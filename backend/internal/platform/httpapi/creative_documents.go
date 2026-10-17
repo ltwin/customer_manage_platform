@@ -10,6 +10,7 @@ import (
 	"github.com/oapi-codegen/nullable"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
@@ -184,6 +185,12 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		abortError(c, 404, CodeNotFound, "修订不存在")
 	case errors.Is(err, creativedocument.ErrNotFound):
 		abortError(c, 404, CodeNotFound, "文档不存在")
+	// Model failures never use 404 or creative_state_conflict: the editor reads
+	// those as "the document is gone" and "the document is in the trash".
+	case errors.Is(err, creativescene.ErrUploadUnavailable):
+		abortError(c, 409, "creative_upload_unavailable", "模型上传已失效，请重新生成")
+	case errors.Is(err, creativescene.ErrModelUnavailable):
+		abortError(c, 400, "creative_model_unavailable", "引用的模型不可用，请重新读取场景")
 	default:
 		return false
 	}

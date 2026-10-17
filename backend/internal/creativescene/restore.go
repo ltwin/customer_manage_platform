@@ -120,7 +120,7 @@ func restoreUnits(old, cur Scene, units []string) (Scene, creativedocument.Chang
 				c.change(placementUnit(id))
 			}
 			if l.content {
-				o.Primitive, o.MaterialSlots, o.Light, o.Camera = src.Primitive, src.MaterialSlots, src.Light, src.Camera
+				o.Primitive, o.Model, o.MaterialSlots, o.Light, o.Camera = src.Primitive, src.Model, src.MaterialSlots, src.Light, src.Camera
 				c.change(contentUnit(id))
 			}
 		case inOld:

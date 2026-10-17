@@ -81,8 +81,8 @@ type Render struct {
 }
 
 // Object is one node of the scene tree. Placement (name, transform, visible,
-// locked) and content (primitive, material_slots, light, camera) are separate
-// units; parent_id and order belong to the objects unit.
+// locked) and content (primitive, model, material_slots, light, camera) are
+// separate units; parent_id and order belong to the objects unit.
 type Object struct {
 	ID            string                  `json:"id"`
 	Kind          string                  `json:"kind"`
@@ -93,6 +93,7 @@ type Object struct {
 	Visible       bool                    `json:"visible"`
 	Locked        bool                    `json:"locked"`
 	Primitive     *Primitive              `json:"primitive,omitempty"`
+	Model         *ModelRef               `json:"model,omitempty"`
 	MaterialSlots map[string]MaterialSlot `json:"material_slots,omitempty"`
 	Light         *Light                  `json:"light,omitempty"`
 	Camera        *Camera                 `json:"camera,omitempty"`
@@ -194,7 +195,7 @@ func encodeScene(s Scene) (creativedocument.Snapshot, error) {
 	if err != nil {
 		return creativedocument.Snapshot{}, err
 	}
-	return creativedocument.Snapshot{Payload: creativecontent.Payload{Scene: raw}}, nil
+	return creativedocument.Snapshot{Payload: creativecontent.Payload{Scene: raw}, Refs: modelRefs(s.Objects)}, nil
 }
 
 // decodeInput decodes client input strictly and then insists on every field
@@ -317,6 +318,9 @@ func Validate(s Scene) error {
 	if cameras > maxCameras {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "摄像机不能超过 %d 台", maxCameras)
 	}
+	if n := len(modelRefs(s.Objects)); n > maxSceneModels {
+		return creativeops.Explain(creativedocument.ErrSizeLimit, "一个场景引用的模型不能超过 %d 个，现有 %d 个", maxSceneModels, n)
+	}
 	return validateTree(s.Objects, byID)
 }
 
@@ -357,11 +361,13 @@ func validateObject(o *Object) error {
 	if err := validateTransform(o.Transform); err != nil {
 		return err
 	}
-	content := map[string]bool{"primitive": o.Primitive != nil, "light": o.Light != nil, "camera": o.Camera != nil, "material_slots": len(o.MaterialSlots) > 0}
+	content := map[string]bool{"primitive": o.Primitive != nil, "model": o.Model != nil, "light": o.Light != nil, "camera": o.Camera != nil, "material_slots": len(o.MaterialSlots) > 0}
 	var allowed []string
 	switch o.Kind {
 	case KindPrimitive:
 		allowed = []string{"primitive", "material_slots"}
+	case KindModelInstance:
+		allowed = []string{"model", "material_slots"}
 	case KindLight:
 		allowed = []string{"light"}
 	case KindCamera:
@@ -385,6 +391,11 @@ func validateObject(o *Object) error {
 			return err
 		}
 		if err := b.checkParams(o.Primitive.Params); err != nil {
+			return err
+		}
+		return validateSlots(o.MaterialSlots)
+	case KindModelInstance:
+		if err := validateModelRef(o.Model); err != nil {
 			return err
 		}
 		return validateSlots(o.MaterialSlots)
