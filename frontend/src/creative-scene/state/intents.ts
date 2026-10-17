@@ -4,6 +4,7 @@ import {
   applyPatch,
   contentKeys,
   contentUnit,
+  instanceTargets,
   placementKeys,
   placementUnit,
   subtree,
@@ -75,6 +76,10 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
     }
     case 'restore_units':
       return op.units
+    case 'commit_model':
+      return []
+    case 'set_instance_model':
+      return instanceTargets(op).map(contentUnit)
   }
 }
 

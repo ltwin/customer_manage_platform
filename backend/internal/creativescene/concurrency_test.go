@@ -180,3 +180,105 @@ func count(t *testing.T, f fixture, query string) int {
 	}
 	return n
 }
+
+// Moving a model instance and swapping its model touch different units, so
+// both always succeed (AC-8).
+func TestMoveAndModelSwapDoNotConflict(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	a := objectID(1)
+	model := newPillar(t, f, doc, a, 1)
+	for round := range 20 {
+		v := readScene(t, f.a, doc)
+		move := batch{DocumentID: doc, Expected: v.expect(placement(a)), Operations: []any{op{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "transform": at(float64(round), 0, 0)}}}}}
+		swap := batch{DocumentID: doc, Expected: v.expect(content(a)), Operations: []any{
+			commit(t, "next", stagePair(t, f, f.a), pillarGenerator(1+float64(round)/10), basicManifest(t), map[string]any{"base_content_id": model.ContentID}),
+			op{"op": "set_instance_model", "object_id": a, "model": map[string]any{"ref": "next"}},
+		}}
+		for i, err := range race(t, f.a, move, swap) {
+			if err != nil {
+				t.Fatalf("round %d writer %d: %v", round, i, err)
+			}
+		}
+		_, models := readModels(t, f.a, doc)
+		o := readScene(t, f.a, doc).object(t, a)
+		if o.Transform.Position[0] != float64(round) || o.Model.ContentRevisionID == v.object(t, a).Model.ContentRevisionID || !models[o.Model.ContentRevisionID].Usable {
+			t.Fatalf("round %d lost a write: %+v", round, o)
+		}
+	}
+}
+
+// Two swaps of the same instance: exactly one wins, the other sees a conflict
+// on the content unit and leaves nothing behind.
+func TestTwoModelSwapsExactlyOneWins(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	a := objectID(1)
+	model := newPillar(t, f, doc, a, 1)
+	for round := range 20 {
+		v := readScene(t, f.a, doc)
+		swap := func(height float64) batch {
+			return batch{DocumentID: doc, Expected: v.expect(content(a)), Operations: []any{
+				commit(t, "next", stagePair(t, f, f.a), pillarGenerator(height), basicManifest(t), map[string]any{"base_content_id": model.ContentID}),
+				op{"op": "set_instance_model", "object_id": a, "model": map[string]any{"ref": "next"}},
+			}}
+		}
+		var won, lost int
+		for _, err := range race(t, f.a, swap(2), swap(3)) {
+			c, ok := creativedocument.IsPublicConflict(err)
+			switch {
+			case err == nil:
+				won++
+			case ok && len(c.Conflicts) == 1 && c.Conflicts[0].Unit == content(a):
+				lost++
+			default:
+				t.Fatalf("round %d: unexpected %v", round, err)
+			}
+		}
+		if won != 1 || lost != 1 {
+			t.Fatalf("round %d: %d won, %d lost", round, won, lost)
+		}
+	}
+	// Every losing command rolled back its model write and kept its uploads.
+	var revisions, pending int
+	if err := f.db.QueryRow(`SELECT count(*) FROM creative_content_revisions r JOIN creative_contents c ON c.id=r.content_id WHERE c.kind='model' AND r.payload->'model' ? 'generator'`).Scan(&revisions); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRow(`SELECT count(*) FROM creative_upload_candidates WHERE state='pending'`).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if revisions != 21 || pending != 40 {
+		t.Fatalf("%d complete model revisions, %d pending uploads; want 21 and 40", revisions, pending)
+	}
+}
+
+// all_instances lists the instances the caller saw. A copy made at the same
+// time keeps the old model, and neither request fails.
+func TestAllInstancesWithConcurrentCopy(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	a, b := objectID(1), objectID(2)
+	model := newPillar(t, f, doc, a, 1)
+	addObjects(t, f.a, doc, instance(b, 2, map[string]any{"content_revision_id": model.ContentRevisionID}))
+	for round := range 20 {
+		v := readScene(t, f.a, doc)
+		shared := v.object(t, a).Model.ContentRevisionID
+		copyID := objectID(100 + round)
+		both := batch{DocumentID: doc, Expected: v.expect(content(a), content(b)), Operations: []any{
+			commit(t, "next", stagePair(t, f, f.a), pillarGenerator(2), basicManifest(t), map[string]any{"base_content_id": model.ContentID}),
+			op{"op": "set_instance_model", "object_id": a, "model": map[string]any{"ref": "next"}, "scope": "all_instances", "object_ids": []string{a, b}},
+		}}
+		dup := batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{
+			op{"op": "add_objects", "objects": []any{instance(copyID, 100+round, map[string]any{"content_revision_id": shared})}},
+		}}
+		for i, err := range race(t, f.a, both, dup) {
+			if err != nil {
+				t.Fatalf("round %d writer %d: %v", round, i, err)
+			}
+		}
+		after := readScene(t, f.a, doc)
+		if after.object(t, a).Model.ContentRevisionID == shared || after.object(t, b).Model.ContentRevisionID != after.object(t, a).Model.ContentRevisionID || after.object(t, copyID).Model.ContentRevisionID != shared {
+			t.Fatalf("round %d: %+v", round, after.Scene.Objects)
+		}
+	}
+}

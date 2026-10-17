@@ -41,6 +41,7 @@ export const contentUnit = (id: string) => `object:${id}:content`
 export const placementKeys = ['name', 'transform', 'visible', 'locked'] as const
 export const contentKeys = [
   'primitive',
+  'model',
   'material_slots',
   'light',
   'camera',
@@ -153,8 +154,29 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
         },
       }
     }
+    // A committed model changes no unit until an operation places it.
+    case 'commit_model':
+      return state
+    case 'set_instance_model': {
+      const targets = new Set(instanceTargets(op))
+      return {
+        ...state,
+        scene: {
+          ...scene,
+          objects: scene.objects.map((o) =>
+            targets.has(o.id) ? { ...o, model: op.model } : o,
+          ),
+        },
+      }
+    }
   }
 }
+
+/** The instances set_instance_model changes, as the server reads it. */
+export const instanceTargets = (
+  op: Extract<WireOp, { op: 'set_instance_model' }>,
+): string[] =>
+  op.scope === 'all_instances' ? (op.object_ids ?? []) : [op.object_id]
 
 export function applyPatch(state: SceneState, patch: ProjectionPatch): SceneState {
   const gone = new Set(patch.removed)
