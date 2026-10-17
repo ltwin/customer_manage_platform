@@ -31,7 +31,7 @@
 
 ## 6. 前端视口与交互
 
-- [ ] 6.1 键位表与分发：`input/keymap.ts`（键位表是状态栏、菜单、速查的唯一来源；按 `event.code` 分发；macOS 认 `metaKey`、`Backspace` 视作 Delete；输入框内与组字中不分发；命中后 `preventDefault` + `stopPropagation`；Esc 的处理顺序且永不关闭视图；Ctrl/Cmd + S 拦下并提示已自动保存）；`creative-scene-interaction.test.ts` 先写，覆盖 AC-2c
+- [x] 6.1 键位表与分发：`input/keymap.ts`（键位表是状态栏、菜单、速查的唯一来源；按 `event.code` 分发；macOS 认 `metaKey`、`Backspace` 视作 Delete；输入框内与组字中不分发；命中后 `preventDefault` + `stopPropagation`；Esc 的处理顺序且永不关闭视图；Ctrl/Cmd + S 拦下并提示已自动保存）；`creative-scene-interaction.test.ts` 先写，覆盖 AC-2c
 - [ ] 6.2 视口与导航（依赖 4.1）：`Viewport.tsx`（R3F Canvas、`Grid`、天空、clay 光照、`GizmoHelper`）、`objects/*`（基础体、灯光图标、摄像机视锥、分组）、`input/navigation.ts`（`CameraControls` 配置；中键与 Alt + 左键并存；鼠标 / 触控板两套滚轮映射，`ctrlKey` 一律推拉；`classifyWheel` 推测加「视图」菜单手动选择并持久化；数字行视图、`.` 聚焦选中、Home 全部显示、反引号视图菜单）；单测覆盖 AC-2a，`classifyWheel` 用 4.1 的夹具
 - [ ] 6.3 选择与变换：`input/selection.ts`（单击、Shift + 单击三态、`SelectionBox` 框选及 Shift 加选 / 修饰键减选、A / Alt + A、锁定与隐藏排除、只变换最上层选中物件）、`transform/modal.ts` + `numeric.ts`（G / R / S；X/Y/Z 全局 → 自身 → 取消循环、Shift + 轴锁平面；Ctrl 吸附 1 m / 5° / 0.1，Ctrl + Shift 精细吸附，Shift 精细从按下时起算；数字输入含小数、负号、Backspace、Tab 换轴；多物件以中点为枢轴；父对象下换算回局部变换；一次确认一个 `update_objects`）、gizmo 工具（`TransformControls` 挂在枢轴代理上）、W 切换工具、Shift + D、X / Delete、H / Shift + H / Alt + H、Alt + G/R/S、F2；单测覆盖 AC-2 模态变换与 AC-2b
 - [ ] 6.4 面板与样式：工具栏、菜单栏（含 Shift + A 添加菜单，新物件落在鼠标所指的地面点）、物件列表、属性栏（左侧）、状态栏（当前工具或变换的轴向与数值、保存状态）、快捷键速查、右键菜单、首次提示、冲突提示（重新应用 / 放弃 / 仍然删除）、历史版本面板（分组列表、只读预览、确认后整份恢复）、关闭视图时 `blocked` 意图的确认；`scene.css`；在助手面板展开时让出空间；菜单与状态栏的按键标注全部取自键位表；`make check-frontend` 通过
