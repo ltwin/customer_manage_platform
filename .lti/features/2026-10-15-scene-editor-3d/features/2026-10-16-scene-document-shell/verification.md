@@ -9,8 +9,8 @@
 | `go test -count=1`：`creativescene`、`creativecontent`、`creativedocument`、`creativecanvas`、`platform/store`、`platform/httpapi` | 通过 |
 | `golangci-lint run`：上述包与 `cmd/server`、`cmd/creative-worker` | 0 issues |
 | `make generate-check`（OpenAPI 两份生成物、`builtins.gen.json`） | 通过，无漂移 |
-| `make check-frontend`（oxlint、`tsc -b` + vite build、577 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
-| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 15/15 通过，连跑两遍稳定 |
+| `make check-frontend`（oxlint、`tsc -b` + vite build、581 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
+| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 17/17 通过 |
 | `make check`（合回 `develop` 前的门禁） | 未跑，合并点执行一次 |
 
 e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收站、修订列表和整份恢复都按契约模拟，操作语义复用前端的 `state/apply.ts`。服务端真实语义由 Go 测试负责，e2e 验证的是编辑器在真实浏览器里的交互、请求次数和请求内容。运行方式：在 `frontend/` 起 Vite（`npx vite --port 5179`），再执行 `node scripts/creative-scene.e2e.mjs`；`SCENE_E2E_ONLY=<名称片段>` 只跑一项，`SCENE_E2E_SHOTS=<目录>` 保存关键步骤截图。
@@ -29,6 +29,9 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 | 新建修订与随后两分钟内的编辑并成一组，回不到刚建好时 | 新建单独成组，标为「新建场景」 | 单测「history groups…」；e2e「history」 |
 | 属性栏只在回车 / 失焦时提交，与 AC-2「停下 300ms 后提交」不符；聚焦再离开会写回舍入值 | 300ms 防抖 + 回车 / 失焦立即提交，只提交改动过的文本；属性栏按物件重建 | e2e「properties commit 300 ms…」 |
 | 字段内回车后焦点落到页面 body，快捷键全部失效 | 焦点交还编辑器根元素；点击视口也取回焦点 | e2e「key boundaries」 |
+| owner 测试：触控板双指滑动、捏合后视图要点一下才更新 | 视口按需渲染，滚轮 / 手势调用 camera-controls 时不带过渡、不发事件，没有触发重绘；每次程序化移动相机后显式重绘 | e2e「trackpad swipes and pinches…」修复前失败 |
+| owner 测试：坐标轴与 Blender 不一致（`G Z` 是前后） | 编辑器层换成 Blender 坐标（Z 向上），文档数据仍 Y 向上，见 design「局部设计与偏差」 | 单测「the editor speaks Blender…」等 4 条；e2e `G Z 2` 抬高、属性栏按 Blender 轴、数字键与坐标轴部件 |
+| 点击坐标轴部件会取消选中；drei 的转视角动画转到顶视后画面歪 90° | 控制器自己命中轴头，走数字键的视图切换，拦下这次点击 | e2e「number keys and the axis widget…」 |
 | 冲突提示压住坐标轴部件；助手面板变底部抽屉（≤ 760px）时编辑器仍让出右侧 | 调整右边距与断点 | 截图目检；e2e「makes room for the assistant panel」 |
 
 ## 验收对照
@@ -56,6 +59,6 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 ## 未完成与待 owner 决定
 
 1. **4.1 浏览器输入穿刺 / 6.2 导航**：需要 owner 在 macOS Chrome / Safari / Edge（触控板和鼠标）与 Windows Chrome（鼠标）上录制。录制页在本次会话的 scratchpad（不入库）。录制结果存为 `frontend/scripts/fixtures/scene-input/*.json` 后，再校准 `classifyWheel`、补夹具测试、勾选 6.2。也可以由 owner 决定延期，作为后续安排记录。
-2. **坐标轴与 Blender 的差异**：数据契约规定 Y 轴向上、正面朝 +Z（epic `patterns: 几何模块契约`），所以 `G Z` 是前后移动；Blender 的 `G Z` 是上下移动。习惯 Blender 的摄影师会按错。可选：保持现状并在速查里说明；或者存储仍是 Y 向上，界面和锁轴键按 Blender 的叫法映射（X 右、Y 纵深、Z 向上）。
+2. ~~坐标轴与 Blender 的差异~~：**已处理**（owner 2026-10-16 要求与 Blender 一致）。编辑器层采用 Z 向上，文档数据保持契约的 Y 向上；摄像机 / 灯光朝向的显示差别留到 C4。
 3. **AC-1 画布侧**：请在真实画布上手动确认一次（见上表）。
 4. **proposal 风险第 7 条不成立**：原以为 `add_node` 枚举加 `core.scene` 会改变助手 `edit_canvas` 的工具 schema，需要排空后升级。实际助手的节点类型是手写枚举（`backend/internal/creativeagent/canvas_tools.go:nodeTypes`，只有文字、图片、视频、音频、链接），`tool_schemas.gen.go` 也没有变化。所以本次上线不需要排空升级，助手在 C1 也不能新建场景，要到 C3 才接入。design 的挂载点已注明。
