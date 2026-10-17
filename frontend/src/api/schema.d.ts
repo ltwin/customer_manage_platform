@@ -6526,10 +6526,10 @@ export interface components {
             type: "add_node";
             node_id: string;
             /**
-             * @description 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
+             * @description 文档节点类型（core.scene、internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
              * @enum {string}
              */
-            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.group" | "internal.document";
+            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.group" | "core.scene" | "internal.document";
             title?: string;
             x: number;
             y: number;
@@ -6830,7 +6830,7 @@ export interface components {
             execution_id: string;
         };
         /** @description 按 type_key 判别；各文档类型在自己的契约里加分支。 */
-        CreativeDocument: components["schemas"]["CreativeInternalDocument"];
+        CreativeDocument: components["schemas"]["CreativeInternalDocument"] | components["schemas"]["CreativeSceneDocument"];
         CreativeInternalDocument: {
             id: string;
             title: string;
@@ -6849,6 +6849,215 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             content: components["schemas"]["CreativeContentRevision"];
+        };
+        /** @description 场景文档（type_key = scene）。快照结构见 data 契约「场景文档」，服务端每次写入前整体校验。 */
+        CreativeSceneDocument: {
+            id: string;
+            title: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type_key: "scene";
+            content_revision_id: string;
+            revision: components["schemas"]["CreativeRevision"];
+            unit_revs: components["schemas"]["CreativeDocumentUnitRevisions"];
+            /** Format: date-time */
+            trashed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            scene: components["schemas"]["CreativeScene"];
+            /** @description 以 content_revision_id 为键，覆盖快照引用的全部模型；C2 之前恒为空对象。 */
+            models: {
+                [key: string]: components["schemas"]["CreativeSceneModel"];
+            };
+        };
+        CreativeSceneModel: {
+            content_id: string;
+            /** @description false 时其余字段为 null，编辑器显示「模型不可用」占位。 */
+            usable: boolean;
+            manifest: {
+                [key: string]: unknown;
+            } | null;
+            /** @description {language, contract_version, lib_version, params_schema, params, mount}，不含代码。 */
+            generator: {
+                [key: string]: unknown;
+            } | null;
+            glb_url: string | null;
+            thumbnail_url: string | null;
+        };
+        CreativeScene: {
+            environment: components["schemas"]["CreativeSceneEnvironment"];
+            render: components["schemas"]["CreativeSceneRender"];
+            objects: components["schemas"]["CreativeSceneObject"][];
+        };
+        CreativeSceneEnvironment: {
+            sky: components["schemas"]["CreativeSceneSky"];
+            ambient: components["schemas"]["CreativeSceneAmbient"];
+            fog: components["schemas"]["CreativeSceneFog"] | null;
+        };
+        /** @description 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。 */
+        CreativeSceneSky: {
+            /** @enum {string} */
+            kind: "procedural" | "hdri" | "color";
+            sun_elevation_deg?: number;
+            sun_azimuth_deg?: number;
+            turbidity?: number;
+            hdri?: string;
+            color?: components["schemas"]["CreativeSceneColor"];
+        };
+        CreativeSceneColor: string;
+        CreativeSceneAmbient: {
+            color: components["schemas"]["CreativeSceneColor"];
+            intensity: number;
+        };
+        CreativeSceneFog: {
+            color: components["schemas"]["CreativeSceneColor"];
+            near_m: number;
+            /** @description 须大于 near_m。 */
+            far_m: number;
+        };
+        CreativeSceneRender: {
+            /** @enum {string} */
+            mode: "clay" | "lit";
+        };
+        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
+        CreativeSceneObject: {
+            id: string;
+            /** @enum {string} */
+            kind: "primitive" | "light" | "camera" | "group";
+            name: string;
+            /** @description null 为根；父对象必须是 group，不能成环。 */
+            parent_id: string | null;
+            /** @description 同一父对象下的兄弟顺序，兄弟之间不重复。 */
+            order: number;
+            transform: components["schemas"]["CreativeSceneTransform"];
+            visible: boolean;
+            locked: boolean;
+            primitive?: components["schemas"]["CreativeScenePrimitive"];
+            material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
+            light?: components["schemas"]["CreativeSceneLight"];
+            camera?: components["schemas"]["CreativeSceneCamera"];
+        };
+        CreativeSceneTransform: {
+            /** @description 米，每轴 ±100000。 */
+            position: number[];
+            /** @description 单位四元数 x, y, z, w。 */
+            rotation: number[];
+            /** @description 每项 0.001…1000。 */
+            scale: number[];
+        };
+        CreativeScenePrimitive: {
+            /** @description 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。 */
+            builtin: string;
+            params?: components["schemas"]["CreativeSceneParams"];
+        };
+        /** @description 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。 */
+        CreativeSceneParams: {
+            [key: string]: unknown;
+        };
+        /** @description 缺省等同于空对象。 */
+        CreativeSceneMaterialSlots: {
+            [key: string]: components["schemas"]["CreativeSceneMaterialSlot"];
+        };
+        CreativeSceneMaterialSlot: {
+            preset: string;
+            params: {
+                [key: string]: unknown;
+            };
+        };
+        CreativeSceneLight: {
+            /** @enum {string} */
+            type: "directional" | "point" | "spot";
+            color: components["schemas"]["CreativeSceneColor"];
+            intensity: number;
+            range_m: number | null;
+            /** @description spot 时必填。 */
+            angle_deg: number | null;
+            penumbra: number | null;
+            cast_shadow: boolean;
+        };
+        CreativeSceneCamera: {
+            focal_mm: number;
+            sensor_mm: number[];
+            aspect: string;
+            near_m: number;
+            far_m: number;
+            label: string;
+        };
+        /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
+        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"];
+        /** @description 涉及 objects；新对象的两个单元出现在 changed_units 中。 */
+        CreativeSceneAddObjects: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "add_objects";
+            objects: components["schemas"]["CreativeSceneObject"][];
+        };
+        CreativeSceneUpdateObjects: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "update_objects";
+            updates: components["schemas"]["CreativeSceneObjectUpdate"][];
+        };
+        /** @description 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params 按键合并，material_slots、light、camera 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。 */
+        CreativeSceneObjectUpdate: {
+            object_id: string;
+            name?: string;
+            transform?: components["schemas"]["CreativeSceneTransform"];
+            visible?: boolean;
+            locked?: boolean;
+            primitive?: {
+                params: components["schemas"]["CreativeSceneParams"];
+            };
+            material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
+            light?: components["schemas"]["CreativeSceneLight"];
+            camera?: components["schemas"]["CreativeSceneCamera"];
+        };
+        /** @description 分组连同后代一起删除；涉及 objects 以及每个被删对象的两个单元。 */
+        CreativeSceneRemoveObjects: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "remove_objects";
+            object_ids: string[];
+        };
+        /** @description 涉及 objects。 */
+        CreativeSceneReparentObjects: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "reparent_objects";
+            moves: components["schemas"]["CreativeSceneMove"][];
+        };
+        CreativeSceneMove: {
+            object_id: string;
+            parent_id: string | null;
+            order: number;
+        };
+        CreativeSceneSetEnvironment: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "set_environment";
+            environment: components["schemas"]["CreativeSceneEnvironment"];
+        };
+        CreativeSceneSetRender: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "set_render";
+            render: components["schemas"]["CreativeSceneRender"];
         };
         /** @description 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。 */
         CreativeDocumentUnitRevisions: {

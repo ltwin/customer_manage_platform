@@ -13561,8 +13561,9 @@ components:
           - core.video
           - core.audio
           - core.group
+          - core.scene
           - internal.document
-          description: 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
+          description: 文档节点类型（core.scene、internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
         title:
           type: string
           maxLength: 200
@@ -14396,10 +14397,12 @@ components:
       description: 按 type_key 判别；各文档类型在自己的契约里加分支。
       oneOf:
       - $ref: '#/components/schemas/CreativeInternalDocument'
+      - $ref: '#/components/schemas/CreativeSceneDocument'
       discriminator:
         propertyName: type_key
         mapping:
           internal.document: '#/components/schemas/CreativeInternalDocument'
+          scene: '#/components/schemas/CreativeSceneDocument'
     CreativeInternalDocument:
       type: object
       additionalProperties: false
@@ -14441,6 +14444,542 @@ components:
           format: date-time
         content:
           $ref: '#/components/schemas/CreativeContentRevision'
+    CreativeSceneDocument:
+      type: object
+      additionalProperties: false
+      description: 场景文档（type_key = scene）。快照结构见 data 契约「场景文档」，服务端每次写入前整体校验。
+      required:
+      - id
+      - title
+      - type_key
+      - content_revision_id
+      - revision
+      - unit_revs
+      - trashed_at
+      - created_at
+      - updated_at
+      - scene
+      - models
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type_key:
+          type: string
+          enum:
+          - scene
+        content_revision_id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        unit_revs:
+          $ref: '#/components/schemas/CreativeDocumentUnitRevisions'
+        trashed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        scene:
+          $ref: '#/components/schemas/CreativeScene'
+        models:
+          type: object
+          description: 以 content_revision_id 为键，覆盖快照引用的全部模型；C2 之前恒为空对象。
+          additionalProperties:
+            $ref: '#/components/schemas/CreativeSceneModel'
+    CreativeSceneModel:
+      type: object
+      additionalProperties: false
+      required:
+      - content_id
+      - usable
+      - manifest
+      - generator
+      - glb_url
+      - thumbnail_url
+      properties:
+        content_id:
+          type: string
+        usable:
+          type: boolean
+          description: false 时其余字段为 null，编辑器显示「模型不可用」占位。
+        manifest:
+          type: object
+          nullable: true
+          additionalProperties: true
+        generator:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: '{language, contract_version, lib_version, params_schema, params, mount}，不含代码。'
+        glb_url:
+          type: string
+          nullable: true
+        thumbnail_url:
+          type: string
+          nullable: true
+    CreativeScene:
+      type: object
+      additionalProperties: false
+      required:
+      - environment
+      - render
+      - objects
+      properties:
+        environment:
+          $ref: '#/components/schemas/CreativeSceneEnvironment'
+        render:
+          $ref: '#/components/schemas/CreativeSceneRender'
+        objects:
+          type: array
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/CreativeSceneObject'
+    CreativeSceneEnvironment:
+      type: object
+      additionalProperties: false
+      required:
+      - sky
+      - ambient
+      - fog
+      properties:
+        sky:
+          $ref: '#/components/schemas/CreativeSceneSky'
+        ambient:
+          $ref: '#/components/schemas/CreativeSceneAmbient'
+        fog:
+          allOf:
+          - $ref: '#/components/schemas/CreativeSceneFog'
+          nullable: true
+    CreativeSceneSky:
+      type: object
+      additionalProperties: false
+      description: 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
+      required:
+      - kind
+      properties:
+        kind:
+          type: string
+          enum:
+          - procedural
+          - hdri
+          - color
+        sun_elevation_deg:
+          type: number
+          minimum: -10
+          maximum: 90
+        sun_azimuth_deg:
+          type: number
+          minimum: 0
+          maximum: 360
+        turbidity:
+          type: number
+          minimum: 1
+          maximum: 20
+        hdri:
+          type: string
+          pattern: ^[a-z0-9_]+@[1-9][0-9]*$
+        color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+    CreativeSceneColor:
+      type: string
+      pattern: ^#[0-9a-fA-F]{6}$
+    CreativeSceneAmbient:
+      type: object
+      additionalProperties: false
+      required:
+      - color
+      - intensity
+      properties:
+        color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+        intensity:
+          type: number
+          minimum: 0
+          maximum: 10
+    CreativeSceneFog:
+      type: object
+      additionalProperties: false
+      required:
+      - color
+      - near_m
+      - far_m
+      properties:
+        color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+        near_m:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+        far_m:
+          type: number
+          description: 须大于 near_m。
+    CreativeSceneRender:
+      type: object
+      additionalProperties: false
+      required:
+      - mode
+      properties:
+        mode:
+          type: string
+          enum:
+          - clay
+          - lit
+    CreativeSceneObject:
+      type: object
+      additionalProperties: false
+      description: 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+      required:
+      - id
+      - kind
+      - name
+      - parent_id
+      - order
+      - transform
+      - visible
+      - locked
+      properties:
+        id:
+          type: string
+          pattern: ^sobj_[A-Za-z0-9_-]{21}$
+        kind:
+          type: string
+          enum:
+          - primitive
+          - light
+          - camera
+          - group
+        name:
+          type: string
+          maxLength: 80
+        parent_id:
+          type: string
+          nullable: true
+          description: null 为根；父对象必须是 group，不能成环。
+        order:
+          type: integer
+          minimum: 0
+          description: 同一父对象下的兄弟顺序，兄弟之间不重复。
+        transform:
+          $ref: '#/components/schemas/CreativeSceneTransform'
+        visible:
+          type: boolean
+        locked:
+          type: boolean
+        primitive:
+          $ref: '#/components/schemas/CreativeScenePrimitive'
+        material_slots:
+          $ref: '#/components/schemas/CreativeSceneMaterialSlots'
+        light:
+          $ref: '#/components/schemas/CreativeSceneLight'
+        camera:
+          $ref: '#/components/schemas/CreativeSceneCamera'
+    CreativeSceneTransform:
+      type: object
+      additionalProperties: false
+      required:
+      - position
+      - rotation
+      - scale
+      properties:
+        position:
+          type: array
+          minItems: 3
+          maxItems: 3
+          description: 米，每轴 ±100000。
+          items:
+            type: number
+        rotation:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: 单位四元数 x, y, z, w。
+          items:
+            type: number
+        scale:
+          type: array
+          minItems: 3
+          maxItems: 3
+          description: 每项 0.001…1000。
+          items:
+            type: number
+    CreativeScenePrimitive:
+      type: object
+      additionalProperties: false
+      required:
+      - builtin
+      properties:
+        builtin:
+          type: string
+          pattern: ^[a-z0-9_]+@[1-9][0-9]*$
+          description: 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。
+        params:
+          $ref: '#/components/schemas/CreativeSceneParams'
+    CreativeSceneParams:
+      type: object
+      description: 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。
+      additionalProperties: true
+    CreativeSceneMaterialSlots:
+      type: object
+      maxProperties: 32
+      description: 缺省等同于空对象。
+      additionalProperties:
+        $ref: '#/components/schemas/CreativeSceneMaterialSlot'
+    CreativeSceneMaterialSlot:
+      type: object
+      additionalProperties: false
+      required:
+      - preset
+      - params
+      properties:
+        preset:
+          type: string
+          pattern: ^[a-z0-9_]+@[1-9][0-9]*$
+        params:
+          type: object
+          maxProperties: 32
+          additionalProperties: true
+    CreativeSceneLight:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - color
+      - intensity
+      - range_m
+      - angle_deg
+      - penumbra
+      - cast_shadow
+      properties:
+        type:
+          type: string
+          enum:
+          - directional
+          - point
+          - spot
+        color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+        intensity:
+          type: number
+          minimum: 0
+          maximum: 1000
+        range_m:
+          type: number
+          nullable: true
+        angle_deg:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 179
+          description: spot 时必填。
+        penumbra:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        cast_shadow:
+          type: boolean
+    CreativeSceneCamera:
+      type: object
+      additionalProperties: false
+      required:
+      - focal_mm
+      - sensor_mm
+      - aspect
+      - near_m
+      - far_m
+      - label
+      properties:
+        focal_mm:
+          type: number
+          minimum: 8
+          maximum: 800
+        sensor_mm:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+            minimum: 1
+            maximum: 100
+        aspect:
+          type: string
+          pattern: ^([1-9]|[12][0-9]|3[0-2]):([1-9]|[12][0-9]|3[0-2])$
+        near_m:
+          type: number
+        far_m:
+          type: number
+        label:
+          type: string
+          maxLength: 40
+    CreativeSceneOperation:
+      description: 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。
+      oneOf:
+      - $ref: '#/components/schemas/CreativeSceneAddObjects'
+      - $ref: '#/components/schemas/CreativeSceneUpdateObjects'
+      - $ref: '#/components/schemas/CreativeSceneRemoveObjects'
+      - $ref: '#/components/schemas/CreativeSceneReparentObjects'
+      - $ref: '#/components/schemas/CreativeSceneSetEnvironment'
+      - $ref: '#/components/schemas/CreativeSceneSetRender'
+      discriminator:
+        propertyName: op
+        mapping:
+          add_objects: '#/components/schemas/CreativeSceneAddObjects'
+          update_objects: '#/components/schemas/CreativeSceneUpdateObjects'
+          remove_objects: '#/components/schemas/CreativeSceneRemoveObjects'
+          reparent_objects: '#/components/schemas/CreativeSceneReparentObjects'
+          set_environment: '#/components/schemas/CreativeSceneSetEnvironment'
+          set_render: '#/components/schemas/CreativeSceneSetRender'
+    CreativeSceneAddObjects:
+      type: object
+      additionalProperties: false
+      description: 涉及 objects；新对象的两个单元出现在 changed_units 中。
+      required:
+      - op
+      - objects
+      properties:
+        op:
+          type: string
+          enum:
+          - add_objects
+        objects:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/CreativeSceneObject'
+    CreativeSceneUpdateObjects:
+      type: object
+      additionalProperties: false
+      required:
+      - op
+      - updates
+      properties:
+        op:
+          type: string
+          enum:
+          - update_objects
+        updates:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/CreativeSceneObjectUpdate'
+    CreativeSceneObjectUpdate:
+      type: object
+      additionalProperties: false
+      description: 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params 按键合并，material_slots、light、camera 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。
+      required:
+      - object_id
+      properties:
+        object_id:
+          type: string
+        name:
+          type: string
+          maxLength: 80
+        transform:
+          $ref: '#/components/schemas/CreativeSceneTransform'
+        visible:
+          type: boolean
+        locked:
+          type: boolean
+        primitive:
+          type: object
+          additionalProperties: false
+          required:
+          - params
+          properties:
+            params:
+              $ref: '#/components/schemas/CreativeSceneParams'
+        material_slots:
+          $ref: '#/components/schemas/CreativeSceneMaterialSlots'
+        light:
+          $ref: '#/components/schemas/CreativeSceneLight'
+        camera:
+          $ref: '#/components/schemas/CreativeSceneCamera'
+    CreativeSceneRemoveObjects:
+      type: object
+      additionalProperties: false
+      description: 分组连同后代一起删除；涉及 objects 以及每个被删对象的两个单元。
+      required:
+      - op
+      - object_ids
+      properties:
+        op:
+          type: string
+          enum:
+          - remove_objects
+        object_ids:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            type: string
+    CreativeSceneReparentObjects:
+      type: object
+      additionalProperties: false
+      description: 涉及 objects。
+      required:
+      - op
+      - moves
+      properties:
+        op:
+          type: string
+          enum:
+          - reparent_objects
+        moves:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/CreativeSceneMove'
+    CreativeSceneMove:
+      type: object
+      additionalProperties: false
+      required:
+      - object_id
+      - parent_id
+      - order
+      properties:
+        object_id:
+          type: string
+        parent_id:
+          type: string
+          nullable: true
+        order:
+          type: integer
+          minimum: 0
+    CreativeSceneSetEnvironment:
+      type: object
+      additionalProperties: false
+      required:
+      - op
+      - environment
+      properties:
+        op:
+          type: string
+          enum:
+          - set_environment
+        environment:
+          $ref: '#/components/schemas/CreativeSceneEnvironment'
+    CreativeSceneSetRender:
+      type: object
+      additionalProperties: false
+      required:
+      - op
+      - render
+      properties:
+        op:
+          type: string
+          enum:
+          - set_render
+        render:
+          $ref: '#/components/schemas/CreativeSceneRender'
     CreativeDocumentUnitRevisions:
       type: object
       description: 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。

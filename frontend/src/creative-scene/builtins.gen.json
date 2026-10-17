@@ -1,0 +1,72 @@
+[
+  {
+    "builtin": "ground@1",
+    "label": "地面",
+    "mount": "floor",
+    "params": {
+      "size": { "type": "number", "default": 40, "min": 1, "max": 1000, "step": 1, "unit": "m", "label": "边长" }
+    }
+  },
+  {
+    "builtin": "box@1",
+    "label": "方块",
+    "mount": "floor",
+    "params": {
+      "width": { "type": "number", "default": 1, "min": 0.01, "max": 1000, "step": 0.01, "unit": "m", "label": "宽" },
+      "height": { "type": "number", "default": 1, "min": 0.01, "max": 1000, "step": 0.01, "unit": "m", "label": "高" },
+      "depth": { "type": "number", "default": 1, "min": 0.01, "max": 1000, "step": 0.01, "unit": "m", "label": "深" }
+    }
+  },
+  {
+    "builtin": "cylinder@1",
+    "label": "圆柱",
+    "mount": "floor",
+    "params": {
+      "radius_top": { "type": "number", "default": 0.5, "min": 0, "max": 500, "step": 0.01, "unit": "m", "label": "顶部半径" },
+      "radius_bottom": { "type": "number", "default": 0.5, "min": 0.001, "max": 500, "step": 0.01, "unit": "m", "label": "底部半径" },
+      "height": { "type": "number", "default": 1, "min": 0.01, "max": 1000, "step": 0.01, "unit": "m", "label": "高" },
+      "radial_segments": { "type": "integer", "default": 32, "min": 3, "max": 128, "step": 1, "label": "分段数" }
+    }
+  },
+  {
+    "builtin": "sphere@1",
+    "label": "球体",
+    "mount": "floor",
+    "params": {
+      "radius": { "type": "number", "default": 0.5, "min": 0.01, "max": 500, "step": 0.01, "unit": "m", "label": "半径" },
+      "segments": { "type": "integer", "default": 32, "min": 8, "max": 128, "step": 1, "label": "分段数" }
+    }
+  },
+  {
+    "builtin": "plane@1",
+    "label": "平板",
+    "mount": "wall",
+    "params": {
+      "width": { "type": "number", "default": 2, "min": 0.01, "max": 1000, "step": 0.01, "unit": "m", "label": "宽" },
+      "height": { "type": "number", "default": 2, "min": 0.01, "max": 1000, "step": 0.01, "unit": "m", "label": "高" }
+    }
+  },
+  {
+    "builtin": "stairs@1",
+    "label": "楼梯",
+    "mount": "floor",
+    "params": {
+      "width": { "type": "number", "default": 1.2, "min": 0.1, "max": 100, "step": 0.01, "unit": "m", "label": "宽" },
+      "step_count": { "type": "integer", "default": 8, "min": 1, "max": 100, "step": 1, "label": "台阶数" },
+      "step_height": { "type": "number", "default": 0.18, "min": 0.01, "max": 2, "step": 0.01, "unit": "m", "label": "台阶高" },
+      "step_depth": { "type": "number", "default": 0.28, "min": 0.01, "max": 5, "step": 0.01, "unit": "m", "label": "台阶深" }
+    }
+  },
+  {
+    "builtin": "arch@1",
+    "label": "拱门",
+    "mount": "floor",
+    "params": {
+      "width": { "type": "number", "default": 2, "min": 0.2, "max": 100, "step": 0.01, "unit": "m", "label": "宽" },
+      "height": { "type": "number", "default": 3, "min": 0.2, "max": 100, "step": 0.01, "unit": "m", "label": "高" },
+      "depth": { "type": "number", "default": 0.5, "min": 0.05, "max": 20, "step": 0.01, "unit": "m", "label": "厚" },
+      "opening_width": { "type": "number", "default": 1.2, "min": 0.1, "max": 100, "step": 0.01, "unit": "m", "label": "门洞宽" },
+      "opening_height": { "type": "number", "default": 2.2, "min": 0.1, "max": 100, "step": 0.01, "unit": "m", "label": "门洞高" }
+    }
+  }
+]
