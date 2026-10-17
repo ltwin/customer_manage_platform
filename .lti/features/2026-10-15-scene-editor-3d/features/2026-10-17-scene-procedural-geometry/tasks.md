@@ -9,7 +9,7 @@
 
 ## 2. 场景模型命令（后端）
 
-- [ ] 2.1 回执扩展：`creativedocument.Changes` 加 `Response map[string]json.RawMessage`，`persist` 并入 `CommandResult` 顶层，与通用字段冲突时整个事务回滚，随幂等记录重放；`document_test.go` 先写附加字段、键冲突回滚、重放一致、不设置时回执不变
+- [x] 2.1 回执扩展：`creativedocument.Changes` 加 `Response map[string]json.RawMessage`，`persist` 并入 `CommandResult` 顶层，与通用字段冲突时整个事务回滚，随幂等记录重放；`document_test.go` 先写附加字段、键冲突回滚、重放一致、不设置时回执不变
 - [ ] 2.2 场景模型与读取：`model.go` 加 `model_instance` 种类与 `model` 字段、R1 引用上限（≤ 300 个不同模型修订）、`encodeScene` 填 `Refs`；`models.go` 实现 `ModelPayload` / `Generator` 校验（复用 `paramSpec`）和 R3 manifest 比对；`view` 用 `ReadDisplayBatch` 批量返回 `models`（不含代码，不可用项只有 `usable:false`），按经验 `query-count-guard-pg-stat-xact` 断言查询次数不随模型数增长；`unitView`、按单元恢复把 `model` 归入内容单元（AC-9）
 - [ ] 2.3 模型操作：`sceneOp.apply` 带 `env{tx, retain, refs}`；`commit_model`（`ref` 规则、每批 ≤ 16 个、`generator` 校验、两次 `Lock` 与类型检查、manifest 比对、`WriteModelAndRetain`、两次 `Consume`、回执 `models`）、`set_instance_model`（`this` / `all_instances` 显式 `object_ids`）、`add_objects` 的 `model_instance`（`{ref}` / `{content_revision_id}`，只允许 `model` 和 `material_slots`）；`creativeDocumentError` 映射 409 `creative_upload_unavailable`、400 `creative_model_unavailable`。测试先写：manifest / 哈希不符、参数越界、`ref` 未定义 / 重复 / 未被引用、他人的或已消费的上传、上传类型不符、模型不可用、分叉三种组合、撤销换回旧修订，全部断言错误码且不产生修订（AC-1、AC-2、AC-3、AC-7）
 - [ ] 2.4 契约与集成：`api/openapi.yaml` 按「接口与数据契约」修改并 `make generate`，提交两份生成物；`httpapi` 测试覆盖读取 `models`、上传 `model` 类型、两个新错误码、跨账号 404；`concurrency` 新增屏障测试各 20 轮：移动与换模型并发都成功、两边换模型恰好一方成功、`all_instances` 期间别处复制出共用实例时请求照常成功且新实例不变（AC-8）

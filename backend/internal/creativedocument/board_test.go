@@ -116,7 +116,7 @@ func (board) Touched(_ context.Context, _ store.TxAccountScope, _ creativedocume
 			for _, id := range op.IDs {
 				out = append(out, "item:"+id)
 			}
-		case "set_note", "plant_leak", "sneak":
+		case "set_note", "plant_leak", "sneak", "respond", "respond_clash":
 			out = append(out, "note")
 		case "add_ref", "create_ref", "create_orphan", "fail_after_create":
 			out = append(out, "refs")
@@ -172,6 +172,19 @@ func (board) Apply(ctx context.Context, tx store.TxAccountScope, cur creativedoc
 		case "plant_leak":
 			s.Extra = map[string]string{"leak": op.Ref}
 			c.Changed = append(c.Changed, "note")
+		case "respond", "respond_clash":
+			// A type-specific receipt field; respond_clash reuses a shared one.
+			s.Note = op.Text
+			c.Changed = append(c.Changed, "note")
+			key := "echo"
+			if op.Op == "respond_clash" {
+				key = "revision"
+			}
+			echo, err := json.Marshal(op.Text)
+			if err != nil {
+				return Snapshot{}, c, err
+			}
+			c.Response = map[string]json.RawMessage{key: echo}
 		case "sneak":
 			// Claims the note but reports a unit it never had checked.
 			c.Changed = append(c.Changed, "note", "items")
