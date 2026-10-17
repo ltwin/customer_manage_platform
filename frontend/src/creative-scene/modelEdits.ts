@@ -329,7 +329,7 @@ export class ModelEdits {
     }
     // Registered before the view can name it.
     const placeholder = localRevision(intentID, ref)
-    cache.register(placeholder, { glb, summary: summary(baseContent ?? localContent(intentID, ref)) })
+    cache.register(placeholder, { glb, summary: summary(baseContent ?? localContent(intentID, ref)), generator })
     const intent = session.edit(plan.ops(commit, objects), plan.label, { baseline: baseline.id, id: intentID })
     if (!intent) {
       cache.unregister(placeholder)

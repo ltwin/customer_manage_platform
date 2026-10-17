@@ -1,6 +1,7 @@
 import { Mesh, type BufferGeometry, type Matrix4, type Object3D } from 'three'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
+import { readModelGenerator, type ModelGenerator } from '../api.ts'
 import { mediaTicket } from '../../creative-canvas/editor/media.ts'
 import { parseGLB } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
@@ -21,9 +22,10 @@ export type ModelParts = { meshes: { geometry: BufferGeometry; matrix: Matrix4 }
  * placeholder until the receipt, and under its real revision after it,
  * until a read brings the server's summary.
  */
-export type LocalModel = { glb: ArrayBuffer; summary: SceneModel }
+export type LocalModel = { glb: ArrayBuffer; summary: SceneModel; generator?: ModelGenerator }
 
 export type Download = (revision: string) => Promise<ArrayBuffer>
+export type ReadGenerator = (revision: string) => Promise<ModelGenerator>
 
 async function downloadGLB(revision: string): Promise<ArrayBuffer> {
   const ticket = await mediaTicket(revision, 'original', 'display')
@@ -46,10 +48,27 @@ export class ModelCache {
   /** Revisions whose GLB could not be loaded, for the properties panel. */
   readonly failed: StoreApi<Readonly<Record<string, true>>> = createStore(() => ({}))
   private readonly download: Download
+  private readonly readGenerator: ReadGenerator
   private readonly loads = new Map<string, Promise<ModelParts>>()
+  private readonly generators = new Map<string, Promise<ModelGenerator>>()
 
-  constructor(download: Download = downloadGLB) {
+  constructor(download: Download = downloadGLB, readGenerator: ReadGenerator = (r) => readModelGenerator(r)) {
     this.download = download
+    this.readGenerator = readGenerator
+  }
+
+  /** How a revision was made, code included: from a local bake, or read once from the server. */
+  generator(revision: string): Promise<ModelGenerator> {
+    const local = this.local.getState()[revision]?.generator
+    if (local) return Promise.resolve(local)
+    const hit = this.generators.get(revision)
+    if (hit) return hit
+    const promise = parsePlaceholder(revision) ? Promise.reject(new Error('本机模型已不在，请重新生成')) : this.readGenerator(revision)
+    promise.catch(() => {
+      if (this.generators.get(revision) === promise) this.generators.delete(revision)
+    })
+    this.generators.set(revision, promise)
+    return promise
   }
 
   /** Registers a freshly baked model under its placeholder revision. */

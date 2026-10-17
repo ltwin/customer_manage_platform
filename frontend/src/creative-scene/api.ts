@@ -14,6 +14,7 @@ export type ObjectUpdate = components['schemas']['CreativeSceneObjectUpdate']
 export type CommandReceipt = components['schemas']['CreativeDocumentCommandResult']
 export type RevisionPage = components['schemas']['CreativeDocumentRevisionPage']
 export type RevisionView = components['schemas']['CreativeDocumentRevisionView']
+export type ModelGenerator = components['schemas']['CreativeModelGeneratorInput']
 
 const documentPath = (id: string) => `/documents/${encodeURIComponent(id)}`
 
@@ -63,6 +64,20 @@ export function commandScene(
       throw new Error('登录会话已变化；修改是否保存需要重新确认')
     return value
   })
+}
+
+/**
+ * A model revision's generator with its code. The scene read leaves code
+ * out, so the code panel and a parameter change read it here.
+ */
+export async function readModelGenerator(revision: string, signal?: AbortSignal): Promise<ModelGenerator> {
+  const r = await read<components['schemas']['CreativeContentRevision']>(
+    `/content-revisions/${encodeURIComponent(revision)}`,
+    signal,
+  )
+  const generator = r.kind === 'model' ? (r.payload as components['schemas']['CreativeModelPayload']).model.generator : undefined
+  if (!generator) throw new Error('读不到这个模型的代码')
+  return generator
 }
 
 export function readRevisions(

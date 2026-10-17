@@ -10,11 +10,12 @@ const saveText: Record<SaveStatus, string> = {
   missing: '场景已不存在',
 }
 
-export function StatusBar({ hint, status, notice, device }: { hint: string; status: SaveStatus; notice: string; device: string }) {
+export function StatusBar({ hint, status, notice, device, activity = '' }: { hint: string; status: SaveStatus; notice: string; device: string; activity?: string }) {
   return (
     <footer className="cc-scene-status" aria-live="polite">
       <span className="cc-scene-hint">{notice || hint}</span>
       <span className="cc-scene-device">{device}</span>
+      {activity && <span className="cc-scene-activity">{activity}</span>}
       <span className={`cc-scene-save is-${status}`}>{saveText[status]}</span>
     </footer>
   )

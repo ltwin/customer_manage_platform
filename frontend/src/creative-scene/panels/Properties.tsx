@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Euler, MathUtils, Quaternion } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { builtinSpec, type ParamSpec } from '../builtins/catalog.ts'
@@ -10,7 +10,7 @@ import { transformToDoc, transformToView } from '../space.ts'
  * reverts on Esc. Only text the photographer changed is committed, so
  * focusing a field never writes back its rounded display.
  */
-function NumberField({ label, value, step, min, max, disabled, onCommit }: { label: string; value: number; step?: number; min?: number; max?: number; disabled?: boolean; onCommit: (v: number) => void }) {
+export function NumberField({ label, value, step, min, max, disabled, onCommit }: { label: string; value: number; step?: number; min?: number; max?: number; disabled?: boolean; onCommit: (v: number) => void }) {
   const [text, setText] = useState(String(round(value)))
   const [editing, setEditing] = useState(false)
   const timer = useRef<number | null>(null)
@@ -157,7 +157,7 @@ function ParamField({ name, spec, value, disabled, onCommit }: { name: string; s
  * Field commits carry a merge key, so typing in one field is one undo step
  * even when its commits wait to be sent together.
  */
-export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate }: {
+export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, children }: {
   object: SceneObject | null
   count: number
   readOnly: boolean
@@ -166,6 +166,8 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
   /** Its GLB could not be loaded. */
   modelFailed?: boolean
   onUpdate: (u: ObjectUpdate, label: string, merge?: string) => void
+  /** Type-specific controls below the common ones, such as a model's parameters. */
+  children?: ReactNode
 }) {
   if (!object) return <div className="cc-scene-props is-empty">{count > 1 ? `已选中 ${count} 个物件` : '选中物件后在这里调整'}</div>
   // Shown and typed in Blender's axes (Z up); stored in the document's.
@@ -237,6 +239,7 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
           {(model?.usable === false || modelFailed) && <strong role="status">模型不可用</strong>}
         </div>
       )}
+      {children}
       {object.light && <small>灯光：{object.light.type} · 强度 {object.light.intensity}（灯光设置随后续版本开放）</small>}
       {object.camera && <small>摄像机：{object.camera.focal_mm} mm · {object.camera.aspect}（机位设置随后续版本开放）</small>}
     </div>
