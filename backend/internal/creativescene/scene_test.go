@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -425,6 +426,26 @@ func TestOneUpdateMovesTwoThousandObjects(t *testing.T) {
 		if o.Transform.Position[1] != 2 || after.UnitRevs[placement(o.ID)] != strconv.FormatInt(int64(res.Revision), 10) {
 			t.Fatalf("object %s not moved in revision %d", o.ID, res.Revision)
 		}
+	}
+}
+
+func TestOversizedSnapshotIsRefused(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	v := readScene(t, f.a, doc)
+	// 1500 objects stay under the object cap; 80-character names push the
+	// snapshot past 512 KiB.
+	name := strings.Repeat("场", 80)
+	objects := make([]any, 1500)
+	for i := range objects {
+		g := group(objectID(i+1), nil, i+1)
+		g["name"] = name
+		objects[i] = g
+	}
+	_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": objects}}})
+	wantErr(t, err, creativedocument.ErrSizeLimit)
+	if after := readScene(t, f.a, doc); after.Revision != v.Revision || len(after.Scene.Objects) != 1 {
+		t.Fatalf("refused command left revision %d with %d objects", after.Revision, len(after.Scene.Objects))
 	}
 }
 

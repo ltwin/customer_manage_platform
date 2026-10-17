@@ -558,6 +558,7 @@ stateDiagram-v2
 | `backend/internal/creativescene/*_test.go` | 新增 | 单元、集成、并发、基线测试 |
 | `backend/internal/creativecontent/content.go:Payload`、`Validate` | 修改 | `Scene` 字段与 `scene` 分支；`scene` 属于文档专用类型，`Validate` 和 `WriteAndRetain` 拒绝，只有新增的 `WriteDocumentAndRetain` 能写（代码审计 2026-10-17） |
 | `backend/internal/creativedocument/command.go`、`document.go` | 修改 | 文档快照改经 `WriteDocumentAndRetain` 写入（代码审计 2026-10-17） |
+| `backend/internal/creativelibrary/asset_library_test.go` | 修改 | 资产入口拒绝场景内容的回归测试（代码审计 2026-10-17）；`creativecontent/content_test.go` 同理补了文档专用类型的用例 |
 | `backend/internal/platform/store/migrations/0073_creative_scene_document.up.sql` / `.down.sql` | 新增 | 内容类型 CHECK |
 | `backend/internal/platform/store/creative_scene_document_migration_test.go` | 新增 | 新回滚链头 `rollbackSceneDocument`、拒绝回滚测试 |
 | `backend/internal/platform/store/creative_document_foundation_migration_test.go:rollbackDocumentFoundation` | 修改 | 先调用 `rollbackSceneDocument` |

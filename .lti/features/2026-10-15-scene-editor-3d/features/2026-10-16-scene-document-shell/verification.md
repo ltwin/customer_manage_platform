@@ -11,7 +11,8 @@
 | `make generate-check`（OpenAPI 两份生成物、`builtins.gen.json`） | 通过，无漂移 |
 | `make check-frontend`（oxlint、`tsc -b` + vite build、589 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
 | `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 22/22 通过（2026-10-17 修订增长优化后重跑）；夹具与 `main.tsx` 一样用 StrictMode 渲染 |
-| `make check`（合回 `develop` 前的门禁） | 未跑，合并点执行一次 |
+| `make check`（合并点：develop 合入后的 `da8a40a`） | 2026-10-17 通过，用时 9 分 21 秒：build、lint 0 issues、Go 55 个包、前端 589 个测试、ops 契约测试、生成物无漂移 |
+| 合并点之后补的 `TestOversizedSnapshotIsRefused`（AC-8 快照上限） | `creativescene` 全包通过、lint 0 issues；去掉服务端快照大小检查时失败（返回 400 而不是 413），恢复后通过 |
 
 e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收站、修订列表和整份恢复都按契约模拟，操作语义复用前端的 `state/apply.ts`。服务端真实语义由 Go 测试负责，e2e 验证的是编辑器在真实浏览器里的交互、请求次数和请求内容。运行方式：在 `frontend/` 起 Vite（`npx vite --port 5179`），再执行 `node scripts/creative-scene.e2e.mjs`；`SCENE_E2E_ONLY=<名称片段>` 只跑一项，`SCENE_E2E_SHOTS=<目录>` 保存关键步骤截图。
 
@@ -52,7 +53,7 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 | `POST /creative/assets` 提交 `kind: "scene"` 返回 500 | 资产入口复用共享内容校验，C1 加了 `scene` 分支后能通过校验，进写事务才撞上 `creative_assets_kind_check`。在共享层把 `scene` 列为文档专用类型：`Validate`、`WriteAndRetain` 拒绝，文档层改用 `WriteDocumentAndRetain` | `creativelibrary` 「TestCreateAssetRefusesSceneContent」：返回校验错误，资产和内容修订都没有写入 |
 | （核对第 3 项时发现）画布 `replace_content` 能把一份未经场景 schema 校验的内容挂到 `core.scene` 节点上 | 同一根因：`replace_content` 把节点类型去掉 `core.` 前缀当作内容类型，场景节点得到 `scene`，再走共享写入。随第 3 项一起修正 | `creativescene` 「TestNewSceneFromCanvas」末尾：带授权信息的 `replace_content` 返回校验错误，内容修订数不变 |
 
-门禁：`golangci-lint`（`creativecontent`、`creativedocument`、`creativescene`、`creativelibrary`、`creativecanvas`、`creativegeneration`、`creativeagent`、`platform/httpapi`）0 issues；上述 8 个包 `go test -count=1` 全部通过。`make check-go` 传多个包时 `test-go` 只测第一个（`PKG` 往下传没加引号），这次直接用同样参数跑 `go test`。前端发出的请求只在 `parent_id` 上写 `null`，不受新检查影响。
+门禁：`golangci-lint`（`creativecontent`、`creativedocument`、`creativescene`、`creativelibrary`、`creativecanvas`、`creativegeneration`、`creativeagent`、`platform/httpapi`）0 issues；上述 8 个包 `go test -count=1` 全部通过。`make check-go` 传多个包时 `test-go` 只测第一个（`PKG` 往下传没加引号），这次直接用同样参数跑 `go test`。已在 develop 修正（`ea3a51c`），随合并点进入本分支。前端发出的请求只在 `parent_id` 上写 `null`，不受新检查影响。
 
 ## 修订增长的检查与优化（2026-10-17）
 
@@ -90,10 +91,40 @@ owner 问快速操作是否会产生大量修订、有没有性能风险。核�
 | AC-6 历史版本 | e2e「history」：列表分组、新建单独成组、只读预览（编辑菜单禁用）、确认后整份恢复产生新修订（`restored_from = 1`）；`unit` 分组与描述 | 满足 |
 | AC-7 多标签页同步 | e2e：另一页收到画布失效通知后显示新位置；回收站中提交得到 409 后切只读，移出回收站后恢复可编辑；`unit` 拖动中推迟重读 | 满足。e2e 直接调用 `notifyCanvasInvalidate` 代替真实 SSE；SSE → 失效通知这一段沿用画布既有链路 |
 | AC-7a 离开提示 | e2e「leaving with unsaved edits」：保存中关闭页面弹出 beforeunload，保存后不再拦截；e2e 冲突时点「还原节点」先确认；`unit` 离开提示跟随未保存状态 | 满足 |
-| AC-8 校验与上限 | `model` `TestValidate`（S1–S8、灯光、摄像机、分组、材质槽）；`scene` `TestInvalidCommandsLeaveNoRevision`；`http` 33 台摄像机 413 | 满足 |
+| AC-8 校验与上限 | `model` `TestValidate`（S1–S8、灯光、摄像机、分组、材质槽）；`scene` `TestInvalidCommandsLeaveNoRevision`；`http` 33 台摄像机 413；`scene` `TestOversizedSnapshotIsRefused`（快照超过 512 KiB 返回 `creative_size_limit`，不产生修订；2026-10-17 验收核对时发现缺这条测试后补上） | 满足 |
 | AC-9 账号隔离与回收站 | `http` 跨账号 404、回收站 409 `creative_state_conflict`；e2e 回收站中只读并提示先恢复 | 满足 |
 | AC-10 按需加载 | 构建产物：`WebGLRenderer` 只在 `SceneEditor` 块（约 1.1 MB，gzip 305 KB），画布入口块大小不变；e2e「opening the canvas page loads no three.js」；e2e「without WebGL2」显示说明 | 满足 |
 | AC-11 写入频率实测 | 本机 `CREATIVE_SCENE_BASELINE=1 go test -run Baseline`：300 个物件快照约 94 KB；连续 100 次 `update_objects` 服务端 p50 26 ms / p95 34 ms；每修订存储约 5.2 KB；10 个场景节点的画布读快照 p50 约 50 ms | 达标（设计假设 p95 < 150 ms、画布 < 500 ms），不提前做摘要缓存 |
+
+## 风险检查（2026-10-17）
+
+**迁移**
+- `TestSceneDocumentMigrationAddsKindAndRefusesLossyRollback`：迁移前 `scene` 类型被拒，迁移后可写；存在场景内容时回滚被拒（`scene documents exist`）。各迁移测试的回滚链以 `rollbackSceneDocument` 为头，`make check` 中全部通过。
+- 真实数据：owner 的开发库已执行 0073，并已用编辑器产生场景修订（2026-10-17 只读查询核对过）。
+- 回滚：down 迁移在有场景内容时拒绝执行，需先导出或删除场景；没有场景时恢复原内容类型约束。
+- 新旧并存：项目尚未对外，不设开关。旧代码不认识 `scene` 内容和 `core.scene` 节点，它们在旧代码下的表现没有验证。所以回滚顺序是：先删除场景，再回滚代码和迁移。
+
+**并发**
+- `concurrency` 的两条测试（摆放与内容并发都成功、同一单元恰一方成功，各 20 轮）连跑 10 遍全部通过：`go test ./internal/creativescene/ -run 'TestPlacementAndContentDoNotConflict|TestSameUnitExactlyOneWins' -count=10 -v`。
+- 单元版本检查在底座 `creativedocument` 的写事务里完成，与设计一致。前端同一时间只发一个请求，意图的终态、变基与转确认由 `unit` 覆盖（见 AC-5）。
+
+**性能**
+- AC-11 基线：本机 Docker PG17，300 个物件；阈值在设计里预先声明（p95 < 150 ms，画布读取 < 500 ms），实测 p95 34 ms、画布 p50 约 50 ms。
+- 存储增长与无效修订见「修订增长的检查与优化」。存储只增不减，由 `scene-history-cleanup` 承接。
+
+**影响面**
+- 共享内容写入（`creativecontent.Validate` / `WriteAndRetain` 改为拒绝 `scene`，新增 `WriteDocumentAndRetain`）。调用方取自 `grep -rn 'creativecontent\.Validate(\|creativecontent\.WriteAndRetain(\|creativecontent\.WriteDocumentAndRetain(' backend --include='*.go'`（不含测试）：
+  - `creativelibrary/service.go`（资产）；
+  - `creativecanvas` 的 `graph_commands.go`（两处）、`execution.go`、`execution_stage.go`、`document_fixture.go`；
+  - `creativegeneration/service.go`；
+  - 文档层 `creativedocument` 的 `command.go`、`document.go`，已改用 `WriteDocumentAndRetain`。
+
+  回归：这些包的测试都在 `make check` 中通过；另有资产入口、画布 `replace_content` 拒绝场景内容的新用例。
+- `creativedocument.maxRestoreUnits` 200 → 4096 对所有文档类型生效。回归：`creativedocument`、`shootplanning` 的测试在 `make check` 中通过。
+- OpenAPI：`generate-check` 无漂移；`shootplanning/httpcontract/api.gen.go`、`creativecanvas/tool_schemas.gen.go` 没有变化。
+- 前端画布：`CanvasView.tsx`、`WorkspacePage.tsx`、`outbox.ts`、`canvasEvents.ts`、`useCanvasSnapshot.ts`、`workspace.css`、`tsconfig.app.json`。
+  - 回归：`make check-frontend` 通过，包括 `creative-canvas-*.test.ts`；owner 在真实画布上实测能打开和编辑。
+  - 画布 e2e（`creative-canvas-*.e2e.mjs`）需要真实账号，这次没有跑。
 
 ## 未完成与待 owner 决定
 
