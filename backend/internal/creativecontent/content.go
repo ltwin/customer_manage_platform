@@ -33,9 +33,14 @@ type Payload struct {
 	// Scene is a scene document snapshot. Only its outer shape is checked
 	// here; creativescene validates the structure before every write.
 	Scene json.RawMessage `json:"scene,omitempty"`
+	// Model describes a baked GLB: the staged form written by the media
+	// worker or the complete form written by a scene command. Only its outer
+	// shape is checked here; its writers validate the structure.
+	Model json.RawMessage `json:"model,omitempty"`
 }
 
-// maxScenePayload matches the document snapshot limit.
+// maxScenePayload matches the document snapshot limit; a model payload (code up
+// to 64 KiB, escaped, plus its manifest) shares it.
 const maxScenePayload = 512 << 10
 
 // MediaObject is an authorized description of one stored rendition. It never
@@ -60,6 +65,11 @@ type ObjectBinding struct {
 
 // IsMediaKind reports whether a content kind stores its payload as blobs.
 func IsMediaKind(kind string) bool { return kind == "image" || kind == "video" || kind == "audio" }
+
+// hasObjects reports whether revisions of a kind are bound to verified blobs:
+// media, and models (GLB plus thumbnail). Models are not media to callers
+// outside this package.
+func hasObjects(kind string) bool { return IsMediaKind(kind) || kind == "model" }
 
 // RightsDeclarationInput exposes only the current display declaration fields.
 // Generation consent is intentionally absent from this namespace.
@@ -100,22 +110,24 @@ type Revision struct {
 	OriginNodeID  *string              `json:"-"`
 }
 
-// documentKinds are snapshots of a document type. Only the document layer
-// writes them (WriteDocumentAndRetain), after checking the type's own schema;
-// content that clients and the assistant submit directly, as assets, canvas
-// node content or generation output, can never be one.
-var documentKinds = map[string]bool{"scene": true}
+// restrictedKinds have a single trusted writer and can never be content that
+// clients and the assistant submit directly (assets, canvas node content,
+// generation output): scene snapshots are written by the document layer
+// (WriteDocumentAndRetain) after checking the type's schema; models by the
+// media worker (WriteMediaAndRetain, staged form) and by scene commands
+// (WriteModelAndRetain, complete form).
+var restrictedKinds = map[string]bool{"scene": true, "model": true}
 
-// Validate checks content submitted directly; document kinds are refused.
+// Validate checks content submitted directly; restricted kinds are refused.
 func Validate(d Draft) error {
-	if documentKinds[d.Kind] {
+	if restrictedKinds[d.Kind] {
 		return creativeops.ErrValidation
 	}
 	return validate(d)
 }
 
 func validate(d Draft) error {
-	if d.Kind != "scene" && len(d.Payload.Scene) != 0 {
+	if d.Kind != "scene" && len(d.Payload.Scene) != 0 || d.Kind != "model" && len(d.Payload.Model) != 0 {
 		return creativeops.ErrValidation
 	}
 	switch d.Kind {
@@ -143,6 +155,11 @@ func validate(d Draft) error {
 		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || len(p.Scene) > maxScenePayload || !isJSONObject(p.Scene) {
 			return creativeops.ErrValidation
 		}
+	case "model":
+		p := d.Payload
+		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || len(p.Model) > maxScenePayload || !isJSONObject(p.Model) {
+			return creativeops.ErrValidation
+		}
 	default:
 		return creativeops.ErrValidation
 	}
@@ -164,36 +181,62 @@ func WriteAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, s
 	if IsMediaKind(draft.Kind) && sourceID == "" {
 		return Revision{}, creativeops.ErrValidation
 	}
-	return write(ctx, tx, draft, nil, sourceID, originNodeID, retain, Validate)
+	return write(ctx, tx, draft, writeOptions{sourceID: sourceID, originNodeID: originNodeID}, retain, Validate)
 }
 
 // WriteDocumentAndRetain creates a document snapshot revision, the one way to
 // write a document kind. Its caller (creativedocument) has checked the
 // snapshot against the document type.
 func WriteDocumentAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, retain func(Revision) error) (Revision, error) {
-	if IsMediaKind(draft.Kind) {
+	if hasObjects(draft.Kind) {
 		return Revision{}, creativeops.ErrValidation
 	}
-	return write(ctx, tx, draft, nil, "", nil, retain, validate)
+	return write(ctx, tx, draft, writeOptions{}, retain, validate)
 }
 
-// WriteMediaAndRetain creates the first revision of verified media. Objects are
-// trusted bindings established by the media publisher inside the same transaction.
+// WriteMediaAndRetain creates the first revision of verified media, or the
+// staged form of a model. Objects are trusted bindings established by the
+// media publisher inside the same transaction.
 func WriteMediaAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []ObjectBinding, retain func(Revision) error) (Revision, error) {
-	if !IsMediaKind(draft.Kind) || len(objects) == 0 {
+	if !hasObjects(draft.Kind) || len(objects) == 0 {
 		return Revision{}, creativeops.ErrValidation
 	}
-	return write(ctx, tx, draft, objects, "", nil, retain, Validate)
+	return write(ctx, tx, draft, writeOptions{objects: objects}, retain, validate)
 }
 
-func write(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []ObjectBinding, sourceID string, originNodeID *string, retain func(Revision) error, check func(Draft) error) (Revision, error) {
+// WriteModelAndRetain writes the complete form of a model, the only way to
+// create a model that scenes can reference. Objects reuse the blobs of verified
+// staged uploads. With baseContentID it appends a revision to that model;
+// otherwise it creates a new model. The caller (a scene command) has validated
+// the payload and compared its manifest with the server's.
+func WriteModelAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, baseContentID string, objects []ObjectBinding, retain func(Revision) error) (Revision, error) {
+	if draft.Kind != "model" || len(objects) == 0 {
+		return Revision{}, creativeops.ErrValidation
+	}
+	return write(ctx, tx, draft, writeOptions{objects: objects, baseContentID: baseContentID}, retain, validate)
+}
+
+type writeOptions struct {
+	objects       []ObjectBinding
+	sourceID      string
+	originNodeID  *string
+	baseContentID string
+}
+
+func write(ctx context.Context, tx store.TxAccountScope, draft Draft, opts writeOptions, retain func(Revision) error, check func(Draft) error) (Revision, error) {
 	if err := check(draft); err != nil {
 		return Revision{}, err
 	}
 	if retain == nil {
 		return Revision{}, ErrMissingRoot
 	}
+	objects, sourceID, originNodeID := opts.objects, opts.sourceID, opts.originNodeID
 	result := Revision{ID: newID("ccrv"), ContentID: newID("ccnt"), Kind: draft.Kind, Sequence: 1, Payload: draft.Payload, OriginNodeID: originNodeID}
+	if opts.baseContentID != "" {
+		if err := appendTo(ctx, tx, &result, opts.baseContentID); err != nil {
+			return Revision{}, err
+		}
+	}
 	var source Revision
 	if sourceID != "" {
 		var err error
@@ -275,7 +318,7 @@ func write(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []
 	if err := tx.Insert(ctx, "creative_content_revisions", []string{"id", "content_id", "sequence", "schema_version", "payload", "rights_declaration_id", "provenance_snapshot"}, result.ID, result.ContentID, int64(result.Sequence), 1, payload, result.DeclarationID, provenance); err != nil {
 		return Revision{}, err
 	}
-	if IsMediaKind(result.Kind) {
+	if hasObjects(result.Kind) {
 		if sourceID != "" {
 			// Derived media keeps the exact verified objects of its source.
 			objects = nil
@@ -309,6 +352,27 @@ func write(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []
 		return Revision{}, err
 	}
 	return result, nil
+}
+
+// appendTo makes result the next revision of an existing content of the same
+// kind, locking the content row first as the shared lock order requires.
+func appendTo(ctx context.Context, tx store.TxAccountScope, result *Revision, contentID string) error {
+	var kind string
+	var sequence int64
+	err := tx.QueryRowForUpdate(ctx, "creative_contents", "kind,last_sequence", "id=$2", contentID).Scan(&kind, &sequence)
+	if errors.Is(err, store.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if kind != result.Kind || sequence == int64(^uint64(0)>>1) {
+		return creativeops.ErrValidation
+	}
+	result.ContentID = contentID
+	result.Sequence = creativeops.Revision(sequence + 1)
+	_, err = tx.Update(ctx, "creative_contents", "last_sequence=$2", "id=$3", int64(result.Sequence), contentID)
+	return err
 }
 
 // RequireUsable protects the selected revision. Future GC must take the same
@@ -436,7 +500,7 @@ func requireRevision(ctx context.Context, tx contentReader, protectedRow func(co
 	if err := creativeops.Decode(payload, &r.Payload); err != nil {
 		return Revision{}, err
 	}
-	if IsMediaKind(r.Kind) {
+	if hasObjects(r.Kind) {
 		media, err := loadMedia(ctx, tx, id)
 		if err != nil {
 			return Revision{}, err

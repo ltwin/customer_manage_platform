@@ -273,3 +273,134 @@ func TestSceneKindIsWrittenOnlyThroughADocument(t *testing.T) {
 		}
 	}
 }
+
+// A model has exactly two trusted writers: the media worker writes the staged
+// form, a scene command the complete form (optionally appending to an existing
+// model). Every direct content entry refuses it.
+func TestModelKindHasTwoTrustedWriters(t *testing.T) {
+	db, a, b := setup(t)
+	ctx := t.Context()
+	if _, err := db.Exec(`INSERT INTO creative_blobs(id,account_id,storage_driver,object_key,object_version,sha256,byte_size,mime,state,verified_at) VALUES
+ ('blob-glb','content-a','local','creative-v2/content-a/blobs/glb','v1','sha256-'||repeat('1',64),100,'model/gltf-binary','ready',clock_timestamp()),
+ ('blob-png','content-a','local','creative-v2/content-a/blobs/png','v1','sha256-'||repeat('2',64),50,'image/png','ready',clock_timestamp())`); err != nil {
+		t.Fatal(err)
+	}
+	model := func(raw string) creativecontent.Draft {
+		d := textDraft("")
+		d.Kind = "model"
+		d.Payload = creativecontent.Payload{Model: json.RawMessage(raw)}
+		return d
+	}
+	staged := model(`{"format":"glb","manifest":{}}`)
+	complete := model(`{"format":"glb","generator":{},"manifest":{}}`)
+	glb := creativecontent.ObjectBinding{Role: "original", BlobID: "blob-glb"}
+	png := creativecontent.ObjectBinding{Role: "thumbnail", BlobID: "blob-png"}
+	ref := 0
+	held := func(tx store.TxAccountScope) func(creativecontent.Revision) error {
+		return func(r creativecontent.Revision) error {
+			ref++
+			return tx.Insert(ctx, "creative_document_content_refs", []string{"document_id", "revision", "content_revision_id"}, "cwdoc_m", int64(ref), r.ID)
+		}
+	}
+	run := func(scope store.AccountScope, f func(tx store.TxAccountScope) (creativecontent.Revision, error)) (creativecontent.Revision, error) {
+		var out creativecontent.Revision
+		err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			var err error
+			out, err = f(tx)
+			return err
+		})
+		return out, err
+	}
+
+	if creativecontent.Validate(complete) == nil {
+		t.Fatal("direct content accepted a model")
+	}
+	text := textDraft("说明")
+	text.Payload.Model = json.RawMessage(`{}`)
+	if creativecontent.Validate(text) == nil {
+		t.Fatal("model payload accepted on text")
+	}
+	refused := map[string]func(tx store.TxAccountScope) (creativecontent.Revision, error){
+		"direct write": func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+			return creativecontent.WriteAndRetain(ctx, tx, complete, "", nil, held(tx))
+		},
+		"document write": func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+			return creativecontent.WriteDocumentAndRetain(ctx, tx, complete, held(tx))
+		},
+		"model entry with image kind": func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+			d := complete
+			d.Kind = "image"
+			return creativecontent.WriteModelAndRetain(ctx, tx, d, "", []creativecontent.ObjectBinding{glb}, held(tx))
+		},
+		"model entry without objects": func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+			return creativecontent.WriteModelAndRetain(ctx, tx, complete, "", nil, held(tx))
+		},
+		"model entry with array payload": func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+			return creativecontent.WriteModelAndRetain(ctx, tx, model(`[]`), "", []creativecontent.ObjectBinding{glb}, held(tx))
+		},
+	}
+	for name, f := range refused {
+		if _, err := run(a, f); !errors.Is(err, creativeops.ErrValidation) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	stagedRev, err := run(a, func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+		return creativecontent.WriteMediaAndRetain(ctx, tx, staged, []creativecontent.ObjectBinding{glb}, held(tx))
+	})
+	if err != nil {
+		t.Fatal("staged form:", err)
+	}
+	if len(stagedRev.Media) != 1 || stagedRev.Media[0].Role != "original" || stagedRev.Media[0].Mime != "model/gltf-binary" {
+		t.Fatalf("staged media %+v", stagedRev.Media)
+	}
+	first, err := run(a, func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+		return creativecontent.WriteModelAndRetain(ctx, tx, complete, "", []creativecontent.ObjectBinding{glb, png}, held(tx))
+	})
+	if err != nil {
+		t.Fatal("complete form:", err)
+	}
+	if first.ContentID == stagedRev.ContentID || first.Sequence != 1 || len(first.Media) != 2 {
+		t.Fatalf("complete form %+v", first)
+	}
+	second, err := run(a, func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+		return creativecontent.WriteModelAndRetain(ctx, tx, complete, first.ContentID, []creativecontent.ObjectBinding{glb, png}, held(tx))
+	})
+	if err != nil || second.ContentID != first.ContentID || second.Sequence != 2 {
+		t.Fatalf("append: %+v %v", second, err)
+	}
+	read, err := run(a, func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+		return creativecontent.RequireUsable(ctx, tx, second.ID, "display")
+	})
+	if err != nil || len(read.Media) != 2 || read.Kind != "model" {
+		t.Fatalf("read model: %+v %v", read, err)
+	}
+	var batch map[string]creativecontent.DisplayResult
+	if err := a.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		var err error
+		batch, err = creativecontent.ReadDisplayBatch(ctx, tx, []string{second.ID})
+		return err
+	}); err != nil || batch[second.ID].Err != nil || len(batch[second.ID].Revision.Media) != 2 {
+		t.Fatalf("batch read model: %+v %v", batch, err)
+	}
+
+	textRev, err := write(t, a, textDraft("不是模型"), "", nil, func(tx store.TxAccountScope, r creativecontent.Revision) error { return asset(ctx, tx, r) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendTo := func(scope store.AccountScope, base string) error {
+		_, err := run(scope, func(tx store.TxAccountScope) (creativecontent.Revision, error) {
+			return creativecontent.WriteModelAndRetain(ctx, tx, complete, base, []creativecontent.ObjectBinding{glb, png}, held(tx))
+		})
+		return err
+	}
+	if err := appendTo(a, textRev.ContentID); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("append to text: %v", err)
+	}
+	if err := appendTo(a, "ccnt_missing"); !errors.Is(err, creativecontent.ErrNotFound) {
+		t.Fatalf("append to missing: %v", err)
+	}
+	if err := appendTo(b, first.ContentID); !errors.Is(err, creativecontent.ErrNotFound) {
+		t.Fatalf("append across accounts: %v", err)
+	}
+}

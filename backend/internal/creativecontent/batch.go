@@ -134,7 +134,7 @@ func readDisplayBatch(ctx context.Context, tx batchReader, ids []string) (map[st
 			return nil, err
 		}
 		out[id] = DisplayResult{Revision: r}
-		if IsMediaKind(r.Kind) {
+		if hasObjects(r.Kind) {
 			mediaIDs = append(mediaIDs, id)
 		}
 	}
