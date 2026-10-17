@@ -1,22 +1,51 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Euler, MathUtils, Quaternion } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { builtinSpec, type ParamSpec } from '../builtins/catalog.ts'
 
-/** A number that commits on Enter or blur and reverts on Esc. */
+/**
+ * A number that commits 300 ms after typing stops, on Enter or on blur, and
+ * reverts on Esc. Only text the photographer changed is committed, so
+ * focusing a field never writes back its rounded display.
+ */
 function NumberField({ label, value, step, min, max, disabled, onCommit }: { label: string; value: number; step?: number; min?: number; max?: number; disabled?: boolean; onCommit: (v: number) => void }) {
   const [text, setText] = useState(String(round(value)))
   const [editing, setEditing] = useState(false)
+  const timer = useRef<number | null>(null)
+  const dirty = useRef(false)
+  const latest = useRef({ text, value, min, max, onCommit })
+  latest.current = { text, value, min, max, onCommit }
   useEffect(() => {
     if (!editing) setText(String(round(value)))
   }, [value, editing])
-  const commit = () => {
+  /** Commits typed text; returns the committed number, or null for nothing to commit. */
+  const commit = useCallback((raw: string): number | null => {
+    const l = latest.current
+    const v = Number(raw)
+    if (!dirty.current || raw.trim() === '' || !Number.isFinite(v)) return null
+    dirty.current = false
+    const clamped = Math.min(l.max ?? Infinity, Math.max(l.min ?? -Infinity, v))
+    if (clamped !== l.value) l.onCommit(clamped)
+    return clamped
+  }, [])
+  const stopTimer = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current)
+    timer.current = null
+  }
+  // A field closing mid-wait (selection change, editor closing) still saves.
+  useEffect(
+    () => () => {
+      if (timer.current === null) return
+      window.clearTimeout(timer.current)
+      commit(latest.current.text)
+    },
+    [commit],
+  )
+  const finish = () => {
+    stopTimer()
     setEditing(false)
-    const v = Number(text)
-    if (!Number.isFinite(v)) return setText(String(round(value)))
-    const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v))
-    if (clamped !== value) onCommit(clamped)
-    setText(String(round(clamped)))
+    const done = commit(text)
+    setText(String(round(done ?? latest.current.value)))
   }
   return (
     <label className="cc-scene-field">
@@ -30,11 +59,22 @@ function NumberField({ label, value, step, min, max, disabled, onCommit }: { lab
         value={text}
         disabled={disabled}
         onFocus={() => setEditing(true)}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
+        onChange={(e) => {
+          const next = e.target.value
+          setText(next)
+          dirty.current = true
+          stopTimer()
+          timer.current = window.setTimeout(() => {
+            timer.current = null
+            commit(next)
+          }, 300)
+        }}
+        onBlur={finish}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') {
+            stopTimer()
+            dirty.current = false
             setText(String(round(value)))
             setEditing(false)
             e.currentTarget.blur()
@@ -130,7 +170,7 @@ export function Properties({ object, count, readOnly, onUpdate }: { object: Scen
   }
   const spec = object.primitive ? builtinSpec(object.primitive.builtin) : undefined
   return (
-    <div className="cc-scene-props" aria-label="属性">
+    <div key={object.id} className="cc-scene-props" aria-label="属性">
       <TextField value={object.name} disabled={readOnly} onCommit={(name) => onUpdate({ object_id: object.id, name }, '重命名')} />
       {count > 1 && <small>共选中 {count} 个物件，这里显示活动物件</small>}
       {(['position', 'rotation', 'scale'] as const).map((part) => (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Box, CircleHelp, History, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -250,6 +250,17 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
     e.stopPropagation()
     if (modifierKeys.has(e.nativeEvent.code)) handle.current?.modifiers(e.nativeEvent)
   }
+  // Enter in a field or a closed popup drops focus on the page body, where
+  // shortcuts stop working; hand it back to the editor.
+  const onBlur = (e: ReactFocusEvent) => {
+    if (e.relatedTarget || e.target === root.current) return
+    queueMicrotask(() => {
+      if (document.activeElement === document.body) root.current?.focus({ preventScroll: true })
+    })
+  }
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (e.target instanceof HTMLCanvasElement) root.current?.focus({ preventScroll: true })
+  }
 
   const menuItems = (menu: MenuKind, at?: { x: number; y: number }): MenuItem[] => {
     const none = !selected.length
@@ -327,7 +338,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
   }
 
   return (
-    <section ref={root} tabIndex={-1} className="cc-maximized-document cc-surface cc-scene-editor" aria-label="3D 场景编辑" onKeyDown={onKeyDown} onKeyUp={onKeyUp}>
+    <section ref={root} tabIndex={-1} className="cc-maximized-document cc-surface cc-scene-editor" aria-label="3D 场景编辑" onKeyDown={onKeyDown} onKeyUp={onKeyUp} onBlur={onBlur} onPointerDownCapture={onPointerDown}>
       <header>
         <Box size={18} />
         <h2>{shown && s.base ? (s.view?.title ?? s.base.title) : '3D 场景'}</h2>
