@@ -20,7 +20,8 @@
   - 实施记录：Worker 中不依赖 three.js 的步骤（语法与 import 检查、参数定义规范化与补齐、行号解析、种子随机数）放在 `sandbox/compile.ts`，便于 node 单测；默认模板放在 `sandbox/template.ts`。Worker 导出前对灯光、摄像机、线 / 点、蒙皮 / 实例网格、形变、非 `MeshStandardMaterial` 材质和纹理给出明确提示（GLB 子集照样拒绝，这里只是提前报原因）。开发服务器下 Chromium 与 WebKit 编译默认模板、断裂（CSG）与 `lib@1` 全部函数，两端 GLB 逐字节一致，均通过 `creativeglb.Inspect`
 - [x] 3.2 宿主：`host.ts`（单编译、5 秒超时移除重建、只收 `event.source` 匹配的消息、逐字段校验、`module` 按服务端规则校验、`crypto.subtle` 计算代码哈希）；`inspect.ts`（`creativeglb.Inspect` 的 TS 版，读取同一组 `testdata` 夹具，两端接受 / 拒绝与 manifest 一致）；`thumbnail.ts`（预检通过后才交给 `GLTFLoader`，`setURLModifier` 只放行 `blob:` / `data:`）。补一个由 `GLTFExporter` 实际导出的默认模板夹具，Go 与前端都通过。`creative-scene-model.test.ts` 先写协议、`module` 校验、上限、运行错误行号解析（AC-4、AC-5）
   - 实施记录：受限的 `GLTFLoader` 入口放在 `sandbox/gltf.ts:parseGLB`，缩略图和 4.2 的模型缓存共用。宿主通过 `FrameFactory` 创建页面，单测用假页面覆盖等待就绪、id 匹配、超时重建、串行编译。夹具 `exported-template.glb` 由真实沙箱里的 `GLTFExporter` 从默认模板导出，Go 的 `TestFixtures` 对它只读不生成；3.3 的安全样例集同时断言导出器仍写出相同字节。开发服务器下 Chromium 与 WebKit 跑通编译 → 校验 → 缩略图，死循环 5 秒超时后重建可继续编译
-- [ ] 3.3 安全样例集 `scripts/scene-sandbox.test.mjs`：真实沙箱 + 攻击者端口，覆盖网络（fetch、XHR、WebSocket、EventSource、动态 `import`、`importScripts`）、cookie、`localStorage`、IndexedDB、父页面 DOM、顶层导航、`eval`、死循环、内存炸弹、GLB 内含外链 URI，断言攻击者端口 0 请求、宿主心跳正常、之后的编译照常；Chromium 纳入 `make check-frontend`，`SCENE_SANDBOX_BROWSERS=webkit` 手动运行（AC-6）
+- [x] 3.3 安全样例集 `scripts/scene-sandbox.test.mjs`：真实沙箱 + 攻击者端口，覆盖网络（fetch、XHR、WebSocket、EventSource、动态 `import`、`importScripts`）、cookie、`localStorage`、IndexedDB、父页面 DOM、顶层导航、`eval`、死循环、内存炸弹、GLB 内含外链 URI，断言攻击者端口 0 请求、宿主心跳正常、之后的编译照常；Chromium 纳入 `make check-frontend`，`SCENE_SANDBOX_BROWSERS=webkit` 手动运行（AC-6）
+  - 实施记录：另覆盖 `sessionStorage`、`cookieStore`、`sendBeacon`、嵌套 Worker、字符串 `setTimeout`、`export … from`、模块抢先回传外链 GLB（宿主拒绝）、绕过预检直接加载外链纹理（`parseGLB` 拦截）、超大 GLB 与三角形超限，并断言默认模板仍导出与夹具相同的字节（`UPDATE_SCENE_FIXTURES=1` 重写）。攻击者服务器开放 CORS，未被拦截的探测会报 ALLOWED。反证：去掉沙箱页面的 CSP 后 `eval` 等探测报 ALLOWED、攻击者端口收到 6 个请求，测试失败。2026-10-17 本机 Chromium 与 WebKit 均通过
 
 ## 4. 编辑器
 
