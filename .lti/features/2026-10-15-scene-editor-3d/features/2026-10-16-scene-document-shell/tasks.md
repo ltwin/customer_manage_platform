@@ -9,9 +9,9 @@
 
 ## 2. 场景文档类型（后端）
 
-- [ ] 2.1 模型与内置清单：`creativescene/model.go`（`Scene` / `Object` 类型、拒绝未知字段的解码与编码、`Validate` 校验 S1–S8）、`builtins.json` + `builtins.go`（7 个基础体、参数类型与范围校验、缺省补默认值）；表驱动测试先写，覆盖 S1–S8 每条及每个基础体的参数越界、未知键、未知 builtin
-- [ ] 2.2 场景操作：`ops.go` 实现 `add_objects` / `update_objects` / `remove_objects` / `reparent_objects`（各 1–2000 项）、`set_environment`、`set_render` 的解码、`Touched`（每单元一条）和 `Apply`；字段语义按 R5（`primitive.params` 按键合并，`light` / `camera` / `material_slots` 整体替换），物件不存在返回 400（R6），同一物件在一个操作里出现两次返回 400；测试覆盖每种操作的合法与非法输入（含灯光、摄像机、分组、材质槽），非法时不产生修订，一个 `update_objects` 更新 2000 个物件产生一个修订
-- [ ] 2.3 恢复、读取与注册：`restore.go`（`RestoreTouched` / `RestoreUnits`：最终集合、按源快照祖先链找父、顺序规则、删除分组时后代上移、结果与 `units` 顺序无关、不得单独列 `objects`）、`view.go`（`View` 按单元裁剪、`Summary`）、`type.go`（`sceneType`，`init()` 注册），`cmd/server` 与 `cmd/creative-worker` 空导入；测试覆盖 AC-1（`add_node core.scene` 同事务产生文档、修订 1、只有地面）和 AC-4 后端各项（删除后按原 ID 与位置加回；150 个物件的嵌套分组一次撤销成功，制造一个单元冲突时整体失败且快照不变；G ⊃ H ⊃ A 复原、打乱 `units` 顺序结果相同；只恢复 A 时挂到最近祖先或根）
+- [x] 2.1 模型与内置清单：`creativescene/model.go`（`Scene` / `Object` 类型、拒绝未知字段的解码与编码、`Validate` 校验 S1–S8）、`builtins.json` + `builtins.go`（7 个基础体、参数类型与范围校验、缺省补默认值）；表驱动测试先写，覆盖 S1–S8 每条及每个基础体的参数越界、未知键、未知 builtin
+- [x] 2.2 场景操作：`ops.go` 实现 `add_objects` / `update_objects` / `remove_objects` / `reparent_objects`（各 1–2000 项）、`set_environment`、`set_render` 的解码、`Touched`（每单元一条）和 `Apply`；字段语义按 R5（`primitive.params` 按键合并，`light` / `camera` / `material_slots` 整体替换），物件不存在返回 400（R6），同一物件在一个操作里出现两次返回 400；测试覆盖每种操作的合法与非法输入（含灯光、摄像机、分组、材质槽），非法时不产生修订，一个 `update_objects` 更新 2000 个物件产生一个修订
+- [x] 2.3 恢复、读取与注册：`restore.go`（`RestoreTouched` / `RestoreUnits`：最终集合、按源快照祖先链找父、顺序规则、删除分组时后代上移、结果与 `units` 顺序无关、不得单独列 `objects`）、`view.go`（`View` 按单元裁剪、`Summary`）、`type.go`（`sceneType`，`init()` 注册），`cmd/server` 与 `cmd/creative-worker` 空导入；测试覆盖 AC-1（`add_node core.scene` 同事务产生文档、修订 1、只有地面）和 AC-4 后端各项（删除后按原 ID 与位置加回；150 个物件的嵌套分组一次撤销成功，制造一个单元冲突时整体失败且快照不变；G ⊃ H ⊃ A 复原、打乱 `units` 顺序结果相同；只恢复 A 时挂到最近祖先或根）
 
 ## 3. 契约、生成物与集成测试（后端）
 
