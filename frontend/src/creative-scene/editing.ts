@@ -1,7 +1,7 @@
 import type { SceneObject, SceneTransform } from './api.ts'
 import { builtinSpec } from './builtins/catalog.ts'
 import { newObjectID } from './ids.ts'
-import { subtree, type WireOp } from './state/apply.ts'
+import { sameValue, subtree, type WireOp } from './state/apply.ts'
 
 // The edits behind menu items and shortcuts, each one intent's operations.
 
@@ -90,26 +90,28 @@ export function visibilityOp(
   return { op: 'update_objects', updates: targets.map((o) => ({ object_id: o.id, visible: mode === 'reveal' })) }
 }
 
-/** Alt+G / R / S puts location, rotation or scale back to the default. */
+/**
+ * Alt+G / R / S puts location, rotation or scale back to the default.
+ * Objects already there are left out, so the label counts what changes.
+ */
 export function clearOp(
   objects: readonly SceneObject[],
   ids: readonly string[],
   what: 'location' | 'rotation' | 'scale',
 ): WireOp | null {
   const byID = new Map(objects.map((o) => [o.id, o]))
-  const updates = ids
-    .map((id) => byID.get(id))
-    .filter((o): o is SceneObject => !!o)
-    .map((o) => {
-      const t = o.transform
-      const transform =
-        what === 'location'
-          ? { ...t, position: [0, 0, 0] }
-          : what === 'rotation'
-            ? { ...t, rotation: [0, 0, 0, 1] }
-            : { ...t, scale: [1, 1, 1] }
-      return { object_id: o.id, transform }
-    })
+  const updates = ids.flatMap((id) => {
+    const o = byID.get(id)
+    if (!o) return []
+    const t = o.transform
+    const transform =
+      what === 'location'
+        ? { ...t, position: [0, 0, 0] }
+        : what === 'rotation'
+          ? { ...t, rotation: [0, 0, 0, 1] }
+          : { ...t, scale: [1, 1, 1] }
+    return sameValue(transform, t) ? [] : [{ object_id: o.id, transform }]
+  })
   return updates.length ? { op: 'update_objects', updates } : null
 }
 

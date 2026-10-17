@@ -204,7 +204,8 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
       case 'clear-scale': {
         const what = action === 'clear-location' ? 'location' : action === 'clear-rotation' ? 'rotation' : 'scale'
         const op = editing ? clearOp(objects, movable(), what) : null
-        if (op) edit([op], label(what === 'location' ? '清除位置' : what === 'rotation' ? '清除旋转' : '清除缩放', movable()))
+        if (op?.op === 'update_objects')
+          edit([op], label(what === 'location' ? '清除位置' : what === 'rotation' ? '清除旋转' : '清除缩放', op.updates.map((u) => u.object_id)))
         return
       }
       case 'rename': {

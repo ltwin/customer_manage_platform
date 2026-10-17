@@ -9,8 +9,8 @@
 | `go test -count=1`：`creativescene`、`creativecontent`、`creativedocument`、`creativecanvas`、`platform/store`、`platform/httpapi` | 通过 |
 | `golangci-lint run`：上述包与 `cmd/server`、`cmd/creative-worker` | 0 issues |
 | `make generate-check`（OpenAPI 两份生成物、`builtins.gen.json`） | 通过，无漂移 |
-| `make check-frontend`（oxlint、`tsc -b` + vite build、587 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
-| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 21/21 通过，连跑两遍；夹具与 `main.tsx` 一样用 StrictMode 渲染 |
+| `make check-frontend`（oxlint、`tsc -b` + vite build、589 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
+| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 22/22 通过（2026-10-17 修订增长优化后重跑）；夹具与 `main.tsx` 一样用 StrictMode 渲染 |
 | `make check`（合回 `develop` 前的门禁） | 未跑，合并点执行一次 |
 
 e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收站、修订列表和整份恢复都按契约模拟，操作语义复用前端的 `state/apply.ts`。服务端真实语义由 Go 测试负责，e2e 验证的是编辑器在真实浏览器里的交互、请求次数和请求内容。运行方式：在 `frontend/` 起 Vite（`npx vite --port 5179`），再执行 `node scripts/creative-scene.e2e.mjs`；`SCENE_E2E_ONLY=<名称片段>` 只跑一项，`SCENE_E2E_SHOTS=<目录>` 保存关键步骤截图。
@@ -54,6 +54,25 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 
 门禁：`golangci-lint`（`creativecontent`、`creativedocument`、`creativescene`、`creativelibrary`、`creativecanvas`、`creativegeneration`、`creativeagent`、`platform/httpapi`）0 issues；上述 8 个包 `go test -count=1` 全部通过。`make check-go` 传多个包时 `test-go` 只测第一个（`PKG` 往下传没加引号），这次直接用同样参数跑 `go test`。前端发出的请求只在 `parent_id` 上写 `null`，不受新检查影响。
 
+## 修订增长的检查与优化（2026-10-17）
+
+owner 问快速操作是否会产生大量修订、有没有性能风险。核对结论：
+
+- **修订数**：每个独立操作一个修订（同时是一个撤销步骤），连续操作合成一个（拖动松手提交、属性输入停 300 ms 提交、复制后移动）。操作快不会让修订数翻倍。历史面板按 2 分钟分组、每页 50 条，不会刷屏；撤销和重做是恢复，每次单独一条。
+- **前端**：同一时间只发一个请求。模拟保存卡住时意图积压：100 个物件积压 200 个，新操作 0.4 ms；1000 个物件积压 500 个，新操作 12 ms。
+- **请求与读取**：每个编辑器最多一个请求在途。每次保存引起的重读（画布页一次、编辑器 500 ms 内最多一次、历史面板开着时第一页一次）都有合并或节流。读当前场景只读最新一份，历史列表按索引分页，修订再多也不变慢。
+- **存储（真正的风险）**：每次保存存一份完整快照，旧修订不清理。本地 PG17 实测压缩后：每个物件约 90 B / 修订；100 个物件约 9.6 KB，300 个约 27 KB，1000 个约 90 KB（物件位置、尺寸各不相同；AC-11 的 5.2 KB 是相同方块）。1000 次操作在 100 个物件的场景上约 10 MB，只增不减。epic 设计已把历史清理列为后续工作，尚无子项承接，待 owner 决定。
+- **白写的修订**：服务端不识别无变化的命令。Alt+G / R / S 不检查物件是否已是默认值；编辑器也不忽略按键重复，按住 Alt+G 一秒写十几到几十份快照。
+
+修正：
+
+| 问题 | 修正 | 回归测试 |
+|---|---|---|
+| 无变化的修改照样保存 | `SceneSession.edit` 入队前经 `withoutNoops` 去掉不改变任何值的字段、更新和操作，全部无变化则不入队；`clearOp` 跳过已是默认值的物件，标签只数真正改动的物件 | `creative-scene.test.ts`「an edit that changes nothing is not saved…」；`creative-scene-interaction.test.ts`「hide, hide unselected and reveal…」补两条清除断言 |
+| 按住快捷键重复执行 | `handleKey` 遇到 `event.repeat` 仍拦下按键，但只有撤销、重做执行 | `creative-scene-interaction.test.ts`「a held key acts once and stays claimed…」；e2e「a held key acts once, and clearing what is already clear saves nothing」 |
+
+三条单测和这条 e2e 都在修复前确认失败（e2e 按住 Alt+G 再补按两次，写了 6 条修改，应为 1 条），修复后通过。门禁：`make check-frontend` 通过（589 个测试）；e2e 22/22。
+
 ## 验收对照
 
 简称：`scene` = `backend/internal/creativescene/scene_test.go`，`model` / `restore` / `concurrency` 同目录对应文件；`http` = `backend/internal/platform/httpapi/creative_documents_test.go`；`unit` = `frontend/scripts/creative-scene.test.ts`，`interaction` = `frontend/scripts/creative-scene-interaction.test.ts`；`e2e` = `frontend/scripts/creative-scene.e2e.mjs`。
@@ -82,3 +101,4 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 2. ~~坐标轴与 Blender 的差异~~：**已处理**（owner 2026-10-16 要求与 Blender 一致）。编辑器层采用 Z 向上，文档数据保持契约的 Y 向上；摄像机 / 灯光朝向的显示差别留到 C4。
 3. **AC-1 画布侧**：请在真实画布上手动确认一次（见上表）。
 4. **proposal 风险第 7 条不成立**：原以为 `add_node` 枚举加 `core.scene` 会改变助手 `edit_canvas` 的工具 schema，需要排空后升级。实际助手的节点类型是手写枚举（`backend/internal/creativeagent/canvas_tools.go:nodeTypes`，只有文字、图片、视频、音频、链接），`tool_schemas.gen.go` 也没有变化。所以本次上线不需要排空升级，助手在 C1 也不能新建场景，要到 C3 才接入。design 的挂载点已注明。
+5. **历史清理**：每次保存一份完整快照、只增不减（见「修订增长」）。建议作为 epic 的后续子项：近期修订全部保留，更早的按历史面板的 2 分钟分组只留每组最后一版，恢复点和新建保留；保留期限由 owner 定。

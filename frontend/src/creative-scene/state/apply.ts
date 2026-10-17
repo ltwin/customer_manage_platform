@@ -191,3 +191,70 @@ export function applyPatch(state: SceneState, patch: ProjectionPatch): SceneStat
 export function applyOps(state: SceneState, ops: readonly WireOp[]): SceneState {
   return ops.reduce(applyOp, state)
 }
+
+/** Equal as JSON values: what the server would store is the same. */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const ka = Object.keys(a).filter((k) => (a as Record<string, unknown>)[k] !== undefined)
+  const kb = Object.keys(b).filter((k) => (b as Record<string, unknown>)[k] !== undefined)
+  return ka.length === kb.length && ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+}
+
+const updateKeys = ['name', 'transform', 'visible', 'locked', 'material_slots', 'light', 'camera'] as const
+
+/** The fields of u that would change o; null when none would. */
+function changedPart(o: SceneObject, u: ObjectUpdate): ObjectUpdate | null {
+  const out: ObjectUpdate = { object_id: u.object_id }
+  let any = false
+  for (const k of updateKeys)
+    if (u[k] !== undefined && !sameValue(u[k], o[k])) {
+      ;(out as Record<string, unknown>)[k] = u[k]
+      any = true
+    }
+  if (u.primitive) {
+    const now = o.primitive?.params ?? {}
+    const params = Object.fromEntries(Object.entries(u.primitive.params).filter(([k, v]) => !o.primitive || !sameValue(v, now[k])))
+    if (!o.primitive || Object.keys(params).length) {
+      out.primitive = { ...u.primitive, params }
+      any = true
+    }
+  }
+  return any ? out : null
+}
+
+/**
+ * Drops what would change nothing: fields already holding the value, updates
+ * left empty and renames or settings to what is already there. Every saved
+ * edit is a whole snapshot on the server and an undo step, so clearing an
+ * object already at the origin must not be one. Other operations pass as
+ * they are; an object the state does not have is left for the server.
+ */
+export function withoutNoops(ops: readonly WireOp[], state: SceneState): WireOp[] {
+  const out: WireOp[] = []
+  let probe = state
+  for (const op of ops) {
+    let kept: WireOp | null = op
+    if (op.op === 'update_objects') {
+      const byID = new Map(probe.scene.objects.map((o) => [o.id, o]))
+      const updates = op.updates.flatMap((u) => {
+        const o = byID.get(u.object_id)
+        if (!o) return [u]
+        const part = changedPart(o, u)
+        return part ? [part] : []
+      })
+      kept = updates.length ? { ...op, updates } : null
+    } else if (op.op === 'rename') {
+      if (op.title === probe.title) kept = null
+    } else if (op.op === 'set_environment') {
+      if (sameValue(op.environment, probe.scene.environment)) kept = null
+    } else if (op.op === 'set_render') {
+      if (sameValue(op.render, probe.scene.render)) kept = null
+    }
+    if (!kept) continue
+    out.push(kept)
+    probe = applyOp(probe, kept)
+  }
+  return out
+}

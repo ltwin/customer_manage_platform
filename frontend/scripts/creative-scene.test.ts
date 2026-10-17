@@ -299,6 +299,28 @@ test('edits show at once and go out one request at a time', async () => {
   assert.equal(session.hasUnsaved(), false)
 })
 
+test('an edit that changes nothing is not saved; one that changes a part keeps only that part', async () => {
+  const { transport, session } = await started([box(1)])
+  const origin = { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }
+  // Each would be a whole snapshot on the server and an undo step that does nothing.
+  assert.equal(session.edit([{ op: 'update_objects', updates: [{ object_id: id(1), transform: origin }] }], '清除位置'), null)
+  assert.equal(session.edit([{ op: 'update_objects', updates: [{ object_id: id(1), primitive: { params: { width: 1 } } }] }], '调整参数'), null)
+  assert.equal(session.edit([{ op: 'rename', title: '场景' }], '重命名'), null)
+  assert.equal(session.edit([{ op: 'set_render', render: { mode: 'clay' } }], '渲染'), null)
+  await tick()
+  assert.equal(transport.sent.length, 0)
+  assert.equal(session.state.queue.length, 0)
+
+  const kept = session.edit(
+    [{ op: 'update_objects', updates: [{ object_id: id(1), name: '', transform: origin, visible: false, primitive: { params: { width: 1, height: 2 } } }] }],
+    '修改',
+  )
+  assert.deepEqual(kept?.ops, [{ op: 'update_objects', updates: [{ object_id: id(1), visible: false, primitive: { params: { height: 2 } } }] }])
+  const half = session.edit([{ op: 'update_objects', updates: [{ object_id: id(1), name: '', visible: true }] }], '显示')
+  assert.deepEqual(half?.ops, [{ op: 'update_objects', updates: [{ object_id: id(1), visible: true }] }], 'compared with what the view shows, unsent edits included')
+  assert.deepEqual(Object.keys(half!.expected), [`object:${id(1)}`], 'an unchanged name does not drag in other units')
+})
+
 test('a receipt after someone else\'s revision re-reads instead of guessing', async () => {
   const { transport, session } = await started([box(1)])
   session.edit([moveTo([id(1)], 1)], '移动')

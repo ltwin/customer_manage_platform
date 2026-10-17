@@ -780,6 +780,40 @@ await check('selection edits: box select, H / Alt+H, Shift+D, X', async () => {
   await context.close()
 })
 
+await check('a held key acts once, and clearing what is already clear saves nothing', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const id = await addBox(page, server)
+  await page.keyboard.press('KeyG')
+  await page.keyboard.press('KeyX')
+  await page.keyboard.press('Digit2')
+  await page.keyboard.press('Enter')
+  await waitFor(() => server.commands.length === 2, 'move off the origin')
+  await saved(page)
+
+  // Keydowns after the first are repeats while the key stays down.
+  const hold = async (code, modifier) => {
+    if (modifier) await page.keyboard.down(modifier)
+    for (let i = 0; i < 4; i++) await page.keyboard.down(code)
+    await page.keyboard.up(code)
+    if (modifier) await page.keyboard.up(modifier)
+  }
+  await hold('KeyG', 'Alt')
+  await waitFor(() => server.commands.length === 3, 'clear location')
+  await saved(page)
+  assert.deepEqual(server.object(id).transform.position, [0, 0, 0])
+  await page.keyboard.press('Alt+KeyG')
+  await page.keyboard.press('Alt+KeyS')
+  await sleep(300)
+  assert.equal(server.commands.length, 3, 'a held Alt+G clears once; clearing again changes nothing and saves nothing')
+
+  assert.ok(await page.getByRole('treeitem').count() > 0)
+  await hold('KeyN')
+  assert.equal(await page.getByRole('treeitem').count(), 0, 'a held N hides the sidebar once instead of flickering')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('the move tool drags the selection with its handle: one update', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)

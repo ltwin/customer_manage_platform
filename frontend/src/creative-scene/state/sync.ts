@@ -4,6 +4,7 @@ import { newIntentID } from '../ids.ts'
 import {
   applyOp,
   objectOfUnit,
+  withoutNoops,
   type ProjectionPatch,
   type SceneState,
   type WireOp,
@@ -185,15 +186,17 @@ export class SceneSession {
   /**
    * Records an edit and shows it at once. Returns the intent now holding it,
    * which may be an earlier one it was folded into, or null when the scene
-   * cannot be edited.
+   * cannot be edited or the edit changes nothing the view shows.
    */
   edit(
-    ops: WireOp[],
+    requested: WireOp[],
     label: string,
     options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string } = {},
   ): Intent | null {
     const { base, view, queue, trashed, missing } = this.state
-    if (!base || !view || trashed || missing || !ops.length) return null
+    if (!base || !view || trashed || missing) return null
+    const ops = withoutNoops(requested, view)
+    if (!ops.length) return null
     const units: string[] = []
     let probe = view
     for (const op of ops) {

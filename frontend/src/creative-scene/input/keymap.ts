@@ -141,6 +141,8 @@ export type KeyLike = {
   shiftKey: boolean
   altKey: boolean
   isComposing?: boolean
+  /** The key is held down and the system is repeating it. */
+  repeat?: boolean
   target?: unknown
 }
 
@@ -182,9 +184,14 @@ export function lookup(e: KeyLike, context: Context, mac: boolean): Binding | nu
 
 export type KeyEventLike = KeyLike & { preventDefault(): void; stopPropagation(): void }
 
+/** Holding Cmd+Z steps back one edit after another, as in Blender. */
+const repeating: ReadonlySet<Action> = new Set(['undo', 'redo'])
+
 /**
  * Handles one keydown at the editor root. A matched key is claimed so the
- * browser and the canvas behind the editor do nothing with it.
+ * browser and the canvas behind the editor do nothing with it. A held key
+ * acts once: repeats would flip a panel or an axis back and forth, and each
+ * repeated edit would be a revision of its own.
  */
 export function handleKey(
   e: KeyEventLike,
@@ -196,7 +203,7 @@ export function handleKey(
   if (!b) return false
   e.preventDefault()
   e.stopPropagation()
-  run(b.action)
+  if (!e.repeat || repeating.has(b.action)) run(b.action)
   return true
 }
 

@@ -85,6 +85,22 @@ test('a matched key is claimed; an unmatched one is left alone', () => {
   assert.deepEqual(calls, [])
 })
 
+test('a held key acts once and stays claimed; only undo and redo repeat', () => {
+  const calls: string[] = []
+  const held = (code: string, extra: Partial<KeyLike> = {}) => ({
+    ...key(code, extra), repeat: true, preventDefault: () => calls.push('prevent'), stopPropagation: () => calls.push('stop'),
+  })
+  const run: string[] = []
+  assert.equal(handleKey(held('KeyG', { altKey: true }), 'idle', true, (a) => run.push(a)), true)
+  assert.equal(handleKey(held('KeyN'), 'idle', true, (a) => run.push(a)), true)
+  assert.equal(handleKey(held('KeyX'), 'modal', true, (a) => run.push(a)), true)
+  assert.deepEqual(run, [])
+  assert.deepEqual(calls, ['prevent', 'stop', 'prevent', 'stop', 'prevent', 'stop'], 'a repeat still never reaches the page')
+  handleKey(held('KeyZ', { metaKey: true }), 'idle', true, (a) => run.push(a))
+  handleKey(held('KeyZ', { metaKey: true, shiftKey: true }), 'idle', true, (a) => run.push(a))
+  assert.deepEqual(run, ['undo', 'redo'], 'holding Cmd+Z steps back, as in Blender')
+})
+
 test('Esc closes the innermost layer and never the editor', () => {
   assert.equal(escapeTarget({ modal: true, menu: true, preview: true, selection: true }), 'cancel-modal')
   assert.equal(escapeTarget({ modal: false, menu: true, preview: true, selection: true }), 'close-menu')
@@ -374,6 +390,8 @@ test('hide, hide unselected and reveal each make one update; clearing resets one
   assert.deepEqual(visibilityOp(objects, [], 'reveal'), { op: 'update_objects', updates: [{ object_id: sid(3), visible: true }] })
   const moved = so(5, { transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [2, 2, 2] } })
   assert.deepEqual(clearOp([moved], [sid(5)], 'location'), { op: 'update_objects', updates: [{ object_id: sid(5), transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] } }] })
+  assert.equal(clearOp([so(6)], [sid(6)], 'location'), null, 'already at the origin: nothing to clear')
+  assert.deepEqual(clearOp([moved, so(6)], [sid(5), sid(6)], 'scale'), { op: 'update_objects', updates: [{ object_id: sid(5), transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }] })
 })
 
 // --- view space ------------------------------------------------------------------
