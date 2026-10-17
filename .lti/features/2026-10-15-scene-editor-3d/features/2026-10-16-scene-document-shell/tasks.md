@@ -25,7 +25,7 @@
 
 ## 5. 前端状态与同步
 
-- [ ] 5.1 投影与几何：`state/apply.ts`（镜像服务端操作语义）、意图合并（队尾合并保留最早的预期修订号，复制后移动并入同一个 `add_objects`）、`builtins/*` 7 个几何函数；`creative-scene.test.ts` 先写，覆盖投影与服务端语义一致、合并规则、清单与几何函数一一对应
+- [x] 5.1 投影与几何：`state/apply.ts`（镜像服务端操作语义）、意图合并（队尾合并保留最早的预期修订号，复制后移动并入同一个 `add_objects`）、`builtins/*` 7 个几何函数；`creative-scene.test.ts` 先写，覆盖投影与服务端语义一致、合并规则、清单与几何函数一一对应
 - [ ] 5.2 发送循环与意图终态：`state/sceneStore.ts`（zustand：权威快照、队列、投影、选择）、`state/sync.ts`（单请求在途；`pending` / `sent` / `unknown` / `blocked`；`{after}` 预期修订号的替换；只在 `objects` 冲突的新增自动变基、删除转确认、父对象已不在的新增不变基；依赖被拒意图的后续意图转 `blocked`；`pagehide` 时 `keepalive`；`beforeunload` 拦截；SSE 失效节流 500ms 后重读、拖动中推迟、`trashed_at` 切换只读）；状态机单测覆盖设计「意图终态」「离开提示」两行与 AC-5 前端、AC-7 前端
 - [ ] 5.3 撤销与历史：`state/undo.ts`（撤销和重做都发 `restore_units`；按单元的 `foreignSeq` 过期规则只看物件单元，存在性变化时另查 `objects`；「重新移动后也不复活」；整份恢复清空两栈）、`history.ts`（按写入者、运行和时间窗分组与描述）、历史版本面板（只读预览、确认后整份恢复）；单测覆盖 AC-4 前端与 AC-6
 
