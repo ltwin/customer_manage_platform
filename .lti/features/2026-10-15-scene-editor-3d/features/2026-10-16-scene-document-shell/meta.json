@@ -1,6 +1,6 @@
 {
   "uid": "32c90485-2ed7-497a-9411-b09fb0608521",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-document-shell",
   "kind": "feature",
   "assurance": "governed",
@@ -31,7 +31,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-16T18:52:18.536Z",
-  "updatedAt": "2026-10-17T10:28:26.208Z",
+  "updatedAt": "2026-10-17T10:39:22.745Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-17T10:39:22.715Z",
+    "summary": "feat/scene-document-shell 以 no-ff 合入 develop（59d2ea3），develop 此前无新提交，合并后代码树与功能分支 HEAD fad3548 完全一致（git diff 为空）；合并点 da8a40a 上 make check 通过，之后只增加 TestOversizedSnapshotIsRefused（creativescene 全包与 lint 通过）和 .lti 文档",
+    "method": "code-review",
+    "limitations": "项目未在 .lti/config.yaml 配置 checks；按 owner 约定全量门禁只在合并点跑一次，未在 develop 上重跑；合并点之后的改动只有一个后端测试和文档，已定向验证",
+    "sourceCommit": "fad354883b72871967593b3c4656ffd0fca55616",
+    "targetCommit": "59d2ea3ab226ce7c3bdea4be8d32fd7b43c7c6b2",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "65fa13b82efa6c0f1abe405e6fc904a69da8740b1ed7a25545d23d907a3bfe74"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
