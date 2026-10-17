@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import {
   CameraControls,
@@ -24,7 +24,7 @@ import {
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
 import type { Scene, SceneEnvironment, SceneObject } from './api.ts'
-import { buttonActions, classifyWheel, resolveDevice, wheelAction, type WheelSample } from './input/navigation.ts'
+import { axisHeadAt, axisWidget, buttonActions, classifyWheel, resolveDevice, wheelAction, type WheelSample } from './input/navigation.ts'
 import { pickable, topmost } from './input/selection.ts'
 import type { EditorStore, Tool } from './state/sceneStore.ts'
 import { numericKey, numericText } from './transform/numeric.ts'
@@ -46,6 +46,7 @@ import {
   type View,
 } from './transform/modal.ts'
 import { SceneObjects } from './objects/SceneObjects.tsx'
+import { positionToDoc, positionToView, transformToDoc } from './space.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -102,21 +103,23 @@ export function Viewport(props: ViewportProps) {
   const selected = useMemo(() => new Set(selection.selected), [selection.selected])
   const wrap = useRef<HTMLDivElement>(null)
   const r = box && wrap.current ? wrap.current.getBoundingClientRect() : null
+  // The 3D scene is in view space (Z up); everything outside it speaks the
+  // document's space, so transforms convert on their way out.
+  const onCommit: ViewportProps['onCommit'] = (results, label, held) =>
+    props.onCommit(results.map((t) => ({ id: t.id, ...transformToDoc(t) })), label, held)
   return (
     <div ref={wrap} className="cc-scene-viewport">
-      <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: [10, 8, 12], fov: 45, near: 0.05, far: 5000 }}>
+      <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
         <Environment environment={props.scene.environment} />
-        <Grid position={[0, 0.002, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
+        <Grid position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
         <SceneObjects scene={props.scene} selected={selected} active={selection.active} />
         <OrthoSwitch ortho={ortho} />
         <CameraControls makeDefault />
         {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
-          <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={props.onCommit} onDragging={props.onDragging} />
+          <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
         )}
-        <GizmoHelper alignment="top-right" margin={[64, 64]}>
-          <GizmoViewport axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
-        </GizmoHelper>
-        <Controller {...props} setBox={setBox} tool={tool} />
+        <AxisGizmo />
+        <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
       </Canvas>
       {box && r && (
         <div
@@ -140,22 +143,31 @@ function sunDirection(env: SceneEnvironment): Vector3 {
   return new Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el))
 }
 
-/** Clay lighting: the scene's sky and ambient, one sun with shadows. */
+/**
+ * Clay lighting: the scene's sky and ambient, one sun with shadows. The sun
+ * angles are document data (Y up); the lights sit in view space (Z up).
+ */
 function Environment({ environment }: { environment: SceneEnvironment }) {
   const sun = sunDirection(environment).multiplyScalar(60)
   const sky = environment.sky
+  const skyRef = useRef<ComponentRef<typeof Sky>>(null)
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    skyRef.current?.material.uniforms.up.value.set(0, 0, 1)
+    invalidate()
+  }, [sky.kind, invalidate])
   return (
     <>
       {sky.kind === 'procedural' ? (
-        <Sky sunPosition={[sun.x, Math.max(sun.y, 0.5), sun.z]} turbidity={sky.turbidity ?? 3} />
+        <Sky ref={skyRef} sunPosition={positionToView([sun.x, Math.max(sun.y, 0.5), sun.z])} turbidity={sky.turbidity ?? 3} />
       ) : (
         <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
       )}
       {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near_m, environment.fog.far_m]} />}
       <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity + 0.3} />
-      <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} />
+      <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={[0, 0, 1]} />
       <directionalLight
-        position={[sun.x, Math.max(sun.y, 2), sun.z]}
+        position={positionToView([sun.x, Math.max(sun.y, 2), sun.z])}
         intensity={2.2}
         castShadow
         shadow-mapSize={[2048, 2048]}
@@ -165,6 +177,19 @@ function Environment({ environment }: { environment: SceneEnvironment }) {
         shadow-camera-bottom={-30}
       />
     </>
+  )
+}
+
+/**
+ * The axis widget, display only. drei's own click animation rewrites
+ * camera.up and leaves the top view turned; the controller hit-tests the
+ * heads instead (axisHeadAt) and uses the number-row views' code.
+ */
+function AxisGizmo() {
+  return (
+    <GizmoHelper alignment="top-right" margin={[axisWidget.margin, axisWidget.margin]}>
+      <GizmoViewport disabled axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
+    </GizmoHelper>
   )
 }
 
@@ -190,6 +215,7 @@ function OrthoSwitch({ ortho }: { ortho: boolean }) {
       next = new PerspectiveCamera(45, size.width / size.height, 0.05, 5000)
     }
     next.position.copy(position)
+    next.up.set(0, 0, 1)
     pending.current = { position, target }
     set({ camera: next as PerspectiveCamera })
   }, [ortho, camera, controls, set, size])
@@ -396,19 +422,20 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const r = rect()
         if (at && at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom) {
           raycaster.setFromCamera(ndc(at.x, at.y), camera)
-          const hit = raycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), new Vector3())
-          if (hit && hit.length() < 5000) return [hit.x, 0, hit.z]
+          const hit = raycaster.ray.intersectPlane(new Plane(new Vector3(0, 0, 1), 0), new Vector3())
+          if (hit && hit.length() < 5000) return positionToDoc([hit.x, hit.y, 0])
         }
         const t = controls ? controls.getTarget(new Vector3()) : new Vector3()
-        return [t.x, 0, t.z]
+        return positionToDoc([t.x, t.y, 0])
       },
       pointer: () => ({ x: pointer.current.x, y: pointer.current.y }),
       setView: (dir) => {
         if (!controls) return
         const target = controls.getTarget(new Vector3())
         const distance = Math.max(1, camera.position.distanceTo(target))
-        // Looking straight down needs a tiny offset or the up vector flips.
-        const d = new Vector3(dir[0], dir[1], dir[2] + (Math.abs(dir[1]) === 1 ? 1e-4 : 0)).normalize()
+        // Looking straight down needs a tiny offset or the up vector flips;
+        // from the front side, so +Y points up the screen as in Blender.
+        const d = new Vector3(dir[0], dir[1] - (Math.abs(dir[2]) === 1 ? 1e-4 : 0), dir[2]).normalize()
         void controls.setLookAt(target.x + d.x * distance, target.y + d.y * distance, target.z + d.z * distance, target.x, target.y, target.z, true)
       },
       toggleOrtho: () => {
@@ -438,6 +465,22 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         if (e.button === 0) finish(true)
         if (e.button === 2) finish(false)
         return
+      }
+      if (e.button === 0) {
+        const r = rect()
+        const q = camera.quaternion
+        const head = axisHeadAt(
+          { x: e.clientX, y: e.clientY },
+          { x: r.right - axisWidget.margin, y: r.top + axisWidget.margin },
+          { right: new Vector3(1, 0, 0).applyQuaternion(q), up: new Vector3(0, 1, 0).applyQuaternion(q), toViewer: new Vector3(0, 0, 1).applyQuaternion(q) },
+        )
+        if (head) {
+          // A press on the axis widget turns the view; it is not a selection click.
+          e.preventDefault()
+          e.stopImmediatePropagation()
+          latest.current.handle.current?.setView(head)
+          return
+        }
       }
       const p = latest.current
       if (e.button === 0 && !e.altKey) {

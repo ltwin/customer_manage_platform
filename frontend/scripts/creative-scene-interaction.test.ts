@@ -375,3 +375,47 @@ test('hide, hide unselected and reveal each make one update; clearing resets one
   const moved = so(5, { transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [2, 2, 2] } })
   assert.deepEqual(clearOp([moved], [sid(5)], 'location'), { op: 'update_objects', updates: [{ object_id: sid(5), transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] } }] })
 })
+
+// --- view space ------------------------------------------------------------------
+
+import { axisHeadAt, viewDirections } from '../src/creative-scene/input/navigation.ts'
+import { positionToDoc, positionToView, rotationToView, scaleToView, transformToDoc, transformToView } from '../src/creative-scene/space.ts'
+
+const near = (a: readonly number[], b: readonly number[]) => a.every((v, i) => Math.abs(v - b[i]) < 1e-9)
+
+test('the editor speaks Blender: document up is view Z, the document front faces view -Y', () => {
+  assert.deepEqual(positionToView([0, 1, 0]), [0, 0, 1])
+  assert.deepEqual(positionToView([0, 0, 1]), [0, -1, 0])
+  assert.deepEqual(positionToDoc(positionToView([1, 2, 3])), [1, 2, 3])
+  // G Z 2 in the editor raises the object two metres: document Y.
+  const doc = positionToDoc([1, -3, 2 + 2])
+  assert.deepEqual(doc, [1, 4, 3])
+  assert.deepEqual(scaleToView([1, 2, 3]), [1, 3, 2])
+})
+
+test('a turn about the document vertical is a turn about view Z, and transforms round-trip', () => {
+  const aboutUp = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI / 3)
+  const view = rotationToView([aboutUp.x, aboutUp.y, aboutUp.z, aboutUp.w])
+  const expected = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI / 3)
+  assert.ok(near(view, [expected.x, expected.y, expected.z, expected.w]))
+  const t = { position: [1, 2, 3], rotation: [0.1, 0.2, 0.3, Math.sqrt(1 - 0.14)], scale: [1, 2, 3] }
+  const back = transformToDoc(transformToView(t))
+  assert.ok(near(back.position, t.position) && near(back.rotation, t.rotation) && near(back.scale, t.scale))
+  assert.deepEqual(transformToView({ position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }), { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, 'identity stays identity: no -0, no turn')
+})
+
+test('number-row views stand where Blender puts them', () => {
+  assert.deepEqual(viewDirections['view-front'], [0, -1, 0])
+  assert.deepEqual(viewDirections['view-right'], [1, 0, 0])
+  assert.deepEqual(viewDirections['view-top'], [0, 0, 1])
+})
+
+test('the axis widget finds the head under a press, preferring the one in front', () => {
+  // Front view: right is +X, up is +Z, the viewer stands at -Y.
+  const front = { right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, toViewer: { x: 0, y: -1, z: 0 } }
+  const c = { x: 1000, y: 100 }
+  assert.deepEqual(axisHeadAt({ x: 1000, y: 60 }, c, front), [0, 0, 1], 'above the centre is +Z: the top view')
+  assert.deepEqual(axisHeadAt({ x: 1042, y: 101 }, c, front), [1, 0, 0])
+  assert.deepEqual(axisHeadAt({ x: 1000, y: 100 }, c, front), [0, -1, 0], '±Y overlap at the centre; -Y faces the viewer')
+  assert.equal(axisHeadAt({ x: 900, y: 100 }, c, front), null)
+})

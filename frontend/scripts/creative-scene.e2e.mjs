@@ -338,7 +338,8 @@ await check('keyboard flow: Shift+A, G Z 2 Enter, R cancelled, A G confirmed', a
   const move = server.commands[1].payload
   assert.deepEqual(Object.keys(move.expected), [placement(id)], 'a move names only the placement unit')
   const moved = server.object(id).transform.position
-  assert.ok(close(moved[0], start[0]) && close(moved[1], start[1]) && close(moved[2], start[2] + 2), `G Z 2: ${moved} from ${start}`)
+  // The editor's Z is up (Blender); the document stores Y up.
+  assert.ok(close(moved[0], start[0]) && close(moved[1], start[1] + 2) && close(moved[2], start[2]), `G Z 2 raises it: ${moved} from ${start}`)
 
   const { x, y } = await viewportCenter(page)
   await page.mouse.move(x, y)
@@ -424,9 +425,11 @@ await check('reopening shows exactly what the server has', async () => {
   const fields = again.page.locator('.cc-scene-props input[type=number]')
   const [px, py, pz] = server.object(id).transform.position
   const value = async (i) => Number(await fields.nth(i).inputValue())
-  assert.ok(close(await value(0), Math.round(px * 1000) / 1000), 'x')
-  assert.ok(close(await value(1), Math.round(py * 1000) / 1000), 'y')
-  assert.ok(close(await value(2), Math.round(pz * 1000) / 1000), 'z')
+  const shown = (v) => Math.round(v * 1000) / 1000 || 0
+  // Fields read in Blender's axes: Y is depth (document -Z), Z is up (document Y).
+  assert.ok(close(await value(0), shown(px)), 'x')
+  assert.ok(close(await value(1), shown(-pz)), 'y')
+  assert.ok(close(await value(2), shown(py)), 'z')
   assert.equal(server.reads, 2)
   assert.deepEqual([...first.errors, ...again.errors], [])
   await again.context.close()
@@ -487,7 +490,7 @@ await check("someone else's edit: a re-read shows it, a stale edit asks first", 
   // A moves again; B, not yet told, moves the same box and is asked.
   server.external([{ op: 'update_objects', updates: [{ object_id: id, transform: { ...server.object(id).transform, position: [5, 0, 5] } }] }])
   await b.page.keyboard.press('KeyG')
-  await b.page.keyboard.press('KeyY')
+  await b.page.keyboard.press('KeyZ')
   await b.page.keyboard.press('Digit1')
   await b.page.keyboard.press('Enter')
   await b.page.getByRole('alert').filter({ hasText: '重新应用' }).waitFor()
@@ -780,6 +783,42 @@ await check('trackpad swipes and pinches move the view at once, without a click'
   after = await view()
   assert.ok(!before.equals(after), 'a pinch redraws the view by itself')
   assert.equal(server.commands.length, 1, 'moving the view saves nothing')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('number keys and the axis widget turn the view as in Blender', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const id = await addBox(page, server)
+  const { x, y, box } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Digit1')
+  await sleep(900)
+  // Front view: the widget's Z head sits straight above its centre.
+  await page.mouse.click(box.x + box.width - 64, box.y + 64 - 40)
+  await sleep(900)
+  assert.equal(await page.getByRole('treeitem', { name: /方块/ }).getAttribute('aria-selected'), 'true', 'a press on the widget is not a selection click')
+  // Top view: right on screen is +X, up on screen is +Y (document -Z).
+  const at = () => [...server.object(id).transform.position]
+  let before = at()
+  await page.mouse.move(x, y)
+  await page.keyboard.press('KeyG')
+  await page.mouse.move(x + 100, y, { steps: 5 })
+  await page.mouse.click(x + 100, y)
+  await waitFor(() => server.commands.length === 2, 'move right')
+  let after = at()
+  assert.ok(after[0] - before[0] > 0.3 && close(after[1], before[1], 1e-6) && close(after[2], before[2], 1e-3), `right is +X: ${before} → ${after}`)
+  await saved(page)
+  before = after
+  await page.mouse.move(x, y)
+  await page.keyboard.press('KeyG')
+  await page.mouse.move(x, y - 100, { steps: 5 })
+  await page.mouse.click(x, y - 100)
+  await waitFor(() => server.commands.length === 3, 'move up')
+  after = at()
+  assert.ok(before[2] - after[2] > 0.3 && close(after[0], before[0], 1e-3), `up is +Y, document -Z: ${before} → ${after}`)
+  await saved(page)
   assert.deepEqual(errors, [])
   await context.close()
 })

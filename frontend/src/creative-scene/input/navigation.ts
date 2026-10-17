@@ -104,12 +104,46 @@ export function writePreference(storage: Pick<Storage, 'setItem' | 'removeItem'>
   }
 }
 
-/** Camera directions for the number-row views; Y is up. */
+/**
+ * Where the camera stands for the number-row views, in view space (Blender:
+ * Z up, the front facing -Y, so the front view looks along +Y).
+ */
 export const viewDirections = {
-  'view-front': [0, 0, 1],
-  'view-back': [0, 0, -1],
+  'view-front': [0, -1, 0],
+  'view-back': [0, 1, 0],
   'view-right': [1, 0, 0],
   'view-left': [-1, 0, 0],
-  'view-top': [0, 1, 0],
-  'view-bottom': [0, -1, 0],
+  'view-top': [0, 0, 1],
+  'view-bottom': [0, 0, -1],
 } as const
+
+/** The axis widget in the viewport's top-right corner, in CSS pixels. */
+export const axisWidget = { margin: 64, radius: 40, hit: 12 }
+
+type V3 = { x: number; y: number; z: number }
+const dot = (a: readonly number[], b: V3) => a[0] * b.x + a[1] * b.y + a[2] * b.z
+
+/**
+ * Which axis head of the widget a press lands on, as the direction the
+ * camera should stand in; null when it misses them all. The widget turns
+ * with the camera, so a head sits at its axis projected on the camera's
+ * right and up vectors. Overlapping heads go to the one nearer the viewer.
+ */
+export function axisHeadAt(
+  press: { x: number; y: number },
+  center: { x: number; y: number },
+  camera: { right: V3; up: V3; toViewer: V3 },
+): readonly number[] | null {
+  let best: { dir: readonly number[]; depth: number } | null = null
+  for (const axis of [0, 1, 2])
+    for (const sign of [1, -1]) {
+      const dir = [0, 0, 0]
+      dir[axis] = sign
+      const x = center.x + axisWidget.radius * dot(dir, camera.right)
+      const y = center.y - axisWidget.radius * dot(dir, camera.up)
+      if (Math.hypot(press.x - x, press.y - y) > axisWidget.hit) continue
+      const depth = dot(dir, camera.toViewer)
+      if (!best || depth > best.depth) best = { dir, depth }
+    }
+  return best?.dir ?? null
+}

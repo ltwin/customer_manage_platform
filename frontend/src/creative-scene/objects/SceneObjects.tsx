@@ -3,10 +3,15 @@ import { Edges, Outlines } from '@react-three/drei'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
+import { docToView, transformToView } from '../space.ts'
 
 // Draws the scene tree. Every object is a group named by its ID (picking and
 // transforms find it by name); hiding an object hides only its own drawing,
 // not its children, as in Blender. The viewport is always clay in C1.
+//
+// Object groups carry view-space transforms (Z up, see space.ts), so moving,
+// rotating and the object's own axes read as in Blender. What an object
+// draws is authored in document space (Y up) and turns once inside it.
 
 const clay = '#d9d5cd'
 // Blender's selection colours: the active object lighter than the rest.
@@ -51,23 +56,17 @@ function ObjectNode({
   selected: ReadonlySet<string>
   active: string | null
 }) {
-  const t = o.transform
+  const t = useMemo(() => transformToView(o.transform), [o.transform])
   const edge = o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : null
   return (
-    <group
-      name={o.id}
-      userData={{ objectID: o.id }}
-      position={t.position as [number, number, number]}
-      quaternion={t.rotation as [number, number, number, number]}
-      scale={t.scale as [number, number, number]}
-    >
-      <group visible={o.visible}>
+    <group name={o.id} userData={{ objectID: o.id }} position={t.position} quaternion={t.rotation} scale={t.scale}>
+      {o.kind === 'group' && edge && <GroupMarker />}
+      <group visible={o.visible} quaternion={docToView}>
         {o.kind === 'primitive' && o.primitive && (
           <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} />
         )}
         {o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
         {o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
-        {o.kind === 'group' && edge && <GroupMarker />}
       </group>
       {(childrenOf.get(o.id) ?? []).map((c) => (
         <ObjectNode key={c.id} object={c} childrenOf={childrenOf} selected={selected} active={active} />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Euler, MathUtils, Quaternion } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { builtinSpec, type ParamSpec } from '../builtins/catalog.ts'
+import { transformToDoc, transformToView } from '../space.ts'
 
 /**
  * A number that commits 300 ms after typing stops, on Enter or on blur, and
@@ -153,12 +154,13 @@ function ParamField({ name, spec, value, disabled, onCommit }: { name: string; s
 /** The active object's fields; each change is one update. */
 export function Properties({ object, count, readOnly, onUpdate }: { object: SceneObject | null; count: number; readOnly: boolean; onUpdate: (u: ObjectUpdate, label: string) => void }) {
   if (!object) return <div className="cc-scene-props is-empty">{count > 1 ? `已选中 ${count} 个物件` : '选中物件后在这里调整'}</div>
-  const t = object.transform
-  const euler = new Euler().setFromQuaternion(new Quaternion(...(t.rotation as [number, number, number, number])), 'XYZ')
+  // Shown and typed in Blender's axes (Z up); stored in the document's.
+  const t = transformToView(object.transform)
+  const euler = new Euler().setFromQuaternion(new Quaternion(...t.rotation), 'XYZ')
   const degrees = [euler.x, euler.y, euler.z].map((r) => MathUtils.radToDeg(r))
   const locked = readOnly || object.locked
   const setTransform = (part: 'position' | 'rotation' | 'scale', axis: number, v: number) => {
-    const next = { position: [...t.position], rotation: [...t.rotation], scale: [...t.scale] }
+    const next: { position: number[]; rotation: number[]; scale: number[] } = { position: [...t.position], rotation: [...t.rotation], scale: [...t.scale] }
     if (part === 'rotation') {
       const d = [...degrees]
       d[axis] = v
@@ -166,7 +168,7 @@ export function Properties({ object, count, readOnly, onUpdate }: { object: Scen
       const q = new Quaternion().setFromEuler(new Euler(x, y, z, 'XYZ'))
       next.rotation = [q.x, q.y, q.z, q.w]
     } else next[part][axis] = v
-    onUpdate({ object_id: object.id, transform: next }, `调整「${object.name || '物件'}」`)
+    onUpdate({ object_id: object.id, transform: transformToDoc(next) }, `调整「${object.name || '物件'}」`)
   }
   const spec = object.primitive ? builtinSpec(object.primitive.builtin) : undefined
   return (
