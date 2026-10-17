@@ -13,8 +13,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
+	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -311,6 +313,28 @@ func TestNewSceneFromCanvas(t *testing.T) {
 	if sky := v.Scene.Environment.Sky; sky.Kind != "procedural" || *sky.SunElevationDeg != 35 || v.Scene.Render.Mode != "clay" || v.Scene.Environment.Fog != nil {
 		t.Fatalf("environment %+v", v.Scene.Environment)
 	}
+
+	// A scene node's content is its document. Replacing it as plain node
+	// content wrote an unchecked scene revision onto the node.
+	contents := func() (n int) {
+		if err := f.db.QueryRow(`SELECT count(*) FROM creative_content_revisions WHERE account_id='scene-a'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := contents()
+	canvas, err = creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replace := creativecanvas.BatchInput{CanvasID: p.CanvasID, ExpectedTopologyRevision: canvas.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(canvas),
+		Actions: []creativecanvas.Action{{Type: "replace_content", NodeID: node, Payload: &creativecontent.Payload{Scene: json.RawMessage(`{"objects":"nonsense"}`)},
+			Rights: &creativecontent.RightsDeclarationInput{SourceClass: planningmedia.SourcePhotographerOwned, RightsBasis: planningmedia.RightsOwnershipAttested}}}}
+	_, err = creativecanvas.ApplyCommands(t.Context(), f.a, command(t, replace))
+	wantErr(t, err, creativeops.ErrValidation)
+	if after := contents(); after != before {
+		t.Fatalf("content revisions %d -> %d", before, after)
+	}
 }
 
 func keys(m map[string]string) []string {
@@ -515,6 +539,19 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 		"objects touched twice":    {DocumentID: doc, Expected: v.expect(append(units(a), "objects")...), Operations: []any{op{"op": "add_objects", "objects": []any{box(n, nil, 5)}}, op{"op": "remove_objects", "object_ids": []string{a}}}},
 		"bad render":               {DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"mode": "path"}}}},
 		"sky missing sun":          {DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "procedural"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}}}},
+		// null is accepted only where the contract says nullable; a null
+		// number used to decode as 0 and save.
+		"null in position":        update(map[string]any{"object_id": a, "transform": map[string]any{"position": []any{nil, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}}}, placement(a)),
+		"null in rotation on add": add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0, 0}, "rotation": []any{0, 0, 0, nil}, "scale": []float64{1, 1, 1}})),
+		"null visible":            add(with(box(n, nil, 5), "visible", nil)),
+		"null name":               add(with(box(n, nil, 5), "name", nil)),
+		"null order":              add(with(box(n, nil, 5), "order", nil)),
+		"null optional on update": update(map[string]any{"object_id": a, "visible": nil, "locked": true}, placement(a)),
+		"null params":             add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": nil})),
+		"null objects":            {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "add_objects", "objects": nil}}},
+		"null ambient":            {DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "color", "color": "#203040"}, "ambient": nil, "fog": nil}}}},
+		"null in removed ids":     {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "remove_objects", "object_ids": []any{nil}}}},
+		"null param value":        add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": map[string]any{"width": nil}})),
 	}
 	for name, b := range cases {
 		t.Run(name, func(t *testing.T) {

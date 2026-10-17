@@ -186,6 +186,10 @@ func canonicalNumbers(o *Object) {
 }
 
 func encodeScene(s Scene) (creativedocument.Snapshot, error) {
+	// objects is always an array in the contract; a nil slice would store null.
+	if s.Objects == nil {
+		s.Objects = []Object{}
+	}
 	raw, err := json.Marshal(s)
 	if err != nil {
 		return creativedocument.Snapshot{}, err
@@ -195,22 +199,28 @@ func encodeScene(s Scene) (creativedocument.Snapshot, error) {
 
 // decodeInput decodes client input strictly and then insists on every field
 // whose json tag lacks omitempty, so a missing visible never reads as false.
+// null passes only where the contract makes a field nullable, a pointer
+// without omitempty (parent_id, fog, a light's range_m): anywhere else it
+// decodes as the zero value, and position [null, 0, 0] saved as the origin.
 func decodeInput(raw json.RawMessage, target any) error {
 	if err := creativeops.Decode(raw, target); err != nil {
 		return err
 	}
-	return requireFields(raw, reflect.TypeOf(target).Elem(), "")
+	return requireFields(raw, reflect.TypeOf(target).Elem(), "", false)
 }
 
-func requireFields(raw json.RawMessage, t reflect.Type, path string) error {
+func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bool) error {
 	if string(raw) == "null" {
-		return nil
+		if nullable {
+			return nil
+		}
+		return invalid("字段 %s 不能为 null", strings.TrimPrefix(path, "."))
 	}
 	switch t.Kind() {
 	case reflect.Pointer:
-		return requireFields(raw, t.Elem(), path)
+		return requireFields(raw, t.Elem(), path, false)
 	case reflect.Slice:
-		if t.Elem().Kind() != reflect.Struct {
+		if t.Elem().Kind() == reflect.Uint8 {
 			return nil
 		}
 		var items []json.RawMessage
@@ -218,20 +228,17 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string) error {
 			return err
 		}
 		for i, item := range items {
-			if err := requireFields(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i)); err != nil {
+			if err := requireFields(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), freeForm(t.Elem())); err != nil {
 				return err
 			}
 		}
 	case reflect.Map:
-		if t.Elem().Kind() != reflect.Struct {
-			return nil
-		}
 		var items map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &items); err != nil {
 			return err
 		}
 		for k, item := range items {
-			if err := requireFields(item, t.Elem(), path+"."+k); err != nil {
+			if err := requireFields(item, t.Elem(), path+"."+k, freeForm(t.Elem())); err != nil {
 				return err
 			}
 		}
@@ -253,13 +260,18 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string) error {
 				}
 				return invalid("缺少字段 %s", strings.TrimPrefix(path+"."+name, "."))
 			}
-			if err := requireFields(v, f.Type, path+"."+name); err != nil {
+			nullable := f.Type.Kind() == reflect.Pointer && opts != "omitempty"
+			if err := requireFields(v, f.Type, path+"."+name, nullable); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
 }
+
+// freeForm values, such as primitive params, may be anything JSON allows;
+// the builtin catalog checks them.
+func freeForm(t reflect.Type) bool { return t.Kind() == reflect.Interface }
 
 // newObjectID is a 21-character nanoid; clients make their own the same way.
 func newObjectID() string {

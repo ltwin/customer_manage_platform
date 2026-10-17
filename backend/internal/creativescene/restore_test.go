@@ -1,6 +1,7 @@
 package creativescene_test
 
 import (
+	"encoding/json"
 	"math/rand/v2"
 	"reflect"
 	"strconv"
@@ -220,5 +221,39 @@ func TestRestoreEnvironmentAndPartialObject(t *testing.T) {
 	v = readScene(t, f.a, doc)
 	if o := v.object(t, a); o.Transform.Position[0] != 0 || o.Primitive.Params["depth"] != 4.0 || v.Scene.Environment.Sky.Kind != "procedural" {
 		t.Fatalf("after partial restore %+v %+v", o, v.Scene.Environment)
+	}
+}
+
+// An empty scene stays an array through a settings restore: copying the empty
+// slice made it nil, stored as "objects": null, which the editor cannot list.
+func TestRestoringSettingsOfAnEmptySceneKeepsObjectsAnArray(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	ground := readScene(t, f.a, doc).Scene.Objects[0].ID
+	remove(t, f.a, doc, []string{ground}, ground)
+	v := readScene(t, f.a, doc)
+	empty := v.Revision
+	mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect("environment", "render"), Operations: []any{
+		op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "color", "color": "#203040"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 1}, "fog": nil}},
+		op{"op": "set_render", "render": map[string]any{"mode": "lit"}},
+	}})
+	mustRestore(t, f.a, doc, empty, []string{"environment", "render"})
+	raw, err := creativedocument.Read(t.Context(), f.a, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Scene struct {
+			Objects json.RawMessage `json:"objects"`
+			Render  struct {
+				Mode string `json:"mode"`
+			} `json:"render"`
+		} `json:"scene"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got.Scene.Objects) != "[]" || got.Scene.Render.Mode != "clay" {
+		t.Fatalf("objects %s, render %q", got.Scene.Objects, got.Scene.Render.Mode)
 	}
 }

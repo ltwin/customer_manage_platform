@@ -102,7 +102,7 @@ type Object struct {
 | `creativescene/ops.go` | 场景操作的解码、`touched`（只读）和 `apply` |
 | `creativescene/restore.go` | `RestoreTouched` / `RestoreUnits` |
 | `creativescene/view.go` | `View`（含按单元裁剪）和 `Summary` |
-| `creativecontent/content.go:Payload`、`Validate` | 新增 `Scene` 字段和 `scene` 分支 |
+| `creativecontent/content.go:Payload`、`Validate` | 新增 `Scene` 字段和 `scene` 分支；`scene` 只能经 `WriteDocumentAndRetain` 由文档层写入 |
 | 迁移 `0073_creative_scene_document` | 内容类型 CHECK 加 `scene`；回滚时如有 `scene` 内容则拒绝 |
 | `cmd/server/main.go`、`cmd/creative-worker/main.go` | 空导入 `creativescene` 完成注册（两个进程都会执行画布命令和助手工具） |
 
@@ -506,6 +506,8 @@ stateDiagram-v2
 | 回执连续时先推进 base，撤销、重做和 `reset_required` 再补重读 | 原设计让撤销回执等重读，期间的编辑带旧修订号与自己冲突（见「回执处理」） |
 | 合并只发生在同一次连续编辑内（合并键），以及复制后移动（owner 2026-10-17） | epic 原文「同一对象未发出的连续 `update_objects` 在 outbox 队尾合并」按字面会把两个独立操作并成一步；保存慢时（例如开发环境连远程库）一次 Cmd+Z 撤掉两步。「一次拖动一个修订」由松手提交保证，不受影响。代价是保存慢或离线时修订数略多。epic 的这句话建议在下次修订时同步改为「同一次连续编辑」 |
 | 保存中按 Cmd+Z 等回执后执行 | 原实现提示「稍后再撤销」后什么都不做，保存慢时撤销像失灵。等待期间有新编辑或修改被拒绝就取消，避免撤销掉不是摄影师想撤的那一步 |
+| 场景内容只能经文档层写入（代码审计 2026-10-17） | 共享内容层加了 `scene` 分支后，资产创建、画布 `replace_content` 等直接写内容的入口也跟着接受场景：资产入口进写事务后撞上资产表的类型约束（500），画布入口把未经场景 schema 校验的内容挂到文档节点上。在共享层把 `scene` 列为文档专用类型，比在每个入口各加一道限制更不容易漏 |
+| 输入里的 `null` 只允许出现在契约标为可空的字段（代码审计 2026-10-17） | 可空字段是 Go 里不带 `omitempty` 的指针（`parent_id`、`fog`、灯光的 `range_m` 等），与 OpenAPI 的 `nullable` 一一对应。其余位置的 `null` 会被解码成零值，例如 `position: [null, 0, 0]` 被当成原点保存；数组元素同样检查。基础体参数是自由键值，由内置清单检查类型 |
 | 视窗状态存本机浏览器（owner 2026-10-17） | 与画布视口一致，不给文档增加和编辑无关的修订；跨设备同步留待有需要时做服务端存储 |
 
 **待验证假设**（AC-11 已实测，本机，`CREATIVE_SCENE_BASELINE=1`）：
@@ -549,7 +551,8 @@ stateDiagram-v2
 | `backend/internal/creativescene/restore.go` | 新增 | 按单元恢复 |
 | `backend/internal/creativescene/view.go` | 新增 | 读取分支、摘要 |
 | `backend/internal/creativescene/*_test.go` | 新增 | 单元、集成、并发、基线测试 |
-| `backend/internal/creativecontent/content.go:Payload`、`Validate` | 修改 | `Scene` 字段与 `scene` 分支 |
+| `backend/internal/creativecontent/content.go:Payload`、`Validate` | 修改 | `Scene` 字段与 `scene` 分支；`scene` 属于文档专用类型，`Validate` 和 `WriteAndRetain` 拒绝，只有新增的 `WriteDocumentAndRetain` 能写（代码审计 2026-10-17） |
+| `backend/internal/creativedocument/command.go`、`document.go` | 修改 | 文档快照改经 `WriteDocumentAndRetain` 写入（代码审计 2026-10-17） |
 | `backend/internal/platform/store/migrations/0073_creative_scene_document.up.sql` / `.down.sql` | 新增 | 内容类型 CHECK |
 | `backend/internal/platform/store/creative_scene_document_migration_test.go` | 新增 | 新回滚链头 `rollbackSceneDocument`、拒绝回滚测试 |
 | `backend/internal/platform/store/creative_document_foundation_migration_test.go:rollbackDocumentFoundation` | 修改 | 先调用 `rollbackSceneDocument` |

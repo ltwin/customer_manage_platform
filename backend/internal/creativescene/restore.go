@@ -1,6 +1,7 @@
 package creativescene
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
@@ -96,7 +97,7 @@ func restoreUnits(old, cur Scene, units []string) (Scene, creativedocument.Chang
 		return Scene{}, creativedocument.Changes{}, err
 	}
 	next, c := cur, newChangeSet()
-	next.Objects = append([]Object(nil), cur.Objects...)
+	next.Objects = slices.Clone(cur.Objects)
 	if r.environment {
 		next.Environment = old.Environment
 		c.change(unitEnvironment)

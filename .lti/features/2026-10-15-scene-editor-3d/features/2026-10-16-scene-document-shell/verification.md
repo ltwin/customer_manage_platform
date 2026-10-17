@@ -41,6 +41,19 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 | owner 需求（2026-10-17）：再次进入时视窗要和离开时一样 | 相机、选择、工具、面板开合按账号和场景存本机，见 design「视窗状态」 | 单测「the view is kept per account and scene…」；e2e「leaving and coming back, even after a reload…」（关闭再打开、刷新页面；正交顶视与任意透视角度对比截图），修复前失败 |
 | 验证视窗恢复时发现：正交视图里场景缩小几十倍；7 之后立刻 5 得不到顶视 | 正交相机设 zoom 后漏了更新投影矩阵；切换时取了过渡中途的相机位置。分别补上更新、改取 camera-controls 的目标终点 | e2e「7 then 5 at once gives a top orthographic view…」，修复前 85.8% 像素不同 |
 
+## 代码审计发现的问题（2026-10-17）
+
+审计报告列了 3 个 P2，逐项核对都成立；核对第 3 项时又找到一个同源问题。每项先写测试确认在修复前失败，修复后通过。
+
+| 问题 | 原因与修正 | 回归测试 |
+|---|---|---|
+| 删除全部物件后改渲染设置，再用 `restore_units` 撤销设置，快照存成 `"objects": null`，编辑器遍历时报错 | 恢复时用 `append([]Object(nil), …)` 复制，空切片变成 nil。改用 `slices.Clone`；编码快照时再兜底，nil 一律写成 `[]` | `creativescene` 「TestRestoringSettingsOfAnEmptySceneKeepsObjectsAnArray」 |
+| `position: [null, 0, 0]` 返回 200，物件被移到原点，修订递增 | `requireFields` 对任何 `null` 都放行，也不检查数值数组的元素；Go 把 `null` 解码成零值。改为只有契约标为可空的字段接受 `null`，数组和映射的元素一并检查 | 「TestInvalidCommandsLeaveNoRevision」新增 11 个 `null` 用例（坐标、旋转、`visible`、`name`、`order`、更新里的可选字段、`params`、`objects`、`ambient`、删除 ID、参数值），断言 `validation_failed` 且不产生修订 |
+| `POST /creative/assets` 提交 `kind: "scene"` 返回 500 | 资产入口复用共享内容校验，C1 加了 `scene` 分支后能通过校验，进写事务才撞上 `creative_assets_kind_check`。在共享层把 `scene` 列为文档专用类型：`Validate`、`WriteAndRetain` 拒绝，文档层改用 `WriteDocumentAndRetain` | `creativelibrary` 「TestCreateAssetRefusesSceneContent」：返回校验错误，资产和内容修订都没有写入 |
+| （核对第 3 项时发现）画布 `replace_content` 能把一份未经场景 schema 校验的内容挂到 `core.scene` 节点上 | 同一根因：`replace_content` 把节点类型去掉 `core.` 前缀当作内容类型，场景节点得到 `scene`，再走共享写入。随第 3 项一起修正 | `creativescene` 「TestNewSceneFromCanvas」末尾：带授权信息的 `replace_content` 返回校验错误，内容修订数不变 |
+
+门禁：`golangci-lint`（`creativecontent`、`creativedocument`、`creativescene`、`creativelibrary`、`creativecanvas`、`creativegeneration`、`creativeagent`、`platform/httpapi`）0 issues；上述 8 个包 `go test -count=1` 全部通过。`make check-go` 传多个包时 `test-go` 只测第一个（`PKG` 往下传没加引号），这次直接用同样参数跑 `go test`。前端发出的请求只在 `parent_id` 上写 `null`，不受新检查影响。
+
 ## 验收对照
 
 简称：`scene` = `backend/internal/creativescene/scene_test.go`，`model` / `restore` / `concurrency` 同目录对应文件；`http` = `backend/internal/platform/httpapi/creative_documents_test.go`；`unit` = `frontend/scripts/creative-scene.test.ts`，`interaction` = `frontend/scripts/creative-scene-interaction.test.ts`；`e2e` = `frontend/scripts/creative-scene.e2e.mjs`。

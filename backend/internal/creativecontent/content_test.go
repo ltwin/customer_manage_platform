@@ -15,6 +15,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
@@ -223,15 +224,36 @@ func TestRevisionSequenceDoesNotRewindAfterUnreferencedRevisionIsRemoved(t *test
 	}
 }
 
-func TestSceneKindCarriesOnlyAJSONObject(t *testing.T) {
+// A scene is a document snapshot: direct content writes (assets, canvas node
+// content, generation) refuse it, and the document path still checks that it
+// carries only a JSON object.
+func TestSceneKindIsWrittenOnlyThroughADocument(t *testing.T) {
+	_, a, _ := setup(t)
 	scene := func(raw string) creativecontent.Draft {
 		d := textDraft("")
 		d.Kind = "scene"
 		d.Payload = creativecontent.Payload{Scene: json.RawMessage(raw)}
 		return d
 	}
-	if err := creativecontent.Validate(scene(` {"objects":[]}`)); err != nil {
-		t.Fatalf("scene object rejected: %v", err)
+	ok := scene(` {"objects":[]}`)
+	if creativecontent.Validate(ok) == nil {
+		t.Fatal("direct content accepted a scene")
+	}
+	if _, err := write(t, a, ok, "", nil, func(store.TxAccountScope, creativecontent.Revision) error { return nil }); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("direct write: %v", err)
+	}
+	errReached := errors.New("reached retain")
+	document := func(d creativecontent.Draft) error {
+		return a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			if err := tx.RequireCreativeCapability(t.Context(), "manual_write"); err != nil {
+				return err
+			}
+			_, err := creativecontent.WriteDocumentAndRetain(t.Context(), tx, d, func(creativecontent.Revision) error { return errReached })
+			return err
+		})
+	}
+	if err := document(ok); !errors.Is(err, errReached) {
+		t.Fatalf("document write: %v", err)
 	}
 	body := "x"
 	withBody := scene(`{}`)
@@ -246,8 +268,8 @@ func TestSceneKindCarriesOnlyAJSONObject(t *testing.T) {
 		"with body": withBody,
 		"on text":   text,
 	} {
-		if creativecontent.Validate(d) == nil {
-			t.Errorf("%s: accepted", name)
+		if err := document(d); !errors.Is(err, creativeops.ErrValidation) {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

@@ -100,7 +100,21 @@ type Revision struct {
 	OriginNodeID  *string              `json:"-"`
 }
 
+// documentKinds are snapshots of a document type. Only the document layer
+// writes them (WriteDocumentAndRetain), after checking the type's own schema;
+// content that clients and the assistant submit directly, as assets, canvas
+// node content or generation output, can never be one.
+var documentKinds = map[string]bool{"scene": true}
+
+// Validate checks content submitted directly; document kinds are refused.
 func Validate(d Draft) error {
+	if documentKinds[d.Kind] {
+		return creativeops.ErrValidation
+	}
+	return validate(d)
+}
+
+func validate(d Draft) error {
 	if d.Kind != "scene" && len(d.Payload.Scene) != 0 {
 		return creativeops.ErrValidation
 	}
@@ -150,7 +164,17 @@ func WriteAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, s
 	if IsMediaKind(draft.Kind) && sourceID == "" {
 		return Revision{}, creativeops.ErrValidation
 	}
-	return write(ctx, tx, draft, nil, sourceID, originNodeID, retain)
+	return write(ctx, tx, draft, nil, sourceID, originNodeID, retain, Validate)
+}
+
+// WriteDocumentAndRetain creates a document snapshot revision, the one way to
+// write a document kind. Its caller (creativedocument) has checked the
+// snapshot against the document type.
+func WriteDocumentAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, retain func(Revision) error) (Revision, error) {
+	if IsMediaKind(draft.Kind) {
+		return Revision{}, creativeops.ErrValidation
+	}
+	return write(ctx, tx, draft, nil, "", nil, retain, validate)
 }
 
 // WriteMediaAndRetain creates the first revision of verified media. Objects are
@@ -159,11 +183,11 @@ func WriteMediaAndRetain(ctx context.Context, tx store.TxAccountScope, draft Dra
 	if !IsMediaKind(draft.Kind) || len(objects) == 0 {
 		return Revision{}, creativeops.ErrValidation
 	}
-	return write(ctx, tx, draft, objects, "", nil, retain)
+	return write(ctx, tx, draft, objects, "", nil, retain, Validate)
 }
 
-func write(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []ObjectBinding, sourceID string, originNodeID *string, retain func(Revision) error) (Revision, error) {
-	if err := Validate(draft); err != nil {
+func write(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []ObjectBinding, sourceID string, originNodeID *string, retain func(Revision) error, check func(Draft) error) (Revision, error) {
+	if err := check(draft); err != nil {
 		return Revision{}, err
 	}
 	if retain == nil {

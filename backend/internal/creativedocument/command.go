@@ -459,7 +459,7 @@ func persist(ctx context.Context, tx store.TxAccountScope, t Type, cur Current, 
 	if declaration == "" {
 		draft.Rights = creativecontent.RightsDeclarationInput{}.OrDefault()
 	}
-	r, err := creativecontent.WriteAndRetain(ctx, tx, draft, "", nil, func(r creativecontent.Revision) error {
+	r, err := creativecontent.WriteDocumentAndRetain(ctx, tx, draft, func(r creativecontent.Revision) error {
 		return insertRevision(ctx, tx, cur.Document.ID, next, r.ID, w.title, actor, w.restoredFrom, changed, annotated, removed, unitJSON)
 	})
 	if err != nil {
