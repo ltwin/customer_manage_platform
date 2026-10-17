@@ -1,0 +1,67 @@
+{
+  "uid": "9f8bcaa9-5b8e-4314-b5b4-7576bbc0ab61",
+  "revision": 3,
+  "id": "scene-procedural-geometry",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-editor-3d",
+  "designBinding": {
+    "version": 3,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "data:场景文档",
+      "api:读取场景",
+      "api:提交场景命令",
+      "patterns:几何模块契约",
+      "patterns:客户端代码沙箱",
+      "data:模型内容",
+      "api:场景模型命令"
+    ],
+    "delivers": [
+      "patterns:几何模块契约",
+      "patterns:客户端代码沙箱",
+      "data:模型内容",
+      "api:场景模型命令"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-17T10:45:57.330Z",
+  "updatedAt": "2026-10-17T13:56:22.336Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "data-migration",
+      "concurrency",
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-17T13:56:22.292Z",
+      "contentHash": "0be4eda0dc572cbe"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-17T13:56:22.292Z",
+      "contentHash": "b5b406c8bc879793",
+      "deltaHash": "f2553e306d82df2d"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

@@ -46,10 +46,18 @@ export default function build({ params, THREE, lib, rng }) {
 
 - **参数类型**：`number`（`default`、`min`、`max` 必填，`step`、`unit` 可选）、`integer`、`boolean`、`enum`（`options` 1–32 项）、`color`（`#rrggbb`）。每项可带 `label`，最多 32 项。
 - **坐标与单位**：米，Y 轴向上，正面朝 +Z。原点：`floor` 为底面中心，`wall` 为背面底边中心，`ceiling` 为顶面中心，`free` 为几何中心。
-- **依赖**：`THREE`、`lib` 和 `rng` 都由宿主注入，模块内不得 `import`。`lib` 是平台的建模标准库，按版本发布（`lib@1`），模块文本里声明 `export const lib_version = 1`，省略时为 1。`rng` 是带种子的确定性随机数；`Math.random`、`Date` 在沙箱内不可用。
-- **材质**：只能使用 `MeshStandardMaterial`（或 `lib.material(slot, hint)` 生成的同类材质）。材质名 `slot:<id>` 表示可分配材质预设的槽位，`userData.hint` 给语义提示（如 `stone`、`wood`）。不得使用 `ShaderMaterial` / `RawShaderMaterial`、外部纹理 URL 或视频纹理。程序化外观由编辑器材质库在渲染时提供。
+- **依赖**：`THREE`、`lib` 和 `rng` 都由宿主注入，模块内不得出现 `import` 语句或动态 `import()`。`lib` 是平台的建模标准库，按版本发布（`lib@1`），模块文本里声明 `export const lib_version = 1`，省略时为 1。`rng` 是带种子的确定性随机数。`Math.random` 在沙箱内被替换为每次编译从固定种子开始的确定性序列（three.js 创建对象时用它生成 UUID，不能禁用）；`Date` 不可用。
+- **`lib@1`**（发布后行为不再改变，需要新能力时发布 `lib@2`，沙箱同时内置所有已发布版本）：
+  - `lib.material(slot, hint?)`：名为 `slot:<slot>` 的 `MeshStandardMaterial`，`userData.hint = hint`；同一次编译里同名槽返回同一个材质。
+  - `lib.subtract(a, b)`、`lib.union(a, b)`、`lib.intersect(a, b)`：两个 `Mesh` 按各自的世界变换做布尔运算（`three-bvh-csg`，保留材质分组），返回位于原点的新 `Mesh`。
+  - `lib.extrude(shape, depth, {bevel?})`：`shape` 是 `THREE.Shape` 或二维点数组，返回 `BufferGeometry`。
+  - `lib.lathe(points, segments = 32)`：二维轮廓绕 Y 轴旋转，返回 `BufferGeometry`。
+  - `lib.array(object, count, step)`：线性阵列，`step` 为 `[x,y,z]`，返回 `Group`。
+  - `lib.radial(object, count, radius, axis = 'y')`：环形阵列，返回 `Group`。
+- **材质**：只能使用 `MeshStandardMaterial`（或 `lib.material(slot, hint)` 生成的同类材质）的常量参数。材质名 `slot:<id>` 表示可分配材质预设的槽位，`userData.hint` 给语义提示（如 `stone`、`wood`）。不得使用 `ShaderMaterial` / `RawShaderMaterial`，也不得使用任何纹理（外部 URL、数据纹理、视频纹理）。程序化外观由编辑器材质库在渲染时提供。导出的 GLB 必须落在 `data: 模型内容` 的静态 GLB 子集内：没有形变、骨骼、动画、灯光和摄像机。
 - **命名约定**（进入 manifest）：对象名 `part:<id>` 表示可寻址部件，用于点选改某个部位；空对象 `anchor:<id>` 表示挂点。
-- **产物**：沙箱返回 GLB（经 `GLTFExporter` 二进制导出）和 manifest：`{bounds:{min:[x,y,z],max:[x,y,z]}, triangles, slots:[{id,hint}], parts:[id], anchors:[{id,position:[x,y,z]}]}`。GLB 是几何事实源，只有代码、参数或 `lib_version` 变化时才重新编译。
+- **几何**：只接受三角网格（GLB 中 primitive 的 `mode` 为 4）；线和点会被拒绝。
+- **产物**：沙箱返回 GLB（经 `GLTFExporter` 二进制导出）和规范化的模块信息 `{contract_version, lib_version, mount, params_schema, params}`（`params` 为补齐默认值后实际使用的值）。manifest 不由沙箱提供，由宿主和服务端从 GLB 算出：`{bounds:{min:[x,y,z],max:[x,y,z]}, triangles, slots:[{id,hint}], parts:[id], anchors:[{id,position:[x,y,z]}]}`。GLB 是几何事实源，只有代码、参数或 `lib_version` 变化时才重新编译。
 - **上限**（初始值，见 design 未决 #3）：代码 ≤ 64 KiB；编译 ≤ 5 秒；三角形 ≤ 300k；GLB ≤ 16 MiB。
 - **为什么**：只用 primitive 的 JSON 表达力不够；整个场景是一段代码则无法支持手动编辑、点选修改和撤销。以物件为粒度写代码，既有建模自由度，又让场景编排可编辑。先例见 research §3（Pascal authored objects）。
 - **不适用于**：内置基础体是前端打包的可信模块，遵守同一契约，但不经沙箱、不烘焙。外部 GLB 导入（下一版）不经过本契约。
@@ -58,14 +66,17 @@ export default function build({ params, THREE, lib, rng }) {
 ## patterns: ADD 客户端代码沙箱
 
 - **约定**：任何来自模型或助手的代码，只能在满足以下条件的环境中执行：
-  1. 独立的 `<iframe sandbox="allow-scripts">`（不含 `allow-same-origin`，因此是 opaque origin），内容由平台自带的沙箱页面提供，CSP 至少包括 `default-src 'none'; script-src 'self' blob:; connect-src 'none'; img-src blob: data:`。
-  2. 实际编译在沙箱页面内部的 Worker 中进行，宿主通过 `postMessage` 传入代码、参数和 `lib_version`，只接收 GLB 的 ArrayBuffer、manifest 和错误信息。传出的消息有固定结构，宿主逐字段校验。
-  3. 宿主为每次编译设硬超时（5 秒）；超时后销毁 Worker，必要时重建 iframe。沙箱不持有凭证，不能访问 cookie、存储、父页面 DOM 和网络，也不能导航顶层页面。
-  4. 宿主用 `GLTFLoader` 解析返回的 GLB；解析失败按编译失败处理。
+  1. 独立的 `<iframe sandbox="allow-scripts">`（不含 `allow-same-origin`，因此是 opaque origin），内容是平台自带的沙箱页面 `/scene-sandbox/sandbox.html`（具体文件路径；该前缀下找不到的文件返回 404，不回退到应用首页）。页面由 HTTP 头下发 CSP，模板只有一份（`frontend/public/scene-sandbox/csp.txt`）：
+     `default-src 'none'; script-src <站点源>/scene-sandbox/ blob:; worker-src blob:; connect-src 'none'; img-src blob: data:; style-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors <站点源>`。
+     `script-src` 和 `frame-ancestors` 必须写明确的站点源，不能用 `'self'`：WebKit 在 opaque origin 里不把 `'self'` 匹配到站点源（穿刺实测）。限定到沙箱路径，避免代码对其他路径发起带 cookie 的脚本请求。
+  2. 实际编译在沙箱页面内部的 **classic** Worker 中进行，Worker 从页面内嵌的源码经 Blob URL 创建（Chromium 拒绝 opaque origin 里从 Blob 创建 module Worker）。**每次编译新建一个 Worker**，结束即销毁，避免上一次的代码改写 three.js 或 `lib` 影响下一次。
+  3. 宿主通过 `postMessage` 传入代码、参数和 `lib_version`，只接收 GLB 的 ArrayBuffer、规范化的模块信息和错误信息。只接受来自该 iframe 的消息；传出的消息有固定结构，宿主逐字段校验，超长或结构不符一律丢弃。模块信息按不可信 JSON 校验（与服务端同一套参数定义规则）；代码哈希由宿主对自己发出的代码计算，不取沙箱的值。
+  4. 宿主为每次编译设硬超时（5 秒）；超时后移除 iframe 并重建。沙箱不持有凭证，不能访问 cookie、站点存储、父页面 DOM 和网络，也不能导航顶层页面。
+  5. **沙箱回传的内容不可信**：宿主先按 `data: 模型内容` 的静态 GLB 子集做与服务端相同的预检，并按同一算法从顶点数据重新计算 manifest、检查上限；预检不通过按编译失败处理。预检通过后才交给 `GLTFLoader`，并用 `LoadingManager.setURLModifier` 拒绝 `blob:`、`data:` 以外的地址，否则 GLB 里的 `uri` 会让可信页面带着 cookie 发请求。服务端另以 worker 从 GLB 算出的 manifest 为准。
 - **为什么**：助手会读网页，网页内容可能把恶意代码注入生成代码。代码在摄影师浏览器里执行，和摄影师的登录会话同处一个浏览器，所以必须隔离。
-- **验收**：C2 交付安全样例集（尝试 `fetch`、`XMLHttpRequest`、`WebSocket`、`document.cookie`、`localStorage`、`indexedDB`、`parent.document`、`top.location`、死循环、超大输出），全部被阻断或在时限内终止，并纳入 `make check-frontend`。
+- **验收**：C2 交付安全样例集（尝试 `fetch`、`XMLHttpRequest`、`WebSocket`、`EventSource`、动态 `import`、`importScripts`、`document.cookie`、`localStorage`、`indexedDB`、`parent.document`、`top.location`、`eval`、死循环、内存耗尽、超大输出、GLB 内含外链 URI），全部被阻断或在时限内终止，外部地址收不到请求。样例集在 Chromium 上纳入 `make check-frontend`；WebKit 用环境变量手动运行，结果记入 verification。穿刺记录见子项 C2 的 `discovery/research/sandbox-spike.md`。
 - **不适用于**：前端自带的可信代码（内置基础体、材质库）。
-- **备选**：安全样例无法在 iframe + Worker 方案下全部通过时，改用 QuickJS-wasm 执行，契约其余部分不变（design 未决 #2）。
+- **备选**：将来某个目标浏览器的样例无法全部通过时，改用 QuickJS-wasm 执行，契约其余部分不变。
 
 ## data: ADD 场景文档
 
@@ -133,7 +144,11 @@ export default function build({ params, THREE, lib, rng }) {
   - `creative_contents.kind = 'model'`。
   - 每个版本一条 `creative_content_revisions`（`schema_version = 1`）。
   - GLB 存为 blob，经 `creative_content_objects` 以 `role='original'` 绑定；缩略图 PNG 以 `role='thumbnail'` 绑定。
-  - 上传走 `creative_uploads`，`declared_kind` 加 `model`，校验格式加 `model/gltf-binary`（`.glb`）。
+  - 上传走 `creative_uploads`，`declared_kind` 加 `model`，校验格式加 `model/gltf-binary`（`.glb`），上限 16 MiB，只允许暂存目标。
+  - **两种形态**：
+    - 暂存形态：worker 校验 GLB 通过后写入，载荷只有 `{format, manifest}`，manifest 由服务端从 GLB 算出；由暂存候选持有，只供 `commit_model` 消费，不能被场景引用，也不能被采用到资产或画布节点。候选被消费后（`adopted_target_kind = 'document'`）失去持有方，按 GC 回收。
+    - 完整形态：`commit_model` 写入，载荷为下表结构；GLB 与缩略图对象复用暂存修订的 blob，不复制字节。
+  - **写入口**：`model` 不能经通用写入口（`creativecontent.Validate` / `WriteAndRetain`）写入，资产、画布 `replace_content`、生成输出都写不进来。暂存形态只由 `WriteMediaAndRetain`（worker）写，完整形态只由 `WriteModelAndRetain`（`commit_model`）写。
 - **角色**：权威主数据，内容修订不可变。
 - **所有权**：由 `creativescene` 的 `commit_model` 写入（消费暂存上传）；`creativelibrary` 存入资产库时只引用同一修订，不复制字节（复制语义由「不可变 + 编辑时分叉」实现，见 I4、I7）。
 
@@ -154,15 +169,18 @@ export default function build({ params, THREE, lib, rng }) {
 | `model.name_hint` | string ≤ 80 | 否 | 助手或摄影师起的名字 |
 
 ### 访问模式与保证
-- **GLB 校验**（worker 的 verify 阶段，Go 实现，不执行代码）：
-  - magic 为 `glTF`，version 为 2，长度与 chunk 一致；JSON chunk 可解析。
-  - `buffers[].uri` 必须为空（只用 BIN chunk）；`images[].uri` 只允许空或 `data:image/png|jpeg`。
-  - accessor 计数与 BIN 长度相符。
-  - 三角形数 ≤ 上限，按 indices 或 POSITION 计算。
-  - 字节 ≤ 16 MiB。
-  - 不合规时上传标记为 failed，返回 `creative_state_conflict`（经暂存状态呈现）。
-- **提交时**：manifest 的 `bounds` 和 `triangles` 必须与服务端从 GLB 计算的结果一致（容差 1e-4 m），不一致则拒绝。服务端以自己的计算为准。
-- **读取**：GLB 和缩略图走现有媒体读取票据（`IssueTicket` / `Open`）。
+- **接受的 GLB 子集**（worker 的 verify 阶段用 Go 实现，编辑器宿主用同一算法预检；不执行代码，文件里的任何声明都不直接采信；不在子集内的一律拒绝）：
+  - 容器：magic 为 `glTF`，version 为 2，总长度与实际一致；JSON 块加至多一个 BIN 块，4 字节对齐。
+  - 缓冲：至多一个 `buffer`，没有 `uri`。
+  - 场景树：恰好一个 `scene`；节点下标全部有效，每个节点至多一个父节点，无环；变换只用 TRS 或 `matrix` 之一，数值有限。
+  - 网格：primitive 的 `mode` 为 4；属性只允许 `POSITION`（`FLOAT VEC3`，必有）、`NORMAL`、`TANGENT`、`TEXCOORD_0/1`、`COLOR_0`；不允许 `targets`、`JOINTS_*`、`WEIGHTS_*`。
+  - 访问器：不用 `sparse`；按组件对齐；`byteStride` ≥ 元素大小；全部数据落在 `bufferView` 和 BIN 内；索引值小于顶点数；索引数或非索引顶点数是 3 的倍数。
+  - 不允许 `images`、`textures`、`samplers`、`skins`、`animations`、`cameras`；`extensionsRequired` 为空，`extensionsUsed` 只允许 `KHR_materials_emissive_strength`。
+  - 预算：节点 ≤ 10000，遍历到的 primitive 实例 ≤ 10000，三角形 ≤ 300000，字节 ≤ 16 MiB。
+  - 不合规时上传以 `failed` 结束，失败码沿用现有的 `media_unsupported`。
+- **manifest 的算法**：三角形数按场景树遍历累加；每个 primitive 的局部范围**从 POSITION 实际数值算出**，并与访问器声明的 `min` / `max` 逐分量核对（必须存在且相等，否则拒绝）；包围盒取局部范围的 8 个角点经节点世界矩阵变换后合并（与 three.js `Box3.setFromObject` 非精确模式一致）；槽位取材质名 `slot:<id>` 与 `extras.hint`，部件取节点名 `part:<id>`，挂点取节点名 `anchor:<id>` 及其世界坐标，名称取 JSON 原文；槽位 ≤ 32、部件 ≤ 200、挂点 ≤ 200。
+- **提交时**：manifest 必须与暂存形态中服务端从 GLB 算出的一致，不一致则拒绝。比对规则：`slots`、`parts`、`anchors` 先按 `id` 排序；`id`、`hint`、`triangles` 精确相等；`bounds` 与挂点坐标容差 1e-4 m。名称取 GLB JSON 原文（three.js 加载后会删掉节点名里的 `:`）。写入完整形态时使用服务端的值。
+- **读取**：GLB 和缩略图走现有媒体读取票据（`IssueTicket` / `Open`），角色分别为 `original` 和 `thumbnail`（票据角色加 `thumbnail`）。
 
 ### 生命周期与演进
 - 持有方：场景修订引用表、资产、画布节点（后续若有）。三者均登记进 `creativereference.LiveOwnerCondition` 和守卫测试。没有持有方的修订按媒体 GC 规则回收。媒体 GC 的类型范围（`creativemedia/gc.go` 的 `unheldMediaRevision`）目前只含 image / video / audio，C2 必须把 `model` 加进去并登记守卫测试；上线时先升级 creative-worker，再开放模型写入。
@@ -418,22 +436,24 @@ Content-Type: application/json
 |---|---|---|
 | `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容） | 无场景单元（不改快照） |
 | `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
-| `set_instance_model` | `object_id`、`model`（`{content_revision_id}` 或 `{ref}`）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时还涉及所有引用同一旧修订的对象的内容单元 |
+| `set_instance_model` | `object_id`、`model`（`{content_revision_id}` 或 `{ref}`）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
 
 - **分叉规则（I4）**：
   - `base_content_id` 被其他实例或资产引用时，`commit_model` 仍然在该内容上追加修订。是否让其他实例跟随，由 `set_instance_model` 的 `scope` 决定。
   - 资产持有的旧修订不受影响，因为资产引用的是修订而不是内容的最新版。
   - 编辑器和助手在 `scope = "this"` 且共享时，应传入不带 `base_content_id` 的 `commit_model`，即新建内容（分叉）。
 - **持有方交接**：`commit_model` 在场景类型的 `Apply` 中新建模型内容，使用底座传入的 `Retain` 回调预登记引用（底座 `patterns: 文档类型端口`）。
-- **校验**：暂存上传属于本账号；GLB 已通过结构校验；manifest 与服务端计算一致；`code_sha256` 正确；参数符合 schema。
-- **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`。
+- **校验**：暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` 必须出现在引用它的操作之前。消费后两个暂存候选标为已被文档采用。
+- **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。
 - **失败响应**（在基础接口之上增加）：
 
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 409 | `creative_state_conflict` | 暂存上传不存在、已过期、已消费或尚未就绪 | 重新上传 |
-| 400 | `validation_failed` | manifest 与 GLB 不符、哈希不符、参数越界、`ref` 未定义或重复 | 修正 |
-| 404 | `not_found` | `content_revision_id` 不存在、不是 `model` 或不可用 | 重读 |
+| 409 | `creative_upload_unavailable` | 暂存上传不存在、属于其他账号、已过期、已消费或尚未就绪 | 重新上传 |
+| 400 | `validation_failed` | manifest 与 GLB 不符、哈希不符、参数越界、上传类型不符、`ref` 未定义 / 重复 / 未被本批引用、单批 `commit_model` 超过 16 个 | 修正 |
+| 400 | `creative_model_unavailable` | `content_revision_id` 不存在、不是完整形态的 `model` 或不可展示 | 重读后重新选择 |
+
+不使用 404 和 `creative_state_conflict`：编辑器把命令返回的 404 当作文档不存在、把 `creative_state_conflict` 当作文档进了回收站。
 
 - **示例**：
 ```json
