@@ -1,12 +1,12 @@
 {
   "uid": "9f8bcaa9-5b8e-4314-b5b4-7576bbc0ab61",
-  "revision": 3,
+  "revision": 6,
   "id": "scene-procedural-geometry",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 3,
+    "version": 4,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -30,12 +30,14 @@
       "patterns:几何模块契约",
       "patterns:客户端代码沙箱",
       "data:模型内容",
-      "api:场景模型命令"
+      "api:场景模型命令",
+      "api:读取场景",
+      "data:场景文档"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-17T10:45:57.330Z",
-  "updatedAt": "2026-10-17T13:56:22.336Z",
+  "updatedAt": "2026-10-17T14:01:17.951Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -48,20 +50,46 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-17T13:56:22.292Z",
-      "contentHash": "0be4eda0dc572cbe"
+      "at": "2026-10-17T14:01:16.102Z",
+      "contentHash": "697b94a6d1970711"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-17T13:56:22.292Z",
-      "contentHash": "b5b406c8bc879793",
-      "deltaHash": "f2553e306d82df2d"
+      "at": "2026-10-17T14:01:16.102Z",
+      "contentHash": "b680f457a871cd95",
+      "deltaHash": "dcc01ebc3298b1b9"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-17T13:56:22.292Z",
+      "contentHash": "0be4eda0dc572cbe",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-17T13:56:22.292Z",
+      "contentHash": "b5b406c8bc879793",
+      "deltaHash": "f2553e306d82df2d",
+      "role": "design"
+    }
+  ],
   "revisions": [],
+  "baseline": {
+    "commit": "faace7eedef921a082ab6380bf95d95ef3a5320b",
+    "at": "2026-10-17T14:01:17.783Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "0c4e4b4b4e63b6598a7e6ef4460738799be4fdcb9118a5a6cc1ee28ef4221239"
+    },
+    "preExisting": [
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-17-scene-procedural-geometry/meta.json",
+      ".lti/snapshots/0c4e4b4b4e63b6598a7e6ef4460738799be4fdcb9118a5a6cc1ee28ef4221239.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
