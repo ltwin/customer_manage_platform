@@ -214,11 +214,12 @@ export class SceneSession {
   edit(
     requested: WireOp[],
     label: string,
-    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string; baseline?: string } = {},
+    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string; baseline?: string; id?: string } = {},
   ): Intent | null {
     const { base, view, queue, trashed, missing } = this.state
     if (!base || !view || trashed || missing) return null
-    const { baseline: baselineID, ...rest } = options
+    // A model edit names its intent up front: its placeholders are registered before the view shows them.
+    const { baseline: baselineID, id: presetID, ...rest } = options
     const frozen = baselineID === undefined ? undefined : this.baselines.get(baselineID)
     if (baselineID !== undefined && (!frozen || frozen.broken)) return null
     const ops = withoutNoops(requested, view)
@@ -236,7 +237,7 @@ export class SceneSession {
     // Units the slow edit started from keep the revisions it saw then.
     if (frozen) for (const u of units) if (u in frozen.expected) expected[u] = frozen.expected[u]
     const intent: Intent = {
-      id: newIntentID(),
+      id: presetID ?? newIntentID(),
       createdAt: new Date(this.clock.now()).toISOString(),
       ops,
       expected,

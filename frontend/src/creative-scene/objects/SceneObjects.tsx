@@ -151,6 +151,18 @@ function CameraFrustum({ aspect, focal, sensor, edge }: { aspect: string; focal:
   )
 }
 
+/** A new code model being baked, translucent at its drop point; it cannot be picked. */
+export function GhostModel({ revision, position, models }: { revision: string; position: number[]; models: Readonly<Record<string, SceneModel>> }) {
+  const t = useMemo(() => transformToView({ position, rotation: [0, 0, 0, 1], scale: [1, 1, 1] }), [position])
+  return (
+    <group position={t.position}>
+      <group quaternion={docToView}>
+        <ModelMesh revision={revision} summary={models[revision]} edge={null} ghost />
+      </group>
+    </group>
+  )
+}
+
 /** Groups draw nothing; while selected they show their axes. */
 function GroupMarker() {
   return <axesHelper args={[0.5]} />

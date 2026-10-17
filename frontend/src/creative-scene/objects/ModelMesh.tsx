@@ -12,10 +12,13 @@ import { clay, unavailableGrey } from './look.ts'
 // Code-built models are often open (a lathe without caps), so both sides draw.
 const clayMaterial = new MeshStandardMaterial({ color: clay, roughness: 0.92, metalness: 0, side: DoubleSide })
 const unavailableMaterial = new MeshStandardMaterial({ color: unavailableGrey, roughness: 1, metalness: 0 })
+// A model still being baked and saved, at the point it will land.
+const ghostMaterial = new MeshStandardMaterial({ color: clay, roughness: 0.92, metalness: 0, side: DoubleSide, transparent: true, opacity: 0.45, depthWrite: false })
+const noRaycast = () => {}
 
 type Loaded = { revision: string; parts: ModelParts | null }
 
-export function ModelMesh({ revision, summary, edge }: { revision: string; summary: SceneModel | undefined; edge: string | null }) {
+export function ModelMesh({ revision, summary, edge, ghost = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean }) {
   const usable = summary?.usable !== false
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   useEffect(() => {
@@ -32,11 +35,11 @@ export function ModelMesh({ revision, summary, edge }: { revision: string; summa
   const bounds = summary?.manifest?.bounds
   if (!usable || (loaded?.revision === revision && !loaded.parts)) return <BoundsBox bounds={bounds} edge={edge} unavailable />
   // While a new revision loads, the previous one stays on screen.
-  if (!loaded?.parts) return <BoundsBox bounds={bounds} edge={edge} />
+  if (!loaded?.parts) return ghost ? null : <BoundsBox bounds={bounds} edge={edge} />
   return (
     <group>
       {loaded.parts.meshes.map((m, i) => (
-        <mesh key={i} geometry={m.geometry} matrix={m.matrix} matrixAutoUpdate={false} material={clayMaterial} castShadow receiveShadow>
+        <mesh key={i} geometry={m.geometry} matrix={m.matrix} matrixAutoUpdate={false} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
           {edge && <Outlines thickness={3} color={edge} />}
         </mesh>
       ))}
