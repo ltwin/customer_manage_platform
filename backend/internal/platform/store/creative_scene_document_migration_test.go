@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackSceneDocument is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackSceneDocument undoes 0074 and then 0073; every older migration's
+// rollback helper starts here.
 func rollbackSceneDocument(t *testing.T, url string) {
 	t.Helper()
+	rollbackModelContent(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-scene-document", err)
 	}
@@ -40,6 +41,7 @@ func TestSceneDocumentMigrationAddsKindAndRefusesLossyRollback(t *testing.T) {
 	if _, err = db.Exec(insert, "ccnt_scene"); err != nil {
 		t.Fatal("scene kind rejected", err)
 	}
+	rollbackModelContent(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "scene documents exist") {
 		t.Fatal("lossy scene rollback allowed", err)
 	}
