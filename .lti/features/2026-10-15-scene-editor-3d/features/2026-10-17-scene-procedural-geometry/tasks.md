@@ -16,7 +16,8 @@
 
 ## 3. 编译沙箱
 
-- [ ] 3.1 沙箱页面：`package.json` 加 `three-bvh-csg`、`three-mesh-bvh`、`acorn`（精确版本）与沙箱构建前置；`scripts/build-scene-sandbox.mjs` 两次 IIFE 构建输出 `public/scene-sandbox/`（加入 `.gitignore`）；`sandbox/harness.ts`（每次编译新建 classic Worker）、`worker.ts`（design「Worker 内的步骤」1–6）、`lib.ts`（`lib@1` 六类函数）、`protocol.ts`、`csp.txt`；Vite 插件提供 `/scene-sandbox/sandbox.html` 并带 CSP；Go `staticHandler` 对 `scene-sandbox/` 前缀带 CSP 返回、模板缺失 404、前缀下不回退首页，`httpapi` 测试覆盖。完成判据：开发服务器下默认模板在沙箱中编译出 GLB
+- [x] 3.1 沙箱页面：`package.json` 加 `three-bvh-csg`、`three-mesh-bvh`、`acorn`（精确版本）与沙箱构建前置；`scripts/build-scene-sandbox.mjs` 两次 IIFE 构建输出 `public/scene-sandbox/`（加入 `.gitignore`）；`sandbox/harness.ts`（每次编译新建 classic Worker）、`worker.ts`（design「Worker 内的步骤」1–6）、`lib.ts`（`lib@1` 六类函数）、`protocol.ts`、`csp.txt`；Vite 插件提供 `/scene-sandbox/sandbox.html` 并带 CSP；Go `staticHandler` 对 `scene-sandbox/` 前缀带 CSP 返回、模板缺失 404、前缀下不回退首页，`httpapi` 测试覆盖。完成判据：开发服务器下默认模板在沙箱中编译出 GLB
+  - 实施记录：Worker 中不依赖 three.js 的步骤（语法与 import 检查、参数定义规范化与补齐、行号解析、种子随机数）放在 `sandbox/compile.ts`，便于 node 单测；默认模板放在 `sandbox/template.ts`。Worker 导出前对灯光、摄像机、线 / 点、蒙皮 / 实例网格、形变、非 `MeshStandardMaterial` 材质和纹理给出明确提示（GLB 子集照样拒绝，这里只是提前报原因）。开发服务器下 Chromium 与 WebKit 编译默认模板、断裂（CSG）与 `lib@1` 全部函数，两端 GLB 逐字节一致，均通过 `creativeglb.Inspect`
 - [ ] 3.2 宿主：`host.ts`（单编译、5 秒超时移除重建、只收 `event.source` 匹配的消息、逐字段校验、`module` 按服务端规则校验、`crypto.subtle` 计算代码哈希）；`inspect.ts`（`creativeglb.Inspect` 的 TS 版，读取同一组 `testdata` 夹具，两端接受 / 拒绝与 manifest 一致）；`thumbnail.ts`（预检通过后才交给 `GLTFLoader`，`setURLModifier` 只放行 `blob:` / `data:`）。补一个由 `GLTFExporter` 实际导出的默认模板夹具，Go 与前端都通过。`creative-scene-model.test.ts` 先写协议、`module` 校验、上限、运行错误行号解析（AC-4、AC-5）
 - [ ] 3.3 安全样例集 `scripts/scene-sandbox.test.mjs`：真实沙箱 + 攻击者端口，覆盖网络（fetch、XHR、WebSocket、EventSource、动态 `import`、`importScripts`）、cookie、`localStorage`、IndexedDB、父页面 DOM、顶层导航、`eval`、死循环、内存炸弹、GLB 内含外链 URI，断言攻击者端口 0 请求、宿主心跳正常、之后的编译照常；Chromium 纳入 `make check-frontend`，`SCENE_SANDBOX_BROWSERS=webkit` 手动运行（AC-6）
 

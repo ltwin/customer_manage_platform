@@ -26,3 +26,6 @@ dist-ssr
 .od-skills/
 browser/
 proto-design/
+
+# 场景代码沙箱构建产物（scripts/build-scene-sandbox.mjs）
+public/scene-sandbox/
