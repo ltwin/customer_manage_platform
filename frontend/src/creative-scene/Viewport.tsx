@@ -170,7 +170,7 @@ function Environment({ environment }: { environment: SceneEnvironment }) {
 
 /** Swaps between perspective and orthographic, keeping where the view looks. */
 function OrthoSwitch({ ortho }: { ortho: boolean }) {
-  const { set, camera, size } = useThree()
+  const { set, camera, size, invalidate } = useThree()
   const controls = useThree((s) => s.controls) as CameraControlsImpl | null
   const pending = useRef<{ position: Vector3; target: Vector3 } | null>(null)
   useEffect(() => {
@@ -198,7 +198,8 @@ function OrthoSwitch({ ortho }: { ortho: boolean }) {
     if (!p || !controls) return
     pending.current = null
     void controls.setLookAt(p.position.x, p.position.y, p.position.z, p.target.x, p.target.y, p.target.z, false)
-  }, [controls])
+    invalidate()
+  }, [controls, invalidate])
   return null
 }
 
@@ -538,6 +539,9 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const k = (isOrtho ? 1 / (camera as OrthographicCamera).zoom : controls.distance * 0.0015)
         void controls.truck(a.dx * k, a.dy * k, false)
       }
+      // A move without transition raises no event, and the viewport only
+      // renders on demand: without this the view waits for the next click.
+      invalidate()
     }
     // Safari reports trackpad pinches as gesture events.
     let gestureScale = 1
@@ -554,6 +558,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       const isOrtho = (camera as OrthographicCamera).isOrthographicCamera === true
       if (isOrtho) void controls.zoom((step - 1) * (camera as OrthographicCamera).zoom, false)
       else void controls.dolly((step - 1) * Math.max(1, controls.distance), false)
+      invalidate()
     }
     el.addEventListener('pointerdown', onPointerDown, true)
     window.addEventListener('pointermove', onPointerMove)

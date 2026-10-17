@@ -753,6 +753,37 @@ await check('without WebGL2 the view explains instead of going blank', async () 
   await context.close()
 })
 
+await check('trackpad swipes and pinches move the view at once, without a click', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  await page.getByRole('button', { name: '视图' }).click()
+  await page.getByRole('menuitem', { name: '触控板' }).click()
+  const { x, y, box } = await viewportCenter(page)
+  const view = () => page.screenshot({ clip: box })
+  await page.mouse.move(x, y)
+  // The first wheel settles the device guess, a re-render that would hide the bug.
+  await page.mouse.wheel(1, 0)
+  await sleep(300)
+  let before = await view()
+  // Two-finger swipe orbits; the frame must change with no click after it.
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(40, 0)
+  await sleep(300)
+  let after = await view()
+  assert.ok(!before.equals(after), 'a two-finger swipe redraws the view by itself')
+  before = after
+  // A pinch arrives as a wheel with ctrlKey.
+  await page.keyboard.down('Control')
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -30)
+  await page.keyboard.up('Control')
+  await sleep(300)
+  after = await view()
+  assert.ok(!before.equals(after), 'a pinch redraws the view by itself')
+  assert.equal(server.commands.length, 1, 'moving the view saves nothing')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('the editor makes room for the open assistant panel', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)
