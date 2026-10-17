@@ -24,6 +24,23 @@ import {
 } from '../src/creative-scene/sandbox/inspect.ts'
 import { createLib1 } from '../src/creative-scene/sandbox/lib.ts'
 import {
+  localContent,
+  localRevision,
+  parsePlaceholder,
+  withModelRevisions,
+  type SceneState,
+} from '../src/creative-scene/state/apply.ts'
+import {
+  applyIntent,
+  asConfirmed,
+  mapModelIDs,
+  resolveModelIDs,
+  sendable,
+  waitsOnModels,
+  type Intent,
+} from '../src/creative-scene/state/intents.ts'
+import type { SceneObject } from '../src/creative-scene/api.ts'
+import {
   isCompileRequest,
   readSandboxMessage,
   type CompileRequest,
@@ -503,4 +520,63 @@ test('lib@1', () => {
   assert.ok(Math.abs(turned.y - Math.PI / 2) < 1e-9, 'each copy turns with its angle')
   assert.deepEqual(lib.radial(box(), 2, 1, 'x').children[0].position.toArray(), [0, 1, 0])
   assert.throws(() => lib.radial(box(), 2, 1, 'w' as 'x'), /axis/)
+})
+
+const objectID = (n: number) => `sobj_${String(n).padStart(21, '0')}`
+const modelInstance = (n: number, model: SceneObject['model']): SceneObject => ({
+  id: objectID(n), kind: 'model_instance', name: '', parent_id: null, order: n,
+  transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false,
+  model, material_slots: {},
+})
+const emptyScene: SceneState = {
+  title: '场景',
+  scene: {
+    environment: { sky: { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null },
+    render: { mode: 'clay' },
+    objects: [],
+  },
+}
+const commitOp = { op: 'commit_model', ref: 'm', glb_upload_id: 'ccup_1', thumbnail_upload_id: 'ccup_2', generator: {}, manifest: {} } as unknown as Intent['ops'][number]
+const draft = (id: string, ops: Intent['ops'], extra: Partial<Intent> = {}): Intent =>
+  ({ id, createdAt: '2026-10-17T00:00:00Z', ops, expected: {}, state: 'pending', label: '编辑', ...extra })
+
+test('model placeholders: format, projection and rewriting', () => {
+  assert.equal(localRevision('i1', 'm'), 'local:i1:m')
+  assert.equal(localContent('i1', 'm'), 'local-content:i1:m')
+  assert.deepEqual(parsePlaceholder('local:9b2c-11:pillar_2'), { intent: '9b2c-11', ref: 'pillar_2', content: false })
+  assert.deepEqual(parsePlaceholder('local-content:i1:m'), { intent: 'i1', ref: 'm', content: true })
+  for (const id of ['ccrv_1', 'local:i1', 'local:i1:Bad', 'local::m', 'local:a:b:c']) assert.equal(parsePlaceholder(id), null, id)
+
+  const add = { op: 'add_objects' as const, objects: [modelInstance(1, { ref: 'm' }), modelInstance(2, { content_revision_id: 'ccrv_x' })] }
+  const set = { op: 'set_instance_model' as const, object_id: objectID(2), model: { ref: 'm' }, scope: 'this' as const }
+  const resolved = withModelRevisions([commitOp, add, set], (ref) => `rev-${ref}`)
+  assert.deepEqual((resolved[1] as typeof add).objects.map((o) => o.model), [{ content_revision_id: 'rev-m' }, { content_revision_id: 'ccrv_x' }])
+  assert.deepEqual((resolved[2] as typeof set).model, { content_revision_id: 'rev-m' })
+  assert.equal(resolved[0], commitOp)
+
+  const a = draft('ia', [commitOp, add, set])
+  const shown = applyIntent(emptyScene, a)
+  assert.deepEqual(shown.scene.objects.map((o) => o.model?.content_revision_id), ['local:ia:m', 'local:ia:m'], 'an intent shows its own models by placeholder')
+  assert.equal(waitsOnModels(a).size, 0, 'its own {ref}s are not waits')
+  assert.ok(sendable(a))
+
+  const copy = draft('ib', [{ op: 'add_objects', objects: [modelInstance(3, { content_revision_id: 'local:ia:m' })] }])
+  const retune = draft('ic', [{ ...commitOp, base_content_id: 'local-content:ia:m' } as Intent['ops'][number]], {
+    projection: { put: [modelInstance(4, { content_revision_id: 'local:ia:m' })], fields: { [objectID(5)]: { model: { content_revision_id: 'local:ia:m' } } }, removed: [] },
+  })
+  assert.deepEqual([...waitsOnModels(copy)], ['ia'])
+  assert.deepEqual([...waitsOnModels(retune)], ['ia'], 'base_content_id and projections count')
+  assert.ok(!sendable(copy) && !sendable(retune), 'a placeholder keeps an intent from going out')
+
+  const models = { m: { content_id: 'ccnt_1', content_revision_id: 'ccrv_1' } }
+  const fixed = resolveModelIDs(retune, 'ia', models)
+  assert.equal((fixed.ops[0] as { base_content_id: string }).base_content_id, 'ccnt_1')
+  assert.equal(fixed.projection!.put[0].model?.content_revision_id, 'ccrv_1')
+  assert.equal(fixed.projection!.fields[objectID(5)].model?.content_revision_id, 'ccrv_1')
+  assert.ok(sendable(fixed))
+  assert.equal(resolveModelIDs(retune, 'other', models), retune, 'other receipts leave it alone')
+  assert.deepEqual(mapModelIDs(copy, (id) => id.toUpperCase()).ops, [{ op: 'add_objects', objects: [modelInstance(3, { content_revision_id: 'LOCAL:IA:M' })] }])
+
+  const confirmed = asConfirmed(a, models)
+  assert.deepEqual(applyIntent(emptyScene, confirmed).scene.objects.map((o) => o.model?.content_revision_id), ['ccrv_1', 'ccrv_1'])
 })

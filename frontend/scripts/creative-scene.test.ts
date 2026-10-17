@@ -723,3 +723,185 @@ test('history groups a photographer\'s nearby edits and one assistant run; resto
   assert.equal(groups[2].objectCount, 2)
   assert.equal(groups[3].latest, '5')
 })
+
+// --- model edits: placeholders across intents, frozen baselines ------------
+
+import type { WireOp } from '../src/creative-scene/state/apply.ts'
+
+const generator = {
+  language: 'three-module' as const, contract_version: 1 as const, lib_version: 1 as const, code: 'export default 1',
+  code_sha256: 'sha256-x', params_schema: {}, params: {}, mount: 'floor' as const,
+}
+const manifest = { bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 12, slots: [], parts: [], anchors: [] }
+const commit = (ref: string, extra: Record<string, unknown> = {}): WireOp =>
+  ({ op: 'commit_model', ref, glb_upload_id: `ccup_${ref}`, thumbnail_upload_id: `ccup_${ref}_t`, generator, manifest, ...extra }) as WireOp
+const instance = (n: number, model: SceneObject['model'], order = n) =>
+  obj(n, 'model_instance', null, order, { model, material_slots: {} })
+const content = (n: number) => `object:${id(n)}:content`
+const viewModel = (session: SceneSession, n: number) =>
+  session.state.view!.scene.objects.find((o) => o.id === id(n))?.model?.content_revision_id
+const noPlaceholders = (v: unknown) => !JSON.stringify(v).includes('local')
+
+test('a copy and a retune made before the new model\'s receipt wait for it, then go out with real IDs', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  const a = session.edit([commit('m'), { op: 'add_objects', objects: [instance(10, { ref: 'm' })] }], '新建代码模型')!
+  assert.equal(transport.sent.length, 1, 'its own ref goes out as is')
+  assert.equal(viewModel(session, 10), `local:${a.id}:m`, 'the view names the model by placeholder')
+
+  const copy = session.state.view!.scene.objects.find((o) => o.id === id(10))!
+  session.edit([{ op: 'add_objects', objects: [{ ...copy, id: id(11), order: 11 }] }], '复制')
+  session.edit([
+    commit('n', { base_content_id: `local-content:${a.id}:m` }),
+    { op: 'set_instance_model', object_id: id(10), model: { ref: 'n' }, scope: 'this' },
+  ], '调整参数')
+  assert.equal(transport.sent.length, 1, 'placeholders keep both edits waiting')
+  assert.equal(viewModel(session, 11), `local:${a.id}:m`)
+  const retune = session.state.queue[2]
+  assert.equal(viewModel(session, 10), `local:${retune.id}:n`)
+
+  const reads = transport.reads
+  await confirmLast(transport, 4, ['objects', `object:${id(10)}`, content(10)], {
+    models: { m: { content_id: 'ccnt_m', content_revision_id: 'ccrv_m1' } },
+  })
+  assert.equal(session.state.base!.scene.objects.find((o) => o.id === id(10))?.model?.content_revision_id, 'ccrv_m1')
+  assert.ok(noPlaceholders(session.state.base), 'the base never holds a placeholder')
+  assert.ok(transport.reads > reads, 'the new model\'s summary comes with a read')
+  const sentCopy = transport.last().payload.operations[0] as { objects: SceneObject[] }
+  assert.equal(sentCopy.objects[0].model?.content_revision_id, 'ccrv_m1', 'the copy went out with the real revision')
+
+  await confirmLast(transport, 5, ['objects', `object:${id(11)}`, content(11)])
+  const sentRetune = transport.last().payload
+  assert.equal((sentRetune.operations[0] as { base_content_id: string }).base_content_id, 'ccnt_m')
+  assert.deepEqual(sentRetune.expected, { [content(10)]: '4' })
+  await confirmLast(transport, 6, [content(10)], { models: { n: { content_id: 'ccnt_m', content_revision_id: 'ccrv_m2' } } })
+  assert.ok(noPlaceholders(session.state), 'nothing in the session keeps a placeholder')
+
+  assert.equal(undo.undo(), 'sent')
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '5', units: [content(10)] }])
+  assert.equal(viewModel(session, 10), 'ccrv_m1', 'undoing the retune shows the earlier revision')
+})
+
+test('a rejected model commit blocks what names it, as an invalid edit and never the trash', async () => {
+  for (const [code, status, message] of [
+    ['creative_upload_unavailable', 409, '模型上传已失效，请重新生成'],
+    ['creative_model_unavailable', 400, '模型 ccrv_x 不可用'],
+  ] as const) {
+    const { transport, session } = await started([box(1)])
+    const a = session.edit([commit('m'), { op: 'add_objects', objects: [instance(10, { ref: 'm' })] }], '新建代码模型')!
+    session.edit([{ op: 'add_objects', objects: [{ ...instance(11, { content_revision_id: `local:${a.id}:m` }) }] }], '复制')
+    session.edit([moveTo([id(1)], 3)], '移动')
+    transport.last().reject({ status, code, message: '模型 ccrv_x 不可用' })
+    await tick()
+    const [group] = session.state.conflicts
+    assert.equal(group.kind, 'invalid', code)
+    assert.equal(group.message, message, code)
+    assert.equal(group.intents.length, 2, `${code}: the copy waits with it`)
+    assert.equal(group.intents[1].state, 'blocked')
+    assert.equal(session.state.trashed, false)
+    assert.equal(session.state.missing, false)
+    assert.deepEqual(transport.last().payload.operations, [moveTo([id(1)], 3)], 'unrelated edits still save')
+  }
+})
+
+test('a baseline keeps the revisions an edit saw; a change made elsewhere meanwhile is a conflict', async () => {
+  const { transport, clock, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  const b = session.baseline([content(1)], { source: 'ccrv_a' })!
+  transport.doc = docAt([instance(1, { content_revision_id: 'ccrv_other' })], 4, { [content(1)]: 4 })
+  clock.advance(1000)
+  session.invalidate()
+  await tick()
+  assert.equal(session.state.base!.unit_revs[content(1)], '4', 'the re-read moved the base')
+
+  const ops: WireOp[] = [commit('m', { base_content_id: 'ccnt_a' }), { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' }]
+  session.edit(ops, '调整参数', { baseline: b.id })
+  assert.deepEqual(transport.last().payload.expected, { [content(1)]: '3' }, 'the frozen revision, not the re-read one')
+  transport.last().reject(conflictOn(content(1)))
+  await tick()
+  assert.equal(session.state.conflicts[0].kind, 'conflict')
+  assert.equal(session.state.view!.scene.objects[0].model?.content_revision_id, 'ccrv_other', 'the other write stays')
+})
+
+test('a baseline follows this session\'s own edits and breaks when one it waits for is rejected', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  const slots = (name: string): WireOp => ({ op: 'update_objects', updates: [{ object_id: id(1), material_slots: { main: { preset: name } } }] } as WireOp)
+  const x = session.edit([slots('stone')], '材质')!
+  const b = session.baseline([content(1)], { source: 'ccrv_a' })!
+  assert.deepEqual(b.expected, { [content(1)]: { after: x.id } })
+  await confirmLast(transport, 4, [content(1)])
+  assert.deepEqual(session.baselineOf(b.id)!.expected, { [content(1)]: '4' }, 'our receipt resolves it')
+
+  const y = session.edit([slots('wood')], '材质')!
+  assert.deepEqual(session.baselineOf(b.id)!.expected, { [content(1)]: { after: y.id } }, 'a later own edit is waited for, not conflicted with')
+  transport.last().reject({ status: 400, code: 'validation_failed', message: '材质不存在' })
+  await tick()
+  assert.equal(session.baselineOf(b.id)!.broken, true)
+  const ops: WireOp[] = [commit('m'), { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' }]
+  assert.equal(session.edit(ops, '调整参数', { baseline: b.id }), null, 'a broken baseline cannot be saved')
+  session.dropBaseline(b.id)
+  assert.equal(session.baselineOf(b.id), undefined)
+})
+
+test('a new model that only collides on objects is rebased with its commit', async () => {
+  const { transport, session } = await started([box(1)])
+  session.edit([commit('m'), { op: 'add_objects', objects: [instance(10, { ref: 'm' }, 2)] }], '新建代码模型')
+  transport.doc = sceneDoc([box(1), box(2, null, 2)], 4)
+  transport.last().reject(conflictOn('objects'))
+  await tick()
+  await tick()
+  assert.equal(transport.sent.length, 2)
+  const [sentCommit, add] = transport.last().payload.operations as [{ op: string }, { objects: SceneObject[] }]
+  assert.equal(sentCommit.op, 'commit_model')
+  assert.equal(add.objects[0].order, 3)
+})
+
+test('copying an instance retuned moments ago waits for the model even though no unit is shared', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  const a = session.edit([
+    commit('m', { base_content_id: 'ccnt_a' }),
+    { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' },
+  ], '调整参数')!
+  const copy = { ...session.state.view!.scene.objects[0], id: id(2), order: 2 }
+  assert.equal(copy.model?.content_revision_id, `local:${a.id}:m`)
+  const b = session.edit([{ op: 'add_objects', objects: [copy] }], '复制')!
+  assert.deepEqual(b.expected, { objects: '3' }, 'nothing to wait for by revision')
+  assert.equal(transport.sent.length, 1, 'the placeholder alone holds it back')
+  await confirmLast(transport, 4, [content(1)], { models: { m: { content_id: 'ccnt_a', content_revision_id: 'ccrv_a2' } } })
+  const sent = transport.last().payload.operations[0] as { objects: SceneObject[] }
+  assert.equal(sent.objects[0].model?.content_revision_id, 'ccrv_a2')
+})
+
+test('when that retune is rejected, the copy naming its model is blocked with it', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  session.edit([
+    commit('m', { base_content_id: 'ccnt_a' }),
+    { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' },
+  ], '调整参数')
+  const copy = { ...session.state.view!.scene.objects[0], id: id(2), order: 2 }
+  session.edit([{ op: 'add_objects', objects: [copy] }], '复制')
+  transport.last().reject({ status: 409, code: 'creative_upload_unavailable', message: 'x' })
+  await tick()
+  assert.equal(transport.sent.length, 1, 'the copy never went out with a placeholder')
+  assert.deepEqual(session.state.conflicts[0].intents.map((i) => i.label), ['调整参数', '复制'])
+  assert.equal(session.state.queue.length, 0)
+})
+
+test('reapplying a conflicted retune renames the placeholders of what it blocked', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  session.edit([
+    commit('m', { base_content_id: 'ccnt_a' }),
+    { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' },
+  ], '调整参数')
+  session.edit([{ op: 'add_objects', objects: [{ ...session.state.view!.scene.objects[0], id: id(2), order: 2 }] }], '复制')
+  transport.doc = docAt([instance(1, { content_revision_id: 'ccrv_other' })], 4, { [content(1)]: 4 })
+  transport.last().reject(conflictOn(content(1)))
+  await tick()
+  session.reapply(session.state.conflicts[0].id)
+  await tick()
+  const [again, copy] = session.state.queue
+  assert.equal(viewModel(session, 2), `local:${again.id}:m`, 'the copy follows the reapplied commit')
+  assert.deepEqual(again.expected, { [content(1)]: '4' })
+  await confirmLast(transport, 5, [content(1)], { models: { m: { content_id: 'ccnt_a', content_revision_id: 'ccrv_a3' } } })
+  assert.equal(transport.last().intent.id, copy.id)
+  assert.equal((transport.last().payload.operations[0] as { objects: SceneObject[] }).objects[0].model?.content_revision_id, 'ccrv_a3')
+})
