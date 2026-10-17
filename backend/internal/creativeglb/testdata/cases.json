@@ -1,0 +1,223 @@
+[
+  {
+    "name": "basic",
+    "file": "basic.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          -0.5,
+          0,
+          -0.5
+        ],
+        "max": [
+          0.5,
+          1,
+          0.5
+        ]
+      },
+      "triangles": 12,
+      "slots": [
+        {
+          "id": "stone",
+          "hint": "stone"
+        }
+      ],
+      "parts": [
+        "body"
+      ],
+      "anchors": []
+    }
+  },
+  {
+    "name": "hierarchy",
+    "file": "hierarchy.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          1,
+          0,
+          -1
+        ],
+        "max": [
+          3,
+          2,
+          0.5
+        ]
+      },
+      "triangles": 26,
+      "slots": [],
+      "parts": [],
+      "anchors": [
+        {
+          "id": "top",
+          "position": [
+            2,
+            2,
+            0
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "multi-material",
+    "file": "multi-material.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          -0.5,
+          0,
+          -3.5
+        ],
+        "max": [
+          0.5,
+          1,
+          3.5
+        ]
+      },
+      "triangles": 36,
+      "slots": [
+        {
+          "id": "metal"
+        },
+        {
+          "id": "wood",
+          "hint": "wood"
+        }
+      ],
+      "parts": [],
+      "anchors": []
+    }
+  },
+  {
+    "name": "parts-anchors",
+    "file": "parts-anchors.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          -1.5,
+          0,
+          -0.5
+        ],
+        "max": [
+          1.5,
+          1,
+          0.5
+        ]
+      },
+      "triangles": 36,
+      "slots": [
+        {
+          "id": "frame"
+        }
+      ],
+      "parts": [
+        "door",
+        "panel"
+      ],
+      "anchors": [
+        {
+          "id": "handle",
+          "position": [
+            0,
+            0.5,
+            0.5
+          ]
+        },
+        {
+          "id": "hinge",
+          "position": [
+            0.5,
+            0.5,
+            0
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "bad-bounds-mismatch",
+    "file": "bad-bounds-mismatch.glb",
+    "reason": "bounds_mismatch"
+  },
+  {
+    "name": "bad-index-out-of-range",
+    "file": "bad-index-out-of-range.glb",
+    "reason": "index_range"
+  },
+  {
+    "name": "bad-index-not-triangles",
+    "file": "bad-index-not-triangles.glb",
+    "reason": "index_range"
+  },
+  {
+    "name": "bad-cycle",
+    "file": "bad-cycle.glb",
+    "reason": "scene_graph"
+  },
+  {
+    "name": "bad-shared-child",
+    "file": "bad-shared-child.glb",
+    "reason": "scene_graph"
+  },
+  {
+    "name": "bad-morph-target",
+    "file": "bad-morph-target.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-skin",
+    "file": "bad-skin.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-animation",
+    "file": "bad-animation.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-texture-external-uri",
+    "file": "bad-texture-external-uri.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-buffer-external-uri",
+    "file": "bad-buffer-external-uri.glb",
+    "reason": "buffer"
+  },
+  {
+    "name": "bad-unknown-extension",
+    "file": "bad-unknown-extension.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-sparse-accessor",
+    "file": "bad-sparse-accessor.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-lines",
+    "file": "bad-lines.glb",
+    "reason": "unsupported_feature"
+  },
+  {
+    "name": "bad-shear-matrix",
+    "file": "bad-shear-matrix.glb",
+    "reason": "scene_graph"
+  },
+  {
+    "name": "bad-part-name",
+    "file": "bad-part-name.glb",
+    "reason": "name"
+  },
+  {
+    "name": "bad-container-length",
+    "file": "bad-container-length.glb",
+    "reason": "container"
+  },
+  {
+    "name": "bad-too-many-triangles",
+    "file": "bad-too-many-triangles.glb",
+    "reason": "limit"
+  }
+]
