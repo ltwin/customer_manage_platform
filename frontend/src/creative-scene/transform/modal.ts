@@ -24,8 +24,12 @@ export type View = {
   ray(screen: Vector2): Ray
   /** Screen position in pixels of a world point. */
   toScreen(world: Vector3): Vector2
-  /** Unit vector from a world point toward the camera. */
-  toViewer(at: Vector3): Vector3
+  /**
+   * Unit vector out of the screen toward the viewer. Free moves happen in
+   * the plane parallel to the screen, as in Blender, so a sideways drag
+   * never drifts up or down in perspective.
+   */
+  toViewer(): Vector3
 }
 
 export type ModalState = {
@@ -222,7 +226,7 @@ function grab(s: ModalState, p: Vector2, c: Constraint, typed: (number | null)[]
     deltas = s.targets.map((tg) => axisDir(tg, c.axis, c.space).multiplyScalar(t))
     values = [t]
   } else {
-    const toViewer = s.view.toViewer(s.pivot)
+    const toViewer = s.view.toViewer()
     const normal = c.kind === 'plane' ? axisDir(active, c.axis, c.space) : toViewer
     const a = onPlane(normal, s.pivot, r0)
     const b = onPlane(normal, s.pivot, r1)
@@ -258,7 +262,7 @@ function rotate(s: ModalState, p: Vector2, c: Constraint, typed: (number | null)
   // Keep counting past ±180° by picking the turn nearest the last angle.
   theta += Math.round((s.lastAngle - theta) / (2 * Math.PI)) * 2 * Math.PI
   const state = { ...s, lastAngle: theta }
-  const toViewer = s.view.toViewer(s.pivot)
+  const toViewer = s.view.toViewer()
   let degrees = (theta * 180) / Math.PI
   if (step) degrees = snapTo(degrees, step)
   const fromTyped = typed?.[0] != null
@@ -322,4 +326,19 @@ export function targetFrom(
     new Vector3(...(transform.scale as [number, number, number])),
   )
   return { id, world: parentWorld.clone().multiply(local), parentWorld: parentWorld.clone() }
+}
+
+/** A target's local transform for a new world matrix (gizmo drags). */
+export function localFromWorld(t: Target, world: Matrix4): LocalTransform {
+  const r = toLocal(t, world)
+  return { ...r, scale: r.scale.map((v) => Math.min(maxScale, Math.max(minScale, v))) as [number, number, number] }
+}
+
+/** True when nothing moved, so confirming would only add a no-op revision. */
+export function unchanged(targets: readonly Target[], results: readonly LocalTransform[]): boolean {
+  return results.every((r, i) => {
+    const before = toLocal(targets[i], targets[i].world)
+    const near = (a: readonly number[], b: readonly number[]) => a.every((v, k) => Math.abs(v - b[k]) < 1e-6)
+    return near(r.position, before.position) && near(r.scale, before.scale) && Math.abs(Math.abs(new Quaternion(...r.rotation).dot(new Quaternion(...before.rotation))) - 1) < 1e-9
+  })
 }

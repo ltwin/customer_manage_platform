@@ -95,6 +95,14 @@ export function changedUnits(intent: Intent, state: SceneState): string[] {
   return [...out]
 }
 
+/** The units an intent removes, for receipts too large to list them. */
+export function removedUnits(intent: Intent, before: SceneState): string[] {
+  const ids = new Set<string>(intent.projection?.removed ?? [])
+  for (const op of intent.ops)
+    if (op.op === 'remove_objects') for (const id of subtree(before.scene.objects, op.object_ids)) ids.add(id)
+  return [...ids].flatMap((id) => [placementUnit(id), contentUnit(id)])
+}
+
 export function applyIntent(state: SceneState, intent: Intent): SceneState {
   return intent.projection
     ? applyPatch(state, intent.projection)

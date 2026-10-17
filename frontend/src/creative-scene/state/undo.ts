@@ -1,15 +1,12 @@
 import type { CommandReceipt, SceneDocument, SceneObject } from '../api.ts'
 import {
   contentKeys,
-  contentUnit,
   objectOfUnit,
   placementKeys,
-  placementUnit,
-  subtree,
   type ProjectionPatch,
   type SceneState,
 } from './apply.ts'
-import { applyIntent, changedUnits, type Intent } from './intents.ts'
+import { applyIntent, changedUnits, removedUnits, type Intent } from './intents.ts'
 import type { SceneSession } from './sync.ts'
 
 // Cmd+Z only reverses this session's own confirmed edits. A step stays valid
@@ -59,13 +56,6 @@ function patchFor(from: SceneState, to: SceneState, units: string[]): Projection
   return patch
 }
 
-function removedBy(intent: Intent, before: SceneState): string[] {
-  const ids = new Set<string>(intent.projection?.removed ?? [])
-  for (const op of intent.ops)
-    if (op.op === 'remove_objects') for (const id of subtree(before.scene.objects, op.object_ids)) ids.add(id)
-  return [...ids].flatMap((id) => [placementUnit(id), contentUnit(id)])
-}
-
 export class UndoStack {
   private undoSteps: Step[] = []
   private redoSteps: Step[] = []
@@ -81,11 +71,12 @@ export class UndoStack {
   private inFlight = new Map<string, Step>()
   private readonly session: SceneSession
   private listeners = new Set<() => void>()
+  private readonly stop: () => void
   notice = ''
 
   constructor(session: SceneSession) {
     this.session = session
-    session.observe({
+    this.stop = session.observe({
       confirmed: (intent, receipt, before) => this.confirmed(intent, receipt, before),
       read: (doc) => this.observe(doc),
       sending: (intent) => this.sending(intent),
@@ -93,6 +84,12 @@ export class UndoStack {
     })
     const base = session.state.base
     if (base) this.observe(base)
+  }
+
+  /** Stops following the session; the editor closed. */
+  dispose() {
+    this.stop()
+    this.listeners.clear()
   }
 
   subscribe(listener: () => void): () => void {
@@ -147,7 +144,7 @@ export class UndoStack {
     const r = Number(receipt.revision)
     this.own.add(r)
     // A large receipt lists nothing; the intent says what it removed.
-    const removed = receipt.reset_required ? removedBy(intent, before) : receipt.removed_units
+    const removed = receipt.reset_required ? removedUnits(intent, before) : receipt.removed_units
     for (const u of removed) this.ownRemoved.set(u, r)
     const pending = this.inFlight.get(intent.id)
     if (pending) {

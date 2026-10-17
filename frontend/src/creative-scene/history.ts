@@ -19,8 +19,11 @@ export type HistoryGroup = {
 const sameWindowMs = 2 * 60 * 1000
 const actorName: Record<string, string> = { photographer: '你', agent: '助手', system: '系统' }
 
+const whole = (i: RevisionItem) => i.restored_from !== null || i.changed_units.includes('*')
+
 function joins(group: HistoryGroup, prev: RevisionItem, item: RevisionItem): boolean {
-  if (prev.restored_from !== null || item.restored_from !== null) return false
+  // Restores and the creation stand alone, so each stays a point to go back to.
+  if (whole(prev) || whole(item)) return false
   if (prev.actor_kind !== item.actor_kind) return false
   if (item.actor_kind === 'photographer')
     return Date.parse(prev.created_at) - Date.parse(item.created_at) <= sameWindowMs
@@ -40,6 +43,7 @@ function objectsOf(items: RevisionItem[]): number {
 
 function labelOf(items: RevisionItem[], actor: string): string {
   const only = items.length === 1 ? items[0] : null
+  if (only?.restored_from == null && only?.changed_units.includes('*')) return '新建场景'
   if (only?.restored_from != null)
     return only.changed_units.includes('*')
       ? `恢复到第 ${only.restored_from} 版`
@@ -50,7 +54,7 @@ function labelOf(items: RevisionItem[], actor: string): string {
 /**
  * Groups a newest-first revision list: a photographer's revisions within two
  * minutes of each other, or one assistant run's revisions, form one group;
- * every restore stands alone.
+ * every restore and the creation stand alone.
  */
 export function groupRevisions(items: readonly RevisionItem[]): HistoryGroup[] {
   const groups: { group: HistoryGroup; items: RevisionItem[] }[] = []

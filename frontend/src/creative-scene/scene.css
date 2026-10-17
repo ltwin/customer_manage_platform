@@ -1,10 +1,99 @@
-/* 场景编辑视图：沿用 .cc-maximized-document 的覆盖层定位，中间是视口。 */
+/* 场景编辑视图：沿用 .cc-maximized-document 的覆盖层定位。
+   左侧工具栏与侧栏（物件列表 + 属性），中间视口与状态栏，右侧可选历史版本。 */
 .cc-scene-editor { outline: none; }
-.cc-scene-editor > header { padding: 10px 16px; }
-.cc-scene-editor h2 { font-size: 17px; }
+.cc-scene-editor > header { padding: 8px 12px; gap: 8px; }
+.cc-scene-editor h2 { font-size: 16px; flex: 0 1 auto; max-width: 28%; }
 .cc-scene-body { position: relative; flex: 1; min-height: 0; display: flex; }
-.cc-scene-viewport { flex: 1; min-width: 0; }
 .cc-scene-message { margin: auto; padding: 24px; text-align: center; color: var(--muted); }
-/* 助手面板打开时让出右侧，不读取面板内部状态。 */
+
+.cc-scene-menubar { display: flex; gap: 2px; flex: 1; }
+.cc-scene-menubar button { background: none; border: 0; color: var(--fg); padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+.cc-scene-menubar button:hover:not(:disabled) { background: var(--surface-2, #ffffff14); }
+.cc-scene-menubar button:disabled { color: var(--muted); cursor: default; }
+
+.cc-scene-toolbar { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--border); }
+.cc-scene-toolbar button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--fg); cursor: pointer; }
+.cc-scene-toolbar button.is-active { border-color: var(--accent); color: var(--accent); }
+.cc-scene-toolbar button:disabled { opacity: 0.35; cursor: default; }
+
+.cc-scene-sidebar { width: 280px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; }
+.cc-scene-outliner { flex: 1 1 45%; overflow: auto; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.cc-scene-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; font-size: 13px; user-select: none; }
+.cc-scene-row:hover { background: #ffffff0d; }
+.cc-scene-row.is-selected { background: #f28c2826; }
+.cc-scene-row.is-active { background: #f28c2840; }
+.cc-scene-row.is-hidden .cc-scene-row-name { color: var(--muted); }
+.cc-scene-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-scene-row button { background: none; border: 0; color: var(--muted); padding: 2px; cursor: pointer; display: grid; place-items: center; }
+.cc-scene-props { flex: 1 1 55%; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.cc-scene-props.is-empty { color: var(--muted); }
+.cc-scene-props fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.cc-scene-props fieldset:last-of-type { grid-template-columns: minmax(0, 1fr); }
+.cc-scene-props legend { color: var(--muted); padding: 0 4px; font-size: 12px; }
+.cc-scene-props small { color: var(--muted); }
+.cc-scene-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cc-scene-field span { color: var(--muted); font-size: 11px; }
+.cc-scene-field input, .cc-scene-field select, .cc-scene-name { width: 100%; min-width: 0; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+.cc-scene-field input[type='checkbox'] { width: auto; }
+.cc-scene-flags { display: flex; gap: 16px; }
+
+.cc-scene-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cc-scene-viewport { position: relative; flex: 1; min-height: 0; touch-action: none; }
+.cc-scene-viewport canvas { outline: none; }
+.cc-scene-box { position: absolute; border: 1px dashed #ffd27a; background: #ffd27a1f; pointer-events: none; }
+.cc-scene-banner { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: #f28c2829; border-bottom: 1px solid var(--border); font-size: 13px; }
+.cc-scene-conflicts { position: absolute; z-index: 3; top: 12px; left: 12px; right: 140px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.cc-scene-conflict { pointer-events: auto; padding: 10px 12px; border-radius: 10px; background: var(--surface, #1f1f1d); border: 1px solid var(--accent); display: flex; align-items: center; gap: 12px; justify-content: space-between; font-size: 13px; }
+.cc-scene-conflict p { margin: 0; }
+.cc-scene-conflict div { display: flex; gap: 8px; flex: none; }
+
+.cc-scene-status { display: flex; align-items: center; gap: 16px; padding: 5px 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); min-height: 28px; }
+.cc-scene-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.cc-scene-save.is-saved { color: var(--muted); }
+.cc-scene-save.is-saving { color: var(--fg); }
+.cc-scene-save.is-offline, .cc-scene-save.is-conflict, .cc-scene-save.is-missing { color: var(--accent); }
+
+.cc-scene-menu { position: fixed; z-index: 60; min-width: 220px; padding: 4px; border-radius: 10px; background: var(--surface, #1f1f1d); border: 1px solid var(--border); box-shadow: 0 8px 24px #0006; display: flex; flex-direction: column; }
+.cc-scene-menu button { display: flex; justify-content: space-between; gap: 16px; padding: 6px 10px; background: none; border: 0; border-radius: 6px; color: var(--fg); text-align: left; cursor: pointer; font: inherit; font-size: 13px; }
+.cc-scene-menu button:hover:not(:disabled), .cc-scene-menu button:focus-visible { background: #f28c2833; outline: none; }
+.cc-scene-menu button:disabled { color: var(--muted); cursor: default; }
+.cc-scene-menu kbd { color: var(--muted); font-family: inherit; font-size: 12px; }
+.cc-scene-menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+.cc-scene-menu-section { padding: 6px 10px 2px; color: var(--muted); font-size: 11px; }
+.cc-scene-check { display: inline-block; width: 14px; color: var(--accent); }
+.cc-scene-rename input { padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+
+.cc-scene-sheet { position: absolute; z-index: 50; inset: 48px 48px; overflow: hidden; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface, #1f1f1d); border: 1px solid var(--border); box-shadow: 0 12px 40px #0007; }
+.cc-scene-sheet header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.cc-scene-sheet h3 { margin: 0; font-size: 16px; }
+.cc-scene-sheet-body { overflow: auto; padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.cc-scene-sheet h4 { margin: 0 0 6px; font-size: 13px; color: var(--accent); }
+.cc-scene-sheet dl { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.cc-scene-sheet dl div { display: flex; justify-content: space-between; gap: 12px; }
+.cc-scene-sheet dt { color: var(--fg); }
+.cc-scene-sheet dd { margin: 0; color: var(--muted); text-align: right; }
+.cc-scene-sheet kbd { font-family: inherit; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
+
+.cc-scene-hint-card { position: absolute; z-index: 4; left: 16px; bottom: 44px; width: min(360px, calc(100% - 32px)); padding: 14px 16px; border-radius: 12px; background: var(--surface, #1f1f1d); border: 1px solid var(--border); box-shadow: 0 8px 24px #0005; font-size: 13px; }
+.cc-scene-hint-card h4 { margin: 0 0 8px; font-size: 14px; }
+.cc-scene-hint-card ul { margin: 0 0 10px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.cc-scene-hint-close { position: absolute; top: 8px; right: 8px; background: none; border: 0; color: var(--muted); cursor: pointer; }
+
+.cc-scene-history { width: 300px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--border); min-height: 0; }
+.cc-scene-history header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.cc-scene-history h3 { margin: 0; font-size: 14px; }
+.cc-scene-history ol { list-style: none; margin: 0; padding: 6px; overflow: auto; flex: 1; }
+.cc-scene-history li button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--fg); text-align: left; cursor: pointer; font: inherit; font-size: 13px; }
+.cc-scene-history li button span { color: var(--muted); font-size: 12px; }
+.cc-scene-history li button.is-active { border-color: var(--accent); }
+.cc-scene-history > .btn { margin: 8px 12px 12px; }
+
+/* 助手面板打开时让出右侧，不读取面板内部状态；760px 以下面板改为底部抽屉（agent.css），不再让位。 */
 .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: calc(min(380px, 100vw - 16px) + 24px); }
-@media (max-width: 620px) { .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 8px; } }
+@media (max-width: 760px) {
+  .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 12px; }
+}
+@media (max-width: 620px) {
+  .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 8px; }
+  .cc-scene-sidebar, .cc-scene-history { display: none; }
+}

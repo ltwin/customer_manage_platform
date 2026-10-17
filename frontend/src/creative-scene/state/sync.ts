@@ -16,6 +16,7 @@ import {
   expectedFor,
   mergeUpdate,
   project,
+  removedUnits,
   resolveAfter,
   sendable,
   touchedUnits,
@@ -321,12 +322,19 @@ export class SceneSession {
     const before = toState(base)
     const rest = resolveAfter(queue.filter((i) => i.id !== id), id, receipt.revision)
     const r = revision(receipt.revision)
-    if (r === revision(base.revision) + 1 && !receipt.reset_required && !intent.projection) {
+    if (r === revision(base.revision) + 1) {
+      // Our revision follows the base directly: it becomes the base now, so
+      // the next edit expects the right revisions. A receipt too large to
+      // list its units, or an undo the server may settle differently, is
+      // checked by a read as well.
       const unit_revs = { ...base.unit_revs }
-      for (const u of receipt.changed_units) unit_revs[u] = receipt.revision
-      for (const u of receipt.removed_units) delete unit_revs[u]
+      const changed = receipt.reset_required ? changedUnits(intent, before) : receipt.changed_units
+      const removed = receipt.reset_required ? removedUnits(intent, before) : receipt.removed_units
+      for (const u of changed) unit_revs[u] = receipt.revision
+      for (const u of removed) delete unit_revs[u]
       const after = applyIntent(before, intent)
       this.set({ base: { ...base, revision: receipt.revision, unit_revs, title: after.title, scene: after.scene }, queue: rest })
+      if (receipt.reset_required || intent.projection) void this.read()
     } else {
       this.set({ queue: rest })
       // Someone else's revision came in between, or the receipt has no

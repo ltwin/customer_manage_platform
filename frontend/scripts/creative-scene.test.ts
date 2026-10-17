@@ -535,6 +535,31 @@ test('undoing a delete brings the object back and is checked against objects', a
   assert.equal(session.state.view!.scene.objects[0].id, id(1))
 })
 
+test('an undo receipt advances the base at once; the next edit does not wait for the re-read', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  session.edit([{ op: 'remove_objects', object_ids: [id(1)] }], '删除')
+  await confirmLast(transport, 4, ['objects'], { removed_units: [`object:${id(1)}`, `object:${id(1)}:content`] })
+  assert.equal(undo.undo(), 'sent')
+  const reads = transport.reads
+  await confirmLast(transport, 5, [`object:${id(1)}`, `object:${id(1)}:content`, 'objects'])
+  assert.equal(transport.reads, reads + 1, 'the server may settle an undo differently: read it')
+  assert.equal(session.state.base!.revision, '5')
+  assert.equal(session.state.view!.scene.objects[0]?.id, id(1), 'the restored object stays while the read is out')
+  session.edit([moveTo([id(1)], 2)], '移动')
+  assert.deepEqual(transport.last().payload.expected, { [`object:${id(1)}`]: '5' })
+})
+
+test('a receipt too large to list its units still advances what the intent changed', async () => {
+  const { transport, session } = await started([box(1), box(2)])
+  session.edit([{ op: 'remove_objects', object_ids: [id(2)] }, moveTo([id(1)], 1)], '整理')
+  await confirmLast(transport, 4, [], { reset_required: true })
+  const revs = session.state.base!.unit_revs
+  assert.equal(revs[`object:${id(1)}`], '4')
+  assert.equal(revs.objects, '4')
+  assert.equal(revs[`object:${id(2)}`], undefined)
+})
+
 test('undoing an edit that has not been sent drops it without a request', async () => {
   const { transport, session } = await started([box(1), box(2)])
   const undo = new UndoStack(session)
@@ -564,7 +589,7 @@ const rev = (n: number, actor: RevisionItem['actor_kind'], minute: number, extra
   created_at: new Date(Date.UTC(2026, 9, 16, 10, minute)).toISOString(), ...extra,
 })
 
-test('history groups a photographer\'s nearby edits and one assistant run; restores stand alone', () => {
+test('history groups a photographer\'s nearby edits and one assistant run; restores and the creation stand alone', () => {
   const groups = groupRevisions([
     rev(9, 'photographer', 30, { restored_from: '2', changed_units: ['*'] }),
     rev(8, 'agent', 20, { run_id: 'run_b' }),
@@ -574,9 +599,10 @@ test('history groups a photographer\'s nearby edits and one assistant run; resto
     rev(4, 'photographer', 9),
     rev(3, 'photographer', 6),
     rev(2, 'photographer', 5, { restored_from: '1', changed_units: [`object:${id(2)}`], removed_units: [`object:${id(3)}`] }),
+    rev(1, 'photographer', 5, { changed_units: ['*'] }),
   ])
-  assert.deepEqual(groups.map((g) => g.revisions), [['9'], ['8'], ['7', '6'], ['5', '4'], ['3'], ['2']])
-  assert.deepEqual(groups.map((g) => g.label), ['恢复到第 2 版', '助手的修改', '助手的修改', '你的修改', '你的修改', '恢复了 2 处'])
+  assert.deepEqual(groups.map((g) => g.revisions), [['9'], ['8'], ['7', '6'], ['5', '4'], ['3'], ['2'], ['1']])
+  assert.deepEqual(groups.map((g) => g.label), ['恢复到第 2 版', '助手的修改', '助手的修改', '你的修改', '你的修改', '恢复了 2 处', '新建场景'])
   assert.equal(groups[2].objectCount, 2)
   assert.equal(groups[3].latest, '5')
 })

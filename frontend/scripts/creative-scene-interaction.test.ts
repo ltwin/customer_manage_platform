@@ -347,6 +347,12 @@ test('a new primitive goes last at the root, named after its builtin', () => {
   const o = newPrimitive('box@1', [1, 0, 2], [so(0), so(3)], () => sid(9))
   assert.deepEqual([o.id, o.name, o.order, o.parent_id], [sid(9), '方块', 4, null])
   assert.deepEqual(o.transform.position, [1, 0, 2])
+  assert.equal(o.locked, false)
+})
+
+test('a new ground goes to the origin, locked like the one a scene starts with', () => {
+  const g = newPrimitive('ground@1', [1, 0, 2], [so(0)], () => sid(9))
+  assert.deepEqual([g.name, g.locked, g.transform.position], ['地面', true, [0, 0, 0]])
 })
 
 test('duplicating copies descendants under new IDs and puts each copy last under its parent', () => {

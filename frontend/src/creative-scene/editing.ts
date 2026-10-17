@@ -14,22 +14,29 @@ export function nextOrder(objects: readonly SceneObject[], parent: string | null
   return max + 1
 }
 
-/** A new primitive at a point on the ground, last among root objects. */
+export const groundBuiltin = 'ground@1'
+
+/**
+ * A new primitive at a point on the ground, last among root objects. A
+ * ground goes to the origin locked, like the one a new scene starts with,
+ * so clicks keep reaching what stands on it.
+ */
 export function newPrimitive(
   builtin: string,
   position: [number, number, number],
   objects: readonly SceneObject[],
   makeID: () => string = newObjectID,
 ): SceneObject {
+  const ground = builtin === groundBuiltin
   return {
     id: makeID(),
     kind: 'primitive',
     name: builtinSpec(builtin)?.label ?? '',
     parent_id: null,
     order: nextOrder(objects, null),
-    transform: { ...identity, position },
+    transform: { ...identity, position: ground ? [0, 0, 0] : position },
     visible: true,
-    locked: false,
+    locked: ground,
     primitive: { builtin },
   }
 }
