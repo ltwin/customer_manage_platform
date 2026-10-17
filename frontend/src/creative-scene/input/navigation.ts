@@ -44,6 +44,19 @@ export function wheelAction(e: WheelSample, device: Device): WheelAction {
   return e.shiftKey ? { kind: 'pan', dx, dy } : { kind: 'orbit', dx, dy }
 }
 
+/** Radians of camera turn per pixel of two-finger swipe. */
+const orbitSpeed = 0.004
+
+/**
+ * The camera-controls rotate() angles for a two-finger swipe. The view
+ * follows the fingers, like the Shift pan and like Blender with the system's
+ * natural scrolling: fingers moving right (deltaX < 0) turn the scene as a
+ * middle-button drag to the right does, which is a negative azimuth.
+ */
+export function orbitAngles(dx: number, dy: number): [azimuth: number, polar: number] {
+  return [dx * orbitSpeed, dy * orbitSpeed]
+}
+
 /**
  * Guesses the device from recent wheel events, or null when unsure.
  *

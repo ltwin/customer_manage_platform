@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { Box, CircleHelp, History, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { currentAccount } from '../creative-canvas/editor/api.ts'
 import type { ObjectUpdate, Scene } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
 import { clearOp, duplicate, groundBuiltin, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
@@ -23,6 +24,7 @@ import type { WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, type MenuKind } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
+import { readView, viewKey, ViewSaver } from './viewState.ts'
 import { Viewport, type ViewportHandle } from './Viewport.tsx'
 import './scene.css'
 
@@ -56,9 +58,16 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
   useEffect(() => undo.connect(), [undo])
   useSyncExternalStore(
     useCallback((cb) => undo.subscribe(cb), [undo]),
-    () => `${undo.canUndo}:${undo.canRedo}:${undo.notice}`,
+    () => `${undo.canUndo}:${undo.canRedo}`,
   )
-  const ui = useMemo(() => createEditorStore(readPreference(storage())), [])
+  // The view as it was left: camera, selection, tool and panels.
+  const view = useMemo(() => {
+    const key = viewKey(currentAccount(), documentID)
+    const saved = readView(storage(), key)
+    const initial = saved ?? { camera: null, selection: emptySelection, tool: 'box' as const, toolbar: true, sidebar: true, history: false }
+    return { saved, saver: new ViewSaver(storage(), key, initial) }
+  }, [documentID])
+  const ui = useMemo(() => createEditorStore(readPreference(storage()), view.saved), [view])
   const mac = useMemo(() => isMac(), [])
   const [webgl] = useState(webgl2Available)
   const s = useStore(session.store)
@@ -82,18 +91,31 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
     }
   }, [])
   useEffect(() => {
+    // Before the first read there are no objects yet, only a remembered selection.
+    if (!s.view) return
     const sel = ui.getState().selection
     const next = prune(sel, objects)
     if (next !== sel) ui.setState({ selection: next })
-  }, [objects, ui])
+  }, [objects, ui, s.view])
+  useEffect(() => {
+    const { saver } = view
+    const stop = ui.subscribe((state) => saver.ui(state))
+    const flush = () => saver.flush()
+    window.addEventListener('pagehide', flush)
+    return () => {
+      stop()
+      window.removeEventListener('pagehide', flush)
+      saver.flush()
+    }
+  }, [ui, view])
   useEffect(() => {
     if (!u.notice) return
     const t = window.setTimeout(() => ui.setState({ notice: '' }), 4000)
     return () => window.clearTimeout(t)
   }, [u.notice, ui])
-  useEffect(() => {
-    if (undo.notice) ui.setState({ notice: undo.notice })
-  })
+  // Pushed as they happen: copying undo.notice on every render looped, since
+  // each copy re-renders the editor.
+  useEffect(() => undo.onNotice((notice) => ui.setState({ notice })), [undo, ui])
 
   const notify = (notice: string) => ui.setState({ notice })
   const edit = (ops: WireOp[], label: string, options?: Parameters<typeof session.edit>[2]) => session.edit(ops, label, options)
@@ -397,7 +419,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                   object={u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active}
                   count={selected.length}
                   readOnly={readOnly}
-                  onUpdate={(update: ObjectUpdate, text) => edit([{ op: 'update_objects', updates: [update] }], text)}
+                  onUpdate={(update: ObjectUpdate, text, merge) => edit([{ op: 'update_objects', updates: [update] }], text, merge ? { merge } : undefined)}
                 />
               </aside>
             )}
@@ -425,6 +447,8 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                 ui={ui}
                 mac={mac}
                 handle={handle}
+                camera={view.saved?.camera ?? null}
+                onCamera={(camera) => view.saver.camera(camera)}
                 onPick={(id, shift) => ui.setState({ selection: click(ui.getState().selection, id, shift) })}
                 onBox={(ids, mode) => ui.setState({ selection: boxSelect(ui.getState().selection, ids, mode) })}
                 onCommit={(results: LocalTransform[], text, held) => {

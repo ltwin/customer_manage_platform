@@ -24,7 +24,7 @@ import {
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
 import type { Scene, SceneEnvironment, SceneObject } from './api.ts'
-import { axisHeadAt, axisWidget, buttonActions, classifyWheel, resolveDevice, wheelAction, type WheelSample } from './input/navigation.ts'
+import { axisHeadAt, axisWidget, buttonActions, classifyWheel, orbitAngles, resolveDevice, wheelAction, type WheelSample } from './input/navigation.ts'
 import { pickable, topmost } from './input/selection.ts'
 import type { EditorStore, Tool } from './state/sceneStore.ts'
 import { numericKey, numericText } from './transform/numeric.ts'
@@ -47,6 +47,7 @@ import {
 } from './transform/modal.ts'
 import { SceneObjects } from './objects/SceneObjects.tsx'
 import { positionToDoc, positionToView, transformToDoc } from './space.ts'
+import type { CameraView } from './viewState.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -78,6 +79,9 @@ export type ViewportProps = {
   ui: EditorStore
   mac: boolean
   handle: MutableRefObject<ViewportHandle | null>
+  /** Where the camera was left last time, or null for the default view. */
+  camera: CameraView | null
+  onCamera(camera: CameraView): void
   onPick(id: string | null, shift: boolean): void
   onBox(ids: string[], mode: 'set' | 'add' | 'subtract'): void
   onCommit(results: LocalTransform[], label: string, held: string | null): void
@@ -115,6 +119,7 @@ export function Viewport(props: ViewportProps) {
         <SceneObjects scene={props.scene} selected={selected} active={selection.active} />
         <OrthoSwitch ortho={ortho} />
         <CameraControls makeDefault />
+        <ViewKeeper initial={props.camera} onChange={props.onCamera} />
         {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
           <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
         )}
@@ -201,8 +206,9 @@ function OrthoSwitch({ ortho }: { ortho: boolean }) {
   useEffect(() => {
     const isOrtho = (camera as OrthographicCamera).isOrthographicCamera === true
     if (isOrtho === ortho) return
+    // Where a view change in progress ends, so 7 then 5 gives a top orthographic view.
     const target = controls ? controls.getTarget(new Vector3()) : new Vector3()
-    const position = camera.position.clone()
+    const position = controls ? controls.getPosition(new Vector3()) : camera.position.clone()
     const distance = position.distanceTo(target)
     let next: Camera
     if (ortho) {
@@ -210,6 +216,8 @@ function OrthoSwitch({ ortho }: { ortho: boolean }) {
       const height = 2 * distance * Math.tan(((persp.fov ?? 45) * Math.PI) / 360)
       const o = new OrthographicCamera(-size.width / 2, size.width / 2, size.height / 2, -size.height / 2, -5000, 5000)
       o.zoom = size.height / height
+      // The constructor projected at zoom 1; nothing else updates it until a resize.
+      o.updateProjectionMatrix()
       next = o
     } else {
       next = new PerspectiveCamera(45, size.width / size.height, 0.05, 5000)
@@ -226,6 +234,49 @@ function OrthoSwitch({ ortho }: { ortho: boolean }) {
     void controls.setLookAt(p.position.x, p.position.y, p.position.z, p.target.x, p.target.y, p.target.z, false)
     invalidate()
   }, [controls, invalidate])
+  return null
+}
+
+/**
+ * Puts the camera back where it was left, then reports where it goes. It
+ * runs after OrthoSwitch, so a saved orthographic view is applied to the
+ * orthographic camera; nothing is reported before that, so the default view
+ * never overwrites the saved one.
+ */
+function ViewKeeper({ initial, onChange }: { initial: CameraView | null; onChange(c: CameraView): void }) {
+  const { camera, invalidate } = useThree()
+  const controls = useThree((s) => s.controls) as CameraControlsImpl | null
+  const restored = useRef(!initial)
+  const report = useRef(onChange)
+  report.current = onChange
+  useEffect(() => {
+    if (!controls || restored.current || !initial) return
+    const isOrtho = (camera as OrthographicCamera).isOrthographicCamera === true
+    // Right after a camera swap the controls still drive the old camera.
+    if (isOrtho !== initial.ortho || controls.camera !== camera) return
+    restored.current = true
+    const [px, py, pz] = initial.position
+    const [tx, ty, tz] = initial.target
+    void controls.setLookAt(px, py, pz, tx, ty, tz, false)
+    if (isOrtho) void controls.zoomTo(initial.zoom, false)
+    invalidate()
+  }, [controls, camera, initial, invalidate])
+  useEffect(() => {
+    if (!controls) return
+    const changed = () => {
+      if (!restored.current) return
+      const p = controls.getPosition(new Vector3())
+      const t = controls.getTarget(new Vector3())
+      report.current({
+        position: [p.x, p.y, p.z],
+        target: [t.x, t.y, t.z],
+        ortho: (camera as OrthographicCamera).isOrthographicCamera === true,
+        zoom: (camera as OrthographicCamera).zoom,
+      })
+    }
+    controls.addEventListener('update', changed)
+    return () => controls.removeEventListener('update', changed)
+  }, [controls, camera])
   return null
 }
 
@@ -577,7 +628,8 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         if (isOrtho) void controls.zoom(-a.amount * k * (camera as OrthographicCamera).zoom, false)
         else void controls.dolly(-a.amount * k * Math.max(1, controls.distance), false)
       } else if (a.kind === 'orbit') {
-        void controls.rotate(-a.dx * 0.004, -a.dy * 0.004, false)
+        const [azimuth, polar] = orbitAngles(a.dx, a.dy)
+        void controls.rotate(azimuth, polar, false)
       } else {
         const k = (isOrtho ? 1 / (camera as OrthographicCamera).zoom : controls.distance * 0.0015)
         void controls.truck(a.dx * k, a.dy * k, false)

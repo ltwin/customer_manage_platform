@@ -1,6 +1,6 @@
 {
   "uid": "32c90485-2ed7-497a-9411-b09fb0608521",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-document-shell",
   "kind": "feature",
   "assurance": "governed",
@@ -31,13 +31,13 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-16T18:52:18.536Z",
-  "updatedAt": "2026-10-16T20:15:10.791Z",
+  "updatedAt": "2026-10-17T08:12:34.541Z",
   "risk": {
     "factors": [
-      "data-migration",
+      "broad-impact",
       "concurrency",
-      "perf-sensitive",
-      "broad-impact"
+      "data-migration",
+      "perf-sensitive"
     ]
   },
   "approvals": {
@@ -54,7 +54,15 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
+  "revisions": [
+    {
+      "at": "2026-10-17T08:12:34.110Z",
+      "summary": "owner 2026-10-17 第二轮测试：1) 合并规则收窄为同一次连续编辑与复制后移动，不同操作各为一步撤销（新建后缩放被一并撤销）；保存中撤销改为等回执后执行；2) 触控板环绕改为画面跟随手指；3) 新增视窗状态（视角、正交、选择、工具、面板）按账号和场景存本机，离开或刷新后恢复，AC-3 扩展。不改契约，无新增风险面",
+      "contentHash": "98bdda4861347c91",
+      "added": [],
+      "removed": []
+    }
+  ],
   "baseline": {
     "commit": "2a883f44b1555f3699ebd8894d593fd0665c93be",
     "at": "2026-10-16T20:15:09.898Z",

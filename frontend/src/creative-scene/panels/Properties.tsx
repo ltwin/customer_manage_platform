@@ -152,7 +152,11 @@ function ParamField({ name, spec, value, disabled, onCommit }: { name: string; s
 }
 
 /** The active object's fields; each change is one update. */
-export function Properties({ object, count, readOnly, onUpdate }: { object: SceneObject | null; count: number; readOnly: boolean; onUpdate: (u: ObjectUpdate, label: string) => void }) {
+/**
+ * Field commits carry a merge key, so typing in one field is one undo step
+ * even when its commits wait to be sent together.
+ */
+export function Properties({ object, count, readOnly, onUpdate }: { object: SceneObject | null; count: number; readOnly: boolean; onUpdate: (u: ObjectUpdate, label: string, merge?: string) => void }) {
   if (!object) return <div className="cc-scene-props is-empty">{count > 1 ? `已选中 ${count} 个物件` : '选中物件后在这里调整'}</div>
   // Shown and typed in Blender's axes (Z up); stored in the document's.
   const t = transformToView(object.transform)
@@ -168,12 +172,12 @@ export function Properties({ object, count, readOnly, onUpdate }: { object: Scen
       const q = new Quaternion().setFromEuler(new Euler(x, y, z, 'XYZ'))
       next.rotation = [q.x, q.y, q.z, q.w]
     } else next[part][axis] = v
-    onUpdate({ object_id: object.id, transform: transformToDoc(next) }, `调整「${object.name || '物件'}」`)
+    onUpdate({ object_id: object.id, transform: transformToDoc(next) }, `调整「${object.name || '物件'}」`, `${object.id}:${part}.${axis}`)
   }
   const spec = object.primitive ? builtinSpec(object.primitive.builtin) : undefined
   return (
     <div key={object.id} className="cc-scene-props" aria-label="属性">
-      <TextField value={object.name} disabled={readOnly} onCommit={(name) => onUpdate({ object_id: object.id, name }, '重命名')} />
+      <TextField value={object.name} disabled={readOnly} onCommit={(name) => onUpdate({ object_id: object.id, name }, '重命名', `${object.id}:name`)} />
       {count > 1 && <small>共选中 {count} 个物件，这里显示活动物件</small>}
       {(['position', 'rotation', 'scale'] as const).map((part) => (
         <fieldset key={part} disabled={locked}>
@@ -212,7 +216,7 @@ export function Properties({ object, count, readOnly, onUpdate }: { object: Scen
               spec={p}
               value={object.primitive?.params?.[name]}
               disabled={readOnly}
-              onCommit={(v) => onUpdate({ object_id: object.id, primitive: { params: { [name]: v } } }, `调整「${object.name || spec.label}」参数`)}
+              onCommit={(v) => onUpdate({ object_id: object.id, primitive: { params: { [name]: v } } }, `调整「${object.name || spec.label}」参数`, `${object.id}:param.${name}`)}
             />
           ))}
         </fieldset>

@@ -1,6 +1,7 @@
 import type { SceneObject } from '../api.ts'
 
-// Selection is local UI state, never saved. Blender semantics: Shift+click
+// Selection is UI state: never in the document, kept in this browser for the
+// next visit (viewState.ts). Blender semantics: Shift+click
 // adds, makes active, or removes the active object; box select replaces,
 // adds or subtracts.
 

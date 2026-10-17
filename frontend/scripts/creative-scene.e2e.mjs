@@ -280,6 +280,26 @@ async function viewportCenter(page) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, box }
 }
 
+/** The share of pixels that differ visibly between two screenshots of one size. */
+async function pixelDiff(page, a, b) {
+  return page.evaluate(async ([a, b]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const c = document.createElement('canvas')
+    c.width = x.width
+    c.height = x.height
+    const g = c.getContext('2d')
+    g.drawImage(x, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    g.clearRect(0, 0, c.width, c.height)
+    g.drawImage(y, 0, 0)
+    const q = g.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 48) n++
+    return n / (p.length / 4)
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+}
+
 async function waitFor(check, message, timeout = 5000) {
   const start = Date.now()
   for (;;) {
@@ -504,6 +524,120 @@ await check('undo and redo go through restore_units', async () => {
   assert.ok(close(server.object(id).transform.position[0], start[0] + 4))
   await saved(page)
   assert.equal(await page.getByRole('treeitem', { name: /方块/ }).count(), 1)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('slow saves: add then S stays two steps, and Cmd+Z waits for the save instead of failing', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  let release
+  server.hold = new Promise((resolve) => (release = resolve))
+  const add = async (dx) => {
+    await page.mouse.move(x + dx, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '方块' }).click()
+  }
+  const boxes = () => page.getByRole('treeitem', { name: /方块/ }).count()
+  const scaleX = () => page.getByRole('group', { name: '缩放' }).getByLabel('X').inputValue()
+  await add(-160) // goes out and waits on the server
+  await add(160) // waits behind it
+  await page.mouse.move(x + 200, y + 20)
+  await page.keyboard.press('KeyS')
+  await page.mouse.move(x + 320, y + 80, { steps: 5 })
+  await page.mouse.down()
+  await page.mouse.up()
+  await waitFor(async () => (await scaleX()) !== '1', 'scaled')
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(async () => (await scaleX()) === '1', 'the first Cmd+Z drops the scale')
+  assert.equal(await boxes(), 2, 'and keeps the box')
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(async () => (await boxes()) === 1, 'the second drops the unsent box')
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(async () => (await page.locator('.cc-scene-hint').textContent()) === '正在保存，保存后撤销', 'waiting notice')
+  assert.equal(await boxes(), 1, 'the box being saved waits for its receipt')
+  await page.keyboard.press(`${mod}+KeyZ`)
+  assert.equal(await page.locator('.cc-scene-save').count(), 1, 'the same notice again keeps the editor up')
+  server.hold = null
+  release()
+  await waitFor(() => server.commands.length === 2, 'saved, then undone')
+  assert.deepEqual(server.commands.map((c) => c.payload.operations[0].op), ['add_objects', 'restore_units'])
+  assert.equal(server.scene.objects.length, 1, 'only the ground is left')
+  await saved(page)
+  assert.equal(await boxes(), 0)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('7 then 5 at once gives a top orthographic view framed like the perspective one', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  const { box } = await viewportCenter(page)
+  await page.keyboard.press('Digit7')
+  await page.keyboard.press('Digit5')
+  await sleep(1200)
+  const ortho = await page.screenshot({ clip: box })
+  await page.keyboard.press('Digit5')
+  await sleep(800)
+  const persp = await page.screenshot({ clip: box })
+  // A view still turning, or an orthographic camera left at zoom 1, differs wholesale.
+  const diff = await pixelDiff(page, ortho, persp)
+  assert.ok(diff < 0.05, `top orthographic vs perspective differ on ${(diff * 100).toFixed(1)}% of pixels`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('leaving and coming back, even after a reload, shows the editor as it was left', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const id = await addBox(page, server)
+  await page.getByRole('button', { name: '移动', exact: true }).click()
+  await page.keyboard.press('Digit7')
+  await page.keyboard.press('Digit5')
+  await sleep(1200)
+  const { box } = await viewportCenter(page)
+  const left = await page.screenshot({ clip: box })
+  await page.getByRole('button', { name: '还原节点' }).click()
+  await page.locator('#closed').waitFor()
+  await page.evaluate(() => window.__reopen())
+  await page.locator('.cc-scene-editor canvas').waitFor()
+  await page.getByRole('treeitem', { name: /方块/ }).waitFor()
+  const restored = async (when) => {
+    assert.equal(await page.getByRole('button', { name: '移动', exact: true }).getAttribute('aria-pressed'), 'true', `${when}: the tool`)
+    assert.equal(await page.getByRole('treeitem', { name: /方块/ }).getAttribute('aria-selected'), 'true', `${when}: the selection`)
+    await sleep(1200)
+    const diff = await pixelDiff(page, await page.screenshot({ clip: box }), left)
+    assert.ok(diff < 0.005, `${when}: the same top orthographic view (${(diff * 100).toFixed(2)}% of pixels differ)`)
+  }
+  await restored('reopened')
+  await page.reload()
+  await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
+  await page.getByRole('treeitem', { name: /方块/ }).waitFor()
+  await restored('reloaded')
+  // A perspective view comes back too, from an angle no number key gives.
+  await page.keyboard.press('Digit5')
+  await sleep(600)
+  const { x, y } = await viewportCenter(page)
+  await page.keyboard.down('Alt')
+  await page.mouse.move(x + 200, y + 150)
+  await page.mouse.down()
+  await page.mouse.move(x + 120, y + 60, { steps: 8 })
+  await page.mouse.up()
+  await page.keyboard.up('Alt')
+  await sleep(1200)
+  const turned = await page.screenshot({ clip: box })
+  assert.ok((await pixelDiff(page, turned, left)) > 0.02, 'the turned view is a different picture')
+  await page.reload()
+  await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
+  await page.getByRole('treeitem', { name: /方块/ }).waitFor()
+  await sleep(1200)
+  const back = await pixelDiff(page, await page.screenshot({ clip: box }), turned)
+  assert.ok(back < 0.005, `the turned perspective view comes back (${(back * 100).toFixed(2)}% of pixels differ)`)
+  assert.equal(server.commands.length, 1, 'the view is not an edit')
+  assert.ok(server.object(id))
   assert.deepEqual(errors, [])
   await context.close()
 })

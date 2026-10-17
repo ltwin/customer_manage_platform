@@ -33,6 +33,11 @@ export type Intent = {
   projection?: ProjectionPatch
   /** The undo step this intent reverses or replays. */
   step?: { kind: 'undo' | 'redo'; seq: number }
+  /**
+   * One continuous edit, such as typing in one properties field: its commits
+   * fold together while unsent. Without a key an edit is a step of its own.
+   */
+  merge?: string
   /** How prompts name this edit, for example 「移动 3 个物件」. */
   label: string
 }
@@ -155,14 +160,16 @@ const onlyUpdate = (i: Intent) =>
     ? i.ops[0]
     : null
 
-const unsent = (i: Intent) => i.state === 'pending' || !!i.held
-
 /**
- * Adds an edit to the queue, folding it in when that loses nothing:
- *  - an update that only touches objects a held or unsent add creates is
- *    written into that add, so duplicating and moving is one revision;
- *  - an update of exactly the objects the unsent tail updates replaces the
- *    tail's fields and keeps the tail's earlier expected revisions.
+ * Adds an edit to the queue. Each intent is one undo step, so edits fold
+ * together only when they are one operation to the photographer:
+ *  - an update that only touches objects a held add creates is written into
+ *    that add, so duplicating and moving is one revision;
+ *  - a commit of the same continuous edit (merge key) as the unsent tail, on
+ *    exactly its objects, replaces the tail's fields and keeps the tail's
+ *    earlier expected revisions.
+ * Separate operations stay separate however slowly saving goes: folding an
+ * add and the scale after it made Cmd+Z remove the new object.
  */
 export function enqueue(
   queue: readonly Intent[],
@@ -173,7 +180,7 @@ export function enqueue(
     const ids = new Set(update.updates.map((u) => u.object_id))
     const owner = queue.findIndex(
       (i) =>
-        unsent(i) &&
+        !!i.held &&
         i.ops.some(
           (op) =>
             op.op === 'add_objects' &&
@@ -203,7 +210,8 @@ export function enqueue(
       return { queue: rewritten, holder: queue[owner].id }
     }
     const tail = queue.at(-1)
-    const tailUpdate = tail && !tail.held && tail.state === 'pending' ? onlyUpdate(tail) : null
+    const sameEdit = next.merge !== undefined && tail?.merge === next.merge
+    const tailUpdate = tail && sameEdit && !tail.held && tail.state === 'pending' ? onlyUpdate(tail) : null
     if (tail && tailUpdate) {
       const tailIDs = new Set(tailUpdate.updates.map((u) => u.object_id))
       if (tailIDs.size === ids.size && [...ids].every((id) => tailIDs.has(id))) {

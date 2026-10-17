@@ -419,3 +419,74 @@ test('the axis widget finds the head under a press, preferring the one in front'
   assert.deepEqual(axisHeadAt({ x: 1000, y: 100 }, c, front), [0, -1, 0], '±Y overlap at the centre; -Y faces the viewer')
   assert.equal(axisHeadAt({ x: 900, y: 100 }, c, front), null)
 })
+
+import * as THREE from 'three'
+import CameraControls from 'camera-controls'
+import { orbitAngles } from '../src/creative-scene/input/navigation.ts'
+import { parseView, readView, viewKey, ViewSaver, type SavedView } from '../src/creative-scene/viewState.ts'
+
+test('a two-finger swipe turns the view the way the fingers go, like a middle-button drag', () => {
+  // camera-controls measures its element at construction; Node has no DOM.
+  ;(globalThis as Record<string, unknown>).DOMRect ??= class { x = 0; y = 0; width = 0; height = 0; top = 0; left = 0; right = 0; bottom = 0 }
+  CameraControls.install({ THREE })
+  const front = () => {
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000)
+    camera.up.set(0, 0, 1)
+    const controls = new CameraControls(camera)
+    void controls.setLookAt(0, -10, 0, 0, 0, 0, false)
+    controls.update(0)
+    return { camera, controls }
+  }
+  // Natural scrolling: fingers moving right report deltaX < 0, fingers moving up deltaY > 0.
+  const right = front()
+  void right.controls.rotate(...orbitAngles(-40, 0), false)
+  right.controls.update(0)
+  // The scene's front swings right, so the camera ends up on its left.
+  assert.ok(right.camera.position.x < -1, `camera x ${right.camera.position.x}`)
+  const up = front()
+  void up.controls.rotate(...orbitAngles(0, 40), false)
+  up.controls.update(0)
+  // The scene's front tips up, so the camera looks from lower down.
+  assert.ok(up.camera.position.z < -1, `camera z ${up.camera.position.z}`)
+})
+
+class MemoryStorage {
+  data = new Map<string, string>()
+  getItem(k: string) { return this.data.get(k) ?? null }
+  setItem(k: string, v: string) { this.data.set(k, v) }
+}
+
+test('the view is kept per account and scene and only a well-formed one comes back', async () => {
+  assert.equal(viewKey('acct-1', 'cwdoc_1'), 'creative-scene-view:acct-1:cwdoc_1')
+  const view: SavedView = {
+    camera: { position: [3, -8, 4], target: [1, 0, 0], ortho: true, zoom: 42 },
+    selection: { selected: ['sobj_a', 'sobj_b'], active: 'sobj_b' },
+    tool: 'move',
+    toolbar: false,
+    sidebar: true,
+    history: true,
+  }
+  assert.deepEqual(parseView(JSON.parse(JSON.stringify(view))), view)
+  assert.deepEqual(parseView({ ...view, camera: null }), { ...view, camera: null })
+  assert.equal(parseView({ ...view, tool: 'lasso' }), null)
+  assert.equal(parseView({ ...view, selection: { selected: ['a'], active: 'b' } }), null, 'the active object is one of the selected')
+  assert.equal(parseView({ ...view, camera: { ...view.camera, zoom: 0 } })?.camera, null, 'a broken camera falls back to the default view')
+  assert.equal(parseView('nonsense'), null)
+
+  const storage = new MemoryStorage() as unknown as Storage
+  storage.setItem('k', '{broken')
+  assert.equal(readView(storage, 'k'), null)
+  const saver = new ViewSaver(storage, 'k', view)
+  saver.camera({ position: [0, -5, 2], target: [0, 0, 0], ortho: false, zoom: 1 })
+  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, history: false })
+  assert.equal(storage.getItem('k'), '{broken', 'writes wait a moment')
+  saver.flush()
+  assert.deepEqual(readView(storage, 'k'), {
+    camera: { position: [0, -5, 2], target: [0, 0, 0], ortho: false, zoom: 1 },
+    selection: { selected: [], active: null },
+    tool: 'box',
+    toolbar: true,
+    sidebar: false,
+    history: false,
+  })
+})

@@ -87,6 +87,10 @@ export type SessionObserver = {
   confirmed?(intent: Intent, receipt: CommandReceipt, before: SceneState): void
   read?(doc: SceneDocument): void
   sending?(intent: Intent): void
+  /** A new edit entered the queue (folded or not). */
+  queued?(intent: Intent): void
+  /** An edit left the queue unsaved: rejected, or stopped by the trash. */
+  rejected?(intent: Intent): void
   /** A whole-document restore succeeded. */
   restored?(): void
 }
@@ -186,7 +190,7 @@ export class SceneSession {
   edit(
     ops: WireOp[],
     label: string,
-    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step'] } = {},
+    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string } = {},
   ): Intent | null {
     const { base, view, queue, trashed, missing } = this.state
     if (!base || !view || trashed || missing || !ops.length) return null
@@ -210,6 +214,7 @@ export class SceneSession {
     }
     const { queue: next, holder } = enqueue(queue, intent)
     this.set({ queue: next })
+    for (const o of this.observers) o.queued?.(intent)
     this.pump()
     return this.state.queue.find((i) => i.id === holder) ?? null
   }
@@ -435,6 +440,7 @@ export class SceneSession {
     const queue = this.state.queue.filter((i) => i.id !== intent.id && !deps.has(i.id))
     const deletes = intent.ops.some((op) => op.op === 'remove_objects') || (intent.projection?.removed.length ?? 0) > 0
     this.set({ queue, conflicts: [...this.state.conflicts, { id: intent.id, kind, intents: [intent, ...blocked], message, deletes }] })
+    for (const o of this.observers) o.rejected?.(intent)
     void this.read()
     this.pump()
   }
@@ -449,6 +455,7 @@ export class SceneSession {
       queue: [],
       conflicts: [...others, { id: 'trash', kind: 'trash', intents: [...(trash?.intents ?? []), ...waiting], message: '场景在回收站，请先恢复', deletes: false }],
     })
+    for (const i of waiting) for (const o of this.observers) o.rejected?.(i)
   }
 
   /**

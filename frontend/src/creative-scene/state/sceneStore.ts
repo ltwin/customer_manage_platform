@@ -3,10 +3,12 @@ import type { Scene } from '../api.ts'
 import type { Context } from '../input/keymap.ts'
 import type { Device, DevicePreference } from '../input/navigation.ts'
 import { emptySelection, type Selection } from '../input/selection.ts'
+import type { SavedView } from '../viewState.ts'
 
-// Editor UI state that is never saved: what is selected, which tool and
-// panels are showing, open menus and prompts. Document state lives in the
-// session (sync.ts).
+// Editor UI state, never part of the document: what is selected, which tool
+// and panels are showing, open menus and prompts. The selection, tool,
+// panels and camera come back on the next visit (viewState.ts); document
+// state lives in the session (sync.ts).
 
 export type Tool = 'box' | 'tweak' | 'move' | 'rotate' | 'scale'
 
@@ -39,22 +41,22 @@ export type EditorUI = {
   confirmClose: boolean
 }
 
-export function createEditorStore(device: DevicePreference) {
+export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
   return createStore<EditorUI>(() => ({
-    selection: emptySelection,
-    tool: 'box',
-    toolbar: true,
-    sidebar: true,
+    selection: saved?.selection ?? emptySelection,
+    tool: saved?.tool ?? 'box',
+    toolbar: saved?.toolbar ?? true,
+    sidebar: saved?.sidebar ?? true,
     popup: null,
     sheet: false,
-    history: false,
+    history: saved?.history ?? false,
     preview: null,
     modal: null,
     boxing: false,
     notice: '',
     device,
     guessed: null,
-    ortho: false,
+    ortho: saved?.camera?.ortho ?? false,
     confirmClose: false,
   }))
 }

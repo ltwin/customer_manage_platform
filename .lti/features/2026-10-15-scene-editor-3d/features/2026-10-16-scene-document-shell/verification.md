@@ -1,6 +1,6 @@
 # 验证记录：场景文档与编辑器外壳（C1）
 
-日期：2026-10-16　分支：`feat/scene-document-shell`（worktree `.worktrees/scene-document-shell`，基线 `2a883f4`）
+日期：2026-10-16（2026-10-17 补 owner 第二轮测试的修正）　分支：`feat/scene-document-shell`（worktree `.worktrees/scene-document-shell`，基线 `2a883f4`）
 
 ## 门禁结果
 
@@ -9,8 +9,8 @@
 | `go test -count=1`：`creativescene`、`creativecontent`、`creativedocument`、`creativecanvas`、`platform/store`、`platform/httpapi` | 通过 |
 | `golangci-lint run`：上述包与 `cmd/server`、`cmd/creative-worker` | 0 issues |
 | `make generate-check`（OpenAPI 两份生成物、`builtins.gen.json`） | 通过，无漂移 |
-| `make check-frontend`（oxlint、`tsc -b` + vite build、583 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
-| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 18/18 通过；夹具与 `main.tsx` 一样用 StrictMode 渲染 |
+| `make check-frontend`（oxlint、`tsc -b` + vite build、587 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
+| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 21/21 通过，连跑两遍；夹具与 `main.tsx` 一样用 StrictMode 渲染 |
 | `make check`（合回 `develop` 前的门禁） | 未跑，合并点执行一次 |
 
 e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收站、修订列表和整份恢复都按契约模拟，操作语义复用前端的 `state/apply.ts`。服务端真实语义由 Go 测试负责，e2e 验证的是编辑器在真实浏览器里的交互、请求次数和请求内容。运行方式：在 `frontend/` 起 Vite（`npx vite --port 5179`），再执行 `node scripts/creative-scene.e2e.mjs`；`SCENE_E2E_ONLY=<名称片段>` 只跑一项，`SCENE_E2E_SHOTS=<目录>` 保存关键步骤截图。
@@ -34,6 +34,12 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 | owner 测试：坐标轴与 Blender 不一致（`G Z` 是前后） | 编辑器层换成 Blender 坐标（Z 向上），文档数据仍 Y 向上，见 design「局部设计与偏差」 | 单测「the editor speaks Blender…」等 4 条；e2e `G Z 2` 抬高、属性栏按 Blender 轴、数字键与坐标轴部件 |
 | 点击坐标轴部件会取消选中；drei 的转视角动画转到顶视后画面歪 90° | 控制器自己命中轴头，走数字键的视图切换，拦下这次点击 | e2e「number keys and the axis widget…」 |
 | 冲突提示压住坐标轴部件；助手面板变底部抽屉（≤ 760px）时编辑器仍让出右侧 | 调整右边距与断点 | 截图目检；e2e「makes room for the assistant panel」 |
+| owner 测试（2026-10-17）：新建方块后按 S 缩放，Cmd+Z 把方块一起撤掉 | 只读查了 owner 那份场景：只有第 2 版（新建，缩放仍为 1），缩放和撤销都没到服务端。在真实路由（httptest + 容器库，临时探针，已删）上直接操作、加 1.5～3 秒保存延迟都复现不了「一次撤掉两步」，但找到了能精确产生这个现象的代码路径：新建在排队等前一个保存时，紧接的缩放被并进新建（原合并规则：待发的新增吸收之后对它的修改），Cmd+Z 撤掉的是整个待发新增。改为只在同一次连续编辑（合并键）和 Shift + D 复制后移动时合并，见 design「合并」 | 单测「adding while a save is slow, then scaling…」「commits of one field fold…」，修复前失败；e2e「slow saves…」第一次 Cmd+Z 只去掉缩放，修复前失败 |
+| 排查时发现：任何撤销提示（「这一步之后物件已被修改」「正在保存」）都会让编辑器无限重渲染并崩溃，整页空白 | 每次渲染都把 `undo.notice` 写进界面状态，写入又触发渲染。改为撤销栈逐条推送提示 | e2e「slow saves…」保存中连按两次 Cmd+Z 编辑器仍在、提示正确；修复前在真实路由上复现为 `Maximum update depth exceeded` |
+| 保存中按 Cmd+Z 只提示「稍后再撤销」，什么都不做；连远程库时保存慢，撤销像失灵 | 记下这次撤销，回执到达后执行；期间有新编辑或修改被拒绝就取消 | 单测「undo while the last edit is saving…」、改写后的「undoing an edit that has not been sent…」；e2e「slow saves…」放行后先存新建、再撤销新建 |
+| owner 测试（2026-10-17）：触控板双指滑动环绕方向是反的 | 环绕改为画面跟着手指走，与 Shift 平移、Blender 默认一致 | 单测「a two-finger swipe turns the view the way the fingers go…」直接用 camera-controls 断言，旧符号下失败 |
+| owner 需求（2026-10-17）：再次进入时视窗要和离开时一样 | 相机、选择、工具、面板开合按账号和场景存本机，见 design「视窗状态」 | 单测「the view is kept per account and scene…」；e2e「leaving and coming back, even after a reload…」（关闭再打开、刷新页面；正交顶视与任意透视角度对比截图），修复前失败 |
+| 验证视窗恢复时发现：正交视图里场景缩小几十倍；7 之后立刻 5 得不到顶视 | 正交相机设 zoom 后漏了更新投影矩阵；切换时取了过渡中途的相机位置。分别补上更新、改取 camera-controls 的目标终点 | e2e「7 then 5 at once gives a top orthographic view…」，修复前 85.8% 像素不同 |
 
 ## 验收对照
 
@@ -43,11 +49,11 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 |---|---|---|
 | AC-1 新建与打开 | `scene` `TestNewSceneFromCanvas`（`add_node core.scene` 同事务产生文档、修订 1，快照只有锁定的地面）；画布创建菜单、卡片、最大化入口靠代码走查和 `tsc`；编辑视图渲染地面和网格见 e2e 截图 | 后端满足；**画布侧未在浏览器验证**：现有画布 e2e 需要真实账号，请 owner 在真实画布上走一遍（新建「3D 场景」、卡片物件数、双击打开、助手面板仍可打开） |
 | AC-2 放置与变换 | e2e「keyboard flow」：Shift + A 加方块并选中，`G Z 2 Enter` 状态栏显示「移动 · Z 轴 · …2」、只 1 个命令且 Z 恰好 +2，`R` 右键取消无请求，最终「已保存」；e2e「move tool drags…」gizmo 拖动 1 个命令；e2e「properties commit 300 ms」宽度改 3 m 1 个命令；Ctrl 5° 吸附见 `interaction`「R turns around the view axis…」 | 满足 |
-| AC-2a 导航 | `interaction`：鼠标 / 触控板滚轮映射、`ctrlKey` 一律推拉、中键与 Alt + 左键、设备推测与手动选择；1 / 3 / 7 / 5、`.`、Home 已接线，未做浏览器断言 | **部分满足**：`classifyWheel` 仍是假设，等 4.1 真机录制校准（6.2 未勾） |
+| AC-2a 导航 | `interaction`：鼠标 / 触控板滚轮映射、`ctrlKey` 一律推拉、中键与 Alt + 左键、设备推测与手动选择、触控板环绕方向（camera-controls 实测）；e2e 数字键与坐标轴部件、7 之后立刻 5 的正交顶视、触控板滑动与捏合无需点击即重绘 | **部分满足**：`classifyWheel` 仍是假设，等 4.1 真机录制校准（6.2 未勾） |
 | AC-2b 多选 | e2e「selection edits」：框选两只方块且不含锁定地面，H / Alt + H 各 1 个命令，Shift + D 复制并移动合计 1 个 `add_objects`，X 确认后 1 个删除；e2e「keyboard flow」A 全选后 G 只更新未锁定物件；`interaction` Shift + 单击三态、只变换最上层；`unit` 多物件一次确认一个撤销步骤 | 满足 |
 | AC-2c 上手辅助与按键边界 | e2e「key boundaries」：状态栏提示、菜单项标注快捷键、名称框里打 `grsx` 只产生重命名、Esc 三次不关视图只清选择、Cmd/Ctrl + S 提示自动保存、`?` 打开速查、按键不会到达编辑器之外的监听；`interaction` 按 `event.code` 分发、组字中不分发 | 满足 |
-| AC-3 重开一致 | e2e「reopening」：新页面重新读取后属性栏数值与服务端一致 | 满足 |
-| AC-4 只撤销自己 | e2e「undo and redo」：撤销移动、撤销添加、重做添加（同一 ID 回来）、重做移动，均为 `restore_units`；`unit` 过期规则（别人改过即跳过并提示、重新移动不复活、别人改层级不过期）；`restore` 150 个物件嵌套分组一次撤销、单元冲突整体失败、层级复原 | 满足 |
+| AC-3 重开一致 | e2e「reopening」：新页面重新读取后属性栏数值与服务端一致；e2e「leaving and coming back…」：关闭再打开、刷新页面后工具、选择、视口与离开时一致（截图差异 < 0.5%），且不产生命令；`interaction` 视窗状态的校验与节流写入 | 满足。视窗状态只存在本机浏览器 |
+| AC-4 只撤销自己 | e2e「undo and redo」：撤销移动、撤销添加、重做添加（同一 ID 回来）、重做移动，均为 `restore_units`；e2e「slow saves…」：慢保存下新建再缩放，Cmd+Z 依次去掉缩放、待发的新建，保存中的再撤销等回执后执行；`unit` 保存中撤销的等待与取消；`unit` 过期规则（别人改过即跳过并提示、重新移动不复活、别人改层级不过期）；`restore` 150 个物件嵌套分组一次撤销、单元冲突整体失败、层级复原 | 满足 |
 | AC-5 单元并发 | `concurrency` 摆放与内容并发都成功、同一单元恰一方成功（各 20 轮）；e2e「someone else's edit」409 后提示「重新应用我的修改」，重发后落在最新版本上；`unit` 删除只撞 `objects` 时提示确认、新增只撞 `objects` 时自动变基、被拒意图的后续修改一起进入冲突提示 | 满足 |
 | AC-6 历史版本 | e2e「history」：列表分组、新建单独成组、只读预览（编辑菜单禁用）、确认后整份恢复产生新修订（`restored_from = 1`）；`unit` 分组与描述 | 满足 |
 | AC-7 多标签页同步 | e2e：另一页收到画布失效通知后显示新位置；回收站中提交得到 409 后切只读，移出回收站后恢复可编辑；`unit` 拖动中推迟重读 | 满足。e2e 直接调用 `notifyCanvasInvalidate` 代替真实 SSE；SSE → 失效通知这一段沿用画布既有链路 |

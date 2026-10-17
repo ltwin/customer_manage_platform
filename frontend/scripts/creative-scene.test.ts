@@ -147,9 +147,9 @@ test('expected revisions wait for the local intent that last changed a unit', ()
   assert.equal(sendable(intent([], { expected: { objects: '4', x: null } })), true)
 })
 
-test('an update of the same objects folds into the unsent tail and keeps the earliest expected', () => {
-  const first = intent([moveTo([id(1), id(2)], 1)], { expected: { [`object:${id(1)}`]: '4', [`object:${id(2)}`]: '4' } })
-  const second = intent([moveTo([id(2), id(1)], 2)], { expected: { [`object:${id(1)}`]: { after: first.id }, [`object:${id(2)}`]: { after: first.id } } })
+test('commits of one field fold into the unsent tail and keep the earliest expected; separate operations never do', () => {
+  const first = intent([moveTo([id(1), id(2)], 1)], { merge: 'field', expected: { [`object:${id(1)}`]: '4', [`object:${id(2)}`]: '4' } })
+  const second = intent([moveTo([id(2), id(1)], 2)], { merge: 'field', expected: { [`object:${id(1)}`]: { after: first.id }, [`object:${id(2)}`]: { after: first.id } } })
   const { queue, holder } = enqueue([first], second)
   assert.equal(holder, first.id)
   assert.equal(queue.length, 1)
@@ -158,7 +158,11 @@ test('an update of the same objects folds into the unsent tail and keeps the ear
   const s = project(state([box(1), box(2)]), queue)
   assert.deepEqual(s.scene.objects.map((o) => o.transform.position[0]), [2, 2])
 
-  assert.equal(enqueue([first], intent([moveTo([id(1)], 3)])).queue.length, 2, 'a different set of objects stays separate')
+  // Each G / R / S or drag is its own undo step, however slow saving is.
+  assert.equal(enqueue([first], { ...second, merge: undefined }).queue.length, 2, 'an operation without a key stays separate')
+  assert.equal(enqueue([{ ...first, merge: undefined }], { ...second, merge: undefined }).queue.length, 2, 'two operations never fold')
+  assert.equal(enqueue([first], { ...second, merge: 'other field' }).queue.length, 2, 'another field stays separate')
+  assert.equal(enqueue([first], intent([moveTo([id(1)], 3)], { merge: 'field' })).queue.length, 2, 'a different set of objects stays separate')
   assert.equal(enqueue([{ ...first, state: 'sent' }], second).queue.length, 2, 'a sent tail is never rewritten')
 })
 
@@ -172,6 +176,8 @@ test('moving a held duplicate rewrites its add, so duplicate-and-move is one int
   if (op.op === 'add_objects') assert.deepEqual(op.objects.map((o) => o.transform.position[0]), [5, 5])
   assert.equal(sendable(queue[0]), false, 'still held until released')
   assert.equal(enqueue([add], intent([moveTo([id(3), id(1)], 5)])).queue.length, 2, 'touching an existing object is a separate intent')
+  // A plain add that is only waiting to go out is a step of its own.
+  assert.equal(enqueue([{ ...add, held: false }], intent([moveTo([id(3), id(4)], 5)])).queue.length, 2, 'an unsent add does not absorb a later edit')
 })
 
 test('dependents follow {after} transitively and receipts resolve it', () => {
@@ -602,6 +608,62 @@ test('undoing an edit that has not been sent drops it without a request', async 
   assert.equal(position(session, 2), 0)
   assert.equal(transport.sent.length, 1)
   assert.equal(undo.undo(), 'busy', 'the move in flight has to land first')
+  await confirmLast(transport, 4, [`object:${id(1)}`])
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '3', units: [`object:${id(1)}`] }], 'then it is undone')
+})
+
+const scaleTo = (n: number, k: number) => ({
+  op: 'update_objects' as const,
+  updates: [{ object_id: id(n), transform: { ...identity, scale: [k, k, k] } }],
+})
+
+test('adding while a save is slow, then scaling: undo drops the scale and keeps the box', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  session.edit([moveTo([id(1)], 1)], '移动')
+  session.edit([{ op: 'add_objects', objects: [box(3)] }], '添加「方块」')
+  session.edit([scaleTo(3, 2)], '缩放「方块」')
+  assert.equal(transport.sent.length, 1, 'the add waits behind the move')
+  assert.equal(session.state.queue.length, 3, 'the scale is not folded into the add')
+  assert.equal(undo.undo(), 'cancelled')
+  const added = session.state.view!.scene.objects.find((o) => o.id === id(3))
+  assert.ok(added, 'the box stays')
+  assert.deepEqual(added.transform.scale, [1, 1, 1])
+})
+
+test('undo while the last edit is saving runs once it lands; a newer edit or a rejection calls it off', async () => {
+  const { transport, session } = await started([box(1), box(2)])
+  const undo = new UndoStack(session)
+  const notices: string[] = []
+  const stop = undo.onNotice((n) => notices.push(n))
+  session.edit([moveTo([id(1)], 1)], '移动 A')
+  assert.equal(undo.undo(), 'busy')
+  assert.deepEqual(notices, ['正在保存，保存后撤销'])
+  assert.equal(transport.sent.length, 1)
+  await confirmLast(transport, 4, [`object:${id(1)}`])
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '3', units: [`object:${id(1)}`] }], 'the undo goes out after the save')
+  assert.equal(position(session, 1), 0)
+  await confirmLast(transport, 5, [`object:${id(1)}`])
+
+  // A newer edit replaces the request: the next receipt undoes nothing.
+  session.edit([moveTo([id(2)], 2)], '移动 B')
+  assert.equal(undo.undo(), 'busy')
+  session.edit([moveTo([id(1)], 3)], '再次移动 A')
+  await confirmLast(transport, 6, [`object:${id(2)}`])
+  assert.deepEqual(transport.last().payload.operations, [moveTo([id(1)], 3)])
+  await confirmLast(transport, 7, [`object:${id(1)}`])
+
+  // A rejected edit is already gone from the view; nothing older is undone for it.
+  session.edit([moveTo([id(2)], 4)], '移动 B')
+  assert.equal(undo.undo(), 'busy')
+  transport.last().reject(conflictOn(`object:${id(2)}`))
+  await tick()
+  const sent = transport.sent.length
+  session.edit([moveTo([id(1)], 5)], '移动 A')
+  await confirmLast(transport, 9, [`object:${id(1)}`])
+  assert.equal(transport.sent.length, sent + 1, 'only the new edit went out')
+  assert.equal(transport.sent.filter((x) => (x.payload.operations[0] as { op: string }).op === 'restore_units').length, 1)
+  stop()
 })
 
 test('a whole restore clears both stacks', async () => {

@@ -14,6 +14,9 @@ import type { SceneSession } from './sync.ts'
 // one foreign revision makes it stale for good. Validity is decided when
 // undoing, from every revision seen so far, so a read that arrives before
 // our own receipt cannot mistake our write for someone else's.
+//
+// Cmd+Z while the last own edit is still saving waits for its receipt and
+// then undoes it; a newer edit, or the edit being rejected, calls that off.
 
 export type Step = {
   seq: number
@@ -71,7 +74,11 @@ export class UndoStack {
   private inFlight = new Map<string, Step>()
   private readonly session: SceneSession
   private listeners = new Set<() => void>()
+  private noticeListeners = new Set<(text: string) => void>()
   private stop: (() => void) | null = null
+  /** Cmd+Z presses waiting for the edit in flight to land. */
+  private deferred = 0
+  /** The latest notice, for example 「这一步之后物件已被修改，无法撤销」. */
   notice = ''
 
   constructor(session: SceneSession) {
@@ -89,6 +96,12 @@ export class UndoStack {
         confirmed: (intent, receipt, before) => this.confirmed(intent, receipt, before),
         read: (doc) => this.observe(doc),
         sending: (intent) => this.sending(intent),
+        queued: (intent) => {
+          if (!intent.step) this.deferred = 0
+        },
+        rejected: (intent) => {
+          if (!intent.step) this.deferred = 0
+        },
         restored: () => this.clear(),
       })
       const base = this.session.state.base
@@ -108,8 +121,19 @@ export class UndoStack {
     return () => this.listeners.delete(listener)
   }
 
+  /** Notices as they happen, so the same notice twice is shown twice. */
+  onNotice(listener: (text: string) => void): () => void {
+    this.noticeListeners.add(listener)
+    return () => this.noticeListeners.delete(listener)
+  }
+
   private changed() {
     for (const l of this.listeners) l()
+  }
+
+  private say(text: string) {
+    this.notice = text
+    for (const l of this.noticeListeners) l(text)
   }
 
   get canUndo(): boolean {
@@ -152,6 +176,23 @@ export class UndoStack {
   }
 
   private confirmed(intent: Intent, receipt: CommandReceipt, before: SceneState) {
+    this.record(intent, receipt, before)
+    this.settle()
+  }
+
+  /** Undoes what waited for the save, once nothing of ours is in flight. */
+  private settle() {
+    if (!this.deferred || this.busy()) return
+    const n = this.deferred
+    this.deferred = 0
+    for (let k = 0; k < n; k++) if (this.undo() === 'empty') break
+  }
+
+  private busy(): boolean {
+    return this.session.state.queue.some((i) => !i.step && (i.state === 'sent' || i.state === 'unknown'))
+  }
+
+  private record(intent: Intent, receipt: CommandReceipt, before: SceneState) {
     const r = Number(receipt.revision)
     this.own.add(r)
     // A large receipt lists nothing; the intent says what it removed.
@@ -187,6 +228,7 @@ export class UndoStack {
   private clear() {
     this.undoSteps = []
     this.redoSteps = []
+    this.deferred = 0
     this.changed()
   }
 
@@ -205,15 +247,16 @@ export class UndoStack {
         return 'cancelled'
       }
     }
-    if (this.session.state.queue.some((i) => !i.step && (i.state === 'sent' || i.state === 'unknown'))) {
-      this.notice = '正在保存，稍后再撤销'
+    if (this.busy()) {
+      this.deferred++
+      this.say('正在保存，保存后撤销')
       this.changed()
       return 'busy'
     }
     while (this.undoSteps.length) {
       const step = this.undoSteps.pop()!
       if (!this.valid(step)) {
-        this.notice = '这一步之后物件已被修改，无法撤销'
+        this.say('这一步之后物件已被修改，无法撤销')
         continue
       }
       return this.submit(step, 'undo')
@@ -227,7 +270,7 @@ export class UndoStack {
     while (this.redoSteps.length) {
       const step = this.redoSteps.pop()!
       if (!this.valid(step)) {
-        this.notice = '这一步之后物件已被修改，无法重做'
+        this.say('这一步之后物件已被修改，无法重做')
         continue
       }
       return this.submit(step, 'redo')
