@@ -535,13 +535,13 @@ stateDiagram-v2
 | `backend/internal/platform/store/migrations/0073_creative_scene_document.up.sql` / `.down.sql` | 新增 | 内容类型 CHECK |
 | `backend/internal/platform/store/creative_scene_document_migration_test.go` | 新增 | 新回滚链头 `rollbackSceneDocument`、拒绝回滚测试 |
 | `backend/internal/platform/store/creative_document_foundation_migration_test.go:rollbackDocumentFoundation` | 修改 | 先调用 `rollbackSceneDocument` |
-| `backend/internal/platform/store/*_migration_test.go` 的回滚标签列表 | 修改 | 最前面加 `creative-scene-document` |
+| `backend/internal/platform/store/*_migration_test.go` 的回滚标签列表 | 修改 | 最前面加 `creative-scene-document`；同样带标签列表的 `auth_legacy_cutover_harness_test.go`、`auth_limiter_test.go`、`store_test.go` 一并修改 |
 | `backend/cmd/server/main.go`、`backend/cmd/creative-worker/main.go` | 修改 | 空导入 `creativescene` |
 | `backend/internal/platform/httpapi/creative_documents_test.go` | 修改 | 场景读取、命令、冲突和回收站的 HTTP 用例 |
 | `backend/internal/creativedocument/command.go:maxRestoreUnits` | 修改 | 200 → 4096 |
 | `backend/internal/creativedocument/document_test.go` | 修改 | 上限边界：4096 个单元可以恢复，4097 返回 400 |
 | `api/openapi.yaml` | 修改 | 见上 |
-| `backend/internal/platform/httpapi/api.gen.go`、`backend/internal/shootplanning/httpcontract/api.gen.go`、`backend/internal/creativecanvas/tool_schemas.gen.go`、`frontend/src/api/schema.d.ts` | 生成 | `make generate` |
+| `backend/internal/platform/httpapi/api.gen.go`、`frontend/src/api/schema.d.ts` | 生成 | `make generate`。`shootplanning/httpcontract/api.gen.go`、`creativecanvas/tool_schemas.gen.go` 实际未变：前者不含这些 schema；后者只生成读取类输出，助手 `edit_canvas` 的节点类型是手写枚举（`creativeagent/canvas_tools.go:nodeTypes`），不含文档节点，所以工具 schema 不变，无需排空升级，助手到 C3 才能新建或编辑场景 |
 | `Makefile:generate`、`Makefile:generate-check` | 修改 | 复制并比对 `builtins.gen.json` |
 | `frontend/package.json`、`package-lock.json` | 修改 | `three@0.186.1`、`@types/three@0.186.0`、`@react-three/fiber@9.8.1`、`@react-three/drei@10.7.9` |
 | `frontend/src/creative-scene/**` | 新增 | 见「模块职责」 |
@@ -554,6 +554,8 @@ stateDiagram-v2
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | 最大化按类型分派，懒加载 `SceneEditor` |
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 创建菜单「3D 场景」、`KindIcon`、`known`、未命名标签、卡片摘要、最大化按钮 |
 | `frontend/src/creative-canvas/editor/outbox.ts:defaultActions`、`defaultNodeSize` | 修改 | `core.scene` 的乐观投影默认值 |
+| `frontend/src/creative-canvas/editor/canvasEvents.ts`、`useCanvasSnapshot.ts` | 修改 | 画布 SSE 失效时广播 `notifyCanvasInvalidate`，编辑视图订阅后重读（「失效后重读」） |
+| `frontend/tsconfig.app.json` | 修改 | `resolveJsonModule`，读取 `builtins.gen.json` |
 | `frontend/src/creative-canvas/editor/workspace.css` 或 `frontend/src/creative-scene/scene.css` | 修改 / 新增 | 编辑视图样式 |
 | `frontend/scripts/creative-scene.test.ts` | 新增 | 纯逻辑测试：投影、合并、预期修订号、撤销过期、历史分组、清单一致性 |
 | `frontend/scripts/creative-scene-interaction.test.ts` | 新增 | 交互纯逻辑测试：键位分发、模态变换计算、数字输入、选择、滚轮分类 |

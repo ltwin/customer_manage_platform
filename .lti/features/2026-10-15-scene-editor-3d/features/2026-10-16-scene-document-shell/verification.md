@@ -58,3 +58,4 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 1. **4.1 浏览器输入穿刺 / 6.2 导航**：需要 owner 在 macOS Chrome / Safari / Edge（触控板和鼠标）与 Windows Chrome（鼠标）上录制。录制页在本次会话的 scratchpad（不入库）。录制结果存为 `frontend/scripts/fixtures/scene-input/*.json` 后，再校准 `classifyWheel`、补夹具测试、勾选 6.2。也可以由 owner 决定延期，作为后续安排记录。
 2. **坐标轴与 Blender 的差异**：数据契约规定 Y 轴向上、正面朝 +Z（epic `patterns: 几何模块契约`），所以 `G Z` 是前后移动；Blender 的 `G Z` 是上下移动。习惯 Blender 的摄影师会按错。可选：保持现状并在速查里说明；或者存储仍是 Y 向上，界面和锁轴键按 Blender 的叫法映射（X 右、Y 纵深、Z 向上）。
 3. **AC-1 画布侧**：请在真实画布上手动确认一次（见上表）。
+4. **proposal 风险第 7 条不成立**：原以为 `add_node` 枚举加 `core.scene` 会改变助手 `edit_canvas` 的工具 schema，需要排空后升级。实际助手的节点类型是手写枚举（`backend/internal/creativeagent/canvas_tools.go:nodeTypes`，只有文字、图片、视频、音频、链接），`tool_schemas.gen.go` 也没有变化。所以本次上线不需要排空升级，助手在 C1 也不能新建场景，要到 C3 才接入。design 的挂载点已注明。
