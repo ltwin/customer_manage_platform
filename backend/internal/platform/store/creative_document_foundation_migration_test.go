@@ -9,10 +9,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackDocumentFoundation is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackDocumentFoundation undoes 0073 and then the foundation; every older
+// migration's rollback helper starts here.
 func rollbackDocumentFoundation(t *testing.T, url string) {
 	t.Helper()
+	rollbackSceneDocument(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-document-foundation", err)
 	}
@@ -107,6 +108,7 @@ func TestDocumentFoundationMigrationRefusesLossyRollback(t *testing.T) {
 			if _, err = db.Exec(tc.seed); err != nil {
 				t.Fatal(err)
 			}
+			rollbackSceneDocument(t, url)
 			if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "before rollback") {
 				t.Fatal("lossy rollback", err)
 			}

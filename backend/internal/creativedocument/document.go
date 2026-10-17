@@ -259,7 +259,7 @@ func create(ctx context.Context, tx store.TxAccountScope, t Type, title string, 
 		return Document{}, err
 	}
 	d := Document{ID: "cwdoc_" + uuid.NewString(), TypeKey: t.Key(), Title: title, Revision: 1, UnitRevs: revs}
-	r, err := creativecontent.WriteAndRetain(ctx, tx, draft, "", nil, func(r creativecontent.Revision) error {
+	r, err := creativecontent.WriteDocumentAndRetain(ctx, tx, draft, func(r creativecontent.Revision) error {
 		if err := tx.Insert(ctx, "creative_documents", []string{"id", "type_key", "title", "content_revision_id", "revision", "unit_revs"}, d.ID, d.TypeKey, d.Title, r.ID, int64(1), unitJSON); err != nil {
 			return err
 		}

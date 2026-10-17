@@ -985,6 +985,9 @@ button.cc-project-name:hover,
 .cc-document-body small { color: var(--muted); }
 .cc-document-body > p { max-width: 800px; white-space: pre-wrap; font-size: 17px; line-height: 1.9; }
 @media (max-width: 620px) { .cc-maximized-document { inset: 64px 8px 60px 8px; } .cc-maximized-document > header { padding: 16px; } }
+/* 场景节点卡片：只显示物件数摘要，双击打开编辑视图。 */
+.cc-scene-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 100%; min-height: 120px; color: var(--muted); text-align: center; }
+.cc-scene-card > span { color: var(--fg); font-size: 15px; }
 
 /* 组内节点的连线会被 React Flow 抬高 z-index，剪刀按钮所在的标签层需要更高才能点到。 */
 .cc-flow .react-flow__edgelabel-renderer {

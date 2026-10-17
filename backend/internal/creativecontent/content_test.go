@@ -3,9 +3,11 @@ package creativecontent_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
@@ -218,5 +221,55 @@ func TestRevisionSequenceDoesNotRewindAfterUnreferencedRevisionIsRemoved(t *test
 	}
 	if third.ContentID != first.ContentID || third.Sequence != 3 {
 		t.Fatalf("sequence reused: %+v", third)
+	}
+}
+
+// A scene is a document snapshot: direct content writes (assets, canvas node
+// content, generation) refuse it, and the document path still checks that it
+// carries only a JSON object.
+func TestSceneKindIsWrittenOnlyThroughADocument(t *testing.T) {
+	_, a, _ := setup(t)
+	scene := func(raw string) creativecontent.Draft {
+		d := textDraft("")
+		d.Kind = "scene"
+		d.Payload = creativecontent.Payload{Scene: json.RawMessage(raw)}
+		return d
+	}
+	ok := scene(` {"objects":[]}`)
+	if creativecontent.Validate(ok) == nil {
+		t.Fatal("direct content accepted a scene")
+	}
+	if _, err := write(t, a, ok, "", nil, func(store.TxAccountScope, creativecontent.Revision) error { return nil }); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("direct write: %v", err)
+	}
+	errReached := errors.New("reached retain")
+	document := func(d creativecontent.Draft) error {
+		return a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			if err := tx.RequireCreativeCapability(t.Context(), "manual_write"); err != nil {
+				return err
+			}
+			_, err := creativecontent.WriteDocumentAndRetain(t.Context(), tx, d, func(creativecontent.Revision) error { return errReached })
+			return err
+		})
+	}
+	if err := document(ok); !errors.Is(err, errReached) {
+		t.Fatalf("document write: %v", err)
+	}
+	body := "x"
+	withBody := scene(`{}`)
+	withBody.Payload.Body = &body
+	text := textDraft("说明")
+	text.Payload.Scene = json.RawMessage(`{}`)
+	for name, d := range map[string]creativecontent.Draft{
+		"missing":   scene(""),
+		"array":     scene(`[]`),
+		"malformed": scene(`{"objects":`),
+		"too large": scene(`{"pad":"` + strings.Repeat("x", 512<<10) + `"}`),
+		"with body": withBody,
+		"on text":   text,
+	} {
+		if err := document(d); !errors.Is(err, creativeops.ErrValidation) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

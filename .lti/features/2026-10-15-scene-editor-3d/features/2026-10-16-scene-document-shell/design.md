@@ -102,7 +102,7 @@ type Object struct {
 | `creativescene/ops.go` | 场景操作的解码、`touched`（只读）和 `apply` |
 | `creativescene/restore.go` | `RestoreTouched` / `RestoreUnits` |
 | `creativescene/view.go` | `View`（含按单元裁剪）和 `Summary` |
-| `creativecontent/content.go:Payload`、`Validate` | 新增 `Scene` 字段和 `scene` 分支 |
+| `creativecontent/content.go:Payload`、`Validate` | 新增 `Scene` 字段和 `scene` 分支；`scene` 只能经 `WriteDocumentAndRetain` 由文档层写入 |
 | 迁移 `0073_creative_scene_document` | 内容类型 CHECK 加 `scene`；回滚时如有 `scene` 内容则拒绝 |
 | `cmd/server/main.go`、`cmd/creative-worker/main.go` | 空导入 `creativescene` 完成注册（两个进程都会执行画布命令和助手工具） |
 
@@ -209,16 +209,20 @@ type ExpectedRev = string | null | { after: string }   // { after: 意图 id }�
 - **记录预期修订号**：编辑时，对每个涉及单元记录当前看到的修订号。如果这个单元在投影里来自本机一个尚未确认的意图，就记为 `{after: 该意图}`，等它的回执到达后换成回执里的 `revision`。这样编辑基于什么状态，就用什么状态做并发检查，不会因为发送时快照已刷新而悄悄覆盖别人。
 - **合并**：
   - 拖动 gizmo 只在松手时产生意图；
-  - 滑块和数值输入防抖 300ms；
-  - 队尾还没发出的意图如果只是 `update_objects` 改同一组对象，就合并成一个：字段取新值，预期修订号保留最早记录的那个。
-  - 改的是本机仍暂扣或待发的 `add_objects` 里的新物件时，直接改写那个 `add_objects` 里的对象，不另起意图（复制后立即移动因此只有一个修订）。
+  - 滑块和数值输入防抖 300ms：停止输入 300ms 后提交，回车或失焦立即提交，Esc 还原；只提交改动过的文本（聚焦再离开不写回舍入后的显示值）；属性栏按物件重建，待提交的值不会落到新选中的物件上；
+  - 每个意图就是一个撤销步骤，只有对摄影师来说是同一个操作时才合并（owner 2026-10-17）：
+    - 同一次连续编辑（属性栏同一字段的多次提交，意图带相同的合并键 `merge`）在队尾还没发出时合并成一个：字段取新值，预期修订号保留最早记录的那个；
+    - 复制后立即移动：移动写进 Shift + D 暂扣的那个 `add_objects`，只有一个修订。
+  - 入队前先去掉不改变任何值的部分（`apply.ts:withoutNoops`，与当前视图比较，未发出的意图也算在内）：已经是这个值的字段去掉，一个字段都不剩的更新整条去掉，改名、环境、渲染设成现值也去掉；整个修改什么都不改就不入队。服务端不识别无变化的命令，照样写一份完整快照、推进修订号，摄影师还会多出一个什么都不做的撤销步骤。去掉没变的字段也让预期修订号只涉及真正改动的单元，减少不必要的冲突。
+  - 不同的操作（G / R / S、gizmo 拖动、显隐切换等）不合并，保存再慢也一样。原规则把「待发的新增」和「同一组对象的连续修改」都合并，保存慢时新增后紧接的缩放会并进新增，Cmd+Z 把方块一起撤掉（owner 测试发现）。
 - **发送循环**：
   - 同一时间只有一个请求在发送中，`Idempotency-Key` 等于意图 ID。
   - 按队列顺序取第一个可发送的意图：`pending` 且没有未解析的 `{after}`。`blocked` 的意图跳过，不挡住后面的独立意图。
   - 页面隐藏（`pagehide` / `visibilitychange`）时立即发出待发意图，请求带 `keepalive`。
 - **回执处理**：
-  - `revision` 等于 base 修订号 + 1 且 `reset_required = false`：把本意图应用到 base，`changed_units` 的修订号设为 `revision`，删除 `removed_units`，不用重读。
-  - 其他情况（中间夹了别人的修订，或 `reset_required`）：重读快照，再以新 base 重放剩余意图。
+  - `revision` 等于 base 修订号 + 1：把本意图应用到 base 并推进修订号。单元修订号取回执的 `changed_units` / `removed_units`；`reset_required` 时回执不列单元，改用本意图涉及的单元（与服务端 `Touched` 同规则）和它删除的对象单元。
+  - 其中 `reset_required` 的回执和撤销、重做（投影来自步骤记录，服务端可能另行安排层级和顺序）再补一次重读校正。base 先推进，紧接着的编辑才会带上新修订号；等重读回来再推进的话，这段时间里的编辑会和自己的回执冲突（浏览器验证时发现）。
+  - 中间夹了别人的修订：重读快照，再以新 base 重放剩余意图。
 - **失效后重读**：
   - 编辑视图沿用画布页已有的 SSE 连接，在 `onInvalidate` 里加一个订阅，节流到每 500ms 最多一次。
   - 每次直接 `GET /creative/documents/{id}`。不能只看修订号：进出回收站只改 `trashed_at`、`updated_at`，不推进修订号（`backend/internal/creativedocument/trash.go:setTrashed`）。
@@ -294,6 +298,7 @@ owner 已确认（2026-10-16）：本批不把未发出的修改存到本机，�
 | 重做步骤 s | `restore_units{from_revision: s.after, units: s.units}` | 立即显示后值 |
 | s 已过期 | 不提交，跳过并提示「这一步之后物件已被修改，无法撤销」，继续检查下一步 | — |
 | 撤销时 s 还没发出 | 直接从待发队列删掉，不发请求 | 回到前值 |
+| 撤销时本人上一个修改还在发送中或结果未知 | 记下这次撤销，提示「正在保存，保存后撤销」；回执到达、没有本人修改在途时依次执行。期间有新的编辑入队，或这个修改被拒绝（含进回收站），就取消等待 | 回执后显示前值 |
 | 整份恢复成功 | 清空撤销栈和重做栈 | — |
 
 示例（AC-4）：
@@ -303,13 +308,15 @@ owner 已确认（2026-10-16）：本批不把未发出的修改存到本机，�
 
 撤销和重做本身也是本会话的写入，它们产生的修订号会加入本会话集合。
 
+提示（过期、保存后撤销）由撤销栈逐条推送给状态栏（`onNotice`）。原实现每次渲染都把 `undo.notice` 写进界面状态，写入又触发渲染，出现任何提示时编辑器都会无限重渲染并崩溃（排查本次问题时在真实后端上复现）。
+
 过期规则只看物件自己的两个单元，不看 `objects`：别人改层级只推进 `objects`，不会让撤销移动、改参数的步骤过期；按单元恢复也保持当前的 `parent_id` 和 `order`，所以不会把别人的层级调整撤回去。会改变物件存在性的撤销或重做（撤销新增就是删除），要对 `objects` 做并发检查，冲突时按上面的冲突规则处理：删除类必须确认，只加回的才自动变基。
 
 删除含大分组的步骤，撤销时一次恢复全部单元（上限 4096），整体成功或整体失败。
 
 ### 前端：历史版本列表
 
-- 分页读 `GET /revisions`（每页 50 条），在前端分组。相邻修订满足以下任一条件就并入同一组：
+- 分页读 `GET /revisions`（每页 50 条），在前端分组。新建（`changed_units = ["*"]` 且不是恢复）单独成组，标为「新建场景」，保证能回到刚建好时的样子。其余相邻修订满足以下任一条件就并入同一组：
   - 两条都是摄影师写入，且相隔 ≤ 2 分钟；
   - 两条都是助手写入，且 `run_id` 相同。
 - `restored_from` 不为 null 的修订单独成组：`changed_units = ["*"]` 标为「恢复到第 k 版」，其余标为「恢复了 n 处」。
@@ -337,6 +344,7 @@ owner 已确认（2026-10-16）：本批不把未发出的修改存到本机，�
   - `event.isComposing` 为真（输入法组字中）。
 - 按 `event.code` 判断按键，不受键盘布局和 macOS Option 字符的影响。`mod` 在 macOS 上取 `metaKey`，其他平台取 `ctrlKey`。macOS 上 `Backspace` 也视作 Delete，因为 Mac 笔记本没有独立的 Delete 键。
 - 命中的按键先 `preventDefault`，再 `stopPropagation`，避免画布同时响应撤销、删除等快捷键。实施时要核对画布键盘监听挂在哪个阶段：如果在捕获阶段，改为编辑视图打开时由画布停用自身快捷键。
+- 按住不放时系统重复发出的 `keydown`（`event.repeat`）同样拦下，但不执行动作；只有撤销、重做随重复连续执行，与 Blender 一致。否则面板、正交切换、轴锁定会来回翻转，编辑类快捷键每次重复都是一个修订。模态变换里的数字输入走自己的处理，退格等仍可按住重复。
 - **键位表**（`input/keymap.ts`）是一份数据：`{code, mods, context, action, label}`。分发器、状态栏提示、菜单上的快捷键标注和速查都读这份表，保证显示的按键和实际行为一致。
 - **上下文**：
   - 空闲；
@@ -355,7 +363,7 @@ owner 已确认（2026-10-16）：本批不把未发出的修改存到本机，�
 |---|---|---|
 | 中键拖动 / + Shift / + Ctrl | 环绕 / 平移 / 推拉 | 同左 |
 | Alt + 左键拖动 / + Shift / + Ctrl | 环绕 / 平移 / 推拉（与中键并存） | 同左 |
-| `wheel`，无修饰键 | 推拉 | 环绕（`deltaX` 和 `deltaY` 都参与） |
+| `wheel`，无修饰键 | 推拉 | 环绕（`deltaX` 和 `deltaY` 都参与；画面跟着手指走，见下） |
 | `wheel` + Shift | 纵向平移 | 平移 |
 | `wheel` + `ctrlKey`（捏合，或 Ctrl/Cmd + 滚动） | 推拉 | 推拉 |
 | Safari `gesturechange` | 推拉 | 推拉 |
@@ -365,12 +373,22 @@ owner 已确认（2026-10-16）：本批不把未发出的修改存到本机，�
   - 看最近一小段 `wheel` 事件，以下特征判为触控板：`deltaMode = 0`，并且出现横向分量、非整数增量，或连续的小增量；
   - `deltaMode = 1`，或稳定的整格大增量，判为鼠标。
   - 只在用户没有手动选择时生效；手动选择存 `localStorage`，读写都包 try/catch。
-  - 规则是待验证假设，先做真机穿刺（见「未决事项」）。
+  - 规则是待验证假设。原计划先做真机穿刺；owner 2026-10-17 决定不录制，改为日常使用中反馈（见「未决事项」2），单测用合成样本。
 - **视图**：
   - `Digit1`/`Numpad1` 前视，`Digit3`/`Numpad3` 右视，`Digit7`/`Numpad7` 顶视，加 `mod` 看反方向，`Digit5`/`Numpad5` 切换正交与透视；
   - `Period`/`NumpadDecimal` 框选中物件，Home 框全部可见物件，反引号键弹出视图菜单。
-  - 坐标系是 Y 向上：前视从 +Z 看向原点，右视从 +X 看，顶视从 +Y 看。
+  - 编辑器坐标与 Blender 一致：Z 向上、正面朝 -Y；前视（1）从 -Y 看向原点，右视（3）从 +X 看，顶视（7）从 +Z 看、屏幕上方为 +Y。文档数据仍按契约 Y 向上，换算见「局部设计与偏差」。
+  - 右上角坐标轴部件只做显示；点击轴头由控制器按屏幕位置命中（`navigation.ts:axisHeadAt`），走与数字键相同的视图切换，不算选择点击。drei 自带的点击动画会改写相机 up 向量、顶视转歪，不用。
+  - 滚轮、捏合等不带过渡的相机移动后显式触发重绘：视口按需渲染，camera-controls 不带过渡时不发事件。
 - 环绕中心是相机目标点；框选操作会移动目标点。
+- **触控板环绕方向**（owner 2026-10-17）：画面跟着手指走，与 Shift 平移一致，也与 Blender 跟随系统自然滚动时一致。自然滚动下手指右移报 `deltaX < 0`，对应中键向右拖，即 camera-controls 的负方位角（`navigation.ts:orbitAngles`，单测直接用 camera-controls 断言）。原实现方向相反。关闭了自然滚动的系统整体反过来，和它的页面滚动一致。
+- **正交切换**：新相机取 camera-controls 的目标终点，正在过渡的视图切换（如 7 之后立刻 5）不会丢；正交相机设好 zoom 后立即更新投影矩阵。原实现漏了这一步，正交视图按 zoom = 1 投影，场景缩小几十倍（本次验证视窗恢复时发现）。
+- **视窗状态**（owner 2026-10-17）：离开编辑器或刷新页面后，回来看到的和离开时一样。
+  - 内容：相机（视图空间的位置、目标点、正交与否、正交缩放）、选择、当前工具、工具栏 / 侧栏 / 历史面板的开合。预览中的旧版本、菜单和提示不保留。
+  - 存放：按账号和场景存本机 `localStorage`，键 `creative-scene-view:<账号>:<场景>`，与画布视口 `creative-viewport:<账号>:<画布>` 相同做法（`viewState.ts`）。不进文档、不产生修订；换设备不带过去，跨设备需要服务端存储，另议。
+  - 写入：第一次变化后 300ms 内写一次（节流，不是防抖：视图切换过渡期间相机每帧上报），关闭视图和 `pagehide` 时立即写；读写都包 try/catch，读到的内容先校验，坏数据回到默认视图。
+  - 刷新页面后回到画布，不自动重新打开编辑器（2026-10-17）：和通用文档的全屏视图一致，双击节点重开后视窗按上述恢复。要刷新后直接回到编辑器，应和文档全屏视图一起做（例如把打开的节点写进 URL），不在 C1 单独做。
+  - 恢复：界面状态作为编辑器状态的初值；相机在正交切换完成、控制器已绑定当前相机后恢复，此前不上报，默认视图不会覆盖保存的视图。选择在第一次读到场景后才按现有物件裁剪。
 
 ### 交互：选择
 
@@ -408,7 +426,7 @@ stateDiagram-v2
 - **进入时记录**：每个变换对象的起始世界变换、枢轴（这些对象世界位置的中点）、起始指针位置和视图矩阵。模态期间只更新本机预览，不产生意图。
 - **计算**（`transform/modal.ts`，纯函数）：
   - **移动**：
-    - 无约束时，在过枢轴、垂直于视线的平面上取指针射线交点；
+    - 无约束时，在过枢轴、平行于屏幕的平面（法线为相机朝向，同 Blender）上取指针射线交点；透视下横向拖动不会带出竖直漂移；
     - 锁轴时，取指针射线到该轴直线的最近点；
     - 锁平面时，与该平面求交。
   - **旋转**：
@@ -452,7 +470,7 @@ stateDiagram-v2
 ### 交互：菜单、状态栏与速查
 
 - **菜单**：
-  - 「添加」：7 种基础体；
+  - 「添加」：6 种基础体，分隔线后是地面（场景已自带一块，放在末尾，避免回车误加）。新物件放在打开菜单时指针所指的地面点（Shift + A 时的指针、右键的位置），从菜单栏打开时放在视图中心；新加的地面与新建场景时一样锁定并放在原点；
   - 「物件」：复制、删除、隐藏、隐藏未选、全部显示、清除位置 / 旋转 / 缩放、重命名；
   - 「视图」：前 / 右 / 顶 / 正交透视切换、框选中、框全部；导航设备（自动 / 鼠标 / 触控板）；显示工具栏、显示属性栏。
   - 每项右侧显示键位表里的快捷键。
@@ -467,6 +485,7 @@ stateDiagram-v2
 | 历史预览 | 正在预览第 N 版 · 只读 |
 
 - **速查**：`?` 或顶栏按钮打开，按「导航 / 选择 / 变换 / 编辑 / 视图」分组，内容来自键位表。
+- **焦点**：输入框回车或弹层关闭后焦点会落到页面 `body`，快捷键随之失效；焦点从编辑器内部离开且没有新目标时交还根元素，点击视口也会把焦点取回根元素。
 - **首次打开提示**：一张可关闭的卡片，介绍导航设备设置、G / R / S 和 Shift + A。是否已显示过记在 `localStorage`，读写包 try/catch，失败时每次都显示也无妨。
 
 ## 局部设计与偏差
@@ -485,10 +504,20 @@ stateDiagram-v2
 | 不做 3D 游标、Esc 不关视图、H 写入 `visible`、属性栏放左侧、不用 Pointer Lock | 理由见 epic「编辑器交互约定」与调研文档 §6 |
 | gizmo 不支持 Shift 精细；缩放锁轴只用物件自身的轴 | drei `TransformControls` 只支持吸附；物件模式下按全局轴缩放旋转过的物件会错切 |
 | 场景卡片不做缩略图 | 缩略图需要客户端渲染并上传；建议与 C4 的导出一起做 |
+| 编辑器坐标与 Blender 一致（Z 向上、正面朝 -Y），文档数据保持契约的 Y 向上（owner 2026-10-16） | 摄影师按 Blender 习惯操作，`G Z` 必须是上下。数据仍是 three.js / glTF 的 Y 向上，C2 导入的模型和其他读者都不受影响，契约不改。换基是绕 X 轴 90°（`space.ts`），只在视图边界做：物件节点用换算后的变换，绘制内容内部再转一次；提交变换、属性栏、地面取点时换算回文档。模态变换、gizmo、框选都在世界坐标里，天然是 Blender 语义。已知差别：摄像机和灯光的朝向沿用数据约定（看向数据 -Z，即视图 +Y），无旋转时显示为 0°，而 Blender 的摄像机无旋转时朝下；摄像机放置 UI 归 C4，届时再定 |
+| 选中描边：实体用外轮廓（drei `Outlines`），地面和平板用加粗边线（`Edges`），颜色取 Blender 的选中橙 / 活动浅橙 | 只描折角边时球体、圆柱选中后几乎看不出；扁平体没有外壳可描 |
+| 回执连续时先推进 base，撤销、重做和 `reset_required` 再补重读 | 原设计让撤销回执等重读，期间的编辑带旧修订号与自己冲突（见「回执处理」） |
+| 合并只发生在同一次连续编辑内（合并键），以及复制后移动（owner 2026-10-17） | epic 原文「同一对象未发出的连续 `update_objects` 在 outbox 队尾合并」按字面会把两个独立操作并成一步；保存慢时（例如开发环境连远程库）一次 Cmd+Z 撤掉两步。「一次拖动一个修订」由松手提交保证，不受影响。代价是保存慢或离线时修订数略多。epic 的这句话建议在下次修订时同步改为「同一次连续编辑」 |
+| 保存中按 Cmd+Z 等回执后执行 | 原实现提示「稍后再撤销」后什么都不做，保存慢时撤销像失灵。等待期间有新编辑或修改被拒绝就取消，避免撤销掉不是摄影师想撤的那一步 |
+| 场景内容只能经文档层写入（代码审计 2026-10-17） | 共享内容层加了 `scene` 分支后，资产创建、画布 `replace_content` 等直接写内容的入口也跟着接受场景：资产入口进写事务后撞上资产表的类型约束（500），画布入口把未经场景 schema 校验的内容挂到文档节点上。在共享层把 `scene` 列为文档专用类型，比在每个入口各加一道限制更不容易漏 |
+| 输入里的 `null` 只允许出现在契约标为可空的字段（代码审计 2026-10-17） | 可空字段是 Go 里不带 `omitempty` 的指针（`parent_id`、`fog`、灯光的 `range_m` 等），与 OpenAPI 的 `nullable` 一一对应。其余位置的 `null` 会被解码成零值，例如 `position: [null, 0, 0]` 被当成原点保存；数组元素同样检查。基础体参数是自由键值，由内置清单检查类型 |
+| 无变化的修改在前端丢弃，服务端不识别（2026-10-17） | 每个修订都是一份完整快照和一个撤销步骤。前端入队时和视图比较就能判断，不改契约；服务端识别需要定义「无变化」的回执（不推进修订号），等有其他写入方需要时再做 |
+| 按住快捷键只执行一次，撤销、重做除外（2026-10-17） | 重复会让面板和轴锁定来回翻转；编辑类快捷键大多已因无变化被丢弃，但规则统一在分发器里更不容易漏。按住 Cmd+Z 连续撤销是 Blender 的习惯，保留 |
+| 视窗状态存本机浏览器（owner 2026-10-17） | 与画布视口一致，不给文档增加和编辑无关的修订；跨设备同步留待有需要时做服务端存储 |
 
-**待验证假设**：
-- 300 个物件的快照约 100 KB，单次命令服务端耗时 p95 < 150ms。AC-11 实测；超出时先查是全文快照写入慢还是 JSON 校验慢。
-- 10 个场景节点的画布读快照 < 500ms。超出时向底座提「修订行缓存摘要」。
+**待验证假设**（AC-11 已实测，本机，`CREATIVE_SCENE_BASELINE=1`）：
+- 300 个物件的快照约 100 KB，单次命令服务端耗时 p95 < 150ms。实测快照约 94 KB，命令 p50 26 ms / p95 34 ms，每修订存储约 5.2 KB，达标。5.2 KB 是 300 个完全相同的方块，压缩率很高；位置和尺寸各不相同的 300 个物件实测约 27 KB（见 verification「修订增长」）。
+- 10 个场景节点的画布读快照 < 500ms。实测 p50 约 50 ms，达标，不提前做摘要缓存。
 
 ## 接口与数据契约
 
@@ -527,29 +556,34 @@ stateDiagram-v2
 | `backend/internal/creativescene/restore.go` | 新增 | 按单元恢复 |
 | `backend/internal/creativescene/view.go` | 新增 | 读取分支、摘要 |
 | `backend/internal/creativescene/*_test.go` | 新增 | 单元、集成、并发、基线测试 |
-| `backend/internal/creativecontent/content.go:Payload`、`Validate` | 修改 | `Scene` 字段与 `scene` 分支 |
+| `backend/internal/creativecontent/content.go:Payload`、`Validate` | 修改 | `Scene` 字段与 `scene` 分支；`scene` 属于文档专用类型，`Validate` 和 `WriteAndRetain` 拒绝，只有新增的 `WriteDocumentAndRetain` 能写（代码审计 2026-10-17） |
+| `backend/internal/creativedocument/command.go`、`document.go` | 修改 | 文档快照改经 `WriteDocumentAndRetain` 写入（代码审计 2026-10-17） |
+| `backend/internal/creativelibrary/asset_library_test.go` | 修改 | 资产入口拒绝场景内容的回归测试（代码审计 2026-10-17）；`creativecontent/content_test.go` 同理补了文档专用类型的用例 |
 | `backend/internal/platform/store/migrations/0073_creative_scene_document.up.sql` / `.down.sql` | 新增 | 内容类型 CHECK |
 | `backend/internal/platform/store/creative_scene_document_migration_test.go` | 新增 | 新回滚链头 `rollbackSceneDocument`、拒绝回滚测试 |
 | `backend/internal/platform/store/creative_document_foundation_migration_test.go:rollbackDocumentFoundation` | 修改 | 先调用 `rollbackSceneDocument` |
-| `backend/internal/platform/store/*_migration_test.go` 的回滚标签列表 | 修改 | 最前面加 `creative-scene-document` |
+| `backend/internal/platform/store/*_migration_test.go` 的回滚标签列表 | 修改 | 最前面加 `creative-scene-document`；同样带标签列表的 `auth_legacy_cutover_harness_test.go`、`auth_limiter_test.go`、`store_test.go` 一并修改 |
 | `backend/cmd/server/main.go`、`backend/cmd/creative-worker/main.go` | 修改 | 空导入 `creativescene` |
 | `backend/internal/platform/httpapi/creative_documents_test.go` | 修改 | 场景读取、命令、冲突和回收站的 HTTP 用例 |
 | `backend/internal/creativedocument/command.go:maxRestoreUnits` | 修改 | 200 → 4096 |
 | `backend/internal/creativedocument/document_test.go` | 修改 | 上限边界：4096 个单元可以恢复，4097 返回 400 |
 | `api/openapi.yaml` | 修改 | 见上 |
-| `backend/internal/platform/httpapi/api.gen.go`、`backend/internal/shootplanning/httpcontract/api.gen.go`、`backend/internal/creativecanvas/tool_schemas.gen.go`、`frontend/src/api/schema.d.ts` | 生成 | `make generate` |
+| `backend/internal/platform/httpapi/api.gen.go`、`frontend/src/api/schema.d.ts` | 生成 | `make generate`。`shootplanning/httpcontract/api.gen.go`、`creativecanvas/tool_schemas.gen.go` 实际未变：前者不含这些 schema；后者只生成读取类输出，助手 `edit_canvas` 的节点类型是手写枚举（`creativeagent/canvas_tools.go:nodeTypes`），不含文档节点，所以工具 schema 不变，无需排空升级，助手到 C3 才能新建或编辑场景 |
 | `Makefile:generate`、`Makefile:generate-check` | 修改 | 复制并比对 `builtins.gen.json` |
 | `frontend/package.json`、`package-lock.json` | 修改 | `three@0.186.1`、`@types/three@0.186.0`、`@react-three/fiber@9.8.1`、`@react-three/drei@10.7.9` |
 | `frontend/src/creative-scene/**` | 新增 | 见「模块职责」 |
 | `frontend/src/creative-scene/input/keymap.ts` | 新增 | 键位表与分发器 |
 | `frontend/src/creative-scene/input/navigation.ts` | 新增 | `CameraControls` 配置、滚轮处理、`classifyWheel` |
 | `frontend/src/creative-scene/input/selection.ts` | 新增 | 选择状态与框选 |
+| `frontend/src/creative-scene/viewState.ts` | 新增 | 视窗状态的读写与校验（owner 2026-10-17） |
 | `frontend/src/creative-scene/transform/modal.ts`、`numeric.ts` | 新增 | 模态变换计算与数字输入（纯函数） |
 | `frontend/src/creative-scene/panels/Toolbar.tsx`、`MenuBar.tsx`、`StatusBar.tsx`、`ShortcutSheet.tsx`、`ContextMenu.tsx`、`FirstRunHint.tsx` | 新增 | 工具栏、菜单、状态栏、速查、右键菜单、首次提示 |
 | `frontend/src/creative-scene/builtins.gen.json` | 生成 | 内置清单副本 |
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | 最大化按类型分派，懒加载 `SceneEditor` |
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 创建菜单「3D 场景」、`KindIcon`、`known`、未命名标签、卡片摘要、最大化按钮 |
 | `frontend/src/creative-canvas/editor/outbox.ts:defaultActions`、`defaultNodeSize` | 修改 | `core.scene` 的乐观投影默认值 |
+| `frontend/src/creative-canvas/editor/canvasEvents.ts`、`useCanvasSnapshot.ts` | 修改 | 画布 SSE 失效时广播 `notifyCanvasInvalidate`，编辑视图订阅后重读（「失效后重读」） |
+| `frontend/tsconfig.app.json` | 修改 | `resolveJsonModule`，读取 `builtins.gen.json` |
 | `frontend/src/creative-canvas/editor/workspace.css` 或 `frontend/src/creative-scene/scene.css` | 修改 / 新增 | 编辑视图样式 |
 | `frontend/scripts/creative-scene.test.ts` | 新增 | 纯逻辑测试：投影、合并、预期修订号、撤销过期、历史分组、清单一致性 |
 | `frontend/scripts/creative-scene-interaction.test.ts` | 新增 | 交互纯逻辑测试：键位分发、模态变换计算、数字输入、选择、滚轮分类 |
@@ -561,9 +595,9 @@ stateDiagram-v2
 | 验收 / 不变量 | 验证 |
 |---|---|
 | AC-1 新建 | `creativescene` 集成测试：`add_node core.scene` 同事务产生文档、修订 1 和节点，快照只有地面；`definitions` 列出 `core.scene` 且可新建 |
-| AC-2 写入合并 | 前端单测：一次拖动产生 1 个意图；300ms 防抖；队尾合并后保留最早的预期修订号 |
-| AC-3 重开一致 | e2e：改动后重新打开，对比物件列表与属性；后端读取测试对比快照 |
-| AC-4 撤销 | 前端单测覆盖过期规则的各个场景（含「重新移动后也不复活」，以及别人改层级不让移动步骤过期）。后端测试覆盖：撤销用的 `restore_units` 能把删除的对象按原 ID 和位置加回、能删除新加的对象；删除含 150 个对象的分组后一次撤销（300 个单元）整体成功，人为制造其中一个单元冲突时整体失败、快照不变；嵌套分组 G ⊃ H ⊃ A 一起删除后撤销，层级和顺序完全复原，打乱 `units` 顺序结果相同；只恢复 A 而 G 不在时挂到最近的祖先或根 |
+| AC-2 写入合并 | 前端单测：一次拖动产生 1 个意图；300ms 防抖；同一字段的连续提交合并并保留最早的预期修订号，不同操作不合并；新增排队时紧接缩放，Cmd+Z 只去掉缩放（e2e 用慢保存复现） |
+| AC-3 重开一致 | e2e：改动后重新打开，对比物件列表与属性；后端读取测试对比快照。视窗状态：单测覆盖读写校验与节流写入；e2e 关闭再打开、刷新页面后对比工具、选择和视口截图（正交顶视与任意透视角度） |
+| AC-4 撤销 | 前端单测覆盖过期规则的各个场景（含「重新移动后也不复活」，以及别人改层级不让移动步骤过期）；保存中撤销等回执后执行，新编辑或被拒绝时取消；e2e 覆盖保存中连按 Cmd+Z 编辑器不崩溃。后端测试覆盖：撤销用的 `restore_units` 能把删除的对象按原 ID 和位置加回、能删除新加的对象；删除含 150 个对象的分组后一次撤销（300 个单元）整体成功，人为制造其中一个单元冲突时整体失败、快照不变；嵌套分组 G ⊃ H ⊃ A 一起删除后撤销，层级和顺序完全复原，打乱 `units` 顺序结果相同；只恢复 A 而 G 不在时挂到最近的祖先或根 |
 | AC-5 单元并发 | 后端屏障并发测试（每组 20 轮）：摆放与内容并发两边都成功；同一单元并发恰好一方成功，冲突明细正确。前端单测覆盖：只冲突在 `objects` 的新增自动变基；删除遇到只在 `objects` 的冲突时不自动重发，进入确认；目标父对象已不存在的新增不自动变基 |
 | 意图终态 | 前端状态机单测：A 发送中、B 依赖 A，A 被拒绝时 B 转为 `blocked` 且不发送，独立的 C 照常发送；「重新应用」把 A、B 合并后用最新修订号重发；A 结果未知时用原 key 重发，B 继续等待；A 确认后 B 的 `{after}` 换成回执修订号 |
 | 离开提示 | 前端单测：存在 pending/sent/unknown/blocked 意图时 `beforeunload` 拦截，队列清空后解除；关闭视图时只有 blocked 意图才弹确认 |
@@ -575,18 +609,18 @@ stateDiagram-v2
 | AC-11 基线 | `creativescene` 基线测试（`-run Baseline`，不进默认测试集），记录 p50/p95 和每修订新增字节；画布快照计时，结果写入 verification |
 | 迁移 | 回滚链测试；有 `scene` 内容时拒绝回滚 |
 | AC-2 模态变换 | 前端单测：无约束、锁轴、锁平面三种移动投影；全局轴和物件自身轴的循环；旋转角与吸附（5° / 1°）；缩放夹取与锁轴；Shift 精细从按下时起算；数字输入（小数、负号、Backspace、Tab 换轴）覆盖鼠标值；取消后变换完全复原；父对象下的物件换算回局部变换 |
-| AC-2a 导航 | 前端单测：两种模式下滚轮加修饰键的映射；`ctrlKey` 一律推拉；`classifyWheel` 用穿刺时录下的真机事件序列做夹具；手动选择优先于推测。真机穿刺矩阵结论写入 verification |
+| AC-2a 导航 | 前端单测：两种模式下滚轮加修饰键的映射；`ctrlKey` 一律推拉；触控板环绕方向用 camera-controls 断言画面跟手指走；e2e：7 之后立刻 5 是正交顶视，构图与透视顶视一致；`classifyWheel` 用穿刺时录下的真机事件序列做夹具；手动选择优先于推测。真机穿刺矩阵结论写入 verification |
 | AC-2b 多选 | 前端单测：Shift + 单击的三态语义、A / Alt + A、锁定和隐藏物件排除、只变换最上层选中物件、多物件绕中点旋转后位置正确、一次确认只产生一个 `update_objects` 意图；复制后移动合并进同一个 `add_objects`。后端测试：一个 `update_objects` 更新 2000 个物件成功并产生一个修订；同一物件出现两次返回 400 |
 | AC-2c 按键边界 | 前端单测：按 `event.code` 分发；macOS 认 `metaKey`、`Backspace` 视作 Delete；输入框内或组字中不分发；命中后 `preventDefault` 和 `stopPropagation`；Esc 的处理顺序，以及永不关闭视图；Ctrl/Cmd + S 被拦下。e2e：键盘流程 `Shift+A` → `G Z 2 Enter` → `R` 右键取消 → `A` `G` 确认，断言请求次数和最终快照 |
 
 - 日常检查：`make check-go PKG=./internal/creativescene/... ./internal/creativecontent/... ./internal/platform/store/... ./internal/platform/httpapi/...`、`make check-frontend`、`make generate-check`。合回 develop 前跑一次 `make check`。
-- e2e 依赖本机浏览器（SwiftShader 下的 WebGL），按惯例由 owner 手动运行，未运行时如实记录。
+- e2e（`frontend/scripts/creative-scene.e2e.mjs`）用内存场景服务端和 mock 路由，不需要真实账号；依赖本机 Playwright Chromium（SwiftShader 下的 WebGL）和运行中的 Vite（`CREATIVE_SCENE_URL`，默认 :5179），手动运行。
 - 上线：项目尚未对外，不设开关。助手工具 schema 变化，按「排空后升级」部署，先升级 creative-worker。
 
 ## 未决事项
 
 | # | 问题 | 影响 | 解决方式 | 最晚时点 |
 |---|---|---|---|---|
-| 1 | epic 修订 v2（R1–R9、编辑器交互约定、编组并入 C5）和底座恢复上限扩展待批准 | 后端操作集合、OpenAPI、撤销实现、交互 | 与本设计一起呈现给 owner | 实施前 |
-| 2 | 浏览器输入穿刺：`classifyWheel` 规则、Safari 捏合事件、Cmd + D / Cmd + S 等能否拦下、画布键盘监听的阶段 | 导航与键位分发 | 在 macOS Chrome / Safari / Edge（触控板和鼠标）和 Windows Chrome（鼠标）上实测，录下事件序列作测试夹具 | 导航任务开始前 |
-| 3 | 基线是否达标 | 底座摘要缓存是否需要提前做 | AC-11 实测 | 本次 verify |
+| 1 | ~~epic 修订 v2（R1–R9、编辑器交互约定、编组并入 C5）和底座恢复上限扩展待批准~~ | 后端操作集合、OpenAPI、撤销实现、交互 | **已解决**：owner 2026-10-16 与本设计一并批准 | 实施前 |
+| 2 | ~~浏览器输入穿刺：`classifyWheel` 规则、Safari 捏合事件、Cmd + D / Cmd + S 等能否拦下、画布键盘监听的阶段~~ | 导航与键位分发 | **改为体验反馈**：owner 2026-10-17 决定不做真机录制，在日常使用中体验，发现问题再修。`classifyWheel` 保持推测规则，推测错时用「视图」菜单手动选择；分发与 `preventDefault` 由单测和 Chromium e2e 覆盖，Safari、Edge 和 Windows 未实测 | 后续安排（owner 反馈） |
+| 3 | ~~基线是否达标~~ | 底座摘要缓存是否需要提前做 | **已解决**：达标，数据见「待验证假设」 | 本次 verify |

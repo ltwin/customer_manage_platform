@@ -567,3 +567,22 @@ func TestGroupRestoreRefusesToDropMembersAtTheGroupLimit(t *testing.T) {
 		t.Fatal("membership not restored")
 	}
 }
+
+// A scene is a document snapshot that only the scene document type writes.
+// The asset entry accepted it and then failed the assets table check (500).
+func TestCreateAssetRefusesSceneContent(t *testing.T) {
+	db, a, _ := setup(t)
+	scene := textDraft("x")
+	scene.Kind, scene.Payload = "scene", creativecontent.Payload{Scene: json.RawMessage(`{}`)}
+	_, err := creativelibrary.CreateAsset(t.Context(), a, cmd(t, creativelibrary.CreateAssetInput{Title: "场景", Content: scene}))
+	if !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("want validation, got %v", err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM creative_assets) + (SELECT count(*) FROM creative_content_revisions)`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("%d rows written", n)
+	}
+}

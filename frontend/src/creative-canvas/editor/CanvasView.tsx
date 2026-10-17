@@ -50,6 +50,7 @@ import {
   SquareDashedMousePointer,
   Map as MapIcon,
   Folder,
+  Box as BoxIcon,
   FolderPlus,
   FolderMinus,
   Copy,
@@ -193,6 +194,7 @@ const kindLabel: Record<string, string> = {
   video: '视频',
   audio: '音频',
   group: '布局分组',
+  scene: '场景',
 }
 export const untitled = (typeKey: string) =>
   typeKey === 'core.group'
@@ -204,12 +206,36 @@ function emptyRatio(ratio: string) {
   return ratio || '1:1'
 }
 
+// 场景卡片只显示摘要：物件数，有摄像机时追加台数。缩略图随 C4 的导出一起做。
+function SceneCard({ node }: { node: CanvasNode }) {
+  const summary = node.document_summary as
+    | { objects?: number; cameras?: number }
+    | null
+    | undefined
+  if (node.status.content_state === 'unavailable')
+    return <p>当前无法显示此场景</p>
+  return (
+    <div className="cc-scene-card" role="group" aria-label="3D 场景">
+      <BoxIcon size={40} />
+      <span>
+        {typeof summary?.objects === 'number'
+          ? `${summary.objects} 个物件${summary.cameras ? ` · ${summary.cameras} 台摄像机` : ''}`
+          : '正在创建场景…'}
+      </span>
+      {node.document_trashed && <small>场景在回收站</small>}
+      <small className="cc-empty-hint">双击打开编辑</small>
+    </div>
+  )
+}
+
 function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
   switch (typeKey) {
     case 'core.group':
       return <Folder size={size} />
     case 'internal.document':
       return <FileText size={size} />
+    case 'core.scene':
+      return <BoxIcon size={size} />
     case 'core.text':
     case 'core.link':
       return <Type size={size} />
@@ -313,6 +339,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
       'core.audio',
       'core.group',
       'internal.document',
+      'core.scene',
     ].includes(n.metadata.type_key)
   return (
     <article
@@ -482,7 +509,9 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
       )}
       {!group && !media && (
         <div className="cc-node-content">
-          {data.inlineContent ? (
+          {n.metadata.type_key === 'core.scene' ? (
+            <SceneCard node={n} />
+          ) : data.inlineContent ? (
             data.inlineContent.draft ? (
               <InlineNodeText
                 {...data.inlineContent}
@@ -1654,6 +1683,22 @@ export default function CanvasView({
     onCreated(id, kind, kind === 'video' ? `${mentions} 镜头缓慢推进，` : `${mentions} `)
   }
   createNodeRef.current = createNode
+  function createScene(menu: AddMenuState) {
+    const id = `cwnode_${crypto.randomUUID()}`
+    const size = defaultNodeSize('core.scene')
+    act([
+      {
+        type: 'add_node',
+        node_id: id,
+        type_key: 'core.scene',
+        title: untitled('core.scene'),
+        x: menu.world.x - size.width / 2,
+        y: menu.world.y - size.height / 2,
+      },
+    ])
+    onSelection([id])
+    onSelect(id)
+  }
   function addMenuItems(menu: AddMenuState): CanvasMenuItem[] {
     const from =
       menu.link?.side === 'output'
@@ -1686,6 +1731,12 @@ export default function CanvasView({
     ]
     if (!menu.link)
       items.push(
+        {
+          label: '3D 场景',
+          icon: <KindIcon typeKey="core.scene" size={16} />,
+          disabled,
+          action: () => createScene(menu),
+        },
         'separator',
         {
           label: '上传文件',
@@ -1811,6 +1862,13 @@ export default function CanvasView({
         icon: <FileText size={16} />,
         shortcut: 'Enter',
         disabled: disabled || !target.capabilities.actions.includes('edit'),
+        action: () => onEdit(target.id),
+      })
+    else if (target.metadata.type_key === 'core.scene')
+      items.push({
+        label: '打开场景',
+        icon: <Maximize2 size={16} />,
+        disabled: !target.data.document_id,
         action: () => onEdit(target.id),
       })
     else if (
@@ -2535,6 +2593,7 @@ export default function CanvasView({
             // 链接、文档等：主要动作 + 更多；链接/音频的完整工具条由 V6-009/010 交付。
             return [
               type === 'internal.document' && icon('最大化文档', <Maximize2 size={16} />, () => onEdit(one.id)),
+              type === 'core.scene' && icon('打开场景', <Maximize2 size={16} />, () => onEdit(one.id), '打开场景', !one.data.document_id),
               type === 'core.link' && one.capabilities.actions.includes('edit') && tool('编辑', <Pencil size={16} />, () => onEdit(one.id)),
               more,
             ]

@@ -601,6 +601,44 @@ func TestRestoreReferences(t *testing.T) {
 	wantErr(t, err, creativeops.ErrValidation)
 }
 
+// TestRestoreUnitsUpToCapacity restores as many units as a document can hold
+// in one request, so undoing a large delete never has to be split.
+func TestRestoreUnitsUpToCapacity(t *testing.T) {
+	f := setup(t)
+	d := createBoard(t, f.a, "")
+	// meta, note, items and refs leave room for 4092 items.
+	ids := make([]string, 4092)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("n%04d", i)
+	}
+	addItems(t, f.a, d, ids...)                                                                                                            // 2
+	mustSend(t, f.a, batch{DocumentID: d.ID, Expected: map[string]any{"note": "1"}, Operations: []any{op{"op": "set_note", "text": "x"}}}) // 3
+
+	// A unit absent from both revisions keeps the collection untouched, which
+	// brings the list to exactly 4096 names without a 4097th expected entry.
+	units := []string{"meta", "note", "refs", "item:ghost"}
+	expected := map[string]any{"meta": "1", "note": "3", "refs": "1", "item:ghost": nil}
+	for _, id := range ids {
+		units = append(units, "item:"+id)
+		expected["item:"+id] = "2"
+	}
+	restore := func(units []string) batch {
+		return batch{DocumentID: d.ID, Expected: expected, Operations: []any{op{"op": "restore_units", "from_revision": "2", "units": units}}}
+	}
+	if res := mustSend(t, f.a, restore(units)); res.Revision != 4 || !res.ResetRequired {
+		t.Fatalf("restore of %d units %+v", len(units), res)
+	}
+	if v := readBoard(t, f.a, d.ID); v.Board.Note != "空白" || v.UnitRevs["item:n4091"] != "4" {
+		t.Fatalf("after restore: note %q, item rev %q", v.Board.Note, v.UnitRevs["item:n4091"])
+	}
+	expected["meta"], expected["note"], expected["refs"] = "4", "4", "4"
+	for _, id := range ids {
+		expected["item:"+id] = "4"
+	}
+	_, err := send(t, f.a, restore(append(units, "item:ghost2")))
+	wantErr(t, err, creativeops.ErrValidation)
+}
+
 func TestReceiptStaysBounded(t *testing.T) {
 	f := setup(t)
 	d := createBoard(t, f.a, "")

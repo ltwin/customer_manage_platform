@@ -248,6 +248,7 @@ const (
 	CreativeActionAddNodeTypeKeyCoreGroup        CreativeActionAddNodeTypeKey = "core.group"
 	CreativeActionAddNodeTypeKeyCoreImage        CreativeActionAddNodeTypeKey = "core.image"
 	CreativeActionAddNodeTypeKeyCoreLink         CreativeActionAddNodeTypeKey = "core.link"
+	CreativeActionAddNodeTypeKeyCoreScene        CreativeActionAddNodeTypeKey = "core.scene"
 	CreativeActionAddNodeTypeKeyCoreText         CreativeActionAddNodeTypeKey = "core.text"
 	CreativeActionAddNodeTypeKeyCoreVideo        CreativeActionAddNodeTypeKey = "core.video"
 	CreativeActionAddNodeTypeKeyInternalDocument CreativeActionAddNodeTypeKey = "internal.document"
@@ -263,6 +264,8 @@ func (e CreativeActionAddNodeTypeKey) Valid() bool {
 	case CreativeActionAddNodeTypeKeyCoreImage:
 		return true
 	case CreativeActionAddNodeTypeKeyCoreLink:
+		return true
+	case CreativeActionAddNodeTypeKeyCoreScene:
 		return true
 	case CreativeActionAddNodeTypeKeyCoreText:
 		return true
@@ -1889,6 +1892,105 @@ const (
 func (e CreativeSavePromptPayloadType) Valid() bool {
 	switch e {
 	case SavePrompt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneDocumentTypeKey.
+const (
+	Scene CreativeSceneDocumentTypeKey = "scene"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneDocumentTypeKey enum.
+func (e CreativeSceneDocumentTypeKey) Valid() bool {
+	switch e {
+	case Scene:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneLightType.
+const (
+	Directional CreativeSceneLightType = "directional"
+	Point       CreativeSceneLightType = "point"
+	Spot        CreativeSceneLightType = "spot"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneLightType enum.
+func (e CreativeSceneLightType) Valid() bool {
+	switch e {
+	case Directional:
+		return true
+	case Point:
+		return true
+	case Spot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneObjectKind.
+const (
+	Camera    CreativeSceneObjectKind = "camera"
+	Group     CreativeSceneObjectKind = "group"
+	Light     CreativeSceneObjectKind = "light"
+	Primitive CreativeSceneObjectKind = "primitive"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneObjectKind enum.
+func (e CreativeSceneObjectKind) Valid() bool {
+	switch e {
+	case Camera:
+		return true
+	case Group:
+		return true
+	case Light:
+		return true
+	case Primitive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneRenderMode.
+const (
+	Clay CreativeSceneRenderMode = "clay"
+	Lit  CreativeSceneRenderMode = "lit"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneRenderMode enum.
+func (e CreativeSceneRenderMode) Valid() bool {
+	switch e {
+	case Clay:
+		return true
+	case Lit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneSkyKind.
+const (
+	Color      CreativeSceneSkyKind = "color"
+	Hdri       CreativeSceneSkyKind = "hdri"
+	Procedural CreativeSceneSkyKind = "procedural"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneSkyKind enum.
+func (e CreativeSceneSkyKind) Valid() bool {
+	switch e {
+	case Color:
+		return true
+	case Hdri:
+		return true
+	case Procedural:
 		return true
 	default:
 		return false
@@ -3723,7 +3825,7 @@ type CreativeActionAddNode struct {
 	Title           *string                   `json:"title,omitempty"`
 	Type            CreativeActionAddNodeType `json:"type"`
 
-	// TypeKey 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
+	// TypeKey 文档节点类型（core.scene、internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
 	TypeKey CreativeActionAddNodeTypeKey `json:"type_key"`
 	X       float32                      `json:"x"`
 	Y       float32                      `json:"y"`
@@ -3732,7 +3834,7 @@ type CreativeActionAddNode struct {
 // CreativeActionAddNodeType defines model for CreativeActionAddNode.Type.
 type CreativeActionAddNodeType string
 
-// CreativeActionAddNodeTypeKey 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
+// CreativeActionAddNodeTypeKey 文档节点类型（core.scene、internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
 type CreativeActionAddNodeTypeKey string
 
 // CreativeActionClearContent defines model for CreativeActionClearContent.
@@ -5980,6 +6082,182 @@ type CreativeSavePromptPayload struct {
 
 // CreativeSavePromptPayloadType defines model for CreativeSavePromptPayload.Type.
 type CreativeSavePromptPayloadType string
+
+// CreativeScene defines model for CreativeScene.
+type CreativeScene struct {
+	Environment CreativeSceneEnvironment `json:"environment"`
+	Objects     []CreativeSceneObject    `json:"objects"`
+	Render      CreativeSceneRender      `json:"render"`
+}
+
+// CreativeSceneAmbient defines model for CreativeSceneAmbient.
+type CreativeSceneAmbient struct {
+	Color     CreativeSceneColor `json:"color"`
+	Intensity float32            `json:"intensity"`
+}
+
+// CreativeSceneCamera defines model for CreativeSceneCamera.
+type CreativeSceneCamera struct {
+	Aspect   string    `json:"aspect"`
+	FarM     float32   `json:"far_m"`
+	FocalMm  float32   `json:"focal_mm"`
+	Label    string    `json:"label"`
+	NearM    float32   `json:"near_m"`
+	SensorMm []float32 `json:"sensor_mm"`
+}
+
+// CreativeSceneColor defines model for CreativeSceneColor.
+type CreativeSceneColor = string
+
+// CreativeSceneDocument 场景文档（type_key = scene）。快照结构见 data 契约「场景文档」，服务端每次写入前整体校验。
+type CreativeSceneDocument struct {
+	ContentRevisionId string    `json:"content_revision_id"`
+	CreatedAt         time.Time `json:"created_at"`
+	Id                string    `json:"id"`
+
+	// Models 以 content_revision_id 为键，覆盖快照引用的全部模型；C2 之前恒为空对象。
+	Models map[string]CreativeSceneModel `json:"models"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision  CreativeRevision             `json:"revision"`
+	Scene     CreativeScene                `json:"scene"`
+	Title     string                       `json:"title"`
+	TrashedAt nullable.Nullable[time.Time] `json:"trashed_at"`
+	TypeKey   CreativeSceneDocumentTypeKey `json:"type_key"`
+
+	// UnitRevs 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。
+	UnitRevs  CreativeDocumentUnitRevisions `json:"unit_revs"`
+	UpdatedAt time.Time                     `json:"updated_at"`
+}
+
+// CreativeSceneDocumentTypeKey defines model for CreativeSceneDocument.TypeKey.
+type CreativeSceneDocumentTypeKey string
+
+// CreativeSceneEnvironment defines model for CreativeSceneEnvironment.
+type CreativeSceneEnvironment struct {
+	Ambient CreativeSceneAmbient                `json:"ambient"`
+	Fog     nullable.Nullable[CreativeSceneFog] `json:"fog"`
+
+	// Sky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
+	Sky CreativeSceneSky `json:"sky"`
+}
+
+// CreativeSceneFog defines model for CreativeSceneFog.
+type CreativeSceneFog struct {
+	Color CreativeSceneColor `json:"color"`
+
+	// FarM 须大于 near_m。
+	FarM  float32 `json:"far_m"`
+	NearM float32 `json:"near_m"`
+}
+
+// CreativeSceneLight defines model for CreativeSceneLight.
+type CreativeSceneLight struct {
+	// AngleDeg spot 时必填。
+	AngleDeg   nullable.Nullable[float32] `json:"angle_deg"`
+	CastShadow bool                       `json:"cast_shadow"`
+	Color      CreativeSceneColor         `json:"color"`
+	Intensity  float32                    `json:"intensity"`
+	Penumbra   nullable.Nullable[float32] `json:"penumbra"`
+	RangeM     nullable.Nullable[float32] `json:"range_m"`
+	Type       CreativeSceneLightType     `json:"type"`
+}
+
+// CreativeSceneLightType defines model for CreativeSceneLight.Type.
+type CreativeSceneLightType string
+
+// CreativeSceneMaterialSlot defines model for CreativeSceneMaterialSlot.
+type CreativeSceneMaterialSlot struct {
+	Params map[string]interface{} `json:"params"`
+	Preset string                 `json:"preset"`
+}
+
+// CreativeSceneMaterialSlots 缺省等同于空对象。
+type CreativeSceneMaterialSlots map[string]CreativeSceneMaterialSlot
+
+// CreativeSceneModel defines model for CreativeSceneModel.
+type CreativeSceneModel struct {
+	ContentId string `json:"content_id"`
+
+	// Generator {language, contract_version, lib_version, params_schema, params, mount}，不含代码。
+	Generator    nullable.Nullable[map[string]interface{}] `json:"generator"`
+	GlbUrl       nullable.Nullable[string]                 `json:"glb_url"`
+	Manifest     nullable.Nullable[map[string]interface{}] `json:"manifest"`
+	ThumbnailUrl nullable.Nullable[string]                 `json:"thumbnail_url"`
+
+	// Usable false 时其余字段为 null，编辑器显示「模型不可用」占位。
+	Usable bool `json:"usable"`
+}
+
+// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+type CreativeSceneObject struct {
+	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
+	Id     string                  `json:"id"`
+	Kind   CreativeSceneObjectKind `json:"kind"`
+	Light  *CreativeSceneLight     `json:"light,omitempty"`
+	Locked bool                    `json:"locked"`
+
+	// MaterialSlots 缺省等同于空对象。
+	MaterialSlots *CreativeSceneMaterialSlots `json:"material_slots,omitempty"`
+	Name          string                      `json:"name"`
+
+	// Order 同一父对象下的兄弟顺序，兄弟之间不重复。
+	Order int `json:"order"`
+
+	// ParentId null 为根；父对象必须是 group，不能成环。
+	ParentId  nullable.Nullable[string] `json:"parent_id"`
+	Primitive *CreativeScenePrimitive   `json:"primitive,omitempty"`
+	Transform CreativeSceneTransform    `json:"transform"`
+	Visible   bool                      `json:"visible"`
+}
+
+// CreativeSceneObjectKind defines model for CreativeSceneObject.Kind.
+type CreativeSceneObjectKind string
+
+// CreativeSceneParams 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。
+type CreativeSceneParams map[string]interface{}
+
+// CreativeScenePrimitive defines model for CreativeScenePrimitive.
+type CreativeScenePrimitive struct {
+	// Builtin 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。
+	Builtin string `json:"builtin"`
+
+	// Params 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。
+	Params *CreativeSceneParams `json:"params,omitempty"`
+}
+
+// CreativeSceneRender defines model for CreativeSceneRender.
+type CreativeSceneRender struct {
+	Mode CreativeSceneRenderMode `json:"mode"`
+}
+
+// CreativeSceneRenderMode defines model for CreativeSceneRender.Mode.
+type CreativeSceneRenderMode string
+
+// CreativeSceneSky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
+type CreativeSceneSky struct {
+	Color           *CreativeSceneColor  `json:"color,omitempty"`
+	Hdri            *string              `json:"hdri,omitempty"`
+	Kind            CreativeSceneSkyKind `json:"kind"`
+	SunAzimuthDeg   *float32             `json:"sun_azimuth_deg,omitempty"`
+	SunElevationDeg *float32             `json:"sun_elevation_deg,omitempty"`
+	Turbidity       *float32             `json:"turbidity,omitempty"`
+}
+
+// CreativeSceneSkyKind defines model for CreativeSceneSky.Kind.
+type CreativeSceneSkyKind string
+
+// CreativeSceneTransform defines model for CreativeSceneTransform.
+type CreativeSceneTransform struct {
+	// Position 米，每轴 ±100000。
+	Position []float32 `json:"position"`
+
+	// Rotation 单位四元数 x, y, z, w。
+	Rotation []float32 `json:"rotation"`
+
+	// Scale 每项 0.001…1000。
+	Scale []float32 `json:"scale"`
+}
 
 // CreativeSequence 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
 type CreativeSequence = string
@@ -9238,6 +9516,34 @@ func (t *CreativeDocument) MergeCreativeInternalDocument(v CreativeInternalDocum
 	return err
 }
 
+// AsCreativeSceneDocument returns the union data inside the CreativeDocument as a CreativeSceneDocument
+func (t CreativeDocument) AsCreativeSceneDocument() (CreativeSceneDocument, error) {
+	var body CreativeSceneDocument
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeSceneDocument overwrites any union data inside the CreativeDocument as the provided CreativeSceneDocument
+func (t *CreativeDocument) FromCreativeSceneDocument(v CreativeSceneDocument) error {
+	v.TypeKey = "scene"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeSceneDocument performs a merge with any union data inside the CreativeDocument, using the provided CreativeSceneDocument
+func (t *CreativeDocument) MergeCreativeSceneDocument(v CreativeSceneDocument) error {
+	v.TypeKey = "scene"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t CreativeDocument) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"type_key"`
@@ -9254,6 +9560,8 @@ func (t CreativeDocument) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "internal.document":
 		return t.AsCreativeInternalDocument()
+	case "scene":
+		return t.AsCreativeSceneDocument()
 	default:
 		return nil, errors.New("unknown discriminator value: " + discriminator)
 	}

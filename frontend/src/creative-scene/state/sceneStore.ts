@@ -1,0 +1,73 @@
+import { createStore } from 'zustand/vanilla'
+import type { Scene } from '../api.ts'
+import type { Context } from '../input/keymap.ts'
+import type { Device, DevicePreference } from '../input/navigation.ts'
+import { emptySelection, type Selection } from '../input/selection.ts'
+import type { SavedView } from '../viewState.ts'
+
+// Editor UI state, never part of the document: what is selected, which tool
+// and panels are showing, open menus and prompts. The selection, tool,
+// panels and camera come back on the next visit (viewState.ts); document
+// state lives in the session (sync.ts).
+
+export type Tool = 'box' | 'tweak' | 'move' | 'rotate' | 'scale'
+
+export type MenuKind = 'add' | 'object' | 'view'
+
+export type Popup =
+  | { kind: 'menu'; menu: MenuKind; x: number; y: number }
+  | { kind: 'delete'; x: number; y: number; ids: string[] }
+  | { kind: 'rename'; x: number; y: number; id: string }
+
+export type Preview = { revision: string; scene: Scene }
+
+export type EditorUI = {
+  selection: Selection
+  tool: Tool
+  toolbar: boolean
+  sidebar: boolean
+  popup: Popup | null
+  sheet: boolean
+  history: boolean
+  preview: Preview | null
+  /** A G / R / S transform is running; its text goes to the status bar. */
+  modal: string | null
+  boxing: boolean
+  notice: string
+  device: DevicePreference
+  guessed: Device | null
+  ortho: boolean
+  /** Closing while edits wait on a conflict asks first. */
+  confirmClose: boolean
+}
+
+export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
+  return createStore<EditorUI>(() => ({
+    selection: saved?.selection ?? emptySelection,
+    tool: saved?.tool ?? 'box',
+    toolbar: saved?.toolbar ?? true,
+    sidebar: saved?.sidebar ?? true,
+    popup: null,
+    sheet: false,
+    history: saved?.history ?? false,
+    preview: null,
+    modal: null,
+    boxing: false,
+    notice: '',
+    device,
+    guessed: null,
+    ortho: saved?.camera?.ortho ?? false,
+    confirmClose: false,
+  }))
+}
+
+export type EditorStore = ReturnType<typeof createEditorStore>
+
+/** Which keymap context applies now; the innermost layer wins. */
+export function contextOf(ui: EditorUI): Context {
+  if (ui.modal) return 'modal'
+  if (ui.popup) return 'menu'
+  if (ui.boxing) return 'boxselect'
+  if (ui.preview) return 'preview'
+  return 'idle'
+}

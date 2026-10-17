@@ -14,3 +14,22 @@
 - 依赖方向：`httpapi` / `creativecanvas` / 各类型包 → `creativedocument` → `creativecontent` / `platform/store`。`creativedocument` 不依赖 `creativecanvas`，也不依赖任何具体类型。
 - 文档与画布节点是两个聚合：只有 `add_node` 新建时同事务创建，之后节点只持有 `document_id`。删除节点不删除文档；彻底删除文档后，节点读取为不可用。
 - 实时：文档头的变化经已有的 `creative_documents_notify` 触发器走账号级失效通道，不新增 SSE。
+
+## 场景模块
+
+### 职责与边界
+- 依赖通用文档底座（`creative-document-foundation`）：场景以文档类型端口注册为 `scene` 类型，读取、命令、回收站和历史都走通用入口。
+- `backend/internal/creativescene`：
+  - 场景快照的 schema 校验、单元版本与命令应用、恢复。
+  - 模型提交（消费暂存上传，写 `model` 内容）。
+  - 客户端任务生命周期、导出编排。
+  - 场景助手工具的领域入口。
+- 不职责：执行几何代码、渲染、画布节点的布局规则（调用画布命令层完成）。
+- 依赖方向：`creativeagent` → `creativescene` → `creativecontent` / `creativestaging` / `creativecanvas`（命令层）/ 通用文档层 / `platform/store` / `platform/realtime`。`creativescene` 不 import gin（ADR-003），`gin.Context` 不下穿。
+- 前端 `frontend/src/creative-scene/`：编辑器外壳（R3F）、场景状态（快照 + outbox + 撤销栈）、沙箱宿主、渲染端（客户端任务执行器）、材质库、导出器。编辑视图嵌入画布的同一个助手面板。
+- 渲染、烘焙、截图、导出只在浏览器完成；服务端不渲染。服务端经客户端任务派发工作，经暂存上传接收产物。
+
+### 关键数据流
+- 手动编辑：编辑器 outbox → `POST /creative/documents/{id}/commands` → 新文档修订 → 账号失效通知 → 其他标签页重读。
+- 助手写模型 / 截图 / 导出：工具创建客户端任务 → 运行等待并释放槽位 → 编辑器认领、执行、暂存上传 → 完成任务 → 同事务落结果并让运行继续。
+- 导出：渲染端暂存上传导出图 → `POST /creative/documents/{id}/scene-exports` → 画布命令层建图片节点，写入 `based_on`。

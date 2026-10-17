@@ -110,6 +110,8 @@ const defaultActions: Record<string, string[]> = {
     'save_to_library',
   ],
   'core.group': ['move', 'rename', 'duplicate', 'remove', 'ungroup'],
+  // Document nodes share one definition on the server (documentDefinition).
+  'core.scene': ['move', 'resize', 'rename', 'duplicate', 'remove', 'maximize'],
 }
 // 新建节点的默认尺寸，与服务端 defaultNodeSize 一致（PRD CV-14 / CV-B0 / CV-C0）。
 export function defaultNodeSize(typeKey: string): {
@@ -378,7 +380,8 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
               prompt: null,
               capabilities: {
                 actions: defaultActions[action.type_key] ?? [],
-                prompt_mode: 'draft',
+                prompt_mode:
+                  action.type_key === 'core.scene' ? 'unavailable' : 'draft',
                 disabled_reason: null,
               },
               placement_revision: '1',

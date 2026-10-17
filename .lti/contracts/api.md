@@ -163,7 +163,7 @@ Authorization: Bearer <token>
 |---|---|---|
 | `rename` | `title`（1–200 字符，去首尾空白后非空） | `meta` |
 | `restore` | `revision`（1 ≤ revision < 当前修订）；**必须单独成批** | 全部单元。在文档行锁内比较 `expected_revision` 与文档当前修订号，不使用 `expected` |
-| `restore_units` | `from_revision`（同上）、`units`（1–200 个单元名，可含 `meta`）；**必须单独成批** | 列出的单元。当前不存在、或在 `from_revision` 中不存在的单元会改变存在性，此时类型同时声明集合单元；当前不存在的单元在 `expected` 中写 null |
+| `restore_units` | `from_revision`（同上）、`units`（1–4096 个单元名，可含 `meta`）；**必须单独成批** | 列出的单元。当前不存在、或在 `from_revision` 中不存在的单元会改变存在性，此时类型同时声明集合单元；当前不存在的单元在 `expected` 中写 null |
 
 同一批里每个单元最多被一个操作涉及；请求体 ≤ 1 MiB。
 
@@ -239,6 +239,8 @@ Content-Type: application/json
 
 ### 兼容与变更
 首次定义。`set_body` 是 `internal.document` 的类型操作，只用于内部视图和测试。
+
+2026-10-16（`scene-document-shell`）：`restore_units` 的单元上限从 200 放宽到 4096，与单元容量一致，使删除大分组后的撤销能在一个请求里原子完成；请求体 1 MiB 限制不变。只放宽，旧客户端不受影响。
 
 ## 文档进回收站
 
@@ -457,3 +459,189 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
  "document_id": "cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b", "x": 120, "y": 80}
 ```
 - **兼容**：扩展现有动作，旧请求不受影响；`internal.document` 仍不可新建，但可以放回（替代测试夹具 `ReferenceInternalDocument` 的生产路径）。
+
+## 读取场景
+
+### 用途与调用
+- **用途**：编辑器打开或重读场景时，取得当前快照和渲染所需的模型信息。
+- **消费者**：前端场景编辑器；助手工具 `read_scene` 走领域层，不经 HTTP。
+- **调用**：`GET /api/v1/creative/documents/{id}`，响应为 `application/json`。这是通用读取接口在 `type_key = "scene"` 时的分支：通用字段（`id`、`type_key`、`title`、`revision`、`trashed_at`）由底座的 `api: 读取文档` 定义，本条目定义 `scene` 分支增加的字段。
+- **权限**：已登录且账号具备创意空间能力；场景必须属于当前账号，否则返回 404。回收站中的场景可以读取，响应标明 `trashed_at`。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `id` | path | string | 是 | 场景文档 ID |
+
+无查询参数和请求体。
+
+### 成功响应
+200：
+
+| 字段 | 类型 | 必返 | 可为 null | 说明 |
+|---|---|---|---|---|
+| `id`、`type_key`、`title`、`revision`、`content_revision_id`、`unit_revs`、`trashed_at`、`created_at`、`updated_at` | — | 是 | — | 通用字段，见底座 `api: 读取文档`；`type_key` 为 `"scene"`；场景的单元命名见 `data: 场景文档` |
+| `scene` | object | 是 | 否 | 快照里的 `scene`，结构见 `data: 场景文档` |
+| `models` | object | 是 | 否 | 以 `content_revision_id` 为键，覆盖快照引用的全部模型；C2 之前恒为 `{}` |
+| `models.*.content_id` | string | 是 | 否 | 模型内容 ID |
+| `models.*.usable` | boolean | 是 | 否 | false 时其余字段为 null，编辑器显示「模型不可用」占位 |
+| `models.*.manifest` | object | 是 | 是 | 见几何模块契约「产物」 |
+| `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, params_schema, params, mount}`，**不含代码** |
+| `models.*.glb_url` | string | 是 | 是 | 10 分钟有效的读取票据 URL |
+| `models.*.thumbnail_url` | string | 是 | 是 | 同上 |
+
+代码通过助手工具或代码面板单独读取（C2 局部设计），避免每次重读快照都传几十 KB 代码。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 401 | 现有认证错误码 | 未登录或会话过期 | 走现有续期 |
+| 404 | `not_found` | 不存在或不属于当前账号 | 关闭编辑视图，回到画布 |
+| 503 | `creative_dependency_unavailable` | 媒体票据服务不可用 | 退避重试 |
+
+### 交互规则
+只读，没有分页。重复调用没有副作用。读取票据每次签发新的。
+
+### 调用示例
+```http
+GET /api/v1/creative/documents/cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10
+Authorization: Bearer <token>
+```
+```json
+{
+  "id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10",
+  "type_key": "scene",
+  "title": "黄昏教堂中殿",
+  "revision": "4",
+  "content_revision_id": "ccrv_3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7",
+  "unit_revs": {"meta": "1", "environment": "3", "render": "1", "objects": "4",
+                "object:sobj_V1StGXR8_Z5jdHi6B-myT": "1", "object:sobj_V1StGXR8_Z5jdHi6B-myT:content": "1",
+                "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ": "4", "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ:content": "2"},
+  "trashed_at": null,
+  "created_at": "2026-10-20T08:00:00Z",
+  "updated_at": "2026-10-20T09:10:00Z",
+  "scene": {
+    "environment": {
+      "sky": {"kind": "procedural", "sun_elevation_deg": 12, "sun_azimuth_deg": 240, "turbidity": 4},
+      "ambient": {"color": "#ffffff", "intensity": 0.4},
+      "fog": null
+    },
+    "render": {"mode": "clay"},
+    "objects": [
+      {"id": "sobj_V1StGXR8_Z5jdHi6B-myT", "kind": "primitive", "name": "地面", "parent_id": null, "order": 0,
+       "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
+       "visible": true, "locked": true,
+       "primitive": {"builtin": "ground@1", "params": {"size": 40}}, "material_slots": {}},
+      {"id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "kind": "camera", "name": "主机位", "parent_id": null, "order": 1,
+       "transform": {"position": [0, 1.6, 8], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
+       "visible": true, "locked": false,
+       "camera": {"focal_mm": 35, "sensor_mm": [36, 24], "aspect": "3:2", "near_m": 0.1, "far_m": 1000, "label": "镜头 1"}}
+    ]
+  },
+  "models": {}
+}
+```
+失败示例：
+```http
+GET /api/v1/creative/documents/cwdoc_not_mine
+```
+```json
+{"error": {"code": "not_found", "message": "文档不存在"}}
+```
+
+### 兼容与变更
+在通用读取接口上新增 `scene` 分支，其他类型不受影响。`models` 在 C2 之前恒为空对象，C2 起才填充，属于兼容扩展。
+
+## 提交场景命令
+
+### 用途与调用
+- **用途**：对场景做一组原子编辑，成功时产生一个新修订。
+- **消费者**：前端场景编辑器（outbox）；助手工具 `edit_scene` 经同一领域命令（不经 HTTP，写入者记为助手和 `run_id`）。
+- **调用**：`POST /api/v1/creative/documents/{id}/commands`，`Idempotency-Key` 必填，`application/json`。这是通用命令接口在 `scene` 类型上的操作集合：外壳（`expected` 为单元到修订号的映射、`operations` 数组、整批原子、单元乐观并发）由底座的 `api: 提交文档命令` 定义，本条目定义场景的单元和操作。
+- **权限**：场景属于当前账号，且不在回收站。
+
+### 请求
+外层 `{operation_id, client_created_at, payload}`（公共约定）。`payload`（外壳见底座，以下是场景的约束）：
+
+| 字段 | 类型 | 必传 | 说明 |
+|---|---|---|---|
+| `expected` | object（单元 → CreativeRevision 或 null，见底座） | 非 `restore` 批次必传 | 本批涉及的每个单元及其预期 `rev`，null 表示预期该单元不存在；缺少涉及单元时返回 400。`restore` 批次改用底座的 `expected_revision` |
+| `operations` | array，1–200 项 | 是 | 按顺序应用；每个单元最多出现一次（同一对象的多处改动合并成 `update_objects` 里的一项）。批量操作的条目上限与物件上限一致（2000），一次多选操作因此始终是一个操作、一个修订 |
+
+`operations[]` 按 `op` 区分：
+
+| op | 字段 | 涉及单元 |
+|---|---|---|
+| `rename` | `title`（1–200） | `meta` |
+| `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`；`primitive.params` 缺省的键补成默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
+| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选，至少一项（省略即不改；`primitive.params` 按键合并；`material_slots`、`light`、`camera` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
+| `remove_objects` | `object_ids`（1–2000；分组连同后代一起删除） | `objects`，以及每个被删对象的 `object:<id>` 和 `object:<id>:content` |
+| `reparent_objects` | `moves`（1–2000 项 `{object_id, parent_id（null 为根）, order}`） | `objects`（一次） |
+| `set_environment` | `environment`（整体替换） | `environment` |
+| `set_render` | `render`（整体替换） | `render` |
+| `restore` | `revision`（旧修订号）；**必须单独成批**，带 `expected_revision` | 全部单元；按文档修订号检查（底座规则） |
+| `restore_units` | `units`（1–4096 个单元名，随底座放宽；不能含 `objects`）、`from_revision` | 列出的单元；**必须单独成批**，删除大分组后的撤销也是一个请求，整体成功或整体失败。对象两边都存在时只换列出单元的字段，`parent_id`、`order` 保持现状。存在性会变化时，该对象的两个单元都必须列出，并额外涉及 `objects`，当前不存在的单元在 `expected` 中写 null。服务端先算出恢复后的完整对象集合，再统一解析层级：每个对象沿来源快照（加回的取旧修订，保留的取当前）的祖先链，挂到第一个仍在最终集合中且是分组的祖先下，没有就放到根；父对象同在本次加回的集合里时层级保持不变；旧修订中不存在的对象被删除时，它的后代按同一规则上移，不连带删除。顺序：父对象没变的保留原 `order`，其余按来源快照的层级和顺序依次放入，原 `order` 被占用时排到末尾。结果与 `units` 的排列顺序无关 |
+
+### 成功响应
+200（同一 operation 回放原回执）：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+回执外形由底座 `api: 提交文档命令` 定义：`revision`、`changed_units`、`annotated_units`、`removed_units`、`reset_required`。场景不增加字段（`api: 场景模型命令` 另加 `models`）。删除大分组或整份恢复时 `reset_required = true`，编辑器重新读取场景。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复等）、引用的物件不存在、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元 | 修正，不可原样重试 |
+| 404 | `not_found` | 场景不存在或不属于当前账号 | 关闭编辑视图 |
+| 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符。`details.conflicts` 为数组：`[{unit, expected_rev, current_rev}]` | 重读，按冲突界面处理后再提交 |
+| 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
+| 409 | `idempotency_conflict` | 同一 key 用于不同请求体 | 换新 key 前先查原回执 |
+| 413 | `creative_size_limit` | 请求体超限，或应用后快照 > 512 KiB / 对象 > 2000 / 摄像机 > 32 | 缩小改动 |
+
+### 交互规则
+- **原子性**：全部成功或全部不生效。
+- **幂等**：沿用公共约定。
+- **并发**：按单元乐观并发，规则见 design「单元版本、写入与撤销」。
+- 不适用：分页、异步、限流（沿用全局请求体上限）。
+
+### 调用示例
+```http
+POST /api/v1/creative/documents/cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10/commands
+Authorization: Bearer <token>
+Idempotency-Key: 5f0c3a8e-6a51-4d0b-9a77-1b2c3d4e5f60
+Content-Type: application/json
+```
+```json
+{
+  "operation_id": "5f0c3a8e-6a51-4d0b-9a77-1b2c3d4e5f60",
+  "client_created_at": "2026-10-20T09:30:00Z",
+  "payload": {
+    "expected": {"object:sobj_3kTMd9Qp2xLw7nB0cR5yZ": "4", "objects": "4"},
+    "operations": [
+      {"op": "update_objects", "updates": [{"object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ",
+       "transform": {"position": [1.5, 1.4, 7], "rotation": [0, 0.0998, 0, 0.995], "scale": [1, 1, 1]}}]},
+      {"op": "add_objects", "objects": [{
+        "id": "sobj_Q9w8E7r6T5y4U3i2O1p0a", "kind": "primitive", "name": "石台", "parent_id": null, "order": 2,
+        "transform": {"position": [0, 0, -3], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
+        "visible": true, "locked": false,
+        "primitive": {"builtin": "box@1", "params": {"width": 2, "height": 0.8, "depth": 1}}, "material_slots": {}}]}
+    ]
+  }
+}
+```
+```json
+{"revision": "5", "changed_units": ["object:sobj_3kTMd9Qp2xLw7nB0cR5yZ", "objects", "object:sobj_Q9w8E7r6T5y4U3i2O1p0a", "object:sobj_Q9w8E7r6T5y4U3i2O1p0a:content"],
+ "annotated_units": [], "removed_units": [], "reset_required": false}
+```
+冲突示例（助手已先改过这台摄像机）：
+```json
+{"error": {"code": "creative_document_conflict", "message": "文档已被修改",
+  "details": {"conflicts": [{"unit": "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ", "expected_rev": "4", "current_rev": "6"}]}}}
+```
+
+### 兼容与变更
+在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
+
+### 补充说明
+新建场景不经本接口，而是走画布命令 `add_node`（`type_key = "core.scene"`）。底座的文档类型端口负责在同一事务里创建文档；场景类型提供初始快照（一块内置地面 `ground@1`，摄像机随 C4 的放置 UI 出现）和卡片摘要。
