@@ -137,3 +137,91 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **彻底删除**：删除会话指针、引用行、修订行和文档行。快照内容修订（`text`、`plan`、`scene` 等非媒体类型）不在现有媒体 GC 的回收范围内（`backend/internal/creativemedia/gc.go` 的 `unheldMediaRevision` 只处理 `image` / `video` / `audio`），首版保留为无入口数据，**不承诺物理回收**。被快照引用的媒体在失去全部持有方后，照常由媒体 GC 回收。
 - **回滚**：存在 `system` 以外写入者的修订行，或存在 `trashed_at` 时拒绝回滚，前向修复。
 - **GC**：`LiveOwnerCondition` 增加修订表的 `content_revision_id` 和引用表两行，只扩大持有范围。
+
+## 场景文档
+
+### 用途与存储角色
+- **用途**：保存 3D 场景的编排，包括对象树、变换、环境、渲染设置和单元版本。不保存几何（几何在模型内容里）、GLB 字节、生成代码和导出图。
+- **存储**：PostgreSQL。
+  - 通用文档层：`creative_documents` 行，`type_key = 'scene'`。
+  - 修订：`creative_document_revisions`。
+  - 引用：`creative_document_content_refs`。
+  - 每个修订的全文快照：一条 `creative_content_revisions`，内容类型 `scene`。
+  - 通用文档的表（文档行、修订、引用、工作会话）由通用文档底座 change 交付，本条目只定义 `scene` 类型的载荷、单元和引用登记。
+- **角色**：权威主数据。`creative_documents.content_revision_id` 指向当前快照；修订表是历史的唯一顺序来源。
+- **所有权**：只有 `creativescene` 写入，摄影师和助手都经场景命令；画布命令层只在新建 `core.scene` 节点时同事务创建文档。读取方是场景接口、画布节点视图和助手工具。
+
+### 结构与身份
+- 文档 ID 形如 `cwdoc_<uuid>`，账号内唯一。对象 ID 形如 `sobj_<21位 nanoid>`，由客户端生成，场景内唯一，删除后不复用。不复用由客户端随机生成来保证；服务端只拒绝与当前快照重复的 ID，不查历史。
+- 快照载荷（`creative_content_revisions.payload`，`schema_version = 1`，≤ 512 KiB）：
+
+| 路径 | 类型 | 必须 | 缺省 / 约束 |
+|---|---|---|---|
+| `scene.environment.sky.kind` | `"procedural"` \| `"hdri"` \| `"color"` | 是 | 新建场景为 `procedural` |
+| `scene.environment.sky.sun_elevation_deg` | number −10…90 | `procedural` 时 | 新建为 35 |
+| `scene.environment.sky.sun_azimuth_deg` | number 0…360 | `procedural` 时 | 新建为 135 |
+| `scene.environment.sky.turbidity` | number 1…20 | `procedural` 时 | 新建为 3 |
+| `scene.environment.sky.hdri` | string，内置 HDRI ID（`^[a-z0-9_]+@[1-9][0-9]*$`） | `hdri` 时 | — |
+| `scene.environment.sky.color` | `#rrggbb` | `color` 时 | — |
+| `scene.environment.ambient` | `{color:#rrggbb, intensity:0…10}` | 是 | `{#ffffff, 0.4}` |
+| `scene.environment.fog` | `{color:#rrggbb, near_m>0, far_m>near_m}` 或 null | 是 | null |
+| `scene.render.mode` | `"clay"` \| `"lit"` | 是 | `clay`；只影响编辑器默认显示，导出时另行指定 |
+| `scene.objects[]` | 对象数组，≤ 2000 | 是 | 新建为一个内置地面 |
+| `objects[].id` | string | 是 | 见身份规则 |
+| `objects[].kind` | `"primitive"` \| `"model_instance"` \| `"light"` \| `"camera"` \| `"group"` | 是 | `model_instance` 自 C2 起可写入 |
+| `objects[].name` | string ≤ 80 字符 | 是 | 可为空串 |
+| `objects[].parent_id` | string 或 null | 是 | null 表示根；父对象必须是 `group`；不能成环 |
+| `objects[].order` | integer ≥ 0 | 是 | 同一父对象下的兄弟顺序，兄弟之间不重复 |
+| `objects[].transform` | `{position:[3], rotation:[4]（单位四元数 x,y,z,w）, scale:[3]（每项 0.001…1000）}` | 是 | 数值有限；位置每轴 ±100000 m |
+| `objects[].visible` / `locked` | boolean | 是 | `true` / `false` |
+| `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
+| `objects[].model` | `{content_revision_id}` | `kind=model_instance` 时 | 必须是本账号 `model` 类型、`ready` 且可展示的内容修订 |
+| `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean |
+| `objects[].light` | `{type:"directional"\|"point"\|"spot", color, intensity:0…1000, range_m:null\|>0, angle_deg:null\|1…179, penumbra:null\|0…1, cast_shadow:boolean}` | `kind=light` 时 | `spot` 时 `angle_deg` 必填 |
+| `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near_m>0, far_m>near_m, label≤40}` | `kind=camera` 时 | 新建为 `{35,[36,24],"3:2",0.1,1000,""}` |
+| 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
+
+- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
+
+### 访问模式与保证
+- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、缩略图、GLB 读取票据）。
+- **写**：在文档行锁内（`SELECT … FOR UPDATE`）检查单元版本 → 应用 → 校验全部不变量 → 写新快照、修订行（`actor_kind`、`run_id`、`changed_units`、`restored_from`）和引用行 → 更新文档行的 `revision` 和 `content_revision_id`。整个过程在一个事务里，失败则不产生任何修订。
+- **不变量的保证方**：
+  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型可用、单元版本单调。
+  - 由数据库保证：修订号主键唯一、`account_id` 限定、内容类型 CHECK。
+- **历史**：按 `revision DESC` 分页列出修订；`changed_units` 直接读，不比对快照。
+
+### 生命周期与演进
+- 进回收站与彻底删除沿用通用文档层。彻底删除时删除修订行和引用行，之后模型修订失去持有方，可被 GC 回收。
+- 内容类型 CHECK 加 `scene`。回滚时如已有 `scene` 内容则拒绝，前向修复。
+- 快照 `schema_version` 升级时，读取端兼容旧版本，写入只写新版本；不做批量回填。
+
+## 场景内置基础体
+
+### 用途与存储角色
+- **用途**：服务端校验 `objects[].primitive` 的依据，也是前端几何生成和参数面板的参数来源。
+- **存储**：代码仓库中的一份 JSON，`backend/internal/creativescene/builtins.json`，经 Go `embed` 读入。不进数据库。
+- **派生**：`make generate` 原样复制到 `frontend/src/creative-scene/builtins.gen.json`，`make generate-check` 比对漂移。前端不得手写另一份。
+
+### 结构与身份
+- 每项的身份是 `<name>@<version>`。版本一经发布，参数和几何语义就不再改变；需要改动时发布新版本（如 `box@2`），旧版本继续可读、可渲染。
+- 每项字段：`builtin`、`label`、`mount`（`floor` / `wall` / `ceiling` / `free`）、`params`。`params` 的格式同 `patterns: 几何模块契约` 的参数定义：`number` 必带 `default`、`min`、`max`，可带 `step`、`unit`；`integer` 同 `number`；还有 `boolean`、`enum`、`color`；每项可带 `label`。
+- 首批清单（单位为米，Y 轴向上，正面朝 +Z）：
+
+| builtin | mount | 参数（默认值，范围） |
+|---|---|---|
+| `ground@1` | floor | `size`（40，1…1000） |
+| `box@1` | floor | `width`、`height`、`depth`（各 1，0.01…1000） |
+| `cylinder@1` | floor | `radius_top`（0.5，0…500）、`radius_bottom`（0.5，0.001…500）、`height`（1，0.01…1000）、`radial_segments`（integer 32，3…128） |
+| `sphere@1` | floor | `radius`（0.5，0.01…500）、`segments`（integer 32，8…128） |
+| `plane@1` | wall | `width`、`height`（各 2，0.01…1000） |
+| `stairs@1` | floor | `width`（1.2，0.1…100）、`step_count`（integer 8，1…100）、`step_height`（0.18，0.01…2）、`step_depth`（0.28，0.01…5） |
+| `arch@1` | floor | `width`（2，0.2…100）、`height`（3，0.2…100）、`depth`（0.5，0.05…20）、`opening_width`（1.2，0.1…100）、`opening_height`（2.2，0.1…100） |
+
+### 访问模式与保证
+- **服务端校验**：`builtin` 必须在清单中；`params` 的键必须属于该项，类型和单项范围必须符合；缺省的键在写入时补成默认值，所以快照里的参数总是完整的。跨参数约束（如门洞开口不超过外框）不由服务端校验，由几何代码收缩处理。
+- **前端**：每个清单项都有一个几何函数。前端测试断言清单与几何函数一一对应。
+
+### 生命周期与演进
+- 新增基础体或新版本只改这份 JSON 和前端几何代码，不需要迁移。
+- 删除或修改已发布版本属于破坏性变更，不允许。

@@ -1,6 +1,6 @@
 {
   "uid": "32c90485-2ed7-497a-9411-b09fb0608521",
-  "revision": 7,
+  "revision": 9,
   "id": "scene-document-shell",
   "kind": "feature",
   "assurance": "governed",
@@ -29,9 +29,9 @@
       "api:提交场景命令"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-16T18:52:18.536Z",
-  "updatedAt": "2026-10-17T10:26:28.431Z",
+  "updatedAt": "2026-10-17T10:28:26.208Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -357,9 +357,296 @@
         "version": 2,
         "digest": "0d41af6c9589b26c9ac2a0c611bfefcae90c8a290d5d068312bfd09428bfee00"
       }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-17T10:28:17.477Z",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "真机部分延期：classifyWheel 未经真机录制校准，Safari/Edge/Windows 的滚轮与组合键拦截未实测（owner 决定不录制，改为日常体验反馈）；画布 e2e 需要真实账号未跑；回滚代码而保留场景数据时旧代码的表现未验证",
+        "followUp": "owner 日常使用编辑器时体验触控板/鼠标推测与快捷键，发现问题反馈后修正；修订存储只增不减由 epic 子项 scene-history-cleanup 承接",
+        "followUpChange": {
+          "uid": "aa2e24a0-a9b0-472a-950d-8e0d9136d896",
+          "id": "scene-history-cleanup"
+        },
+        "coverage": [
+          {
+            "criterionId": "AC-b9cc19607c3a",
+            "status": "verified",
+            "evidence": "`scene` `TestNewSceneFromCanvas`（`add_node core.scene` 同事务产生文档、修订 1，快照只有锁定的地面）；画布创建菜单、卡片、最大化入口靠代码走查和 `tsc`；编辑视图渲染地面和网格见 e2e 截图；画布侧 owner 2026-10-17 在真实画布上实测能正常打开和编辑；卡片物件数与助手面板仍可打开靠代码走查"
+          },
+          {
+            "criterionId": "AC-da6478a1675e",
+            "status": "verified",
+            "evidence": "e2e「keyboard flow」：Shift + A 加方块并选中，`G Z 2 Enter` 状态栏显示「移动 · Z 轴 · …2」、只 1 个命令且 Z 恰好 +2，`R` 右键取消无请求，最终「已保存」；e2e「move tool drags…」gizmo 拖动 1 个命令；e2e「properties commit 300 ms」宽度改 3 m 1 个命令；Ctrl 5° 吸附见 `interaction`「R turns around the view axis…」"
+          },
+          {
+            "criterionId": "AC-c8dca531f73f",
+            "status": "verified",
+            "evidence": "e2e「keyboard flow」：Shift + A 加方块并选中；e2e「new objects go where the menu opened」落在打开菜单时指针所指的地面点"
+          },
+          {
+            "criterionId": "AC-b6fc121e73d8",
+            "status": "verified",
+            "evidence": "e2e「keyboard flow」：`G Z 2 Enter` 状态栏显示「移动 · Z 轴 · …2」，只 1 个命令且 Z 恰好 +2，最终「已保存」"
+          },
+          {
+            "criterionId": "AC-b101e793d58f",
+            "status": "verified",
+            "evidence": "e2e「keyboard flow」：R 后右键取消，没有请求，变换复原"
+          },
+          {
+            "criterionId": "AC-490828af936f",
+            "status": "verified",
+            "evidence": "`interaction`「R turns around the view axis…」：mod 吸附 5°"
+          },
+          {
+            "criterionId": "AC-3b104f67b2d9",
+            "status": "verified",
+            "evidence": "e2e「move tool drags…」gizmo 拖动 1 个命令；e2e「properties commit 300 ms」宽度改 3 m 1 个命令"
+          },
+          {
+            "criterionId": "AC-88c366746561",
+            "status": "verified",
+            "evidence": "`interaction`：鼠标 / 触控板滚轮映射、`ctrlKey` 一律推拉、中键与 Alt + 左键、设备推测与手动选择、触控板环绕方向（camera-controls 实测）；e2e 数字键与坐标轴部件、7 之后立刻 5 的正交顶视、触控板滑动与捏合无需点击即重绘"
+          },
+          {
+            "criterionId": "AC-23adea73abfd",
+            "status": "verified",
+            "evidence": "`interaction`：鼠标模式中键环绕、Shift + 中键平移、滚轮推拉，Alt + 左键环绕、加 Shift 平移"
+          },
+          {
+            "criterionId": "AC-338ede8795ad",
+            "status": "verified",
+            "evidence": "`interaction`：触控板模式双指环绕、Shift 平移、捏合（ctrlKey）推拉，环绕方向用 camera-controls 断言跟手指走；e2e「trackpad swipes and pinches…」无需点击即重绘，页面不缩放（Chromium）"
+          },
+          {
+            "criterionId": "AC-0fa63d19fd59",
+            "status": "verified",
+            "evidence": "e2e「number keys and the axis widget…」与「7 then 5 at once gives a top orthographic view…」；`interaction` 视图键与框选"
+          },
+          {
+            "criterionId": "AC-4fcd6e3c3e20",
+            "status": "deferred",
+            "evidence": "`interaction` 用合成样本覆盖 `classifyWheel` 推测与手动选择优先、刷新后保持；未经真机录制校准，owner 2026-10-17 决定不录制，改为日常使用体验后反馈"
+          },
+          {
+            "criterionId": "AC-29e12aa15374",
+            "status": "verified",
+            "evidence": "e2e「selection edits」：框选两只方块且不含锁定地面，H / Alt + H 各 1 个命令，Shift + D 复制并移动合计 1 个 `add_objects`，X 确认后 1 个删除；e2e「keyboard flow」A 全选后 G 只更新未锁定物件；`interaction` Shift + 单击三态、只变换最上层；`unit` 多物件一次确认一个撤销步骤"
+          },
+          {
+            "criterionId": "AC-b56bf88b4927",
+            "status": "verified",
+            "evidence": "e2e「selection edits」框选后移动 1 个命令；`unit` 多物件一次确认一个撤销步骤"
+          },
+          {
+            "criterionId": "AC-bd5c766a0c86",
+            "status": "verified",
+            "evidence": "e2e「keyboard flow」A 全选后 G 只更新未锁定物件；`interaction` Alt + A 取消选择"
+          },
+          {
+            "criterionId": "AC-97f22d0516f4",
+            "status": "verified",
+            "evidence": "e2e「selection edits」Shift + D 复制并移动合计 1 个 `add_objects`"
+          },
+          {
+            "criterionId": "AC-875e82cbb6e0",
+            "status": "verified",
+            "evidence": "e2e「selection edits」X 确认后 1 个删除命令"
+          },
+          {
+            "criterionId": "AC-cf4c6b968d8c",
+            "status": "verified",
+            "evidence": "e2e「selection edits」框选不含锁定地面；`interaction` 锁定与隐藏排除"
+          },
+          {
+            "criterionId": "AC-cb8cf606fda8",
+            "status": "verified",
+            "evidence": "e2e「key boundaries」：状态栏提示、菜单项标注快捷键、名称框里打 `grsx` 只产生重命名、Esc 三次不关视图只清选择、Cmd/Ctrl + S 提示自动保存、`?` 打开速查、按键不会到达编辑器之外的监听；`interaction` 按 `event.code` 分发、组字中不分发"
+          },
+          {
+            "criterionId": "AC-de1ea5bcd836",
+            "status": "verified",
+            "evidence": "e2e「key boundaries」状态栏提示、菜单项标注快捷键、`?` 打开速查"
+          },
+          {
+            "criterionId": "AC-1a6c9ae41ec1",
+            "status": "verified",
+            "evidence": "e2e「key boundaries」名称框里打 `grsx` 只产生重命名；`interaction` 输入框内与组字中不分发"
+          },
+          {
+            "criterionId": "AC-27ca6fac8df6",
+            "status": "verified",
+            "evidence": "e2e「key boundaries」Esc 三次不关视图，只清选择"
+          },
+          {
+            "criterionId": "AC-f807be2c005e",
+            "status": "verified",
+            "evidence": "e2e「key boundaries」Cmd/Ctrl + S 被拦下并提示自动保存（Chromium；Safari、Edge 未实测）"
+          },
+          {
+            "criterionId": "AC-a630d5475563",
+            "status": "verified",
+            "evidence": "e2e「key boundaries」按键不会到达编辑器之外的监听；`interaction` 命中后 stopPropagation"
+          },
+          {
+            "criterionId": "AC-e8e8b480854c",
+            "status": "verified",
+            "evidence": "e2e「reopening」：新页面重新读取后属性栏数值与服务端一致；e2e「leaving and coming back…」：关闭再打开、刷新页面后工具、选择、视口与离开时一致（截图差异 < 0.5%），且不产生命令；`interaction` 视窗状态的校验与节流写入"
+          },
+          {
+            "criterionId": "AC-b2a7bef35816",
+            "status": "verified",
+            "evidence": "e2e「undo and redo」：撤销移动、撤销添加、重做添加（同一 ID 回来）、重做移动，均为 `restore_units`；e2e「slow saves…」：慢保存下新建再缩放，Cmd+Z 依次去掉缩放、待发的新建，保存中的再撤销等回执后执行；`unit` 保存中撤销的等待与取消；`unit` 过期规则（别人改过即跳过并提示、重新移动不复活、别人改层级不过期）；`restore` 150 个物件嵌套分组一次撤销、单元冲突整体失败、层级复原"
+          },
+          {
+            "criterionId": "AC-8053e774cdb0",
+            "status": "verified",
+            "evidence": "e2e「undo and redo」撤销、重做均为 `restore_units`"
+          },
+          {
+            "criterionId": "AC-d1ee3ff81871",
+            "status": "verified",
+            "evidence": "e2e「slow saves…」慢保存下新建再缩放，Cmd+Z 只去掉缩放，保存中的撤销等回执后执行；`unit`「adding while a save is slow, then scaling…」「undo while the last edit is saving…」"
+          },
+          {
+            "criterionId": "AC-860927f65811",
+            "status": "verified",
+            "evidence": "`unit` 过期规则：别人改过即跳过并提示，重新移动不复活"
+          },
+          {
+            "criterionId": "AC-ce9b692c6035",
+            "status": "verified",
+            "evidence": "e2e「undo and redo」撤销添加 / 重做添加同一 ID 回来；`restore` 恢复原位置与 ID"
+          },
+          {
+            "criterionId": "AC-1b1b204607c7",
+            "status": "verified",
+            "evidence": "`restore` 150 个物件嵌套分组一次撤销、单元冲突整体失败、层级与顺序复原"
+          },
+          {
+            "criterionId": "AC-1b461b9539ea",
+            "status": "verified",
+            "evidence": "`concurrency` 摆放与内容并发都成功、同一单元恰一方成功（各 20 轮）；e2e「someone else's edit」409 后提示「重新应用我的修改」，重发后落在最新版本上；`unit` 删除只撞 `objects` 时提示确认、新增只撞 `objects` 时自动变基、被拒意图的后续修改一起进入冲突提示"
+          },
+          {
+            "criterionId": "AC-80d7dcc94a8f",
+            "status": "verified",
+            "evidence": "`unit` 删除只撞 `objects` 时转确认「仍然删除」"
+          },
+          {
+            "criterionId": "AC-a10578f581f8",
+            "status": "verified",
+            "evidence": "`unit` 新增只撞 `objects` 时自动变基；e2e「someone else's edit」"
+          },
+          {
+            "criterionId": "AC-8b917131d495",
+            "status": "verified",
+            "evidence": "`unit` 被拒意图的后续修改转 blocked，一起进入冲突提示"
+          },
+          {
+            "criterionId": "AC-dfe2344cfc3b",
+            "status": "verified",
+            "evidence": "e2e「history」：列表分组、新建单独成组、只读预览（编辑菜单禁用）、确认后整份恢复产生新修订（`restored_from = 1`）；`unit` 分组与描述"
+          },
+          {
+            "criterionId": "AC-3acee524b426",
+            "status": "verified",
+            "evidence": "e2e「history」列表分组、新建单独成组；`unit`「history groups…」"
+          },
+          {
+            "criterionId": "AC-5df4de4958f2",
+            "status": "verified",
+            "evidence": "e2e「history」只读预览，编辑菜单禁用"
+          },
+          {
+            "criterionId": "AC-2c287ecfb8b2",
+            "status": "verified",
+            "evidence": "e2e「history」确认后整份恢复产生新修订（`restored_from = 1`），撤销栈清空"
+          },
+          {
+            "criterionId": "AC-393ba8fa9069",
+            "status": "verified",
+            "evidence": "e2e：另一页收到画布失效通知后显示新位置；回收站中提交得到 409 后切只读，移出回收站后恢复可编辑；`unit` 拖动中推迟重读"
+          },
+          {
+            "criterionId": "AC-fc6c99383db4",
+            "status": "verified",
+            "evidence": "e2e「leaving with unsaved edits」：保存中关闭页面弹出 beforeunload，保存后不再拦截；e2e 冲突时点「还原节点」先确认；`unit` 离开提示跟随未保存状态"
+          },
+          {
+            "criterionId": "AC-15bf1b28ff8a",
+            "status": "verified",
+            "evidence": "`model` `TestValidate`（S1–S8、灯光、摄像机、分组、材质槽）；`scene` `TestInvalidCommandsLeaveNoRevision`；`http` 33 台摄像机 413"
+          },
+          {
+            "criterionId": "AC-91fc40e4ca77",
+            "status": "verified",
+            "evidence": "`model` `TestValidate`；`scene` `TestInvalidCommandsLeaveNoRevision`（含 11 个 null 用例）"
+          },
+          {
+            "criterionId": "AC-63a3793a85c3",
+            "status": "verified",
+            "evidence": "`scene` `TestOversizedSnapshotIsRefused`：快照超过 512 KiB 返回 `creative_size_limit`，不产生修订；`model` `TestValidate`：物件超过 2000、摄像机超过 32 返回大小上限；`http` 33 台摄像机返回 413"
+          },
+          {
+            "criterionId": "AC-214eda241c65",
+            "status": "verified",
+            "evidence": "`model` `TestValidate` 覆盖灯光、摄像机、分组、材质槽"
+          },
+          {
+            "criterionId": "AC-d6d8aa4241d4",
+            "status": "verified",
+            "evidence": "`http` 跨账号 404、回收站 409 `creative_state_conflict`；e2e 回收站中只读并提示先恢复"
+          },
+          {
+            "criterionId": "AC-4f9f6a6c0bcc",
+            "status": "verified",
+            "evidence": "构建产物：`WebGLRenderer` 只在 `SceneEditor` 块（约 1.1 MB，gzip 305 KB），画布入口块大小不变；e2e「opening the canvas page loads no three.js」；e2e「without WebGL2」显示说明"
+          },
+          {
+            "criterionId": "AC-e545ead94040",
+            "status": "verified",
+            "evidence": "本机 `CREATIVE_SCENE_BASELINE=1 go test -run Baseline`：300 个物件快照约 94 KB；连续 100 次 `update_objects` 服务端 p50 26 ms / p95 34 ms；每修订存储约 5.2 KB；10 个场景节点的画布读快照 p50 约 50 ms"
+          },
+          {
+            "criterionId": "AC-0343802e39a0",
+            "status": "verified",
+            "evidence": "`CREATIVE_SCENE_BASELINE=1` 基线：p50 26 ms / p95 34 ms；每修订存储约 5.2 KB（相同方块），不同物件约 27 KB"
+          },
+          {
+            "criterionId": "AC-817f108fc636",
+            "status": "verified",
+            "evidence": "基线：10 个场景节点的画布读快照 p50 约 50 ms"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-17 验收通过：接受技术验收报告（合并点 make check 通过、e2e 22/22、49/50 条验收标准有证据），画布上实测能正常打开和编辑；接受 proposal/design 批准后的修订",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "0d41af6c9589b26c9ac2a0c611bfefcae90c8a290d5d068312bfd09428bfee00"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-17T10:28:26.073Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
