@@ -10,7 +10,7 @@
   - 关键机制：「几何模块与模型生命周期」、「账号隔离与安全」；
   - 选型：`three-bvh-csg`、`GLTFExporter` / `GLTFLoader`、代码沙箱、Go 手写 GLB 校验；
   - 数据与存储：GC、大小上限。
-- **交付的 epic 目标契约**：`patterns: 几何模块契约`、`patterns: 客户端代码沙箱`、`data: 模型内容`、`api: 场景模型命令`。正文在 epic `contracts.md`，本文只写实现细节。
+- **交付的 epic 目标契约**：`patterns: 几何模块契约`、`patterns: 客户端代码沙箱`、`data: 模型内容`、`api: 场景模型命令`，以及对 C1 已交付的 `api: 读取场景`、`data: 场景文档` 的修改。正文在 epic `contracts.md`，本文只写实现细节。
 - **C1 的实现**（已归档）：
   - 后端 `backend/internal/creativescene`：快照、单元、操作、按单元恢复、读取分支；
   - 前端 `frontend/src/creative-scene`：意图队列、本人撤销栈、历史预览、键位表。
@@ -418,8 +418,7 @@ commit_model(op):
 | 编辑开始时冻结基线，远端重读不更新它 | 方案评审（第二轮）复现：烘焙上传期间重读，提交会带新版本号覆盖别人的修改而不冲突 |
 | 代码面板用 CodeMirror 6，按需加载 | owner 2026-10-17。编译错误能直接定位到行；不打开代码面板时不增加编辑器首屏体积 |
 | 模型地址走媒体票据，按修订缓存 | owner 2026-10-17。读取快照不必逐个检查可用性并签名，保存后的重读不随模型数变慢；与画布图片一致 |
-| 只接受受限的静态 GLB 子集 | owner 2026-10-17，方案评审（第二轮）推荐。服务端以顶点数据为准，不信任文件自述；被排除的特性程序化建模用不到 |
-| 只接受静态 GLB 子集，范围从顶点数据算出并核对声明 | 方案评审（第二轮）：直接采用访问器声明的 `min` / `max`，等于信任不可信文件的自述；两端算法一致不能证明输入正确。子集写进长期契约，形变、骨骼、动画、纹理和扩展明确拒绝 |
+| 只接受静态 GLB 子集，范围从顶点数据算出并核对声明 | owner 2026-10-17 确认；方案评审（第二轮）：直接采用访问器声明的 `min` / `max`，等于信任不可信文件的自述；两端算法一致不能证明输入正确。子集写进长期契约，形变、骨骼、动画、纹理和扩展明确拒绝 |
 
 **需要 epic 修订（v3）的部分**（草稿已改在 epic 的 `contracts.md`、`design.md`、`roadmap.md`、`proposal.md`，与本设计一起审）：
 1. `patterns: 客户端代码沙箱`：页面路径 `/scene-sandbox/sandbox.html`；CSP 写明确源并限定路径（含 `frame-ancestors`）；用 classic Worker；每次编译新建 Worker；宿主先预检 GLB 再交给 `GLTFLoader`，限制加载地址，并重算 manifest；样例集加「GLB 内含外链」，在 `make check-frontend` 只跑 Chromium。
@@ -427,17 +426,17 @@ commit_model(op):
 3. `data: 模型内容`：接受的静态 GLB 子集与 manifest 算法（长期契约）；暂存形态；上传类型 `model` 只允许暂存目标，且不能被采用到资产或节点；缩略图可读；写入口限定为两个；候选消费后的去向；manifest 比对规则；GLB 不合规时上传以 `media_unsupported` 失败。
 4. epic design「单元版本、写入与撤销」：耗时的编辑（烘焙、上传）在开始时冻结预期版本，远端修改不更新它，冲突照常提示。
 5. `api: 场景模型命令`：manifest 以暂存修订中服务端算出的为准；`ref` 必须被本批引用、每批 ≤ 16 个 `commit_model`；`all_instances` 显式列出实例；失败码改为 409 `creative_upload_unavailable` 和 400 `creative_model_unavailable`；回执的 `models` 经底座回执扩展返回。
-6. `api: 读取场景`：去掉模型地址，改走媒体票据（owner 2026-10-17）。它已由 C1 交付，epic 正文保持 v2，修改由本 change 的局部 delta 承载。
+6. `api: 读取场景`、`data: 场景文档`：去掉模型地址，改走媒体票据（owner 2026-10-17）。两者已由 C1 交付，epic 以 MODIFY 改写，由本 change 交付。
 7. 顺带处理：roadmap 补上子项 `scene-history-cleanup`；design「写入频率」改为「同一次连续编辑」。
 
 ## 接口与数据契约
 
 - **契约状态：扩展**，对已有调用方兼容。
   - 交付 4 条 epic 目标契约（以修订 v3 为准）。
-  - 本 change 的 `contracts.md` 修改三条已交付的项目契约（C1 已交付的条目不能在 epic 里改，由本 change 的局部 delta 承载）：
-    - `patterns: 文档类型端口`：类型专属回执字段；模型的写入口。
-    - `api: 读取场景`：模型地址改走媒体票据，去掉 `glb_url`、`thumbnail_url` 和 503。
+  - epic 以 MODIFY 改写 C1 已交付的两条，同样由本 change 交付：
+    - `api: 读取场景`：模型地址改走媒体票据，去掉 `glb_url`、`thumbnail_url` 和 503；
     - `data: 场景文档`：「读当前」的模型摘要不再含票据。
+  - 本 change 的 `contracts.md` 修改底座已交付的 `patterns: 文档类型端口`：类型专属回执字段；模型的写入口。
 - **OpenAPI**（`api/openapi.yaml`，之后运行 `make generate`）：
   - 场景对象 `kind` 加 `model_instance`，加 `model` 字段；
   - 场景操作加 `commit_model`、`set_instance_model`；命令回执加 `models`；

@@ -35,6 +35,7 @@ C2 只做摄影师手动写代码和调参数。助手写模型（`write_model`�
 - `patterns: 客户端代码沙箱`
 - `data: 模型内容`
 - `api: 场景模型命令`
+- `api: 读取场景`、`data: 场景文档`（C1 已交付，epic 以 MODIFY 改写：模型地址改走媒体票据）
 
 **沙箱与建模标准库（前端）**：
 - 独立的沙箱页面 `/scene-sandbox/`，带专用 CSP，由 Go 静态服务和 Vite 开发服务器以同样的方式提供。
@@ -85,7 +86,7 @@ C2 只做摄影师手动写代码和调参数。助手写模型（`write_model`�
 
 - **后端**：`creativescene`（新操作、引用登记、读取 `models`）、`creativecontent`（`model` 类型与写入入口）、`creativemedia`（GLB 校验、上传类型、`thumbnail` 票据角色、GC）、`creativestaging`、新迁移 0074、`platform/httpapi`（沙箱页面的 CSP）、`api/openapi.yaml` 与两份生成物。
 - **前端**：`frontend/src/creative-scene/`（沙箱宿主、代码面板、参数面板、模型渲染）、新的沙箱构建入口与 `public/scene-sandbox/`、`creative-canvas/editor/media.ts`（上传类型 `model`）、`package.json`（`three-bvh-csg`、CodeMirror 6）。
-- **契约**：交付上列 4 条 epic 目标契约；修订 epic 契约（见 Risk Notes）；修改已交付的 `api: 读取场景`（模型地址改走媒体票据）。
+- **契约**：交付上列 4 条 epic 目标契约，以及 epic 对 C1 已交付的 `api: 读取场景`、`data: 场景文档` 的修改（模型地址改走媒体票据）；修订 epic 契约（见 Risk Notes）。
 - **部署**：creative-worker 必须先于 server 升级，否则旧 worker 会把 GLB 上传判为不支持的格式，GC 也不会处理 `model`。
 
 ## Risk Notes

@@ -78,7 +78,8 @@ export default function build({ params, THREE, lib, rng }) {
 - **不适用于**：前端自带的可信代码（内置基础体、材质库）。
 - **备选**：将来某个目标浏览器的样例无法全部通过时，改用 QuickJS-wasm 执行，契约其余部分不变。
 
-## data: ADD 场景文档
+## data: MODIFY 场景文档
+
 
 ### 用途与存储角色
 - **用途**：保存 3D 场景的编排，包括对象树、变换、环境、渲染设置和单元版本。不保存几何（几何在模型内容里）、GLB 字节、生成代码和导出图。
@@ -124,7 +125,7 @@ export default function build({ params, THREE, lib, rng }) {
 - **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
 
 ### 访问模式与保证
-- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、缩略图、GLB 读取票据）。
+- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
 - **写**：在文档行锁内（`SELECT … FOR UPDATE`）检查单元版本 → 应用 → 校验全部不变量 → 写新快照、修订行（`actor_kind`、`run_id`、`changed_units`、`restored_from`）和引用行 → 更新文档行的 `revision` 和 `content_revision_id`。整个过程在一个事务里，失败则不产生任何修订。
 - **不变量的保证方**：
   - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型可用、单元版本单调。
@@ -239,7 +240,7 @@ export default function build({ params, THREE, lib, rng }) {
 - **存储**：`creative_assets.kind` 的 CHECK 加 `model`；资产引用模型的 `content_revision_id`。资产库现有能力（分组、标签、评分、回收站、查重）对 `model` 一视同仁；查重按 GLB 的 sha256。
 - **生命周期**：回滚时如已有 `model` 资产则拒绝，前向修复。资产库不记录资产被哪个场景使用过（I7）。
 
-## api: ADD 读取场景
+## api: MODIFY 读取场景
 
 ### 用途与调用
 - **用途**：编辑器打开或重读场景时，取得当前快照和渲染所需的模型信息。
@@ -261,25 +262,25 @@ export default function build({ params, THREE, lib, rng }) {
 |---|---|---|---|---|
 | `id`、`type_key`、`title`、`revision`、`content_revision_id`、`unit_revs`、`trashed_at`、`created_at`、`updated_at` | — | 是 | — | 通用字段，见底座 `api: 读取文档`；`type_key` 为 `"scene"`；场景的单元命名见 `data: 场景文档` |
 | `scene` | object | 是 | 否 | 快照里的 `scene`，结构见 `data: 场景文档` |
-| `models` | object | 是 | 否 | 以 `content_revision_id` 为键，覆盖快照引用的全部模型；C2 之前恒为 `{}` |
+| `models` | object | 是 | 否 | 以 `content_revision_id` 为键，覆盖快照引用的全部模型；没有模型实例时为 `{}` |
 | `models.*.content_id` | string | 是 | 否 | 模型内容 ID |
-| `models.*.usable` | boolean | 是 | 否 | false 时其余字段为 null，编辑器显示「模型不可用」占位 |
-| `models.*.manifest` | object | 是 | 是 | 见几何模块契约「产物」 |
-| `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, params_schema, params, mount}`，**不含代码** |
-| `models.*.glb_url` | string | 是 | 是 | 10 分钟有效的读取票据 URL |
-| `models.*.thumbnail_url` | string | 是 | 是 | 同上 |
+| `models.*.usable` | boolean | 是 | 否 | false 时 `manifest`、`generator` 为 null，编辑器显示「模型不可用」占位 |
+| `models.*.manifest` | object | 是 | 是 | 见几何模块契约「产物」；取服务端从 GLB 算出的值 |
+| `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, code_sha256, params_schema, params, mount}`，**不含代码** |
+| `models.*.name_hint` | string | 是 | 是 | 模型名称提示 |
 
-代码通过助手工具或代码面板单独读取（C2 局部设计），避免每次重读快照都传几十 KB 代码。
+- **GLB 与缩略图**：响应不含地址。编辑器按模型修订调用现有的 `POST /creative/media-access-tickets`（`content_revision_id`，`role` 为 `original` 取 GLB、`thumbnail` 取缩略图，`purpose` 为 `display`），按修订缓存，与画布图片的做法一致。
+- **代码**：通过 `GET /creative/content-revisions/{content_revision_id}` 单独读取（载荷的 `model.generator.code`），避免每次重读快照都传几十 KB 代码。
+- **性能**：模型摘要在同一个读快照事务里批量读取，查询次数不随模型数增长。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
 | 401 | 现有认证错误码 | 未登录或会话过期 | 走现有续期 |
 | 404 | `not_found` | 不存在或不属于当前账号 | 关闭编辑视图，回到画布 |
-| 503 | `creative_dependency_unavailable` | 媒体票据服务不可用 | 退避重试 |
 
 ### 交互规则
-只读，没有分页。重复调用没有副作用。读取票据每次签发新的。
+只读，没有分页。重复调用没有副作用。
 
 ### 调用示例
 ```http
@@ -291,14 +292,14 @@ Authorization: Bearer <token>
   "id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10",
   "type_key": "scene",
   "title": "黄昏教堂中殿",
-  "revision": "4",
+  "revision": "6",
   "content_revision_id": "ccrv_3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7",
-  "unit_revs": {"meta": "1", "environment": "3", "render": "1", "objects": "4",
+  "unit_revs": {"meta": "1", "environment": "3", "render": "1", "objects": "6",
                 "object:sobj_V1StGXR8_Z5jdHi6B-myT": "1", "object:sobj_V1StGXR8_Z5jdHi6B-myT:content": "1",
-                "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ": "4", "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ:content": "2"},
+                "object:sobj_Z1x2C3v4B5n6M7a8S9d0f": "6", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "6"},
   "trashed_at": null,
   "created_at": "2026-10-20T08:00:00Z",
-  "updated_at": "2026-10-20T09:10:00Z",
+  "updated_at": "2026-10-22T10:00:00Z",
   "scene": {
     "environment": {
       "sky": {"kind": "procedural", "sun_elevation_deg": 12, "sun_azimuth_deg": 240, "turbidity": 4},
@@ -311,13 +312,25 @@ Authorization: Bearer <token>
        "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": true,
        "primitive": {"builtin": "ground@1", "params": {"size": 40}}, "material_slots": {}},
-      {"id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "kind": "camera", "name": "主机位", "parent_id": null, "order": 1,
-       "transform": {"position": [0, 1.6, 8], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
+      {"id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "kind": "model_instance", "name": "左侧柱 1", "parent_id": null, "order": 3,
+       "transform": {"position": [-3, 0, -2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": false,
-       "camera": {"focal_mm": 35, "sensor_mm": [36, 24], "aspect": "3:2", "near_m": 0.1, "far_m": 1000, "label": "镜头 1"}}
+       "model": {"content_revision_id": "ccrv_9e2a0d4c-1b3f-4a5e-8c7d-6f5e4d3c2b1a"}, "material_slots": {}}
     ]
   },
-  "models": {}
+  "models": {
+    "ccrv_9e2a0d4c-1b3f-4a5e-8c7d-6f5e4d3c2b1a": {
+      "content_id": "ccnt_51c0e8a2-7d6b-4c3a-9f1e-2d4c6b8a0e1f",
+      "usable": true,
+      "manifest": {"bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 6, 0.5]}, "triangles": 64,
+                   "slots": [{"id": "stone", "hint": "stone"}], "parts": [], "anchors": []},
+      "generator": {"language": "three-module", "contract_version": 1, "lib_version": 1,
+                    "code_sha256": "sha256-6f1ed002ab5595859014ebf0951522d9f2b8d1c5e8a6a7c3b1d0e9f8a7b6c5d4",
+                    "params_schema": {"height": {"type": "number", "default": 6, "min": 2, "max": 20}},
+                    "params": {"height": 6}, "mount": "floor"},
+      "name_hint": "哥特束柱"
+    }
+  }
 }
 ```
 失败示例：
@@ -329,7 +342,8 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ```
 
 ### 兼容与变更
-在通用读取接口上新增 `scene` 分支，其他类型不受影响。`models` 在 C2 之前恒为空对象，C2 起才填充，属于兼容扩展。
+- 在通用读取接口上新增 `scene` 分支，其他类型不受影响。
+- C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
 
 ## api: ADD 提交场景命令
 
