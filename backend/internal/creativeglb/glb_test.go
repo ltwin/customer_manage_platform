@@ -291,6 +291,19 @@ func fixtureCases() []fixtureCase {
 			},
 		},
 		{
+			// Not built here: GLTFExporter wrote it in the real sandbox from the
+			// editor's default template (frontend/src/creative-scene/sandbox/
+			// template.ts). frontend/scripts/scene-sandbox.test.mjs checks the
+			// exporter still writes exactly these bytes. Base 0.75 wide, height 3;
+			// a 32-segment closed cylinder (128) between two boxes (12 each).
+			Name: "exported-template",
+			Manifest: &Manifest{
+				Bounds: Bounds{Min: [3]float64{-0.375, 0, -0.375}, Max: [3]float64{0.375, 3, 0.375}}, Triangles: 152,
+				Slots: []Slot{{ID: "stone", Hint: "stone"}, {ID: "trim", Hint: "stone"}}, Parts: []string{"base", "capital", "shaft"},
+				Anchors: []Anchor{{ID: "top", Position: [3]float64{0, 3, 0}}},
+			},
+		},
+		{
 			Name: "bad-bounds-mismatch", Reason: ReasonBoundsMismatch,
 			build: basicWith(func(doc map[string]any, b *builder) {
 				b.accessors[0]["max"] = []float64{0.5, 0.25, 0.5}
@@ -450,8 +463,20 @@ func TestFixtures(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			data := c.build()
 			path := filepath.Join("testdata", c.File)
+			if c.build == nil {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := Inspect(data, DefaultLimits())
+				if err != nil {
+					t.Fatalf("Inspect: %v", err)
+				}
+				assertManifest(t, got, *c.Manifest)
+				return
+			}
+			data := c.build()
 			if *update {
 				if err := os.WriteFile(path, data, 0o644); err != nil {
 					t.Fatal(err)

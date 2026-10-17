@@ -136,6 +136,50 @@
     }
   },
   {
+    "name": "exported-template",
+    "file": "exported-template.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          -0.375,
+          0,
+          -0.375
+        ],
+        "max": [
+          0.375,
+          3,
+          0.375
+        ]
+      },
+      "triangles": 152,
+      "slots": [
+        {
+          "id": "stone",
+          "hint": "stone"
+        },
+        {
+          "id": "trim",
+          "hint": "stone"
+        }
+      ],
+      "parts": [
+        "base",
+        "capital",
+        "shaft"
+      ],
+      "anchors": [
+        {
+          "id": "top",
+          "position": [
+            0,
+            3,
+            0
+          ]
+        }
+      ]
+    }
+  },
+  {
     "name": "bad-bounds-mismatch",
     "file": "bad-bounds-mismatch.glb",
     "reason": "bounds_mismatch"

@@ -97,7 +97,8 @@ export function readSandboxMessage(v: unknown): SandboxMessage | null {
   if (v.type !== 'result' || !Number.isSafeInteger(v.id)) return null
   const id = v.id as number
   if (v.ok === true) {
-    if (!(v.glb instanceof ArrayBuffer) || v.glb.byteLength > MAX_GLB_BYTES || !isRecord(v.module)) return null
+    // Size and content are the host's checks (inspect), so they get a reason.
+    if (!(v.glb instanceof ArrayBuffer) || !isRecord(v.module)) return null
     return { type: 'result', id, ok: true, glb: v.glb, module: v.module as ModuleInfo }
   }
   if (v.ok !== false || !isRecord(v.error)) return null
