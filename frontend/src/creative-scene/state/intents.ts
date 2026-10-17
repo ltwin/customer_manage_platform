@@ -134,7 +134,7 @@ export function expectedFor(
   return out
 }
 
-function mergeUpdate(a: ObjectUpdate, b: ObjectUpdate): ObjectUpdate {
+export function mergeUpdate(a: ObjectUpdate, b: ObjectUpdate): ObjectUpdate {
   const primitive =
     a.primitive && b.primitive
       ? { params: { ...a.primitive.params, ...b.primitive.params } }
@@ -156,7 +156,10 @@ const unsent = (i: Intent) => i.state === 'pending' || !!i.held
  *  - an update of exactly the objects the unsent tail updates replaces the
  *    tail's fields and keeps the tail's earlier expected revisions.
  */
-export function enqueue(queue: readonly Intent[], next: Intent): Intent[] {
+export function enqueue(
+  queue: readonly Intent[],
+  next: Intent,
+): { queue: Intent[]; holder: string } {
   const update = onlyUpdate(next)
   if (update) {
     const ids = new Set(update.updates.map((u) => u.object_id))
@@ -171,7 +174,7 @@ export function enqueue(queue: readonly Intent[], next: Intent): Intent[] {
     )
     if (owner >= 0) {
       const byID = new Map(update.updates.map((u) => [u.object_id, u]))
-      return queue.map((i, n) =>
+      const rewritten = queue.map((i, n) =>
         n !== owner
           ? i
           : {
@@ -189,6 +192,7 @@ export function enqueue(queue: readonly Intent[], next: Intent): Intent[] {
               ),
             },
       )
+      return { queue: rewritten, holder: queue[owner].id }
     }
     const tail = queue.at(-1)
     const tailUpdate = tail && !tail.held && tail.state === 'pending' ? onlyUpdate(tail) : null
@@ -207,11 +211,11 @@ export function enqueue(queue: readonly Intent[], next: Intent): Intent[] {
             },
           ],
         }
-        return [...queue.slice(0, -1), merged]
+        return { queue: [...queue.slice(0, -1), merged], holder: tail.id }
       }
     }
   }
-  return [...queue, next]
+  return { queue: [...queue, next], holder: next.id }
 }
 
 /** Intents that depend on id, directly or through another dependent. */

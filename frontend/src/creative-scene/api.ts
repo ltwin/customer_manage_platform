@@ -1,5 +1,7 @@
 import type { components } from '../api/schema'
-import { read, send } from '../creative-canvas/editor/api.ts'
+import { request } from '../api/transport.ts'
+import { getAuthSnapshot } from '../auth/session.ts'
+import { currentAccount, read } from '../creative-canvas/editor/api.ts'
 
 export type SceneDocument = components['schemas']['CreativeSceneDocument']
 export type Scene = components['schemas']['CreativeScene']
@@ -28,24 +30,39 @@ export async function readScene(
   return doc
 }
 
+/**
+ * Sends one command. keepalive lets it outlive a closing page; browsers cap
+ * such bodies near 64 KiB, so larger ones go out as ordinary requests.
+ */
 export function commandScene(
   account: string,
   id: string,
   operationID: string,
   createdAt: string,
   payload: unknown,
+  keepalive = false,
 ): Promise<CommandReceipt> {
+  if (currentAccount() !== account)
+    return Promise.reject(new Error('账号已变化，请重新登录原账号'))
   const body = JSON.stringify({
     operation_id: operationID,
     client_created_at: createdAt,
     payload,
   })
-  return send<CommandReceipt>(
-    account,
-    `${documentPath(id)}/commands`,
+  const before = getAuthSnapshot()
+  return request<CommandReceipt>(`/creative${documentPath(id)}/commands`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': operationID },
     body,
-    operationID,
-  )
+    keepalive: keepalive && body.length < 60_000,
+  }).then((value) => {
+    if (
+      currentAccount() !== account ||
+      getAuthSnapshot().sessionEpoch !== before.sessionEpoch
+    )
+      throw new Error('登录会话已变化；修改是否保存需要重新确认')
+    return value
+  })
 }
 
 export function readRevisions(

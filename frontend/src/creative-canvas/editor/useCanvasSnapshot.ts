@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as api from './api.ts'
 import { ApiError } from '../../api/transport.ts'
-import { watchCanvasEvents } from './canvasEvents.ts'
+import { notifyCanvasInvalidate, watchCanvasEvents } from './canvasEvents.ts'
 import { newerCanvas } from './snapshot.ts'
 import { errorMessage } from './queue.ts'
 
@@ -94,7 +94,10 @@ export function useCanvasSnapshot(canvasID: string, tick: number) {
       void watchCanvasEvents(
         (signal) => api.connectCanvasEvents(canvasID, signal),
         stream.signal,
-        () => void reload(),
+        () => {
+          void reload()
+          notifyCanvasInvalidate()
+        },
         setSyncError,
       )
     }

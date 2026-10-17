@@ -4,6 +4,19 @@ import {
   watchStream,
 } from '../../api/watchStream.ts'
 
+// Other views on the canvas page (the scene editor) re-read on the same
+// notifications instead of opening a second stream.
+const invalidationListeners = new Set<() => void>()
+
+export function onCanvasInvalidate(listener: () => void): () => void {
+  invalidationListeners.add(listener)
+  return () => invalidationListeners.delete(listener)
+}
+
+export function notifyCanvasInvalidate(): void {
+  for (const listener of invalidationListeners) listener()
+}
+
 // Canvas notifications invalidate snapshots; there is no event log, so every
 // reconnect starts with an invalidation instead of a cursor.
 export async function consumeCanvasEvents(
