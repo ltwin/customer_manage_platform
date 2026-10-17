@@ -192,7 +192,6 @@ import type { CommandReceipt, SceneDocument } from '../src/creative-scene/api.ts
 import {
   SceneSession,
   anyUnsaved,
-  detach,
   sessionFor,
   type Clock,
   type FailureLike,
@@ -432,15 +431,152 @@ test('the leave prompt follows unsaved work across sessions, and a closed editor
   const transport = new FakeTransport(sceneDoc([box(1)]))
   const session = sessionFor('cwdoc_leave', () => new SceneSession('cwdoc_leave', transport, new FakeClock()))
   await session.start()
-  session.attached = true
+  session.attach()
   assert.equal(anyUnsaved(), false)
   session.edit([moveTo([id(1)], 1)], '移动')
   assert.equal(anyUnsaved(), true)
-  detach(session)
+  session.detach()
   assert.equal(session.isDisposed, false, 'still saving after the view closed')
   assert.equal(sessionFor('cwdoc_leave', () => { throw new Error('reopened') }), session, 'reopening finds the same session')
   transport.last().resolve(receipt(4, [`object:${id(1)}`]))
   await tick()
   assert.equal(anyUnsaved(), false)
   assert.equal(session.isDisposed, true)
+})
+
+// --- own undo and history ---------------------------------------------------
+
+import { UndoStack } from '../src/creative-scene/state/undo.ts'
+import { groupRevisions, type RevisionItem } from '../src/creative-scene/history.ts'
+
+async function confirmLast(transport: FakeTransport, revision: number, changed: string[], extra: Partial<CommandReceipt> = {}) {
+  transport.last().resolve(receipt(revision, changed, extra))
+  await tick()
+}
+
+/** The server's document after this session's writes, for later reads. */
+function docAt(objects: SceneObject[], revision: number, revs: Record<string, number>): SceneDocument {
+  const doc = sceneDoc(objects, 3)
+  doc.revision = String(revision)
+  for (const [u, r] of Object.entries(revs)) doc.unit_revs[u] = String(r)
+  return doc
+}
+
+test('undo and redo walk this session\'s steps, each a restore_units of their own revisions', async () => {
+  const { transport, session } = await started([box(1), box(2)])
+  const undo = new UndoStack(session)
+  session.edit([moveTo([id(1)], 1)], '移动 A')
+  await confirmLast(transport, 4, [`object:${id(1)}`])
+  session.edit([moveTo([id(2)], 2)], '移动 B')
+  await confirmLast(transport, 5, [`object:${id(2)}`])
+
+  assert.equal(undo.undo(), 'sent')
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '4', units: [`object:${id(2)}`] }])
+  assert.equal(position(session, 2), 0, 'the undo shows at once')
+  await confirmLast(transport, 6, [`object:${id(2)}`])
+  assert.equal(undo.undo(), 'sent')
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '3', units: [`object:${id(1)}`] }])
+  await confirmLast(transport, 7, [`object:${id(1)}`])
+  assert.equal(undo.redo(), 'sent')
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '4', units: [`object:${id(1)}`] }])
+  assert.equal(position(session, 1), 1)
+})
+
+test('a foreign revision makes a step stale for good; a hierarchy change does not', async () => {
+  const { transport, clock, session } = await started([box(1), box(2)])
+  const undo = new UndoStack(session)
+  session.edit([moveTo([id(1)], 1)], '移动 A')
+  await confirmLast(transport, 4, [`object:${id(1)}`])
+  session.edit([moveTo([id(2)], 1)], '移动 B')
+  await confirmLast(transport, 5, [`object:${id(2)}`])
+  // Someone else moves A and regroups things.
+  transport.doc = docAt([box(1), box(2)], 7, { [`object:${id(1)}`]: 6, [`object:${id(2)}`]: 5, objects: 7 })
+  clock.advance(1000)
+  session.invalidate()
+  await tick()
+  assert.equal(undo.undo(), 'sent', 'B survives a hierarchy change')
+  await confirmLast(transport, 8, [`object:${id(2)}`])
+  assert.equal(undo.undo(), 'empty')
+  assert.equal(undo.notice, '这一步之后物件已被修改，无法撤销')
+
+  session.edit([moveTo([id(1)], 3)], '再次移动 A')
+  await confirmLast(transport, 9, [`object:${id(1)}`])
+  assert.equal(undo.undo(), 'sent')
+  await confirmLast(transport, 10, [`object:${id(1)}`])
+  assert.equal(undo.undo(), 'empty', 'moving A again never revives the stale step')
+})
+
+test('a read that shows our own write before its receipt does not stale earlier steps', async () => {
+  const { transport, clock, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  session.edit([moveTo([id(1)], 1)], '移动')
+  await confirmLast(transport, 4, [`object:${id(1)}`])
+  session.edit([moveTo([id(1)], 2)], '再次移动')
+  transport.doc = docAt([box(1)], 5, { [`object:${id(1)}`]: 5 })
+  clock.advance(1000)
+  session.invalidate()
+  await tick()
+  await confirmLast(transport, 5, [`object:${id(1)}`])
+  assert.equal(undo.undo(), 'sent')
+  await confirmLast(transport, 6, [`object:${id(1)}`])
+  assert.equal(undo.undo(), 'sent', 'the first move is still ours to undo')
+})
+
+test('undoing a delete brings the object back and is checked against objects', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  session.edit([{ op: 'remove_objects', object_ids: [id(1)] }], '删除')
+  await confirmLast(transport, 4, ['objects'], { removed_units: [`object:${id(1)}`, `object:${id(1)}:content`] })
+  assert.equal(session.state.view!.scene.objects.length, 0)
+  assert.equal(undo.undo(), 'sent')
+  const sent = transport.last().payload
+  assert.deepEqual(sent.operations, [{ op: 'restore_units', from_revision: '3', units: [`object:${id(1)}`, `object:${id(1)}:content`] }])
+  assert.deepEqual(sent.expected, { [`object:${id(1)}`]: null, [`object:${id(1)}:content`]: null, objects: '4' })
+  assert.equal(session.state.view!.scene.objects[0].id, id(1))
+})
+
+test('undoing an edit that has not been sent drops it without a request', async () => {
+  const { transport, session } = await started([box(1), box(2)])
+  const undo = new UndoStack(session)
+  session.edit([moveTo([id(1)], 1)], '移动 A')
+  session.edit([moveTo([id(2)], 1)], '移动 B')
+  assert.equal(undo.undo(), 'cancelled')
+  assert.equal(position(session, 2), 0)
+  assert.equal(transport.sent.length, 1)
+  assert.equal(undo.undo(), 'busy', 'the move in flight has to land first')
+})
+
+test('a whole restore clears both stacks', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  session.edit([moveTo([id(1)], 1)], '移动')
+  await confirmLast(transport, 4, [`object:${id(1)}`])
+  assert.equal(undo.canUndo, true)
+  const restoring = session.restoreWhole('3')
+  transport.last().resolve(receipt(5, [], { reset_required: true }))
+  assert.equal(await restoring, 'restored')
+  assert.equal(undo.canUndo, false)
+  assert.deepEqual(transport.last().payload, { expected_revision: '4', operations: [{ op: 'restore', revision: '3' }] })
+})
+
+const rev = (n: number, actor: RevisionItem['actor_kind'], minute: number, extra: Partial<RevisionItem> = {}): RevisionItem => ({
+  revision: String(n), actor_kind: actor, run_id: null, restored_from: null, changed_units: [`object:${id(n)}`], annotated_units: [], removed_units: [], title: '场景',
+  created_at: new Date(Date.UTC(2026, 9, 16, 10, minute)).toISOString(), ...extra,
+})
+
+test('history groups a photographer\'s nearby edits and one assistant run; restores stand alone', () => {
+  const groups = groupRevisions([
+    rev(9, 'photographer', 30, { restored_from: '2', changed_units: ['*'] }),
+    rev(8, 'agent', 20, { run_id: 'run_b' }),
+    rev(7, 'agent', 19, { run_id: 'run_a' }),
+    rev(6, 'agent', 18, { run_id: 'run_a', changed_units: [`object:${id(5)}:content`] }),
+    rev(5, 'photographer', 10),
+    rev(4, 'photographer', 9),
+    rev(3, 'photographer', 6),
+    rev(2, 'photographer', 5, { restored_from: '1', changed_units: [`object:${id(2)}`], removed_units: [`object:${id(3)}`] }),
+  ])
+  assert.deepEqual(groups.map((g) => g.revisions), [['9'], ['8'], ['7', '6'], ['5', '4'], ['3'], ['2']])
+  assert.deepEqual(groups.map((g) => g.label), ['恢复到第 2 版', '助手的修改', '助手的修改', '你的修改', '你的修改', '恢复了 2 处'])
+  assert.equal(groups[2].objectCount, 2)
+  assert.equal(groups[3].latest, '5')
 })

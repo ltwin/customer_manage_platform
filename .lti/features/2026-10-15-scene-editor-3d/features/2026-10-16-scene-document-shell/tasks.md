@@ -27,14 +27,14 @@
 
 - [x] 5.1 投影与几何：`state/apply.ts`（镜像服务端操作语义）、意图合并（队尾合并保留最早的预期修订号，复制后移动并入同一个 `add_objects`）、`builtins/*` 7 个几何函数；`creative-scene.test.ts` 先写，覆盖投影与服务端语义一致、合并规则、清单与几何函数一一对应
 - [x] 5.2 发送循环与意图终态：`state/sceneStore.ts`（zustand：权威快照、队列、投影、选择）、`state/sync.ts`（单请求在途；`pending` / `sent` / `unknown` / `blocked`；`{after}` 预期修订号的替换；只在 `objects` 冲突的新增自动变基、删除转确认、父对象已不在的新增不变基；依赖被拒意图的后续意图转 `blocked`；`pagehide` 时 `keepalive`；`beforeunload` 拦截；SSE 失效节流 500ms 后重读、拖动中推迟、`trashed_at` 切换只读）；状态机单测覆盖设计「意图终态」「离开提示」两行与 AC-5 前端、AC-7 前端
-- [ ] 5.3 撤销与历史：`state/undo.ts`（撤销和重做都发 `restore_units`；按单元的 `foreignSeq` 过期规则只看物件单元，存在性变化时另查 `objects`；「重新移动后也不复活」；整份恢复清空两栈）、`history.ts`（按写入者、运行和时间窗分组与描述）、历史版本面板（只读预览、确认后整份恢复）；单测覆盖 AC-4 前端与 AC-6
+- [x] 5.3 撤销与历史：`state/undo.ts`（撤销和重做都发 `restore_units`；按单元的 `foreignSeq` 过期规则只看物件单元，存在性变化时另查 `objects`；「重新移动后也不复活」；整份恢复清空两栈）、`history.ts`（按写入者、运行和时间窗分组与描述）、会话的整份恢复（`restoreWhole`，成功后清空两栈）；单测覆盖 AC-4 前端与 AC-6 的分组逻辑（历史版本面板的界面移到 6.4，依赖编辑视图布局）
 
 ## 6. 前端视口与交互
 
 - [ ] 6.1 键位表与分发：`input/keymap.ts`（键位表是状态栏、菜单、速查的唯一来源；按 `event.code` 分发；macOS 认 `metaKey`、`Backspace` 视作 Delete；输入框内与组字中不分发；命中后 `preventDefault` + `stopPropagation`；Esc 的处理顺序且永不关闭视图；Ctrl/Cmd + S 拦下并提示已自动保存）；`creative-scene-interaction.test.ts` 先写，覆盖 AC-2c
 - [ ] 6.2 视口与导航（依赖 4.1）：`Viewport.tsx`（R3F Canvas、`Grid`、天空、clay 光照、`GizmoHelper`）、`objects/*`（基础体、灯光图标、摄像机视锥、分组）、`input/navigation.ts`（`CameraControls` 配置；中键与 Alt + 左键并存；鼠标 / 触控板两套滚轮映射，`ctrlKey` 一律推拉；`classifyWheel` 推测加「视图」菜单手动选择并持久化；数字行视图、`.` 聚焦选中、Home 全部显示、反引号视图菜单）；单测覆盖 AC-2a，`classifyWheel` 用 4.1 的夹具
 - [ ] 6.3 选择与变换：`input/selection.ts`（单击、Shift + 单击三态、`SelectionBox` 框选及 Shift 加选 / 修饰键减选、A / Alt + A、锁定与隐藏排除、只变换最上层选中物件）、`transform/modal.ts` + `numeric.ts`（G / R / S；X/Y/Z 全局 → 自身 → 取消循环、Shift + 轴锁平面；Ctrl 吸附 1 m / 5° / 0.1，Ctrl + Shift 精细吸附，Shift 精细从按下时起算；数字输入含小数、负号、Backspace、Tab 换轴；多物件以中点为枢轴；父对象下换算回局部变换；一次确认一个 `update_objects`）、gizmo 工具（`TransformControls` 挂在枢轴代理上）、W 切换工具、Shift + D、X / Delete、H / Shift + H / Alt + H、Alt + G/R/S、F2；单测覆盖 AC-2 模态变换与 AC-2b
-- [ ] 6.4 面板与样式：工具栏、菜单栏（含 Shift + A 添加菜单，新物件落在鼠标所指的地面点）、物件列表、属性栏（左侧）、状态栏（当前工具或变换的轴向与数值、保存状态）、快捷键速查、右键菜单、首次提示、冲突提示（重新应用 / 放弃 / 仍然删除）、关闭视图时 `blocked` 意图的确认；`scene.css`；在助手面板展开时让出空间；菜单与状态栏的按键标注全部取自键位表；`make check-frontend` 通过
+- [ ] 6.4 面板与样式：工具栏、菜单栏（含 Shift + A 添加菜单，新物件落在鼠标所指的地面点）、物件列表、属性栏（左侧）、状态栏（当前工具或变换的轴向与数值、保存状态）、快捷键速查、右键菜单、首次提示、冲突提示（重新应用 / 放弃 / 仍然删除）、历史版本面板（分组列表、只读预览、确认后整份恢复）、关闭视图时 `blocked` 意图的确认；`scene.css`；在助手面板展开时让出空间；菜单与状态栏的按键标注全部取自键位表；`make check-frontend` 通过
 
 ## 7. 端到端与基线
 

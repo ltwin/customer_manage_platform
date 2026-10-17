@@ -86,6 +86,8 @@ export type SessionObserver = {
   confirmed?(intent: Intent, receipt: CommandReceipt, before: SceneState): void
   read?(doc: SceneDocument): void
   sending?(intent: Intent): void
+  /** A whole-document restore succeeded. */
+  restored?(): void
 }
 
 const toState = (doc: SceneDocument): SceneState => ({
@@ -109,7 +111,8 @@ export class SceneSession {
   private rebased = new Set<string>()
   private observers = new Set<SessionObserver>()
   private disposed = false
-  attached = false
+  /** The editor closed; the session goes away once everything is saved. */
+  private closing = false
 
   readonly documentID: string
   private readonly transport: Transport
@@ -189,6 +192,9 @@ export class SceneSession {
       for (const u of touchedUnits(op, probe)) if (!units.includes(u)) units.push(u)
       probe = applyOp(probe, op)
     }
+    // Undo or redo that adds or removes objects is checked against objects.
+    const p = options.projection
+    if (p && (p.put.length || p.removed.length) && !units.includes('objects')) units.push('objects')
     const intent: Intent = {
       id: newIntentID(),
       createdAt: new Date(this.clock.now()).toISOString(),
@@ -461,6 +467,32 @@ export class SceneSession {
     }
   }
 
+  /**
+   * Restores the whole document to a revision from the history list. Only
+   * while nothing is waiting to be saved; checked against the base revision.
+   */
+  async restoreWhole(revisionToRestore: string): Promise<'restored' | 'conflict' | 'busy' | 'failed'> {
+    const base = this.state.base
+    if (!base || this.state.queue.length || this.state.trashed) return 'busy'
+    const intent: Intent = {
+      id: newIntentID(),
+      createdAt: new Date(this.clock.now()).toISOString(),
+      ops: [],
+      expected: {},
+      state: 'sent',
+      label: `恢复到第 ${revisionToRestore} 版`,
+    }
+    try {
+      await this.transport.command(this.documentID, intent, { expected_revision: base.revision, operations: [{ op: 'restore', revision: revisionToRestore }] }, false)
+    } catch (e) {
+      const f = e as FailureLike
+      return f.status === 409 && f.code === 'creative_document_conflict' ? 'conflict' : 'failed'
+    }
+    for (const o of this.observers) o.restored?.()
+    await this.read()
+    return 'restored'
+  }
+
   /** 「放弃」: the group and what it blocked are dropped. */
   discard(groupID: string) {
     this.set({ conflicts: this.state.conflicts.filter((g) => g.id !== groupID) })
@@ -472,8 +504,19 @@ export class SceneSession {
     this.maybeDispose()
   }
 
+  /** An editor shows this session again. */
+  attach() {
+    this.closing = false
+  }
+
+  /** The editor closed; saving continues, then the session goes away. */
+  detach() {
+    this.closing = true
+    this.maybeDispose()
+  }
+
   private maybeDispose() {
-    if (!this.attached && !this.hasUnsaved()) this.dispose()
+    if (this.closing && !this.hasUnsaved()) this.dispose()
   }
 
   dispose() {
@@ -573,11 +616,6 @@ export function sessionFor(
   return session
 }
 
-/** The editor closed; the session keeps saving and then goes away. */
-export function detach(session: SceneSession) {
-  session.attached = false
-  if (!session.hasUnsaved()) session.dispose()
-}
 
 export function anyUnsaved(): boolean {
   for (const s of sessions.values()) if (s.hasUnsaved()) return true
