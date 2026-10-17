@@ -285,3 +285,87 @@ test('a child is computed in world space and converted back to its parent\'s spa
   const world = parentWorld.clone().multiply(new Matrix4().compose(new Vector3(...local.position), new Quaternion(...local.rotation), new Vector3(...local.scale)))
   close(new Vector3().setFromMatrixPosition(world).toArray(), [6, 0, -1])
 })
+
+// --- navigation ---------------------------------------------------------------
+
+import {
+  buttonActions,
+  classifyWheel,
+  readPreference,
+  resolveDevice,
+  wheelAction,
+  writePreference,
+  type WheelSample,
+} from '../src/creative-scene/input/navigation.ts'
+
+const wheel = (deltaY: number, extra: Partial<WheelSample> = {}): WheelSample => ({
+  deltaX: 0, deltaY, deltaMode: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, t: 0, ...extra,
+})
+
+test('the wheel dollies with a mouse and orbits with a trackpad; a pinch always dollies', () => {
+  assert.deepEqual(wheelAction(wheel(100), 'mouse'), { kind: 'dolly', amount: 100 })
+  assert.deepEqual(wheelAction(wheel(3, { deltaMode: 1 }), 'mouse'), { kind: 'dolly', amount: 48 })
+  assert.deepEqual(wheelAction(wheel(100, { shiftKey: true }), 'mouse'), { kind: 'pan', dx: 0, dy: 100 })
+  assert.deepEqual(wheelAction(wheel(4, { deltaX: 2 }), 'trackpad'), { kind: 'orbit', dx: 2, dy: 4 })
+  assert.deepEqual(wheelAction(wheel(4, { deltaX: 2, shiftKey: true }), 'trackpad'), { kind: 'pan', dx: 2, dy: 4 })
+  for (const device of ['mouse', 'trackpad'] as const) {
+    assert.equal(wheelAction(wheel(-3.5, { ctrlKey: true }), device).kind, 'dolly')
+    assert.equal(wheelAction(wheel(-3, { metaKey: true }), device).kind, 'dolly')
+  }
+})
+
+test('the device guess (a hypothesis until real recordings) and the manual choice', () => {
+  assert.equal(classifyWheel([wheel(3, { deltaMode: 1 })]), 'mouse')
+  assert.equal(classifyWheel([wheel(100), wheel(100)]), 'mouse')
+  assert.equal(classifyWheel([wheel(4, { deltaX: 1.5 })]), 'trackpad')
+  assert.equal(classifyWheel([wheel(2.25)]), 'trackpad')
+  assert.equal(classifyWheel([wheel(2), wheel(3), wheel(1)]), 'trackpad')
+  assert.equal(classifyWheel([wheel(-6, { ctrlKey: true })]), null, 'a pinch says nothing')
+  assert.equal(resolveDevice('trackpad', 'mouse'), 'trackpad', 'the choice beats the guess')
+  assert.equal(resolveDevice('auto', null), 'mouse')
+  const store = new Map<string, string>()
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) }
+  writePreference(storage, 'trackpad')
+  assert.equal(readPreference(storage), 'trackpad')
+  const broken = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') }, removeItem: () => { throw new Error('denied') } }
+  assert.equal(readPreference(broken), 'auto')
+  writePreference(broken, 'mouse')
+})
+
+test('the middle button and Alt + left drag both navigate; the right button never does', () => {
+  assert.deepEqual(buttonActions({ alt: false, shift: false, ctrl: false }), { left: 'none', middle: 'rotate' })
+  assert.deepEqual(buttonActions({ alt: true, shift: false, ctrl: false }), { left: 'rotate', middle: 'rotate' })
+  assert.deepEqual(buttonActions({ alt: true, shift: true, ctrl: false }), { left: 'truck', middle: 'truck' })
+  assert.deepEqual(buttonActions({ alt: false, shift: false, ctrl: true }), { left: 'none', middle: 'dolly' })
+})
+
+// --- edits ----------------------------------------------------------------------
+
+import { clearOp, duplicate, newPrimitive, visibilityOp } from '../src/creative-scene/editing.ts'
+
+test('a new primitive goes last at the root, named after its builtin', () => {
+  const o = newPrimitive('box@1', [1, 0, 2], [so(0), so(3)], () => sid(9))
+  assert.deepEqual([o.id, o.name, o.order, o.parent_id], [sid(9), '方块', 4, null])
+  assert.deepEqual(o.transform.position, [1, 0, 2])
+})
+
+test('duplicating copies descendants under new IDs and puts each copy last under its parent', () => {
+  const objects = [so(10, { kind: 'group' }), so(1, { parent_id: sid(10), order: 0 }), so(2, { parent_id: sid(10), order: 1 }), so(3, { order: 11 })]
+  let n = 100
+  const copies = duplicate(objects, [sid(10), sid(3)], () => sid(n++))
+  assert.equal(copies.length, 4)
+  const g = copies.find((c) => c.kind === 'group')!
+  assert.deepEqual([g.parent_id, g.order], [null, 12])
+  assert.deepEqual(copies.filter((c) => c.parent_id === g.id).map((c) => c.order), [0, 1])
+  assert.deepEqual(copies.find((c) => c.name === '' && c.order === 13)?.parent_id, null)
+  assert.ok(copies.every((c) => !objects.some((o) => o.id === c.id)))
+})
+
+test('hide, hide unselected and reveal each make one update; clearing resets one part', () => {
+  const objects = [so(1), so(2), so(3, { visible: false }), so(4, { locked: true })]
+  assert.deepEqual(visibilityOp(objects, [sid(1)], 'hide'), { op: 'update_objects', updates: [{ object_id: sid(1), visible: false }] })
+  assert.deepEqual(visibilityOp(objects, [sid(1)], 'hide-unselected'), { op: 'update_objects', updates: [{ object_id: sid(2), visible: false }] })
+  assert.deepEqual(visibilityOp(objects, [], 'reveal'), { op: 'update_objects', updates: [{ object_id: sid(3), visible: true }] })
+  const moved = so(5, { transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [2, 2, 2] } })
+  assert.deepEqual(clearOp([moved], [sid(5)], 'location'), { op: 'update_objects', updates: [{ object_id: sid(5), transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] } }] })
+})
