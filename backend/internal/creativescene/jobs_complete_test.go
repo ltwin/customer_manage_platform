@@ -1,9 +1,11 @@
 package creativescene_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -251,6 +253,56 @@ func TestCompleteRefusals(t *testing.T) {
 	}
 	if n := len(waiter.results); n != 2 || waiter.results[n-1].Failure.Code != "compile_error" {
 		t.Fatalf("settled %+v", waiter.results)
+	}
+}
+
+// Each transition is one log line that names the tab holding the job and how
+// long the job sat in the state it leaves.
+func TestJobTransitionsAreLogged(t *testing.T) {
+	f := setup(t)
+	creativescene.SetJobWaiterForTest(t, &fakeWaiter{})
+	var out bytes.Buffer
+	creativescene.SetLoggerForTest(t, slog.New(slog.NewJSONHandler(&out, nil)))
+	doc := createScene(t, f.a)
+	job := newJob(t, f.a, addJob(doc, objectID(1)))
+	claimed := claimOne(t, f.a)
+	if _, err := completeJob(t, f.a, uuid.NewString(), map[string]any{"job_id": job.ID, "claim_token": claimed.ClaimToken, "outcome": "failed",
+		"error": map[string]any{"code": "compile_error", "message": "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	type line struct {
+		Msg     string `json:"msg"`
+		JobID   string `json:"job_id"`
+		From    string `json:"from"`
+		To      string `json:"to"`
+		RunID   string `json:"run_id"`
+		Session string `json:"editor_session_id"`
+		InState *int64 `json:"in_state"`
+		Since   *int64 `json:"since_created"`
+		Code    string `json:"code"`
+	}
+	var lines []line
+	for _, raw := range bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n")) {
+		var l line
+		if err := json.Unmarshal(raw, &l); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if l.Msg == "creative scene job" && l.JobID == job.ID {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) != 3 {
+		t.Fatalf("transitions %+v", lines)
+	}
+	created, claim, done := lines[0], lines[1], lines[2]
+	if created.To != creativescene.JobQueued || created.Session != "" || created.RunID == "" {
+		t.Fatalf("created %+v", created)
+	}
+	if claim.From != creativescene.JobQueued || claim.To != creativescene.JobClaimed || claim.Session != tab || claim.InState == nil || claim.Since == nil {
+		t.Fatalf("claimed %+v", claim)
+	}
+	if done.From != creativescene.JobClaimed || done.To != creativescene.JobFailed || done.Session != tab || done.InState == nil || done.Code != "compile_error" {
+		t.Fatalf("completed %+v", done)
 	}
 }
 

@@ -44,6 +44,9 @@ type ClaimedSceneJob struct {
 	Deadline   time.Time
 	RunID      *string
 	ToolCallID *string
+	CreatedAt  time.Time
+	// QueuedAt is when the job last became queued, for the wait in the log.
+	QueuedAt time.Time
 }
 
 // SceneJobClaim says which job a tab may take and how it holds it.
@@ -69,7 +72,7 @@ func (sc TxAccountScope) ClaimCreativeSceneJob(ctx context.Context, c SceneJobCl
 	}
 	const sqlText = `
 WITH next AS (
-  SELECT id FROM creative_scene_jobs
+  SELECT id, created_at, updated_at FROM creative_scene_jobs
   WHERE account_id = $1 AND state = 'queued' AND deadline > clock_timestamp()
     AND kind = ANY($2::text[]) AND ($3 = '' OR document_id = $3)
   ORDER BY created_at, id
@@ -82,10 +85,10 @@ SET state = 'claimed', claim_token = $4, editor_session_id = $5,
     updated_at = clock_timestamp()
 FROM next
 WHERE j.account_id = $1 AND j.id = next.id
-RETURNING j.id, j.document_id, j.kind, j.request, j.attempt, j.lease_until, j.deadline, j.run_id, j.tool_call_id`
+RETURNING j.id, j.document_id, j.kind, j.request, j.attempt, j.lease_until, j.deadline, j.run_id, j.tool_call_id, next.created_at, next.updated_at`
 	row := sc.scope.execRunner().QueryRow(ctx, sqlText, sc.AccountID(), c.Kinds, c.DocumentID, c.Token, c.Session,
 		fmt.Sprintf("%d milliseconds", c.Lease.Milliseconds()))
-	err = row.Scan(&job.ID, &job.DocumentID, &job.Kind, &job.Request, &job.Attempt, &job.LeaseUntil, &job.Deadline, &job.RunID, &job.ToolCallID)
+	err = row.Scan(&job.ID, &job.DocumentID, &job.Kind, &job.Request, &job.Attempt, &job.LeaseUntil, &job.Deadline, &job.RunID, &job.ToolCallID, &job.CreatedAt, &job.QueuedAt)
 	if errors.Is(err, ErrNoRows) {
 		return ClaimedSceneJob{}, false, nil
 	}

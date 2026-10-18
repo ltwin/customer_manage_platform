@@ -98,7 +98,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 
 ### 日志
 
-- 每次状态迁移一条 `creative scene job`：`job_id`、`document_id`、`kind`、`from`、`to`、`attempt`，有运行时带 `run_id`，失败带 `code`，以及从建任务起的 `since_created`。按 `job_id` 能跟住一个任务在几个标签页之间的往返。
+- 每次状态迁移一条 `creative scene job`：`job_id`、`document_id`、`kind`、`from`、`to`、`attempt`；有运行时带 `run_id`，有标签页持有时带 `editor_session_id`，失败带 `code`；`in_state` 是在离开的那个状态里待了多久（`queued` 是等页面领取，`claimed` 是页面执行），`since_created` 是从建任务起的总时长。按 `job_id` 能跟住一个任务在几个标签页之间的往返。
 - 每轮清扫一条 `creative scene job sweep`：`requeued`、`host_errors`、`expired`、`deleted`、`aborted`；出错时是同名的 Warn 日志带 `error`。
 
 ### 查库（只读）

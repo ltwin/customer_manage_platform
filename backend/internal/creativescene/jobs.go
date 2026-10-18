@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -80,6 +81,10 @@ type Job struct {
 	ToolCallID *string
 	Deadline   time.Time
 	Result     json.RawMessage
+	// EditorSessionID is the tab holding a claimed job; UpdatedAt is when the
+	// job entered its state. Both are for the transition log.
+	EditorSessionID *string
+	UpdatedAt       time.Time
 }
 
 // BakeRequest is a bake_model job's request.
@@ -215,7 +220,7 @@ type JobWaiter interface {
 var (
 	waiterMu sync.RWMutex
 	waiter   JobWaiter
-	logger   = slog.Default()
+	logger   atomic.Pointer[slog.Logger]
 )
 
 // SetJobWaiter registers the agent runtime's waiter. The server and the
@@ -245,12 +250,28 @@ func currentWaiter() JobWaiter {
 // SetLogger receives the process logger for job transitions.
 func SetLogger(l *slog.Logger) {
 	if l != nil {
-		logger = l
+		logger.Store(l)
 	}
 }
 
+// SetLoggerForTest swaps the transition logger for one test.
+func SetLoggerForTest(tb creativedocument.Cleaner, l *slog.Logger) {
+	tb.Helper()
+	old := logger.Load()
+	logger.Store(l)
+	tb.Cleanup(func() { logger.Store(old) })
+}
+
+func transitionLogger() *slog.Logger {
+	if l := logger.Load(); l != nil {
+		return l
+	}
+	return slog.Default()
+}
+
 // logTransition records one state change: enough to follow a job across tabs
-// and retries without reading the database.
+// and retries without reading the database. in_state is how long the job sat
+// in the state it leaves (queued: waiting for a tab; claimed: the tab's work).
 func logTransition(job Job, to string, code string, started time.Time) {
 	attrs := []any{
 		slog.String("job_id", job.ID), slog.String("document_id", job.DocumentID), slog.String("kind", string(job.Kind)),
@@ -259,22 +280,28 @@ func logTransition(job Job, to string, code string, started time.Time) {
 	if job.RunID != nil {
 		attrs = append(attrs, slog.String("run_id", *job.RunID))
 	}
+	if job.EditorSessionID != nil {
+		attrs = append(attrs, slog.String("editor_session_id", *job.EditorSessionID))
+	}
+	if !job.UpdatedAt.IsZero() {
+		attrs = append(attrs, slog.Duration("in_state", time.Since(job.UpdatedAt)))
+	}
 	if code != "" {
 		attrs = append(attrs, slog.String("code", code))
 	}
 	if !started.IsZero() {
 		attrs = append(attrs, slog.Duration("since_created", time.Since(started)))
 	}
-	logger.Info("creative scene job", attrs...)
+	transitionLogger().Info("creative scene job", attrs...)
 }
 
-const jobColumns = "id,document_id,kind,state,request,attempt,run_id,tool_call_id,deadline,result,created_at"
+const jobColumns = "id,document_id,kind,state,request,attempt,run_id,tool_call_id,deadline,result,created_at,editor_session_id,updated_at"
 
 func scanJob(row store.Row) (Job, time.Time, error) {
 	var j Job
 	var kind string
 	var created time.Time
-	err := row.Scan(&j.ID, &j.DocumentID, &kind, &j.State, &j.Request, &j.Attempt, &j.RunID, &j.ToolCallID, &j.Deadline, &j.Result, &created)
+	err := row.Scan(&j.ID, &j.DocumentID, &kind, &j.State, &j.Request, &j.Attempt, &j.RunID, &j.ToolCallID, &j.Deadline, &j.Result, &created, &j.EditorSessionID, &j.UpdatedAt)
 	j.Kind = JobKind(kind)
 	if errors.Is(err, store.ErrNoRows) {
 		return Job{}, time.Time{}, ErrJobNotFound
@@ -416,7 +443,8 @@ func Claim(ctx context.Context, scope store.AccountScope, in ClaimInput) (*Claim
 		}
 		out = &ClaimedJob{ID: job.ID, DocumentID: job.DocumentID, Kind: job.Kind, Request: job.Request, Attempt: job.Attempt,
 			ClaimToken: token, LeaseUntil: job.LeaseUntil, Deadline: job.Deadline}
-		logTransition(Job{ID: job.ID, DocumentID: job.DocumentID, Kind: JobKind(job.Kind), State: JobQueued, Attempt: job.Attempt, RunID: job.RunID}, JobClaimed, "", time.Time{})
+		logTransition(Job{ID: job.ID, DocumentID: job.DocumentID, Kind: JobKind(job.Kind), State: JobQueued, Attempt: job.Attempt, RunID: job.RunID,
+			EditorSessionID: &in.EditorSessionID, UpdatedAt: job.QueuedAt}, JobClaimed, "", job.CreatedAt)
 		return nil
 	})
 	return out, err
