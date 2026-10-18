@@ -665,21 +665,7 @@ func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, hel
 	if state != RunRunning || epoch != held.Epoch || cancelRequested != nil || leaseUntil == nil || !now.Before(*leaseUntil) {
 		return ErrRunState
 	}
-	// The skill control lock, between the run and the consent: the design puts
-	// the skill control row after operation/account/slot/budget/conversation/run
-	// and before the resource locks, and the dispatch intent this transaction is
-	// about to record must not be able to overtake a withdrawal.
-	if err := s.requireActiveSkillsInTx(ctx, tx, held); err != nil {
-		return err
-	}
-	consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
-	if err != nil {
-		return err
-	}
-	// The content refs were matched against this consent when the run was
-	// created and a consent's scope never changes afterwards, so what is
-	// re-checked here is whether it still stands at all.
-	return coversRun(consent, held.ConversationID, nil)
+	return s.admitParkedRunInTx(ctx, tx, held, now)
 }
 
 // admitDispatchInTx is the last gate, run inside the dispatch transaction. The

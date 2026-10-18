@@ -93,6 +93,8 @@ func run() error {
 	}
 	agent.SetLogger(slog.Default())
 	agent.SetImageReader(media)
+	// Expired scene jobs settle the runs that parked on them.
+	creativescene.SetJobWaiter(agent.SceneJobWaiter())
 	generation, err := creativegeneration.Compose(gateway, gatewayOptions.Catalog.Currency(), media, gatewayOptions.Credential)
 	if err != nil {
 		return err

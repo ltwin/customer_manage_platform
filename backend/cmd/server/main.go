@@ -22,7 +22,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
-	_ "github.com/samson/customer-manage-platform/backend/internal/creativescene" // 注册场景文档类型，画布命令和助手工具都要用
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene" // 注册场景文档类型，画布命令和助手工具都要用；客户端任务恢复运行
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
@@ -269,6 +269,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	creativeAgent.SetLogger(logger)
 	creativeAgent.SetImageReader(creativeMedia)
+	// A completed scene job resumes the run that parked on it.
+	creativescene.SetJobWaiter(creativeAgent.SceneJobWaiter())
 	// 缺凭证或保护密钥时生成关闭，目录为空；草稿与历史入口照常可用。
 	generation, err := creativegeneration.Compose(creativeGateway, gatewayOptions.Catalog.Currency(), creativeMedia, gatewayOptions.Credential)
 	if err != nil {

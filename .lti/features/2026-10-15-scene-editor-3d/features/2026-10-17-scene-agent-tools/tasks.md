@@ -53,13 +53,14 @@
 
   先写测试：并行两个挂起；屏障测试卡在「建任务提交」与 `completeAttempt` 之间完成任务，运行不进 `waiting_input`、只恢复一次；崩溃重跑不重复建任务。
   - 实施记录：interrupt 的 info 用字符串 `client_job:<任务 ID>`，检查点是 gob 序列化，字符串不需要注册类型；`drainAgent` 返回 `parkedRun`（`errors.Is` 仍是 `errRunInterrupted`）。`callTool` 写结果的事务体抽成 `publishResultInTx`（行为不变），3.3 的 `Settle` 复用它，保证与工具成功分支同一顺序；本任务的测试也用它模拟任务完成。并行挂起测试用两个写同一资源的调用，第二个排在第一个挂起之后，能区分「挂起停批」的回归。
-- [ ] 3.3 `JobWaiter` 实现（`creativeagent/scene_waiter.go`）：
+- [x] 3.3 `JobWaiter` 实现（`creativeagent/scene_waiter.go`）：
   - 从 `admitRunInTx` 抽出 `admitParkedRunInTx`，`Admit` 与它共用，锁序为项目 → 槽位 → 网关组 → 运行 → Skill → consent；
   - `Settle` 按 `callTool` 成功分支的顺序写步骤结果，取到槽位后入队；
   - `Abort` 结束运行；
   - server 与 creative-worker 启动时注册。
 
   先写测试：用测试渲染端完成任务后运行恢复并读到结果；等待期间撤回 consent 或停用 Skill 时，完成返回 409、运行结束、场景无新修订；过期路径同理。
+  - 实施记录：`Admit` 也接受 `running` 与 `queued` 的运行——前者是挂起的那次执行还没退出（B2），后者是崩溃后重跑还没走到这个调用；两种情况 `Settle` 只写结果，由执行或日志回放接上。`Abort` 只结束 `waiting_client` 的运行，其余交给持有它的执行，后者自己的准入会遇到同样的拒绝。`admitRunInTx` 的 Skill 与 consent 复查改为调用 `admitParkedRunInTx`，所以已有的 Skill 停用测试同样覆盖这段；本任务的测试覆盖 consent 撤回（完成与过期两条路径）。工具结果先给基础形态（成功、失败、冲突带 `retry_job_id`、过期），`changes_since` 与尺寸、三角面等字段随 3.4、3.6 补上。测试用渲染端上报失败的完成，截图成功与烘焙的整条链路在 3.6 的搭景全流程里测。
 - [ ] 3.4 `creativescene.RunChanges` 与 `ChangesSince`，以及 `GET /documents/{id}/run-changes` 的领域实现。表驱动测试先写：
   - `RunChanges`：新增、删除、修改、别人改过、整份恢复过、需要分批、层级条目不可恢复；
   - `ChangesSince`：手动修改、整份恢复、按单元恢复、从未写过。
