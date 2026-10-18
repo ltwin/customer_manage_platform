@@ -7,7 +7,7 @@
 通用文档的读取外壳、命令外壳（`expected` + `operations`）、冲突错误 `creative_document_conflict`、回收站、修订历史和工作会话指针，
 由独立 change `creative-document-foundation`（通用文档底座）定义和交付。本 Epic 只定义 `type_key = "scene"` 的分支，以及场景专属的动作。 -->
 
-## architecture: ADD 场景模块
+## architecture: MODIFY 场景模块
 
 ### 职责与边界
 - 依赖通用文档底座（`creative-document-foundation`）：场景以文档类型端口注册为 `scene` 类型，读取、命令、回收站和历史都走通用入口。
@@ -17,13 +17,13 @@
   - 客户端任务生命周期、导出编排。
   - 场景助手工具的领域入口。
 - 不职责：执行几何代码、渲染、画布节点的布局规则（调用画布命令层完成）。
-- 依赖方向：`creativeagent` → `creativescene` → `creativecontent` / `creativestaging` / `creativecanvas`（命令层）/ 通用文档层 / `platform/store` / `platform/realtime`。`creativescene` 不 import gin（ADR-003），`gin.Context` 不下穿。
-- 前端 `frontend/src/creative-scene/`：编辑器外壳（R3F）、场景状态（快照 + outbox + 撤销栈）、沙箱宿主、渲染端（客户端任务执行器）、材质库、导出器。编辑视图嵌入画布的同一个助手面板。
+- 依赖方向：`creativeagent` → `creativescene` → `creativecontent` / `creativestaging` / `creativecanvas`（命令层）/ 通用文档层 / `platform/store` / `platform/realtime`。`creativescene` 不 import gin（ADR-003），`gin.Context` 不下穿。客户端任务到达终态时，`creativescene` 经自己定义的端口通知 `creativeagent`（进程启动时注册实现），不反向 import。
+- 前端 `frontend/src/creative-scene/`：编辑器外壳（R3F）、场景状态（快照 + outbox + 撤销栈）、沙箱宿主、渲染端（客户端任务执行器）、材质库、导出器。编辑视图嵌入画布的同一个助手面板。渲染端不依赖编辑器外壳：画布页在认领到任务时按需加载它，摄影师不打开场景也能让助手搭建；没有任务的画布页不加载 3D 引擎。
 - 渲染、烘焙、截图、导出只在浏览器完成；服务端不渲染。服务端经客户端任务派发工作，经暂存上传接收产物。
 
 ### 关键数据流
 - 手动编辑：编辑器 outbox → `POST /creative/documents/{id}/commands` → 新文档修订 → 账号失效通知 → 其他标签页重读。
-- 助手写模型 / 截图 / 导出：工具创建客户端任务 → 运行等待并释放槽位 → 编辑器认领、执行、暂存上传 → 完成任务 → 同事务落结果并让运行继续。
+- 助手写模型 / 截图 / 导出：工具创建客户端任务 → 运行进入 `waiting_client` 并释放槽位 → 渲染端（场景编辑视图，或按需加载渲染模块的画布页）认领、执行、暂存上传 → 完成任务 → 同事务落结果并让运行继续。
 - 导出：渲染端暂存上传导出图 → `POST /creative/documents/{id}/scene-exports` → 画布命令层建图片节点，写入 `based_on`。
 
 ## patterns: ADD 几何模块契约
@@ -190,10 +190,10 @@ export default function build({ params, THREE, lib, rng }) {
 ## data: ADD 场景客户端任务
 
 ### 用途与存储角色
-- **用途**：服务端派给编辑器页面执行的工作（烘焙模型、回看截图、导出），以及它的认领、租约、结果和关联的助手运行。
+- **用途**：服务端派给创意空间页面（渲染端）执行的工作（烘焙模型、回看截图、导出），以及它的认领、租约、结果和关联的助手运行。
 - **存储**：新表 `creative_scene_jobs`（PostgreSQL）。
 - **角色**：权威主数据（任务状态）。产物本身在暂存上传或内容里，不在本表。
-- **所有权**：`creativescene` 创建、过期、取消；编辑器经认领、续租、完成接口推进；`creativeagent` 只读任务结果，并在任务终态时继续运行。
+- **所有权**：`creativescene` 创建、过期、取消；渲染端经认领、续租、完成接口推进；`creativeagent` 经 `creativescene` 的终态端口读取任务结果，并在任务终态时继续运行。
 
 ### 结构与身份
 
@@ -202,29 +202,44 @@ export default function build({ params, THREE, lib, rng }) {
 | `id` | text | 是 | `csjob_<uuid>`，主键 |
 | `account_id` | text | 是 | 账号隔离 |
 | `document_id` | text | 是 | 目标场景 |
-| `kind` | text | 是 | `bake_model` / `render_view` / `export_shots` |
-| `request` | jsonb | 是 | 按 kind 定义：`bake_model` 为 `{code, params, lib_version, target}`，`target` 为 `{op:"add", object:{…}}` 或 `{op:"replace", object_id, scope:"this"\|"all_instances"}`；`render_view` 为 `{camera_object_id}` 或 `{viewpoint:{position,target,focal_mm}}`，加上 `mode`；`export_shots` 为 `{camera_object_ids, passes, canvas_id}` |
+| `kind` | text | 是 | `bake_model` / `render_view` / `export_shots`（CHECK） |
+| `request` | jsonb | 是 | 按 kind 定义，见下 |
 | `state` | text | 是 | `queued`/`claimed`/`succeeded`/`failed`/`expired`/`cancelled`（CHECK） |
 | `attempt` | integer | 是 | 从 0 开始，每次租约过期回到 queued 时加 1 |
 | `claim_token` | text | 认领时 | 随机令牌，过期或终态时清空 |
 | `editor_session_id` | text | 认领时 | 认领者标签页 |
 | `lease_until` | timestamptz | 认领时 | 租约到期时间 |
-| `deadline` | timestamptz | 是 | 创建时间 + 30 分钟（初始值） |
-| `run_id` / `tool_call_id` | text | 助手创建时 | 关联运行；摄影师发起的导出为 null |
-| `result` | jsonb | 终态时 | 成功：产物摘要（模型修订 ID、截图暂存上传 ID、导出节点 ID 等）；失败：`{code, message}` |
+| `deadline` | timestamptz | 是 | 创建时间 + 30 分钟 |
+| `run_id` / `tool_call_id` | text | 助手创建时 | 关联运行与工具调用；摄影师发起的导出为 null |
+| `result` | jsonb | 终态时 | 见下 |
 | `created_at` / `updated_at` | timestamptz | 是 | — |
 
-索引：`(account_id, document_id, state, created_at)`，用于认领下一个；`(state, deadline)`，用于过期扫描。
+`request`：
+- `bake_model`：`{code, params, lib_version, name_hint, target, expected}`。
+  - `target` 为 `{op:"add", object:{…}}`（新物件的名称、变换、父级等，字段同 `add_objects` 的条目，不含 `model`），或 `{op:"replace", object_id, scope:"this"|"all_instances", object_ids}`；`all_instances` 时 `object_ids` 是建任务时共用同一模型修订的全部实例，此后不再展开。
+  - `expected`：建任务时冻结的替换目标内容单元版本（`{"object:<id>:content": rev}`）；`add` 为空对象，完成时按当时的 `objects` 版本写入。
+- `render_view`：三选一，加上 `mode`（C3 只有 `clay`）：
+  - `{camera_object_id}`：按场景里的摄像机，画幅取摄像机的比例；
+  - `{viewpoint:{position, target, focal_mm}}`：临时视点，4:3；
+  - `{preset:"overview"|"top"|"front"|"side"}`：按全部可见物件的包围盒自动取景，4:3（总览为斜上方 3/4 视角）。
+- `export_shots`：`{camera_object_ids, passes, canvas_id}`（C4）。
+
+`result`：
+- 成功：`bake_model` 为 `{content_id, content_revision_id, object_ids, revision}`；`render_view` 为 `{image_upload_id, content_revision_id}`（暂存截图）；`export_shots` 见 C4。
+- 失败：`{code, message}`。`code` 取完成接口的错误码，或服务端写入的 `conflict`（场景单元冲突）、`invalid_result`（结果不合规，例如 manifest 与 GLB 不符、物件超出上限、父级不存在）、`expired`、`cancelled`。`conflict` 时另带 `conflicts`（单元、预期与当前版本、改动者）和 `bake`（`{glb_upload_id, thumbnail_upload_id, module, manifest}`），助手重试时复用这份烘焙产物，不重新编译。
+
+索引：`(account_id, state, created_at)`，用于账号级认领；`(account_id, document_id, state, created_at)`，用于按场景认领；`(state, deadline)`，用于过期扫描；`(run_id)`，用于取消运行时找到它的任务。
 
 ### 访问模式与保证
-- **认领**：按场景取最早的 `queued` 任务，用 `FOR UPDATE SKIP LOCKED` 改为 `claimed`，写入令牌、会话和租约。由数据库行锁保证同一任务只被一个会话认领（I5）。
-- **租约回收**：worker 周期扫描（复用 creative-worker 的维护循环），把 `claimed` 且租约已过期的任务改回 `queued`，`attempt` 加 1，清空令牌；把超过 `deadline` 的非终态任务改为 `expired`，并让关联运行继续（工具结果为过期）。
-- **完成**：校验令牌与租约 → 落产物 → 改终态 → 让运行继续，在同一事务里提交（design「客户端任务」）。
-- **通知**：表上安装提交后通知触发器，走账号级失效通道（design 未决 #4）。
+- **认领**：取最早的 `queued` 任务（指定场景时只在该场景内），用 `FOR UPDATE SKIP LOCKED` 改为 `claimed`，写入令牌、会话和租约。由数据库行锁保证同一任务只被一个会话认领（I5）。没有任务时只走索引、不加锁，渲染端在每次失效通知时都会调用。
+- **租约回收**：worker 周期扫描（复用 creative-worker 的维护循环），把 `claimed` 且租约已过期的任务改回 `queued`，`attempt` 加 1，清空令牌；把超过 `deadline` 的非终态任务改为 `expired`，并经终态端口让关联运行继续（工具结果为过期）。
+- **完成**：校验令牌与租约 → 落产物 → 改终态 → 经终态端口让运行继续，在同一事务里提交（design「客户端任务」）。
+- **取消**：运行被取消时，在取消运行的同一事务里把它的非终态任务改为 `cancelled`，清空令牌。
+- **通知**：表上安装提交后通知触发器，走账号级失效通道（`notify_creative_canvas_changed('account')`）；只改 `lease_until` / `updated_at` 的更新不通知。
 
 ### 生命周期与演进
 - 终态任务保留 30 天后由维护任务删除；只删任务行，不影响产物。
-- 新增 `kind` 时扩展 CHECK，并在 `request` 定义新外形；读取端遇到未知 kind 时不认领。
+- 新增 `kind` 时扩展 CHECK，并在 `request` 定义新外形；渲染端只认领自己能执行的 kind（认领请求的 `kinds`）。C3 实现 `bake_model`、`render_view`，`export_shots` 由 C4 实现。
 
 ## data: ADD 导出图来源
 
@@ -504,43 +519,44 @@ Content-Type: application/json
 ## api: ADD 认领场景客户端任务
 
 ### 用途与调用
-- **用途**：编辑器认领本场景下最早的一个待执行任务。
-- **消费者**：前端渲染端。收到任务变化通知、打开编辑视图、或完成上一个任务后调用。
-- **调用**：`POST /api/v1/creative/documents/{id}/scene-jobs/claim`，`application/json`。认领本身不需要幂等键：重复认领只会拿到下一个任务，或续上自己的租约。
-- **权限**：场景属于当前账号。
+- **用途**：渲染端认领一个待执行任务。指定场景时只取该场景最早的任务，否则取账号里最早的任务。
+- **消费者**：前端渲染端：场景编辑视图（带 `document_id`）和画布页的后台渲染端（不带）。收到失效通知、连接或回到前台、完成上一个任务后调用。
+- **调用**：`POST /api/v1/creative/scene-jobs/claim`，`application/json`。认领本身不需要幂等键：重复认领只会拿到下一个任务。
+- **权限**：任务属于当前账号；指定的场景属于当前账号。
 
 ### 请求
 | 字段 | 位置 | 类型 | 必传 | 说明 |
 |---|---|---|---|---|
-| `id` | path | string | 是 | 场景 ID |
 | `editor_session_id` | body | string，`^[A-Za-z0-9_-]{16,64}$` | 是 | 标签页随机生成的会话 ID |
+| `document_id` | body | string | 否 | 只认领该场景的任务 |
 | `kinds` | body | string[] | 否 | 本端能执行的任务类型；缺省为全部已知类型 |
 
 ### 成功响应
-- 200，认领成功：`{job: {id, kind, request, attempt, claim_token, lease_until, deadline}}`。`request` 的结构见 `data: 场景客户端任务`。
+- 200，认领成功：`{job: {id, document_id, kind, request, attempt, claim_token, lease_until, deadline}}`。`request` 的结构见 `data: 场景客户端任务`。
 - 204，没有可认领的任务：无响应体。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
 | 400 | `validation_failed` | 会话 ID 非法、`kinds` 含未知值 | 修正 |
-| 404 | `not_found` | 文档不存在、不属于当前账号或不是场景 | 停止认领 |
+| 404 | `not_found` | 指定的文档不存在、不属于当前账号或不是场景 | 停止认领该场景 |
 
 ### 交互规则
 - 用 `FOR UPDATE SKIP LOCKED` 保证每个任务最多被一个会话认领。同一会话可以连续认领多个任务，按顺序执行。
+- 没有任务时只读索引、不加锁，可以在每次失效通知时调用。
 - 租约 30 秒，续租见 `api: 续租场景客户端任务`。
 
 ### 调用示例
 ```http
-POST /api/v1/creative/documents/cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10/scene-jobs/claim
+POST /api/v1/creative/scene-jobs/claim
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{"editor_session_id": "tab_Vx9q2LmN7pR4sT8w"}
+{"editor_session_id": "tab_Vx9q2LmN7pR4sT8w", "kinds": ["bake_model", "render_view"]}
 ```
 ```json
-{"job": {"id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "kind": "render_view",
-  "request": {"camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "mode": "clay"},
+{"job": {"id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10",
+  "kind": "render_view", "request": {"camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "mode": "clay"},
   "attempt": 0, "claim_token": "clm_Q2w3E4r5T6y7U8i9", "lease_until": "2026-10-22T10:05:30Z", "deadline": "2026-10-22T10:35:00Z"}}
 ```
 失败示例：
@@ -549,7 +565,7 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义。
+首次定义。修订 v6 起为账号级路径（此前未交付）。
 
 ## api: ADD 续租场景客户端任务
 
@@ -565,7 +581,7 @@ Content-Type: application/json
 | `claim_token` | body | string | 是 | 认领时拿到的令牌 |
 
 ### 成功响应
-200：`{lease_until}`，延长到当前时间 + 30 秒，但不超过 `deadline`。
+200：`{lease_until}`，延长到当前时间 + 30 秒，但不超过 `deadline`。续租不触发任务通知。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
@@ -590,7 +606,7 @@ Content-Type: application/json
 ## api: ADD 完成场景客户端任务
 
 ### 用途与调用
-- **用途**：编辑器提交任务结果（成功或失败）。服务端在同一事务里落结果、改终态、让关联运行继续。
+- **用途**：渲染端提交任务结果（成功或失败）。服务端在同一事务里落结果、改终态、让关联运行继续。
 - **调用**：`POST /api/v1/creative/scene-jobs/{job_id}/complete`，`Idempotency-Key` 必填，外层为公共约定。
 - **权限**：任务属于当前账号，`claim_token` 匹配，且租约未过期。
 
@@ -602,34 +618,46 @@ Content-Type: application/json
 | `claim_token` | string | 是 | — |
 | `outcome` | `"succeeded"` \| `"failed"` | 是 | — |
 | `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`；`message` ≤ 4000 字符，会原样交给助手 |
-| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest}`。服务端据任务 `request` 组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id` |
+| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest, module}`。`module` 为 `{params_schema, params, mount}`：沙箱回传、宿主按服务端规则校验过的规范化模块信息。服务端用任务 `request` 里的代码计算 `code_sha256`、组装 `generator`，按 `api: 场景模型命令` 的规则校验，再组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id`；替换目标的预期版本取任务 `request.expected` |
 | `render` | object | `kind=render_view` 且成功时 | `{image_upload_id}`（暂存图片，长边 1024） |
 | `export` | object | `kind=export_shots` 且成功时 | `{export_operation_id}`：渲染端已调用 `api: 导出分镜` 时的操作 ID，服务端据此读回执 |
 
 ### 成功响应
-200：`{job_id, state, result}`，`result` 结构见 `data: 场景客户端任务`。
+200：`{job_id, state, result}`，`result` 结构见 `data: 场景客户端任务`。`state` 为 `succeeded` 或 `failed`。下列情况任务记为 `failed` 并照常返回 200，渲染端不重试：
+- 写入场景时单元冲突，例如替换目标在烘焙期间被摄影师改过或删除（`result.code = "conflict"`，带冲突信息和烘焙产物）；
+- 结果内容不合规：manifest 与服务端从 GLB 算出的不符、参数不符合定义、物件超出上限、父级不存在（`result.code = "invalid_result"`）。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 缺少与 kind 对应的结果字段、错误码非法 | 修正 |
+| 400 | `validation_failed` | 请求外形不对：缺少与 kind 对应的结果字段、错误码非法。任务不变 | 修正 |
 | 404 | `not_found` | 任务不存在或不属于当前账号 | 放弃 |
-| 409 | `creative_state_conflict` | 租约已失效或令牌不匹配；暂存上传不可用 | 丢弃产物；任务会被重新认领或已过期 |
-| 409 | `creative_document_conflict` | 写入场景时单元冲突（例如目标对象已被摄影师删除） | 不重试；服务端已把任务记为 `failed`，并把冲突信息交给助手 |
+| 409 | `creative_state_conflict` | 任务已不是 `claimed`、令牌不匹配或租约已失效 | 丢弃产物；任务会被重新认领或已过期 |
+| 409 | `creative_upload_unavailable` | 暂存上传不存在、已过期或已被消费 | 租约仍有效时重新上传，用新的 operation id 重试 |
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
 ### 交互规则
-- **原子性**：结果落库、任务终态、运行继续在同一事务里。`creative_document_conflict` 是例外：此时任务记为 `failed`（结果为冲突信息）后提交，返回 409 只是告知编辑器。
+- **原子性**：结果落库、任务终态、运行继续在同一事务里。场景写入在保存点内执行，冲突或结果不合规时回滚到保存点，任务记为 `failed`（带原因），运行照常继续，助手据此重做。
 - **幂等**：沿用公共约定。网络中断后用同一 key 重试或查回执。
 
 ### 调用示例
 ```json
 {"operation_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "client_created_at": "2026-10-22T10:05:12Z",
- "payload": {"claim_token": "clm_Q2w3E4r5T6y7U8i9", "outcome": "succeeded", "render": {"image_upload_id": "cupl_cc33"}}}
+ "payload": {"claim_token": "clm_Q2w3E4r5T6y7U8i9", "outcome": "succeeded", "render": {"image_upload_id": "ccup_cc33"}}}
 ```
 ```json
 {"job_id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "state": "succeeded",
- "result": {"render": {"content_revision_id": "ccrev_77aa"}}}
+ "result": {"image_upload_id": "ccup_cc33", "content_revision_id": "ccrv_77aa"}}
+```
+烘焙成功示例（请求）：
+```json
+{"operation_id": "5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f", "client_created_at": "2026-10-22T10:06:40Z",
+ "payload": {"claim_token": "clm_Z9y8X7w6V5u4T3s2", "outcome": "succeeded",
+             "bake": {"glb_upload_id": "ccup_g1", "thumbnail_upload_id": "ccup_t1",
+                      "manifest": {"bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 6, 0.5]}, "triangles": 64,
+                                   "slots": [{"id": "stone", "hint": "stone"}], "parts": [], "anchors": []},
+                      "module": {"params_schema": {"height": {"type": "number", "default": 6, "min": 2, "max": 20}},
+                                 "params": {"height": 6}, "mount": "floor"}}}}
 ```
 编译失败示例（请求）：
 ```json
@@ -639,7 +667,100 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义。
+首次定义。修订 v6：`bake` 增加 `module`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）。
+
+## api: ADD 列出场景客户端任务
+
+### 用途与调用
+- **用途**：列出某个场景当前未结束的任务，供编辑器高亮「助手正在修改」的物件、在烘焙目标处显示占位。
+- **消费者**：场景编辑视图。打开时、收到失效通知时（节流）调用。
+- **调用**：`GET /api/v1/creative/documents/{id}/scene-jobs`，只读，无请求体。
+- **权限**：场景属于当前账号。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `id` | path | string | 是 | 场景 ID |
+
+### 成功响应
+200：`{items: [{id, kind, state, run_id, created_at, target}]}`，只含 `queued` 和 `claimed`，按创建时间排序，最多 50 条。
+- `target`：`bake_model` 为 `{op:"add", object:{name, parent_id, transform}}` 或 `{op:"replace", object_ids}`；其他 kind 为 null。
+- 不返回代码、参数和认领信息。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 404 | `not_found` | 文档不存在、不属于当前账号或不是场景 | 停止 |
+
+### 交互规则
+只读，没有分页；重复调用没有副作用。
+
+### 调用示例
+```json
+{"items": [{"id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "kind": "bake_model", "state": "claimed",
+  "run_id": "crun_8c7b6a59", "created_at": "2026-10-22T10:05:00Z",
+  "target": {"op": "replace", "object_ids": ["sobj_Z1x2C3v4B5n6M7a8S9d0f"]}}]}
+```
+
+### 兼容与变更
+首次定义（修订 v6）。
+
+## api: ADD 读取运行的场景改动
+
+### 用途与调用
+- **用途**：列出某次助手运行对一个场景改了哪些物件和设置，并给出每一处恢复到运行之前所需的 `restore_units`；已被别人改过的标为不可恢复。「恢复这一处」「撤销本轮」和助手撤回自己的改动共用这一份计算。
+- **消费者**：助手面板的本轮改动清单；`edit_scene` 的撤回操作在领域层调用同一函数，不经 HTTP。
+- **调用**：`GET /api/v1/creative/documents/{id}/run-changes?run_id=<run_id>`，只读。
+- **权限**：场景和运行都属于当前账号。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `id` | path | string | 是 | 场景 ID |
+| `run_id` | query | string | 是 | 助手运行 ID |
+
+### 成功响应
+200：
+
+| 字段 | 类型 | 可为 null | 说明 |
+|---|---|---|---|
+| `run_id`、`document_id` | string | 否 | — |
+| `revisions` | string[] | 否 | 这次运行写出的修订号，升序；为空表示没有改过这个场景 |
+| `entries` | array | 否 | 每个改动过的物件一条，`environment` / `render` / `meta` 各一条 |
+| `entries[].target` | `{kind:"object", object_id}` \| `{kind:"unit", unit}` | 否 | — |
+| `entries[].name` | string | 否 | 当前名称；已删除的取运行之前的名称 |
+| `entries[].change` | `"added"` \| `"removed"` \| `"modified"` | 否 | 相对运行之前 |
+| `entries[].restore` | `{from_revision, units, expected}` | 是 | 恢复这一处的命令内容（`restore_units` 的参数加上预期版本）；不可恢复时为 null |
+| `entries[].blocked` | `{reason, revision, actor_kind}` | 是 | 不可恢复的原因：`changed_by_others`（运行之后别人改过这一处）或 `restored_whole`（之后整份恢复过） |
+| `undo_all` | array | 否 | 撤销本轮的命令内容，通常 1 批；只包含可恢复的条目；全部不可恢复时为空数组 |
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 缺少 `run_id`；运行写出的修订超过 500 个 | 改用历史版本列表 |
+| 404 | `not_found` | 文档或运行不存在、不属于当前账号，或文档不是场景 | 停止 |
+
+### 交互规则
+- 某一处的旧值取它在本次运行第一次被写之前那一版。一批 `restore_units` 只能有一个来源修订，这些来源修订之间若没有别人改过，就合成一批；否则按来源修订分批。
+- 返回的 `expected` 是读取时的当前版本；提交后若有人刚好又改了，照常冲突。
+- 只读，没有副作用。
+
+### 调用示例
+```json
+{"run_id": "crun_8c7b6a59", "document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10", "revisions": ["7", "8", "9"],
+ "entries": [
+   {"target": {"kind": "object", "object_id": "sobj_Z1x2C3v4B5n6M7a8S9d0f"}, "name": "左侧柱 1", "change": "added",
+    "restore": {"from_revision": "6", "units": ["object:sobj_Z1x2C3v4B5n6M7a8S9d0f", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content"],
+                "expected": {"object:sobj_Z1x2C3v4B5n6M7a8S9d0f": "7", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "9", "objects": "7"}},
+    "blocked": null},
+   {"target": {"kind": "object", "object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ"}, "name": "主机位", "change": "modified",
+    "restore": null, "blocked": {"reason": "changed_by_others", "revision": "10", "actor_kind": "photographer"}}],
+ "undo_all": [{"from_revision": "6", "units": ["object:sobj_Z1x2C3v4B5n6M7a8S9d0f", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content"],
+               "expected": {"object:sobj_Z1x2C3v4B5n6M7a8S9d0f": "7", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "9", "objects": "7"}}]}
+```
+
+### 兼容与变更
+首次定义（修订 v6）。
 
 ## api: ADD 导出分镜
 
