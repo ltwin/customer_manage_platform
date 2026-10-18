@@ -1,10 +1,10 @@
 {
   "uid": "0188d84f-3381-446a-a3e1-559354550230",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-editor-3d",
   "title": "CG 合成用 3D 场景编辑器：选型（自研 three.js vs 开源）、编排 JSON + 几何代码可行性、建模资产入资产库",
   "createdAt": "2026-10-16T06:22:07.586Z",
-  "updatedAt": "2026-10-18T03:30:19.585Z",
+  "updatedAt": "2026-10-18T04:36:35.705Z",
   "state": "active",
   "designBaselines": [
     {
@@ -1342,6 +1342,11 @@
     {
       "uid": "9f8bcaa9-5b8e-4314-b5b4-7576bbc0ab61",
       "changeId": "scene-procedural-geometry",
+      "dependsOnUids": []
+    },
+    {
+      "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
+      "changeId": "scene-agent-tools",
       "dependsOnUids": []
     }
   ],

@@ -1,0 +1,50 @@
+{
+  "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
+  "revision": 2,
+  "id": "scene-agent-tools",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-editor-3d",
+  "designBinding": {
+    "version": 5,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "data:场景文档",
+      "data:模型内容",
+      "api:读取场景",
+      "api:提交场景命令",
+      "api:场景模型命令",
+      "patterns:几何模块契约",
+      "patterns:客户端代码沙箱",
+      "data:场景客户端任务",
+      "api:认领场景客户端任务",
+      "api:续租场景客户端任务",
+      "api:完成场景客户端任务"
+    ],
+    "delivers": [
+      "data:场景客户端任务",
+      "api:认领场景客户端任务",
+      "api:续租场景客户端任务",
+      "api:完成场景客户端任务"
+    ]
+  },
+  "state": "draft",
+  "createdAt": "2026-10-18T04:36:35.664Z",
+  "updatedAt": "2026-10-18T04:51:00.432Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
