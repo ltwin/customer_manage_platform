@@ -2,12 +2,16 @@ package creativescene
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -306,4 +310,625 @@ func restoredTargets(units []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+const (
+	// maxReadObjects is how many objects read_scene details; past it, unless
+	// object_ids narrows the read, objects come in brief.
+	maxReadObjects   = 300
+	maxReadObjectIDs = 200
+	maxReadCode      = 3
+	// maxConflictEntries bounds a conflict result; the rest is counted.
+	maxConflictEntries = 50
+)
+
+// ReadInput is read_scene's arguments with the conversation's runs, whose
+// writes are the conversation's own.
+type ReadInput struct {
+	DocumentID       string
+	ObjectIDs        []string
+	IncludeCode      []string
+	ConversationRuns []string
+}
+
+// SceneRead is what read_scene returns. Revision is the baseline the next
+// write may be based on.
+type SceneRead struct {
+	DocumentID            string               `json:"document_id"`
+	Title                 string               `json:"title"`
+	Revision              creativeops.Revision `json:"revision"`
+	Environment           Environment          `json:"environment"`
+	Render                Render               `json:"render"`
+	ObjectCount           int                  `json:"object_count"`
+	Brief                 bool                 `json:"brief,omitempty"`
+	Objects               []ObjectView         `json:"objects"`
+	Missing               []string             `json:"missing_object_ids,omitempty"`
+	Code                  map[string]string    `json:"code,omitempty"`
+	ChangesSinceLastWrite *ChangeSummary       `json:"changes_since_last_write"`
+}
+
+// ObjectView is one object as the assistant reads it. A brief listing carries
+// only the id, name, kind, parent and position.
+type ObjectView struct {
+	ID            string                  `json:"id"`
+	Name          string                  `json:"name"`
+	Kind          string                  `json:"kind"`
+	ParentID      *string                 `json:"parent_id"`
+	Position      []float64               `json:"position,omitempty"`
+	Transform     *Transform              `json:"transform,omitempty"`
+	Visible       *bool                   `json:"visible,omitempty"`
+	Locked        *bool                   `json:"locked,omitempty"`
+	Builtin       string                  `json:"builtin,omitempty"`
+	Params        map[string]any          `json:"params,omitempty"`
+	Model         *ModelView              `json:"model,omitempty"`
+	MaterialSlots map[string]MaterialSlot `json:"material_slots,omitempty"`
+	Light         *Light                  `json:"light,omitempty"`
+	Camera        *Camera                 `json:"camera,omitempty"`
+}
+
+// ModelView is a placed model: its revision and what was baked, never its
+// code (read_scene's include_code asks for that).
+type ModelView struct {
+	ContentRevisionID string               `json:"content_revision_id"`
+	Usable            bool                 `json:"usable"`
+	NameHint          string               `json:"name_hint,omitempty"`
+	Params            map[string]any       `json:"params,omitempty"`
+	ParamsSchema      map[string]paramSpec `json:"params_schema,omitempty"`
+	BoundsM           *creativeglb.Bounds  `json:"bounds_m,omitempty"`
+	Triangles         int                  `json:"triangles,omitempty"`
+	Slots             []creativeglb.Slot   `json:"slots,omitempty"`
+}
+
+// placedModel is a model revision as a write transaction reads it.
+type placedModel struct {
+	contentID string
+	payload   ModelPayload
+	usable    bool
+}
+
+func placedModelsInTx(ctx context.Context, tx store.TxAccountScope, ids []string) (map[string]placedModel, error) {
+	out := make(map[string]placedModel, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	batch, err := creativecontent.ReadDisplayBatchInTx(ctx, tx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		res := batch[id]
+		m := placedModel{contentID: res.Revision.ContentID}
+		if p, ok := completeModel(res.Revision); res.Err == nil && ok {
+			m.payload, m.usable = p, true
+		}
+		out[id] = m
+	}
+	return out, nil
+}
+
+func objectView(o Object, models map[string]placedModel) ObjectView {
+	v := ObjectView{ID: o.ID, Name: o.Name, Kind: o.Kind, ParentID: o.ParentID, MaterialSlots: o.MaterialSlots, Light: o.Light, Camera: o.Camera}
+	t, visible, locked := o.Transform, o.Visible, o.Locked
+	v.Transform, v.Visible, v.Locked = &t, &visible, &locked
+	if o.Primitive != nil {
+		v.Builtin, v.Params = o.Primitive.Builtin, o.Primitive.Params
+	}
+	if o.Model != nil {
+		mv := &ModelView{ContentRevisionID: o.Model.ContentRevisionID}
+		if m, ok := models[o.Model.ContentRevisionID]; ok && m.usable {
+			bounds := m.payload.Manifest.Bounds
+			mv.Usable, mv.NameHint, mv.BoundsM = true, m.payload.NameHint, &bounds
+			mv.Params, mv.ParamsSchema = m.payload.Generator.Params, m.payload.Generator.ParamsSchema
+			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, m.payload.Manifest.Slots
+		}
+		v.Model = mv
+	}
+	return v
+}
+
+// AgentReadInTx is read_scene: the scene in full, or in brief past 300
+// objects unless object_ids narrows it; the code of up to three placed models;
+// and what others changed since the conversation last wrote it.
+func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (SceneRead, error) {
+	if len(in.ObjectIDs) > maxReadObjectIDs {
+		return SceneRead{}, invalid("object_ids 最多 %d 个", maxReadObjectIDs)
+	}
+	if len(in.IncludeCode) > maxReadCode {
+		return SceneRead{}, invalid("include_code 最多 %d 个模型修订", maxReadCode)
+	}
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
+	if err != nil {
+		return SceneRead{}, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return SceneRead{}, creativedocument.ErrTrashed
+	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return SceneRead{}, err
+	}
+	out := SceneRead{DocumentID: in.DocumentID, Title: cur.Title, Revision: creativeops.Revision(cur.Revision),
+		Environment: scene.Environment, Render: scene.Render, ObjectCount: len(scene.Objects), Objects: []ObjectView{}}
+	listed := scene.Objects
+	if len(in.ObjectIDs) > 0 {
+		idx := indexObjects(scene.Objects)
+		listed = nil
+		for _, id := range in.ObjectIDs {
+			if i, ok := idx[id]; ok {
+				listed = append(listed, scene.Objects[i])
+			} else if !slices.Contains(out.Missing, id) {
+				out.Missing = append(out.Missing, id)
+			}
+		}
+	} else if len(scene.Objects) > maxReadObjects {
+		out.Brief = true
+		for _, o := range scene.Objects {
+			out.Objects = append(out.Objects, ObjectView{ID: o.ID, Name: o.Name, Kind: o.Kind, ParentID: o.ParentID, Position: o.Transform.Position})
+		}
+		listed = nil
+	}
+	ids := modelRefs(listed)
+	for _, id := range in.IncludeCode {
+		if !slices.Contains(cur.Refs, id) {
+			return SceneRead{}, invalid("模型修订 %s 不在这个场景里", id)
+		}
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	models, err := placedModelsInTx(ctx, tx, ids)
+	if err != nil {
+		return SceneRead{}, err
+	}
+	for _, o := range listed {
+		out.Objects = append(out.Objects, objectView(o, models))
+	}
+	for _, id := range in.IncludeCode {
+		m := models[id]
+		if !m.usable {
+			return SceneRead{}, modelUnavailable(id)
+		}
+		if out.Code == nil {
+			out.Code = map[string]string{}
+		}
+		out.Code[id] = m.payload.Generator.Code
+	}
+	out.ChangesSinceLastWrite, err = ChangesSinceInTx(ctx, tx, in.DocumentID, in.ConversationRuns)
+	return out, err
+}
+
+// WriteConflict is an assistant write refused because someone else changed
+// what it touches after its baseline. Revision is the new baseline; the
+// summary says what happened in between.
+type WriteConflict struct {
+	Status       string               `json:"status"`
+	Message      string               `json:"message"`
+	Conflicts    []ConflictEntry      `json:"conflicts"`
+	More         int                  `json:"more,omitempty"`
+	ChangesSince ChangeSummary        `json:"changes_since"`
+	Revision     creativeops.Revision `json:"revision"`
+	RetryJobID   string               `json:"retry_job_id,omitempty"`
+}
+
+// ConflictEntry is one unit that changed: an object's placement or content,
+// or a scene-wide unit, with who changed it last and what it is now (null
+// when the object is gone).
+type ConflictEntry struct {
+	ObjectID  string `json:"object_id,omitempty"`
+	Unit      string `json:"unit,omitempty"`
+	Name      string `json:"name"`
+	Part      string `json:"part"`
+	ChangedBy string `json:"changed_by"`
+	Current   any    `json:"current"`
+}
+
+// othersChanges is who other than the run last changed each unit after a
+// baseline; a whole restore counts for every unit.
+type othersChanges struct {
+	units map[string]creativedocument.HistoryRow
+	whole *creativedocument.HistoryRow
+}
+
+func (o othersChanges) by(u string) (string, bool) {
+	row, ok := o.units[u]
+	switch {
+	case o.whole != nil && (!ok || o.whole.Revision > row.Revision):
+		return o.whole.ActorKind, true
+	case ok:
+		return row.ActorKind, true
+	}
+	return "", false
+}
+
+func othersSince(ctx context.Context, pages creativedocument.PageReader, documentID string, base int64, runID string) (othersChanges, error) {
+	rows, err := creativedocument.History(ctx, pages, documentID, base, maxHistoryRows+1)
+	if err != nil {
+		return othersChanges{}, err
+	}
+	if len(rows) > maxHistoryRows {
+		return othersChanges{}, invalid("第 %d 版之后的修订太多，请先用 read_scene 读取当前场景，按新的 revision 写入", base)
+	}
+	out := othersChanges{units: map[string]creativedocument.HistoryRow{}}
+	for i, row := range rows {
+		if row.RunID == runID && runID != "" {
+			continue
+		}
+		if row.WholeRestore() {
+			out.whole = &rows[i]
+			continue
+		}
+		for _, u := range append(slices.Clone(row.Changed), row.Removed...) {
+			out.units[u] = row
+		}
+	}
+	return out, nil
+}
+
+// checkBaseline is the conflict a write of touched units based on base meets:
+// units someone else than the run changed after base. It is nil when there is
+// none. Writes of the run itself never conflict, so the baseline need not
+// move past them.
+func checkBaseline(ctx context.Context, tx store.TxAccountScope, cur creativedocument.Current, base int64, runID string, touched []string) (*WriteConflict, error) {
+	if base < 1 || base > cur.Revision {
+		return nil, invalid("based_on_revision 须在 1 到当前修订 %d 之间", cur.Revision)
+	}
+	others, err := othersSince(ctx, tx, cur.Document.ID, base, runID)
+	if err != nil {
+		return nil, err
+	}
+	var hits []string
+	for _, u := range touched {
+		if _, ok := others.by(u); ok && !slices.Contains(hits, u) {
+			hits = append(hits, u)
+		}
+	}
+	if len(hits) == 0 {
+		return nil, nil
+	}
+	c, err := describeConflict(ctx, tx, cur, base, runID, hits, others)
+	return &c, err
+}
+
+var partLabels = map[bool]string{false: "摆放", true: "内容"}
+
+// describeConflict words a conflict on units for the model: each unit with
+// who changed it and its current state, the summary since base and the new
+// baseline.
+func describeConflict(ctx context.Context, tx store.TxAccountScope, cur creativedocument.Current, base int64, runID string, units []string, others othersChanges) (WriteConflict, error) {
+	now, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	old, err := creativedocument.ReadAtInTx(ctx, tx, cur.Document.ID, TypeKey, base)
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	before, err := decodeScene(old.Content.Payload)
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	nowIdx, beforeIdx := indexObjects(now.Objects), indexObjects(before.Objects)
+	models, err := placedModelsInTx(ctx, tx, modelRefs(now.Objects))
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	out := WriteConflict{Status: "conflict", Conflicts: []ConflictEntry{}, Revision: creativeops.Revision(cur.Revision)}
+	sort.Strings(units)
+	for _, u := range units {
+		e := ConflictEntry{ChangedBy: "本次运行"}
+		if actor, ok := others.by(u); ok {
+			e.ChangedBy = actorLabel(actor)
+		}
+		if id, content, ok := objectOfUnit(u); ok {
+			e.ObjectID, e.Part = id, partLabels[content]
+			if i, ok := nowIdx[id]; ok {
+				e.Name, e.Current = now.Objects[i].Name, objectView(now.Objects[i], models)
+			} else if i, ok := beforeIdx[id]; ok {
+				e.Name = before.Objects[i].Name
+			}
+		} else {
+			e.Unit, e.Name, e.Part = u, unitLabels[u], unitLabels[u]
+			switch u {
+			case unitEnvironment:
+				e.Current = now.Environment
+			case unitRender:
+				e.Current = now.Render
+			case creativedocument.MetaUnit:
+				e.Current = cur.Title
+			}
+		}
+		if len(out.Conflicts) == maxConflictEntries {
+			out.More++
+			continue
+		}
+		out.Conflicts = append(out.Conflicts, e)
+	}
+	if out.ChangesSince, err = ChangesAfterInTx(ctx, tx, cur.Document.ID, base, runID); err != nil {
+		return WriteConflict{}, err
+	}
+	out.Message = fmt.Sprintf("第 %d 版之后有人改了这些内容，这次没有写入。按它们现在的状态重新决定；再写入时 based_on_revision 用 %d。", base, cur.Revision)
+	return out, nil
+}
+
+// EditInput is edit_scene's arguments with the run writing and the
+// conversation's runs (revert_run's "previous").
+type EditInput struct {
+	DocumentID       string
+	RunID            string
+	BasedOn          int64
+	Operations       []json.RawMessage
+	ConversationRuns []string
+}
+
+// EditResult is a written edit. WrittenRevision only reports what was
+// written: it is never a baseline, since others may have written before it.
+type EditResult struct {
+	WrittenRevision creativeops.Revision `json:"written_revision"`
+	ChangedObjects  []string             `json:"changed_objects"`
+}
+
+// RevertResult is a taken-back run: what was put back and what was left
+// because someone else changed it since.
+type RevertResult struct {
+	WrittenRevision *creativeops.Revision `json:"written_revision"`
+	RunID           string                `json:"run_id"`
+	Restored        []RevertedEntry       `json:"restored"`
+	Skipped         []RevertedEntry       `json:"skipped"`
+}
+
+type RevertedEntry struct {
+	ObjectID string `json:"object_id,omitempty"`
+	Unit     string `json:"unit,omitempty"`
+	Name     string `json:"name"`
+	Change   string `json:"change,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// opsNotForTheAssistant are scene command operations edit_scene leaves out:
+// models come from write_model, the hierarchy cannot be restored unit by unit
+// (C5 opens manual grouping), and taking changes back is revert_run.
+var opsNotForTheAssistant = map[string]string{
+	"commit_model":     "模型用 write_model 写入",
+	"reparent_objects": "暂不支持调整层级",
+	"restore":          "撤回改动用 revert_run",
+	"restore_units":    "撤回改动用 revert_run",
+	"rename":           "不能改场景标题",
+}
+
+// AgentEditInTx is edit_scene: scene operations checked against the
+// baseline and written as the run, or a single revert_run. It returns an
+// EditResult, a RevertResult or a *WriteConflict.
+func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (any, error) {
+	if in.RunID == "" || len(in.Operations) == 0 {
+		return nil, creativeops.ErrValidation
+	}
+	kinds := make([]string, len(in.Operations))
+	for i, raw := range in.Operations {
+		var head struct {
+			Op string `json:"op"`
+		}
+		if json.Unmarshal(raw, &head) != nil || head.Op == "" {
+			return nil, invalid("第 %d 个操作缺少 op", i+1)
+		}
+		if why, ok := opsNotForTheAssistant[head.Op]; ok {
+			return nil, invalid("第 %d 个操作 %s 不可用：%s", i+1, head.Op, why)
+		}
+		kinds[i] = head.Op
+	}
+	if slices.Contains(kinds, "revert_run") {
+		if len(kinds) != 1 {
+			return nil, invalid("revert_run 必须单独提交")
+		}
+		return agentRevertInTx(ctx, tx, in)
+	}
+	cur, err := creativedocument.LockCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
+	if err != nil {
+		return nil, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return nil, creativedocument.ErrTrashed
+	}
+	actor := creativedocument.Actor{Kind: "agent", RunID: &in.RunID}
+	touched, err := sceneType{}.Touched(ctx, tx, cur, actor, in.Operations)
+	if err != nil {
+		return nil, err
+	}
+	conflict, err := checkBaseline(ctx, tx, cur, in.BasedOn, in.RunID, touched)
+	if err != nil || conflict != nil {
+		return conflict, err
+	}
+	expected := make(map[string]*creativeops.Revision, len(touched))
+	for _, u := range touched {
+		expected[u] = currentRev(cur.UnitRevs, u)
+	}
+	payload, err := json.Marshal(map[string]any{"document_id": in.DocumentID, "expected": expected, "operations": in.Operations})
+	if err != nil {
+		return nil, err
+	}
+	written, err := creativedocument.CommandInTx(ctx, tx, actor, payload)
+	if err != nil {
+		return nil, err
+	}
+	return EditResult{WrittenRevision: written.Revision, ChangedObjects: changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))}, nil
+}
+
+func changedObjects(units []string) []string {
+	out := []string{}
+	for _, u := range units {
+		if id, _, ok := objectOfUnit(u); ok && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// revertRunOp is edit_scene's revert_run: a run of this conversation
+// ("previous" for the last one before this that wrote the scene), and
+// optionally only some of the objects it changed.
+type revertRunOp struct {
+	Op        string   `json:"op"`
+	RunID     string   `json:"run_id"`
+	ObjectIDs []string `json:"object_ids,omitempty"`
+}
+
+var blockedReasons = map[string]string{
+	BlockedByOthers:       "之后被%s改过",
+	BlockedByWholeRestore: "之后%s把整个场景恢复过",
+	BlockedHierarchy:      "层级调整不能单独恢复",
+}
+
+// agentRevertInTx puts back what a run changed, the way the photographer's
+// 撤销本轮 does: entries someone else changed since are skipped and said so,
+// never overwritten.
+func agentRevertInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (RevertResult, error) {
+	var op revertRunOp
+	if err := decodeInput(in.Operations[0], &op); err != nil {
+		return RevertResult{}, err
+	}
+	if len(op.ObjectIDs) > maxBatchItems {
+		return RevertResult{}, invalid("object_ids 最多 %d 个", maxBatchItems)
+	}
+	cur, err := creativedocument.LockCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
+	if err != nil {
+		return RevertResult{}, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return RevertResult{}, creativedocument.ErrTrashed
+	}
+	runID := op.RunID
+	switch {
+	case runID == "previous":
+		var earlier []string
+		for _, r := range in.ConversationRuns {
+			if r != in.RunID {
+				earlier = append(earlier, r)
+			}
+		}
+		if runID, err = creativedocument.LastRunWriter(ctx, tx, in.DocumentID, earlier); err != nil {
+			return RevertResult{}, err
+		}
+		if runID == "" {
+			return RevertResult{}, invalid("本会话之前的运行没有改过这个场景")
+		}
+	case runID != in.RunID && !slices.Contains(in.ConversationRuns, runID):
+		return RevertResult{}, invalid("run_id 须是本会话的运行，或写 previous")
+	}
+	selected := func(t ChangeTarget) bool {
+		return len(op.ObjectIDs) == 0 || t.Kind == "object" && slices.Contains(op.ObjectIDs, t.ObjectID)
+	}
+	set, err := runChangesFor(ctx, tx, func(revision int64) (creativedocument.Current, error) {
+		return creativedocument.ReadAtInTx(ctx, tx, in.DocumentID, TypeKey, revision)
+	}, in.DocumentID, runID, selected)
+	if err != nil {
+		return RevertResult{}, err
+	}
+	out := RevertResult{RunID: runID, Restored: []RevertedEntry{}, Skipped: []RevertedEntry{}}
+	seen := map[string]bool{}
+	for _, e := range set.Entries {
+		if !selected(e.Target) {
+			continue
+		}
+		seen[e.Target.ObjectID] = true
+		entry := RevertedEntry{ObjectID: e.Target.ObjectID, Unit: e.Target.Unit, Name: e.Name, Change: e.Change}
+		if e.Blocked != nil {
+			reason := blockedReasons[e.Blocked.Reason]
+			if strings.Contains(reason, "%s") {
+				reason = fmt.Sprintf(reason, actorLabel(e.Blocked.ActorKind))
+			}
+			entry.Reason = reason
+			out.Skipped = append(out.Skipped, entry)
+			continue
+		}
+		out.Restored = append(out.Restored, entry)
+	}
+	for _, id := range op.ObjectIDs {
+		if !seen[id] {
+			seen[id] = true
+			out.Skipped = append(out.Skipped, RevertedEntry{ObjectID: id, Name: id, Reason: "这次运行没有改过它"})
+		}
+	}
+	actor := creativedocument.Actor{Kind: "agent", RunID: &in.RunID}
+	revs := cur.UnitRevs
+	for _, batch := range set.UndoAll {
+		// Batches take disjoint units but may share the object list, which an
+		// earlier batch moves on; the document is locked, so now is what counts.
+		expected := make(map[string]*creativeops.Revision, len(batch.Expected))
+		for u := range batch.Expected {
+			expected[u] = currentRev(revs, u)
+		}
+		payload, err := json.Marshal(map[string]any{"document_id": in.DocumentID, "expected": expected,
+			"operations": []any{map[string]any{"op": "restore_units", "from_revision": batch.FromRevision, "units": batch.Units}}})
+		if err != nil {
+			return RevertResult{}, err
+		}
+		written, err := creativedocument.CommandInTx(ctx, tx, actor, payload)
+		if err != nil {
+			return RevertResult{}, err
+		}
+		r := written.Revision
+		out.WrittenRevision = &r
+		head, err := creativedocument.ReadHeadInTx(ctx, tx, in.DocumentID, TypeKey)
+		if err != nil {
+			return RevertResult{}, err
+		}
+		revs = head.UnitRevs
+	}
+	return out, nil
+}
+
+// JobConflictInTx words a bake that failed on a conflict for the run that
+// asked for it, from the baseline its call was based on: what changed, the
+// new baseline, and the job to retry with.
+func JobConflictInTx(ctx context.Context, tx store.TxAccountScope, job Job, failure JobFailure, base int64) (WriteConflict, error) {
+	if job.RunID == nil {
+		return WriteConflict{}, creativeops.ErrValidation
+	}
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, job.DocumentID, TypeKey)
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	base = min(max(base, 1), cur.Revision)
+	others, err := othersSince(ctx, tx, job.DocumentID, base, *job.RunID)
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	units := make([]string, 0, len(failure.Conflicts))
+	for _, c := range failure.Conflicts {
+		units = append(units, c.Unit)
+	}
+	out, err := describeConflict(ctx, tx, cur, base, *job.RunID, units, others)
+	if err != nil {
+		return WriteConflict{}, err
+	}
+	out.RetryJobID = job.ID
+	out.Message = fmt.Sprintf("烘焙期间这些内容被改过，模型没有写入。按它们现在的状态决定后，用 retry_job_id 重试即可写入，不用重新烘焙；based_on_revision 用 %d。", cur.Revision)
+	return out, nil
+}
+
+// BakedModel is what write_model reports of a written model.
+type BakedModel struct {
+	SizeM     [3]float64           `json:"size_m"`
+	Triangles int                  `json:"triangles"`
+	Slots     []creativeglb.Slot   `json:"slots"`
+	Parts     []string             `json:"parts"`
+	Anchors   []creativeglb.Anchor `json:"anchors"`
+}
+
+// BakedModelInTx reads a written model's manifest: its size in metres
+// (rounded to millimetres), triangles, material slots, parts and anchors.
+func BakedModelInTx(ctx context.Context, tx store.TxAccountScope, revisionID string) (BakedModel, error) {
+	models, err := placedModelsInTx(ctx, tx, []string{revisionID})
+	if err != nil {
+		return BakedModel{}, err
+	}
+	m := models[revisionID]
+	if !m.usable {
+		return BakedModel{}, modelUnavailable(revisionID)
+	}
+	manifest := m.payload.Manifest
+	out := BakedModel{Triangles: manifest.Triangles, Slots: manifest.Slots, Parts: manifest.Parts, Anchors: manifest.Anchors}
+	for i := range out.SizeM {
+		out.SizeM[i] = math.Round((manifest.Bounds.Max[i]-manifest.Bounds.Min[i])*1000) / 1000
+	}
+	return out, nil
 }

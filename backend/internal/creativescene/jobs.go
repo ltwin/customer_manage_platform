@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
@@ -597,4 +598,254 @@ func finishJob(ctx context.Context, tx store.TxAccountScope, job Job, res JobRes
 	}
 	logTransition(job, to, code, created)
 	return nil
+}
+
+// libVersion is the geometry library a bake runs against (contract_version 1).
+const libVersion = 1
+
+// renderPresets are render_view's automatic framings.
+var renderPresets = []string{"overview", "top", "front", "side"}
+
+// AddTarget places a baked model as a new object.
+type AddTarget struct {
+	Name      string    `json:"name"`
+	Transform Transform `json:"transform"`
+	ParentID  *string   `json:"parent_id,omitempty"`
+}
+
+// ReplaceTarget gives an existing instance (scope this) or every instance of
+// its model (all_instances) the baked model.
+type ReplaceTarget struct {
+	ObjectID string `json:"object_id"`
+	Scope    string `json:"scope,omitempty"`
+}
+
+// BakeInput is write_model's request for a new bake: the code, or the model
+// revision whose code is re-baked with other params.
+type BakeInput struct {
+	DocumentID            string
+	RunID                 string
+	ToolCallID            string
+	BasedOn               int64
+	Add                   *AddTarget
+	Replace               *ReplaceTarget
+	Params                map[string]any
+	Code                  string
+	BaseContentRevisionID string
+	NameHint              string
+}
+
+// CreateBakeJobInTx queues write_model's bake as the run's job. A replace is
+// checked against the baseline first, and its target's content units are
+// frozen into the job's expected; a conflict there returns no job. The same
+// tool call finds the job it already made.
+func CreateBakeJobInTx(ctx context.Context, tx store.TxAccountScope, in BakeInput) (Job, *WriteConflict, error) {
+	if existing, err := ReadRunJob(ctx, tx, in.RunID, in.ToolCallID); err == nil {
+		return existing, nil, nil
+	} else if !errors.Is(err, creativedocument.ErrNotFound) {
+		return Job{}, nil, err
+	}
+	if (in.Add == nil) == (in.Replace == nil) {
+		return Job{}, nil, invalid("target 须为 add 或 replace 其中之一")
+	}
+	if (in.Code == "") == (in.BaseContentRevisionID == "") {
+		return Job{}, nil, invalid("须给出 code 或 base_content_revision_id 其中之一")
+	}
+	if len(in.Params) > maxModelParams {
+		return Job{}, nil, invalid("params 最多 %d 个", maxModelParams)
+	}
+	if utf8.RuneCountInString(in.NameHint) > maxNameHintRunes {
+		return Job{}, nil, invalid("name_hint 不能超过 %d 个字", maxNameHintRunes)
+	}
+	cur, err := creativedocument.LockCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
+	if err != nil {
+		return Job{}, nil, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return Job{}, nil, creativedocument.ErrTrashed
+	}
+	if in.BasedOn < 1 || in.BasedOn > cur.Revision {
+		return Job{}, nil, invalid("based_on_revision 须在 1 到当前修订 %d 之间", cur.Revision)
+	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return Job{}, nil, err
+	}
+	req := BakeRequest{Code: in.Code, Params: in.Params, LibVersion: libVersion, NameHint: in.NameHint, Expected: map[string]*creativeops.Revision{}}
+	if req.Params == nil {
+		req.Params = map[string]any{}
+	}
+	if in.BaseContentRevisionID != "" {
+		// Only the params change: the code is the base revision's.
+		if err := requireModel(ctx, tx, in.BaseContentRevisionID); err != nil {
+			return Job{}, nil, err
+		}
+		models, err := placedModelsInTx(ctx, tx, []string{in.BaseContentRevisionID})
+		if err != nil {
+			return Job{}, nil, err
+		}
+		base := models[in.BaseContentRevisionID].payload.Generator
+		req.Code, req.LibVersion = base.Code, base.LibVersion
+	} else if len(in.Code) > maxCodeBytes || !utf8.ValidString(in.Code) {
+		return Job{}, nil, invalid("代码须为 1 字节到 64 KiB 的 UTF-8 文本")
+	}
+	idx := indexObjects(scene.Objects)
+	if in.Add != nil {
+		target, err := addTarget(scene, idx, *in.Add, in.NameHint)
+		if err != nil {
+			return Job{}, nil, err
+		}
+		req.Target = target
+	} else {
+		target, units, err := replaceTarget(ctx, tx, scene, idx, *in.Replace)
+		if err != nil {
+			return Job{}, nil, err
+		}
+		conflict, err := checkBaseline(ctx, tx, cur, in.BasedOn, in.RunID, units)
+		if err != nil || conflict != nil {
+			return Job{}, conflict, err
+		}
+		for _, u := range units {
+			req.Expected[u] = currentRev(cur.UnitRevs, u)
+		}
+		req.Target = target
+	}
+	job, err := CreateJob(ctx, tx, NewJob{DocumentID: in.DocumentID, Kind: KindBakeModel, Request: req, RunID: in.RunID, ToolCallID: in.ToolCallID})
+	return job, nil, err
+}
+
+// addTarget is a new object for the baked model, its id fixed now so the run
+// can refer to it once written.
+func addTarget(scene Scene, idx map[string]int, add AddTarget, nameHint string) (BakeTarget, error) {
+	name := add.Name
+	if name == "" {
+		name = nameHint
+	}
+	if utf8.RuneCountInString(name) > maxNameRunes {
+		return BakeTarget{}, invalid("名称不能超过 %d 个字", maxNameRunes)
+	}
+	if err := validateTransform(add.Transform); err != nil {
+		return BakeTarget{}, invalid("transform：%v", err)
+	}
+	if add.ParentID != nil {
+		i, ok := idx[*add.ParentID]
+		if !ok || scene.Objects[i].Kind != KindGroup {
+			return BakeTarget{}, invalid("父物件 %s 须是场景里的编组", *add.ParentID)
+		}
+	}
+	object, err := json.Marshal(map[string]any{"id": newObjectID(), "name": name, "parent_id": add.ParentID, "transform": add.Transform})
+	if err != nil {
+		return BakeTarget{}, err
+	}
+	return BakeTarget{Op: "add", Object: object}, nil
+}
+
+// replaceTarget applies R4 to a replaced instance: one that shares its model
+// revision forks a new model unless every instance changes; otherwise the
+// bake becomes the model's next revision. units are the content units the job
+// changes.
+func replaceTarget(ctx context.Context, tx store.TxAccountScope, scene Scene, idx map[string]int, r ReplaceTarget) (BakeTarget, []string, error) {
+	i, ok := idx[r.ObjectID]
+	if !ok {
+		return BakeTarget{}, nil, invalid("物件 %s 不存在", r.ObjectID)
+	}
+	o := scene.Objects[i]
+	if o.Kind != KindModelInstance || o.Model == nil {
+		return BakeTarget{}, nil, invalid("物件 %s 不是模型实例，只能替换模型实例", r.ObjectID)
+	}
+	scope := r.Scope
+	if scope == "" {
+		scope = "this"
+	}
+	if scope != "this" && scope != "all_instances" {
+		return BakeTarget{}, nil, invalid("scope 须为 this 或 all_instances")
+	}
+	var sharing []string
+	for _, other := range scene.Objects {
+		if other.ID != o.ID && other.Kind == KindModelInstance && other.Model != nil && other.Model.ContentRevisionID == o.Model.ContentRevisionID {
+			sharing = append(sharing, other.ID)
+		}
+	}
+	models, err := placedModelsInTx(ctx, tx, []string{o.Model.ContentRevisionID})
+	if err != nil {
+		return BakeTarget{}, nil, err
+	}
+	contentID := models[o.Model.ContentRevisionID].contentID
+	target := BakeTarget{Op: "replace", ObjectID: o.ID, Scope: "this"}
+	switch {
+	case len(sharing) == 0:
+		target.BaseContentID = contentID
+	case scope == "all_instances":
+		target.BaseContentID, target.Scope, target.ObjectIDs = contentID, scope, append([]string{o.ID}, sharing...)
+	}
+	units := []string{contentUnit(o.ID)}
+	for _, id := range target.ObjectIDs[min(1, len(target.ObjectIDs)):] {
+		units = append(units, contentUnit(id))
+	}
+	return target, units, nil
+}
+
+// RenderInput is render_view's request: one of a camera in the scene, a
+// viewpoint or a preset framing.
+type RenderInput struct {
+	DocumentID     string
+	RunID          string
+	ToolCallID     string
+	CameraObjectID string
+	Viewpoint      *Viewpoint
+	Preset         string
+}
+
+// CreateRenderJobInTx queues render_view's screenshot as the run's job; the
+// same tool call finds the job it already made.
+func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderInput) (Job, error) {
+	if existing, err := ReadRunJob(ctx, tx, r.RunID, r.ToolCallID); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, creativedocument.ErrNotFound) {
+		return Job{}, err
+	}
+	given := 0
+	for _, set := range []bool{r.CameraObjectID != "", r.Viewpoint != nil, r.Preset != ""} {
+		if set {
+			given++
+		}
+	}
+	if given != 1 {
+		return Job{}, invalid("camera_object_id、viewpoint、preset 须给出其中一个")
+	}
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, r.DocumentID, TypeKey)
+	if err != nil {
+		return Job{}, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return Job{}, creativedocument.ErrTrashed
+	}
+	switch {
+	case r.CameraObjectID != "":
+		scene, err := decodeScene(cur.Content.Payload)
+		if err != nil {
+			return Job{}, err
+		}
+		i, ok := indexObjects(scene.Objects)[r.CameraObjectID]
+		if !ok || scene.Objects[i].Kind != KindCamera {
+			return Job{}, invalid("物件 %s 不是场景里的摄像机", r.CameraObjectID)
+		}
+	case r.Viewpoint != nil:
+		v := r.Viewpoint
+		for _, x := range append(v.Position[:], v.Target[:]...) {
+			if !in(x, -maxPositionM, maxPositionM) {
+				return Job{}, invalid("视点坐标每轴须在 ±%d m 以内", maxPositionM)
+			}
+		}
+		if v.Position == v.Target {
+			return Job{}, invalid("视点位置与目标不能重合")
+		}
+		if !in(v.FocalMM, 8, 800) {
+			return Job{}, invalid("focal_mm 须在 8 到 800 之间")
+		}
+	case !slices.Contains(renderPresets, r.Preset):
+		return Job{}, invalid("preset 须为 overview、top、front 或 side")
+	}
+	req := RenderRequest{CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Mode: "clay"}
+	return CreateJob(ctx, tx, NewJob{DocumentID: r.DocumentID, Kind: KindRenderView, Request: req, RunID: r.RunID, ToolCallID: r.ToolCallID})
 }

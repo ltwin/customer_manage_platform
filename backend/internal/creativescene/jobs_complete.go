@@ -213,6 +213,16 @@ func completeBake(ctx context.Context, tx store.TxAccountScope, job Job, out Bak
 	if err := json.Unmarshal(job.Request, &req); err != nil {
 		return JobResult{}, err
 	}
+	actor := creativedocument.Photographer
+	if job.RunID != nil {
+		actor = creativedocument.Actor{Kind: "agent", RunID: job.RunID}
+	}
+	return writeBake(ctx, tx, job.DocumentID, actor, req, out)
+}
+
+// writeBake writes a baked model as req asks, in a savepoint: a conflict or a
+// refused result rolls back only the write and comes back as the failure.
+func writeBake(ctx context.Context, tx store.TxAccountScope, documentID string, actor creativedocument.Actor, req BakeRequest, out BakeOutput) (JobResult, error) {
 	var module moduleInfo
 	if err := creativeops.Decode(out.Module, &module); err != nil {
 		return JobResult{}, invalid("module 格式不正确")
@@ -238,7 +248,7 @@ func completeBake(ctx context.Context, tx store.TxAccountScope, job Job, out Bak
 	var objectIDs []string
 	switch req.Target.Op {
 	case "add":
-		cur, err := creativedocument.ReadCurrentInTx(ctx, tx, job.DocumentID, TypeKey)
+		cur, err := creativedocument.ReadCurrentInTx(ctx, tx, documentID, TypeKey)
 		if err != nil {
 			return failedWrite(err, out)
 		}
@@ -278,15 +288,11 @@ func completeBake(ctx context.Context, tx store.TxAccountScope, job Job, out Bak
 		}
 		expected = req.Expected
 	default:
-		return JobResult{}, fmt.Errorf("bake job %s: target %q", job.ID, req.Target.Op)
+		return JobResult{}, fmt.Errorf("bake for %s: target %q", documentID, req.Target.Op)
 	}
-	payload, err := json.Marshal(map[string]any{"document_id": job.DocumentID, "expected": expected, "operations": []any{commit, place}})
+	payload, err := json.Marshal(map[string]any{"document_id": documentID, "expected": expected, "operations": []any{commit, place}})
 	if err != nil {
 		return JobResult{}, err
-	}
-	actor := creativedocument.Photographer
-	if job.RunID != nil {
-		actor = creativedocument.Actor{Kind: "agent", RunID: job.RunID}
 	}
 	var written creativedocument.CommandResult
 	err = tx.Savepoint(ctx, "scene_job_write", func() error {
@@ -302,7 +308,7 @@ func completeBake(ctx context.Context, tx store.TxAccountScope, job Job, out Bak
 		ContentRevisionID string `json:"content_revision_id"`
 	}
 	if err := json.Unmarshal(written.Extra["models"], &models); err != nil || models["m"].ContentRevisionID == "" {
-		return JobResult{}, fmt.Errorf("bake job %s: receipt models %s", job.ID, written.Extra["models"])
+		return JobResult{}, fmt.Errorf("bake for %s: receipt models %s", documentID, written.Extra["models"])
 	}
 	return JobResult{Bake: &BakeResult{ContentID: models["m"].ContentID, ContentRevisionID: models["m"].ContentRevisionID,
 		ObjectIDs: objectIDs, Revision: creativeops.Revision(written.Revision)}}, nil
@@ -381,4 +387,99 @@ func completeRender(ctx context.Context, tx store.TxAccountScope, job Job, out R
 		return JobResult{}, invalid("截图必须是图片上传")
 	}
 	return JobResult{Render: &RenderResult{ImageUploadID: out.ImageUploadID, ContentRevisionID: staged.ContentRevisionID, SceneRevision: out.SceneRevision}}, nil
+}
+
+// RetryInput is write_model's retry_job_id: a bake of this conversation that
+// failed on a conflict, written again at a new baseline and target from what
+// it already baked.
+type RetryInput struct {
+	DocumentID       string
+	RunID            string
+	ConversationRuns []string
+	RetryJobID       string
+	BasedOn          int64
+	Add              *AddTarget
+	Replace          *ReplaceTarget
+}
+
+// RetryBakeInTx writes a conflicted bake's artifacts in the caller's
+// transaction, without a job: the code is not compiled again. A replace meets
+// the baseline check again. Two retries of one job serialize on the job row,
+// and the second finds the staged uploads consumed.
+func RetryBakeInTx(ctx context.Context, tx store.TxAccountScope, in RetryInput) (*BakeResult, *WriteConflict, error) {
+	if (in.Add == nil) == (in.Replace == nil) {
+		return nil, nil, invalid("target 须为 add 或 replace 其中之一")
+	}
+	refused := invalid("retry_job_id 只能指向本会话在同一场景里因冲突失败的烘焙任务")
+	jobs, err := LockJobs(ctx, tx, []string{in.RetryJobID})
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(jobs) != 1 {
+		return nil, nil, refused
+	}
+	job := jobs[0]
+	if job.Kind != KindBakeModel || job.State != JobFailed || job.DocumentID != in.DocumentID || job.RunID == nil ||
+		*job.RunID != in.RunID && !slices.Contains(in.ConversationRuns, *job.RunID) {
+		return nil, nil, refused
+	}
+	var failure JobFailure
+	if err := json.Unmarshal(job.Result, &failure); err != nil || failure.Code != "conflict" || failure.Bake == nil {
+		return nil, nil, refused
+	}
+	var original BakeRequest
+	if err := json.Unmarshal(job.Request, &original); err != nil {
+		return nil, nil, err
+	}
+	cur, err := creativedocument.LockCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return nil, nil, creativedocument.ErrTrashed
+	}
+	if in.BasedOn < 1 || in.BasedOn > cur.Revision {
+		return nil, nil, invalid("based_on_revision 须在 1 到当前修订 %d 之间", cur.Revision)
+	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	req := BakeRequest{Code: original.Code, Params: original.Params, LibVersion: original.LibVersion, NameHint: original.NameHint, Expected: map[string]*creativeops.Revision{}}
+	idx := indexObjects(scene.Objects)
+	if in.Add != nil {
+		if req.Target, err = addTarget(scene, idx, *in.Add, req.NameHint); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		target, units, err := replaceTarget(ctx, tx, scene, idx, *in.Replace)
+		if err != nil {
+			return nil, nil, err
+		}
+		conflict, err := checkBaseline(ctx, tx, cur, in.BasedOn, in.RunID, units)
+		if err != nil {
+			return nil, nil, err
+		}
+		if conflict != nil {
+			conflict.RetryJobID = job.ID
+			return nil, conflict, nil
+		}
+		for _, u := range units {
+			req.Expected[u] = currentRev(cur.UnitRevs, u)
+		}
+		req.Target = target
+	}
+	artifacts := failure.Bake
+	res, err := writeBake(ctx, tx, in.DocumentID, creativedocument.Actor{Kind: "agent", RunID: &in.RunID}, req,
+		BakeOutput{GLBUploadID: artifacts.GLBUploadID, ThumbnailUploadID: artifacts.ThumbnailUploadID, Manifest: artifacts.Manifest, Module: artifacts.Module})
+	if errors.Is(err, ErrUploadUnavailable) {
+		return nil, nil, invalid("这份烘焙结果已被使用或已过期，请重新调用 write_model 生成")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if res.Failure != nil {
+		return nil, nil, invalid("没有写入：%s", res.Failure.Message)
+	}
+	return res.Bake, nil, nil
 }

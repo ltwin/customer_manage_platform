@@ -48,6 +48,20 @@ func ReadCurrentInTx(ctx context.Context, tx store.TxAccountScope, id, typeKey s
 	return loadInTx(ctx, tx, head, 0)
 }
 
+// LockCurrentInTx locks a document's head and reads its current snapshot, for
+// a write that decides what to send from what is there now. The command that
+// follows in the same transaction takes the same lock again.
+func LockCurrentInTx(ctx context.Context, tx store.TxAccountScope, id, typeKey string) (Current, error) {
+	head, err := lockHead(ctx, tx, id)
+	if err != nil {
+		return Current{}, err
+	}
+	if head.TypeKey != typeKey {
+		return Current{}, ErrNotFound
+	}
+	return loadInTx(ctx, tx, head, 0)
+}
+
 // ReadAtInTx reads a document at one revision (0 is the current one) in the
 // caller's write transaction. A document of another type is not found.
 func ReadAtInTx(ctx context.Context, tx store.TxAccountScope, id, typeKey string, revision int64) (Current, error) {
@@ -189,4 +203,25 @@ func RunDocuments(ctx context.Context, tx PageReader, typeKey string, runIDs []s
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// LastRunWriter is the run among runIDs that wrote the document last, "" when
+// none did.
+func LastRunWriter(ctx context.Context, tx PageReader, documentID string, runIDs []string) (string, error) {
+	if len(runIDs) == 0 {
+		return "", nil
+	}
+	rows, err := tx.QueryPage(ctx, "creative_document_revisions", "run_id", "document_id=$2 AND run_id = ANY($3)",
+		[]store.OrderBy{{Column: "revision", Desc: true}}, 1, 0, documentID, runIDs)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var run string
+	if rows.Next() {
+		if err := rows.Scan(&run); err != nil {
+			return "", err
+		}
+	}
+	return run, rows.Err()
 }

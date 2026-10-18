@@ -95,6 +95,12 @@ func RunChangesInTx(ctx context.Context, tx store.TxAccountScope, documentID, ru
 }
 
 func runChanges(ctx context.Context, pages creativedocument.PageReader, at func(int64) (creativedocument.Current, error), documentID, runID string) (RunChangeSet, error) {
+	return runChangesFor(ctx, pages, at, documentID, runID, nil)
+}
+
+// runChangesFor is runChanges whose undo_all covers only the selected
+// entries (all of them when selected is nil).
+func runChangesFor(ctx context.Context, pages creativedocument.PageReader, at func(int64) (creativedocument.Current, error), documentID, runID string, selected func(ChangeTarget) bool) (RunChangeSet, error) {
 	if runID == "" {
 		return RunChangeSet{}, creativeops.Explain(creativeops.ErrValidation, "缺少 run_id")
 	}
@@ -140,7 +146,7 @@ func runChanges(ctx context.Context, pages creativedocument.PageReader, at func(
 		scenes[revision] = s
 		return s, err
 	}
-	out.Entries, out.UndoAll, err = planRunChanges(head.UnitRevs, headScene, revisions, history, sceneAt)
+	out.Entries, out.UndoAll, err = planRunChanges(head.UnitRevs, headScene, revisions, history, sceneAt, selected)
 	return out, err
 }
 
@@ -281,8 +287,9 @@ var unitLabels = map[string]string{unitEnvironment: "环境", unitRender: "渲�
 // planRunChanges is RunChanges over loaded history: one entry per changed
 // object or unit, each restorable from the state before the run's first write
 // of it unless someone else changed it since, and undo_all batching the
-// restorable ones by source revision.
-func planRunChanges(unitRevs map[string]int64, head Scene, revisions []int64, history []creativedocument.HistoryRow, sceneAt func(int64) (Scene, error)) ([]RunChange, []RestoreBatch, error) {
+// restorable ones by source revision (the selected ones, when selected is not
+// nil).
+func planRunChanges(unitRevs map[string]int64, head Scene, revisions []int64, history []creativedocument.HistoryRow, sceneAt func(int64) (Scene, error), selected func(ChangeTarget) bool) ([]RunChange, []RestoreBatch, error) {
 	h := indexRunHistory(revisions, history)
 	entries := []RunChange{}
 	var restorable []*changeGroup
@@ -322,7 +329,9 @@ func planRunChanges(unitRevs map[string]int64, head Scene, revisions []int64, hi
 			entry.Blocked = blockedBy(block)
 		} else {
 			entry.Restore = &RestoreBatch{FromRevision: creativeops.Revision(g.from), Units: g.units, Expected: expectedFor(g.units, before, head, unitRevs)}
-			restorable = append(restorable, g)
+			if selected == nil || selected(g.target) {
+				restorable = append(restorable, g)
+			}
 		}
 		entries = append(entries, entry)
 	}
