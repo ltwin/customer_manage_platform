@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -266,6 +268,10 @@ func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope,
 	if err = releaseSlotInTx(ctx, tx, c.ID, c.token, now); err != nil {
 		return err
 	}
+	// The run is locked, so its client jobs come after it in the lock order.
+	if err = creativescene.CancelRunJobs(ctx, tx, c.ID); err != nil {
+		return err
+	}
 	for _, table := range []string{"creative_agent_checkpoints", "creative_agent_context_items"} {
 		if _, err = tx.Update(ctx, table, "retained_until=GREATEST(retained_until,$3)", "run_id=$2", c.ID, now.Add(contextRetention)); err != nil {
 			return err
@@ -353,7 +359,7 @@ func (s *Service) SweepRuns(ctx context.Context, scope store.AccountScope, batch
 	if err := pruneLibraryResults(ctx, scope, batch); err != nil {
 		return 0, err
 	}
-	rows, err := scope.QueryPage(ctx, "creative_agent_runs", "id", "(state='running' AND lease_until<clock_timestamp()) OR (state='queued' AND updated_at<clock_timestamp()-interval '30 seconds') OR state='reconciling' OR (state IN ('waiting_input','waiting_apply') AND deadline_at<=clock_timestamp()) OR (finished_at IS NOT NULL AND settlement_state IN ('unknown','pending'))", []store.OrderBy{{Column: "updated_at"}, {Column: "id"}}, batch, 0)
+	rows, err := scope.QueryPage(ctx, "creative_agent_runs", "id", "(state='running' AND lease_until<clock_timestamp()) OR (state='queued' AND updated_at<clock_timestamp()-interval '30 seconds') OR state='reconciling' OR (state IN ('waiting_input','waiting_apply') AND deadline_at<=clock_timestamp()) OR state='waiting_client' OR (finished_at IS NOT NULL AND settlement_state IN ('unknown','pending'))", []store.OrderBy{{Column: "updated_at"}, {Column: "id"}}, batch, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -380,6 +386,25 @@ func (s *Service) SweepRuns(ctx context.Context, scope store.AccountScope, batch
 }
 func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id string) error {
 	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		// Resuming a waiting_client run takes the slot, and the project lock
+		// comes before the slot (see lockControlledRun).
+		var state, canvasID string
+		if err := tx.QueryRow(ctx, "creative_agent_runs", "state,canvas_id", "id=$2", id).Scan(&state, &canvasID); err != nil {
+			if errors.Is(err, store.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		// Archiving refuses a project with a waiting_client run, so archived here
+		// is only a guard: the run stays parked and still meets its deadline.
+		archived := false
+		if state == RunWaitingClient {
+			err := creativecanvas.LockProjectForWorkInTx(ctx, tx, canvasID)
+			archived = errors.Is(err, creativecanvas.ErrArchived)
+			if err != nil && !archived {
+				return err
+			}
+		}
 		c, err := s.lockControlledRun(ctx, tx, id)
 		if err != nil {
 			return err
@@ -412,6 +437,13 @@ func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id str
 		}
 		if c.State == RunWaitingInput || c.State == RunWaitingApply {
 			return nil
+		}
+		if c.State == RunWaitingClient {
+			if state != RunWaitingClient || archived {
+				return nil // it got there after the read; the next sweep takes the project lock
+			}
+			_, err = s.resumeClientWait(ctx, tx, c, now)
+			return err
 		}
 		if c.unsettled() {
 			return s.moveControlledRun(ctx, tx, c, RunReconciling, "creative_llm_unknown", now)

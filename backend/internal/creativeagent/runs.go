@@ -72,11 +72,14 @@ const (
 	RunRunning      = "running"
 	RunWaitingInput = "waiting_input"
 	RunWaitingApply = "waiting_apply"
-	RunReconciling  = "reconciling"
-	RunSucceeded    = "succeeded"
-	RunPartial      = "partial"
-	RunFailed       = "failed"
-	RunCancelled    = "cancelled"
+	// RunWaitingClient is a run parked on client jobs (a scene bake or
+	// screenshot an open workspace tab runs). It holds no slot and no lease.
+	RunWaitingClient = "waiting_client"
+	RunReconciling   = "reconciling"
+	RunSucceeded     = "succeeded"
+	RunPartial       = "partial"
+	RunFailed        = "failed"
+	RunCancelled     = "cancelled"
 )
 
 // Seq is a run's event cursor. It crosses the API as a decimal string for the

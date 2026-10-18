@@ -36,7 +36,7 @@
 
 ## 3. 助手运行与工具（后端）
 
-- [ ] 3.1 `waiting_client` 状态：
+- [x] 3.1 `waiting_client` 状态：
   - 加状态常量 `RunWaitingClient`；
   - `liveRunStates` 加入它，阻止归档；
   - `SupplementRun` 拒绝它；
