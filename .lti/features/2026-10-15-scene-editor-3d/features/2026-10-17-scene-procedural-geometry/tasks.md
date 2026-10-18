@@ -38,4 +38,5 @@
 
 - [x] 5.1 文档与实测：`docs/dev/creative-media.md` 补上传类型 `model`、`thumbnail` 票据和「先升级 creative-worker 再升级 server」；本机真实服务测 20 次调参，记录编译、宿主校验、缩略图、上传与 worker 校验、提交命令各阶段 p50 / p95（远程开发库数据仅作参考），结论与 WebKit 手动运行结果写入 verification（AC-11、AC-6）
   - 实施记录：`docs/dev/creative-media.md` 新增「模型（GLB）」一节。时延用 `TestCreativeEditorBrowser` 起的真实 API + 媒体管线（本地存储、进程内 worker）+ PostgreSQL 测量（`CREATIVE_EDITOR_SCRIPT=creative-scene-latency.e2e.mjs`，夹具加了只在该测试服务器存在的 `/__test/scene`），各阶段由 `measureStage` 记为 User Timing。2026-10-17 本机 20 次调参（ms，p50 / p95）：沙箱编译 34 / 39，宿主校验 <1 / <1，缩略图 9 / 14，两个暂存上传与 worker 校验 1656 / 1976，提交命令 40 / 49，回车到「已保存」1777 / 2086。p50 低于提案假设的 3 秒，不改为随命令直接提交；耗时集中在上传链路的 worker 任务跳转与轮询。新几何在编译后约 45 ms 即在本机显示。远程开发库的参考数据未测：测量要注册账号、写场景和上传，而远程库约定只做只读查询。WebKit：`SCENE_SANDBOX_BROWSERS=chromium,webkit` 安全样例集两端通过
-- [ ] 5.2 交 owner 本机体验：新建代码模型、调参、分叉、改代码、撤销重做、两个标签页并发调参；记录体验结论与遗留问题
+- [x] 5.2 交 owner 本机体验：新建代码模型、调参、分叉、改代码、撤销重做、两个标签页并发调参；记录体验结论与遗留问题
+  - 体验记录（2026-10-17）：owner 本机体验了表层可见功能，未报告问题，决定继续推进。owner 只能看到可见行为；看不到的部分依赖自动化证据：沙箱安全（安全样例集，Chromium + WebKit）、服务端把关与 GC（后端测试）、并发与编辑基线（后端屏障测试 + 会话单测）。遗留：两个标签页并发调参没有浏览器端用例；「关闭再打开后几何一致」没有专门的浏览器用例（后端读取 `models` 有测试）；远程开发库时延未测
