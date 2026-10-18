@@ -13,7 +13,7 @@
   - 旧令牌续租返回 `ErrJobLeaseLost`；
   - 列表不泄露代码；
   - 跨账号返回不存在。
-- [ ] 1.4 完成任务：
+- [x] 1.4 完成任务：
   - `creativedocument.CommandInTx`（包装 `decodeCommand` + `commandInTx`，沿用 `CommandAs` 的写入者检查）；
   - `creativescene.Complete`，按 design「完成任务的事务与锁序」：
     - `Admit` 复查失败时走 `Abort`；

@@ -98,6 +98,9 @@ type BakeTarget struct {
 	ObjectID  string          `json:"object_id,omitempty"`
 	Scope     string          `json:"scope,omitempty"`
 	ObjectIDs []string        `json:"object_ids,omitempty"`
+	// BaseContentID appends the new revision to the replaced model's content
+	// (R4: unshared, or all instances); empty forks a new content.
+	BaseContentID string `json:"base_content_id,omitempty"`
 }
 
 // RenderRequest is a render_view job's request: one of camera, viewpoint or preset.
@@ -565,7 +568,7 @@ func CancelRunJobs(ctx context.Context, tx store.TxAccountScope, runID string) e
 		if Terminal(job.State) {
 			continue // finished between the read and the lock
 		}
-		if err := finishJob(ctx, tx, job, JobResult{Failure: &JobFailure{Code: JobCancelled, Message: "运行已结束，任务已取消"}}, false, true); err != nil {
+		if err := finishJob(ctx, tx, job, JobResult{Failure: &JobFailure{Code: JobCancelled, Message: "运行已结束，任务已取消"}}, false, true, time.Time{}); err != nil {
 			return err
 		}
 	}
@@ -573,7 +576,7 @@ func CancelRunJobs(ctx context.Context, tx store.TxAccountScope, runID string) e
 }
 
 // finishJob moves a locked job to its terminal state with its result.
-func finishJob(ctx context.Context, tx store.TxAccountScope, job Job, res JobResult, expired, cancelled bool) error {
+func finishJob(ctx context.Context, tx store.TxAccountScope, job Job, res JobResult, expired, cancelled bool, created time.Time) error {
 	body, err := json.Marshal(res)
 	if err != nil {
 		return err
@@ -588,6 +591,6 @@ func finishJob(ctx context.Context, tx store.TxAccountScope, job Job, res JobRes
 	if res.Failure != nil {
 		code = res.Failure.Code
 	}
-	logTransition(job, to, code, time.Time{})
+	logTransition(job, to, code, created)
 	return nil
 }
