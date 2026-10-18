@@ -482,25 +482,25 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
 |---|---|---|---|---|
 | `id`、`type_key`、`title`、`revision`、`content_revision_id`、`unit_revs`、`trashed_at`、`created_at`、`updated_at` | — | 是 | — | 通用字段，见底座 `api: 读取文档`；`type_key` 为 `"scene"`；场景的单元命名见 `data: 场景文档` |
 | `scene` | object | 是 | 否 | 快照里的 `scene`，结构见 `data: 场景文档` |
-| `models` | object | 是 | 否 | 以 `content_revision_id` 为键，覆盖快照引用的全部模型；C2 之前恒为 `{}` |
+| `models` | object | 是 | 否 | 以 `content_revision_id` 为键，覆盖快照引用的全部模型；没有模型实例时为 `{}` |
 | `models.*.content_id` | string | 是 | 否 | 模型内容 ID |
-| `models.*.usable` | boolean | 是 | 否 | false 时其余字段为 null，编辑器显示「模型不可用」占位 |
-| `models.*.manifest` | object | 是 | 是 | 见几何模块契约「产物」 |
-| `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, params_schema, params, mount}`，**不含代码** |
-| `models.*.glb_url` | string | 是 | 是 | 10 分钟有效的读取票据 URL |
-| `models.*.thumbnail_url` | string | 是 | 是 | 同上 |
+| `models.*.usable` | boolean | 是 | 否 | false 时 `manifest`、`generator` 为 null，编辑器显示「模型不可用」占位 |
+| `models.*.manifest` | object | 是 | 是 | 见几何模块契约「产物」；取服务端从 GLB 算出的值 |
+| `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, code_sha256, params_schema, params, mount}`，**不含代码** |
+| `models.*.name_hint` | string | 是 | 是 | 模型名称提示 |
 
-代码通过助手工具或代码面板单独读取（C2 局部设计），避免每次重读快照都传几十 KB 代码。
+- **GLB 与缩略图**：响应不含地址。编辑器按模型修订调用现有的 `POST /creative/media-access-tickets`（`content_revision_id`，`role` 为 `original` 取 GLB、`thumbnail` 取缩略图，`purpose` 为 `display`），按修订缓存，与画布图片的做法一致。
+- **代码**：通过 `GET /creative/content-revisions/{content_revision_id}` 单独读取（载荷的 `model.generator.code`），避免每次重读快照都传几十 KB 代码。
+- **性能**：模型摘要在同一个读快照事务里批量读取，查询次数不随模型数增长。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
 | 401 | 现有认证错误码 | 未登录或会话过期 | 走现有续期 |
 | 404 | `not_found` | 不存在或不属于当前账号 | 关闭编辑视图，回到画布 |
-| 503 | `creative_dependency_unavailable` | 媒体票据服务不可用 | 退避重试 |
 
 ### 交互规则
-只读，没有分页。重复调用没有副作用。读取票据每次签发新的。
+只读，没有分页。重复调用没有副作用。
 
 ### 调用示例
 ```http
@@ -512,14 +512,14 @@ Authorization: Bearer <token>
   "id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10",
   "type_key": "scene",
   "title": "黄昏教堂中殿",
-  "revision": "4",
+  "revision": "6",
   "content_revision_id": "ccrv_3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7",
-  "unit_revs": {"meta": "1", "environment": "3", "render": "1", "objects": "4",
+  "unit_revs": {"meta": "1", "environment": "3", "render": "1", "objects": "6",
                 "object:sobj_V1StGXR8_Z5jdHi6B-myT": "1", "object:sobj_V1StGXR8_Z5jdHi6B-myT:content": "1",
-                "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ": "4", "object:sobj_3kTMd9Qp2xLw7nB0cR5yZ:content": "2"},
+                "object:sobj_Z1x2C3v4B5n6M7a8S9d0f": "6", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "6"},
   "trashed_at": null,
   "created_at": "2026-10-20T08:00:00Z",
-  "updated_at": "2026-10-20T09:10:00Z",
+  "updated_at": "2026-10-22T10:00:00Z",
   "scene": {
     "environment": {
       "sky": {"kind": "procedural", "sun_elevation_deg": 12, "sun_azimuth_deg": 240, "turbidity": 4},
@@ -532,13 +532,25 @@ Authorization: Bearer <token>
        "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": true,
        "primitive": {"builtin": "ground@1", "params": {"size": 40}}, "material_slots": {}},
-      {"id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "kind": "camera", "name": "主机位", "parent_id": null, "order": 1,
-       "transform": {"position": [0, 1.6, 8], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
+      {"id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "kind": "model_instance", "name": "左侧柱 1", "parent_id": null, "order": 3,
+       "transform": {"position": [-3, 0, -2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": false,
-       "camera": {"focal_mm": 35, "sensor_mm": [36, 24], "aspect": "3:2", "near_m": 0.1, "far_m": 1000, "label": "镜头 1"}}
+       "model": {"content_revision_id": "ccrv_9e2a0d4c-1b3f-4a5e-8c7d-6f5e4d3c2b1a"}, "material_slots": {}}
     ]
   },
-  "models": {}
+  "models": {
+    "ccrv_9e2a0d4c-1b3f-4a5e-8c7d-6f5e4d3c2b1a": {
+      "content_id": "ccnt_51c0e8a2-7d6b-4c3a-9f1e-2d4c6b8a0e1f",
+      "usable": true,
+      "manifest": {"bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 6, 0.5]}, "triangles": 64,
+                   "slots": [{"id": "stone", "hint": "stone"}], "parts": [], "anchors": []},
+      "generator": {"language": "three-module", "contract_version": 1, "lib_version": 1,
+                    "code_sha256": "sha256-6f1ed002ab5595859014ebf0951522d9f2b8d1c5e8a6a7c3b1d0e9f8a7b6c5d4",
+                    "params_schema": {"height": {"type": "number", "default": 6, "min": 2, "max": 20}},
+                    "params": {"height": 6}, "mount": "floor"},
+      "name_hint": "哥特束柱"
+    }
+  }
 }
 ```
 失败示例：
@@ -550,7 +562,8 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ```
 
 ### 兼容与变更
-在通用读取接口上新增 `scene` 分支，其他类型不受影响。`models` 在 C2 之前恒为空对象，C2 起才填充，属于兼容扩展。
+- 在通用读取接口上新增 `scene` 分支，其他类型不受影响。
+- C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
 
 ## 提交场景命令
 
@@ -645,3 +658,65 @@ Content-Type: application/json
 
 ### 补充说明
 新建场景不经本接口，而是走画布命令 `add_node`（`type_key = "core.scene"`）。底座的文档类型端口负责在同一事务里创建文档；场景类型提供初始快照（一块内置地面 `ground@1`，摄像机随 C4 的放置 UI 出现）和卡片摘要。
+
+## 场景模型命令
+
+### 用途与调用
+- **用途**：把烘焙好的模型提交为 `model` 内容，并在场景中新增实例或替换实例的模型。
+- **消费者**：编辑器代码面板（C2）；客户端任务完成时由服务端内部调用（C3，经领域层）。
+- **调用**：同 `api: 提交场景命令` 的端点与外层，增加以下操作：
+
+| op | 字段 | 涉及单元 |
+|---|---|---|
+| `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容） | 无场景单元（不改快照） |
+| `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
+| `set_instance_model` | `object_id`、`model`（`{content_revision_id}` 或 `{ref}`）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
+
+- **分叉规则（I4）**：
+  - `base_content_id` 被其他实例或资产引用时，`commit_model` 仍然在该内容上追加修订。是否让其他实例跟随，由 `set_instance_model` 的 `scope` 决定。
+  - 资产持有的旧修订不受影响，因为资产引用的是修订而不是内容的最新版。
+  - 编辑器和助手在 `scope = "this"` 且共享时，应传入不带 `base_content_id` 的 `commit_model`，即新建内容（分叉）。
+- **持有方交接**：`commit_model` 在场景类型的 `Apply` 中新建模型内容，使用底座传入的 `Retain` 回调预登记引用（底座 `patterns: 文档类型端口`）。
+- **校验**：暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` 必须出现在引用它的操作之前。消费后两个暂存候选标为已被文档采用。
+- **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。
+- **失败响应**（在基础接口之上增加）：
+
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 409 | `creative_upload_unavailable` | 暂存上传不存在、属于其他账号、已过期、已消费或尚未就绪 | 重新上传 |
+| 400 | `validation_failed` | manifest 与 GLB 不符、哈希不符、参数越界、上传类型不符、`ref` 未定义 / 重复 / 未被本批引用、单批 `commit_model` 超过 16 个 | 修正 |
+| 400 | `creative_model_unavailable` | `content_revision_id` 不存在、不是完整形态的 `model` 或不可展示 | 重读后重新选择 |
+
+不使用 404 和 `creative_state_conflict`：编辑器把命令返回的 404 当作文档不存在、把 `creative_state_conflict` 当作文档进了回收站。
+
+- **示例**：
+```json
+{
+  "operation_id": "0b7e2c1d-3f4a-4b5c-8d9e-0f1a2b3c4d5e",
+  "client_created_at": "2026-10-22T10:00:00Z",
+  "payload": {
+    "expected": {"objects": "5"},
+    "operations": [
+      {"op": "commit_model", "ref": "pillar", "glb_upload_id": "cupl_aa11", "thumbnail_upload_id": "cupl_bb22",
+       "name_hint": "哥特束柱",
+       "generator": {"language": "three-module", "contract_version": 1, "lib_version": 1,
+                     "code": "export const params={height:{type:'number',default:6,min:2,max:20}};export const mount='floor';export default function build({params,THREE}){const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.5,params.height,16),new THREE.MeshStandardMaterial({name:'slot:stone'})));return g}",
+                     "code_sha256": "sha256-6f1ed002ab5595859014ebf0951522d9f2b8d1c5e8a6a7c3b1d0e9f8a7b6c5d4",
+                     "params_schema": {"height": {"type": "number", "default": 6, "min": 2, "max": 20}},
+                     "params": {"height": 6}, "mount": "floor"},
+       "manifest": {"bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 6, 0.5]}, "triangles": 64,
+                    "slots": [{"id": "stone", "hint": "stone"}], "parts": [], "anchors": []}},
+      {"op": "add_objects", "objects": [{
+        "id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "kind": "model_instance", "name": "左侧柱 1", "parent_id": null, "order": 3,
+        "transform": {"position": [-3, 0, -2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
+        "visible": true, "locked": false, "model": {"ref": "pillar"}, "material_slots": {}}]}
+    ]
+  }
+}
+```
+```json
+{"revision": "6", "changed_units": ["objects", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content"],
+ "annotated_units": [], "removed_units": [], "reset_required": false,
+ "models": {"pillar": {"content_id": "ccnt_51c0", "content_revision_id": "ccrev_9e2a"}}}
+```
+- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。

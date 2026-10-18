@@ -184,7 +184,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
 
 ### 访问模式与保证
-- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、缩略图、GLB 读取票据）。
+- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
 - **写**：在文档行锁内（`SELECT … FOR UPDATE`）检查单元版本 → 应用 → 校验全部不变量 → 写新快照、修订行（`actor_kind`、`run_id`、`changed_units`、`restored_from`）和引用行 → 更新文档行的 `revision` 和 `content_revision_id`。整个过程在一个事务里，失败则不产生任何修订。
 - **不变量的保证方**：
   - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型可用、单元版本单调。
@@ -225,3 +225,53 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 ### 生命周期与演进
 - 新增基础体或新版本只改这份 JSON 和前端几何代码，不需要迁移。
 - 删除或修改已发布版本属于破坏性变更，不允许。
+
+## 模型内容
+
+### 用途与存储角色
+- **用途**：可复用的几何物件，由场景实例和资产库资产共同引用。
+- **存储**：
+  - `creative_contents.kind = 'model'`。
+  - 每个版本一条 `creative_content_revisions`（`schema_version = 1`）。
+  - GLB 存为 blob，经 `creative_content_objects` 以 `role='original'` 绑定；缩略图 PNG 以 `role='thumbnail'` 绑定。
+  - 上传走 `creative_uploads`，`declared_kind` 加 `model`，校验格式加 `model/gltf-binary`（`.glb`），上限 16 MiB，只允许暂存目标。
+  - **两种形态**：
+    - 暂存形态：worker 校验 GLB 通过后写入，载荷只有 `{format, manifest}`，manifest 由服务端从 GLB 算出；由暂存候选持有，只供 `commit_model` 消费，不能被场景引用，也不能被采用到资产或画布节点。候选被消费后（`adopted_target_kind = 'document'`）失去持有方，按 GC 回收。
+    - 完整形态：`commit_model` 写入，载荷为下表结构；GLB 与缩略图对象复用暂存修订的 blob，不复制字节。
+  - **写入口**：`model` 不能经通用写入口（`creativecontent.Validate` / `WriteAndRetain`）写入，资产、画布 `replace_content`、生成输出都写不进来。暂存形态只由 `WriteMediaAndRetain`（worker）写，完整形态只由 `WriteModelAndRetain`（`commit_model`）写。
+- **角色**：权威主数据，内容修订不可变。
+- **所有权**：由 `creativescene` 的 `commit_model` 写入（消费暂存上传）；`creativelibrary` 存入资产库时只引用同一修订，不复制字节（复制语义由「不可变 + 编辑时分叉」实现，见 I4、I7）。
+
+### 结构与身份
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `model.format` | `"glb"` | 是 | — |
+| `model.generator.language` | `"three-module"` | 是 | 外部导入（后续）将使用其他值 |
+| `model.generator.contract_version` | integer | 是 | 当前为 1 |
+| `model.generator.lib_version` | integer | 是 | 当前为 1 |
+| `model.generator.code` | string | 是 | ≤ 64 KiB，UTF-8 |
+| `model.generator.code_sha256` | `sha256-<64 hex>` | 是 | 服务端重算并核对 |
+| `model.generator.params_schema` | object | 是 | 按几何模块契约的参数定义 |
+| `model.generator.params` | object | 是 | 每个键都在 schema 中，值在范围内 |
+| `model.generator.mount` | `floor`/`wall`/`ceiling`/`free` | 是 | — |
+| `model.manifest` | 见几何模块契约「产物」 | 是 | `triangles` ≤ 300000；`slots` ≤ 32；`parts` ≤ 200 |
+| `model.name_hint` | string ≤ 80 | 否 | 助手或摄影师起的名字 |
+
+### 访问模式与保证
+- **接受的 GLB 子集**（worker 的 verify 阶段用 Go 实现，编辑器宿主用同一算法预检；不执行代码，文件里的任何声明都不直接采信；不在子集内的一律拒绝）：
+  - 容器：magic 为 `glTF`，version 为 2，总长度与实际一致；JSON 块加至多一个 BIN 块，4 字节对齐。
+  - 缓冲：至多一个 `buffer`，没有 `uri`。
+  - 场景树：恰好一个 `scene`；节点下标全部有效，每个节点至多一个父节点，无环；变换只用 TRS 或 `matrix` 之一，数值有限。
+  - 网格：primitive 的 `mode` 为 4；属性只允许 `POSITION`（`FLOAT VEC3`，必有）、`NORMAL`、`TANGENT`、`TEXCOORD_0/1`、`COLOR_0`；不允许 `targets`、`JOINTS_*`、`WEIGHTS_*`。
+  - 访问器：不用 `sparse`；按组件对齐；`byteStride` ≥ 元素大小；全部数据落在 `bufferView` 和 BIN 内；索引值小于顶点数；索引数或非索引顶点数是 3 的倍数。
+  - 不允许 `images`、`textures`、`samplers`、`skins`、`animations`、`cameras`；`extensionsRequired` 为空，`extensionsUsed` 只允许 `KHR_materials_emissive_strength`。
+  - 预算：节点 ≤ 10000，遍历到的 primitive 实例 ≤ 10000，三角形 ≤ 300000，字节 ≤ 16 MiB；读取的 POSITION 顶点总数（每个访问器计一次）≤ BIN 块字节数 / 12。访问器可以指向同一段数据，少了这一项，各项计数都在预算内的文件也能让校验读上数十亿个顶点；访问器互不重叠的文件不会超出。
+  - 不合规时上传以 `failed` 结束，失败码沿用现有的 `media_unsupported`。
+- **manifest 的算法**：三角形数按场景树遍历累加；每个 primitive 的局部范围**从 POSITION 实际数值算出**，并与访问器声明的 `min` / `max` 逐分量核对（必须存在且相等，否则拒绝）；包围盒取局部范围的 8 个角点经节点世界矩阵变换后合并（与 three.js `Box3.setFromObject` 非精确模式一致）；世界矩阵、包围盒与挂点坐标必须是有限值，各节点数值有限但相乘溢出时拒绝；槽位取材质名 `slot:<id>` 与 `extras.hint`，部件取节点名 `part:<id>`，挂点取节点名 `anchor:<id>` 及其世界坐标，名称取 JSON 原文；槽位 ≤ 32、部件 ≤ 200、挂点 ≤ 200。
+- **提交时**：manifest 必须与暂存形态中服务端从 GLB 算出的一致，不一致则拒绝。比对规则：`slots`、`parts`、`anchors` 先按 `id` 排序；`id`、`hint`、`triangles` 精确相等；`bounds` 与挂点坐标容差 1e-4 m。名称取 GLB JSON 原文（three.js 加载后会删掉节点名里的 `:`）。写入完整形态时使用服务端的值。
+- **读取**：GLB 和缩略图走现有媒体读取票据（`IssueTicket` / `Open`），角色分别为 `original` 和 `thumbnail`（票据角色加 `thumbnail`）。
+
+### 生命周期与演进
+- 持有方：场景修订引用表、资产、画布节点（后续若有）。三者均登记进 `creativereference.LiveOwnerCondition` 和守卫测试。没有持有方的修订按媒体 GC 规则回收。媒体 GC 的类型范围（`creativemedia/gc.go` 的 `unheldMediaRevision`）目前只含 image / video / audio，C2 必须把 `model` 加进去并登记守卫测试；上线时先升级 creative-worker，再开放模型写入。
+- 外部 GLB 导入（下一版）会加 `generator.language = "imported"`，且没有 `code`。本版读取端遇到未知 `language` 时只能显示，不能调参数。

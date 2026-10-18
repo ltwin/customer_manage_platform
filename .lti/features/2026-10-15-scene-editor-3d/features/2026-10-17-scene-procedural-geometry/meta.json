@@ -1,6 +1,6 @@
 {
   "uid": "9f8bcaa9-5b8e-4314-b5b4-7576bbc0ab61",
-  "revision": 10,
+  "revision": 12,
   "id": "scene-procedural-geometry",
   "kind": "feature",
   "assurance": "governed",
@@ -35,9 +35,9 @@
       "data:场景文档"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-17T10:45:57.330Z",
-  "updatedAt": "2026-10-18T04:28:17.081Z",
+  "updatedAt": "2026-10-18T04:35:10.381Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -196,9 +196,108 @@
         "version": 2,
         "digest": "827cd36ff03104ca231ba594809d75f28194c2a0ce7c90e8479c608a25d66051"
       }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-18T04:35:02.045Z",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "真实 Safari、Edge 与 Windows 下的沙箱未实测（WebKit 自动化已过）；两个真实标签页同时调参未手动演练；远程开发库时延未测；迁移只在测试容器上跑过；有 model 数据后 down 迁移拒绝回滚",
+        "followUp": "owner 日常在 Safari/Edge 使用代码模型时体验并反馈；C3 接入助手写模型时再测一次远程环境时延",
+        "coverage": [
+          {
+            "criterionId": "AC-65bfd9c5d2e9",
+            "status": "verified",
+            "evidence": "e2e「a code model: 代码模型… then 生成 is one command at the menu point, and it is there after reopening」：真实沙箱烘焙默认模板，一个命令内 commit_model + add_objects，落点等于打开菜单时的地面点，新物件被选中，GLB 与夹具逐字节一致；关闭后重开按票据加载，无「模型不可用」。后端 `creativescene` `TestCommitModelPlacesNewInstance`（1 个场景修订 + 1 个模型内容修订、{ref} 解析）。时延实测在真实 API + 媒体管线 + PostgreSQL 上完成同一流程"
+          },
+          {
+            "criterionId": "AC-d386608a2729",
+            "status": "verified",
+            "evidence": "e2e「a parameter change rebakes into a new revision; Cmd+Z and redo switch the model back and forth」：改高度产生 1 个命令（commit_model 带 base_content_id + set_instance_model），Cmd+Z 走 restore_units 换回旧修订、Cmd+Shift+Z 重做；输入 99 时提交的是定义上限 12。后端 `TestModelRevisionsForkAndUndo`、`TestCommitModelRejections`「param out of range」；前端单测「module exports are normalized; values are filled, clamped and dropped」"
+          },
+          {
+            "criterionId": "AC-93128af7662d",
+            "status": "verified",
+            "evidence": "e2e「a shared model forks by default; 应用到全部 switches every instance」：共用时默认 scope this、不带 base_content_id，其他实例不变；勾选「应用到全部」为 all_instances 显式列出实例，1 个命令。单测「R4: unshared appends to the model, shared forks unless applied to every instance」「a copy and a retune made before the new model's receipt wait for it…」；后端 `TestModelRevisionsForkAndUndo`（分叉三种组合）"
+          },
+          {
+            "criterionId": "AC-539b894e1725",
+            "status": "verified",
+            "evidence": "e2e「a syntax error shows its line and changes nothing; new parameter definitions come through on 重新生成」：语法错误标行号、无命令；新增参数后参数面板更新，generator 带新定义。单测「runtime errors point at the module line in Chromium and WebKit stacks」「syntax errors carry line and column; imports are refused」「the host reports sandbox errors, bad modules and GLBs outside the subset」；安全样例集：build 返回值不是 THREE.Object3D 时报 invalid「a compile that runs past the timeout replaces the page」；安全样例集死循环 5 秒内终止"
+          },
+          {
+            "criterionId": "AC-7dee257f77c2",
+            "status": "verified",
+            "evidence": "e2e「a model over the limit is refused before anything is uploaded」；单测「the host checks module info by the server rules」「inspect budgets」；安全样例集超大输出与三角形超限；后端 `TestCommitModelRejections`「code over 64 KiB」、`creativeglb` `TestFixtures` bad-too-many-triangles 与 `TestLimits`"
+          },
+          {
+            "criterionId": "AC-1f424c90a866",
+            "status": "verified",
+            "evidence": "`frontend/scripts/scene-sandbox.test.mjs`（make check 内 Chromium）：fetch / XHR / WebSocket / EventSource / 动态 import / importScripts、cookie、localStorage、IndexedDB、父页面 DOM、顶层导航、eval、死循环、内存炸弹、内含外链 URI 的 GLB 全部失败或被终止，攻击者端口 0 请求，宿主心跳正常、之后编译照常。去掉 CSP 的反证会让测试失败。WebKit：`SCENE_SANDBOX_BROWSERS=webkit` 通过"
+          },
+          {
+            "criterionId": "AC-e04f125967ee",
+            "status": "verified",
+            "evidence": "见 AC-7 三个子项"
+          },
+          {
+            "criterionId": "AC-6e3562c92944",
+            "status": "verified",
+            "evidence": "`creativescene` `TestCommitModelRejections`：manifest 与 GLB 不符、代码哈希不符、参数越界 / 无定义、ref 未定义 / 先用后提交 / 重复 / 未被引用、超过 16 个，全部 ErrValidation 且不产生修订；`httpapi` `TestCreativeSceneModelHTTP` 映射 400 validation_failed"
+          },
+          {
+            "criterionId": "AC-a0a1a5158079",
+            "status": "verified",
+            "evidence": "`TestCommitModelRejections`「upload already consumed / of another account / missing」→ ErrUploadUnavailable，「referenced revision missing / is not a model」→ ErrModelUnavailable；`TestCreativeSceneModelHTTP` 映射 409 creative_upload_unavailable、400 creative_model_unavailable；前端单测「a rejected model commit blocks what names it, as an invalid edit and never the trash」"
+          },
+          {
+            "criterionId": "AC-e85b24c6ffcc",
+            "status": "verified",
+            "evidence": "`creativeglb` `TestFixtures`（4 类合规夹具 manifest 正确，容器、外链 URI、包围盒不符 / 溢出、索引越界、成环、共享子节点、形变、骨骼、动画、纹理、未知扩展、稀疏访问器、超预算、别名 POSITION 等不合规夹具各返回原因码）；前端「inspect agrees with the server on every shared fixture」用同一批夹具；`creativemedia` `TestModelUploadIsVerifiedIntoStagedForm` 不合规 GLB 上传以 media_unsupported 失败；e2e 超限在上传前拦下"
+          },
+          {
+            "criterionId": "AC-6f997252d033",
+            "status": "verified",
+            "evidence": "`creativescene` 并发屏障测试各 20 轮：`TestMoveAndModelSwapDoNotConflict`（两边都成功）、`TestTwoModelSwapsExactlyOneWins`（恰好一方成功）、`TestAllInstancesWithConcurrentCopy`；前端单测「a baseline keeps the revisions an edit saw; a change made elsewhere meanwhile is a conflict」「a baseline follows this session's own edits…」；e2e「someone else changing the model while it bakes and uploads: the save asks first」：上传期间远端换模型并被本页重读，保存收到冲突提示、服务器上仍是对方的模型。两个真实标签页的手动并发未专门演练"
+          },
+          {
+            "criterionId": "AC-a12339789bdf",
+            "status": "verified",
+            "evidence": "`creativescene` `TestCommitModelPlacesNewInstance`（models 条目含 manifest、生成参数、name_hint，generator 不含代码）、`TestCopyOfPlacedModelNeedsUsableRevision`（授权撤销后读取中该修订只有 usable:false，其余为 null）、`TestReadModelsQueriesDoNotGrowWithModels`（查询次数不随模型数增长）；`httpapi` `TestCreativeSceneModelHTTP`；e2e「a model that cannot be shown is a grey block and says so」（修订缺失与 GLB 取不到两种）"
+          },
+          {
+            "criterionId": "AC-fc9af84e2196",
+            "status": "verified",
+            "evidence": "`creativemedia` `TestModelThumbnailTicketAndGC`：消费后的暂存形态修订被回收；被场景修订引用时完整模型的 GLB 与缩略图不回收；文档修订对它的引用全部移除后（以删除引用行模拟彻底删除），模型修订与两个 blob 按媒体 GC 回收"
+          },
+          {
+            "criterionId": "AC-01541c5512d1",
+            "status": "verified",
+            "evidence": "`creative-scene-latency.e2e.mjs` 经 `TestCreativeEditorBrowser`（真实 API、媒体管线、PostgreSQL）2026-10-17 本机 20 次调参 p50 / p95（ms）：编译 34 / 39，宿主校验 <1 / <1，缩略图 9 / 14，上传与 worker 校验 1656 / 1976，提交 40 / 49，回车到已保存 1777 / 2086。p50 低于 3 秒，不改为随命令直接提交。远程开发库未测（远程库只做只读查询）"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-18 确认验收通过：本机体验表层可见功能无问题，接受技术验收结论（11 条验收标准有证据，make check 通过，补测 5 处）；不可用模型 content_id 为空字符串维持现状",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "827cd36ff03104ca231ba594809d75f28194c2a0ce7c90e8479c608a25d66051"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-18T04:35:10.258Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
