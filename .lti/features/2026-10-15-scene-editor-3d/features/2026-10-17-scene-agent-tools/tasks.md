@@ -102,7 +102,11 @@
     - 编译错误的行号由渲染端写在 `message` 里（完成接口的错误只有 `code` 与 `message`，契约未变）。
     - `bindMessages` 从 `render_view` 结果取图片，标签「(render_view 截图)」；`toolContentRevisions` 与 `admitDispatchInTx` 的复查名单加入 `render_view`。基础指令（`instructions/base.md`）加「搭建场景」一节。
     - 4 个工具的定义约 7 KB，每次请求都会带上；压缩回归测试的小窗口相应放大（16000→18000、8000→10000），测试意图不变。
-- [ ] 3.7 画布上新建场景：`canvas_tools.go:nodeTypes` 加 `scene`，结果带 `document_id`；`creativecanvas` 的 `attachDocument` 写入者取画布命令的执行者（未决 #4 在本任务开始时解决）。先写测试：助手建出场景节点和文档，修订写入者为该运行；摄影师新建照旧。
+- [x] 3.7 画布上新建场景：`canvas_tools.go:nodeTypes` 加 `scene`，结果带 `document_id`；`creativecanvas` 的 `attachDocument` 写入者取画布命令的执行者（未决 #4 在本任务开始时解决）。先写测试：助手建出场景节点和文档，修订写入者为该运行；摄影师新建照旧。
+  - 实施记录：
+    - 未决 #4 的结论：画布命令层拿不到执行者（命令载荷不带，也不应由客户端带）。按设计的备选方案，`creativecanvas` 新增 `ApplyCommandsAs(actor)`，执行者只从服务端传入；`ApplyCommands` 等于以摄影师执行，原有调用不变。画布工具用助手运行作为执行者。
+    - 局部偏差：设计写的是把结果 `created` 的值改成 `{node_id, document_id}`。`created` 现在是「临时名 → 节点 ID」，模型和现有测试都按这个形态使用，所以保留不变，另加 `documents`（临时名 → document_id），只在新建了文档节点时出现。`edit_canvas` 的说明写明新建 scene 节点后用 `documents` 里的 ID 调场景工具。
+    - 摄影师新建场景照旧记为摄影师，由已有的 `creativecanvas/document_node_test.go` 覆盖。
 
 ## 4. 渲染端（前端）
 

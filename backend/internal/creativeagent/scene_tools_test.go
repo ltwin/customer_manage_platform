@@ -565,3 +565,42 @@ func TestSceneToolsNeedTheCanvasInTheConsent(t *testing.T) {
 		t.Fatalf("read without canvas consent: %v", got)
 	}
 }
+
+// The assistant can start a scene on the canvas: the node's document is
+// written by the run and comes back for the scene tools to use.
+func TestTheAssistantCreatesASceneOnTheCanvas(t *testing.T) {
+	f, c, consent, _ := visualScene(t, false)
+	var doc string
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", editCanvasTool, map[string]any{"actions": []any{map[string]any{"type": "add_node", "key": "s", "node_type": "scene", "title": "哥特教堂"}}}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			documents, _ := lastTool(r)["documents"].(map[string]any)
+			doc, _ = documents["s"].(string)
+			return scriptedResult(r, sceneCall("b", readSceneTool, map[string]any{"document_id": doc}))
+		},
+	}}
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "新建一个场景"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+	created := lastTool(s.request(2))
+	if created["success"] != true || created["created"].(map[string]any)["s"] == nil || doc == "" {
+		t.Fatalf("edit_canvas result %v", created)
+	}
+	if read := lastTool(s.request(3)); read["title"] != "哥特教堂" || read["revision"] != 1.0 {
+		t.Fatalf("read_scene of the new scene %v", read)
+	}
+	var actor, runID string
+	if err := f.db.QueryRow(`SELECT actor_kind, run_id FROM creative_document_revisions WHERE document_id=$1 AND revision=1`, doc).Scan(&actor, &runID); err != nil || actor != "agent" || runID != run.ID {
+		t.Fatalf("first revision written by %s %s %v", actor, runID, err)
+	}
+	if n := f.count("creative_nodes", "canvas_id=$1 AND type_key='core.scene' AND document_id=$2", f.canvasID, doc); n != 1 {
+		t.Fatalf("scene nodes %d", n)
+	}
+}

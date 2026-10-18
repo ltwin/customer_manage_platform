@@ -17,6 +17,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -127,7 +128,7 @@ type canvasTool struct {
 
 var _ tool.InvokableTool = (*canvasTool)(nil)
 
-var nodeTypes = []string{"text", "image", "video", "audio", "link"}
+var nodeTypes = []string{"text", "image", "video", "audio", "link", "scene"}
 
 func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 	str := func(desc string) *schema.ParameterInfo { return &schema.ParameterInfo{Type: schema.String, Desc: desc} }
@@ -155,7 +156,7 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 		}
 		return &schema.ToolInfo{
 			Name: editCanvasTool,
-			Desc: "按顺序执行一组画布修改，全部成功或全部不生效：新建节点、改标题、移动、缩放、改写文字节点正文、连接或断开参考、删除节点。连接参考表示 target 生成时把 source 的内容作为参考。修改会进入画布历史，创作者可以撤销。改动前先用 read_canvas 了解现状。",
+			Desc: "按顺序执行一组画布修改，全部成功或全部不生效：新建节点、改标题、移动、缩放、改写文字节点正文、连接或断开参考、删除节点。连接参考表示 target 生成时把 source 的内容作为参考。新建 scene 节点会同时新建一个空场景，结果 documents 给出它的 document_id，之后用场景工具搭建。修改会进入画布历史，创作者可以撤销。改动前先用 read_canvas 了解现状。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"actions": {Type: schema.Array, Required: true, Desc: "1 到 100 个动作", ElemInfo: &schema.ParameterInfo{Type: schema.Object, SubParams: action}},
 			}),
@@ -333,11 +334,27 @@ func (h *runtimeHandler) editCanvas(ctx context.Context, canvasID, seed, raw str
 		}
 		return creativecanvas.BatchInput{CanvasID: canvas.ID, ExpectedTopologyRevision: canvas.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(canvas), Actions: actions}, nil
 	}
-	_, replayed, err := h.applyOnce(ctx, canvasID, toolOperation(seed), build, creativecanvas.ApplyCommands)
+	// A document the batch creates (a scene) is written by this run.
+	apply := func(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
+		return creativecanvas.ApplyCommandsAs(ctx, scope, creativedocument.Actor{Kind: "agent", RunID: &h.held.RunID}, command)
+	}
+	canvas, replayed, err := h.applyOnce(ctx, canvasID, toolOperation(seed), build, apply)
 	if err != nil {
 		return nil, editRefusal(err)
 	}
-	return map[string]any{"success": true, "created": created, "replayed": replayed}, nil
+	out := map[string]any{"success": true, "created": created, "replayed": replayed}
+	documents := map[string]string{}
+	for key, id := range created {
+		for _, n := range canvas.Nodes {
+			if n.ID == id && n.DocumentID != nil {
+				documents[key] = *n.DocumentID
+			}
+		}
+	}
+	if len(documents) > 0 {
+		out["documents"] = documents
+	}
+	return out, nil
 }
 
 // editRefusal says why the canvas turned a batch down. The batch is one
