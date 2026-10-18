@@ -20,7 +20,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
-	_ "github.com/samson/customer-manage-platform/backend/internal/creativescene" // 注册场景文档类型，画布命令和助手工具都要用
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene" // 注册场景文档类型；客户端任务清扫
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -156,6 +156,8 @@ func run() error {
 	// persisted dispatches through account-scoped transactions.
 	agentDone := make(chan struct{})
 	go func() { defer close(agentDone); sweepAgentRuns(ctx, db, agent) }()
+	sceneJobsDone := make(chan struct{})
+	go func() { defer close(sceneJobsDone); creativescene.RunSweep(ctx, db, slog.Default()) }()
 	recoveryDone := make(chan struct{})
 	go func() {
 		defer close(recoveryDone)
@@ -171,6 +173,7 @@ func run() error {
 	<-ctx.Done()
 	<-recoveryDone
 	<-agentDone
+	<-sceneJobsDone
 	<-generationDone
 	<-trashDone
 	<-imageEditDone

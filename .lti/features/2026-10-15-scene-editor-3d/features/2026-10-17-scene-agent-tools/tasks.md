@@ -23,7 +23,7 @@
     - `render_view` 校验 `scene_revision ≤` 当前修订、不消费候选。
 
   用假的 `JobWaiter` 先写测试，覆盖上面每个分支，以及幂等重放。
-- [ ] 1.5 `creativescene/jobs_sweep.go`：租约回收（第 3 次转 `failed`、`host_error`）、deadline 过期（经端口；复查失败走 `Abort`）、删除终态满 30 天的任务；creative-worker 新增 15 秒一轮的 goroutine。每次状态迁移打结构化日志，每轮清扫打一条汇总计数。先写测试：回收、上限、过期、删除。
+- [x] 1.5 `creativescene/jobs_sweep.go`：租约回收（第 3 次转 `failed`、`host_error`）、deadline 过期（经端口；复查失败走 `Abort`）、删除终态满 30 天的任务；creative-worker 新增 15 秒一轮的 goroutine。每次状态迁移打结构化日志，每轮清扫打一条汇总计数。先写测试：回收、上限、过期、删除。
 
 ## 2. 接口（后端）
 
