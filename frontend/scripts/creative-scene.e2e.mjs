@@ -111,6 +111,8 @@ class SceneServer {
     this.discarded = []
     this.mediaMissing = new Set()
     this.modelSeq = 0
+    // Set to a promise to keep uploads from completing until it settles.
+    this.uploadHold = null
   }
   /** A committed model revision, as if made earlier; returns its revision ID. */
   seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
@@ -371,6 +373,7 @@ async function route(page, server) {
       if (upload[2] === '/part-authorizations')
         return json(200, { upload_id: u.id, parts: [{ part_number: 1, method: 'PUT', url: `${base}/__upload/${u.id}`, headers: {}, expires_at: '2100-01-01T00:00:00Z' }] })
       if (upload[2] === '/complete') {
+        if (server.uploadHold) await server.uploadHold
         Object.assign(u, { state: 'ready', publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
         u.binding = { status: 'staged', target_kind: null, target_id: null, candidate_id: `ccuc_${u.id}`, expires_at: '2100-01-01T00:00:00Z' }
       }
@@ -1220,7 +1223,6 @@ await check('opening the canvas page loads no three.js', async () => {
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
 const objectID = (tag) => `sobj_${tag.padEnd(21, '0')}`
 const codePanel = (page) => page.getByRole('complementary', { name: '代码' })
-const hasModelCommit = (c) => c.payload.operations?.some((op) => op.op === 'commit_model')
 
 /** Replaces the whole text in the code panel's editor. */
 async function replaceCode(page, code) {
@@ -1312,6 +1314,13 @@ await check('a parameter change rebakes into a new revision; Cmd+Z and redo swit
   await saved(page)
   await page.getByRole('treeitem', { name: /柱/ }).click()
   await waitFor(async () => (await page.getByLabel('高度（m）', { exact: true }).inputValue()) === '5', 'the panel shows the redone value')
+
+  // Past the definition's max, the field sends the max.
+  await height.fill('99')
+  await height.press('Enter')
+  await waitFor(() => server.commands.length === 4, 'clamped retune', 20_000)
+  await saved(page)
+  assert.equal(server.commands[3].payload.operations[0].generator.params.height, 12, 'clamped to max')
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -1354,6 +1363,39 @@ await check('a shared model forks by default; 应用到全部 switches every ins
   assert.deepEqual(Object.keys(server.commands[1].payload.expected).sort(), [content(b), content(c)].sort())
   assert.equal(server.object(b).model.content_revision_id, server.object(c).model.content_revision_id)
   assert.notEqual(server.object(b).model.content_revision_id, rev)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('someone else changing the model while it bakes and uploads: the save asks first', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const theirs = server.seedModel({ params: { ...templateParams, height: 2 } })
+  const pillar = objectID('pillar')
+  server.seedInstance(pillar, rev)
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  let release
+  server.uploadHold = new Promise((resolve) => (release = resolve))
+  const height = page.getByLabel('高度（m）', { exact: true })
+  await height.fill('5')
+  await height.press('Enter')
+  await waitFor(() => server.uploads.size === 2, 'both uploads started', 20_000)
+
+  // While the uploads wait, another tab switches the same instance's model,
+  // and this tab reads it.
+  server.external([{ op: 'set_instance_model', object_id: pillar, model: { content_revision_id: theirs }, scope: 'this' }])
+  const reads = server.reads
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(() => server.reads > reads, 're-read')
+  await sleep(300)
+  server.uploadHold = null
+  release()
+
+  await page.getByRole('alert').filter({ hasText: '重新应用' }).waitFor({ timeout: 20_000 })
+  assert.equal(await saveText(page), '有冲突待处理')
+  assert.equal(server.commands.length, 0, 'nothing was saved over theirs')
+  assert.equal(server.object(pillar).model.content_revision_id, theirs)
   assert.deepEqual(errors, [])
   await context.close()
 })

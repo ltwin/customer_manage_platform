@@ -330,6 +330,9 @@ for (const name of browsers) {
         assert.equal(r.error?.kind, 'invalid', code)
       }
 
+      const notObject = await compile(`export const mount = 'free'\nexport default function build() { return { scale: 1 } }\n`)
+      assert.deepEqual(notObject.error, { kind: 'invalid', message: 'build 须返回 THREE.Object3D' })
+
       const forged = await compile(probe(forgedResult))
       assert.equal(forged.ok, false)
       assert.equal(forged.error.kind, 'invalid', JSON.stringify(forged))

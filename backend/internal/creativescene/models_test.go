@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -302,6 +303,7 @@ func TestCommitModelRejections(t *testing.T) {
 	}{
 		{"manifest differs from GLB", []any{commit(t, "p", fresh, pillarGenerator(2), wrongManifest, nil), place("p")}, creativeops.ErrValidation},
 		{"code hash differs", []any{commit(t, "p", fresh, badHash, manifest, nil), place("p")}, creativeops.ErrValidation},
+		{"code over 64 KiB", []any{commit(t, "p", fresh, generator(pillarCode+strings.Repeat("/", 64<<10), map[string]any{}, map[string]any{}), manifest, nil), place("p")}, creativeops.ErrValidation},
 		{"param out of range", []any{commit(t, "p", fresh, pillarGenerator(9), manifest, nil), place("p")}, creativeops.ErrValidation},
 		{"param without definition", []any{commit(t, "p", fresh, generator(pillarCode, map[string]any{}, map[string]any{"height": 2}), manifest, nil), place("p")}, creativeops.ErrValidation},
 		{"integer without range", []any{commit(t, "p", fresh, generator(pillarCode, map[string]any{"n": map[string]any{"type": "integer", "default": 1}}, map[string]any{}), manifest, nil), place("p")}, creativeops.ErrValidation},
@@ -354,6 +356,10 @@ func TestCopyOfPlacedModelNeedsUsableRevision(t *testing.T) {
 	addObjects(t, f.a, doc, instance(objectID(2), 2, map[string]any{"content_revision_id": placed.ContentRevisionID}))
 	if _, err := f.db.Exec(`UPDATE creative_usage_grants SET revoked_at=clock_timestamp() WHERE declaration_id=(SELECT rights_declaration_id FROM creative_content_revisions WHERE id=$1)`, placed.ContentRevisionID); err != nil {
 		t.Fatal(err)
+	}
+	// A read still lists it, as unusable and with nothing else.
+	if _, models := readModels(t, f.a, doc); models[placed.ContentRevisionID] != (modelEntry{}) {
+		t.Fatalf("unusable model in a read: %+v", models[placed.ContentRevisionID])
 	}
 	v := readScene(t, f.a, doc)
 	_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{
