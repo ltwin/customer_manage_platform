@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla'
 import type { Scene } from '../api.ts'
 import type { Context } from '../input/keymap.ts'
+import type { SceneModel } from '../models/cache.ts'
 import type { Device, DevicePreference } from '../input/navigation.ts'
 import { emptySelection, type Selection } from '../input/selection.ts'
 import type { SavedView } from '../viewState.ts'
@@ -19,7 +20,15 @@ export type Popup =
   | { kind: 'delete'; x: number; y: number; ids: string[] }
   | { kind: 'rename'; x: number; y: number; id: string }
 
-export type Preview = { revision: string; scene: Scene }
+/**
+ * What the code panel edits: a model about to be created at a point on the
+ * ground, or a model instance. `opened` changes each time the panel is
+ * opened anew; a new model becoming an instance keeps the same panel.
+ */
+export type CodeTarget = ({ kind: 'new'; position: [number, number, number] } | { kind: 'object'; id: string }) & { opened: number }
+
+/** A revision from the history list, with the models its snapshot names. */
+export type Preview = { revision: string; scene: Scene; models: Record<string, SceneModel> }
 
 export type EditorUI = {
   selection: Selection
@@ -29,6 +38,8 @@ export type EditorUI = {
   popup: Popup | null
   sheet: boolean
   history: boolean
+  /** The code panel; it and the history panel share one place. */
+  code: CodeTarget | null
   preview: Preview | null
   /** A G / R / S transform is running; its text goes to the status bar. */
   modal: string | null
@@ -50,6 +61,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     popup: null,
     sheet: false,
     history: saved?.history ?? false,
+    code: null,
     preview: null,
     modal: null,
     boxing: false,

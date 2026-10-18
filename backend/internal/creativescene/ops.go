@@ -18,10 +18,11 @@ const (
 )
 
 // sceneOp is one decoded scene operation. touched reads the scene before the
-// batch; apply edits the working copy in batch order.
+// batch; apply edits the working copy in batch order, with env for the
+// operations that read or write content.
 type sceneOp interface {
 	touched(s Scene, byID map[string]int) ([]string, error)
-	apply(s *Scene, c *changeSet) error
+	apply(env *opEnv, s *Scene, c *changeSet) error
 }
 
 type addObjectsOp struct {
@@ -123,18 +124,34 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 	case "set_render":
 		var op setRenderOp
 		return &op, decodeInput(raw, &op)
+	case "commit_model":
+		var op commitModelOp
+		return &op, decodeInput(raw, &op)
+	case "set_instance_model":
+		var op setInstanceModelOp
+		if err := decodeInput(raw, &op); err != nil {
+			return nil, err
+		}
+		return &op, op.checkScope()
 	}
 	return nil, invalid("场景不支持操作 %q", head.Op)
 }
 
 func decodeOps(raws []json.RawMessage) ([]sceneOp, error) {
 	ops := make([]sceneOp, 0, len(raws))
+	commits := 0
 	for _, raw := range raws {
 		op, err := decodeOp(raw)
 		if err != nil {
 			return nil, err
 		}
+		if _, ok := op.(*commitModelOp); ok {
+			commits++
+		}
 		ops = append(ops, op)
+	}
+	if commits > maxCommitsPerBatch {
+		return nil, invalid("一次最多提交 %d 个 commit_model", maxCommitsPerBatch)
 	}
 	return ops, nil
 }
@@ -186,8 +203,13 @@ func (op *addObjectsOp) touched(Scene, map[string]int) ([]string, error) {
 	return []string{unitObjects}, nil
 }
 
-func (op *addObjectsOp) apply(s *Scene, c *changeSet) error {
+func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 	for _, o := range op.Objects {
+		if o.Kind == KindModelInstance && o.Model != nil {
+			if err := env.resolve(o.Model); err != nil {
+				return err
+			}
+		}
 		if o.Primitive != nil {
 			b, err := lookupBuiltin(o.Primitive.Builtin)
 			if err != nil {
@@ -245,7 +267,7 @@ func (op *updateObjectsOp) touched(_ Scene, byID map[string]int) ([]string, erro
 	return out, nil
 }
 
-func (op *updateObjectsOp) apply(s *Scene, c *changeSet) error {
+func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	byID := indexObjects(s.Objects)
 	for _, u := range op.Updates {
 		o := &s.Objects[byID[u.ObjectID]]
@@ -345,7 +367,7 @@ func (op *removeObjectsOp) touched(s Scene, byID map[string]int) ([]string, erro
 	return out, nil
 }
 
-func (op *removeObjectsOp) apply(s *Scene, c *changeSet) error {
+func (op *removeObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	gone, err := op.removed(*s, indexObjects(s.Objects))
 	if err != nil {
 		return err
@@ -384,7 +406,7 @@ func (op *reparentObjectsOp) touched(_ Scene, byID map[string]int) ([]string, er
 
 // apply only moves; Validate then rejects a non-group parent, a cycle or a
 // clashing order.
-func (op *reparentObjectsOp) apply(s *Scene, c *changeSet) error {
+func (op *reparentObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	byID := indexObjects(s.Objects)
 	for _, m := range op.Moves {
 		o := &s.Objects[byID[m.ObjectID]]
@@ -398,7 +420,7 @@ func (op *setEnvironmentOp) touched(Scene, map[string]int) ([]string, error) {
 	return []string{unitEnvironment}, nil
 }
 
-func (op *setEnvironmentOp) apply(s *Scene, c *changeSet) error {
+func (op *setEnvironmentOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	s.Environment = op.Environment
 	c.change(unitEnvironment)
 	return nil
@@ -408,7 +430,7 @@ func (op *setRenderOp) touched(Scene, map[string]int) ([]string, error) {
 	return []string{unitRender}, nil
 }
 
-func (op *setRenderOp) apply(s *Scene, c *changeSet) error {
+func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	s.Render = op.Render
 	c.change(unitRender)
 	return nil

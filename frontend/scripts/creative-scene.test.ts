@@ -723,3 +723,387 @@ test('history groups a photographer\'s nearby edits and one assistant run; resto
   assert.equal(groups[2].objectCount, 2)
   assert.equal(groups[3].latest, '5')
 })
+
+// --- model edits: placeholders across intents, frozen baselines ------------
+
+import type { WireOp } from '../src/creative-scene/state/apply.ts'
+
+const generator = {
+  language: 'three-module' as const, contract_version: 1 as const, lib_version: 1 as const, code: 'export default 1',
+  code_sha256: 'sha256-x', params_schema: {}, params: {}, mount: 'floor' as const,
+}
+const manifest = { bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 12, slots: [], parts: [], anchors: [] }
+const commit = (ref: string, extra: Record<string, unknown> = {}): WireOp =>
+  ({ op: 'commit_model', ref, glb_upload_id: `ccup_${ref}`, thumbnail_upload_id: `ccup_${ref}_t`, generator, manifest, ...extra }) as WireOp
+const instance = (n: number, model: SceneObject['model'], order = n) =>
+  obj(n, 'model_instance', null, order, { model, material_slots: {} })
+const content = (n: number) => `object:${id(n)}:content`
+const viewModel = (session: SceneSession, n: number) =>
+  session.state.view!.scene.objects.find((o) => o.id === id(n))?.model?.content_revision_id
+const noPlaceholders = (v: unknown) => !JSON.stringify(v).includes('local')
+
+test('a copy and a retune made before the new model\'s receipt wait for it, then go out with real IDs', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  const a = session.edit([commit('m'), { op: 'add_objects', objects: [instance(10, { ref: 'm' })] }], '新建代码模型')!
+  assert.equal(transport.sent.length, 1, 'its own ref goes out as is')
+  assert.equal(viewModel(session, 10), `local:${a.id}:m`, 'the view names the model by placeholder')
+
+  const copy = session.state.view!.scene.objects.find((o) => o.id === id(10))!
+  session.edit([{ op: 'add_objects', objects: [{ ...copy, id: id(11), order: 11 }] }], '复制')
+  session.edit([
+    commit('n', { base_content_id: `local-content:${a.id}:m` }),
+    { op: 'set_instance_model', object_id: id(10), model: { ref: 'n' }, scope: 'this' },
+  ], '调整参数')
+  assert.equal(transport.sent.length, 1, 'placeholders keep both edits waiting')
+  assert.equal(viewModel(session, 11), `local:${a.id}:m`)
+  const retune = session.state.queue[2]
+  assert.equal(viewModel(session, 10), `local:${retune.id}:n`)
+
+  const reads = transport.reads
+  await confirmLast(transport, 4, ['objects', `object:${id(10)}`, content(10)], {
+    models: { m: { content_id: 'ccnt_m', content_revision_id: 'ccrv_m1' } },
+  })
+  assert.equal(session.state.base!.scene.objects.find((o) => o.id === id(10))?.model?.content_revision_id, 'ccrv_m1')
+  assert.ok(noPlaceholders(session.state.base), 'the base never holds a placeholder')
+  assert.ok(transport.reads > reads, 'the new model\'s summary comes with a read')
+  const sentCopy = transport.last().payload.operations[0] as { objects: SceneObject[] }
+  assert.equal(sentCopy.objects[0].model?.content_revision_id, 'ccrv_m1', 'the copy went out with the real revision')
+
+  await confirmLast(transport, 5, ['objects', `object:${id(11)}`, content(11)])
+  const sentRetune = transport.last().payload
+  assert.equal((sentRetune.operations[0] as { base_content_id: string }).base_content_id, 'ccnt_m')
+  assert.deepEqual(sentRetune.expected, { [content(10)]: '4' })
+  await confirmLast(transport, 6, [content(10)], { models: { n: { content_id: 'ccnt_m', content_revision_id: 'ccrv_m2' } } })
+  assert.ok(noPlaceholders(session.state), 'nothing in the session keeps a placeholder')
+
+  assert.equal(undo.undo(), 'sent')
+  assert.deepEqual(transport.last().payload.operations, [{ op: 'restore_units', from_revision: '5', units: [content(10)] }])
+  assert.equal(viewModel(session, 10), 'ccrv_m1', 'undoing the retune shows the earlier revision')
+})
+
+test('a rejected model commit blocks what names it, as an invalid edit and never the trash', async () => {
+  for (const [code, status, message] of [
+    ['creative_upload_unavailable', 409, '模型上传已失效，请重新生成'],
+    ['creative_model_unavailable', 400, '模型 ccrv_x 不可用'],
+  ] as const) {
+    const { transport, session } = await started([box(1)])
+    const a = session.edit([commit('m'), { op: 'add_objects', objects: [instance(10, { ref: 'm' })] }], '新建代码模型')!
+    session.edit([{ op: 'add_objects', objects: [{ ...instance(11, { content_revision_id: `local:${a.id}:m` }) }] }], '复制')
+    session.edit([moveTo([id(1)], 3)], '移动')
+    transport.last().reject({ status, code, message: '模型 ccrv_x 不可用' })
+    await tick()
+    const [group] = session.state.conflicts
+    assert.equal(group.kind, 'invalid', code)
+    assert.equal(group.message, message, code)
+    assert.equal(group.intents.length, 2, `${code}: the copy waits with it`)
+    assert.equal(group.intents[1].state, 'blocked')
+    assert.equal(session.state.trashed, false)
+    assert.equal(session.state.missing, false)
+    assert.deepEqual(transport.last().payload.operations, [moveTo([id(1)], 3)], 'unrelated edits still save')
+  }
+})
+
+test('a baseline keeps the revisions an edit saw; a change made elsewhere meanwhile is a conflict', async () => {
+  const { transport, clock, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  const b = session.baseline([content(1)], { source: 'ccrv_a' })!
+  transport.doc = docAt([instance(1, { content_revision_id: 'ccrv_other' })], 4, { [content(1)]: 4 })
+  clock.advance(1000)
+  session.invalidate()
+  await tick()
+  assert.equal(session.state.base!.unit_revs[content(1)], '4', 'the re-read moved the base')
+
+  const ops: WireOp[] = [commit('m', { base_content_id: 'ccnt_a' }), { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' }]
+  session.edit(ops, '调整参数', { baseline: b.id })
+  assert.deepEqual(transport.last().payload.expected, { [content(1)]: '3' }, 'the frozen revision, not the re-read one')
+  transport.last().reject(conflictOn(content(1)))
+  await tick()
+  assert.equal(session.state.conflicts[0].kind, 'conflict')
+  assert.equal(session.state.view!.scene.objects[0].model?.content_revision_id, 'ccrv_other', 'the other write stays')
+})
+
+test('a baseline follows this session\'s own edits and breaks when one it waits for is rejected', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  const slots = (name: string): WireOp => ({ op: 'update_objects', updates: [{ object_id: id(1), material_slots: { main: { preset: name } } }] } as WireOp)
+  const x = session.edit([slots('stone')], '材质')!
+  const b = session.baseline([content(1)], { source: 'ccrv_a' })!
+  assert.deepEqual(b.expected, { [content(1)]: { after: x.id } })
+  await confirmLast(transport, 4, [content(1)])
+  assert.deepEqual(session.baselineOf(b.id)!.expected, { [content(1)]: '4' }, 'our receipt resolves it')
+
+  const y = session.edit([slots('wood')], '材质')!
+  assert.deepEqual(session.baselineOf(b.id)!.expected, { [content(1)]: { after: y.id } }, 'a later own edit is waited for, not conflicted with')
+  transport.last().reject({ status: 400, code: 'validation_failed', message: '材质不存在' })
+  await tick()
+  assert.equal(session.baselineOf(b.id)!.broken, true)
+  const ops: WireOp[] = [commit('m'), { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' }]
+  assert.equal(session.edit(ops, '调整参数', { baseline: b.id }), null, 'a broken baseline cannot be saved')
+  session.dropBaseline(b.id)
+  assert.equal(session.baselineOf(b.id), undefined)
+})
+
+test('a new model that only collides on objects is rebased with its commit', async () => {
+  const { transport, session } = await started([box(1)])
+  session.edit([commit('m'), { op: 'add_objects', objects: [instance(10, { ref: 'm' }, 2)] }], '新建代码模型')
+  transport.doc = sceneDoc([box(1), box(2, null, 2)], 4)
+  transport.last().reject(conflictOn('objects'))
+  await tick()
+  await tick()
+  assert.equal(transport.sent.length, 2)
+  const [sentCommit, add] = transport.last().payload.operations as [{ op: string }, { objects: SceneObject[] }]
+  assert.equal(sentCommit.op, 'commit_model')
+  assert.equal(add.objects[0].order, 3)
+})
+
+test('copying an instance retuned moments ago waits for the model even though no unit is shared', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  const a = session.edit([
+    commit('m', { base_content_id: 'ccnt_a' }),
+    { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' },
+  ], '调整参数')!
+  const copy = { ...session.state.view!.scene.objects[0], id: id(2), order: 2 }
+  assert.equal(copy.model?.content_revision_id, `local:${a.id}:m`)
+  const b = session.edit([{ op: 'add_objects', objects: [copy] }], '复制')!
+  assert.deepEqual(b.expected, { objects: '3' }, 'nothing to wait for by revision')
+  assert.equal(transport.sent.length, 1, 'the placeholder alone holds it back')
+  await confirmLast(transport, 4, [content(1)], { models: { m: { content_id: 'ccnt_a', content_revision_id: 'ccrv_a2' } } })
+  const sent = transport.last().payload.operations[0] as { objects: SceneObject[] }
+  assert.equal(sent.objects[0].model?.content_revision_id, 'ccrv_a2')
+})
+
+test('when that retune is rejected, the copy naming its model is blocked with it', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  session.edit([
+    commit('m', { base_content_id: 'ccnt_a' }),
+    { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' },
+  ], '调整参数')
+  const copy = { ...session.state.view!.scene.objects[0], id: id(2), order: 2 }
+  session.edit([{ op: 'add_objects', objects: [copy] }], '复制')
+  transport.last().reject({ status: 409, code: 'creative_upload_unavailable', message: 'x' })
+  await tick()
+  assert.equal(transport.sent.length, 1, 'the copy never went out with a placeholder')
+  assert.deepEqual(session.state.conflicts[0].intents.map((i) => i.label), ['调整参数', '复制'])
+  assert.equal(session.state.queue.length, 0)
+})
+
+test('reapplying a conflicted retune renames the placeholders of what it blocked', async () => {
+  const { transport, session } = await started([instance(1, { content_revision_id: 'ccrv_a' })])
+  session.edit([
+    commit('m', { base_content_id: 'ccnt_a' }),
+    { op: 'set_instance_model', object_id: id(1), model: { ref: 'm' }, scope: 'this' },
+  ], '调整参数')
+  session.edit([{ op: 'add_objects', objects: [{ ...session.state.view!.scene.objects[0], id: id(2), order: 2 }] }], '复制')
+  transport.doc = docAt([instance(1, { content_revision_id: 'ccrv_other' })], 4, { [content(1)]: 4 })
+  transport.last().reject(conflictOn(content(1)))
+  await tick()
+  session.reapply(session.state.conflicts[0].id)
+  await tick()
+  const [again, copy] = session.state.queue
+  assert.equal(viewModel(session, 2), `local:${again.id}:m`, 'the copy follows the reapplied commit')
+  assert.deepEqual(again.expected, { [content(1)]: '4' })
+  await confirmLast(transport, 5, [content(1)], { models: { m: { content_id: 'ccnt_a', content_revision_id: 'ccrv_a3' } } })
+  assert.equal(transport.last().intent.id, copy.id)
+  assert.equal((transport.last().payload.operations[0] as { objects: SceneObject[] }).objects[0].model?.content_revision_id, 'ccrv_a3')
+})
+
+// --- model edits: bake, upload, one command --------------------------------
+
+import { readFileSync } from 'node:fs'
+import { ModelEdits, forkPlan, sharingInstances, type ModelEditDeps } from '../src/creative-scene/modelEdits.ts'
+import { ModelCache } from '../src/creative-scene/models/cache.ts'
+import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
+import type { Upload } from '../src/creative-canvas/editor/media.ts'
+
+const testdata = new URL('../../backend/internal/creativeglb/testdata/', import.meta.url)
+const templateBytes = () => { const b = readFileSync(new URL('exported-template.glb', testdata)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer }
+const templateManifest = (JSON.parse(readFileSync(new URL('cases.json', testdata), 'utf8')) as { name: string; manifest: never }[]).find((c) => c.name === 'exported-template')!.manifest
+const compiled = (code: string): CompileResult => ({
+  ok: true, glb: templateBytes(), manifest: templateManifest, codeSHA256: `sha256-${code.length}`,
+  module: { contract_version: 1, lib_version: 1, mount: 'floor', params_schema: { height: { type: 'number', default: 3, min: 1, max: 12 } }, params: { height: 5 } },
+})
+
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  let reject!: (e: unknown) => void
+  const promise = new Promise<T>((a, b) => { resolve = a; reject = b })
+  return { promise, resolve, reject }
+}
+
+class FakeBakery {
+  compiles: { code: string; gate: ReturnType<typeof deferred<CompileResult>> }[] = []
+  uploads: { name: string; gate: ReturnType<typeof deferred<Upload>>; signal: AbortSignal }[] = []
+  discarded: string[] = []
+  autoCompile = true
+  autoUpload = true
+  thumbnailFails = false
+  private n = 0
+  deps(session: SceneSession, cache = new ModelCache(() => Promise.reject(new Error('no download')))): ModelEditDeps {
+    return {
+      session, cache,
+      compile: ({ code }) => {
+        const gate = deferred<CompileResult>()
+        this.compiles.push({ code, gate })
+        if (this.autoCompile) gate.resolve(compiled(code))
+        return gate.promise
+      },
+      thumbnail: () => (this.thumbnailFails ? Promise.reject(new Error('no webgl')) : Promise.resolve(new Blob(['png']))),
+      upload: (file, _declared, signal) => {
+        const gate = deferred<Upload>()
+        this.uploads.push({ name: file.name, gate, signal })
+        const id = `ccup_${++this.n}`
+        if (this.autoUpload) gate.resolve({ id, publication: { kind: 'candidate', id: `ccuc_${this.n}`, revision: '1' } } as Upload)
+        return gate.promise
+      },
+      discard: (u) => { this.discarded.push(u.id); return Promise.resolve() },
+      makeObjectID: () => id(90),
+    }
+  }
+}
+
+async function startedWithModels(objects: SceneObject[]) {
+  const doc = sceneDoc(objects)
+  doc.models = { ccrv_a: { content_id: 'ccnt_a', usable: true, manifest: templateManifest, generator: null, name_hint: '柱' } }
+  const transport = new FakeTransport(doc)
+  const session = new SceneSession('cwdoc_1', transport, new FakeClock())
+  await session.start()
+  return { transport, session }
+}
+
+const pillarAt = (n: number, rev = 'ccrv_a') => instance(n, { content_revision_id: rev })
+
+test('R4: unshared appends to the model, shared forks unless applied to every instance', () => {
+  const objects = [pillarAt(1), pillarAt(2), pillarAt(3, 'ccrv_b'), box(4)]
+  assert.deepEqual(sharingInstances(objects, id(1)), [id(2)])
+  assert.deepEqual(forkPlan(objects, id(3), 'ccnt_b', false), { baseContentID: 'ccnt_b', scope: 'this', objectIDs: [id(3)] })
+  assert.deepEqual(forkPlan(objects, id(1), 'ccnt_a', false), { scope: 'this', objectIDs: [id(1)] })
+  assert.deepEqual(forkPlan(objects, id(1), 'ccnt_a', true), { baseContentID: 'ccnt_a', scope: 'all_instances', objectIDs: [id(1), id(2)] })
+})
+
+test('retuning a model instance bakes, uploads both files and queues one command per R4', async () => {
+  for (const [objects, applyToAll, base, scope, units] of [
+    [[pillarAt(1)], false, 'ccnt_a', 'this', [content(1)]],
+    [[pillarAt(1), pillarAt(2)], false, undefined, 'this', [content(1)]],
+    [[pillarAt(1), pillarAt(2)], true, 'ccnt_a', 'all_instances', [content(1), content(2)]],
+  ] as const) {
+    const { transport, session } = await startedWithModels([...objects])
+    const bakery = new FakeBakery()
+    const cache = new ModelCache(() => Promise.reject(new Error('no download')))
+    const edits = new ModelEdits(bakery.deps(session, cache))
+    const out = await edits.update({ objectID: id(1), code: 'code v2', params: { height: 5 }, libVersion: 1, applyToAll, label: '调整「柱」参数' })
+    assert.ok(out.ok, JSON.stringify(out))
+    assert.deepEqual(bakery.uploads.map((u) => u.name), ['model.glb', 'thumbnail.png'], 'both files go up together')
+    const sent = transport.last().payload
+    const [commitOp, set] = sent.operations as [Record<string, unknown>, Record<string, unknown>]
+    assert.equal(commitOp.base_content_id, base, `${scope}/${applyToAll}: base_content_id`)
+    assert.equal(commitOp.glb_upload_id, 'ccup_1')
+    assert.equal(commitOp.thumbnail_upload_id, 'ccup_2')
+    assert.deepEqual(commitOp.generator, { language: 'three-module', contract_version: 1, lib_version: 1, code: 'code v2', code_sha256: 'sha256-7', params_schema: { height: { type: 'number', default: 3, min: 1, max: 12 } }, params: { height: 5 }, mount: 'floor' })
+    assert.equal(commitOp.name_hint, '柱')
+    assert.equal(set.scope, scope)
+    assert.deepEqual(set.object_ids, scope === 'all_instances' ? [id(1), id(2)] : undefined)
+    assert.deepEqual(Object.keys(sent.expected).sort(), [...units].sort())
+    const placeholder = `local:${out.intent.id}:model`
+    assert.equal(viewModel(session, 1), placeholder)
+    assert.equal(cache.local.getState()[placeholder].summary.content_id, base ?? `local-content:${out.intent.id}:model`)
+    assert.deepEqual(edits.store.getState().previews, {}, 'the preview gives way to the queued edit')
+    assert.deepEqual(Object.keys(cache.local.getState()), [placeholder], 'the preview bytes are released')
+    assert.deepEqual(edits.store.getState().status[id(1)], { state: 'queued', intent: out.intent.id })
+  }
+})
+
+test('a new code model shows as a ghost while baking and lands last among root objects', async () => {
+  const { transport, session } = await startedWithModels([box(1), box(2)])
+  const bakery = new FakeBakery()
+  bakery.autoUpload = false
+  const edits = new ModelEdits(bakery.deps(session))
+  const pending = edits.create({ code: 'pillar', position: [1, 0, 2] })
+  await tick()
+  assert.equal(edits.store.getState().ghost?.position.join(), '1,0,2', 'the ghost stands at the drop point')
+  assert.equal(transport.sent.length, 0)
+  for (const u of bakery.uploads) u.gate.resolve({ id: `ccup_${u.name}`, publication: null } as Upload)
+  const out = await pending
+  assert.ok(out.ok)
+  const [commitOp, add] = transport.last().payload.operations as [Record<string, unknown>, { objects: SceneObject[] }]
+  assert.equal(commitOp.op, 'commit_model')
+  assert.equal(commitOp.base_content_id, undefined, 'a new model is new content')
+  assert.deepEqual(add.objects[0].model, { ref: 'model' })
+  assert.equal(add.objects[0].order, 3)
+  assert.deepEqual(add.objects[0].transform.position, [1, 0, 2])
+  assert.deepEqual(transport.last().payload.expected, { objects: '3' })
+  assert.equal(edits.store.getState().ghost, null)
+})
+
+test('a newer input replaces an edit not yet queued and frees its uploads', async () => {
+  const { transport, session } = await startedWithModels([pillarAt(1)])
+  const bakery = new FakeBakery()
+  bakery.autoUpload = false
+  const edits = new ModelEdits(bakery.deps(session))
+  const first = edits.update({ objectID: id(1), code: 'v1', params: {}, libVersion: 1, applyToAll: false, label: '调整' })
+  await tick()
+  assert.equal(bakery.uploads.length, 2, 'the first edit is uploading')
+  const second = edits.update({ objectID: id(1), code: 'v2', params: {}, libVersion: 1, applyToAll: false, label: '调整' })
+  assert.ok(bakery.uploads[0].signal.aborted, 'its uploads are cancelled')
+  bakery.uploads[0].gate.resolve({ id: 'ccup_old_glb' } as Upload)
+  bakery.uploads[1].gate.resolve({ id: 'ccup_old_png' } as Upload)
+  assert.deepEqual(await first, { ok: false, superseded: true })
+  assert.deepEqual(bakery.discarded.sort(), ['ccup_old_glb', 'ccup_old_png'], 'uploads that finished anyway are discarded')
+  await tick()
+  for (const u of bakery.uploads.slice(2)) u.gate.resolve({ id: `ccup_new_${u.name}` } as Upload)
+  const out = await second
+  assert.ok(out.ok)
+  assert.equal(transport.sent.length, 1, 'only the latest edit is saved')
+  assert.equal((transport.last().payload.operations[0] as { generator: { code: string } }).generator.code, 'v2')
+})
+
+test('an edit that fails before the queue leaves no intent behind', async () => {
+  const cases: [string, (b: FakeBakery, s: SceneSession, t: FakeTransport) => void, string, string][] = [
+    ['compile', (b) => { b.autoCompile = false }, 'compile', 'Unexpected token'],
+    ['thumbnail', (b) => { b.thumbnailFails = true }, 'thumbnail', '缩略图生成失败，模型没有保存'],
+    ['upload', (b) => { b.autoUpload = false }, 'upload', '模型保存失败，可以重试'],
+    ['deleted', (b) => { b.autoUpload = false }, 'commit', '物件已被删除，修改未保存'],
+    ['rejected before', (b) => { b.autoUpload = false }, 'commit', '之前的修改没有保存，这次修改已放弃'],
+  ]
+  for (const [name, arrange, stage, message] of cases) {
+    const { transport, session } = await startedWithModels([pillarAt(1), box(2)])
+    const bakery = new FakeBakery()
+    arrange(bakery, session, transport)
+    if (name === 'rejected before') session.edit([{ op: 'update_objects', updates: [{ object_id: id(1), material_slots: { main: { preset: 'stone' } } }] } as WireOp], '材质')
+    const sentBefore = transport.sent.length
+    const edits = new ModelEdits(bakery.deps(session))
+    const pending = edits.update({ objectID: id(1), code: 'x', params: {}, libVersion: 1, applyToAll: false, label: '调整' })
+    await tick()
+    if (name === 'compile') bakery.compiles[0].gate.resolve({ ok: false, error: { kind: 'syntax', message: 'Unexpected token', line: 3, column: 1 } })
+    if (name === 'upload') {
+      bakery.uploads[0].gate.resolve({ id: 'ccup_glb' } as Upload)
+      bakery.uploads[1].gate.reject(new Error('network'))
+    }
+    if (name === 'deleted' || name === 'rejected before') {
+      if (name === 'deleted') session.edit([{ op: 'remove_objects', object_ids: [id(1)] }], '删除')
+      else {
+        transport.last().reject({ status: 400, code: 'validation_failed', message: '材质不存在' })
+        await tick()
+      }
+      for (const u of bakery.uploads) u.gate.resolve({ id: `ccup_${u.name}` } as Upload)
+    }
+    const out = await pending
+    assert.ok(!out.ok && !out.superseded && out.stage === stage, `${name}: ${JSON.stringify(out)}`)
+    assert.equal(out.message, message, name)
+    if (name === 'compile') assert.equal(out.error?.line, 3)
+    const status = edits.store.getState().status[id(1)]
+    assert.equal(status.state, 'failed', name)
+    const commits = transport.sent.slice(sentBefore).filter((x) => x.payload.operations.some((op) => (op as { op: string }).op === 'commit_model'))
+    assert.equal(commits.length, 0, `${name}: nothing was committed`)
+    assert.ok(!session.state.queue.some((i) => i.ops.some((op) => op.op === 'commit_model')), `${name}: nothing waits in the queue`)
+    assert.deepEqual(edits.store.getState().previews, {}, `${name}: the preview is gone`)
+    if (['upload', 'deleted', 'rejected before'].includes(name)) assert.ok(bakery.discarded.length >= 1, `${name}: ready uploads are discarded`)
+  }
+})
+
+test('previews change only what the viewport draws', async () => {
+  const { withPreviews } = await import('../src/creative-scene/modelEdits.ts')
+  const scene = state([pillarAt(1), pillarAt(2), box(3)]).scene
+  assert.equal(withPreviews(scene, {}), scene)
+  const shown = withPreviews(scene, { [id(1)]: 'preview:4', [id(3)]: 'preview:4' })
+  assert.deepEqual(shown.objects.map((o) => o.model?.content_revision_id), ['preview:4', 'ccrv_a', undefined], 'only model instances take a preview')
+  assert.equal(scene.objects[0].model?.content_revision_id, 'ccrv_a', 'the scene itself is untouched')
+})

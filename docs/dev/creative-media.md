@@ -40,6 +40,17 @@
 
 `creative-worker` 启动（非 `--migrate/--check`）时调用完整 `config.Load()`，因此除 `DATABASE_URL` 外还需要与 API 相同的 `AUTH_TOKEN_SECRET`（派生票据/分片签名密钥）、`PUBLIC_BASE_URL`、存储驱动与 `CREATIVE_*` 配置；部署时给两个进程同一份 EnvironmentFile。verify 任务超时 20 分钟、complete 5 分钟，其余沿队列默认 2 分钟，每个阶段的执行租约与其超时相同（测试固定该不变量）；发布阶段被中断的会话在下次任务认领时以 `promote_interrupted` 落为 failed，写入的对象留在 `deleting` 的 blob 行等待对账。
 
+## 模型（GLB）
+
+3D 场景的代码模型（契约 `data: 模型内容`）沿用同一条上传链路，只多一种类型：
+
+- **上传类型 `model`**：`.glb`、`model/gltf-binary`、上限 16 MiB，只允许 `staged` 目标。`Formats` 不列出它，文件选择和拖入都不会出现模型；只有编辑器在烘焙后程序内上传（`frontend/src/creative-canvas/editor/media.ts:uploadGenerated`）。
+- **校验**：`workVerify` 调用 `creativeglb.Inspect`，只接受静态 GLB 子集，manifest 从顶点数据算出并核对访问器声明；不合规以 `media_unsupported` 结束。通过后修订载荷是暂存形态 `{format, manifest}`，由暂存候选持有。
+- **去向**：暂存候选不能被采用到资产或节点（`AdoptCandidate` 拒绝 `declared_kind = 'model'`），只能被场景命令 `commit_model` 消费（`creativestaging.Consume`，`adopted_target_kind = 'document'`）。完整形态 `{format, generator, manifest, name_hint}` 只由 `commit_model` 经 `creativecontent.WriteModelAndRetain` 写入，复用暂存修订的 blob：GLB 为 `original`，缩略图 PNG（同一命令里的另一个暂存图片上传）为 `thumbnail`。
+- **票据**：角色加 `thumbnail`；编辑器按修订取 `original` 票据下载 GLB，加载前同样先过宿主侧的子集预检。
+- **GC**：类型范围含 `model`。场景修订的引用持有完整修订；暂存修订在候选被消费后失去持有方，按无持有方修订回收。
+- **上线顺序**：迁移 `0074_creative_model_content` 之后，**先升级 creative-worker，再升级 server**。旧 worker 不认识 `model`，会把这类上传判为不支持的格式；新 worker 配旧 server 不会收到 `model` 上传。按 [agent-skills-tools](agent-skills-tools.md) 的方式停旧、迁移、启新，不混跑版本。
+
 ## 读取
 
 `IssueTicket` 在事务内用 `RequireUsable` 核验当前用途后签发 10 分钟无状态票据；`Open` 再次核验、锁 blob、写 read pin（120s）并打开精确版本。HTTP 层实现单段 Range/206/416/HEAD/ETag，`Cache-Control: private, no-store`。撤销 `creative_usage_grants` 后票据与流立即失效。
@@ -49,3 +60,4 @@
 - `go test ./internal/creativemedia/`：真实 PostgreSQL + local 适配器 + 内嵌 HTTP 分片端点，样本在 `testdata/`（JPEG/PNG/WebP、MP4 H.264/AAC、WebM VP8/Opus、MP3、WAV；WebM 由 Chromium MediaRecorder 录制）。
 - `CREATIVE_EDITOR_URL=... CREATIVE_EDITOR_SCRIPT=creative-media.e2e.mjs go test ./internal/platform/httpapi/ -run TestCreativeEditorBrowser`：真实浏览器导入/拖入/替换/撤销/预览/下载/播放/存库/重开。
 - OSS：`internal/creativemedia/oss.go` 需在授权 bucket 上补 conformance（PRE-05），当前未验收。
+- 模型：`go test ./internal/creativeglb/`（与前端 `scripts/creative-scene-model.test.ts` 共用 `testdata/` 夹具，`-update` 重写生成的夹具，`exported-template.glb` 由沙箱安全样例集以 `UPDATE_SCENE_FIXTURES=1` 重写）；沙箱安全样例集 `scripts/scene-sandbox.test.mjs` 在 `make check-frontend` 里跑 Chromium，`SCENE_SANDBOX_BROWSERS=webkit` 手动跑 WebKit。

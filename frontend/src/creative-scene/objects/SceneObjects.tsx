@@ -3,28 +3,29 @@ import { Edges, Outlines } from '@react-three/drei'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
+import type { SceneModel } from '../models/cache.ts'
 import { docToView, transformToView } from '../space.ts'
+import { activeEdge, clay, selectedEdge } from './look.ts'
+import { ModelMesh } from './ModelMesh.tsx'
 
 // Draws the scene tree. Every object is a group named by its ID (picking and
 // transforms find it by name); hiding an object hides only its own drawing,
-// not its children, as in Blender. The viewport is always clay in C1.
+// not its children, as in Blender. The viewport is always clay.
 //
 // Object groups carry view-space transforms (Z up, see space.ts), so moving,
 // rotating and the object's own axes read as in Blender. What an object
 // draws is authored in document space (Y up) and turns once inside it.
 
-const clay = '#d9d5cd'
-// Blender's selection colours: the active object lighter than the rest.
-const selectedEdge = '#ed5700'
-const activeEdge = '#ffaf29'
 
 type Props = {
   scene: Scene
+  /** Summaries of the models the scene names, by content revision. */
+  models: Readonly<Record<string, SceneModel>>
   selected: ReadonlySet<string>
   active: string | null
 }
 
-export function SceneObjects({ scene, selected, active }: Props) {
+export function SceneObjects({ scene, models, selected, active }: Props) {
   const children = useMemo(() => {
     const byParent = new Map<string, SceneObject[]>()
     for (const o of scene.objects) {
@@ -39,7 +40,7 @@ export function SceneObjects({ scene, selected, active }: Props) {
   return (
     <>
       {(children.get('') ?? []).map((o) => (
-        <ObjectNode key={o.id} object={o} childrenOf={children} selected={selected} active={active} />
+        <ObjectNode key={o.id} object={o} childrenOf={children} models={models} selected={selected} active={active} />
       ))}
     </>
   )
@@ -48,11 +49,13 @@ export function SceneObjects({ scene, selected, active }: Props) {
 function ObjectNode({
   object: o,
   childrenOf,
+  models,
   selected,
   active,
 }: {
   object: SceneObject
   childrenOf: Map<string, SceneObject[]>
+  models: Readonly<Record<string, SceneModel>>
   selected: ReadonlySet<string>
   active: string | null
 }) {
@@ -65,11 +68,14 @@ function ObjectNode({
         {o.kind === 'primitive' && o.primitive && (
           <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} />
         )}
+        {o.kind === 'model_instance' && o.model?.content_revision_id && (
+          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
+        )}
         {o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
         {o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
       </group>
       {(childrenOf.get(o.id) ?? []).map((c) => (
-        <ObjectNode key={c.id} object={c} childrenOf={childrenOf} selected={selected} active={active} />
+        <ObjectNode key={c.id} object={c} childrenOf={childrenOf} models={models} selected={selected} active={active} />
       ))}
     </group>
   )
@@ -141,6 +147,18 @@ function CameraFrustum({ aspect, focal, sensor, edge }: { aspect: string; focal:
         <boxGeometry args={[0.3, 0.3, 0.6]} />
         <meshBasicMaterial visible={false} />
       </mesh>
+    </group>
+  )
+}
+
+/** A new code model being baked, translucent at its drop point; it cannot be picked. */
+export function GhostModel({ revision, position, models }: { revision: string; position: number[]; models: Readonly<Record<string, SceneModel>> }) {
+  const t = useMemo(() => transformToView({ position, rotation: [0, 0, 0, 1], scale: [1, 1, 1] }), [position])
+  return (
+    <group position={t.position}>
+      <group quaternion={docToView}>
+        <ModelMesh revision={revision} summary={models[revision]} edge={null} ghost />
+      </group>
     </group>
   )
 }

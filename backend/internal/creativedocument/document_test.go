@@ -1062,3 +1062,52 @@ func TestConversation(t *testing.T) {
 		t.Fatalf("purge kept %d conversation pointers", n)
 	}
 }
+
+// A type adds its own receipt fields through Changes.Response: they appear at
+// the top level, replay unchanged, and may not reuse a shared field.
+func TestTypeReceiptFields(t *testing.T) {
+	f := setup(t)
+	d := createBoard(t, f.a, "回执")
+	keys := func(raw []byte) []string {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(fields))
+		for k := range fields {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return out
+	}
+	plain, raw, err := run(t, f.a, creativedocument.Photographer, command(t, batch{DocumentID: d.ID, Expected: map[string]any{"note": "1"}, Operations: []any{op{"op": "set_note", "text": "无附加"}}}))
+	if err != nil || plain.Extra != nil {
+		t.Fatalf("plain receipt %+v %v", plain, err)
+	}
+	if got := strings.Join(keys(raw), ","); got != "annotated_units,changed_units,removed_units,reset_required,revision" {
+		t.Fatalf("plain receipt fields %s", got)
+	}
+
+	c := command(t, batch{DocumentID: d.ID, Expected: map[string]any{"note": r(int64(plain.Revision))}, Operations: []any{op{"op": "respond", "text": "你好"}}})
+	res, raw, err := run(t, f.a, creativedocument.Photographer, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(res.Extra["echo"]) != `"你好"` || res.Revision != plain.Revision+1 || len(res.ChangedUnits) != 1 {
+		t.Fatalf("extended receipt %+v", res)
+	}
+	if got := strings.Join(keys(raw), ","); got != "annotated_units,changed_units,echo,removed_units,reset_required,revision" {
+		t.Fatalf("extended receipt fields %s", got)
+	}
+	// The replay comes from the stored receipt (JSONB: same fields, its own order).
+	again, replay, err := run(t, f.a, creativedocument.Photographer, c)
+	if err != nil || strings.Join(keys(replay), ",") != strings.Join(keys(raw), ",") || string(again.Extra["echo"]) != `"你好"` || again.Revision != res.Revision {
+		t.Fatalf("replay %s vs %s: %v", replay, raw, err)
+	}
+
+	_, err = send(t, f.a, batch{DocumentID: d.ID, Expected: map[string]any{"note": r(int64(res.Revision))}, Operations: []any{op{"op": "respond_clash", "text": "抢字段"}}})
+	wantErr(t, err, creativedocument.ErrTypeContract)
+	if v := readBoard(t, f.a, d.ID); v.Revision != res.Revision || v.Board.Note != "你好" {
+		t.Fatalf("clashing receipt committed: %+v", v)
+	}
+}

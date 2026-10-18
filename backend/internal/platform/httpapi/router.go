@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 
@@ -263,7 +264,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）
-	serveStatic := staticHandler(webui.Dist())
+	serveStatic := staticHandler(webui.Dist(), deps.PublicBaseURL)
 	r.NoRoute(func(c *gin.Context) {
 		if isAPIPath(c.Request.URL.Path) {
 			abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
@@ -291,11 +292,16 @@ func isAPIPath(path string) bool {
 const sharedPlanHTMLCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
 // staticHandler 托管 go:embed 静态产物：命中文件直接服务，其余路径 SPA fallback 到 index.html；
-// 产物未同步（仅 .gitkeep 的空 dist）时非 API 路径纯 404。
-func staticHandler(dist fs.FS) gin.HandlerFunc {
+// 产物未同步（仅 .gitkeep 的空 dist）时非 API 路径纯 404。scene-sandbox/ 前缀单独处理，见 serveSceneSandbox。
+func staticHandler(dist fs.FS, publicBaseURL string) gin.HandlerFunc {
 	httpFS := http.FS(dist)
+	sandboxOrigin := siteOrigin(publicBaseURL)
 	return func(c *gin.Context) {
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
+		if strings.HasPrefix(path, sceneSandboxPrefix) {
+			serveSceneSandbox(c, dist, httpFS, path, sandboxOrigin)
+			return
+		}
 		actionPath := strings.Trim(path, "/")
 		if actionPath == "verify-email" || actionPath == "reset-password" {
 			c.Header("Referrer-Policy", "no-referrer")
@@ -329,4 +335,46 @@ func healthzHandler(db Pinger) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
+}
+
+const (
+	sceneSandboxPrefix = "scene-sandbox/"
+	sceneSandboxPage   = sceneSandboxPrefix + "sandbox.html"
+	sceneSandboxCSP    = sceneSandboxPrefix + "csp.txt"
+)
+
+// serveSceneSandbox serves the geometry code sandbox (patterns: 客户端代码沙箱).
+// The page always carries its CSP, with the site origin written out because
+// WebKit does not match 'self' inside the opaque-origin iframe; without the
+// template or a configured origin the page is not served at all. Nothing under
+// the prefix falls back to the application shell.
+func serveSceneSandbox(c *gin.Context, dist fs.FS, httpFS http.FileSystem, path, origin string) {
+	if path == sceneSandboxPage {
+		page, pageErr := fs.ReadFile(dist, sceneSandboxPage)
+		template, cspErr := fs.ReadFile(dist, sceneSandboxCSP)
+		if pageErr != nil || cspErr != nil || origin == "" {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Header("Content-Security-Policy", strings.TrimSpace(strings.ReplaceAll(string(template), "{origin}", origin)))
+		c.Header("Cache-Control", "no-cache")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", page)
+		return
+	}
+	if info, err := fs.Stat(dist, path); err == nil && !info.IsDir() {
+		c.FileFromFS(path, httpFS)
+		return
+	}
+	c.Status(http.StatusNotFound)
+}
+
+// siteOrigin is scheme://host of the public base URL, or "" when it is not an
+// absolute http(s) URL.
+func siteOrigin(base string) string {
+	u, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }

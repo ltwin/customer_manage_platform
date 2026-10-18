@@ -224,7 +224,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。 */
+        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。 */
         post: operations["commandCreativeDocument"];
         delete?: never;
         options?: never;
@@ -3011,7 +3011,85 @@ export interface components {
         CreativeMediaPayload: {
             caption?: string;
         };
-        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"];
+        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"];
+        /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 */
+        CreativeModelPayload: {
+            model: {
+                /** @enum {string} */
+                format: "glb";
+                generator?: components["schemas"]["CreativeModelGeneratorInput"];
+                manifest: components["schemas"]["CreativeModelManifest"];
+                name_hint?: string;
+            };
+        };
+        /** @description 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。 */
+        CreativeModelManifest: {
+            bounds: {
+                min: number[];
+                max: number[];
+            };
+            triangles: number;
+            slots: {
+                id: string;
+                hint?: string;
+            }[];
+            parts: string[];
+            anchors: {
+                id: string;
+                position: number[];
+            }[];
+        };
+        /** @description 几何模块的一个参数定义。number / integer 必须有 min 与 max；enum 必须有 options。 */
+        CreativeModelParamSpec: {
+            /** @enum {string} */
+            type: "number" | "integer" | "boolean" | "enum" | "color";
+            /** @description 按 type 的取值 */
+            default: unknown;
+            min?: number;
+            max?: number;
+            step?: number;
+            unit?: string;
+            options?: string[];
+            label?: string;
+        };
+        /** @description 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。 */
+        CreativeModelGenerator: {
+            /** @enum {string} */
+            language: "three-module";
+            /** @enum {integer} */
+            contract_version: 1;
+            /** @enum {integer} */
+            lib_version: 1;
+            code_sha256: string;
+            params_schema: {
+                [key: string]: components["schemas"]["CreativeModelParamSpec"];
+            };
+            params: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            mount: "floor" | "wall" | "ceiling" | "free";
+        };
+        /** @description 提交模型时的完整生成信息（含代码）。params 缺省的键补默认值。 */
+        CreativeModelGeneratorInput: {
+            /** @enum {string} */
+            language: "three-module";
+            /** @enum {integer} */
+            contract_version: 1;
+            /** @enum {integer} */
+            lib_version: 1;
+            /** @description ≤ 64 KiB 的 UTF-8 文本 */
+            code: string;
+            code_sha256: string;
+            params_schema: {
+                [key: string]: components["schemas"]["CreativeModelParamSpec"];
+            };
+            params: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            mount: "floor" | "wall" | "ceiling" | "free";
+        };
         CreativeMediaObject: {
             /** @enum {string} */
             role: "original" | "display" | "thumbnail" | "attachment";
@@ -3042,7 +3120,7 @@ export interface components {
             id: string;
             content_id: string;
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model";
             sequence: components["schemas"]["CreativeRevision"];
             payload: components["schemas"]["CreativeContentPayload"];
             media?: components["schemas"]["CreativeMediaObject"][];
@@ -6869,24 +6947,20 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             scene: components["schemas"]["CreativeScene"];
-            /** @description 以 content_revision_id 为键，覆盖快照引用的全部模型；C2 之前恒为空对象。 */
+            /** @description 以 content_revision_id 为键，覆盖快照引用的全部模型（按单元读取时覆盖所列内容单元引用的模型）；没有模型实例时为空对象。 */
             models: {
                 [key: string]: components["schemas"]["CreativeSceneModel"];
             };
         };
+        /** @description GLB 与缩略图不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original / thumbnail）取地址。 */
         CreativeSceneModel: {
+            /** @description 不可用且无法读取时为空字符串。 */
             content_id: string;
-            /** @description false 时其余字段为 null，编辑器显示「模型不可用」占位。 */
+            /** @description false 时 manifest、generator、name_hint 为 null，编辑器显示「模型不可用」占位。 */
             usable: boolean;
-            manifest: {
-                [key: string]: unknown;
-            } | null;
-            /** @description {language, contract_version, lib_version, params_schema, params, mount}，不含代码。 */
-            generator: {
-                [key: string]: unknown;
-            } | null;
-            glb_url: string | null;
-            thumbnail_url: string | null;
+            manifest: components["schemas"]["CreativeModelManifest"] | null;
+            generator: components["schemas"]["CreativeModelGenerator"] | null;
+            name_hint: string | null;
         };
         CreativeScene: {
             environment: components["schemas"]["CreativeSceneEnvironment"];
@@ -6923,11 +6997,11 @@ export interface components {
             /** @enum {string} */
             mode: "clay" | "lit";
         };
-        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
+        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
         CreativeSceneObject: {
             id: string;
             /** @enum {string} */
-            kind: "primitive" | "light" | "camera" | "group";
+            kind: "primitive" | "model_instance" | "light" | "camera" | "group";
             name: string;
             /** @description null 为根；父对象必须是 group，不能成环。 */
             parent_id: string | null;
@@ -6937,9 +7011,15 @@ export interface components {
             visible: boolean;
             locked: boolean;
             primitive?: components["schemas"]["CreativeScenePrimitive"];
+            model?: components["schemas"]["CreativeSceneModelRef"];
             material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
             light?: components["schemas"]["CreativeSceneLight"];
             camera?: components["schemas"]["CreativeSceneCamera"];
+        };
+        /** @description model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。 */
+        CreativeSceneModelRef: {
+            content_revision_id?: string;
+            ref?: string;
         };
         CreativeSceneTransform: {
             /** @description 米，每轴 ±100000。 */
@@ -6988,7 +7068,7 @@ export interface components {
             label: string;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
-        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"];
+        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
         /** @description 涉及 objects；新对象的两个单元出现在 changed_units 中。 */
         CreativeSceneAddObjects: {
             /**
@@ -7059,6 +7139,38 @@ export interface components {
             op: "set_render";
             render: components["schemas"]["CreativeSceneRender"];
         };
+        /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
+        CreativeSceneCommitModel: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "commit_model";
+            ref: string;
+            glb_upload_id: string;
+            thumbnail_upload_id: string;
+            generator: components["schemas"]["CreativeModelGeneratorInput"];
+            manifest: components["schemas"]["CreativeModelManifest"];
+            name_hint?: string;
+            /** @description 有则作为该模型内容的新修订，否则新建模型内容（分叉）。 */
+            base_content_id?: string;
+        };
+        /** @description 只动内容单元 object:<id>:content。all_instances 时 object_ids 列出调用方看到的全部共用实例（含 object_id），每个都须在批前引用同一修订。 */
+        CreativeSceneSetInstanceModel: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "set_instance_model";
+            object_id: string;
+            model: components["schemas"]["CreativeSceneModelRef"];
+            /**
+             * @default this
+             * @enum {string}
+             */
+            scope: "this" | "all_instances";
+            object_ids?: string[];
+        };
         /** @description 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。 */
         CreativeDocumentUnitRevisions: {
             [key: string]: components["schemas"]["CreativeRevision"];
@@ -7100,6 +7212,13 @@ export interface components {
             annotated_units: string[];
             removed_units: string[];
             reset_required: boolean;
+            /** @description 场景的 commit_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。 */
+            models?: {
+                [key: string]: {
+                    content_id: string;
+                    content_revision_id: string;
+                };
+            };
         };
         CreativeDocumentConflict: {
             /** @description 冲突的单元；整份恢复冲突时为 "*"，两个值都是文档修订号。 */
@@ -7225,8 +7344,11 @@ export interface components {
         };
         CreativeUploadCreatePayload: {
             file_name: string;
-            /** @enum {string} */
-            kind: "image" | "video" | "audio";
+            /**
+             * @description model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
+             * @enum {string}
+             */
+            kind: "image" | "video" | "audio" | "model";
             mime: string;
             /** Format: int64 */
             size: number;
@@ -7308,7 +7430,7 @@ export interface components {
             io_phase: "none" | "initializing" | "completing" | "promoting";
             revision: components["schemas"]["CreativeRevision"];
             /** @enum {string} */
-            kind: "image" | "video" | "audio";
+            kind: "image" | "video" | "audio" | "model";
             mime: string;
             /** Format: int64 */
             size: number;
@@ -7336,7 +7458,7 @@ export interface components {
             revision: components["schemas"]["CreativeRevision"];
             reason: string;
             /** @enum {string} */
-            kind: "image" | "video" | "audio";
+            kind: "image" | "video" | "audio" | "model";
             file_name: string;
             content_revision_id: string | null;
             target: components["schemas"]["CreativeUploadTarget"];
@@ -7362,8 +7484,11 @@ export interface components {
         };
         CreativeMediaTicketRequest: {
             content_revision_id: string;
-            /** @enum {string} */
-            role: "original" | "display";
+            /**
+             * @description thumbnail 是模型的缩略图
+             * @enum {string}
+             */
+            role: "original" | "display" | "thumbnail";
             /** @enum {string} */
             purpose: "display" | "download";
             file_name?: string;
@@ -9706,7 +9831,7 @@ export interface operations {
             header?: never;
             path: {
                 revision_id: string;
-                role: "original" | "display";
+                role: "original" | "display" | "thumbnail";
             };
             cookie?: never;
         };

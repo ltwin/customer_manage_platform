@@ -41,6 +41,7 @@ export const contentUnit = (id: string) => `object:${id}:content`
 export const placementKeys = ['name', 'transform', 'visible', 'locked'] as const
 export const contentKeys = [
   'primitive',
+  'model',
   'material_slots',
   'light',
   'camera',
@@ -153,8 +154,55 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
         },
       }
     }
+    // A committed model changes no unit until an operation places it.
+    case 'commit_model':
+      return state
+    case 'set_instance_model': {
+      const targets = new Set(instanceTargets(op))
+      return {
+        ...state,
+        scene: {
+          ...scene,
+          objects: scene.objects.map((o) =>
+            targets.has(o.id) ? { ...o, model: op.model } : o,
+          ),
+        },
+      }
+    }
   }
 }
+
+/**
+ * A model committed by a local intent has no IDs until its receipt. Until
+ * then the view, copies and later edits use these placeholders; the receipt
+ * replaces them everywhere before the base moves on.
+ */
+export const localRevision = (intentID: string, ref: string) => `local:${intentID}:${ref}`
+export const localContent = (intentID: string, ref: string) => `local-content:${intentID}:${ref}`
+
+export function parsePlaceholder(id: string): { intent: string; ref: string; content: boolean } | null {
+  const m = /^local(-content)?:([^:]+):([a-z0-9_]{1,32})$/.exec(id)
+  return m ? { intent: m[2], ref: m[3], content: !!m[1] } : null
+}
+
+/** The ops with every {ref} model reference written as a revision ID. */
+export function withModelRevisions(ops: readonly WireOp[], revisionOf: (ref: string) => string): WireOp[] {
+  const resolve = (m: SceneObject['model']) =>
+    m?.ref !== undefined ? { content_revision_id: revisionOf(m.ref) } : m
+  return ops.map((op) => {
+    if (op.op === 'add_objects' && op.objects.some((o) => o.model?.ref !== undefined))
+      return { ...op, objects: op.objects.map((o) => (o.model?.ref !== undefined ? { ...o, model: resolve(o.model) } : o)) }
+    if (op.op === 'set_instance_model' && op.model.ref !== undefined)
+      return { ...op, model: resolve(op.model)! }
+    return op
+  })
+}
+
+/** The instances set_instance_model changes, as the server reads it. */
+export const instanceTargets = (
+  op: Extract<WireOp, { op: 'set_instance_model' }>,
+): string[] =>
+  op.scope === 'all_instances' ? (op.object_ids ?? []) : [op.object_id]
 
 export function applyPatch(state: SceneState, patch: ProjectionPatch): SceneState {
   const gone = new Set(patch.removed)

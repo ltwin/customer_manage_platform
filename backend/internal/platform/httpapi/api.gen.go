@@ -1000,22 +1000,22 @@ func (e CreativeAgentSkillVersionOrigin) Valid() bool {
 
 // Defines values for CreativeAgentStepSummaryKind.
 const (
-	Check      CreativeAgentStepSummaryKind = "check"
-	Compaction CreativeAgentStepSummaryKind = "compaction"
-	Model      CreativeAgentStepSummaryKind = "model"
-	Tool       CreativeAgentStepSummaryKind = "tool"
+	CreativeAgentStepSummaryKindCheck      CreativeAgentStepSummaryKind = "check"
+	CreativeAgentStepSummaryKindCompaction CreativeAgentStepSummaryKind = "compaction"
+	CreativeAgentStepSummaryKindModel      CreativeAgentStepSummaryKind = "model"
+	CreativeAgentStepSummaryKindTool       CreativeAgentStepSummaryKind = "tool"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAgentStepSummaryKind enum.
 func (e CreativeAgentStepSummaryKind) Valid() bool {
 	switch e {
-	case Check:
+	case CreativeAgentStepSummaryKindCheck:
 		return true
-	case Compaction:
+	case CreativeAgentStepSummaryKindCompaction:
 		return true
-	case Model:
+	case CreativeAgentStepSummaryKindModel:
 		return true
-	case Tool:
+	case CreativeAgentStepSummaryKindTool:
 		return true
 	default:
 		return false
@@ -1132,6 +1132,7 @@ const (
 	CreativeContentRevisionKindAudio CreativeContentRevisionKind = "audio"
 	CreativeContentRevisionKindImage CreativeContentRevisionKind = "image"
 	CreativeContentRevisionKindLink  CreativeContentRevisionKind = "link"
+	CreativeContentRevisionKindModel CreativeContentRevisionKind = "model"
 	CreativeContentRevisionKindText  CreativeContentRevisionKind = "text"
 	CreativeContentRevisionKindVideo CreativeContentRevisionKind = "video"
 )
@@ -1144,6 +1145,8 @@ func (e CreativeContentRevisionKind) Valid() bool {
 	case CreativeContentRevisionKindImage:
 		return true
 	case CreativeContentRevisionKindLink:
+		return true
+	case CreativeContentRevisionKindModel:
 		return true
 	case CreativeContentRevisionKindText:
 		return true
@@ -1345,22 +1348,22 @@ func (e CreativeGenerationModelKind) Valid() bool {
 
 // Defines values for CreativeGenerationParameterType.
 const (
-	Boolean CreativeGenerationParameterType = "boolean"
-	Integer CreativeGenerationParameterType = "integer"
-	Number  CreativeGenerationParameterType = "number"
-	String  CreativeGenerationParameterType = "string"
+	CreativeGenerationParameterTypeBoolean CreativeGenerationParameterType = "boolean"
+	CreativeGenerationParameterTypeInteger CreativeGenerationParameterType = "integer"
+	CreativeGenerationParameterTypeNumber  CreativeGenerationParameterType = "number"
+	CreativeGenerationParameterTypeString  CreativeGenerationParameterType = "string"
 )
 
 // Valid indicates whether the value is a known member of the CreativeGenerationParameterType enum.
 func (e CreativeGenerationParameterType) Valid() bool {
 	switch e {
-	case Boolean:
+	case CreativeGenerationParameterTypeBoolean:
 		return true
-	case Integer:
+	case CreativeGenerationParameterTypeInteger:
 		return true
-	case Number:
+	case CreativeGenerationParameterTypeNumber:
 		return true
-	case String:
+	case CreativeGenerationParameterTypeString:
 		return true
 	default:
 		return false
@@ -1681,8 +1684,9 @@ func (e CreativeMediaTicketRequestPurpose) Valid() bool {
 
 // Defines values for CreativeMediaTicketRequestRole.
 const (
-	CreativeMediaTicketRequestRoleDisplay  CreativeMediaTicketRequestRole = "display"
-	CreativeMediaTicketRequestRoleOriginal CreativeMediaTicketRequestRole = "original"
+	CreativeMediaTicketRequestRoleDisplay   CreativeMediaTicketRequestRole = "display"
+	CreativeMediaTicketRequestRoleOriginal  CreativeMediaTicketRequestRole = "original"
+	CreativeMediaTicketRequestRoleThumbnail CreativeMediaTicketRequestRole = "thumbnail"
 )
 
 // Valid indicates whether the value is a known member of the CreativeMediaTicketRequestRole enum.
@@ -1691,6 +1695,188 @@ func (e CreativeMediaTicketRequestRole) Valid() bool {
 	case CreativeMediaTicketRequestRoleDisplay:
 		return true
 	case CreativeMediaTicketRequestRoleOriginal:
+		return true
+	case CreativeMediaTicketRequestRoleThumbnail:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorContractVersion.
+const (
+	CreativeModelGeneratorContractVersionN1 CreativeModelGeneratorContractVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorContractVersion enum.
+func (e CreativeModelGeneratorContractVersion) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorContractVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorLanguage.
+const (
+	CreativeModelGeneratorLanguageThreeModule CreativeModelGeneratorLanguage = "three-module"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorLanguage enum.
+func (e CreativeModelGeneratorLanguage) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorLanguageThreeModule:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorLibVersion.
+const (
+	CreativeModelGeneratorLibVersionN1 CreativeModelGeneratorLibVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorLibVersion enum.
+func (e CreativeModelGeneratorLibVersion) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorLibVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorMount.
+const (
+	CreativeModelGeneratorMountCeiling CreativeModelGeneratorMount = "ceiling"
+	CreativeModelGeneratorMountFloor   CreativeModelGeneratorMount = "floor"
+	CreativeModelGeneratorMountFree    CreativeModelGeneratorMount = "free"
+	CreativeModelGeneratorMountWall    CreativeModelGeneratorMount = "wall"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorMount enum.
+func (e CreativeModelGeneratorMount) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorMountCeiling:
+		return true
+	case CreativeModelGeneratorMountFloor:
+		return true
+	case CreativeModelGeneratorMountFree:
+		return true
+	case CreativeModelGeneratorMountWall:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorInputContractVersion.
+const (
+	CreativeModelGeneratorInputContractVersionN1 CreativeModelGeneratorInputContractVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorInputContractVersion enum.
+func (e CreativeModelGeneratorInputContractVersion) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorInputContractVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorInputLanguage.
+const (
+	CreativeModelGeneratorInputLanguageThreeModule CreativeModelGeneratorInputLanguage = "three-module"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorInputLanguage enum.
+func (e CreativeModelGeneratorInputLanguage) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorInputLanguageThreeModule:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorInputLibVersion.
+const (
+	CreativeModelGeneratorInputLibVersionN1 CreativeModelGeneratorInputLibVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorInputLibVersion enum.
+func (e CreativeModelGeneratorInputLibVersion) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorInputLibVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelGeneratorInputMount.
+const (
+	CreativeModelGeneratorInputMountCeiling CreativeModelGeneratorInputMount = "ceiling"
+	CreativeModelGeneratorInputMountFloor   CreativeModelGeneratorInputMount = "floor"
+	CreativeModelGeneratorInputMountFree    CreativeModelGeneratorInputMount = "free"
+	CreativeModelGeneratorInputMountWall    CreativeModelGeneratorInputMount = "wall"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelGeneratorInputMount enum.
+func (e CreativeModelGeneratorInputMount) Valid() bool {
+	switch e {
+	case CreativeModelGeneratorInputMountCeiling:
+		return true
+	case CreativeModelGeneratorInputMountFloor:
+		return true
+	case CreativeModelGeneratorInputMountFree:
+		return true
+	case CreativeModelGeneratorInputMountWall:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelParamSpecType.
+const (
+	CreativeModelParamSpecTypeBoolean CreativeModelParamSpecType = "boolean"
+	CreativeModelParamSpecTypeColor   CreativeModelParamSpecType = "color"
+	CreativeModelParamSpecTypeEnum    CreativeModelParamSpecType = "enum"
+	CreativeModelParamSpecTypeInteger CreativeModelParamSpecType = "integer"
+	CreativeModelParamSpecTypeNumber  CreativeModelParamSpecType = "number"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelParamSpecType enum.
+func (e CreativeModelParamSpecType) Valid() bool {
+	switch e {
+	case CreativeModelParamSpecTypeBoolean:
+		return true
+	case CreativeModelParamSpecTypeColor:
+		return true
+	case CreativeModelParamSpecTypeEnum:
+		return true
+	case CreativeModelParamSpecTypeInteger:
+		return true
+	case CreativeModelParamSpecTypeNumber:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelPayloadModelFormat.
+const (
+	Glb CreativeModelPayloadModelFormat = "glb"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelPayloadModelFormat enum.
+func (e CreativeModelPayloadModelFormat) Valid() bool {
+	switch e {
+	case Glb:
 		return true
 	default:
 		return false
@@ -1936,10 +2122,11 @@ func (e CreativeSceneLightType) Valid() bool {
 
 // Defines values for CreativeSceneObjectKind.
 const (
-	Camera    CreativeSceneObjectKind = "camera"
-	Group     CreativeSceneObjectKind = "group"
-	Light     CreativeSceneObjectKind = "light"
-	Primitive CreativeSceneObjectKind = "primitive"
+	Camera        CreativeSceneObjectKind = "camera"
+	Group         CreativeSceneObjectKind = "group"
+	Light         CreativeSceneObjectKind = "light"
+	ModelInstance CreativeSceneObjectKind = "model_instance"
+	Primitive     CreativeSceneObjectKind = "primitive"
 )
 
 // Valid indicates whether the value is a known member of the CreativeSceneObjectKind enum.
@@ -1950,6 +2137,8 @@ func (e CreativeSceneObjectKind) Valid() bool {
 	case Group:
 		return true
 	case Light:
+		return true
+	case ModelInstance:
 		return true
 	case Primitive:
 		return true
@@ -2043,6 +2232,7 @@ func (e CreativeUploadIoPhase) Valid() bool {
 const (
 	CreativeUploadKindAudio CreativeUploadKind = "audio"
 	CreativeUploadKindImage CreativeUploadKind = "image"
+	CreativeUploadKindModel CreativeUploadKind = "model"
 	CreativeUploadKindVideo CreativeUploadKind = "video"
 )
 
@@ -2052,6 +2242,8 @@ func (e CreativeUploadKind) Valid() bool {
 	case CreativeUploadKindAudio:
 		return true
 	case CreativeUploadKindImage:
+		return true
+	case CreativeUploadKindModel:
 		return true
 	case CreativeUploadKindVideo:
 		return true
@@ -2145,6 +2337,7 @@ func (e CreativeUploadBindingStatus) Valid() bool {
 const (
 	CreativeUploadCandidateKindAudio CreativeUploadCandidateKind = "audio"
 	CreativeUploadCandidateKindImage CreativeUploadCandidateKind = "image"
+	CreativeUploadCandidateKindModel CreativeUploadCandidateKind = "model"
 	CreativeUploadCandidateKindVideo CreativeUploadCandidateKind = "video"
 )
 
@@ -2154,6 +2347,8 @@ func (e CreativeUploadCandidateKind) Valid() bool {
 	case CreativeUploadCandidateKindAudio:
 		return true
 	case CreativeUploadCandidateKindImage:
+		return true
+	case CreativeUploadCandidateKindModel:
 		return true
 	case CreativeUploadCandidateKindVideo:
 		return true
@@ -2190,6 +2385,7 @@ func (e CreativeUploadCandidateState) Valid() bool {
 const (
 	CreativeUploadCreatePayloadKindAudio CreativeUploadCreatePayloadKind = "audio"
 	CreativeUploadCreatePayloadKindImage CreativeUploadCreatePayloadKind = "image"
+	CreativeUploadCreatePayloadKindModel CreativeUploadCreatePayloadKind = "model"
 	CreativeUploadCreatePayloadKindVideo CreativeUploadCreatePayloadKind = "video"
 )
 
@@ -2199,6 +2395,8 @@ func (e CreativeUploadCreatePayloadKind) Valid() bool {
 	case CreativeUploadCreatePayloadKindAudio:
 		return true
 	case CreativeUploadCreatePayloadKindImage:
+		return true
+	case CreativeUploadCreatePayloadKindModel:
 		return true
 	case CreativeUploadCreatePayloadKindVideo:
 		return true
@@ -3319,25 +3517,25 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	Audio ListCreativeAssetsParamsKind = "audio"
-	Image ListCreativeAssetsParamsKind = "image"
-	Link  ListCreativeAssetsParamsKind = "link"
-	Text  ListCreativeAssetsParamsKind = "text"
-	Video ListCreativeAssetsParamsKind = "video"
+	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
+	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
+	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
+	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
-	case Audio:
+	case ListCreativeAssetsParamsKindAudio:
 		return true
-	case Image:
+	case ListCreativeAssetsParamsKindImage:
 		return true
-	case Link:
+	case ListCreativeAssetsParamsKindLink:
 		return true
-	case Text:
+	case ListCreativeAssetsParamsKindText:
 		return true
-	case Video:
+	case ListCreativeAssetsParamsKindVideo:
 		return true
 	default:
 		return false
@@ -3409,8 +3607,9 @@ func (e ListCreativeAssetsParamsShape) Valid() bool {
 
 // Defines values for GetCreativeMediaParamsRole.
 const (
-	Display  GetCreativeMediaParamsRole = "display"
-	Original GetCreativeMediaParamsRole = "original"
+	Display   GetCreativeMediaParamsRole = "display"
+	Original  GetCreativeMediaParamsRole = "original"
+	Thumbnail GetCreativeMediaParamsRole = "thumbnail"
 )
 
 // Valid indicates whether the value is a known member of the GetCreativeMediaParamsRole enum.
@@ -3419,6 +3618,8 @@ func (e GetCreativeMediaParamsRole) Valid() bool {
 	case Display:
 		return true
 	case Original:
+		return true
+	case Thumbnail:
 		return true
 	default:
 		return false
@@ -5039,8 +5240,14 @@ type CreativeDocumentCommandRequest struct {
 type CreativeDocumentCommandResult struct {
 	AnnotatedUnits []string `json:"annotated_units"`
 	ChangedUnits   []string `json:"changed_units"`
-	RemovedUnits   []string `json:"removed_units"`
-	ResetRequired  bool     `json:"reset_required"`
+
+	// Models 场景的 commit_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。
+	Models *map[string]struct {
+		ContentId         string `json:"content_id"`
+		ContentRevisionId string `json:"content_revision_id"`
+	} `json:"models,omitempty"`
+	RemovedUnits  []string `json:"removed_units"`
+	ResetRequired bool     `json:"reset_required"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
@@ -5698,14 +5905,115 @@ type CreativeMediaTicketRequest struct {
 	ContentRevisionId string                            `json:"content_revision_id"`
 	FileName          *string                           `json:"file_name,omitempty"`
 	Purpose           CreativeMediaTicketRequestPurpose `json:"purpose"`
-	Role              CreativeMediaTicketRequestRole    `json:"role"`
+
+	// Role thumbnail 是模型的缩略图
+	Role CreativeMediaTicketRequestRole `json:"role"`
 }
 
 // CreativeMediaTicketRequestPurpose defines model for CreativeMediaTicketRequest.Purpose.
 type CreativeMediaTicketRequestPurpose string
 
-// CreativeMediaTicketRequestRole defines model for CreativeMediaTicketRequest.Role.
+// CreativeMediaTicketRequestRole thumbnail 是模型的缩略图
 type CreativeMediaTicketRequestRole string
+
+// CreativeModelGenerator 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。
+type CreativeModelGenerator struct {
+	CodeSha256      string                                `json:"code_sha256"`
+	ContractVersion CreativeModelGeneratorContractVersion `json:"contract_version"`
+	Language        CreativeModelGeneratorLanguage        `json:"language"`
+	LibVersion      CreativeModelGeneratorLibVersion      `json:"lib_version"`
+	Mount           CreativeModelGeneratorMount           `json:"mount"`
+	Params          map[string]interface{}                `json:"params"`
+	ParamsSchema    map[string]CreativeModelParamSpec     `json:"params_schema"`
+}
+
+// CreativeModelGeneratorContractVersion defines model for CreativeModelGenerator.ContractVersion.
+type CreativeModelGeneratorContractVersion int
+
+// CreativeModelGeneratorLanguage defines model for CreativeModelGenerator.Language.
+type CreativeModelGeneratorLanguage string
+
+// CreativeModelGeneratorLibVersion defines model for CreativeModelGenerator.LibVersion.
+type CreativeModelGeneratorLibVersion int
+
+// CreativeModelGeneratorMount defines model for CreativeModelGenerator.Mount.
+type CreativeModelGeneratorMount string
+
+// CreativeModelGeneratorInput 提交模型时的完整生成信息（含代码）。params 缺省的键补默认值。
+type CreativeModelGeneratorInput struct {
+	// Code ≤ 64 KiB 的 UTF-8 文本
+	Code            string                                     `json:"code"`
+	CodeSha256      string                                     `json:"code_sha256"`
+	ContractVersion CreativeModelGeneratorInputContractVersion `json:"contract_version"`
+	Language        CreativeModelGeneratorInputLanguage        `json:"language"`
+	LibVersion      CreativeModelGeneratorInputLibVersion      `json:"lib_version"`
+	Mount           CreativeModelGeneratorInputMount           `json:"mount"`
+	Params          map[string]interface{}                     `json:"params"`
+	ParamsSchema    map[string]CreativeModelParamSpec          `json:"params_schema"`
+}
+
+// CreativeModelGeneratorInputContractVersion defines model for CreativeModelGeneratorInput.ContractVersion.
+type CreativeModelGeneratorInputContractVersion int
+
+// CreativeModelGeneratorInputLanguage defines model for CreativeModelGeneratorInput.Language.
+type CreativeModelGeneratorInputLanguage string
+
+// CreativeModelGeneratorInputLibVersion defines model for CreativeModelGeneratorInput.LibVersion.
+type CreativeModelGeneratorInputLibVersion int
+
+// CreativeModelGeneratorInputMount defines model for CreativeModelGeneratorInput.Mount.
+type CreativeModelGeneratorInputMount string
+
+// CreativeModelManifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
+type CreativeModelManifest struct {
+	Anchors []struct {
+		Id       string    `json:"id"`
+		Position []float32 `json:"position"`
+	} `json:"anchors"`
+	Bounds struct {
+		Max []float32 `json:"max"`
+		Min []float32 `json:"min"`
+	} `json:"bounds"`
+	Parts []string `json:"parts"`
+	Slots []struct {
+		Hint *string `json:"hint,omitempty"`
+		Id   string  `json:"id"`
+	} `json:"slots"`
+	Triangles int `json:"triangles"`
+}
+
+// CreativeModelParamSpec 几何模块的一个参数定义。number / integer 必须有 min 与 max；enum 必须有 options。
+type CreativeModelParamSpec struct {
+	// Default 按 type 的取值
+	Default interface{}                `json:"default"`
+	Label   *string                    `json:"label,omitempty"`
+	Max     *float32                   `json:"max,omitempty"`
+	Min     *float32                   `json:"min,omitempty"`
+	Options *[]string                  `json:"options,omitempty"`
+	Step    *float32                   `json:"step,omitempty"`
+	Type    CreativeModelParamSpecType `json:"type"`
+	Unit    *string                    `json:"unit,omitempty"`
+}
+
+// CreativeModelParamSpecType defines model for CreativeModelParamSpec.Type.
+type CreativeModelParamSpecType string
+
+// CreativeModelPayload model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。
+type CreativeModelPayload struct {
+	Model struct {
+		Format CreativeModelPayloadModelFormat `json:"format"`
+
+		// Generator 提交模型时的完整生成信息（含代码）。params 缺省的键补默认值。
+		Generator *CreativeModelGeneratorInput `json:"generator,omitempty"`
+
+		// Manifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
+		Manifest CreativeModelManifest `json:"manifest"`
+		NameHint *string               `json:"name_hint,omitempty"`
+	} `json:"model"`
+}
+
+// CreativeModelPayloadModelFormat defines model for CreativeModelPayload.Model.Format.
+type CreativeModelPayloadModelFormat string
 
 // CreativeMoveNodePayload defines model for CreativeMoveNodePayload.
 type CreativeMoveNodePayload struct {
@@ -6115,7 +6423,7 @@ type CreativeSceneDocument struct {
 	CreatedAt         time.Time `json:"created_at"`
 	Id                string    `json:"id"`
 
-	// Models 以 content_revision_id 为键，覆盖快照引用的全部模型；C2 之前恒为空对象。
+	// Models 以 content_revision_id 为键，覆盖快照引用的全部模型（按单元读取时覆盖所列内容单元引用的模型）；没有模型实例时为空对象。
 	Models map[string]CreativeSceneModel `json:"models"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
@@ -6175,21 +6483,25 @@ type CreativeSceneMaterialSlot struct {
 // CreativeSceneMaterialSlots 缺省等同于空对象。
 type CreativeSceneMaterialSlots map[string]CreativeSceneMaterialSlot
 
-// CreativeSceneModel defines model for CreativeSceneModel.
+// CreativeSceneModel GLB 与缩略图不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original / thumbnail）取地址。
 type CreativeSceneModel struct {
-	ContentId string `json:"content_id"`
+	// ContentId 不可用且无法读取时为空字符串。
+	ContentId string                                    `json:"content_id"`
+	Generator nullable.Nullable[CreativeModelGenerator] `json:"generator"`
+	Manifest  nullable.Nullable[CreativeModelManifest]  `json:"manifest"`
+	NameHint  nullable.Nullable[string]                 `json:"name_hint"`
 
-	// Generator {language, contract_version, lib_version, params_schema, params, mount}，不含代码。
-	Generator    nullable.Nullable[map[string]interface{}] `json:"generator"`
-	GlbUrl       nullable.Nullable[string]                 `json:"glb_url"`
-	Manifest     nullable.Nullable[map[string]interface{}] `json:"manifest"`
-	ThumbnailUrl nullable.Nullable[string]                 `json:"thumbnail_url"`
-
-	// Usable false 时其余字段为 null，编辑器显示「模型不可用」占位。
+	// Usable false 时 manifest、generator、name_hint 为 null，编辑器显示「模型不可用」占位。
 	Usable bool `json:"usable"`
 }
 
-// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+// CreativeSceneModelRef model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。
+type CreativeSceneModelRef struct {
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	Ref               *string `json:"ref,omitempty"`
+}
+
+// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
 	Id     string                  `json:"id"`
@@ -6199,7 +6511,10 @@ type CreativeSceneObject struct {
 
 	// MaterialSlots 缺省等同于空对象。
 	MaterialSlots *CreativeSceneMaterialSlots `json:"material_slots,omitempty"`
-	Name          string                      `json:"name"`
+
+	// Model model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。
+	Model *CreativeSceneModelRef `json:"model,omitempty"`
+	Name  string                 `json:"name"`
 
 	// Order 同一父对象下的兄弟顺序，兄弟之间不重复。
 	Order int `json:"order"`
@@ -6445,9 +6760,11 @@ type CreativeUploadCompletePayload struct {
 
 // CreativeUploadCreatePayload defines model for CreativeUploadCreatePayload.
 type CreativeUploadCreatePayload struct {
-	FileName string                          `json:"file_name"`
-	Kind     CreativeUploadCreatePayloadKind `json:"kind"`
-	Mime     string                          `json:"mime"`
+	FileName string `json:"file_name"`
+
+	// Kind model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
+	Kind CreativeUploadCreatePayloadKind `json:"kind"`
+	Mime string                          `json:"mime"`
 
 	// Rights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
 	Rights *CreativeContentRights `json:"rights,omitempty"`
@@ -6455,7 +6772,7 @@ type CreativeUploadCreatePayload struct {
 	Target CreativeUploadTarget   `json:"target"`
 }
 
-// CreativeUploadCreatePayloadKind defines model for CreativeUploadCreatePayload.Kind.
+// CreativeUploadCreatePayloadKind model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
 type CreativeUploadCreatePayloadKind string
 
 // CreativeUploadNodeTarget defines model for CreativeUploadNodeTarget.
@@ -9468,6 +9785,32 @@ func (t *CreativeContentPayload) FromCreativeMediaPayload(v CreativeMediaPayload
 
 // MergeCreativeMediaPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeMediaPayload
 func (t *CreativeContentPayload) MergeCreativeMediaPayload(v CreativeMediaPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeModelPayload returns the union data inside the CreativeContentPayload as a CreativeModelPayload
+func (t CreativeContentPayload) AsCreativeModelPayload() (CreativeModelPayload, error) {
+	var body CreativeModelPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelPayload overwrites any union data inside the CreativeContentPayload as the provided CreativeModelPayload
+func (t *CreativeContentPayload) FromCreativeModelPayload(v CreativeModelPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeModelPayload
+func (t *CreativeContentPayload) MergeCreativeModelPayload(v CreativeModelPayload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

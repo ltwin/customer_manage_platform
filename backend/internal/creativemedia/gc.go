@@ -59,7 +59,7 @@ type GCReport struct {
 	SkippedBlobs int64
 }
 
-const unheldMediaRevision = `state='ready' AND content_id IN (SELECT id FROM creative_contents WHERE account_id=$1 AND kind IN ('image','video','audio')) AND NOT (` + creativereference.LiveOwnerCondition + `)`
+const unheldMediaRevision = `state='ready' AND content_id IN (SELECT id FROM creative_contents WHERE account_id=$1 AND kind IN ('image','video','audio','model')) AND NOT (` + creativereference.LiveOwnerCondition + `)`
 
 // blobHolders 对应 media.md §6.2 的 blob 持有方。绑定到无持有方修订的 blob 视为
 // 未持有：这样的修订已不可用，也不会重新获得持有方。

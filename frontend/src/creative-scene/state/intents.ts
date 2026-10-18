@@ -1,13 +1,17 @@
-import type { ObjectUpdate } from '../api.ts'
+import type { CommandReceipt, ObjectUpdate, SceneObject } from '../api.ts'
 import {
   applyOps,
   applyPatch,
   contentKeys,
   contentUnit,
+  instanceTargets,
+  localRevision,
+  parsePlaceholder,
   placementKeys,
   placementUnit,
   subtree,
   updateObject,
+  withModelRevisions,
   type ProjectionPatch,
   type SceneState,
   type WireOp,
@@ -75,6 +79,10 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
     }
     case 'restore_units':
       return op.units
+    case 'commit_model':
+      return []
+    case 'set_instance_model':
+      return instanceTargets(op).map(contentUnit)
   }
 }
 
@@ -108,10 +116,65 @@ export function removedUnits(intent: Intent, before: SceneState): string[] {
   return [...ids].flatMap((id) => [placementUnit(id), contentUnit(id)])
 }
 
+/** Shows an intent; its own committed models appear under placeholders. */
 export function applyIntent(state: SceneState, intent: Intent): SceneState {
   return intent.projection
     ? applyPatch(state, intent.projection)
-    : applyOps(state, intent.ops)
+    : applyOps(state, withModelRevisions(intent.ops, (ref) => localRevision(intent.id, ref)))
+}
+
+export type ReceiptModels = NonNullable<CommandReceipt['models']>
+
+/** The intent with every model ID passed through f, in its ops and its projection. */
+export function mapModelIDs(intent: Intent, f: (id: string) => string): Intent {
+  const model = <T extends { model?: SceneObject['model'] }>(o: T): T =>
+    o.model?.content_revision_id !== undefined ? { ...o, model: { ...o.model, content_revision_id: f(o.model.content_revision_id) } } : o
+  const ops = intent.ops.map((op): WireOp => {
+    switch (op.op) {
+      case 'add_objects':
+        return { ...op, objects: op.objects.map(model) }
+      case 'set_instance_model':
+        return model(op)
+      case 'commit_model':
+        return op.base_content_id !== undefined ? { ...op, base_content_id: f(op.base_content_id) } : op
+      default:
+        return op
+    }
+  })
+  const p = intent.projection
+  const projection = p && {
+    ...p,
+    put: p.put.map(model),
+    fields: Object.fromEntries(Object.entries(p.fields).map(([id, fields]) => [id, model(fields)])),
+  }
+  return { ...intent, ops, ...(projection ? { projection } : {}) }
+}
+
+/** Intents whose committed models this intent still names by placeholder. */
+export function waitsOnModels(intent: Intent): Set<string> {
+  const out = new Set<string>()
+  mapModelIDs(intent, (id) => {
+    const p = parsePlaceholder(id)
+    if (p) out.add(p.intent)
+    return id
+  })
+  return out
+}
+
+/** Replaces the placeholders of owner's models with the IDs its receipt gave. */
+export function resolveModelIDs(intent: Intent, owner: string, models: ReceiptModels): Intent {
+  if (!waitsOnModels(intent).has(owner)) return intent
+  return mapModelIDs(intent, (id) => {
+    const p = parsePlaceholder(id)
+    const m = p && p.intent === owner ? models[p.ref] : undefined
+    if (!p || !m) return id
+    return p.content ? m.content_id : m.content_revision_id
+  })
+}
+
+/** A confirmed intent as the server applied it: its {ref}s are real revisions. */
+export function asConfirmed(intent: Intent, models: ReceiptModels): Intent {
+  return { ...intent, ops: withModelRevisions(intent.ops, (ref) => models[ref]?.content_revision_id ?? localRevision(intent.id, ref)) }
 }
 
 /** The view: every intent that is not blocked, in queue order, over base. */
@@ -242,9 +305,13 @@ export function dependents(queue: readonly Intent[], id: string): Set<string> {
     grew = false
     for (const i of queue) {
       if (out.has(i.id) || i.id === id) continue
-      const waits = Object.values(i.expected).some(
-        (e) => e !== null && typeof e === 'object' && (e.after === id || out.has(e.after)),
-      )
+      const models = waitsOnModels(i)
+      const waits =
+        models.has(id) ||
+        [...models].some((m) => out.has(m)) ||
+        Object.values(i.expected).some(
+          (e) => e !== null && typeof e === 'object' && (e.after === id || out.has(e.after)),
+        )
       if (waits) {
         out.add(i.id)
         grew = true
@@ -269,11 +336,15 @@ export function resolveAfter(queue: readonly Intent[], id: string, revision: str
   })
 }
 
-/** An intent may go out once nothing it expects is still waiting. */
+/**
+ * An intent may go out once nothing it expects is still waiting and every
+ * model it names has a real ID.
+ */
 export function sendable(i: Intent): boolean {
   return (
     (i.state === 'pending' || i.state === 'unknown') &&
     !i.held &&
-    Object.values(i.expected).every((e) => e === null || typeof e === 'string')
+    Object.values(i.expected).every((e) => e === null || typeof e === 'string') &&
+    waitsOnModels(i).size === 0
   )
 }

@@ -45,7 +45,9 @@ import {
   type Target,
   type View,
 } from './transform/modal.ts'
-import { SceneObjects } from './objects/SceneObjects.tsx'
+import type { SceneModel } from './models/cache.ts'
+import type { Ghost } from './modelEdits.ts'
+import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
 import { positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
 
@@ -75,6 +77,10 @@ export type ViewportHandle = {
 
 export type ViewportProps = {
   scene: Scene
+  /** Summaries of the models the scene names, by content revision. */
+  models: Readonly<Record<string, SceneModel>>
+  /** A new code model being baked, drawn translucent where it will land. */
+  ghost?: Ghost | null
   readOnly: boolean
   ui: EditorStore
   mac: boolean
@@ -116,7 +122,8 @@ export function Viewport(props: ViewportProps) {
       <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
         <Environment environment={props.scene.environment} />
         <Grid position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
-        <SceneObjects scene={props.scene} selected={selected} active={selection.active} />
+        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} />
+        {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} models={props.models} />}
         <OrthoSwitch ortho={ortho} />
         <CameraControls makeDefault />
         <ViewKeeper initial={props.camera} onChange={props.onCamera} />

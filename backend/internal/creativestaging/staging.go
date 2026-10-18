@@ -54,6 +54,14 @@ func Place(ctx context.Context, tx store.TxAccountScope, s Staged, changeID, nod
 	return err
 }
 
+// Consume marks a locked staged row as used by a document command. The
+// staged revision loses its holder (GC reclaims it); the document's new
+// revision holds what it took from it.
+func Consume(ctx context.Context, tx store.TxAccountScope, s Staged, documentID string, documentRevision int64) error {
+	_, err := tx.Update(ctx, "creative_upload_candidates", "state='applied',content_id=NULL,content_revision_id=NULL,adopted_target_kind='document',adopted_target_id=$2,adopted_target_revision=$3,revision=revision+1,updated_at=clock_timestamp()", "id=$4", documentID, documentRevision, s.ID)
+	return err
+}
+
 // Title is the default node title for an uploaded file: the name without its
 // last extension, at most 200 characters.
 func Title(name string) string {

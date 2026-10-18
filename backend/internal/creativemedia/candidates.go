@@ -97,6 +97,10 @@ func (s *Service) AdoptCandidate(ctx context.Context, scope store.AccountScope, 
 		if candidate.State != "pending" || !now.Before(candidate.ExpiresAt) || candidate.ContentRevisionID == nil {
 			return creativeops.Outcome{}, ErrState
 		}
+		// A staged model is consumed only by a scene command (commit_model).
+		if candidate.Kind == "model" {
+			return creativeops.Outcome{}, creativeops.ErrValidation
+		}
 		target := Target{}
 		if v.Target != nil {
 			target = *v.Target

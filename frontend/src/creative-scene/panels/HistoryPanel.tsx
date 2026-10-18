@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { readRevision, readRevisions, type Scene } from '../api.ts'
 import { groupRevisions, type HistoryGroup, type RevisionItem } from '../history.ts'
+import type { SceneModel } from '../models/cache.ts'
 import { errorMessage } from '../../creative-canvas/editor/queue.ts'
 
 const time = (iso: string) => new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 const actor: Record<string, string> = { photographer: '你', agent: '助手', system: '系统' }
 
 /** Revision groups; a click previews one read-only. */
-export function HistoryPanel({ documentID, revision, previewing, onPreview, onClose }: { documentID: string; revision: string; previewing: string | null; onPreview: (revision: string, scene: Scene) => void; onClose: () => void }) {
+export function HistoryPanel({ documentID, revision, previewing, onPreview, onClose }: { documentID: string; revision: string; previewing: string | null; onPreview: (revision: string, scene: Scene, models: Record<string, SceneModel>) => void; onClose: () => void }) {
   const [items, setItems] = useState<RevisionItem[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -39,7 +40,10 @@ export function HistoryPanel({ documentID, revision, previewing, onPreview, onCl
   }
   const open = (g: HistoryGroup) => {
     readRevision(documentID, g.latest)
-      .then((v) => onPreview(g.latest, (v.view as { scene: Scene }).scene))
+      .then((v) => {
+        const view = v.view as { scene: Scene; models?: Record<string, SceneModel> }
+        onPreview(g.latest, view.scene, view.models ?? {})
+      })
       .catch((e: unknown) => setError(errorMessage(e)))
   }
   const groups = groupRevisions(items)

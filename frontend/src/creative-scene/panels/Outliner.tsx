@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Box, Camera, Eye, EyeOff, Folder, Lightbulb, Lock, LockOpen } from 'lucide-react'
+import { Box, Camera, Eye, EyeOff, Folder, Lightbulb, Lock, LockOpen, Shapes } from 'lucide-react'
 import type { SceneObject } from '../api.ts'
 import type { Selection } from '../input/selection.ts'
 
@@ -23,7 +23,7 @@ function rows(objects: readonly SceneObject[]): Row[] {
   return out
 }
 
-const icon = { primitive: Box, light: Lightbulb, camera: Camera, group: Folder } as const
+const icon = { primitive: Box, model_instance: Shapes, light: Lightbulb, camera: Camera, group: Folder } as const
 
 export function Outliner({
   objects,

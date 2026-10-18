@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/build-scene-sandbox.mjs && vite",
+    "build": "node scripts/build-scene-sandbox.mjs && tsc -b && vite build",
+    "build:sandbox": "node scripts/build-scene-sandbox.mjs",
     "lint": "oxlint",
     "test:customer-money": "node --test --experimental-transform-types scripts/customer-money.test.ts",
     "test:package-price": "node --test --experimental-transform-types scripts/package-price.test.ts",
@@ -36,13 +37,20 @@
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
     "@js-temporal/polyfill": "^0.5.1",
+    "@lezer/highlight": "1.2.5",
     "@react-three/drei": "10.7.9",
     "@react-three/fiber": "9.8.1",
     "@streamdown/code": "2.0.0",
     "@streamdown/math": "1.0.3",
     "@streamdown/mermaid": "1.0.3",
     "@xyflow/react": "12.11.6",
+    "acorn": "8.18.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.27.0",
     "marked": "18.0.11",
@@ -52,6 +60,8 @@
     "remend": "1.4.0",
     "streamdown": "2.7.0",
     "three": "0.186.1",
+    "three-bvh-csg": "0.0.18",
+    "three-mesh-bvh": "0.9.15",
     "zustand": "5.0.15"
   },
   "devDependencies": {

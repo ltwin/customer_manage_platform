@@ -3,7 +3,8 @@ import { Box, CircleHelp, History, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { currentAccount } from '../creative-canvas/editor/api.ts'
-import type { ObjectUpdate, Scene } from './api.ts'
+import { discardCandidate, uploadGenerated } from '../creative-canvas/editor/media.ts'
+import type { ObjectUpdate, Scene, SceneObject } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
 import { clearOp, duplicate, groundBuiltin, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
@@ -12,13 +13,20 @@ import { boxSelect, click, emptySelection, listClick, prune, selectAll, topmost 
 import { ContextMenu, type MenuItem } from './panels/ContextMenu.tsx'
 import { ConflictPrompt } from './panels/ConflictPrompt.tsx'
 import { FirstRunHint } from './panels/FirstRunHint.tsx'
+import { ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
+import { modelCache, modelSummaries } from './models/cache.ts'
+import { CodePanel } from './panels/CodePanel.tsx'
 import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
+import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
 import { Properties } from './panels/Properties.tsx'
 import { ShortcutSheet } from './panels/ShortcutSheet.tsx'
 import { StatusBar } from './panels/StatusBar.tsx'
 import { Toolbar } from './panels/Toolbar.tsx'
+import { iframeFactory, SandboxHost } from './sandbox/host.ts'
+import { defaultModuleCode } from './sandbox/template.ts'
+import { renderThumbnail } from './sandbox/thumbnail.ts'
 import { openScene } from './session.ts'
 import type { WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, type MenuKind } from './state/sceneStore.ts'
@@ -75,13 +83,52 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
   const handle = useRef<ViewportHandle | null>(null)
   const root = useRef<HTMLElement>(null)
   const [confirmRestore, setConfirmRestore] = useState(false)
+  // The code sandbox starts with the first bake and goes with the editor.
+  const sandbox = useRef<SandboxHost | null>(null)
+  const modelEdits = useMemo(
+    () =>
+      new ModelEdits({
+        session,
+        cache: modelCache,
+        compile: (input) => {
+          sandbox.current ??= new SandboxHost(iframeFactory(root.current ?? document.body))
+          return sandbox.current.compile(input)
+        },
+        thumbnail: renderThumbnail,
+        upload: (file, declared, signal) => uploadGenerated(file, declared, { kind: 'staged' }, signal),
+        discard: (upload) =>
+          upload.publication?.kind === 'candidate' ? discardCandidate(upload.publication.id, upload.publication.revision) : Promise.resolve(),
+      }),
+    [session],
+  )
+  useEffect(
+    () => () => {
+      modelEdits.dispose()
+      sandbox.current?.dispose()
+      sandbox.current = null
+    },
+    [modelEdits],
+  )
+  const baking = useStore(modelEdits.store)
 
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
   const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
+  const localModels = useStore(modelCache.local)
+  const failedModels = useStore(modelCache.failed)
+  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels), [u.preview, s.base, localModels])
   const readOnly = s.trashed || s.missing || !!u.preview || !s.base
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
   const selected = u.selection.selected
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
+  const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
+  const shownModel = shownActive?.model?.content_revision_id
+  // Bakes waiting for their uploads show on their instances, in the viewport only.
+  const drawn = useMemo(() => (shown && !u.preview ? withPreviews(shown, baking.previews) : shown), [shown, u.preview, baking.previews])
+  const activity = Object.values(baking.status).some((x) => x.state === 'baking')
+    ? '正在生成模型…'
+    : Object.values(baking.status).some((x) => x.state === 'uploading')
+      ? '正在保存模型…'
+      : ''
 
   useEffect(() => {
     const previous = window.document.activeElement
@@ -159,6 +206,55 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
   const openMenu = (menu: MenuKind, x?: number, y?: number) => {
     const p = handle.current?.pointer() ?? { x: 200, y: 200 }
     ui.setState({ popup: { kind: 'menu', menu, x: x ?? p.x, y: y ?? p.y } })
+  }
+  /** Opens the code panel in the history panel's place. */
+  const openCode = (target: { kind: 'new'; position: [number, number, number] } | { kind: 'object'; id: string }) =>
+    ui.setState({ code: { ...target, opened: Date.now() }, history: false, preview: null })
+  const generate = async (code: string) => {
+    const target = ui.getState().code
+    if (!target) return
+    if (target.kind === 'new') {
+      const out = await modelEdits.create({ code, position: target.position })
+      if (!out.ok) {
+        if (!out.superseded && out.stage !== 'compile') notify(out.message)
+        return
+      }
+      const add = out.intent.ops.find((op) => op.op === 'add_objects')
+      const id = add?.op === 'add_objects' ? add.objects[0]?.id : undefined
+      if (!id) return
+      select([id])
+      // The same panel goes on editing the model it just made.
+      if (ui.getState().code?.opened === target.opened) ui.setState({ code: { kind: 'object', id, opened: target.opened } })
+      return
+    }
+    const o = session.state.view?.scene.objects.find((x) => x.id === target.id)
+    const rev = o?.model?.content_revision_id
+    const generator = rev ? await modelCache.generator(rev).catch(() => null) : null
+    const out = await modelEdits.update({
+      objectID: target.id,
+      code,
+      params: generator?.params ?? {},
+      libVersion: generator?.lib_version ?? 1,
+      applyToAll: false,
+      label: `修改「${o?.name || '代码模型'}」代码`,
+    })
+    if (!out.ok && !out.superseded && out.stage !== 'compile') notify(out.message)
+  }
+  /** A parameter change rebakes the model; false when it did not take. */
+  const retune = async (object: SceneObject, params: Record<string, unknown>, applyToAll: boolean): Promise<boolean> => {
+    const rev = object.model?.content_revision_id
+    if (!rev) return false
+    let generator
+    try {
+      generator = await modelCache.generator(rev)
+    } catch {
+      notify('读不到这个模型的代码，参数没有生效')
+      return false
+    }
+    const out = await modelEdits.update({ objectID: object.id, code: generator.code, params, libVersion: generator.lib_version, applyToAll, label: `调整「${object.name || '代码模型'}」参数` })
+    if (out.ok || out.superseded) return true
+    notify(out.stage === 'compile' ? `参数没有生效：${out.message}` : out.message)
+    return false
   }
   const setDevice = (device: DevicePreference) => {
     writePreference(storage(), device)
@@ -301,6 +397,8 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
         ...builtins.filter((b) => b.builtin !== groundBuiltin).map(item),
         'separator',
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
+        'separator',
+        { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
       ]
     }
     if (menu === 'object')
@@ -316,6 +414,8 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
         { label: '清除旋转', shortcut: k('clear-rotation'), disabled: none, run: () => run('clear-rotation') },
         { label: '清除缩放', shortcut: k('clear-scale'), disabled: none, run: () => run('clear-scale') },
         { label: '重命名', shortcut: k('rename'), disabled: !active, run: () => run('rename') },
+        'separator',
+        { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
       ]
     const guessed = u.guessed === 'trackpad' ? '触控板' : '鼠标'
     return [
@@ -371,7 +471,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
         <Box size={18} />
         <h2>{shown && s.base ? (s.view?.title ?? s.base.title) : '3D 场景'}</h2>
         <MenuBar onOpen={(menu, x, y) => openMenu(menu, x, y)} disabled={(menu) => readOnly && menu !== 'view'} />
-        <button className="btn" aria-pressed={u.history} onClick={() => ui.setState({ history: !u.history, preview: null })} title="历史版本">
+        <button className="btn" aria-pressed={u.history} onClick={() => ui.setState({ history: !u.history, preview: null, code: null })} title="历史版本">
           <History size={16} />
           历史
         </button>
@@ -417,11 +517,24 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
                 />
                 <Properties
-                  object={u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active}
+                  object={shownActive}
                   count={selected.length}
                   readOnly={readOnly}
+                  model={shownModel ? models[shownModel] : undefined}
+                  modelFailed={!!shownModel && !!failedModels[shownModel]}
                   onUpdate={(update: ObjectUpdate, text, merge) => edit([{ op: 'update_objects', updates: [update] }], text, merge ? { merge } : undefined)}
-                />
+                >
+                  {shownActive?.kind === 'model_instance' && shownModel && (
+                    <ModelParams
+                      key={shownActive.id}
+                      generator={models[shownModel]?.generator ?? null}
+                      sharedWith={u.preview ? 0 : sharingInstances(objects, shownActive.id).length}
+                      readOnly={readOnly}
+                      onCommit={(params, all) => retune(shownActive, params, all)}
+                      onEditCode={() => openCode({ kind: 'object', id: shownActive.id })}
+                    />
+                  )}
+                </Properties>
               </aside>
             )}
             <div className="cc-scene-main">
@@ -443,7 +556,9 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
               )}
               <ConflictPrompt groups={s.conflicts} trashed={s.trashed} onReapply={(id) => session.reapply(id)} onDiscard={(id) => session.discard(id)} />
               <Viewport
-                scene={shown}
+                scene={drawn ?? shown}
+                models={models}
+                ghost={u.preview ? null : baking.ghost}
                 readOnly={readOnly}
                 ui={ui}
                 mac={mac}
@@ -463,15 +578,32 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                 }}
                 onDragging={(dragging) => session.setDragging(dragging)}
               />
-              <StatusBar hint={hint} status={s.status} notice={u.notice} device={deviceText} />
+              <StatusBar hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />
             </div>
+            {u.code && !u.history && (
+              <CodePanel
+                key={u.code.opened}
+                title={u.code.kind === 'new' ? '新建代码模型' : `「${byID.get(u.code.id)?.name || '代码模型'}」的代码`}
+                isNew={u.code.kind === 'new'}
+                loadCode={() => {
+                  const target = ui.getState().code
+                  if (!target || target.kind === 'new') return Promise.resolve(defaultModuleCode)
+                  const rev = byID.get(target.id)?.model?.content_revision_id
+                  return rev ? modelCache.generator(rev).then((g) => g.code) : Promise.reject(new Error('这个物件不是代码模型'))
+                }}
+                status={baking.status[u.code.kind === 'new' ? 'new' : u.code.id]}
+                readOnly={readOnly}
+                onGenerate={(code) => void generate(code)}
+                onClose={() => ui.setState({ code: null })}
+              />
+            )}
             {u.history && (
               <HistoryPanel
                 documentID={documentID}
                 revision={s.base.revision}
                 previewing={u.preview?.revision ?? null}
-                onPreview={(revision, scene) => ui.setState({ preview: { revision, scene }, selection: emptySelection })}
+                onPreview={(revision, scene, models) => ui.setState({ preview: { revision, scene, models }, selection: emptySelection })}
                 onClose={() => ui.setState({ history: false, preview: null })}
               />
             )}

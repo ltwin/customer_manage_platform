@@ -62,10 +62,14 @@ type Snapshot struct {
 }
 
 // Changes says which units a write advanced, only annotated, or removed.
+// Response carries type-specific receipt fields (the scene's commit_model
+// returns models); they are merged into the top level of the command receipt
+// and must not reuse a shared field name.
 type Changes struct {
 	Changed   []string
 	Annotated []string
 	Removed   []string
+	Response  map[string]json.RawMessage
 }
 
 // Current is one revision of a document. For an old revision, UnitRevs and

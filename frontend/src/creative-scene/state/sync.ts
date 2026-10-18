@@ -3,7 +3,9 @@ import type { CommandReceipt, SceneDocument } from '../api.ts'
 import { newIntentID } from '../ids.ts'
 import {
   applyOp,
+  instanceTargets,
   objectOfUnit,
+  parsePlaceholder,
   withoutNoops,
   type ProjectionPatch,
   type SceneState,
@@ -11,16 +13,20 @@ import {
 } from './apply.ts'
 import {
   applyIntent,
+  asConfirmed,
   changedUnits,
   dependents,
   enqueue,
   expectedFor,
+  mapModelIDs,
   mergeUpdate,
   project,
   removedUnits,
   resolveAfter,
+  resolveModelIDs,
   sendable,
   touchedUnits,
+  type ExpectedRev,
   type Intent,
 } from './intents.ts'
 
@@ -96,6 +102,22 @@ export type SessionObserver = {
   restored?(): void
 }
 
+/**
+ * What a slow edit (a model bake and its uploads) saw when it started. A
+ * re-read never changes it, so a write made elsewhere in the meantime comes
+ * back as a conflict instead of being overwritten. This session's own edits
+ * do move it, as they move queued intents: a receipt resolves {after} and
+ * model placeholders, and a later local edit of a unit becomes its {after}.
+ */
+export type Baseline = {
+  id: string
+  expected: Record<string, ExpectedRev>
+  /** Model IDs the edit started from, such as the source revision; may be placeholders. */
+  models: Record<string, string>
+  /** A local edit it builds on was rejected or dropped: it cannot be saved. */
+  broken: boolean
+}
+
 const toState = (doc: SceneDocument): SceneState => ({
   title: doc.title,
   scene: doc.scene,
@@ -115,6 +137,7 @@ export class SceneSession {
   private dragging = false
   private deferredRead = false
   private rebased = new Set<string>()
+  private baselines = new Map<string, Baseline>()
   private observers = new Set<SessionObserver>()
   private disposed = false
   /** Editors showing this session. */
@@ -191,10 +214,14 @@ export class SceneSession {
   edit(
     requested: WireOp[],
     label: string,
-    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string } = {},
+    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string; baseline?: string; id?: string } = {},
   ): Intent | null {
     const { base, view, queue, trashed, missing } = this.state
     if (!base || !view || trashed || missing) return null
+    // A model edit names its intent up front: its placeholders are registered before the view shows them.
+    const { baseline: baselineID, id: presetID, ...rest } = options
+    const frozen = baselineID === undefined ? undefined : this.baselines.get(baselineID)
+    if (baselineID !== undefined && (!frozen || frozen.broken)) return null
     const ops = withoutNoops(requested, view)
     if (!ops.length) return null
     const units: string[] = []
@@ -206,16 +233,23 @@ export class SceneSession {
     // Undo or redo that adds or removes objects is checked against objects.
     const p = options.projection
     if (p && (p.put.length || p.removed.length) && !units.includes('objects')) units.push('objects')
+    const expected = expectedFor(units, base.unit_revs, toState(base), queue)
+    // Units the slow edit started from keep the revisions it saw then.
+    if (frozen) for (const u of units) if (u in frozen.expected) expected[u] = frozen.expected[u]
     const intent: Intent = {
-      id: newIntentID(),
+      id: presetID ?? newIntentID(),
       createdAt: new Date(this.clock.now()).toISOString(),
       ops,
-      expected: expectedFor(units, base.unit_revs, toState(base), queue),
+      expected,
       state: 'pending',
       label,
-      ...options,
+      ...rest,
     }
     const { queue: next, holder } = enqueue(queue, intent)
+    for (const b of this.baselines.values()) {
+      if (b.id === baselineID) continue
+      for (const u of changedUnits(intent, view)) if (u in b.expected) b.expected[u] = { after: holder }
+    }
     this.set({ queue: next })
     for (const o of this.observers) o.queued?.(intent)
     this.pump()
@@ -234,8 +268,57 @@ export class SceneSession {
     if (!i || i.state !== 'pending' || this.inflight === id) return false
     const deps = dependents(this.state.queue, id)
     if (deps.size) return false
+    this.breakBaselines(new Set([id]))
     this.set({ queue: this.state.queue.filter((q) => q.id !== id) })
     return true
+  }
+
+  /**
+   * Freezes the expected revisions of units for an edit that takes a while
+   * to prepare; pass its id to edit() as `baseline`, then drop it.
+   */
+  baseline(units: readonly string[], models: Record<string, string> = {}): Baseline | null {
+    const { base, queue } = this.state
+    if (!base) return null
+    const b: Baseline = {
+      id: newIntentID(),
+      expected: expectedFor(units, base.unit_revs, toState(base), queue),
+      models: { ...models },
+      broken: false,
+    }
+    this.baselines.set(b.id, b)
+    return b
+  }
+
+  baselineOf(id: string): Baseline | undefined {
+    return this.baselines.get(id)
+  }
+
+  dropBaseline(id: string) {
+    this.baselines.delete(id)
+  }
+
+  /** Baselines waiting on any of these intents can no longer be saved. */
+  private breakBaselines(ids: Set<string>) {
+    for (const b of this.baselines.values()) {
+      const waits =
+        Object.values(b.expected).some((e) => e !== null && typeof e === 'object' && ids.has(e.after)) ||
+        Object.values(b.models).some((m) => ids.has(parsePlaceholder(m)?.intent ?? ''))
+      if (waits) b.broken = true
+    }
+  }
+
+  /** A receipt reaches the baselines as it reaches the queue. */
+  private settleBaselines(id: string, revision: string, models: NonNullable<CommandReceipt['models']>) {
+    for (const b of this.baselines.values()) {
+      for (const [u, e] of Object.entries(b.expected))
+        if (e !== null && typeof e === 'object' && e.after === id) b.expected[u] = revision
+      for (const [k, m] of Object.entries(b.models)) {
+        const p = parsePlaceholder(m)
+        const real = p && p.intent === id ? models[p.ref] : undefined
+        if (p && real) b.models[k] = p.content ? real.content_id : real.content_revision_id
+      }
+    }
   }
 
   setDragging(dragging: boolean) {
@@ -331,7 +414,12 @@ export class SceneSession {
     const intent = queue.find((i) => i.id === id)
     if (!intent || !base) return this.pump()
     const before = toState(base)
-    const rest = resolveAfter(queue.filter((i) => i.id !== id), id, receipt.revision)
+    // Placeholders of this intent's models become real IDs everywhere before
+    // the base moves on, so neither the base nor the undo steps keep them.
+    const models = receipt.models ?? {}
+    const own = asConfirmed(intent, models)
+    const rest = resolveAfter(queue.filter((i) => i.id !== id), id, receipt.revision).map((i) => resolveModelIDs(i, id, models))
+    this.settleBaselines(id, receipt.revision, models)
     const r = revision(receipt.revision)
     if (r === revision(base.revision) + 1) {
       // Our revision follows the base directly: it becomes the base now, so
@@ -339,20 +427,21 @@ export class SceneSession {
       // list its units, or an undo the server may settle differently, is
       // checked by a read as well.
       const unit_revs = { ...base.unit_revs }
-      const changed = receipt.reset_required ? changedUnits(intent, before) : receipt.changed_units
-      const removed = receipt.reset_required ? removedUnits(intent, before) : receipt.removed_units
+      const changed = receipt.reset_required ? changedUnits(own, before) : receipt.changed_units
+      const removed = receipt.reset_required ? removedUnits(own, before) : receipt.removed_units
       for (const u of changed) unit_revs[u] = receipt.revision
       for (const u of removed) delete unit_revs[u]
-      const after = applyIntent(before, intent)
+      const after = applyIntent(before, own)
       this.set({ base: { ...base, revision: receipt.revision, unit_revs, title: after.title, scene: after.scene }, queue: rest })
-      if (receipt.reset_required || intent.projection) void this.read()
+      // New models' summaries come with the next read.
+      if (receipt.reset_required || intent.projection || Object.keys(models).length) void this.read()
     } else {
       this.set({ queue: rest })
       // Someone else's revision came in between, or the receipt has no
       // detail: read the scene instead of guessing.
       if (r > revision(base.revision)) void this.read()
     }
-    for (const o of this.observers) o.confirmed?.(intent, receipt, before)
+    for (const o of this.observers) o.confirmed?.(own, receipt, before)
     this.pump()
     this.maybeDispose()
   }
@@ -368,6 +457,16 @@ export class SceneSession {
     if (f.status === 409 && f.code === 'creative_state_conflict') {
       this.blockForTrash()
       void this.read()
+      return
+    }
+    // Model failures have codes of their own: the trash and missing-document
+    // branches above must never see them.
+    if (f.code === 'creative_upload_unavailable') {
+      this.reject(intent, 'invalid', '模型上传已失效，请重新生成')
+      return
+    }
+    if (f.code === 'creative_model_unavailable') {
+      this.reject(intent, 'invalid', f.message || '模型不可用')
       return
     }
     if (f.status === 404) {
@@ -400,8 +499,10 @@ export class SceneSession {
    */
   private async conflict(intent: Intent, f: FailureLike) {
     const units = this.conflictUnits(f)
+    // A new model's commit travels with its add and goes out again with it:
+    // the failed command consumed no upload.
     const addsOnly =
-      intent.ops.every((op) => op.op === 'add_objects') ||
+      (intent.ops.some((op) => op.op === 'add_objects') && intent.ops.every((op) => op.op === 'add_objects' || op.op === 'commit_model')) ||
       (!!intent.projection && intent.projection.removed.length === 0 && Object.keys(intent.projection.fields).length === 0 && intent.projection.put.length > 0)
     if (!(units.length && units.every((u) => u === 'objects') && addsOnly) || this.rebased.has(intent.id)) {
       this.reject(intent, 'conflict', this.conflictMessage(intent, units))
@@ -439,6 +540,7 @@ export class SceneSession {
   /** The intent leaves the queue; whatever depended on it waits as blocked. */
   private reject(intent: Intent, kind: ConflictGroup['kind'], message: string) {
     const deps = dependents(this.state.queue, intent.id)
+    this.breakBaselines(new Set([intent.id, ...deps]))
     const blocked = this.state.queue.filter((i) => deps.has(i.id)).map((i) => ({ ...i, state: 'blocked' as const, blockedBy: intent.id }))
     const queue = this.state.queue.filter((i) => i.id !== intent.id && !deps.has(i.id))
     const deletes = intent.ops.some((op) => op.op === 'remove_objects') || (intent.projection?.removed.length ?? 0) > 0
@@ -451,6 +553,7 @@ export class SceneSession {
   /** The scene went to the trash: everything unsent waits for a restore. */
   private blockForTrash() {
     const waiting = this.state.queue.map((i) => ({ ...i, state: 'blocked' as const, blockedBy: 'trash' }))
+    this.breakBaselines(new Set(waiting.map((i) => i.id)))
     const others = this.state.conflicts.filter((g) => g.kind !== 'trash')
     const trash = this.state.conflicts.find((g) => g.kind === 'trash')
     this.set({
@@ -482,9 +585,19 @@ export class SceneSession {
       if (merged.size) this.edit([{ op: 'update_objects', updates: [...merged.values()] }], group.intents[0].label)
       return
     }
-    for (const i of group.intents) {
-      const ops = i.ops.map((op) => keepPresent(op, present)).filter((op): op is WireOp => !!op)
-      if (ops.length) this.edit(ops, i.label, { projection: i.projection, step: i.step })
+    // Each intent goes back under a new id; later ones that name its models
+    // by placeholder follow it.
+    const renamed = new Map<string, string>()
+    for (const original of group.intents) {
+      const i = mapModelIDs(original, (m) => {
+        const p = parsePlaceholder(m)
+        const to = p && renamed.get(p.intent)
+        return p && to ? m.replace(`:${p.intent}:`, `:${to}:`) : m
+      })
+      const ops = withUsedRefs(i.ops.map((op) => keepPresent(op, present)).filter((op): op is WireOp => !!op))
+      if (!ops.length) continue
+      const again = this.edit(ops, i.label, { projection: i.projection, step: i.step })
+      if (again) renamed.set(i.id, again.id)
     }
   }
 
@@ -596,6 +709,10 @@ function rebaseAdds(
   }
   const ops: WireOp[] = []
   for (const op of intent.ops) {
+    if (op.op === 'commit_model') {
+      ops.push(op)
+      continue
+    }
     if (op.op !== 'add_objects') return null
     const added = new Set(op.objects.map((o) => o.id))
     const placed = []
@@ -630,9 +747,25 @@ function keepPresent(op: WireOp, present: Set<string>): WireOp | null {
       const moves = op.moves.filter((m) => present.has(m.object_id) && (!m.parent_id || present.has(m.parent_id)))
       return moves.length ? { ...op, moves } : null
     }
+    case 'set_instance_model': {
+      const targets = instanceTargets(op).filter((id) => present.has(id))
+      if (!targets.length) return null
+      return op.scope === 'all_instances' ? { ...op, object_id: targets.includes(op.object_id) ? op.object_id : targets[0], object_ids: targets } : op
+    }
     default:
       return op
   }
+}
+
+/** Drops commits no remaining operation places; the server requires every ref used. */
+function withUsedRefs(ops: WireOp[]): WireOp[] {
+  const used = new Set<string>()
+  for (const op of ops) {
+    if (op.op === 'add_objects') for (const o of op.objects) if (o.model?.ref !== undefined) used.add(o.model.ref)
+    if (op.op === 'set_instance_model' && op.model.ref !== undefined) used.add(op.model.ref)
+  }
+  const kept = ops.filter((op) => op.op !== 'commit_model' || used.has(op.ref))
+  return kept.every((op) => op.op === 'commit_model') ? [] : kept
 }
 
 // --- the registry and the page-level guards --------------------------------

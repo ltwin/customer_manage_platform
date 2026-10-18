@@ -94,7 +94,7 @@ func (sceneType) Touched(_ context.Context, _ store.TxAccountScope, cur creative
 	return out, nil
 }
 
-func (sceneType) Apply(_ context.Context, _ store.TxAccountScope, cur creativedocument.Current, _ creativedocument.Actor, _ creativedocument.Retain, raws []json.RawMessage) (creativedocument.Snapshot, creativedocument.Changes, error) {
+func (sceneType) Apply(ctx context.Context, tx store.TxAccountScope, cur creativedocument.Current, _ creativedocument.Actor, retain creativedocument.Retain, raws []json.RawMessage) (creativedocument.Snapshot, creativedocument.Changes, error) {
 	s, err := decodeScene(cur.Content.Payload)
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
@@ -103,17 +103,27 @@ func (sceneType) Apply(_ context.Context, _ store.TxAccountScope, cur creativedo
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
+	env := newOpEnv(ctx, tx, retain, cur)
+	if err := env.verifyExisting(ops); err != nil {
+		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
+	}
 	c := newChangeSet()
 	for _, op := range ops {
-		if err := op.apply(&s, c); err != nil {
+		if err := op.apply(env, &s, c); err != nil {
 			return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 		}
+	}
+	response, err := env.finish(s)
+	if err != nil {
+		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
 	if err := Validate(s); err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
 	snap, err := encodeScene(s)
-	return snap, c.result(), err
+	changes := c.result()
+	changes.Response = response
+	return snap, changes, err
 }
 
 func (sceneType) RestoreTouched(_ context.Context, _ store.TxAccountScope, old, cur creativedocument.Current, units []string) ([]string, error) {
@@ -145,15 +155,15 @@ func (sceneType) RestoreUnits(_ context.Context, _ store.TxAccountScope, old, cu
 	return snap, changes, err
 }
 
-func (sceneType) View(_ context.Context, _ store.ReadTxAccountScope, cur creativedocument.Current, units []string) (json.RawMessage, error) {
+func (sceneType) View(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument.Current, units []string) (json.RawMessage, error) {
 	if units == nil {
-		return view(cur)
+		return view(ctx, tx, cur)
 	}
 	s, err := decodeScene(cur.Content.Payload)
 	if err != nil {
 		return nil, err
 	}
-	return unitView(s, units)
+	return unitView(ctx, tx, s, units)
 }
 
 func (sceneType) Summary(_ context.Context, _ store.ReadTxAccountScope, cur creativedocument.Current) (json.RawMessage, error) {

@@ -1,0 +1,1 @@
+default-src 'none'; script-src {origin}/scene-sandbox/ blob:; worker-src blob:; connect-src 'none'; img-src blob: data:; style-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors {origin}

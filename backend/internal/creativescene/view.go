@@ -1,21 +1,30 @@
 package creativescene
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// view is the scene branch of a read: the stored snapshot as is, plus the
-// models it references (none before C2).
-func view(cur creativedocument.Current) (json.RawMessage, error) {
-	return json.Marshal(map[string]any{"scene": cur.Content.Payload.Scene, "models": map[string]any{}})
+// view is the scene branch of a read: the stored snapshot as is, plus a summary
+// of every model revision it references (the revision's own reference rows),
+// read in the same snapshot with a fixed number of queries.
+func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument.Current) (json.RawMessage, error) {
+	models, err := readModels(ctx, tx, cur.Refs)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]any{"scene": cur.Content.Payload.Scene, "models": models})
 }
 
 // unitView narrows a read to the listed units. Each object appears once with
 // its id and kind plus the fields of every listed unit it has; units the
-// revision does not hold are skipped.
-func unitView(s Scene, units []string) (json.RawMessage, error) {
+// revision does not hold are skipped. models covers the model instances whose
+// content units are listed.
+func unitView(ctx context.Context, tx store.ReadTxAccountScope, s Scene, units []string) (json.RawMessage, error) {
+	var listed []Object
 	out := map[string]any{}
 	hierarchy := false
 	fields := map[string]map[string]any{}
@@ -47,7 +56,8 @@ func unitView(s Scene, units []string) (json.RawMessage, error) {
 		}
 		o := s.Objects[i]
 		if content {
-			add(id, map[string]any{"primitive": o.Primitive, "material_slots": o.MaterialSlots, "light": o.Light, "camera": o.Camera})
+			add(id, map[string]any{"primitive": o.Primitive, "model": o.Model, "material_slots": o.MaterialSlots, "light": o.Light, "camera": o.Camera})
+			listed = append(listed, o)
 		} else {
 			add(id, map[string]any{"name": o.Name, "transform": o.Transform, "visible": o.Visible, "locked": o.Locked})
 		}
@@ -67,7 +77,11 @@ func unitView(s Scene, units []string) (json.RawMessage, error) {
 		}
 		out[unitObjects] = objects
 	}
-	return json.Marshal(map[string]any{"scene": out})
+	models, err := readModels(ctx, tx, modelRefs(listed))
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]any{"scene": out, "models": models})
 }
 
 // summary is what a canvas card shows: object counts, the ground included.

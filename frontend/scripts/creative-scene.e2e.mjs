@@ -5,10 +5,13 @@
 // (state/apply.ts); the Go tests own the real ones. Every check gets a fresh
 // browser context.
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
+import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
 
 const DOC = 'cwdoc_scene'
 const fixture = new URL('../.scene-editor-qa.html', import.meta.url)
@@ -53,6 +56,18 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) < eps
 
 const identity = () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] })
+
+// The editor's default template as the sandbox exports it (the shared fixture).
+const testdata = new URL('../../backend/internal/creativeglb/testdata/', import.meta.url)
+const templateGLB = readFileSync(new URL('exported-template.glb', testdata))
+const templateManifest = JSON.parse(readFileSync(new URL('cases.json', testdata), 'utf8')).find((c) => c.name === 'exported-template').manifest
+const templateSchema = {
+  height: { type: 'number', default: 3, min: 1, max: 12, step: 0.1, unit: 'm', label: '高度' },
+  radius: { type: 'number', default: 0.25, min: 0.1, max: 1, step: 0.01, unit: 'm', label: '半径' },
+  style: { type: 'enum', default: 'round', options: ['round', 'square'], label: '柱身' },
+  broken: { type: 'boolean', default: false, label: '断裂' },
+}
+const templateParams = { height: 3, radius: 0.25, style: 'round', broken: false }
 const placement = (id) => `object:${id}`
 const content = (id) => `object:${id}:content`
 
@@ -89,6 +104,88 @@ class SceneServer {
     this.history = [this.record(['*'], [], null)]
     this.reads = 0
     this.hold = null
+    // Code models: staged uploads, committed revisions and their GLBs.
+    this.uploads = new Map()
+    this.uploadBytes = new Map()
+    this.models = new Map()
+    this.discarded = []
+    this.mediaMissing = new Set()
+    this.modelSeq = 0
+    // Set to a promise to keep uploads from completing until it settles.
+    this.uploadHold = null
+  }
+  /** A committed model revision, as if made earlier; returns its revision ID. */
+  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
+    const rev = `ccrv_seed${++this.modelSeq}`
+    const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount: 'floor' }
+    this.models.set(rev, { content_id: content ?? `ccnt_seed${this.modelSeq}`, glb, generator, manifest, name_hint: '柱' })
+    return rev
+  }
+  /** A model instance placed earlier, at revision 1 like the ground. */
+  seedInstance(id, rev, x = 0, name = '柱') {
+    this.scene.objects.push({
+      id, kind: 'model_instance', name, parent_id: null, order: this.scene.objects.length,
+      transform: { ...identity(), position: [x, 0, 0] }, visible: true, locked: false,
+      model: { content_revision_id: rev }, material_slots: {},
+    })
+    this.unitRevs[placement(id)] = '1'
+    this.unitRevs[content(id)] = '1'
+    this.history[0] = this.record(['*'], [], null)
+  }
+  modelSummaries(scene) {
+    const out = {}
+    for (const o of scene.objects) {
+      const rev = o.model?.content_revision_id
+      if (!rev || out[rev]) continue
+      const m = this.models.get(rev)
+      if (!m) {
+        out[rev] = { content_id: '', usable: false, manifest: null, generator: null, name_hint: null }
+        continue
+      }
+      const { code: _code, ...generator } = m.generator
+      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null }
+    }
+    return out
+  }
+  /**
+   * commit_model the way the server does it here: both uploads ready and
+   * unused, then a new revision under base_content_id or a new content, and
+   * every {ref} in the batch becomes that revision.
+   */
+  commitModels(ops) {
+    const commits = ops.filter((op) => op.op === 'commit_model')
+    for (const op of commits) {
+      for (const id of [op.glb_upload_id, op.thumbnail_upload_id]) {
+        const u = this.uploads.get(id)
+        if (!u || u.state !== 'ready' || u.consumed) return { error: [409, { error: { code: 'creative_upload_unavailable', message: '暂存上传已失效' } }] }
+      }
+      assert.ok(!op.base_content_id || [...this.models.values()].some((m) => m.content_id === op.base_content_id), `base content ${op.base_content_id} is real`)
+    }
+    const models = {}
+    for (const op of commits) {
+      for (const id of [op.glb_upload_id, op.thumbnail_upload_id]) this.uploads.get(id).consumed = true
+      const rev = `ccrv_m${++this.modelSeq}`
+      const content_id = op.base_content_id ?? `ccnt_m${this.modelSeq}`
+      this.models.set(rev, { content_id, glb: this.uploadBytes.get(op.glb_upload_id), generator: op.generator, manifest: op.manifest, name_hint: op.name_hint })
+      models[op.ref] = { content_id, content_revision_id: rev }
+    }
+    const real = (m) => {
+      if (m?.ref !== undefined) return { content_revision_id: models[m.ref].content_revision_id }
+      if (m) assert.ok(this.models.has(m.content_revision_id) || m.content_revision_id.startsWith('ccrv_gone'), `a model sent is real: ${m.content_revision_id}`)
+      return m
+    }
+    const resolved = ops.map((op) =>
+      op.op === 'add_objects'
+        ? { ...op, objects: op.objects.map((o) => (o.model ? { ...o, model: real(o.model) } : o)) }
+        : op.op === 'set_instance_model'
+          ? { ...op, model: real(op.model) }
+          : op,
+    )
+    return { ops: resolved, models }
+  }
+  uploadView(u) {
+    const { consumed: _consumed, ...view } = u
+    return view
   }
   record(changed, removed, restoredFrom) {
     return {
@@ -114,7 +211,7 @@ class SceneServer {
       created_at: '2026-10-16T09:00:00Z',
       updated_at: '2026-10-16T09:00:00Z',
       scene: structuredClone(this.scene),
-      models: {},
+      models: this.modelSummaries(this.scene),
     }
   }
   object(id) {
@@ -139,6 +236,8 @@ class SceneServer {
     if (conflicts.length && process.env.SCENE_E2E_DEBUG) console.log('CONFLICT', JSON.stringify(payload), JSON.stringify(conflicts))
     if (conflicts.length)
       return [409, { error: { code: 'creative_document_conflict', message: '文档已被修改', details: { conflicts } } }]
+    const committed = this.commitModels(ops)
+    if (committed.error) return committed.error
     const before = { title: this.title, scene: this.scene }
     const beforeUnits = this.objectUnits()
     let changed
@@ -150,10 +249,10 @@ class SceneServer {
       this.scene = after.scene
       changed = [...ops[0].units]
     } else {
-      const after = applyOps(before, ops)
+      const after = applyOps(before, committed.ops)
       this.title = after.title
       this.scene = after.scene
-      changed = changedUnits({ ops }, before)
+      changed = changedUnits({ ops: committed.ops }, before)
     }
     const afterUnits = this.objectUnits()
     const removed = [...beforeUnits].filter((u) => !afterUnits.has(u))
@@ -165,6 +264,7 @@ class SceneServer {
     for (const u of removed) delete this.unitRevs[u]
     this.history.push(this.record(changed, removed, restoredFrom))
     const receipt = { revision: String(this.revision), changed_units: changed, annotated_units: [], removed_units: removed, reset_required: false }
+    if (Object.keys(committed.models).length) receipt.models = committed.models
     this.receipts.set(body.operation_id, receipt)
     this.commands.push({ ...body, receipt })
     return [200, receipt]
@@ -185,7 +285,7 @@ class SceneServer {
         const now = objects.find((o) => o.id === id)
         if (!was) objects = objects.filter((o) => o.id !== id)
         else if (!now) objects.push(structuredClone(was))
-        else if (unit.endsWith(':content')) Object.assign(now, { primitive: was.primitive, light: was.light, camera: was.camera })
+        else if (unit.endsWith(':content')) Object.assign(now, { primitive: was.primitive, model: was.model, material_slots: was.material_slots, light: was.light, camera: was.camera })
         else Object.assign(now, { name: was.name, transform: was.transform, visible: was.visible, locked: was.locked })
       }
     }
@@ -254,9 +354,61 @@ async function route(page, server) {
     if (one) {
       const h = server.history.find((x) => x.revision === one[1])
       if (!h) return json(404, { error: { code: 'not_found', message: '修订不存在' } })
-      return json(200, { ...server.revisionItem(h), unit_revs: h.unit_revs, view: { scene: h.scene, models: {} } })
+      return json(200, { ...server.revisionItem(h), unit_revs: h.unit_revs, view: { scene: h.scene, models: server.modelSummaries(h.scene) } })
+    }
+    if (path === '/uploads' && request.method() === 'POST') {
+      const { payload } = request.postDataJSON()
+      const id = `ccup_${server.uploads.size + 1}`
+      const upload = {
+        id, state: 'uploading', io_phase: 'none', revision: '1', kind: payload.kind, mime: payload.mime, size: payload.size,
+        file_name: payload.file_name, part_size: payload.size, part_count: 1, uploaded_parts: [], target_kind: payload.target.kind,
+        expires_at: '2100-01-01T00:00:00Z', error_code: '', publication: null, binding: null, content_revision_id: null, created_at: '2026-10-17T00:00:00Z',
+      }
+      server.uploads.set(id, upload)
+      return json(201, server.uploadView(upload))
+    }
+    const upload = path.match(/^\/uploads\/([^/]+)(\/part-authorizations|\/complete)?$/)
+    if (upload) {
+      const u = server.uploads.get(upload[1])
+      if (upload[2] === '/part-authorizations')
+        return json(200, { upload_id: u.id, parts: [{ part_number: 1, method: 'PUT', url: `${base}/__upload/${u.id}`, headers: {}, expires_at: '2100-01-01T00:00:00Z' }] })
+      if (upload[2] === '/complete') {
+        if (server.uploadHold) await server.uploadHold
+        Object.assign(u, { state: 'ready', publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
+        u.binding = { status: 'staged', target_kind: null, target_id: null, candidate_id: `ccuc_${u.id}`, expires_at: '2100-01-01T00:00:00Z' }
+      }
+      return json(200, server.uploadView(u))
+    }
+    const discard = path.match(/^\/upload-candidates\/([^/]+)\/discard$/)
+    if (discard) {
+      server.discarded.push(discard[1])
+      return json(200, { id: discard[1], state: 'discarded' })
+    }
+    if (path === '/media-access-tickets' && request.method() === 'POST') {
+      const { content_revision_id: rev } = request.postDataJSON()
+      const m = server.models.get(rev)
+      if (!m) return json(404, { error: { code: 'not_found', message: '内容不存在' } })
+      return json(200, { url: `${base}/__media/${rev}`, expires_at: '2100-01-01T00:00:00Z', mime: 'model/gltf-binary', byte_size: m.glb.byteLength })
+    }
+    const revision = path.match(/^\/content-revisions\/([^/]+)$/)
+    if (revision && server.models.has(revision[1])) {
+      const m = server.models.get(revision[1])
+      return json(200, { truncated: false, id: revision[1], content_id: m.content_id, kind: 'model', sequence: '1', payload: { model: { format: 'glb', generator: m.generator, manifest: m.manifest, name_hint: m.name_hint } } })
     }
     return json(404, { error: { code: 'not_found', message: `unmocked ${path}` } })
+  })
+}
+
+async function routeFiles(page, server) {
+  await page.route('**/__upload/**', async (r) => {
+    server.uploadBytes.set(r.request().url().split('/').at(-1), r.request().postDataBuffer())
+    return r.fulfill({ status: 200, body: '' })
+  })
+  await page.route('**/__media/**', async (r) => {
+    const rev = r.request().url().split('/').at(-1)
+    const m = server.models.get(rev)
+    if (!m || server.mediaMissing.has(rev)) return r.fulfill({ status: 404, body: '' })
+    return r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: m.glb })
   })
 }
 
@@ -267,6 +419,7 @@ async function open(server, options = {}) {
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()))
   await route(page, server)
+  await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html`)
   await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
   await page.getByRole('treeitem').first().waitFor()
@@ -1062,6 +1215,281 @@ await check('opening the canvas page loads no three.js', async () => {
   const three = requested.filter((u) => /\/(three|@react-three)[/_.]/.test(u) || /deps\/(three|@react-three)/.test(u))
   assert.deepEqual(three, [], 'the editor and three load only when a scene opens')
   assert.ok(requested.some((u) => u.includes('WorkspacePage')), 'the canvas page itself loaded')
+  await context.close()
+})
+
+// --- code models (C2): the real sandbox, mocked uploads and tickets -------
+
+const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+const objectID = (tag) => `sobj_${tag.padEnd(21, '0')}`
+const codePanel = (page) => page.getByRole('complementary', { name: '代码' })
+
+/** Replaces the whole text in the code panel's editor. */
+async function replaceCode(page, code) {
+  await page.locator('.cc-scene-code .cm-content').click()
+  await page.keyboard.press(`${mod}+KeyA`)
+  await page.keyboard.insertText(code)
+}
+
+async function generateButton(page, name) {
+  const button = codePanel(page).getByRole('button', { name, exact: true })
+  await waitFor(() => button.isEnabled(), `${name} ready`, 15_000)
+  return button
+}
+
+await check('a code model: 代码模型… then 生成 is one command at the menu point, and it is there after reopening', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const boxAt = server.object(await addBox(page, server)).transform.position
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '代码模型…' }).click()
+  const generate = await generateButton(page, '生成')
+  assert.match(await codePanel(page).locator('.cm-content').textContent(), /export const params/, 'a new model starts from the template')
+  await generate.click()
+  await waitFor(() => server.commands.length === 2, 'create command', 20_000)
+  await saved(page)
+  const { operations, expected } = server.commands[1].payload
+  assert.deepEqual(operations.map((op) => op.op), ['commit_model', 'add_objects'], 'one command: the model and its instance')
+  const [commit, add] = operations
+  assert.equal(commit.generator.code, defaultModuleCode)
+  assert.equal(commit.base_content_id, undefined)
+  assert.deepEqual(commit.manifest, templateManifest, 'the host computed the manifest')
+  assert.equal(server.uploads.get(commit.glb_upload_id).kind, 'model')
+  assert.equal(server.uploads.get(commit.thumbnail_upload_id).mime, 'image/png')
+  assert.ok(server.uploadBytes.get(commit.glb_upload_id).equals(templateGLB), 'the uploaded GLB is the template baked by the real sandbox')
+  assert.deepEqual(add.objects[0].transform.position, boxAt, 'it lands where the menu opened, like a box')
+  assert.deepEqual(add.objects[0].model, { ref: commit.ref })
+  assert.deepEqual(Object.keys(expected), ['objects'])
+  const item = page.getByRole('treeitem', { name: /代码模型/ })
+  await item.waitFor()
+  assert.equal(await item.getAttribute('aria-selected'), 'true', 'the new model is selected')
+  await generateButton(page, '重新生成')
+  assert.match(server.object(add.objects[0].id).model.content_revision_id, /^ccrv_m/)
+  await sleep(500)
+  await shot(page, 'model-created')
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  const again = await open(server)
+  await again.page.getByRole('treeitem', { name: /代码模型/ }).click()
+  await again.page.getByLabel('高度（m）', { exact: true }).waitFor()
+  await sleep(500)
+  assert.equal(await again.page.getByText('模型不可用').count(), 0, 'the saved model loads by ticket')
+  assert.deepEqual(again.errors, [])
+  await again.context.close()
+})
+
+await check('a parameter change rebakes into a new revision; Cmd+Z and redo switch the model back and forth', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const pillar = objectID('pillar')
+  server.seedInstance(pillar, rev)
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  const height = page.getByLabel('高度（m）', { exact: true })
+  await height.fill('5')
+  await height.press('Enter')
+  await waitFor(() => server.commands.length === 1, 'retune command', 20_000)
+  await saved(page)
+  const [commit, set] = server.commands[0].payload.operations
+  assert.equal(commit.base_content_id, server.models.get(rev).content_id, 'an unshared model gets a new revision of the same content')
+  assert.equal(commit.generator.params.height, 5)
+  assert.equal(commit.manifest.bounds.max[1], 5, 'the bake used the new height')
+  assert.deepEqual(set, { op: 'set_instance_model', object_id: pillar, model: { ref: commit.ref }, scope: 'this' })
+  assert.deepEqual(Object.keys(server.commands[0].payload.expected), [content(pillar)])
+  const next = server.object(pillar).model.content_revision_id
+  assert.notEqual(next, rev)
+
+  await page.locator('.cc-scene-editor canvas').click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo')
+  assert.deepEqual(server.commands[1].payload.operations, [{ op: 'restore_units', from_revision: '1', units: [content(pillar)] }])
+  assert.equal(server.object(pillar).model.content_revision_id, rev, 'undo brings the old model back')
+  await saved(page)
+  await page.keyboard.press(`${mod}+Shift+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'redo')
+  assert.equal(server.object(pillar).model.content_revision_id, next)
+  await saved(page)
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  await waitFor(async () => (await page.getByLabel('高度（m）', { exact: true }).inputValue()) === '5', 'the panel shows the redone value')
+
+  // Past the definition's max, the field sends the max.
+  await height.fill('99')
+  await height.press('Enter')
+  await waitFor(() => server.commands.length === 4, 'clamped retune', 20_000)
+  await saved(page)
+  assert.equal(server.commands[3].payload.operations[0].generator.params.height, 12, 'clamped to max')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('a shared model forks by default; 应用到全部 switches every instance', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const [a, b, c] = ['a', 'b', 'c'].map((t) => objectID(`pillar${t}`))
+  server.seedInstance(a, rev, -2, '柱 A')
+  server.seedInstance(b, rev, 0, '柱 B')
+  server.seedInstance(c, rev, 2, '柱 C')
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /柱 A/ }).click()
+  await page.getByText('与 2 个实例共用').waitFor()
+  const height = page.getByLabel('高度（m）', { exact: true })
+  await height.fill('4')
+  await height.press('Enter')
+  await waitFor(() => server.commands.length === 1, 'fork command', 20_000)
+  await saved(page)
+  const [fork, forkSet] = server.commands[0].payload.operations
+  assert.equal(fork.base_content_id, undefined, 'only this one: a new model')
+  assert.equal(forkSet.scope, 'this')
+  assert.equal(server.object(b).model.content_revision_id, rev, 'the others keep theirs')
+  assert.equal(server.object(c).model.content_revision_id, rev)
+  await sleep(500)
+  await shot(page, 'model-forked')
+
+  await page.getByRole('treeitem', { name: /柱 B/ }).click()
+  await page.getByText('与 1 个实例共用').waitFor()
+  await page.getByLabel('应用到全部').check()
+  const heightB = page.getByLabel('高度（m）', { exact: true })
+  await heightB.fill('6')
+  await heightB.press('Enter')
+  await waitFor(() => server.commands.length === 2, 'all-instances command', 20_000)
+  await saved(page)
+  const [all, allSet] = server.commands[1].payload.operations
+  assert.equal(all.base_content_id, server.models.get(rev).content_id)
+  assert.equal(allSet.scope, 'all_instances')
+  assert.deepEqual(allSet.object_ids, [b, c])
+  assert.deepEqual(Object.keys(server.commands[1].payload.expected).sort(), [content(b), content(c)].sort())
+  assert.equal(server.object(b).model.content_revision_id, server.object(c).model.content_revision_id)
+  assert.notEqual(server.object(b).model.content_revision_id, rev)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('someone else changing the model while it bakes and uploads: the save asks first', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const theirs = server.seedModel({ params: { ...templateParams, height: 2 } })
+  const pillar = objectID('pillar')
+  server.seedInstance(pillar, rev)
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  let release
+  server.uploadHold = new Promise((resolve) => (release = resolve))
+  const height = page.getByLabel('高度（m）', { exact: true })
+  await height.fill('5')
+  await height.press('Enter')
+  await waitFor(() => server.uploads.size === 2, 'both uploads started', 20_000)
+
+  // While the uploads wait, another tab switches the same instance's model,
+  // and this tab reads it.
+  server.external([{ op: 'set_instance_model', object_id: pillar, model: { content_revision_id: theirs }, scope: 'this' }])
+  const reads = server.reads
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(() => server.reads > reads, 're-read')
+  await sleep(300)
+  server.uploadHold = null
+  release()
+
+  await page.getByRole('alert').filter({ hasText: '重新应用' }).waitFor({ timeout: 20_000 })
+  assert.equal(await saveText(page), '有冲突待处理')
+  assert.equal(server.commands.length, 0, 'nothing was saved over theirs')
+  assert.equal(server.object(pillar).model.content_revision_id, theirs)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('a syntax error shows its line and changes nothing; new parameter definitions come through on 重新生成', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const pillar = objectID('pillar')
+  server.seedInstance(pillar, rev)
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  await page.getByRole('button', { name: '编辑代码' }).click()
+  let regenerate = await generateButton(page, '重新生成')
+  assert.match(await codePanel(page).locator('.cm-content').textContent(), /export const params/, 'the model\'s own code is loaded')
+  await replaceCode(page, 'export const mount = "floor"\nexport default function build({ THREE }) {\n  return new THREE.Group(\n}\n')
+  await regenerate.click()
+  await codePanel(page).getByText(/^第 4 行：/).waitFor({ timeout: 10_000 })
+  assert.equal(await page.locator('.cc-code-error-line').count(), 1, 'the line is marked')
+  assert.equal(server.commands.length, 0, 'the scene is unchanged')
+  assert.equal(server.uploads.size, 0, 'nothing was uploaded')
+
+  await replaceCode(page, defaultModuleCode.replace('  broken: {', "  width: { type: 'number', default: 1, min: 0.5, max: 3, unit: 'm', label: '宽度' },\n  broken: {"))
+  regenerate = await generateButton(page, '重新生成')
+  await regenerate.click()
+  await waitFor(() => server.commands.length === 1, 'regenerate command', 20_000)
+  await saved(page)
+  const [commit] = server.commands[0].payload.operations
+  assert.deepEqual(commit.generator.params_schema.width, { type: 'number', default: 1, min: 0.5, max: 3, unit: 'm', label: '宽度' })
+  assert.equal(commit.generator.params.width, 1, 'a new parameter starts at its default')
+  assert.equal(await page.locator('.cc-code-error-line').count(), 0)
+  await page.getByLabel('宽度（m）', { exact: true }).waitFor({ timeout: 10_000 })
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('a model over the limit is refused before anything is uploaded', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '代码模型…' }).click()
+  await generateButton(page, '生成')
+  await replaceCode(page, `export const mount = 'free'
+export default function build({ THREE, lib }) {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3))
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(300001 * 3).map((_, i) => i % 3), 1))
+  return new THREE.Mesh(g, lib.material('a'))
+}
+`)
+  await (await generateButton(page, '生成')).click()
+  await codePanel(page).getByText(/模型超出上限/).waitFor({ timeout: 15_000 })
+  assert.equal(server.uploads.size, 0)
+  assert.equal(server.commands.length, 0)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('with the focus in the code panel, Cmd+Z undoes text and leaves the scene alone', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '代码模型…' }).click()
+  await generateButton(page, '生成')
+  const text = codePanel(page).locator('.cm-content')
+  await text.click()
+  await page.keyboard.press(`${mod}+End`)
+  await page.keyboard.type('// 草稿')
+  await waitFor(async () => (await text.textContent()).includes('// 草稿'), 'typed')
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(async () => !(await text.textContent()).includes('// 草稿'), 'text undone')
+  await sleep(300)
+  assert.equal(server.commands.length, 1, 'no restore_units went out')
+  assert.equal(server.scene.objects.length, 2, 'the box is still there')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('a model that cannot be shown is a grey block and says so', async () => {
+  const server = new SceneServer()
+  const missing = server.seedModel()
+  server.mediaMissing.add(missing)
+  server.seedInstance(objectID('gone'), 'ccrv_gone1', -1, '已删模型')
+  server.seedInstance(objectID('broken'), missing, 1, '坏模型')
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /已删模型/ }).click()
+  await page.getByText('模型不可用').waitFor()
+  await page.getByRole('treeitem', { name: /坏模型/ }).click()
+  await page.getByText('模型不可用').waitFor({ timeout: 10_000 })
+  assert.deepEqual(errors, [])
   await context.close()
 })
 

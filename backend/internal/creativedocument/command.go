@@ -58,6 +58,54 @@ type CommandResult struct {
 	AnnotatedUnits []string             `json:"annotated_units"`
 	RemovedUnits   []string             `json:"removed_units"`
 	ResetRequired  bool                 `json:"reset_required"`
+	// Extra holds the type's receipt fields (Changes.Response), serialized at
+	// the top level next to the shared fields.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// sharedReceiptFields are the receipt fields a type's Response cannot reuse.
+var sharedReceiptFields = map[string]bool{"revision": true, "changed_units": true, "annotated_units": true, "removed_units": true, "reset_required": true}
+
+type plainResult CommandResult
+
+// MarshalJSON writes the shared fields and, when present, the type's fields at
+// the same level. Without Extra the receipt is exactly the shared shape.
+func (r CommandResult) MarshalJSON() ([]byte, error) {
+	base, err := json.Marshal(plainResult(r))
+	if err != nil || len(r.Extra) == 0 {
+		return base, err
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(base, &fields); err != nil {
+		return nil, err
+	}
+	for k, v := range r.Extra {
+		if sharedReceiptFields[k] {
+			return nil, fmt.Errorf("%w: receipt field %q", ErrTypeContract, k)
+		}
+		fields[k] = v
+	}
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads a receipt back, keeping the type's fields in Extra.
+func (r *CommandResult) UnmarshalJSON(raw []byte) error {
+	var plain plainResult
+	if err := json.Unmarshal(raw, &plain); err != nil {
+		return err
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	for k := range sharedReceiptFields {
+		delete(fields, k)
+	}
+	*r = CommandResult(plain)
+	if len(fields) > 0 {
+		r.Extra = fields
+	}
+	return nil
 }
 
 // Command applies one photographer batch; the HTTP handler puts the path's
@@ -450,6 +498,11 @@ func persist(ctx context.Context, tx store.TxAccountScope, t Type, cur Current, 
 	if len(revs) > maxUnits {
 		return CommandResult{}, ErrSizeLimit
 	}
+	for k, v := range w.changes.Response {
+		if sharedReceiptFields[k] || !json.Valid(v) {
+			return CommandResult{}, fmt.Errorf("%w: receipt field %q", ErrTypeContract, k)
+		}
+	}
 	unitJSON, err := json.Marshal(revs)
 	if err != nil {
 		return CommandResult{}, err
@@ -472,7 +525,11 @@ func persist(ctx context.Context, tx store.TxAccountScope, t Type, cur Current, 
 		next, r.ID, w.title, unitJSON, cur.Document.ID); err != nil {
 		return CommandResult{}, err
 	}
-	return receipt(next, w.wholeRestore, changed, annotated, removed), nil
+	res := receipt(next, w.wholeRestore, changed, annotated, removed)
+	if len(w.changes.Response) > 0 {
+		res.Extra = w.changes.Response
+	}
+	return res, nil
 }
 
 func receipt(revision int64, reset bool, changed, annotated, removed []string) CommandResult {
