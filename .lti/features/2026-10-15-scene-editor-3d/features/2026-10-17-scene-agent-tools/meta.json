@@ -1,12 +1,12 @@
 {
   "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
-  "revision": 2,
+  "revision": 4,
   "id": "scene-agent-tools",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 5,
+    "version": 6,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -28,19 +28,44 @@
       "data:场景客户端任务",
       "api:认领场景客户端任务",
       "api:续租场景客户端任务",
-      "api:完成场景客户端任务"
+      "api:完成场景客户端任务",
+      "api:列出场景客户端任务",
+      "api:读取运行的场景改动"
     ],
     "delivers": [
+      "architecture:场景模块",
       "data:场景客户端任务",
       "api:认领场景客户端任务",
       "api:续租场景客户端任务",
-      "api:完成场景客户端任务"
+      "api:完成场景客户端任务",
+      "api:列出场景客户端任务",
+      "api:读取运行的场景改动"
     ]
   },
-  "state": "draft",
+  "state": "approved",
   "createdAt": "2026-10-18T04:36:35.664Z",
-  "updatedAt": "2026-10-18T04:51:00.432Z",
-  "approvals": {},
+  "updatedAt": "2026-10-18T06:34:16.104Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "data-migration",
+      "concurrency",
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-18T06:34:16.042Z",
+      "contentHash": "ccf2d0f07d0cfc20"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-18T06:34:16.042Z",
+      "contentHash": "de363a29c18ccb0e"
+    }
+  },
   "approvalHistory": [],
   "revisions": [],
   "verify": [],

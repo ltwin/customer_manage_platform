@@ -1,12 +1,12 @@
 {
   "uid": "aa2e24a0-a9b0-472a-950d-8e0d9136d896",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-history-cleanup",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 5,
+    "version": 6,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -31,6 +31,8 @@
       "api:认领场景客户端任务",
       "api:续租场景客户端任务",
       "api:完成场景客户端任务",
+      "api:列出场景客户端任务",
+      "api:读取运行的场景改动",
       "api:导出分镜",
       "api:模型存入资产库"
     ],
@@ -38,7 +40,7 @@
   },
   "state": "draft",
   "createdAt": "2026-10-17T10:04:34.466Z",
-  "updatedAt": "2026-10-18T03:30:19.922Z",
+  "updatedAt": "2026-10-18T06:34:15.747Z",
   "approvals": {},
   "approvalHistory": [],
   "revisions": [],
