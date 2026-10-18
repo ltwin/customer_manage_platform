@@ -77,7 +77,7 @@
     - 「本会话最近写过」按本会话各次运行写入修订的时间取最近 3 个场景（`creativedocument.RunDocuments`，回收站里的不算）；编辑中的场景另算，所以最多 4 段摘要。没有别人改过的场景不写摘要。
     - 测试说明：从检查点恢复时消息取自检查点，不重新组装，所以哈希一致由检查点保证。本任务测的是冻结本身：建运行之后场景继续被改，每次组装的请求都相同，且写的是建运行时的版本。另有两处变异检查：去掉 `canvas_metadata` 判断、放宽最近场景的上限，测试都会失败。
     - Skill 资源恢复运行（`RetryRun`）不带场景行。
-- [ ] 3.6 4 个场景工具（`creativeagent/scene_tools.go`、`creativescene/agent.go`），在 `tool_registry.go` 登记，资源键 `scene:<doc>`：
+- [x] 3.6 4 个场景工具（`creativeagent/scene_tools.go`、`creativescene/agent.go`），在 `tool_registry.go` 登记，资源键 `scene:<doc>`：
   - `read_scene`：概要上限 300 个物件，`include_code` 至多 3 个，附变更摘要；
   - `edit_scene`：基线规则；拒绝 `reparent_objects`、`commit_model`、整份 `restore`；撤回操作 `revert_run`；
   - `write_model`：建任务并挂起；只改参数时代码沿用原修订；`retry_job_id` 的约束；
@@ -90,6 +90,18 @@
   - 冲突后 `retry_job_id` 直接写入；并行重试同一任务时第二个失败；
   - 无看图能力时没有 `render_view`；
   - 截图被回收后降级为文字。
+  - 实施记录：
+    - 领域入口在 `creativescene`：`AgentReadInTx`、`AgentEditInTx`（含 `revert_run`）、`CreateBakeJobInTx`、`CreateRenderJobInTx`、`RetryBakeInTx`、`JobConflictInTx`、`BakedModelInTx`；建任务放在 `jobs.go`，重试放在 `jobs_complete.go`（`completeBake` 拆出 `writeBake` 共用）。`creativedocument` 新增 `LockCurrentInTx`（基线检查与命令在同一把锁下）和 `LastRunWriter`（`revert_run` 的 `previous`）。
+    - 基线检查：基线之后、不是本运行写的修订所改的单元与本次涉及的单元有交集即冲突（整份恢复算全部单元）。`add_objects` 涉及 `objects` 单元，所以基线之后别人新增或删除过物件时，助手新增物件也会冲突，按设计处理，冲突结果给出新基线。
+    - 写入类调用（`edit_scene`、`write_model` 的 `retry_job_id`）走操作回执：操作 ID 由运行与步骤派生，重跑先查回执，命中就原样返回，不会写两次；准入复查作为回执的 Guard，锁序为运行 → Skill → consent → 场景文档。建任务（`write_model`、`render_view`）在同一事务里先 `admitRunInTx`。
+    - 冲突结果作为失败的工具结果返回（新增 `structuredRefusal`，步骤记为 failed、结果是冲突的 JSON），与任务冲突经 `Settle` 写回时一致。
+    - 场景工具与 3.5 的场景行一样要求 consent 含 `canvas_metadata`，不含时返回「本次对话没有授权发送这类内容」。工具可用性没有按 consent 收窄，与画布写工具一致。
+    - 工具结果上限是 64 KB，300 个物件的完整信息就会超出，所以 `read_scene` 带字节预算：先放请求的代码，放不下的列入 `code_omitted`；物件放不下时降为概要，仍放不下就截断并给出 `omitted_objects` 与提示。编辑与撤回结果的列表各最多 200 项，另给总数。
+    - 给模型看的修订号改为整数（API 仍是十进制字符串）：模型照抄结果里的值，字符串会让参数校验失败；工具参数两种写法都接受。
+    - 给模型看的文字一律用「创作者」（owner 2026-10-14 的中性称呼规则），3.5 的编辑器上下文和变更摘要一并改过；`creativescene` 新增守护测试。
+    - 编译错误的行号由渲染端写在 `message` 里（完成接口的错误只有 `code` 与 `message`，契约未变）。
+    - `bindMessages` 从 `render_view` 结果取图片，标签「(render_view 截图)」；`toolContentRevisions` 与 `admitDispatchInTx` 的复查名单加入 `render_view`。基础指令（`instructions/base.md`）加「搭建场景」一节。
+    - 4 个工具的定义约 7 KB，每次请求都会带上；压缩回归测试的小窗口相应放大（16000→18000、8000→10000），测试意图不变。
 - [ ] 3.7 画布上新建场景：`canvas_tools.go:nodeTypes` 加 `scene`，结果带 `document_id`；`creativecanvas` 的 `attachDocument` 写入者取画布命令的执行者（未决 #4 在本任务开始时解决）。先写测试：助手建出场景节点和文档，修订写入者为该运行；摄影师新建照旧。
 
 ## 4. 渲染端（前端）

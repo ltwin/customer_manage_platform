@@ -25,14 +25,15 @@ const (
 
 // ChangeSummary is what others changed in a scene after a revision, in words
 // the model reads: who changed which objects, what was added or deleted, and
-// what was restored.
+// what was restored. Revisions the assistant reads are plain integers; the
+// API's decimal strings are for browsers, and a model copies what it sees.
 type ChangeSummary struct {
-	DocumentID    string               `json:"document_id"`
-	Title         string               `json:"title"`
-	SinceRevision creativeops.Revision `json:"since_revision"`
-	Revision      creativeops.Revision `json:"revision"`
-	Lines         []string             `json:"lines"`
-	More          int                  `json:"more,omitempty"`
+	DocumentID    string   `json:"document_id"`
+	Title         string   `json:"title"`
+	SinceRevision int64    `json:"since_revision"`
+	Revision      int64    `json:"revision"`
+	Lines         []string `json:"lines"`
+	More          int      `json:"more,omitempty"`
 }
 
 // ChangesSinceInTx summarizes what others changed since the conversation's
@@ -61,7 +62,7 @@ func changesAfter(ctx context.Context, pages creativedocument.PageReader, at fun
 	if err != nil {
 		return ChangeSummary{}, err
 	}
-	out := ChangeSummary{DocumentID: documentID, Title: head.Title, SinceRevision: creativeops.Revision(base), Revision: creativeops.Revision(head.Revision), Lines: []string{}}
+	out := ChangeSummary{DocumentID: documentID, Title: head.Title, SinceRevision: base, Revision: head.Revision, Lines: []string{}}
 	if base >= head.Revision {
 		return out, nil
 	}
@@ -124,11 +125,11 @@ func (s ChangeSummary) Prompt() string {
 // EditorContext is the scene open in the photographer's editor when they
 // asked, and the objects they had selected there that are still in it.
 type EditorContext struct {
-	DocumentID string               `json:"document_id"`
-	Title      string               `json:"title"`
-	Revision   creativeops.Revision `json:"revision"`
-	Selected   []string             `json:"selected_object_ids"`
-	Prompt     string               `json:"-"`
+	DocumentID string   `json:"document_id"`
+	Title      string   `json:"title"`
+	Revision   int64    `json:"revision"`
+	Selected   []string `json:"selected_object_ids"`
+	Prompt     string   `json:"-"`
 }
 
 // EditorContextInTx reads the scene being edited and words it for a run's
@@ -147,7 +148,7 @@ func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID 
 		return EditorContext{}, err
 	}
 	idx := indexObjects(scene.Objects)
-	out := EditorContext{DocumentID: documentID, Title: cur.Title, Revision: creativeops.Revision(cur.Revision), Selected: []string{}}
+	out := EditorContext{DocumentID: documentID, Title: cur.Title, Revision: cur.Revision, Selected: []string{}}
 	var names []string
 	for _, id := range selected {
 		i, ok := idx[id]
@@ -161,7 +162,7 @@ func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID 
 			names = append(names, id)
 		}
 	}
-	out.Prompt = fmt.Sprintf("摄影师正在编辑场景「%s」(%s，第 %d 版)，", out.Title, documentID, cur.Revision)
+	out.Prompt = fmt.Sprintf("创作者正在编辑场景「%s」(%s，第 %d 版)，", out.Title, documentID, cur.Revision)
 	if len(names) == 0 {
 		out.Prompt += "没有选中物件。"
 	} else {
@@ -170,7 +171,7 @@ func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID 
 	return out, nil
 }
 
-var actorLabels = map[string]string{"photographer": "摄影师", "agent": "另一次助手对话", "system": "系统"}
+var actorLabels = map[string]string{"photographer": "创作者", "agent": "另一次助手对话", "system": "系统"}
 
 func actorLabel(kind string) string {
 	if l, ok := actorLabels[kind]; ok {
@@ -323,28 +324,32 @@ const (
 )
 
 // ReadInput is read_scene's arguments with the conversation's runs, whose
-// writes are the conversation's own.
+// writes are the conversation's own, and the bytes the result may take.
 type ReadInput struct {
 	DocumentID       string
 	ObjectIDs        []string
 	IncludeCode      []string
 	ConversationRuns []string
+	MaxBytes         int
 }
 
 // SceneRead is what read_scene returns. Revision is the baseline the next
 // write may be based on.
 type SceneRead struct {
-	DocumentID            string               `json:"document_id"`
-	Title                 string               `json:"title"`
-	Revision              creativeops.Revision `json:"revision"`
-	Environment           Environment          `json:"environment"`
-	Render                Render               `json:"render"`
-	ObjectCount           int                  `json:"object_count"`
-	Brief                 bool                 `json:"brief,omitempty"`
-	Objects               []ObjectView         `json:"objects"`
-	Missing               []string             `json:"missing_object_ids,omitempty"`
-	Code                  map[string]string    `json:"code,omitempty"`
-	ChangesSinceLastWrite *ChangeSummary       `json:"changes_since_last_write"`
+	DocumentID            string            `json:"document_id"`
+	Title                 string            `json:"title"`
+	Revision              int64             `json:"revision"`
+	Environment           Environment       `json:"environment"`
+	Render                Render            `json:"render"`
+	ObjectCount           int               `json:"object_count"`
+	Brief                 bool              `json:"brief,omitempty"`
+	Objects               []ObjectView      `json:"objects"`
+	OmittedObjects        int               `json:"omitted_objects,omitempty"`
+	Missing               []string          `json:"missing_object_ids,omitempty"`
+	Code                  map[string]string `json:"code,omitempty"`
+	CodeOmitted           []string          `json:"code_omitted,omitempty"`
+	ChangesSinceLastWrite *ChangeSummary    `json:"changes_since_last_write"`
+	Note                  string            `json:"note,omitempty"`
 }
 
 // ObjectView is one object as the assistant reads it. A brief listing carries
@@ -428,7 +433,9 @@ func objectView(o Object, models map[string]placedModel) ObjectView {
 
 // AgentReadInTx is read_scene: the scene in full, or in brief past 300
 // objects unless object_ids narrows it; the code of up to three placed models;
-// and what others changed since the conversation last wrote it.
+// and what others changed since the conversation last wrote it. A result past
+// MaxBytes drops code that does not fit, then details, then trailing objects,
+// and says so.
 func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (SceneRead, error) {
 	if len(in.ObjectIDs) > maxReadObjectIDs {
 		return SceneRead{}, invalid("object_ids 最多 %d 个", maxReadObjectIDs)
@@ -447,7 +454,7 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 	if err != nil {
 		return SceneRead{}, err
 	}
-	out := SceneRead{DocumentID: in.DocumentID, Title: cur.Title, Revision: creativeops.Revision(cur.Revision),
+	out := SceneRead{DocumentID: in.DocumentID, Title: cur.Title, Revision: cur.Revision,
 		Environment: scene.Environment, Render: scene.Render, ObjectCount: len(scene.Objects), Objects: []ObjectView{}}
 	listed := scene.Objects
 	if len(in.ObjectIDs) > 0 {
@@ -483,31 +490,104 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 	for _, o := range listed {
 		out.Objects = append(out.Objects, objectView(o, models))
 	}
+	code := map[string]string{}
 	for _, id := range in.IncludeCode {
 		m := models[id]
 		if !m.usable {
 			return SceneRead{}, modelUnavailable(id)
 		}
-		if out.Code == nil {
-			out.Code = map[string]string{}
-		}
-		out.Code[id] = m.payload.Generator.Code
+		code[id] = m.payload.Generator.Code
 	}
-	out.ChangesSinceLastWrite, err = ChangesSinceInTx(ctx, tx, in.DocumentID, in.ConversationRuns)
+	if out.ChangesSinceLastWrite, err = ChangesSinceInTx(ctx, tx, in.DocumentID, in.ConversationRuns); err != nil {
+		return SceneRead{}, err
+	}
+	if in.MaxBytes > 0 {
+		err = out.fit(in.MaxBytes, code, in.IncludeCode, scene.Objects, len(in.ObjectIDs) > 0)
+	} else if len(code) > 0 {
+		out.Code = code
+	}
 	return out, err
+}
+
+// fit keeps a read within budget bytes: requested code first, in order, as
+// long as it fits; then the objects in detail, or in brief when they do not
+// fit and the read was not narrowed; then as many objects as fit.
+func (r *SceneRead) fit(budget int, code map[string]string, order []string, all []Object, narrowed bool) error {
+	size := func(v any) (int, error) {
+		raw, err := json.Marshal(v)
+		return len(raw), err
+	}
+	objects := r.Objects
+	r.Objects = []ObjectView{}
+	used, err := size(r)
+	if err != nil {
+		return err
+	}
+	used += 320 // room for the brief flag, the omission count and the notes
+	for _, id := range order {
+		n, err := size(map[string]string{id: code[id]})
+		if err != nil {
+			return err
+		}
+		if used+n > budget {
+			r.CodeOmitted = append(r.CodeOmitted, id)
+			continue
+		}
+		if r.Code == nil {
+			r.Code = map[string]string{}
+		}
+		r.Code[id] = code[id]
+		used += n
+	}
+	if len(r.CodeOmitted) > 0 {
+		r.Note = "部分模型代码太长没有附上，一次只读一个模型的代码。"
+	}
+	take := func(list []ObjectView) ([]ObjectView, error) {
+		total := used
+		for i, o := range list {
+			n, err := size(o)
+			if err != nil {
+				return nil, err
+			}
+			if total+n+1 > budget {
+				return list[:i], nil
+			}
+			total += n + 1
+		}
+		return list, nil
+	}
+	kept, err := take(objects)
+	if err != nil {
+		return err
+	}
+	if len(kept) < len(objects) && !narrowed && !r.Brief {
+		brief := make([]ObjectView, 0, len(all))
+		for _, o := range all {
+			brief = append(brief, ObjectView{ID: o.ID, Name: o.Name, Kind: o.Kind, ParentID: o.ParentID, Position: o.Transform.Position})
+		}
+		r.Brief, objects = true, brief
+		if kept, err = take(objects); err != nil {
+			return err
+		}
+	}
+	r.Objects = kept
+	if r.OmittedObjects = len(objects) - len(kept); r.OmittedObjects > 0 {
+		r.Note = strings.TrimSpace(r.Note + " 结果太长，后面的物件没有列出；用 object_ids 分批读取。")
+	}
+	return nil
 }
 
 // WriteConflict is an assistant write refused because someone else changed
 // what it touches after its baseline. Revision is the new baseline; the
 // summary says what happened in between.
 type WriteConflict struct {
-	Status       string               `json:"status"`
-	Message      string               `json:"message"`
-	Conflicts    []ConflictEntry      `json:"conflicts"`
-	More         int                  `json:"more,omitempty"`
-	ChangesSince ChangeSummary        `json:"changes_since"`
-	Revision     creativeops.Revision `json:"revision"`
-	RetryJobID   string               `json:"retry_job_id,omitempty"`
+	Status       string          `json:"status"`
+	Message      string          `json:"message"`
+	Conflicts    []ConflictEntry `json:"conflicts"`
+	More         int             `json:"more,omitempty"`
+	ChangesSince ChangeSummary   `json:"changes_since"`
+	Revision     int64           `json:"revision"`
+	RetryJobID   string          `json:"retry_job_id,omitempty"`
 }
 
 // ConflictEntry is one unit that changed: an object's placement or content,
@@ -612,7 +692,7 @@ func describeConflict(ctx context.Context, tx store.TxAccountScope, cur creative
 	if err != nil {
 		return WriteConflict{}, err
 	}
-	out := WriteConflict{Status: "conflict", Conflicts: []ConflictEntry{}, Revision: creativeops.Revision(cur.Revision)}
+	out := WriteConflict{Status: "conflict", Conflicts: []ConflictEntry{}, Revision: cur.Revision}
 	sort.Strings(units)
 	for _, u := range units {
 		e := ConflictEntry{ChangedBy: "本次运行"}
@@ -663,17 +743,24 @@ type EditInput struct {
 // EditResult is a written edit. WrittenRevision only reports what was
 // written: it is never a baseline, since others may have written before it.
 type EditResult struct {
-	WrittenRevision creativeops.Revision `json:"written_revision"`
-	ChangedObjects  []string             `json:"changed_objects"`
+	WrittenRevision int64    `json:"written_revision"`
+	ChangedObjects  []string `json:"changed_objects"`
+	ChangedCount    int      `json:"changed_count"`
 }
+
+// maxListedEntries bounds the lists an edit or revert result carries; counts
+// say how many there were.
+const maxListedEntries = 200
 
 // RevertResult is a taken-back run: what was put back and what was left
 // because someone else changed it since.
 type RevertResult struct {
-	WrittenRevision *creativeops.Revision `json:"written_revision"`
-	RunID           string                `json:"run_id"`
-	Restored        []RevertedEntry       `json:"restored"`
-	Skipped         []RevertedEntry       `json:"skipped"`
+	WrittenRevision *int64          `json:"written_revision"`
+	RunID           string          `json:"run_id"`
+	Restored        []RevertedEntry `json:"restored"`
+	RestoredCount   int             `json:"restored_count"`
+	Skipped         []RevertedEntry `json:"skipped"`
+	SkippedCount    int             `json:"skipped_count"`
 }
 
 type RevertedEntry struct {
@@ -749,7 +836,8 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	if err != nil {
 		return nil, err
 	}
-	return EditResult{WrittenRevision: written.Revision, ChangedObjects: changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))}, nil
+	changed := changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))
+	return EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed)}, nil
 }
 
 func changedObjects(units []string) []string {
@@ -865,7 +953,7 @@ func agentRevertInTx(ctx context.Context, tx store.TxAccountScope, in EditInput)
 		if err != nil {
 			return RevertResult{}, err
 		}
-		r := written.Revision
+		r := int64(written.Revision)
 		out.WrittenRevision = &r
 		head, err := creativedocument.ReadHeadInTx(ctx, tx, in.DocumentID, TypeKey)
 		if err != nil {
@@ -873,6 +961,8 @@ func agentRevertInTx(ctx context.Context, tx store.TxAccountScope, in EditInput)
 		}
 		revs = head.UnitRevs
 	}
+	out.RestoredCount, out.SkippedCount = len(out.Restored), len(out.Skipped)
+	out.Restored, out.Skipped = out.Restored[:min(len(out.Restored), maxListedEntries)], out.Skipped[:min(len(out.Skipped), maxListedEntries)]
 	return out, nil
 }
 
@@ -931,4 +1021,27 @@ func BakedModelInTx(ctx context.Context, tx store.TxAccountScope, revisionID str
 		out.SizeM[i] = math.Round((manifest.Bounds.Max[i]-manifest.Bounds.Min[i])*1000) / 1000
 	}
 	return out, nil
+}
+
+// BuiltinCatalog lists the builtin primitives for the assistant: each with
+// its parameter names, sorted.
+func BuiltinCatalog() string {
+	keys := make([]string, 0, len(builtins))
+	for k := range builtins {
+		if k != "ground@1" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		spec := builtins[k]
+		names := make([]string, 0, len(spec.Params))
+		for n := range spec.Params {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		parts = append(parts, fmt.Sprintf("%s %s(%s)", k, spec.Label, strings.Join(names, ",")))
+	}
+	return strings.Join(parts, "；")
 }

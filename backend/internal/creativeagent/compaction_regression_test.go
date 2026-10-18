@@ -112,7 +112,9 @@ func TestHistoryGuardUsesCurrentToolsAfterConsentUpgrade(t *testing.T) {
 
 func TestCompactionSmallWindowCanContinue(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 16000 })
+	// The window leaves the same room as before the scene tools (about 7 KB of
+	// definitions in every request) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 18000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for i := 0; i < 4; i++ {
@@ -132,7 +134,9 @@ func TestCompactionSmallWindowCanContinue(t *testing.T) {
 
 func TestCompactionOriginalsLeaveRoomForRecentTurns(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 16000 })
+	// The window leaves the same room as before the scene tools (about 7 KB of
+	// definitions in every request) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 18000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for _, text := range []string{strings.Repeat("x", 20000), strings.Repeat("y", 20000), "最近方案甲", "最近方案乙"} {
@@ -198,7 +202,9 @@ func TestCompactionOriginalsYieldToExpandedTools(t *testing.T) {
 
 func TestCompactionSummaryFallsBackWhenCurrentToolsOutgrowWindow(t *testing.T) {
 	f := newCompactionFixture(t, testSummary)
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 8000 })
+	// The window leaves the same room as before the scene tools (about 7 KB of
+	// definitions in every request) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 10000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	summary := testSummary
@@ -251,7 +257,7 @@ func TestCompactionSummaryFallsBackWhenCurrentToolsOutgrowWindow(t *testing.T) {
 	f.vendor.mu.Lock()
 	request := f.vendor.sent[len(f.vendor.sent)-1]
 	f.vendor.mu.Unlock()
-	if bytes := llmgateway.EstimateInputTokens(request); bytes > 32000 {
+	if bytes := llmgateway.EstimateInputTokens(request); bytes > 40000 {
 		t.Fatalf("actual request exceeded byte ceiling: %d", bytes)
 	}
 }
@@ -263,7 +269,9 @@ func TestCompactionReplacementAtSameCoverageUsesNewSummary(t *testing.T) {
 	if first.State != RunSucceeded {
 		t.Fatalf("first compact: %s / %s", first.State, first.ErrorCode)
 	}
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 8000 })
+	// The window leaves the same room as before the scene tools (about 7 KB of
+	// definitions in every request) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 10000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = compactionScript(testSummary + "\nreplacement-small-summary")

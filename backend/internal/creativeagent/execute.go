@@ -682,7 +682,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 		return err
 	}
 	// Include content read by tools in this run, including restored checkpoints.
-	rows, err := tx.Query(ctx, "creative_message_content_refs", "content_revision_id", "role='result' AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND run_id=$2 AND body->>'tool_name' IN ('read_asset','read_canvas','read_run_result'))", held.RunID)
+	rows, err := tx.Query(ctx, "creative_message_content_refs", "content_revision_id", "role='result' AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND run_id=$2 AND body->>'tool_name' IN ('read_asset','read_canvas','read_run_result','render_view'))", held.RunID)
 	if err != nil {
 		return err
 	}

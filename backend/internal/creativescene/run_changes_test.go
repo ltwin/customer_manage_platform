@@ -306,20 +306,20 @@ func TestChangesSince(t *testing.T) {
 			me.move(a, 2)
 			me.resize(a, 3)
 			me.add(named(box(b, nil, 11), "灯笼"))
-		}, []string{"摄影师改了「柱 A」(" + a + ")的摆放和内容", "摄影师新增了「灯笼」(" + b + ")"}},
+		}, []string{"创作者改了「柱 A」(" + a + ")的摆放和内容", "创作者新增了「灯笼」(" + b + ")"}},
 		{"deleted", func(me, agent author) {
 			agent.add(named(box(a, nil, 10), "柱 A"))
 			me.remove(a)
-		}, []string{"摄影师删除了「柱 A」(" + a + ")"}},
+		}, []string{"创作者删除了「柱 A」(" + a + ")"}},
 		{"whole restore", func(me, agent author) {
 			agent.add(named(box(a, nil, 10), "柱 A"))
 			me.restoreWhole(1)
-		}, []string{"摄影师把整个场景恢复到第 1 版"}},
+		}, []string{"创作者把整个场景恢复到第 1 版"}},
 		{"unit restore", func(me, agent author) {
 			me.add(named(box(a, nil, 10), "柱 A"))
 			agent.move(a, 3)
 			me.send([]string{placement(a)}, op{"op": "restore_units", "from_revision": "2", "units": []string{placement(a)}})
-		}, []string{"摄影师把「柱 A」(" + a + ")恢复到第 2 版"}},
+		}, []string{"创作者把「柱 A」(" + a + ")恢复到第 2 版"}},
 		{"the conversation's own runs are not news", func(me, agent author) {
 			agent.add(named(box(a, nil, 10), "柱 A"))
 			agent.as(agentRun("ccrn_2")).move(a, 4)

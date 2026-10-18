@@ -3,6 +3,9 @@ package creativescene_test
 import (
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"slices"
 	"strings"
 	"testing"
@@ -72,13 +75,13 @@ func TestAgentEditChecksTheBaseline(t *testing.T) {
 		t.Fatalf("expected a conflict, got %#v", got)
 	}
 	c := conflict.Conflicts[0]
-	if c.ObjectID != p || c.Name != "柱 P" || c.Part != "摆放" || c.ChangedBy != "摄影师" {
+	if c.ObjectID != p || c.Name != "柱 P" || c.Part != "摆放" || c.ChangedBy != "创作者" {
 		t.Fatalf("conflict entry %+v", c)
 	}
 	if view, ok := c.Current.(creativescene.ObjectView); !ok || view.Transform.Position[0] != 3 {
 		t.Fatalf("current state %#v", c.Current)
 	}
-	if len(conflict.ChangesSince.Lines) != 1 || !strings.Contains(conflict.ChangesSince.Lines[0], "摄影师改了「柱 P」") {
+	if len(conflict.ChangesSince.Lines) != 1 || !strings.Contains(conflict.ChangesSince.Lines[0], "创作者改了「柱 P」") {
 		t.Fatalf("changes since %+v", conflict.ChangesSince)
 	}
 	if positionX(t, f.a, me.doc, p) != 3 {
@@ -104,7 +107,7 @@ func TestAgentEditChecksTheBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conflict, ok := got.(*creativescene.WriteConflict); !ok || conflict.Conflicts[0].Unit != "render" || conflict.Conflicts[0].ChangedBy != "摄影师" {
+	if conflict, ok := got.(*creativescene.WriteConflict); !ok || conflict.Conflicts[0].Unit != "render" || conflict.Conflicts[0].ChangedBy != "创作者" {
 		t.Fatalf("after a whole restore: %#v", got)
 	}
 }
@@ -172,7 +175,7 @@ func TestAgentRevertTakesBackARun(t *testing.T) {
 	}
 
 	rest := revert(t, op{"op": "revert_run", "run_id": earlier})
-	if len(rest.Restored) != 1 || rest.Restored[0].ObjectID != c || len(rest.Skipped) != 1 || rest.Skipped[0].ObjectID != b || rest.Skipped[0].Reason != "之后被摄影师改过" || rest.WrittenRevision == nil {
+	if len(rest.Restored) != 1 || rest.Restored[0].ObjectID != c || len(rest.Skipped) != 1 || rest.Skipped[0].ObjectID != b || rest.Skipped[0].Reason != "之后被创作者改过" || rest.WrittenRevision == nil {
 		t.Fatalf("revert %+v", rest)
 	}
 	if positionX(t, f.a, me.doc, c) != 0 || positionX(t, f.a, me.doc, b) != 7 {
@@ -243,6 +246,26 @@ func TestAgentRead(t *testing.T) {
 	}
 	if got.Brief || len(got.Objects) != 1 || got.Objects[0].Transform == nil || !slices.Equal(got.Missing, []string{objectID(9999)}) {
 		t.Fatalf("narrowed read %+v", got)
+	}
+
+	// Within a byte budget: requested code first, then objects in brief, then
+	// as many as fit, and the result says what it left out.
+	for _, budget := range []int{4000, 20000} {
+		got, err = agentRead(t, f.a, creativescene.ReadInput{DocumentID: doc, IncludeCode: []string{pillar.ContentRevisionID}, MaxBytes: budget})
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(got)
+		if len(raw) > budget || !got.Brief || got.OmittedObjects == 0 || len(got.Objects)+got.OmittedObjects != 302 || got.Code[pillar.ContentRevisionID] != pillarCode || got.Note == "" {
+			t.Fatalf("budget %d: %d bytes, brief=%v listed=%d omitted=%d code=%d", budget, len(raw), got.Brief, len(got.Objects), got.OmittedObjects, len(got.Code))
+		}
+	}
+	got, err = agentRead(t, f.a, creativescene.ReadInput{DocumentID: doc, IncludeCode: []string{pillar.ContentRevisionID}, MaxBytes: 600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Code) != 0 || !slices.Equal(got.CodeOmitted, []string{pillar.ContentRevisionID}) {
+		t.Fatalf("code past the budget: %+v", got)
 	}
 }
 
@@ -430,7 +453,7 @@ func TestRetryBakeWritesTheConflictedBake(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := int64(readScene(t, f.a, doc).Revision)
-	if described.RetryJobID != job.ID || int64(described.Revision) != head || len(described.Conflicts) != 1 || described.Conflicts[0].ChangedBy != "摄影师" || described.Conflicts[0].ObjectID != objectID(1) {
+	if described.RetryJobID != job.ID || int64(described.Revision) != head || len(described.Conflicts) != 1 || described.Conflicts[0].ChangedBy != "创作者" || described.Conflicts[0].ObjectID != objectID(1) {
 		t.Fatalf("described %+v", described)
 	}
 
@@ -511,4 +534,21 @@ func TestCreateRenderJob(t *testing.T) {
 			t.Fatalf("%+v: %v", bad, err)
 		}
 	}
+}
+
+// What the assistant reads (agent.go) names the person neutrally, like the
+// assistant's own text: the creator may be a photographer today and anything
+// else tomorrow (owner 2026-10-14).
+func TestAgentTextNamesNoProfession(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "agent.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING && strings.Contains(lit.Value, "摄影师") {
+			t.Errorf("%s names a profession", fset.Position(lit.Pos()))
+		}
+		return true
+	})
 }

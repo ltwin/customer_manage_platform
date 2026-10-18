@@ -304,6 +304,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	code := ""
 	var public creativeops.Public
 	var parked errParked
+	var structured *structuredRefusal
 	switch {
 	case readErr == nil:
 	case errors.As(readErr, &parked):
@@ -311,6 +312,8 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		return "", tool.StatefulInterrupt(ctx, clientJobInfo+parked.jobID, parked.jobID)
 	case stopsRun(ctx, readErr):
 		return "", readErr
+	case errors.As(readErr, &structured):
+		code, result = "creative_tool_refused", structured.result
 	case errors.As(readErr, &public):
 		code = "creative_tool_refused"
 		raw, err := json.Marshal(map[string]any{"success": false, "code": code, "message": public.PublicMessage()})
@@ -353,6 +356,13 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	})
 	return projection, err
 }
+
+// structuredRefusal is a business "no" whose answer has a structure the model
+// acts on, such as a scene conflict with the new baseline. The step fails and
+// its result is that structure.
+type structuredRefusal struct{ result string }
+
+func (r *structuredRefusal) Error() string { return "creative tool refused: " + r.result }
 
 // publishedCall is one finished call as the journal records it.
 type publishedCall struct {
@@ -463,6 +473,8 @@ func (h *runtimeHandler) unexpected(ctx context.Context, name, stepID string, er
 		message += "这次调用没有改动任何内容。"
 	} else if libraryWriteTool(name) {
 		message += "请用 read_library_result 或资产库查询核对后再继续。"
+	} else if sceneWriteTool(name) {
+		message += "改动可能已生效也可能没有，继续之前请先用 read_scene 核对。"
 	} else {
 		message += "改动可能已生效也可能没有，继续之前请先读取画布核对。"
 	}

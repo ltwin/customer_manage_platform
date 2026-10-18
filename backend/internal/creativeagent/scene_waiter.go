@@ -112,7 +112,7 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 		if err := json.Unmarshal(input, &call); err != nil {
 			return err
 		}
-		result, failed, err := sceneToolResult(job, res)
+		result, failed, err := sceneToolResult(ctx, tx, job, res, string(call.Arguments))
 		if err != nil {
 			return err
 		}
@@ -221,33 +221,6 @@ func (s *Service) parkedHandlerInTx(ctx context.Context, tx store.TxAccountScope
 	service := *s
 	service.limits = held.Limits
 	return &runtimeHandler{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}, service: &service, held: held, revisions: revisions, current: &currentStep{}}, nil
-}
-
-// sceneToolResult is what the model reads for a finished job. failed marks a
-// call that did not do what was asked.
-func sceneToolResult(job creativescene.Job, res creativescene.JobResult) (string, bool, error) {
-	var out any
-	failed := false
-	switch {
-	case res.Bake != nil:
-		out = map[string]any{"status": "succeeded", "content_revision_id": res.Bake.ContentRevisionID, "object_ids": res.Bake.ObjectIDs, "written_revision": res.Bake.Revision}
-	case res.Render != nil:
-		out = map[string]any{"image_revision_id": res.Render.ContentRevisionID, "content_revision_id": res.Render.ContentRevisionID, "scene_revision": res.Render.SceneRevision}
-	case res.Failure != nil:
-		failed = true
-		switch res.Failure.Code {
-		case creativescene.JobExpired:
-			out = map[string]any{"status": "expired", "message": res.Failure.Message}
-		case "conflict":
-			out = map[string]any{"status": "conflict", "conflicts": res.Failure.Conflicts, "retry_job_id": job.ID, "message": res.Failure.Message}
-		default:
-			out = map[string]any{"status": "failed", "error": map[string]string{"code": res.Failure.Code, "message": res.Failure.Message}}
-		}
-	default:
-		return "", false, errors.New("creative agent: empty job result")
-	}
-	raw, err := json.Marshal(out)
-	return string(raw), failed, err
 }
 
 var _ creativescene.JobWaiter = sceneWaiter{}

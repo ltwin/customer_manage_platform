@@ -30,6 +30,9 @@ func agentToolDefinitions() []agentToolDefinition {
 	canvas := func(name string) func(*runtimeHandler) tool.InvokableTool {
 		return func(h *runtimeHandler) tool.InvokableTool { return &canvasTool{handler: h, name: name} }
 	}
+	scene := func(name string) func(*runtimeHandler) tool.InvokableTool {
+		return func(h *runtimeHandler) tool.InvokableTool { return &sceneTool{handler: h, name: name} }
+	}
 	skill := func(name string) func(*runtimeHandler) tool.InvokableTool {
 		return func(h *runtimeHandler) tool.InvokableTool { return &skillTool{handler: h, name: name} }
 	}
@@ -73,6 +76,11 @@ func agentToolDefinitions() []agentToolDefinition {
 			}
 			return []resource{{keyCanvas, false}, {nodeKey(node), true}}
 		}},
+		{entry: ToolEntry{Key: readSceneTool, Version: 1, DisplayName: "读取场景", EffectClass: "read_only"}, bind: scene(readSceneTool), resources: sceneResources(false)},
+		{entry: ToolEntry{Key: editSceneTool, Version: 1, DisplayName: "修改场景", EffectClass: "write", MaxImpact: 2000}, bind: scene(editSceneTool), resources: sceneResources(true)},
+		{entry: ToolEntry{Key: writeModelTool, Version: 1, DisplayName: "生成模型", EffectClass: "write", MaxImpact: 1}, bind: scene(writeModelTool), resources: sceneResources(false)},
+		{entry: ToolEntry{Key: renderViewTool, Version: 1, DisplayName: "回看场景", EffectClass: "read_only"}, bind: scene(renderViewTool),
+			allowed: func(h *runtimeHandler) bool { return h.held.Model.Capability.ImageInput }, resources: sceneResources(false)},
 		{entry: ToolEntry{Key: searchWebTool, Version: 1, DisplayName: "搜索网页", EffectClass: "read_only"}, bind: func(h *runtimeHandler) tool.InvokableTool { return &searchTool{handler: h} }, deployed: webEnabled, resources: func(args string, _ map[string][]string, _ bool) []resource {
 			q := searchKey(stringArgument(args, "query"))
 			if q == "" {

@@ -175,9 +175,9 @@ func TestSceneInputsAreFrozenWithTheRun(t *testing.T) {
 	f.addPillar(creativedocument.Photographer, doc, sceneObjectID("pillarB"), "柱 B", 11)
 	first := assembled()
 	for _, want := range []string{
-		"摄影师正在编辑场景「中殿」(" + doc + "，第 3 版)，选中了：「柱 A」(" + pillar + ")。",
+		"创作者正在编辑场景「中殿」(" + doc + "，第 3 版)，选中了：「柱 A」(" + pillar + ")。",
 		"在本会话上次写入（第 2 版）之后被改过，现在是第 3 版",
-		"摄影师改了「柱 A」(" + pillar + ")的摆放",
+		"创作者改了「柱 A」(" + pillar + ")的摆放",
 	} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("request lacks %q:\n%s", want, first)
@@ -202,7 +202,7 @@ func TestSceneInputsAreFrozenWithTheRun(t *testing.T) {
 	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunSucceeded {
 		t.Fatalf("run %s", got.State)
 	}
-	if sent := f.vendor.sentText(f.vendor.calls() - 1); !strings.Contains(sent, "摄影师正在编辑场景「中殿」") || strings.Contains(sent, "柱 B") {
+	if sent := f.vendor.sentText(f.vendor.calls() - 1); !strings.Contains(sent, "创作者正在编辑场景「中殿」") || strings.Contains(sent, "柱 B") {
 		t.Fatalf("sent request:\n%s", sent)
 	}
 }
@@ -223,7 +223,7 @@ func TestARunFromTheCanvasIsToldNothingAboutScenes(t *testing.T) {
 	if err := f.work(f.alice, run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if sent := f.vendor.sentText(0); strings.Contains(sent, "摄影师正在编辑场景") || strings.Contains(sent, "被改过") {
+	if sent := f.vendor.sentText(0); strings.Contains(sent, "创作者正在编辑场景") || strings.Contains(sent, "被改过") {
 		t.Fatalf("canvas run told about scenes:\n%s", sent)
 	}
 }
