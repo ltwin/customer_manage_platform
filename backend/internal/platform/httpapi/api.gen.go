@@ -895,15 +895,16 @@ func (e CreativeAgentRunSettlementState) Valid() bool {
 
 // Defines values for CreativeAgentRunState.
 const (
-	CreativeAgentRunStateCancelled    CreativeAgentRunState = "cancelled"
-	CreativeAgentRunStateFailed       CreativeAgentRunState = "failed"
-	CreativeAgentRunStatePartial      CreativeAgentRunState = "partial"
-	CreativeAgentRunStateQueued       CreativeAgentRunState = "queued"
-	CreativeAgentRunStateReconciling  CreativeAgentRunState = "reconciling"
-	CreativeAgentRunStateRunning      CreativeAgentRunState = "running"
-	CreativeAgentRunStateSucceeded    CreativeAgentRunState = "succeeded"
-	CreativeAgentRunStateWaitingApply CreativeAgentRunState = "waiting_apply"
-	CreativeAgentRunStateWaitingInput CreativeAgentRunState = "waiting_input"
+	CreativeAgentRunStateCancelled     CreativeAgentRunState = "cancelled"
+	CreativeAgentRunStateFailed        CreativeAgentRunState = "failed"
+	CreativeAgentRunStatePartial       CreativeAgentRunState = "partial"
+	CreativeAgentRunStateQueued        CreativeAgentRunState = "queued"
+	CreativeAgentRunStateReconciling   CreativeAgentRunState = "reconciling"
+	CreativeAgentRunStateRunning       CreativeAgentRunState = "running"
+	CreativeAgentRunStateSucceeded     CreativeAgentRunState = "succeeded"
+	CreativeAgentRunStateWaitingApply  CreativeAgentRunState = "waiting_apply"
+	CreativeAgentRunStateWaitingClient CreativeAgentRunState = "waiting_client"
+	CreativeAgentRunStateWaitingInput  CreativeAgentRunState = "waiting_input"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAgentRunState enum.
@@ -924,6 +925,8 @@ func (e CreativeAgentRunState) Valid() bool {
 	case CreativeAgentRunStateSucceeded:
 		return true
 	case CreativeAgentRunStateWaitingApply:
+		return true
+	case CreativeAgentRunStateWaitingClient:
 		return true
 	case CreativeAgentRunStateWaitingInput:
 		return true
@@ -2093,6 +2096,108 @@ const (
 func (e CreativeSceneDocumentTypeKey) Valid() bool {
 	switch e {
 	case Scene:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneJobCompletePayloadErrorCode.
+const (
+	CompileError   CreativeSceneJobCompletePayloadErrorCode = "compile_error"
+	CompileTimeout CreativeSceneJobCompletePayloadErrorCode = "compile_timeout"
+	HostError      CreativeSceneJobCompletePayloadErrorCode = "host_error"
+	LimitExceeded  CreativeSceneJobCompletePayloadErrorCode = "limit_exceeded"
+	RenderError    CreativeSceneJobCompletePayloadErrorCode = "render_error"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneJobCompletePayloadErrorCode enum.
+func (e CreativeSceneJobCompletePayloadErrorCode) Valid() bool {
+	switch e {
+	case CompileError:
+		return true
+	case CompileTimeout:
+		return true
+	case HostError:
+		return true
+	case LimitExceeded:
+		return true
+	case RenderError:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneJobCompletePayloadOutcome.
+const (
+	CreativeSceneJobCompletePayloadOutcomeFailed    CreativeSceneJobCompletePayloadOutcome = "failed"
+	CreativeSceneJobCompletePayloadOutcomeSucceeded CreativeSceneJobCompletePayloadOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneJobCompletePayloadOutcome enum.
+func (e CreativeSceneJobCompletePayloadOutcome) Valid() bool {
+	switch e {
+	case CreativeSceneJobCompletePayloadOutcomeFailed:
+		return true
+	case CreativeSceneJobCompletePayloadOutcomeSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneJobCompletionState.
+const (
+	CreativeSceneJobCompletionStateFailed    CreativeSceneJobCompletionState = "failed"
+	CreativeSceneJobCompletionStateSucceeded CreativeSceneJobCompletionState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneJobCompletionState enum.
+func (e CreativeSceneJobCompletionState) Valid() bool {
+	switch e {
+	case CreativeSceneJobCompletionStateFailed:
+		return true
+	case CreativeSceneJobCompletionStateSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneJobKind.
+const (
+	BakeModel   CreativeSceneJobKind = "bake_model"
+	ExportShots CreativeSceneJobKind = "export_shots"
+	RenderView  CreativeSceneJobKind = "render_view"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneJobKind enum.
+func (e CreativeSceneJobKind) Valid() bool {
+	switch e {
+	case BakeModel:
+		return true
+	case ExportShots:
+		return true
+	case RenderView:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneJobSummaryState.
+const (
+	Claimed CreativeSceneJobSummaryState = "claimed"
+	Queued  CreativeSceneJobSummaryState = "queued"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneJobSummaryState enum.
+func (e CreativeSceneJobSummaryState) Valid() bool {
+	switch e {
+	case Claimed:
+		return true
+	case Queued:
 		return true
 	default:
 		return false
@@ -4646,8 +4751,10 @@ type CreativeAgentRun struct {
 	// State 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
 	State            CreativeAgentRunState `json:"state"`
 	TriggerMessageId string                `json:"trigger_message_id"`
-	WaitReason       *string               `json:"wait_reason,omitempty"`
-	WaitingToken     *string               `json:"waiting_token,omitempty"`
+
+	// WaitReason 等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）或 slot_busy（任务已完成， 等其他助手运行释放写入槽位）。
+	WaitReason   *string `json:"wait_reason,omitempty"`
+	WaitingToken *string `json:"waiting_token,omitempty"`
 }
 
 // CreativeAgentRunKind chat 是普通的一轮对话（可能先自动压缩）；compact 由 /compact 创建，只压缩上下文、不回答。
@@ -4674,6 +4781,12 @@ type CreativeAgentRunPayload struct {
 
 	// ModelKey 必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。
 	ModelKey string `json:"model_key"`
+
+	// SceneContext 在场景编辑视图里发起时带上：当前场景和选中的物件，冻结为运行输入， 助手据此只改选中的物件。画布视图里发起时不带。
+	SceneContext *struct {
+		DocumentId        string   `json:"document_id"`
+		SelectedObjectIds []string `json:"selected_object_ids"`
+	} `json:"scene_context,omitempty"`
 }
 
 // CreativeAgentSkill defines model for CreativeAgentSkill.
@@ -6214,7 +6327,7 @@ type CreativeProject struct {
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
 
-	// Running 有排队中、运行中或核实中的助手运行或生成任务；归档禁用与状态轮询只看它
+	// Running 有排队中、运行中、核实中或等待页面执行的助手运行，或生成任务；归档禁用与状态轮询只看它
 	Running bool `json:"running"`
 
 	// UpdatedAt 项目元数据（名称、归档状态）最后一次变化；排序请用 edited_at
@@ -6458,6 +6571,122 @@ type CreativeSceneFog struct {
 	FarM  float32 `json:"far_m"`
 	NearM float32 `json:"near_m"`
 }
+
+// CreativeSceneJob defines model for CreativeSceneJob.
+type CreativeSceneJob struct {
+	Attempt    int                  `json:"attempt"`
+	ClaimToken string               `json:"claim_token"`
+	Deadline   time.Time            `json:"deadline"`
+	DocumentId string               `json:"document_id"`
+	Id         string               `json:"id"`
+	Kind       CreativeSceneJobKind `json:"kind"`
+	LeaseUntil time.Time            `json:"lease_until"`
+
+	// Request 按 kind 定义，见契约 data:场景客户端任务
+	Request map[string]interface{} `json:"request"`
+}
+
+// CreativeSceneJobClaim defines model for CreativeSceneJobClaim.
+type CreativeSceneJobClaim struct {
+	Job CreativeSceneJob `json:"job"`
+}
+
+// CreativeSceneJobClaimRequest defines model for CreativeSceneJobClaimRequest.
+type CreativeSceneJobClaimRequest struct {
+	// DocumentId 只认领该场景的任务；不传时认领账号里最早的任务
+	DocumentId *string `json:"document_id,omitempty"`
+
+	// EditorSessionId 标签页随机生成的会话 ID
+	EditorSessionId string `json:"editor_session_id"`
+
+	// Kinds 本端能执行的任务类型；缺省为全部已知类型
+	Kinds *[]CreativeSceneJobKind `json:"kinds,omitempty"`
+}
+
+// CreativeSceneJobCompletePayload defines model for CreativeSceneJobCompletePayload.
+type CreativeSceneJobCompletePayload struct {
+	Bake *struct {
+		GlbUploadId string                 `json:"glb_upload_id"`
+		Manifest    map[string]interface{} `json:"manifest"`
+
+		// Module 沙箱回传、宿主按服务端规则校验过的 {params_schema, params, mount}
+		Module            map[string]interface{} `json:"module"`
+		ThumbnailUploadId string                 `json:"thumbnail_upload_id"`
+	} `json:"bake,omitempty"`
+	ClaimToken string `json:"claim_token"`
+	Error      *struct {
+		Code    CreativeSceneJobCompletePayloadErrorCode `json:"code"`
+		Message string                                   `json:"message"`
+	} `json:"error,omitempty"`
+	Export *struct {
+		ExportOperationId string `json:"export_operation_id"`
+	} `json:"export,omitempty"`
+	Outcome CreativeSceneJobCompletePayloadOutcome `json:"outcome"`
+	Render  *struct {
+		ImageUploadId string `json:"image_upload_id"`
+
+		// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+		SceneRevision CreativeRevision `json:"scene_revision"`
+	} `json:"render,omitempty"`
+}
+
+// CreativeSceneJobCompletePayloadErrorCode defines model for CreativeSceneJobCompletePayload.Error.Code.
+type CreativeSceneJobCompletePayloadErrorCode string
+
+// CreativeSceneJobCompletePayloadOutcome defines model for CreativeSceneJobCompletePayload.Outcome.
+type CreativeSceneJobCompletePayloadOutcome string
+
+// CreativeSceneJobCompleteRequest defines model for CreativeSceneJobCompleteRequest.
+type CreativeSceneJobCompleteRequest struct {
+	ClientCreatedAt time.Time                       `json:"client_created_at"`
+	OperationId     openapi_types.UUID              `json:"operation_id"`
+	Payload         CreativeSceneJobCompletePayload `json:"payload"`
+}
+
+// CreativeSceneJobCompletion defines model for CreativeSceneJobCompletion.
+type CreativeSceneJobCompletion struct {
+	JobId string `json:"job_id"`
+
+	// Result 见契约 data:场景客户端任务 的 result
+	Result map[string]interface{}          `json:"result"`
+	State  CreativeSceneJobCompletionState `json:"state"`
+}
+
+// CreativeSceneJobCompletionState defines model for CreativeSceneJobCompletion.State.
+type CreativeSceneJobCompletionState string
+
+// CreativeSceneJobKind defines model for CreativeSceneJobKind.
+type CreativeSceneJobKind string
+
+// CreativeSceneJobLease defines model for CreativeSceneJobLease.
+type CreativeSceneJobLease struct {
+	LeaseUntil time.Time `json:"lease_until"`
+}
+
+// CreativeSceneJobLeaseRequest defines model for CreativeSceneJobLeaseRequest.
+type CreativeSceneJobLeaseRequest struct {
+	ClaimToken string `json:"claim_token"`
+}
+
+// CreativeSceneJobList defines model for CreativeSceneJobList.
+type CreativeSceneJobList struct {
+	Items []CreativeSceneJobSummary `json:"items"`
+}
+
+// CreativeSceneJobSummary defines model for CreativeSceneJobSummary.
+type CreativeSceneJobSummary struct {
+	CreatedAt time.Time                    `json:"created_at"`
+	Id        string                       `json:"id"`
+	Kind      CreativeSceneJobKind         `json:"kind"`
+	RunId     nullable.Nullable[string]    `json:"run_id"`
+	State     CreativeSceneJobSummaryState `json:"state"`
+
+	// Target bake_model 为 {op:"add", object:{name, parent_id, transform}} 或 {op:"replace", object_ids}；其他为 null
+	Target nullable.Nullable[map[string]interface{}] `json:"target"`
+}
+
+// CreativeSceneJobSummaryState defines model for CreativeSceneJobSummary.State.
+type CreativeSceneJobSummaryState string
 
 // CreativeSceneLight defines model for CreativeSceneLight.
 type CreativeSceneLight struct {
@@ -8607,6 +8836,11 @@ type RestoreCreativeProjectParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CompleteCreativeSceneJobParams defines parameters for CompleteCreativeSceneJob.
+type CompleteCreativeSceneJobParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // CreateCreativeCategoryParams defines parameters for CreateCreativeCategory.
 type CreateCreativeCategoryParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -9152,6 +9386,15 @@ type RenameCreativeProjectJSONRequestBody = RenameCreativeProjectRequest
 
 // RestoreCreativeProjectJSONRequestBody defines body for RestoreCreativeProject for application/json ContentType.
 type RestoreCreativeProjectJSONRequestBody = RestoreCreativeProjectRequest
+
+// ClaimCreativeSceneJobJSONRequestBody defines body for ClaimCreativeSceneJob for application/json ContentType.
+type ClaimCreativeSceneJobJSONRequestBody = CreativeSceneJobClaimRequest
+
+// CompleteCreativeSceneJobJSONRequestBody defines body for CompleteCreativeSceneJob for application/json ContentType.
+type CompleteCreativeSceneJobJSONRequestBody = CreativeSceneJobCompleteRequest
+
+// LeaseCreativeSceneJobJSONRequestBody defines body for LeaseCreativeSceneJob for application/json ContentType.
+type LeaseCreativeSceneJobJSONRequestBody = CreativeSceneJobLeaseRequest
 
 // CreateCreativeCategoryJSONRequestBody defines body for CreateCreativeCategory for application/json ContentType.
 type CreateCreativeCategoryJSONRequestBody = CreateCreativeCategoryRequest
@@ -11224,6 +11467,9 @@ type ServerInterface interface {
 
 	// (GET /creative/documents/{id}/revisions/{revision})
 	GetCreativeDocumentRevision(c *gin.Context, id string, revision CreativeRevision, params GetCreativeDocumentRevisionParams)
+	// 列出场景当前未结束的客户端任务，供编辑器高亮与占位
+	// (GET /creative/documents/{id}/scene-jobs)
+	ListCreativeSceneJobs(c *gin.Context, id string)
 
 	// (POST /creative/documents/{id}/trash)
 	TrashCreativeDocument(c *gin.Context, id string, params TrashCreativeDocumentParams)
@@ -11290,6 +11536,15 @@ type ServerInterface interface {
 
 	// (POST /creative/projects/{id}/restore)
 	RestoreCreativeProject(c *gin.Context, id string, params RestoreCreativeProjectParams)
+	// 渲染端认领一个待执行的场景客户端任务
+	// (POST /creative/scene-jobs/claim)
+	ClaimCreativeSceneJob(c *gin.Context)
+	// 渲染端提交任务结果，服务端同一事务落结果、改终态、让助手运行继续
+	// (POST /creative/scene-jobs/{job_id}/complete)
+	CompleteCreativeSceneJob(c *gin.Context, jobId string, params CompleteCreativeSceneJobParams)
+	// 续租：把租约延长到现在加 30 秒，不超过 deadline
+	// (POST /creative/scene-jobs/{job_id}/lease)
+	LeaseCreativeSceneJob(c *gin.Context, jobId string)
 
 	// (GET /creative/tag-categories)
 	ListCreativeCategories(c *gin.Context)
@@ -14489,6 +14744,33 @@ func (siw *ServerInterfaceWrapper) GetCreativeDocumentRevision(c *gin.Context) {
 	siw.Handler.GetCreativeDocumentRevision(c, id, revision, params)
 }
 
+// ListCreativeSceneJobs operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeSceneJobs(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeSceneJobs(c, id)
+}
+
 // TrashCreativeDocument operation middleware
 func (siw *ServerInterfaceWrapper) TrashCreativeDocument(c *gin.Context) {
 
@@ -15299,6 +15581,102 @@ func (siw *ServerInterfaceWrapper) RestoreCreativeProject(c *gin.Context) {
 	}
 
 	siw.Handler.RestoreCreativeProject(c, id, params)
+}
+
+// ClaimCreativeSceneJob operation middleware
+func (siw *ServerInterfaceWrapper) ClaimCreativeSceneJob(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ClaimCreativeSceneJob(c)
+}
+
+// CompleteCreativeSceneJob operation middleware
+func (siw *ServerInterfaceWrapper) CompleteCreativeSceneJob(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", c.Param("job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter job_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CompleteCreativeSceneJobParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CompleteCreativeSceneJob(c, jobId, params)
+}
+
+// LeaseCreativeSceneJob operation middleware
+func (siw *ServerInterfaceWrapper) LeaseCreativeSceneJob(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", c.Param("job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter job_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.LeaseCreativeSceneJob(c, jobId)
 }
 
 // ListCreativeCategories operation middleware
@@ -17768,6 +18146,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/documents/:id/purge", wrapper.PurgeCreativeDocument)
 	router.GET(options.BaseURL+"/creative/documents/:id/revisions", wrapper.ListCreativeDocumentRevisions)
 	router.GET(options.BaseURL+"/creative/documents/:id/revisions/:revision", wrapper.GetCreativeDocumentRevision)
+	router.GET(options.BaseURL+"/creative/documents/:id/scene-jobs", wrapper.ListCreativeSceneJobs)
 	router.POST(options.BaseURL+"/creative/documents/:id/trash", wrapper.TrashCreativeDocument)
 	router.POST(options.BaseURL+"/creative/documents/:id/untrash", wrapper.UntrashCreativeDocument)
 	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
@@ -17790,6 +18169,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/projects/:id/archive", wrapper.ArchiveCreativeProject)
 	router.POST(options.BaseURL+"/creative/projects/:id/rename", wrapper.RenameCreativeProject)
 	router.POST(options.BaseURL+"/creative/projects/:id/restore", wrapper.RestoreCreativeProject)
+	router.POST(options.BaseURL+"/creative/scene-jobs/claim", wrapper.ClaimCreativeSceneJob)
+	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/complete", wrapper.CompleteCreativeSceneJob)
+	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/lease", wrapper.LeaseCreativeSceneJob)
 	router.GET(options.BaseURL+"/creative/tag-categories", wrapper.ListCreativeCategories)
 	router.POST(options.BaseURL+"/creative/tag-categories", wrapper.CreateCreativeCategory)
 	router.POST(options.BaseURL+"/creative/tag-categories/:id/delete", wrapper.DeleteCreativeCategory)

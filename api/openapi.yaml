@@ -577,6 +577,107 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/scene-jobs/claim:
+    post:
+      tags: [creative-foundation]
+      operationId: claimCreativeSceneJob
+      summary: 渲染端认领一个待执行的场景客户端任务
+      description: >-
+        指定 document_id 时只认领该场景最早的任务，否则认领账号里最早的任务。用 FOR UPDATE SKIP LOCKED
+        保证每个任务最多被一个标签页认领；没有任务时返回 204、不加锁。认领本身不需要幂等键。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeSceneJobClaimRequest'}
+      responses:
+        '200':
+          description: 认领成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeSceneJobClaim'}
+        '204':
+          description: 没有可认领的任务
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/scene-jobs/{job_id}/lease:
+    post:
+      tags: [creative-foundation]
+      operationId: leaseCreativeSceneJob
+      summary: 续租：把租约延长到现在加 30 秒，不超过 deadline
+      description: 令牌不匹配、任务已不是 claimed 或租约已过期时返回 409 creative_state_conflict，渲染端立即停止并丢弃产物。续租不触发任务通知。
+      parameters:
+      - {in: path, name: job_id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeSceneJobLeaseRequest'}
+      responses:
+        '200':
+          description: 续租成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeSceneJobLease'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/scene-jobs/{job_id}/complete:
+    post:
+      tags: [creative-foundation]
+      operationId: completeCreativeSceneJob
+      summary: 渲染端提交任务结果，服务端同一事务落结果、改终态、让助手运行继续
+      description: >-
+        写入场景时单元冲突、或结果内容不合规（manifest 与 GLB 不符、参数不合定义、超上限、父级不存在）时，
+        任务记为 failed 并照常返回 200，渲染端不重试。409 creative_state_conflict：租约已失效、令牌不匹配，
+        或关联运行已不能继续写入（运行已结束，任务已取消）；409 creative_upload_unavailable：暂存上传不可用，
+        租约仍有效时重新上传后用新的 operation id 重试。
+      parameters:
+      - {in: path, name: job_id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeSceneJobCompleteRequest'}
+      responses:
+        '200':
+          description: 任务已进入终态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeSceneJobCompletion'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/documents/{id}/scene-jobs:
+    get:
+      tags: [creative-foundation]
+      operationId: listCreativeSceneJobs
+      summary: 列出场景当前未结束的客户端任务，供编辑器高亮与占位
+      description: 只含 queued 和 claimed，按创建时间排序，最多 50 条；不返回代码、参数和认领信息。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeSceneJobList'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /creative/documents:
     get:
       tags:
@@ -7854,7 +7955,7 @@ components:
           description: 最近编辑：画布内容提交与改名推进它，归档、恢复不推进
         running:
           type: boolean
-          description: 有排队中、运行中或核实中的助手运行或生成任务；归档禁用与状态轮询只看它
+          description: 有排队中、运行中、核实中或等待页面执行的助手运行，或生成任务；归档禁用与状态轮询只看它
         waiting:
           type: boolean
           description: 有等你确认的运行（waiting_input / waiting_apply）；只用于展示
@@ -8737,6 +8838,19 @@ components:
           description: >-
             本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次，
             所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。
+        scene_context:
+          type: object
+          additionalProperties: false
+          required: [document_id, selected_object_ids]
+          description: >-
+            在场景编辑视图里发起时带上：当前场景和选中的物件，冻结为运行输入，
+            助手据此只改选中的物件。画布视图里发起时不带。
+          properties:
+            document_id: {type: string}
+            selected_object_ids:
+              type: array
+              maxItems: 50
+              items: {type: string}
     CreateCreativeAgentRunRequest:
       type: object
       additionalProperties: false
@@ -8851,7 +8965,7 @@ components:
         skill_version_id: {type: string}
         state:
           type: string
-          enum: [queued, running, waiting_input, waiting_apply, reconciling,
+          enum: [queued, running, waiting_input, waiting_apply, waiting_client, reconciling,
                  succeeded, partial, failed, cancelled]
           description: >-
             运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
@@ -8863,7 +8977,11 @@ components:
             这是投影，允许短暂滞后。
         error_code: {type: string}
         waiting_token: {type: string}
-        wait_reason: {type: string}
+        wait_reason:
+          type: string
+          description: >-
+            等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）或 slot_busy（任务已完成，
+            等其他助手运行释放写入槽位）。
         source_run_id: {type: string}
         limits_version: {type: string}
         revision: {$ref: '#/components/schemas/CreativeRevision'}
@@ -15206,6 +15324,149 @@ components:
           maxItems: 200
           items:
             $ref: '#/components/schemas/CreativeDocumentOperation'
+    CreativeSceneJobKind:
+      type: string
+      enum: [bake_model, render_view, export_shots]
+    CreativeSceneJobClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [editor_session_id]
+      properties:
+        editor_session_id:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+          description: 标签页随机生成的会话 ID
+        document_id:
+          type: string
+          description: 只认领该场景的任务；不传时认领账号里最早的任务
+        kinds:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeSceneJobKind'}
+          description: 本端能执行的任务类型；缺省为全部已知类型
+    CreativeSceneJob:
+      type: object
+      additionalProperties: false
+      required: [id, document_id, kind, request, attempt, claim_token, lease_until, deadline]
+      properties:
+        id: {type: string}
+        document_id: {type: string}
+        kind: {$ref: '#/components/schemas/CreativeSceneJobKind'}
+        request:
+          type: object
+          additionalProperties: true
+          description: 按 kind 定义，见契约 data:场景客户端任务
+        attempt: {type: integer, minimum: 0}
+        claim_token: {type: string}
+        lease_until: {type: string, format: date-time}
+        deadline: {type: string, format: date-time}
+    CreativeSceneJobClaim:
+      type: object
+      additionalProperties: false
+      required: [job]
+      properties:
+        job: {$ref: '#/components/schemas/CreativeSceneJob'}
+    CreativeSceneJobLeaseRequest:
+      type: object
+      additionalProperties: false
+      required: [claim_token]
+      properties:
+        claim_token: {type: string}
+    CreativeSceneJobLease:
+      type: object
+      additionalProperties: false
+      required: [lease_until]
+      properties:
+        lease_until: {type: string, format: date-time}
+    CreativeSceneJobCompletePayload:
+      type: object
+      additionalProperties: false
+      required: [claim_token, outcome]
+      properties:
+        claim_token: {type: string}
+        outcome:
+          type: string
+          enum: [succeeded, failed]
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [compile_error, compile_timeout, limit_exceeded, render_error, host_error]
+            message: {type: string, maxLength: 4000}
+        bake:
+          type: object
+          additionalProperties: false
+          required: [glb_upload_id, thumbnail_upload_id, manifest, module]
+          properties:
+            glb_upload_id: {type: string}
+            thumbnail_upload_id: {type: string}
+            manifest: {type: object, additionalProperties: true}
+            module:
+              type: object
+              additionalProperties: true
+              description: 沙箱回传、宿主按服务端规则校验过的 {params_schema, params, mount}
+        render:
+          type: object
+          additionalProperties: false
+          required: [image_upload_id, scene_revision]
+          properties:
+            image_upload_id: {type: string}
+            scene_revision: {$ref: '#/components/schemas/CreativeRevision'}
+        export:
+          type: object
+          additionalProperties: false
+          required: [export_operation_id]
+          properties:
+            export_operation_id: {type: string}
+    CreativeSceneJobCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeSceneJobCompletePayload'}
+    CreativeSceneJobCompletion:
+      type: object
+      additionalProperties: false
+      required: [job_id, state, result]
+      properties:
+        job_id: {type: string}
+        state:
+          type: string
+          enum: [succeeded, failed]
+        result:
+          type: object
+          additionalProperties: true
+          description: 见契约 data:场景客户端任务 的 result
+    CreativeSceneJobSummary:
+      type: object
+      additionalProperties: false
+      required: [id, kind, state, run_id, created_at, target]
+      properties:
+        id: {type: string}
+        kind: {$ref: '#/components/schemas/CreativeSceneJobKind'}
+        state:
+          type: string
+          enum: [queued, claimed]
+        run_id: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+        target:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: bake_model 为 {op:"add", object:{name, parent_id, transform}} 或 {op:"replace", object_ids}；其他为 null
+    CreativeSceneJobList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/CreativeSceneJobSummary'}
     CreativeDocumentCommandRequest:
       type: object
       additionalProperties: false

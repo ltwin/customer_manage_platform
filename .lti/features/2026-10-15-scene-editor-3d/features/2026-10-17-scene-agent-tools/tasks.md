@@ -27,11 +27,12 @@
 
 ## 2. 接口（后端）
 
-- [ ] 2.1 `api/openapi.yaml` 增加 5 个接口：认领、续租、完成、列出、运行改动；运行状态枚举加 `waiting_client`；等待原因加 `client_job`、`slot_busy`；创建运行请求加 `scene_context`。然后 `make generate` 并提交两份生成物。`httpapi/creative_scene_jobs.go` 实现处理函数，`creativeError` 映射 `ErrJobLeaseLost`。`httpapi` 测试覆盖：
+- [x] 2.1 `api/openapi.yaml` 增加 5 个接口：认领、续租、完成、列出、运行改动；运行状态枚举加 `waiting_client`；等待原因加 `client_job`、`slot_busy`；创建运行请求加 `scene_context`。然后 `make generate` 并提交两份生成物。`httpapi/creative_scene_jobs.go` 实现处理函数，`creativeError` 映射 `ErrJobLeaseLost`。`httpapi` 测试覆盖：
   - 每个接口的成功路径；
   - 跨账号 404；
   - 错误码 400 / 409 `creative_state_conflict` / 409 `creative_upload_unavailable`；
   - 完成接口的幂等。
+  - 实施记录：运行改动接口 `GET /documents/{id}/run-changes` 依赖 3.4 的 `RunChanges`，随 3.4 一起加入 OpenAPI 与处理函数；本任务交付其余 4 个接口、运行状态与等待原因、`scene_context`。生成的前端类型要求运行状态文案覆盖全部状态，所以先在 `agentState.ts` 补了 `waiting_client` 的文案并计入进行中（面板的完整表现在 5.2）。任务不存在时返回 404「任务不存在」（`creativescene.ErrJobNotFound`，仍匹配 `creativedocument.ErrNotFound`）。
 
 ## 3. 助手运行与工具（后端）
 

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"slices"
@@ -61,6 +62,9 @@ var (
 	// capability, the run passed its deadline or was cancelled, a skill was
 	// disabled or the consent withdrawn.
 	ErrRunGate = errors.New("creative scene: run may no longer write")
+	// ErrJobNotFound is a job that does not exist in this account. It matches
+	// creativedocument.ErrNotFound, so it maps to 404 like a missing scene.
+	ErrJobNotFound = fmt.Errorf("%w: scene job", creativedocument.ErrNotFound)
 )
 
 // Job is one creative_scene_jobs row.
@@ -272,7 +276,7 @@ func scanJob(row store.Row) (Job, time.Time, error) {
 	err := row.Scan(&j.ID, &j.DocumentID, &kind, &j.State, &j.Request, &j.Attempt, &j.RunID, &j.ToolCallID, &j.Deadline, &j.Result, &created)
 	j.Kind = JobKind(kind)
 	if errors.Is(err, store.ErrNoRows) {
-		return Job{}, time.Time{}, creativedocument.ErrNotFound
+		return Job{}, time.Time{}, ErrJobNotFound
 	}
 	return j, created, err
 }

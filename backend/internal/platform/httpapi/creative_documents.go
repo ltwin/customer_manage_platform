@@ -27,6 +27,10 @@ func registerCreativeDocuments(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/documents/:id/revisions", w.ListCreativeDocumentRevisions)
 	r.GET("/creative/documents/:id/revisions/:revision", w.GetCreativeDocumentRevision)
 	r.GET("/creative/documents/:id/conversation", w.GetCreativeDocumentConversation)
+	r.GET("/creative/documents/:id/scene-jobs", w.ListCreativeSceneJobs)
+	r.POST("/creative/scene-jobs/claim", w.ClaimCreativeSceneJob)
+	r.POST("/creative/scene-jobs/:job_id/lease", w.LeaseCreativeSceneJob)
+	r.POST("/creative/scene-jobs/:job_id/complete", w.CompleteCreativeSceneJob)
 }
 
 // Document writes go through creativeWrite, which puts the path id into the
@@ -183,6 +187,12 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		abortError(c, 413, "creative_size_limit", "文档超过大小上限")
 	case errors.Is(err, creativedocument.ErrRevisionNotFound):
 		abortError(c, 404, CodeNotFound, "修订不存在")
+	case errors.Is(err, creativescene.ErrJobNotFound):
+		abortError(c, 404, CodeNotFound, "任务不存在")
+	// The host drops its work: the job was reclaimed, finished or cancelled, or
+	// the run it belongs to may no longer write.
+	case errors.Is(err, creativescene.ErrJobLeaseLost):
+		abortError(c, 409, "creative_state_conflict", "任务已被回收或已结束，请丢弃这次的结果")
 	case errors.Is(err, creativedocument.ErrNotFound):
 		abortError(c, 404, CodeNotFound, "文档不存在")
 	// Model failures never use 404 or creative_state_conflict: the editor reads
