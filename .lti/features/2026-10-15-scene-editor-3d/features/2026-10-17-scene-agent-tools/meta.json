@@ -1,6 +1,6 @@
 {
   "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-agent-tools",
   "kind": "feature",
   "assurance": "governed",
@@ -42,9 +42,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-18T04:36:35.664Z",
-  "updatedAt": "2026-10-18T06:34:16.104Z",
+  "updatedAt": "2026-10-18T06:35:45.543Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -68,8 +68,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "3f5e86280f54a0c6d6542734712942420d498315",
+    "at": "2026-10-18T06:35:44.620Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a83e4c37bcb5a7dc4d2aa5fba2136f527d2b0d4ed98c81e4f81e9e7e02794e38"
+    },
+    "preExisting": [
+      ".lti/snapshots/a83e4c37bcb5a7dc4d2aa5fba2136f527d2b0d4ed98c81e4f81e9e7e02794e38.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
