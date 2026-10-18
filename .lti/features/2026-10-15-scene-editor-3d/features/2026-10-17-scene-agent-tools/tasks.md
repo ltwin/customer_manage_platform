@@ -69,7 +69,14 @@
     - 运行改动接口加入 OpenAPI 与处理函数；运行是否属于本账号由新增的 `creativeagent.RequireRun` 判断（不需要服务实例），不存在返回 404。
     - 与契约的出入，需 owner 知悉：①`blocked.reason` 按设计 H4 多一个 `hierarchy_not_restorable`（契约表只列了两种）；C3 的 `edit_scene` 不开放 `reparent_objects`，正常不会出现。②同一物件的两个单元来源修订不同、且中间有别人写过时，设计写「按 pre 分批」，但契约里条目的 `restore` 是单个批次；实现按保守处理，记为 `changed_by_others`（指向中间那次修订），不单独恢复、也不进 `undo_all`，摄影师可用历史版本。③运行之后的历史超过 5000 条时同样返回 400 `validation_failed`（读取上限）。
     - 文档的第 1 版（新建）没有更早的版本可回，不计入本轮改动。
-- [ ] 3.5 运行输入：`createRun` 接收 `scene_context` 并冻结；运行创建时计算变更摘要（编辑器上下文里的场景加上本会话最近写过的至多 3 个场景）并冻结；`assemble` 渲染编辑器上下文与摘要。先写测试：输入冻结后，恢复时模型请求哈希一致；画布视图发起的运行不带上下文。
+- [x] 3.5 运行输入：`createRun` 接收 `scene_context` 并冻结；运行创建时计算变更摘要（编辑器上下文里的场景加上本会话最近写过的至多 3 个场景）并冻结；`assemble` 渲染编辑器上下文与摘要。先写测试：输入冻结后，恢复时模型请求哈希一致；画布视图发起的运行不带上下文。
+  - 实施记录：
+    - 冻结为 `creative_run_inputs` 的 `selection` 行，`source_revision_snapshot.kind` 区分 `scene_context` 与 `scene_changes`；画布概览行没有快照，`assemble` 据此区分渲染。沿用已有角色，不加迁移。
+    - 场景属于画布元数据，与画布概览行一样只在 consent 含 `canvas_metadata` 时写入（面板的授权默认带它）。场景行的字节计入历史预算，和提交内容一样从历史的份额里扣。
+    - `scene_context` 的场景不存在、属于别的账号或在回收站里时返回 404；选中的物件已不在场景里的去掉，重复的去重；`document_id` 为空、选中超过 50 个或有空 ID 时返回 400。
+    - 「本会话最近写过」按本会话各次运行写入修订的时间取最近 3 个场景（`creativedocument.RunDocuments`，回收站里的不算）；编辑中的场景另算，所以最多 4 段摘要。没有别人改过的场景不写摘要。
+    - 测试说明：从检查点恢复时消息取自检查点，不重新组装，所以哈希一致由检查点保证。本任务测的是冻结本身：建运行之后场景继续被改，每次组装的请求都相同，且写的是建运行时的版本。另有两处变异检查：去掉 `canvas_metadata` 判断、放宽最近场景的上限，测试都会失败。
+    - Skill 资源恢复运行（`RetryRun`）不带场景行。
 - [ ] 3.6 4 个场景工具（`creativeagent/scene_tools.go`、`creativescene/agent.go`），在 `tool_registry.go` 登记，资源键 `scene:<doc>`：
   - `read_scene`：概要上限 300 个物件，`include_code` 至多 3 个，附变更摘要；
   - `edit_scene`：基线规则；拒绝 `reparent_objects`、`commit_model`、整份 `restore`；撤回操作 `revert_run`；

@@ -159,3 +159,34 @@ func LastRunRevision(ctx context.Context, tx PageReader, documentID string, runI
 	}
 	return last, rows.Err()
 }
+
+// RunDocuments lists the documents of one type the runs wrote, the most
+// recently written first, at most limit. Documents in the trash are left out.
+func RunDocuments(ctx context.Context, tx PageReader, typeKey string, runIDs []string, limit int) ([]string, error) {
+	out := []string{}
+	for len(out) < limit && len(runIDs) > 0 {
+		rows, err := tx.QueryPage(ctx, "creative_document_revisions", "document_id",
+			"run_id = ANY($2) AND NOT (document_id = ANY($3)) AND document_id IN (SELECT id FROM creative_documents WHERE account_id=$1 AND type_key=$4 AND trashed_at IS NULL)",
+			[]store.OrderBy{{Column: "created_at", Desc: true}, {Column: "revision", Desc: true}}, 1, 0, runIDs, out, typeKey)
+		if err != nil {
+			return nil, err
+		}
+		var id string
+		found := rows.Next()
+		if found {
+			err = rows.Scan(&id)
+		}
+		if err == nil {
+			err = rows.Err()
+		}
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			break
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}

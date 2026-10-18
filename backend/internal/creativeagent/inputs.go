@@ -3,12 +3,15 @@ package creativeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -522,10 +525,11 @@ func (w *inputWriter) history(ctx context.Context, p historyProjection) error {
 	return nil
 }
 
-// freezeRequestInputsInTx writes the submission itself and the canvas line,
-// from start: directly after the history when it was frozen first, or
-// deferredHistoryOrdinal when the worker will freeze it after compacting.
-func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, blocks []Block, start int) error {
+// freezeRequestInputsInTx writes the submission itself, the canvas line and
+// the scene lines, from start: directly after the history when it was frozen
+// first, or deferredHistoryOrdinal when the worker will freeze it after
+// compacting.
+func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, blocks []Block, scenes []sceneInput, start int) error {
 	w := &inputWriter{tx: tx, runID: runID, ordinal: start}
 	for _, block := range blocks {
 		switch block.Type {
@@ -570,7 +574,123 @@ func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccoun
 			return err
 		}
 	}
+	for _, scene := range scenes {
+		text := scene.Text
+		snapshot, err := jsonValue(scene.Snapshot)
+		if err != nil {
+			return err
+		}
+		if err := w.insert(ctx, "selection", "metadata_only", &text, nil, snapshot); err != nil {
+			return err
+		}
+	}
 	return w.flush(ctx)
+}
+
+// SceneContext is where the photographer asked from: the scene open in the
+// editor and the objects selected there. A run started from the canvas has
+// none.
+type SceneContext struct {
+	DocumentID        string   `json:"document_id"`
+	SelectedObjectIDs []string `json:"selected_object_ids"`
+}
+
+const (
+	maxSceneSelection = 50
+	// maxRecentScenes is how many scenes the conversation wrote last that a
+	// new run hears the changes of, besides the one being edited.
+	maxRecentScenes = 3
+)
+
+func (c *SceneContext) valid() bool {
+	if c == nil {
+		return true
+	}
+	if c.DocumentID == "" || len(c.SelectedObjectIDs) > maxSceneSelection {
+		return false
+	}
+	return !slices.Contains(c.SelectedObjectIDs, "")
+}
+
+// sceneInput is one scene line a run is told at its start. It is frozen with
+// the run's inputs, so every attempt sends the same request (a summary read
+// afresh would change the request hash a rerun is checked against).
+type sceneInput struct {
+	Text     string
+	Snapshot map[string]any
+}
+
+// sceneInputsInTx words what a new run is told about scenes: the scene being
+// edited with its selection, then what others changed in it and in the scenes
+// this conversation wrote last since the conversation's runs last wrote them.
+func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, scene *SceneContext) ([]sceneInput, error) {
+	var out []sceneInput
+	var docs []string
+	if scene != nil {
+		editor, err := creativescene.EditorContextInTx(ctx, tx, scene.DocumentID, scene.SelectedObjectIDs)
+		if errors.Is(err, creativedocument.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sceneInput{Text: editor.Prompt, Snapshot: map[string]any{"kind": "scene_context",
+			"document_id": editor.DocumentID, "revision": editor.Revision, "selected_object_ids": editor.Selected}})
+		docs = append(docs, scene.DocumentID)
+	}
+	runs, err := conversationRunsInTx(ctx, tx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	limit := maxRecentScenes + len(docs)
+	recent, err := creativedocument.RunDocuments(ctx, tx, creativescene.TypeKey, runs, limit)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range recent {
+		if len(docs) < limit && !slices.Contains(docs, id) {
+			docs = append(docs, id)
+		}
+	}
+	for _, id := range docs {
+		summary, err := creativescene.ChangesSinceInTx(ctx, tx, id, runs)
+		if err != nil {
+			return nil, err
+		}
+		if summary == nil || len(summary.Lines) == 0 {
+			continue
+		}
+		out = append(out, sceneInput{Text: summary.Prompt(), Snapshot: map[string]any{"kind": "scene_changes",
+			"document_id": id, "since_revision": summary.SinceRevision, "revision": summary.Revision}})
+	}
+	return out, nil
+}
+
+func sceneInputBytes(scenes []sceneInput) int {
+	total := 0
+	for _, s := range scenes {
+		total += len(s.Text) + perMessageOverhead
+	}
+	return total
+}
+
+// conversationRunsInTx is every run of the conversation, the writers whose
+// scene revisions are the conversation's own.
+func conversationRunsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string) ([]string, error) {
+	rows, err := tx.Query(ctx, "creative_agent_runs", "id", "conversation_id=$2", conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 func bodyMessage(body Body, role string) *schema.Message {

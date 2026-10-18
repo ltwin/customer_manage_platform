@@ -612,7 +612,13 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 				continue
 			}
 			if item.role == "selection" && item.body != nil {
-				messages = append(messages, schema.UserMessage("当前画布概览（详细节点请用 read_canvas）："+*item.body))
+				// Scene lines carry a snapshot and are frozen as worded; the
+				// canvas line has none.
+				if len(item.snapshot) > 0 {
+					messages = append(messages, schema.UserMessage(*item.body))
+				} else {
+					messages = append(messages, schema.UserMessage("当前画布概览（详细节点请用 read_canvas）："+*item.body))
+				}
 				continue
 			}
 			if item.id != nil {

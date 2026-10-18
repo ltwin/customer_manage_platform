@@ -190,10 +190,11 @@ type Instruction struct {
 }
 
 type createRun struct {
-	ConversationID  string      `json:"conversation_id"`
-	Instruction     Instruction `json:"instruction"`
-	ModelKey        string      `json:"model_key"`
-	EgressConsentID string      `json:"egress_consent_id"`
+	ConversationID  string        `json:"conversation_id"`
+	Instruction     Instruction   `json:"instruction"`
+	ModelKey        string        `json:"model_key"`
+	EgressConsentID string        `json:"egress_consent_id"`
+	SceneContext    *SceneContext `json:"scene_context"`
 }
 
 // CreateRun turns one submission into work. Everything that makes the run real
@@ -226,7 +227,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				return err
 			}
 			if input.ConversationID == "" || input.EgressConsentID == "" ||
-				input.Instruction.SchemaVersion != instructionSchemaVersion {
+				input.Instruction.SchemaVersion != instructionSchemaVersion || !input.SceneContext.valid() {
 				return creativeops.ErrValidation
 			}
 			if err := validSegments(input.Instruction.Segments); err != nil {
@@ -338,6 +339,15 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				}
 			}
 
+			// Scenes are canvas metadata: told only under a consent that lets
+			// the canvas leave, like the canvas line.
+			var scenes []sceneInput
+			if consentHas(consent, "canvas_metadata") {
+				if scenes, err = sceneInputsInTx(ctx, tx, input.ConversationID, input.SceneContext); err != nil {
+					return creativeops.Outcome{}, err
+				}
+			}
+
 			trigger, err := s.appendMessageInTx(ctx, tx, input.ConversationID, newMessage{
 				Role: "user", Status: "complete", Body: resolved.Body, RunID: runID,
 				ContentRefs: resolved.ContentRefs, SkillRefs: resolved.SkillRefs(),
@@ -345,7 +355,11 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			history, err := s.planHistoryInTx(ctx, tx, input.ConversationID, consent.ID, int64(trigger.Ordinal), model, resolved)
+			// The scene lines are sent with every request, so they come out of
+			// the history's share like the submission does.
+			planned := resolved
+			planned.Bytes += sceneInputBytes(scenes)
+			history, err := s.planHistoryInTx(ctx, tx, input.ConversationID, consent.ID, int64(trigger.Ordinal), model, planned)
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
@@ -358,7 +372,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			if err := s.freezePlannedInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks); err != nil {
+			if err := s.freezePlannedInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks, scenes); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			if resolved.Skill != nil {
@@ -460,18 +474,18 @@ func (s *Service) planHistoryInTx(ctx context.Context, tx store.TxAccountScope, 
 // freezePlannedInputsInTx writes what the run was planned to carry. A compact
 // run carries nothing; a run that compacts first leaves room for the history
 // its worker will freeze.
-func (s *Service) freezePlannedInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, planned plannedHistory, blocks []Block) error {
+func (s *Service) freezePlannedInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, planned plannedHistory, blocks []Block, scenes []sceneInput) error {
 	switch {
 	case planned.Kind == runKindCompact:
 		return nil
 	case planned.Plan != nil:
-		return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, deferredHistoryOrdinal)
+		return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, scenes, deferredHistoryOrdinal)
 	}
 	next, err := freezeHistoryInputsInTx(ctx, tx, runID, planned.Projection)
 	if err != nil {
 		return err
 	}
-	return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, next)
+	return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, scenes, next)
 }
 
 // skillInstructionBytes is what the chosen skill will cost in every request. It

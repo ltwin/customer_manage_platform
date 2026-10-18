@@ -24,6 +24,7 @@ const (
 // what was restored.
 type ChangeSummary struct {
 	DocumentID    string               `json:"document_id"`
+	Title         string               `json:"title"`
 	SinceRevision creativeops.Revision `json:"since_revision"`
 	Revision      creativeops.Revision `json:"revision"`
 	Lines         []string             `json:"lines"`
@@ -56,7 +57,7 @@ func changesAfter(ctx context.Context, pages creativedocument.PageReader, at fun
 	if err != nil {
 		return ChangeSummary{}, err
 	}
-	out := ChangeSummary{DocumentID: documentID, SinceRevision: creativeops.Revision(base), Revision: creativeops.Revision(head.Revision), Lines: []string{}}
+	out := ChangeSummary{DocumentID: documentID, Title: head.Title, SinceRevision: creativeops.Revision(base), Revision: creativeops.Revision(head.Revision), Lines: []string{}}
 	if base >= head.Revision {
 		return out, nil
 	}
@@ -94,6 +95,74 @@ func changesAfter(ctx context.Context, pages creativedocument.PageReader, at fun
 		lines = lines[:maxSummaryLines]
 	}
 	out.Lines = lines
+	return out, nil
+}
+
+// Prompt words the summary for a run's input: which scene, since when, and
+// what changed. It is empty when nothing did.
+func (s ChangeSummary) Prompt() string {
+	if len(s.Lines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "场景「%s」(%s)在本会话上次写入（第 %d 版）之后被改过，现在是第 %d 版：", s.Title, s.DocumentID, s.SinceRevision, s.Revision)
+	for _, l := range s.Lines {
+		b.WriteString("\n- ")
+		b.WriteString(l)
+	}
+	if s.More > 0 {
+		fmt.Fprintf(&b, "\n另有 %d 处改动未列出。", s.More)
+	}
+	b.WriteString("\n改这个场景前先用 read_scene 读当前状态。")
+	return b.String()
+}
+
+// EditorContext is the scene open in the photographer's editor when they
+// asked, and the objects they had selected there that are still in it.
+type EditorContext struct {
+	DocumentID string               `json:"document_id"`
+	Title      string               `json:"title"`
+	Revision   creativeops.Revision `json:"revision"`
+	Selected   []string             `json:"selected_object_ids"`
+	Prompt     string               `json:"-"`
+}
+
+// EditorContextInTx reads the scene being edited and words it for a run's
+// input. Selected objects no longer in the scene are left out; a scene in the
+// trash is not found.
+func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID string, selected []string) (EditorContext, error) {
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, documentID, TypeKey)
+	if err != nil {
+		return EditorContext{}, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return EditorContext{}, creativedocument.ErrNotFound
+	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return EditorContext{}, err
+	}
+	idx := indexObjects(scene.Objects)
+	out := EditorContext{DocumentID: documentID, Title: cur.Title, Revision: creativeops.Revision(cur.Revision), Selected: []string{}}
+	var names []string
+	for _, id := range selected {
+		i, ok := idx[id]
+		if !ok || slices.Contains(out.Selected, id) {
+			continue
+		}
+		out.Selected = append(out.Selected, id)
+		if name := scene.Objects[i].Name; name != "" {
+			names = append(names, fmt.Sprintf("「%s」(%s)", name, id))
+		} else {
+			names = append(names, id)
+		}
+	}
+	out.Prompt = fmt.Sprintf("摄影师正在编辑场景「%s」(%s，第 %d 版)，", out.Title, documentID, cur.Revision)
+	if len(names) == 0 {
+		out.Prompt += "没有选中物件。"
+	} else {
+		out.Prompt += "选中了：" + strings.Join(names, "、") + "。说「这个」「它们」时指的是选中的物件。"
+	}
 	return out, nil
 }
 
