@@ -262,6 +262,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/documents/{id}/run-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取一次助手运行对场景的改动，以及恢复每一处所需的命令内容
+         * @description 只读。某一处的旧值取它在本次运行第一次被写之前那一版；运行之后被别人改过或整份恢复过的条目不可恢复。expected 是读取时的当前版本，提交后若有人刚好又改了照常冲突。
+         */
+        get: operations["getCreativeSceneRunChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/documents": {
         parameters: {
             query?: never;
@@ -7372,6 +7392,53 @@ export interface components {
         CreativeSceneJobList: {
             items: components["schemas"]["CreativeSceneJobSummary"][];
         };
+        CreativeSceneRunChanges: {
+            run_id: string;
+            document_id: string;
+            /** @description 这次运行写出的修订号，升序；为空表示没有改过这个场景。 */
+            revisions: components["schemas"]["CreativeRevision"][];
+            /** @description 每个改动过的物件一条，environment、render、meta 各一条。 */
+            entries: components["schemas"]["CreativeSceneRunChange"][];
+            /** @description 撤销本轮的命令内容，按顺序提交；只包含可恢复的条目，全部不可恢复时为空数组。分多批时不是原子的，遇到冲突就停下重读。 */
+            undo_all: components["schemas"]["CreativeSceneRestoreBatch"][];
+        };
+        CreativeSceneRunChange: {
+            target: components["schemas"]["CreativeSceneChangeTarget"];
+            /** @description 当前名称；已删除的取运行之前的名称；非物件条目为「环境」「渲染设置」「标题」「层级结构」。 */
+            name: string;
+            /**
+             * @description 相对运行之前。
+             * @enum {string}
+             */
+            change: "added" | "removed" | "modified";
+            /** @description 恢复这一处的命令内容；不可恢复时为 null。 */
+            restore: components["schemas"]["CreativeSceneRestoreBatch"] | null;
+            blocked: components["schemas"]["CreativeSceneChangeBlocked"] | null;
+        };
+        CreativeSceneChangeTarget: {
+            /** @enum {string} */
+            kind: "object" | "unit";
+            /** @description kind 为 object 时给出 */
+            object_id?: string;
+            /** @description kind 为 unit 时给出：environment、render、meta 或 objects */
+            unit?: string;
+        };
+        /** @description 一条 restore_units 命令的内容：来源修订、单元和预期版本。 */
+        CreativeSceneRestoreBatch: {
+            from_revision: components["schemas"]["CreativeRevision"];
+            units: string[];
+            expected: components["schemas"]["CreativeDocumentExpectedUnits"];
+        };
+        CreativeSceneChangeBlocked: {
+            /**
+             * @description changed_by_others 是运行之后别人改过这一处（或运行先后两次写它之间别人改过，不能合成一次恢复）；restored_whole 是之后整份恢复过；hierarchy_not_restorable 是运行只调整了层级或顺序，层级不能单独恢复，请用历史版本整份恢复。
+             * @enum {string}
+             */
+            reason: "changed_by_others" | "restored_whole" | "hierarchy_not_restorable";
+            revision: components["schemas"]["CreativeRevision"];
+            /** @enum {string} */
+            actor_kind: "photographer" | "agent" | "system";
+        };
         CreativeDocumentCommandRequest: {
             /** Format: uuid */
             operation_id: string;
@@ -8460,6 +8527,39 @@ export interface operations {
                 };
             };
             /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeSceneRunChanges: {
+        parameters: {
+            query: {
+                run_id: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneRunChanges"];
+                };
+            };
+            /** @description 请求失败；400 validation_failed 表示缺少 run_id 或运行写出的修订超过 500 个（改用历史版本列表），404 表示文档或运行不存在、不属于本账号，或文档不是场景 */
             default: {
                 headers: {
                     [name: string]: unknown;

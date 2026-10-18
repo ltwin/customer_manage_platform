@@ -4,7 +4,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
 // Scene client jobs: a render host (an open creative workspace tab) claims,
@@ -65,5 +68,23 @@ func (h *handlers) ListCreativeSceneJobs(c *gin.Context, id string) {
 	creativeRead(c, func() (gin.H, error) {
 		items, err := creativescene.ListActive(c.Request.Context(), scope, id)
 		return gin.H{"items": items}, err
+	})
+}
+
+// GetCreativeSceneRunChanges lists one run's changes to a scene. The run is
+// checked first so another account's run, or a missing one, is a 404.
+func (h *handlers) GetCreativeSceneRunChanges(c *gin.Context, id string, params GetCreativeSceneRunChangesParams) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	creativeRead(c, func() (creativescene.RunChangeSet, error) {
+		if params.RunId == "" {
+			return creativescene.RunChangeSet{}, creativeops.Explain(creativeops.ErrValidation, "缺少 run_id")
+		}
+		if err := creativeagent.RequireRun(c.Request.Context(), scope, params.RunId); err != nil {
+			return creativescene.RunChangeSet{}, err
+		}
+		return creativescene.RunChanges(c.Request.Context(), scope, id, params.RunId)
 	})
 }

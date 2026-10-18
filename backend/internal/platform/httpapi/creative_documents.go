@@ -28,6 +28,7 @@ func registerCreativeDocuments(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/documents/:id/revisions/:revision", w.GetCreativeDocumentRevision)
 	r.GET("/creative/documents/:id/conversation", w.GetCreativeDocumentConversation)
 	r.GET("/creative/documents/:id/scene-jobs", w.ListCreativeSceneJobs)
+	r.GET("/creative/documents/:id/run-changes", w.GetCreativeSceneRunChanges)
 	r.POST("/creative/scene-jobs/claim", w.ClaimCreativeSceneJob)
 	r.POST("/creative/scene-jobs/:job_id/lease", w.LeaseCreativeSceneJob)
 	r.POST("/creative/scene-jobs/:job_id/complete", w.CompleteCreativeSceneJob)

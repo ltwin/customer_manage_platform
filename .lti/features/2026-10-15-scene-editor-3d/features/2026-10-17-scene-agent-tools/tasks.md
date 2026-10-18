@@ -61,9 +61,14 @@
 
   先写测试：用测试渲染端完成任务后运行恢复并读到结果；等待期间撤回 consent 或停用 Skill 时，完成返回 409、运行结束、场景无新修订；过期路径同理。
   - 实施记录：`Admit` 也接受 `running` 与 `queued` 的运行——前者是挂起的那次执行还没退出（B2），后者是崩溃后重跑还没走到这个调用；两种情况 `Settle` 只写结果，由执行或日志回放接上。`Abort` 只结束 `waiting_client` 的运行，其余交给持有它的执行，后者自己的准入会遇到同样的拒绝。`admitRunInTx` 的 Skill 与 consent 复查改为调用 `admitParkedRunInTx`，所以已有的 Skill 停用测试同样覆盖这段；本任务的测试覆盖 consent 撤回（完成与过期两条路径）。工具结果先给基础形态（成功、失败、冲突带 `retry_job_id`、过期），`changes_since` 与尺寸、三角面等字段随 3.4、3.6 补上。测试用渲染端上报失败的完成，截图成功与烘焙的整条链路在 3.6 的搭景全流程里测。
-- [ ] 3.4 `creativescene.RunChanges` 与 `ChangesSince`，以及 `GET /documents/{id}/run-changes` 的领域实现。表驱动测试先写：
+- [x] 3.4 `creativescene.RunChanges` 与 `ChangesSince`，以及 `GET /documents/{id}/run-changes` 的领域实现。表驱动测试先写：
   - `RunChanges`：新增、删除、修改、别人改过、整份恢复过、需要分批、层级条目不可恢复；
   - `ChangesSince`：手动修改、整份恢复、按单元恢复、从未写过。
+  - 实施记录：
+    - 读取层放在 `creativedocument`（`History`、`RunRevisions`、`LastRunRevision`、`ReadAtInTx` / `ReadAtInSnapshot`），计算放在 `creativescene/run_changes.go` 与 `agent.go`；`ChangesAfterInTx` 给冲突结果用（旧基线到现在、排除本运行）。
+    - 运行改动接口加入 OpenAPI 与处理函数；运行是否属于本账号由新增的 `creativeagent.RequireRun` 判断（不需要服务实例），不存在返回 404。
+    - 与契约的出入，需 owner 知悉：①`blocked.reason` 按设计 H4 多一个 `hierarchy_not_restorable`（契约表只列了两种）；C3 的 `edit_scene` 不开放 `reparent_objects`，正常不会出现。②同一物件的两个单元来源修订不同、且中间有别人写过时，设计写「按 pre 分批」，但契约里条目的 `restore` 是单个批次；实现按保守处理，记为 `changed_by_others`（指向中间那次修订），不单独恢复、也不进 `undo_all`，摄影师可用历史版本。③运行之后的历史超过 5000 条时同样返回 400 `validation_failed`（读取上限）。
+    - 文档的第 1 版（新建）没有更早的版本可回，不计入本轮改动。
 - [ ] 3.5 运行输入：`createRun` 接收 `scene_context` 并冻结；运行创建时计算变更摘要（编辑器上下文里的场景加上本会话最近写过的至多 3 个场景）并冻结；`assemble` 渲染编辑器上下文与摘要。先写测试：输入冻结后，恢复时模型请求哈希一致；画布视图发起的运行不带上下文。
 - [ ] 3.6 4 个场景工具（`creativeagent/scene_tools.go`、`creativescene/agent.go`），在 `tool_registry.go` 登记，资源键 `scene:<doc>`：
   - `read_scene`：概要上限 300 个物件，`include_code` 至多 3 个，附变更摘要；

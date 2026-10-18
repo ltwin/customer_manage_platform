@@ -1162,19 +1162,19 @@ func (e CreativeContentRevisionKind) Valid() bool {
 
 // Defines values for CreativeDocumentActorKind.
 const (
-	Agent        CreativeDocumentActorKind = "agent"
-	Photographer CreativeDocumentActorKind = "photographer"
-	System       CreativeDocumentActorKind = "system"
+	CreativeDocumentActorKindAgent        CreativeDocumentActorKind = "agent"
+	CreativeDocumentActorKindPhotographer CreativeDocumentActorKind = "photographer"
+	CreativeDocumentActorKindSystem       CreativeDocumentActorKind = "system"
 )
 
 // Valid indicates whether the value is a known member of the CreativeDocumentActorKind enum.
 func (e CreativeDocumentActorKind) Valid() bool {
 	switch e {
-	case Agent:
+	case CreativeDocumentActorKindAgent:
 		return true
-	case Photographer:
+	case CreativeDocumentActorKindPhotographer:
 		return true
-	case System:
+	case CreativeDocumentActorKindSystem:
 		return true
 	default:
 		return false
@@ -2087,6 +2087,66 @@ func (e CreativeSavePromptPayloadType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeSceneChangeBlockedActorKind.
+const (
+	CreativeSceneChangeBlockedActorKindAgent        CreativeSceneChangeBlockedActorKind = "agent"
+	CreativeSceneChangeBlockedActorKindPhotographer CreativeSceneChangeBlockedActorKind = "photographer"
+	CreativeSceneChangeBlockedActorKindSystem       CreativeSceneChangeBlockedActorKind = "system"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneChangeBlockedActorKind enum.
+func (e CreativeSceneChangeBlockedActorKind) Valid() bool {
+	switch e {
+	case CreativeSceneChangeBlockedActorKindAgent:
+		return true
+	case CreativeSceneChangeBlockedActorKindPhotographer:
+		return true
+	case CreativeSceneChangeBlockedActorKindSystem:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneChangeBlockedReason.
+const (
+	ChangedByOthers        CreativeSceneChangeBlockedReason = "changed_by_others"
+	HierarchyNotRestorable CreativeSceneChangeBlockedReason = "hierarchy_not_restorable"
+	RestoredWhole          CreativeSceneChangeBlockedReason = "restored_whole"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneChangeBlockedReason enum.
+func (e CreativeSceneChangeBlockedReason) Valid() bool {
+	switch e {
+	case ChangedByOthers:
+		return true
+	case HierarchyNotRestorable:
+		return true
+	case RestoredWhole:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneChangeTargetKind.
+const (
+	Object CreativeSceneChangeTargetKind = "object"
+	Unit   CreativeSceneChangeTargetKind = "unit"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneChangeTargetKind enum.
+func (e CreativeSceneChangeTargetKind) Valid() bool {
+	switch e {
+	case Object:
+		return true
+	case Unit:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneDocumentTypeKey.
 const (
 	Scene CreativeSceneDocumentTypeKey = "scene"
@@ -2264,6 +2324,27 @@ func (e CreativeSceneRenderMode) Valid() bool {
 	case Clay:
 		return true
 	case Lit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneRunChangeChange.
+const (
+	Added    CreativeSceneRunChangeChange = "added"
+	Modified CreativeSceneRunChangeChange = "modified"
+	Removed  CreativeSceneRunChangeChange = "removed"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneRunChangeChange enum.
+func (e CreativeSceneRunChangeChange) Valid() bool {
+	switch e {
+	case Added:
+		return true
+	case Modified:
+		return true
+	case Removed:
 		return true
 	default:
 		return false
@@ -6527,6 +6608,37 @@ type CreativeSceneCamera struct {
 	SensorMm []float32 `json:"sensor_mm"`
 }
 
+// CreativeSceneChangeBlocked defines model for CreativeSceneChangeBlocked.
+type CreativeSceneChangeBlocked struct {
+	ActorKind CreativeSceneChangeBlockedActorKind `json:"actor_kind"`
+
+	// Reason changed_by_others 是运行之后别人改过这一处（或运行先后两次写它之间别人改过，不能合成一次恢复）；restored_whole 是之后整份恢复过；hierarchy_not_restorable 是运行只调整了层级或顺序，层级不能单独恢复，请用历史版本整份恢复。
+	Reason CreativeSceneChangeBlockedReason `json:"reason"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeSceneChangeBlockedActorKind defines model for CreativeSceneChangeBlocked.ActorKind.
+type CreativeSceneChangeBlockedActorKind string
+
+// CreativeSceneChangeBlockedReason changed_by_others 是运行之后别人改过这一处（或运行先后两次写它之间别人改过，不能合成一次恢复）；restored_whole 是之后整份恢复过；hierarchy_not_restorable 是运行只调整了层级或顺序，层级不能单独恢复，请用历史版本整份恢复。
+type CreativeSceneChangeBlockedReason string
+
+// CreativeSceneChangeTarget defines model for CreativeSceneChangeTarget.
+type CreativeSceneChangeTarget struct {
+	Kind CreativeSceneChangeTargetKind `json:"kind"`
+
+	// ObjectId kind 为 object 时给出
+	ObjectId *string `json:"object_id,omitempty"`
+
+	// Unit kind 为 unit 时给出：environment、render、meta 或 objects
+	Unit *string `json:"unit,omitempty"`
+}
+
+// CreativeSceneChangeTargetKind defines model for CreativeSceneChangeTarget.Kind.
+type CreativeSceneChangeTargetKind string
+
 // CreativeSceneColor defines model for CreativeSceneColor.
 type CreativeSceneColor = string
 
@@ -6777,6 +6889,49 @@ type CreativeSceneRender struct {
 
 // CreativeSceneRenderMode defines model for CreativeSceneRender.Mode.
 type CreativeSceneRenderMode string
+
+// CreativeSceneRestoreBatch 一条 restore_units 命令的内容：来源修订、单元和预期版本。
+type CreativeSceneRestoreBatch struct {
+	// Expected 本批涉及的每个单元都要给出；值为修订号表示预期存在且相同，null 表示预期当前不存在。
+	Expected CreativeDocumentExpectedUnits `json:"expected"`
+
+	// FromRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	FromRevision CreativeRevision `json:"from_revision"`
+	Units        []string         `json:"units"`
+}
+
+// CreativeSceneRunChange defines model for CreativeSceneRunChange.
+type CreativeSceneRunChange struct {
+	Blocked nullable.Nullable[CreativeSceneChangeBlocked] `json:"blocked"`
+
+	// Change 相对运行之前。
+	Change CreativeSceneRunChangeChange `json:"change"`
+
+	// Name 当前名称；已删除的取运行之前的名称；非物件条目为「环境」「渲染设置」「标题」「层级结构」。
+	Name string `json:"name"`
+
+	// Restore 恢复这一处的命令内容；不可恢复时为 null。
+	Restore nullable.Nullable[CreativeSceneRestoreBatch] `json:"restore"`
+	Target  CreativeSceneChangeTarget                    `json:"target"`
+}
+
+// CreativeSceneRunChangeChange 相对运行之前。
+type CreativeSceneRunChangeChange string
+
+// CreativeSceneRunChanges defines model for CreativeSceneRunChanges.
+type CreativeSceneRunChanges struct {
+	DocumentId string `json:"document_id"`
+
+	// Entries 每个改动过的物件一条，environment、render、meta 各一条。
+	Entries []CreativeSceneRunChange `json:"entries"`
+
+	// Revisions 这次运行写出的修订号，升序；为空表示没有改过这个场景。
+	Revisions []CreativeRevision `json:"revisions"`
+	RunId     string             `json:"run_id"`
+
+	// UndoAll 撤销本轮的命令内容，按顺序提交；只包含可恢复的条目，全部不可恢复时为空数组。分多批时不是原子的，遇到冲突就停下重读。
+	UndoAll []CreativeSceneRestoreBatch `json:"undo_all"`
+}
 
 // CreativeSceneSky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
 type CreativeSceneSky struct {
@@ -8755,6 +8910,11 @@ type ListCreativeDocumentRevisionsParams struct {
 // GetCreativeDocumentRevisionParams defines parameters for GetCreativeDocumentRevision.
 type GetCreativeDocumentRevisionParams struct {
 	Units *string `form:"units,omitempty" json:"units,omitempty"`
+}
+
+// GetCreativeSceneRunChangesParams defines parameters for GetCreativeSceneRunChanges.
+type GetCreativeSceneRunChangesParams struct {
+	RunId string `form:"run_id" json:"run_id"`
 }
 
 // TrashCreativeDocumentParams defines parameters for TrashCreativeDocument.
@@ -11467,6 +11627,9 @@ type ServerInterface interface {
 
 	// (GET /creative/documents/{id}/revisions/{revision})
 	GetCreativeDocumentRevision(c *gin.Context, id string, revision CreativeRevision, params GetCreativeDocumentRevisionParams)
+	// 读取一次助手运行对场景的改动，以及恢复每一处所需的命令内容
+	// (GET /creative/documents/{id}/run-changes)
+	GetCreativeSceneRunChanges(c *gin.Context, id string, params GetCreativeSceneRunChangesParams)
 	// 列出场景当前未结束的客户端任务，供编辑器高亮与占位
 	// (GET /creative/documents/{id}/scene-jobs)
 	ListCreativeSceneJobs(c *gin.Context, id string)
@@ -14742,6 +14905,44 @@ func (siw *ServerInterfaceWrapper) GetCreativeDocumentRevision(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeDocumentRevision(c, id, revision, params)
+}
+
+// GetCreativeSceneRunChanges operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeSceneRunChanges(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeSceneRunChangesParams
+
+	// ------------- Required query parameter "run_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "run_id", c.Request.URL.Query(), &params.RunId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter run_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeSceneRunChanges(c, id, params)
 }
 
 // ListCreativeSceneJobs operation middleware
@@ -18146,6 +18347,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/documents/:id/purge", wrapper.PurgeCreativeDocument)
 	router.GET(options.BaseURL+"/creative/documents/:id/revisions", wrapper.ListCreativeDocumentRevisions)
 	router.GET(options.BaseURL+"/creative/documents/:id/revisions/:revision", wrapper.GetCreativeDocumentRevision)
+	router.GET(options.BaseURL+"/creative/documents/:id/run-changes", wrapper.GetCreativeSceneRunChanges)
 	router.GET(options.BaseURL+"/creative/documents/:id/scene-jobs", wrapper.ListCreativeSceneJobs)
 	router.POST(options.BaseURL+"/creative/documents/:id/trash", wrapper.TrashCreativeDocument)
 	router.POST(options.BaseURL+"/creative/documents/:id/untrash", wrapper.UntrashCreativeDocument)

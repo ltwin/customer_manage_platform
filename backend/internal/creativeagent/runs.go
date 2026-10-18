@@ -765,6 +765,24 @@ func randomClaimToken() (string, error) {
 // ReadRun answers about one run. It is the panel's query and the test's, and it
 // never reveals another account's work because the scope decides what is
 // visible before the id does.
+// RequireRun reports ErrNotFound unless the run belongs to the account. It
+// needs no service, for readers that only name a run (a scene's run changes).
+func RequireRun(ctx context.Context, scope store.AccountScope, runID string) error {
+	if runID == "" {
+		return creativeops.ErrValidation
+	}
+	return scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
+			return err
+		}
+		exists, err := tx.Exists(ctx, "creative_agent_runs", "id=$2", runID)
+		if err == nil && !exists {
+			err = ErrNotFound
+		}
+		return err
+	})
+}
+
 func (s *Service) ReadRun(ctx context.Context, scope store.AccountScope, runID string) (Run, error) {
 	if runID == "" {
 		return Run{}, creativeops.ErrValidation

@@ -14,6 +14,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -151,4 +152,94 @@ INSERT INTO accounts(id,password_hash,status) VALUES('acct-other','test','active
 	}
 	want("complete again with another key", complete(jobID, token, uuid.NewString(), render), 409, "creative_state_conflict")
 	want("lease after completion", call("POST", lease, token, "", `{"claim_token":"`+claim.Job.ClaimToken+`"}`), 409, "creative_state_conflict")
+}
+
+func TestCreativeSceneRunChangesHTTP(t *testing.T) {
+	ctx := context.Background()
+	router, st, tokens, url := newCustomerAPIRouterWithURL(t)
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`UPDATE accounts SET status='active' WHERE id='` + testAcctID + `';
+INSERT INTO accounts(id,password_hash,status) VALUES('acct-other','test','active')`); err != nil {
+		t.Fatal(err)
+	}
+	runID := "ccrn_" + uuid.NewString()
+	if _, err := db.Exec(`INSERT INTO creative_agent_runs(account_id,id,conversation_id,canvas_id,trigger_message_id,egress_consent_id,
+		model_key,model_snapshot,state,claim_token,limits_version,limits_snapshot,deadline_at)
+		VALUES($1,$2,'c','v','m','e','k','{}','running','t','v1','{}',now()+interval '1 hour')`, testAcctID, runID); err != nil {
+		t.Fatal(err)
+	}
+	token, other := issueToken(t, tokens, testAcctID), issueToken(t, tokens, "acct-other")
+	scope := st.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	typ, _ := creativedocument.Lookup(creativescene.TypeKey)
+	var doc creativedocument.Document
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		doc, err = creativedocument.CreateInTx(ctx, tx, typ, "中殿", nil, creativedocument.Photographer)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The run adds a pillar.
+	run := runID
+	object := map[string]any{"id": "sobj_000000000000000000001", "kind": "primitive", "name": "柱 A", "parent_id": nil, "order": 10,
+		"transform": map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+		"visible":   true, "locked": false, "primitive": map[string]any{"builtin": "box@1"}}
+	raw, err := json.Marshal(map[string]any{"document_id": doc.ID, "expected": map[string]any{"objects": "1"},
+		"operations": []any{map[string]any{"op": "add_objects", "objects": []any{object}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := creativedocument.CommandAs(ctx, scope, creativedocument.Actor{Kind: "agent", RunID: &run},
+		creativeops.Command{OperationID: uuid.NewString(), CreatedAt: time.Now(), Payload: raw}); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/creative/documents/" + doc.ID + "/run-changes?run_id="
+	call := func(tok, query string) *httptest.ResponseRecorder {
+		t.Helper()
+		return shootPlanningRequest(t, router, "GET", path+query, tok, "", "")
+	}
+	ok := call(token, runID)
+	if ok.Code != 200 {
+		t.Fatalf("run changes: %d %s", ok.Code, ok.Body.String())
+	}
+	var got struct {
+		RunID     string   `json:"run_id"`
+		Revisions []string `json:"revisions"`
+		Entries   []struct {
+			Target  map[string]string `json:"target"`
+			Name    string            `json:"name"`
+			Change  string            `json:"change"`
+			Restore *struct {
+				FromRevision string             `json:"from_revision"`
+				Units        []string           `json:"units"`
+				Expected     map[string]*string `json:"expected"`
+			} `json:"restore"`
+			Blocked json.RawMessage `json:"blocked"`
+		} `json:"entries"`
+		UndoAll []json.RawMessage `json:"undo_all"`
+	}
+	if err := json.Unmarshal(ok.Body.Bytes(), &got); err != nil || got.RunID != runID || len(got.Revisions) != 1 || got.Revisions[0] != "2" || len(got.Entries) != 1 || len(got.UndoAll) != 1 {
+		t.Fatalf("body %s", ok.Body.String())
+	}
+	e := got.Entries[0]
+	if e.Target["kind"] != "object" || e.Name != "柱 A" || e.Change != "added" || e.Restore == nil || e.Restore.FromRevision != "1" ||
+		e.Restore.Expected["objects"] == nil || *e.Restore.Expected["objects"] != "2" || string(e.Blocked) != "null" {
+		t.Fatalf("entry %s", ok.Body.String())
+	}
+	for name, tc := range map[string]struct {
+		tok, query string
+		status     int
+	}{
+		"missing run id":  {token, "", 400},
+		"unknown run":     {token, "ccrn_missing", 404},
+		"another account": {other, runID, 404},
+	} {
+		if w := call(tc.tok, tc.query); w.Code != tc.status {
+			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
+		}
+	}
 }
