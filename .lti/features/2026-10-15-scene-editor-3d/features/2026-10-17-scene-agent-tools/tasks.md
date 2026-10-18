@@ -45,13 +45,14 @@
   - `endControlledRun` 调用 `CancelRunJobs`。
 
   先写测试：补充输入不唤醒；归档被拒；槽位被占时保持等待、释放后清扫恢复；取消时任务同事务取消。
-- [ ] 3.2 挂起：
+- [x] 3.2 挂起：
   - 工具返回 `errParked`，`callTool` 转成 `tool.StatefulInterrupt`，步骤保持 `prepared`；
   - `batch.dispatch` 遇到挂起不停止整批；
   - `drainAgent` 收集 interrupt 里的任务 ID；
   - `completeAttempt` 按任务 ID 分支：全部终态则直接入队，否则 `waitForClient`。
 
   先写测试：并行两个挂起；屏障测试卡在「建任务提交」与 `completeAttempt` 之间完成任务，运行不进 `waiting_input`、只恢复一次；崩溃重跑不重复建任务。
+  - 实施记录：interrupt 的 info 用字符串 `client_job:<任务 ID>`，检查点是 gob 序列化，字符串不需要注册类型；`drainAgent` 返回 `parkedRun`（`errors.Is` 仍是 `errRunInterrupted`）。`callTool` 写结果的事务体抽成 `publishResultInTx`（行为不变），3.3 的 `Settle` 复用它，保证与工具成功分支同一顺序；本任务的测试也用它模拟任务完成。并行挂起测试用两个写同一资源的调用，第二个排在第一个挂起之后，能区分「挂起停批」的回归。
 - [ ] 3.3 `JobWaiter` 实现（`creativeagent/scene_waiter.go`）：
   - 从 `admitRunInTx` 抽出 `admitParkedRunInTx`，`Admit` 与它共用，锁序为项目 → 槽位 → 网关组 → 运行 → Skill → consent；
   - `Settle` 按 `callTool` 成功分支的顺序写步骤结果，取到槽位后入队；

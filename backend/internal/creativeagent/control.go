@@ -330,6 +330,10 @@ func (s *Service) completeAttempt(ctx context.Context, scope store.AccountScope,
 				if !exists {
 					return errCheckpointMissing
 				}
+				var parked *parkedRun
+				if errors.As(turnErr, &parked) {
+					return s.parkOnClient(cleanup, tx, c, parked.jobIDs, now)
+				}
 				return s.waitForInput(cleanup, tx, c, "checkpoint_interrupted", now)
 			}
 			return nil

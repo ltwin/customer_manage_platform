@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudwego/eino/compose"
+
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -206,11 +208,22 @@ func (h *runtimeHandler) dispatch(ctx context.Context, name, callID, args string
 		return "", err
 	}
 	result, err := h.callTool(ctx, name, callID, args, read)
-	if err != nil {
+	if err != nil && !parkedCall(err) {
 		// Recorded before the slot is given back, so no waiting call starts.
+		// A parked call is not a failure: its siblings run and park or finish
+		// on their own, or they would all fail with its interrupt.
 		b.stop(err)
 	}
 	return result, err
+}
+
+func parkedCall(err error) bool {
+	info, ok := compose.IsInterruptRerunError(err)
+	if !ok {
+		return false
+	}
+	_, ok = parkedJobOf(info)
+	return ok
 }
 
 func (h *runtimeHandler) batchFor(ctx context.Context, parent string) (*toolBatch, error) {

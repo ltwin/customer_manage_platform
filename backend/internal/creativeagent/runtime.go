@@ -303,8 +303,12 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	}
 	code := ""
 	var public creativeops.Public
+	var parked errParked
 	switch {
 	case readErr == nil:
+	case errors.As(readErr, &parked):
+		// The job's completion writes this step; the run waits for it.
+		return "", tool.StatefulInterrupt(ctx, clientJobInfo+parked.jobID, parked.jobID)
 	case stopsRun(ctx, readErr):
 		return "", readErr
 	case errors.As(readErr, &public):
@@ -342,57 +346,78 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		if err := h.service.admitDispatchInTx(ctx, tx, h.held, h.revisions); err != nil {
 			return err
 		}
-		kind := "tool_result"
-		if name == readSkillTool && readErr == nil {
-			kind = "skill_resource"
-		}
-		item, err := h.persistContextInTx(ctx, tx, stepID, kind, result)
-		if err != nil {
-			return err
-		}
-		projection = result
-		if len(result) > inlineResultBytes && name != loadSkillTool && name != readResultTool && !libraryWriteTool(name) && name != searchAssetsTool && name != readLibraryTool && name != readLibraryResultTool && h.allowed(readResultTool) {
-			raw, err := json.Marshal(map[string]any{"success": true, "item_id": item, "byte_size": len(result), "read_tool": readResultTool, "preview": utf8Prefix(result, 512)})
-			if err != nil {
-				return err
-			}
-			projection = string(raw)
-		}
-		output, err := json.Marshal(toolProjection{Result: projection, ItemID: item})
-		if err != nil {
-			return err
-		}
-		now, err := tx.CreativeNow(ctx)
-		if err != nil {
-			return err
-		}
-		terminal := "succeeded"
-		if readErr != nil {
-			terminal = "failed"
-		}
-		if _, err = tx.Update(ctx, "creative_agent_steps", "state=$3,output=$4,error_code=$5,finished_at=$6,updated_at=$6,execution_epoch=$7", "id=$2 AND state='prepared'", stepID, terminal, output, nullableText(code), now, h.held.Epoch); err != nil {
-			return err
-		}
-		// A recorded recovery has no model call to pair with a tool message.
-		// Its result stays in the step journal; executeRecordedRetry publishes
-		// the separate assistant delivery, including after an interrupted retry.
-		if !recordedRetry {
-			if _, err := h.persistToolMessage(ctx, tx, stepID, callID, name, projection, result); err != nil {
-				return err
-			}
-		}
-		if name == updatePlanTool && readErr == nil {
-			plan, err := parsePlan(args)
-			if err != nil {
-				return err
-			}
-			if _, err = writeBlockInTx(ctx, tx, h.held.RunID, "plan", blockChange{Type: BlockPlan, State: planState(plan.Steps), Set: plan}); err != nil {
-				return err
-			}
-		}
-		return h.service.writeToolBlockInTx(ctx, tx, h.held.RunID, stepID)
+		var err error
+		projection, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: stepID, CallID: callID, Name: name, Args: args, Result: result,
+			Failed: readErr != nil, Code: code, RecordedRetry: recordedRetry})
+		return err
 	})
 	return projection, err
+}
+
+// publishedCall is one finished call as the journal records it.
+type publishedCall struct {
+	StepID, CallID, Name, Args string
+	Result                     string
+	Failed                     bool
+	Code                       string
+	// RecordedRetry is a recovery with no model call to pair a tool message with.
+	RecordedRetry bool
+}
+
+// publishResultInTx records a call's result for the model: its context bytes,
+// the step, the tool message and the blocks, in that order. callTool runs it
+// after the call returns; a client job's completion runs it for a call that
+// parked. The caller has admitted the run in tx.
+func (h *runtimeHandler) publishResultInTx(ctx context.Context, tx store.TxAccountScope, r publishedCall) (string, error) {
+	kind := "tool_result"
+	if r.Name == readSkillTool && !r.Failed {
+		kind = "skill_resource"
+	}
+	item, err := h.persistContextInTx(ctx, tx, r.StepID, kind, r.Result)
+	if err != nil {
+		return "", err
+	}
+	projection := r.Result
+	if len(r.Result) > inlineResultBytes && r.Name != loadSkillTool && r.Name != readResultTool && !libraryWriteTool(r.Name) && r.Name != searchAssetsTool && r.Name != readLibraryTool && r.Name != readLibraryResultTool && h.allowed(readResultTool) {
+		raw, err := json.Marshal(map[string]any{"success": true, "item_id": item, "byte_size": len(r.Result), "read_tool": readResultTool, "preview": utf8Prefix(r.Result, 512)})
+		if err != nil {
+			return "", err
+		}
+		projection = string(raw)
+	}
+	output, err := json.Marshal(toolProjection{Result: projection, ItemID: item})
+	if err != nil {
+		return "", err
+	}
+	now, err := tx.CreativeNow(ctx)
+	if err != nil {
+		return "", err
+	}
+	terminal := "succeeded"
+	if r.Failed {
+		terminal = "failed"
+	}
+	if _, err = tx.Update(ctx, "creative_agent_steps", "state=$3,output=$4,error_code=$5,finished_at=$6,updated_at=$6,execution_epoch=$7", "id=$2 AND state='prepared'", r.StepID, terminal, output, nullableText(r.Code), now, h.held.Epoch); err != nil {
+		return "", err
+	}
+	// A recorded recovery has no model call to pair with a tool message.
+	// Its result stays in the step journal; executeRecordedRetry publishes
+	// the separate assistant delivery, including after an interrupted retry.
+	if !r.RecordedRetry {
+		if _, err := h.persistToolMessage(ctx, tx, r.StepID, r.CallID, r.Name, projection, r.Result); err != nil {
+			return "", err
+		}
+	}
+	if r.Name == updatePlanTool && !r.Failed {
+		plan, err := parsePlan(r.Args)
+		if err != nil {
+			return "", err
+		}
+		if _, err = writeBlockInTx(ctx, tx, h.held.RunID, "plan", blockChange{Type: BlockPlan, State: planState(plan.Steps), Set: plan}); err != nil {
+			return "", err
+		}
+	}
+	return projection, h.service.writeToolBlockInTx(ctx, tx, h.held.RunID, r.StepID)
 }
 
 // stopsRun names the failures that end the run whichever tool met them: the

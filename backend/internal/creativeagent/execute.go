@@ -1251,18 +1251,32 @@ func failureCode(err error) string {
 // drainAgent reads the framework's event stream to the end. The assistant text
 // is not taken from here: it is whatever the gateway persisted and this run
 // already consumed, so a stream that ends early cannot invent an answer.
+//
+// An interruption whose calls parked on client jobs comes back as a parkedRun
+// naming the jobs.
 func drainAgent(it *adk.AsyncIterator[*adk.AgentEvent]) error {
 	var first error
+	var jobs []string
 	for {
 		event, ok := it.Next()
 		if !ok {
+			if errors.Is(first, errRunInterrupted) && len(jobs) > 0 {
+				return &parkedRun{jobIDs: jobs}
+			}
 			return first
 		}
 		if event.Err != nil && first == nil {
 			first = event.Err
 		}
-		if event.Action != nil && event.Action.Interrupted != nil && first == nil {
-			first = errRunInterrupted
+		if event.Action != nil && event.Action.Interrupted != nil {
+			for _, c := range event.Action.Interrupted.InterruptContexts {
+				if id, ok := parkedJobOf(c.Info); ok {
+					jobs = append(jobs, id)
+				}
+			}
+			if first == nil {
+				first = errRunInterrupted
+			}
 		}
 	}
 }
