@@ -8,7 +8,7 @@
   - 迁移测试 `creative_scene_jobs_migration_test.go`：新回滚链头 `rollbackSceneJobs`，`rollbackModelContent` 先调用它；各迁移测试的回滚标签列表最前面加新标签。
   - 完成判据：up、down、有 `waiting_client` 时拒绝回滚三种情况通过；认领、续租不发通知，新建和终态发通知。
 - [x] 1.2 存储辅助：`store.TxAccountScope.Savepoint(ctx, name, fn)`；`ClaimCreativeSceneJob`（`FOR UPDATE SKIP LOCKED`，账号级与按场景两种，先例 `assignment_quarantine_claim.go`）。先写测试：保存点内出错只回滚保存点；两个事务并发认领拿到不同任务；没有任务时不加锁返回空。
-- [ ] 1.3 `creativescene/jobs.go`：`Job`、`JobResult`、`JobWaiter` 与 `SetJobWaiter`、`CreateBakeJob` / `CreateRenderJob`（同 `(run_id, tool_call_id)` 返回已有任务）、`Claim`（`kinds` 过滤）、`Lease`（不超过 deadline）、`ListActive`（不含代码与令牌）、`CancelRunJobs`、`ErrJobLeaseLost`。先写测试：
+- [x] 1.3 `creativescene/jobs.go`：`Job`、`JobResult`、`JobWaiter` 与 `SetJobWaiter`、`CreateBakeJob` / `CreateRenderJob`（同 `(run_id, tool_call_id)` 返回已有任务）、`Claim`（`kinds` 过滤）、`Lease`（不超过 deadline）、`ListActive`（不含代码与令牌）、`CancelRunJobs`、`ErrJobLeaseLost`。先写测试：
   - 屏障测试 20 轮：两个会话同时认领，只有一个拿到；
   - 旧令牌续租返回 `ErrJobLeaseLost`；
   - 列表不泄露代码；
