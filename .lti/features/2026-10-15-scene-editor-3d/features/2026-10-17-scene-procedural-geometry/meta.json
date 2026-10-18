@@ -1,6 +1,6 @@
 {
   "uid": "9f8bcaa9-5b8e-4314-b5b4-7576bbc0ab61",
-  "revision": 12,
+  "revision": 13,
   "id": "scene-procedural-geometry",
   "kind": "feature",
   "assurance": "governed",
@@ -37,7 +37,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-17T10:45:57.330Z",
-  "updatedAt": "2026-10-18T04:35:10.381Z",
+  "updatedAt": "2026-10-18T04:35:56.066Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-18T04:35:56.015Z",
+    "summary": "develop 以 --no-ff 合入 feat/scene-procedural-geometry（8f16d17），合并后树与功能分支完全一致；功能分支已含 develop 最新提交，完整 make check 在该树上通过（exit 0），之后只改测试与 .lti，另跑 check-go creativescene、沙箱样例集 Chromium+WebKit、场景 e2e 30/30 均通过",
+    "method": "manual",
+    "limitations": "项目未配置 lti checks，集成验证引用合并点前在同一树上执行的 make check 结果，未在 develop 上重复运行",
+    "sourceCommit": "04175602b9aefdf672bb386d3151c541947dac03",
+    "targetCommit": "8f16d177a2b5166ce63c95da53d0c9b564b013f1",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "60783bec24ad2e05ce65b2f91c1403d1fc6a1ed29bfced67f4a451522ca8b5e2"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
