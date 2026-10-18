@@ -372,6 +372,14 @@ button.cc-project-name:hover,
   font-size: 11px;
   color: var(--fg-3);
 }
+/* 本页正在执行助手的场景任务：常驻到任务结束，提醒不要关闭。 */
+.cc-scene-host {
+  margin: 0 8px 0 4px;
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* 保存状态：只读文字，不抢焦点、不挡画布。 */
 .cc-save-state {
   margin: 0 8px 0 4px;

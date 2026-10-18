@@ -4,7 +4,7 @@ import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
 import type { RenderRequest } from './framing.ts'
-import type { CompletePayload, Completion, JobApi, JobErrorCode, SceneJob } from './jobs.ts'
+import { leaseEveryMs, type CompletePayload, type Completion, type JobApi, type JobErrorCode, type SceneJob } from './jobs.ts'
 import type { Ticker } from './ticker.ts'
 
 // Runs one claimed scene job to its end: renews the lease while working,
@@ -35,7 +35,6 @@ export type JobOutcome =
   /** Nothing could be reported; the lease will run out and the job go back to the queue. */
   | { state: 'abandoned'; reason: string }
 
-export const leaseEveryMs = 10_000
 /** A screenshot that has not come back by then will not; the job is the page's failure. */
 export const renderTimeoutMs = 60_000
 const completeAttempts = 3

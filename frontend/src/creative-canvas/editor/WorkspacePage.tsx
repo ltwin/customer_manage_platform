@@ -32,6 +32,9 @@ import type { Draft } from './journal.ts'
 import * as api from './api.ts'
 import { assetActions } from './assetPlacement.ts'
 import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
+import { useAgentRuns } from './agentRuns.ts'
+import { isActiveRun } from './agentState.ts'
+import { useSceneHost } from '../../creative-scene/host/launcher.ts'
 import { useNodeContent } from './useNodeContent.ts'
 import { matchesCanvas } from './snapshot.ts'
 import {
@@ -202,12 +205,17 @@ function Workspace({ account }: { account: string }) {
   const [localError, setLocalError] = useState('')
   const [mediaError, setMediaError] = useState('')
   const [mutationLoading, setLoading] = useState(false)
+  // The assistant's scene jobs run on this page, scene editor open or not.
+  const sceneHost = useSceneHost(account)
+  const agentLive = useAgentRuns((store) =>
+    Object.values(store.runs).some((view) => !!view && isActiveRun(view.run)),
+  )
   const {
     canvas,
     syncError,
     loading: canvasLoading,
     refreshCanvas,
-  } = useCanvasSnapshot(canvasID, tick)
+  } = useCanvasSnapshot(canvasID, tick, !!sceneHost.state.holding || agentLive)
   const loading = canvasLoading || mutationLoading
   const [discard, setDiscard] = useState<string | null>(null)
   const [preview, setPreview] = useState<{
@@ -1254,6 +1262,16 @@ function Workspace({ account }: { account: string }) {
             data-state={status}
           >
             {saveStatusText[status]}
+          </span>
+        )}
+        {sceneHost.state.holding && (
+          <span className="cc-scene-host" role="status">
+            {sceneHost.state.resumed === sceneHost.state.holding.id
+              ? '已继续助手的任务'
+              : sceneHost.state.holding.kind === 'render_view'
+                ? '助手正在用这个页面截图'
+                : '助手正在用这个页面生成模型'}
+            ，关闭页面会中断
           </span>
         )}
       </header>

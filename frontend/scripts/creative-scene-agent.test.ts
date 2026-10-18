@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ApiError } from '../src/api/transport.ts'
 import type { Upload } from '../src/creative-canvas/editor/media.ts'
-import { bakeFailure, compileFailure, leaseEveryMs, renderTimeoutMs, SceneExecutor, type ExecutorDeps, type Shot } from '../src/creative-scene/host/executor.ts'
-import type { CompletePayload, Completion, SceneJob } from '../src/creative-scene/host/jobs.ts'
+import { bakeFailure, compileFailure, renderTimeoutMs, SceneExecutor, type ExecutorDeps, type Shot } from '../src/creative-scene/host/executor.ts'
+import { leaseEveryMs, type CompletePayload, type Completion, type SceneJob } from '../src/creative-scene/host/jobs.ts'
 import type { Ticker } from '../src/creative-scene/host/ticker.ts'
 import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
 import type { Manifest } from '../src/creative-scene/sandbox/inspect.ts'
@@ -468,4 +468,226 @@ test('peek hands over a loaded model at once, null for a failed one, nothing bef
   assert.equal(cache.peek('ccrv_gone'), null)
   cache.clear()
   assert.equal(cache.peek('ccrv_ok'), undefined, 'cleared with the editor')
+})
+
+// --- the page's claim loop -------------------------------------------------
+
+import { SceneJobLauncher, type LauncherDeps, type PageRunner } from '../src/creative-scene/host/launcher.ts'
+import { LeaveGuard } from '../src/creative-scene/host/leaveGuard.ts'
+
+class FakeHost {
+  ticker = new ManualTicker()
+  queue: SceneJob[] = []
+  claims: (string | undefined)[] = []
+  claimGate: ReturnType<typeof deferred<void>> | null = null
+  leases: string[] = []
+  completes: Call[] = []
+  ran: string[] = []
+  runGate: ReturnType<typeof deferred<void>> | null = null
+  loads = 0
+  loadGate: ReturnType<typeof deferred<void>> | null = null
+  loadFails = false
+  disposed = 0
+  capable = true
+  claimError: unknown = null
+  deps(): LauncherDeps {
+    return {
+      ticker: this.ticker,
+      probe: () => this.capable,
+      load: async () => {
+        this.loads++
+        if (this.loadGate) await this.loadGate.promise
+        if (this.loadFails) throw new Error('Failed to fetch dynamically imported module')
+        const runner: PageRunner = {
+          run: async (job) => { this.ran.push(job.id); if (this.runGate) await this.runGate.promise },
+          dispose: () => { this.disposed++ },
+        }
+        return runner
+      },
+      api: {
+        claim: async ({ documentID }) => {
+          this.claims.push(documentID)
+          if (this.claimGate) await this.claimGate.promise
+          if (this.claimError) throw this.claimError
+          const i = this.queue.findIndex((j) => !documentID || j.document_id === documentID)
+          return i < 0 ? null : this.queue.splice(i, 1)[0]
+        },
+        lease: async (jobID) => { this.leases.push(jobID) },
+        complete: async (_id, operation, _at, payload) => { this.completes.push({ operation, payload }); return { job_id: _id, state: 'failed', result: {} } },
+      },
+    }
+  }
+}
+
+const queued = (id: string, documentID = 'cwdoc_1', attempt = 0): SceneJob => ({ ...bakeJob(), id, document_id: documentID, attempt })
+const settle = async () => { for (let i = 0; i < 10; i++) await tick() }
+
+test('the launcher claims until the queue is empty, one job at a time, loading the executor once', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1'), queued('csj_2')]
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  await settle()
+  assert.deepEqual(host.ran, ['csj_1', 'csj_2'])
+  assert.equal(host.loads, 1)
+  assert.equal(host.claims.length, 3, 'a third claim finds nothing')
+  assert.equal(launcher.store.getState().holding, null)
+})
+
+test('nudges while busy become one more claim, not a second loop', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1')]
+  host.runGate = deferred<void>()
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  await settle()
+  assert.deepEqual(launcher.store.getState().holding, { id: 'csj_1', documentID: 'cwdoc_1', kind: 'bake_model' })
+  host.queue.push(queued('csj_2'))
+  launcher.poke()
+  launcher.poke()
+  await settle()
+  assert.equal(host.claims.length, 1, 'no claim while a job runs')
+  host.runGate.resolve()
+  await settle()
+  assert.deepEqual(host.ran, ['csj_1', 'csj_2'])
+})
+
+test('canvas notifications are throttled to one claim per 500 ms', async () => {
+  const host = new FakeHost()
+  const due: (() => void)[] = []
+  host.ticker.after = (_ms: number, fn: () => void) => { due.push(fn); return () => {} }
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  await settle()
+  const before = host.claims.length
+  launcher.invalidated()
+  launcher.invalidated()
+  launcher.invalidated()
+  assert.equal(due.length, 1)
+  due[0]()
+  await settle()
+  assert.equal(host.claims.length, before + 1)
+})
+
+test('the open editor’s scene is claimed first', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_other', 'cwdoc_other'), queued('csj_mine', 'cwdoc_mine')]
+  const launcher = new SceneJobLauncher(host.deps())
+  const unprefer = launcher.prefer('cwdoc_mine')
+  launcher.start()
+  await settle()
+  assert.deepEqual(host.ran, ['csj_mine', 'csj_other'])
+  assert.equal(host.claims[0], 'cwdoc_mine')
+  unprefer()
+  host.queue = [queued('csj_3')]
+  launcher.poke()
+  await settle()
+  assert.equal(host.claims.at(-2), undefined, 'without the editor, the account’s oldest')
+})
+
+test('a device that fails the probe claims nothing', async () => {
+  const host = new FakeHost()
+  host.capable = false
+  host.queue = [queued('csj_1')]
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  launcher.poke()
+  await settle()
+  assert.equal(host.claims.length, 0)
+  assert.equal(launcher.store.getState().capable, false)
+})
+
+test('the lease is renewed while the executor loads; a chunk that will not load fails the job and stops claiming', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1'), queued('csj_2')]
+  host.loadGate = deferred<void>()
+  host.loadFails = true
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  await settle()
+  host.ticker.beat()
+  assert.deepEqual(host.leases, ['csj_1'], 'renewed during the load')
+  host.loadGate.resolve()
+  await settle()
+  assert.equal(host.completes.length, 1)
+  assert.equal(host.completes[0].payload.error?.code, 'host_error')
+  assert.match(host.completes[0].payload.error?.message ?? '', /页面没能加载渲染模块/)
+  assert.equal(launcher.store.getState().capable, false)
+  assert.equal(host.queue.length, 1, 'the next job is left for another page')
+})
+
+test('taking over an interrupted job is said once; a claim error waits for the next nudge', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1', 'cwdoc_1', 1)]
+  host.runGate = deferred<void>()
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  await settle()
+  assert.equal(launcher.store.getState().resumed, 'csj_1')
+  host.runGate.resolve()
+  await settle()
+
+  const offline = new FakeHost()
+  offline.claimError = new TypeError('Failed to fetch')
+  const quiet = new SceneJobLauncher(offline.deps())
+  quiet.start()
+  await settle()
+  assert.equal(offline.claims.length, 1, 'no retry loop')
+  offline.claimError = null
+  offline.queue = [queued('csj_1')]
+  quiet.poke()
+  await settle()
+  assert.deepEqual(offline.ran, ['csj_1'])
+})
+
+test('leaving the page lets a running job finish, then frees the executor', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1'), queued('csj_2')]
+  host.runGate = deferred<void>()
+  const launcher = new SceneJobLauncher(host.deps())
+  const stop = launcher.start()
+  await settle()
+  stop()
+  assert.equal(host.disposed, 0, 'not while csj_1 runs')
+  host.runGate.resolve()
+  await settle()
+  assert.deepEqual(host.ran, ['csj_1'], 'nothing more is claimed')
+  assert.equal(host.disposed, 1)
+})
+
+// --- closing the page while it holds a job ---------------------------------
+
+class FakeBroadcast {
+  static channels: FakeBroadcast[] = []
+  onmessage: ((e: MessageEvent) => void) | null = null
+  closed = false
+  constructor() { FakeBroadcast.channels.push(this) }
+  postMessage(m: unknown) { for (const c of FakeBroadcast.channels) if (c !== this && !c.closed) c.onmessage?.({ data: m } as MessageEvent) }
+  close() { this.closed = true }
+}
+
+class FakeWindow {
+  listeners = new Map<string, Set<unknown>>()
+  addEventListener(type: string, fn: unknown) { if (!this.listeners.has(type)) this.listeners.set(type, new Set()); this.listeners.get(type)!.add(fn) }
+  removeEventListener(type: string, fn: unknown) { this.listeners.get(type)?.delete(fn) }
+  asks() { return (this.listeners.get('beforeunload')?.size ?? 0) > 0 }
+}
+
+test('closing asks first only while holding a job in the browser’s only workspace tab', () => {
+  FakeBroadcast.channels = []
+  const open = () => new FakeBroadcast() as never
+  const a = new FakeWindow(), b = new FakeWindow()
+  const first = new LeaveGuard(a as never, open)
+  const stopFirst = first.start()
+  first.setHolding(true)
+  assert.ok(a.asks(), 'alone and holding: asks')
+  const second = new LeaveGuard(b as never, open)
+  const stopSecond = second.start()
+  assert.ok(!first.alone && !second.alone, 'the tabs found each other')
+  assert.ok(!a.asks(), 'another tab will take the job over')
+  stopSecond()
+  assert.ok(first.alone && a.asks(), 'the other tab said goodbye')
+  first.setHolding(false)
+  assert.ok(!a.asks())
+  stopFirst()
 })

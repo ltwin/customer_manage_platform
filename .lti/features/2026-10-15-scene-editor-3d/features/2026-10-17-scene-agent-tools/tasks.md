@@ -138,13 +138,23 @@
     - 取景：摄像机的垂直视角按传感器高度算，与编辑器里画的视锥一致；预设按全部可见物件（不含地面、灯光、摄像机）的世界包围盒取景，内容最多占画面的 1/1.1。
     - 执行器接入 `render_view`：拍不了（摄像机已删）报 `render_error`，页面自己的问题（WebGL、超时、上传）报 `host_error`；截图以 `image/jpeg` 暂存上传，上传不可用时与烘焙一样重传一次。`uploadGenerated` 的声明类型增加 `image/jpeg`。
     - 验证：单测新增取景 4 项、截图任务 2 项、`peek` 1 项（共 17 项）；`creative-scene-agent.e2e.mjs` 3 项：JPEG、长边 1024、`scene_revision`、模型首帧即为几何、四种预设、连拍 20 张不触发浏览器的上下文上限。变异检查：去掉 `peek` 首帧读取、去掉卸载，都会被 e2e 抓到。C2 场景单测与 e2e 30 项照常通过。
-- [ ] 4.3 画布页接入：
+- [x] 4.3 画布页接入：
   - `host/launcher.ts`：每页唯一的认领循环、能力探测、优先场景、按需加载执行器、加载期间续租；
   - `WorkspacePage` 挂载 launcher；
   - `useCanvasSnapshot` 增加 `keepAlive`；
   - `host/leaveGuard.ts`：常驻提示、BroadcastChannel、`beforeunload`、「已继续助手的任务」。
 
   `creative-scene-agent.e2e.mjs`（mock 接口）：只开画布页时执行器被按需加载并完成任务，加载前没有 three；关闭拦截只在唯一标签页生效；能力探测不满足时不认领。
+  - 实施记录：
+    - 认领时机：挂载、画布失效通知（500 ms 节流）、回到前台、恢复联网；做完一个任务立即再认领；认领遇到网络错误不重试，等下一次触发。认领时带 `kinds: [bake_model, render_view]`。
+    - 执行器代码块加载失败时，本页标记为不能执行、不再认领，并把这个任务以 `host_error` 报回（单测抓到过一次：最初失败后循环还会认领下一个任务并同样报错，已修正）。在应用内离开工作区时，进行中的任务做完再释放执行器，不会被打断。
+    - `keepAlive`：本页持有任务或助手有进行中的运行（含 `waiting_client`）时，隐藏标签页也不断开实时流；回到前台照常重连并重读。隐藏标签页的行为留给 6.2 用真实 Chrome 验证。
+    - 常驻提示放在工作区头部（`cc-scene-host`）：「助手正在用这个页面生成模型 / 截图，关闭页面会中断」；接手中断的任务时第一次显示「已继续助手的任务，关闭页面会中断」。
+    - 局部偏差：
+      - `host/pageExecutor.ts`（按需加载的代码块：沙箱、缩略图、截图、上传与 Worker 节拍的组装）挂载点里没有列；
+      - `launcher.ts` 提供 `useSceneHost(account)`，把启动、触发和关闭拦截收在一起，`WorkspacePage` 只加一个 hook 和提示。
+      - e2e 用只挂 `useSceneHost` 的页面代替完整的 `WorkspacePage`（现有 e2e 都不挂完整工作区）；`WorkspacePage` 的模块图仍由 C2 的「打开画布页不加载 three」检查覆盖，现在包含 launcher。
+    - 验证：单测新增认领循环 8 项、关闭拦截 1 项（共 26 项）；`creative-scene-agent.e2e.mjs` 新增 3 项（共 6 项）。变异检查：有其他标签页也拦截、去掉能力探测、静态引入执行器，都会被 e2e 抓到。C2 场景 e2e 30 项照常通过；生产构建中执行器是单独的代码块，工作区代码块不引用 three。
 
 ## 5. 编辑视图与助手面板（前端）
 
