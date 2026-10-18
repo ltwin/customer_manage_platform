@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackModelContent is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackModelContent undoes 0075 and then 0074; every older migration's
+// rollback helper undoes this one first.
 func rollbackModelContent(t *testing.T, url string) {
 	t.Helper()
+	rollbackSceneJobs(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-model-content", err)
 	}
@@ -55,6 +56,7 @@ VALUES('cand-doc','acct','up-model','applied','{}','model',now()+interval '1 day
 			t.Fatal("model value rejected", q, err)
 		}
 	}
+	rollbackSceneJobs(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "model content exists") {
 		t.Fatal("lossy model rollback allowed", err)
 	}
@@ -87,6 +89,7 @@ VALUES('cand-doc','acct','up-png','applied','{}','image',now()+interval '1 day',
 			if _, err = db.Exec(`INSERT INTO accounts(id,password_hash,status) VALUES('acct','test','active');` + tt.seed); err != nil {
 				t.Fatal(err)
 			}
+			rollbackSceneJobs(t, url)
 			if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "model content exists") {
 				t.Fatal("lossy model rollback allowed", err)
 			}

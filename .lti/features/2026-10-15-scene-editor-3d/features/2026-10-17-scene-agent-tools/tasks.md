@@ -2,7 +2,7 @@
 
 ## 1. 客户端任务（后端）
 
-- [ ] 1.1 迁移 `0075_creative_scene_jobs` up/down：
+- [x] 1.1 迁移 `0075_creative_scene_jobs` up/down：
   - up：新表 `creative_scene_jobs`（列、CHECK、索引按契约，另加唯一 `(run_id, tool_call_id)`）；`AFTER INSERT` 与 `AFTER UPDATE ... WHEN (OLD.state IS DISTINCT FROM NEW.state AND NEW.state <> 'claimed')` 两个触发器，执行现有的 `notify_creative_canvas_changed('account')`；`creative_agent_runs.state` 的 CHECK 加 `waiting_client`，重建活跃索引。
   - down：存在 `waiting_client` 运行时拒绝。
   - 迁移测试 `creative_scene_jobs_migration_test.go`：新回滚链头 `rollbackSceneJobs`，`rollbackModelContent` 先调用它；各迁移测试的回滚标签列表最前面加新标签。
