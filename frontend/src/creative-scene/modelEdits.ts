@@ -3,11 +3,11 @@ import type { components } from '../api/schema'
 import type { Upload } from '../creative-canvas/editor/media.ts'
 import type { Scene, SceneObject } from './api.ts'
 import { nextOrder } from './editing.ts'
+import { bake, type BakeDeps, type Compiled } from './host/bake.ts'
 import { newIntentID, newObjectID } from './ids.ts'
 import { modelSummaries, type ModelCache, type SceneModel } from './models/cache.ts'
-import type { CompileInput, CompileResult } from './sandbox/host.ts'
-import type { Manifest } from './sandbox/inspect.ts'
-import { measureStage, type CompileError } from './sandbox/protocol.ts'
+import type { CompileInput } from './sandbox/host.ts'
+import type { CompileError } from './sandbox/protocol.ts'
 import { contentUnit, localContent, localRevision, type WireOp } from './state/apply.ts'
 import type { Intent } from './state/intents.ts'
 import type { SceneSession } from './state/sync.ts'
@@ -19,14 +19,10 @@ import type { SceneSession } from './state/sync.ts'
 // are the session's.
 
 type Generator = components['schemas']['CreativeModelGeneratorInput']
-type Declared = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' }
 
-export type ModelEditDeps = {
+export type ModelEditDeps = BakeDeps & {
   session: SceneSession
   cache: ModelCache
-  compile(input: CompileInput): Promise<CompileResult>
-  thumbnail(glb: ArrayBuffer, manifest: Manifest): Promise<Blob>
-  upload(file: File, declared: Declared, signal: AbortSignal): Promise<Upload>
   /** Releases a ready staged upload that will never be committed. */
   discard(upload: Upload): Promise<void>
   makeObjectID?: () => string
@@ -276,51 +272,41 @@ export class ModelEdits {
     }
     if (!baseline) return failed('commit', '场景还没有加载完')
 
-    this.setStatus(plan.key, { state: 'baking' })
-    let started = performance.now()
-    const compiled = await this.deps.compile(plan.compile)
-    if (!live()) return superseded()
-    if (!compiled.ok) return failed('compile', compiled.error.message, compiled.error)
-    const { glb, manifest, module, codeSHA256 } = compiled
-    const generator: Generator = {
-      language: 'three-module',
-      contract_version: module.contract_version,
-      lib_version: module.lib_version,
-      code: plan.compile.code,
-      code_sha256: codeSHA256,
-      params_schema: module.params_schema,
-      params: module.params,
-      mount: module.mount,
-    }
-    const { code: _, ...shown } = generator
     const nameHint = [...plan.nameHint].slice(0, maxNameHint).join('')
-    const summary = (contentID: string): SceneModel => ({ content_id: contentID, usable: true, manifest, generator: shown, name_hint: nameHint })
-    cache.register(previewKey, { glb, summary: summary('') })
-    this.showPreview(plan, previewKey)
-
-    measureStage('compile', started)
-    let png: Blob
-    started = performance.now()
-    try {
-      png = await this.deps.thumbnail(glb, manifest)
-    } catch {
-      return live() ? failed('thumbnail', '缩略图生成失败，模型没有保存') : superseded()
+    const described = (compiled: Compiled) => {
+      const { module, manifest, codeSHA256 } = compiled
+      const generator: Generator = {
+        language: 'three-module',
+        contract_version: module.contract_version,
+        lib_version: module.lib_version,
+        code: plan.compile.code,
+        code_sha256: codeSHA256,
+        params_schema: module.params_schema,
+        params: module.params,
+        mount: module.mount,
+      }
+      const { code: _, ...shown } = generator
+      const summary = (contentID: string): SceneModel => ({ content_id: contentID, usable: true, manifest, generator: shown, name_hint: nameHint })
+      return { generator, summary }
     }
-    if (!live()) return superseded()
 
-    measureStage('thumbnail', started)
-    this.setStatus(plan.key, { state: 'uploading' })
-    started = performance.now()
-    const signal = me.abort.signal
-    const results = await Promise.allSettled([
-      this.deps.upload(new File([glb], 'model.glb', { type: 'model/gltf-binary' }), { kind: 'model', mime: 'model/gltf-binary' }, signal),
-      this.deps.upload(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, signal),
-    ])
-    for (const r of results) if (r.status === 'fulfilled') me.uploads.push(r.value)
-    if (!live()) return superseded()
-    if (results.some((r) => r.status === 'rejected')) return failed('upload', '模型保存失败，可以重试')
-    measureStage('upload', started)
-    const [model, thumbnail] = me.uploads
+    this.setStatus(plan.key, { state: 'baking' })
+    const out = await bake(this.deps, plan.compile, me.abort.signal, {
+      live,
+      compiled: (compiled) => {
+        cache.register(previewKey, { glb: compiled.glb, summary: described(compiled).summary('') })
+        this.showPreview(plan, previewKey)
+      },
+      uploading: () => this.setStatus(plan.key, { state: 'uploading' }),
+    })
+    me.uploads.push(...out.uploads)
+    if (!out.ok) {
+      if (out.stopped) return superseded()
+      if (out.stage === 'compile') return failed('compile', out.error.message, out.error)
+      return failed(out.stage, out.stage === 'thumbnail' ? '缩略图生成失败，模型没有保存' : '模型保存失败，可以重试')
+    }
+    const { glb, manifest, model, thumbnail } = out.baked
+    const { generator, summary } = described(out.baked)
 
     const frozen = session.baselineOf(baseline.id)
     if (!frozen || frozen.broken) return failed('commit', '之前的修改没有保存，这次修改已放弃')

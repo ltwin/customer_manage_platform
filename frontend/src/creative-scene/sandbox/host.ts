@@ -31,6 +31,13 @@ export type CompileInput = { code: string; params: Record<string, unknown>; libV
 /** One sandbox page instance; destroyed on timeout and replaced. */
 export type SandboxFrame = { post(request: CompileRequest): void; destroy(): void }
 export type FrameFactory = (onMessage: (data: unknown) => void) => SandboxFrame
+/** Calls `fn` once after `ms` and returns its cancel. */
+export type After = (ms: number, fn: () => void) => () => void
+
+function pageAfter(ms: number, fn: () => void): () => void {
+  const timer = setTimeout(fn, ms)
+  return () => clearTimeout(timer)
+}
 
 const bootTimeoutMs = 10000
 
@@ -71,6 +78,7 @@ type CompileResultOrTimeout = ReturnType<typeof readSandboxMessage> | 'timeout'
 export class SandboxHost {
   readonly #factory: FrameFactory
   readonly #timeoutMs: number
+  readonly #after: After
   #frame: SandboxFrame | null = null
   #generation = 0
   #ready: Promise<boolean> | null = null
@@ -80,9 +88,11 @@ export class SandboxHost {
   #queue: Promise<unknown> = Promise.resolve()
   #disposed = false
 
-  constructor(factory: FrameFactory, timeoutMs = COMPILE_TIMEOUT_MS) {
+  /** `after` paces the timeouts; a renderer in a hidden tab passes Worker-paced timers. */
+  constructor(factory: FrameFactory, timeoutMs = COMPILE_TIMEOUT_MS, after: After = pageAfter) {
     this.#factory = factory
     this.#timeoutMs = timeoutMs
+    this.#after = after
   }
 
   /** Compiles one module; calls run one after another, never together. */
@@ -102,7 +112,7 @@ export class SandboxHost {
     const generation = ++this.#generation
     this.#ready = new Promise<boolean>((resolve) => {
       this.#markReady = () => resolve(true)
-      setTimeout(() => resolve(false), bootTimeoutMs)
+      this.#after(bootTimeoutMs, () => resolve(false))
     })
     this.#frame = this.#factory((data) => {
       if (generation === this.#generation) this.#receive(data)
@@ -134,25 +144,25 @@ export class SandboxHost {
   }
 
   async #compile({ code, params, libVersion }: CompileInput): Promise<CompileResult> {
-    if (this.#disposed) return failure('runtime', '代码沙箱已关闭')
+    if (this.#disposed) return hostFailure('runtime', '代码沙箱已关闭')
     if (utf8Length(code) > MAX_CODE_BYTES) return failure('limit', '代码超过 64 KiB')
     if (!LIB_VERSIONS.includes(libVersion)) return failure('invalid', `lib_version 须为 ${LIB_VERSIONS.join('、')}`)
     if (!this.#frame) this.#boot()
     if (!(await this.#ready)) {
       this.#boot()
-      return failure('timeout', '代码沙箱没有启动')
+      return hostFailure('timeout', '代码沙箱没有启动')
     }
     const id = ++this.#seq
     const posted = performance.now()
     const reply = await new Promise<CompileResultOrTimeout>((resolve) => {
-      const timer = setTimeout(() => {
+      const cancel = this.#after(this.#timeoutMs, () => {
         this.#pending = null
         resolve('timeout')
-      }, this.#timeoutMs)
+      })
       this.#pending = {
         id,
         resolve: (r) => {
-          clearTimeout(timer)
+          cancel()
           resolve(r)
         },
       }
@@ -190,6 +200,10 @@ export class SandboxHost {
 
 function failure(kind: CompileError['kind'], message: string): CompileResult {
   return { ok: false, error: compileError(kind, message) }
+}
+
+function hostFailure(kind: CompileError['kind'], message: string): CompileResult {
+  return { ok: false, error: { ...compileError(kind, message), host: true } }
 }
 
 // The server's rules for a generator's module fields (creativescene

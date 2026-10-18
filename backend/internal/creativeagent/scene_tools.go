@@ -461,7 +461,7 @@ func sceneToolResult(ctx context.Context, tx store.TxAccountScope, job creatives
 		default:
 			message := res.Failure.Message
 			if res.Failure.Code == "host_error" {
-				message = strings.TrimSpace(message + " 页面多次没能完成这个任务，可以稍后重试或换一种写法。")
+				message = strings.TrimSpace(message + " 问题出在页面上，可以稍后重试。")
 			}
 			out = map[string]any{"status": "failed", "error": map[string]string{"code": res.Failure.Code, "message": message}}
 		}

@@ -110,7 +110,7 @@
 
 ## 4. 渲染端（前端）
 
-- [ ] 4.1 执行器：
+- [x] 4.1 执行器：
   - 从 `modelEdits.ts` 抽出 `host/bake.ts`，`ModelEdits` 改用它；
   - `host/jobs.ts`；
   - `host/executor.ts`：认领、续租、执行 `bake_model`、完成，`host_error` 等失败映射，`creative_upload_unavailable` 重传一次；
@@ -118,6 +118,13 @@
   - `uploadGenerated` 可注入等待函数。
 
   单测：失败映射、重传、租约丢失时丢弃产物；C2 现有单测与 e2e 不变。
+  - 实施记录：
+    - 分工：认领接口在 `host/jobs.ts`，由 4.3 的 launcher 调用；`SceneExecutor.run(job)` 接手已认领的任务，自己续租、执行、完成。浏览器侧的组装（沙箱、缩略图、上传、Worker 节拍）随 launcher 在 4.3 写。
+    - 沙箱页没启动、已关闭时，`CompileError` 带 `host: true`（只有宿主能设，沙箱回传的错误不会带），映射为 `host_error`；编译错误的行列号写进 message（「第 3 行第 7 列：…」）。缩略图和上传失败都算 `host_error`。
+    - 结果处理：服务端记下结果（200，成功或失败）就保留产物，冲突的烘焙要靠它重试；续租或完成返回 409 / 404 时丢弃产物；完成遇到网络错误或 5xx 用同一个 operation id 重试 3 次，仍不行就放手、等租约过期回队；成功结果被 400 拒绝时改报 `host_error`，避免反复回队。
+    - `SandboxHost` 增加可注入的计时（启动与编译超时），执行器在隐藏标签页里也按 Worker 节拍判断超时。
+    - 顺手修正后端 `host_error` 的补充说明：原文「页面多次没能完成」对页面一次上报的失败不准确，改为「问题出在页面上，可以稍后重试」。
+    - 验证：`creative-scene-agent.test.ts` 10 项（变异检查 5 处均被抓到：不重传、丢失时不丢弃、忽略租约、重试换 operation id、超时码错映射）；C2 场景单测 99 项、`creative-scene.e2e.mjs` 30 项照常通过。
 - [ ] 4.2 离屏截图：先做最小样例，确认 R3F `createRoot` 离屏渲染可行（未决 #2），不行就为截图写独立的 three 场景构建。然后：
   - 导出 `Environment`，`ModelMesh` 同步读缓存（`modelCache.peek`）；
   - `host/render.ts`：四种取景、JPEG、`scene_revision`、用后释放 WebGL 上下文。
