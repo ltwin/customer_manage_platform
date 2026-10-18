@@ -8,7 +8,10 @@ import type { Ticker } from '../src/creative-scene/host/ticker.ts'
 import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
 import type { Manifest } from '../src/creative-scene/sandbox/inspect.ts'
 import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders, revisionObjects, type ActivityDeps } from '../src/creative-scene/agentActivity.ts'
-import type { RevisionItem, SceneJobSummary, SceneObject } from '../src/creative-scene/api.ts'
+import type { RestoreBatch, RevisionItem, SceneJobSummary, SceneObject } from '../src/creative-scene/api.ts'
+import { blockedText, documentOf, finishedDetail, outcomeText, restorePayload, screenshotRevision, submitBatches, type Detail } from '../src/creative-canvas/editor/agentScene.ts'
+import { currentStep, type RunView } from '../src/creative-canvas/editor/agentBlocks.ts'
+import { messageSteps } from '../src/creative-canvas/editor/agentState.ts'
 
 // --- the page's scene job executor -----------------------------------------
 
@@ -821,4 +824,79 @@ test('the editor reads on opening, then at most once a second after notification
   stop()
   assert.equal(s.listener, null)
   assert.equal(s.clock.pending.length, 0)
+})
+
+// --- the panel: screenshots and the run's change list ----------------------
+
+test('undoing a run sends its batches in order and stops at the first conflict', async () => {
+  const batch = (from: string): RestoreBatch => ({ from_revision: from, units: [`object:${objA}`], expected: { [`object:${objA}`]: '5' } })
+  const sent: string[] = []
+  const conflict = new ApiError(409, 'creative_document_conflict', '文档已被修改')
+  const send = (fail: string | null) => async (b: RestoreBatch) => {
+    sent.push(b.from_revision)
+    if (b.from_revision === fail) throw conflict
+    return { revision: String(10 + sent.length) }
+  }
+  let out = await submitBatches([batch('1'), batch('3'), batch('4')], send('3'))
+  assert.deepEqual(sent, ['1', '3'])
+  assert.deepEqual(out, { written: ['11'], total: 3, conflict: true, error: null })
+  assert.equal(outcomeText(out), '撤销了一部分：其余的地方刚被修改，没有覆盖，清单已重新读取')
+  sent.length = 0
+  out = await submitBatches([batch('1')], send(null))
+  assert.equal(outcomeText(out), '已撤销本轮的改动')
+  assert.equal(outcomeText(out, '椅子'), '已恢复「椅子」')
+  sent.length = 0
+  out = await submitBatches([batch('1')], send('1'))
+  assert.equal(outcomeText(out, '椅子'), '「椅子」刚被修改，没有覆盖，清单已重新读取')
+  out = await submitBatches([batch('1')], async () => { throw new Error('网络中断') })
+  assert.deepEqual([out.conflict, out.error], [false, '网络中断'])
+  assert.equal(outcomeText(out), '没有撤销：网络中断')
+  assert.deepEqual(restorePayload(batch('1')), { expected: { [`object:${objA}`]: '5' }, operations: [{ op: 'restore_units', from_revision: '1', units: [`object:${objA}`] }] })
+})
+
+test('the panel reads a tool block once: the scene from its arguments, the screenshot from its result', async () => {
+  const reads: string[] = []
+  const detail = (result?: string): Detail => ({ block_id: 'b', step_id: 's', tool_key: 'render_view', arguments: { document_id: 'cwdoc_1', preset: 'overview' }, ...(result === undefined ? {} : { result }) })
+  const read = async <T,>(path: string) => {
+    reads.push(path)
+    return detail(JSON.stringify({ image_revision_id: 'ccrv_shot', content_revision_id: 'ccrv_shot', scene_revision: 3 })) as T
+  }
+  const block = { id: 'ccbk_shot', run_id: 'car_1' }
+  const first = await finishedDetail(block, read)
+  await finishedDetail(block, read)
+  assert.deepEqual(reads, ['/agent-runs/car_1/blocks/ccbk_shot/detail'])
+  assert.equal(screenshotRevision(first), 'ccrv_shot')
+  assert.equal(documentOf(first), 'cwdoc_1')
+  assert.equal(screenshotRevision(detail('截图失败')), null)
+  assert.equal(screenshotRevision(detail()), null)
+  // A failed read is tried again.
+  let fail = true
+  const flaky = async <T,>(path: string) => {
+    reads.push(path)
+    if (fail) throw new Error('offline')
+    return detail() as T
+  }
+  await assert.rejects(finishedDetail({ id: 'ccbk_x', run_id: 'car_1' }, flaky))
+  fail = false
+  assert.equal((await finishedDetail({ id: 'ccbk_x', run_id: 'car_1' }, flaky)).tool_key, 'render_view')
+  assert.equal(blockedText({ reason: 'changed_by_others', revision: '7', actor_kind: 'photographer' }), '之后你又改过（第 7 版）')
+  assert.equal(blockedText({ reason: 'changed_by_others', revision: '8', actor_kind: 'agent' }), '之后助手的其他运行又改过（第 8 版）')
+  assert.equal(blockedText({ reason: 'restored_whole', revision: '9', actor_kind: 'photographer' }), '之后整份恢复过（第 9 版）')
+  assert.equal(blockedText({ reason: 'hierarchy_not_restorable', revision: '4', actor_kind: 'agent' }), '层级调整不能单独恢复，可以在历史版本里整份恢复')
+})
+
+test('a run parked on a page job says what it waits for', () => {
+  const view = (wait: string | undefined) =>
+    ({ run: { state: 'waiting_client', wait_reason: wait }, blocks: [{ id: 'b', type: 'tool', hidden: false, finished_at: null, payload: { title: '生成模型' } }] }) as unknown as RunView
+  assert.equal(currentStep(view('client_job')), '等待页面执行')
+  assert.equal(currentStep(view('slot_busy')), '等待其他助手运行结束')
+})
+
+test('a run started from the scene editor carries its scene and at most 50 selected objects; elsewhere none', () => {
+  const message = { model: 'vision', imageInput: true, revisionIDs: [], segments: [{ type: 'text', text: '改成木头的' }] } as Parameters<typeof messageSteps>[1]
+  const runStep = (scene?: Parameters<typeof messageSteps>[1]['scene']) => messageSteps('c', { ...message, scene }).find((s) => s.path.endsWith('/runs'))!
+  assert.equal('scene_context' in runStep().payload, false)
+  assert.equal('scene_context' in runStep(null).payload, false)
+  const many = Array.from({ length: 60 }, (_, i) => `sobj_${String(i).padStart(21, '0')}`)
+  assert.deepEqual(runStep({ documentID: 'cwdoc_1', selected: many }).payload.scene_context, { document_id: 'cwdoc_1', selected_object_ids: many.slice(0, 50) })
 })

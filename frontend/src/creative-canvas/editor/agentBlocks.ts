@@ -222,6 +222,11 @@ export function nodeRefs(block: AgentBlock): string[] {
 
 // What the status row says the run is doing right now.
 export function currentStep(view: RunView): string {
+  // Parked on a page job, its tool row stays open; the wait says more.
+  if (view.run.state === 'waiting_client')
+    return view.run.wait_reason === 'slot_busy'
+      ? '等待其他助手运行结束'
+      : runLabels.waiting_client
   const open = view.blocks.findLast(
     (block) => !block.hidden && !block.finished_at,
   )

@@ -1,8 +1,9 @@
-// C3 renderer side in a real browser, against mocked endpoints: the
-// assistant's screenshots (render_view) taken offscreen, and the workspace
-// page's claim loop running jobs with the executor loaded on demand.
+// C3 in a real browser, against mocked endpoints: the assistant's
+// screenshots (render_view) taken offscreen, the workspace page's claim loop
+// running jobs with the executor loaded on demand, and the assistant panel's
+// screenshots and change list.
 // Run with the frontend Vite server on CREATIVE_SCENE_URL (default :5179):
-//   node scripts/creative-scene-agent.e2e.mjs
+//   node scripts/creative-scene-agent.e2e.mjs   (SCENE_AGENT_E2E_ONLY=<part of a name> runs matching checks)
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
@@ -14,6 +15,8 @@ const MODEL = 'ccrv_pillar'
 const auth = `setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});`
 const renderFixture = new URL('../.scene-agent-qa.html', import.meta.url)
 const hostFixture = new URL('../.scene-agent-host-qa.html', import.meta.url)
+const panelFixture = new URL('../.scene-agent-panel-qa.html', import.meta.url)
+const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 await writeFile(
   renderFixture,
   `<html><body><script type="module">
@@ -52,6 +55,26 @@ function Host() {
   return React.createElement('p', {id: 'host'}, state.holding ? 'holding:' + state.holding.kind : state.capable ? 'idle' : 'incapable');
 }
 createRoot(document.getElementById('root')).render(React.createElement(Host));
+window.__ready = true;
+</script></body></html>`,
+)
+
+// The assistant panel on a canvas with the scene's node; window.__scene() stands in for an open scene editor.
+await writeFile(
+  panelFixture,
+  `<html><body><div id="root" class="cc-workspace"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import '/src/index.css';
+import '/src/creative-canvas/editor/workspace.css';
+import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
+import {setSceneContext} from '/src/creative-scene/context.ts';
+import {setAuthenticated} from '/src/auth/session.ts';
+${auth}
+localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
+window.__scene = setSceneContext;
+const nodes = [{id: 'node-scene', metadata: {title: '棚拍布景'}, data: {document_id: '${DOC}'}}];
+createRoot(document.getElementById('root')).render(React.createElement(AgentPanel, {account: 'qa-account', canvasID: 'canvas', defaultOpen: true, canvas: {nodes}}));
 window.__ready = true;
 </script></body></html>`,
 )
@@ -202,8 +225,130 @@ async function openRender() {
   return { ...t, context, server, render: (request) => t.page.evaluate((q) => window.__render(q), request) }
 }
 
+
+// --- the panel's mocked conversation: one finished scene run ---------------
+
+const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+const chairBatch = { from_revision: '1', units: ['objects', 'object:sobj_chair000000000000000000', 'object:sobj_chair000000000000000000:content'], expected: { objects: '4', 'object:sobj_chair000000000000000000': '3', 'object:sobj_chair000000000000000000:content': '3' } }
+const tableBatch = { from_revision: '2', units: ['object:sobj_table000000000000000000'], expected: { 'object:sobj_table000000000000000000': '4' } }
+const lampBatch = { from_revision: '2', units: ['object:sobj_lamp0000000000000000000'], expected: { 'object:sobj_lamp0000000000000000000': '4' } }
+const runBase = {
+  conversation_id: 'c', canvas_id: 'canvas', egress_consent_id: 'consent', model_key: 'vision', kind: 'chat', settlement_state: 'settled',
+  limits_version: '1', revision: '1', last_event_seq: '9', pruned_through_seq: '0', deadline_at: '2099-01-01T00:00:00Z', created_at: '2026-10-18T00:00:00Z',
+}
+const toolBlock = (n, key, title) => ({
+  id: `ccbk_${n}`, run_id: 'run', ordinal: String(n), type: 'tool', state: 'succeeded', revision: '2', payload_version: 1, hidden: false,
+  payload: { step_id: `step${n}`, tool_key: key, title, started_at: '2026-10-18T00:00:00Z', duration_ms: 1200, detail_ref: `step${n}`, node_refs: [] },
+  started_at: '2026-10-18T00:00:00Z', finished_at: '2026-10-18T00:00:02Z',
+})
+const panelBlocks = [
+  toolBlock(1, 'write_model', '生成模型'),
+  toolBlock(2, 'edit_scene', '修改场景'),
+  toolBlock(3, 'render_view', '截图回看'),
+  { id: 'ccbk_4', run_id: 'run', ordinal: '4', type: 'text', state: 'complete', revision: '2', payload_version: 1, hidden: false, payload: { markdown: '搭好了：椅子、桌子和台灯。' }, started_at: '2026-10-18T00:00:03Z', finished_at: '2026-10-18T00:00:04Z' },
+]
+const panelDetails = {
+  ccbk_1: { tool_key: 'write_model', arguments: { document_id: DOC, code: '…' }, result: '{"status":"ok"}' },
+  ccbk_2: { tool_key: 'edit_scene', arguments: { document_id: DOC, based_on_revision: 2, operations: [] }, result: '{"written_revision":4}' },
+  ccbk_3: { tool_key: 'render_view', arguments: { document_id: DOC, preset: 'overview' }, result: '{"image_revision_id":"ccrv_shot","content_revision_id":"ccrv_shot","scene_revision":4}' },
+}
+
+class PanelServer {
+  constructor() {
+    this.tickets = []
+    this.ticketMissing = false
+    this.commands = []
+    this.created = []
+    this.changeReads = 0
+    this.restored = new Set()
+    this.undoAll = [tableBatch]
+    // Statuses for the next commands, in order; past the end, 200.
+    this.answers = []
+    this.revision = 7
+  }
+  changes() {
+    const chair = this.restored.has('chair')
+      ? { restore: null, blocked: { reason: 'changed_by_others', revision: '8', actor_kind: 'photographer' } }
+      : { restore: chairBatch, blocked: null }
+    return {
+      run_id: 'run', document_id: DOC, revisions: ['3', '4'],
+      entries: [
+        { target: { kind: 'object', object_id: 'sobj_chair000000000000000000' }, name: '椅子', change: 'added', ...chair },
+        { target: { kind: 'object', object_id: 'sobj_table000000000000000000' }, name: '桌子', change: 'modified', restore: tableBatch, blocked: null },
+        { target: { kind: 'object', object_id: 'sobj_lamp0000000000000000000' }, name: '台灯', change: 'modified', restore: null, blocked: { reason: 'changed_by_others', revision: '5', actor_kind: 'photographer' } },
+      ],
+      undo_all: this.undoAll,
+    }
+  }
+}
+
+async function routePanel(context, panel) {
+  await context.route('**/api/v1/creative/**', async (r) => {
+    const request = r.request()
+    const url = new URL(request.url())
+    const path = url.pathname.replace('/api/v1/creative', '')
+    const json = (body, status = 200) => r.fulfill({ status, json: body })
+    if (path === '/media-access-tickets') {
+      const { content_revision_id, role, purpose } = request.postDataJSON()
+      panel.tickets.push({ content_revision_id, role, purpose })
+      if (panel.ticketMissing) return json({ error: { code: 'not_found', message: '内容不存在' } }, 404)
+      return json({ url: pixel, expires_at: '2099-01-01T00:00:00Z', mime: 'image/jpeg', byte_size: 1 })
+    }
+    if (path === '/agent/catalog')
+      return json({ limits: { attachments: 10, image_preview_count: 8 }, skills: [], models: [{ model_key: 'vision', display_name: '看图模型', available: true, capability: { image_input: true }, context_window_tokens: 100_000 }] })
+    if (path.endsWith('/conversations')) return json({ items: [{ id: 'c', title: '搭景' }] })
+    if (path.endsWith('/conversations/c/egress-consents') && request.method() === 'POST')
+      return json({ id: 'consent-new', conversation_id: 'c', revision: '1', purpose: 'creative_assistance', policy_version: noticeVersion, scope: {}, granted_at: '2026-10-18T00:00:00Z' }, 201)
+    if (path.endsWith('/conversations/c/runs') && request.method() === 'POST') {
+      panel.created.push(request.postDataJSON())
+      return json({ ...runBase, id: 'run9', trigger_message_id: 'm9', state: 'queued' }, 202)
+    }
+    if (path.endsWith('/conversations/c/runs')) return json({ items: [{ ...runBase, id: 'run', trigger_message_id: 'm1', state: 'succeeded', finished_at: '2026-10-18T00:00:05Z' }] })
+    if (path.endsWith('/conversations/c/messages'))
+      return json({ items: [{ id: 'm1', ordinal: '1', run_id: 'run', role: 'user', status: 'complete', schema_version: 2, revision: '1', created_at: '2026-10-18T00:00:00Z', body: { blocks: [{ type: 'text', text: '搭一个棚拍场景' }] } }], prev_cursor: '', conversation_revision: '1' })
+    if (path === '/agent-runs/run')
+      return json({ ...runBase, id: 'run', trigger_message_id: 'm1', state: 'succeeded', finished_at: '2026-10-18T00:00:05Z', blocks: panelBlocks, snapshot_seq: '9' })
+    const detail = path.match(/^\/agent-runs\/run\/blocks\/([^/]+)\/detail$/)
+    if (detail) return json({ block_id: detail[1], step_id: 'step', ...panelDetails[detail[1]] })
+    if (path === `/documents/${DOC}/run-changes`) {
+      assert.equal(url.searchParams.get('run_id'), 'run')
+      panel.changeReads++
+      return json(panel.changes())
+    }
+    if (path === `/documents/${DOC}/commands` && request.method() === 'POST') {
+      const body = request.postDataJSON()
+      panel.commands.push(body)
+      const status = panel.answers.shift() ?? 200
+      if (status === 409) return json({ error: { code: 'creative_document_conflict', message: '文档已被修改', details: { conflicts: [] } } }, 409)
+      const revision = String(++panel.revision)
+      if (body.payload.operations[0].units.includes('object:sobj_chair000000000000000000') && body.payload.operations[0].units.length === 3) panel.restored.add('chair')
+      return json({ revision, changed_units: body.payload.operations[0].units, annotated_units: [], removed_units: [], reset_required: false })
+    }
+    return json({ items: [] })
+  })
+}
+
+async function openPanel() {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } })
+  const panel = new PanelServer()
+  await routePanel(context, panel)
+  const t = await tab(context, '.scene-agent-panel-qa.html')
+  await t.page.getByRole('log', { name: '对话消息' }).getByText('搭好了：椅子、桌子和台灯。').waitFor()
+  return { ...t, context, panel }
+}
+
+async function waitUntil(test, message, timeout = 5000) {
+  const start = Date.now()
+  while (!(await test())) {
+    if (Date.now() - start > timeout) throw new Error(`timed out: ${message}`)
+    await sleep(25)
+  }
+}
+
 const results = []
+const only = process.env.SCENE_AGENT_E2E_ONLY
 async function check(name, fn) {
+  if (only && !name.includes(only)) return
   const started = Date.now()
   try {
     await Promise.race([fn(), sleep(90_000).then(() => Promise.reject(new Error('timed out after 90 s')))])
@@ -342,10 +487,75 @@ try {
     assert.equal(server.queue.length, 1, 'the job waits for a page that can run it')
     await context.close()
   })
+
+  // --- the assistant panel: screenshots and the run's change list ---------
+
+  await check('the panel shows the assistant’s screenshot under its tool row, and a click opens it large', async () => {
+    const p = await openPanel()
+    await p.page.locator('.cc-agent-fold').first().click()
+    const thumb = p.page.getByRole('button', { name: '查看截图' })
+    await thumb.locator('img').waitFor()
+    assert.deepEqual(p.panel.tickets, [{ content_revision_id: 'ccrv_shot', role: 'original', purpose: 'display' }])
+    await thumb.click()
+    const view = p.page.getByRole('dialog', { name: '截图' })
+    await view.locator('img').waitFor()
+    await p.page.keyboard.press('Escape')
+    await view.waitFor({ state: 'detached' })
+    // A screenshot that has gone away says so instead of a broken image.
+    p.panel.ticketMissing = true
+    await p.page.reload()
+    await p.page.locator('.cc-agent-fold').first().click()
+    await p.page.getByText('截图已不可用').waitFor()
+    assert.deepEqual(p.errors, [])
+    await p.context.close()
+  })
+
+  await check('「恢复这一处」 and 「撤销本轮」 each write one revision; a conflict mid-undo says what was done and reads the list again', async () => {
+    const p = await openPanel()
+    const list = p.page.getByRole('region', { name: '本轮对「棚拍布景」的改动' })
+    const row = (name) => list.getByRole('listitem').filter({ hasText: name })
+    await row('椅子').waitFor()
+    assert.equal(await row('台灯').textContent(), '台灯修改不可恢复：之后你又改过（第 5 版）')
+    // One part.
+    await row('椅子').getByRole('button', { name: '恢复这一处' }).click()
+    await list.getByRole('status').filter({ hasText: '已恢复「椅子」' }).waitFor()
+    assert.equal(p.panel.commands.length, 1)
+    assert.deepEqual(p.panel.commands[0].payload, { expected: chairBatch.expected, operations: [{ op: 'restore_units', from_revision: '1', units: chairBatch.units }] })
+    assert.equal(p.panel.changeReads, 2, 'the list was read again')
+    // What it put back reads as put back, not as someone's later edit.
+    await row('椅子').getByText('已恢复').waitFor()
+    // The whole run: one batch, one revision. The list read after it has three batches.
+    p.panel.undoAll = [chairBatch, tableBatch, lampBatch]
+    await list.getByRole('button', { name: '撤销本轮' }).click()
+    await list.getByRole('status').filter({ hasText: '已撤销本轮的改动' }).waitFor()
+    assert.equal(p.panel.commands.length, 2)
+    assert.deepEqual(p.panel.commands[1].payload.operations[0].units, tableBatch.units)
+    await waitUntil(() => p.panel.changeReads === 3, 'the list was read again')
+    // The second of three batches meets a newer edit: the first stays done, the third is not sent.
+    p.panel.answers = [200, 409]
+    await list.getByRole('button', { name: '撤销本轮' }).click()
+    await list.getByRole('status').filter({ hasText: '撤销了一部分：其余的地方刚被修改，没有覆盖，清单已重新读取' }).waitFor()
+    assert.equal(p.panel.commands.length, 4, 'the third batch was not sent')
+    assert.deepEqual(p.errors, [])
+    await p.context.close()
+  })
+
+  await check('a message sent from the scene editor carries its scene and selection', async () => {
+    const p = await openPanel()
+    await p.page.evaluate((doc) => window.__scene({ documentID: doc, selected: ['sobj_chair000000000000000000'] }), DOC)
+    const editor = p.page.getByRole('textbox', { name: '创作问题' })
+    await editor.click()
+    await p.page.keyboard.type('把椅子换成木头的')
+    await p.page.keyboard.press('Enter')
+    await waitUntil(() => p.panel.created.length === 1, 'the run was created')
+    assert.deepEqual(p.panel.created[0].payload.scene_context, { document_id: DOC, selected_object_ids: ['sobj_chair000000000000000000'] })
+    await p.context.close()
+  })
 } finally {
   await browser.close()
   await rm(renderFixture, { force: true })
   await rm(hostFixture, { force: true })
+  await rm(panelFixture, { force: true })
 }
 
 const failed = results.filter((r) => !r.ok)

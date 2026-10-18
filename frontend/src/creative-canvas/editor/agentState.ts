@@ -1,4 +1,5 @@
 import type { AgentMaterial } from './agentReferences.ts'
+import type { SceneContext } from '../../creative-scene/context.ts'
 import type { components } from '../../api/schema'
 
 export type AgentRun = components['schemas']['CreativeAgentRun']
@@ -96,6 +97,8 @@ export function messageSteps(
     imageInput: boolean
     revisionIDs: string[]
     segments: Segment[]
+    // Sent from the scene editor: the run works on its scene and selection.
+    scene?: SceneContext | null
   },
 ): AgentStep[] {
   const createdAt = new Date().toISOString()
@@ -124,6 +127,14 @@ export function messageSteps(
           schema_version: 1,
           instruction_segments: message.segments,
         },
+        ...(message.scene
+          ? {
+              scene_context: {
+                document_id: message.scene.documentID,
+                selected_object_ids: message.scene.selected.slice(0, 50),
+              },
+            }
+          : {}),
       },
       createdAt,
     ),

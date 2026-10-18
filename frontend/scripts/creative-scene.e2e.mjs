@@ -25,11 +25,13 @@ import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
 import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
+import {sceneContext} from '/src/creative-scene/context.ts';
 import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
 try { localStorage.setItem('creative-scene:first-run-seen', '1') } catch {}
 window.__invalidate = notifyCanvasInvalidate;
+window.__context = () => sceneContext.getState();
 window.__closed = 0;
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
@@ -817,8 +819,10 @@ await check('leaving and coming back, even after a reload, shows the editor as i
   await page.reload()
   await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
   await page.getByRole('treeitem', { name: /方块/ }).waitFor()
-  await sleep(1200)
-  const back = await pixelDiff(page, await page.screenshot({ clip: box }), turned)
+  // The first frames after a reload can come late under load: compare until it settles.
+  let back = 1
+  for (const started = Date.now(); back >= 0.005 && Date.now() - started < 5000; await sleep(200))
+    back = await pixelDiff(page, await page.screenshot({ clip: box }), turned)
   assert.ok(back < 0.005, `the turned perspective view comes back (${(back * 100).toFixed(2)}% of pixels differ)`)
   assert.equal(server.commands.length, 1, 'the view is not an edit')
   assert.ok(server.object(id))
@@ -1623,6 +1627,29 @@ await check('the editor view claims its own scene’s jobs before the account’
   assert.deepEqual(server.completes.map((c) => c.id), ['csj_this', 'csj_other'])
   assert.equal(server.completes[0].payload.outcome, 'succeeded')
   assert.equal(server.completes[0].payload.render.scene_revision, '1')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('the editor hands its scene and selection to the assistant panel, and takes them back when trashed or closed', async () => {
+  const server = new SceneServer()
+  const chair = objectID('chair')
+  server.external([{ op: 'add_objects', objects: [boxObject(chair, '椅子', 1, 1)] }])
+  const { context, page, errors } = await open(server)
+  const shared = async () => JSON.stringify(await page.evaluate(() => window.__context()))
+  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [] }), 'the scene, nothing selected')
+  await page.getByRole('treeitem', { name: /椅子/ }).click()
+  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [chair] }), 'the selection')
+  // A trashed scene cannot be worked on: a run that named it would be refused.
+  server.trashedAt = '2026-10-18T10:00:00Z'
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await shared()) === 'null', 'nothing while trashed')
+  server.trashedAt = null
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await shared()) !== 'null', 'back after untrash')
+  await page.getByRole('button', { name: '还原节点' }).click()
+  await page.locator('#closed').waitFor()
+  assert.equal(await shared(), 'null')
   assert.deepEqual(errors, [])
   await context.close()
 })

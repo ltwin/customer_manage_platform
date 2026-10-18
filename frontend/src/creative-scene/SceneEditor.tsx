@@ -168,7 +168,12 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
     lastSelected.current = selected
     if (selected.some((id) => highlighted.has(id))) ui.setState({ notice: agentNotice })
   }, [selected, highlighted, ui])
-  useEffect(() => setSceneContext({ documentID, selected: [...selected] }), [documentID, selected])
+  // The assistant panel sends this with a new run; a scene that cannot be edited is not offered.
+  const editable = !!s.base && !s.trashed && !s.missing
+  useEffect(() => {
+    if (editable) setSceneContext({ documentID, selected: [...selected] })
+    else clearSceneContext(documentID)
+  }, [documentID, selected, editable])
   useEffect(() => () => clearSceneContext(documentID), [documentID])
   useEffect(() => {
     const { saver } = view

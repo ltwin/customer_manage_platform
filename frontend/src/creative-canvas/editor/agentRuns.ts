@@ -137,6 +137,8 @@ async function follow(id: string, signal: AbortSignal) {
 // subscribe, so a canvas edit does not re-render the conversation.
 export interface TurnContext {
   canvas?: api.Canvas | null
+  // The page's account: restoring a scene from the run's change list writes as it.
+  account?: string
   // Re-runs one failed read of a finished run; absent while it cannot be sent.
   retry?: (runID: string, stepID: string) => void
 }

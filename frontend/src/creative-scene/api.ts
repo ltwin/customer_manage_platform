@@ -17,6 +17,9 @@ export type RevisionView = components['schemas']['CreativeDocumentRevisionView']
 export type ModelGenerator = components['schemas']['CreativeModelGeneratorInput']
 export type RevisionItem = components['schemas']['CreativeDocumentRevisionItem']
 export type SceneJobSummary = components['schemas']['CreativeSceneJobSummary']
+export type RunChanges = components['schemas']['CreativeSceneRunChanges']
+export type RunChange = components['schemas']['CreativeSceneRunChange']
+export type RestoreBatch = components['schemas']['CreativeSceneRestoreBatch']
 
 const documentPath = (id: string) => `/documents/${encodeURIComponent(id)}`
 
@@ -111,4 +114,9 @@ export function readRevision(
     `${documentPath(id)}/revisions/${encodeURIComponent(revision)}`,
     signal,
   )
+}
+
+/** What one assistant run changed in the scene, with the commands that put each part back. */
+export function readRunChanges(id: string, runID: string, signal?: AbortSignal): Promise<RunChanges> {
+  return read<RunChanges>(`${documentPath(id)}/run-changes?${new URLSearchParams({ run_id: runID })}`, signal)
 }

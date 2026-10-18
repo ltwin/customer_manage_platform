@@ -26,6 +26,7 @@ import {
 import { AgentTurnContext, setOpen, useAgentRuns } from './agentRuns.ts'
 import { hasUnsettledCost, runFailure } from './agentState.ts'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
+import { SceneRunChanges, SceneShot } from './AgentScene.tsx'
 import { tokenLabel } from './agentContext.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind } from './media.ts'
@@ -211,6 +212,9 @@ function ToolRow({ block }: { block: AgentBlock }) {
         <ToolRetry block={block} />
       )}
       {refs.length > 0 && <ToolThumbs ids={refs} />}
+      {key === 'render_view' && block.state === 'succeeded' && (
+        <SceneShot block={block} />
+      )}
       {open && <ToolDetail block={block} />}
     </div>
   )
@@ -392,6 +396,7 @@ export function RunTurn({ runID }: { runID: string }) {
       {view.outdated && (
         <p className="cc-agent-note">助手有新的内容形式，刷新页面后查看。</p>
       )}
+      {finished && <SceneRunChanges runID={runID} blocks={view.blocks} />}
       {finished && run.state !== 'succeeded' && (
         <p className="cc-agent-note">
           {run.state === 'cancelled'
