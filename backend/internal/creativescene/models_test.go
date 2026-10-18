@@ -344,6 +344,27 @@ func TestCommitModelRejections(t *testing.T) {
 	wantErr(t, err, creativescene.ErrModelUnavailable)
 }
 
+// R1 holds for copies too: an instance may only point at a model the account
+// can still display, even when the scene already references it. Such
+// revisions are read in one batch instead of being locked one by one.
+func TestCopyOfPlacedModelNeedsUsableRevision(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	placed := newPillar(t, f, doc, objectID(1), 1)
+	addObjects(t, f.a, doc, instance(objectID(2), 2, map[string]any{"content_revision_id": placed.ContentRevisionID}))
+	if _, err := f.db.Exec(`UPDATE creative_usage_grants SET revoked_at=clock_timestamp() WHERE declaration_id=(SELECT rights_declaration_id FROM creative_content_revisions WHERE id=$1)`, placed.ContentRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	v := readScene(t, f.a, doc)
+	_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{
+		op{"op": "add_objects", "objects": []any{instance(objectID(3), 3, map[string]any{"content_revision_id": placed.ContentRevisionID})}},
+	}})
+	wantErr(t, err, creativescene.ErrModelUnavailable)
+	if after := readScene(t, f.a, doc); after.Revision != v.Revision {
+		t.Fatalf("rejected copy moved the scene to %d", after.Revision)
+	}
+}
+
 func newPillarFrom(t *testing.T, f fixture, doc, id string, order int, u uploads) {
 	t.Helper()
 	mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect("objects"), Operations: []any{

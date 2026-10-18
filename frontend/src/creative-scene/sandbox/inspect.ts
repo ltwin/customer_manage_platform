@@ -571,6 +571,11 @@ function checkGraph(d: Doc): void {
 
 type LocalBounds = { min: number[]; max: number[] }
 
+/** The most POSITION vertices a file without aliased accessors can hold. */
+function binVertices(d: Doc): number {
+  return Math.floor((d.bin?.byteLength ?? 0) / 12)
+}
+
 function elementLayout(d: Doc, a: Accessor): { base: number; stride: number } {
   const v = d.views[a.view]
   const stride = v.stride === 0 ? (componentSizes.get(a.component) ?? 0) * a.comps : v.stride
@@ -578,11 +583,14 @@ function elementLayout(d: Doc, a: Accessor): { base: number; stride: number } {
 }
 
 // Reads every POSITION value; the declared min and max must equal the
-// computed range exactly (both are float32 values).
-function positionBounds(d: Doc, idx: number, cache: Map<number, LocalBounds>): LocalBounds {
+// computed range exactly (both are float32 values). budget.left is the number
+// of vertices the scan may still read.
+function positionBounds(d: Doc, idx: number, cache: Map<number, LocalBounds>, budget: { left: number }): LocalBounds {
   const cached = cache.get(idx)
   if (cached) return cached
   const a = d.accessors[idx]
+  budget.left -= a.count
+  if (budget.left < 0) fail('limit', `POSITION accessors read more vertices than the BIN chunk holds (${binVertices(d)})`)
   const lb: LocalBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] }
   const { base, stride } = elementLayout(d, a)
   const bin = d.bin as DataView
@@ -659,6 +667,11 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
   const parts = new Set<string>()
   const anchorIDs = new Set<string>()
   const manifest: Manifest = { bounds, triangles: 0, slots: [], parts: [], anchors: [] }
+  // Accessors may alias one bufferView, so without a budget a file within
+  // every count limit could make the POSITION scan arbitrarily long. A file
+  // whose POSITION accessors do not overlap never reads more vertices than
+  // its BIN chunk holds.
+  const budget = { left: binVertices(d) }
 
   const identity = compose([0, 0, 0], [0, 0, 0, 1], [1, 1, 1])
   const stack: { node: number; world: number[] }[] = []
@@ -666,12 +679,14 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
   for (let f = stack.pop(); f; f = stack.pop()) {
     const n = d.nodes[f.node]
     const world = multiply(f.world, n.local)
+    // Each local value is finite, but their products can still overflow.
+    if (!world.every((v) => Number.isFinite(v))) fail('scene_graph', `nodes[${f.node}] world transform overflows`)
     collectName(n.name, world, manifest, parts, anchorIDs)
     if (n.mesh >= 0) {
       for (const p of d.meshes[n.mesh]) {
         instances++
         if (instances > limits.maxPrimitiveInstances) fail('limit', `more than ${limits.maxPrimitiveInstances} primitive instances`)
-        const lb = positionBounds(d, p.position, positions)
+        const lb = positionBounds(d, p.position, positions, budget)
         count += triangles(d, p, maxIndex)
         if (count > limits.maxTriangles) fail('limit', `more than ${limits.maxTriangles} triangles`)
         extend(bounds, lb, world)
@@ -685,6 +700,7 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
     for (let i = n.children.length - 1; i >= 0; i--) stack.push({ node: n.children[i], world })
   }
   if (count === 0) fail('scene_graph', 'model has no triangles')
+  if (![...bounds.min, ...bounds.max].every((v) => Number.isFinite(v))) fail('scene_graph', 'model bounds overflow')
   if (manifest.slots.length > limits.maxSlots) fail('limit', `${manifest.slots.length} material slots, limit ${limits.maxSlots}`)
   if (manifest.parts.length > limits.maxParts) fail('limit', `${manifest.parts.length} parts, limit ${limits.maxParts}`)
   if (manifest.anchors.length > limits.maxAnchors) fail('limit', `${manifest.anchors.length} anchors, limit ${limits.maxAnchors}`)

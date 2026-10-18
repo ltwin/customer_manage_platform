@@ -25,6 +25,13 @@ func ReadDisplayBatch(ctx context.Context, tx store.ReadTxAccountScope, ids []st
 	return readDisplayBatch(ctx, tx, ids)
 }
 
+// ReadDisplayBatchInTx is ReadDisplayBatch inside a write transaction. It
+// takes no row locks, so it only suits revisions that rows the caller has
+// already locked keep alive; a newly referenced revision needs RequireUsable.
+func ReadDisplayBatchInTx(ctx context.Context, tx store.TxAccountScope, ids []string) (map[string]DisplayResult, error) {
+	return readDisplayBatch(ctx, tx, ids)
+}
+
 type batchReader interface {
 	contentReader
 	Query(context.Context, string, string, string, ...any) (store.Rows, error)

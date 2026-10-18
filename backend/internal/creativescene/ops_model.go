@@ -27,22 +27,39 @@ type opEnv struct {
 
 	refs     map[string]creativecontent.Revision // commit_model ref → new revision
 	order    []string                            // refs in batch order
-	used     map[string]bool                     // refs a later operation pointed at
+	held     map[string]bool                     // revisions the current snapshot references
 	verified map[string]bool                     // existing revisions checked this batch
 }
 
-func newOpEnv(ctx context.Context, tx store.TxAccountScope, retain creativedocument.Retain, document string, revision int64) *opEnv {
-	return &opEnv{ctx: ctx, tx: tx, retain: retain, document: document, revision: revision,
-		refs: map[string]creativecontent.Revision{}, used: map[string]bool{}, verified: map[string]bool{}}
+// newOpEnv prepares the operations of a batch on cur; the batch produces the
+// next revision.
+func newOpEnv(ctx context.Context, tx store.TxAccountScope, retain creativedocument.Retain, cur creativedocument.Current) *opEnv {
+	held := make(map[string]bool, len(cur.Refs))
+	for _, id := range cur.Refs {
+		held[id] = true
+	}
+	return &opEnv{ctx: ctx, tx: tx, retain: retain, document: cur.Document.ID, revision: cur.Revision + 1,
+		refs: map[string]creativecontent.Revision{}, held: held, verified: map[string]bool{}}
 }
 
-// verifyExisting checks, in sorted order, every existing model revision the
-// batch points at, so concurrent batches take content locks in one order.
+// verifyExisting checks every existing model revision the batch points at.
+// Revisions the current snapshot already references (copies of placed
+// instances) are kept alive by its reference rows, under the document lock,
+// so they are read together without row locks. New ones are locked one by
+// one in sorted order, so concurrent batches take content locks in one order.
 func (env *opEnv) verifyExisting(ops []sceneOp) error {
-	var ids []string
+	seen := map[string]bool{}
+	var held, fresh []string
 	add := func(m *ModelRef) {
-		if m != nil && m.Ref == "" && m.ContentRevisionID != "" && !slices.Contains(ids, m.ContentRevisionID) {
-			ids = append(ids, m.ContentRevisionID)
+		if m == nil || m.Ref != "" || m.ContentRevisionID == "" || seen[m.ContentRevisionID] {
+			return
+		}
+		id := m.ContentRevisionID
+		seen[id] = true
+		if env.held[id] {
+			held = append(held, id)
+		} else {
+			fresh = append(fresh, id)
 		}
 	}
 	for _, op := range ops {
@@ -57,8 +74,21 @@ func (env *opEnv) verifyExisting(ops []sceneOp) error {
 			add(&o.Model)
 		}
 	}
-	sort.Strings(ids)
-	for _, id := range ids {
+	if len(held) > 0 {
+		batch, err := creativecontent.ReadDisplayBatchInTx(env.ctx, env.tx, held)
+		if err != nil {
+			return err
+		}
+		for _, id := range held {
+			res := batch[id]
+			if _, ok := completeModel(res.Revision); res.Err != nil || !ok {
+				return modelUnavailable(id)
+			}
+			env.verified[id] = true
+		}
+	}
+	sort.Strings(fresh)
+	for _, id := range fresh {
 		if err := requireModel(env.ctx, env.tx, id); err != nil {
 			return err
 		}
@@ -78,7 +108,6 @@ func (env *opEnv) resolve(m *ModelRef) error {
 		if !ok {
 			return invalid("model 引用的 ref %q 没有在它之前的 commit_model 中定义", m.Ref)
 		}
-		env.used[m.Ref] = true
 		*m = ModelRef{ContentRevisionID: r.ID}
 		return nil
 	case m.ContentRevisionID == "":
@@ -92,10 +121,11 @@ func (env *opEnv) resolve(m *ModelRef) error {
 	return nil
 }
 
-// finish requires every committed model to be referenced by the batch, so a
-// commit never creates content the snapshot does not hold, and returns the
-// receipt's models.
-func (env *opEnv) finish() (map[string]json.RawMessage, error) {
+// finish requires every committed model to stay referenced by the resulting
+// scene s, so a commit never creates content the snapshot does not hold (the
+// document layer would report that as a type contract violation), and returns
+// the receipt's models.
+func (env *opEnv) finish(s Scene) (map[string]json.RawMessage, error) {
 	if len(env.refs) == 0 {
 		return nil, nil
 	}
@@ -103,12 +133,16 @@ func (env *opEnv) finish() (map[string]json.RawMessage, error) {
 		ContentID         string `json:"content_id"`
 		ContentRevisionID string `json:"content_revision_id"`
 	}
+	inScene := map[string]bool{}
+	for _, id := range modelRefs(s.Objects) {
+		inScene[id] = true
+	}
 	models := make(map[string]committed, len(env.refs))
 	for _, ref := range env.order {
-		if !env.used[ref] {
-			return nil, invalid("commit_model %s 没有被本批后面的操作引用", ref)
-		}
 		r := env.refs[ref]
+		if !inScene[r.ID] {
+			return nil, invalid("commit_model %s 写入的模型没有被场景中的物件引用", ref)
+		}
 		models[ref] = committed{ContentID: r.ContentID, ContentRevisionID: r.ID}
 	}
 	raw, err := json.Marshal(models)

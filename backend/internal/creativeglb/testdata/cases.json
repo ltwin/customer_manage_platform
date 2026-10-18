@@ -263,5 +263,20 @@
     "name": "bad-too-many-triangles",
     "file": "bad-too-many-triangles.glb",
     "reason": "limit"
+  },
+  {
+    "name": "bad-aliased-positions",
+    "file": "bad-aliased-positions.glb",
+    "reason": "limit"
+  },
+  {
+    "name": "bad-world-overflow",
+    "file": "bad-world-overflow.glb",
+    "reason": "scene_graph"
+  },
+  {
+    "name": "bad-bounds-overflow",
+    "file": "bad-bounds-overflow.glb",
+    "reason": "scene_graph"
   }
 ]

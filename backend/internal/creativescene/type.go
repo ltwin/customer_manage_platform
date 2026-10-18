@@ -103,7 +103,7 @@ func (sceneType) Apply(ctx context.Context, tx store.TxAccountScope, cur creativ
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
-	env := newOpEnv(ctx, tx, retain, cur.Document.ID, cur.Revision+1)
+	env := newOpEnv(ctx, tx, retain, cur)
 	if err := env.verifyExisting(ops); err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
@@ -113,7 +113,7 @@ func (sceneType) Apply(ctx context.Context, tx store.TxAccountScope, cur creativ
 			return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 		}
 	}
-	response, err := env.finish()
+	response, err := env.finish(s)
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}

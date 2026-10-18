@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -433,6 +434,36 @@ func fixtureCases() []fixtureCase {
 				for i := range 301 {
 					b.roots = append(b.roots, b.node(map[string]any{"mesh": mesh, "translation": []float64{float64(i), 0, 0}}))
 				}
+				return encodeGLB(b.doc(), b.bin)
+			},
+		},
+		{
+			// Two POSITION accessors alias one bufferView: within every count
+			// limit, but they read more vertices than the BIN chunk holds.
+			// Thousands of them over a large view would make the scan take
+			// minutes.
+			Name: "bad-aliased-positions", Reason: ReasonLimit,
+			build: basicWith(func(doc map[string]any, b *builder) {
+				doc["accessors"] = append(b.accessors, maps.Clone(b.accessors[0]))
+				prim := b.meshes[0]["primitives"].([]any)[0].(map[string]any)
+				b.meshes[0]["primitives"] = append(b.meshes[0]["primitives"].([]any), map[string]any{"attributes": map[string]any{"POSITION": len(b.accessors)}, "indices": prim["indices"]})
+			}),
+		},
+		{
+			Name: "bad-world-overflow", Reason: ReasonSceneGraph,
+			build: basicWith(func(doc map[string]any, b *builder) {
+				doc["nodes"] = append(b.nodes, map[string]any{"scale": []float64{1e200, 1, 1}, "children": []int{0}})
+				b.nodes[0]["scale"] = []float64{1e200, 1, 1}
+				doc["scenes"] = []any{map[string]any{"nodes": []int{1}}}
+			}),
+		},
+		{
+			// The world transform is finite; scaling the vertices is not.
+			Name: "bad-bounds-overflow", Reason: ReasonSceneGraph,
+			build: func() []byte {
+				b := &builder{}
+				mesh := b.mesh(map[string]any{"attributes": map[string]any{"POSITION": b.positions([]float32{0, 0, 0, 3e38, 0, 0, 0, 3e38, 0})}})
+				b.roots = []int{b.node(map[string]any{"mesh": mesh, "scale": []float64{1e300, 1e300, 1}})}
 				return encodeGLB(b.doc(), b.bin)
 			},
 		},

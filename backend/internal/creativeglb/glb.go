@@ -969,6 +969,15 @@ func localMatrix(n object, what string) ([16]float64, error) {
 
 func norm(v [3]float64) float64 { return math.Sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]) }
 
+func finite(vs ...float64) bool {
+	for _, v := range vs {
+		if math.IsInf(v, 0) || math.IsNaN(v) {
+			return false
+		}
+	}
+	return true
+}
+
 func compose(t, q, s []float64) [16]float64 {
 	x, y, z, w := q[0], q[1], q[2], q[3]
 	x2, y2, z2 := x+x, y+y, z+z
@@ -1067,6 +1076,11 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 	slots := map[string]bool{}
 	manifest := Manifest{Slots: []Slot{}, Parts: []string{}, Anchors: []Anchor{}}
 	parts, anchors := map[string]bool{}, map[string]bool{}
+	// Accessors may alias one bufferView, so without a budget a file within
+	// every count limit could make the POSITION scan arbitrarily long. A file
+	// whose POSITION accessors do not overlap never reads more vertices than
+	// its BIN chunk holds.
+	budget := len(d.bin) / 12
 
 	type frame struct {
 		node  int
@@ -1082,6 +1096,10 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 		stack = stack[:len(stack)-1]
 		n := d.nodes[f.node]
 		world := multiply(f.world, n.local)
+		// Each local value is finite, but their products can still overflow.
+		if !finite(world[:]...) {
+			return Manifest{}, failf(ReasonSceneGraph, "nodes[%d] world transform overflows", f.node)
+		}
 		if err := collectName(n.name, world, &manifest, parts, anchors); err != nil {
 			return Manifest{}, err
 		}
@@ -1091,7 +1109,7 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 				if instances > limits.MaxPrimitiveInstances {
 					return Manifest{}, failf(ReasonLimit, "more than %d primitive instances", limits.MaxPrimitiveInstances)
 				}
-				lb, err := d.positionBounds(p.position, positions)
+				lb, err := d.positionBounds(p.position, positions, &budget)
 				if err != nil {
 					return Manifest{}, err
 				}
@@ -1117,6 +1135,9 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 	}
 	if triangles == 0 {
 		return Manifest{}, failf(ReasonSceneGraph, "model has no triangles")
+	}
+	if !finite(bounds.Min[:]...) || !finite(bounds.Max[:]...) {
+		return Manifest{}, failf(ReasonSceneGraph, "model bounds overflow")
 	}
 	switch {
 	case len(manifest.Slots) > limits.MaxSlots:
@@ -1158,12 +1179,16 @@ func collectName(name string, world [16]float64, m *Manifest, parts, anchors map
 }
 
 // positionBounds reads every POSITION value and requires the declared min and
-// max to equal the computed range exactly (both are float32 values).
-func (d *document) positionBounds(idx int, cache map[int]localBounds) (localBounds, error) {
+// max to equal the computed range exactly (both are float32 values). budget is
+// the number of vertices the scan may still read.
+func (d *document) positionBounds(idx int, cache map[int]localBounds, budget *int) (localBounds, error) {
 	if lb, ok := cache[idx]; ok {
 		return lb, nil
 	}
 	a := d.accessors[idx]
+	if *budget -= a.count; *budget < 0 {
+		return localBounds{}, failf(ReasonLimit, "POSITION accessors read more vertices than the BIN chunk holds (%d)", len(d.bin)/12)
+	}
 	lb := localBounds{
 		min: [3]float32{float32(math.Inf(1)), float32(math.Inf(1)), float32(math.Inf(1))},
 		max: [3]float32{float32(math.Inf(-1)), float32(math.Inf(-1)), float32(math.Inf(-1))},

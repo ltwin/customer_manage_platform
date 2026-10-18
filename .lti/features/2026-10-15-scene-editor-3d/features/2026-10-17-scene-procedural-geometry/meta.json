@@ -1,12 +1,12 @@
 {
   "uid": "9f8bcaa9-5b8e-4314-b5b4-7576bbc0ab61",
-  "revision": 6,
+  "revision": 9,
   "id": "scene-procedural-geometry",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 4,
+    "version": 5,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -37,7 +37,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-17T10:45:57.330Z",
-  "updatedAt": "2026-10-17T14:01:17.951Z",
+  "updatedAt": "2026-10-18T03:27:36.619Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -50,13 +50,13 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-17T14:01:16.102Z",
+      "at": "2026-10-18T03:27:36.438Z",
       "contentHash": "697b94a6d1970711"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-17T14:01:16.102Z",
-      "contentHash": "b680f457a871cd95",
+      "at": "2026-10-18T03:27:18.058Z",
+      "contentHash": "281a9a3490b41fc1",
       "deltaHash": "dcc01ebc3298b1b9"
     }
   },
@@ -72,6 +72,19 @@
       "at": "2026-10-17T13:56:22.292Z",
       "contentHash": "b5b406c8bc879793",
       "deltaHash": "f2553e306d82df2d",
+      "role": "design"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-17T14:01:16.102Z",
+      "contentHash": "697b94a6d1970711",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-17T14:01:16.102Z",
+      "contentHash": "b680f457a871cd95",
+      "deltaHash": "dcc01ebc3298b1b9",
       "role": "design"
     }
   ],

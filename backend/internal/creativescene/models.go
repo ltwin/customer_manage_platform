@@ -215,10 +215,17 @@ func requireModel(ctx context.Context, tx store.TxAccountScope, id string) error
 	if err != nil {
 		return err
 	}
-	if p, ok := decodeModelPayload(r.Payload.Model); r.Kind != modelKind || !ok || p.Generator == nil {
+	if _, ok := completeModel(r); !ok {
 		return modelUnavailable(id)
 	}
 	return nil
+}
+
+// completeModel decodes a revision a scene may reference: model content in
+// its complete form, with a generator.
+func completeModel(r creativecontent.Revision) (ModelPayload, bool) {
+	p, ok := decodeModelPayload(r.Payload.Model)
+	return p, ok && r.Kind == modelKind && p.Generator != nil
 }
 
 func modelUnavailable(id string) error {
@@ -264,7 +271,7 @@ func readModels(ctx context.Context, tx store.ReadTxAccountScope, ids []string) 
 	for _, id := range ids {
 		res := batch[id]
 		v := modelView{ContentID: res.Revision.ContentID}
-		if p, ok := decodeModelPayload(res.Revision.Payload.Model); res.Err == nil && res.Revision.Kind == modelKind && ok && p.Generator != nil {
+		if p, ok := completeModel(res.Revision); res.Err == nil && ok {
 			g := *p.Generator
 			g.Code = ""
 			manifest := p.Manifest
