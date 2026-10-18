@@ -202,7 +202,11 @@
 
 ## 6. 收尾
 
-- [ ] 6.1 文档：`docs/dev/agent-skills-tools.md` 排空清单加 `waiting_client`、登记 4 个工具；新增 `docs/dev/creative-scene-agent.md`（客户端任务、渲染端、调试与日志字段）。
+- [x] 6.1 文档：`docs/dev/agent-skills-tools.md` 排空清单加 `waiting_client`、登记 4 个工具；新增 `docs/dev/creative-scene-agent.md`（客户端任务、渲染端、调试与日志字段）。
+  - 实施记录：
+    - `agent-skills-tools.md`：新增「场景工具」一节（四个工具的版本、效果、资源键、可用性）。排空清单加 `waiting_client`，并说明这类运行在等页面任务：要么开着页面让任务做完，要么等 30 分钟期限过期后运行恢复；`0075` 回滚在有 `waiting_client` 运行时拒绝。
+    - `creative-scene-agent.md`：模块分工、任务生命周期与完成接口的结果表、失败码、运行的挂起与恢复、渲染端（认领循环、执行器、截图、编辑视图、面板）、接口一览、调试（日志字段、只读查库、常见现象）、测试命令、已知边界。
+    - 日志字段按实际实现写：每次迁移有 `job_id`、`document_id`、`kind`、`from`、`to`、`attempt`、`run_id`、`code`、`since_created`。设计列的 `editor_session_id` 与「本段耗时」没有进日志：认领它的标签页可在表里的 `editor_session_id` 查到，查库示例已写上。
 - [ ] 6.2 实测：
   - AC-12：`creative-scene-agent-latency.e2e.mjs` 经 `TestCreativeEditorBrowser` 测各段 p50 / p95；
   - 后台标签页：用真实 Chrome 隐藏 6 分钟以上，助手照常完成烘焙和截图（未决 #1）；

@@ -1,0 +1,140 @@
+# 场景助手开发说明（C3）
+
+助手用四个场景工具读场景、改场景、写几何代码生成模型、截图回看。编译模型和截图要用浏览器（沙箱、WebGL），所以服务端把这两类工作派成**场景客户端任务**，由打开着的创意空间页面领取执行，运行在此期间挂起。本文记实现事实、调试方法与已知边界；设计权威是 epic `scene-editor-3d` 与 C3 的 design（`.lti/features/2026-10-15-scene-editor-3d/features/2026-10-17-scene-agent-tools/`），工具登记见 [Agent Skills 与 Tools 运行契约](agent-skills-tools.md#场景工具c32026-10-18)。
+
+## 模块分工
+
+| 位置 | 负责 |
+|---|---|
+| `backend/internal/creativescene/jobs.go` | 任务表的读写：建任务（同 `(run_id, tool_call_id)` 返回已有任务）、认领、续租、列出、取消；状态迁移日志 |
+| `creativescene/jobs_complete.go` | 完成任务：准入复查、烘焙结果在保存点里写入场景、截图只校验不消费候选、冲突与不合规结果 |
+| `creativescene/jobs_sweep.go` | 清扫：租约回收、期限过期、删除旧任务；creative-worker 每 15 秒一轮 |
+| `creativescene/agent.go`、`run_changes.go` | 工具的领域入口（读、改、撤回、冲突描述）与「本轮改动」清单 |
+| `backend/internal/creativeagent/scene_tools.go` | 四个工具的参数、结果与挂起 |
+| `creativeagent/scene_waiter.go` | `JobWaiter` 的实现：`Admit`、`Settle`、`Abort` |
+| `frontend/src/creative-scene/host/` | 渲染端：认领循环、执行器、离屏截图、Worker 节拍、关闭提醒 |
+| `frontend/src/creative-scene/agentActivity.ts` | 编辑视图里助手工作的高亮、占位、状态栏 |
+| `frontend/src/creative-canvas/editor/AgentScene.tsx`、`agentScene.ts` | 助手面板的截图与本轮改动清单 |
+
+依赖方向是 `creativeagent → creativescene`：完成任务时需要回到运行，经 `creativescene.JobWaiter` 端口调用，server 和 creative-worker 启动时用 `SetJobWaiter` 注册。
+
+## 任务的生命周期
+
+```
+queued ──认领──> claimed ──完成──> succeeded / failed
+   │               │ 租约过期（第 1、2 次）回 queued；第 3 次转 failed（host_error）
+   └── 期限到（30 分钟）──> expired        运行结束时 ──> cancelled
+```
+
+- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）。`export_shots` 留给 C4，页面不认领。
+- 租约 30 秒，页面每 10 秒续一次；续租不会超过期限。
+- 新建与进入终态会触发画布通知（账号级），认领和续租不通知。页面靠通知知道有新任务。
+- 终态满 30 天的任务由清扫删除。
+
+### 完成接口的结果
+
+| 情况 | 响应 | 页面怎么做 |
+|---|---|---|
+| 成功写入，或任务失败（编译错误、冲突、结果不合规） | 200，`state` 为 `succeeded` / `failed` | 保留上传的产物：冲突的烘焙要靠它重试 |
+| 租约已丢（被别的页面接手、任务结束） | 409 / 404 | 丢弃产物 |
+| 暂存上传已失效 | 409 `creative_upload_unavailable` | 重新上传一次再交 |
+| 网络错误、5xx | — | 用同一个 `operation_id` 重试 3 次，仍不行就放手，等租约过期回队 |
+| 成功的结果被 400 拒绝 | 400 | 改报 `host_error`，避免反复回队 |
+
+失败码：`compile_error`（语法、运行或模块不合规，行列号写在 message 开头「第 N 行第 M 列：」）、`compile_timeout`、`limit_exceeded`、`render_error`（摄像机已删等请求本身的问题）、`host_error`（沙箱没启动、WebGL、缩略图、上传、截图超时、执行器代码块加载失败）。
+
+## 运行的挂起与恢复
+
+- `write_model` / `render_view` 在运行的写事务里建任务，返回 `errParked`；`callTool` 把它变成 Eino 的 interrupt，步骤保持 `prepared`。同一批里其他调用照常执行，挂起不停批。
+- 本次执行结束时，`completeAttempt` 看任务是否都已终态：是就直接入队继续，否则运行进入 `waiting_client`，`wait_reason = client_job`。等待期间不占写入槽位，补充输入不会唤醒它。
+- 任务完成的事务里，`Settle` 按工具成功分支的顺序写步骤结果，再取槽位入队；取不到槽位时运行留在 `waiting_client`、`wait_reason = slot_busy`，清扫在槽位空出后恢复它。
+- `Admit` 在完成事务里复查运行（能力、期限、未取消、Skill 未停用、consent 未撤回），锁序为项目 → 槽位 → 网关组 → 运行 → Skill → consent。复查失败时整笔回滚，另开事务 `Abort` 结束运行，任务随运行取消，场景不会多出修订。
+- 崩溃后从检查点重跑时，工具按 `(run_id, tool_call_id)` 找到已建的任务，不会重复建。
+
+模型读到的结果：烘焙成功 `{status: "succeeded", content_revision_id, object_ids, written_revision, …尺寸、三角面}`；截图 `{image_revision_id, content_revision_id, scene_revision, width, height}`，图片随下一次请求作为图片输入；失败 `{status: "failed", error: {code, message}}`；冲突带 `retry_job_id` 与变化说明；过期提示助手转告创作者打开页面。
+
+## 渲染端（前端）
+
+### 认领循环
+
+- 每个页面一个，由 `WorkspacePage` 的 `useSceneHost(account)` 启动（`host/launcher.ts`，不含 three）。场景编辑视图不另开循环，只 `prefer(documentID)` 让本场景的任务先领。
+- 触发：挂载、画布失效通知（500 ms 节流）、回到前台、恢复联网；做完一个任务立即再领。认领遇到网络错误不重试，等下一次触发。
+- 第一次认领前探测设备：WebGL2、`Worker`、`(pointer: fine)`、窗口宽度 ≥ 1024。不满足就不认领，避免平板上的画布页领走任务再失败。
+- 执行器（`host/pageExecutor.ts`，含沙箱、three、截图）在认领到第一个任务时 `import()`，加载期间循环自己续租。代码块加载失败时本页标记为不能执行、不再认领，并把这个任务以 `host_error` 报回。
+- 页面持有任务时，头部常驻「助手正在用这个页面……，关闭页面会中断」；本页是浏览器里唯一的创意空间标签页时，关闭会弹确认（`host/leaveGuard.ts`，标签页之间用 BroadcastChannel `creative-workspace` 互相计数）。
+
+### 执行器与截图
+
+- 计时（续租、上传轮询、沙箱超时）都用 `host/ticker.ts` 的 Worker 节拍，隐藏标签页里的页面计时器会被浏览器降频。
+- 截图（`host/render.ts`）：React Three Fiber 的 `createRoot` 配一个不挂到页面的 canvas，`frameloop: 'never'`，组件提交后手动渲染一帧，导出长边 1024 的 JPEG，再 `unmount` 释放 WebGL 上下文。单独的 root 必须先 `extend(THREE)`，否则灯光等元素报错、提交永远不来。截图不画灯光和摄像机图标。整体 60 秒上限，超时报 `host_error`。
+- 取景（`host/framing.ts`）：摄像机按传感器高度算垂直视角；`viewpoint` 是 4:3；预设（总览、俯视、正视、侧视）按可见物件（不含地面、灯光、摄像机）的包围盒取景，留 1.1 倍边距。
+
+### 编辑视图
+
+`SceneEditor` 打开时和画布通知后（1 秒节流）读任务列表和最近修订（先读最近 20 条，之后只读 `since_revision` 之后的）：
+
+- 描边（`look.ts` 的 `agentEdge`）：进行中烘焙要替换的物件，以及 60 秒内助手修订改过的物件；物件列表行尾标「助手正在修改」。选中、编辑这些物件时状态栏提示「助手正在修改此物件，你的修改可能让它重做」，不阻止操作。
+- 助手新增的模型在目标位置显示 1 m 的半透明占位，挂在目标父物件下，不可拾取。
+- 状态栏：「助手正在生成「名称」…」。
+- 编辑器把场景和选中写进 `creative-scene/context.ts`，面板发消息时作为 `scene_context` 带上；场景在回收站或已删除时不提供。
+
+### 助手面板
+
+- `render_view` 的工具行下显示截图：从工具详情的结果取 `content_revision_id`，签 `original` 角色的展示票据（截图长边 1024，没有展示图）。截图是暂存上传，过期后显示「截图已不可用」。
+- 运行结束后，从 `edit_scene` / `write_model` 的参数里收集场景，逐个读「本轮改动」：每处可「恢复这一处」，整体「撤销本轮」。提交走通用命令接口，写入者是创作者。撤销本轮分多批时按顺序提交，遇到冲突就停下并重读清单，提示撤销了一部分。
+
+## 接口
+
+| 接口 | 用途 |
+|---|---|
+| `POST /creative/scene-jobs/claim` | 认领最早的任务；带 `document_id` 时只领该场景的；`kinds` 过滤；没有时 204 |
+| `POST /creative/scene-jobs/{id}/lease` | 续租 |
+| `POST /creative/scene-jobs/{id}/complete` | 完成，`Idempotency-Key` 等于 `operation_id` |
+| `GET /creative/documents/{id}/scene-jobs` | 场景未结束的任务（最多 50 条，不含代码与认领信息），供编辑视图 |
+| `GET /creative/documents/{id}/run-changes?run_id=` | 一次运行对场景的改动与恢复命令 |
+| `GET /creative/documents/{id}/revisions?run_id=&since_revision=` | 修订列表的过滤（接口原有，C3 起前端使用） |
+
+## 调试
+
+### 日志
+
+- 每次状态迁移一条 `creative scene job`：`job_id`、`document_id`、`kind`、`from`、`to`、`attempt`，有运行时带 `run_id`，失败带 `code`，以及从建任务起的 `since_created`。按 `job_id` 能跟住一个任务在几个标签页之间的往返。
+- 每轮清扫一条 `creative scene job sweep`：`requeued`、`host_errors`、`expired`、`deleted`、`aborted`；出错时是同名的 Warn 日志带 `error`。
+
+### 查库（只读）
+
+```sql
+-- 一个场景最近的任务
+-- editor_session_id 是认领它的标签页（每个页面一个随机 ID）
+SELECT id, kind, state, attempt, run_id, editor_session_id, lease_until, deadline, created_at
+FROM creative_scene_jobs WHERE document_id = $1 ORDER BY created_at DESC LIMIT 20;
+
+-- 在等页面的运行和原因
+SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state = 'waiting_client';
+```
+
+### 常见现象
+
+| 现象 | 先看 |
+|---|---|
+| 运行一直「等待页面执行」 | 有没有开着的创意空间页面；页面是否通过设备探测（窄窗口、触屏、没有 WebGL2 不认领）；任务是否在 `claimed` 反复回队（日志里 `attempt` 增长） |
+| 任务第 3 次以 `host_error` 失败 | 页面在执行中关闭或崩溃了三次；看浏览器控制台与 `code` |
+| 运行停在 `waiting_client` / `slot_busy` | 同一会话或画布上另一个运行占着写入槽位，它结束后清扫会恢复 |
+| 截图显示「截图已不可用」 | 暂存上传已过期回收，属预期 |
+
+浏览器里：认领到第一个任务时 Network 面板会出现 `pageExecutor` 代码块；之前页面不应加载 three（C2 的 e2e「opening the canvas page loads no three.js」守着）。
+
+## 测试
+
+- 单测：`node --test --experimental-transform-types scripts/creative-scene-agent.test.ts`（执行器、取景、认领循环、关闭提醒、编辑视图的活动、面板的清单逻辑）。
+- 浏览器：先在 `frontend/` 起 `npx vite --port 5179 --strictPort`，再跑
+  - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
+  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）。
+- 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
+
+## 已知边界
+
+- 隐藏标签页长时间（6 分钟以上）执行任务的表现要在真实 Chrome 里手动验证（C3 任务 6.2）。
+- 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`），C3 的 `edit_scene` 也不开放 `reparent_objects`；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
+- 四个工具的定义约 7 KB，每次模型请求都会带上。
+- 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。
