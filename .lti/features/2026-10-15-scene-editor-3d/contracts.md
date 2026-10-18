@@ -205,7 +205,7 @@ export default function build({ params, THREE, lib, rng }) {
 | `kind` | text | 是 | `bake_model` / `render_view` / `export_shots`（CHECK） |
 | `request` | jsonb | 是 | 按 kind 定义，见下 |
 | `state` | text | 是 | `queued`/`claimed`/`succeeded`/`failed`/`expired`/`cancelled`（CHECK） |
-| `attempt` | integer | 是 | 从 0 开始，每次租约过期回到 queued 时加 1 |
+| `attempt` | integer | 是 | 从 0 开始，每次租约过期回到 queued 时加 1；达到 3 时不再回队，直接转 `failed`（`host_error`） |
 | `claim_token` | text | 认领时 | 随机令牌，过期或终态时清空 |
 | `editor_session_id` | text | 认领时 | 认领者标签页 |
 | `lease_until` | timestamptz | 认领时 | 租约到期时间 |
@@ -225,17 +225,17 @@ export default function build({ params, THREE, lib, rng }) {
 - `export_shots`：`{camera_object_ids, passes, canvas_id}`（C4）。
 
 `result`：
-- 成功：`bake_model` 为 `{content_id, content_revision_id, object_ids, revision}`；`render_view` 为 `{image_upload_id, content_revision_id}`（暂存截图）；`export_shots` 见 C4。
-- 失败：`{code, message}`。`code` 取完成接口的错误码，或服务端写入的 `conflict`（场景单元冲突）、`invalid_result`（结果不合规，例如 manifest 与 GLB 不符、物件超出上限、父级不存在）、`expired`、`cancelled`。`conflict` 时另带 `conflicts`（单元、预期与当前版本、改动者）和 `bake`（`{glb_upload_id, thumbnail_upload_id, module, manifest}`），助手重试时复用这份烘焙产物，不重新编译。
+- 成功：`bake_model` 为 `{content_id, content_revision_id, object_ids, revision}`；`render_view` 为 `{image_upload_id, content_revision_id, scene_revision}`（暂存截图及其实际渲染的场景修订）；`export_shots` 见 C4。
+- 失败：`{code, message}`。`code` 取完成接口的错误码，或服务端写入的 `conflict`（场景单元冲突）、`invalid_result`（结果不合规，例如 manifest 与 GLB 不符、物件超出上限、父级不存在）、`host_error`（第 3 次租约过期）、`expired`、`cancelled`。`conflict` 时另带 `conflicts`（单元、预期与当前版本、改动者）和 `bake`（`{glb_upload_id, thumbnail_upload_id, module, manifest}`），助手重试时复用这份烘焙产物，不重新编译。
 
 索引：`(account_id, state, created_at)`，用于账号级认领；`(account_id, document_id, state, created_at)`，用于按场景认领；`(state, deadline)`，用于过期扫描；`(run_id)`，用于取消运行时找到它的任务。
 
 ### 访问模式与保证
 - **认领**：取最早的 `queued` 任务（指定场景时只在该场景内），用 `FOR UPDATE SKIP LOCKED` 改为 `claimed`，写入令牌、会话和租约。由数据库行锁保证同一任务只被一个会话认领（I5）。没有任务时只走索引、不加锁，渲染端在每次失效通知时都会调用。
-- **租约回收**：worker 周期扫描（复用 creative-worker 的维护循环），把 `claimed` 且租约已过期的任务改回 `queued`，`attempt` 加 1，清空令牌；把超过 `deadline` 的非终态任务改为 `expired`，并经终态端口让关联运行继续（工具结果为过期）。
-- **完成**：校验令牌与租约 → 落产物 → 改终态 → 经终态端口让运行继续，在同一事务里提交（design「客户端任务」）。
+- **租约回收**：worker 周期扫描（复用 creative-worker 的维护循环），把 `claimed` 且租约已过期的任务改回 `queued`，`attempt` 加 1，清空令牌；`attempt` 达到 3 时改为 `failed`（`host_error`）。把超过 `deadline` 的非终态任务改为 `expired`。两者都经终态端口让关联运行继续。
+- **完成**：经终态端口复查关联运行（与助手写工具同一套准入：能力、deadline、Skill、consent）→ 校验令牌与租约 → 落产物 → 改终态 → 让运行继续，在同一事务里提交（design「客户端任务」）。复查不通过时运行按现有规则结束，任务随之取消。
 - **取消**：运行被取消时，在取消运行的同一事务里把它的非终态任务改为 `cancelled`，清空令牌。
-- **通知**：表上安装提交后通知触发器，走账号级失效通道（`notify_creative_canvas_changed('account')`）；只改 `lease_until` / `updated_at` 的更新不通知。
+- **通知**：表上安装提交后通知触发器，走账号级失效通道（`notify_creative_canvas_changed('account')`）。只在新建、回到 `queued` 和进入终态时通知（触发器 `WHEN` 条件），认领、续租和删除不通知。
 
 ### 生命周期与演进
 - 终态任务保留 30 天后由维护任务删除；只删任务行，不影响产物。
@@ -617,9 +617,9 @@ Content-Type: application/json
 |---|---|---|---|
 | `claim_token` | string | 是 | — |
 | `outcome` | `"succeeded"` \| `"failed"` | 是 | — |
-| `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`；`message` ≤ 4000 字符，会原样交给助手 |
+| `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`、`host_error`（宿主侧失败：媒体校验失败、WebGL 上下文丢失、代码加载失败等）；`message` ≤ 4000 字符，会原样交给助手 |
 | `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest, module}`。`module` 为 `{params_schema, params, mount}`：沙箱回传、宿主按服务端规则校验过的规范化模块信息。服务端用任务 `request` 里的代码计算 `code_sha256`、组装 `generator`，按 `api: 场景模型命令` 的规则校验，再组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id`；替换目标的预期版本取任务 `request.expected` |
-| `render` | object | `kind=render_view` 且成功时 | `{image_upload_id}`（暂存图片，长边 1024） |
+| `render` | object | `kind=render_view` 且成功时 | `{image_upload_id, scene_revision}`：暂存图片（JPEG，长边 1024），以及渲染端实际渲染的场景修订（不得大于当前修订） |
 | `export` | object | `kind=export_shots` 且成功时 | `{export_operation_id}`：渲染端已调用 `api: 导出分镜` 时的操作 ID，服务端据此读回执 |
 
 ### 成功响应
@@ -632,7 +632,7 @@ Content-Type: application/json
 |---|---|---|---|
 | 400 | `validation_failed` | 请求外形不对：缺少与 kind 对应的结果字段、错误码非法。任务不变 | 修正 |
 | 404 | `not_found` | 任务不存在或不属于当前账号 | 放弃 |
-| 409 | `creative_state_conflict` | 任务已不是 `claimed`、令牌不匹配或租约已失效 | 丢弃产物；任务会被重新认领或已过期 |
+| 409 | `creative_state_conflict` | 任务已不是 `claimed`、令牌不匹配或租约已失效；或关联运行的复查不通过（运行已结束，任务已取消） | 丢弃产物；任务会被重新认领、已过期或已取消 |
 | 409 | `creative_upload_unavailable` | 暂存上传不存在、已过期或已被消费 | 租约仍有效时重新上传，用新的 operation id 重试 |
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
@@ -643,11 +643,11 @@ Content-Type: application/json
 ### 调用示例
 ```json
 {"operation_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "client_created_at": "2026-10-22T10:05:12Z",
- "payload": {"claim_token": "clm_Q2w3E4r5T6y7U8i9", "outcome": "succeeded", "render": {"image_upload_id": "ccup_cc33"}}}
+ "payload": {"claim_token": "clm_Q2w3E4r5T6y7U8i9", "outcome": "succeeded", "render": {"image_upload_id": "ccup_cc33", "scene_revision": "12"}}}
 ```
 ```json
 {"job_id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "state": "succeeded",
- "result": {"image_upload_id": "ccup_cc33", "content_revision_id": "ccrv_77aa"}}
+ "result": {"image_upload_id": "ccup_cc33", "content_revision_id": "ccrv_77aa", "scene_revision": "12"}}
 ```
 烘焙成功示例（请求）：
 ```json
@@ -667,7 +667,7 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义。修订 v6：`bake` 增加 `module`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）。
+首次定义。修订 v6：`bake` 增加 `module`；`render` 增加 `scene_revision`；错误码增加 `host_error`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）；完成时复查关联运行。
 
 ## api: ADD 列出场景客户端任务
 
