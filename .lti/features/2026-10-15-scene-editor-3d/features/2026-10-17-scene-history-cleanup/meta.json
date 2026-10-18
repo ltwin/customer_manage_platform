@@ -1,12 +1,12 @@
 {
   "uid": "aa2e24a0-a9b0-472a-950d-8e0d9136d896",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-history-cleanup",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 4,
+    "version": 5,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -38,7 +38,7 @@
   },
   "state": "draft",
   "createdAt": "2026-10-17T10:04:34.466Z",
-  "updatedAt": "2026-10-17T14:00:20.012Z",
+  "updatedAt": "2026-10-18T03:30:19.922Z",
   "approvals": {},
   "approvalHistory": [],
   "revisions": [],
