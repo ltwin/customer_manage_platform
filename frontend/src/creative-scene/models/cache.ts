@@ -50,6 +50,7 @@ export class ModelCache {
   private readonly download: Download
   private readonly readGenerator: ReadGenerator
   private readonly loads = new Map<string, Promise<ModelParts>>()
+  private readonly ready = new Map<string, ModelParts>()
   private readonly generators = new Map<string, Promise<ModelGenerator>>()
 
   constructor(download: Download = downloadGLB, readGenerator: ReadGenerator = (r) => readModelGenerator(r)) {
@@ -82,6 +83,7 @@ export class ModelCache {
     if (!gone) return
     this.local.setState(rest, true)
     this.loads.delete(revision)
+    this.ready.delete(revision)
   }
 
   /** The receipt named a placeholder's model: keep its bytes and parse under the real IDs. */
@@ -91,6 +93,8 @@ export class ModelCache {
     this.local.setState({ ...this.local.getState(), [revision]: { ...model, summary: { ...model.summary, content_id: contentID } } })
     const loading = this.loads.get(from)
     if (loading && !this.loads.has(revision)) this.loads.set(revision, loading)
+    const parts = this.ready.get(from)
+    if (parts && !this.ready.has(revision)) this.ready.set(revision, parts)
   }
 
   /** Follows a session's receipts; returns the disconnect. */
@@ -119,7 +123,8 @@ export class ModelCache {
       return partsOf(await parseGLB(glb))
     })()
     promise.then(
-      () => {
+      (parts) => {
+        if (this.loads.get(revision) === promise) this.ready.set(revision, parts)
         const { [revision]: was, ...rest } = this.failed.getState()
         if (was) this.failed.setState(rest, true)
       },
@@ -132,10 +137,21 @@ export class ModelCache {
     return promise
   }
 
+  /**
+   * A model already loaded, without waiting, so a first frame can draw it:
+   * its parts, null when its last load failed, undefined when not loaded yet.
+   */
+  peek(revision: string): ModelParts | null | undefined {
+    const parts = this.ready.get(revision)
+    if (parts) return parts
+    return this.failed.getState()[revision] ? null : undefined
+  }
+
   /** Drops everything; the editor closed. */
   clear() {
     const parts = [...this.loads.values()]
     this.loads.clear()
+    this.ready.clear()
     this.local.setState({}, true)
     const seen = new Set<BufferGeometry>()
     for (const p of parts)

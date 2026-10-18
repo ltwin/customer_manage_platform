@@ -1,4 +1,4 @@
-import type { Upload } from '../../creative-canvas/editor/media.ts'
+import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { CompileInput, CompileResult } from '../sandbox/host.ts'
 import type { Manifest } from '../sandbox/inspect.ts'
 import { measureStage, type CompileError } from '../sandbox/protocol.ts'
@@ -9,12 +9,10 @@ import { measureStage, type CompileError } from '../sandbox/protocol.ts'
 // wanted; a stopped or failed bake hands back the uploads that finished, for
 // the caller to free.
 
-export type Declared = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' }
-
 export type BakeDeps = {
   compile(input: CompileInput): Promise<CompileResult>
   thumbnail(glb: ArrayBuffer, manifest: Manifest): Promise<Blob>
-  upload(file: File, declared: Declared, signal: AbortSignal): Promise<Upload>
+  upload(file: File, declared: Generated, signal: AbortSignal): Promise<Upload>
 }
 
 export type Compiled = Extract<CompileResult, { ok: true }>

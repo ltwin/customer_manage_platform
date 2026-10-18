@@ -159,7 +159,7 @@ function sunDirection(env: SceneEnvironment): Vector3 {
  * Clay lighting: the scene's sky and ambient, one sun with shadows. The sun
  * angles are document data (Y up); the lights sit in view space (Z up).
  */
-function Environment({ environment }: { environment: SceneEnvironment }) {
+export function Environment({ environment }: { environment: SceneEnvironment }) {
   const sun = sunDirection(environment).multiplyScalar(60)
   const sky = environment.sky
   const skyRef = useRef<ComponentRef<typeof Sky>>(null)

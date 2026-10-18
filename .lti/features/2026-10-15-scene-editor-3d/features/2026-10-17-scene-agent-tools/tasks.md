@@ -125,11 +125,19 @@
     - `SandboxHost` 增加可注入的计时（启动与编译超时），执行器在隐藏标签页里也按 Worker 节拍判断超时。
     - 顺手修正后端 `host_error` 的补充说明：原文「页面多次没能完成」对页面一次上报的失败不准确，改为「问题出在页面上，可以稍后重试」。
     - 验证：`creative-scene-agent.test.ts` 10 项（变异检查 5 处均被抓到：不重传、丢失时不丢弃、忽略租约、重试换 operation id、超时码错映射）；C2 场景单测 99 项、`creative-scene.e2e.mjs` 30 项照常通过。
-- [ ] 4.2 离屏截图：先做最小样例，确认 R3F `createRoot` 离屏渲染可行（未决 #2），不行就为截图写独立的 three 场景构建。然后：
+- [x] 4.2 离屏截图：先做最小样例，确认 R3F `createRoot` 离屏渲染可行（未决 #2），不行就为截图写独立的 three 场景构建。然后：
   - 导出 `Environment`，`ModelMesh` 同步读缓存（`modelCache.peek`）；
   - `host/render.ts`：四种取景、JPEG、`scene_revision`、用后释放 WebGL 上下文。
 
   单测：四种取景的相机参数；e2e：截图长边 1024。
+  - 实施记录：
+    - 未决 #2 的结论：可行。R3F 9.8 的 `createRoot` 配不挂到页面的 canvas、`frameloop: 'never'`，手动渲染一帧即可，SwiftShader 下一张 1024 的截图约 0.4 秒。唯一的坑：`<Canvas>` 会自动 `extend(THREE)`，单独的 root 不会，漏了时 `<ambientLight>` 报错、提交永远不来、截图一直等。已补 `extend`，并加错误边界让绘制错误直接失败；执行器另设 60 秒上限，超时报 `host_error`。
+    - 局部偏差：
+      - 取景计算放在 `host/framing.ts`（纯计算，node 单测可直接测），绘制的组件树放在 `host/ShotScene.tsx`（只导出组件，保持 lint 的 fast-refresh 规则无告警），`host/render.ts` 只负责读场景、预加载模型、出图。这两个文件挂载点里没有列。
+      - `SceneObjects` 增加 `helpers` 开关，截图不画灯光和摄像机图标：否则用摄像机截图时，它自己的视锥线会出现在画面里。
+    - 取景：摄像机的垂直视角按传感器高度算，与编辑器里画的视锥一致；预设按全部可见物件（不含地面、灯光、摄像机）的世界包围盒取景，内容最多占画面的 1/1.1。
+    - 执行器接入 `render_view`：拍不了（摄像机已删）报 `render_error`，页面自己的问题（WebGL、超时、上传）报 `host_error`；截图以 `image/jpeg` 暂存上传，上传不可用时与烘焙一样重传一次。`uploadGenerated` 的声明类型增加 `image/jpeg`。
+    - 验证：单测新增取景 4 项、截图任务 2 项、`peek` 1 项（共 17 项）；`creative-scene-agent.e2e.mjs` 3 项：JPEG、长边 1024、`scene_revision`、模型首帧即为几何、四种预设、连拍 20 张不触发浏览器的上下文上限。变异检查：去掉 `peek` 首帧读取、去掉卸载，都会被 e2e 抓到。C2 场景单测与 e2e 30 项照常通过。
 - [ ] 4.3 画布页接入：
   - `host/launcher.ts`：每页唯一的认领循环、能力探测、优先场景、按需加载执行器、加载期间续租；
   - `WorkspacePage` 挂载 launcher；

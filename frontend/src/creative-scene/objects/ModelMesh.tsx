@@ -20,7 +20,12 @@ type Loaded = { revision: string; parts: ModelParts | null }
 
 export function ModelMesh({ revision, summary, edge, ghost = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean }) {
   const usable = summary?.usable !== false
-  const [loaded, setLoaded] = useState<Loaded | null>(null)
+  // A model already in the cache draws from the first frame (an offscreen
+  // screenshot renders exactly once).
+  const [loaded, setLoaded] = useState<Loaded | null>(() => {
+    const parts = usable ? modelCache.peek(revision) : undefined
+    return parts === undefined ? null : { revision, parts }
+  })
   useEffect(() => {
     if (!usable) return
     let live = true

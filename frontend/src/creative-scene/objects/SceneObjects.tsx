@@ -23,9 +23,11 @@ type Props = {
   models: Readonly<Record<string, SceneModel>>
   selected: ReadonlySet<string>
   active: string | null
+  /** Light and camera icons; a screenshot leaves them out. */
+  helpers?: boolean
 }
 
-export function SceneObjects({ scene, models, selected, active }: Props) {
+export function SceneObjects({ scene, models, selected, active, helpers = true }: Props) {
   const children = useMemo(() => {
     const byParent = new Map<string, SceneObject[]>()
     for (const o of scene.objects) {
@@ -40,7 +42,7 @@ export function SceneObjects({ scene, models, selected, active }: Props) {
   return (
     <>
       {(children.get('') ?? []).map((o) => (
-        <ObjectNode key={o.id} object={o} childrenOf={children} models={models} selected={selected} active={active} />
+        <ObjectNode key={o.id} object={o} childrenOf={children} models={models} selected={selected} active={active} helpers={helpers} />
       ))}
     </>
   )
@@ -52,12 +54,14 @@ function ObjectNode({
   models,
   selected,
   active,
+  helpers,
 }: {
   object: SceneObject
   childrenOf: Map<string, SceneObject[]>
   models: Readonly<Record<string, SceneModel>>
   selected: ReadonlySet<string>
   active: string | null
+  helpers: boolean
 }) {
   const t = useMemo(() => transformToView(o.transform), [o.transform])
   const edge = o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : null
@@ -71,11 +75,11 @@ function ObjectNode({
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
         )}
-        {o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
-        {o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
+        {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
+        {helpers && o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
       </group>
       {(childrenOf.get(o.id) ?? []).map((c) => (
-        <ObjectNode key={c.id} object={c} childrenOf={childrenOf} models={models} selected={selected} active={active} />
+        <ObjectNode key={c.id} object={c} childrenOf={childrenOf} models={models} selected={selected} active={active} helpers={helpers} />
       ))}
     </group>
   )

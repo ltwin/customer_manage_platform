@@ -111,6 +111,9 @@ export async function uploadFile(
   return uploadAs(file, classified, target, onProgress, signal, wait)
 }
 
+/** What the editor produces itself: baked models, their thumbnails, screenshots. */
+export type Generated = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' | 'image/jpeg' }
+
 /**
  * Uploads bytes the editor produced itself, such as a baked model GLB and its
  * thumbnail. Model files are never offered in file pickers: capabilities do
@@ -119,7 +122,7 @@ export async function uploadFile(
  */
 export function uploadGenerated(
   file: File,
-  declared: { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' },
+  declared: Generated,
   target: UploadTarget,
   signal?: AbortSignal,
   pause: Wait = wait,

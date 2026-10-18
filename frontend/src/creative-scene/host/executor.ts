@@ -3,6 +3,7 @@ import type { Upload } from '../../creative-canvas/editor/media.ts'
 import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
+import type { RenderRequest } from './framing.ts'
 import type { CompletePayload, Completion, JobApi, JobErrorCode, SceneJob } from './jobs.ts'
 import type { Ticker } from './ticker.ts'
 
@@ -13,12 +14,18 @@ import type { Ticker } from './ticker.ts'
 // A page that crashes or closes reports nothing; the lease runs out and the
 // job goes back to the queue, at most three claims in all.
 
+/** A screenshot of the confirmed scene and the revision it shows, or why there is none. */
+export type Shot = { ok: true; image: Blob; revision: string } | { ok: false; message: string }
+
 export type ExecutorDeps = BakeDeps & {
   api: JobApi
   ticker: Ticker
   /** Releases a ready staged upload that will never be committed. */
   discard(upload: Upload): Promise<void>
+  render(documentID: string, request: RenderRequest): Promise<Shot>
 }
+
+type Sent = { ok: true; uploads: Upload[] } | { ok: false; cause: unknown; uploads: Upload[] }
 
 export type JobOutcome =
   /** The server recorded a result, success or failure. */
@@ -29,6 +36,8 @@ export type JobOutcome =
   | { state: 'abandoned'; reason: string }
 
 export const leaseEveryMs = 10_000
+/** A screenshot that has not come back by then will not; the job is the page's failure. */
+export const renderTimeoutMs = 60_000
 const completeAttempts = 3
 const maxErrorChars = 4000
 
@@ -46,6 +55,7 @@ export class SceneExecutor {
     const hold = this.hold(job)
     try {
       if (job.kind === 'bake_model') return await this.bakeModel(job, hold)
+      if (job.kind === 'render_view') return await this.renderView(job, hold)
       return { state: 'abandoned', reason: `这个页面不能执行 ${job.kind} 任务` }
     } finally {
       hold.release()
@@ -82,25 +92,71 @@ export class SceneExecutor {
       const [code, message] = bakeFailure(out)
       return this.fail(job, code, message)
     }
-    let { baked, uploads } = out
+    const { baked } = out
+    return this.deliver(job, hold, '模型文件', out.uploads, ([model, thumbnail]) => ({ bake: bakeResult({ ...baked, model, thumbnail }) }), () =>
+      uploadBake(this.deps, baked.glb, baked.png, hold.signal),
+    )
+  }
+
+  private async renderView(job: SceneJob, hold: Hold): Promise<JobOutcome> {
+    const rendering = this.deps.render(job.document_id, job.request as RenderRequest)
+    rendering.catch(() => {}) // still awaited below unless the timer wins
+    const timer = new AbortController()
+    const stopTimer = () => timer.abort()
+    hold.signal.addEventListener('abort', stopTimer, { once: true })
+    let shot: Shot | 'timeout' | 'stopped'
+    try {
+      shot = await Promise.race([rendering, this.deps.ticker.wait(renderTimeoutMs, timer.signal).then(() => 'timeout' as const, () => 'stopped' as const)])
+    } catch (err) {
+      if (hold.lost()) return { state: 'lost' }
+      return this.fail(job, 'host_error', `截图失败：${reason(err)}`)
+    } finally {
+      timer.abort()
+      hold.signal.removeEventListener('abort', stopTimer)
+    }
+    if (hold.lost() || shot === 'stopped') return { state: 'lost' }
+    if (shot === 'timeout') return this.fail(job, 'host_error', '截图超过 60 秒没有完成')
+    if (!shot.ok) return this.fail(job, 'render_error', shot.message)
+    const { image, revision } = shot
+    const send = (): Promise<Sent> => uploadOne(this.deps, new File([image], 'view.jpg', { type: 'image/jpeg' }), hold.signal)
+    const sent = await send()
+    if (hold.lost()) {
+      this.discard(sent.uploads)
+      return { state: 'lost' }
+    }
+    if (!sent.ok) return this.fail(job, 'host_error', `截图上传失败：${reason(sent.cause)}`)
+    return this.deliver(job, hold, '截图', sent.uploads, ([upload]) => ({ render: { image_upload_id: upload.id, scene_revision: revision } }), send)
+  }
+
+  /**
+   * Reports a success built from staged uploads. When the server finds them
+   * unusable (expired or used) and the lease still holds, they go up once
+   * more; anything that ends the job here frees them.
+   */
+  private async deliver(
+    job: SceneJob,
+    hold: Hold,
+    what: string,
+    uploads: Upload[],
+    result: (uploads: Upload[]) => Pick<CompletePayload, 'bake' | 'render'>,
+    resend: () => Promise<Sent>,
+  ): Promise<JobOutcome> {
     for (let resent = false; ; resent = true) {
-      const reported = await this.report(job, { claim_token: job.claim_token, outcome: 'succeeded', bake: bakeResult(baked) })
+      const reported = await this.report(job, { claim_token: job.claim_token, outcome: 'succeeded', ...result(uploads) })
       if (reported.state === 'lost' || reported.state === 'abandoned') this.discard(uploads)
       if (reported.state !== 'unavailable') return reported
-      // The staged copies are gone (expired or used); the lease still holds, so send them once more.
       if (hold.lost()) return { state: 'lost' }
-      if (resent) return this.fail(job, 'host_error', '模型文件上传后无法使用')
-      const again = await uploadBake(this.deps, baked.glb, baked.png, hold.signal)
+      if (resent) return this.fail(job, 'host_error', `${what}上传后无法使用`)
+      const again = await resend()
       if (hold.lost()) {
         this.discard(again.uploads)
         return { state: 'lost' }
       }
       if (!again.ok) {
         this.discard(again.uploads)
-        return this.fail(job, 'host_error', `模型文件上传失败：${reason(again.cause)}`)
+        return this.fail(job, 'host_error', `${what}上传失败：${reason(again.cause)}`)
       }
       uploads = again.uploads
-      baked = { ...baked, model: again.uploads[0], thumbnail: again.uploads[1] }
     }
   }
 
@@ -139,6 +195,14 @@ export class SceneExecutor {
 
   private discard(uploads: Upload[]) {
     for (const u of uploads) void this.deps.discard(u).catch(() => {})
+  }
+}
+
+async function uploadOne(deps: Pick<BakeDeps, 'upload'>, file: File, signal: AbortSignal): Promise<Sent> {
+  try {
+    return { ok: true, uploads: [await deps.upload(file, { kind: 'image', mime: 'image/jpeg' }, signal)] }
+  } catch (cause) {
+    return { ok: false, cause, uploads: [] }
   }
 }
 
