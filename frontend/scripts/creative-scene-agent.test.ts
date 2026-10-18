@@ -7,6 +7,8 @@ import { leaseEveryMs, type CompletePayload, type Completion, type SceneJob } fr
 import type { Ticker } from '../src/creative-scene/host/ticker.ts'
 import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
 import type { Manifest } from '../src/creative-scene/sandbox/inspect.ts'
+import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders, revisionObjects, type ActivityDeps } from '../src/creative-scene/agentActivity.ts'
+import type { RevisionItem, SceneJobSummary, SceneObject } from '../src/creative-scene/api.ts'
 
 // --- the page's scene job executor -----------------------------------------
 
@@ -690,4 +692,133 @@ test('closing asks first only while holding a job in the browser’s only worksp
   first.setHolding(false)
   assert.ok(!a.asks())
   stopFirst()
+})
+
+// --- the editor's view of the assistant's work -----------------------------
+
+const objA = 'sobj_' + 'a'.repeat(21)
+const objB = 'sobj_' + 'b'.repeat(21)
+const objC = 'sobj_' + 'c'.repeat(21)
+const objD = 'sobj_' + 'd'.repeat(21)
+
+function jobSummary(id: string, kind: SceneJobSummary['kind'], target: SceneJobSummary['target']): SceneJobSummary {
+  return { id, kind, state: 'queued', run_id: 'car_1', created_at: '2026-10-18T00:00:00Z', target }
+}
+
+function revisionItem(revision: string, actor: RevisionItem['actor_kind'], createdAt: number, changed: string[], annotated: string[] = []): RevisionItem {
+  return { revision, actor_kind: actor, run_id: actor === 'agent' ? 'car_1' : null, restored_from: null, changed_units: changed, annotated_units: annotated, removed_units: [], title: '', created_at: new Date(createdAt).toISOString() }
+}
+
+class Clock {
+  now = Date.parse('2026-10-18T08:00:00Z')
+  timers: { at: number; ms: number; fn: () => void; live: boolean }[] = []
+  after = (ms: number, fn: () => void) => {
+    const t = { at: this.now + ms, ms, fn, live: true }
+    this.timers.push(t)
+    return () => { t.live = false }
+  }
+  get pending() { return this.timers.filter((t) => t.live) }
+  async advance(ms: number) {
+    this.now += ms
+    for (const t of this.timers) if (t.live && t.at <= this.now) { t.live = false; t.fn() }
+    for (let i = 0; i < 5; i++) await tick()
+  }
+}
+
+class FakeActivityServer {
+  clock = new Clock()
+  jobs: SceneJobSummary[] | Error = []
+  revisions: RevisionItem[] = []
+  reads: (string | null)[] = []
+  listener: (() => void) | null = null
+  deps: ActivityDeps = {
+    listJobs: async () => {
+      if (this.jobs instanceof Error) throw this.jobs
+      return this.jobs
+    },
+    readRevisions: async (_id, since) => {
+      this.reads.push(since)
+      return this.revisions.filter((r) => since === null || Number(r.revision) > Number(since)).sort((a, b) => Number(b.revision) - Number(a.revision))
+    },
+    now: () => this.clock.now,
+    after: this.clock.after,
+    subscribe: (listener) => {
+      this.listener = listener
+      return () => { this.listener = null }
+    },
+  }
+}
+
+test('outlines, placeholders and the status line come from the jobs and the assistant’s last revisions', () => {
+  const transform = { position: [2, 0, 1], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }
+  const jobs = [
+    jobSummary('csj_1', 'bake_model', { op: 'replace', object_ids: [objA, objB] }),
+    jobSummary('csj_2', 'bake_model', { op: 'add', object: { name: '椅子', parent_id: null, transform } }),
+    jobSummary('csj_3', 'render_view', null),
+  ]
+  const state = { jobs, recent: [{ revision: '9', at: 0, objects: [objC] }] }
+  assert.deepEqual([...highlightedObjects(state)].sort(), [objA, objB, objC].sort())
+  assert.deepEqual(jobPlaceholders(jobs), [{ id: 'csj_2', name: '椅子', parentID: null, transform }])
+  // A target written without a transform still has a place.
+  assert.deepEqual(jobPlaceholders([jobSummary('csj_4', 'bake_model', { op: 'add', object: { name: '' } })])[0].transform.position, [0, 0, 0])
+  const byID = new Map([[objA, { id: objA, name: '台灯' } as SceneObject]])
+  assert.equal(activityText([jobs[0]], byID), '助手正在生成「台灯」…')
+  assert.equal(activityText([jobs[1]], byID), '助手正在生成「椅子」…')
+  assert.equal(activityText(jobs, byID), '助手正在生成「台灯」等 2 个模型…')
+  assert.equal(activityText([jobs[2]], byID), '')
+  assert.deepEqual(revisionObjects(revisionItem('3', 'agent', 0, ['objects', `object:${objA}`, `object:${objA}:content`, 'environment'], [`object:${objB}`])), [objA, objB])
+  assert.deepEqual(
+    editedObjects([
+      { op: 'update_objects', updates: [{ object_id: objA, name: 'x' }] },
+      { op: 'remove_objects', object_ids: [objB] },
+      { op: 'restore_units', units: [`object:${objC}:content`, 'objects'] },
+    ]).sort(),
+    [objA, objB, objC].sort(),
+  )
+})
+
+test('the editor reads on opening, then at most once a second after notifications, asking only for newer revisions', async () => {
+  const s = new FakeActivityServer()
+  const now = s.clock.now
+  s.revisions = [
+    revisionItem('4', 'agent', now - 120_000, [`object:${objB}`]),
+    revisionItem('5', 'agent', now - 10_000, [`object:${objA}`]),
+    revisionItem('6', 'photographer', now, [`object:${objC}`]),
+  ]
+  s.jobs = [jobSummary('csj_1', 'bake_model', { op: 'replace', object_ids: [objD] })]
+  const activity = new AgentActivity('cwdoc_1', s.deps)
+  const stop = activity.start()
+  await s.clock.advance(0)
+  assert.deepEqual(s.reads, [null])
+  // The first page is dated by the server: two minutes ago is over, ten seconds ago is not.
+  assert.deepEqual([...highlightedObjects(activity.store.getState())].sort(), [objA, objD].sort())
+
+  s.listener?.()
+  s.listener?.()
+  assert.equal(s.clock.pending.filter((t) => t.ms === 1_000).length, 1)
+  // A revision whose server time looks old to this machine is still new when it arrives.
+  s.revisions.push(revisionItem('7', 'agent', now - 600_000, [`object:${objC}`]))
+  s.jobs = []
+  await s.clock.advance(1_000)
+  assert.deepEqual(s.reads, [null, '6'])
+  assert.deepEqual([...highlightedObjects(activity.store.getState())].sort(), [objA, objC].sort())
+
+  // Each outline lasts a minute from when it was seen.
+  await s.clock.advance(49_000)
+  assert.deepEqual([...highlightedObjects(activity.store.getState())], [objC])
+  await s.clock.advance(11_000)
+  assert.deepEqual([...highlightedObjects(activity.store.getState())], [])
+
+  // A failed job list keeps what was shown.
+  s.jobs = [jobSummary('csj_2', 'bake_model', { op: 'replace', object_ids: [objA] })]
+  s.listener?.()
+  await s.clock.advance(1_000)
+  s.jobs = new Error('offline')
+  s.listener?.()
+  await s.clock.advance(1_000)
+  assert.deepEqual([...highlightedObjects(activity.store.getState())], [objA])
+
+  stop()
+  assert.equal(s.listener, null)
+  assert.equal(s.clock.pending.length, 0)
 })

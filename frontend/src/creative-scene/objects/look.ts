@@ -3,5 +3,7 @@
 export const clay = '#d9d5cd'
 export const selectedEdge = '#ed5700'
 export const activeEdge = '#ffaf29'
+/** What the assistant is changing or just changed; selection colours win. */
+export const agentEdge = '#17a397'
 /** A model that cannot be shown: unusable, or its GLB failed to load. */
 export const unavailableGrey = '#9a9893'

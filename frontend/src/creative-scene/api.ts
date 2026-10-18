@@ -15,6 +15,8 @@ export type CommandReceipt = components['schemas']['CreativeDocumentCommandResul
 export type RevisionPage = components['schemas']['CreativeDocumentRevisionPage']
 export type RevisionView = components['schemas']['CreativeDocumentRevisionView']
 export type ModelGenerator = components['schemas']['CreativeModelGeneratorInput']
+export type RevisionItem = components['schemas']['CreativeDocumentRevisionItem']
+export type SceneJobSummary = components['schemas']['CreativeSceneJobSummary']
 
 const documentPath = (id: string) => `/documents/${encodeURIComponent(id)}`
 
@@ -80,14 +82,24 @@ export async function readModelGenerator(revision: string, signal?: AbortSignal)
   return generator
 }
 
+/** Newest first; `runID` keeps one run's writes, `since` those after a revision. */
 export function readRevisions(
   id: string,
   cursor: string | null,
   signal?: AbortSignal,
+  filter: { runID?: string; since?: string; limit?: number } = {},
 ): Promise<RevisionPage> {
-  const query = new URLSearchParams({ limit: '50' })
+  const query = new URLSearchParams({ limit: String(filter.limit ?? 50) })
   if (cursor) query.set('cursor', cursor)
+  if (filter.runID) query.set('run_id', filter.runID)
+  if (filter.since) query.set('since_revision', filter.since)
   return read<RevisionPage>(`${documentPath(id)}/revisions?${query}`, signal)
+}
+
+/** The scene's queued and running client jobs: no code, parameters or claims. */
+export async function listSceneJobs(id: string, signal?: AbortSignal): Promise<SceneJobSummary[]> {
+  const list = await read<components['schemas']['CreativeSceneJobList']>(`${documentPath(id)}/scene-jobs`, signal)
+  return list.items
 }
 
 export function readRevision(

@@ -34,7 +34,7 @@ import { assetActions } from './assetPlacement.ts'
 import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
 import { useAgentRuns } from './agentRuns.ts'
 import { isActiveRun } from './agentState.ts'
-import { useSceneHost } from '../../creative-scene/host/launcher.ts'
+import { useSceneHost, type SceneJobLauncher } from '../../creative-scene/host/launcher.ts'
 import { useNodeContent } from './useNodeContent.ts'
 import { matchesCanvas } from './snapshot.ts'
 import {
@@ -52,7 +52,7 @@ import {
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
 
-type SceneEditorProps = { documentID: string; onClose: () => void }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -1762,6 +1762,7 @@ function Workspace({ account }: { account: string }) {
         >
           <SceneEditor
             documentID={maximized.id}
+            host={sceneHost.launcher}
             onClose={() => {
               setLibraryOpen(maximized.libraryOpen)
               setMaximized(null)
