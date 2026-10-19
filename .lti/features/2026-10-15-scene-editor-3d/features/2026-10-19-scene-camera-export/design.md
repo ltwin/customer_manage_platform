@@ -383,6 +383,22 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
   - `write_model` 的 `look_at`；
   - 导出 WebP 以减小上传体积。
 
+### 实施中的偏差（verify 时补记）
+
+- **指纹版本不符时判过时，不重算**：重算要按 `scene_revision` 读旧快照，画布读取就多了查询，与「读画布不增加查询」冲突。指纹版本只在渲染规则变化时升级，届时旧导出图本来就该重新导出。测试：`TestBasedOnStateFollowsTheScene`。
+- **相机视图不跟随摄像机的滚转**：视口控制器（`CameraControls`）固定 Z 轴朝上。用 `look_at`、`Ctrl + Alt + 0` 和添加菜单摆出的摄像机都没有滚转，不受影响；助手直接写带滚转的 `rotation` 时，相机视图与导出图的取景范围相同，但画面没有倾斜。导出图按真实朝向渲染。
+- **编码仍用 `canvasBlob`（`toDataURL`），不用 `toBlob`**：隐藏标签页里 `toBlob` 要等节流后的空闲回调才开始编码，助手的导出多在后台标签页执行。导出一张 2048 PNG 的编码在出图耗时内（e2e：4 张约 3.9 s，含渲染）。
+- **景深按块取最大弥散圆后半分辨率采样**：避免前景虚化边缘被清晰背景切断。常量（采样数、弥散圆上限 4%、线稿阈值、GTAO 参数）写在 `render/dofPass.ts`、`render/linePass.ts`、`render/clayExport.ts`（未决 #1）。
+- **`checkFocusTargets` 在 `type.go:Apply` 调用**，不在 `ops.go`：要在整批命令应用后对照最终场景检查，`ops.go` 只记录写到了哪些对焦字段。
+- **导出接口的处理函数放在 `creative_scene_jobs.go`**，与场景任务的处理函数放在一起；路由仍在 `creative_documents.go`。
+- **`creative_upload_unavailable` 的提示改为通用文案**「上传已失效或已被使用，请重新上传」：原文案只讲模型，导出图共用这个错误码。错误码不变，前端按错误码映射提示。
+- **`export_shots` 工具拒绝 `lit`**：C5 之前没有这种导出，直接返回工具错误，不建任务。
+- **手动导出先等保存（最多 15 s）**：AC-4，`SceneEditor.tsx:startExport` 调 `whenSaved`。
+- **修了 `parkOnJob` 读任务结果的方式**：原先按渲染结果解码，导出任务的结果会丢失。改为 `creativescene.ResultOf` 按任务类型解码。
+- **`instructions/base.md` 加了 `export_shots` 和「先回看再导出」**：已有测试要求说明里提到每个工具。
+- **新增辅助函数**：`creativecanvas.DocumentNodeInTx`（建任务时找场景节点）、前端 `exportCount`（对话框的张数与上限，放在 `exportShots.ts`，便于 Node 测试引用）。
+- **AC-9 样例场景**：用基础体搭的棚拍布景，没有用助手搭的教堂中殿，以排除模型质量的影响。owner 若要用指定场景，可用同一脚本重新生成。
+
 ## 接口与数据契约
 
 扩展为主。共享定义见 Epic 修订 v8 的 `api: 导出分镜`、`data: 导出图来源`、`data: MODIFY 场景客户端任务`、`api: MODIFY 完成场景客户端任务`、`data: MODIFY 场景文档`（`--deliver`），本 Change 不另写 contracts.md。
@@ -445,6 +461,12 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 「场景已更新」标记 |
 | `docs/dev/agent-skills-tools.md` | 修改 | 工具变化与排空后升级 |
 | `docs/dev/creative-scene-agent.md` | 修改 | 取景一节的视场角规则 |
+| `backend/internal/creativescene/type.go:Apply` | 修改（实施补记） | 调用 `checkFocusTargets` |
+| `backend/internal/platform/httpapi/creative_scene_jobs.go` | 修改（实施补记） | `ExportCreativeSceneShots` 处理函数 |
+| `backend/internal/creativecanvas/tool_schemas.gen.go` | 修改（实施补记） | 生成物（`based_on_state`） |
+| `backend/internal/creativeagent/instructions/base.md` | 修改（实施补记） | 提到 `export_shots` 与回看后导出 |
+| `frontend/src/creative-scene/host/pageExecutor.ts` | 修改（实施补记） | 接上 `renderShots` |
+| `frontend/src/creative-scene/scene.css`、`frontend/src/creative-canvas/editor/workspace.css` | 修改（实施补记） | 取景框、导出对话框、摄像机属性、「场景已更新」标记的样式 |
 
 ## 验证与交付
 
@@ -494,6 +516,6 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 
 | # | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|---|
-| 1 | 线稿阈值、GTAO 参数、景深的采样数与弥散圆上限 | 导出图质量 | 用 3 个样例场景调参，截图对比后写成常量 | 导出渲染任务完成时 |
-| 2 | 哪种导出组合喂给 gpt-image-2.5 最好（Epic 未决 #6），景深虚化是帮助还是拉低一致性 | 重绘一致性 | AC-9 实测，三种组合 × 景深开关对照 | C4 验收 |
-| 3 | 2048 PNG 的上传体积是否可接受 | 导出耗时 | 记录实测体积和耗时；明显过大时提出改 WebP，交 owner 决定 | C4 验收 |
+| 1 | 线稿阈值、GTAO 参数、景深的采样数与弥散圆上限 | 导出图质量 | 用 3 个样例场景调参，截图对比后写成常量 | 导出渲染任务完成时。**已解决**：常量写在 `render/*.ts` |
+| 2 | 哪种导出组合喂给 gpt-image-2.5 最好（Epic 未决 #6），景深虚化是帮助还是拉低一致性 | 重绘一致性 | AC-9 实测，三种组合 × 景深开关对照 | C4 验收。**待 owner**：原图与提示词见 `discovery/research/repaint-consistency.md` |
+| 3 | 2048 PNG 的上传体积是否可接受 | 导出耗时 | 记录实测体积和耗时；明显过大时提出改 WebP，交 owner 决定 | C4 验收。**实测**：白模 330–490 KB、线稿 80–110 KB；交 owner 判断 |
