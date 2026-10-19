@@ -1,6 +1,6 @@
 {
   "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
-  "revision": 6,
+  "revision": 8,
   "id": "scene-agent-tools",
   "kind": "feature",
   "assurance": "governed",
@@ -42,9 +42,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-18T04:36:35.664Z",
-  "updatedAt": "2026-10-19T03:52:01.509Z",
+  "updatedAt": "2026-10-19T06:02:38.100Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -184,9 +184,41 @@
         "version": 2,
         "digest": "40d3a2c348c22e5447b65a8baaa31dc40437957ef9ea0135c88c0ef1109bfd50"
       }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-19T06:02:28.862Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 的小毛病尚未逐条列出；烘焙耗时随场景模型数线性增长原因未诊断；auth catalog 一次失败未复现；C3 无烘焙同时移动的端到端用例。",
+        "followUp": "合并后：①诊断烘焙耗时随模型数增长（看 creative scene job 迁移日志 in_state）；②场景格式对齐 three.js 的 epic 修订里一并修正「读取运行的场景改动」契约的 3 处出入；③owner 列出小毛病后排期。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 2026-10-18 本机试用后结论：有一些小毛病，但问题不大，可以先往后推进。接受技术验收报告（合并点 make check、并发重复、15 条验收标准证据）；同意契约 3 处出入并进 C3 合并后的场景格式对齐 three.js epic 修订一起修正；同意合并前改写分支历史去掉误提交的 creative-worker 编译产物（最终代码不变，备份分支 backup/feat-scene-agent-tools-9019c2d）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "40d3a2c348c22e5447b65a8baaa31dc40437957ef9ea0135c88c0ef1109bfd50"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-19T06:02:37.962Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
