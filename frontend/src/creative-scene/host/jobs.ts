@@ -13,8 +13,8 @@ export type CompletePayload = components['schemas']['CreativeSceneJobCompletePay
 export type Completion = components['schemas']['CreativeSceneJobCompletion']
 export type JobErrorCode = NonNullable<CompletePayload['error']>['code']
 
-/** The kinds a page runs; export_shots belongs to C4. */
-export const pageJobKinds: JobKind[] = ['bake_model', 'render_view']
+/** The kinds a page runs. */
+export const pageJobKinds: JobKind[] = ['bake_model', 'render_view', 'export_shots']
 /** Renewal pace; the server's lease is 30 seconds. */
 export const leaseEveryMs = 10_000
 

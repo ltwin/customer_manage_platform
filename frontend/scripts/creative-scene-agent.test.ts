@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { ApiError } from '../src/api/transport.ts'
 import type { Upload } from '../src/creative-canvas/editor/media.ts'
 import { bakeFailure, compileFailure, renderTimeoutMs, SceneExecutor, type ExecutorDeps, type Shot } from '../src/creative-scene/host/executor.ts'
+import type { ExportPlan, RenderedShots } from '../src/creative-scene/host/exportShots.ts'
 import { leaseEveryMs, type CompletePayload, type Completion, type SceneJob } from '../src/creative-scene/host/jobs.ts'
 import type { Ticker } from '../src/creative-scene/host/ticker.ts'
 import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
@@ -71,6 +72,17 @@ class FakePage {
   completes: Call[] = []
   renders: { documentID: string; request: unknown }[] = []
   shot: Shot | Error | Promise<Shot> = { ok: true, image: new Blob(['jpeg']), revision: '7' }
+  exports: { documentID: string; plan: ExportPlan }[] = []
+  exported: RenderedShots | Error = {
+    ok: true,
+    revision: '9',
+    images: [
+      { camera: 'camA', pass: 'clay', blob: new Blob(['a']) },
+      { camera: 'camA', pass: 'line', blob: new Blob(['b']) },
+      { camera: 'camB', pass: 'clay', blob: new Blob(['c']) },
+      { camera: 'camB', pass: 'line', blob: new Blob(['d']) },
+    ],
+  }
   /** Answers for complete, in order; past the end, a recorded success. */
   answers: (Completion | Error)[] = []
   private n = 0
@@ -94,6 +106,10 @@ class FakePage {
       render: (documentID, request) => {
         this.renders.push({ documentID, request })
         return this.shot instanceof Error ? Promise.reject(this.shot) : Promise.resolve(this.shot)
+      },
+      exportImages: (documentID, plan) => {
+        this.exports.push({ documentID, plan })
+        return this.exported instanceof Error ? Promise.reject(this.exported) : Promise.resolve(this.exported)
       },
       api: {
         claim: () => Promise.resolve(null),
@@ -356,10 +372,12 @@ test('a scene camera shoots with its own lens and picture shape, from where it s
   assert.ok(near(f.position, [2, -6, 1.6]), `document (2, 1.6, 6) is view (2, -6, 1.6): ${f.position}`)
   assert.ok(near(forwardOf(f).toArray(), [0, 1, 0]), 'an unturned camera looks along document -Z, view +Y')
   assert.ok(near(upOf(f).toArray(), [0, 0, 1]), 'its up is the view’s up')
-  assert.ok(Math.abs(f.fov - (2 * Math.atan(12 / 35) * 180) / Math.PI) < 1e-9, 'vertical angle from the sensor height, as the drawn frustum')
+  assert.ok(Math.abs(f.fov - (2 * Math.atan(12 / 35) * 180) / Math.PI) < 1e-9, 'at 3:2 the long side spans the sensor width: as the sensor height')
   assert.deepEqual([f.width, f.height, f.near, f.far], [1024, 683, 0.1, 200])
   const portrait = framed(sceneOf(object({ id: 'cam', kind: 'camera', camera: { ...lens, aspect: '4:5' } })), { camera_object_id: 'cam' })
   assert.deepEqual([portrait.width, portrait.height], [819, 1024], 'the long side is 1024 either way')
+  // A portrait frame's long side is its height: the vertical angle spans the sensor's long side.
+  assert.ok(Math.abs(portrait.fov - (2 * Math.atan(18 / 35) * 180) / Math.PI) < 1e-9, 'portrait: vertical angle from the sensor width')
   assert.deepEqual(framingFor(sceneOf(cube('box', 1)), {}, { camera_object_id: 'box' }), { error: '摄像机 box 已不在场景里' })
 })
 
@@ -369,7 +387,7 @@ test('a viewpoint looks from its position at its target, 4:3', () => {
   assert.ok(near(forwardOf(f).toArray(), new Vector3(-4, 4, -2).normalize().toArray()))
   assert.ok(upOf(f).z > 0, 'level, not rolled')
   assert.deepEqual([f.width, f.height], [1024, 768])
-  assert.ok(Math.abs(f.fov - (2 * Math.atan(12 / 50) * 180) / Math.PI) < 1e-9)
+  assert.ok(Math.abs(f.fov - (2 * Math.atan(13.5 / 50) * 180) / Math.PI) < 1e-9, 'full frame at 4:3: the 36 mm width spans the long side')
   const down = framed(sceneOf(), { viewpoint: { position: [0, 10, 0], target: [0, 0, 0], focal_mm: 35 } })
   assert.ok(near(forwardOf(down).toArray(), [0, 0, -1]), 'straight down still has an up')
 })
@@ -391,7 +409,7 @@ test('presets frame every visible object with a margin, from their own side', ()
     assert.ok(near(forwardOf(f).toArray(), want.forward), `${preset}: looks ${forwardOf(f).toArray()}`)
     if (want.up) assert.ok(near(upOf(f).toArray(), want.up), `${preset}: up ${upOf(f).toArray()}`)
     assert.deepEqual([f.width, f.height], [1024, 768])
-    assert.ok(Math.abs(f.fov - (2 * Math.atan(12 / 35) * 180) / Math.PI) < 1e-9, `${preset}: 35 mm`)
+    assert.ok(Math.abs(f.fov - (2 * Math.atan(13.5 / 35) * 180) / Math.PI) < 1e-9, `${preset}: 35 mm full frame at 4:3`)
     const r = reach(f, scene)
     assert.ok(r <= 1 / 1.1 + 1e-6 && r > 0.85, `${preset}: the box fills the picture up to the margin (${r.toFixed(3)})`)
   }
@@ -428,6 +446,64 @@ test('a render job uploads the JPEG and reports the revision it shows', async ()
   again.answers = [unavailable()]
   await new SceneExecutor(again.deps()).run(renderJob())
   assert.deepEqual(again.completes.map((c) => c.payload.render?.image_upload_id), ['ccup_1', 'ccup_2'], 'an unusable screenshot goes up once more')
+})
+
+function exportJob(request: Record<string, unknown> = { camera_object_ids: ['camA', 'camB'], passes: ['clay', 'line'], canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }): SceneJob {
+  return { id: 'csj_1', document_id: 'cwdoc_1', kind: 'export_shots', request, attempt: 0, claim_token: 'tok_1', lease_until: '', deadline: '' }
+}
+
+test('an export job draws the plan, uploads every image and completes with them per camera', async () => {
+  const page = new FakePage()
+  const out = await new SceneExecutor(page.deps()).run(exportJob())
+  assert.equal(out.state, 'completed')
+  assert.deepEqual(page.exports, [{ documentID: 'cwdoc_1', plan: { cameraObjectIDs: ['camA', 'camB'], passes: ['clay', 'line'] } }])
+  assert.deepEqual(page.uploads.map((u) => [u.name, u.mime]), [['camA-clay.png', 'image/png'], ['camA-line.png', 'image/png'], ['camB-clay.png', 'image/png'], ['camB-line.png', 'image/png']])
+  assert.deepEqual(page.completes.map((c) => c.payload), [{
+    claim_token: 'tok_1',
+    outcome: 'succeeded',
+    export: {
+      scene_revision: '9',
+      shots: [
+        { camera_object_id: 'camA', images: [{ pass: 'clay', upload_id: 'ccup_1' }, { pass: 'line', upload_id: 'ccup_2' }] },
+        { camera_object_id: 'camB', images: [{ pass: 'clay', upload_id: 'ccup_3' }, { pass: 'line', upload_id: 'ccup_4' }] },
+      ],
+    },
+  }])
+
+  const again = new FakePage()
+  again.answers = [unavailable()]
+  await new SceneExecutor(again.deps()).run(exportJob())
+  assert.equal(again.uploads.length, 8, 'unusable images go up once more')
+  assert.equal(again.completes[1].payload.export?.shots[0].images[0].upload_id, 'ccup_5')
+})
+
+test('an export that cannot be drawn or uploaded fails the job and frees what went up', async () => {
+  const missing = new FakePage()
+  missing.exported = { ok: false, message: '摄像机 camB 已不在场景里' }
+  await new SceneExecutor(missing.deps()).run(exportJob())
+  assert.deepEqual(missing.completes[0].payload.error, { code: 'render_error', message: '摄像机 camB 已不在场景里' })
+  assert.equal(missing.uploads.length, 0)
+
+  const broken = new FakePage()
+  broken.exported = new Error('WebGL 上下文丢失')
+  await new SceneExecutor(broken.deps()).run(exportJob())
+  assert.deepEqual(broken.completes[0].payload.error, { code: 'host_error', message: '导出图渲染失败：WebGL 上下文丢失' })
+
+  const failing = new FakePage()
+  failing.autoUpload = false
+  const running = new SceneExecutor(failing.deps()).run(exportJob())
+  await tick()
+  failing.uploads[0].gate.resolve({ id: 'ccup_ok' } as Upload)
+  failing.uploads[1].gate.reject(new Error('网络中断'))
+  await tick()
+  for (const u of failing.uploads.slice(2)) u.gate.resolve({ id: 'ccup_late' } as Upload)
+  await running
+  assert.deepEqual(failing.completes[0].payload.error, { code: 'host_error', message: '导出图上传失败：网络中断' })
+  assert.ok(failing.discarded.includes('ccup_ok'), 'the finished upload is freed')
+
+  const malformed = new FakePage()
+  await new SceneExecutor(malformed.deps()).run(exportJob({ camera_object_ids: [] }))
+  assert.deepEqual(malformed.completes[0].payload.error, { code: 'host_error', message: '任务内容不完整' })
 })
 
 test('a render that cannot be taken says why: the request’s problem, or the page’s', async () => {

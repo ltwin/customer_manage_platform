@@ -1,0 +1,178 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { ApiError } from '../src/api/transport.ts'
+import type { Upload } from '../src/creative-canvas/editor/media.ts'
+import type { Scene, SceneObject } from '../src/creative-scene/api.ts'
+import {
+  aspectOf,
+  blurPixels,
+  cameraViewFov,
+  equivalentFocal,
+  fStopShortcuts,
+  fStopThirds,
+  maxBlurShare,
+  presetOf,
+  sharpRange,
+  verticalFov,
+} from '../src/creative-scene/cameraOptics.ts'
+import { cameraFraming } from '../src/creative-scene/host/framing.ts'
+import { renderShots, submitExport, uploadShots, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
+import type { Shooter } from '../src/creative-scene/host/render.ts'
+
+const deg = (r: number) => (r * 180) / Math.PI
+const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
+
+// --- optics -----------------------------------------------------------------
+
+test('the field of view follows the picture’s long side: a portrait sees what the landscape sees, turned', () => {
+  assert.ok(close(verticalFov(35, [36, 24], 3 / 2), deg(2 * Math.atan(12 / 35))), '3:2 landscape as before')
+  const landscapeWidth = 2 * Math.atan(Math.tan((verticalFov(35, [36, 24], 3 / 2) * Math.PI) / 360) * 1.5)
+  assert.ok(close(verticalFov(35, [36, 24], 2 / 3), deg(landscapeWidth)), '2:3 portrait height = 3:2 landscape width')
+  assert.ok(close(verticalFov(50, [24, 36], 1), deg(2 * Math.atan(18 / 50))), 'only the sensor’s long side counts')
+  assert.equal(aspectOf('16:9'), 16 / 9)
+  assert.equal(aspectOf('bad'), 1.5)
+})
+
+test('the camera view fits the camera’s picture into 90% of the viewport', () => {
+  const v = verticalFov(35, [36, 24], 1.5)
+  const t = (d: number) => Math.tan((d * Math.PI) / 360)
+  // A viewport wider than the picture: its height is what fills.
+  assert.ok(close(t(cameraViewFov(v, 1.5, 2)), t(v) / 0.9))
+  // Narrower: the picture's width fills 90% of the viewport's width.
+  const view = cameraViewFov(v, 1.5, 1)
+  assert.ok(close(t(view) * 1, (t(v) * 1.5) / 0.9))
+})
+
+test('sensor presets, the full-frame equivalent and the aperture steps', () => {
+  assert.equal(presetOf([23.5, 15.6]), 'APS-C')
+  assert.equal(presetOf([36, 24]), '全画幅')
+  assert.equal(presetOf([30, 20]), null)
+  assert.ok(close(equivalentFocal(35, [23.5, 15.6]), 53.617, 1e-3), 'APS-C 35 mm is about 53.6 mm')
+  assert.ok(close(equivalentFocal(25, [17.3, 13]), 52.02, 1e-2), 'M43 by the long side: factor 2.08')
+  for (const f of fStopShortcuts) assert.ok(fStopThirds.includes(f), `f/${f} is on the slider`)
+  assert.deepEqual([fStopThirds[0], fStopThirds.at(-1)], [0.7, 64])
+})
+
+test('the sharp range and the blur follow the lens: 50 mm f/2.8 at 3 m is about 2.74–3.32 m', () => {
+  const r = sharpRange(50, 2.8, 3, [36, 24])
+  assert.ok(close(r.near, 2.739, 2e-3) && close(r.far, 3.316, 2e-3), `${r.near} – ${r.far}`)
+  assert.equal(sharpRange(24, 11, 5, [36, 24]).far, Infinity, 'past the hyperfocal distance everything behind is sharp')
+  const dof = { focalMM: 50, fStop: 2.8, focusM: 3, sensorLongMM: 36 }
+  assert.equal(blurPixels(dof, 3, 2048), 0, 'sharp at the focus')
+  assert.ok(blurPixels(dof, 2, 2048) < 0 && blurPixels(dof, 6, 2048) > 0, 'negative in front, positive behind')
+  assert.ok(Math.abs(blurPixels(dof, 6, 1024) * 2 - blurPixels(dof, 6, 2048)) < 1e-9, 'scales with the picture: 1024 is half of 2048')
+  assert.equal(blurPixels({ ...dof, fStop: 0.7 }, 0.2, 2048), -maxBlurShare * 2048, 'capped at 4% of the long side')
+  assert.ok(blurPixels({ ...dof, fStop: 8 }, 6, 2048) < blurPixels(dof, 6, 2048), 'a smaller aperture blurs less')
+})
+
+// --- focus ------------------------------------------------------------------
+
+const identity = () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] })
+const object = (o: Partial<SceneObject> & { id: string; kind: SceneObject['kind'] }): SceneObject => ({
+  name: '',
+  parent_id: null,
+  order: 0,
+  transform: identity(),
+  visible: true,
+  locked: false,
+  ...o,
+})
+const sceneOf = (...objects: SceneObject[]): Scene =>
+  ({ environment: { sky: { kind: 'color', color: '#000000' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, render: { mode: 'clay' }, objects }) as Scene
+const camera = (extra: Record<string, unknown> = {}) =>
+  object({
+    id: 'cam',
+    kind: 'camera',
+    transform: { ...identity(), position: [0, 1, 5] },
+    camera: { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 100, label: '', depth_of_field: true, f_stop: 2.8, focus: 10, focus_object_id: '', ...extra },
+  })
+
+test('the camera focuses on its focus object along its view, else at focus, kept between near and far', () => {
+  const empty = object({ id: 'empty', kind: 'group', transform: { ...identity(), position: [2, 1, 2] } })
+  const on = cameraFraming(sceneOf(camera({ focus_object_id: 'empty' }), empty), 'cam', 2048)
+  assert.ok(!('error' in on))
+  assert.ok(close(on.optics!.focusM, 3, 1e-9), 'depth along −Z, not straight-line distance')
+  assert.deepEqual([on.width, on.height], [2048, 1365])
+  const gone = cameraFraming(sceneOf(camera({ focus_object_id: 'empty' })), 'cam')
+  assert.ok(!('error' in gone) && gone.optics!.focusM === 10, 'a removed focus object falls back to focus')
+  const behind = object({ id: 'behind', kind: 'primitive', transform: { ...identity(), position: [0, 1, 9] } })
+  const clamped = cameraFraming(sceneOf(camera({ focus_object_id: 'behind' }), behind), 'cam')
+  assert.ok(!('error' in clamped) && clamped.optics!.focusM === 0.1, 'an object behind the camera clamps to near')
+  assert.ok(!('error' in clamped) && clamped.depthOfField === true)
+})
+
+// --- export flow ------------------------------------------------------------
+
+test('a submitted export keeps its operation and time across retries; a refusal stops at once', async () => {
+  const seen: [string, string][] = []
+  let failures = 2
+  const ok = await submitExport(
+    {
+      send: async (operation, createdAt) => {
+        seen.push([operation, createdAt])
+        if (failures-- > 0) throw new TypeError('Failed to fetch')
+        return { change_id: 'cwch_1', scene_revision: '3', nodes: [] }
+      },
+      wait: async () => {},
+      newID: () => 'op-1',
+      clock: () => new Date('2026-10-19T12:00:00Z'),
+    },
+    { canvas_id: 'c', scene_node_id: 'n', scene_revision: '3', shots: [] },
+  )
+  assert.ok(ok.ok)
+  assert.deepEqual(seen, [['op-1', '2026-10-19T12:00:00.000Z'], ['op-1', '2026-10-19T12:00:00.000Z'], ['op-1', '2026-10-19T12:00:00.000Z']])
+
+  const refused = await submitExport({ send: async () => { throw new ApiError(409, 'creative_upload_unavailable', '上传已失效') }, wait: async () => {} }, {
+    canvas_id: 'c', scene_node_id: 'n', scene_revision: '3', shots: [],
+  })
+  assert.deepEqual(refused, { ok: false, refused: true, message: '上传已失效', code: 'creative_upload_unavailable' })
+
+  let calls = 0
+  const unknown = await submitExport({ send: async () => { calls++; throw new ApiError(503, 'unavailable', '') }, wait: async () => {} }, {
+    canvas_id: 'c', scene_node_id: 'n', scene_revision: '3', shots: [],
+  })
+  assert.equal(calls, 4)
+  assert.deepEqual(unknown, { ok: false, refused: false, message: '没能确认导出结果，请先看画布上是否已有这组图' })
+})
+
+test('uploads go two at a time in order; a failure hands back what already went up', async () => {
+  const images: ShotImage[] = ['a', 'b', 'c', 'd'].map((c) => ({ camera: c, pass: 'clay', blob: new Blob([c]) }))
+  let running = 0
+  let most = 0
+  const sent = await uploadShots(async (file) => {
+    running++
+    most = Math.max(most, running)
+    await new Promise((r) => setTimeout(r, 1))
+    running--
+    return { id: file.name } as Upload
+  }, images, new AbortController().signal)
+  assert.ok(sent.ok)
+  assert.deepEqual(sent.uploads.map((u) => u.id), ['a-clay.png', 'b-clay.png', 'c-clay.png', 'd-clay.png'])
+  assert.equal(most, 2)
+
+  const failed = await uploadShots(async (file) => {
+    if (file.name.startsWith('b')) throw new Error('网络中断')
+    return { id: file.name } as Upload
+  }, images, new AbortController().signal)
+  assert.ok(!failed.ok)
+  assert.ok(failed.uploads.some((u) => u.id === 'a-clay.png'))
+})
+
+test('render shots draws every camera and pass from the snapshot, blurring clay only with depth of field on', async () => {
+  const shots: { kind: string; dof?: boolean }[] = []
+  let closed = false
+  const shooter: Shooter = {
+    shoot: (_f, o) => {
+      shots.push({ kind: o.kind, dof: o.depthOfField })
+      return new Blob([o.kind])
+    },
+    close: () => { closed = true },
+  }
+  const doc = { scene: sceneOf(camera(), object({ id: 'cam2', kind: 'camera', camera: { aspect: '2:3', depth_of_field: false } as SceneObject['camera'] })), models: {}, revision: '5' }
+  const read = async () => doc as never
+  const out = await renderShots({ read, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['cam', 'cam2'], passes: ['clay', 'line'] })
+  assert.ok(out.ok && out.revision === '5' && out.images.length === 4 && closed)
+  assert.deepEqual(shots, [{ kind: 'clay', dof: true }, { kind: 'line', dof: false }, { kind: 'clay', dof: false }, { kind: 'line', dof: false }])
+  const missing = await renderShots({ read, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['nope'], passes: ['clay'] })
+  assert.deepEqual(missing, { ok: false, message: '摄像机 nope 已不在场景里' })
+})

@@ -4,6 +4,8 @@ import { BufferGeometry, Float32BufferAttribute, MeshStandardMaterial } from 'th
 import type { Placeholder } from '../agentActivity.ts'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
+import { aspectOf, sharpRange, verticalFov } from '../cameraOptics.ts'
+import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { cameraDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
@@ -34,6 +36,7 @@ type Props = {
 }
 
 type Tree = Required<Omit<Props, 'scene' | 'placeholders'>> & {
+  scene: Scene
   childrenOf: Map<string, SceneObject[]>
   placeholdersOf: Map<string, Placeholder[]>
 }
@@ -63,7 +66,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { childrenOf, placeholdersOf, models, selected, active, highlighted, helpers }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers }
   return (
     <>
       {(childrenOf.get('') ?? []).map((o) => (
@@ -82,7 +85,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
   const edge = o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : highlighted.has(o.id) ? agentEdge : null
   return (
     <group name={o.id} userData={{ objectID: o.id }} position={t.position} quaternion={t.rotation} scale={t.scale}>
-      {o.kind === 'group' && edge && <GroupMarker />}
+      {o.kind === 'group' && (helpers && !tree.childrenOf.get(o.id)?.length ? <EmptyMarker edge={edge} /> : edge && <GroupMarker />)}
       <group visible={o.visible} quaternion={docToView}>
         {o.kind === 'primitive' && o.primitive && (
           <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} />
@@ -91,14 +94,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
         )}
         {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
-        {helpers && o.kind === 'camera' && o.camera && (
-          <CameraFrustum
-            aspect={o.camera.aspect ?? cameraDefaults.aspect}
-            focal={o.camera.focal_mm ?? cameraDefaults.focal_mm}
-            sensor={o.camera.sensor_mm ?? cameraDefaults.sensor_mm}
-            edge={edge}
-          />
-        )}
+        {helpers && o.kind === 'camera' && o.camera && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
       </group>
       {(tree.childrenOf.get(o.id) ?? []).map((c) => (
         <ObjectNode key={c.id} object={c} tree={tree} />
@@ -162,13 +158,23 @@ function LightIcon({ color, spot, edge }: { color: string; spot: boolean; edge: 
   )
 }
 
-/** A frustum outline looking down -Z, sized by focal length and aspect. */
-function CameraFrustum({ aspect, focal, sensor, edge }: { aspect: string; focal: number; sensor: number[]; edge: string | null }) {
+/**
+ * A frustum outline looking down -Z with the export's field of view, a small
+ * cross where it focuses and, with depth of field on, ticks where the sharp
+ * range starts and ends.
+ */
+function CameraFrustum({ scene, object, edge }: { scene: Scene; object: SceneObject; edge: string | null }) {
+  const camera = { ...cameraDefaults, ...object.camera }
+  const { aspect, focal_mm: focal, sensor_mm: sensor, depth_of_field: dof, f_stop: fStop } = camera
+  // Where it focuses depends on where the focus object is: the same answer the export gets.
+  const framing = useMemo(() => cameraFraming(scene, object.id), [scene, object.id])
+  const focus = 'error' in framing ? camera.focus : (framing.optics?.focusM ?? camera.focus)
+  const sensorKey = sensor.join(',')
   const geometry = useMemo(() => {
-    const [w, h] = aspect.split(':').map(Number)
+    const ratio = aspectOf(aspect)
     const length = 0.6
-    const halfH = ((sensor[1] ?? 24) / 2 / focal) * length
-    const halfW = halfH * ((w || 3) / (h || 2))
+    const halfH = Math.tan((verticalFov(focal, sensorKey.split(',').map(Number), ratio) * Math.PI) / 360) * length
+    const halfW = halfH * ratio
     const corners = [
       [-halfW, -halfH, -length],
       [halfW, -halfH, -length],
@@ -183,12 +189,28 @@ function CameraFrustum({ aspect, focal, sensor, edge }: { aspect: string; focal:
     const g = new BufferGeometry()
     g.setAttribute('position', new Float32BufferAttribute(lines, 3))
     return g
-  }, [aspect, focal, sensor])
+  }, [aspect, focal, sensorKey])
   useEffect(() => () => geometry.dispose(), [geometry])
+  const marks = useMemo(() => {
+    const cross = 0.08
+    const lines = [-cross, 0, -focus, cross, 0, -focus, 0, -cross, -focus, 0, cross, -focus]
+    if (dof) {
+      const range = sharpRange(focal, fStop, focus, sensorKey.split(',').map(Number))
+      for (const d of [range.near, Math.min(range.far, camera.far)]) lines.push(-cross * 1.5, 0, -d, cross * 1.5, 0, -d)
+      lines.push(0, 0, -range.near, 0, 0, -Math.min(range.far, camera.far))
+    }
+    const g = new BufferGeometry()
+    g.setAttribute('position', new Float32BufferAttribute(lines, 3))
+    return g
+  }, [focus, dof, focal, fStop, sensorKey, camera.far])
+  useEffect(() => () => marks.dispose(), [marks])
   return (
     <group>
       <lineSegments geometry={geometry}>
         <lineBasicMaterial color={edge ?? '#3b3b3b'} />
+      </lineSegments>
+      <lineSegments geometry={marks} raycast={noRaycast}>
+        <lineBasicMaterial color={edge ?? (dof ? '#c2410c' : '#3b3b3b')} />
       </lineSegments>
       {/* An invisible body so the frustum can be clicked. */}
       <mesh position={[0, 0, -0.3]}>
@@ -214,4 +236,30 @@ export function GhostModel({ revision, position, models }: { revision: string; p
 /** Groups draw nothing; while selected they show their axes. */
 function GroupMarker() {
   return <axesHelper args={[0.5]} />
+}
+
+const emptyCross = (() => {
+  const g = new BufferGeometry()
+  const r = 0.25
+  g.setAttribute('position', new Float32BufferAttribute([-r, 0, 0, r, 0, 0, 0, -r, 0, 0, r, 0, 0, 0, -r, 0, 0, r], 3))
+  return g
+})()
+
+/**
+ * A group without children is an empty (空物体): an always-shown cross with
+ * a body to click, as Blender's plain axes. With children it is an ordinary
+ * group again.
+ */
+function EmptyMarker({ edge }: { edge: string | null }) {
+  return (
+    <group>
+      <lineSegments geometry={emptyCross}>
+        <lineBasicMaterial color={edge ?? '#5b5b5b'} />
+      </lineSegments>
+      <mesh>
+        <sphereGeometry args={[0.15, 8, 6]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
+    </group>
+  )
 }
