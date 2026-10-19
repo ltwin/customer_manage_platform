@@ -13,8 +13,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
@@ -24,6 +27,36 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
+
+// latencyWaiter stands in for the assistant run behind a scene job: it admits
+// every job and notes when the result would reach the run (AC-12).
+type latencyWaiter struct {
+	mu      sync.Mutex
+	settled map[string]time.Time
+	failed  map[string]string
+}
+
+func (w *latencyWaiter) Admit(context.Context, store.TxAccountScope, string) (creativescene.RunGate, error) {
+	return struct{}{}, nil
+}
+
+func (w *latencyWaiter) Settle(_ context.Context, _ store.TxAccountScope, _ creativescene.RunGate, job creativescene.Job, res creativescene.JobResult) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.settled[job.ID] = time.Now()
+	if res.Failure != nil {
+		w.failed[job.ID] = res.Failure.Code + ": " + res.Failure.Message
+	}
+	return nil
+}
+
+func (w *latencyWaiter) Abort(context.Context, store.AccountScope, string, error) error { return nil }
+
+func (w *latencyWaiter) settledAt(id string) (time.Time, string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.settled[id], w.failed[id]
+}
 
 // Opt-in browser test; the ordinary Go gate never launches a browser or a dev server.
 func TestCreativeEditorBrowser(t *testing.T) {
@@ -93,8 +126,47 @@ func TestCreativeEditorBrowser(t *testing.T) {
 		}
 	}
 
+	waiter := &latencyWaiter{settled: map[string]time.Time{}, failed: map[string]string{}}
+	creativescene.SetJobWaiterForTest(t, waiter)
 	// Isolated benchmark fixture endpoint exists only in this opt-in test server.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A scene job as the assistant's tools create one, for a stand-in run;
+		// GET says when its result reached the run.
+		if r.URL.Path == "/__test/scene-job" {
+			reply := func(v any) {
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(v); err != nil {
+					t.Error(err)
+				}
+			}
+			if r.Method == http.MethodGet {
+				settled, failure := waiter.settledAt(r.URL.Query().Get("id"))
+				if settled.IsZero() {
+					reply(map[string]any{"settled_ms": 0})
+					return
+				}
+				reply(map[string]any{"settled_ms": settled.UnixMilli(), "failure": failure})
+				return
+			}
+			var request json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			var job creativescene.Job
+			err := db.ScopeFor(auth.AccountContext{AccountID: account.ID}).WithTxScope(r.Context(), func(tx store.TxAccountScope) error {
+				var err error
+				job, err = creativescene.CreateJob(r.Context(), tx, creativescene.NewJob{DocumentID: r.URL.Query().Get("document_id"),
+					Kind: creativescene.JobKind(r.URL.Query().Get("kind")), Request: request, RunID: "ccrn_latency", ToolCallID: uuid.NewString()})
+				return err
+			})
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			reply(map[string]any{"job_id": job.ID, "created_ms": time.Now().UnixMilli()})
+			return
+		}
 		if r.URL.Path == "/__test/document" {
 			if r.Method != http.MethodPost {
 				w.WriteHeader(405)
@@ -193,7 +265,7 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	}
 	scripts := []string{"creative-text-canvas.e2e.mjs", "creative-canvas-commands.e2e.mjs", "creative-media.e2e.mjs"}
 	// Measurements run only when named: they take a while and assert no budget.
-	measurements := []string{"creative-scene-latency.e2e.mjs"}
+	measurements := []string{"creative-scene-latency.e2e.mjs", "creative-scene-agent-latency.e2e.mjs", "creative-scene-agent-background.e2e.mjs"}
 	if selected := os.Getenv("CREATIVE_EDITOR_SCRIPT"); selected != "" {
 		known := false
 		for _, name := range append(scripts, measurements...) {

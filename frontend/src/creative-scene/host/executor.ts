@@ -1,7 +1,7 @@
 import { ApiError } from '../../api/transport.ts'
 import type { Upload } from '../../creative-canvas/editor/media.ts'
 import type { CompileInput } from '../sandbox/host.ts'
-import { isRecord, type CompileError } from '../sandbox/protocol.ts'
+import { isRecord, measureStage, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
 import type { RenderRequest } from './framing.ts'
 import { leaseEveryMs, type CompletePayload, type Completion, type JobApi, type JobErrorCode, type SceneJob } from './jobs.ts'
@@ -98,6 +98,7 @@ export class SceneExecutor {
   }
 
   private async renderView(job: SceneJob, hold: Hold): Promise<JobOutcome> {
+    const started = performance.now()
     const rendering = this.deps.render(job.document_id, job.request as RenderRequest)
     rendering.catch(() => {}) // still awaited below unless the timer wins
     const timer = new AbortController()
@@ -116,9 +117,12 @@ export class SceneExecutor {
     if (hold.lost() || shot === 'stopped') return { state: 'lost' }
     if (shot === 'timeout') return this.fail(job, 'host_error', '截图超过 60 秒没有完成')
     if (!shot.ok) return this.fail(job, 'render_error', shot.message)
+    measureStage('shot', started)
     const { image, revision } = shot
     const send = (): Promise<Sent> => uploadOne(this.deps, new File([image], 'view.jpg', { type: 'image/jpeg' }), hold.signal)
+    const uploading = performance.now()
     const sent = await send()
+    measureStage('shot-upload', uploading)
     if (hold.lost()) {
       this.discard(sent.uploads)
       return { state: 'lost' }

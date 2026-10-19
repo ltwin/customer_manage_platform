@@ -66,7 +66,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 ### 执行器与截图
 
 - 计时（续租、上传轮询、沙箱超时）都用 `host/ticker.ts` 的 Worker 节拍，隐藏标签页里的页面计时器会被浏览器降频。
-- 截图（`host/render.ts`）：React Three Fiber 的 `createRoot` 配一个不挂到页面的 canvas，`frameloop: 'never'`，组件提交后手动渲染一帧，导出长边 1024 的 JPEG，再 `unmount` 释放 WebGL 上下文。单独的 root 必须先 `extend(THREE)`，否则灯光等元素报错、提交永远不来。截图不画灯光和摄像机图标。整体 60 秒上限，超时报 `host_error`。
+- 截图（`host/render.ts`）：React Three Fiber 的 `createRoot` 配一个不挂到页面的 canvas，`frameloop: 'never'`，组件提交后手动渲染一帧，导出长边 1024 的 JPEG（与缩略图一样用 `canvasBlob` 同步编码，不用 `toBlob`），再 `unmount` 释放 WebGL 上下文。单独的 root 必须先 `extend(THREE)`，否则灯光等元素报错、提交永远不来。截图不画灯光和摄像机图标。整体 60 秒上限，超时报 `host_error`。
 - 取景（`host/framing.ts`）：摄像机按传感器高度算垂直视角；`viewpoint` 是 4:3；预设（总览、俯视、正视、侧视）按可见物件（不含地面、灯光、摄像机）的包围盒取景，留 1.1 倍边距。
 
 ### 编辑视图
@@ -131,10 +131,13 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
   - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
   - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）。
 - 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
+- 实测（只在点名时跑，经 `TestCreativeEditorBrowser` 起真实 API、媒体流水线和 PostgreSQL；测试端点 `/__test/scene-job` 像工具那样建任务，替身运行记下结果交回的时间）：
+  - 时延：`CREATIVE_EDITOR_URL=http://localhost:5179 CREATIVE_EDITOR_SCRIPT=creative-scene-agent-latency.e2e.mjs go test ./internal/platform/httpapi/ -run TestCreativeEditorBrowser -v`（`SCENE_AGENT_LATENCY_RUNS` 调样本数）；
+  - 后台标签页：`CREATIVE_EDITOR_URL=http://localhost:5181 CREATIVE_EDITOR_SCRIPT=creative-scene-agent-background.e2e.mjs go test ./internal/platform/httpapi/ -run TestCreativeEditorBrowser -v -timeout 30m`。脚本自己在 5181 起 Vite 并启动本机 Chrome（窗口在屏幕外）：Playwright 会让它控制的页面一直可见，测不出后台。
 
 ## 已知边界
 
-- 隐藏标签页长时间（6 分钟以上）执行任务的表现要在真实 Chrome 里手动验证（C3 任务 6.2）。
+- 后台标签页：真实 Chrome 隐藏 6.5 分钟后，烘焙与截图的耗时和前台相当（2026-10-18 实测 1.05 倍、1.00 倍）。前提是所有计时走 Worker 节拍、图片同步编码（`canvasBlob`）：Chrome 后台会把页面主线程的计时器和 `toBlob` 的空闲编码推迟到每秒乃至每分钟一次，新增等待时不要用页面计时器。
 - 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`），C3 的 `edit_scene` 也不开放 `reparent_objects`；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
 - 四个工具的定义约 7 KB，每次模型请求都会带上。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。
