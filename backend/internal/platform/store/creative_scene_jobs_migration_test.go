@@ -12,10 +12,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackSceneJobs is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackSceneJobs undoes 0076 and then 0075; every older migration's
+// rollback helper undoes this one first.
 func rollbackSceneJobs(t *testing.T, url string) {
 	t.Helper()
+	rollbackCheckpointPayloadCap(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-scene-jobs", err)
 	}
@@ -52,6 +53,7 @@ func TestSceneJobsMigrationAddsTableAndRefusesLossyRollback(t *testing.T) {
 	if _, err = db.Exec(waitingClientRun); err != nil {
 		t.Fatal("waiting_client run rejected", err)
 	}
+	rollbackCheckpointPayloadCap(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "waiting on client jobs") {
 		t.Fatal("lossy rollback allowed", err)
 	}

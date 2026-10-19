@@ -8,7 +8,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackModelContent undoes 0075 and then 0074; every older migration's
+// rollbackModelContent undoes 0076, 0075 and then 0074; every older migration's
 // rollback helper undoes this one first.
 func rollbackModelContent(t *testing.T, url string) {
 	t.Helper()
