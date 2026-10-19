@@ -27,14 +27,15 @@ Agent 工具注册信息统一在 `creativeagent/tool_registry.go`：目录、�
 
 ## 场景工具（C3，2026-10-18）
 
-四个场景工具同样在 `tool_registry.go` 登记，实现在 `creativeagent/scene_tools.go`，领域入口在 `creativescene`。都要求会话授权含 `canvas_metadata`；资源键是 `scene:<document_id>`，参数里没有场景时占用整个运行。
+五个场景工具同样在 `tool_registry.go` 登记，实现在 `creativeagent/scene_tools.go`，领域入口在 `creativescene`。都要求会话授权含 `canvas_metadata`；资源键是 `scene:<document_id>`，参数里没有场景时占用整个运行。
 
 | 工具 | 展示名 | 效果 | 资源 | 可用性与说明 |
 |---|---|---|---|---|
 | `read_scene@1` | 读取场景 | 只读 | 共享 | 概要上限 300 个物件，`include_code` 至多 3 个模型的代码；带「自你上次写入后的变化」摘要；按 64 KB 结果上限降级 |
-| `edit_scene@1` | 修改场景 | 写，影响上限 2000 | 独占 | 基线规则：基线之后别人改过的单元与本次涉及的单元有交集即冲突，冲突作为失败结果返回；`revert_run` 撤回某次运行；不开放 `reparent_objects`、`commit_model`、整份 `restore` |
+| `edit_scene@1` | 修改场景 | 写，影响上限 2000 | 独占 | 基线规则：基线之后别人改过的单元与本次涉及的单元有交集即冲突，冲突作为失败结果返回；`revert_run` 撤回某次运行；不开放 `reparent_objects`、`commit_model`、整份 `restore`。C4 起：摄像机可写全部参数（含景深与对焦），条目可写 `look_at`（换算成 `transform` 后再交给场景命令） |
 | `write_model@1` | 生成模型 | 写，影响上限 1 | 共享 | 建 `bake_model` 任务并挂起运行，页面执行后恢复；只改参数时用 `base_content_revision_id` 沿用代码；冲突后用 `retry_job_id` 复用已烘焙的产物 |
-| `render_view@1` | 回看场景 | 只读 | 共享 | 只在模型支持图片输入时提供；建 `render_view` 任务并挂起，截图进入下一步的图片输入 |
+| `render_view@1` | 回看场景 | 只读 | 共享 | 只在模型支持图片输入时提供；建 `render_view` 任务并挂起，截图进入下一步的图片输入。C4 起可选 `depth_of_field: true`：只能与 `camera_object_id` 一起用、摄像机须已打开景深，按白模导出流程（AO + 景深）渲染 |
+| `export_shots@1` | 导出分镜 | 写，影响上限 48 | 场景共享、画布独占 | C4：建 `export_shots` 任务并挂起；页面出图上传后随完成任务提交，节点在完成事务里放到运行所在画布的场景节点旁；结果只有节点 ID，不带图片 |
 
 任务、挂起与恢复、渲染端的细节见 [场景助手开发说明](creative-scene-agent.md)。
 
@@ -77,6 +78,8 @@ CREATIVE_AGENT_LIVE=1 CREATIVE_SKILL_EVAL_LIVE=1 CREATIVE_SKILL_LIVE_OUT=/tmp/cr
 ## 排空后升级
 
 此次工具参数及检查点指纹有版本变化，不支持旧活动运行跨此发布续跑。
+
+C4（scene-camera-export）沿用这套步骤：`render_view@1` 新增可选参数、`edit_scene@1` 说明与 `look_at`、新增 `export_shots@1`，版本号不变（同 C3a 修改 `edit_scene@1`），工具定义变化会改变检查点指纹，发布前同样排空；没有迁移。
 
 1. 在入口进入维护窗口，阻断新增 Agent 运行与重试，保留读取和处理已有等待任务所需的入口。
 2. 旧 worker 继续完成运行。检查 queued/running/waiting_input/waiting_apply/waiting_client/reconciling 等非终态运行与待恢复任务；全部处理到终态才继续。不要自动取消、删除检查点或伪造终态。`waiting_client` 的运行在等页面执行场景任务（`creative_scene_jobs` 里 `queued` / `claimed` 的行）：保持一个创意空间页面开着让任务做完，或者等任务到 30 分钟期限后由清扫转为过期，运行随之恢复（助手得知页面没有打开）；迁移 `0075` 的回滚在还有 `waiting_client` 运行时会拒绝。

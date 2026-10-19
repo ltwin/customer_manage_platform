@@ -38,6 +38,6 @@
 
 ## 7. 文档与验收
 
-- [ ] 7.1 `docs/dev/agent-skills-tools.md`（工具变化、排空后升级）、`docs/dev/creative-scene-agent.md`（长边视场角、景深回看）
+- [x] 7.1 `docs/dev/agent-skills-tools.md`（工具变化、排空后升级）、`docs/dev/creative-scene-agent.md`（长边视场角、景深回看）
 - [ ] 7.2 `scripts/creative-scene.e2e.mjs`：添加摄像机 → 相机视图 → 导出 → PNG 尺寸与画布节点；空物体对焦 + 景深预览 + 导出虚化对比；传感器预设与辅助线不进导出图。`scripts/creative-scene-agent.e2e.mjs`：`export_shots`；助手写光圈与对焦物件，`render_view` 默认清晰、带 `depth_of_field` 虚化。记录出图、编码、上传与景深耗时
 - [ ] 7.3 AC-9 重绘一致性样例：3 台摄像机导出，景深关、开各一组，记录到 `discovery/research/repaint-consistency.md`，结论由 owner 给出
