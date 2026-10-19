@@ -586,8 +586,8 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 | op | 字段 | 涉及单元 |
 |---|---|---|
 | `rename` | `title`（1–200） | `meta` |
-| `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`；`primitive.params` 缺省的键补成默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
-| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选，至少一项（省略即不改；`primitive.params` 按键合并；`material_slots`、`light`、`camera` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
+| `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`；`primitive.params` 缺省的键补成默认值；`light`、`camera` 缺省的字段补成数据契约里的默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
+| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选，至少一项（省略即不改；`primitive.params`、`light`、`camera` 按键合并，`light.type` 改变时去掉新类型没有的字段、缺少的补默认值；`material_slots` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
 | `remove_objects` | `object_ids`（1–2000；分组连同后代一起删除） | `objects`，以及每个被删对象的 `object:<id>` 和 `object:<id>:content` |
 | `reparent_objects` | `moves`（1–2000 项 `{object_id, parent_id（null 为根）, order}`） | `objects`（一次） |
 | `set_environment` | `environment`（整体替换） | `environment` |
@@ -655,6 +655,8 @@ Content-Type: application/json
 
 ### 兼容与变更
 在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
+
+修订 v7：`update_objects` 里的 `light`、`camera` 由整体替换改为按键合并（字段允许省略后，整体替换会把没写的字段悄悄重置成默认值；three.js 里改 `light.intensity` 也只改这一项）；`add_objects` 可省略它们的字段。字段改名见 `data: 场景文档`。编辑器同一版本更新，旧字段名返回 400。
 
 ### 补充说明
 新建场景不经本接口，而是走画布命令 `add_node`（`type_key = "core.scene"`）。底座的文档类型端口负责在同一事务里创建文档；场景类型提供初始快照（一块内置地面 `ground@1`，摄像机随 C4 的放置 UI 出现）和卡片摘要。
@@ -931,22 +933,23 @@ Content-Type: application/json
 |---|---|---|---|
 | `run_id`、`document_id` | string | 否 | — |
 | `revisions` | string[] | 否 | 这次运行写出的修订号，升序；为空表示没有改过这个场景 |
-| `entries` | array | 否 | 每个改动过的物件一条，`environment` / `render` / `meta` 各一条 |
+| `entries` | array | 否 | 每个改动过的物件一条，`environment` / `render` / `meta` 各一条；运行只调整过层级或顺序时（只动了 `objects` 单元）另有一条 `{kind:"unit", unit:"objects"}` |
 | `entries[].target` | `{kind:"object", object_id}` \| `{kind:"unit", unit}` | 否 | — |
 | `entries[].name` | string | 否 | 当前名称；已删除的取运行之前的名称 |
 | `entries[].change` | `"added"` \| `"removed"` \| `"modified"` | 否 | 相对运行之前 |
 | `entries[].restore` | `{from_revision, units, expected}` | 是 | 恢复这一处的命令内容（`restore_units` 的参数加上预期版本）；不可恢复时为 null |
-| `entries[].blocked` | `{reason, revision, actor_kind}` | 是 | 不可恢复的原因：`changed_by_others`（运行之后别人改过这一处）或 `restored_whole`（之后整份恢复过） |
+| `entries[].blocked` | `{reason, revision, actor_kind}` | 是 | 不可恢复的原因：`changed_by_others`（运行之后别人改过这一处）、`restored_whole`（之后整份恢复过）或 `hierarchy_not_restorable`（运行调整过层级或顺序；按单元恢复不改层级，只能在历史版本列表整份恢复。C3 的助手不能调整层级，正常不会出现） |
 | `undo_all` | array | 否 | 撤销本轮的命令内容，通常 1 批；只包含可恢复的条目；全部不可恢复时为空数组 |
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 缺少 `run_id`；运行写出的修订超过 500 个 | 改用历史版本列表 |
+| 400 | `validation_failed` | 缺少 `run_id`；运行写出的修订超过 500 个；运行第一次写入之后的修订（含别人的）超过 5000 个 | 改用历史版本列表 |
 | 404 | `not_found` | 文档或运行不存在、不属于当前账号，或文档不是场景 | 停止 |
 
 ### 交互规则
 - 某一处的旧值取它在本次运行第一次被写之前那一版。一批 `restore_units` 只能有一个来源修订，这些来源修订之间若没有别人改过，就合成一批；否则按来源修订分批。
+- 同一物件的摆放和内容两个单元若来自不同的来源修订，且两者之间有别人改过，这一条不拆成两批，整条标为 `changed_by_others`（`blocked.revision` 为那次修改），留给历史版本列表。
 - 返回的 `expected` 是读取时的当前版本；提交后若有人刚好又改了，照常冲突。
 - 只读，没有副作用。
 
@@ -965,4 +968,4 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义（修订 v6）。
+首次定义（修订 v6）。修订 v7 补记 C3 实现时确定的第三种不可恢复原因、5000 条历史上限和多来源规则，与已交付的实现一致，接口外形不变。

@@ -1,6 +1,6 @@
 {
   "uid": "706bd3ea-80bb-479e-b23c-44c4e38025d6",
-  "revision": 5,
+  "revision": 8,
   "id": "scene-schema-threejs",
   "kind": "feature",
   "assurance": "governed",
@@ -42,9 +42,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-19T06:27:37.792Z",
-  "updatedAt": "2026-10-19T07:34:49.264Z",
+  "updatedAt": "2026-10-19T10:14:15.111Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -145,9 +145,99 @@
         "version": 2,
         "digest": "e3af926b5d4d7f5f9ce5e5eff53acde13f3f5ca7aecb039ce94db3964647dd59"
       }
+    },
+    {
+      "by": "claude",
+      "at": "2026-10-19T10:14:02.391Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks。分支已变基到 develop 505cce7（检查点上限迁移占用 0076），本迁移改号 0077；变基后在 214cf72 重跑合并点 make check 通过（build、lint、test-go 56 包、test-frontend、test-ops、generate-check）。场景 e2e 与助手 e2e 为变基前结果，变基只引入检查点上限改动，与场景前端无交集。开发库无灯光物件，灯光迁移只有测试容器样例证据；灯光仍不渲染（C5）。",
+        "coverage": [
+          {
+            "criterionId": "AC-ab33cd96f0c9",
+            "status": "verified",
+            "evidence": "creativescene TestLightAndCameraDefaults（点光 #ff963d/45/7/2 读回带 cast_shadow false、无 angle/penumbra）；httpapi TestCreativeSceneDocumentHTTP「three.js point light」200"
+          },
+          {
+            "criterionId": "AC-701f599910da",
+            "status": "verified",
+            "evidence": "creativescene TestLightAndCameraDefaults：{type: spot} 存为 #ffffff/1/0/2/π/3/0/false，平行光三项；摄像机 {} 存为 {35,[36,24],3:2,0.1,1000,\"\"}"
+          },
+          {
+            "criterionId": "AC-5a8ef8a1a537",
+            "status": "verified",
+            "evidence": "creativescene TestABadShapeNamesTheField（range_m、near_m、far_m、点光 angle、distance:null 各给出字段名）与 TestInvalidCommandsLeaveNoRevision（旧名、多余字段、null、越界共 13 例，修订号不变）；httpapi 旧名 400；creativeagent TestABadSceneCallSaysWhatToFix 工具结果指出 range_m"
+          },
+          {
+            "criterionId": "AC-3979b3b990a0",
+            "status": "verified",
+            "evidence": "服务端 TestLightAndCameraUpdatesMergeByKey（决策表 5 行 + 摄像机只改 far，拒绝时修订号不变）；编辑器 creative-scene.test.ts「light and camera updates merge by key as the server does」同输入同期望"
+          },
+          {
+            "criterionId": "AC-4cdaf8328e59",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs「fog written as three.js Fog {color, near, far} shows in the view」（改回 near_m/far_m 时画面差异为 0，变异被抓到）；creative-scene-agent.test.ts「a scene camera shoots with its own lens」断言 near 0.1、far 200；creative-scene-agent.e2e.mjs 9/9。截图里的雾与编辑视图同一渲染路径（Viewport Environment）"
+          },
+          {
+            "criterionId": "AC-f7d18d59169d",
+            "status": "verified",
+            "evidence": "store TestSceneThreejsMigrationRenamesFieldsAndRefusesLossyRollback（迁移已随变基改号为 0077，排在 develop 的 0076 检查点上限之后；雾、摄像机、三种灯光 up 后字段与数值正确，down 还原旧名，decay=3 时 down 被拒，非场景修订不动）；owner 试用后开发库只读核对：schema_migrations version=77、dirty=false，77 个场景修订中 17 个带 near 与 focal_mm，旧名（near_m/far_m/near_clip_m/far_clip_m/range_m/angle_deg）残留 0"
+          },
+          {
+            "criterionId": "AC-f6ee28bbf74c",
+            "status": "verified",
+            "evidence": "creativeagent TestEditSceneDescribesThreejsFields：三种灯光字段与默认值、局部 −Z、方位 0 朝 +Z/90 朝 +X、按键合并都在，range_m/angle_deg/near_m/far_m/整体替换不在"
+          },
+          {
+            "criterionId": "AC-3e1dac61443c",
+            "status": "verified",
+            "evidence": "epic 契约「api: MODIFY 读取运行的场景改动」与 run_changes.go 对照：maxRunRevisions 500、maxHistoryRows 5000、BlockedHierarchy hierarchy_not_restorable、{kind:unit, unit:objects} 条目、多来源标 changed_by_others 一致；归档时随 --deliver 并入项目契约"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "7/7 任务完成。变基后合并点全量门禁通过；迁移改号 0077 后回滚链与测试同步；owner 试用后开发库已到 77，场景修订无旧字段名残留。（更正上次记录的 6/6 为 7/7）",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "4328dde1d5e4908af879467ad0f416d96f9393cd5e69f7c9436b63a35f9a787c"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-19T10:14:09.295Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 从新 worktree 试用；灯光仍不渲染（C5），灯光只验证了可写入不被拒绝。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 试用后确认验收通过，同意合回 develop。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "4328dde1d5e4908af879467ad0f416d96f9393cd5e69f7c9436b63a35f9a787c"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-19T10:14:15.000Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
