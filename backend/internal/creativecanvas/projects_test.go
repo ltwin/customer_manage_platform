@@ -412,3 +412,19 @@ func TestProjectListDoesNotTakeTheWriteLock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A run parked on a page's client job is live work: the project shows as
+// running and cannot be archived under it.
+func TestWaitingClientRunKeepsProjectLive(t *testing.T) {
+	db, a, _ := setup(t)
+	p := namedProject(t, a, "等页面")
+	insertRun(t, db, "canvas-a", p.CanvasID, "waiting_client")
+	page := listProjects(t, a, creativecanvas.ProjectQuery{})
+	if len(page.Items) != 1 || !page.Items[0].Running || page.Items[0].Waiting {
+		t.Fatalf("activity %+v", page.Items)
+	}
+	_, err := creativecanvas.ArchiveProject(t.Context(), a, command(t, creativecanvas.ProjectStateInput{ProjectID: p.ProjectID, ExpectedRevision: 1}))
+	if !errors.Is(err, creativecanvas.ErrProjectBusy) {
+		t.Fatalf("archived with a waiting_client run: %v", err)
+	}
+}

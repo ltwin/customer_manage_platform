@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { Edges, Outlines } from '@react-three/drei'
-import { BufferGeometry, Float32BufferAttribute } from 'three'
+import { BufferGeometry, Float32BufferAttribute, MeshStandardMaterial } from 'three'
+import type { Placeholder } from '../agentActivity.ts'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { docToView, transformToView } from '../space.ts'
-import { activeEdge, clay, selectedEdge } from './look.ts'
+import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
 
 // Draws the scene tree. Every object is a group named by its ID (picking and
@@ -23,44 +24,61 @@ type Props = {
   models: Readonly<Record<string, SceneModel>>
   selected: ReadonlySet<string>
   active: string | null
+  /** Objects the assistant is working on, outlined in its colour. */
+  highlighted?: ReadonlySet<string>
+  /** Models the assistant is adding, as translucent blocks where they will appear. */
+  placeholders?: readonly Placeholder[]
+  /** Light and camera icons; a screenshot leaves them out. */
+  helpers?: boolean
 }
 
-export function SceneObjects({ scene, models, selected, active }: Props) {
-  const children = useMemo(() => {
-    const byParent = new Map<string, SceneObject[]>()
-    for (const o of scene.objects) {
-      const key = o.parent_id ?? ''
-      const list = byParent.get(key) ?? []
-      list.push(o)
-      byParent.set(key, list)
-    }
+type Tree = Required<Omit<Props, 'scene' | 'placeholders'>> & {
+  childrenOf: Map<string, SceneObject[]>
+  placeholdersOf: Map<string, Placeholder[]>
+}
+
+const none: ReadonlySet<string> = new Set()
+const noPlaceholders: readonly Placeholder[] = []
+
+function grouped<T>(items: readonly T[], key: (item: T) => string | null): Map<string, T[]> {
+  const out = new Map<string, T[]>()
+  for (const item of items) {
+    const k = key(item) ?? ''
+    const list = out.get(k) ?? []
+    list.push(item)
+    out.set(k, list)
+  }
+  return out
+}
+
+export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true }: Props) {
+  const childrenOf = useMemo(() => {
+    const byParent = grouped(scene.objects, (o) => o.parent_id)
     for (const list of byParent.values()) list.sort((a, b) => a.order - b.order)
     return byParent
   }, [scene.objects])
+  const placeholdersOf = useMemo(() => {
+    // One whose parent went away waits at the top level.
+    const ids = new Set(scene.objects.map((o) => o.id))
+    return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
+  }, [placeholders, scene.objects])
+  const tree: Tree = { childrenOf, placeholdersOf, models, selected, active, highlighted, helpers }
   return (
     <>
-      {(children.get('') ?? []).map((o) => (
-        <ObjectNode key={o.id} object={o} childrenOf={children} models={models} selected={selected} active={active} />
+      {(childrenOf.get('') ?? []).map((o) => (
+        <ObjectNode key={o.id} object={o} tree={tree} />
+      ))}
+      {(placeholdersOf.get('') ?? []).map((p) => (
+        <PlaceholderBlock key={p.id} placeholder={p} />
       ))}
     </>
   )
 }
 
-function ObjectNode({
-  object: o,
-  childrenOf,
-  models,
-  selected,
-  active,
-}: {
-  object: SceneObject
-  childrenOf: Map<string, SceneObject[]>
-  models: Readonly<Record<string, SceneModel>>
-  selected: ReadonlySet<string>
-  active: string | null
-}) {
+function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
+  const { models, selected, active, highlighted, helpers } = tree
   const t = useMemo(() => transformToView(o.transform), [o.transform])
-  const edge = o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : null
+  const edge = o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : highlighted.has(o.id) ? agentEdge : null
   return (
     <group name={o.id} userData={{ objectID: o.id }} position={t.position} quaternion={t.rotation} scale={t.scale}>
       {o.kind === 'group' && edge && <GroupMarker />}
@@ -71,12 +89,34 @@ function ObjectNode({
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
         )}
-        {o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
-        {o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
+        {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
+        {helpers && o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
       </group>
-      {(childrenOf.get(o.id) ?? []).map((c) => (
-        <ObjectNode key={c.id} object={c} childrenOf={childrenOf} models={models} selected={selected} active={active} />
+      {(tree.childrenOf.get(o.id) ?? []).map((c) => (
+        <ObjectNode key={c.id} object={c} tree={tree} />
       ))}
+      {(tree.placeholdersOf.get(o.id) ?? []).map((p) => (
+        <PlaceholderBlock key={p.id} placeholder={p} />
+      ))}
+    </group>
+  )
+}
+
+// Tinted the assistant's colour: clay on a clay ground would hardly show.
+const placeholderMaterial = new MeshStandardMaterial({ color: agentEdge, roughness: 0.92, metalness: 0, transparent: true, opacity: 0.2, depthWrite: false })
+const noRaycast = () => {}
+
+/** A model the assistant is still baking: a translucent metre block standing where it will appear; it cannot be picked. */
+function PlaceholderBlock({ placeholder }: { placeholder: Placeholder }) {
+  const t = useMemo(() => transformToView(placeholder.transform), [placeholder.transform])
+  return (
+    <group name={`placeholder:${placeholder.id}`} position={t.position} quaternion={t.rotation} scale={t.scale}>
+      <group quaternion={docToView}>
+        <mesh position={[0, 0.5, 0]} material={placeholderMaterial} raycast={noRaycast}>
+          <boxGeometry args={[1, 1, 1]} />
+          <Edges color={agentEdge} />
+        </mesh>
+      </group>
     </group>
   )
 }

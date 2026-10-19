@@ -182,6 +182,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/scene-jobs/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 渲染端认领一个待执行的场景客户端任务
+         * @description 指定 document_id 时只认领该场景最早的任务，否则认领账号里最早的任务。用 FOR UPDATE SKIP LOCKED 保证每个任务最多被一个标签页认领；没有任务时返回 204、不加锁。认领本身不需要幂等键。
+         */
+        post: operations["claimCreativeSceneJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/scene-jobs/{job_id}/lease": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 续租：把租约延长到现在加 30 秒，不超过 deadline
+         * @description 令牌不匹配、任务已不是 claimed 或租约已过期时返回 409 creative_state_conflict，渲染端立即停止并丢弃产物。续租不触发任务通知。
+         */
+        post: operations["leaseCreativeSceneJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/scene-jobs/{job_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 渲染端提交任务结果，服务端同一事务落结果、改终态、让助手运行继续
+         * @description 写入场景时单元冲突、或结果内容不合规（manifest 与 GLB 不符、参数不合定义、超上限、父级不存在）时， 任务记为 failed 并照常返回 200，渲染端不重试。409 creative_state_conflict：租约已失效、令牌不匹配， 或关联运行已不能继续写入（运行已结束，任务已取消）；409 creative_upload_unavailable：暂存上传不可用， 租约仍有效时重新上传后用新的 operation id 重试。
+         */
+        post: operations["completeCreativeSceneJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/scene-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 列出场景当前未结束的客户端任务，供编辑器高亮与占位
+         * @description 只含 queued 和 claimed，按创建时间排序，最多 50 条；不返回代码、参数和认领信息。
+         */
+        get: operations["listCreativeSceneJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/run-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取一次助手运行对场景的改动，以及恢复每一处所需的命令内容
+         * @description 只读。某一处的旧值取它在本次运行第一次被写之前那一版；运行之后被别人改过或整份恢复过的条目不可恢复。expected 是读取时的当前版本，提交后若有人刚好又改了照常冲突。
+         */
+        get: operations["getCreativeSceneRunChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/documents": {
         parameters: {
             query?: never;
@@ -3289,7 +3389,7 @@ export interface components {
              * @description 最近编辑：画布内容提交与改名推进它，归档、恢复不推进
              */
             edited_at: string;
-            /** @description 有排队中、运行中或核实中的助手运行或生成任务；归档禁用与状态轮询只看它 */
+            /** @description 有排队中、运行中、核实中或等待页面执行的助手运行，或生成任务；归档禁用与状态轮询只看它 */
             running: boolean;
             /** @description 有等你确认的运行（waiting_input / waiting_apply）；只用于展示 */
             waiting: boolean;
@@ -3753,6 +3853,11 @@ export interface components {
             model_key: string;
             /** @description 本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次， 所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。 */
             egress_consent_id: string;
+            /** @description 在场景编辑视图里发起时带上：当前场景和选中的物件，冻结为运行输入， 助手据此只改选中的物件。画布视图里发起时不带。 */
+            scene_context?: {
+                document_id: string;
+                selected_object_ids: string[];
+            };
         };
         CreateCreativeAgentRunRequest: {
             /** Format: uuid */
@@ -3830,7 +3935,7 @@ export interface components {
              * @description 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
              * @enum {string}
              */
-            state: "queued" | "running" | "waiting_input" | "waiting_apply" | "reconciling" | "succeeded" | "partial" | "failed" | "cancelled";
+            state: "queued" | "running" | "waiting_input" | "waiting_apply" | "waiting_client" | "reconciling" | "succeeded" | "partial" | "failed" | "cancelled";
             /**
              * @description 费用是另一个问题：未知的账单不阻止已交付的运行进入终态，终态也不关闭核算。 这是投影，允许短暂滞后。
              * @enum {string}
@@ -3838,6 +3943,7 @@ export interface components {
             settlement_state: "not_started" | "pending" | "settled" | "unknown";
             error_code?: string;
             waiting_token?: string;
+            /** @description 等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）或 slot_busy（任务已完成， 等其他助手运行释放写入槽位）。 */
             wait_reason?: string;
             source_run_id?: string;
             limits_version: string;
@@ -7191,6 +7297,148 @@ export interface components {
             expected_revision?: components["schemas"]["CreativeRevision"];
             operations: components["schemas"]["CreativeDocumentOperation"][];
         };
+        /** @enum {string} */
+        CreativeSceneJobKind: "bake_model" | "render_view" | "export_shots";
+        CreativeSceneJobClaimRequest: {
+            /** @description 标签页随机生成的会话 ID */
+            editor_session_id: string;
+            /** @description 只认领该场景的任务；不传时认领账号里最早的任务 */
+            document_id?: string;
+            /** @description 本端能执行的任务类型；缺省为全部已知类型 */
+            kinds?: components["schemas"]["CreativeSceneJobKind"][];
+        };
+        CreativeSceneJob: {
+            id: string;
+            document_id: string;
+            kind: components["schemas"]["CreativeSceneJobKind"];
+            /** @description 按 kind 定义，见契约 data:场景客户端任务 */
+            request: {
+                [key: string]: unknown;
+            };
+            attempt: number;
+            claim_token: string;
+            /** Format: date-time */
+            lease_until: string;
+            /** Format: date-time */
+            deadline: string;
+        };
+        CreativeSceneJobClaim: {
+            job: components["schemas"]["CreativeSceneJob"];
+        };
+        CreativeSceneJobLeaseRequest: {
+            claim_token: string;
+        };
+        CreativeSceneJobLease: {
+            /** Format: date-time */
+            lease_until: string;
+        };
+        CreativeSceneJobCompletePayload: {
+            claim_token: string;
+            /** @enum {string} */
+            outcome: "succeeded" | "failed";
+            error?: {
+                /** @enum {string} */
+                code: "compile_error" | "compile_timeout" | "limit_exceeded" | "render_error" | "host_error";
+                message: string;
+            };
+            bake?: {
+                glb_upload_id: string;
+                thumbnail_upload_id: string;
+                manifest: {
+                    [key: string]: unknown;
+                };
+                /** @description 沙箱回传、宿主按服务端规则校验过的 {params_schema, params, mount} */
+                module: {
+                    [key: string]: unknown;
+                };
+            };
+            render?: {
+                image_upload_id: string;
+                scene_revision: components["schemas"]["CreativeRevision"];
+            };
+            export?: {
+                export_operation_id: string;
+            };
+        };
+        CreativeSceneJobCompleteRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeSceneJobCompletePayload"];
+        };
+        CreativeSceneJobCompletion: {
+            job_id: string;
+            /** @enum {string} */
+            state: "succeeded" | "failed";
+            /** @description 见契约 data:场景客户端任务 的 result */
+            result: {
+                [key: string]: unknown;
+            };
+        };
+        CreativeSceneJobSummary: {
+            id: string;
+            kind: components["schemas"]["CreativeSceneJobKind"];
+            /** @enum {string} */
+            state: "queued" | "claimed";
+            run_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description bake_model 为 {op:"add", object:{name, parent_id, transform}} 或 {op:"replace", object_ids}；其他为 null */
+            target: {
+                [key: string]: unknown;
+            } | null;
+        };
+        CreativeSceneJobList: {
+            items: components["schemas"]["CreativeSceneJobSummary"][];
+        };
+        CreativeSceneRunChanges: {
+            run_id: string;
+            document_id: string;
+            /** @description 这次运行写出的修订号，升序；为空表示没有改过这个场景。 */
+            revisions: components["schemas"]["CreativeRevision"][];
+            /** @description 每个改动过的物件一条，environment、render、meta 各一条。 */
+            entries: components["schemas"]["CreativeSceneRunChange"][];
+            /** @description 撤销本轮的命令内容，按顺序提交；只包含可恢复的条目，全部不可恢复时为空数组。分多批时不是原子的，遇到冲突就停下重读。 */
+            undo_all: components["schemas"]["CreativeSceneRestoreBatch"][];
+        };
+        CreativeSceneRunChange: {
+            target: components["schemas"]["CreativeSceneChangeTarget"];
+            /** @description 当前名称；已删除的取运行之前的名称；非物件条目为「环境」「渲染设置」「标题」「层级结构」。 */
+            name: string;
+            /**
+             * @description 相对运行之前。
+             * @enum {string}
+             */
+            change: "added" | "removed" | "modified";
+            /** @description 恢复这一处的命令内容；不可恢复时为 null。 */
+            restore: components["schemas"]["CreativeSceneRestoreBatch"] | null;
+            blocked: components["schemas"]["CreativeSceneChangeBlocked"] | null;
+        };
+        CreativeSceneChangeTarget: {
+            /** @enum {string} */
+            kind: "object" | "unit";
+            /** @description kind 为 object 时给出 */
+            object_id?: string;
+            /** @description kind 为 unit 时给出：environment、render、meta 或 objects */
+            unit?: string;
+        };
+        /** @description 一条 restore_units 命令的内容：来源修订、单元和预期版本。 */
+        CreativeSceneRestoreBatch: {
+            from_revision: components["schemas"]["CreativeRevision"];
+            units: string[];
+            expected: components["schemas"]["CreativeDocumentExpectedUnits"];
+        };
+        CreativeSceneChangeBlocked: {
+            /**
+             * @description changed_by_others 是运行之后别人改过这一处（或运行先后两次写它之间别人改过，不能合成一次恢复）；restored_whole 是之后整份恢复过；hierarchy_not_restorable 是运行只调整了层级或顺序，层级不能单独恢复，请用历史版本整份恢复。
+             * @enum {string}
+             */
+            reason: "changed_by_others" | "restored_whole" | "hierarchy_not_restorable";
+            revision: components["schemas"]["CreativeRevision"];
+            /** @enum {string} */
+            actor_kind: "photographer" | "agent" | "system";
+        };
         CreativeDocumentCommandRequest: {
             /** Format: uuid */
             operation_id: string;
@@ -8136,6 +8384,182 @@ export interface operations {
                 };
             };
             /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    claimCreativeSceneJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeSceneJobClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description 认领成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneJobClaim"];
+                };
+            };
+            /** @description 没有可认领的任务 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    leaseCreativeSceneJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeSceneJobLeaseRequest"];
+            };
+        };
+        responses: {
+            /** @description 续租成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneJobLease"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    completeCreativeSceneJob: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeSceneJobCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description 任务已进入终态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneJobCompletion"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeSceneJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneJobList"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeSceneRunChanges: {
+        parameters: {
+            query: {
+                run_id: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneRunChanges"];
+                };
+            };
+            /** @description 请求失败；400 validation_failed 表示缺少 run_id 或运行写出的修订超过 500 个（改用历史版本列表），404 表示文档或运行不存在、不属于本账号，或文档不是场景 */
             default: {
                 headers: {
                     [name: string]: unknown;

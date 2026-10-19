@@ -140,7 +140,7 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 	for _, i := range imageMessageOrder(source) {
 		message := source[i]
 		id, _ := message.Extra[imageRefsKey].(string)
-		if message.Role == schema.Tool && toolNames[message.ToolCallID] == readAssetTool {
+		if message.Role == schema.Tool && (toolNames[message.ToolCallID] == readAssetTool || toolNames[message.ToolCallID] == renderViewTool) {
 			var result struct {
 				ImageID string `json:"image_revision_id"`
 			}
@@ -199,7 +199,11 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 		total += handle.ByteSize
 		block := llmgateway.Block{Kind: llmgateway.BlockImageInput, Image: handle}
 		if message.Role == schema.Tool {
-			delayed = append(delayed, llmgateway.Message{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: referenceLabel(id) + "（read_asset 读取结果）"}, block}})
+			label := "（read_asset 读取结果）"
+			if toolNames[message.ToolCallID] == renderViewTool {
+				label = "（render_view 截图）"
+			}
+			delayed = append(delayed, llmgateway.Message{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: referenceLabel(id) + label}, block}})
 		} else {
 			messages[i].Blocks = append(messages[i].Blocks, block)
 		}

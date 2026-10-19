@@ -1,4 +1,5 @@
 import type { AgentMaterial } from './agentReferences.ts'
+import type { SceneContext } from '../../creative-scene/context.ts'
 import type { components } from '../../api/schema'
 
 export type AgentRun = components['schemas']['CreativeAgentRun']
@@ -7,6 +8,8 @@ export const runLabels: Record<AgentRun['state'], string> = {
   running: '正在处理',
   waiting_input: '等待补充',
   waiting_apply: '等待采纳',
+  // 页面正在执行助手派出的任务（烘焙模型、截图）。
+  waiting_client: '等待页面执行',
   reconciling: '正在核实调用结果',
   succeeded: '已完成',
   partial: '部分完成',
@@ -14,7 +17,9 @@ export const runLabels: Record<AgentRun['state'], string> = {
   cancelled: '已取消',
 }
 export function isActiveRun(run: AgentRun): boolean {
-  return ['queued', 'running', 'reconciling'].includes(run.state)
+  return ['queued', 'running', 'reconciling', 'waiting_client'].includes(
+    run.state,
+  )
 }
 export function hasUnsettledCost(run: AgentRun): boolean {
   return (
@@ -92,6 +97,8 @@ export function messageSteps(
     imageInput: boolean
     revisionIDs: string[]
     segments: Segment[]
+    // Sent from the scene editor: the run works on its scene and selection.
+    scene?: SceneContext | null
   },
 ): AgentStep[] {
   const createdAt = new Date().toISOString()
@@ -120,6 +127,14 @@ export function messageSteps(
           schema_version: 1,
           instruction_segments: message.segments,
         },
+        ...(message.scene
+          ? {
+              scene_context: {
+                document_id: message.scene.documentID,
+                selected_object_ids: message.scene.selected.slice(0, 50),
+              },
+            }
+          : {}),
       },
       createdAt,
     ),

@@ -4,8 +4,10 @@ import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { currentAccount } from '../creative-canvas/editor/api.ts'
 import { discardCandidate, uploadGenerated } from '../creative-canvas/editor/media.ts'
+import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders } from './agentActivity.ts'
 import type { ObjectUpdate, Scene, SceneObject } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
+import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearOp, duplicate, groundBuiltin, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
 import { readPreference, viewDirections, writePreference, type DevicePreference } from './input/navigation.ts'
@@ -24,6 +26,7 @@ import { Properties } from './panels/Properties.tsx'
 import { ShortcutSheet } from './panels/ShortcutSheet.tsx'
 import { StatusBar } from './panels/StatusBar.tsx'
 import { Toolbar } from './panels/Toolbar.tsx'
+import type { SceneJobLauncher } from './host/launcher.ts'
 import { iframeFactory, SandboxHost } from './sandbox/host.ts'
 import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
@@ -52,9 +55,16 @@ function storage(): Storage | undefined {
   }
 }
 
+const noObjects: ReadonlySet<string> = new Set()
 const modifierKeys = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight'])
 
-export default function SceneEditor({ documentID, onClose }: { documentID: string; onClose: () => void }) {
+const agentNotice = '助手正在修改此物件，你的修改可能让它重做'
+
+/**
+ * `host` is the page's job launcher: while the editor is open it claims this
+ * scene's jobs first.
+ */
+export default function SceneEditor({ documentID, onClose, host }: { documentID: string; onClose: () => void; host?: SceneJobLauncher }) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
   // runs cleanup and setup once more after mounting.
@@ -110,6 +120,13 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
     [modelEdits],
   )
   const baking = useStore(modelEdits.store)
+  useEffect(() => host?.prefer(documentID), [host, documentID])
+  // What the assistant is doing to this scene: outlines, placeholders, status.
+  const agentActivity = useMemo(() => new AgentActivity(documentID), [documentID])
+  useEffect(() => agentActivity.start(), [agentActivity])
+  const agent = useStore(agentActivity.store)
+  const highlighted = useMemo(() => highlightedObjects(agent), [agent])
+  const placeholders = useMemo(() => jobPlaceholders(agent.jobs), [agent.jobs])
 
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
   const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
@@ -128,7 +145,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
     ? '正在生成模型…'
     : Object.values(baking.status).some((x) => x.state === 'uploading')
       ? '正在保存模型…'
-      : ''
+      : activityText(agent.jobs, byID)
 
   useEffect(() => {
     const previous = window.document.activeElement
@@ -144,6 +161,20 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
     const next = prune(sel, objects)
     if (next !== sel) ui.setState({ selection: next })
   }, [objects, ui, s.view])
+  // Selecting what the assistant works on says so; it does not stop anything.
+  const lastSelected = useRef(selected)
+  useEffect(() => {
+    if (lastSelected.current === selected) return
+    lastSelected.current = selected
+    if (selected.some((id) => highlighted.has(id))) ui.setState({ notice: agentNotice })
+  }, [selected, highlighted, ui])
+  // The assistant panel sends this with a new run; a scene that cannot be edited is not offered.
+  const editable = !!s.base && !s.trashed && !s.missing
+  useEffect(() => {
+    if (editable) setSceneContext({ documentID, selected: [...selected] })
+    else clearSceneContext(documentID)
+  }, [documentID, selected, editable])
+  useEffect(() => () => clearSceneContext(documentID), [documentID])
   useEffect(() => {
     const { saver } = view
     const stop = ui.subscribe((state) => saver.ui(state))
@@ -165,7 +196,15 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
   useEffect(() => undo.onNotice((notice) => ui.setState({ notice })), [undo, ui])
 
   const notify = (notice: string) => ui.setState({ notice })
-  const edit = (ops: WireOp[], label: string, options?: Parameters<typeof session.edit>[2]) => session.edit(ops, label, options)
+  /** Editing what the assistant works on goes ahead, with the soft notice. */
+  const warnAgent = (ids: readonly string[]) => {
+    if (ids.some((id) => highlighted.has(id))) notify(agentNotice)
+  }
+  const edit = (ops: WireOp[], label: string, options?: Parameters<typeof session.edit>[2]) => {
+    const out = session.edit(ops, label, options)
+    if (out) warnAgent(editedObjects(ops))
+    return out
+  }
   const select = (ids: string[]) => ui.setState({ selection: { selected: ids, active: ids.at(-1) ?? null } })
   /** The selection a transform moves: topmost, unlocked. */
   const movable = () => topmost(selected, objects).filter((id) => !byID.get(id)?.locked)
@@ -228,6 +267,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
       return
     }
     const o = session.state.view?.scene.objects.find((x) => x.id === target.id)
+    warnAgent([target.id])
     const rev = o?.model?.content_revision_id
     const generator = rev ? await modelCache.generator(rev).catch(() => null) : null
     const out = await modelEdits.update({
@@ -244,6 +284,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
   const retune = async (object: SceneObject, params: Record<string, unknown>, applyToAll: boolean): Promise<boolean> => {
     const rev = object.model?.content_revision_id
     if (!rev) return false
+    warnAgent([object.id])
     let generator
     try {
       generator = await modelCache.generator(rev)
@@ -512,6 +553,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                 <Outliner
                   objects={shown.objects}
                   selection={u.selection}
+                  highlighted={u.preview ? noObjects : highlighted}
                   readOnly={readOnly}
                   onSelect={(id, mods, order) => ui.setState({ selection: listClick(u.selection, id, order, mods) })}
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
@@ -559,6 +601,8 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                 scene={drawn ?? shown}
                 models={models}
                 ghost={u.preview ? null : baking.ghost}
+                highlighted={u.preview ? noObjects : highlighted}
+                placeholders={u.preview ? undefined : placeholders}
                 readOnly={readOnly}
                 ui={ui}
                 mac={mac}

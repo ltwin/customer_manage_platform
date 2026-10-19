@@ -24,6 +24,8 @@
 .cc-scene-row.is-active { background: #f28c2840; }
 .cc-scene-row.is-hidden .cc-scene-row-name { color: var(--muted); }
 .cc-scene-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 与视图里助手描边同色（look.ts agentEdge）。 */
+.cc-scene-row-agent { flex: none; font-size: 11px; color: #17a397; white-space: nowrap; }
 .cc-scene-row button { background: none; border: 0; color: var(--muted); padding: 2px; cursor: pointer; display: grid; place-items: center; }
 .cc-scene-props { flex: 1 1 55%; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .cc-scene-props.is-empty { color: var(--muted); }

@@ -99,6 +99,7 @@ import {
   type MessagePart,
   type Outgoing,
 } from './agentOutgoing.ts'
+import { sceneContext } from '../../creative-scene/context.ts'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -675,6 +676,7 @@ function AgentConversation({
           imageInput: chosenModel.capability.image_input,
           revisionIDs: approvedIDs,
           segments,
+          scene: sceneContext.getState(),
         }),
       ],
       draft: saved,
@@ -707,6 +709,7 @@ function AgentConversation({
   const turn = useMemo<TurnContext>(
     () => ({
       canvas,
+      account,
       retry:
         locked || archivedView
           ? undefined
@@ -723,7 +726,7 @@ function AgentConversation({
     }),
     // perform only reads refs and setters; it is stable in what it does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canvas, locked, archivedView, runs],
+    [canvas, account, locked, archivedView, runs],
   )
   const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
   const followedRuns = new Set(triggers.values())

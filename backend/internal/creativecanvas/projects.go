@@ -27,7 +27,9 @@ const (
 // Run and execution states that make a project "running" or "waiting". They
 // match the partial indexes of migration 0060.
 const (
-	liveRunStates      = "'queued','running','reconciling'"
+	// waiting_client counts as live: a tab is running the run's client job, for
+	// at most the job's deadline, and archiving under it would strand the job.
+	liveRunStates      = "'queued','running','reconciling','waiting_client'"
 	waitingRunStates   = "'waiting_input','waiting_apply'"
 	liveExecutionState = "'queued','running','reconciling'"
 )

@@ -25,6 +25,19 @@ Agent 工具注册信息统一在 `creativeagent/tool_registry.go`：目录、�
 
 后续会话索引包含自动激活版本，并兼容旧 run 的显式快照。方法加载一次后跨轮沿用：早先运行激活过、加载结果仍在本轮历史里的版本，新运行开始时重新校验并登记为本轮已激活（来源 `history`），正文照常随历史发送，资源直接可读，不重复加载。版本已停用、模型或依赖工具不满足时不沿用，历史里的方法/资源正文替换为提示，需要时重新加载。压缩只保留使用记录，正文离开上下文后按固定版本重新加载。
 
+## 场景工具（C3，2026-10-18）
+
+四个场景工具同样在 `tool_registry.go` 登记，实现在 `creativeagent/scene_tools.go`，领域入口在 `creativescene`。都要求会话授权含 `canvas_metadata`；资源键是 `scene:<document_id>`，参数里没有场景时占用整个运行。
+
+| 工具 | 展示名 | 效果 | 资源 | 可用性与说明 |
+|---|---|---|---|---|
+| `read_scene@1` | 读取场景 | 只读 | 共享 | 概要上限 300 个物件，`include_code` 至多 3 个模型的代码；带「自你上次写入后的变化」摘要；按 64 KB 结果上限降级 |
+| `edit_scene@1` | 修改场景 | 写，影响上限 2000 | 独占 | 基线规则：基线之后别人改过的单元与本次涉及的单元有交集即冲突，冲突作为失败结果返回；`revert_run` 撤回某次运行；不开放 `reparent_objects`、`commit_model`、整份 `restore` |
+| `write_model@1` | 生成模型 | 写，影响上限 1 | 共享 | 建 `bake_model` 任务并挂起运行，页面执行后恢复；只改参数时用 `base_content_revision_id` 沿用代码；冲突后用 `retry_job_id` 复用已烘焙的产物 |
+| `render_view@1` | 回看场景 | 只读 | 共享 | 只在模型支持图片输入时提供；建 `render_view` 任务并挂起，截图进入下一步的图片输入 |
+
+任务、挂起与恢复、渲染端的细节见 [场景助手开发说明](creative-scene-agent.md)。
+
 ## 包格式与兼容
 
 标准纯文本包只需 `SKILL.md`，YAML frontmatter 必含 `name`、`description`。支持 `license`、`compatibility`、`metadata`、`allowed-tools` 元数据；后者不会被转换成权限。正文与参考资源按需读取。
@@ -66,7 +79,7 @@ CREATIVE_AGENT_LIVE=1 CREATIVE_SKILL_EVAL_LIVE=1 CREATIVE_SKILL_LIVE_OUT=/tmp/cr
 此次工具参数及检查点指纹有版本变化，不支持旧活动运行跨此发布续跑。
 
 1. 在入口进入维护窗口，阻断新增 Agent 运行与重试，保留读取和处理已有等待任务所需的入口。
-2. 旧 worker 继续完成运行。检查 queued/running/waiting_input/waiting_apply/reconciling 等非终态运行与待恢复任务；全部处理到终态才继续。不要自动取消、删除检查点或伪造终态。
+2. 旧 worker 继续完成运行。检查 queued/running/waiting_input/waiting_apply/waiting_client/reconciling 等非终态运行与待恢复任务；全部处理到终态才继续。不要自动取消、删除检查点或伪造终态。`waiting_client` 的运行在等页面执行场景任务（`creative_scene_jobs` 里 `queued` / `claimed` 的行）：保持一个创意空间页面开着让任务做完，或者等任务到 30 分钟期限后由清扫转为过期，运行随之恢复（助手得知页面没有打开）；迁移 `0075` 的回滚在还有 `waiting_client` 运行时会拒绝。
 3. 停止旧 worker，执行迁移并发布新服务，启动新 worker，再恢复新增运行入口。先迁移、后启动；多版本 worker 不混跑。
 4. 历史消息、Skill 版本、digest 和业务回执继续保留。回退前同样排空；若已写入更长描述或新格式名称，down 迁移会拒绝缩窄约束，不能截断不可变数据，应前向修复。
 

@@ -720,3 +720,249 @@ Content-Type: application/json
  "models": {"pillar": {"content_id": "ccnt_51c0", "content_revision_id": "ccrev_9e2a"}}}
 ```
 - **兼容**：在 `api: 提交场景命令` 上做兼容扩展。
+
+## 认领场景客户端任务
+
+### 用途与调用
+- **用途**：渲染端认领一个待执行任务。指定场景时只取该场景最早的任务，否则取账号里最早的任务。
+- **消费者**：前端渲染端：场景编辑视图（带 `document_id`）和画布页的后台渲染端（不带）。收到失效通知、连接或回到前台、完成上一个任务后调用。
+- **调用**：`POST /api/v1/creative/scene-jobs/claim`，`application/json`。认领本身不需要幂等键：重复认领只会拿到下一个任务。
+- **权限**：任务属于当前账号；指定的场景属于当前账号。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `editor_session_id` | body | string，`^[A-Za-z0-9_-]{16,64}$` | 是 | 标签页随机生成的会话 ID |
+| `document_id` | body | string | 否 | 只认领该场景的任务 |
+| `kinds` | body | string[] | 否 | 本端能执行的任务类型；缺省为全部已知类型 |
+
+### 成功响应
+- 200，认领成功：`{job: {id, document_id, kind, request, attempt, claim_token, lease_until, deadline}}`。`request` 的结构见 `data: 场景客户端任务`。
+- 204，没有可认领的任务：无响应体。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 会话 ID 非法、`kinds` 含未知值 | 修正 |
+| 404 | `not_found` | 指定的文档不存在、不属于当前账号或不是场景 | 停止认领该场景 |
+
+### 交互规则
+- 用 `FOR UPDATE SKIP LOCKED` 保证每个任务最多被一个会话认领。同一会话可以连续认领多个任务，按顺序执行。
+- 没有任务时只读索引、不加锁，可以在每次失效通知时调用。
+- 租约 30 秒，续租见 `api: 续租场景客户端任务`。
+
+### 调用示例
+```http
+POST /api/v1/creative/scene-jobs/claim
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"editor_session_id": "tab_Vx9q2LmN7pR4sT8w", "kinds": ["bake_model", "render_view"]}
+```
+```json
+{"job": {"id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10",
+  "kind": "render_view", "request": {"camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "mode": "clay"},
+  "attempt": 0, "claim_token": "clm_Q2w3E4r5T6y7U8i9", "lease_until": "2026-10-22T10:05:30Z", "deadline": "2026-10-22T10:35:00Z"}}
+```
+失败示例：
+```json
+{"error": {"code": "validation_failed", "message": "editor_session_id 格式不正确"}}
+```
+
+### 兼容与变更
+首次定义。修订 v6 起为账号级路径（此前未交付）。
+
+## 续租场景客户端任务
+
+### 用途与调用
+- **用途**：执行中的编辑器延长租约，表明自己仍在工作。
+- **调用**：`POST /api/v1/creative/scene-jobs/{job_id}/lease`，`application/json`，不需要幂等键（续租本身幂等）。
+- **权限**：任务属于当前账号，且 `claim_token` 匹配。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `job_id` | path | string | 是 | 任务 ID |
+| `claim_token` | body | string | 是 | 认领时拿到的令牌 |
+
+### 成功响应
+200：`{lease_until}`，延长到当前时间 + 30 秒，但不超过 `deadline`。续租不触发任务通知。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 404 | `not_found` | 任务不存在或不属于当前账号 | 放弃执行 |
+| 409 | `creative_state_conflict` | 任务已不是 `claimed`，或令牌不匹配（租约已过期被回收、任务已过期或取消） | 立即停止执行并丢弃产物 |
+
+### 调用示例
+```json
+{"claim_token": "clm_Q2w3E4r5T6y7U8i9"}
+```
+```json
+{"lease_until": "2026-10-22T10:06:00Z"}
+```
+```json
+{"error": {"code": "creative_state_conflict", "message": "任务已被回收"}}
+```
+
+### 兼容与变更
+首次定义。
+
+## 完成场景客户端任务
+
+### 用途与调用
+- **用途**：渲染端提交任务结果（成功或失败）。服务端在同一事务里落结果、改终态、让关联运行继续。
+- **调用**：`POST /api/v1/creative/scene-jobs/{job_id}/complete`，`Idempotency-Key` 必填，外层为公共约定。
+- **权限**：任务属于当前账号，`claim_token` 匹配，且租约未过期。
+
+### 请求
+`payload`：
+
+| 字段 | 类型 | 必传 | 说明 |
+|---|---|---|---|
+| `claim_token` | string | 是 | — |
+| `outcome` | `"succeeded"` \| `"failed"` | 是 | — |
+| `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`、`host_error`（宿主侧失败：媒体校验失败、WebGL 上下文丢失、代码加载失败等）；`message` ≤ 4000 字符，会原样交给助手 |
+| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest, module}`。`module` 为 `{params_schema, params, mount}`：沙箱回传、宿主按服务端规则校验过的规范化模块信息。服务端用任务 `request` 里的代码计算 `code_sha256`、组装 `generator`，按 `api: 场景模型命令` 的规则校验，再组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id`；替换目标的预期版本取任务 `request.expected` |
+| `render` | object | `kind=render_view` 且成功时 | `{image_upload_id, scene_revision}`：暂存图片（JPEG，长边 1024），以及渲染端实际渲染的场景修订（不得大于当前修订） |
+| `export` | object | `kind=export_shots` 且成功时 | `{export_operation_id}`：渲染端已调用 `api: 导出分镜` 时的操作 ID，服务端据此读回执 |
+
+### 成功响应
+200：`{job_id, state, result}`，`result` 结构见 `data: 场景客户端任务`。`state` 为 `succeeded` 或 `failed`。下列情况任务记为 `failed` 并照常返回 200，渲染端不重试：
+- 写入场景时单元冲突，例如替换目标在烘焙期间被摄影师改过或删除（`result.code = "conflict"`，带冲突信息和烘焙产物）；
+- 结果内容不合规：manifest 与服务端从 GLB 算出的不符、参数不符合定义、物件超出上限、父级不存在（`result.code = "invalid_result"`）。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 请求外形不对：缺少与 kind 对应的结果字段、错误码非法。任务不变 | 修正 |
+| 404 | `not_found` | 任务不存在或不属于当前账号 | 放弃 |
+| 409 | `creative_state_conflict` | 任务已不是 `claimed`、令牌不匹配或租约已失效；或关联运行的复查不通过（运行已结束，任务已取消） | 丢弃产物；任务会被重新认领、已过期或已取消 |
+| 409 | `creative_upload_unavailable` | 暂存上传不存在、已过期或已被消费 | 租约仍有效时重新上传，用新的 operation id 重试 |
+| 409 | `idempotency_conflict` | 公共约定 | — |
+
+### 交互规则
+- **原子性**：结果落库、任务终态、运行继续在同一事务里。场景写入在保存点内执行，冲突或结果不合规时回滚到保存点，任务记为 `failed`（带原因），运行照常继续，助手据此重做。
+- **幂等**：沿用公共约定。网络中断后用同一 key 重试或查回执。
+
+### 调用示例
+```json
+{"operation_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "client_created_at": "2026-10-22T10:05:12Z",
+ "payload": {"claim_token": "clm_Q2w3E4r5T6y7U8i9", "outcome": "succeeded", "render": {"image_upload_id": "ccup_cc33", "scene_revision": "12"}}}
+```
+```json
+{"job_id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "state": "succeeded",
+ "result": {"image_upload_id": "ccup_cc33", "content_revision_id": "ccrv_77aa", "scene_revision": "12"}}
+```
+烘焙成功示例（请求）：
+```json
+{"operation_id": "5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f", "client_created_at": "2026-10-22T10:06:40Z",
+ "payload": {"claim_token": "clm_Z9y8X7w6V5u4T3s2", "outcome": "succeeded",
+             "bake": {"glb_upload_id": "ccup_g1", "thumbnail_upload_id": "ccup_t1",
+                      "manifest": {"bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 6, 0.5]}, "triangles": 64,
+                                   "slots": [{"id": "stone", "hint": "stone"}], "parts": [], "anchors": []},
+                      "module": {"params_schema": {"height": {"type": "number", "default": 6, "min": 2, "max": 20}},
+                                 "params": {"height": 6}, "mount": "floor"}}}}
+```
+编译失败示例（请求）：
+```json
+{"operation_id": "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f", "client_created_at": "2026-10-22T10:07:00Z",
+ "payload": {"claim_token": "clm_Z9y8X7w6V5u4T3s2", "outcome": "failed",
+             "error": {"code": "compile_error", "message": "ReferenceError: archCount is not defined (line 12)"}}}
+```
+
+### 兼容与变更
+首次定义。修订 v6：`bake` 增加 `module`；`render` 增加 `scene_revision`；错误码增加 `host_error`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）；完成时复查关联运行。
+
+## 列出场景客户端任务
+
+### 用途与调用
+- **用途**：列出某个场景当前未结束的任务，供编辑器高亮「助手正在修改」的物件、在烘焙目标处显示占位。
+- **消费者**：场景编辑视图。打开时、收到失效通知时（节流）调用。
+- **调用**：`GET /api/v1/creative/documents/{id}/scene-jobs`，只读，无请求体。
+- **权限**：场景属于当前账号。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `id` | path | string | 是 | 场景 ID |
+
+### 成功响应
+200：`{items: [{id, kind, state, run_id, created_at, target}]}`，只含 `queued` 和 `claimed`，按创建时间排序，最多 50 条。
+- `target`：`bake_model` 为 `{op:"add", object:{name, parent_id, transform}}` 或 `{op:"replace", object_ids}`；其他 kind 为 null。
+- 不返回代码、参数和认领信息。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 404 | `not_found` | 文档不存在、不属于当前账号或不是场景 | 停止 |
+
+### 交互规则
+只读，没有分页；重复调用没有副作用。
+
+### 调用示例
+```json
+{"items": [{"id": "csjob_1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b", "kind": "bake_model", "state": "claimed",
+  "run_id": "crun_8c7b6a59", "created_at": "2026-10-22T10:05:00Z",
+  "target": {"op": "replace", "object_ids": ["sobj_Z1x2C3v4B5n6M7a8S9d0f"]}}]}
+```
+
+### 兼容与变更
+首次定义（修订 v6）。
+
+## 读取运行的场景改动
+
+### 用途与调用
+- **用途**：列出某次助手运行对一个场景改了哪些物件和设置，并给出每一处恢复到运行之前所需的 `restore_units`；已被别人改过的标为不可恢复。「恢复这一处」「撤销本轮」和助手撤回自己的改动共用这一份计算。
+- **消费者**：助手面板的本轮改动清单；`edit_scene` 的撤回操作在领域层调用同一函数，不经 HTTP。
+- **调用**：`GET /api/v1/creative/documents/{id}/run-changes?run_id=<run_id>`，只读。
+- **权限**：场景和运行都属于当前账号。
+
+### 请求
+| 字段 | 位置 | 类型 | 必传 | 说明 |
+|---|---|---|---|---|
+| `id` | path | string | 是 | 场景 ID |
+| `run_id` | query | string | 是 | 助手运行 ID |
+
+### 成功响应
+200：
+
+| 字段 | 类型 | 可为 null | 说明 |
+|---|---|---|---|
+| `run_id`、`document_id` | string | 否 | — |
+| `revisions` | string[] | 否 | 这次运行写出的修订号，升序；为空表示没有改过这个场景 |
+| `entries` | array | 否 | 每个改动过的物件一条，`environment` / `render` / `meta` 各一条 |
+| `entries[].target` | `{kind:"object", object_id}` \| `{kind:"unit", unit}` | 否 | — |
+| `entries[].name` | string | 否 | 当前名称；已删除的取运行之前的名称 |
+| `entries[].change` | `"added"` \| `"removed"` \| `"modified"` | 否 | 相对运行之前 |
+| `entries[].restore` | `{from_revision, units, expected}` | 是 | 恢复这一处的命令内容（`restore_units` 的参数加上预期版本）；不可恢复时为 null |
+| `entries[].blocked` | `{reason, revision, actor_kind}` | 是 | 不可恢复的原因：`changed_by_others`（运行之后别人改过这一处）或 `restored_whole`（之后整份恢复过） |
+| `undo_all` | array | 否 | 撤销本轮的命令内容，通常 1 批；只包含可恢复的条目；全部不可恢复时为空数组 |
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 缺少 `run_id`；运行写出的修订超过 500 个 | 改用历史版本列表 |
+| 404 | `not_found` | 文档或运行不存在、不属于当前账号，或文档不是场景 | 停止 |
+
+### 交互规则
+- 某一处的旧值取它在本次运行第一次被写之前那一版。一批 `restore_units` 只能有一个来源修订，这些来源修订之间若没有别人改过，就合成一批；否则按来源修订分批。
+- 返回的 `expected` 是读取时的当前版本；提交后若有人刚好又改了，照常冲突。
+- 只读，没有副作用。
+
+### 调用示例
+```json
+{"run_id": "crun_8c7b6a59", "document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10", "revisions": ["7", "8", "9"],
+ "entries": [
+   {"target": {"kind": "object", "object_id": "sobj_Z1x2C3v4B5n6M7a8S9d0f"}, "name": "左侧柱 1", "change": "added",
+    "restore": {"from_revision": "6", "units": ["object:sobj_Z1x2C3v4B5n6M7a8S9d0f", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content"],
+                "expected": {"object:sobj_Z1x2C3v4B5n6M7a8S9d0f": "7", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "9", "objects": "7"}},
+    "blocked": null},
+   {"target": {"kind": "object", "object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ"}, "name": "主机位", "change": "modified",
+    "restore": null, "blocked": {"reason": "changed_by_others", "revision": "10", "actor_kind": "photographer"}}],
+ "undo_all": [{"from_revision": "6", "units": ["object:sobj_Z1x2C3v4B5n6M7a8S9d0f", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content"],
+               "expected": {"object:sobj_Z1x2C3v4B5n6M7a8S9d0f": "7", "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "9", "objects": "7"}}]}
+```
+
+### 兼容与变更
+首次定义（修订 v6）。

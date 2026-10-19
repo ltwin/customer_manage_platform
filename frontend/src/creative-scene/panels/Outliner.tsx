@@ -28,12 +28,15 @@ const icon = { primitive: Box, model_instance: Shapes, light: Lightbulb, camera:
 export function Outliner({
   objects,
   selection,
+  highlighted,
   readOnly,
   onSelect,
   onToggle,
 }: {
   objects: readonly SceneObject[]
   selection: Selection
+  /** Objects the assistant is working on. */
+  highlighted: ReadonlySet<string>
   readOnly: boolean
   onSelect: (id: string, mods: { mod: boolean; shift: boolean }, order: string[]) => void
   onToggle: (id: string, field: 'visible' | 'locked', value: boolean) => void
@@ -56,6 +59,7 @@ export function Outliner({
           >
             <Icon size={14} />
             <span className="cc-scene-row-name">{o.name || '未命名'}</span>
+            {highlighted.has(o.id) && <span className="cc-scene-row-agent">助手正在修改</span>}
             <button
               aria-label={o.visible ? '隐藏' : '显示'}
               disabled={readOnly}

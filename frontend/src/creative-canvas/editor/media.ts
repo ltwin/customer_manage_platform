@@ -86,7 +86,8 @@ export function classifyFile(
   return { kind: format.kind, mime: format.mime }
 }
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+export type Wait = (ms: number) => Promise<void>
+const wait: Wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export type UploadProgress = {
   stage: 'creating' | 'uploading' | 'verifying' | 'done' | 'failed'
@@ -107,21 +108,26 @@ export async function uploadFile(
 ): Promise<Upload> {
   const classified = classifyFile(file, capabilities)
   if ('error' in classified) throw new Error(classified.error)
-  return uploadAs(file, classified, target, onProgress, signal)
+  return uploadAs(file, classified, target, onProgress, signal, wait)
 }
+
+/** What the editor produces itself: baked models, their thumbnails, screenshots. */
+export type Generated = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' | 'image/jpeg' }
 
 /**
  * Uploads bytes the editor produced itself, such as a baked model GLB and its
  * thumbnail. Model files are never offered in file pickers: capabilities do
- * not list them, so only this path declares kind model.
+ * not list them, so only this path declares kind model. A hidden tab's timers
+ * are throttled, so a caller working in the background passes its own pause.
  */
 export function uploadGenerated(
   file: File,
-  declared: { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' },
+  declared: Generated,
   target: UploadTarget,
   signal?: AbortSignal,
+  pause: Wait = wait,
 ): Promise<Upload> {
-  return uploadAs(file, declared, target, () => {}, signal)
+  return uploadAs(file, declared, target, () => {}, signal, pause)
 }
 
 async function uploadAs(
@@ -129,7 +135,8 @@ async function uploadAs(
   classified: { kind: MediaKind | 'model'; mime: string },
   target: UploadTarget,
   onProgress: (p: UploadProgress) => void,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  pause: Wait,
 ): Promise<Upload> {
   onProgress({ stage: 'creating', sent: 0, total: file.size })
   const operation = crypto.randomUUID()
@@ -155,7 +162,7 @@ async function uploadAs(
     await cancelUpload(upload).catch(() => {})
     throw new Error('已取消')
   }
-  upload = await poll(upload.id, (u) => u.state !== 'created', signal)
+  upload = await poll(upload.id, (u) => u.state !== 'created', signal, pause)
   if (upload.state !== 'uploading')
     throw new Error(describeFailure(upload) ?? '上传会话未能初始化')
   const numbers = Array.from({ length: upload.part_count }, (_, i) => i + 1)
@@ -193,7 +200,7 @@ async function uploadAs(
             break
           } catch (e) {
             if (attempt >= 2 || signal?.aborted) throw e
-            await wait(400 * (attempt + 1))
+            await pause(400 * (attempt + 1))
           }
         }
         sent += chunk.size
@@ -225,6 +232,7 @@ async function uploadAs(
     upload.id,
     (u) => ['ready', 'failed', 'expired', 'cancelled'].includes(u.state),
     signal,
+    pause,
   )
   if (upload.state !== 'ready') {
     const message = describeFailure(upload) ?? '上传失败'
@@ -287,6 +295,7 @@ async function poll(
   id: string,
   done: (u: Upload) => boolean,
   signal?: AbortSignal,
+  pause: Wait = wait,
 ): Promise<Upload> {
   for (let attempt = 0; attempt < 600; attempt++) {
     const upload = await read<Upload>(
@@ -294,7 +303,7 @@ async function poll(
       signal,
     )
     if (done(upload)) return upload
-    await wait(Math.min(250 + attempt * 50, 1500))
+    await pause(Math.min(250 + attempt * 50, 1500))
     if (signal?.aborted) throw new Error('已取消')
   }
   throw new Error('等待服务器处理超时，请稍后在上传状态中查看')

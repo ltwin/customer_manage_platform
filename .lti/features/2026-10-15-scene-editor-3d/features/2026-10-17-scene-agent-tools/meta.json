@@ -1,6 +1,6 @@
 {
   "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
-  "revision": 4,
+  "revision": 8,
   "id": "scene-agent-tools",
   "kind": "feature",
   "assurance": "governed",
@@ -42,9 +42,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-18T04:36:35.664Z",
-  "updatedAt": "2026-10-18T06:34:16.104Z",
+  "updatedAt": "2026-10-19T06:02:38.100Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -68,8 +68,157 @@
   },
   "approvalHistory": [],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "3f5e86280f54a0c6d6542734712942420d498315",
+    "at": "2026-10-18T06:35:44.620Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a83e4c37bcb5a7dc4d2aa5fba2136f527d2b0d4ed98c81e4f81e9e7e02794e38"
+    },
+    "preExisting": [
+      ".lti/snapshots/a83e4c37bcb5a7dc4d2aa5fba2136f527d2b0d4ed98c81e4f81e9e7e02794e38.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-19T03:52:01.389Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，测试由 make check 与定向命令执行。auth catalog 那次失败未能复现，原因未明（日志只有匹配 0）。性能：实验室时延达标，真实运行烘焙任务 7–24 秒且随场景模型数线性增长，原因未诊断。AC-13 为 owner 判断，库中能对上样例名的只有日式小巷两次。C3 无「烘焙同时移动」的端到端用例，依赖 C2 单元互不冲突测试。",
+        "followUp": "合并后：①诊断烘焙耗时随模型数增长（看 creative scene job 迁移日志 in_state）；②场景格式对齐 three.js 的 epic 修订里一并修正「读取运行的场景改动」契约的 3 处出入；③owner 提到的小毛病待列出后排期。",
+        "coverage": [
+          {
+            "criterionId": "AC-c7f0e6edf600",
+            "status": "verified",
+            "evidence": "creativeagent TestTheAssistantBuildsASceneAndLooksAtIt（写模型→渲染端完成→恢复→改场景→截图进下一步）；creative-scene-agent.e2e.mjs「恢复这一处/撤销本轮」与面板截图；owner 2026-10-18 本机试用（ccrn_450ca7d9、ccrn_c17c55f6 用了 write_model/edit_scene/render_view）"
+          },
+          {
+            "criterionId": "AC-1a122df5b109",
+            "status": "verified",
+            "evidence": "creativeagent TestTheAssistantCreatesASceneOnTheCanvas；creative-scene-agent.e2e.mjs「with only the canvas page open, the executor loads on the first job…three.js loads only then」与「the panel shows the assistant’s screenshot」；试用两次均由 edit_canvas 新建场景节点"
+          },
+          {
+            "criterionId": "AC-16d102bad299",
+            "status": "verified",
+            "evidence": "creativeagent TestACompileErrorIsTheAssistantsToFix；creative-scene-agent.test.ts 失败映射；试用 ccrn_450ca7d9 第 8 步 bevel 编译错误带行列号，下一次 write_model 成功"
+          },
+          {
+            "criterionId": "AC-c48fa7eb0002",
+            "status": "verified",
+            "evidence": "creative-scene-agent.e2e.mjs「a screenshot is a JPEG with a 1024 long side…」；creativescene TestCompleteRenderKeepsTheScreenshotStaged（不进场景/画布）；creativeagent TestRenderViewNeedsAModelThatSeesImages"
+          },
+          {
+            "criterionId": "AC-3f15733bd296",
+            "status": "verified",
+            "evidence": "e2e「closing asks first only in the browser’s only workspace tab」；creativescene TestSweepRequeuesThenFailsALostJob、TestSweepExpiresAndDeletes；creativeagent TestExpiredJobTellsTheRunThePageNeverOpened、TestRerunAfterACrashParksOnTheSameJobs、TestSceneWritesReplayTheirReceipt；后台标签页见 6.2 creative-scene-agent-background.e2e.mjs（隐藏 6.5 分钟，1.05 倍）"
+          },
+          {
+            "criterionId": "AC-dfc3a0a285d3",
+            "status": "verified",
+            "evidence": "creativeagent TestWaitingClientParksAndResumesWhenItsStepsSettle、TestWaitingClientWaitsForABusySlot、TestCancellingAWaitingClientRunCancelsItsJobs、TestCompletionOfARunThatLostItsConsentEndsTheRun、TestExpiryOfARunThatLostItsConsentEndsTheRun；creativecanvas TestWaitingClientRunKeepsProjectLive；creativescene TestCompleteRefusals"
+          },
+          {
+            "criterionId": "AC-50af58f5b732",
+            "status": "verified",
+            "evidence": "store TestClaimSceneJobConcurrentClaimersSplitTheQueue；creativescene TestClaimLeaseAndList（屏障 20 轮、旧令牌 ErrJobLeaseLost）、TestSweepRequeuesThenFailsALostJob（第 3 次 host_error）；e2e「a device that fails the probe claims nothing」"
+          },
+          {
+            "criterionId": "AC-17c6aa0c3c10",
+            "status": "verified",
+            "evidence": "creativescene TestCreateBakeJob（只改参数沿用代码；one of shared instances forks / all_instances）；creativeagent TestSceneContextIsChecked、e2e「a message sent from the scene editor carries its scene and selection」；owner 本机体验点选修改"
+          },
+          {
+            "criterionId": "AC-2c5295373648",
+            "status": "verified",
+            "evidence": "creativeagent TestEditSceneConflictsWithAMoveItNeverSaw、TestRetryJobIDWritesTheConflictedBakeOnce；creativescene TestAgentEditChecksTheBaseline、TestCompleteBakeReplaceConflictKeepsTheBake、TestRetryBakeWritesTheConflictedBake。烘焙同时移动两边成功：烘焙写入只检查内容单元（writeBake 的 Expected），单元互不冲突由 C2 TestMoveAndModelSwapDoNotConflict 覆盖；C3 无烘焙+移动的端到端用例"
+          },
+          {
+            "criterionId": "AC-d24280184c17",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs「the assistant’s changes are outlined and labelled for a minute; touching them warns without blocking」「a model the assistant is adding stands as a placeholder…」；creative-scene-agent.test.ts outlines/placeholders/status line"
+          },
+          {
+            "criterionId": "AC-84410af6c04a",
+            "status": "verified",
+            "evidence": "creativescene TestChangesSince（手动修改、整份恢复、按单元恢复、从未写过）、TestAgentRead；creativeagent TestSceneInputsAreFrozenWithTheRun、TestOnlyTheScenesWrittenLastAreSummarized"
+          },
+          {
+            "criterionId": "AC-0dfeee7b6a1e",
+            "status": "verified",
+            "evidence": "creativescene TestRunChanges、TestAgentRevertTakesBackARun；httpapi TestCreativeSceneRunChangesHTTP；e2e「恢复这一处」和「撤销本轮」各 1 个修订及部分成功。助手撤回用 edit_scene 的 revert_run（design.md:354），内部提交 restore_units"
+          },
+          {
+            "criterionId": "AC-18499cdfab37",
+            "status": "verified",
+            "evidence": "httpapi TestCreativeSceneJobsHTTP（跨账号 404、令牌/租约 409、完成幂等）；creativescene TestClaimLeaseAndList"
+          },
+          {
+            "criterionId": "AC-85691aaab24f",
+            "status": "verified",
+            "evidence": "6.2 creative-scene-agent-latency.e2e.mjs：write_model 除模型生成外 p50 约 2.1 秒（≤4 秒，不需要一个任务烘焙多个模型），截图约 1.1 秒；6.3 补真实运行：模型写代码 37–58 秒，正常时段烘焙任务 7–24 秒、截图 5–7 秒；ccrn_47a847e9 烘焙耗时随场景模型数线性增长，原因未查明，合并后单独诊断"
+          },
+          {
+            "criterionId": "AC-b5c67e1cc372",
+            "status": "verified",
+            "evidence": "owner 2026-10-18 结论「验了，有一些小毛病，但问题不大，可以先往后推进」；库中能按样例名对上的是日式小巷两次（ccrn_450ca7d9、ccrn_c17c55f6），另两个样例按 owner 整体判断；小毛病未逐条列出"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "21/21 任务完成。合并点 make check（HEAD 836296b，已含 develop 6ca6e30）：build、lint、test-go（56 包）、test-frontend 通过；test-ops 的 auth catalog two-account-isolation 一次失败（go test -list 匹配 0），单独重跑整个 catalog 18 项通过，其后 6 个 ops 脚本与 generate-check 补跑通过、工作区干净。并发测试重复 5–10 轮通过。15 条验收标准均有测试或试用证据（coverage）。设计：计划外文件多为挂载点简写/通配未匹配，真实偏差已记在 tasks 实施记录（agentActivity、AgentScene/agentScene、framing/ShotScene、pageExecutor、intx.go、jobs_complete.go 等）。契约：7 节 delta 与实现一致，另有 3 处小出入（blocked.reason 多 hierarchy_not_restorable；运行后历史超 5000 条也返回 400；同物件多来源修订保守记 changed_by_others）。迁移 0075 有 up/down 与拒绝回滚测试，开发库已在用。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "40d3a2c348c22e5447b65a8baaa31dc40437957ef9ea0135c88c0ef1109bfd50"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-19T06:02:28.862Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 的小毛病尚未逐条列出；烘焙耗时随场景模型数线性增长原因未诊断；auth catalog 一次失败未复现；C3 无烘焙同时移动的端到端用例。",
+        "followUp": "合并后：①诊断烘焙耗时随模型数增长（看 creative scene job 迁移日志 in_state）；②场景格式对齐 three.js 的 epic 修订里一并修正「读取运行的场景改动」契约的 3 处出入；③owner 列出小毛病后排期。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 2026-10-18 本机试用后结论：有一些小毛病，但问题不大，可以先往后推进。接受技术验收报告（合并点 make check、并发重复、15 条验收标准证据）；同意契约 3 处出入并进 C3 合并后的场景格式对齐 three.js epic 修订一起修正；同意合并前改写分支历史去掉误提交的 creative-worker 编译产物（最终代码不变，备份分支 backup/feat-scene-agent-tools-9019c2d）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "40d3a2c348c22e5447b65a8baaa31dc40437957ef9ea0135c88c0ef1109bfd50"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-19T06:02:37.962Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

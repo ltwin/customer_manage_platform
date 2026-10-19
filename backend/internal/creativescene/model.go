@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"regexp"
@@ -205,9 +206,97 @@ func encodeScene(s Scene) (creativedocument.Snapshot, error) {
 // decodes as the zero value, and position [null, 0, 0] saved as the origin.
 func decodeInput(raw json.RawMessage, target any) error {
 	if err := creativeops.Decode(raw, target); err != nil {
-		return err
+		var public creativeops.Public
+		if errors.As(err, &public) {
+			return err
+		}
+		if err := shapeError(raw, reflect.TypeOf(target).Elem(), ""); err != nil {
+			return err
+		}
+		return invalid("操作格式不合法")
 	}
 	return requireFields(raw, reflect.TypeOf(target).Elem(), "", false)
+}
+
+var jsonUnmarshaler = reflect.TypeFor[json.Unmarshaler]()
+
+// shapeError says where input that failed to decode stops matching t: a
+// field t does not have, with the ones it does, or a value of the wrong
+// type. The decoder names an unknown field without its path, and the
+// assistant writes these by hand.
+func shapeError(raw json.RawMessage, t reflect.Type, path string) error {
+	if string(raw) == "null" {
+		return nil
+	}
+	if t.Kind() == reflect.Pointer {
+		return shapeError(raw, t.Elem(), path)
+	}
+	wrong := func() error {
+		if path == "" {
+			return invalid("操作须是 JSON 对象")
+		}
+		return invalid("字段 %s 的类型不对", strings.TrimPrefix(path, "."))
+	}
+	switch {
+	case t.Kind() == reflect.Interface, t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8:
+		return nil
+	case reflect.PointerTo(t).Implements(jsonUnmarshaler):
+	case t.Kind() == reflect.Slice:
+		var items []json.RawMessage
+		if json.Unmarshal(raw, &items) != nil {
+			return wrong()
+		}
+		for i, item := range items {
+			if err := shapeError(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	case t.Kind() == reflect.Map:
+		var items map[string]json.RawMessage
+		if json.Unmarshal(raw, &items) != nil {
+			return wrong()
+		}
+		for _, k := range slices.Sorted(maps.Keys(items)) {
+			if err := shapeError(items[k], t.Elem(), path+"."+k); err != nil {
+				return err
+			}
+		}
+		return nil
+	case t.Kind() == reflect.Struct:
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return wrong()
+		}
+		var names []string
+		types := map[string]reflect.Type{}
+		for i := range t.NumField() {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if f.IsExported() && name != "-" && name != "" {
+				names = append(names, name)
+				types[name] = f.Type
+			}
+		}
+		for _, k := range slices.Sorted(maps.Keys(fields)) {
+			ft, ok := types[k]
+			if !ok {
+				where := "操作"
+				if path != "" {
+					where = strings.TrimPrefix(path, ".") + " "
+				}
+				return invalid("%s没有字段 %s，可用字段：%s", where, k, strings.Join(names, "、"))
+			}
+			if err := shapeError(fields[k], ft, path+"."+k); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if json.Unmarshal(raw, reflect.New(t).Interface()) != nil {
+		return wrong()
+	}
+	return nil
 }
 
 func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bool) error {
@@ -274,6 +363,16 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bo
 // the builtin catalog checks them.
 func freeForm(t reflect.Type) bool { return t.Kind() == reflect.Interface }
 
+// objectIDProblem says what is wrong with an id: hand-written ones are
+// usually a character off.
+func objectIDProblem(id string) error {
+	rest, ok := strings.CutPrefix(id, "sobj_")
+	if !ok {
+		return invalid("物件 ID %q 不合法：须以 sobj_ 开头，后接 21 位字母、数字、_ 或 -", id)
+	}
+	return invalid("物件 ID %q 不合法：sobj_ 后须是 21 位字母、数字、_ 或 -，现在是 %d 位", id, utf8.RuneCountInString(rest))
+}
+
 // newObjectID is a 21-character nanoid; clients make their own the same way.
 func newObjectID() string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -302,7 +401,7 @@ func Validate(s Scene) error {
 	for i := range s.Objects {
 		o := &s.Objects[i]
 		if !objectIDPattern.MatchString(o.ID) {
-			return invalid("物件 ID %q 不合法", o.ID)
+			return objectIDProblem(o.ID)
 		}
 		if _, dup := byID[o.ID]; dup {
 			return invalid("物件 ID %s 重复", o.ID)

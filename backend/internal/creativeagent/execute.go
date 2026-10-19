@@ -612,7 +612,13 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 				continue
 			}
 			if item.role == "selection" && item.body != nil {
-				messages = append(messages, schema.UserMessage("当前画布概览（详细节点请用 read_canvas）："+*item.body))
+				// Scene lines carry a snapshot and are frozen as worded; the
+				// canvas line has none.
+				if len(item.snapshot) > 0 {
+					messages = append(messages, schema.UserMessage(*item.body))
+				} else {
+					messages = append(messages, schema.UserMessage("当前画布概览（详细节点请用 read_canvas）："+*item.body))
+				}
 				continue
 			}
 			if item.id != nil {
@@ -665,21 +671,7 @@ func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, hel
 	if state != RunRunning || epoch != held.Epoch || cancelRequested != nil || leaseUntil == nil || !now.Before(*leaseUntil) {
 		return ErrRunState
 	}
-	// The skill control lock, between the run and the consent: the design puts
-	// the skill control row after operation/account/slot/budget/conversation/run
-	// and before the resource locks, and the dispatch intent this transaction is
-	// about to record must not be able to overtake a withdrawal.
-	if err := s.requireActiveSkillsInTx(ctx, tx, held); err != nil {
-		return err
-	}
-	consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
-	if err != nil {
-		return err
-	}
-	// The content refs were matched against this consent when the run was
-	// created and a consent's scope never changes afterwards, so what is
-	// re-checked here is whether it still stands at all.
-	return coversRun(consent, held.ConversationID, nil)
+	return s.admitParkedRunInTx(ctx, tx, held, now)
 }
 
 // admitDispatchInTx is the last gate, run inside the dispatch transaction. The
@@ -690,7 +682,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 		return err
 	}
 	// Include content read by tools in this run, including restored checkpoints.
-	rows, err := tx.Query(ctx, "creative_message_content_refs", "content_revision_id", "role='result' AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND run_id=$2 AND body->>'tool_name' IN ('read_asset','read_canvas','read_run_result'))", held.RunID)
+	rows, err := tx.Query(ctx, "creative_message_content_refs", "content_revision_id", "role='result' AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND run_id=$2 AND body->>'tool_name' IN ('read_asset','read_canvas','read_run_result','render_view'))", held.RunID)
 	if err != nil {
 		return err
 	}
@@ -1251,18 +1243,32 @@ func failureCode(err error) string {
 // drainAgent reads the framework's event stream to the end. The assistant text
 // is not taken from here: it is whatever the gateway persisted and this run
 // already consumed, so a stream that ends early cannot invent an answer.
+//
+// An interruption whose calls parked on client jobs comes back as a parkedRun
+// naming the jobs.
 func drainAgent(it *adk.AsyncIterator[*adk.AgentEvent]) error {
 	var first error
+	var jobs []string
 	for {
 		event, ok := it.Next()
 		if !ok {
+			if errors.Is(first, errRunInterrupted) && len(jobs) > 0 {
+				return &parkedRun{jobIDs: jobs}
+			}
 			return first
 		}
 		if event.Err != nil && first == nil {
 			first = event.Err
 		}
-		if event.Action != nil && event.Action.Interrupted != nil && first == nil {
-			first = errRunInterrupted
+		if event.Action != nil && event.Action.Interrupted != nil {
+			for _, c := range event.Action.Interrupted.InterruptContexts {
+				if id, ok := parkedJobOf(c.Info); ok {
+					jobs = append(jobs, id)
+				}
+			}
+			if first == nil {
+				first = errRunInterrupted
+			}
 		}
 	}
 }

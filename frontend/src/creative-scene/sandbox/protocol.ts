@@ -39,6 +39,8 @@ export type CompileError = {
   message: string
   line?: number
   column?: number
+  /** Set by the host when the sandbox page itself failed (did not start, was closed), not the code. */
+  host?: true
 }
 
 export type CompileRequest = {

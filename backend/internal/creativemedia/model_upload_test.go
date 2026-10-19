@@ -130,6 +130,11 @@ func TestModelThumbnailTicketAndGC(t *testing.T) {
 	if _, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: stagedGLB.ID, Role: "thumbnail", Purpose: "display"}); !errors.Is(err, creativecontent.ErrNotFound) {
 		t.Fatalf("staged model has no thumbnail: %v", err)
 	}
+	// A staged image shows before anything adopts it: the assistant's
+	// screenshots stay staged. Small ones have no display rendition.
+	if ticket, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: stagedPNG.ID, Role: "original", Purpose: "display"}); err != nil || ticket.Mime != "image/png" {
+		t.Fatalf("staged image ticket %+v %v", ticket, err)
+	}
 
 	var model creativecontent.Revision
 	err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {

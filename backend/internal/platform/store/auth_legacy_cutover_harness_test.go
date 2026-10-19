@@ -136,7 +136,7 @@ const legacyAuthMigrationVersion uint = 12
 func legacyRollbackDownWalk(t *testing.T) []string {
 	t.Helper()
 	walk := []string{
-		"creative-model-content", "creative-scene-document", "creative-document-foundation", "retire-provider-limits", "generation-billing-optional", "generation-routes", "agent-skill-runtime", "creative-platform-skill-owner", "agent-context-compaction", "asset-digest-lookup", "agent-library-organize", "creative-image-edit", "creative-media-gc", "creative-asset-library", "creative-project-home", "agent-conversation-manage", "chat-failover", "creative-agent-reasoning", "creative-agent-blocks", "creative-staged-uploads", "generation-handoff", "generation-lifecycle", "generation-admission", "generation-media-facts", "execution-continuations", "agent-controls", "agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
+		"creative-scene-jobs", "creative-model-content", "creative-scene-document", "creative-document-foundation", "retire-provider-limits", "generation-billing-optional", "generation-routes", "agent-skill-runtime", "creative-platform-skill-owner", "agent-context-compaction", "asset-digest-lookup", "agent-library-organize", "creative-image-edit", "creative-media-gc", "creative-asset-library", "creative-project-home", "agent-conversation-manage", "chat-failover", "creative-agent-reasoning", "creative-agent-blocks", "creative-staged-uploads", "generation-handoff", "generation-lifecycle", "generation-admission", "generation-media-facts", "execution-continuations", "agent-controls", "agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
 		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",

@@ -5,8 +5,11 @@ import { notifyCanvasInvalidate, watchCanvasEvents } from './canvasEvents.ts'
 import { newerCanvas } from './snapshot.ts'
 import { errorMessage } from './queue.ts'
 
-// Owns snapshot ordering, event subscription and retry lifetime.
-export function useCanvasSnapshot(canvasID: string, tick: number) {
+// Owns snapshot ordering, event subscription and retry lifetime. A hidden
+// tab drops its event stream, unless `keepAlive`: the page runs or awaits
+// assistant work (a scene job held here, a live run) that its notifications
+// drive.
+export function useCanvasSnapshot(canvasID: string, tick: number, keepAlive = false) {
   const [canvas, setCanvas] = useState<api.Canvas | null>(null)
   const [syncError, setSyncError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -39,6 +42,12 @@ export function useCanvasSnapshot(canvasID: string, tick: number) {
     return () => controller.abort()
   }, [canvasID, tick])
   const refreshCanvas = useRef<() => Promise<void>>(() => Promise.resolve())
+  const keepAliveRef = useRef(keepAlive)
+  const reconnect = useRef<() => void>(() => {})
+  useEffect(() => {
+    keepAliveRef.current = keepAlive
+    if (document.hidden) reconnect.current()
+  }, [keepAlive])
   useEffect(() => {
     const controller = new AbortController()
     let fetching = false
@@ -87,9 +96,12 @@ export function useCanvasSnapshot(canvasID: string, tick: number) {
     refreshCanvas.current = reload
     let stream: AbortController | undefined
     const connect = () => {
+      const wanted = (!document.hidden || keepAliveRef.current) && navigator.onLine && !!canvasID
+      // Kept alive through hiding; coming back still reconnects, which re-reads.
+      if (wanted && stream && document.hidden) return
       stream?.abort()
       stream = undefined
-      if (document.hidden || !navigator.onLine || !canvasID) return
+      if (!wanted) return
       stream = new AbortController()
       void watchCanvasEvents(
         (signal) => api.connectCanvasEvents(canvasID, signal),
@@ -101,6 +113,7 @@ export function useCanvasSnapshot(canvasID: string, tick: number) {
         setSyncError,
       )
     }
+    reconnect.current = connect
     connect()
     window.addEventListener('online', connect)
     window.addEventListener('offline', connect)
@@ -110,6 +123,7 @@ export function useCanvasSnapshot(canvasID: string, tick: number) {
       stream?.abort()
       clearTimeout(retry)
       refreshCanvas.current = () => Promise.resolve()
+      reconnect.current = () => {}
       window.removeEventListener('online', connect)
       window.removeEventListener('offline', connect)
       document.removeEventListener('visibilitychange', connect)

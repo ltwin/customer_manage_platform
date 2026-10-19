@@ -24,21 +24,29 @@ import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
+import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
+import {sceneContext} from '/src/creative-scene/context.ts';
 import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
 try { localStorage.setItem('creative-scene:first-run-seen', '1') } catch {}
 window.__invalidate = notifyCanvasInvalidate;
+window.__context = () => sceneContext.getState();
 window.__closed = 0;
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
-function App() {
+// ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
+function Editor({host}) {
   const [open, setOpen] = useState(true);
   window.__reopen = () => setOpen(true);
   return open
-    ? React.createElement(SceneEditor, {documentID:'${DOC}', onClose:()=>{window.__closed++; setOpen(false)}})
+    ? React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}})
     : React.createElement('p', {id:'closed'}, 'closed');
 }
+function WithHost() {
+  return React.createElement(Editor, {host: useSceneHost('qa-account').launcher});
+}
+const App = new URLSearchParams(location.search).has('host') ? WithHost : Editor;
 createRoot(document.getElementById('root')).render(React.createElement(StrictMode, null, React.createElement(App)));
 </script></body></html>`,
 )
@@ -113,6 +121,11 @@ class SceneServer {
     this.modelSeq = 0
     // Set to a promise to keep uploads from completing until it settles.
     this.uploadHold = null
+    // The assistant's client jobs: what the editor lists, and what a page claims.
+    this.jobs = []
+    this.claimable = []
+    this.claims = []
+    this.completes = []
   }
   /** A committed model revision, as if made earlier; returns its revision ID. */
   seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
@@ -187,8 +200,9 @@ class SceneServer {
     const { consumed: _consumed, ...view } = u
     return view
   }
-  record(changed, removed, restoredFrom) {
+  record(changed, removed, restoredFrom, actor = 'photographer', at = null) {
     return {
+      actor,
       revision: String(this.revision),
       title: this.title,
       scene: structuredClone(this.scene),
@@ -196,7 +210,7 @@ class SceneServer {
       changed_units: changed,
       removed_units: removed,
       restored_from: restoredFrom,
-      created_at: new Date(Date.UTC(2026, 9, 16, 9, 0, this.revision)).toISOString(),
+      created_at: new Date(at ?? Date.UTC(2026, 9, 16, 9, 0, this.revision)).toISOString(),
     }
   }
   doc() {
@@ -305,22 +319,23 @@ class SceneServer {
     this.commands.push({ ...body, receipt })
     return [200, receipt]
   }
-  /** Someone else's edit, straight on the server. */
-  external(ops) {
+  /** Someone else's edit, straight on the server; the assistant's with `actor: 'agent'`, dated `at`. */
+  external(ops, { actor = 'photographer', at = null } = {}) {
     const before = { title: this.title, scene: this.scene }
     const after = applyOps(before, ops)
     const changed = changedUnits({ ops }, before)
+    if (ops.some((op) => op.op === 'add_objects')) changed.push('objects')
     this.title = after.title
     this.scene = after.scene
     this.revision++
     for (const u of changed) this.unitRevs[u] = String(this.revision)
-    this.history.push(this.record(changed, [], null))
+    this.history.push(this.record(changed, [], null, actor, at))
   }
   revisionItem(h) {
     return {
       revision: h.revision,
-      actor_kind: 'photographer',
-      run_id: null,
+      actor_kind: h.actor,
+      run_id: h.actor === 'agent' ? 'car_qa' : null,
       restored_from: h.restored_from,
       changed_units: h.changed_units,
       annotated_units: [],
@@ -347,8 +362,26 @@ async function route(page, server) {
       return json(status, body)
     }
     if (path === `/documents/${DOC}/revisions`) {
-      const items = [...server.history].reverse().map((h) => server.revisionItem(h))
+      const since = Number(url.searchParams.get('since_revision') ?? 0)
+      const limit = Number(url.searchParams.get('limit') ?? 50)
+      const items = [...server.history].reverse().filter((h) => Number(h.revision) > since).slice(0, limit).map((h) => server.revisionItem(h))
       return json(200, { items, next_cursor: null })
+    }
+    if (path === `/documents/${DOC}/scene-jobs`) return json(200, { items: server.jobs })
+    if (path === '/scene-jobs/claim' && request.method() === 'POST') {
+      const body = request.postDataJSON()
+      server.claims.push(body)
+      const i = server.claimable.findIndex((j) => !body.document_id || j.document_id === body.document_id)
+      if (i < 0) return r.fulfill({ status: 204, body: '' })
+      const [job] = server.claimable.splice(i, 1)
+      return json(200, { job })
+    }
+    const jobAction = path.match(/^\/scene-jobs\/([^/]+)\/(lease|complete)$/)
+    if (jobAction) {
+      if (jobAction[2] === 'lease') return json(200, { job_id: jobAction[1], lease_until: '2100-01-01T00:00:00Z' })
+      const { payload } = request.postDataJSON()
+      server.completes.push({ id: jobAction[1], payload })
+      return json(200, { job_id: jobAction[1], state: payload.outcome === 'failed' ? 'failed' : 'succeeded', result: {} })
     }
     const one = path.match(new RegExp(`^/documents/${DOC}/revisions/(\\d+)$`))
     if (one) {
@@ -420,7 +453,7 @@ async function open(server, options = {}) {
   page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()))
   await route(page, server)
   await routeFiles(page, server)
-  await page.goto(`${base}/.scene-editor-qa.html`)
+  await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
   await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
   await page.getByRole('treeitem').first().waitFor()
   // Let R3F mount the scene and the camera settle.
@@ -786,8 +819,10 @@ await check('leaving and coming back, even after a reload, shows the editor as i
   await page.reload()
   await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
   await page.getByRole('treeitem', { name: /方块/ }).waitFor()
-  await sleep(1200)
-  const back = await pixelDiff(page, await page.screenshot({ clip: box }), turned)
+  // The first frames after a reload can come late under load: compare until it settles.
+  let back = 1
+  for (const started = Date.now(); back >= 0.005 && Date.now() - started < 5000; await sleep(200))
+    back = await pixelDiff(page, await page.screenshot({ clip: box }), turned)
   assert.ok(back < 0.005, `the turned perspective view comes back (${(back * 100).toFixed(2)}% of pixels differ)`)
   assert.equal(server.commands.length, 1, 'the view is not an edit')
   assert.ok(server.object(id))
@@ -1489,6 +1524,132 @@ await check('a model that cannot be shown is a grey block and says so', async ()
   await page.getByText('模型不可用').waitFor()
   await page.getByRole('treeitem', { name: /坏模型/ }).click()
   await page.getByText('模型不可用').waitFor({ timeout: 10_000 })
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- the assistant's work, as the editor shows it ---------------------------
+
+/** Pixels in the assistant's outline colour (look.ts agentEdge, #17a397). */
+async function agentPixels(page, png) {
+  return page.evaluate(async (src) => {
+    const i = await new Promise((resolve) => { const x = new Image(); x.onload = () => resolve(x); x.src = src })
+    const c = document.createElement('canvas')
+    c.width = i.width
+    c.height = i.height
+    const g = c.getContext('2d')
+    g.drawImage(i, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let k = 0; k < p.length; k += 4) if (Math.abs(p[k] - 23) < 30 && Math.abs(p[k + 1] - 163) < 30 && Math.abs(p[k + 2] - 151) < 30) n++
+    return n
+  }, `data:image/png;base64,${png.toString('base64')}`)
+}
+const boxObject = (id, name, x, order) => ({ id, kind: 'primitive', name, parent_id: null, order, transform: { ...identity(), position: [x, 0, 0] }, visible: true, locked: false, primitive: { builtin: 'box@1' } })
+const agentBadge = (page, name) => page.getByRole('treeitem', { name: new RegExp(name) }).locator('.cc-scene-row-agent')
+const bakeSummary = (id, target) => ({ id, kind: 'bake_model', state: 'queued', run_id: 'car_qa', created_at: '2026-10-18T00:00:00Z', target })
+
+await check('the assistant’s changes are outlined and labelled for a minute; touching them warns without blocking', async () => {
+  const server = new SceneServer()
+  const chair = objectID('chair')
+  const table = objectID('table')
+  server.external([{ op: 'add_objects', objects: [boxObject(table, '桌子', 2.5, 1)] }])
+  // The assistant added the chair 48 seconds ago: its outline has about 12 seconds left.
+  server.external([{ op: 'add_objects', objects: [boxObject(chair, '椅子', -2.5, 2)] }], { actor: 'agent', at: Date.now() - 48_000 })
+  const { context, page, errors } = await open(server)
+  await agentBadge(page, '椅子').waitFor()
+  assert.equal(await agentBadge(page, '桌子').count(), 0)
+  const { box: clip } = await viewportCenter(page)
+  assert.ok((await agentPixels(page, await page.screenshot({ clip }))) > 50, 'the chair is outlined in the assistant’s colour')
+  // Selecting it says so; hiding it still saves.
+  await page.getByRole('treeitem', { name: /椅子/ }).click()
+  await waitFor(async () => (await page.locator('.cc-scene-hint').textContent()) === '助手正在修改此物件，你的修改可能让它重做', 'soft notice on select')
+  await page.locator('.cc-scene-hint').filter({ hasNotText: '助手' }).waitFor({ timeout: 6000 })
+  const before = server.commands.length
+  await page.getByRole('treeitem', { name: /椅子/ }).getByRole('button', { name: '隐藏' }).click()
+  await waitFor(() => server.commands.length === before + 1, 'the edit went out')
+  await saved(page)
+  assert.equal(await page.locator('.cc-scene-hint').textContent(), '助手正在修改此物件，你的修改可能让它重做', 'soft notice on edit')
+  assert.equal(server.object(chair).visible, false)
+  // The assistant moves the table now: its outline comes with the notification.
+  server.external([{ op: 'update_objects', updates: [{ object_id: table, transform: { ...identity(), position: [3, 0, 0] } }] }], { actor: 'agent' })
+  await page.evaluate(() => window.__invalidate())
+  await agentBadge(page, '桌子').waitFor({ timeout: 4000 })
+  // The chair's minute runs out; the table's has just begun.
+  await agentBadge(page, '椅子').waitFor({ state: 'detached', timeout: 20_000 })
+  assert.equal(await agentBadge(page, '桌子').count(), 1)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('a model the assistant is adding stands as a placeholder with the status line until its job ends', async () => {
+  const server = new SceneServer()
+  // The chair goes under the shelf, 3 m along from it: at the origin, in the middle of the view.
+  const shelf = objectID('shelf')
+  server.external([{ op: 'add_objects', objects: [boxObject(shelf, '架子', -3, 1)] }])
+  server.jobs = [bakeSummary('csj_add', { op: 'add', object: { name: '椅子', parent_id: shelf, transform: { ...identity(), position: [3, 0, 0] } } })]
+  const { context, page, errors } = await open(server)
+  const activity = page.locator('.cc-scene-activity')
+  await waitFor(async () => (await activity.count()) > 0 && (await activity.textContent()) === '助手正在生成「椅子」…', 'status line')
+  await sleep(300)
+  const { box: clip, x, y } = await viewportCenter(page)
+  const drawn = await agentPixels(page, await page.screenshot({ clip }))
+  assert.ok(drawn > 30, `the placeholder is drawn (${drawn} px)`)
+  const middle = await agentPixels(page, await page.screenshot({ clip: { x: x - 70, y: y - 70, width: 140, height: 140 } }))
+  assert.ok(middle > 10, `it stands where its parent puts it (${middle} px in the middle)`)
+  // It cannot be picked: a click on it selects neither it nor the shelf it hangs from.
+  await page.mouse.click(x, y)
+  await sleep(200)
+  assert.equal(await page.locator('[role=treeitem][aria-selected=true]').count(), 0)
+  server.jobs = []
+  await page.evaluate(() => window.__invalidate())
+  await activity.waitFor({ state: 'detached', timeout: 4000 })
+  await sleep(300)
+  assert.ok((await agentPixels(page, await page.screenshot({ clip }))) < drawn / 10, 'the placeholder is gone with its job')
+  // A bake replacing an object outlines it; two bakes say how many.
+  server.jobs = [bakeSummary('csj_add', { op: 'add', object: { name: '椅子' } }), bakeSummary('csj_rep', { op: 'replace', object_ids: ['sobj_ground'] })]
+  await page.evaluate(() => window.__invalidate())
+  await agentBadge(page, '地面').waitFor({ timeout: 4000 })
+  assert.equal(await activity.textContent(), '助手正在生成「椅子」等 2 个模型…')
+  assert.equal(server.commands.length, 0)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('the editor view claims its own scene’s jobs before the account’s older ones', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server, { query: '?host=1' })
+  await waitFor(() => server.claims.some((c) => c.document_id === DOC), 'the editor asks for its scene', 10_000)
+  const job = (id, doc) => ({ id, document_id: doc, kind: 'render_view', request: { preset: 'overview' }, attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' })
+  server.claimable = [job('csj_other', 'cwdoc_other'), job('csj_this', DOC)]
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(() => server.completes.length === 2, 'both jobs reported', 30_000)
+  assert.deepEqual(server.completes.map((c) => c.id), ['csj_this', 'csj_other'])
+  assert.equal(server.completes[0].payload.outcome, 'succeeded')
+  assert.equal(server.completes[0].payload.render.scene_revision, '1')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('the editor hands its scene and selection to the assistant panel, and takes them back when trashed or closed', async () => {
+  const server = new SceneServer()
+  const chair = objectID('chair')
+  server.external([{ op: 'add_objects', objects: [boxObject(chair, '椅子', 1, 1)] }])
+  const { context, page, errors } = await open(server)
+  const shared = async () => JSON.stringify(await page.evaluate(() => window.__context()))
+  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [] }), 'the scene, nothing selected')
+  await page.getByRole('treeitem', { name: /椅子/ }).click()
+  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [chair] }), 'the selection')
+  // A trashed scene cannot be worked on: a run that named it would be refused.
+  server.trashedAt = '2026-10-18T10:00:00Z'
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await shared()) === 'null', 'nothing while trashed')
+  server.trashedAt = null
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await shared()) !== 'null', 'back after untrash')
+  await page.getByRole('button', { name: '还原节点' }).click()
+  await page.locator('#closed').waitFor()
+  assert.equal(await shared(), 'null')
   assert.deepEqual(errors, [])
   await context.close()
 })

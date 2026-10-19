@@ -30,6 +30,8 @@ type editGraph struct {
 	mapping   map[string]string
 	omitted   []string
 	staged    []placedUpload
+	// actor writes the documents add_node creates; zero is the photographer.
+	actor creativedocument.Actor
 }
 
 // placedUpload is a staged upload consumed by this batch; it is marked placed
@@ -40,8 +42,15 @@ type placedUpload struct {
 }
 
 func ApplyCommands(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
+	return ApplyCommandsAs(ctx, scope, creativedocument.Photographer, command)
+}
+
+// ApplyCommandsAs is ApplyCommands for a server-side writer: the documents
+// its add_node actions create are written by actor, such as an assistant
+// run. The actor never comes from the payload.
+func ApplyCommandsAs(ctx context.Context, scope store.AccountScope, actor creativedocument.Actor, command creativeops.Command) (creativeops.Receipt, error) {
 	return run(ctx, scope, "canvas.commands", command, validateBatch, func(ctx context.Context, tx store.TxAccountScope, v BatchInput) (creativeops.Outcome, error) {
-		r, err := applyBatch(ctx, tx, v, command.OperationID)
+		r, err := applyBatchAs(ctx, tx, v, command.OperationID, actor)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
@@ -72,6 +81,10 @@ func validateBatch(v BatchInput) error {
 	return nil
 }
 func applyBatch(ctx context.Context, tx store.TxAccountScope, v BatchInput, operation string) (ChangeResult, error) {
+	return applyBatchAs(ctx, tx, v, operation, creativedocument.Photographer)
+}
+
+func applyBatchAs(ctx context.Context, tx store.TxAccountScope, v BatchInput, operation string, actor creativedocument.Actor) (ChangeResult, error) {
 	c, err := lockCanvas(ctx, tx, v.CanvasID, true)
 	if err != nil {
 		return ChangeResult{}, err
@@ -80,7 +93,7 @@ func applyBatch(ctx context.Context, tx store.TxAccountScope, v BatchInput, oper
 	if err != nil {
 		return ChangeResult{}, err
 	}
-	e := editGraph{ctx: ctx, tx: tx, c: c, before: before, g: cloneGraph(before), ids: ids, required: map[string]map[string]bool{}, changeID: newChangeID(), mapping: map[string]string{}, omitted: []string{}}
+	e := editGraph{ctx: ctx, tx: tx, c: c, before: before, g: cloneGraph(before), ids: ids, required: map[string]map[string]bool{}, changeID: newChangeID(), mapping: map[string]string{}, omitted: []string{}, actor: actor}
 	structural := false
 	for _, a := range v.Actions {
 		switch a.Type {
@@ -541,9 +554,11 @@ func (e *editGraph) attachDocument(n *Node, t creativedocument.Type, a Action) e
 	if a.DocumentID != "" {
 		doc, err = creativedocument.RequirePlaceable(e.ctx, e.tx, a.DocumentID, a.TypeKey)
 	} else {
-		// Canvas commands carry no actor; agent tools build their own actions
-		// and cannot reach this branch yet.
-		doc, err = creativedocument.CreateInTx(e.ctx, e.tx, t, a.Title, a.DocumentOptions, creativedocument.Photographer)
+		actor := e.actor
+		if actor.Kind == "" {
+			actor = creativedocument.Photographer
+		}
+		doc, err = creativedocument.CreateInTx(e.ctx, e.tx, t, a.Title, a.DocumentOptions, actor)
 	}
 	if err != nil {
 		return err

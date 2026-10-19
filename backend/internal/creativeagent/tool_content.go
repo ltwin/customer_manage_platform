@@ -9,7 +9,7 @@ func contentReadTool(name string) bool {
 }
 
 func toolContentRevisions(name, raw string) []string {
-	if !contentReadTool(name) && name != generateNodeTool && name != compressImageTool {
+	if !contentReadTool(name) && name != generateNodeTool && name != compressImageTool && name != renderViewTool {
 		return nil
 	}
 	var result struct {
