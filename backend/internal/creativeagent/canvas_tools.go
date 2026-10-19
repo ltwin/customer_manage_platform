@@ -107,6 +107,11 @@ func asRefusal(err error) error {
 		return refuseTool("内容已删除、失去引用或不可展示，请重新选择")
 	case errors.Is(err, creativecanvas.ErrGraphIntegrity):
 		return refuseTool("画布数据校验未通过，本次修改没有生效。这不是参数问题，重试也不会成功；请如实告诉创作者，并请其联系我们处理")
+	case errors.Is(err, creativeops.ErrValidation):
+		// Generation words its own refusals where it submits; read through
+		// AgentRefusal, any other tool's bad input became a generation
+		// request's image limits.
+		return refuseTool("参数或取值不符合工具说明，请对照说明重写这次调用")
 	}
 	var generation *creativegeneration.Refusal
 	if errors.As(creativegeneration.AgentRefusal(err), &generation) {

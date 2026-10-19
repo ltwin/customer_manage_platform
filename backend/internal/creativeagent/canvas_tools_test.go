@@ -238,6 +238,22 @@ func TestRefusedEditSaysWhy(t *testing.T) {
 	}
 }
 
+// Bad input nobody explained is the tool's own, not a generation request's:
+// it used to come back as the image reference limits.
+func TestAnUnexplainedValidationIsNotAGenerationLimit(t *testing.T) {
+	var refused *toolRefusal
+	if err := asRefusal(fmt.Errorf("%w: json: unknown field %q", creativeops.ErrValidation, "decay")); !errors.As(err, &refused) || strings.Contains(refused.message, "图片") || !strings.Contains(refused.message, "工具说明") {
+		t.Fatalf("unexplained validation: %v", err)
+	}
+	// Generation's own refusals keep their words.
+	if err := asRefusal(creativegeneration.AgentRefusal(creativeops.ErrValidation)); !errors.As(err, &refused) || !strings.Contains(refused.message, "图片参考最多") {
+		t.Fatalf("generation refusal: %v", err)
+	}
+	if err := asRefusal(creativeops.ErrConflict); !errors.As(err, &refused) || !strings.Contains(refused.message, "重新读取画布") {
+		t.Fatalf("conflict: %v", err)
+	}
+}
+
 // brokenGenerator fails with whatever error it is given, as a backend would.
 type brokenGenerator struct {
 	stubGenerator
