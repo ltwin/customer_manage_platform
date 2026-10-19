@@ -245,3 +245,5 @@
     - 原因：灯光写了 `decay`、`distance`、`kind` 等场景格式没有的字段，雾写成 `near`/`far`、天空写成 `solid`。严格解码的报错只说「unknown field」且没有说明文字，`sceneRefusal` 落到 `asRefusal`，再兜底进 `creativegeneration.AgentRefusal`，把所有未说明的校验失败都翻成生成参考的限制。工具说明也只写了 `light|camera`，没给字段。
     - 修正：场景输入解码失败时指出字段路径和可用字段（`creativescene/model.go:shapeError`，编辑器的命令接口也受益）；场景工具未说明的校验失败改为场景自己的提示，不再走生成的措辞；`edit_scene` 说明补上灯光、摄像机、环境的字段和取值。
     - 测试：`TestABadShapeNamesTheField`、`TestABadSceneCallSaysWhatToFix`（重放库里那次调用）、`TestSceneRefusalNeverSpeaksOfGeneration`；去掉任一处修正，对应测试失败。
+    - 灯光物件与 `lit` 模式按 epic 到 C5 才渲染，加了也看不出来。`edit_scene`、`render_view` 说明现在写明：只画素模，太阳方向、环境光和雾生效，灯光和 hdri 暂不显示，先做几何和构图（owner 2026-10-18 同意）。
+    - 后续（owner 2026-10-18 拍板）：场景格式中助手要写的字段对齐 three.js（灯光 `distance`/`decay`/`angle` 弧度半角，雾和摄像机 `near`/`far`），保留下划线命名和 `focal_mm`/`sensor_mm`。C3 合并后立即单独做，需 epic 修订，不在 C3 范围。

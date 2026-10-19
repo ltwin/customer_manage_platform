@@ -82,6 +82,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params 按键合并，light、camera 整体替换）；remove_objects{object_ids}（连同子物件）；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg, sun_azimuth_deg, turbidity}|{kind:color, color}|{kind:hdri, hdri}, ambient:{color, intensity:0…10}, fog:{color, near_m, far_m}或 null}}（三项都要写）；set_render{render:{mode:clay|lit}}；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
+				"当前版本编辑视图和截图都只画素模：程序天空的太阳方向决定主光和阴影，纯色天空、环境光和雾也生效；灯光物件、lit 模式和 hdri 天空暂不显示，先别花调用打光，把精力放在几何、比例和构图上。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +
 				"新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
@@ -126,7 +127,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	default:
 		return &schema.ToolInfo{
 			Name: renderViewTool,
-			Desc: "给场景拍一张素模截图交给你看，检查摆放、比例和构图。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
+			Desc: "给场景拍一张素模截图交给你看，检查摆放、比例和构图（灯光物件暂不渲染）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
 				"截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,
