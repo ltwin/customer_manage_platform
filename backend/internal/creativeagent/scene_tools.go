@@ -19,13 +19,14 @@ import (
 )
 
 // The assistant builds and edits 3D scenes with these. Reads and edits run
-// here; bakes and screenshots are client jobs a page executes, and the call
-// parks until the job's result is written back (see scene_waiter.go).
+// here; bakes, screenshots and exports are client jobs a page executes, and
+// the call parks until the job's result is written back (see scene_waiter.go).
 const (
-	readSceneTool  = "read_scene"
-	editSceneTool  = "edit_scene"
-	writeModelTool = "write_model"
-	renderViewTool = "render_view"
+	readSceneTool   = "read_scene"
+	editSceneTool   = "edit_scene"
+	writeModelTool  = "write_model"
+	renderViewTool  = "render_view"
+	exportShotsTool = "export_shots"
 )
 
 func sceneWriteTool(name string) bool { return name == editSceneTool || name == writeModelTool }
@@ -79,13 +80,17 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, primitive{builtin,params}|light|camera|model{content_revision_id}}]}；" +
 				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
 				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
-				"camera{focal_mm:8…800, sensor_mm:[宽,高], aspect:\"3:2\", near, far, label}，均可省略（默认 35、[36,24]、3:2、0.1、1000）；" +
+				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
+				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"）；" +
+				"视场角按画面长边对应传感器长边：同一焦距下 2:3 竖幅和 3:2 横幅拍到的范围一样大，只是方向不同；depth_of_field 打开后白模导出按光圈和对焦虚化（线稿不虚化）。" +
+				"空物体是没有子物件的 group，可以当对焦目标或父级。" +
+				"add_objects 和 update_objects 的条目可写 look_at:[x,y,z]（世界坐标）代替 transform.rotation：摄像机和灯光的 −Z、其余物件的 +Z 对准该点（同 three.js Object3D.lookAt），update 时 transform 可只写 position 或省略；父级在同一次修改里也被移动时会被拒绝，分两次提交。" +
 				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段）；remove_objects{object_ids}（连同子物件）；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}|{kind:hdri, hdri}, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写）；set_render{render:{mode:clay|lit}}；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
 				"当前版本编辑视图和截图都只画素模：程序天空的太阳方向决定主光和阴影，纯色天空、环境光和雾也生效；灯光物件、lit 模式和 hdri 天空暂不显示，先别花调用打光，把精力放在几何、比例和构图上。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +
-				"新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
+				"摆好摄像机后先用 render_view 按摄像机回看确认构图，再用 export_shots 导出。新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
 				"based_on_revision": base,
@@ -125,14 +130,27 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"retry_job_id":             str("冲突结果给出的任务 ID；不能和 code、params 同用"),
 			}),
 		}, nil
+	case exportShotsTool:
+		return &schema.ToolInfo{
+			Name: exportShotsTool,
+			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模，打开景深的摄像机按光圈虚化）和 line（线稿）各一列，节点记下来源修订，场景之后改了会提示过时。" +
+				"图在创作者的页面渲染（长边 2048），调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"document_id":       doc,
+				"camera_object_ids": strs("要导出的摄像机，省略为全部摄像机（按物件顺序），最多 32 台"),
+				"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line"}}},
+			}),
+		}, nil
 	default:
 		return &schema.ToolInfo{
 			Name: renderViewTool,
 			Desc: "给场景拍一张素模截图交给你看，检查摆放、比例和构图（灯光物件暂不渲染）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
+				"默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，画面与白模导出一致（按光圈和对焦虚化，带环境光遮蔽），这台摄像机须已打开 depth_of_field。" +
 				"截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,
 				"camera_object_id": str("摄像机物件 ID"),
+				"depth_of_field":   {Type: schema.Boolean, Desc: "按这台摄像机的光圈和对焦虚化；只能与 camera_object_id 一起用"},
 				"viewpoint": {Type: schema.Object, Desc: "临时视点，画幅 4:3", SubParams: map[string]*schema.ParameterInfo{
 					"position": numbers, "target": numbers,
 					"focal_mm": {Type: schema.Number, Required: true, Desc: "8 到 800"},
@@ -158,6 +176,8 @@ func (t *sceneTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opti
 		out, err = h.editScene(ctx, step, raw)
 	case writeModelTool:
 		out, err = h.writeModel(ctx, step, raw)
+	case exportShotsTool:
+		out, err = h.exportShots(ctx, step, raw)
 	default:
 		out, err = h.renderView(ctx, step, raw)
 	}
@@ -365,13 +385,39 @@ func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any,
 		CameraObjectID string                   `json:"camera_object_id"`
 		Viewpoint      *creativescene.Viewpoint `json:"viewpoint"`
 		Preset         string                   `json:"preset"`
+		DepthOfField   bool                     `json:"depth_of_field"`
 	}
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
 	}
 	return h.parkOnJob(ctx, func(ctx context.Context, tx store.TxAccountScope) (creativescene.Job, any, error) {
 		job, err := creativescene.CreateRenderJobInTx(ctx, tx, creativescene.RenderInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step,
-			CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset})
+			CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset, DepthOfField: args.DepthOfField})
+		return job, nil, err
+	}, raw)
+}
+
+// exportShots places the scene's camera images on the run's canvas, beside
+// the scene node; the nodes are made when the page completes the job.
+func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any, error) {
+	var args struct {
+		DocumentID      string   `json:"document_id"`
+		CameraObjectIDs []string `json:"camera_object_ids"`
+		Passes          []string `json:"passes"`
+	}
+	if err := strictArguments(raw, &args); err != nil {
+		return nil, err
+	}
+	return h.parkOnJob(ctx, func(ctx context.Context, tx store.TxAccountScope) (creativescene.Job, any, error) {
+		var canvasID *string
+		if err := tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", h.held.ConversationID).Scan(&canvasID); err != nil {
+			return creativescene.Job{}, nil, err
+		}
+		in := creativescene.ExportJobInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step, CameraObjectIDs: args.CameraObjectIDs, Passes: args.Passes}
+		if canvasID != nil {
+			in.CanvasID = *canvasID
+		}
+		job, err := creativescene.CreateExportJobInTx(ctx, tx, in)
 		return job, nil, err
 	}, raw)
 }
@@ -397,8 +443,8 @@ func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Cont
 		if !creativescene.Terminal(job.State) {
 			return nil
 		}
-		var res creativescene.JobResult
-		if err := json.Unmarshal(job.Result, &res); err != nil {
+		res, err := creativescene.ResultOf(job)
+		if err != nil {
 			return err
 		}
 		result, _, err := sceneToolResult(ctx, tx, job, res, args)
@@ -442,6 +488,21 @@ func renderSucceeded(ctx context.Context, tx store.TxAccountScope, render creati
 	return out, nil
 }
 
+// exportSucceeded is export_shots' answer: where the images went, no images
+// (the model looks with render_view).
+func exportSucceeded(export creativescene.ExportResult) any {
+	type node struct {
+		CameraObjectID string `json:"camera_object_id"`
+		Pass           string `json:"pass"`
+		NodeID         string `json:"node_id"`
+	}
+	nodes := make([]node, 0, len(export.Nodes))
+	for _, n := range export.Nodes {
+		nodes = append(nodes, node{n.CameraObjectID, n.Pass, n.NodeID})
+	}
+	return map[string]any{"status": "succeeded", "scene_revision": int64(export.SceneRevision), "change_id": export.ChangeID, "nodes": nodes}
+}
+
 // sceneToolResult is what the model reads for a finished job. failed marks a
 // call that did not do what was asked. args are the parked call's arguments,
 // whose baseline a conflict is worded from.
@@ -454,6 +515,8 @@ func sceneToolResult(ctx context.Context, tx store.TxAccountScope, job creatives
 		out, err = bakeSucceeded(ctx, tx, *res.Bake)
 	case res.Render != nil:
 		out, err = renderSucceeded(ctx, tx, *res.Render)
+	case res.Export != nil:
+		out = exportSucceeded(*res.Export)
 	case res.Failure != nil:
 		failed = true
 		switch res.Failure.Code {

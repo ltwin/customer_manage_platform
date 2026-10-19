@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -49,10 +50,10 @@ const (
 )
 
 // knownKinds are the kinds a claim may ask for; executableKinds are the ones a
-// render host can run today (export_shots arrives with C4).
+// render host can run.
 var (
 	knownKinds      = []string{string(KindBakeModel), string(KindRenderView), string(KindExportShots)}
-	executableKinds = []string{string(KindBakeModel), string(KindRenderView)}
+	executableKinds = []string{string(KindBakeModel), string(KindRenderView), string(KindExportShots)}
 	editorSession   = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
 )
 
@@ -119,6 +120,9 @@ type RenderRequest struct {
 	Viewpoint      *Viewpoint `json:"viewpoint,omitempty"`
 	Preset         string     `json:"preset,omitempty"`
 	Mode           string     `json:"mode"`
+	// DepthOfField renders the camera's aperture and focus the way the clay
+	// export does; only with CameraObjectID.
+	DepthOfField bool `json:"depth_of_field,omitempty"`
 }
 
 type Viewpoint struct {
@@ -170,6 +174,7 @@ type Conflict struct {
 type JobResult struct {
 	Bake    *BakeResult
 	Render  *RenderResult
+	Export  *ExportResult
 	Failure *JobFailure
 }
 
@@ -191,10 +196,39 @@ func (r JobResult) MarshalJSON() ([]byte, error) {
 		return json.Marshal(r.Bake)
 	case r.Render != nil:
 		return json.Marshal(r.Render)
+	case r.Export != nil:
+		return json.Marshal(r.Export)
 	case r.Failure != nil:
 		return json.Marshal(r.Failure)
 	}
 	return nil, errors.New("empty job result")
+}
+
+// ResultOf decodes a terminal job's stored result: a success has the shape
+// of its kind, anything else is a failure.
+func ResultOf(job Job) (JobResult, error) {
+	var res JobResult
+	var target any
+	switch {
+	case job.State != JobSucceeded:
+		res.Failure = &JobFailure{}
+		target = res.Failure
+	case job.Kind == KindBakeModel:
+		res.Bake = &BakeResult{}
+		target = res.Bake
+	case job.Kind == KindRenderView:
+		res.Render = &RenderResult{}
+		target = res.Render
+	case job.Kind == KindExportShots:
+		res.Export = &ExportResult{}
+		target = res.Export
+	default:
+		return JobResult{}, fmt.Errorf("creative scene: job %s of kind %s", job.ID, job.Kind)
+	}
+	if err := json.Unmarshal(job.Result, target); err != nil {
+		return JobResult{}, fmt.Errorf("creative scene: job %s result: %w", job.ID, err)
+	}
+	return res, nil
 }
 
 // RunGate is the waiter's handle on a run admitted in this transaction.
@@ -823,6 +857,7 @@ type RenderInput struct {
 	CameraObjectID string
 	Viewpoint      *Viewpoint
 	Preset         string
+	DepthOfField   bool
 }
 
 // CreateRenderJobInTx queues render_view's screenshot as the run's job; the
@@ -842,6 +877,9 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 	if given != 1 {
 		return Job{}, invalid("camera_object_id、viewpoint、preset 须给出其中一个")
 	}
+	if r.DepthOfField && r.CameraObjectID == "" {
+		return Job{}, invalid("depth_of_field 只能与 camera_object_id 一起用：临时视点和预设视角没有光圈和对焦")
+	}
 	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, r.DocumentID, TypeKey)
 	if err != nil {
 		return Job{}, err
@@ -859,6 +897,9 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 		if !ok || scene.Objects[i].Kind != KindCamera {
 			return Job{}, invalid("物件 %s 不是场景里的摄像机", r.CameraObjectID)
 		}
+		if c := scene.Objects[i].Camera; r.DepthOfField && (c == nil || c.DepthOfField == nil || !*c.DepthOfField) {
+			return Job{}, invalid("摄像机 %s 没有打开景深：先用 edit_scene 把 depth_of_field 设为 true，再按景深回看", r.CameraObjectID)
+		}
 	case r.Viewpoint != nil:
 		v := r.Viewpoint
 		for _, x := range append(v.Position[:], v.Target[:]...) {
@@ -875,6 +916,102 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 	case !slices.Contains(renderPresets, r.Preset):
 		return Job{}, invalid("preset 须为 overview、top、front 或 side")
 	}
-	req := RenderRequest{CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Mode: "clay"}
+	req := RenderRequest{CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Mode: "clay", DepthOfField: r.DepthOfField}
 	return CreateJob(ctx, tx, NewJob{DocumentID: r.DocumentID, Kind: KindRenderView, Request: req, RunID: r.RunID, ToolCallID: r.ToolCallID})
+}
+
+// ExportRequest is an export_shots job's request: the cameras and passes to
+// render, and where the images go (design「export_shots 任务」).
+type ExportRequest struct {
+	CameraObjectIDs []string `json:"camera_object_ids"`
+	Passes          []string `json:"passes"`
+	CanvasID        string   `json:"canvas_id"`
+	SceneNodeID     string   `json:"scene_node_id"`
+}
+
+// ExportJobInput is export_shots: cameras left out mean every camera in
+// object order, passes left out mean clay and line.
+type ExportJobInput struct {
+	DocumentID      string
+	RunID           string
+	ToolCallID      string
+	CanvasID        string
+	CameraObjectIDs []string
+	Passes          []string
+}
+
+// exportJobPasses are the passes a render host can draw today; lit arrives
+// with the material and lighting mode.
+var exportJobPasses = []string{PassClay, PassLine}
+
+// CreateExportJobInTx queues export_shots for the run's canvas. The scene
+// node on that canvas is fixed now; a scene not on it makes no job.
+func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in ExportJobInput) (Job, error) {
+	if existing, err := ReadRunJob(ctx, tx, in.RunID, in.ToolCallID); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, creativedocument.ErrNotFound) {
+		return Job{}, err
+	}
+	if in.CanvasID == "" {
+		return Job{}, invalid("这次对话没有画布，导出图无处可放")
+	}
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
+	if err != nil {
+		return Job{}, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return Job{}, creativedocument.ErrTrashed
+	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return Job{}, err
+	}
+	cameras := in.CameraObjectIDs
+	if len(cameras) == 0 {
+		for _, o := range scene.Objects {
+			if o.Kind == KindCamera {
+				cameras = append(cameras, o.ID)
+			}
+		}
+		if len(cameras) == 0 {
+			return Job{}, invalid("场景里还没有摄像机：先用 edit_scene 添加摄像机再导出")
+		}
+	}
+	idx := indexObjects(scene.Objects)
+	seen := map[string]bool{}
+	for _, id := range cameras {
+		i, ok := idx[id]
+		if !ok || scene.Objects[i].Kind != KindCamera {
+			return Job{}, invalid("物件 %s 不是场景里的摄像机", id)
+		}
+		if seen[id] {
+			return Job{}, invalid("摄像机 %s 重复", id)
+		}
+		seen[id] = true
+	}
+	passes := in.Passes
+	if len(passes) == 0 {
+		passes = exportJobPasses
+	}
+	used := map[string]bool{}
+	for _, p := range passes {
+		if !slices.Contains(exportJobPasses, p) || used[p] {
+			return Job{}, invalid("passes 只能是 clay、line，且不重复")
+		}
+		used[p] = true
+	}
+	// Columns go in the canonical pass order whatever order was asked.
+	passes = slices.DeleteFunc(slices.Clone(Passes), func(p string) bool { return !used[p] })
+	if n := len(cameras) * len(passes); len(cameras) > maxExportShots || n > maxExportImages {
+		return Job{}, creativeops.Explain(creativedocument.ErrSizeLimit, "一次最多导出 %d 张图（%d 台摄像机），现在是 %d 张", maxExportImages, maxExportShots, n)
+	}
+	node, err := creativecanvas.DocumentNodeInTx(ctx, tx, in.CanvasID, in.DocumentID)
+	if errors.Is(err, creativecanvas.ErrNotFound) {
+		return Job{}, invalid("这个场景不在当前画布上，导出图无处可放")
+	}
+	if err != nil {
+		return Job{}, err
+	}
+	req := ExportRequest{CameraObjectIDs: cameras, Passes: passes, CanvasID: in.CanvasID, SceneNodeID: node}
+	return CreateJob(ctx, tx, NewJob{DocumentID: in.DocumentID, Kind: KindExportShots, Request: req, RunID: in.RunID, ToolCallID: in.ToolCallID})
 }

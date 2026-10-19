@@ -19,9 +19,9 @@
 
 ## 4. 客户端任务与助手工具（后端）
 
-- [ ] 4.1 `creativescene/jobs.go`：`executableKinds` 加 `export_shots`、`ExportRequest`、`JobResult.Export`、`CreateExportJobInTx`（找画布上的场景节点、定摄像机、≤ 48 张）；`RenderRequest.DepthOfField` 与 `CreateRenderJobInTx` 的校验。测试：场景节点不在画布报错；`depth_of_field` 配 `viewpoint`/`preset` 或摄像机没开景深时报错且不建任务；不带参数时请求不变
-- [ ] 4.2 `creativescene/jobs_complete.go`：`ExportOutput{SceneRevision, Shots}`、`validate` 与 `completeExport`（保存点内放置，放置失败转 `invalid_result`）。测试：一个事务里节点、任务成功、运行继续；`Admit` 不通过与令牌失效不建节点；暂存不可用整体回滚；场景节点移除或画布归档 `invalid_result`；`shots` 与请求不符 400；换手后只有一组节点；烘焙与截图完成测试不变
-- [ ] 4.3 `creativeagent/scene_tools.go`、`tool_registry.go`：`export_shots@1` 工具与结果；`render_view` 的 `depth_of_field` 参数与说明；`edit_scene` 说明（摄像机全部参数、`look_at`、长边视场角、景深与对焦、空物体、先回看再导出）。工具测试通过
+- [x] 4.1 `creativescene/jobs.go`：`executableKinds` 加 `export_shots`、`ExportRequest`、`JobResult.Export`、`CreateExportJobInTx`（找画布上的场景节点、定摄像机、≤ 48 张）；`RenderRequest.DepthOfField` 与 `CreateRenderJobInTx` 的校验。测试：场景节点不在画布报错；`depth_of_field` 配 `viewpoint`/`preset` 或摄像机没开景深时报错且不建任务；不带参数时请求不变
+- [x] 4.2 `creativescene/jobs_complete.go`：`ExportOutput{SceneRevision, Shots}`、`validate` 与 `completeExport`（保存点内放置，放置失败转 `invalid_result`）。测试：一个事务里节点、任务成功、运行继续；`Admit` 不通过与令牌失效不建节点；暂存不可用整体回滚；场景节点移除或画布归档 `invalid_result`；`shots` 与请求不符 400；换手后只有一组节点；烘焙与截图完成测试不变
+- [x] 4.3 `creativeagent/scene_tools.go`、`tool_registry.go`：`export_shots@1` 工具与结果；`render_view` 的 `depth_of_field` 参数与说明；`edit_scene` 说明（摄像机全部参数、`look_at`、长边视场角、景深与对焦、空物体、先回看再导出）。工具测试通过
 
 ## 5. 前端：光学、渲染与执行
 
