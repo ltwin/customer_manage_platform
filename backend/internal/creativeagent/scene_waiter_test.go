@@ -194,3 +194,45 @@ func TestJobCompletedWhileTheRunIsStillRunning(t *testing.T) {
 		t.Fatalf("resumed run %s", done.State)
 	}
 }
+
+// A run that ended while a page still held its job (left behind before the
+// worker's own close cancelled jobs) must not keep that job claimed forever:
+// the sweep cancels it once, instead of re-admitting the run every pass.
+func TestSweepCancelsAJobWhoseRunAlreadyEnded(t *testing.T) {
+	f := setup(t)
+	run, _, _ := parkOnRender(t, f)
+	if claimed, err := creativescene.Claim(t.Context(), f.alice, creativescene.ClaimInput{EditorSessionID: "tab_0123456789abcdef"}); err != nil || claimed == nil {
+		t.Fatalf("claim %+v %v", claimed, err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='failed', error_code='creative_context_limit', finished_at=now(), updated_at=now() WHERE id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_scene_jobs SET lease_until=now()-interval '1 second', deadline=now()-interval '1 second' WHERE run_id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := creativescene.SweepJobs(t.Context(), f.alice, 10); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("creative_scene_jobs", "run_id=$1 AND state='cancelled'", run.ID); n != 1 {
+		t.Fatalf("job of an ended run still open: %v", f.runJobs(run.ID))
+	}
+	if counts, err := creativescene.SweepJobs(t.Context(), f.alice, 10); err != nil || counts != (creativescene.SweepCounts{}) {
+		t.Fatalf("second sweep %+v %v", counts, err)
+	}
+}
+
+// A page that finishes a job of a run that already ended is told the job was
+// cancelled, and it is.
+func TestCompletionOfAJobWhoseRunAlreadyEndedCancelsIt(t *testing.T) {
+	f := setup(t)
+	run, _, _ := parkOnRender(t, f)
+	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='failed', error_code='creative_context_limit', finished_at=now(), updated_at=now() WHERE id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.hostFails(); !errors.Is(err, creativescene.ErrJobLeaseLost) {
+		t.Fatalf("completion for an ended run: %v", err)
+	}
+	if n := f.count("creative_scene_jobs", "run_id=$1 AND state='cancelled'", run.ID); n != 1 {
+		t.Fatalf("job of an ended run still open: %v", f.runJobs(run.ID))
+	}
+}

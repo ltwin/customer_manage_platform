@@ -143,7 +143,8 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 
 // Abort ends a waiting run that failed Admit; ending it cancels its jobs. A
 // run that is running or queued is left to its worker, whose own admission
-// meets the same refusal.
+// meets the same refusal. A run that already ended has its leftover jobs
+// cancelled, or the sweep would admit it again on every pass.
 func (w sceneWaiter) Abort(ctx context.Context, scope store.AccountScope, runID string, cause error) error {
 	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		c, err := w.s.lockControlledRun(ctx, tx, runID)
@@ -152,6 +153,9 @@ func (w sceneWaiter) Abort(ctx context.Context, scope store.AccountScope, runID 
 		}
 		if err != nil {
 			return err
+		}
+		if terminalRun(c.State) {
+			return creativescene.CancelRunJobs(ctx, tx, c.ID)
 		}
 		if c.State != RunWaitingClient {
 			return nil

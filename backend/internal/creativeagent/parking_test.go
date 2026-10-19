@@ -298,3 +298,25 @@ func TestRerunAfterACrashParksOnTheSameJobs(t *testing.T) {
 		t.Fatalf("first %v second %v jobs %v calls %d", first.jobIDs, second.jobIDs, f.runJobs(run.ID), parking.calls)
 	}
 }
+
+// An attempt can fail after a call parked: on 2026-10-19 the checkpoint taken
+// at the interruption was over its cap. The worker ends the run itself, and its
+// jobs must end with it, or a page claims them for a run that is gone and the
+// sweep can never settle them.
+func TestRunFailedAfterParkingCancelsItsJobs(t *testing.T) {
+	f := setup(t)
+	run, held, execution, _, err := startParkingRun(t, f, nil, readResultCall("a", "a"))
+	var parked *parkedRun
+	if !errors.As(err, &parked) {
+		t.Fatalf("attempt ended with %v", err)
+	}
+	if err = f.service.completeAttempt(t.Context(), f.alice, held, execution.outcome, ErrLimit); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunFailed || got.ErrorCode != "creative_context_limit" {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+	if n := f.count("creative_scene_jobs", "run_id=$1 AND state='cancelled'", run.ID); n != 1 {
+		t.Fatalf("jobs %v not cancelled with the run", f.runJobs(run.ID))
+	}
+}

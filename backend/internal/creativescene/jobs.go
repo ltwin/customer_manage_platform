@@ -213,7 +213,8 @@ type JobWaiter interface {
 	// on nothing else, takes the slot and queues it.
 	Settle(ctx context.Context, tx store.TxAccountScope, gate RunGate, job Job, res JobResult) error
 	// Abort ends a run that failed Admit, in its own transaction; ending a run
-	// cancels its jobs.
+	// cancels its jobs. A run that had already ended has the jobs it left
+	// behind cancelled.
 	Abort(ctx context.Context, scope store.AccountScope, runID string, cause error) error
 }
 

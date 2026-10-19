@@ -16,6 +16,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -1010,10 +1011,10 @@ type runCloseGuard struct {
 	State string
 }
 
-// closeRunInTx ends a run, gives the slot back and gives back any budget the
-// run reserved but never spent. The release names the run and the token
-// together, so a worker whose claim was taken over cannot free an occupancy
-// that now belongs to somebody else.
+// closeRunInTx ends a run, gives the slot back, cancels its unfinished client
+// jobs and gives back any budget the run reserved but never spent. The release
+// names the run and the token together, so a worker whose claim was taken over
+// cannot free an occupancy that now belongs to somebody else.
 //
 // Every terminal path comes through here, which is the point: the hold taken at
 // creation outlives the run otherwise, and an account whose runs all end before
@@ -1065,6 +1066,11 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 		return false, err
 	}
 	if err := releaseSlotInTx(ctx, tx, runID, token, now); err != nil {
+		return false, err
+	}
+	// An attempt can fail after a call parked; the run row is locked by the
+	// update above, so its client jobs come after it in the lock order.
+	if err := creativescene.CancelRunJobs(ctx, tx, runID); err != nil {
 		return false, err
 	}
 	// Checkpoint and context lifetimes share the run's terminal clock. Pending
