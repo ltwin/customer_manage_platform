@@ -975,7 +975,11 @@ function CameraFrame({ scene, models, ui, id, size }: { scene: Scene; models: Re
                 <input
                   type="checkbox"
                   checked={chosen.includes(g)}
-                  onChange={(e) => ui.setState({ guides: e.target.checked ? allGuides.filter((x) => x === g || chosen.includes(x)) : chosen.filter((x) => x !== g) })}
+                  onChange={(e) => {
+                    ui.setState({ guides: e.target.checked ? allGuides.filter((x) => x === g || chosen.includes(x)) : chosen.filter((x) => x !== g) })
+                    // Shortcuts are ignored while a field has focus; hand it back to the editor.
+                    e.currentTarget.blur()
+                  }}
                 />
                 {guideNames[g]}
               </label>

@@ -26,7 +26,7 @@
 ## 5. 前端：光学、渲染与执行
 
 - [x] 5.1 `cameraOptics.ts`（视场角、对焦距离、弥散圆、清晰范围、等效焦距、传感器预设）；`host/framing.ts` 与 `CameraFrustum` 改按长边；`state/apply.ts` 的 `cameraDefaults` 加景深字段。单元测试：3:2 与现在相同、2:3 长边视场等于 3:2、清晰范围约 2.74–3.32 m、APS-C 35 mm 约 53.6 mm、对焦距离夹在 near/far 之间、弥散圆上限
-- [ ] 5.2 `render/clayExport.ts`、`render/dofPass.ts`、`render/linePass.ts`；`host/render.ts` 一次导出共用离屏根、`longSide` 参数、`toBlob` 异步编码、`render_view` 带景深时走白模导出流程。用样例场景定线稿阈值、GTAO 参数、景深采样（未决 #1），写成常量
+- [x] 5.2 `render/clayExport.ts`、`render/dofPass.ts`、`render/linePass.ts`；`host/render.ts` 一次导出共用离屏根、`longSide` 参数、`toBlob` 异步编码、`render_view` 带景深时走白模导出流程。用样例场景定线稿阈值、GTAO 参数、景深采样（未决 #1），写成常量
 - [x] 5.3 `host/exportShots.ts`（出图、并发 2 上传、失败丢弃、手动提交复用 `operation_id` 与 `client_created_at` 的重试）；`api.ts:exportScene`；`host/executor.ts`、`host/jobs.ts` 执行 `export_shots` 经 `deliver` 完成、`render_view` 传 `depth_of_field`。单元测试覆盖失败丢弃与重试
 
 ## 6. 前端：编辑器与画布
@@ -39,5 +39,5 @@
 ## 7. 文档与验收
 
 - [x] 7.1 `docs/dev/agent-skills-tools.md`（工具变化、排空后升级）、`docs/dev/creative-scene-agent.md`（长边视场角、景深回看）
-- [ ] 7.2 `scripts/creative-scene.e2e.mjs`：添加摄像机 → 相机视图 → 导出 → PNG 尺寸与画布节点；空物体对焦 + 景深预览 + 导出虚化对比；传感器预设与辅助线不进导出图。`scripts/creative-scene-agent.e2e.mjs`：`export_shots`；助手写光圈与对焦物件，`render_view` 默认清晰、带 `depth_of_field` 虚化。记录出图、编码、上传与景深耗时
+- [x] 7.2 `scripts/creative-scene.e2e.mjs`：添加摄像机 → 相机视图 → 导出 → PNG 尺寸与画布节点；空物体对焦 + 景深预览 + 导出虚化对比；传感器预设与辅助线不进导出图。`scripts/creative-scene-agent.e2e.mjs`：`export_shots`；助手写光圈与对焦物件，`render_view` 默认清晰、带 `depth_of_field` 虚化。记录出图、编码、上传与景深耗时
 - [ ] 7.3 AC-9 重绘一致性样例：3 台摄像机导出，景深关、开各一组，记录到 `discovery/research/repaint-consistency.md`，结论由 owner 给出

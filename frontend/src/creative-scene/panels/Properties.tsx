@@ -306,7 +306,7 @@ function CameraFields({ object, objects, readOnly, focusDistance, picking, onPic
       <small>等效全画幅 {Math.round(equivalentFocal(c.focal_mm, c.sensor_mm) * 10) / 10} mm</small>
       <label className="cc-scene-field">
         <span>画幅</span>
-        <select value={c.aspect} onChange={(e) => onCamera({ aspect: e.target.value }, `调整「${name}」画幅`)}>
+        <select aria-label="画幅" value={c.aspect} onChange={(e) => onCamera({ aspect: e.target.value }, `调整「${name}」画幅`)}>
           {(aspects.includes(c.aspect) ? aspects : [c.aspect, ...aspects]).map((a) => (
             <option key={a} value={a}>
               {a}
@@ -384,6 +384,7 @@ function CameraFields({ object, objects, readOnly, focusDistance, picking, onPic
           <label className="cc-scene-field">
             <span>传感器</span>
             <select
+              aria-label="传感器预设"
               value={preset ?? 'custom'}
               onChange={(e) => {
                 const p = sensorPresets.find((x) => x.label === e.target.value)

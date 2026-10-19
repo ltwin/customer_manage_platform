@@ -31,7 +31,16 @@ window.__render = async (request) => {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(bitmap, 0, 0);
   const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
+  // Squared luminance gradient: blur spreads edges thin and lowers it.
+  const d = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+  const lum = (i) => d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+  let energy = 0;
+  for (let y = 0; y < bitmap.height - 1; y++) for (let x = 0; x < bitmap.width - 1; x++) {
+    const i = (y * bitmap.width + x) * 4;
+    energy += (lum(i) - lum(i + 4)) ** 2 + (lum(i) - lum(i + bitmap.width * 4)) ** 2;
+  }
   return {
+    energy: energy / (bitmap.width * bitmap.height),
     ok: true, type: shot.image.type, revision: shot.revision, width: bitmap.width, height: bitmap.height,
     center: px(bitmap.width >> 1, bitmap.height >> 1), corner: px(4, 4), canvases: document.querySelectorAll('canvas').length,
   };
@@ -104,6 +113,11 @@ function sceneDoc() {
           id: 'sobj_cam', kind: 'camera', name: '机位', parent_id: null, order: 1, transform: { ...identity(), position: [0, 1.5, 8] }, visible: true, locked: false,
           camera: { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '' },
         },
+        // Depth of field on, focused 2 m ahead: the pillar 8 m away is out of focus.
+        {
+          id: 'sobj_dof', kind: 'camera', name: '景深机位', parent_id: null, order: 2, transform: { ...identity(), position: [0, 1.5, 8] }, visible: true, locked: false,
+          camera: { focal_mm: 85, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '', depth_of_field: true, f_stop: 1.4, focus: 2, focus_object_id: '' },
+        },
       ],
     },
     models: { [MODEL]: { content_id: 'ccnt_pillar', usable: true, manifest: pillarManifest, generator: null, name_hint: '柱' } },
@@ -132,6 +146,11 @@ class Server {
   }
   render(id, request) {
     const job = { id, document_id: DOC, kind: 'render_view', attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z', request: { ...request, mode: 'clay' } }
+    this.queue.push(job)
+    return job
+  }
+  export(id, request) {
+    const job = { id, document_id: DOC, kind: 'export_shots', attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z', request }
     this.queue.push(job)
     return job
   }
@@ -395,6 +414,23 @@ try {
     await t.context.close()
   })
 
+  await check('render_view with depth_of_field blurs through the camera’s aperture, at render_view’s size', async () => {
+    const t = await openRender()
+    let started = Date.now()
+    const plain = await t.render({ camera_object_id: 'sobj_dof' })
+    const plainMs = Date.now() - started
+    started = Date.now()
+    const blurred = await t.render({ camera_object_id: 'sobj_dof', depth_of_field: true })
+    console.log(`render_view 1024 JPEG: sharp ${plainMs} ms, depth of field ${Date.now() - started} ms; gradient energy ${plain.energy.toFixed(2)} → ${blurred.energy.toFixed(2)}`)
+    assert.ok(plain.ok && blurred.ok, JSON.stringify(blurred))
+    assert.equal(blurred.type, 'image/jpeg')
+    assert.deepEqual([blurred.width, blurred.height], [1024, 683])
+    assert.ok(!isBackground(blurred.center), `the pillar is still there: ${blurred.center}`)
+    assert.ok(blurred.energy < plain.energy * 0.6, `out of focus is softer: ${plain.energy.toFixed(2)} → ${blurred.energy.toFixed(2)}`)
+    assert.deepEqual(t.errors, [])
+    await t.context.close()
+  })
+
   await check('each screenshot gives its WebGL context back: twenty in a row all draw', async () => {
     const t = await openRender()
     for (let i = 0; i < 20; i++) {
@@ -437,6 +473,26 @@ try {
     assert.equal(shot.payload.outcome, 'succeeded', JSON.stringify(shot.payload))
     assert.equal(shot.payload.render.scene_revision, '7')
     assert.equal(server.uploads.get(shot.payload.render.image_upload_id).mime, 'image/jpeg')
+    assert.deepEqual(t.errors, [])
+    await context.close()
+  })
+
+  await check('the canvas page runs export_shots: clay and line art per camera, completed with the revision it drew', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new Server()
+    await route(context, server)
+    const t = await tab(context, '.scene-agent-host-qa.html')
+    await t.page.locator('#host', { hasText: 'idle' }).waitFor()
+    server.export('csj_export', { camera_object_ids: ['sobj_cam', 'sobj_dof'], passes: ['clay', 'line'], canvas_id: 'canvas', scene_node_id: 'node-scene' })
+    const started = Date.now()
+    await t.page.evaluate(() => window.__invalidate())
+    const done = await server.completed('csj_export')
+    assert.equal(done.payload.outcome, 'succeeded', JSON.stringify(done.payload))
+    const { export: out } = done.payload
+    assert.equal(out.scene_revision, '7')
+    assert.deepEqual(out.shots.map((s) => [s.camera_object_id, s.images.map((i) => i.pass)]), [['sobj_cam', ['clay', 'line']], ['sobj_dof', ['clay', 'line']]])
+    for (const s of out.shots) for (const i of s.images) assert.equal(server.uploads.get(i.upload_id).mime, 'image/png')
+    console.log(`export_shots of 4 images completed in ${Date.now() - started} ms`)
     assert.deepEqual(t.errors, [])
     await context.close()
   })
