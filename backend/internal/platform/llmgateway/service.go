@@ -395,7 +395,7 @@ func settlementOf(ctx context.Context, tx rowReader, requestID string) (Settleme
 func (s *Service) Get(ctx context.Context, scope store.AccountScope, requestID string) (RequestView, error) {
 	var view RequestView
 	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
-		row, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns, "id=$2", requestID))
+		row, err := scanRequestView(tx.QueryRow(ctx, "llm_requests", requestViewColumns, "id=$2", requestID))
 		if err != nil {
 			return err
 		}
@@ -436,7 +436,7 @@ func (s *Service) RequestForBinding(ctx context.Context, scope store.AccountScop
 func (s *Service) requestByOperation(ctx context.Context, scope store.AccountScope, callerService, operationID string) (RequestView, error) {
 	var view RequestView
 	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
-		row, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns,
+		row, err := scanRequestView(tx.QueryRow(ctx, "llm_requests", requestViewColumns,
 			"caller_service=$2 AND caller_operation_id=$3", callerService, operationID))
 		if err != nil {
 			return err
@@ -461,7 +461,9 @@ func (s *Service) CancelInTx(ctx context.Context, tx store.TxAccountScope, reque
 	if err := s.lockBudgetForRequest(ctx, tx, requestID, now); err != nil {
 		return RequestView{}, err
 	}
-	row, err := scanRequest(tx.QueryRowForUpdate(ctx, "llm_requests", requestColumns, "id=$2", requestID))
+	// Closing a run cancels each of its requests, so the prompt must not ride
+	// along: a long run's group would outlast the close's time budget.
+	row, err := scanRequestView(tx.QueryRowForUpdate(ctx, "llm_requests", requestViewColumns, "id=$2", requestID))
 	if err != nil {
 		return RequestView{}, err
 	}
