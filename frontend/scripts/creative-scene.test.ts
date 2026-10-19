@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Box3 } from 'three'
-import type { SceneObject } from '../src/creative-scene/api.ts'
+import type { ObjectUpdate, SceneObject } from '../src/creative-scene/api.ts'
 import { builtins } from '../src/creative-scene/builtins/catalog.ts'
 import {
   geometryBuilders,
@@ -102,6 +102,32 @@ test('projection mirrors the server: defaults, param merge, subtree removal, rep
   assert.equal(s.scene.objects.find((o) => o.id === id(2))!.parent_id, id(10))
   s = applyOps(s, [{ op: 'remove_objects', object_ids: [id(10)] }])
   assert.deepEqual(s.scene.objects, [], 'removing a group takes its descendants')
+})
+
+// The decision table of the server's mergeLight, applied locally.
+test('light and camera updates merge by key as the server does, a type change keeping the shared fields', () => {
+  const light = (n: number, l: SceneObject['light']) => obj(n, 'light', null, n, { light: l })
+  let s = state([
+    light(1, { type: 'point', color: '#ff963d', intensity: 45, cast_shadow: false, distance: 7, decay: 2 }),
+    light(2, { type: 'spot', color: '#ffeedd', intensity: 30, cast_shadow: false, distance: 5, decay: 1.5, angle: 0.4, penumbra: 0.3 }),
+    light(3, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }),
+    obj(4, 'camera', null, 4, { camera: { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 1000, label: 'A' } }),
+  ])
+  const update = (n: number, u: Omit<ObjectUpdate, 'object_id'>) =>
+    (s = applyOps(s, [{ op: 'update_objects', updates: [{ ...u, object_id: id(n) }] }]))
+  const at = (n: number) => s.scene.objects.find((o) => o.id === id(n))!
+  update(1, { light: { intensity: 80 } })
+  assert.deepEqual(at(1).light, { type: 'point', color: '#ff963d', intensity: 80, cast_shadow: false, distance: 7, decay: 2 })
+  update(2, { light: { type: 'point' } })
+  assert.deepEqual(at(2).light, { type: 'point', color: '#ffeedd', intensity: 30, cast_shadow: false, distance: 5, decay: 1.5 })
+  update(1, { light: { type: 'spot' } })
+  assert.deepEqual(at(1).light, { type: 'spot', color: '#ff963d', intensity: 80, cast_shadow: false, distance: 7, decay: 2, angle: Math.PI / 3, penumbra: 0 })
+  update(3, { light: { angle: 0.5 } })
+  assert.deepEqual(at(3).light, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }, 'the server refuses an angle on a point light')
+  update(3, { light: { type: 'spot', angle: 0.5 } })
+  assert.deepEqual(at(3).light, { type: 'spot', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, angle: 0.5, penumbra: 0 })
+  update(4, { camera: { far: 200 } })
+  assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A' })
 })
 
 test('an undo patch puts objects back under a returning group and replaces only listed fields', () => {

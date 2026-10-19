@@ -14848,20 +14848,21 @@ components:
     CreativeSceneFog:
       type: object
       additionalProperties: false
+      description: three.js Fog，从 near 到 far 线性变浓，单位米。
       required:
       - color
-      - near_m
-      - far_m
+      - near
+      - far
       properties:
         color:
           $ref: '#/components/schemas/CreativeSceneColor'
-        near_m:
+        near:
           type: number
           exclusiveMinimum: true
           minimum: 0
-        far_m:
+        far:
           type: number
-          description: 须大于 near_m。
+          description: 须大于 near。
     CreativeSceneRender:
       type: object
       additionalProperties: false
@@ -15003,14 +15004,12 @@ components:
     CreativeSceneLight:
       type: object
       additionalProperties: false
+      description: >-
+        字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。
+        写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。
+        平行光和聚光沿物件局部 −Z 照射。
       required:
       - type
-      - color
-      - intensity
-      - range_m
-      - angle_deg
-      - penumbra
-      - cast_shadow
       properties:
         type:
           type: string
@@ -15024,32 +15023,71 @@ components:
           type: number
           minimum: 0
           maximum: 1000
-        range_m:
-          type: number
-          nullable: true
-        angle_deg:
-          type: number
-          nullable: true
-          minimum: 1
-          maximum: 179
-          description: spot 时必填。
-        penumbra:
-          type: number
-          nullable: true
-          minimum: 0
-          maximum: 1
+          description: three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值。缺省 1。
         cast_shadow:
           type: boolean
+          description: 缺省 false。
+        distance:
+          type: number
+          minimum: 0
+          description: point、spot。光照截断距离（米），0 表示不截断；缺省 0。
+        decay:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: point、spot。随距离衰减的指数；缺省 2。
+        angle:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 1.5707963267948966
+          description: spot。光锥中心到边缘的半角（弧度），不超过 π/2；缺省 π/3。
+        penumbra:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: spot。缺省 0。
+    CreativeSceneLightPatch:
+      type: object
+      additionalProperties: false
+      description: update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。
+      properties:
+        type:
+          type: string
+          enum:
+          - directional
+          - point
+          - spot
+        color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+        intensity:
+          type: number
+          minimum: 0
+          maximum: 1000
+        cast_shadow:
+          type: boolean
+        distance:
+          type: number
+          minimum: 0
+        decay:
+          type: number
+          minimum: 0
+          maximum: 10
+        angle:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 1.5707963267948966
+        penumbra:
+          type: number
+          minimum: 0
+          maximum: 1
     CreativeSceneCamera:
       type: object
       additionalProperties: false
-      required:
-      - focal_mm
-      - sensor_mm
-      - aspect
-      - near_m
-      - far_m
-      - label
+      description: >-
+        写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。
+        near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。
       properties:
         focal_mm:
           type: number
@@ -15066,10 +15104,13 @@ components:
         aspect:
           type: string
           pattern: ^([1-9]|[12][0-9]|3[0-2]):([1-9]|[12][0-9]|3[0-2])$
-        near_m:
+        near:
           type: number
-        far_m:
+          exclusiveMinimum: true
+          minimum: 0
+        far:
           type: number
+          description: 须大于 near。
         label:
           type: string
           maxLength: 40
@@ -15133,7 +15174,7 @@ components:
     CreativeSceneObjectUpdate:
       type: object
       additionalProperties: false
-      description: 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params 按键合并，material_slots、light、camera 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。
+      description: 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params、light、camera 按键合并，material_slots 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。
       required:
       - object_id
       properties:
@@ -15159,7 +15200,7 @@ components:
         material_slots:
           $ref: '#/components/schemas/CreativeSceneMaterialSlots'
         light:
-          $ref: '#/components/schemas/CreativeSceneLight'
+          $ref: '#/components/schemas/CreativeSceneLightPatch'
         camera:
           $ref: '#/components/schemas/CreativeSceneCamera'
     CreativeSceneRemoveObjects:

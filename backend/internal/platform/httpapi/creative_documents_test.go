@@ -409,10 +409,19 @@ func TestCreativeSceneDocumentHTTP(t *testing.T) {
 		c := boxObject(fmt.Sprintf("sobj_C%020d", i), 10+i)
 		c["kind"] = "camera"
 		delete(c, "primitive")
-		c["camera"] = map[string]any{"focal_mm": 35, "sensor_mm": []float64{36, 24}, "aspect": "3:2", "near_m": 0.1, "far_m": 1000, "label": ""}
+		c["camera"] = map[string]any{"focal_mm": 35, "sensor_mm": []float64{36, 24}, "aspect": "3:2", "near": 0.1, "far": 1000, "label": ""}
 		cameras[i] = c
 	}
 	want("too many cameras", post(token, base+"/commands", map[string]any{"expected": map[string]any{"objects": "2"}, "operations": []any{map[string]any{"op": "add_objects", "objects": cameras}}}), 413, "creative_size_limit")
+	addLight := func(fields map[string]any) map[string]any {
+		l := boxObject("sobj_L00000000000000000001", 50)
+		l["kind"] = "light"
+		delete(l, "primitive")
+		l["light"] = fields
+		return map[string]any{"expected": map[string]any{"objects": "2"}, "operations": []any{map[string]any{"op": "add_objects", "objects": []any{l}}}}
+	}
+	want("light field from before v7", post(token, base+"/commands", addLight(map[string]any{"type": "point", "range_m": 7})), 400, "validation_failed")
+	want("three.js point light", post(token, base+"/commands", addLight(map[string]any{"type": "point", "color": "#ff963d", "intensity": 45, "distance": 7, "decay": 2})), 200, "")
 
 	want("trash", post(token, base+"/trash", map[string]any{}), 200, "")
 	v, w = read(token)

@@ -493,7 +493,7 @@ func TestCreateRenderJob(t *testing.T) {
 	f := setup(t)
 	doc := createScene(t, f.a)
 	cam := object(objectID(1), "camera", nil, 10)
-	cam["camera"] = map[string]any{"focal_mm": 35, "sensor_mm": []float64{36, 24}, "aspect": "3:2", "near_m": 0.1, "far_m": 100, "label": "A"}
+	cam["camera"] = map[string]any{"focal_mm": 35, "sensor_mm": []float64{36, 24}, "aspect": "3:2", "near": 0.1, "far": 100, "label": "A"}
 	addObjects(t, f.a, doc, cam, box(objectID(2), nil, 11))
 	render := func(in creativescene.RenderInput) (creativescene.Job, error) {
 		in.DocumentID, in.RunID = doc, "ccrn_agent"

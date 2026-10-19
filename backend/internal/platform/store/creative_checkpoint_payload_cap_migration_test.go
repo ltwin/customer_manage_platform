@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackCheckpointPayloadCap is the head of the rollback chain: every older
+// rollbackCheckpointPayloadCap undoes 0077 and then 0076; every older
 // migration's rollback helper undoes this one first.
 func rollbackCheckpointPayloadCap(t *testing.T, url string) {
 	t.Helper()
+	rollbackSceneThreejs(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-checkpoint-payload-cap", err)
 	}
@@ -43,6 +44,7 @@ func TestCheckpointPayloadCapMigrationRaisesCapAndRefusesLossyRollback(t *testin
 	if _, err = db.Exec(largeCheckpointInsert); err != nil {
 		t.Fatal("checkpoint above 1 MiB rejected", err)
 	}
+	rollbackSceneThreejs(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "checkpoints above 1 MiB exist") {
 		t.Fatal("lossy rollback allowed", err)
 	}

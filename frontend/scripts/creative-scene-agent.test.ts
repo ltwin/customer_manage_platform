@@ -321,7 +321,7 @@ const sceneOf = (...objects: SceneObject[]): Scene =>
 const ground = object({ id: 'ground', kind: 'primitive', locked: true, primitive: { builtin: 'ground@1', params: { size: 40 } } })
 const cube = (id: string, size: number, position = [0, 0, 0]) =>
   object({ id, kind: 'primitive', transform: { ...identity(), position }, primitive: { builtin: 'box@1', params: { width: size, height: size, depth: size } } })
-const lens = { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near_m: 0.1, far_m: 200, label: '' }
+const lens = { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '' }
 const near = (a: readonly number[], b: readonly number[], eps = 1e-6) => a.every((x, i) => Math.abs(x - b[i]) < eps)
 
 function framed(scene: Scene, request: Parameters<typeof framingFor>[2]): Framing {

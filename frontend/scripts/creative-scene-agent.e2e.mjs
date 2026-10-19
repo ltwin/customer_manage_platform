@@ -102,7 +102,7 @@ function sceneDoc() {
         { id: 'sobj_pillar', kind: 'model_instance', name: '柱', parent_id: null, order: 0, transform: identity(), visible: true, locked: false, model: { content_revision_id: MODEL }, material_slots: {} },
         {
           id: 'sobj_cam', kind: 'camera', name: '机位', parent_id: null, order: 1, transform: { ...identity(), position: [0, 1.5, 8] }, visible: true, locked: false,
-          camera: { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near_m: 0.1, far_m: 200, label: '' },
+          camera: { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '' },
         },
       ],
     },

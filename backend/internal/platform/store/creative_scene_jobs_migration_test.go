@@ -12,7 +12,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackSceneJobs undoes 0076 and then 0075; every older migration's
+// rollbackSceneJobs undoes 0077 through 0075; every older migration's
 // rollback helper undoes this one first.
 func rollbackSceneJobs(t *testing.T, url string) {
 	t.Helper()

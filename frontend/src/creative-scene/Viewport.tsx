@@ -180,7 +180,7 @@ export function Environment({ environment }: { environment: SceneEnvironment }) 
       ) : (
         <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
       )}
-      {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near_m, environment.fog.far_m]} />}
+      {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
       <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity + 0.3} />
       <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={[0, 0, 1]} />
       <directionalLight

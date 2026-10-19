@@ -679,6 +679,20 @@ await check('reopening shows exactly what the server has', async () => {
   await again.context.close()
 })
 
+await check('fog written as three.js Fog {color, near, far} shows in the view', async () => {
+  const clear = await open(new SceneServer())
+  const before = await clear.page.locator('.cc-scene-editor canvas').screenshot()
+  await clear.context.close()
+  const server = new SceneServer()
+  server.scene.environment.fog = { color: '#ff00ff', near: 1, far: 8 }
+  const foggy = await open(server)
+  const after = await foggy.page.locator('.cc-scene-editor canvas').screenshot()
+  const diff = await pixelDiff(foggy.page, before, after)
+  assert.ok(diff > 0.2, `fog changes ${diff} of the picture`)
+  assert.deepEqual([...clear.errors, ...foggy.errors], [])
+  await foggy.context.close()
+})
+
 await check('undo and redo go through restore_units', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)

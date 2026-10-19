@@ -1,6 +1,7 @@
 import { Box3, Matrix4, Quaternion, Vector3 } from 'three'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
+import { cameraDefaults } from '../state/apply.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { docToView, positionToView, type Quat, type Vec3 } from '../space.ts'
 
@@ -78,15 +79,17 @@ function cameraFraming(scene: Scene, id: string): Framing | { error: string } {
   const position = new Vector3()
   const rotation = new Quaternion()
   viewMatrix(objects, o).decompose(position, rotation, new Vector3())
-  const [w, h] = o.camera.aspect.split(':').map(Number)
+  // The server stores every field; the defaults only satisfy the shared type.
+  const camera = { ...cameraDefaults, ...o.camera }
+  const [w, h] = camera.aspect.split(':').map(Number)
   const aspect = w > 0 && h > 0 ? w / h : 3 / 2
   // As the frustum the editor draws: vertical angle from the sensor height.
   return {
     position: vec(position),
     quaternion: quat(rotation.normalize()),
-    fov: fovFor(o.camera.focal_mm, o.camera.sensor_mm[1]),
-    near: o.camera.near_m,
-    far: o.camera.far_m,
+    fov: fovFor(camera.focal_mm, camera.sensor_mm[1]),
+    near: camera.near,
+    far: camera.far,
     ...pictureSize(aspect),
   }
 }

@@ -71,10 +71,11 @@ type Ambient struct {
 	Intensity float64 `json:"intensity"`
 }
 
+// Fog is three.js Fog: linear from near to far, in metres.
 type Fog struct {
 	Color string  `json:"color"`
-	NearM float64 `json:"near_m"`
-	FarM  float64 `json:"far_m"`
+	Near  float64 `json:"near"`
+	Far   float64 `json:"far"`
 }
 
 type Render struct {
@@ -118,23 +119,42 @@ type MaterialSlot struct {
 	Params map[string]any `json:"params"`
 }
 
+// Light names and means its fields as the three.js light class of its type
+// does. Input may leave out all but type; the stored snapshot holds exactly
+// the fields of the type (completeLight). A nil field is one not written, so
+// distance 0 still encodes.
 type Light struct {
 	Type       string   `json:"type"`
-	Color      string   `json:"color"`
-	Intensity  float64  `json:"intensity"`
-	RangeM     *float64 `json:"range_m"`
-	AngleDeg   *float64 `json:"angle_deg"`
-	Penumbra   *float64 `json:"penumbra"`
-	CastShadow bool     `json:"cast_shadow"`
+	Color      *string  `json:"color,omitempty"`
+	Intensity  *float64 `json:"intensity,omitempty"`
+	CastShadow *bool    `json:"cast_shadow,omitempty"`
+	Distance   *float64 `json:"distance,omitempty"`
+	Decay      *float64 `json:"decay,omitempty"`
+	Angle      *float64 `json:"angle,omitempty"`
+	Penumbra   *float64 `json:"penumbra,omitempty"`
 }
 
+// lightPatch is a light in update_objects, where type may be left out too.
+type lightPatch struct {
+	Type       *string  `json:"type,omitempty"`
+	Color      *string  `json:"color,omitempty"`
+	Intensity  *float64 `json:"intensity,omitempty"`
+	CastShadow *bool    `json:"cast_shadow,omitempty"`
+	Distance   *float64 `json:"distance,omitempty"`
+	Decay      *float64 `json:"decay,omitempty"`
+	Angle      *float64 `json:"angle,omitempty"`
+	Penumbra   *float64 `json:"penumbra,omitempty"`
+}
+
+// Camera fields may all be left out on input; the stored snapshot holds every
+// one (completeCamera). near and far are those of three.js PerspectiveCamera.
 type Camera struct {
-	FocalMM  float64   `json:"focal_mm"`
-	SensorMM []float64 `json:"sensor_mm"`
-	Aspect   string    `json:"aspect"`
-	NearM    float64   `json:"near_m"`
-	FarM     float64   `json:"far_m"`
-	Label    string    `json:"label"`
+	FocalMM  *float64  `json:"focal_mm,omitempty"`
+	SensorMM []float64 `json:"sensor_mm,omitempty"`
+	Aspect   *string   `json:"aspect,omitempty"`
+	Near     *float64  `json:"near,omitempty"`
+	Far      *float64  `json:"far,omitempty"`
+	Label    *string   `json:"label,omitempty"`
 }
 
 func placementUnit(id string) string { return "object:" + id }
@@ -202,7 +222,7 @@ func encodeScene(s Scene) (creativedocument.Snapshot, error) {
 // decodeInput decodes client input strictly and then insists on every field
 // whose json tag lacks omitempty, so a missing visible never reads as false.
 // null passes only where the contract makes a field nullable, a pointer
-// without omitempty (parent_id, fog, a light's range_m): anywhere else it
+// without omitempty (parent_id, fog): anywhere else it
 // decodes as the zero value, and position [null, 0, 0] saved as the origin.
 func decodeInput(raw json.RawMessage, target any) error {
 	if err := creativeops.Decode(raw, target); err != nil {
@@ -444,8 +464,8 @@ func validateEnvironment(e Environment) error {
 	if !colorPattern.MatchString(e.Ambient.Color) || !in(e.Ambient.Intensity, 0, 10) {
 		return invalid("环境光须有 #rrggbb 颜色和 0…10 的强度")
 	}
-	if f := e.Fog; f != nil && (!colorPattern.MatchString(f.Color) || !finite(f.NearM) || !finite(f.FarM) || f.NearM <= 0 || f.FarM <= f.NearM) {
-		return invalid("雾须有 #rrggbb 颜色，且 0 < near_m < far_m")
+	if f := e.Fog; f != nil && (!colorPattern.MatchString(f.Color) || !finite(f.Near) || !finite(f.Far) || f.Near <= 0 || f.Far <= f.Near) {
+		return invalid("雾须有 #rrggbb 颜色，且 0 < near < far")
 	}
 	return nil
 }
@@ -570,20 +590,160 @@ func validateSlots(slots map[string]MaterialSlot) error {
 	return nil
 }
 
-func validateLight(l Light) error {
-	switch l.Type {
-	case "directional", "point", "spot":
-	default:
-		return fmt.Errorf("未知灯光类型 %q", l.Type)
+// lightFields lists, in contract order, the fields each light type has
+// besides type (L1, L2).
+var lightFields = map[string][]string{
+	"directional": {"color", "intensity", "cast_shadow"},
+	"point":       {"color", "intensity", "cast_shadow", "distance", "decay"},
+	"spot":        {"color", "intensity", "cast_shadow", "distance", "decay", "angle", "penumbra"},
+}
+
+var lightNames = map[string]string{"directional": "平行光", "point": "点光", "spot": "聚光"}
+
+type lightField struct {
+	name  string
+	set   bool
+	clear func()
+}
+
+// fields is every optional field of l in contract order.
+func (l *Light) fields() []lightField {
+	return []lightField{
+		{"color", l.Color != nil, func() { l.Color = nil }},
+		{"intensity", l.Intensity != nil, func() { l.Intensity = nil }},
+		{"cast_shadow", l.CastShadow != nil, func() { l.CastShadow = nil }},
+		{"distance", l.Distance != nil, func() { l.Distance = nil }},
+		{"decay", l.Decay != nil, func() { l.Decay = nil }},
+		{"angle", l.Angle != nil, func() { l.Angle = nil }},
+		{"penumbra", l.Penumbra != nil, func() { l.Penumbra = nil }},
 	}
-	if !colorPattern.MatchString(l.Color) || !in(l.Intensity, 0, 1000) {
+}
+
+// checkLightFields is L2: a light carries only fields its type has. The
+// message names the first one that does not belong and the ones that do.
+func checkLightFields(l *Light) error {
+	has, ok := lightFields[l.Type]
+	if !ok {
+		return fmt.Errorf("未知灯光类型 %q，可用：directional、point、spot", l.Type)
+	}
+	for _, f := range l.fields() {
+		if f.set && !slices.Contains(has, f.name) {
+			return fmt.Errorf("%s没有字段 %s，可用字段：type、%s", lightNames[l.Type], f.name, strings.Join(has, "、"))
+		}
+	}
+	return nil
+}
+
+// completeLight checks L2 and fills the three.js default of every field the
+// type has and l leaves out (L1).
+func completeLight(l *Light) error {
+	if err := checkLightFields(l); err != nil {
+		return err
+	}
+	has := lightFields[l.Type]
+	fill(&l.Color, "#ffffff")
+	fill(&l.Intensity, 1.0)
+	fill(&l.CastShadow, false)
+	if slices.Contains(has, "distance") {
+		fill(&l.Distance, 0.0)
+		fill(&l.Decay, 2.0)
+	}
+	if slices.Contains(has, "angle") {
+		fill(&l.Angle, math.Pi/3)
+		fill(&l.Penumbra, 0.0)
+	}
+	return nil
+}
+
+// mergeLight is L4: p changes only what it carries. The update itself must
+// fit the resulting type; the current fields the type lacks are dropped and
+// the ones it gains take their defaults.
+func mergeLight(cur Light, p lightPatch) (Light, error) {
+	next := Light{Type: cur.Type, Color: p.Color, Intensity: p.Intensity, CastShadow: p.CastShadow, Distance: p.Distance, Decay: p.Decay, Angle: p.Angle, Penumbra: p.Penumbra}
+	if p.Type != nil {
+		next.Type = *p.Type
+	}
+	if err := checkLightFields(&next); err != nil {
+		return Light{}, err
+	}
+	keep(&next.Color, cur.Color)
+	keep(&next.Intensity, cur.Intensity)
+	keep(&next.CastShadow, cur.CastShadow)
+	keep(&next.Distance, cur.Distance)
+	keep(&next.Decay, cur.Decay)
+	keep(&next.Angle, cur.Angle)
+	keep(&next.Penumbra, cur.Penumbra)
+	has := lightFields[next.Type]
+	for _, f := range next.fields() {
+		if !slices.Contains(has, f.name) {
+			f.clear()
+		}
+	}
+	return next, completeLight(&next)
+}
+
+// completeCamera fills every field c leaves out (L3).
+func completeCamera(c *Camera) {
+	fill(&c.FocalMM, 35.0)
+	if c.SensorMM == nil {
+		c.SensorMM = []float64{36, 24}
+	}
+	fill(&c.Aspect, "3:2")
+	fill(&c.Near, 0.1)
+	fill(&c.Far, 1000.0)
+	fill(&c.Label, "")
+}
+
+// mergeCamera is L4 for cameras: p changes only what it carries.
+func mergeCamera(cur, p Camera) Camera {
+	keep(&p.FocalMM, cur.FocalMM)
+	if p.SensorMM == nil {
+		p.SensorMM = cur.SensorMM
+	}
+	keep(&p.Aspect, cur.Aspect)
+	keep(&p.Near, cur.Near)
+	keep(&p.Far, cur.Far)
+	keep(&p.Label, cur.Label)
+	completeCamera(&p)
+	return p
+}
+
+// fill sets *p to v when it was not written.
+func fill[T any](p **T, v T) {
+	if *p == nil {
+		*p = &v
+	}
+}
+
+// keep sets *p to cur when it was not written.
+func keep[T any](p **T, cur *T) {
+	if *p == nil {
+		*p = cur
+	}
+}
+
+// validateLight checks a completed light: L1 and the ranges of the contract.
+func validateLight(l Light) error {
+	if err := checkLightFields(&l); err != nil {
+		return err
+	}
+	has := lightFields[l.Type]
+	for _, f := range l.fields() {
+		if !f.set && slices.Contains(has, f.name) {
+			return fmt.Errorf("%s缺少字段 %s", lightNames[l.Type], f.name)
+		}
+	}
+	if !colorPattern.MatchString(*l.Color) || !in(*l.Intensity, 0, 1000) {
 		return errors.New("灯光须有 #rrggbb 颜色和 0…1000 的强度")
 	}
-	if l.RangeM != nil && (!finite(*l.RangeM) || *l.RangeM <= 0) {
-		return errors.New("range_m 须大于 0")
+	if l.Distance != nil && (!finite(*l.Distance) || *l.Distance < 0) {
+		return errors.New("distance 须 ≥ 0 米（0 表示不截断）")
 	}
-	if l.AngleDeg != nil && !in(*l.AngleDeg, 1, 179) || l.Type == "spot" && l.AngleDeg == nil {
-		return errors.New("聚光灯须有 1…179 的 angle_deg")
+	if l.Decay != nil && !in(*l.Decay, 0, 10) {
+		return errors.New("decay 须在 0…10 之间")
+	}
+	if l.Angle != nil && (!finite(*l.Angle) || *l.Angle <= 0 || *l.Angle > math.Pi/2) {
+		return errors.New("angle 是光锥半角，须为大于 0、不超过 π/2 的弧度")
 	}
 	if l.Penumbra != nil && !in(*l.Penumbra, 0, 1) {
 		return errors.New("penumbra 须在 0…1 之间")
@@ -591,20 +751,24 @@ func validateLight(l Light) error {
 	return nil
 }
 
+// validateCamera checks a completed camera (L3).
 func validateCamera(c Camera) error {
-	if !in(c.FocalMM, 8, 800) {
+	if c.FocalMM == nil || c.Aspect == nil || c.Near == nil || c.Far == nil || c.Label == nil {
+		return errors.New("摄像机缺少字段")
+	}
+	if !in(*c.FocalMM, 8, 800) {
 		return errors.New("焦距须在 8…800 mm 之间")
 	}
 	if len(c.SensorMM) != 2 || !in(c.SensorMM[0], 1, 100) || !in(c.SensorMM[1], 1, 100) {
 		return errors.New("传感器尺寸须为 [宽, 高]，各 1…100 mm")
 	}
-	if !aspectPattern.MatchString(c.Aspect) {
+	if !aspectPattern.MatchString(*c.Aspect) {
 		return errors.New("画幅比须为「宽:高」，各 1…32 的整数")
 	}
-	if !finite(c.NearM) || !finite(c.FarM) || c.NearM <= 0 || c.FarM <= c.NearM {
-		return errors.New("须满足 0 < near_m < far_m")
+	if !finite(*c.Near) || !finite(*c.Far) || *c.Near <= 0 || *c.Far <= *c.Near {
+		return errors.New("须满足 0 < near < far")
 	}
-	if utf8.RuneCountInString(c.Label) > maxLabelRunes {
+	if utf8.RuneCountInString(*c.Label) > maxLabelRunes {
 		return fmt.Errorf("标签不能超过 %d 个字", maxLabelRunes)
 	}
 	return nil

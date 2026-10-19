@@ -36,8 +36,8 @@ type updateObjectsOp struct {
 }
 
 // objectUpdate changes only what it carries: placement fields are replaced,
-// primitive.params is merged by key, and material_slots, light and camera
-// are replaced whole.
+// primitive.params, light and camera are merged by key (mergeLight,
+// mergeCamera), and material_slots is replaced whole.
 type objectUpdate struct {
 	ObjectID      string                   `json:"object_id"`
 	Name          *string                  `json:"name,omitempty"`
@@ -46,7 +46,7 @@ type objectUpdate struct {
 	Locked        *bool                    `json:"locked,omitempty"`
 	Primitive     *primitivePatch          `json:"primitive,omitempty"`
 	MaterialSlots *map[string]MaterialSlot `json:"material_slots,omitempty"`
-	Light         *Light                   `json:"light,omitempty"`
+	Light         *lightPatch              `json:"light,omitempty"`
 	Camera        *Camera                  `json:"camera,omitempty"`
 }
 
@@ -221,6 +221,14 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			}
 			o.Primitive = &Primitive{Builtin: b.Builtin, Params: params}
 		}
+		if o.Light != nil {
+			if err := completeLight(o.Light); err != nil {
+				return invalid("物件 %s：%v", o.ID, err)
+			}
+		}
+		if o.Camera != nil {
+			completeCamera(o.Camera)
+		}
 		canonicalNumbers(&o)
 		s.Objects = append(s.Objects, o)
 		c.change(unitObjects, placementUnit(o.ID), contentUnit(o.ID))
@@ -301,10 +309,21 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 			o.MaterialSlots = *u.MaterialSlots
 		}
 		if u.Light != nil {
-			o.Light = u.Light
+			if o.Light == nil {
+				return invalid("物件 %s 不是灯光", o.ID)
+			}
+			l, err := mergeLight(*o.Light, *u.Light)
+			if err != nil {
+				return invalid("物件 %s：%v", o.ID, err)
+			}
+			o.Light = &l
 		}
 		if u.Camera != nil {
-			o.Camera = u.Camera
+			if o.Camera == nil {
+				return invalid("物件 %s 不是摄像机", o.ID)
+			}
+			cam := mergeCamera(*o.Camera, *u.Camera)
+			o.Camera = &cam
 		}
 		canonicalNumbers(o)
 		c.change(u.units()...)
