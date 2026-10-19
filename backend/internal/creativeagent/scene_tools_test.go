@@ -570,11 +570,12 @@ func TestSceneToolsNeedTheCanvasInTheConsent(t *testing.T) {
 
 // A scene call that does not decode is answered with the field to fix, never
 // with the generation tool's words about image references (a light written
-// with three.js fields was told it had too many images).
+// with fields the format lacked was told it had too many images). Names from
+// before v7 are such fields now.
 func TestABadSceneCallSaysWhatToFix(t *testing.T) {
 	f, c, consent, doc := visualScene(t, false)
 	lantern := map[string]any{"id": sceneObjectID("lantern"), "kind": "light", "name": "灯笼暖光", "parent_id": nil, "order": 2, "visible": true, "locked": false,
-		"transform": identityAt(0), "light": map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "decay": 2, "distance": 20}}
+		"transform": identityAt(0), "light": map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "range_m": 20}}
 	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
 		func(r llmgateway.ProviderRequest) llmgateway.Result {
 			return scriptedResult(r, sceneCall("a", readSceneTool, map[string]any{"document_id": doc}))
@@ -593,8 +594,28 @@ func TestABadSceneCallSaysWhatToFix(t *testing.T) {
 		t.Fatalf("run %s %s", got.State, got.ErrorCode)
 	}
 	refused := lastTool(s.request(3))
-	if message, _ := refused["message"].(string); refused["code"] != "creative_tool_refused" || !strings.Contains(message, "objects[0].light 没有字段 decay") || strings.Contains(message, "图片") {
+	if message, _ := refused["message"].(string); refused["code"] != "creative_tool_refused" || !strings.Contains(message, "objects[0].light 没有字段 range_m") || strings.Contains(message, "图片") {
 		t.Fatalf("refusal %v", refused)
+	}
+}
+
+// AC-7: the assistant reads the three.js fields, their defaults, the local
+// −Z facing and merge-by-key in edit_scene, and none of the old names.
+func TestEditSceneDescribesThreejsFields(t *testing.T) {
+	info, err := (&sceneTool{name: editSceneTool}).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"light 字段同 three.js", "distance", "decay（默认 2）", "angle（弧度，光锥半角，≤π/2，默认 π/3）", "penumbra", "只有 type 必填",
+		"坎德拉", "局部 −Z", "near, far, label}，均可省略", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并", "灯光物件、lit 模式和 hdri 天空暂不显示"} {
+		if !strings.Contains(info.Desc, want) {
+			t.Errorf("edit_scene does not say %q", want)
+		}
+	}
+	for _, old := range []string{"range_m", "angle_deg", "near_m", "far_m", "整体替换", "七个字段"} {
+		if strings.Contains(info.Desc, old) {
+			t.Errorf("edit_scene still says %q", old)
+		}
 	}
 }
 

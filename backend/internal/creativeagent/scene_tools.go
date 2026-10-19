@@ -77,10 +77,11 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
 				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, primitive{builtin,params}|light|camera|model{content_revision_id}}]}；" +
-				"light{type:point|spot|directional, color:\"#rrggbb\", intensity:0…1000, range_m:米或 null, angle_deg:聚光灯 1…179、其余 null, penumbra:0…1 或 null, cast_shadow}，七个字段都要写；" +
-				"camera{focal_mm:8…800, sensor_mm:[宽,高], aspect:\"3:2\", near_m, far_m, label}；" +
-				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params 按键合并，light、camera 整体替换）；remove_objects{object_ids}（连同子物件）；" +
-				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg, sun_azimuth_deg, turbidity}|{kind:color, color}|{kind:hdri, hdri}, ambient:{color, intensity:0…10}, fog:{color, near_m, far_m}或 null}}（三项都要写）；set_render{render:{mode:clay|lit}}；" +
+				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
+				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
+				"camera{focal_mm:8…800, sensor_mm:[宽,高], aspect:\"3:2\", near, far, label}，均可省略（默认 35、[36,24]、3:2、0.1、1000）；" +
+				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段）；remove_objects{object_ids}（连同子物件）；" +
+				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}|{kind:hdri, hdri}, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写）；set_render{render:{mode:clay|lit}}；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
 				"当前版本编辑视图和截图都只画素模：程序天空的太阳方向决定主光和阴影，纯色天空、环境光和雾也生效；灯光物件、lit 模式和 hdri 天空暂不显示，先别花调用打光，把精力放在几何、比例和构图上。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +

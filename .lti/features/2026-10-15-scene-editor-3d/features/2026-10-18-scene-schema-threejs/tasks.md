@@ -16,7 +16,8 @@
 
 ## 3. 助手工具
 
-- [ ] 3.1 改写 `edit_scene` 说明中灯光、摄像机、雾的部分（design 给出的文字），`scene_tools_test` 断言新字段在、旧名不在；`agent_tools_test.go` 夹具改名；`make check-go PKG=./internal/creativeagent/...` 与 `creativescene` 通过
+- [x] 3.1 改写 `edit_scene` 说明中灯光、摄像机、雾的部分（design 给出的文字），`scene_tools_test` 断言新字段在、旧名不在；`agent_tools_test.go` 夹具改名；`make check-go PKG=./internal/creativeagent/...` 与 `creativescene` 通过
+  - 验证：新增 `TestEditSceneDescribesThreejsFields`（新字段、默认值、局部 −Z、方位约定、按键合并在，旧名与「整体替换」不在）；`TestABadSceneCallSaysWhatToFix` 改用旧名 `range_m`，工具结果指出字段（AC-3）。`agent_tools_test.go` 的夹具在 `creativescene` 包，已随 1.1 改名。`check-go` 两个包均通过。
 
 ## 4. 编辑器
 
