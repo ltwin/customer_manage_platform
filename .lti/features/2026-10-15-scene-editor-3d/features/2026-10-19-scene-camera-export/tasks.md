@@ -41,3 +41,9 @@
 - [x] 7.1 `docs/dev/agent-skills-tools.md`（工具变化、排空后升级）、`docs/dev/creative-scene-agent.md`（长边视场角、景深回看）
 - [x] 7.2 `scripts/creative-scene.e2e.mjs`：添加摄像机 → 相机视图 → 导出 → PNG 尺寸与画布节点；空物体对焦 + 景深预览 + 导出虚化对比；传感器预设与辅助线不进导出图。`scripts/creative-scene-agent.e2e.mjs`：`export_shots`；助手写光圈与对焦物件，`render_view` 默认清晰、带 `depth_of_field` 虚化。记录出图、编码、上传与景深耗时
 - [ ] 7.3 AC-9 重绘一致性样例：3 台摄像机导出，景深关、开各一组，记录到 `discovery/research/repaint-consistency.md`，结论由 owner 给出
+
+## 8. owner 验收修订（2026-10-19）
+
+- [x] 8.1 视口、`render_view`、白模导出共用 `ClayRenderer`（AO 常驻）：`render/clayExport.ts` 网格不进 AO、变换手柄在整条链之后画、AO 那一遍不重画阴影、正交相机的 AO 视线方向、视口 AO 按 CSS 像素；`render/dofPass.ts` 弥散圆按取景框长边；`Viewport.tsx:ClayView`（`useFrame` 优先级 1，坐标轴小部件优先级 2）；`host/render.ts` 去掉不带 AO 的截图。单元测试覆盖正交补丁
+- [x] 8.2 「景深预览」改为开关：`Viewport.tsx:CameraFrame`、`state/sceneStore.ts:dofPreview`、`scene.css`；开着时场景改动实时更新，不撤掉
+- [x] 8.3 proposal 决定 2、specs、design、`render_view` 工具说明与开发文档同步；e2e：开关打开后虚化、外部改光圈后仍开着并更新、关掉后与打开前一致，正交视图 AO 不发黑，助手截图背景按色调映射后的颜色；记录视口单帧耗时

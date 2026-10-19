@@ -68,7 +68,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 - 计时（续租、上传轮询、沙箱超时）都用 `host/ticker.ts` 的 Worker 节拍，隐藏标签页里的页面计时器会被浏览器降频。
 - 截图（`host/render.ts`）：React Three Fiber 的 `createRoot` 配一个不挂到页面的 canvas，`frameloop: 'never'`，组件提交后手动渲染一帧，导出长边 1024 的 JPEG（与缩略图一样用 `canvasBlob` 同步编码，不用 `toBlob`），再 `unmount` 释放 WebGL 上下文。单独的 root 必须先 `extend(THREE)`，否则灯光等元素报错、提交永远不来。截图不画灯光和摄像机图标。整体 60 秒上限，超时报 `host_error`。
 - 取景（`host/framing.ts`）：视场角按画面长边对应传感器长边（`cameraOptics.verticalFov`，C4 起；与 Blender 的 Auto 适配相同），默认传感器下 3:2 横幅与原先一样，竖幅与横幅同焦距拍到的范围一样大；`viewpoint` 是全画幅 4:3；预设（总览、俯视、正视、侧视）按可见物件（不含地面、灯光、摄像机）的包围盒取景，留 1.1 倍边距。摄像机的取景还带光学参数：对焦物件存在时按它原点沿视线的深度对焦，否则按 `focus`，夹在 near/far 之间。
-- 导出与景深回看（C4，`host/render.ts` 的 `openShooter`）：一次导出共用一个离屏根和 WebGL 上下文，模型只加载一次，逐镜头移动同一台相机；结束后 `forceContextLoss`。`clay` 是 `EffectComposer`（4 倍 MSAA）→ `RenderPass` → `GTAOPass` →（景深）→ `OutputPass`；景深在 `render/dofPass.ts`，按物理弥散圆（与 `cameraOptics.blurPixels` 同一公式），先算 16 像素瓦片的最大弥散圆，再在半分辨率按 Vogel 圆盘聚合，只收自身弥散圆覆盖到中心的样本，位于中心之后的样本最多影响到中心自己的弥散圆。线稿在 `render/linePass.ts`，2 倍分辨率的视空间法线与深度做边缘检测。导出长边 2048 PNG，`render_view` 带 `depth_of_field` 时走 clay 流程、长边 1024 JPEG。编码仍用 `canvasBlob`：助手的导出多在后台标签页执行。
+- 导出与景深回看（C4，`host/render.ts` 的 `openShooter`）：一次导出共用一个离屏根和 WebGL 上下文，模型只加载一次，逐镜头移动同一台相机；结束后 `forceContextLoss`。`clay` 是 `EffectComposer`（4 倍 MSAA）→ `RenderPass` → `GTAOPass` →（景深）→ `OutputPass`；景深在 `render/dofPass.ts`，按物理弥散圆（与 `cameraOptics.blurPixels` 同一公式），先算 16 像素瓦片的最大弥散圆，再在半分辨率按 Vogel 圆盘聚合，只收自身弥散圆覆盖到中心的样本，位于中心之后的样本最多影响到中心自己的弥散圆。线稿在 `render/linePass.ts`，2 倍分辨率的视空间法线与深度做边缘检测。导出长边 2048 PNG；`render_view` 也走 clay（长边 1024 JPEG），`depth_of_field` 只加虚化。编辑器视口用同一个 `ClayRenderer` 出每一帧（`Viewport.tsx:ClayView`，`useFrame` 优先级 1）：网格不进 AO 的法线深度，变换手柄在整条链之后单独画；相机视图打开「景深预览」时加虚化，弥散圆按取景框长边换算。编码仍用 `canvasBlob`：助手的导出多在后台标签页执行。
 
 ### 编辑视图
 

@@ -145,7 +145,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		return &schema.ToolInfo{
 			Name: renderViewTool,
 			Desc: "给场景拍一张素模截图交给你看，检查摆放、比例和构图（灯光物件暂不渲染）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
-				"默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，画面与白模导出一致（按光圈和对焦虚化，带环境光遮蔽），这台摄像机须已打开 depth_of_field。" +
+				"截图与编辑器视口、白模导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
 				"截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,

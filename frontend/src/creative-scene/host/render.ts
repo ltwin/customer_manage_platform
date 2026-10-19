@@ -10,8 +10,8 @@ import type { Shot } from './executor.ts'
 import { framingFor, type Framing, type RenderRequest } from './framing.ts'
 import { ShotScene } from './ShotScene.tsx'
 
-// Pictures of the confirmed scene drawn as the viewport draws it (clay, the
-// scene's sky and sun), into a canvas that is never shown. Frames are drawn
+// Pictures of the confirmed scene drawn as the viewport draws it (the clay
+// look: the scene's sky and sun with AO), into a canvas that is never shown. Frames are drawn
 // by hand, so a hidden tab without animation frames still takes them. One
 // shooter mounts the scene once and loads every model once for all the shots
 // of an export, then gives its WebGL context back at once: browsers cap live
@@ -26,8 +26,8 @@ const jpegQuality = 0.85
 // <Canvas> registers three's classes for JSX; a bare root has to.
 extend(THREE as unknown as Parameters<typeof extend>[0])
 
-/** plain is render_view's sharp screenshot; clay and line are the export's. */
-export type ShotKind = 'plain' | 'clay' | 'line'
+/** clay is the viewport's look, for render_view and the export; line is the export's line art. */
+export type ShotKind = 'clay' | 'line'
 export type ShotOptions = { kind: ShotKind; type: 'image/jpeg' | 'image/png'; depthOfField?: boolean }
 
 export type Shooter = {
@@ -46,12 +46,10 @@ export async function renderView(documentID: string, request: RenderRequest, rea
   const framing = framingFor(doc.scene, doc.models, request)
   if ('error' in framing) return { ok: false, message: framing.error }
   await loadModels(doc.scene, doc.models)
-  // With depth of field the picture is the clay export's, at render_view's size.
+  // The viewport's look; depth_of_field only adds the blur.
   const shooter = await openShooter(doc.scene, doc.models)
   try {
-    const image = request.depth_of_field
-      ? shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg', depthOfField: true })
-      : shooter.shoot(framing, { kind: 'plain', type: 'image/jpeg' })
+    const image = shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg', depthOfField: request.depth_of_field === true })
     return { ok: true, image, revision: doc.revision }
   } finally {
     shooter.close()
@@ -61,7 +59,7 @@ export async function renderView(documentID: string, request: RenderRequest, rea
 export async function shoot(scene: Scene, models: Readonly<Record<string, SceneModel>>, framing: Framing): Promise<Blob> {
   const shooter = await openShooter(scene, models)
   try {
-    return shooter.shoot(framing, { kind: 'plain', type: 'image/jpeg' })
+    return shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg' })
   } finally {
     shooter.close()
   }
@@ -116,13 +114,10 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         camera.updateMatrixWorld()
         if (options.kind === 'clay') {
           clay ??= new ClayRenderer(gl!, three, camera)
-          clay.render(camera, width, height, options.depthOfField && framing.optics ? framing.optics : null)
-        } else if (options.kind === 'line') {
+          clay.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null })
+        } else {
           line ??= new LineRenderer()
           line.render(gl!, three, camera, width, height)
-        } else {
-          gl!.setRenderTarget(null)
-          gl!.render(three, camera)
         }
         if (contextLost) throw new Error('WebGL 上下文丢失')
         return canvasBlob(canvas, options.type, options.type === 'image/jpeg' ? jpegQuality : undefined)

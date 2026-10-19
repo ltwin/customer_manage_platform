@@ -34,7 +34,7 @@ Agent 工具注册信息统一在 `creativeagent/tool_registry.go`：目录、�
 | `read_scene@1` | 读取场景 | 只读 | 共享 | 概要上限 300 个物件，`include_code` 至多 3 个模型的代码；带「自你上次写入后的变化」摘要；按 64 KB 结果上限降级 |
 | `edit_scene@1` | 修改场景 | 写，影响上限 2000 | 独占 | 基线规则：基线之后别人改过的单元与本次涉及的单元有交集即冲突，冲突作为失败结果返回；`revert_run` 撤回某次运行；不开放 `reparent_objects`、`commit_model`、整份 `restore`。C4 起：摄像机可写全部参数（含景深与对焦），条目可写 `look_at`（换算成 `transform` 后再交给场景命令） |
 | `write_model@1` | 生成模型 | 写，影响上限 1 | 共享 | 建 `bake_model` 任务并挂起运行，页面执行后恢复；只改参数时用 `base_content_revision_id` 沿用代码；冲突后用 `retry_job_id` 复用已烘焙的产物 |
-| `render_view@1` | 回看场景 | 只读 | 共享 | 只在模型支持图片输入时提供；建 `render_view` 任务并挂起，截图进入下一步的图片输入。C4 起可选 `depth_of_field: true`：只能与 `camera_object_id` 一起用、摄像机须已打开景深，按白模导出流程（AO + 景深）渲染 |
+| `render_view@1` | 回看场景 | 只读 | 共享 | 只在模型支持图片输入时提供；建 `render_view` 任务并挂起，截图进入下一步的图片输入。C4 起截图与编辑器视口、白模导出同一套渲染（带 AO）；可选 `depth_of_field: true`：只能与 `camera_object_id` 一起用、摄像机须已打开景深，再加景深虚化 |
 | `export_shots@1` | 导出分镜 | 写，影响上限 48 | 场景共享、画布独占 | C4：建 `export_shots` 任务并挂起；页面出图上传后随完成任务提交，节点在完成事务里放到运行所在画布的场景节点旁；结果只有节点 ID，不带图片 |
 
 任务、挂起与恢复、渲染端的细节见 [场景助手开发说明](creative-scene-agent.md)。

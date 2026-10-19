@@ -18,6 +18,8 @@ import {
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
 import { renderShots, submitExport, uploadShots, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
+import { lookAlongZ, perspectiveViewDirection } from '../src/creative-scene/render/clayExport.ts'
+import { GTAOShader } from 'three/examples/jsm/shaders/GTAOShader.js'
 
 const deg = (r: number) => (r * 180) / Math.PI
 const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
@@ -102,6 +104,16 @@ test('the camera focuses on its focus object along its view, else at focus, kept
 })
 
 // --- export flow ------------------------------------------------------------
+
+test('orthographic views look along -Z in the AO: three’s GTAO shader still has the line the patch replaces', () => {
+  assert.ok(GTAOShader.fragmentShader.includes(perspectiveViewDirection), 'GTAOShader changed; orthographic views would go without AO')
+  const material = { fragmentShader: GTAOShader.fragmentShader, needsUpdate: false }
+  assert.equal(lookAlongZ(material), true)
+  assert.ok(!material.fragmentShader.includes(perspectiveViewDirection))
+  assert.ok(material.fragmentShader.includes('vec3 viewDir = vec3(0.0, 0.0, 1.0);'))
+  assert.equal(material.needsUpdate, true)
+  assert.equal(lookAlongZ({ fragmentShader: 'void main() {}', needsUpdate: false }), false)
+})
 
 test('a submitted export keeps its operation and time across retries; a refusal stops at once', async () => {
   const seen: [string, string][] = []

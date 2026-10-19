@@ -266,10 +266,10 @@ sequenceDiagram
   render_view(camera_object_id | viewpoint | preset, depth_of_field?: bool = false)
     depth_of_field = true 时（建任务时校验，不通过返回工具错误、不建任务）：
       必须给 camera_object_id                       // 临时视点和预设没有光圈和对焦
-      这台摄像机在当前快照里 depth_of_field = true    // 与编辑器「预览景深」的出现条件一致
-    渲染端：
-      false → 现有截图流程，全清晰、不加 AO（不变）
-      true  → 白模导出同一套流程（clay + AO + 景深），长边 1024，JPEG；
+      这台摄像机在当前快照里 depth_of_field = true    // 与编辑器「景深预览」开关的出现条件一致
+    渲染端（clay 渲染链，与视口、白模导出相同，含 AO；owner 2026-10-19 修订）：
+      false → 全清晰
+      true  → 加景深，长边 1024，JPEG；
               按渲染时快照里这台摄像机的光圈和对焦，不再检查它的景深开关
   ```
 - 弥散圆按画面长边像素换算，1024 的截图与 2048 的导出虚化程度成比例，缩小后一致。
@@ -281,6 +281,10 @@ sequenceDiagram
 在 `host/render.ts` 的离屏 R3F 根上进行：隐藏画布、`frameloop: 'never'`。一次导出共用一个根和 WebGL 上下文：模型只加载、上传一次，逐个镜头切换摄像机和导出方式，全部画完后卸载并调用 `forceContextLoss`。取景沿用 `cameraFraming`，`longSide` 改为参数，导出时为 2048。物件、隐藏状态、天空和雾与 `ShotScene` 一致，不画辅助线框。
 
 - **`clay`**：`EffectComposer`（渲染目标 4 倍 MSAA，带 `DepthTexture`）→ `RenderPass` → `GTAOPass`（three 自带，参数用默认值，按样例微调）→ 景深（仅 `depth_of_field = true`）→ `OutputPass`。材质、天空、太阳光与编辑器相同。
+  - 这条渲染链（`render/clayExport.ts` 的 `ClayRenderer`）也是编辑器视口和 `render_view` 的画面（owner 2026-10-19 修订，proposal 决定 2）：视口每帧经它出图（R3F `useFrame` 优先级 1 接管渲染，坐标轴小部件改为优先级 2 叠在上面），景深只在相机视图打开「景深预览」时开启。
+  - 视口的辅助物件：网格在 AO 读取的法线深度那一遍里隐藏，免得它的平面给地面上的物件压出阴影；变换手柄在整条链之后单独画到屏幕上（它本来就不做深度测试），不受 AO 压暗，也不被虚化。线框、灯光图标、选中描边留在画面里，随 AO 和虚化（AO 本来就不读线条）。
+  - AO 那一遍不再重画阴影贴图（`shadowMap.autoUpdate` 临时关闭），视口和导出都少一次阴影渲染。
+  - 视口里虚化的弥散圆按取景框的长边像素换算（`DofPass.setLens` 的 `longSidePx`），与导出图同比例。
 - **景深**（`render/dofPass.ts`，自写着色器）：
   1. 按「景深」一节的公式，由深度算出每个像素的弥散圆 `c_px`（带符号：焦前为负、焦后为正）；
   2. 在半分辨率上用 Vogel 圆盘采样做聚合（gather），采样半径为 `|c_px|`，导出 128 个采样点；只接受自身弥散圆覆盖到中心像素的采样，避免清晰的前景被背景渗进去；
@@ -322,7 +326,7 @@ sequenceDiagram
     - 否则：`h_cam = 2·atan(tan(v_cam/2)·a_cam)`，`tan(h_view/2) = tan(h_cam/2) / 0.9`，`v_view = 2·atan(tan(h_view/2) / a_view)`。
   - 取景框用 DOM 叠加层画，框外压暗，框上写摄像机名、焦距和光圈（景深打开时）。
   - 构图辅助线：叠加层的菜单可切换三分线、黄金分割、对角线、中心十字，可以多选，只画在取景框内。选择记在本机视窗状态里（`viewState.ts`），不进场景，也不进导出图。
-  - 预览景深：这台摄像机打开景深时，叠加层显示「预览景深」。点击后按导出同一套流程（`clay` + 景深，视口尺寸）渲染一帧，覆盖在取景框上；视角、场景或摄像机一变就撤掉。视口本身不做实时虚化。
+  - 景深预览（owner 2026-10-19 修订）：这台摄像机打开景深时，叠加层显示「景深预览」开关（`aria-pressed`）。打开后视口实时按这台摄像机的光圈和对焦虚化，场景、对焦物件或光圈变化时跟着更新，开关保持打开；再点一下关闭，只去掉虚化。开关状态记在编辑器状态 `dofPreview`，退出相机视图后保留，再进入有景深的摄像机时继续虚化；不存进本机视窗状态。
   - `CameraControls` 的 `controlstart`、按 `5`、按 `1`/`3`/`7` 都会退出相机视图，从当前位姿继续自由导航。
   - 在相机视图里改这台摄像机（属性栏、`G`、`Ctrl + Alt + 0`）时，视图跟着更新。
 - **按键**（`input/keymap.ts`）：
@@ -370,7 +374,7 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
   - `EdgesGeometry` 只有折痕线，曲面的轮廓线（圆柱两侧）画不出来，WebGL 线宽也固定为 1 像素；
   - three 自带的 `SobelOperatorShader` 基于颜色亮度，白模上效果差；
   - 着色器约 80 行，不新增依赖。
-- **AO 只在导出的 `clay` 里**：决定 2。
+- **视口、`render_view` 和导出的 `clay` 共用一条带 AO 的渲染链**：决定 2（owner 2026-10-19 修订，原为「AO 只在导出的 `clay` 里」）。
 - **景深用自写的弥散圆着色器，不用 three 的 `BokehPass`**：`BokehPass` 的模糊量与深度差成线性，参数不是光圈值，焦后虚化会无限增大；摄影师按光圈值判断虚化，必须按物理弥散圆算。着色器约 120 行，不新增依赖。
 - **景深只进白模导出和按需预览，不进线稿和实时视口；`render_view` 默认不虚化，助手显式要求时才虚化**：决定 6。实时虚化会拖慢编辑；助手回看默认要看清结构，需要时再看虚化。`render_view` 带景深时直接复用白模导出的流程，不另写一套截图景深。
 - **对焦物件是软引用**：只在写入时校验，之后悬空按 `focus` 对焦。整份场景的 `Validate` 若检查它，删除对焦物件、按单元恢复摄像机时都会被这条引用卡住。
@@ -398,6 +402,10 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 - **`instructions/base.md` 加了 `export_shots` 和「先回看再导出」**：已有测试要求说明里提到每个工具。
 - **新增辅助函数**：`creativecanvas.DocumentNodeInTx`（建任务时找场景节点）、前端 `exportCount`（对话框的张数与上限，放在 `exportShots.ts`，便于 Node 测试引用）。
 - **AC-9 样例场景**：用基础体搭的棚拍布景，没有用助手搭的教堂中殿，以排除模型质量的影响。owner 若要用指定场景，可用同一脚本重新生成。
+- **视口常驻 AO、景深预览改为实时开关**（owner 2026-10-19 验收时修订，proposal 决定 2）：原实现只在导出里加 AO，「预览景深」渲染一帧盖在视口上，于是打开预览才看到 AO，场景一有变化（包括画布推送引起的重读）预览就被撤掉，也没有关闭的办法。改为视口、`render_view`、白模导出共用 `ClayRenderer`，景深预览只切换虚化，见「导出渲染」「相机视图」。`render_view` 不带景深时也有 AO，与视口一致。
+  - 视口的 AO 按 CSS 像素计算（`aoPixelRatio: 1`），再铺到全分辨率画面上：2 倍屏上按设备像素算 AO 让单帧耗时翻倍，差别只在放大到设备像素时可见（物体边缘一圈细杂点）。导出仍按全分辨率。
+  - 正交视图：three 的 GTAO 把视线方向取作「回到相机原点的方向」，只对透视相机成立；视口正交相机的近平面是 −5000，这个方向会反过来，AO 整片发黑。正交相机改为沿 −Z 看（`clayExport.ts:lookAlongZ`，替换着色器里的一行；three 升级后这一行不在时，正交视图不加 AO，单元测试会先报出来）。
+  - 纯色背景（`sky.kind = color`）随画面一起经过色调映射，显示的颜色比设定值略淡（`#3355ff` 约为 `(62, 85, 227)`），与导出图一致；原先视口直接清屏，不经色调映射。
 
 ## 接口与数据契约
 
@@ -443,10 +451,10 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `backend/cmd/server/main.go` | 修改 | `creativecanvas.SetExportFreshness(...)` |
 | `api/openapi.yaml`、`backend/internal/platform/httpapi/api.gen.go`、`frontend/src/api/schema.d.ts` | 修改 | 契约与生成物（含摄像机的景深字段） |
 | `frontend/src/creative-scene/host/exportShots.ts` | 新增 | 出图、上传；手动导出的提交与重试 |
-| `frontend/src/creative-scene/render/clayExport.ts`、`render/dofPass.ts`、`render/linePass.ts` | 新增 | AO、景深与线稿 |
+| `frontend/src/creative-scene/render/clayExport.ts`、`render/dofPass.ts`、`render/linePass.ts` | 新增 | AO、景深与线稿；`ClayRenderer` 是视口、`render_view`、白模导出共用的渲染链（owner 2026-10-19 修订） |
 | `frontend/src/creative-scene/cameraOptics.ts` | 新增 | 视场角、对焦距离、弥散圆、清晰范围、等效焦距、传感器预设（纯函数，导出、预览、属性栏共用） |
 | `frontend/src/creative-scene/state/apply.ts` | 修改 | `cameraDefaults` 加景深字段 |
-| `frontend/src/creative-scene/host/render.ts`、`host/framing.ts` | 修改 | `longSide` 参数、一次导出共用的离屏根；`render_view` 带景深时走白模导出流程；视场角改按长边 |
+| `frontend/src/creative-scene/host/render.ts`、`host/framing.ts` | 修改 | `longSide` 参数、一次导出共用的离屏根；`render_view` 走白模渲染链，`depth_of_field` 只加虚化；视场角改按长边 |
 | `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | `CameraFrustum` 按长边规则、对焦十字与清晰范围；没有子物件的分组常显十字标记 |
 | `frontend/src/creative-scene/host/executor.ts`、`host/jobs.ts` | 修改 | `export_shots` 的认领与执行，经 `deliver` 完成；`render_view` 把 `depth_of_field` 交给渲染 |
 | `frontend/src/creative-scene/api.ts` | 修改 | `exportScene` |
@@ -456,7 +464,7 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `frontend/src/creative-scene/input/keymap.ts` | 修改 | `camera-view`、`camera-to-view` |
 | `frontend/src/creative-scene/panels/Properties.tsx` | 修改 | 摄像机属性（含景深、对焦、传感器预设、清晰范围） |
 | `frontend/src/creative-scene/panels/ExportDialog.tsx` | 新增 | 导出对话框 |
-| `frontend/src/creative-scene/state/sceneStore.ts`、`viewState.ts` | 修改 | `cameraView`、`lastCamera`、构图辅助线的选择 |
+| `frontend/src/creative-scene/state/sceneStore.ts`、`viewState.ts` | 修改 | `cameraView`、`lastCamera`、构图辅助线的选择、`dofPreview` 开关 |
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | 传 `canvasID`、`sceneNodeID` |
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 「场景已更新」标记 |
 | `docs/dev/agent-skills-tools.md` | 修改 | 工具变化与排空后升级 |
@@ -498,13 +506,14 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
     - `newCamera`、`newEmpty`、导出对话框的张数与 48 上限、`exportShots` 的失败丢弃、手动提交重试复用 `operation_id` 与 `client_created_at`。
   - `scripts/creative-scene.e2e.mjs` 补浏览器流程：
     - 添加摄像机 → `0` 进入相机视图 → 导出 → 校验 PNG 尺寸与比例、画布出现节点（AC-1 至 AC-4）；
-    - 添加空物体 → 摄像机对焦到它 → 打开景深 → 预览景深 → 导出：白模图焦外像素的局部方差明显低于景深关闭时，焦点处差别很小，线稿不变（AC-10、AC-11）；
+    - 添加空物体 → 摄像机对焦到它 → 打开景深 → 导出：白模图焦外像素的局部方差明显低于景深关闭时，焦点处差别很小，线稿不变（AC-10、AC-11）；
+    - 相机视图打开「景深预览」：视口焦外变虚；外部把光圈改成 f/8 后开关仍打开、虚化随之减轻；关掉后画面与打开前一致，AO 不变（AC-10，owner 2026-10-19 修订）；
     - 切换传感器预设与构图辅助线，导出图里没有辅助线（AC-12）。
   - `scripts/creative-scene-agent.e2e.mjs` 补渲染端执行 `export_shots`（AC-7）；助手写摄像机的光圈和对焦物件，`render_view` 不带参数时截图全清晰，带 `depth_of_field: true` 时焦外虚化，并与同一摄像机的白模导出缩小后一致（AC-13、AC-14）。
 - **性能（perf-sensitive）**：
   - 基线：画布读取 `GetCanvas`。条件：一张画布、1 个场景（200 个物件）、6 张导出图，本地测试库。
   - 阈值：与没有导出图的同一画布查询次数相同，耗时增加不超过 10 ms。结果写进验收记录。
-  - 浏览器里记录 3 台摄像机 × 2 种方式的出图、编码、上传耗时；另记一组景深打开（f/1.4）时白模单张多花的时间和一次景深预览的耗时。
+  - 浏览器里记录 3 台摄像机 × 2 种方式的出图、编码、上传耗时；另记一组景深打开（f/1.4）时白模单张多花的时间，以及视口单帧耗时（无 AO、AO、AO + 景深）。
 - **广影响（broad-impact）**：画布读取的调用方是画布页和 `read_canvas` 工具，回归已有的画布测试和 httpapi 画布测试，新字段只在 `based_on` 生效的节点上出现。完成任务接口回归见上。
 - **质量（AC-9）**：
   - 场景：助手搭的哥特教堂中殿，或 owner 指定的场景；3 台摄像机，用 `look_at` 和相机视图摆。

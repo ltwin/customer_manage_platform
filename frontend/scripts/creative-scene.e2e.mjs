@@ -788,6 +788,7 @@ await check('7 then 5 at once gives a top orthographic view framed like the pers
   await page.keyboard.press('Digit5')
   await sleep(1200)
   const ortho = await page.screenshot({ clip: box })
+  await shot(page, 'c4-ortho-top')
   await page.keyboard.press('Digit5')
   await sleep(800)
   const persp = await page.screenshot({ clip: box })
@@ -1866,17 +1867,44 @@ await check('guides stay in the editor: an export with guides on matches one wit
   await b.context.close()
 })
 
-await check('预览景深 renders one frame over the camera view and goes when the scene changes', async () => {
+await check('景深预览 is a switch: the camera view blurs live, keeps blurring through scene changes, and off leaves the same AO picture', async () => {
   const { server, a } = exportScene(true)
   const { context, page, errors } = await open(server)
   await page.getByRole('treeitem', { name: /机位 A/ }).click()
   await page.keyboard.press('Digit0')
-  await page.getByRole('button', { name: '预览景深' }).click()
-  await page.locator('.cc-scene-camframe img').waitFor({ timeout: 60_000 })
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  await page.mouse.move(5, 5)
+  await sleep(400)
+  const box = await frame.boundingBox()
+  // The picture without the switch and guides button at its top right.
+  const clip = { x: box.x, y: box.y + 40, width: Math.round(box.width * 0.75), height: Math.round(box.height - 40) }
+  const picture = () => page.screenshot({ clip })
+  // The far tower (out of focus) as a share of the clip.
+  const tower = [(0.62 * box.width) / clip.width, (0.15 * box.height - 40) / clip.height, (0.7 * box.width) / clip.width, (0.5 * box.height - 40) / clip.height]
+  const before = await picture()
+  const sharp = await sharpness(page, before, tower)
+  const toggle = page.getByRole('button', { name: '景深预览' })
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+  await toggle.click()
+  await page.mouse.move(5, 5)
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true')
+  let blurred = 0
+  await waitFor(async () => (blurred = await sharpness(page, await picture(), tower)) < sharp * 0.6, 'the camera view blurs', 30_000)
   await shot(page, 'c4-dof-preview')
+  // A change from elsewhere: the switch stays on and the blur follows the new aperture.
   server.external([{ op: 'update_objects', updates: [{ object_id: a, camera: { f_stop: 8 } }] }])
   await page.evaluate(() => window.__invalidate())
-  await page.locator('.cc-scene-camframe img').waitFor({ state: 'detached' })
+  await frame.filter({ hasText: 'f/8' }).waitFor()
+  let stopped = 0
+  await waitFor(async () => (stopped = await sharpness(page, await picture(), tower)) > blurred * 1.5, 'f/8 blurs less', 30_000)
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'a scene change keeps the switch on')
+  await toggle.click()
+  await page.mouse.move(5, 5)
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+  let diff = 1
+  await waitFor(async () => (diff = await pixelDiff(page, before, await picture())) < 0.002, 'off is the picture before the switch', 30_000)
+  console.log(`camera view sharpness: off ${sharp.toFixed(3)}, f/1.4 ${blurred.toFixed(3)}, f/8 ${stopped.toFixed(3)}; off again differs ${diff}`)
   assert.deepEqual(errors, [])
   await context.close()
 })

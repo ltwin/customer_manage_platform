@@ -95,8 +95,10 @@ const testdata = new URL('../../backend/internal/creativeglb/testdata/', import.
 const pillarGLB = readFileSync(new URL('exported-template.glb', testdata))
 const pillarManifest = JSON.parse(readFileSync(new URL('cases.json', testdata), 'utf8')).find((c) => c.name === 'exported-template').manifest
 const identity = () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] })
-// A saturated background, so "the model is there" reads off one pixel.
-const background = [51, 85, 255]
+// A saturated background (#3355ff), so "the model is there" reads off one
+// pixel. Screenshots draw in the clay look, whose tone mapping takes the
+// background with everything else: #3355ff comes out about (62, 85, 227).
+const background = [62, 85, 227]
 const isBackground = (px) => px.every((v, i) => Math.abs(v - background[i]) < 24)
 const threeURL = (u) => /\/(three|@react-three)[/_.]/.test(u) || /deps\/(three|@react-three)/.test(u)
 

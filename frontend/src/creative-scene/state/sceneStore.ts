@@ -63,6 +63,8 @@ export type EditorUI = {
   pickFocus: string | null
   /** The export dialog is open. */
   exporting: boolean
+  /** 景深预览: the camera view blurs as the camera's depth of field does, until turned off. */
+  dofPreview: boolean
 }
 
 export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
@@ -88,6 +90,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     guides: saved?.guides ?? [],
     pickFocus: null,
     exporting: false,
+    dofPreview: false,
   }))
 }
 

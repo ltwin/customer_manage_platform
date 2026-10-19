@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject } from 'react'
-import { Grid3x3 } from 'lucide-react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject, type RefObject } from 'react'
+import { Aperture, Grid3x3 } from 'lucide-react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   CameraControls,
   CameraControlsImpl,
@@ -23,6 +23,7 @@ import {
   Vector2,
   Vector3,
   type Camera,
+  type Mesh,
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
 import type { Scene, SceneEnvironment, SceneObject } from './api.ts'
@@ -54,8 +55,8 @@ import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
-import { cameraFraming, type Framing } from './host/framing.ts'
-import { loadModels, openShooter } from './host/render.ts'
+import { cameraFraming } from './host/framing.ts'
+import { ClayRenderer } from './render/clayExport.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -133,6 +134,7 @@ export function Viewport(props: ViewportProps) {
   const wrap = useRef<HTMLDivElement>(null)
   const r = box && wrap.current ? wrap.current.getBoundingClientRect() : null
   const cameraView = useStore(props.ui, (s) => s.cameraView)
+  const grid = useRef<Mesh>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   useEffect(() => {
     const el = wrap.current
@@ -149,7 +151,7 @@ export function Viewport(props: ViewportProps) {
     <div ref={wrap} className="cc-scene-viewport">
       <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
         <Environment environment={props.scene.environment} />
-        <Grid position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
+        <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
         <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} />
         {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} models={props.models} />}
         <OrthoSwitch ortho={ortho} />
@@ -160,9 +162,10 @@ export function Viewport(props: ViewportProps) {
           <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
         )}
         <AxisGizmo />
+        <ClayView scene={props.scene} ui={props.ui} grid={grid} />
         <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
       </Canvas>
-      {cameraView && <CameraFrame scene={props.scene} models={props.models} ui={props.ui} id={cameraView} size={size} />}
+      {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
       {box && r && (
         <div
           className="cc-scene-box"
@@ -229,7 +232,8 @@ export function Environment({ environment }: { environment: SceneEnvironment }) 
  */
 function AxisGizmo() {
   return (
-    <GizmoHelper alignment="top-right" margin={[axisWidget.margin, axisWidget.margin]}>
+    // After the clay view's frame (priority 1), over it.
+    <GizmoHelper alignment="top-right" margin={[axisWidget.margin, axisWidget.margin]} renderPriority={2}>
       <GizmoViewport disabled axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
     </GizmoHelper>
   )
@@ -734,7 +738,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
 }
 
 /** The gizmo, read on pointer down: a press on its axes is not a selection click. */
-const gizmo: { current: { axis: string | null } | null } = { current: null }
+const gizmo: { current: (Object3D & { axis: string | null }) | null } = { current: null }
 
 /** Move / rotate / scale gizmo on a proxy at the selection's midpoint. */
 function Gizmo({
@@ -793,7 +797,7 @@ function Gizmo({
       <TransformControls
         // React calls this with null on unmount, which clears it.
         ref={(c) => {
-          gizmo.current = c as unknown as { axis: string | null } | null
+          gizmo.current = c as unknown as (Object3D & { axis: string | null }) | null
         }}
         object={proxy}
         mode={mode}
@@ -899,70 +903,87 @@ const guideLines: Record<Guide, [number, number, number, number][]> = {
   center: [[0.47, 0.5, 0.53, 0.5], [0.5, 0.47, 0.5, 0.53]],
 }
 
-type DofPreview = { key: string; url: string | null; busy: boolean; error?: string }
+type Size = { width: number; height: number }
 
-/**
- * The camera view's frame: the picture the camera takes, the rest dimmed,
- * named with its lens; composition guides inside it; and with depth of field
- * on, one frame rendered as the clay export renders it.
- */
-function CameraFrame({ scene, models, ui, id, size }: { scene: Scene; models: Readonly<Record<string, SceneModel>>; ui: EditorStore; id: string; size: { width: number; height: number } }) {
-  const chosen = useStore(ui, (s) => s.guides)
-  const [menu, setMenu] = useState(false)
-  const [preview, setPreview] = useState<DofPreview | null>(null)
-  const object = scene.objects.find((o) => o.id === id)
-  const camera = { ...cameraDefaults, ...object?.camera }
-  const aspect = aspectOf(camera.aspect)
+/** The camera view's frame: the camera's picture in 90% of the viewport (cameraViewFov's fill). */
+function frameBox(size: Size, aspect: number) {
   const viewAspect = size.width / Math.max(size.height, 1)
   const height = viewAspect >= aspect ? size.height * 0.9 : (size.width * 0.9) / aspect
   const width = height * aspect
-  const left = (size.width - width) / 2
-  const top = (size.height - height) / 2
-  // Any change to the scene or the frame ends a preview.
-  const key = `${id}:${Math.round(width)}x${Math.round(height)}`
-  const sceneRef = useRef(scene)
+  return { left: (size.width - width) / 2, top: (size.height - height) / 2, width, height }
+}
+
+/**
+ * Draws the viewport in the clay look (design「导出渲染」), the same as
+ * render_view and the clay export: AO always; in the camera view of a camera
+ * with depth of field, its blur while 景深预览 is on, live as the scene
+ * changes. The grid stays out of the AO and the gizmo is drawn on top, sharp.
+ */
+function ClayView({ scene, ui, grid }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null> }) {
+  const { gl, scene: three, camera, invalidate } = useThree()
+  const id = useStore(ui, (s) => s.cameraView)
+  const preview = useStore(ui, (s) => s.dofPreview)
+  const renderer = useRef<ClayRenderer | null>(null)
   useEffect(() => {
-    if (sceneRef.current === scene) return
-    sceneRef.current = scene
-    setPreview(null)
-  }, [scene])
-  useEffect(() => () => {
-    if (preview?.url) URL.revokeObjectURL(preview.url)
-  }, [preview?.url])
-  const shown = preview && preview.key === key ? preview : null
-  const renderPreview = async () => {
-    const side = Math.min(2048, Math.round(Math.max(width, height) * Math.min(window.devicePixelRatio || 1, 2)))
-    const framing = cameraFraming(scene, id, side)
-    if ('error' in framing) return
-    setPreview({ key, url: null, busy: true })
-    try {
-      await loadModels(scene, models)
-      const shooter = await openShooter(scene, models)
-      let blob: Blob
-      try {
-        blob = shooter.shoot(framing as Framing, { kind: 'clay', type: 'image/jpeg', depthOfField: true })
-      } finally {
-        shooter.close()
-      }
-      if (sceneRef.current !== scene) return
-      setPreview({ key, url: URL.createObjectURL(blob), busy: false })
-    } catch (err) {
-      setPreview({ key, url: null, busy: false, error: err instanceof Error ? err.message : String(err) })
+    const r = new ClayRenderer(gl, three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
+    renderer.current = r
+    invalidate()
+    return () => {
+      if (renderer.current === r) renderer.current = null
+      r.dispose()
     }
-  }
+  }, [gl, three, camera, grid, invalidate])
+  const framing = useMemo(() => (id && preview ? cameraFraming(scene, id) : null), [scene, id, preview])
+  const lens = framing && !('error' in framing) && framing.depthOfField && framing.optics ? { optics: framing.optics, aspect: framing.width / framing.height } : null
+  // Turning the blur on or off, or a lens change, draws a frame of its own.
+  const lensKey = lens ? JSON.stringify(lens) : ''
+  useEffect(() => invalidate(), [lensKey, invalidate])
+  useFrame((state) => {
+    const r = renderer.current
+    if (!r) {
+      state.gl.render(state.scene, state.camera)
+      return
+    }
+    const ratio = state.gl.getPixelRatio()
+    const box = lens && frameBox(state.size, lens.aspect)
+    r.render(state.camera, {
+      width: state.size.width,
+      height: state.size.height,
+      pixelRatio: ratio,
+      // On a 2× screen, AO at device pixels doubles the frame time for a difference only seen up close.
+      aoPixelRatio: 1,
+      dof: lens?.optics ?? null,
+      pictureLongSide: box ? Math.max(box.width, box.height) * ratio : undefined,
+    })
+  }, 1)
+  return null
+}
+
+/**
+ * The camera view's frame: the picture the camera takes, the rest dimmed,
+ * named with its lens; composition guides inside it; and for a camera with
+ * depth of field, the 景深预览 switch.
+ */
+function CameraFrame({ scene, ui, id, size }: { scene: Scene; ui: EditorStore; id: string; size: Size }) {
+  const chosen = useStore(ui, (s) => s.guides)
+  const preview = useStore(ui, (s) => s.dofPreview)
+  const [menu, setMenu] = useState(false)
+  const object = scene.objects.find((o) => o.id === id)
+  const camera = { ...cameraDefaults, ...object?.camera }
+  const { left, top, width, height } = frameBox(size, aspectOf(camera.aspect))
   if (!object || size.width === 0) return null
   const lens = `${object.name || '摄像机'} · ${camera.focal_mm} mm${camera.depth_of_field ? ` · f/${camera.f_stop}` : ''}`
   return (
     <div className="cc-scene-camframe" style={{ left, top, width, height }}>
-      {shown?.url && <img src={shown.url} alt="景深预览" />}
       <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
         {chosen.flatMap((g) => guideLines[g].map(([x1, y1, x2, y2], i) => <line key={`${g}${i}`} x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" />))}
       </svg>
       <span className="cc-scene-camframe-label">{lens}</span>
       <div className="cc-scene-camframe-tools">
         {camera.depth_of_field && (
-          <button className="btn" disabled={shown?.busy} onClick={() => void renderPreview()}>
-            {shown?.busy ? '正在渲染…' : shown?.url ? '重新预览' : '预览景深'}
+          <button className="btn" aria-pressed={preview} title={preview ? '关闭景深预览' : '打开景深预览'} onClick={() => ui.setState({ dofPreview: !preview })}>
+            <Aperture size={14} />
+            景深预览
           </button>
         )}
         <button className="btn" aria-label="构图辅助线" aria-expanded={menu} onClick={() => setMenu(!menu)}>
@@ -987,7 +1008,6 @@ function CameraFrame({ scene, models, ui, id, size }: { scene: Scene; models: Re
           </div>
         )}
       </div>
-      {shown?.error && <span className="cc-scene-camframe-error">预览失败：{shown.error}</span>}
     </div>
   )
 }

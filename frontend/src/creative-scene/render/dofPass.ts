@@ -155,8 +155,12 @@ export class DofPass extends Pass {
     this.blendQuad = new FullScreenQuad(new ShaderMaterial({ uniforms: { tColor: { value: null }, tBlur: { value: null } }, vertexShader, fragmentShader: blendShader }))
   }
 
-  /** The lens of the frame about to be drawn; distances are along the camera's axis. */
-  setLens(dof: DepthOfField, near: number, far: number) {
+  /**
+   * The lens of the frame about to be drawn; distances are along the camera's
+   * axis. `longSidePx` is the long side of the camera's picture in pixels:
+   * the whole frame for an export, the camera view's frame in the viewport.
+   */
+  setLens(dof: DepthOfField, near: number, far: number, longSidePx = Math.max(this.size.x, this.size.y)) {
     for (const quad of [this.tileQuad, this.gatherQuad]) {
       const u = (quad.material as ShaderMaterial).uniforms
       u.cameraNear.value = near
@@ -165,6 +169,8 @@ export class DofPass extends Pass {
       u.fStop.value = dof.fStop
       u.focusMM.value = dof.focusM * 1000
       u.sensorLongMM.value = dof.sensorLongMM
+      u.longSidePx.value = longSidePx
+      u.maxBlurPx.value = maxBlurShare * longSidePx
     }
   }
 
@@ -172,13 +178,7 @@ export class DofPass extends Pass {
     this.size.set(width, height)
     this.tiles.setSize(Math.ceil(width / tile), Math.ceil(height / tile))
     this.blurred.setSize(Math.max(1, Math.round(width / 2)), Math.max(1, Math.round(height / 2)))
-    const longSide = Math.max(width, height)
-    for (const quad of [this.tileQuad, this.gatherQuad]) {
-      const u = (quad.material as ShaderMaterial).uniforms
-      u.longSidePx.value = longSide
-      u.maxBlurPx.value = maxBlurShare * longSide
-      u.resolution.value.set(width, height)
-    }
+    for (const quad of [this.tileQuad, this.gatherQuad]) (quad.material as ShaderMaterial).uniforms.resolution.value.set(width, height)
     ;(this.gatherQuad.material as ShaderMaterial).uniforms.tileStep.value.set(tile / width, tile / height)
   }
 
