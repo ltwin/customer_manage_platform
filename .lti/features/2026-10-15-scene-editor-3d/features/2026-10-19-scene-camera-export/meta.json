@@ -1,6 +1,6 @@
 {
   "uid": "bdabd66b-09bb-4897-ab28-f1c9cdb918ee",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-camera-export",
   "kind": "feature",
   "assurance": "governed",
@@ -45,9 +45,9 @@
       "architecture:场景模块"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-19T12:33:49.068Z",
-  "updatedAt": "2026-10-19T14:00:20.445Z",
+  "updatedAt": "2026-10-19T14:01:48.753Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -70,8 +70,30 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "4ce0dda616f94665abb5b1332ce65e429969a165",
+    "at": "2026-10-19T14:01:48.210Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "16bb7bf161ab5e012cae1b60b0ffc5fa8f1add2d5731d5ed153ac0cc0ab5a487"
+    },
+    "preExisting": [
+      ".gitignore",
+      ".lti/features/2026-10-15-scene-editor-3d/contracts.md",
+      ".lti/features/2026-10-15-scene-editor-3d/design.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/design.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/meta.json",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/proposal.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/specs.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/tasks.md",
+      ".lti/features/2026-10-15-scene-editor-3d/meta.json",
+      ".lti/features/2026-10-15-scene-editor-3d/proposal.md",
+      ".lti/features/2026-10-15-scene-editor-3d/roadmap.md",
+      ".lti/snapshots/16bb7bf161ab5e012cae1b60b0ffc5fa8f1add2d5731d5ed153ac0cc0ab5a487.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
