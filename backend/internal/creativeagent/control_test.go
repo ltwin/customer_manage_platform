@@ -205,6 +205,52 @@ func TestCCancelDuringDispatchDoesNotPublishLateAnswer(t *testing.T) {
 	assertRunReleased(t, f, run.ID)
 }
 
+// A turn that delivered its answer but was never closed (the worker's close ran
+// out of time) is finished by the sweep rather than queued again: each takeover
+// would end in the same close and the run would spin until its deadline. A
+// refused tool call earlier in the turn was answered, so it is not unfinished.
+func TestCSweepClosesADeliveredRunWithARefusedTool(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := contextConsent(t, f, c.ID)
+	f.service.SetWebFetcher(&stubFetcher{})
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, searchCall("s0", 0, " ")), nil
+		}
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "找找森系外景的资料"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.service.executeWithCompaction(t.Context(), f.alice, held); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("creative_agent_steps", "run_id=$1 AND state='failed' AND error_code='creative_tool_refused'", run.ID); n != 1 {
+		t.Fatalf("refused steps = %d", n)
+	}
+	if _, err = f.db.Exec(`UPDATE creative_agent_runs SET lease_until=now()-interval '1 minute' WHERE id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.service.SweepRuns(t.Context(), f.alice, 20); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunSucceeded {
+		t.Fatalf("run=%+v err=%v", got, err)
+	}
+	if f.vendor.calls() != 2 {
+		t.Fatalf("model called %d times", f.vendor.calls())
+	}
+	assertRunReleased(t, f, run.ID)
+}
+
 func TestCExpiredLeaseRequeuesCompatibleCheckpoint(t *testing.T) {
 	f := setup(t)
 	run, held, _ := pauseCheckpointRun(t, f, false)

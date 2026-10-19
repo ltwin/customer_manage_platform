@@ -461,7 +461,10 @@ func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id str
 		if err != nil {
 			return err
 		}
-		pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND state<>'succeeded'", c.ID)
+		// A failed step was answered (a refused tool call goes back to the model
+		// as its result), so it is not unfinished work; counting it would queue a
+		// delivered run again and again.
+		pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND state NOT IN ('succeeded','failed')", c.ID)
 		if err != nil {
 			return err
 		}
