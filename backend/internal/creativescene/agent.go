@@ -815,6 +815,13 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	if cur.Document.TrashedAt != nil {
 		return nil, creativedocument.ErrTrashed
 	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return nil, err
+	}
+	if in.Operations, err = resolveLookAt(in.Operations, scene); err != nil {
+		return nil, err
+	}
 	actor := creativedocument.Actor{Kind: "agent", RunID: &in.RunID}
 	touched, err := sceneType{}.Touched(ctx, tx, cur, actor, in.Operations)
 	if err != nil {

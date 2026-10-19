@@ -147,14 +147,21 @@ type lightPatch struct {
 }
 
 // Camera fields may all be left out on input; the stored snapshot holds every
-// one (completeCamera). near and far are those of three.js PerspectiveCamera.
+// one (completeCamera). near, far and focus are those of three.js
+// PerspectiveCamera. FocusObjectID is a soft reference: checked when written
+// (checkFocusTargets), left dangling when its target is later removed, and
+// then the renderer focuses at focus instead (E7).
 type Camera struct {
-	FocalMM  *float64  `json:"focal_mm,omitempty"`
-	SensorMM []float64 `json:"sensor_mm,omitempty"`
-	Aspect   *string   `json:"aspect,omitempty"`
-	Near     *float64  `json:"near,omitempty"`
-	Far      *float64  `json:"far,omitempty"`
-	Label    *string   `json:"label,omitempty"`
+	FocalMM       *float64  `json:"focal_mm,omitempty"`
+	SensorMM      []float64 `json:"sensor_mm,omitempty"`
+	Aspect        *string   `json:"aspect,omitempty"`
+	Near          *float64  `json:"near,omitempty"`
+	Far           *float64  `json:"far,omitempty"`
+	Label         *string   `json:"label,omitempty"`
+	DepthOfField  *bool     `json:"depth_of_field,omitempty"`
+	FStop         *float64  `json:"f_stop,omitempty"`
+	Focus         *float64  `json:"focus,omitempty"`
+	FocusObjectID *string   `json:"focus_object_id,omitempty"`
 }
 
 func placementUnit(id string) string { return "object:" + id }
@@ -178,7 +185,8 @@ func invalid(format string, args ...any) error {
 
 // decodeScene reads a stored snapshot. Numbers inside free-form params come
 // back as json.Number and are made float64 so comparisons and re-encoding
-// behave like freshly applied values.
+// behave like freshly applied values. Cameras stored before the depth of
+// field fields existed are completed here instead of by a migration.
 func decodeScene(p creativecontent.Payload) (Scene, error) {
 	var s Scene
 	if err := creativeops.Decode(p.Scene, &s); err != nil {
@@ -186,6 +194,9 @@ func decodeScene(p creativecontent.Payload) (Scene, error) {
 	}
 	for i := range s.Objects {
 		canonicalNumbers(&s.Objects[i])
+		if c := s.Objects[i].Camera; c != nil {
+			completeCamera(c)
+		}
 	}
 	return s, nil
 }
@@ -692,9 +703,21 @@ func completeCamera(c *Camera) {
 	fill(&c.Near, 0.1)
 	fill(&c.Far, 1000.0)
 	fill(&c.Label, "")
+	fill(&c.DepthOfField, false)
+	fill(&c.FStop, 2.8)
+	fill(&c.Focus, 10.0)
+	fill(&c.FocusObjectID, "")
 }
 
-// mergeCamera is L4 for cameras: p changes only what it carries.
+// cameraComplete reports whether c already holds every field, so a stored
+// snapshot needs no completion before it is shown.
+func cameraComplete(c Camera) bool {
+	return c.FocalMM != nil && c.SensorMM != nil && c.Aspect != nil && c.Near != nil && c.Far != nil && c.Label != nil &&
+		c.DepthOfField != nil && c.FStop != nil && c.Focus != nil && c.FocusObjectID != nil
+}
+
+// mergeCamera is L4 for cameras: p changes only what it carries. Merging
+// cannot tell null from absent, so focus_object_id is cleared with "".
 func mergeCamera(cur, p Camera) Camera {
 	keep(&p.FocalMM, cur.FocalMM)
 	if p.SensorMM == nil {
@@ -704,6 +727,10 @@ func mergeCamera(cur, p Camera) Camera {
 	keep(&p.Near, cur.Near)
 	keep(&p.Far, cur.Far)
 	keep(&p.Label, cur.Label)
+	keep(&p.DepthOfField, cur.DepthOfField)
+	keep(&p.FStop, cur.FStop)
+	keep(&p.Focus, cur.Focus)
+	keep(&p.FocusObjectID, cur.FocusObjectID)
 	completeCamera(&p)
 	return p
 }
@@ -753,7 +780,7 @@ func validateLight(l Light) error {
 
 // validateCamera checks a completed camera (L3).
 func validateCamera(c Camera) error {
-	if c.FocalMM == nil || c.Aspect == nil || c.Near == nil || c.Far == nil || c.Label == nil {
+	if !cameraComplete(c) {
 		return errors.New("摄像机缺少字段")
 	}
 	if !in(*c.FocalMM, 8, 800) {
@@ -770,6 +797,52 @@ func validateCamera(c Camera) error {
 	}
 	if utf8.RuneCountInString(*c.Label) > maxLabelRunes {
 		return fmt.Errorf("标签不能超过 %d 个字", maxLabelRunes)
+	}
+	if !in(*c.FStop, 0.5, 64) {
+		return errors.New("光圈 f_stop 须在 0.5…64 之间")
+	}
+	if !finite(*c.Focus) || *c.Focus <= 0 {
+		return errors.New("对焦距离 focus 须大于 0 米")
+	}
+	if id := *c.FocusObjectID; id != "" && !objectIDPattern.MatchString(id) {
+		return objectIDProblem(id)
+	}
+	return nil
+}
+
+// focusTargetKinds are the objects a camera may focus on.
+var focusTargetKinds = []string{KindPrimitive, KindModelInstance, KindGroup}
+
+// checkFocusTargets validates the focus_object_id that an operation wrote,
+// against the scene after the operation. Only written references are
+// checked: one left dangling by a later removal stays valid (E7).
+func checkFocusTargets(s *Scene, written map[string]bool) error {
+	if len(written) == 0 {
+		return nil
+	}
+	byID := make(map[string]*Object, len(s.Objects))
+	for i := range s.Objects {
+		byID[s.Objects[i].ID] = &s.Objects[i]
+	}
+	for _, id := range slices.Sorted(maps.Keys(written)) {
+		o, ok := byID[id]
+		if !ok || o.Camera == nil || o.Camera.FocusObjectID == nil || *o.Camera.FocusObjectID == "" {
+			continue
+		}
+		target := *o.Camera.FocusObjectID
+		if !objectIDPattern.MatchString(target) {
+			return objectIDProblem(target)
+		}
+		if target == id {
+			return invalid("摄像机 %s 不能对焦到自己", id)
+		}
+		t, ok := byID[target]
+		if !ok {
+			return invalid("摄像机 %s 的对焦物件 %s 不存在", id, target)
+		}
+		if !slices.Contains(focusTargetKinds, t.Kind) {
+			return invalid("摄像机 %s 的对焦物件 %s 是 %s，只能对焦到基础体、模型实例或分组（空物体）", id, target, t.Kind)
+		}
 	}
 	return nil
 }

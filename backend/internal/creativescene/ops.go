@@ -169,10 +169,13 @@ func indexObjects(objects []Object) map[string]int {
 type changeSet struct {
 	changed map[string]bool
 	removed map[string]bool
+	// focus lists the cameras whose focus_object_id the batch wrote; Apply
+	// checks their targets against the scene after the whole batch.
+	focus map[string]bool
 }
 
 func newChangeSet() *changeSet {
-	return &changeSet{changed: map[string]bool{}, removed: map[string]bool{}}
+	return &changeSet{changed: map[string]bool{}, removed: map[string]bool{}, focus: map[string]bool{}}
 }
 
 func (c *changeSet) change(units ...string) {
@@ -227,6 +230,9 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			}
 		}
 		if o.Camera != nil {
+			if o.Camera.FocusObjectID != nil {
+				c.focus[o.ID] = true
+			}
 			completeCamera(o.Camera)
 		}
 		canonicalNumbers(&o)
@@ -321,6 +327,9 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 		if u.Camera != nil {
 			if o.Camera == nil {
 				return invalid("物件 %s 不是摄像机", o.ID)
+			}
+			if u.Camera.FocusObjectID != nil {
+				c.focus[o.ID] = true
 			}
 			cam := mergeCamera(*o.Camera, *u.Camera)
 			o.Camera = &cam

@@ -117,6 +117,9 @@ func (sceneType) Apply(ctx context.Context, tx store.TxAccountScope, cur creativ
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
+	if err := checkFocusTargets(&s, c.focus); err != nil {
+		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
+	}
 	if err := Validate(s); err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}

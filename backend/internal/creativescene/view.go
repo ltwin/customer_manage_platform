@@ -4,19 +4,49 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// view is the scene branch of a read: the stored snapshot as is, plus a summary
-// of every model revision it references (the revision's own reference rows),
+// view is the scene branch of a read: the stored snapshot, plus a summary of
+// every model revision it references (the revision's own reference rows),
 // read in the same snapshot with a fixed number of queries.
 func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument.Current) (json.RawMessage, error) {
+	scene, err := completedScene(cur.Content.Payload)
+	if err != nil {
+		return nil, err
+	}
 	models, err := readModels(ctx, tx, cur.Refs)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"scene": cur.Content.Payload.Scene, "models": models})
+	return json.Marshal(map[string]any{"scene": scene, "models": models})
+}
+
+// completedScene is the stored snapshot as is, unless a camera predates a
+// camera field: then the snapshot is decoded, which completes it, so the
+// response always carries every camera field.
+func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
+	var cams struct {
+		Objects []struct {
+			Camera *Camera `json:"camera"`
+		} `json:"objects"`
+	}
+	if err := json.Unmarshal(p.Scene, &cams); err != nil {
+		return nil, err
+	}
+	for _, o := range cams.Objects {
+		if o.Camera != nil && !cameraComplete(*o.Camera) {
+			s, err := decodeScene(p)
+			if err != nil {
+				return nil, err
+			}
+			snap, err := encodeScene(s)
+			return snap.Payload.Scene, err
+		}
+	}
+	return p.Scene, nil
 }
 
 // unitView narrows a read to the listed units. Each object appears once with
