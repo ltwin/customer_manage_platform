@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -21,7 +22,12 @@ const (
 	checkpointRuntime    = "eino/v0.9.19"
 	checkpointSerializer = "adk-gob/creative-1"
 	checkpointRegistry   = "creative-runtime/4"
-	checkpointMaxBytes   = 1 << 20
+	// The framework's gob holds the conversation about four times over (run
+	// session, agent state, root input, interrupt state), reasoning included.
+	// A 256K-token window at four bytes per token is ~1 MiB of model input
+	// before compaction, so the cap must sit well above four times that; at
+	// 1 MiB it ended runs whose context was a quarter full.
+	checkpointMaxBytes = 16 << 20
 )
 
 var (
@@ -253,7 +259,7 @@ func (c *runCheckpoint) Set(ctx context.Context, key string, payload []byte) err
 		return ErrNotFound
 	}
 	if len(payload) == 0 || len(payload) > checkpointMaxBytes {
-		return ErrLimit
+		return fmt.Errorf("%w: checkpoint %d bytes, cap %d", ErrLimit, len(payload), checkpointMaxBytes)
 	}
 	modelStep, _ := h.current.get()
 	if modelStep == "" {
