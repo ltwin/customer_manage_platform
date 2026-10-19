@@ -1,6 +1,6 @@
 {
   "uid": "706bd3ea-80bb-479e-b23c-44c4e38025d6",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-schema-threejs",
   "kind": "feature",
   "assurance": "governed",
@@ -44,7 +44,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-19T06:27:37.792Z",
-  "updatedAt": "2026-10-19T10:14:15.111Z",
+  "updatedAt": "2026-10-19T10:14:50.771Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-19T10:14:50.697Z",
+    "summary": "099fd60 以 --no-ff 合入 develop，合并树与 46bd2df 完全一致；该树的合并点 make check（214cf72 起无代码改动）已通过。",
+    "method": "manual",
+    "limitations": "项目未配置 lti checks；合并后未单独重跑门禁，依据是合并树与已通过门禁的分支树逐字节一致。",
+    "sourceCommit": "46bd2df6e4c80b2f00a5f0522118fe71b73877fc",
+    "targetCommit": "099fd609493c80cd70894fc3f9b20ac1ff600880",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "4eb144205baaf15c1b8b17d9fdc385b699ab80a5d636d4ade9cb611757048eeb"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "data-migration",
