@@ -1,6 +1,6 @@
 {
   "uid": "706bd3ea-80bb-479e-b23c-44c4e38025d6",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-schema-threejs",
   "kind": "feature",
   "assurance": "governed",
@@ -44,7 +44,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-19T06:27:37.792Z",
-  "updatedAt": "2026-10-19T06:48:48.754Z",
+  "updatedAt": "2026-10-19T07:34:49.264Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -78,8 +78,76 @@
       ".lti/snapshots/023fb13da4b4898b42415cc5f0c60308b03b30c5afa8303f0963d0a635bd5c69.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-19T07:34:49.136Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，测试由合并点 make check 与定向命令执行。迁移 0076 只在测试容器上真实执行过；开发库上只以只读事务跑了改写的 SELECT（70 个场景修订换算后通过新代码解码与校验），真正写库要等 owner 验收试用时从 worktree 启动新后端。开发库没有灯光物件，灯光迁移只有测试容器的样例证据。灯光仍不渲染（C5）。",
+        "coverage": [
+          {
+            "criterionId": "AC-ab33cd96f0c9",
+            "status": "verified",
+            "evidence": "creativescene TestLightAndCameraDefaults（点光 #ff963d/45/7/2 读回带 cast_shadow false、无 angle/penumbra）；httpapi TestCreativeSceneDocumentHTTP「three.js point light」200"
+          },
+          {
+            "criterionId": "AC-701f599910da",
+            "status": "verified",
+            "evidence": "creativescene TestLightAndCameraDefaults：{type: spot} 存为 #ffffff/1/0/2/π/3/0/false，平行光三项；摄像机 {} 存为 {35,[36,24],3:2,0.1,1000,\"\"}"
+          },
+          {
+            "criterionId": "AC-5a8ef8a1a537",
+            "status": "verified",
+            "evidence": "creativescene TestABadShapeNamesTheField（range_m、near_m、far_m、点光 angle、distance:null 各给出字段名）与 TestInvalidCommandsLeaveNoRevision（旧名、多余字段、null、越界共 13 例，修订号不变）；httpapi 旧名 400；creativeagent TestABadSceneCallSaysWhatToFix 工具结果指出 range_m"
+          },
+          {
+            "criterionId": "AC-3979b3b990a0",
+            "status": "verified",
+            "evidence": "服务端 TestLightAndCameraUpdatesMergeByKey（决策表 5 行 + 摄像机只改 far，拒绝时修订号不变）；编辑器 creative-scene.test.ts「light and camera updates merge by key as the server does」同输入同期望"
+          },
+          {
+            "criterionId": "AC-4cdaf8328e59",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs「fog written as three.js Fog {color, near, far} shows in the view」（改回 near_m/far_m 时画面差异为 0，变异被抓到）；creative-scene-agent.test.ts「a scene camera shoots with its own lens」断言 near 0.1、far 200；creative-scene-agent.e2e.mjs 9/9。截图里的雾与编辑视图同一渲染路径（Viewport Environment）"
+          },
+          {
+            "criterionId": "AC-f7d18d59169d",
+            "status": "verified",
+            "evidence": "store TestSceneThreejsMigrationRenamesFieldsAndRefusesLossyRollback（雾、摄像机、三种灯光 up 后字段与数值正确，down 还原旧名，decay=3 时 down 被拒，非场景修订不动）；开发库只读事务执行 up 的改写 SELECT，70 个场景修订（含全部历史修订）换算后全部通过新代码严格解码与 Validate，无旧名残留。真实迁移在 owner 验收试用时执行"
+          },
+          {
+            "criterionId": "AC-f6ee28bbf74c",
+            "status": "verified",
+            "evidence": "creativeagent TestEditSceneDescribesThreejsFields：三种灯光字段与默认值、局部 −Z、方位 0 朝 +Z/90 朝 +X、按键合并都在，range_m/angle_deg/near_m/far_m/整体替换不在"
+          },
+          {
+            "criterionId": "AC-3e1dac61443c",
+            "status": "verified",
+            "evidence": "epic 契约「api: MODIFY 读取运行的场景改动」与 run_changes.go 对照：maxRunRevisions 500、maxHistoryRows 5000、BlockedHierarchy hierarchy_not_restorable、{kind:unit, unit:objects} 条目、多来源标 changed_by_others 一致；归档时随 --deliver 并入项目契约"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contract-delta",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "6/6 任务完成。合并点 make check（HEAD f302e16，已含 develop de6aa36）全部通过：构建、lint、test-go 56 包、test-frontend、test-ops、generate-check。另跑 creative-scene.e2e.mjs 35 项（新增雾一项，变异检查改回 near_m/far_m 时被抓到）与 creative-scene-agent.e2e.mjs 9/9。8 条验收标准均有测试证据（coverage）。设计：计划外文件为 model_test.go 夹具、creativeagent/scene_tools_test.go（AC-3、AC-7 用例）、9 个 store 测试的固定回滚步数清单（加 0076，同 0075 做法）、SceneObjects.tsx 摄像机调用处按字段兜底；未动的 creative-scene-model.test.ts 本来没有旧字段名。新增 OpenAPI CreativeSceneLightPatch 供更新条目不写 type。契约：按 v7 交付 3 节，无局部 delta；运行改动契约文字与 run_changes.go 一致。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "e3af926b5d4d7f5f9ce5e5eff53acde13f3f5ca7aecb039ce94db3964647dd59"
+      }
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }
