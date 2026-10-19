@@ -1,6 +1,6 @@
 {
   "uid": "706bd3ea-80bb-479e-b23c-44c4e38025d6",
-  "revision": 2,
+  "revision": 3,
   "id": "scene-schema-threejs",
   "kind": "feature",
   "assurance": "governed",
@@ -42,10 +42,28 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "draft",
+  "state": "approved",
   "createdAt": "2026-10-19T06:27:37.792Z",
-  "updatedAt": "2026-10-19T06:27:44.862Z",
-  "approvals": {},
+  "updatedAt": "2026-10-19T06:48:23.610Z",
+  "risk": {
+    "factors": [
+      "data-migration",
+      "contract-break",
+      "trust-boundary"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-19T06:48:23.536Z",
+      "contentHash": "f95f90d98e68e56f"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-19T06:48:23.536Z",
+      "contentHash": "849c8c7aa6b93aad"
+    }
+  },
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
