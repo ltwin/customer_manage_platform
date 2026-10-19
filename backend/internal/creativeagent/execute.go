@@ -147,8 +147,8 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		if err := tx.RequireCreativeCapability(ctx, "agent_start"); err != nil {
 			return err
 		}
-		var slotRun *string
-		if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id", "").Scan(&slotRun); err != nil {
+		slotRun, _, err := lockRunSlotInTx(ctx, tx, runID)
+		if err != nil {
 			if errors.Is(err, store.ErrNoRows) {
 				return ErrRunState
 			}
@@ -181,7 +181,7 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		var modelKey string
 		var skillSnapshot, limitsSnapshot, modelSnapshot []byte
 		var deadline time.Time
-		err := tx.QueryRowForUpdate(ctx, "creative_agent_runs",
+		err = tx.QueryRowForUpdate(ctx, "creative_agent_runs",
 			"state,execution_epoch,claim_token,model_key,egress_consent_id,conversation_id,skill_snapshot,deadline_at,limits_snapshot,kind,model_snapshot",
 			"id=$2", runID).Scan(&state, &epoch, &token, &modelKey, &held.ConsentID,
 			&held.ConversationID, &skillSnapshot, &deadline, &limitsSnapshot, &held.Kind, &modelSnapshot)
@@ -1026,8 +1026,8 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 	}
 	// All terminal paths take slot -> budget -> run. Updating run before
 	// locking slot deadlocks with a concurrent claimant holding slot -> run.
-	var slotRun, slotToken *string
-	if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id,claim_token", "").Scan(&slotRun, &slotToken); err != nil {
+	slotRun, slotToken, err := lockRunSlotInTx(ctx, tx, runID)
+	if err != nil {
 		return false, err
 	}
 	if slotRun == nil || *slotRun != runID || slotToken == nil || *slotToken != token {
@@ -1038,7 +1038,7 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 	var currentToken, currentState string
 	var currentEpoch int64
 	var finished *time.Time
-	err := tx.QueryRow(ctx, "creative_agent_runs", "claim_token,execution_epoch,state,finished_at", "id=$2", runID).Scan(&currentToken, &currentEpoch, &currentState, &finished)
+	err = tx.QueryRow(ctx, "creative_agent_runs", "claim_token,execution_epoch,state,finished_at", "id=$2", runID).Scan(&currentToken, &currentEpoch, &currentState, &finished)
 	if errors.Is(err, store.ErrNoRows) {
 		return false, nil
 	}

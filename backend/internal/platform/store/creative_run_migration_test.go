@@ -116,15 +116,18 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 	}
 
 	// A half-filled slot is one nobody can release.
-	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id,run_id) VALUES('mig-run',$1)`, runID); err == nil {
+	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id,conversation_id,run_id) VALUES('mig-run','ccco_1',$1)`, runID); err == nil {
 		t.Fatal("an occupied slot must carry its claim token and time")
 	}
-	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id,run_id,claim_token,acquired_at)
-		VALUES('mig-run',$1,'tok',clock_timestamp())`, runID); err != nil {
+	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id,conversation_id,run_id,claim_token,acquired_at)
+		VALUES('mig-run','ccco_1',$1,'tok',clock_timestamp())`, runID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id) VALUES('mig-run')`); err == nil {
-		t.Fatal("an account has exactly one write slot")
+	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id,conversation_id) VALUES('mig-run','ccco_1')`); err == nil {
+		t.Fatal("a conversation has exactly one write slot")
+	}
+	if _, err := db.Exec(`INSERT INTO creative_agent_slots(account_id,conversation_id) VALUES('mig-run','ccco_2')`); err != nil {
+		t.Fatalf("another conversation of the account has a slot of its own: %v", err)
 	}
 
 	// A model step never belongs to another model answer, and one gateway

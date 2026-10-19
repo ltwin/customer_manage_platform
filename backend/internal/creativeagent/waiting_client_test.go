@@ -84,6 +84,28 @@ func TestWaitingClientParksAndResumesWhenItsStepsSettle(t *testing.T) {
 	}
 }
 
+// Migration 0078 drops every free slot row, so a run parked before the upgrade
+// resumes into a conversation that has no slot row yet: it is created, not
+// mistaken for a missing run.
+func TestWaitingClientResumesWithoutASlotRow(t *testing.T) {
+	f := setup(t)
+	run := parkOnClient(t, f)
+	if _, err := f.db.Exec(`DELETE FROM creative_agent_slots`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_agent_steps SET state='succeeded', output='{}' WHERE run_id=$1 AND kind='tool'`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.sweepRuns()
+	resumed, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || resumed.State != RunQueued {
+		t.Fatalf("resumed=%+v %v", resumed, err)
+	}
+	if holder := f.slotHolder(); holder != run.ID {
+		t.Fatalf("slot held by %q", holder)
+	}
+}
+
 func TestWaitingClientWaitsForABusySlot(t *testing.T) {
 	f := setup(t)
 	run := parkOnClient(t, f)

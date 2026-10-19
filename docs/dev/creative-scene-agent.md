@@ -119,7 +119,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 |---|---|
 | 运行一直「等待页面执行」 | 有没有开着的创意空间页面；页面是否通过设备探测（窄窗口、触屏、没有 WebGL2 不认领）；任务是否在 `claimed` 反复回队（日志里 `attempt` 增长） |
 | 任务第 3 次以 `host_error` 失败 | 页面在执行中关闭或崩溃了三次；看浏览器控制台与 `code` |
-| 运行停在 `waiting_client` / `slot_busy` | 同一会话或画布上另一个运行占着写入槽位，它结束后清扫会恢复 |
+| 运行停在 `waiting_client` / `slot_busy` | 同一会话里另一个运行占着写入槽位（槽位按会话划分），它结束后清扫会恢复 |
 | 截图显示「截图已不可用」 | 暂存上传已过期回收，属预期 |
 
 浏览器里：认领到第一个任务时 Network 面板会出现 `pageExecutor` 代码块；之前页面不应加载 three（C2 的 e2e「opening the canvas page loads no three.js」守着）。

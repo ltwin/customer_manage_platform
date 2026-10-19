@@ -212,10 +212,10 @@ func TestCreatingARunIsOneFactOrNone(t *testing.T) {
 	}
 }
 
-// The account has one write slot, so a second submission is refused while the
-// first is still working — and it is told which run to wait for rather than
-// just "busy".
-func TestTheAccountHasOneWriteSlot(t *testing.T) {
+// Each conversation has one write slot, so a second submission to the same
+// conversation is refused while the first is still working — and it is told
+// which run to wait for rather than just "busy".
+func TestEachConversationHasOneWriteSlot(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
@@ -241,9 +241,90 @@ func TestTheAccountHasOneWriteSlot(t *testing.T) {
 	}
 }
 
+// A run in one conversation never blocks another conversation of the same
+// account, whether it lives on the same canvas or in another project, and
+// ending one leaves the other's occupancy alone.
+func TestConversationsRunSideBySide(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	if _, err := f.db.Exec(`INSERT INTO creative_projects(id,account_id,name) VALUES ('ccpj_a2','agent-a','另一个项目');
+		INSERT INTO creative_canvases(id,account_id,project_id,name) VALUES ('cccv_a2','agent-a','ccpj_a2','画布')`); err != nil {
+		t.Fatal(err)
+	}
+	start := func(canvasID, text string) Run {
+		t.Helper()
+		c := f.conversation(f.alice, canvasID)
+		run, err := f.startRun(f.alice, c.ID, f.consent(f.alice, c.ID).ID, InstructionSegment{Type: "text", Text: text})
+		if err != nil {
+			t.Fatalf("a run on %s was blocked by another conversation: %v", canvasID, err)
+		}
+		return run
+	}
+	first := start(f.canvasID, "第一个会话。")
+	sameCanvas := start(f.canvasID, "同画布的新会话。")
+	otherProject := start("cccv_a2", "另一个项目。")
+	for _, run := range []Run{first, sameCanvas, otherProject} {
+		if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 1 {
+			t.Fatalf("run %s holds no slot of its own", run.ID)
+		}
+	}
+	if _, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": sameCanvas.ID})); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, sameCanvas.ID); got.State != RunCancelled {
+		t.Fatalf("cancelled run is %s", got.State)
+	}
+	if n := f.count("creative_agent_slots", "run_id=$1", sameCanvas.ID); n != 0 {
+		t.Fatal("the cancelled run kept its slot")
+	}
+	for _, run := range []Run{first, otherProject} {
+		if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 1 {
+			t.Fatalf("cancelling another conversation freed %s's slot", run.ID)
+		}
+	}
+}
+
 // One submission produces one answer, and the whole path is real: the step is
 // fixed before anything is sent, the result the vendor returned is what the
 // photographer reads, and the slot is free again afterwards.
+// Two conversations' runs are both claimed and finished by the worker, and each
+// finish frees only its own conversation's slot.
+func TestSideBySideRunsFinishIndependently(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	f.vendor.reply = "好的。"
+	start := func(text string) Run {
+		t.Helper()
+		c := f.conversation(f.alice, f.canvasID)
+		run, err := f.startRun(f.alice, c.ID, f.consent(f.alice, c.ID).ID, InstructionSegment{Type: "text", Text: text})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run
+	}
+	first, second := start("第一个会话。"), start("第二个会话。")
+	finish := func(run Run) {
+		t.Helper()
+		if err := f.work(f.alice, run.ID); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunSucceeded {
+			t.Fatalf("run %s is %s", run.ID, got.State)
+		}
+		if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 0 {
+			t.Fatalf("finished run %s kept its slot", run.ID)
+		}
+	}
+	finish(first)
+	if n := f.count("creative_agent_slots", "run_id=$1", second.ID); n != 1 {
+		t.Fatal("finishing one conversation freed another's slot")
+	}
+	finish(second)
+	if n := f.count("creative_agent_slots", "conversation_id IN ($1,$2)", first.ConversationID, second.ConversationID); n != 2 {
+		t.Fatalf("each conversation keeps its own free slot row, got %d", n)
+	}
+}
+
 func TestOneSubmissionProducesOneAnswer(t *testing.T) {
 	f := setup(t)
 	f.queue()

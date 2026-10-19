@@ -119,7 +119,7 @@ func (s *Service) resumeClientWait(ctx context.Context, tx store.TxAccountScope,
 	if err != nil || pending > 0 {
 		return false, err
 	}
-	if err = acquireSlotInTx(ctx, tx, c.ID, c.token, now); err != nil {
+	if err = acquireSlotInTx(ctx, tx, c.ConversationID, c.ID, c.token, now); err != nil {
 		var busy BusyError
 		if !errors.As(err, &busy) {
 			return false, err
@@ -218,7 +218,7 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if err = coversRun(consent, c.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if err = acquireSlotInTx(ctx, tx, c.ID, c.token, now); err != nil {
+		if err = acquireSlotInTx(ctx, tx, c.ConversationID, c.ID, c.token, now); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if _, err = s.appendMessageInTx(ctx, tx, c.ConversationID, newMessage{Role: "user", Status: "complete", RunID: c.ID, Body: Body{Blocks: []Block{{Type: "text", Text: in.Text}}}}); err != nil {

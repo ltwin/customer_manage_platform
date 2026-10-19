@@ -241,19 +241,22 @@ test('a refusal clears the chain and a stale owner touches nothing', async () =>
     }),
     draft: { conversation: 'c', model: 'm', skill: '', text: '原文' },
   }
-  for (const [status, kind] of [
-    [422, 'rejected'],
-    [404, 'rejected'],
-    [409, 'rejected'],
-    [408, 'unknown'],
-    [429, 'unknown'],
-    [503, 'unknown'],
+  for (const [status, kind, code] of [
+    [422, 'rejected', ''],
+    [404, 'rejected', ''],
+    [409, 'rejected', ''],
+    [408, 'unknown', ''],
+    // 会话正忙、额度用尽是服务端整事务回滚后的明确拒绝：链清掉，面板不再锁住。
+    [429, 'rejected', 'creative_agent_busy'],
+    [429, 'rejected', 'creative_llm_budget_exceeded'],
+    [429, 'unknown', ''],
+    [503, 'unknown', ''],
   ] as const) {
     const storage = memoryStorage(JSON.stringify(chain))
     const outcome = await performAgentChain(chain, slotOf(storage), async () => {
-      throw new Refused(status)
+      throw new Refused(status, code)
     })
-    assert.equal(outcome.kind, kind, `status ${status}`)
+    assert.equal(outcome.kind, kind, `status ${status} ${code}`)
     assert.equal(storage.box.raw === null, kind === 'rejected')
     if (outcome.kind === 'rejected')
       assert.deepEqual(outcome.chain.draft, chain.draft)

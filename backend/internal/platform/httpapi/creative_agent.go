@@ -43,7 +43,7 @@ func creativeAgentError(c *gin.Context, err error) {
 	var busy creativeagent.BusyError
 	switch {
 	case errors.As(err, &busy):
-		// The account has one write slot. Naming the run that holds it turns
+		// Each conversation has one write slot. Naming the run that holds it turns
 		// "try later" into something the photographer can actually open.
 		var details ErrorDetails
 		if buildErr := details.FromCreativeAgentBusyDetails(
