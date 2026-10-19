@@ -265,7 +265,7 @@ Blob 还被未交接的上传会话、正在校验的任务和 read pin 保留�
 | `creative_run_artifacts` | `id, run_id, step_id?, content_revision_id?, proposal JSONB, preconditions JSONB, apply_state, applied_change_id?` | 新内容以 key 关联 revision；候选采用有条件命令；被画布采纳后由节点独立保留，清运行不删作品 |
 | `creative_run_events` | `run_id, seq, event_type, payload JSONB, created_at` | PK(account_id,run_id,seq)；与关键状态事务写入；事件是可清理投影，业务状态/回执单独保留 |
 | `llm_budgets` | `period_start, currency, limit_micros, reserved_micros, spent_micros, token_limit, reserved_tokens, used_tokens, revision` | PK(account_id,period_start,currency)；额度在行锁下预留，活动运行数不存此表；金额不用浮点数 |
-| `creative_agent_slots` | `run_id?, claim_token?, acquired_at?, updated_at` | 每账号唯一行，PK(account_id)；run key 关联；占用字段同空/同非空；与预算周期/币种无关，首期仅一个写槽位 |
+| `creative_agent_slots` | `conversation_id, run_id?, claim_token?, acquired_at?, updated_at` | 每会话一行，PK(account_id, conversation_id)，首次运行时创建；一个 run 至多占一行（部分唯一索引）；占用字段同空/同非空；与预算周期/币种无关。同账号不同会话、不同项目可并行运行（迁移 0078，2026-10-19） |
 | `creative_egress_consents` | `id, conversation_id?, node_prompt_draft_id?, provider_key, purpose, scope JSONB, policy_version, granted_at, revoked_at?` | 账号外发同意；scope 仅保存范围策略和数据类别，不保存资源 ID；选定内容通过下表的显式修订 key 关联，个人库范围必须显式授权；运行创建校验同意，实际每次模型调用前再次检查有效性、供应商和实际发送集合；不代替素材 usage_grants |
 | `creative_egress_consent_contents` | `consent_id, content_revision_id, approved_at` | PK(account_id,consent_id,content_revision_id)；创建时验证同账号 consent/ready 修订；是对固定修订的授权记录，不是内容保留根，原修订清理后可保留审批定位但不可据此恢复媒体 |
 | `llm_usage_reservations` | `id, caller_service, caller_operation_id, request_id?, budget_period, currency, reserved_micros, actual_micros?, reserved_tokens, actual_tokens?, settlement_state, price_version` | Gateway 拥有，按账号显式引用 budget、可选 request；调用方操作预留唯一，request 只能认领一份适用预留；已结算不重复扣费，unknown 保守占用，过期需对账 |
@@ -304,7 +304,7 @@ Agent initial_llm_reservation_id 按同账号/受信调用方关联初始预留�
 
 消息正文与引用分离。运行创建、输入固定、写并发占用、用量预留、消息及 River 入队必须原子；上下文大小超限在事务前预检查，事务内核对实际快照未变化。实际模型能力由 provider catalog 校验，不能从前端 model_key 推定具备图像理解。
 
-账号 slot 先锁后检查：只有 run_id 为空才能取得；同 run/claim_token 重试回放已有占用。释放必须匹配 run_id 和 claim_token，旧运行不能清空后来取得的槽位。worker 接管同一 run 时按锁序取得 slot 与 run，递增 execution_epoch 并轮换 claim_token；租约过期不直接将 slot 判为可用。waiting/终态事务幂等释放本 run 的占用；恢复等待运行重新抢占，失败则继续等待而不入队。跨月或更换币种只创建新预算桶，不改变账号 slot 的占用。
+会话 slot（每会话一行，首次使用时创建）先锁后检查：只有 run_id 为空才能取得；同 run/claim_token 重试回放已有占用。释放必须匹配 run_id 和 claim_token，旧运行不能清空后来取得的槽位。worker 接管同一 run 时按锁序取得 slot 与 run，递增 execution_epoch 并轮换 claim_token；租约过期不直接将 slot 判为可用。waiting/终态事务幂等释放本 run 的占用；恢复等待运行重新抢占，失败则继续等待而不入队。跨月或更换币种只创建新预算桶，不改变会话 slot 的占用。同账号不同会话的 slot 互不影响，可并行运行。
 
 运行始终记录哪些字段是输入事实、哪些是创作推测，回复的引用指向 run_input/artifact，而不是给模型自由编造数据库 ID。未成功读取的附件不得标为已使用。
 
@@ -316,7 +316,7 @@ Agent initial_llm_reservation_id 按同账号/受信调用方关联初始预留�
 
 run.state 只允许 queued、running、waiting_input、waiting_apply、reconciling、succeeded、partial、failed、cancelled。recoverable 仅表示可恢复条件，不是状态；取消请求只写 cancel_requested_at，不增加 cancel_requested 状态。step.state 的 prepared/dispatched/succeeded/failed/unknown 独立于运行状态，不能相互混填。
 
-queued/running/reconciling 占账号写槽位；waiting_input/waiting_apply 和终态不占。进入/离开上述集合须与 slot claim/release 同事务，按 run_id/claim_token 匹配。槽位与 worker 租约独立：排队或等待外部核实时可以没有正在工作的 worker。deadline_at 是本次运行的有界执行期限，等待/恢复不自动延长；超期后不再发模型请求或应用写工具。
+queued/running/reconciling 占所属会话的写槽位；waiting_input/waiting_apply 和终态不占。进入/离开上述集合须与 slot claim/release 同事务，按 run_id/claim_token 匹配。槽位与 worker 租约独立：排队或等待外部核实时可以没有正在工作的 worker。deadline_at 是本次运行的有界执行期限，等待/恢复不自动延长；超期后不再发模型请求或应用写工具。
 
 | 当前状态 → 下一状态 | 触发方与条件 | 原子动作及恢复规则 |
 |---|---|---|

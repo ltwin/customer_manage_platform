@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackSceneThreejs is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackSceneThreejs undoes 0078 and then 0077; every older migration's
+// rollback helper undoes this one first.
 func rollbackSceneThreejs(t *testing.T, url string) {
 	t.Helper()
+	rollbackAgentConversationSlots(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-scene-threejs-fields", err)
 	}
@@ -107,6 +108,7 @@ VALUES($1,'acct',$2,(SELECT count(*)+1 FROM creative_content_revisions WHERE con
 	if _, err = db.Exec(`UPDATE creative_content_revisions SET payload = jsonb_set(payload, '{scene,objects,2,light,decay}', '3') WHERE id='ccrev_old'`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackAgentConversationSlots(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "decay other than 2") {
 		t.Fatal("lossy rollback allowed", err)
 	}

@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	// ErrBusy means this account's single write slot is already held. It is not
+	// ErrBusy means the conversation's write slot is already held. It is not
 	// a failure of the request: the same words submitted after the current run
 	// finishes will be accepted.
 	ErrBusy = errors.New("creative agent write slot is busy")
@@ -273,10 +273,10 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err := creativecanvas.LockProjectForWorkInTx(ctx, tx, canvasOfConversation); err != nil {
 				return creativeops.Outcome{}, err
 			}
-			// Lock order: the project row (above), the account's write slot, then the gateway's group and
+			// Lock order: the project row (above), the conversation's write slot, then the gateway's group and
 			// budget rows, then the conversation, then the consent, then the
 			// content revisions it authorises.
-			if err := acquireSlotInTx(ctx, tx, runID, claim, now); err != nil {
+			if err := acquireSlotInTx(ctx, tx, input.ConversationID, runID, claim, now); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			reservation, err := s.reserveInTx(ctx, tx, runID, model, deadline)
@@ -702,21 +702,12 @@ func nullableJSON(raw []byte) any {
 	return raw
 }
 
-// acquireSlotInTx takes the account's one write slot. The row is locked before
-// it is read, so two submissions racing for the slot do not both see it free.
-func acquireSlotInTx(ctx context.Context, tx store.TxAccountScope, runID, claim string, now time.Time) error {
-	exists, err := tx.Exists(ctx, "creative_agent_slots", "")
+// acquireSlotInTx takes the conversation's one write slot. The row is locked
+// before it is read, so two submissions racing for the slot do not both see it
+// free. Other conversations of the account have slots of their own.
+func acquireSlotInTx(ctx context.Context, tx store.TxAccountScope, conversationID, runID, claim string, now time.Time) error {
+	heldRun, heldToken, err := lockConversationSlotInTx(ctx, tx, conversationID)
 	if err != nil {
-		return err
-	}
-	if !exists {
-		// The empty row is the slot; creating it is not taking it.
-		if err := tx.Insert(ctx, "creative_agent_slots", []string{"updated_at"}, now); err != nil {
-			return err
-		}
-	}
-	var heldRun, heldToken *string
-	if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id,claim_token", "").Scan(&heldRun, &heldToken); err != nil {
 		return err
 	}
 	if heldRun != nil {
@@ -726,8 +717,36 @@ func acquireSlotInTx(ctx context.Context, tx store.TxAccountScope, runID, claim 
 		return BusyError{ActiveRunID: *heldRun}
 	}
 	_, err = tx.Update(ctx, "creative_agent_slots",
-		"run_id=$2, claim_token=$3, acquired_at=$4, updated_at=$4", "", runID, claim, now)
+		"run_id=$3, claim_token=$4, acquired_at=$5, updated_at=$5", "conversation_id=$2",
+		conversationID, runID, claim, now)
 	return err
+}
+
+// lockConversationSlotInTx locks a conversation's slot and reports who holds
+// it. The empty row is the slot; creating it is not taking it, and a racing
+// creator's row is simply the one locked.
+func lockConversationSlotInTx(ctx context.Context, tx store.TxAccountScope, conversationID string) (run, token *string, err error) {
+	var created string
+	err = tx.InsertOnConflictDoNothingReturning(ctx, "creative_agent_slots",
+		[]string{"conversation_id"}, []string{"account_id", "conversation_id"}, []string{"conversation_id"},
+		conversationID).Scan(&created)
+	if err != nil && !errors.Is(err, store.ErrNoRows) {
+		return nil, nil, err
+	}
+	err = tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id,claim_token", "conversation_id=$2", conversationID).
+		Scan(&run, &token)
+	return run, token, err
+}
+
+// lockRunSlotInTx locks the slot of the conversation a run belongs to, whoever
+// holds it now. The conversation is fixed for a run's life, so reading it
+// unlocked keeps the slot first in the lock order. A missing run is ErrNoRows.
+func lockRunSlotInTx(ctx context.Context, tx store.TxAccountScope, runID string) (run, token *string, err error) {
+	var conversationID string
+	if err := tx.QueryRow(ctx, "creative_agent_runs", "conversation_id", "id=$2", runID).Scan(&conversationID); err != nil {
+		return nil, nil, err
+	}
+	return lockConversationSlotInTx(ctx, tx, conversationID)
 }
 
 // releaseSlotInTx frees the slot only for the holder that still matches. An old

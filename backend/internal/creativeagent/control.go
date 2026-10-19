@@ -38,20 +38,13 @@ func terminalRun(state string) bool {
 // so cancellation can neither miss a committed dispatch nor deadlock behind it.
 func (s *Service) lockControlledRun(ctx context.Context, tx store.TxAccountScope, id string) (controlledRun, error) {
 	var c controlledRun
-	var slot *string
-	if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id", "").Scan(&slot); err != nil {
+	if _, _, err := lockRunSlotInTx(ctx, tx, id); err != nil {
 		if errors.Is(err, store.ErrNoRows) {
 			return c, ErrNotFound
 		}
 		return c, err
 	}
-	exists, err := tx.Exists(ctx, "creative_agent_runs", "id=$2", id)
-	if err != nil {
-		return c, err
-	}
-	if !exists {
-		return c, ErrNotFound
-	}
+	var err error
 	c.requests, err = s.gateway.LockCallerGroupInTx(ctx, tx, callerService, id)
 	if err != nil {
 		return c, err

@@ -192,19 +192,23 @@ export function replacePendingChain(
   else storage.removeItem(key)
   return true
 }
-// 4xx（408、429 除外）说明服务端明确拒绝了这次操作；其余情况（断网、超时、
-// 5xx、408、429）服务端可能已经受理，结果未知。
+// 4xx（408 除外）说明服务端明确拒绝了这次操作；其余情况（断网、超时、5xx、
+// 408）服务端可能已经受理，结果未知。429 只有带下面这些代码时才算明确拒绝：
+// 会话正忙、额度用尽都是整事务回滚后给出的，按原操作重发只会再被拒，留着待确认
+// 链只会把面板锁死；不带这些代码的 429（限流）仍算结果未知。
+const refusedWhenBusy = new Set(['creative_agent_busy', 'creative_llm_budget_exceeded'])
 export function definitelyRejected(
   e: unknown,
 ): e is Error & { status: number; code?: string } {
   if (!(e instanceof Error) || !('status' in e)) return false
   const status = e.status
+  if (status === 429)
+    return 'code' in e && typeof e.code === 'string' && refusedWhenBusy.has(e.code)
   return (
     typeof status === 'number' &&
     status >= 400 &&
     status < 500 &&
-    status !== 408 &&
-    status !== 429
+    status !== 408
   )
 }
 export type ChainSlot = {

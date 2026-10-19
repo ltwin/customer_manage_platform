@@ -4485,7 +4485,7 @@ type CreativeAgentBlockDetail struct {
 	ToolKey string  `json:"tool_key"`
 }
 
-// CreativeAgentBusyDetails 账号只有一个写槽位。告诉摄影师是哪一次运行占着它，比只说「忙」多出 一个他们真的能打开去看的东西。
+// CreativeAgentBusyDetails 每个会话只有一个写槽位，同账号的其他会话与项目不受影响。告诉摄影师 是哪一次运行占着它，比只说「忙」多出一个他们真的能打开去看的东西。
 type CreativeAgentBusyDetails struct {
 	ActiveRunId string `json:"active_run_id"`
 }

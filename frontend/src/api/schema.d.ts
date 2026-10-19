@@ -4503,7 +4503,7 @@ export interface components {
                 details?: components["schemas"]["ErrorDetails"];
             };
         };
-        /** @description 账号只有一个写槽位。告诉摄影师是哪一次运行占着它，比只说「忙」多出 一个他们真的能打开去看的东西。 */
+        /** @description 每个会话只有一个写槽位，同账号的其他会话与项目不受影响。告诉摄影师 是哪一次运行占着它，比只说「忙」多出一个他们真的能打开去看的东西。 */
         CreativeAgentBusyDetails: {
             active_run_id: string;
         };

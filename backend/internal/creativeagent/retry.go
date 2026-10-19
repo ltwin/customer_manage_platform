@@ -57,7 +57,7 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if err = acquireSlotInTx(ctx, tx, id, token, now); err != nil {
+		if err = acquireSlotInTx(ctx, tx, peek.ConversationID, id, token, now); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		source.requests, err = s.gateway.LockCallerGroupInTx(ctx, tx, callerService, in.RunID)
