@@ -3,6 +3,7 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
+import { canvasBlob } from '../sandbox/thumbnail.ts'
 import type { Shot } from './executor.ts'
 import { framingFor, type Framing, type RenderRequest } from './framing.ts'
 import { ShotScene } from './ShotScene.tsx'
@@ -56,9 +57,7 @@ export async function shoot(scene: Scene, models: Readonly<Record<string, SceneM
     })
     const state = store!.getState()
     state.gl.render(state.scene, state.camera)
-    return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('截图生成失败'))), 'image/jpeg', jpegQuality)
-    })
+    return canvasBlob(canvas, 'image/jpeg', jpegQuality)
   } finally {
     root.unmount()
   }

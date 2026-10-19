@@ -35,6 +35,20 @@ function frame(camera: THREE.PerspectiveCamera, manifest: Manifest): void {
   camera.updateProjectionMatrix()
 }
 
+/**
+ * The canvas as an image file, encoded now. toBlob encodes in an idle task,
+ * which a background tab starts only after a throttled timeout: a hidden
+ * page running the assistant's jobs would wait a second or more per image.
+ */
+export function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Blob {
+  const url = canvas.toDataURL(type, quality)
+  if (!url.startsWith(`data:${type};base64,`)) throw new Error('图片编码失败')
+  const text = atob(url.slice(url.indexOf(',') + 1))
+  const bytes = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+  return new Blob([bytes], { type })
+}
+
 export async function renderThumbnail(glb: ArrayBuffer, manifest: Manifest): Promise<Blob> {
   const model = await parseGLB(glb)
   const scene = new THREE.Scene()
@@ -53,7 +67,5 @@ export async function renderThumbnail(glb: ArrayBuffer, manifest: Manifest): Pro
   model.traverse((o) => {
     if (o instanceof THREE.Mesh) o.geometry.dispose()
   })
-  return new Promise((resolve, reject) => {
-    r.domElement.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('缩略图生成失败'))), 'image/png')
-  })
+  return canvasBlob(r.domElement, 'image/png')
 }
