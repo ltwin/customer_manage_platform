@@ -1,6 +1,6 @@
 {
   "uid": "706bd3ea-80bb-479e-b23c-44c4e38025d6",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-schema-threejs",
   "kind": "feature",
   "assurance": "governed",
@@ -42,9 +42,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-19T06:27:37.792Z",
-  "updatedAt": "2026-10-19T06:48:23.610Z",
+  "updatedAt": "2026-10-19T06:48:48.754Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -66,8 +66,20 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "c72046ba9318f79dde43aa3420e6decb7879e4a8",
+    "at": "2026-10-19T06:48:48.241Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "023fb13da4b4898b42415cc5f0c60308b03b30c5afa8303f0963d0a635bd5c69"
+    },
+    "preExisting": [
+      ".lti/config.yaml",
+      ".lti/snapshots/023fb13da4b4898b42415cc5f0c60308b03b30c5afa8303f0963d0a635bd5c69.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
