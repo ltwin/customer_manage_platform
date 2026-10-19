@@ -291,6 +291,7 @@ stateDiagram-v2
 - 材质预设由前端拥有并带版本（`stone_brick@1`）。实现是在 MeshStandardMaterial 上注入三平面投影的程序化着色（`onBeforeCompile`），所以照常参与光照和阴影，也不依赖模型 UV。
 - 服务端只校验预设 ID 格式（`^[a-z0-9_]+@[1-9][0-9]*$`）和参数外形（平铺对象，最多 32 个键，值为 number / string / boolean）。前端遇到未知预设时，显示中性灰并提示。
 - 环境默认是程序化天空（太阳高度角、方位角、浊度），可选少量内置 HDRI（来源与许可在 C5 确定）。灯光是场景对象：方向光、点光、聚光。
+- 灯光字段与 three.js 灯光类同名同义（修订 v7，见 `data: 场景文档`），渲染时原样赋给 `DirectionalLight` / `PointLight` / `SpotLight`，`target` 取物件位置沿局部 −Z 的一点。理由：助手最熟悉 three.js，`write_model` 和渲染器也都用 three.js，同一轮对话里只用一套思路；格式若只是大体像 three.js，助手会按像的部分去补其余字段，含义不同的字段（整锥角与半角、度与弧度）不会报错，只会悄悄出错。
 
 ### 账号隔离与安全
 

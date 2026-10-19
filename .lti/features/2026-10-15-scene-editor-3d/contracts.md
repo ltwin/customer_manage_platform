@@ -99,13 +99,13 @@ export default function build({ params, THREE, lib, rng }) {
 | 路径 | 类型 | 必须 | 缺省 / 约束 |
 |---|---|---|---|
 | `scene.environment.sky.kind` | `"procedural"` \| `"hdri"` \| `"color"` | 是 | 新建场景为 `procedural` |
-| `scene.environment.sky.sun_elevation_deg` | number −10…90 | `procedural` 时 | 新建为 35 |
-| `scene.environment.sky.sun_azimuth_deg` | number 0…360 | `procedural` 时 | 新建为 135 |
+| `scene.environment.sky.sun_elevation_deg` | number −10…90 | `procedural` 时 | 新建为 35；0° 为地平线，90° 为天顶 |
+| `scene.environment.sky.sun_azimuth_deg` | number 0…360 | `procedural` 时 | 新建为 135；0° 指向 +Z，90° 指向 +X（与 three.js Sky 示例的 `azimuth` 相同） |
 | `scene.environment.sky.turbidity` | number 1…20 | `procedural` 时 | 新建为 3 |
 | `scene.environment.sky.hdri` | string，内置 HDRI ID（`^[a-z0-9_]+@[1-9][0-9]*$`） | `hdri` 时 | — |
 | `scene.environment.sky.color` | `#rrggbb` | `color` 时 | — |
 | `scene.environment.ambient` | `{color:#rrggbb, intensity:0…10}` | 是 | `{#ffffff, 0.4}` |
-| `scene.environment.fog` | `{color:#rrggbb, near_m>0, far_m>near_m}` 或 null | 是 | null |
+| `scene.environment.fog` | `{color:#rrggbb, near>0, far>near}`（three.js `Fog`，米）或 null | 是 | null |
 | `scene.render.mode` | `"clay"` \| `"lit"` | 是 | `clay`；只影响编辑器默认显示，导出时另行指定 |
 | `scene.objects[]` | 对象数组，≤ 2000 | 是 | 新建为一个内置地面 |
 | `objects[].id` | string | 是 | 见身份规则 |
@@ -118,11 +118,23 @@ export default function build({ params, THREE, lib, rng }) {
 | `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
 | `objects[].model` | `{content_revision_id}` | `kind=model_instance` 时 | 必须是本账号 `model` 类型、`ready` 且可展示的内容修订 |
 | `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean |
-| `objects[].light` | `{type:"directional"\|"point"\|"spot", color, intensity:0…1000, range_m:null\|>0, angle_deg:null\|1…179, penumbra:null\|0…1, cast_shadow:boolean}` | `kind=light` 时 | `spot` 时 `angle_deg` 必填 |
-| `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near_m>0, far_m>near_m, label≤40}` | `kind=camera` 时 | 新建为 `{35,[36,24],"3:2",0.1,1000,""}` |
+| `objects[].light` | 按 `type` 区分，字段与 three.js 灯光类同名同义，见下方「灯光」 | `kind=light` 时 | 只有 `type` 必填，其余缺省取 three.js 默认值，存储时补齐 |
+| `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near>0, far>near（米，同 three.js `PerspectiveCamera`）, label≤40}` | `kind=camera` 时 | 各字段可省略，缺省 `{35,[36,24],"3:2",0.1,1000,""}`，存储时补齐。朝局部 −Z 看（three.js 摄像机约定）；垂直视场角由 `focal_mm` 和 `sensor_mm[1]` 算出，不写 three.js 的 `fov` |
 | 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
 - **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
+- **灯光**（字段与 three.js 同名同义，渲染时原样赋给对应的灯光类）：
+
+| `type` | three.js | 字段与缺省 |
+|---|---|---|
+| `directional` | `DirectionalLight` | `color`（#rrggbb，#ffffff）、`intensity`（0…1000，1）、`cast_shadow`（false） |
+| `point` | `PointLight` | 以上三项，加 `distance`（米，≥ 0，0 表示不截断，缺省 0）、`decay`（0…10，2） |
+| `spot` | `SpotLight` | `point` 的全部字段，加 `angle`（弧度，光锥中心到边缘的半角，0 < angle ≤ π/2，缺省 π/3）、`penumbra`（0…1，0） |
+
+  - 写了该类型没有的字段返回 400 并指出字段（例如点光写了 `angle`）。
+  - `intensity` 的含义同 three.js 默认的物理光照：点光和聚光为坎德拉（cd），平行光为 three.js 的强度值。
+  - 方向：平行光和聚光沿物件局部 −Z 照射，与 three.js 摄像机、Blender 灯光一致。three.js 的 `target` 不进格式，渲染时由旋转算出；平行光的位置只影响阴影范围。
+- **命名原则**（修订 v7）：助手要写的字段与 three.js 同名同义；three.js 没有对应字段的，保留带单位的名字（`sun_elevation_deg`、`focal_mm`、`sensor_mm`）。不接受别名，写错名字返回 400 并指出字段。变换的 `rotation` 保持四元数：three.js 里它对应 `quaternion`（three.js 的 `rotation` 是欧拉角），但两者长度不同，写错会被拒绝而不会悄悄出错，C3 试用中助手也全部写对。
 
 ### 访问模式与保证
 - **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
@@ -136,6 +148,7 @@ export default function build({ params, THREE, lib, rng }) {
 - 进回收站与彻底删除沿用通用文档层。彻底删除时删除修订行和引用行，之后模型修订失去持有方，可被 GC 回收。
 - 内容类型 CHECK 加 `scene`。回滚时如已有 `scene` 内容则拒绝，前向修复。
 - 快照 `schema_version` 升级时，读取端兼容旧版本，写入只写新版本；不做批量回填。
+- 例外：修订 v7 的改名（雾和摄像机的 `near_m`/`far_m` → `near`/`far`，灯光 `range_m` → `distance`、`angle_deg` → `angle` 并补 `decay`）发生在上线之前，生产库没有场景数据。由一次迁移改写已有的场景快照，`schema_version` 仍为 1，不保留旧字段的读取兼容。旧的 `angle_deg` 没有定义是整锥角还是半角，也从未渲染过，迁移按整锥角换算（`angle = angle_deg / 2`，换成弧度）；2026-10-18 开发库里没有灯光物件。
 
 ## data: ADD 模型内容
 
@@ -360,7 +373,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 - 在通用读取接口上新增 `scene` 分支，其他类型不受影响。
 - C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
 
-## api: ADD 提交场景命令
+## api: MODIFY 提交场景命令
 
 ### 用途与调用
 - **用途**：对场景做一组原子编辑，成功时产生一个新修订。
@@ -381,8 +394,8 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 | op | 字段 | 涉及单元 |
 |---|---|---|
 | `rename` | `title`（1–200） | `meta` |
-| `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`；`primitive.params` 缺省的键补成默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
-| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选，至少一项（省略即不改；`primitive.params` 按键合并；`material_slots`、`light`、`camera` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
+| `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`；`primitive.params` 缺省的键补成默认值；`light`、`camera` 缺省的字段补成数据契约里的默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
+| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选，至少一项（省略即不改；`primitive.params`、`light`、`camera` 按键合并，`light.type` 改变时去掉新类型没有的字段、缺少的补默认值；`material_slots` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
 | `remove_objects` | `object_ids`（1–2000；分组连同后代一起删除） | `objects`，以及每个被删对象的 `object:<id>` 和 `object:<id>:content` |
 | `reparent_objects` | `moves`（1–2000 项 `{object_id, parent_id（null 为根）, order}`） | `objects`（一次） |
 | `set_environment` | `environment`（整体替换） | `environment` |
@@ -450,6 +463,8 @@ Content-Type: application/json
 
 ### 兼容与变更
 在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
+
+修订 v7：`update_objects` 里的 `light`、`camera` 由整体替换改为按键合并（字段允许省略后，整体替换会把没写的字段悄悄重置成默认值；three.js 里改 `light.intensity` 也只改这一项）；`add_objects` 可省略它们的字段。字段改名见 `data: 场景文档`。编辑器同一版本更新，旧字段名返回 400。
 
 ### 补充说明
 新建场景不经本接口，而是走画布命令 `add_node`（`type_key = "core.scene"`）。底座的文档类型端口负责在同一事务里创建文档；场景类型提供初始快照（一块内置地面 `ground@1`，摄像机随 C4 的放置 UI 出现）和卡片摘要。
@@ -705,7 +720,7 @@ Content-Type: application/json
 ### 兼容与变更
 首次定义（修订 v6）。
 
-## api: ADD 读取运行的场景改动
+## api: MODIFY 读取运行的场景改动
 
 ### 用途与调用
 - **用途**：列出某次助手运行对一个场景改了哪些物件和设置，并给出每一处恢复到运行之前所需的 `restore_units`；已被别人改过的标为不可恢复。「恢复这一处」「撤销本轮」和助手撤回自己的改动共用这一份计算。
@@ -726,22 +741,23 @@ Content-Type: application/json
 |---|---|---|---|
 | `run_id`、`document_id` | string | 否 | — |
 | `revisions` | string[] | 否 | 这次运行写出的修订号，升序；为空表示没有改过这个场景 |
-| `entries` | array | 否 | 每个改动过的物件一条，`environment` / `render` / `meta` 各一条 |
+| `entries` | array | 否 | 每个改动过的物件一条，`environment` / `render` / `meta` 各一条；运行只调整过层级或顺序时（只动了 `objects` 单元）另有一条 `{kind:"unit", unit:"objects"}` |
 | `entries[].target` | `{kind:"object", object_id}` \| `{kind:"unit", unit}` | 否 | — |
 | `entries[].name` | string | 否 | 当前名称；已删除的取运行之前的名称 |
 | `entries[].change` | `"added"` \| `"removed"` \| `"modified"` | 否 | 相对运行之前 |
 | `entries[].restore` | `{from_revision, units, expected}` | 是 | 恢复这一处的命令内容（`restore_units` 的参数加上预期版本）；不可恢复时为 null |
-| `entries[].blocked` | `{reason, revision, actor_kind}` | 是 | 不可恢复的原因：`changed_by_others`（运行之后别人改过这一处）或 `restored_whole`（之后整份恢复过） |
+| `entries[].blocked` | `{reason, revision, actor_kind}` | 是 | 不可恢复的原因：`changed_by_others`（运行之后别人改过这一处）、`restored_whole`（之后整份恢复过）或 `hierarchy_not_restorable`（运行调整过层级或顺序；按单元恢复不改层级，只能在历史版本列表整份恢复。C3 的助手不能调整层级，正常不会出现） |
 | `undo_all` | array | 否 | 撤销本轮的命令内容，通常 1 批；只包含可恢复的条目；全部不可恢复时为空数组 |
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 缺少 `run_id`；运行写出的修订超过 500 个 | 改用历史版本列表 |
+| 400 | `validation_failed` | 缺少 `run_id`；运行写出的修订超过 500 个；运行第一次写入之后的修订（含别人的）超过 5000 个 | 改用历史版本列表 |
 | 404 | `not_found` | 文档或运行不存在、不属于当前账号，或文档不是场景 | 停止 |
 
 ### 交互规则
 - 某一处的旧值取它在本次运行第一次被写之前那一版。一批 `restore_units` 只能有一个来源修订，这些来源修订之间若没有别人改过，就合成一批；否则按来源修订分批。
+- 同一物件的摆放和内容两个单元若来自不同的来源修订，且两者之间有别人改过，这一条不拆成两批，整条标为 `changed_by_others`（`blocked.revision` 为那次修改），留给历史版本列表。
 - 返回的 `expected` 是读取时的当前版本；提交后若有人刚好又改了，照常冲突。
 - 只读，没有副作用。
 
@@ -760,7 +776,7 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义（修订 v6）。
+首次定义（修订 v6）。修订 v7 补记 C3 实现时确定的第三种不可恢复原因、5000 条历史上限和多来源规则，与已交付的实现一致，接口外形不变。
 
 ## api: ADD 导出分镜
 
