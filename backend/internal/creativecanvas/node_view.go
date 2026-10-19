@@ -92,7 +92,8 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		VersionSummary    *VersionSummary           `json:"version_summary,omitempty"`
 		DocumentSummary   json.RawMessage           `json:"document_summary,omitempty"`
 		DocumentTrashed   *bool                     `json:"document_trashed,omitempty"`
-	}{ID: n.ID, ParentID: n.ParentID, Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content, VersionSummary: n.Versions, DocumentSummary: summary, DocumentTrashed: n.DocumentTrashed})
+		BasedOnState      string                    `json:"based_on_state,omitempty"`
+	}{ID: n.ID, ParentID: n.ParentID, Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content, VersionSummary: n.Versions, DocumentSummary: summary, DocumentTrashed: n.DocumentTrashed, BasedOnState: n.BasedOnState})
 }
 
 // The persistence projection is deliberately independent from the public DTO.

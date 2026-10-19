@@ -115,6 +115,8 @@ type Node struct {
 	// 文档节点的只读展示：快照读取时填；DocumentTrashed 为 nil 表示没有读过文档。
 	DocumentSummary json.RawMessage `json:"-"`
 	DocumentTrashed *bool           `json:"-"`
+	// 场景导出图的只读过时状态：based_on 生效时由快照读取填写，否则为空。
+	BasedOnState string `json:"-"`
 }
 
 // VersionSummary 是卡片外标签的版本元信息（PRD CV-10）。

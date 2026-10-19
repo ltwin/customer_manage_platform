@@ -74,6 +74,9 @@ type Action struct {
 	// to the document type when add_node creates a new one.
 	DocumentID      string          `json:"document_id,omitempty"`
 	DocumentOptions json.RawMessage `json:"document_options,omitempty"`
+	// Config is the new node's config. Only Go callers set it: it never
+	// decodes from a request, so clients cannot write based_on.
+	Config map[string]any `json:"-"`
 }
 type BatchInput struct {
 	CanvasID                 string               `json:"canvas_id"`

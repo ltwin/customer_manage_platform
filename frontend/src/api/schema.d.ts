@@ -233,7 +233,7 @@ export interface paths {
         put?: never;
         /**
          * 渲染端提交任务结果，服务端同一事务落结果、改终态、让助手运行继续
-         * @description 写入场景时单元冲突、或结果内容不合规（manifest 与 GLB 不符、参数不合定义、超上限、父级不存在）时， 任务记为 failed 并照常返回 200，渲染端不重试。409 creative_state_conflict：租约已失效、令牌不匹配， 或关联运行已不能继续写入（运行已结束，任务已取消）；409 creative_upload_unavailable：暂存上传不可用， 租约仍有效时重新上传后用新的 operation id 重试。
+         * @description 写入场景时单元冲突、或结果内容不合规（manifest 与 GLB 不符、参数不合定义、超上限、父级不存在）、 或导出无法放置（画布已归档、场景节点已不在画布、场景在回收站、摄像机不在所报修订、画布节点超出上限）时， 任务记为 failed 并照常返回 200，渲染端不重试。export.shots 与任务请求的摄像机和导出方式不一致时 400。409 creative_state_conflict：租约已失效、令牌不匹配， 或关联运行已不能继续写入（运行已结束，任务已取消）；409 creative_upload_unavailable：暂存上传不可用， 租约仍有效时重新上传后用新的 operation id 重试。
          */
         post: operations["completeCreativeSceneJob"];
         delete?: never;
@@ -256,6 +256,26 @@ export interface paths {
         get: operations["listCreativeSceneJobs"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/scene-exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把渲染端出的导出图落成画布图片节点，并记录来源
+         * @description 摄影师手动导出用；助手导出随完成任务提交，不调本接口。全部节点在一次画布修改里创建，放在场景节点右侧、同一父级。 400 validation_failed：外形非法、摄像机或 pass 重复、摄像机不在该修订里、scene_revision 晚于当前修订或不存在； 404：场景、画布或场景节点不存在，或场景节点不指向这个场景；409 archived_read_only：画布已归档； 409 creative_state_conflict：场景在回收站；409 creative_upload_unavailable：暂存图片不可用，重新上传后用新的 operation id 重试； 413 creative_size_limit：合计超过 48 张或画布节点超出上限。网络中断、超时或 5xx 时用同一 operation id 和 client_created_at 重试。
+         */
+        post: operations["exportCreativeSceneShots"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3461,6 +3481,11 @@ export interface components {
             document_summary?: components["schemas"]["CreativeDocumentSummary"] | null;
             /** @description 只出现在文档节点上；文档在回收站时为 true，摘要照常返回。 */
             document_trashed?: boolean;
+            /**
+             * @description 只读，只出现在场景导出图节点上，且节点当前内容仍是导出时那张图。stale 表示来源场景之后有与这张图相关的修改， 前端显示「场景已更新」；unavailable 表示来源场景不存在、在回收站或不可展示。
+             * @enum {string}
+             */
+            based_on_state?: "current" | "stale" | "unavailable";
         };
         /** @description 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。 */
         CreativeNodeVersionSummary: {
@@ -7185,7 +7210,7 @@ export interface components {
             angle?: number;
             penumbra?: number;
         };
-        /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。 */
+        /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。 */
         CreativeSceneCamera: {
             focal_mm?: number;
             sensor_mm?: number[];
@@ -7194,6 +7219,14 @@ export interface components {
             /** @description 须大于 near。 */
             far?: number;
             label?: string;
+            /** @description 打开后白模导出和景深预览按光圈和对焦虚化；线稿不虚化。 */
+            depth_of_field?: boolean;
+            /** @description 光圈值 N。 */
+            f_stop?: number;
+            /** @description 对焦距离（米），同 three.js PerspectiveCamera.focus；focus_object_id 指向的物件存在时以它为准。 */
+            focus?: number;
+            /** @description 非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group， 且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。 */
+            focus_object_id?: string;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
         CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
@@ -7378,8 +7411,10 @@ export interface components {
                 image_upload_id: string;
                 scene_revision: components["schemas"]["CreativeRevision"];
             };
+            /** @description export_shots 成功时必填：实际渲染的场景修订和图片清单，必须正好覆盖任务 request 的摄像机和导出方式。 服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。 */
             export?: {
-                export_operation_id: string;
+                scene_revision: components["schemas"]["CreativeRevision"];
+                shots: components["schemas"]["CreativeSceneExportShots"];
             };
         };
         CreativeSceneJobCompleteRequest: {
@@ -7393,10 +7428,44 @@ export interface components {
             job_id: string;
             /** @enum {string} */
             state: "succeeded" | "failed";
-            /** @description 见契约 data:场景客户端任务 的 result */
+            /** @description 见契约 data:场景客户端任务 的 result；export_shots 成功时同 CreativeSceneExportResult */
             result: {
                 [key: string]: unknown;
             };
+        };
+        /** @enum {string} */
+        CreativeScenePass: "clay" | "line" | "lit";
+        /** @description 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。 */
+        CreativeSceneExportShots: {
+            camera_object_id: string;
+            /** @description 同一镜头内 pass 不重复。 */
+            images: {
+                pass: components["schemas"]["CreativeScenePass"];
+                upload_id: string;
+            }[];
+        }[];
+        CreativeSceneExportPayload: {
+            canvas_id: string;
+            scene_node_id: string;
+            scene_revision: components["schemas"]["CreativeRevision"];
+            shots: components["schemas"]["CreativeSceneExportShots"];
+        };
+        CreativeSceneExportRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeSceneExportPayload"];
+        };
+        CreativeSceneExportResult: {
+            change_id: string;
+            scene_revision: components["schemas"]["CreativeRevision"];
+            nodes: {
+                camera_object_id: string;
+                pass: components["schemas"]["CreativeScenePass"];
+                node_id: string;
+                content_revision_id: string;
+            }[];
         };
         CreativeSceneJobSummary: {
             id: string;
@@ -8546,6 +8615,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeSceneJobList"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    exportCreativeSceneShots: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeSceneExportRequest"];
+            };
+        };
+        responses: {
+            /** @description 节点已创建 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeSceneExportResult"];
                 };
             };
             /** @description 请求失败 */

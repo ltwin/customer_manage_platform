@@ -633,8 +633,9 @@ paths:
       operationId: completeCreativeSceneJob
       summary: 渲染端提交任务结果，服务端同一事务落结果、改终态、让助手运行继续
       description: >-
-        写入场景时单元冲突、或结果内容不合规（manifest 与 GLB 不符、参数不合定义、超上限、父级不存在）时，
-        任务记为 failed 并照常返回 200，渲染端不重试。409 creative_state_conflict：租约已失效、令牌不匹配，
+        写入场景时单元冲突、或结果内容不合规（manifest 与 GLB 不符、参数不合定义、超上限、父级不存在）、
+        或导出无法放置（画布已归档、场景节点已不在画布、场景在回收站、摄像机不在所报修订、画布节点超出上限）时，
+        任务记为 failed 并照常返回 200，渲染端不重试。export.shots 与任务请求的摄像机和导出方式不一致时 400。409 creative_state_conflict：租约已失效、令牌不匹配，
         或关联运行已不能继续写入（运行已结束，任务已取消）；409 creative_upload_unavailable：暂存上传不可用，
         租约仍有效时重新上传后用新的 operation id 重试。
       parameters:
@@ -673,6 +674,39 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CreativeSceneJobList'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/documents/{id}/scene-exports:
+    post:
+      tags: [creative-foundation]
+      operationId: exportCreativeSceneShots
+      summary: 把渲染端出的导出图落成画布图片节点，并记录来源
+      description: >-
+        摄影师手动导出用；助手导出随完成任务提交，不调本接口。全部节点在一次画布修改里创建，放在场景节点右侧、同一父级。
+        400 validation_failed：外形非法、摄像机或 pass 重复、摄像机不在该修订里、scene_revision 晚于当前修订或不存在；
+        404：场景、画布或场景节点不存在，或场景节点不指向这个场景；409 archived_read_only：画布已归档；
+        409 creative_state_conflict：场景在回收站；409 creative_upload_unavailable：暂存图片不可用，重新上传后用新的 operation id 重试；
+        413 creative_size_limit：合计超过 48 张或画布节点超出上限。网络中断、超时或 5xx 时用同一 operation id 和 client_created_at 重试。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeSceneExportRequest'}
+      responses:
+        '200':
+          description: 节点已创建
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeSceneExportResult'}
         default:
           description: 请求失败
           content:
@@ -8147,6 +8181,12 @@ components:
         document_trashed:
           type: boolean
           description: 只出现在文档节点上；文档在回收站时为 true，摘要照常返回。
+        based_on_state:
+          type: string
+          enum: [current, stale, unavailable]
+          description: >-
+            只读，只出现在场景导出图节点上，且节点当前内容仍是导出时那张图。stale 表示来源场景之后有与这张图相关的修改，
+            前端显示「场景已更新」；unavailable 表示来源场景不存在、在回收站或不可展示。
     CreativeNodeVersionSummary:
       type: object
       additionalProperties: false
@@ -15086,8 +15126,11 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。
-        near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。
+        写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、
+        depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。
+        near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边：
+        tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。
+        update_objects 里只改写到的字段。
       properties:
         focal_mm:
           type: number
@@ -15114,6 +15157,24 @@ components:
         label:
           type: string
           maxLength: 40
+        depth_of_field:
+          type: boolean
+          description: 打开后白模导出和景深预览按光圈和对焦虚化；线稿不虚化。
+        f_stop:
+          type: number
+          minimum: 0.5
+          maximum: 64
+          description: 光圈值 N。
+        focus:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          description: 对焦距离（米），同 three.js PerspectiveCamera.focus；focus_object_id 指向的物件存在时以它为准。
+        focus_object_id:
+          type: string
+          description: >-
+            非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group，
+            且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。
     CreativeSceneOperation:
       description: 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。
       oneOf:
@@ -15478,9 +15539,13 @@ components:
         export:
           type: object
           additionalProperties: false
-          required: [export_operation_id]
+          required: [scene_revision, shots]
+          description: >-
+            export_shots 成功时必填：实际渲染的场景修订和图片清单，必须正好覆盖任务 request 的摄像机和导出方式。
+            服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。
           properties:
-            export_operation_id: {type: string}
+            scene_revision: {$ref: '#/components/schemas/CreativeRevision'}
+            shots: {$ref: '#/components/schemas/CreativeSceneExportShots'}
     CreativeSceneJobCompleteRequest:
       type: object
       additionalProperties: false
@@ -15501,7 +15566,68 @@ components:
         result:
           type: object
           additionalProperties: true
-          description: 见契约 data:场景客户端任务 的 result
+          description: 见契约 data:场景客户端任务 的 result；export_shots 成功时同 CreativeSceneExportResult
+    CreativeScenePass:
+      type: string
+      enum: [clay, line, lit]
+    CreativeSceneExportShots:
+      type: array
+      minItems: 1
+      maxItems: 32
+      description: 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+      items:
+        type: object
+        additionalProperties: false
+        required: [camera_object_id, images]
+        properties:
+          camera_object_id: {type: string}
+          images:
+            type: array
+            minItems: 1
+            maxItems: 3
+            description: 同一镜头内 pass 不重复。
+            items:
+              type: object
+              additionalProperties: false
+              required: [pass, upload_id]
+              properties:
+                pass: {$ref: '#/components/schemas/CreativeScenePass'}
+                upload_id: {type: string}
+    CreativeSceneExportPayload:
+      type: object
+      additionalProperties: false
+      required: [canvas_id, scene_node_id, scene_revision, shots]
+      properties:
+        canvas_id: {type: string}
+        scene_node_id: {type: string}
+        scene_revision: {$ref: '#/components/schemas/CreativeRevision'}
+        shots: {$ref: '#/components/schemas/CreativeSceneExportShots'}
+    CreativeSceneExportRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeSceneExportPayload'}
+    CreativeSceneExportResult:
+      type: object
+      additionalProperties: false
+      required: [change_id, scene_revision, nodes]
+      properties:
+        change_id: {type: string}
+        scene_revision: {$ref: '#/components/schemas/CreativeRevision'}
+        nodes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [camera_object_id, pass, node_id, content_revision_id]
+            properties:
+              camera_object_id: {type: string}
+              pass: {$ref: '#/components/schemas/CreativeScenePass'}
+              node_id: {type: string}
+              content_revision_id: {type: string}
     CreativeSceneJobSummary:
       type: object
       additionalProperties: false

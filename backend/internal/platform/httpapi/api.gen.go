@@ -1103,6 +1103,27 @@ func (e CreativeCancelExecutionPayloadType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeCanvasNodeBasedOnState.
+const (
+	CreativeCanvasNodeBasedOnStateCurrent     CreativeCanvasNodeBasedOnState = "current"
+	CreativeCanvasNodeBasedOnStateStale       CreativeCanvasNodeBasedOnState = "stale"
+	CreativeCanvasNodeBasedOnStateUnavailable CreativeCanvasNodeBasedOnState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the CreativeCanvasNodeBasedOnState enum.
+func (e CreativeCanvasNodeBasedOnState) Valid() bool {
+	switch e {
+	case CreativeCanvasNodeBasedOnStateCurrent:
+		return true
+	case CreativeCanvasNodeBasedOnStateStale:
+		return true
+	case CreativeCanvasNodeBasedOnStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeContentDraftKind.
 const (
 	CreativeContentDraftKindAudio CreativeContentDraftKind = "audio"
@@ -2312,18 +2333,39 @@ func (e CreativeSceneObjectKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeScenePass.
+const (
+	CreativeScenePassClay CreativeScenePass = "clay"
+	CreativeScenePassLine CreativeScenePass = "line"
+	CreativeScenePassLit  CreativeScenePass = "lit"
+)
+
+// Valid indicates whether the value is a known member of the CreativeScenePass enum.
+func (e CreativeScenePass) Valid() bool {
+	switch e {
+	case CreativeScenePassClay:
+		return true
+	case CreativeScenePassLine:
+		return true
+	case CreativeScenePassLit:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneRenderMode.
 const (
-	Clay CreativeSceneRenderMode = "clay"
-	Lit  CreativeSceneRenderMode = "lit"
+	CreativeSceneRenderModeClay CreativeSceneRenderMode = "clay"
+	CreativeSceneRenderModeLit  CreativeSceneRenderMode = "lit"
 )
 
 // Valid indicates whether the value is a known member of the CreativeSceneRenderMode enum.
 func (e CreativeSceneRenderMode) Valid() bool {
 	switch e {
-	case Clay:
+	case CreativeSceneRenderModeClay:
 		return true
-	case Lit:
+	case CreativeSceneRenderModeLit:
 		return true
 	default:
 		return false
@@ -3211,19 +3253,19 @@ func (e PricingMode) Valid() bool {
 
 // Defines values for ReminderStatus.
 const (
-	Dismissed ReminderStatus = "dismissed"
-	Done      ReminderStatus = "done"
-	Pending   ReminderStatus = "pending"
+	ReminderStatusDismissed ReminderStatus = "dismissed"
+	ReminderStatusDone      ReminderStatus = "done"
+	ReminderStatusPending   ReminderStatus = "pending"
 )
 
 // Valid indicates whether the value is a known member of the ReminderStatus enum.
 func (e ReminderStatus) Valid() bool {
 	switch e {
-	case Dismissed:
+	case ReminderStatusDismissed:
 		return true
-	case Done:
+	case ReminderStatusDone:
 		return true
-	case Pending:
+	case ReminderStatusPending:
 		return true
 	default:
 		return false
@@ -5263,9 +5305,11 @@ type CreativeCanvasInput struct {
 
 // CreativeCanvasNode defines model for CreativeCanvasNode.
 type CreativeCanvasNode struct {
-	Capabilities CreativeNodeCapabilities `json:"capabilities"`
-	Content      *CreativeContentRevision `json:"content,omitempty"`
-	Data         CreativeNodeData         `json:"data"`
+	// BasedOnState 只读，只出现在场景导出图节点上，且节点当前内容仍是导出时那张图。stale 表示来源场景之后有与这张图相关的修改， 前端显示「场景已更新」；unavailable 表示来源场景不存在、在回收站或不可展示。
+	BasedOnState *CreativeCanvasNodeBasedOnState `json:"based_on_state,omitempty"`
+	Capabilities CreativeNodeCapabilities        `json:"capabilities"`
+	Content      *CreativeContentRevision        `json:"content,omitempty"`
+	Data         CreativeNodeData                `json:"data"`
 
 	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	DataRevision CreativeRevision `json:"data_revision"`
@@ -5287,6 +5331,9 @@ type CreativeCanvasNode struct {
 	// VersionSummary 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。
 	VersionSummary *CreativeNodeVersionSummary `json:"version_summary,omitempty"`
 }
+
+// CreativeCanvasNodeBasedOnState 只读，只出现在场景导出图节点上，且节点当前内容仍是导出时那张图。stale 表示来源场景之后有与这张图相关的修改， 前端显示「场景已更新」；unavailable 表示来源场景不存在、在回收站或不可展示。
+type CreativeCanvasNodeBasedOnState string
 
 // CreativeCanvasSnapshot defines model for CreativeCanvasSnapshot.
 type CreativeCanvasSnapshot struct {
@@ -6598,16 +6645,28 @@ type CreativeSceneAmbient struct {
 	Intensity float32            `json:"intensity"`
 }
 
-// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。
+// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 type CreativeSceneCamera struct {
 	Aspect *string `json:"aspect,omitempty"`
 
+	// DepthOfField 打开后白模导出和景深预览按光圈和对焦虚化；线稿不虚化。
+	DepthOfField *bool `json:"depth_of_field,omitempty"`
+
+	// FStop 光圈值 N。
+	FStop *float32 `json:"f_stop,omitempty"`
+
 	// Far 须大于 near。
-	Far      *float32   `json:"far,omitempty"`
-	FocalMm  *float32   `json:"focal_mm,omitempty"`
-	Label    *string    `json:"label,omitempty"`
-	Near     *float32   `json:"near,omitempty"`
-	SensorMm *[]float32 `json:"sensor_mm,omitempty"`
+	Far     *float32 `json:"far,omitempty"`
+	FocalMm *float32 `json:"focal_mm,omitempty"`
+
+	// Focus 对焦距离（米），同 three.js PerspectiveCamera.focus；focus_object_id 指向的物件存在时以它为准。
+	Focus *float32 `json:"focus,omitempty"`
+
+	// FocusObjectId 非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group， 且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。
+	FocusObjectId *string    `json:"focus_object_id,omitempty"`
+	Label         *string    `json:"label,omitempty"`
+	Near          *float32   `json:"near,omitempty"`
+	SensorMm      *[]float32 `json:"sensor_mm,omitempty"`
 }
 
 // CreativeSceneChangeBlocked defines model for CreativeSceneChangeBlocked.
@@ -6677,6 +6736,50 @@ type CreativeSceneEnvironment struct {
 	Sky CreativeSceneSky `json:"sky"`
 }
 
+// CreativeSceneExportPayload defines model for CreativeSceneExportPayload.
+type CreativeSceneExportPayload struct {
+	CanvasId    string `json:"canvas_id"`
+	SceneNodeId string `json:"scene_node_id"`
+
+	// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	SceneRevision CreativeRevision `json:"scene_revision"`
+
+	// Shots 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+	Shots CreativeSceneExportShots `json:"shots"`
+}
+
+// CreativeSceneExportRequest defines model for CreativeSceneExportRequest.
+type CreativeSceneExportRequest struct {
+	ClientCreatedAt time.Time                  `json:"client_created_at"`
+	OperationId     openapi_types.UUID         `json:"operation_id"`
+	Payload         CreativeSceneExportPayload `json:"payload"`
+}
+
+// CreativeSceneExportResult defines model for CreativeSceneExportResult.
+type CreativeSceneExportResult struct {
+	ChangeId string `json:"change_id"`
+	Nodes    []struct {
+		CameraObjectId    string            `json:"camera_object_id"`
+		ContentRevisionId string            `json:"content_revision_id"`
+		NodeId            string            `json:"node_id"`
+		Pass              CreativeScenePass `json:"pass"`
+	} `json:"nodes"`
+
+	// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	SceneRevision CreativeRevision `json:"scene_revision"`
+}
+
+// CreativeSceneExportShots 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+type CreativeSceneExportShots = []struct {
+	CameraObjectId string `json:"camera_object_id"`
+
+	// Images 同一镜头内 pass 不重复。
+	Images []struct {
+		Pass     CreativeScenePass `json:"pass"`
+		UploadId string            `json:"upload_id"`
+	} `json:"images"`
+}
+
 // CreativeSceneFog three.js Fog，从 near 到 far 线性变浓，单位米。
 type CreativeSceneFog struct {
 	Color CreativeSceneColor `json:"color"`
@@ -6732,8 +6835,14 @@ type CreativeSceneJobCompletePayload struct {
 		Code    CreativeSceneJobCompletePayloadErrorCode `json:"code"`
 		Message string                                   `json:"message"`
 	} `json:"error,omitempty"`
+
+	// Export export_shots 成功时必填：实际渲染的场景修订和图片清单，必须正好覆盖任务 request 的摄像机和导出方式。 服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。
 	Export *struct {
-		ExportOperationId string `json:"export_operation_id"`
+		// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+		SceneRevision CreativeRevision `json:"scene_revision"`
+
+		// Shots 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+		Shots CreativeSceneExportShots `json:"shots"`
 	} `json:"export,omitempty"`
 	Outcome CreativeSceneJobCompletePayloadOutcome `json:"outcome"`
 	Render  *struct {
@@ -6761,7 +6870,7 @@ type CreativeSceneJobCompleteRequest struct {
 type CreativeSceneJobCompletion struct {
 	JobId string `json:"job_id"`
 
-	// Result 见契约 data:场景客户端任务 的 result
+	// Result 见契约 data:场景客户端任务 的 result；export_shots 成功时同 CreativeSceneExportResult
 	Result map[string]interface{}          `json:"result"`
 	State  CreativeSceneJobCompletionState `json:"state"`
 }
@@ -6857,7 +6966,7 @@ type CreativeSceneModelRef struct {
 
 // CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
-	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。
+	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
 	Id     string                  `json:"id"`
 	Kind   CreativeSceneObjectKind `json:"kind"`
@@ -6888,6 +6997,9 @@ type CreativeSceneObjectKind string
 
 // CreativeSceneParams 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。
 type CreativeSceneParams map[string]interface{}
+
+// CreativeScenePass defines model for CreativeScenePass.
+type CreativeScenePass string
 
 // CreativeScenePrimitive defines model for CreativeScenePrimitive.
 type CreativeScenePrimitive struct {
@@ -8933,6 +9045,11 @@ type GetCreativeSceneRunChangesParams struct {
 	RunId string `form:"run_id" json:"run_id"`
 }
 
+// ExportCreativeSceneShotsParams defines parameters for ExportCreativeSceneShots.
+type ExportCreativeSceneShotsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // TrashCreativeDocumentParams defines parameters for TrashCreativeDocument.
 type TrashCreativeDocumentParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -9529,6 +9646,9 @@ type CommandCreativeDocumentJSONRequestBody = CreativeDocumentCommandRequest
 
 // PurgeCreativeDocumentJSONRequestBody defines body for PurgeCreativeDocument for application/json ContentType.
 type PurgeCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
+
+// ExportCreativeSceneShotsJSONRequestBody defines body for ExportCreativeSceneShots for application/json ContentType.
+type ExportCreativeSceneShotsJSONRequestBody = CreativeSceneExportRequest
 
 // TrashCreativeDocumentJSONRequestBody defines body for TrashCreativeDocument for application/json ContentType.
 type TrashCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
@@ -11646,6 +11766,9 @@ type ServerInterface interface {
 	// 读取一次助手运行对场景的改动，以及恢复每一处所需的命令内容
 	// (GET /creative/documents/{id}/run-changes)
 	GetCreativeSceneRunChanges(c *gin.Context, id string, params GetCreativeSceneRunChangesParams)
+	// 把渲染端出的导出图落成画布图片节点，并记录来源
+	// (POST /creative/documents/{id}/scene-exports)
+	ExportCreativeSceneShots(c *gin.Context, id string, params ExportCreativeSceneShotsParams)
 	// 列出场景当前未结束的客户端任务，供编辑器高亮与占位
 	// (GET /creative/documents/{id}/scene-jobs)
 	ListCreativeSceneJobs(c *gin.Context, id string)
@@ -14959,6 +15082,60 @@ func (siw *ServerInterfaceWrapper) GetCreativeSceneRunChanges(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeSceneRunChanges(c, id, params)
+}
+
+// ExportCreativeSceneShots operation middleware
+func (siw *ServerInterfaceWrapper) ExportCreativeSceneShots(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportCreativeSceneShotsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExportCreativeSceneShots(c, id, params)
 }
 
 // ListCreativeSceneJobs operation middleware
@@ -18364,6 +18541,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/documents/:id/revisions", wrapper.ListCreativeDocumentRevisions)
 	router.GET(options.BaseURL+"/creative/documents/:id/revisions/:revision", wrapper.GetCreativeDocumentRevision)
 	router.GET(options.BaseURL+"/creative/documents/:id/run-changes", wrapper.GetCreativeSceneRunChanges)
+	router.POST(options.BaseURL+"/creative/documents/:id/scene-exports", wrapper.ExportCreativeSceneShots)
 	router.GET(options.BaseURL+"/creative/documents/:id/scene-jobs", wrapper.ListCreativeSceneJobs)
 	router.POST(options.BaseURL+"/creative/documents/:id/trash", wrapper.TrashCreativeDocument)
 	router.POST(options.BaseURL+"/creative/documents/:id/untrash", wrapper.UntrashCreativeDocument)

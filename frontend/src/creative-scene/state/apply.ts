@@ -107,7 +107,18 @@ const lightDefaults: Required<Omit<Light, 'type'>> = {
   penumbra: 0,
 }
 /** The camera fields the server stores for those left out. */
-export const cameraDefaults: Required<Camera> = { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 1000, label: '' }
+export const cameraDefaults: Required<Camera> = {
+  focal_mm: 35,
+  sensor_mm: [36, 24],
+  aspect: '3:2',
+  near: 0.1,
+  far: 1000,
+  label: '',
+  depth_of_field: false,
+  f_stop: 2.8,
+  focus: 10,
+  focus_object_id: '',
+}
 
 /**
  * As the server's mergeLight: the update changes only what it carries, a new
