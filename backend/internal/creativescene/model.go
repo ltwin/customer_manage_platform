@@ -363,6 +363,16 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bo
 // the builtin catalog checks them.
 func freeForm(t reflect.Type) bool { return t.Kind() == reflect.Interface }
 
+// objectIDProblem says what is wrong with an id: hand-written ones are
+// usually a character off.
+func objectIDProblem(id string) error {
+	rest, ok := strings.CutPrefix(id, "sobj_")
+	if !ok {
+		return invalid("物件 ID %q 不合法：须以 sobj_ 开头，后接 21 位字母、数字、_ 或 -", id)
+	}
+	return invalid("物件 ID %q 不合法：sobj_ 后须是 21 位字母、数字、_ 或 -，现在是 %d 位", id, utf8.RuneCountInString(rest))
+}
+
 // newObjectID is a 21-character nanoid; clients make their own the same way.
 func newObjectID() string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -391,7 +401,7 @@ func Validate(s Scene) error {
 	for i := range s.Objects {
 		o := &s.Objects[i]
 		if !objectIDPattern.MatchString(o.ID) {
-			return invalid("物件 ID %q 不合法", o.ID)
+			return objectIDProblem(o.ID)
 		}
 		if _, dup := byID[o.ID]; dup {
 			return invalid("物件 ID %s 重复", o.ID)

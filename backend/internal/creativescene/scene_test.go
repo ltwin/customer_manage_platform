@@ -610,6 +610,9 @@ func TestABadShapeNamesTheField(t *testing.T) {
 			"sky": map[string]any{"kind": "color", "color": "#080f20"}, "ambient": map[string]any{"color": "#8ca6d5", "intensity": 0.25}, "fog": map[string]any{"color": "#101b30", "near": 17, "far": 55}}}}},
 			"environment.fog 没有字段 far"},
 		"field of the operation": {batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"mode": "lit"}, "extra": 1}}}, "操作没有字段 extra"},
+		// From a trial: the assistant pads ids by hand and lands one over.
+		"hand-counted id": {batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": []any{object("sobj_houseL2aaaaaaaaaaaaaaa", "group", nil, 1)}}}},
+			`物件 ID "sobj_houseL2aaaaaaaaaaaaaaa" 不合法：sobj_ 后须是 21 位字母、数字、_ 或 -，现在是 22 位`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := send(t, f.a, tc.b)
