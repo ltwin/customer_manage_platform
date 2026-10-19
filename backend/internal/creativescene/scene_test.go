@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -483,7 +484,7 @@ func TestEnvironmentAndRender(t *testing.T) {
 	f := setup(t)
 	doc := createScene(t, f.a)
 	v := readScene(t, f.a, doc)
-	env := map[string]any{"sky": map[string]any{"kind": "color", "color": "#203040"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 1}, "fog": map[string]any{"color": "#808080", "near_m": 5, "far_m": 50}}
+	env := map[string]any{"sky": map[string]any{"kind": "color", "color": "#203040"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 1}, "fog": map[string]any{"color": "#808080", "near": 5, "far": 50}}
 	res := mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect("environment", "render"), Operations: []any{
 		op{"op": "set_environment", "environment": env},
 		op{"op": "set_render", "render": map[string]any{"mode": "lit"}},
@@ -492,7 +493,7 @@ func TestEnvironmentAndRender(t *testing.T) {
 		t.Fatalf("receipt %+v", res)
 	}
 	v = readScene(t, f.a, doc)
-	if e := v.Scene.Environment; e.Sky.Kind != "color" || *e.Sky.Color != "#203040" || e.Fog == nil || e.Fog.FarM != 50 || v.Scene.Render.Mode != "lit" {
+	if e := v.Scene.Environment; e.Sky.Kind != "color" || *e.Sky.Color != "#203040" || e.Fog == nil || e.Fog.Near != 5 || e.Fog.Far != 50 || v.Scene.Render.Mode != "lit" {
 		t.Fatalf("environment %+v render %+v", e, v.Scene.Render)
 	}
 }
@@ -504,7 +505,7 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 	doc := createScene(t, f.a)
 	g, a, l := objectID(1), objectID(2), objectID(3)
 	light := object(l, "light", nil, 3)
-	light["light"] = map[string]any{"type": "point", "color": "#ffeedd", "intensity": 10, "range_m": nil, "angle_deg": nil, "penumbra": nil, "cast_shadow": true}
+	light["light"] = map[string]any{"type": "point", "color": "#ffeedd", "intensity": 10, "cast_shadow": true}
 	addObjects(t, f.a, doc, group(g, nil, 1), box(a, nil, 2), light)
 	v := readScene(t, f.a, doc)
 	ground := v.Scene.Objects[0].ID
@@ -552,7 +553,16 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 		"no fields":                update(map[string]any{"object_id": a}, placement(a)),
 		"light on primitive":       update(map[string]any{"object_id": a, "light": light["light"]}, content(a)),
 		"params on light":          update(map[string]any{"object_id": l, "primitive": map[string]any{"params": map[string]any{"width": 2}}}, content(l)),
-		"spot without angle":       update(map[string]any{"object_id": l, "light": map[string]any{"type": "spot", "color": "#ffffff", "intensity": 1, "range_m": nil, "angle_deg": nil, "penumbra": nil, "cast_shadow": false}}, content(l)),
+		"spot angle past π/2":      update(map[string]any{"object_id": l, "light": map[string]any{"type": "spot", "angle": 1.6}}, content(l)),
+		"angle on point":           update(map[string]any{"object_id": l, "light": map[string]any{"angle": 0.5}}, content(l)),
+		"decay out of range":       update(map[string]any{"object_id": l, "light": map[string]any{"decay": 11}}, content(l)),
+		"negative distance":        add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "point", "distance": -1})),
+		"unknown light type":       add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "area"})),
+		"light without type":       add(with(object(n, "light", nil, 5), "light", map[string]any{"intensity": 5})),
+		"old light name":           update(map[string]any{"object_id": l, "light": map[string]any{"range_m": 7}}, content(l)),
+		"camera on light":          update(map[string]any{"object_id": l, "camera": map[string]any{"far": 50}}, content(l)),
+		"camera far before near":   add(with(object(n, "camera", nil, 5), "camera", map[string]any{"far": 0.05})),
+		"old camera name":          add(with(object(n, "camera", nil, 5), "camera", map[string]any{"near_m": 0.1})),
 		"bad slot preset":          update(map[string]any{"object_id": a, "material_slots": map[string]any{"main": map[string]any{"preset": "stone", "params": map[string]any{}}}}, content(a)),
 		"under itself":             reparent(g, g, 0),
 		"reparent under primitive": reparent(g, a, 0),
@@ -573,6 +583,8 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 		"null ambient":            {DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "color", "color": "#203040"}, "ambient": nil, "fog": nil}}}},
 		"null in removed ids":     {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "remove_objects", "object_ids": []any{nil}}}},
 		"null param value":        add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": map[string]any{"width": nil}})),
+		"null light field":        update(map[string]any{"object_id": l, "light": map[string]any{"distance": nil}}, content(l)),
+		"null camera field":       add(with(object(n, "camera", nil, 5), "camera", map[string]any{"label": nil})),
 	}
 	for name, b := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -599,16 +611,27 @@ func TestABadShapeNamesTheField(t *testing.T) {
 		o["light"] = fields
 		return batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": []any{o}}}}
 	}
+	camera := func(fields map[string]any) batch {
+		o := object(objectID(1), "camera", nil, 1)
+		o["camera"] = fields
+		return batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": []any{o}}}}
+	}
 	for name, tc := range map[string]struct {
 		b    batch
 		want string
 	}{
-		"three.js light field": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "decay": 2}),
-			"objects[0].light 没有字段 decay，可用字段：type、color、intensity、range_m、angle_deg、penumbra、cast_shadow"},
-		"wrong type": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": "bright"}), "字段 objects[0].light.intensity 的类型不对"},
-		"fog in metres": {batch{DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{
-			"sky": map[string]any{"kind": "color", "color": "#080f20"}, "ambient": map[string]any{"color": "#8ca6d5", "intensity": 0.25}, "fog": map[string]any{"color": "#101b30", "near": 17, "far": 55}}}}},
-			"environment.fog 没有字段 far"},
+		// Names from before v7 are rejected, not read as aliases.
+		"old light field": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "range_m": 7}),
+			"objects[0].light 没有字段 range_m，可用字段：type、color、intensity、cast_shadow、distance、decay、angle、penumbra"},
+		"field of another light type": {light(map[string]any{"type": "point", "angle": 0.5}),
+			"物件 " + objectID(1) + "：点光没有字段 angle，可用字段：type、color、intensity、cast_shadow、distance、decay"},
+		"old camera field": {camera(map[string]any{"focal_mm": 50, "near_m": 0.1}),
+			"objects[0].camera 没有字段 near_m，可用字段：focal_mm、sensor_mm、aspect、near、far、label"},
+		"null light field": {light(map[string]any{"type": "point", "distance": nil}), "字段 objects[0].light.distance 不能为 null"},
+		"wrong type":       {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": "bright"}), "字段 objects[0].light.intensity 的类型不对"},
+		"old fog fields": {batch{DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{
+			"sky": map[string]any{"kind": "color", "color": "#080f20"}, "ambient": map[string]any{"color": "#8ca6d5", "intensity": 0.25}, "fog": map[string]any{"color": "#101b30", "near_m": 17, "far_m": 55}}}}},
+			"environment.fog 没有字段 far_m，可用字段：color、near、far"},
 		"field of the operation": {batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"mode": "lit"}, "extra": 1}}}, "操作没有字段 extra"},
 		// From a trial: the assistant pads ids by hand and lands one over.
 		"hand-counted id": {batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": []any{object("sobj_houseL2aaaaaaaaaaaaaaa", "group", nil, 1)}}}},
@@ -621,5 +644,121 @@ func TestABadShapeNamesTheField(t *testing.T) {
 				t.Fatalf("want %q, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+// storedContent is one object's light or camera exactly as the snapshot
+// holds it.
+func storedContent(t *testing.T, scope store.AccountScope, doc, id, key string) map[string]any {
+	t.Helper()
+	raw, err := creativedocument.Read(t.Context(), scope, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Scene struct {
+			Objects []map[string]any `json:"objects"`
+		} `json:"scene"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range v.Scene.Objects {
+		if o["id"] == id {
+			m, _ := o[key].(map[string]any)
+			return m
+		}
+	}
+	t.Fatalf("object %s missing", id)
+	return nil
+}
+
+func withContent(id, kind string, order int, fields map[string]any) map[string]any {
+	o := object(id, kind, nil, order)
+	o[kind] = fields
+	return o
+}
+
+// AC-1, AC-2: light and camera fields left out take the three.js defaults,
+// and a stored light holds exactly the fields of its type.
+func TestLightAndCameraDefaults(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	p, s, d, c := objectID(1), objectID(2), objectID(3), objectID(4)
+	addObjects(t, f.a, doc,
+		withContent(p, "light", 1, map[string]any{"type": "point", "color": "#ff963d", "intensity": 45, "distance": 7, "decay": 2}),
+		withContent(s, "light", 2, map[string]any{"type": "spot"}),
+		withContent(d, "light", 3, map[string]any{"type": "directional"}),
+		withContent(c, "camera", 4, map[string]any{}))
+	for id, want := range map[string]map[string]any{
+		p: {"type": "point", "color": "#ff963d", "intensity": 45.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0},
+		s: {"type": "spot", "color": "#ffffff", "intensity": 1.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "angle": math.Pi / 3, "penumbra": 0.0},
+		d: {"type": "directional", "color": "#ffffff", "intensity": 1.0, "cast_shadow": false},
+	} {
+		if got := storedContent(t, f.a, doc, id, "light"); !reflect.DeepEqual(got, want) {
+			t.Errorf("light %s = %v, want %v", id, got, want)
+		}
+	}
+	want := map[string]any{"focal_mm": 35.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": ""}
+	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
+		t.Errorf("camera = %v, want %v", got, want)
+	}
+}
+
+// AC-4: update_objects changes only the light and camera fields it carries.
+// A type change keeps the fields the new type shares, drops the rest and
+// fills the ones it gains; the update itself must fit the type.
+func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	p, s, q, c := objectID(1), objectID(2), objectID(3), objectID(4)
+	addObjects(t, f.a, doc,
+		withContent(p, "light", 1, map[string]any{"type": "point", "color": "#ff963d", "intensity": 45, "distance": 7, "decay": 2}),
+		withContent(s, "light", 2, map[string]any{"type": "spot", "color": "#ffeedd", "intensity": 30, "distance": 5, "decay": 1.5, "angle": 0.4, "penumbra": 0.3}),
+		withContent(q, "light", 3, map[string]any{"type": "point", "color": "#336699", "intensity": 20}),
+		withContent(c, "camera", 4, map[string]any{"focal_mm": 50, "label": "A"}))
+	update := func(id, key string, fields map[string]any) error {
+		v := readScene(t, f.a, doc)
+		_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect(content(id)), Operations: []any{
+			op{"op": "update_objects", "updates": []any{map[string]any{"object_id": id, key: fields}}}}})
+		return err
+	}
+	for _, step := range []struct {
+		name, id     string
+		patch, light map[string]any
+	}{
+		{"intensity only", p, map[string]any{"intensity": 80},
+			map[string]any{"type": "point", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0}},
+		{"spot to point", s, map[string]any{"type": "point"},
+			map[string]any{"type": "point", "color": "#ffeedd", "intensity": 30.0, "cast_shadow": false, "distance": 5.0, "decay": 1.5}},
+		{"point to spot", p, map[string]any{"type": "spot"},
+			map[string]any{"type": "spot", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0, "angle": math.Pi / 3, "penumbra": 0.0}},
+		{"point to spot with angle", q, map[string]any{"type": "spot", "angle": 0.5},
+			map[string]any{"type": "spot", "color": "#336699", "intensity": 20.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "angle": 0.5, "penumbra": 0.0}},
+	} {
+		if err := update(step.id, "light", step.patch); err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+		if got := storedContent(t, f.a, doc, step.id, "light"); !reflect.DeepEqual(got, step.light) {
+			t.Fatalf("%s: light = %v, want %v", step.name, got, step.light)
+		}
+	}
+
+	before := readScene(t, f.a, doc).Revision
+	err := update(s, "light", map[string]any{"angle": 0.5})
+	var public creativeops.Public
+	if !errors.As(err, &public) || !strings.Contains(public.PublicMessage(), "点光没有字段 angle") {
+		t.Fatalf("angle on a point light: %v", err)
+	}
+	if after := readScene(t, f.a, doc).Revision; after != before {
+		t.Fatalf("a refused update wrote revision %d", after)
+	}
+
+	if err := update(c, "camera", map[string]any{"far": 200}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 200.0, "label": "A"}
+	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("camera = %v, want %v", got, want)
 	}
 }

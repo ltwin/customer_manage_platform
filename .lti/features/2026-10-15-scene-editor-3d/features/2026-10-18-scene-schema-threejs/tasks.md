@@ -2,8 +2,8 @@
 
 ## 1. 服务端格式
 
-- [ ] 1.1 `scene_test.go` 先补 AC-1–AC-3 用例（按类型补齐、只写 `type`、摄像机缺省、旧名、多余字段、`null`），再改 `Fog`、`Light`、`Camera`、`lightPatch`，新增 `completeLight`、`completeCamera`，接入 `addObjectsOp.apply`，更新 `validateEnvironment`、`validateLight`、`validateCamera` 与旧夹具；`make check-go PKG=./internal/creativescene/...` 通过
-- [ ] 1.2 `scene_test.go` 先补 AC-4 决策表 5 行与摄像机局部更新，再实现 `mergeLight`、`mergeCamera` 并接入 `updateObjectsOp.apply`，`objectUpdate` 注释改为按键合并；同一检查通过
+- [x] 1.1 `scene_test.go` 先补 AC-1–AC-3 用例（按类型补齐、只写 `type`、摄像机缺省、旧名、多余字段、`null`），再改 `Fog`、`Light`、`Camera`、`lightPatch`，新增 `completeLight`、`completeCamera`，接入 `addObjectsOp.apply`，更新 `validateEnvironment`、`validateLight`、`validateCamera` 与旧夹具；`make check-go PKG=./internal/creativescene/...` 通过
+- [x] 1.2 `scene_test.go` 先补 AC-4 决策表 5 行与摄像机局部更新，再实现 `mergeLight`、`mergeCamera` 并接入 `updateObjectsOp.apply`，`objectUpdate` 注释改为按键合并；同一检查通过
 - [ ] 1.3 `api/openapi.yaml` 改 `CreativeSceneFog`、`CreativeSceneLight`、`CreativeSceneCamera` 与更新条目，`make generate` 并提交两份生成物；`creative_documents_test.go` 夹具改名，并补一例旧名返回 400；`make check-go PKG=./internal/platform/httpapi/...` 通过
 
 ## 2. 迁移
