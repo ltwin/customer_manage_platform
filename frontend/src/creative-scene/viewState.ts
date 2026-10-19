@@ -1,5 +1,5 @@
 import type { Selection } from './input/selection.ts'
-import type { EditorUI, Tool } from './state/sceneStore.ts'
+import { guides as allGuides, type EditorUI, type Guide, type Tool } from './state/sceneStore.ts'
 
 // What the photographer was looking at when they left a scene: the camera,
 // the selection, the tool and the panels. It is kept per account and scene
@@ -19,6 +19,9 @@ export type SavedView = {
   toolbar: boolean
   sidebar: boolean
   history: boolean
+  /** The camera 0 goes to; views saved before cameras had it lack it. */
+  lastCamera?: string | null
+  guides?: Guide[]
 }
 
 export const viewKey = (account: string | null, documentID: string) =>
@@ -56,6 +59,8 @@ export function parseView(v: unknown): SavedView | null {
     toolbar: o.toolbar,
     sidebar: o.sidebar,
     history: o.history,
+    lastCamera: typeof o.lastCamera === 'string' ? o.lastCamera : null,
+    guides: Array.isArray(o.guides) ? allGuides.filter((g) => (o.guides as unknown[]).includes(g)) : [],
   }
 }
 
@@ -85,10 +90,11 @@ export class ViewSaver {
     this.view = initial
   }
 
-  ui(s: Pick<EditorUI, 'selection' | 'tool' | 'toolbar' | 'sidebar' | 'history'>) {
+  ui(s: Pick<EditorUI, 'selection' | 'tool' | 'toolbar' | 'sidebar' | 'history' | 'lastCamera' | 'guides'>) {
     const v = this.view
-    if (v.selection === s.selection && v.tool === s.tool && v.toolbar === s.toolbar && v.sidebar === s.sidebar && v.history === s.history) return
-    this.view = { ...v, selection: s.selection, tool: s.tool, toolbar: s.toolbar, sidebar: s.sidebar, history: s.history }
+    if (v.selection === s.selection && v.tool === s.tool && v.toolbar === s.toolbar && v.sidebar === s.sidebar && v.history === s.history && v.lastCamera === s.lastCamera && v.guides === s.guides)
+      return
+    this.view = { ...v, selection: s.selection, tool: s.tool, toolbar: s.toolbar, sidebar: s.sidebar, history: s.history, lastCamera: s.lastCamera, guides: s.guides }
     this.later()
   }
 

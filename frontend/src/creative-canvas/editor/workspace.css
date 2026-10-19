@@ -1631,3 +1631,14 @@ button.cc-project-name:hover,
   .cc-node.has-versions.is-stack-deep::after { transition: none; }
   .cc-version-placeholder { animation: none; }
 }
+
+/* A scene export whose scene changed since (data: 导出图来源). */
+.cc-node-stale {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #b45309;
+  background: #f59e0b24;
+  white-space: nowrap;
+}

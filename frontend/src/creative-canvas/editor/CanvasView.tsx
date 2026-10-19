@@ -407,6 +407,14 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
         {data.meta && !data.renaming && (
           <span className="cc-node-meta">{data.meta}</span>
         )}
+        {n.based_on_state === 'stale' && (
+          <span
+            className="cc-node-stale"
+            title="导出后场景有改动，这张图可能和场景不一致"
+          >
+            场景已更新
+          </span>
+        )}
       </header>
       {!group && media && (
         <div className="cc-node-content cc-node-media">

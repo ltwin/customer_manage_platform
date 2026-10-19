@@ -22,6 +22,16 @@ export type ShotImage = { camera: string; pass: ExportPass; blob: Blob }
 export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string }
 export type Progress = { stage: 'render' | 'upload' | 'place'; done: number; total: number }
 
+/** How many images an export makes, and why it cannot go ahead: none, or more than 48. */
+export function exportCount(cameras: number, passCount: number): { count: number; problem: string | null } {
+  const count = cameras * passCount
+  if (count === 0) return { count, problem: cameras === 0 ? '至少选一台摄像机' : '至少选一种导出方式' }
+  if (count > maxImages) return { count, problem: `一次最多导出 ${maxImages} 张，请少选一些` }
+  return { count, problem: null }
+}
+
+const maxImages = 48
+
 /** One image that takes longer than this, rendered and encoded, fails the export. */
 export const shotTimeoutMs = 30_000
 const uploadConcurrency = 2
@@ -137,4 +147,53 @@ export async function submitExport(deps: SubmitDeps, payload: ExportPayload): Pr
       await deps.wait(1000 * 2 ** (attempt - 1))
     }
   }
+}
+
+export type ManualExportDeps = RenderDeps & {
+  upload: UploadFn
+  discard(upload: Upload): Promise<void>
+  send: SubmitDeps['send']
+  wait(ms: number): Promise<void>
+}
+
+export type ManualExport = { documentID: string; canvasID: string; sceneNodeID: string; plan: ExportPlan }
+export type ManualOutcome = { ok: true; result: ExportResult } | { ok: false; message: string }
+
+const refusals: Record<string, string> = {
+  creative_upload_unavailable: '上传的图已失效，请重新导出',
+  archived_read_only: '画布已归档，恢复后再导出',
+  not_found: '场景节点已不在画布上，请从画布重新打开场景',
+  creative_size_limit: '画布放不下这么多图，请少选几台摄像机或几种方式',
+  creative_state_conflict: '场景在回收站，恢复后再导出',
+}
+
+/**
+ * The photographer's export: draw, upload, place. Uploads that will never
+ * be placed are discarded whatever stops it; one already placed refuses the
+ * discard, which is harmless.
+ */
+export async function runManualExport(deps: ManualExportDeps, job: ManualExport, signal: AbortSignal, onProgress?: (p: Progress) => void): Promise<ManualOutcome> {
+  const drop = (uploads: readonly Upload[]) => {
+    for (const u of uploads) void deps.discard(u).catch(() => {})
+  }
+  let rendered: RenderedShots
+  try {
+    rendered = await renderShots(deps, job.documentID, job.plan, onProgress)
+  } catch (err) {
+    return { ok: false, message: `导出图渲染失败：${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (!rendered.ok) return { ok: false, message: rendered.message }
+  const sent = await uploadShots(deps.upload, rendered.images, signal, onProgress)
+  if (!sent.ok) {
+    drop(sent.uploads)
+    return { ok: false, message: `导出图上传失败：${sent.cause instanceof Error ? sent.cause.message : String(sent.cause)}` }
+  }
+  onProgress?.({ stage: 'place', done: 0, total: 1 })
+  const out = await submitExport(
+    { send: deps.send, wait: deps.wait },
+    { canvas_id: job.canvasID, scene_node_id: job.sceneNodeID, scene_revision: rendered.revision, shots: shotsOf(rendered.images, sent.uploads) },
+  )
+  if (out.ok) return out
+  drop(sent.uploads)
+  return { ok: false, message: out.refused ? (refusals[out.code ?? ''] ?? out.message) : out.message }
 }

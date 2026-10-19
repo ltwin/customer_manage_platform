@@ -1,3 +1,4 @@
+import { Matrix4, Quaternion, Vector3 } from 'three'
 import type { SceneObject, SceneTransform } from './api.ts'
 import { builtinSpec } from './builtins/catalog.ts'
 import { newObjectID } from './ids.ts'
@@ -126,4 +127,61 @@ export function transformOp(results: readonly { id: string; position: number[]; 
 /** How a prompt names an edit of n objects, for example 「移动 3 个物件」. */
 export function objectsLabel(verb: string, n: number, name?: string): string {
   return n === 1 && name ? `${verb}「${name}」` : `${verb} ${n} 个物件`
+}
+
+/**
+ * A camera standing where the viewport looks from, facing the same way, with
+ * the server's defaults for its lens. Named 「摄像机 N」 after the cameras
+ * already there.
+ */
+export function newCamera(pose: { position: number[]; rotation: number[] }, objects: readonly SceneObject[], makeID: () => string = newObjectID): SceneObject {
+  const n = objects.filter((o) => o.kind === 'camera').length + 1
+  return {
+    id: makeID(),
+    kind: 'camera',
+    name: `摄像机 ${n}`,
+    parent_id: null,
+    order: nextOrder(objects, null),
+    transform: { position: pose.position, rotation: pose.rotation, scale: [1, 1, 1] },
+    visible: true,
+    locked: false,
+    camera: {},
+  }
+}
+
+/** An empty (空物体): a group without children, to focus on or to parent things to. */
+export function newEmpty(position: [number, number, number], objects: readonly SceneObject[], makeID: () => string = newObjectID): SceneObject {
+  const parents = new Set(objects.map((o) => o.parent_id).filter(Boolean))
+  const n = objects.filter((o) => o.kind === 'group' && !parents.has(o.id)).length + 1
+  return {
+    id: makeID(),
+    kind: 'group',
+    name: `空物体 ${n}`,
+    parent_id: null,
+    order: nextOrder(objects, null),
+    transform: { ...identity, position },
+    visible: true,
+    locked: false,
+  }
+}
+
+/**
+ * A world pose (document space) as the local transform of an object under
+ * `parent`, keeping `scale`: Ctrl+Alt+0 on a camera inside a group.
+ */
+export function localPose(objects: readonly SceneObject[], parent: string | null, pose: { position: number[]; rotation: number[] }, scale: number[]): SceneTransform {
+  const byID = new Map(objects.map((o) => [o.id, o]))
+  const world = new Matrix4()
+  const chain: SceneObject[] = []
+  for (let at = parent ? byID.get(parent) : undefined; at && chain.length <= objects.length; at = at.parent_id ? byID.get(at.parent_id) : undefined) chain.unshift(at)
+  for (const o of chain) {
+    const t = o.transform
+    world.multiply(new Matrix4().compose(new Vector3().fromArray(t.position), new Quaternion().fromArray(t.rotation), new Vector3().fromArray(t.scale)))
+  }
+  const local = world.invert().multiply(new Matrix4().compose(new Vector3().fromArray(pose.position), new Quaternion().fromArray(pose.rotation), new Vector3(1, 1, 1)))
+  const position = new Vector3()
+  const rotation = new Quaternion()
+  local.decompose(position, rotation, new Vector3())
+  rotation.normalize()
+  return { position: position.toArray(), rotation: rotation.toArray(), scale }
 }

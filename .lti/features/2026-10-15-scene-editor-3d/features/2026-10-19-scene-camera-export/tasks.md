@@ -31,10 +31,10 @@
 
 ## 6. 前端：编辑器与画布
 
-- [ ] 6.1 `editing.ts:newCamera`/`newEmpty`；`SceneObjects.tsx` 对焦十字与清晰范围短线、没有子物件的分组常显可点选十字；`SceneEditor.tsx` 添加菜单（摄像机、空物体）。单元测试覆盖 `newCamera`、`newEmpty`
-- [ ] 6.2 `panels/Properties.tsx` 摄像机属性：标签、焦距、画幅、高度；景深开关、光圈快捷值、对焦（距离/物件列表/视口拾取）、清晰范围、对焦物件已删除的提示；「更多」里传感器预设、宽高与等效焦距、`near`/`far`；滑块 300ms 合并
-- [ ] 6.3 相机视图：`Viewport.tsx` 取景框、视场角放大、构图辅助线、预览景深、退出条件；`input/keymap.ts` 的 `camera-view`/`camera-to-view`；`state/sceneStore.ts`、`viewState.ts` 的 `cameraView`、`lastCamera`、辅助线选择。单元测试覆盖相机视图视场角公式
-- [ ] 6.4 `panels/ExportDialog.tsx`（摄像机全选、方式、张数、0 张与 48 张上限）；`SceneEditor.tsx` 导出入口与 `canvasID`/`sceneNodeID`；`WorkspacePage.tsx` 传参；`CanvasView.tsx`「场景已更新」标记。`make check-frontend` 通过
+- [x] 6.1 `editing.ts:newCamera`/`newEmpty`；`SceneObjects.tsx` 对焦十字与清晰范围短线、没有子物件的分组常显可点选十字；`SceneEditor.tsx` 添加菜单（摄像机、空物体）。单元测试覆盖 `newCamera`、`newEmpty`
+- [x] 6.2 `panels/Properties.tsx` 摄像机属性：标签、焦距、画幅、高度；景深开关、光圈快捷值、对焦（距离/物件列表/视口拾取）、清晰范围、对焦物件已删除的提示；「更多」里传感器预设、宽高与等效焦距、`near`/`far`；滑块 300ms 合并
+- [x] 6.3 相机视图：`Viewport.tsx` 取景框、视场角放大、构图辅助线、预览景深、退出条件；`input/keymap.ts` 的 `camera-view`/`camera-to-view`；`state/sceneStore.ts`、`viewState.ts` 的 `cameraView`、`lastCamera`、辅助线选择。单元测试覆盖相机视图视场角公式
+- [x] 6.4 `panels/ExportDialog.tsx`（摄像机全选、方式、张数、0 张与 48 张上限）；`SceneEditor.tsx` 导出入口与 `canvasID`/`sceneNodeID`；`WorkspacePage.tsx` 传参；`CanvasView.tsx`「场景已更新」标记。`make check-frontend` 通过
 
 ## 7. 文档与验收
 

@@ -176,3 +176,62 @@ test('render shots draws every camera and pass from the snapshot, blurring clay 
   const missing = await renderShots({ read, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['nope'], passes: ['clay'] })
   assert.deepEqual(missing, { ok: false, message: '摄像机 nope 已不在场景里' })
 })
+
+// --- editor -----------------------------------------------------------------
+
+test('a new camera stands where the view looks from; an empty is a childless group named in turn', async () => {
+  const { newCamera, newEmpty, localPose } = await import('../src/creative-scene/editing.ts')
+  const existing = [camera(), object({ id: 'g', kind: 'group', order: 1 }), object({ id: 'child', kind: 'primitive', parent_id: 'g' })]
+  const cam = newCamera({ position: [1, 2, 3], rotation: [0, 0.3826834, 0, 0.9238795] }, existing, () => 'sobj_new')
+  assert.deepEqual([cam.kind, cam.name, cam.order, cam.camera], ['camera', '摄像机 2', 2, {}])
+  assert.deepEqual(cam.transform, { position: [1, 2, 3], rotation: [0, 0.3826834, 0, 0.9238795], scale: [1, 1, 1] })
+  const empty = newEmpty([0, 1, 0], existing, () => 'sobj_e')
+  assert.deepEqual([empty.kind, empty.name, empty.parent_id, empty.transform.position], ['group', '空物体 1', null, [0, 1, 0]], 'a group with children is not an empty')
+
+  // Ctrl+Alt+0 on a camera inside a group: the world pose in the group's space.
+  const turned = object({ id: 'rig', kind: 'group', transform: { position: [2, 0, 0], rotation: [0, 0.7071068, 0, 0.7071068], scale: [2, 2, 2] } })
+  const local = localPose([turned], 'rig', { position: [2, 0, -4], rotation: [0, 0.7071068, 0, 0.7071068] }, [1, 1, 1])
+  assert.ok(local.position.every((v, i) => close(v, [2, 0, 0][i], 1e-6)), `position ${local.position}`)
+  assert.ok(close(Math.abs(local.rotation[3]), 1, 1e-6), `rotation ${local.rotation}`)
+})
+
+test('the export dialog allows 1 to 48 images', async () => {
+  const { exportCount } = await import('../src/creative-scene/host/exportShots.ts')
+  assert.deepEqual(exportCount(3, 2), { count: 6, problem: null })
+  assert.equal(exportCount(0, 2).problem, '至少选一台摄像机')
+  assert.equal(exportCount(2, 0).problem, '至少选一种导出方式')
+  assert.equal(exportCount(24, 2).problem, null)
+  assert.equal(exportCount(17, 3).problem, '一次最多导出 48 张，请少选一些')
+})
+
+test('a manual export frees its uploads when it is refused or never answered', async () => {
+  const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
+  const doc = { scene: sceneOf(camera()), models: {}, revision: '4' }
+  const shooter: Shooter = { shoot: () => new Blob(['x']), close: () => {} }
+  const run = async (send: () => Promise<never> | Promise<{ change_id: string; scene_revision: string; nodes: [] }>) => {
+    const discarded: string[] = []
+    let n = 0
+    const out = await runManualExport(
+      {
+        read: async () => doc as never,
+        loadModels: async () => {},
+        open: async () => shooter,
+        upload: async () => ({ id: `ccup_${++n}` }) as Upload,
+        discard: async (u) => { discarded.push(u.id) },
+        send,
+        wait: async () => {},
+      },
+      { documentID: 'doc', canvasID: 'ccv', sceneNodeID: 'node', plan: { cameraObjectIDs: ['cam'], passes: ['clay', 'line'] } },
+      new AbortController().signal,
+    )
+    return { out, discarded }
+  }
+  const ok = await run(async () => ({ change_id: 'cwch', scene_revision: '4', nodes: [] }))
+  assert.ok(ok.out.ok && ok.discarded.length === 0)
+  const refused = await run(async () => { throw new ApiError(409, 'archived_read_only', '已归档') })
+  assert.deepEqual(refused.out, { ok: false, message: '画布已归档，恢复后再导出' })
+  assert.deepEqual(refused.discarded, ['ccup_1', 'ccup_2'])
+  const lost = await run(async () => { throw new TypeError('Failed to fetch') })
+  assert.deepEqual(lost.out, { ok: false, message: '没能确认导出结果，请先看画布上是否已有这组图' })
+  assert.equal(lost.discarded.length, 2)
+})

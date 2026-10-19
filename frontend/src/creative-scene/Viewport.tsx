@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject } from 'react'
+import { Grid3x3 } from 'lucide-react'
 import { Canvas, useThree } from '@react-three/fiber'
 import {
   CameraControls,
@@ -17,6 +18,7 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
   Plane,
+  Quaternion,
   Raycaster,
   Vector2,
   Vector3,
@@ -49,8 +51,13 @@ import type { SceneModel } from './models/cache.ts'
 import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
-import { positionToDoc, positionToView, transformToDoc } from './space.ts'
+import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
+import { aspectOf, cameraViewFov } from './cameraOptics.ts'
+import { cameraFraming, type Framing } from './host/framing.ts'
+import { loadModels, openShooter } from './host/render.ts'
+import { guides as allGuides, type Guide } from './state/sceneStore.ts'
+import { cameraDefaults } from './state/apply.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -74,6 +81,10 @@ export type ViewportHandle = {
   setView(direction: readonly number[]): void
   toggleOrtho(): boolean
   frame(ids: readonly string[]): void
+  /** Where the viewport looks from, in document space: a new camera stands there. */
+  viewPose(): { position: number[]; rotation: number[] }
+  /** What the view's centre hits, or 3 m ahead when nothing: where a new empty goes (document space). */
+  centrePoint(): [number, number, number]
 }
 
 export type ViewportProps = {
@@ -102,6 +113,9 @@ export type ViewportProps = {
 }
 
 const { ACTION } = CameraControlsImpl
+/** The free view's field of view; the camera view widens it to frame a camera. */
+const freeFov = 45
+const viewToDoc = docToView.clone().invert()
 const actionCode = { rotate: ACTION.ROTATE, truck: ACTION.TRUCK, dolly: ACTION.DOLLY, none: ACTION.NONE } as const
 const modeName: Record<Mode, string> = { grab: '移动', rotate: '旋转', scale: '缩放' }
 const axisName = ['X', 'Y', 'Z']
@@ -118,6 +132,15 @@ export function Viewport(props: ViewportProps) {
   const selected = useMemo(() => new Set(selection.selected), [selection.selected])
   const wrap = useRef<HTMLDivElement>(null)
   const r = box && wrap.current ? wrap.current.getBoundingClientRect() : null
+  const cameraView = useStore(props.ui, (s) => s.cameraView)
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const observer = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
   // The 3D scene is in view space (Z up); everything outside it speaks the
   // document's space, so transforms convert on their way out.
   const onCommit: ViewportProps['onCommit'] = (results, label, held) =>
@@ -127,17 +150,19 @@ export function Viewport(props: ViewportProps) {
       <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
         <Environment environment={props.scene.environment} />
         <Grid position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
-        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} />
+        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} />
         {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} models={props.models} />}
         <OrthoSwitch ortho={ortho} />
         <CameraControls makeDefault />
         <ViewKeeper initial={props.camera} onChange={props.onCamera} />
+        <CameraViewRig scene={props.scene} ui={props.ui} />
         {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
           <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
         )}
         <AxisGizmo />
         <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
       </Canvas>
+      {cameraView && <CameraFrame scene={props.scene} models={props.models} ui={props.ui} id={cameraView} size={size} />}
       {box && r && (
         <div
           className="cc-scene-box"
@@ -441,6 +466,10 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       run()
       return true
     }
+    /** Navigating by hand leaves the camera view, from where it looks now. */
+    const leaveCameraView = () => {
+      if (latest.current.ui.getState().cameraView) latest.current.ui.setState({ cameraView: null })
+    }
     const applyButtons = (e: { altKey: boolean; shiftKey: boolean; ctrlKey: boolean }) => {
       if (!controls) return
       const a = buttonActions({ alt: e.altKey, shift: e.shiftKey, ctrl: e.ctrlKey })
@@ -494,6 +523,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       pointer: () => ({ x: pointer.current.x, y: pointer.current.y }),
       setView: (dir) => {
         if (!controls) return
+        leaveCameraView()
         const target = controls.getTarget(new Vector3())
         const distance = Math.max(1, camera.position.distanceTo(target))
         // Looking straight down needs a tiny offset or the up vector flips;
@@ -506,8 +536,22 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         latest.current.ui.setState({ ortho: next })
         return next
       },
+      centrePoint: () => {
+        raycaster.setFromCamera(new Vector2(0, 0), camera)
+        for (const hit of raycaster.intersectObjects(scene.children, true)) {
+          if (objectOf(hit.object)) return positionToDoc(hit.point.toArray())
+        }
+        const ahead = camera.getWorldPosition(new Vector3()).addScaledVector(camera.getWorldDirection(new Vector3()), 3)
+        return positionToDoc(ahead.toArray())
+      },
+      viewPose: () => {
+        camera.updateMatrixWorld()
+        const q = viewToDoc.clone().multiply(camera.getWorldQuaternion(new Quaternion()))
+        return { position: positionToDoc(camera.getWorldPosition(new Vector3()).toArray()), rotation: [q.x, q.y, q.z, q.w] }
+      },
       frame: (ids) => {
         if (!controls) return
+        leaveCameraView()
         const bounds = new Box3()
         for (const id of ids) {
           const n = node(id)
@@ -627,6 +671,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       if (!controls || modal.current) return
+      leaveCameraView()
       const sample: WheelSample = { deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, t: e.timeStamp }
       samples.current = [...samples.current.filter((s) => sample.t - s.t < 400), sample].slice(-12)
       const ui = latest.current.ui
@@ -794,5 +839,151 @@ function Gizmo({
         }}
       />
     </>
+  )
+}
+
+/**
+ * The camera view (0): the viewport stands where the camera stands and widens
+ * its field of view so the camera's picture fills 90% of it. Navigating by
+ * hand leaves it; editing the camera moves the view along. Roll is not
+ * followed: the view keeps Z up.
+ */
+function CameraViewRig({ scene, ui }: { scene: Scene; ui: EditorStore }) {
+  const id = useStore(ui, (s) => s.cameraView)
+  const { camera, size, invalidate } = useThree()
+  const controls = useThree((s) => s.controls) as CameraControlsImpl | null
+  const framing = useMemo(() => (id ? cameraFraming(scene, id) : null), [scene, id])
+  useEffect(() => {
+    if (!id) return
+    if (!framing || 'error' in framing) {
+      ui.setState({ cameraView: null })
+      return
+    }
+    if (ui.getState().ortho) {
+      ui.setState({ ortho: false })
+      return
+    }
+    const persp = camera as PerspectiveCamera
+    if (!controls || !persp.isPerspectiveCamera || controls.camera !== camera) return
+    const position = new Vector3().fromArray(framing.position)
+    const forward = new Vector3(0, 0, -1).applyQuaternion(new Quaternion().fromArray(framing.quaternion))
+    const target = position.clone().addScaledVector(forward, Math.max(framing.optics?.focusM ?? 5, 1))
+    void controls.setLookAt(position.x, position.y, position.z, target.x, target.y, target.z, false)
+    persp.fov = cameraViewFov(framing.fov, framing.width / framing.height, size.width / Math.max(size.height, 1))
+    persp.updateProjectionMatrix()
+    invalidate()
+  }, [id, framing, camera, controls, size.width, size.height, ui, invalidate])
+  useEffect(() => {
+    if (!controls || !id) return
+    const leave = () => ui.setState({ cameraView: null })
+    controls.addEventListener('controlstart', leave)
+    return () => controls.removeEventListener('controlstart', leave)
+  }, [controls, id, ui])
+  useEffect(() => {
+    const persp = camera as PerspectiveCamera
+    if (id || !persp.isPerspectiveCamera || persp.fov === freeFov) return
+    persp.fov = freeFov
+    persp.updateProjectionMatrix()
+    invalidate()
+  }, [id, camera, invalidate])
+  return null
+}
+
+const guideNames: Record<Guide, string> = { thirds: '三分线', golden: '黄金分割', diagonals: '对角线', center: '中心十字' }
+
+/** Lines of each guide in a 0–1 frame. */
+const guideLines: Record<Guide, [number, number, number, number][]> = {
+  thirds: [[1 / 3, 0, 1 / 3, 1], [2 / 3, 0, 2 / 3, 1], [0, 1 / 3, 1, 1 / 3], [0, 2 / 3, 1, 2 / 3]],
+  golden: [[0.382, 0, 0.382, 1], [0.618, 0, 0.618, 1], [0, 0.382, 1, 0.382], [0, 0.618, 1, 0.618]],
+  diagonals: [[0, 0, 1, 1], [1, 0, 0, 1]],
+  center: [[0.47, 0.5, 0.53, 0.5], [0.5, 0.47, 0.5, 0.53]],
+}
+
+type DofPreview = { key: string; url: string | null; busy: boolean; error?: string }
+
+/**
+ * The camera view's frame: the picture the camera takes, the rest dimmed,
+ * named with its lens; composition guides inside it; and with depth of field
+ * on, one frame rendered as the clay export renders it.
+ */
+function CameraFrame({ scene, models, ui, id, size }: { scene: Scene; models: Readonly<Record<string, SceneModel>>; ui: EditorStore; id: string; size: { width: number; height: number } }) {
+  const chosen = useStore(ui, (s) => s.guides)
+  const [menu, setMenu] = useState(false)
+  const [preview, setPreview] = useState<DofPreview | null>(null)
+  const object = scene.objects.find((o) => o.id === id)
+  const camera = { ...cameraDefaults, ...object?.camera }
+  const aspect = aspectOf(camera.aspect)
+  const viewAspect = size.width / Math.max(size.height, 1)
+  const height = viewAspect >= aspect ? size.height * 0.9 : (size.width * 0.9) / aspect
+  const width = height * aspect
+  const left = (size.width - width) / 2
+  const top = (size.height - height) / 2
+  // Any change to the scene or the frame ends a preview.
+  const key = `${id}:${Math.round(width)}x${Math.round(height)}`
+  const sceneRef = useRef(scene)
+  useEffect(() => {
+    if (sceneRef.current === scene) return
+    sceneRef.current = scene
+    setPreview(null)
+  }, [scene])
+  useEffect(() => () => {
+    if (preview?.url) URL.revokeObjectURL(preview.url)
+  }, [preview?.url])
+  const shown = preview && preview.key === key ? preview : null
+  const renderPreview = async () => {
+    const side = Math.min(2048, Math.round(Math.max(width, height) * Math.min(window.devicePixelRatio || 1, 2)))
+    const framing = cameraFraming(scene, id, side)
+    if ('error' in framing) return
+    setPreview({ key, url: null, busy: true })
+    try {
+      await loadModels(scene, models)
+      const shooter = await openShooter(scene, models)
+      let blob: Blob
+      try {
+        blob = shooter.shoot(framing as Framing, { kind: 'clay', type: 'image/jpeg', depthOfField: true })
+      } finally {
+        shooter.close()
+      }
+      if (sceneRef.current !== scene) return
+      setPreview({ key, url: URL.createObjectURL(blob), busy: false })
+    } catch (err) {
+      setPreview({ key, url: null, busy: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  if (!object || size.width === 0) return null
+  const lens = `${object.name || '摄像机'} · ${camera.focal_mm} mm${camera.depth_of_field ? ` · f/${camera.f_stop}` : ''}`
+  return (
+    <div className="cc-scene-camframe" style={{ left, top, width, height }}>
+      {shown?.url && <img src={shown.url} alt="景深预览" />}
+      <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+        {chosen.flatMap((g) => guideLines[g].map(([x1, y1, x2, y2], i) => <line key={`${g}${i}`} x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" />))}
+      </svg>
+      <span className="cc-scene-camframe-label">{lens}</span>
+      <div className="cc-scene-camframe-tools">
+        {camera.depth_of_field && (
+          <button className="btn" disabled={shown?.busy} onClick={() => void renderPreview()}>
+            {shown?.busy ? '正在渲染…' : shown?.url ? '重新预览' : '预览景深'}
+          </button>
+        )}
+        <button className="btn" aria-label="构图辅助线" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          <Grid3x3 size={14} />
+        </button>
+        {menu && (
+          <div className="cc-scene-menu cc-scene-guides" role="menu">
+            {allGuides.map((g) => (
+              <label key={g}>
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(g)}
+                  onChange={(e) => ui.setState({ guides: e.target.checked ? allGuides.filter((x) => x === g || chosen.includes(x)) : chosen.filter((x) => x !== g) })}
+                />
+                {guideNames[g]}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      {shown?.error && <span className="cc-scene-camframe-error">预览失败：{shown.error}</span>}
+    </div>
   )
 }

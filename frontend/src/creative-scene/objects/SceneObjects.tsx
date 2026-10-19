@@ -33,9 +33,12 @@ type Props = {
   placeholders?: readonly Placeholder[]
   /** Light and camera icons; a screenshot leaves them out. */
   helpers?: boolean
+  /** The camera the viewport looks through; its own frustum would be in the way. */
+  through?: string | null
 }
 
-type Tree = Required<Omit<Props, 'scene' | 'placeholders'>> & {
+type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through'>> & {
+  through: string | null
   scene: Scene
   childrenOf: Map<string, SceneObject[]>
   placeholdersOf: Map<string, Placeholder[]>
@@ -55,7 +58,7 @@ function grouped<T>(items: readonly T[], key: (item: T) => string | null): Map<s
   return out
 }
 
-export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true }: Props) {
+export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, through = null }: Props) {
   const childrenOf = useMemo(() => {
     const byParent = grouped(scene.objects, (o) => o.parent_id)
     for (const list of byParent.values()) list.sort((a, b) => a.order - b.order)
@@ -66,7 +69,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through }
   return (
     <>
       {(childrenOf.get('') ?? []).map((o) => (
@@ -94,7 +97,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
         )}
         {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
-        {helpers && o.kind === 'camera' && o.camera && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
+        {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
       </group>
       {(tree.childrenOf.get(o.id) ?? []).map((c) => (
         <ObjectNode key={c.id} object={c} tree={tree} />

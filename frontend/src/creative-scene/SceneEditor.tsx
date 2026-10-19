@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Box, CircleHelp, History, Minimize2 } from 'lucide-react'
+import { Box, CircleHelp, History, ImageDown, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { currentAccount } from '../creative-canvas/editor/api.ts'
-import { discardCandidate, uploadGenerated } from '../creative-canvas/editor/media.ts'
+import { discardCandidate, uploadGenerated, type Upload } from '../creative-canvas/editor/media.ts'
 import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders } from './agentActivity.ts'
-import type { ObjectUpdate, Scene, SceneObject } from './api.ts'
+import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
-import { clearOp, duplicate, groundBuiltin, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { clearOp, duplicate, groundBuiltin, localPose, newCamera, newEmpty, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
+import { cameraFraming } from './host/framing.ts'
+import { loadModels, openShooter } from './host/render.ts'
+import { ExportDialog } from './panels/ExportDialog.tsx'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
 import { readPreference, viewDirections, writePreference, type DevicePreference } from './input/navigation.ts'
 import { boxSelect, click, emptySelection, listClick, prune, selectAll, topmost } from './input/selection.ts'
@@ -59,12 +63,35 @@ const noObjects: ReadonlySet<string> = new Set()
 const modifierKeys = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight'])
 
 const agentNotice = '助手正在修改此物件，你的修改可能让它重做'
+const focusKinds: readonly SceneObject['kind'][] = ['primitive', 'model_instance', 'group']
+const savedWaitMs = 15_000
+
+/** Resolves true once nothing waits to be saved, false after the wait. */
+function whenSaved(session: ReturnType<typeof openScene>, ms: number): Promise<boolean> {
+  if (!session.hasUnsaved()) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      stop()
+      resolve(false)
+    }, ms)
+    const stop = session.store.subscribe(() => {
+      if (session.hasUnsaved()) return
+      window.clearTimeout(timer)
+      stop()
+      resolve(true)
+    })
+  })
+}
+
+const discardUpload = (upload: Upload) =>
+  upload.publication?.kind === 'candidate' ? discardCandidate(upload.publication.id, upload.publication.revision) : Promise.resolve()
 
 /**
  * `host` is the page's job launcher: while the editor is open it claims this
- * scene's jobs first.
+ * scene's jobs first. `canvasID` and `sceneNodeID` say where exports go; the
+ * editor always opens from a canvas node, and without them there is no export.
  */
-export default function SceneEditor({ documentID, onClose, host }: { documentID: string; onClose: () => void; host?: SceneJobLauncher }) {
+export default function SceneEditor({ documentID, onClose, host, canvasID, sceneNodeID }: { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string }) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
   // runs cleanup and setup once more after mounting.
@@ -93,6 +120,7 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
   const handle = useRef<ViewportHandle | null>(null)
   const root = useRef<HTMLElement>(null)
   const [confirmRestore, setConfirmRestore] = useState(false)
+  const [exportRun, setExportRun] = useState<{ busy: boolean; progress: Progress | null }>({ busy: false, progress: null })
   // The code sandbox starts with the first bake and goes with the editor.
   const sandbox = useRef<SandboxHost | null>(null)
   const modelEdits = useMemo(
@@ -236,6 +264,82 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
     }
     requestAnimationFrame(start)
   }
+  const addCamera = () => {
+    const pose = handle.current?.viewPose()
+    if (!pose) return
+    const o = newCamera(pose, objects)
+    if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) {
+      select([o.id])
+      ui.setState({ lastCamera: o.id })
+    }
+  }
+  const addEmpty = () => {
+    const o = newEmpty(handle.current?.centrePoint() ?? [0, 0, 0], objects)
+    if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) select([o.id])
+  }
+  /** 0 looks through the active camera, else the last one used, else the first. */
+  const cameraView = () => {
+    const cameras = (shown?.objects ?? []).filter((o) => o.kind === 'camera')
+    const target = active?.kind === 'camera' ? active : (cameras.find((c) => c.id === u.lastCamera) ?? cameras[0])
+    if (!target) return notify('场景里没有摄像机，先在「添加」菜单里添加摄像机')
+    ui.setState({ cameraView: target.id, lastCamera: target.id })
+  }
+  /** Ctrl+Alt+0 moves the active camera to where the view looks from. */
+  const cameraToView = () => {
+    if (active?.kind !== 'camera') return notify('先选中一台摄像机')
+    if (active.locked) return notify('锁定的物件不能变换，先在属性栏解锁')
+    const pose = handle.current?.viewPose()
+    if (!pose) return
+    const transform = localPose(objects, active.parent_id ?? null, pose, active.transform.scale)
+    if (edit([{ op: 'update_objects', updates: [{ object_id: active.id, transform }] }], `「${active.name || '摄像机'}」对齐当前视角`))
+      ui.setState({ cameraView: active.id, lastCamera: active.id })
+  }
+  /** A click while picking sets the camera's focus object instead of selecting. */
+  const pickFocus = (id: string | null) => {
+    const cameraID = ui.getState().pickFocus
+    if (!cameraID) return false
+    const target = id ? byID.get(id) : undefined
+    if (!target) {
+      notify('点选要对焦的物件，Esc 取消')
+      return true
+    }
+    if (!focusKinds.includes(target.kind)) {
+      notify('只能对焦到基础体、模型实例或空物体')
+      return true
+    }
+    ui.setState({ pickFocus: null })
+    edit([{ op: 'update_objects', updates: [{ object_id: cameraID, camera: { focus_object_id: target.id } }] }], `「${byID.get(cameraID)?.name || '摄像机'}」对焦到「${target.name || '物件'}」`)
+    return true
+  }
+  /** The photographer's export: saved edits first, then the server's snapshot (E1). */
+  const startExport = async (plan: ExportPlan) => {
+    if (!canvasID || !sceneNodeID) return
+    setExportRun({ busy: true, progress: null })
+    if (!(await whenSaved(session, savedWaitMs))) {
+      setExportRun({ busy: false, progress: null })
+      return notify('还有修改没有保存，保存后再导出')
+    }
+    const account = currentAccount() ?? ''
+    const out = await runManualExport(
+      {
+        read: (id) => readScene(id),
+        loadModels: (doc) => loadModels(doc.scene, doc.models),
+        open: (doc) => openShooter(doc.scene, doc.models),
+        upload: (file, declared, signal) => uploadGenerated(file, declared, { kind: 'staged' }, signal),
+        discard: discardUpload,
+        send: (operation, createdAt, payload) => exportScene(account, documentID, operation, createdAt, payload),
+        wait: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      },
+      { documentID, canvasID, sceneNodeID, plan },
+      new AbortController().signal,
+      (progress) => setExportRun({ busy: true, progress }),
+    )
+    setExportRun({ busy: false, progress: null })
+    if (out.ok) {
+      ui.setState({ exporting: false })
+      notify(`已导出 ${out.result.nodes.length} 张图到画布`)
+    } else notify(out.message)
+  }
   /** Adds where the menu was opened: Shift+A or a right click over the ground. */
   const addPrimitive = (builtin: string, at?: { x: number; y: number }) => {
     const point = handle.current?.groundPoint(at) ?? [0, 0, 0]
@@ -368,7 +472,12 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
       case 'view-bottom':
         return handle.current?.setView(viewDirections[action])
       case 'view-ortho':
+        if (u.cameraView) ui.setState({ cameraView: null })
         return handle.current?.toggleOrtho()
+      case 'camera-view':
+        return cameraView()
+      case 'camera-to-view':
+        return editing && cameraToView()
       case 'frame-selected':
         return selected.length && handle.current?.frame(selected)
       case 'frame-all': {
@@ -389,6 +498,8 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
       case 'shortcuts':
         return ui.setState({ sheet: !u.sheet })
       case 'escape': {
+        if (u.pickFocus) return ui.setState({ pickFocus: null })
+        if (u.exporting) return exportRun.busy || ui.setState({ exporting: false })
         const target = escapeTarget({ modal: false, menu: !!u.popup || u.sheet, preview: !!u.preview, selection: selected.length > 0 })
         if (target === 'close-menu') ui.setState({ popup: null, sheet: false })
         else if (target === 'exit-preview') ui.setState({ preview: null })
@@ -440,6 +551,9 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
+        { section: '其他' },
+        { label: '摄像机', run: addCamera },
+        { label: '空物体', run: addEmpty },
       ]
     }
     if (menu === 'object')
@@ -467,6 +581,8 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
       { label: '顶视', shortcut: k('view-top'), run: () => run('view-top') },
       { label: '底视', shortcut: k('view-bottom'), run: () => run('view-bottom') },
       { label: u.ortho ? '切换为透视' : '切换为正交', shortcut: k('view-ortho'), run: () => run('view-ortho') },
+      { label: '相机视图', shortcut: k('camera-view'), run: () => run('camera-view') },
+      { label: '摄像机对齐当前视角', shortcut: k('camera-to-view'), disabled: readOnly || active?.kind !== 'camera', run: () => run('camera-to-view') },
       'separator',
       { label: '聚焦选中', shortcut: k('frame-selected'), disabled: none, run: () => run('frame-selected') },
       { label: '显示全部', shortcut: k('frame-all'), run: () => run('frame-all') },
@@ -488,6 +604,7 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
   const hint = (() => {
     const m = mac ? '⌘' : 'Ctrl'
     if (u.modal) return `${u.modal}  ·  X/Y/Z 锁轴 · ${m} 吸附 · Shift 精细 · 输入数字 · 左键确认 · 右键取消`
+    if (u.pickFocus) return '点选要对焦的物件（基础体、模型实例或空物体） · Esc 取消'
     if (u.preview) return `正在预览第 ${u.preview.revision} 版 · 只读`
     if (s.trashed) return '场景在回收站，请先恢复后再编辑'
     if (selected.length) return 'G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除'
@@ -512,6 +629,12 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
         <Box size={18} />
         <h2>{shown && s.base ? (s.view?.title ?? s.base.title) : '3D 场景'}</h2>
         <MenuBar onOpen={(menu, x, y) => openMenu(menu, x, y)} disabled={(menu) => readOnly && menu !== 'view'} />
+        {canvasID && sceneNodeID && (
+          <button className="btn" disabled={readOnly} onClick={() => ui.setState({ exporting: true })} title="导出分镜到画布">
+            <ImageDown size={16} />
+            导出
+          </button>
+        )}
         <button className="btn" aria-pressed={u.history} onClick={() => ui.setState({ history: !u.history, preview: null, code: null })} title="历史版本">
           <History size={16} />
           历史
@@ -565,6 +688,10 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
                   model={shownModel ? models[shownModel] : undefined}
                   modelFailed={!!shownModel && !!failedModels[shownModel]}
                   onUpdate={(update: ObjectUpdate, text, merge) => edit([{ op: 'update_objects', updates: [update] }], text, merge ? { merge } : undefined)}
+                  objects={shown.objects}
+                  focusDistance={shownActive?.kind === 'camera' ? focusOf(shown, shownActive.id) : undefined}
+                  picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
+                  onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}
                 >
                   {shownActive?.kind === 'model_instance' && shownModel && (
                     <ModelParams
@@ -609,7 +736,7 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
                 handle={handle}
                 camera={view.saved?.camera ?? null}
                 onCamera={(camera) => view.saver.camera(camera)}
-                onPick={(id, shift) => ui.setState({ selection: click(ui.getState().selection, id, shift) })}
+                onPick={(id, shift) => pickFocus(id) || ui.setState({ selection: click(ui.getState().selection, id, shift) })}
                 onBox={(ids, mode) => ui.setState({ selection: boxSelect(ui.getState().selection, ids, mode) })}
                 onCommit={(results: LocalTransform[], text, held) => {
                   edit([transformOp(results)], text)
@@ -690,6 +817,15 @@ export default function SceneEditor({ documentID, onClose, host }: { documentID:
         />
       )}
       {u.sheet && <ShortcutSheet mac={mac} onClose={() => ui.setState({ sheet: false })} />}
+      {u.exporting && (
+        <ExportDialog
+          cameras={objects.filter((o) => o.kind === 'camera')}
+          busy={exportRun.busy}
+          progress={exportRun.progress}
+          onExport={(plan) => void startExport(plan)}
+          onClose={() => ui.setState({ exporting: false })}
+        />
+      )}
       {u.confirmClose && (
         <ConfirmDialog
           title="有修改因冲突没有保存"
@@ -737,4 +873,10 @@ function RenamePopup({ x, y, name, onDone }: { x: number; y: number; name: strin
       />
     </div>
   )
+}
+
+/** Where a camera focuses, as the export resolves it. */
+function focusOf(scene: Scene, id: string): number | undefined {
+  const framing = cameraFraming(scene, id)
+  return 'error' in framing ? undefined : framing.optics?.focusM
 }
