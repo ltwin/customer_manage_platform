@@ -27,4 +27,5 @@
 
 ## 5. 合并前
 
-- [ ] 5.1 先合 develop，再跑一次 `make check`；结果和例外记进本文件
+- [x] 5.1 先合 develop，再跑一次 `make check`；结果和例外记进本文件
+  - 结果：合 develop（`de6aa36`，只带进 `.lti/config.yaml` 一行；C3a `meta.json` 冲突取功能分支版本）得 `f302e16`，在其上跑一次 `make check` 全部通过：前端构建与 lint、后端构建、`golangci-lint`、`test-go`（56 包）、`test-frontend`、`test-ops` 全部脚本、`generate-check` 无漂移。无例外。
