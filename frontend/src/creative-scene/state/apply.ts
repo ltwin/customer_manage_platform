@@ -86,6 +86,43 @@ export function completeObject(o: SceneObject): SceneObject {
   }
 }
 
+type Light = NonNullable<SceneObject['light']>
+type LightField = Exclude<keyof Light, 'type'>
+type Camera = NonNullable<SceneObject['camera']>
+
+// The light table of data: 场景文档 — the fields each type has besides type,
+// and the three.js defaults the server stores for those left out.
+const lightFields: Record<Light['type'], readonly LightField[]> = {
+  directional: ['color', 'intensity', 'cast_shadow'],
+  point: ['color', 'intensity', 'cast_shadow', 'distance', 'decay'],
+  spot: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'angle', 'penumbra'],
+}
+const lightDefaults: Required<Omit<Light, 'type'>> = {
+  color: '#ffffff',
+  intensity: 1,
+  cast_shadow: false,
+  distance: 0,
+  decay: 2,
+  angle: Math.PI / 3,
+  penumbra: 0,
+}
+/** The camera fields the server stores for those left out. */
+export const cameraDefaults: Required<Camera> = { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 1000, label: '' }
+
+/**
+ * As the server's mergeLight: the update changes only what it carries, a new
+ * type keeps the fields it shares and fills the ones it gains. Null where the
+ * server refuses, an update with a field the resulting type lacks.
+ */
+export function mergeLight(cur: Light, patch: NonNullable<ObjectUpdate['light']>): Light | null {
+  const type = patch.type ?? cur.type
+  const has: readonly string[] = lightFields[type]
+  if (Object.keys(patch).some((k) => k !== 'type' && !has.includes(k))) return null
+  const next: Record<string, unknown> = { type }
+  for (const k of lightFields[type]) next[k] = patch[k] ?? cur[k] ?? lightDefaults[k]
+  return next as Light
+}
+
 export function updateObject(o: SceneObject, u: ObjectUpdate): SceneObject {
   const next: SceneObject = { ...o }
   if (u.name !== undefined) next.name = u.name
@@ -98,8 +135,8 @@ export function updateObject(o: SceneObject, u: ObjectUpdate): SceneObject {
       params: { ...o.primitive.params, ...u.primitive.params },
     }
   if (u.material_slots !== undefined) next.material_slots = u.material_slots
-  if (u.light !== undefined) next.light = u.light
-  if (u.camera !== undefined) next.camera = u.camera
+  if (u.light && o.light) next.light = mergeLight(o.light, u.light) ?? o.light
+  if (u.camera && o.camera) next.camera = { ...cameraDefaults, ...o.camera, ...u.camera }
   return next
 }
 

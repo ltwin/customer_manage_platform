@@ -5,6 +5,7 @@ import type { Placeholder } from '../agentActivity.ts'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
 import type { SceneModel } from '../models/cache.ts'
+import { cameraDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
@@ -90,7 +91,14 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
         )}
         {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
-        {helpers && o.kind === 'camera' && o.camera && <CameraFrustum aspect={o.camera.aspect} focal={o.camera.focal_mm} sensor={o.camera.sensor_mm} edge={edge} />}
+        {helpers && o.kind === 'camera' && o.camera && (
+          <CameraFrustum
+            aspect={o.camera.aspect ?? cameraDefaults.aspect}
+            focal={o.camera.focal_mm ?? cameraDefaults.focal_mm}
+            sensor={o.camera.sensor_mm ?? cameraDefaults.sensor_mm}
+            edge={edge}
+          />
+        )}
       </group>
       {(tree.childrenOf.get(o.id) ?? []).map((c) => (
         <ObjectNode key={c.id} object={c} tree={tree} />

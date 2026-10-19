@@ -7093,11 +7093,12 @@ export interface components {
             color: components["schemas"]["CreativeSceneColor"];
             intensity: number;
         };
+        /** @description three.js Fog，从 near 到 far 线性变浓，单位米。 */
         CreativeSceneFog: {
             color: components["schemas"]["CreativeSceneColor"];
-            near_m: number;
-            /** @description 须大于 near_m。 */
-            far_m: number;
+            near: number;
+            /** @description 须大于 near。 */
+            far: number;
         };
         CreativeSceneRender: {
             /** @enum {string} */
@@ -7154,24 +7155,45 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description 字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。 */
         CreativeSceneLight: {
             /** @enum {string} */
             type: "directional" | "point" | "spot";
-            color: components["schemas"]["CreativeSceneColor"];
-            intensity: number;
-            range_m: number | null;
-            /** @description spot 时必填。 */
-            angle_deg: number | null;
-            penumbra: number | null;
-            cast_shadow: boolean;
+            color?: components["schemas"]["CreativeSceneColor"];
+            /** @description three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值。缺省 1。 */
+            intensity?: number;
+            /** @description 缺省 false。 */
+            cast_shadow?: boolean;
+            /** @description point、spot。光照截断距离（米），0 表示不截断；缺省 0。 */
+            distance?: number;
+            /** @description point、spot。随距离衰减的指数；缺省 2。 */
+            decay?: number;
+            /** @description spot。光锥中心到边缘的半角（弧度），不超过 π/2；缺省 π/3。 */
+            angle?: number;
+            /** @description spot。缺省 0。 */
+            penumbra?: number;
         };
+        /** @description update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。 */
+        CreativeSceneLightPatch: {
+            /** @enum {string} */
+            type?: "directional" | "point" | "spot";
+            color?: components["schemas"]["CreativeSceneColor"];
+            intensity?: number;
+            cast_shadow?: boolean;
+            distance?: number;
+            decay?: number;
+            angle?: number;
+            penumbra?: number;
+        };
+        /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。 */
         CreativeSceneCamera: {
-            focal_mm: number;
-            sensor_mm: number[];
-            aspect: string;
-            near_m: number;
-            far_m: number;
-            label: string;
+            focal_mm?: number;
+            sensor_mm?: number[];
+            aspect?: string;
+            near?: number;
+            /** @description 须大于 near。 */
+            far?: number;
+            label?: string;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
         CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
@@ -7192,7 +7214,7 @@ export interface components {
             op: "update_objects";
             updates: components["schemas"]["CreativeSceneObjectUpdate"][];
         };
-        /** @description 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params 按键合并，material_slots、light、camera 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。 */
+        /** @description 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params、light、camera 按键合并，material_slots 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。 */
         CreativeSceneObjectUpdate: {
             object_id: string;
             name?: string;
@@ -7203,7 +7225,7 @@ export interface components {
                 params: components["schemas"]["CreativeSceneParams"];
             };
             material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
-            light?: components["schemas"]["CreativeSceneLight"];
+            light?: components["schemas"]["CreativeSceneLightPatch"];
             camera?: components["schemas"]["CreativeSceneCamera"];
         };
         /** @description 分组连同后代一起删除；涉及 objects 以及每个被删对象的两个单元。 */

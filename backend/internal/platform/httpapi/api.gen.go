@@ -6598,14 +6598,16 @@ type CreativeSceneAmbient struct {
 	Intensity float32            `json:"intensity"`
 }
 
-// CreativeSceneCamera defines model for CreativeSceneCamera.
+// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。
 type CreativeSceneCamera struct {
-	Aspect   string    `json:"aspect"`
-	FarM     float32   `json:"far_m"`
-	FocalMm  float32   `json:"focal_mm"`
-	Label    string    `json:"label"`
-	NearM    float32   `json:"near_m"`
-	SensorMm []float32 `json:"sensor_mm"`
+	Aspect *string `json:"aspect,omitempty"`
+
+	// Far 须大于 near。
+	Far      *float32   `json:"far,omitempty"`
+	FocalMm  *float32   `json:"focal_mm,omitempty"`
+	Label    *string    `json:"label,omitempty"`
+	Near     *float32   `json:"near,omitempty"`
+	SensorMm *[]float32 `json:"sensor_mm,omitempty"`
 }
 
 // CreativeSceneChangeBlocked defines model for CreativeSceneChangeBlocked.
@@ -6675,13 +6677,13 @@ type CreativeSceneEnvironment struct {
 	Sky CreativeSceneSky `json:"sky"`
 }
 
-// CreativeSceneFog defines model for CreativeSceneFog.
+// CreativeSceneFog three.js Fog，从 near 到 far 线性变浓，单位米。
 type CreativeSceneFog struct {
 	Color CreativeSceneColor `json:"color"`
 
-	// FarM 须大于 near_m。
-	FarM  float32 `json:"far_m"`
-	NearM float32 `json:"near_m"`
+	// Far 须大于 near。
+	Far  float32 `json:"far"`
+	Near float32 `json:"near"`
 }
 
 // CreativeSceneJob defines model for CreativeSceneJob.
@@ -6800,16 +6802,27 @@ type CreativeSceneJobSummary struct {
 // CreativeSceneJobSummaryState defines model for CreativeSceneJobSummary.State.
 type CreativeSceneJobSummaryState string
 
-// CreativeSceneLight defines model for CreativeSceneLight.
+// CreativeSceneLight 字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。
 type CreativeSceneLight struct {
-	// AngleDeg spot 时必填。
-	AngleDeg   nullable.Nullable[float32] `json:"angle_deg"`
-	CastShadow bool                       `json:"cast_shadow"`
-	Color      CreativeSceneColor         `json:"color"`
-	Intensity  float32                    `json:"intensity"`
-	Penumbra   nullable.Nullable[float32] `json:"penumbra"`
-	RangeM     nullable.Nullable[float32] `json:"range_m"`
-	Type       CreativeSceneLightType     `json:"type"`
+	// Angle spot。光锥中心到边缘的半角（弧度），不超过 π/2；缺省 π/3。
+	Angle *float32 `json:"angle,omitempty"`
+
+	// CastShadow 缺省 false。
+	CastShadow *bool               `json:"cast_shadow,omitempty"`
+	Color      *CreativeSceneColor `json:"color,omitempty"`
+
+	// Decay point、spot。随距离衰减的指数；缺省 2。
+	Decay *float32 `json:"decay,omitempty"`
+
+	// Distance point、spot。光照截断距离（米），0 表示不截断；缺省 0。
+	Distance *float32 `json:"distance,omitempty"`
+
+	// Intensity three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值。缺省 1。
+	Intensity *float32 `json:"intensity,omitempty"`
+
+	// Penumbra spot。缺省 0。
+	Penumbra *float32               `json:"penumbra,omitempty"`
+	Type     CreativeSceneLightType `json:"type"`
 }
 
 // CreativeSceneLightType defines model for CreativeSceneLight.Type.
@@ -6844,11 +6857,14 @@ type CreativeSceneModelRef struct {
 
 // CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
+	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空；响应里总是带齐。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。update_objects 里只改写到的字段。
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
 	Id     string                  `json:"id"`
 	Kind   CreativeSceneObjectKind `json:"kind"`
-	Light  *CreativeSceneLight     `json:"light,omitempty"`
-	Locked bool                    `json:"locked"`
+
+	// Light 字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。
+	Light  *CreativeSceneLight `json:"light,omitempty"`
+	Locked bool                `json:"locked"`
 
 	// MaterialSlots 缺省等同于空对象。
 	MaterialSlots *CreativeSceneMaterialSlots `json:"material_slots,omitempty"`
