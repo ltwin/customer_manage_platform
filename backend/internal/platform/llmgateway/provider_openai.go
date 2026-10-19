@@ -1,7 +1,6 @@
 package llmgateway
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -271,8 +270,7 @@ const maxResultBytes = 256 << 10
 // readStream reassembles fragments by choice and tool index. A fragment stream
 // is never a result: only a fully terminated, validated answer is returned.
 func (a *OpenAICompatible) readStream(body io.Reader, sink Sink) (Result, error) {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64<<10), maxResultBytes)
+	scanner := eventLines(body, maxResultBytes)
 	var (
 		text      strings.Builder
 		reasoning strings.Builder

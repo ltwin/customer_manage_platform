@@ -1,6 +1,8 @@
 package llmgateway
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -123,6 +125,37 @@ func classifyTransport(err error) *ProviderError {
 		return &ProviderError{Outcome: OutcomeUnknown, Class: "timeout", Detail: err.Error()}
 	}
 	return &ProviderError{Outcome: OutcomeUnknown, Class: "transport", Detail: err.Error()}
+}
+
+// eventLines scans a streamed body line by line. A bufio.Scanner hands out the
+// bytes left in its buffer as a last line even when the read failed, so a
+// connection cut in the middle of an event would surface as a malformed event.
+// Here that fragment is held back and Err reports the transport failure.
+func eventLines(body io.Reader, maxLine int) *bufio.Scanner {
+	src := &failedReader{r: body}
+	scanner := bufio.NewScanner(src)
+	scanner.Buffer(make([]byte, 0, 64<<10), maxLine)
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		if atEOF && src.err != nil && bytes.IndexByte(data, '\n') < 0 {
+			return 0, nil, nil
+		}
+		return bufio.ScanLines(data, atEOF)
+	})
+	return scanner
+}
+
+// failedReader remembers a read that ended in an error rather than at EOF.
+type failedReader struct {
+	r   io.Reader
+	err error
+}
+
+func (f *failedReader) Read(p []byte) (int, error) {
+	n, err := f.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		f.err = err
+	}
+	return n, err
 }
 
 // readImage loads a pinned media handle at send time. The gateway never

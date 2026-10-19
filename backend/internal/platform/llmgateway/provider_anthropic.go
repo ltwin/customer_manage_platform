@@ -1,7 +1,6 @@
 package llmgateway
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -486,8 +485,7 @@ func (s *streamBlock) raw() (json.RawMessage, bool) {
 
 // readStream reassembles Anthropic events into the same complete result shape.
 func (a *AnthropicMessages) readStream(body io.Reader, sink Sink, deployment string) (Result, error) {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64<<10), maxResultBytes)
+	scanner := eventLines(body, maxResultBytes)
 	var (
 		result   Result
 		usage    anthropicUsage

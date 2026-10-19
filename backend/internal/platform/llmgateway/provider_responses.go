@@ -1,7 +1,6 @@
 package llmgateway
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -315,8 +314,7 @@ func readResponsesSingle(body io.Reader) (responsesBody, error) {
 // readResponsesStream forwards text deltas while the answer streams, but the
 // result is only ever the terminal event's complete response object.
 func readResponsesStream(body io.Reader, sink Sink) (responsesBody, error) {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64<<10), maxResponsesBytes)
+	scanner := eventLines(body, maxResponsesBytes)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data:") {

@@ -217,6 +217,69 @@ func TestUnterminatedStreamIsUnknownNotSuccess(t *testing.T) {
 	}
 }
 
+// A connection that breaks in the middle of an event leaves half a line
+// behind. That is a lost stream, not a provider answering outside the
+// contract: it must read as a transport failure, never as malformed_chunk.
+// The events that arrived whole before the cut still reach the sink.
+func TestStreamCutMidEventIsTransportNotMalformed(t *testing.T) {
+	for _, tc := range []struct {
+		name, cut string
+		key       llmgateway.ProviderKey
+		provider  func(*http.Client) llmgateway.Provider
+	}{
+		{"openai", `data: {"id":"req-1","model":"vendor-model","choices":[{"index":0,"delta":{"content":"好的"}}]}` + "\n\n" +
+			`data: {"id":"req-1","model":"vendor-model","choi`,
+			llmgateway.ProviderOpenAICompatible, func(c *http.Client) llmgateway.Provider { return llmgateway.NewOpenAICompatible(c) }},
+		{"anthropic", `data: {"type":"message_start","message":{"id":"req-1","model":"vendor-model"}}` + "\n\n" +
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}` + "\n\n" +
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"好的"}}` + "\n\n" +
+			`data: {"type":"content_block_st`,
+			llmgateway.ProviderAnthropicMessage, func(c *http.Client) llmgateway.Provider { return llmgateway.NewAnthropicMessages(c, "") }},
+		{"responses", `data: {"type":"response.output_text.delta","delta":"好的"}` + "\n\n" +
+			`data: {"type":"response.function_call_arguments.delta","delta":"{\"obj`,
+			llmgateway.ProviderOpenAIResponses, func(c *http.Client) llmgateway.Provider { return llmgateway.NewOpenAIResponses(c) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newProtocolFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					t.Error("the test server cannot flush a partial stream")
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, tc.cut)
+				flusher.Flush()
+				panic(http.ErrAbortHandler) // drop the connection mid-line
+			})
+			model := fixture.model(t, tc.key)
+			sink := &recordingSink{}
+			_, err := tc.provider(llmgateway.NewHTTPClient(5*time.Second)).Invoke(context.Background(), llmgateway.ProviderRequest{
+				Model: model, Snapshot: snapshotFor(model), Chat: toolRequest(), Credential: "k", Stream: true, Sink: sink,
+			})
+			var providerErr *llmgateway.ProviderError
+			if !errors.As(err, &providerErr) || providerErr.Outcome != llmgateway.OutcomeUnknown || providerErr.Class != "transport" {
+				t.Fatalf("a stream cut mid-event must be a transport failure, got %v", err)
+			}
+			if got := strings.Join(sink.deltas, ""); got != "好的" {
+				t.Fatalf("deltas before the cut %q", got)
+			}
+		})
+	}
+}
+
+// A stream the server closes cleanly may still end its last line without a
+// newline; that line is read as before.
+func TestCleanStreamEndWithoutNewlineStillCompletes(t *testing.T) {
+	fixture := newProtocolFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, strings.TrimSuffix(openAIToolStream, "\n"))
+	})
+	result, err := invoke(t, fixture, llmgateway.NewOpenAICompatible(llmgateway.NewHTTPClient(5*time.Second)), llmgateway.ProviderOpenAICompatible, true)
+	if err != nil || result.Text != "好的" || len(result.ToolCalls) != 1 {
+		t.Fatalf("result %+v err %v", result, err)
+	}
+}
+
 func TestUnexpectedModelRoutingIsAProtocolError(t *testing.T) {
 	const routed = `{"id":"req-1","model":"some-other-model","choices":[{"index":0,"finish_reason":"stop","message":{"content":"hi"}}]}`
 	fixture := newProtocolFixture(t, func(w http.ResponseWriter, _ *http.Request) {
