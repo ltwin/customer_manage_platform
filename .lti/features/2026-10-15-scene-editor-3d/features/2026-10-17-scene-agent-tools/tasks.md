@@ -241,3 +241,7 @@
       - 修正后隐藏时缩略图 8 ms、截图 67 ms。编辑器自己的烘焙也走这里，行为不变。
     - 局限：测试页的实时流始终保持；真实画布页由 `useCanvasSnapshot` 的 `keepAlive` 决定，本页持有任务或助手有进行中的运行时保持，这段逻辑没有在隐藏标签页里实测。只测了 macOS 与本机 GPU。
 - [ ] 6.3 交 owner：用真实模型跑 3 个搭景样例各两次（AC-13，保留对话、截图和最终场景），并本机体验画布页搭景、编辑视图点选修改、本轮清单；记录质量结论与遗留问题。
+  - 试用发现（2026-10-18，日式小巷样例）：助手加灯光的 3 次 `edit_scene` 都被拒，提示却是生成工具的「图片参考最多 9 张…」，助手无从改正。
+    - 原因：灯光写了 `decay`、`distance`、`kind` 等场景格式没有的字段，雾写成 `near`/`far`、天空写成 `solid`。严格解码的报错只说「unknown field」且没有说明文字，`sceneRefusal` 落到 `asRefusal`，再兜底进 `creativegeneration.AgentRefusal`，把所有未说明的校验失败都翻成生成参考的限制。工具说明也只写了 `light|camera`，没给字段。
+    - 修正：场景输入解码失败时指出字段路径和可用字段（`creativescene/model.go:shapeError`，编辑器的命令接口也受益）；场景工具未说明的校验失败改为场景自己的提示，不再走生成的措辞；`edit_scene` 说明补上灯光、摄像机、环境的字段和取值。
+    - 测试：`TestABadShapeNamesTheField`、`TestABadSceneCallSaysWhatToFix`（重放库里那次调用）、`TestSceneRefusalNeverSpeaksOfGeneration`；去掉任一处修正，对应测试失败。

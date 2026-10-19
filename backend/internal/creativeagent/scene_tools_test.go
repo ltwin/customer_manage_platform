@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -563,6 +565,50 @@ func TestSceneToolsNeedTheCanvasInTheConsent(t *testing.T) {
 	}
 	if got := lastTool(s.request(2)); got["code"] != "creative_tool_not_authorized" {
 		t.Fatalf("read without canvas consent: %v", got)
+	}
+}
+
+// A scene call that does not decode is answered with the field to fix, never
+// with the generation tool's words about image references (a light written
+// with three.js fields was told it had too many images).
+func TestABadSceneCallSaysWhatToFix(t *testing.T) {
+	f, c, consent, doc := visualScene(t, false)
+	lantern := map[string]any{"id": sceneObjectID("lantern"), "kind": "light", "name": "灯笼暖光", "parent_id": nil, "order": 2, "visible": true, "locked": false,
+		"transform": identityAt(0), "light": map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "decay": 2, "distance": 20}}
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", readSceneTool, map[string]any{"document_id": doc}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("b", editSceneTool, map[string]any{"document_id": doc, "based_on_revision": lastTool(r)["revision"],
+				"operations": []any{map[string]any{"op": "add_objects", "objects": []any{lantern}}}}))
+		},
+	}}
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "加一盏灯笼的暖光"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+	refused := lastTool(s.request(3))
+	if message, _ := refused["message"].(string); refused["code"] != "creative_tool_refused" || !strings.Contains(message, "objects[0].light 没有字段 decay") || strings.Contains(message, "图片") {
+		t.Fatalf("refusal %v", refused)
+	}
+}
+
+func TestSceneRefusalNeverSpeaksOfGeneration(t *testing.T) {
+	var refused *toolRefusal
+	if err := sceneRefusal(fmt.Errorf("%w: trailing data", creativeops.ErrValidation)); !errors.As(err, &refused) || strings.Contains(refused.message, "图片") {
+		t.Fatalf("unexplained validation: %v", err)
+	}
+	explained := creativeops.Explain(creativeops.ErrValidation, "缺少字段 order")
+	if err := sceneRefusal(explained); err != explained {
+		t.Fatalf("explained validation: %v", err)
+	}
+	if err := sceneRefusal(errToolArguments); !errors.As(err, &refused) || !strings.Contains(refused.message, "参数不符合工具说明") {
+		t.Fatalf("arguments: %v", err)
 	}
 }
 

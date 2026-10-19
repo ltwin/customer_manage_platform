@@ -587,3 +587,36 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 		t.Fatalf("invalid commands wrote revision %d", after.Revision)
 	}
 }
+
+// A batch that does not decode says which field, where: the assistant writes
+// these by hand and has only the message to go on.
+func TestABadShapeNamesTheField(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	v := readScene(t, f.a, doc)
+	light := func(fields map[string]any) batch {
+		o := object(objectID(1), "light", nil, 1)
+		o["light"] = fields
+		return batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": []any{o}}}}
+	}
+	for name, tc := range map[string]struct {
+		b    batch
+		want string
+	}{
+		"three.js light field": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "decay": 2}),
+			"objects[0].light 没有字段 decay，可用字段：type、color、intensity、range_m、angle_deg、penumbra、cast_shadow"},
+		"wrong type": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": "bright"}), "字段 objects[0].light.intensity 的类型不对"},
+		"fog in metres": {batch{DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{
+			"sky": map[string]any{"kind": "color", "color": "#080f20"}, "ambient": map[string]any{"color": "#8ca6d5", "intensity": 0.25}, "fog": map[string]any{"color": "#101b30", "near": 17, "far": 55}}}}},
+			"environment.fog 没有字段 far"},
+		"field of the operation": {batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"mode": "lit"}, "extra": 1}}}, "操作没有字段 extra"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := send(t, f.a, tc.b)
+			var public creativeops.Public
+			if !errors.As(err, &public) || !errors.Is(err, creativeops.ErrValidation) || !strings.HasPrefix(public.PublicMessage(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+		})
+	}
+}

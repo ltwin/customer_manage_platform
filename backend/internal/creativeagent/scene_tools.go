@@ -77,7 +77,10 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
 				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, primitive{builtin,params}|light|camera|model{content_revision_id}}]}；" +
-				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params 按键合并）；remove_objects{object_ids}（连同子物件）；set_environment{environment}；set_render{render:{mode:clay|lit}}；" +
+				"light{type:point|spot|directional, color:\"#rrggbb\", intensity:0…1000, range_m:米或 null, angle_deg:聚光灯 1…179、其余 null, penumbra:0…1 或 null, cast_shadow}，七个字段都要写；" +
+				"camera{focal_mm:8…800, sensor_mm:[宽,高], aspect:\"3:2\", near_m, far_m, label}；" +
+				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params 按键合并，light、camera 整体替换）；remove_objects{object_ids}（连同子物件）；" +
+				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg, sun_azimuth_deg, turbidity}|{kind:color, color}|{kind:hdri, hdri}, ambient:{color, intensity:0…10}, fog:{color, near_m, far_m}或 null}}（三项都要写）；set_render{render:{mode:clay|lit}}；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +
 				"新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
@@ -177,6 +180,7 @@ func (t *sceneTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opti
 // sceneRefusal words what the model can act on; a parked call passes through.
 func sceneRefusal(err error) error {
 	var parked errParked
+	var public creativeops.Public
 	switch {
 	case errors.As(err, &parked):
 		return err
@@ -184,6 +188,9 @@ func sceneRefusal(err error) error {
 		return refuseTool("场景在回收站里，恢复后才能读写")
 	case errors.Is(err, creativedocument.ErrNotFound):
 		return refuseTool("场景或物件不存在，或不属于这个账号；请核对 document_id")
+	case errors.Is(err, creativeops.ErrValidation) && !errors.As(err, &public) && !errors.Is(err, errToolArguments):
+		// asRefusal would word it as a generation request's references.
+		return refuseTool("场景操作的字段或取值不符合工具说明，请对照说明重写这次调用")
 	}
 	return asRefusal(err)
 }
