@@ -191,10 +191,13 @@ func (v RequestView) Terminal() bool {
 }
 
 const (
-	requestColumns = "id,caller_service,caller_operation_id,caller_group_id,request_hash,model_key," +
-		"catalog_version,price_version,model_snapshot,price_snapshot,request_payload,payload_state," +
+	// requestViewColumns are every column but request_payload: the whole prompt,
+	// often over 100 KB, which a RequestView never shows.
+	requestViewColumns = "id,caller_service,caller_operation_id,caller_group_id,request_hash,model_key," +
+		"catalog_version,price_version,model_snapshot,price_snapshot,payload_state," +
 		"output_limit,deadline_at,state,failure_class,attempts_used,retry_eligible,cancel_requested_at," +
 		"closed_at,result_payload,result_hash,result_revision,revision,retained_until,request_kind"
+	requestColumns = requestViewColumns + ",request_payload"
 )
 
 type requestRow struct {
@@ -226,17 +229,28 @@ type requestRow struct {
 	kind           string
 }
 
-func scanRequest(row store.Row) (requestRow, error) {
+// scanRequest reads requestColumns.
+func scanRequest(row store.Row) (requestRow, error) { return scanRequestRow(row, true) }
+
+// scanRequestView reads requestViewColumns: the row without its payload, for
+// callers that only build views.
+func scanRequestView(row store.Row) (requestRow, error) { return scanRequestRow(row, false) }
+
+func scanRequestRow(row store.Row, withPayload bool) (requestRow, error) {
 	var (
 		r             requestRow
 		modelSnapshot []byte
 		priceSnapshot []byte
 	)
-	err := row.Scan(&r.id, &r.callerService, &r.operationID, &r.groupID, &r.requestHash, &r.modelKey,
-		&r.catalogVersion, &r.priceVersion, &modelSnapshot, &priceSnapshot, &r.payload, &r.payloadState,
+	dest := []any{&r.id, &r.callerService, &r.operationID, &r.groupID, &r.requestHash, &r.modelKey,
+		&r.catalogVersion, &r.priceVersion, &modelSnapshot, &priceSnapshot, &r.payloadState,
 		&r.outputLimit, &r.deadline, &r.state, &r.failureClass, &r.attemptsUsed, &r.retryEligible,
 		&r.cancelAt, &r.closedAt, &r.resultPayload, &r.resultHash, &r.resultRevision, &r.revision, &r.retainedUntil,
-		&r.kind)
+		&r.kind}
+	if withPayload {
+		dest = append(dest, &r.payload)
+	}
+	err := row.Scan(dest...)
 	if errors.Is(err, store.ErrNoRows) {
 		return requestRow{}, ErrNotFound
 	}

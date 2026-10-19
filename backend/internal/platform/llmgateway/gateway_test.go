@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -684,6 +686,37 @@ func TestCallerGroupCeilingDoesNotResetAcrossMonths(t *testing.T) {
 	}
 	if accepted != 1 {
 		t.Fatalf("accepted %d calls in the new month; a ceiling that reset per month would have accepted 2", accepted)
+	}
+}
+
+func TestCallerGroupLockSeesWhatAReadSees(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	o := turnOptions{group: "run-views"}
+	var want []llmgateway.RequestView
+	for range 2 {
+		view, _, err := f.turn(t, f.a, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := f.gateway.Get(t.Context(), f.a, view.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, got)
+	}
+	var locked []llmgateway.RequestView
+	err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		var err error
+		locked, err = f.gateway.LockCallerGroupInTx(t.Context(), tx, "creative_agent", o.group)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.SortFunc(want, func(a, b llmgateway.RequestView) int { return strings.Compare(a.ID, b.ID) })
+	slices.SortFunc(locked, func(a, b llmgateway.RequestView) int { return strings.Compare(a.ID, b.ID) })
+	if !reflect.DeepEqual(locked, want) {
+		t.Fatalf("group lock views differ from reads:\n got %+v\nwant %+v", locked, want)
 	}
 }
 

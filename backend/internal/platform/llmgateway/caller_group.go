@@ -65,7 +65,9 @@ func (s *Service) LockCallerGroupInTx(ctx context.Context, tx store.TxAccountSco
 		if e.request == nil {
 			continue
 		}
-		row, err := scanRequest(tx.QueryRowForUpdate(ctx, "llm_requests", requestColumns, "id=$2 AND caller_service=$3 AND caller_group_id=$4", *e.request, caller, group))
+		// A run's group holds one request per model step, each with the whole
+		// prompt; the views need none of it.
+		row, err := scanRequestView(tx.QueryRowForUpdate(ctx, "llm_requests", requestViewColumns, "id=$2 AND caller_service=$3 AND caller_group_id=$4", *e.request, caller, group))
 		if err != nil {
 			return nil, err
 		}
