@@ -1,6 +1,6 @@
 {
   "uid": "04f1c4df-0f59-4f93-a20f-6663afe49eca",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-agent-tools",
   "kind": "feature",
   "assurance": "governed",
@@ -44,7 +44,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-18T04:36:35.664Z",
-  "updatedAt": "2026-10-19T06:02:38.100Z",
+  "updatedAt": "2026-10-19T06:03:32.272Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-19T06:03:32.236Z",
+    "summary": "develop 以 --no-ff 合入 feat/scene-agent-tools（cf4f0d3），合并后树与功能分支完全一致；功能分支已含 develop 最新提交 6ca6e30，完整 make check 在 836296b 上执行：build、lint、test-go、test-frontend 通过，test-ops 的 auth catalog 一次失败未复现、整组重跑与其余 ops 脚本和 generate-check 补跑通过。之后只改 .lti，并按 owner 同意改写分支历史去掉误提交的 creative-worker 编译产物（树不变，备份 backup/feat-scene-agent-tools-9019c2d）",
+    "method": "manual",
+    "limitations": "项目未配置 lti checks，集成验证引用合并点前在同一代码树上执行的 make check 结果，未在 develop 上重复运行；auth catalog two-account-isolation 那次失败原因未明",
+    "sourceCommit": "1ffc775ec8dbdeaf24e5f0f626f59a089fe4cc25",
+    "targetCommit": "cf4f0d37f7f0629e97e5f482da6fae464b9e44f0",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "815a2bc1bbfeb02a2d2a242f2848458e32f10404d8780b286a0dd46b8ec47f2a"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
