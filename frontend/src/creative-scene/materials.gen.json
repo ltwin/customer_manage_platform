@@ -1,0 +1,208 @@
+{
+  "materials": [
+    {
+      "id": "principled@1",
+      "kind": "principled",
+      "label": "原理化 BSDF",
+      "params": {
+        "color": { "type": "color", "default": "#cccccc", "label": "基础色" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" },
+        "roughness": { "type": "number", "default": 0.5, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "ior": { "type": "number", "default": 1.5, "min": 1, "max": 2.333, "step": 0.01, "label": "IOR" },
+        "opacity": { "type": "number", "default": 1, "min": 0, "max": 1, "step": 0.01, "label": "Alpha" },
+        "specular_intensity": { "type": "number", "default": 1, "min": 0, "max": 1, "step": 0.01, "label": "高光" },
+        "specular_color": { "type": "color", "default": "#ffffff", "label": "高光色" },
+        "transmission": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "透射" },
+        "thickness": { "type": "number", "default": 0, "min": 0, "max": 10, "step": 0.01, "unit": "m", "label": "厚度" },
+        "clearcoat": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "涂层" },
+        "clearcoat_roughness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "涂层糙度" },
+        "sheen": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "光泽" },
+        "sheen_roughness": { "type": "number", "default": 1, "min": 0, "max": 1, "step": 0.01, "label": "光泽糙度" },
+        "sheen_color": { "type": "color", "default": "#ffffff", "label": "光泽色" },
+        "emissive": { "type": "color", "default": "#000000", "label": "自发光" },
+        "emissive_intensity": { "type": "number", "default": 1, "min": 0, "max": 100, "step": 0.1, "label": "自发光强度" },
+        "anisotropy": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "各向异性" },
+        "anisotropy_rotation": { "type": "number", "default": 0, "min": -3.141593, "max": 3.141593, "step": 0.01, "unit": "rad", "label": "各向异性旋转" },
+        "iridescence": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "薄膜" },
+        "iridescence_thickness": { "type": "number", "default": 400, "min": 0, "max": 1200, "step": 1, "unit": "nm", "label": "薄膜厚度" }
+      }
+    },
+    {
+      "id": "paint@1",
+      "kind": "pattern",
+      "label": "漆面",
+      "params": {
+        "color": { "type": "color", "default": "#c9c4bb", "label": "色调" },
+        "roughness": { "type": "number", "default": 0.6, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "plaster@1",
+      "kind": "pattern",
+      "label": "灰泥",
+      "params": {
+        "color": { "type": "color", "default": "#d8d0c2", "label": "色调" },
+        "mottle": { "type": "number", "default": 0.4, "min": 0, "max": 1, "step": 0.01, "label": "斑驳程度" },
+        "roughness": { "type": "number", "default": 0.9, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "concrete@1",
+      "kind": "pattern",
+      "label": "混凝土",
+      "params": {
+        "color": { "type": "color", "default": "#a19d96", "label": "色调" },
+        "stains": { "type": "number", "default": 0.3, "min": 0, "max": 1, "step": 0.01, "label": "污渍程度" },
+        "roughness": { "type": "number", "default": 0.9, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "stone_brick@1",
+      "kind": "pattern",
+      "label": "石砖",
+      "params": {
+        "color": { "type": "color", "default": "#8f8676", "label": "色调" },
+        "brick_size": { "type": "number", "default": 0.3, "min": 0.05, "max": 2, "step": 0.01, "unit": "m", "label": "砖块尺寸" },
+        "mortar_color": { "type": "color", "default": "#bdb5a6", "label": "灰缝颜色" },
+        "roughness": { "type": "number", "default": 0.85, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "stone@1",
+      "kind": "pattern",
+      "label": "岩石",
+      "params": {
+        "color": { "type": "color", "default": "#7d776d", "label": "色调" },
+        "scale": { "type": "number", "default": 1, "min": 0.05, "max": 10, "step": 0.01, "unit": "m", "label": "纹理尺寸" },
+        "roughness": { "type": "number", "default": 0.9, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "marble@1",
+      "kind": "pattern",
+      "label": "大理石",
+      "params": {
+        "color": { "type": "color", "default": "#e8e4dc", "label": "色调" },
+        "vein_color": { "type": "color", "default": "#8c8780", "label": "纹路颜色" },
+        "scale": { "type": "number", "default": 0.8, "min": 0.05, "max": 10, "step": 0.01, "unit": "m", "label": "纹理尺寸" },
+        "roughness": { "type": "number", "default": 0.25, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "tile@1",
+      "kind": "pattern",
+      "label": "瓷砖",
+      "params": {
+        "color": { "type": "color", "default": "#e6e2da", "label": "色调" },
+        "tile_size": { "type": "number", "default": 0.3, "min": 0.05, "max": 2, "step": 0.01, "unit": "m", "label": "砖块尺寸" },
+        "grout_color": { "type": "color", "default": "#a9a49b", "label": "灰缝颜色" },
+        "roughness": { "type": "number", "default": 0.35, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "wood@1",
+      "kind": "pattern",
+      "label": "木纹",
+      "params": {
+        "color": { "type": "color", "default": "#8a5a36", "label": "色调" },
+        "scale": { "type": "number", "default": 0.5, "min": 0.05, "max": 5, "step": 0.01, "unit": "m", "label": "纹理尺寸" },
+        "roughness": { "type": "number", "default": 0.6, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "wood_plank@1",
+      "kind": "pattern",
+      "label": "木地板",
+      "params": {
+        "color": { "type": "color", "default": "#9a6a42", "label": "色调" },
+        "plank_width": { "type": "number", "default": 0.15, "min": 0.05, "max": 1, "step": 0.01, "unit": "m", "label": "板宽" },
+        "roughness": { "type": "number", "default": 0.55, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "metal@1",
+      "kind": "pattern",
+      "label": "做旧金属",
+      "params": {
+        "color": { "type": "color", "default": "#8c8f93", "label": "色调" },
+        "rust": { "type": "number", "default": 0.3, "min": 0, "max": 1, "step": 0.01, "label": "锈蚀程度" },
+        "roughness": { "type": "number", "default": 0.45, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 1, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "fabric@1",
+      "kind": "pattern",
+      "label": "布料",
+      "params": {
+        "color": { "type": "color", "default": "#6e2b2b", "label": "色调" },
+        "scale": { "type": "number", "default": 0.01, "min": 0.002, "max": 0.1, "step": 0.001, "unit": "m", "label": "纹理尺寸" },
+        "roughness": { "type": "number", "default": 0.95, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "dirt@1",
+      "kind": "pattern",
+      "label": "泥土",
+      "params": {
+        "color": { "type": "color", "default": "#6b5440", "label": "色调" },
+        "roughness": { "type": "number", "default": 0.95, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "grass@1",
+      "kind": "pattern",
+      "label": "草地",
+      "params": {
+        "color": { "type": "color", "default": "#5b7a3a", "label": "色调" },
+        "roughness": { "type": "number", "default": 0.9, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    },
+    {
+      "id": "emissive@1",
+      "kind": "pattern",
+      "label": "自发光",
+      "params": {
+        "color": { "type": "color", "default": "#ffd9a0", "label": "色调" },
+        "strength": { "type": "number", "default": 5, "min": 0, "max": 100, "step": 0.1, "label": "发光强度" },
+        "roughness": { "type": "number", "default": 0.5, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
+        "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
+      }
+    }
+  ],
+  "hints": {
+    "paint": "paint@1",
+    "plaster": "plaster@1",
+    "concrete": "concrete@1",
+    "brick": "stone_brick@1",
+    "stone": "stone@1",
+    "rock": "stone@1",
+    "marble": "marble@1",
+    "tile": "tile@1",
+    "wood": "wood@1",
+    "plank": "wood_plank@1",
+    "floorboard": "wood_plank@1",
+    "metal": "metal@1",
+    "iron": "metal@1",
+    "steel": "metal@1",
+    "fabric": "fabric@1",
+    "cloth": "fabric@1",
+    "dirt": "dirt@1",
+    "soil": "dirt@1",
+    "grass": "grass@1",
+    "emissive": "emissive@1",
+    "glow": "emissive@1"
+  }
+}
