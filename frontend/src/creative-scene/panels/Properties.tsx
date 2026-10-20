@@ -115,7 +115,7 @@ function TextField({ value, disabled, onCommit }: { value: string; disabled?: bo
   )
 }
 
-function ParamField({ name, spec, value, disabled, onCommit }: { name: string; spec: ParamSpec; value: unknown; disabled: boolean; onCommit: (v: unknown) => void }) {
+export function ParamField({ name, spec, value, disabled, onCommit }: { name: string; spec: ParamSpec; value: unknown; disabled: boolean; onCommit: (v: unknown) => void }) {
   if (spec.type === 'boolean')
     return (
       <label className="cc-scene-field">
@@ -249,7 +249,6 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
         </div>
       )}
       {children}
-      {object.light && <small>灯光：{object.light.type} · 强度 {object.light.intensity}（灯光设置随后续版本开放）</small>}
       {object.camera && (
         <CameraFields
           object={object}

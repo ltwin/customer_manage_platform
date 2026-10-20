@@ -76,6 +76,13 @@ func TestCreateExportJob(t *testing.T) {
 	if req := exportRequest(t, picked); !slices.Equal(req.CameraObjectIDs, []string{a}) || !slices.Equal(req.Passes, []string{"clay", "line"}) {
 		t.Fatalf("picked request %+v", req)
 	}
+	lit, err := exportJob(t, f.a, creativescene.ExportJobInput{DocumentID: sc.doc, CanvasID: sc.canvas, CameraObjectIDs: []string{a}, Passes: []string{"lit", "clay"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := exportRequest(t, lit); !slices.Equal(req.Passes, []string{"clay", "lit"}) {
+		t.Fatalf("lit request %+v", req)
+	}
 
 	empty := newSceneCanvas(t, f.a)
 	elsewhere := createScene(t, f.a)
@@ -85,7 +92,8 @@ func TestCreateExportJob(t *testing.T) {
 		"no camera":         {DocumentID: empty.doc, CanvasID: empty.canvas},
 		"not a camera":      {DocumentID: sc.doc, CanvasID: sc.canvas, CameraObjectIDs: []string{objectID(3)}},
 		"repeated camera":   {DocumentID: sc.doc, CanvasID: sc.canvas, CameraObjectIDs: []string{a, a}},
-		"lit not yet":       {DocumentID: sc.doc, CanvasID: sc.canvas, Passes: []string{"lit"}},
+		"unknown pass":      {DocumentID: sc.doc, CanvasID: sc.canvas, Passes: []string{"depth"}},
+		"repeated pass":     {DocumentID: sc.doc, CanvasID: sc.canvas, Passes: []string{"lit", "lit"}},
 		"no canvas":         {DocumentID: sc.doc},
 	} {
 		if _, err := exportJob(t, f.a, in); !errors.Is(err, creativeops.ErrValidation) {
@@ -123,10 +131,15 @@ func TestRenderViewDepthOfField(t *testing.T) {
 	if err := json.Unmarshal(blurred.Request, &req); err != nil || !req.DepthOfField {
 		t.Fatalf("depth of field request %s", blurred.Request)
 	}
+	lit, err := render(creativescene.RenderInput{CameraObjectID: on, Mode: "lit"})
+	if err != nil || string(lit.Request) != `{"camera_object_id":"`+on+`","mode":"lit"}` {
+		t.Fatalf("lit request %s %v", lit.Request, err)
+	}
 	for name, in := range map[string]creativescene.RenderInput{
 		"preset":     {Preset: "overview", DepthOfField: true},
 		"viewpoint":  {Viewpoint: &creativescene.Viewpoint{Position: [3]float64{5, 2, 5}, Target: [3]float64{0, 1, 0}, FocalMM: 35}, DepthOfField: true},
 		"camera off": {CameraObjectID: off, DepthOfField: true},
+		"bad mode":   {CameraObjectID: on, Mode: "line"},
 	} {
 		if _, err := render(in); !errors.Is(err, creativeops.ErrValidation) {
 			t.Fatalf("%s: %v", name, err)

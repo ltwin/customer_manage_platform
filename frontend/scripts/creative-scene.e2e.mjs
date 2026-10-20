@@ -11,6 +11,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
+import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
 
 const DOC = 'cwdoc_scene'
@@ -474,9 +475,9 @@ async function viewportCenter(page) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, box }
 }
 
-/** The share of pixels that differ visibly between two screenshots of one size. */
-async function pixelDiff(page, a, b) {
-  return page.evaluate(async ([a, b]) => {
+/** The share of pixels that differ visibly (summed RGB difference over min) between two screenshots of one size. */
+async function pixelDiff(page, a, b, min = 48) {
+  return page.evaluate(async ([a, b, min]) => {
     const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
     const [x, y] = await Promise.all([load(a), load(b)])
     const c = document.createElement('canvas')
@@ -489,9 +490,9 @@ async function pixelDiff(page, a, b) {
     g.drawImage(y, 0, 0)
     const q = g.getImageData(0, 0, c.width, c.height).data
     let n = 0
-    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 48) n++
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > min) n++
     return n / (p.length / 4)
-  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
 }
 
 async function waitFor(check, message, timeout = 5000) {
@@ -1907,6 +1908,1008 @@ await check('景深预览 is a switch: the camera view blurs live, keeps blurrin
   console.log(`camera view sharpness: off ${sharp.toFixed(3)}, f/1.4 ${blurred.toFixed(3)}, f/8 ${stopped.toFixed(3)}; off again differs ${diff}`)
   assert.deepEqual(errors, [])
   await context.close()
+})
+
+// --- AC-7 grouping -------------------------------------------------------------
+
+/** Objects placed earlier, at revision 1 like the ground. */
+function seed(server, objects) {
+  for (const o of objects) {
+    server.scene.objects.push({ parent_id: null, visible: true, locked: false, transform: identity(), ...o })
+    server.unitRevs[placement(o.id)] = '1'
+    server.unitRevs[content(o.id)] = '1'
+  }
+  server.history[0] = server.record(['*'], [], null)
+}
+
+const gid = (name) => `sobj_${name.padEnd(21, '0')}`
+// A group turned by Euler(0, 0.8, 0) and scaled 2, a child tilted and stretched.
+const turned = { position: [2, 0, -3], rotation: [0, 0.3894183423086505, 0, 0.9210609940028851], scale: [2, 2, 2] }
+const tilted = { position: [1, 0.5, 2], rotation: [0.06407134770607115, 0.09115754934299071, 0.15343930202422257, 0.9818561728660807], scale: [1, 1.5, 1] }
+
+function groupingScene(server) {
+  seed(server, [
+    { id: gid('p'), kind: 'group', name: '支架', order: 1, transform: turned },
+    { id: gid('a'), kind: 'primitive', name: '箱 A', parent_id: gid('p'), order: 0, transform: tilted, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } } },
+    { id: gid('q'), kind: 'group', name: '台', order: 2, transform: { ...identity(), position: [-3, 0, 0] } },
+    { id: gid('b'), kind: 'primitive', name: '箱 B', parent_id: gid('q'), order: 0, transform: { ...identity(), position: [0, 0, 2] }, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } } },
+    { id: gid('c'), kind: 'primitive', name: '箱 C', order: 3, transform: { ...identity(), position: [4, 0, 4] }, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } } },
+  ])
+}
+
+const worlds = (server) => {
+  const world = worldOf(server.scene.objects)
+  return new Map(server.scene.objects.map((o) => [o.id, world(o.id).elements]))
+}
+function sameWorlds(before, after, ids) {
+  for (const id of ids) {
+    const a = before.get(id)
+    const b = after.get(id)
+    assert.ok(a && b && a.every((v, i) => Math.abs(v - b[i]) < 1e-6), `${id} moved: ${a} → ${b}`)
+  }
+}
+const treeOf = (server) => Object.fromEntries(server.scene.objects.map((o) => [o.id, `${o.parent_id ?? '-'}#${o.order}`]))
+/** Parents are groups and siblings never share an order, as the real server checks. */
+function validTree(server) {
+  const kinds = new Map(server.scene.objects.map((o) => [o.id, o.kind]))
+  const taken = new Set()
+  for (const o of server.scene.objects) {
+    if (o.parent_id) assert.equal(kinds.get(o.parent_id), 'group', `${o.name} under a ${kinds.get(o.parent_id)}`)
+    const key = `${o.parent_id}#${o.order}`
+    assert.ok(!taken.has(key), `order clash ${key}`)
+    taken.add(key)
+  }
+}
+const modKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+async function pick(page, names) {
+  for (const [i, name] of names.entries()) await page.getByRole('treeitem', { name: new RegExp(name) }).click({ modifiers: i ? [modKey] : [] })
+}
+
+await check('AC-7: Ctrl+G groups objects of three parents in place, one revision; Cmd+Z puts them back; Ctrl+Alt+G ungroups in place', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const { context, page, errors } = await open(server)
+  const start = worlds(server)
+  const startTree = treeOf(server)
+  const startTransforms = new Map(server.scene.objects.map((o) => [o.id, o.transform]))
+  const moved = [gid('a'), gid('b'), gid('c')]
+
+  await pick(page, ['箱 A', '箱 B', '箱 C'])
+  await page.keyboard.press(`${modKey}+KeyG`)
+  await waitFor(() => server.commands.length === 1, 'group')
+  await saved(page)
+  const op = server.commands[0].payload.operations
+  assert.equal(op.length, 1)
+  assert.equal(op[0].op, 'reparent_objects')
+  assert.equal(server.revision, 2, 'one revision')
+  const g = op[0].create_groups[0].id
+  assert.deepEqual(moved.map((id) => server.object(id).parent_id), [g, g, g])
+  assert.equal(server.object(g).parent_id, null, 'parents differ: the group goes to the root')
+  validTree(server)
+  sameWorlds(start, worlds(server), moved)
+  await page.getByRole('treeitem', { name: /分组 1/ }).waitFor()
+
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo')
+  await saved(page)
+  assert.equal(server.commands[1].payload.operations[0].op, 'reparent_objects')
+  assert.deepEqual(treeOf(server), startTree, 'back under their old parents, in their old order')
+  for (const id of moved) {
+    const [t, u] = [server.object(id).transform, startTransforms.get(id)]
+    assert.ok([...t.position, ...t.scale].every((v, i) => Math.abs(v - [...u.position, ...u.scale][i]) < 1e-6), `${id} transform restored`)
+  }
+
+  // Redo, then ungroup with Ctrl+Alt+G.
+  await page.keyboard.press(`${modKey}+Shift+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'redo')
+  await saved(page)
+  await page.getByRole('treeitem', { name: /分组 1/ }).click()
+  await page.keyboard.press(`${modKey}+Alt+KeyG`)
+  await waitFor(() => server.commands.length === 4, 'ungroup')
+  await saved(page)
+  assert.equal(server.object(g), undefined, 'the group is gone')
+  assert.deepEqual(moved.map((id) => server.object(id).parent_id), [null, null, null])
+  validTree(server)
+  sameWorlds(start, worlds(server), moved)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-7: Ctrl+P onto a primitive says why and changes nothing; dragging into a turned, scaled group keeps the object in place', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const { context, page, errors } = await open(server)
+  await pick(page, ['台', '箱 C'])
+  await page.keyboard.press(`${modKey}+KeyP`)
+  await page.locator('.cc-scene-hint').filter({ hasText: '只能挂到分组或空物体下' }).waitFor()
+  await sleep(300)
+  assert.equal(server.commands.length, 0, 'the scene is unchanged')
+
+  const start = worlds(server)
+  const row = page.getByRole('treeitem', { name: /箱 C/ })
+  // Dragging a selected row takes the whole selection; this one goes alone.
+  await row.click()
+  const target = page.getByRole('treeitem', { name: /支架/ })
+  const box = await target.boundingBox()
+  await row.dragTo(target, { targetPosition: { x: 60, y: box.height / 2 } })
+  await waitFor(() => server.commands.length === 1, 'drop')
+  await saved(page)
+  assert.equal(server.object(gid('c')).parent_id, gid('p'))
+  validTree(server)
+  sameWorlds(start, worlds(server), [gid('c')])
+  // The list shows it inside 支架, indented under it.
+  let names = []
+  await waitFor(async () => {
+    names = await page.getByRole('treeitem').allTextContents()
+    return names.findIndex((n) => n.includes('箱 C')) === names.findIndex((n) => n.includes('箱 A')) + 1
+  }, 'the list shows the new hierarchy').catch(() => assert.fail(`list order ${names}`))
+  const pad = async (name) => parseFloat(await page.getByRole('treeitem', { name: new RegExp(name) }).evaluate((e) => e.style.paddingLeft))
+  assert.ok((await pad('箱 C')) > (await pad('支架')))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-7: grouping while the assistant moves one of the objects asks first, and 重新应用 keeps it where the assistant put it', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const { context, page, errors } = await open(server)
+  await pick(page, ['箱 B', '箱 C'])
+  // The assistant moves C; the editor has not heard yet.
+  server.external([{ op: 'update_objects', updates: [{ object_id: gid('c'), transform: { ...identity(), position: [6, 1, -2] } }] }], { actor: 'agent' })
+  const moved = worlds(server)
+  await page.keyboard.press(`${modKey}+KeyG`)
+  await page.getByRole('alert').filter({ hasText: '重新应用' }).waitFor()
+  assert.equal(server.scene.objects.some((o) => o.kind === 'group' && o.name.startsWith('分组')), false, 'the grouping did not land')
+  assert.deepEqual(server.object(gid('c')).transform.position, [6, 1, -2], 'nothing jumped or went missing')
+  await page.getByRole('button', { name: '重新应用我的修改' }).click()
+  await waitFor(() => server.scene.objects.some((o) => o.name === '分组 1'), 'grouped on the latest')
+  await saved(page)
+  validTree(server)
+  sameWorlds(moved, worlds(server), [gid('b'), gid('c')])
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- AC-1 display modes --------------------------------------------------------
+
+/** The share of pixels within a small distance of one colour. */
+async function colorShare(page, png, [r, g, b]) {
+  return page.evaluate(async ([src, r, g, b]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - r) + Math.abs(p[i + 1] - g) + Math.abs(p[i + 2] - b) < 12) n++
+    return n / (p.length / 4)
+  }, [`data:image/png;base64,${png.toString('base64')}`, r, g, b])
+}
+const wireGrey = [0x3d, 0x3f, 0x43]
+const pressed = (page, name) => page.getByRole('group', { name: '显示模式' }).getByRole('button', { name, exact: true }).getAttribute('aria-pressed')
+
+await check('AC-1: Z switches the shading, Shift+Z goes to wireframe and back; it is kept here, never an edit', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  const { box } = await viewportCenter(page)
+  assert.equal(await pressed(page, '白模'), 'true', 'a clay scene opens solid')
+  await page.mouse.move(box.x + 300, box.y + 200)
+  await page.keyboard.press('KeyZ')
+  await page.getByRole('menuitem', { name: '线框', exact: true }).click()
+  await waitFor(async () => (await colorShare(page, await page.screenshot({ clip: box }), wireGrey)) > 0.5, 'a wireframe view')
+  assert.equal(await pressed(page, '线框'), 'true')
+  await page.keyboard.press('Shift+KeyZ')
+  await waitFor(async () => (await pressed(page, '白模')) === 'true', 'Shift+Z goes back')
+  assert.ok((await colorShare(page, await page.screenshot({ clip: box }), wireGrey)) < 0.05, 'solid again')
+  await page.getByRole('group', { name: '显示模式' }).getByRole('button', { name: '最终渲染' }).click()
+  await page.keyboard.press('Shift+KeyZ')
+  await page.keyboard.press('Shift+KeyZ')
+  assert.equal(await pressed(page, '最终渲染'), 'true', 'Shift+Z comes back to the mode before wireframe')
+
+  // Cmd+Z undoes the add, not the shading.
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo the add')
+  await saved(page)
+  assert.equal(await pressed(page, '最终渲染'), 'true', 'undo leaves the shading alone')
+  assert.ok(server.commands.every((c) => c.payload.operations.every((op) => op.op !== 'set_render')), 'never written to the scene')
+  assert.equal(server.scene.render.mode, 'clay')
+
+  await page.reload()
+  await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
+  assert.equal(await pressed(page, '最终渲染'), 'true', 'kept in this browser')
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Another browser has no choice yet: the scene's suggestion decides.
+  const lit = new SceneServer()
+  lit.scene.render.mode = 'lit'
+  const other = await open(lit)
+  assert.equal(await pressed(other.page, '最终渲染'), 'true', 'a lit scene opens rendered')
+  await other.context.close()
+})
+
+/** A screenshot once two in a row agree: the view has stopped changing. */
+async function settledShot(page, clip) {
+  let png = await page.screenshot({ clip })
+  for (let i = 0; i < 30; i++) {
+    await sleep(250)
+    const next = await page.screenshot({ clip })
+    const still = (await pixelDiff(page, png, next)) < 0.0005
+    png = next
+    if (still) return png
+  }
+  return png
+}
+
+await check('AC-1: lights light the rendered view; material preview ignores lights and the sun', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const lamp = gid('lamp')
+  seed(server, [{ id: lamp, kind: 'light', name: '灯', order: 9, transform: { ...identity(), position: [-1, 2.5, 1] }, light: { type: 'point', color: '#ffb070', intensity: 60, cast_shadow: true, distance: 0, decay: 2 } }])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const shading = (name) => page.getByRole('group', { name: '显示模式' }).getByRole('button', { name }).click()
+  const change = async (ops) => {
+    server.external(ops)
+    await page.evaluate(() => window.__invalidate())
+    await sleep(600)
+  }
+  const dim = [{ op: 'update_objects', updates: [{ object_id: lamp, light: { intensity: 0 } }] }]
+  const bright = [{ op: 'update_objects', updates: [{ object_id: lamp, light: { intensity: 60 } }] }]
+  const sunset = (deg) => [{ op: 'set_environment', environment: { ...server.scene.environment, sky: { ...server.scene.environment.sky, sun_azimuth_deg: deg } } }]
+
+  await shading('最终渲染')
+  const lit = await settledShot(page, box)
+  await change(dim)
+  const dark = await settledShot(page, box)
+  const byLight = await pixelDiff(page, lit, dark)
+  assert.ok(byLight > 0.01, `the lamp lights the rendered view (${(byLight * 100).toFixed(2)}% differ)`)
+  await change(bright)
+
+  await shading('材质预览')
+  const before = await settledShot(page, box)
+  await change(dim)
+  await change(sunset(300))
+  const after = await settledShot(page, box)
+  const preview = await pixelDiff(page, before, after)
+  assert.ok(preview < 0.002, `material preview does not change (${(preview * 100).toFixed(3)}% differ)`)
+
+  await shading('白模')
+  const clay = await settledShot(page, box)
+  await change(bright)
+  await change([{ op: 'update_objects', updates: [{ object_id: gid('c'), material_slots: { main: { preset: 'stone_brick@1', params: {} } } }] }])
+  const clayAfter = await settledShot(page, box)
+  const byClay = await pixelDiff(page, clay, clayAfter)
+  assert.ok(byClay < 0.002, `clay ignores lights and materials (${(byClay * 100).toFixed(3)}% differ)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- AC-2 materials ------------------------------------------------------------
+
+const boxOf = (name, order, transform, params, slot) => ({
+  id: gid(name), kind: 'primitive', name, order, transform: { ...identity(), ...transform },
+  primitive: { builtin: 'box@1', params }, material_slots: slot ? { main: slot } : {},
+})
+const shading = (page, name) => page.getByRole('group', { name: '显示模式' }).getByRole('button', { name }).click()
+
+/** Blobs of pixels brighter than a level in all channels, 4-connected, at least min pixels. */
+async function brightBlobs(page, png, level, min) {
+  return page.evaluate(async ([src, level, min]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    const w = c.width
+    const h = c.height
+    const seen = new Uint8Array(w * h)
+    const bright = (i) => p[i * 4] >= level && p[i * 4 + 1] >= level && p[i * 4 + 2] >= level
+    let blobs = 0
+    for (let i = 0; i < w * h; i++) {
+      if (seen[i] || !bright(i)) continue
+      let size = 0
+      const stack = [i]
+      seen[i] = 1
+      while (stack.length) {
+        const j = stack.pop()
+        size++
+        const jx = j % w
+        for (const k of [j - 1, j + 1, j - w, j + w]) {
+          if (k < 0 || k >= w * h || seen[k] || (Math.abs((k % w) - jx) > 1) || !bright(k)) continue
+          seen[k] = 1
+          stack.push(k)
+        }
+      }
+      if (size >= min) blobs++
+    }
+    return blobs
+  }, [`data:image/png;base64,${png.toString('base64')}`, level, min])
+}
+
+await check('AC-2: every preset compiles and draws in both material looks', async () => {
+  const server = new SceneServer()
+  const ids = JSON.parse(readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')).materials.map((m) => m.id)
+  seed(server, ids.map((id, i) => boxOf(`m${String.fromCharCode(97 + i)}`, 10 + i, { position: [(i % 5) * 1.6 - 3.2, 0, Math.floor(i / 5) * 1.6 - 1.6] }, { width: 1.2, height: 1.2, depth: 1.2 }, { preset: id, params: {} })))
+  // Looking down 35.5° from 5 m up and 7 m back: all fifteen in the frame.
+  seed(server, [{ id: gid('cam'), kind: 'camera', name: '样张', order: 40, transform: { position: [0, 5, 7], rotation: [-0.30508, 0, 0, 0.95233], scale: [1, 1, 1] }, camera: {} }])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /样张/ }).click()
+  await page.keyboard.press('Digit0')
+  await page.locator('.cc-scene-camframe').waitFor()
+  await page.mouse.move(5, 5)
+  const box = await page.locator('.cc-scene-camframe').boundingBox()
+  const solid = await settledShot(page, box)
+  for (const name of ['材质预览', '最终渲染']) {
+    await shading(page, name)
+    const png = await settledShot(page, box)
+    assert.ok((await pixelDiff(page, solid, png)) > 0.05, `${name} draws the materials`)
+    if (process.env.SCENE_E2E_SHOTS) (await import('node:fs')).writeFileSync(`${process.env.SCENE_E2E_SHOTS}/c5-materials-${name}.png`, png)
+  }
+  assert.deepEqual(errors, [], 'no shader failed to compile')
+  await context.close()
+})
+
+await check('AC-2: a brick wall scaled 2× along X looks like one built twice as wide: no stretching', async () => {
+  const look = async (params, scale) => {
+    const server = new SceneServer()
+    seed(server, [boxOf('wall', 5, { position: [0, 0, 0], scale }, params, { preset: 'stone_brick@1', params: {} })])
+    const { context, page, errors } = await open(server)
+    await page.keyboard.press('Digit1')
+    await shading(page, '材质预览')
+    const { box } = await viewportCenter(page)
+    const png = await settledShot(page, box)
+    assert.deepEqual(errors, [])
+    return { png, page, context }
+  }
+  const wide = await look({ width: 4, height: 1.5, depth: 0.3 }, [1, 1, 1])
+  const scaled = await look({ width: 2, height: 1.5, depth: 0.3 }, [2, 1, 1])
+  const diff = await pixelDiff(wide.page, wide.png, scaled.png)
+  assert.ok(diff < 0.003, `the same bricks (${(diff * 100).toFixed(3)}% of pixels differ)`)
+  await wide.context.close()
+  await scaled.context.close()
+})
+
+await check('AC-2: polished metal mirrors the sky with one sun highlight, not two', async () => {
+  const server = new SceneServer()
+  server.scene.render.exposure_ev = -2
+  seed(server, [{
+    id: gid('ball'), kind: 'primitive', name: '球', order: 5, transform: { ...identity(), position: [0, 0, 0] },
+    primitive: { builtin: 'sphere@1', params: { radius: 2 } }, material_slots: { main: { preset: 'principled@1', params: { metalness: 1, roughness: 0.2 } } },
+  }])
+  const { context, page, errors } = await open(server)
+  await shading(page, '最终渲染')
+  await page.getByRole('treeitem', { name: /球/ }).click()
+  await page.keyboard.press('Period')
+  await page.keyboard.press('Escape')
+  const { box } = await viewportCenter(page)
+  const png = await settledShot(page, box)
+  await shot(page, 'c5-metal')
+  const blobs = await brightBlobs(page, png, 250, 4)
+  assert.equal(blobs, 1, `sun highlights on the ball: ${blobs}`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-2: a far brick wall barely changes when the camera moves half a pixel', async () => {
+  const server = new SceneServer()
+  const cam = gid('cam')
+  seed(server, [
+    boxOf('wall', 5, { position: [0, 0, -60] }, { width: 60, height: 20, depth: 0.5 }, { preset: 'stone_brick@1', params: {} }),
+    { id: cam, kind: 'camera', name: '机位', order: 6, transform: { ...identity(), position: [0, 6, 0] }, camera: {} },
+  ])
+  const { context, page, errors } = await open(server)
+  await shading(page, '最终渲染')
+  await page.getByRole('treeitem', { name: /机位/ }).click()
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  await page.mouse.move(5, 5)
+  const fb = await frame.boundingBox()
+  const clip = { x: Math.round(fb.x + 10), y: Math.round(fb.y + 40), width: Math.round(fb.width * 0.7), height: Math.round(fb.height * 0.5) }
+  const before = await settledShot(page, clip)
+  // 35 mm on a 36 mm sensor: the frame is 2 × 60 × 18/35 m wide at the wall.
+  const halfPixel = (0.5 * 2 * 60 * (18 / 35)) / fb.width
+  server.external([{ op: 'update_objects', updates: [{ object_id: cam, transform: { ...identity(), position: [halfPixel, 6, 0] } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await sleep(800)
+  const after = await settledShot(page, clip)
+  const diff = await pixelDiff(page, before, after)
+  console.log(`far brick wall, half a pixel over: ${(diff * 100).toFixed(2)}% of pixels differ visibly`)
+  assert.ok(diff < 0.02, `the far wall shimmers (${(diff * 100).toFixed(2)}% differ)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-2: a see-through box shows what is behind it', async () => {
+  const look = async (opacity) => {
+    const server = new SceneServer()
+    seed(server, [
+      boxOf('back', 5, { position: [0, 0, -2] }, { width: 3, height: 3, depth: 0.2 }, { preset: 'principled@1', params: { color: '#c02020' } }),
+      boxOf('glass', 6, { position: [0, 0, 0] }, { width: 1.5, height: 1.5, depth: 1.5 }, { preset: 'principled@1', params: { color: '#ffffff', opacity } }),
+    ])
+    const { context, page, errors } = await open(server)
+    await page.keyboard.press('Digit1')
+    await shading(page, '材质预览')
+    const { x, y } = await viewportCenter(page)
+    await shot(page, `c5-see-through-${opacity}`)
+    // Inside the front box, seen straight on.
+    const png = await settledShot(page, { x: x - 20, y: y - 55, width: 40, height: 30 })
+    assert.deepEqual(errors, [])
+    await context.close()
+    return png
+  }
+  const opaque = await look(1)
+  const clear = await look(0.25)
+  const page = (await open(new SceneServer())).page
+  const diff = await pixelDiff(page, opaque, clear)
+  assert.ok(diff > 0.5, `the red wall shows through (${(diff * 100).toFixed(1)}% differ)`)
+  await page.context().close()
+})
+
+// --- AC-2 / AC-3 material editing ----------------------------------------------
+
+/** Two pillars of the template model (slots stone and trim) and a box. */
+function materialScene(server) {
+  const rev = server.seedModel()
+  server.seedInstance(gid('pa'), rev, -2, '柱 A')
+  server.seedInstance(gid('pb'), rev, 2, '柱 B')
+  server.object(gid('pa')).material_slots = { stone: { preset: 'marble@1', params: { scale: 2 } }, trim: { preset: 'paint@1', params: { color: '#203040' } } }
+  seed(server, [{ ...boxOf('box', 9, { position: [0, 0, 3] }, { width: 1, height: 1, depth: 1 }, { preset: 'wood@1', params: {} }), name: '箱' }])
+}
+const objectMenu = async (page, item) => {
+  await page.locator('.cc-scene-menubar').getByRole('button', { name: '物件' }).click()
+  await page.getByRole('menuitem', { name: item }).click()
+}
+
+await check('AC-3: 复制材质到选中物件 copies by slot name in one revision, one Cmd+Z; a one-slot box fills every slot', async () => {
+  const server = new SceneServer()
+  materialScene(server)
+  const { context, page, errors } = await open(server)
+  await pick(page, ['柱 B', '箱', '柱 A'])
+  await objectMenu(page, '复制材质到选中物件')
+  await waitFor(() => server.commands.length === 1, 'copy')
+  await saved(page)
+  const ops = server.commands[0].payload.operations
+  assert.equal(ops.length, 1)
+  assert.deepEqual(ops[0].updates.map((u) => u.object_id), [gid('pb')], 'the box has no stone or trim slot: left alone')
+  assert.deepEqual(server.object(gid('pb')).material_slots, server.object(gid('pa')).material_slots)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo')
+  await saved(page)
+  assert.deepEqual(server.object(gid('pb')).material_slots, {}, 'one Cmd+Z takes it back')
+
+  await pick(page, ['柱 A', '柱 B', '箱'])
+  await objectMenu(page, '复制材质到选中物件')
+  await waitFor(() => server.commands.length === 3, 'copy from the box')
+  await saved(page)
+  for (const id of [gid('pa'), gid('pb')]) assert.deepEqual(server.object(id).material_slots, { stone: { preset: 'wood@1', params: {} }, trim: { preset: 'wood@1', params: {} } })
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-2: a material chosen with two boxes selected goes to both in one update', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('b1', 5, { position: [-1, 0, 0] }, { width: 1, height: 1, depth: 1 }), boxOf('b2', 6, { position: [1, 0, 0] }, { width: 1, height: 1, depth: 1 })])
+  const { context, page, errors } = await open(server)
+  await pick(page, ['b1', 'b2'])
+  await page.getByLabel('main 的材质').selectOption('stone_brick@1')
+  await waitFor(() => server.commands.length === 1, 'set')
+  await saved(page)
+  const op = server.commands[0].payload.operations[0]
+  assert.deepEqual(op.updates.map((u) => u.object_id), [gid('b1'), gid('b2')])
+  for (const id of [gid('b1'), gid('b2')]) assert.equal(server.object(id).material_slots.main.preset, 'stone_brick@1')
+  // One field edit goes to both too.
+  await page.getByLabel('砖块尺寸（m）').fill('0.5')
+  await page.getByLabel('砖块尺寸（m）').press('Enter')
+  await waitFor(() => server.commands.length === 2, 'param')
+  assert.ok([gid('b1'), gid('b2')].every((id) => server.object(id).material_slots.main.params.brick_size === 0.5))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-3: 复制材质 in one scene, 粘贴材质 on an object of another', async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  const one = new SceneServer()
+  materialScene(one)
+  const a = await open(one, { context })
+  await a.page.getByRole('treeitem', { name: /柱 A/ }).click()
+  await a.page.getByLabel('槽位 stone').getByRole('button', { name: '复制材质' }).click()
+  await a.page.close()
+  const two = new SceneServer()
+  seed(two, [boxOf('other', 5, { position: [0, 0, 0] }, { width: 1, height: 1, depth: 1 })])
+  const b = await open(two, { context })
+  await b.page.getByRole('treeitem', { name: /other/ }).click()
+  await b.page.getByLabel('槽位 main').getByRole('button', { name: '粘贴材质' }).click()
+  await waitFor(() => two.commands.length === 1, 'paste')
+  await saved(b.page)
+  assert.deepEqual(two.object(gid('other')).material_slots.main, { preset: 'marble@1', params: { scale: 2 } })
+  assert.deepEqual([...a.errors, ...b.errors], [])
+  await context.close()
+})
+
+// --- AC-4 / AC-5 lights and environment ---------------------------------------
+
+/**
+ * Mean luma and colour of a screenshot, the share of pixels brighter than
+ * a level, and the share darker than ratio × the median: shadow, relative
+ * to how lit the picture is overall.
+ */
+async function lumaStats(page, png, { level = 60, ratio = 0.6 } = {}) {
+  return page.evaluate(async ([src, level, ratio]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    const n = p.length / 4
+    const luma = new Float32Array(n)
+    let r = 0, g = 0, b = 0
+    for (let i = 0; i < n; i++) {
+      r += p[i * 4]
+      g += p[i * 4 + 1]
+      b += p[i * 4 + 2]
+      luma[i] = 0.2126 * p[i * 4] + 0.7152 * p[i * 4 + 1] + 0.0722 * p[i * 4 + 2]
+    }
+    const sorted = Float32Array.from(luma).sort()
+    const median = sorted[n >> 1]
+    let bright = 0, dark = 0, sum = 0
+    for (const v of luma) {
+      sum += v
+      if (v > level) bright++
+      if (v < ratio * median) dark++
+    }
+    return { mean: sum / n, bright: bright / n, dark: dark / n, r: r / n, g: g / n, b: b / n }
+  }, [`data:image/png;base64,${png.toString('base64')}`, level, ratio])
+}
+/** Like pixelDiff, counting only solid areas: a pixel whose neighbours 2 px away differ too, so thin lines do not count. */
+async function solidDiff(page, a, b, min) {
+  return page.evaluate(async ([a, b, min]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const c = document.createElement('canvas')
+    c.width = x.width
+    c.height = x.height
+    const g = c.getContext('2d')
+    g.drawImage(x, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    g.clearRect(0, 0, c.width, c.height)
+    g.drawImage(y, 0, 0)
+    const q = g.getImageData(0, 0, c.width, c.height).data
+    const w = c.width
+    const h = c.height
+    const differs = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) differs[i] = Math.abs(p[i * 4] - q[i * 4]) + Math.abs(p[i * 4 + 1] - q[i * 4 + 1]) + Math.abs(p[i * 4 + 2] - q[i * 4 + 2]) > min ? 1 : 0
+    let n = 0
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+      const i = y * w + x
+      if (differs[i] && differs[i - 2] && differs[i + 2] && differs[i - 2 * w] && differs[i + 2 * w]) n++
+    }
+    return n / (w * h)
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
+}
+const night = { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ffffff', intensity: 0 }, fog: null }
+const lightAt = (server, id) => server.object(id).light
+const focusEditor = (page) => page.locator('.cc-scene-editor').focus()
+
+await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/12 and narrows the light; shadows show; spot → point keeps the rest; Cmd+Z', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { x, y, box } = await viewportCenter(page)
+  await shading(page, '最终渲染')
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '聚光', exact: true }).click()
+  await waitFor(() => server.commands.length === 1, 'add a spot')
+  const spot = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([spot.kind, spot.name, spot.light.type], ['light', '聚光 1', 'spot'])
+  assert.ok(Math.abs(spot.transform.position[1] - 2) < 1e-9, `above the pointed ground: ${spot.transform.position}`)
+  await saved(page)
+  // From the left, 30° down at the post, so its shadow falls in the light.
+  server.external([{ op: 'update_objects', updates: [{ object_id: spot.id, transform: { ...spot.transform, position: [-1.5, 1.2, 0], rotation: [-0.1830127018922193, -0.6830127018922193, -0.18301270189221933, 0.6830127018922194] } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await sleep(600)
+  // Brighter than the grid lines: only what the spot lights.
+  const lit = { level: 200 }
+  const wide = await lumaStats(page, await settledShot(page, box), lit)
+  assert.ok(wide.bright > 0.01, `the spot lights the ground (${(wide.bright * 100).toFixed(2)}% lit)`)
+
+  const cone = page.getByLabel('光锥角（°）')
+  await cone.fill('30')
+  await cone.press('Enter')
+  await waitFor(() => Math.abs(lightAt(server, spot.id).angle - Math.PI / 12) < 1e-9, 'a 30° cone is a π/12 half angle')
+  const narrow = await lumaStats(page, await settledShot(page, box), lit)
+  await shot(page, 'c5-spot-30')
+  assert.ok(narrow.bright < wide.bright * 0.6, `a narrower cone lights less (${(wide.bright * 100).toFixed(2)}% → ${(narrow.bright * 100).toFixed(2)}%)`)
+
+  await page.getByLabel('投射阴影').check()
+  await waitFor(() => lightAt(server, spot.id).cast_shadow === true, 'shadows on')
+  const shadow = await lumaStats(page, await settledShot(page, box), lit)
+  await shot(page, 'c5-spot-shadow')
+  assert.ok(shadow.bright < narrow.bright * 0.8, `the post casts a shadow in the light (${(narrow.bright * 100).toFixed(2)}% → ${(shadow.bright * 100).toFixed(2)}% lit)`)
+
+  await page.getByLabel('灯光类型').selectOption('point')
+  await waitFor(() => lightAt(server, spot.id).type === 'point', 'to a point light')
+  assert.deepEqual(lightAt(server, spot.id), { type: 'point', color: '#ffffff', intensity: spot.light.intensity, cast_shadow: true, distance: 0, decay: 2 })
+  assert.equal(await page.getByLabel('光锥角（°）').count(), 0, 'the cone fields go')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, spot.id).type === 'spot', 'undo')
+  assert.ok(Math.abs(lightAt(server, spot.id).angle - Math.PI / 12) < 1e-9, 'the spot comes back with its cone')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens shadows and turns the sky to dusk; Cmd+Z', async () => {
+  const server = new SceneServer()
+  const post = gid('post')
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.getByLabel('环境', { exact: true }).waitFor()
+  const show = async (visible) => {
+    server.external([{ op: 'update_objects', updates: [{ object_id: post, visible }] }])
+    await page.evaluate(() => window.__invalidate())
+    await sleep(600)
+  }
+  /** The post and its shadow: what hiding the post changes. */
+  const footprint = async (name) => {
+    const standing = await settledShot(page, box)
+    await shot(page, `c5-sun-${name}`)
+    await show(false)
+    const gone = await settledShot(page, box)
+    await show(true)
+    return solidDiff(page, standing, gone, 12)
+  }
+  const skyBand = { x: box.x, y: box.y + 4, width: box.width, height: 30 }
+  const warmth = async () => {
+    const band = await lumaStats(page, await settledShot(page, skyBand))
+    return band.r / Math.max(1, band.b)
+  }
+  const noon = await footprint('35')
+  await shading(page, '最终渲染')
+  const noonLit = await footprint('35-lit')
+  const noonSky = await warmth()
+  await shading(page, '白模')
+  const elevation = page.getByRole('spinbutton', { name: '太阳高度（°）' })
+  await elevation.fill('5')
+  await elevation.press('Enter')
+  await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 5, 'the sun goes down')
+  assert.deepEqual(server.scene.environment, { sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, 'only the elevation changes')
+  assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
+  const dusk = await footprint('5')
+  assert.ok(dusk > noon * 1.5, `a longer clay shadow (${(noon * 100).toFixed(2)}% → ${(dusk * 100).toFixed(2)}% of the view)`)
+  await shading(page, '最终渲染')
+  const duskLit = await footprint('5-lit')
+  assert.ok(duskLit > noonLit * 1.5, `a longer rendered shadow (${(noonLit * 100).toFixed(2)}% → ${(duskLit * 100).toFixed(2)}% of the view)`)
+  const duskSky = await warmth()
+  assert.ok(duskSky > noonSky * 1.3, `a dusk sky (red/blue ${noonSky.toFixed(2)} → ${duskSky.toFixed(2)})`)
+  await shading(page, '白模')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 35, 'undo')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-5: a colour sky and fog show as set', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.getByLabel('天空类型').selectOption('color')
+  await waitFor(() => server.scene.environment.sky.kind === 'color', 'a colour sky')
+  assert.deepEqual(server.scene.environment.sky, { kind: 'color', color: '#a7b6c6' }, 'only the colour sky\'s fields')
+  await page.getByLabel('天空颜色').fill('#2050c0')
+  await waitFor(() => server.scene.environment.sky.color === '#2050c0', 'sky colour')
+  await shading(page, '最终渲染')
+  const clear = await settledShot(page, box)
+  await page.getByLabel('雾', { exact: true }).check()
+  await waitFor(() => !!server.scene.environment.fog, 'fog on')
+  const near = page.getByRole('spinbutton', { name: '起始（m）' })
+  await near.fill('1')
+  await near.press('Enter')
+  const far = page.getByRole('spinbutton', { name: '结束（m）' })
+  await far.fill('12')
+  await far.press('Enter')
+  await waitFor(() => server.scene.environment.fog?.far === 12 && server.scene.environment.fog.near === 1, 'fog range')
+  const foggy = await settledShot(page, box)
+  await shot(page, 'c5-fog')
+  const diff = await pixelDiff(page, clear, foggy)
+  assert.ok(diff > 0.2, `the ground fades into fog (${(diff * 100).toFixed(1)}% differ)`)
+  // Level with the horizon, the sky fills the top of the view; fog leaves the background alone.
+  await page.keyboard.press('Digit1')
+  const sky = { x: box.x, y: box.y + 10, width: box.width, height: 40 }
+  for (const mode of ['白模', '最终渲染']) {
+    await shading(page, mode)
+    const top = await lumaStats(page, await settledShot(page, sky))
+    assert.ok(top.b > top.r + 60, `${mode}: the sky is the colour set (rgb ${top.r.toFixed(0)}, ${top.g.toFixed(0)}, ${top.b.toFixed(0)})`)
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-5: exposure +2 brightens the rendered view of a room lit by two wall lights, not the clay', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  server.scene.render.exposure_ev = 0
+  seed(server, [
+    boxOf('wall', 5, { position: [0, 0, -1.5] }, { width: 6, height: 3, depth: 0.2 }),
+    { id: gid('lampa'), kind: 'light', name: '壁灯 A', order: 6, transform: { ...identity(), position: [-1.5, 2, -1.2] }, light: { type: 'point', color: '#ffd2a0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 } },
+    { id: gid('lampb'), kind: 'light', name: '壁灯 B', order: 7, transform: { ...identity(), position: [1.5, 2, -1.2] }, light: { type: 'point', color: '#ffd2a0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 } },
+  ])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const clayBefore = await settledShot(page, box)
+  await shot(page, 'c5-room-clay')
+  await shading(page, '最终渲染')
+  const before = await lumaStats(page, await settledShot(page, box))
+  const ev = page.getByRole('spinbutton', { name: '曝光补偿（EV）' })
+  await ev.fill('2')
+  await ev.press('Enter')
+  await waitFor(() => server.scene.render.exposure_ev === 2, 'exposure')
+  assert.deepEqual(server.commands.at(-1).payload.operations, [{ op: 'set_render', render: { exposure_ev: 2 } }], 'only the exposure is written')
+  assert.equal(server.scene.render.mode, 'clay', 'the mode stays')
+  const after = await lumaStats(page, await settledShot(page, box))
+  assert.ok(after.mean > before.mean * 1.3, `brighter (${before.mean.toFixed(1)} → ${after.mean.toFixed(1)})`)
+  await shading(page, '白模')
+  const clayAfter = await settledShot(page, box)
+  await shot(page, 'c5-room-clay-after')
+  const clay = await pixelDiff(page, clayBefore, clayAfter)
+  // An exposure leaking into the clay would change nearly every pixel; far grid lines flicker a little.
+  assert.ok(clay < 0.005, `the clay does not change (${(clay * 100).toFixed(3)}% differ)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- AC-6 lit export ------------------------------------------------------------
+
+/** A picture as a grid of block means (RGB, 0–255), cols × rows; clip insets each side by a share. */
+async function blocks(page, png, cols, rows, inset = 0) {
+  return page.evaluate(async ([src, cols, rows, inset]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    const x0 = Math.round(c.width * inset), y0 = Math.round(c.height * inset)
+    const w = c.width - 2 * x0, h = c.height - 2 * y0
+    const out = new Float64Array(cols * rows * 3)
+    const n = new Float64Array(cols * rows)
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+      const b = Math.min(rows - 1, Math.floor((y * rows) / h)) * cols + Math.min(cols - 1, Math.floor((xx * cols) / w))
+      const i = ((y + y0) * c.width + xx + x0) * 4
+      out[b * 3] += p[i]
+      out[b * 3 + 1] += p[i + 1]
+      out[b * 3 + 2] += p[i + 2]
+      n[b]++
+    }
+    return Array.from(out, (v, i) => v / n[Math.floor(i / 3)])
+  }, [`data:image/png;base64,${png.toString('base64')}`, cols, rows, inset])
+}
+const meanAbs = (a, b) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0) / a.length
+
+await check('AC-6: in the rendered view the dialog ticks all three passes; 3 cameras give 9 images, and lit matches the camera view', async () => {
+  const { server, a, b } = exportScene(false)
+  const c = objectID('camc')
+  const lamp = objectID('lamp')
+  server.scene.render.exposure_ev = 1
+  server.external([
+    { op: 'add_objects', objects: [
+      cameraObject(c, '机位 C', 6, { focal_mm: 28 }, [-5, 2, 7]),
+      { id: lamp, kind: 'light', name: '灯', parent_id: null, order: 7, transform: { ...identity(), position: [1.5, 2, 1.5] }, visible: true, locked: false, light: { type: 'point', color: '#ffb070', intensity: 30, cast_shadow: true } },
+    ] },
+    { op: 'update_objects', updates: [
+      { object_id: objectID('near'), material_slots: { main: { preset: 'stone_brick@1', params: {} } } },
+      { object_id: objectID('far'), material_slots: { main: { preset: 'paint@1', params: { color: '#3060a0' } } } },
+    ] },
+  ])
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  await shading(page, '最终渲染')
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  for (const name of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(name).isChecked(), `${name} ticked`)
+  assert.match(await dialog.textContent(), /共 9 张/)
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.waitFor({ state: 'detached' })
+  const shots = server.exports[0].payload.shots.map((s) => ({ camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
+  assert.deepEqual(shots.map((s) => [s.camera, s.images.map((i) => i.pass)]), [a, b, c].map((id) => [id, ['clay', 'line', 'lit']]))
+  const [clay, , lit] = shots[0].images.map((i) => i.png)
+  assert.deepEqual(pngSize(lit), { width: 2048, height: 1365 })
+  if (process.env.SCENE_E2E_SHOTS) for (const [name, png] of [['clay', clay], ['lit', lit]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5-export-${name}.png`, png)
+
+  // Through camera A in the rendered view: the same picture, smaller.
+  await page.getByRole('treeitem', { name: /机位 A/ }).click()
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  const fb = await frame.boundingBox()
+  const view = await settledShot(page, fb)
+  await shot(page, 'c5-camera-view-lit')
+  const [cols, rows] = [24, 16]
+  const want = await blocks(page, view, cols, rows, 0.03)
+  const fromLit = meanAbs(await blocks(page, lit, cols, rows, 0.03), want)
+  const fromClay = meanAbs(await blocks(page, clay, cols, rows, 0.03), want)
+  console.log(`lit export vs camera view: ${fromLit.toFixed(1)}; clay export vs camera view: ${fromClay.toFixed(1)}`)
+  assert.ok(fromLit < 8, `the lit export looks like the rendered camera view (mean difference ${fromLit.toFixed(1)})`)
+  assert.ok(fromClay > fromLit * 2, `and unlike the clay export (${fromClay.toFixed(1)})`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- 3.4 calibration: the reference scenes ----------------------------------
+
+/** A yard: a white box, a concrete wall, a wooden crate and a metal ball on the ground. */
+const yard = (server, sky) => {
+  server.scene.environment = { sky, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  seed(server, [
+    boxOf('white', 5, { position: [-1.5, 0, 0] }, { width: 1, height: 1, depth: 1 }),
+    boxOf('wall', 6, { position: [0.5, 0, -2] }, { width: 4, height: 2.5, depth: 0.2 }, { preset: 'concrete@1', params: {} }),
+    boxOf('crate', 7, { position: [1.2, 0, 0.5] }, { width: 0.8, height: 0.8, depth: 0.8 }, { preset: 'wood@1', params: {} }),
+    { id: gid('ball'), kind: 'primitive', name: 'ball', order: 8, transform: { ...identity(), position: [0, 0, 1.5] }, primitive: { builtin: 'sphere@1', params: { radius: 0.4 } }, material_slots: { main: { preset: 'metal@1', params: { rust: 0 } } } },
+  ])
+}
+/** A room 6 × 4 m, 3 m high, open towards the view, lit by two wall lights. */
+const room = (server, intensity) => {
+  server.scene.environment = { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  const wall = (name, order, position, size) => boxOf(name, order, { position }, { width: size[0], height: size[1], depth: size[2] }, { preset: 'plaster@1', params: {} })
+  const lamp = (name, order, x) => ({ id: gid(name), kind: 'light', name, order, transform: { ...identity(), position: [x, 2, -1.75] }, light: { type: 'point', color: '#ffd9b0', intensity, cast_shadow: true, distance: 0, decay: 2 } })
+  seed(server, [
+    wall('back', 5, [0, 0, -2], [6, 3, 0.2]),
+    wall('left', 6, [-3, 0, 0], [0.2, 3, 4]),
+    wall('right', 7, [3, 0, 0], [0.2, 3, 4]),
+    boxOf('sofa', 8, { position: [0, 0, -1] }, { width: 2, height: 0.8, depth: 0.9 }, { preset: 'fabric@1', params: {} }),
+    boxOf('table', 9, { position: [0, 0, 0.5] }, { width: 1, height: 0.45, depth: 0.6 }, { preset: 'wood@1', params: {} }),
+    lamp('lampa', 10, -1.8),
+    lamp('lampb', 11, 1.8),
+  ])
+}
+
+await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd lamps at 0 render in range', async () => {
+  const cases = [
+    { name: 'noon', ev: 0, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 55, sun_azimuth_deg: 135, turbidity: 3 }) },
+    { name: 'dusk', ev: 2, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }) },
+    { name: 'room', ev: 0, setup: (s) => room(s, 40) },
+  ]
+  const seen = {}
+  for (const c of cases) {
+    const server = new SceneServer()
+    c.setup(server)
+    server.scene.render.exposure_ev = c.ev
+    const { context, page, errors } = await open(server)
+    const { box } = await viewportCenter(page)
+    await shading(page, '最终渲染')
+    const all = await lumaStats(page, await settledShot(page, box), { level: 250 })
+    await shot(page, `c5-calibration-${c.name}`)
+    // The lower quarter is ground in the yard and the floor before the room.
+    const ground = await lumaStats(page, await settledShot(page, { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }))
+    seen[c.name] = { all, ground }
+    console.log(`${c.name} at EV ${c.ev}: mean ${all.mean.toFixed(0)}, clipped ${(all.bright * 100).toFixed(1)}%, ground ${ground.mean.toFixed(0)} (rgb ${[ground.r, ground.g, ground.b].map((v) => v.toFixed(0))})`)
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  const { noon, dusk, room: lamps } = seen
+  assert.ok(noon.ground.mean > 175 && noon.ground.mean < 220, 'sunlit light ground is bright, not blown')
+  assert.ok(Math.abs(noon.ground.r - noon.ground.b) < 12, 'daylight is neutral')
+  assert.ok(noon.all.bright < 0.01 && dusk.all.bright < 0.01, 'nothing clips outdoors')
+  assert.ok(dusk.ground.mean > 130 && dusk.ground.mean < 200, 'dusk at +2 is a little darker than noon')
+  assert.ok(dusk.ground.r - dusk.ground.b > 15, 'dusk light is warm')
+  assert.ok(lamps.all.mean > 40 && lamps.all.mean < 110 && lamps.all.bright < 0.02, 'the lamps light the room without blowing it out')
+})
+
+// --- AC-9 performance (opt-in: SCENE_E2E_PERF=1, needs the machine's GPU) ------
+
+/** About 200 objects in 8 materials, the sun and 4 lights of which 2 spots cast shadows (AC-9). */
+function perfScene(server) {
+  const presets = [
+    { preset: 'stone_brick@1', params: {} }, { preset: 'wood@1', params: {} }, { preset: 'metal@1', params: {} }, { preset: 'fabric@1', params: {} },
+    { preset: 'marble@1', params: {} }, { preset: 'tile@1', params: {} }, { preset: 'plaster@1', params: {} }, { preset: 'principled@1', params: { color: '#c04040', roughness: 0.3 } },
+  ]
+  const builtins = [['box@1', { width: 0.8, height: 0.8, depth: 0.8 }], ['cylinder@1', { radius_top: 0.35, radius_bottom: 0.35, height: 1.2, radial_segments: 24 }], ['sphere@1', { radius: 0.45, segments: 32 }]]
+  const objects = []
+  for (let i = 0; i < 196; i++) {
+    const [builtin, params] = builtins[i % 3]
+    // Zero-padded and closed with x: gid pads with zeros, so p1 and p10 would collide.
+    objects.push({ id: gid(`p${String(i).padStart(3, '0')}x`), kind: 'primitive', name: `件 ${i}`, order: 10 + i, transform: { ...identity(), position: [(i % 14) * 1.3 - 8.5, 0, Math.floor(i / 14) * 1.3 - 8.5] }, primitive: { builtin, params }, material_slots: { main: presets[i % 8] } })
+  }
+  const light = (name, order, position, rotation, light) => ({ id: gid(name), kind: 'light', name, order, transform: { position, rotation, scale: [1, 1, 1] }, light })
+  const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+  objects.push(
+    light('spota', 300, [-3, 5, 0], down, { type: 'spot', color: '#ffffff', intensity: 150, cast_shadow: true, distance: 0, decay: 2, angle: Math.PI / 6, penumbra: 0.2 }),
+    light('spotb', 301, [3, 5, 0], down, { type: 'spot', color: '#ffe0c0', intensity: 150, cast_shadow: true, distance: 0, decay: 2, angle: Math.PI / 6, penumbra: 0.2 }),
+    light('pointa', 302, [-5, 2, 4], identity().rotation, { type: 'point', color: '#ffd9b0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 }),
+    light('pointb', 303, [5, 2, 4], identity().rotation, { type: 'point', color: '#ffd9b0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 }),
+  )
+  seed(server, objects)
+}
+
+/** rAF timestamps for ms while a two-finger swipe turns the view a little every frame, so every frame renders. */
+const orbitFrames = (page, ms) =>
+  page.evaluate((ms) => new Promise((resolve) => {
+    const el = document.querySelector('.cc-scene-editor canvas')
+    const times = []
+    let sign = 1
+    const start = performance.now()
+    const tick = (t) => {
+      times.push(t)
+      sign = -sign
+      el.dispatchEvent(new WheelEvent('wheel', { deltaX: 4 * sign, deltaY: 0, deltaMode: 0, bubbles: true, cancelable: true }))
+      if (t - start < ms) requestAnimationFrame(tick)
+      else resolve(times)
+    }
+    requestAnimationFrame(tick)
+  }), ms)
+const gaps = (times) => times.slice(1).map((t, i) => t - times[i])
+const frameStats = (times) => {
+  const g = gaps(times).sort((a, b) => a - b)
+  return { mean: g.reduce((a, b) => a + b, 0) / g.length, p95: g[Math.floor(g.length * 0.95)], max: g.at(-1), frames: g.length }
+}
+
+if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference scene at 1600 × 1000, 2× pixels, on this machine’s GPU', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const { page, errors } = await open(server, { context })
+    const renderer = await page.evaluate(() => {
+      const gl = document.createElement('canvas').getContext('webgl2')
+      return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+    })
+    const canvas = await page.locator('.cc-scene-editor canvas').evaluate((c) => [c.width, c.height])
+    console.log(`AC-9 on ${renderer}, canvas ${canvas.join(' × ')} device pixels`)
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const results = {}
+    for (const [mode, label] of [['线框', 'wireframe'], ['白模', 'solid'], ['材质预览', 'preview'], ['最终渲染', 'rendered']]) {
+      await shading(page, mode)
+      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+      await orbitFrames(page, 1000) // shaders compiled, caches warm
+      results[label] = frameStats(await orbitFrames(page, 4000))
+      console.log(`  ${label}: mean ${results[label].mean.toFixed(1)} ms, p95 ${results[label].p95.toFixed(1)} ms, max ${results[label].max.toFixed(1)} ms over ${results[label].frames} frames`)
+    }
+    // A light added and taken away in the rendered view: the longest frame while three recompiles.
+    const hitch = async (act) => {
+      const measuring = orbitFrames(page, 3000)
+      await sleep(800)
+      const at = await page.evaluate(() => performance.now())
+      await act()
+      const times = await measuring
+      const after = times.filter((t) => t >= at)
+      return Math.max(...gaps([at, ...after]))
+    }
+    const add = await hitch(async () => {
+      await page.keyboard.press('Shift+KeyA')
+      await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+    })
+    await page.locator('.cc-scene-editor').focus()
+    const remove = await hitch(() => page.keyboard.press(`${modKey}+KeyZ`))
+    console.log(`  adding a light: longest frame ${add.toFixed(0)} ms; removing it: ${remove.toFixed(0)} ms`)
+    assert.ok(results.rendered.mean <= 33, `rendered mean frame ${results.rendered.mean.toFixed(1)} ms`)
+    assert.ok(results.preview.mean <= results.rendered.mean, 'material preview is no slower')
+    assert.ok(add < 1000 && remove < 1000, 'adding or removing a light hitches under a second')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
 })
 
 await browser.close()

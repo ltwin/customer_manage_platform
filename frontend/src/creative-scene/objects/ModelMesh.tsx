@@ -3,6 +3,10 @@ import { Edges, Outlines } from '@react-three/drei'
 import { DoubleSide, MeshStandardMaterial } from 'three'
 import { modelCache, type ModelParts, type SceneModel } from '../models/cache.ts'
 import { clay, unavailableGrey } from './look.ts'
+import { WireMesh } from './WireMesh.tsx'
+import { SlotMesh } from './SlotMesh.tsx'
+import { resolveSlot } from '../materials/resolve.ts'
+import type { SceneObject } from '../api.ts'
 
 // A model instance. Every instance of a revision draws the same cached
 // geometries in clay; the module's own materials only name slots. Until the
@@ -18,7 +22,10 @@ const noRaycast = () => {}
 
 type Loaded = { revision: string; parts: ModelParts | null }
 
-export function ModelMesh({ revision, summary, edge, ghost = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean }) {
+type Slots = NonNullable<SceneObject['material_slots']>
+
+/** slots: the instance's material slots in the material looks, null for clay. */
+export function ModelMesh({ revision, summary, edge, ghost = false, wire = false, slots = null }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean; wire?: boolean; slots?: Slots | null }) {
   const usable = summary?.usable !== false
   // A model already in the cache draws from the first frame (an offscreen
   // screenshot renders exactly once).
@@ -41,10 +48,30 @@ export function ModelMesh({ revision, summary, edge, ghost = false }: { revision
   if (!usable || (loaded?.revision === revision && !loaded.parts)) return <BoundsBox bounds={bounds} edge={edge} unavailable />
   // While a new revision loads, the previous one stays on screen.
   if (!loaded?.parts) return ghost ? null : <BoundsBox bounds={bounds} edge={edge} />
+  if (wire && !ghost)
+    return (
+      <group>
+        {loaded.parts.meshes.map((m, i) => (
+          <WireMesh key={i} geometry={m.geometry} edge={edge} />
+        ))}
+      </group>
+    )
+  if (slots && !ghost) {
+    const hints = new Map((summary?.manifest?.slots ?? []).map((x) => [x.id, x.hint]))
+    return (
+      <group>
+        {loaded.parts.meshes.map((m, i) => (
+          <SlotMesh key={i} geometry={m.geometry} material={resolveSlot(m.slot, slots, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material} doubleSided castShadow>
+            {edge && <Outlines thickness={3} color={edge} />}
+          </SlotMesh>
+        ))}
+      </group>
+    )
+  }
   return (
     <group>
       {loaded.parts.meshes.map((m, i) => (
-        <mesh key={i} geometry={m.geometry} matrix={m.matrix} matrixAutoUpdate={false} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
+        <mesh key={i} geometry={m.geometry} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
           {edge && <Outlines thickness={3} color={edge} />}
         </mesh>
       ))}

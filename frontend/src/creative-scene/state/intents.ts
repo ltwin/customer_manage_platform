@@ -44,6 +44,12 @@ export type Intent = {
   merge?: string
   /** How prompts name this edit, for example 「移动 3 个物件」. */
   label: string
+  /**
+   * A grouping edit's way back, worked out from the snapshot it was made
+   * on: its undo step replays this instead of restoring units, which cannot
+   * restore the hierarchy.
+   */
+  inverse?: Extract<WireOp, { op: 'reparent_objects' }>
 }
 
 export type UnitRevs = Record<string, string>
@@ -61,8 +67,13 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
     case 'set_render':
       return ['render']
     case 'add_objects':
-    case 'reparent_objects':
       return ['objects']
+    case 'reparent_objects':
+      return [
+        'objects',
+        ...op.moves.filter((m) => m.transform).map((m) => placementUnit(m.object_id)),
+        ...(op.remove_groups ?? []).flatMap((id) => [placementUnit(id), contentUnit(id)]),
+      ]
     case 'update_objects':
       return op.updates.flatMap((u) => [
         ...(hasAny(u, placementKeys) ? [placementUnit(u.object_id)] : []),
@@ -91,11 +102,11 @@ export function changedUnits(intent: Intent, state: SceneState): string[] {
   const out = new Set<string>()
   for (const op of intent.ops) {
     for (const u of touchedUnits(op, state)) out.add(u)
-    if (op.op === 'add_objects')
-      for (const o of op.objects) {
-        out.add(placementUnit(o.id))
-        out.add(contentUnit(o.id))
-      }
+    const added = op.op === 'add_objects' ? op.objects : op.op === 'reparent_objects' ? (op.create_groups ?? []) : []
+    for (const o of added) {
+      out.add(placementUnit(o.id))
+      out.add(contentUnit(o.id))
+    }
   }
   if (intent.projection) {
     const p = intent.projection
@@ -113,6 +124,7 @@ export function removedUnits(intent: Intent, before: SceneState): string[] {
   const ids = new Set<string>(intent.projection?.removed ?? [])
   for (const op of intent.ops)
     if (op.op === 'remove_objects') for (const id of subtree(before.scene.objects, op.object_ids)) ids.add(id)
+    else if (op.op === 'reparent_objects') for (const id of op.remove_groups ?? []) ids.add(id)
   return [...ids].flatMap((id) => [placementUnit(id), contentUnit(id)])
 }
 
@@ -230,7 +242,9 @@ const onlyUpdate = (i: Intent) =>
  *    that add, so duplicating and moving is one revision;
  *  - a commit of the same continuous edit (merge key) as the unsent tail, on
  *    exactly its objects, replaces the tail's fields and keeps the tail's
- *    earlier expected revisions.
+ *    earlier expected revisions;
+ *  - likewise an environment or render edit of the same continuous edit as
+ *    the unsent tail, such as dragging the sun.
  * Separate operations stay separate however slowly saving goes: folding an
  * add and the scale after it made Cmd+Z remove the new object.
  */
@@ -294,7 +308,24 @@ export function enqueue(
       }
     }
   }
+  const setting = onlySetting(next)
+  const tail = queue.at(-1)
+  if (setting && tail && next.merge !== undefined && tail.merge === next.merge && !tail.held && tail.state === 'pending') {
+    const before = onlySetting(tail)
+    if (before?.op === setting.op) {
+      // The environment is written whole, so the latest wins; the render merges by key.
+      const op: WireOp = before.op === 'set_render' && setting.op === 'set_render' ? { op: 'set_render', render: { ...before.render, ...setting.render } } : setting
+      const merged: Intent = { ...tail, label: next.label, expected: { ...next.expected, ...tail.expected }, ops: [op] }
+      return { queue: [...queue.slice(0, -1), merged], holder: tail.id }
+    }
+  }
   return { queue: [...queue, next], holder: next.id }
+}
+
+/** The environment panel's edits: one set_environment or set_render. */
+const onlySetting = (i: Intent) => {
+  const op = !i.projection && i.ops.length === 1 ? i.ops[0] : null
+  return op && (op.op === 'set_environment' || op.op === 'set_render') ? op : null
 }
 
 /** Intents that depend on id, directly or through another dependent. */

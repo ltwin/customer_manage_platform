@@ -282,6 +282,111 @@ func (h runHistory) cleanFrom(g *changeGroup, k int64) *creativedocument.History
 	return found
 }
 
+// reparented finds what the run moved in the tree along with placement
+// (reparent_objects with transforms): object id -> the first such revision,
+// for the objects moved and the groups they moved into or out of, and the
+// revisions themselves. Only a revision that changed objects together with
+// the placement of an object that existed before it is a candidate, and only
+// candidates have their snapshots compared, so a run of add_objects reads
+// only the scene before it, which the entries read anyway. Existence is
+// followed from there through the history's added and removed units; the
+// revision rows store no operations.
+func reparented(revisions []int64, history []creativedocument.HistoryRow, sceneAt func(int64) (Scene, error)) (map[string]int64, []int64, error) {
+	inRun := make(map[int64]bool, len(revisions))
+	for _, r := range revisions {
+		inRun[r] = true
+	}
+	exists := map[string]bool{}
+	reset := func(revision int64) error {
+		exists = map[string]bool{}
+		if revision < 1 {
+			return nil
+		}
+		s, err := sceneAt(revision)
+		if err != nil {
+			return err
+		}
+		for _, o := range s.Objects {
+			exists[o.ID] = true
+		}
+		return nil
+	}
+	loaded := false
+	objects := map[string]int64{}
+	var found []int64
+	for _, row := range history {
+		if row.WholeRestore() {
+			loaded = false
+			continue
+		}
+		candidate := false
+		if inRun[row.Revision] && row.Revision > 1 && slices.Contains(row.Changed, unitObjects) {
+			if !loaded {
+				if err := reset(row.Revision - 1); err != nil {
+					return nil, nil, err
+				}
+				loaded = true
+			}
+			for _, u := range row.Changed {
+				if id, content, ok := objectOfUnit(u); ok && !content && exists[id] {
+					candidate = true
+					break
+				}
+			}
+		}
+		if loaded {
+			for _, u := range row.Changed {
+				if id, _, ok := objectOfUnit(u); ok {
+					exists[id] = true
+				}
+			}
+			for _, u := range row.Removed {
+				if id, _, ok := objectOfUnit(u); ok {
+					delete(exists, id)
+				}
+			}
+		}
+		if !candidate {
+			continue
+		}
+		before, err := sceneAt(row.Revision - 1)
+		if err != nil {
+			return nil, nil, err
+		}
+		after, err := sceneAt(row.Revision)
+		if err != nil {
+			return nil, nil, err
+		}
+		mark := func(id *string) {
+			if id != nil {
+				if _, seen := objects[*id]; !seen {
+					objects[*id] = row.Revision
+				}
+			}
+		}
+		afterIdx := indexObjects(after.Objects)
+		changed := false
+		for _, o := range before.Objects {
+			i, ok := afterIdx[o.ID]
+			if !ok {
+				continue
+			}
+			n := after.Objects[i]
+			if o.Order == n.Order && (o.ParentID == nil) == (n.ParentID == nil) && (o.ParentID == nil || *o.ParentID == *n.ParentID) {
+				continue
+			}
+			changed = true
+			mark(&o.ID)
+			mark(o.ParentID)
+			mark(n.ParentID)
+		}
+		if changed {
+			found = append(found, row.Revision)
+		}
+	}
+	return objects, found, nil
+}
+
 var unitLabels = map[string]string{unitEnvironment: "环境", unitRender: "渲染设置", creativedocument.MetaUnit: "标题", unitObjects: "层级结构"}
 
 // planRunChanges is RunChanges over loaded history: one entry per changed
@@ -291,6 +396,12 @@ var unitLabels = map[string]string{unitEnvironment: "环境", unitRender: "渲�
 // nil).
 func planRunChanges(unitRevs map[string]int64, head Scene, revisions []int64, history []creativedocument.HistoryRow, sceneAt func(int64) (Scene, error), selected func(ChangeTarget) bool) ([]RunChange, []RestoreBatch, error) {
 	h := indexRunHistory(revisions, history)
+	moved, movedAt, err := reparented(revisions, history, sceneAt)
+	if err != nil {
+		return nil, nil, err
+	}
+	h.hierarchy = append(h.hierarchy, movedAt...)
+	slices.Sort(h.hierarchy)
 	entries := []RunChange{}
 	var restorable []*changeGroup
 	headIdx := indexObjects(head.Objects)
@@ -314,6 +425,11 @@ func planRunChanges(unitRevs map[string]int64, head Scene, revisions []int64, hi
 			default:
 				entry.Name = head.Objects[hi].Name
 			}
+		}
+		if at, ok := moved[g.target.ObjectID]; ok && g.target.Kind == "object" {
+			entry.Blocked = &Blocked{Reason: BlockedHierarchy, Revision: creativeops.Revision(at), ActorKind: "agent"}
+			entries = append(entries, entry)
+			continue
 		}
 		var block *creativedocument.HistoryRow
 		for _, u := range g.units {

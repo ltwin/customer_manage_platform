@@ -29,6 +29,7 @@ const (
 	maxNameRunes     = 80
 	maxLabelRunes    = 40
 	maxPositionM     = 100000
+	maxExposureEV    = 10
 	minScale         = 0.001
 	maxScale         = 1000
 	quaternionSlack  = 1e-3
@@ -78,8 +79,18 @@ type Fog struct {
 	Far   float64 `json:"far"`
 }
 
+// Render is how the scene suggests it be shown and the lit look's exposure
+// compensation in stops (toneMappingExposure = 2^exposure_ev); scenes stored
+// before exposure existed read 0.
 type Render struct {
-	Mode string `json:"mode"`
+	Mode       string  `json:"mode"`
+	ExposureEV float64 `json:"exposure_ev"`
+}
+
+// renderPatch is set_render: only what it carries changes.
+type renderPatch struct {
+	Mode       *string  `json:"mode,omitempty"`
+	ExposureEV *float64 `json:"exposure_ev,omitempty"`
 }
 
 // Object is one node of the scene tree. Placement (name, transform, visible,
@@ -426,6 +437,9 @@ func Validate(s Scene) error {
 	}
 	if s.Render.Mode != "clay" && s.Render.Mode != "lit" {
 		return invalid("渲染模式须为 clay 或 lit")
+	}
+	if !in(s.Render.ExposureEV, -maxExposureEV, maxExposureEV) {
+		return invalid("曝光补偿须在 −%d…%d 档之间", maxExposureEV, maxExposureEV)
 	}
 	byID := make(map[string]*Object, len(s.Objects))
 	cameras := 0

@@ -122,7 +122,7 @@ func TestAgentEditRefusals(t *testing.T) {
 		ops  []any
 	}{
 		{"commit_model", base, []any{op{"op": "commit_model"}}},
-		{"reparent_objects", base, []any{op{"op": "reparent_objects", "moves": []any{}}}},
+		{"reparent without moves", base, []any{op{"op": "reparent_objects", "moves": []any{}}}},
 		{"whole restore", base, []any{op{"op": "restore", "revision": "1"}}},
 		{"restore_units", base, []any{op{"op": "restore_units", "from_revision": "1", "units": []string{"render"}}}},
 		{"revert_run with others", base, []any{op{"op": "revert_run", "run_id": "previous"}, moveOp(objectID(1), 1)}},
@@ -137,6 +137,84 @@ func TestAgentEditRefusals(t *testing.T) {
 	}
 	if _, err := agentEdit(t, f.b, creativescene.EditInput{DocumentID: me.doc, RunID: "ccrn_agent", BasedOn: base, Operations: raws(t, moveOp(objectID(1), 1))}); !errors.Is(err, creativedocument.ErrNotFound) {
 		t.Fatalf("another account: %v", err)
+	}
+}
+
+// TestAgentReparentKeepsWorldPositions: the assistant names only the new
+// parent; the local transform comes out as three.js computes it
+// (parent.invert().multiply(world).decompose()), and orders and group
+// defaults are filled in.
+func TestAgentReparentKeepsWorldPositions(t *testing.T) {
+	f := setup(t)
+	const run = "ccrn_agent"
+	p, x, a, b, g := objectID(1), objectID(2), objectID(3), objectID(4), objectID(5)
+	me := author{t: t, scope: f.a, doc: createScene(t, f.a), actor: creativedocument.Photographer}
+	parent := group(p, nil, 10)
+	parent["transform"] = map[string]any{"position": []float64{2, 1, -3}, "rotation": []float64{0, 0.3894183423086505, 0, 0.9210609940028851}, "scale": []float64{2, 2, 2}}
+	child := box(x, nil, 11)
+	child["transform"] = map[string]any{"position": []float64{5, 1, 0}, "rotation": []float64{0.06407134770607115, 0.09115754934299071, 0.15343930202422257, 0.9818561728660807}, "scale": []float64{1, 1, 1}}
+	pa, pb := box(a, nil, 12), box(b, nil, 13)
+	pa["transform"], pb["transform"] = at(1, 0, 2), at(3, 0, 2)
+	base := me.add(parent, child, pa, pb)
+	edit := func(t *testing.T, base int64, ops ...any) (any, error) {
+		return agentEdit(t, f.a, creativescene.EditInput{DocumentID: me.doc, RunID: run, BasedOn: base, Operations: raws(t, ops...)})
+	}
+
+	got, err := edit(t, base, op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": x, "parent_id": p}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, ok := got.(creativescene.EditResult)
+	if !ok {
+		t.Fatalf("reparent result %#v", got)
+	}
+	o := readScene(t, f.a, me.doc).object(t, x)
+	if o.ParentID == nil || *o.ParentID != p || o.Order != 0 ||
+		!closeTo(o.Transform.Position, []float64{-0.0309740723285361, 0, 2.12109420037003}) ||
+		!closeTo(o.Transform.Rotation, []float64{-0.000738459434010749, -0.298391140214303, 0.166277514054719, 0.939847844301968}) ||
+		!closeTo(o.Transform.Scale, []float64{0.5, 0.5, 0.5}) {
+		t.Fatalf("reparented %+v", o)
+	}
+
+	// A new group without a transform sits in the middle of what goes in.
+	got, err = edit(t, res.WrittenRevision, op{"op": "reparent_objects",
+		"create_groups": []any{map[string]any{"id": g, "name": "石台组", "parent_id": nil}},
+		"moves":         []any{map[string]any{"object_id": a, "parent_id": g}, map[string]any{"object_id": b, "parent_id": g}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := readScene(t, f.a, me.doc)
+	grp, oa, ob := v.object(t, g), v.object(t, a), v.object(t, b)
+	if grp.Kind != "group" || !grp.Visible || grp.Order != 11 || !closeTo(grp.Transform.Position, []float64{2, 0, 2}) ||
+		oa.Order != 0 || ob.Order != 1 || !closeTo(oa.Transform.Position, []float64{-1, 0, 0}) || !closeTo(ob.Transform.Position, []float64{1, 0, 0}) {
+		t.Fatalf("group %+v, a %+v, b %+v", grp, oa, ob)
+	}
+	if r, ok := got.(creativescene.EditResult); !ok || r.ChangedCount != 3 {
+		t.Fatalf("group result %#v", got)
+	}
+
+	tiny := group(objectID(6), nil, 20)
+	tiny["transform"] = map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{0.001, 0.001, 0.001}}
+	base = me.add(tiny)
+	for name, ops := range map[string][]any{
+		"transform written": {op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": x, "parent_id": nil, "transform": at(0, 0, 0)}}}},
+		"parent moved too":  {moveOp(p, 4), op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": a, "parent_id": p}}}},
+		"object moved too": {op{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "look_at": []float64{0, 0, 9}}}},
+			op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": a, "parent_id": nil}}}},
+		"scale out of range": {op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": p, "parent_id": objectID(6)}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := edit(t, base, ops...)
+			wantErr(t, err, creativeops.ErrValidation)
+		})
+	}
+	// Each changes the object list, which a revision changes once: refused up
+	// front with the way to write it, not as a parent that is not there.
+	_, err = edit(t, base,
+		op{"op": "reparent_objects", "create_groups": []any{map[string]any{"id": objectID(7)}}, "moves": []any{map[string]any{"object_id": a, "parent_id": objectID(7)}}},
+		op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": b, "parent_id": objectID(7)}}})
+	if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "写在同一个 reparent_objects 里") {
+		t.Fatalf("two reparent_objects: %v", err)
 	}
 }
 
@@ -551,4 +629,88 @@ func TestAgentTextNamesNoProfession(t *testing.T) {
 		}
 		return true
 	})
+}
+
+// The assistant's material slots merge by slot, null clearing one, and are
+// checked against the object and the catalog; the sky cannot be an HDRI
+// (design「助手：材质、灯光与环境」).
+func TestAgentMaterialSlots(t *testing.T) {
+	f := setup(t)
+	const run = "ccrn_agent"
+	b, m, l := objectID(1), objectID(2), objectID(3)
+	me := author{t: t, scope: f.a, doc: createScene(t, f.a), actor: creativedocument.Photographer}
+	slot := func(preset string, params map[string]any) map[string]any {
+		if params == nil {
+			params = map[string]any{}
+		}
+		return map[string]any{"preset": preset, "params": params}
+	}
+	pillar := instance(m, 11, map[string]any{"ref": "pillar"})
+	// The command checks slots by shape only: a slot the model lost and a preset this build lacks.
+	pillar["material_slots"] = map[string]any{"stone": slot("marble@1", nil), "legacy": slot("old@1", nil)}
+	lamp := object(l, "light", nil, 12)
+	lamp["light"] = map[string]any{"type": "point"}
+	me.send([]string{"objects"}, commit(t, "pillar", stagePair(t, f, f.a), pillarGenerator(2), basicManifest(t), nil), op{"op": "add_objects", "objects": []any{box(b, nil, 10), pillar, lamp}})
+	edit := func(ops ...any) error {
+		_, err := agentEdit(t, f.a, creativescene.EditInput{DocumentID: me.doc, RunID: run, BasedOn: int64(readScene(t, f.a, me.doc).Revision), Operations: raws(t, ops...)})
+		return err
+	}
+	slots := func(id string, s map[string]any) op {
+		return op{"op": "update_objects", "updates": []any{map[string]any{"object_id": id, "material_slots": s}}}
+	}
+	stored := func(id string) map[string]creativescene.MaterialSlot {
+		return readScene(t, f.a, me.doc).object(t, id).MaterialSlots
+	}
+
+	if err := edit(slots(m, map[string]any{"stone": slot("wood@1", map[string]any{"scale": 1.0})})); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored(m); len(got) != 2 || got["stone"].Preset != "wood@1" || got["stone"].Params["scale"] != 1.0 || got["legacy"].Preset != "old@1" {
+		t.Fatalf("one slot written, the other kept: %+v", got)
+	}
+	if err := edit(slots(m, map[string]any{"legacy": nil}), slots(b, map[string]any{"main": slot("stone_brick@1", map[string]any{"brick_size": 0.5, "mortar_color": "#a0a0a0"})})); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored(m); len(got) != 1 || got["stone"].Preset != "wood@1" {
+		t.Fatalf("null clears a slot: %+v", got)
+	}
+	if got := stored(b)["main"]; got.Preset != "stone_brick@1" || got.Params["brick_size"] != 0.5 {
+		t.Fatalf("box main %+v", got)
+	}
+
+	for name, tc := range map[string]struct {
+		op   any
+		says string
+	}{
+		"slot the model lacks":   {slots(m, map[string]any{"trim": slot("paint@1", nil)}), "可用：stone"},
+		"slot on a light":        {slots(l, map[string]any{"main": slot("paint@1", nil)}), "没有材质槽"},
+		"unknown material":       {slots(b, map[string]any{"main": slot("glass@1", nil)}), "可用：principled@1"},
+		"parameter out of range": {slots(b, map[string]any{"main": slot("stone_brick@1", map[string]any{"brick_size": 9.0})}), "brick_size"},
+		"unknown parameter":      {slots(b, map[string]any{"main": slot("paint@1", map[string]any{"shine": 1.0})}), "可用参数"},
+		"bad colour":             {slots(b, map[string]any{"main": slot("paint@1", map[string]any{"color": "red"})}), "color"},
+		"added with a bad slot": {op{"op": "add_objects", "objects": []any{func() map[string]any {
+			o := box(objectID(4), nil, 13)
+			o["material_slots"] = map[string]any{"top": slot("paint@1", nil)}
+			return o
+		}()}}, "可用：main"},
+		"hdri sky": {op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "hdri", "hdri": "studio@1"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}}, "暂无内置 HDRI"},
+	} {
+		err := edit(tc.op)
+		if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), tc.says) {
+			t.Errorf("%s: %v, want it to say %q", name, err, tc.says)
+		}
+	}
+	if got := stored(b)["main"]; got.Preset != "stone_brick@1" {
+		t.Fatalf("a refused batch writes nothing: %+v", got)
+	}
+	// Swapping the model and writing its slots in one batch would change the
+	// content twice: refused, either way round, before the old model's slots
+	// are offered.
+	swap := op{"op": "set_instance_model", "object_id": m, "model": map[string]any{"content_revision_id": readScene(t, f.a, me.doc).object(t, m).Model.ContentRevisionID}}
+	write := slots(m, map[string]any{"stone": slot("paint@1", nil)})
+	for _, ops := range [][]any{{swap, write}, {write, swap}} {
+		if err := edit(ops...); !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "既换模型又改材质槽") {
+			t.Errorf("%v: %v", ops[0], err)
+		}
+	}
 }

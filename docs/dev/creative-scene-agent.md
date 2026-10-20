@@ -26,7 +26,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
    └── 期限到（30 分钟）──> expired        运行结束时 ──> cancelled
 ```
 
-- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）、`export_shots`（C4：按摄像机出 clay 和线稿，节点在完成事务里放到画布上）。
+- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）、`export_shots`（C4：按摄像机出 clay 和线稿，节点在完成事务里放到画布上；C5 起可含 `lit`）。`render_view` 的请求带 `mode`（`clay` / `lit`，C5）。
 - 租约 30 秒，页面每 10 秒续一次；续租不会超过期限。
 - 新建与进入终态会触发画布通知（账号级），认领和续租不通知。页面靠通知知道有新任务。
 - 终态满 30 天的任务由清扫删除。
@@ -68,7 +68,9 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 - 计时（续租、上传轮询、沙箱超时）都用 `host/ticker.ts` 的 Worker 节拍，隐藏标签页里的页面计时器会被浏览器降频。
 - 截图（`host/render.ts`）：React Three Fiber 的 `createRoot` 配一个不挂到页面的 canvas，`frameloop: 'never'`，组件提交后手动渲染一帧，导出长边 1024 的 JPEG（与缩略图一样用 `canvasBlob` 同步编码，不用 `toBlob`），再 `unmount` 释放 WebGL 上下文。单独的 root 必须先 `extend(THREE)`，否则灯光等元素报错、提交永远不来。截图不画灯光和摄像机图标。整体 60 秒上限，超时报 `host_error`。
 - 取景（`host/framing.ts`）：视场角按画面长边对应传感器长边（`cameraOptics.verticalFov`，C4 起；与 Blender 的 Auto 适配相同），默认传感器下 3:2 横幅与原先一样，竖幅与横幅同焦距拍到的范围一样大；`viewpoint` 是全画幅 4:3；预设（总览、俯视、正视、侧视）按可见物件（不含地面、灯光、摄像机）的包围盒取景，留 1.1 倍边距。摄像机的取景还带光学参数：对焦物件存在时按它原点沿视线的深度对焦，否则按 `focus`，夹在 near/far 之间。
-- 导出与景深回看（C4，`host/render.ts` 的 `openShooter`）：一次导出共用一个离屏根和 WebGL 上下文，模型只加载一次，逐镜头移动同一台相机；结束后 `forceContextLoss`。`clay` 是 `EffectComposer`（4 倍 MSAA）→ `RenderPass` → `GTAOPass` →（景深）→ `OutputPass`；景深在 `render/dofPass.ts`，按物理弥散圆（与 `cameraOptics.blurPixels` 同一公式），先算 16 像素瓦片的最大弥散圆，再在半分辨率按 Vogel 圆盘聚合，只收自身弥散圆覆盖到中心的样本，位于中心之后的样本最多影响到中心自己的弥散圆。线稿在 `render/linePass.ts`，2 倍分辨率的视空间法线与深度做边缘检测。导出长边 2048 PNG；`render_view` 也走 clay（长边 1024 JPEG），`depth_of_field` 只加虚化。编辑器视口用同一个 `ClayRenderer` 出每一帧（`Viewport.tsx:ClayView`，`useFrame` 优先级 1）：网格不进 AO 的法线深度，变换手柄在整条链之后单独画；相机视图打开「景深预览」时加虚化，弥散圆按取景框长边换算。编码仍用 `canvasBlob`：助手的导出多在后台标签页执行。
+- 导出与景深回看（C4，`host/render.ts` 的 `openShooter`）：一次导出共用一个离屏根和 WebGL 上下文，模型只加载一次，逐镜头移动同一台相机；结束后 `forceContextLoss`。`clay` 是 `EffectComposer`（4 倍 MSAA）→ `RenderPass` → `GTAOPass` →（景深）→ `OutputPass`；景深在 `render/dofPass.ts`，按物理弥散圆（与 `cameraOptics.blurPixels` 同一公式），先算 16 像素瓦片的最大弥散圆，再在半分辨率按 Vogel 圆盘聚合，只收自身弥散圆覆盖到中心的样本，位于中心之后的样本最多影响到中心自己的弥散圆。线稿在 `render/linePass.ts`，2 倍分辨率的视空间法线与深度做边缘检测。导出长边 2048 PNG；`render_view` 也走 clay（长边 1024 JPEG），`depth_of_field` 只加虚化。编辑器视口用同一个 `SceneRenderer`（`render/sceneRenderer.ts`） 出每一帧（`Viewport.tsx:LookView`，`useFrame` 优先级 1）：网格不进 AO 的法线深度，变换手柄在整条链之后单独画；相机视图打开「景深预览」时加虚化，弥散圆按取景框长边换算。编码仍用 `canvasBlob`：助手的导出多在后台标签页执行。
+- 材质光照（C5）：`openShooter(scene, models, look)` 按 `clay` 或 `lit` 挂载 `ShotScene`（`lit` 即视口的「最终渲染」：材质、灯光物件、天空当环境光照、阴影与 AO），挂载后 `gl.compileAsync` 预编译材质；`setLook` 换一种再编译。`lit` 出图前把 `toneMappingExposure` 设为 `2^render.exposure_ev`，出完复原。导出先出全部摄像机的 clay 与线稿，再切一次 `lit` 出全部材质光照图，切换超过 60 秒按失败处理；`render_view` 按请求的 `mode` 直接以那种方式打开。
+- 视口的显示模式（C5，`Viewport.tsx:LookView`）：线框直接 `gl.render`；白模、材质预览、最终渲染都走 `SceneRenderer`，只换挂载的光照（`objects/Lighting.tsx`）与材质。最终渲染里新增灯光、或灯光开关投射阴影时，three.js 要把所有受光材质重编译一遍（AC-9 场景约 2 秒）；`SceneLight` 先让这盏灯不亮，用 `compileAsync` 在驱动线程上编好再显示，卡顿降到 0.1 秒左右。截图不需要：出图前已整体编译。
 
 ### 编辑视图
 
@@ -131,7 +133,8 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 - 单测：`node --test --experimental-transform-types scripts/creative-scene-agent.test.ts`（执行器、取景、认领循环、关闭提醒、编辑视图的活动、面板的清单逻辑）。
 - 浏览器：先在 `frontend/` 起 `npx vite --port 5179 --strictPort`，再跑
   - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
-  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）。
+  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5 起含最终渲染的标定检查（`calibration`）；
+  - 帧时间（AC-9，只在点名时跑，需要本机 GPU）：`SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs`，用 Metal 后端的无头 Chromium、1600 × 1000、2 倍像素比，打印四种显示模式的平均与 p95 帧时间和加灯、删灯的最长一帧。
 - 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
 - 实测（只在点名时跑，经 `TestCreativeEditorBrowser` 起真实 API、媒体流水线和 PostgreSQL；测试端点 `/__test/scene-job` 像工具那样建任务，替身运行记下结果交回的时间）：
   - 时延：`CREATIVE_EDITOR_URL=http://localhost:5179 CREATIVE_EDITOR_SCRIPT=creative-scene-agent-latency.e2e.mjs go test ./internal/platform/httpapi/ -run TestCreativeEditorBrowser -v`（`SCENE_AGENT_LATENCY_RUNS` 调样本数）；
@@ -140,7 +143,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 ## 已知边界
 
 - 后台标签页：真实 Chrome 隐藏 6.5 分钟后，烘焙与截图的耗时和前台相当（2026-10-18 实测 1.05 倍、1.00 倍）。前提是所有计时走 Worker 节拍、图片同步编码（`canvasBlob`）：Chrome 后台会把页面主线程的计时器和 `toBlob` 的空闲编码推迟到每秒乃至每分钟一次，新增等待时不要用页面计时器。
-- 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`），C3 的 `edit_scene` 也不开放 `reparent_objects`；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
-- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`）。
+- 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`）：C5 起助手可以编组、改挂，被改挂的物件和它进出的分组都不能单独恢复，按前后快照判断；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
+- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）。
 - 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

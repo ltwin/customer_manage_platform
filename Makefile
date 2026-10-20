@@ -115,6 +115,7 @@ generate: frontend/node_modules
 	cd backend && go run ./cmd/creative-tool-schema-gen ../api/openapi.yaml internal/creativecanvas/tool_schemas.gen.go
 	cd frontend && npm run generate
 	mkdir -p frontend/src/creative-scene && cp backend/internal/creativescene/builtins.json frontend/src/creative-scene/builtins.gen.json
+	cp backend/internal/creativescene/materials.json frontend/src/creative-scene/materials.gen.json
 
 # 漂移检查：比较生成前后内容，允许 feature 在提交前验证已同步的生成物（CMD-002 / A11）
 generate-check: frontend/node_modules
@@ -125,6 +126,7 @@ generate-check: frontend/node_modules
 	cp frontend/src/api/schema.d.ts "$$tmp_dir/schema.d.ts"; \
 	cp backend/internal/creativecanvas/tool_schemas.gen.go "$$tmp_dir/tool_schemas.gen.go"; \
 	cp frontend/src/creative-scene/builtins.gen.json "$$tmp_dir/builtins.gen.json"; \
+	cp frontend/src/creative-scene/materials.gen.json "$$tmp_dir/materials.gen.json"; \
 	$(MAKE) generate || exit $$?; \
 	cmp -s "$$tmp_dir/api.gen.go" backend/internal/platform/httpapi/api.gen.go \
 		|| { echo "Go OpenAPI 生成物存在漂移" >&2; exit 1; }; \
@@ -135,7 +137,9 @@ generate-check: frontend/node_modules
 	cmp -s "$$tmp_dir/schema.d.ts" frontend/src/api/schema.d.ts \
 		|| { echo "TypeScript OpenAPI 生成物存在漂移" >&2; exit 1; }; \
 	cmp -s "$$tmp_dir/builtins.gen.json" frontend/src/creative-scene/builtins.gen.json \
-		|| { echo "场景内置基础体清单存在漂移，运行 make generate" >&2; exit 1; }
+		|| { echo "场景内置基础体清单存在漂移，运行 make generate" >&2; exit 1; }; \
+	cmp -s "$$tmp_dir/materials.gen.json" frontend/src/creative-scene/materials.gen.json \
+		|| { echo "场景材质目录存在漂移，运行 make generate" >&2; exit 1; }
 
 # 本地 dev 库：单起 compose 的 postgres 服务（全容器模式见 docker-compose.yml 注释）
 db-up:

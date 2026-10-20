@@ -2,12 +2,13 @@ import { ApiError } from '../../api/transport.ts'
 import type { components } from '../../api/schema'
 import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { SceneDocument } from '../api.ts'
-import { exportLongSide, cameraFraming } from './framing.ts'
-import type { Shooter, ShotKind } from './render.ts'
+import type { DisplayMode } from '../state/sceneStore.ts'
+import { exportLongSide, cameraFraming, type Framing } from './framing.ts'
+import type { Look, Shooter, ShotKind } from './render.ts'
 
 // Export (design「导出渲染」「导出接口」): every camera of the plan drawn
-// from the scene's confirmed snapshot (E1) as clay and line art, 2048 on the
-// long side, PNG; then the images go up as staged uploads. The photographer's
+// from the scene's confirmed snapshot (E1) as clay, line art and the lit look,
+// 2048 on the long side, PNG; then the images go up as staged uploads. The photographer's
 // export submits them to the export endpoint; export_shots hands them to the
 // job's completion. Whatever goes wrong, the uploads already made are given
 // back for the caller to discard.
@@ -32,22 +33,35 @@ export function exportCount(cameras: number, passCount: number): { count: number
 
 const maxImages = 48
 
+/** The passes the export dialog starts with: the lit look too when the view shows materials. */
+export const defaultPasses = (display: DisplayMode): ExportPass[] => (display === 'preview' || display === 'rendered' ? ['clay', 'line', 'lit'] : ['clay', 'line'])
+
 /** One image that takes longer than this, rendered and encoded, fails the export. */
 export const shotTimeoutMs = 30_000
+/** Mounting the lit look and compiling its materials longer than this fails the export. */
+export const lookTimeoutMs = 60_000
 const uploadConcurrency = 2
 
 export type RenderDeps = {
   read(documentID: string): Promise<SceneDocument>
   loadModels(doc: SceneDocument): Promise<void>
-  open(doc: SceneDocument): Promise<Shooter>
+  open(doc: SceneDocument, look: Look): Promise<Shooter>
   now?(): number
+  /** Resolves after ms; a timer by default. */
+  sleep?(ms: number): Promise<void>
 }
 
-/** Draws every image of the plan from the scene's current snapshot. */
+/**
+ * Draws every image of the plan from the scene's current snapshot: clay and
+ * line art of every camera first, then the lit look mounted once for every
+ * camera's lit image (design「lit 导出与 render_view」). Images come back in
+ * camera × pass order.
+ */
 export async function renderShots(deps: RenderDeps, documentID: string, plan: ExportPlan, onProgress?: (p: Progress) => void): Promise<RenderedShots> {
   const now = deps.now ?? (() => performance.now())
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const doc = await deps.read(documentID)
-  const framings = []
+  const framings: { id: string; framing: Framing }[] = []
   for (const id of plan.cameraObjectIDs) {
     const framing = cameraFraming(doc.scene, id, exportLongSide)
     if ('error' in framing) return { ok: false, message: framing.error }
@@ -55,22 +69,35 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   }
   await deps.loadModels(doc)
   const total = framings.length * plan.passes.length
-  const shooter = await deps.open(doc)
-  const images: ShotImage[] = []
+  const clayPasses = plan.passes.filter((p) => p !== 'lit')
+  const lit = plan.passes.includes('lit')
+  const shooter = await deps.open(doc, clayPasses.length ? 'clay' : 'lit')
+  const drawn = new Map<string, Blob>()
+  const key = (camera: string, pass: ExportPass) => `${camera}\n${pass}`
+  /** Draws one image; false when it took too long. */
+  const draw = (id: string, framing: Framing, pass: ExportPass) => {
+    onProgress?.({ stage: 'render', done: drawn.size, total })
+    const started = now()
+    const blob = shooter.shoot(framing, { kind: pass as ShotKind, type: 'image/png', depthOfField: pass !== 'line' && framing.depthOfField })
+    if (now() - started > shotTimeoutMs) return false
+    drawn.set(key(id, pass), blob)
+    return true
+  }
+  const slow = { ok: false as const, message: `一张导出图渲染超过 ${shotTimeoutMs / 1000} 秒` }
   try {
-    for (const { id, framing } of framings) {
-      for (const pass of plan.passes) {
-        onProgress?.({ stage: 'render', done: images.length, total })
-        const started = now()
-        const blob = shooter.shoot(framing, { kind: pass as ShotKind, type: 'image/png', depthOfField: pass === 'clay' && framing.depthOfField })
-        if (now() - started > shotTimeoutMs) return { ok: false, message: `一张导出图渲染超过 ${shotTimeoutMs / 1000} 秒` }
-        images.push({ camera: id, pass, blob })
+    for (const { id, framing } of framings) for (const pass of clayPasses) if (!draw(id, framing, pass)) return slow
+    if (lit) {
+      if (clayPasses.length) {
+        const switched = await Promise.race([shooter.setLook('lit').then(() => true), sleep(lookTimeoutMs).then(() => false)])
+        if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookTimeoutMs / 1000} 秒` }
       }
+      for (const { id, framing } of framings) if (!draw(id, framing, 'lit')) return slow
     }
   } finally {
     shooter.close()
   }
   onProgress?.({ stage: 'render', done: total, total })
+  const images = framings.flatMap(({ id }) => plan.passes.map((pass) => ({ camera: id, pass, blob: drawn.get(key(id, pass))! })))
   return { ok: true, revision: doc.revision, images }
 }
 

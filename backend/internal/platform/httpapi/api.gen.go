@@ -7028,7 +7028,9 @@ type CreativeScenePrimitive struct {
 
 // CreativeSceneRender defines model for CreativeSceneRender.
 type CreativeSceneRender struct {
-	Mode CreativeSceneRenderMode `json:"mode"`
+	// ExposureEv 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。
+	ExposureEv float32                 `json:"exposure_ev"`
+	Mode       CreativeSceneRenderMode `json:"mode"`
 }
 
 // CreativeSceneRenderMode defines model for CreativeSceneRender.Mode.

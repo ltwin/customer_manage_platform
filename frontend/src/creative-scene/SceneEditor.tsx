@@ -8,7 +8,8 @@ import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlac
 import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
-import { clearOp, duplicate, groundBuiltin, localPose, newCamera, newEmpty, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
+import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -26,6 +27,10 @@ import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
+import { EnvironmentPanel } from './panels/EnvironmentPanel.tsx'
+import { LightFields } from './panels/LightFields.tsx'
+import { MaterialSlots } from './panels/MaterialSlots.tsx'
+import { copyMaterials, slotsOf } from './materials/slotEdits.ts'
 import { Properties } from './panels/Properties.tsx'
 import { ShortcutSheet } from './panels/ShortcutSheet.tsx'
 import { StatusBar } from './panels/StatusBar.tsx'
@@ -36,7 +41,7 @@ import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
 import { openScene } from './session.ts'
 import type { WireOp } from './state/apply.ts'
-import { contextOf, createEditorStore, type MenuKind } from './state/sceneStore.ts'
+import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
@@ -162,6 +167,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   const failedModels = useStore(modelCache.failed)
   const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels), [u.preview, s.base, localModels])
   const readOnly = s.trashed || s.missing || !!u.preview || !s.base
+  const display = displayOf(u, shown?.render)
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
   const selected = u.selection.selected
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
@@ -238,6 +244,41 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   const movable = () => topmost(selected, objects).filter((id) => !byID.get(id)?.locked)
   const label = (verb: string, ids: string[]) => objectsLabel(verb, ids.length, byID.get(ids[0])?.name)
 
+  /** Ctrl+G, Ctrl+Alt+G, Ctrl+P and Alt+P: one edit each, keeping world positions. */
+  const regroup = (action: 'group' | 'ungroup' | 'parent' | 'clear-parent') => {
+    const sel = { selected, active: active?.id ?? null }
+    const r =
+      action === 'group'
+        ? groupSelection(objects, sel)
+        : action === 'ungroup'
+          ? ungroupSelection(objects, sel)
+          : action === 'parent'
+            ? parentToActive(objects, sel)
+            : clearParent(objects, sel)
+    if (!r) return
+    if ('error' in r) return notify(r.error)
+    if (!edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)) return
+    if (action === 'group' && r.op.op === 'reparent_objects') {
+      const g = r.op.create_groups?.[0]
+      if (g) select([g.id])
+    }
+  }
+
+  const slotNamesOf = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((x) => x.slot)
+  /** 复制材质到选中物件: one update of every target, one undo step. */
+  const copyMaterialsToSelected = () => {
+    if (!active) return
+    const updates = copyMaterials(objects, active.id, selected, slotNamesOf)
+    if (!updates.length) return notify('选中的物件没有对应的材质槽位')
+    edit([{ op: 'update_objects', updates }], label('复制材质到', updates.map((x) => x.object_id)))
+  }
+  const drop = (moving: string[], target: string, place: DropPlace) => {
+    const r = dropRows(objects, moving, target, place)
+    if (!r) return
+    if ('error' in r) return notify(r.error)
+    edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)
+  }
+
   const transform = (mode: Mode) => {
     const ids = movable()
     if (!ids.length) return notify(selected.length ? '锁定的物件不能变换，先在属性栏解锁' : '先选中物件')
@@ -272,6 +313,13 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       select([o.id])
       ui.setState({ lastCamera: o.id })
     }
+  }
+  /** Above where the pointer is, facing the way the view looks. */
+  const addLight = (type: keyof typeof lightLabels, at?: { x: number; y: number }) => {
+    const pose = handle.current?.viewPose()
+    if (!pose) return
+    const o = newLight(type, handle.current?.groundPoint(at) ?? [0, 0, 0], pose.rotation, objects)
+    if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) select([o.id])
   }
   const addEmpty = () => {
     const o = newEmpty(handle.current?.centrePoint() ?? [0, 0, 0], objects)
@@ -324,7 +372,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       {
         read: (id) => readScene(id),
         loadModels: (doc) => loadModels(doc.scene, doc.models),
-        open: (doc) => openShooter(doc.scene, doc.models),
+        open: (doc, look) => openShooter(doc.scene, doc.models, look),
         upload: (file, declared, signal) => uploadGenerated(file, declared, { kind: 'staged' }, signal),
         discard: discardUpload,
         send: (operation, createdAt, payload) => exportScene(account, documentID, operation, createdAt, payload),
@@ -449,6 +497,11 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
           edit([op], label(what === 'location' ? '清除位置' : what === 'rotation' ? '清除旋转' : '清除缩放', op.updates.map((u) => u.object_id)))
         return
       }
+      case 'group':
+      case 'ungroup':
+      case 'parent':
+      case 'clear-parent':
+        return editing && regroup(action)
       case 'rename': {
         if (!editing || !active) return
         const p = handle.current?.pointer() ?? { x: 200, y: 200 }
@@ -487,6 +540,10 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       }
       case 'view-menu':
         return openMenu('view')
+      case 'display-menu':
+        return openMenu('display')
+      case 'toggle-wireframe':
+        return ui.setState(toggleWireframe(u, display))
       case 'undo':
         if (editing) undo.undo()
         return
@@ -551,6 +608,8 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
+        { section: '灯光' },
+        ...(['directional', 'point', 'spot'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
         { label: '摄像机', run: addCamera },
         { label: '空物体', run: addEmpty },
@@ -569,8 +628,21 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         { label: '清除旋转', shortcut: k('clear-rotation'), disabled: none, run: () => run('clear-rotation') },
         { label: '清除缩放', shortcut: k('clear-scale'), disabled: none, run: () => run('clear-scale') },
         { label: '重命名', shortcut: k('rename'), disabled: !active, run: () => run('rename') },
+        { label: '复制材质到选中物件', disabled: !active || selected.length < 2 || !slotNamesOf(active).length, run: copyMaterialsToSelected },
+        'separator',
+        { label: '编组', shortcut: k('group'), disabled: none, run: () => run('group') },
+        { label: '取消编组', shortcut: k('ungroup'), disabled: !selected.some((id) => byID.get(id)?.kind === 'group'), run: () => run('ungroup') },
+        { label: '设置父级', shortcut: k('parent'), disabled: active?.kind !== 'group' || selected.length < 2, run: () => run('parent') },
+        { label: '清除父级', shortcut: k('clear-parent'), disabled: !selected.some((id) => byID.get(id)?.parent_id), run: () => run('clear-parent') },
         'separator',
         { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
+      ]
+    if (menu === 'display')
+      return [
+        { section: '显示模式' },
+        ...displayModes.map((d) => ({ label: d.label, checked: display === d.mode, run: () => ui.setState({ display: d.mode }) })),
+        'separator',
+        { label: '切换线框', shortcut: k('toggle-wireframe'), run: () => run('toggle-wireframe') },
       ]
     const guessed = u.guessed === 'trackpad' ? '触控板' : '鼠标'
     return [
@@ -629,6 +701,13 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         <Box size={18} />
         <h2>{shown && s.base ? (s.view?.title ?? s.base.title) : '3D 场景'}</h2>
         <MenuBar onOpen={(menu, x, y) => openMenu(menu, x, y)} disabled={(menu) => readOnly && menu !== 'view'} />
+        <div className="cc-scene-shading" role="group" aria-label="显示模式">
+          {displayModes.map((d) => (
+            <button key={d.mode} className="btn" aria-pressed={display === d.mode} onClick={() => ui.setState({ display: d.mode })} title={`${d.label} · ${shortcutFor('display-menu', mac)}`}>
+              {d.label}
+            </button>
+          ))}
+        </div>
         {canvasID && sceneNodeID && (
           <button className="btn" disabled={readOnly} onClick={() => ui.setState({ exporting: true })} title="导出分镜到画布">
             <ImageDown size={16} />
@@ -680,7 +759,18 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   readOnly={readOnly}
                   onSelect={(id, mods, order) => ui.setState({ selection: listClick(u.selection, id, order, mods) })}
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
+                  onDrop={(moving, target, place) => drop(moving, target, place)}
                 />
+                {!shownActive && !selected.length && shown ? (
+                  <EnvironmentPanel
+                    environment={shown.environment}
+                    exposure={shown.render.exposure_ev ?? 0}
+                    readOnly={readOnly}
+                    display={display}
+                    onEnvironment={(environment, text, merge) => edit([{ op: 'set_environment', environment }], text, merge ? { merge } : undefined)}
+                    onRender={(render, text, merge) => edit([{ op: 'set_render', render }], text, merge ? { merge } : undefined)}
+                  />
+                ) : (
                 <Properties
                   object={shownActive}
                   count={selected.length}
@@ -693,6 +783,29 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
                   onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}
                 >
+                  {shownActive && (shownActive.kind === 'primitive' || shownActive.kind === 'model_instance') && (
+                    <MaterialSlots
+                      key={`slots:${shownActive.id}`}
+                      object={shownActive}
+                      model={shownModel ? models[shownModel] : undefined}
+                      objects={shown.objects}
+                      selected={selected}
+                      models={models}
+                      readOnly={readOnly}
+                      display={display}
+                      storage={storage()}
+                      onUpdates={(updates, text, merge) => edit([{ op: 'update_objects', updates }], text, merge ? { merge } : undefined)}
+                    />
+                  )}
+                  {shownActive?.light && (
+                    <LightFields
+                      key={`light:${shownActive.id}`}
+                      object={{ ...shownActive, light: shownActive.light }}
+                      readOnly={readOnly}
+                      display={display}
+                      onLight={(light, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, light }] }], text, merge ? { merge } : undefined)}
+                    />
+                  )}
                   {shownActive?.kind === 'model_instance' && shownModel && (
                     <ModelParams
                       key={shownActive.id}
@@ -704,6 +817,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                     />
                   )}
                 </Properties>
+                )}
               </aside>
             )}
             <div className="cc-scene-main">
@@ -820,6 +934,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       {u.exporting && (
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
+          display={display}
           busy={exportRun.busy}
           progress={exportRun.progress}
           onExport={(plan) => void startExport(plan)}

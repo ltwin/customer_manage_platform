@@ -102,3 +102,41 @@ func BenchmarkFreshnessCheck(b *testing.B) {
 		Freshness{}.Check(sources, current)
 	}
 }
+
+// Exposure only brightens lit images. At 0 it is left out of the hash, so
+// fingerprints taken before the field existed still match (no version bump).
+func TestExposureFingerprintsOnlyLit(t *testing.T) {
+	scene := func(render string) Scene {
+		raw := `{"environment":{"sky":{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3},"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
+			"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
+			"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":{}},
+			{"id":"sobj_000000000000000000002","kind":"light","name":"","parent_id":null,"order":1,
+			"transform":{"position":[0,3,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"light":{"type":"point","intensity":50}}]}`
+		s, err := decodeScene(creativecontent.Payload{Scene: json.RawMessage(raw)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	// Taken before render.exposure_ev existed.
+	before := map[string]string{
+		PassClay: "v1:97cf4a21ba8b318b9d4f7127a87cde66902afca4c4ff687c0658dbe14eb5e92e",
+		PassLine: "v1:26a2cfb52279e30da0729c68d15b2acfdc0a362cbd546072dc2894f193844d72",
+		PassLit:  "v1:2e0a60a7fa1fe800852915a413dcba499be7baf9c35b3ceeb504a2760c86f6e5",
+	}
+	camera := "sobj_000000000000000000001"
+	for _, render := range []string{`{"mode":"lit"}`, `{"mode":"lit","exposure_ev":0}`} {
+		for _, pass := range Passes {
+			if got, _ := Fingerprint(scene(render), camera, pass); got != before[pass] {
+				t.Fatalf("%s %s: %s, want %s", render, pass, got, before[pass])
+			}
+		}
+	}
+	brighter := scene(`{"mode":"lit","exposure_ev":2}`)
+	for _, pass := range Passes {
+		got, _ := Fingerprint(brighter, camera, pass)
+		if (got != before[pass]) != (pass == PassLit) {
+			t.Fatalf("exposure 2, %s: %s", pass, got)
+		}
+	}
+}

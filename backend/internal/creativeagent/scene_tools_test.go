@@ -623,15 +623,41 @@ func TestEditSceneDescribesThreejsFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"light 字段同 three.js", "distance", "decay（默认 2）", "angle（弧度，光锥半角，≤π/2，默认 π/3）", "penumbra", "只有 type 必填",
-		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并", "灯光物件、lit 模式和 hdri 天空暂不显示"} {
+		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并",
+		"material_slots 按槽位合并，写 null 清除", "stone_brick@1 石砖(brick_size 0.05–2m", "暂无内置 HDRI", "exposure_ev?:-10…10}}（按键合并）", "点光 20–80 cd", "建议曝光", "mode:lit 回看"} {
 		if !strings.Contains(info.Desc, want) {
 			t.Errorf("edit_scene does not say %q", want)
 		}
 	}
-	for _, old := range []string{"range_m", "angle_deg", "near_m", "far_m", "整体替换", "七个字段"} {
+	for _, old := range []string{"range_m", "angle_deg", "near_m", "far_m", "整体替换", "七个字段", "暂不显示", "先别花调用打光", "{kind:hdri"} {
 		if strings.Contains(info.Desc, old) {
 			t.Errorf("edit_scene still says %q", old)
 		}
+	}
+}
+
+func TestRenderAndExportOfferTheLitLook(t *testing.T) {
+	render, err := (&sceneTool{name: renderViewTool}).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	export, err := (&sceneTool{name: exportShotsTool}).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := render.ToJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderParams, err := json.Marshal(js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(renderParams), `"mode":{"enum":["clay","lit"]`) || !strings.Contains(render.Desc, "mode:lit") || strings.Contains(render.Desc, "暂不渲染") {
+		t.Errorf("render_view: %s %s", render.Desc, renderParams)
+	}
+	if !strings.Contains(export.Desc, "lit（材质光照") {
+		t.Errorf("export_shots: %s", export.Desc)
 	}
 }
 

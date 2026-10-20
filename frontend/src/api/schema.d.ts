@@ -7128,6 +7128,14 @@ export interface components {
         CreativeSceneRender: {
             /** @enum {string} */
             mode: "clay" | "lit";
+            /** @description 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。 */
+            exposure_ev: number;
+        };
+        /** @description set_render 按键合并，只改写到的字段。 */
+        CreativeSceneRenderPatch: {
+            /** @enum {string} */
+            mode?: "clay" | "lit";
+            exposure_ev?: number;
         };
         /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
         CreativeSceneObject: {
@@ -7270,7 +7278,7 @@ export interface components {
             op: "remove_objects";
             object_ids: string[];
         };
-        /** @description 涉及 objects。 */
+        /** @description 按顺序执行：先建 create_groups，再按 moves 改挂（parent_id 可以是本次新建的分组），最后删除 remove_groups（删除时须没有子物件；同时删除的子分组不算）。同一物件在三处合计只能出现一次。涉及 objects；带 transform 的移动另涉及 object:<id>；删除的分组涉及它的两个单元；新建分组的两个单元出现在 changed_units 中。 */
         CreativeSceneReparentObjects: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -7278,11 +7286,16 @@ export interface components {
              */
             op: "reparent_objects";
             moves: components["schemas"]["CreativeSceneMove"][];
+            /** @description 新分组，外形同 add_objects 里 kind=group 的对象。 */
+            create_groups?: components["schemas"]["CreativeSceneObject"][];
+            remove_groups?: string[];
         };
         CreativeSceneMove: {
             object_id: string;
             parent_id: string | null;
             order: number;
+            /** @description 同时替换该物件的局部变换；调用方据此保持世界位置，服务端照写。 */
+            transform?: components["schemas"]["CreativeSceneTransform"];
         };
         CreativeSceneSetEnvironment: {
             /**
@@ -7298,7 +7311,7 @@ export interface components {
              * @enum {string}
              */
             op: "set_render";
-            render: components["schemas"]["CreativeSceneRender"];
+            render: components["schemas"]["CreativeSceneRenderPatch"];
         };
         /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
         CreativeSceneCommitModel: {

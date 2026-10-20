@@ -16,9 +16,9 @@ import {
   verticalFov,
 } from '../src/creative-scene/cameraOptics.ts'
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
-import { renderShots, submitExport, uploadShots, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
+import { renderShots, submitExport, uploadShots, type ExportPass, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
-import { lookAlongZ, perspectiveViewDirection } from '../src/creative-scene/render/clayExport.ts'
+import { lookAlongZ, perspectiveViewDirection } from '../src/creative-scene/render/sceneRenderer.ts'
 import { GTAOShader } from 'three/examples/jsm/shaders/GTAOShader.js'
 
 const deg = (r: number) => (r * 180) / Math.PI
@@ -178,6 +178,7 @@ test('render shots draws every camera and pass from the snapshot, blurring clay 
       shots.push({ kind: o.kind, dof: o.depthOfField })
       return new Blob([o.kind])
     },
+    setLook: async () => {},
     close: () => { closed = true },
   }
   const doc = { scene: sceneOf(camera(), object({ id: 'cam2', kind: 'camera', camera: { aspect: '2:3', depth_of_field: false } as SceneObject['camera'] })), models: {}, revision: '5' }
@@ -187,6 +188,42 @@ test('render shots draws every camera and pass from the snapshot, blurring clay 
   assert.deepEqual(shots, [{ kind: 'clay', dof: true }, { kind: 'line', dof: false }, { kind: 'clay', dof: false }, { kind: 'line', dof: false }])
   const missing = await renderShots({ read, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['nope'], passes: ['clay'] })
   assert.deepEqual(missing, { ok: false, message: '摄像机 nope 已不在场景里' })
+})
+
+test('lit images come after every clay and line image, with the lit look mounted once; images keep camera × pass order', async () => {
+  const doc = { scene: sceneOf(camera(), object({ id: 'cam2', kind: 'camera', camera: { aspect: '2:3', depth_of_field: false } as SceneObject['camera'] })), models: {}, revision: '5' }
+  const read = async () => doc as never
+  // The switch's timeout fires only when the look never comes.
+  const run = async (passes: ExportPass[], setLook: Shooter['setLook'] = async () => {}, sleep = () => new Promise<void>(() => {})) => {
+    const events: string[] = []
+    const opened: string[] = []
+    const shooter: Shooter = {
+      shoot: (_f, o) => {
+        events.push(`${o.kind}${o.depthOfField ? '+dof' : ''}`)
+        return new Blob([o.kind])
+      },
+      setLook: async (look) => {
+        events.push(`look ${look}`)
+        return setLook(look)
+      },
+      close: () => events.push('close'),
+    }
+    const out = await renderShots({ read, loadModels: async () => {}, open: async (_d, look) => (opened.push(look), shooter), sleep }, 'doc', { cameraObjectIDs: ['cam', 'cam2'], passes })
+    return { out, events, opened }
+  }
+  const all = await run(['clay', 'line', 'lit'])
+  assert.deepEqual(all.opened, ['clay'])
+  assert.deepEqual(all.events, ['clay+dof', 'line', 'clay', 'line', 'look lit', 'lit+dof', 'lit', 'close'], 'lit blurs like clay')
+  assert.ok(all.out.ok)
+  assert.deepEqual(all.out.images.map((i) => `${i.camera} ${i.pass} ${String(i.blob.size)}`), ['cam clay 4', 'cam line 4', 'cam lit 3', 'cam2 clay 4', 'cam2 line 4', 'cam2 lit 3'])
+
+  const only = await run(['lit'])
+  assert.deepEqual(only.opened, ['lit'], 'a lit-only export opens in the lit look')
+  assert.deepEqual(only.events, ['lit+dof', 'lit', 'close'])
+
+  const stuck = await run(['clay', 'lit'], () => new Promise(() => {}), async () => {})
+  assert.deepEqual(stuck.out, { ok: false, message: '切换到材质光照超过 60 秒' })
+  assert.equal(stuck.events.at(-1), 'close', 'the shooter is closed all the same')
 })
 
 // --- editor -----------------------------------------------------------------
@@ -207,8 +244,12 @@ test('a new camera stands where the view looks from; an empty is a childless gro
   assert.ok(close(Math.abs(local.rotation[3]), 1, 1e-6), `rotation ${local.rotation}`)
 })
 
-test('the export dialog allows 1 to 48 images', async () => {
-  const { exportCount } = await import('../src/creative-scene/host/exportShots.ts')
+test('the export dialog allows 1 to 48 images; it ticks the lit look when the view shows materials', async () => {
+  const { exportCount, defaultPasses } = await import('../src/creative-scene/host/exportShots.ts')
+  assert.deepEqual(defaultPasses('solid'), ['clay', 'line'])
+  assert.deepEqual(defaultPasses('wireframe'), ['clay', 'line'])
+  assert.deepEqual(defaultPasses('preview'), ['clay', 'line', 'lit'])
+  assert.deepEqual(defaultPasses('rendered'), ['clay', 'line', 'lit'])
   assert.deepEqual(exportCount(3, 2), { count: 6, problem: null })
   assert.equal(exportCount(0, 2).problem, '至少选一台摄像机')
   assert.equal(exportCount(2, 0).problem, '至少选一种导出方式')
@@ -219,7 +260,7 @@ test('the export dialog allows 1 to 48 images', async () => {
 test('a manual export frees its uploads when it is refused or never answered', async () => {
   const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
   const doc = { scene: sceneOf(camera()), models: {}, revision: '4' }
-  const shooter: Shooter = { shoot: () => new Blob(['x']), close: () => {} }
+  const shooter: Shooter = { shoot: () => new Blob(['x']), setLook: async () => {}, close: () => {} }
   const run = async (send: () => Promise<never> | Promise<{ change_id: string; scene_revision: string; nodes: [] }>) => {
     const discarded: string[] = []
     let n = 0

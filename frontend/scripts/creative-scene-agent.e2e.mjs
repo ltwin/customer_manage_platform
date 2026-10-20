@@ -43,6 +43,8 @@ window.__render = async (request) => {
     energy: energy / (bitmap.width * bitmap.height),
     ok: true, type: shot.image.type, revision: shot.revision, width: bitmap.width, height: bitmap.height,
     center: px(bitmap.width >> 1, bitmap.height >> 1), corner: px(4, 4), canvases: document.querySelectorAll('canvas').length,
+    // Points the request names in fractions of the picture.
+    probes: (request.probes ?? []).map(([x, y]) => px(Math.floor(x * bitmap.width), Math.floor(y * bitmap.height))),
   };
 };
 window.__ready = true;
@@ -126,9 +128,39 @@ function sceneDoc() {
   }
 }
 
+/**
+ * What the assistant writes for 「把这个场景改成黄昏、墙用石砖、窗户用彩色玻璃、
+ * 加两盏暖色壁灯」(AC-8): a low sun, a brick wall with a tinted glass pane in
+ * front of it, two warm wall lights and the exposure dusk asks for.
+ */
+function duskDoc() {
+  const doc = sceneDoc()
+  const box = (id, name, order, position, size, slot) => ({
+    id, kind: 'primitive', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false,
+    primitive: { builtin: 'box@1', params: { width: size[0], height: size[1], depth: size[2] } }, material_slots: { main: slot },
+  })
+  const lamp = (id, order, x) => ({
+    id, kind: 'light', name: '壁灯', parent_id: null, order, transform: { ...identity(), position: [x, 2, -1.6] }, visible: true, locked: false,
+    light: { type: 'point', color: '#ffb46b', intensity: 40, cast_shadow: false, distance: 0, decay: 2 },
+  })
+  doc.scene.environment = { sky: { kind: 'procedural', sun_elevation_deg: 4, sun_azimuth_deg: 250, turbidity: 4 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  doc.scene.render = { mode: 'lit', exposure_ev: 2 }
+  doc.scene.objects = [
+    ...doc.scene.objects.filter((o) => o.kind === 'camera'),
+    { id: 'sobj_ground', kind: 'primitive', name: '地面', parent_id: null, order: 3, transform: identity(), visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 40 } }, material_slots: {} },
+    box('sobj_wall', '墙', 4, [0, 0, -2], [6, 3, 0.2], { preset: 'stone_brick@1', params: {} }),
+    box('sobj_window', '窗', 5, [0, 1, -1.8], [1.2, 1.2, 0.05], { preset: 'principled@1', params: { color: '#5a8fd0', transmission: 0.9, roughness: 0.05, thickness: 0.01 } }),
+    lamp('sobj_lampa', 6, -2),
+    lamp('sobj_lampb', 7, 2),
+  ]
+  doc.models = {}
+  return doc
+}
+
 /** The job queue, staged uploads and one scene, shared by every tab of a browser context. */
 class Server {
   constructor() {
+    this.doc = sceneDoc()
     this.queue = []
     this.claims = []
     this.leases = []
@@ -147,7 +179,7 @@ class Server {
     return job
   }
   render(id, request) {
-    const job = { id, document_id: DOC, kind: 'render_view', attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z', request: { ...request, mode: 'clay' } }
+    const job = { id, document_id: DOC, kind: 'render_view', attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z', request: { mode: 'clay', ...request } }
     this.queue.push(job)
     return job
   }
@@ -188,7 +220,7 @@ async function route(context, server) {
       server.completes.push({ id: job[1], payload })
       return json(200, { job_id: job[1], state: payload.outcome, result: {} })
     }
-    if (path === `/documents/${DOC}` && request.method() === 'GET') return json(200, sceneDoc())
+    if (path === `/documents/${DOC}` && request.method() === 'GET') return json(200, server.doc)
     if (path === '/media-access-tickets' && request.method() === 'POST')
       return json(200, { url: `${base}/__media/${MODEL}`, expires_at: '2100-01-01T00:00:00Z', mime: 'model/gltf-binary', byte_size: pillarGLB.byteLength })
     if (path === '/uploads' && request.method() === 'POST') {
@@ -433,6 +465,26 @@ try {
     await t.context.close()
   })
 
+  await check('the dusk sample (AC-8): render_view mode lit draws the brick, the glass and the warm lamps the clay leaves out', async () => {
+    const t = await openRender()
+    t.server.doc = duskDoc()
+    // The wall below the window, between the lamps.
+    const wall = [[0.5, 0.62]]
+    const clay = await t.render({ camera_object_id: 'sobj_cam', probes: wall })
+    const lit = await t.render({ camera_object_id: 'sobj_cam', mode: 'lit', probes: wall })
+    assert.ok(clay.ok && lit.ok, JSON.stringify(lit))
+    assert.equal(lit.type, 'image/jpeg')
+    assert.deepEqual([lit.width, lit.height], [1024, 683])
+    console.log(`dusk sample at the camera: clay wall ${clay.probes[0]}, lit wall ${lit.probes[0]}; corner ${clay.corner} → ${lit.corner}`)
+    const [r, g, b] = lit.probes[0]
+    assert.ok(r > b + 20 && g > b, `the brick wall in warm lamp light: ${lit.probes[0]}`)
+    const [cr, , cb] = clay.probes[0]
+    assert.ok(Math.abs(cr - cb) < 20, `the clay wall stays grey: ${clay.probes[0]}`)
+    assert.ok(lit.corner[2] < clay.corner[2] - 40, `a darker dusk sky than the clay's: ${clay.corner} → ${lit.corner}`)
+    assert.deepEqual(t.errors, [])
+    await t.context.close()
+  })
+
   await check('each screenshot gives its WebGL context back: twenty in a row all draw', async () => {
     const t = await openRender()
     for (let i = 0; i < 20; i++) {
@@ -495,6 +547,25 @@ try {
     assert.deepEqual(out.shots.map((s) => [s.camera_object_id, s.images.map((i) => i.pass)]), [['sobj_cam', ['clay', 'line']], ['sobj_dof', ['clay', 'line']]])
     for (const s of out.shots) for (const i of s.images) assert.equal(server.uploads.get(i.upload_id).mime, 'image/png')
     console.log(`export_shots of 4 images completed in ${Date.now() - started} ms`)
+    assert.deepEqual(t.errors, [])
+    await context.close()
+  })
+
+  await check('the canvas page runs the dusk sample’s lit render_view and a lit export', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new Server()
+    server.doc = duskDoc()
+    await route(context, server)
+    const t = await tab(context, '.scene-agent-host-qa.html')
+    await t.page.locator('#host', { hasText: 'idle' }).waitFor()
+    server.render('csj_lit', { camera_object_id: 'sobj_cam', mode: 'lit' })
+    server.export('csj_lit_export', { camera_object_ids: ['sobj_cam'], passes: ['clay', 'line', 'lit'], canvas_id: 'canvas', scene_node_id: 'node-scene' })
+    await t.page.evaluate(() => window.__invalidate())
+    const shot = await server.completed('csj_lit')
+    assert.equal(shot.payload.outcome, 'succeeded', JSON.stringify(shot.payload))
+    const done = await server.completed('csj_lit_export')
+    assert.equal(done.payload.outcome, 'succeeded', JSON.stringify(done.payload))
+    assert.deepEqual(done.payload.export.shots.map((s) => [s.camera_object_id, s.images.map((i) => i.pass)]), [['sobj_cam', ['clay', 'line', 'lit']]])
     assert.deepEqual(t.errors, [])
     await context.close()
   })

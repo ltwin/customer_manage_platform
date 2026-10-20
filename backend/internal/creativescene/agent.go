@@ -197,6 +197,24 @@ func summarizeChanges(rows []creativedocument.HistoryRow, before, now Scene) []s
 		}
 		return fmt.Sprintf("「%s」(%s)", name, id)
 	}
+	// reparentedTo words a parent that differs between before and now. Only
+	// edits that changed placement say it: a keep-world reparent always
+	// does, and an object's mere order is not news.
+	reparentedTo := func(id string) string {
+		bi, ok1 := beforeIdx[id]
+		ni, ok2 := nowIdx[id]
+		if !ok1 || !ok2 {
+			return ""
+		}
+		was, is := before.Objects[bi].ParentID, now.Objects[ni].ParentID
+		switch {
+		case is == nil && was == nil, is != nil && was != nil && *is == *was:
+			return ""
+		case is == nil:
+			return "，并改挂到根"
+		}
+		return "，并改挂到" + label(*is)
+	}
 	type edit struct {
 		at                 int64
 		actor, target      string
@@ -283,6 +301,9 @@ func summarizeChanges(rows []creativedocument.HistoryRow, before, now Scene) []s
 				parts = append(parts, "内容")
 			}
 			text = fmt.Sprintf("%s改了%s的%s", e.actor, label(e.target), strings.Join(parts, "和"))
+			if e.placement {
+				text += reparentedTo(e.target)
+			}
 		}
 		restores = append(restores, line{e.at, text})
 	}
@@ -772,15 +793,18 @@ type RevertedEntry struct {
 }
 
 // opsNotForTheAssistant are scene command operations edit_scene leaves out:
-// models come from write_model, the hierarchy cannot be restored unit by unit
-// (C5 opens manual grouping), and taking changes back is revert_run.
+// models come from write_model, and taking changes back is revert_run.
 var opsNotForTheAssistant = map[string]string{
-	"commit_model":     "模型用 write_model 写入",
-	"reparent_objects": "暂不支持调整层级",
-	"restore":          "撤回改动用 revert_run",
-	"restore_units":    "撤回改动用 revert_run",
-	"rename":           "不能改场景标题",
+	"commit_model":  "模型用 write_model 写入",
+	"restore":       "撤回改动用 revert_run",
+	"restore_units": "撤回改动用 revert_run",
+	"rename":        "不能改场景标题",
 }
+
+// opsOnTheObjectList all change the objects unit, which a revision changes
+// once: the scene command would refuse a second one only after the batch has
+// been resolved, with a reason that does not say what to do.
+var opsOnTheObjectList = []string{"add_objects", "remove_objects", "reparent_objects"}
 
 // AgentEditInTx is edit_scene: scene operations checked against the
 // baseline and written as the run, or a single revert_run. It returns an
@@ -790,15 +814,27 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		return nil, creativeops.ErrValidation
 	}
 	kinds := make([]string, len(in.Operations))
+	onTheList := 0
 	for i, raw := range in.Operations {
 		var head struct {
-			Op string `json:"op"`
+			Op          string `json:"op"`
+			Environment *struct {
+				Sky struct {
+					Kind string `json:"kind"`
+				} `json:"sky"`
+			} `json:"environment"`
 		}
 		if json.Unmarshal(raw, &head) != nil || head.Op == "" {
 			return nil, invalid("第 %d 个操作缺少 op", i+1)
 		}
 		if why, ok := opsNotForTheAssistant[head.Op]; ok {
 			return nil, invalid("第 %d 个操作 %s 不可用：%s", i+1, head.Op, why)
+		}
+		if head.Op == "set_environment" && head.Environment != nil && head.Environment.Sky.Kind == "hdri" {
+			return nil, invalid("第 %d 个操作：暂无内置 HDRI，请用程序化天空（procedural）或纯色（color）", i+1)
+		}
+		if slices.Contains(opsOnTheObjectList, head.Op) {
+			onTheList++
 		}
 		kinds[i] = head.Op
 	}
@@ -807,6 +843,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 			return nil, invalid("revert_run 必须单独提交")
 		}
 		return agentRevertInTx(ctx, tx, in)
+	}
+	if onTheList > 1 {
+		return nil, invalid("add_objects、remove_objects 和 reparent_objects 都改物件列表，一次修改里只能有其中一个：同类的条目合进一个操作（新分组和挂进它的物件写在同一个 reparent_objects 里，新物件在 add_objects 里直接写 parent_id），不同类的分次提交")
 	}
 	cur, err := creativedocument.LockCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
 	if err != nil {
@@ -817,6 +856,12 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	}
 	scene, err := decodeScene(cur.Content.Payload)
 	if err != nil {
+		return nil, err
+	}
+	if in.Operations, err = resolveSlots(ctx, tx, in.Operations, scene); err != nil {
+		return nil, err
+	}
+	if in.Operations, err = resolveReparent(in.Operations, scene); err != nil {
 		return nil, err
 	}
 	if in.Operations, err = resolveLookAt(in.Operations, scene); err != nil {

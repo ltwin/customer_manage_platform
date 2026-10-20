@@ -2,7 +2,8 @@ import { Component, useEffect, type ReactNode } from 'react'
 import type { Scene } from '../api.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { SceneObjects } from '../objects/SceneObjects.tsx'
-import { Environment } from '../Viewport.tsx'
+import { Lighting } from '../objects/Lighting.tsx'
+import type { Look } from './render.ts'
 
 // What a screenshot draws: the scene as the viewport shows it, nothing
 // selected, no light or camera icons. It reports its commit, so the one
@@ -10,13 +11,15 @@ import { Environment } from '../Viewport.tsx'
 
 const nothingSelected: ReadonlySet<string> = new Set()
 
-type Props = { scene: Scene; models: Readonly<Record<string, SceneModel>>; onCommit(): void; onError(err: unknown): void }
+type Props = { scene: Scene; models: Readonly<Record<string, SceneModel>>; look: Look; onCommit(): void; onError(err: unknown): void }
 
-export function ShotScene({ scene, models, onCommit, onError }: Props) {
+export function ShotScene({ scene, models, look, onCommit, onError }: Props) {
+  // The viewport's solid or rendered shading.
+  const display = look === 'lit' ? 'rendered' : 'solid'
   return (
     <Failed onError={onError}>
-      <Environment environment={scene.environment} />
-      <SceneObjects scene={scene} models={models} selected={nothingSelected} active={null} helpers={false} />
+      <Lighting environment={scene.environment} display={display} />
+      <SceneObjects scene={scene} models={models} selected={nothingSelected} active={null} helpers={false} display={display} />
       <Committed onCommit={onCommit} />
     </Failed>
   )

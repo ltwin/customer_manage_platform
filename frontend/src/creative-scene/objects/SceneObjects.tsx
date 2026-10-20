@@ -7,14 +7,21 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, sharpRange, verticalFov } from '../cameraOptics.ts'
 import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
-import { cameraDefaults } from '../state/apply.ts'
+import { cameraDefaults, lightDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
+import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
+import { SceneLight } from './SceneLights.tsx'
+import { SlotMesh } from './SlotMesh.tsx'
+import { resolveSlot } from '../materials/resolve.ts'
+import { disposeEdges } from './wireframe.ts'
+import { WireMesh } from './WireMesh.tsx'
 
 // Draws the scene tree. Every object is a group named by its ID (picking and
 // transforms find it by name); hiding an object hides only its own drawing,
-// not its children, as in Blender. The viewport is always clay.
+// not its children, as in Blender. In wireframe, meshes show their edges
+// only and stay pickable.
 //
 // Object groups carry view-space transforms (Z up, see space.ts), so moving,
 // rotating and the object's own axes read as in Blender. What an object
@@ -35,10 +42,17 @@ type Props = {
   helpers?: boolean
   /** The camera the viewport looks through; its own frustum would be in the way. */
   through?: string | null
+  /** The viewport's shading; a screenshot is solid. */
+  display?: DisplayMode
 }
 
-type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through'>> & {
+type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through' | 'display'>> & {
   through: string | null
+  wire: boolean
+  /** Light objects shine only in the lit look. */
+  lit: boolean
+  /** Material preview and rendered draw slots' materials; the rest is clay. */
+  materials: boolean
   scene: Scene
   childrenOf: Map<string, SceneObject[]>
   placeholdersOf: Map<string, Placeholder[]>
@@ -58,7 +72,7 @@ function grouped<T>(items: readonly T[], key: (item: T) => string | null): Map<s
   return out
 }
 
-export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, through = null }: Props) {
+export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, through = null, display = 'solid' }: Props) {
   const childrenOf = useMemo(() => {
     const byParent = grouped(scene.objects, (o) => o.parent_id)
     for (const list of byParent.values()) list.sort((a, b) => a.order - b.order)
@@ -69,7 +83,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered' }
   return (
     <>
       {(childrenOf.get('') ?? []).map((o) => (
@@ -91,12 +105,14 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
       {o.kind === 'group' && (helpers && !tree.childrenOf.get(o.id)?.length ? <EmptyMarker edge={edge} /> : edge && <GroupMarker />)}
       <group visible={o.visible} quaternion={docToView}>
         {o.kind === 'primitive' && o.primitive && (
-          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} />
+          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
-          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
+          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
-        {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
+        {/* The viewport, the one place with helpers, warms new lights; a shot compiles before shooting. */}
+        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} />}
+        {helpers && o.kind === 'light' && <LightIcon light={o.light} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
       </group>
       {(tree.childrenOf.get(o.id) ?? []).map((c) => (
@@ -128,13 +144,29 @@ function PlaceholderBlock({ placeholder }: { placeholder: Placeholder }) {
   )
 }
 
-function PrimitiveMesh({ builtin, params, edge }: { builtin: string; params?: Record<string, unknown>; edge: string | null }) {
+type Slots = NonNullable<SceneObject['material_slots']>
+
+function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string; params?: Record<string, unknown>; edge: string | null; wire: boolean; slots: Slots | null }) {
   const key = JSON.stringify(params ?? {})
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key stands for params
   const geometry = useMemo(() => primitiveGeometry(builtin, params), [builtin, key])
-  useEffect(() => () => geometry?.dispose(), [geometry])
+  useEffect(
+    () => () => {
+      if (!geometry) return
+      disposeEdges(geometry)
+      geometry.dispose()
+    },
+    [geometry],
+  )
   if (!geometry) return null
+  if (wire) return <WireMesh geometry={geometry} edge={edge} />
   const flat = builtin === 'ground@1' || builtin === 'plane@1'
+  if (slots)
+    return (
+      <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} doubleSided={flat} castShadow={!flat}>
+        {edge && (flat ? <Edges threshold={20} lineWidth={2} color={edge} /> : <Outlines thickness={3} color={edge} />)}
+      </SlotMesh>
+    )
   return (
     <mesh geometry={geometry} castShadow={!flat} receiveShadow>
       <meshStandardMaterial name="slot:main" color={clay} roughness={0.92} metalness={0} side={flat ? 2 : 0} />
@@ -144,17 +176,34 @@ function PrimitiveMesh({ builtin, params, edge }: { builtin: string; params?: Re
   )
 }
 
-function LightIcon({ color, spot, edge }: { color: string; spot: boolean; edge: string | null }) {
+/** Slant length of a spot's cone icon: wide cones stay short instead of reaching out. */
+const coneSlant = 0.6
+
+/**
+ * A light's icon: a ball, with a spot's cone at its real angle and a
+ * directional light's beam, both along local −Z where the light shines.
+ */
+function LightIcon({ light, edge }: { light: SceneObject['light']; edge: string | null }) {
+  const color = edge ?? light?.color ?? '#ffffff'
+  const angle = light?.angle ?? lightDefaults.angle
+  const height = coneSlant * Math.cos(angle)
   return (
     <group>
       <mesh>
         <sphereGeometry args={[0.15, 16, 8]} />
-        <meshBasicMaterial color={edge ?? color} />
+        <meshBasicMaterial color={color} />
       </mesh>
-      {spot && (
-        <mesh position={[0, 0, -0.35]} rotation={[-Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.12, 0.4, 12, 1, true]} />
-          <meshBasicMaterial color={edge ?? color} wireframe />
+      {light?.type === 'spot' && (
+        // three's cone points +Y from its middle; turned to −Z with the tip at the light.
+        <mesh position={[0, 0, -height / 2]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[coneSlant * Math.sin(angle), height, 16, 1, true]} />
+          <meshBasicMaterial color={color} wireframe />
+        </mesh>
+      )}
+      {light?.type === 'directional' && (
+        <mesh position={[0, 0, -0.4]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.5, 6]} />
+          <meshBasicMaterial color={color} />
         </mesh>
       )}
     </group>
