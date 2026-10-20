@@ -1,12 +1,12 @@
 {
   "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
-  "revision": 6,
+  "revision": 8,
   "id": "scene-model-library",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 11,
+    "version": 12,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -43,7 +43,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-20T14:52:30.611Z",
-  "updatedAt": "2026-10-20T18:06:58.687Z",
+  "updatedAt": "2026-10-20T19:29:12.282Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -54,16 +54,29 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-20T16:39:58.603Z",
-      "contentHash": "8dffc4908e831566"
+      "at": "2026-10-20T19:29:12.077Z",
+      "contentHash": "97608d07863a1fad"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-20T16:39:58.603Z",
-      "contentHash": "b1b12f551153336d"
+      "at": "2026-10-20T19:29:12.077Z",
+      "contentHash": "1ad578f31a7cc399"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-20T16:39:58.603Z",
+      "contentHash": "8dffc4908e831566",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-20T16:39:58.603Z",
+      "contentHash": "b1b12f551153336d",
+      "role": "design"
+    }
+  ],
   "revisions": [],
   "baseline": {
     "commit": "c3c2c9a92e8350c27c552aed89119b89d49ecbff",

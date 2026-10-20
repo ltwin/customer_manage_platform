@@ -278,19 +278,34 @@ export default function build({ params, THREE, lib, rng }) {
 
 ## data: ADD 模型资产
 
-- **用途**：资产库可以存放 `model` 资产。
-- **存储**：`creative_assets.kind` 的 CHECK 加 `model`；资产引用模型完整形态的 `content_revision_id`（暂存形态不能入库），不复制字节。资产库现有能力（分组、标签、评分、回收站、筛选）对 `model` 一视同仁；按画面的筛选（主色、画幅）只作用于图片，模型自然不命中。
-- **查重**（修订 v11）：与「从画布存入」相同，按模型修订：同一 `content_revision_id` 已有不在回收站的资产时复用，只追加归类。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
-- **持有**：资产是模型修订的 GC 持有方，经现有的 `creativereference.LiveOwnerCondition`（按 `content_revision_id` 与 `kind` 匹配），GLB 与缩略图对象随之保留；不新增引用列。
+- **用途**：资产库可以存放 `model` 资产：一份模型（几何、代码、参数）加它的材质分配，相当于 Blender 的物件资产。位置、旋转、缩放是场景物件的变换，不随资产保存（修订 v12，owner 2026-10-20）。
+- **存储**：
+  - `creative_assets.kind` 的 CHECK 加 `model`。资产库现有能力（分组、标签、评分、回收站、筛选）对 `model` 一视同仁；按画面的筛选（主色、画幅）只作用于图片，模型自然不命中。
+  - **库副本**（修订 v12）：存入时新建一个模型内容，写一个完整形态的修订，资产引用它。它是场景里那个模型修订的复制品：
+    - 载荷：`format`、`generator`（含代码）、`manifest`、`name_hint` 与来源修订相同，另加两个字段：
+
+      | 路径 | 类型 | 必须 | 约束 |
+      |---|---|---|---|
+      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params}}`），只保留 manifest 里存在的槽位，可以是空对象 |
+      | `model.source_revision_id` | string | 库副本必有 | 复制自哪个模型修订。来源本身是库副本时取它的 `source_revision_id`，所以总指向场景里烘焙出的修订 |
+
+      场景命令写出的修订没有这两个字段；有 `source_revision_id` 就是库副本。
+    - 对象：`original` 复用来源修订的 GLB blob，不复制字节；`thumbnail` 是存入时上传的 PNG，按所配材质渲染（未分配的槽位按 C5 的规则取提示或默认材质）。
+    - 写入口：只由「模型存入资产库」写入；`commit_model` 的操作结构里没有这两个字段，场景命令写不出库副本。约束由应用保证。
+    - 修订 v12 之前直接引用场景修订的模型资产只存在于开发环境，照常可读，视为没有材质分配，不迁移。
+- **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
+- **持有**：资产是库副本修订的 GC 持有方，经现有的 `creativereference.LiveOwnerCondition`（按 `content_revision_id` 与 `kind` 匹配）。与来源修订共用的 GLB、存入时上传的缩略图随之保留；不新增引用列。
+- **库副本只属于资产库**（修订 v12）：`commit_model` 的 `base_content_id` 指向库副本的内容时，服务端新建内容，不在库副本上追加修订，响应的 `models` 照常返回新内容的 ID。这样放进场景后的修改，不论来自编辑器还是助手、页面是否刷新过，总是分叉出场景自己的模型，库副本只有存入时的那一个修订。这条补充 `api: 场景模型命令` 的分叉规则（I4），由本条交付。
 - **读取**（修订 v11）：
-  - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。
+  - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
   - 助手（修订 v11）：
-    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽和参数名。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
-    - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。
-    - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足时只返回信息，并在 `thumbnail_omitted` 里说明原因，不报错。
+    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
+    - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
     - 模型信息按 `media_metadata` 外发，与资产库元数据相同。
-  - 卡片用 `thumbnail` 角色的 PNG，查看浮窗按 `original` 角色读 GLB，都走现有媒体读取票据。
-- **放置**：模型资产只能放进场景（`add_objects` 的 `model.content_revision_id`），不能放到画布：没有 `core.model` 节点类型，画布的放入、填充和参考选择都不接受它。
+  - 卡片用 `thumbnail` 角色的 PNG，查看浮窗按 `original` 角色读 GLB，都走现有媒体读取票据；查看浮窗的「材质」模式按 `materials` 着色（修订 v12）。
+- **放置**：模型资产只能放进场景（`add_objects` 的 `model.content_revision_id`），不能放到画布：没有 `core.model` 节点类型，画布的放入、填充和参考选择都不接受它。放入时实例的 `material_slots` 写资产的 `materials`：编辑器自动写，助手按 `edit_scene` 的说明写。之后在场景里换材质只改实例（修订 v12）。
+- **OpenAPI**（修订 v12）：`CreativeModelPayload` 与只用于响应的 `CreativeModelPreviewPayload` 的 `model` 加可选的 `materials`、`source_revision_id`。`CreativeModelPayload` 也被请求体引用，但模型不能经通用写入口写入，放宽不产生新的写法。
 - **生命周期**：回滚时如已有 `model` 资产则拒绝，前向修复。资产库不记录资产被哪个场景使用过（I7）。
 
 ## api: MODIFY 读取场景
@@ -896,11 +911,11 @@ Content-Type: application/json
 ## api: ADD 模型存入资产库
 
 ### 用途与调用
-- **用途**：把场景里某个实例当前引用的模型修订存入资产库（复制语义，见 I7）。
+- **用途**：把场景里某个实例的模型和材质分配复制成库副本，存入资产库（复制语义，见 I7 与 `data: 模型资产`，修订 v12）。
 - **消费者**：编辑器对象菜单「存入资产库」；后续的助手库整理工具。
 - **调用**：`POST /api/v1/creative/assets/from-scene-model`，`Idempotency-Key` 必填，外层为公共约定（`{operation_id, client_created_at, payload}`，`Idempotency-Key` 等于 `operation_id`）。成功响应复用 `CreativeAssetCreateResult`（`api/openapi.yaml`）。
 - **权限**：场景属于当前账号，账号有创意空间写入权限（同 `/creative/assets/from-canvas-node`）。
-- **只读场景**：不改场景，不产生场景修订；只在资产库写入。
+- **只读场景**：不改场景，不产生场景修订；只写库副本和资产库。
 
 ### 请求
 `payload`：
@@ -909,40 +924,43 @@ Content-Type: application/json
 |---|---|---|---|
 | `document_id` | string | 是 | 场景文档 ID |
 | `object_id` | string | 是 | `kind=model_instance` 的对象 |
-| `expected_object_rev` | CreativeRevision | 是 | 该对象**内容单元** `object:<id>:content` 的当前 `rev`（模型引用在这个单元里，修订 v11），防止存入摄影师没看到的模型修订 |
+| `expected_object_rev` | CreativeRevision | 是 | 该对象**内容单元** `object:<id>:content` 的当前 `rev`。模型引用和材质分配都在这个单元里（修订 v11、v12），防止存入摄影师没看到的模型或材质 |
+| `thumbnail_upload_id` | string | 是 | 缩略图的暂存上传（修订 v12）：声明类型 `image` 的 PNG，与 `commit_model` 的缩略图同一套暂存上传。编辑器按实例当前的材质渲染，256 × 256、取景与烘焙缩略图相同。新建库副本时消费；复用已有资产时不消费，按暂存规则过期回收 |
 | `target` | `CreativeUploadAssetTarget` | 是 | 沿用现有结构：`title` 必填（1–200），`description`（≤ 1000 码点）、`group_ids`、`tag_ids`、`new_tags`、`is_favorite` 可选 |
 
 ### 成功响应
-- 201：已创建资产，`reused = false`。
-- 200：同一模型修订已有不在回收站的资产，`reused = true`，只追加所选分组和标签；`title`、`description` 是已有资产的值，本次传入的标题、描述和收藏不生效。
+- 201：已新建库副本和资产，`reused = false`；`content_revision_id` 是库副本修订。
+- 200：来源修订相同、材质分配相同的模型资产已存在且不在回收站（修订 v12），`reused = true`，只追加所选分组和标签；`title`、`description` 是已有资产的值，本次传入的标题、描述和收藏不生效。
 
 两者的语义都与 `/creative/assets/from-canvas-node` 一致，随幂等回执重放。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 对象不是模型实例；`target` 字段不合法 | 修正 |
+| 400 | `validation_failed` | 对象不是模型实例；`target` 字段不合法；缩略图上传不是 PNG 图片 | 修正 |
 | 400 | `creative_model_unavailable` | 实例引用的模型修订不存在、不是完整形态或不可展示（修订 v11：与场景模型命令一致，不用 404 和 `creative_state_conflict`） | 提示不能存入 |
 | 404 | `not_found` | 场景不存在或不属于当前账号；对象不在场景当前快照里；`target` 引用的分组或标签不存在（同 `/creative/assets/from-canvas-node`） | 重读 |
 | 409 | `creative_document_conflict` | `expected_object_rev` 与当前不符；`details.conflicts` 为 `[{unit: "object:<id>:content", expected_rev, current_rev}]`，与提交场景命令相同 | 重读，确认看到的是要存的模型后重试 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
+| 409 | `creative_upload_unavailable` | 需要新建库副本时，缩略图上传不存在、属于其他账号、已过期、已消费或尚未就绪（修订 v12，与 `commit_model` 相同） | 重新渲染并上传缩略图后重试 |
 | 409 | `idempotency_conflict` 等 | 公共约定 | — |
 
 ### 调用示例
 ```json
 {"operation_id": "6e7f8091-a2b3-4c4d-8e5f-60718293a4b5", "client_created_at": "2026-10-28T09:00:00Z",
  "payload": {"document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10", "object_id": "sobj_Z1x2C3v4B5n6M7a8S9d0f",
-             "expected_object_rev": "6", "target": {"title": "哥特束柱", "description": "可调高度的束柱", "group_ids": ["cgrp_31aa"]}}}
+             "expected_object_rev": "6", "thumbnail_upload_id": "cupl_5d0c",
+             "target": {"title": "哥特束柱", "description": "可调高度的束柱", "group_ids": ["cgrp_31aa"]}}}
 ```
 201：
 ```json
 {"asset_id": "cast_90ab", "revision": "1", "content_revision_id": "ccrev_9e2a", "library_revision": "211", "tag_mapping": {}, "reused": false, "title": "哥特束柱", "description": "可调高度的束柱"}
 ```
-409（摄影师看到的是修订 6，之后助手改了参数）：
+409（摄影师看到的是修订 6，之后助手改了参数或材质）：
 ```json
 {"error": {"code": "creative_document_conflict", "message": "文档已被修改",
            "details": {"conflicts": [{"unit": "object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content", "expected_rev": "6", "current_rev": "9"}]}}}
 ```
 
 ### 兼容与变更
-首次定义。**从资产库放入场景**不新增接口：编辑器用资产的 `content_revision_id` 调 `add_objects`（`kind=model_instance`）。之后编辑时按 I4 分叉，资产不受影响。`CreativeAssetCreateResult` 已于 C6 起草时（2026-10-20）核对，示例与之一致。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `model`，是兼容扩展。
+首次定义。**从资产库放入场景**不新增接口：编辑器用资产的 `content_revision_id` 调 `add_objects`（`kind=model_instance`），`material_slots` 写资产的 `materials`。之后编辑总是分叉（`data: 模型资产`「库副本只属于资产库」），资产不受影响。修订 v12 新增必填的 `thumbnail_upload_id`；接口尚未上线，不保留旧形态。`CreativeAssetCreateResult` 已于 C6 起草时（2026-10-20）核对，示例与之一致。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `model`，是兼容扩展。
