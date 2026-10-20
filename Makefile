@@ -1,6 +1,6 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops check-image-codec
+.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops check-merge check-image-codec
 
 BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
 
@@ -82,6 +82,18 @@ check-go:
 
 # 部署脚本 / ops 契约改动
 check-ops: test-ops
+
+# 合回 develop 的门禁（AGENTS.md「合并门禁」）。build、lint、生成物、前端单测照跑；后端
+# 用 Go 的测试缓存，只重跑这次合并影响到的包：缓存按包自己和它全部依赖的代码计算，依赖链上
+# 任何代码变了都会重跑，所以不靠人列影响面。缓存跟检出目录绑定（worktree 之间不共用），
+# 在主检出里合并时跑：git merge --no-ff --no-commit feat/x → make check-merge → git commit。
+# scripts/、deploy/、Dockerfile 与 develop 相同时跳过 test-ops。发布前仍用 make check。
+MERGE_BASE ?= develop
+check-merge: build lint generate-check test-frontend
+	cd backend && go test -p=$(GOTEST_P) ./... -parallel=$(GOTEST_P)
+	@if git diff --quiet $(MERGE_BASE) -- scripts deploy Dockerfile; then \
+		echo "check-merge: scripts/、deploy/、Dockerfile 与 $(MERGE_BASE) 相同，跳过 test-ops"; \
+	else $(MAKE) test-ops; fi
 
 # 图片编辑编解码（creativeimageedit）：本机没有 vips 时这些样张测试会跳过，改动编解码或
 # 升级 libvips 时在与 creative-worker 镜像同版本的 vips 下跑。VIPS_APK 须与 Dockerfile 一致。

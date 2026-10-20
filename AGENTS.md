@@ -56,7 +56,7 @@ Skills directory: /Users/samson/.claude/skills
 
 ## 验证范式
 
-**门禁按影响面选，不按习惯选。** `make check` 是合回 `develop` 与发布前的门禁，不是每次编辑的默认动作。改一行 CSS 就跑全量，浪费的不只是时间——等待中人会倾向于跳过验证，那才是真代价。
+**门禁按影响面选，不按习惯选。** `make check-merge` 是合回 `develop` 的门禁，`make check` 是发布前的门禁，都不是每次编辑的默认动作。改一行 CSS 就跑全量，浪费的不只是时间——等待中人会倾向于跳过验证，那才是真代价。
 
 ### 判定表
 
@@ -68,9 +68,22 @@ Skills directory: /Users/samson/.claude/skills
 | Go 跨包改动 / 接口签名 / 迁移 | `make check-go`（PKG 默认 `./...`） | ~55s |
 | `api/openapi.yaml` | `make generate` + 提交两份生成物 + 两侧受影响包 | — |
 | `scripts/` 下部署与 ops 契约 | `make check-ops` | ~2min |
-| 合回 `develop` 前 / 发布前 | `make check` | ~3min |
+| 合回 `develop` | 主检出里 `git merge --no-ff --no-commit` 后 `make check-merge` | 缓存热、无 Go 改动 27s；只改 creativescene 160s（重跑它和依赖它的 5 个包，creativeagent 占 121s）；主检出首次冷跑 ~6.5min |
+| 发布前（`develop` → `main`） | `make check` | ~8min（含 test-ops） |
 
 分层门禁只改变**跑什么**，不改变**标准**。缩小范围是因为其余部分与改动无关，不是为了让红灯消失；一旦不确定影响面，就往上取一档。
+
+### 合并门禁（`make check-merge`，2026-10-20 拍板）
+
+合回 `develop` 不再每次跑 `make check`。功能分支开发时已按影响面跑过定向测试，合并点要补的是两类定向测试抓不到的问题：**影响面算漏**（例：改系统说明的文字，坏的是 creativeagent 里与功能无关的上下文压缩测试），和**与 develop 上其他改动的组合**。
+
+`check-merge` 全仓 build、lint、生成物、前端单测照跑；后端 `go test ./...` **不带 `-count=1`**，用 Go 的测试缓存：缓存按包自身和它全部依赖的代码计算，依赖链上任一代码变化都会重跑，所以「只重跑受影响的包」由编译器判定，不靠人列清单。`scripts/`、`deploy/`、`Dockerfile` 与 develop 相同时跳过 `test-ops`（其中的 Go 测试已在 `./...` 里）。
+
+- **在主检出里跑**：测试缓存跟检出目录绑定，同一份代码换到 worktree 会整包重跑（实测）。合并顺序：主检出 `git merge --no-ff --no-commit feat/x` → `make check-merge` → 通过后 `git commit`；不通过就 `git merge --abort` 回功能分支修。
+- **缓存的盲区**：只感知 Go 代码和测试读到的文件与环境变量；测试容器镜像、未被测试引用的迁移脚本、外部服务变化看不到。所以发布前仍跑 `make check`（`-count=1` 全部重跑）。
+- **少跑也少挤**：全量 `-p=4` 时多个包同时起测试容器，Docker 会被压到启动超时（2026-10-20 合 C4 时 3 个包 `context deadline exceeded`，单独重跑全绿）。只跑受影响的包，这类环境红灯也少。
+- **下一个瓶颈是 creativeagent**：单包约 105–120s，场景、画布、助手相关的改动都会让它重跑，合并门禁的耗时基本由它决定，值得单独优化。
+- 红灯分诊照旧（见下）：先假设是真回归。
 
 ### `make check` 的成本构成
 
