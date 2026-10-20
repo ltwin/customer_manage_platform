@@ -16,12 +16,14 @@ export const isMediaKind = (kind: string): kind is MediaKind =>
   (mediaKinds as readonly string[]).includes(kind)
 
 // Picks the rendition that fits the purpose; originals only for download or
-// when no display rendition was derived.
+// when no display rendition was derived. A model is shown only through its
+// thumbnail: its original is a GLB, never an image.
 export function pickRendition(
   media: MediaObject[] | undefined,
-  prefer: 'display' | 'original',
+  prefer: 'display' | 'original' | 'thumbnail',
 ): MediaObject | undefined {
   if (!media?.length) return undefined
+  if (prefer === 'thumbnail') return media.find((m) => m.role === 'thumbnail')
   return (
     media.find((m) => m.role === prefer) ??
     media.find((m) => m.role === 'original')

@@ -1,0 +1,72 @@
+import type { components } from '../../api/schema'
+import type { Content } from '../editor/api.ts'
+
+// 模型资产的信息格式化：检查器、查看浮窗共用。不依赖 three，资产库页照常不加载 3D 引擎。
+
+type Manifest = components['schemas']['CreativeModelManifest']
+type Generator = components['schemas']['CreativeModelGenerator']
+
+export const mountLabel: Record<Generator['mount'], string> = {
+  floor: '落地',
+  wall: '墙挂',
+  ceiling: '吊顶',
+  free: '自由放置',
+}
+
+export type ModelInfo = {
+  name: string
+  mount: string
+  /** 宽 × 高 × 深，米，保留两位。 */
+  size: string
+  triangles: string
+  slots: { id: string; hint?: string }[]
+  params: { key: string; label: string; value: string }[]
+}
+
+/** 完整形态的模型才有信息；暂存形态和其他类型返回 null。 */
+export function modelInfo(content: Content | undefined): ModelInfo | null {
+  if (content?.kind !== 'model' || !('model' in content.payload)) return null
+  const { manifest, generator, name_hint } = content.payload.model
+  if (!generator) return null
+  return {
+    name: name_hint ?? '',
+    mount: mountLabel[generator.mount],
+    size: modelSize(manifest),
+    triangles: manifest.triangles.toLocaleString('zh-CN'),
+    slots: manifest.slots,
+    params: Object.entries(generator.params_schema)
+      .map(([key, spec]) => ({
+        key,
+        label: spec.label || key,
+        value: paramValue(generator.params[key] ?? spec.default, spec.unit),
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
+  }
+}
+
+export function modelSize(m: Manifest): string {
+  const edge = (i: number) => ((m.bounds.max[i] ?? 0) - (m.bounds.min[i] ?? 0)).toFixed(2)
+  return `${edge(0)} × ${edge(1)} × ${edge(2)} 米`
+}
+
+function paramValue(v: unknown, unit?: string): string {
+  if (typeof v === 'boolean') return v ? '是' : '否'
+  if (typeof v === 'number') return unit ? `${v} ${unit}` : String(v)
+  return typeof v === 'string' ? v : JSON.stringify(v)
+}
+
+/** 检查器与查看浮窗的信息行：标签与值。 */
+export function modelRows(info: ModelInfo): [string, string][] {
+  const rows: [string, string][] = [
+    ['尺寸', info.size],
+    ['放置方式', info.mount],
+    ['面数', info.triangles],
+  ]
+  if (info.slots.length)
+    rows.push([
+      '材质槽',
+      info.slots.map((s) => (s.hint ? `${s.id}（${s.hint}）` : s.id)).join('、'),
+    ])
+  for (const p of info.params) rows.push([p.label, p.value])
+  return rows
+}

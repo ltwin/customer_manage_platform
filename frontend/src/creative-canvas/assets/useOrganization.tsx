@@ -204,7 +204,7 @@ export function useOrganization({
             )
             if (!full.content || full.unavailable)
               throw new Error('素材当前无法下载')
-            if (['image', 'video', 'audio'].includes(full.kind))
+            if (['image', 'video', 'audio', 'model'].includes(full.kind))
               await downloadMedia(full.content, full.title)
             else {
               const blob = new Blob(

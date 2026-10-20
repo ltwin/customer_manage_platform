@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import AssetDescriptionInput from "../assets/AssetDescriptionInput.tsx"
 import { ArrowUpRight, Download, Plus, Trash2, Undo2, X } from 'lucide-react'
 import type { Asset } from '../editor/api.ts'
@@ -10,6 +11,7 @@ import { StarRating } from '../editor/StarRating.tsx'
 import type { LibraryCatalog } from '../assets/useLibrary.ts'
 import type { useOrganization } from '../assets/useOrganization.tsx'
 import { anchorPoint } from '../assets/popover.ts'
+import { modelInfo, modelRows } from './modelInfo.ts'
 
 export default function AssetInfoPanel({
   asset,
@@ -31,6 +33,7 @@ export default function AssetInfoPanel({
 }) {
   const original = asset.content?.media?.find((m) => m.role === 'original')
   const duration = mediaDuration(asset)
+  const model = modelInfo(asset.content)
   const disabled = blocked || !!asset.deleted_at
   return (
     <>
@@ -73,6 +76,13 @@ export default function AssetInfoPanel({
           onChange={onRate}
         />
         <dl className="v-rows">
+          {model &&
+            modelRows(model).map(([label, value], i) => (
+              <Fragment key={i}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </Fragment>
+            ))}
           <dt>添加于</dt>
           <dd>
             {new Intl.DateTimeFormat('zh-CN', {

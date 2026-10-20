@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Film, ImageOff } from 'lucide-react'
+import { AudioLines, Box, Film, ImageOff } from 'lucide-react'
 import type { Content } from './api.ts'
 import {
   cachedMediaTicket,
@@ -7,6 +7,7 @@ import {
   mediaTicket,
   pickRendition,
   type MediaObject,
+  type TicketRole,
 } from './media.ts'
 import { getAuthSnapshot } from '../../auth/session.ts'
 
@@ -54,7 +55,7 @@ export function useThumbnails(
 export function useMediaURL(
   revision: string | null | undefined,
   media: MediaObject[] | undefined,
-  prefer: 'display' | 'original',
+  prefer: 'display' | 'original' | 'thumbnail',
   active: boolean,
 ): { url: string | null; error: string | null; retry: () => void } {
   const [state, setState] = useState<{
@@ -73,7 +74,7 @@ export function useMediaURL(
     let live = true
     void mediaTicket(
       revision,
-      rendition.role as 'original' | 'display',
+      rendition.role as TicketRole,
       'display',
     )
       .then((ticket) => {
@@ -98,7 +99,7 @@ export function useMediaURL(
         : active && revision && rendition
           ? (cachedMediaTicket(
               revision,
-              rendition.role as 'original' | 'display',
+              rendition.role as TicketRole,
             )?.url ?? null)
           : null,
     error: state.key === key ? state.error : null,
@@ -106,7 +107,7 @@ export function useMediaURL(
       if (revision && rendition)
         invalidateMediaTicket(
           revision,
-          rendition.role as 'original' | 'display',
+          rendition.role as TicketRole,
         )
       setState({ key: '', url: null, error: null })
       setAttempt((n) => n + 1)
@@ -168,7 +169,7 @@ export function MediaFigure({
   const { url, error, retry } = useMediaURL(
     content?.id,
     content?.media,
-    kind === 'image' ? prefer : 'original',
+    kind === 'image' ? prefer : kind === 'model' ? 'thumbnail' : 'original',
     near,
   )
   const [failed, setFailed] = useState(false)
@@ -206,9 +207,11 @@ export function MediaFigure({
             <Film size={22} />
           ) : kind === 'audio' ? (
             <AudioLines size={22} />
+          ) : kind === 'model' ? (
+            <Box size={22} />
           ) : null}
         </span>
-      ) : kind === 'image' ? (
+      ) : kind === 'image' || kind === 'model' ? (
         <img
           src={url}
           alt={title}
@@ -287,6 +290,7 @@ export async function downloadMedia(
       'video/webm': 'webm',
       'audio/mpeg': 'mp3',
       'audio/wav': 'wav',
+      'model/gltf-binary': 'glb',
     }[original.mime] ?? ''
   const base = Array.from(title || '媒体')
     .map((ch) =>
