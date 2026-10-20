@@ -15285,7 +15285,7 @@ components:
     CreativeSceneReparentObjects:
       type: object
       additionalProperties: false
-      description: 涉及 objects。
+      description: 按顺序执行：先建 create_groups，再按 moves 改挂（parent_id 可以是本次新建的分组），最后删除 remove_groups（删除时须没有子物件；同时删除的子分组不算）。同一物件在三处合计只能出现一次。涉及 objects；带 transform 的移动另涉及 object:<id>；删除的分组涉及它的两个单元；新建分组的两个单元出现在 changed_units 中。
       required:
       - op
       - moves
@@ -15300,6 +15300,19 @@ components:
           maxItems: 2000
           items:
             $ref: '#/components/schemas/CreativeSceneMove'
+        create_groups:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          description: 新分组，外形同 add_objects 里 kind=group 的对象。
+          items:
+            $ref: '#/components/schemas/CreativeSceneObject'
+        remove_groups:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            type: string
     CreativeSceneMove:
       type: object
       additionalProperties: false
@@ -15316,6 +15329,9 @@ components:
         order:
           type: integer
           minimum: 0
+        transform:
+          description: 同时替换该物件的局部变换；调用方据此保持世界位置，服务端照写。
+          $ref: '#/components/schemas/CreativeSceneTransform'
     CreativeSceneSetEnvironment:
       type: object
       additionalProperties: false

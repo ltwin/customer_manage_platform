@@ -480,6 +480,90 @@ func TestRemoveAndReparent(t *testing.T) {
 	}
 }
 
+// TestGroupAndUngroup is Ctrl+G, Ctrl+Alt+G and undoing the ungroup, each
+// one reparent_objects: creating or removing the group in the same operation
+// is what keeps objects touched once.
+func TestGroupAndUngroup(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	g, a, b := objectID(1), objectID(2), objectID(3)
+	addObjects(t, f.a, doc, box(a, nil, 1), box(b, nil, 2))
+	pa, pb := at(1, 0, 2), at(3, 0, 2)
+	updates := []any{map[string]any{"object_id": a, "transform": pa}, map[string]any{"object_id": b, "transform": pb}}
+	v := readScene(t, f.a, doc)
+	mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect(placement(a), placement(b)), Operations: []any{op{"op": "update_objects", "updates": updates}}})
+
+	// a gets a new local transform; b keeps its own.
+	v = readScene(t, f.a, doc)
+	grp := group(g, nil, 3)
+	grp["transform"] = at(2, 0, 2)
+	res := mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects", placement(a)), Operations: []any{op{"op": "reparent_objects",
+		"create_groups": []any{grp},
+		"moves": []any{
+			map[string]any{"object_id": a, "parent_id": g, "order": 0, "transform": at(-1, 0, 0)},
+			map[string]any{"object_id": b, "parent_id": g, "order": 1},
+		}}}})
+	if want := sorted([]string{"objects", placement(a), placement(g), content(g)}); !reflect.DeepEqual(res.ChangedUnits, want) || len(res.RemovedUnits) != 0 {
+		t.Fatalf("group receipt %+v", res)
+	}
+	v = readScene(t, f.a, doc)
+	if got := tree(v); got[a] != g+"#0" || got[b] != g+"#1" || got[g] != "-#3" {
+		t.Fatalf("grouped tree %v", got)
+	}
+	if o := v.object(t, a); o.Transform.Position[0] != -1 || v.UnitRevs[placement(a)] != strconv.FormatInt(int64(res.Revision), 10) {
+		t.Fatalf("grouped a %+v", o)
+	}
+	if o := v.object(t, b); o.Transform.Position[0] != 3 {
+		t.Fatalf("b without transform moved: %+v", o)
+	}
+
+	// Ungroup: children back to the root with their world transforms, the
+	// group removed with both its units.
+	res = mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect(append(units(g), "objects", placement(a), placement(b))...), Operations: []any{op{"op": "reparent_objects",
+		"moves": []any{
+			map[string]any{"object_id": a, "parent_id": nil, "order": 3, "transform": pa},
+			map[string]any{"object_id": b, "parent_id": nil, "order": 4, "transform": pb},
+		},
+		"remove_groups": []string{g}}}})
+	if !reflect.DeepEqual(res.ChangedUnits, sorted([]string{"objects", placement(a), placement(b)})) || !reflect.DeepEqual(res.RemovedUnits, sorted(units(g))) {
+		t.Fatalf("ungroup receipt %+v", res)
+	}
+	v = readScene(t, f.a, doc)
+	if got := tree(v); v.has(g) || got[a] != "-#3" || got[b] != "-#4" {
+		t.Fatalf("ungrouped tree %v", got)
+	}
+
+	// Undoing the ungroup recreates the group under its old ID.
+	res = mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect(append(units(g), "objects", placement(a))...), Operations: []any{op{"op": "reparent_objects",
+		"create_groups": []any{grp},
+		"moves": []any{
+			map[string]any{"object_id": a, "parent_id": g, "order": 0, "transform": at(-1, 0, 0)},
+			map[string]any{"object_id": b, "parent_id": g, "order": 1},
+		}}}})
+	if v = readScene(t, f.a, doc); tree(v)[a] != g+"#0" || res.Revision != v.Revision {
+		t.Fatalf("regrouped tree %v", tree(v))
+	}
+}
+
+// Ungrouping nested groups removes both: a child that is removed too does not
+// keep its parent.
+func TestUngroupNestedGroups(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	outer, inner, a := objectID(1), objectID(2), objectID(3)
+	addObjects(t, f.a, doc, group(outer, nil, 1), group(inner, &outer, 0), box(a, &inner, 0))
+	v := readScene(t, f.a, doc)
+	res := mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect(append(units(outer, inner), "objects")...), Operations: []any{op{"op": "reparent_objects",
+		"moves":         []any{map[string]any{"object_id": a, "parent_id": nil, "order": 1}},
+		"remove_groups": []string{outer, inner}}}})
+	if !reflect.DeepEqual(res.RemovedUnits, sorted(units(outer, inner))) {
+		t.Fatalf("nested ungroup receipt %+v", res)
+	}
+	if got := tree(readScene(t, f.a, doc)); len(got) != 2 || got[a] != "-#1" {
+		t.Fatalf("nested ungroup tree %v", got)
+	}
+}
+
 func TestEnvironmentAndRender(t *testing.T) {
 	f := setup(t)
 	doc := createScene(t, f.a)
@@ -527,49 +611,70 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 		o[key] = value
 		return o
 	}
+	regroup := func(expected map[string]any, fields op) batch {
+		fields["op"] = "reparent_objects"
+		if _, ok := fields["moves"]; !ok {
+			fields["moves"] = []any{map[string]any{"object_id": a, "parent_id": nil, "order": 2}}
+		}
+		return batch{DocumentID: doc, Expected: expected, Operations: []any{fields}}
+	}
 	n := objectID(9)
 	cases := map[string]batch{
-		"unknown op":               {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "explode"}}},
-		"unknown field":            {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "add_objects", "objects": []any{box(n, nil, 5)}, "extra": 1}}},
-		"empty add":                {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "add_objects", "objects": []any{}}}},
-		"missing visible":          add(without(box(n, nil, 5), "visible")),
-		"missing parent_id":        add(without(box(n, nil, 5), "parent_id")),
-		"short position":           add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}})),
-		"existing id":              add(box(ground, nil, 5)),
-		"bad id":                   add(box("sobj_short", nil, 5)),
-		"unknown builtin":          add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "torus@1"})),
-		"param out of range":       add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": map[string]any{"width": 0}})),
-		"unknown param":            add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": map[string]any{"radius": 1}})),
-		"model instance":           add(object(n, "model_instance", nil, 5)),
-		"order taken":              add(box(n, nil, 2)),
-		"parent not a group":       add(box(n, &a, 0)),
-		"parent missing":           add(box(n, ptr(objectID(99)), 0)),
-		"name too long":            add(with(box(n, nil, 5), "name", string(make([]rune, 81)))),
-		"scale zero":               add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{0, 1, 1}})),
-		"not a unit quaternion":    add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 2}, "scale": []float64{1, 1, 1}})),
-		"group with content":       add(with(group(n, nil, 5), "primitive", map[string]any{"builtin": "box@1"})),
-		"missing object":           update(map[string]any{"object_id": objectID(99), "visible": false}, placement(objectID(99))),
-		"object twice":             {DocumentID: doc, Expected: v.expect(placement(a)), Operations: []any{op{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "visible": false}, map[string]any{"object_id": a, "locked": true}}}}},
-		"no fields":                update(map[string]any{"object_id": a}, placement(a)),
-		"light on primitive":       update(map[string]any{"object_id": a, "light": light["light"]}, content(a)),
-		"params on light":          update(map[string]any{"object_id": l, "primitive": map[string]any{"params": map[string]any{"width": 2}}}, content(l)),
-		"spot angle past π/2":      update(map[string]any{"object_id": l, "light": map[string]any{"type": "spot", "angle": 1.6}}, content(l)),
-		"angle on point":           update(map[string]any{"object_id": l, "light": map[string]any{"angle": 0.5}}, content(l)),
-		"decay out of range":       update(map[string]any{"object_id": l, "light": map[string]any{"decay": 11}}, content(l)),
-		"negative distance":        add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "point", "distance": -1})),
-		"unknown light type":       add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "area"})),
-		"light without type":       add(with(object(n, "light", nil, 5), "light", map[string]any{"intensity": 5})),
-		"old light name":           update(map[string]any{"object_id": l, "light": map[string]any{"range_m": 7}}, content(l)),
-		"camera on light":          update(map[string]any{"object_id": l, "camera": map[string]any{"far": 50}}, content(l)),
-		"camera far before near":   add(with(object(n, "camera", nil, 5), "camera", map[string]any{"far": 0.05})),
-		"old camera name":          add(with(object(n, "camera", nil, 5), "camera", map[string]any{"near_m": 0.1})),
-		"bad slot preset":          update(map[string]any{"object_id": a, "material_slots": map[string]any{"main": map[string]any{"preset": "stone", "params": map[string]any{}}}}, content(a)),
-		"under itself":             reparent(g, g, 0),
-		"reparent under primitive": reparent(g, a, 0),
-		"remove missing":           {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "remove_objects", "object_ids": []string{objectID(99)}}}},
-		"objects touched twice":    {DocumentID: doc, Expected: v.expect(append(units(a), "objects")...), Operations: []any{op{"op": "add_objects", "objects": []any{box(n, nil, 5)}}, op{"op": "remove_objects", "object_ids": []string{a}}}},
-		"bad render":               {DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"mode": "path"}}}},
-		"sky missing sun":          {DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "procedural"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}}}},
+		"create a primitive":            regroup(objects, op{"create_groups": []any{box(n, nil, 5)}}),
+		"empty create_groups":           regroup(objects, op{"create_groups": []any{}}),
+		"null create_groups":            regroup(objects, op{"create_groups": nil}),
+		"empty remove_groups":           regroup(objects, op{"remove_groups": []string{}}),
+		"move a created group":          regroup(objects, op{"create_groups": []any{group(n, nil, 5)}, "moves": []any{map[string]any{"object_id": n, "parent_id": nil, "order": 6}}}),
+		"move a removed group":          regroup(v.expect(append(units(g), "objects")...), op{"remove_groups": []string{g}, "moves": []any{map[string]any{"object_id": g, "parent_id": nil, "order": 6}}}),
+		"remove a light":                regroup(v.expect(append(units(l), "objects")...), op{"remove_groups": []string{l}}),
+		"remove missing group":          regroup(objects, op{"remove_groups": []string{objectID(99)}}),
+		"remove group that has a child": regroup(v.expect(append(units(g), "objects")...), op{"remove_groups": []string{g}, "moves": []any{map[string]any{"object_id": a, "parent_id": g, "order": 0}}}),
+		"removed group not expected":    regroup(objects, op{"remove_groups": []string{g}}),
+		"move transform not expected":   regroup(objects, op{"moves": []any{map[string]any{"object_id": a, "parent_id": nil, "order": 2, "transform": at(1, 0, 0)}}}),
+		"move transform out of range":   regroup(v.expect("objects", placement(a)), op{"moves": []any{map[string]any{"object_id": a, "parent_id": nil, "order": 2, "transform": map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{0, 1, 1}}}}}),
+		"null move transform":           regroup(objects, op{"moves": []any{map[string]any{"object_id": a, "parent_id": nil, "order": 2, "transform": nil}}}),
+		"move under missing parent":     reparent(a, objectID(99), 0),
+		"unknown op":                    {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "explode"}}},
+		"unknown field":                 {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "add_objects", "objects": []any{box(n, nil, 5)}, "extra": 1}}},
+		"empty add":                     {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "add_objects", "objects": []any{}}}},
+		"missing visible":               add(without(box(n, nil, 5), "visible")),
+		"missing parent_id":             add(without(box(n, nil, 5), "parent_id")),
+		"short position":                add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}})),
+		"existing id":                   add(box(ground, nil, 5)),
+		"bad id":                        add(box("sobj_short", nil, 5)),
+		"unknown builtin":               add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "torus@1"})),
+		"param out of range":            add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": map[string]any{"width": 0}})),
+		"unknown param":                 add(with(box(n, nil, 5), "primitive", map[string]any{"builtin": "box@1", "params": map[string]any{"radius": 1}})),
+		"model instance":                add(object(n, "model_instance", nil, 5)),
+		"order taken":                   add(box(n, nil, 2)),
+		"parent not a group":            add(box(n, &a, 0)),
+		"parent missing":                add(box(n, ptr(objectID(99)), 0)),
+		"name too long":                 add(with(box(n, nil, 5), "name", string(make([]rune, 81)))),
+		"scale zero":                    add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{0, 1, 1}})),
+		"not a unit quaternion":         add(with(box(n, nil, 5), "transform", map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 2}, "scale": []float64{1, 1, 1}})),
+		"group with content":            add(with(group(n, nil, 5), "primitive", map[string]any{"builtin": "box@1"})),
+		"missing object":                update(map[string]any{"object_id": objectID(99), "visible": false}, placement(objectID(99))),
+		"object twice":                  {DocumentID: doc, Expected: v.expect(placement(a)), Operations: []any{op{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "visible": false}, map[string]any{"object_id": a, "locked": true}}}}},
+		"no fields":                     update(map[string]any{"object_id": a}, placement(a)),
+		"light on primitive":            update(map[string]any{"object_id": a, "light": light["light"]}, content(a)),
+		"params on light":               update(map[string]any{"object_id": l, "primitive": map[string]any{"params": map[string]any{"width": 2}}}, content(l)),
+		"spot angle past π/2":           update(map[string]any{"object_id": l, "light": map[string]any{"type": "spot", "angle": 1.6}}, content(l)),
+		"angle on point":                update(map[string]any{"object_id": l, "light": map[string]any{"angle": 0.5}}, content(l)),
+		"decay out of range":            update(map[string]any{"object_id": l, "light": map[string]any{"decay": 11}}, content(l)),
+		"negative distance":             add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "point", "distance": -1})),
+		"unknown light type":            add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "area"})),
+		"light without type":            add(with(object(n, "light", nil, 5), "light", map[string]any{"intensity": 5})),
+		"old light name":                update(map[string]any{"object_id": l, "light": map[string]any{"range_m": 7}}, content(l)),
+		"camera on light":               update(map[string]any{"object_id": l, "camera": map[string]any{"far": 50}}, content(l)),
+		"camera far before near":        add(with(object(n, "camera", nil, 5), "camera", map[string]any{"far": 0.05})),
+		"old camera name":               add(with(object(n, "camera", nil, 5), "camera", map[string]any{"near_m": 0.1})),
+		"bad slot preset":               update(map[string]any{"object_id": a, "material_slots": map[string]any{"main": map[string]any{"preset": "stone", "params": map[string]any{}}}}, content(a)),
+		"under itself":                  reparent(g, g, 0),
+		"reparent under primitive":      reparent(g, a, 0),
+		"remove missing":                {DocumentID: doc, Expected: objects, Operations: []any{op{"op": "remove_objects", "object_ids": []string{objectID(99)}}}},
+		"objects touched twice":         {DocumentID: doc, Expected: v.expect(append(units(a), "objects")...), Operations: []any{op{"op": "add_objects", "objects": []any{box(n, nil, 5)}}, op{"op": "remove_objects", "object_ids": []string{a}}}},
+		"bad render":                    {DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"mode": "path"}}}},
+		"sky missing sun":               {DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "procedural"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}}}},
 		// null is accepted only where the contract says nullable; a null
 		// number used to decode as 0 and save.
 		"null in position":        update(map[string]any{"object_id": a, "transform": map[string]any{"position": []any{nil, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}}}, placement(a)),

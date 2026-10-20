@@ -2,7 +2,7 @@
 
 ## 1. 编组（后端与契约）
 
-- [ ] 1.1 `reparent_objects` 扩展：`ops.go` 的解码（`moves` 仍为 1–2000，`create_groups`、`remove_groups` 可选）、涉及单元（带变换的移动加摆放单元，删除的分组加两个单元）、应用顺序（新建 → 改挂 → 删除）和错误（重复出现、新建的不是分组、删除时仍有子物件）；`api/openapi.yaml` 的 `CreativeSceneReparentObjects`、`CreativeSceneMove`，`make generate`。先写 Go 测试：编组、取消编组、删除空分组、各失败情形、回执的 `changed_units`/`removed_units`，旧请求不变；`make check-go PKG=./internal/creativescene/...` 与 `make generate-check` 通过
+- [x] 1.1 `reparent_objects` 扩展：`ops.go` 的解码（`moves` 仍为 1–2000，`create_groups`、`remove_groups` 可选）、涉及单元（带变换的移动加摆放单元，删除的分组加两个单元）、应用顺序（新建 → 改挂 → 删除）和错误（重复出现、新建的不是分组、删除时仍有子物件）；`api/openapi.yaml` 的 `CreativeSceneReparentObjects`、`CreativeSceneMove`，`make generate`。先写 Go 测试：编组、取消编组、删除空分组、各失败情形、回执的 `changed_units`/`removed_units`，旧请求不变；`make check-go PKG=./internal/creativescene/...` 与 `make generate-check` 通过
 - [ ] 1.2 助手改挂：`lookat.go` 增加 `mat4.invert`、`decompose`（先写与 three.js 数值对照的测试）；`reparent.go` 的 `resolveReparent`（补局部变换和顺序、新建分组的默认位置、拒绝同批移动祖先、越界拒绝）；`agent.go` 去掉禁用；`run_changes.go` 先按 `changed_units` 与前一修订的 `unit_revs` 筛出候选，只对候选比对前后快照，判断层级变化并阻止对应物件；`summarizeChanges` 报改挂；`agent_tools_test.go`、`run_changes_test.go` 相应用例翻转或新增，测试通过
 
 ## 2. 编组（编辑器）

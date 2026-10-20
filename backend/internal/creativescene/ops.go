@@ -59,15 +59,23 @@ type removeObjectsOp struct {
 	ObjectIDs []string `json:"object_ids"`
 }
 
+// reparentObjectsOp runs in three steps: create_groups, then moves, then
+// remove_groups. Grouping and ungrouping each touch objects, so they have to
+// be one operation.
 type reparentObjectsOp struct {
-	Op    string `json:"op"`
-	Moves []move `json:"moves"`
+	Op           string   `json:"op"`
+	Moves        []move   `json:"moves"`
+	CreateGroups []Object `json:"create_groups,omitempty"`
+	RemoveGroups []string `json:"remove_groups,omitempty"`
 }
 
+// move with a transform also replaces the local transform; the caller works
+// it out to keep the world position.
 type move struct {
-	ObjectID string  `json:"object_id"`
-	ParentID *string `json:"parent_id"`
-	Order    int     `json:"order"`
+	ObjectID  string     `json:"object_id"`
+	ParentID  *string    `json:"parent_id"`
+	Order     int        `json:"order"`
+	Transform *Transform `json:"transform,omitempty"`
 }
 
 type setEnvironmentOp struct {
@@ -117,7 +125,20 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
 		}
-		return &op, count(len(op.Moves), "moves ")
+		if err := count(len(op.Moves), "moves "); err != nil {
+			return nil, err
+		}
+		if op.CreateGroups != nil {
+			if err := count(len(op.CreateGroups), "create_groups "); err != nil {
+				return nil, err
+			}
+		}
+		if op.RemoveGroups != nil {
+			if err := count(len(op.RemoveGroups), "remove_groups "); err != nil {
+				return nil, err
+			}
+		}
+		return &op, nil
 	case "set_environment":
 		var op setEnvironmentOp
 		return &op, decodeInput(raw, &op)
@@ -413,32 +434,98 @@ func (op *removeObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	return nil
 }
 
-func (op *reparentObjectsOp) touched(_ Scene, byID map[string]int) ([]string, error) {
-	seen := make(map[string]bool, len(op.Moves))
+// touched is objects, the placement of every move that carries a transform,
+// and both units of every removed group. Created groups are new units, as in
+// add_objects.
+func (op *reparentObjectsOp) touched(s Scene, byID map[string]int) ([]string, error) {
+	seen := make(map[string]bool, len(op.CreateGroups)+len(op.Moves)+len(op.RemoveGroups))
+	once := func(id string) error {
+		if seen[id] {
+			return invalid("物件 %s 在 reparent_objects 中出现了两次", id)
+		}
+		seen[id] = true
+		return nil
+	}
+	created := make(map[string]bool, len(op.CreateGroups))
+	for _, g := range op.CreateGroups {
+		if g.Kind != KindGroup {
+			return nil, invalid("create_groups 里的物件 %s 不是分组", g.ID)
+		}
+		if err := once(g.ID); err != nil {
+			return nil, err
+		}
+		created[g.ID] = true
+	}
+	out := []string{unitObjects}
 	for _, m := range op.Moves {
 		if _, ok := byID[m.ObjectID]; !ok {
 			return nil, invalid("物件 %s 不存在", m.ObjectID)
 		}
-		if m.ParentID != nil {
+		if m.ParentID != nil && !created[*m.ParentID] {
 			if _, ok := byID[*m.ParentID]; !ok {
 				return nil, invalid("父物件 %s 不存在", *m.ParentID)
 			}
 		}
-		if seen[m.ObjectID] {
-			return nil, invalid("物件 %s 在 moves 中出现了两次", m.ObjectID)
+		if err := once(m.ObjectID); err != nil {
+			return nil, err
 		}
-		seen[m.ObjectID] = true
+		if m.Transform != nil {
+			out = append(out, placementUnit(m.ObjectID))
+		}
 	}
-	return []string{unitObjects}, nil
+	for _, id := range op.RemoveGroups {
+		i, ok := byID[id]
+		if !ok {
+			return nil, invalid("分组 %s 不存在", id)
+		}
+		if s.Objects[i].Kind != KindGroup {
+			return nil, invalid("remove_groups 里的物件 %s 不是分组", id)
+		}
+		if err := once(id); err != nil {
+			return nil, err
+		}
+		out = append(out, placementUnit(id), contentUnit(id))
+	}
+	return out, nil
 }
 
-// apply only moves; Validate then rejects a non-group parent, a cycle or a
-// clashing order.
+// apply creates, moves, then removes; Validate then rejects a non-group
+// parent, a cycle or a clashing order.
 func (op *reparentObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
+	for _, g := range op.CreateGroups {
+		canonicalNumbers(&g)
+		s.Objects = append(s.Objects, g)
+		c.change(placementUnit(g.ID), contentUnit(g.ID))
+	}
 	byID := indexObjects(s.Objects)
 	for _, m := range op.Moves {
 		o := &s.Objects[byID[m.ObjectID]]
 		o.ParentID, o.Order = m.ParentID, m.Order
+		if m.Transform != nil {
+			o.Transform = *m.Transform
+			canonicalNumbers(o)
+			c.change(placementUnit(o.ID))
+		}
+	}
+	if len(op.RemoveGroups) > 0 {
+		gone := make(map[string]bool, len(op.RemoveGroups))
+		for _, id := range op.RemoveGroups {
+			gone[id] = true
+		}
+		// A child that is itself removed does not count: ungrouping nested
+		// groups removes both.
+		kept := s.Objects[:0:0]
+		for _, o := range s.Objects {
+			if o.ParentID != nil && gone[*o.ParentID] && !gone[o.ID] {
+				return invalid("分组 %s 仍有子物件 %s，不能删除", *o.ParentID, o.ID)
+			}
+			if gone[o.ID] {
+				c.remove(placementUnit(o.ID), contentUnit(o.ID))
+				continue
+			}
+			kept = append(kept, o)
+		}
+		s.Objects = kept
 	}
 	c.change(unitObjects)
 	return nil

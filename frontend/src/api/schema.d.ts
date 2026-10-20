@@ -7270,7 +7270,7 @@ export interface components {
             op: "remove_objects";
             object_ids: string[];
         };
-        /** @description 涉及 objects。 */
+        /** @description 按顺序执行：先建 create_groups，再按 moves 改挂（parent_id 可以是本次新建的分组），最后删除 remove_groups（删除时须没有子物件；同时删除的子分组不算）。同一物件在三处合计只能出现一次。涉及 objects；带 transform 的移动另涉及 object:<id>；删除的分组涉及它的两个单元；新建分组的两个单元出现在 changed_units 中。 */
         CreativeSceneReparentObjects: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -7278,11 +7278,16 @@ export interface components {
              */
             op: "reparent_objects";
             moves: components["schemas"]["CreativeSceneMove"][];
+            /** @description 新分组，外形同 add_objects 里 kind=group 的对象。 */
+            create_groups?: components["schemas"]["CreativeSceneObject"][];
+            remove_groups?: string[];
         };
         CreativeSceneMove: {
             object_id: string;
             parent_id: string | null;
             order: number;
+            /** @description 同时替换该物件的局部变换；调用方据此保持世界位置，服务端照写。 */
+            transform?: components["schemas"]["CreativeSceneTransform"];
         };
         CreativeSceneSetEnvironment: {
             /**
