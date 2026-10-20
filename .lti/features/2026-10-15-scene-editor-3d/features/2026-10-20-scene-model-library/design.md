@@ -346,6 +346,12 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
   - **兜底的细化**（实施中发现，按设计「按 free 的规则」的本意落实）：没有合适的面时先按 free 找第一个朝上的面，找不到才落到射线与地面的交点。原写法直接落地，吊顶模型拖到桌面上方时会埋进桌子里。spec「没有合适的表面」的结果（包围盒底面着地、不埋进地下）不变。
   - e2e 用「拖到抽屉上松手」覆盖取消拖入：Playwright 的原生拖放模拟里按不出 Esc 取消；两者都由浏览器以 `dragend` 结束、不触发 `drop`，走的是同一条清空路径。
   - **3.4 发现的缺口**：设计的「复制语义如何成立」假定放入后改参数会分叉，但 `forkPlan` 对场景里只有一个实例的模型会带上 `base_content_id`，在资产所属的内容上追加修订。资产仍钉在旧修订上，看到的不变，但场景和资产会共用一条内容历史，不符合 I7。改为：`ModelCache` 记下从资产库放入的内容（`copied`），这类内容第一次修改时不带 `base_content_id`，分叉出场景自己的模型；之后的修改照 R4 续在新内容上。已知限制：这份记录只在页面存活期间有效，刷新后再改会照 R4 续在原内容上（资产不受影响）。要彻底解决需要服务端回报内容的归属，留作后续。
+  - 挂载表与实际改动的其余出入：
+    - `CodePanel.tsx` 未改：读代码的地方实际是 `creative-scene/api.ts:readModelGenerator`，类型守卫加在那里；
+    - `CanvasView.tsx` 未改：拖到画布的素材都经 `WorkspacePage.addAssets`，模型在那里被过滤并提示；填充判断 `fillable` 要求媒体类型，模型本来就不满足；
+    - `assets/BatchBar.tsx`、`assets/assetMenu.tsx`：「放入项目」「放入画布」两个入口按「至少一项能放到画布上」显示，属于 2.2 的范围；
+    - 前端单测按项目惯例放在 `frontend/scripts/*.test.ts`（`creative-scene-snap.test.ts`、`creative-scene-library.test.ts`、`creative-model-asset.test.ts`），不放在 `placement/snap.test.ts`；
+    - 样式落在各自已有的样式表：`editor/library.css`（抽屉层级）、`viewer/viewer.css`（3D 预览）、`creative-scene/scene.css`（菜单说明、属性栏的存入按钮）。
   - 1.2 生成新的 `kind` 枚举后，前端类型要求画布放置先排除模型；`assetPlacement.ts` 加 `CanvasAsset` 类型守卫，`assets/placement.ts` 遇到模型抛「模型只能放进 3D 场景」，`WorkspacePage` 的 `addAssets`、`pickReferences` 先过滤。2.2 在此基础上补齐提示与其余入口。
 - **后续**：
   - 参考点设置与快捷轮盘（C8）；
