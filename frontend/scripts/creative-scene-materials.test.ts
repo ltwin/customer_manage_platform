@@ -97,3 +97,47 @@ test('model parts are baked into model space; a mirrored part keeps its faces fa
   flipWinding(g)
   assert.deepEqual(Array.from(g.index!.array), before)
 })
+
+import { ShaderLib } from 'three'
+import { canInject, injectPattern, patternsSupported } from '../src/creative-scene/materials/inject.ts'
+import { instanceCount, keyOf, makeMaterial, materialFor, release, retain } from '../src/creative-scene/materials/instances.ts'
+import { patternGLSL } from '../src/creative-scene/materials/patterns.ts'
+import { catalogMaterial } from '../src/creative-scene/materials/resolve.ts'
+
+test('this three.js has every chunk the presets inject at; every preset has its shader', () => {
+  assert.equal(patternsSupported, true)
+  assert.equal(canInject(ShaderLib.physical.vertexShader, ShaderLib.physical.fragmentShader.replace('#include <normal_fragment_maps>', '')), false, 'a renamed chunk is noticed')
+  for (const m of materialCatalog.materials) if (m.kind === 'pattern') assert.ok(patternGLSL[m.id], `${m.id} has no shader`)
+  const shader = { vertexShader: ShaderLib.physical.vertexShader, fragmentShader: ShaderLib.physical.fragmentShader }
+  assert.equal(injectPattern(shader, materialEntry('stone_brick@1')!), true)
+  assert.match(shader.vertexShader, /vPatPos = position \* patScale;/)
+  assert.match(shader.fragmentShader, /uniform float pm_brick_size;\nuniform vec3 pm_mortar_color;/)
+  for (const line of ['PatOut pat = patternEval();', 'roughnessFactor = pat.rough;', 'metalnessFactor = pat.metal;', 'normal = patBumpNormal(-vViewPosition, normal, pat.height);', 'totalEmissiveRadiance += pat.emission;'])
+    assert.ok(shader.fragmentShader.includes(line), line)
+  const broken = { vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }
+  assert.equal(injectPattern(broken, materialEntry('stone_brick@1')!), false)
+  assert.equal(broken.fragmentShader, 'void main() {}', 'left alone when an anchor is missing')
+})
+
+test('instances are shared by key; a preset has one program whatever its parameters', () => {
+  const a = catalogMaterial('marble@1', { scale: 2 })!
+  const b = catalogMaterial('marble@1', { scale: 2, roughness: 0.25 })!
+  const c = catalogMaterial('marble@1', { scale: 3 })!
+  assert.equal(keyOf(a, false), keyOf(b, false), 'defaults filled in alike')
+  assert.notEqual(keyOf(a, false), keyOf(c, false))
+  assert.notEqual(keyOf(a, false), keyOf(a, true))
+  const ma = makeMaterial(a, false)
+  const mc = makeMaterial(c, false)
+  assert.equal(ma.customProgramCacheKey(), mc.customProgramCacheKey())
+  assert.equal(ma.customProgramCacheKey(), 'pattern:marble@1')
+  const key = keyOf(a, false)
+  const before = instanceCount()
+  const shared = materialFor(key, a, false)
+  assert.equal(materialFor(key, a, false), shared)
+  retain(key)
+  release(key)
+  assert.equal(instanceCount(), before + 1, 'kept a moment after the last user goes')
+  const glass = makeMaterial(catalogMaterial('principled@1', { transmission: 1, roughness: 0 })!, true)
+  assert.deepEqual([glass.transmission, glass.side], [1, 2])
+  assert.equal(makeMaterial({ kind: 'unknown' }, false).color.getHexString(), '8a8a8a')
+})

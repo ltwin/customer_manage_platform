@@ -13,6 +13,8 @@ import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
 import { SceneLight } from './SceneLights.tsx'
+import { SlotMesh } from './SlotMesh.tsx'
+import { resolveSlot } from '../materials/resolve.ts'
 import { disposeEdges } from './wireframe.ts'
 import { WireMesh } from './WireMesh.tsx'
 
@@ -49,6 +51,8 @@ type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through' | 'display
   wire: boolean
   /** Light objects shine only in the lit look. */
   lit: boolean
+  /** Material preview and rendered draw slots' materials; the rest is clay. */
+  materials: boolean
   scene: Scene
   childrenOf: Map<string, SceneObject[]>
   placeholdersOf: Map<string, Placeholder[]>
@@ -79,7 +83,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered' }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered' }
   return (
     <>
       {(childrenOf.get('') ?? []).map((o) => (
@@ -101,10 +105,10 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
       {o.kind === 'group' && (helpers && !tree.childrenOf.get(o.id)?.length ? <EmptyMarker edge={edge} /> : edge && <GroupMarker />)}
       <group visible={o.visible} quaternion={docToView}>
         {o.kind === 'primitive' && o.primitive && (
-          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} wire={tree.wire} />
+          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
-          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} />
+          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} />}
         {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
@@ -139,7 +143,9 @@ function PlaceholderBlock({ placeholder }: { placeholder: Placeholder }) {
   )
 }
 
-function PrimitiveMesh({ builtin, params, edge, wire }: { builtin: string; params?: Record<string, unknown>; edge: string | null; wire: boolean }) {
+type Slots = NonNullable<SceneObject['material_slots']>
+
+function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string; params?: Record<string, unknown>; edge: string | null; wire: boolean; slots: Slots | null }) {
   const key = JSON.stringify(params ?? {})
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key stands for params
   const geometry = useMemo(() => primitiveGeometry(builtin, params), [builtin, key])
@@ -154,6 +160,12 @@ function PrimitiveMesh({ builtin, params, edge, wire }: { builtin: string; param
   if (!geometry) return null
   if (wire) return <WireMesh geometry={geometry} edge={edge} />
   const flat = builtin === 'ground@1' || builtin === 'plane@1'
+  if (slots)
+    return (
+      <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} doubleSided={flat} castShadow={!flat}>
+        {edge && (flat ? <Edges threshold={20} lineWidth={2} color={edge} /> : <Outlines thickness={3} color={edge} />)}
+      </SlotMesh>
+    )
   return (
     <mesh geometry={geometry} castShadow={!flat} receiveShadow>
       <meshStandardMaterial name="slot:main" color={clay} roughness={0.92} metalness={0} side={flat ? 2 : 0} />

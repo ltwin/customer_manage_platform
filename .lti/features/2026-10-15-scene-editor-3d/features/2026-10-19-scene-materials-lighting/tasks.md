@@ -22,7 +22,7 @@
 
 - [x] 4.1 材质目录：`materials.json`（原理化 BSDF、14 种预设、提示映射）、`materials.go`（嵌入与严格解析、`MaterialCatalog()`）、`Makefile` 的复制与比对、`materials/catalog.ts`。先写测试：目录合法、默认值在范围内、每个预设的参数表锁定、前后端副本一致
 - [x] 4.2 `models/cache.ts` 保留槽位、提示和材质常量，部件矩阵烘焙进几何（行列式为负时翻转绕序）；`materials/resolve.ts` 的解析表五条与参数夹取；`materials/principled.ts`（`anisotropy_rotation` 为弧度）。先写单测（含 `creative-scene-model.test.ts` 的部件断言调整）
-- [ ] 4.3 程序化着色：`materials/inject.ts`（锚点检测与失败退回）、`patterns.ts`（公共噪声、14 个预设、凹凸；硬边用 `fwidth` 驱动的 `smoothstep`，高频八度和凹凸按 `fwidth(vPos)` 淡出）、`instances.ts`（共享与引用计数）；`SceneObjects`、`ModelMesh` 按显示模式选材质。单测：锚点、缓存键；e2e：AC-2 的缩放不拉伸、金属反射且只有一个太阳高光、远处砖墙平移半个像素前后像素差低于阈值、Alpha 与 AO；逐个预设出样张存档
+- [x] 4.3 程序化着色：`materials/inject.ts`（锚点检测与失败退回）、`patterns.ts`（公共噪声、14 个预设、凹凸；硬边用 `fwidth` 驱动的 `smoothstep`，高频八度和凹凸按 `fwidth(vPos)` 淡出）、`instances.ts`（共享与引用计数）；`SceneObjects`、`ModelMesh` 按显示模式选材质。单测：锚点、缓存键；e2e：AC-2 的缩放不拉伸、金属反射且只有一个太阳高光、远处砖墙平移半个像素前后像素差低于阈值、Alpha 与 AO；逐个预设出样张存档
 - [ ] 4.4 属性栏「材质」区（槽位列表、来源标记、参数、转为原理化、多选作用于同名槽位、合并键）与「复制材质到选中物件」、槽位复制粘贴；e2e 覆盖 AC-2 多选、AC-3
 
 ## 5. 灯光与环境编辑

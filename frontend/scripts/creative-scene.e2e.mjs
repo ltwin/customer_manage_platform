@@ -2180,6 +2180,170 @@ await check('AC-1: lights light the rendered view; material preview ignores ligh
   await context.close()
 })
 
+// --- AC-2 materials ------------------------------------------------------------
+
+const boxOf = (name, order, transform, params, slot) => ({
+  id: gid(name), kind: 'primitive', name, order, transform: { ...identity(), ...transform },
+  primitive: { builtin: 'box@1', params }, material_slots: slot ? { main: slot } : {},
+})
+const shading = (page, name) => page.getByRole('group', { name: '显示模式' }).getByRole('button', { name }).click()
+
+/** Blobs of pixels brighter than a level in all channels, 4-connected, at least min pixels. */
+async function brightBlobs(page, png, level, min) {
+  return page.evaluate(async ([src, level, min]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    const w = c.width
+    const h = c.height
+    const seen = new Uint8Array(w * h)
+    const bright = (i) => p[i * 4] >= level && p[i * 4 + 1] >= level && p[i * 4 + 2] >= level
+    let blobs = 0
+    for (let i = 0; i < w * h; i++) {
+      if (seen[i] || !bright(i)) continue
+      let size = 0
+      const stack = [i]
+      seen[i] = 1
+      while (stack.length) {
+        const j = stack.pop()
+        size++
+        const jx = j % w
+        for (const k of [j - 1, j + 1, j - w, j + w]) {
+          if (k < 0 || k >= w * h || seen[k] || (Math.abs((k % w) - jx) > 1) || !bright(k)) continue
+          seen[k] = 1
+          stack.push(k)
+        }
+      }
+      if (size >= min) blobs++
+    }
+    return blobs
+  }, [`data:image/png;base64,${png.toString('base64')}`, level, min])
+}
+
+await check('AC-2: every preset compiles and draws in both material looks', async () => {
+  const server = new SceneServer()
+  const ids = JSON.parse(readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')).materials.map((m) => m.id)
+  seed(server, ids.map((id, i) => boxOf(`m${String.fromCharCode(97 + i)}`, 10 + i, { position: [(i % 5) * 1.6 - 3.2, 0, Math.floor(i / 5) * 1.6 - 1.6] }, { width: 1.2, height: 1.2, depth: 1.2 }, { preset: id, params: {} })))
+  // Looking down 35.5° from 5 m up and 7 m back: all fifteen in the frame.
+  seed(server, [{ id: gid('cam'), kind: 'camera', name: '样张', order: 40, transform: { position: [0, 5, 7], rotation: [-0.30508, 0, 0, 0.95233], scale: [1, 1, 1] }, camera: {} }])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /样张/ }).click()
+  await page.keyboard.press('Digit0')
+  await page.locator('.cc-scene-camframe').waitFor()
+  await page.mouse.move(5, 5)
+  const box = await page.locator('.cc-scene-camframe').boundingBox()
+  const solid = await settledShot(page, box)
+  for (const name of ['材质预览', '最终渲染']) {
+    await shading(page, name)
+    const png = await settledShot(page, box)
+    assert.ok((await pixelDiff(page, solid, png)) > 0.05, `${name} draws the materials`)
+    if (process.env.SCENE_E2E_SHOTS) (await import('node:fs')).writeFileSync(`${process.env.SCENE_E2E_SHOTS}/c5-materials-${name}.png`, png)
+  }
+  assert.deepEqual(errors, [], 'no shader failed to compile')
+  await context.close()
+})
+
+await check('AC-2: a brick wall scaled 2× along X looks like one built twice as wide: no stretching', async () => {
+  const look = async (params, scale) => {
+    const server = new SceneServer()
+    seed(server, [boxOf('wall', 5, { position: [0, 0, 0], scale }, params, { preset: 'stone_brick@1', params: {} })])
+    const { context, page, errors } = await open(server)
+    await page.keyboard.press('Digit1')
+    await shading(page, '材质预览')
+    const { box } = await viewportCenter(page)
+    const png = await settledShot(page, box)
+    assert.deepEqual(errors, [])
+    return { png, page, context }
+  }
+  const wide = await look({ width: 4, height: 1.5, depth: 0.3 }, [1, 1, 1])
+  const scaled = await look({ width: 2, height: 1.5, depth: 0.3 }, [2, 1, 1])
+  const diff = await pixelDiff(wide.page, wide.png, scaled.png)
+  assert.ok(diff < 0.003, `the same bricks (${(diff * 100).toFixed(3)}% of pixels differ)`)
+  await wide.context.close()
+  await scaled.context.close()
+})
+
+await check('AC-2: polished metal mirrors the sky with one sun highlight, not two', async () => {
+  const server = new SceneServer()
+  server.scene.render.exposure_ev = -2
+  seed(server, [{
+    id: gid('ball'), kind: 'primitive', name: '球', order: 5, transform: { ...identity(), position: [0, 0, 0] },
+    primitive: { builtin: 'sphere@1', params: { radius: 2 } }, material_slots: { main: { preset: 'principled@1', params: { metalness: 1, roughness: 0.2 } } },
+  }])
+  const { context, page, errors } = await open(server)
+  await shading(page, '最终渲染')
+  await page.getByRole('treeitem', { name: /球/ }).click()
+  await page.keyboard.press('Period')
+  await page.keyboard.press('Escape')
+  const { box } = await viewportCenter(page)
+  const png = await settledShot(page, box)
+  await shot(page, 'c5-metal')
+  const blobs = await brightBlobs(page, png, 250, 4)
+  assert.equal(blobs, 1, `sun highlights on the ball: ${blobs}`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-2: a far brick wall barely changes when the camera moves half a pixel', async () => {
+  const server = new SceneServer()
+  const cam = gid('cam')
+  seed(server, [
+    boxOf('wall', 5, { position: [0, 0, -60] }, { width: 60, height: 20, depth: 0.5 }, { preset: 'stone_brick@1', params: {} }),
+    { id: cam, kind: 'camera', name: '机位', order: 6, transform: { ...identity(), position: [0, 6, 0] }, camera: {} },
+  ])
+  const { context, page, errors } = await open(server)
+  await shading(page, '最终渲染')
+  await page.getByRole('treeitem', { name: /机位/ }).click()
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  await page.mouse.move(5, 5)
+  const fb = await frame.boundingBox()
+  const clip = { x: Math.round(fb.x + 10), y: Math.round(fb.y + 40), width: Math.round(fb.width * 0.7), height: Math.round(fb.height * 0.5) }
+  const before = await settledShot(page, clip)
+  // 35 mm on a 36 mm sensor: the frame is 2 × 60 × 18/35 m wide at the wall.
+  const halfPixel = (0.5 * 2 * 60 * (18 / 35)) / fb.width
+  server.external([{ op: 'update_objects', updates: [{ object_id: cam, transform: { ...identity(), position: [halfPixel, 6, 0] } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await sleep(800)
+  const after = await settledShot(page, clip)
+  const diff = await pixelDiff(page, before, after)
+  console.log(`far brick wall, half a pixel over: ${(diff * 100).toFixed(2)}% of pixels differ visibly`)
+  assert.ok(diff < 0.02, `the far wall shimmers (${(diff * 100).toFixed(2)}% differ)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-2: a see-through box shows what is behind it', async () => {
+  const look = async (opacity) => {
+    const server = new SceneServer()
+    seed(server, [
+      boxOf('back', 5, { position: [0, 0, -2] }, { width: 3, height: 3, depth: 0.2 }, { preset: 'principled@1', params: { color: '#c02020' } }),
+      boxOf('glass', 6, { position: [0, 0, 0] }, { width: 1.5, height: 1.5, depth: 1.5 }, { preset: 'principled@1', params: { color: '#ffffff', opacity } }),
+    ])
+    const { context, page, errors } = await open(server)
+    await page.keyboard.press('Digit1')
+    await shading(page, '材质预览')
+    const { x, y } = await viewportCenter(page)
+    await shot(page, `c5-see-through-${opacity}`)
+    // Inside the front box, seen straight on.
+    const png = await settledShot(page, { x: x - 20, y: y - 55, width: 40, height: 30 })
+    assert.deepEqual(errors, [])
+    await context.close()
+    return png
+  }
+  const opaque = await look(1)
+  const clear = await look(0.25)
+  const page = (await open(new SceneServer())).page
+  const diff = await pixelDiff(page, opaque, clear)
+  assert.ok(diff > 0.5, `the red wall shows through (${(diff * 100).toFixed(1)}% differ)`)
+  await page.context().close()
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
