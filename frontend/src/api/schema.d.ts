@@ -3799,10 +3799,10 @@ export interface components {
         /** @description `schema_version=2` 起 skill_ref 与 content_ref 是明确的块类型； v1 写下的 `reference` 仍按原样读出，不会被重新猜成 Skill。 */
         CreativeAgentMessageBlock: {
             /**
-             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
+             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照），只用于展示，不进入之后运行的历史。
              * @enum {string}
              */
-            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference" | "command";
+            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference" | "command" | "scene_selection";
             /**
              * @description command 块的命令名
              * @enum {string}
@@ -3814,6 +3814,17 @@ export interface components {
             /** @description notice 的稳定机器原因 */
             code?: string;
             skill?: components["schemas"]["CreativeAgentMessageSkill"];
+            scene?: components["schemas"]["CreativeAgentMessageScene"];
+        };
+        /** @description scene_selection 块冻结的场景与选中物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。 */
+        CreativeAgentMessageScene: {
+            document_id: string;
+            title: string;
+            objects: {
+                id: string;
+                /** @description 未命名的物体为空字符串 */
+                name: string;
+            }[];
         };
         CreativeAgentMessageBody: {
             blocks: components["schemas"]["CreativeAgentMessageBlock"][];

@@ -207,6 +207,57 @@ func TestSceneInputsAreFrozenWithTheRun(t *testing.T) {
 	}
 }
 
+// The photographer's message shows the selection the run was told, as it was
+// named then; one sent with nothing selected shows none.
+func TestTheMessageShowsTheSelectionItAskedAbout(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	pillar, plain := sceneObjectID("pillarA"), sceneObjectID("plain")
+	f.addPillar(creativedocument.Photographer, doc, pillar, "柱 A", 10)
+	f.addPillar(creativedocument.Photographer, doc, plain, "", 11)
+
+	run, err := f.startSceneRun(c.ID, consent.ID, map[string]any{"document_id": doc, "selected_object_ids": []string{pillar, sceneObjectID("gone"), plain}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trigger := func(runID string) Body {
+		t.Helper()
+		page, err := f.service.ListMessages(t.Context(), f.alice, c.ID, "", 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range page.Items {
+			if m.RunID == runID && m.Role == "user" {
+				return m.Body
+			}
+		}
+		t.Fatalf("no trigger message for %s", runID)
+		return Body{}
+	}
+	blocks := trigger(run.ID).Blocks
+	if len(blocks) != 2 || blocks[0].Type != "text" || blocks[1].Type != "scene_selection" {
+		t.Fatalf("blocks %+v", blocks)
+	}
+	want := BlockScene{DocumentID: doc, Title: "中殿", Objects: []BlockSceneObject{{ID: pillar, Name: "柱 A"}, {ID: plain}}}
+	if got := blocks[1].Scene; got == nil || got.DocumentID != want.DocumentID || got.Title != want.Title || !slices.Equal(got.Objects, want.Objects) {
+		t.Fatalf("selection %+v", blocks[1].Scene)
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := f.startSceneRun(c.ID, consent.ID, map[string]any{"document_id": doc, "selected_object_ids": []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocks := trigger(next.ID).Blocks; len(blocks) != 1 || blocks[0].Type != "text" {
+		t.Fatalf("message without selection %+v", blocks)
+	}
+}
+
 func TestARunFromTheCanvasIsToldNothingAboutScenes(t *testing.T) {
 	f := setup(t)
 	f.queue()

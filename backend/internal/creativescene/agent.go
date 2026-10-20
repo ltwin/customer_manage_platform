@@ -129,7 +129,16 @@ type EditorContext struct {
 	Title      string   `json:"title"`
 	Revision   int64    `json:"revision"`
 	Selected   []string `json:"selected_object_ids"`
-	Prompt     string   `json:"-"`
+	// Objects are the selected objects with the names they had when asked,
+	// in Selected's order, for the photographer's message to show.
+	Objects []EditorObject `json:"-"`
+	Prompt  string         `json:"-"`
+}
+
+// EditorObject is one selected object as the editor showed it.
+type EditorObject struct {
+	ID   string
+	Name string
 }
 
 // EditorContextInTx reads the scene being edited and words it for a run's
@@ -156,6 +165,7 @@ func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID 
 			continue
 		}
 		out.Selected = append(out.Selected, id)
+		out.Objects = append(out.Objects, EditorObject{ID: id, Name: scene.Objects[i].Name})
 		if name := scene.Objects[i].Name; name != "" {
 			names = append(names, fmt.Sprintf("「%s」(%s)", name, id))
 		} else {

@@ -5,11 +5,13 @@ type Segment = components['schemas']['CreativeAgentInstructionSegment']
 type Block =
   components['schemas']['CreativeAgentMessage']['body']['blocks'][number]
 
-// 用户消息的一段：文字、引用（Skill 或素材）或命令。已存的消息和刚发出的消息都画成这样。
+// 用户消息的一段：文字、引用（Skill 或素材）、命令，或从 3D 场景发送时选中的物体
+// （names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
 export type MessagePart =
   | { kind: 'text'; text: string }
   | { kind: 'chip'; title: string }
   | { kind: 'command'; command: string; text?: string }
+  | { kind: 'scene'; names: string[] }
 
 // 刚发出、还没从服务端读回的一条消息。先画出来，读回真消息后让位。
 export interface Outgoing {
@@ -27,8 +29,9 @@ export function outgoingParts(
   segments: Segment[],
   titleOf: (revisionID: string) => string | undefined,
   skillName?: string,
+  sceneNames: string[] = [],
 ): MessagePart[] {
-  return segments.map((segment): MessagePart => {
+  const parts = segments.map((segment): MessagePart => {
     switch (segment.type) {
       case 'skill_ref':
         return { kind: 'chip', title: skillName ?? 'Skill' }
@@ -47,6 +50,10 @@ export function outgoingParts(
         return { kind: 'text', text: segment.text ?? '' }
     }
   })
+  // 服务端把选中的物体存在消息末尾，这里照样放。
+  return sceneNames.length
+    ? [...parts, { kind: 'scene', names: sceneNames }]
+    : parts
 }
 
 export function messageParts(
@@ -57,6 +64,11 @@ export function messageParts(
     if (block.type === 'command')
       return { kind: 'command', command: block.command ?? '', text: block.text }
     if (block.type === 'text') return { kind: 'text', text: block.text ?? '' }
+    if (block.type === 'scene_selection')
+      return {
+        kind: 'scene',
+        names: block.scene?.objects.map((object) => object.name) ?? [],
+      }
     return {
       kind: 'chip',
       title:

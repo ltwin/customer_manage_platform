@@ -52,6 +52,24 @@ export function screenshotRevision(detail: Detail): string | null {
   return typeof id === 'string' && id ? id : null
 }
 
+/**
+ * The objects a message was asked about, as its tag reads: the one object, or
+ * the first and how many; detail names them all.
+ */
+export function selectionLabel(names: string[]): {
+  label: string
+  detail: string
+} {
+  const shown = names.map((name) => name || '未命名物体')
+  return {
+    label:
+      shown.length > 1
+        ? `${shown[0]} 等 ${shown.length} 个物体`
+        : (shown[0] ?? ''),
+    detail: shown.join('、'),
+  }
+}
+
 /** The scene a tool call worked on. */
 export function documentOf(detail: Detail): string | null {
   const id = detail.arguments.document_id

@@ -349,7 +349,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			}
 
 			trigger, err := s.appendMessageInTx(ctx, tx, input.ConversationID, newMessage{
-				Role: "user", Status: "complete", Body: resolved.Body, RunID: runID,
+				Role: "user", Status: "complete", Body: withSceneSelection(resolved.Body, scenes), RunID: runID,
 				ContentRefs: resolved.ContentRefs, SkillRefs: resolved.SkillRefs(),
 			})
 			if err != nil {

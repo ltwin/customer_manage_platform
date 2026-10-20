@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { useStore } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import {
   ArrowRight,
@@ -99,7 +100,11 @@ import {
   type MessagePart,
   type Outgoing,
 } from './agentOutgoing.ts'
-import { sceneContext } from '../../creative-scene/context.ts'
+import {
+  sceneContext,
+  selectedNames,
+} from '../../creative-scene/context.ts'
+import { SceneSelectionTag } from './AgentScene.tsx'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -336,6 +341,9 @@ function AgentConversation({
   const compactPercent = catalog?.limits.auto_compact_percent ?? 0
   const ring = ringView(usage, chosenModel, compactPercent)
   const command = waiting ? null : parseCommand(draft)
+  // 场景编辑器开着时，这条消息会带上它的选中；补充和命令不带。
+  const scene = useStore(sceneContext)
+  const sceneNames = scene && !waiting && !command ? selectedNames(scene) : []
   const locked = busy || !!pending || storageBroken
   const unsupportedImage =
     referenced.some((item) => item.kind === 'image') &&
@@ -666,6 +674,7 @@ function AgentConversation({
         skill_id: selected.skill_id,
         skill_version_id: selected.skill_version_id,
       })
+    const editing = sceneContext.getState()
     // 第一条消息顺带建对话，三步一起记进待确认链：建对话的结果不确定时，
     // 重放的也是同一个操作，不会多出空对话。
     const chain = {
@@ -676,7 +685,7 @@ function AgentConversation({
           imageInput: chosenModel.capability.image_input,
           revisionIDs: approvedIDs,
           segments,
-          scene: sceneContext.getState(),
+          scene: editing,
         }),
       ],
       draft: saved,
@@ -684,7 +693,14 @@ function AgentConversation({
     // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框。
     void notice.confirm().then((ok) => {
       if (!ok) return
-      showOutgoing(outgoingParts(segments, titleOf, selected?.display_name))
+      showOutgoing(
+        outgoingParts(
+          segments,
+          titleOf,
+          selected?.display_name,
+          editing ? selectedNames(editing) : [],
+        ),
+      )
       void perform(chain)
     })
   }
@@ -1259,13 +1275,18 @@ function AgentConversation({
               onHover={slash.hover}
               onChoose={chooseSlash}
             />
-            {!waiting && selectedSkill && (
+            {!waiting && (selectedSkill || sceneNames.length > 0) && (
               <div className="cc-agent-skill">
-                <SkillTag
-                  skill={selectedSkill}
-                  disabled={locked || !!active}
-                  onRemove={() => chooseSkill('')}
-                />
+                {selectedSkill && (
+                  <SkillTag
+                    skill={selectedSkill}
+                    disabled={locked || !!active}
+                    onRemove={() => chooseSkill('')}
+                  />
+                )}
+                {sceneNames.length > 0 && (
+                  <SceneSelectionTag names={sceneNames} />
+                )}
               </div>
             )}
             <label className="sr-only" htmlFor="creative-agent-draft">
@@ -1448,24 +1469,36 @@ function UserMessage({
   parts: MessagePart[]
   sending?: boolean
 }) {
+  // 选中的物体单独一行，挂在气泡上方。
+  const scenes = parts.filter(
+    (part): part is Extract<MessagePart, { kind: 'scene' }> =>
+      part.kind === 'scene',
+  )
   return (
-    <div className="cc-agent-user" aria-busy={sending || undefined}>
-      {parts.map((part, index) =>
-        part.kind === 'command' ? (
-          <span key={index}>
-            <span className="cc-agent-command">/{part.command}</span>
-            {part.text && ` ${part.text}`}
-          </span>
-        ) : part.kind === 'text' ? (
-          <span key={index}>{part.text}</span>
-        ) : (
-          <span className="cc-agent-chip" key={index}>
-            {part.title}
-          </span>
-        ),
-      )}
-      {sending && <span className="sr-only">发送中</span>}
-    </div>
+    <>
+      {scenes.map((part, index) => (
+        <div className="cc-agent-user-scene" key={index}>
+          <SceneSelectionTag names={part.names} />
+        </div>
+      ))}
+      <div className="cc-agent-user" aria-busy={sending || undefined}>
+        {parts.map((part, index) =>
+          part.kind === 'scene' ? null : part.kind === 'command' ? (
+            <span key={index}>
+              <span className="cc-agent-command">/{part.command}</span>
+              {part.text && ` ${part.text}`}
+            </span>
+          ) : part.kind === 'text' ? (
+            <span key={index}>{part.text}</span>
+          ) : (
+            <span className="cc-agent-chip" key={index}>
+              {part.title}
+            </span>
+          ),
+        )}
+        {sending && <span className="sr-only">发送中</span>}
+      </div>
+    </>
   )
 }
 

@@ -1147,7 +1147,44 @@
 
 /* 输入框上方的命令菜单 */
 .cc-agent-skill {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 8px 10px 0;
+}
+
+/* 从 3D 场景发送时选中的物体：输入框上方一枚，发出的消息气泡上方一枚 */
+.cc-agent-scene-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--s3);
+  color: var(--fg);
+  font-size: 12px;
+}
+.cc-agent-scene-tag > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-agent-scene-tag > svg {
+  flex: none;
+  color: var(--fg-2);
+}
+.cc-agent-user-scene {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 88%;
+  margin: 0 0 4px auto;
+}
+.cc-agent-user-scene .cc-agent-scene-tag {
+  height: 22px;
+  color: var(--fg-2);
 }
 
 /* 上下文用量小环：中性色为主，过六成换强调色，到自动压缩线换提示色 */

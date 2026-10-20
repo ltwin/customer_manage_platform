@@ -671,13 +671,21 @@ try {
 
   await check('a message sent from the scene editor carries its scene and selection', async () => {
     const p = await openPanel()
-    await p.page.evaluate((doc) => window.__scene({ documentID: doc, selected: ['sobj_chair000000000000000000'] }), DOC)
+    const chair = 'sobj_chair000000000000000000'
+    const lamp = 'sobj_lamp0000000000000000000'
+    await p.page.evaluate(([doc, chair, lamp]) => window.__scene({ documentID: doc, selected: [chair, lamp], names: { [chair]: '椅子' } }), [DOC, chair, lamp])
+    // What will go with the message shows above the input.
+    const composer = p.page.locator('.cc-agent-compose .cc-agent-scene-tag')
+    await composer.filter({ hasText: '椅子 等 2 个物体' }).waitFor()
+    assert.equal(await composer.getAttribute('title'), '选中的物体：椅子、未命名物体')
     const editor = p.page.getByRole('textbox', { name: '创作问题' })
     await editor.click()
     await p.page.keyboard.type('把椅子换成木头的')
     await p.page.keyboard.press('Enter')
     await waitUntil(() => p.panel.created.length === 1, 'the run was created')
-    assert.deepEqual(p.panel.created[0].payload.scene_context, { document_id: DOC, selected_object_ids: ['sobj_chair000000000000000000'] })
+    assert.deepEqual(p.panel.created[0].payload.scene_context, { document_id: DOC, selected_object_ids: [chair, lamp] })
+    // And on the message as it is sent.
+    await p.page.locator('.cc-agent-user-scene .cc-agent-scene-tag').filter({ hasText: '椅子 等 2 个物体' }).waitFor()
     await p.context.close()
   })
 } finally {

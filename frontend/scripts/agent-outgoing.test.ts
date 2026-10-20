@@ -13,6 +13,7 @@ import {
   conversationSlot,
   messageSteps,
 } from '../src/creative-canvas/editor/agentState.ts'
+import { selectionLabel } from '../src/creative-canvas/editor/agentScene.ts'
 
 const titles = new Map([
   ['rev-1', '秋日样片'],
@@ -62,6 +63,45 @@ test('what was sent is drawn the way the server will draw it', () => {
       { kind: 'command', command: 'compact', text: undefined },
     ],
   )
+})
+
+test('the objects selected in the scene editor ride on the message', () => {
+  const parts = outgoingParts(
+    [{ type: 'text', text: '把它们加高' }],
+    titleOf,
+    undefined,
+    ['柱 A', ''],
+  )
+  assert.deepEqual(parts, [
+    { kind: 'text', text: '把它们加高' },
+    { kind: 'scene', names: ['柱 A', ''] },
+  ])
+  // The stored message reads back the same: the server puts the selection last.
+  assert.deepEqual(
+    messageParts(
+      [
+        { type: 'text', text: '把它们加高' },
+        {
+          type: 'scene_selection',
+          scene: {
+            document_id: 'doc',
+            title: '中殿',
+            objects: [
+              { id: 'a', name: '柱 A' },
+              { id: 'b', name: '' },
+            ],
+          },
+        },
+      ],
+      titleOf,
+    ),
+    parts,
+  )
+  assert.deepEqual(selectionLabel(['柱 A']), { label: '柱 A', detail: '柱 A' })
+  assert.deepEqual(selectionLabel(['柱 A', '', '椅子']), {
+    label: '柱 A 等 3 个物体',
+    detail: '柱 A、未命名物体、椅子',
+  })
 })
 
 const sending: Outgoing = {

@@ -597,6 +597,10 @@ type SceneContext struct {
 
 const (
 	maxSceneSelection = 50
+	// maxSceneTitleRunes and maxSceneNameRunes are the scene's own bounds on
+	// a document title and an object name.
+	maxSceneTitleRunes = 200
+	maxSceneNameRunes  = 80
 	// maxRecentScenes is how many scenes the conversation wrote last that a
 	// new run hears the changes of, besides the one being edited.
 	maxRecentScenes = 3
@@ -618,6 +622,9 @@ func (c *SceneContext) valid() bool {
 type sceneInput struct {
 	Text     string
 	Snapshot map[string]any
+	// Selection is set on the editor line when objects were selected: what
+	// the photographer's message shows they asked about.
+	Selection *BlockScene
 }
 
 // sceneInputsInTx words what a new run is told about scenes: the scene being
@@ -634,8 +641,15 @@ func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationI
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, sceneInput{Text: editor.Prompt, Snapshot: map[string]any{"kind": "scene_context",
-			"document_id": editor.DocumentID, "revision": editor.Revision, "selected_object_ids": editor.Selected}})
+		line := sceneInput{Text: editor.Prompt, Snapshot: map[string]any{"kind": "scene_context",
+			"document_id": editor.DocumentID, "revision": editor.Revision, "selected_object_ids": editor.Selected}}
+		if len(editor.Objects) > 0 {
+			line.Selection = &BlockScene{DocumentID: editor.DocumentID, Title: editor.Title}
+			for _, o := range editor.Objects {
+				line.Selection.Objects = append(line.Selection.Objects, BlockSceneObject{ID: o.ID, Name: o.Name})
+			}
+		}
+		out = append(out, line)
 		docs = append(docs, scene.DocumentID)
 	}
 	runs, err := conversationRunsInTx(ctx, tx, conversationID)
@@ -664,6 +678,18 @@ func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationI
 			"document_id": id, "since_revision": summary.SinceRevision, "revision": summary.Revision}})
 	}
 	return out, nil
+}
+
+// withSceneSelection is the photographer's message with the selection the run
+// was told, so the conversation shows what "this" meant when it was asked.
+func withSceneSelection(body Body, scenes []sceneInput) Body {
+	for _, s := range scenes {
+		if s.Selection != nil {
+			body.Blocks = append(slices.Clone(body.Blocks), Block{Type: "scene_selection", Scene: s.Selection})
+			return body
+		}
+	}
+	return body
 }
 
 func sceneInputBytes(scenes []sceneInput) int {

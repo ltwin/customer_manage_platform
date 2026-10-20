@@ -820,13 +820,14 @@ func (e CreativeAgentMessageBlockCommand) Valid() bool {
 
 // Defines values for CreativeAgentMessageBlockType.
 const (
-	CreativeAgentMessageBlockTypeCommand    CreativeAgentMessageBlockType = "command"
-	CreativeAgentMessageBlockTypeContentRef CreativeAgentMessageBlockType = "content_ref"
-	CreativeAgentMessageBlockTypeNotice     CreativeAgentMessageBlockType = "notice"
-	CreativeAgentMessageBlockTypeReference  CreativeAgentMessageBlockType = "reference"
-	CreativeAgentMessageBlockTypeSkillRef   CreativeAgentMessageBlockType = "skill_ref"
-	CreativeAgentMessageBlockTypeText       CreativeAgentMessageBlockType = "text"
-	CreativeAgentMessageBlockTypeToolResult CreativeAgentMessageBlockType = "tool_result"
+	CreativeAgentMessageBlockTypeCommand        CreativeAgentMessageBlockType = "command"
+	CreativeAgentMessageBlockTypeContentRef     CreativeAgentMessageBlockType = "content_ref"
+	CreativeAgentMessageBlockTypeNotice         CreativeAgentMessageBlockType = "notice"
+	CreativeAgentMessageBlockTypeReference      CreativeAgentMessageBlockType = "reference"
+	CreativeAgentMessageBlockTypeSceneSelection CreativeAgentMessageBlockType = "scene_selection"
+	CreativeAgentMessageBlockTypeSkillRef       CreativeAgentMessageBlockType = "skill_ref"
+	CreativeAgentMessageBlockTypeText           CreativeAgentMessageBlockType = "text"
+	CreativeAgentMessageBlockTypeToolResult     CreativeAgentMessageBlockType = "tool_result"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAgentMessageBlockType enum.
@@ -839,6 +840,8 @@ func (e CreativeAgentMessageBlockType) Valid() bool {
 	case CreativeAgentMessageBlockTypeNotice:
 		return true
 	case CreativeAgentMessageBlockTypeReference:
+		return true
+	case CreativeAgentMessageBlockTypeSceneSelection:
 		return true
 	case CreativeAgentMessageBlockTypeSkillRef:
 		return true
@@ -4739,18 +4742,21 @@ type CreativeAgentMessageBlock struct {
 	// RefId 定位一个内容修订或工具结果；本身不授予任何权限
 	RefId *string `json:"ref_id,omitempty"`
 
+	// Scene scene_selection 块冻结的场景与选中物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。
+	Scene *CreativeAgentMessageScene `json:"scene,omitempty"`
+
 	// Skill 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。
 	Skill *CreativeAgentMessageSkill `json:"skill,omitempty"`
 	Text  *string                    `json:"text,omitempty"`
 
-	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
+	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照），只用于展示，不进入之后运行的历史。
 	Type CreativeAgentMessageBlockType `json:"type"`
 }
 
 // CreativeAgentMessageBlockCommand command 块的命令名
 type CreativeAgentMessageBlockCommand string
 
-// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
+// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照），只用于展示，不进入之后运行的历史。
 type CreativeAgentMessageBlockType string
 
 // CreativeAgentMessageBody defines model for CreativeAgentMessageBody.
@@ -4778,6 +4784,18 @@ type CreativeAgentMessagePage struct {
 
 	// PrevCursor 继续往回翻；留空表示会话从这里开始
 	PrevCursor string `json:"prev_cursor"`
+}
+
+// CreativeAgentMessageScene scene_selection 块冻结的场景与选中物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。
+type CreativeAgentMessageScene struct {
+	DocumentId string `json:"document_id"`
+	Objects    []struct {
+		Id string `json:"id"`
+
+		// Name 未命名的物体为空字符串
+		Name string `json:"name"`
+	} `json:"objects"`
+	Title string `json:"title"`
 }
 
 // CreativeAgentMessageSkill 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。

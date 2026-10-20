@@ -205,9 +205,14 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   // The assistant panel sends this with a new run; a scene that cannot be edited is not offered.
   const editable = !!s.base && !s.trashed && !s.missing
   useEffect(() => {
-    if (editable) setSceneContext({ documentID, selected: [...selected] })
-    else clearSceneContext(documentID)
-  }, [documentID, selected, editable])
+    if (!editable) return clearSceneContext(documentID)
+    const names: Record<string, string> = {}
+    for (const id of selected) {
+      const name = byID.get(id)?.name
+      if (name) names[id] = name
+    }
+    setSceneContext({ documentID, selected: [...selected], names })
+  }, [documentID, selected, editable, byID])
   useEffect(() => () => clearSceneContext(documentID), [documentID])
   useEffect(() => {
     const { saver } = view

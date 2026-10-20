@@ -1661,9 +1661,9 @@ await check('the editor hands its scene and selection to the assistant panel, an
   server.external([{ op: 'add_objects', objects: [boxObject(chair, '椅子', 1, 1)] }])
   const { context, page, errors } = await open(server)
   const shared = async () => JSON.stringify(await page.evaluate(() => window.__context()))
-  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [] }), 'the scene, nothing selected')
+  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [], names: {} }), 'the scene, nothing selected')
   await page.getByRole('treeitem', { name: /椅子/ }).click()
-  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [chair] }), 'the selection')
+  await waitFor(async () => (await shared()) === JSON.stringify({ documentID: DOC, selected: [chair], names: { [chair]: '椅子' } }), 'the selection')
   // A trashed scene cannot be worked on: a run that named it would be refused.
   server.trashedAt = '2026-10-18T10:00:00Z'
   await page.evaluate(() => window.__invalidate())

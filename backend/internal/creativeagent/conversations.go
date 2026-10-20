@@ -82,6 +82,23 @@ type Block struct {
 	// value rather than five more flat fields, because it is one fact — which
 	// frozen version this message showed — and a half-filled one means nothing.
 	Skill *BlockSkill `json:"skill,omitempty"`
+	// Scene is what a scene_selection block froze: the objects selected in the
+	// scene editor when the message was sent. It is shown, never sent to the
+	// model — the run was told the selection in its own input.
+	Scene *BlockScene `json:"scene,omitempty"`
+}
+
+// BlockScene snapshots the scene and the names its selected objects had, so a
+// later rename or deletion does not rewrite what the message showed.
+type BlockScene struct {
+	DocumentID string             `json:"document_id"`
+	Title      string             `json:"title"`
+	Objects    []BlockSceneObject `json:"objects"`
+}
+
+type BlockSceneObject struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // BlockSkill is what a message froze about a skill: the identity to resolve it
@@ -213,7 +230,7 @@ func validBody(b Body, limits Limits) error {
 		return creativeops.ErrValidation
 	}
 	for _, block := range b.Blocks {
-		if block.Command != "" && block.Type != "command" {
+		if block.Command != "" && block.Type != "command" || block.Scene != nil && block.Type != "scene_selection" {
 			return creativeops.ErrValidation
 		}
 		switch block.Type {
@@ -243,6 +260,10 @@ func validBody(b Body, limits Limits) error {
 			if block.Code == "" || block.RefID != "" || block.Skill != nil {
 				return creativeops.ErrValidation
 			}
+		case "scene_selection":
+			if !validBlockScene(block.Scene) || block.Text != "" || block.RefID != "" || block.Code != "" || block.Skill != nil {
+				return creativeops.ErrValidation
+			}
 		default:
 			return creativeops.ErrValidation
 		}
@@ -262,6 +283,22 @@ func validBody(b Body, limits Limits) error {
 		return ErrLimit
 	}
 	return nil
+}
+
+// validBlockScene bounds a selection by its shape rather than the byte budget:
+// it is never sent to the model, so charging it would only refuse a long
+// message for having been asked about many objects.
+func validBlockScene(s *BlockScene) bool {
+	if s == nil || s.DocumentID == "" || len(s.Objects) == 0 || len(s.Objects) > maxSceneSelection ||
+		!utf8.ValidString(s.Title) || utf8.RuneCountInString(s.Title) > maxSceneTitleRunes {
+		return false
+	}
+	for _, o := range s.Objects {
+		if o.ID == "" || !utf8.ValidString(o.ID) || !utf8.ValidString(o.Name) || utf8.RuneCountInString(o.Name) > maxSceneNameRunes {
+			return false
+		}
+	}
+	return true
 }
 
 // bodyBytes is what a body costs against the budget: every stored string, not
