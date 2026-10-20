@@ -1,6 +1,6 @@
 {
   "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-model-library",
   "kind": "feature",
   "assurance": "governed",
@@ -41,9 +41,9 @@
       "data:模型资产"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-20T14:52:30.611Z",
-  "updatedAt": "2026-10-20T16:39:58.690Z",
+  "updatedAt": "2026-10-20T16:40:23.289Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -65,8 +65,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "c3c2c9a92e8350c27c552aed89119b89d49ecbff",
+    "at": "2026-10-20T16:40:22.944Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "9d747ce8304d501fb59f60e508ebd084227ad0382edd5b93987120eb851015e0"
+    },
+    "preExisting": [
+      ".lti/snapshots/9d747ce8304d501fb59f60e508ebd084227ad0382edd5b93987120eb851015e0.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
