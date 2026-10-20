@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject, type RefObject } from 'react'
 import { Aperture, Grid3x3 } from 'lucide-react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
@@ -23,6 +23,7 @@ import {
   Vector2,
   Vector3,
   type Camera,
+  type DirectionalLight,
   type Mesh,
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
@@ -57,6 +58,7 @@ import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
 import { ClayRenderer } from './render/clayExport.ts'
+import { fitSunShadow } from './render/sunShadow.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -196,11 +198,14 @@ export function Environment({ environment }: { environment: SceneEnvironment }) 
   const sun = sunDirection(environment).multiplyScalar(60)
   const sky = environment.sky
   const skyRef = useRef<ComponentRef<typeof Sky>>(null)
+  const sunRef = useRef<DirectionalLight>(null)
   const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
     skyRef.current?.material.uniforms.up.value.set(0, 0, 1)
     invalidate()
   }, [sky.kind, invalidate])
+  // Before the first frame: an offscreen shot draws only one.
+  useLayoutEffect(() => (sunRef.current ? fitSunShadow(sunRef.current) : undefined), [])
   return (
     <>
       {sky.kind === 'procedural' ? (
@@ -211,15 +216,13 @@ export function Environment({ environment }: { environment: SceneEnvironment }) 
       {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
       <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity + 0.3} />
       <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={[0, 0, 1]} />
+      {/* The shadow camera's bounds and normal bias follow the scene (fitSunShadow). */}
       <directionalLight
+        ref={sunRef}
         position={positionToView([sun.x, Math.max(sun.y, 2), sun.z])}
         intensity={2.2}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-30}
-        shadow-camera-right={30}
-        shadow-camera-top={30}
-        shadow-camera-bottom={-30}
       />
     </>
   )
