@@ -7,6 +7,7 @@ import {
   type SceneState,
 } from './apply.ts'
 import { applyIntent, changedUnits, removedUnits, type Intent } from './intents.ts'
+import { rebaseReparent, type ReparentOp } from '../grouping.ts'
 import type { SceneSession } from './sync.ts'
 
 // Cmd+Z only reverses this session's own confirmed edits. A step stays valid
@@ -27,6 +28,11 @@ export type Step = {
   after: string
   undoPatch: ProjectionPatch
   redoPatch: ProjectionPatch
+  /**
+   * A grouping step replays reparent_objects both ways: restoring units
+   * cannot restore the hierarchy.
+   */
+  ops?: { undo: ReparentOp; redo: ReparentOp }
 }
 
 export type UndoResult = 'sent' | 'cancelled' | 'empty' | 'busy'
@@ -208,8 +214,10 @@ export class UndoStack {
     }
     if (intent.step) return
     const units = changedUnits(intent, before).filter((u) => u !== 'objects')
-    // Hierarchy-only edits cannot be restored per unit; they are not steps.
-    if (!units.length) return
+    const redo = intent.ops.length === 1 && intent.ops[0].op === 'reparent_objects' ? intent.ops[0] : null
+    const ops = redo && intent.inverse ? { undo: intent.inverse, redo } : undefined
+    // Other hierarchy-only edits cannot be restored per unit; they are not steps.
+    if (!units.length && !ops) return
     const after = applyIntent(before, intent)
     this.seq++
     this.undoSteps.push({
@@ -220,6 +228,7 @@ export class UndoStack {
       after: receipt.revision,
       undoPatch: patchFor(after, before, units),
       redoPatch: patchFor(before, after, units),
+      ...(ops ? { ops } : {}),
     })
     this.redoSteps = []
     this.changed()
@@ -259,7 +268,12 @@ export class UndoStack {
         this.say('这一步之后物件已被修改，无法撤销')
         continue
       }
-      return this.submit(step, 'undo')
+      const result = this.submit(step, 'undo')
+      if (result === 'skipped') {
+        this.say('层级已被修改，无法撤销')
+        continue
+      }
+      return result
     }
     this.changed()
     return 'empty'
@@ -273,18 +287,44 @@ export class UndoStack {
         this.say('这一步之后物件已被修改，无法重做')
         continue
       }
-      return this.submit(step, 'redo')
+      const result = this.submit(step, 'redo')
+      if (result === 'skipped') {
+        this.say('层级已被修改，无法重做')
+        continue
+      }
+      return result
     }
     this.changed()
     return 'empty'
   }
 
-  private submit(step: Step, kind: 'undo' | 'redo'): UndoResult {
+  private submit(step: Step, kind: 'undo' | 'redo'): UndoResult | 'skipped' {
+    if (step.ops) return this.submitOps(step, kind)
     const intent = this.session.edit(
       [{ op: 'restore_units', from_revision: kind === 'undo' ? step.before : step.after, units: step.units }],
       `${kind === 'undo' ? '撤销' : '重做'}${step.label}`,
       { projection: kind === 'undo' ? step.undoPatch : step.redoPatch, step: { kind, seq: step.seq } },
     )
+    if (!intent) {
+      ;(kind === 'undo' ? this.undoSteps : this.redoSteps).push(step)
+      this.changed()
+      return 'empty'
+    }
+    this.inFlight.set(intent.id, step)
+    this.changed()
+    return 'sent'
+  }
+
+  /**
+   * Replays a grouping step's reparent on the current view: skipped when a
+   * group or parent it needs is gone, orders that now clash go last.
+   */
+  private submitOps(step: Step, kind: 'undo' | 'redo'): UndoResult | 'skipped' {
+    const view = this.session.state.view
+    const op = view && rebaseReparent(kind === 'undo' ? step.ops!.undo : step.ops!.redo, view.scene.objects)
+    if (!op) return 'skipped'
+
+    const intent = this.session.edit([op], `${kind === 'undo' ? '撤销' : '重做'}${step.label}`, { step: { kind, seq: step.seq } })
     if (!intent) {
       ;(kind === 'undo' ? this.undoSteps : this.redoSteps).push(step)
       this.changed()

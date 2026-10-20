@@ -1136,3 +1136,72 @@ test('previews change only what the viewport draws', async () => {
   assert.deepEqual(shown.objects.map((o) => o.model?.content_revision_id), ['preview:4', 'ccrv_a', undefined], 'only model instances take a preview')
   assert.equal(scene.objects[0].model?.content_revision_id, 'ccrv_a', 'the scene itself is untouched')
 })
+
+// --- grouping: sync and undo -------------------------------------------------
+
+import { groupSelection, parentToActive, type GroupingResult, type Regroup } from '../src/creative-scene/grouping.ts'
+
+function regroup(r: GroupingResult): Regroup {
+  assert.ok(r && !('error' in r), JSON.stringify(r))
+  return r
+}
+
+const parentOf = (session: SceneSession, n: number) => session.state.view!.scene.objects.find((o) => o.id === id(n))?.parent_id
+
+test('grouping is one step: undo replays the inverse reparent, redo the forward one', async () => {
+  const { transport, session } = await started([box(1, null, 1), box(2, null, 2)])
+  const undo = new UndoStack(session)
+  const r = regroup(groupSelection(session.state.view!.scene.objects, { selected: [id(1), id(2)], active: id(2) }, () => id(9)))
+  session.edit([r.op], r.label, { inverse: r.inverse! })
+  assert.equal(parentOf(session, 1), id(9), 'shows at once')
+  assert.deepEqual(transport.last().payload.expected, { objects: '3', [`object:${id(1)}`]: '3', [`object:${id(2)}`]: '3' })
+  await confirmLast(transport, 4, ['objects', `object:${id(1)}`, `object:${id(2)}`, `object:${id(9)}`, `object:${id(9)}:content`])
+
+  assert.equal(undo.undo(), 'sent')
+  const back = transport.last().payload.operations[0] as { op: string; remove_groups?: string[] }
+  assert.deepEqual([back.op, back.remove_groups], ['reparent_objects', [id(9)]])
+  assert.equal(parentOf(session, 1), null)
+  assert.equal(session.state.view!.scene.objects.some((o) => o.id === id(9)), false)
+  await confirmLast(transport, 5, ['objects', `object:${id(1)}`, `object:${id(2)}`], { removed_units: [`object:${id(9)}`, `object:${id(9)}:content`] })
+
+  assert.equal(undo.redo(), 'sent')
+  const again = transport.last().payload.operations[0] as { create_groups?: { id: string }[] }
+  assert.deepEqual(again.create_groups?.map((g) => g.id), [id(9)], 'the group comes back under its ID')
+  assert.equal(parentOf(session, 2), id(9))
+})
+
+test('an objects conflict sends a grouping edit again on the latest snapshot; a placement conflict goes to the prompt', async () => {
+  const { transport, session } = await started([box(1, null, 1), box(2, null, 2)])
+  const r = regroup(groupSelection(session.state.view!.scene.objects, { selected: [id(1), id(2)], active: id(2) }, () => id(9)))
+  session.edit([r.op], r.label, { inverse: r.inverse! })
+  // Someone else added a box meanwhile.
+  transport.doc = docAt([box(1, null, 1), box(2, null, 2), box(5, null, 3)], 4, { objects: 4 })
+  transport.last().reject(conflictOn('objects'))
+  await tick()
+  await tick()
+  assert.equal(transport.sent.length, 2, 'sent again')
+  assert.equal(transport.last().payload.expected.objects, '4')
+  assert.equal(session.state.conflicts.length, 0)
+
+  transport.last().reject(conflictOn(`object:${id(1)}`))
+  await tick()
+  assert.equal(session.state.conflicts.length, 1, 'someone moved one of the objects: ask')
+})
+
+test('undoing a parenting is skipped when the old parent is gone', async () => {
+  const group = (n: number, order: number) => obj(n, 'group', null, order)
+  const { transport, clock, session } = await started([group(1, 1), group(2, 2), box(3, id(1), 0)])
+  const undo = new UndoStack(session)
+  const r = regroup(parentToActive(session.state.view!.scene.objects, { selected: [id(3), id(2)], active: id(2) }))
+  session.edit([r.op], r.label, { inverse: r.inverse! })
+  await confirmLast(transport, 4, ['objects', `object:${id(3)}`])
+  // Someone else deleted the group it came from.
+  transport.doc = docAt([group(2, 2), box(3, id(2), 0)], 5, { objects: 5, [`object:${id(3)}`]: 4 })
+  delete transport.doc.unit_revs[`object:${id(1)}`]
+  delete transport.doc.unit_revs[`object:${id(1)}:content`]
+  clock.advance(1000)
+  session.invalidate()
+  await tick()
+  assert.equal(undo.undo(), 'empty')
+  assert.equal(undo.notice, '层级已被修改，无法撤销')
+})

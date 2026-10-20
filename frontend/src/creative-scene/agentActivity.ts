@@ -225,7 +225,7 @@ export function editedObjects(ops: readonly unknown[]): string[] {
     if (!v || typeof v !== 'object') return
     for (const [k, x] of Object.entries(v)) {
       if (k === 'object_id' && typeof x === 'string') ids.add(x)
-      else if (k === 'object_ids' && Array.isArray(x)) x.forEach((id) => typeof id === 'string' && ids.add(id))
+      else if ((k === 'object_ids' || k === 'remove_groups') && Array.isArray(x)) x.forEach((id) => typeof id === 'string' && ids.add(id))
       else if (k === 'units' && Array.isArray(x)) x.forEach(add)
       else walk(x)
     }

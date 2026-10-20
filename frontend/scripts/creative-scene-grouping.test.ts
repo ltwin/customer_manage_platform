@@ -185,3 +185,16 @@ test('a reparent that leaves things where they are is not sent; float noise coun
   const moved = { ...op, moves: [...op.moves, { object_id: sid(1), parent_id: null, order: 3 }] }
   assert.deepEqual(withoutNoops([moved], state(objects)), [{ ...op, moves: [{ object_id: sid(1), parent_id: null, order: 3 }] }])
 })
+
+import { rebaseReparent } from '../src/creative-scene/grouping.ts'
+
+test('a reparent fitted to a newer snapshot: clashing orders go last, missing parents refuse', () => {
+  const op = { op: 'reparent_objects' as const, moves: [{ object_id: sid(1), parent_id: null, order: 2 }, { object_id: sid(2), parent_id: null, order: 3 }] }
+  const now = [group(5, { order: 0 }), so(1, { parent_id: sid(5), order: 0 }), so(2, { parent_id: sid(5), order: 1 }), so(3, { order: 2 }), so(4, { order: 7 })]
+  assert.deepEqual(rebaseReparent(op, now)?.moves.map((m) => m.order), [8, 9], 'someone took order 2: both go last, in order')
+  assert.deepEqual(rebaseReparent(op, now.filter((o) => o.id !== sid(3)))?.moves.map((m) => m.order), [2, 3], 'no clash: unchanged')
+  const into = { op: 'reparent_objects' as const, moves: [{ object_id: sid(3), parent_id: sid(5), order: 2 }] }
+  assert.equal(rebaseReparent(into, now.filter((o) => o.id !== sid(5)).map((o) => ({ ...o, parent_id: null }))), null, 'the parent is gone')
+  assert.equal(rebaseReparent({ ...op, create_groups: [group(4)] }, now), null, 'a group to create exists again')
+  assert.equal(rebaseReparent({ ...op, remove_groups: [sid(3)] }, now), null, 'a group to remove is not a group')
+})

@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { CommandReceipt, SceneDocument } from '../api.ts'
 import { newIntentID } from '../ids.ts'
+import { rebaseReparent } from '../grouping.ts'
 import {
   applyOp,
   instanceTargets,
@@ -214,7 +215,7 @@ export class SceneSession {
   edit(
     requested: WireOp[],
     label: string,
-    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string; baseline?: string; id?: string } = {},
+    options: { held?: boolean; projection?: ProjectionPatch; step?: Intent['step']; merge?: string; baseline?: string; id?: string; inverse?: Intent['inverse'] } = {},
   ): Intent | null {
     const { base, view, queue, trashed, missing } = this.state
     if (!base || !view || trashed || missing) return null
@@ -494,11 +495,16 @@ export class SceneSession {
   }
 
   /**
-   * Only an intent that adds objects is rebased on its own, and only when
-   * nothing but objects moved and every target parent is still a group.
+   * Only an intent that adds objects or reparents is rebased on its own, and
+   * only when nothing but objects moved and every target parent is still a
+   * group.
    */
   private async conflict(intent: Intent, f: FailureLike) {
     const units = this.conflictUnits(f)
+    if (!intent.projection && intent.ops.length > 0 && intent.ops.every((op) => op.op === 'reparent_objects')) {
+      await this.rebaseReparents(intent, units)
+      return
+    }
     // A new model's commit travels with its add and goes out again with it:
     // the failed command consumed no upload.
     const addsOnly =
@@ -525,6 +531,40 @@ export class SceneSession {
       return
     }
     rebased.expected = { ...intent.expected, objects: doc.unit_revs.objects ?? null }
+    this.set({ queue: this.state.queue.map((i) => (i.id === intent.id ? rebased : i)) })
+    this.pump()
+  }
+
+  /**
+   * A grouping edit whose objects collection changed under it: read the
+   * latest, check what it moves and where to are still there, put clashing
+   * orders last and send it again. A placement conflict is someone else's
+   * edit of the same object and goes to the prompt.
+   */
+  private async rebaseReparents(intent: Intent, units: string[]) {
+    if (!(units.length && units.every((u) => u === 'objects')) || this.rebased.has(intent.id)) {
+      this.reject(intent, 'conflict', this.conflictMessage(intent, units))
+      return
+    }
+    this.rebased.add(intent.id)
+    let doc: SceneDocument
+    try {
+      doc = await this.transport.read(this.documentID)
+    } catch {
+      this.reject(intent, 'conflict', this.conflictMessage(intent, units))
+      return
+    }
+    this.rebase(doc)
+    const ops: WireOp[] = []
+    for (const op of intent.ops) {
+      const fitted = op.op === 'reparent_objects' ? rebaseReparent(op, doc.scene.objects) : null
+      if (!fitted) {
+        this.reject(intent, 'conflict', this.conflictMessage(intent, units))
+        return
+      }
+      ops.push(fitted)
+    }
+    const rebased: Intent = { ...intent, ops, state: 'pending', expected: { ...intent.expected, objects: doc.unit_revs.objects ?? null } }
     this.set({ queue: this.state.queue.map((i) => (i.id === intent.id ? rebased : i)) })
     this.pump()
   }
@@ -743,9 +783,14 @@ function keepPresent(op: WireOp, present: Set<string>): WireOp | null {
       const ids = op.object_ids.filter((id) => present.has(id))
       return ids.length ? { ...op, object_ids: ids } : null
     }
+    // A grouping edit is all or nothing: half a group or half an ungroup
+    // would leave things somewhere nobody chose. Its new groups count as
+    // present.
     case 'reparent_objects': {
-      const moves = op.moves.filter((m) => present.has(m.object_id) && (!m.parent_id || present.has(m.parent_id)))
-      return moves.length ? { ...op, moves } : null
+      const created = new Set((op.create_groups ?? []).map((g) => g.id))
+      const there = (id: string | null) => id === null || present.has(id) || created.has(id)
+      const whole = op.moves.every((m) => present.has(m.object_id) && there(m.parent_id)) && (op.remove_groups ?? []).every((id) => present.has(id))
+      return whole ? op : null
     }
     case 'set_instance_model': {
       const targets = instanceTargets(op).filter((id) => present.has(id))

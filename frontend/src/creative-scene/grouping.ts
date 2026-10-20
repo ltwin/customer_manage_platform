@@ -252,3 +252,53 @@ export function dropRows(objects: readonly SceneObject[], moving: readonly strin
   if (!built) return null
   return { ...built, label: objectsLabel('移动', moving.length, byID.get(moving[0])?.name) }
 }
+
+/**
+ * A reparent made against an older snapshot, fitted to objects: for an
+ * objects conflict (someone added, removed or reparented something else) and
+ * for undo and redo. Null when an object, a parent or a group to remove is
+ * gone, a parent is no longer a group, or a group to create exists again.
+ * Orders that now clash go last under their parent, keeping their order
+ * among themselves; transforms stay, since moving a parent meanwhile is the
+ * same as moving it after the reparent.
+ */
+export function rebaseReparent(op: ReparentOp, objects: readonly SceneObject[]): ReparentOp | null {
+  const byID = new Map(objects.map((o) => [o.id, o]))
+  const created = new Map((op.create_groups ?? []).map((g) => [g.id, g]))
+  const removed = new Set(op.remove_groups ?? [])
+  if ([...created.keys()].some((id) => byID.has(id))) return null
+  if ([...removed].some((id) => byID.get(id)?.kind !== 'group')) return null
+  const isGroup = (id: string | null) => id === null || created.has(id) || (byID.get(id)?.kind === 'group' && !removed.has(id))
+  if (op.moves.some((m) => !byID.has(m.object_id) || !isGroup(m.parent_id))) return null
+  if ([...created.values()].some((g) => !isGroup(g.parent_id ?? null))) return null
+
+  // What each parent holds that this operation leaves where it is.
+  const moving = new Set(op.moves.map((m) => m.object_id))
+  const staying = new Map<string, Set<number>>()
+  const last = new Map<string, number>()
+  for (const o of objects) {
+    if (moving.has(o.id) || removed.has(o.id)) continue
+    const key = o.parent_id ?? ''
+    staying.set(key, (staying.get(key) ?? new Set()).add(o.order))
+    last.set(key, Math.max(last.get(key) ?? -1, o.order))
+  }
+  type Item = { parent: string | null; order: number; set: (order: number) => void }
+  const items: Item[] = []
+  const groups = [...created.values()].map((g) => ({ ...g }))
+  const moves = op.moves.map((m) => ({ ...m }))
+  for (const g of groups) items.push({ parent: g.parent_id ?? null, order: g.order, set: (n) => (g.order = n) })
+  for (const m of moves) items.push({ parent: m.parent_id, order: m.order, set: (n) => (m.order = n) })
+  const byParent = new Map<string, Item[]>()
+  for (const it of items) {
+    const key = it.parent ?? ''
+    byParent.set(key, [...(byParent.get(key) ?? []), it])
+  }
+  for (const [key, list] of byParent) {
+    const taken = staying.get(key) ?? new Set()
+    const orders = list.map((it) => it.order)
+    if (orders.every((n) => !taken.has(n)) && new Set(orders).size === orders.length) continue
+    let next = (last.get(key) ?? -1) + 1
+    for (const it of [...list].sort((a, b) => a.order - b.order)) it.set(next++)
+  }
+  return { ...op, moves, ...(groups.length ? { create_groups: groups } : {}) }
+}

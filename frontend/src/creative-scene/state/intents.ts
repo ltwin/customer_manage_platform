@@ -44,6 +44,12 @@ export type Intent = {
   merge?: string
   /** How prompts name this edit, for example 「移动 3 个物件」. */
   label: string
+  /**
+   * A grouping edit's way back, worked out from the snapshot it was made
+   * on: its undo step replays this instead of restoring units, which cannot
+   * restore the hierarchy.
+   */
+  inverse?: Extract<WireOp, { op: 'reparent_objects' }>
 }
 
 export type UnitRevs = Record<string, string>
