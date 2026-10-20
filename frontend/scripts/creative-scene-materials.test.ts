@@ -29,3 +29,71 @@ test('slot hints map to presets whole, ignoring case and spaces', () => {
   assert.equal(hintPreset('old stone'), undefined)
   assert.equal(hintPreset(null), undefined)
 })
+
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three'
+import { flipWinding, partsOf, type MeshConstants } from '../src/creative-scene/models/cache.ts'
+import { principledProps, seeThrough } from '../src/creative-scene/materials/principled.ts'
+import { resolveSlot } from '../src/creative-scene/materials/resolve.ts'
+
+const constants: MeshConstants = { color: '#336699', roughness: 0.3, metalness: 0.8, emissive: '#000000', emissiveIntensity: 1, vertexColors: false }
+
+test('a slot resolves by the five rules, first match wins', () => {
+  const assigned = { main: { preset: 'marble@1', params: { scale: 99 } }, lid: { preset: 'lava@2', params: {} } }
+  const a = resolveSlot('main', assigned, 'wood', constants)
+  assert.equal(a.source, 'assigned')
+  assert.ok(a.material.kind === 'pattern' && a.material.id === 'marble@1' && a.material.params.scale === 10, 'clamped into range')
+  assert.deepEqual(resolveSlot('lid', assigned, 'wood', constants), { slot: 'lid', source: 'unknown', material: { kind: 'unknown' } })
+  const hinted = resolveSlot('body', assigned, ' Wood', constants)
+  assert.ok(hinted.source === 'hint' && hinted.material.kind === 'pattern' && hinted.material.id === 'wood@1')
+  const model = resolveSlot('body', assigned, 'unobtainium', constants)
+  assert.ok(model.source === 'model' && model.material.kind === 'principled' && model.material.params.color === '#336699' && model.material.params.metalness === 0.8)
+  const painted = resolveSlot(null, assigned, null, { ...constants, vertexColors: true }).material
+  assert.ok(painted.kind === 'principled' && painted.vertexColors, 'unslotted code materials keep vertex colours')
+  const primitive = resolveSlot('main', undefined, undefined, null)
+  assert.ok(primitive.source === 'default' && primitive.material.kind === 'principled' && primitive.material.params.color === '#d9d5cd')
+})
+
+test('principled parameters go onto MeshPhysicalMaterial as three.js names them', () => {
+  const p = resolveSlot('main', { main: { preset: 'principled@1', params: { opacity: 0.4, anisotropy_rotation: 1.2, iridescence_thickness: 600, sheen_color: '#ff0000' } } }, null, null)
+  assert.ok(p.material.kind === 'principled')
+  const props = principledProps(p.material.params)
+  assert.equal(props.anisotropyRotation, 1.2, 'radians as stored')
+  assert.deepEqual(props.iridescenceThicknessRange, [600, 600])
+  assert.deepEqual([props.transparent, props.depthWrite], [true, false])
+  assert.equal((props.sheenColor as { getHexString(): string }).getHexString(), 'ff0000')
+  assert.equal(seeThrough(p.material.params), true)
+  assert.equal(seeThrough({ ...p.material.params, opacity: 1, transmission: 0.5 }), true, 'glass is see-through')
+  assert.equal(seeThrough({ ...p.material.params, opacity: 1 }), false)
+})
+
+test('model parts are baked into model space; a mirrored part keeps its faces facing out', () => {
+  const shared = new BoxGeometry(1, 1, 1)
+  const slot = new MeshStandardMaterial({ name: 'slot:body', color: '#ff0000' })
+  slot.userData.hint = 'stone'
+  const root = new Group()
+  const left = new Mesh(shared, slot)
+  left.position.set(-2, 0, 0)
+  const right = new Mesh(shared, new MeshStandardMaterial({ roughness: 0.25 }))
+  right.position.set(2, 0, 0)
+  right.scale.set(-1, 1, 1)
+  root.add(left, right)
+  const { meshes } = partsOf(root)
+  assert.notEqual(meshes[0].geometry, meshes[1].geometry, 'a shared geometry is copied before its transform goes in')
+  assert.deepEqual([meshes[0].slot, meshes[0].hint, meshes[0].constants.color], ['body', 'stone', '#ff0000'])
+  assert.deepEqual([meshes[1].slot, meshes[1].constants.roughness], [null, 0.25])
+  meshes[1].geometry.computeBoundingBox()
+  assert.equal(meshes[1].geometry.boundingBox!.min.x, 1.5)
+  // The +X face of the mirrored box now faces −X in model space: its first
+  // triangle's winding normal must agree with its stored normal.
+  const g = meshes[1].geometry
+  const [i0, i1, i2] = [g.index!.getX(0), g.index!.getX(1), g.index!.getX(2)]
+  const p = (i: number) => new Vector3().fromBufferAttribute(g.attributes.position, i)
+  const wound = p(i1).sub(p(i0)).cross(p(i2).sub(p(i0))).normalize()
+  const stored = new Vector3().fromBufferAttribute(g.attributes.normal, i0)
+  assert.ok(wound.dot(stored) > 0.99, `winding ${wound.toArray()} vs normal ${stored.toArray()}`)
+  // Flipping twice is the original order.
+  const before = Array.from(g.index!.array)
+  flipWinding(g)
+  flipWinding(g)
+  assert.deepEqual(Array.from(g.index!.array), before)
+})

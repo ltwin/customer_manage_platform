@@ -46,14 +46,14 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
     return (
       <group>
         {loaded.parts.meshes.map((m, i) => (
-          <WireMesh key={i} geometry={m.geometry} matrix={m.matrix} edge={edge} />
+          <WireMesh key={i} geometry={m.geometry} edge={edge} />
         ))}
       </group>
     )
   return (
     <group>
       {loaded.parts.meshes.map((m, i) => (
-        <mesh key={i} geometry={m.geometry} matrix={m.matrix} matrixAutoUpdate={false} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
+        <mesh key={i} geometry={m.geometry} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
           {edge && <Outlines thickness={3} color={edge} />}
         </mesh>
       ))}

@@ -1,4 +1,4 @@
-import { Mesh, type BufferGeometry, type Matrix4, type Object3D } from 'three'
+import { Mesh, type BufferAttribute, type BufferGeometry, type Material, type Object3D } from 'three'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { readModelGenerator, type ModelGenerator } from '../api.ts'
@@ -14,8 +14,26 @@ import type { SceneSession } from '../state/sync.ts'
 
 export type SceneModel = components['schemas']['CreativeSceneModel']
 
-/** What a model draws: shared geometries, each with its transform inside the model. */
-export type ModelParts = { meshes: { geometry: BufferGeometry; matrix: Matrix4 }[] }
+/** What the module's own material held, for a slot nothing else decides (materials/resolve.ts). */
+export type MeshConstants = {
+  color: string
+  roughness: number
+  metalness: number
+  emissive: string
+  emissiveIntensity: number
+  vertexColors: boolean
+}
+
+/**
+ * One drawable piece of a model, in model space: its part's transform is
+ * baked into the geometry so every piece shares one space and procedural
+ * materials run on across part seams. `slot` is the material's slot (its
+ * name `slot:<id>`), null for a material the code made itself.
+ */
+export type ModelMeshPart = { geometry: BufferGeometry; slot: string | null; hint: string | null; constants: MeshConstants }
+
+/** What a model draws: shared geometries in model space. */
+export type ModelParts = { meshes: ModelMeshPart[] }
 
 /**
  * A model baked in this editor. It is drawn from these bytes under its
@@ -34,11 +52,72 @@ async function downloadGLB(revision: string): Promise<ArrayBuffer> {
   return response.arrayBuffer()
 }
 
-function partsOf(root: Object3D): ModelParts {
+type StandardLike = Material & {
+  color?: { getHexString(): string }
+  roughness?: number
+  metalness?: number
+  emissive?: { getHexString(): string }
+  emissiveIntensity?: number
+  vertexColors?: boolean
+}
+
+function constantsOf(m: StandardLike): MeshConstants {
+  return {
+    color: `#${m.color?.getHexString() ?? 'cccccc'}`,
+    roughness: m.roughness ?? 1,
+    metalness: m.metalness ?? 0,
+    emissive: `#${m.emissive?.getHexString() ?? '000000'}`,
+    emissiveIntensity: m.emissiveIntensity ?? 1,
+    vertexColors: !!m.vertexColors,
+  }
+}
+
+/**
+ * Swaps the second and third corner of every triangle. A mirrored part's
+ * transform turned its faces inside out; three.js would flip them back while
+ * the transform was the object's, but baked into the geometry it is not.
+ */
+export function flipWinding(geometry: BufferGeometry) {
+  const index = geometry.index
+  if (index) {
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      const b = index.getX(i + 1)
+      index.setX(i + 1, index.getX(i + 2))
+      index.setX(i + 2, b)
+    }
+    index.needsUpdate = true
+    return
+  }
+  for (const attribute of Object.values(geometry.attributes) as BufferAttribute[]) {
+    const n = attribute.itemSize
+    const a = attribute.array
+    for (let i = 0; i + 2 < attribute.count; i += 3)
+      for (let k = 0; k < n; k++) {
+        const x = a[(i + 1) * n + k]
+        a[(i + 1) * n + k] = a[(i + 2) * n + k]
+        a[(i + 2) * n + k] = x
+      }
+    attribute.needsUpdate = true
+  }
+}
+
+export function partsOf(root: Object3D): ModelParts {
   root.updateMatrixWorld(true)
-  const meshes: ModelParts['meshes'] = []
+  const found: Mesh[] = []
   root.traverse((o) => {
-    if (o instanceof Mesh) meshes.push({ geometry: o.geometry, matrix: o.matrixWorld.clone() })
+    if (o instanceof Mesh) found.push(o)
+  })
+  const uses = new Map<BufferGeometry, number>()
+  for (const o of found) uses.set(o.geometry, (uses.get(o.geometry) ?? 0) + 1)
+  const meshes = found.map((o): ModelMeshPart => {
+    // A geometry several parts share is copied before its transform goes in.
+    const geometry = (uses.get(o.geometry) ?? 0) > 1 ? o.geometry.clone() : o.geometry
+    geometry.applyMatrix4(o.matrixWorld)
+    if (o.matrixWorld.determinant() < 0) flipWinding(geometry)
+    const material = (Array.isArray(o.material) ? o.material[0] : o.material) as StandardLike
+    const slot = /^slot:(.+)$/.exec(material.name)?.[1] ?? null
+    const hint = typeof material.userData.hint === 'string' ? material.userData.hint : null
+    return { geometry, slot, hint, constants: constantsOf(material) }
   })
   return { meshes }
 }

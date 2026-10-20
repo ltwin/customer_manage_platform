@@ -597,8 +597,12 @@ test('the model cache downloads, inspects and parses each revision once', async 
   assert.equal(a, b)
   assert.deepEqual(downloads, ['ccrv_1'], 'one download for any number of instances')
   assert.equal(a.meshes.length, 3, 'base, shaft and capital')
-  const top = a.meshes.map((m) => m.matrix.elements[13])
-  assert.ok(top.some((y) => Math.abs(y - 2.9375) < 1e-6), 'parts keep their place inside the model')
+  // Each part's transform is baked into its geometry (model space).
+  const top = a.meshes.map((m) => {
+    m.geometry.computeBoundingBox()
+    return m.geometry.boundingBox!.max.y
+  })
+  assert.ok(Math.max(...top) > 2.9375, `parts keep their place inside the model: tops ${top}`)
 
   await assert.rejects(cache.load('ccrv_bad'), (e: Error) => e instanceof GLBError && e.reason === 'unsupported_feature', 'server bytes are inspected too')
   assert.equal(cache.failed.getState()['ccrv_bad'], true)
