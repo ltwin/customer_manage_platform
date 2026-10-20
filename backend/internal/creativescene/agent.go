@@ -801,6 +801,11 @@ var opsNotForTheAssistant = map[string]string{
 	"rename":        "不能改场景标题",
 }
 
+// opsOnTheObjectList all change the objects unit, which a revision changes
+// once: the scene command would refuse a second one only after the batch has
+// been resolved, with a reason that does not say what to do.
+var opsOnTheObjectList = []string{"add_objects", "remove_objects", "reparent_objects"}
+
 // AgentEditInTx is edit_scene: scene operations checked against the
 // baseline and written as the run, or a single revert_run. It returns an
 // EditResult, a RevertResult or a *WriteConflict.
@@ -809,15 +814,27 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		return nil, creativeops.ErrValidation
 	}
 	kinds := make([]string, len(in.Operations))
+	onTheList := 0
 	for i, raw := range in.Operations {
 		var head struct {
-			Op string `json:"op"`
+			Op          string `json:"op"`
+			Environment *struct {
+				Sky struct {
+					Kind string `json:"kind"`
+				} `json:"sky"`
+			} `json:"environment"`
 		}
 		if json.Unmarshal(raw, &head) != nil || head.Op == "" {
 			return nil, invalid("第 %d 个操作缺少 op", i+1)
 		}
 		if why, ok := opsNotForTheAssistant[head.Op]; ok {
 			return nil, invalid("第 %d 个操作 %s 不可用：%s", i+1, head.Op, why)
+		}
+		if head.Op == "set_environment" && head.Environment != nil && head.Environment.Sky.Kind == "hdri" {
+			return nil, invalid("第 %d 个操作：暂无内置 HDRI，请用程序化天空（procedural）或纯色（color）", i+1)
+		}
+		if slices.Contains(opsOnTheObjectList, head.Op) {
+			onTheList++
 		}
 		kinds[i] = head.Op
 	}
@@ -826,6 +843,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 			return nil, invalid("revert_run 必须单独提交")
 		}
 		return agentRevertInTx(ctx, tx, in)
+	}
+	if onTheList > 1 {
+		return nil, invalid("add_objects、remove_objects 和 reparent_objects 都改物件列表，一次修改里只能有其中一个：同类的条目合进一个操作（新分组和挂进它的物件写在同一个 reparent_objects 里，新物件在 add_objects 里直接写 parent_id），不同类的分次提交")
 	}
 	cur, err := creativedocument.LockCurrentInTx(ctx, tx, in.DocumentID, TypeKey)
 	if err != nil {

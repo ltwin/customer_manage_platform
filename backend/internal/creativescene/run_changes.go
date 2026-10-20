@@ -303,10 +303,13 @@ func reparented(revisions []int64, history []creativedocument.HistoryRow, sceneA
 			return nil
 		}
 		s, err := sceneAt(revision)
+		if err != nil {
+			return err
+		}
 		for _, o := range s.Objects {
 			exists[o.ID] = true
 		}
-		return err
+		return nil
 	}
 	loaded := false
 	objects := map[string]int64{}

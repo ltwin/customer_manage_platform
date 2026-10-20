@@ -208,6 +208,14 @@ func TestAgentReparentKeepsWorldPositions(t *testing.T) {
 			wantErr(t, err, creativeops.ErrValidation)
 		})
 	}
+	// Each changes the object list, which a revision changes once: refused up
+	// front with the way to write it, not as a parent that is not there.
+	_, err = edit(t, base,
+		op{"op": "reparent_objects", "create_groups": []any{map[string]any{"id": objectID(7)}}, "moves": []any{map[string]any{"object_id": a, "parent_id": objectID(7)}}},
+		op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": b, "parent_id": objectID(7)}}})
+	if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "写在同一个 reparent_objects 里") {
+		t.Fatalf("two reparent_objects: %v", err)
+	}
 }
 
 // revert_run puts back what a run changed and skips what someone else changed
@@ -694,5 +702,15 @@ func TestAgentMaterialSlots(t *testing.T) {
 	}
 	if got := stored(b)["main"]; got.Preset != "stone_brick@1" {
 		t.Fatalf("a refused batch writes nothing: %+v", got)
+	}
+	// Swapping the model and writing its slots in one batch would change the
+	// content twice: refused, either way round, before the old model's slots
+	// are offered.
+	swap := op{"op": "set_instance_model", "object_id": m, "model": map[string]any{"content_revision_id": readScene(t, f.a, me.doc).object(t, m).Model.ContentRevisionID}}
+	write := slots(m, map[string]any{"stone": slot("paint@1", nil)})
+	for _, ops := range [][]any{{swap, write}, {write, swap}} {
+		if err := edit(ops...); !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "既换模型又改材质槽") {
+			t.Errorf("%v: %v", ops[0], err)
+		}
 	}
 }

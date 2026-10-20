@@ -599,6 +599,7 @@ func TestRenderMergesByKey(t *testing.T) {
 		_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": render}}})
 		return err
 	}
+	stale := readScene(t, f.a, doc).expect("render")
 	if err := set(map[string]any{"exposure_ev": 2.5}); err != nil {
 		t.Fatal(err)
 	}
@@ -616,6 +617,11 @@ func TestRenderMergesByKey(t *testing.T) {
 		"unknown mode": {"mode": "path"},
 	} {
 		t.Run(name, func(t *testing.T) { wantErr(t, set(render), creativeops.ErrValidation) })
+	}
+	// An empty patch is refused as such, not as a conflict with a stale baseline.
+	_, err = send(t, f.a, batch{DocumentID: doc, Expected: stale, Operations: []any{op{"op": "set_render", "render": map[string]any{}}}})
+	if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "至少写一项") {
+		t.Fatalf("empty patch on a stale baseline: %v", err)
 	}
 }
 

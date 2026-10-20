@@ -144,7 +144,13 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		return &op, decodeInput(raw, &op)
 	case "set_render":
 		var op setRenderOp
-		return &op, decodeInput(raw, &op)
+		if err := decodeInput(raw, &op); err != nil {
+			return nil, err
+		}
+		if op.Render.Mode == nil && op.Render.ExposureEV == nil {
+			return nil, invalid("render 至少写一项：mode 或 exposure_ev")
+		}
+		return &op, nil
 	case "commit_model":
 		var op commitModelOp
 		return &op, decodeInput(raw, &op)
@@ -548,9 +554,6 @@ func (op *setRenderOp) touched(Scene, map[string]int) ([]string, error) {
 // apply merges by key: writing only the mode keeps the exposure.
 func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	p := op.Render
-	if p.Mode == nil && p.ExposureEV == nil {
-		return invalid("render 至少写一项：mode 或 exposure_ev")
-	}
 	if p.Mode != nil {
 		s.Render.Mode = *p.Mode
 	}

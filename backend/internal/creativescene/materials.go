@@ -154,7 +154,9 @@ func MaterialCatalog() string {
 // the object has, null clearing a slot, and goes to the command whole, as the
 // command replaces it. Every slot written names a slot the object has (main
 // for a primitive, the manifest's for a model) and a material of the catalog
-// with parameters in range. The sky cannot be an HDRI: none is built in.
+// with parameters in range. The model's slots are the snapshot's: an object
+// whose model the batch also swaps is refused, as the scene command would
+// refuse its content changing twice, with the way to do it.
 func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMessage, cur Scene) ([]json.RawMessage, error) {
 	type item struct {
 		ID            string                      `json:"id"`
@@ -164,23 +166,17 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		MaterialSlots map[string]*json.RawMessage `json:"material_slots"`
 	}
 	type decoded struct {
-		Op          string            `json:"op"`
-		Objects     []json.RawMessage `json:"objects"`
-		Updates     []json.RawMessage `json:"updates"`
-		Environment *struct {
-			Sky struct {
-				Kind string `json:"kind"`
-			} `json:"sky"`
-		} `json:"environment"`
+		Op        string            `json:"op"`
+		Objects   []json.RawMessage `json:"objects"`
+		Updates   []json.RawMessage `json:"updates"`
+		ObjectID  string            `json:"object_id"`
+		ObjectIDs []string          `json:"object_ids"`
 	}
 	heads := make([]decoded, len(ops))
 	slotted := false
 	for i, raw := range ops {
 		if json.Unmarshal(raw, &heads[i]) != nil {
 			return ops, nil // the scene command reports the shape
-		}
-		if heads[i].Op == "set_environment" && heads[i].Environment != nil && heads[i].Environment.Sky.Kind == "hdri" {
-			return nil, invalid("第 %d 个操作：暂无内置 HDRI，请用程序化天空（procedural）或纯色（color）", i+1)
 		}
 		for _, raws := range [][]json.RawMessage{heads[i].Objects, heads[i].Updates} {
 			for _, r := range raws {
@@ -259,6 +255,10 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		return nil
 	}
 
+	swapped, written := map[string]bool{}, map[string]bool{}
+	bothChange := func(id string) error {
+		return invalid("物件 %s 在同一次修改里既换模型又改材质槽，两者都改物件内容：请分两次提交，先换模型，再按新模型的槽位配材质", id)
+	}
 	out := make([]json.RawMessage, len(ops))
 	for i, h := range heads {
 		out[i] = ops[i]
@@ -269,6 +269,14 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 			items, key = h.Objects, "objects"
 		case "update_objects":
 			items, key = h.Updates, "updates"
+		case "set_instance_model":
+			for _, id := range append([]string{h.ObjectID}, h.ObjectIDs...) {
+				if written[id] {
+					return nil, bothChange(id)
+				}
+				swapped[id] = true
+			}
+			continue
 		default:
 			continue
 		}
@@ -302,6 +310,10 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 			if !ok || it.MaterialSlots == nil {
 				continue // the scene command reports a missing object
 			}
+			if swapped[it.ObjectID] {
+				return nil, bothChange(it.ObjectID)
+			}
+			written[it.ObjectID] = true
 			merged := make(map[string]MaterialSlot, len(st.slots)+len(it.MaterialSlots))
 			for name, slot := range st.slots {
 				merged[name] = slot
