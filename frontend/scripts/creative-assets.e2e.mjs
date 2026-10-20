@@ -13,7 +13,9 @@ const output = process.env.CREATIVE_QA_OUTPUT_DIR ?? '/tmp/creative-assets-qa'
 mkdirSync(output, { recursive: true })
 const webm = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.webm', import.meta.url)))
 const mp3 = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.mp3', import.meta.url)))
-const browser = await chromium.launch({ headless: true })
+const glb = readFileSync(fileURLToPath(new URL('../../backend/internal/creativeglb/testdata/exported-template.glb', import.meta.url)))
+// 模型预览用 WebGL：和场景编辑器的 e2e 一样走 SwiftShader。
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
 const errors = []
 const results = {}
 let context, page, server
@@ -146,6 +148,11 @@ function mockServer(assets) {
     if (path.endsWith('/creative/media-access-tickets')) {
       const id = request.postDataJSON().content_revision_id.slice(2)
       const a = s.assets.find((x) => x.id === id)
+      if (a?.kind === 'model' && request.postDataJSON().role === 'original') return json({ url: `${base}/__qa_media/${id}.glb`, expires_at: new Date(Date.now() + 3600000).toISOString() })
+      if (a?.kind === 'model') {
+        const thumb = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="104" y="20" width="48" height="216" fill="#d9d5cd"/></svg>'
+        return json({ url: `data:image/svg+xml,${encodeURIComponent(thumb)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })
+      }
       if (a?.kind === 'audio') return json({ url: `${base}/__qa_media/${id}.mp3`, expires_at: new Date(Date.now() + 3600000).toISOString() })
       if (a?.kind === 'video') return json({ url: `${base}/__qa_media/${id}.webm`, expires_at: new Date(Date.now() + 3600000).toISOString() })
       const hue = [...id].reduce((h, c) => h + c.charCodeAt(0), 0) % 360
@@ -170,7 +177,7 @@ function mockServer(assets) {
         const selected = (q.get('tag_ids') ?? '').split(',').filter(Boolean)
         const loose = scope(q, { tagFilter: false })
         facets = {
-          kinds: Object.fromEntries(['text', 'link', 'image', 'video', 'audio'].map((k) => [k, byKind.filter((a) => a.kind === k).length])),
+          kinds: Object.fromEntries(['text', 'link', 'image', 'video', 'audio', 'model'].map((k) => [k, byKind.filter((a) => a.kind === k).length])),
           tags: s.tags.map((t) => ({
             tag_id: t.id,
             count: loose.filter((a) => (q.get('tag_mode') === 'any' ? a.tag_ids.includes(t.id) : [...selected, t.id].every((x) => a.tag_ids.includes(x)))).length,
@@ -297,7 +304,11 @@ async function fresh({ width = 1440, height = 900, assets = fixture(), layout = 
   page.setDefaultTimeout(6000)
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/api/v1/**', server.handle)
-  await page.route('**/__qa_media/**', (route) => route.fulfill({ status: 200, contentType: route.request().url().endsWith('.mp3') ? 'audio/mpeg' : 'video/webm', body: route.request().url().endsWith('.mp3') ? mp3 : webm }))
+  await page.route('**/__qa_media/**', (route) => {
+    const url = route.request().url()
+    if (url.endsWith('.glb')) return route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glb })
+    return route.fulfill({ status: 200, contentType: url.endsWith('.mp3') ? 'audio/mpeg' : 'video/webm', body: url.endsWith('.mp3') ? mp3 : webm })
+  })
 }
 const open = async (query = '') => {
   await page.goto(`${base}/creative/library${query}`)
@@ -1535,6 +1546,70 @@ await check('tag-tree-manage', async () => {
   assert.equal(server.tags.find((t) => t.id === 't-back').category_id, null)
   await cat('未分类').waitFor()
   await page.screenshot({ path: `${output}/tag-tree.png` })
+})
+
+// C6 AC-6：模型卡片只显示缩略图，资产库页在打开模型前不加载 3D 引擎；查看浮窗里转着看、切换白模与默认材质，信息与清单一致，下载得到 .glb。
+const pillarManifest = { bounds: { min: [-0.375, 0, -0.375], max: [0.375, 3, 0.375] }, triangles: 152, slots: [{ id: 'stone', hint: 'stone' }, { id: 'trim', hint: 'stone' }], parts: ['base', 'capital', 'shaft'], anchors: [{ id: 'top', position: [0, 3, 0] }] }
+const modelAsset = () => {
+  const a = asset({ id: 'm-pillar', title: '哥特束柱', age: 0 })
+  a.kind = 'model'
+  a.palette = []
+  a.content = {
+    ...a.content,
+    kind: 'model',
+    payload: { model: { format: 'glb', name_hint: '哥特束柱', manifest: pillarManifest,
+      generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: 'sha256-' + 'a'.repeat(64), mount: 'floor',
+        params_schema: { height: { type: 'number', default: 3, min: 1, max: 5, unit: '米', label: '高度' } }, params: { height: 3 } } } },
+    media: [{ role: 'original', blob_id: 'b-glb', mime: 'model/gltf-binary', byte_size: glb.length, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'b-png', mime: 'image/png', byte_size: 900, width: 256, height: 256, duration_ms: null }],
+  }
+  return a
+}
+await check('C6-model-preview', async () => {
+  await fresh({ assets: [modelAsset(), ...fixture()] })
+  const engine = []
+  page.on('request', (r) => {
+    if (/\/deps\/(three|@react-three)|creative-scene\/preview\//.test(r.url())) engine.push(r.url())
+  })
+  await open()
+  await after(() => page.getByRole('group', { name: '类型' }).getByRole('button', { name: /^模型/ }).click())
+  assert.equal(lastRead().get('kind'), 'model')
+  assert.equal(await tiles().count(), 1)
+  assert.equal((await tile('哥特束柱').locator('.cl-video-badge').innerText()).trim(), '3D')
+  await tile('哥特束柱').locator('.cc-media img').waitFor()
+  assert.deepEqual(engine, [], 'browsing model cards loads no 3D engine')
+
+  await tile('哥特束柱').dblclick()
+  await viewerReady()
+  const stage = viewer().locator('.v-model canvas')
+  await stage.waitFor()
+  await until(async () => (await viewer().locator('.v-model-still').count()) === 0, 'model loaded', 10000)
+  await page.waitForTimeout(300)
+  assert(engine.length > 0, 'opening a model loads the 3D engine')
+  for (const [label, value] of [['尺寸', '0.75 × 3.00 × 0.75 米'], ['放置方式', '落地'], ['面数', '152'], ['材质槽', 'stone（stone）、trim（stone）'], ['高度', '3 米']])
+    assert.equal(await viewer().locator('dt', { hasText: new RegExp(`^${label}$`) }).locator('xpath=following-sibling::dd[1]').innerText(), value, label)
+  assert.equal(await viewer().getByRole('button', { name: '放入项目…' }).count(), 0, 'a model has no project placement')
+
+  const shot = () => stage.screenshot()
+  const front = await shot()
+  const box = await stage.boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 160, box.y + box.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  const turned = await shot()
+  assert(!front.equals(turned), 'dragging turns the model')
+  await viewer().getByRole('button', { name: '默认材质', exact: true }).click()
+  await viewer().getByText('放进场景后可以换材质', { exact: true }).waitFor()
+  await page.waitForTimeout(500)
+  assert(!turned.equals(await shot()), 'default materials look different from clay')
+  await page.screenshot({ path: `${output}/model-preview.png` })
+
+  const ticket = page.waitForRequest((r) => r.url().endsWith('/media-access-tickets') && r.postDataJSON()?.purpose === 'download')
+  const download = page.waitForEvent('download')
+  await viewer().getByRole('button', { name: '下载', exact: true }).click()
+  assert.equal((await download).suggestedFilename(), '哥特束柱.glb')
+  assert.equal((await ticket).postDataJSON().role, 'original')
 })
 
 await context?.close()

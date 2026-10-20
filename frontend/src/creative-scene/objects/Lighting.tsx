@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type ComponentRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type ComponentRef, type Ref } from 'react'
 import { useThree } from '@react-three/fiber'
 import { Sky } from '@react-three/drei'
 import { PMREMGenerator, type DirectionalLight, type WebGLRenderTarget } from 'three'
@@ -16,7 +16,8 @@ import { wireBackground } from './wireframe.ts'
 // look the lit export also draws. The sun angles are document data (Y up);
 // the lights sit in view space (Z up).
 
-const previewBackground = '#5b5d61'
+/** Material preview's backdrop; the asset viewer's 3D preview uses it too. */
+export const previewBackground = '#5b5d61'
 
 export function Lighting({ environment, display }: { environment: SceneEnvironment; display: DisplayMode }) {
   const { gl } = useThree()
@@ -59,18 +60,39 @@ export function ClayLighting({ environment }: { environment: SceneEnvironment })
         <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
       )}
       {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
-      <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity + 0.3} />
-      <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={[0, 0, 1]} />
-      {/* The shadow camera's bounds and normal bias follow the scene (fitSunShadow). */}
-      <directionalLight
-        ref={sunRef}
-        position={positionToView([sun.x, Math.max(sun.y, 2), sun.z])}
-        intensity={2.2}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-      />
+      <ClayLights ambient={environment.ambient} sun={positionToView([sun.x, Math.max(sun.y, 2), sun.z])} up={[0, 0, 1]} sunRef={sunRef} />
     </>
   )
+}
+
+/**
+ * The clay look's lights, without the scene around them: the ambient lifted
+ * a little, a sky fill and one sun. A sun given a ref casts shadows, whose
+ * bounds its owner fits.
+ */
+export function ClayLights({ ambient, sun, up, sunRef }: { ambient: { color: string; intensity: number }; sun: [number, number, number]; up: [number, number, number]; sunRef?: Ref<DirectionalLight> }) {
+  return (
+    <>
+      <ambientLight color={ambient.color} intensity={ambient.intensity + 0.3} />
+      <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={up} />
+      {/* The shadow camera's bounds and normal bias follow the scene (fitSunShadow). */}
+      <directionalLight ref={sunRef} position={sun} intensity={2.2} castShadow={!!sunRef} shadow-mapSize={[2048, 2048]} />
+    </>
+  )
+}
+
+/** Material preview's neutral room on its own, made and freed with the component. */
+export function RoomLighting() {
+  const { gl } = useThree()
+  const room = useRef<ReturnType<typeof roomEnvironment> | null>(null)
+  useEffect(
+    () => () => {
+      room.current?.dispose()
+      room.current = null
+    },
+    [],
+  )
+  return <PreviewLighting room={() => (room.current ??= roomEnvironment(gl))} />
 }
 
 /** A neutral room as the only light: materials read the same whatever the scene's lighting. */

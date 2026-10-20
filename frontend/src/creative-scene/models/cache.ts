@@ -226,25 +226,38 @@ export class ModelCache {
     return this.failed.getState()[revision] ? null : undefined
   }
 
+  /** Drops one model and frees its geometries; nothing may be drawing it. */
+  forget(revision: string) {
+    const loading = this.loads.get(revision)
+    this.loads.delete(revision)
+    this.ready.delete(revision)
+    if (loading) disposeParts([loading])
+  }
+
   /** Drops everything; the editor closed. */
   clear() {
     const parts = [...this.loads.values()]
     this.loads.clear()
     this.ready.clear()
     this.local.setState({}, true)
-    const seen = new Set<BufferGeometry>()
-    for (const p of parts)
-      void p.then(
-        ({ meshes }) => {
-          for (const m of meshes) {
-            if (seen.has(m.geometry)) continue
-            seen.add(m.geometry)
-            m.geometry.dispose()
-          }
-        },
-        () => {},
-      )
+    disposeParts(parts)
   }
+}
+
+/** Frees each geometry once, as its load settles. */
+function disposeParts(parts: Promise<ModelParts>[]) {
+  const seen = new Set<BufferGeometry>()
+  for (const p of parts)
+    void p.then(
+      ({ meshes }) => {
+        for (const m of meshes) {
+          if (seen.has(m.geometry)) continue
+          seen.add(m.geometry)
+          m.geometry.dispose()
+        }
+      },
+      () => {},
+    )
 }
 
 export const modelCache = new ModelCache()

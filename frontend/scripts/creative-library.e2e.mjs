@@ -10,6 +10,11 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
 page.setDefaultTimeout(8000)
 const errors = []
 page.on('pageerror', (error) => errors.push(error.message))
+// 3D 引擎只随模型的查看浮窗或场景加载，画布页平时不请求。
+const engine = []
+page.on('request', (r) => {
+  if (/\/deps\/(three|@react-three)|creative-scene\/preview\//.test(r.url())) engine.push(r.url())
+})
 
 const caps = (kind) => ({
   actions: ['move', 'resize', 'rename', 'duplicate', 'remove', 'edit', 'reference', ...(kind === 'text' ? [] : ['replace', 'maximize', 'download']), 'save_to_library'],
@@ -437,6 +442,7 @@ try {
   const model = tile('哥特束柱')
   assert.equal((await model.locator('.cl-video-badge').innerText()).trim(), '3D')
   await model.locator('.cc-media img').waitFor()
+  assert.deepEqual(engine, [], 'the canvas page with model cards loads no 3D engine')
   await model.click({ button: 'right' })
   const modelMenu = page.getByRole('menu', { name: '素材操作' })
   const modelLabels = await modelMenu.getByRole('menuitem').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? e.textContent.trim()))

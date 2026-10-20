@@ -630,3 +630,27 @@ test('the model cache downloads, inspects and parses each revision once', async 
   cache.unregister('local:i1:m')
   assert.equal(cache.local.getState()['local:i1:m'], undefined)
 })
+
+test('the preview cache keeps the eight most recently opened models and frees the rest', async () => {
+  const { PreviewModels } = await import('../src/creative-scene/preview/cache.ts')
+  const downloads: string[] = []
+  const models = new PreviewModels(8, async (revision) => {
+    downloads.push(revision)
+    return templateGLB()
+  })
+  const first = await models.load('ccrv_0')
+  let freed = 0
+  for (const m of first.meshes) m.geometry.addEventListener('dispose', () => freed++)
+  for (let i = 1; i < 8; i++) await models.load(`ccrv_${i}`)
+  assert.equal(await models.load('ccrv_0'), first, 'opening it again keeps it')
+  await models.load('ccrv_8')
+  assert.equal(freed, 0, 'the least recently opened is ccrv_1, not ccrv_0')
+  await models.load('ccrv_9')
+  assert.equal(await models.load('ccrv_0'), first)
+  assert.equal(downloads.filter((r) => r === 'ccrv_0').length, 1)
+  for (let i = 10; i < 18; i++) await models.load(`ccrv_${i}`)
+  await new Promise((r) => setTimeout(r))
+  assert.equal(freed, first.meshes.length, 'an evicted model frees its geometries')
+  await models.load('ccrv_0')
+  assert.equal(downloads.filter((r) => r === 'ccrv_0').length, 2, 'an evicted model is downloaded again')
+})

@@ -23,6 +23,13 @@ export type ModelInfo = {
   params: { key: string; label: string; value: string }[]
 }
 
+/** 模型的清单（包围盒、槽位），3D 预览按它取景、配材质。 */
+export function modelManifest(content: Content | undefined): Manifest | null {
+  return content?.kind === 'model' && 'model' in content.payload
+    ? content.payload.model.manifest
+    : null
+}
+
 /** 完整形态的模型才有信息；暂存形态和其他类型返回 null。 */
 export function modelInfo(content: Content | undefined): ModelInfo | null {
   if (content?.kind !== 'model' || !('model' in content.payload)) return null

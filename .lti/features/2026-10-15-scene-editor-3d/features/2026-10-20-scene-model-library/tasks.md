@@ -13,7 +13,7 @@
 
 - [x] 2.1 类型与卡面：`query.ts` 的 `KINDS`、`libraryState.ts` 的 `kindLabel` 和 `tileRatio`、`media.ts` 的 `thumbnail` 角色（模型只取缩略图，不退回 `original`）、`MediaView.tsx` 与 `LibraryTiles.tsx` 的模型卡面、`AssetBrowser.tsx` 的 `visual`、`AssetInspector.tsx` 与 `AssetInfoPanel.tsx` 的模型信息（尺寸、面数、槽位、参数；格式化放在不依赖 three 的 `viewer/modelInfo.ts`）、`useOrganization.tsx` 下载 `.glb`、`CodePanel.tsx` 收窄到带 `code` 的模型载荷。单测：`pickRendition` 对模型的选择、`modelInfo.ts` 的格式化；`make check-frontend` 通过
 - [x] 2.2 模型不进画布：`assetPlacement.ts`、`assets/placement.ts`、`WorkspacePage.addAssets`、`CanvasView.tsx` 拖放与 `fillable`、菜单与查看浮窗的「放入画布」、抽屉的「填充」和「选参考」都排除模型，全是模型时提示「模型只能放进 3D 场景」。单测：放置过滤；e2e（`creative-library.e2e.mjs`）：抽屉菜单无放入项，拖到画布节点数不变并出现提示
-- [ ] 2.3 3D 预览：先从 `Lighting.tsx` 抽出无状态的白模、材质预览灯光构件（场景的 e2e 截图对比不变；抽不干净按 design 退回并在此记录）；`creative-scene/preview/cache.ts`（预览专用的 `ModelCache` 实例，最多 8 个，淘汰最久没打开的并释放几何体）；`creative-scene/preview/ModelPreview.tsx`（`OrbitControls`、按包围盒取景、经预览缓存 `load`、按槽位提示的材质、「白模 / 默认材质」切换与「放进场景后可以换材质」的说明、失败时显示缩略图和「无法预览」）；`MediaViewer.tsx` 懒加载模型舞台。单测：预览缓存的淘汰与释放。e2e（`creative-assets.e2e.mjs`，真实 GLB 夹具）：查看浮窗出现画布、拖动和切换后像素变化、信息与 manifest 一致、下载文件名为 `.glb`；资产库页浏览模型卡片时没有 three 请求，打开模型浮窗后才有
+- [x] 2.3 3D 预览：先从 `Lighting.tsx` 抽出无状态的白模、材质预览灯光构件（场景的 e2e 截图对比不变；抽不干净按 design 退回并在此记录）；`creative-scene/preview/cache.ts`（预览专用的 `ModelCache` 实例，最多 8 个，淘汰最久没打开的并释放几何体）；`creative-scene/preview/ModelPreview.tsx`（`OrbitControls`、按包围盒取景、经预览缓存 `load`、按槽位提示的材质、「白模 / 默认材质」切换与「放进场景后可以换材质」的说明、失败时显示缩略图和「无法预览」）；`MediaViewer.tsx` 懒加载模型舞台。单测：预览缓存的淘汰与释放。e2e（`creative-assets.e2e.mjs`，真实 GLB 夹具）：查看浮窗出现画布、拖动和切换后像素变化、信息与 manifest 一致、下载文件名为 `.glb`；资产库页浏览模型卡片时没有 three 请求，打开模型浮窗后才有
 
 ## 3. 前端：场景里的存入与放入
 
