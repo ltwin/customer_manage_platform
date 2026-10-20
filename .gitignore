@@ -43,4 +43,5 @@ var/
 /.lti/transactions/
 /.lti/cache/
 /.lti/worktrees/
+/.worktrees/
 # <<< lti managed ignore rules
