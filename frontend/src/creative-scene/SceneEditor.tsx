@@ -46,7 +46,8 @@ import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
 import { saveTarget, whenShown, type LibraryAsset, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
-import { Viewport, type ViewportHandle } from './Viewport.tsx'
+import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
+import type { Placed } from './placement/snap.ts'
 import './scene.css'
 
 function webgl2Available(): boolean {
@@ -97,6 +98,20 @@ const discardUpload = (upload: Upload) =>
  * scene's jobs first. `canvasID` and `sceneNodeID` say where exports go; the
  * editor always opens from a canvas node, and without them there is no export.
  */
+/** What the viewport needs of an asset to drag and place it; null when it is no usable model. */
+function dragModel(asset: LibraryAsset): DragModel | null {
+  const payload = asset.content?.payload
+  const model = payload && 'model' in payload ? payload.model : null
+  if (asset.kind !== 'model' || asset.unavailable || !model?.generator) return null
+  return {
+    assetID: asset.id,
+    revision: asset.content_revision_id,
+    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null },
+    mount: model.generator.mount,
+    bounds: model.manifest.bounds,
+  }
+}
+
 export default function SceneEditor({
   documentID,
   onClose,
@@ -105,6 +120,7 @@ export default function SceneEditor({
   sceneNodeID,
   onSaveModel,
   onOpenLibrary,
+  libraryDrag = null,
 }: {
   documentID: string
   onClose: () => void
@@ -115,6 +131,8 @@ export default function SceneEditor({
   onSaveModel?: (request: SaveModelRequest) => void
   /** Opens the asset drawer to pick a model; place puts the picked one in the scene. */
   onOpenLibrary?: (place: (asset: LibraryAsset) => void) => void
+  /** A model being dragged from the asset drawer, null when nothing is. */
+  libraryDrag?: LibraryAsset | null
 }) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
@@ -430,19 +448,20 @@ export default function SceneEditor({
    * pointer, else below the view's centre). Its summary is known at once, so
    * the properties and the selection box are right before the next read.
    */
-  const placeModel = (asset: LibraryAsset, at?: { x: number; y: number }) => {
-    const payload = asset.content?.payload
-    const model = payload && 'model' in payload ? payload.model : null
-    if (asset.kind !== 'model' || asset.unavailable || !model?.generator) return notify('这个模型不可用')
-    const revision = asset.content_revision_id
-    modelCache.remember(revision, { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null })
-    const o = newModelInstance(revision, asset.title, { position: handle.current?.groundPoint(at) ?? [0, 0, 0], rotation: [0, 0, 0, 1] }, objects)
+  const placeModel = (asset: LibraryAsset, where: { at?: { x: number; y: number }; placed?: Placed }) => {
+    const model = dragModel(asset)
+    if (!model) return notify('这个模型不可用')
+    const placed = where.placed ?? handle.current?.snapAt(where.at, model)
+    if (!placed) return
+    modelCache.remember(model.revision, model.summary)
+    const o = newModelInstance(model.revision, asset.title, placed, objects)
     if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
     select([o.id])
     // The pick was made in the drawer: keys go back to the editor, so Cmd+Z undoes it at once.
     root.current?.focus({ preventScroll: true })
   }
-  const openLibrary = (at?: { x: number; y: number }) => onOpenLibrary?.((asset) => placeModel(asset, at))
+  const openLibrary = (at?: { x: number; y: number }) => onOpenLibrary?.((asset) => placeModel(asset, { at }))
+  const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : null), [libraryDrag])
   /** Adds where the menu was opened: Shift+A or a right click over the ground. */
   const addPrimitive = (builtin: string, at?: { x: number; y: number }) => {
     const point = handle.current?.groundPoint(at) ?? [0, 0, 0]
@@ -954,6 +973,8 @@ export default function SceneEditor({
                   ui.setState({ popup: { kind: 'menu', menu: objectID && !readOnly ? 'object' : readOnly ? 'view' : 'add', x, y } })
                 }}
                 onDragging={(dragging) => session.setDragging(dragging)}
+                libraryDrag={drag}
+                onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, { placed })}
               />
               <StatusBar hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />

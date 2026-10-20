@@ -45,14 +45,15 @@ function Editor({host}) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(null);
   const [place, setPlace] = useState(null);
+  const [drag, setDrag] = useState(null);
   const [notice, setNotice] = useState('');
   window.__reopen = () => setOpen(true);
   const query = new URLSearchParams(location.search);
   const group = React.createElement('select', {name:'group'}, React.createElement('option', {value:''}, '不归类'), React.createElement('option', {value:'cgrp_qa'}, '柱子'));
   return open
     ? React.createElement(React.Fragment, null,
-        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, onOpenLibrary: (p) => setPlace(() => p)} : {})}),
-        query.has('library') && React.createElement(LibraryDrawer, {hidden: !place, tick: 0, task: place ? {kind: 'scene-model'} : null, canPlace: false, onPlace: noop, onFill: noop, onPick: noop, onScenePlace: (a) => { setPlace(null); place?.(a) }, onClose: () => setPlace(null), onWidth: noop, onAssets: noop, onCatalog: noop}),
+        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, onOpenLibrary: (p) => setPlace(() => p), libraryDrag: drag} : {})}),
+        query.has('library') && React.createElement(LibraryDrawer, {hidden: !place, tick: 0, task: place ? {kind: 'scene-model'} : null, canPlace: false, onPlace: noop, onFill: noop, onPick: noop, onScenePlace: (a) => { setPlace(null); place?.(a) }, onSceneDrag: setDrag, onClose: () => setPlace(null), onWidth: noop, onAssets: noop, onCatalog: noop}),
         saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: setNotice, onClose: () => setSaving(null)}),
         notice && React.createElement('p', {id:'notice'}, notice))
     : React.createElement('p', {id:'closed'}, 'closed');
@@ -176,9 +177,9 @@ class SceneServer {
     return [201, asset]
   }
   /** A committed model revision, as if made earlier; returns its revision ID. */
-  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
+  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content, mount = 'floor' } = {}) {
     const rev = `ccrv_seed${++this.modelSeq}`
-    const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount: 'floor' }
+    const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount }
     this.models.set(rev, { content_id: content ?? `ccnt_seed${this.modelSeq}`, glb, generator, manifest, name_hint: '柱' })
     return rev
   }
@@ -673,6 +674,70 @@ await check('C6 place from the library: Shift+A 从资产库添加… puts the c
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
   await page.keyboard.press(`${mod}+KeyZ`)
   await waitFor(() => !server.scene.objects.some((o) => o.id === placed.id), 'one undo removes it')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C6 drag in: a floor model lands on a box top, the drawer stays open; a ceiling model with no ceiling stands on what is below; let go elsewhere and nothing changes', async () => {
+  const server = new SceneServer()
+  const block = 'sobj_B00000000000000000001'
+  server.scene.objects.push({ id: block, kind: 'primitive', name: '台子', parent_id: null, order: 1, transform: identity(), visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 6, height: 1, depth: 6 } } })
+  server.unitRevs[placement(block)] = '1'
+  server.unitRevs[content(block)] = '1'
+  server.history[0] = server.record(['*'], [], null)
+  const stool = server.seedModel()
+  server.libraryAsset(stool, '石凳')
+  const lamp = server.seedModel({ mount: 'ceiling' })
+  server.libraryAsset(lamp, '吊灯')
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  const canvas = page.locator('.cc-scene-editor canvas')
+  await canvas.click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+  const drawer = page.locator('#creative-library')
+  const tile = (title) => drawer.locator('.al-tile', { hasText: title })
+  await tile('石凳').waitFor()
+  const { box } = await viewportCenter(page)
+  const centre = { x: box.width / 2, y: box.height / 2 }
+
+  const dropAt = async (title, at) => {
+    const before = server.commands.length
+    await tile(title).dragTo(canvas, { targetPosition: at })
+    await waitFor(() => server.commands.length === before + 1, `${title} placed`)
+    const [add] = server.commands.at(-1).payload.operations
+    assert.equal(add.op, 'add_objects')
+    return add.objects[0]
+  }
+  const first = await dropAt('石凳', centre)
+  assert.equal(first.model.content_revision_id, stool)
+  assert.ok(close(first.transform.position[1], 1, 1e-3), `stands on the block's top: ${first.transform.position}`)
+  assert.deepEqual(first.transform.rotation, [0, 0, 0, 1], 'upright')
+  assert(await drawer.isVisible(), 'the drawer stays open after a drag')
+  const second = await dropAt('石凳', { x: centre.x + 60, y: centre.y + 20 })
+  assert.ok(close(second.transform.position[1], 1, 1e-3))
+  assert.notDeepEqual(second.transform.position, first.transform.position, 'each lands where it was let go')
+  assert.equal(server.commands.length, 2, 'one revision each')
+  assert.ok(close(server.object(first.id).transform.position[1], 1, 1e-3))
+
+  // No ceiling here: the lamp's bounds stand on the block's top, never buried in it.
+  const hung = await dropAt('吊灯', { x: centre.x - 40, y: centre.y + 10 })
+  assert.ok(close(hung.transform.position[1], 1 - templateManifest.bounds.min[1], 1e-3), `on the block: ${hung.transform.position}`)
+
+  // A drag over the viewport shows the ghost; let go over the drawer and nothing is placed.
+  const still = await canvas.screenshot()
+  const from = await tile('石凳').boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + centre.x - 80, box.y + centre.y + 40, { steps: 8 })
+  await page.mouse.move(box.x + centre.x - 90, box.y + centre.y + 40, { steps: 2 })
+  await sleep(300)
+  assert.ok((await pixelDiff(page, still, await canvas.screenshot())) > 0.002, 'the ghost follows the pointer')
+  await shot(page, 'c6-drag-ghost')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await sleep(300)
+  assert.equal(server.commands.length, 3, 'letting go elsewhere places nothing')
+  assert.ok((await pixelDiff(page, still, await canvas.screenshot())) < 0.002, 'and the ghost is gone')
   assert.deepEqual(errors, [])
   await context.close()
 })

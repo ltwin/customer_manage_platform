@@ -342,6 +342,9 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
   - 3.1 的可存入判断和「等编辑器显示出新版」放在不依赖 three 的 `creative-scene/saveModel.ts`（`saveTarget`、`whenShown`），供单测和画布页的类型引用；存入弹框是独立组件 `creative-canvas/editor/SaveModelDialog.tsx`，`WorkspacePage` 只负责挂载。409 后的刷新经 `SaveModelRequest.refresh` 回到编辑器，场景会话不离开编辑器。
   - 场景菜单项加可选的 `hint`（`panels/ContextMenu.tsx`），不可点时在下方说明原因；右键菜单保留带说明的禁用项，「存入资产库」因此也能说明原因。
   - 3.2 的实例对象由 `editing.ts:newModelInstance` 生成（与 `newPrimitive` 并列）；重读条件是 `state/sync.ts:namesUnknownModel`。查看浮窗的放入按钮改由调用方给文字和适用范围（`AssetViewer` 的 `placeLabel`、`placeable`），场景任务下显示「放入场景」且只对模型。点抽屉卡片放入后，编辑器取回焦点，Cmd+Z 立即可用。
+  - 3.3 的吸附在文档空间（Y 向上）里算，视口把命中点和法线换算过去再调用，表中「按 z 轴向上判断」对应文档空间的 y 轴；求交与按需建 BVH 在 `placement/raycast.ts`；拖入虚影复用 `GhostModel`（加旋转与「加载前画包围盒」）。
+  - **兜底的细化**（实施中发现，按设计「按 free 的规则」的本意落实）：没有合适的面时先按 free 找第一个朝上的面，找不到才落到射线与地面的交点。原写法直接落地，吊顶模型拖到桌面上方时会埋进桌子里。spec「没有合适的表面」的结果（包围盒底面着地、不埋进地下）不变。
+  - e2e 用「拖到抽屉上松手」覆盖取消拖入：Playwright 的原生拖放模拟里按不出 Esc 取消；两者都由浏览器以 `dragend` 结束、不触发 `drop`，走的是同一条清空路径。
   - 1.2 生成新的 `kind` 枚举后，前端类型要求画布放置先排除模型；`assetPlacement.ts` 加 `CanvasAsset` 类型守卫，`assets/placement.ts` 遇到模型抛「模型只能放进 3D 场景」，`WorkspacePage` 的 `addAssets`、`pickReferences` 先过滤。2.2 在此基础上补齐提示与其余入口。
 - **后续**：
   - 参考点设置与快捷轮盘（C8）；

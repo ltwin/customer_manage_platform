@@ -57,6 +57,7 @@ export default function LibraryDrawer({
   onFill,
   onPick,
   onScenePlace,
+  onSceneDrag,
   onClose,
   onWidth,
   onAssets,
@@ -72,6 +73,8 @@ export default function LibraryDrawer({
   onPick: (assets: api.Asset[]) => void
   /** scene-model 任务：点一个模型放进场景。 */
   onScenePlace?: (asset: api.Asset) => void
+  /** scene-model 任务：开始拖一个模型（拖动结束时为 null），场景视口靠它画虚影。 */
+  onSceneDrag?: (asset: api.Asset | null) => void
   onClose: () => void
   onWidth: (width: number) => void
   onAssets: (assets: api.Asset[]) => void
@@ -267,6 +270,20 @@ export default function LibraryDrawer({
   }
   // 拖出卡片：画布按 creative-asset 放置，资料库树按选择归入分组。
   function dragCard(asset: api.Asset, e: React.DragEvent) {
+    // 往场景里拖：一次一个模型，只带被拖的这张卡片。浏览器在 dragover 时读不到
+    // 拖动的数据，视口画虚影要知道是哪个模型，所以另外经页面内状态传过去。
+    if (task?.kind === 'scene-model') {
+      const a = actual(asset)
+      if (a.kind !== 'model' || !usable([a]).length) return e.preventDefault()
+      e.dataTransfer.setData('application/creative-asset', a.id)
+      e.dataTransfer.setData('application/creative-asset+json', JSON.stringify([a]))
+      e.dataTransfer.effectAllowed = 'copy'
+      onSceneDrag?.(a)
+      document.addEventListener('dragend', () => onSceneDrag?.(null), {
+        once: true,
+      })
+      return
+    }
     const list = usable(
       selection.ids.includes(asset.id) && selected.length > 1
         ? selected
