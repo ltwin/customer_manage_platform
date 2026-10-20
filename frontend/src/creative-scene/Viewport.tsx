@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type MutableRefObject, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import { Aperture, Grid3x3 } from 'lucide-react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
@@ -7,7 +7,6 @@ import {
   GizmoHelper,
   GizmoViewport,
   Grid,
-  Sky,
   TransformControls,
 } from '@react-three/drei'
 import { useStore } from 'zustand'
@@ -23,14 +22,13 @@ import {
   Vector2,
   Vector3,
   type Camera,
-  type DirectionalLight,
   type Mesh,
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
-import type { Scene, SceneEnvironment, SceneObject } from './api.ts'
+import type { Scene, SceneObject } from './api.ts'
 import { axisHeadAt, axisWidget, buttonActions, classifyWheel, orbitAngles, resolveDevice, wheelAction, type WheelSample } from './input/navigation.ts'
 import { pickable, topmost } from './input/selection.ts'
-import { displayOf, type EditorStore, type Tool } from './state/sceneStore.ts'
+import { displayOf, type DisplayMode, type EditorStore, type Tool } from './state/sceneStore.ts'
 import { numericKey, numericText } from './transform/numeric.ts'
 import {
   constraintAxes,
@@ -53,13 +51,13 @@ import type { SceneModel } from './models/cache.ts'
 import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
-import { wireBackground } from './objects/wireframe.ts'
+import { Lighting } from './objects/Lighting.tsx'
+import { exposureOf } from './render/litLook.ts'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
-import { ClayRenderer } from './render/clayExport.ts'
-import { fitSunShadow } from './render/sunShadow.ts'
+import { SceneRenderer } from './render/sceneRenderer.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -154,7 +152,7 @@ export function Viewport(props: ViewportProps) {
   return (
     <div ref={wrap} className="cc-scene-viewport">
       <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
-        {display === 'wireframe' ? <color attach="background" args={[wireBackground]} /> : <Environment environment={props.scene.environment} />}
+        <Lighting environment={props.scene.environment} display={display} />
         <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
         <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
         {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} models={props.models} />}
@@ -166,7 +164,7 @@ export function Viewport(props: ViewportProps) {
           <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
         )}
         <AxisGizmo />
-        <ClayView scene={props.scene} ui={props.ui} grid={grid} wire={display === 'wireframe'} />
+        <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} />
         <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
       </Canvas>
       {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
@@ -182,51 +180,6 @@ export function Viewport(props: ViewportProps) {
         />
       )}
     </div>
-  )
-}
-
-function sunDirection(env: SceneEnvironment): Vector3 {
-  const sky = env.sky
-  const el = ((sky.sun_elevation_deg ?? 35) * Math.PI) / 180
-  const az = ((sky.sun_azimuth_deg ?? 135) * Math.PI) / 180
-  return new Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el))
-}
-
-/**
- * Clay lighting: the scene's sky and ambient, one sun with shadows. The sun
- * angles are document data (Y up); the lights sit in view space (Z up).
- */
-export function Environment({ environment }: { environment: SceneEnvironment }) {
-  const sun = sunDirection(environment).multiplyScalar(60)
-  const sky = environment.sky
-  const skyRef = useRef<ComponentRef<typeof Sky>>(null)
-  const sunRef = useRef<DirectionalLight>(null)
-  const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => {
-    skyRef.current?.material.uniforms.up.value.set(0, 0, 1)
-    invalidate()
-  }, [sky.kind, invalidate])
-  // Before the first frame: an offscreen shot draws only one.
-  useLayoutEffect(() => (sunRef.current ? fitSunShadow(sunRef.current) : undefined), [])
-  return (
-    <>
-      {sky.kind === 'procedural' ? (
-        <Sky ref={skyRef} sunPosition={positionToView([sun.x, Math.max(sun.y, 0.5), sun.z])} turbidity={sky.turbidity ?? 3} />
-      ) : (
-        <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
-      )}
-      {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
-      <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity + 0.3} />
-      <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={[0, 0, 1]} />
-      {/* The shadow camera's bounds and normal bias follow the scene (fitSunShadow). */}
-      <directionalLight
-        ref={sunRef}
-        position={positionToView([sun.x, Math.max(sun.y, 2), sun.z])}
-        intensity={2.2}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-      />
-    </>
   )
 }
 
@@ -919,19 +872,22 @@ function frameBox(size: Size, aspect: number) {
 }
 
 /**
- * Draws the viewport in the clay look (design「导出渲染」), the same as
- * render_view and the clay export: AO always; in the camera view of a camera
- * with depth of field, its blur while 景深预览 is on, live as the scene
- * changes. The grid stays out of the AO and the gizmo is drawn on top, sharp.
- * In wireframe there are no surfaces to shade: the scene is drawn as it is.
+ * Draws the viewport through the renderer render_view and the exports use
+ * (design「导出渲染」): AO always; in the camera view of a camera with depth
+ * of field, its blur while 景深预览 is on, live as the scene changes; the
+ * rendered shading at the scene's exposure. The grid stays out of the AO and
+ * the gizmo is drawn on top, sharp. In wireframe there are no surfaces to
+ * shade: the scene is drawn as it is.
  */
-function ClayView({ scene, ui, grid, wire }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; wire: boolean }) {
+function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; display: DisplayMode }) {
+  const wire = display === 'wireframe'
+  const exposure = display === 'rendered' ? exposureOf(scene.render) : 1
   const { gl, scene: three, camera, invalidate } = useThree()
   const id = useStore(ui, (s) => s.cameraView)
   const preview = useStore(ui, (s) => s.dofPreview)
-  const renderer = useRef<ClayRenderer | null>(null)
+  const renderer = useRef<SceneRenderer | null>(null)
   useEffect(() => {
-    const r = new ClayRenderer(gl, three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
+    const r = new SceneRenderer(gl, three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
     renderer.current = r
     invalidate()
     return () => {
@@ -943,7 +899,7 @@ function ClayView({ scene, ui, grid, wire }: { scene: Scene; ui: EditorStore; gr
   const lens = framing && !('error' in framing) && framing.depthOfField && framing.optics ? { optics: framing.optics, aspect: framing.width / framing.height } : null
   // Turning the blur on or off, or a lens change, draws a frame of its own.
   const lensKey = lens ? JSON.stringify(lens) : ''
-  useEffect(() => invalidate(), [lensKey, wire, invalidate])
+  useEffect(() => invalidate(), [lensKey, wire, exposure, invalidate])
   useFrame((state) => {
     const r = renderer.current
     // Wireframe has no surfaces to shade: no AO, no blur.
@@ -961,6 +917,7 @@ function ClayView({ scene, ui, grid, wire }: { scene: Scene; ui: EditorStore; gr
       aoPixelRatio: 1,
       dof: lens?.optics ?? null,
       pictureLongSide: box ? Math.max(box.width, box.height) * ratio : undefined,
+      exposure,
     })
   }, 1)
   return null

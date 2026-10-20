@@ -3,7 +3,7 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { ClayRenderer } from '../render/clayExport.ts'
+import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { LineRenderer } from '../render/linePass.ts'
 import { canvasBlob } from '../sandbox/thumbnail.ts'
 import type { Shot } from './executor.ts'
@@ -73,7 +73,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
   const camera = new THREE.PerspectiveCamera()
   camera.up.set(0, 0, 1)
   const root = createRoot(canvas)
-  let clay: ClayRenderer | null = null
+  let clay: SceneRenderer | null = null
   let line: LineRenderer | null = null
   let gl: THREE.WebGLRenderer | null = null
   const close = () => {
@@ -113,7 +113,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         camera.updateProjectionMatrix()
         camera.updateMatrixWorld()
         if (options.kind === 'clay') {
-          clay ??= new ClayRenderer(gl!, three, camera)
+          clay ??= new SceneRenderer(gl!, three, camera)
           clay.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null })
         } else {
           line ??= new LineRenderer()

@@ -18,7 +18,7 @@ import {
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
 import { renderShots, submitExport, uploadShots, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
-import { lookAlongZ, perspectiveViewDirection } from '../src/creative-scene/render/clayExport.ts'
+import { lookAlongZ, perspectiveViewDirection } from '../src/creative-scene/render/sceneRenderer.ts'
 import { GTAOShader } from 'three/examples/jsm/shaders/GTAOShader.js'
 
 const deg = (r: number) => (r * 180) / Math.PI

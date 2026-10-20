@@ -98,7 +98,7 @@ const lightFields: Record<Light['type'], readonly LightField[]> = {
   point: ['color', 'intensity', 'cast_shadow', 'distance', 'decay'],
   spot: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'angle', 'penumbra'],
 }
-const lightDefaults: Required<Omit<Light, 'type'>> = {
+export const lightDefaults: Required<Omit<Light, 'type'>> = {
   color: '#ffffff',
   intensity: 1,
   cast_shadow: false,

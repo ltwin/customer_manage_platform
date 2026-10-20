@@ -6,14 +6,15 @@ import { Pass } from 'three/examples/jsm/postprocessing/Pass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { DofPass } from './dofPass.ts'
+import { transparentMeshes } from './transparent.ts'
 
-// The clay look (design「导出渲染」, owner 2026-10-19): the scene as mounted,
-// its sky and sun, with ambient occlusion so contacts and corners read, then
-// the camera's depth of field when it is on. The editor viewport, render_view
-// and the clay export all draw through it, so depth of field is the only
-// switch and what the viewport shows is what the export gets. AO comes
+// The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
+// mounted, lit as its look says (objects/Lighting.tsx), with ambient
+// occlusion so contacts and corners read, then the camera's depth of field
+// when it is on. The editor viewport, render_view and the exports all draw
+// through it, so what the viewport shows is what the export gets. AO comes
 // before the blur, so contact shadows out of focus soften with everything
-// else.
+// else. Clay and lit differ only in what is mounted and in the exposure.
 
 /** Viewport helpers the clay look treats apart; an export has none. */
 export type Overlays = {
@@ -40,9 +41,13 @@ export type Frame = {
   dof: DepthOfField | null
   /** The long side of the camera's picture in device pixels, when it is not the whole frame. */
   pictureLongSide?: number
+  /** Ambient occlusion; on unless turned off. */
+  ao?: boolean
+  /** toneMappingExposure for this frame: 2^exposure_ev for lit, 1 otherwise. */
+  exposure?: number
 }
 
-export class ClayRenderer {
+export class SceneRenderer {
   private readonly gl: WebGLRenderer
   private readonly composer: EffectComposer
   private readonly gtao: GTAOPass
@@ -51,6 +56,8 @@ export class ClayRenderer {
   private readonly size = new Vector2(-1, -1)
   private pixelRatio = -1
   private aoPixelRatio = -1
+  /** False when an orthographic camera's AO could not be fixed (lookAlongZ). */
+  private gtaoUsable = true
 
   /** `camera` is the one camera every frame is drawn from; the passes keep it. */
   constructor(gl: WebGLRenderer, scene: Scene, camera: Camera, overlays: Overlays = noOverlays) {
@@ -60,19 +67,20 @@ export class ClayRenderer {
     this.composer = new EffectComposer(gl, target)
     this.composer.addPass(new RenderPass(scene, camera))
     // AO draws the scene once more for its depth and normals: without the
-    // helpers set aside, and without drawing the shadow maps again.
+    // helpers set aside or see-through meshes, and without drawing the
+    // shadow maps again.
     let hidden: Object3D[] = []
     let shadows = true
     this.composer.addPass(
       new Hook(() => {
-        hidden = overlays.aside().filter((o): o is Object3D => o?.visible === true)
+        hidden = [...overlays.aside(), ...transparentMeshes].filter((o): o is Object3D => o?.visible === true)
         for (const o of hidden) o.visible = false
         shadows = gl.shadowMap.autoUpdate
         gl.shadowMap.autoUpdate = false
       }),
     )
     this.gtao = new GTAOPass(scene, camera, 1, 1)
-    if (!(camera as PerspectiveCamera).isPerspectiveCamera) this.gtao.enabled = lookAlongZ(this.gtao.gtaoMaterial)
+    if (!(camera as PerspectiveCamera).isPerspectiveCamera) this.gtaoUsable = lookAlongZ(this.gtao.gtaoMaterial)
     this.composer.addPass(this.gtao)
     this.composer.addPass(
       new Hook(() => {
@@ -105,11 +113,16 @@ export class ClayRenderer {
       const persp = camera as PerspectiveCamera
       this.dof.setLens(dof, persp.near, persp.far, frame.pictureLongSide ?? Math.max(frame.width, frame.height) * ratio)
     }
+    this.gtao.enabled = (frame.ao ?? true) && this.gtaoUsable
     const top = this.overlays.top().filter((o): o is Object3D => o?.visible === true)
     for (const o of top) o.visible = false
+    // OutputPass reads the exposure from the renderer as it draws.
+    const exposure = this.gl.toneMappingExposure
+    this.gl.toneMappingExposure = frame.exposure ?? 1
     try {
       this.composer.render()
     } finally {
+      this.gl.toneMappingExposure = exposure
       for (const o of top) o.visible = true
     }
     if (!top.length) return

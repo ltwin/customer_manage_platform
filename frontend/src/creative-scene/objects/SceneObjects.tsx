@@ -12,6 +12,7 @@ import { docToView, transformToView } from '../space.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
+import { SceneLight } from './SceneLights.tsx'
 import { disposeEdges } from './wireframe.ts'
 import { WireMesh } from './WireMesh.tsx'
 
@@ -46,6 +47,8 @@ type Props = {
 type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through' | 'display'>> & {
   through: string | null
   wire: boolean
+  /** Light objects shine only in the lit look. */
+  lit: boolean
   scene: Scene
   childrenOf: Map<string, SceneObject[]>
   placeholdersOf: Map<string, Placeholder[]>
@@ -76,7 +79,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe' }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered' }
   return (
     <>
       {(childrenOf.get('') ?? []).map((o) => (
@@ -103,6 +106,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} />
         )}
+        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} />}
         {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
       </group>

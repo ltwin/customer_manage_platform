@@ -2,7 +2,7 @@ import { Component, useEffect, type ReactNode } from 'react'
 import type { Scene } from '../api.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { SceneObjects } from '../objects/SceneObjects.tsx'
-import { Environment } from '../Viewport.tsx'
+import { Lighting } from '../objects/Lighting.tsx'
 
 // What a screenshot draws: the scene as the viewport shows it, nothing
 // selected, no light or camera icons. It reports its commit, so the one
@@ -15,7 +15,7 @@ type Props = { scene: Scene; models: Readonly<Record<string, SceneModel>>; onCom
 export function ShotScene({ scene, models, onCommit, onError }: Props) {
   return (
     <Failed onError={onError}>
-      <Environment environment={scene.environment} />
+      <Lighting environment={scene.environment} display="solid" />
       <SceneObjects scene={scene} models={models} selected={nothingSelected} active={null} helpers={false} />
       <Committed onCommit={onCommit} />
     </Failed>

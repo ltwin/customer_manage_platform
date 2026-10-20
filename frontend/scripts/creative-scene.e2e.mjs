@@ -2131,6 +2131,55 @@ await check('AC-1: Z switches the shading, Shift+Z goes to wireframe and back; i
   await other.context.close()
 })
 
+/** A screenshot once two in a row agree: the view has stopped changing. */
+async function settledShot(page, clip) {
+  let png = await page.screenshot({ clip })
+  for (let i = 0; i < 30; i++) {
+    await sleep(250)
+    const next = await page.screenshot({ clip })
+    const still = (await pixelDiff(page, png, next)) < 0.0005
+    png = next
+    if (still) return png
+  }
+  return png
+}
+
+await check('AC-1: lights light the rendered view; material preview ignores lights and the sun', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const lamp = gid('lamp')
+  seed(server, [{ id: lamp, kind: 'light', name: '灯', order: 9, transform: { ...identity(), position: [-1, 2.5, 1] }, light: { type: 'point', color: '#ffb070', intensity: 60, cast_shadow: true, distance: 0, decay: 2 } }])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const shading = (name) => page.getByRole('group', { name: '显示模式' }).getByRole('button', { name }).click()
+  const change = async (ops) => {
+    server.external(ops)
+    await page.evaluate(() => window.__invalidate())
+    await sleep(600)
+  }
+  const dim = [{ op: 'update_objects', updates: [{ object_id: lamp, light: { intensity: 0 } }] }]
+  const bright = [{ op: 'update_objects', updates: [{ object_id: lamp, light: { intensity: 60 } }] }]
+  const sunset = (deg) => [{ op: 'set_environment', environment: { ...server.scene.environment, sky: { ...server.scene.environment.sky, sun_azimuth_deg: deg } } }]
+
+  await shading('最终渲染')
+  const lit = await settledShot(page, box)
+  await change(dim)
+  const dark = await settledShot(page, box)
+  const byLight = await pixelDiff(page, lit, dark)
+  assert.ok(byLight > 0.01, `the lamp lights the rendered view (${(byLight * 100).toFixed(2)}% differ)`)
+  await change(bright)
+
+  await shading('材质预览')
+  const before = await settledShot(page, box)
+  await change(dim)
+  await change(sunset(300))
+  const after = await settledShot(page, box)
+  const preview = await pixelDiff(page, before, after)
+  assert.ok(preview < 0.002, `material preview does not change (${(preview * 100).toFixed(3)}% differ)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
