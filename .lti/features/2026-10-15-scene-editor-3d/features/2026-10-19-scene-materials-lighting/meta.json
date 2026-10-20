@@ -1,6 +1,6 @@
 {
   "uid": "d440919d-dee2-472f-8837-37d15c69c893",
-  "revision": 4,
+  "revision": 7,
   "id": "scene-materials-lighting",
   "kind": "feature",
   "assurance": "governed",
@@ -43,9 +43,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-20T04:24:28.397Z",
-  "updatedAt": "2026-10-20T08:02:27.976Z",
+  "updatedAt": "2026-10-20T12:55:30.318Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -78,8 +78,382 @@
       ".lti/snapshots/7faae6f70daf4b96aecc0624642713d485a23a309495195334f01874a10f6165.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-20T12:51:08.833Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 lti 配置 checks，验证命令由我执行；e2e 用模拟场景服务端；AC-8 用助手按验收会写出的场景，不经真实模型对话；AC-9 只在 M4 Pro 上测过，本轮未重跑性能；14 个预设的观感（未决事项 3）与 AC-10 重绘对照由 owner 判断",
+        "coverage": [
+          {
+            "criterionId": "AC-b5cde6f3997b",
+            "status": "verified",
+            "evidence": "e2e creative-scene.e2e.mjs「AC-1: Z switches the shading, Shift+Z goes to wireframe and back; it is kept here, never an edit」；viewState display 读写与兜底单测"
+          },
+          {
+            "criterionId": "AC-74ec606995e7",
+            "status": "verified",
+            "evidence": "e2e「AC-1: Z switches the shading…」线框背景占比与框选；design 偏差 5（网格不画但可拾取）"
+          },
+          {
+            "criterionId": "AC-692245c3cbee",
+            "status": "verified",
+            "evidence": "e2e「AC-1: lights light the rendered view…」末段（验收时补，74cdebe）：白模下点亮灯光并给画面内的方块换石砖后像素差为 0，同一改动让材质预览变 1.26%；「AC-5: exposure +2 …not the clay」断言白模不随曝光变；C4 白模/线稿导出 e2e 照常通过；Lighting.tsx 白模分支从 Viewport.tsx:Environment 原样搬来（代码走查）。限制：没有搬迁前后白模截图的常驻比对"
+          },
+          {
+            "criterionId": "AC-afb7ec5e5b9d",
+            "status": "verified",
+            "evidence": "e2e「AC-1: lights light the rendered view; material preview ignores lights and the sun」（删灯前后像素相同）"
+          },
+          {
+            "criterionId": "AC-04161a62323e",
+            "status": "verified",
+            "evidence": "e2e「AC-1: lights light the rendered view…」（最终渲染有阴影区）；「AC-4: Shift+A adds a spot…shadows show」"
+          },
+          {
+            "criterionId": "AC-0daf43e63b74",
+            "status": "verified",
+            "evidence": "见 AC-2 各子条"
+          },
+          {
+            "criterionId": "AC-1bdc18c10bca",
+            "status": "verified",
+            "evidence": "e2e「AC-2: a brick wall scaled 2× along X looks like one built twice as wide」：宽 2 放大 2 倍与宽 4 的截图像素差 < 0.3%。测试用 2 倍而非验收写的 4 倍，同一机制（世界空间三平面投影）；另有「every preset compiles and draws」与「far brick wall … half a pixel」"
+          },
+          {
+            "criterionId": "AC-60a25995e727",
+            "status": "verified",
+            "evidence": "e2e「AC-2: polished metal mirrors the sky with one sun highlight, not two」（亮度方差、高光连通区域计数为 1）"
+          },
+          {
+            "criterionId": "AC-24a6e517be3d",
+            "status": "verified",
+            "evidence": "e2e「AC-2: a see-through box shows what is behind it」（对比 transparent 集合开关，该处无 AO）；design 偏差 9"
+          },
+          {
+            "criterionId": "AC-fbac4dec8001",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts「a material set with several selected goes to every one with a slot of that name, in one update each」；e2e「AC-2: a material chosen with two boxes selected goes to both in one update」（一次修订、一次撤销）。e2e 用 2 个方块而非 5 根共用模型的柱子，同名槽位逻辑由单测覆盖"
+          },
+          {
+            "criterionId": "AC-e2821bb75fda",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts「a slot resolves by the five rules」与「slot hints map to presets whole」（hint wood → wood@1）"
+          },
+          {
+            "criterionId": "AC-af7f8fd8b38d",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts：未知预设解析为 unknown，makeMaterial 为 #8a8a8a；MaterialSlots 属性栏标记「未知材质」，编辑走同一路径"
+          },
+          {
+            "criterionId": "AC-3ec57c019a75",
+            "status": "verified",
+            "evidence": "见 AC-3 各子条"
+          },
+          {
+            "criterionId": "AC-bb1aeb0e9e5e",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts「复制材质到选中物件 copies by slot name, or one slot to all of them」；e2e「AC-3: 复制材质到选中物件 copies by slot name in one revision, one Cmd+Z…」"
+          },
+          {
+            "criterionId": "AC-f2f259827c61",
+            "status": "verified",
+            "evidence": "同上两条测试的单槽位扩散分支"
+          },
+          {
+            "criterionId": "AC-7edc62931be2",
+            "status": "verified",
+            "evidence": "e2e「AC-3: 复制材质 in one scene, 粘贴材质 on an object of another」"
+          },
+          {
+            "criterionId": "AC-d82c10557516",
+            "status": "verified",
+            "evidence": "e2e「AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/12…shadows show; spot → point keeps the rest; Cmd+Z」；lights.ts 字段映射单测；Go TestLightAndCameraUpdatesMergeByKey"
+          },
+          {
+            "criterionId": "AC-359c035969b0",
+            "status": "verified",
+            "evidence": "e2e「AC-5: …the sun at 5° lengthens shadows and turns the sky to dusk」「AC-5: a colour sky and fog show as set」「AC-5: exposure +2 brightens the rendered view…not the clay」；Go TestExposureFingerprintsOnlyLit（只有 lit 过时）、TestRenderMergesByKey、TestEnvironmentAndRender"
+          },
+          {
+            "criterionId": "AC-3c7360684257",
+            "status": "verified",
+            "evidence": "e2e「AC-6: in the rendered view the dialog ticks all three passes; 3 cameras give 9 images, and lit matches the camera view」；Go exports_test 指纹表（light、material slots 只让 lit 过时）、TestCreateExportJob、TestRenderViewDepthOfField；renderShots 分批单测"
+          },
+          {
+            "criterionId": "AC-b681e723e052",
+            "status": "verified",
+            "evidence": "见 AC-7 各子条"
+          },
+          {
+            "criterionId": "AC-f6dd392372f0",
+            "status": "verified",
+            "evidence": "e2e「AC-7: Ctrl+G groups objects of three parents in place, one revision; Cmd+Z puts them back…」；grouping 单测（世界矩阵误差 < 1e-6、反向操作回到原父级与顺序）；Go TestGroupAndUngroup"
+          },
+          {
+            "criterionId": "AC-dbc076044e4d",
+            "status": "verified",
+            "evidence": "同上 e2e 的 Ctrl+Alt+G 部分；Go TestUngroupNestedGroups"
+          },
+          {
+            "criterionId": "AC-86d4f9db93f0",
+            "status": "verified",
+            "evidence": "e2e「AC-7: Ctrl+P onto a primitive says why and changes nothing…」"
+          },
+          {
+            "criterionId": "AC-ed7799f29c21",
+            "status": "verified",
+            "evidence": "同上 e2e 的拖进旋转缩放分组部分"
+          },
+          {
+            "criterionId": "AC-b7b895c9c514",
+            "status": "verified",
+            "evidence": "e2e「AC-7: grouping while the assistant moves one of the objects asks first, and 重新应用 keeps it where the assistant put it」；sync 冲突重排单测"
+          },
+          {
+            "criterionId": "AC-cc3afcb57aff",
+            "status": "verified",
+            "evidence": "见 AC-8 各子条"
+          },
+          {
+            "criterionId": "AC-e3dbc664b3a9",
+            "status": "verified",
+            "evidence": "助手 e2e creative-scene-agent.e2e.mjs「the dusk sample (AC-8): render_view mode lit draws the brick, the glass and the warm lamps the clay leaves out」与「the canvas page runs the dusk sample’s lit render_view and a lit export」；Go TestAgentMaterialSlots。限制：用助手按 AC-8 会写出的场景，不经真实模型对话（design 偏差 14），真实模型是否按此写由 owner 试用判断"
+          },
+          {
+            "criterionId": "AC-1e4b0e92975f",
+            "status": "verified",
+            "evidence": "Go TestAgentMaterialSlots（未知预设、参数越界、错误信息列出可用项、场景不变）、TestCheckMaterial、TestAgentEditRefusals"
+          },
+          {
+            "criterionId": "AC-cf0aed2f7398",
+            "status": "verified",
+            "evidence": "Go TestAgentReparentKeepsWorldPositions（含新建分组、拒绝同批移动祖先、一批多个列表操作的拒绝）；lookat 与 three.js 对照的求逆、分解测试"
+          },
+          {
+            "criterionId": "AC-6441a0de7ed2",
+            "status": "verified",
+            "evidence": "Go TestCreateExportJob（passes 接受 lit）；助手 e2e「the canvas page runs the dusk sample’s lit render_view and a lit export」"
+          },
+          {
+            "criterionId": "AC-a9a1ea568ee2",
+            "status": "verified",
+            "evidence": "SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs，M4 Pro Metal：最终渲染平均 19.3 ms（p95 25.4）、材质预览 15.0 ms、加灯最长一帧 117 ms、删灯 142 ms，记录于 design 未决事项 2。限制：只在 M4 Pro 上测，本轮验收未重跑性能"
+          },
+          {
+            "criterionId": "AC-9c5b4430531a",
+            "status": "unverified",
+            "evidence": "owner 判断项。原图与提示词已备于 discovery/research/lit-repaint.md，重绘对照与结论待 owner 填写"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "技术检查：AC-1～AC-9 逐条对应测试；make check-go（creativescene、creativeagent，lint 0 issues）、make check-frontend（709/709）、make generate-check 通过；场景 e2e 60 项（1 项菜单点击超时在并行负载下出现，单独重跑 3 次通过）、助手 e2e 13/13；验收时补白模不受灯光和材质影响的 e2e 断言（74cdebe）。契约 4 处 MODIFY 与 Epic v10 一致，规格 6 ADD、2 MODIFY 无静默丢失。AC-10 待 owner",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "6bd1a165cbc20baaabae4af8ae135c63814f95a04c91b703ddd92e16da4056e9"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-20T12:55:11.982Z",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "AC-10 材质光照图对重绘的影响、14 个预设样张的观感、室内曝光建议值（0～+1 对 AC-5 的 +2）未由 owner 实际查看；AC-8 未经真实模型对话；AC-9 只在 M4 Pro 测过",
+        "followUp": "owner（samson）在使用 C5 做实际重绘或开始后续材质子项（PBR 贴图 / HDRI）之前：按 lit-repaint.md 做 3 机位两组重绘并填结论，据此定默认导出组合与 base.md 的重绘规则；看 presets/ 样张，需要调整的预设另开 Change；确认工具说明里的室内曝光建议。结果不理想时开修正 Change，不重开本项",
+        "coverage": [
+          {
+            "criterionId": "AC-b5cde6f3997b",
+            "status": "verified",
+            "evidence": "e2e creative-scene.e2e.mjs「AC-1: Z switches the shading, Shift+Z goes to wireframe and back; it is kept here, never an edit」；viewState display 读写与兜底单测"
+          },
+          {
+            "criterionId": "AC-74ec606995e7",
+            "status": "verified",
+            "evidence": "e2e「AC-1: Z switches the shading…」线框背景占比与框选；design 偏差 5（网格不画但可拾取）"
+          },
+          {
+            "criterionId": "AC-692245c3cbee",
+            "status": "verified",
+            "evidence": "e2e「AC-1: lights light the rendered view…」末段（验收时补，74cdebe）：白模下点亮灯光并给画面内的方块换石砖后像素差为 0，同一改动让材质预览变 1.26%；「AC-5: exposure +2 …not the clay」断言白模不随曝光变；C4 白模/线稿导出 e2e 照常通过；Lighting.tsx 白模分支从 Viewport.tsx:Environment 原样搬来（代码走查）。限制：没有搬迁前后白模截图的常驻比对"
+          },
+          {
+            "criterionId": "AC-afb7ec5e5b9d",
+            "status": "verified",
+            "evidence": "e2e「AC-1: lights light the rendered view; material preview ignores lights and the sun」（删灯前后像素相同）"
+          },
+          {
+            "criterionId": "AC-04161a62323e",
+            "status": "verified",
+            "evidence": "e2e「AC-1: lights light the rendered view…」（最终渲染有阴影区）；「AC-4: Shift+A adds a spot…shadows show」"
+          },
+          {
+            "criterionId": "AC-0daf43e63b74",
+            "status": "verified",
+            "evidence": "见 AC-2 各子条"
+          },
+          {
+            "criterionId": "AC-1bdc18c10bca",
+            "status": "verified",
+            "evidence": "e2e「AC-2: a brick wall scaled 2× along X looks like one built twice as wide」：宽 2 放大 2 倍与宽 4 的截图像素差 < 0.3%。测试用 2 倍而非验收写的 4 倍，同一机制（世界空间三平面投影）；另有「every preset compiles and draws」与「far brick wall … half a pixel」"
+          },
+          {
+            "criterionId": "AC-60a25995e727",
+            "status": "verified",
+            "evidence": "e2e「AC-2: polished metal mirrors the sky with one sun highlight, not two」（亮度方差、高光连通区域计数为 1）"
+          },
+          {
+            "criterionId": "AC-24a6e517be3d",
+            "status": "verified",
+            "evidence": "e2e「AC-2: a see-through box shows what is behind it」（对比 transparent 集合开关，该处无 AO）；design 偏差 9"
+          },
+          {
+            "criterionId": "AC-fbac4dec8001",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts「a material set with several selected goes to every one with a slot of that name, in one update each」；e2e「AC-2: a material chosen with two boxes selected goes to both in one update」（一次修订、一次撤销）。e2e 用 2 个方块而非 5 根共用模型的柱子，同名槽位逻辑由单测覆盖"
+          },
+          {
+            "criterionId": "AC-e2821bb75fda",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts「a slot resolves by the five rules」与「slot hints map to presets whole」（hint wood → wood@1）"
+          },
+          {
+            "criterionId": "AC-af7f8fd8b38d",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts：未知预设解析为 unknown，makeMaterial 为 #8a8a8a；MaterialSlots 属性栏标记「未知材质」，编辑走同一路径"
+          },
+          {
+            "criterionId": "AC-3ec57c019a75",
+            "status": "verified",
+            "evidence": "见 AC-3 各子条"
+          },
+          {
+            "criterionId": "AC-bb1aeb0e9e5e",
+            "status": "verified",
+            "evidence": "creative-scene-materials.test.ts「复制材质到选中物件 copies by slot name, or one slot to all of them」；e2e「AC-3: 复制材质到选中物件 copies by slot name in one revision, one Cmd+Z…」"
+          },
+          {
+            "criterionId": "AC-f2f259827c61",
+            "status": "verified",
+            "evidence": "同上两条测试的单槽位扩散分支"
+          },
+          {
+            "criterionId": "AC-7edc62931be2",
+            "status": "verified",
+            "evidence": "e2e「AC-3: 复制材质 in one scene, 粘贴材质 on an object of another」"
+          },
+          {
+            "criterionId": "AC-d82c10557516",
+            "status": "verified",
+            "evidence": "e2e「AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/12…shadows show; spot → point keeps the rest; Cmd+Z」；lights.ts 字段映射单测；Go TestLightAndCameraUpdatesMergeByKey"
+          },
+          {
+            "criterionId": "AC-359c035969b0",
+            "status": "verified",
+            "evidence": "e2e「AC-5: …the sun at 5° lengthens shadows and turns the sky to dusk」「AC-5: a colour sky and fog show as set」「AC-5: exposure +2 brightens the rendered view…not the clay」；Go TestExposureFingerprintsOnlyLit（只有 lit 过时）、TestRenderMergesByKey、TestEnvironmentAndRender"
+          },
+          {
+            "criterionId": "AC-3c7360684257",
+            "status": "verified",
+            "evidence": "e2e「AC-6: in the rendered view the dialog ticks all three passes; 3 cameras give 9 images, and lit matches the camera view」；Go exports_test 指纹表（light、material slots 只让 lit 过时）、TestCreateExportJob、TestRenderViewDepthOfField；renderShots 分批单测"
+          },
+          {
+            "criterionId": "AC-b681e723e052",
+            "status": "verified",
+            "evidence": "见 AC-7 各子条"
+          },
+          {
+            "criterionId": "AC-f6dd392372f0",
+            "status": "verified",
+            "evidence": "e2e「AC-7: Ctrl+G groups objects of three parents in place, one revision; Cmd+Z puts them back…」；grouping 单测（世界矩阵误差 < 1e-6、反向操作回到原父级与顺序）；Go TestGroupAndUngroup"
+          },
+          {
+            "criterionId": "AC-dbc076044e4d",
+            "status": "verified",
+            "evidence": "同上 e2e 的 Ctrl+Alt+G 部分；Go TestUngroupNestedGroups"
+          },
+          {
+            "criterionId": "AC-86d4f9db93f0",
+            "status": "verified",
+            "evidence": "e2e「AC-7: Ctrl+P onto a primitive says why and changes nothing…」"
+          },
+          {
+            "criterionId": "AC-ed7799f29c21",
+            "status": "verified",
+            "evidence": "同上 e2e 的拖进旋转缩放分组部分"
+          },
+          {
+            "criterionId": "AC-b7b895c9c514",
+            "status": "verified",
+            "evidence": "e2e「AC-7: grouping while the assistant moves one of the objects asks first, and 重新应用 keeps it where the assistant put it」；sync 冲突重排单测"
+          },
+          {
+            "criterionId": "AC-cc3afcb57aff",
+            "status": "verified",
+            "evidence": "见 AC-8 各子条"
+          },
+          {
+            "criterionId": "AC-e3dbc664b3a9",
+            "status": "verified",
+            "evidence": "助手 e2e creative-scene-agent.e2e.mjs「the dusk sample (AC-8): render_view mode lit draws the brick, the glass and the warm lamps the clay leaves out」与「the canvas page runs the dusk sample’s lit render_view and a lit export」；Go TestAgentMaterialSlots。限制：用助手按 AC-8 会写出的场景，不经真实模型对话（design 偏差 14），真实模型是否按此写由 owner 试用判断"
+          },
+          {
+            "criterionId": "AC-1e4b0e92975f",
+            "status": "verified",
+            "evidence": "Go TestAgentMaterialSlots（未知预设、参数越界、错误信息列出可用项、场景不变）、TestCheckMaterial、TestAgentEditRefusals"
+          },
+          {
+            "criterionId": "AC-cf0aed2f7398",
+            "status": "verified",
+            "evidence": "Go TestAgentReparentKeepsWorldPositions（含新建分组、拒绝同批移动祖先、一批多个列表操作的拒绝）；lookat 与 three.js 对照的求逆、分解测试"
+          },
+          {
+            "criterionId": "AC-6441a0de7ed2",
+            "status": "verified",
+            "evidence": "Go TestCreateExportJob（passes 接受 lit）；助手 e2e「the canvas page runs the dusk sample’s lit render_view and a lit export」"
+          },
+          {
+            "criterionId": "AC-a9a1ea568ee2",
+            "status": "verified",
+            "evidence": "SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs，M4 Pro Metal：最终渲染平均 19.3 ms（p95 25.4）、材质预览 15.0 ms、加灯最长一帧 117 ms、删灯 142 ms，记录于 design 未决事项 2。限制：只在 M4 Pro 上测，本轮验收未重跑性能"
+          },
+          {
+            "criterionId": "AC-9c5b4430531a",
+            "status": "unverified",
+            "evidence": "owner 判断项。原图与提示词已备于 discovery/research/lit-repaint.md，重绘对照与结论待 owner 填写"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 接受：AC-1～AC-9 的技术检查结果，功能先结束合入；体验效果类验证延后",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "6bd1a165cbc20baaabae4af8ae135c63814f95a04c91b703ddd92e16da4056e9"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-20T12:55:30.187Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "archived"
 }
