@@ -1739,6 +1739,34 @@ await check('Add > 摄像机 stands at the view; 0 looks through it in a frame w
   await context.close()
 })
 
+await check('0 again leaves the camera view for the view it came from, orthographic too', async () => {
+  const server = new SceneServer()
+  server.external([{ op: 'add_objects', objects: [cameraObject(objectID('cam'), '机位', 1, {})] }])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const frame = page.locator('.cc-scene-camframe')
+  const roundTrip = async (view) => {
+    await sleep(1200)
+    const before = await page.screenshot({ clip: box })
+    await page.keyboard.press('Digit0')
+    await frame.waitFor()
+    await sleep(1200)
+    assert.ok((await pixelDiff(page, await page.screenshot({ clip: box }), before)) > 0.02, `${view}: the camera view is a different picture`)
+    await page.keyboard.press('Digit0')
+    await frame.waitFor({ state: 'detached' })
+    let back = 1
+    for (const started = Date.now(); back >= 0.005 && Date.now() - started < 5000; await sleep(200))
+      back = await pixelDiff(page, await page.screenshot({ clip: box }), before)
+    assert.ok(back < 0.005, `${view}: back to the view it came from (${(back * 100).toFixed(2)}% of pixels differ)`)
+  }
+  await roundTrip('perspective')
+  await page.keyboard.press('Digit7')
+  await page.keyboard.press('Digit5')
+  await roundTrip('top orthographic')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('Add > 空物体 shows a marker; the camera focuses on it by 拾取, its sharp range shows', async () => {
   const server = new SceneServer()
   const cam = objectID('cam')

@@ -4,7 +4,7 @@ import type { Context } from '../input/keymap.ts'
 import type { SceneModel } from '../models/cache.ts'
 import type { Device, DevicePreference } from '../input/navigation.ts'
 import { emptySelection, type Selection } from '../input/selection.ts'
-import type { SavedView } from '../viewState.ts'
+import type { CameraView, SavedView } from '../viewState.ts'
 
 // Editor UI state, never part of the document: what is selected, which tool
 // and panels are showing, open menus and prompts. The selection, tool,
@@ -71,6 +71,8 @@ export type EditorUI = {
   cameraView: string | null
   /** The camera 0 goes to when none is selected. */
   lastCamera: string | null
+  /** The free view the camera view was entered from: 0 again goes back to it, navigating by hand drops it. */
+  viewBack: CameraView | null
   guides: Guide[]
   /** A camera waiting for a click on the object to focus on. */
   pickFocus: string | null
@@ -104,6 +106,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     confirmClose: false,
     cameraView: null,
     lastCamera: saved?.lastCamera ?? null,
+    viewBack: null,
     guides: saved?.guides ?? [],
     pickFocus: null,
     exporting: false,

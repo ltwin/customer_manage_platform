@@ -264,19 +264,24 @@ function ViewKeeper({ initial, onChange }: { initial: CameraView | null; onChang
     if (!controls) return
     const changed = () => {
       if (!restored.current) return
-      const p = controls.getPosition(new Vector3())
-      const t = controls.getTarget(new Vector3())
-      report.current({
-        position: [p.x, p.y, p.z],
-        target: [t.x, t.y, t.z],
-        ortho: (camera as OrthographicCamera).isOrthographicCamera === true,
-        zoom: (camera as OrthographicCamera).zoom,
-      })
+      report.current(viewOf(controls, camera))
     }
     controls.addEventListener('update', changed)
     return () => controls.removeEventListener('update', changed)
   }, [controls, camera])
   return null
+}
+
+/** Where the controls look from and to, as a saved view holds it. */
+function viewOf(controls: CameraControlsImpl, camera: Camera): CameraView {
+  const p = controls.getPosition(new Vector3())
+  const t = controls.getTarget(new Vector3())
+  return {
+    position: [p.x, p.y, p.z],
+    target: [t.x, t.y, t.z],
+    ortho: (camera as OrthographicCamera).isOrthographicCamera === true,
+    zoom: (camera as OrthographicCamera).zoom,
+  }
 }
 
 type ModalRun = {
@@ -430,7 +435,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
     }
     /** Navigating by hand leaves the camera view, from where it looks now. */
     const leaveCameraView = () => {
-      if (latest.current.ui.getState().cameraView) latest.current.ui.setState({ cameraView: null })
+      if (latest.current.ui.getState().cameraView) latest.current.ui.setState({ cameraView: null, viewBack: null })
     }
     const applyButtons = (e: { altKey: boolean; shiftKey: boolean; ctrlKey: boolean }) => {
       if (!controls) return
@@ -807,7 +812,8 @@ function Gizmo({
 /**
  * The camera view (0): the viewport stands where the camera stands and widens
  * its field of view so the camera's picture fills 90% of it. Navigating by
- * hand leaves it; editing the camera moves the view along. Roll is not
+ * hand leaves it from where it looks; 0 again goes back to the view it was
+ * entered from. Editing the camera moves the view along. Roll is not
  * followed: the view keeps Z up.
  */
 function CameraViewRig({ scene, ui }: { scene: Scene; ui: EditorStore }) {
@@ -815,12 +821,15 @@ function CameraViewRig({ scene, ui }: { scene: Scene; ui: EditorStore }) {
   const { camera, size, invalidate } = useThree()
   const controls = useThree((s) => s.controls) as CameraControlsImpl | null
   const framing = useMemo(() => (id ? cameraFraming(scene, id) : null), [scene, id])
+  const zoomBack = useRef<number | null>(null)
   useEffect(() => {
     if (!id) return
     if (!framing || 'error' in framing) {
       ui.setState({ cameraView: null })
       return
     }
+    // Before the switch to perspective, so an orthographic view comes back as one.
+    if (controls && !ui.getState().viewBack) ui.setState({ viewBack: viewOf(controls, camera) })
     if (ui.getState().ortho) {
       ui.setState({ ortho: false })
       return
@@ -837,10 +846,34 @@ function CameraViewRig({ scene, ui }: { scene: Scene; ui: EditorStore }) {
   }, [id, framing, camera, controls, size.width, size.height, ui, invalidate])
   useEffect(() => {
     if (!controls || !id) return
-    const leave = () => ui.setState({ cameraView: null })
+    const leave = () => ui.setState({ cameraView: null, viewBack: null })
     controls.addEventListener('controlstart', leave)
     return () => controls.removeEventListener('controlstart', leave)
   }, [controls, id, ui])
+  // Leaving by 0 (or the camera going away) eases back to the view it came from.
+  useEffect(() => {
+    const back = ui.getState().viewBack
+    if (id || !controls || !back) return
+    ui.setState({ viewBack: null })
+    const [px, py, pz] = back.position
+    const [tx, ty, tz] = back.target
+    if (back.ortho) {
+      // OrthoSwitch carries where the view ends to the new camera; the zoom follows once the controls drive it.
+      void controls.setLookAt(px, py, pz, tx, ty, tz, false)
+      zoomBack.current = back.zoom
+      ui.setState({ ortho: true })
+    } else {
+      void controls.setLookAt(px, py, pz, tx, ty, tz, true)
+    }
+    invalidate()
+  }, [id, controls, ui, invalidate])
+  useEffect(() => {
+    const zoom = zoomBack.current
+    if (zoom === null || !controls || controls.camera !== camera || !(camera as OrthographicCamera).isOrthographicCamera) return
+    zoomBack.current = null
+    void controls.zoomTo(zoom, false)
+    invalidate()
+  }, [camera, controls, invalidate])
   useEffect(() => {
     const persp = camera as PerspectiveCamera
     if (id || !persp.isPerspectiveCamera || persp.fov === freeFov) return

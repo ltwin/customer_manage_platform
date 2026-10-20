@@ -330,8 +330,16 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
     const o = newEmpty(handle.current?.centrePoint() ?? [0, 0, 0], objects)
     if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) select([o.id])
   }
-  /** 0 looks through the active camera, else the last one used, else the first. */
+  /**
+   * 0 looks through the active camera, else the last one used, else the
+   * first. In the camera view it goes back to the view it came from, unless
+   * another camera is active: then it looks through that one.
+   */
   const cameraView = () => {
+    if (u.cameraView && !(active?.kind === 'camera' && active.id !== u.cameraView)) {
+      ui.setState({ cameraView: null })
+      return
+    }
     const cameras = (shown?.objects ?? []).filter((o) => o.kind === 'camera')
     const target = active?.kind === 'camera' ? active : (cameras.find((c) => c.id === u.lastCamera) ?? cameras[0])
     if (!target) return notify('场景里没有摄像机，先在「添加」菜单里添加摄像机')
@@ -530,7 +538,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       case 'view-bottom':
         return handle.current?.setView(viewDirections[action])
       case 'view-ortho':
-        if (u.cameraView) ui.setState({ cameraView: null })
+        if (u.cameraView) ui.setState({ cameraView: null, viewBack: null })
         return handle.current?.toggleOrtho()
       case 'camera-view':
         return cameraView()
