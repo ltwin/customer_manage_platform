@@ -44,6 +44,7 @@ import type { WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
+import { saveTarget, whenShown, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
 import { Viewport, type ViewportHandle } from './Viewport.tsx'
 import './scene.css'
@@ -96,7 +97,22 @@ const discardUpload = (upload: Upload) =>
  * scene's jobs first. `canvasID` and `sceneNodeID` say where exports go; the
  * editor always opens from a canvas node, and without them there is no export.
  */
-export default function SceneEditor({ documentID, onClose, host, canvasID, sceneNodeID }: { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string }) {
+export default function SceneEditor({
+  documentID,
+  onClose,
+  host,
+  canvasID,
+  sceneNodeID,
+  onSaveModel,
+}: {
+  documentID: string
+  onClose: () => void
+  host?: SceneJobLauncher
+  canvasID?: string
+  sceneNodeID?: string
+  /** Opens the canvas page's 「存入资产库」 dialog; without it the entries are hidden. */
+  onSaveModel?: (request: SaveModelRequest) => void
+}) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
   // runs cleanup and setup once more after mounting.
@@ -471,6 +487,39 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
     else onClose()
   }
 
+  /** What 「存入资产库」 would save of these objects now, or why it cannot. */
+  const saveCheck = (ids: readonly string[]) => {
+    const st = session.state
+    return saveTarget({
+      selected: ids,
+      objects: st.view?.scene.objects ?? [],
+      base: st.base,
+      models: modelSummaries(st.base?.models, modelCache.local.getState()),
+      previews: modelEdits.store.getState().previews,
+      unsaved: [...st.queue, ...st.conflicts.flatMap((g) => g.intents)],
+    })
+  }
+  const saveBlocked = !onSaveModel
+    ? null
+    : u.preview
+      ? '退出历史预览后再存'
+      : s.trashed
+        ? '场景在回收站，请先恢复'
+        : (() => {
+            const check = saveCheck(selected)
+            return 'error' in check ? check.error : null
+          })()
+  const saveModel = () => {
+    const target = saveCheck(selected)
+    if (!onSaveModel || 'error' in target) return
+    onSaveModel({ documentID, target, refresh: (currentRev, signal) => refreshSave(target.objectID, currentRev, signal) })
+  }
+  /** After a save conflict: re-read, and check the object again once the editor shows the new version. */
+  const refreshSave = async (objectID: string, currentRev: string, signal: AbortSignal): Promise<SaveTarget | { error: string }> => {
+    session.invalidate()
+    return (await whenShown(session.store, objectID, currentRev, signal)) ? saveCheck([objectID]) : { error: '已取消' }
+  }
+
   const run = (action: Action) => {
     if (contextOf(ui.getState()) === 'modal' && action !== 'save') {
       handle.current?.modalAction(action as Parameters<ViewportHandle['modalAction']>[0])
@@ -649,6 +698,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         { label: '清除父级', shortcut: k('clear-parent'), disabled: !selected.some((id) => byID.get(id)?.parent_id), run: () => run('clear-parent') },
         'separator',
         { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
+        ...(onSaveModel ? [{ label: '存入资产库…', disabled: !!saveBlocked, hint: saveBlocked ?? undefined, run: saveModel }] : []),
       ]
     if (menu === 'display')
       return [
@@ -683,7 +733,8 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
 
   const contextItems = (objectID: string | null, at: { x: number; y: number }): MenuItem[] => {
     if (!objectID) return menuItems('add', at)
-    return menuItems('object').filter((i) => i === 'separator' || 'section' in i || !i.disabled)
+    // A disabled entry that says why stays: 「存入资产库」 explains what to wait for.
+    return menuItems('object').filter((i) => i === 'separator' || 'section' in i || !i.disabled || !!i.hint)
   }
 
   const hint = (() => {
@@ -795,6 +846,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   focusDistance={shownActive?.kind === 'camera' ? focusOf(shown, shownActive.id) : undefined}
                   picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
                   onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}
+                  save={onSaveModel ? { blocked: saveBlocked, run: saveModel } : undefined}
                 >
                   {shownActive && (shownActive.kind === 'primitive' || shownActive.kind === 'model_instance') && (
                     <MaterialSlots

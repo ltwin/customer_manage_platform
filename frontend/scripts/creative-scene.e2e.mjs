@@ -25,6 +25,7 @@ import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
+import SaveModelDialog from '/src/creative-canvas/editor/SaveModelDialog.tsx';
 import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
 import {sceneContext} from '/src/creative-scene/context.ts';
 import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
@@ -37,11 +38,19 @@ window.__closed = 0;
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
+// ?library=1 hands the editor the canvas page's 「存入资产库」 dialog.
 function Editor({host}) {
   const [open, setOpen] = useState(true);
+  const [saving, setSaving] = useState(null);
+  const [notice, setNotice] = useState('');
   window.__reopen = () => setOpen(true);
+  const query = new URLSearchParams(location.search);
+  const group = React.createElement('select', {name:'group'}, React.createElement('option', {value:''}, '不归类'), React.createElement('option', {value:'cgrp_qa'}, '柱子'));
   return open
-    ? React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(new URLSearchParams(location.search).has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {})})
+    ? React.createElement(React.Fragment, null,
+        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving} : {})}),
+        saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: setNotice, onClose: () => setSaving(null)}),
+        notice && React.createElement('p', {id:'notice'}, notice))
     : React.createElement('p', {id:'closed'}, 'closed');
 }
 function WithHost() {
@@ -129,6 +138,24 @@ class SceneServer {
     this.completes = []
     // Exports the editor submitted.
     this.exports = []
+    // Models saved into the asset library, by revision; every save request.
+    this.assets = new Map()
+    this.saves = []
+  }
+  /** POST /assets/from-scene-model: the instance's model, if the editor saw its current version. */
+  saveModel(body) {
+    const p = body.payload
+    this.saves.push(body)
+    const unit = content(p.object_id)
+    const current = this.unitRevs[unit] ?? null
+    if (current !== p.expected_object_rev)
+      return [409, { error: { code: 'creative_document_conflict', message: '文档已被修改', details: { conflicts: [{ unit, expected_rev: p.expected_object_rev, current_rev: current }] } } }]
+    const rev = this.object(p.object_id).model.content_revision_id
+    const existing = this.assets.get(rev)
+    if (existing) return [200, { ...existing, reused: true }]
+    const asset = { asset_id: `ccas_${this.assets.size + 1}`, revision: '1', title: p.target.title, description: '', content_revision_id: rev, library_revision: '1', tag_mapping: {}, tags_created: [], tags_reused: [], reused: false }
+    this.assets.set(rev, asset)
+    return [201, asset]
   }
   /** A committed model revision, as if made earlier; returns its revision ID. */
   seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
@@ -370,6 +397,10 @@ async function route(page, server) {
       const items = [...server.history].reverse().filter((h) => Number(h.revision) > since).slice(0, limit).map((h) => server.revisionItem(h))
       return json(200, { items, next_cursor: null })
     }
+    if (path === '/assets/from-scene-model' && request.method() === 'POST') {
+      const [status, body] = server.saveModel(request.postDataJSON())
+      return json(status, body)
+    }
     if (path === `/documents/${DOC}/scene-jobs`) return json(200, { items: server.jobs })
     if (path === `/documents/${DOC}/scene-exports` && request.method() === 'POST') {
       const body = request.postDataJSON()
@@ -535,6 +566,51 @@ async function check(name, fn) {
     results.push(`FAIL ${name}\n     ${error.stack?.split('\n').slice(0, 4).join('\n     ')}`)
   }
 }
+
+await check('C6 save to library: saved once, then filed; a model changed meanwhile is confirmed before saving', async () => {
+  const server = new SceneServer()
+  const first = server.seedModel()
+  const second = server.seedModel({ params: { ...templateParams, height: 5 } })
+  const pillar = 'sobj_P00000000000000000001'
+  server.seedInstance(pillar, first)
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  const save = page.getByRole('button', { name: '存入资产库…' })
+  const dialog = page.getByRole('dialog', { name: '存入个人资产库' })
+  const title = dialog.getByRole('textbox', { name: '资产名称' })
+  const notice = (text) => page.locator('#notice').filter({ hasText: text }).waitFor()
+
+  await save.click()
+  assert.equal(await title.inputValue(), '柱', 'the model name by default')
+  await dialog.getByText('场景里换的材质和缩放不随资产保存', { exact: false }).waitFor()
+  await title.fill('哥特束柱')
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await notice('已存入资产库')
+  await dialog.waitFor({ state: 'detached' })
+  assert.deepEqual(server.saves[0].payload, { document_id: DOC, object_id: pillar, expected_object_rev: '1', target: { title: '哥特束柱', group_ids: [] } })
+
+  await save.click()
+  await dialog.locator('select[name="group"]').selectOption('cgrp_qa')
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await notice('这个模型已在资产库中，已归入「柱子」')
+  assert.equal(server.assets.size, 1, 'the same revision is not saved twice')
+
+  // The assistant changes the model while the dialog is open.
+  await save.click()
+  server.external([{ op: 'set_instance_model', object_id: pillar, model: { content_revision_id: second }, scope: 'this' }], { actor: 'agent' })
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await dialog.getByText('模型已更新为最新版本，确认后再存').waitFor()
+  const conflicted = server.saves.at(-1)
+  assert.equal(server.assets.size, 1, 'nothing saved on the conflict')
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await notice('已存入资产库')
+  const last = server.saves.at(-1)
+  assert.equal(last.payload.expected_object_rev, server.unitRevs[content(pillar)])
+  assert.notEqual(last.operation_id, conflicted.operation_id, 'a new request after the refresh')
+  assert.equal([...server.assets.keys()].at(-1), second, 'the new version is what was saved')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
 
 await check('keyboard flow: Shift+A, G Z 2 Enter, R cancelled, A G confirmed', async () => {
   const server = new SceneServer()

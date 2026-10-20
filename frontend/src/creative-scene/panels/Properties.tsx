@@ -159,7 +159,7 @@ export function ParamField({ name, spec, value, disabled, onCommit }: { name: st
  * Field commits carry a merge key, so typing in one field is one undo step
  * even when its commits wait to be sent together.
  */
-export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, objects = [], focusDistance, picking = false, onPickFocus, children }: {
+export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, objects = [], focusDistance, picking = false, onPickFocus, save, children }: {
   object: SceneObject | null
   count: number
   readOnly: boolean
@@ -175,6 +175,8 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
   /** Its GLB could not be loaded. */
   modelFailed?: boolean
   onUpdate: (u: ObjectUpdate, label: string, merge?: string) => void
+  /** 「存入资产库」 for a model instance, with why it cannot be saved now; absent without a library. */
+  save?: { blocked: string | null; run: () => void }
   /** Type-specific controls below the common ones, such as a model's parameters. */
   children?: ReactNode
 }) {
@@ -246,6 +248,14 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
         <div className="cc-scene-model-info">
           <span>代码模型{model?.name_hint ? `：${model.name_hint}` : ''}</span>
           {(model?.usable === false || modelFailed) && <strong role="status">模型不可用</strong>}
+        </div>
+      )}
+      {object.kind === 'model_instance' && save && (
+        <div className="cc-scene-model-save">
+          <button type="button" className="btn" disabled={!!save.blocked} onClick={save.run}>
+            存入资产库…
+          </button>
+          {save.blocked && <span>{save.blocked}</span>}
         </div>
       )}
       {children}

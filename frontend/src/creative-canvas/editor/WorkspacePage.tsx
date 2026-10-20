@@ -51,8 +51,10 @@ import {
 } from './outbox.ts'
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
+import SaveModelDialog from './SaveModelDialog.tsx'
+import type { SaveModelRequest } from '../../creative-scene/saveModel.ts'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveModelRequest) => void }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -225,6 +227,7 @@ function Workspace({ account }: { account: string }) {
     revision?: string
   } | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
+  const [savingModel, setSavingModel] = useState<SaveModelRequest | null>(null)
   // 多选「存入资产库…」：一次选分组，逐个入库（PRD CV-81）。
   const [savingMany, setSavingMany] = useState<string[] | null>(null)
   const nodeFileInput = useRef<HTMLInputElement>(null)
@@ -1773,7 +1776,9 @@ function Workspace({ account }: { account: string }) {
             canvasID={canvasID}
             sceneNodeID={maximized.nodeID}
             host={sceneHost.launcher}
+            onSaveModel={setSavingModel}
             onClose={() => {
+              setSavingModel(null)
               setLibraryOpen(maximized.libraryOpen)
               setMaximized(null)
             }}
@@ -1913,6 +1918,18 @@ function Workspace({ account }: { account: string }) {
             </button>
           </form>
         </StudioDialog>
+      )}
+      {savingModel && (
+        <SaveModelDialog
+          key={savingModel.target.objectID}
+          request={savingModel}
+          groupField={<GroupField groups={catalog.groups} />}
+          groupName={(id) =>
+            catalog.groups.find((g) => g.id === id)?.name ?? '分组'
+          }
+          onSaved={setCopyNotice}
+          onClose={() => setSavingModel(null)}
+        />
       )}
       {savingMany && view && (
         <StudioDialog

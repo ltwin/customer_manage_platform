@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 export type MenuItem =
-  | { label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run: () => void }
+  | { label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run: () => void; /** Why it is disabled, shown under the label. */ hint?: string }
   | 'separator'
   | { section: string }
 
@@ -41,6 +41,7 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
             <span>
               {item.checked !== undefined && <span className="cc-scene-check">{item.checked ? '●' : ''}</span>}
               {item.label}
+              {item.disabled && item.hint && <small className="cc-scene-menu-hint">{item.hint}</small>}
             </span>
             {item.shortcut && <kbd>{item.shortcut}</kbd>}
           </button>
