@@ -212,10 +212,36 @@ func (s *lookAtScene) parentOf(id string) *string {
 	return nil
 }
 
+// ancestors lists the parent, grandparent and so on of object id whose
+// parent is parent, as the batch would leave them; false when the chain comes
+// back to an object already on it. The arguments are the model's, read before
+// the scene's own checks refuse a loop, so the walk has to stop on its own.
+func (s *lookAtScene) ancestors(id string, parent *string) ([]string, bool) {
+	seen := map[string]bool{id: true}
+	var out []string
+	for p := parent; p != nil; p = s.parentOf(*p) {
+		if seen[*p] {
+			return nil, false
+		}
+		seen[*p] = true
+		out = append(out, *p)
+	}
+	return out, true
+}
+
 // worldMatrix is the world matrix of an existing or added object; added
 // objects with look_at count with the rotation they were sent with, which is
-// why moving a parent and aiming its child in one batch is refused.
+// why moving a parent and aiming its child in one batch is refused. Callers
+// check the chain with ancestors first; a loop is still not followed.
 func (s *lookAtScene) worldMatrix(id string) (mat4, bool) {
+	return s.worldMatrixOnce(id, map[string]bool{})
+}
+
+func (s *lookAtScene) worldMatrixOnce(id string, visiting map[string]bool) (mat4, bool) {
+	if visiting[id] {
+		return mat4{}, false
+	}
+	visiting[id] = true
 	if m, ok := s.world[id]; ok {
 		return m, true
 	}
@@ -237,7 +263,7 @@ func (s *lookAtScene) worldMatrix(id string) (mat4, bool) {
 	}
 	m := local
 	if p := s.parentOf(id); p != nil {
-		pm, ok := s.worldMatrix(*p)
+		pm, ok := s.worldMatrixOnce(*p, visiting)
 		if !ok {
 			return mat4{}, false
 		}
@@ -411,12 +437,16 @@ func (s *lookAtScene) resolveItem(raw json.RawMessage, add bool, reparented, mov
 	if reparented[id] {
 		return nil, false, invalid("物件 %s 在同一次修改里也被改了父级，请分两次提交", id)
 	}
-	var parentWorld *mat4
-	for p := parent; p != nil; p = s.parentOf(*p) {
-		if reparented[*p] || moved[*p] {
+	ancestors, ok := s.ancestors(id, parent)
+	if !ok {
+		return nil, false, invalid("物件 %s 的父级链成环", id)
+	}
+	for _, p := range ancestors {
+		if reparented[p] || moved[p] {
 			return nil, false, invalid("物件 %s 的父级在同一次修改里也被移动，请分两次提交", id)
 		}
 	}
+	var parentWorld *mat4
 	if parent != nil {
 		m, ok := s.worldMatrix(*parent)
 		if !ok {

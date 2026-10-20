@@ -55,6 +55,14 @@ func lookAtObject(id, kind string, parent *string, order int, pos []float64) map
 	return o
 }
 
+// aimed is a new camera under parent that looks at the origin.
+func aimed(id, parent string) map[string]any {
+	o := lookAtObject(id, "camera", &parent, 9, []float64{0, 1, 5})
+	delete(o["transform"].(map[string]any), "rotation")
+	o["look_at"] = []float64{0, 0, 0}
+	return o
+}
+
 func closeTo(got, want []float64) bool {
 	if len(got) != len(want) {
 		return false
@@ -132,6 +140,11 @@ func TestLookAtRefusals(t *testing.T) {
 		{"bad target", "look_at 须为", []any{op{"op": "update_objects", "updates": []any{update(map[string]any{"look_at": []float64{0, 0}})}}}},
 		{"add without position", "transform.position", []any{op{"op": "add_objects", "objects": []any{
 			map[string]any{"id": objectID(3), "kind": "group", "name": "", "parent_id": nil, "order": 2, "visible": true, "locked": false, "look_at": []float64{0, 0, 0}}}}}},
+		// The model's arguments are read before the scene refuses a loop; the walk up the parents must stop.
+		{"own parent", "父级链成环", []any{op{"op": "add_objects", "objects": []any{aimed(objectID(3), objectID(3))}}}},
+		{"two new objects each other's parent", "父级链成环", []any{op{"op": "add_objects", "objects": []any{
+			aimed(objectID(3), objectID(4)), aimed(objectID(4), objectID(3))}}}},
+		{"a new object under its own descendant", "父级链成环", []any{op{"op": "add_objects", "objects": []any{aimed(g, c)}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := agentEdit(t, f.a, creativescene.EditInput{DocumentID: me.doc, RunID: "ccrn_look", BasedOn: base, Operations: raws(t, tc.ops...)})

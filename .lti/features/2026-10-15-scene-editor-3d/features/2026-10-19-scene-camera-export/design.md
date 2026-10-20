@@ -142,7 +142,7 @@ tan(v / 2) = L / (2 · focal_mm) / max(a, 1)     // v 为 three.js PerspectiveCa
 | `creativescene/jobs_complete.go` | `ExportOutput{SceneRevision, Shots}` | 完成任务的 `export`，替换现有占位的 `{export_operation_id}`；`Shots` 与 `ExportInput.Shots` 同类型 |
 | `creativecanvas` | `SceneExportPlacement{CanvasID, SceneNodeID, DocumentID, Rows[][]{UploadID, Title, Aspect, BasedOn}, Actor}` → `SceneExportPlaced{ChangeID, Nodes[]}` | 画布侧放置入口的输入与输出 |
 | `creativecanvas` | `Action.Config map[string]any` 加 `json:"-"` | 只有 Go 调用方能设置，HTTP 解码不到 |
-| `creativecanvas` | `ExportSource{NodeID, DocumentID, SceneRevision, CameraObjectID, Pass, Fingerprint}`；端口 `ExportFreshness.Check(ctx, tx, sources, current map[documentID]creativecontent.Revision) map[nodeID]string` | 读画布时问场景是否过时。当前快照由画布传入，只有指纹版本不符时端口才查库 |
+| `creativecanvas` | `ExportSource{NodeID, DocumentID, CameraObjectID, Pass, Fingerprint}`；端口 `ExportFreshness.Check(sources, current map[documentID]creativecontent.Revision) map[nodeID]string`；`SceneExportBasedOn`（`based_on` 的读写共用类型） | 读画布时问场景是否过时。当前快照由画布传入，端口不查库（实施补记：指纹版本不符直接判过时，`ctx`、`tx` 随之去掉；同一（场景, 摄像机, 方式）只算一次指纹） |
 
 ## 模块职责与协作
 
@@ -400,6 +400,10 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 - **手动导出先等保存（最多 15 s）**：AC-4，`SceneEditor.tsx:startExport` 调 `whenSaved`。
 - **修了 `parkOnJob` 读任务结果的方式**：原先按渲染结果解码，导出任务的结果会丢失。改为 `creativescene.ResultOf` 按任务类型解码。
 - **`instructions/base.md` 加了 `export_shots` 和「先回看再导出」**：已有测试要求说明里提到每个工具。
+- **代码审计修正**（2026-10-19）：
+  - `look_at` 换算沿父级链往上走时记录走过的物件，成环（自己当父级、两个新增物件互为父级、新增物件复用祖先的 ID）返回 400。原先这一步在场景校验之前，成环会让请求空转并一直占着场景行锁，`worldMatrix` 的递归还会栈溢出。测试：`TestLookAtRefusals` 的三个成环用例。
+  - `Freshness.Check` 按（场景, 摄像机, 方式）缓存指纹：每次重新导出都会多一组同组合的节点。2000 个物件、48 个导出节点时一次读画布约 29 ms、24 MB（基准 `BenchmarkFreshnessCheck`，主要是解码场景），审计时约 120 ms、170 MB。测试：`TestFreshnessFingerprintsEachShotOnce`。
+  - `based_on` 改用 `creativecanvas.SceneExportBasedOn` 结构读写，不再在两个包里手写键名。
 - **新增辅助函数**：`creativecanvas.DocumentNodeInTx`（建任务时找场景节点）、前端 `exportCount`（对话框的张数与上限，放在 `exportShots.ts`，便于 Node 测试引用）。
 - **AC-9 样例场景**：用基础体搭的棚拍布景，没有用助手搭的教堂中殿，以排除模型质量的影响。owner 若要用指定场景，可用同一脚本重新生成。
 - **视口常驻 AO、景深预览改为实时开关**（owner 2026-10-19 验收时修订，proposal 决定 2）：原实现只在导出里加 AO，「预览景深」渲染一帧盖在视口上，于是打开预览才看到 AO，场景一有变化（包括画布推送引起的重读）预览就被撤掉，也没有关闭的办法。改为视口、`render_view`、白模导出共用 `ClayRenderer`，景深预览只切换虚化，见「导出渲染」「相机视图」。`render_view` 不带景深时也有 AO，与视口一致。

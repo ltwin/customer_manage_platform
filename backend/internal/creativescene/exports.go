@@ -187,12 +187,12 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 				UploadID: img.UploadID,
 				Title:    name + " · " + passTitles[img.Pass],
 				Column:   slices.Index(columns, img.Pass),
-				BasedOn: map[string]any{
-					"scene_document_id": in.DocumentID,
-					"scene_revision":    in.SceneRevision,
-					"camera_object_id":  s.CameraObjectID,
-					"pass":              img.Pass,
-					"fingerprint":       fp,
+				BasedOn: creativecanvas.SceneExportBasedOn{
+					SceneDocumentID: in.DocumentID,
+					SceneRevision:   in.SceneRevision,
+					CameraObjectID:  s.CameraObjectID,
+					Pass:            img.Pass,
+					Fingerprint:     fp,
 				},
 			})
 		}
@@ -213,7 +213,7 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 	for i, row := range rows {
 		for j, img := range row.Images {
 			p := placed.Rows[i][j]
-			out.Nodes = append(out.Nodes, ExportNode{CameraObjectID: in.Shots[i].CameraObjectID, Pass: img.BasedOn["pass"].(string), NodeID: p.NodeID, ContentRevisionID: p.ContentRevisionID})
+			out.Nodes = append(out.Nodes, ExportNode{CameraObjectID: in.Shots[i].CameraObjectID, Pass: img.BasedOn.Pass, NodeID: p.NodeID, ContentRevisionID: p.ContentRevisionID})
 		}
 	}
 	return out, nil

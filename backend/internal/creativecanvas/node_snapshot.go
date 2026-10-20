@@ -126,9 +126,7 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 	if err != nil {
 		return err
 	}
-	if err := fillBasedOn(ctx, tx, nodes, sources, documents); err != nil {
-		return err
-	}
+	fillBasedOn(nodes, sources, documents)
 	content, err := creativecontent.ReadDisplayBatch(ctx, tx, revisionIDs)
 	if err != nil {
 		return err

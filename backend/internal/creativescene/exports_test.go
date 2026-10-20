@@ -417,7 +417,7 @@ func TestFingerprintCountsWhatThePassDraws(t *testing.T) {
 }
 
 // The freshness check runs on the snapshots the canvas read already loaded:
-// it never queries (a zero transaction has no connection).
+// it takes no transaction, so it cannot query.
 func TestFreshnessReadsNothing(t *testing.T) {
 	f := setup(t)
 	sc := newSceneCanvas(t, f.a)
@@ -440,9 +440,9 @@ func TestFreshnessReadsNothing(t *testing.T) {
 	src := creativecanvas.ExportSource{NodeID: n.ID, DocumentID: sc.doc, CameraObjectID: cam, Pass: "clay", Fingerprint: b["fingerprint"].(string)}
 	old := src
 	old.NodeID, old.Fingerprint = "old", "v0:abc"
-	states, err := creativescene.Freshness{}.Check(t.Context(), store.ReadTxAccountScope{}, []creativecanvas.ExportSource{src, old}, map[string]creativecontent.Revision{sc.doc: cur.Content})
-	if err != nil || states[n.ID] != "current" || states["old"] != "stale" {
-		t.Fatalf("states %v %v", states, err)
+	states := creativescene.Freshness{}.Check([]creativecanvas.ExportSource{src, old}, map[string]creativecontent.Revision{sc.doc: cur.Content})
+	if states[n.ID] != "current" || states["old"] != "stale" {
+		t.Fatalf("states %v", states)
 	}
 }
 

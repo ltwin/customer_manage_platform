@@ -10,6 +10,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -38,7 +39,22 @@ type SceneExportImage struct {
 	UploadID string
 	Title    string
 	Column   int
-	BasedOn  map[string]any
+	BasedOn  SceneExportBasedOn
+}
+
+// SceneExportBasedOn is where an export image came from, kept in its node's
+// config under based_on. The scene package fills it in and this package
+// reads it back; both go through this type, so a renamed key cannot leave
+// the reader silently finding nothing.
+type SceneExportBasedOn struct {
+	SceneDocumentID string               `json:"scene_document_id"`
+	SceneRevision   creativeops.Revision `json:"scene_revision"`
+	CameraObjectID  string               `json:"camera_object_id"`
+	Pass            string               `json:"pass"`
+	Fingerprint     string               `json:"fingerprint"`
+	// ContentRevisionID is the exported image; placement sets it. Once the
+	// node's content is something else, the based_on no longer applies.
+	ContentRevisionID string `json:"content_revision_id"`
 }
 
 // SceneExportRow is one camera: its images and frame aspect (width / height).
@@ -107,11 +123,8 @@ func PlaceSceneExportsInTx(ctx context.Context, tx store.TxAccountScope, in Scen
 	for i, row := range in.Rows {
 		for _, img := range row.Images {
 			id := "cwnode_" + uuid.NewString()
-			basedOn := make(map[string]any, len(img.BasedOn)+1)
-			for k, v := range img.BasedOn {
-				basedOn[k] = v
-			}
-			basedOn["content_revision_id"] = revisions[img.UploadID]
+			basedOn := img.BasedOn
+			basedOn.ContentRevisionID = revisions[img.UploadID]
 			actions = append(actions,
 				Action{Type: "add_node", NodeID: id, TypeKey: exportImageTypeKey, Title: img.Title, ParentID: scene.ParentID,
 					X: x + float64(img.Column)*(exportCellWidth+exportGap), Y: rowY, Config: map[string]any{exportBasedOnKey: basedOn}},
@@ -185,7 +198,6 @@ func sameParent(a, b *string) bool {
 type ExportSource struct {
 	NodeID         string
 	DocumentID     string
-	SceneRevision  string
 	CameraObjectID string
 	Pass           string
 	Fingerprint    string
@@ -194,10 +206,10 @@ type ExportSource struct {
 // ExportFreshness tells whether export images still match their scene. The
 // scene package implements it; cmd/server registers it at start-up so this
 // package never imports the scene package. current holds the current
-// snapshot of every usable source document. Check returns current or stale
-// for each node.
+// snapshot of every usable source document; Check reads nothing else.
+// Check returns current or stale for each node.
 type ExportFreshness interface {
-	Check(ctx context.Context, tx store.ReadTxAccountScope, sources []ExportSource, current map[string]creativecontent.Revision) (map[string]string, error)
+	Check(sources []ExportSource, current map[string]creativecontent.Revision) map[string]string
 }
 
 var exportFreshness ExportFreshness
@@ -218,27 +230,20 @@ func exportSource(n Node) (ExportSource, bool) {
 		return ExportSource{}, false
 	}
 	var cfg struct {
-		BasedOn *struct {
-			SceneDocumentID   string `json:"scene_document_id"`
-			SceneRevision     string `json:"scene_revision"`
-			CameraObjectID    string `json:"camera_object_id"`
-			Pass              string `json:"pass"`
-			ContentRevisionID string `json:"content_revision_id"`
-			Fingerprint       string `json:"fingerprint"`
-		} `json:"based_on"`
+		BasedOn *SceneExportBasedOn `json:"based_on"`
 	}
 	if json.Unmarshal(n.Config, &cfg) != nil || cfg.BasedOn == nil || cfg.BasedOn.ContentRevisionID != *n.ContentRevisionID || cfg.BasedOn.SceneDocumentID == "" {
 		return ExportSource{}, false
 	}
 	b := cfg.BasedOn
-	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, SceneRevision: b.SceneRevision, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint}, true
+	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint}, true
 }
 
 // fillBasedOn sets BasedOnState on export image nodes. documents already
 // holds every source document (fillNodeViews reads them with the others).
-func fillBasedOn(ctx context.Context, tx store.ReadTxAccountScope, nodes map[string]*Node, sources []ExportSource, documents map[string]creativedocument.NodeSummary) error {
+func fillBasedOn(nodes map[string]*Node, sources []ExportSource, documents map[string]creativedocument.NodeSummary) {
 	if len(sources) == 0 || exportFreshness == nil {
-		return nil
+		return
 	}
 	current := map[string]creativecontent.Revision{}
 	var usable []ExportSource
@@ -252,16 +257,12 @@ func fillBasedOn(ctx context.Context, tx store.ReadTxAccountScope, nodes map[str
 		usable = append(usable, s)
 	}
 	if len(usable) == 0 {
-		return nil
+		return
 	}
-	states, err := exportFreshness.Check(ctx, tx, usable, current)
-	if err != nil {
-		return err
-	}
+	states := exportFreshness.Check(usable, current)
 	for _, s := range usable {
 		nodes[s.NodeID].BasedOnState = states[s.NodeID]
 	}
-	return nil
 }
 
 // DocumentNodeInTx is the node on the canvas holding the document, the

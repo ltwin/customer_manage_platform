@@ -1,7 +1,6 @@
 package creativescene
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
-	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 // An export image is stale once the scene changes in a way that would render
@@ -85,26 +83,38 @@ type Freshness struct{}
 
 var _ creativecanvas.ExportFreshness = Freshness{}
 
-// Check decodes each source scene once. A fingerprint of another version can
-// only come from a future projection; until one exists it reads as stale.
-func (Freshness) Check(_ context.Context, _ store.ReadTxAccountScope, sources []creativecanvas.ExportSource, current map[string]creativecontent.Revision) (map[string]string, error) {
+// Check decodes each source scene once and fingerprints each (scene,
+// camera, pass) once: every re-export adds nodes that share them. A
+// fingerprint of another version can only come from a future projection;
+// until one exists it reads as stale.
+func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string]creativecontent.Revision) map[string]string {
+	type shot struct{ doc, camera, pass string }
 	scenes := map[string]*Scene{}
+	prints := map[shot]string{}
 	out := make(map[string]string, len(sources))
 	for _, src := range sources {
-		s, ok := scenes[src.DocumentID]
-		if !ok {
-			if decoded, err := decodeScene(current[src.DocumentID].Payload); err == nil {
-				s = &decoded
-			}
-			scenes[src.DocumentID] = s
-		}
 		out[src.NodeID] = creativecanvas.BasedOnStale
-		if s == nil || !strings.HasPrefix(src.Fingerprint, fingerprintVersion+":") {
+		if !strings.HasPrefix(src.Fingerprint, fingerprintVersion+":") {
 			continue
 		}
-		if fp, ok := Fingerprint(*s, src.CameraObjectID, src.Pass); ok && fp == src.Fingerprint {
+		key := shot{src.DocumentID, src.CameraObjectID, src.Pass}
+		fp, ok := prints[key]
+		if !ok {
+			s, decoded := scenes[src.DocumentID]
+			if !decoded {
+				if d, err := decodeScene(current[src.DocumentID].Payload); err == nil {
+					s = &d
+				}
+				scenes[src.DocumentID] = s
+			}
+			if s != nil {
+				fp, _ = Fingerprint(*s, src.CameraObjectID, src.Pass)
+			}
+			prints[key] = fp
+		}
+		if fp != "" && fp == src.Fingerprint {
 			out[src.NodeID] = creativecanvas.BasedOnCurrent
 		}
 	}
-	return out, nil
+	return out
 }
