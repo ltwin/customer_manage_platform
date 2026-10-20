@@ -33,8 +33,9 @@ func (e *ImagePreviewLimitError) Error() string {
 
 func (e *ImagePreviewLimitError) Unwrap() error { return ErrSizeLimit }
 
-// AgentImage binds the display rendition of an immutable revision. The caller
-// checks egress consent; this port checks account ownership and display rights.
+// AgentImage binds the display rendition of an immutable revision, or a model's
+// thumbnail. The caller checks egress consent; this port checks account
+// ownership and display rights.
 // Media larger than maxBytes is sent as a downscaled JPEG preview. The usual media reader pins the exact object version.
 func (s *Service) AgentImage(ctx context.Context, scope store.AccountScope, revisionID string, maxBytes int64) (*llmgateway.ImageInput, error) {
 	var media creativecontent.MediaObject
@@ -47,17 +48,26 @@ func (s *Service) AgentImage(ctx context.Context, scope store.AccountScope, revi
 		if err != nil {
 			return err
 		}
-		if rev.Kind != "image" {
+		switch rev.Kind {
+		case "image":
+			for _, candidate := range rev.Media {
+				if candidate.Role == "display" {
+					media = candidate
+					break
+				}
+				if candidate.Role == "original" {
+					media = candidate
+				}
+			}
+		case "model":
+			// A model is seen through its PNG thumbnail, never its GLB.
+			for _, candidate := range rev.Media {
+				if candidate.Role == "thumbnail" {
+					media = candidate
+				}
+			}
+		default:
 			return llmgateway.ErrCapability
-		}
-		for _, candidate := range rev.Media {
-			if candidate.Role == "display" {
-				media = candidate
-				break
-			}
-			if candidate.Role == "original" {
-				media = candidate
-			}
 		}
 		if media.BlobID == "" {
 			return creativecontent.ErrNotFound

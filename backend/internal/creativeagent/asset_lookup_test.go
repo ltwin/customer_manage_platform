@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -596,5 +600,209 @@ func TestSearchTaggedImageReturnsGroupNames(t *testing.T) {
 				t.Fatalf("unexpected groups: %s", result)
 			}
 		})
+	}
+}
+
+// modelAsset files a complete model into the library, as a save from a scene
+// does: the GLB, its thumbnail and the generator it was baked with.
+func (f *fixture) modelAsset() (assetID, revisionID string) {
+	f.t.Helper()
+	glb, thumb := "ccbl_"+uuid.NewString(), "ccbl_"+uuid.NewString()
+	if _, err := f.db.Exec(`INSERT INTO creative_blobs(id,account_id,storage_driver,object_key,object_version,sha256,byte_size,mime,state,verified_at) VALUES
+ ($1,$3,'local','blobs/'||$1,'v1','sha256-'||repeat('1',64),100,'model/gltf-binary','ready',clock_timestamp()),
+ ($2,$3,'local','blobs/'||$2,'v1','sha256-'||repeat('2',64),50,'image/png','ready',clock_timestamp())`, glb, thumb, f.alice.AccountID()); err != nil {
+		f.t.Fatal(err)
+	}
+	var generator map[string]any
+	if err := json.Unmarshal(testPillarModule, &generator); err != nil {
+		f.t.Fatal(err)
+	}
+	generator["language"], generator["contract_version"], generator["lib_version"], generator["code"], generator["code_sha256"] = "three-module", 1, 1, testPillarCode, "sha256-"+strings.Repeat("c", 64)
+	payload, err := json.Marshal(map[string]any{"format": "glb", "manifest": testManifest(f.t), "generator": generator, "name_hint": "哥特束柱"})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	err = f.alice.WithTxScope(f.t.Context(), func(tx store.TxAccountScope) error {
+		r, err := creativecontent.WriteModelAndRetain(f.t.Context(), tx, creativecontent.Draft{Kind: "model", Payload: creativecontent.Payload{Model: payload}}, "",
+			[]creativecontent.ObjectBinding{{Role: "original", BlobID: glb}, {Role: "thumbnail", BlobID: thumb}},
+			func(r creativecontent.Revision) error {
+				saved, err := creativelibrary.SaveRevisionInTx(f.t.Context(), tx, r, creativelibrary.ImportTarget{Title: "哥特束柱"})
+				assetID = saved.ID
+				return err
+			})
+		revisionID = r.ID
+		return err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return assetID, revisionID
+}
+
+// The assistant finds a model by kind with enough to choose it, reads its
+// facts and thumbnail, and places two instances of the same revision.
+func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
+	f, c, _, doc := visualScene(t, true)
+	consent := libraryConsent(t, f, c.ID)
+	assetID, rev := f.modelAsset()
+	instance := func(n int) map[string]any {
+		return map[string]any{"id": fmt.Sprintf("sobj_L%020d", n), "kind": "model_instance", "name": "束柱", "parent_id": nil, "order": n,
+			"transform": identityAt(float64(n)), "visible": true, "locked": false, "model": map[string]any{"content_revision_id": rev}}
+	}
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, call("search", 0, searchAssetsTool, `{"kind":"model","limit":20}`))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, call("read", 0, readAssetTool, fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, rev)))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("place", editSceneTool, map[string]any{"document_id": doc, "based_on_revision": 1,
+				"operations": []any{map[string]any{"op": "add_objects", "objects": []any{instance(1), instance(2)}}}}))
+		},
+	}}
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "把哥特束柱放到门两边"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+
+	var page struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	found := toolResult(s.request(2), 0)
+	if err := json.Unmarshal([]byte(found), &page); err != nil || len(page.Items) != 1 {
+		t.Fatalf("search %s %v", found, err)
+	}
+	item := page.Items[0]
+	var brief map[string]any
+	if err := json.Unmarshal(item["model"], &brief); err != nil {
+		t.Fatalf("search item has no model brief: %s", found)
+	}
+	if string(item["asset_id"]) != strconv.Quote(assetID) || string(item["content_revision_id"]) != strconv.Quote(rev) || item["width"] != nil || item["height"] != nil {
+		t.Fatalf("search item %s", found)
+	}
+	if brief["name"] != "哥特束柱" || brief["mount"] != "floor" || brief["size_m"] == nil || brief["triangles"] == nil || brief["slots"] == nil || brief["parts"] != nil || brief["anchors"] != nil ||
+		fmt.Sprint(brief["params"]) != "[height]" || strings.Contains(found, "export const params") {
+		t.Fatalf("model brief %s", item["model"])
+	}
+
+	var read struct {
+		Model            creativecontent.ModelFacts `json:"model"`
+		ImageRevisionID  string                     `json:"image_revision_id"`
+		ThumbnailOmitted string                     `json:"thumbnail_omitted"`
+	}
+	result := toolResult(s.request(3), 0)
+	if err := json.Unmarshal([]byte(result), &read); err != nil || read.ImageRevisionID != rev || read.ThumbnailOmitted != "" || strings.Contains(result, "export const params") {
+		t.Fatalf("read_asset %s %v", result, err)
+	}
+	if len(read.Model.ParamsSchema) != 1 || read.Model.Params["height"] != 2.0 || read.Model.Name != "哥特束柱" {
+		t.Fatalf("model facts %s", result)
+	}
+	if ok, _ := hasImage(s.request(3)); !ok {
+		t.Fatal("thumbnail not sent with the read")
+	}
+	var baked creativescene.BakedModel
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		var err error
+		baked, err = creativescene.BakedModelInTx(t.Context(), tx, rev)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if baked.SizeM != read.Model.SizeM || baked.Triangles != read.Model.Triangles || !reflect.DeepEqual(baked.Slots, read.Model.Slots) ||
+		!reflect.DeepEqual(baked.Parts, read.Model.Parts) || !reflect.DeepEqual(baked.Anchors, read.Model.Anchors) {
+		t.Fatalf("read_asset %+v and write_model %+v disagree", read.Model, baked)
+	}
+
+	placed := 0
+	for _, o := range f.objectsOf(doc) {
+		if o.Kind == creativescene.KindModelInstance && o.Model != nil && o.Model.ContentRevisionID == rev {
+			placed++
+		}
+	}
+	if placed != 2 {
+		t.Fatalf("placed %d instances of the library model: %+v", placed, f.objectsOf(doc))
+	}
+}
+
+// Without a thumbnail the facts still come, with the reason; without media
+// metadata the read is refused.
+func TestReadingAModelWithoutItsThumbnail(t *testing.T) {
+	grant := func(t *testing.T, f *fixture, c string, classes ...string) Consent {
+		t.Helper()
+		receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c, "purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": classes}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var consent Consent
+		if err := json.Unmarshal(receipt.Outcome.Response, &consent); err != nil {
+			t.Fatal(err)
+		}
+		return consent
+	}
+	read := func(t *testing.T, h *runtimeHandler, rev string) map[string]any {
+		t.Helper()
+		out, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, rev))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result map[string]any
+		if err := json.Unmarshal([]byte(out), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	t.Run("model cannot see images", func(t *testing.T) {
+		f := setup(t)
+		f.queue()
+		_, rev := f.modelAsset()
+		c := f.conversation(f.alice, f.canvasID)
+		got := read(t, lookupHandler(t, f, c.ID, libraryConsent(t, f, c.ID)), rev)
+		if got["thumbnail_omitted"] != "model_cannot_see_images" || got["image_revision_id"] != nil || got["model"] == nil {
+			t.Fatalf("read %v", got)
+		}
+	})
+	t.Run("image preview not allowed", func(t *testing.T) {
+		f, c, _, _ := visualScene(t, true)
+		_, rev := f.modelAsset()
+		got := read(t, lookupHandler(t, f, c.ID, grant(t, f, c.ID, "text", "canvas_metadata", "media_metadata")), rev)
+		if got["thumbnail_omitted"] != "image_preview_not_allowed" || got["image_revision_id"] != nil || got["model"] == nil {
+			t.Fatalf("read %v", got)
+		}
+	})
+	t.Run("no media metadata", func(t *testing.T) {
+		f, c, _, _ := visualScene(t, true)
+		_, rev := f.modelAsset()
+		h := lookupHandler(t, f, c.ID, grant(t, f, c.ID, "text", "image_preview", "canvas_metadata"))
+		if _, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, rev)); !errors.Is(err, ErrEgressRequired) {
+			t.Fatalf("read without media metadata: %v", err)
+		}
+	})
+}
+
+func TestToolsSayHowToFindAndPlaceModels(t *testing.T) {
+	search := assetToolInfo(searchAssetsTool)
+	js, err := search.ToJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(js.Properties.Value("kind"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"model"`) || strings.Contains(string(raw), `"scene"`) || !strings.Contains(search.Desc, "read_asset") || !strings.Contains(search.Desc, "edit_scene") {
+		t.Fatalf("search_assets %s / %s", search.Desc, raw)
+	}
+	edit, err := (&sceneTool{name: editSceneTool}).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(edit.Desc, "kind:model") || !strings.Contains(edit.Desc, "model{content_revision_id}，可放多个实例") {
+		t.Fatal("edit_scene does not say how to place a library model")
 	}
 }

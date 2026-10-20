@@ -76,34 +76,95 @@ func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope,
 	if !approved {
 		return schema.UserMessage(referenceLabel(id) + "（本轮未授权读取，只有引用标识）"), false, nil
 	}
+	ref, err := s.readReference(ctx, tx, id, consent, imageCapable)
+	if err != nil {
+		return nil, false, err
+	}
+	message, err := referenceMessage(id, ref)
+	return message, err == nil, err
+}
+
+// referenceMessage writes what a reference gives into a user message: a text
+// body quoted, a model's facts as JSON, an image to bind later.
+func referenceMessage(id string, ref reference) (*schema.Message, error) {
+	message := schema.UserMessage(referenceLabel(id))
+	switch {
+	case ref.model != nil:
+		facts, err := json.Marshal(modelReference{Model: ref.model, ThumbnailOmitted: ref.thumbnailOmitted})
+		if err != nil {
+			return nil, err
+		}
+		message.Content += "\n" + string(facts)
+	case ref.body != nil:
+		message.Content += "\n" + quotedContentOpen + "\n" + *ref.body + "\n" + quotedContentClose
+	}
+	if ref.image != "" {
+		message.Extra = map[string]any{imageRefsKey: ref.image}
+	}
+	return message, nil
+}
+
+// reference is what an approved revision gives the model: text, an image to
+// bind, or a model's facts with its thumbnail when the model may see it.
+type reference struct {
+	body             *string
+	image            string
+	model            *creativecontent.ModelFacts
+	thumbnailOmitted string
+}
+
+// modelReference is a model's facts as written into the conversation.
+type modelReference struct {
+	Model            *creativecontent.ModelFacts `json:"model"`
+	ThumbnailOmitted string                      `json:"thumbnail_omitted,omitempty"`
+}
+
+// readReference reads an approved revision under the consent's data classes.
+func (s *Service) readReference(ctx context.Context, tx store.TxAccountScope, id string, consent Consent, imageCapable bool) (reference, error) {
 	rev, err := creativecontent.RequireUsable(ctx, tx, id, "display")
 	if err != nil {
-		return nil, false, translateContent(err)
+		return reference{}, translateContent(err)
 	}
-	message := schema.UserMessage(referenceLabel(id))
 	switch rev.Kind {
 	case "text":
 		if !consentHas(consent, "text") {
-			return nil, false, ErrEgressRequired
+			return reference{}, ErrEgressRequired
 		}
-		if rev.Payload.Body != nil {
-			message.Content += "\n" + quotedContentOpen + "\n" + *rev.Payload.Body + "\n" + quotedContentClose
-		}
+		return reference{body: rev.Payload.Body}, nil
 	case "image":
 		// Capability first: a model that cannot see images never asks for
 		// image egress, and saying "not authorised" would send the
 		// photographer looking for a permission that does not exist.
 		if !imageCapable || s.images == nil {
-			return nil, false, ErrModelCapability
+			return reference{}, ErrModelCapability
 		}
 		if !consentHas(consent, "image_preview") {
-			return nil, false, ErrEgressRequired
+			return reference{}, ErrEgressRequired
 		}
-		message.Extra = map[string]any{imageRefsKey: id}
+		return reference{image: id}, nil
+	case "model":
+		if !consentHas(consent, "media_metadata") {
+			return reference{}, ErrEgressRequired
+		}
+		facts, ok := creativecontent.ModelFactsOf(rev.Payload)
+		if !ok {
+			return reference{}, ErrUnsupportedSegment
+		}
+		// Size and parameters are useful on their own, so a missing thumbnail
+		// is said, never refused.
+		ref := reference{model: &facts}
+		switch {
+		case !imageCapable || s.images == nil:
+			ref.thumbnailOmitted = "model_cannot_see_images"
+		case !consentHas(consent, "image_preview"):
+			ref.thumbnailOmitted = "image_preview_not_allowed"
+		default:
+			ref.image = id
+		}
+		return ref, nil
 	default:
-		return nil, false, ErrUnsupportedSegment
+		return reference{}, ErrUnsupportedSegment
 	}
-	return message, true, nil
 }
 
 func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Message, messages []llmgateway.Message) ([]llmgateway.Message, error) {
@@ -411,14 +472,28 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 		if !readable {
 			return errReadRefused
 		}
-		message, _, err := h.service.resolveReference(ctx, tx, h.held.RunID, args.RevisionID, c, h.held.Model.Capability.ImageInput)
+		ref, err := h.service.readReference(ctx, tx, args.RevisionID, c, h.held.Model.Capability.ImageInput)
 		if err != nil {
 			return err
 		}
 		result = map[string]any{"reference": referenceLabel(args.RevisionID), "content_revision_id": args.RevisionID}
-		if image, _ := message.Extra[imageRefsKey].(string); image != "" {
-			result["image_revision_id"] = image
+		if ref.image != "" {
+			result["image_revision_id"] = ref.image
+		}
+		// A model's facts come whole, with its thumbnail; they fit one result.
+		if ref.model != nil {
+			result["model"] = ref.model
+			if ref.thumbnailOmitted != "" {
+				result["thumbnail_omitted"] = ref.thumbnailOmitted
+			}
 			return nil
+		}
+		if ref.image != "" {
+			return nil
+		}
+		message, err := referenceMessage(args.RevisionID, ref)
+		if err != nil {
+			return err
 		}
 		if args.Offset > len(message.Content) {
 			return creativeops.ErrValidation
@@ -589,7 +664,7 @@ func contextToolInfo(name string) *schema.ToolInfo {
 	desc := ""
 	switch name {
 	case readAssetTool:
-		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。"
+		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因。不返回生成代码。"
 		params["content_revision_id"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "内容修订 ID"}
 		params["offset"] = integer("文字起始字节，初次读取填 0")
 		params["limit"] = integer("文字最多字节数，1 到 8192；图片也填写此参数")

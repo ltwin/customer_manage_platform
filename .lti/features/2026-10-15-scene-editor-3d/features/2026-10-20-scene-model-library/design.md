@@ -336,6 +336,9 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
   - 模型资产的库测试放在新文件 `creativelibrary/model_asset_test.go`，不塞进 `asset_library_test.go`；画布拒绝模型的测试在 `creativecanvas/graph_test.go`（tasks 1.3 已写明）。
   - 迁移标签列表另有两处带编号的写法：`creative_graph_migration_test.go`、`creative_library_migration_test.go`。
   - 生成物还包括 `httpapi/api.gen.go` 与 `creativecanvas/tool_schemas.gen.go`（`read_canvas` 的输出 schema 引用了内容修订载荷）。
+  - Go 里类型和函数不能同名，`ModelFacts(p)` 落为 `creativecontent.ModelFactsOf(p)`，类型仍叫 `ModelFacts`，要点类型为 `ModelBrief`。
+  - `creativeagent/context.go` 把 `resolveReference` 拆成 `readReference`（按同意和能力读出文字、图片或模型信息）与 `referenceMessage`（写成消息）；`readAsset` 直接用 `readReference` 的结构化结果，不从消息正文里解析模型信息。
+  - `AgentImage` 交出模型缩略图的测试放在 `creativemedia/agent_test.go`：助手包的测试用的是假的图片读取器，验证不了真实字节。
   - 1.2 生成新的 `kind` 枚举后，前端类型要求画布放置先排除模型；`assetPlacement.ts` 加 `CanvasAsset` 类型守卫，`assets/placement.ts` 遇到模型抛「模型只能放进 3D 场景」，`WorkspacePage` 的 `addAssets`、`pickReferences` 先过滤。2.2 在此基础上补齐提示与其余入口。
 - **后续**：
   - 参考点设置与快捷轮盘（C8）；

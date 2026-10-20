@@ -3,6 +3,7 @@ package creativemedia_test
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -10,8 +11,11 @@ import (
 	"io"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 func TestAgentImageReadsAuthorizedImmutableBytes(t *testing.T) {
@@ -134,5 +138,61 @@ func TestMessageReferenceKeepsStagedImageAfterExpiry(t *testing.T) {
 	}
 	if report.UnheldRevisions != 1 {
 		t.Fatalf("unreferenced expired image retained: %+v", report)
+	}
+}
+
+// A model is seen through its PNG thumbnail; its GLB (here a blob with no
+// bytes behind it) is never opened.
+func TestAgentImageOfAModelIsItsThumbnail(t *testing.T) {
+	f := setup(t)
+	view := f.uploadFile(t, f.a, "缩略图.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "缩略图"}})
+	picture, err := creativelibrary.GetAsset(t.Context(), f.a, view.Publication.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thumb := picture.Content.Media[0]
+	if _, err := f.db.Exec(`INSERT INTO creative_blobs(id,account_id,storage_driver,object_key,object_version,sha256,byte_size,mime,state,verified_at)
+ VALUES('ccbl_glb','media-a','local','creative-v2/media-a/blobs/missing','v1','sha256-'||repeat('1',64),100,'model/gltf-binary','ready',clock_timestamp())`); err != nil {
+		t.Fatal(err)
+	}
+	var model creativecontent.Revision
+	err = f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		d := creativecontent.Draft{Kind: "model", Payload: creativecontent.Payload{Model: []byte(`{"format":"glb","manifest":{},"generator":{"code":"x"}}`)}}
+		var err error
+		model, err = creativecontent.WriteModelAndRetain(t.Context(), tx, d, "", []creativecontent.ObjectBinding{{Role: "original", BlobID: "ccbl_glb"}, {Role: "thumbnail", BlobID: thumb.BlobID}},
+			func(r creativecontent.Revision) error {
+				_, err := creativelibrary.SaveRevisionInTx(t.Context(), tx, r, creativelibrary.ImportTarget{Title: "柱"})
+				return err
+			})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := f.svc.AgentImage(t.Context(), f.a, model.ID, 2<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image.MIME != "image/png" || image.ByteSize != thumb.ByteSize {
+		t.Fatalf("model image %+v", image)
+	}
+	reader, err := image.Open(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil || fmt.Sprintf("sha256-%x", sha256.Sum256(data)) != image.Digest {
+		t.Fatalf("thumbnail bytes: %v", err)
+	}
+	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+		t.Fatalf("thumbnail is not a PNG: %v", err)
+	}
+
+	// Other kinds still have no image to give.
+	body := "文字"
+	text := must[creativelibrary.AssetResult](t)(creativelibrary.CreateAsset(t.Context(), f.a, command(t, creativelibrary.CreateAssetInput{Title: "文字", Content: creativecontent.Draft{Kind: "text", Payload: creativecontent.Payload{Body: &body}, Rights: rights()}})))
+	if _, err := f.svc.AgentImage(t.Context(), f.a, text.ContentRevisionID, 2<<20); !errors.Is(err, llmgateway.ErrCapability) {
+		t.Fatalf("text image: %v", err)
 	}
 }
