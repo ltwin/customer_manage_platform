@@ -432,6 +432,10 @@ func transcriptLine(role string, body Body) string {
 			b.WriteString(text)
 		case "content_ref":
 			b.WriteString(referenceLabel(block.RefID))
+		case "scene_selection":
+			if block.Scene != nil {
+				b.WriteString(block.Scene.historyLine())
+			}
 		}
 	}
 	for _, call := range body.ToolCalls {

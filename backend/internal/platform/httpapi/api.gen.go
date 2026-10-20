@@ -4749,14 +4749,14 @@ type CreativeAgentMessageBlock struct {
 	Skill *CreativeAgentMessageSkill `json:"skill,omitempty"`
 	Text  *string                    `json:"text,omitempty"`
 
-	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照），只用于展示，不进入之后运行的历史。
+	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。
 	Type CreativeAgentMessageBlockType `json:"type"`
 }
 
 // CreativeAgentMessageBlockCommand command 块的命令名
 type CreativeAgentMessageBlockCommand string
 
-// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照），只用于展示，不进入之后运行的历史。
+// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。
 type CreativeAgentMessageBlockType string
 
 // CreativeAgentMessageBody defines model for CreativeAgentMessageBody.

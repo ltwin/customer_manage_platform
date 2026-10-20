@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -83,8 +85,8 @@ type Block struct {
 	// frozen version this message showed — and a half-filled one means nothing.
 	Skill *BlockSkill `json:"skill,omitempty"`
 	// Scene is what a scene_selection block froze: the objects selected in the
-	// scene editor when the message was sent. It is shown, never sent to the
-	// model — the run was told the selection in its own input.
+	// scene editor when the message was sent. Its own run was told the
+	// selection in its inputs; later runs hear it as a line of history.
 	Scene *BlockScene `json:"scene,omitempty"`
 }
 
@@ -99,6 +101,20 @@ type BlockScene struct {
 type BlockSceneObject struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// historyLine words the selection for a later run reading this message, so
+// "this" in an earlier turn still names something.
+func (s *BlockScene) historyLine() string {
+	names := make([]string, 0, len(s.Objects))
+	for _, o := range s.Objects {
+		if o.Name != "" {
+			names = append(names, fmt.Sprintf("「%s」(%s)", o.Name, o.ID))
+		} else {
+			names = append(names, o.ID)
+		}
+	}
+	return fmt.Sprintf("[发送这条消息时，创作者在场景「%s」(%s)里选中了：%s]", s.Title, s.DocumentID, strings.Join(names, "、"))
 }
 
 // BlockSkill is what a message froze about a skill: the identity to resolve it
@@ -286,8 +302,8 @@ func validBody(b Body, limits Limits) error {
 }
 
 // validBlockScene bounds a selection by its shape rather than the byte budget:
-// it is never sent to the model, so charging it would only refuse a long
-// message for having been asked about many objects.
+// charging it would refuse a long message for having been asked about many
+// objects. What it costs as history is charged there, by itemBytes.
 func validBlockScene(s *BlockScene) bool {
 	if s == nil || s.DocumentID == "" || len(s.Objects) == 0 || len(s.Objects) > maxSceneSelection ||
 		!utf8.ValidString(s.Title) || utf8.RuneCountInString(s.Title) > maxSceneTitleRunes {

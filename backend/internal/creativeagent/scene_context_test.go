@@ -256,6 +256,14 @@ func TestTheMessageShowsTheSelectionItAskedAbout(t *testing.T) {
 	if blocks := trigger(next.ID).Blocks; len(blocks) != 1 || blocks[0].Type != "text" {
 		t.Fatalf("message without selection %+v", blocks)
 	}
+	// The next run hears the earlier selection as part of that message, once.
+	if err := f.work(f.alice, next.ID); err != nil {
+		t.Fatal(err)
+	}
+	line := "[发送这条消息时，创作者在场景「中殿」(" + doc + ")里选中了：「柱 A」(" + pillar + ")、" + plain + "]"
+	if sent := f.vendor.sentText(f.vendor.calls() - 1); strings.Count(sent, line) != 1 {
+		t.Fatalf("history lacks the selection once:\n%s", sent)
+	}
 }
 
 func TestARunFromTheCanvasIsToldNothingAboutScenes(t *testing.T) {

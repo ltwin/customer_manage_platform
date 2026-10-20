@@ -99,7 +99,19 @@ func isCommand(b Body) bool {
 }
 
 func itemBytes(item historyItem) int {
-	return bodyBytes(item.Body) + len(item.Reasoning) + perMessageOverhead
+	return bodyBytes(item.Body) + sceneLineBytes(item.Body) + len(item.Reasoning) + perMessageOverhead
+}
+
+// sceneLineBytes is what a message's selection adds to the history line it
+// becomes, which bodyBytes leaves out.
+func sceneLineBytes(b Body) int {
+	total := 0
+	for _, block := range b.Blocks {
+		if block.Type == "scene_selection" && block.Scene != nil {
+			total += len(block.Scene.historyLine())
+		}
+	}
+	return total
 }
 
 // projectionQuery asks what one run would carry as history.
@@ -728,6 +740,9 @@ func bodyMessage(body Body, role string) *schema.Message {
 		}
 		if b.Type == "content_ref" && role != "tool" {
 			parts = append(parts, referenceLabel(b.RefID))
+		}
+		if b.Type == "scene_selection" && b.Scene != nil {
+			parts = append(parts, b.Scene.historyLine())
 		}
 	}
 	m.Content = strings.Join(parts, "\n")
