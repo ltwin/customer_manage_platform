@@ -587,8 +587,10 @@ func Read(ctx context.Context, scope store.AccountScope, id string) (Revision, e
 }
 
 // Preview limits inline text while retaining the exact revision identity.
-// Editors must read that revision before replacing a truncated body.
+// Editors must read that revision before replacing a truncated body. Model code
+// is left out entirely; the content revision read is the only way to get it.
 func Preview(r Revision) Revision {
+	r = WithoutModelCode(r)
 	if r.Payload.Body != nil {
 		runes := []rune(*r.Payload.Body)
 		if len(runes) > 2000 {
@@ -597,5 +599,36 @@ func Preview(r Revision) Revision {
 			r.Truncated = true
 		}
 	}
+	return r
+}
+
+// WithoutModelCode drops generator.code from a complete model payload; every
+// other field and every other kind is returned unchanged. Truncated stays as it
+// was: the code is not cut short, these reads just do not offer it.
+func WithoutModelCode(r Revision) Revision {
+	if r.Kind != "model" || len(r.Payload.Model) == 0 {
+		return r
+	}
+	var model map[string]json.RawMessage
+	if json.Unmarshal(r.Payload.Model, &model) != nil || len(model["generator"]) == 0 {
+		return r
+	}
+	var generator map[string]json.RawMessage
+	if json.Unmarshal(model["generator"], &generator) != nil {
+		return r
+	}
+	if _, ok := generator["code"]; !ok {
+		return r
+	}
+	delete(generator, "code")
+	raw, err := json.Marshal(generator)
+	if err != nil {
+		return r
+	}
+	model["generator"] = raw
+	if raw, err = json.Marshal(model); err != nil {
+		return r
+	}
+	r.Payload.Model = raw
 	return r
 }

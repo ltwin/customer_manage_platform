@@ -30,7 +30,7 @@ import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
-import { assetActions } from './assetPlacement.ts'
+import { assetActions, isCanvasAsset } from './assetPlacement.ts'
 import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
 import { useAgentRuns } from './agentRuns.ts'
 import { isActiveRun } from './agentState.ts'
@@ -824,7 +824,9 @@ function Workspace({ account }: { account: string }) {
   // a horizontal row centred on the drop point (or the visible centre).
   function addAssets(dropped: api.Asset[], x?: number, y?: number) {
     if (!view || !editable) return
-    const usable = dropped.filter((a) => !a.unavailable)
+    const usable = dropped
+      .filter((a) => !a.unavailable)
+      .filter(isCanvasAsset)
     if (!usable.length) return
     const at =
       x === undefined || y === undefined
@@ -882,7 +884,8 @@ function Workspace({ account }: { account: string }) {
     )
   }
   // 为节点选参考：素材竖排在目标左侧并连线；左边已有节点就继续往左让。
-  function pickReferences(targetID: string, picked: api.Asset[]) {
+  function pickReferences(targetID: string, list: api.Asset[]) {
+    const picked = list.filter(isCanvasAsset)
     const target = view?.nodes.find((n) => n.id === targetID)
     if (!view || !target || !queue || !editable || !picked.length) return
     const heights = picked.map((a) => {

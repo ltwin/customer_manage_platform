@@ -1,15 +1,25 @@
 import type { components } from '../../api/schema'
 import type { Asset, CanvasNode } from '../editor/api.ts'
-import { assetActions, assetGap, assetWidth } from '../editor/assetPlacement.ts'
+import {
+  assetActions,
+  assetGap,
+  assetWidth,
+  type CanvasAsset,
+  isCanvasAsset,
+} from '../editor/assetPlacement.ts'
 
 export class PlacementError extends Error {}
-export function validatePlacementAssets(assets: Asset[]) {
+export function validatePlacementAssets(
+  assets: Asset[],
+): asserts assets is CanvasAsset[] {
   if (
     !assets.length ||
     assets.length > 100 ||
     assets.some((a) => a.unavailable || a.deleted_at)
   )
     throw new PlacementError('请选择 1–100 项可用素材')
+  if (!assets.every(isCanvasAsset))
+    throw new PlacementError('模型只能放进 3D 场景')
 }
 
 type Positioned = Pick<CanvasNode, 'id' | 'parent_id'> & {

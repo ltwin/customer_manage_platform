@@ -3142,6 +3142,18 @@ export interface components {
                 name_hint?: string;
             };
         };
+        /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
+        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"];
+        /** @description 不含代码的完整形态模型载荷，只出现在响应里。 */
+        CreativeModelPreviewPayload: {
+            model: {
+                /** @enum {string} */
+                format: "glb";
+                generator: components["schemas"]["CreativeModelGenerator"];
+                manifest: components["schemas"]["CreativeModelManifest"];
+                name_hint?: string;
+            };
+        };
         /** @description 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。 */
         CreativeModelManifest: {
             bounds: {
@@ -3242,7 +3254,7 @@ export interface components {
             /** @enum {string} */
             kind: "text" | "link" | "image" | "video" | "audio" | "model";
             sequence: components["schemas"]["CreativeRevision"];
-            payload: components["schemas"]["CreativeContentPayload"];
+            payload: components["schemas"]["CreativeContentRevisionPayload"];
             media?: components["schemas"]["CreativeMediaObject"][];
         };
         CreativeLibraryAsset: {
@@ -3256,7 +3268,7 @@ export interface components {
             }[];
             rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model";
             revision: components["schemas"]["CreativeRevision"];
             content_id: string;
             content_revision_id: string;
@@ -3362,6 +3374,8 @@ export interface components {
                 video: number;
                 /** Format: int64 */
                 audio: number;
+                /** Format: int64 */
+                model: number;
             };
             tags: {
                 tag_id: string;
@@ -8066,7 +8080,7 @@ export interface operations {
                 view?: "all" | "recent" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
-                kind?: "text" | "link" | "image" | "video" | "audio";
+                kind?: "text" | "link" | "image" | "video" | "audio" | "model";
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";

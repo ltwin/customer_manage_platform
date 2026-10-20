@@ -106,6 +106,7 @@ paths:
           - image
           - video
           - audio
+          - model
       - name: q
         in: query
         required: false
@@ -7413,6 +7414,29 @@ components:
             generator: {$ref: '#/components/schemas/CreativeModelGeneratorInput'}
             manifest: {$ref: '#/components/schemas/CreativeModelManifest'}
             name_hint: {type: string, maxLength: 80}
+    CreativeContentRevisionPayload:
+      description: 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。
+      oneOf:
+      - $ref: '#/components/schemas/CreativeTextPayload'
+      - $ref: '#/components/schemas/CreativeLinkPayload'
+      - $ref: '#/components/schemas/CreativeMediaPayload'
+      - $ref: '#/components/schemas/CreativeModelPayload'
+      - $ref: '#/components/schemas/CreativeModelPreviewPayload'
+    CreativeModelPreviewPayload:
+      type: object
+      additionalProperties: false
+      description: 不含代码的完整形态模型载荷，只出现在响应里。
+      required: [model]
+      properties:
+        model:
+          type: object
+          additionalProperties: false
+          required: [format, manifest, generator]
+          properties:
+            format: {type: string, enum: [glb]}
+            generator: {$ref: '#/components/schemas/CreativeModelGenerator'}
+            manifest: {$ref: '#/components/schemas/CreativeModelManifest'}
+            name_hint: {type: string, maxLength: 80}
     CreativeModelManifest:
       type: object
       additionalProperties: false
@@ -7580,7 +7604,7 @@ components:
         sequence:
           $ref: '#/components/schemas/CreativeRevision'
         payload:
-          $ref: '#/components/schemas/CreativeContentPayload'
+          $ref: '#/components/schemas/CreativeContentRevisionPayload'
         media:
           type: array
           maxItems: 20
@@ -7639,6 +7663,7 @@ components:
           - image
           - video
           - audio
+          - model
         revision:
           $ref: '#/components/schemas/CreativeRevision'
         content_id:
@@ -7884,6 +7909,7 @@ components:
           - image
           - video
           - audio
+          - model
           properties:
             text:
               type: integer
@@ -7898,6 +7924,9 @@ components:
               type: integer
               format: int64
             audio:
+              type: integer
+              format: int64
+            model:
               type: integer
               format: int64
         tags:

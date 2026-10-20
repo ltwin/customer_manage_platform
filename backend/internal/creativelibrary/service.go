@@ -326,6 +326,7 @@ func GetAsset(ctx context.Context, scope store.AccountScope, id string) (Asset, 
 		if r.ContentID != a.ContentID || r.Kind != a.Kind {
 			return creativecontent.ErrMissingRoot
 		}
+		r = creativecontent.WithoutModelCode(r)
 		a.Content = &r
 		items := []Asset{a}
 		err = attachPalettes(ctx, tx, items)

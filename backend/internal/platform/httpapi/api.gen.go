@@ -1567,6 +1567,7 @@ const (
 	CreativeLibraryAssetKindAudio CreativeLibraryAssetKind = "audio"
 	CreativeLibraryAssetKindImage CreativeLibraryAssetKind = "image"
 	CreativeLibraryAssetKindLink  CreativeLibraryAssetKind = "link"
+	CreativeLibraryAssetKindModel CreativeLibraryAssetKind = "model"
 	CreativeLibraryAssetKindText  CreativeLibraryAssetKind = "text"
 	CreativeLibraryAssetKindVideo CreativeLibraryAssetKind = "video"
 )
@@ -1579,6 +1580,8 @@ func (e CreativeLibraryAssetKind) Valid() bool {
 	case CreativeLibraryAssetKindImage:
 		return true
 	case CreativeLibraryAssetKindLink:
+		return true
+	case CreativeLibraryAssetKindModel:
 		return true
 	case CreativeLibraryAssetKindText:
 		return true
@@ -1897,13 +1900,28 @@ func (e CreativeModelParamSpecType) Valid() bool {
 
 // Defines values for CreativeModelPayloadModelFormat.
 const (
-	Glb CreativeModelPayloadModelFormat = "glb"
+	CreativeModelPayloadModelFormatGlb CreativeModelPayloadModelFormat = "glb"
 )
 
 // Valid indicates whether the value is a known member of the CreativeModelPayloadModelFormat enum.
 func (e CreativeModelPayloadModelFormat) Valid() bool {
 	switch e {
-	case Glb:
+	case CreativeModelPayloadModelFormatGlb:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelPreviewPayloadModelFormat.
+const (
+	CreativeModelPreviewPayloadModelFormatGlb CreativeModelPreviewPayloadModelFormat = "glb"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelPreviewPayloadModelFormat enum.
+func (e CreativeModelPreviewPayloadModelFormat) Valid() bool {
+	switch e {
+	case CreativeModelPreviewPayloadModelFormatGlb:
 		return true
 	default:
 		return false
@@ -3751,6 +3769,7 @@ const (
 	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
 	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
 	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindModel ListCreativeAssetsParamsKind = "model"
 	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
 	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
 )
@@ -3763,6 +3782,8 @@ func (e ListCreativeAssetsParamsKind) Valid() bool {
 	case ListCreativeAssetsParamsKindImage:
 		return true
 	case ListCreativeAssetsParamsKindLink:
+		return true
+	case ListCreativeAssetsParamsKindModel:
 		return true
 	case ListCreativeAssetsParamsKindText:
 		return true
@@ -5143,6 +5164,7 @@ type CreativeAssetFacets struct {
 		Audio int64 `json:"audio"`
 		Image int64 `json:"image"`
 		Link  int64 `json:"link"`
+		Model int64 `json:"model"`
 		Text  int64 `json:"text"`
 		Video int64 `json:"video"`
 	} `json:"kinds"`
@@ -5451,7 +5473,9 @@ type CreativeContentRevision struct {
 	Id        string                      `json:"id"`
 	Kind      CreativeContentRevisionKind `json:"kind"`
 	Media     *[]CreativeMediaObject      `json:"media,omitempty"`
-	Payload   CreativeContentPayload      `json:"payload"`
+
+	// Payload 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。
+	Payload CreativeContentRevisionPayload `json:"payload"`
 
 	// Sequence 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Sequence CreativeRevision `json:"sequence"`
@@ -5462,6 +5486,11 @@ type CreativeContentRevision struct {
 
 // CreativeContentRevisionKind defines model for CreativeContentRevision.Kind.
 type CreativeContentRevisionKind string
+
+// CreativeContentRevisionPayload 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。
+type CreativeContentRevisionPayload struct {
+	union json.RawMessage
+}
 
 // CreativeContentRights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
 type CreativeContentRights struct {
@@ -6273,6 +6302,23 @@ type CreativeModelPayload struct {
 
 // CreativeModelPayloadModelFormat defines model for CreativeModelPayload.Model.Format.
 type CreativeModelPayloadModelFormat string
+
+// CreativeModelPreviewPayload 不含代码的完整形态模型载荷，只出现在响应里。
+type CreativeModelPreviewPayload struct {
+	Model struct {
+		Format CreativeModelPreviewPayloadModelFormat `json:"format"`
+
+		// Generator 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。
+		Generator CreativeModelGenerator `json:"generator"`
+
+		// Manifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
+		Manifest CreativeModelManifest `json:"manifest"`
+		NameHint *string               `json:"name_hint,omitempty"`
+	} `json:"model"`
+}
+
+// CreativeModelPreviewPayloadModelFormat defines model for CreativeModelPreviewPayload.Model.Format.
+type CreativeModelPreviewPayloadModelFormat string
 
 // CreativeMoveNodePayload defines model for CreativeMoveNodePayload.
 type CreativeMoveNodePayload struct {
@@ -10402,6 +10448,146 @@ func (t CreativeContentPayload) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreativeContentPayload) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeTextPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeTextPayload
+func (t CreativeContentRevisionPayload) AsCreativeTextPayload() (CreativeTextPayload, error) {
+	var body CreativeTextPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeTextPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeTextPayload
+func (t *CreativeContentRevisionPayload) FromCreativeTextPayload(v CreativeTextPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeTextPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeTextPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeTextPayload(v CreativeTextPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeLinkPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeLinkPayload
+func (t CreativeContentRevisionPayload) AsCreativeLinkPayload() (CreativeLinkPayload, error) {
+	var body CreativeLinkPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeLinkPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeLinkPayload
+func (t *CreativeContentRevisionPayload) FromCreativeLinkPayload(v CreativeLinkPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeLinkPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeLinkPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeLinkPayload(v CreativeLinkPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMediaPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeMediaPayload
+func (t CreativeContentRevisionPayload) AsCreativeMediaPayload() (CreativeMediaPayload, error) {
+	var body CreativeMediaPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMediaPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeMediaPayload
+func (t *CreativeContentRevisionPayload) FromCreativeMediaPayload(v CreativeMediaPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMediaPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeMediaPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeMediaPayload(v CreativeMediaPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeModelPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeModelPayload
+func (t CreativeContentRevisionPayload) AsCreativeModelPayload() (CreativeModelPayload, error) {
+	var body CreativeModelPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeModelPayload
+func (t *CreativeContentRevisionPayload) FromCreativeModelPayload(v CreativeModelPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeModelPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeModelPayload(v CreativeModelPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeModelPreviewPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeModelPreviewPayload
+func (t CreativeContentRevisionPayload) AsCreativeModelPreviewPayload() (CreativeModelPreviewPayload, error) {
+	var body CreativeModelPreviewPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelPreviewPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeModelPreviewPayload
+func (t *CreativeContentRevisionPayload) FromCreativeModelPreviewPayload(v CreativeModelPreviewPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelPreviewPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeModelPreviewPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeModelPreviewPayload(v CreativeModelPreviewPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeContentRevisionPayload) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeContentRevisionPayload) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

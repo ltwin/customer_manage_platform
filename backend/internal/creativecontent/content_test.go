@@ -404,3 +404,44 @@ func TestModelKindHasTwoTrustedWriters(t *testing.T) {
 		t.Fatalf("append across accounts: %v", err)
 	}
 }
+
+func TestWithoutModelCodeDropsOnlyTheCode(t *testing.T) {
+	complete := creativecontent.Revision{ID: "ccrv_m", Kind: "model", Payload: creativecontent.Payload{Model: json.RawMessage(
+		`{"format":"glb","name_hint":"柱","manifest":{"triangles":12},"generator":{"code":"export default 1","code_sha256":"sha256-x","mount":"floor","params":{"h":2}}}`)}}
+	got := creativecontent.WithoutModelCode(complete)
+	var model struct {
+		Format    string                     `json:"format"`
+		NameHint  string                     `json:"name_hint"`
+		Manifest  json.RawMessage            `json:"manifest"`
+		Generator map[string]json.RawMessage `json:"generator"`
+	}
+	if err := json.Unmarshal(got.Payload.Model, &model); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := model.Generator["code"]; ok {
+		t.Fatalf("code kept: %s", got.Payload.Model)
+	}
+	if model.Format != "glb" || model.NameHint != "柱" || string(model.Manifest) != `{"triangles":12}` ||
+		string(model.Generator["mount"]) != `"floor"` || string(model.Generator["params"]) != `{"h":2}` || string(model.Generator["code_sha256"]) != `"sha256-x"` {
+		t.Fatalf("other fields changed: %s", got.Payload.Model)
+	}
+	if got.Truncated || got.ID != complete.ID {
+		t.Fatalf("identity or truncation changed: %+v", got)
+	}
+	if !strings.Contains(string(complete.Payload.Model), "export default 1") {
+		t.Fatal("input revision was modified")
+	}
+	if p := creativecontent.Preview(complete); strings.Contains(string(p.Payload.Model), "export default") {
+		t.Fatal("preview kept the code")
+	}
+
+	staged := creativecontent.Revision{Kind: "model", Payload: creativecontent.Payload{Model: json.RawMessage(`{"format":"glb","manifest":{}}`)}}
+	if got := creativecontent.WithoutModelCode(staged); string(got.Payload.Model) != `{"format":"glb","manifest":{}}` {
+		t.Fatalf("staged form changed: %s", got.Payload.Model)
+	}
+	body := "正文"
+	text := creativecontent.Revision{Kind: "text", Payload: creativecontent.Payload{Body: &body}}
+	if got := creativecontent.WithoutModelCode(text); got.Payload.Body != &body || got.Payload.Model != nil {
+		t.Fatalf("text changed: %+v", got)
+	}
+}
