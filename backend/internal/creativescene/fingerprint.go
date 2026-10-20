@@ -64,17 +64,35 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 		return "", false
 	}
 	slices.SortFunc(p.Objects, func(a, b Object) int { return strings.Compare(a.ID, b.ID) })
+	// The render settings never counted, except the exposure of a lit image;
+	// at 0 it is left out so fingerprints from before it existed still match.
+	render := fingerprintRender{}
+	if pass == PassLit {
+		render.ExposureEV = s.Render.ExposureEV
+	}
 	raw, err := json.Marshal(struct {
-		V        int    `json:"v"`
-		Pass     string `json:"pass"`
-		CameraID string `json:"camera_id"`
-		Scene    Scene  `json:"scene"`
-	}{1, pass, cameraID, p})
+		V        int              `json:"v"`
+		Pass     string           `json:"pass"`
+		CameraID string           `json:"camera_id"`
+		Scene    fingerprintScene `json:"scene"`
+	}{1, pass, cameraID, fingerprintScene{p.Environment, render, p.Objects}})
 	if err != nil {
 		return "", false
 	}
 	sum := sha256.Sum256(raw)
 	return fingerprintVersion + ":" + hex.EncodeToString(sum[:]), true
+}
+
+// fingerprintScene is Scene as hashed: the same JSON for the same fields.
+type fingerprintScene struct {
+	Environment Environment       `json:"environment"`
+	Render      fingerprintRender `json:"render"`
+	Objects     []Object          `json:"objects"`
+}
+
+type fingerprintRender struct {
+	Mode       string  `json:"mode"`
+	ExposureEV float64 `json:"exposure_ev,omitempty"`
 }
 
 // Freshness is the canvas's ExportFreshness: it compares each export image's

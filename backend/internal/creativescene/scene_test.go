@@ -582,6 +582,43 @@ func TestEnvironmentAndRender(t *testing.T) {
 	}
 }
 
+// set_render merges by key: writing only the mode keeps the exposure, and a
+// scene stored before exposure existed reads with 0.
+func TestRenderMergesByKey(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	raw, err := creativedocument.Read(t.Context(), f.a, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"render":{"mode":"clay","exposure_ev":0}`) {
+		t.Fatalf("a new scene reads without exposure: %s", raw)
+	}
+	set := func(render map[string]any) error {
+		v := readScene(t, f.a, doc)
+		_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": render}}})
+		return err
+	}
+	if err := set(map[string]any{"exposure_ev": 2.5}); err != nil {
+		t.Fatal(err)
+	}
+	if err := set(map[string]any{"mode": "lit"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := readScene(t, f.a, doc).Scene.Render; r.Mode != "lit" || r.ExposureEV != 2.5 {
+		t.Fatalf("render %+v", r)
+	}
+	for name, render := range map[string]map[string]any{
+		"too bright":   {"exposure_ev": 10.5},
+		"too dark":     {"exposure_ev": -11},
+		"null":         {"exposure_ev": nil},
+		"nothing":      {},
+		"unknown mode": {"mode": "path"},
+	} {
+		t.Run(name, func(t *testing.T) { wantErr(t, set(render), creativeops.ErrValidation) })
+	}
+}
+
 // TestInvalidCommandsLeaveNoRevision covers each operation's bad input; none
 // may produce a revision.
 func TestInvalidCommandsLeaveNoRevision(t *testing.T) {

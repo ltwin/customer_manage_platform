@@ -84,8 +84,8 @@ type setEnvironmentOp struct {
 }
 
 type setRenderOp struct {
-	Op     string `json:"op"`
-	Render Render `json:"render"`
+	Op     string      `json:"op"`
+	Render renderPatch `json:"render"`
 }
 
 func decodeOp(raw json.RawMessage) (sceneOp, error) {
@@ -545,8 +545,18 @@ func (op *setRenderOp) touched(Scene, map[string]int) ([]string, error) {
 	return []string{unitRender}, nil
 }
 
+// apply merges by key: writing only the mode keeps the exposure.
 func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
-	s.Render = op.Render
+	p := op.Render
+	if p.Mode == nil && p.ExposureEV == nil {
+		return invalid("render 至少写一项：mode 或 exposure_ev")
+	}
+	if p.Mode != nil {
+		s.Render.Mode = *p.Mode
+	}
+	if p.ExposureEV != nil {
+		s.Render.ExposureEV = *p.ExposureEV
+	}
 	c.change(unitRender)
 	return nil
 }

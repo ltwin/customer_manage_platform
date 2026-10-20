@@ -161,8 +161,9 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
       return state
     case 'set_environment':
       return { ...state, scene: { ...scene, environment: op.environment } }
+    // Merged by key, as the server does: writing the mode keeps the exposure.
     case 'set_render':
-      return { ...state, scene: { ...scene, render: op.render } }
+      return { ...state, scene: { ...scene, render: { ...scene.render, ...op.render } } }
     case 'add_objects': {
       const present = new Set(scene.objects.map((o) => o.id))
       const added = op.objects
@@ -349,7 +350,7 @@ export function withoutNoops(ops: readonly WireOp[], state: SceneState): WireOp[
     } else if (op.op === 'set_environment') {
       if (sameValue(op.environment, probe.scene.environment)) kept = null
     } else if (op.op === 'set_render') {
-      if (sameValue(op.render, probe.scene.render)) kept = null
+      if (sameValue({ ...probe.scene.render, ...op.render }, probe.scene.render)) kept = null
     } else if (op.op === 'reparent_objects') {
       kept = reparentWithoutNoops(op, probe)
     }

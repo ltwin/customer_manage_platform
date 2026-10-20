@@ -7128,6 +7128,14 @@ export interface components {
         CreativeSceneRender: {
             /** @enum {string} */
             mode: "clay" | "lit";
+            /** @description 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。 */
+            exposure_ev: number;
+        };
+        /** @description set_render 按键合并，只改写到的字段。 */
+        CreativeSceneRenderPatch: {
+            /** @enum {string} */
+            mode?: "clay" | "lit";
+            exposure_ev?: number;
         };
         /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
         CreativeSceneObject: {
@@ -7303,7 +7311,7 @@ export interface components {
              * @enum {string}
              */
             op: "set_render";
-            render: components["schemas"]["CreativeSceneRender"];
+            render: components["schemas"]["CreativeSceneRenderPatch"];
         };
         /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
         CreativeSceneCommitModel: {

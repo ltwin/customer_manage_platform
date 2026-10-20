@@ -15,7 +15,7 @@
 
 - [x] 3.1 `display` 状态：`sceneStore.ts`、`viewState.ts`（本机记住，`render.mode` 兜底）、`Z` 菜单、`Shift + Z`、顶栏按钮；线框模式（不可见可拾取的网格 + 按几何缓存的轮廓边，高亮改线色，直接 `gl.render`）。单测：读写与兜底；e2e：切换、重开保持、撤销不受影响
 - [ ] 3.2 `Lighting.tsx`（白模分支原样搬迁，e2e 对比搬迁前后截图一致）、`SceneRenderer` 改名与 `Frame.ao`、透明网格集合与 AO 钩子；材质预览的 `RoomEnvironment`；最终渲染的太阳（阴影沿用 `fitSunShadow`）、three 自带 `Sky` 的背景与不含太阳盘的环境贴图、`ColorEnvironment`、补光、`SceneRenderer` 的曝光；`SceneLights.tsx`。单测：灯光字段到 three.js 属性的映射与 target 方向
-- [ ] 3.3 曝光补偿：`model.go` 的 `render.exposure_ev`（范围、补 0）、`ops.go` 的 `set_render` 按键合并、`fingerprint.go` 的 `lit` 投影（为 0 时不写入）、`api/openapi.yaml` 的 `CreativeSceneRender` 与 `make generate`、`state/apply.ts` 的合并。先写 Go 测试：合并、范围、补默认、`lit` 指纹随曝光变化且为 0 时与原指纹相同
+- [x] 3.3 曝光补偿：`model.go` 的 `render.exposure_ev`（范围、补 0）、`ops.go` 的 `set_render` 按键合并、`fingerprint.go` 的 `lit` 投影（为 0 时不写入）、`api/openapi.yaml` 的 `CreativeSceneRender` 与 `make generate`、`state/apply.ts` 的合并。先写 Go 测试：合并、范围、补默认、`lit` 指纹随曝光变化且为 0 时与原指纹相同
 - [ ] 3.4 标定：参考场景（室外正午、黄昏、室内两盏壁灯）下定出 `SUN_MAX`、环境贴图强度、`AMBIENT_FILL` 和常用灯光强度（只定一组），以及各类场景的建议曝光，写回 design 未决事项 1 与工具说明的数值
 
 ## 4. 材质
