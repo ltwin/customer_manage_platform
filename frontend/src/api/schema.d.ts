@@ -1151,6 +1151,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/from-scene-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把场景里模型实例当前引用的模型修订存入个人库；同一修订已在库中时只追加归类
+         * @description 只读场景，不产生场景修订。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev， 不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）； 对象不是模型实例返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable； 场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict。
+         */
+        post: operations["createCreativeAssetFromSceneModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/capabilities": {
         parameters: {
             query?: never;
@@ -7902,6 +7922,19 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAssetFromNodePayload"];
         };
+        CreativeAssetFromSceneModelPayload: {
+            document_id: string;
+            object_id: string;
+            expected_object_rev: components["schemas"]["CreativeRevision"];
+            target: components["schemas"]["CreativeUploadAssetTarget"];
+        };
+        CreateCreativeAssetFromSceneModelRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetFromSceneModelPayload"];
+        };
         CreativeNodeExecution: {
             execution_id: string;
             node_id: string;
@@ -10483,6 +10516,50 @@ export interface operations {
         };
         responses: {
             /** @description 同一内容修订已在库中；已追加归类，reused 为 true */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromSceneModel: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromSceneModelRequest"];
+            };
+        };
+        responses: {
+            /** @description 同一模型修订已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值 */
             200: {
                 headers: {
                     [name: string]: unknown;

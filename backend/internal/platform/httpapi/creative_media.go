@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -34,6 +35,7 @@ func registerCreativeMedia(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/upload-candidates/:id/discard", w.DiscardCreativeUploadCandidate)
 	r.POST("/creative/media-access-tickets", w.IssueCreativeMediaTicket)
 	r.POST("/creative/assets/from-canvas-node", w.CreateCreativeAssetFromNode)
+	r.POST("/creative/assets/from-scene-model", w.CreateCreativeAssetFromSceneModel)
 }
 
 // registerCreativeMediaBytes serves signed part writes and ticketed reads.
@@ -115,6 +117,9 @@ func (h *handlers) DiscardCreativeUploadCandidate(c *gin.Context, id string, _ D
 }
 func (h *handlers) CreateCreativeAssetFromNode(c *gin.Context, _ CreateCreativeAssetFromNodeParams) {
 	h.creativeWrite(c, "", "", creativecanvas.SaveNodeToLibrary)
+}
+func (h *handlers) CreateCreativeAssetFromSceneModel(c *gin.Context, _ CreateCreativeAssetFromSceneModelParams) {
+	h.creativeWrite(c, "", "", creativescene.SaveModelToLibrary)
 }
 func (h *handlers) GetCreativeUpload(c *gin.Context, id string) {
 	svc, ok := h.mediaService(c)

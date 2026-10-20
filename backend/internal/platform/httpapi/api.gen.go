@@ -4205,6 +4205,13 @@ type CreateCreativeAssetFromNodeRequest struct {
 	Payload         CreativeAssetFromNodePayload `json:"payload"`
 }
 
+// CreateCreativeAssetFromSceneModelRequest defines model for CreateCreativeAssetFromSceneModelRequest.
+type CreateCreativeAssetFromSceneModelRequest struct {
+	ClientCreatedAt time.Time                          `json:"client_created_at"`
+	OperationId     openapi_types.UUID                 `json:"operation_id"`
+	Payload         CreativeAssetFromSceneModelPayload `json:"payload"`
+}
+
 // CreateCreativeCategoryRequest defines model for CreateCreativeCategoryRequest.
 type CreateCreativeCategoryRequest struct {
 	ClientCreatedAt time.Time                     `json:"client_created_at"`
@@ -5182,6 +5189,16 @@ type CreativeAssetFromNodePayload struct {
 	ExpectedDataRevision CreativeRevision          `json:"expected_data_revision"`
 	NodeId               string                    `json:"node_id"`
 	Target               CreativeUploadAssetTarget `json:"target"`
+}
+
+// CreativeAssetFromSceneModelPayload defines model for CreativeAssetFromSceneModelPayload.
+type CreativeAssetFromSceneModelPayload struct {
+	DocumentId string `json:"document_id"`
+
+	// ExpectedObjectRev 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedObjectRev CreativeRevision          `json:"expected_object_rev"`
+	ObjectId          string                    `json:"object_id"`
+	Target            CreativeUploadAssetTarget `json:"target"`
 }
 
 // CreativeAssetGroup defines model for CreativeAssetGroup.
@@ -8995,6 +9012,11 @@ type CreateCreativeAssetFromNodeParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CreateCreativeAssetFromSceneModelParams defines parameters for CreateCreativeAssetFromSceneModel.
+type CreateCreativeAssetFromSceneModelParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // ReplaceCreativeAssetByImportParams defines parameters for ReplaceCreativeAssetByImport.
 type ReplaceCreativeAssetByImportParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -9680,6 +9702,9 @@ type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
 // CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
 type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
+
+// CreateCreativeAssetFromSceneModelJSONRequestBody defines body for CreateCreativeAssetFromSceneModel for application/json ContentType.
+type CreateCreativeAssetFromSceneModelJSONRequestBody = CreateCreativeAssetFromSceneModelRequest
 
 // ReplaceCreativeAssetByImportJSONRequestBody defines body for ReplaceCreativeAssetByImport for application/json ContentType.
 type ReplaceCreativeAssetByImportJSONRequestBody = ReplaceCreativeAssetByImportRequest
@@ -11892,6 +11917,9 @@ type ServerInterface interface {
 	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
+	// 把场景里模型实例当前引用的模型修订存入个人库；同一修订已在库中时只追加归类
+	// (POST /creative/assets/from-scene-model)
+	CreateCreativeAssetFromSceneModel(c *gin.Context, params CreateCreativeAssetFromSceneModelParams)
 
 	// (GET /creative/assets/{id})
 	GetCreativeTextAsset(c *gin.Context, id string)
@@ -13836,6 +13864,51 @@ func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromNode(c *gin.Context) {
 	}
 
 	siw.Handler.CreateCreativeAssetFromNode(c, params)
+}
+
+// CreateCreativeAssetFromSceneModel operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromSceneModel(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAssetFromSceneModelParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAssetFromSceneModel(c, params)
 }
 
 // GetCreativeTextAsset operation middleware
@@ -18731,6 +18804,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
 	router.GET(options.BaseURL+"/creative/assets/digest-matches", wrapper.FindCreativeAssetDigestMatches)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
+	router.POST(options.BaseURL+"/creative/assets/from-scene-model", wrapper.CreateCreativeAssetFromSceneModel)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
 	router.POST(options.BaseURL+"/creative/assets/:id/import-replace", wrapper.ReplaceCreativeAssetByImport)
 	router.POST(options.BaseURL+"/creative/assets/:id/metadata", wrapper.UpdateCreativeAssetMetadata)

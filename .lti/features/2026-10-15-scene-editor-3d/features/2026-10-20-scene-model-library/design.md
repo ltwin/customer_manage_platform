@@ -331,6 +331,12 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
 - **不在本次范围**（proposal「What Changes」第 6 条）：
   - 把编组（多个物件）存成一个资产；
   - 材质和缩放随资产保存。先看试用中摄影师是否常常需要，再决定是否给模型资产加「实例模板」。
+- **实施中的挂载点调整**（不改语义）：
+  - `creativescene/models.go`：`requireModel` 只回报错误，存入需要拿到它检查过的修订，所以拆出 `usableModel` 返回修订，`requireModel` 改为调用它。
+  - 模型资产的库测试放在新文件 `creativelibrary/model_asset_test.go`，不塞进 `asset_library_test.go`；画布拒绝模型的测试在 `creativecanvas/graph_test.go`（tasks 1.3 已写明）。
+  - 迁移标签列表另有两处带编号的写法：`creative_graph_migration_test.go`、`creative_library_migration_test.go`。
+  - 生成物还包括 `httpapi/api.gen.go` 与 `creativecanvas/tool_schemas.gen.go`（`read_canvas` 的输出 schema 引用了内容修订载荷）。
+  - 1.2 生成新的 `kind` 枚举后，前端类型要求画布放置先排除模型；`assetPlacement.ts` 加 `CanvasAsset` 类型守卫，`assets/placement.ts` 遇到模型抛「模型只能放进 3D 场景」，`WorkspacePage` 的 `addAssets`、`pickReferences` 先过滤。2.2 在此基础上补齐提示与其余入口。
 - **后续**：
   - 参考点设置与快捷轮盘（C8）；
   - 助手把场景模型存入资产库；

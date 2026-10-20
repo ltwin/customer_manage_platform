@@ -2086,6 +2086,42 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/assets/from-scene-model:
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeAssetFromSceneModel
+      summary: 把场景里模型实例当前引用的模型修订存入个人库；同一修订已在库中时只追加归类
+      description: >-
+        只读场景，不产生场景修订。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev，
+        不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）；
+        对象不是模型实例返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable；
+        场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict。
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateCreativeAssetFromSceneModelRequest"}
+      responses:
+        "201":
+          description: 已创建资产
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        "200":
+          description: 同一模型修订已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /creative/capabilities:
     get:
       tags: [creative-foundation]
@@ -16378,6 +16414,23 @@ components:
         operation_id: {type: string, format: uuid}
         client_created_at: {type: string, format: date-time}
         payload: {$ref: "#/components/schemas/CreativeAssetFromNodePayload"}
+    CreativeAssetFromSceneModelPayload:
+      type: object
+      additionalProperties: false
+      required: [document_id, object_id, expected_object_rev, target]
+      properties:
+        document_id: {type: string}
+        object_id: {type: string}
+        expected_object_rev: {$ref: "#/components/schemas/CreativeRevision"}
+        target: {$ref: "#/components/schemas/CreativeUploadAssetTarget"}
+    CreateCreativeAssetFromSceneModelRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: "#/components/schemas/CreativeAssetFromSceneModelPayload"}
     CreativeNodeExecution:
       type: object
       additionalProperties: false
