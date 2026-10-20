@@ -838,6 +838,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	if err != nil {
 		return nil, err
 	}
+	if in.Operations, err = resolveSlots(ctx, tx, in.Operations, scene); err != nil {
+		return nil, err
+	}
 	if in.Operations, err = resolveReparent(in.Operations, scene); err != nil {
 		return nil, err
 	}

@@ -78,7 +78,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: editSceneTool,
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
-				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, primitive{builtin,params}|light|camera|model{content_revision_id}}]}；" +
+				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, material_slots?, primitive{builtin,params}|light|camera|model{content_revision_id}}]}；" +
 				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
 				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
 				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
@@ -86,12 +86,16 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"视场角按画面长边对应传感器长边：同一焦距下 2:3 竖幅和 3:2 横幅拍到的范围一样大，只是方向不同；depth_of_field 打开后白模导出按光圈和对焦虚化（线稿不虚化）。" +
 				"空物体是没有子物件的 group，可以当对焦目标或父级。" +
 				"add_objects 和 update_objects 的条目可写 look_at:[x,y,z]（世界坐标）代替 transform.rotation：摄像机和灯光的 −Z、其余物件的 +Z 对准该点（同 three.js Object3D.lookAt），update 时 transform 可只写 position 或省略；父级在同一次修改里也被移动时会被拒绝，分两次提交。" +
-				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段）；remove_objects{object_ids}（连同子物件）；" +
+				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；" +
-				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}|{kind:hdri, hdri}, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写）；set_render{render:{mode:clay|lit}}；" +
+				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写）；set_render{render:{mode?:clay|lit, exposure_ev?:-10…10}}（按键合并）；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
-				"当前版本编辑视图和截图都只画素模：程序天空的太阳方向决定主光和阴影，纯色天空、环境光和雾也生效；灯光物件、lit 模式和 hdri 天空暂不显示，先别花调用打光，把精力放在几何、比例和构图上。" +
+				"渲染方式：clay 是素模，只有程序天空的太阳、纯色天空、环境光和雾生效，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit）。" +
+				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
+				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
+				"打光：室外由程序天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（太阳约 2.2）；投射阴影的灯光不超过 4 盏，太多会卡。" +
+				"建议曝光：太阳高于 30° 为 0，15°–30° 为 +1，5°–15° 为 +2，日落前后 +2～+3；只有灯光的室内 0～+1。配好材质、打好光后用 render_view 的 mode:lit 回看，过暗或过曝调 exposure_ev。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +
 				"摆好摄像机后先用 render_view 按摄像机回看确认构图，再用 export_shots 导出。新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
@@ -136,19 +140,19 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	case exportShotsTool:
 		return &schema.ToolInfo{
 			Name: exportShotsTool,
-			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模，打开景深的摄像机按光圈虚化）和 line（线稿）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
+			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
 				"图在创作者的页面渲染（长边 2048），调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
 				"camera_object_ids": strs("要导出的摄像机，省略为全部摄像机（按物件顺序），最多 32 台"),
-				"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line"}}},
+				"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line；配了材质和灯光时加 lit", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line", "lit"}}},
 			}),
 		}, nil
 	default:
 		return &schema.ToolInfo{
 			Name: renderViewTool,
-			Desc: "给场景拍一张素模截图交给你看，检查摆放、比例和构图（灯光物件暂不渲染）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
-				"截图与编辑器视口、白模导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
+			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模，检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空光照、曝光补偿）出图，检查材质和打光。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
+				"截图与编辑器视口的白模或最终渲染、对应的导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
 				"截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,
@@ -159,6 +163,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 					"focal_mm": {Type: schema.Number, Required: true, Desc: "8 到 800"},
 				}},
 				"preset": {Type: schema.String, Enum: []string{"overview", "top", "front", "side"}},
+				"mode":   {Type: schema.String, Enum: []string{"clay", "lit"}, Desc: "渲染方式，省略为 clay"},
 			}),
 		}, nil
 	}
@@ -389,13 +394,14 @@ func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any,
 		Viewpoint      *creativescene.Viewpoint `json:"viewpoint"`
 		Preset         string                   `json:"preset"`
 		DepthOfField   bool                     `json:"depth_of_field"`
+		Mode           string                   `json:"mode"`
 	}
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
 	}
 	return h.parkOnJob(ctx, func(ctx context.Context, tx store.TxAccountScope) (creativescene.Job, any, error) {
 		job, err := creativescene.CreateRenderJobInTx(ctx, tx, creativescene.RenderInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step,
-			CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset, DepthOfField: args.DepthOfField})
+			CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset, Mode: args.Mode, DepthOfField: args.DepthOfField})
 		return job, nil, err
 	}, raw)
 }

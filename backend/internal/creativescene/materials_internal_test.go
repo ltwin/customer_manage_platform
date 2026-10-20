@@ -74,8 +74,11 @@ func TestMaterialCatalog(t *testing.T) {
 	if _, ok := hintPreset("old stone"); ok {
 		t.Fatal("hints match whole")
 	}
-	if !strings.HasPrefix(MaterialCatalog(), "principled@1 原理化 BSDF(anisotropy,") {
-		t.Fatalf("catalog text %s", MaterialCatalog())
+	text := MaterialCatalog()
+	for _, want := range []string{"principled@1 原理化 BSDF(anisotropy, anisotropy_rotation -3.141593–3.141593rad,", "ior 1–2.333,", "stone_brick@1 石砖(brick_size 0.05–2m, color, metalness, mortar_color, roughness)", "；emissive@1 自发光("} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("catalog text lacks %q: %s", want, text)
+		}
 	}
 }
 

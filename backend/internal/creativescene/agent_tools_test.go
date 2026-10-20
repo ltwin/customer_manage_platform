@@ -622,3 +622,77 @@ func TestAgentTextNamesNoProfession(t *testing.T) {
 		return true
 	})
 }
+
+// The assistant's material slots merge by slot, null clearing one, and are
+// checked against the object and the catalog; the sky cannot be an HDRI
+// (design「助手：材质、灯光与环境」).
+func TestAgentMaterialSlots(t *testing.T) {
+	f := setup(t)
+	const run = "ccrn_agent"
+	b, m, l := objectID(1), objectID(2), objectID(3)
+	me := author{t: t, scope: f.a, doc: createScene(t, f.a), actor: creativedocument.Photographer}
+	slot := func(preset string, params map[string]any) map[string]any {
+		if params == nil {
+			params = map[string]any{}
+		}
+		return map[string]any{"preset": preset, "params": params}
+	}
+	pillar := instance(m, 11, map[string]any{"ref": "pillar"})
+	// The command checks slots by shape only: a slot the model lost and a preset this build lacks.
+	pillar["material_slots"] = map[string]any{"stone": slot("marble@1", nil), "legacy": slot("old@1", nil)}
+	lamp := object(l, "light", nil, 12)
+	lamp["light"] = map[string]any{"type": "point"}
+	me.send([]string{"objects"}, commit(t, "pillar", stagePair(t, f, f.a), pillarGenerator(2), basicManifest(t), nil), op{"op": "add_objects", "objects": []any{box(b, nil, 10), pillar, lamp}})
+	edit := func(ops ...any) error {
+		_, err := agentEdit(t, f.a, creativescene.EditInput{DocumentID: me.doc, RunID: run, BasedOn: int64(readScene(t, f.a, me.doc).Revision), Operations: raws(t, ops...)})
+		return err
+	}
+	slots := func(id string, s map[string]any) op {
+		return op{"op": "update_objects", "updates": []any{map[string]any{"object_id": id, "material_slots": s}}}
+	}
+	stored := func(id string) map[string]creativescene.MaterialSlot {
+		return readScene(t, f.a, me.doc).object(t, id).MaterialSlots
+	}
+
+	if err := edit(slots(m, map[string]any{"stone": slot("wood@1", map[string]any{"scale": 1.0})})); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored(m); len(got) != 2 || got["stone"].Preset != "wood@1" || got["stone"].Params["scale"] != 1.0 || got["legacy"].Preset != "old@1" {
+		t.Fatalf("one slot written, the other kept: %+v", got)
+	}
+	if err := edit(slots(m, map[string]any{"legacy": nil}), slots(b, map[string]any{"main": slot("stone_brick@1", map[string]any{"brick_size": 0.5, "mortar_color": "#a0a0a0"})})); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored(m); len(got) != 1 || got["stone"].Preset != "wood@1" {
+		t.Fatalf("null clears a slot: %+v", got)
+	}
+	if got := stored(b)["main"]; got.Preset != "stone_brick@1" || got.Params["brick_size"] != 0.5 {
+		t.Fatalf("box main %+v", got)
+	}
+
+	for name, tc := range map[string]struct {
+		op   any
+		says string
+	}{
+		"slot the model lacks":   {slots(m, map[string]any{"trim": slot("paint@1", nil)}), "可用：stone"},
+		"slot on a light":        {slots(l, map[string]any{"main": slot("paint@1", nil)}), "没有材质槽"},
+		"unknown material":       {slots(b, map[string]any{"main": slot("glass@1", nil)}), "可用：principled@1"},
+		"parameter out of range": {slots(b, map[string]any{"main": slot("stone_brick@1", map[string]any{"brick_size": 9.0})}), "brick_size"},
+		"unknown parameter":      {slots(b, map[string]any{"main": slot("paint@1", map[string]any{"shine": 1.0})}), "可用参数"},
+		"bad colour":             {slots(b, map[string]any{"main": slot("paint@1", map[string]any{"color": "red"})}), "color"},
+		"added with a bad slot": {op{"op": "add_objects", "objects": []any{func() map[string]any {
+			o := box(objectID(4), nil, 13)
+			o["material_slots"] = map[string]any{"top": slot("paint@1", nil)}
+			return o
+		}()}}, "可用：main"},
+		"hdri sky": {op{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "hdri", "hdri": "studio@1"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}}, "暂无内置 HDRI"},
+	} {
+		err := edit(tc.op)
+		if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), tc.says) {
+			t.Errorf("%s: %v, want it to say %q", name, err, tc.says)
+		}
+	}
+	if got := stored(b)["main"]; got.Preset != "stone_brick@1" {
+		t.Fatalf("a refused batch writes nothing: %+v", got)
+	}
+}
