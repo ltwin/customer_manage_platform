@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DirectionalLight, Group, PointLight, Quaternion, SpotLight, Vector3 } from 'three'
 import { applyLight, buildLight } from '../src/creative-scene/objects/lights.ts'
-import { exposureOf, NEW_LIGHT_INTENSITY, SUN_MAX, sunLight } from '../src/creative-scene/render/litLook.ts'
+import { exposureOf, NEW_LIGHT_INTENSITY, SKY_GAIN, SKY_SHARE, SUN_MAX, sunLight } from '../src/creative-scene/render/litLook.ts'
+import { skyIrradiance } from '../src/creative-scene/render/atmosphere.ts'
 import { colorSky, coneAngle, coneDegrees, newLight, newLightHeight, proceduralSky, withFog, withSkyKind } from '../src/creative-scene/editing.ts'
 
 const close = (a: readonly number[], b: readonly number[], eps = 1e-9) =>
@@ -49,14 +50,35 @@ test('directional and spot lights shine along the object\'s local −Z and turn 
 
 test('the lit sun dims below the horizon and warms when low; exposure is in stops', () => {
   assert.equal(sunLight(-5).intensity, 0)
-  assert.equal(sunLight(60).intensity, SUN_MAX)
-  const low = sunLight(3)
   const high = sunLight(60)
-  assert.ok(low.intensity > 0 && low.intensity < SUN_MAX)
-  assert.ok(low.color.b < high.color.b, 'warmer near the horizon')
+  const brightness = (l: ReturnType<typeof sunLight>) => l.intensity * (0.2126 * l.color.r + 0.7152 * l.color.g + 0.0722 * l.color.b)
+  assert.ok(Math.abs(brightness(high) / SUN_MAX - 1) < 0.1, `about SUN_MAX high up: ${brightness(high)}`)
+  const low = sunLight(5)
+  assert.ok(brightness(low) > 0 && brightness(low) < brightness(high) * 0.6, `weaker low down: ${brightness(low)}`)
+  assert.ok(low.color.b / low.color.r < (high.color.b / high.color.r) * 0.6, 'warmer near the horizon')
   assert.equal(exposureOf({ exposure_ev: 2 }), 4)
   assert.equal(exposureOf({ exposure_ev: -1 }), 0.5)
   assert.equal(exposureOf(undefined), 1, 'scenes from before exposure render as before')
+})
+
+test('at the reference noon the sky lights level ground a quarter as much as the sun, and daylight comes out neutral', () => {
+  const y = Math.sin((55 * Math.PI) / 180)
+  const sun = sunLight(55, 3)
+  const direct = [sun.color.r, sun.color.g, sun.color.b].map((c) => c * sun.intensity * y)
+  const sky = skyIrradiance([0, y, Math.sqrt(1 - y * y)], 3).map((v, i) => v * SKY_GAIN[i])
+  const total = direct.map((v, i) => v + sky[i])
+  const lum = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+  assert.ok(Math.abs(lum(sky) / lum(direct) - SKY_SHARE) < 0.02, `sky share ${lum(sky) / lum(direct)}`)
+  for (const c of total) assert.ok(Math.abs(c / lum(total) - 1) < 0.01, `neutral: ${total}`)
+  // Shadows stay bluer than the sunlit ground, as under a clear sky.
+  assert.ok(sky[2] / sky[0] > 1.5, `a blue sky light: ${sky}`)
+})
+
+test('the sky integral has converged', () => {
+  const sun: [number, number, number] = [0, Math.sin(0.3), Math.cos(0.3)]
+  const coarse = skyIrradiance(sun, 3)
+  const fine = skyIrradiance(sun, 3, 96, 192)
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(coarse[i] / fine[i] - 1) < 0.02, `${coarse} vs ${fine}`)
 })
 
 test('a light from the add menu stands above the pointed ground, facing the view, numbered by type', () => {

@@ -2543,7 +2543,7 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   await context.close()
 })
 
-await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens the clay shadow; Cmd+Z', async () => {
+await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens shadows and turns the sky to dusk; Cmd+Z', async () => {
   const server = new SceneServer()
   const post = gid('post')
   seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
@@ -2564,7 +2564,16 @@ await check('AC-5: with nothing selected the environment shows; the sun at 5° l
     await show(true)
     return solidDiff(page, standing, gone, 12)
   }
+  const skyBand = { x: box.x, y: box.y + 4, width: box.width, height: 30 }
+  const warmth = async () => {
+    const band = await lumaStats(page, await settledShot(page, skyBand))
+    return band.r / Math.max(1, band.b)
+  }
   const noon = await footprint('35')
+  await shading(page, '最终渲染')
+  const noonLit = await footprint('35-lit')
+  const noonSky = await warmth()
+  await shading(page, '白模')
   const elevation = page.getByRole('spinbutton', { name: '太阳高度（°）' })
   await elevation.fill('5')
   await elevation.press('Enter')
@@ -2572,7 +2581,13 @@ await check('AC-5: with nothing selected the environment shows; the sun at 5° l
   assert.deepEqual(server.scene.environment, { sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, 'only the elevation changes')
   assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
   const dusk = await footprint('5')
-  assert.ok(dusk > noon * 1.5, `a longer shadow (${(noon * 100).toFixed(2)}% → ${(dusk * 100).toFixed(2)}% of the view)`)
+  assert.ok(dusk > noon * 1.5, `a longer clay shadow (${(noon * 100).toFixed(2)}% → ${(dusk * 100).toFixed(2)}% of the view)`)
+  await shading(page, '最终渲染')
+  const duskLit = await footprint('5-lit')
+  assert.ok(duskLit > noonLit * 1.5, `a longer rendered shadow (${(noonLit * 100).toFixed(2)}% → ${(duskLit * 100).toFixed(2)}% of the view)`)
+  const duskSky = await warmth()
+  assert.ok(duskSky > noonSky * 1.3, `a dusk sky (red/blue ${noonSky.toFixed(2)} → ${duskSky.toFixed(2)})`)
+  await shading(page, '白模')
   await saved(page)
   await focusEditor(page)
   await page.keyboard.press(`${modKey}+KeyZ`)
@@ -2650,6 +2665,66 @@ await check('AC-5: exposure +2 brightens the rendered view of a room lit by two 
   assert.ok(clay < 0.005, `the clay does not change (${(clay * 100).toFixed(3)}% differ)`)
   assert.deepEqual(errors, [])
   await context.close()
+})
+
+// --- 3.4 calibration: the reference scenes ----------------------------------
+
+/** A yard: a white box, a concrete wall, a wooden crate and a metal ball on the ground. */
+const yard = (server, sky) => {
+  server.scene.environment = { sky, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  seed(server, [
+    boxOf('white', 5, { position: [-1.5, 0, 0] }, { width: 1, height: 1, depth: 1 }),
+    boxOf('wall', 6, { position: [0.5, 0, -2] }, { width: 4, height: 2.5, depth: 0.2 }, { preset: 'concrete@1', params: {} }),
+    boxOf('crate', 7, { position: [1.2, 0, 0.5] }, { width: 0.8, height: 0.8, depth: 0.8 }, { preset: 'wood@1', params: {} }),
+    { id: gid('ball'), kind: 'primitive', name: 'ball', order: 8, transform: { ...identity(), position: [0, 0, 1.5] }, primitive: { builtin: 'sphere@1', params: { radius: 0.4 } }, material_slots: { main: { preset: 'metal@1', params: { rust: 0 } } } },
+  ])
+}
+/** A room 6 × 4 m, 3 m high, open towards the view, lit by two wall lights. */
+const room = (server, intensity) => {
+  server.scene.environment = { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  const wall = (name, order, position, size) => boxOf(name, order, { position }, { width: size[0], height: size[1], depth: size[2] }, { preset: 'plaster@1', params: {} })
+  const lamp = (name, order, x) => ({ id: gid(name), kind: 'light', name, order, transform: { ...identity(), position: [x, 2, -1.75] }, light: { type: 'point', color: '#ffd9b0', intensity, cast_shadow: true, distance: 0, decay: 2 } })
+  seed(server, [
+    wall('back', 5, [0, 0, -2], [6, 3, 0.2]),
+    wall('left', 6, [-3, 0, 0], [0.2, 3, 4]),
+    wall('right', 7, [3, 0, 0], [0.2, 3, 4]),
+    boxOf('sofa', 8, { position: [0, 0, -1] }, { width: 2, height: 0.8, depth: 0.9 }, { preset: 'fabric@1', params: {} }),
+    boxOf('table', 9, { position: [0, 0, 0.5] }, { width: 1, height: 0.45, depth: 0.6 }, { preset: 'wood@1', params: {} }),
+    lamp('lampa', 10, -1.8),
+    lamp('lampb', 11, 1.8),
+  ])
+}
+
+await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd lamps at 0 render in range', async () => {
+  const cases = [
+    { name: 'noon', ev: 0, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 55, sun_azimuth_deg: 135, turbidity: 3 }) },
+    { name: 'dusk', ev: 2, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }) },
+    { name: 'room', ev: 0, setup: (s) => room(s, 40) },
+  ]
+  const seen = {}
+  for (const c of cases) {
+    const server = new SceneServer()
+    c.setup(server)
+    server.scene.render.exposure_ev = c.ev
+    const { context, page, errors } = await open(server)
+    const { box } = await viewportCenter(page)
+    await shading(page, '最终渲染')
+    const all = await lumaStats(page, await settledShot(page, box), { level: 250 })
+    await shot(page, `c5-calibration-${c.name}`)
+    // The lower quarter is ground in the yard and the floor before the room.
+    const ground = await lumaStats(page, await settledShot(page, { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }))
+    seen[c.name] = { all, ground }
+    console.log(`${c.name} at EV ${c.ev}: mean ${all.mean.toFixed(0)}, clipped ${(all.bright * 100).toFixed(1)}%, ground ${ground.mean.toFixed(0)} (rgb ${[ground.r, ground.g, ground.b].map((v) => v.toFixed(0))})`)
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  const { noon, dusk, room: lamps } = seen
+  assert.ok(noon.ground.mean > 175 && noon.ground.mean < 220, 'sunlit light ground is bright, not blown')
+  assert.ok(Math.abs(noon.ground.r - noon.ground.b) < 12, 'daylight is neutral')
+  assert.ok(noon.all.bright < 0.01 && dusk.all.bright < 0.01, 'nothing clips outdoors')
+  assert.ok(dusk.ground.mean > 130 && dusk.ground.mean < 200, 'dusk at +2 is a little darker than noon')
+  assert.ok(dusk.ground.r - dusk.ground.b > 15, 'dusk light is warm')
+  assert.ok(lamps.all.mean > 40 && lamps.all.mean < 110 && lamps.all.bright < 0.02, 'the lamps light the room without blowing it out')
 })
 
 await browser.close()

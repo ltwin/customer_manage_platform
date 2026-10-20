@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber'
 import { Sky } from '@react-three/drei'
 import { PMREMGenerator, type DirectionalLight, type WebGLRenderTarget } from 'three'
 import type { SceneEnvironment } from '../api.ts'
-import { AMBIENT_FILL, ENVIRONMENT_INTENSITY, sunLight } from '../render/litLook.ts'
+import { AMBIENT_FILL, sunLight } from '../render/litLook.ts'
 import { roomEnvironment, setSky, skyEnvironment, sunDirection, viewSky } from '../render/sky.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
@@ -137,7 +137,7 @@ function LitLighting({ environment }: { environment: SceneEnvironment }) {
       l.target?.dispose()
       l.target = next
       scene.environment = next.texture
-      scene.environmentIntensity = ENVIRONMENT_INTENSITY
+      scene.environmentIntensity = 1
       invalidate()
     }
     if (l.timer !== null) window.clearTimeout(l.timer)
@@ -161,7 +161,7 @@ function Sun({ environment }: { environment: SceneEnvironment }) {
   const ref = useRef<DirectionalLight>(null)
   useLayoutEffect(() => (ref.current ? fitSunShadow(ref.current) : undefined), [])
   const position = sunDirection(environment).multiplyScalar(60)
-  const light = sunLight(environment.sky.sun_elevation_deg ?? 35)
+  const light = sunLight(environment.sky.sun_elevation_deg ?? 35, environment.sky.turbidity ?? 3)
   return (
     <directionalLight
       ref={ref}

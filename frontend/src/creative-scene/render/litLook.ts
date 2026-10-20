@@ -1,31 +1,63 @@
 import { Color } from 'three'
+import { luminance, skyIrradiance, transmittance, type Vec3 } from './atmosphere.ts'
 
 // The lit look's constants (design「最终渲染的光照」). They set the balance
 // within one scene: sun, sky light and ambient fill. How bright a scene is
-// overall is its own exposure compensation (render.exposure_ev). Assumed
-// values until calibrated on the reference scenes (design 未决事项 1).
+// overall is its own exposure compensation (render.exposure_ev). Calibrated
+// on the reference scenes (design 未决事项 1, the e2e「calibration」check):
+// a clear noon at EV 0, dusk at +2, a room lit by two 40 cd lamps at 0.
 
-/** The sun's intensity high in the sky (three.js units). */
-export const SUN_MAX = 3
-/** scene.environmentIntensity for the sky's light. */
-export const ENVIRONMENT_INTENSITY = 1
+/** The sun's brightness high in the sky (luminance in three.js units, on a surface facing it). */
+export const SUN_MAX = 2.2
+/**
+ * The sky's light on level ground against the sun's, on the reference clear
+ * noon (sun 55° up, turbidity 3): about a quarter, as in a clear-day photograph.
+ */
+export const SKY_SHARE = 0.25
 /** The sky map lights already; the scene's ambient only fills shadows a little. */
 export const AMBIENT_FILL = 0.5
 
-const low = new Color('#ffb46b')
-const high = new Color('#fff4e6')
+const reference = { elevationDeg: 55, turbidity: 3 }
+const toY = (deg: number) => Math.sin((deg * Math.PI) / 180)
+const times = (a: Vec3, b: Vec3): Vec3 => [a[0] * b[0], a[1] * b[1], a[2] * b[2]]
+const scaled = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k]
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return t * t * (3 - 2 * t)
 }
 
-/** The sun at an elevation: fading out below the horizon, warmer when low. */
-export function sunLight(elevationDeg: number): { intensity: number; color: Color } {
-  return {
-    intensity: SUN_MAX * smoothstep(-2, 20, elevationDeg),
-    color: low.clone().lerp(high, smoothstep(0, 35, elevationDeg)),
-  }
+/** The sun's light on a surface facing it, before white balance: what the atmosphere lets through, gone below the horizon. */
+function rawSun(elevationDeg: number, turbidity: number): Vec3 {
+  const fade = smoothstep(-1, 1, elevationDeg)
+  return scaled(transmittance(toY(elevationDeg), turbidity), (SUN_MAX * fade) / luminance(transmittance(1, turbidity)))
+}
+
+/**
+ * The reference noon fixes two things: how much the sky shader's output is
+ * scaled (its light SKY_SHARE of the sun's on level ground) and a daylight
+ * white balance, as a camera set to daylight would: the sky's light alone is
+ * deep blue, so without it every sunny scene came out cold. Lamps are not
+ * balanced; they keep the colour they are given.
+ */
+const { skyScale, whiteBalance } = (() => {
+  const y = toY(reference.elevationDeg)
+  const sunOnGround = scaled(rawSun(reference.elevationDeg, reference.turbidity), y)
+  const sky = skyIrradiance([0, y, Math.sqrt(1 - y * y)], reference.turbidity)
+  const scale = (SKY_SHARE * luminance(sunOnGround)) / luminance(sky)
+  const total: Vec3 = [0, 1, 2].map((i) => sunOnGround[i] + sky[i] * scale) as Vec3
+  const grey = luminance(total)
+  return { skyScale: scale, whiteBalance: total.map((v) => grey / v) as Vec3 }
+})()
+
+/** What the sky shader's output is multiplied by, per channel: background and sky light alike. */
+export const SKY_GAIN: Vec3 = scaled(whiteBalance, skyScale)
+
+/** The sun at an elevation: weaker and more orange as it sets, gone below the horizon. */
+export function sunLight(elevationDeg: number, turbidity = reference.turbidity): { intensity: number; color: Color } {
+  const light = times(rawSun(elevationDeg, turbidity), whiteBalance)
+  const peak = Math.max(...light)
+  return peak > 0 ? { intensity: peak, color: new Color(light[0] / peak, light[1] / peak, light[2] / peak) } : { intensity: 0, color: new Color(1, 1, 1) }
 }
 
 /** toneMappingExposure for the lit look. */
@@ -36,4 +68,4 @@ export const exposureOf = (render: { exposure_ev?: number } | undefined) => 2 **
  * stage spot, a fill directional light (candela for point and spot).
  * Calibrated with the constants above.
  */
-export const NEW_LIGHT_INTENSITY = { directional: 1, point: 40, spot: 300 } as const
+export const NEW_LIGHT_INTENSITY = { directional: 1, point: 40, spot: 150 } as const
