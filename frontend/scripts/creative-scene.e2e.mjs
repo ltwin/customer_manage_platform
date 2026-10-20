@@ -26,6 +26,7 @@ import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
 import SaveModelDialog from '/src/creative-canvas/editor/SaveModelDialog.tsx';
+import LibraryDrawer from '/src/creative-canvas/editor/LibraryDrawer.tsx';
 import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
 import {sceneContext} from '/src/creative-scene/context.ts';
 import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
@@ -38,17 +39,20 @@ window.__closed = 0;
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
-// ?library=1 hands the editor the canvas page's 「存入资产库」 dialog.
+// ?library=1 hands the editor the canvas page's 「存入资产库」 dialog and asset drawer.
+const noop = () => {};
 function Editor({host}) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(null);
+  const [place, setPlace] = useState(null);
   const [notice, setNotice] = useState('');
   window.__reopen = () => setOpen(true);
   const query = new URLSearchParams(location.search);
   const group = React.createElement('select', {name:'group'}, React.createElement('option', {value:''}, '不归类'), React.createElement('option', {value:'cgrp_qa'}, '柱子'));
   return open
     ? React.createElement(React.Fragment, null,
-        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving} : {})}),
+        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, onOpenLibrary: (p) => setPlace(() => p)} : {})}),
+        query.has('library') && React.createElement(LibraryDrawer, {hidden: !place, tick: 0, task: place ? {kind: 'scene-model'} : null, canPlace: false, onPlace: noop, onFill: noop, onPick: noop, onScenePlace: (a) => { setPlace(null); place?.(a) }, onClose: () => setPlace(null), onWidth: noop, onAssets: noop, onCatalog: noop}),
         saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: setNotice, onClose: () => setSaving(null)}),
         notice && React.createElement('p', {id:'notice'}, notice))
     : React.createElement('p', {id:'closed'}, 'closed');
@@ -141,6 +145,20 @@ class SceneServer {
     // Models saved into the asset library, by revision; every save request.
     this.assets = new Map()
     this.saves = []
+    // The asset drawer's list, and the queries it sent.
+    this.library = []
+    this.assetQueries = []
+  }
+  /** A model asset in the drawer: the seeded revision, without its code. */
+  libraryAsset(rev, title) {
+    const m = this.models.get(rev)
+    const { code: _code, ...generator } = m.generator
+    this.library.push({
+      id: `ccas_${this.library.length + 1}`, title, description: '', kind: 'model', revision: '1', content_id: m.content_id, content_revision_id: rev,
+      content: { id: rev, content_id: m.content_id, kind: 'model', sequence: '1', truncated: false, payload: { model: { format: 'glb', manifest: m.manifest, generator, name_hint: m.name_hint } },
+        media: [{ role: 'original', blob_id: 'glb', mime: 'model/gltf-binary', byte_size: m.glb.byteLength, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'png', mime: 'image/png', byte_size: 64, width: 256, height: 256, duration_ms: null }] },
+      unavailable: false, is_favorite: false, rating: null, palette: [], created_at: '2026-10-20T00:00:00Z', deleted_at: null, purge_after: null, group_ids: [], tag_ids: [],
+    })
   }
   /** POST /assets/from-scene-model: the instance's model, if the editor saw its current version. */
   saveModel(body) {
@@ -397,6 +415,16 @@ async function route(page, server) {
       const items = [...server.history].reverse().filter((h) => Number(h.revision) > since).slice(0, limit).map((h) => server.revisionItem(h))
       return json(200, { items, next_cursor: null })
     }
+    if (path === '/assets' && request.method() === 'GET') {
+      server.assetQueries.push(url.searchParams.toString())
+      const kind = url.searchParams.get('kind')
+      const items = server.library.filter((a) => !kind || a.kind === kind)
+      return json(200, { items, next_cursor: '', total_count: items.length, library_revision: '1' })
+    }
+    if (path === '/asset-groups') return json(200, { items: [], hierarchy_revision: '1', asset_counts: {} })
+    if (path === '/tags' || path === '/tag-categories') return json(200, { items: [], hierarchy_revision: '1' })
+    if (path === '/library-usage') return json(200, { asset_count: server.library.length, stored_bytes: 0, limit_bytes: 1, pending_release_bytes: 0 })
+    if (path === '/library-settings') return json(200, { retention_days: 30, revision: '1', hierarchy_revision: '1', library_revision: '1' })
     if (path === '/assets/from-scene-model' && request.method() === 'POST') {
       const [status, body] = server.saveModel(request.postDataJSON())
       return json(status, body)
@@ -608,6 +636,43 @@ await check('C6 save to library: saved once, then filed; a model changed meanwhi
   assert.equal(last.payload.expected_object_rev, server.unitRevs[content(pillar)])
   assert.notEqual(last.operation_id, conflicted.operation_id, 'a new request after the refresh')
   assert.equal([...server.assets.keys()].at(-1), second, 'the new version is what was saved')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C6 place from the library: Shift+A 从资产库添加… puts the clicked model under the pointer, selected, one undo, drawer closes', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  server.libraryAsset(rev, '哥特束柱')
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x + 120, y + 60)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+  const drawer = page.locator('#creative-library')
+  await drawer.getByRole('heading', { name: '放入场景' }).waitFor()
+  await drawer.getByText('点一个模型放进场景，或拖到想放的位置').waitFor()
+  await waitFor(() => server.assetQueries.some((q) => new URLSearchParams(q).get('kind') === 'model'), 'only models are listed')
+  const before = server.commands.length
+  await drawer.locator('.al-tile', { hasText: '哥特束柱' }).click()
+  await drawer.waitFor({ state: 'hidden' })
+  await waitFor(() => server.commands.length === before + 1, 'place command')
+  const [add] = server.commands.at(-1).payload.operations
+  assert.equal(add.op, 'add_objects')
+  const placed = add.objects[0]
+  assert.equal(placed.kind, 'model_instance')
+  assert.equal(placed.name, '哥特束柱')
+  assert.deepEqual(placed.model, { content_revision_id: rev })
+  assert.ok(close(placed.transform.position[1], 0, 1e-3), 'on the ground')
+  assert.ok(Math.hypot(placed.transform.position[0], placed.transform.position[2]) > 0.3, 'under the pointer, not at the origin')
+  const row = page.getByRole('treeitem', { name: /哥特束柱/ })
+  await row.waitFor()
+  assert.equal(await row.getAttribute('aria-selected'), 'true', 'the placed model is selected')
+  await page.locator('.cc-scene-model-info').filter({ hasText: '代码模型：柱' }).waitFor()
+  await saved(page)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => !server.scene.objects.some((o) => o.id === placed.id), 'one undo removes it')
   assert.deepEqual(errors, [])
   await context.close()
 })

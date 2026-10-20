@@ -78,3 +78,33 @@ test('after a conflict the dialog waits until the editor shows the new version',
   assert.equal(cancelled, false)
   assert.equal(listeners.size, 0)
 })
+
+test('a placed model the snapshot does not describe asks for a read', async () => {
+  const { namesUnknownModel } = await import('../src/creative-scene/state/sync.ts')
+  const place = (rev: string) => ({ ops: [{ op: 'add_objects', objects: [object(3, { model: { content_revision_id: rev } })] }] }) as unknown as Intent
+  const known = { ccrv_1: summary() }
+  assert.equal(namesUnknownModel(place('ccrv_asset'), known), true, 'an asset placed from the library')
+  assert.equal(namesUnknownModel(place('ccrv_1'), known), false, 'a copy of a model the scene has')
+  assert.equal(namesUnknownModel({ ops: [{ op: 'set_instance_model', object_id: objectID(1), model: { content_revision_id: 'ccrv_2' }, scope: 'this' }] } as unknown as Intent, known), true)
+  assert.equal(namesUnknownModel({ ops: [{ op: 'add_objects', objects: [object(4, { kind: 'primitive', model: undefined })] }] } as unknown as Intent, known), false)
+})
+
+test('known summaries come last and never stand in for bytes', async () => {
+  const { ModelCache, modelSummaries } = await import('../src/creative-scene/models/cache.ts')
+  const downloads: string[] = []
+  const cache = new ModelCache(async (revision) => {
+    downloads.push(revision)
+    throw new Error('offline')
+  })
+  cache.remember('ccrv_asset', summary({ name_hint: '资产' }))
+  cache.register('ccrv_baked', { glb: new ArrayBuffer(8), summary: summary({ name_hint: '本机' }) })
+  cache.remember('ccrv_baked', summary({ name_hint: '资产里的' }))
+  const merged = modelSummaries({ ccrv_server: summary({ name_hint: '服务端' }) }, cache.local.getState(), cache.known.getState())
+  assert.equal(merged.ccrv_asset.name_hint, '资产')
+  assert.equal(merged.ccrv_baked.name_hint, '本机', 'a local bake wins over a known summary')
+  assert.equal(modelSummaries({ ccrv_asset: summary({ name_hint: '服务端' }) }, {}, cache.known.getState()).ccrv_asset.name_hint, '服务端', 'the server wins')
+  await assert.rejects(cache.load('ccrv_asset'), /offline/)
+  assert.deepEqual(downloads, ['ccrv_asset'], 'a known summary is no GLB: load() downloads')
+  cache.settle(['ccrv_asset'])
+  assert.equal(cache.known.getState().ccrv_asset, undefined, 'dropped once the server describes it')
+})

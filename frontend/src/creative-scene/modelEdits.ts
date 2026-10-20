@@ -189,7 +189,7 @@ export class ModelEdits {
   }
 
   private summaries(): Record<string, SceneModel> {
-    return modelSummaries(this.deps.session.state.base?.models, this.deps.cache.local.getState())
+    return modelSummaries(this.deps.session.state.base?.models, this.deps.cache.local.getState(), this.deps.cache.known.getState())
   }
 
   private set(patch: (s: ModelEditsState) => Partial<ModelEditsState>) {

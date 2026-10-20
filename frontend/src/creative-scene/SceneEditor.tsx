@@ -9,7 +9,7 @@ import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
-import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -44,7 +44,7 @@ import type { WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
-import { saveTarget, whenShown, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
+import { saveTarget, whenShown, type LibraryAsset, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
 import { Viewport, type ViewportHandle } from './Viewport.tsx'
 import './scene.css'
@@ -104,6 +104,7 @@ export default function SceneEditor({
   canvasID,
   sceneNodeID,
   onSaveModel,
+  onOpenLibrary,
 }: {
   documentID: string
   onClose: () => void
@@ -112,6 +113,8 @@ export default function SceneEditor({
   sceneNodeID?: string
   /** Opens the canvas page's 「存入资产库」 dialog; without it the entries are hidden. */
   onSaveModel?: (request: SaveModelRequest) => void
+  /** Opens the asset drawer to pick a model; place puts the picked one in the scene. */
+  onOpenLibrary?: (place: (asset: LibraryAsset) => void) => void
 }) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
@@ -180,8 +183,13 @@ export default function SceneEditor({
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
   const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
   const localModels = useStore(modelCache.local)
+  const knownModels = useStore(modelCache.known)
   const failedModels = useStore(modelCache.failed)
-  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels), [u.preview, s.base, localModels])
+  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels, knownModels), [u.preview, s.base, localModels, knownModels])
+  // A placed asset's model is told apart once the server describes it.
+  useEffect(() => {
+    if (s.base) modelCache.settle(Object.keys(s.base.models ?? {}))
+  }, [s.base])
   const readOnly = s.trashed || s.missing || !!u.preview || !s.base
   const display = displayOf(u, shown?.render)
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
@@ -417,6 +425,24 @@ export default function SceneEditor({
       notify(`已导出 ${out.result.nodes.length} 张图到画布`)
     } else notify(out.message)
   }
+  /**
+   * An asset's model, where the menu was opened (on the ground under the
+   * pointer, else below the view's centre). Its summary is known at once, so
+   * the properties and the selection box are right before the next read.
+   */
+  const placeModel = (asset: LibraryAsset, at?: { x: number; y: number }) => {
+    const payload = asset.content?.payload
+    const model = payload && 'model' in payload ? payload.model : null
+    if (asset.kind !== 'model' || asset.unavailable || !model?.generator) return notify('这个模型不可用')
+    const revision = asset.content_revision_id
+    modelCache.remember(revision, { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null })
+    const o = newModelInstance(revision, asset.title, { position: handle.current?.groundPoint(at) ?? [0, 0, 0], rotation: [0, 0, 0, 1] }, objects)
+    if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
+    select([o.id])
+    // The pick was made in the drawer: keys go back to the editor, so Cmd+Z undoes it at once.
+    root.current?.focus({ preventScroll: true })
+  }
+  const openLibrary = (at?: { x: number; y: number }) => onOpenLibrary?.((asset) => placeModel(asset, at))
   /** Adds where the menu was opened: Shift+A or a right click over the ground. */
   const addPrimitive = (builtin: string, at?: { x: number; y: number }) => {
     const point = handle.current?.groundPoint(at) ?? [0, 0, 0]
@@ -494,7 +520,7 @@ export default function SceneEditor({
       selected: ids,
       objects: st.view?.scene.objects ?? [],
       base: st.base,
-      models: modelSummaries(st.base?.models, modelCache.local.getState()),
+      models: modelSummaries(st.base?.models, modelCache.local.getState(), modelCache.known.getState()),
       previews: modelEdits.store.getState().previews,
       unsaved: [...st.queue, ...st.conflicts.flatMap((g) => g.intents)],
     })
@@ -670,6 +696,7 @@ export default function SceneEditor({
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
+        ...(onOpenLibrary ? [{ label: '从资产库添加…', run: () => openLibrary(at) }] : []),
         { section: '灯光' },
         ...(['directional', 'point', 'spot'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },

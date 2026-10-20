@@ -54,7 +54,7 @@ import DocumentView from './DocumentView.tsx'
 import SaveModelDialog from './SaveModelDialog.tsx'
 import type { SaveModelRequest } from '../../creative-scene/saveModel.ts'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveModelRequest) => void }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveModelRequest) => void; onOpenLibrary?: (place: (asset: api.Asset) => void) => void }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -228,6 +228,8 @@ function Workspace({ account }: { account: string }) {
   } | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
   const [savingModel, setSavingModel] = useState<SaveModelRequest | null>(null)
+  // 场景里「从资产库添加…」：抽屉点中的模型交回编辑器放置。
+  const scenePlace = useRef<((asset: api.Asset) => void) | null>(null)
   // 多选「存入资产库…」：一次选分组，逐个入库（PRD CV-81）。
   const [savingMany, setSavingMany] = useState<string[] | null>(null)
   const nodeFileInput = useRef<HTMLInputElement>(null)
@@ -1486,6 +1488,11 @@ function Workspace({ account }: { account: string }) {
             if (libraryTask?.kind === 'pick')
               pickReferences(libraryTask.nodeID, list)
           }}
+          onScenePlace={(asset) => {
+            const place = scenePlace.current
+            closeLibrary()
+            place?.(asset)
+          }}
           onClose={closeLibrary}
           onWidth={setLibraryWidth}
           onAssets={setAssets}
@@ -1777,8 +1784,15 @@ function Workspace({ account }: { account: string }) {
             sceneNodeID={maximized.nodeID}
             host={sceneHost.launcher}
             onSaveModel={setSavingModel}
+            onOpenLibrary={(place) => {
+              scenePlace.current = place
+              setLibraryTask({ kind: 'scene-model' })
+              setLibraryOpen(true)
+            }}
             onClose={() => {
               setSavingModel(null)
+              scenePlace.current = null
+              setLibraryTask(null)
               setLibraryOpen(maximized.libraryOpen)
               setMaximized(null)
             }}

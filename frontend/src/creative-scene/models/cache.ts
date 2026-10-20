@@ -124,6 +124,12 @@ export function partsOf(root: Object3D): ModelParts {
 
 export class ModelCache {
   readonly local: StoreApi<Readonly<Record<string, LocalModel>>> = createStore(() => ({}))
+  /**
+   * Summaries of models placed from elsewhere (an asset), until the scene's
+   * next read brings the server's. Kept apart from local: those have bytes
+   * load() draws from, these only say what the model is.
+   */
+  readonly known: StoreApi<Readonly<Record<string, SceneModel>>> = createStore(() => ({}))
   /** Revisions whose GLB could not be loaded, for the properties panel. */
   readonly failed: StoreApi<Readonly<Record<string, true>>> = createStore(() => ({}))
   private readonly download: Download
@@ -149,6 +155,20 @@ export class ModelCache {
     })
     this.generators.set(revision, promise)
     return promise
+  }
+
+  /** What a placed asset's model is, shown until the server's summary arrives. */
+  remember(revision: string, summary: SceneModel) {
+    this.known.setState({ ...this.known.getState(), [revision]: summary })
+  }
+
+  /** The server has summaries of these now. */
+  settle(revisions: readonly string[]) {
+    const known = this.known.getState()
+    if (!revisions.some((r) => r in known)) return
+    const rest = { ...known }
+    for (const r of revisions) delete rest[r]
+    this.known.setState(rest, true)
   }
 
   /** Registers a freshly baked model under its placeholder revision. */
@@ -240,6 +260,7 @@ export class ModelCache {
     this.loads.clear()
     this.ready.clear()
     this.local.setState({}, true)
+    this.known.setState({}, true)
     disposeParts(parts)
   }
 }
@@ -264,13 +285,14 @@ export const modelCache = new ModelCache()
 
 /**
  * What the editor knows about the models a scene names: the server's
- * summaries win, local bakes fill in until a read brings them.
+ * summaries win, then local bakes, then what placed assets said.
  */
 export function modelSummaries(
   server: Readonly<Record<string, SceneModel>> | undefined,
   local: Readonly<Record<string, LocalModel>>,
+  known: Readonly<Record<string, SceneModel>> = {},
 ): Record<string, SceneModel> {
-  const out: Record<string, SceneModel> = {}
+  const out: Record<string, SceneModel> = { ...known }
   for (const [id, m] of Object.entries(local)) out[id] = m.summary
   return { ...out, ...server }
 }

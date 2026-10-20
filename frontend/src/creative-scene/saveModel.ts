@@ -1,3 +1,4 @@
+import type { components } from '../api/schema'
 import type { SceneDocument, SceneObject } from './api.ts'
 import type { SceneModel } from './models/cache.ts'
 import { parsePlaceholder } from './state/apply.ts'
@@ -6,6 +7,9 @@ import type { Intent } from './state/intents.ts'
 // Saving a scene's code model into the asset library: which version, and
 // whether it can be saved now. The canvas page holds the dialog; it imports
 // only these types, never the editor (three.js stays out of its bundle).
+
+/** An asset the drawer hands the editor to place. */
+export type LibraryAsset = components['schemas']['CreativeLibraryAsset']
 
 /** The model version a save dialog froze when it opened. */
 export type SaveTarget = {

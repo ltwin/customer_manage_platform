@@ -21,6 +21,7 @@ export default function AssetInfoPanel({
   blocked,
   onRate,
   onPlace,
+  placeLabel = '放入画布',
   foot,
 }: {
   asset: Asset
@@ -29,6 +30,7 @@ export default function AssetInfoPanel({
   blocked: boolean
   onRate: (rating: number | null) => void
   onPlace?: () => void
+  placeLabel?: string
   /** 带着任务打开时（挑素材引用），底部换成任务自己的操作。 */
   foot?: React.ReactNode
 }) {
@@ -227,14 +229,14 @@ export default function AssetInfoPanel({
               <Trash2 size={14} />
               移到回收站
             </button>
-            {onPlace && canvasPlaceable && (
+            {onPlace && (
               <button
                 className="btn wide"
                 disabled={disabled || asset.unavailable}
                 onClick={onPlace}
               >
                 <Plus size={14} />
-                放入画布
+                {placeLabel}
               </button>
             )}
           </>

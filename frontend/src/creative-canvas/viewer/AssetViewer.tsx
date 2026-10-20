@@ -5,6 +5,7 @@ import { useActions } from '../assets/useActions.ts'
 import { useOrganization } from '../assets/useOrganization.tsx'
 import type { LibraryCatalog } from '../assets/useLibrary.ts'
 import MediaViewer from './MediaViewer.tsx'
+import { isCanvasAsset } from '../editor/assetPlacement.ts'
 import AssetInfoPanel from './AssetInfoPanel.tsx'
 import '../assets/organize.css'
 
@@ -19,6 +20,8 @@ export default function AssetViewer({
   onClose,
   blocked = false,
   onPlace,
+  placeLabel,
+  placeable = isCanvasAsset,
   label,
   foot,
 }: {
@@ -31,6 +34,10 @@ export default function AssetViewer({
   onClose: () => void
   blocked?: boolean
   onPlace?: (asset: api.Asset) => void
+  /** 放入按钮的文字，默认「放入画布」。 */
+  placeLabel?: string
+  /** 哪些素材给放入按钮；默认能放到画布上的（模型除外）。 */
+  placeable?: (asset: api.Asset) => boolean
   label?: string
   /** 底部换成调用方的操作，按当前看的那一项给出。 */
   foot?: (asset: api.Asset) => React.ReactNode
@@ -125,8 +132,9 @@ export default function AssetViewer({
           organization={organization}
           blocked={editingBlocked}
           onRate={(value) => actions.rate([asset], value)}
+          placeLabel={placeLabel}
           onPlace={
-            onPlace
+            onPlace && placeable(asset)
               ? () => {
                   if (!blocked && !actions.isBlocked()) onPlace(asset)
                 }
