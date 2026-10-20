@@ -1,12 +1,12 @@
 {
   "uid": "bdabd66b-09bb-4897-ab28-f1c9cdb918ee",
-  "revision": 4,
+  "revision": 10,
   "id": "scene-camera-export",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 8,
+    "version": 9,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -45,9 +45,9 @@
       "architecture:场景模块"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-19T12:33:49.068Z",
-  "updatedAt": "2026-10-19T14:00:20.445Z",
+  "updatedAt": "2026-10-20T04:02:34.297Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -59,19 +59,176 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-19T14:00:20.371Z",
-      "contentHash": "f516856e4da8faf4"
+      "at": "2026-10-20T03:51:31.574Z",
+      "contentHash": "6c0d8b9ef598b4b1"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-19T14:00:20.371Z",
-      "contentHash": "1e972d03a01b5344"
+      "at": "2026-10-20T03:51:31.574Z",
+      "contentHash": "0011412f89bc694e"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-19T14:00:20.371Z",
+      "contentHash": "f516856e4da8faf4",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-19T14:00:20.371Z",
+      "contentHash": "1e972d03a01b5344",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "4ce0dda616f94665abb5b1332ce65e429969a165",
+    "at": "2026-10-19T14:01:48.210Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "16bb7bf161ab5e012cae1b60b0ffc5fa8f1add2d5731d5ed153ac0cc0ab5a487"
+    },
+    "preExisting": [
+      ".gitignore",
+      ".lti/features/2026-10-15-scene-editor-3d/contracts.md",
+      ".lti/features/2026-10-15-scene-editor-3d/design.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/design.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/meta.json",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/proposal.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/specs.md",
+      ".lti/features/2026-10-15-scene-editor-3d/features/2026-10-19-scene-camera-export/tasks.md",
+      ".lti/features/2026-10-15-scene-editor-3d/meta.json",
+      ".lti/features/2026-10-15-scene-editor-3d/proposal.md",
+      ".lti/features/2026-10-15-scene-editor-3d/roadmap.md",
+      ".lti/snapshots/16bb7bf161ab5e012cae1b60b0ffc5fa8f1add2d5731d5ed153ac0cc0ab5a487.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-20T04:02:12.246Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 lti 配置 checks，验证命令由我执行并贴结果；e2e 用 SwiftShader 与模拟服务端；视口帧耗时只在 Apple M4 Pro 上测过，弱集成显卡未验证；AC-9 与助手实际写出的重绘提示词质量由 owner 判断",
+        "coverage": [
+          {
+            "criterionId": "AC-2a3153223467",
+            "status": "verified",
+            "evidence": "e2e creative-scene.e2e.mjs「Add > 摄像机 stands at the view…」；creative-scene-camera.test.ts newCamera；属性栏改动沿用现有静默保存/撤销（creative-scene-interaction.test.ts）"
+          },
+          {
+            "criterionId": "AC-af2287dd399c",
+            "status": "verified",
+            "evidence": "e2e「…0 looks through it in a frame with guides; 1 leaves」；creative-scene-camera.test.ts 长边视场角与 cameraViewFov、keymap camera-to-view。限制：相机视图不跟随摄像机滚转（design 实施偏差），带滚转的摄像机框内画面未倾斜"
+          },
+          {
+            "criterionId": "AC-095b606595af",
+            "status": "verified",
+            "evidence": "TestExportPlacesTheImagesInOneChange（6 张一个 change_id、3 行 2 列、第二次在下方）；e2e「export: two cameras × clay and line, 2048 PNGs at each camera’s shape…」"
+          },
+          {
+            "criterionId": "AC-d1a0ee357996",
+            "status": "verified",
+            "evidence": "SceneEditor.tsx:startExport whenSaved；exportCount 单元测试（0 台/超 48）；TestExportRetryReplaysTheSameNodes；submitExport 重试复用 operation_id/client_created_at 单元测试"
+          },
+          {
+            "criterionId": "AC-b7bd7588ea37",
+            "status": "verified",
+            "evidence": "TestFingerprintCountsWhatThePassDraws（表驱动，含景深行）、TestBasedOnStateFollowsTheScene（换图/删场景/回收站）、TestOldCameraFingerprintsLikeACompletedOne"
+          },
+          {
+            "criterionId": "AC-6196c0cc4f50",
+            "status": "verified",
+            "evidence": "TestLookAtMatchesThreeJS（three.js 金样例：根级、旋转缩放分组、正上/正下、摄像机/灯光/物件）、TestLookAtRefusals；TestTheAssistantAimsLooksAndExports"
+          },
+          {
+            "criterionId": "AC-8a54f5fbf2bc",
+            "status": "verified",
+            "evidence": "TestCreateExportJob、TestExportShotsNeedsTheSceneOnTheCanvas、TestCompleteExportPlacesTheNodes、TestCompleteExportThatCannotBePlacedFailsTheJob、TestCompleteExportGatesAndHandover；agent e2e「the canvas page runs export_shots…」"
+          },
+          {
+            "criterionId": "AC-9978b3334559",
+            "status": "verified",
+            "evidence": "TestExportRefusals、TestCreativeSceneExportHTTP（400/409 archived_read_only/409 creative_upload_unavailable/413/跨账号 404）"
+          },
+          {
+            "criterionId": "AC-567c76e70e72",
+            "status": "verified",
+            "evidence": "owner 2026-10-19 用导出图实测 gpt-image-2.5 重绘，效果 OK（原话「经过我的测试，重绘效果OK」）；原图、组合与结论记在 discovery/research/repaint-consistency.md。技术侧只提供原图，判断由 owner 给出"
+          },
+          {
+            "criterionId": "AC-62656d389577",
+            "status": "verified",
+            "evidence": "creative-scene-camera.test.ts sharpRange（50mm f/2.8 3m ≈ 2.74–3.32m）、focusDistance（物件/悬空/夹取）；TestDanglingFocusObjectBlocksNothing；e2e 导出景深焦外梯度能量 34.9→4.0、焦点 25.0→23.3，线稿不变；e2e「预览景深…」；相机视图「景深预览」开关（owner 2026-10-19 修订）：e2e「景深预览 is a switch…」焦外梯度能量 关 77.3 → f/1.4 20.6 → 外部改 f/8 后开关仍开 57.2，关掉后与打开前逐像素一致（AO 不变）"
+          },
+          {
+            "criterionId": "AC-a0f83d92bf7f",
+            "status": "verified",
+            "evidence": "e2e「Add > 空物体 shows a marker; the camera focuses on it by 拾取…」；newEmpty 单元测试"
+          },
+          {
+            "criterionId": "AC-b89c567f05d2",
+            "status": "verified",
+            "evidence": "e2e「a sensor preset changes only sensor_mm and the equivalent focal length」「guides stay in the editor…」；viewState 单元测试（辅助线持久化）；equivalentFocal APS-C ≈ 53.6"
+          },
+          {
+            "criterionId": "AC-da8e3598044b",
+            "status": "verified",
+            "evidence": "TestCameraDepthOfFieldMergesByKey、TestFocusObjectIsCheckedWhenWritten、TestOldCameraIsCompletedOnRead；TestTheAssistantAimsLooksAndExports"
+          },
+          {
+            "criterionId": "AC-d662c17b5720",
+            "status": "verified",
+            "evidence": "TestRenderViewDepthOfField（不带参数请求不变、与 viewpoint/preset 同用或未开景深报错）；agent e2e「render_view with depth_of_field blurs…」1024×683 JPEG，梯度能量 5.78→0.14；render_view 不带参数时也走 clay（AO 与视口一致），agent e2e 11/11，截图背景按色调映射后的颜色校验"
+          },
+          {
+            "criterionId": "AC-a062a4706b32",
+            "status": "verified",
+            "evidence": "TestExportRecordsTheLens（转 90° 的摄像机、对焦物件在放大 2 倍的分组里，focus_m=6、物件名；无对焦物件时夹到 near 0.1）；TestTheAssistantAimsLooksAndExports（export_shots 结果的 lens 与 read_canvas 的 export_source：摄像机、场景、lens、state=current）；TestRepaintGuidanceNamesTheExportSource（系统说明点到的字段名从类型取）。助手写出的提示词效果由 owner 在 AC-9 重绘时检查，结论 OK"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "合入 develop 后全量门禁：build、lint 0 问题、前端 668/668、ops（preflight 56 例、auth legacy、auth security）、generate-check 全部通过；后端 go test 首轮 reminder/schedule/shootplanning 在启动 Postgres 测试容器时 Docker 接口超时（context deadline exceeded，非断言失败），按 AGENTS.md 分诊单独重跑三轮均绿，其余 50 个包首轮通过。场景 e2e 41/41、助手 e2e 11/11（视口 AO 与景深开关修订后）。契约：Epic v9 的 api 导出分镜、data 导出图来源、data/api 场景客户端任务、data 场景文档、architecture 场景模块均已实现；living specs 5 条 ADD 适用。设计偏差逐条记在 design.md「实施中的偏差」。性能：画布读取 +4.1 ms（200 物件 6 导出，阈值 10 ms）；指纹按组合缓存后 2000 物件 48 节点约 28 ms；视口单帧 M4 Pro 2× 屏 AO 12.6 ms、AO+景深 19.1 ms。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f2347a1a1d3f787e44fc176ae70a55edc80acc99d8dffffdbe5164bdc990e75c"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-20T04:02:22.931Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 未逐组记录导出组合对比（repaint-consistency.md 的表留空）"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "spec"
+      ],
+      "summary": "owner 2026-10-19 用导出图实测 gpt-image-2.5 重绘，效果 OK（原话：经过我的测试，重绘效果OK，你可以收尾本feature，合回develop）；AC-9 通过，指示收尾并合回 develop",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f2347a1a1d3f787e44fc176ae70a55edc80acc99d8dffffdbe5164bdc990e75c"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-20T04:02:34.172Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

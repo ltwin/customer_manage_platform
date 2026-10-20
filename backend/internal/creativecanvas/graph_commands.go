@@ -475,6 +475,13 @@ func (e *editGraph) add(a Action) error {
 	}
 	w, h := defaultNodeSize(a.TypeKey)
 	n := Node{ID: a.NodeID, TypeKey: a.TypeKey, TypeVersion: 1, Title: a.Title, X: a.X, Y: a.Y, Width: w, Height: h, ParentID: a.ParentID, Config: json.RawMessage("{}"), PlacementRevision: 1, DataRevision: 1, StatusRevision: 1}
+	if a.Config != nil {
+		raw, err := json.Marshal(a.Config)
+		if err != nil {
+			return err
+		}
+		n.Config = raw
+	}
 	if n.TypeKey == "core.group" && (a.Content != nil || a.Asset != nil || a.ContentRevisionID != "") {
 		return creativeops.Explain(creativeops.ErrValidation, "分组不能带内容或素材")
 	}

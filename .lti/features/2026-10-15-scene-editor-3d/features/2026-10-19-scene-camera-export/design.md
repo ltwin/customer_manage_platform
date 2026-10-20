@@ -134,7 +134,8 @@ tan(v / 2) = L / (2 · focal_mm) / max(a, 1)     // v 为 three.js PerspectiveCa
 |---|---|---|
 | `creativescene/model.go` | `Camera` 加 `DepthOfField *bool`、`FStop *float64`、`Focus *float64`、`FocusObjectID *string` | `completeCamera`、`mergeCamera` 同步；`decodeScene` 补齐默认值 |
 | `creativescene/exports.go` | `ExportInput{CanvasID, SceneNodeID, SceneRevision, Shots[]{CameraObjectID, Images[]{Pass, UploadID}}}` | 导出接口的 payload，`DocumentID` 来自路径 |
-| 同上 | `ExportResult{ChangeID, SceneRevision, Nodes[]{CameraObjectID, Pass, NodeID, ContentRevisionID}}` | 接口响应，也是 `export_shots` 任务的 `result` |
+| 同上 | `ExportResult{ChangeID, SceneRevision, Nodes[]{CameraObjectID, Pass, NodeID, ContentRevisionID, Lens}}` | 接口响应，也是 `export_shots` 任务的 `result`；`Lens` 为修订 v9 追加 |
+| `creativescene/lens.go` | `lensOf(scene, camera) creativecanvas.SceneExportLens` | 修订 v9：按导出快照算镜头，对焦距离与渲染端 `framing.ts:focusDistance`、`clampFocus` 同一规则 |
 | 同上 | `placeExportsInTx(ctx, tx, documentID, ExportInput, actor) (ExportResult, error)` | 手动导出与任务完成共用的放置流程 |
 | `creativescene/fingerprint.go` | `Fingerprint(scene, cameraID, pass) (string, bool)`；`Freshness`（端口实现） | 渲染指纹与过时判断 |
 | `creativescene/jobs.go` | `ExportRequest{CameraObjectIDs, Passes, CanvasID, SceneNodeID}` | `export_shots` 的 `request`；`JobResult` 增加 `Export *ExportResult` |
@@ -142,7 +143,7 @@ tan(v / 2) = L / (2 · focal_mm) / max(a, 1)     // v 为 three.js PerspectiveCa
 | `creativescene/jobs_complete.go` | `ExportOutput{SceneRevision, Shots}` | 完成任务的 `export`，替换现有占位的 `{export_operation_id}`；`Shots` 与 `ExportInput.Shots` 同类型 |
 | `creativecanvas` | `SceneExportPlacement{CanvasID, SceneNodeID, DocumentID, Rows[][]{UploadID, Title, Aspect, BasedOn}, Actor}` → `SceneExportPlaced{ChangeID, Nodes[]}` | 画布侧放置入口的输入与输出 |
 | `creativecanvas` | `Action.Config map[string]any` 加 `json:"-"` | 只有 Go 调用方能设置，HTTP 解码不到 |
-| `creativecanvas` | `ExportSource{NodeID, DocumentID, SceneRevision, CameraObjectID, Pass, Fingerprint}`；端口 `ExportFreshness.Check(ctx, tx, sources, current map[documentID]creativecontent.Revision) map[nodeID]string` | 读画布时问场景是否过时。当前快照由画布传入，只有指纹版本不符时端口才查库 |
+| `creativecanvas` | `ExportSource{NodeID, DocumentID, CameraObjectID, Pass, Fingerprint}`；端口 `ExportFreshness.Check(sources, current map[documentID]creativecontent.Revision) map[nodeID]string`；`SceneExportBasedOn`（`based_on` 的读写共用类型，修订 v9 加 `Lens *SceneExportLens`）、`SceneExportOf(node)`（读出生效的 `based_on`，`read_canvas` 也用它） | 读画布时问场景是否过时。当前快照由画布传入，端口不查库（实施补记：指纹版本不符直接判过时，`ctx`、`tx` 随之去掉；同一（场景, 摄像机, 方式）只算一次指纹） |
 
 ## 模块职责与协作
 
@@ -266,21 +267,32 @@ sequenceDiagram
   render_view(camera_object_id | viewpoint | preset, depth_of_field?: bool = false)
     depth_of_field = true 时（建任务时校验，不通过返回工具错误、不建任务）：
       必须给 camera_object_id                       // 临时视点和预设没有光圈和对焦
-      这台摄像机在当前快照里 depth_of_field = true    // 与编辑器「预览景深」的出现条件一致
-    渲染端：
-      false → 现有截图流程，全清晰、不加 AO（不变）
-      true  → 白模导出同一套流程（clay + AO + 景深），长边 1024，JPEG；
+      这台摄像机在当前快照里 depth_of_field = true    // 与编辑器「景深预览」开关的出现条件一致
+    渲染端（clay 渲染链，与视口、白模导出相同，含 AO；owner 2026-10-19 修订）：
+      false → 全清晰
+      true  → 加景深，长边 1024，JPEG；
               按渲染时快照里这台摄像机的光圈和对焦，不再检查它的景深开关
   ```
 - 弥散圆按画面长边像素换算，1024 的截图与 2048 的导出虚化程度成比例，缩小后一致。
 - 工具结果不变：截图作为下一步的图片输入，附 `scene_revision`。工具说明写明：默认回看看结构；检查焦点和虚化时带 `depth_of_field: true`；导出前若要确认虚化，按摄像机回看一次即可。
 - `render_view@1` 的参数新增一个可选字段，沿用 C3a 修改 `edit_scene@1` 的做法：版本号不变，随本次工具变化排空后升级。
 
+### 助手读导出图的来源（修订 v9）
+
+- **写**：`placeExportsInTx` 对每台摄像机算一次 `lensOf`，放进这台摄像机每张图的 `based_on.lens`，同时写进结果节点。对焦物件存在时取它原点在摄像机视线（局部 −Z）上的深度，否则取 `focus`；夹在 `max(near, 焦距 × 1.01)` 与 `far` 之间，保留到毫米。`lens` 不进指纹。
+- **读**：`read_canvas`（`creativeagent/context.go:canvasView`）对每个节点调 `creativecanvas.SceneExportOf`，生效时给出 `export_source{scene_document_id, scene_revision, camera_object_id, pass, lens, state}`；`state` 取画布读取时算好的 `based_on_state`。没有 `lens` 的旧节点给 `null`。
+- **说明**：`instructions/base.md` 的场景段落后加重绘规则；`export_shots`、`read_canvas` 的工具说明提到 `lens`、`export_source`。测试 `TestRepaintGuidanceNamesTheExportSource` 从类型取字段名，保证说明里点到的字段存在。
+- 系统说明变长约 1 KB，上下文压缩的回归测试把窗口放宽了同样的量。
+
 ### 导出渲染
 
 在 `host/render.ts` 的离屏 R3F 根上进行：隐藏画布、`frameloop: 'never'`。一次导出共用一个根和 WebGL 上下文：模型只加载、上传一次，逐个镜头切换摄像机和导出方式，全部画完后卸载并调用 `forceContextLoss`。取景沿用 `cameraFraming`，`longSide` 改为参数，导出时为 2048。物件、隐藏状态、天空和雾与 `ShotScene` 一致，不画辅助线框。
 
 - **`clay`**：`EffectComposer`（渲染目标 4 倍 MSAA，带 `DepthTexture`）→ `RenderPass` → `GTAOPass`（three 自带，参数用默认值，按样例微调）→ 景深（仅 `depth_of_field = true`）→ `OutputPass`。材质、天空、太阳光与编辑器相同。
+  - 这条渲染链（`render/clayExport.ts` 的 `ClayRenderer`）也是编辑器视口和 `render_view` 的画面（owner 2026-10-19 修订，proposal 决定 2）：视口每帧经它出图（R3F `useFrame` 优先级 1 接管渲染，坐标轴小部件改为优先级 2 叠在上面），景深只在相机视图打开「景深预览」时开启。
+  - 视口的辅助物件：网格在 AO 读取的法线深度那一遍里隐藏，免得它的平面给地面上的物件压出阴影；变换手柄在整条链之后单独画到屏幕上（它本来就不做深度测试），不受 AO 压暗，也不被虚化。线框、灯光图标、选中描边留在画面里，随 AO 和虚化（AO 本来就不读线条）。
+  - AO 那一遍不再重画阴影贴图（`shadowMap.autoUpdate` 临时关闭），视口和导出都少一次阴影渲染。
+  - 视口里虚化的弥散圆按取景框的长边像素换算（`DofPass.setLens` 的 `longSidePx`），与导出图同比例。
 - **景深**（`render/dofPass.ts`，自写着色器）：
   1. 按「景深」一节的公式，由深度算出每个像素的弥散圆 `c_px`（带符号：焦前为负、焦后为正）；
   2. 在半分辨率上用 Vogel 圆盘采样做聚合（gather），采样半径为 `|c_px|`，导出 128 个采样点；只接受自身弥散圆覆盖到中心像素的采样，避免清晰的前景被背景渗进去；
@@ -322,7 +334,7 @@ sequenceDiagram
     - 否则：`h_cam = 2·atan(tan(v_cam/2)·a_cam)`，`tan(h_view/2) = tan(h_cam/2) / 0.9`，`v_view = 2·atan(tan(h_view/2) / a_view)`。
   - 取景框用 DOM 叠加层画，框外压暗，框上写摄像机名、焦距和光圈（景深打开时）。
   - 构图辅助线：叠加层的菜单可切换三分线、黄金分割、对角线、中心十字，可以多选，只画在取景框内。选择记在本机视窗状态里（`viewState.ts`），不进场景，也不进导出图。
-  - 预览景深：这台摄像机打开景深时，叠加层显示「预览景深」。点击后按导出同一套流程（`clay` + 景深，视口尺寸）渲染一帧，覆盖在取景框上；视角、场景或摄像机一变就撤掉。视口本身不做实时虚化。
+  - 景深预览（owner 2026-10-19 修订）：这台摄像机打开景深时，叠加层显示「景深预览」开关（`aria-pressed`）。打开后视口实时按这台摄像机的光圈和对焦虚化，场景、对焦物件或光圈变化时跟着更新，开关保持打开；再点一下关闭，只去掉虚化。开关状态记在编辑器状态 `dofPreview`，退出相机视图后保留，再进入有景深的摄像机时继续虚化；不存进本机视窗状态。
   - `CameraControls` 的 `controlstart`、按 `5`、按 `1`/`3`/`7` 都会退出相机视图，从当前位姿继续自由导航。
   - 在相机视图里改这台摄像机（属性栏、`G`、`Ctrl + Alt + 0`）时，视图跟着更新。
 - **按键**（`input/keymap.ts`）：
@@ -370,7 +382,7 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
   - `EdgesGeometry` 只有折痕线，曲面的轮廓线（圆柱两侧）画不出来，WebGL 线宽也固定为 1 像素；
   - three 自带的 `SobelOperatorShader` 基于颜色亮度，白模上效果差；
   - 着色器约 80 行，不新增依赖。
-- **AO 只在导出的 `clay` 里**：决定 2。
+- **视口、`render_view` 和导出的 `clay` 共用一条带 AO 的渲染链**：决定 2（owner 2026-10-19 修订，原为「AO 只在导出的 `clay` 里」）。
 - **景深用自写的弥散圆着色器，不用 three 的 `BokehPass`**：`BokehPass` 的模糊量与深度差成线性，参数不是光圈值，焦后虚化会无限增大；摄影师按光圈值判断虚化，必须按物理弥散圆算。着色器约 120 行，不新增依赖。
 - **景深只进白模导出和按需预览，不进线稿和实时视口；`render_view` 默认不虚化，助手显式要求时才虚化**：决定 6。实时虚化会拖慢编辑；助手回看默认要看清结构，需要时再看虚化。`render_view` 带景深时直接复用白模导出的流程，不另写一套截图景深。
 - **对焦物件是软引用**：只在写入时校验，之后悬空按 `focus` 对焦。整份场景的 `Validate` 若检查它，删除对焦物件、按单元恢复摄像机时都会被这条引用卡住。
@@ -382,6 +394,30 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
   - 编辑器里的「对准选中物件」；
   - `write_model` 的 `look_at`；
   - 导出 WebP 以减小上传体积。
+
+### 实施中的偏差（verify 时补记）
+
+- **指纹版本不符时判过时，不重算**：重算要按 `scene_revision` 读旧快照，画布读取就多了查询，与「读画布不增加查询」冲突。指纹版本只在渲染规则变化时升级，届时旧导出图本来就该重新导出。测试：`TestBasedOnStateFollowsTheScene`。
+- **相机视图不跟随摄像机的滚转**：视口控制器（`CameraControls`）固定 Z 轴朝上。用 `look_at`、`Ctrl + Alt + 0` 和添加菜单摆出的摄像机都没有滚转，不受影响；助手直接写带滚转的 `rotation` 时，相机视图与导出图的取景范围相同，但画面没有倾斜。导出图按真实朝向渲染。
+- **编码仍用 `canvasBlob`（`toDataURL`），不用 `toBlob`**：隐藏标签页里 `toBlob` 要等节流后的空闲回调才开始编码，助手的导出多在后台标签页执行。导出一张 2048 PNG 的编码在出图耗时内（e2e：4 张约 3.9 s，含渲染）。
+- **景深按块取最大弥散圆后半分辨率采样**：避免前景虚化边缘被清晰背景切断。常量（采样数、弥散圆上限 4%、线稿阈值、GTAO 参数）写在 `render/dofPass.ts`、`render/linePass.ts`、`render/clayExport.ts`（未决 #1）。
+- **`checkFocusTargets` 在 `type.go:Apply` 调用**，不在 `ops.go`：要在整批命令应用后对照最终场景检查，`ops.go` 只记录写到了哪些对焦字段。
+- **导出接口的处理函数放在 `creative_scene_jobs.go`**，与场景任务的处理函数放在一起；路由仍在 `creative_documents.go`。
+- **`creative_upload_unavailable` 的提示改为通用文案**「上传已失效或已被使用，请重新上传」：原文案只讲模型，导出图共用这个错误码。错误码不变，前端按错误码映射提示。
+- **`export_shots` 工具拒绝 `lit`**：C5 之前没有这种导出，直接返回工具错误，不建任务。
+- **手动导出先等保存（最多 15 s）**：AC-4，`SceneEditor.tsx:startExport` 调 `whenSaved`。
+- **修了 `parkOnJob` 读任务结果的方式**：原先按渲染结果解码，导出任务的结果会丢失。改为 `creativescene.ResultOf` 按任务类型解码。
+- **`instructions/base.md` 加了 `export_shots` 和「先回看再导出」**：已有测试要求说明里提到每个工具。
+- **代码审计修正**（2026-10-19）：
+  - `look_at` 换算沿父级链往上走时记录走过的物件，成环（自己当父级、两个新增物件互为父级、新增物件复用祖先的 ID）返回 400。原先这一步在场景校验之前，成环会让请求空转并一直占着场景行锁，`worldMatrix` 的递归还会栈溢出。测试：`TestLookAtRefusals` 的三个成环用例。
+  - `Freshness.Check` 按（场景, 摄像机, 方式）缓存指纹：每次重新导出都会多一组同组合的节点。2000 个物件、48 个导出节点时一次读画布约 29 ms、24 MB（基准 `BenchmarkFreshnessCheck`，主要是解码场景），审计时约 120 ms、170 MB。测试：`TestFreshnessFingerprintsEachShotOnce`。
+  - `based_on` 改用 `creativecanvas.SceneExportBasedOn` 结构读写，不再在两个包里手写键名。
+- **新增辅助函数**：`creativecanvas.DocumentNodeInTx`（建任务时找场景节点）、前端 `exportCount`（对话框的张数与上限，放在 `exportShots.ts`，便于 Node 测试引用）。
+- **AC-9 样例场景**：用基础体搭的棚拍布景，没有用助手搭的教堂中殿，以排除模型质量的影响。owner 若要用指定场景，可用同一脚本重新生成。
+- **视口常驻 AO、景深预览改为实时开关**（owner 2026-10-19 验收时修订，proposal 决定 2）：原实现只在导出里加 AO，「预览景深」渲染一帧盖在视口上，于是打开预览才看到 AO，场景一有变化（包括画布推送引起的重读）预览就被撤掉，也没有关闭的办法。改为视口、`render_view`、白模导出共用 `ClayRenderer`，景深预览只切换虚化，见「导出渲染」「相机视图」。`render_view` 不带景深时也有 AO，与视口一致。
+  - 视口的 AO 按 CSS 像素计算（`aoPixelRatio: 1`），再铺到全分辨率画面上：2 倍屏上按设备像素算 AO 让单帧耗时翻倍，差别只在放大到设备像素时可见（物体边缘一圈细杂点）。导出仍按全分辨率。
+  - 正交视图：three 的 GTAO 把视线方向取作「回到相机原点的方向」，只对透视相机成立；视口正交相机的近平面是 −5000，这个方向会反过来，AO 整片发黑。正交相机改为沿 −Z 看（`clayExport.ts:lookAlongZ`，替换着色器里的一行；three 升级后这一行不在时，正交视图不加 AO，单元测试会先报出来）。
+  - 纯色背景（`sky.kind = color`）随画面一起经过色调映射，显示的颜色比设定值略淡（`#3355ff` 约为 `(62, 85, 227)`），与导出图一致；原先视口直接清屏，不经色调映射。
 
 ## 接口与数据契约
 
@@ -412,6 +448,7 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `backend/internal/creativescene/view.go:view` | 修改 | 有摄像机缺字段时输出补齐后的场景 |
 | `backend/internal/creativescene/exports.go` | 新增 | `Export` 操作、`placeExportsInTx`、`ExportInput`/`ExportResult` |
 | `backend/internal/creativescene/fingerprint.go` | 新增 | 渲染指纹、`Freshness`（`ExportFreshness` 端口实现） |
+| `backend/internal/creativescene/lens.go` | 新增（修订 v9） | `lensOf`：导出时的镜头快照 |
 | `backend/internal/creativescene/lookat.go` | 新增 | `resolveLookAt` 与数学 |
 | `backend/internal/creativescene/agent.go:AgentEditInTx` | 修改 | 换算 `look_at` |
 | `backend/internal/creativescene/jobs.go` | 修改 | `executableKinds` 加 `export_shots`；`ExportRequest`；`JobResult.Export`；`CreateExportJobInTx`；`RenderRequest.DepthOfField` 与 `CreateRenderJobInTx` 的校验 |
@@ -427,10 +464,10 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `backend/cmd/server/main.go` | 修改 | `creativecanvas.SetExportFreshness(...)` |
 | `api/openapi.yaml`、`backend/internal/platform/httpapi/api.gen.go`、`frontend/src/api/schema.d.ts` | 修改 | 契约与生成物（含摄像机的景深字段） |
 | `frontend/src/creative-scene/host/exportShots.ts` | 新增 | 出图、上传；手动导出的提交与重试 |
-| `frontend/src/creative-scene/render/clayExport.ts`、`render/dofPass.ts`、`render/linePass.ts` | 新增 | AO、景深与线稿 |
+| `frontend/src/creative-scene/render/clayExport.ts`、`render/dofPass.ts`、`render/linePass.ts` | 新增 | AO、景深与线稿；`ClayRenderer` 是视口、`render_view`、白模导出共用的渲染链（owner 2026-10-19 修订） |
 | `frontend/src/creative-scene/cameraOptics.ts` | 新增 | 视场角、对焦距离、弥散圆、清晰范围、等效焦距、传感器预设（纯函数，导出、预览、属性栏共用） |
 | `frontend/src/creative-scene/state/apply.ts` | 修改 | `cameraDefaults` 加景深字段 |
-| `frontend/src/creative-scene/host/render.ts`、`host/framing.ts` | 修改 | `longSide` 参数、一次导出共用的离屏根；`render_view` 带景深时走白模导出流程；视场角改按长边 |
+| `frontend/src/creative-scene/host/render.ts`、`host/framing.ts` | 修改 | `longSide` 参数、一次导出共用的离屏根；`render_view` 走白模渲染链，`depth_of_field` 只加虚化；视场角改按长边 |
 | `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | `CameraFrustum` 按长边规则、对焦十字与清晰范围；没有子物件的分组常显十字标记 |
 | `frontend/src/creative-scene/host/executor.ts`、`host/jobs.ts` | 修改 | `export_shots` 的认领与执行，经 `deliver` 完成；`render_view` 把 `depth_of_field` 交给渲染 |
 | `frontend/src/creative-scene/api.ts` | 修改 | `exportScene` |
@@ -440,11 +477,18 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `frontend/src/creative-scene/input/keymap.ts` | 修改 | `camera-view`、`camera-to-view` |
 | `frontend/src/creative-scene/panels/Properties.tsx` | 修改 | 摄像机属性（含景深、对焦、传感器预设、清晰范围） |
 | `frontend/src/creative-scene/panels/ExportDialog.tsx` | 新增 | 导出对话框 |
-| `frontend/src/creative-scene/state/sceneStore.ts`、`viewState.ts` | 修改 | `cameraView`、`lastCamera`、构图辅助线的选择 |
+| `frontend/src/creative-scene/state/sceneStore.ts`、`viewState.ts` | 修改 | `cameraView`、`lastCamera`、构图辅助线的选择、`dofPreview` 开关 |
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | 传 `canvasID`、`sceneNodeID` |
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 「场景已更新」标记 |
 | `docs/dev/agent-skills-tools.md` | 修改 | 工具变化与排空后升级 |
 | `docs/dev/creative-scene-agent.md` | 修改 | 取景一节的视场角规则 |
+| `backend/internal/creativescene/type.go:Apply` | 修改（实施补记） | 调用 `checkFocusTargets` |
+| `backend/internal/platform/httpapi/creative_scene_jobs.go` | 修改（实施补记） | `ExportCreativeSceneShots` 处理函数 |
+| `backend/internal/creativecanvas/tool_schemas.gen.go` | 修改（实施补记） | 生成物（`based_on_state`） |
+| `backend/internal/creativeagent/instructions/base.md` | 修改（实施补记） | 提到 `export_shots` 与回看后导出；修订 v9 加按 `export_source.lens` 写重绘提示词的规则 |
+| `backend/internal/creativeagent/context.go` | 修改（修订 v9） | `read_canvas` 的导出图节点带 `export_source`，工具说明同步 |
+| `frontend/src/creative-scene/host/pageExecutor.ts` | 修改（实施补记） | 接上 `renderShots` |
+| `frontend/src/creative-scene/scene.css`、`frontend/src/creative-canvas/editor/workspace.css` | 修改（实施补记） | 取景框、导出对话框、摄像机属性、「场景已更新」标记的样式 |
 
 ## 验证与交付
 
@@ -476,13 +520,14 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
     - `newCamera`、`newEmpty`、导出对话框的张数与 48 上限、`exportShots` 的失败丢弃、手动提交重试复用 `operation_id` 与 `client_created_at`。
   - `scripts/creative-scene.e2e.mjs` 补浏览器流程：
     - 添加摄像机 → `0` 进入相机视图 → 导出 → 校验 PNG 尺寸与比例、画布出现节点（AC-1 至 AC-4）；
-    - 添加空物体 → 摄像机对焦到它 → 打开景深 → 预览景深 → 导出：白模图焦外像素的局部方差明显低于景深关闭时，焦点处差别很小，线稿不变（AC-10、AC-11）；
+    - 添加空物体 → 摄像机对焦到它 → 打开景深 → 导出：白模图焦外像素的局部方差明显低于景深关闭时，焦点处差别很小，线稿不变（AC-10、AC-11）；
+    - 相机视图打开「景深预览」：视口焦外变虚；外部把光圈改成 f/8 后开关仍打开、虚化随之减轻；关掉后画面与打开前一致，AO 不变（AC-10，owner 2026-10-19 修订）；
     - 切换传感器预设与构图辅助线，导出图里没有辅助线（AC-12）。
   - `scripts/creative-scene-agent.e2e.mjs` 补渲染端执行 `export_shots`（AC-7）；助手写摄像机的光圈和对焦物件，`render_view` 不带参数时截图全清晰，带 `depth_of_field: true` 时焦外虚化，并与同一摄像机的白模导出缩小后一致（AC-13、AC-14）。
 - **性能（perf-sensitive）**：
   - 基线：画布读取 `GetCanvas`。条件：一张画布、1 个场景（200 个物件）、6 张导出图，本地测试库。
   - 阈值：与没有导出图的同一画布查询次数相同，耗时增加不超过 10 ms。结果写进验收记录。
-  - 浏览器里记录 3 台摄像机 × 2 种方式的出图、编码、上传耗时；另记一组景深打开（f/1.4）时白模单张多花的时间和一次景深预览的耗时。
+  - 浏览器里记录 3 台摄像机 × 2 种方式的出图、编码、上传耗时；另记一组景深打开（f/1.4）时白模单张多花的时间，以及视口单帧耗时（无 AO、AO、AO + 景深）。
 - **广影响（broad-impact）**：画布读取的调用方是画布页和 `read_canvas` 工具，回归已有的画布测试和 httpapi 画布测试，新字段只在 `based_on` 生效的节点上出现。完成任务接口回归见上。
 - **质量（AC-9）**：
   - 场景：助手搭的哥特教堂中殿，或 owner 指定的场景；3 台摄像机，用 `look_at` 和相机视图摆。
@@ -494,6 +539,6 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 
 | # | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|---|
-| 1 | 线稿阈值、GTAO 参数、景深的采样数与弥散圆上限 | 导出图质量 | 用 3 个样例场景调参，截图对比后写成常量 | 导出渲染任务完成时 |
-| 2 | 哪种导出组合喂给 gpt-image-2.5 最好（Epic 未决 #6），景深虚化是帮助还是拉低一致性 | 重绘一致性 | AC-9 实测，三种组合 × 景深开关对照 | C4 验收 |
-| 3 | 2048 PNG 的上传体积是否可接受 | 导出耗时 | 记录实测体积和耗时；明显过大时提出改 WebP，交 owner 决定 | C4 验收 |
+| 1 | 线稿阈值、GTAO 参数、景深的采样数与弥散圆上限 | 导出图质量 | 用 3 个样例场景调参，截图对比后写成常量 | 导出渲染任务完成时。**已解决**：常量写在 `render/*.ts` |
+| 2 | 哪种导出组合喂给 gpt-image-2.5 最好（Epic 未决 #6），景深虚化是帮助还是拉低一致性 | 重绘一致性 | AC-9 实测，三种组合 × 景深开关对照 | C4 验收。**待 owner**：原图与提示词见 `discovery/research/repaint-consistency.md` |
+| 3 | 2048 PNG 的上传体积是否可接受 | 导出耗时 | 记录实测体积和耗时；明显过大时提出改 WebP，交 owner 决定 | C4 验收。**实测**：白模 330–490 KB、线稿 80–110 KB；交 owner 判断 |

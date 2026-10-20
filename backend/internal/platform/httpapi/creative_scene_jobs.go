@@ -60,6 +60,12 @@ func (h *handlers) CompleteCreativeSceneJob(c *gin.Context, jobID string, _ Comp
 	h.creativeWrite(c, "job_id", jobID, creativescene.Complete)
 }
 
+// ExportCreativeSceneShots places a photographer's export images beside the
+// scene node.
+func (h *handlers) ExportCreativeSceneShots(c *gin.Context, id string, _ ExportCreativeSceneShotsParams) {
+	h.creativeWrite(c, "document_id", id, creativescene.Export)
+}
+
 func (h *handlers) ListCreativeSceneJobs(c *gin.Context, id string) {
 	scope, ok := h.creativeScope(c)
 	if !ok {

@@ -31,6 +31,8 @@ export type Action =
   | 'view-top'
   | 'view-bottom'
   | 'view-ortho'
+  | 'camera-view'
+  | 'camera-to-view'
   | 'frame-selected'
   | 'frame-all'
   | 'view-menu'
@@ -96,6 +98,8 @@ export const bindings: readonly Binding[] = [
   { codes: ['Digit7', 'Numpad7'], contexts: viewing, action: 'view-top', label: '顶视', group: '视图' },
   { codes: ['Digit7', 'Numpad7'], mods: { mod: true }, contexts: viewing, action: 'view-bottom', label: '底视', group: '视图' },
   { codes: ['Digit5', 'Numpad5'], contexts: viewing, action: 'view-ortho', label: '正交 / 透视', group: '视图' },
+  { codes: ['Digit0', 'Numpad0'], contexts: viewing, action: 'camera-view', label: '相机视图', group: '视图' },
+  { codes: ['Digit0', 'Numpad0'], mods: { mod: true, alt: true }, contexts: idle, action: 'camera-to-view', label: '摄像机对齐当前视角', group: '视图' },
   { codes: ['Period', 'NumpadDecimal'], contexts: viewing, action: 'frame-selected', label: '聚焦选中', group: '视图' },
   { codes: ['Home'], contexts: viewing, action: 'frame-all', label: '显示全部', group: '视图' },
   { codes: ['Backquote'], contexts: viewing, action: 'view-menu', label: '视图菜单', group: '视图' },

@@ -13,6 +13,10 @@ import type { SavedView } from '../viewState.ts'
 
 export type Tool = 'box' | 'tweak' | 'move' | 'rotate' | 'scale'
 
+/** Composition guides drawn in the camera view's frame, never in an export. */
+export type Guide = 'thirds' | 'golden' | 'diagonals' | 'center'
+export const guides: readonly Guide[] = ['thirds', 'golden', 'diagonals', 'center']
+
 export type MenuKind = 'add' | 'object' | 'view'
 
 export type Popup =
@@ -50,6 +54,17 @@ export type EditorUI = {
   ortho: boolean
   /** Closing while edits wait on a conflict asks first. */
   confirmClose: boolean
+  /** The camera the viewport looks through (0), or null for free navigation. */
+  cameraView: string | null
+  /** The camera 0 goes to when none is selected. */
+  lastCamera: string | null
+  guides: Guide[]
+  /** A camera waiting for a click on the object to focus on. */
+  pickFocus: string | null
+  /** The export dialog is open. */
+  exporting: boolean
+  /** 景深预览: the camera view blurs as the camera's depth of field does, until turned off. */
+  dofPreview: boolean
 }
 
 export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
@@ -70,6 +85,12 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     guessed: null,
     ortho: saved?.camera?.ortho ?? false,
     confirmClose: false,
+    cameraView: null,
+    lastCamera: saved?.lastCamera ?? null,
+    guides: saved?.guides ?? [],
+    pickFocus: null,
+    exporting: false,
+    dofPreview: false,
   }))
 }
 
@@ -78,7 +99,7 @@ export type EditorStore = ReturnType<typeof createEditorStore>
 /** Which keymap context applies now; the innermost layer wins. */
 export function contextOf(ui: EditorUI): Context {
   if (ui.modal) return 'modal'
-  if (ui.popup) return 'menu'
+  if (ui.popup || ui.exporting) return 'menu'
   if (ui.boxing) return 'boxselect'
   if (ui.preview) return 'preview'
   return 'idle'

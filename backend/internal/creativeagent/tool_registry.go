@@ -81,6 +81,14 @@ func agentToolDefinitions() []agentToolDefinition {
 		{entry: ToolEntry{Key: writeModelTool, Version: 1, DisplayName: "生成模型", EffectClass: "write", MaxImpact: 1}, bind: scene(writeModelTool), resources: sceneResources(false)},
 		{entry: ToolEntry{Key: renderViewTool, Version: 1, DisplayName: "回看场景", EffectClass: "read_only"}, bind: scene(renderViewTool),
 			allowed: func(h *runtimeHandler) bool { return h.held.Model.Capability.ImageInput }, resources: sceneResources(false)},
+		{entry: ToolEntry{Key: exportShotsTool, Version: 1, DisplayName: "导出分镜", EffectClass: "write", MaxImpact: 48}, bind: scene(exportShotsTool),
+			resources: func(args string, _ map[string][]string, _ bool) []resource {
+				doc := stringArgument(args, "document_id")
+				if doc == "" {
+					return wholeRun()
+				}
+				return []resource{{"scene:" + doc, false}, {keyCanvas, true}}
+			}},
 		{entry: ToolEntry{Key: searchWebTool, Version: 1, DisplayName: "搜索网页", EffectClass: "read_only"}, bind: func(h *runtimeHandler) tool.InvokableTool { return &searchTool{handler: h} }, deployed: webEnabled, resources: func(args string, _ map[string][]string, _ bool) []resource {
 			q := searchKey(stringArgument(args, "query"))
 			if q == "" {

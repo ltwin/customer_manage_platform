@@ -32,12 +32,19 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 	}
 	nodes := make(map[string]*Node, len(c.Nodes))
 	revisionIDs, documentIDs, executionIDs := []string{}, []string{}, []string{}
+	var sources []ExportSource
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
 		nodes[n.ID] = n
 		n.ReadOnly = c.Archived
 		if n.ContentRevisionID != nil && knownType(n.TypeKey) {
 			revisionIDs = append(revisionIDs, *n.ContentRevisionID)
+		}
+		// The source scene of an export image is read with the canvas's other
+		// documents, so freshness costs no extra query.
+		if s, ok := exportSource(*n); ok {
+			sources = append(sources, s)
+			documentIDs = append(documentIDs, s.DocumentID)
 		}
 		if n.DocumentID != nil {
 			documentIDs = append(documentIDs, *n.DocumentID)
@@ -119,6 +126,7 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 	if err != nil {
 		return err
 	}
+	fillBasedOn(nodes, sources, documents)
 	content, err := creativecontent.ReadDisplayBatch(ctx, tx, revisionIDs)
 	if err != nil {
 		return err

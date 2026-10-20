@@ -40,7 +40,7 @@ function Editor({host}) {
   const [open, setOpen] = useState(true);
   window.__reopen = () => setOpen(true);
   return open
-    ? React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}})
+    ? React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(new URLSearchParams(location.search).has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {})})
     : React.createElement('p', {id:'closed'}, 'closed');
 }
 function WithHost() {
@@ -126,6 +126,8 @@ class SceneServer {
     this.claimable = []
     this.claims = []
     this.completes = []
+    // Exports the editor submitted.
+    this.exports = []
   }
   /** A committed model revision, as if made earlier; returns its revision ID. */
   seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
@@ -368,6 +370,12 @@ async function route(page, server) {
       return json(200, { items, next_cursor: null })
     }
     if (path === `/documents/${DOC}/scene-jobs`) return json(200, { items: server.jobs })
+    if (path === `/documents/${DOC}/scene-exports` && request.method() === 'POST') {
+      const body = request.postDataJSON()
+      server.exports.push(body)
+      const nodes = body.payload.shots.flatMap((s) => s.images.map((img, i) => ({ camera_object_id: s.camera_object_id, pass: img.pass, node_id: `cwnode_${s.camera_object_id}_${i}`, content_revision_id: `ccrv_${img.upload_id}` })))
+      return json(200, { change_id: 'cwch_qa', scene_revision: body.payload.scene_revision, nodes })
+    }
     if (path === '/scene-jobs/claim' && request.method() === 'POST') {
       const body = request.postDataJSON()
       server.claims.push(body)
@@ -780,6 +788,7 @@ await check('7 then 5 at once gives a top orthographic view framed like the pers
   await page.keyboard.press('Digit5')
   await sleep(1200)
   const ortho = await page.screenshot({ clip: box })
+  await shot(page, 'c4-ortho-top')
   await page.keyboard.press('Digit5')
   await sleep(800)
   const persp = await page.screenshot({ clip: box })
@@ -1664,6 +1673,238 @@ await check('the editor hands its scene and selection to the assistant panel, an
   await page.getByRole('button', { name: '还原节点' }).click()
   await page.locator('#closed').waitFor()
   assert.equal(await shared(), 'null')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+
+// --- cameras and export (C4) ------------------------------------------------
+
+const pngSize = (bytes) => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) })
+
+/** Gradient energy of a PNG inside a rectangle given as fractions [x0, y0, x1, y1]: blur lowers it. */
+async function sharpness(page, png, rect) {
+  return page.evaluate(async ([src, rect]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x0, y0, x1, y1] = rect
+    const w = Math.round(img.width * (x1 - x0)), h = Math.round(img.height * (y1 - y0))
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    const g = c.getContext('2d')
+    g.drawImage(img, img.width * x0, img.height * y0, w, h, 0, 0, w, h)
+    const d = g.getImageData(0, 0, w, h).data
+    const lum = (i) => d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114
+    let e = 0
+    for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+      const i = (y * w + x) * 4
+      // Squared: blurring an edge keeps its summed gradient but spreads it thin.
+      e += (lum(i) - lum(i + 4)) ** 2 + (lum(i) - lum(i + w * 4)) ** 2
+    }
+    return e / (w * h)
+  }, [`data:image/png;base64,${png.toString('base64')}`, rect])
+}
+
+const cameraObject = (id, name, order, camera, position = [0, 1.6, 8]) => ({ id, kind: 'camera', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false, camera })
+const emptyObject = (id, name, order, position) => ({ id, kind: 'group', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false })
+
+await check('Add > 摄像机 stands at the view; 0 looks through it in a frame with guides; 1 leaves', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '摄像机' }).click()
+  await waitFor(() => server.commands.length === 1, 'add camera')
+  const cam = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([cam.kind, cam.name, cam.camera], ['camera', '摄像机 1', {}])
+  assert.ok(Math.hypot(...cam.transform.position) > 5, `stands where the view looks from: ${cam.transform.position}`)
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  assert.match(await frame.textContent(), /摄像机 1 · 35 mm/)
+  const box = await frame.boundingBox()
+  const view = await viewportCenter(page)
+  assert.ok(Math.abs(box.width / box.height - 1.5) < 0.02, `3:2 frame: ${box.width}×${box.height}`)
+  assert.ok(Math.abs(Math.max(box.width / view.box.width, box.height / view.box.height) - 0.9) < 0.02, 'fills 90% of the viewport')
+  await page.getByRole('button', { name: '构图辅助线' }).click()
+  await page.getByRole('menu').getByLabel('三分线').check()
+  await page.getByRole('menu').getByLabel('对角线').check()
+  assert.equal(await frame.locator('line').count(), 6)
+  await shot(page, 'c4-camera-view')
+  await page.keyboard.press('Digit1')
+  await frame.waitFor({ state: 'detached' })
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('Add > 空物体 shows a marker; the camera focuses on it by 拾取, its sharp range shows', async () => {
+  const server = new SceneServer()
+  const cam = objectID('cam')
+  server.external([{ op: 'add_objects', objects: [cameraObject(cam, '机位', 1, { depth_of_field: true, f_stop: 2.8, focal_mm: 50 })] }])
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '空物体' }).click()
+  await waitFor(() => server.commands.length === 1, 'add empty')
+  const empty = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([empty.kind, empty.name], ['group', '空物体 1'])
+  await saved(page)
+  await page.getByRole('treeitem', { name: /机位/ }).click()
+  const props = page.getByRole('group', { name: '摄像机' })
+  await props.getByLabel('物件').check()
+  await waitFor(() => server.commands.length === 2, 'focus by object')
+  await saved(page)
+  await props.getByRole('button', { name: '拾取' }).click()
+  // The empty sits where the view's centre hit; a click there picks it.
+  await page.mouse.click(x, y)
+  await waitFor(() => server.commands.length === 3, 'picked')
+  const update = server.commands[2].payload.operations[0].updates[0]
+  assert.deepEqual([update.object_id, update.camera], [cam, { focus_object_id: empty.id }])
+  await saved(page)
+  assert.match(await props.textContent(), /清晰范围 [\d.]+ m – [\d.]+ m/)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('a sensor preset changes only sensor_mm and the equivalent focal length', async () => {
+  const server = new SceneServer()
+  const cam = objectID('cam')
+  server.external([{ op: 'add_objects', objects: [cameraObject(cam, '机位', 1, { focal_mm: 35 })] }])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /机位/ }).click()
+  const props = page.getByRole('group', { name: '摄像机' })
+  await props.getByRole('button', { name: '更多' }).click()
+  await props.getByLabel('传感器预设').selectOption('APS-C')
+  await waitFor(() => server.commands.length === 1, 'preset')
+  assert.deepEqual(server.commands[0].payload.operations[0].updates[0].camera, { sensor_mm: [23.5, 15.6] })
+  await saved(page)
+  assert.match(await props.textContent(), /等效全画幅 53\.6 mm/)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+/** A scene to export: a box in focus 8 m ahead, a far tower, two cameras. */
+function exportScene(dof) {
+  const server = new SceneServer()
+  const near = objectID('near'), far = objectID('far'), aim = objectID('aim'), a = objectID('cama'), b = objectID('camb')
+  server.external([{ op: 'add_objects', objects: [
+    { ...boxObject(near, '近处方块', 0, 1), transform: { ...identity(), position: [0, 0, 0] } },
+    { ...boxObject(far, '远处塔', 0, 2), transform: { position: [4, 0, -40], rotation: [0, 0, 0, 1], scale: [3, 8, 3] } },
+    emptyObject(aim, '空物体 1', 3, [0, 0.5, 0]),
+    cameraObject(a, '机位 A', 4, { focal_mm: 50, depth_of_field: dof, f_stop: 1.4, focus_object_id: aim }, [0, 0.5, 8]),
+    cameraObject(b, '机位 B', 5, { focal_mm: 35, aspect: '2:3' }, [6, 1.6, 6]),
+  ] }])
+  return { server, a, b }
+}
+
+async function runExport(page, server) {
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  assert.match(await dialog.textContent(), /共 4 张/)
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.waitFor({ state: 'detached' })
+  const body = server.exports[0]
+  return body.payload.shots.map((s) => ({ camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
+}
+
+await check('export: two cameras × clay and line, 2048 PNGs at each camera’s shape; depth of field blurs clay out of focus only', async () => {
+  const started = Date.now()
+  const off = exportScene(false)
+  const first = await open(off.server, { query: '?export=1' })
+  const sharp = await runExport(first.page, off.server)
+  const ms = Date.now() - started
+  const body = off.server.exports[0]
+  assert.equal(body.operation_id.length, 36)
+  assert.equal(body.payload.canvas_id, 'ccv_qa')
+  assert.equal(body.payload.scene_node_id, 'cwnode_qa')
+  assert.deepEqual(sharp.map((s) => [s.camera, s.images.map((i) => i.pass)]), [[off.a, ['clay', 'line']], [off.b, ['clay', 'line']]])
+  assert.deepEqual(pngSize(sharp[0].images[0].png), { width: 2048, height: 1365 })
+  assert.deepEqual(pngSize(sharp[1].images[1].png), { width: 1365, height: 2048 }, 'portrait camera, long side 2048')
+  await first.page.locator('.cc-scene-hint').filter({ hasText: '已导出 4 张图到画布' }).waitFor()
+  assert.deepEqual(first.errors, [])
+  await first.context.close()
+
+  const on = exportScene(true)
+  const second = await open(on.server, { query: '?export=1' })
+  const blurred = await runExport(second.page, on.server)
+  const page = second.page
+  const [sClay, bClay] = [sharp[0].images[0].png, blurred[0].images[0].png]
+  if (process.env.SCENE_E2E_SHOTS) {
+    for (const [name, png] of [['clay', sClay], ['clay-dof', bClay], ['line', sharp[0].images[1].png], ['portrait', sharp[1].images[0].png]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c4-export-${name}.png`, png)
+  }
+  // The far tower's right edge (40 m, out of focus) and the near box's left edge (8 m, in focus).
+  const tower = [0.62, 0.15, 0.7, 0.5]
+  const box = [0.37, 0.4, 0.45, 0.6]
+  const whole = [await sharpness(page, sClay, tower), await sharpness(page, bClay, tower)]
+  const centre = [await sharpness(page, sClay, box), await sharpness(page, bClay, box)]
+  assert.ok(whole[1] < whole[0] * 0.6, `out of focus is softer: ${whole.map((v) => v.toFixed(3))}`)
+  assert.ok(centre[1] > centre[0] * 0.85, `in focus stays sharp: ${centre.map((v) => v.toFixed(3))}`)
+  const lineDiff = await pixelDiff(page, sharp[0].images[1].png, blurred[0].images[1].png)
+  assert.ok(lineDiff < 0.002, `line art is not blurred: ${lineDiff}`)
+  console.log(`export 4 images ${ms} ms; sharpness out of focus ${whole.map((v) => v.toFixed(3))} centre ${centre.map((v) => v.toFixed(3))}`)
+  assert.deepEqual(second.errors, [])
+  await second.context.close()
+})
+
+await check('guides stay in the editor: an export with guides on matches one without', async () => {
+  const one = exportScene(false)
+  const a = await open(one.server, { query: '?export=1' })
+  await a.page.getByRole('treeitem', { name: /机位 A/ }).click()
+  await a.page.keyboard.press('Digit0')
+  await a.page.getByRole('button', { name: '构图辅助线' }).click()
+  for (const name of ['三分线', '黄金分割', '对角线', '中心十字']) await a.page.getByRole('menu').getByLabel(name).check()
+  const withGuides = await runExport(a.page, one.server)
+  await a.context.close()
+  const two = exportScene(false)
+  const b = await open(two.server, { query: '?export=1' })
+  const without = await runExport(b.page, two.server)
+  const diff = await pixelDiff(b.page, withGuides[0].images[0].png, without[0].images[0].png)
+  assert.ok(diff < 0.001, `the guides are not in the export: ${diff}`)
+  await b.context.close()
+})
+
+await check('景深预览 is a switch: the camera view blurs live, keeps blurring through scene changes, and off leaves the same AO picture', async () => {
+  const { server, a } = exportScene(true)
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /机位 A/ }).click()
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  await page.mouse.move(5, 5)
+  await sleep(400)
+  const box = await frame.boundingBox()
+  // The picture without the switch and guides button at its top right.
+  const clip = { x: box.x, y: box.y + 40, width: Math.round(box.width * 0.75), height: Math.round(box.height - 40) }
+  const picture = () => page.screenshot({ clip })
+  // The far tower (out of focus) as a share of the clip.
+  const tower = [(0.62 * box.width) / clip.width, (0.15 * box.height - 40) / clip.height, (0.7 * box.width) / clip.width, (0.5 * box.height - 40) / clip.height]
+  const before = await picture()
+  const sharp = await sharpness(page, before, tower)
+  const toggle = page.getByRole('button', { name: '景深预览' })
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+  await toggle.click()
+  await page.mouse.move(5, 5)
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true')
+  let blurred = 0
+  await waitFor(async () => (blurred = await sharpness(page, await picture(), tower)) < sharp * 0.6, 'the camera view blurs', 30_000)
+  await shot(page, 'c4-dof-preview')
+  // A change from elsewhere: the switch stays on and the blur follows the new aperture.
+  server.external([{ op: 'update_objects', updates: [{ object_id: a, camera: { f_stop: 8 } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await frame.filter({ hasText: 'f/8' }).waitFor()
+  let stopped = 0
+  await waitFor(async () => (stopped = await sharpness(page, await picture(), tower)) > blurred * 1.5, 'f/8 blurs less', 30_000)
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'a scene change keeps the switch on')
+  await toggle.click()
+  await page.mouse.move(5, 5)
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+  let diff = 1
+  await waitFor(async () => (diff = await pixelDiff(page, before, await picture())) < 0.002, 'off is the picture before the switch', 30_000)
+  console.log(`camera view sharpness: off ${sharp.toFixed(3)}, f/1.4 ${blurred.toFixed(3)}, f/8 ${stopped.toFixed(3)}; off again differs ${diff}`)
   assert.deepEqual(errors, [])
   await context.close()
 })

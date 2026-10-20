@@ -10,6 +10,7 @@ import (
 	"slices"
 	"unicode/utf8"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -30,6 +31,9 @@ type CompleteInput struct {
 	Bake       *BakeOutput   `json:"bake,omitempty"`
 	Render     *RenderOutput `json:"render,omitempty"`
 	Export     *ExportOutput `json:"export,omitempty"`
+	// operationID is the completion's operation, recorded on the canvas
+	// change an export makes.
+	operationID string
 }
 
 type HostError struct {
@@ -51,8 +55,11 @@ type RenderOutput struct {
 	SceneRevision creativeops.Revision `json:"scene_revision"`
 }
 
+// ExportOutput is what the host exported: the revision it rendered and the
+// staged images, shaped as in the export request.
 type ExportOutput struct {
-	ExportOperationID string `json:"export_operation_id"`
+	SceneRevision creativeops.Revision `json:"scene_revision"`
+	Shots         []ExportShot         `json:"shots"`
 }
 
 // moduleInfo is the sandbox's module, as the host checked it.
@@ -89,6 +96,7 @@ func Complete(ctx context.Context, scope store.AccountScope, c creativeops.Comma
 			if err := creativeops.Decode(raw, &in); err != nil {
 				return err
 			}
+			in.operationID = c.OperationID
 			return in.validate()
 		},
 		Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
@@ -149,6 +157,12 @@ func (in CompleteInput) validate() error {
 	if in.Render != nil && (in.Render.ImageUploadID == "" || in.Render.SceneRevision < 1) {
 		return invalid("render 缺少截图上传或 scene_revision")
 	}
+	if in.Export != nil {
+		if in.Export.SceneRevision < 1 {
+			return invalid("export 缺少 scene_revision")
+		}
+		return validateShots(in.Export.Shots)
+	}
 	return nil
 }
 
@@ -183,6 +197,8 @@ func complete(ctx context.Context, tx store.TxAccountScope, in CompleteInput) (C
 		res, err = completeBake(ctx, tx, job, *in.Bake)
 	case job.Kind == KindRenderView && in.Render != nil:
 		res, err = completeRender(ctx, tx, job, *in.Render)
+	case job.Kind == KindExportShots && in.Export != nil:
+		res, err = completeExport(ctx, tx, job, *in.Export, in.operationID)
 	default:
 		return CompleteResponse{}, invalid("结果与任务类型 %s 不对应", job.Kind)
 	}
@@ -387,6 +403,74 @@ func completeRender(ctx context.Context, tx store.TxAccountScope, job Job, out R
 		return JobResult{}, invalid("截图必须是图片上传")
 	}
 	return JobResult{Render: &RenderResult{ImageUploadID: out.ImageUploadID, ContentRevisionID: staged.ContentRevisionID, SceneRevision: out.SceneRevision}}, nil
+}
+
+// completeExport places the exported images as the run, in a savepoint (E4):
+// the nodes exist only if the job succeeds. The shots must be exactly the
+// cameras and passes the job asked for; rows follow the job's camera order.
+// An export that cannot be placed fails the job and the run goes on; a
+// staged image that is gone rolls the completion back for the host to
+// upload again.
+func completeExport(ctx context.Context, tx store.TxAccountScope, job Job, out ExportOutput, operation string) (JobResult, error) {
+	var req ExportRequest
+	if err := json.Unmarshal(job.Request, &req); err != nil {
+		return JobResult{}, err
+	}
+	byCamera := make(map[string]ExportShot, len(out.Shots))
+	for _, s := range out.Shots {
+		byCamera[s.CameraObjectID] = s
+	}
+	mismatch := invalid("export.shots 须正好是任务请求的摄像机 %v 和导出方式 %v", req.CameraObjectIDs, req.Passes)
+	if len(out.Shots) != len(req.CameraObjectIDs) {
+		return JobResult{}, mismatch
+	}
+	shots := make([]ExportShot, 0, len(req.CameraObjectIDs))
+	for _, id := range req.CameraObjectIDs {
+		s, ok := byCamera[id]
+		if !ok || len(s.Images) != len(req.Passes) {
+			return JobResult{}, mismatch
+		}
+		for _, img := range s.Images {
+			if !slices.Contains(req.Passes, img.Pass) {
+				return JobResult{}, mismatch
+			}
+		}
+		shots = append(shots, s)
+	}
+	actor := creativedocument.Photographer
+	if job.RunID != nil {
+		actor = creativedocument.Actor{Kind: "agent", RunID: job.RunID}
+	}
+	in := ExportInput{DocumentID: job.DocumentID, CanvasID: req.CanvasID, SceneNodeID: req.SceneNodeID, SceneRevision: out.SceneRevision, Shots: shots}
+	var placed ExportResult
+	err := tx.Savepoint(ctx, "scene_job_export", func() error {
+		var err error
+		placed, err = placeExportsInTx(ctx, tx, in, actor, operation)
+		return err
+	})
+	switch {
+	case err == nil:
+		return JobResult{Export: &placed}, nil
+	case errors.Is(err, ErrUploadUnavailable):
+		return JobResult{}, err
+	}
+	for _, refused := range []error{creativeops.ErrValidation, creativedocument.ErrSizeLimit, creativedocument.ErrTrashed, creativedocument.ErrNotFound,
+		creativecanvas.ErrArchived, creativecanvas.ErrNotFound, creativecanvas.ErrLimit} {
+		if errors.Is(err, refused) {
+			return JobResult{Failure: &JobFailure{Code: "invalid_result", Message: exportReason(err)}}, nil
+		}
+	}
+	return JobResult{}, err
+}
+
+func exportReason(err error) string {
+	switch {
+	case errors.Is(err, creativecanvas.ErrArchived):
+		return "画布已归档，导出图没有放置"
+	case errors.Is(err, creativecanvas.ErrNotFound):
+		return "场景节点已不在画布上，导出图没有放置"
+	}
+	return "导出图没有放置：" + reasonOf(err)
 }
 
 // RetryInput is write_model's retry_job_id: a bake of this conversation that

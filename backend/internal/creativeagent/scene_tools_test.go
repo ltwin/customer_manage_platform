@@ -92,6 +92,22 @@ func (f *fixture) hostCompletes(failure ...string) creativescene.CompleteRespons
 		if err := f.db.QueryRow(`SELECT revision FROM creative_documents WHERE id=$1`, claimed.DocumentID).Scan(&revision); err != nil {
 			f.t.Fatal(err)
 		}
+		if claimed.Kind == string(creativescene.KindExportShots) {
+			var req creativescene.ExportRequest
+			if err := json.Unmarshal(claimed.Request, &req); err != nil {
+				f.t.Fatal(err)
+			}
+			var shots []any
+			for _, cam := range req.CameraObjectIDs {
+				var images []any
+				for _, pass := range req.Passes {
+					images = append(images, map[string]any{"pass": pass, "upload_id": f.stageUpload("image")})
+				}
+				shots = append(shots, map[string]any{"camera_object_id": cam, "images": images})
+			}
+			in["export"] = map[string]any{"scene_revision": strconv.FormatInt(revision, 10), "shots": shots}
+			break
+		}
 		in["render"] = map[string]any{"image_upload_id": f.stageUpload("image"), "scene_revision": strconv.FormatInt(revision, 10)}
 	}
 	cmd := command(f.t, in)
@@ -607,7 +623,7 @@ func TestEditSceneDescribesThreejsFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"light 字段同 three.js", "distance", "decay（默认 2）", "angle（弧度，光锥半角，≤π/2，默认 π/3）", "penumbra", "只有 type 必填",
-		"坎德拉", "局部 −Z", "near, far, label}，均可省略", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并", "灯光物件、lit 模式和 hdri 天空暂不显示"} {
+		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并", "灯光物件、lit 模式和 hdri 天空暂不显示"} {
 		if !strings.Contains(info.Desc, want) {
 			t.Errorf("edit_scene does not say %q", want)
 		}

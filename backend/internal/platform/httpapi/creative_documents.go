@@ -29,6 +29,7 @@ func registerCreativeDocuments(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/documents/:id/conversation", w.GetCreativeDocumentConversation)
 	r.GET("/creative/documents/:id/scene-jobs", w.ListCreativeSceneJobs)
 	r.GET("/creative/documents/:id/run-changes", w.GetCreativeSceneRunChanges)
+	r.POST("/creative/documents/:id/scene-exports", w.ExportCreativeSceneShots)
 	r.POST("/creative/scene-jobs/claim", w.ClaimCreativeSceneJob)
 	r.POST("/creative/scene-jobs/:job_id/lease", w.LeaseCreativeSceneJob)
 	r.POST("/creative/scene-jobs/:job_id/complete", w.CompleteCreativeSceneJob)
@@ -199,7 +200,7 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 	// Model failures never use 404 or creative_state_conflict: the editor reads
 	// those as "the document is gone" and "the document is in the trash".
 	case errors.Is(err, creativescene.ErrUploadUnavailable):
-		abortError(c, 409, "creative_upload_unavailable", "模型上传已失效，请重新生成")
+		abortError(c, 409, "creative_upload_unavailable", "上传已失效或已被使用，请重新上传")
 	case errors.Is(err, creativescene.ErrModelUnavailable):
 		abortError(c, 400, "creative_model_unavailable", "引用的模型不可用，请重新读取场景")
 	default:

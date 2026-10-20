@@ -3,6 +3,7 @@ import type { Upload } from '../../creative-canvas/editor/media.ts'
 import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, measureStage, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
+import { shotsOf, uploadShots, type ExportPass, type ExportPlan, type RenderedShots } from './exportShots.ts'
 import type { RenderRequest } from './framing.ts'
 import { leaseEveryMs, type CompletePayload, type Completion, type JobApi, type JobErrorCode, type SceneJob } from './jobs.ts'
 import type { Ticker } from './ticker.ts'
@@ -23,6 +24,8 @@ export type ExecutorDeps = BakeDeps & {
   /** Releases a ready staged upload that will never be committed. */
   discard(upload: Upload): Promise<void>
   render(documentID: string, request: RenderRequest): Promise<Shot>
+  /** Draws an export's images from the scene's confirmed snapshot. */
+  exportImages(documentID: string, plan: ExportPlan): Promise<RenderedShots>
 }
 
 type Sent = { ok: true; uploads: Upload[] } | { ok: false; cause: unknown; uploads: Upload[] }
@@ -37,6 +40,8 @@ export type JobOutcome =
 
 /** A screenshot that has not come back by then will not; the job is the page's failure. */
 export const renderTimeoutMs = 60_000
+/** An export's pictures, up to 48 of them, get this long in all. */
+export const exportTimeoutMs = 10 * 60_000
 const completeAttempts = 3
 const maxErrorChars = 4000
 
@@ -55,6 +60,7 @@ export class SceneExecutor {
     try {
       if (job.kind === 'bake_model') return await this.bakeModel(job, hold)
       if (job.kind === 'render_view') return await this.renderView(job, hold)
+      if (job.kind === 'export_shots') return await this.exportShots(job, hold)
       return { state: 'abandoned', reason: `这个页面不能执行 ${job.kind} 任务` }
     } finally {
       hold.release()
@@ -131,6 +137,41 @@ export class SceneExecutor {
     return this.deliver(job, hold, '截图', sent.uploads, ([upload]) => ({ render: { image_upload_id: upload.id, scene_revision: revision } }), send)
   }
 
+  private async exportShots(job: SceneJob, hold: Hold): Promise<JobOutcome> {
+    const plan = exportPlan(job.request)
+    if (!plan) return this.fail(job, 'host_error', '任务内容不完整')
+    const timer = new AbortController()
+    const stopTimer = () => timer.abort()
+    hold.signal.addEventListener('abort', stopTimer, { once: true })
+    const rendering = this.deps.exportImages(job.document_id, plan)
+    rendering.catch(() => {})
+    let rendered: RenderedShots | 'timeout' | 'stopped'
+    try {
+      rendered = await Promise.race([rendering, this.deps.ticker.wait(exportTimeoutMs, timer.signal).then(() => 'timeout' as const, () => 'stopped' as const)])
+    } catch (err) {
+      if (hold.lost()) return { state: 'lost' }
+      return this.fail(job, 'host_error', `导出图渲染失败：${reason(err)}`)
+    } finally {
+      timer.abort()
+      hold.signal.removeEventListener('abort', stopTimer)
+    }
+    if (hold.lost() || rendered === 'stopped') return { state: 'lost' }
+    if (rendered === 'timeout') return this.fail(job, 'host_error', `导出超过 ${exportTimeoutMs / 60_000} 分钟没有完成`)
+    if (!rendered.ok) return this.fail(job, 'render_error', rendered.message)
+    const { images, revision } = rendered
+    const send = () => uploadShots(this.deps.upload, images, hold.signal)
+    const sent = await send()
+    if (hold.lost()) {
+      this.discard(sent.uploads)
+      return { state: 'lost' }
+    }
+    if (!sent.ok) {
+      this.discard(sent.uploads)
+      return this.fail(job, 'host_error', `导出图上传失败：${reason(sent.cause)}`)
+    }
+    return this.deliver(job, hold, '导出图', sent.uploads, (uploads) => ({ export: { scene_revision: revision, shots: shotsOf(images, uploads) } }), send)
+  }
+
   /**
    * Reports a success built from staged uploads. When the server finds them
    * unusable (expired or used) and the lease still holds, they go up once
@@ -141,7 +182,7 @@ export class SceneExecutor {
     hold: Hold,
     what: string,
     uploads: Upload[],
-    result: (uploads: Upload[]) => Pick<CompletePayload, 'bake' | 'render'>,
+    result: (uploads: Upload[]) => Pick<CompletePayload, 'bake' | 'render' | 'export'>,
     resend: () => Promise<Sent>,
   ): Promise<JobOutcome> {
     for (let resent = false; ; resent = true) {
@@ -207,6 +248,13 @@ async function uploadOne(deps: Pick<BakeDeps, 'upload'>, file: File, signal: Abo
   } catch (cause) {
     return { ok: false, cause, uploads: [] }
   }
+}
+
+function exportPlan(request: Record<string, unknown>): ExportPlan | null {
+  const { camera_object_ids: cameras, passes } = request
+  const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')
+  if (!strings(cameras) || !strings(passes)) return null
+  return { cameraObjectIDs: cameras, passes: passes as ExportPass[] }
 }
 
 function bakeInput(request: Record<string, unknown>): CompileInput | null {

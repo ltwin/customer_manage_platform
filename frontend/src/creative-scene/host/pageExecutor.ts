@@ -4,7 +4,9 @@ import { renderThumbnail } from '../sandbox/thumbnail.ts'
 import { SceneExecutor } from './executor.ts'
 import type { JobApi } from './jobs.ts'
 import type { PageRunner } from './launcher.ts'
-import { renderView } from './render.ts'
+import { readScene } from '../api.ts'
+import { renderShots } from './exportShots.ts'
+import { loadModels, openShooter, renderView } from './render.ts'
 import { backgroundTicker } from './ticker.ts'
 
 // The executor as a page runs it, loaded (with three.js) on the first job:
@@ -27,6 +29,8 @@ export function createPageExecutor(api: JobApi): PageRunner {
     discard: (upload) =>
       upload.publication?.kind === 'candidate' ? discardCandidate(upload.publication.id, upload.publication.revision) : Promise.resolve(),
     render: (documentID, request) => renderView(documentID, request),
+    exportImages: (documentID, plan) =>
+      renderShots({ read: readScene, loadModels: (doc) => loadModels(doc.scene, doc.models), open: (doc) => openShooter(doc.scene, doc.models) }, documentID, plan),
   })
   return {
     run: (job) => executor.run(job),

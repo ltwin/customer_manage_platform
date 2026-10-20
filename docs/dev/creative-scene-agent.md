@@ -1,6 +1,6 @@
 # 场景助手开发说明（C3）
 
-助手用四个场景工具读场景、改场景、写几何代码生成模型、截图回看。编译模型和截图要用浏览器（沙箱、WebGL），所以服务端把这两类工作派成**场景客户端任务**，由打开着的创意空间页面领取执行，运行在此期间挂起。本文记实现事实、调试方法与已知边界；设计权威是 epic `scene-editor-3d` 与 C3 的 design（`.lti/features/2026-10-15-scene-editor-3d/features/2026-10-17-scene-agent-tools/`），工具登记见 [Agent Skills 与 Tools 运行契约](agent-skills-tools.md#场景工具c32026-10-18)。
+助手用五个场景工具读场景、改场景、写几何代码生成模型、截图回看、导出分镜。编译模型、截图和导出要用浏览器（沙箱、WebGL），所以服务端把这几类工作派成**场景客户端任务**，由打开着的创意空间页面领取执行，运行在此期间挂起。本文记实现事实、调试方法与已知边界；设计权威是 epic `scene-editor-3d` 与 C3 的 design（`.lti/features/2026-10-15-scene-editor-3d/features/2026-10-17-scene-agent-tools/`），工具登记见 [Agent Skills 与 Tools 运行契约](agent-skills-tools.md#场景工具c32026-10-18)。
 
 ## 模块分工
 
@@ -26,7 +26,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
    └── 期限到（30 分钟）──> expired        运行结束时 ──> cancelled
 ```
 
-- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）。`export_shots` 留给 C4，页面不认领。
+- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）、`export_shots`（C4：按摄像机出 clay 和线稿，节点在完成事务里放到画布上）。
 - 租约 30 秒，页面每 10 秒续一次；续租不会超过期限。
 - 新建与进入终态会触发画布通知（账号级），认领和续租不通知。页面靠通知知道有新任务。
 - 终态满 30 天的任务由清扫删除。
@@ -35,7 +35,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 
 | 情况 | 响应 | 页面怎么做 |
 |---|---|---|
-| 成功写入，或任务失败（编译错误、冲突、结果不合规） | 200，`state` 为 `succeeded` / `failed` | 保留上传的产物：冲突的烘焙要靠它重试 |
+| 成功写入，或任务失败（编译错误、冲突、结果不合规、导出无法放置） | 200，`state` 为 `succeeded` / `failed` | 保留上传的产物：冲突的烘焙要靠它重试 |
 | 租约已丢（被别的页面接手、任务结束） | 409 / 404 | 丢弃产物 |
 | 暂存上传已失效 | 409 `creative_upload_unavailable` | 重新上传一次再交 |
 | 网络错误、5xx | — | 用同一个 `operation_id` 重试 3 次，仍不行就放手，等租约过期回队 |
@@ -45,13 +45,13 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 
 ## 运行的挂起与恢复
 
-- `write_model` / `render_view` 在运行的写事务里建任务，返回 `errParked`；`callTool` 把它变成 Eino 的 interrupt，步骤保持 `prepared`。同一批里其他调用照常执行，挂起不停批。
+- `write_model` / `render_view` / `export_shots` 在运行的写事务里建任务，返回 `errParked`；`callTool` 把它变成 Eino 的 interrupt，步骤保持 `prepared`。同一批里其他调用照常执行，挂起不停批。
 - 本次执行结束时，`completeAttempt` 看任务是否都已终态：是就直接入队继续，否则运行进入 `waiting_client`，`wait_reason = client_job`。等待期间不占写入槽位，补充输入不会唤醒它。
 - 任务完成的事务里，`Settle` 按工具成功分支的顺序写步骤结果，再取槽位入队；取不到槽位时运行留在 `waiting_client`、`wait_reason = slot_busy`，清扫在槽位空出后恢复它。
 - `Admit` 在完成事务里复查运行（能力、期限、未取消、Skill 未停用、consent 未撤回），锁序为项目 → 槽位 → 网关组 → 运行 → Skill → consent。复查失败时整笔回滚，另开事务 `Abort` 结束运行，任务随运行取消，场景不会多出修订。
 - 崩溃后从检查点重跑时，工具按 `(run_id, tool_call_id)` 找到已建的任务，不会重复建。
 
-模型读到的结果：烘焙成功 `{status: "succeeded", content_revision_id, object_ids, written_revision, …尺寸、三角面}`；截图 `{image_revision_id, content_revision_id, scene_revision, width, height}`，图片随下一次请求作为图片输入；失败 `{status: "failed", error: {code, message}}`；冲突带 `retry_job_id` 与变化说明；过期提示助手转告创作者打开页面。
+模型读到的结果：烘焙成功 `{status: "succeeded", content_revision_id, object_ids, written_revision, …尺寸、三角面}`；截图 `{image_revision_id, content_revision_id, scene_revision, width, height}`，图片随下一次请求作为图片输入；导出 `{status: "succeeded", scene_revision, change_id, nodes:[{camera_object_id, pass, node_id}]}`，不带图片；失败 `{status: "failed", error: {code, message}}`；冲突带 `retry_job_id` 与变化说明；过期提示助手转告创作者打开页面。
 
 ## 渲染端（前端）
 
@@ -67,7 +67,8 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 
 - 计时（续租、上传轮询、沙箱超时）都用 `host/ticker.ts` 的 Worker 节拍，隐藏标签页里的页面计时器会被浏览器降频。
 - 截图（`host/render.ts`）：React Three Fiber 的 `createRoot` 配一个不挂到页面的 canvas，`frameloop: 'never'`，组件提交后手动渲染一帧，导出长边 1024 的 JPEG（与缩略图一样用 `canvasBlob` 同步编码，不用 `toBlob`），再 `unmount` 释放 WebGL 上下文。单独的 root 必须先 `extend(THREE)`，否则灯光等元素报错、提交永远不来。截图不画灯光和摄像机图标。整体 60 秒上限，超时报 `host_error`。
-- 取景（`host/framing.ts`）：摄像机按传感器高度算垂直视角；`viewpoint` 是 4:3；预设（总览、俯视、正视、侧视）按可见物件（不含地面、灯光、摄像机）的包围盒取景，留 1.1 倍边距。
+- 取景（`host/framing.ts`）：视场角按画面长边对应传感器长边（`cameraOptics.verticalFov`，C4 起；与 Blender 的 Auto 适配相同），默认传感器下 3:2 横幅与原先一样，竖幅与横幅同焦距拍到的范围一样大；`viewpoint` 是全画幅 4:3；预设（总览、俯视、正视、侧视）按可见物件（不含地面、灯光、摄像机）的包围盒取景，留 1.1 倍边距。摄像机的取景还带光学参数：对焦物件存在时按它原点沿视线的深度对焦，否则按 `focus`，夹在 near/far 之间。
+- 导出与景深回看（C4，`host/render.ts` 的 `openShooter`）：一次导出共用一个离屏根和 WebGL 上下文，模型只加载一次，逐镜头移动同一台相机；结束后 `forceContextLoss`。`clay` 是 `EffectComposer`（4 倍 MSAA）→ `RenderPass` → `GTAOPass` →（景深）→ `OutputPass`；景深在 `render/dofPass.ts`，按物理弥散圆（与 `cameraOptics.blurPixels` 同一公式），先算 16 像素瓦片的最大弥散圆，再在半分辨率按 Vogel 圆盘聚合，只收自身弥散圆覆盖到中心的样本，位于中心之后的样本最多影响到中心自己的弥散圆。线稿在 `render/linePass.ts`，2 倍分辨率的视空间法线与深度做边缘检测。导出长边 2048 PNG；`render_view` 也走 clay（长边 1024 JPEG），`depth_of_field` 只加虚化。编辑器视口用同一个 `ClayRenderer` 出每一帧（`Viewport.tsx:ClayView`，`useFrame` 优先级 1）：网格不进 AO 的法线深度，变换手柄在整条链之后单独画；相机视图打开「景深预览」时加虚化，弥散圆按取景框长边换算。编码仍用 `canvasBlob`：助手的导出多在后台标签页执行。
 
 ### 编辑视图
 
@@ -93,6 +94,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 | `GET /creative/documents/{id}/scene-jobs` | 场景未结束的任务（最多 50 条，不含代码与认领信息），供编辑视图 |
 | `GET /creative/documents/{id}/run-changes?run_id=` | 一次运行对场景的改动与恢复命令 |
 | `GET /creative/documents/{id}/revisions?run_id=&since_revision=` | 修订列表的过滤（接口原有，C3 起前端使用） |
+| `POST /creative/documents/{id}/scene-exports` | 摄影师手动导出（C4）：放置导出图节点；助手导出不经这里 |
 
 ## 调试
 
@@ -139,5 +141,6 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 
 - 后台标签页：真实 Chrome 隐藏 6.5 分钟后，烘焙与截图的耗时和前台相当（2026-10-18 实测 1.05 倍、1.00 倍）。前提是所有计时走 Worker 节拍、图片同步编码（`canvasBlob`）：Chrome 后台会把页面主线程的计时器和 `toBlob` 的空闲编码推迟到每秒乃至每分钟一次，新增等待时不要用页面计时器。
 - 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`），C3 的 `edit_scene` 也不开放 `reparent_objects`；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
-- 四个工具的定义约 7 KB，每次模型请求都会带上。
+- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`）。
+- 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

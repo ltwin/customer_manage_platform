@@ -120,3 +120,19 @@ export function readRevision(
 export function readRunChanges(id: string, runID: string, signal?: AbortSignal): Promise<RunChanges> {
   return read<RunChanges>(`${documentPath(id)}/run-changes?${new URLSearchParams({ run_id: runID })}`, signal)
 }
+
+/** Places export images beside the scene node; the caller keeps one operation ID and time across retries. */
+export function exportScene(
+  account: string,
+  id: string,
+  operationID: string,
+  createdAt: string,
+  payload: components['schemas']['CreativeSceneExportPayload'],
+): Promise<components['schemas']['CreativeSceneExportResult']> {
+  if (currentAccount() !== account) return Promise.reject(new Error('账号已变化，请重新登录原账号'))
+  return request(`/creative${documentPath(id)}/scene-exports`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': operationID },
+    body: JSON.stringify({ operation_id: operationID, client_created_at: createdAt, payload }),
+  })
+}

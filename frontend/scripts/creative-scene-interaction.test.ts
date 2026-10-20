@@ -483,8 +483,13 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     toolbar: false,
     sidebar: true,
     history: true,
+    lastCamera: 'sobj_cam',
+    guides: ['thirds', 'diagonals'],
   }
   assert.deepEqual(parseView(JSON.parse(JSON.stringify(view))), view)
+  const { lastCamera: _l, guides: _g, ...before } = view
+  assert.deepEqual(parseView(before), { ...before, lastCamera: null, guides: [] }, 'a view saved before cameras comes back without them')
+  assert.deepEqual(parseView({ ...view, guides: ['thirds', 'spiral'] })?.guides, ['thirds'], 'unknown guides are dropped')
   assert.deepEqual(parseView({ ...view, camera: null }), { ...view, camera: null })
   assert.equal(parseView({ ...view, tool: 'lasso' }), null)
   assert.equal(parseView({ ...view, selection: { selected: ['a'], active: 'b' } }), null, 'the active object is one of the selected')
@@ -496,7 +501,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
   assert.equal(readView(storage, 'k'), null)
   const saver = new ViewSaver(storage, 'k', view)
   saver.camera({ position: [0, -5, 2], target: [0, 0, 0], ortho: false, zoom: 1 })
-  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, history: false })
+  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, history: false, lastCamera: null, guides: ['center'] })
   assert.equal(storage.getItem('k'), '{broken', 'writes wait a moment')
   saver.flush()
   assert.deepEqual(readView(storage, 'k'), {
@@ -506,5 +511,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     toolbar: true,
     sidebar: false,
     history: false,
+    lastCamera: null,
+    guides: ['center'],
   })
 })

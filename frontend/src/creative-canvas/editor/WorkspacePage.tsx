@@ -52,7 +52,7 @@ import {
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -138,6 +138,8 @@ function Workspace({ account }: { account: string }) {
     id: string
     typeKey: string
     libraryOpen: boolean
+    /** The node it was opened from: a scene's exports go beside it. */
+    nodeID: string
   } | null>(null)
   const [editing, setEditing] = useState(false)
   const [addRequest, setAddRequest] = useState<{
@@ -1534,6 +1536,7 @@ function Workspace({ account }: { account: string }) {
                         id: n.data.document_id,
                         typeKey: n.metadata.type_key,
                         libraryOpen,
+                        nodeID: n.id,
                       })
                       setLibraryOpen(false)
                       return
@@ -1762,6 +1765,8 @@ function Workspace({ account }: { account: string }) {
         >
           <SceneEditor
             documentID={maximized.id}
+            canvasID={canvasID}
+            sceneNodeID={maximized.nodeID}
             host={sceneHost.launcher}
             onClose={() => {
               setLibraryOpen(maximized.libraryOpen)

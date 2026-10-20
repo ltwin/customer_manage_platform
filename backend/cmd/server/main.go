@@ -19,6 +19,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
@@ -271,6 +272,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	creativeAgent.SetImageReader(creativeMedia)
 	// A completed scene job resumes the run that parked on it.
 	creativescene.SetJobWaiter(creativeAgent.SceneJobWaiter())
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
 	// 缺凭证或保护密钥时生成关闭，目录为空；草稿与历史入口照常可用。
 	generation, err := creativegeneration.Compose(creativeGateway, gatewayOptions.Catalog.Currency(), creativeMedia, gatewayOptions.Credential)
 	if err != nil {

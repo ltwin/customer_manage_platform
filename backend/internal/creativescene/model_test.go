@@ -36,7 +36,8 @@ func validScene() creativescene.Scene {
 			{ID: objectID(3), Kind: "light", Order: 1, Transform: validTransform(), Visible: true,
 				Light: &creativescene.Light{Type: "spot", Color: ptr("#ffeedd"), Intensity: f64(50), CastShadow: flag(false), Distance: f64(20), Decay: f64(2), Angle: f64(0.26), Penumbra: f64(0.2)}},
 			{ID: objectID(4), Kind: "camera", Order: 2, Transform: validTransform(), Visible: true,
-				Camera: &creativescene.Camera{FocalMM: f64(35), SensorMM: []float64{36, 24}, Aspect: ptr("3:2"), Near: f64(0.1), Far: f64(1000), Label: ptr("")}},
+				Camera: &creativescene.Camera{FocalMM: f64(35), SensorMM: []float64{36, 24}, Aspect: ptr("3:2"), Near: f64(0.1), Far: f64(1000), Label: ptr(""),
+					DepthOfField: flag(false), FStop: f64(2.8), Focus: f64(10), FocusObjectID: ptr("")}},
 		},
 	}
 }
@@ -95,6 +96,11 @@ func TestValidate(t *testing.T) {
 		"aspect":                obj(3, func(o *creativescene.Object) { o.Camera.Aspect = ptr("33:1") }),
 		"far before near":       obj(3, func(o *creativescene.Object) { o.Camera.Far = f64(0.05) }),
 		"camera without near":   obj(3, func(o *creativescene.Object) { o.Camera.Near = nil }),
+		"camera without f_stop": obj(3, func(o *creativescene.Object) { o.Camera.FStop = nil }),
+		"f_stop low":            obj(3, func(o *creativescene.Object) { o.Camera.FStop = f64(0.4) }),
+		"f_stop high":           obj(3, func(o *creativescene.Object) { o.Camera.FStop = f64(65) }),
+		"focus zero":            obj(3, func(o *creativescene.Object) { o.Camera.Focus = f64(0) }),
+		"focus object id":       obj(3, func(o *creativescene.Object) { o.Camera.FocusObjectID = ptr("box") }),
 		"sun":                   func(s *creativescene.Scene) { s.Environment.Sky.SunElevationDeg = f64(91) },
 		"sky extra field":       func(s *creativescene.Scene) { s.Environment.Sky.HDRI = ptr("dusk@1") },
 		"hdri id": func(s *creativescene.Scene) {

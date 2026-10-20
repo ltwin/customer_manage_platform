@@ -699,7 +699,8 @@ func TestLightAndCameraDefaults(t *testing.T) {
 			t.Errorf("light %s = %v, want %v", id, got, want)
 		}
 	}
-	want := map[string]any{"focal_mm": 35.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": ""}
+	want := map[string]any{"focal_mm": 35.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": "",
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": ""}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Errorf("camera = %v, want %v", got, want)
 	}
@@ -757,7 +758,8 @@ func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
 	if err := update(c, "camera", map[string]any{"far": 200}); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 200.0, "label": "A"}
+	want := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 200.0, "label": "A",
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": ""}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("camera = %v, want %v", got, want)
 	}
