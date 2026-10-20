@@ -1,0 +1,72 @@
+{
+  "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
+  "revision": 4,
+  "id": "scene-model-library",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-editor-3d",
+  "designBinding": {
+    "version": 11,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "patterns:几何模块契约",
+      "patterns:客户端代码沙箱",
+      "data:场景文档",
+      "data:模型内容",
+      "data:场景客户端任务",
+      "data:导出图来源",
+      "data:模型资产",
+      "api:读取场景",
+      "api:提交场景命令",
+      "api:场景模型命令",
+      "api:认领场景客户端任务",
+      "api:续租场景客户端任务",
+      "api:完成场景客户端任务",
+      "api:列出场景客户端任务",
+      "api:读取运行的场景改动",
+      "api:导出分镜",
+      "api:模型存入资产库"
+    ],
+    "delivers": [
+      "api:模型存入资产库",
+      "data:模型资产"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-20T14:52:30.611Z",
+  "updatedAt": "2026-10-20T16:39:58.690Z",
+  "risk": {
+    "factors": [
+      "data-migration",
+      "broad-impact",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-20T16:39:58.603Z",
+      "contentHash": "8dffc4908e831566"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-20T16:39:58.603Z",
+      "contentHash": "b1b12f551153336d"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
