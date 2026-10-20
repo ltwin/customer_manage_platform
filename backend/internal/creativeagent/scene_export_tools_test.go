@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"encoding/json"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -51,8 +52,14 @@ func TestTheAssistantAimsLooksAndExports(t *testing.T) {
 		func(r llmgateway.ProviderRequest) llmgateway.Result {
 			return scriptedResult(r, sceneCall("c", exportShotsTool, map[string]any{"document_id": doc}))
 		},
+		// Before repainting, the canvas tells which image was shot how.
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, llmgateway.ToolCall{ID: "d", Name: readCanvasTool, Arguments: json.RawMessage(`{"offset":0,"limit":50}`)})
+		},
 	}}
 	f.vendor.script = s.answer
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
+	t.Cleanup(func() { creativecanvas.SetExportFreshness(nil) })
 	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "摆一台机位，确认虚化后导出"})
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +105,28 @@ func TestTheAssistantAimsLooksAndExports(t *testing.T) {
 	nodes, _ := exported["nodes"].([]any)
 	if exported["status"] != "succeeded" || exported["change_id"] == nil || len(nodes) != 2 {
 		t.Fatalf("export_shots result %v", exported)
+	}
+	// The camera stands 5 m in front of the empty it focuses on.
+	lens := map[string]any{"focal_mm": 50.0, "depth_of_field": true, "f_stop": 1.4, "focus_m": 5.0, "focus_object_name": "空物体 1"}
+	for _, n := range nodes {
+		if got := n.(map[string]any)["lens"]; !reflect.DeepEqual(got, lens) {
+			t.Fatalf("export_shots lens %v", got)
+		}
+	}
+	read := lastTool(s.request(5))
+	sources := 0
+	for _, n := range read["nodes"].([]any) {
+		src, ok := n.(map[string]any)["export_source"].(map[string]any)
+		if !ok {
+			continue
+		}
+		sources++
+		if src["camera_object_id"] != cam || src["scene_document_id"] != doc || src["state"] != "current" || !reflect.DeepEqual(src["lens"], lens) {
+			t.Fatalf("export_source %v", src)
+		}
+	}
+	if sources != 2 {
+		t.Fatalf("read_canvas shows %d export sources: %v", sources, read)
 	}
 	if ok, _ := hasImage(s.request(4)); !ok {
 		t.Fatal("the depth of field screenshot is not in the request after render_view")

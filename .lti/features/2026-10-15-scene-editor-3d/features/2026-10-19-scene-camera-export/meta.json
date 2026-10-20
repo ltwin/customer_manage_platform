@@ -1,12 +1,12 @@
 {
   "uid": "bdabd66b-09bb-4897-ab28-f1c9cdb918ee",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-camera-export",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 8,
+    "version": 9,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -47,7 +47,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-19T12:33:49.068Z",
-  "updatedAt": "2026-10-19T14:01:48.753Z",
+  "updatedAt": "2026-10-20T03:12:58.772Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -56,19 +56,21 @@
       "broad-impact"
     ]
   },
-  "approvals": {
-    "proposal": {
+  "approvals": {},
+  "approvalHistory": [
+    {
       "by": "samson",
       "at": "2026-10-19T14:00:20.371Z",
-      "contentHash": "f516856e4da8faf4"
+      "contentHash": "f516856e4da8faf4",
+      "role": "proposal"
     },
-    "design": {
+    {
       "by": "samson",
       "at": "2026-10-19T14:00:20.371Z",
-      "contentHash": "1e972d03a01b5344"
+      "contentHash": "1e972d03a01b5344",
+      "role": "design"
     }
-  },
-  "approvalHistory": [],
+  ],
   "revisions": [],
   "baseline": {
     "commit": "4ce0dda616f94665abb5b1332ce65e429969a165",

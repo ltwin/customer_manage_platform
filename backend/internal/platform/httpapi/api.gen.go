@@ -6736,6 +6736,19 @@ type CreativeSceneEnvironment struct {
 	Sky CreativeSceneSky `json:"sky"`
 }
 
+// CreativeSceneExportLens 导出时这台摄像机的镜头快照，与节点 based_on.lens 相同；只说明这张图怎么拍的，不参与过时判断。
+type CreativeSceneExportLens struct {
+	DepthOfField bool    `json:"depth_of_field"`
+	FStop        float32 `json:"f_stop"`
+	FocalMm      float32 `json:"focal_mm"`
+
+	// FocusM 实际对焦距离（米）：有对焦物件时为物件原点沿视线的深度，否则为 focus；夹在 near、far 之间
+	FocusM float32 `json:"focus_m"`
+
+	// FocusObjectName 对焦物件的名称；按距离对焦或对焦物件已删除时为空字符串
+	FocusObjectName string `json:"focus_object_name"`
+}
+
 // CreativeSceneExportPayload defines model for CreativeSceneExportPayload.
 type CreativeSceneExportPayload struct {
 	CanvasId    string `json:"canvas_id"`
@@ -6759,10 +6772,13 @@ type CreativeSceneExportRequest struct {
 type CreativeSceneExportResult struct {
 	ChangeId string `json:"change_id"`
 	Nodes    []struct {
-		CameraObjectId    string            `json:"camera_object_id"`
-		ContentRevisionId string            `json:"content_revision_id"`
-		NodeId            string            `json:"node_id"`
-		Pass              CreativeScenePass `json:"pass"`
+		CameraObjectId    string `json:"camera_object_id"`
+		ContentRevisionId string `json:"content_revision_id"`
+
+		// Lens 导出时这台摄像机的镜头快照，与节点 based_on.lens 相同；只说明这张图怎么拍的，不参与过时判断。
+		Lens   CreativeSceneExportLens `json:"lens"`
+		NodeId string                  `json:"node_id"`
+		Pass   CreativeScenePass       `json:"pass"`
 	} `json:"nodes"`
 
 	// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number

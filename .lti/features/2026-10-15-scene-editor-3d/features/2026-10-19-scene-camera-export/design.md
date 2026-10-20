@@ -134,7 +134,8 @@ tan(v / 2) = L / (2 · focal_mm) / max(a, 1)     // v 为 three.js PerspectiveCa
 |---|---|---|
 | `creativescene/model.go` | `Camera` 加 `DepthOfField *bool`、`FStop *float64`、`Focus *float64`、`FocusObjectID *string` | `completeCamera`、`mergeCamera` 同步；`decodeScene` 补齐默认值 |
 | `creativescene/exports.go` | `ExportInput{CanvasID, SceneNodeID, SceneRevision, Shots[]{CameraObjectID, Images[]{Pass, UploadID}}}` | 导出接口的 payload，`DocumentID` 来自路径 |
-| 同上 | `ExportResult{ChangeID, SceneRevision, Nodes[]{CameraObjectID, Pass, NodeID, ContentRevisionID}}` | 接口响应，也是 `export_shots` 任务的 `result` |
+| 同上 | `ExportResult{ChangeID, SceneRevision, Nodes[]{CameraObjectID, Pass, NodeID, ContentRevisionID, Lens}}` | 接口响应，也是 `export_shots` 任务的 `result`；`Lens` 为修订 v9 追加 |
+| `creativescene/lens.go` | `lensOf(scene, camera) creativecanvas.SceneExportLens` | 修订 v9：按导出快照算镜头，对焦距离与渲染端 `framing.ts:focusDistance`、`clampFocus` 同一规则 |
 | 同上 | `placeExportsInTx(ctx, tx, documentID, ExportInput, actor) (ExportResult, error)` | 手动导出与任务完成共用的放置流程 |
 | `creativescene/fingerprint.go` | `Fingerprint(scene, cameraID, pass) (string, bool)`；`Freshness`（端口实现） | 渲染指纹与过时判断 |
 | `creativescene/jobs.go` | `ExportRequest{CameraObjectIDs, Passes, CanvasID, SceneNodeID}` | `export_shots` 的 `request`；`JobResult` 增加 `Export *ExportResult` |
@@ -142,7 +143,7 @@ tan(v / 2) = L / (2 · focal_mm) / max(a, 1)     // v 为 three.js PerspectiveCa
 | `creativescene/jobs_complete.go` | `ExportOutput{SceneRevision, Shots}` | 完成任务的 `export`，替换现有占位的 `{export_operation_id}`；`Shots` 与 `ExportInput.Shots` 同类型 |
 | `creativecanvas` | `SceneExportPlacement{CanvasID, SceneNodeID, DocumentID, Rows[][]{UploadID, Title, Aspect, BasedOn}, Actor}` → `SceneExportPlaced{ChangeID, Nodes[]}` | 画布侧放置入口的输入与输出 |
 | `creativecanvas` | `Action.Config map[string]any` 加 `json:"-"` | 只有 Go 调用方能设置，HTTP 解码不到 |
-| `creativecanvas` | `ExportSource{NodeID, DocumentID, CameraObjectID, Pass, Fingerprint}`；端口 `ExportFreshness.Check(sources, current map[documentID]creativecontent.Revision) map[nodeID]string`；`SceneExportBasedOn`（`based_on` 的读写共用类型） | 读画布时问场景是否过时。当前快照由画布传入，端口不查库（实施补记：指纹版本不符直接判过时，`ctx`、`tx` 随之去掉；同一（场景, 摄像机, 方式）只算一次指纹） |
+| `creativecanvas` | `ExportSource{NodeID, DocumentID, CameraObjectID, Pass, Fingerprint}`；端口 `ExportFreshness.Check(sources, current map[documentID]creativecontent.Revision) map[nodeID]string`；`SceneExportBasedOn`（`based_on` 的读写共用类型，修订 v9 加 `Lens *SceneExportLens`）、`SceneExportOf(node)`（读出生效的 `based_on`，`read_canvas` 也用它） | 读画布时问场景是否过时。当前快照由画布传入，端口不查库（实施补记：指纹版本不符直接判过时，`ctx`、`tx` 随之去掉；同一（场景, 摄像机, 方式）只算一次指纹） |
 
 ## 模块职责与协作
 
@@ -275,6 +276,13 @@ sequenceDiagram
 - 弥散圆按画面长边像素换算，1024 的截图与 2048 的导出虚化程度成比例，缩小后一致。
 - 工具结果不变：截图作为下一步的图片输入，附 `scene_revision`。工具说明写明：默认回看看结构；检查焦点和虚化时带 `depth_of_field: true`；导出前若要确认虚化，按摄像机回看一次即可。
 - `render_view@1` 的参数新增一个可选字段，沿用 C3a 修改 `edit_scene@1` 的做法：版本号不变，随本次工具变化排空后升级。
+
+### 助手读导出图的来源（修订 v9）
+
+- **写**：`placeExportsInTx` 对每台摄像机算一次 `lensOf`，放进这台摄像机每张图的 `based_on.lens`，同时写进结果节点。对焦物件存在时取它原点在摄像机视线（局部 −Z）上的深度，否则取 `focus`；夹在 `max(near, 焦距 × 1.01)` 与 `far` 之间，保留到毫米。`lens` 不进指纹。
+- **读**：`read_canvas`（`creativeagent/context.go:canvasView`）对每个节点调 `creativecanvas.SceneExportOf`，生效时给出 `export_source{scene_document_id, scene_revision, camera_object_id, pass, lens, state}`；`state` 取画布读取时算好的 `based_on_state`。没有 `lens` 的旧节点给 `null`。
+- **说明**：`instructions/base.md` 的场景段落后加重绘规则；`export_shots`、`read_canvas` 的工具说明提到 `lens`、`export_source`。测试 `TestRepaintGuidanceNamesTheExportSource` 从类型取字段名，保证说明里点到的字段存在。
+- 系统说明变长约 1 KB，上下文压缩的回归测试把窗口放宽了同样的量。
 
 ### 导出渲染
 
@@ -440,6 +448,7 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `backend/internal/creativescene/view.go:view` | 修改 | 有摄像机缺字段时输出补齐后的场景 |
 | `backend/internal/creativescene/exports.go` | 新增 | `Export` 操作、`placeExportsInTx`、`ExportInput`/`ExportResult` |
 | `backend/internal/creativescene/fingerprint.go` | 新增 | 渲染指纹、`Freshness`（`ExportFreshness` 端口实现） |
+| `backend/internal/creativescene/lens.go` | 新增（修订 v9） | `lensOf`：导出时的镜头快照 |
 | `backend/internal/creativescene/lookat.go` | 新增 | `resolveLookAt` 与数学 |
 | `backend/internal/creativescene/agent.go:AgentEditInTx` | 修改 | 换算 `look_at` |
 | `backend/internal/creativescene/jobs.go` | 修改 | `executableKinds` 加 `export_shots`；`ExportRequest`；`JobResult.Export`；`CreateExportJobInTx`；`RenderRequest.DepthOfField` 与 `CreateRenderJobInTx` 的校验 |
@@ -476,7 +485,8 @@ resolveLookAt(item, 当前快照, 同一命令的其他操作):
 | `backend/internal/creativescene/type.go:Apply` | 修改（实施补记） | 调用 `checkFocusTargets` |
 | `backend/internal/platform/httpapi/creative_scene_jobs.go` | 修改（实施补记） | `ExportCreativeSceneShots` 处理函数 |
 | `backend/internal/creativecanvas/tool_schemas.gen.go` | 修改（实施补记） | 生成物（`based_on_state`） |
-| `backend/internal/creativeagent/instructions/base.md` | 修改（实施补记） | 提到 `export_shots` 与回看后导出 |
+| `backend/internal/creativeagent/instructions/base.md` | 修改（实施补记） | 提到 `export_shots` 与回看后导出；修订 v9 加按 `export_source.lens` 写重绘提示词的规则 |
+| `backend/internal/creativeagent/context.go` | 修改（修订 v9） | `read_canvas` 的导出图节点带 `export_source`，工具说明同步 |
 | `frontend/src/creative-scene/host/pageExecutor.ts` | 修改（实施补记） | 接上 `renderShots` |
 | `frontend/src/creative-scene/scene.css`、`frontend/src/creative-canvas/editor/workspace.css` | 修改（实施补记） | 取景框、导出对话框、摄像机属性、「场景已更新」标记的样式 |
 

@@ -3,6 +3,7 @@ package creativescene_test
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -486,4 +487,41 @@ func TestCanvasReadCostOfExports(t *testing.T) {
 	defer creativecanvas.SetExportFreshness(creativescene.Freshness{})
 	without := median()
 	t.Logf("canvas read, 200-object scene, 6 export images: p50 %v with freshness, %v without (+%v)", with, without, with-without)
+}
+
+// The export records each camera's lens (contracts「导出图来源」lens) as the
+// renderer used it: the focus object's depth along the view, through a
+// scaled parent; a focus distance kept beyond near.
+func TestExportRecordsTheLens(t *testing.T) {
+	f := setup(t)
+	sc := newSceneCanvas(t, f.a)
+	aimed, plain, g, vase := objectID(1), objectID(2), objectID(3), objectID(4)
+	turned := withContent(aimed, "camera", 1, map[string]any{"focal_mm": 85, "depth_of_field": true, "f_stop": 1.8, "focus_object_id": vase})
+	// Standing at x = 5 and turned 90° about Y, it looks along −X.
+	turned["transform"] = map[string]any{"position": []float64{5, 1, 0}, "rotation": []float64{0, math.Sqrt2 / 2, 0, math.Sqrt2 / 2}, "scale": []float64{1, 1, 1}}
+	parent := group(g, nil, 3)
+	parent["transform"] = map[string]any{"position": []float64{1, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{2, 2, 2}}
+	child := named(box(vase, &g, 4), "花瓶")
+	child["transform"] = at(-1, 0, 0) // world x = 1 + 2 × (−1) = −1, 6 m ahead
+	addObjects(t, f.a, sc.doc, parent, child, turned, withContent(plain, "camera", 2, map[string]any{"focus": 0.01}))
+	rev := readScene(t, f.a, sc.doc).Revision
+	res, err := export(t, f.a, exportPayload(sc, rev,
+		shot(aimed, img("clay", stage(t, f, f.a, "image")), img("line", stage(t, f, f.a, "image"))),
+		shot(plain, img("clay", stage(t, f, f.a, "image")))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]creativecanvas.SceneExportLens{
+		aimed: {FocalMM: 85, DepthOfField: true, FStop: 1.8, FocusM: 6, FocusObjectName: "花瓶"},
+		plain: {FocalMM: 35, DepthOfField: false, FStop: 2.8, FocusM: 0.1}, // near
+	}
+	for _, n := range res.Nodes {
+		if n.Lens != want[n.CameraObjectID] {
+			t.Fatalf("%s %s lens %+v, want %+v", n.CameraObjectID, n.Pass, n.Lens, want[n.CameraObjectID])
+		}
+		b, ok := creativecanvas.SceneExportOf(canvasNode(t, f.a, sc.canvas, n.NodeID))
+		if !ok || b.Lens == nil || *b.Lens != n.Lens {
+			t.Fatalf("based_on of %s: %+v", n.NodeID, b)
+		}
+	}
 }

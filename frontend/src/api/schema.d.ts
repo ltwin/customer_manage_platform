@@ -7465,7 +7465,18 @@ export interface components {
                 pass: components["schemas"]["CreativeScenePass"];
                 node_id: string;
                 content_revision_id: string;
+                lens: components["schemas"]["CreativeSceneExportLens"];
             }[];
+        };
+        /** @description 导出时这台摄像机的镜头快照，与节点 based_on.lens 相同；只说明这张图怎么拍的，不参与过时判断。 */
+        CreativeSceneExportLens: {
+            focal_mm: number;
+            depth_of_field: boolean;
+            f_stop: number;
+            /** @description 实际对焦距离（米）：有对焦物件时为物件原点沿视线的深度，否则为 focus；夹在 near、far 之间 */
+            focus_m: number;
+            /** @description 对焦物件的名称；按距离对焦或对焦物件已删除时为空字符串 */
+            focus_object_name: string;
         };
         CreativeSceneJobSummary: {
             id: string;

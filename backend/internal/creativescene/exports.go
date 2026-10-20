@@ -48,10 +48,11 @@ type ExportInput struct {
 }
 
 type ExportNode struct {
-	CameraObjectID    string `json:"camera_object_id"`
-	Pass              string `json:"pass"`
-	NodeID            string `json:"node_id"`
-	ContentRevisionID string `json:"content_revision_id"`
+	CameraObjectID    string                         `json:"camera_object_id"`
+	Pass              string                         `json:"pass"`
+	NodeID            string                         `json:"node_id"`
+	ContentRevisionID string                         `json:"content_revision_id"`
+	Lens              creativecanvas.SceneExportLens `json:"lens"`
 }
 
 // ExportResult is the export response and export_shots' job result.
@@ -176,6 +177,7 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 		if name == "" {
 			name = "摄像机"
 		}
+		lens := lensOf(scene, cam)
 		images := slices.Clone(s.Images)
 		slices.SortFunc(images, func(a, b ExportImage) int {
 			return slices.Index(Passes, a.Pass) - slices.Index(Passes, b.Pass)
@@ -193,6 +195,7 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 					CameraObjectID:  s.CameraObjectID,
 					Pass:            img.Pass,
 					Fingerprint:     fp,
+					Lens:            &lens,
 				},
 			})
 		}
@@ -213,7 +216,7 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 	for i, row := range rows {
 		for j, img := range row.Images {
 			p := placed.Rows[i][j]
-			out.Nodes = append(out.Nodes, ExportNode{CameraObjectID: in.Shots[i].CameraObjectID, Pass: img.BasedOn.Pass, NodeID: p.NodeID, ContentRevisionID: p.ContentRevisionID})
+			out.Nodes = append(out.Nodes, ExportNode{CameraObjectID: in.Shots[i].CameraObjectID, Pass: img.BasedOn.Pass, NodeID: p.NodeID, ContentRevisionID: p.ContentRevisionID, Lens: *img.BasedOn.Lens})
 		}
 	}
 	return out, nil

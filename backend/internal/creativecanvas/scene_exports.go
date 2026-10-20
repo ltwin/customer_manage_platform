@@ -55,6 +55,22 @@ type SceneExportBasedOn struct {
 	// ContentRevisionID is the exported image; placement sets it. Once the
 	// node's content is something else, the based_on no longer applies.
 	ContentRevisionID string `json:"content_revision_id"`
+	// Lens is how the camera shot it; nodes placed before it existed lack it.
+	Lens *SceneExportLens `json:"lens,omitempty"`
+}
+
+// SceneExportLens is the camera's lens when the image was exported, for
+// whoever reads the image (the assistant writing a repaint prompt). It does
+// not decide freshness: the fingerprint already counts these settings.
+type SceneExportLens struct {
+	FocalMM      float64 `json:"focal_mm"`
+	DepthOfField bool    `json:"depth_of_field"`
+	FStop        float64 `json:"f_stop"`
+	// FocusM is where it focused, in metres: the focus object's depth along
+	// the view while it exists, else focus; kept between near and far.
+	FocusM float64 `json:"focus_m"`
+	// FocusObjectName is "" when it focused by distance or the object is gone.
+	FocusObjectName string `json:"focus_object_name"`
 }
 
 // SceneExportRow is one camera: its images and frame aspect (width / height).
@@ -223,19 +239,27 @@ const (
 	BasedOnUnavailable = "unavailable"
 )
 
-// exportSource reads n's based_on; ok is false when the node has none or its
-// content is no longer the exported image.
-func exportSource(n Node) (ExportSource, bool) {
+// SceneExportOf reads n's based_on; ok is false when the node has none or
+// its content is no longer the exported image.
+func SceneExportOf(n Node) (SceneExportBasedOn, bool) {
 	if n.TypeKey != exportImageTypeKey || n.ContentRevisionID == nil || len(n.Config) == 0 {
-		return ExportSource{}, false
+		return SceneExportBasedOn{}, false
 	}
 	var cfg struct {
 		BasedOn *SceneExportBasedOn `json:"based_on"`
 	}
 	if json.Unmarshal(n.Config, &cfg) != nil || cfg.BasedOn == nil || cfg.BasedOn.ContentRevisionID != *n.ContentRevisionID || cfg.BasedOn.SceneDocumentID == "" {
+		return SceneExportBasedOn{}, false
+	}
+	return *cfg.BasedOn, true
+}
+
+// exportSource is what the freshness check needs of n's based_on.
+func exportSource(n Node) (ExportSource, bool) {
+	b, ok := SceneExportOf(n)
+	if !ok {
 		return ExportSource{}, false
 	}
-	b := cfg.BasedOn
 	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint}, true
 }
 

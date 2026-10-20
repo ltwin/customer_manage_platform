@@ -47,3 +47,9 @@
 - [x] 8.1 视口、`render_view`、白模导出共用 `ClayRenderer`（AO 常驻）：`render/clayExport.ts` 网格不进 AO、变换手柄在整条链之后画、AO 那一遍不重画阴影、正交相机的 AO 视线方向、视口 AO 按 CSS 像素；`render/dofPass.ts` 弥散圆按取景框长边；`Viewport.tsx:ClayView`（`useFrame` 优先级 1，坐标轴小部件优先级 2）；`host/render.ts` 去掉不带 AO 的截图。单元测试覆盖正交补丁
 - [x] 8.2 「景深预览」改为开关：`Viewport.tsx:CameraFrame`、`state/sceneStore.ts:dofPreview`、`scene.css`；开着时场景改动实时更新，不撤掉
 - [x] 8.3 proposal 决定 2、specs、design、`render_view` 工具说明与开发文档同步；e2e：开关打开后虚化、外部改光圈后仍开着并更新、关掉后与打开前一致，正交视图 AO 不发黑，助手截图背景按色调映射后的颜色；记录视口单帧耗时
+
+## 9. 助手看得到导出图的镜头（owner 2026-10-19，Epic 修订 v9）
+
+- [x] 9.1 Epic 修订 v9：`data: 导出图来源` 加 `lens` 与助手读取，`api: 导出分镜` 和任务结果加 `lens`，视口与截图带 AO、指纹版本不同直接过时；`epic revise` 后重新绑定 C4
+- [x] 9.2 `creativescene/lens.go`、`exports.go` 写 `lens`；`creativecanvas` 的 `SceneExportLens`、`SceneExportOf`；OpenAPI `CreativeSceneExportLens` 与生成物
+- [x] 9.3 `read_canvas` 的 `export_source`、`export_shots` 结果的 `lens`、系统说明的重绘规则与工具说明；测试 `TestExportRecordsTheLens`、`TestTheAssistantAimsLooksAndExports`（`lens` 与 `export_source`）、`TestRepaintGuidanceNamesTheExportSource`；压缩回归测试按说明增长放宽窗口

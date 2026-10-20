@@ -113,8 +113,9 @@ func TestHistoryGuardUsesCurrentToolsAfterConsentUpgrade(t *testing.T) {
 func TestCompactionSmallWindowCanContinue(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
 	// The window leaves the same room as before the scene tools (about 7 KB of
-	// definitions in every request) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 18000 })
+	// definitions in every request) and the repaint guidance for export
+	// images (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 19000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for i := 0; i < 4; i++ {
@@ -135,8 +136,9 @@ func TestCompactionSmallWindowCanContinue(t *testing.T) {
 func TestCompactionOriginalsLeaveRoomForRecentTurns(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
 	// The window leaves the same room as before the scene tools (about 7 KB of
-	// definitions in every request) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 18000 })
+	// definitions in every request) and the repaint guidance for export
+	// images (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 19000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for _, text := range []string{strings.Repeat("x", 20000), strings.Repeat("y", 20000), "最近方案甲", "最近方案乙"} {
@@ -270,8 +272,9 @@ func TestCompactionReplacementAtSameCoverageUsesNewSummary(t *testing.T) {
 		t.Fatalf("first compact: %s / %s", first.State, first.ErrorCode)
 	}
 	// The window leaves the same room as before the scene tools (about 7 KB of
-	// definitions in every request) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 10000 })
+	// definitions in every request) and the repaint guidance for export
+	// images (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 11000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = compactionScript(testSummary + "\nreplacement-small-summary")

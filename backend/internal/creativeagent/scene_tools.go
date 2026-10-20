@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
@@ -133,7 +134,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	case exportShotsTool:
 		return &schema.ToolInfo{
 			Name: exportShotsTool,
-			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模，打开景深的摄像机按光圈虚化）和 line（线稿）各一列，节点记下来源修订，场景之后改了会提示过时。" +
+			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模，打开景深的摄像机按光圈虚化）和 line（线稿）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
 				"图在创作者的页面渲染（长边 2048），调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
@@ -492,13 +493,14 @@ func renderSucceeded(ctx context.Context, tx store.TxAccountScope, render creati
 // (the model looks with render_view).
 func exportSucceeded(export creativescene.ExportResult) any {
 	type node struct {
-		CameraObjectID string `json:"camera_object_id"`
-		Pass           string `json:"pass"`
-		NodeID         string `json:"node_id"`
+		CameraObjectID string                         `json:"camera_object_id"`
+		Pass           string                         `json:"pass"`
+		NodeID         string                         `json:"node_id"`
+		Lens           creativecanvas.SceneExportLens `json:"lens"`
 	}
 	nodes := make([]node, 0, len(export.Nodes))
 	for _, n := range export.Nodes {
-		nodes = append(nodes, node{n.CameraObjectID, n.Pass, n.NodeID})
+		nodes = append(nodes, node{n.CameraObjectID, n.Pass, n.NodeID, n.Lens})
 	}
 	return map[string]any{"status": "succeeded", "scene_revision": int64(export.SceneRevision), "change_id": export.ChangeID, "nodes": nodes}
 }
