@@ -349,10 +349,11 @@ grouping.group(view, selection) -> { op: reparent_objects, inverse: reparent_obj
   - 分解出的缩放或位置越界。
 - **矩阵**：`lookat.go` 增加 `mat4.invert` 和 `decompose`（与 three.js `Matrix4.invert`、`decompose` 一致，含行列式为负时翻转 X 缩放），用 three.js 的数值对照测试。
 - **运行改动**（`run_changes.go`）：
-  - 先用修订行的 `changed_units` 和前一修订的 `unit_revs` 筛出候选：`objects` 有变化，并且有已存在物件（前一修订的 `unit_revs` 里已有）的摆放单元一起变化。只增删物件的修订（例如助手大批 `add_objects`）不是候选，不读快照。修订行没有存操作列表，所以按单元筛选；
+  - 先用修订行的 `changed_units` 筛出候选：`objects` 有变化，并且有已存在物件的摆放单元一起变化。修订行没有存操作列表，所以按单元筛选。
+  - 「已存在」从运行首个修订之前的快照出发，按历史行里新增、删除的单元逐条推进；遇到整份恢复就重读那一版。实施时这样做，而不是读前一修订的 `unit_revs`：不多查修订表，那份快照条目本来就要读。只增删物件的修订（例如助手大批 `add_objects`）不是候选，不读它前后的快照；
   - 候选修订读它与前一修订的快照，比较两边都存在的物件的 `parent_id` 和 `order`；
   - 有变化的修订记入层级集合；
-  - 这些物件在该修订之后的条目以 `hierarchy_not_restorable` 阻止恢复，原来那条 `{kind: unit, unit: objects}` 条目保留；
+  - 这些物件，以及它们改挂进、改挂出的分组，条目都以 `hierarchy_not_restorable` 阻止恢复。分组也要阻止：撤销本轮会删掉新建的分组，按单元恢复的规则把子物件上移，子物件就跳位了。`{kind: unit, unit: objects}` 条目保留，候选修订也计入它；
   - 只读运行内、`objects` 有变化的修订，最多 5000 条历史的上限不变。
 - **变更摘要**（`summarizeChanges`）：比较前后快照，对两边都存在、父级变了的物件报「改挂到 <分组名>/根」。新建的分组照常按新增物件报告。
 

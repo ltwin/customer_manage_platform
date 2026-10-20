@@ -252,6 +252,49 @@ func TestRunChanges(t *testing.T) {
 		}
 	})
 
+	// Restoring a reparented object's units puts back its old local
+	// transform under its new parent: it would jump. The objects moved, and
+	// the groups they moved into or out of, are left to the history list.
+	t.Run("grouping", func(t *testing.T) {
+		me, agent := newScene(t)
+		g, c := objectID(9), objectID(3)
+		me.add(box(a, nil, 10), box(b, nil, 11), box(c, nil, 12))
+		me.move(c, 6)
+		grouped := agent.send([]string{"objects", placement(a), placement(b)}, op{"op": "reparent_objects",
+			"create_groups": []any{group(g, nil, 13)},
+			"moves": []any{
+				map[string]any{"object_id": a, "parent_id": g, "order": 0, "transform": at(-1, 0, 0)},
+				map[string]any{"object_id": b, "parent_id": g, "order": 1, "transform": at(1, 0, 0)},
+			}})
+		agent.resize(c, 2)
+		got := runChanges(t, f.a, me.doc, run)
+		blocked := map[string]string{}
+		for _, e := range got.Entries {
+			key := e.Target.ObjectID + e.Target.Unit
+			if e.Blocked == nil {
+				blocked[key] = "restorable"
+				continue
+			}
+			if e.Blocked.Reason == creativescene.BlockedHierarchy && e.Blocked.Revision != creativeops.Revision(grouped) {
+				t.Fatalf("blocked at %v, want %d", e.Blocked.Revision, grouped)
+			}
+			blocked[key] = e.Blocked.Reason
+		}
+		want := map[string]string{a: creativescene.BlockedHierarchy, b: creativescene.BlockedHierarchy, g: creativescene.BlockedHierarchy,
+			"objects": creativescene.BlockedHierarchy, c: "restorable"}
+		if len(blocked) != len(want) {
+			t.Fatalf("entries %v", blocked)
+		}
+		for k, v := range want {
+			if blocked[k] != v {
+				t.Fatalf("entries %v", blocked)
+			}
+		}
+		if len(got.UndoAll) != 1 || !slices.Equal(got.UndoAll[0].Units, []string{content(c)}) {
+			t.Fatalf("undo_all %+v", got.UndoAll)
+		}
+	})
+
 	t.Run("environment", func(t *testing.T) {
 		me, agent := newScene(t)
 		env := readScene(t, f.a, me.doc).Scene.Environment
@@ -307,6 +350,12 @@ func TestChangesSince(t *testing.T) {
 			me.resize(a, 3)
 			me.add(named(box(b, nil, 11), "灯笼"))
 		}, []string{"创作者改了「柱 A」(" + a + ")的摆放和内容", "创作者新增了「灯笼」(" + b + ")"}},
+		{"grouped", func(me, agent author) {
+			agent.add(named(box(a, nil, 10), "柱 A"))
+			me.send([]string{"objects", placement(a)}, op{"op": "reparent_objects",
+				"create_groups": []any{named(group(b, nil, 11), "石台组")},
+				"moves":         []any{map[string]any{"object_id": a, "parent_id": b, "order": 0, "transform": at(1, 0, 0)}}})
+		}, []string{"创作者改了「柱 A」(" + a + ")的摆放，并改挂到「石台组」(" + b + ")", "创作者新增了「石台组」(" + b + ")"}},
 		{"deleted", func(me, agent author) {
 			agent.add(named(box(a, nil, 10), "柱 A"))
 			me.remove(a)

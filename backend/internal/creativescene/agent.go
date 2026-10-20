@@ -197,6 +197,24 @@ func summarizeChanges(rows []creativedocument.HistoryRow, before, now Scene) []s
 		}
 		return fmt.Sprintf("「%s」(%s)", name, id)
 	}
+	// reparentedTo words a parent that differs between before and now. Only
+	// edits that changed placement say it: a keep-world reparent always
+	// does, and an object's mere order is not news.
+	reparentedTo := func(id string) string {
+		bi, ok1 := beforeIdx[id]
+		ni, ok2 := nowIdx[id]
+		if !ok1 || !ok2 {
+			return ""
+		}
+		was, is := before.Objects[bi].ParentID, now.Objects[ni].ParentID
+		switch {
+		case is == nil && was == nil, is != nil && was != nil && *is == *was:
+			return ""
+		case is == nil:
+			return "，并改挂到根"
+		}
+		return "，并改挂到" + label(*is)
+	}
 	type edit struct {
 		at                 int64
 		actor, target      string
@@ -283,6 +301,9 @@ func summarizeChanges(rows []creativedocument.HistoryRow, before, now Scene) []s
 				parts = append(parts, "内容")
 			}
 			text = fmt.Sprintf("%s改了%s的%s", e.actor, label(e.target), strings.Join(parts, "和"))
+			if e.placement {
+				text += reparentedTo(e.target)
+			}
 		}
 		restores = append(restores, line{e.at, text})
 	}
@@ -772,14 +793,12 @@ type RevertedEntry struct {
 }
 
 // opsNotForTheAssistant are scene command operations edit_scene leaves out:
-// models come from write_model, the hierarchy cannot be restored unit by unit
-// (C5 opens manual grouping), and taking changes back is revert_run.
+// models come from write_model, and taking changes back is revert_run.
 var opsNotForTheAssistant = map[string]string{
-	"commit_model":     "模型用 write_model 写入",
-	"reparent_objects": "暂不支持调整层级",
-	"restore":          "撤回改动用 revert_run",
-	"restore_units":    "撤回改动用 revert_run",
-	"rename":           "不能改场景标题",
+	"commit_model":  "模型用 write_model 写入",
+	"restore":       "撤回改动用 revert_run",
+	"restore_units": "撤回改动用 revert_run",
+	"rename":        "不能改场景标题",
 }
 
 // AgentEditInTx is edit_scene: scene operations checked against the
@@ -817,6 +836,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	}
 	scene, err := decodeScene(cur.Content.Payload)
 	if err != nil {
+		return nil, err
+	}
+	if in.Operations, err = resolveReparent(in.Operations, scene); err != nil {
 		return nil, err
 	}
 	if in.Operations, err = resolveLookAt(in.Operations, scene); err != nil {

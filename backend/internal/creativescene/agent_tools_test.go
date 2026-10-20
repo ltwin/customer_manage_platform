@@ -122,7 +122,7 @@ func TestAgentEditRefusals(t *testing.T) {
 		ops  []any
 	}{
 		{"commit_model", base, []any{op{"op": "commit_model"}}},
-		{"reparent_objects", base, []any{op{"op": "reparent_objects", "moves": []any{}}}},
+		{"reparent without moves", base, []any{op{"op": "reparent_objects", "moves": []any{}}}},
 		{"whole restore", base, []any{op{"op": "restore", "revision": "1"}}},
 		{"restore_units", base, []any{op{"op": "restore_units", "from_revision": "1", "units": []string{"render"}}}},
 		{"revert_run with others", base, []any{op{"op": "revert_run", "run_id": "previous"}, moveOp(objectID(1), 1)}},
@@ -137,6 +137,76 @@ func TestAgentEditRefusals(t *testing.T) {
 	}
 	if _, err := agentEdit(t, f.b, creativescene.EditInput{DocumentID: me.doc, RunID: "ccrn_agent", BasedOn: base, Operations: raws(t, moveOp(objectID(1), 1))}); !errors.Is(err, creativedocument.ErrNotFound) {
 		t.Fatalf("another account: %v", err)
+	}
+}
+
+// TestAgentReparentKeepsWorldPositions: the assistant names only the new
+// parent; the local transform comes out as three.js computes it
+// (parent.invert().multiply(world).decompose()), and orders and group
+// defaults are filled in.
+func TestAgentReparentKeepsWorldPositions(t *testing.T) {
+	f := setup(t)
+	const run = "ccrn_agent"
+	p, x, a, b, g := objectID(1), objectID(2), objectID(3), objectID(4), objectID(5)
+	me := author{t: t, scope: f.a, doc: createScene(t, f.a), actor: creativedocument.Photographer}
+	parent := group(p, nil, 10)
+	parent["transform"] = map[string]any{"position": []float64{2, 1, -3}, "rotation": []float64{0, 0.3894183423086505, 0, 0.9210609940028851}, "scale": []float64{2, 2, 2}}
+	child := box(x, nil, 11)
+	child["transform"] = map[string]any{"position": []float64{5, 1, 0}, "rotation": []float64{0.06407134770607115, 0.09115754934299071, 0.15343930202422257, 0.9818561728660807}, "scale": []float64{1, 1, 1}}
+	pa, pb := box(a, nil, 12), box(b, nil, 13)
+	pa["transform"], pb["transform"] = at(1, 0, 2), at(3, 0, 2)
+	base := me.add(parent, child, pa, pb)
+	edit := func(t *testing.T, base int64, ops ...any) (any, error) {
+		return agentEdit(t, f.a, creativescene.EditInput{DocumentID: me.doc, RunID: run, BasedOn: base, Operations: raws(t, ops...)})
+	}
+
+	got, err := edit(t, base, op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": x, "parent_id": p}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, ok := got.(creativescene.EditResult)
+	if !ok {
+		t.Fatalf("reparent result %#v", got)
+	}
+	o := readScene(t, f.a, me.doc).object(t, x)
+	if o.ParentID == nil || *o.ParentID != p || o.Order != 0 ||
+		!closeTo(o.Transform.Position, []float64{-0.0309740723285361, 0, 2.12109420037003}) ||
+		!closeTo(o.Transform.Rotation, []float64{-0.000738459434010749, -0.298391140214303, 0.166277514054719, 0.939847844301968}) ||
+		!closeTo(o.Transform.Scale, []float64{0.5, 0.5, 0.5}) {
+		t.Fatalf("reparented %+v", o)
+	}
+
+	// A new group without a transform sits in the middle of what goes in.
+	got, err = edit(t, res.WrittenRevision, op{"op": "reparent_objects",
+		"create_groups": []any{map[string]any{"id": g, "name": "石台组", "parent_id": nil}},
+		"moves":         []any{map[string]any{"object_id": a, "parent_id": g}, map[string]any{"object_id": b, "parent_id": g}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := readScene(t, f.a, me.doc)
+	grp, oa, ob := v.object(t, g), v.object(t, a), v.object(t, b)
+	if grp.Kind != "group" || !grp.Visible || grp.Order != 11 || !closeTo(grp.Transform.Position, []float64{2, 0, 2}) ||
+		oa.Order != 0 || ob.Order != 1 || !closeTo(oa.Transform.Position, []float64{-1, 0, 0}) || !closeTo(ob.Transform.Position, []float64{1, 0, 0}) {
+		t.Fatalf("group %+v, a %+v, b %+v", grp, oa, ob)
+	}
+	if r, ok := got.(creativescene.EditResult); !ok || r.ChangedCount != 3 {
+		t.Fatalf("group result %#v", got)
+	}
+
+	tiny := group(objectID(6), nil, 20)
+	tiny["transform"] = map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{0.001, 0.001, 0.001}}
+	base = me.add(tiny)
+	for name, ops := range map[string][]any{
+		"transform written": {op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": x, "parent_id": nil, "transform": at(0, 0, 0)}}}},
+		"parent moved too":  {moveOp(p, 4), op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": a, "parent_id": p}}}},
+		"object moved too": {op{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "look_at": []float64{0, 0, 9}}}},
+			op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": a, "parent_id": nil}}}},
+		"scale out of range": {op{"op": "reparent_objects", "moves": []any{map[string]any{"object_id": p, "parent_id": objectID(6)}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := edit(t, base, ops...)
+			wantErr(t, err, creativeops.ErrValidation)
+		})
 	}
 }
 

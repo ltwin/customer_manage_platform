@@ -75,6 +75,74 @@ func (a mat4) apply(p vec3) vec3 {
 	}
 }
 
+// determinant is three.js Matrix4.determinant.
+func (a mat4) determinant() float64 {
+	n11, n12, n13, n14 := a[0], a[4], a[8], a[12]
+	n21, n22, n23, n24 := a[1], a[5], a[9], a[13]
+	n31, n32, n33, n34 := a[2], a[6], a[10], a[14]
+	n41, n42, n43, n44 := a[3], a[7], a[11], a[15]
+	return n41*(n14*n23*n32-n13*n24*n32-n14*n22*n33+n12*n24*n33+n13*n22*n34-n12*n23*n34) +
+		n42*(n11*n23*n34-n11*n24*n33+n14*n21*n33-n13*n21*n34+n13*n24*n31-n14*n23*n31) +
+		n43*(n11*n24*n32-n11*n22*n34-n14*n21*n32+n12*n21*n34+n14*n22*n31-n12*n24*n31) +
+		n44*(-n13*n22*n31-n11*n23*n32+n11*n22*n33+n13*n21*n32-n12*n21*n33+n12*n23*n31)
+}
+
+// invert is three.js Matrix4.invert; a singular matrix gives zeros.
+func (a mat4) invert() mat4 {
+	n11, n21, n31, n41 := a[0], a[1], a[2], a[3]
+	n12, n22, n32, n42 := a[4], a[5], a[6], a[7]
+	n13, n23, n33, n43 := a[8], a[9], a[10], a[11]
+	n14, n24, n34, n44 := a[12], a[13], a[14], a[15]
+	t11 := n23*n34*n42 - n24*n33*n42 + n24*n32*n43 - n22*n34*n43 - n23*n32*n44 + n22*n33*n44
+	t12 := n14*n33*n42 - n13*n34*n42 - n14*n32*n43 + n12*n34*n43 + n13*n32*n44 - n12*n33*n44
+	t13 := n13*n24*n42 - n14*n23*n42 + n14*n22*n43 - n12*n24*n43 - n13*n22*n44 + n12*n23*n44
+	t14 := n14*n23*n32 - n13*n24*n32 - n14*n22*n33 + n12*n24*n33 + n13*n22*n34 - n12*n23*n34
+	det := n11*t11 + n21*t12 + n31*t13 + n41*t14
+	if det == 0 {
+		return mat4{}
+	}
+	d := 1 / det
+	return mat4{
+		t11 * d,
+		(n24*n33*n41 - n23*n34*n41 - n24*n31*n43 + n21*n34*n43 + n23*n31*n44 - n21*n33*n44) * d,
+		(n22*n34*n41 - n24*n32*n41 + n24*n31*n42 - n21*n34*n42 - n22*n31*n44 + n21*n32*n44) * d,
+		(n23*n32*n41 - n22*n33*n41 - n23*n31*n42 + n21*n33*n42 + n22*n31*n43 - n21*n32*n43) * d,
+		t12 * d,
+		(n13*n34*n41 - n14*n33*n41 + n14*n31*n43 - n11*n34*n43 - n13*n31*n44 + n11*n33*n44) * d,
+		(n14*n32*n41 - n12*n34*n41 - n14*n31*n42 + n11*n34*n42 + n12*n31*n44 - n11*n32*n44) * d,
+		(n12*n33*n41 - n13*n32*n41 + n13*n31*n42 - n11*n33*n42 - n12*n31*n43 + n11*n32*n43) * d,
+		t13 * d,
+		(n14*n23*n41 - n13*n24*n41 - n14*n21*n43 + n11*n24*n43 + n13*n21*n44 - n11*n23*n44) * d,
+		(n12*n24*n41 - n14*n22*n41 + n14*n21*n42 - n11*n24*n42 - n12*n21*n44 + n11*n22*n44) * d,
+		(n13*n22*n41 - n12*n23*n41 - n13*n21*n42 + n11*n23*n42 + n12*n21*n43 - n11*n22*n43) * d,
+		t14 * d,
+		(n13*n24*n31 - n14*n23*n31 + n14*n21*n33 - n11*n24*n33 - n13*n21*n34 + n11*n23*n34) * d,
+		(n14*n22*n31 - n12*n24*n31 - n14*n21*n32 + n11*n24*n32 + n12*n21*n34 - n11*n22*n34) * d,
+		(n12*n23*n31 - n13*n22*n31 + n13*n21*n32 - n11*n23*n32 - n12*n21*n33 + n11*n22*n33) * d,
+	}
+}
+
+// decompose is three.js Matrix4.decompose: a negative determinant flips the
+// X scale. With shear (a non-uniformly scaled parent of a rotated child) the
+// rotation part is not orthogonal and the result only approximates it, as in
+// three.js; the quaternion is normalized so the scene accepts it.
+func (a mat4) decompose() (vec3, quat, vec3) {
+	sx := math.Sqrt(vec3{a[0], a[1], a[2]}.lengthSq())
+	sy := math.Sqrt(vec3{a[4], a[5], a[6]}.lengthSq())
+	sz := math.Sqrt(vec3{a[8], a[9], a[10]}.lengthSq())
+	if a.determinant() < 0 {
+		sx = -sx
+	}
+	r := a
+	for i, s := range []float64{sx, sy, sz} {
+		if s == 0 {
+			continue
+		}
+		r[i*4], r[i*4+1], r[i*4+2] = r[i*4]/s, r[i*4+1]/s, r[i*4+2]/s
+	}
+	return vec3{a[12], a[13], a[14]}, quatFromMatrix(r).normalize(), vec3{sx, sy, sz}
+}
+
 // extractRotation is three.js Matrix4.extractRotation: the columns divided by
 // their lengths.
 func (a mat4) extractRotation() mat4 {
