@@ -1,6 +1,6 @@
 {
   "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-model-library",
   "kind": "feature",
   "assurance": "governed",
@@ -43,7 +43,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-20T14:52:30.611Z",
-  "updatedAt": "2026-10-20T16:40:23.289Z",
+  "updatedAt": "2026-10-20T18:06:58.687Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -76,8 +76,211 @@
       ".lti/snapshots/9d747ce8304d501fb59f60e508ebd084227ad0382edd5b93987120eb851015e0.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-20T18:06:58.564Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "性能：未做同条件基线与阈值测量，只实现了每帧至多一次求交与模型 BVH；Esc 取消拖入由拖到别处松手替代验证；选中框贴合未做像素断言",
+        "coverage": [
+          {
+            "criterionId": "AC-8d2999d4b73f",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-e0c2cd8310ac",
+            "status": "verified",
+            "evidence": "scene e2e「C6 save to library」；Go creativescene TestSaveModelToLibraryCreatesThenReuses、httpapi TestCreativeSceneModelSaveToLibraryHTTP；卡片缩略图 creative-assets e2e C6-model-preview"
+          },
+          {
+            "criterionId": "AC-98cc757cd907",
+            "status": "verified",
+            "evidence": "scene e2e「C6 save to library」第二次存入提示已在库中并只归类；Go 复用 200 只追加分组"
+          },
+          {
+            "criterionId": "AC-89c4dd5d1f24",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-440a78179d56",
+            "status": "verified",
+            "evidence": "scripts/creative-scene-library.test.ts 判断表逐行；菜单与属性栏显示原因（代码走查 SceneEditor/Properties/ContextMenu）"
+          },
+          {
+            "criterionId": "AC-83c6f3b1a730",
+            "status": "verified",
+            "evidence": "scene e2e「C6 save to library」冲突段 + 单测 whenShown；Go 409 带 object:<id>:content"
+          },
+          {
+            "criterionId": "AC-4e166457a2bf",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-c8e2a0951952",
+            "status": "verified",
+            "evidence": "scene e2e「C6 place from the library」：在光标下的地面、选中、名称为资产标题；吸附单测 creative-scene-snap.test.ts"
+          },
+          {
+            "criterionId": "AC-25fe28f27a33",
+            "status": "verified",
+            "evidence": "e2e 断言属性栏「代码模型：柱」；known 摘要单测。选中框贴合靠已知 manifest，代码走查，未做像素断言"
+          },
+          {
+            "criterionId": "AC-06cdc634feca",
+            "status": "verified",
+            "evidence": "scene e2e「C6 place from the library」一次 Cmd+Z 移除"
+          },
+          {
+            "criterionId": "AC-ce4cbe1ea629",
+            "status": "verified",
+            "evidence": "scene e2e 抽屉 hidden"
+          },
+          {
+            "criterionId": "AC-256328d3f5fe",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-65d36fc3ad4e",
+            "status": "verified",
+            "evidence": "scene e2e「C6 drag in」落在方块顶面、虚影像素变化；snap 单测覆盖墙挂朝向与吊顶"
+          },
+          {
+            "criterionId": "AC-d2b4337df425",
+            "status": "verified",
+            "evidence": "snap 单测兜底；e2e 吊灯不埋进物体（兜底细化见 design，待 owner 确认 spec 措辞）"
+          },
+          {
+            "criterionId": "AC-8bc7ba7c7bc1",
+            "status": "verified",
+            "evidence": "scene e2e「C6 drag in」：一次修订、连续拖入抽屉保持打开；撤销沿用同一 edit 路径（place 用例已验证一次撤销）"
+          },
+          {
+            "criterionId": "AC-46eba54736ea",
+            "status": "verified",
+            "evidence": "scene e2e 拖到抽屉上松手不放入、虚影消失；Esc 由浏览器以 dragend 结束，同一路径，Playwright 无法模拟 Esc"
+          },
+          {
+            "criterionId": "AC-fa0c8eab87e5",
+            "status": "verified",
+            "evidence": "scene e2e「C6 copy semantics」；Go TestSavedModelOutlivesItsScene"
+          },
+          {
+            "criterionId": "AC-63e2d2f95d6f",
+            "status": "verified",
+            "evidence": "creative-assets e2e C6-model-preview（真实 GLB）；预览缓存单测"
+          },
+          {
+            "criterionId": "AC-b054561488aa",
+            "status": "verified",
+            "evidence": "creative-assets e2e C6-model-preview 与 creative-library e2e 第 12 段断言无 three 请求；scene e2e「opening the canvas page loads no three.js」"
+          },
+          {
+            "criterionId": "AC-48f2cf78594d",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-422247fa425a",
+            "status": "verified",
+            "evidence": "creative-library e2e 第 12 段菜单无放入项；选参考与填充过滤为代码走查"
+          },
+          {
+            "criterionId": "AC-257f833d12ad",
+            "status": "verified",
+            "evidence": "creative-library e2e 第 12 段拖到画布节点数不变并出现提示"
+          },
+          {
+            "criterionId": "AC-9a0ad68a4d41",
+            "status": "verified",
+            "evidence": "代码走查 BatchBar/assetMenu/AssetInfoPanel/useOrganization；creative-assets e2e 浮窗无「放入项目…」；单测 validatePlacementAssets"
+          },
+          {
+            "criterionId": "AC-cbe6bc23be06",
+            "status": "verified",
+            "evidence": "Go creativecanvas TestModelAssetIsRefusedOnTheCanvas"
+          },
+          {
+            "criterionId": "AC-f7680c722149",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-b0cd7393dd90",
+            "status": "verified",
+            "evidence": "Go TestModelAssetsListFilterAndTrashWithoutCode、httpapi 列表与读取断言无代码"
+          },
+          {
+            "criterionId": "AC-d28cb4b70f2d",
+            "status": "verified",
+            "evidence": "同上，按内容修订读取仍带代码、长文字资产读取完整"
+          },
+          {
+            "criterionId": "AC-90ef25aa3f06",
+            "status": "verified",
+            "evidence": "生成的 schema.d.ts 中三个请求体仍引用 CreativeContentPayload，GeneratorInput.code 必填（人工核对生成物）"
+          },
+          {
+            "criterionId": "AC-6e31d5755090",
+            "status": "verified",
+            "evidence": "creativeagent asset_lookup_test 断言搜索与 read_asset 不含代码"
+          },
+          {
+            "criterionId": "AC-7af75750c549",
+            "status": "verified",
+            "evidence": "creativeagent TestAssistantFindsReadsAndPlacesALibraryModel"
+          },
+          {
+            "criterionId": "AC-347e2ffbc92b",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-44dd2e5fa106",
+            "status": "verified",
+            "evidence": "同上，搜索项有 model 要点、无宽高"
+          },
+          {
+            "criterionId": "AC-53ef19d8a906",
+            "status": "verified",
+            "evidence": "同上，read_asset 完整信息与缩略图、与 write_model 一致；creativemedia TestAgentImageOfAModelIsItsThumbnail"
+          },
+          {
+            "criterionId": "AC-baab2714e6e1",
+            "status": "verified",
+            "evidence": "creativeagent TestReadingAModelWithoutItsThumbnail 三种情形"
+          },
+          {
+            "criterionId": "AC-69b8651938af",
+            "status": "verified",
+            "evidence": "store TestCreativeAssetModelMigrationAddsKindAndRefusesLossyRollback"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "13 项任务完成；后端 8 个包 check-go 全绿、generate-check 通过、前端 tsc/lint 通过、105 项定向单测与 C6 及回归 e2e 全绿。待 owner 决定：吸附兜底细化后 spec「没有合适的表面」措辞；复制语义的「放入过的内容」记录只在页面存活期间有效；性能未做基线测量。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "137cd02d3e8f3bb20c36b0f73fdaac4b382ef40b55176ac4ce38328b3163b98a"
+      }
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }
