@@ -39,3 +39,13 @@ test('only a complete model has info', () => {
   assert.equal(modelInfo(undefined), null)
   assert.equal(modelInfo({ kind: 'text', payload: { body: 'x' } } as unknown as Content), null)
 })
+
+test('models never reach the canvas', async () => {
+  const { isCanvasAsset } = await import('../src/creative-canvas/editor/assetPlacement.ts')
+  const { validatePlacementAssets, PlacementError } = await import('../src/creative-canvas/assets/placement.ts')
+  const asset = (kind: string) => ({ id: `ccas_${kind}`, kind, unavailable: false, deleted_at: null }) as never
+  assert.equal(isCanvasAsset(asset('model')), false)
+  assert.equal(isCanvasAsset(asset('image')), true)
+  assert.throws(() => validatePlacementAssets([asset('image'), asset('model')]), (e: unknown) => e instanceof PlacementError && e.message === '模型只能放进 3D 场景')
+  assert.doesNotThrow(() => validatePlacementAssets([asset('image'), asset('text')]))
+})

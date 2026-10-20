@@ -824,10 +824,12 @@ function Workspace({ account }: { account: string }) {
   // a horizontal row centred on the drop point (or the visible centre).
   function addAssets(dropped: api.Asset[], x?: number, y?: number) {
     if (!view || !editable) return
-    const usable = dropped
-      .filter((a) => !a.unavailable)
-      .filter(isCanvasAsset)
-    if (!usable.length) return
+    const live = dropped.filter((a) => !a.unavailable)
+    const usable = live.filter(isCanvasAsset)
+    if (!usable.length) {
+      if (live.length) setCopyNotice('模型只能放进 3D 场景')
+      return
+    }
     const at =
       x === undefined || y === undefined
         ? (viewCenter.current?.() ?? { x: 80, y: 80 })

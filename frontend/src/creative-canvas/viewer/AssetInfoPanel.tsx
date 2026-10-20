@@ -12,6 +12,7 @@ import type { LibraryCatalog } from '../assets/useLibrary.ts'
 import type { useOrganization } from '../assets/useOrganization.tsx'
 import { anchorPoint } from '../assets/popover.ts'
 import { modelInfo, modelRows } from './modelInfo.ts'
+import { isCanvasAsset } from '../editor/assetPlacement.ts'
 
 export default function AssetInfoPanel({
   asset,
@@ -34,6 +35,8 @@ export default function AssetInfoPanel({
   const original = asset.content?.media?.find((m) => m.role === 'original')
   const duration = mediaDuration(asset)
   const model = modelInfo(asset.content)
+  // 模型只能放进 3D 场景：不给「放入项目」「放入画布」。
+  const canvasPlaceable = isCanvasAsset(asset)
   const disabled = blocked || !!asset.deleted_at
   return (
     <>
@@ -186,18 +189,20 @@ export default function AssetInfoPanel({
           </>
         ) : (
           <>
-            <button
-              className="btn btn-primary wide"
-              disabled={disabled || asset.unavailable}
-              onClick={(e) =>
-                organization.action('project', anchorPoint(e.currentTarget), [
-                  asset,
-                ])
-              }
-            >
-              <ArrowUpRight size={14} />
-              放入项目…
-            </button>
+            {canvasPlaceable && (
+              <button
+                className="btn btn-primary wide"
+                disabled={disabled || asset.unavailable}
+                onClick={(e) =>
+                  organization.action('project', anchorPoint(e.currentTarget), [
+                    asset,
+                  ])
+                }
+              >
+                <ArrowUpRight size={14} />
+                放入项目…
+              </button>
+            )}
             <button
               className="btn"
               disabled={disabled || asset.unavailable}
@@ -222,7 +227,7 @@ export default function AssetInfoPanel({
               <Trash2 size={14} />
               移到回收站
             </button>
-            {onPlace && (
+            {onPlace && canvasPlaceable && (
               <button
                 className="btn wide"
                 disabled={disabled || asset.unavailable}

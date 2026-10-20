@@ -3,6 +3,7 @@ import { Maximize, Minimize, PanelLeftClose, X } from 'lucide-react'
 import * as api from './api.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
 import { kindLabel, type Catalog } from './libraryState.ts'
+import { isCanvasAsset } from './assetPlacement.ts'
 import AssetViewer from '../viewer/AssetViewer.tsx'
 import AssetBrowser from '../assets/AssetBrowser.tsx'
 import LibraryTree from '../assets/LibraryTree.tsx'
@@ -216,6 +217,8 @@ export default function LibraryDrawer({
       if (a && usable([a]).length) onFill(actual(a))
       return
     }
+    // 参考接到画布节点上，模型不能当参考。
+    if (task?.kind === 'pick' && a && !isCanvasAsset(a)) return
     setSelection((s) =>
       clickSelection(
         s,
@@ -227,7 +230,7 @@ export default function LibraryDrawer({
   }
   const placeable = canPlace && effective.view !== 'trash' && !task
   function place(assets: api.Asset[]) {
-    const ok = usable(assets)
+    const ok = usable(assets).filter(isCanvasAsset)
     if (!ok.length) return
     onPlace(ok)
     clear()
@@ -444,8 +447,8 @@ export default function LibraryDrawer({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={!usable(selected).length}
-              onClick={() => onPick(usable(selected))}
+              disabled={!usable(selected).filter(isCanvasAsset).length}
+              onClick={() => onPick(usable(selected).filter(isCanvasAsset))}
             >
               添加{selected.length ? ` ${selected.length} 项` : ''}
             </button>
@@ -470,11 +473,11 @@ export default function LibraryDrawer({
             >
               整理…
             </button>
-            {placeable && (
+            {placeable && selected.some(isCanvasAsset) && (
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!usable(selected).length}
+                disabled={!usable(selected).filter(isCanvasAsset).length}
                 onClick={() => place(selected)}
               >
                 放入画布

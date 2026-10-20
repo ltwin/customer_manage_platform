@@ -10,6 +10,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import type { Asset } from '../editor/api.ts'
+import { isCanvasAsset } from '../editor/assetPlacement.ts'
 import { anchorPoint, type Point } from './popover.ts'
 export type Action =
   | 'group'
@@ -61,9 +62,13 @@ export function ActionButtons({
           { key: 'download', label: '下载', Icon: Download },
           { key: 'trash', label: '移到回收站', Icon: Trash2 },
         ] as const)
+  // 模型只能放进 3D 场景：一项能放进画布的都没有时不显示「放入项目」。
+  const placeable = assets.some(isCanvasAsset)
   return (
     <>
-      {entries.map(({ key, label, Icon }) => (
+      {entries
+        .filter(({ key }) => key !== 'project' || placeable)
+        .map(({ key, label, Icon }) => (
         <button
           type="button"
           key={key}
