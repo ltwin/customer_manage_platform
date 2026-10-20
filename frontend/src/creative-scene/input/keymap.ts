@@ -40,6 +40,8 @@ export type Action =
   | 'frame-selected'
   | 'frame-all'
   | 'view-menu'
+  | 'display-menu'
+  | 'toggle-wireframe'
   | 'undo'
   | 'redo'
   | 'save'
@@ -111,6 +113,8 @@ export const bindings: readonly Binding[] = [
   { codes: ['Period', 'NumpadDecimal'], contexts: viewing, action: 'frame-selected', label: '聚焦选中', group: '视图' },
   { codes: ['Home'], contexts: viewing, action: 'frame-all', label: '显示全部', group: '视图' },
   { codes: ['Backquote'], contexts: viewing, action: 'view-menu', label: '视图菜单', group: '视图' },
+  { codes: ['KeyZ'], contexts: viewing, action: 'display-menu', label: '显示模式', group: '视图' },
+  { codes: ['KeyZ'], mods: { shift: true }, contexts: viewing, action: 'toggle-wireframe', label: '切换线框', group: '视图' },
   { codes: ['KeyZ'], mods: { mod: true }, contexts: idle, action: 'undo', label: '撤销', group: '通用' },
   { codes: ['KeyZ'], mods: { mod: true, shift: true }, contexts: idle, action: 'redo', label: '重做', group: '通用' },
   { codes: ['KeyS'], mods: { mod: true }, contexts: ['idle', 'modal', 'boxselect', 'menu', 'preview'], action: 'save', label: '保存（自动）', group: '通用' },

@@ -37,7 +37,7 @@ import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
 import { openScene } from './session.ts'
 import type { WireOp } from './state/apply.ts'
-import { contextOf, createEditorStore, type MenuKind } from './state/sceneStore.ts'
+import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
@@ -163,6 +163,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   const failedModels = useStore(modelCache.failed)
   const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels), [u.preview, s.base, localModels])
   const readOnly = s.trashed || s.missing || !!u.preview || !s.base
+  const display = displayOf(u, shown?.render)
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
   const selected = u.selection.selected
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
@@ -520,6 +521,10 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       }
       case 'view-menu':
         return openMenu('view')
+      case 'display-menu':
+        return openMenu('display')
+      case 'toggle-wireframe':
+        return ui.setState(toggleWireframe(u, display))
       case 'undo':
         if (editing) undo.undo()
         return
@@ -610,6 +615,13 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         'separator',
         { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
       ]
+    if (menu === 'display')
+      return [
+        { section: '显示模式' },
+        ...displayModes.map((d) => ({ label: d.label, checked: display === d.mode, run: () => ui.setState({ display: d.mode }) })),
+        'separator',
+        { label: '切换线框', shortcut: k('toggle-wireframe'), run: () => run('toggle-wireframe') },
+      ]
     const guessed = u.guessed === 'trackpad' ? '触控板' : '鼠标'
     return [
       { label: '前视', shortcut: k('view-front'), run: () => run('view-front') },
@@ -667,6 +679,13 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         <Box size={18} />
         <h2>{shown && s.base ? (s.view?.title ?? s.base.title) : '3D 场景'}</h2>
         <MenuBar onOpen={(menu, x, y) => openMenu(menu, x, y)} disabled={(menu) => readOnly && menu !== 'view'} />
+        <div className="cc-scene-shading" role="group" aria-label="显示模式">
+          {displayModes.map((d) => (
+            <button key={d.mode} className="btn" aria-pressed={display === d.mode} onClick={() => ui.setState({ display: d.mode })} title={`${d.label} · ${shortcutFor('display-menu', mac)}`}>
+              {d.label}
+            </button>
+          ))}
+        </div>
         {canvasID && sceneNodeID && (
           <button className="btn" disabled={readOnly} onClick={() => ui.setState({ exporting: true })} title="导出分镜到画布">
             <ImageDown size={16} />

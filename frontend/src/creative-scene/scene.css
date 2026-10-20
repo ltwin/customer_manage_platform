@@ -10,6 +10,11 @@
 .cc-scene-menubar button { background: none; border: 0; color: var(--fg); padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
 .cc-scene-menubar button:hover:not(:disabled) { background: var(--surface-2, #ffffff14); }
 .cc-scene-menubar button:disabled { color: var(--muted); cursor: default; }
+.cc-scene-shading { display: flex; gap: 0; }
+.cc-scene-shading .btn { border-radius: 0; padding: 4px 10px; font-size: 12px; }
+.cc-scene-shading .btn:first-child { border-radius: 6px 0 0 6px; }
+.cc-scene-shading .btn:last-child { border-radius: 0 6px 6px 0; }
+.cc-scene-shading .btn[aria-pressed="true"] { background: #f28c2840; }
 
 .cc-scene-toolbar { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--border); }
 .cc-scene-toolbar button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--fg); cursor: pointer; }

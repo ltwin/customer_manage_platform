@@ -30,7 +30,7 @@ import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
 import type { Scene, SceneEnvironment, SceneObject } from './api.ts'
 import { axisHeadAt, axisWidget, buttonActions, classifyWheel, orbitAngles, resolveDevice, wheelAction, type WheelSample } from './input/navigation.ts'
 import { pickable, topmost } from './input/selection.ts'
-import type { EditorStore, Tool } from './state/sceneStore.ts'
+import { displayOf, type EditorStore, type Tool } from './state/sceneStore.ts'
 import { numericKey, numericText } from './transform/numeric.ts'
 import {
   constraintAxes,
@@ -53,6 +53,7 @@ import type { SceneModel } from './models/cache.ts'
 import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
+import { wireBackground } from './objects/wireframe.ts'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
@@ -136,6 +137,7 @@ export function Viewport(props: ViewportProps) {
   const wrap = useRef<HTMLDivElement>(null)
   const r = box && wrap.current ? wrap.current.getBoundingClientRect() : null
   const cameraView = useStore(props.ui, (s) => s.cameraView)
+  const display = displayOf({ display: useStore(props.ui, (s) => s.display) }, props.scene.render)
   const grid = useRef<Mesh>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   useEffect(() => {
@@ -152,9 +154,9 @@ export function Viewport(props: ViewportProps) {
   return (
     <div ref={wrap} className="cc-scene-viewport">
       <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
-        <Environment environment={props.scene.environment} />
+        {display === 'wireframe' ? <color attach="background" args={[wireBackground]} /> : <Environment environment={props.scene.environment} />}
         <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
-        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} />
+        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
         {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} models={props.models} />}
         <OrthoSwitch ortho={ortho} />
         <CameraControls makeDefault />
@@ -164,7 +166,7 @@ export function Viewport(props: ViewportProps) {
           <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
         )}
         <AxisGizmo />
-        <ClayView scene={props.scene} ui={props.ui} grid={grid} />
+        <ClayView scene={props.scene} ui={props.ui} grid={grid} wire={display === 'wireframe'} />
         <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
       </Canvas>
       {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
@@ -921,8 +923,9 @@ function frameBox(size: Size, aspect: number) {
  * render_view and the clay export: AO always; in the camera view of a camera
  * with depth of field, its blur while 景深预览 is on, live as the scene
  * changes. The grid stays out of the AO and the gizmo is drawn on top, sharp.
+ * In wireframe there are no surfaces to shade: the scene is drawn as it is.
  */
-function ClayView({ scene, ui, grid }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null> }) {
+function ClayView({ scene, ui, grid, wire }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; wire: boolean }) {
   const { gl, scene: three, camera, invalidate } = useThree()
   const id = useStore(ui, (s) => s.cameraView)
   const preview = useStore(ui, (s) => s.dofPreview)
@@ -940,10 +943,11 @@ function ClayView({ scene, ui, grid }: { scene: Scene; ui: EditorStore; grid: Re
   const lens = framing && !('error' in framing) && framing.depthOfField && framing.optics ? { optics: framing.optics, aspect: framing.width / framing.height } : null
   // Turning the blur on or off, or a lens change, draws a frame of its own.
   const lensKey = lens ? JSON.stringify(lens) : ''
-  useEffect(() => invalidate(), [lensKey, invalidate])
+  useEffect(() => invalidate(), [lensKey, wire, invalidate])
   useFrame((state) => {
     const r = renderer.current
-    if (!r) {
+    // Wireframe has no surfaces to shade: no AO, no blur.
+    if (!r || wire) {
       state.gl.render(state.scene, state.camera)
       return
     }

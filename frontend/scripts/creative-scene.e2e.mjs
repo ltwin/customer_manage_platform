@@ -2070,6 +2070,67 @@ await check('AC-7: grouping while the assistant moves one of the objects asks fi
   await context.close()
 })
 
+// --- AC-1 display modes --------------------------------------------------------
+
+/** The share of pixels within a small distance of one colour. */
+async function colorShare(page, png, [r, g, b]) {
+  return page.evaluate(async ([src, r, g, b]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - r) + Math.abs(p[i + 1] - g) + Math.abs(p[i + 2] - b) < 12) n++
+    return n / (p.length / 4)
+  }, [`data:image/png;base64,${png.toString('base64')}`, r, g, b])
+}
+const wireGrey = [0x3d, 0x3f, 0x43]
+const pressed = (page, name) => page.getByRole('group', { name: '显示模式' }).getByRole('button', { name, exact: true }).getAttribute('aria-pressed')
+
+await check('AC-1: Z switches the shading, Shift+Z goes to wireframe and back; it is kept here, never an edit', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  const { box } = await viewportCenter(page)
+  assert.equal(await pressed(page, '白模'), 'true', 'a clay scene opens solid')
+  await page.mouse.move(box.x + 300, box.y + 200)
+  await page.keyboard.press('KeyZ')
+  await page.getByRole('menuitem', { name: '线框', exact: true }).click()
+  await waitFor(async () => (await colorShare(page, await page.screenshot({ clip: box }), wireGrey)) > 0.5, 'a wireframe view')
+  assert.equal(await pressed(page, '线框'), 'true')
+  await page.keyboard.press('Shift+KeyZ')
+  await waitFor(async () => (await pressed(page, '白模')) === 'true', 'Shift+Z goes back')
+  assert.ok((await colorShare(page, await page.screenshot({ clip: box }), wireGrey)) < 0.05, 'solid again')
+  await page.getByRole('group', { name: '显示模式' }).getByRole('button', { name: '最终渲染' }).click()
+  await page.keyboard.press('Shift+KeyZ')
+  await page.keyboard.press('Shift+KeyZ')
+  assert.equal(await pressed(page, '最终渲染'), 'true', 'Shift+Z comes back to the mode before wireframe')
+
+  // Cmd+Z undoes the add, not the shading.
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo the add')
+  await saved(page)
+  assert.equal(await pressed(page, '最终渲染'), 'true', 'undo leaves the shading alone')
+  assert.ok(server.commands.every((c) => c.payload.operations.every((op) => op.op !== 'set_render')), 'never written to the scene')
+  assert.equal(server.scene.render.mode, 'clay')
+
+  await page.reload()
+  await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
+  assert.equal(await pressed(page, '最终渲染'), 'true', 'kept in this browser')
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Another browser has no choice yet: the scene's suggestion decides.
+  const lit = new SceneServer()
+  lit.scene.render.mode = 'lit'
+  const other = await open(lit)
+  assert.equal(await pressed(other.page, '最终渲染'), 'true', 'a lit scene opens rendered')
+  await other.context.close()
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })

@@ -9,12 +9,16 @@ import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { cameraDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
+import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
+import { disposeEdges } from './wireframe.ts'
+import { WireMesh } from './WireMesh.tsx'
 
 // Draws the scene tree. Every object is a group named by its ID (picking and
 // transforms find it by name); hiding an object hides only its own drawing,
-// not its children, as in Blender. The viewport is always clay.
+// not its children, as in Blender. In wireframe, meshes show their edges
+// only and stay pickable.
 //
 // Object groups carry view-space transforms (Z up, see space.ts), so moving,
 // rotating and the object's own axes read as in Blender. What an object
@@ -35,10 +39,13 @@ type Props = {
   helpers?: boolean
   /** The camera the viewport looks through; its own frustum would be in the way. */
   through?: string | null
+  /** The viewport's shading; a screenshot is solid. */
+  display?: DisplayMode
 }
 
-type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through'>> & {
+type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through' | 'display'>> & {
   through: string | null
+  wire: boolean
   scene: Scene
   childrenOf: Map<string, SceneObject[]>
   placeholdersOf: Map<string, Placeholder[]>
@@ -58,7 +65,7 @@ function grouped<T>(items: readonly T[], key: (item: T) => string | null): Map<s
   return out
 }
 
-export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, through = null }: Props) {
+export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, through = null, display = 'solid' }: Props) {
   const childrenOf = useMemo(() => {
     const byParent = grouped(scene.objects, (o) => o.parent_id)
     for (const list of byParent.values()) list.sort((a, b) => a.order - b.order)
@@ -69,7 +76,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe' }
   return (
     <>
       {(childrenOf.get('') ?? []).map((o) => (
@@ -91,10 +98,10 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
       {o.kind === 'group' && (helpers && !tree.childrenOf.get(o.id)?.length ? <EmptyMarker edge={edge} /> : edge && <GroupMarker />)}
       <group visible={o.visible} quaternion={docToView}>
         {o.kind === 'primitive' && o.primitive && (
-          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} />
+          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} wire={tree.wire} />
         )}
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
-          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} />
+          <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} />
         )}
         {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
@@ -128,12 +135,20 @@ function PlaceholderBlock({ placeholder }: { placeholder: Placeholder }) {
   )
 }
 
-function PrimitiveMesh({ builtin, params, edge }: { builtin: string; params?: Record<string, unknown>; edge: string | null }) {
+function PrimitiveMesh({ builtin, params, edge, wire }: { builtin: string; params?: Record<string, unknown>; edge: string | null; wire: boolean }) {
   const key = JSON.stringify(params ?? {})
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key stands for params
   const geometry = useMemo(() => primitiveGeometry(builtin, params), [builtin, key])
-  useEffect(() => () => geometry?.dispose(), [geometry])
+  useEffect(
+    () => () => {
+      if (!geometry) return
+      disposeEdges(geometry)
+      geometry.dispose()
+    },
+    [geometry],
+  )
   if (!geometry) return null
+  if (wire) return <WireMesh geometry={geometry} edge={edge} />
   const flat = builtin === 'ground@1' || builtin === 'plane@1'
   return (
     <mesh geometry={geometry} castShadow={!flat} receiveShadow>

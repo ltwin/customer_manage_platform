@@ -3,6 +3,7 @@ import { Edges, Outlines } from '@react-three/drei'
 import { DoubleSide, MeshStandardMaterial } from 'three'
 import { modelCache, type ModelParts, type SceneModel } from '../models/cache.ts'
 import { clay, unavailableGrey } from './look.ts'
+import { WireMesh } from './WireMesh.tsx'
 
 // A model instance. Every instance of a revision draws the same cached
 // geometries in clay; the module's own materials only name slots. Until the
@@ -18,7 +19,7 @@ const noRaycast = () => {}
 
 type Loaded = { revision: string; parts: ModelParts | null }
 
-export function ModelMesh({ revision, summary, edge, ghost = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean }) {
+export function ModelMesh({ revision, summary, edge, ghost = false, wire = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean; wire?: boolean }) {
   const usable = summary?.usable !== false
   // A model already in the cache draws from the first frame (an offscreen
   // screenshot renders exactly once).
@@ -41,6 +42,14 @@ export function ModelMesh({ revision, summary, edge, ghost = false }: { revision
   if (!usable || (loaded?.revision === revision && !loaded.parts)) return <BoundsBox bounds={bounds} edge={edge} unavailable />
   // While a new revision loads, the previous one stays on screen.
   if (!loaded?.parts) return ghost ? null : <BoundsBox bounds={bounds} edge={edge} />
+  if (wire && !ghost)
+    return (
+      <group>
+        {loaded.parts.meshes.map((m, i) => (
+          <WireMesh key={i} geometry={m.geometry} matrix={m.matrix} edge={edge} />
+        ))}
+      </group>
+    )
   return (
     <group>
       {loaded.parts.meshes.map((m, i) => (

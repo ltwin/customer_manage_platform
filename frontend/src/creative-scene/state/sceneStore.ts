@@ -17,7 +17,20 @@ export type Tool = 'box' | 'tweak' | 'move' | 'rotate' | 'scale'
 export type Guide = 'thirds' | 'golden' | 'diagonals' | 'center'
 export const guides: readonly Guide[] = ['thirds', 'golden', 'diagonals', 'center']
 
-export type MenuKind = 'add' | 'object' | 'view'
+export type MenuKind = 'add' | 'object' | 'view' | 'display'
+
+/**
+ * Blender's viewport shading. Solid and rendered are the clay and lit looks
+ * the exports use; wireframe and material preview are for editing only.
+ */
+export type DisplayMode = 'wireframe' | 'solid' | 'preview' | 'rendered'
+export type Look = 'clay' | 'lit'
+export const displayModes: readonly { mode: DisplayMode; label: string }[] = [
+  { mode: 'wireframe', label: '线框' },
+  { mode: 'solid', label: '白模' },
+  { mode: 'preview', label: '材质预览' },
+  { mode: 'rendered', label: '最终渲染' },
+]
 
 export type Popup =
   | { kind: 'menu'; menu: MenuKind; x: number; y: number }
@@ -65,6 +78,10 @@ export type EditorUI = {
   exporting: boolean
   /** 景深预览: the camera view blurs as the camera's depth of field does, until turned off. */
   dofPreview: boolean
+  /** The shading this browser chose for the scene; null until chosen, then render.mode decides. */
+  display: DisplayMode | null
+  /** Where Shift+Z goes back to from wireframe. */
+  wireBack: DisplayMode
 }
 
 export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
@@ -91,7 +108,19 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     pickFocus: null,
     exporting: false,
     dofPreview: false,
+    display: saved?.display ?? null,
+    wireBack: saved?.wireBack ?? 'solid',
   }))
+}
+
+/** The shading shown: the one chosen here, or the scene's suggested look. */
+export function displayOf(ui: Pick<EditorUI, 'display'>, render: { mode: string } | undefined): DisplayMode {
+  return ui.display ?? (render?.mode === 'lit' ? 'rendered' : 'solid')
+}
+
+/** Shift+Z: wireframe and back to the mode before it. */
+export function toggleWireframe(ui: Pick<EditorUI, 'wireBack'>, shown: DisplayMode): Pick<EditorUI, 'display' | 'wireBack'> {
+  return shown === 'wireframe' ? { display: ui.wireBack, wireBack: ui.wireBack } : { display: 'wireframe', wireBack: shown }
 }
 
 export type EditorStore = ReturnType<typeof createEditorStore>

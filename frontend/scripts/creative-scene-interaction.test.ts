@@ -485,10 +485,13 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     history: true,
     lastCamera: 'sobj_cam',
     guides: ['thirds', 'diagonals'],
+    display: 'rendered',
+    wireBack: 'preview',
   }
   assert.deepEqual(parseView(JSON.parse(JSON.stringify(view))), view)
-  const { lastCamera: _l, guides: _g, ...before } = view
-  assert.deepEqual(parseView(before), { ...before, lastCamera: null, guides: [] }, 'a view saved before cameras comes back without them')
+  const { lastCamera: _l, guides: _g, display: _d, wireBack: _w, ...before } = view
+  assert.deepEqual(parseView(before), { ...before, lastCamera: null, guides: [], display: null, wireBack: 'solid' }, 'a view saved before cameras comes back without them')
+  assert.equal(parseView({ ...view, display: 'xray' })?.display, null, 'an unknown shading leaves it to the scene')
   assert.deepEqual(parseView({ ...view, guides: ['thirds', 'spiral'] })?.guides, ['thirds'], 'unknown guides are dropped')
   assert.deepEqual(parseView({ ...view, camera: null }), { ...view, camera: null })
   assert.equal(parseView({ ...view, tool: 'lasso' }), null)
@@ -501,7 +504,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
   assert.equal(readView(storage, 'k'), null)
   const saver = new ViewSaver(storage, 'k', view)
   saver.camera({ position: [0, -5, 2], target: [0, 0, 0], ortho: false, zoom: 1 })
-  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, history: false, lastCamera: null, guides: ['center'] })
+  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, history: false, lastCamera: null, guides: ['center'], display: 'wireframe', wireBack: 'rendered' })
   assert.equal(storage.getItem('k'), '{broken', 'writes wait a moment')
   saver.flush()
   assert.deepEqual(readView(storage, 'k'), {
@@ -513,5 +516,18 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     history: false,
     lastCamera: null,
     guides: ['center'],
+    display: 'wireframe',
+    wireBack: 'rendered',
   })
+})
+
+import { displayOf, toggleWireframe } from '../src/creative-scene/state/sceneStore.ts'
+
+test('the shading chosen here wins; until then the scene suggests it; Shift+Z goes to wireframe and back', () => {
+  assert.equal(displayOf({ display: null }, { mode: 'lit' }), 'rendered')
+  assert.equal(displayOf({ display: null }, { mode: 'clay' }), 'solid')
+  assert.equal(displayOf({ display: 'preview' }, { mode: 'lit' }), 'preview')
+  const wire = toggleWireframe({ wireBack: 'solid' }, 'rendered')
+  assert.deepEqual(wire, { display: 'wireframe', wireBack: 'rendered' })
+  assert.deepEqual(toggleWireframe(wire, 'wireframe'), { display: 'rendered', wireBack: 'rendered' })
 })

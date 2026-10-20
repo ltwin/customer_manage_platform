@@ -1,5 +1,5 @@
 import type { Selection } from './input/selection.ts'
-import { guides as allGuides, type EditorUI, type Guide, type Tool } from './state/sceneStore.ts'
+import { displayModes, guides as allGuides, type DisplayMode, type EditorUI, type Guide, type Tool } from './state/sceneStore.ts'
 
 // What the photographer was looking at when they left a scene: the camera,
 // the selection, the tool and the panels. It is kept per account and scene
@@ -22,6 +22,9 @@ export type SavedView = {
   /** The camera 0 goes to; views saved before cameras had it lack it. */
   lastCamera?: string | null
   guides?: Guide[]
+  /** The shading; views saved before C5 lack it and the scene's render.mode decides. */
+  display?: DisplayMode | null
+  wireBack?: DisplayMode
 }
 
 export const viewKey = (account: string | null, documentID: string) =>
@@ -61,8 +64,12 @@ export function parseView(v: unknown): SavedView | null {
     history: o.history,
     lastCamera: typeof o.lastCamera === 'string' ? o.lastCamera : null,
     guides: Array.isArray(o.guides) ? allGuides.filter((g) => (o.guides as unknown[]).includes(g)) : [],
+    display: displayMode(o.display),
+    wireBack: displayMode(o.wireBack) ?? 'solid',
   }
 }
+
+const displayMode = (v: unknown): DisplayMode | null => displayModes.find((d) => d.mode === v)?.mode ?? null
 
 export function readView(storage: Storage | undefined, key: string): SavedView | null {
   try {
@@ -90,11 +97,14 @@ export class ViewSaver {
     this.view = initial
   }
 
-  ui(s: Pick<EditorUI, 'selection' | 'tool' | 'toolbar' | 'sidebar' | 'history' | 'lastCamera' | 'guides'>) {
+  ui(s: Pick<EditorUI, 'selection' | 'tool' | 'toolbar' | 'sidebar' | 'history' | 'lastCamera' | 'guides' | 'display' | 'wireBack'>) {
     const v = this.view
-    if (v.selection === s.selection && v.tool === s.tool && v.toolbar === s.toolbar && v.sidebar === s.sidebar && v.history === s.history && v.lastCamera === s.lastCamera && v.guides === s.guides)
+    if (
+      v.selection === s.selection && v.tool === s.tool && v.toolbar === s.toolbar && v.sidebar === s.sidebar && v.history === s.history &&
+      v.lastCamera === s.lastCamera && v.guides === s.guides && (v.display ?? null) === s.display && (v.wireBack ?? 'solid') === s.wireBack
+    )
       return
-    this.view = { ...v, selection: s.selection, tool: s.tool, toolbar: s.toolbar, sidebar: s.sidebar, history: s.history, lastCamera: s.lastCamera, guides: s.guides }
+    this.view = { ...v, selection: s.selection, tool: s.tool, toolbar: s.toolbar, sidebar: s.sidebar, history: s.history, lastCamera: s.lastCamera, guides: s.guides, display: s.display, wireBack: s.wireBack }
     this.later()
   }
 
