@@ -115,7 +115,7 @@ function TextField({ value, disabled, onCommit }: { value: string; disabled?: bo
   )
 }
 
-function ParamField({ name, spec, value, disabled, onCommit }: { name: string; spec: ParamSpec; value: unknown; disabled: boolean; onCommit: (v: unknown) => void }) {
+export function ParamField({ name, spec, value, disabled, onCommit }: { name: string; spec: ParamSpec; value: unknown; disabled: boolean; onCommit: (v: unknown) => void }) {
   if (spec.type === 'boolean')
     return (
       <label className="cc-scene-field">

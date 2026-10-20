@@ -141,3 +141,61 @@ test('instances are shared by key; a preset has one program whatever its paramet
   assert.deepEqual([glass.transmission, glass.side], [1, 2])
   assert.equal(makeMaterial({ kind: 'unknown' }, false).color.getHexString(), '8a8a8a')
 })
+
+import type { SceneObject } from '../src/creative-scene/api.ts'
+import { copyMaterials, readClipboard, setSlot, toPrincipled, writeClipboard } from '../src/creative-scene/materials/slotEdits.ts'
+
+const obj = (n: number, slots: Record<string, { preset: string; params: Record<string, unknown> }> = {}): SceneObject => ({
+  id: `sobj_${String(n).padStart(21, '0')}`, kind: 'model_instance', name: '', parent_id: null, order: n,
+  transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, material_slots: slots as SceneObject['material_slots'],
+})
+const names: Record<string, string[]> = {}
+const slotNames = (o: SceneObject) => names[o.id] ?? ['main']
+
+test('a material set with several selected goes to every one with a slot of that name, in one update each', () => {
+  const [a, b, c] = [obj(1), obj(2), obj(3)]
+  names[a.id] = ['stone', 'trim']
+  names[b.id] = ['stone']
+  names[c.id] = ['main']
+  const brick = () => ({ preset: 'stone_brick@1', params: {} })
+  const updates = setSlot([a, b, c], [a.id, b.id, c.id], a.id, 'stone', slotNames, brick)
+  assert.deepEqual(updates.map((u) => u.object_id), [a.id, b.id], 'the box has no stone slot')
+  assert.deepEqual(updates[0].material_slots, { stone: brick() })
+  const only = setSlot([a, b, c], [a.id, b.id, c.id], a.id, 'trim', slotNames, brick)
+  assert.deepEqual(only.map((u) => u.object_id), [a.id], 'only the active object has trim')
+})
+
+test('转为原理化 keeps tint, roughness and metalness; emissive keeps its glow; patterns say they are dropped', () => {
+  assert.deepEqual(toPrincipled({ preset: 'stone_brick@1', params: { color: '#112233' } }), {
+    slot: { preset: 'principled@1', params: { color: '#112233', roughness: 0.85, metalness: 0 } },
+    lost: true,
+  })
+  const glow = toPrincipled({ preset: 'emissive@1', params: { strength: 20 } })
+  assert.deepEqual([glow.slot.params.emissive, glow.slot.params.emissive_intensity, glow.lost], ['#ffd9a0', 20, false])
+})
+
+test('复制材质到选中物件 copies by slot name, or one slot to all of them', () => {
+  const pillar = obj(1, { stone: { preset: 'marble@1', params: { scale: 2 } } })
+  const twin = obj(2, { trim: { preset: 'paint@1', params: {} } })
+  const other = obj(3)
+  const box = { ...obj(4, { main: { preset: 'wood@1', params: {} } }), kind: 'primitive' as const }
+  names[pillar.id] = ['stone', 'trim']
+  names[twin.id] = ['stone', 'trim']
+  names[other.id] = ['body']
+  names[box.id] = ['main']
+  const all = [pillar, twin, other, box]
+  const byName = copyMaterials(all, pillar.id, [pillar.id, twin.id, other.id], slotNames)
+  assert.deepEqual(byName, [{ object_id: twin.id, material_slots: { stone: { preset: 'marble@1', params: { scale: 2 } } } }], 'unassigned trim clears; the body-only model is left alone')
+  const fromBox = copyMaterials(all, box.id, [box.id, pillar.id, other.id], slotNames)
+  assert.deepEqual(fromBox.map((u) => [u.object_id, Object.keys(u.material_slots!)]), [[pillar.id, ['stone', 'trim']], [other.id, ['body']]])
+})
+
+test('the material clipboard keeps a preset and its parameters in this browser', () => {
+  const data = new Map<string, string>()
+  const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) } as unknown as Storage
+  assert.equal(readClipboard(storage), null)
+  writeClipboard(storage, { preset: 'tile@1', params: { tile_size: 0.6 } })
+  assert.deepEqual(readClipboard(storage), { preset: 'tile@1', params: { tile_size: 0.6 } })
+  data.set('creative-scene:material-clipboard', '{broken')
+  assert.equal(readClipboard(storage), null)
+})

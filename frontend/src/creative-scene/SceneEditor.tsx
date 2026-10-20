@@ -27,6 +27,8 @@ import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
+import { MaterialSlots } from './panels/MaterialSlots.tsx'
+import { copyMaterials, slotsOf } from './materials/slotEdits.ts'
 import { Properties } from './panels/Properties.tsx'
 import { ShortcutSheet } from './panels/ShortcutSheet.tsx'
 import { StatusBar } from './panels/StatusBar.tsx'
@@ -260,6 +262,14 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
     }
   }
 
+  const slotNamesOf = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((x) => x.slot)
+  /** 复制材质到选中物件: one update of every target, one undo step. */
+  const copyMaterialsToSelected = () => {
+    if (!active) return
+    const updates = copyMaterials(objects, active.id, selected, slotNamesOf)
+    if (!updates.length) return notify('选中的物件没有对应的材质槽位')
+    edit([{ op: 'update_objects', updates }], label('复制材质到', updates.map((x) => x.object_id)))
+  }
   const drop = (moving: string[], target: string, place: DropPlace) => {
     const r = dropRows(objects, moving, target, place)
     if (!r) return
@@ -607,6 +617,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         { label: '清除旋转', shortcut: k('clear-rotation'), disabled: none, run: () => run('clear-rotation') },
         { label: '清除缩放', shortcut: k('clear-scale'), disabled: none, run: () => run('clear-scale') },
         { label: '重命名', shortcut: k('rename'), disabled: !active, run: () => run('rename') },
+        { label: '复制材质到选中物件', disabled: !active || selected.length < 2 || !slotNamesOf(active).length, run: copyMaterialsToSelected },
         'separator',
         { label: '编组', shortcut: k('group'), disabled: none, run: () => run('group') },
         { label: '取消编组', shortcut: k('ungroup'), disabled: !selected.some((id) => byID.get(id)?.kind === 'group'), run: () => run('ungroup') },
@@ -751,6 +762,20 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
                   onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}
                 >
+                  {shownActive && (shownActive.kind === 'primitive' || shownActive.kind === 'model_instance') && (
+                    <MaterialSlots
+                      key={`slots:${shownActive.id}`}
+                      object={shownActive}
+                      model={shownModel ? models[shownModel] : undefined}
+                      objects={shown.objects}
+                      selected={selected}
+                      models={models}
+                      readOnly={readOnly}
+                      display={display}
+                      storage={storage()}
+                      onUpdates={(updates, text, merge) => edit([{ op: 'update_objects', updates }], text, merge ? { merge } : undefined)}
+                    />
+                  )}
                   {shownActive?.kind === 'model_instance' && shownModel && (
                     <ModelParams
                       key={shownActive.id}

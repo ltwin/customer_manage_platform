@@ -2344,6 +2344,87 @@ await check('AC-2: a see-through box shows what is behind it', async () => {
   await page.context().close()
 })
 
+// --- AC-2 / AC-3 material editing ----------------------------------------------
+
+/** Two pillars of the template model (slots stone and trim) and a box. */
+function materialScene(server) {
+  const rev = server.seedModel()
+  server.seedInstance(gid('pa'), rev, -2, '柱 A')
+  server.seedInstance(gid('pb'), rev, 2, '柱 B')
+  server.object(gid('pa')).material_slots = { stone: { preset: 'marble@1', params: { scale: 2 } }, trim: { preset: 'paint@1', params: { color: '#203040' } } }
+  seed(server, [{ ...boxOf('box', 9, { position: [0, 0, 3] }, { width: 1, height: 1, depth: 1 }, { preset: 'wood@1', params: {} }), name: '箱' }])
+}
+const objectMenu = async (page, item) => {
+  await page.locator('.cc-scene-menubar').getByRole('button', { name: '物件' }).click()
+  await page.getByRole('menuitem', { name: item }).click()
+}
+
+await check('AC-3: 复制材质到选中物件 copies by slot name in one revision, one Cmd+Z; a one-slot box fills every slot', async () => {
+  const server = new SceneServer()
+  materialScene(server)
+  const { context, page, errors } = await open(server)
+  await pick(page, ['柱 B', '箱', '柱 A'])
+  await objectMenu(page, '复制材质到选中物件')
+  await waitFor(() => server.commands.length === 1, 'copy')
+  await saved(page)
+  const ops = server.commands[0].payload.operations
+  assert.equal(ops.length, 1)
+  assert.deepEqual(ops[0].updates.map((u) => u.object_id), [gid('pb')], 'the box has no stone or trim slot: left alone')
+  assert.deepEqual(server.object(gid('pb')).material_slots, server.object(gid('pa')).material_slots)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo')
+  await saved(page)
+  assert.deepEqual(server.object(gid('pb')).material_slots, {}, 'one Cmd+Z takes it back')
+
+  await pick(page, ['柱 A', '柱 B', '箱'])
+  await objectMenu(page, '复制材质到选中物件')
+  await waitFor(() => server.commands.length === 3, 'copy from the box')
+  await saved(page)
+  for (const id of [gid('pa'), gid('pb')]) assert.deepEqual(server.object(id).material_slots, { stone: { preset: 'wood@1', params: {} }, trim: { preset: 'wood@1', params: {} } })
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-2: a material chosen with two boxes selected goes to both in one update', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('b1', 5, { position: [-1, 0, 0] }, { width: 1, height: 1, depth: 1 }), boxOf('b2', 6, { position: [1, 0, 0] }, { width: 1, height: 1, depth: 1 })])
+  const { context, page, errors } = await open(server)
+  await pick(page, ['b1', 'b2'])
+  await page.getByLabel('main 的材质').selectOption('stone_brick@1')
+  await waitFor(() => server.commands.length === 1, 'set')
+  await saved(page)
+  const op = server.commands[0].payload.operations[0]
+  assert.deepEqual(op.updates.map((u) => u.object_id), [gid('b1'), gid('b2')])
+  for (const id of [gid('b1'), gid('b2')]) assert.equal(server.object(id).material_slots.main.preset, 'stone_brick@1')
+  // One field edit goes to both too.
+  await page.getByLabel('砖块尺寸（m）').fill('0.5')
+  await page.getByLabel('砖块尺寸（m）').press('Enter')
+  await waitFor(() => server.commands.length === 2, 'param')
+  assert.ok([gid('b1'), gid('b2')].every((id) => server.object(id).material_slots.main.params.brick_size === 0.5))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-3: 复制材质 in one scene, 粘贴材质 on an object of another', async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  const one = new SceneServer()
+  materialScene(one)
+  const a = await open(one, { context })
+  await a.page.getByRole('treeitem', { name: /柱 A/ }).click()
+  await a.page.getByLabel('槽位 stone').getByRole('button', { name: '复制材质' }).click()
+  await a.page.close()
+  const two = new SceneServer()
+  seed(two, [boxOf('other', 5, { position: [0, 0, 0] }, { width: 1, height: 1, depth: 1 })])
+  const b = await open(two, { context })
+  await b.page.getByRole('treeitem', { name: /other/ }).click()
+  await b.page.getByLabel('槽位 main').getByRole('button', { name: '粘贴材质' }).click()
+  await waitFor(() => two.commands.length === 1, 'paste')
+  await saved(b.page)
+  assert.deepEqual(two.object(gid('other')).material_slots.main, { preset: 'marble@1', params: { scale: 2 } })
+  assert.deepEqual([...a.errors, ...b.errors], [])
+  await context.close()
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
