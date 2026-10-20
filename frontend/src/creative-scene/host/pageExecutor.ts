@@ -30,7 +30,7 @@ export function createPageExecutor(api: JobApi): PageRunner {
       upload.publication?.kind === 'candidate' ? discardCandidate(upload.publication.id, upload.publication.revision) : Promise.resolve(),
     render: (documentID, request) => renderView(documentID, request),
     exportImages: (documentID, plan) =>
-      renderShots({ read: readScene, loadModels: (doc) => loadModels(doc.scene, doc.models), open: (doc) => openShooter(doc.scene, doc.models) }, documentID, plan),
+      renderShots({ read: readScene, loadModels: (doc) => loadModels(doc.scene, doc.models), open: (doc, look) => openShooter(doc.scene, doc.models, look) }, documentID, plan),
   })
   return {
     run: (job) => executor.run(job),

@@ -857,7 +857,9 @@ type RenderInput struct {
 	CameraObjectID string
 	Viewpoint      *Viewpoint
 	Preset         string
-	DepthOfField   bool
+	// Mode is clay (the default when empty) or lit.
+	Mode         string
+	DepthOfField bool
 }
 
 // CreateRenderJobInTx queues render_view's screenshot as the run's job; the
@@ -876,6 +878,13 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 	}
 	if given != 1 {
 		return Job{}, invalid("camera_object_id、viewpoint、preset 须给出其中一个")
+	}
+	mode := r.Mode
+	if mode == "" {
+		mode = PassClay
+	}
+	if mode != PassClay && mode != PassLit {
+		return Job{}, invalid("mode 只能是 clay 或 lit")
 	}
 	if r.DepthOfField && r.CameraObjectID == "" {
 		return Job{}, invalid("depth_of_field 只能与 camera_object_id 一起用：临时视点和预设视角没有光圈和对焦")
@@ -916,7 +925,7 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 	case !slices.Contains(renderPresets, r.Preset):
 		return Job{}, invalid("preset 须为 overview、top、front 或 side")
 	}
-	req := RenderRequest{CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Mode: "clay", DepthOfField: r.DepthOfField}
+	req := RenderRequest{CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Mode: mode, DepthOfField: r.DepthOfField}
 	return CreateJob(ctx, tx, NewJob{DocumentID: r.DocumentID, Kind: KindRenderView, Request: req, RunID: r.RunID, ToolCallID: r.ToolCallID})
 }
 
@@ -940,9 +949,9 @@ type ExportJobInput struct {
 	Passes          []string
 }
 
-// exportJobPasses are the passes a render host can draw today; lit arrives
-// with the material and lighting mode.
-var exportJobPasses = []string{PassClay, PassLine}
+// defaultExportPasses are export_shots' passes when it names none: lit is
+// asked for, as the photographer's dialog leaves it off in the clay look.
+var defaultExportPasses = []string{PassClay, PassLine}
 
 // CreateExportJobInTx queues export_shots for the run's canvas. The scene
 // node on that canvas is fixed now; a scene not on it makes no job.
@@ -991,12 +1000,12 @@ func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in Export
 	}
 	passes := in.Passes
 	if len(passes) == 0 {
-		passes = exportJobPasses
+		passes = defaultExportPasses
 	}
 	used := map[string]bool{}
 	for _, p := range passes {
-		if !slices.Contains(exportJobPasses, p) || used[p] {
-			return Job{}, invalid("passes 只能是 clay、line，且不重复")
+		if !slices.Contains(Passes, p) || used[p] {
+			return Job{}, invalid("passes 只能是 clay、line、lit，且不重复")
 		}
 		used[p] = true
 	}

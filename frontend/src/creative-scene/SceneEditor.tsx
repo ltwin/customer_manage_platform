@@ -372,7 +372,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       {
         read: (id) => readScene(id),
         loadModels: (doc) => loadModels(doc.scene, doc.models),
-        open: (doc) => openShooter(doc.scene, doc.models),
+        open: (doc, look) => openShooter(doc.scene, doc.models, look),
         upload: (file, declared, signal) => uploadGenerated(file, declared, { kind: 'staged' }, signal),
         discard: discardUpload,
         send: (operation, createdAt, payload) => exportScene(account, documentID, operation, createdAt, payload),
@@ -934,6 +934,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       {u.exporting && (
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
+          display={display}
           busy={exportRun.busy}
           progress={exportRun.progress}
           onExport={(plan) => void startExport(plan)}

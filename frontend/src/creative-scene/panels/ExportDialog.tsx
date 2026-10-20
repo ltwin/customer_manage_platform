@@ -1,28 +1,33 @@
 import { useState } from 'react'
 import type { SceneObject } from '../api.ts'
-import { exportCount, type ExportPass, type ExportPlan, type Progress } from '../host/exportShots.ts'
+import { defaultPasses, exportCount, type ExportPass, type ExportPlan, type Progress } from '../host/exportShots.ts'
+import type { DisplayMode } from '../state/sceneStore.ts'
 
-// The export dialog (design「导出对话框」): which cameras, which passes, how
-// many images. Every camera is chosen at first; nothing or more than 48
-// images cannot be exported.
+// The export dialog (design「导出对话框」「lit 导出与 render_view」): which
+// cameras, which passes, how many images. Every camera is chosen at first;
+// clay and line art always, the lit look too when the view shows materials.
+// Nothing or more than 48 images cannot be exported.
 
 const passes: { pass: ExportPass; label: string }[] = [
   { pass: 'clay', label: '白模（clay）' },
   { pass: 'line', label: '线稿' },
+  { pass: 'lit', label: '材质光照' },
 ]
 
 const progressText = (p: Progress | null) =>
   !p ? '准备中…' : p.stage === 'render' ? `正在渲染 ${p.done}/${p.total}` : p.stage === 'upload' ? `正在上传 ${p.done}/${p.total}` : '正在放到画布…'
 
-export function ExportDialog({ cameras, busy, progress, onExport, onClose }: {
+export function ExportDialog({ cameras, display, busy, progress, onExport, onClose }: {
   cameras: readonly SceneObject[]
+  /** The view's shading when the dialog opened. */
+  display: DisplayMode
   busy: boolean
   progress: Progress | null
   onExport: (plan: ExportPlan) => void
   onClose: () => void
 }) {
   const [chosen, setChosen] = useState<ReadonlySet<string>>(() => new Set(cameras.map((c) => c.id)))
-  const [picked, setPicked] = useState<ReadonlySet<ExportPass>>(() => new Set<ExportPass>(['clay', 'line']))
+  const [picked, setPicked] = useState<ReadonlySet<ExportPass>>(() => new Set(defaultPasses(display)))
   const ids = cameras.filter((c) => chosen.has(c.id)).map((c) => c.id)
   const kinds = passes.filter((p) => picked.has(p.pass)).map((p) => p.pass)
   const { count, problem } = exportCount(ids.length, kinds.length)

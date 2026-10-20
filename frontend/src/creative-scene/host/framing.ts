@@ -20,6 +20,8 @@ export type RenderRequest = {
   preset?: Preset
   /** Blur with the camera's aperture and focus (render_view's depth_of_field). */
   depth_of_field?: boolean
+  /** render_view's look: clay when left out. */
+  mode?: 'clay' | 'lit'
 }
 
 /**

@@ -2667,6 +2667,85 @@ await check('AC-5: exposure +2 brightens the rendered view of a room lit by two 
   await context.close()
 })
 
+// --- AC-6 lit export ------------------------------------------------------------
+
+/** A picture as a grid of block means (RGB, 0–255), cols × rows; clip insets each side by a share. */
+async function blocks(page, png, cols, rows, inset = 0) {
+  return page.evaluate(async ([src, cols, rows, inset]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    const x0 = Math.round(c.width * inset), y0 = Math.round(c.height * inset)
+    const w = c.width - 2 * x0, h = c.height - 2 * y0
+    const out = new Float64Array(cols * rows * 3)
+    const n = new Float64Array(cols * rows)
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+      const b = Math.min(rows - 1, Math.floor((y * rows) / h)) * cols + Math.min(cols - 1, Math.floor((xx * cols) / w))
+      const i = ((y + y0) * c.width + xx + x0) * 4
+      out[b * 3] += p[i]
+      out[b * 3 + 1] += p[i + 1]
+      out[b * 3 + 2] += p[i + 2]
+      n[b]++
+    }
+    return Array.from(out, (v, i) => v / n[Math.floor(i / 3)])
+  }, [`data:image/png;base64,${png.toString('base64')}`, cols, rows, inset])
+}
+const meanAbs = (a, b) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0) / a.length
+
+await check('AC-6: in the rendered view the dialog ticks all three passes; 3 cameras give 9 images, and lit matches the camera view', async () => {
+  const { server, a, b } = exportScene(false)
+  const c = objectID('camc')
+  const lamp = objectID('lamp')
+  server.scene.render.exposure_ev = 1
+  server.external([
+    { op: 'add_objects', objects: [
+      cameraObject(c, '机位 C', 6, { focal_mm: 28 }, [-5, 2, 7]),
+      { id: lamp, kind: 'light', name: '灯', parent_id: null, order: 7, transform: { ...identity(), position: [1.5, 2, 1.5] }, visible: true, locked: false, light: { type: 'point', color: '#ffb070', intensity: 30, cast_shadow: true } },
+    ] },
+    { op: 'update_objects', updates: [
+      { object_id: objectID('near'), material_slots: { main: { preset: 'stone_brick@1', params: {} } } },
+      { object_id: objectID('far'), material_slots: { main: { preset: 'paint@1', params: { color: '#3060a0' } } } },
+    ] },
+  ])
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  await shading(page, '最终渲染')
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  for (const name of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(name).isChecked(), `${name} ticked`)
+  assert.match(await dialog.textContent(), /共 9 张/)
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.waitFor({ state: 'detached' })
+  const shots = server.exports[0].payload.shots.map((s) => ({ camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
+  assert.deepEqual(shots.map((s) => [s.camera, s.images.map((i) => i.pass)]), [a, b, c].map((id) => [id, ['clay', 'line', 'lit']]))
+  const [clay, , lit] = shots[0].images.map((i) => i.png)
+  assert.deepEqual(pngSize(lit), { width: 2048, height: 1365 })
+  if (process.env.SCENE_E2E_SHOTS) for (const [name, png] of [['clay', clay], ['lit', lit]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5-export-${name}.png`, png)
+
+  // Through camera A in the rendered view: the same picture, smaller.
+  await page.getByRole('treeitem', { name: /机位 A/ }).click()
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  const fb = await frame.boundingBox()
+  const view = await settledShot(page, fb)
+  await shot(page, 'c5-camera-view-lit')
+  const [cols, rows] = [24, 16]
+  const want = await blocks(page, view, cols, rows, 0.03)
+  const fromLit = meanAbs(await blocks(page, lit, cols, rows, 0.03), want)
+  const fromClay = meanAbs(await blocks(page, clay, cols, rows, 0.03), want)
+  console.log(`lit export vs camera view: ${fromLit.toFixed(1)}; clay export vs camera view: ${fromClay.toFixed(1)}`)
+  assert.ok(fromLit < 8, `the lit export looks like the rendered camera view (mean difference ${fromLit.toFixed(1)})`)
+  assert.ok(fromClay > fromLit * 2, `and unlike the clay export (${fromClay.toFixed(1)})`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- 3.4 calibration: the reference scenes ----------------------------------
 
 /** A yard: a white box, a concrete wall, a wooden crate and a metal ball on the ground. */

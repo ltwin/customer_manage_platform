@@ -31,7 +31,7 @@
 
 ## 6. `lit` 导出与助手
 
-- [ ] 6.1 渲染端：`ShotKind` 加 `lit`、`openShooter` 的 `look` 与 `setLook`（`compileAsync`）、`renderShots` 按渲染方式分批、`render_view` 的模式；导出对话框的 `lit` 与默认勾选；后端 `jobs.go` 的 `mode` 与 `exportJobPasses`。单测与 Go 测试先行；e2e 覆盖 AC-6
+- [x] 6.1 渲染端：`ShotKind` 加 `lit`、`openShooter` 的 `look` 与 `setLook`（`compileAsync`）、`renderShots` 按渲染方式分批、`render_view` 的模式；导出对话框的 `lit` 与默认勾选；后端 `jobs.go` 的 `mode` 与 `exportJobPasses`。单测与 Go 测试先行；e2e 覆盖 AC-6
 - [ ] 6.2 助手：工具层的材质槽按键合并与目录校验、HDRI 拒绝；`set_render` 的曝光说明；`edit_scene`、`render_view`、`export_shots` 的参数与说明；`instructions/base.md`；工具说明的钉住测试与压缩窗口按需调整；助手 e2e 的黄昏布置样例。Go 测试覆盖错误信息与列出的可用项
 
 ## 7. 收尾
