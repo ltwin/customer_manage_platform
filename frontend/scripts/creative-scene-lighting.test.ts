@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DirectionalLight, Group, PointLight, Quaternion, SpotLight, Vector3 } from 'three'
 import { applyLight, buildLight } from '../src/creative-scene/objects/lights.ts'
-import { exposureOf, SUN_MAX, sunLight } from '../src/creative-scene/render/litLook.ts'
+import { exposureOf, NEW_LIGHT_INTENSITY, SUN_MAX, sunLight } from '../src/creative-scene/render/litLook.ts'
+import { colorSky, coneAngle, coneDegrees, newLight, newLightHeight, proceduralSky, withFog, withSkyKind } from '../src/creative-scene/editing.ts'
 
 const close = (a: readonly number[], b: readonly number[], eps = 1e-9) =>
   assert.ok(a.every((v, i) => Math.abs(v - b[i]) < eps), `${JSON.stringify(a)} ≈ ${JSON.stringify(b)}`)
@@ -56,4 +57,43 @@ test('the lit sun dims below the horizon and warms when low; exposure is in stop
   assert.equal(exposureOf({ exposure_ev: 2 }), 4)
   assert.equal(exposureOf({ exposure_ev: -1 }), 0.5)
   assert.equal(exposureOf(undefined), 1, 'scenes from before exposure render as before')
+})
+
+test('a light from the add menu stands above the pointed ground, facing the view, numbered by type', () => {
+  const view = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -0.4).toArray()
+  let n = 0
+  const make = () => `sobj_light${++n}`
+  const spot = newLight('spot', [1, 0, -2], view, [], make)
+  assert.equal(spot.kind, 'light')
+  assert.equal(spot.name, '聚光 1')
+  assert.deepEqual(spot.transform.position, [1, newLightHeight, -2])
+  assert.deepEqual(spot.transform.rotation, view, 'it shines the way the view looks')
+  assert.equal(spot.light?.intensity, NEW_LIGHT_INTENSITY.spot)
+  assert.ok(spot.light?.angle && spot.light.angle <= Math.PI / 2, 'the server accepts the cone')
+  const second = newLight('spot', [0, 0, 0], view, [spot], make)
+  assert.equal(second.name, '聚光 2')
+  assert.equal(second.order, spot.order + 1)
+  const point = newLight('point', [0, 0, 0], view, [spot, second], make)
+  assert.equal(point.name, '点光 1')
+  assert.deepEqual(point.transform.rotation, [0, 0, 0, 1], 'a point light has no direction')
+  assert.deepEqual(Object.keys(point.light!).sort(), ['intensity', 'type'], 'only fields a point light has')
+})
+
+test('the cone shows its full angle in degrees and stores three.js\'s half angle', () => {
+  assert.ok(Math.abs(coneAngle(30) - Math.PI / 12) < 1e-12)
+  assert.ok(Math.abs(coneDegrees(Math.PI / 3) - 120) < 1e-12)
+  assert.ok(Math.abs(coneDegrees(coneAngle(47)) - 47) < 1e-12)
+})
+
+test('switching the sky keeps only the new kind\'s fields; fog toggles with a start', () => {
+  const env = { sky: { kind: 'procedural' as const, sun_elevation_deg: 5, sun_azimuth_deg: 200, turbidity: 4 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  const colour = withSkyKind(env, 'color')
+  assert.deepEqual(colour.sky, colorSky)
+  assert.equal(colour.ambient, env.ambient)
+  assert.equal(withSkyKind(env, 'procedural'), env, 'the same kind is no change')
+  assert.deepEqual(withSkyKind(colour, 'procedural').sky, proceduralSky)
+  const foggy = withFog(env, true)
+  assert.ok(foggy.fog && foggy.fog.near > 0 && foggy.fog.far > foggy.fog.near, 'the server accepts it')
+  assert.equal(withFog(foggy, false).fog, null)
+  assert.equal(withFog(env, false), env)
 })

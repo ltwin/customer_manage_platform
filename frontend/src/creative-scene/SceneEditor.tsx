@@ -9,7 +9,7 @@ import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
-import { clearOp, duplicate, groundBuiltin, localPose, newCamera, newEmpty, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -27,6 +27,8 @@ import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
+import { EnvironmentPanel } from './panels/EnvironmentPanel.tsx'
+import { LightFields } from './panels/LightFields.tsx'
 import { MaterialSlots } from './panels/MaterialSlots.tsx'
 import { copyMaterials, slotsOf } from './materials/slotEdits.ts'
 import { Properties } from './panels/Properties.tsx'
@@ -311,6 +313,13 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       select([o.id])
       ui.setState({ lastCamera: o.id })
     }
+  }
+  /** Above where the pointer is, facing the way the view looks. */
+  const addLight = (type: keyof typeof lightLabels, at?: { x: number; y: number }) => {
+    const pose = handle.current?.viewPose()
+    if (!pose) return
+    const o = newLight(type, handle.current?.groundPoint(at) ?? [0, 0, 0], pose.rotation, objects)
+    if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) select([o.id])
   }
   const addEmpty = () => {
     const o = newEmpty(handle.current?.centrePoint() ?? [0, 0, 0], objects)
@@ -599,6 +608,8 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
+        { section: '灯光' },
+        ...(['directional', 'point', 'spot'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
         { label: '摄像机', run: addCamera },
         { label: '空物体', run: addEmpty },
@@ -750,6 +761,16 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
                   onDrop={(moving, target, place) => drop(moving, target, place)}
                 />
+                {!shownActive && !selected.length && shown ? (
+                  <EnvironmentPanel
+                    environment={shown.environment}
+                    exposure={shown.render.exposure_ev ?? 0}
+                    readOnly={readOnly}
+                    display={display}
+                    onEnvironment={(environment, text, merge) => edit([{ op: 'set_environment', environment }], text, merge ? { merge } : undefined)}
+                    onRender={(render, text, merge) => edit([{ op: 'set_render', render }], text, merge ? { merge } : undefined)}
+                  />
+                ) : (
                 <Properties
                   object={shownActive}
                   count={selected.length}
@@ -776,6 +797,15 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                       onUpdates={(updates, text, merge) => edit([{ op: 'update_objects', updates }], text, merge ? { merge } : undefined)}
                     />
                   )}
+                  {shownActive?.light && (
+                    <LightFields
+                      key={`light:${shownActive.id}`}
+                      object={{ ...shownActive, light: shownActive.light }}
+                      readOnly={readOnly}
+                      display={display}
+                      onLight={(light, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, light }] }], text, merge ? { merge } : undefined)}
+                    />
+                  )}
                   {shownActive?.kind === 'model_instance' && shownModel && (
                     <ModelParams
                       key={shownActive.id}
@@ -787,6 +817,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                     />
                   )}
                 </Properties>
+                )}
               </aside>
             )}
             <div className="cc-scene-main">

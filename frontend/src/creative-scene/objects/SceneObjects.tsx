@@ -7,7 +7,7 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, sharpRange, verticalFov } from '../cameraOptics.ts'
 import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
-import { cameraDefaults } from '../state/apply.ts'
+import { cameraDefaults, lightDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
@@ -111,7 +111,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} />}
-        {helpers && o.kind === 'light' && <LightIcon color={o.light?.color ?? '#ffffff'} spot={o.light?.type !== 'point'} edge={edge} />}
+        {helpers && o.kind === 'light' && <LightIcon light={o.light} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
       </group>
       {(tree.childrenOf.get(o.id) ?? []).map((c) => (
@@ -175,17 +175,34 @@ function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string
   )
 }
 
-function LightIcon({ color, spot, edge }: { color: string; spot: boolean; edge: string | null }) {
+/** Slant length of a spot's cone icon: wide cones stay short instead of reaching out. */
+const coneSlant = 0.6
+
+/**
+ * A light's icon: a ball, with a spot's cone at its real angle and a
+ * directional light's beam, both along local −Z where the light shines.
+ */
+function LightIcon({ light, edge }: { light: SceneObject['light']; edge: string | null }) {
+  const color = edge ?? light?.color ?? '#ffffff'
+  const angle = light?.angle ?? lightDefaults.angle
+  const height = coneSlant * Math.cos(angle)
   return (
     <group>
       <mesh>
         <sphereGeometry args={[0.15, 16, 8]} />
-        <meshBasicMaterial color={edge ?? color} />
+        <meshBasicMaterial color={color} />
       </mesh>
-      {spot && (
-        <mesh position={[0, 0, -0.35]} rotation={[-Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.12, 0.4, 12, 1, true]} />
-          <meshBasicMaterial color={edge ?? color} wireframe />
+      {light?.type === 'spot' && (
+        // three's cone points +Y from its middle; turned to −Z with the tip at the light.
+        <mesh position={[0, 0, -height / 2]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[coneSlant * Math.sin(angle), height, 16, 1, true]} />
+          <meshBasicMaterial color={color} wireframe />
+        </mesh>
+      )}
+      {light?.type === 'directional' && (
+        <mesh position={[0, 0, -0.4]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.5, 6]} />
+          <meshBasicMaterial color={color} />
         </mesh>
       )}
     </group>

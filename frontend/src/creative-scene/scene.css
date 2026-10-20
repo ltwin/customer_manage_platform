@@ -156,3 +156,7 @@
 .cc-scene-slot-tools { display: flex; flex-wrap: wrap; gap: 4px; }
 .cc-scene-slot-tools .btn { padding: 2px 8px; font-size: 12px; }
 .cc-scene-slot-params { display: grid; gap: 4px; }
+.cc-scene-props fieldset.cc-scene-light, .cc-scene-environment fieldset { grid-template-columns: minmax(0, 1fr); }
+.cc-scene-light small, .cc-scene-environment small { font-size: 12px; }
+.cc-scene-slider { display: grid; gap: 2px; }
+.cc-scene-slider input[type='range'] { width: 100%; accent-color: var(--accent); }

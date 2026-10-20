@@ -242,7 +242,9 @@ const onlyUpdate = (i: Intent) =>
  *    that add, so duplicating and moving is one revision;
  *  - a commit of the same continuous edit (merge key) as the unsent tail, on
  *    exactly its objects, replaces the tail's fields and keeps the tail's
- *    earlier expected revisions.
+ *    earlier expected revisions;
+ *  - likewise an environment or render edit of the same continuous edit as
+ *    the unsent tail, such as dragging the sun.
  * Separate operations stay separate however slowly saving goes: folding an
  * add and the scale after it made Cmd+Z remove the new object.
  */
@@ -306,7 +308,24 @@ export function enqueue(
       }
     }
   }
+  const setting = onlySetting(next)
+  const tail = queue.at(-1)
+  if (setting && tail && next.merge !== undefined && tail.merge === next.merge && !tail.held && tail.state === 'pending') {
+    const before = onlySetting(tail)
+    if (before?.op === setting.op) {
+      // The environment is written whole, so the latest wins; the render merges by key.
+      const op: WireOp = before.op === 'set_render' && setting.op === 'set_render' ? { op: 'set_render', render: { ...before.render, ...setting.render } } : setting
+      const merged: Intent = { ...tail, label: next.label, expected: { ...next.expected, ...tail.expected }, ops: [op] }
+      return { queue: [...queue.slice(0, -1), merged], holder: tail.id }
+    }
+  }
   return { queue: [...queue, next], holder: next.id }
+}
+
+/** The environment panel's edits: one set_environment or set_render. */
+const onlySetting = (i: Intent) => {
+  const op = !i.projection && i.ops.length === 1 ? i.ops[0] : null
+  return op && (op.op === 'set_environment' || op.op === 'set_render') ? op : null
 }
 
 /** Intents that depend on id, directly or through another dependent. */

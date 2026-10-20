@@ -475,9 +475,9 @@ async function viewportCenter(page) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, box }
 }
 
-/** The share of pixels that differ visibly between two screenshots of one size. */
-async function pixelDiff(page, a, b) {
-  return page.evaluate(async ([a, b]) => {
+/** The share of pixels that differ visibly (summed RGB difference over min) between two screenshots of one size. */
+async function pixelDiff(page, a, b, min = 48) {
+  return page.evaluate(async ([a, b, min]) => {
     const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
     const [x, y] = await Promise.all([load(a), load(b)])
     const c = document.createElement('canvas')
@@ -490,9 +490,9 @@ async function pixelDiff(page, a, b) {
     g.drawImage(y, 0, 0)
     const q = g.getImageData(0, 0, c.width, c.height).data
     let n = 0
-    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 48) n++
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > min) n++
     return n / (p.length / 4)
-  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
 }
 
 async function waitFor(check, message, timeout = 5000) {
@@ -2422,6 +2422,233 @@ await check('AC-3: 复制材质 in one scene, 粘贴材质 on an object of anoth
   await saved(b.page)
   assert.deepEqual(two.object(gid('other')).material_slots.main, { preset: 'marble@1', params: { scale: 2 } })
   assert.deepEqual([...a.errors, ...b.errors], [])
+  await context.close()
+})
+
+// --- AC-4 / AC-5 lights and environment ---------------------------------------
+
+/**
+ * Mean luma and colour of a screenshot, the share of pixels brighter than
+ * a level, and the share darker than ratio × the median: shadow, relative
+ * to how lit the picture is overall.
+ */
+async function lumaStats(page, png, { level = 60, ratio = 0.6 } = {}) {
+  return page.evaluate(async ([src, level, ratio]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const p = x.getImageData(0, 0, c.width, c.height).data
+    const n = p.length / 4
+    const luma = new Float32Array(n)
+    let r = 0, g = 0, b = 0
+    for (let i = 0; i < n; i++) {
+      r += p[i * 4]
+      g += p[i * 4 + 1]
+      b += p[i * 4 + 2]
+      luma[i] = 0.2126 * p[i * 4] + 0.7152 * p[i * 4 + 1] + 0.0722 * p[i * 4 + 2]
+    }
+    const sorted = Float32Array.from(luma).sort()
+    const median = sorted[n >> 1]
+    let bright = 0, dark = 0, sum = 0
+    for (const v of luma) {
+      sum += v
+      if (v > level) bright++
+      if (v < ratio * median) dark++
+    }
+    return { mean: sum / n, bright: bright / n, dark: dark / n, r: r / n, g: g / n, b: b / n }
+  }, [`data:image/png;base64,${png.toString('base64')}`, level, ratio])
+}
+/** Like pixelDiff, counting only solid areas: a pixel whose neighbours 2 px away differ too, so thin lines do not count. */
+async function solidDiff(page, a, b, min) {
+  return page.evaluate(async ([a, b, min]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const c = document.createElement('canvas')
+    c.width = x.width
+    c.height = x.height
+    const g = c.getContext('2d')
+    g.drawImage(x, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    g.clearRect(0, 0, c.width, c.height)
+    g.drawImage(y, 0, 0)
+    const q = g.getImageData(0, 0, c.width, c.height).data
+    const w = c.width
+    const h = c.height
+    const differs = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) differs[i] = Math.abs(p[i * 4] - q[i * 4]) + Math.abs(p[i * 4 + 1] - q[i * 4 + 1]) + Math.abs(p[i * 4 + 2] - q[i * 4 + 2]) > min ? 1 : 0
+    let n = 0
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+      const i = y * w + x
+      if (differs[i] && differs[i - 2] && differs[i + 2] && differs[i - 2 * w] && differs[i + 2 * w]) n++
+    }
+    return n / (w * h)
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
+}
+const night = { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ffffff', intensity: 0 }, fog: null }
+const lightAt = (server, id) => server.object(id).light
+const focusEditor = (page) => page.locator('.cc-scene-editor').focus()
+
+await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/12 and narrows the light; shadows show; spot → point keeps the rest; Cmd+Z', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { x, y, box } = await viewportCenter(page)
+  await shading(page, '最终渲染')
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '聚光', exact: true }).click()
+  await waitFor(() => server.commands.length === 1, 'add a spot')
+  const spot = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([spot.kind, spot.name, spot.light.type], ['light', '聚光 1', 'spot'])
+  assert.ok(Math.abs(spot.transform.position[1] - 2) < 1e-9, `above the pointed ground: ${spot.transform.position}`)
+  await saved(page)
+  // From the left, 30° down at the post, so its shadow falls in the light.
+  server.external([{ op: 'update_objects', updates: [{ object_id: spot.id, transform: { ...spot.transform, position: [-1.5, 1.2, 0], rotation: [-0.1830127018922193, -0.6830127018922193, -0.18301270189221933, 0.6830127018922194] } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await sleep(600)
+  // Brighter than the grid lines: only what the spot lights.
+  const lit = { level: 200 }
+  const wide = await lumaStats(page, await settledShot(page, box), lit)
+  assert.ok(wide.bright > 0.01, `the spot lights the ground (${(wide.bright * 100).toFixed(2)}% lit)`)
+
+  const cone = page.getByLabel('光锥角（°）')
+  await cone.fill('30')
+  await cone.press('Enter')
+  await waitFor(() => Math.abs(lightAt(server, spot.id).angle - Math.PI / 12) < 1e-9, 'a 30° cone is a π/12 half angle')
+  const narrow = await lumaStats(page, await settledShot(page, box), lit)
+  await shot(page, 'c5-spot-30')
+  assert.ok(narrow.bright < wide.bright * 0.6, `a narrower cone lights less (${(wide.bright * 100).toFixed(2)}% → ${(narrow.bright * 100).toFixed(2)}%)`)
+
+  await page.getByLabel('投射阴影').check()
+  await waitFor(() => lightAt(server, spot.id).cast_shadow === true, 'shadows on')
+  const shadow = await lumaStats(page, await settledShot(page, box), lit)
+  await shot(page, 'c5-spot-shadow')
+  assert.ok(shadow.bright < narrow.bright * 0.8, `the post casts a shadow in the light (${(narrow.bright * 100).toFixed(2)}% → ${(shadow.bright * 100).toFixed(2)}% lit)`)
+
+  await page.getByLabel('灯光类型').selectOption('point')
+  await waitFor(() => lightAt(server, spot.id).type === 'point', 'to a point light')
+  assert.deepEqual(lightAt(server, spot.id), { type: 'point', color: '#ffffff', intensity: spot.light.intensity, cast_shadow: true, distance: 0, decay: 2 })
+  assert.equal(await page.getByLabel('光锥角（°）').count(), 0, 'the cone fields go')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, spot.id).type === 'spot', 'undo')
+  assert.ok(Math.abs(lightAt(server, spot.id).angle - Math.PI / 12) < 1e-9, 'the spot comes back with its cone')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens the clay shadow; Cmd+Z', async () => {
+  const server = new SceneServer()
+  const post = gid('post')
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.getByLabel('环境', { exact: true }).waitFor()
+  const show = async (visible) => {
+    server.external([{ op: 'update_objects', updates: [{ object_id: post, visible }] }])
+    await page.evaluate(() => window.__invalidate())
+    await sleep(600)
+  }
+  /** The post and its shadow: what hiding the post changes. */
+  const footprint = async (name) => {
+    const standing = await settledShot(page, box)
+    await shot(page, `c5-sun-${name}`)
+    await show(false)
+    const gone = await settledShot(page, box)
+    await show(true)
+    return solidDiff(page, standing, gone, 12)
+  }
+  const noon = await footprint('35')
+  const elevation = page.getByRole('spinbutton', { name: '太阳高度（°）' })
+  await elevation.fill('5')
+  await elevation.press('Enter')
+  await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 5, 'the sun goes down')
+  assert.deepEqual(server.scene.environment, { sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, 'only the elevation changes')
+  assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
+  const dusk = await footprint('5')
+  assert.ok(dusk > noon * 1.5, `a longer shadow (${(noon * 100).toFixed(2)}% → ${(dusk * 100).toFixed(2)}% of the view)`)
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 35, 'undo')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-5: a colour sky and fog show as set', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.getByLabel('天空类型').selectOption('color')
+  await waitFor(() => server.scene.environment.sky.kind === 'color', 'a colour sky')
+  assert.deepEqual(server.scene.environment.sky, { kind: 'color', color: '#a7b6c6' }, 'only the colour sky\'s fields')
+  await page.getByLabel('天空颜色').fill('#2050c0')
+  await waitFor(() => server.scene.environment.sky.color === '#2050c0', 'sky colour')
+  await shading(page, '最终渲染')
+  const clear = await settledShot(page, box)
+  await page.getByLabel('雾', { exact: true }).check()
+  await waitFor(() => !!server.scene.environment.fog, 'fog on')
+  const near = page.getByRole('spinbutton', { name: '起始（m）' })
+  await near.fill('1')
+  await near.press('Enter')
+  const far = page.getByRole('spinbutton', { name: '结束（m）' })
+  await far.fill('12')
+  await far.press('Enter')
+  await waitFor(() => server.scene.environment.fog?.far === 12 && server.scene.environment.fog.near === 1, 'fog range')
+  const foggy = await settledShot(page, box)
+  await shot(page, 'c5-fog')
+  const diff = await pixelDiff(page, clear, foggy)
+  assert.ok(diff > 0.2, `the ground fades into fog (${(diff * 100).toFixed(1)}% differ)`)
+  // Level with the horizon, the sky fills the top of the view; fog leaves the background alone.
+  await page.keyboard.press('Digit1')
+  const sky = { x: box.x, y: box.y + 10, width: box.width, height: 40 }
+  for (const mode of ['白模', '最终渲染']) {
+    await shading(page, mode)
+    const top = await lumaStats(page, await settledShot(page, sky))
+    assert.ok(top.b > top.r + 60, `${mode}: the sky is the colour set (rgb ${top.r.toFixed(0)}, ${top.g.toFixed(0)}, ${top.b.toFixed(0)})`)
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-5: exposure +2 brightens the rendered view of a room lit by two wall lights, not the clay', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  server.scene.render.exposure_ev = 0
+  seed(server, [
+    boxOf('wall', 5, { position: [0, 0, -1.5] }, { width: 6, height: 3, depth: 0.2 }),
+    { id: gid('lampa'), kind: 'light', name: '壁灯 A', order: 6, transform: { ...identity(), position: [-1.5, 2, -1.2] }, light: { type: 'point', color: '#ffd2a0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 } },
+    { id: gid('lampb'), kind: 'light', name: '壁灯 B', order: 7, transform: { ...identity(), position: [1.5, 2, -1.2] }, light: { type: 'point', color: '#ffd2a0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 } },
+  ])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const clayBefore = await settledShot(page, box)
+  await shot(page, 'c5-room-clay')
+  await shading(page, '最终渲染')
+  const before = await lumaStats(page, await settledShot(page, box))
+  const ev = page.getByRole('spinbutton', { name: '曝光补偿（EV）' })
+  await ev.fill('2')
+  await ev.press('Enter')
+  await waitFor(() => server.scene.render.exposure_ev === 2, 'exposure')
+  assert.deepEqual(server.commands.at(-1).payload.operations, [{ op: 'set_render', render: { exposure_ev: 2 } }], 'only the exposure is written')
+  assert.equal(server.scene.render.mode, 'clay', 'the mode stays')
+  const after = await lumaStats(page, await settledShot(page, box))
+  assert.ok(after.mean > before.mean * 1.3, `brighter (${before.mean.toFixed(1)} → ${after.mean.toFixed(1)})`)
+  await shading(page, '白模')
+  const clayAfter = await settledShot(page, box)
+  await shot(page, 'c5-room-clay-after')
+  const clay = await pixelDiff(page, clayBefore, clayAfter)
+  // An exposure leaking into the clay would change nearly every pixel; far grid lines flicker a little.
+  assert.ok(clay < 0.005, `the clay does not change (${(clay * 100).toFixed(3)}% differ)`)
+  assert.deepEqual(errors, [])
   await context.close()
 })
 

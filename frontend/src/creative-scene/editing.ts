@@ -1,7 +1,8 @@
 import { Matrix4, Quaternion, Vector3 } from 'three'
-import type { SceneObject, SceneTransform } from './api.ts'
+import type { Scene, SceneObject, SceneTransform } from './api.ts'
 import { builtinSpec } from './builtins/catalog.ts'
 import { newObjectID } from './ids.ts'
+import { NEW_LIGHT_INTENSITY } from './render/litLook.ts'
 import { sameValue, subtree, type WireOp } from './state/apply.ts'
 
 // The edits behind menu items and shortcuts, each one intent's operations.
@@ -184,4 +185,62 @@ export function localPose(objects: readonly SceneObject[], parent: string | null
   local.decompose(position, rotation, new Vector3())
   rotation.normalize()
   return { position: position.toArray(), rotation: rotation.toArray(), scale }
+}
+
+type LightType = NonNullable<SceneObject['light']>['type']
+export const lightLabels: Record<LightType, string> = { directional: '平行光', point: '点光', spot: '聚光' }
+
+/** The properties show a spot's full cone in degrees; the document keeps three.js's half angle in radians. */
+export const coneDegrees = (angle: number) => (angle * 360) / Math.PI
+export const coneAngle = (degrees: number) => (degrees * Math.PI) / 360
+
+/** How high above the pointed ground point a new light goes. */
+export const newLightHeight = 2
+
+/**
+ * A light from the add menu: above the point the pointer is on, facing the
+ * way the view looks, so a spot or directional light shines into what the
+ * photographer is looking at. Named 「聚光 N」 after the lights of its type.
+ */
+export function newLight(
+  type: LightType,
+  ground: [number, number, number],
+  viewRotation: number[],
+  objects: readonly SceneObject[],
+  makeID: () => string = newObjectID,
+): SceneObject {
+  const n = objects.filter((o) => o.light?.type === type).length + 1
+  return {
+    id: makeID(),
+    kind: 'light',
+    name: `${lightLabels[type]} ${n}`,
+    parent_id: null,
+    order: nextOrder(objects, null),
+    transform: { position: [ground[0], ground[1] + newLightHeight, ground[2]], rotation: type === 'point' ? [0, 0, 0, 1] : [...viewRotation], scale: [1, 1, 1] },
+    visible: true,
+    locked: false,
+    light: { type, intensity: NEW_LIGHT_INTENSITY[type], ...(type === 'spot' ? { angle: Math.PI / 6, penumbra: 0.2 } : {}) },
+  }
+}
+
+type Environment = Scene['environment']
+type Sky = Environment['sky']
+
+/** The sky a new scene starts with, and the colour a colour sky starts at. */
+export const proceduralSky: Sky = { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }
+export const colorSky: Sky = { kind: 'color', color: '#a7b6c6' }
+
+/**
+ * The environment with the sky switched to kind: each kind carries only its
+ * own fields, so the other kind's values are left behind.
+ */
+export function withSkyKind(env: Environment, kind: 'procedural' | 'color'): Environment {
+  if (env.sky.kind === kind) return env
+  return { ...env, sky: kind === 'procedural' ? { ...proceduralSky } : { ...colorSky } }
+}
+
+/** Fog on starts 10 m to 100 m in a pale grey; off removes it. */
+export function withFog(env: Environment, on: boolean): Environment {
+  if (on === !!env.fog) return env
+  return { ...env, fog: on ? { color: '#c8ccd0', near: 10, far: 100 } : null }
 }

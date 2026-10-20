@@ -27,7 +27,7 @@
 
 ## 5. 灯光与环境编辑
 
-- [ ] 5.1 添加菜单的三种灯光（`editing.ts:newLight`）、`LightFields.tsx`、`EnvironmentPanel.tsx`（含曝光补偿，经 `set_render`）、`set_environment` 的合并键；e2e 覆盖 AC-4、AC-5
+- [x] 5.1 添加菜单的三种灯光（`editing.ts:newLight`）、`LightFields.tsx`、`EnvironmentPanel.tsx`（含曝光补偿，经 `set_render`）、`set_environment` 的合并键；e2e 覆盖 AC-4、AC-5
 
 ## 6. `lit` 导出与助手
 

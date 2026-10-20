@@ -30,3 +30,10 @@ export function sunLight(elevationDeg: number): { intensity: number; color: Colo
 
 /** toneMappingExposure for the lit look. */
 export const exposureOf = (render: { exposure_ev?: number } | undefined) => 2 ** (render?.exposure_ev ?? 0)
+
+/**
+ * What a light added from the menu starts at: a desk lamp's point light, a
+ * stage spot, a fill directional light (candela for point and spot).
+ * Calibrated with the constants above.
+ */
+export const NEW_LIGHT_INTENSITY = { directional: 1, point: 40, spot: 300 } as const

@@ -195,6 +195,24 @@ test('commits of one field fold into the unsent tail and keep the earliest expec
   assert.equal(enqueue([{ ...first, state: 'sent' }], second).queue.length, 2, 'a sent tail is never rewritten')
 })
 
+test('dragging an environment or exposure field folds into the unsent tail; the render merges by key', () => {
+  const env = (elevation: number) => ({ sky: { kind: 'procedural' as const, sun_elevation_deg: elevation }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null })
+  const first = intent([{ op: 'set_environment', environment: env(30) }], { merge: 'environment.sun', expected: { environment: '4' } })
+  const second = intent([{ op: 'set_environment', environment: env(5) }], { merge: 'environment.sun', expected: { environment: { after: first.id } } })
+  const { queue, holder } = enqueue([first], second)
+  assert.equal(holder, first.id)
+  assert.equal(queue.length, 1)
+  assert.deepEqual(queue[0].expected, first.expected)
+  assert.deepEqual(queue[0].ops, second.ops, 'the environment is written whole: the latest wins')
+  assert.equal(enqueue([first], { ...second, merge: 'environment.fog' }).queue.length, 2, 'another field stays separate')
+  assert.equal(enqueue([{ ...first, state: 'sent' }], second).queue.length, 2, 'a sent tail is never rewritten')
+  assert.equal(enqueue([first], intent([{ op: 'set_render', render: { exposure_ev: 1 } }], { merge: 'environment.sun' })).queue.length, 2, 'a different operation stays separate')
+
+  const a = intent([{ op: 'set_render', render: { exposure_ev: 1 } }], { merge: 'render.exposure_ev' })
+  const b = intent([{ op: 'set_render', render: { exposure_ev: 2, mode: 'lit' } }], { merge: 'render.exposure_ev' })
+  assert.deepEqual(enqueue([a], b).queue[0].ops, [{ op: 'set_render', render: { exposure_ev: 2, mode: 'lit' } }])
+})
+
 test('moving a held duplicate rewrites its add, so duplicate-and-move is one intent', () => {
   const add = intent([{ op: 'add_objects', objects: [box(3), box(4)] }], { held: true })
   const { queue, holder } = enqueue([add], intent([moveTo([id(3), id(4)], 5)]))
