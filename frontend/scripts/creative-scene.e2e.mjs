@@ -742,6 +742,54 @@ await check('C6 drag in: a floor model lands on a box top, the drawer stays open
   await context.close()
 })
 
+await check('C6 copy semantics: a placed model changes only in this scene; editing it starts a model of its own; the asset places as saved', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  server.libraryAsset(rev, '哥特束柱')
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  const canvas = page.locator('.cc-scene-editor canvas')
+  const place = async () => {
+    const before = server.commands.length
+    await canvas.click({ position: { x: 20, y: 20 } })
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+    await page.locator('#creative-library .al-tile', { hasText: '哥特束柱' }).click()
+    await waitFor(() => server.commands.length === before + 1, 'placed')
+    await saved(page)
+    return server.commands.at(-1).payload.operations[0].objects[0]
+  }
+  const first = await place()
+
+  // A slot's material: the instance only.
+  await page.getByLabel('stone 的材质').selectOption('marble@1')
+  await waitFor(() => server.commands.length === 2, 'material')
+  await saved(page)
+  assert.equal(server.object(first.id).material_slots.stone.preset, 'marble@1')
+
+  // A parameter: a new model of the scene's own, never a revision of the asset's.
+  const height = page.getByLabel('高度（m）', { exact: true })
+  await height.fill('5')
+  await height.press('Enter')
+  await waitFor(() => server.commands.length === 3, 'retune command', 20_000)
+  await saved(page)
+  const [commit, set] = server.commands[2].payload.operations
+  assert.equal(commit.op, 'commit_model')
+  assert.equal(commit.base_content_id, undefined, 'a placed model is copied, not continued')
+  assert.equal(commit.generator.params.height, 5)
+  assert.deepEqual(set, { op: 'set_instance_model', object_id: first.id, model: { ref: commit.ref }, scope: 'this' })
+  const forked = server.object(first.id).model.content_revision_id
+  assert.notEqual(forked, rev)
+  assert.notEqual(server.models.get(forked).content_id, server.models.get(rev).content_id, 'a content of its own')
+  assert.equal(server.library[0].content_revision_id, rev, 'the asset keeps its revision')
+  assert.equal(server.models.get(rev).generator.params.height, 3, 'and that revision is as saved')
+
+  const second = await place()
+  assert.deepEqual(second.model, { content_revision_id: rev }, 'placing again gives the model as saved')
+  assert.deepEqual(second.material_slots, {}, 'without this scene\'s materials')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('keyboard flow: Shift+A, G Z 2 Enter, R cancelled, A G confirmed', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)

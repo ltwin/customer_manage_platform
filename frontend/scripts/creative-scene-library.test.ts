@@ -108,3 +108,18 @@ test('known summaries come last and never stand in for bytes', async () => {
   cache.settle(['ccrv_asset'])
   assert.equal(cache.known.getState().ccrv_asset, undefined, 'dropped once the server describes it')
 })
+
+test('a model placed from the library is copied on its first edit, never continued', async () => {
+  const { forkPlan } = await import('../src/creative-scene/modelEdits.ts')
+  const { ModelCache } = await import('../src/creative-scene/models/cache.ts')
+  const lone = [pillar]
+  assert.deepEqual(forkPlan(lone, objectID(1), 'ccnt_1', false, true), { baseContentID: undefined, scope: 'this', objectIDs: [objectID(1)] })
+  assert.deepEqual(forkPlan(lone, objectID(1), 'ccnt_1', false), { baseContentID: 'ccnt_1', scope: 'this', objectIDs: [objectID(1)] }, 'the scene\'s own model goes on')
+  const two = [pillar, object(2, { model: { content_revision_id: 'ccrv_1' } })]
+  assert.deepEqual(forkPlan(two, objectID(1), 'ccnt_1', true, true), { baseContentID: undefined, scope: 'all_instances', objectIDs: [objectID(1), objectID(2)] })
+  const cache = new ModelCache(async () => new ArrayBuffer(0))
+  assert.equal(cache.copied('ccnt_asset'), false)
+  cache.remember('ccrv_asset', summary({ content_id: 'ccnt_asset' }))
+  cache.settle(['ccrv_asset'])
+  assert.equal(cache.copied('ccnt_asset'), true, 'still a copy after the server describes it')
+})

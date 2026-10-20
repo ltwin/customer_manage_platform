@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
@@ -160,5 +161,32 @@ func TestSaveModelToLibraryRejections(t *testing.T) {
 	}
 	if n := assets(); n != 0 {
 		t.Fatalf("%d assets written by rejected saves", n)
+	}
+}
+
+// AC-4: the asset holds its revision. A scene that moved on, or is gone,
+// leaves the saved model readable from the library.
+func TestSavedModelOutlivesItsScene(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	id := objectID(1)
+	placed := newPillar(t, f, doc, id, 1)
+	v := readScene(t, f.a, doc)
+	_, saved, err := saveModel(t, f.a, command(t, creativescene.SaveModelInput{DocumentID: doc, ObjectID: id, ExpectedObjectRev: contentRev(t, v, id), Target: creativelibrary.ImportTarget{Title: "柱"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := creativedocument.Trash(t.Context(), f.a, command(t, map[string]string{"document_id": doc})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := creativedocument.Purge(t.Context(), f.a, command(t, map[string]string{"document_id": doc})); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := creativelibrary.GetAsset(t.Context(), f.a, saved.ID)
+	if err != nil || asset.Unavailable || asset.Content == nil || asset.Content.ID != placed.ContentRevisionID {
+		t.Fatalf("asset after its scene is gone: %+v %v", asset, err)
+	}
+	if _, err := creativecontent.Read(t.Context(), f.a, placed.ContentRevisionID); err != nil {
+		t.Fatalf("the saved revision is no longer readable: %v", err)
 	}
 }
