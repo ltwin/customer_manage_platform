@@ -7,7 +7,7 @@
 
 ## 2. 编组（编辑器）
 
-- [ ] 2.1 `state/world.ts` 与 `grouping.ts`：五个操作各生成正向与反向的 `reparent_objects`；`state/apply.ts`、`state/intents.ts` 镜像服务端（含 `withoutNoops` 按容差去掉无变化的移动、新建分组的单元；取消的分组都没有子物件时改发 `remove_objects`）。先写单测：保持世界位置（误差 < 1e-6，含旋转缩放过的父级）、反向操作回到原父级与顺序、同一用例本地应用与 Go 回执一致；`make check-frontend` 通过
+- [x] 2.1 `state/world.ts` 与 `grouping.ts`：五个操作各生成正向与反向的 `reparent_objects`；`state/apply.ts`、`state/intents.ts` 镜像服务端（含 `withoutNoops` 按容差去掉无变化的移动、新建分组的单元；取消的分组都没有子物件时改发 `remove_objects`）。先写单测：保持世界位置（误差 < 1e-6，含旋转缩放过的父级）、反向操作回到原父级与顺序、同一用例本地应用与 Go 回执一致；`make check-frontend` 通过
 - [ ] 2.2 `state/sync.ts` 的 `keepPresent` 与 `objects` 冲突重排、`state/undo.ts` 的 `ops` 步骤（有效性检查、顺序重排、撤销与重做）、`agentActivity.ts`。单测覆盖：冲突后重排重试、父级缺失时提示、别人改过时撤销跳过、撤销后再重做
 - [ ] 2.3 按键（Ctrl + G、Ctrl + Alt + G、Ctrl + P、Alt + P）、物件菜单项、`Outliner.tsx` 拖动（之前、之后、放入，不能拖到自己或后代上）；e2e 覆盖 AC-7 的五个场景
 

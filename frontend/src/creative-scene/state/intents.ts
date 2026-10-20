@@ -61,8 +61,13 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
     case 'set_render':
       return ['render']
     case 'add_objects':
-    case 'reparent_objects':
       return ['objects']
+    case 'reparent_objects':
+      return [
+        'objects',
+        ...op.moves.filter((m) => m.transform).map((m) => placementUnit(m.object_id)),
+        ...(op.remove_groups ?? []).flatMap((id) => [placementUnit(id), contentUnit(id)]),
+      ]
     case 'update_objects':
       return op.updates.flatMap((u) => [
         ...(hasAny(u, placementKeys) ? [placementUnit(u.object_id)] : []),
@@ -91,11 +96,11 @@ export function changedUnits(intent: Intent, state: SceneState): string[] {
   const out = new Set<string>()
   for (const op of intent.ops) {
     for (const u of touchedUnits(op, state)) out.add(u)
-    if (op.op === 'add_objects')
-      for (const o of op.objects) {
-        out.add(placementUnit(o.id))
-        out.add(contentUnit(o.id))
-      }
+    const added = op.op === 'add_objects' ? op.objects : op.op === 'reparent_objects' ? (op.create_groups ?? []) : []
+    for (const o of added) {
+      out.add(placementUnit(o.id))
+      out.add(contentUnit(o.id))
+    }
   }
   if (intent.projection) {
     const p = intent.projection
@@ -113,6 +118,7 @@ export function removedUnits(intent: Intent, before: SceneState): string[] {
   const ids = new Set<string>(intent.projection?.removed ?? [])
   for (const op of intent.ops)
     if (op.op === 'remove_objects') for (const id of subtree(before.scene.objects, op.object_ids)) ids.add(id)
+    else if (op.op === 'reparent_objects') for (const id of op.remove_groups ?? []) ids.add(id)
   return [...ids].flatMap((id) => [placementUnit(id), contentUnit(id)])
 }
 

@@ -7,6 +7,7 @@ import type {
   SceneRender,
 } from '../api.ts'
 import { builtinSpec, defaultParams } from '../builtins/catalog.ts'
+import { sameTransform } from './world.ts'
 
 // The client's copy of the server's operation semantics, used only to show
 // edits before their receipt. Anything the server would reject is skipped
@@ -189,18 +190,20 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
         scene: { ...scene, objects: scene.objects.filter((o) => !gone.has(o.id)) },
       }
     }
+    // As the server: create, then move (a transform replaces the local
+    // one), then remove.
     case 'reparent_objects': {
+      const present = new Set(scene.objects.map((o) => o.id))
+      const created = (op.create_groups ?? []).filter((g) => !present.has(g.id))
       const moves = new Map(op.moves.map((m) => [m.object_id, m]))
-      return {
-        ...state,
-        scene: {
-          ...scene,
-          objects: scene.objects.map((o) => {
-            const m = moves.get(o.id)
-            return m ? { ...o, parent_id: m.parent_id, order: m.order } : o
-          }),
-        },
-      }
+      const gone = new Set(op.remove_groups ?? [])
+      const objects = [...scene.objects, ...created]
+        .map((o) => {
+          const m = moves.get(o.id)
+          return m ? { ...o, parent_id: m.parent_id, order: m.order, ...(m.transform ? { transform: m.transform } : {}) } : o
+        })
+        .filter((o) => !gone.has(o.id))
+      return { ...state, scene: { ...scene, objects } }
     }
     // A committed model changes no unit until an operation places it.
     case 'commit_model':
@@ -347,10 +350,31 @@ export function withoutNoops(ops: readonly WireOp[], state: SceneState): WireOp[
       if (sameValue(op.environment, probe.scene.environment)) kept = null
     } else if (op.op === 'set_render') {
       if (sameValue(op.render, probe.scene.render)) kept = null
+    } else if (op.op === 'reparent_objects') {
+      kept = reparentWithoutNoops(op, probe)
     }
     if (!kept) continue
     out.push(kept)
     probe = applyOp(probe, kept)
   }
   return out
+}
+
+/**
+ * A reparent without the moves that leave an object where it is: same
+ * parent, same order, and a transform equal within float noise. Without
+ * moves, new groups become an add and removed ones a remove (moves must have
+ * one item); with neither, nothing is left.
+ */
+function reparentWithoutNoops(op: Extract<WireOp, { op: 'reparent_objects' }>, state: SceneState): WireOp | null {
+  const byID = new Map(state.scene.objects.map((o) => [o.id, o]))
+  const moves = op.moves.filter((m) => {
+    const o = byID.get(m.object_id)
+    if (!o) return true
+    return (o.parent_id ?? null) !== m.parent_id || o.order !== m.order || (m.transform !== undefined && !sameTransform(m.transform, o.transform))
+  })
+  if (moves.length) return moves.length === op.moves.length ? op : { ...op, moves }
+  if (op.create_groups?.length && !op.remove_groups?.length) return { op: 'add_objects', objects: op.create_groups }
+  if (op.remove_groups?.length && !op.create_groups?.length) return { op: 'remove_objects', object_ids: op.remove_groups }
+  return null
 }
