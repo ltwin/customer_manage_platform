@@ -10,10 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -713,8 +715,7 @@ func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if baked.SizeM != read.Model.SizeM || baked.Triangles != read.Model.Triangles || !reflect.DeepEqual(baked.Slots, read.Model.Slots) ||
-		!reflect.DeepEqual(baked.Parts, read.Model.Parts) || !reflect.DeepEqual(baked.Anchors, read.Model.Anchors) {
+	if !reflect.DeepEqual(baked, read.Model.ManifestFacts) {
 		t.Fatalf("read_asset %+v and write_model %+v disagree", read.Model, baked)
 	}
 
@@ -783,6 +784,147 @@ func TestReadingAModelWithoutItsThumbnail(t *testing.T) {
 			t.Fatalf("read without media metadata: %v", err)
 		}
 	})
+}
+
+// A thumbnail left out by the image window keeps the model's facts in the
+// conversation; only the image goes, and thumbnail_omitted says why. A
+// message that is the image alone is still replaced by its notice.
+func TestModelFactsOutliveTheirThumbnail(t *testing.T) {
+	call := &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{
+		{ID: "read", Function: schema.FunctionCall{Name: readAssetTool, Arguments: `{}`}},
+		{ID: "render", Function: schema.FunctionCall{Name: renderViewTool, Arguments: `{}`}},
+	}}
+	read := schema.ToolMessage(`{"content_revision_id":"ccrv_m","image_revision_id":"ccrv_m","model":{"name":"柱","size_m":[0.5,2.4,0.5]},"reference":"<<<ccrv_m>>>"}`, "read")
+	render := schema.ToolMessage(`{"content_revision_id":"ccrv_r","image_revision_id":"ccrv_r","scene_revision":3}`, "render")
+	reference := schema.UserMessage(referenceLabel("ccrv_m") + "\n" + `{"model":{"name":"柱"}}`)
+	reference.Extra = map[string]any{imageRefsKey: "ccrv_m"}
+	historyTag(reference, "old")
+	image := schema.UserMessage(referenceLabel("ccrv_i"))
+	image.Extra = map[string]any{imageRefsKey: "ccrv_i"}
+	historyTag(image, "old")
+
+	limitHistoryImages([]*schema.Message{image, reference, call, read, render}, 1)
+	if messageImageID(render) != "ccrv_r" {
+		t.Fatal("the newest image was dropped")
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(read.Content), &got); err != nil || messageImageID(read) != "" ||
+		got["thumbnail_omitted"] != "context_limit" || got["model"].(map[string]any)["name"] != "柱" {
+		t.Fatalf("read_asset result %s %v", read.Content, err)
+	}
+	if messageImageID(reference) != "" || !strings.HasPrefix(reference.Content, referenceLabel("ccrv_m")+"\n") ||
+		!strings.Contains(reference.Content, `"name":"柱"`) || !strings.Contains(reference.Content, `"thumbnail_omitted":"context_limit"`) {
+		t.Fatalf("reference %s", reference.Content)
+	}
+	if messageImageID(image) != "" || !strings.Contains(image.Content, "未附加图片") {
+		t.Fatalf("image %s", image.Content)
+	}
+	for _, content := range []string{referenceLabel("ccrv_i"), render.Content} {
+		if _, ok := withoutThumbnail(content, "context_limit"); ok {
+			t.Fatalf("%s read as a model", content)
+		}
+	}
+}
+
+// Facts too large for one result shed parts and anchors, then the parameter
+// definitions, and name what they left out; past even that the read is
+// refused instead of ending the run.
+func TestModelFactsFitOneResult(t *testing.T) {
+	small := creativecontent.ModelFacts{Mount: "floor", ManifestFacts: creativecontent.ManifestFacts{Parts: []string{"base"}, Anchors: []creativeglb.Anchor{{ID: "top"}}},
+		ParamsSchema: map[string]json.RawMessage{"height": json.RawMessage(`{"type":"number","min":1,"max":3,"default":2}`)}}
+	large := small
+	large.Parts, large.Anchors = make([]string, 200), make([]creativeglb.Anchor, 200)
+	for i := range 200 {
+		large.Parts[i] = fmt.Sprintf("%064d", i)
+		large.Anchors[i] = creativeglb.Anchor{ID: fmt.Sprintf("%064d", i), Position: [3]float64{1.0 / 3, 2.0 / 3, 1.0 / 7}}
+	}
+	options := make([]string, 32)
+	for i := range options {
+		options[i] = fmt.Sprintf("%s%02d", strings.Repeat("选", 62), i)
+	}
+	enum, err := json.Marshal(map[string]any{"type": "enum", "options": options, "default": options[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wide := large
+	wide.ParamsSchema = map[string]json.RawMessage{}
+	for i := range 32 {
+		wide.ParamsSchema["p"+strconv.Itoa(i)] = enum
+	}
+	for _, tt := range []struct {
+		name    string
+		facts   creativecontent.ModelFacts
+		limit   int
+		omitted []string
+	}{
+		{"whole", small, 64 << 10, nil},
+		{"without parts and anchors", large, 16 << 10, []string{"parts", "anchors"}},
+		{"without definitions", wide, 64 << 10, []string{"parts", "anchors", "params_schema"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := map[string]any{"content_revision_id": "ccrv_m"}
+			if err := fitModelFacts(result, tt.facts, tt.limit); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := result["model"].(creativecontent.ModelFacts)
+			if len(raw) > tt.limit || !reflect.DeepEqual(got.Omitted, tt.omitted) || got.Mount != "floor" {
+				t.Fatalf("%d bytes, omitted %v", len(raw), got.Omitted)
+			}
+		})
+	}
+	var refusal *toolRefusal
+	if err := fitModelFacts(map[string]any{}, small, 64); !errors.As(err, &refusal) {
+		t.Fatalf("too small a limit: %v", err)
+	}
+}
+
+// A model read in an earlier turn whose thumbnail can no longer be read: the
+// later turn still gets the model's facts, without the image.
+func TestEarlierModelReadWithAnUnreadableThumbnail(t *testing.T) {
+	f, c, _, _ := visualScene(t, true)
+	consent := libraryConsent(t, f, c.ID)
+	_, rev := f.modelAsset()
+	f.vendor.script = (&script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, call("read", 0, readAssetTool, fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, rev)))
+		},
+	}}).answer
+	first, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "看看哥特束柱"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(first.ID); got.State != RunSucceeded {
+		t.Fatalf("first run %s %s", got.State, got.ErrorCode)
+	}
+
+	f.service.SetImageReader(&unreadableImages{})
+	var prompt string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+		prompt = ""
+		for _, m := range r.Chat.Messages {
+			for _, b := range m.Blocks {
+				if b.Image != nil {
+					t.Error("an unreadable thumbnail was attached")
+				}
+				prompt += b.Text
+			}
+		}
+		return scriptedResult(r), nil
+	}
+	second, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "它多高"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(second.ID); got.State != RunSucceeded {
+		t.Fatalf("second run %s %s", got.State, got.ErrorCode)
+	}
+	if !strings.Contains(prompt, `"thumbnail_omitted":"thumbnail_unreadable"`) || !strings.Contains(prompt, `"size_m"`) || strings.Contains(prompt, "已无法读取") {
+		t.Fatalf("the earlier read lost the model's facts: %s", prompt)
+	}
 }
 
 func TestToolsSayHowToFindAndPlaceModels(t *testing.T) {

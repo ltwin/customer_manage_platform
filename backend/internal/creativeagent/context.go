@@ -119,6 +119,34 @@ type modelReference struct {
 	ThumbnailOmitted string                      `json:"thumbnail_omitted,omitempty"`
 }
 
+// withoutThumbnail keeps a model's facts when its thumbnail is not sent: the
+// image locator goes and thumbnail_omitted says why. A read_asset result is
+// the facts as JSON; a reference is its label, a newline, then the JSON. ok
+// is false for anything else, whose message carries the image alone.
+func withoutThumbnail(content, reason string) (string, bool) {
+	label, body, found := strings.Cut(content, "\n")
+	if found {
+		label += "\n"
+	} else {
+		label, body = "", content
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(body), &fields) != nil || fields["model"] == nil {
+		return content, false
+	}
+	why, err := json.Marshal(reason)
+	if err != nil {
+		return content, false
+	}
+	delete(fields, "image_revision_id")
+	fields["thumbnail_omitted"] = why
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return content, false
+	}
+	return label + string(raw), true
+}
+
 // readReference reads an approved revision under the consent's data classes.
 func (s *Service) readReference(ctx context.Context, tx store.TxAccountScope, id string, consent Consent, imageCapable bool) (reference, error) {
 	rev, err := creativecontent.RequireUsable(ctx, tx, id, "display")
@@ -229,6 +257,13 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 			continue
 		}
 		if err != nil && unreadableImage(err) {
+			// A model's facts stand without its thumbnail; only the image goes.
+			if facts, ok := withoutThumbnail(message.Content, "thumbnail_unreadable"); ok {
+				delete(message.Extra, imageRefsKey)
+				message.Content = facts
+				messages[i].Blocks = []llmgateway.Block{{Kind: llmgateway.BlockText, Text: message.Content}}
+				continue
+			}
 			// An earlier image that can no longer be prepared must not take the
 			// whole conversation down with it; the model is told it is missing.
 			if optional {
@@ -480,13 +515,12 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 		if ref.image != "" {
 			result["image_revision_id"] = ref.image
 		}
-		// A model's facts come whole, with its thumbnail; they fit one result.
+		// A model's facts come in one result, with its thumbnail.
 		if ref.model != nil {
-			result["model"] = ref.model
 			if ref.thumbnailOmitted != "" {
 				result["thumbnail_omitted"] = ref.thumbnailOmitted
 			}
-			return nil
+			return fitModelFacts(result, *ref.model, h.service.limits.ToolResultBytes)
 		}
 		if ref.image != "" {
 			return nil
@@ -514,6 +548,29 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 	}
 	out, err := json.Marshal(result)
 	return string(out), err
+}
+
+// fitModelFacts puts a model's facts into a read_asset result of at most
+// limit bytes. Past it, parts and anchors go first, then the parameter
+// definitions; omitted names them, so partial facts never pass as whole.
+func fitModelFacts(result map[string]any, f creativecontent.ModelFacts, limit int) error {
+	fits := func() (bool, error) {
+		result["model"] = f
+		raw, err := json.Marshal(result)
+		return len(raw) <= limit, err
+	}
+	if ok, err := fits(); ok || err != nil {
+		return err
+	}
+	f.Parts, f.Anchors, f.Omitted = nil, nil, []string{"parts", "anchors"}
+	if ok, err := fits(); ok || err != nil {
+		return err
+	}
+	f.ParamsSchema, f.Omitted = nil, append(f.Omitted, "params_schema")
+	if ok, err := fits(); ok || err != nil {
+		return err
+	}
+	return refuseTool("这个模型的信息超出单次读取上限")
 }
 
 func validTextBoundary(text string, offset int) bool {
@@ -664,7 +721,7 @@ func contextToolInfo(name string) *schema.ToolInfo {
 	desc := ""
 	switch name {
 	case readAssetTool:
-		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因。不返回生成代码。"
+		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因；超出单次结果上限时依次省略部件与挂点、参数定义，omitted 列出省略项。不返回生成代码。"
 		params["content_revision_id"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "内容修订 ID"}
 		params["offset"] = integer("文字起始字节，初次读取填 0")
 		params["limit"] = integer("文字最多字节数，1 到 8192；图片也填写此参数")
@@ -738,6 +795,10 @@ func messageImageID(m *schema.Message) string {
 func omitImage(m *schema.Message) {
 	id := messageImageID(m)
 	delete(m.Extra, imageRefsKey)
+	if facts, ok := withoutThumbnail(m.Content, "context_limit"); ok {
+		m.Content = facts
+		return
+	}
 	m.Content = referenceLabel(id) + "（仅本轮因上下文容量限制未附加图片；这不表示此前读取失败。若已观察并记录过该图，沿用已有观察；只有尚未观察或需要新的视觉判断时才用 read_asset 重读，不要为核验历史加载状态重复读图。）"
 }
 
