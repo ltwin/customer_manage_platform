@@ -302,3 +302,36 @@ export function rebaseReparent(op: ReparentOp, objects: readonly SceneObject[]):
   }
   return { ...op, moves, ...(groups.length ? { create_groups: groups } : {}) }
 }
+
+/**
+ * A grouping edit applied again after a conflict prompt: fitted like
+ * rebaseReparent, and with the transforms worked out again so objects keep
+ * where they are now, not where they were when the edit was made; someone
+ * may have moved one of them meanwhile. The inverse is worked out from the
+ * same snapshot.
+ */
+export function refitReparent(op: ReparentOp, objects: readonly SceneObject[]): { op: ReparentOp; inverse: ReparentOp } | null {
+  const fitted = rebaseReparent(op, objects)
+  if (!fitted) return null
+  const byID = new Map(objects.map((o) => [o.id, o]))
+  const world = worldOf(objects, fitted.create_groups ?? [])
+  const moves: ReparentOp['moves'] = []
+  const back: ReparentOp['moves'] = []
+  for (const m of fitted.moves) {
+    const o = byID.get(m.object_id)!
+    const was = { object_id: o.id, parent_id: o.parent_id ?? null, order: o.order }
+    if (!m.transform) {
+      moves.push(m)
+      back.push(was)
+      continue
+    }
+    const transform = localUnder(world(m.parent_id), world(o.id))
+    if (!transform) return null
+    moves.push({ ...m, transform })
+    back.push({ ...was, transform: o.transform })
+  }
+  const inverse: ReparentOp = { op: 'reparent_objects', moves: back }
+  if (fitted.create_groups?.length) inverse.remove_groups = fitted.create_groups.map((g) => g.id)
+  if (fitted.remove_groups?.length) inverse.create_groups = fitted.remove_groups.map((id) => byID.get(id)!)
+  return { op: { ...fitted, moves }, inverse }
+}

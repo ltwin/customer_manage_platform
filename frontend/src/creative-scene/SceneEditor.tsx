@@ -8,6 +8,7 @@ import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlac
 import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
+import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
 import { clearOp, duplicate, groundBuiltin, localPose, newCamera, newEmpty, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
@@ -238,6 +239,33 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   const movable = () => topmost(selected, objects).filter((id) => !byID.get(id)?.locked)
   const label = (verb: string, ids: string[]) => objectsLabel(verb, ids.length, byID.get(ids[0])?.name)
 
+  /** Ctrl+G, Ctrl+Alt+G, Ctrl+P and Alt+P: one edit each, keeping world positions. */
+  const regroup = (action: 'group' | 'ungroup' | 'parent' | 'clear-parent') => {
+    const sel = { selected, active: active?.id ?? null }
+    const r =
+      action === 'group'
+        ? groupSelection(objects, sel)
+        : action === 'ungroup'
+          ? ungroupSelection(objects, sel)
+          : action === 'parent'
+            ? parentToActive(objects, sel)
+            : clearParent(objects, sel)
+    if (!r) return
+    if ('error' in r) return notify(r.error)
+    if (!edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)) return
+    if (action === 'group' && r.op.op === 'reparent_objects') {
+      const g = r.op.create_groups?.[0]
+      if (g) select([g.id])
+    }
+  }
+
+  const drop = (moving: string[], target: string, place: DropPlace) => {
+    const r = dropRows(objects, moving, target, place)
+    if (!r) return
+    if ('error' in r) return notify(r.error)
+    edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)
+  }
+
   const transform = (mode: Mode) => {
     const ids = movable()
     if (!ids.length) return notify(selected.length ? '锁定的物件不能变换，先在属性栏解锁' : '先选中物件')
@@ -449,6 +477,11 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
           edit([op], label(what === 'location' ? '清除位置' : what === 'rotation' ? '清除旋转' : '清除缩放', op.updates.map((u) => u.object_id)))
         return
       }
+      case 'group':
+      case 'ungroup':
+      case 'parent':
+      case 'clear-parent':
+        return editing && regroup(action)
       case 'rename': {
         if (!editing || !active) return
         const p = handle.current?.pointer() ?? { x: 200, y: 200 }
@@ -570,6 +603,11 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         { label: '清除缩放', shortcut: k('clear-scale'), disabled: none, run: () => run('clear-scale') },
         { label: '重命名', shortcut: k('rename'), disabled: !active, run: () => run('rename') },
         'separator',
+        { label: '编组', shortcut: k('group'), disabled: none, run: () => run('group') },
+        { label: '取消编组', shortcut: k('ungroup'), disabled: !selected.some((id) => byID.get(id)?.kind === 'group'), run: () => run('ungroup') },
+        { label: '设置父级', shortcut: k('parent'), disabled: active?.kind !== 'group' || selected.length < 2, run: () => run('parent') },
+        { label: '清除父级', shortcut: k('clear-parent'), disabled: !selected.some((id) => byID.get(id)?.parent_id), run: () => run('clear-parent') },
+        'separator',
         { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
       ]
     const guessed = u.guessed === 'trackpad' ? '触控板' : '鼠标'
@@ -680,6 +718,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   readOnly={readOnly}
                   onSelect={(id, mods, order) => ui.setState({ selection: listClick(u.selection, id, order, mods) })}
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
+                  onDrop={(moving, target, place) => drop(moving, target, place)}
                 />
                 <Properties
                   object={shownActive}

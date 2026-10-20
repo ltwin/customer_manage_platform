@@ -11,6 +11,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
+import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
 
 const DOC = 'cwdoc_scene'
@@ -1905,6 +1906,166 @@ await check('景深预览 is a switch: the camera view blurs live, keeps blurrin
   let diff = 1
   await waitFor(async () => (diff = await pixelDiff(page, before, await picture())) < 0.002, 'off is the picture before the switch', 30_000)
   console.log(`camera view sharpness: off ${sharp.toFixed(3)}, f/1.4 ${blurred.toFixed(3)}, f/8 ${stopped.toFixed(3)}; off again differs ${diff}`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- AC-7 grouping -------------------------------------------------------------
+
+/** Objects placed earlier, at revision 1 like the ground. */
+function seed(server, objects) {
+  for (const o of objects) {
+    server.scene.objects.push({ parent_id: null, visible: true, locked: false, transform: identity(), ...o })
+    server.unitRevs[placement(o.id)] = '1'
+    server.unitRevs[content(o.id)] = '1'
+  }
+  server.history[0] = server.record(['*'], [], null)
+}
+
+const gid = (name) => `sobj_${name.padEnd(21, '0')}`
+// A group turned by Euler(0, 0.8, 0) and scaled 2, a child tilted and stretched.
+const turned = { position: [2, 0, -3], rotation: [0, 0.3894183423086505, 0, 0.9210609940028851], scale: [2, 2, 2] }
+const tilted = { position: [1, 0.5, 2], rotation: [0.06407134770607115, 0.09115754934299071, 0.15343930202422257, 0.9818561728660807], scale: [1, 1.5, 1] }
+
+function groupingScene(server) {
+  seed(server, [
+    { id: gid('p'), kind: 'group', name: '支架', order: 1, transform: turned },
+    { id: gid('a'), kind: 'primitive', name: '箱 A', parent_id: gid('p'), order: 0, transform: tilted, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } } },
+    { id: gid('q'), kind: 'group', name: '台', order: 2, transform: { ...identity(), position: [-3, 0, 0] } },
+    { id: gid('b'), kind: 'primitive', name: '箱 B', parent_id: gid('q'), order: 0, transform: { ...identity(), position: [0, 0, 2] }, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } } },
+    { id: gid('c'), kind: 'primitive', name: '箱 C', order: 3, transform: { ...identity(), position: [4, 0, 4] }, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } } },
+  ])
+}
+
+const worlds = (server) => {
+  const world = worldOf(server.scene.objects)
+  return new Map(server.scene.objects.map((o) => [o.id, world(o.id).elements]))
+}
+function sameWorlds(before, after, ids) {
+  for (const id of ids) {
+    const a = before.get(id)
+    const b = after.get(id)
+    assert.ok(a && b && a.every((v, i) => Math.abs(v - b[i]) < 1e-6), `${id} moved: ${a} → ${b}`)
+  }
+}
+const treeOf = (server) => Object.fromEntries(server.scene.objects.map((o) => [o.id, `${o.parent_id ?? '-'}#${o.order}`]))
+/** Parents are groups and siblings never share an order, as the real server checks. */
+function validTree(server) {
+  const kinds = new Map(server.scene.objects.map((o) => [o.id, o.kind]))
+  const taken = new Set()
+  for (const o of server.scene.objects) {
+    if (o.parent_id) assert.equal(kinds.get(o.parent_id), 'group', `${o.name} under a ${kinds.get(o.parent_id)}`)
+    const key = `${o.parent_id}#${o.order}`
+    assert.ok(!taken.has(key), `order clash ${key}`)
+    taken.add(key)
+  }
+}
+const modKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+async function pick(page, names) {
+  for (const [i, name] of names.entries()) await page.getByRole('treeitem', { name: new RegExp(name) }).click({ modifiers: i ? [modKey] : [] })
+}
+
+await check('AC-7: Ctrl+G groups objects of three parents in place, one revision; Cmd+Z puts them back; Ctrl+Alt+G ungroups in place', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const { context, page, errors } = await open(server)
+  const start = worlds(server)
+  const startTree = treeOf(server)
+  const startTransforms = new Map(server.scene.objects.map((o) => [o.id, o.transform]))
+  const moved = [gid('a'), gid('b'), gid('c')]
+
+  await pick(page, ['箱 A', '箱 B', '箱 C'])
+  await page.keyboard.press(`${modKey}+KeyG`)
+  await waitFor(() => server.commands.length === 1, 'group')
+  await saved(page)
+  const op = server.commands[0].payload.operations
+  assert.equal(op.length, 1)
+  assert.equal(op[0].op, 'reparent_objects')
+  assert.equal(server.revision, 2, 'one revision')
+  const g = op[0].create_groups[0].id
+  assert.deepEqual(moved.map((id) => server.object(id).parent_id), [g, g, g])
+  assert.equal(server.object(g).parent_id, null, 'parents differ: the group goes to the root')
+  validTree(server)
+  sameWorlds(start, worlds(server), moved)
+  await page.getByRole('treeitem', { name: /分组 1/ }).waitFor()
+
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo')
+  await saved(page)
+  assert.equal(server.commands[1].payload.operations[0].op, 'reparent_objects')
+  assert.deepEqual(treeOf(server), startTree, 'back under their old parents, in their old order')
+  for (const id of moved) {
+    const [t, u] = [server.object(id).transform, startTransforms.get(id)]
+    assert.ok([...t.position, ...t.scale].every((v, i) => Math.abs(v - [...u.position, ...u.scale][i]) < 1e-6), `${id} transform restored`)
+  }
+
+  // Redo, then ungroup with Ctrl+Alt+G.
+  await page.keyboard.press(`${modKey}+Shift+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'redo')
+  await saved(page)
+  await page.getByRole('treeitem', { name: /分组 1/ }).click()
+  await page.keyboard.press(`${modKey}+Alt+KeyG`)
+  await waitFor(() => server.commands.length === 4, 'ungroup')
+  await saved(page)
+  assert.equal(server.object(g), undefined, 'the group is gone')
+  assert.deepEqual(moved.map((id) => server.object(id).parent_id), [null, null, null])
+  validTree(server)
+  sameWorlds(start, worlds(server), moved)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-7: Ctrl+P onto a primitive says why and changes nothing; dragging into a turned, scaled group keeps the object in place', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const { context, page, errors } = await open(server)
+  await pick(page, ['台', '箱 C'])
+  await page.keyboard.press(`${modKey}+KeyP`)
+  await page.locator('.cc-scene-hint').filter({ hasText: '只能挂到分组或空物体下' }).waitFor()
+  await sleep(300)
+  assert.equal(server.commands.length, 0, 'the scene is unchanged')
+
+  const start = worlds(server)
+  const row = page.getByRole('treeitem', { name: /箱 C/ })
+  // Dragging a selected row takes the whole selection; this one goes alone.
+  await row.click()
+  const target = page.getByRole('treeitem', { name: /支架/ })
+  const box = await target.boundingBox()
+  await row.dragTo(target, { targetPosition: { x: 60, y: box.height / 2 } })
+  await waitFor(() => server.commands.length === 1, 'drop')
+  await saved(page)
+  assert.equal(server.object(gid('c')).parent_id, gid('p'))
+  validTree(server)
+  sameWorlds(start, worlds(server), [gid('c')])
+  // The list shows it inside 支架, indented under it.
+  let names = []
+  await waitFor(async () => {
+    names = await page.getByRole('treeitem').allTextContents()
+    return names.findIndex((n) => n.includes('箱 C')) === names.findIndex((n) => n.includes('箱 A')) + 1
+  }, 'the list shows the new hierarchy').catch(() => assert.fail(`list order ${names}`))
+  const pad = async (name) => parseFloat(await page.getByRole('treeitem', { name: new RegExp(name) }).evaluate((e) => e.style.paddingLeft))
+  assert.ok((await pad('箱 C')) > (await pad('支架')))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-7: grouping while the assistant moves one of the objects asks first, and 重新应用 keeps it where the assistant put it', async () => {
+  const server = new SceneServer()
+  groupingScene(server)
+  const { context, page, errors } = await open(server)
+  await pick(page, ['箱 B', '箱 C'])
+  // The assistant moves C; the editor has not heard yet.
+  server.external([{ op: 'update_objects', updates: [{ object_id: gid('c'), transform: { ...identity(), position: [6, 1, -2] } }] }], { actor: 'agent' })
+  const moved = worlds(server)
+  await page.keyboard.press(`${modKey}+KeyG`)
+  await page.getByRole('alert').filter({ hasText: '重新应用' }).waitFor()
+  assert.equal(server.scene.objects.some((o) => o.kind === 'group' && o.name.startsWith('分组')), false, 'the grouping did not land')
+  assert.deepEqual(server.object(gid('c')).transform.position, [6, 1, -2], 'nothing jumped or went missing')
+  await page.getByRole('button', { name: '重新应用我的修改' }).click()
+  await waitFor(() => server.scene.objects.some((o) => o.name === '分组 1'), 'grouped on the latest')
+  await saved(page)
+  validTree(server)
+  sameWorlds(moved, worlds(server), [gid('b'), gid('c')])
   assert.deepEqual(errors, [])
   await context.close()
 })

@@ -198,3 +198,20 @@ test('a reparent fitted to a newer snapshot: clashing orders go last, missing pa
   assert.equal(rebaseReparent({ ...op, create_groups: [group(4)] }, now), null, 'a group to create exists again')
   assert.equal(rebaseReparent({ ...op, remove_groups: [sid(3)] }, now), null, 'a group to remove is not a group')
 })
+
+import { refitReparent } from '../src/creative-scene/grouping.ts'
+
+test('a grouping applied again after a conflict keeps where objects are now, and undoes to there', () => {
+  const objects = [group(1, { order: 0, transform: turned }), so(2, { order: 1, transform: at(1) }), so(3, { order: 2, transform: at(3) })]
+  const r = edit(groupSelection(objects, sel([2, 3]), () => sid(9)))
+  assert.ok(r.op.op === 'reparent_objects')
+  // Someone moved object 2 before the edit landed.
+  const now = objects.map((o) => (o.id === sid(2) ? { ...o, transform: at(-4, 2, 0) } : o))
+  const again = refitReparent(r.op, now)
+  assert.ok(again)
+  const after = applyOp(state(now), again.op).scene.objects
+  sameWorlds(now, after)
+  const back = applyOp(state(after), again.inverse).scene.objects
+  assert.deepEqual(tree(back), tree(now))
+  assert.ok(sameTransform(back.find((o) => o.id === sid(2))!.transform, at(-4, 2, 0)), 'undo returns to where it was moved, not before')
+})

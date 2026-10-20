@@ -19,6 +19,10 @@ export type Action =
   | 'clear-rotation'
   | 'clear-scale'
   | 'rename'
+  | 'group'
+  | 'ungroup'
+  | 'parent'
+  | 'clear-parent'
   | 'select-all'
   | 'deselect-all'
   | 'toggle-tool'
@@ -86,6 +90,10 @@ export const bindings: readonly Binding[] = [
   { codes: ['KeyR'], mods: { alt: true }, contexts: idle, action: 'clear-rotation', label: '清除旋转', group: '变换' },
   { codes: ['KeyS'], mods: { alt: true }, contexts: idle, action: 'clear-scale', label: '清除缩放', group: '变换' },
   { codes: ['F2'], contexts: idle, action: 'rename', label: '重命名', group: '编辑' },
+  { codes: ['KeyG'], mods: { mod: true }, contexts: idle, action: 'group', label: '编组', group: '编辑' },
+  { codes: ['KeyG'], mods: { mod: true, alt: true }, contexts: idle, action: 'ungroup', label: '取消编组', group: '编辑' },
+  { codes: ['KeyP'], mods: { mod: true }, contexts: idle, action: 'parent', label: '设置父级（挂到活动物件下）', group: '编辑' },
+  { codes: ['KeyP'], mods: { alt: true }, contexts: idle, action: 'clear-parent', label: '清除父级', group: '编辑' },
   { codes: ['KeyA'], contexts: idle, action: 'select-all', label: '全选', group: '选择' },
   { codes: ['KeyA'], mods: { alt: true }, contexts: idle, action: 'deselect-all', label: '取消全选', group: '选择' },
   { codes: ['KeyW'], contexts: idle, action: 'toggle-tool', label: '切换框选 / 调整', group: '选择' },

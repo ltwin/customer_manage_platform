@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { CommandReceipt, SceneDocument } from '../api.ts'
 import { newIntentID } from '../ids.ts'
-import { rebaseReparent } from '../grouping.ts'
+import { rebaseReparent, refitReparent } from '../grouping.ts'
 import {
   applyOp,
   instanceTargets,
@@ -634,9 +634,17 @@ export class SceneSession {
         const to = p && renamed.get(p.intent)
         return p && to ? m.replace(`:${p.intent}:`, `:${to}:`) : m
       })
-      const ops = withUsedRefs(i.ops.map((op) => keepPresent(op, present)).filter((op): op is WireOp => !!op))
+      let ops = withUsedRefs(i.ops.map((op) => keepPresent(op, present)).filter((op): op is WireOp => !!op))
       if (!ops.length) continue
-      const again = this.edit(ops, i.label, { projection: i.projection, step: i.step })
+      // A grouping edit keeps where things are now, with its way back to match.
+      let inverse = i.inverse
+      if (inverse) {
+        const fitted = ops.length === 1 && ops[0].op === 'reparent_objects' ? refitReparent(ops[0], this.state.view?.scene.objects ?? []) : null
+        if (!fitted) continue
+        ops = [fitted.op]
+        inverse = fitted.inverse
+      }
+      const again = this.edit(ops, i.label, { projection: i.projection, step: i.step, ...(inverse ? { inverse } : {}) })
       if (again) renamed.set(i.id, again.id)
     }
   }
