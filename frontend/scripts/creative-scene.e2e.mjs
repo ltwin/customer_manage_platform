@@ -2806,6 +2806,104 @@ await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd l
   assert.ok(lamps.all.mean > 40 && lamps.all.mean < 110 && lamps.all.bright < 0.02, 'the lamps light the room without blowing it out')
 })
 
+// --- AC-9 performance (opt-in: SCENE_E2E_PERF=1, needs the machine's GPU) ------
+
+/** About 200 objects in 8 materials, the sun and 4 lights of which 2 spots cast shadows (AC-9). */
+function perfScene(server) {
+  const presets = [
+    { preset: 'stone_brick@1', params: {} }, { preset: 'wood@1', params: {} }, { preset: 'metal@1', params: {} }, { preset: 'fabric@1', params: {} },
+    { preset: 'marble@1', params: {} }, { preset: 'tile@1', params: {} }, { preset: 'plaster@1', params: {} }, { preset: 'principled@1', params: { color: '#c04040', roughness: 0.3 } },
+  ]
+  const builtins = [['box@1', { width: 0.8, height: 0.8, depth: 0.8 }], ['cylinder@1', { radius_top: 0.35, radius_bottom: 0.35, height: 1.2, radial_segments: 24 }], ['sphere@1', { radius: 0.45, segments: 32 }]]
+  const objects = []
+  for (let i = 0; i < 196; i++) {
+    const [builtin, params] = builtins[i % 3]
+    // Zero-padded and closed with x: gid pads with zeros, so p1 and p10 would collide.
+    objects.push({ id: gid(`p${String(i).padStart(3, '0')}x`), kind: 'primitive', name: `件 ${i}`, order: 10 + i, transform: { ...identity(), position: [(i % 14) * 1.3 - 8.5, 0, Math.floor(i / 14) * 1.3 - 8.5] }, primitive: { builtin, params }, material_slots: { main: presets[i % 8] } })
+  }
+  const light = (name, order, position, rotation, light) => ({ id: gid(name), kind: 'light', name, order, transform: { position, rotation, scale: [1, 1, 1] }, light })
+  const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+  objects.push(
+    light('spota', 300, [-3, 5, 0], down, { type: 'spot', color: '#ffffff', intensity: 150, cast_shadow: true, distance: 0, decay: 2, angle: Math.PI / 6, penumbra: 0.2 }),
+    light('spotb', 301, [3, 5, 0], down, { type: 'spot', color: '#ffe0c0', intensity: 150, cast_shadow: true, distance: 0, decay: 2, angle: Math.PI / 6, penumbra: 0.2 }),
+    light('pointa', 302, [-5, 2, 4], identity().rotation, { type: 'point', color: '#ffd9b0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 }),
+    light('pointb', 303, [5, 2, 4], identity().rotation, { type: 'point', color: '#ffd9b0', intensity: 40, cast_shadow: false, distance: 0, decay: 2 }),
+  )
+  seed(server, objects)
+}
+
+/** rAF timestamps for ms while a two-finger swipe turns the view a little every frame, so every frame renders. */
+const orbitFrames = (page, ms) =>
+  page.evaluate((ms) => new Promise((resolve) => {
+    const el = document.querySelector('.cc-scene-editor canvas')
+    const times = []
+    let sign = 1
+    const start = performance.now()
+    const tick = (t) => {
+      times.push(t)
+      sign = -sign
+      el.dispatchEvent(new WheelEvent('wheel', { deltaX: 4 * sign, deltaY: 0, deltaMode: 0, bubbles: true, cancelable: true }))
+      if (t - start < ms) requestAnimationFrame(tick)
+      else resolve(times)
+    }
+    requestAnimationFrame(tick)
+  }), ms)
+const gaps = (times) => times.slice(1).map((t, i) => t - times[i])
+const frameStats = (times) => {
+  const g = gaps(times).sort((a, b) => a - b)
+  return { mean: g.reduce((a, b) => a + b, 0) / g.length, p95: g[Math.floor(g.length * 0.95)], max: g.at(-1), frames: g.length }
+}
+
+if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference scene at 1600 × 1000, 2× pixels, on this machine’s GPU', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const { page, errors } = await open(server, { context })
+    const renderer = await page.evaluate(() => {
+      const gl = document.createElement('canvas').getContext('webgl2')
+      return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+    })
+    const canvas = await page.locator('.cc-scene-editor canvas').evaluate((c) => [c.width, c.height])
+    console.log(`AC-9 on ${renderer}, canvas ${canvas.join(' × ')} device pixels`)
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const results = {}
+    for (const [mode, label] of [['线框', 'wireframe'], ['白模', 'solid'], ['材质预览', 'preview'], ['最终渲染', 'rendered']]) {
+      await shading(page, mode)
+      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+      await orbitFrames(page, 1000) // shaders compiled, caches warm
+      results[label] = frameStats(await orbitFrames(page, 4000))
+      console.log(`  ${label}: mean ${results[label].mean.toFixed(1)} ms, p95 ${results[label].p95.toFixed(1)} ms, max ${results[label].max.toFixed(1)} ms over ${results[label].frames} frames`)
+    }
+    // A light added and taken away in the rendered view: the longest frame while three recompiles.
+    const hitch = async (act) => {
+      const measuring = orbitFrames(page, 3000)
+      await sleep(800)
+      const at = await page.evaluate(() => performance.now())
+      await act()
+      const times = await measuring
+      const after = times.filter((t) => t >= at)
+      return Math.max(...gaps([at, ...after]))
+    }
+    const add = await hitch(async () => {
+      await page.keyboard.press('Shift+KeyA')
+      await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+    })
+    await page.locator('.cc-scene-editor').focus()
+    const remove = await hitch(() => page.keyboard.press(`${modKey}+KeyZ`))
+    console.log(`  adding a light: longest frame ${add.toFixed(0)} ms; removing it: ${remove.toFixed(0)} ms`)
+    assert.ok(results.rendered.mean <= 33, `rendered mean frame ${results.rendered.mean.toFixed(1)} ms`)
+    assert.ok(results.preview.mean <= results.rendered.mean, 'material preview is no slower')
+    assert.ok(add < 1000 && remove < 1000, 'adding or removing a light hitches under a second')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })

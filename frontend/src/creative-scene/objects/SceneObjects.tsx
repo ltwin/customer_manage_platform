@@ -110,7 +110,8 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
-        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} />}
+        {/* The viewport, the one place with helpers, warms new lights; a shot compiles before shooting. */}
+        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} />}
         {helpers && o.kind === 'light' && <LightIcon light={o.light} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
       </group>

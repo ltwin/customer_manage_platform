@@ -36,4 +36,4 @@
 
 ## 7. 收尾
 
-- [ ] 7.1 AC-9 性能实测（参考场景 fixture，四种模式的帧时间与加灯卡顿）写进 design；更新 `docs/dev/agent-skills-tools.md`、`docs/dev/creative-scene-agent.md`；建 `discovery/research/lit-repaint.md` 供 owner 记录 AC-10 重绘对照
+- [x] 7.1 AC-9 性能实测（参考场景 fixture，四种模式的帧时间与加灯卡顿）写进 design；更新 `docs/dev/agent-skills-tools.md`、`docs/dev/creative-scene-agent.md`；建 `discovery/research/lit-repaint.md` 供 owner 记录 AC-10 重绘对照
