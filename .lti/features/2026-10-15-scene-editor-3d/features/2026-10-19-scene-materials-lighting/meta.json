@@ -1,6 +1,6 @@
 {
   "uid": "d440919d-dee2-472f-8837-37d15c69c893",
-  "revision": 7,
+  "revision": 8,
   "id": "scene-materials-lighting",
   "kind": "feature",
   "assurance": "governed",
@@ -45,7 +45,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-20T04:24:28.397Z",
-  "updatedAt": "2026-10-20T12:55:30.318Z",
+  "updatedAt": "2026-10-20T12:59:19.832Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-20T12:59:19.799Z",
+    "summary": "已合入 develop（282d463），主检出 make check-merge 通过：build、lint 0 issues、generate-check、前端单测全过、后端受影响包重跑通过",
+    "method": "manual",
+    "limitations": "项目未在 lti 配置 checks；集成检查为我在主检出手动执行的 make check-merge",
+    "sourceCommit": "aa9ea7bfbe4b3c2196fa3740425e0772afbf99ef",
+    "targetCommit": "282d4630684f0942b163b1dce4db9bead09327bf",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "f11b721a88b20c1fb06e79ab8b5cd6c4ab5cb29c073e2ed7fdbaef514f56df53"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "concurrency",
