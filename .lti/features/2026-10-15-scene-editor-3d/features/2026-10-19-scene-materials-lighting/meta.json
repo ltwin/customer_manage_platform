@@ -1,6 +1,6 @@
 {
   "uid": "d440919d-dee2-472f-8837-37d15c69c893",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-materials-lighting",
   "kind": "feature",
   "assurance": "governed",
@@ -43,9 +43,9 @@
       "api:读取运行的场景改动"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-20T04:24:28.397Z",
-  "updatedAt": "2026-10-20T08:02:10.777Z",
+  "updatedAt": "2026-10-20T08:02:27.976Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -67,8 +67,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "38087ccf2f4fd9aa6a896ede231f8206c1db15b7",
+    "at": "2026-10-20T08:02:27.565Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "7faae6f70daf4b96aecc0624642713d485a23a309495195334f01874a10f6165"
+    },
+    "preExisting": [
+      ".lti/snapshots/7faae6f70daf4b96aecc0624642713d485a23a309495195334f01874a10f6165.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
