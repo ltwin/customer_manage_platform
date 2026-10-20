@@ -582,8 +582,12 @@ func notGroup(n Node) error {
 	return creativeops.Explain(creativeops.ErrValidation, "%s 不是分组，不能作为上级", n.ID)
 }
 
-// kindMismatch is content of one kind going into a node of another.
+// kindMismatch is content of one kind going into a node of another. Models have
+// no canvas node at all; the assistant is pointed at the scene instead.
 func kindMismatch(n Node, kind string) error {
+	if kind == "model" {
+		return creativeops.Explain(creativeops.ErrValidation, "模型只能放进 3D 场景，请用 edit_scene 的 add_objects 放入")
+	}
 	return creativeops.Explain(creativeops.ErrValidation, "%s 内容不能放进 %s 节点 %s", kind, strings.TrimPrefix(n.TypeKey, "core."), n.ID)
 }
 

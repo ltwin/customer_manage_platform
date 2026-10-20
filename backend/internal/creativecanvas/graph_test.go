@@ -1,12 +1,16 @@
 package creativecanvas_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -87,5 +91,62 @@ func TestReferenceCycleAtomicityAndUnrelatedUndo(t *testing.T) {
 	snapshot, _ = creativecanvas.GetCanvas(t.Context(), scope, p.CanvasID)
 	if len(snapshot.Edges) != 0 || creativecanvas.WorldPositions(snapshot.Nodes)[a].X != 30 {
 		t.Fatal("undo clobbered placement")
+	}
+}
+
+// modelAsset files the complete form of a model into the library, as a save
+// from a scene does.
+func modelAsset(t *testing.T, db *sql.DB, a store.AccountScope) creativelibrary.AssetReference {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO creative_blobs(id,account_id,storage_driver,object_key,object_version,sha256,byte_size,mime,state,verified_at) VALUES
+ ('blob-glb','canvas-a','local','creative-v2/canvas-a/blobs/glb','v1','sha256-'||repeat('1',64),100,'model/gltf-binary','ready',clock_timestamp()),
+ ('blob-png','canvas-a','local','creative-v2/canvas-a/blobs/png','v1','sha256-'||repeat('2',64),50,'image/png','ready',clock_timestamp())`); err != nil {
+		t.Fatal(err)
+	}
+	d := draft("")
+	d.Kind, d.Payload = "model", creativecontent.Payload{Model: json.RawMessage(`{"format":"glb","manifest":{},"generator":{"code":"x"}}`)}
+	var saved creativelibrary.AssetResult
+	err := a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		_, err := creativecontent.WriteModelAndRetain(t.Context(), tx, d, "", []creativecontent.ObjectBinding{{Role: "original", BlobID: "blob-glb"}, {Role: "thumbnail", BlobID: "blob-png"}},
+			func(r creativecontent.Revision) error {
+				var err error
+				saved, err = creativelibrary.SaveRevisionInTx(t.Context(), tx, r, creativelibrary.ImportTarget{Title: "柱"})
+				return err
+			})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return creativelibrary.AssetReference{ID: saved.ID, Revision: saved.Revision, ContentRevisionID: saved.ContentRevisionID}
+}
+
+func TestModelAssetIsRefusedOnTheCanvas(t *testing.T) {
+	db, a, _ := setup(t)
+	p := project(t, a)
+	ref := modelAsset(t, db, a)
+	empty := "cwnode_" + uuid.NewString()
+	graph(t, a, p.CanvasID, creativecanvas.Action{Type: "add_node", NodeID: empty, TypeKey: "core.image"})
+
+	for name, action := range map[string]creativecanvas.Action{
+		"add_node":        {Type: "add_node", NodeID: "cwnode_" + uuid.NewString(), TypeKey: "core.image", Asset: &ref},
+		"fill_from_asset": {Type: "fill_from_asset", NodeID: empty, Asset: &ref},
+	} {
+		snapshot, err := creativecanvas.GetCanvas(t.Context(), a, p.CanvasID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := creativecanvas.BatchInput{CanvasID: p.CanvasID, ExpectedTopologyRevision: snapshot.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(snapshot), Actions: []creativecanvas.Action{action}}
+		_, err = creativecanvas.ApplyCommands(t.Context(), a, command(t, input))
+		if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "模型只能放进 3D 场景") || !strings.Contains(err.Error(), "edit_scene") {
+			t.Fatalf("%s: %v", name, err)
+		}
+		after, err := creativecanvas.GetCanvas(t.Context(), a, p.CanvasID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.TopologyRevision != snapshot.TopologyRevision || len(after.Nodes) != 1 || after.Nodes[0].ContentRevisionID != nil {
+			t.Fatalf("%s changed the canvas", name)
+		}
 	}
 }
