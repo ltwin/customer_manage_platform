@@ -1,6 +1,6 @@
 {
   "uid": "bdabd66b-09bb-4897-ab28-f1c9cdb918ee",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-camera-export",
   "kind": "feature",
   "assurance": "governed",
@@ -47,7 +47,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-19T12:33:49.068Z",
-  "updatedAt": "2026-10-20T04:02:34.297Z",
+  "updatedAt": "2026-10-20T04:03:20.079Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-20T04:03:20.043Z",
+    "summary": "feat/scene-camera-export 以 --no-ff 合入 develop（e926f64），无冲突；合并后 develop 的代码树与功能分支完全相同（git diff 为空），功能分支已先合入 develop 并跑过全量门禁",
+    "method": "manual",
+    "limitations": "未在合并提交上重跑门禁：代码树与已验证的功能分支相同；全量门禁结论见技术验收记录（后端首轮 3 个包 Docker 超时，单独重跑三轮均绿）",
+    "sourceCommit": "3351a70bf3b3d57f7becf655f89c1714d85ec171",
+    "targetCommit": "e926f648092539c064e91a866dc0e1e9486930b4",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "1d93944c8a795a4748c6d8e1af361174100960302a3669e6306ba15f20048033"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
