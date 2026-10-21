@@ -570,11 +570,12 @@ class FakeHost {
   loadFails = false
   disposed = 0
   capable = true
+  probes = 0
   claimError: unknown = null
   deps(): LauncherDeps {
     return {
       ticker: this.ticker,
-      probe: () => this.capable,
+      probe: async () => (this.probes++, this.capable),
       load: async () => {
         this.loads++
         if (this.loadGate) await this.loadGate.promise
@@ -676,6 +677,21 @@ test('a device that fails the probe claims nothing', async () => {
   await settle()
   assert.equal(host.claims.length, 0)
   assert.equal(launcher.store.getState().capable, false)
+})
+
+test('the probe is asked once however often the page is nudged, and claiming waits for its answer', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1')]
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  launcher.poke()
+  launcher.poke()
+  assert.equal(host.claims.length, 0, 'not before the probe answers')
+  await settle()
+  launcher.poke()
+  await settle()
+  assert.equal(host.probes, 1)
+  assert.ok(host.claims.length > 0)
 })
 
 test('the lease is renewed while the executor loads; a chunk that will not load fails the job and stops claiming', async () => {

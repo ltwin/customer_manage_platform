@@ -50,7 +50,9 @@
 
 ## 7. 设备丢失、探测与退回
 
-- [ ] 7.1 探测：`probeRender()` 接入 `SceneEditor.tsx`（探测期间加载态，失败显示现有「设备不支持」提示）和 `host/launcher.ts`（`probe` 改为 async）；兼容模式设备的工作台关 MSAA、加 `SMAANode`。先写单测：launcher 在 `probe` 为 false 时不认领。完成判据：单测绿，`creative-scene-agent.test.ts` 跟随 async 的 `probe` 后仍绿
+- [x] 7.1 探测：`probeRender()` 接入 `SceneEditor.tsx`（探测期间加载态，失败显示现有「设备不支持」提示）和 `host/launcher.ts`（`probe` 改为 async）；兼容模式设备的工作台关 MSAA、加 `SMAANode`。先写单测：launcher 在 `probe` 为 false 时不认领。完成判据：单测绿，`creative-scene-agent.test.ts` 跟随 async 的 `probe` 后仍绿
+  - 完成记录：`creative-scene-agent.test.ts` 绿（含新增「探测只问一次、认领等探测结果」）；`creative-library` e2e 仍断言画布页不加载 3D 引擎并通过；兼容模式关 MSAA、加 SMAA 已在 `sceneRenderer.ts`（2.1）。
+  - 调整：`probeRender` 与取适配器的 `adapter()` 放进不依赖 three 的 `render/probe.ts`（`gpu.ts` 引用它），因为画布页的 launcher 也要探测，不能为此加载 three。`SceneEditor` 探测期间沿用「正在读取场景…」。
 - [ ] 7.2 设备丢失：视口 `canvasEpoch` 重建（10 秒内第 3 次停止并提示刷新）；`SceneExecutor` 遇 `DeviceLostError` 返回 `abandoned`，经 `pageExecutor.ts` 通知 launcher `deviceLost()`，暂停认领并在唤醒时（间隔 ≥ 10 秒）试建设备，成功后恢复；手动导出显示「渲染设备暂时不可用，请重试」。先写单测：执行器放弃不调 `complete`、launcher 暂停与恢复、视口重建计数。完成判据：单测绿
 
 ## 8. 删除旧管线与静态检查

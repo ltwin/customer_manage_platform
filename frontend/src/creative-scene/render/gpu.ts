@@ -1,5 +1,6 @@
 import { LinearSRGBColorSpace, NoToneMapping, Source, type Texture } from 'three'
 import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
+import { adapter } from './probe.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -149,40 +150,6 @@ export function reset(frame: FrameState): void {
   frame.updateMap = new WeakMap()
   frame.updateBeforeMap = new WeakMap()
   frame.updateAfterMap = new WeakMap()
-}
-
-type Adapter = { limits: Record<string, number> }
-type GPUEntry = { requestAdapter(options?: { featureLevel?: string }): Promise<Adapter | null> }
-
-const gpuEntry = (): GPUEntry | undefined => (navigator as Navigator & { gpu?: GPUEntry }).gpu
-
-function webgl2Available(): boolean {
-  try {
-    const gl = document.createElement('canvas').getContext('webgl2')
-    if (!gl) return false
-    gl.getExtension('WEBGL_lose_context')?.loseContext()
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function adapter(): Promise<Adapter | null> {
-  try {
-    // three asks for the adapter the same way (WebGPUBackend.init).
-    return (await gpuEntry()?.requestAdapter({ featureLevel: 'compatibility' })) ?? null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Whether this browser can draw a scene at all: WebGL2, or a WebGPU adapter.
- * Chrome exposes navigator.gpu even with no adapter to give, so its presence
- * says nothing. Loads no three.
- */
-export async function probeRender(): Promise<boolean> {
-  return webgl2Available() || (await adapter()) !== null
 }
 
 /** Set by the e2e fixture page; nothing in the app touches them. */
