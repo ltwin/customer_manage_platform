@@ -472,7 +472,8 @@ export class SceneRenderer {
     built.gi?.setQuality(frame.quality ?? 'interactive')
     const ratio = frame.pixelRatio ?? 1
     const aoRatio = Math.min(frame.aoPixelRatio ?? ratio, ratio)
-    if (ratio !== this.pixelRatio || aoRatio !== this.aoPixelRatio || frame.width !== this.width || frame.height !== this.height) {
+    // R3F sets the renderer's pixel ratio on resizes of its own: it is checked as well as remembered.
+    if (ratio !== this.pixelRatio || renderer.getPixelRatio() !== ratio || aoRatio !== this.aoPixelRatio || frame.width !== this.width || frame.height !== this.height) {
       this.pixelRatio = ratio
       this.aoPixelRatio = aoRatio
       this.width = frame.width

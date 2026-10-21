@@ -3,7 +3,7 @@ import type { Scene } from '../api.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { SceneObjects } from '../objects/SceneObjects.tsx'
 import { Lighting } from '../objects/Lighting.tsx'
-import { engineOf } from '../render/engines.ts'
+import { effectiveEngine, engineOf } from '../render/engines.ts'
 import type { Look } from './render.ts'
 
 // What a screenshot draws: the scene as the viewport shows it, nothing
@@ -19,7 +19,7 @@ export function ShotScene({ scene, models, look, onCommit, onError }: Props) {
   const display = look === 'lit' ? 'rendered' : 'solid'
   return (
     <Failed onError={onError}>
-      <Lighting environment={scene.environment} display={display} engine={engineOf(scene.render)} />
+      <Lighting environment={scene.environment} display={display} engine={effectiveEngine(engineOf(scene.render), look, true)} />
       <SceneObjects scene={scene} models={models} selected={nothingSelected} active={null} helpers={false} display={display} />
       <Committed onCommit={onCommit} />
     </Failed>

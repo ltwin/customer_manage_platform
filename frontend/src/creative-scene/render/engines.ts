@@ -35,3 +35,26 @@ export const engineOf = (render: SceneRender): Engine => render.engine
  * accumulation (R2 tasks 4.1), which replaces it.
  */
 export const GI_WARMUP_FRAMES = 16
+
+/** What is drawn: a viewport shading or an export pass. */
+export type Look = 'solid' | 'rendered' | 'wireframe' | 'preview' | 'clay' | 'lit' | 'line'
+
+/**
+ * The renderer a picture is drawn with (R2 design R-2): the scene's for the
+ * clay and lit looks in a perspective view, the workbench otherwise.
+ * Wireframe, material preview and line art are the workbench's; so is an
+ * orthographic view, which the real-time GI does not take (the viewport
+ * says so). Exports and render_view always look through a perspective camera.
+ */
+export function effectiveEngine(engine: Engine, look: Look, perspective: boolean): Engine {
+  if (!perspective) return 'workbench'
+  return look === 'solid' || look === 'rendered' || look === 'clay' || look === 'lit' ? engine : 'workbench'
+}
+
+/**
+ * The frames the viewport draws after it stops changing, before it stops
+ * drawing (R2 design「收敛」): the real-time GI's temporal nodes settling;
+ * the workbench needs the one. 16 to start with, set by the calibration
+ * (tasks 5.1).
+ */
+export const convergeFrames = (engine: Engine): number => (engine === 'realtime_gi' ? 16 : 1)

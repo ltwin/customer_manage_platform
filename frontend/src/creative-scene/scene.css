@@ -175,6 +175,8 @@
 }
 
 /* The camera view's frame (0): the camera's picture, everything else dimmed. */
+/* 实时 GI 不画正交视图：左上角说明按工作台显示。 */
+.cc-scene-viewbadge { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 3px 8px; border-radius: 6px; background: #000000a6; color: #fff; font-size: 12px; pointer-events: none; }
 .cc-scene-camframe { position: absolute; z-index: 2; pointer-events: none; outline: 1px solid #ffffffb3; box-shadow: 0 0 0 100vmax #0000006b; }
 .cc-scene-viewport { overflow: hidden; }
 .cc-scene-camframe > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }

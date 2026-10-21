@@ -4167,6 +4167,17 @@ window.__shots = async (scene, n, side) => {
   }
   return held;
 };
+// One picture's SHA-256: what the renderer in effect draws for a pass.
+window.__hash = async (scene, kind, side) => {
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const blob = shooter.shoot(framing, { kind, type: 'image/png' });
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } finally {
+    shooter.close();
+  }
+};
 window.__ready = true;
 </script></body></html>`,
 )
@@ -4188,6 +4199,83 @@ await check('real-time GI: 48 pictures in a row leave nothing behind on the devi
   assert.deepEqual(held.at(-1), held[0], `after the first: ${JSON.stringify(held[0])}, after the 48th: ${JSON.stringify(held.at(-1))}`)
   assert.deepEqual(errors, [], errors.join('\n'))
   await context.close()
+})
+
+// R2 AC-R2-2 and AC-R2-4: the renderer in effect (render/engines.ts effectiveEngine). The staleness of exports is
+// the server's fingerprint (creativescene TestEngineFingerprintsOnlyClayAndLit); the in-memory server has none.
+await check('renderer in effect: real-time GI converges in the viewport and stops; wireframe, material preview, line art and orthographic views stay the workbench’s', async () => {
+  const server = new SceneServer()
+  seed(server, [
+    boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.6, height: 1.5, depth: 0.6 }),
+    boxOf('wall', 6, { position: [1.2, 0, -1] }, { width: 3, height: 2, depth: 0.2 }, { preset: 'paint@1', params: { color: '#c03020' } }),
+  ])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const frames = () => page.evaluate(() => window.__sceneGPU.viewportFrames)
+  const settledFrames = async (n, what) => {
+    await waitFor(async () => (await frames()) === n, what, 60_000)
+    await sleep(500)
+    assert.equal(await frames(), n, `${what}: stays at ${n}`)
+  }
+  const engine = (value) => page.getByRole('combobox', { name: '渲染器' }).selectOption(value)
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染' }).click()
+  const look = {}
+  for (const mode of ['线框', '材质预览', '白模', '最终渲染']) {
+    await shading(page, mode)
+    await settledFrames(1, `${mode}, workbench`)
+    look[mode] = await settledShot(page, box)
+  }
+  await engine('realtime_gi')
+  await waitFor(() => server.scene.render.engine === 'realtime_gi', 'renderer written')
+  // The rendered view with the real-time GI draws on by itself, to its frame count, then stops.
+  await settledFrames(16, 'rendered, real-time GI')
+  assert.ok((await pixelDiff(page, look['最终渲染'], await settledShot(page, box))) > 0.01, 'the real-time GI changes the rendered view')
+  await shading(page, '白模')
+  await settledFrames(16, 'clay, real-time GI')
+  for (const mode of ['线框', '材质预览']) {
+    await shading(page, mode)
+    await settledFrames(1, `${mode}, real-time GI chosen`)
+    assert.equal(await pixelDiff(page, look[mode], await settledShot(page, box), 0), 0, `${mode} is the workbench’s, pixel for pixel`)
+  }
+  // An orthographic view is drawn by the workbench and says so.
+  await shading(page, '最终渲染')
+  await focusEditor(page)
+  await page.keyboard.press('Digit5')
+  await page.getByRole('status').filter({ hasText: '正交视图按工作台显示' }).waitFor()
+  await settledFrames(1, 'orthographic')
+  await page.keyboard.press('Digit5')
+  await waitFor(async () => (await page.getByRole('status').filter({ hasText: '正交视图按工作台显示' }).count()) === 0, 'the badge goes in perspective')
+
+  // Another tab of the same scene follows; Cmd+Z takes the renderer back.
+  const other = await open(server)
+  await other.page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染' }).click()
+  assert.equal(await other.page.getByRole('combobox', { name: '渲染器' }).inputValue(), 'realtime_gi', 'the other tab reads the renderer')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.scene.render.engine === 'workbench', 'undo')
+  await other.page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await other.page.getByRole('combobox', { name: '渲染器' }).inputValue()) === 'workbench', 'the other tab follows the undo')
+  assert.deepEqual(other.errors, [])
+  await other.context.close()
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Exports: clay and lit are drawn by the scene's renderer, line art by the workbench whatever it says.
+  const shots = await browser.newContext()
+  const shooter = await shots.newPage()
+  await shooter.goto(`${base}/.scene-gi-qa.html`)
+  await shooter.waitForFunction(() => window.__ready === true)
+  const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+  const hashes = {}
+  for (const engineName of ['workbench', 'realtime_gi']) {
+    scene.render = { ...scene.render, engine: engineName }
+    for (const kind of ['clay', 'line', 'lit']) hashes[`${engineName}:${kind}`] = await shooter.evaluate(([s, k]) => window.__hash(s, k, 256), [scene, kind])
+  }
+  assert.equal(hashes['realtime_gi:line'], hashes['workbench:line'], 'line art is the workbench’s')
+  assert.notEqual(hashes['realtime_gi:clay'], hashes['workbench:clay'], 'clay follows the renderer')
+  assert.notEqual(hashes['realtime_gi:lit'], hashes['workbench:lit'], 'lit follows the renderer')
+  await shots.close()
 })
 
 await browser.close()

@@ -56,6 +56,7 @@ import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
 import { Lighting } from './objects/Lighting.tsx'
+import { convergeFrames, effectiveEngine, engineOf } from './render/engines.ts'
 import { exposureOf } from './render/litLook.ts'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
@@ -63,7 +64,7 @@ import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
 import { OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
-import { createRenderer, gpuOf, lossCounter, type SceneGPU } from './render/gpu.ts'
+import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -258,7 +259,7 @@ export function Viewport(props: ViewportProps) {
           dpr={[1, 2]}
           camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
         >
-          <Lighting environment={props.scene.environment} display={display} />
+          <Lighting environment={props.scene.environment} display={display} engine={effectiveEngine(engineOf(props.scene.render), display, !ortho)} />
           <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
           <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
           {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
@@ -276,6 +277,11 @@ export function Viewport(props: ViewportProps) {
         </Canvas>
       )}
       {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
+      {ortho && engineOf(props.scene.render) === 'realtime_gi' && (display === 'solid' || display === 'rendered') && (
+        <div className="cc-scene-viewbadge" role="status">
+          正交视图按工作台显示
+        </div>
+      )}
       {box && r && (
         <div
           className="cc-scene-box"
@@ -1064,6 +1070,8 @@ function frameBox(size: Size, aspect: number) {
 function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; display: DisplayMode }) {
   const wire = display === 'wireframe'
   const exposure = display === 'rendered' ? exposureOf(scene.render) : 1
+  const ortho = useStore(ui, (s) => s.ortho)
+  const engine = effectiveEngine(engineOf(scene.render), display, !ortho)
   const { gl, scene: three, camera, invalidate } = useThree()
   const id = useStore(ui, (s) => s.cameraView)
   const preview = useStore(ui, (s) => s.dofPreview)
@@ -1081,17 +1089,31 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   const lens = framing && !('error' in framing) && framing.depthOfField && framing.optics ? { optics: framing.optics, aspect: framing.width / framing.height } : null
   // Turning the blur on or off, or a lens change, draws a frame of its own.
   const lensKey = lens ? JSON.stringify(lens) : ''
-  useEffect(() => invalidate(), [lensKey, wire, exposure, invalidate])
+  // Convergence (R2 design「收敛」): once the view stops changing the real-time GI draws on by itself,
+  // up to its frame count, and stops; any frame it did not ask for, a camera move or an edit starts the count again.
+  const drawn = useRef({ count: 0, view: '', asked: false, changed: true })
+  useEffect(() => {
+    drawn.current.changed = true
+    invalidate()
+  }, [scene, lensKey, wire, exposure, engine, invalidate])
   useFrame((state) => {
     const r = renderer.current
     if (!r) return
-    const ratio = state.gl.getPixelRatio()
+    // R3F's own: the renderer's is set to what the last frame drew at.
+    const ratio = state.viewport.dpr
     const box = lens && !wire && frameBox(state.size, lens.aspect)
+    const d = drawn.current
+    const view = `${state.camera.matrixWorld.elements.join()}|${state.camera.projectionMatrix.elements.join()}|${state.size.width}x${state.size.height}@${ratio}`
+    if (!d.asked || d.changed || view !== d.view) d.count = 0
+    d.asked = false
+    d.changed = false
+    d.view = view
     gpuOf(state.gl).advanceFrame()
     r.render(state.camera, {
       width: state.size.width,
       height: state.size.height,
-      pixelRatio: ratio,
+      // The real-time GI at device pixels on a 2× screen takes about five times as long (R0): CSS pixels.
+      pixelRatio: engine === 'realtime_gi' ? 1 : ratio,
       // On a 2× screen, AO at device pixels doubles the frame time for a difference only seen up close.
       aoPixelRatio: 1,
       dof: (!wire && lens?.optics) || null,
@@ -1099,7 +1121,16 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       exposure,
       // Wireframe has no surfaces to shade: no AO, no blur.
       wireframe: wire,
+      engine,
+      quality: 'interactive',
+      reflections: display === 'rendered',
     })
+    d.count++
+    gpuTestHooks.viewportFrames = d.count
+    if (d.count < convergeFrames(engine)) {
+      d.asked = true
+      state.invalidate()
+    }
   }, 1)
   return null
 }

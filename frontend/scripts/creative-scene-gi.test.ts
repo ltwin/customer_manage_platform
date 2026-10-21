@@ -221,3 +221,20 @@ test('TRAA keeps its first previous depth where realtimeGI frees it', () => {
   // Render state is per MRT node: one node for every pipeline.
   assert.match(read('../node_modules/three/src/renderers/common/RenderContexts.js'), /const mrtState = \( mrt !== null \) \? mrt\.id : 'default';/)
 })
+
+// --- the renderer in effect ---------------------------------------------------------
+
+test('the renderer in effect: the scene’s for clay and lit in perspective, the workbench for the rest', async () => {
+  const { convergeFrames, effectiveEngine } = await import('../src/creative-scene/render/engines.ts')
+  for (const look of ['solid', 'rendered', 'clay', 'lit'] as const) {
+    assert.equal(effectiveEngine('realtime_gi', look, true), 'realtime_gi', look)
+    assert.equal(effectiveEngine('realtime_gi', look, false), 'workbench', `${look}, orthographic`)
+    assert.equal(effectiveEngine('workbench', look, true), 'workbench', look)
+  }
+  for (const look of ['wireframe', 'preview', 'line'] as const) {
+    assert.equal(effectiveEngine('realtime_gi', look, true), 'workbench', look)
+    assert.equal(effectiveEngine('realtime_gi', look, false), 'workbench', look)
+  }
+  assert.equal(convergeFrames('workbench'), 1)
+  assert.ok(convergeFrames('realtime_gi') > 1)
+})

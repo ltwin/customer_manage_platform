@@ -46,7 +46,10 @@
   - e2e「render tab: …」绿；「AC-5: exposure」（先点「渲染」选项卡）、「AC-5: with nothing selected the environment shows」、「history lists revisions」仍绿。`tabAfterSelection` 有单测（`creative-scene-interaction.test.ts`）。
   - 渲染后端由视口建好渲染器后写进编辑器 UI 状态（`EditorUI.backend`，`Viewport.tsx` 一行），「渲染」选项卡读它。
   - 「物件」选项卡没有选中时沿用 `Properties` 现有的「选中物件后在这里调整」，没有改成 design 写的「未选中物件」：现有文字更能说明怎么用，也免得改清单外的 `Properties.tsx`。
-- [ ] 3.2 `render/engines.ts` 的 `effectiveEngine` 接入视口（实时 GI 时 1× 像素比、正交角标）和离屏渲染端（`render_view`、导出）；视口收敛（`LookView` 区分自己续的帧）。先写 `engines.ts` 决策表单测。完成判据：e2e 用例绿——换渲染器后视口、`render_view`、`clay` / `lit` 导出一致，撤销、两个标签页同步、过时提示三种情况（AC-R2-2）；线框、材质预览、`line` 与工作台逐像素相同、正交角标（AC-R2-4）；实时 GI 视口帧计数停在 N、工作台停在 1
+- [x] 3.2 `render/engines.ts` 的 `effectiveEngine` 接入视口（实时 GI 时 1× 像素比、正交角标）和离屏渲染端（`render_view`、导出）；视口收敛（`LookView` 区分自己续的帧）。先写 `engines.ts` 决策表单测。完成判据：e2e 用例绿——换渲染器后视口、`render_view`、`clay` / `lit` 导出一致，撤销、两个标签页同步、过时提示三种情况（AC-R2-2）；线框、材质预览、`line` 与工作台逐像素相同、正交角标（AC-R2-4）；实时 GI 视口帧计数停在 N、工作台停在 1
+  - e2e「renderer in effect: …」绿（SwiftShader）：最终渲染、白模在实时 GI 下帧计数停在 16、工作台停在 1；线框、材质预览换渲染器前后逐像素相同；正交视图角标且停在 1；另一个标签页读到新渲染器、撤销后跟随；离屏出图 `line` 两种渲染器哈希相同，`clay`、`lit` 不同。`effectiveEngine` 决策表有单测。原有「lights: … warms」「AC-1: lights」「export: two cameras」「7 then 5」仍绿，场景单测 229 个全绿。
+  - 过时提示三种情况由服务端指纹负责（e2e 的内存服务端不算指纹）：`creativescene` 的 `TestEngineFingerprintsOnlyClayAndLit`（换渲染器只让 `clay`、`lit` 过时，改输出分辨率不过时）与 `TestExposureFingerprintsOnlyLit`。
+  - 收敛计数：自己没请求的帧、视角（相机矩阵、尺寸、像素比）变化、场景或显示变化都清零；计数写进测试钩子 `viewportFrames`。视口的像素比改取 R3F 的 `viewport.dpr`（渲染器上的值会被实时 GI 的 1× 改掉），`SceneRenderer` 也核对渲染器当前的像素比。
 
 ## 4. 累积与输出分辨率
 
