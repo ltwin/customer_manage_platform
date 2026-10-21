@@ -70,7 +70,9 @@
 
 ## 9. 验收证据
 
-- [ ] 9.1 迁移对照 e2e（`SCENE_E2E_GPU`，Metal 参数）：六组参考场景 × `clay`、`line`、`lit` + 正交白模，对 R0 `baseline/` 算平均差与差 > 8 的像素比例并按阈值断言，并排图和差异图写进 `discovery/research/parity/`；同一用例加 `forceWebGL` 一轮，与 WebGPU 的图比（AC-R1-1、AC-R1-4 画面）。首次跑通后按实测值的 1.5 倍收紧阈值（不超过 Epic 上限）；超阈值的图交 owner，不放宽
+- [x] 9.1 迁移对照 e2e（`SCENE_E2E_GPU`，Metal 参数）：六组参考场景 × `clay`、`line`、`lit` + 正交白模，对 R0 `baseline/` 算平均差与差 > 8 的像素比例并按阈值断言，并排图和差异图写进 `discovery/research/parity/`；同一用例加 `forceWebGL` 一轮，与 WebGPU 的图比（AC-R1-1、AC-R1-4 画面）。首次跑通后按实测值的 1.5 倍收紧阈值（不超过 Epic 上限）；超阈值的图交 owner，不放宽
+  - 完成记录：e2e `parity`（`SCENE_E2E_GPU`）跑通，结果与并排图在 `discovery/research/parity.md`、`parity/`。阈值按实测收紧为 line 0.0016 / 0.0026%、clay 1.5 / 0.62%、lit 0.63 / 0.18%。48 次比较 43 次通过；5 次超出交 owner：4 次是混凝土气孔硬边（Metal 浮点差异，WebGL2 后端对 R0 在阈值内），1 次是正交视图材质板窄缝 AO 偏深。用例保持断言，owner 拍板前它会失败。
+  - 顺带：基线与对照共用 `exportReference()`；后端日志断言（视口、离屏为 webgpu，`forceWebGL` 时离屏为 webgl2）。
 - [ ] 9.2 确定性与退回 e2e：自启 Chrome 后台标签页连续两次导出（3 台摄像机 × 3 种方式）逐像素相同，并与前台同一张图相同（AC-R1-3）；`--use-angle=swiftshader` 下退回 WebGL2 能打开、编辑、导出且无原始错误；headless 默认参数下显示「设备不支持」且不认领（AC-R1-4 功能）
 - [ ] 9.3 设备丢失 e2e（AC-R1-5）：视口丢失后恢复且选中、视角、已进 outbox 的编辑保留；`render_view`、`export_shots` 丢失后回队并最终完成（缩短租约）；`export_shots` 第 2 张之后丢失时一张都不上传；手动导出丢失后提示、画布无图、重试成功；资产卡片缩略图丢失后重试成功
 - [ ] 9.4 性能与外观收尾：`SCENE_E2E_PERF` 重跑 AC-9 性能用例，与 `baseline/perf.json` 逐项对比（含加灯、删灯最长一帧）并写进 evidence（AC-R1-7）；四种显示模式 × 编辑器辅助截图对照迁移前（AC-R1-6）；定向回归交互、C4 导出、C5 校准、C5 AC-6、参考场景用例；尝试兼容模式设备，Safari 26.5 人工打开并导出一次，结果与已知限制（含提交点残余窗口）写进 `discovery/research/acceptance.md`（AC-R1-8）

@@ -3355,60 +3355,178 @@ await check('reference scenes: each opens and draws in clay and rendered without
   }
 })
 
+const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
+
+/**
+ * A reference scene exported in all three passes from the rendered view,
+ * then the saved orthographic view in clay, on gpu (a Chromium on this
+ * machine's GPU); forceWebGL draws the export through the WebGL2 backend.
+ */
+async function exportReference(gpu, name, { forceWebGL = false } = {}) {
+  const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+  await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
+  const server = new SceneServer()
+  referenceScene(server, name)
+  const backends = []
+  context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
+  const { page, errors } = await open(server, { context, query: '?export=1' })
+  if (forceWebGL) await page.evaluate(() => { window.__sceneGPU.forceWebGL = true })
+  const renderer = await page.evaluate(() => {
+    const gl = document.createElement('canvas').getContext('webgl2')
+    return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+  })
+  await shading(page, '最终渲染')
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  for (const pass of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(pass).isChecked(), `${name}: ${pass} ticked`)
+  const started = Date.now()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
+  const exportMs = Date.now() - started
+  await dialog.waitFor({ state: 'detached' })
+  const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
+  const images = []
+  for (const s of server.exports[0].payload.shots) {
+    for (const img of s.images) images.push({ file: `${name}-${cameras.get(s.camera_object_id)}-${img.pass}.png`, pass: img.pass, png: server.uploadBytes.get(img.upload_id) })
+  }
+  // The saved orthographic view from front right above, in clay: the AO the orthographic GTAO must keep.
+  await shading(page, '白模')
+  const { x, y, box } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await sleep(600)
+  const ortho = { file: `${name}-ortho-clay.png`, pass: 'clay', png: await settledShot(page, box) }
+  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  await context.close()
+  return { renderer, exportMs, images, ortho, backends }
+}
+
 // SCENE_E2E_BASELINE=<dir>: every reference scene exported in all three passes
 // on this machine's GPU, an orthographic clay view of each, and baseline.json
 // with the machine, the versions and the export times. The AC-9 case below
 // adds perf.json to the same directory. Run it before the renderer changes.
 if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes exported on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_BASELINE
-  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
     for (const name of referenceNames) {
-      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
-      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
-      const server = new SceneServer()
-      referenceScene(server, name)
-      const { page, errors } = await open(server, { context, query: '?export=1' })
-      record.renderer ??= await page.evaluate(() => {
-        const gl = document.createElement('canvas').getContext('webgl2')
-        return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
-      })
-      await shading(page, '最终渲染')
-      await page.getByRole('button', { name: '导出' }).first().click()
-      const dialog = page.getByRole('dialog', { name: '导出分镜' })
-      await dialog.waitFor()
-      for (const pass of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(pass).isChecked(), `${name}: ${pass} ticked`)
-      const started = Date.now()
-      await dialog.getByRole('button', { name: '导出' }).click()
-      await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
-      const exportMs = Date.now() - started
-      await dialog.waitFor({ state: 'detached' })
-      const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
+      const out = await exportReference(gpu, name)
+      record.renderer ??= out.renderer
       const images = []
-      for (const s of server.exports[0].payload.shots) {
-        for (const img of s.images) {
-          const png = server.uploadBytes.get(img.upload_id)
-          const file = `${name}-${cameras.get(s.camera_object_id)}-${img.pass}.png`
-          await writeFile(`${dir}/${file}`, png)
-          images.push({ file, ...pngSize(png), bytes: png.length })
-        }
+      for (const img of [...out.images, out.ortho]) {
+        await writeFile(`${dir}/${img.file}`, img.png)
+        if (img !== out.ortho) images.push({ file: img.file, ...pngSize(img.png), bytes: img.png.length })
       }
-      // The saved orthographic view from front right above, in clay: the AO the orthographic GTAO must keep.
-      await shading(page, '白模')
-      const { x, y, box } = await viewportCenter(page)
-      await page.mouse.move(x, y)
-      await sleep(600)
-      await writeFile(`${dir}/${name}-ortho-clay.png`, await settledShot(page, box))
-      record.scenes[name] = { export_ms: exportMs, images }
-      console.log(`baseline ${name}: ${images.length} images in ${exportMs} ms`)
-      assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
-      await context.close()
+      record.scenes[name] = { export_ms: out.exportMs, images }
+      console.log(`baseline ${name}: ${images.length} images in ${out.exportMs} ms`)
     }
     await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
   } finally {
     await gpu.close()
   }
+})
+
+// --- R1 AC-R1-1 / AC-R1-4: the same pictures as the WebGL baseline --------------
+
+const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer/features/2026-10-21-scene-webgpu-spike/discovery/research/baseline/', import.meta.url)
+
+/**
+ * The thresholds of AC-R1-1, tightened after the first full run to 1.5× the
+ * largest difference measured among the images within the Epic's limits
+ * (line ≤ 0.1 / 0.05 %, clay and lit ≤ 1.5 / 1 %), never above them. An
+ * image over its threshold goes to the owner; the threshold is not raised.
+ */
+const parityLimits = { line: { mean: 0.0016, over: 0.0026 }, clay: { mean: 1.5, over: 0.62 }, lit: { mean: 0.63, over: 0.18 } }
+
+/** Mean difference per channel (0–255), the share of pixels with a channel off by more than 8 (%), and a + b + difference (×8) side by side as a JPEG. */
+async function compareShots(page, a, b) {
+  const out = await page.evaluate(async ([a, b]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const w = x.width
+    const h = x.height
+    if (y.width !== w || y.height !== h) return { error: `${w}×${h} against ${y.width}×${y.height}` }
+    const pixels = (img) => {
+      const c = document.createElement('canvas')
+      c.width = w
+      c.height = h
+      const g = c.getContext('2d')
+      g.drawImage(img, 0, 0)
+      return g.getImageData(0, 0, w, h)
+    }
+    const p = pixels(x).data
+    const q = pixels(y).data
+    const diff = new ImageData(w, h)
+    let sum = 0
+    let over = 0
+    for (let k = 0; k < p.length; k += 4) {
+      let most = 0
+      for (let c = 0; c < 3; c++) {
+        const d = Math.abs(p[k + c] - q[k + c])
+        sum += d
+        most = Math.max(most, d)
+        diff.data[k + c] = Math.min(255, d * 8)
+      }
+      diff.data[k + 3] = 255
+      if (most > 8) over++
+    }
+    const sheet = document.createElement('canvas')
+    const scale = 0.5
+    sheet.width = Math.round(w * scale) * 3
+    sheet.height = Math.round(h * scale)
+    const g = sheet.getContext('2d')
+    const d = document.createElement('canvas')
+    d.width = w
+    d.height = h
+    d.getContext('2d').putImageData(diff, 0, 0)
+    for (const [i, img] of [x, y, d].entries()) g.drawImage(img, i * Math.round(w * scale), 0, Math.round(w * scale), Math.round(h * scale))
+    return { mean: sum / ((p.length / 4) * 3), over: (over / (p.length / 4)) * 100, sheet: sheet.toDataURL('image/jpeg', 0.85).split(',')[1] }
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+  return out.error ? out : { ...out, sheet: Buffer.from(out.sheet, 'base64') }
+}
+
+// SCENE_E2E_GPU=<dir>: the reference scenes on this machine's GPU against the
+// R0 baseline (AC-R1-1), then the export once more through the WebGL2 backend
+// against the WebGPU one (AC-R1-4); side-by-side sheets and parity.json go to
+// the directory, and every image must be within its threshold.
+if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match the WebGL baseline, and the WebGL2 backend matches WebGPU', async () => {
+  const dir = process.env.SCENE_E2E_GPU
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  const over = []
+  const record = (against, file, pass, m) => {
+    const limit = parityLimits[pass]
+    const ok = !m.error && m.mean <= limit.mean && m.over <= limit.over
+    rows.push({ against, file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), ok, ...(m.error ? { error: m.error } : {}) })
+    if (!ok) over.push(`${against} ${file}: ${m.error ?? `mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(3)}% (limit ${limit.mean} / ${limit.over}%)`}`)
+  }
+  try {
+    let page = null
+    for (const name of referenceNames) {
+      const webgpu = await exportReference(gpu, name)
+      assert.ok(webgpu.backends.some((b) => b === 'scene renderer (viewport): webgpu'), `${name}: the viewport on WebGPU: ${webgpu.backends}`)
+      assert.ok(webgpu.backends.some((b) => b === 'scene renderer (offscreen): webgpu'), `${name}: the export on WebGPU: ${webgpu.backends}`)
+      page ??= await (await gpu.newContext()).newPage()
+      for (const img of [...webgpu.images, webgpu.ortho]) {
+        const m = await compareShots(page, readFileSync(new URL(img.file, r0Baseline)), img.png)
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}.jpg`, m.sheet)
+        record('r0-webgl', img.file, img.pass, m)
+      }
+      const webgl = await exportReference(gpu, name, { forceWebGL: true })
+      assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: the export on WebGL2: ${webgl.backends}`)
+      for (const img of webgl.images) {
+        const m = await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png)
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}-webgl2.jpg`, m.sheet)
+        record('webgpu', img.file, img.pass, m)
+      }
+      console.log(`parity ${name}: ${rows.filter((r) => r.file.startsWith(`${name}-`) && r.ok).length}/${rows.filter((r) => r.file.startsWith(`${name}-`)).length} within`)
+    }
+    await writeFile(`${dir}/parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits, rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
 })
 
 // SCENE_E2E_LOOK=<dir>: the four display modes and an orthographic clay view

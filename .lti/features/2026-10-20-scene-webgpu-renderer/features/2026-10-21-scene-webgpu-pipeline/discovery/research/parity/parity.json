@@ -1,0 +1,360 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "limits": {
+    "line": {
+      "mean": 0.0016,
+      "over": 0.0026
+    },
+    "clay": {
+      "mean": 1.5,
+      "over": 0.62
+    },
+    "lit": {
+      "mean": 0.63,
+      "over": 0.18
+    }
+  },
+  "rows": [
+    {
+      "against": "r0-webgl",
+      "file": "noon-shot-clay.png",
+      "mean": 0.3206,
+      "over_percent": 0.0643,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "noon-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "noon-shot-lit.png",
+      "mean": 0.5516,
+      "over_percent": 1.346,
+      "ok": false
+    },
+    {
+      "against": "r0-webgl",
+      "file": "noon-ortho-clay.png",
+      "mean": 0.7089,
+      "over_percent": 0.3719,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "noon-shot-clay.png",
+      "mean": 0.0365,
+      "over_percent": 0.0417,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "noon-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "noon-shot-lit.png",
+      "mean": 0.25,
+      "over_percent": 1.3034,
+      "ok": false
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dusk-shot-clay.png",
+      "mean": 0.2746,
+      "over_percent": 0.0476,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dusk-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dusk-shot-lit.png",
+      "mean": 0.4223,
+      "over_percent": 0.1004,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dusk-ortho-clay.png",
+      "mean": 0.6893,
+      "over_percent": 0.4117,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dusk-shot-clay.png",
+      "mean": 0.0366,
+      "over_percent": 0.026,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dusk-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dusk-shot-lit.png",
+      "mean": 0.0836,
+      "over_percent": 0.0836,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "room-shot-clay.png",
+      "mean": 0.3735,
+      "over_percent": 0.0549,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "room-shot-line.png",
+      "mean": 0.0011,
+      "over_percent": 0.0017,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "room-shot-lit.png",
+      "mean": 0.3629,
+      "over_percent": 0.1088,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "room-ortho-clay.png",
+      "mean": 0.8881,
+      "over_percent": 0.1357,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "room-shot-clay.png",
+      "mean": 0.048,
+      "over_percent": 0.0218,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "room-shot-line.png",
+      "mean": 0.0007,
+      "over_percent": 0.0011,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "room-shot-lit.png",
+      "mean": 0.1425,
+      "over_percent": 0.0708,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "materials-board-clay.png",
+      "mean": 0.4009,
+      "over_percent": 0.232,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "materials-board-line.png",
+      "mean": 0.0005,
+      "over_percent": 0.0008,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "materials-board-lit.png",
+      "mean": 0.6155,
+      "over_percent": 1.1267,
+      "ok": false
+    },
+    {
+      "against": "r0-webgl",
+      "file": "materials-ortho-clay.png",
+      "mean": 0.9342,
+      "over_percent": 2.9052,
+      "ok": false
+    },
+    {
+      "against": "webgpu",
+      "file": "materials-board-clay.png",
+      "mean": 0.0997,
+      "over_percent": 0.0774,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "materials-board-line.png",
+      "mean": 0.0004,
+      "over_percent": 0.0006,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "materials-board-lit.png",
+      "mean": 0.3062,
+      "over_percent": 0.9663,
+      "ok": false
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-cama-clay.png",
+      "mean": 0.3058,
+      "over_percent": 0.0001,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-cama-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-cama-lit.png",
+      "mean": 0.385,
+      "over_percent": 0.0013,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-camb-clay.png",
+      "mean": 0.4301,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-camb-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-camb-lit.png",
+      "mean": 0.3232,
+      "over_percent": 0.0001,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "dof-ortho-clay.png",
+      "mean": 1.0226,
+      "over_percent": 0.1556,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dof-cama-clay.png",
+      "mean": 0.0048,
+      "over_percent": 0.0001,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dof-cama-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dof-cama-lit.png",
+      "mean": 0.0237,
+      "over_percent": 0.0003,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dof-camb-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dof-camb-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "dof-camb-lit.png",
+      "mean": 0.0049,
+      "over_percent": 0.0001,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "cornell-shot-clay.png",
+      "mean": 0.1727,
+      "over_percent": 0.0514,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "cornell-shot-line.png",
+      "mean": 0,
+      "over_percent": 0.0001,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "cornell-shot-lit.png",
+      "mean": 0.1944,
+      "over_percent": 0.1207,
+      "ok": true
+    },
+    {
+      "against": "r0-webgl",
+      "file": "cornell-ortho-clay.png",
+      "mean": 0.681,
+      "over_percent": 0.1393,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "cornell-shot-clay.png",
+      "mean": 0.0644,
+      "over_percent": 0.0157,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "cornell-shot-line.png",
+      "mean": 0,
+      "over_percent": 0.0001,
+      "ok": true
+    },
+    {
+      "against": "webgpu",
+      "file": "cornell-shot-lit.png",
+      "mean": 0.0503,
+      "over_percent": 0.0199,
+      "ok": true
+    }
+  ]
+}
