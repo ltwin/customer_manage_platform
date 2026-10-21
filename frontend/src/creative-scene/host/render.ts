@@ -3,6 +3,7 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
+import { engineOf, GI_WARMUP_FRAMES } from '../render/engines.ts'
 import { exposureOf } from '../render/litLook.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, type SceneGPU } from '../render/gpu.ts'
@@ -146,13 +147,26 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         g.resetFrames()
         // Every picture gets a pipeline of its own: nodes that keep state between frames start afresh.
         const picture = options.kind === 'line' ? null : new SceneRenderer(g, three, camera)
+        const engine = engineOf(scene.render)
         try {
           return g.capture(
             () => {
-              g.advanceFrame()
               if (picture) {
-                picture.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null, exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1 })
+                const frame = {
+                  width,
+                  height,
+                  dof: options.depthOfField && framing.optics ? framing.optics : null,
+                  exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1,
+                  engine,
+                  quality: 'final' as const,
+                  reflections: options.kind === 'lit',
+                }
+                for (let i = engine === 'realtime_gi' ? GI_WARMUP_FRAMES : 1; i > 0; i--) {
+                  g.advanceFrame()
+                  picture.render(camera, frame)
+                }
               } else {
+                g.advanceFrame()
                 g.renderer.setPixelRatio(1)
                 g.renderer.setSize(width, height, false)
                 line ??= new LineRenderer()

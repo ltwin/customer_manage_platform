@@ -6,8 +6,10 @@ import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
+import type { Engine, Quality } from './engines.ts'
 import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
+import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -24,6 +26,11 @@ import { ao } from './nodes/GTAONode.js'
 // linear and tone mapping happens in the output node (render/gpu.ts,
 // 'pipeline'), so the transform gizmo, drawn by a pass of its own, is laid
 // over the finished picture in sRGB.
+//
+// The real-time GI (R2) is the other renderer for clay and lit in a
+// perspective view: its own passes and composite (render/realtimeGI.ts),
+// antialiased by TRAA instead of MSAA, then the same depth of field, tone
+// mapping and overlay. The workbench is drawn exactly as before.
 
 /** Viewport helpers the clay look treats apart; an export has none. */
 export type Overlays = {
@@ -68,6 +75,16 @@ export type Frame = {
   exposure?: number
   /** Wireframe has no surfaces to shade: no AO, no blur. */
   wireframe?: boolean
+  /**
+   * The renderer (render/engines.ts effectiveEngine); the workbench unless
+   * said. The real-time GI needs a perspective camera and surfaces: an
+   * orthographic view and wireframe are drawn by the workbench whatever this says.
+   */
+  engine?: Engine
+  /** Real-time GI: interactive unless said; a picture to keep is final. */
+  quality?: Quality
+  /** Real-time GI: screen-space reflections, the lit look's; clay has none. */
+  reflections?: boolean
 }
 
 /**
@@ -165,7 +182,10 @@ function disposeStandIn({ meshes, lights }: StandIn) {
   }
 }
 
-const keyOf = (wireframe: boolean, blur: boolean) => (wireframe ? 'wire' : blur ? 'shaded+dof' : 'shaded')
+/** How a frame is drawn, which decides the pipeline: the real-time GI with or without reflections, or the workbench. */
+type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit' }
+
+const keyOf = ({ wireframe, blur, gi }: Look) => (wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}`}${blur ? '+dof' : ''}`)
 
 /** three's typings leave most display nodes untyped; these all give a colour. */
 const vec4Of = (node: Node) => node as Node<'vec4'>
@@ -206,6 +226,8 @@ type Built = {
   dof: Dof | null
   /** Wireframe's plain background, laid under the tone-mapped picture. */
   background: { value: Color }
+  /** The real-time GI's graph, when this is one. */
+  gi: RealtimeGI | null
   dispose(): void
 }
 
@@ -310,53 +332,70 @@ export class SceneRenderer {
     )
   }
 
-  private build(wireframe: boolean, blur: boolean): Built {
+  private build(look: Look): Built {
+    const { wireframe, blur } = look
     const { scene, camera, gpu } = this
     const disposables: { dispose(): void }[] = []
     const own = <T extends { dispose(): void }>(n: T) => (disposables.push(n), n)
     const msaa = gpu.compatibility ? 0 : 4
-    const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
-    beauty.setLayers(layers(0, ASIDE_LAYER))
-    const passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER) }]
-    let picture: Node<'vec4'> = beauty
+    let passes: Built['passes']
+    let picture: Node<'vec4'>
     const background = uniform(new Color())
     let aoNode: ReturnType<typeof ao> | null = null
     let aoOn: { value: number } | null = null
     let dof: Dof | null = null
-    if (!wireframe) {
-      // Multisampled depth cannot be sampled by the AO: the prepass has none.
-      const prepass = own(pass(scene, camera, { samples: 0 }))
-      prepass.transparent = false
-      // The surfaces' own normals, as GTAOPass drew them (MeshNormalMaterial over the scene): no
-      // maps, and no lights, so a new light compiles only the picture's materials.
-      prepass.overrideMaterial = own(new MeshBasicNodeMaterial())
-      prepass.setLayers(layers(0))
-      prepass.setMRT(mrt({ output: normalView }))
-      passes.push({ node: prepass, layers: layers(0) })
-      const normal = prepass.getTextureNode()
-      const depth = prepass.getTextureNode('depth')
-      aoNode = own(ao(depth, normal, camera))
-      // GTAOPass's Poisson denoise, as it was set up there.
-      const clean = own(denoise(aoNode.getTextureNode(), depth, normal, camera))
-      clean.lumaPhi.value = 10
-      clean.depthPhi.value = 2
-      clean.normalPhi.value = 3
-      clean.radius.value = 8
-      ;(clean.noiseNode as unknown as { value: DataTexture }).value = own(fixedNoise())
-      // Frame.ao = false multiplies by one rather than rebuilding.
-      const on = uniform(1)
-      aoOn = on
-      picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
-      // AO comes before the blur, so contact shadows out of focus soften with everything else.
+    let gi: RealtimeGI | null = null
+    if (look.gi !== 'off') {
+      gi = own(realtimeGI(scene, camera, { reflections: look.gi === 'lit', prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise }))
+      passes = gi.passes
+      aoOn = gi.aoOn
+      picture = gi.color
       if (blur) {
-        dof = depthOfField(picture, depth)
+        dof = depthOfField(picture, gi.depth)
         disposables.push(dof)
         picture = dof.output
+      }
+    } else {
+      const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
+      beauty.setLayers(layers(0, ASIDE_LAYER))
+      passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER) }]
+      picture = beauty
+      if (!wireframe) {
+        // Multisampled depth cannot be sampled by the AO: the prepass has none.
+        const prepass = own(pass(scene, camera, { samples: 0 }))
+        prepass.transparent = false
+        // The surfaces' own normals, as GTAOPass drew them (MeshNormalMaterial over the scene): no
+        // maps, and no lights, so a new light compiles only the picture's materials.
+        prepass.overrideMaterial = own(new MeshBasicNodeMaterial())
+        prepass.setLayers(layers(0))
+        prepass.setMRT(mrt({ output: normalView }))
+        passes.push({ node: prepass, layers: layers(0) })
+        const normal = prepass.getTextureNode()
+        const depth = prepass.getTextureNode('depth')
+        aoNode = own(ao(depth, normal, camera))
+        // GTAOPass's Poisson denoise, as it was set up there.
+        const clean = own(denoise(aoNode.getTextureNode(), depth, normal, camera))
+        clean.lumaPhi.value = 10
+        clean.depthPhi.value = 2
+        clean.normalPhi.value = 3
+        clean.radius.value = 8
+        ;(clean.noiseNode as unknown as { value: DataTexture }).value = own(fixedNoise())
+        // Frame.ao = false multiplies by one rather than rebuilding.
+        const on = uniform(1)
+        aoOn = on
+        picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
+        // AO comes before the blur, so contact shadows out of focus soften with everything else.
+        if (blur) {
+          dof = depthOfField(picture, depth)
+          disposables.push(dof)
+          picture = dof.output
+        }
       }
     }
     let output = vec4Of(renderOutput(picture, ACESFilmicToneMapping, SRGBColorSpace))
     if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
-    if (msaa === 0) output = vec4Of(own(smaa(output)))
+    // The real-time GI is antialiased by its TRAA.
+    if (msaa === 0 && !gi) output = vec4Of(own(smaa(output)))
     const pipeline = new RenderPipeline(gpu.renderer)
     pipeline.outputColorTransform = false
     pipeline.outputNode = vec4(output.rgb, 1)
@@ -368,13 +407,14 @@ export class SceneRenderer {
       pipeline.outputNode = vec4(output.rgb.mul(top.a.oneMinus()).add(top.rgb), 1)
     }
     return {
-      key: keyOf(wireframe, blur),
+      key: keyOf(look),
       dof,
       pipeline,
       passes,
       ao: aoNode,
       aoOn,
       background,
+      gi,
       dispose() {
         pipeline.dispose()
         for (const d of disposables) d.dispose()
@@ -387,14 +427,18 @@ export class SceneRenderer {
     if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
     const renderer = this.gpu.renderer
     const wireframe = frame.wireframe === true
-    const dof = !wireframe && (camera as PerspectiveCamera).isPerspectiveCamera ? frame.dof : null
-    const key = keyOf(wireframe, dof !== null)
+    const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
+    const dof = !wireframe && perspective ? frame.dof : null
+    const gi = frame.engine === 'realtime_gi' && !wireframe && perspective ? (frame.reflections ? 'lit' : 'clay') : 'off'
+    const look: Look = { wireframe, blur: dof !== null, gi }
+    const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()
-      this.built = this.build(wireframe, dof !== null)
+      this.built = this.build(look)
       this.width = -1
     }
     const built = this.built
+    built.gi?.setQuality(frame.quality ?? 'interactive')
     const ratio = frame.pixelRatio ?? 1
     const aoRatio = Math.min(frame.aoPixelRatio ?? ratio, ratio)
     if (ratio !== this.pixelRatio || aoRatio !== this.aoPixelRatio || frame.width !== this.width || frame.height !== this.height) {

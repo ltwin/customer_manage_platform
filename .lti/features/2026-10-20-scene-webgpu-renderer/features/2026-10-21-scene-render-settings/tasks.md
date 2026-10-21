@@ -4,7 +4,18 @@
 
 ## 1. 实时 GI 管线
 
-- [ ] 1.1 `render/nodes/SSGINode.js`（+ `.d.ts`，黄金比例采样、直接输出 `vec4(GI, AO)`）、`render/giSplit.ts`、`render/realtimeGI.ts`，`SceneRenderer` 的 `Frame.engine` / `quality` 与 `keyOf` 扩展（此时只经测试参数打开）。先写单测：SSGI fork 守护（换回上游块后逐字相同）、`giSplit` 守护（无标记时着色代码与不包装时逐字相同）、合成代数（常量纹理）。完成判据：盒子间的 `lit`、`clay` 实时 GI 出图有渗色和反射、没有均匀提亮；结清 L1（MRT 读 property、三附件建管线，Metal 与 `forceWebGL` 都试）与 L3（递归降噪接法），不成立时按 design 的退路实现并记在本任务下
+- [x] 1.1 `render/nodes/SSGINode.js`（+ `.d.ts`，黄金比例采样、直接输出 `vec4(GI, AO)`）、`render/giSplit.ts`、`render/realtimeGI.ts`，`SceneRenderer` 的 `Frame.engine` / `quality` 与 `keyOf` 扩展（此时只经测试参数打开）。先写单测：SSGI fork 守护（换回上游块后逐字相同）、`giSplit` 守护（无标记时着色代码与不包装时逐字相同）、合成代数（常量纹理）。完成判据：盒子间的 `lit`、`clay` 实时 GI 出图有渗色和反射、没有均匀提亮；结清 L1（MRT 读 property、三附件建管线，Metal 与 `forceWebGL` 都试）与 L3（递归降噪接法），不成立时按 design 的退路实现并记在本任务下
+  - **L1 成立**：MRT 读得到光照模型里赋值的 property；GI 光照 pass 的 `output` 加三个附件在 Metal 和 `forceWebGL`（WebGL2）下都能建管线、出图不报错。采用方案不变，不用 `builtinGIContext` 退路。
+  - **L3 成立**：盒子间 2048 × 1365，`lit`，16 帧加 TRAA，后墙上部残余噪点（R0 度量）不降噪 14.4、递归降噪 5.9；渗色保留：立方体左侧面红绿比工作台 0.95 → 实时 GI 1.44，红墙旁地面 1.00 → 1.21。剩余噪点留给 K 帧累积（4.1）和标定（5.1）。
+  - 实施中的发现：
+    - three 会把不透明材质的 alpha 强制设为 1，fork 若用 `colorNode` 输出 `vec4(GI, AO)`，AO 会整张变成 1；改用 `fragmentNode`（fork 块已注明）。
+    - 拆出的三个附件按材质的混合方式写入：透明、透射材质写 alpha 0，附件保留背后物体的值，两个后端一致（WebGL2 只能全局混合）。合成的 `split`（是否拆过、且预通道有表面）取 `ambient.a × (深度 < 1)`，玻璃和背景处画面原样输出。
+    - SSR 命中覆盖率先取每帧的原始命中（光线长度 < 1000），期望值上无偏，噪点靠 TRAA 和累积；是否需要时域平滑在 1.2 看图定（L2）。
+    - 灯光预编译（`SceneRenderer.compile`）还没带上 GI 光照 pass 的上下文，这个 pass 的材质在第一帧编译；放到 1.2 或性能任务（7.2）处理。
+    - 雾：`output` 是加雾后的，三个间接光通道没有加雾，远处 AO、GI 会略偏；参考场景没有雾，记为近似。
+    - 实时 GI 白模平均亮度高于工作台（盒子间 119.6 对 106.0，`lit` 126.5 对 91.2），由 1.2 的环境光补偿标定。
+    - 离屏出图暂时按场景里的 `render.engine` 画实时 GI、固定预热 16 帧（`engines.ts` 的 `GI_WARMUP_FRAMES`），4.1 换成 K 帧累积。
+  - 单测：`scripts/creative-scene-gi.test.ts`（在 node 里用 WebGPU 后端的节点构建器生成 WGSL 比对；去掉标记判断的变异会被抓到）。
 - [ ] 1.2 SSR 命中覆盖率（结清 L2）、接触阴影的主光源选择、`final` 档关掉 `flickerSuppression`、实时 GI 的环境光补偿（`litLook.ts`、`Lighting.tsx`，`room` 与盒子间平均亮度与工作台相差 ≤ 10%）；GI 管线释放。完成判据：连续导出 48 张实时 GI 图后 GPU 纹理数不增长（e2e，计数同 R1 的灯光用例）；`forceWebGL` 下盒子间与 WebGPU 在 AC-R1-1 阈值内
 
 ## 2. 场景格式与后端
