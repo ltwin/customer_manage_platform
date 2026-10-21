@@ -4,7 +4,7 @@
 
 ## 1. 渲染器创建入口
 
-- [ ] 1.1 `render/gpu.ts`：`createRenderer({ canvas, alpha, output, forceWebGL })`（`requiredLimits`、停内部循环、`GizmoViewport` 垫片、`pipeline` / `direct` 输出约定、接管 `onDeviceLost`）、`capture`、`advanceFrame` / `resetFrames`（含清空三张更新记录表）、`cache`、`isLost` / `lost`、`probeRender`、测试钩子 `loseDevice({ afterCaptures })`。先写 `scripts/creative-scene-gpu.test.ts`：私有字段存在、推进加一、重置归零且同一节点再次执行 `updateBefore`、`capture` 在已丢失时抛 `DeviceLostError`、`cache` 随 `dispose` 释放。完成判据：单测先红后绿
+- [x] 1.1 `render/gpu.ts`：`createRenderer({ canvas, alpha, output, forceWebGL })`（`requiredLimits`、停内部循环、`GizmoViewport` 垫片、`pipeline` / `direct` 输出约定、接管 `onDeviceLost`）、`capture`、`advanceFrame` / `resetFrames`（含清空三张更新记录表）、`cache`、`isLost` / `lost`、`probeRender`、测试钩子 `loseDevice({ afterCaptures })`。先写 `scripts/creative-scene-gpu.test.ts`：私有字段存在、推进加一、重置归零且同一节点再次执行 `updateBefore`、`capture` 在已丢失时抛 `DeviceLostError`、`cache` 随 `dispose` 释放。完成判据：单测先红后绿
 
 ## 2. 工作台管线
 
