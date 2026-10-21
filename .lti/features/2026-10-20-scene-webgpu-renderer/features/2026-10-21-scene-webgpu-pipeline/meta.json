@@ -1,6 +1,6 @@
 {
   "uid": "24a57b62-e69e-4946-9cf4-9a95989b5240",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-webgpu-pipeline",
   "kind": "feature",
   "assurance": "governed",
@@ -28,7 +28,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-21T11:07:26.287Z",
-  "updatedAt": "2026-10-21T11:47:27.363Z",
+  "updatedAt": "2026-10-21T15:59:50.993Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -60,8 +60,29 @@
       ".lti/snapshots/b9da29cef28ed2e2ab725140b7a7cc4ea667d7802393293082f3c2aebf4b5bab.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-21T15:59:50.876Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，改为手动运行：make check-frontend（lint、build、744 单测）、creative-scene 单测 218、定向 e2e 21 条（SwiftShader/WebGL2）、Metal 下 parity/AC-9/look、真实 Chrome 后台标签页确定性、Safari 26.5 脚本化导出；兼容模式设备拿不到，仅模拟 SMAA 分支；Safari 人工打开编辑器未做（留给 owner）"
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "15 项任务完成，静态检查、确定性、设备丢失、退回均通过；交 owner 决定：AC-R1-1/AC-R1-4 共 5 次比较超阈值（混凝土气孔硬边 4 次、正交窄缝 AO 1 次）；AC-R1-7 加灯最长一帧 2.5–2.8 s（R0 0.12 s）、部分导出耗时高于基线；AC-R1-6 看图与 Safari 人工检查待 owner。证据见 discovery/research/acceptance.md"
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }
