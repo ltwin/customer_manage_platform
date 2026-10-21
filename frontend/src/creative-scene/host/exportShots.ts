@@ -93,6 +93,8 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
       }
       for (const { id, framing } of framings) if (!draw(id, framing, 'lit')) return slow
     }
+    // Nothing goes up drawn on a device lost on the way (render.ts).
+    await shooter.confirm()
   } finally {
     shooter.close()
   }

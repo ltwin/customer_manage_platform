@@ -5,8 +5,9 @@ import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
 import { exposureOf } from '../render/litLook.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
-import { canvasBlob, createRenderer, gpuOf } from '../render/gpu.ts'
-import { LineRenderer } from '../render/linePass.ts'
+import { createRenderer, DeviceLostError, gpuOf, type SceneGPU } from '../render/gpu.ts'
+import { LineRenderer } from '../render/lineArt.ts'
+import { backgroundTicker } from './ticker.ts'
 import type { Shot } from './executor.ts'
 import { framingFor, type Framing, type RenderRequest } from './framing.ts'
 import { ShotScene } from './ShotScene.tsx'
@@ -14,15 +15,19 @@ import { ShotScene } from './ShotScene.tsx'
 // Pictures of the confirmed scene drawn as the viewport draws it (the clay
 // look: the scene's sky and sun with AO; or the lit look: materials, lights,
 // the sky's light and the scene's exposure), into a canvas that is never
-// shown. Frames are drawn
-// by hand, so a hidden tab without animation frames still takes them. One
-// shooter mounts the scene once and loads every model once for all the shots
-// of an export, then gives its WebGL context back at once: browsers cap live
-// contexts and the editor may hold one.
+// shown. Frames are stepped by hand (render/gpu.ts), each picture from frame
+// 0 with a pipeline of its own, so a hidden tab without animation frames
+// still takes them and every shot of a run is its own. One shooter mounts the
+// scene once and loads every model once for all the shots of an export, then
+// gives its device back at once.
 //
-// Images are encoded with canvasBlob (toDataURL), not toBlob: a hidden tab
-// starts toBlob's idle-time encoding only after a throttled timeout, and the
-// assistant's exports usually run in one.
+// Images are encoded as they are drawn (SceneGPU.capture, toDataURL), not
+// with toBlob: a hidden tab starts toBlob's idle-time encoding only after a
+// throttled timeout, and the assistant's exports usually run in one.
+//
+// A device lost while drawing is told later, in a task of its own, and three
+// then draws nothing while the canvas still encodes: pictures are handed on
+// only after confirm(), which lets that task run first.
 
 const jpegQuality = 0.85
 
@@ -40,6 +45,8 @@ export type Look = 'clay' | 'lit'
 
 export type Shooter = {
   shoot(framing: Framing, options: ShotOptions): Blob
+  /** Throws DeviceLostError when the device was lost while the shots so far were drawn; call before handing them on. */
+  confirm(): Promise<void>
   /** Mounts the other look and compiles its materials, so its first shot is complete. */
   setLook(look: Look): Promise<void>
   close(): void
@@ -61,6 +68,7 @@ export async function renderView(documentID: string, request: RenderRequest, rea
   const shooter = await openShooter(doc.scene, doc.models, look)
   try {
     const image = shooter.shoot(framing, { kind: look, type: 'image/jpeg', depthOfField: request.depth_of_field === true })
+    await shooter.confirm()
     return { ok: true, image, revision: doc.revision }
   } finally {
     shooter.close()
@@ -70,7 +78,9 @@ export async function renderView(documentID: string, request: RenderRequest, rea
 export async function shoot(scene: Scene, models: Readonly<Record<string, SceneModel>>, framing: Framing): Promise<Blob> {
   const shooter = await openShooter(scene, models)
   try {
-    return shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg' })
+    const image = shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg' })
+    await shooter.confirm()
+    return image
   } finally {
     shooter.close()
   }
@@ -79,24 +89,21 @@ export async function shoot(scene: Scene, models: Readonly<Record<string, SceneM
 /** Mounts the scene on a hidden canvas in a look; every shot moves one camera. */
 export async function openShooter(scene: Scene, models: Readonly<Record<string, SceneModel>>, look: Look = 'clay'): Promise<Shooter> {
   const canvas = document.createElement('canvas')
-  let contextLost = false
-  canvas.addEventListener('webglcontextlost', () => (contextLost = true), { once: true })
   const camera = new THREE.PerspectiveCamera()
   camera.up.set(0, 0, 1)
   const root = createRoot(canvas)
-  let clay: SceneRenderer | null = null
   let line: LineRenderer | null = null
-  let gl: THREE.WebGLRenderer | null = null
+  let gpu: SceneGPU | null = null
   const close = () => {
-    clay?.dispose()
     line?.dispose()
     root.unmount()
-    // Give the context back now rather than when the canvas is collected.
-    gl?.forceContextLoss()
+    // Give the device back now rather than when the canvas is collected.
+    gpu?.dispose()
   }
   try {
     await root.configure({
       gl: ({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'offscreen' }).then((g) => g.renderer),
+      // Tone mapping and sRGB happen in the pipeline's output node; R3F would set them back on the renderer.
       linear: true,
       flat: true,
       shadows: 'percentage',
@@ -112,23 +119,22 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
       })
     await mount(look)
     const state = store!.getState()
-    gl = state.gl
+    const g = gpuOf(state.gl)
+    gpu = g
     const three = state.scene
     // Materials compile now, in parallel where the browser can, not inside the first shot.
-    if (look === 'lit') await gl.compileAsync(three, camera)
+    await g.renderer.compileAsync(three, camera)
     let mounted = look
     return {
       async setLook(next) {
         if (next === mounted) return
         await mount(next)
         mounted = next
-        await gl!.compileAsync(three, camera)
+        await g.renderer.compileAsync(three, camera)
       },
       shoot(framing, options) {
-        if (contextLost) throw new Error('WebGL 上下文丢失')
         if (options.kind !== 'line' && options.kind !== mounted) throw new Error(`拍${options.kind}图前须先切换渲染方式`)
         const { width, height } = framing
-        gl!.setSize(width, height, false)
         camera.fov = framing.fov
         camera.aspect = width / height
         camera.near = framing.near
@@ -137,15 +143,32 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         camera.quaternion.fromArray(framing.quaternion)
         camera.updateProjectionMatrix()
         camera.updateMatrixWorld()
-        if (options.kind !== 'line') {
-          clay ??= new SceneRenderer(gpuOf(gl!), three, camera)
-          clay.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null, exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1 })
-        } else {
-          line ??= new LineRenderer()
-          line.render(gl!, three, camera, width, height)
+        g.resetFrames()
+        // Every picture gets a pipeline of its own: nodes that keep state between frames start afresh.
+        const picture = options.kind === 'line' ? null : new SceneRenderer(g, three, camera)
+        try {
+          return g.capture(
+            () => {
+              g.advanceFrame()
+              if (picture) {
+                picture.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null, exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1 })
+              } else {
+                g.renderer.setPixelRatio(1)
+                g.renderer.setSize(width, height, false)
+                line ??= new LineRenderer()
+                line.render(g, three, camera, width, height)
+              }
+            },
+            options.type,
+            options.type === 'image/jpeg' ? jpegQuality : undefined,
+          )
+        } finally {
+          picture?.dispose()
         }
-        if (contextLost) throw new Error('WebGL 上下文丢失')
-        return canvasBlob(canvas, options.type, options.type === 'image/jpeg' ? jpegQuality : undefined)
+      },
+      async confirm() {
+        await backgroundTicker().wait(0)
+        if (g.isLost()) throw new DeviceLostError()
       },
       close,
     }

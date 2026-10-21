@@ -1,9 +1,10 @@
-import { ACESFilmicToneMapping, Color, Layers, NoToneMapping, SRGBColorSpace, type Camera, type Object3D, type Scene } from 'three'
+import { ACESFilmicToneMapping, Color, Layers, NoToneMapping, SRGBColorSpace, type Camera, type Object3D, type PerspectiveCamera, type Scene } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
 import { PassNode, RenderPipeline, type Node } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import type { DepthOfField } from '../cameraOptics.ts'
+import { depthOfField, type Dof } from './dof.ts'
 import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
 
@@ -81,6 +82,8 @@ export function overlayColor(hex: string): string {
   return `#${[c.r, c.g, c.b].map((x) => Math.round(Math.min(1, encode(encode(x))) * 255).toString(16).padStart(2, '0')).join('')}`
 }
 
+const keyOf = (wireframe: boolean, blur: boolean) => (wireframe ? 'wire' : blur ? 'shaded+dof' : 'shaded')
+
 /** three's typings leave most display nodes untyped; these all give a colour. */
 const vec4Of = (node: Node) => node as Node<'vec4'>
 
@@ -114,6 +117,8 @@ type Built = {
   /** The AO node, when the look has one: its resolution follows aoPixelRatio. */
   ao: ReturnType<typeof ao> | null
   aoOn: { value: number } | null
+  /** The blur, when the look has it. */
+  dof: Dof | null
   /** Wireframe's plain background, laid under the tone-mapped picture. */
   background: { value: Color }
   dispose(): void
@@ -139,7 +144,7 @@ export class SceneRenderer {
     this.overlays = overlays
   }
 
-  private build(wireframe: boolean): Built {
+  private build(wireframe: boolean, blur: boolean): Built {
     const { scene, camera, gpu } = this
     const disposables: { dispose(): void }[] = []
     const own = <T extends { dispose(): void }>(n: T) => (disposables.push(n), n)
@@ -150,6 +155,7 @@ export class SceneRenderer {
     const background = uniform(new Color())
     let aoNode: ReturnType<typeof ao> | null = null
     let aoOn: { value: number } | null = null
+    let dof: Dof | null = null
     if (!wireframe) {
       // Multisampled depth cannot be sampled by the AO: the prepass has none.
       const prepass = own(pass(scene, camera, { samples: 0 }))
@@ -169,6 +175,12 @@ export class SceneRenderer {
       const on = uniform(1)
       aoOn = on
       picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
+      // AO comes before the blur, so contact shadows out of focus soften with everything else.
+      if (blur) {
+        dof = depthOfField(picture, depth)
+        disposables.push(dof)
+        picture = dof.output
+      }
     }
     let output = vec4Of(renderOutput(picture, ACESFilmicToneMapping, SRGBColorSpace))
     if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
@@ -184,7 +196,8 @@ export class SceneRenderer {
       pipeline.outputNode = vec4(output.rgb.mul(top.a.oneMinus()).add(top.rgb), 1)
     }
     return {
-      key: wireframe ? 'wire' : 'shaded',
+      key: keyOf(wireframe, blur),
+      dof,
       pipeline,
       ao: aoNode,
       aoOn,
@@ -200,10 +213,12 @@ export class SceneRenderer {
   render(camera: Camera, frame: Frame) {
     if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
     const renderer = this.gpu.renderer
-    const key = frame.wireframe ? 'wire' : 'shaded'
+    const wireframe = frame.wireframe === true
+    const dof = !wireframe && (camera as PerspectiveCamera).isPerspectiveCamera ? frame.dof : null
+    const key = keyOf(wireframe, dof !== null)
     if (this.built?.key !== key) {
       this.built?.dispose()
-      this.built = this.build(frame.wireframe === true)
+      this.built = this.build(wireframe, dof !== null)
       this.width = -1
     }
     const built = this.built
@@ -217,6 +232,11 @@ export class SceneRenderer {
       renderer.setPixelRatio(ratio)
       renderer.setSize(frame.width, frame.height, false)
       if (built.ao) built.ao.resolutionScale = aoRatio / ratio
+      built.dof?.setSize(Math.round(frame.width * ratio), Math.round(frame.height * ratio))
+    }
+    if (dof && built.dof) {
+      const persp = camera as PerspectiveCamera
+      built.dof.setLens(dof, persp.near, persp.far, frame.pictureLongSide ?? Math.max(frame.width, frame.height) * ratio)
     }
     if (built.aoOn) built.aoOn.value = frame.ao === false ? 0 : 1
     const bg = this.scene.background
