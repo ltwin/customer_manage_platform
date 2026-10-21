@@ -40,7 +40,7 @@ func newScene() Scene {
 			Sky:     Sky{Kind: "procedural", SunElevationDeg: &elevation, SunAzimuthDeg: &azimuth, Turbidity: &turbidity},
 			Ambient: Ambient{Color: "#ffffff", Intensity: 0.4},
 		},
-		Render: Render{Mode: "clay"},
+		Render: Render{Mode: "clay", Engine: EngineWorkbench, Resolution: defaultResolution},
 		Objects: []Object{{
 			ID:        newObjectID(),
 			Kind:      KindPrimitive,

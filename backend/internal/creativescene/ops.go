@@ -147,8 +147,8 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
 		}
-		if op.Render.Mode == nil && op.Render.ExposureEV == nil {
-			return nil, invalid("render 至少写一项：mode 或 exposure_ev")
+		if op.Render.Mode == nil && op.Render.ExposureEV == nil && op.Render.Engine == nil && op.Render.Resolution == nil {
+			return nil, invalid("render 至少写一项：mode、exposure_ev、engine 或 resolution")
 		}
 		return &op, nil
 	case "commit_model":
@@ -559,6 +559,12 @@ func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	}
 	if p.ExposureEV != nil {
 		s.Render.ExposureEV = *p.ExposureEV
+	}
+	if p.Engine != nil {
+		s.Render.Engine = *p.Engine
+	}
+	if p.Resolution != nil {
+		s.Render.Resolution = *p.Resolution
 	}
 	c.change(unitRender)
 	return nil

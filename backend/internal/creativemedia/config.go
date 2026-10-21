@@ -36,7 +36,7 @@ func DefaultConfig() Config {
 		ReadPinTTL:           120 * time.Second,
 		QuotaLimitBytes:      20 << 30,
 		MaxImageEdge:         12000,
-		MaxImagePixels:       60_000_000,
+		MaxImagePixels:       8192 * 8192, // the 3D scene's 8K square export
 		DisplayMaxEdge:       1600,
 		FFProbe:              "ffprobe",
 		MaxProbeDuration:     60 * time.Second,

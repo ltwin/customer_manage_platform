@@ -32,7 +32,10 @@
 
 ## 2. 场景格式与后端
 
-- [ ] 2.1 `creativescene`：`Render` / `renderPatch` 新字段、`decodeScene` 补缺省、`completedScene` 补齐 `render`、`newScene`、`Validate`、`set_render` 提示、`fingerprintRender.Engine`；`creativemedia` 的 `MaxImagePixels`。先改测试：`TestRenderMergesByKey` 的期望、老场景（SQL 剥字段）读取补齐且写入成功、固定 v1 指纹不变、`engine` 只影响 `clay` / `lit`、`resolution` 不影响、`path_tracing` / 未知档位 / `null` 被拒。完成判据：`make check-go PKG=./internal/creativescene/...`、`./internal/creativemedia/...` 绿
+- [x] 2.1 `creativescene`：`Render` / `renderPatch` 新字段、`decodeScene` 补缺省、`completedScene` 补齐 `render`、`newScene`、`Validate`、`set_render` 提示、`fingerprintRender.Engine`；`creativemedia` 的 `MaxImagePixels`。先改测试：`TestRenderMergesByKey` 的期望、老场景（SQL 剥字段）读取补齐且写入成功、固定 v1 指纹不变、`engine` 只影响 `clay` / `lit`、`resolution` 不影响、`path_tracing` / 未知档位 / `null` 被拒。完成判据：`make check-go PKG=./internal/creativescene/...`、`./internal/creativemedia/...` 绿
+  - 两个包的 `make check-go` 都绿。补缺省的函数叫 `completeRenderSettings`，因为 `completeRender` 已是 `render_view` 任务完成的函数名；完整读取判断 `render` 是否齐全用 `view.go` 的 `storedRender.complete()`（design 写的 `renderComplete`）。
+  - `path_tracing` 单独提示「还不能选路径追踪，可选 workbench 或 realtime_gi」；空串、`null`、未知值都被拒。
+  - `model_test.go` 的 `validScene` 写全 `render`，并加了四个 render 校验用例；`creativemedia/config_internal_test.go` 固定 8192² 可收、8192 × 8193 不收。
 - [ ] 2.2 `api/openapi.yaml` 两个 schema 加字段，`make generate` 提交 Go 与 TS 生成物；前端读 `render` 的地方去掉对缺字段的猜测，改用 `engines.ts` 的取值函数。完成判据：`make generate-check`、`tsc -b` 绿
 
 ## 3. 渲染选项卡与有效渲染器

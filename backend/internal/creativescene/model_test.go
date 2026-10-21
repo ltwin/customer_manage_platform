@@ -27,7 +27,7 @@ func validScene() creativescene.Scene {
 			Sky:     creativescene.Sky{Kind: "procedural", SunElevationDeg: f64(35), SunAzimuthDeg: f64(135), Turbidity: f64(3)},
 			Ambient: creativescene.Ambient{Color: "#ffffff", Intensity: 0.4},
 		},
-		Render: creativescene.Render{Mode: "clay"},
+		Render: creativescene.Render{Mode: "clay", Engine: creativescene.EngineWorkbench, Resolution: "2k"},
 		Objects: []creativescene.Object{
 			{ID: g, Kind: "group", Transform: validTransform(), Visible: true},
 			{ID: objectID(2), Kind: "primitive", ParentID: &g, Transform: validTransform(), Visible: true,
@@ -51,6 +51,11 @@ func TestValidate(t *testing.T) {
 		return func(s *creativescene.Scene) { m(&s.Objects[i]) }
 	}
 	cases := map[string]mutation{
+		// render
+		"path tracing":       func(s *creativescene.Scene) { s.Render.Engine = "path_tracing" },
+		"no engine":          func(s *creativescene.Scene) { s.Render.Engine = "" },
+		"unknown resolution": func(s *creativescene.Scene) { s.Render.Resolution = "16k" },
+		"no resolution":      func(s *creativescene.Scene) { s.Render.Resolution = "" },
 		// S1
 		"bad id":       obj(1, func(o *creativescene.Object) { o.ID = "box" }),
 		"duplicate id": obj(3, func(o *creativescene.Object) { o.ID = objectID(2) }),

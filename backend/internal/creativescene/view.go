@@ -28,25 +28,40 @@ func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument
 // camera field: then the snapshot is decoded, which completes it, so the
 // response always carries every camera field.
 func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
-	var cams struct {
+	var stored struct {
+		Render  storedRender `json:"render"`
 		Objects []struct {
 			Camera *Camera `json:"camera"`
 		} `json:"objects"`
 	}
-	if err := json.Unmarshal(p.Scene, &cams); err != nil {
+	if err := json.Unmarshal(p.Scene, &stored); err != nil {
 		return nil, err
 	}
-	for _, o := range cams.Objects {
-		if o.Camera != nil && !cameraComplete(*o.Camera) {
-			s, err := decodeScene(p)
-			if err != nil {
-				return nil, err
-			}
-			snap, err := encodeScene(s)
-			return snap.Payload.Scene, err
-		}
+	complete := stored.Render.complete()
+	for _, o := range stored.Objects {
+		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera))
 	}
-	return p.Scene, nil
+	if complete {
+		return p.Scene, nil
+	}
+	s, err := decodeScene(p)
+	if err != nil {
+		return nil, err
+	}
+	snap, err := encodeScene(s)
+	return snap.Payload.Scene, err
+}
+
+// storedRender tells which render fields a stored snapshot holds.
+type storedRender struct {
+	ExposureEV *float64 `json:"exposure_ev"`
+	Engine     *string  `json:"engine"`
+	Resolution *string  `json:"resolution"`
+}
+
+// complete reports whether the render needs no completion before it is shown.
+func (r storedRender) complete() bool {
+	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil
 }
 
 // unitView narrows a read to the listed units. Each object appears once with
