@@ -4,7 +4,8 @@ import { keyOf, materialFor } from '../materials/instances.ts'
 import { resolveSlot } from '../materials/resolve.ts'
 import type { ModelParts } from '../models/cache.ts'
 import { roomEnvironment } from '../render/sky.ts'
-import { canvasBlob, frame, sharedRenderer } from '../sandbox/thumbnail.ts'
+import { drawThumbnail, frame, onThumbnailGPU } from '../sandbox/thumbnail.ts'
+import type { WebGPURenderer } from 'three/webgpu'
 import type { Manifest } from '../sandbox/inspect.ts'
 
 // A model asset's card thumbnail: the model with the materials it is saved
@@ -14,13 +15,8 @@ import type { Manifest } from '../sandbox/inspect.ts'
 
 type Slots = NonNullable<SceneObject['material_slots']>
 
-let room: ReturnType<typeof roomEnvironment> | null = null
-
-export function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, materials: Slots): Blob {
-  const renderer = sharedRenderer()
-  room ??= roomEnvironment(renderer)
+export function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, materials: Slots): Promise<Blob> {
   const scene = new THREE.Scene()
-  scene.environment = room.texture
   const key = new THREE.DirectionalLight(0xffffff, 1.5)
   key.position.set(3, 5, 4)
   scene.add(key)
@@ -32,6 +28,8 @@ export function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, m
   }
   const camera = new THREE.PerspectiveCamera(30, 1)
   frame(camera, manifest)
-  renderer.render(scene, camera)
-  return canvasBlob(renderer.domElement, 'image/png')
+  return onThumbnailGPU((gpu) => {
+    scene.environment = gpu.cache('room', () => roomEnvironment(gpu.renderer as WebGPURenderer)).texture
+    return drawThumbnail(gpu, scene, camera)
+  })
 }

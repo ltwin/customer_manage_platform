@@ -1,11 +1,12 @@
-import type { MaterialEntry } from './catalog.ts'
+import * as tsl from 'three/tsl'
 
-// The procedural presets' shading (design「材质着色」): each preset is a GLSL
-// function patternEval() giving base colour, roughness, metalness, a height
-// in metres for bump, and emission. It reads vPatPos, the object-space
-// position in true metres (so a scaled object does not stretch its
-// pattern), vPatNormal for the projection weights, and its parameters as
-// uniforms pm_<name>.
+// The procedural presets' shading (design「材质着色」, patterns「场景着色写法」):
+// each preset is a TSL function of the object-space position in true metres
+// (so a scaled object does not stretch its pattern), the object-space normal
+// for the projection weights, its parameters as uniforms and the metres one
+// pixel covers; it gives base colour, roughness, metalness, a height in
+// metres for bump, and emission. It reads nothing of the renderer, so a
+// compute path tracer can call the same function later.
 //
 // Noise presets are solid textures evaluated in 3D: no projection, no
 // seams. Flat patterns (brick, tile, planks, fabric) are projected along the
@@ -13,322 +14,290 @@ import type { MaterialEntry } from './catalog.ts'
 // corners, which is accepted.
 //
 // Anti-aliasing, since multisampling does not reach inside a shader:
-//  - hard edges (joints, gaps) are smoothsteps as wide as a pixel (patAAStep);
-//  - fbm octaves finer than about two pixels fade out (patFbm), and the
+//  - hard edges (joints, gaps) are smoothsteps as wide as a pixel (aaStep);
+//  - fbm octaves finer than about two pixels fade out (fbm), and the
 //    height uses the same faded values, so bumps flatten with distance;
 //  - a joint narrower than a pixel blends towards its average share.
 //
-// A published preset never changes: a different look is a new @2.
+// Ported line for line from the GLSL the presets were published with (R1):
+// a published preset never changes, a different look is a new @2.
 
-/** Shared by every preset: the output, hashes, value noise, fbm, Voronoi, projection. */
-export const commonGLSL = /* glsl */ `
-varying vec3 vPatPos;
-varying vec3 vPatNormal;
+/* eslint-disable @typescript-eslint/no-explicit-any -- three's TSL typings do not follow swizzles and chained maths */
+/** A TSL node; three's typings are too partial to say which. */
+export type TSLNode = any
 
-struct PatOut { vec3 albedo; float rough; float metal; float height; vec3 emission; };
+type Op = (...args: TSLNode[]) => TSLNode
+const { abs, clamp, cross, dFdx, dFdy, dot, float, floor, fract, fwidth, length, max, min, mix, mod, normalize, pow, select, sin, smoothstep, sqrt, vec2, vec3 } = tsl as unknown as Record<string, Op>
+const Fn = tsl.Fn as unknown as (fn: (args: TSLNode[]) => TSLNode) => { setLayout(layout: object): Op }
 
-PatOut patMix3(PatOut a, PatOut b, PatOut c, vec3 w) {
-  PatOut o;
-  o.albedo = a.albedo * w.x + b.albedo * w.y + c.albedo * w.z;
-  o.rough = a.rough * w.x + b.rough * w.y + c.rough * w.z;
-  o.metal = a.metal * w.x + b.metal * w.y + c.metal * w.z;
-  o.height = a.height * w.x + b.height * w.y + c.height * w.z;
-  o.emission = a.emission * w.x + b.emission * w.y + c.emission * w.z;
-  return o;
-}
+/** What a preset gives. */
+export type PatternOut = { albedo: TSLNode; rough: TSLNode; metal: TSLNode; height: TSLNode; emission: TSLNode }
 
-PatOut patOut(vec3 albedo, float rough, float metal, float height) {
-  PatOut o;
-  o.albedo = albedo;
-  o.rough = clamp(rough, 0.0, 1.0);
-  o.metal = clamp(metal, 0.0, 1.0);
-  o.height = height;
-  o.emission = vec3(0.0);
-  return o;
-}
-
-vec3 patTriWeights(vec3 n) {
-  vec3 a = pow(abs(normalize(n)), vec3(4.0));
-  return a / (a.x + a.y + a.z);
+/** What a preset reads. */
+export type PatternInput = {
+  /** Object-space position in metres. */
+  pos: TSLNode
+  /** Object-space normal, for the projection weights. */
+  normal: TSLNode
+  /** Metres one pixel covers at pos. */
+  footprint: TSLNode
+  /** The preset's parameters by name: colours as vec3, the rest as floats. */
+  pm: Record<string, TSLNode>
 }
 
 // Hashes without sin, so every GPU gives the same pattern.
-float patHash13(vec3 p3) {
-  p3 = fract(p3 * 0.1031);
-  p3 += dot(p3, p3.zyx + 31.32);
-  return fract((p3.x + p3.y) * p3.z);
-}
+const hash13 = Fn(([p]) => {
+  const p3 = fract(p.mul(0.1031)).toVar()
+  p3.addAssign(dot(p3, p3.zyx.add(31.32)))
+  return fract(p3.x.add(p3.y).mul(p3.z))
+}).setLayout({ name: 'patHash13', type: 'float', inputs: [{ name: 'p', type: 'vec3' }] })
 
-float patHash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
+const hash12 = Fn(([p]) => {
+  const p3 = fract(vec3(p.x, p.y, p.x).mul(0.1031)).toVar()
+  p3.addAssign(dot(p3, p3.yzx.add(33.33)))
+  return fract(p3.x.add(p3.y).mul(p3.z))
+}).setLayout({ name: 'patHash12', type: 'float', inputs: [{ name: 'p', type: 'vec2' }] })
 
-float patNoise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  vec3 u = f * f * (3.0 - 2.0 * f);
+const noise = Fn(([p]) => {
+  const i = floor(p).toVar()
+  const f = fract(p).toVar()
+  const u = f.mul(f).mul(f.mul(-2).add(3)).toVar()
+  const h = (x: number, y: number, z: number) => hash13(i.add(vec3(x, y, z)))
   return mix(
-    mix(mix(patHash13(i), patHash13(i + vec3(1, 0, 0)), u.x), mix(patHash13(i + vec3(0, 1, 0)), patHash13(i + vec3(1, 1, 0)), u.x), u.y),
-    mix(mix(patHash13(i + vec3(0, 0, 1)), patHash13(i + vec3(1, 0, 1)), u.x), mix(patHash13(i + vec3(0, 1, 1)), patHash13(i + vec3(1, 1, 1)), u.x), u.y),
-    u.z);
-}
+    mix(mix(h(0, 0, 0), h(1, 0, 0), u.x), mix(h(0, 1, 0), h(1, 1, 0), u.x), u.y),
+    mix(mix(h(0, 0, 1), h(1, 0, 1), u.x), mix(h(0, 1, 1), h(1, 1, 1), u.x), u.y),
+    u.z,
+  )
+}).setLayout({ name: 'patNoise', type: 'float', inputs: [{ name: 'p', type: 'vec3' }] })
 
-// Metres one pixel covers here.
-float patFootprint() {
-  return max(length(fwidth(vPatPos)), 1e-6);
-}
-
-// fbm around 0.5 starting at freq cycles per metre. An octave whose
-// wavelength is under about two pixels (fp metres each) fades out.
-float patFbm(vec3 p, float freq, float fp, int octaves) {
-  float sum = 0.0;
-  float norm = 0.0;
-  float amp = 0.5;
-  float f = freq;
-  for (int i = 0; i < 7; i++) {
-    if (i >= octaves) break;
-    float fade = 1.0 - smoothstep(0.25, 0.5, f * fp);
-    sum += amp * fade * (patNoise(p * f + float(i) * 17.31) - 0.5);
-    norm += amp;
-    amp *= 0.5;
-    f *= 2.0;
+/**
+ * fbm around 0.5 starting at freq cycles per metre. An octave whose
+ * wavelength is under about two pixels (fp metres each) fades out.
+ * Unrolled: octaves is a constant of the preset.
+ */
+function fbm(p: TSLNode, freq: number | TSLNode, fp: TSLNode, octaves: number): TSLNode {
+  let sum: TSLNode = float(0)
+  let norm = 0
+  let amp = 0.5
+  let f: TSLNode = float(freq)
+  for (let i = 0; i < octaves; i++) {
+    const fade = float(1).sub(smoothstep(0.25, 0.5, f.mul(fp)))
+    sum = sum.add(fade.mul(amp).mul(noise(p.mul(f).add(i * 17.31)).sub(0.5)))
+    norm += amp
+    amp *= 0.5
+    f = f.mul(2)
   }
-  return 0.5 + sum / norm;
+  return sum.div(norm).add(0.5)
 }
 
-// Distances to the nearest and second nearest cell point.
-vec2 patVoronoi(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  float d1 = 8.0;
-  float d2 = 8.0;
-  for (int z = -1; z <= 1; z++)
-    for (int y = -1; y <= 1; y++)
-      for (int x = -1; x <= 1; x++) {
-        vec3 g = vec3(float(x), float(y), float(z));
-        vec3 o = vec3(patHash13(i + g), patHash13(i + g + 11.1), patHash13(i + g + 23.7));
-        vec3 r = g + o - f;
-        float d = dot(r, r);
-        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+/** Distances to the nearest and second nearest cell point. Unrolled over the 27 neighbours. */
+const voronoi = Fn(([p]) => {
+  const i = floor(p).toVar()
+  const f = fract(p).toVar()
+  const d1 = float(8).toVar()
+  const d2 = float(8).toVar()
+  for (let z = -1; z <= 1; z++)
+    for (let y = -1; y <= 1; y++)
+      for (let x = -1; x <= 1; x++) {
+        const g = vec3(x, y, z)
+        const o = vec3(hash13(i.add(g)), hash13(i.add(g).add(11.1)), hash13(i.add(g).add(23.7)))
+        const r = g.add(o).sub(f)
+        const d = dot(r, r).toVar()
+        // if (d < d1) { d2 = d1; d1 = d } else if (d < d2) d2 = d
+        d2.assign(min(d2, max(d1, d)))
+        d1.assign(min(d1, d))
       }
-  return vec2(sqrt(d1), sqrt(d2));
+  return vec2(sqrt(d1), sqrt(d2))
+}).setLayout({ name: 'patVoronoi', type: 'vec2', inputs: [{ name: 'p', type: 'vec3' }] })
+
+const triWeights = (n: TSLNode): TSLNode => {
+  const a = pow(abs(normalize(n)), vec3(4)).toVar()
+  return a.div(a.x.add(a.y).add(a.z))
 }
 
-// 0 below edge, 1 above, over the width of a pixel.
-float patAAStep(float edge, float x) {
-  float w = max(fwidth(x), 1e-6);
-  return smoothstep(edge - w, edge + w, x);
+/** 0 below edge, 1 above, over the width of a pixel. */
+const aaStep = (edge: TSLNode, x: TSLNode): TSLNode => {
+  const w = max(fwidth(x), 1e-6)
+  return smoothstep(edge.sub(w), edge.add(w), x)
 }
 
-// A joint of width jw metres at distance d from the cell edge: 1 in the
-// joint. Narrower than a pixel, it tends to its share of the cell (share).
-float patJoint(float d, float jw, float share) {
-  float j = 1.0 - patAAStep(jw * 0.5, d);
-  return mix(j, share, smoothstep(0.5, 1.5, fwidth(d) / jw));
+/** A joint of width jw metres at distance d from the cell edge: 1 in the joint; narrower than a pixel, its share of the cell. */
+const joint = (d: TSLNode, jw: TSLNode, share: TSLNode): TSLNode => {
+  const j = float(1).sub(aaStep(jw.mul(0.5), d))
+  return mix(j, share, smoothstep(0.5, 1.5, fwidth(d).div(jw)))
 }
 
-// The normal bent by the height's slope along the surface (surface
-// gradient), resolution independent; P and N in view space.
-vec3 patBumpNormal(vec3 P, vec3 N, float h) {
-  vec3 dpdx = dFdx(P);
-  vec3 dpdy = dFdy(P);
-  vec3 r1 = cross(dpdy, N);
-  vec3 r2 = cross(N, dpdx);
-  float det = dot(dpdx, r1);
-  if (abs(det) < 1e-20) return N;
-  vec3 grad = (dFdx(h) * r1 + dFdy(h) * r2) / det;
-  return normalize(N - grad);
+/**
+ * The normal bent by the height's slope along the surface (surface
+ * gradient), resolution independent; P and N in view space.
+ */
+export const bumpNormal = (P: TSLNode, N: TSLNode, h: TSLNode): TSLNode => {
+  const dpdx = dFdx(P).toVar()
+  const dpdy = dFdy(P).toVar()
+  const r1 = cross(dpdy, N).toVar()
+  const r2 = cross(N, dpdx).toVar()
+  const det = dot(dpdx, r1).toVar()
+  const grad = dFdx(h).mul(r1).add(dFdy(h).mul(r2)).div(det)
+  return select(abs(det).lessThan(1e-20), N, normalize(N.sub(grad)))
 }
-`
+
+const out = (albedo: TSLNode, rough: TSLNode, metal: TSLNode, height: TSLNode, emission: TSLNode = vec3(0)): PatternOut => ({
+  albedo,
+  rough: clamp(rough, 0, 1),
+  metal: clamp(metal, 0, 1),
+  height: float(height),
+  emission,
+})
+
+const mix3 = (a: PatternOut, b: PatternOut, c: PatternOut, w: TSLNode): PatternOut => {
+  const m = (k: keyof PatternOut) => a[k].mul(w.x).add(b[k].mul(w.y)).add(c[k].mul(w.z))
+  return { albedo: m('albedo'), rough: m('rough'), metal: m('metal'), height: m('height'), emission: m('emission') }
+}
 
 /** A flat pattern f(uv, fp) projected along the three axes. */
-const planar = (fn: string) => /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  vec3 w = patTriWeights(vPatNormal);
-  return patMix3(${fn}(vPatPos.zy, fp), ${fn}(vPatPos.xz, fp), ${fn}(vPatPos.xy, fp), w);
-}
-`
+const planar =
+  (fn: (uv: TSLNode, fp: TSLNode, pm: PatternInput['pm']) => PatternOut) =>
+  ({ pos, normal, footprint, pm }: PatternInput): PatternOut => {
+    const w = triWeights(normal).toVar()
+    return mix3(fn(pos.zy, footprint, pm), fn(pos.xz, footprint, pm), fn(pos.xy, footprint, pm), w)
+  }
 
-/** patternEval() of each preset. */
-export const patternGLSL: Record<string, string> = {
-  'paint@1': /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  float n = patFbm(vPatPos, 3.0, fp, 4);
-  return patOut(pm_color * (0.97 + 0.06 * n), pm_roughness, pm_metalness, 0.0002 * patFbm(vPatPos, 60.0, fp, 3));
-}
-`,
-  'plaster@1': /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  float n = patFbm(vPatPos, 1.5, fp, 5);
-  float fine = patFbm(vPatPos, 12.0, fp, 4);
-  vec3 albedo = pm_color * mix(1.0, 0.72 + 0.56 * n, pm_mottle);
-  return patOut(albedo, pm_roughness + 0.08 * (fine - 0.5), pm_metalness, 0.0015 * fine + 0.002 * n);
-}
-`,
-  'concrete@1': /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  float n = patFbm(vPatPos, 2.0, fp, 5);
-  float fine = patFbm(vPatPos, 25.0, fp, 3);
-  float pores = (1.0 - smoothstep(0.12, 0.18, patNoise(vPatPos * 60.0))) * (1.0 - smoothstep(0.25, 0.5, 60.0 * fp));
-  float stain = smoothstep(0.55, 0.8, patFbm(vPatPos + 7.3, 0.35, fp, 4)) * pm_stains;
-  vec3 albedo = pm_color * (0.85 + 0.3 * n) * (1.0 - 0.45 * stain) * (1.0 - 0.3 * pores);
-  return patOut(albedo, pm_roughness, pm_metalness, 0.0015 * fine - 0.0015 * pores);
-}
-`,
-  'stone_brick@1': /* glsl */ `
-PatOut patBrick(vec2 uv, float fp) {
-  float h = pm_brick_size;
-  float w = 2.0 * h;
-  float jw = clamp(0.06 * h, 0.004, 0.02);
-  vec2 c = vec2(uv.x / w, uv.y / h);
-  c.x += 0.5 * mod(floor(c.y), 2.0);
-  vec2 id = floor(c);
-  vec2 f = fract(c);
-  float d = min(min(f.x, 1.0 - f.x) * w, min(f.y, 1.0 - f.y) * h);
-  float joint = patJoint(d, jw, jw / h + jw / w);
-  float tint = patHash12(id);
-  float n = patFbm(vec3(uv, tint * 13.0), 6.0, fp, 4);
-  vec3 brick = pm_color * (0.82 + 0.3 * tint) * (0.9 + 0.2 * n);
-  float bevel = smoothstep(0.0, 0.015, d - jw * 0.5);
-  return patOut(mix(brick, pm_mortar_color, joint), mix(pm_roughness, pm_roughness + 0.1, joint), pm_metalness, -0.01 * (1.0 - bevel) + 0.002 * n);
-}
-${planar('patBrick')}`,
-  'stone@1': /* glsl */ `
-PatOut patternEval() {
-  float s = pm_scale;
-  vec3 q = vPatPos / s;
-  float fp = patFootprint() / s;
-  float n = patFbm(q, 1.0, fp, 6);
-  vec2 v = patVoronoi(q * 2.0 + 0.5 * (n - 0.5));
-  float gap = v.y - v.x;
-  float cw = max(fwidth(gap), 1e-4);
-  float crack = (1.0 - smoothstep(0.02, 0.02 + cw, gap)) * (1.0 - smoothstep(0.5, 1.0, cw / 0.05));
-  vec3 albedo = pm_color * (0.7 + 0.6 * n) * (1.0 - 0.5 * crack);
-  return patOut(albedo, pm_roughness, pm_metalness, s * (0.03 * n - 0.01 * crack));
-}
-`,
-  'marble@1': /* glsl */ `
-PatOut patternEval() {
-  float s = pm_scale;
-  vec3 q = vPatPos / s;
-  float fp = patFootprint() / s;
-  float turb = patFbm(q, 1.5, fp, 6);
-  float t = q.x * 1.3 + q.y * 0.4 + 4.0 * turb;
-  float vein = pow(1.0 - abs(sin(t * 3.14159265)), 6.0);
-  vein = mix(vein, 0.15, smoothstep(0.3, 0.8, fwidth(t)));
-  vec3 albedo = mix(pm_color * (0.95 + 0.1 * turb), pm_vein_color, vein * 0.85);
-  return patOut(albedo, pm_roughness + 0.05 * vein, pm_metalness, -0.0005 * vein);
-}
-`,
-  'tile@1': /* glsl */ `
-PatOut patTile(vec2 uv, float fp) {
-  float s = pm_tile_size;
-  float jw = 0.004;
-  vec2 c = uv / s;
-  vec2 id = floor(c);
-  vec2 f = fract(c);
-  float d = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)) * s;
-  float joint = patJoint(d, jw, 2.0 * jw / s);
-  float tint = patHash12(id);
-  float bevel = smoothstep(0.0, 0.004, d - jw * 0.5);
-  return patOut(mix(pm_color * (0.96 + 0.08 * tint), pm_grout_color, joint), mix(pm_roughness, 0.85, joint), pm_metalness, -0.003 * (1.0 - bevel));
-}
-${planar('patTile')}`,
-  'wood@1': /* glsl */ `
-PatOut patternEval() {
-  float s = pm_scale;
-  vec3 q = vPatPos / s;
-  float fp = patFootprint() / s;
-  float warp = patFbm(q * vec3(1.0, 0.15, 1.0), 2.0, fp, 4);
-  float r = length(q.xz + 0.3) * 8.0 + warp * 3.0;
-  float ring = smoothstep(0.0, 0.25, fract(r)) * (1.0 - smoothstep(0.6, 1.0, fract(r)));
-  ring = mix(ring, 0.55, smoothstep(0.3, 0.8, fwidth(r)));
-  float grain = patFbm(q * vec3(8.0, 0.5, 8.0), 4.0, fp * 8.0, 4);
-  vec3 albedo = pm_color * mix(0.72, 1.12, ring) * (0.92 + 0.16 * grain);
-  return patOut(albedo, pm_roughness, pm_metalness, 0.0004 * ring + 0.0003 * grain);
-}
-`,
-  'wood_plank@1': /* glsl */ `
-PatOut patPlank(vec2 uv, float fp) {
-  float wv = pm_plank_width;
-  float len = wv * 8.0;
-  float row = floor(uv.y / wv);
-  float x = uv.x / len + patHash12(vec2(row, 3.7));
-  vec2 id = vec2(floor(x), row);
-  vec2 f = vec2(fract(x), fract(uv.y / wv));
-  float d = min(min(f.x, 1.0 - f.x) * len, min(f.y, 1.0 - f.y) * wv);
-  float gap = patJoint(d, 0.003, 0.003 / wv + 0.003 / len);
-  float tint = patHash12(id + 1.3);
-  float grain = patFbm(vec3(uv.x * 0.6, f.y * wv * 25.0, tint * 9.0), 4.0, fp * 25.0, 5);
-  vec3 plank = pm_color * (0.85 + 0.3 * tint) * (0.85 + 0.3 * grain);
-  return patOut(mix(plank, pm_color * 0.25, gap), pm_roughness + 0.1 * gap, pm_metalness, -0.002 * gap + 0.0003 * grain);
-}
-${planar('patPlank')}`,
-  'metal@1': /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  float n = patFbm(vPatPos, 3.0, fp, 5);
-  float r = patFbm(vPatPos + 3.1, 1.5, fp, 6);
-  float mask = smoothstep(1.0 - pm_rust, 1.15 - pm_rust, r);
-  vec3 rust = vec3(0.32, 0.13, 0.05) * (0.7 + 0.6 * n);
-  vec3 albedo = mix(pm_color * (0.9 + 0.2 * n), rust, mask);
-  float rough = mix(pm_roughness + 0.1 * (n - 0.5), 0.92, mask);
-  return patOut(albedo, rough, mix(pm_metalness, 0.0, mask), 0.0008 * mask * n + 0.0002 * patFbm(vPatPos, 40.0, fp, 3));
-}
-`,
-  'fabric@1': /* glsl */ `
-PatOut patWeave(vec2 uv, float fp) {
-  float s = pm_scale;
-  vec2 c = uv / s;
-  vec2 f = fract(c);
-  float over = mod(floor(c.x) + floor(c.y), 2.0);
-  float h = over > 0.5 ? sin(3.14159265 * f.x) : sin(3.14159265 * f.y);
-  vec2 fw = fwidth(c);
-  float fade = 1.0 - smoothstep(0.25, 0.5, max(fw.x, fw.y));
-  h = mix(0.6, h, fade);
-  float n = patFbm(vec3(uv, 0.0), 8.0, fp, 4);
-  return patOut(pm_color * (0.8 + 0.25 * h) * (0.95 + 0.1 * n), pm_roughness, pm_metalness, 0.3 * s * h * fade);
-}
-${planar('patWeave')}`,
-  'dirt@1': /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  float n = patFbm(vPatPos, 1.0, fp, 6);
-  float fine = patFbm(vPatPos, 15.0, fp, 4);
-  vec2 v = patVoronoi(vPatPos * 25.0);
-  float pebble = (1.0 - smoothstep(0.15, 0.25, v.x)) * (1.0 - smoothstep(0.25, 0.5, 25.0 * fp));
-  vec3 albedo = pm_color * (0.75 + 0.5 * n) * (0.9 + 0.2 * fine) * (1.0 + 0.25 * pebble);
-  return patOut(albedo, pm_roughness, pm_metalness, 0.01 * n + 0.002 * fine + 0.003 * pebble);
-}
-`,
-  'grass@1': /* glsl */ `
-PatOut patternEval() {
-  float fp = patFootprint();
-  float n = patFbm(vPatPos, 0.8, fp, 5);
-  float blades = patFbm(vPatPos, 60.0, fp, 3);
-  float dry = smoothstep(0.55, 0.8, patFbm(vPatPos + 5.0, 0.3, fp, 4));
-  vec3 tint = mix(pm_color, pm_color * vec3(1.35, 1.15, 0.6), dry);
-  return patOut(tint * (0.7 + 0.5 * n) * (0.8 + 0.4 * blades), pm_roughness, pm_metalness, 0.004 * blades + 0.01 * n);
-}
-`,
-  'emissive@1': /* glsl */ `
-PatOut patternEval() {
-  PatOut o = patOut(pm_color, pm_roughness, pm_metalness, 0.0);
-  o.emission = pm_color * pm_strength;
-  return o;
-}
-`,
-}
+const one = float(1)
 
-/** The uniform declarations of a preset's parameters. */
-export function uniformDeclarations(entry: MaterialEntry): string {
-  return Object.entries(entry.params)
-    .map(([k, p]) => `uniform ${p.type === 'color' ? 'vec3' : 'float'} pm_${k};`)
-    .join('\n')
+/** Every preset's function. */
+export const patternFns: Record<string, (input: PatternInput) => PatternOut> = {
+  'paint@1': ({ pos, footprint: fp, pm }) => {
+    const n = fbm(pos, 3, fp, 4)
+    return out(pm.color.mul(n.mul(0.06).add(0.97)), pm.roughness, pm.metalness, fbm(pos, 60, fp, 3).mul(0.0002))
+  },
+  'plaster@1': ({ pos, footprint: fp, pm }) => {
+    const n = fbm(pos, 1.5, fp, 5).toVar()
+    const fine = fbm(pos, 12, fp, 4).toVar()
+    const albedo = pm.color.mul(mix(one, n.mul(0.56).add(0.72), pm.mottle))
+    return out(albedo, pm.roughness.add(fine.sub(0.5).mul(0.08)), pm.metalness, fine.mul(0.0015).add(n.mul(0.002)))
+  },
+  'concrete@1': ({ pos, footprint: fp, pm }) => {
+    const n = fbm(pos, 2, fp, 5)
+    const fine = fbm(pos, 25, fp, 3)
+    const pores = one.sub(smoothstep(0.12, 0.18, noise(pos.mul(60)))).mul(one.sub(smoothstep(0.25, 0.5, fp.mul(60)))).toVar()
+    const stain = smoothstep(0.55, 0.8, fbm(pos.add(7.3), 0.35, fp, 4)).mul(pm.stains)
+    const albedo = pm.color.mul(n.mul(0.3).add(0.85)).mul(one.sub(stain.mul(0.45))).mul(one.sub(pores.mul(0.3)))
+    return out(albedo, pm.roughness, pm.metalness, fine.mul(0.0015).sub(pores.mul(0.0015)))
+  },
+  'stone_brick@1': planar((uv, fp, pm) => {
+    const h = pm.brick_size
+    const w = h.mul(2)
+    const jw = clamp(h.mul(0.06), 0.004, 0.02).toVar()
+    const cy = uv.y.div(h).toVar()
+    const cx = uv.x.div(w).add(mod(floor(cy), 2).mul(0.5)).toVar()
+    const id = floor(vec2(cx, cy))
+    const fx = fract(cx).toVar()
+    const fy = fract(cy).toVar()
+    const d = min(min(fx, one.sub(fx)).mul(w), min(fy, one.sub(fy)).mul(h)).toVar()
+    const j = joint(d, jw, jw.div(h).add(jw.div(w))).toVar()
+    const tint = hash12(id).toVar()
+    const n = fbm(vec3(uv, tint.mul(13)), 6, fp, 4).toVar()
+    const brick = pm.color.mul(tint.mul(0.3).add(0.82)).mul(n.mul(0.2).add(0.9))
+    const bevel = smoothstep(0, 0.015, d.sub(jw.mul(0.5)))
+    return out(mix(brick, pm.mortar_color, j), mix(pm.roughness, pm.roughness.add(0.1), j), pm.metalness, one.sub(bevel).mul(-0.01).add(n.mul(0.002)))
+  }),
+  'stone@1': ({ pos, footprint, pm }) => {
+    const s = pm.scale
+    const q = pos.div(s).toVar()
+    const fp = footprint.div(s)
+    const n = fbm(q, 1, fp, 6).toVar()
+    const v = voronoi(q.mul(2).add(n.sub(0.5).mul(0.5))).toVar()
+    const gap = v.y.sub(v.x).toVar()
+    const cw = max(fwidth(gap), 1e-4).toVar()
+    const crack = one.sub(smoothstep(0.02, cw.add(0.02), gap)).mul(one.sub(smoothstep(0.5, 1, cw.div(0.05)))).toVar()
+    const albedo = pm.color.mul(n.mul(0.6).add(0.7)).mul(one.sub(crack.mul(0.5)))
+    return out(albedo, pm.roughness, pm.metalness, s.mul(n.mul(0.03).sub(crack.mul(0.01))))
+  },
+  'marble@1': ({ pos, footprint, pm }) => {
+    const s = pm.scale
+    const q = pos.div(s).toVar()
+    const fp = footprint.div(s)
+    const turb = fbm(q, 1.5, fp, 6).toVar()
+    const t = q.x.mul(1.3).add(q.y.mul(0.4)).add(turb.mul(4)).toVar()
+    const raw = pow(one.sub(abs(sin(t.mul(3.14159265)))), 6)
+    const vein = mix(raw, 0.15, smoothstep(0.3, 0.8, fwidth(t))).toVar()
+    const albedo = mix(pm.color.mul(turb.mul(0.1).add(0.95)), pm.vein_color, vein.mul(0.85))
+    return out(albedo, pm.roughness.add(vein.mul(0.05)), pm.metalness, vein.mul(-0.0005))
+  },
+  'tile@1': planar((uv, _fp, pm) => {
+    const s = pm.tile_size
+    const jw = float(0.004)
+    const c = uv.div(s).toVar()
+    const id = floor(c)
+    const f = fract(c).toVar()
+    const d = min(min(f.x, one.sub(f.x)), min(f.y, one.sub(f.y))).mul(s).toVar()
+    const j = joint(d, jw, jw.mul(2).div(s)).toVar()
+    const tint = hash12(id)
+    const bevel = smoothstep(0, 0.004, d.sub(jw.mul(0.5)))
+    return out(mix(pm.color.mul(tint.mul(0.08).add(0.96)), pm.grout_color, j), mix(pm.roughness, 0.85, j), pm.metalness, one.sub(bevel).mul(-0.003))
+  }),
+  'wood@1': ({ pos, footprint, pm }) => {
+    const s = pm.scale
+    const q = pos.div(s).toVar()
+    const fp = footprint.div(s).toVar()
+    const warp = fbm(q.mul(vec3(1, 0.15, 1)), 2, fp, 4)
+    const r = length(q.xz.add(0.3)).mul(8).add(warp.mul(3)).toVar()
+    const raw = smoothstep(0, 0.25, fract(r)).mul(one.sub(smoothstep(0.6, 1, fract(r))))
+    const ring = mix(raw, 0.55, smoothstep(0.3, 0.8, fwidth(r))).toVar()
+    const grain = fbm(q.mul(vec3(8, 0.5, 8)), 4, fp.mul(8), 4).toVar()
+    const albedo = pm.color.mul(mix(0.72, 1.12, ring)).mul(grain.mul(0.16).add(0.92))
+    return out(albedo, pm.roughness, pm.metalness, ring.mul(0.0004).add(grain.mul(0.0003)))
+  },
+  'wood_plank@1': planar((uv, fp, pm) => {
+    const wv = pm.plank_width
+    const len = wv.mul(8).toVar()
+    const row = floor(uv.y.div(wv)).toVar()
+    const x = uv.x.div(len).add(hash12(vec2(row, 3.7))).toVar()
+    const id = vec2(floor(x), row)
+    const fx = fract(x).toVar()
+    const fy = fract(uv.y.div(wv)).toVar()
+    const d = min(min(fx, one.sub(fx)).mul(len), min(fy, one.sub(fy)).mul(wv)).toVar()
+    const gap = joint(d, float(0.003), float(0.003).div(wv).add(float(0.003).div(len))).toVar()
+    const tint = hash12(id.add(1.3)).toVar()
+    const grain = fbm(vec3(uv.x.mul(0.6), fy.mul(wv).mul(25), tint.mul(9)), 4, fp.mul(25), 5).toVar()
+    const plank = pm.color.mul(tint.mul(0.3).add(0.85)).mul(grain.mul(0.3).add(0.85))
+    return out(mix(plank, pm.color.mul(0.25), gap), pm.roughness.add(gap.mul(0.1)), pm.metalness, gap.mul(-0.002).add(grain.mul(0.0003)))
+  }),
+  'metal@1': ({ pos, footprint: fp, pm }) => {
+    const n = fbm(pos, 3, fp, 5).toVar()
+    const r = fbm(pos.add(3.1), 1.5, fp, 6)
+    const mask = smoothstep(one.sub(pm.rust), float(1.15).sub(pm.rust), r).toVar()
+    const rust = vec3(0.32, 0.13, 0.05).mul(n.mul(0.6).add(0.7))
+    const albedo = mix(pm.color.mul(n.mul(0.2).add(0.9)), rust, mask)
+    const rough = mix(pm.roughness.add(n.sub(0.5).mul(0.1)), 0.92, mask)
+    return out(albedo, rough, mix(pm.metalness, 0, mask), mask.mul(0.0008).mul(n).add(fbm(pos, 40, fp, 3).mul(0.0002)))
+  },
+  'fabric@1': planar((uv, fp, pm) => {
+    const s = pm.scale
+    const c = uv.div(s).toVar()
+    const f = fract(c).toVar()
+    const over = mod(floor(c.x).add(floor(c.y)), 2)
+    const raw = select(over.greaterThan(0.5), sin(f.x.mul(3.14159265)), sin(f.y.mul(3.14159265)))
+    const fw = fwidth(c).toVar()
+    const fade = one.sub(smoothstep(0.25, 0.5, max(fw.x, fw.y))).toVar()
+    const h = mix(0.6, raw, fade).toVar()
+    const n = fbm(vec3(uv, 0), 8, fp, 4)
+    return out(pm.color.mul(h.mul(0.25).add(0.8)).mul(n.mul(0.1).add(0.95)), pm.roughness, pm.metalness, s.mul(0.3).mul(h).mul(fade))
+  }),
+  'dirt@1': ({ pos, footprint: fp, pm }) => {
+    const n = fbm(pos, 1, fp, 6).toVar()
+    const fine = fbm(pos, 15, fp, 4).toVar()
+    const v = voronoi(pos.mul(25))
+    const pebble = one.sub(smoothstep(0.15, 0.25, v.x)).mul(one.sub(smoothstep(0.25, 0.5, fp.mul(25)))).toVar()
+    const albedo = pm.color.mul(n.mul(0.5).add(0.75)).mul(fine.mul(0.2).add(0.9)).mul(pebble.mul(0.25).add(1))
+    return out(albedo, pm.roughness, pm.metalness, n.mul(0.01).add(fine.mul(0.002)).add(pebble.mul(0.003)))
+  },
+  'grass@1': ({ pos, footprint: fp, pm }) => {
+    const n = fbm(pos, 0.8, fp, 5)
+    const blades = fbm(pos, 60, fp, 3).toVar()
+    const dry = smoothstep(0.55, 0.8, fbm(pos.add(5), 0.3, fp, 4))
+    const tint = mix(pm.color, pm.color.mul(vec3(1.35, 1.15, 0.6)), dry)
+    return out(tint.mul(n.mul(0.5).add(0.7)).mul(blades.mul(0.4).add(0.8)), pm.roughness, pm.metalness, blades.mul(0.004).add(n.mul(0.01)))
+  },
+  'emissive@1': ({ pm }) => out(pm.color, pm.roughness, pm.metalness, 0, pm.color.mul(pm.strength)),
 }

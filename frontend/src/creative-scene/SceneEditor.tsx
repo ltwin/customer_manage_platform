@@ -609,7 +609,8 @@ export default function SceneEditor({
     if (!manifest) throw new Error('模型不可用')
     const parts = await modelCache.load(target.contentRevisionID)
     signal.throwIfAborted()
-    const png = renderMaterialThumbnail(parts, manifest, target.materials)
+    const png = await renderMaterialThumbnail(parts, manifest, target.materials)
+    signal.throwIfAborted()
     const upload = await uploadGenerated(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, { kind: 'staged' }, signal)
     return upload.id
   }

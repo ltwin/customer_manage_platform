@@ -1,7 +1,7 @@
 import { Color, type MeshPhysicalMaterialParameters } from 'three'
 import type { ParamValue } from '../builtins/catalog.ts'
 
-// The principled BSDF's parameters as MeshPhysicalMaterial properties: the
+// The principled BSDF's parameters as MeshPhysicalNodeMaterial properties: the
 // names are three.js's in snake case, so most go across as they are. Two
 // convert: colours, and the film thickness, which three takes as a range.
 // Features left at 0 (clearcoat, sheen, transmission, iridescence,
