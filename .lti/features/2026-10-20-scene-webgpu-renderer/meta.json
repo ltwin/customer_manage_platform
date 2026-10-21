@@ -1,9 +1,9 @@
 {
   "uid": "b117108c-c8a2-48a4-89e6-2b3bedc21cbe",
-  "revision": 2,
+  "revision": 3,
   "id": "scene-webgpu-renderer",
   "createdAt": "2026-10-21T06:56:11.282Z",
-  "updatedAt": "2026-10-21T07:35:14.488Z",
+  "updatedAt": "2026-10-21T07:35:40.118Z",
   "state": "active",
   "designBaselines": [
     {
@@ -102,7 +102,13 @@
       ]
     }
   ],
-  "children": [],
+  "children": [
+    {
+      "uid": "08a60d92-9939-45f9-b4d4-94b2e0f91d4c",
+      "changeId": "scene-webgpu-spike",
+      "dependsOnUids": []
+    }
+  ],
   "policy": "serial",
   "activation": {
     "by": "samson",
