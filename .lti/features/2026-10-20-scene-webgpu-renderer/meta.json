@@ -1,9 +1,9 @@
 {
   "uid": "b117108c-c8a2-48a4-89e6-2b3bedc21cbe",
-  "revision": 6,
+  "revision": 7,
   "id": "scene-webgpu-renderer",
   "createdAt": "2026-10-21T06:56:11.282Z",
-  "updatedAt": "2026-10-21T11:43:02.860Z",
+  "updatedAt": "2026-10-21T17:25:44.987Z",
   "state": "active",
   "designBaselines": [
     {
@@ -301,6 +301,11 @@
     {
       "uid": "24a57b62-e69e-4946-9cf4-9a95989b5240",
       "changeId": "scene-webgpu-pipeline",
+      "dependsOnUids": []
+    },
+    {
+      "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
+      "changeId": "scene-render-settings",
       "dependsOnUids": []
     }
   ],
