@@ -1,6 +1,6 @@
 {
   "uid": "24a57b62-e69e-4946-9cf4-9a95989b5240",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-webgpu-pipeline",
   "kind": "feature",
   "assurance": "governed",
@@ -26,9 +26,9 @@
       "patterns:场景着色写法"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-21T11:07:26.287Z",
-  "updatedAt": "2026-10-21T11:43:09.799Z",
+  "updatedAt": "2026-10-21T11:47:27.363Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -49,8 +49,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "42074cd340a3bc61d09e21687a5af607cb77ce83",
+    "at": "2026-10-21T11:47:26.940Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b9da29cef28ed2e2ab725140b7a7cc4ea667d7802393293082f3c2aebf4b5bab"
+    },
+    "preExisting": [
+      ".lti/snapshots/b9da29cef28ed2e2ab725140b7a7cc4ea667d7802393293082f3c2aebf4b5bab.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
