@@ -71,6 +71,9 @@ export function commandScene(
   })
 }
 
+const withCode = (g: ModelGenerator | components['schemas']['CreativeModelGenerator']): g is ModelGenerator =>
+  'code' in g && typeof g.code === 'string'
+
 /**
  * A model revision's generator with its code. The scene read leaves code
  * out, so the code panel and a parameter change read it here.
@@ -80,8 +83,9 @@ export async function readModelGenerator(revision: string, signal?: AbortSignal)
     `/content-revisions/${encodeURIComponent(revision)}`,
     signal,
   )
-  const generator = r.kind === 'model' ? (r.payload as components['schemas']['CreativeModelPayload']).model.generator : undefined
-  if (!generator) throw new Error('读不到这个模型的代码')
+  // This read carries the code; asset reads give the same model without it.
+  const generator = r.kind === 'model' && 'model' in r.payload ? r.payload.model.generator : undefined
+  if (!generator || !withCode(generator)) throw new Error('读不到这个模型的代码')
   return generator
 }
 

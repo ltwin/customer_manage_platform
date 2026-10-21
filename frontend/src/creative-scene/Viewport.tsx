@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MutableRefObject, type RefObject } from 'react'
 import { Aperture, Grid3x3 } from 'lucide-react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
@@ -12,6 +12,7 @@ import {
 import { useStore } from 'zustand'
 import {
   Box3,
+  Matrix3,
   Matrix4,
   Object3D,
   OrthographicCamera,
@@ -47,7 +48,9 @@ import {
   type Target,
   type View,
 } from './transform/modal.ts'
-import type { SceneModel } from './models/cache.ts'
+import { modelCache, type SceneModel } from './models/cache.ts'
+import { snap, type Bounds, type Hit, type Mount, type Placed, type Ray } from './placement/snap.ts'
+import { accelerateModels, ghostOf } from './placement/raycast.ts'
 import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
@@ -87,7 +90,15 @@ export type ViewportHandle = {
   viewPose(): { position: number[]; rotation: number[] }
   /** What the view's centre hits, or 3 m ahead when nothing: where a new empty goes (document space). */
   centrePoint(): [number, number, number]
+  /**
+   * Where a model lands under a screen point, by its mount (design「吸附」),
+   * in document space; without a point, on the ground below the view's centre.
+   */
+  snapAt(at: { x: number; y: number } | undefined, model: { mount: Mount; bounds: Bounds }): Placed
 }
+
+/** A model dragged in from the asset drawer. */
+export type DragModel = { assetID: string; revision: string; summary: SceneModel; mount: Mount; bounds: Bounds }
 
 export type ViewportProps = {
   scene: Scene
@@ -112,6 +123,10 @@ export type ViewportProps = {
   onCancelHeld(held: string): void
   onContextMenu(x: number, y: number, objectID: string | null): void
   onDragging(dragging: boolean): void
+  /** A model being dragged in from the asset drawer: its ghost follows the pointer. */
+  libraryDrag?: DragModel | null
+  /** It was let go over the viewport, placed where its ghost stood. */
+  onDropModel?(placed: Placed): void
 }
 
 const { ACTION } = CameraControlsImpl
@@ -149,13 +164,69 @@ export function Viewport(props: ViewportProps) {
   // document's space, so transforms convert on their way out.
   const onCommit: ViewportProps['onCommit'] = (results, label, held) =>
     props.onCommit(results.map((t) => ({ id: t.id, ...transformToDoc(t) })), label, held)
+
+  // Dragging a model in: the pointer is noted on dragover and snapped at most
+  // once a frame; the ghost goes when the drag leaves or ends.
+  const drag = props.readOnly ? null : (props.libraryDrag ?? null)
+  const [dragAt, setDragAt] = useState<Placed | null>(null)
+  const dragPointer = useRef<{ x: number; y: number } | null>(null)
+  const dragFrame = useRef<number | null>(null)
+  const latestDrag = useRef(drag)
+  latestDrag.current = drag
+  useEffect(() => {
+    dragPointer.current = null
+    setDragAt(null)
+    if (drag) void modelCache.load(drag.revision).catch(() => {})
+  }, [drag])
+  useEffect(() => () => {
+    if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current)
+  }, [])
+  const follow = () => {
+    dragFrame.current = null
+    const at = dragPointer.current
+    const model = latestDrag.current
+    if (at && model) setDragAt(props.handle.current?.snapAt(at, model) ?? null)
+  }
+  const accepts = (e: ReactDragEvent) => !!drag && e.dataTransfer.types.includes('application/creative-asset+json')
   return (
-    <div ref={wrap} className="cc-scene-viewport">
+    <div
+      ref={wrap}
+      className="cc-scene-viewport"
+      onDragOver={(e) => {
+        if (!accepts(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        dragPointer.current = { x: e.clientX, y: e.clientY }
+        dragFrame.current ??= requestAnimationFrame(follow)
+      }}
+      onDragLeave={(e) => {
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
+        dragPointer.current = null
+        setDragAt(null)
+      }}
+      onDrop={(e) => {
+        if (!accepts(e) || !drag) return
+        e.preventDefault()
+        dragPointer.current = null
+        setDragAt(null)
+        // The data only confirms it is the same asset; the page's drag state says which model.
+        let dropped: { id?: string }[] = []
+        try {
+          dropped = JSON.parse(e.dataTransfer.getData('application/creative-asset+json')) as { id?: string }[]
+        } catch {
+          return
+        }
+        if (dropped[0]?.id !== drag.assetID) return
+        const placed = props.handle.current?.snapAt({ x: e.clientX, y: e.clientY }, drag)
+        if (placed) props.onDropModel?.(placed)
+      }}
+    >
       <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
         <Lighting environment={props.scene.environment} display={display} />
         <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
         <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
-        {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} models={props.models} />}
+        {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
+        {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
         <OrthoSwitch ortho={ortho} />
         <CameraControls makeDefault />
         <ViewKeeper initial={props.camera} onChange={props.onCamera} />
@@ -502,6 +573,30 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const next = !latest.current.ui.getState().ortho
         latest.current.ui.setState({ ortho: next })
         return next
+      },
+      snapAt: (at, model) => {
+        const r = rect()
+        const hits: Hit[] = []
+        let ray: Ray | null = null
+        if (at && at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom) {
+          raycaster.setFromCamera(ndc(at.x, at.y), camera)
+          const byID = objectsByID()
+          const surface = (id: string | null) => {
+            const o = id ? byID.get(id) : undefined
+            return !!o && o.visible && (o.kind === 'primitive' || o.kind === 'model_instance')
+          }
+          accelerateModels(scene, (id) => byID.get(id)?.kind === 'model_instance')
+          const normal = new Vector3()
+          for (const hit of raycaster.intersectObjects(scene.children, true)) {
+            if (!hit.face || ghostOf(hit.object) || !surface(objectOf(hit.object))) continue
+            normal.copy(hit.face.normal).applyNormalMatrix(new Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize()
+            if (normal.dot(raycaster.ray.direction) > 0) normal.negate()
+            hits.push({ point: positionToDoc(hit.point.toArray()), normal: positionToDoc(normal.toArray()) })
+          }
+          ray = { origin: positionToDoc(raycaster.ray.origin.toArray()), direction: positionToDoc(raycaster.ray.direction.toArray()) }
+        }
+        const t = controls ? controls.getTarget(new Vector3()) : new Vector3()
+        return snap({ hits, ray, mount: model.mount, bounds: model.bounds, fallback: positionToDoc([t.x, t.y, 0]) })
       },
       centrePoint: () => {
         raycaster.setFromCamera(new Vector2(0, 0), camera)

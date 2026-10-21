@@ -1151,6 +1151,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/from-scene-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把场景里模型实例的模型和材质分配复制成库副本，存入个人库；同一来源修订、同样材质已在库中时只追加归类
+         * @description 只读场景，不产生场景修订；位置、旋转和缩放不随资产保存。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev， 不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）； 对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable； 场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict； 需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable。
+         */
+        post: operations["createCreativeAssetFromSceneModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/capabilities": {
         parameters: {
             query?: never;
@@ -3132,7 +3152,7 @@ export interface components {
             caption?: string;
         };
         CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"];
-        /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 */
+        /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。 */
         CreativeModelPayload: {
             model: {
                 /** @enum {string} */
@@ -3140,6 +3160,24 @@ export interface components {
                 generator?: components["schemas"]["CreativeModelGeneratorInput"];
                 manifest: components["schemas"]["CreativeModelManifest"];
                 name_hint?: string;
+                materials?: components["schemas"]["CreativeSceneMaterialSlots"];
+                /** @description 库副本复制自哪个模型修订；有它就是库副本 */
+                source_revision_id?: string;
+            };
+        };
+        /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
+        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"];
+        /** @description 不含代码的完整形态模型载荷，只出现在响应里。 */
+        CreativeModelPreviewPayload: {
+            model: {
+                /** @enum {string} */
+                format: "glb";
+                generator: components["schemas"]["CreativeModelGenerator"];
+                manifest: components["schemas"]["CreativeModelManifest"];
+                name_hint?: string;
+                materials?: components["schemas"]["CreativeSceneMaterialSlots"];
+                /** @description 库副本复制自哪个模型修订；有它就是库副本 */
+                source_revision_id?: string;
             };
         };
         /** @description 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。 */
@@ -3242,7 +3280,7 @@ export interface components {
             /** @enum {string} */
             kind: "text" | "link" | "image" | "video" | "audio" | "model";
             sequence: components["schemas"]["CreativeRevision"];
-            payload: components["schemas"]["CreativeContentPayload"];
+            payload: components["schemas"]["CreativeContentRevisionPayload"];
             media?: components["schemas"]["CreativeMediaObject"][];
         };
         CreativeLibraryAsset: {
@@ -3256,7 +3294,7 @@ export interface components {
             }[];
             rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model";
             revision: components["schemas"]["CreativeRevision"];
             content_id: string;
             content_revision_id: string;
@@ -3362,6 +3400,8 @@ export interface components {
                 video: number;
                 /** Format: int64 */
                 audio: number;
+                /** Format: int64 */
+                model: number;
             };
             tags: {
                 tag_id: string;
@@ -7888,6 +7928,21 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAssetFromNodePayload"];
         };
+        CreativeAssetFromSceneModelPayload: {
+            document_id: string;
+            object_id: string;
+            expected_object_rev: components["schemas"]["CreativeRevision"];
+            /** @description 按实例当前材质渲染的 256 × 256 PNG 缩略图的暂存上传（声明类型 image）。新建库副本时消费；复用已有资产时不消费。 */
+            thumbnail_upload_id: string;
+            target: components["schemas"]["CreativeUploadAssetTarget"];
+        };
+        CreateCreativeAssetFromSceneModelRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetFromSceneModelPayload"];
+        };
         CreativeNodeExecution: {
             execution_id: string;
             node_id: string;
@@ -8066,7 +8121,7 @@ export interface operations {
                 view?: "all" | "recent" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
-                kind?: "text" | "link" | "image" | "video" | "audio";
+                kind?: "text" | "link" | "image" | "video" | "audio" | "model";
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";
@@ -10469,6 +10524,50 @@ export interface operations {
         };
         responses: {
             /** @description 同一内容修订已在库中；已追加归类，reused 为 true */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromSceneModel: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromSceneModelRequest"];
+            };
+        };
+        responses: {
+            /** @description 同一来源修订、同样材质分配的模型资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值 */
             200: {
                 headers: {
                     [name: string]: unknown;

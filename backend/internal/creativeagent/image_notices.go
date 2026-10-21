@@ -32,7 +32,11 @@ func (h *runtimeHandler) omitLimitedImage(ctx context.Context, source *schema.Me
 		return err
 	}
 	delete(source.Extra, imageRefsKey)
-	source.Content = referenceLabel(id) + "（" + reason + "该图片未加载，无法判断画面内容；在图片或引用发生变化前，不要重复读取。）"
+	if facts, ok := withoutThumbnail(source.Content, "image_limit"); ok {
+		source.Content = facts
+	} else {
+		source.Content = referenceLabel(id) + "（" + reason + "该图片未加载，无法判断画面内容；在图片或引用发生变化前，不要重复读取。）"
+	}
 	message.Blocks = []llmgateway.Block{{Kind: llmgateway.BlockText, Text: source.Content}}
 	return nil
 }

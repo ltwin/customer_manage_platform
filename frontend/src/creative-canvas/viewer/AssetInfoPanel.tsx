@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import AssetDescriptionInput from "../assets/AssetDescriptionInput.tsx"
 import { ArrowUpRight, Download, Plus, Trash2, Undo2, X } from 'lucide-react'
 import type { Asset } from '../editor/api.ts'
@@ -10,6 +11,8 @@ import { StarRating } from '../editor/StarRating.tsx'
 import type { LibraryCatalog } from '../assets/useLibrary.ts'
 import type { useOrganization } from '../assets/useOrganization.tsx'
 import { anchorPoint } from '../assets/popover.ts'
+import { modelInfo, modelRows } from './modelInfo.ts'
+import { isCanvasAsset } from '../editor/assetPlacement.ts'
 
 export default function AssetInfoPanel({
   asset,
@@ -18,6 +21,7 @@ export default function AssetInfoPanel({
   blocked,
   onRate,
   onPlace,
+  placeLabel = '放入画布',
   foot,
 }: {
   asset: Asset
@@ -26,11 +30,15 @@ export default function AssetInfoPanel({
   blocked: boolean
   onRate: (rating: number | null) => void
   onPlace?: () => void
+  placeLabel?: string
   /** 带着任务打开时（挑素材引用），底部换成任务自己的操作。 */
   foot?: React.ReactNode
 }) {
   const original = asset.content?.media?.find((m) => m.role === 'original')
   const duration = mediaDuration(asset)
+  const model = modelInfo(asset.content)
+  // 模型只能放进 3D 场景：不给「放入项目」「放入画布」。
+  const canvasPlaceable = isCanvasAsset(asset)
   const disabled = blocked || !!asset.deleted_at
   return (
     <>
@@ -73,6 +81,13 @@ export default function AssetInfoPanel({
           onChange={onRate}
         />
         <dl className="v-rows">
+          {model &&
+            modelRows(model).map(([label, value], i) => (
+              <Fragment key={i}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </Fragment>
+            ))}
           <dt>添加于</dt>
           <dd>
             {new Intl.DateTimeFormat('zh-CN', {
@@ -176,18 +191,20 @@ export default function AssetInfoPanel({
           </>
         ) : (
           <>
-            <button
-              className="btn btn-primary wide"
-              disabled={disabled || asset.unavailable}
-              onClick={(e) =>
-                organization.action('project', anchorPoint(e.currentTarget), [
-                  asset,
-                ])
-              }
-            >
-              <ArrowUpRight size={14} />
-              放入项目…
-            </button>
+            {canvasPlaceable && (
+              <button
+                className="btn btn-primary wide"
+                disabled={disabled || asset.unavailable}
+                onClick={(e) =>
+                  organization.action('project', anchorPoint(e.currentTarget), [
+                    asset,
+                  ])
+                }
+              >
+                <ArrowUpRight size={14} />
+                放入项目…
+              </button>
+            )}
             <button
               className="btn"
               disabled={disabled || asset.unavailable}
@@ -219,7 +236,7 @@ export default function AssetInfoPanel({
                 onClick={onPlace}
               >
                 <Plus size={14} />
-                放入画布
+                {placeLabel}
               </button>
             )}
           </>

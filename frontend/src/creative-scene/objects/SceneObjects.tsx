@@ -274,12 +274,19 @@ function CameraFrustum({ scene, object, edge }: { scene: Scene; object: SceneObj
 }
 
 /** A new code model being baked, translucent at its drop point; it cannot be picked. */
-export function GhostModel({ revision, position, models }: { revision: string; position: number[]; models: Readonly<Record<string, SceneModel>> }) {
-  const t = useMemo(() => transformToView({ position, rotation: [0, 0, 0, 1], scale: [1, 1, 1] }), [position])
+const upright = [0, 0, 0, 1]
+
+/**
+ * A model drawn translucent where it will land: a bake on its way, or one
+ * dragged in from the asset drawer (its bounds outlined until the GLB is in).
+ * Snapping and picking look through it.
+ */
+export function GhostModel({ revision, position, rotation = upright, summary, outline = false }: { revision: string; position: number[]; rotation?: number[]; summary: SceneModel | undefined; outline?: boolean }) {
+  const t = useMemo(() => transformToView({ position, rotation, scale: [1, 1, 1] }), [position, rotation])
   return (
-    <group position={t.position}>
+    <group position={t.position} quaternion={t.rotation} userData={{ ghost: true }}>
       <group quaternion={docToView}>
-        <ModelMesh revision={revision} summary={models[revision]} edge={null} ghost />
+        <ModelMesh revision={revision} summary={summary} edge={null} ghost boundsWhileLoading={outline} />
       </group>
     </group>
   )

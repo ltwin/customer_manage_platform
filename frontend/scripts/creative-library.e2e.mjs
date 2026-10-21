@@ -10,6 +10,11 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
 page.setDefaultTimeout(8000)
 const errors = []
 page.on('pageerror', (error) => errors.push(error.message))
+// 3D 引擎只随模型的查看浮窗或场景加载，画布页平时不请求。
+const engine = []
+page.on('request', (r) => {
+  if (/\/deps\/(three|@react-three)|creative-scene\/preview\//.test(r.url())) engine.push(r.url())
+})
 
 const caps = (kind) => ({
   actions: ['move', 'resize', 'rename', 'duplicate', 'remove', 'edit', 'reference', ...(kind === 'text' ? [] : ['replace', 'maximize', 'download']), 'save_to_library'],
@@ -191,7 +196,7 @@ await page.route('**/api/v1/**', async (route) => {
     if (q.get('kind')) items = items.filter((a) => a.kind === q.get('kind'))
     if (q.get('q')) items = items.filter((a) => a.title.includes(q.get('q')))
     // 标签数量只按「满足任一」模型：在其余条件下数每个标签。
-    const kinds = Object.fromEntries(['image', 'video', 'audio', 'text', 'link'].map((k) => [k, items.filter((a) => a.kind === k).length]))
+    const kinds = Object.fromEntries(['image', 'video', 'audio', 'text', 'link', 'model'].map((k) => [k, items.filter((a) => a.kind === k).length]))
     const facets = q.get('include_facets') === 'true' ? { kinds, tags: tags.map((t) => ({ tag_id: t.id, count: items.filter((a) => a.tag_ids.includes(t.id)).length })) } : undefined
     if (q.get('tag_ids')) items = items.filter((a) => a.tag_ids.some((t) => q.get('tag_ids').split(',').includes(t)))
     const limit = Number(q.get('limit') ?? 30)
@@ -418,6 +423,38 @@ try {
   await page.keyboard.press('Escape')
   await assetViewer.waitFor({ state: 'detached' })
   await page.waitForFunction(() => document.activeElement?.getAttribute('data-asset') === 'a1')
+
+  // 12. 模型只能放进 3D 场景：卡片带「3D」角标，菜单里没有放入项，拖到画布上不建节点并提示。
+  all.push(asset(13, '哥特束柱', 'model', 0, 0, {
+    content: content('rev-a13', 'model', {
+      payload: { model: { format: 'glb', name_hint: '哥特束柱', manifest: { bounds: { min: [-0.25, 0, -0.25], max: [0.25, 2.4, 0.25] }, triangles: 1200, slots: [{ id: 'stone', hint: 'stone' }], parts: [], anchors: [] },
+        generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: 'sha256-' + 'a'.repeat(64), params_schema: {}, params: {}, mount: 'floor' } } },
+      media: [{ role: 'original', blob_id: 'glb', mime: 'model/gltf-binary', byte_size: 2048, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'png', mime: 'image/png', byte_size: 64, width: 256, height: 256, duration_ms: null }],
+    }),
+  }))
+  await drawer.getByRole('button', { name: '收起资产库', exact: true }).click()
+  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await scope().selectOption({ label: '全部' })
+  await count(13)
+  await drawer.getByRole('group', { name: '类型' }).getByRole('button', { name: /^模型/ }).click()
+  await count(1)
+  assert(assetQueries.at(-1).includes('kind=model'))
+  const model = tile('哥特束柱')
+  assert.equal((await model.locator('.cl-video-badge').innerText()).trim(), '3D')
+  await model.locator('.cc-media img').waitFor()
+  assert.deepEqual(engine, [], 'the canvas page with model cards loads no 3D engine')
+  await model.click({ button: 'right' })
+  const modelMenu = page.getByRole('menu', { name: '素材操作' })
+  const modelLabels = await modelMenu.getByRole('menuitem').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? e.textContent.trim()))
+  assert(!modelLabels.includes('放入画布') && !modelLabels.includes('放入项目…'), `model menu: ${modelLabels}`)
+  await page.keyboard.press('Escape')
+  const nodesBeforeModel = await page.locator('.react-flow__node').count()
+  const commandsBeforeModel = commands.length
+  await model.dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 1200, y: 700 } })
+  await page.locator('.cc-save-status').filter({ hasText: '模型只能放进 3D 场景' }).waitFor()
+  await page.waitForTimeout(400)
+  assert.equal(await page.locator('.react-flow__node').count(), nodesBeforeModel, 'a model makes no canvas node')
+  assert.equal(commands.length, commandsBeforeModel)
 
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ ok: true, metrics, commands: commands.length, assetQueries: assetQueries.length }))

@@ -4,6 +4,7 @@ import { Folder, Plus, X } from 'lucide-react'
 import type { components } from '../../api/schema'
 import * as api from '../editor/api.ts'
 import { downloadMedia } from '../editor/MediaView.tsx'
+import { isCanvasAsset } from '../editor/assetPlacement.ts'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { StarRating } from '../editor/StarRating.tsx'
 import ActionPopover from './ActionPopover.tsx'
@@ -150,8 +151,11 @@ export function useOrganization({
       kind === 'rate' ||
       kind === 'project'
     ) {
+      // 模型只能放进 3D 场景，放入项目时略过。
+      const targets = kind === 'project' ? assets.filter(isCanvasAsset) : assets
+      if (!targets.length) return
       setGroupDraft('')
-      setPopup({ kind, at, assets })
+      setPopup({ kind, at, assets: targets })
       return
     }
     if (kind === 'favorite') {
@@ -204,7 +208,7 @@ export function useOrganization({
             )
             if (!full.content || full.unavailable)
               throw new Error('素材当前无法下载')
-            if (['image', 'video', 'audio'].includes(full.kind))
+            if (['image', 'video', 'audio', 'model'].includes(full.kind))
               await downloadMedia(full.content, full.title)
             else {
               const blob = new Blob(

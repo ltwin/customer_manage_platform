@@ -30,7 +30,7 @@ import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
-import { assetActions } from './assetPlacement.ts'
+import { assetActions, isCanvasAsset } from './assetPlacement.ts'
 import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
 import { useAgentRuns } from './agentRuns.ts'
 import { isActiveRun } from './agentState.ts'
@@ -51,8 +51,10 @@ import {
 } from './outbox.ts'
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
+import SaveModelDialog from './SaveModelDialog.tsx'
+import type { SaveModelRequest } from '../../creative-scene/saveModel.ts'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveModelRequest) => void; onOpenLibrary?: (place: (asset: api.Asset) => void) => void; libraryDrag?: api.Asset | null }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -225,6 +227,10 @@ function Workspace({ account }: { account: string }) {
     revision?: string
   } | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
+  const [savingModel, setSavingModel] = useState<SaveModelRequest | null>(null)
+  // 场景里「从资产库添加…」：抽屉点中的模型交回编辑器放置。
+  const scenePlace = useRef<((asset: api.Asset) => void) | null>(null)
+  const [libraryDrag, setLibraryDrag] = useState<api.Asset | null>(null)
   // 多选「存入资产库…」：一次选分组，逐个入库（PRD CV-81）。
   const [savingMany, setSavingMany] = useState<string[] | null>(null)
   const nodeFileInput = useRef<HTMLInputElement>(null)
@@ -824,8 +830,12 @@ function Workspace({ account }: { account: string }) {
   // a horizontal row centred on the drop point (or the visible centre).
   function addAssets(dropped: api.Asset[], x?: number, y?: number) {
     if (!view || !editable) return
-    const usable = dropped.filter((a) => !a.unavailable)
-    if (!usable.length) return
+    const live = dropped.filter((a) => !a.unavailable)
+    const usable = live.filter(isCanvasAsset)
+    if (!usable.length) {
+      if (live.length) setCopyNotice('模型只能放进 3D 场景')
+      return
+    }
     const at =
       x === undefined || y === undefined
         ? (viewCenter.current?.() ?? { x: 80, y: 80 })
@@ -882,7 +892,8 @@ function Workspace({ account }: { account: string }) {
     )
   }
   // 为节点选参考：素材竖排在目标左侧并连线；左边已有节点就继续往左让。
-  function pickReferences(targetID: string, picked: api.Asset[]) {
+  function pickReferences(targetID: string, list: api.Asset[]) {
+    const picked = list.filter(isCanvasAsset)
     const target = view?.nodes.find((n) => n.id === targetID)
     if (!view || !target || !queue || !editable || !picked.length) return
     const heights = picked.map((a) => {
@@ -1478,6 +1489,12 @@ function Workspace({ account }: { account: string }) {
             if (libraryTask?.kind === 'pick')
               pickReferences(libraryTask.nodeID, list)
           }}
+          onScenePlace={(asset) => {
+            const place = scenePlace.current
+            closeLibrary()
+            place?.(asset)
+          }}
+          onSceneDrag={setLibraryDrag}
           onClose={closeLibrary}
           onWidth={setLibraryWidth}
           onAssets={setAssets}
@@ -1768,7 +1785,17 @@ function Workspace({ account }: { account: string }) {
             canvasID={canvasID}
             sceneNodeID={maximized.nodeID}
             host={sceneHost.launcher}
+            onSaveModel={setSavingModel}
+            libraryDrag={libraryDrag}
+            onOpenLibrary={(place) => {
+              scenePlace.current = place
+              setLibraryTask({ kind: 'scene-model' })
+              setLibraryOpen(true)
+            }}
             onClose={() => {
+              setSavingModel(null)
+              scenePlace.current = null
+              setLibraryTask(null)
               setLibraryOpen(maximized.libraryOpen)
               setMaximized(null)
             }}
@@ -1908,6 +1935,18 @@ function Workspace({ account }: { account: string }) {
             </button>
           </form>
         </StudioDialog>
+      )}
+      {savingModel && (
+        <SaveModelDialog
+          key={savingModel.target.objectID}
+          request={savingModel}
+          groupField={<GroupField groups={catalog.groups} />}
+          groupName={(id) =>
+            catalog.groups.find((g) => g.id === id)?.name ?? '分组'
+          }
+          onSaved={setCopyNotice}
+          onClose={() => setSavingModel(null)}
+        />
       )}
       {savingMany && view && (
         <StudioDialog

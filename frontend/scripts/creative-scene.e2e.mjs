@@ -25,6 +25,8 @@ import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
+import SaveModelDialog from '/src/creative-canvas/editor/SaveModelDialog.tsx';
+import LibraryDrawer from '/src/creative-canvas/editor/LibraryDrawer.tsx';
 import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
 import {sceneContext} from '/src/creative-scene/context.ts';
 import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
@@ -37,11 +39,23 @@ window.__closed = 0;
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
+// ?library=1 hands the editor the canvas page's 「存入资产库」 dialog and asset drawer.
+const noop = () => {};
 function Editor({host}) {
   const [open, setOpen] = useState(true);
+  const [saving, setSaving] = useState(null);
+  const [place, setPlace] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [notice, setNotice] = useState('');
   window.__reopen = () => setOpen(true);
+  const query = new URLSearchParams(location.search);
+  const group = React.createElement('select', {name:'group'}, React.createElement('option', {value:''}, '不归类'), React.createElement('option', {value:'cgrp_qa'}, '柱子'));
   return open
-    ? React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(new URLSearchParams(location.search).has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {})})
+    ? React.createElement(React.Fragment, null,
+        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, onOpenLibrary: (p) => setPlace(() => p), libraryDrag: drag} : {})}),
+        query.has('library') && React.createElement(LibraryDrawer, {hidden: !place, tick: 0, task: place ? {kind: 'scene-model'} : null, canPlace: false, onPlace: noop, onFill: noop, onPick: noop, onScenePlace: (a) => { setPlace(null); place?.(a) }, onSceneDrag: setDrag, onClose: () => setPlace(null), onWidth: noop, onAssets: noop, onCatalog: noop}),
+        saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: setNotice, onClose: () => setSaving(null)}),
+        notice && React.createElement('p', {id:'notice'}, notice))
     : React.createElement('p', {id:'closed'}, 'closed');
 }
 function WithHost() {
@@ -79,6 +93,8 @@ const templateSchema = {
 const templateParams = { height: 3, radius: 0.25, style: 'round', broken: false }
 const placement = (id) => `object:${id}`
 const content = (id) => `object:${id}:content`
+/** JSON with object keys sorted, for comparing material assignments. */
+const canonical = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x))
 
 /** One scene document with revisions, conflict checks and trash. */
 class SceneServer {
@@ -129,20 +145,80 @@ class SceneServer {
     this.completes = []
     // Exports the editor submitted.
     this.exports = []
+    // Models saved into the asset library, by source revision and materials; every save request.
+    this.assets = new Map()
+    this.saves = []
+    // Set to make the next new library copy find its thumbnail upload expired.
+    this.expireThumbnail = false
+    // The asset drawer's list, and the queries it sent.
+    this.library = []
+    this.assetQueries = []
+  }
+  /** A model asset in the drawer: a library copy of the seeded revision with these materials, without its code. Returns the copy's revision. */
+  libraryAsset(rev, title, materials = {}) {
+    const m = this.models.get(rev)
+    const copy = this.libraryCopy(rev, materials)
+    const { content_id } = this.models.get(copy)
+    const { code: _code, ...generator } = m.generator
+    this.library.push({
+      id: `ccas_${this.library.length + 1}`, title, description: '', kind: 'model', revision: '1', content_id, content_revision_id: copy,
+      content: { id: copy, content_id, kind: 'model', sequence: '1', truncated: false, payload: { model: { format: 'glb', manifest: m.manifest, generator, name_hint: m.name_hint, materials, source_revision_id: rev } },
+        media: [{ role: 'original', blob_id: 'glb', mime: 'model/gltf-binary', byte_size: m.glb.byteLength, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'png', mime: 'image/png', byte_size: 64, width: 256, height: 256, duration_ms: null }] },
+      unavailable: false, is_favorite: false, rating: null, palette: [], created_at: '2026-10-20T00:00:00Z', deleted_at: null, purge_after: null, group_ids: [], tag_ids: [],
+    })
+    return copy
+  }
+  /** New content copying a model revision with materials, as saving into the library writes it. */
+  libraryCopy(rev, materials, thumbnail = null) {
+    const m = this.models.get(rev)
+    const copy = `ccrv_copy${++this.modelSeq}`
+    this.models.set(copy, { ...m, content_id: `ccnt_copy${this.modelSeq}`, materials, source: m.source ?? rev, thumbnail })
+    return copy
+  }
+  /** Whether a content is a library copy, which commit_model never continues. */
+  isCopy(contentID) {
+    return [...this.models.values()].some((m) => m.content_id === contentID && m.source)
+  }
+  /** POST /assets/from-scene-model: a copy of the instance's model and materials, if the editor saw its current version. */
+  saveModel(body) {
+    const p = body.payload
+    this.saves.push(body)
+    const unit = content(p.object_id)
+    const current = this.unitRevs[unit] ?? null
+    if (current !== p.expected_object_rev)
+      return [409, { error: { code: 'creative_document_conflict', message: '文档已被修改', details: { conflicts: [{ unit, expected_rev: p.expected_object_rev, current_rev: current }] } } }]
+    const object = this.object(p.object_id)
+    const rev = object.model.content_revision_id
+    const src = this.models.get(rev)
+    const slots = new Set(src.manifest.slots.map((x) => x.id))
+    const materials = Object.fromEntries(Object.entries(object.material_slots ?? {}).filter(([k]) => slots.has(k)))
+    const key = `${src.source ?? rev} ${canonical(materials)}`
+    const existing = this.assets.get(key)
+    if (existing) return [200, { ...existing, reused: true }]
+    const u = this.uploads.get(p.thumbnail_upload_id)
+    if (this.expireThumbnail || !u || u.state !== 'ready' || u.consumed || u.kind !== 'image') {
+      this.expireThumbnail = false
+      return [409, { error: { code: 'creative_upload_unavailable', message: '暂存上传已失效' } }]
+    }
+    u.consumed = true
+    const copy = this.libraryCopy(rev, materials, this.uploadBytes.get(p.thumbnail_upload_id))
+    const asset = { asset_id: `ccas_${this.assets.size + 1}`, revision: '1', title: p.target.title, description: '', content_revision_id: copy, library_revision: '1', tag_mapping: {}, tags_created: [], tags_reused: [], reused: false }
+    this.assets.set(key, asset)
+    return [201, asset]
   }
   /** A committed model revision, as if made earlier; returns its revision ID. */
-  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content } = {}) {
+  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content, mount = 'floor' } = {}) {
     const rev = `ccrv_seed${++this.modelSeq}`
-    const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount: 'floor' }
+    const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount }
     this.models.set(rev, { content_id: content ?? `ccnt_seed${this.modelSeq}`, glb, generator, manifest, name_hint: '柱' })
     return rev
   }
   /** A model instance placed earlier, at revision 1 like the ground. */
-  seedInstance(id, rev, x = 0, name = '柱') {
+  seedInstance(id, rev, x = 0, name = '柱', slots = {}) {
     this.scene.objects.push({
       id, kind: 'model_instance', name, parent_id: null, order: this.scene.objects.length,
       transform: { ...identity(), position: [x, 0, 0] }, visible: true, locked: false,
-      model: { content_revision_id: rev }, material_slots: {},
+      model: { content_revision_id: rev }, material_slots: slots,
     })
     this.unitRevs[placement(id)] = '1'
     this.unitRevs[content(id)] = '1'
@@ -165,8 +241,9 @@ class SceneServer {
   }
   /**
    * commit_model the way the server does it here: both uploads ready and
-   * unused, then a new revision under base_content_id or a new content, and
-   * every {ref} in the batch becomes that revision.
+   * unused, then a new revision under base_content_id (unless it names a
+   * library copy) or a new content, and every {ref} in the batch becomes that
+   * revision.
    */
   commitModels(ops) {
     const commits = ops.filter((op) => op.op === 'commit_model')
@@ -181,7 +258,7 @@ class SceneServer {
     for (const op of commits) {
       for (const id of [op.glb_upload_id, op.thumbnail_upload_id]) this.uploads.get(id).consumed = true
       const rev = `ccrv_m${++this.modelSeq}`
-      const content_id = op.base_content_id ?? `ccnt_m${this.modelSeq}`
+      const content_id = op.base_content_id && !this.isCopy(op.base_content_id) ? op.base_content_id : `ccnt_m${this.modelSeq}`
       this.models.set(rev, { content_id, glb: this.uploadBytes.get(op.glb_upload_id), generator: op.generator, manifest: op.manifest, name_hint: op.name_hint })
       models[op.ref] = { content_id, content_revision_id: rev }
     }
@@ -370,6 +447,20 @@ async function route(page, server) {
       const items = [...server.history].reverse().filter((h) => Number(h.revision) > since).slice(0, limit).map((h) => server.revisionItem(h))
       return json(200, { items, next_cursor: null })
     }
+    if (path === '/assets' && request.method() === 'GET') {
+      server.assetQueries.push(url.searchParams.toString())
+      const kind = url.searchParams.get('kind')
+      const items = server.library.filter((a) => !kind || a.kind === kind)
+      return json(200, { items, next_cursor: '', total_count: items.length, library_revision: '1' })
+    }
+    if (path === '/asset-groups') return json(200, { items: [], hierarchy_revision: '1', asset_counts: {} })
+    if (path === '/tags' || path === '/tag-categories') return json(200, { items: [], hierarchy_revision: '1' })
+    if (path === '/library-usage') return json(200, { asset_count: server.library.length, stored_bytes: 0, limit_bytes: 1, pending_release_bytes: 0 })
+    if (path === '/library-settings') return json(200, { retention_days: 30, revision: '1', hierarchy_revision: '1', library_revision: '1' })
+    if (path === '/assets/from-scene-model' && request.method() === 'POST') {
+      const [status, body] = server.saveModel(request.postDataJSON())
+      return json(status, body)
+    }
     if (path === `/documents/${DOC}/scene-jobs`) return json(200, { items: server.jobs })
     if (path === `/documents/${DOC}/scene-exports` && request.method() === 'POST') {
       const body = request.postDataJSON()
@@ -535,6 +626,275 @@ async function check(name, fn) {
     results.push(`FAIL ${name}\n     ${error.stack?.split('\n').slice(0, 4).join('\n     ')}`)
   }
 }
+
+/** The bake's clay thumbnail of the template model, rendered in the page. */
+async function clayThumbnail(page) {
+  const url = await page.evaluate(async ([glb, manifest]) => {
+    const { renderThumbnail } = await import('/src/creative-scene/sandbox/thumbnail.ts')
+    const bytes = Uint8Array.from(atob(glb), (c) => c.charCodeAt(0))
+    const blob = await renderThumbnail(bytes.buffer, manifest)
+    return new Promise((resolve) => {
+      const r = new FileReader()
+      r.onload = () => resolve(r.result)
+      r.readAsDataURL(blob)
+    })
+  }, [templateGLB.toString('base64'), templateManifest])
+  return Buffer.from(url.slice(url.indexOf(',') + 1), 'base64')
+}
+
+const pngSize = (bytes) => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) })
+
+await check('C6 save to library: the model with its materials, the card thumbnail in them; the same materials are filed, others a new asset; materials changed meanwhile are confirmed first', async () => {
+  const server = new SceneServer()
+  const first = server.seedModel()
+  const pillar = 'sobj_P00000000000000000001'
+  const marble = { stone: { preset: 'marble@1', params: {} } }
+  server.seedInstance(pillar, first, 0, '柱', marble)
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  const save = page.getByRole('button', { name: '存入资产库…' })
+  const dialog = page.getByRole('dialog', { name: '存入个人资产库' })
+  const title = dialog.getByRole('textbox', { name: '资产名称' })
+  const store = dialog.getByRole('button', { name: '存入', exact: true })
+  // The dialog closes on success; the notice may still show the last save's text.
+  const notice = async (text) => {
+    await dialog.waitFor({ state: 'detached' })
+    await page.locator('#notice').filter({ hasText: text }).waitFor()
+  }
+  const copyOf = (body) => server.models.get([...server.assets.values()].find((a) => a.asset_id === body.asset_id)?.content_revision_id)
+  const thumbnailOf = (n) => server.uploadBytes.get(server.saves[n].payload.thumbnail_upload_id)
+
+  await save.click()
+  assert.equal(await title.inputValue(), '柱', 'the model name by default')
+  await dialog.getByText('保存模型、参数和材质；位置、旋转和缩放不随资产保存', { exact: false }).waitFor()
+  await title.fill('大理石柱')
+  await store.click()
+  await notice('已存入资产库')
+  const { thumbnail_upload_id: thumb, ...sent } = server.saves[0].payload
+  assert.deepEqual(sent, { document_id: DOC, object_id: pillar, expected_object_rev: '1', target: { title: '大理石柱', group_ids: [] } })
+  assert.equal(server.uploads.get(thumb).kind, 'image')
+  const marbled = copyOf([...server.assets.values()][0])
+  assert.deepEqual(marbled.materials, marble, 'the asset keeps the instance\'s materials')
+  assert.equal(marbled.source, first)
+  assert.deepEqual(pngSize(marbled.thumbnail), { width: 256, height: 256 })
+  assert.ok((await pixelDiff(page, await clayThumbnail(page), marbled.thumbnail)) > 0.02, 'the card shows the materials, not clay')
+
+  await save.click()
+  await dialog.locator('select[name="group"]').selectOption('cgrp_qa')
+  await store.click()
+  await notice('这个模型已在资产库中，已归入「柱子」')
+  assert.equal(server.assets.size, 1, 'the same model with the same materials is not saved twice')
+
+  // Another material is another asset, its thumbnail in that material.
+  await page.getByLabel('stone 的材质').selectOption('wood@1')
+  await waitFor(() => server.object(pillar).material_slots.stone?.preset === 'wood@1', 'material')
+  await saved(page)
+  await save.click()
+  await store.click()
+  await notice('已存入资产库')
+  assert.equal(server.assets.size, 2, 'other materials, a new asset')
+  const wooden = copyOf([...server.assets.values()][1])
+  assert.equal(wooden.materials.stone.preset, 'wood@1')
+  assert.ok((await pixelDiff(page, marbled.thumbnail, wooden.thumbnail)) > 0.02, 'the new card shows the new material')
+
+  // The assistant paints the pillar while the dialog is open.
+  await save.click()
+  server.external([{ op: 'update_objects', updates: [{ object_id: pillar, material_slots: { stone: { preset: 'paint@1', params: {} } } }] }], { actor: 'agent' })
+  await store.click()
+  await dialog.getByText('模型已更新为最新版本，确认后再存').waitFor()
+  const conflicted = server.saves.at(-1)
+  assert.equal(server.assets.size, 2, 'nothing saved on the conflict')
+  await store.click()
+  await notice('已存入资产库')
+  const last = server.saves.at(-1)
+  assert.equal(last.payload.expected_object_rev, server.unitRevs[content(pillar)])
+  assert.notEqual(last.operation_id, conflicted.operation_id, 'a new request after the refresh')
+  assert.notEqual(last.payload.thumbnail_upload_id, conflicted.payload.thumbnail_upload_id, 'a thumbnail of the new version')
+  assert.equal(copyOf([...server.assets.values()][2]).materials.stone.preset, 'paint@1', 'the new materials are what was saved')
+
+  // A thumbnail upload that expired is rendered and sent again, once, unasked.
+  await page.getByLabel('stone 的材质').selectOption('metal@1')
+  await waitFor(() => server.object(pillar).material_slots.stone?.preset === 'metal@1', 'metal')
+  await saved(page)
+  await save.click()
+  server.expireThumbnail = true
+  const before = server.saves.length
+  await store.click()
+  await notice('已存入资产库')
+  assert.equal(server.saves.length, before + 2, 'refused once, then saved')
+  assert.notEqual(server.saves.at(-1).payload.thumbnail_upload_id, server.saves.at(-2).payload.thumbnail_upload_id)
+  assert.equal(server.assets.size, 4)
+  assert.ok(thumbnailOf(server.saves.length - 1))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C6 place from the library: Shift+A 从资产库添加… puts the clicked model with its materials under the pointer, selected, one undo, drawer closes', async () => {
+  const server = new SceneServer()
+  const marble = { stone: { preset: 'marble@1', params: { scale: 1 } } }
+  const rev = server.libraryAsset(server.seedModel(), '哥特束柱', marble)
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x + 120, y + 60)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+  const drawer = page.locator('#creative-library')
+  await drawer.getByRole('heading', { name: '放入场景' }).waitFor()
+  await drawer.getByText('点一个模型放进场景，或拖到想放的位置').waitFor()
+  await waitFor(() => server.assetQueries.some((q) => new URLSearchParams(q).get('kind') === 'model'), 'only models are listed')
+  const before = server.commands.length
+  await drawer.locator('.al-tile', { hasText: '哥特束柱' }).click()
+  await drawer.waitFor({ state: 'hidden' })
+  await waitFor(() => server.commands.length === before + 1, 'place command')
+  const [add] = server.commands.at(-1).payload.operations
+  assert.equal(add.op, 'add_objects')
+  const placed = add.objects[0]
+  assert.equal(placed.kind, 'model_instance')
+  assert.equal(placed.name, '哥特束柱')
+  assert.deepEqual(placed.model, { content_revision_id: rev })
+  assert.deepEqual(placed.material_slots, marble, 'the asset\'s materials come with it')
+  assert.ok(close(placed.transform.position[1], 0, 1e-3), 'on the ground')
+  assert.ok(Math.hypot(placed.transform.position[0], placed.transform.position[2]) > 0.3, 'under the pointer, not at the origin')
+  const row = page.getByRole('treeitem', { name: /哥特束柱/ })
+  await row.waitFor()
+  assert.equal(await row.getAttribute('aria-selected'), 'true', 'the placed model is selected')
+  await page.locator('.cc-scene-model-info').filter({ hasText: '代码模型：柱' }).waitFor()
+  await saved(page)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => !server.scene.objects.some((o) => o.id === placed.id), 'one undo removes it')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C6 drag in: a floor model lands on a box top, the drawer stays open; a ceiling model with no ceiling stands on what is below; let go elsewhere and nothing changes', async () => {
+  const server = new SceneServer()
+  const block = 'sobj_B00000000000000000001'
+  server.scene.objects.push({ id: block, kind: 'primitive', name: '台子', parent_id: null, order: 1, transform: identity(), visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 6, height: 1, depth: 6 } } })
+  server.unitRevs[placement(block)] = '1'
+  server.unitRevs[content(block)] = '1'
+  server.history[0] = server.record(['*'], [], null)
+  const wood = { stone: { preset: 'wood@1', params: {} } }
+  const stool = server.libraryAsset(server.seedModel(), '石凳', wood)
+  server.libraryAsset(server.seedModel({ mount: 'ceiling' }), '吊灯')
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  const canvas = page.locator('.cc-scene-editor canvas')
+  await canvas.click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+  const drawer = page.locator('#creative-library')
+  const tile = (title) => drawer.locator('.al-tile', { hasText: title })
+  await tile('石凳').waitFor()
+  const { box } = await viewportCenter(page)
+  const centre = { x: box.width / 2, y: box.height / 2 }
+
+  const dropAt = async (title, at) => {
+    const before = server.commands.length
+    await tile(title).dragTo(canvas, { targetPosition: at })
+    await waitFor(() => server.commands.length === before + 1, `${title} placed`)
+    const [add] = server.commands.at(-1).payload.operations
+    assert.equal(add.op, 'add_objects')
+    return add.objects[0]
+  }
+  const first = await dropAt('石凳', centre)
+  assert.equal(first.model.content_revision_id, stool)
+  assert.deepEqual(first.material_slots, wood, 'dragged in with the asset\'s materials')
+  assert.ok(close(first.transform.position[1], 1, 1e-3), `stands on the block's top: ${first.transform.position}`)
+  assert.deepEqual(first.transform.rotation, [0, 0, 0, 1], 'upright')
+  assert(await drawer.isVisible(), 'the drawer stays open after a drag')
+  const second = await dropAt('石凳', { x: centre.x + 60, y: centre.y + 20 })
+  assert.ok(close(second.transform.position[1], 1, 1e-3))
+  assert.notDeepEqual(second.transform.position, first.transform.position, 'each lands where it was let go')
+  assert.equal(server.commands.length, 2, 'one revision each')
+  assert.ok(close(server.object(first.id).transform.position[1], 1, 1e-3))
+
+  // No ceiling here: the lamp's bounds stand on the block's top, never buried in it.
+  const hung = await dropAt('吊灯', { x: centre.x - 40, y: centre.y + 10 })
+  assert.ok(close(hung.transform.position[1], 1 - templateManifest.bounds.min[1], 1e-3), `on the block: ${hung.transform.position}`)
+
+  // A drag over the viewport shows the ghost; let go over the drawer and nothing is placed.
+  const still = await canvas.screenshot()
+  const from = await tile('石凳').boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + centre.x - 80, box.y + centre.y + 40, { steps: 8 })
+  await page.mouse.move(box.x + centre.x - 90, box.y + centre.y + 40, { steps: 2 })
+  await sleep(300)
+  assert.ok((await pixelDiff(page, still, await canvas.screenshot())) > 0.002, 'the ghost follows the pointer')
+  await shot(page, 'c6-drag-ghost')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await sleep(300)
+  assert.equal(server.commands.length, 3, 'letting go elsewhere places nothing')
+  assert.ok((await pixelDiff(page, still, await canvas.screenshot())) < 0.002, 'and the ghost is gone')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C6 copy semantics: a placed model changes only in this scene; editing it, before or after a reload, forks a model of its own; the asset places as saved', async () => {
+  const server = new SceneServer()
+  const marble = { stone: { preset: 'marble@1', params: { scale: 1 } } }
+  const rev = server.libraryAsset(server.seedModel(), '哥特束柱', marble)
+  const copy = server.models.get(rev).content_id
+  let { context, page, errors } = await open(server, { query: '?library=1' })
+  const canvas = () => page.locator('.cc-scene-editor canvas')
+  const place = async () => {
+    const before = server.commands.length
+    await canvas().click({ position: { x: 20, y: 20 } })
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+    await page.locator('#creative-library .al-tile', { hasText: '哥特束柱' }).click()
+    await waitFor(() => server.commands.length === before + 1, 'placed')
+    await saved(page)
+    return server.commands.at(-1).payload.operations[0].objects[0]
+  }
+  /** Retunes the selected instance's height; returns the commit it sent and the content it got. */
+  const retune = async (id, value) => {
+    const before = server.commands.length
+    const height = page.getByLabel('高度（m）', { exact: true })
+    await height.fill(value)
+    await height.press('Enter')
+    await waitFor(() => server.commands.length === before + 1, 'retune command', 20_000)
+    await saved(page)
+    const [commit, set] = server.commands.at(-1).payload.operations
+    assert.equal(commit.op, 'commit_model')
+    assert.deepEqual(set, { op: 'set_instance_model', object_id: id, model: { ref: commit.ref }, scope: 'this' })
+    const forked = server.object(id).model.content_revision_id
+    assert.notEqual(forked, rev)
+    return { commit, content: server.models.get(forked).content_id }
+  }
+  const first = await place()
+
+  // A slot's material: the instance only.
+  await page.getByLabel('stone 的材质').selectOption('wood@1')
+  await waitFor(() => server.object(first.id).material_slots.stone?.preset === 'wood@1', 'material')
+  await saved(page)
+
+  // A parameter: the editor names the copy as R4 says, the server forks.
+  const one = await retune(first.id, '5')
+  assert.equal(one.commit.base_content_id, copy, 'the editor follows R4; it needs to know nothing of copies')
+  assert.equal(one.commit.generator.params.height, 5)
+  assert.notEqual(one.content, copy, 'a content of its own')
+  assert.equal(server.library[0].content_revision_id, rev, 'the asset keeps its revision')
+  assert.equal(server.models.get(rev).generator.params.height, 3, 'and that revision is as saved')
+  assert.equal([...server.models.values()].filter((m) => m.content_id === copy).length, 1, 'the copy has its one revision')
+
+  const second = await place()
+  assert.deepEqual(second.model, { content_revision_id: rev }, 'placing again gives the model as saved')
+  assert.deepEqual(second.material_slots, marble, 'with the asset\'s materials, not this scene\'s')
+  assert.deepEqual(errors, [])
+
+  // After a reload the editor has no memory of where the model came from: the same result.
+  await context.close()
+  ;({ context, page, errors } = await open(server, { query: '?library=1' }))
+  await page.getByRole('treeitem', { name: '哥特束柱' }).nth(1).click()
+  const two = await retune(second.id, '4')
+  assert.notEqual(two.content, copy)
+  assert.notEqual(two.content, one.content)
+  assert.equal([...server.models.values()].filter((m) => m.content_id === copy).length, 1)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
 
 await check('keyboard flow: Shift+A, G Z 2 Enter, R cancelled, A G confirmed', async () => {
   const server = new SceneServer()
@@ -1680,8 +2040,6 @@ await check('the editor hands its scene and selection to the assistant panel, an
 
 
 // --- cameras and export (C4) ------------------------------------------------
-
-const pngSize = (bytes) => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) })
 
 /** Gradient energy of a PNG inside a rectangle given as fractions [x0, y0, x1, y1]: blur lowers it. */
 async function sharpness(page, png, rect) {

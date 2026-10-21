@@ -19,6 +19,33 @@ export function nextOrder(objects: readonly SceneObject[], parent: string | null
 export const groundBuiltin = 'ground@1'
 
 /**
+ * An instance of a model revision placed from the asset library, last among
+ * root objects, named after the asset (an object name holds 80 characters),
+ * with the materials the asset was saved with.
+ */
+export function newModelInstance(
+  revision: string,
+  name: string,
+  placed: Pick<SceneTransform, 'position' | 'rotation'>,
+  objects: readonly SceneObject[],
+  materials: NonNullable<SceneObject['material_slots']> = {},
+  makeID: () => string = newObjectID,
+): SceneObject {
+  return {
+    id: makeID(),
+    kind: 'model_instance',
+    name: Array.from(name).slice(0, 80).join(''),
+    parent_id: null,
+    order: nextOrder(objects, null),
+    transform: { ...identity, ...placed },
+    visible: true,
+    locked: false,
+    model: { content_revision_id: revision },
+    material_slots: structuredClone(materials),
+  }
+}
+
+/**
  * A new primitive at a point on the ground, last among root objects. A
  * ground goes to the origin locked, like the one a new scene starts with,
  * so clicks keep reaching what stands on it.

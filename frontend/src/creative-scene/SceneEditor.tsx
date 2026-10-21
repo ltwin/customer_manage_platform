@@ -9,7 +9,7 @@ import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
-import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -39,13 +39,16 @@ import type { SceneJobLauncher } from './host/launcher.ts'
 import { iframeFactory, SandboxHost } from './sandbox/host.ts'
 import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
+import { renderMaterialThumbnail } from './library/thumbnail.ts'
 import { openScene } from './session.ts'
 import type { WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
+import { saveTarget, whenShown, type LibraryAsset, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
-import { Viewport, type ViewportHandle } from './Viewport.tsx'
+import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
+import type { Placed } from './placement/snap.ts'
 import './scene.css'
 
 function webgl2Available(): boolean {
@@ -96,7 +99,48 @@ const discardUpload = (upload: Upload) =>
  * scene's jobs first. `canvasID` and `sceneNodeID` say where exports go; the
  * editor always opens from a canvas node, and without them there is no export.
  */
-export default function SceneEditor({ documentID, onClose, host, canvasID, sceneNodeID }: { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string }) {
+/** What the viewport needs of an asset to drag and place it; null when it is no usable model. */
+function dragModel(asset: LibraryAsset): DragModel | null {
+  const payload = asset.content?.payload
+  const model = payload && 'model' in payload ? payload.model : null
+  if (asset.kind !== 'model' || asset.unavailable || !model?.generator) return null
+  return {
+    assetID: asset.id,
+    revision: asset.content_revision_id,
+    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null },
+    mount: model.generator.mount,
+    bounds: model.manifest.bounds,
+  }
+}
+
+/** The materials an asset was saved with; one saved before they were kept has none. */
+function assetMaterials(asset: LibraryAsset): NonNullable<SceneObject['material_slots']> {
+  const payload = asset.content?.payload
+  return (payload && 'model' in payload ? payload.model.materials : undefined) ?? {}
+}
+
+export default function SceneEditor({
+  documentID,
+  onClose,
+  host,
+  canvasID,
+  sceneNodeID,
+  onSaveModel,
+  onOpenLibrary,
+  libraryDrag = null,
+}: {
+  documentID: string
+  onClose: () => void
+  host?: SceneJobLauncher
+  canvasID?: string
+  sceneNodeID?: string
+  /** Opens the canvas page's 「存入资产库」 dialog; without it the entries are hidden. */
+  onSaveModel?: (request: SaveModelRequest) => void
+  /** Opens the asset drawer to pick a model; place puts the picked one in the scene. */
+  onOpenLibrary?: (place: (asset: LibraryAsset) => void) => void
+  /** A model being dragged from the asset drawer, null when nothing is. */
+  libraryDrag?: LibraryAsset | null
+}) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
   // runs cleanup and setup once more after mounting.
@@ -164,8 +208,13 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
   const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
   const localModels = useStore(modelCache.local)
+  const knownModels = useStore(modelCache.known)
   const failedModels = useStore(modelCache.failed)
-  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels), [u.preview, s.base, localModels])
+  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels, knownModels), [u.preview, s.base, localModels, knownModels])
+  // A placed asset's model is told apart once the server describes it.
+  useEffect(() => {
+    if (s.base) modelCache.settle(Object.keys(s.base.models ?? {}))
+  }, [s.base])
   const readOnly = s.trashed || s.missing || !!u.preview || !s.base
   const display = displayOf(u, shown?.render)
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
@@ -401,6 +450,25 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
       notify(`已导出 ${out.result.nodes.length} 张图到画布`)
     } else notify(out.message)
   }
+  /**
+   * An asset's model, where the menu was opened (on the ground under the
+   * pointer, else below the view's centre). Its summary is known at once, so
+   * the properties and the selection box are right before the next read.
+   */
+  const placeModel = (asset: LibraryAsset, where: { at?: { x: number; y: number }; placed?: Placed }) => {
+    const model = dragModel(asset)
+    if (!model) return notify('这个模型不可用')
+    const placed = where.placed ?? handle.current?.snapAt(where.at, model)
+    if (!placed) return
+    modelCache.remember(model.revision, model.summary)
+    const o = newModelInstance(model.revision, asset.title, placed, objects, assetMaterials(asset))
+    if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
+    select([o.id])
+    // The pick was made in the drawer: keys go back to the editor, so Cmd+Z undoes it at once.
+    root.current?.focus({ preventScroll: true })
+  }
+  const openLibrary = (at?: { x: number; y: number }) => onOpenLibrary?.((asset) => placeModel(asset, { at }))
+  const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : null), [libraryDrag])
   /** Adds where the menu was opened: Shift+A or a right click over the ground. */
   const addPrimitive = (builtin: string, at?: { x: number; y: number }) => {
     const point = handle.current?.groundPoint(at) ?? [0, 0, 0]
@@ -469,6 +537,50 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
   const close = () => {
     if (session.blockedCount() > 0) ui.setState({ confirmClose: true })
     else onClose()
+  }
+
+  /** What 「存入资产库」 would save of these objects now, or why it cannot. */
+  const saveCheck = (ids: readonly string[]) => {
+    const st = session.state
+    return saveTarget({
+      selected: ids,
+      objects: st.view?.scene.objects ?? [],
+      base: st.base,
+      models: modelSummaries(st.base?.models, modelCache.local.getState(), modelCache.known.getState()),
+      previews: modelEdits.store.getState().previews,
+      unsaved: [...st.queue, ...st.conflicts.flatMap((g) => g.intents)],
+    })
+  }
+  const saveBlocked = !onSaveModel
+    ? null
+    : u.preview
+      ? '退出历史预览后再存'
+      : s.trashed
+        ? '场景在回收站，请先恢复'
+        : (() => {
+            const check = saveCheck(selected)
+            return 'error' in check ? check.error : null
+          })()
+  const saveModel = () => {
+    const target = saveCheck(selected)
+    if (!onSaveModel || 'error' in target) return
+    onSaveModel({ documentID, target, thumbnail: saveThumbnail, refresh: (currentRev, signal) => refreshSave(target.objectID, currentRev, signal) })
+  }
+  /** The card thumbnail of what a save keeps: the model with its materials, staged for the request. */
+  const saveThumbnail = async (target: SaveTarget, signal: AbortSignal): Promise<string> => {
+    const st = session.state
+    const manifest = modelSummaries(st.base?.models, modelCache.local.getState(), modelCache.known.getState())[target.contentRevisionID]?.manifest
+    if (!manifest) throw new Error('模型不可用')
+    const parts = await modelCache.load(target.contentRevisionID)
+    signal.throwIfAborted()
+    const png = renderMaterialThumbnail(parts, manifest, target.materials)
+    const upload = await uploadGenerated(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, { kind: 'staged' }, signal)
+    return upload.id
+  }
+  /** After a save conflict: re-read, and check the object again once the editor shows the new version. */
+  const refreshSave = async (objectID: string, currentRev: string, signal: AbortSignal): Promise<SaveTarget | { error: string }> => {
+    session.invalidate()
+    return (await whenShown(session.store, objectID, currentRev, signal)) ? saveCheck([objectID]) : { error: '已取消' }
   }
 
   const run = (action: Action) => {
@@ -621,6 +733,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
+        ...(onOpenLibrary ? [{ label: '从资产库添加…', run: () => openLibrary(at) }] : []),
         { section: '灯光' },
         ...(['directional', 'point', 'spot'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
@@ -649,6 +762,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
         { label: '清除父级', shortcut: k('clear-parent'), disabled: !selected.some((id) => byID.get(id)?.parent_id), run: () => run('clear-parent') },
         'separator',
         { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
+        ...(onSaveModel ? [{ label: '存入资产库…', disabled: !!saveBlocked, hint: saveBlocked ?? undefined, run: saveModel }] : []),
       ]
     if (menu === 'display')
       return [
@@ -683,7 +797,8 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
 
   const contextItems = (objectID: string | null, at: { x: number; y: number }): MenuItem[] => {
     if (!objectID) return menuItems('add', at)
-    return menuItems('object').filter((i) => i === 'separator' || 'section' in i || !i.disabled)
+    // A disabled entry that says why stays: 「存入资产库」 explains what to wait for.
+    return menuItems('object').filter((i) => i === 'separator' || 'section' in i || !i.disabled || !!i.hint)
   }
 
   const hint = (() => {
@@ -795,6 +910,7 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   focusDistance={shownActive?.kind === 'camera' ? focusOf(shown, shownActive.id) : undefined}
                   picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
                   onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}
+                  save={onSaveModel ? { blocked: saveBlocked, run: saveModel } : undefined}
                 >
                   {shownActive && (shownActive.kind === 'primitive' || shownActive.kind === 'model_instance') && (
                     <MaterialSlots
@@ -875,6 +991,8 @@ export default function SceneEditor({ documentID, onClose, host, canvasID, scene
                   ui.setState({ popup: { kind: 'menu', menu: objectID && !readOnly ? 'object' : readOnly ? 'view' : 'add', x, y } })
                 }}
                 onDragging={(dragging) => session.setDragging(dragging)}
+                libraryDrag={drag}
+                onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, { placed })}
               />
               <StatusBar hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />

@@ -264,6 +264,38 @@ func SaveRevisionInTx(ctx context.Context, tx store.TxAccountScope, r creativeco
 	return AssetResult{TagMapping: mapping.Mapping, TagsCreated: mapping.Created, TagsReused: mapping.Reused, Title: a.Title, Description: a.Description, ID: a.ID, Revision: a.Revision, ContentRevisionID: r.ID, LibraryRevision: revision, Reused: true}, nil
 }
 
+// FindModelAssetInTx returns the content revision of the live model asset
+// copied from source with exactly these materials (JSON equality, key order
+// aside), if there is one. The caller holds the library root lock, so the
+// answer holds until it commits. It reads the model assets first and then
+// only their revisions, never the account's other content (every scene
+// revision is a content revision too), so its cost follows the library.
+func FindModelAssetInTx(ctx context.Context, tx store.TxAccountScope, source string, materials json.RawMessage) (string, bool, error) {
+	rows, err := tx.Query(ctx, "creative_assets", "content_revision_id", "kind='model' AND deleted_at IS NULL")
+	if err != nil {
+		return "", false, err
+	}
+	defer rows.Close()
+	var revisions []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", false, err
+		}
+		revisions = append(revisions, id)
+	}
+	if err := rows.Err(); err != nil || len(revisions) == 0 {
+		return "", false, err
+	}
+	var id string
+	err = tx.QueryRow(ctx, "creative_content_revisions", "id", "id=ANY($2) AND payload->'model'->>'source_revision_id'=$3 AND payload->'model'->'materials'=$4::jsonb",
+		revisions, source, string(materials)).Scan(&id)
+	if errors.Is(err, store.ErrNoRows) {
+		return "", false, nil
+	}
+	return id, err == nil, err
+}
+
 // ResolveAssetsInTx locks the library and selected asset before canvas locks.
 // It fixes identity/revision only; the canvas checks content usage after taking
 // its project/canvas locks, preserving the library -> canvas -> content order.
@@ -326,6 +358,7 @@ func GetAsset(ctx context.Context, scope store.AccountScope, id string) (Asset, 
 		if r.ContentID != a.ContentID || r.Kind != a.Kind {
 			return creativecontent.ErrMissingRoot
 		}
+		r = creativecontent.WithoutModelCode(r)
 		a.Content = &r
 		items := []Asset{a}
 		err = attachPalettes(ctx, tx, items)

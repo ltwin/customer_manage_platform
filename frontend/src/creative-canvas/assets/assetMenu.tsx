@@ -13,6 +13,7 @@ import {
 import type { CanvasMenuItem } from '../editor/CanvasContextMenu.tsx'
 import type * as api from '../editor/api.ts'
 import type { Action } from './BatchBar.tsx'
+import { isCanvasAsset } from '../editor/assetPlacement.ts'
 
 /** 素材右键菜单：独立页与画布抽屉共用；抽屉多一项「放入画布」。 */
 export function assetMenuItems({
@@ -52,6 +53,8 @@ export function assetMenuItems({
     }
   if (assets.some((a) => a.deleted_at)) return null
   const unavailable = assets.some((a) => a.unavailable)
+  // 模型只能放进 3D 场景：全是模型时没有「放入项目」，抽屉也不给「放入画布」。
+  const placeable = assets.some(isCanvasAsset)
   const entries: { kind: Action; label: string; Icon: typeof Star }[] = [
     { kind: 'rate', label: '评分…', Icon: Star },
     { kind: 'project', label: '放入项目…', Icon: ArrowUpRight },
@@ -65,7 +68,9 @@ export function assetMenuItems({
     { kind: 'download', label: '下载', Icon: Download },
     { kind: 'trash', label: '移到回收站', Icon: Trash2 },
   ]
-  const items: CanvasMenuItem[] = entries.map(({ kind, label, Icon }) => ({
+  const items: CanvasMenuItem[] = entries
+    .filter(({ kind }) => kind !== 'project' || placeable)
+    .map(({ kind, label, Icon }) => ({
     label,
     icon: <Icon size={14} />,
     danger: kind === 'trash',
@@ -82,7 +87,7 @@ export function assetMenuItems({
       disabled: blocked || tooMany,
       action: onRemoveFromGroup,
     })
-  if (onPlace)
+  if (onPlace && placeable)
     items.unshift(
       {
         label: '放入画布',

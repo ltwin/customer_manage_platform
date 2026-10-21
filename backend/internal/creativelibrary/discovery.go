@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -113,7 +114,13 @@ func DiscoverAssets(ctx context.Context, sc store.AccountScope, query Search, bu
 				return err
 			}
 			item := map[string]any{"asset_id": a.ID, "content_revision_id": a.ContentRevisionID, "revision": a.Revision, "title": a.Title, "description": a.Description, "kind": a.Kind, "rating": a.Rating, "is_favorite": a.Favorite, "trashed": a.DeletedAt != nil, "unavailable": a.Unavailable, "tags": tags, "groups": groups, "relations_complete": true, "tag_count": len(tags), "group_count": len(groups)}
-			if a.Content != nil {
+			// A model's only sized media is its 256 px thumbnail; its brief says
+			// how big the model is instead.
+			if a.Content != nil && a.Kind == "model" {
+				if f, ok := creativecontent.ModelFactsOf(a.Content.Payload); ok {
+					item["model"] = f.Brief()
+				}
+			} else if a.Content != nil {
 				for _, m := range a.Content.Media {
 					if m.Width != nil && m.Height != nil {
 						item["width"], item["height"] = *m.Width, *m.Height

@@ -1043,6 +1043,10 @@ button.cc-project-name:hover,
   overflow: hidden;
   background: var(--s1);
 }
+/* 模型缩略图背景透明，放在中性底上 */
+.cc-media[data-kind='model'] {
+  background: var(--s1);
+}
 .cc-media img,
 .cc-media video {
   width: 100%;

@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackAgentConversationSlots is the head of the rollback chain: every older
+// rollbackAgentConversationSlots undoes 0079 and then 0078; every older
 // migration's rollback helper undoes this one first.
 func rollbackAgentConversationSlots(t *testing.T, url string) {
 	t.Helper()
+	rollbackCreativeAssetModel(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback agent-conversation-slots", err)
 	}
@@ -91,6 +92,7 @@ VALUES($1,'acct-a',$2,'cccv_a',$1,'ccec_a','m','{}','queued','tok-'||$1,'v1','{}
 	if _, err = db.Exec(`INSERT INTO creative_agent_slots(account_id,conversation_id,run_id,claim_token,acquired_at) VALUES('acct-a','ccvs_a2',$1,'tok-'||$1,now())`, second); err != nil {
 		t.Fatal(err)
 	}
+	rollbackCreativeAssetModel(t, url)
 	err = store.MigrateDownOneForTest(url)
 	if err == nil || !strings.Contains(err.Error(), "more than one agent write slot") {
 		t.Fatalf("lossy rollback was not refused: %v", err)

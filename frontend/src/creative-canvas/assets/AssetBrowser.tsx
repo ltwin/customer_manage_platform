@@ -911,7 +911,8 @@ function AssetCard({
   onOpen: (asset: api.Asset) => void
   selection: string[]
 }) {
-  const visual = a.kind === 'image' || a.kind === 'video'
+  const visual =
+    a.kind === 'image' || a.kind === 'video' || a.kind === 'model'
   return (
     <div
       className={`al-tile${selected ? ' is-on' : ''}`}

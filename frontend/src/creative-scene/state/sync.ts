@@ -126,6 +126,16 @@ const toState = (doc: SceneDocument): SceneState => ({
 
 const revision = (r: string) => Number(r)
 
+/** The intent places or switches to a model revision the snapshot has no summary of. */
+export function namesUnknownModel(intent: Pick<Intent, 'ops'>, known: Readonly<Record<string, unknown>> | undefined): boolean {
+  const unknown = (id: string | undefined) => !!id && !known?.[id]
+  return intent.ops.some((op) =>
+    op.op === 'add_objects'
+      ? op.objects.some((o) => unknown(o.model?.content_revision_id))
+      : op.op === 'set_instance_model' && unknown(op.model.content_revision_id),
+  )
+}
+
 export class SceneSession {
   readonly store: StoreApi<SessionState>
   private inflight: string | null = null
@@ -434,8 +444,9 @@ export class SceneSession {
       for (const u of removed) delete unit_revs[u]
       const after = applyIntent(before, own)
       this.set({ base: { ...base, revision: receipt.revision, unit_revs, title: after.title, scene: after.scene }, queue: rest })
-      // New models' summaries come with the next read.
-      if (receipt.reset_required || intent.projection || Object.keys(models).length) void this.read()
+      // New models' summaries come with the next read, and so do those of
+      // models placed from elsewhere (the asset library, a copy).
+      if (receipt.reset_required || intent.projection || Object.keys(models).length || namesUnknownModel(own, base.models)) void this.read()
     } else {
       this.set({ queue: rest })
       // Someone else's revision came in between, or the receipt has no

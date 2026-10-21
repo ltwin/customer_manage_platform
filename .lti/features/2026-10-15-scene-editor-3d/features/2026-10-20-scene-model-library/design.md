@@ -2,7 +2,8 @@
 
 ## 继承的设计
 
-- **继承的设计**：Epic `scene-editor-3d` 修订 v11，见 proposal 决定 1。
+- **继承的设计**：Epic `scene-editor-3d` 修订 v12（实施中修订：材质随资产保存，见 proposal 决定 7）。v11 见 proposal 决定 1。
+  - v12 只改本次交付的 `data: 模型资产`、`api: 模型存入资产库`，以及 Epic 设计里 I7 与「材质与光照」的表述；审批后用 `lti epic bind` 把本 change 重新绑定到 v12。
   - v11 与本 change 的设计一同交 owner 审批（`lti epic revise`），审批后用 `lti epic bind` 把本 change 绑定到 v11。
   - 起草时 `designBinding` 仍指向 v10。v10 按 GLB 的 sha256 查重、模型不可用时返回 409，与本设计不一致，不得按 v10 实施。
 - **本次引用的 Epic 条目**：
@@ -12,7 +13,8 @@
 - **本次交付**：`data: 模型资产`、`api: 模型存入资产库`。
 - **复用的已交付能力**：
   - 场景的 `add_objects`（`api: 提交场景命令`、`api: 场景模型命令` 的引用校验）；
-  - C5 的材质解析规则（槽位提示到预设）。
+  - C5 的材质解析规则（槽位提示到预设）；
+  - 场景的暂存上传（`creativestaging`，`commit_model` 的缩略图走同一套）。
 - **项目约定**：
   - 资产库的「存入资产库」：`creativecanvas.SaveNodeToLibrary` 与 `creativelibrary.SaveRevisionInTx`，锁序是先资产库根，再画布或文档，最后内容（`docs/product/creative-canvas-system/data-model.md`「锁顺序」）。
   - 资产库的抽屉和页面共用组件（`LibraryDrawer` / `AssetBrowser` / `AssetViewer`）。
@@ -21,17 +23,26 @@
 
 ## 领域模型与业务规则
 
-不新增领域对象。模型资产就是一行 `creative_assets`（`kind = 'model'`），引用一个完整形态的模型修订。
+不新增领域对象。模型资产就是一行 `creative_assets`（`kind = 'model'`），引用一个**库副本**修订（修订 v12）。
 
+- **存什么**（修订 v12，owner 2026-10-20）：模型（几何、代码、参数）加实例的材质分配，相当于 Blender 的物件资产。位置、旋转、缩放是物件的变换，留在场景里。弹框和查看浮窗都按这个口径说明（见「存入弹框」「3D 预览」）。
+- **库副本**：存入时新建一个模型内容，写一个完整形态的修订。
+  - 载荷复制来源修订，另加 `materials` 和 `source_revision_id`。`materials` 取实例的 `material_slots`，只留 manifest 里有的槽位。
+  - GLB 复用来源修订的 blob；缩略图是编辑器按材质渲染后上传的 PNG。
 - **身份与关系**：
-  - 资产 → 模型修订是多对一：同一修订在库里至多一份不在回收站的资产，按修订查重。
-  - 场景实例 → 模型修订也是多对一。资产和实例之间没有任何记录（I7）。
-- **复制语义如何成立**：入库和放入都只引用同一个不可变修订，不复制字节。
-  - 放入后调参数：编辑器按 I4 新建模型内容，即分叉（`modelEdits.ts`），不带 `base_content_id`。
-  - 修订不可变，所以资产和原场景都不受影响。
-  - 不需要为入库或放入复制内容。
-- **存入时的不变量**：存进库的永远是摄影师看到的那一版模型，由 `expected_object_rev` 对内容单元 `object:<id>:content` 做检查（Epic v11）。编辑器在本机还有未确认的、涉及该内容单元的改动时，不允许存入（见「编辑器侧的可存入判断」）。
-- **存什么**：只存模型修订，也就是几何、代码和参数。实例上的材质、缩放和位置属于场景，不随资产保存。弹框和查看浮窗都会说明这一点（见「存入弹框」「3D 预览」）。
+  - 资产 → 库副本修订是一对一。查重键是「来源修订 + 材质分配」，同一个键至多一份不在回收站的资产。
+  - 场景实例 → 模型修订是多对一。资产和实例之间没有任何记录（I7）。
+- **复制语义如何成立**：
+  - 存入是复制：库副本是新内容，场景里的修订和之后的编辑都碰不到它。
+  - 放入是引用加复制：实例引用库副本修订（不可变，不用复制字节），`material_slots` 复制资产的 `materials`。
+  - 放入后的修改总是分叉：`commit_model` 的 `base_content_id` 指向库副本内容时，服务端新建内容（Epic v12「库副本只属于资产库」）。
+    - 编辑器照 R4 算 `base_content_id`，不用改；助手的烘焙任务同样经过 `commit_model`。
+    - 所以编辑器和助手的结果一致，与页面是否刷新过无关。
+  - 换材质写在实例上，不改模型修订，也不影响资产。
+- **存入时的不变量**：存进库的永远是摄影师看到的那一版模型和材质。
+  - 由 `expected_object_rev` 对内容单元 `object:<id>:content` 做检查。模型引用和 `material_slots` 都在这个单元里。
+  - 编辑器在本机还有未确认的、涉及该内容单元的改动时，不允许存入（见「编辑器侧的可存入判断」）。
+  - 缩略图按冻结的材质渲染。服务端从同一个单元版本读出材质，两边一致。
 - **放置限制**：模型资产只进场景，不进画布（没有 `core.model` 节点）。
 
 ## 模块职责与协作
@@ -60,10 +71,14 @@ flowchart LR
 ```
 
 - **`creativescene.SaveModelToLibrary`**（新，`library.go`）：存入的用例编排。
-  - 读场景，核对对象和单元 `rev`，确认模型修订完整可用，再交给 `creativelibrary.SaveRevisionInTx`。
+  - 读场景，核对对象和单元 `rev`，确认模型修订完整可用。
+  - 按「来源修订 + 材质分配」查重，命中就交给 `creativelibrary.SaveRevisionInTx` 追加归类；否则消费缩略图暂存上传，写库副本，在持有方回调里建资产（修订 v12）。
   - 放在 `creativescene` 是因为对象、单元和完整形态的判断都是场景模块的内部知识（`decodeScene`、`indexObjects`、`requireModel` 均未导出）。`creativelibrary` 不 import 场景，依赖方向与画布的「存入资产库」相同。
+- **`creativescene.commitModelOp`**（修订 v12）：`base_content_id` 指向库副本内容时改为新建内容。
+- **`creativestaging`**（修订 v12）：新增 `ConsumeForAsset`，把暂存上传标为被资产采用（`adopted_target_kind = 'asset'` 已在约束里，不用迁移）。
 - **`creativelibrary`**：
   - 类型白名单加 `model`；
+  - 新增 `FindModelAssetInTx(source, materials)`，按来源修订和材质分配找不在回收站的模型资产（修订 v12）；
   - 新增导出的 `AssetKinds()`，供助手工具枚举使用；
   - 单个资产读取（`service.go:GetAsset`）对内容调用 `creativecontent.WithoutModelCode`。列表经 `Preview` 已去掉代码，`list.go` 不改。
 - **`creativecontent`**：
@@ -72,18 +87,19 @@ flowchart LR
   - 不让 `GetAsset` 直接改用 `Preview`：文字资产的读取要返回完整正文，供编辑前读取，截断会弄坏编辑。去代码和截断正文是两件事，分成两个函数。
 - **`httpapi`**：`creative_media.go` 注册 `POST /creative/assets/from-scene-model`，一行 `h.creativeWrite(c, "", "", creativescene.SaveModelToLibrary)`。错误映射走现有的 `creativeDocumentError`，它已处理 `ConflictError`、`ErrTrashed` 和 `ErrModelUnavailable`，不新增映射。
 - **`creativeagent`**：`search_assets` 的 `kind` 枚举改用 `creativelibrary.AssetKinds()`；`edit_scene` 说明加放入方法；`read_asset` 支持模型（见「助手看模型资产」）。
-- **`creativecontent.ModelFacts`**（新）：从模型载荷解码出给助手看的模型信息，资产库搜索和 `read_asset` 共用。
+- **`creativecontent.ModelFacts`**（新）：从模型载荷解码出给助手看的模型信息，资产库搜索和 `read_asset` 共用；修订 v12 加 `materials`。
 - **`creativemedia.AgentImage`**：对 `kind = model` 取 `thumbnail` 角色的 PNG，不取 GLB。
 - **`creativecanvas`**：
   - 助手能搜到模型之后，可能会用画布的 `add_node` / `fill_node` 把模型放到画布上。后端本来就会拒绝（节点类型必须是 `core.<kind>`，没有 `core.model`），但现在的提示是通用的「model 内容不能放进 image 节点」。
   - `graph_commands.go:kindMismatch` 在 `kind = model` 时改为提示「模型只能放进 3D 场景，请用 edit_scene 的 add_objects 放入」，让助手能自己改正。
 - **前端 `creative-scene/`**：
   - `SceneEditor` 新增三个可选 prop。单独挂载编辑器的 e2e 不传它们，入口隐藏。
-    - `onSaveModel(request)`：打开存入弹框。
+    - `onSaveModel(request)`：打开存入弹框。`request.thumbnail(target, signal)` 由编辑器提供，按冻结目标的模型修订和材质渲染缩略图并暂存上传，返回 `thumbnail_upload_id`（修订 v12）。
     - `onOpenLibrary(place)`：打开抽屉，放入时回调 `place(asset)`。
     - `libraryDrag`：抽屉里正在拖动的模型（修订、标题、`mount`、`manifest`），没有拖动时为 `null`。
   - 视口接收拖放，显示虚影，按参考点吸附表面。吸附计算放在纯函数 `placement/snap.ts`，不依赖 React。
-  - 放入流程 `placeModel(asset, at)`。
+  - 放入流程 `placeModel(asset, at)`，实例带上资产的 `materials`。
+  - 按材质渲染缩略图：`library/thumbnail.ts`（修订 v12，见「存入弹框」）。
 - **前端 `creative-canvas/`**：
   - `WorkspacePage` 持有存入弹框和抽屉调度；
   - `LibraryDrawer` 新增 `scene-model` 任务；
@@ -97,7 +113,7 @@ flowchart LR
 ```
 SaveModelToLibrary(cmd)            // operation key "library.create_asset_from_scene_model"
   Validate（锁外）:
-    document_id / object_id 格式，expected_object_rev 为 CreativeRevision → 否则 ErrValidation
+    document_id / object_id 格式，expected_object_rev 为 CreativeRevision，thumbnail_upload_id 非空 → 否则 ErrValidation
     creativelibrary.ValidateImportTarget(target)
   Apply(tx):
     1. creativelibrary.ValidateImportTargetInTx(tx, target)   // 锁资产库根；分组、标签不存在 → ErrNotFound(404)
@@ -106,15 +122,43 @@ SaveModelToLibrary(cmd)            // operation key "library.create_asset_from_s
     3. cur := ReadAtInTx(head.revision)；scene := decodeScene；obj := indexObjects(scene)[object_id]
          对象不存在 → ErrNotFound；kind ≠ model_instance → ErrValidation
     4. unit := "object:"+id+":content"；cur.UnitRevs[unit] ≠ expected → ConflictError{unit, expected, current}
-    5. rev := requireModel(tx, obj.Model.ContentRevisionID)    // 完整形态 + 可展示，否则 ErrModelUnavailable(400)
-    6. res := creativelibrary.SaveRevisionInTx(tx, rev, target)
-       status = 201；res.Reused → 200
+    5. src := usableModel(tx, obj.Model.ContentRevisionID)     // 完整形态 + 可展示，否则 ErrModelUnavailable(400)
+    6. materials := obj.MaterialSlots 只留 src.manifest 里的槽位
+       source := src.source_revision_id（src 本身是库副本时），否则 src.id
+    7. hit := creativelibrary.FindModelAssetInTx(tx, source, materials)
+         命中 → SaveRevisionInTx(tx, hit 的修订, target) → 200；缩略图上传不动，按暂存规则过期
+    8. thumb := lockStaged(tx, thumbnail_upload_id, "image")，原图须为 PNG
+         不可用 → ErrUploadUnavailable(409 creative_upload_unavailable)；不是 PNG → ErrValidation
+    9. copy := creativecontent.WriteModelAndRetain(tx,
+                 draft{kind: model, declaration: src.DeclarationID, payload: src 载荷 + materials + source_revision_id},
+                 base: "", objects: [original: src 的 GLB blob, thumbnail: 上传的 blob],
+                 retain: r → asset := creativelibrary.CreateFromRevisionInTx(tx, r, target))
+       creativestaging.ConsumeForAsset(tx, thumb, asset.id)
+       → 201
 ```
 
-- **锁序**：资产库根 → 场景（只读快照）→ 内容（`requireModel` 内的 `RequireUsable` 对内容加锁），与画布的「存入资产库」一致。
+- **锁序**：资产库根 → 场景（只读快照）→ 来源内容（`usableModel` 内的 `RequireUsable` 加锁）→ 暂存上传行 → 新内容与资产，与画布的「存入资产库」一致。
 - **不锁场景行的原因**：存入不改场景。第 4 步检查的是同一事务里读到的头修订；即使提交前场景又变了，存入的仍是摄影师看到的那一版。这正是要的语义。
 - **幂等**：沿用 `creativeops` 执行器（同 `creativecanvas.SaveNodeToLibrary` 的 `run`），回执保存 201 或 200 的响应体，同 key 重放。
-- **查重**：`SaveRevisionInTx` 已按 `content_revision_id` 找不在回收站的资产。命中时只追加分组和标签，返回已有的标题和描述。不改。
+- **查重**（修订 v12）：`FindModelAssetInTx` 在资产库根锁内查：`kind = 'model'`、不在回收站、修订载荷的 `source_revision_id` 等于 `source` 且 `materials` 与本次 JSON 相等（jsonb 比较，与键序无关）。命中时只追加分组和标签，返回已有的标题和描述。
+  - 分两步查：先用现有索引取本账号不在回收站的模型资产，再按主键只读这些资产引用的修订来比较。不写成「先在内容修订里按载荷筛选」：每个场景修订也是一条内容修订，那样的查询走哪条路取决于优化器，可能扫过整个场景历史。两步查的成本只随模型资产的数量增长。
+- **为什么查重放在消费上传之前**：命中时不需要新缩略图，也就不要求上传仍然可用；这样已在库里的模型即使上传过期也能「再存一次」追加分组。
+- **库副本的载荷**：在来源载荷（含代码）的基础上加两个字段，其余原样复制，所以库副本经 `completeModel` 仍是合法的完整形态，场景可以直接引用。
+
+### 库副本不被续写（修订 v12）
+
+`commitModelOp.apply` 在写内容之前：
+
+```
+if op.BaseContentID != "" && isLibraryCopy(tx, op.BaseContentID) {
+    op.BaseContentID = ""      // 新建内容；响应的 models 返回新内容 ID
+}
+```
+
+- `isLibraryCopy`：该内容有任一修订的载荷带 `source_revision_id`。库副本内容只会有存入时那一个修订，所以等价于看它的唯一修订。
+- 编辑器照 R4 发 `base_content_id`，不用知道库副本这回事。确认后 `set_instance_model` 引用了 `base.models` 里没有的修订，会触发一次重读（`state/sync.ts:namesUnknownModel`），属性栏拿到服务端摘要里的新内容 ID。
+- 助手的 `write_model` 替换实例时，`replaceTarget` 同样按 R4 带上 `base_content_id`，完成时走同一个 `commit_model`，结果一致。
+- 删除实施中加的前端页面内标记 `ModelCache.copied` 与 `forkPlan` 的 `copied` 参数（见「局部设计与偏差」3.4）。
 
 ### 编辑器侧的可存入判断
 
@@ -134,12 +178,14 @@ SaveModelToLibrary(cmd)            // operation key "library.create_asset_from_s
 弹框沿用 `WorkspacePage` 的 `StudioDialog` 和 `GroupField`：
 
 - 标题默认取模型名（`name_hint`），没有时取物件名；
-- 标题下方一行说明：「保存模型和参数；场景里换的材质和缩放不随资产保存」；
+- 标题下方一行说明：「保存模型、参数和材质；位置、旋转和缩放不随资产保存」（修订 v12）；
 - 结果提示沿用 `copyNotice`（「已存入…」/「这份内容已在资产库中，已归入…」）。
 
 **存哪一版，打开时就冻结**：
 
-- 弹框打开时记下 `{object_id, content_revision_id, unit_rev}`。其中 `unit_rev` 取 `base.unit_revs["object:<id>:content"]`，请求的 `expected_object_rev` 用的就是它，而不是点「存入」时的最新值。
+- 弹框打开时记下 `{object_id, content_revision_id, unit_rev, materials}`。
+  - `unit_rev` 取 `base.unit_revs["object:<id>:content"]`，请求的 `expected_object_rev` 用的就是它，而不是点「存入」时的最新值。
+  - `materials` 取同一版快照里实例的 `material_slots`，缩略图按它渲染（修订 v12）。
 - 原因：弹框打开期间，场景可能已经因失效通知重读到新版。如果点「存入」时才取最新值，请求会直接成功，存进摄影师没确认过的版本，AC-2 不成立。
 
 **收到 409 `creative_document_conflict` 后**：
@@ -148,8 +194,19 @@ SaveModelToLibrary(cmd)            // operation key "library.create_asset_from_s
 2. 等场景会话读到的 `unit_revs[unit]` ≥ `details.conflicts[0].current_rev`。此时编辑器里显示的已是新版，属性栏同步更新。
 3. 按新版重新执行可存入判断：
    - 不能存时（比如实例被删除，或换成了不可用的模型），提示原因，「存入」保持不可点；
-   - 能存时，用新版刷新冻结的三项。如果摄影师没改过标题，标题默认值也换成新模型名。提示改为「模型已更新为最新版本，确认后再存」，「存入」恢复可点。
-4. 再点「存入」时用新的 `operation_id`，因为请求内容已经变了，不能沿用原来的幂等键。
+   - 能存时，用新版刷新冻结的四项。如果摄影师没改过标题，标题默认值也换成新模型名。提示改为「模型已更新为最新版本，确认后再存」，「存入」恢复可点。
+4. 再点「存入」时重新渲染缩略图，用新的 `operation_id`，因为请求内容已经变了，不能沿用原来的幂等键。
+
+**点「存入」之后**（修订 v12）：
+
+1. 按钮显示「正在生成缩略图…」：调用 `request.thumbnail(target, signal)`。同一版目标的缩略图只渲染上传一次，网络失败后重试沿用，请求内容不变，幂等键也就不变。
+   - 编辑器的 `library/thumbnail.ts` 用 `ModelCache.load` 拿到网格，按 `resolveSlot(slot, materials, hint, constants)` 和 `materialFor` 着色。
+   - 灯光用材质预览的 `RoomEnvironment` 加一盏主光；256 × 256、透明背景，取景与 `sandbox/thumbnail.ts` 相同。
+   - 渲染器复用 `sandbox/thumbnail.ts` 的共享渲染器，不另开 WebGL 上下文。
+2. PNG 经场景已有的暂存上传（`commit_model` 的缩略图走的同一套）得到 `thumbnail_upload_id`。
+3. 按钮显示「正在存入…」，提交请求。
+4. 渲染或上传失败：提示「缩略图生成失败，没有存入，可以重试」，不提交请求；关闭弹框时中止进行中的渲染和上传。
+5. 收到 409 `creative_upload_unavailable`（上传过期）：按「点存入」从第 1 步重做一次，仍失败再提示。
 
 收到其他错误时，按现有 `copyNotice` 的错误提示处理，不暴露错误原文（项目偏好）。
 
@@ -176,9 +233,9 @@ sequenceDiagram
   - 从菜单栏打开时没有光标位置，直接用兜底：`groundPoint()` 取视图中心在地面上的投影，与 `addPrimitive` 一致；
   - 拖放在松手处吸附，结果就是虚影最后的位置。
 - **对象**：
-  - `{kind: 'model_instance', name: asset.title（截到对象名上限）, parent_id: null, order: nextOrder, transform: {position, rotation, scale: [1,1,1]}, visible: true, locked: false, model: {content_revision_id}, material_slots: {}}`，`position` 和 `rotation` 取吸附结果；
+  - `{kind: 'model_instance', name: asset.title（截到对象名上限）, parent_id: null, order: nextOrder, transform: {position, rotation, scale: [1,1,1]}, visible: true, locked: false, model: {content_revision_id}, material_slots: 资产的 materials ?? {}}`，`position` 和 `rotation` 取吸附结果（修订 v12：带上资产的材质；修订 v12 以前的模型资产没有 `materials`，放入时为空）；
   - 标签「添加「<标题>」」，一次 `edit` 即一次修订、一次撤销，与 `addPrimitive` 相同。
-- **放入后马上有摘要**：资产内容里已有 `manifest`、去掉代码的 `generator`、`name_hint` 和 `content_id`。
+- **放入后马上有摘要**：资产内容里已有 `manifest`、去掉代码的 `generator`、`name_hint`、`materials` 和 `content_id`。
   - 放入时用 `modelCache.remember(revision, summary)` 登记为已知摘要，属性栏、选中框和参数面板因此立即正确。
   - 已知摘要放在 `ModelCache` 新增的独立存储 `known` 里，**不写进 `local`**：`LocalModel` 要求带 GLB 字节，`load()` 一看到 `local` 里有这个修订就直接用 `local.glb`，只有摘要的条目会让它拿空字节去校验而出错。
   - `modelSummaries` 按「服务端 > 本机烘焙（`local`）> 已知摘要（`known`）」合并。服务端摘要一到就以它为准；收到服务端摘要的修订从 `known` 里删掉。
@@ -222,7 +279,7 @@ sequenceDiagram
 | `ceiling` | 顶面中心 | 朝下的面 | 参考点放在命中点，保持直立，不旋转 |
 | `free` | 几何中心 | 朝上的面 | 包围盒底面中心放在命中点，保持直立，不旋转 |
 
-- **兜底**：没有符合的面时（比如场景里没有顶面），按 `free` 的规则落到射线与地面（z = 0）的交点上，也就是包围盒底面贴地，所以不会埋进地下。射线连地面也碰不到时（比如朝天拖），用 `groundPoint()` 的视图中心投影。
+- **兜底**：没有符合的面时（比如场景里没有顶面），按 `free` 的规则落到光标下第一个朝上的面上；找不到就落到射线与地面（z = 0）的交点上，也就是包围盒底面贴地，所以不会埋进物体或地下。射线连地面也碰不到时（比如朝天拖），用 `groundPoint()` 的视图中心投影。
 - **不做**：按法线倾斜模型（斜面上的家具仍然保持直立）；拖动时按修饰键关闭吸附。真实使用中需要时再加。
 
 ### 资产库对 `model` 的分支
@@ -237,7 +294,7 @@ sequenceDiagram
 | `editor/MediaView.tsx:MediaFigure`、`editor/LibraryTiles.tsx:TileFace` | 新增模型卡面：缩略图放在中性底上，角标「3D」；和图片卡一样经 `useNearViewport`，卡片接近可视区才请求缩略图 |
 | `assets/AssetBrowser.tsx` 的 `visual` 判断 | 模型按有画面的卡片处理（显示标题说明） |
 | `viewer/MediaViewer.tsx` | 新增模型舞台：`lazy(() => import('../../creative-scene/preview/ModelPreview.tsx'))`；加载中显示缩略图 |
-| `viewer/AssetInfoPanel.tsx`、`assets/AssetInspector.tsx` | 类型「模型」；尺寸（`manifest.bounds`，米，保留两位）、面数、材质槽（id 与提示）、参数（只读，按 `params_schema` 的标签和单位）；不显示画幅。格式化放在 `viewer/modelInfo.ts`（见「3D 预览」的加载边界） |
+| `viewer/AssetInfoPanel.tsx`、`assets/AssetInspector.tsx` | 类型「模型」；尺寸（`manifest.bounds`，米，保留两位）、面数、材质槽（id、提示，以及所配材质的名称，修订 v12）、参数（只读，按 `params_schema` 的标签和单位）；不显示画幅。格式化放在 `viewer/modelInfo.ts`（见「3D 预览」的加载边界） |
 | `assets/useOrganization.tsx` 下载、`editor/MediaView.tsx` 扩展名表 | 走 `downloadMedia`，取 `original`，扩展名 `.glb` |
 | `editor/assetPlacement.ts`、`assets/placement.ts`、`WorkspacePage.addAssets` | 过滤掉模型；全是模型时提示「模型只能放进 3D 场景」 |
 | `editor/CanvasView.tsx` 拖放 | 同上；`fillable` 对模型为假 |
@@ -250,9 +307,9 @@ sequenceDiagram
   - 信息面板的格式化（尺寸、参数标签与单位、槽位提示）放在 `viewer/modelInfo.ts`，只依赖 `schema.d.ts` 的类型和不含 three 的数据。它不能 import `creative-scene` 里引用 three 的模块，否则 three 会被拉进主包。e2e 断言能兜底，但发现得晚，所以在模块边界上就隔开。
 - **组成**：
   - R3F `Canvas`，加 drei `OrbitControls`：拖动旋转，滚轮缩放，双击回到初始视角。初始视角与缩略图相同（`sandbox/thumbnail.ts` 的三分之四前视角，按包围盒取景）。
-  - 网格经 `ModelCache.load` 读取，复用 GLB 校验和槽位拆分；材质经 `resolveSlot(slot, {}, hint, constants)` 和 `materialFor`。
-  - 切换按钮叫「白模 / 默认材质」。「白模」沿用编辑器白模的材质与灯光；「默认材质」按槽位提示套用预设，沿用材质预览的 `RoomEnvironment`。不复用 `Lighting.tsx` 里依赖场景状态的部分，只抽出无状态的灯光构件。
-  - 「默认材质」下方一行说明：「放进场景后可以换材质」。叫「默认材质」，是为了不让摄影师以为这是存入时场景里配的材质（见「存什么」）。
+  - 网格经 `ModelCache.load` 读取，复用 GLB 校验和槽位拆分；材质经 `resolveSlot(slot, materials, hint, constants)` 和 `materialFor`。
+  - 切换按钮叫「白模 / 材质」（修订 v12，原「默认材质」），打开时为「材质」，与卡片缩略图一致。「白模」沿用编辑器白模的材质与灯光；「材质」按资产的 `materials` 着色，未分配的槽位按槽位提示套用预设，即 `resolveSlot(slot, materials, hint, constants)`，沿用材质预览的 `RoomEnvironment`。不复用 `Lighting.tsx` 里依赖场景状态的部分，只抽出无状态的灯光构件。
+  - 「材质」下方一行说明：「放进场景后可以换材质」。
 - **失败**：GLB 读不到或校验失败时，舞台显示缩略图和「无法预览」，不暴露错误原文（项目偏好）。
 - **资源**：
   - 浮窗关闭时卸载 `Canvas`，释放渲染器。
@@ -271,7 +328,7 @@ sequenceDiagram
   - 按内容修订读取（`GET /creative/content-revisions/{id}`）不调用它，仍返回代码。
 - **OpenAPI 只改响应侧**：
   - `CreativeModelPayload` 经 `CreativeContentPayload` 的 oneOf，同时被三个**请求体**引用：`CreativeContentDraft`、`CreativeReplaceContentPayload`、`CreativeActionReplaceContent`。直接把它的 `code` 改成可选，请求侧也会跟着放宽，所以不动它。
-  - 新增只用于响应的 `CreativeModelPreviewPayload`：`{model: {format, manifest, generator, name_hint}}`。
+  - 新增只用于响应的 `CreativeModelPreviewPayload`：`{model: {format, manifest, generator, name_hint, materials?, source_revision_id?}}`（后两项修订 v12；`CreativeModelPayload` 同样加这两个可选字段）。
     - `generator` 必填，引用已有的 `CreativeModelGenerator`（场景读取用的那份，不含代码，`additionalProperties: false`）。
     - 资产只持有完整形态，完整形态一定有 `generator`。
   - 新增只用于响应的联合类型 `CreativeContentRevisionPayload`：现有四种载荷，加上 `CreativeModelPreviewPayload`。三种模型载荷各只匹配一个变体，所以 `oneOf` 成立：
@@ -288,9 +345,9 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
 
 - **`creativecontent.ModelFacts(p Payload) (ModelFacts, bool)`**：
   - 只解码完整形态；暂存形态返回 `false`。
-  - 完整信息的字段：`name`（取 `name_hint`）、`mount`、`size_m`（包围盒三边长，米，四舍五入到毫米）、`triangles`、`slots`（id 与提示）、`parts`、`anchors`、`params_schema`、`params`。
+  - 完整信息的字段：`name`（取 `name_hint`）、`mount`、`size_m`（包围盒三边长，米，四舍五入到毫米）、`triangles`、`slots`（id 与提示）、`materials`（资产的材质分配，修订 v12；没有时为空对象）、`parts`、`anchors`、`params_schema`、`params`。
   - 字段名和 `size_m` 的算法与 `write_model` 回报的 `creativescene.BakedModel` 一致，助手看到的是同一套说法；测试对同一修订断言两者的公共字段相同。
-  - `Brief()` 是给搜索结果用的要点：`name`、`size_m`、`mount`、`triangles`、`slots`、`params`（只列参数名）。不含部件和挂点，因为它们最多各 200 项，会挤占搜索的分页字节。
+  - `Brief()` 是给搜索结果用的要点：`name`、`size_m`、`mount`、`triangles`、`slots`、`materials`、`params`（只列参数名）。`materials` 进要点，是为了助手不读取就能原样放入（修订 v12）。不含部件和挂点，因为它们最多各 200 项，会挤占搜索的分页字节。
   - 放在 `creativecontent` 的原因：
     - `creativelibrary` 和 `creativeagent` 都要用，而 `creativelibrary` 不能 import `creativescene`；
     - `creativecontent` 本来就持有 `Payload.Model`，`WithoutModelCode` 也要解码它；
@@ -330,23 +387,59 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
 - **拖入只按 `mount` 原点吸附**：参考点可调和快捷轮盘是 Epic 新增的非主线子项 C8（owner 2026-10-20，proposal 决定 6）。本次的吸附函数以参考点为输入，C8 只需改变参考点的来源。
 - **不在本次范围**（proposal「What Changes」第 6 条）：
   - 把编组（多个物件）存成一个资产；
-  - 材质和缩放随资产保存。先看试用中摄影师是否常常需要，再决定是否给模型资产加「实例模板」。
+  - 变换（位置、旋转、缩放）随资产保存。修订 v12 起材质随资产保存，变换仍属场景（proposal 决定 7）。
+- **实施中的挂载点调整**（不改语义）：
+  - `creativescene/models.go`：`requireModel` 只回报错误，存入需要拿到它检查过的修订，所以拆出 `usableModel` 返回修订，`requireModel` 改为调用它。
+  - 模型资产的库测试放在新文件 `creativelibrary/model_asset_test.go`，不塞进 `asset_library_test.go`；画布拒绝模型的测试在 `creativecanvas/graph_test.go`（tasks 1.3 已写明）。
+  - 迁移标签列表另有两处带编号的写法：`creative_graph_migration_test.go`、`creative_library_migration_test.go`。
+  - 生成物还包括 `httpapi/api.gen.go` 与 `creativecanvas/tool_schemas.gen.go`（`read_canvas` 的输出 schema 引用了内容修订载荷）。
+  - Go 里类型和函数不能同名，`ModelFacts(p)` 落为 `creativecontent.ModelFactsOf(p)`，类型仍叫 `ModelFacts`，要点类型为 `ModelBrief`。
+  - `creativeagent/context.go` 把 `resolveReference` 拆成 `readReference`（按同意和能力读出文字、图片或模型信息）与 `referenceMessage`（写成消息）；`readAsset` 直接用 `readReference` 的结构化结果，不从消息正文里解析模型信息。
+  - `AgentImage` 交出模型缩略图的测试放在 `creativemedia/agent_test.go`：助手包的测试用的是假的图片读取器，验证不了真实字节。
+  - 3.1 的可存入判断和「等编辑器显示出新版」放在不依赖 three 的 `creative-scene/saveModel.ts`（`saveTarget`、`whenShown`），供单测和画布页的类型引用；存入弹框是独立组件 `creative-canvas/editor/SaveModelDialog.tsx`，`WorkspacePage` 只负责挂载。409 后的刷新经 `SaveModelRequest.refresh` 回到编辑器，场景会话不离开编辑器。
+  - 场景菜单项加可选的 `hint`（`panels/ContextMenu.tsx`），不可点时在下方说明原因；右键菜单保留带说明的禁用项，「存入资产库」因此也能说明原因。
+  - 3.2 的实例对象由 `editing.ts:newModelInstance` 生成（与 `newPrimitive` 并列）；重读条件是 `state/sync.ts:namesUnknownModel`。查看浮窗的放入按钮改由调用方给文字和适用范围（`AssetViewer` 的 `placeLabel`、`placeable`），场景任务下显示「放入场景」且只对模型。点抽屉卡片放入后，编辑器取回焦点，Cmd+Z 立即可用。
+  - 3.3 的吸附在文档空间（Y 向上）里算，视口把命中点和法线换算过去再调用，表中「按 z 轴向上判断」对应文档空间的 y 轴；求交与按需建 BVH 在 `placement/raycast.ts`；拖入虚影复用 `GhostModel`（加旋转与「加载前画包围盒」）。
+  - **兜底的细化**（实施中发现，按设计「按 free 的规则」的本意落实）：没有合适的面时先按 free 找第一个朝上的面，找不到才落到射线与地面的交点。原写法直接落地，吊顶模型拖到桌面上方时会埋进桌子里。spec「没有合适的表面」的措辞已按此更新（owner 2026-10-21 确认）。
+  - e2e 用「拖到抽屉上松手」覆盖取消拖入：Playwright 的原生拖放模拟里按不出 Esc 取消；两者都由浏览器以 `dragend` 结束、不触发 `drop`，走的是同一条清空路径。
+  - **3.4 发现的缺口**：设计的「复制语义如何成立」假定放入后改参数会分叉，但 `forkPlan` 对场景里只有一个实例的模型会带上 `base_content_id`，在资产所属的内容上追加修订。资产仍钉在旧修订上，看到的不变，但场景和资产会共用一条内容历史，不符合 I7。改为：`ModelCache` 记下从资产库放入的内容（`copied`），这类内容第一次修改时不带 `base_content_id`，分叉出场景自己的模型；之后的修改照 R4 续在新内容上。已知限制：这份记录只在页面存活期间有效，刷新后再改会照 R4 续在原内容上（资产不受影响）。要彻底解决需要服务端回报内容的归属，留作后续。**修订 v12 取代**：库副本由服务端保证不被续写（见「库副本不被续写」），`copied` 删除。
+  - 挂载表与实际改动的其余出入：
+    - `CodePanel.tsx` 未改：读代码的地方实际是 `creative-scene/api.ts:readModelGenerator`，类型守卫加在那里；
+    - `CanvasView.tsx` 未改：拖到画布的素材都经 `WorkspacePage.addAssets`，模型在那里被过滤并提示；填充判断 `fillable` 要求媒体类型，模型本来就不满足；
+    - `assets/BatchBar.tsx`、`assets/assetMenu.tsx`：「放入项目」「放入画布」两个入口按「至少一项能放到画布上」显示，属于 2.2 的范围；
+    - 前端单测按项目惯例放在 `frontend/scripts/*.test.ts`（`creative-scene-snap.test.ts`、`creative-scene-library.test.ts`、`creative-model-asset.test.ts`），不放在 `placement/snap.test.ts`；
+    - 样式落在各自已有的样式表：`editor/library.css`（抽屉层级）、`viewer/viewer.css`（3D 预览）、`creative-scene/scene.css`（菜单说明、属性栏的存入按钮）。
+  - 1.2 生成新的 `kind` 枚举后，前端类型要求画布放置先排除模型；`assetPlacement.ts` 加 `CanvasAsset` 类型守卫，`assets/placement.ts` 遇到模型抛「模型只能放进 3D 场景」，`WorkspacePage` 的 `addAssets`、`pickReferences` 先过滤。2.2 在此基础上补齐提示与其余入口。
+- **修订 v12 的实施**：
+  - 库副本的载荷按存储的 JSON 复制，只加 `materials` 与 `source_revision_id` 两个字段，不经 `ModelPayload` 解码再编码，代码和参数原样保留。`ModelPayload.Materials` 用 `omitzero`：场景命令写出的修订没有这个字段，库副本的空对象 `{}` 照样写出，查重的 JSON 比较才能命中。
+  - `isLibraryCopy` 不加锁：库副本只有存入时那一个修订，场景内容也不会变成库副本，判断结果不随并发改变。
+  - 存入请求的缩略图入参是整个冻结目标（`request.thumbnail(target, signal)`），不只是材质：409 刷新后模型修订也可能变了。
+  - 查看浮窗打开时显示「材质」：卡片和加载中的占位图都是带材质的缩略图，先显示白模会像材质丢了。
+  - e2e 的模拟服务端按库副本语义改写：存入新建 `ccrv_copy*`，按「来源修订 + 材质」查重；`libraryAsset` 返回库副本修订；`commit_model` 遇到库副本内容新建内容。
+  - 验证按 owner 的要求只跑定向检查：Go 跑任务列出的包；前端跑类型检查、改动文件的 oxlint、相关单测文件和 C6 相关的 e2e 用例。`make check-frontend` 的全量单测和构建留给合并前的 `make check-merge`。
+- **后端评审修复**（2026-10-20）：
+  - **缩略图被省略时保留模型信息**：原先图片省略的几条路径会整条替换消息正文，模型信息随缩略图一起丢失。涉及历史图片窗口、上下文压缩、单轮图片上限和缩略图读不到。现在 `read_asset` 结果和历史里的模型引用都只去掉图片定位，`thumbnail_omitted` 分别记 `context_limit`、`image_limit`、`thumbnail_unreadable`（`creativeagent.withoutThumbnail`）。
+  - **`read_asset` 的模型信息按 64 KiB 工具结果上限取舍**：超出时先省略部件与挂点，再省略参数定义，`omitted` 列出省略项；仍超出就作为工具拒绝返回，不终止 run。原估算「约 25 KB」漏算了枚举选项和材质槽，按校验上限可以超过 64 KiB。
+  - **尺寸算法只保留一份**：`write_model` 的 `BakedModel` 改为 `creativecontent.ManifestFacts` 的别名，与 `ModelFacts` 共用 `ManifestFactsOf`。
+  - **更正「助手看模型资产」里的附带效果**：指令片段只接受文字和图片（`resolveContentSegment`），摄影师不能用 `<<<…>>>` 直接引用模型；模型只会经历史里的 `read_asset` 结果再次出现。上面的省略处理覆盖了这条路径。
 - **后续**：
   - 参考点设置与快捷轮盘（C8）；
   - 助手把场景模型存入资产库；
   - 模型资产的「替换场景里的实例」（`set_instance_model` 指向资产修订）；
-  - 外部 GLB 导入（Epic 非目标）。
+  - 外部 GLB 导入（Epic 非目标）；
+  - 单独的「应用变换」：把缩放固化进模型（proposal 决定 7；代码模型的尺寸靠参数决定，需要时另立子项）。
 
 ## 接口与数据契约
 
-- **交付**：`api: 模型存入资产库`、`data: 模型资产`，按 Epic v11 绑定，不复制到本 Change 的 contracts.md。
+- **交付**：`api: 模型存入资产库`、`data: 模型资产`，按 Epic v12 绑定，不复制到本 Change 的 contracts.md。
 - **兼容扩展**：
   - 资产相关的 `kind` 枚举加 `model`，涉及资产列表 `kind` 查询参数、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`（必填键加 `model`）。
   - `CreativeContentRevision.payload` 改为只用于响应的联合类型 `CreativeContentRevisionPayload`，新增不含代码的模型载荷变体，用于资产列表和资产读取；请求体引用的 `CreativeContentPayload` 不变（见「列表和读取不下发代码」）。
   - 助手 `search_assets` 的 `kind` 枚举改为资产库实际支持的类型：去掉从来不可用的 `scene`，加 `model`；模型项附 `model` 要点，不再附缩略图宽高。
   - 助手 `read_asset` 支持模型，返回 `model` 完整信息，以及缩略图或 `thumbnail_omitted`（Epic v11 `data: 模型资产`）。
+  - 修订 v12：存入请求加必填的 `thumbnail_upload_id`（接口尚未上线）；模型载荷加可选的 `materials`、`source_revision_id`；`search_assets` 要点与 `read_asset` 信息加 `materials`。
   - 工具说明变化按 `docs/dev/agent-skills-tools.md`「排空后升级」。
-- **不变**：场景的读取、命令接口和已交付的场景契约。
+- **场景接口**：读取和命令的请求、响应结构不变。行为上补充一条：`commit_model` 的 `base_content_id` 指向库副本内容时新建内容（Epic v12 写在 `data: 模型资产`，由本次交付）。
 
 ## 挂载点
 
@@ -414,23 +507,43 @@ owner 2026-10-20 补充：助手查找资产时要能看缩略图，也要拿到
 | `frontend/scripts/creative-scene.e2e.mjs` | 修改 | 存入、放入、拖入吸附、复制语义 |
 | `frontend/scripts/creative-assets.e2e.mjs` | 修改 | 模型卡片、查看浮窗、下载、不加载 three |
 | `frontend/scripts/creative-library.e2e.mjs` | 修改 | 画布抽屉的模型限制、场景视图中的抽屉 |
+| **修订 v12：材质随资产保存** | | |
+| `backend/internal/creativescene/models.go:ModelPayload` | 修改 | 加 `Materials`（`omitzero`）、`SourceRevisionID`（`omitempty`），库副本经 `completeModel` 仍是完整形态 |
+| `backend/internal/creativescene/library.go` | 修改 | 查重、写库副本、消费缩略图上传；`SaveModelInput.ThumbnailUploadID` |
+| `backend/internal/creativescene/ops_model.go:commitModelOp` | 修改 | `base_content_id` 是库副本内容时新建内容 |
+| `backend/internal/creativelibrary/service.go:FindModelAssetInTx` | 新增 | 按来源修订与材质分配查重 |
+| `backend/internal/creativestaging/staging.go:ConsumeForAsset` | 新增 | 暂存上传标为被资产采用 |
+| `backend/internal/creativecontent/model_facts.go` | 修改 | `ModelFacts`、`ModelBrief` 加 `materials` |
+| `backend/internal/creativeagent/scene_tools.go`、`asset_tool_info.go`、`context.go` | 修改 | `edit_scene` 说明：放入时把 `materials` 写进 `material_slots`；`search_assets`、`read_asset` 说明加材质 |
+| `api/openapi.yaml` | 修改 | 存入请求加 `thumbnail_upload_id`；`CreativeModelPayload`、`CreativeModelPreviewPayload` 加 `materials`、`source_revision_id`；`make generate`（`httpapi/api.gen.go`、`creativecanvas/tool_schemas.gen.go`、`frontend/src/api/schema.d.ts`） |
+| 后端测试 | 修改 | `creativescene/library_test.go`（库副本、按材质查重、上传不可用、上传不是 PNG、命中时不消费上传）、`ops_model` 的库副本不续写、`httpapi/creative_scene_library_test.go`、`creativeagent/asset_lookup_test.go`（要点与信息带材质） |
+| `frontend/src/creative-scene/library/thumbnail.ts` | 新增 | 按材质渲染 256 px 缩略图，复用共享渲染器 |
+| `frontend/src/creative-scene/sandbox/thumbnail.ts` | 修改（实施中补） | 导出共享渲染器 `sharedRenderer` 与取景 `frame`，供上一行复用 |
+| `frontend/src/creative-scene/editing.ts:newModelInstance` | 修改（实施中补） | 加材质参数，实例的 `material_slots` 复制资产的 `materials` |
+| `frontend/src/creative-scene/saveModel.ts` | 修改 | `SaveTarget.materials`；`SaveModelRequest.thumbnail` |
+| `frontend/src/creative-scene/SceneEditor.tsx` | 修改 | 提供 `thumbnail`（渲染并暂存上传）；`placeModel` 带资产的 `materials` |
+| `frontend/src/creative-canvas/editor/SaveModelDialog.tsx` | 修改 | 说明文字、生成缩略图与上传的进度、失败提示、上传过期重做一次 |
+| `frontend/src/creative-scene/modelEdits.ts`、`models/cache.ts` | 修改 | 删除 `copied` 与 `forkPlan` 的 `copied` 参数 |
+| `frontend/src/creative-scene/preview/ModelPreview.tsx`、`creative-canvas/viewer/MediaViewer.tsx` | 修改 | 「白模 / 材质」，材质模式读资产的 `materials`；查看浮窗把资产的 `materials` 传给预览 |
+| `frontend/src/creative-canvas/viewer/modelInfo.ts` | 修改 | 材质槽显示所配材质（读不含 three 的材质目录取名称）；`AssetInfoPanel.tsx`、`assets/AssetInspector.tsx` 共用 `modelRows`，未改 |
+| `frontend/scripts/creative-scene.e2e.mjs`、`creative-assets.e2e.mjs`、相关单测 | 修改 | 见「验证与交付」修订 v12 各行 |
 
 ## 验证与交付
 
 | 验收 | 验证 |
 |---|---|
-| AC-1 存入、复用 | Go `library_test.go`：201 新建、同修订 200 复用并追加分组、回执重放；e2e：物件菜单存入、提示文案 |
-| AC-2 不能存 | 单测：可存入判断表的每一行；Go：409 冲突带 `object:<id>:content`、400 `creative_model_unavailable`（暂存形态修订）、400 非模型实例、404 对象不存在、409 场景在回收站、跨账号 404；e2e：弹框打开后服务端改了内容单元，点存入得到冲突提示，「存入」暂不可点，场景读到新版后弹框显示「已更新为最新版本」，再点存入的是新版修订；弹框打开期间场景已经重读到新版时，存入仍按打开时的版本检查并得到冲突 |
-| AC-3 放入 | e2e：Shift + A 打开抽屉，点模型后物件出现在菜单点、名称与属性栏正确、一次 Cmd+Z 撤销，抽屉收起；连续拖入两个模型，抽屉保持打开；单测：`confirmed` 的重读条件、`modelSummaries` 三层合并、`known` 条目不影响 `load()` |
-| AC-3b 拖入吸附 | 单测：`snap.ts` 四种 `mount` 各自命中合适与不合适的面、`wall` 的朝向、兜底时包围盒贴地、朝天拖时的视图中心投影；e2e：落地模型拖到方块顶面，虚影出现，松手后物件底面高度等于方块顶面、一次修订；吊顶模型在没有顶面的场景里底面贴地；拖动中按 Esc，场景修订不变 |
-| AC-4 复制语义 | e2e：放入后改参数，命令为不带 `base_content_id` 的 `commit_model` 加 `set_instance_model`，资产的修订不变；Go：资产持有的修订在场景分叉后仍可读（GC 持有） |
-| AC-5 预览 | e2e（真实 GLB 夹具）：查看浮窗出现画布，拖动后像素变化，「白模 / 默认材质」切换后像素变化，信息面板数值与 manifest 一致，下载文件名以 `.glb` 结尾；单测：预览缓存超过 8 个时淘汰最久没打开的并释放几何体 |
+| AC-1 存入、复用 | Go `library_test.go`：201 新建库副本（新内容、载荷带 `materials` 与 `source_revision_id`、GLB 与来源同一 blob、缩略图来自上传且上传被标为资产采用）；同模型同材质 200 复用并追加分组、不消费上传；换材质 201 新建；从库副本实例再存同材质 200；回执重放；上传不可用 409 `creative_upload_unavailable`、不是 PNG 400；e2e：物件菜单存入、提示文案、卡片缩略图与白模缩略图像素不同 |
+| AC-2 不能存 | 单测：可存入判断表的每一行；Go：409 冲突带 `object:<id>:content`、400 `creative_model_unavailable`（暂存形态修订）、400 非模型实例、404 对象不存在、409 场景在回收站、跨账号 404；e2e：弹框打开后服务端改了内容单元（改参数或换材质），点存入得到冲突提示，「存入」暂不可点，场景读到新版后弹框显示「已更新为最新版本」，再点存入的是新版修订；弹框打开期间场景已经重读到新版时，存入仍按打开时的版本检查并得到冲突 |
+| AC-3 放入 | e2e：Shift + A 打开抽屉，点模型后物件出现在菜单点、名称与属性栏正确、`material_slots` 等于资产的 `materials`、一次 Cmd+Z 撤销，抽屉收起；连续拖入两个模型，抽屉保持打开；单测：`confirmed` 的重读条件、`modelSummaries` 三层合并、`known` 条目不影响 `load()` |
+| AC-3b 拖入吸附 | 单测：`snap.ts` 四种 `mount` 各自命中合适与不合适的面、`wall` 的朝向、兜底时包围盒贴地、朝天拖时的视图中心投影；e2e：落地模型拖到方块顶面，虚影出现，松手后物件底面高度等于方块顶面、一次修订；吊顶模型在没有顶面的场景里底面落在光标下的方块顶面上；拖动中按 Esc，场景修订不变 |
+| AC-4 复制语义 | Go：`commit_model` 的 `base_content_id` 指向库副本内容时新建内容，库副本内容仍只有一个修订；助手 `write_model` 替换库副本实例同样新建内容；资产持有的修订在场景分叉后仍可读（GC 持有）。e2e：放入后改参数、换材质，资产的修订和预览不变，场景实例的新修订属于新内容；刷新页面后再改，结果相同 |
+| AC-5 预览 | e2e（真实 GLB 夹具）：查看浮窗出现画布，拖动后像素变化，「白模 / 材质」切换后像素变化、材质模式与资产的 `materials` 一致（换一种材质的资产像素不同），信息面板数值与 manifest 一致，下载文件名以 `.glb` 结尾；单测：预览缓存超过 8 个时淘汰最久没打开的并释放几何体 |
 | AC-6 不多加载 | e2e：资产库页与画布页打开、浏览模型卡片时没有 three 请求；打开模型查看浮窗后才有 |
 | AC-7 不进画布 | e2e：抽屉卡片菜单没有「放入画布」，拖到画布后节点数不变并出现提示；单测：`validatePlacementAssets` 过滤；Go：`add_node` / `fill_node` 用模型资产时，错误说明为「模型只能放进 3D 场景」 |
 | AC-8 不下发代码 | Go：资产列表与 `GET /creative/assets/{id}` 中模型的 `generator` 没有 `code`，内容修订读取有；文字资产的 `GET /creative/assets/{id}` 仍返回完整正文、不截断；`make generate-check`，并检查生成的 Go/TS 类型中三个请求体的 `code` 仍为必填 |
-| AC-9 助手放入 | Go：`search_assets` 接受 `kind=model` 并返回 `content_revision_id`；`edit_scene` 用该修订 `add_objects` 两个实例成功。不跑真实模型对话，真实模型是否这样用由 owner 试用判断 |
+| AC-9 助手放入 | Go：`search_assets` 接受 `kind=model` 并返回 `content_revision_id`；`edit_scene` 用该修订和要点里的 `materials` `add_objects` 两个实例成功，实例的 `material_slots` 与资产一致。不跑真实模型对话，真实模型是否这样用由 owner 试用判断 |
 | AC-10 迁移 | Go 迁移测试三种情形 |
-| AC-11 助手理解模型 | Go：`search_assets kind=model` 每项有 `model` 要点，没有 `width` / `height`，也没有部件、挂点和代码；`read_asset` 读模型返回完整信息，其公共字段与 `write_model` 对同一修订回报的一致，不含代码；能看图且允许图片预览时带 `image_revision_id`，`AgentImage` 交出的是 `thumbnail` 角色的 PNG，不是 GLB；模型不能看图、没有 `image_preview` 同意时，分别返回对应的 `thumbnail_omitted`，不报错；没有 `media_metadata` 同意时按现有规则拒绝。不跑真实模型对话，看图后是否挑得更准由 owner 试用判断 |
+| AC-11 助手理解模型 | Go：`search_assets kind=model` 每项有 `model` 要点（含 `materials`），没有 `width` / `height`，也没有部件、挂点和代码；`read_asset` 读模型返回完整信息，其公共字段与 `write_model` 对同一修订回报的一致，不含代码；能看图且允许图片预览时带 `image_revision_id`，`AgentImage` 交出的是 `thumbnail` 角色的 PNG，不是 GLB；模型不能看图、没有 `image_preview` 同意时，分别返回对应的 `thumbnail_omitted`，不报错；没有 `media_metadata` 同意时按现有规则拒绝。不跑真实模型对话，看图后是否挑得更准由 owner 试用判断 |
 
 - **门禁**：日常 `make check-go PKG=./internal/creativescene/... ./internal/creativelibrary/... ./internal/creativecontent/... ./internal/creativecanvas/... ./internal/creativemedia/... ./internal/creativeagent/... ./internal/platform/...`、`make check-frontend`、`make generate-check`；e2e 只跑相关脚本，用 ONLY 过滤，换端口；合回 develop 用 `make check-merge`。
 - **上线顺序**：迁移随后端发布；项目尚未对外上线，不设开关。助手工具说明变化按「排空后升级」。

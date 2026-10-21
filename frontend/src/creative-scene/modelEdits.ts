@@ -78,7 +78,9 @@ export function sharingInstances(objects: readonly SceneObject[], objectID: stri
 /**
  * R4. Unshared: a new revision of the same model. Shared, this one only
  * (the default): a new model, the others untouched. Shared, all of them: a
- * new revision of the same model, every listed instance switches.
+ * new revision of the same model, every listed instance switches. A model
+ * placed from the asset library needs nothing here: the server never
+ * continues a library copy, so its first edit starts a model of the scene's own.
  */
 export function forkPlan(objects: readonly SceneObject[], objectID: string, contentID: string | undefined, applyToAll: boolean): Fork {
   const others = sharingInstances(objects, objectID)
@@ -189,7 +191,7 @@ export class ModelEdits {
   }
 
   private summaries(): Record<string, SceneModel> {
-    return modelSummaries(this.deps.session.state.base?.models, this.deps.cache.local.getState())
+    return modelSummaries(this.deps.session.state.base?.models, this.deps.cache.local.getState(), this.deps.cache.known.getState())
   }
 
   private set(patch: (s: ModelEditsState) => Partial<ModelEditsState>) {

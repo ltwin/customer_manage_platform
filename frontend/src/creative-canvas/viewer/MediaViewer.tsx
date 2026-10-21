@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import {
   AudioLines,
@@ -15,6 +23,12 @@ import { cachedMediaTicket } from '../editor/media.ts'
 import { contentText } from '../editor/content.ts'
 import { clampPan, zoomAt, wheelZoom, type Zoom } from './zoom.ts'
 import { ViewerImageCache } from './imageCache.ts'
+import { modelManifest, modelMaterials } from './modelInfo.ts'
+
+// three.js 只随模型的查看浮窗加载，资产库页和画布页平时不请求。
+const ModelPreview = lazy(
+  () => import('../../creative-scene/preview/ModelPreview.tsx'),
+)
 import './viewer.css'
 
 export type ViewerItem = {
@@ -144,14 +158,21 @@ export default function MediaViewer({
             </div>
           ) : (
             <>
-              <MediaStage
-                key={`${item.id}:${item.content?.id ?? ''}`}
-                item={item}
-                images={images}
-                mediaRef={(el) => {
-                  media.current = el
-                }}
-              />
+              {item.kind === 'model' ? (
+                <ModelStage
+                  key={`${item.id}:${item.content?.id ?? ''}`}
+                  item={item}
+                />
+              ) : (
+                <MediaStage
+                  key={`${item.id}:${item.content?.id ?? ''}`}
+                  item={item}
+                  images={images}
+                  mediaRef={(el) => {
+                    media.current = el
+                  }}
+                />
+              )}
               {loading && (
                 <div className="v-detail-loading" role="status">
                   正在读取素材…
@@ -195,6 +216,41 @@ export default function MediaViewer({
       </div>
     </div>,
     document.querySelector('.cc-workspace') ?? document.body,
+  )
+}
+
+function ModelStage({ item }: { item: ViewerItem }) {
+  const thumbnail = useMediaURL(
+    item.content?.id,
+    item.content?.media,
+    'thumbnail',
+    true,
+  )
+  const manifest = modelManifest(item.content)
+  if (!item.content || !manifest)
+    return (
+      <div className="v-state" role="status">
+        无法预览
+      </div>
+    )
+  return (
+    <Suspense
+      fallback={
+        <div className="v-model">
+          {thumbnail.url && (
+            <img className="v-model-still" src={thumbnail.url} alt={item.title} />
+          )}
+        </div>
+      }
+    >
+      <ModelPreview
+        revision={item.content.id}
+        manifest={manifest}
+        materials={modelMaterials(item.content)}
+        title={item.title}
+        thumbnail={thumbnail.url}
+      />
+    </Suspense>
   )
 }
 

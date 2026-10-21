@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -1057,17 +1056,11 @@ func JobConflictInTx(ctx context.Context, tx store.TxAccountScope, job Job, fail
 	return out, nil
 }
 
-// BakedModel is what write_model reports of a written model.
-type BakedModel struct {
-	SizeM     [3]float64           `json:"size_m"`
-	Triangles int                  `json:"triangles"`
-	Slots     []creativeglb.Slot   `json:"slots"`
-	Parts     []string             `json:"parts"`
-	Anchors   []creativeglb.Anchor `json:"anchors"`
-}
+// BakedModel is what write_model reports of a written model, the same facts
+// read_asset gives of a library model.
+type BakedModel = creativecontent.ManifestFacts
 
-// BakedModelInTx reads a written model's manifest: its size in metres
-// (rounded to millimetres), triangles, material slots, parts and anchors.
+// BakedModelInTx reads a written model's manifest facts.
 func BakedModelInTx(ctx context.Context, tx store.TxAccountScope, revisionID string) (BakedModel, error) {
 	models, err := placedModelsInTx(ctx, tx, []string{revisionID})
 	if err != nil {
@@ -1077,12 +1070,7 @@ func BakedModelInTx(ctx context.Context, tx store.TxAccountScope, revisionID str
 	if !m.usable {
 		return BakedModel{}, modelUnavailable(revisionID)
 	}
-	manifest := m.payload.Manifest
-	out := BakedModel{Triangles: manifest.Triangles, Slots: manifest.Slots, Parts: manifest.Parts, Anchors: manifest.Anchors}
-	for i := range out.SizeM {
-		out.SizeM[i] = math.Round((manifest.Bounds.Max[i]-manifest.Bounds.Min[i])*1000) / 1000
-	}
-	return out, nil
+	return creativecontent.ManifestFactsOf(m.payload.Manifest), nil
 }
 
 // BuiltinCatalog lists the builtin primitives for the assistant: each with

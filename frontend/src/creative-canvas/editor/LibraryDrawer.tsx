@@ -3,6 +3,7 @@ import { Maximize, Minimize, PanelLeftClose, X } from 'lucide-react'
 import * as api from './api.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
 import { kindLabel, type Catalog } from './libraryState.ts'
+import { isCanvasAsset } from './assetPlacement.ts'
 import AssetViewer from '../viewer/AssetViewer.tsx'
 import AssetBrowser from '../assets/AssetBrowser.tsx'
 import LibraryTree from '../assets/LibraryTree.tsx'
@@ -23,7 +24,7 @@ import '../assets/assets.css'
 import '../assets/organize.css'
 import './library.css'
 
-/** 带着任务打开资产库：给空节点选一份素材填进去，或为节点选参考。 */
+/** 带着任务打开资产库：给空节点选一份素材填进去，为节点选参考，或往 3D 场景里放模型。 */
 export type LibraryTask =
   | {
       kind: 'fill'
@@ -32,6 +33,7 @@ export type LibraryTask =
       title: string
     }
   | { kind: 'pick'; nodeID: string; title: string }
+  | { kind: 'scene-model' }
 type Menu = { at: Point; items: CanvasMenuItem[]; label: string }
 
 const NARROW = 344
@@ -54,6 +56,8 @@ export default function LibraryDrawer({
   onPlace,
   onFill,
   onPick,
+  onScenePlace,
+  onSceneDrag,
   onClose,
   onWidth,
   onAssets,
@@ -67,6 +71,10 @@ export default function LibraryDrawer({
   onPlace: (assets: api.Asset[]) => void
   onFill: (asset: api.Asset) => void
   onPick: (assets: api.Asset[]) => void
+  /** scene-model 任务：点一个模型放进场景。 */
+  onScenePlace?: (asset: api.Asset) => void
+  /** scene-model 任务：开始拖一个模型（拖动结束时为 null），场景视口靠它画虚影。 */
+  onSceneDrag?: (asset: api.Asset | null) => void
   onClose: () => void
   onWidth: (width: number) => void
   onAssets: (assets: api.Asset[]) => void
@@ -89,15 +97,20 @@ export default function LibraryDrawer({
     initialID: string
   } | null>(null)
   const [menu, setMenu] = useState<Menu | null>(null)
-  // 填充只接受节点同类的素材，也不从回收站里挑。
-  const effective: LibraryQuery =
+  // 填充只接受节点同类的素材，放进场景只列模型，都不从回收站里挑。
+  const lockedKind =
     task?.kind === 'fill'
-      ? {
-          ...query,
-          kind: task.mediaKind,
-          view: query.view === 'trash' ? 'all' : query.view,
-        }
-      : query
+      ? task.mediaKind
+      : task?.kind === 'scene-model'
+        ? 'model'
+        : null
+  const effective: LibraryQuery = lockedKind
+    ? {
+        ...query,
+        kind: lockedKind,
+        view: query.view === 'trash' ? 'all' : query.view,
+      }
+    : query
   const { catalog, error: catalogError } = useCatalog(refresh)
   const rawList = useAssetList(effective, refresh)
   const actions = useActions(account, reload)
@@ -203,7 +216,9 @@ export default function LibraryDrawer({
       })
   }, [catalog, onCatalog])
   // 换了任务就从全部素材开始找，不停在上次的条件里。
-  const taskKey = task ? `${task.kind}:${task.nodeID}` : ''
+  const taskKey = task
+    ? `${task.kind}:${'nodeID' in task ? task.nodeID : ''}`
+    : ''
   useEffect(() => {
     setQuery(blank())
     setSelection({ ids: [], anchor: null })
@@ -216,6 +231,12 @@ export default function LibraryDrawer({
       if (a && usable([a]).length) onFill(actual(a))
       return
     }
+    if (task?.kind === 'scene-model') {
+      if (a && a.kind === 'model' && usable([a]).length) onScenePlace?.(actual(a))
+      return
+    }
+    // 参考接到画布节点上，模型不能当参考。
+    if (task?.kind === 'pick' && a && !isCanvasAsset(a)) return
     setSelection((s) =>
       clickSelection(
         s,
@@ -227,7 +248,7 @@ export default function LibraryDrawer({
   }
   const placeable = canPlace && effective.view !== 'trash' && !task
   function place(assets: api.Asset[]) {
-    const ok = usable(assets)
+    const ok = usable(assets).filter(isCanvasAsset)
     if (!ok.length) return
     onPlace(ok)
     clear()
@@ -249,6 +270,20 @@ export default function LibraryDrawer({
   }
   // 拖出卡片：画布按 creative-asset 放置，资料库树按选择归入分组。
   function dragCard(asset: api.Asset, e: React.DragEvent) {
+    // 往场景里拖：一次一个模型，只带被拖的这张卡片。浏览器在 dragover 时读不到
+    // 拖动的数据，视口画虚影要知道是哪个模型，所以另外经页面内状态传过去。
+    if (task?.kind === 'scene-model') {
+      const a = actual(asset)
+      if (a.kind !== 'model' || !usable([a]).length) return e.preventDefault()
+      e.dataTransfer.setData('application/creative-asset', a.id)
+      e.dataTransfer.setData('application/creative-asset+json', JSON.stringify([a]))
+      e.dataTransfer.effectAllowed = 'copy'
+      onSceneDrag?.(a)
+      document.addEventListener('dragend', () => onSceneDrag?.(null), {
+        once: true,
+      })
+      return
+    }
     const list = usable(
       selection.ids.includes(asset.id) && selected.length > 1
         ? selected
@@ -283,7 +318,9 @@ export default function LibraryDrawer({
       ? `选择${kindLabel[task.mediaKind]}`
       : task?.kind === 'pick'
         ? '选择参考素材'
-        : '资产库'
+        : task?.kind === 'scene-model'
+          ? '放入场景'
+          : '资产库'
   const blocked = actions.blocked || selected.length > 100
   return (
     <>
@@ -399,15 +436,14 @@ export default function LibraryDrawer({
               !!organization.confirm
             }
             onImportFiles={importer.files}
-            onQuery={(q) =>
-              go(task?.kind === 'fill' ? { ...q, kind: query.kind } : q)
-            }
+            onQuery={(q) => go(lockedKind ? { ...q, kind: query.kind } : q)}
             onView={(v) => go(enter(query, v))}
             onGroup={(id) => go(enter(query, 'all', id))}
             onPrefs={() => {}}
             onSelect={pick}
             onBox={(ids) =>
               task?.kind !== 'fill' &&
+              task?.kind !== 'scene-model' &&
               setSelection({ ids, anchor: ids[0] ?? null })
             }
             onMenu={assetMenu}
@@ -421,7 +457,15 @@ export default function LibraryDrawer({
             onCardDrag={dragCard}
           />
         </div>
-        {task?.kind === 'fill' ? (
+        {task?.kind === 'scene-model' ? (
+          <footer className="cl-foot is-task">
+            <span>点一个模型放进场景，或拖到想放的位置</span>
+            <span className="cl-grow" />
+            <button type="button" className="btn" onClick={onClose}>
+              取消
+            </button>
+          </footer>
+        ) : task?.kind === 'fill' ? (
           <footer className="cl-foot is-task">
             <span>
               点一份{kindLabel[task.mediaKind]}填进「{task.title}」
@@ -444,8 +488,8 @@ export default function LibraryDrawer({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={!usable(selected).length}
-              onClick={() => onPick(usable(selected))}
+              disabled={!usable(selected).filter(isCanvasAsset).length}
+              onClick={() => onPick(usable(selected).filter(isCanvasAsset))}
             >
               添加{selected.length ? ` ${selected.length} 项` : ''}
             </button>
@@ -470,11 +514,11 @@ export default function LibraryDrawer({
             >
               整理…
             </button>
-            {placeable && (
+            {placeable && selected.some(isCanvasAsset) && (
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!usable(selected).length}
+                disabled={!usable(selected).filter(isCanvasAsset).length}
                 onClick={() => place(selected)}
               >
                 放入画布
@@ -516,13 +560,20 @@ export default function LibraryDrawer({
           refresh={refresh}
           label="快速查看"
           onPlace={
-            placeable
+            task?.kind === 'scene-model'
               ? (asset) => {
                   setViewer(null)
-                  place([asset])
+                  onScenePlace?.(asset)
                 }
-              : undefined
+              : placeable
+                ? (asset) => {
+                    setViewer(null)
+                    place([asset])
+                  }
+                : undefined
           }
+          placeLabel={task?.kind === 'scene-model' ? '放入场景' : undefined}
+          placeable={task?.kind === 'scene-model' ? (a) => a.kind === 'model' : undefined}
           onClose={() => {
             returnFocus.current = viewer.initialID
             setViewer(null)

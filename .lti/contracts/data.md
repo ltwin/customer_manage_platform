@@ -364,3 +364,35 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - `stale`：有，前端显示「场景已更新」。
 - **助手读取**（修订 v9）：`read_canvas` 返回的节点里，`based_on` 生效的导出图带 `export_source: {scene_document_id, scene_revision, camera_object_id, pass, lens, state}`，`state` 即 `based_on_state`。画布的 HTTP 节点快照不变，仍只返回 `based_on_state`。
 - **过时判断**：读取时计算，不落库。对场景当前快照算同一台摄像机、同一种导出方式的渲染指纹，与 `fingerprint` 比较，不同即 `stale`；这台摄像机已不在当前快照里也算 `stale`。指纹计入哪些内容见 design「渲染模式与导出」，按导出方式区分。改动后又改回原样不算过时。指纹版本与当前不同时算 `stale`，不读旧快照重算（修订 v9，读画布不增加查询；指纹版本只在渲染规则变化时升级，届时旧图本来就该重新导出）。
+
+## 模型资产
+
+- **用途**：资产库可以存放 `model` 资产：一份模型（几何、代码、参数）加它的材质分配，相当于 Blender 的物件资产。位置、旋转、缩放是场景物件的变换，不随资产保存（修订 v12，owner 2026-10-20）。
+- **存储**：
+  - `creative_assets.kind` 的 CHECK 加 `model`。资产库现有能力（分组、标签、评分、回收站、筛选）对 `model` 一视同仁；按画面的筛选（主色、画幅）只作用于图片，模型自然不命中。
+  - **库副本**（修订 v12）：存入时新建一个模型内容，写一个完整形态的修订，资产引用它。它是场景里那个模型修订的复制品：
+    - 载荷：`format`、`generator`（含代码）、`manifest`、`name_hint` 与来源修订相同，另加两个字段：
+
+      | 路径 | 类型 | 必须 | 约束 |
+      |---|---|---|---|
+      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params}}`），只保留 manifest 里存在的槽位，可以是空对象 |
+      | `model.source_revision_id` | string | 库副本必有 | 复制自哪个模型修订。来源本身是库副本时取它的 `source_revision_id`，所以总指向场景里烘焙出的修订 |
+
+      场景命令写出的修订没有这两个字段；有 `source_revision_id` 就是库副本。
+    - 对象：`original` 复用来源修订的 GLB blob，不复制字节；`thumbnail` 是存入时上传的 PNG，按所配材质渲染（未分配的槽位按 C5 的规则取提示或默认材质）。
+    - 写入口：只由「模型存入资产库」写入；`commit_model` 的操作结构里没有这两个字段，场景命令写不出库副本。约束由应用保证。
+    - 修订 v12 之前直接引用场景修订的模型资产只存在于开发环境，照常可读，视为没有材质分配，不迁移。
+- **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
+- **持有**：资产是库副本修订的 GC 持有方，经现有的 `creativereference.LiveOwnerCondition`（按 `content_revision_id` 与 `kind` 匹配）。与来源修订共用的 GLB、存入时上传的缩略图随之保留；不新增引用列。
+- **库副本只属于资产库**（修订 v12）：`commit_model` 的 `base_content_id` 指向库副本的内容时，服务端新建内容，不在库副本上追加修订，响应的 `models` 照常返回新内容的 ID。这样放进场景后的修改，不论来自编辑器还是助手、页面是否刷新过，总是分叉出场景自己的模型，库副本只有存入时的那一个修订。这条补充 `api: 场景模型命令` 的分叉规则（I4），由本条交付。
+- **读取**（修订 v11）：
+  - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
+  - 助手（修订 v11）：
+    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
+    - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
+    - 模型信息按 `media_metadata` 外发，与资产库元数据相同。
+  - 卡片用 `thumbnail` 角色的 PNG，查看浮窗按 `original` 角色读 GLB，都走现有媒体读取票据；查看浮窗的「材质」模式按 `materials` 着色（修订 v12）。
+- **放置**：模型资产只能放进场景（`add_objects` 的 `model.content_revision_id`），不能放到画布：没有 `core.model` 节点类型，画布的放入、填充和参考选择都不接受它。放入时实例的 `material_slots` 写资产的 `materials`：编辑器自动写，助手按 `edit_scene` 的说明写。之后在场景里换材质只改实例（修订 v12）。
+- **OpenAPI**（修订 v12）：`CreativeModelPayload` 与只用于响应的 `CreativeModelPreviewPayload` 的 `model` 加可选的 `materials`、`source_revision_id`。`CreativeModelPayload` 也被请求体引用，但模型不能经通用写入口写入，放宽不产生新的写法。
+- **生命周期**：回滚时如已有 `model` 资产则拒绝，前向修复。资产库不记录资产被哪个场景使用过（I7）。

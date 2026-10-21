@@ -459,6 +459,76 @@ body:has(.viewer-back) :is(.menu, .popover) {
   z-index: 160;
   bottom: 20px;
 }
+/* 模型：3D 预览，底部居中切换白模 / 默认材质 */
+.v-model {
+  position: absolute;
+  inset: 0;
+  background: #5b5d61;
+}
+.v-model canvas {
+  cursor: grab;
+}
+.v-model-still {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: min(256px, 60%);
+  max-height: min(256px, 60%);
+  object-fit: contain;
+  pointer-events: none;
+}
+.v-model.is-failed {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--fg-2);
+}
+.v-model.is-failed img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  opacity: 0.7;
+}
+.v-model-looks {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: rgba(11, 11, 12, 0.78);
+}
+.v-model-looks button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.v-model-looks button[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--fg);
+}
+.v-model-note {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(11, 11, 12, 0.6);
+  color: var(--fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .v-state {
   position: absolute;
   inset: 0;

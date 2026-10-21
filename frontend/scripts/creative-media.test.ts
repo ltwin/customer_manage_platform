@@ -98,6 +98,11 @@ test('rendition choice prefers display for viewing and original when absent', ()
   assert.equal(pickRendition([original], 'display')?.blob_id, 'o')
   assert.equal(pickRendition([original, display], 'original')?.blob_id, 'o')
   assert.equal(pickRendition([], 'display'), undefined)
+  // A model is shown only through its thumbnail, never its GLB.
+  const glb = { ...original, role: 'original', mime: 'model/gltf-binary' } as const
+  const thumbnail = { ...original, role: 'thumbnail', blob_id: 't' } as const
+  assert.equal(pickRendition([glb, thumbnail], 'thumbnail')?.blob_id, 't')
+  assert.equal(pickRendition([glb], 'thumbnail'), undefined)
 })
 
 

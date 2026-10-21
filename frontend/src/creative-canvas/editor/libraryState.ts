@@ -20,12 +20,14 @@ export const kindLabel: Record<string, string> = {
   image: '图片',
   video: '视频',
   audio: '音频',
+  model: '模型',
 }
-// 宽高比来自已核实的原图尺寸；文字与音频按固定比例排版。
+// 宽高比来自已核实的原图尺寸；文字与音频按固定比例排版，模型缩略图是方形。
 export function tileRatio(a: api.Asset): number {
   const m = a.content?.media?.find((x) => x.role === 'original') ?? a.content?.media?.[0]
   if ((a.kind === 'image' || a.kind === 'video') && m?.width && m.height)
     return m.height / m.width
+  if (a.kind === 'model') return 1
   return a.kind === 'audio' ? 0.5 : 0.62
 }
 /** 分组按层级排成下拉选项：父分组在前，子分组紧随其后并缩进。 */

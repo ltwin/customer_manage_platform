@@ -10,9 +10,9 @@ const size = 256
 const clay = new THREE.MeshStandardMaterial({ color: '#d9d5cd', roughness: 0.92, metalness: 0 })
 let renderer: THREE.WebGLRenderer | null = null
 
-// One renderer for every thumbnail: browsers cap the number of live WebGL
-// contexts, and the viewport already holds one.
-function sharedRenderer(): THREE.WebGLRenderer {
+// One renderer for every thumbnail, the library's too: browsers cap the
+// number of live WebGL contexts, and the viewport already holds one.
+export function sharedRenderer(): THREE.WebGLRenderer {
   if (!renderer) {
     renderer = new THREE.WebGLRenderer({ canvas: document.createElement('canvas'), alpha: true, antialias: true, preserveDrawingBuffer: true })
     renderer.setPixelRatio(1)
@@ -22,7 +22,8 @@ function sharedRenderer(): THREE.WebGLRenderer {
   return renderer
 }
 
-function frame(camera: THREE.PerspectiveCamera, manifest: Manifest): void {
+/** Three-quarter view from the front (+Z), the whole of the bounds in frame. */
+export function frame(camera: THREE.PerspectiveCamera, manifest: Manifest): void {
   const min = new THREE.Vector3().fromArray(manifest.bounds.min)
   const max = new THREE.Vector3().fromArray(manifest.bounds.max)
   const center = min.clone().add(max).multiplyScalar(0.5)

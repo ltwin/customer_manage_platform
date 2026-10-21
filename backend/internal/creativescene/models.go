@@ -71,11 +71,15 @@ type Generator struct {
 
 // ModelPayload is payload.model of model content. The staged form (written by
 // the media worker) has no generator; scenes reference only the complete form.
+// A library copy, written only by SaveModelToLibrary, also carries the
+// instance's materials and the revision it was copied from.
 type ModelPayload struct {
-	Format    string               `json:"format"`
-	Generator *Generator           `json:"generator,omitempty"`
-	Manifest  creativeglb.Manifest `json:"manifest"`
-	NameHint  string               `json:"name_hint,omitempty"`
+	Format           string                  `json:"format"`
+	Generator        *Generator              `json:"generator,omitempty"`
+	Manifest         creativeglb.Manifest    `json:"manifest"`
+	NameHint         string                  `json:"name_hint,omitempty"`
+	Materials        map[string]MaterialSlot `json:"materials,omitzero"`
+	SourceRevisionID string                  `json:"source_revision_id,omitempty"`
 }
 
 func decodeModelPayload(raw json.RawMessage) (ModelPayload, bool) {
@@ -205,20 +209,26 @@ func fillParams(schema map[string]paramSpec, in map[string]any) (map[string]any,
 // requireModel checks that a referenced revision is a complete model this
 // account can display.
 func requireModel(ctx context.Context, tx store.TxAccountScope, id string) error {
+	_, err := usableModel(ctx, tx, id)
+	return err
+}
+
+// usableModel is requireModel returning the revision it checked.
+func usableModel(ctx context.Context, tx store.TxAccountScope, id string) (creativecontent.Revision, error) {
 	if !revisionIDPattern.MatchString(id) {
-		return modelUnavailable(id)
+		return creativecontent.Revision{}, modelUnavailable(id)
 	}
 	r, err := creativecontent.RequireUsable(ctx, tx, id, "display")
 	if errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativecontent.ErrUsageDenied) || errors.Is(err, creativecontent.ErrMissingRoot) {
-		return modelUnavailable(id)
+		return creativecontent.Revision{}, modelUnavailable(id)
 	}
 	if err != nil {
-		return err
+		return creativecontent.Revision{}, err
 	}
 	if _, ok := completeModel(r); !ok {
-		return modelUnavailable(id)
+		return creativecontent.Revision{}, modelUnavailable(id)
 	}
-	return nil
+	return r, nil
 }
 
 // completeModel decodes a revision a scene may reference: model content in
