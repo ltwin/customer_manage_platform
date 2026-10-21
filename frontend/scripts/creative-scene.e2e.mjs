@@ -5,10 +5,12 @@
 // (state/apply.ts); the Go tests own the real ones. Every check gets a fresh
 // browser context.
 import assert from 'node:assert/strict'
-import { execSync } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
@@ -558,6 +560,8 @@ async function open(server, options = {}) {
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
+  // viewport: false for a browser that cannot draw, where there is no canvas to wait for.
+  if (options.viewport === false) return { context, page, errors }
   await viewportReady(page)
   await page.getByRole('treeitem').first().waitFor()
   // Let R3F mount the scene and the camera settle.
@@ -3566,6 +3570,132 @@ if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor help
   }
 })
 
+// --- R1 AC-R1-3: the same pictures in a hidden tab ------------------------------
+
+// The export as the assistant's page draws it, without the editor or the network.
+const hiddenFixture = new URL('../.scene-hidden-qa.html', import.meta.url)
+await writeFile(
+  hiddenFixture,
+  `<html><body><script>window.__sceneTest = true</script><script type="module">
+import { renderShots } from '/src/creative-scene/host/exportShots.ts';
+import { loadModels, openShooter } from '/src/creative-scene/host/render.ts';
+window.__export = async (doc, plan) => {
+  const out = await renderShots({ read: async () => doc, loadModels: (d) => loadModels(d.scene, d.models), open: (d, look) => openShooter(d.scene, d.models, look) }, 'doc', plan);
+  if (!out.ok) throw new Error(out.message);
+  const hex = async (blob) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return Promise.all(out.images.map(async (i) => ({ camera: i.camera, pass: i.pass, hash: await hex(i.blob) })));
+};
+window.__ready = true;
+</script></body></html>`,
+)
+
+// SCENE_E2E_HIDDEN=1 (needs Google Chrome): Playwright keeps the pages it
+// drives visible, so Chrome is started off screen and spoken to over the
+// DevTools protocol, as creative-scene-agent-background.e2e.mjs does. The
+// material board with glass and two more cameras, clay, line and lit: once in
+// front, twice behind a blank tab, then once behind it on the WebGL2 backend.
+if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden tab are the foreground’s, pixel for pixel, on WebGPU and WebGL2', async () => {
+  const chromePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  const port = 9334
+  const profile = mkdtempSync(join(tmpdir(), 'scene-hidden-'))
+  const chrome = spawn(chromePath, [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--window-position=-2400,-2400', '--window-size=1200,800', `${base}/.scene-hidden-qa.html`], { stdio: 'ignore' })
+  const devtools = `http://127.0.0.1:${port}`
+  try {
+    let target
+    for (let i = 0; i < 100 && !target; i++) {
+      await sleep(200)
+      target = await fetch(`${devtools}/json`).then((r) => r.json()).then((list) => list.find((t) => t.type === 'page' && t.url.includes('.scene-hidden-qa.html'))).catch(() => null)
+    }
+    assert.ok(target, 'the fixture tab')
+    const ws = new WebSocket(target.webSocketDebuggerUrl)
+    await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
+    let id = 0
+    const pending = new Map()
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data)
+      if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+    }
+    const evaluate = (expression, timeoutMs = 300_000) => new Promise((resolve, reject) => {
+      const n = ++id
+      const timer = setTimeout(() => { pending.delete(n); reject(new Error(`timed out after ${timeoutMs} ms: ${expression.slice(0, 60)}`)) }, timeoutMs)
+      pending.set(n, (msg) => {
+        clearTimeout(timer)
+        if (msg.error) reject(new Error(`CDP: ${msg.error.message}`))
+        else if (msg.result?.exceptionDetails) reject(new Error(msg.result.exceptionDetails.exception?.description ?? 'evaluate failed'))
+        else resolve(msg.result?.result?.value)
+      })
+      ws.send(JSON.stringify({ id: n, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+    })
+    await waitFor(async () => (await evaluate('!!window.__ready')) === true, 'the fixture loaded', 30_000)
+    const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/materials.json', import.meta.url), 'utf8'))
+    const board = scene.objects.find((o) => o.kind === 'camera')
+    for (const [i, dx] of [[1, -1.5], [2, 1.5]]) scene.objects.push({ ...structuredClone(board), id: `sobj_cam${String(i).padStart(18, '0')}`, name: `cam${i}`, order: 100 + i, transform: { ...board.transform, position: [board.transform.position[0] + dx, board.transform.position[1], board.transform.position[2]] } })
+    const doc = { scene, models: {}, revision: '1' }
+    const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
+    const run = () => evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)})`)
+    assert.equal(await evaluate('document.visibilityState'), 'visible')
+    const front = await run()
+    assert.equal(front.length, 9)
+    assert.equal(new Set(front.map((i) => i.hash)).size, 9, 'every camera and pass its own picture')
+    await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
+    await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab went into the background', 10_000)
+    const raf = await evaluate('new Promise((res) => { let n = 0; const t = () => { n++; requestAnimationFrame(t) }; requestAnimationFrame(t); setTimeout(() => res(n), 1000) })')
+    const first = await run()
+    const second = await run()
+    assert.equal(await evaluate('document.visibilityState'), 'hidden', 'still in the background')
+    assert.deepEqual(first, front, 'hidden as in front')
+    assert.deepEqual(second, first, 'twice the same')
+    await evaluate('window.__sceneGPU.forceWebGL = true')
+    const webgl = await run()
+    const again = await run()
+    assert.deepEqual(again, webgl, 'the WebGL2 backend, twice the same in the background')
+    console.log(`determinism: hidden (rAF ${raf}/s) = front on WebGPU; WebGL2 in the background repeats itself (${webgl.filter((w, i) => w.hash === front[i].hash).length}/9 equal to WebGPU)`)
+  } finally {
+    chrome.kill()
+    await sleep(500)
+    await rm(profile, { recursive: true, force: true })
+  }
+})
+
+// --- R1 AC-R1-4: without WebGPU ------------------------------------------------
+
+await check('fallback: with no WebGPU adapter (SwiftShader) the editor draws, edits and exports on the WebGL2 backend', async () => {
+  const server = new SceneServer()
+  referenceScene(server, 'noon')
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  const backends = []
+  context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
+  const { page, errors } = await open(server, { context, query: '?export=1' })
+  assert.equal(await page.evaluate(async () => (await navigator.gpu?.requestAdapter()) ?? null), null, 'this browser has no adapter')
+  await addBox(page, server)
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 120_000)
+  assert.ok(backends.includes('scene renderer (viewport): webgl2'), backends.join(', '))
+  assert.ok(backends.includes('scene renderer (offscreen): webgl2'), backends.join(', '))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('fallback: a browser with neither WebGPU nor WebGL2 says so and claims no jobs', async () => {
+  const bare = await chromium.launch({ headless: true })
+  try {
+    const server = new SceneServer()
+    const context = await bare.newContext({ viewport: { width: 1280, height: 820 } })
+    const { page } = await open(server, { context, query: '?host=1', viewport: false })
+    assert.equal(await page.evaluate(async () => !!document.createElement('canvas').getContext('webgl2') || (await navigator.gpu?.requestAdapter()) != null), false, 'this browser has neither')
+    await page.getByRole('alert').filter({ hasText: '当前浏览器无法显示 3D 场景' }).waitFor()
+    await page.evaluate(() => window.__invalidate?.())
+    await sleep(1500)
+    assert.equal(server.claims.length, 0, 'no claims')
+    await context.close()
+  } finally {
+    await bare.close()
+  }
+})
+
 // --- R1 AC-R1-5: a lost device (render/gpu.ts test hooks) -------------------------
 
 await check('device loss: the viewport draws again on a new device; the selection, the view and the edits stay', async () => {
@@ -3709,5 +3839,6 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference 
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
+await rm(hiddenFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)

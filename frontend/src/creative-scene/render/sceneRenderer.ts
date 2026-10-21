@@ -1,8 +1,9 @@
-import { ACESFilmicToneMapping, Color, Layers, NoToneMapping, SRGBColorSpace, type Camera, type Object3D, type PerspectiveCamera, type Scene } from 'three'
+import { ACESFilmicToneMapping, Color, DataTexture, Layers, NoToneMapping, RepeatWrapping, SRGBColorSpace, type Camera, type Object3D, type PerspectiveCamera, type Scene } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
 import { PassNode, RenderPipeline, type Node } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
+import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
 import type { SceneGPU } from './gpu.ts'
@@ -80,6 +81,38 @@ export function overlayColor(hex: string): string {
   const c = new Color(hex)
   const encode = (x: number) => (x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055)
   return `#${[c.r, c.g, c.b].map((x) => Math.round(Math.min(1, encode(encode(x))) * 255).toString(16).padStart(2, '0')).join('')}`
+}
+
+/**
+ * DenoiseNode's noise texture (generateDefaultNoise, three r186), but from a
+ * fixed seed: three's seeds it with Math.random, and with a pipeline per
+ * picture no two exports of the same scene would be alike (AC-R1-3).
+ */
+function fixedNoise(size = 64): DataTexture {
+  let seed = 0x5eed
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const simplex = new SimplexNoise({ random })
+  const data = new Uint8Array(size * size * 4)
+  const at = (x: number, y: number) => (simplex.noise(x, y) * 0.5 + 0.5) * 255
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const k = (i * size + j) * 4
+      data[k] = at(i, j)
+      data[k + 1] = at(i + size, j)
+      data[k + 2] = at(i, j + size)
+      data[k + 3] = at(i + size, j + size)
+    }
+  }
+  const texture = new DataTexture(data, size, size)
+  texture.wrapS = RepeatWrapping
+  texture.wrapT = RepeatWrapping
+  texture.needsUpdate = true
+  return texture
 }
 
 const keyOf = (wireframe: boolean, blur: boolean) => (wireframe ? 'wire' : blur ? 'shaded+dof' : 'shaded')
@@ -171,6 +204,7 @@ export class SceneRenderer {
       clean.depthPhi.value = 2
       clean.normalPhi.value = 3
       clean.radius.value = 8
+      ;(clean.noiseNode as unknown as { value: DataTexture }).value = own(fixedNoise())
       // Frame.ao = false multiplies by one rather than rebuilding.
       const on = uniform(1)
       aoOn = on

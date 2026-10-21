@@ -66,7 +66,7 @@ export function frame(camera: THREE.PerspectiveCamera, manifest: Manifest): void
 
 /** Draws one frame of scene on the thumbnail renderer and encodes it, the materials compiled first. */
 export async function drawThumbnail(gpu: SceneGPU, scene: THREE.Scene, camera: THREE.Camera): Promise<Blob> {
-  await gpu.renderer.compileAsync(scene, camera)
+  await gpu.compile(scene, camera)
   gpu.resetFrames()
   return gpu.capture(
     () => {

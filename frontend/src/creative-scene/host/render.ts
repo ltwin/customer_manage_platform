@@ -123,14 +123,14 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     gpu = g
     const three = state.scene
     // Materials compile now, in parallel where the browser can, not inside the first shot.
-    await g.renderer.compileAsync(three, camera)
+    await g.compile(three, camera)
     let mounted = look
     return {
       async setLook(next) {
         if (next === mounted) return
         await mount(next)
         mounted = next
-        await g.renderer.compileAsync(three, camera)
+        await g.compile(three, camera)
       },
       shoot(framing, options) {
         if (options.kind !== 'line' && options.kind !== mounted) throw new Error(`拍${options.kind}图前须先切换渲染方式`)

@@ -1,4 +1,4 @@
-import { LinearSRGBColorSpace, NoToneMapping, Source, type Texture } from 'three'
+import { LinearSRGBColorSpace, NoToneMapping, Source, type Camera, type Object3D, type Texture } from 'three'
 import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
 import { adapter } from './probe.ts'
 
@@ -106,6 +106,13 @@ export type SceneGPU = {
   advanceFrame(): void
   /** Back to frame 0, every node due again: the start of a picture. */
   resetFrames(): void
+  /**
+   * Compiles the scene's materials ahead of the first picture, on the
+   * driver's threads where it can. The WebGL2 backend waits for its parallel
+   * compile with requestAnimationFrame, which a hidden tab never calls (the
+   * assistant's jobs run in one), so there the first picture compiles them.
+   */
+  compile(scene: Object3D, camera: Camera): Promise<void>
   /** A GPU resource that lives as long as this device. */
   cache<T extends { dispose(): void }>(key: string, create: () => T): T
   dispose(): void
@@ -253,6 +260,9 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     isLost: device.isLost,
     lost: device.lost,
     capture: (draw, type, quality) => device.capture(draw, () => canvasBlob(renderer.domElement, type, quality)),
+    async compile(scene, camera) {
+      if (backend === 'webgpu') await renderer.compileAsync(scene, camera)
+    },
     advanceFrame() {
       const f = frame()
       advance(f)
