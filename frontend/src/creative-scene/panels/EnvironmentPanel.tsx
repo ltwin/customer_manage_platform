@@ -1,13 +1,11 @@
 import type { Scene } from '../api.ts'
 import { proceduralSky, withFog, withSkyKind } from '../editing.ts'
-import type { DisplayMode } from '../state/sceneStore.ts'
 import { NumberField } from './Properties.tsx'
 
 type Environment = Scene['environment']
-type RenderPatch = Partial<Scene['render']>
 
 /** A number with a slider beside it, for what is dragged to judge: the sun and the exposure. */
-function Slider({ label, value, min, max, step, onCommit }: { label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void }) {
+export function Slider({ label, value, min, max, step, onCommit }: { label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void }) {
   return (
     <div className="cc-scene-slider">
       <NumberField label={label} value={value} step={step} min={min} max={max} onCommit={onCommit} />
@@ -17,25 +15,22 @@ function Slider({ label, value, min, max, step, onCommit }: { label: string; val
 }
 
 /**
- * The environment (design「属性栏与复制材质」), where the properties go when
- * nothing is active: sky, ambient light, fog and the lit look's exposure.
+ * The environment tab (design「属性栏与复制材质」, R2「属性区选项卡」): sky,
+ * ambient light and fog; the exposure moved to the render tab.
  * set_environment writes the environment whole, so each field edit sends
  * the current one with that field changed; a drag's commits fold by their
  * merge key while unsent.
  */
-export function EnvironmentPanel({ environment, exposure, readOnly, display, onEnvironment, onRender }: {
+export function EnvironmentPanel({ environment, readOnly, onEnvironment }: {
   environment: Environment
-  exposure: number
   readOnly: boolean
-  display: DisplayMode
   onEnvironment: (env: Environment, label: string, merge?: string) => void
-  onRender: (patch: RenderPatch, label: string, merge?: string) => void
 }) {
   const { sky, ambient, fog } = environment
   const set = (env: Environment, what: string, field?: string) => onEnvironment(env, `调整${what}`, field && `environment.${field}`)
   const setSky = (patch: Partial<Environment['sky']>, what: string, field: string) => set({ ...environment, sky: { ...sky, ...patch } }, what, field)
   return (
-    <div className="cc-scene-props cc-scene-environment" aria-label="环境">
+    <div className="cc-scene-props cc-scene-environment" aria-label="环境" role="tabpanel">
       <fieldset disabled={readOnly}>
         <legend>天空</legend>
         <label className="cc-scene-field">
@@ -92,11 +87,6 @@ export function EnvironmentPanel({ environment, exposure, readOnly, display, onE
             <NumberField label="结束（m）" value={fog.far} step={1} min={fog.near + 0.01} onCommit={(v) => set({ ...environment, fog: { ...fog, far: v } }, '雾结束距离', 'fog_far')} />
           </>
         )}
-      </fieldset>
-      <fieldset disabled={readOnly}>
-        <legend>曝光</legend>
-        {display !== 'rendered' && <small>曝光补偿只作用于「最终渲染」和材质光照导出</small>}
-        <Slider label="曝光补偿（EV）" value={exposure} min={-10} max={10} step={0.1} onCommit={(v) => onRender({ exposure_ev: v }, '调整曝光补偿', 'render.exposure_ev')} />
       </fieldset>
     </div>
   )

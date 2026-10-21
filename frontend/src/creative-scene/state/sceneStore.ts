@@ -46,6 +46,13 @@ export type CodeTarget = ({ kind: 'new'; position: [number, number, number] } | 
 
 export type SidebarTab = 'outliner' | 'assets'
 
+/** The properties area's tabs, in Blender's order (R2 design「属性区选项卡」). */
+export type PropertiesTab = 'render' | 'environment' | 'object'
+export type SceneTab = Exclude<PropertiesTab, 'object'>
+
+/** The viewport's renderer, for the render tab to show. */
+export type Backend = { kind: 'webgpu' | 'webgl2'; compatibility: boolean }
+
 /** A revision from the history list, with the models its snapshot names. */
 export type Preview = { revision: string; scene: Scene; models: Record<string, SceneModel> }
 
@@ -56,6 +63,12 @@ export type EditorUI = {
   sidebar: boolean
   /** What the sidebar's top half shows: the object list or the asset panel. */
   sidebarTab: SidebarTab
+  /** What the properties area shows; not saved with the view. */
+  propertiesTab: PropertiesTab
+  /** The scene tab last stayed on: clearing the selection goes back to it from the object tab. */
+  sceneTab: SceneTab
+  /** The viewport's renderer once made. */
+  backend: Backend | null
   popup: Popup | null
   sheet: boolean
   history: boolean
@@ -97,6 +110,9 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     toolbar: saved?.toolbar ?? true,
     sidebar: saved?.sidebar ?? true,
     sidebarTab: saved?.sidebarTab ?? 'outliner',
+    propertiesTab: 'environment',
+    sceneTab: 'environment',
+    backend: null,
     popup: null,
     sheet: false,
     history: saved?.history ?? false,
@@ -119,6 +135,18 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     display: saved?.display ?? null,
     wireBack: saved?.wireBack ?? 'solid',
   }))
+}
+
+/**
+ * The properties tab once the selection changes (R2 design「属性区选项卡」):
+ * selecting where nothing was selected shows the object; clearing the
+ * selection from the object tab goes back to the scene tab last stayed on.
+ * A tab picked by hand stays until the next such change.
+ */
+export function tabAfterSelection(ui: Pick<EditorUI, 'propertiesTab' | 'sceneTab'>, had: boolean, has: boolean): PropertiesTab {
+  if (!had && has) return 'object'
+  if (had && !has && ui.propertiesTab === 'object') return ui.sceneTab
+  return ui.propertiesTab
 }
 
 /** The shading shown: the one chosen here, or the scene's suggested look. */

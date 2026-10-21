@@ -246,6 +246,7 @@ export function Viewport(props: ViewportProps) {
             createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport' }).then((g) => {
               current.current?.dispose()
               current.current = g
+              props.ui.setState({ backend: { kind: g.backend, compatibility: g.compatibility } })
               void g.lost.then(() => {
                 if (current.current !== g) return
                 if (losses(performance.now()) === 'rebuild') setCanvasEpoch((n) => n + 1)

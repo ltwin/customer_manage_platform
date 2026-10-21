@@ -18,6 +18,14 @@ export type Quality = 'interactive' | 'final'
  */
 export const GI_INTENSITY = 5
 
+/** The exports' output resolution (data contract render.resolution). */
+export type Resolution = SceneRender['resolution']
+
+export const resolutions: readonly Resolution[] = ['1k', '2k', '4k', '8k']
+
+/** The long side of an export at a resolution, in pixels. */
+export const longSideOf = (resolution: Resolution): number => ({ '1k': 1024, '2k': 2048, '4k': 4096, '8k': 8192 })[resolution]
+
 /** The scene's renderer; the server completes a scene stored before R2 (design R-1). */
 export const engineOf = (render: SceneRender): Engine => render.engine
 

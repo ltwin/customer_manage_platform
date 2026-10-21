@@ -42,7 +42,10 @@
 
 ## 3. 渲染选项卡与有效渲染器
 
-- [ ] 3.1 属性区三个选项卡（`SceneEditor.tsx`、`sceneStore.ts`、`scene.css`）与 `panels/RenderPanel.tsx`；`EnvironmentPanel` 去掉曝光；后端提示读 `SceneGPU`。完成判据：e2e「渲染选项卡」用例绿（内容、路径追踪禁用、自动切换、只读预览禁用），现有曝光用例改到新位置后仍绿
+- [x] 3.1 属性区三个选项卡（`SceneEditor.tsx`、`sceneStore.ts`、`scene.css`）与 `panels/RenderPanel.tsx`；`EnvironmentPanel` 去掉曝光；后端提示读 `SceneGPU`。完成判据：e2e「渲染选项卡」用例绿（内容、路径追踪禁用、自动切换、只读预览禁用），现有曝光用例改到新位置后仍绿
+  - e2e「render tab: …」绿；「AC-5: exposure」（先点「渲染」选项卡）、「AC-5: with nothing selected the environment shows」、「history lists revisions」仍绿。`tabAfterSelection` 有单测（`creative-scene-interaction.test.ts`）。
+  - 渲染后端由视口建好渲染器后写进编辑器 UI 状态（`EditorUI.backend`，`Viewport.tsx` 一行），「渲染」选项卡读它。
+  - 「物件」选项卡没有选中时沿用 `Properties` 现有的「选中物件后在这里调整」，没有改成 design 写的「未选中物件」：现有文字更能说明怎么用，也免得改清单外的 `Properties.tsx`。
 - [ ] 3.2 `render/engines.ts` 的 `effectiveEngine` 接入视口（实时 GI 时 1× 像素比、正交角标）和离屏渲染端（`render_view`、导出）；视口收敛（`LookView` 区分自己续的帧）。先写 `engines.ts` 决策表单测。完成判据：e2e 用例绿——换渲染器后视口、`render_view`、`clay` / `lit` 导出一致，撤销、两个标签页同步、过时提示三种情况（AC-R2-2）；线框、材质预览、`line` 与工作台逐像素相同、正交角标（AC-R2-4）；实时 GI 视口帧计数停在 N、工作台停在 1
 
 ## 4. 累积与输出分辨率
