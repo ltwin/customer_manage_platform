@@ -1,0 +1,30 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "switches": {
+    "solid → rendered, first": {
+      "longest_frame_ms": 250,
+      "lights_on_ms": 629,
+      "compiles": 1
+    },
+    "solid → rendered, again": {
+      "longest_frame_ms": 258,
+      "lights_on_ms": 565,
+      "compiles": 1
+    },
+    "preview → rendered": {
+      "longest_frame_ms": 243,
+      "lights_on_ms": 382,
+      "compiles": 1
+    },
+    "wireframe → rendered": {
+      "longest_frame_ms": 258,
+      "lights_on_ms": 522,
+      "compiles": 1
+    }
+  }
+}
