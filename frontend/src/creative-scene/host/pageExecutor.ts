@@ -14,7 +14,7 @@ import { backgroundTicker } from './ticker.ts'
 // timers for renewals, upload polling and sandbox timeouts, so a hidden tab
 // keeps its pace.
 
-export function createPageExecutor(api: JobApi): PageRunner {
+export function createPageExecutor(api: JobApi, deviceLost: () => void): PageRunner {
   const ticker = backgroundTicker()
   let sandbox: SandboxHost | null = null
   const executor = new SceneExecutor({
@@ -31,6 +31,7 @@ export function createPageExecutor(api: JobApi): PageRunner {
     render: (documentID, request) => renderView(documentID, request),
     exportImages: (documentID, plan) =>
       renderShots({ read: readScene, loadModels: (doc) => loadModels(doc.scene, doc.models), open: (doc, look) => openShooter(doc.scene, doc.models, look) }, documentID, plan),
+    deviceLost,
   })
   return {
     run: (job) => executor.run(job),

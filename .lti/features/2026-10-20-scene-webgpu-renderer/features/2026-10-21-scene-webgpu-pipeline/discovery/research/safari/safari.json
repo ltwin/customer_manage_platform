@@ -1,0 +1,25 @@
+{
+  "safari": "26.5",
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15",
+  "ms": 9994,
+  "logs": [
+    "scene renderer (offscreen): webgpu"
+  ],
+  "images": [
+    {
+      "file": "materials-board-clay.png",
+      "mean_vs_r0": 0.4015,
+      "over_percent_vs_r0": 0.2309
+    },
+    {
+      "file": "materials-board-line.png",
+      "mean_vs_r0": 0.0005,
+      "over_percent_vs_r0": 0.0008
+    },
+    {
+      "file": "materials-board-lit.png",
+      "mean_vs_r0": 0.616,
+      "over_percent_vs_r0": 1.1173
+    }
+  ]
+}

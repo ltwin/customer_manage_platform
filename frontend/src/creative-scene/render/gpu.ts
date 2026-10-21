@@ -1,0 +1,404 @@
+import { LinearSRGBColorSpace, NoToneMapping, Source, type Camera, type Object3D, type Texture } from 'three'
+import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
+import { adapter } from './probe.ts'
+
+// The one place a renderer is made (design「渲染器创建入口」): the viewport,
+// the asset preview, the offscreen shooter and the thumbnails all get theirs
+// here. It picks the backend (WebGPU, or the same renderer's WebGL2 backend
+// when there is no adapter), asks the device for the adapter's texture and
+// buffer limits instead of WebGPU's defaults (8192, 256 MiB), owns the frame
+// counter, and turns a lost device into one error the callers know.
+//
+// Frames: three advances nodeFrame from its own rAF loop, and nodes that
+// update once per frame (passes, denoise, lights) run once per frameId.
+// A run of synchronous shots would be one frame, and a hidden tab has no
+// loop at all; so the loop is stopped and whoever draws steps the frame
+// (Epic design「帧推进与确定性」). three has no public way to do this: the
+// private fields are touched here only, and a unit test keeps them in sight.
+
+/**
+ * Gives every viewport texture its own size, and lets it go with its render
+ * target. Glass samples what is behind it through module-wide
+ * ViewportTextureNodes, which keep a texture per render target, cloned from
+ * one (three r186):
+ *  - a clone shares its source, so the viewport's and an export's sizes
+ *    overwrite each other, and each renderer then remakes the texture in the
+ *    middle of a pass while its bindings still name the old one ("Destroyed
+ *    texture used in a submit");
+ *  - nothing frees a clone, so a pipeline built per picture leaves one behind
+ *    for every picture with glass. Nor can one be freed with its target: the
+ *    node (and every copy a material took, which reads the node's value)
+ *    keeps the texture it was last given until its own pass runs, and is
+ *    bound before that. A target's texture goes back to the node instead,
+ *    for the next target to take: the count stays flat, and what a node
+ *    still holds is never a destroyed texture.
+ */
+export function ownViewportTextures(node: typeof ViewportTextureNode.prototype) {
+  const get = node.getTextureForReference
+  type Reference = NonNullable<Parameters<typeof get>[0]>
+  type Cached = { _cacheTextures: WeakMap<Reference, Texture>; referenceNode?: Cached }
+  const spares = new WeakMap<Cached, Texture[]>()
+  node.getTextureForReference = function (this: Cached, reference: Reference | null = null) {
+    const base = this.referenceNode ?? this
+    const cache = base._cacheTextures
+    if (reference === null || cache.has(reference)) return get.call(this, reference)
+    let spare = spares.get(base)
+    if (!spare) spares.set(base, (spare = []))
+    let texture = spare.pop()
+    if (texture) {
+      cache.set(reference, texture)
+    } else {
+      texture = get.call(this, reference) as Texture
+      const { width, height } = texture.image as { width: number; height: number }
+      texture.source = new Source({ width, height })
+    }
+    const own = texture
+    const back = spare
+    ;(reference as { addEventListener(type: 'dispose', listener: () => void): void }).addEventListener('dispose', () => {
+      cache.delete(reference)
+      back.push(own)
+    })
+    return texture
+  }
+}
+ownViewportTextures(ViewportTextureNode.prototype)
+
+
+export type Output =
+  /** Linear canvas, tone mapping and sRGB in the pipeline's output node, so overlays drawn after it do not wipe the picture. */
+  | 'pipeline'
+  /** Drawn straight to the canvas with the renderer's own tone mapping and sRGB. */
+  | 'direct'
+
+/** Who holds the renderer; the test hooks pick one by it. */
+export type Role = 'viewport' | 'offscreen' | 'thumbnail' | 'preview'
+
+export type GPUOptions = {
+  canvas: HTMLCanvasElement
+  alpha?: boolean
+  output: Output
+  role: Role
+}
+
+export class DeviceLostError extends Error {
+  constructor(message = '渲染设备丢失') {
+    super(message)
+    this.name = 'DeviceLostError'
+  }
+}
+
+export type SceneGPU = {
+  readonly renderer: WebGPURenderer
+  readonly backend: 'webgpu' | 'webgl2'
+  /** A WebGPU device without core-features-and-limits: three draws it with no MSAA. */
+  readonly compatibility: boolean
+  readonly maxTextureSize: number
+  isLost(): boolean
+  /** Settles when the device is lost; never when it is disposed. */
+  readonly lost: Promise<DeviceLostError>
+  /**
+   * Draws and encodes in one go: what draw puts on the canvas, as an image
+   * file. Every screenshot, export and thumbnail comes out through here, so
+   * nothing can wait between the drawing and the encoding.
+   */
+  capture(draw: () => void, type: string, quality?: number): Blob
+  /** The next frame, a fixed step after the last. */
+  advanceFrame(): void
+  /** Back to frame 0, every node due again: the start of a picture. */
+  resetFrames(): void
+  /**
+   * Compiles the scene's materials ahead of the first picture, on the
+   * driver's threads where it can. The WebGL2 backend waits for its parallel
+   * compile with requestAnimationFrame, which a hidden tab never calls (the
+   * assistant's jobs run in one), so in a hidden tab the first picture
+   * compiles them.
+   */
+  compile(scene: Object3D, camera: Camera): Promise<void>
+  /** Set by the viewport's SceneRenderer: compile then goes to its passes' targets instead of the canvas's. */
+  compiler: (() => Promise<void>) | null
+  /** A GPU resource that lives as long as this device. */
+  cache<T extends { dispose(): void }>(key: string, create: () => T): T
+  dispose(): void
+}
+
+const frameStep = 1 / 60
+const textureCeiling = 16384
+
+/** nodeFrame's fields this module steps; three keeps them on renderer._nodes. */
+export type FrameState = {
+  frameId: number
+  time: number
+  deltaTime: number
+  lastTime?: number
+  updateMap: WeakMap<object, unknown>
+  updateBeforeMap: WeakMap<object, unknown>
+  updateAfterMap: WeakMap<object, unknown>
+}
+
+type Internals = {
+  _animation: { stop(): void } | null
+  _nodes: { nodeFrame: FrameState } | null
+  info: { frame: number }
+}
+
+export function advance(frame: FrameState): void {
+  frame.frameId++
+  frame.deltaTime = frameStep
+  frame.time += frameStep
+}
+
+/**
+ * three tells a node it is due when the frameId it last ran in differs from
+ * the current one. Counting from 0 again, the second picture's frame 1 would
+ * look done to every node kept from the first; the records go with the count.
+ */
+export function reset(frame: FrameState): void {
+  frame.frameId = 0
+  frame.time = 0
+  frame.deltaTime = 0
+  frame.lastTime = undefined
+  frame.updateMap = new WeakMap()
+  frame.updateBeforeMap = new WeakMap()
+  frame.updateAfterMap = new WeakMap()
+}
+
+/** Set by the e2e fixture page; nothing in the app touches them. */
+export const gpuTestHooks = {
+  /** Draws through the WebGL2 backend even with an adapter (the backend comparison). */
+  forceWebGL: false,
+  /** Treats the device as compatibility mode: the workbench drops MSAA for SMAA (no such device to test on). */
+  forceCompatibility: false,
+  live: new Set<{ role: Role; info: WebGPURenderer['info']; lose(afterCaptures?: number): void }>(),
+  /** Loses the device of every live renderer in that role, now or after that many more captures. */
+  loseDevice(role: Role, afterCaptures = 0): number {
+    let n = 0
+    for (const g of gpuTestHooks.live) {
+      if (g.role !== role) continue
+      g.lose(afterCaptures)
+      n++
+    }
+    return n
+  },
+  armed: new Map<Role, number>(),
+  /** Compiles under way (SceneGPU.compile): a new light shows once its compile is done. */
+  compiling: 0,
+  /** Compiles started (SceneGPU.compile). */
+  compiles: 0,
+  /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
+  loseNext(role: Role, afterCaptures = 0): void {
+    gpuTestHooks.armed.set(role, afterCaptures)
+  },
+}
+// The e2e fixture page sets __sceneTest before the editor loads.
+if ((globalThis as { __sceneTest?: boolean }).__sceneTest) Object.assign(globalThis, { __sceneGPU: gpuTestHooks })
+
+/**
+ * The viewport's answer to each lost device: draw again on a new one, until
+ * the third loss within 10 seconds, when a device that keeps failing is not
+ * worth another try (Epic design「设备丢失」).
+ */
+export function lossCounter(windowMs = 10_000, limit = 3): (now: number) => 'rebuild' | 'stop' {
+  const times: number[] = []
+  return (now) => {
+    times.push(now)
+    while (now - times[0] >= windowMs) times.shift()
+    return times.length >= limit ? 'stop' : 'rebuild'
+  }
+}
+
+const byRenderer = new WeakMap<object, SceneGPU>()
+
+/** The SceneGPU a renderer was made by: R3F hands components the bare renderer. */
+export function gpuOf(renderer: object): SceneGPU {
+  const g = byRenderer.get(renderer)
+  if (!g) throw new Error('渲染器不是由 createRenderer 创建的')
+  return g
+}
+
+export async function createRenderer(options: GPUOptions): Promise<SceneGPU> {
+  const g = await make(options)
+  byRenderer.set(g.renderer, g)
+  return g
+}
+
+async function make({ canvas, alpha = false, output, role }: GPUOptions): Promise<SceneGPU> {
+  const found = gpuTestHooks.forceWebGL ? null : await adapter()
+  const limits = found?.limits
+  const requiredLimits = limits ? { maxTextureDimension2D: Math.min(limits.maxTextureDimension2D, textureCeiling), maxBufferSize: limits.maxBufferSize } : undefined
+  const renderer = new WebGPURenderer({ canvas, alpha, antialias: false, requiredLimits, forceWebGL: gpuTestHooks.forceWebGL || !found })
+  await renderer.init()
+  const internals = renderer as unknown as Internals
+  internals._animation?.stop()
+  // drei's GizmoViewport reads the WebGL renderer's capabilities.
+  Object.assign(renderer, { capabilities: { getMaxAnisotropy: () => renderer.getMaxAnisotropy() } })
+  if (output === 'pipeline') {
+    renderer.toneMapping = NoToneMapping
+    renderer.outputColorSpace = LinearSRGBColorSpace
+  }
+  const backendInfo = renderer.backend as { isWebGPUBackend?: boolean; compatibilityMode?: boolean | null; device?: { destroy(): void; limits: { maxTextureDimension2D: number } } }
+  const backend = backendInfo.isWebGPUBackend ? 'webgpu' : 'webgl2'
+  const gl = backend === 'webgl2' ? (renderer.getContext() as WebGL2RenderingContext) : null
+  const maxTextureSize = backendInfo.device?.limits.maxTextureDimension2D ?? (gl?.getParameter(gl.MAX_TEXTURE_SIZE) as number | undefined) ?? 4096
+  console.info(`scene renderer (${role}): ${backend}${backendInfo.compatibilityMode ? ' compatibility' : ''}`)
+
+  const device = deviceState(() => gl?.isContextLost() ?? false)
+  // Both backends report through onDeviceLost; three's own handler marks the
+  // renderer lost (render() then does nothing) and filters out dispose().
+  const original = renderer.onDeviceLost.bind(renderer)
+  renderer.onDeviceLost = (info) => {
+    if (device.isLost() || device.disposed) return
+    original(info)
+    device.markLost()
+  }
+  const loseNow = () => {
+    if (device.isLost() || device.disposed) return
+    // The same path a real loss takes; destroy() alone is filtered out as a dispose.
+    renderer.onDeviceLost({ api: backend === 'webgpu' ? 'WebGPU' : 'WebGL', message: 'test', reason: 'unknown', originalEvent: null })
+    if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext()
+    else backendInfo.device?.destroy()
+  }
+  const hook = { role, info: renderer.info, lose: (afterCaptures = 0) => device.loseAfter(afterCaptures, loseNow) }
+  gpuTestHooks.live.add(hook)
+  const armed = gpuTestHooks.armed.get(role)
+  if (armed !== undefined) {
+    gpuTestHooks.armed.delete(role)
+    hook.lose(armed)
+  }
+
+  const frame = () => {
+    const f = internals._nodes?.nodeFrame
+    if (!f) throw new Error('three 的帧状态不可用')
+    return f
+  }
+
+  const gpu: SceneGPU = {
+    renderer,
+    backend,
+    compatibility: backendInfo.compatibilityMode === true || gpuTestHooks.forceCompatibility,
+    maxTextureSize,
+    isLost: device.isLost,
+    lost: device.lost,
+    capture: (draw, type, quality) => device.capture(draw, () => canvasBlob(renderer.domElement, type, quality)),
+    compiler: null,
+    async compile(scene, camera) {
+      if (backend !== 'webgpu' && document.hidden) return
+      gpuTestHooks.compiling++
+      gpuTestHooks.compiles++
+      try {
+        await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
+      } finally {
+        gpuTestHooks.compiling--
+      }
+    },
+    advanceFrame() {
+      const f = frame()
+      advance(f)
+      internals.info.frame = f.frameId
+    },
+    resetFrames() {
+      reset(frame())
+      internals.info.frame = 0
+    },
+    cache: device.cache,
+    dispose() {
+      if (device.disposed) return
+      device.dispose()
+      gpuTestHooks.live.delete(hook)
+      renderer.dispose()
+      // Give a WebGL context back now rather than when the canvas is collected: browsers cap live contexts.
+      gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    },
+  }
+  return gpu
+}
+
+export type DeviceState = {
+  isLost(): boolean
+  readonly lost: Promise<DeviceLostError>
+  readonly disposed: boolean
+  markLost(): void
+  /** Draws, then encodes unless the device is lost by then; a lost device throws DeviceLostError. */
+  capture(draw: () => void, encode: () => Blob): Blob
+  cache<T extends { dispose(): void }>(key: string, create: () => T): T
+  /** Calls lose now, or right after that many more captures have drawn. */
+  loseAfter(captures: number, lose: () => void): void
+  dispose(): void
+}
+
+/**
+ * What a device's holder tracks besides the renderer: whether it is lost,
+ * the resources that die with it, and the test hook's countdown.
+ * contextLost reads a WebGL context's own flag, which is set at once, where
+ * onDeviceLost arrives in a later task.
+ */
+export function deviceState(contextLost: () => boolean = () => false): DeviceState {
+  let lost = false
+  let disposed = false
+  let settle: (err: DeviceLostError) => void = () => {}
+  const promise = new Promise<DeviceLostError>((resolve) => (settle = resolve))
+  const cached = new Map<string, { dispose(): void }>()
+  const release = () => {
+    for (const c of cached.values()) c.dispose()
+    cached.clear()
+  }
+  let countdown = 0
+  let pending: (() => void) | null = null
+  const isLost = () => lost || contextLost()
+  return {
+    isLost,
+    lost: promise,
+    get disposed() {
+      return disposed
+    },
+    markLost() {
+      if (lost || disposed) return
+      lost = true
+      release()
+      settle(new DeviceLostError())
+    },
+    capture(draw, encode) {
+      if (isLost()) throw new DeviceLostError()
+      draw()
+      if (pending && --countdown === 0) {
+        const lose = pending
+        pending = null
+        lose()
+      }
+      if (isLost()) throw new DeviceLostError()
+      return encode()
+    },
+    cache(key, create) {
+      if (lost || disposed) throw new DeviceLostError()
+      let c = cached.get(key)
+      if (!c) {
+        c = create()
+        cached.set(key, c)
+      }
+      return c as ReturnType<typeof create>
+    },
+    loseAfter(captures, lose) {
+      if (captures > 0) {
+        countdown = captures
+        pending = lose
+      } else lose()
+    },
+    dispose() {
+      disposed = true
+      release()
+    },
+  }
+}
+
+/**
+ * The canvas as an image file, encoded now. toBlob encodes in an idle task,
+ * which a background tab starts only after a throttled timeout: a hidden
+ * page running the assistant's jobs would wait a second or more per image.
+ */
+export function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Blob {
+  const url = canvas.toDataURL(type, quality)
+  if (!url.startsWith(`data:${type};base64,`)) throw new Error('图片编码失败')
+  const text = atob(url.slice(url.indexOf(',') + 1))
+  const bytes = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+  return new Blob([bytes], { type })
+}

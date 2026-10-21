@@ -18,8 +18,8 @@ import {
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
 import { renderShots, submitExport, uploadShots, type ExportPass, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
-import { lookAlongZ, perspectiveViewDirection } from '../src/creative-scene/render/sceneRenderer.ts'
-import { GTAOShader } from 'three/examples/jsm/shaders/GTAOShader.js'
+import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
+import { readFileSync } from 'node:fs'
 
 const deg = (r: number) => (r * 180) / Math.PI
 const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
@@ -105,14 +105,19 @@ test('the camera focuses on its focus object along its view, else at focus, kept
 
 // --- export flow ------------------------------------------------------------
 
-test('orthographic views look along -Z in the AO: three’s GTAO shader still has the line the patch replaces', () => {
-  assert.ok(GTAOShader.fragmentShader.includes(perspectiveViewDirection), 'GTAOShader changed; orthographic views would go without AO')
-  const material = { fragmentShader: GTAOShader.fragmentShader, needsUpdate: false }
-  assert.equal(lookAlongZ(material), true)
-  assert.ok(!material.fragmentShader.includes(perspectiveViewDirection))
-  assert.ok(material.fragmentShader.includes('vec3 viewDir = vec3(0.0, 0.0, 1.0);'))
-  assert.equal(material.needsUpdate, true)
-  assert.equal(lookAlongZ({ fragmentShader: 'void main() {}', needsUpdate: false }), false)
+test('the workbench GTAO is three’s GTAONode but for what is marked fork:', () => {
+  const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
+  const upstream = read('../node_modules/three/examples/jsm/tsl/display/GTAONode.js')
+  const fork = read('../src/creative-scene/render/nodes/GTAONode.js')
+  // The AO block three has where the fork has its own.
+  const aoOf = (text: string) => text.slice(text.indexOf('\t\tthis._ao = Fn( () => {'), text.indexOf('\t\tthis._sharedContext = builder.getSharedContext();'))
+  const restored = fork
+    .slice(fork.indexOf('import '))
+    .replace(/\t\t\/\/ fork: begin[^\n]*\n[\s\S]*?\t\t\/\/ fork: end\n\n/, aoOf(upstream))
+    // The inserted uniform: comment, line and blank.
+    .replace(/\t*\/\/ fork:[^\n]*\n[^\n]*\n\n/, '')
+  assert.ok(!restored.includes('fork:'), 'every change is undone here')
+  assert.equal(restored, upstream, 'three changed GTAONode: compare and port the fork')
 })
 
 test('a submitted export keeps its operation and time across retries; a refusal stops at once', async () => {
@@ -179,6 +184,7 @@ test('render shots draws every camera and pass from the snapshot, blurring clay 
       return new Blob([o.kind])
     },
     setLook: async () => {},
+    confirm: async () => {},
     close: () => { closed = true },
   }
   const doc = { scene: sceneOf(camera(), object({ id: 'cam2', kind: 'camera', camera: { aspect: '2:3', depth_of_field: false } as SceneObject['camera'] })), models: {}, revision: '5' }
@@ -206,6 +212,7 @@ test('lit images come after every clay and line image, with the lit look mounted
         events.push(`look ${look}`)
         return setLook(look)
       },
+      confirm: async () => {},
       close: () => events.push('close'),
     }
     const out = await renderShots({ read, loadModels: async () => {}, open: async (_d, look) => (opened.push(look), shooter), sleep }, 'doc', { cameraObjectIDs: ['cam', 'cam2'], passes })
@@ -260,7 +267,7 @@ test('the export dialog allows 1 to 48 images; it ticks the lit look when the vi
 test('a manual export frees its uploads when it is refused or never answered', async () => {
   const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
   const doc = { scene: sceneOf(camera()), models: {}, revision: '4' }
-  const shooter: Shooter = { shoot: () => new Blob(['x']), setLook: async () => {}, close: () => {} }
+  const shooter: Shooter = { shoot: () => new Blob(['x']), setLook: async () => {}, confirm: async () => {}, close: () => {} }
   const run = async (send: () => Promise<never> | Promise<{ change_id: string; scene_revision: string; nodes: [] }>) => {
     const discarded: string[] = []
     let n = 0
@@ -287,4 +294,36 @@ test('a manual export frees its uploads when it is refused or never answered', a
   const lost = await run(async () => { throw new TypeError('Failed to fetch') })
   assert.deepEqual(lost.out, { ok: false, message: '没能确认导出结果，请先看画布上是否已有这组图' })
   assert.equal(lost.discarded.length, 2)
+})
+
+test('a device lost while the shots were drawn hands none of them on: the shooter closes and a manual export uploads nothing', async () => {
+  const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
+  const doc = { scene: sceneOf(camera()), models: {}, revision: '4' }
+  let closed = 0
+  const shooter: Shooter = {
+    shoot: () => new Blob(['x']),
+    setLook: async () => {},
+    confirm: async () => { throw new DeviceLostError() },
+    close: () => { closed++ },
+  }
+  const plan = { cameraObjectIDs: ['cam'], passes: ['clay', 'line'] as ExportPass[] }
+  await assert.rejects(renderShots({ read: async () => doc as never, loadModels: async () => {}, open: async () => shooter }, 'doc', plan), DeviceLostError)
+  assert.equal(closed, 1)
+  const uploads: Blob[] = []
+  const out = await runManualExport(
+    {
+      read: async () => doc as never,
+      loadModels: async () => {},
+      open: async () => shooter,
+      upload: async (file) => (uploads.push(file), { id: 'ccup_1' }) as Upload,
+      discard: async () => {},
+      send: async () => ({ change_id: 'cwch', scene_revision: '4', nodes: [] }),
+      wait: async () => {},
+    },
+    { documentID: 'doc', canvasID: 'ccv', sceneNodeID: 'node', plan },
+    new AbortController().signal,
+  )
+  assert.deepEqual(out, { ok: false, message: '渲染设备暂时不可用，请重试' })
+  assert.equal(uploads.length, 0)
+  assert.equal(closed, 2)
 })

@@ -5,10 +5,12 @@
 // (state/apply.ts); the Go tests own the real ones. Every check gets a fresh
 // browser context.
 import assert from 'node:assert/strict'
-import { execSync } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
@@ -20,7 +22,7 @@ const fixture = new URL('../.scene-editor-qa.html', import.meta.url)
 const canvasFixture = new URL('../.scene-canvas-qa.html', import.meta.url)
 await writeFile(
   fixture,
-  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script type="module">
+  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script>window.__sceneTest = true</script><script type="module">
 import React, {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import '/src/index.css';
@@ -56,7 +58,9 @@ function Editor({host}) {
     : React.createElement('p', {id:'closed'}, 'closed');
 }
 function WithHost() {
-  return React.createElement(Editor, {host: useSceneHost('qa-account').launcher});
+  const launcher = useSceneHost('qa-account').launcher;
+  window.__launcher = launcher;
+  return React.createElement(Editor, {host: launcher});
 }
 const App = new URLSearchParams(location.search).has('host') ? WithHost : Editor;
 createRoot(document.getElementById('root')).render(React.createElement(StrictMode, null, React.createElement(App)));
@@ -558,11 +562,23 @@ async function open(server, options = {}) {
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
-  await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
+  // viewport: false for a browser that cannot draw, where there is no canvas to wait for.
+  if (options.viewport === false) return { context, page, errors }
+  await viewportReady(page)
   await page.getByRole('treeitem').first().waitFor()
   // Let R3F mount the scene and the camera settle.
   await sleep(400)
   return { context, page, errors }
+}
+
+/** The renderer is made asynchronously (render/gpu.ts): the viewport takes keys and has its size once it is. */
+async function viewportReady(page) {
+  const canvas = page.locator('.cc-scene-editor canvas')
+  await canvas.waitFor({ timeout: 20_000 })
+  await canvas.evaluate((c) => new Promise((resolve) => {
+    const sized = () => (c.clientWidth === c.parentElement.clientWidth && c.clientHeight === c.parentElement.clientHeight ? resolve() : requestAnimationFrame(sized))
+    sized()
+  }))
 }
 
 async function viewportCenter(page) {
@@ -3045,6 +3061,58 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   await context.close()
 })
 
+await check('lights: the rendered view warms its lights in one compile; adding, undoing and switching away and back leave nothing behind', async () => {
+  const server = new SceneServer()
+  const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+  const lamp = (name, order, position, light) => ({ id: gid(name), kind: 'light', name, order, transform: { position, rotation: down, scale: [1, 1, 1] }, light })
+  seed(server, [
+    boxOf('crate', 5, { position: [-1, 0, 0] }, { width: 1, height: 1, depth: 1 }, { preset: 'wood@1', params: {} }),
+    boxOf('post', 6, { position: [1, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 }),
+    lamp('spota', 10, [0, 3, 0], { type: 'spot', color: '#ffffff', intensity: 60, cast_shadow: true, distance: 0, decay: 2, angle: Math.PI / 6, penumbra: 0.2 }),
+    lamp('pointa', 11, [-2, 2, 2], { type: 'point', color: '#ffd9b0', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }),
+    lamp('pointb', 12, [2, 2, 2], { type: 'point', color: '#ffd9b0', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }),
+  ])
+  const { context, page, errors } = await open(server)
+  const { x, y, box } = await viewportCenter(page)
+  const compiles = () => page.evaluate(() => window.__sceneGPU.compiles)
+  const compiled = () => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+  const before = await compiles()
+  await shading(page, '最终渲染')
+  await compiled()
+  assert.equal((await compiles()) - before, 1, 'the three lights compile together')
+  /** What the viewport's renderer holds on the device. */
+  const memory = () =>
+    page.evaluate(() => {
+      const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').at(-1).info.memory
+      return { textures, renderTargets, uniformBuffers, programs }
+    })
+  const round = async (n) => {
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+    await waitFor(() => server.commands.length === 2 * n - 1, 'add a point light')
+    await compiled()
+    await saved(page)
+    await focusEditor(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.commands.length === 2 * n, 'undo')
+    await saved(page)
+    await shading(page, '白模')
+    // Past the second after which an unused material is freed (materials/instances.ts).
+    await sleep(1500)
+    await shading(page, '最终渲染')
+    await compiled()
+    await settledShot(page, box)
+  }
+  await round(1)
+  const settled = await memory()
+  await round(2)
+  await round(3)
+  assert.deepEqual(await memory(), settled, 'the same resources after two more rounds')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens shadows and turns the sky to dusk; Cmd+Z', async () => {
   const server = new SceneServer()
   const post = gid('post')
@@ -3345,60 +3413,483 @@ await check('reference scenes: each opens and draws in clay and rendered without
   }
 })
 
+const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
+
+/**
+ * A reference scene exported in all three passes from the rendered view,
+ * then the saved orthographic view in clay, on gpu (a Chromium on this
+ * machine's GPU); forceWebGL draws the export through the WebGL2 backend.
+ */
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false } = {}) {
+  const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+  await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
+  const server = new SceneServer()
+  referenceScene(server, name)
+  const backends = []
+  context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
+  const { page, errors } = await open(server, { context, query: '?export=1' })
+  if (forceWebGL) await page.evaluate(() => { window.__sceneGPU.forceWebGL = true })
+  if (forceCompatibility) await page.evaluate(() => { window.__sceneGPU.forceCompatibility = true })
+  const renderer = await page.evaluate(() => {
+    const gl = document.createElement('canvas').getContext('webgl2')
+    return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+  })
+  await shading(page, '最终渲染')
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  for (const pass of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(pass).isChecked(), `${name}: ${pass} ticked`)
+  const started = Date.now()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
+  const exportMs = Date.now() - started
+  await dialog.waitFor({ state: 'detached' })
+  const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
+  const images = []
+  for (const s of server.exports[0].payload.shots) {
+    for (const img of s.images) images.push({ file: `${name}-${cameras.get(s.camera_object_id)}-${img.pass}.png`, pass: img.pass, png: server.uploadBytes.get(img.upload_id) })
+  }
+  // The saved orthographic view from front right above, in clay: the AO the orthographic GTAO must keep.
+  await shading(page, '白模')
+  const { x, y, box } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await sleep(600)
+  const ortho = { file: `${name}-ortho-clay.png`, pass: 'clay', png: await settledShot(page, box) }
+  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  await context.close()
+  return { renderer, exportMs, images, ortho, backends }
+}
+
 // SCENE_E2E_BASELINE=<dir>: every reference scene exported in all three passes
 // on this machine's GPU, an orthographic clay view of each, and baseline.json
 // with the machine, the versions and the export times. The AC-9 case below
 // adds perf.json to the same directory. Run it before the renderer changes.
 if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes exported on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_BASELINE
-  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
     for (const name of referenceNames) {
-      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
-      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
-      const server = new SceneServer()
-      referenceScene(server, name)
-      const { page, errors } = await open(server, { context, query: '?export=1' })
-      record.renderer ??= await page.evaluate(() => {
-        const gl = document.createElement('canvas').getContext('webgl2')
-        return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
-      })
-      await shading(page, '最终渲染')
-      await page.getByRole('button', { name: '导出' }).first().click()
-      const dialog = page.getByRole('dialog', { name: '导出分镜' })
-      await dialog.waitFor()
-      for (const pass of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(pass).isChecked(), `${name}: ${pass} ticked`)
-      const started = Date.now()
-      await dialog.getByRole('button', { name: '导出' }).click()
-      await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
-      const exportMs = Date.now() - started
-      await dialog.waitFor({ state: 'detached' })
-      const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
+      const out = await exportReference(gpu, name)
+      record.renderer ??= out.renderer
       const images = []
-      for (const s of server.exports[0].payload.shots) {
-        for (const img of s.images) {
-          const png = server.uploadBytes.get(img.upload_id)
-          const file = `${name}-${cameras.get(s.camera_object_id)}-${img.pass}.png`
-          await writeFile(`${dir}/${file}`, png)
-          images.push({ file, ...pngSize(png), bytes: png.length })
-        }
+      for (const img of [...out.images, out.ortho]) {
+        await writeFile(`${dir}/${img.file}`, img.png)
+        if (img !== out.ortho) images.push({ file: img.file, ...pngSize(img.png), bytes: img.png.length })
       }
-      // The saved orthographic view from front right above, in clay: the AO the orthographic GTAO must keep.
-      await shading(page, '白模')
-      const { x, y, box } = await viewportCenter(page)
-      await page.mouse.move(x, y)
-      await sleep(600)
-      await writeFile(`${dir}/${name}-ortho-clay.png`, await settledShot(page, box))
-      record.scenes[name] = { export_ms: exportMs, images }
-      console.log(`baseline ${name}: ${images.length} images in ${exportMs} ms`)
-      assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
-      await context.close()
+      record.scenes[name] = { export_ms: out.exportMs, images }
+      console.log(`baseline ${name}: ${images.length} images in ${out.exportMs} ms`)
     }
     await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
   } finally {
     await gpu.close()
   }
+})
+
+// --- R1 AC-R1-1 / AC-R1-4: the same pictures as the WebGL baseline --------------
+
+const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer/features/2026-10-21-scene-webgpu-spike/discovery/research/baseline/', import.meta.url)
+
+/**
+ * The thresholds of AC-R1-1, tightened after the first full run to 1.5× the
+ * largest difference measured among the images within the Epic's limits
+ * (line ≤ 0.1 / 0.05 %, clay and lit ≤ 1.5 / 1 %), never above them. An
+ * image over its threshold goes to the owner; the threshold is not raised.
+ */
+const parityLimits = { line: { mean: 0.0016, over: 0.0026 }, clay: { mean: 1.5, over: 0.62 }, lit: { mean: 0.63, over: 0.18 } }
+
+/** Mean difference per channel (0–255), the share of pixels with a channel off by more than 8 (%), and a + b + difference (×8) side by side as a JPEG. */
+async function compareShots(page, a, b) {
+  const out = await page.evaluate(async ([a, b]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const w = x.width
+    const h = x.height
+    if (y.width !== w || y.height !== h) return { error: `${w}×${h} against ${y.width}×${y.height}` }
+    const pixels = (img) => {
+      const c = document.createElement('canvas')
+      c.width = w
+      c.height = h
+      const g = c.getContext('2d')
+      g.drawImage(img, 0, 0)
+      return g.getImageData(0, 0, w, h)
+    }
+    const p = pixels(x).data
+    const q = pixels(y).data
+    const diff = new ImageData(w, h)
+    let sum = 0
+    let over = 0
+    for (let k = 0; k < p.length; k += 4) {
+      let most = 0
+      for (let c = 0; c < 3; c++) {
+        const d = Math.abs(p[k + c] - q[k + c])
+        sum += d
+        most = Math.max(most, d)
+        diff.data[k + c] = Math.min(255, d * 8)
+      }
+      diff.data[k + 3] = 255
+      if (most > 8) over++
+    }
+    const sheet = document.createElement('canvas')
+    const scale = 0.5
+    sheet.width = Math.round(w * scale) * 3
+    sheet.height = Math.round(h * scale)
+    const g = sheet.getContext('2d')
+    const d = document.createElement('canvas')
+    d.width = w
+    d.height = h
+    d.getContext('2d').putImageData(diff, 0, 0)
+    for (const [i, img] of [x, y, d].entries()) g.drawImage(img, i * Math.round(w * scale), 0, Math.round(w * scale), Math.round(h * scale))
+    return { mean: sum / ((p.length / 4) * 3), over: (over / (p.length / 4)) * 100, sheet: sheet.toDataURL('image/jpeg', 0.85).split(',')[1] }
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+  return out.error ? out : { ...out, sheet: Buffer.from(out.sheet, 'base64') }
+}
+
+// SCENE_E2E_GPU=<dir>: the reference scenes on this machine's GPU against the
+// R0 baseline (AC-R1-1), then the export once more through the WebGL2 backend
+// against the WebGPU one (AC-R1-4); side-by-side sheets and parity.json go to
+// the directory, and every image must be within its threshold.
+if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match the WebGL baseline, and the WebGL2 backend matches WebGPU', async () => {
+  const dir = process.env.SCENE_E2E_GPU
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  const over = []
+  const exports = {}
+  const record = (against, file, pass, m) => {
+    const limit = parityLimits[pass]
+    const ok = !m.error && m.mean <= limit.mean && m.over <= limit.over
+    rows.push({ against, file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), ok, ...(m.error ? { error: m.error } : {}) })
+    if (!ok) over.push(`${against} ${file}: ${m.error ?? `mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(3)}% (limit ${limit.mean} / ${limit.over}%)`}`)
+  }
+  try {
+    let page = null
+    for (const name of referenceNames) {
+      const webgpu = await exportReference(gpu, name)
+      assert.ok(webgpu.backends.some((b) => b === 'scene renderer (viewport): webgpu'), `${name}: the viewport on WebGPU: ${webgpu.backends}`)
+      assert.ok(webgpu.backends.some((b) => b === 'scene renderer (offscreen): webgpu'), `${name}: the export on WebGPU: ${webgpu.backends}`)
+      page ??= await (await gpu.newContext()).newPage()
+      for (const img of [...webgpu.images, webgpu.ortho]) {
+        const m = await compareShots(page, readFileSync(new URL(img.file, r0Baseline)), img.png)
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}.jpg`, m.sheet)
+        record('r0-webgl', img.file, img.pass, m)
+      }
+      const webgl = await exportReference(gpu, name, { forceWebGL: true })
+      exports[name] = { webgpu_ms: webgpu.exportMs, webgl2_ms: webgl.exportMs }
+      assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: the export on WebGL2: ${webgl.backends}`)
+      for (const img of webgl.images) {
+        const m = await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png)
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}-webgl2.jpg`, m.sheet)
+        record('webgpu', img.file, img.pass, m)
+      }
+      console.log(`parity ${name}: ${rows.filter((r) => r.file.startsWith(`${name}-`) && r.ok).length}/${rows.filter((r) => r.file.startsWith(`${name}-`)).length} within`)
+    }
+    // AC-R1-8: no compatibility-mode device here; the workbench's branch for one (no MSAA, SMAA) against the MSAA picture, for the record.
+    const compatibility = []
+    for (const name of ['noon', 'materials']) {
+      const msaa = await exportReference(gpu, name)
+      const smaa = await exportReference(gpu, name, { forceCompatibility: true })
+      for (const img of smaa.images) {
+        if (img.pass === 'line') continue
+        const m = await compareShots(page, msaa.images.find((i) => i.file === img.file).png, img.png)
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}-smaa.jpg`, m.sheet)
+        compatibility.push({ file: img.file, mean: Number(m.mean.toFixed(4)), over_percent: Number(m.over.toFixed(4)) })
+      }
+    }
+    await writeFile(`${dir}/parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits, exports, rows, compatibility }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
+})
+
+// SCENE_E2E_LOOK=<dir>: the four display modes and an orthographic clay view
+// of three reference scenes on this machine's GPU, the ball and the ground
+// selected and the move gizmo up, the grid and the axis widget showing. Run
+// on both sides of the WebGPU migration and compared by eye (R1 AC-R1-6).
+const lookView = (ortho) => ({
+  camera: ortho ? { position: [7, -9, 7], target: [0, 0, 0.5], ortho: true, zoom: 80 } : { position: [6, -8, 4], target: [0, 0, 0.6], ortho: false },
+  selection: { selected: ['sobj_ball00000000000000000', 'sobj_ground'], active: 'sobj_ball00000000000000000' },
+  tool: 'move', toolbar: true, sidebar: true, history: false,
+})
+if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor helpers on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_LOOK
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    for (const name of ['noon', 'materials', 'room']) {
+      for (const ortho of [false, true]) {
+        const context = await gpu.newContext({ viewport: { width: 1280, height: 820 }, deviceScaleFactor: 2 })
+        await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, lookView(ortho)])
+        const server = new SceneServer()
+        referenceScene(server, name)
+        // The ball of the noon yard; the other scenes get one in front.
+        if (!server.scene.objects.some((o) => o.id === 'sobj_ball00000000000000000'))
+          seed(server, [{ id: 'sobj_ball00000000000000000', kind: 'primitive', name: 'ball', order: 99, transform: { ...identity(), position: [0, 0, 1.5] }, primitive: { builtin: 'sphere@1', params: { radius: 0.4 } } }])
+        const { page, errors } = await open(server, { context })
+        const { box } = await viewportCenter(page)
+        for (const mode of ortho ? ['白模'] : ['线框', '白模', '材质预览', '最终渲染']) {
+          await shading(page, mode)
+          // New lights stay dark until compiled for the viewport's passes (objects/SceneLights.tsx).
+          await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name} ${mode}: compiled`, 60_000)
+          await writeFile(`${dir}/${name}-${ortho ? 'ortho' : 'persp'}-${mode}.png`, await settledShot(page, box))
+        }
+        assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+        await context.close()
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// --- R1 AC-R1-3: the same pictures in a hidden tab ------------------------------
+
+// The export as the assistant's page draws it, without the editor or the network.
+const hiddenFixture = new URL('../.scene-hidden-qa.html', import.meta.url)
+await writeFile(
+  hiddenFixture,
+  `<html><body><script>window.__sceneTest = true</script><script type="module">
+import { renderShots } from '/src/creative-scene/host/exportShots.ts';
+import { loadModels, openShooter } from '/src/creative-scene/host/render.ts';
+window.__export = async (doc, plan) => {
+  const out = await renderShots({ read: async () => doc, loadModels: (d) => loadModels(d.scene, d.models), open: (d, look) => openShooter(d.scene, d.models, look) }, 'doc', plan);
+  if (!out.ok) throw new Error(out.message);
+  const hex = async (blob) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return Promise.all(out.images.map(async (i) => ({ camera: i.camera, pass: i.pass, hash: await hex(i.blob) })));
+};
+window.__ready = true;
+</script></body></html>`,
+)
+
+// SCENE_E2E_HIDDEN=1 (needs Google Chrome): Playwright keeps the pages it
+// drives visible, so Chrome is started off screen and spoken to over the
+// DevTools protocol, as creative-scene-agent-background.e2e.mjs does. The
+// material board with glass and two more cameras, clay, line and lit: once in
+// front, twice behind a blank tab, then once behind it on the WebGL2 backend.
+if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden tab are the foreground’s, pixel for pixel, on WebGPU and WebGL2', async () => {
+  const chromePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  const port = 9334
+  const profile = mkdtempSync(join(tmpdir(), 'scene-hidden-'))
+  const chrome = spawn(chromePath, [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--window-position=-2400,-2400', '--window-size=1200,800', `${base}/.scene-hidden-qa.html`], { stdio: 'ignore' })
+  const devtools = `http://127.0.0.1:${port}`
+  try {
+    let target
+    for (let i = 0; i < 100 && !target; i++) {
+      await sleep(200)
+      target = await fetch(`${devtools}/json`).then((r) => r.json()).then((list) => list.find((t) => t.type === 'page' && t.url.includes('.scene-hidden-qa.html'))).catch(() => null)
+    }
+    assert.ok(target, 'the fixture tab')
+    const ws = new WebSocket(target.webSocketDebuggerUrl)
+    await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
+    let id = 0
+    const pending = new Map()
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data)
+      if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+    }
+    const evaluate = (expression, timeoutMs = 300_000) => new Promise((resolve, reject) => {
+      const n = ++id
+      const timer = setTimeout(() => { pending.delete(n); reject(new Error(`timed out after ${timeoutMs} ms: ${expression.slice(0, 60)}`)) }, timeoutMs)
+      pending.set(n, (msg) => {
+        clearTimeout(timer)
+        if (msg.error) reject(new Error(`CDP: ${msg.error.message}`))
+        else if (msg.result?.exceptionDetails) reject(new Error(msg.result.exceptionDetails.exception?.description ?? 'evaluate failed'))
+        else resolve(msg.result?.result?.value)
+      })
+      ws.send(JSON.stringify({ id: n, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+    })
+    await waitFor(async () => (await evaluate('!!window.__ready')) === true, 'the fixture loaded', 30_000)
+    const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/materials.json', import.meta.url), 'utf8'))
+    const board = scene.objects.find((o) => o.kind === 'camera')
+    for (const [i, dx] of [[1, -1.5], [2, 1.5]]) scene.objects.push({ ...structuredClone(board), id: `sobj_cam${String(i).padStart(18, '0')}`, name: `cam${i}`, order: 100 + i, transform: { ...board.transform, position: [board.transform.position[0] + dx, board.transform.position[1], board.transform.position[2]] } })
+    const doc = { scene, models: {}, revision: '1' }
+    const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
+    const run = () => evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)})`)
+    assert.equal(await evaluate('document.visibilityState'), 'visible')
+    const front = await run()
+    assert.equal(front.length, 9)
+    assert.equal(new Set(front.map((i) => i.hash)).size, 9, 'every camera and pass its own picture')
+    await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
+    await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab went into the background', 10_000)
+    const raf = await evaluate('new Promise((res) => { let n = 0; const t = () => { n++; requestAnimationFrame(t) }; requestAnimationFrame(t); setTimeout(() => res(n), 1000) })')
+    const first = await run()
+    const second = await run()
+    assert.equal(await evaluate('document.visibilityState'), 'hidden', 'still in the background')
+    assert.deepEqual(first, front, 'hidden as in front')
+    assert.deepEqual(second, first, 'twice the same')
+    await evaluate('window.__sceneGPU.forceWebGL = true')
+    const webgl = await run()
+    const again = await run()
+    assert.deepEqual(again, webgl, 'the WebGL2 backend, twice the same in the background')
+    console.log(`determinism: hidden (rAF ${raf}/s) = front on WebGPU; WebGL2 in the background repeats itself (${webgl.filter((w, i) => w.hash === front[i].hash).length}/9 equal to WebGPU)`)
+  } finally {
+    chrome.kill()
+    await sleep(500)
+    await rm(profile, { recursive: true, force: true })
+  }
+})
+
+// --- R1 AC-R1-4: without WebGPU ------------------------------------------------
+
+await check('fallback: with no WebGPU adapter (SwiftShader) the editor draws, edits and exports on the WebGL2 backend', async () => {
+  const server = new SceneServer()
+  referenceScene(server, 'noon')
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  const backends = []
+  context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
+  const { page, errors } = await open(server, { context, query: '?export=1' })
+  assert.equal(await page.evaluate(async () => (await navigator.gpu?.requestAdapter()) ?? null), null, 'this browser has no adapter')
+  await addBox(page, server)
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 120_000)
+  assert.ok(backends.includes('scene renderer (viewport): webgl2'), backends.join(', '))
+  assert.ok(backends.includes('scene renderer (offscreen): webgl2'), backends.join(', '))
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('fallback: a browser with neither WebGPU nor WebGL2 says so and claims no jobs', async () => {
+  const bare = await chromium.launch({ headless: true })
+  try {
+    const server = new SceneServer()
+    const context = await bare.newContext({ viewport: { width: 1280, height: 820 } })
+    const { page } = await open(server, { context, query: '?host=1', viewport: false })
+    assert.equal(await page.evaluate(async () => !!document.createElement('canvas').getContext('webgl2') || (await navigator.gpu?.requestAdapter()) != null), false, 'this browser has neither')
+    await page.getByRole('alert').filter({ hasText: '当前浏览器无法显示 3D 场景' }).waitFor()
+    await page.evaluate(() => window.__invalidate?.())
+    await sleep(1500)
+    assert.equal(server.claims.length, 0, 'no claims')
+    await context.close()
+  } finally {
+    await bare.close()
+  }
+})
+
+// --- R1 AC-R1-5: a lost device (render/gpu.ts test hooks) -------------------------
+
+/** host/launcher.ts recoverEveryMs: after a device loss the page tries for a device again no sooner. */
+const recoverWaitMs = 10_000
+
+await check('device loss: the viewport draws again on a new device; the selection, the view and the edits stay', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const id = await addBox(page, server)
+  await saved(page)
+  // A second box on its way to the server when the device goes: the edit is outside the Canvas and still goes out.
+  let release
+  server.hold = new Promise((resolve) => (release = resolve))
+  const sent = server.commands.length
+  const { x, y, box } = await viewportCenter(page)
+  await page.mouse.move(x + 140, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '方块' }).click()
+  await waitFor(async () => (await page.getByRole('treeitem', { name: /方块/ }).count()) === 2, 'the second box shows')
+  const before = await settledShot(page, box)
+  const view = await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('creative-scene-view:'))))
+  const old = await page.locator('.cc-scene-editor canvas').elementHandle()
+  assert.equal(await page.evaluate(() => window.__sceneGPU.loseDevice('viewport')), 1, 'one viewport renderer is live')
+  await waitFor(async () => !(await old.evaluate((c) => c.isConnected)), 'a new canvas')
+  await viewportReady(page)
+  const { box: again } = await viewportCenter(page)
+  const after = await settledShot(page, again)
+  assert.ok((await pixelDiff(page, before, after)) < 0.003, 'the same picture on the new device')
+  assert.equal(await page.getByRole('treeitem', { selected: true }).count(), 1, 'still selected')
+  assert.equal(await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('creative-scene-view:')))), view, 'the same view')
+  assert.ok(server.object(id), 'the box is in the scene')
+  server.hold = null
+  release()
+  await waitFor(() => server.commands.length === sent + 1, 'the held edit went out')
+  await saved(page)
+  assert.equal(server.scene.objects.filter((o) => o.primitive?.builtin?.startsWith('box')).length, 2, 'both boxes saved')
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  // A device that keeps failing: the third loss within 10 seconds stops trying.
+  for (let i = 0; i < 2; i++) {
+    await viewportReady(page)
+    const canvas = await page.locator('.cc-scene-editor canvas').elementHandle()
+    await page.evaluate(() => window.__sceneGPU.loseDevice('viewport'))
+    await waitFor(async () => !(await canvas.evaluate((c) => c.isConnected)), 'gone')
+  }
+  await page.getByRole('alert').filter({ hasText: '渲染设备不可用，请刷新页面' }).waitFor()
+  await context.close()
+})
+
+await check('device loss: render_view and export_shots lost mid-way upload nothing, go back to the queue and finish on a later try', async () => {
+  const server = new SceneServer()
+  referenceScene(server, 'noon')
+  const { context, page, errors } = await open(server, { query: '?host=1' })
+  await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+  const cam = 'sobj_shot00000000000000000'
+  const jobs = [
+    { kind: 'render_view', request: { preset: 'overview', mode: 'clay' }, after: 0 },
+    // Lost after the second of three images: none of them may go up.
+    { kind: 'export_shots', request: { camera_object_ids: [cam], passes: ['clay', 'line', 'lit'], canvas_id: 'ccv_qa', scene_node_id: 'cwnode_qa' }, after: 2 },
+  ]
+  for (const [n, j] of jobs.entries()) {
+    const id = `csj_lost${n}`
+    const job = (attempt) => ({ id, document_id: DOC, kind: j.kind, request: j.request, attempt, claim_token: `tok_${id}_${attempt}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' })
+    await page.evaluate((after) => window.__sceneGPU.loseNext('offscreen', after), j.after)
+    const uploads = server.uploads.size
+    server.claimable = [job(0)]
+    await page.evaluate(() => window.__invalidate())
+    await waitFor(() => server.claimable.length === 0, `${j.kind}: claimed`, 10_000)
+    await waitFor(async () => (await page.evaluate(() => window.__launcher.store.getState().holding)) === null, `${j.kind}: given back`, 120_000)
+    assert.equal(await page.evaluate(() => window.__sceneGPU.armed.size), 0, `${j.kind}: the device was lost`)
+    assert.equal(server.completes.filter((c) => c.id === id).length, 0, `${j.kind}: not reported, the lease runs out`)
+    assert.equal(server.uploads.size, uploads, `${j.kind}: nothing went up`)
+    // The lease has run out: the job is queued again. The page waits 10 seconds from the loss before it tries for a device.
+    server.claimable = [job(1)]
+    await page.evaluate(() => window.__invalidate())
+    await sleep(1500)
+    assert.equal(server.claimable.length, 1, `${j.kind}: not claimed again at once`)
+    await sleep(recoverWaitMs)
+    await page.evaluate(() => window.__invalidate())
+    await waitFor(() => server.completes.some((c) => c.id === id), `${j.kind}: finished on the next try`, 120_000)
+    assert.equal(server.completes.find((c) => c.id === id).payload.outcome, 'succeeded')
+  }
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
+})
+
+await check('device loss: a manual export lost while drawing says so, places nothing, and goes through on a retry', async () => {
+  const server = new SceneServer()
+  referenceScene(server, 'noon')
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  await page.evaluate(() => window.__sceneGPU.loseNext('offscreen', 1))
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  // The editor's notice line, the dialog kept open for the retry.
+  await page.getByText('渲染设备暂时不可用，请重试').waitFor({ timeout: 120_000 })
+  assert.equal(server.exports.length, 0, 'nothing placed')
+  assert.equal(server.uploads.size, 0, 'nothing uploaded')
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'the retry goes through', 120_000)
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
+})
+
+await check('device loss: the asset card thumbnail drawn on a device that is lost is drawn again on a new one', async () => {
+  const server = new SceneServer()
+  const model = server.seedModel()
+  const pillar = 'sobj_P00000000000000000001'
+  server.seedInstance(pillar, model, 0, '柱', { stone: { preset: 'marble@1', params: {} } })
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  await page.evaluate(() => window.__sceneGPU.loseNext('thumbnail', 0))
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  await page.getByRole('button', { name: '存入资产库…' }).click()
+  const dialog = page.getByRole('dialog', { name: '存入个人资产库' })
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await dialog.waitFor({ state: 'detached', timeout: 60_000 })
+  await page.locator('#notice').filter({ hasText: '已存入资产库' }).waitFor()
+  assert.equal(await page.evaluate(() => window.__sceneGPU.armed.size), 0, 'the first device was lost')
+  const thumbnail = server.uploadBytes.get(server.saves[0].payload.thumbnail_upload_id)
+  assert.deepEqual(pngSize(thumbnail), { width: 256, height: 256 })
+  assert.ok((await pixelDiff(page, await clayThumbnail(page), thumbnail)) > 0.02, 'the materials drawn, not an empty card')
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
 })
 
 /** The machine the baseline ran on: model, chip and OS, for the record. */
@@ -3495,13 +3986,81 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference 
     await page.locator('.cc-scene-editor').focus()
     const remove = await hitch(() => page.keyboard.press(`${modKey}+KeyZ`))
     console.log(`  adding a light: longest frame ${add.toFixed(0)} ms; removing it: ${remove.toFixed(0)} ms`)
-    if (process.env.SCENE_E2E_BASELINE) {
+    // SCENE_E2E_PERF_OUT=<dir> keeps the numbers next to the migration's evidence (R1 AC-R1-7).
+    const out = process.env.SCENE_E2E_BASELINE ?? process.env.SCENE_E2E_PERF_OUT
+    if (out) {
       const perf = { machine: machineInfo(), chromium: gpu.version(), renderer, canvas, modes: results, light_add_ms: add, light_remove_ms: remove }
-      await writeFile(`${process.env.SCENE_E2E_BASELINE}/perf.json`, `${JSON.stringify(perf, null, 2)}\n`)
+      await writeFile(`${out}/perf.json`, `${JSON.stringify(perf, null, 2)}\n`)
     }
     assert.ok(results.rendered.mean <= 33, `rendered mean frame ${results.rendered.mean.toFixed(1)} ms`)
-    assert.ok(results.preview.mean <= results.rendered.mean, 'material preview is no slower')
+    // Both can sit at the display's refresh rate, where they differ only by noise.
+    assert.ok(results.preview.mean <= results.rendered.mean + 0.5, 'material preview is no slower')
     assert.ok(add < 1000 && remove < 1000, 'adding or removing a light hitches under a second')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** rAF timestamps, each with the compiles under way (SceneGPU.compile), for ms while a swipe turns the view every frame. */
+const compileFrames = (page, ms) =>
+  page.evaluate((ms) => new Promise((resolve) => {
+    const el = document.querySelector('.cc-scene-editor canvas')
+    const frames = []
+    let sign = 1
+    const start = performance.now()
+    const tick = (t) => {
+      frames.push([t, window.__sceneGPU.compiling])
+      sign = -sign
+      el.dispatchEvent(new WheelEvent('wheel', { deltaX: 4 * sign, deltaY: 0, deltaMode: 0, bubbles: true, cancelable: true }))
+      if (t - start < ms) requestAnimationFrame(tick)
+      else resolve(frames)
+    }
+    requestAnimationFrame(tick)
+  }), ms)
+
+if (process.env.SCENE_E2E_PERF) await check('AC-9: switching to the rendered view of the reference scene, on this machine’s GPU', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    // The longest frame from the click on, and when the scene's lights came on (their compile done).
+    const measure = async (from) => {
+      await shading(page, from)
+      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+      // Past the second after which an unused material is freed (materials/instances.ts).
+      await sleep(1500)
+      const measuring = compileFrames(page, 6000)
+      await sleep(500)
+      const [at, before] = await page.evaluate(() => [performance.now(), window.__sceneGPU.compiles])
+      await shading(page, '最终渲染')
+      const after = (await measuring).filter(([t]) => t >= at)
+      const longest = Math.max(...gaps([at, ...after.map(([t]) => t)]))
+      const last = after.findLastIndex(([, compiling]) => compiling > 0)
+      const lightsOn = (after[last + 1] ?? after[0])[0] - at
+      const compiles = (await page.evaluate(() => window.__sceneGPU.compiles)) - before
+      return { longest_frame_ms: Math.round(longest), lights_on_ms: Math.round(lightsOn), compiles }
+    }
+    const switches = {
+      'solid → rendered, first': await measure('白模'),
+      'solid → rendered, again': await measure('白模'),
+      'preview → rendered': await measure('材质预览'),
+      'wireframe → rendered': await measure('线框'),
+    }
+    for (const [name, m] of Object.entries(switches)) console.log(`  ${name}: longest frame ${m.longest_frame_ms} ms, lights on after ${m.lights_on_ms} ms, ${m.compiles} compile(s)`)
+    const out = process.env.SCENE_E2E_PERF_OUT
+    if (out) await writeFile(`${out}/switch.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), switches }, null, 2)}\n`)
+    // The browser keeps compiled shaders between runs: with none kept the first switch's first frame took 1.7 s
+    // and its lights 3.7 s; compiling light by light, every switch took 7 to 10 s with stalls of 2.5 s.
+    for (const [name, m] of Object.entries(switches)) {
+      assert.equal(m.compiles, 1, `${name}: the four lights compile together`)
+      assert.ok(m.longest_frame_ms < 2000 && m.lights_on_ms < 5000, `${name}: longest frame ${m.longest_frame_ms} ms, lights on after ${m.lights_on_ms} ms`)
+    }
     assert.deepEqual(errors, [], errors.join('\n'))
     await context.close()
   } finally {
@@ -3512,5 +4071,6 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference 
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
+await rm(hiddenFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)

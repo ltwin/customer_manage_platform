@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Edges, Outlines } from '@react-three/drei'
+import { EdgeLines } from './EdgeLines.tsx'
+import { Outline } from './Outline.tsx'
 import { DoubleSide, MeshStandardMaterial } from 'three'
 import { modelCache, type ModelParts, type SceneModel } from '../models/cache.ts'
 import { clay, unavailableGrey } from './look.ts'
@@ -63,7 +64,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
       <group>
         {loaded.parts.meshes.map((m, i) => (
           <SlotMesh key={i} geometry={m.geometry} material={resolveSlot(m.slot, slots, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material} doubleSided castShadow>
-            {edge && <Outlines thickness={3} color={edge} />}
+            {edge && <Outline color={edge} />}
           </SlotMesh>
         ))}
       </group>
@@ -73,7 +74,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
     <group>
       {loaded.parts.meshes.map((m, i) => (
         <mesh key={i} geometry={m.geometry} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
-          {edge && <Outlines thickness={3} color={edge} />}
+          {edge && <Outline color={edge} />}
         </mesh>
       ))}
     </group>
@@ -95,7 +96,7 @@ function BoundsBox({ bounds = fallback, edge, unavailable = false, ghost = false
       <boxGeometry args={size} />
       {/* Loading: invisible but still clickable, with its edges drawn. */}
       {!unavailable && <meshBasicMaterial visible={false} />}
-      {unavailable ? edge && <Outlines thickness={3} color={edge} /> : <Edges color={edge ?? '#8a8780'} />}
+      {unavailable ? edge && <Outline color={edge} /> : <EdgeLines color={edge ?? '#8a8780'} />}
     </mesh>
   )
 }

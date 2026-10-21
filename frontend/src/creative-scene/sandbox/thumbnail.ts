@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { parseGLB } from './gltf.ts'
 import type { Manifest } from './inspect.ts'
+import { createRenderer, DeviceLostError, type SceneGPU } from '../render/gpu.ts'
 
 // The PNG stored as the model revision's thumbnail object: the model in the
 // viewport's clay, three-quarter view from the front (+Z), transparent
@@ -8,18 +9,45 @@ import type { Manifest } from './inspect.ts'
 
 const size = 256
 const clay = new THREE.MeshStandardMaterial({ color: '#d9d5cd', roughness: 0.92, metalness: 0 })
-let renderer: THREE.WebGLRenderer | null = null
+let shared: Promise<SceneGPU> | null = null
 
-// One renderer for every thumbnail, the library's too: browsers cap the
-// number of live WebGL contexts, and the viewport already holds one.
-export function sharedRenderer(): THREE.WebGLRenderer {
-  if (!renderer) {
-    renderer = new THREE.WebGLRenderer({ canvas: document.createElement('canvas'), alpha: true, antialias: true, preserveDrawingBuffer: true })
-    renderer.setPixelRatio(1)
-    renderer.setSize(size, size, false)
-    renderer.setClearColor(0x000000, 0)
+// One renderer for every thumbnail, the library's too, made when first
+// needed and made again after its device is lost.
+function sharedGPU(): Promise<SceneGPU> {
+  if (!shared) {
+    const made = createRenderer({ canvas: document.createElement('canvas'), alpha: true, output: 'direct', role: 'thumbnail' }).then((g) => {
+      g.renderer.setPixelRatio(1)
+      g.renderer.setSize(size, size, false)
+      g.renderer.setClearColor(0x000000, 0)
+      void g.lost.then(() => forget(made))
+      return g
+    })
+    made.catch(() => forget(made))
+    shared = made
   }
-  return renderer
+  return shared
+}
+
+function forget(made: Promise<SceneGPU>) {
+  if (shared !== made) return
+  shared = null
+  void made.then((g) => g.dispose(), () => {})
+}
+
+/**
+ * A thumbnail drawn on the shared renderer. A device lost on the way is made
+ * again and the thumbnail drawn once more: a 256² picture is not worth
+ * failing a bake for.
+ */
+export async function onThumbnailGPU<T>(draw: (gpu: SceneGPU) => Promise<T>): Promise<T> {
+  const first = sharedGPU()
+  try {
+    return await draw(await first)
+  } catch (err) {
+    if (!(err instanceof DeviceLostError)) throw err
+    forget(first)
+    return draw(await sharedGPU())
+  }
 }
 
 /** Three-quarter view from the front (+Z), the whole of the bounds in frame. */
@@ -36,18 +64,17 @@ export function frame(camera: THREE.PerspectiveCamera, manifest: Manifest): void
   camera.updateProjectionMatrix()
 }
 
-/**
- * The canvas as an image file, encoded now. toBlob encodes in an idle task,
- * which a background tab starts only after a throttled timeout: a hidden
- * page running the assistant's jobs would wait a second or more per image.
- */
-export function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Blob {
-  const url = canvas.toDataURL(type, quality)
-  if (!url.startsWith(`data:${type};base64,`)) throw new Error('图片编码失败')
-  const text = atob(url.slice(url.indexOf(',') + 1))
-  const bytes = new Uint8Array(text.length)
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
-  return new Blob([bytes], { type })
+/** Draws one frame of scene on the thumbnail renderer and encodes it, the materials compiled first. */
+export async function drawThumbnail(gpu: SceneGPU, scene: THREE.Scene, camera: THREE.Camera): Promise<Blob> {
+  await gpu.compile(scene, camera)
+  gpu.resetFrames()
+  return gpu.capture(
+    () => {
+      gpu.advanceFrame()
+      gpu.renderer.render(scene, camera)
+    },
+    'image/png',
+  )
 }
 
 export async function renderThumbnail(glb: ArrayBuffer, manifest: Manifest): Promise<Blob> {
@@ -63,10 +90,11 @@ export async function renderThumbnail(glb: ArrayBuffer, manifest: Manifest): Pro
   scene.add(model)
   const camera = new THREE.PerspectiveCamera(30, 1)
   frame(camera, manifest)
-  const r = sharedRenderer()
-  r.render(scene, camera)
-  model.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.geometry.dispose()
-  })
-  return canvasBlob(r.domElement, 'image/png')
+  try {
+    return await onThumbnailGPU((gpu) => drawThumbnail(gpu, scene, camera))
+  } finally {
+    model.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose()
+    })
+  }
 }

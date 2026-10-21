@@ -98,25 +98,20 @@ test('model parts are baked into model space; a mirrored part keeps its faces fa
   assert.deepEqual(Array.from(g.index!.array), before)
 })
 
-import { ShaderLib } from 'three'
-import { canInject, injectPattern, patternsSupported } from '../src/creative-scene/materials/inject.ts'
+import { uniform, vec3, float } from 'three/tsl'
 import { instanceCount, keyOf, makeMaterial, materialFor, release, retain } from '../src/creative-scene/materials/instances.ts'
-import { patternGLSL } from '../src/creative-scene/materials/patterns.ts'
+import { patternFns } from '../src/creative-scene/materials/patterns.ts'
 import { catalogMaterial } from '../src/creative-scene/materials/resolve.ts'
 
-test('this three.js has every chunk the presets inject at; every preset has its shader', () => {
-  assert.equal(patternsSupported, true)
-  assert.equal(canInject(ShaderLib.physical.vertexShader, ShaderLib.physical.fragmentShader.replace('#include <normal_fragment_maps>', '')), false, 'a renamed chunk is noticed')
-  for (const m of materialCatalog.materials) if (m.kind === 'pattern') assert.ok(patternGLSL[m.id], `${m.id} has no shader`)
-  const shader = { vertexShader: ShaderLib.physical.vertexShader, fragmentShader: ShaderLib.physical.fragmentShader }
-  assert.equal(injectPattern(shader, materialEntry('stone_brick@1')!), true)
-  assert.match(shader.vertexShader, /vPatPos = position \* patScale;/)
-  assert.match(shader.fragmentShader, /uniform float pm_brick_size;\nuniform vec3 pm_mortar_color;/)
-  for (const line of ['PatOut pat = patternEval();', 'roughnessFactor = pat.rough;', 'metalnessFactor = pat.metal;', 'normal = patBumpNormal(-vViewPosition, normal, pat.height);', 'totalEmissiveRadiance += pat.emission;'])
-    assert.ok(shader.fragmentShader.includes(line), line)
-  const broken = { vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }
-  assert.equal(injectPattern(broken, materialEntry('stone_brick@1')!), false)
-  assert.equal(broken.fragmentShader, 'void main() {}', 'left alone when an anchor is missing')
+test('every preset in the catalog has its TSL function, and it gives all five outputs', () => {
+  const pattern = materialCatalog.materials.filter((m) => m.kind === 'pattern')
+  assert.equal(pattern.length, 14)
+  assert.deepEqual(Object.keys(patternFns).sort(), pattern.map((m) => m.id).sort())
+  for (const m of pattern) {
+    const pm = Object.fromEntries(Object.entries(m.params).map(([k, spec]) => [k, spec.type === 'color' ? uniform(vec3(0.5)) : uniform(0.5)]))
+    const out = patternFns[m.id]({ pos: vec3(1, 2, 3), normal: vec3(0, 0, 1), footprint: float(0.001), pm })
+    for (const k of ['albedo', 'rough', 'metal', 'height', 'emission'] as const) assert.ok(out[k]?.isNode, `${m.id}: ${k}`)
+  }
 })
 
 test('instances are shared by key; a preset has one program whatever its parameters', () => {
@@ -126,10 +121,13 @@ test('instances are shared by key; a preset has one program whatever its paramet
   assert.equal(keyOf(a, false), keyOf(b, false), 'defaults filled in alike')
   assert.notEqual(keyOf(a, false), keyOf(c, false))
   assert.notEqual(keyOf(a, false), keyOf(a, true))
+  // Parameters are uniforms: the graphs differ only in their values, which three leaves out of the program's key.
   const ma = makeMaterial(a, false)
   const mc = makeMaterial(c, false)
-  assert.equal(ma.customProgramCacheKey(), mc.customProgramCacheKey())
-  assert.equal(ma.customProgramCacheKey(), 'pattern:marble@1')
+  for (const m of [ma, mc]) {
+    assert.equal(m.name, 'marble@1')
+    for (const node of [m.colorNode, m.roughnessNode, m.metalnessNode, m.normalNode, m.emissiveNode]) assert.ok(node?.isNode)
+  }
   const key = keyOf(a, false)
   const before = instanceCount()
   const shared = materialFor(key, a, false)

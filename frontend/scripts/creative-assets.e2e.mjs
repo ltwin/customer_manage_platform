@@ -1607,6 +1607,8 @@ await check('C6-model-preview', async () => {
   }, `data:image/png;base64,${png.toString('base64')}`)
   assert.equal(await viewer().getByRole('button', { name: '材质', exact: true }).getAttribute('aria-pressed'), 'true', 'it opens in the asset\'s materials, like its card')
   await viewer().getByText('放进场景后可以换材质', { exact: true }).waitFor()
+  // The renderer is made asynchronously and may compile the material's shaders in parallel, drawing it once they are ready.
+  await until(async () => (await red(await shot())) > 0.01, 'the paint shows', 10000).catch(() => {})
   const front = await shot()
   assert((await red(front)) > 0.01, 'the stone slot shows the paint the asset was saved with')
   const box = await stage.boundingBox()

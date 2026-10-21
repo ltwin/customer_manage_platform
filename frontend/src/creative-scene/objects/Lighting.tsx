@@ -1,12 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type ComponentRef, type Ref } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type Ref } from 'react'
 import { useThree } from '@react-three/fiber'
-import { Sky } from '@react-three/drei'
-import { PMREMGenerator, type DirectionalLight, type WebGLRenderTarget } from 'three'
+import type { DirectionalLight, Mesh } from 'three'
+import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { SceneEnvironment } from '../api.ts'
 import { AMBIENT_FILL, sunLight } from '../render/litLook.ts'
-import { roomEnvironment, setSky, skyEnvironment, sunDirection, viewSky } from '../render/sky.ts'
+import { gpuOf } from '../render/gpu.ts'
+import { claySky, disposeSky, litSky, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
+import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
 
@@ -20,20 +22,16 @@ import { wireBackground } from './wireframe.ts'
 export const previewBackground = '#5b5d61'
 
 export function Lighting({ environment, display }: { environment: SceneEnvironment; display: DisplayMode }) {
-  const { gl } = useThree()
-  // Material preview's light is made once and kept while the editor is open.
-  const room = useRef<ReturnType<typeof roomEnvironment> | null>(null)
-  useEffect(
-    () => () => {
-      room.current?.dispose()
-      room.current = null
-    },
-    [],
-  )
   if (display === 'wireframe') return <color attach="background" args={[wireBackground]} />
-  if (display === 'preview') return <PreviewLighting room={() => (room.current ??= roomEnvironment(gl))} />
+  if (display === 'preview') return <RoomLighting />
   if (display === 'rendered') return <LitLighting environment={environment} />
   return <ClayLighting environment={environment} />
+}
+
+/** A sky is drawn in the picture, not in the AO's normals: it has no surface there. */
+function drawnAside<T extends Mesh>(sky: T): T {
+  sky.layers.set(ASIDE_LAYER)
+  return sky
 }
 
 /**
@@ -43,19 +41,22 @@ export function Lighting({ environment, display }: { environment: SceneEnvironme
 export function ClayLighting({ environment }: { environment: SceneEnvironment }) {
   const sun = sunDirection(environment).multiplyScalar(60)
   const sky = environment.sky
-  const skyRef = useRef<ComponentRef<typeof Sky>>(null)
+  const mesh = useMemo(() => drawnAside(claySky()), [])
+  useEffect(() => () => disposeSky(mesh), [mesh])
   const sunRef = useRef<DirectionalLight>(null)
   const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => {
-    skyRef.current?.material.uniforms.up.value.set(0, 0, 1)
+  useLayoutEffect(() => {
+    mesh.sunPosition.value.set(...positionToView([sun.x, Math.max(sun.y, 0.5), sun.z]))
+    mesh.turbidity.value = sky.turbidity ?? 3
     invalidate()
-  }, [sky.kind, invalidate])
+  }, [mesh, sun.x, sun.y, sun.z, sky.turbidity, invalidate])
   // Before the first frame: an offscreen shot draws only one.
   useLayoutEffect(() => (sunRef.current ? fitSunShadow(sunRef.current) : undefined), [])
   return (
     <>
       {sky.kind === 'procedural' ? (
-        <Sky ref={skyRef} sunPosition={positionToView([sun.x, Math.max(sun.y, 0.5), sun.z])} turbidity={sky.turbidity ?? 3} />
+        // drei's Sky stood 1000 away; the directions are taken from the world origin.
+        <primitive object={mesh} scale={1000} />
       ) : (
         <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
       )}
@@ -81,18 +82,10 @@ export function ClayLights({ ambient, sun, up, sunRef }: { ambient: { color: str
   )
 }
 
-/** Material preview's neutral room on its own, made and freed with the component. */
+/** Material preview's neutral room, kept on the device for as long as it lives. */
 export function RoomLighting() {
   const { gl } = useThree()
-  const room = useRef<ReturnType<typeof roomEnvironment> | null>(null)
-  useEffect(
-    () => () => {
-      room.current?.dispose()
-      room.current = null
-    },
-    [],
-  )
-  return <PreviewLighting room={() => (room.current ??= roomEnvironment(gl))} />
+  return <PreviewLighting room={() => gpuOf(gl).cache('room', () => roomEnvironment(gl as unknown as WebGPURenderer))} />
 }
 
 /** A neutral room as the only light: materials read the same whatever the scene's lighting. */
@@ -120,14 +113,8 @@ const environmentEveryMs = 200
 function LitLighting({ environment }: { environment: SceneEnvironment }) {
   const { gl, scene, invalidate } = useThree()
   const procedural = environment.sky.kind === 'procedural'
-  const sky = useMemo(() => viewSky(), [])
-  useEffect(
-    () => () => {
-      sky.geometry.dispose()
-      sky.material.dispose()
-    },
-    [sky],
-  )
+  const sky = useMemo(() => drawnAside(litSky()), [])
+  useEffect(() => () => disposeSky(sky), [sky])
   useLayoutEffect(() => {
     setSky(sky, environment, true)
     invalidate()
@@ -136,9 +123,9 @@ function LitLighting({ environment }: { environment: SceneEnvironment }) {
   // The sky's light: made before the first frame, then at most every 200 ms.
   const latest = useRef(environment)
   latest.current = environment
-  const lighting = useRef<{ pmrem: PMREMGenerator; target: WebGLRenderTarget | null; at: number; timer: number | null } | null>(null)
+  const lighting = useRef<{ pmrem: PMREMGenerator; target: RenderTarget | null; at: number; timer: number | null } | null>(null)
   useLayoutEffect(() => {
-    const l = { pmrem: new PMREMGenerator(gl), target: null as WebGLRenderTarget | null, at: -Infinity, timer: null as number | null }
+    const l = { pmrem: new PMREMGenerator(gl as unknown as WebGPURenderer), target: null as RenderTarget | null, at: -Infinity, timer: null as number | null }
     lighting.current = l
     return () => {
       if (l.timer !== null) window.clearTimeout(l.timer)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type RefObject } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { DoubleSide, MathUtils, MeshStandardMaterial, Vector3 } from 'three'
 import type { components } from '../../api/schema'
@@ -9,6 +9,7 @@ import { ClayLights, RoomLighting, previewBackground } from '../objects/Lighting
 import { SlotMesh } from '../objects/SlotMesh.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
 import { previewModels } from './cache.ts'
+import { createRenderer, gpuOf } from '../render/gpu.ts'
 
 // The asset viewer's 3D stage, loaded only when a model is opened: drag to
 // turn, scroll to zoom, double-click to go back. 「材质」, where it opens like
@@ -61,7 +62,14 @@ export default function ModelPreview({ revision, manifest, materials, title, thu
     )
   return (
     <div className="v-model" onDoubleClick={() => controls.current?.reset()}>
-      <Canvas key={revision} frameloop="demand" dpr={[1, 2]} camera={{ fov, position: view.position, near: view.near, far: view.far }} aria-label={`「${title}」的 3D 预览`}>
+      <Canvas
+        key={revision}
+        frameloop="demand"
+        gl={({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'direct', role: 'preview' }).then((g) => g.renderer)}
+        dpr={[1, 2]}
+        camera={{ fov, position: view.position, near: view.near, far: view.far }}
+        aria-label={`「${title}」的 3D 预览`}
+      >
         {look === 'clay' ? (
           <>
             <color attach="background" args={[previewBackground]} />
@@ -72,6 +80,7 @@ export default function ModelPreview({ revision, manifest, materials, title, thu
         )}
         {parts && <Meshes parts={parts} manifest={manifest} materials={materials} look={look} />}
         <Controls controls={controls} target={view.target} />
+        <FrameStep />
       </Canvas>
       {!parts && thumbnail && <img className="v-model-still" src={thumbnail} alt={title} />}
       <div className="v-model-looks" role="group" aria-label="显示方式">
@@ -103,6 +112,12 @@ function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manif
 }
 
 /** Orbit around the model's centre; the opening view is what a double-click returns to. */
+/** Steps the renderer's frame before R3F draws one (render/gpu.ts owns the count). */
+function FrameStep() {
+  useFrame((state) => gpuOf(state.gl).advanceFrame(), -1)
+  return null
+}
+
 function Controls({ controls, target }: { controls: RefObject<Orbit | null>; target: number[] }) {
   useEffect(() => {
     controls.current?.saveState()

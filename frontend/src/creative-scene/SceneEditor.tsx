@@ -49,17 +49,10 @@ import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
 import { saveTarget, whenShown, type LibraryAsset, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
+import { probeRender } from './render/probe.ts'
 import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
 import './scene.css'
-
-function webgl2Available(): boolean {
-  try {
-    return !!document.createElement('canvas').getContext('webgl2')
-  } catch {
-    return false
-  }
-}
 
 function storage(): Storage | undefined {
   try {
@@ -162,7 +155,15 @@ export default function SceneEditor({
   }, [documentID])
   const ui = useMemo(() => createEditorStore(readPreference(storage()), view.saved), [view])
   const mac = useMemo(() => isMac(), [])
-  const [webgl] = useState(webgl2Available)
+  // WebGPU or WebGL2 (render/probe.ts); null while asking.
+  const [renderable, setRenderable] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    void probeRender().then((ok) => live && setRenderable(ok))
+    return () => {
+      live = false
+    }
+  }, [])
   const s = useStore(session.store)
   const u = useStore(ui)
   const handle = useRef<ViewportHandle | null>(null)
@@ -609,7 +610,8 @@ export default function SceneEditor({
     if (!manifest) throw new Error('模型不可用')
     const parts = await modelCache.load(target.contentRevisionID)
     signal.throwIfAborted()
-    const png = renderMaterialThumbnail(parts, manifest, target.materials)
+    const png = await renderMaterialThumbnail(parts, manifest, target.materials)
+    signal.throwIfAborted()
     const upload = await uploadGenerated(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, { kind: 'staged' }, signal)
     return upload.id
   }
@@ -894,7 +896,7 @@ export default function SceneEditor({
         </button>
       </header>
       <div className="cc-scene-body">
-        {!webgl ? (
+        {renderable === false ? (
           <p role="alert" className="cc-scene-message">
             当前浏览器无法显示 3D 场景，请使用最新版 Chrome、Edge 或 Safari
           </p>
@@ -905,7 +907,7 @@ export default function SceneEditor({
               回到画布
             </button>
           </div>
-        ) : !s.base || !shown ? (
+        ) : !s.base || !shown || renderable === null ? (
           <div role={s.readError ? 'alert' : 'status'} className="cc-scene-message">
             <p>{s.readError || '正在读取场景…'}</p>
             {s.readError && (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MutableRefObject, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MutableRefObject, type RefObject } from 'react'
 import { Aperture, Grid3x3 } from 'lucide-react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
@@ -6,7 +6,6 @@ import {
   CameraControlsImpl,
   GizmoHelper,
   GizmoViewport,
-  Grid,
   TransformControls,
 } from '@react-three/drei'
 import { useStore } from 'zustand'
@@ -23,7 +22,9 @@ import {
   Vector2,
   Vector3,
   type Camera,
+  type Group,
   type Mesh,
+  type MeshBasicMaterial,
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
 import type { Scene, SceneObject } from './api.ts'
@@ -60,7 +61,9 @@ import { docToView, positionToDoc, positionToView, transformToDoc } from './spac
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
-import { SceneRenderer } from './render/sceneRenderer.ts'
+import { OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
+import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
+import { createRenderer, gpuOf, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -152,6 +155,12 @@ export function Viewport(props: ViewportProps) {
   const cameraView = useStore(props.ui, (s) => s.cameraView)
   const display = displayOf({ display: useStore(props.ui, (s) => s.display) }, props.scene.render)
   const grid = useRef<Mesh>(null)
+  // A lost device remounts the Canvas on a new one; edits, selection and the view live outside it.
+  const [canvasEpoch, setCanvasEpoch] = useState(0)
+  const [deviceGone, setDeviceGone] = useState(false)
+  const [losses] = useState(lossCounter)
+  // Only the renderer drawing now counts: one a remount left behind (StrictMode, an earlier loss) is given back.
+  const current = useRef<SceneGPU | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   useEffect(() => {
     const el = wrap.current
@@ -221,23 +230,50 @@ export function Viewport(props: ViewportProps) {
         if (placed) props.onDropModel?.(placed)
       }}
     >
-      <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
-        <Lighting environment={props.scene.environment} display={display} />
-        <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
-        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
-        {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
-        {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
-        <OrthoSwitch ortho={ortho} />
-        <CameraControls makeDefault />
-        <ViewKeeper initial={props.camera} onChange={props.onCamera} />
-        <CameraViewRig scene={props.scene} ui={props.ui} />
-        {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
-          <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
-        )}
-        <AxisGizmo />
-        <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} />
-        <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
-      </Canvas>
+      {deviceGone ? (
+        <p role="alert" className="cc-scene-message">
+          渲染设备不可用，请刷新页面
+        </p>
+      ) : (
+        <Canvas
+          key={canvasEpoch}
+          frameloop="demand"
+          // Tone mapping and sRGB happen in the pipeline's output node (render/gpu.ts); R3F would set them back on the renderer.
+          linear
+          flat
+          shadows="percentage"
+          gl={({ canvas }) =>
+            createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport' }).then((g) => {
+              current.current?.dispose()
+              current.current = g
+              void g.lost.then(() => {
+                if (current.current !== g) return
+                if (losses(performance.now()) === 'rebuild') setCanvasEpoch((n) => n + 1)
+                else setDeviceGone(true)
+              })
+              return g.renderer
+            })
+          }
+          dpr={[1, 2]}
+          camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
+        >
+          <Lighting environment={props.scene.environment} display={display} />
+          <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
+          <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
+          {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
+          {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
+          <OrthoSwitch ortho={ortho} />
+          <CameraControls makeDefault />
+          <ViewKeeper initial={props.camera} onChange={props.onCamera} />
+          <CameraViewRig scene={props.scene} ui={props.ui} />
+          {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
+            <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
+          )}
+          <AxisGizmo />
+          <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} />
+          <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
+        </Canvas>
+      )}
       {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
       {box && r && (
         <div
@@ -260,10 +296,25 @@ export function Viewport(props: ViewportProps) {
  * heads instead (axisHeadAt) and uses the number-row views' code.
  */
 function AxisGizmo() {
+  // The widget is drawn straight onto the canvas after the picture, where
+  // nothing turns linear colour into sRGB (render/gpu.ts). Its heads and
+  // labels are canvas textures, written as painted; its lines are material
+  // colours, decoded to linear, so they go in encoded once over.
+  const lines = useRef<Group>(null)
+  useLayoutEffect(() => {
+    lines.current?.traverse((o) => {
+      const m = (o as Mesh).material as MeshBasicMaterial | undefined
+      if (!m?.isMeshBasicMaterial || m.map || m.userData.overlay) return
+      m.color.set(overlayColor(`#${m.color.getHexString()}`))
+      m.userData.overlay = true
+    })
+  })
   return (
     // After the clay view's frame (priority 1), over it.
     <GizmoHelper alignment="top-right" margin={[axisWidget.margin, axisWidget.margin]} renderPriority={2}>
-      <GizmoViewport disabled axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
+      <group ref={lines}>
+        <GizmoViewport disabled axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
+      </group>
     </GizmoHelper>
   )
 }
@@ -856,6 +907,8 @@ function Gizmo({
         // React calls this with null on unmount, which clears it.
         ref={(c) => {
           gizmo.current = c as unknown as (Object3D & { axis: string | null }) | null
+          // The gizmo is drawn by the overlay pass, on its own layer; its picking has to look there.
+          ;(c as unknown as { raycaster: Raycaster } | null)?.raycaster.layers.enable(OVERLAY_LAYER)
         }}
         object={proxy}
         mode={mode}
@@ -1015,7 +1068,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   const preview = useStore(ui, (s) => s.dofPreview)
   const renderer = useRef<SceneRenderer | null>(null)
   useEffect(() => {
-    const r = new SceneRenderer(gl, three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
+    const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
     renderer.current = r
     invalidate()
     return () => {
@@ -1030,22 +1083,21 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   useEffect(() => invalidate(), [lensKey, wire, exposure, invalidate])
   useFrame((state) => {
     const r = renderer.current
-    // Wireframe has no surfaces to shade: no AO, no blur.
-    if (!r || wire) {
-      state.gl.render(state.scene, state.camera)
-      return
-    }
+    if (!r) return
     const ratio = state.gl.getPixelRatio()
-    const box = lens && frameBox(state.size, lens.aspect)
+    const box = lens && !wire && frameBox(state.size, lens.aspect)
+    gpuOf(state.gl).advanceFrame()
     r.render(state.camera, {
       width: state.size.width,
       height: state.size.height,
       pixelRatio: ratio,
       // On a 2× screen, AO at device pixels doubles the frame time for a difference only seen up close.
       aoPixelRatio: 1,
-      dof: lens?.optics ?? null,
+      dof: (!wire && lens?.optics) || null,
       pictureLongSide: box ? Math.max(box.width, box.height) * ratio : undefined,
       exposure,
+      // Wireframe has no surfaces to shade: no AO, no blur.
+      wireframe: wire,
     })
   }, 1)
   return null

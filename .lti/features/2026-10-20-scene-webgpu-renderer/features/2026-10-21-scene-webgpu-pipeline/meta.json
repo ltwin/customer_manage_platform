@@ -1,6 +1,6 @@
 {
   "uid": "24a57b62-e69e-4946-9cf4-9a95989b5240",
-  "revision": 4,
+  "revision": 9,
   "id": "scene-webgpu-pipeline",
   "kind": "feature",
   "assurance": "governed",
@@ -26,9 +26,9 @@
       "patterns:场景着色写法"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-21T11:07:26.287Z",
-  "updatedAt": "2026-10-21T11:43:09.799Z",
+  "updatedAt": "2026-10-21T17:16:03.690Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -49,8 +49,88 @@
   },
   "approvalHistory": [],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "42074cd340a3bc61d09e21687a5af607cb77ce83",
+    "at": "2026-10-21T11:47:26.940Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b9da29cef28ed2e2ab725140b7a7cc4ea667d7802393293082f3c2aebf4b5bab"
+    },
+    "preExisting": [
+      ".lti/snapshots/b9da29cef28ed2e2ab725140b7a7cc4ea667d7802393293082f3c2aebf4b5bab.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-21T15:59:50.876Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，改为手动运行：make check-frontend（lint、build、744 单测）、creative-scene 单测 218、定向 e2e 21 条（SwiftShader/WebGL2）、Metal 下 parity/AC-9/look、真实 Chrome 后台标签页确定性、Safari 26.5 脚本化导出；兼容模式设备拿不到，仅模拟 SMAA 分支；Safari 人工打开编辑器未做（留给 owner）"
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "15 项任务完成，静态检查、确定性、设备丢失、退回均通过；交 owner 决定：AC-R1-1/AC-R1-4 共 5 次比较超阈值（混凝土气孔硬边 4 次、正交窄缝 AO 1 次）；AC-R1-7 加灯最长一帧 2.5–2.8 s（R0 0.12 s）、部分导出耗时高于基线；AC-R1-6 看图与 Safari 人工检查待 owner。证据见 discovery/research/acceptance.md"
+    },
+    {
+      "by": "claude",
+      "at": "2026-10-21T17:01:30.519Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，改为手动运行：make check-frontend（lint、build、744 单测）、定向 e2e 24 条（SwiftShader/WebGL2，含新增灯光预编译与资源不增长用例）、Metal 下 AC-9 帧时间与切换用例；此前的 parity/look/确定性/Safari 导出证据沿用（本次只改视口预编译，离屏出图路径未动）；兼容模式设备拿不到，仅模拟 SMAA 分支；Safari 人工打开编辑器未做（留给 owner）"
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 反馈切到最终渲染卡顿已修正（tasks 9.5）：同一提交的灯合并预编译、替身按代释放（修掉资源泄漏）、预编译用克隆目标；切换第一帧约 0.25 s、灯光 0.4–0.65 s 亮起（原 7–10 s），加灯 150 ms / 删灯 266 ms（R0 120 / 136 ms），上一版加灯 2.8 s 归因已更正。仍交 owner 决定：混凝土气孔硬边 4 次、正交窄缝 AO 1 次超阈值；加灯删灯与部分导出耗时略高于基线；AC-R1-6 看图与 Safari 人工检查。证据见 discovery/research/acceptance.md"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-21T17:15:51.722Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 以在 3D 编辑器中实际使用代替逐项核对：AC-R1-6 看图与 Safari 人工打开编辑器导出未单独做；混凝土气孔硬边 4 次、正交窄缝 AO 1 次超阈值，加灯 150 ms / 删灯 266 ms（R0 120 / 136 ms）与部分导出耗时高于基线，均按现状接受，后续使用中发现问题再开新 Change"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-21 验收通过：切到最终渲染卡顿修正后试用未发现可见问题，接受 R1 交付与技术验收列出的 6 项待决事项（按现状接受，遇到问题再处理）",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "11af694bdbe86eb1e10bbeb90299c1108a0bee94422c726d8be5de88440ef107"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-21T17:16:03.545Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }
