@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type Ref } from 'react'
 import { useThree } from '@react-three/fiber'
-import type { DirectionalLight } from 'three'
+import type { DirectionalLight, Mesh } from 'three'
 import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { SceneEnvironment } from '../api.ts'
 import { AMBIENT_FILL, sunLight } from '../render/litLook.ts'
@@ -8,6 +8,7 @@ import { gpuOf } from '../render/gpu.ts'
 import { claySky, disposeSky, litSky, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
+import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
 
@@ -27,6 +28,12 @@ export function Lighting({ environment, display }: { environment: SceneEnvironme
   return <ClayLighting environment={environment} />
 }
 
+/** A sky is drawn in the picture, not in the AO's normals: it has no surface there. */
+function drawnAside<T extends Mesh>(sky: T): T {
+  sky.layers.set(ASIDE_LAYER)
+  return sky
+}
+
 /**
  * Clay lighting: the scene's sky and ambient, one sun with shadows; tuned for
  * the clay look and kept as it was so clay exports do not change.
@@ -34,7 +41,7 @@ export function Lighting({ environment, display }: { environment: SceneEnvironme
 export function ClayLighting({ environment }: { environment: SceneEnvironment }) {
   const sun = sunDirection(environment).multiplyScalar(60)
   const sky = environment.sky
-  const mesh = useMemo(() => claySky(), [])
+  const mesh = useMemo(() => drawnAside(claySky()), [])
   useEffect(() => () => disposeSky(mesh), [mesh])
   const sunRef = useRef<DirectionalLight>(null)
   const invalidate = useThree((s) => s.invalidate)
@@ -106,7 +113,7 @@ const environmentEveryMs = 200
 function LitLighting({ environment }: { environment: SceneEnvironment }) {
   const { gl, scene, invalidate } = useThree()
   const procedural = environment.sky.kind === 'procedural'
-  const sky = useMemo(() => litSky(), [])
+  const sky = useMemo(() => drawnAside(litSky()), [])
   useEffect(() => () => disposeSky(sky), [sky])
   useLayoutEffect(() => {
     setSky(sky, environment, true)

@@ -110,9 +110,12 @@ export type SceneGPU = {
    * Compiles the scene's materials ahead of the first picture, on the
    * driver's threads where it can. The WebGL2 backend waits for its parallel
    * compile with requestAnimationFrame, which a hidden tab never calls (the
-   * assistant's jobs run in one), so there the first picture compiles them.
+   * assistant's jobs run in one), so in a hidden tab the first picture
+   * compiles them.
    */
   compile(scene: Object3D, camera: Camera): Promise<void>
+  /** Set by the viewport's SceneRenderer: compile then goes to its passes' targets instead of the canvas's. */
+  compiler: (() => Promise<void>) | null
   /** A GPU resource that lives as long as this device. */
   cache<T extends { dispose(): void }>(key: string, create: () => T): T
   dispose(): void
@@ -163,6 +166,8 @@ export function reset(frame: FrameState): void {
 export const gpuTestHooks = {
   /** Draws through the WebGL2 backend even with an adapter (the backend comparison). */
   forceWebGL: false,
+  /** Treats the device as compatibility mode: the workbench drops MSAA for SMAA (no such device to test on). */
+  forceCompatibility: false,
   live: new Set<{ role: Role; lose(afterCaptures?: number): void }>(),
   /** Loses the device of every live renderer in that role, now or after that many more captures. */
   loseDevice(role: Role, afterCaptures = 0): number {
@@ -262,16 +267,18 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     return f
   }
 
-  return {
+  const gpu: SceneGPU = {
     renderer,
     backend,
-    compatibility: backendInfo.compatibilityMode === true,
+    compatibility: backendInfo.compatibilityMode === true || gpuTestHooks.forceCompatibility,
     maxTextureSize,
     isLost: device.isLost,
     lost: device.lost,
     capture: (draw, type, quality) => device.capture(draw, () => canvasBlob(renderer.domElement, type, quality)),
+    compiler: null,
     async compile(scene, camera) {
-      if (backend === 'webgpu') await renderer.compileAsync(scene, camera)
+      if (backend !== 'webgpu' && document.hidden) return
+      await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
     },
     advanceFrame() {
       const f = frame()
@@ -292,6 +299,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
       gl?.getExtension('WEBGL_lose_context')?.loseContext()
     },
   }
+  return gpu
 }
 
 export type DeviceState = {

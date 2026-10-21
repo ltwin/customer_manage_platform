@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo } from 'react'
 import { useThree } from '@react-three/fiber'
 import type { SceneObject } from '../api.ts'
+import { gpuOf } from '../render/gpu.ts'
 import { applyLight, buildLight, disposeLight } from './lights.ts'
 
 type Light = NonNullable<SceneObject['light']>
@@ -13,7 +14,8 @@ type Light = NonNullable<SceneObject['light']>
  * A new light, or one that starts or stops casting shadows, makes three.js
  * compile every lit material again, at once, on the next frame: about two
  * seconds on the AC-9 scene. With warm (the viewport), the light stays dark
- * while compileAsync compiles for it on the driver's threads, then shows. A
+ * while the viewport's passes compile for it on the driver's threads
+ * (SceneGPU.compile), then shows. A
  * shot compiles its whole scene before shooting and passes warm false.
  */
 export function SceneLight({ light, warm }: { light: Light; warm: boolean }) {
@@ -29,7 +31,7 @@ export function SceneLight({ light, warm }: { light: Light; warm: boolean }) {
     let live = true
     // compile() only gathers lights and starts compiling, so the light counts for it and no frame sees it.
     built.light.visible = true
-    const ready = gl.compileAsync(scene, camera)
+    const ready = gpuOf(gl).compile(scene, camera)
     built.light.visible = false
     void ready.finally(() => {
       if (!live) return

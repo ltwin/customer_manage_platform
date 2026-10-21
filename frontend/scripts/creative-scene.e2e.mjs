@@ -3368,7 +3368,7 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * then the saved orthographic view in clay, on gpu (a Chromium on this
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend.
  */
-async function exportReference(gpu, name, { forceWebGL = false } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
@@ -3377,6 +3377,7 @@ async function exportReference(gpu, name, { forceWebGL = false } = {}) {
   context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
   const { page, errors } = await open(server, { context, query: '?export=1' })
   if (forceWebGL) await page.evaluate(() => { window.__sceneGPU.forceWebGL = true })
+  if (forceCompatibility) await page.evaluate(() => { window.__sceneGPU.forceCompatibility = true })
   const renderer = await page.evaluate(() => {
     const gl = document.createElement('canvas').getContext('webgl2')
     return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
@@ -3501,6 +3502,7 @@ if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match t
   const gpu = await chromium.launch({ headless: true, args: metal })
   const rows = []
   const over = []
+  const exports = {}
   const record = (against, file, pass, m) => {
     const limit = parityLimits[pass]
     const ok = !m.error && m.mean <= limit.mean && m.over <= limit.over
@@ -3520,6 +3522,7 @@ if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match t
         record('r0-webgl', img.file, img.pass, m)
       }
       const webgl = await exportReference(gpu, name, { forceWebGL: true })
+      exports[name] = { webgpu_ms: webgpu.exportMs, webgl2_ms: webgl.exportMs }
       assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: the export on WebGL2: ${webgl.backends}`)
       for (const img of webgl.images) {
         const m = await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png)
@@ -3528,7 +3531,19 @@ if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match t
       }
       console.log(`parity ${name}: ${rows.filter((r) => r.file.startsWith(`${name}-`) && r.ok).length}/${rows.filter((r) => r.file.startsWith(`${name}-`)).length} within`)
     }
-    await writeFile(`${dir}/parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits, rows }, null, 2)}\n`)
+    // AC-R1-8: no compatibility-mode device here; the workbench's branch for one (no MSAA, SMAA) against the MSAA picture, for the record.
+    const compatibility = []
+    for (const name of ['noon', 'materials']) {
+      const msaa = await exportReference(gpu, name)
+      const smaa = await exportReference(gpu, name, { forceCompatibility: true })
+      for (const img of smaa.images) {
+        if (img.pass === 'line') continue
+        const m = await compareShots(page, msaa.images.find((i) => i.file === img.file).png, img.png)
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}-smaa.jpg`, m.sheet)
+        compatibility.push({ file: img.file, mean: Number(m.mean.toFixed(4)), over_percent: Number(m.over.toFixed(4)) })
+      }
+    }
+    await writeFile(`${dir}/parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits, exports, rows, compatibility }, null, 2)}\n`)
   } finally {
     await gpu.close()
   }
@@ -3917,12 +3932,15 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference 
     await page.locator('.cc-scene-editor').focus()
     const remove = await hitch(() => page.keyboard.press(`${modKey}+KeyZ`))
     console.log(`  adding a light: longest frame ${add.toFixed(0)} ms; removing it: ${remove.toFixed(0)} ms`)
-    if (process.env.SCENE_E2E_BASELINE) {
+    // SCENE_E2E_PERF_OUT=<dir> keeps the numbers next to the migration's evidence (R1 AC-R1-7).
+    const out = process.env.SCENE_E2E_BASELINE ?? process.env.SCENE_E2E_PERF_OUT
+    if (out) {
       const perf = { machine: machineInfo(), chromium: gpu.version(), renderer, canvas, modes: results, light_add_ms: add, light_remove_ms: remove }
-      await writeFile(`${process.env.SCENE_E2E_BASELINE}/perf.json`, `${JSON.stringify(perf, null, 2)}\n`)
+      await writeFile(`${out}/perf.json`, `${JSON.stringify(perf, null, 2)}\n`)
     }
     assert.ok(results.rendered.mean <= 33, `rendered mean frame ${results.rendered.mean.toFixed(1)} ms`)
-    assert.ok(results.preview.mean <= results.rendered.mean, 'material preview is no slower')
+    // Both can sit at the display's refresh rate, where they differ only by noise.
+    assert.ok(results.preview.mean <= results.rendered.mean + 0.5, 'material preview is no slower')
     assert.ok(add < 1000 && remove < 1000, 'adding or removing a light hitches under a second')
     assert.deepEqual(errors, [], errors.join('\n'))
     await context.close()

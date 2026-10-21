@@ -1,6 +1,6 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Layers, NoToneMapping, RepeatWrapping, SRGBColorSpace, type Camera, type Object3D, type PerspectiveCamera, type Scene } from 'three'
+import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type Light, type Mesh, type Object3D, type PerspectiveCamera } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
-import { PassNode, RenderPipeline, type Node } from 'three/webgpu'
+import { MeshBasicNodeMaterial, PassNode, RenderPipeline, type Node } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
@@ -115,6 +115,44 @@ function fixedNoise(size = 64): DataTexture {
   return texture
 }
 
+/**
+ * What SceneRenderer.compile compiles: one copy of each kind of visible mesh
+ * where the mesh is (geometry and material shared, its flags kept), and the
+ * visible lights copied into a scene with the same environment and fog.
+ */
+function standIn(scene: Scene): { meshes: Group; lights: Scene } {
+  const lights = new Scene()
+  lights.environment = scene.environment
+  lights.environmentIntensity = scene.environmentIntensity
+  lights.environmentRotation.copy(scene.environmentRotation)
+  lights.fog = scene.fog
+  const meshes = new Group()
+  const kinds = new Set<string>()
+  scene.updateMatrixWorld()
+  scene.traverseVisible((o) => {
+    const copyAt = (c: Object3D) => {
+      c.matrixAutoUpdate = false
+      c.matrix.copy(o.matrixWorld)
+      return c
+    }
+    if ((o as Light).isLight) {
+      lights.add(copyAt(o.clone(false)))
+      return
+    }
+    const mesh = o as Mesh
+    if (!mesh.isMesh) return
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    // What a pipeline depends on: the vertex layout, not the geometry itself.
+    const layout = [...Object.keys(mesh.geometry.attributes).sort(), mesh.geometry.index ? 'indexed' : '']
+    const kind = [mesh.type, ...layout, ...materials.map((m) => m.uuid), mesh.castShadow, mesh.receiveShadow, mesh.layers.mask].join('|')
+    if (kinds.has(kind)) return
+    kinds.add(kind)
+    meshes.add(copyAt(mesh.clone(false)))
+  })
+  lights.updateMatrixWorld()
+  return { meshes, lights }
+}
+
 const keyOf = (wireframe: boolean, blur: boolean) => (wireframe ? 'wire' : blur ? 'shaded+dof' : 'shaded')
 
 /** three's typings leave most display nodes untyped; these all give a colour. */
@@ -147,6 +185,8 @@ class BackgroundlessPass extends PassNode {
 type Built = {
   key: string
   pipeline: RenderPipeline
+  /** The scene passes with the layers each draws, to compile for (SceneRenderer.compile). */
+  passes: { node: PassNode; layers: Layers }[]
   /** The AO node, when the look has one: its resolution follows aoPixelRatio. */
   ao: ReturnType<typeof ao> | null
   aoOn: { value: number } | null
@@ -175,6 +215,48 @@ export class SceneRenderer {
     this.camera = camera
     this.scene = scene
     this.overlays = overlays
+    // The viewport's pipeline is the one a new light is compiled for (objects/SceneLights.tsx).
+    if (overlays !== noOverlays) gpu.compiler = () => this.compile()
+  }
+
+  /**
+   * Compiles the scene for this pipeline's passes as they draw it, with the
+   * lights it has at the moment of the call (objects/SceneLights.tsx shows a
+   * new light only for that moment). Two things in WebGPU (three r186) keep
+   * a plain compileAsync from it, and a new light held the viewport for 5
+   * seconds while every lit material compiled on the next frame:
+   *  - a pipeline belongs to its target's formats: compiling for the canvas
+   *    leaves the passes (MSAA, half float, the normals MRT) to compile on
+   *    their first frame;
+   *  - compileAsync builds the materials later, a few per task, with the
+   *    scene's lights as the frames have left them by then.
+   * So each pass compiles a stand-in: one copy of each kind of mesh (sharing
+   * geometry and material) lit by copies of the lights in a scene of its
+   * own. three keeps programs and pipelines by their code and state, so the
+   * real meshes find them ready. Before the first frame, the canvas's.
+   */
+  compile(): Promise<void> {
+    const renderer = this.gpu.renderer
+    const { scene, camera } = this
+    if (!this.built) return renderer.compileAsync(scene, camera)
+    const { meshes, lights } = standIn(scene)
+    // compileAsync reads the target and MRT before its first await; the passes' state is set only for that.
+    const compiling = this.built.passes.map(({ node, layers: drawn }) => {
+      const target = renderer.getRenderTarget()
+      const targetMRT = renderer.getMRT()
+      const mask = camera.layers.mask
+      renderer.setRenderTarget(node.renderTarget)
+      renderer.setMRT(node.getMRT())
+      camera.layers.mask = drawn.mask
+      try {
+        return renderer.compileAsync(meshes, camera, lights)
+      } finally {
+        renderer.setRenderTarget(target)
+        renderer.setMRT(targetMRT)
+        camera.layers.mask = mask
+      }
+    })
+    return Promise.all(compiling).then(() => {})
   }
 
   private build(wireframe: boolean, blur: boolean): Built {
@@ -184,6 +266,7 @@ export class SceneRenderer {
     const msaa = gpu.compatibility ? 0 : 4
     const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
     beauty.setLayers(layers(0, ASIDE_LAYER))
+    const passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER) }]
     let picture: Node<'vec4'> = beauty
     const background = uniform(new Color())
     let aoNode: ReturnType<typeof ao> | null = null
@@ -193,8 +276,12 @@ export class SceneRenderer {
       // Multisampled depth cannot be sampled by the AO: the prepass has none.
       const prepass = own(pass(scene, camera, { samples: 0 }))
       prepass.transparent = false
+      // The surfaces' own normals, as GTAOPass drew them (MeshNormalMaterial over the scene): no
+      // maps, and no lights, so a new light compiles only the picture's materials.
+      prepass.overrideMaterial = own(new MeshBasicNodeMaterial())
       prepass.setLayers(layers(0))
       prepass.setMRT(mrt({ output: normalView }))
+      passes.push({ node: prepass, layers: layers(0) })
       const normal = prepass.getTextureNode()
       const depth = prepass.getTextureNode('depth')
       aoNode = own(ao(depth, normal, camera))
@@ -233,6 +320,7 @@ export class SceneRenderer {
       key: keyOf(wireframe, blur),
       dof,
       pipeline,
+      passes,
       ao: aoNode,
       aoOn,
       background,
@@ -290,5 +378,6 @@ export class SceneRenderer {
   dispose() {
     this.built?.dispose()
     this.built = null
+    if (this.overlays !== noOverlays) this.gpu.compiler = null
   }
 }
