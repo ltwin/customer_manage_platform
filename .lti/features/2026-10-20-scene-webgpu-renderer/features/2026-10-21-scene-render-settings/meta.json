@@ -1,6 +1,6 @@
 {
   "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-render-settings",
   "kind": "feature",
   "assurance": "governed",
@@ -25,9 +25,9 @@
       "data:场景文档"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-21T17:25:44.922Z",
-  "updatedAt": "2026-10-21T18:03:43.372Z",
+  "updatedAt": "2026-10-21T18:07:41.217Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -48,8 +48,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "bc3b1948c5dd58e1b52a6f12b3be0ffd50704f0b",
+    "at": "2026-10-21T18:07:40.377Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "e23640cf13f9d58336666e56e65a78f7ba2540ffc9b34d48c8c5357d9155c355"
+    },
+    "preExisting": [
+      ".lti/snapshots/e23640cf13f9d58336666e56e65a78f7ba2540ffc9b34d48c8c5357d9155c355.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
