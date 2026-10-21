@@ -1,6 +1,6 @@
 {
   "uid": "08a60d92-9939-45f9-b4d4-94b2e0f91d4c",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-webgpu-spike",
   "kind": "feature",
   "assurance": "governed",
@@ -25,7 +25,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-21T07:35:40.057Z",
-  "updatedAt": "2026-10-21T10:49:22.422Z",
+  "updatedAt": "2026-10-21T10:51:16.777Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-21T10:51:16.746Z",
+    "summary": "按 owner 决定 squash 合入 develop（2912c2bd）；合入内容只有 R0 目录、frontend/scripts 的 e2e 与参考场景、lti 快照元数据，frontend/src、backend、api 无改动；squash 提交与原分支归档提交 dec3de37 的文件树逐字节相同，分支已指向 squash 提交以对齐祖先关系（原提交历史保留在 reflog）",
+    "method": "manual",
+    "limitations": "没跑 make check-merge：R0 不改构建与单测的输入，唯一相关的 e2e 文件已在分支上定向跑过（reference scenes、calibration、C4 export、C5 AC-6、baseline）并通过 oxlint",
+    "sourceCommit": "2912c2bdd4728df5d19d32e959888ebadcba1d47",
+    "targetCommit": "2912c2bdd4728df5d19d32e959888ebadcba1d47",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "55fc2740ed5d960fb38384f1ed52ec20e9f1826b80099131118357006313b8ac"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": []
   },
