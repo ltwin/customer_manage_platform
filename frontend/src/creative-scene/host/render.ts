@@ -5,6 +5,7 @@ import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
 import { exposureOf } from '../render/litLook.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
+import { createRenderer, gpuOf } from '../render/gpu.ts'
 import { LineRenderer } from '../render/linePass.ts'
 import { canvasBlob } from '../sandbox/thumbnail.ts'
 import type { Shot } from './executor.ts'
@@ -96,8 +97,10 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
   }
   try {
     await root.configure({
-      gl: { preserveDrawingBuffer: true, antialias: true },
-      shadows: true,
+      gl: ({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'offscreen' }).then((g) => g.renderer),
+      linear: true,
+      flat: true,
+      shadows: 'percentage',
       frameloop: 'never',
       dpr: 1,
       size: { width: 1, height: 1, top: 0, left: 0 },
@@ -136,7 +139,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         camera.updateProjectionMatrix()
         camera.updateMatrixWorld()
         if (options.kind !== 'line') {
-          clay ??= new SceneRenderer(gl!, three, camera)
+          clay ??= new SceneRenderer(gpuOf(gl!), three, camera)
           clay.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null, exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1 })
         } else {
           line ??= new LineRenderer()

@@ -60,7 +60,8 @@ import { docToView, positionToDoc, positionToView, transformToDoc } from './spac
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
-import { SceneRenderer } from './render/sceneRenderer.ts'
+import { OVERLAY_LAYER, SceneRenderer } from './render/sceneRenderer.ts'
+import { createRenderer, gpuOf } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -221,7 +222,16 @@ export function Viewport(props: ViewportProps) {
         if (placed) props.onDropModel?.(placed)
       }}
     >
-      <Canvas frameloop="demand" shadows dpr={[1, 2]} camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}>
+      <Canvas
+        frameloop="demand"
+        // Tone mapping and sRGB happen in the pipeline's output node (render/gpu.ts); R3F would set them back on the renderer.
+        linear
+        flat
+        shadows="percentage"
+        gl={({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport' }).then((g) => g.renderer)}
+        dpr={[1, 2]}
+        camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
+      >
         <Lighting environment={props.scene.environment} display={display} />
         <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
         <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
@@ -856,6 +866,8 @@ function Gizmo({
         // React calls this with null on unmount, which clears it.
         ref={(c) => {
           gizmo.current = c as unknown as (Object3D & { axis: string | null }) | null
+          // The gizmo is drawn by the overlay pass, on its own layer; its picking has to look there.
+          ;(c as unknown as { raycaster: Raycaster } | null)?.raycaster.layers.enable(OVERLAY_LAYER)
         }}
         object={proxy}
         mode={mode}
@@ -1015,7 +1027,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   const preview = useStore(ui, (s) => s.dofPreview)
   const renderer = useRef<SceneRenderer | null>(null)
   useEffect(() => {
-    const r = new SceneRenderer(gl, three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
+    const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
     renderer.current = r
     invalidate()
     return () => {
@@ -1030,22 +1042,21 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   useEffect(() => invalidate(), [lensKey, wire, exposure, invalidate])
   useFrame((state) => {
     const r = renderer.current
-    // Wireframe has no surfaces to shade: no AO, no blur.
-    if (!r || wire) {
-      state.gl.render(state.scene, state.camera)
-      return
-    }
+    if (!r) return
     const ratio = state.gl.getPixelRatio()
-    const box = lens && frameBox(state.size, lens.aspect)
+    const box = lens && !wire && frameBox(state.size, lens.aspect)
+    gpuOf(state.gl).advanceFrame()
     r.render(state.camera, {
       width: state.size.width,
       height: state.size.height,
       pixelRatio: ratio,
       // On a 2× screen, AO at device pixels doubles the frame time for a difference only seen up close.
       aoPixelRatio: 1,
-      dof: lens?.optics ?? null,
+      dof: (!wire && lens?.optics) || null,
       pictureLongSide: box ? Math.max(box.width, box.height) * ratio : undefined,
       exposure,
+      // Wireframe has no surfaces to shade: no AO, no blur.
+      wireframe: wire,
     })
   }, 1)
   return null
