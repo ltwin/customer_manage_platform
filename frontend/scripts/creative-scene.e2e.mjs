@@ -558,7 +558,13 @@ async function open(server, options = {}) {
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
-  await page.locator('.cc-scene-editor canvas').waitFor({ timeout: 20_000 })
+  const canvas = page.locator('.cc-scene-editor canvas')
+  await canvas.waitFor({ timeout: 20_000 })
+  // The renderer is made asynchronously (render/gpu.ts): the viewport takes keys and has its size once it is.
+  await canvas.evaluate((c) => new Promise((resolve) => {
+    const sized = () => (c.clientWidth === c.parentElement.clientWidth && c.clientHeight === c.parentElement.clientHeight ? resolve() : requestAnimationFrame(sized))
+    sized()
+  }))
   await page.getByRole('treeitem').first().waitFor()
   // Let R3F mount the scene and the camera settle.
   await sleep(400)

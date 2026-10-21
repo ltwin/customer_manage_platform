@@ -1,9 +1,18 @@
 // Fork of three r186 (0.186.1) examples/jsm/tsl/display/GTAONode.js
 // (patterns「场景着色写法」: compare with upstream on every three upgrade).
-// Changed: the view direction for orthographic cameras, two lines marked
-// "fork:". three takes it as the way back to the camera's origin, which only
-// holds for a perspective camera; an orthographic one looks along -Z
-// everywhere. Perspective output is unchanged (R0, pixel for pixel).
+// Changed, each marked "fork:":
+//  - the AO itself, between "fork: begin" and "fork: end": r186 moved the
+//    node to a new horizon search (quadratic steps, each sample fading out
+//    towards the radius), which leaves contacts and corners about half as
+//    dark as the WebGL GTAOPass drew them; the block is GTAOShader's search
+//    and integral, so the workbench keeps its look (R1: clay exports within
+//    0.25% of pixels off by more than 8, against 3–8% with r186's);
+//  - the view direction for orthographic cameras: three takes it as the way
+//    back to the camera's origin, which only holds for a perspective camera;
+//    an orthographic one looks along -Z everywhere.
+// three's lines above the class are kept as they are, names the fork no
+// longer uses included, so the comparison stays exact.
+/* eslint-disable no-unused-vars */
 
 import { DataTexture, RenderTarget, RepeatWrapping, Vector2, Vector3, TempNode, QuadMesh, NodeMaterial, RendererUtils, RedFormat } from 'three/webgpu';
 import { reference, logarithmicDepthToViewZ, viewZToPerspectiveDepth, getNormalFromDepth, getViewPosition, getScreenPositionFromClip, nodeObject, Fn, float, NodeUpdateType, uv, uniform, Loop, vec2, vec3, vec4, int, dot, max, min, pow, abs, If, textureSize, sin, cos, PI, texture, passTexture, mat3, normalize, cross, mix, acos, clamp, interleavedGradientNoise, screenCoordinate, rand, context } from 'three/tsl';
@@ -437,6 +446,7 @@ class GTAONode extends TempNode {
 		const sampleNoise = ( uv ) => this._noiseNode.sample( uv );
 		const sampleNormal = ( uv ) => ( this.normalNode !== null ) ? this.normalNode.sample( uv ).rgb.normalize() : getNormalFromDepth( uv, this.depthNode.value, this._cameraProjectionMatrixInverse );
 
+		// fork: begin. GTAOShader's horizon search and integral (r186 examples/jsm/shaders/GTAOShader.js), which the WebGL GTAOPass drew.
 		this._ao = Fn( () => {
 
 			const depth = this._resolutionScale.lessThan( 1 ).select( sampleCenterDepth( uvNode ), sampleDepth( uvNode ) ).toConst();
@@ -445,138 +455,64 @@ class GTAONode extends TempNode {
 
 			const viewPosition = getViewPosition( uvNode, depth, this._cameraProjectionMatrixInverse ).toConst();
 			const viewNormal = sampleNormal( uvNode ).toConst();
-
-			const radius = this.radius;
-			const invRadius = radius.reciprocal().toConst();
-			const viewDir = this._orthographic.select( vec3( 0, 0, 1 ), normalize( viewPosition.xyz.negate() ) ).toConst(); // fork: orthographic looks along -Z
-			const clipPosition = this._cameraProjectionMatrix.mul( vec4( viewPosition, 1.0 ) ).toConst();
+			const viewDir = this._orthographic.select( vec3( 0, 0, 1 ), normalize( viewPosition.xyz.negate() ) ).toConst();
 
 			const noiseResolution = textureSize( this._noiseNode, 0 );
-			let noiseUv = vec2( uvNode.x, uvNode.y.oneMinus() );
-			noiseUv = noiseUv.mul( this._resolution.div( noiseResolution ) );
-
-			const noiseTexel = sampleNoise( noiseUv );
+			const noiseUv = vec2( uvNode.x, uvNode.y.oneMinus() ).mul( this._resolution.div( noiseResolution ) );
+			const noiseTexel = sampleNoise( noiseUv ).toConst();
 			const randomVec = noiseTexel.xyz.mul( 2.0 ).sub( 1.0 );
 			const tangent = vec3( randomVec.xy, 0.0 ).normalize();
-			const bitangent = vec3( tangent.y.mul( - 1.0 ), tangent.x, 0.0 );
+			const bitangent = vec3( tangent.y.negate(), tangent.x, 0.0 );
 			const kernelMatrix = mat3( tangent, bitangent, vec3( 0.0, 0.0, 1.0 ) );
-
-			// The sample count is baked into the shader so loop unrolling works
 
 			const SAMPLES = this.samples.value;
 			const DIRECTIONS = SAMPLES < 30 ? 3 : 5;
-			const STEPS = Math.ceil( SAMPLES / DIRECTIONS );
-			const invSteps = 1 / STEPS;
+			const STEPS = Math.floor( ( SAMPLES + DIRECTIONS - 1 ) / DIRECTIONS );
 
-			const ao = float( 0 ).toVar();
+			// Raises one side's horizon to the scene at sampleViewPosition when it is within the thickness.
+			const raise = ( cosHorizon, sampleViewPosition, j ) => {
 
-			// Each iteration analyzes one vertical "slice" of the 3D space around the fragment.
+				const sampleUv = getScreenPositionFromClip( this._cameraProjectionMatrix.mul( vec4( sampleViewPosition, 1.0 ) ) ).toConst();
+				const viewDelta = getViewPosition( sampleUv, sampleDepth( sampleUv ), this._cameraProjectionMatrixInverse ).sub( viewPosition ).toConst();
 
-			// Per-step phase jitter for spatio-temporal decorrelation.
-			const noiseJitterIdx = this._temporalDirection.mul( 0.02 );
-			const stepJitter = interleavedGradientNoise( screenCoordinate.add( this._temporalOffset ) ).add( rand( uvNode.add( noiseJitterIdx ).mul( 2 ).sub( 1 ) ) );
+				If( abs( viewDelta.z ).lessThan( this.thickness ), () => {
 
-			Loop( { start: int( 0 ), end: int( DIRECTIONS ), type: 'int', condition: '<' }, ( { i } ) => {
-
-				const angle = float( i ).div( DIRECTIONS ).mul( PI ).add( this._temporalDirection ).toConst();
-				const sampleDir = kernelMatrix.mul( vec3( cos( angle ), sin( angle ), 0 ) ).toConst();
-				const clipDirRadius = this._cameraProjectionMatrix.mul( vec4( sampleDir, 0.0 ) ).mul( radius ).toConst();
-
-				const sliceBitangent = normalize( cross( sampleDir, viewDir ) ).toConst();
-				const sliceTangent = cross( sliceBitangent, viewDir ).toConst();
-
-				// Project the view normal onto the slice plane (remove component along sliceBitangent).
-				// The unnormalized length is the foreshortening weight applied at slice integration.
-				// (Activision GTAO paper, Section 3.2 "Per-pixel sampling".)
-				const projNRaw = viewNormal.sub( sliceBitangent.mul( dot( viewNormal, sliceBitangent ) ) ).toConst();
-				const projNLen = projNRaw.length().toConst();
-				const projN = projNRaw.div( max( projNLen, float( 0.0001 ) ) ).toConst();
-
-				// γ — angle of projN within the slice plane, signed by the tangent direction.
-				const nSin = dot( projN, sliceTangent ).toConst();
-				const nCos = clamp( dot( projN, viewDir ), 0, 1 ).toConst();
-				const signNSin = nSin.greaterThanEqual( 0 ).select( float( 1 ), float( - 1 ) );
-				const angleN = signNSin.mul( acos( nCos ) ).toConst();
-
-				const tangentToNormalInSlice = cross( projN, sliceBitangent ).toConst();
-				const cosHorizon = dot( viewDir, tangentToNormalInSlice ).toConst();
-				const cosHorizons = vec2( cosHorizon, cosHorizon.negate() ).toVar();
-
-				// For each slice, the inner loop performs ray marching to find the horizons.
-
-				Loop( { end: int( STEPS ), type: 'int', name: 'j', condition: '<' }, ( { j } ) => {
-
-					// Quadratic step distribution ( sampleDist = t² ) concentrates samples in the
-					// near-field. (Blender's Eevee adaptation)
-					const t = float( j ).add( 1.0 ).add( stepJitter ).mul( invSteps ).toConst();
-					const sampleDist = t.mul( t );
-					const clipOffset = clipDirRadius.mul( sampleDist ).toConst();
-
-					// The loop marches in two opposite directions (x and y) along the slice's line to find the horizon on both sides.
-
-					// x
-
-					const sampleScreenPositionX = getScreenPositionFromClip( clipPosition.add( clipOffset ) ).toConst();
-					const sampleDepthX = sampleDepth( sampleScreenPositionX ).toConst();
-					const sampleSceneViewPositionX = getViewPosition( sampleScreenPositionX, sampleDepthX, this._cameraProjectionMatrixInverse ).toConst();
-					const viewDeltaX = sampleSceneViewPositionX.sub( viewPosition ).toConst();
-					const lenX = viewDeltaX.length().toConst();
-
-					// Manual normalize guards against zero-length delta.
-					const sHX = dot( viewDir, viewDeltaX ).div( max( lenX, float( 0.0001 ) ) );
-
-					// Sphere falloff: ( dist / radius )² fades the sample's horizon contribution
-					// back toward the prior horizon as it approaches the radius boundary.
-					// (squared variant of the paper's near-field attenuation;
-					// Activision GTAO paper, Section 4.3 "Bounding the sampling area")
-					const distFacX = min( lenX.mul( invRadius ), 1 );
-					const distFacSqX = distFacX.mul( distFacX );
-
-					If( abs( viewDeltaX.z ).lessThan( this.thickness ), () => {
-
-						cosHorizons.x.assign( mix( max( cosHorizons.x, sHX ), cosHorizons.x, distFacSqX ) );
-
-					} );
-
-					// y
-
-					const sampleScreenPositionY = getScreenPositionFromClip( clipPosition.sub( clipOffset ) ).toConst();
-					const sampleDepthY = sampleDepth( sampleScreenPositionY ).toConst();
-					const sampleSceneViewPositionY = getViewPosition( sampleScreenPositionY, sampleDepthY, this._cameraProjectionMatrixInverse ).toConst();
-					const viewDeltaY = sampleSceneViewPositionY.sub( viewPosition ).toConst();
-					const lenY = viewDeltaY.length().toConst();
-
-					const sHY = dot( viewDir, viewDeltaY ).div( max( lenY, float( 0.0001 ) ) );
-
-					const distFacY = min( lenY.mul( invRadius ), 1 );
-					const distFacSqY = distFacY.mul( distFacY );
-
-					If( abs( viewDeltaY.z ).lessThan( this.thickness ), () => {
-
-						cosHorizons.y.assign( mix( max( cosHorizons.y, sHY ), cosHorizons.y, distFacSqY ) );
-
-					} );
+					const sampleCosHorizon = dot( viewDir, normalize( viewDelta ) );
+					cosHorizon.addAssign( max( 0, sampleCosHorizon.sub( cosHorizon ).mul( mix( 1, float( 2 ).div( float( j ).add( 2 ) ), this.distanceFallOff ) ) ) );
 
 				} );
 
-				// Cosine-weighted inner integral, closed-form (Activision GTAO paper, Eq. 7).
-				// Per horizon h_i:    term_i = −cos( 2 h_i − γ ) + cos( γ ) + 2 h_i sin( γ )
-				// The 0.25 factor is ½ (integral normalization) × ½ (averaging the two horizons).
-				//
-				// In this slice setup `sliceTangent = cross( sliceBitangent, viewDir )` works out
-				// opposite to `sampleDir`, so the +sampleDir samples (cosHorizons.x) live on the
-				// −T side of the slice and −sampleDir samples (cosHorizons.y) on the +T side.
-				// γ is signed by +T (sliceTangent), so hPos must read from cosHorizons.y.
+			};
 
-				const hPos = acos( cosHorizons.y ).toConst();
-				const hNeg = acos( cosHorizons.x ).negate().toConst();
+			const ao = float( 0 ).toVar();
 
-				const termPos = cos( hPos.mul( 2 ).sub( angleN ) ).negate().add( nCos ).add( hPos.mul( 2 ).mul( nSin ) );
-				const termNeg = cos( hNeg.mul( 2 ).sub( angleN ) ).negate().add( nCos ).add( hNeg.mul( 2 ).mul( nSin ) );
-				const a = termPos.add( termNeg ).mul( 0.25 );
+			Loop( { start: int( 0 ), end: int( DIRECTIONS ), type: 'int', condition: '<' }, ( { i } ) => {
 
-				// |projN| is the foreshortening weight from the per-slice normal projection.
-				ao.addAssign( projNLen.mul( a ) );
+				const angle = float( i ).div( DIRECTIONS ).mul( PI );
+				const sampleDir = normalize( kernelMatrix.mul( vec3( cos( angle ), sin( angle ), 0 ) ) ).toConst();
+				const sampleScale = noiseTexel.w.mul( 0.5 ).add( 0.5 );
+
+				const sliceBitangent = normalize( cross( sampleDir, viewDir ) ).toConst();
+				const sliceTangent = cross( sliceBitangent, viewDir ).toConst();
+				const normalInSlice = normalize( viewNormal.sub( sliceBitangent.mul( dot( viewNormal, sliceBitangent ) ) ) ).toConst();
+
+				const tangentToNormalInSlice = cross( normalInSlice, sliceBitangent ).toConst();
+				const cosHorizons = vec2( dot( viewDir, tangentToNormalInSlice ), dot( viewDir, tangentToNormalInSlice.negate() ) ).toVar();
+
+				Loop( { end: int( STEPS ), type: 'int', name: 'j', condition: '<' }, ( { j } ) => {
+
+					const offset = sampleDir.mul( this.radius ).mul( sampleScale ).mul( pow( float( j ).add( 1 ).div( STEPS ), this.distanceExponent ) ).toConst();
+					raise( cosHorizons.x, viewPosition.add( offset ), j );
+					raise( cosHorizons.y, viewPosition.sub( offset ), j );
+
+				} );
+
+				const sinHorizons = cosHorizons.mul( cosHorizons ).oneMinus().sqrt().toConst();
+				const nx = dot( normalInSlice, sliceTangent );
+				const ny = dot( normalInSlice, viewDir );
+				const nxb = acos( cosHorizons.y ).sub( acos( cosHorizons.x ) ).add( sinHorizons.x.mul( cosHorizons.x ) ).sub( sinHorizons.y.mul( cosHorizons.y ) ).mul( 0.5 );
+				const nyb = float( 2 ).sub( cosHorizons.x.mul( cosHorizons.x ) ).sub( cosHorizons.y.mul( cosHorizons.y ) ).mul( 0.5 );
+				ao.addAssign( nx.mul( nxb ).add( ny.mul( nyb ) ) );
 
 			} );
 
@@ -586,6 +522,7 @@ class GTAONode extends TempNode {
 			return ao;
 
 		} );
+		// fork: end
 
 		this._sharedContext = builder.getSharedContext();
 		this._currentSamples = this.samples.value;

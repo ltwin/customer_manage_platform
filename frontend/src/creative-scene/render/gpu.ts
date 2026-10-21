@@ -1,5 +1,5 @@
-import { LinearSRGBColorSpace, NoToneMapping } from 'three'
-import { WebGPURenderer } from 'three/webgpu'
+import { LinearSRGBColorSpace, NoToneMapping, Source, type Texture } from 'three'
+import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -14,6 +14,30 @@ import { WebGPURenderer } from 'three/webgpu'
 // loop at all; so the loop is stopped and whoever draws steps the frame
 // (Epic design「帧推进与确定性」). three has no public way to do this: the
 // private fields are touched here only, and a unit test keeps them in sight.
+
+/**
+ * Gives every viewport texture its own size. Glass samples what is behind it
+ * through module-wide ViewportTextureNodes, which keep a texture per render
+ * target, cloned from one: a clone shares its source, so the viewport's and
+ * an export's sizes overwrite each other, and each renderer then remakes the
+ * texture in the middle of a pass while its bindings still name the old one
+ * (three r186; "Destroyed texture used in a submit").
+ */
+export function ownViewportTextures(node: typeof ViewportTextureNode.prototype) {
+  type Cached = { _cacheTextures: WeakMap<object, Texture>; referenceNode?: Cached }
+  const get = node.getTextureForReference
+  node.getTextureForReference = function (this: Cached, reference = null) {
+    const cache = (this.referenceNode ?? this)._cacheTextures
+    const fresh = reference !== null && !cache.has(reference)
+    const texture: Texture = get.call(this, reference)
+    if (fresh) {
+      const { width, height } = texture.image as { width: number; height: number }
+      texture.source = new Source({ width, height })
+    }
+    return texture
+  }
+}
+ownViewportTextures(ViewportTextureNode.prototype)
 
 export type Output =
   /** Linear canvas, tone mapping and sRGB in the pipeline's output node, so overlays drawn after it do not wipe the picture. */

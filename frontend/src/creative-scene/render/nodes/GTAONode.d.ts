@@ -9,13 +9,9 @@ declare class GTAONode extends TempNode<"float"> {
 
     radius: UniformNode<"float", number>;
     thickness: UniformNode<"float", number>;
-    /**
-     * @deprecated since r186. The new distance model "Quadratic Ray Stepping" does not need it anymore.
-     */
+    /** Used again by the fork, which keeps GTAOShader's distance model. */
     distanceExponent: UniformNode<"float", number>;
-    /**
-     * @deprecated since r186. The new distance model "Quadratic Ray Stepping" does not need it anymore.
-     */
+    /** Used again by the fork, which keeps GTAOShader's distance model. */
     distanceFallOff: UniformNode<"float", number>;
     scale: UniformNode<"float", number>;
     samples: UniformNode<"float", number>;

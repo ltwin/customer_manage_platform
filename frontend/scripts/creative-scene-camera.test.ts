@@ -104,16 +104,19 @@ test('the camera focuses on its focus object along its view, else at focus, kept
 
 // --- export flow ------------------------------------------------------------
 
-test('the orthographic GTAO is three’s GTAONode but for the lines marked fork:', () => {
+test('the workbench GTAO is three’s GTAONode but for what is marked fork:', () => {
   const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
+  const upstream = read('../node_modules/three/examples/jsm/tsl/display/GTAONode.js')
   const fork = read('../src/creative-scene/render/nodes/GTAONode.js')
-  // Without its header, the inserted uniform (comment, line, blank) and the changed view direction.
+  // The AO block three has where the fork has its own.
+  const aoOf = (text: string) => text.slice(text.indexOf('\t\tthis._ao = Fn( () => {'), text.indexOf('\t\tthis._sharedContext = builder.getSharedContext();'))
   const restored = fork
     .slice(fork.indexOf('import '))
+    .replace(/\t\t\/\/ fork: begin[^\n]*\n[\s\S]*?\t\t\/\/ fork: end\n\n/, aoOf(upstream))
+    // The inserted uniform: comment, line and blank.
     .replace(/\t*\/\/ fork:[^\n]*\n[^\n]*\n\n/, '')
-    .replace(/this\._orthographic\.select\( vec3\( 0, 0, 1 \), (normalize\( viewPosition\.xyz\.negate\(\) \)) \)(\.toConst\(\);) \/\/ fork:[^\n]*/, '$1$2')
   assert.ok(!restored.includes('fork:'), 'every change is undone here')
-  assert.equal(restored, read('../node_modules/three/examples/jsm/tsl/display/GTAONode.js'), 'three changed GTAONode: compare and port the fork')
+  assert.equal(restored, upstream, 'three changed GTAONode: compare and port the fork')
 })
 
 test('a submitted export keeps its operation and time across retries; a refusal stops at once', async () => {

@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { NodeFrame } from 'three/webgpu'
+import { RenderTarget } from 'three'
+import { NodeFrame, ViewportTextureNode } from 'three/webgpu'
 import { advance, DeviceLostError, deviceState, reset, type FrameState } from '../src/creative-scene/render/gpu.ts'
 
 // The renderer entry steps three's private frame state (render/gpu.ts). These
@@ -118,4 +119,15 @@ test('resources cached on a device go with it, lost or disposed; the loss settle
   other.cache('sky', () => res('sky'))
   other.dispose()
   assert.deepEqual(disposed, ['room', 'sky'])
+})
+
+test('each render target’s viewport texture has a size of its own, as glass in the viewport and an export need', () => {
+  // three clones them from one texture, source and all; the entry gives each its own (render/gpu.ts).
+  assert.match(three('nodes/display/ViewportTextureNode.js'), /const framebufferTexture = defaultFramebuffer\.clone\(\);/)
+  const node = new ViewportTextureNode()
+  const viewport = node.getTextureForReference(new RenderTarget(2394, 1692))
+  const shot = node.getTextureForReference(new RenderTarget(2048, 1365))
+  shot.image.width = 2048
+  assert.notEqual(viewport.source, shot.source)
+  assert.notEqual(viewport.image.width, 2048)
 })
