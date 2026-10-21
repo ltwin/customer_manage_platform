@@ -7181,12 +7181,26 @@ export interface components {
             mode: "clay" | "lit";
             /** @description 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。 */
             exposure_ev: number;
+            /**
+             * @description 渲染器，决定白模和最终渲染怎么出图（clay、lit 导出与 render_view）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。线稿、线框、材质预览和正交视图按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
+             * @enum {string}
+             */
+            engine: "workbench" | "realtime_gi";
+            /**
+             * @description 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
+             * @enum {string}
+             */
+            resolution: "1k" | "2k" | "4k" | "8k";
         };
         /** @description set_render 按键合并，只改写到的字段。 */
         CreativeSceneRenderPatch: {
             /** @enum {string} */
             mode?: "clay" | "lit";
             exposure_ev?: number;
+            /** @enum {string} */
+            engine?: "workbench" | "realtime_gi";
+            /** @enum {string} */
+            resolution?: "1k" | "2k" | "4k" | "8k";
         };
         /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
         CreativeSceneObject: {

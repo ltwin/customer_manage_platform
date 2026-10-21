@@ -36,7 +36,9 @@
   - 两个包的 `make check-go` 都绿。补缺省的函数叫 `completeRenderSettings`，因为 `completeRender` 已是 `render_view` 任务完成的函数名；完整读取判断 `render` 是否齐全用 `view.go` 的 `storedRender.complete()`（design 写的 `renderComplete`）。
   - `path_tracing` 单独提示「还不能选路径追踪，可选 workbench 或 realtime_gi」；空串、`null`、未知值都被拒。
   - `model_test.go` 的 `validScene` 写全 `render`，并加了四个 render 校验用例；`creativemedia/config_internal_test.go` 固定 8192² 可收、8192 × 8193 不收。
-- [ ] 2.2 `api/openapi.yaml` 两个 schema 加字段，`make generate` 提交 Go 与 TS 生成物；前端读 `render` 的地方去掉对缺字段的猜测，改用 `engines.ts` 的取值函数。完成判据：`make generate-check`、`tsc -b` 绿
+- [x] 2.2 `api/openapi.yaml` 两个 schema 加字段，`make generate` 提交 Go 与 TS 生成物；前端读 `render` 的地方去掉对缺字段的猜测，改用 `engines.ts` 的取值函数。完成判据：`make generate-check`、`tsc -b` 绿
+  - `engines.ts` 的 `Engine` 取自生成的 `CreativeSceneRender`，`engineOf`、`litLook.ts` 的 `exposureOf` 和属性区的曝光不再兜底缺字段；对应单测改为「服务端读出 0」。
+  - e2e 的内存服务端新建场景、参考场景 fixture（六个）补齐 `engine: workbench`、`resolution: 2k`，与真实后端读出一致；画面不变。定向 e2e「reference scenes: each opens and draws」绿；场景单测 227 个全绿。
 
 ## 3. 渲染选项卡与有效渲染器
 

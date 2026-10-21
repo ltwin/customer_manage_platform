@@ -107,7 +107,7 @@ class SceneServer {
         ambient: { color: '#ffffff', intensity: 0.4 },
         fog: null,
       },
-      render: { mode: 'clay' },
+      render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '2k' },
       objects: [
         {
           id: 'sobj_ground',

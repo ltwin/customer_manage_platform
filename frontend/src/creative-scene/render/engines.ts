@@ -1,8 +1,10 @@
+import type { SceneRender } from '../api.ts'
+
 // The renderers' constants and pure functions (R2 design「模块职责与协作」):
 // nothing here touches the GPU, so the unit tests take it as it is.
 
 /** The scene's renderer (data contract render.engine); path tracing is planned, not selectable. */
-export type Engine = 'workbench' | 'realtime_gi'
+export type Engine = SceneRender['engine']
 
 /** How hard the real-time GI works: the viewport's frames, or a picture to keep. */
 export type Quality = 'interactive' | 'final'
@@ -16,8 +18,8 @@ export type Quality = 'interactive' | 'final'
  */
 export const GI_INTENSITY = 5
 
-/** The scene's renderer as stored; a scene from before R2 has none, which is the workbench. */
-export const engineOf = (render: object | undefined): Engine => ((render as { engine?: unknown } | undefined)?.engine === 'realtime_gi' ? 'realtime_gi' : 'workbench')
+/** The scene's renderer; the server completes a scene stored before R2 (design R-1). */
+export const engineOf = (render: SceneRender): Engine => render.engine
 
 /**
  * The frames a real-time GI picture is drawn over before it is taken, so

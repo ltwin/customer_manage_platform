@@ -962,7 +962,7 @@ export default function SceneEditor({
                 {!shownActive && !selected.length && shown ? (
                   <EnvironmentPanel
                     environment={shown.environment}
-                    exposure={shown.render.exposure_ev ?? 0}
+                    exposure={shown.render.exposure_ev}
                     readOnly={readOnly}
                     display={display}
                     onEnvironment={(environment, text, merge) => edit([{ op: 'set_environment', environment }], text, merge ? { merge } : undefined)}

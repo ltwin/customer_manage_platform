@@ -110,7 +110,7 @@ function sceneDoc() {
     created_at: '2026-10-18T00:00:00Z', updated_at: '2026-10-18T00:00:00Z',
     scene: {
       environment: { sky: { kind: 'color', color: '#3355ff' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null },
-      render: { mode: 'clay' },
+      render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '2k' },
       objects: [
         { id: 'sobj_pillar', kind: 'model_instance', name: '柱', parent_id: null, order: 0, transform: identity(), visible: true, locked: false, model: { content_revision_id: MODEL }, material_slots: {} },
         {

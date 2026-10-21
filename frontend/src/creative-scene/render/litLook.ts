@@ -1,5 +1,6 @@
 import { Color } from 'three'
 import { luminance, skyIrradiance, transmittance, type Vec3 } from './atmosphere.ts'
+import type { SceneRender } from '../api.ts'
 import type { Engine } from './engines.ts'
 
 // The lit look's constants (design「最终渲染的光照」). They set the balance
@@ -74,7 +75,7 @@ export function sunLight(elevationDeg: number, turbidity = reference.turbidity):
 }
 
 /** toneMappingExposure for the lit look. */
-export const exposureOf = (render: { exposure_ev?: number } | undefined) => 2 ** (render?.exposure_ev ?? 0)
+export const exposureOf = (render: Pick<SceneRender, 'exposure_ev'>) => 2 ** render.exposure_ev
 
 /**
  * What a light added from the menu starts at: a desk lamp's point light, a
