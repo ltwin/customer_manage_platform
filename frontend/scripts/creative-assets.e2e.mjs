@@ -1586,7 +1586,7 @@ await check('C6-model-preview', async () => {
   await until(async () => (await viewer().locator('.v-model-still').count()) === 0, 'model loaded', 10000)
   await page.waitForTimeout(300)
   assert(engine.length > 0, 'opening a model loads the 3D engine')
-  for (const [label, value] of [['尺寸', '0.75 × 3.00 × 0.75 米'], ['放置方式', '落地'], ['面数', '152'], ['材质槽', 'stone（stone）：漆面、trim（stone）'], ['高度', '3 米']])
+  for (const [label, value] of [['尺寸', '0.75 × 3.00 × 0.75 米'], ['参考点', '底部中心'], ['面数', '152'], ['材质槽', 'stone（stone）：漆面、trim（stone）'], ['高度', '3 米']])
     assert.equal(await viewer().locator('dt', { hasText: new RegExp(`^${label}$`) }).locator('xpath=following-sibling::dd[1]').innerText(), value, label)
   assert.equal(await viewer().getByRole('button', { name: '放入项目…' }).count(), 0, 'a model has no project placement')
 

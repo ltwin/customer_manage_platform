@@ -22,11 +22,11 @@ test('model info formats size, mount, triangles, slots and parameters', () => {
   assert.ok(info)
   assert.equal(info.name, '哥特束柱')
   assert.equal(info.size, '0.50 × 2.40 × 0.60 米')
-  assert.equal(info.mount, '落地')
+  assert.equal(info.origin, '底部中心')
   assert.equal(info.triangles, '12,000')
   assert.deepEqual(modelRows(info), [
     ['尺寸', '0.50 × 2.40 × 0.60 米'],
-    ['放置方式', '落地'],
+    ['参考点', '底部中心'],
     ['面数', '12,000'],
     ['材质槽', 'stone（stone）、trim'],
     ['fluted', '是'],

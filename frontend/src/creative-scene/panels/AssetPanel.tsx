@@ -32,7 +32,7 @@ function writeSize(size: Size) {
 /** How it stands, its size, and what can be changed after placing. */
 function facts(a: LibraryAsset): string[] {
   const info = modelInfo(a.unavailable ? undefined : a.content)
-  return info ? [`${info.mount} · ${info.size}`, `${info.params.length} 个可调参数 · ${info.slots.length} 个材质槽`] : []
+  return info ? [`参考点${info.origin} · ${info.size}`, `${info.params.length} 个可调参数 · ${info.slots.length} 个材质槽`] : []
 }
 
 /**

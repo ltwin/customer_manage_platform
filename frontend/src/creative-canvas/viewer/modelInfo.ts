@@ -8,16 +8,17 @@ type Manifest = components['schemas']['CreativeModelManifest']
 type Generator = components['schemas']['CreativeModelGenerator']
 type Materials = components['schemas']['CreativeSceneMaterialSlots']
 
-export const mountLabel: Record<Generator['mount'], string> = {
-  floor: '落地',
-  wall: '墙挂',
-  ceiling: '吊顶',
-  free: '自由放置',
+/** 几何模块按 `mount` 约定的原点，即模型的参考点。 */
+export const originLabel: Record<Generator['mount'], string> = {
+  floor: '底部中心',
+  wall: '背面底边中心',
+  ceiling: '顶部中心',
+  free: '几何中心',
 }
 
 export type ModelInfo = {
   name: string
-  mount: string
+  origin: string
   /** 宽 × 高 × 深，米，保留两位。 */
   size: string
   triangles: string
@@ -48,7 +49,7 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
   const materials = modelMaterials(content)
   return {
     name: name_hint ?? '',
-    mount: mountLabel[generator.mount],
+    origin: originLabel[generator.mount],
     size: modelSize(manifest),
     triangles: manifest.triangles.toLocaleString('zh-CN'),
     slots: manifest.slots.map((s) => {
@@ -80,7 +81,7 @@ function paramValue(v: unknown, unit?: string): string {
 export function modelRows(info: ModelInfo): [string, string][] {
   const rows: [string, string][] = [
     ['尺寸', info.size],
-    ['放置方式', info.mount],
+    ['参考点', info.origin],
     ['面数', info.triangles],
   ]
   if (info.slots.length)

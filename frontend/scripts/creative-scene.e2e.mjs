@@ -758,7 +758,7 @@ await check('asset panel: Shift+A 从资产库添加… opens the 资产 tab; se
   await tile('哥特束柱').click()
   const detail = panel.locator('.cc-scene-assets-detail')
   await detail.getByText('哥特束柱').waitFor()
-  await detail.getByText(/落地 · .* 米/).waitFor()
+  await detail.getByText(/参考点底部中心 · .* 米/).waitFor()
   await shot(page, 'asset-panel')
   await sleep(300)
   assert.equal(server.commands.length, before, 'a click only selects')
