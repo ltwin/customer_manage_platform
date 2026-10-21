@@ -1548,7 +1548,7 @@ await check('tag-tree-manage', async () => {
   await page.screenshot({ path: `${output}/tag-tree.png` })
 })
 
-// C6 AC-6：模型卡片只显示缩略图，资产库页在打开模型前不加载 3D 引擎；查看浮窗里转着看、切换白模与默认材质，信息与清单一致，下载得到 .glb。
+// C6 AC-6：模型卡片只显示缩略图，资产库页在打开模型前不加载 3D 引擎；查看浮窗按资产的材质显示、转着看、切换白模与材质，信息与清单一致，下载得到 .glb。
 const pillarManifest = { bounds: { min: [-0.375, 0, -0.375], max: [0.375, 3, 0.375] }, triangles: 152, slots: [{ id: 'stone', hint: 'stone' }, { id: 'trim', hint: 'stone' }], parts: ['base', 'capital', 'shaft'], anchors: [{ id: 'top', position: [0, 3, 0] }] }
 const modelAsset = () => {
   const a = asset({ id: 'm-pillar', title: '哥特束柱', age: 0 })
@@ -1557,7 +1557,8 @@ const modelAsset = () => {
   a.content = {
     ...a.content,
     kind: 'model',
-    payload: { model: { format: 'glb', name_hint: '哥特束柱', manifest: pillarManifest,
+    payload: { model: { format: 'glb', name_hint: '哥特束柱', manifest: pillarManifest, source_revision_id: 'ccrv_scene',
+      materials: { stone: { preset: 'paint@1', params: { color: '#c03030', roughness: 0.6, metalness: 0 } } },
       generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: 'sha256-' + 'a'.repeat(64), mount: 'floor',
         params_schema: { height: { type: 'number', default: 3, min: 1, max: 5, unit: '米', label: '高度' } }, params: { height: 3 } } } },
     media: [{ role: 'original', blob_id: 'b-glb', mime: 'model/gltf-binary', byte_size: glb.length, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'b-png', mime: 'image/png', byte_size: 900, width: 256, height: 256, duration_ms: null }],
@@ -1585,12 +1586,29 @@ await check('C6-model-preview', async () => {
   await until(async () => (await viewer().locator('.v-model-still').count()) === 0, 'model loaded', 10000)
   await page.waitForTimeout(300)
   assert(engine.length > 0, 'opening a model loads the 3D engine')
-  for (const [label, value] of [['尺寸', '0.75 × 3.00 × 0.75 米'], ['放置方式', '落地'], ['面数', '152'], ['材质槽', 'stone（stone）、trim（stone）'], ['高度', '3 米']])
+  for (const [label, value] of [['尺寸', '0.75 × 3.00 × 0.75 米'], ['放置方式', '落地'], ['面数', '152'], ['材质槽', 'stone（stone）：漆面、trim（stone）'], ['高度', '3 米']])
     assert.equal(await viewer().locator('dt', { hasText: new RegExp(`^${label}$`) }).locator('xpath=following-sibling::dd[1]').innerText(), value, label)
   assert.equal(await viewer().getByRole('button', { name: '放入项目…' }).count(), 0, 'a model has no project placement')
 
   const shot = () => stage.screenshot()
+  // The share of pixels in the asset's red paint: the stone slot in 「材质」, none in clay.
+  const red = (png) => page.evaluate(async (src) => {
+    const i = new Image()
+    await new Promise((resolve) => { i.onload = resolve; i.src = src })
+    const c = document.createElement('canvas')
+    c.width = i.width
+    c.height = i.height
+    const g = c.getContext('2d')
+    g.drawImage(i, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let k = 0; k < p.length; k += 4) if (p[k] > p[k + 1] + 60 && p[k] > p[k + 2] + 60) n++
+    return n / (p.length / 4)
+  }, `data:image/png;base64,${png.toString('base64')}`)
+  assert.equal(await viewer().getByRole('button', { name: '材质', exact: true }).getAttribute('aria-pressed'), 'true', 'it opens in the asset\'s materials, like its card')
+  await viewer().getByText('放进场景后可以换材质', { exact: true }).waitFor()
   const front = await shot()
+  assert((await red(front)) > 0.01, 'the stone slot shows the paint the asset was saved with')
   const box = await stage.boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
@@ -1599,10 +1617,11 @@ await check('C6-model-preview', async () => {
   await page.waitForTimeout(300)
   const turned = await shot()
   assert(!front.equals(turned), 'dragging turns the model')
-  await viewer().getByRole('button', { name: '默认材质', exact: true }).click()
-  await viewer().getByText('放进场景后可以换材质', { exact: true }).waitFor()
+  await viewer().getByRole('button', { name: '白模', exact: true }).click()
   await page.waitForTimeout(500)
-  assert(!turned.equals(await shot()), 'default materials look different from clay')
+  const clay = await shot()
+  assert(!turned.equals(clay), 'clay looks different from the materials')
+  assert((await red(clay)) < 0.001, 'clay has no paint')
   await page.screenshot({ path: `${output}/model-preview.png` })
 
   const ticket = page.waitForRequest((r) => r.url().endsWith('/media-access-tickets') && r.postDataJSON()?.purpose === 'download')

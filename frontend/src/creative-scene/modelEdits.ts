@@ -79,15 +79,14 @@ export function sharingInstances(objects: readonly SceneObject[], objectID: stri
  * R4. Unshared: a new revision of the same model. Shared, this one only
  * (the default): a new model, the others untouched. Shared, all of them: a
  * new revision of the same model, every listed instance switches. A model
- * placed from the asset library is copied, never continued (I7): its first
- * edit starts a model of the scene's own.
+ * placed from the asset library needs nothing here: the server never
+ * continues a library copy, so its first edit starts a model of the scene's own.
  */
-export function forkPlan(objects: readonly SceneObject[], objectID: string, contentID: string | undefined, applyToAll: boolean, copied = false): Fork {
+export function forkPlan(objects: readonly SceneObject[], objectID: string, contentID: string | undefined, applyToAll: boolean): Fork {
   const others = sharingInstances(objects, objectID)
-  const base = copied ? undefined : contentID
-  if (!others.length) return { baseContentID: base, scope: 'this', objectIDs: [objectID] }
+  if (!others.length) return { baseContentID: contentID, scope: 'this', objectIDs: [objectID] }
   if (!applyToAll) return { scope: 'this', objectIDs: [objectID] }
-  return { baseContentID: base, scope: 'all_instances', objectIDs: [objectID, ...others] }
+  return { baseContentID: contentID, scope: 'all_instances', objectIDs: [objectID, ...others] }
 }
 
 const ref = 'model'
@@ -158,7 +157,7 @@ export class ModelEdits {
     const source = target?.model?.content_revision_id
     if (!view || !target || !source) return Promise.resolve({ ok: false, stage: 'commit', message: '找不到要修改的模型' })
     const content = this.summaries()[source]?.content_id || undefined
-    const fork = forkPlan(view.scene.objects, input.objectID, content, input.applyToAll, !!content && this.deps.cache.copied(content))
+    const fork = forkPlan(view.scene.objects, input.objectID, content, input.applyToAll)
     return this.run({
       key: input.objectID,
       label: input.label,

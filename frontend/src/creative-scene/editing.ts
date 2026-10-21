@@ -20,13 +20,15 @@ export const groundBuiltin = 'ground@1'
 
 /**
  * An instance of a model revision placed from the asset library, last among
- * root objects, named after the asset (an object name holds 80 characters).
+ * root objects, named after the asset (an object name holds 80 characters),
+ * with the materials the asset was saved with.
  */
 export function newModelInstance(
   revision: string,
   name: string,
   placed: Pick<SceneTransform, 'position' | 'rotation'>,
   objects: readonly SceneObject[],
+  materials: NonNullable<SceneObject['material_slots']> = {},
   makeID: () => string = newObjectID,
 ): SceneObject {
   return {
@@ -39,7 +41,7 @@ export function newModelInstance(
     visible: true,
     locked: false,
     model: { content_revision_id: revision },
-    material_slots: {},
+    material_slots: structuredClone(materials),
   }
 }
 

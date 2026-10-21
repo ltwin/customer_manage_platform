@@ -17,6 +17,8 @@ export type SaveTarget = {
   contentRevisionID: string
   /** The object's content unit as the editor showed it: the request's expected_object_rev. */
   unitRev: string
+  /** The instance's materials in that version: the asset keeps them, the thumbnail shows them. */
+  materials: NonNullable<SceneObject['material_slots']>
   /** The dialog's default title. */
   name: string
 }
@@ -24,6 +26,8 @@ export type SaveTarget = {
 export type SaveModelRequest = {
   documentID: string
   target: SaveTarget
+  /** Renders the target with its materials and stages the PNG; resolves to the upload's ID. */
+  thumbnail(target: SaveTarget, signal: AbortSignal): Promise<string>
   /**
    * After a conflict: re-reads, waits until the editor shows the unit at
    * currentRev and checks the object again.
@@ -58,7 +62,7 @@ export function saveTarget(input: SaveInput): SaveTarget | { error: string } {
   const unit = contentUnit(o.id)
   const unitRev = input.base?.unit_revs[unit]
   if (!unitRev || input.unsaved.some((i) => unit in i.expected)) return { error: '正在保存，稍后再试' }
-  return { objectID: o.id, contentRevisionID: revision, unitRev, name: summary.name_hint || o.name || '代码模型' }
+  return { objectID: o.id, contentRevisionID: revision, unitRev, materials: { ...o.material_slots }, name: summary.name_hint || o.name || '代码模型' }
 }
 
 type Watched = {

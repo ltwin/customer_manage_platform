@@ -157,18 +157,9 @@ export class ModelCache {
     return promise
   }
 
-  /** Contents of models placed from the asset library, for as long as the page lives. */
-  private readonly placed = new Set<string>()
-
   /** What a placed asset's model is, shown until the server's summary arrives. */
   remember(revision: string, summary: SceneModel) {
     this.known.setState({ ...this.known.getState(), [revision]: summary })
-    if (summary.content_id) this.placed.add(summary.content_id)
-  }
-
-  /** The content came from the asset library: an edit copies it instead of continuing it (I7). */
-  copied(contentID: string): boolean {
-    return this.placed.has(contentID)
   }
 
   /** The server has summaries of these now. */

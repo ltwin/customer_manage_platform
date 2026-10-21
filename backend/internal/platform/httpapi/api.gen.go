@@ -5199,6 +5199,9 @@ type CreativeAssetFromSceneModelPayload struct {
 	ExpectedObjectRev CreativeRevision          `json:"expected_object_rev"`
 	ObjectId          string                    `json:"object_id"`
 	Target            CreativeUploadAssetTarget `json:"target"`
+
+	// ThumbnailUploadId 按实例当前材质渲染的 256 × 256 PNG 缩略图的暂存上传（声明类型 image）。新建库副本时消费；复用已有资产时不消费。
+	ThumbnailUploadId string `json:"thumbnail_upload_id"`
 }
 
 // CreativeAssetGroup defines model for CreativeAssetGroup.
@@ -6303,7 +6306,7 @@ type CreativeModelParamSpec struct {
 // CreativeModelParamSpecType defines model for CreativeModelParamSpec.Type.
 type CreativeModelParamSpecType string
 
-// CreativeModelPayload model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。
+// CreativeModelPayload model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。
 type CreativeModelPayload struct {
 	Model struct {
 		Format CreativeModelPayloadModelFormat `json:"format"`
@@ -6313,7 +6316,13 @@ type CreativeModelPayload struct {
 
 		// Manifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
 		Manifest CreativeModelManifest `json:"manifest"`
-		NameHint *string               `json:"name_hint,omitempty"`
+
+		// Materials 缺省等同于空对象。
+		Materials *CreativeSceneMaterialSlots `json:"materials,omitempty"`
+		NameHint  *string                     `json:"name_hint,omitempty"`
+
+		// SourceRevisionId 库副本复制自哪个模型修订；有它就是库副本
+		SourceRevisionId *string `json:"source_revision_id,omitempty"`
 	} `json:"model"`
 }
 
@@ -6330,7 +6339,13 @@ type CreativeModelPreviewPayload struct {
 
 		// Manifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
 		Manifest CreativeModelManifest `json:"manifest"`
-		NameHint *string               `json:"name_hint,omitempty"`
+
+		// Materials 缺省等同于空对象。
+		Materials *CreativeSceneMaterialSlots `json:"materials,omitempty"`
+		NameHint  *string                     `json:"name_hint,omitempty"`
+
+		// SourceRevisionId 库副本复制自哪个模型修订；有它就是库副本
+		SourceRevisionId *string `json:"source_revision_id,omitempty"`
 	} `json:"model"`
 }
 
@@ -11917,7 +11932,7 @@ type ServerInterface interface {
 	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
-	// 把场景里模型实例当前引用的模型修订存入个人库；同一修订已在库中时只追加归类
+	// 把场景里模型实例的模型和材质分配复制成库副本，存入个人库；同一来源修订、同样材质已在库中时只追加归类
 	// (POST /creative/assets/from-scene-model)
 	CreateCreativeAssetFromSceneModel(c *gin.Context, params CreateCreativeAssetFromSceneModelParams)
 

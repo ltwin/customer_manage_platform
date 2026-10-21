@@ -605,8 +605,11 @@ func TestSearchTaggedImageReturnsGroupNames(t *testing.T) {
 	}
 }
 
-// modelAsset files a complete model into the library, as a save from a scene
-// does: the GLB, its thumbnail and the generator it was baked with.
+// testAssetMaterials are the materials a library model was saved with.
+var testAssetMaterials = map[string]any{"stone": map[string]any{"preset": "paint@1", "params": map[string]any{"color": "#7a1f1f", "roughness": 0.3, "metalness": 0.0}}}
+
+// modelAsset files a library copy of a model, as a save from a scene does:
+// the GLB, its thumbnail, the generator it was baked with and the materials.
 func (f *fixture) modelAsset() (assetID, revisionID string) {
 	f.t.Helper()
 	glb, thumb := "ccbl_"+uuid.NewString(), "ccbl_"+uuid.NewString()
@@ -620,7 +623,8 @@ func (f *fixture) modelAsset() (assetID, revisionID string) {
 		f.t.Fatal(err)
 	}
 	generator["language"], generator["contract_version"], generator["lib_version"], generator["code"], generator["code_sha256"] = "three-module", 1, 1, testPillarCode, "sha256-"+strings.Repeat("c", 64)
-	payload, err := json.Marshal(map[string]any{"format": "glb", "manifest": testManifest(f.t), "generator": generator, "name_hint": "哥特束柱"})
+	payload, err := json.Marshal(map[string]any{"format": "glb", "manifest": testManifest(f.t), "generator": generator, "name_hint": "哥特束柱",
+		"materials": testAssetMaterials, "source_revision_id": "ccrv_scene"})
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -642,14 +646,15 @@ func (f *fixture) modelAsset() (assetID, revisionID string) {
 }
 
 // The assistant finds a model by kind with enough to choose it, reads its
-// facts and thumbnail, and places two instances of the same revision.
+// facts and thumbnail, and places two instances of the same revision with
+// the materials the asset was saved with.
 func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
 	f, c, _, doc := visualScene(t, true)
 	consent := libraryConsent(t, f, c.ID)
 	assetID, rev := f.modelAsset()
 	instance := func(n int) map[string]any {
 		return map[string]any{"id": fmt.Sprintf("sobj_L%020d", n), "kind": "model_instance", "name": "束柱", "parent_id": nil, "order": n,
-			"transform": identityAt(float64(n)), "visible": true, "locked": false, "model": map[string]any{"content_revision_id": rev}}
+			"transform": identityAt(float64(n)), "visible": true, "locked": false, "model": map[string]any{"content_revision_id": rev}, "material_slots": testAssetMaterials}
 	}
 	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
 		func(r llmgateway.ProviderRequest) llmgateway.Result {
@@ -688,7 +693,7 @@ func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
 		t.Fatalf("search item %s", found)
 	}
 	if brief["name"] != "哥特束柱" || brief["mount"] != "floor" || brief["size_m"] == nil || brief["triangles"] == nil || brief["slots"] == nil || brief["parts"] != nil || brief["anchors"] != nil ||
-		fmt.Sprint(brief["params"]) != "[height]" || strings.Contains(found, "export const params") {
+		fmt.Sprint(brief["params"]) != "[height]" || !reflect.DeepEqual(brief["materials"], testAssetMaterials) || strings.Contains(found, "export const params") {
 		t.Fatalf("model brief %s", item["model"])
 	}
 
@@ -701,7 +706,7 @@ func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
 	if err := json.Unmarshal([]byte(result), &read); err != nil || read.ImageRevisionID != rev || read.ThumbnailOmitted != "" || strings.Contains(result, "export const params") {
 		t.Fatalf("read_asset %s %v", result, err)
 	}
-	if len(read.Model.ParamsSchema) != 1 || read.Model.Params["height"] != 2.0 || read.Model.Name != "哥特束柱" {
+	if len(read.Model.ParamsSchema) != 1 || read.Model.Params["height"] != 2.0 || read.Model.Name != "哥特束柱" || read.Model.Materials["stone"] == nil {
 		t.Fatalf("model facts %s", result)
 	}
 	if ok, _ := hasImage(s.request(3)); !ok {
@@ -722,6 +727,14 @@ func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
 	placed := 0
 	for _, o := range f.objectsOf(doc) {
 		if o.Kind == creativescene.KindModelInstance && o.Model != nil && o.Model.ContentRevisionID == rev {
+			got, err := json.Marshal(o.MaterialSlots)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var slots map[string]any
+			if err := json.Unmarshal(got, &slots); err != nil || !reflect.DeepEqual(slots, testAssetMaterials) {
+				t.Fatalf("instance %s has materials %s, the asset %v", o.ID, got, testAssetMaterials)
+			}
 			placed++
 		}
 	}
@@ -937,14 +950,14 @@ func TestToolsSayHowToFindAndPlaceModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"model"`) || strings.Contains(string(raw), `"scene"`) || !strings.Contains(search.Desc, "read_asset") || !strings.Contains(search.Desc, "edit_scene") {
+	if !strings.Contains(string(raw), `"model"`) || strings.Contains(string(raw), `"scene"`) || !strings.Contains(search.Desc, "read_asset") || !strings.Contains(search.Desc, "edit_scene") || !strings.Contains(search.Desc, "materials") {
 		t.Fatalf("search_assets %s / %s", search.Desc, raw)
 	}
 	edit, err := (&sceneTool{name: editSceneTool}).Info(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(edit.Desc, "kind:model") || !strings.Contains(edit.Desc, "model{content_revision_id}，可放多个实例") {
+	if !strings.Contains(edit.Desc, "kind:model") || !strings.Contains(edit.Desc, "materials 原样写进 material_slots") || !strings.Contains(edit.Desc, "可放多个实例") {
 		t.Fatal("edit_scene does not say how to place a library model")
 	}
 }

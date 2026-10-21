@@ -11,11 +11,13 @@ import { resolveSlot } from '../materials/resolve.ts'
 import { previewModels } from './cache.ts'
 
 // The asset viewer's 3D stage, loaded only when a model is opened: drag to
-// turn, scroll to zoom, double-click to go back. 「白模」 is the editor's clay;
-// 「默认材质」 is each slot's hinted preset in the material preview's room,
-// not anything a scene gave the model (materials are not saved with it).
+// turn, scroll to zoom, double-click to go back. 「材质」, where it opens like
+// the card thumbnail, is the materials the asset was saved with, a slot
+// without one resolving as in the editor, in the material preview's room;
+// 「白模」 is the editor's clay.
 
 type Manifest = components['schemas']['CreativeModelManifest']
+type Materials = components['schemas']['CreativeSceneMaterialSlots']
 type Look = 'clay' | 'material'
 type Orbit = ComponentRef<typeof OrbitControls>
 
@@ -34,8 +36,8 @@ function framing(manifest: Manifest) {
   return { position: position.toArray(), target: center.toArray(), near: distance / 100, far: distance * 20 }
 }
 
-export default function ModelPreview({ revision, manifest, title, thumbnail }: { revision: string; manifest: Manifest; title: string; thumbnail: string | null }) {
-  const [look, setLook] = useState<Look>('clay')
+export default function ModelPreview({ revision, manifest, materials, title, thumbnail }: { revision: string; manifest: Manifest; materials: Materials; title: string; thumbnail: string | null }) {
+  const [look, setLook] = useState<Look>('material')
   const [loaded, setLoaded] = useState<{ revision: string; parts: ModelParts | null } | null>(null)
   useEffect(() => {
     let live = true
@@ -68,7 +70,7 @@ export default function ModelPreview({ revision, manifest, title, thumbnail }: {
         ) : (
           <RoomLighting />
         )}
-        {parts && <Meshes parts={parts} manifest={manifest} look={look} />}
+        {parts && <Meshes parts={parts} manifest={manifest} materials={materials} look={look} />}
         <Controls controls={controls} target={view.target} />
       </Canvas>
       {!parts && thumbnail && <img className="v-model-still" src={thumbnail} alt={title} />}
@@ -77,7 +79,7 @@ export default function ModelPreview({ revision, manifest, title, thumbnail }: {
           白模
         </button>
         <button type="button" aria-pressed={look === 'material'} onClick={() => setLook('material')}>
-          默认材质
+          材质
         </button>
       </div>
       {look === 'material' && <p className="v-model-note">放进场景后可以换材质</p>}
@@ -85,7 +87,7 @@ export default function ModelPreview({ revision, manifest, title, thumbnail }: {
   )
 }
 
-function Meshes({ parts, manifest, look }: { parts: ModelParts; manifest: Manifest; look: Look }) {
+function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manifest: Manifest; materials: Materials; look: Look }) {
   const hints = useMemo(() => new Map(manifest.slots.map((s) => [s.id, s.hint])), [manifest])
   return (
     <group>
@@ -93,7 +95,7 @@ function Meshes({ parts, manifest, look }: { parts: ModelParts; manifest: Manife
         look === 'clay' ? (
           <mesh key={i} geometry={m.geometry} material={clayMaterial} />
         ) : (
-          <SlotMesh key={i} geometry={m.geometry} material={resolveSlot(m.slot, {}, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material} doubleSided castShadow={false} />
+          <SlotMesh key={i} geometry={m.geometry} material={resolveSlot(m.slot, materials, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material} doubleSided castShadow={false} />
         ),
       )}
     </group>

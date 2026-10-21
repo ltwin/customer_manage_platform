@@ -111,9 +111,10 @@ func TestCreativeSceneModelSaveToLibraryHTTP(t *testing.T) {
 	}
 	unitRev := scene.UnitRevs["object:"+id+":content"]
 
+	thumb := stageForHTTP(t, db, scope, "image", manifest)
 	save := func(change func(map[string]any)) *httptest.ResponseRecorder {
 		t.Helper()
-		p := map[string]any{"document_id": doc.ID, "object_id": id, "expected_object_rev": unitRev, "target": map[string]any{"title": "哥特束柱"}}
+		p := map[string]any{"document_id": doc.ID, "object_id": id, "expected_object_rev": unitRev, "thumbnail_upload_id": thumb, "target": map[string]any{"title": "哥特束柱"}}
 		change(p)
 		return post("/api/v1/creative/assets/from-scene-model", p)
 	}
@@ -131,6 +132,9 @@ func TestCreativeSceneModelSaveToLibraryHTTP(t *testing.T) {
 	want("missing group", save(func(p map[string]any) {
 		p["target"] = map[string]any{"title": "柱", "group_ids": []string{"cagr_missing"}}
 	}), 404, "not_found")
+	want("no thumbnail", save(func(p map[string]any) { delete(p, "thumbnail_upload_id") }), 400, "validation_failed")
+	want("thumbnail not an image", save(func(p map[string]any) { p["thumbnail_upload_id"] = stageForHTTP(t, db, scope, "model", manifest) }), 400, "validation_failed")
+	want("upload unavailable", save(func(p map[string]any) { p["thumbnail_upload_id"] = "ccup_missing" }), 409, "creative_upload_unavailable")
 
 	created := save(keep)
 	want("save", created, 201, "")
@@ -139,20 +143,22 @@ func TestCreativeSceneModelSaveToLibraryHTTP(t *testing.T) {
 		ContentRevisionID string `json:"content_revision_id"`
 		Reused            bool   `json:"reused"`
 	}
-	if err := json.Unmarshal(created.Body.Bytes(), &asset); err != nil || asset.ContentRevisionID != rev || asset.Reused {
+	if err := json.Unmarshal(created.Body.Bytes(), &asset); err != nil || asset.ContentRevisionID == rev || asset.Reused {
 		t.Fatalf("created %s", created.Body.String())
 	}
+	// The same model and materials again need no thumbnail: the upload was taken.
 	again := save(keep)
 	want("save again", again, 200, "")
 	if !strings.Contains(again.Body.String(), `"reused":true`) || !strings.Contains(again.Body.String(), asset.ID) {
 		t.Fatalf("reused %s", again.Body.String())
 	}
 
-	// Reading the asset gives the model without its code.
+	// Reading the asset gives the library copy without its code.
 	got := shootPlanningRequest(t, router, "GET", "/api/v1/creative/assets/"+asset.ID, token, "", "")
 	want("read asset", got, 200, "")
-	if !strings.Contains(got.Body.String(), `"kind":"model"`) || !strings.Contains(got.Body.String(), "code_sha256") || strings.Contains(got.Body.String(), "THREE.Group") {
-		t.Fatalf("asset read %s", got.Body.String())
+	if body := got.Body.String(); !strings.Contains(body, `"kind":"model"`) || !strings.Contains(body, "code_sha256") || strings.Contains(body, "THREE.Group") ||
+		!strings.Contains(body, `"materials":{}`) || !strings.Contains(body, `"source_revision_id":"`+rev+`"`) {
+		t.Fatalf("asset read %s", body)
 	}
 	list := shootPlanningRequest(t, router, "GET", "/api/v1/creative/assets?kind=model", token, "", "")
 	want("list models", list, 200, "")

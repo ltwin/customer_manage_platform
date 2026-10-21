@@ -23,8 +23,21 @@ const input = (patch: Partial<SaveInput> = {}): SaveInput => ({
 const intent = (expected: Record<string, unknown>) => ({ id: 'i', expected }) as unknown as Intent
 
 test('a model can be saved when the editor shows a settled, usable model', () => {
-  assert.deepEqual(saveTarget(input()), { objectID: objectID(1), contentRevisionID: 'ccrv_1', unitRev: '6', name: '哥特束柱' })
+  assert.deepEqual(saveTarget(input()), { objectID: objectID(1), contentRevisionID: 'ccrv_1', unitRev: '6', materials: {}, name: '哥特束柱' })
   assert.equal((saveTarget(input({ models: { ccrv_1: summary({ name_hint: null }) } })) as { name: string }).name, '柱子', 'no name hint: the object name')
+})
+
+test('the dialog freezes the materials it saves, and a refresh takes the new ones', () => {
+  const marble = { stone: { preset: 'marble@1', params: { scale: 1 } } }
+  const slots = { ...marble }
+  const frozen = saveTarget(input({ objects: [object(1, { model: { content_revision_id: 'ccrv_1' }, material_slots: slots })] }))
+  assert.ok(!('error' in frozen))
+  assert.deepEqual(frozen.materials, marble)
+  slots.stone = { preset: 'wood@1', params: {} }
+  assert.deepEqual(frozen.materials, marble, 'a later change in the editor does not reach what was frozen')
+  const painted = { stone: { preset: 'paint@1', params: {} } }
+  const next = saveTarget(input({ objects: [object(1, { model: { content_revision_id: 'ccrv_1' }, material_slots: painted })], base: { unit_revs: { [`object:${objectID(1)}:content`]: '9' } } as unknown as SceneDocument }))
+  assert.deepEqual(next, { objectID: objectID(1), contentRevisionID: 'ccrv_1', unitRev: '9', materials: painted, name: '哥特束柱' }, 'after a conflict: the new version with its materials')
 })
 
 test('each reason it cannot be saved, in the design table order', () => {
@@ -107,19 +120,4 @@ test('known summaries come last and never stand in for bytes', async () => {
   assert.deepEqual(downloads, ['ccrv_asset'], 'a known summary is no GLB: load() downloads')
   cache.settle(['ccrv_asset'])
   assert.equal(cache.known.getState().ccrv_asset, undefined, 'dropped once the server describes it')
-})
-
-test('a model placed from the library is copied on its first edit, never continued', async () => {
-  const { forkPlan } = await import('../src/creative-scene/modelEdits.ts')
-  const { ModelCache } = await import('../src/creative-scene/models/cache.ts')
-  const lone = [pillar]
-  assert.deepEqual(forkPlan(lone, objectID(1), 'ccnt_1', false, true), { baseContentID: undefined, scope: 'this', objectIDs: [objectID(1)] })
-  assert.deepEqual(forkPlan(lone, objectID(1), 'ccnt_1', false), { baseContentID: 'ccnt_1', scope: 'this', objectIDs: [objectID(1)] }, 'the scene\'s own model goes on')
-  const two = [pillar, object(2, { model: { content_revision_id: 'ccrv_1' } })]
-  assert.deepEqual(forkPlan(two, objectID(1), 'ccnt_1', true, true), { baseContentID: undefined, scope: 'all_instances', objectIDs: [objectID(1), objectID(2)] })
-  const cache = new ModelCache(async () => new ArrayBuffer(0))
-  assert.equal(cache.copied('ccnt_asset'), false)
-  cache.remember('ccrv_asset', summary({ content_id: 'ccnt_asset' }))
-  cache.settle(['ccrv_asset'])
-  assert.equal(cache.copied('ccnt_asset'), true, 'still a copy after the server describes it')
 })

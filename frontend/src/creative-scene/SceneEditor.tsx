@@ -39,6 +39,7 @@ import type { SceneJobLauncher } from './host/launcher.ts'
 import { iframeFactory, SandboxHost } from './sandbox/host.ts'
 import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
+import { renderMaterialThumbnail } from './library/thumbnail.ts'
 import { openScene } from './session.ts'
 import type { WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
@@ -110,6 +111,12 @@ function dragModel(asset: LibraryAsset): DragModel | null {
     mount: model.generator.mount,
     bounds: model.manifest.bounds,
   }
+}
+
+/** The materials an asset was saved with; one saved before they were kept has none. */
+function assetMaterials(asset: LibraryAsset): NonNullable<SceneObject['material_slots']> {
+  const payload = asset.content?.payload
+  return (payload && 'model' in payload ? payload.model.materials : undefined) ?? {}
 }
 
 export default function SceneEditor({
@@ -454,7 +461,7 @@ export default function SceneEditor({
     const placed = where.placed ?? handle.current?.snapAt(where.at, model)
     if (!placed) return
     modelCache.remember(model.revision, model.summary)
-    const o = newModelInstance(model.revision, asset.title, placed, objects)
+    const o = newModelInstance(model.revision, asset.title, placed, objects, assetMaterials(asset))
     if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
     select([o.id])
     // The pick was made in the drawer: keys go back to the editor, so Cmd+Z undoes it at once.
@@ -557,7 +564,18 @@ export default function SceneEditor({
   const saveModel = () => {
     const target = saveCheck(selected)
     if (!onSaveModel || 'error' in target) return
-    onSaveModel({ documentID, target, refresh: (currentRev, signal) => refreshSave(target.objectID, currentRev, signal) })
+    onSaveModel({ documentID, target, thumbnail: saveThumbnail, refresh: (currentRev, signal) => refreshSave(target.objectID, currentRev, signal) })
+  }
+  /** The card thumbnail of what a save keeps: the model with its materials, staged for the request. */
+  const saveThumbnail = async (target: SaveTarget, signal: AbortSignal): Promise<string> => {
+    const st = session.state
+    const manifest = modelSummaries(st.base?.models, modelCache.local.getState(), modelCache.known.getState())[target.contentRevisionID]?.manifest
+    if (!manifest) throw new Error('模型不可用')
+    const parts = await modelCache.load(target.contentRevisionID)
+    signal.throwIfAborted()
+    const png = renderMaterialThumbnail(parts, manifest, target.materials)
+    const upload = await uploadGenerated(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, { kind: 'staged' }, signal)
+    return upload.id
   }
   /** After a save conflict: re-read, and check the object again once the editor shows the new version. */
   const refreshSave = async (objectID: string, currentRev: string, signal: AbortSignal): Promise<SaveTarget | { error: string }> => {

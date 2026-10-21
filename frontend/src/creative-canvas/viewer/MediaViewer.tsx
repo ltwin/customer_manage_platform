@@ -23,7 +23,7 @@ import { cachedMediaTicket } from '../editor/media.ts'
 import { contentText } from '../editor/content.ts'
 import { clampPan, zoomAt, wheelZoom, type Zoom } from './zoom.ts'
 import { ViewerImageCache } from './imageCache.ts'
-import { modelManifest } from './modelInfo.ts'
+import { modelManifest, modelMaterials } from './modelInfo.ts'
 
 // three.js 只随模型的查看浮窗加载，资产库页和画布页平时不请求。
 const ModelPreview = lazy(
@@ -246,6 +246,7 @@ function ModelStage({ item }: { item: ViewerItem }) {
       <ModelPreview
         revision={item.content.id}
         manifest={manifest}
+        materials={modelMaterials(item.content)}
         title={item.title}
         thumbnail={thumbnail.url}
       />

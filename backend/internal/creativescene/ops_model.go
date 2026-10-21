@@ -207,10 +207,22 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 	if err != nil {
 		return err
 	}
+	base := op.BaseContentID
+	if base != "" {
+		// A library copy belongs to the library: an edit of an instance placed
+		// from it forks, whoever makes it.
+		copied, err := isLibraryCopy(ctx, tx, base)
+		if err != nil {
+			return err
+		}
+		if copied {
+			base = ""
+		}
+	}
 	draft := creativecontent.Draft{Kind: modelKind, DeclarationID: glbStaged.DeclarationID, Payload: creativecontent.Payload{Model: payload}}
 	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: glbBlob.BlobID}, {Role: "thumbnail", BlobID: thumbBlob.BlobID}}
-	r, err := creativecontent.WriteModelAndRetain(ctx, tx, draft, op.BaseContentID, objects, env.retain)
-	if op.BaseContentID != "" && (errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativeops.ErrValidation)) {
+	r, err := creativecontent.WriteModelAndRetain(ctx, tx, draft, base, objects, env.retain)
+	if base != "" && (errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativeops.ErrValidation)) {
 		return invalid("base_content_id %s 不是本账号的模型", op.BaseContentID)
 	}
 	if err != nil {
@@ -225,6 +237,13 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 	env.refs[op.Ref] = r
 	env.order = append(env.order, op.Ref)
 	return nil
+}
+
+// isLibraryCopy reports whether a content is a library copy, the only kind
+// whose revision carries source_revision_id. Copies never gain revisions and
+// nothing becomes one, so the answer needs no lock.
+func isLibraryCopy(ctx context.Context, tx store.TxAccountScope, contentID string) (bool, error) {
+	return tx.Exists(ctx, "creative_content_revisions", "content_id=$2 AND payload->'model'->>'source_revision_id' IS NOT NULL", contentID)
 }
 
 // lockStaged locks a staged upload of the given declared kind and reads the

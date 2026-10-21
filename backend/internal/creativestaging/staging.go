@@ -62,6 +62,13 @@ func Consume(ctx context.Context, tx store.TxAccountScope, s Staged, documentID 
 	return err
 }
 
+// ConsumeForAsset marks a locked staged row as used by a new library asset,
+// whose content revision now holds what it took from it.
+func ConsumeForAsset(ctx context.Context, tx store.TxAccountScope, s Staged, assetID string) error {
+	_, err := tx.Update(ctx, "creative_upload_candidates", "state='applied',content_id=NULL,content_revision_id=NULL,adopted_target_kind='asset',adopted_target_id=$2,adopted_target_revision=1,revision=revision+1,updated_at=clock_timestamp()", "id=$3", assetID, s.ID)
+	return err
+}
+
 // Title is the default node title for an uploaded file: the name without its
 // last extension, at most 200 characters.
 func Title(name string) string {

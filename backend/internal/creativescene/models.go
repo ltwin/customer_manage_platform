@@ -71,11 +71,15 @@ type Generator struct {
 
 // ModelPayload is payload.model of model content. The staged form (written by
 // the media worker) has no generator; scenes reference only the complete form.
+// A library copy, written only by SaveModelToLibrary, also carries the
+// instance's materials and the revision it was copied from.
 type ModelPayload struct {
-	Format    string               `json:"format"`
-	Generator *Generator           `json:"generator,omitempty"`
-	Manifest  creativeglb.Manifest `json:"manifest"`
-	NameHint  string               `json:"name_hint,omitempty"`
+	Format           string                  `json:"format"`
+	Generator        *Generator              `json:"generator,omitempty"`
+	Manifest         creativeglb.Manifest    `json:"manifest"`
+	NameHint         string                  `json:"name_hint,omitempty"`
+	Materials        map[string]MaterialSlot `json:"materials,omitzero"`
+	SourceRevisionID string                  `json:"source_revision_id,omitempty"`
 }
 
 func decodeModelPayload(raw json.RawMessage) (ModelPayload, bool) {

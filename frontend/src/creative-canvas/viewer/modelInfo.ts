@@ -1,10 +1,12 @@
 import type { components } from '../../api/schema'
+import { materialEntry } from '../../creative-scene/materials/catalog.ts'
 import type { Content } from '../editor/api.ts'
 
-// 模型资产的信息格式化：检查器、查看浮窗共用。不依赖 three，资产库页照常不加载 3D 引擎。
+// 模型资产的信息格式化：检查器、查看浮窗共用。不依赖 three（材质目录只是 JSON），资产库页照常不加载 3D 引擎。
 
 type Manifest = components['schemas']['CreativeModelManifest']
 type Generator = components['schemas']['CreativeModelGenerator']
+type Materials = components['schemas']['CreativeSceneMaterialSlots']
 
 export const mountLabel: Record<Generator['mount'], string> = {
   floor: '落地',
@@ -19,7 +21,8 @@ export type ModelInfo = {
   /** 宽 × 高 × 深，米，保留两位。 */
   size: string
   triangles: string
-  slots: { id: string; hint?: string }[]
+  /** 槽位、提示，以及资产所配材质的名称（没配为空）。 */
+  slots: { id: string; hint?: string; material?: string }[]
   params: { key: string; label: string; value: string }[]
 }
 
@@ -30,17 +33,28 @@ export function modelManifest(content: Content | undefined): Manifest | null {
     : null
 }
 
+/** 资产存入时所配的材质；修订 v12 之前存的模型资产没有，按空对待。 */
+export function modelMaterials(content: Content | undefined): Materials {
+  return content?.kind === 'model' && 'model' in content.payload
+    ? (content.payload.model.materials ?? {})
+    : {}
+}
+
 /** 完整形态的模型才有信息；暂存形态和其他类型返回 null。 */
 export function modelInfo(content: Content | undefined): ModelInfo | null {
   if (content?.kind !== 'model' || !('model' in content.payload)) return null
   const { manifest, generator, name_hint } = content.payload.model
   if (!generator) return null
+  const materials = modelMaterials(content)
   return {
     name: name_hint ?? '',
     mount: mountLabel[generator.mount],
     size: modelSize(manifest),
     triangles: manifest.triangles.toLocaleString('zh-CN'),
-    slots: manifest.slots,
+    slots: manifest.slots.map((s) => {
+      const preset = materials[s.id]?.preset
+      return preset ? { ...s, material: materialEntry(preset)?.label ?? preset } : s
+    }),
     params: Object.entries(generator.params_schema)
       .map(([key, spec]) => ({
         key,
@@ -72,7 +86,9 @@ export function modelRows(info: ModelInfo): [string, string][] {
   if (info.slots.length)
     rows.push([
       '材质槽',
-      info.slots.map((s) => (s.hint ? `${s.id}（${s.hint}）` : s.id)).join('、'),
+      info.slots
+        .map((s) => (s.hint ? `${s.id}（${s.hint}）` : s.id) + (s.material ? `：${s.material}` : ''))
+        .join('、'),
     ])
   for (const p of info.params) rows.push([p.label, p.value])
   return rows
