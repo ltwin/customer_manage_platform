@@ -1,6 +1,6 @@
 {
   "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-model-library",
   "kind": "feature",
   "assurance": "governed",
@@ -43,7 +43,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-20T14:52:30.611Z",
-  "updatedAt": "2026-10-20T19:29:12.282Z",
+  "updatedAt": "2026-10-21T03:19:03.422Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -290,6 +290,213 @@
       "snapshotRef": {
         "version": 2,
         "digest": "137cd02d3e8f3bb20c36b0f73fdaac4b382ef40b55176ac4ce38328b3163b98a"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-10-21T03:19:03.300Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "按 owner 要求只跑定向检查：前端全量单测与构建、全量 e2e 留给合并前的 make check-merge；creative-library e2e（AC-7）本次未重跑，相关文件自上次验证后未改；性能未做同条件基线与阈值测量（查重改为先取模型资产再按主键读修订，成本随资产数增长，未在大数据量下实测；库缩略图渲染时延未测）；Esc 取消拖入由拖到别处松手替代验证；选中框贴合未做像素断言；画布资产抽屉里打开模型与资产库页共用查看浮窗组件，未单独 e2e",
+        "coverage": [
+          {
+            "criterionId": "AC-8d2999d4b73f",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-1458a62d5a47",
+            "status": "verified",
+            "evidence": "scene e2e「C6 save to library」：请求带缩略图上传，库副本 materials 等于实例材质、来源为场景修订，缩略图 256×256 且与白模缩略图像素不同；Go creativescene TestSaveModelToLibraryCopiesModelAndMaterials（新内容、同一 GLB blob、缩略图来自上传、上传标为资产采用）、httpapi TestCreativeSceneModelSaveToLibraryHTTP；卡片显示缩略图见 creative-assets e2e C6-model-preview"
+          },
+          {
+            "criterionId": "AC-4755a50af68e",
+            "status": "verified",
+            "evidence": "scene e2e「C6 save to library」同材质再存提示「这个模型已在资产库中，已归入「柱子」」、资产数不变；Go 同材质的另一实例 200、只追加分组、上传仍为 pending；从库副本放入的实例再存同材质 200"
+          },
+          {
+            "criterionId": "AC-af5f94093234",
+            "status": "verified",
+            "evidence": "scene e2e 换木纹后再存新建资产、两张缩略图像素不同；Go 换材质 201、新库副本 materials 为新材质、来源仍为场景修订"
+          },
+          {
+            "criterionId": "AC-89c4dd5d1f24",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-440a78179d56",
+            "status": "verified",
+            "evidence": "scripts/creative-scene-library.test.ts 判断表逐行（本次重跑）；菜单与属性栏显示原因（代码走查 SceneEditor/Properties/ContextMenu，本次未改）"
+          },
+          {
+            "criterionId": "AC-5718736b16fe",
+            "status": "verified",
+            "evidence": "scene e2e「C6 save to library」冲突段：弹框打开期间助手改材质，409 后提示「模型已更新为最新版本，确认后再存」，再存的是新材质、新操作 ID、重新渲染的缩略图；单测冻结与刷新含材质、whenShown；Go 409 带 object:<id>:content"
+          },
+          {
+            "criterionId": "AC-4e166457a2bf",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-33844aabdfbc",
+            "status": "verified",
+            "evidence": "scene e2e「C6 place from the library」：光标下地面、选中、名称为资产标题、material_slots 等于资产 materials；「C6 drag in」拖入同样带材质；吸附单测 creative-scene-snap.test.ts"
+          },
+          {
+            "criterionId": "AC-25fe28f27a33",
+            "status": "verified",
+            "evidence": "scene e2e 断言属性栏「代码模型：柱」；known 摘要单测。选中框贴合靠已知 manifest，代码走查，未做像素断言"
+          },
+          {
+            "criterionId": "AC-06cdc634feca",
+            "status": "verified",
+            "evidence": "scene e2e「C6 place from the library」一次 Cmd+Z 移除（本次重跑）"
+          },
+          {
+            "criterionId": "AC-ce4cbe1ea629",
+            "status": "verified",
+            "evidence": "scene e2e 抽屉 hidden（本次重跑）"
+          },
+          {
+            "criterionId": "AC-256328d3f5fe",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-65d36fc3ad4e",
+            "status": "verified",
+            "evidence": "scene e2e「C6 drag in」落在方块顶面、虚影像素变化（本次重跑）；snap 单测覆盖墙挂朝向与吊顶"
+          },
+          {
+            "criterionId": "AC-d2b4337df425",
+            "status": "verified",
+            "evidence": "snap 单测兜底；e2e 吊灯不埋进物体（兜底细化见 design，待 owner 确认 spec 措辞）"
+          },
+          {
+            "criterionId": "AC-8bc7ba7c7bc1",
+            "status": "verified",
+            "evidence": "scene e2e「C6 drag in」：一次修订、连续拖入抽屉保持打开（本次重跑）；撤销沿用同一 edit 路径"
+          },
+          {
+            "criterionId": "AC-46eba54736ea",
+            "status": "verified",
+            "evidence": "scene e2e 拖到抽屉上松手不放入、虚影消失（本次重跑）；Esc 由浏览器以 dragend 结束，同一路径，Playwright 无法模拟 Esc"
+          },
+          {
+            "criterionId": "AC-dbf94b8946ba",
+            "status": "verified",
+            "evidence": "scene e2e「C6 copy semantics」：换槽位材质只改实例；改参数时编辑器照 R4 带库副本内容，服务端分叉出新内容；资产修订与参数不变、库副本只有一个修订；再放入是存入时的模型和资产材质；重新打开页面后改另一实例仍分叉。Go TestLibraryCopyIsNeverContinued：编辑器的 commit_model 与助手 write_model 的烘焙完成都新建内容，库副本修订数为 1，普通模型照旧追加"
+          },
+          {
+            "criterionId": "AC-e0c85d831b46",
+            "status": "verified",
+            "evidence": "creative-assets e2e C6-model-preview：打开即「材质」，石材槽按资产的红漆着色（红色像素占比 > 1%），切到「白模」无红色、像素不同；拖动旋转像素变化；材质槽一行为「stone（stone）：漆面、trim（stone）」；下载 .glb 走 original。画布资产抽屉打开模型用同一查看浮窗组件（代码走查）"
+          },
+          {
+            "criterionId": "AC-b054561488aa",
+            "status": "verified",
+            "evidence": "creative-assets e2e C6-model-preview 打开前无 three 请求（本次重跑）；scene e2e「opening the canvas page loads no three.js」（本次重跑，modelInfo 新引用的材质目录不含 three）"
+          },
+          {
+            "criterionId": "AC-48f2cf78594d",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-422247fa425a",
+            "status": "verified",
+            "evidence": "creative-library e2e 第 12 段菜单无放入项（上次验证 700ddb39 时通过，相关文件此后未改，本次未重跑）；选参考与填充过滤为代码走查"
+          },
+          {
+            "criterionId": "AC-257f833d12ad",
+            "status": "verified",
+            "evidence": "creative-library e2e 第 12 段拖到画布节点数不变并出现提示（同上，未重跑，相关文件未改）"
+          },
+          {
+            "criterionId": "AC-9a0ad68a4d41",
+            "status": "verified",
+            "evidence": "代码走查 BatchBar/assetMenu/AssetInfoPanel/useOrganization；creative-assets e2e 浮窗无「放入项目…」（本次重跑）；单测 validatePlacementAssets"
+          },
+          {
+            "criterionId": "AC-cbe6bc23be06",
+            "status": "verified",
+            "evidence": "Go creativecanvas TestModelAssetIsRefusedOnTheCanvas（本次 check-go creativecanvas 全绿）"
+          },
+          {
+            "criterionId": "AC-f7680c722149",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-b0cd7393dd90",
+            "status": "verified",
+            "evidence": "Go TestModelAssetsListFilterAndTrashWithoutCode；httpapi 资产读取与列表断言无代码、带 materials 与 source_revision_id（本次重跑）"
+          },
+          {
+            "criterionId": "AC-d28cb4b70f2d",
+            "status": "verified",
+            "evidence": "同上，按内容修订读取仍带代码、长文字资产读取完整"
+          },
+          {
+            "criterionId": "AC-90ef25aa3f06",
+            "status": "verified",
+            "evidence": "生成的 schema.d.ts 中三个请求体仍引用 CreativeContentPayload，GeneratorInput.code 必填；generate-check 通过"
+          },
+          {
+            "criterionId": "AC-6e31d5755090",
+            "status": "verified",
+            "evidence": "creativeagent asset_lookup_test 断言搜索与 read_asset 不含代码（本次重跑）"
+          },
+          {
+            "criterionId": "AC-bbc0e48a8a82",
+            "status": "verified",
+            "evidence": "creativeagent TestAssistantFindsReadsAndPlacesALibraryModel：search_assets 找到、edit_scene 放入两个实例、引用同一修订、两个实例的 material_slots 都等于资产 materials"
+          },
+          {
+            "criterionId": "AC-347e2ffbc92b",
+            "status": "verified",
+            "evidence": "见下方子项"
+          },
+          {
+            "criterionId": "AC-238472d3343a",
+            "status": "verified",
+            "evidence": "creativeagent TestAssistantFindsReadsAndPlacesALibraryModel 要点含名称、尺寸、挂载、面数、槽位、参数名与 materials，不含部件、挂点与宽高；creativecontent TestModelFactsOfCompleteAndStagedForms（场景烘焙的模型 materials 为空对象）；工具说明测试 TestToolsSayHowToFindAndPlaceModels"
+          },
+          {
+            "criterionId": "AC-53ef19d8a906",
+            "status": "verified",
+            "evidence": "同上，read_asset 完整信息带 materials 与缩略图、与 write_model 一致；超限省略见 TestModelFactsFitOneResult；creativemedia TestAgentImageOfAModelIsItsThumbnail"
+          },
+          {
+            "criterionId": "AC-baab2714e6e1",
+            "status": "verified",
+            "evidence": "creativeagent TestReadingAModelWithoutItsThumbnail 三种情形；历史里缩略图读不到或被省略仍保留模型信息（TestModelFactsOutliveTheirThumbnail、TestEarlierModelReadWithAnUnreadableThumbnail）"
+          },
+          {
+            "criterionId": "AC-69b8651938af",
+            "status": "verified",
+            "evidence": "store TestCreativeAssetModelMigrationAddsKindAndRefusesLossyRollback（本次重跑通过）；修订 v12 无新迁移"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "修订 v12 的 4.1–4.5 完成（a57e3e8d）。后端 check-go：creativescene、creativelibrary、creativestaging、httpapi、creativecontent、creativeagent、creativecanvas 全绿，generate-check 通过；迁移测试重跑通过。前端 tsc 通过、改动文件 oxlint 通过、相关 8 个单测文件 170 项全绿；e2e：scene 的 C6 四个用例与「画布页不加载 three.js」、assets 的 C6-model-preview 全绿。影响面：commit_model（编辑器烘焙与助手烘焙完成两条路径）、ModelPayload（完整形态判断与场景读取）、ModelFactsOf（搜索要点与 read_asset）、查重与 ConsumeForAsset（仅存入）、newModelInstance 与 forkPlan（编辑器放入与改参数）、sandbox 缩略图导出（烘焙与库缩略图）、modelInfo（信息面板、检查器、查看浮窗），均由上述包测试与 e2e 覆盖。契约与行为规格增量与实现一致。待 owner 决定：吸附兜底细化后 AC-3b「没有合适的表面」的规格措辞。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f14835afce6e9f8c6cf8304b0c14f42b5d7adc2a8e06b7662e4c1bbd762e9e6e"
       }
     }
   ],
