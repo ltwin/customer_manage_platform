@@ -60,7 +60,9 @@
 
 ## 8. 删除旧管线与静态检查
 
-- [ ] 8.1 `scripts/creative-scene-shading.test.ts`：TypeScript AST 检查标识符、导入路径、drei 白名单，字符串里查 GLSL 特征，fork 豁免用写死的路径清单；内置违规样例和「注释里提到不报」样例。删除残余的 WebGL 写法（`lookAlongZ`、`EffectComposer`、`three-stdlib` 的 `Sky` 等），跟随修改其余单测。完成判据：`make check-frontend` 通过；把一个违规样例临时放进 `frontend/src` 时检查失败（只在本地验证，不提交）
+- [x] 8.1 `scripts/creative-scene-shading.test.ts`：TypeScript AST 检查标识符、导入路径、drei 白名单，字符串里查 GLSL 特征，fork 豁免用写死的路径清单；内置违规样例和「注释里提到不报」样例。删除残余的 WebGL 写法（`lookAlongZ`、`EffectComposer`、`three-stdlib` 的 `Sky` 等），跟随修改其余单测。完成判据：`make check-frontend` 通过；把一个违规样例临时放进 `frontend/src` 时检查失败（只在本地验证，不提交）
+  - 完成记录：`make check-frontend` 通过（lint、build、744 个单测）；临时在 `frontend/src` 放一个含 `ShaderMaterial` 与 GLSL 字符串的样例时检查失败，报出文件、行号和规则（只在本地验证，已删除）。`frontend/src` 现有代码零命中，残余的 WebGL 写法在前面各任务里已删净。
+  - 偏差：`lines/` 规则放行三个不含着色器的几何模块（`LineSegmentsGeometry`、`LineGeometry`、`WireframeGeometry2`），`lines/webgpu/LineSegments2` 本身依赖它们；豁免清单只有 `render/nodes/GTAONode.js`（天空没有 fork，见 3.2）。
 
 ## 实施中的测试调整
 
