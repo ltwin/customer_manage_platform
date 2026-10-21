@@ -1,6 +1,6 @@
 {
   "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
-  "revision": 12,
+  "revision": 13,
   "id": "scene-model-library",
   "kind": "feature",
   "assurance": "governed",
@@ -41,9 +41,9 @@
       "data:模型资产"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-20T14:52:30.611Z",
-  "updatedAt": "2026-10-21T03:24:04.473Z",
+  "updatedAt": "2026-10-21T03:24:26.994Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -744,6 +744,10 @@
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-21T03:24:26.834Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
