@@ -58,7 +58,9 @@ function Editor({host}) {
     : React.createElement('p', {id:'closed'}, 'closed');
 }
 function WithHost() {
-  return React.createElement(Editor, {host: useSceneHost('qa-account').launcher});
+  const launcher = useSceneHost('qa-account').launcher;
+  window.__launcher = launcher;
+  return React.createElement(Editor, {host: launcher});
 }
 const App = new URLSearchParams(location.search).has('host') ? WithHost : Editor;
 createRoot(document.getElementById('root')).render(React.createElement(StrictMode, null, React.createElement(App)));
@@ -3698,12 +3700,23 @@ await check('fallback: a browser with neither WebGPU nor WebGL2 says so and clai
 
 // --- R1 AC-R1-5: a lost device (render/gpu.ts test hooks) -------------------------
 
+/** host/launcher.ts recoverEveryMs: after a device loss the page tries for a device again no sooner. */
+const recoverWaitMs = 10_000
+
 await check('device loss: the viewport draws again on a new device; the selection, the view and the edits stay', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)
   const id = await addBox(page, server)
   await saved(page)
-  const { box } = await viewportCenter(page)
+  // A second box on its way to the server when the device goes: the edit is outside the Canvas and still goes out.
+  let release
+  server.hold = new Promise((resolve) => (release = resolve))
+  const sent = server.commands.length
+  const { x, y, box } = await viewportCenter(page)
+  await page.mouse.move(x + 140, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '方块' }).click()
+  await waitFor(async () => (await page.getByRole('treeitem', { name: /方块/ }).count()) === 2, 'the second box shows')
   const before = await settledShot(page, box)
   const view = await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('creative-scene-view:'))))
   const old = await page.locator('.cc-scene-editor canvas').elementHandle()
@@ -3716,6 +3729,11 @@ await check('device loss: the viewport draws again on a new device; the selectio
   assert.equal(await page.getByRole('treeitem', { selected: true }).count(), 1, 'still selected')
   assert.equal(await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('creative-scene-view:')))), view, 'the same view')
   assert.ok(server.object(id), 'the box is in the scene')
+  server.hold = null
+  release()
+  await waitFor(() => server.commands.length === sent + 1, 'the held edit went out')
+  await saved(page)
+  assert.equal(server.scene.objects.filter((o) => o.primitive?.builtin?.startsWith('box')).length, 2, 'both boxes saved')
   assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
   // A device that keeps failing: the third loss within 10 seconds stops trying.
   for (let i = 0; i < 2; i++) {
@@ -3725,6 +3743,83 @@ await check('device loss: the viewport draws again on a new device; the selectio
     await waitFor(async () => !(await canvas.evaluate((c) => c.isConnected)), 'gone')
   }
   await page.getByRole('alert').filter({ hasText: '渲染设备不可用，请刷新页面' }).waitFor()
+  await context.close()
+})
+
+await check('device loss: render_view and export_shots lost mid-way upload nothing, go back to the queue and finish on a later try', async () => {
+  const server = new SceneServer()
+  referenceScene(server, 'noon')
+  const { context, page, errors } = await open(server, { query: '?host=1' })
+  await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+  const cam = 'sobj_shot00000000000000000'
+  const jobs = [
+    { kind: 'render_view', request: { preset: 'overview', mode: 'clay' }, after: 0 },
+    // Lost after the second of three images: none of them may go up.
+    { kind: 'export_shots', request: { camera_object_ids: [cam], passes: ['clay', 'line', 'lit'], canvas_id: 'ccv_qa', scene_node_id: 'cwnode_qa' }, after: 2 },
+  ]
+  for (const [n, j] of jobs.entries()) {
+    const id = `csj_lost${n}`
+    const job = (attempt) => ({ id, document_id: DOC, kind: j.kind, request: j.request, attempt, claim_token: `tok_${id}_${attempt}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' })
+    await page.evaluate((after) => window.__sceneGPU.loseNext('offscreen', after), j.after)
+    const uploads = server.uploads.size
+    server.claimable = [job(0)]
+    await page.evaluate(() => window.__invalidate())
+    await waitFor(() => server.claimable.length === 0, `${j.kind}: claimed`, 10_000)
+    await waitFor(async () => (await page.evaluate(() => window.__launcher.store.getState().holding)) === null, `${j.kind}: given back`, 120_000)
+    assert.equal(await page.evaluate(() => window.__sceneGPU.armed.size), 0, `${j.kind}: the device was lost`)
+    assert.equal(server.completes.filter((c) => c.id === id).length, 0, `${j.kind}: not reported, the lease runs out`)
+    assert.equal(server.uploads.size, uploads, `${j.kind}: nothing went up`)
+    // The lease has run out: the job is queued again. The page waits 10 seconds from the loss before it tries for a device.
+    server.claimable = [job(1)]
+    await page.evaluate(() => window.__invalidate())
+    await sleep(1500)
+    assert.equal(server.claimable.length, 1, `${j.kind}: not claimed again at once`)
+    await sleep(recoverWaitMs)
+    await page.evaluate(() => window.__invalidate())
+    await waitFor(() => server.completes.some((c) => c.id === id), `${j.kind}: finished on the next try`, 120_000)
+    assert.equal(server.completes.find((c) => c.id === id).payload.outcome, 'succeeded')
+  }
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
+})
+
+await check('device loss: a manual export lost while drawing says so, places nothing, and goes through on a retry', async () => {
+  const server = new SceneServer()
+  referenceScene(server, 'noon')
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  await page.evaluate(() => window.__sceneGPU.loseNext('offscreen', 1))
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  // The editor's notice line, the dialog kept open for the retry.
+  await page.getByText('渲染设备暂时不可用，请重试').waitFor({ timeout: 120_000 })
+  assert.equal(server.exports.length, 0, 'nothing placed')
+  assert.equal(server.uploads.size, 0, 'nothing uploaded')
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'the retry goes through', 120_000)
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
+})
+
+await check('device loss: the asset card thumbnail drawn on a device that is lost is drawn again on a new one', async () => {
+  const server = new SceneServer()
+  const model = server.seedModel()
+  const pillar = 'sobj_P00000000000000000001'
+  server.seedInstance(pillar, model, 0, '柱', { stone: { preset: 'marble@1', params: {} } })
+  const { context, page, errors } = await open(server, { query: '?library=1' })
+  await page.evaluate(() => window.__sceneGPU.loseNext('thumbnail', 0))
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  await page.getByRole('button', { name: '存入资产库…' }).click()
+  const dialog = page.getByRole('dialog', { name: '存入个人资产库' })
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await dialog.waitFor({ state: 'detached', timeout: 60_000 })
+  await page.locator('#notice').filter({ hasText: '已存入资产库' }).waitFor()
+  assert.equal(await page.evaluate(() => window.__sceneGPU.armed.size), 0, 'the first device was lost')
+  const thumbnail = server.uploadBytes.get(server.saves[0].payload.thumbnail_upload_id)
+  assert.deepEqual(pngSize(thumbnail), { width: 256, height: 256 })
+  assert.ok((await pixelDiff(page, await clayThumbnail(page), thumbnail)) > 0.02, 'the materials drawn, not an empty card')
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
   await context.close()
 })
 

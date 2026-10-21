@@ -174,6 +174,11 @@ export const gpuTestHooks = {
     }
     return n
   },
+  armed: new Map<Role, number>(),
+  /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
+  loseNext(role: Role, afterCaptures = 0): void {
+    gpuTestHooks.armed.set(role, afterCaptures)
+  },
 }
 // The e2e fixture page sets __sceneTest before the editor loads.
 if ((globalThis as { __sceneTest?: boolean }).__sceneTest) Object.assign(globalThis, { __sceneGPU: gpuTestHooks })
@@ -245,6 +250,11 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
   }
   const hook = { role, lose: (afterCaptures = 0) => device.loseAfter(afterCaptures, loseNow) }
   gpuTestHooks.live.add(hook)
+  const armed = gpuTestHooks.armed.get(role)
+  if (armed !== undefined) {
+    gpuTestHooks.armed.delete(role)
+    hook.lose(armed)
+  }
 
   const frame = () => {
     const f = internals._nodes?.nodeFrame
