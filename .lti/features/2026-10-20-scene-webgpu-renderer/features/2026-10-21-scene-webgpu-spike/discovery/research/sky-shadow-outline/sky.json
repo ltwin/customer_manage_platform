@@ -1,0 +1,65 @@
+{
+  "noon-clay-toward": {
+    "mean": 0.2599270833333333,
+    "over8": 0,
+    "max": 1
+  },
+  "noon-clay-away": {
+    "mean": 0.3373965277777778,
+    "over8": 0,
+    "max": 1
+  },
+  "noon-lit-toward": {
+    "mean": 0.2888104166666667,
+    "over8": 0,
+    "max": 1
+  },
+  "noon-lit-away": {
+    "mean": 0.22434722222222223,
+    "over8": 0,
+    "max": 1
+  },
+  "dusk-clay-toward": {
+    "mean": 0.31219930555555553,
+    "over8": 0,
+    "max": 1
+  },
+  "dusk-clay-away": {
+    "mean": 0.3022048611111111,
+    "over8": 0,
+    "max": 1
+  },
+  "dusk-lit-toward": {
+    "mean": 0.06496041666666667,
+    "over8": 0,
+    "max": 1
+  },
+  "dusk-lit-away": {
+    "mean": 0.002051388888888889,
+    "over8": 0,
+    "max": 1
+  },
+  "env noon": {
+    "mean": 16.166143981481483,
+    "over8": 0.8798388888888888,
+    "max": 199
+  },
+  "env dusk": {
+    "mean": 16.138402777777777,
+    "over8": 0.8798388888888888,
+    "max": 129
+  },
+  "errors": [],
+  "env spheres only": {
+    "noon": {
+      "mean": 0.281,
+      "over8": 0.0,
+      "max": 1
+    },
+    "dusk": {
+      "mean": 0.048,
+      "over8": 0.0,
+      "max": 1
+    }
+  }
+}

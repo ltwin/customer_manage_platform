@@ -1,12 +1,12 @@
 {
   "uid": "08a60d92-9939-45f9-b4d4-94b2e0f91d4c",
-  "revision": 2,
+  "revision": 9,
   "id": "scene-webgpu-spike",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-webgpu-renderer",
   "designBinding": {
-    "version": 1,
+    "version": 2,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -23,28 +23,177 @@
     ],
     "delivers": []
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-21T07:35:40.057Z",
-  "updatedAt": "2026-10-21T07:55:06.276Z",
+  "updatedAt": "2026-10-21T10:49:22.422Z",
   "risk": {
     "factors": []
   },
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-21T07:55:06.180Z",
+      "at": "2026-10-21T10:36:03.050Z",
       "contentHash": "a18f3c32a5480378"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-21T07:55:06.180Z",
+      "at": "2026-10-21T10:36:03.050Z",
       "contentHash": "0f973173957f656f"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-21T07:55:06.180Z",
+      "contentHash": "a18f3c32a5480378",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-21T07:55:06.180Z",
+      "contentHash": "0f973173957f656f",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "9bc7c651cfc13ac35f723ba7f211b9c4d92d0833",
+    "at": "2026-10-21T07:56:08.074Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5ab6972733603d073b8e78ce03b3e5a435997c1e1cb3334dc909a785e51c57c7"
+    },
+    "preExisting": [
+      ".lti/snapshots/5ab6972733603d073b8e78ce03b3e5a435997c1e1cb3334dc909a785e51c57c7.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-21T10:40:15.895Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 声明 checks；按约定只跑定向 e2e 与 oxlint，未跑 make check-frontend 的 build 与单测（R0 不改 frontend/src）。AC-R0-2 的导出耗时按场景记录三张合计，未拆分到每种导出。研究证据 57 MB（基线 13 MB 在 30 MB 规则内），合回方式待 owner 决定",
+        "coverage": [
+          {
+            "criterionId": "AC-672dadd2f978",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 的 baseline: 用例 2026-10-21 重跑通过（6 组 27 张图，17.6 s）；常规用例 reference scenes: 通过；场景 JSON 在 frontend/scripts/fixtures/scene-reference/，图与 baseline.json 在 discovery/research/baseline/"
+          },
+          {
+            "criterionId": "AC-05526536998f",
+            "status": "verified",
+            "evidence": "discovery/research/baseline.md「视口帧时间」四种模式的平均/p95/最大与 baseline/perf.json；「导出」表按场景记录三种导出的合计耗时（未拆到单张）；环境表注明 Mac16,8、macOS 26.5、Chromium 145.0.7632.6"
+          },
+          {
+            "criterionId": "AC-e27039ee7b73",
+            "status": "verified",
+            "evidence": "discovery/research/ 下 integration、materials、sky-shadow-outline、gbuffer-aa、realtime-gi、high-resolution、environment 七篇；summary.md 给出未决 1、3、4、5、6、8、9 的建议、未决 9 的选项与代价、R1 两阶段对照阈值"
+          },
+          {
+            "criterionId": "AC-d2e2e463d721",
+            "status": "verified",
+            "evidence": "git diff develop --name-only：frontend/scripts 7 个文件（e2e 与 fixtures），其余在 R0 目录（另有 lti apply 写入的 .lti/snapshots 元数据）；frontend/src、vite.config.ts、package.json、index.html 无差异；oxlint 退出码 0"
+          },
+          {
+            "criterionId": "AC-709a001a9f70",
+            "status": "verified",
+            "evidence": "修订草稿呈给 owner 并获批准；lti epic revise 记录 v2（develop 2f2cf577）；R0 已合入 develop 并重新 bind 到 v2，owner 重新批准方案（0d49b148）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "5 条验收标准逐条核对满足；改动范围与 design 挂载点一致（spike 原型按任务 5.2 移入 R0 目录，故显示 untouched）；定向 e2e：reference scenes、calibration、C4 export、C5 AC-6、baseline 均通过，oxlint 无错误；契约与 living spec 无 delta",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "55fc2740ed5d960fb38384f1ed52ec20e9f1826b80099131118357006313b8ac"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-10-21T10:48:52.302Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 声明 checks；按约定只跑定向 e2e 与 oxlint，未跑 make check-frontend 的 build 与单测（R0 不改 frontend/src）。AC-R0-2 的导出耗时按场景记录三张合计，未拆分到每种导出",
+        "coverage": [
+          {
+            "criterionId": "AC-672dadd2f978",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 的 baseline: 用例 2026-10-21 重跑通过（6 组 27 张图，17.6 s）；常规用例 reference scenes: 通过；场景 JSON 在 frontend/scripts/fixtures/scene-reference/，图与 baseline.json 在 discovery/research/baseline/"
+          },
+          {
+            "criterionId": "AC-05526536998f",
+            "status": "verified",
+            "evidence": "discovery/research/baseline.md「视口帧时间」四种模式的平均/p95/最大与 baseline/perf.json；「导出」表按场景记录三种导出的合计耗时（未拆到单张）；环境表注明 Mac16,8、macOS 26.5、Chromium 145.0.7632.6"
+          },
+          {
+            "criterionId": "AC-e27039ee7b73",
+            "status": "verified",
+            "evidence": "discovery/research/ 下 integration、materials、sky-shadow-outline、gbuffer-aa、realtime-gi、high-resolution、environment 七篇；summary.md 给出未决 1、3、4、5、6、8、9 的建议、未决 9 的选项与代价、R1 两阶段对照阈值"
+          },
+          {
+            "criterionId": "AC-d2e2e463d721",
+            "status": "verified",
+            "evidence": "git diff develop --name-only：frontend/scripts 7 个文件（e2e 与 fixtures），其余在 R0 目录（另有 lti apply 写入的 .lti/snapshots 元数据）；frontend/src、vite.config.ts、package.json、index.html 无差异；oxlint 退出码 0"
+          },
+          {
+            "criterionId": "AC-709a001a9f70",
+            "status": "verified",
+            "evidence": "修订草稿呈给 owner 并获批准；lti epic revise 记录 v2（develop 2f2cf577）；R0 已合入 develop 并重新 bind 到 v2，owner 重新批准方案（0d49b148）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "同上一轮技术验证（定向 e2e：reference scenes、calibration、C4 export、C5 AC-6、baseline 通过，oxlint 无错误）；此后只把 93 张研究证据 PNG 转为 JPEG 并同步文档引用，核对文档引用的图片均存在，不涉及代码与 e2e",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "55fc2740ed5d960fb38384f1ed52ec20e9f1826b80099131118357006313b8ac"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-21T10:48:54.597Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "按约定只跑定向 e2e 与 oxlint；导出耗时按场景合计记录，owner 接受"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 验收通过：五条验收标准满足，Epic 修订 v2 已批准；研究证据 PNG 转 JPEG 后 squash 合回 develop",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "55fc2740ed5d960fb38384f1ed52ec20e9f1826b80099131118357006313b8ac"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-21T10:49:22.254Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

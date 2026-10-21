@@ -1,0 +1,13 @@
+{
+  "ortho: three vs fork": {
+    "mean": 1.5969635416666668,
+    "over8": 0.0024572916666666667,
+    "max": 27
+  },
+  "persp: three vs fork": {
+    "mean": 0,
+    "over8": 0,
+    "max": 0
+  },
+  "errors": []
+}

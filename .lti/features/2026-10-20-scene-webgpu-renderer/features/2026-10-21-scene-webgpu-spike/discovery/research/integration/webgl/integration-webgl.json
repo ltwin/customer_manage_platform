@@ -1,0 +1,281 @@
+{
+  "backend": "webgl",
+  "viewport": {
+    "idleStart": 3,
+    "idleEnd": 3,
+    "afterOrbit": 128,
+    "onDemand": true
+  },
+  "shots": {
+    "visible/controlled": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "13cba8f6400b70c8",
+        "13cba8f6400b70c8"
+      ],
+      "same": true,
+      "frameIds": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      ],
+      "ms": [
+        394,
+        227
+      ]
+    },
+    "visible/loop-sync": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "ce1d06ff40509480",
+        "ce1d06ff40509480"
+      ],
+      "same": true,
+      "frameIds": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      ],
+      "ms": [
+        58,
+        50
+      ]
+    },
+    "visible/loop-async": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "13cba8f6400b70c8",
+        "13cba8f6400b70c8"
+      ],
+      "same": true,
+      "frameIds": [
+        [
+          1,
+          5,
+          9,
+          11,
+          14,
+          16,
+          19,
+          21,
+          24,
+          26,
+          29,
+          31
+        ],
+        [
+          35,
+          38,
+          42,
+          44,
+          47,
+          49,
+          52,
+          55,
+          57,
+          60,
+          63,
+          65
+        ]
+      ],
+      "ms": [
+        322,
+        328
+      ]
+    },
+    "hidden/controlled": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "13cba8f6400b70c8",
+        "13cba8f6400b70c8"
+      ],
+      "same": true,
+      "frameIds": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      ],
+      "ms": [
+        101,
+        64
+      ]
+    },
+    "hidden/loop-sync": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "ce1d06ff40509480",
+        "ce1d06ff40509480"
+      ],
+      "same": true,
+      "frameIds": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      ],
+      "ms": [
+        52,
+        49
+      ]
+    },
+    "hidden/loop-async": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "13cba8f6400b70c8",
+        "13cba8f6400b70c8"
+      ],
+      "same": true,
+      "frameIds": [
+        [
+          1,
+          6,
+          9,
+          12,
+          14,
+          17,
+          19,
+          22,
+          24,
+          27,
+          29,
+          32
+        ],
+        [
+          36,
+          40,
+          43,
+          46,
+          48,
+          51,
+          53,
+          56,
+          58,
+          61,
+          63,
+          66
+        ]
+      ],
+      "ms": [
+        322,
+        323
+      ]
+    }
+  },
+  "visibleState": {
+    "hidden": false,
+    "visibilityState": "visible",
+    "rafRuns": 60
+  },
+  "hiddenState": {
+    "hidden": false,
+    "visibilityState": "visible",
+    "rafRuns": 60
+  },
+  "controlledSameAcrossVisibility": true,
+  "errors": []
+}

@@ -1,0 +1,25 @@
+{
+  "frameMs": {
+    "prepass": 8.001666666567326,
+    "mrt": 8.936666666467984
+  },
+  "switch": [
+    8,
+    17,
+    23,
+    32,
+    38,
+    47,
+    53,
+    62,
+    68,
+    77,
+    83,
+    92
+  ],
+  "compatibility": {
+    "compatibilityMode": false,
+    "samples": 0
+  },
+  "errors": []
+}

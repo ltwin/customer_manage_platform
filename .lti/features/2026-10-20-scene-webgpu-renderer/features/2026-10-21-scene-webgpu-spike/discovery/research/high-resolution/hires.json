@@ -1,0 +1,822 @@
+{
+  "runs": [
+    {
+      "name": "workbench-8k-tiles",
+      "kind": "workbench",
+      "size": "8k",
+      "tiles": [
+        {
+          "gpuMs": 83,
+          "readMs": 17.900000005960464,
+          "textureMB": 357.37216567993164
+        },
+        {
+          "gpuMs": 46.099999994039536,
+          "readMs": 12,
+          "textureMB": 357.37216567993164
+        },
+        {
+          "gpuMs": 58.19999998807907,
+          "readMs": 10.800000011920929,
+          "textureMB": 357.25888442993164
+        },
+        {
+          "gpuMs": 57.79999998211861,
+          "readMs": 11,
+          "textureMB": 357.25888442993164
+        }
+      ],
+      "compare": true,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 313.40000000596046,
+      "seams": {
+        "mean": 0.5299027186861,
+        "band": 6.6869447177962495,
+        "rest": 0.5167279892314216
+      },
+      "jump": {
+        "across": 13.15952537903765,
+        "control": 1.2915354378768886
+      },
+      "pngMB": 31.230374336242676,
+      "pngMs": 590.8000000119209,
+      "webpMB": 18.5240478515625,
+      "webpMs": 2908.5,
+      "jpegMB": 3.543966293334961,
+      "pageErrors": []
+    },
+    {
+      "name": "workbench-8k-tiles-margin",
+      "kind": "workbench",
+      "size": "8k",
+      "tiles": [
+        {
+          "gpuMs": 80,
+          "readMs": 17.5,
+          "textureMB": 381.99313735961914
+        },
+        {
+          "gpuMs": 43.60000002384186,
+          "readMs": 11.699999988079071,
+          "textureMB": 381.99313735961914
+        },
+        {
+          "gpuMs": 59.80000001192093,
+          "readMs": 11.399999976158142,
+          "textureMB": 381.87631607055664
+        },
+        {
+          "gpuMs": 60.29999998211861,
+          "readMs": 11.200000017881393,
+          "textureMB": 381.87631607055664
+        }
+      ],
+      "margin": 64,
+      "compare": true,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 311.09999999403954,
+      "seams": {
+        "mean": 0.6408108064690724,
+        "band": 0.5677575148482374,
+        "rest": 0.6409671246090196
+      },
+      "jump": {
+        "across": 0.5891745403940514,
+        "control": 0.9611440709001549
+      },
+      "pngMB": 31.04087734222412,
+      "pngMs": 589.9000000059605,
+      "webpMB": 18.350509643554688,
+      "webpMs": 2979.7000000178814,
+      "jpegMB": 3.522740364074707,
+      "pageErrors": []
+    },
+    {
+      "name": "gi-8k-noaa",
+      "kind": "gi",
+      "size": "8k",
+      "k": 16,
+      "traa": false,
+      "compare": true,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 19675.59999999404,
+      "tiles": [
+        {
+          "gpuMs": 19490.69999998808,
+          "readMs": 148.5,
+          "textureMB": 4871.7041015625
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 91.70304679870605,
+      "pngMs": 1520.5,
+      "webpMB": 61.9724178314209,
+      "webpMs": 6587.700000017881,
+      "jpegMB": 12.20972728729248,
+      "pageErrors": []
+    },
+    {
+      "name": "gi-8k-noaa-tiles",
+      "kind": "gi",
+      "size": "8k",
+      "k": 16,
+      "traa": false,
+      "tiles": [
+        {
+          "gpuMs": 3967.0999999940395,
+          "readMs": 24.5,
+          "textureMB": 1224.1494140625
+        },
+        {
+          "gpuMs": 3955.7000000178814,
+          "readMs": 11.799999982118607,
+          "textureMB": 1352.1650390625
+        },
+        {
+          "gpuMs": 4013.5,
+          "readMs": 15.200000017881393,
+          "textureMB": 1479.7353515625
+        },
+        {
+          "gpuMs": 3492.100000023842,
+          "readMs": 12.899999976158142,
+          "textureMB": 1607.7041015625
+        }
+      ],
+      "compare": true,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 15515.59999999404,
+      "seams": {
+        "mean": 28.218756996522213,
+        "band": 25.59472512440415,
+        "rest": 28.224371853461733
+      },
+      "jump": {
+        "across": 21.122170951439283,
+        "control": 2.803059156717692
+      },
+      "pngMB": 66.84146404266357,
+      "pngMs": 1316.4000000059605,
+      "webpMB": 44.472049713134766,
+      "webpMs": 7679.299999982119,
+      "jpegMB": 5.132326126098633,
+      "pageErrors": []
+    },
+    {
+      "name": "gi-8k-noaa-tiles-margin",
+      "kind": "gi",
+      "size": "8k",
+      "k": 16,
+      "traa": false,
+      "tiles": [
+        {
+          "gpuMs": 7267.200000017881,
+          "readMs": 61.599999994039536,
+          "textureMB": 2098.1865234375
+        },
+        {
+          "gpuMs": 7359.299999982119,
+          "readMs": 41.70000001788139,
+          "textureMB": 2318.2060546875
+        },
+        {
+          "gpuMs": 7523.399999976158,
+          "readMs": 32.5,
+          "textureMB": 2537.6689453125
+        },
+        {
+          "gpuMs": 6557.699999988079,
+          "readMs": 41.900000005960464,
+          "textureMB": 2757.6298828125
+        }
+      ],
+      "margin": 512,
+      "compare": true,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 28927.19999998808,
+      "seams": {
+        "mean": 25.141220397334507,
+        "band": 21.8166251404563,
+        "rest": 25.148334307400738
+      },
+      "jump": {
+        "across": 22.08520715837792,
+        "control": 2.570045655411535
+      },
+      "pngMB": 69.0170488357544,
+      "pngMs": 1258.0999999940395,
+      "webpMB": 47.13712692260742,
+      "webpMs": 8674.200000017881,
+      "jpegMB": 5.041711807250977,
+      "pageErrors": []
+    },
+    {
+      "name": "gi-8k-tiles",
+      "kind": "gi",
+      "size": "8k",
+      "k": 16,
+      "tiles": [
+        {
+          "gpuMs": 4769.200000017881,
+          "readMs": 30.399999976158142,
+          "textureMB": 1480.1806755065918
+        },
+        {
+          "gpuMs": 4912.5999999940395,
+          "readMs": 20.900000005960464,
+          "textureMB": 1736.211929321289
+        },
+        {
+          "gpuMs": 4109.300000011921,
+          "readMs": 19.400000005960464,
+          "textureMB": 1991.7041206359863
+        },
+        {
+          "gpuMs": 3532.300000011921,
+          "readMs": 18.599999994039536,
+          "textureMB": 2247.6416244506836
+        }
+      ],
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 17452.80000001192,
+      "seams": null,
+      "jump": {
+        "across": 29.257403745208652,
+        "control": 5.778302692936837
+      },
+      "pngMB": 77.85344696044922,
+      "pngMs": 1293.699999988079,
+      "webpMB": 54.471659660339355,
+      "webpMs": 7341.5999999940395,
+      "jpegMB": 6.908028602600098,
+      "pageErrors": []
+    },
+    {
+      "name": "gi-8k-half",
+      "kind": "gi",
+      "size": "8k",
+      "k": 16,
+      "giScale": 0.5,
+      "cropAt": [
+        0.3,
+        0.12,
+        0.125
+      ],
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 13486.199999988079,
+      "tiles": [
+        {
+          "gpuMs": 13298.90000000596,
+          "readMs": 152,
+          "textureMB": 5735.661144256592
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 75.47489261627197,
+      "pngMs": 1381,
+      "webpMB": 46.21263885498047,
+      "webpMs": 7416.5,
+      "jpegMB": 8.142210960388184,
+      "gpuProcessMB": {
+        "idle": 2070,
+        "peak": 8824
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "line-8k-1x",
+      "kind": "line",
+      "size": "8k",
+      "lineScale": 1,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 517.9000000059605,
+      "tiles": [
+        {
+          "gpuMs": 374.30000001192093,
+          "readMs": 111.5,
+          "textureMB": 559.96875
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 2.0660476684570312,
+      "pngMs": 373.59999999403954,
+      "webpMB": 1.4173049926757812,
+      "webpMs": 674.0999999940395,
+      "jpegMB": 2.4093847274780273,
+      "gpuProcessMB": {
+        "idle": 195,
+        "peak": 2120
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "line-8k-2x-default-limit",
+      "kind": "line",
+      "size": "8k",
+      "lineScale": 2,
+      "width": 8192,
+      "height": 5461,
+      "ok": false,
+      "lost": null,
+      "errors": [
+        "Texture size ([Extent3D width:16384, height:10922, depthOrArrayLayers:1]) exceeded maximum texture size ([Extent3D width:8192, height:8192, depthOrArrayLayers:256]). This adapter supports a higher maxTextureDimension2D of 16384, which can be specified in requiredLimits when calling requestDevice(). ",
+        "Texture size ([Extent3D width:16384, height:10922, depthOrArrayLayers:1]) exceeded maximum texture size ([Extent3D width:8192, height:8192, depthOrArrayLayers:256]). This adapter supports a higher maxTextureDimension2D of 16384, which can be specified in requiredLimits when calling requestDevice(). ",
+        "[Invalid Texture] is invalid.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor \"\"colorAttachment_0\"\"]).\n",
+        "[Invalid Texture] is invalid.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor]).\n",
+        "[Invalid TextureView \"colorAttachment_0\"] is invalid.\n - While validating colorAttachments[0].\n - While encoding [CommandEncoder \"clear\"].BeginRenderPass([RenderPassDescriptor]).\n - While finishing [CommandEncoder \"clear\"].\n",
+        "[Invalid CommandBuffer from CommandEncoder \"clear\"] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"clear\"]])\n",
+        "[Invalid TextureView \"colorAttachment_0\"] is invalid.\n - While validating colorAttachments[0].\n - While encoding [CommandEncoder \"renderContext_5\"].BeginRenderPass([RenderPassDescriptor]).\n - While finishing [CommandEncoder \"renderContext_5\"].\n",
+        "[Invalid CommandBuffer from CommandEncoder \"renderContext_5\"] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_5\"]])\n",
+        "[Invalid Texture] is invalid.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor]).\n",
+        "[Invalid Texture] is invalid.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor]).\n",
+        "[Invalid TextureView] is invalid.\n - While validating entries[0] against { binding: 0, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Float, viewDimension: TextureViewDimension::e2D, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] again",
+        "[Invalid TextureView] is invalid.\n - While validating entries[0] against { binding: 0, visibility: ShaderStage::Fragment, texture: {sampleType: TextureSampleType::Float, viewDimension: TextureViewDimension::e2D, multisampled: 0} }.\n - While validating [BindGroupDescriptor \"\"bindGroup_object\"\"] again",
+        "[Invalid BindGroup \"bindGroup_object\"] is invalid.\n - While encoding [RenderPassEncoder (unlabeled)].SetBindGroup(1, [Invalid BindGroup \"bindGroup_object\"], 0, ...).\n - While finishing [CommandEncoder \"renderContext_7\"].\n",
+        "[Invalid CommandBuffer from CommandEncoder \"renderContext_7\"] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_7\"]])\n"
+      ],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 112.09999999403954,
+      "tiles": [
+        {
+          "gpuMs": 47.20000001788139,
+          "readMs": 52.5,
+          "textureMB": 1583.90625
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 0.8102016448974609,
+      "pngMs": 204.39999997615814,
+      "webpMB": 0.000492095947265625,
+      "webpMs": 221.90000000596046,
+      "jpegMB": 0.25121212005615234,
+      "gpuProcessMB": {
+        "idle": 1295,
+        "peak": 1295
+      },
+      "pageErrors": [
+        "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: Texture size ([Extent3D width:16384, height:10922, depthOrArrayLayers:1]) exceeded maximum texture size ([Extent3D width:8192, height:8192, depthOrArrayLayers:256]). This adapter supports a higher maxTextureDimension2D of 16384, which can be specified in requiredLimits when calling requestDevice(). Limits differ by hardware, so always check the adapter limits prior to requesting a higher limit.\n - While validating [TextureDescriptor].\n - While calling [Device].CreateTexture([TextureDescriptor]).\n",
+        "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: Texture size ([Extent3D width:16384, height:10922, depthOrArrayLayers:1]) exceeded maximum texture size ([Extent3D width:8192, height:8192, depthOrArrayLayers:256]). This adapter supports a higher maxTextureDimension2D of 16384, which can be specified in requiredLimits when calling requestDevice(). Limits differ by hardware, so always check the adapter limits prior to requesting a higher limit.\n - While validating [TextureDescriptor].\n - While calling [Device].CreateTexture([TextureDescriptor]).\n",
+        "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid Texture] is invalid.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor \"\"colorAttachment_0\"\"]).\n",
+        "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid Texture] is invalid.\n - While calling [Invalid Texture].CreateView([TextureViewDescriptor]).\n"
+      ]
+    },
+    {
+      "name": "line-2k-2x",
+      "kind": "line",
+      "size": "2k",
+      "lineScale": 2,
+      "width": 2048,
+      "height": 1365,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 46.19999998807907,
+      "tiles": [
+        {
+          "gpuMs": 41.20000001788139,
+          "readMs": 3.399999976158142,
+          "textureMB": 143.9765625
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 0.29360103607177734,
+      "pngMs": 15.099999994039536,
+      "webpMB": 0.1498260498046875,
+      "webpMs": 54.19999998807907,
+      "jpegMB": 0.3856687545776367,
+      "gpuProcessMB": {
+        "idle": 1293,
+        "peak": 1293
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "workbench-2k",
+      "kind": "workbench",
+      "size": "2k",
+      "width": 2048,
+      "height": 1365,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 145.09999999403954,
+      "tiles": [
+        {
+          "gpuMs": 135.5,
+          "readMs": 6.200000017881393,
+          "textureMB": 125.31552505493164
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 3.7307024002075195,
+      "pngMs": 70.5,
+      "webpMB": 2.6912670135498047,
+      "webpMs": 274.90000000596046,
+      "jpegMB": 0.5531272888183594,
+      "jpeg95MB": 0.7326278686523438,
+      "gpuProcessMB": {
+        "idle": 195,
+        "peak": 195
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "workbench-4k",
+      "kind": "workbench",
+      "size": "4k",
+      "width": 4096,
+      "height": 2731,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 261.19999998807907,
+      "tiles": [
+        {
+          "gpuMs": 220.30000001192093,
+          "readMs": 31.799999982118607,
+          "textureMB": 357.37216567993164
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 10.548574447631836,
+      "pngMs": 219.90000000596046,
+      "webpMB": 6.627093315124512,
+      "webpMs": 1066.9000000059605,
+      "jpegMB": 1.2422218322753906,
+      "jpeg95MB": 1.7675228118896484,
+      "gpuProcessMB": {
+        "idle": 323,
+        "peak": 1472
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "workbench-8k",
+      "kind": "workbench",
+      "size": "8k",
+      "compare": true,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 773.1999999880791,
+      "tiles": [
+        {
+          "gpuMs": 601.4000000059605,
+          "readMs": 142,
+          "textureMB": 1285.2588844299316
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 31.033913612365723,
+      "pngMs": 751,
+      "webpMB": 18.356297492980957,
+      "webpMs": 2914.899999976158,
+      "jpegMB": 3.521913528442383,
+      "jpeg95MB": 5.242246627807617,
+      "gpuProcessMB": {
+        "idle": 566,
+        "peak": 4911
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "workbench-8k-square",
+      "kind": "workbench",
+      "size": "8k-square",
+      "width": 8192,
+      "height": 8192,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 620.2999999821186,
+      "tiles": [
+        {
+          "gpuMs": 419.5,
+          "readMs": 154.5,
+          "textureMB": 1904.0010719299316
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 44.043030738830566,
+      "pngMs": 1082.2000000178814,
+      "webpMB": 25.4344482421875,
+      "webpMs": 4060.0999999940395,
+      "jpegMB": 5.086658477783203,
+      "jpeg95MB": 7.693021774291992,
+      "gpuProcessMB": {
+        "idle": 1279,
+        "peak": 7638
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "gi-2k",
+      "kind": "gi",
+      "size": "2k",
+      "k": 16,
+      "cropAt": [
+        0.3,
+        0.12,
+        0.125
+      ],
+      "width": 2048,
+      "height": 1365,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 670.7999999821186,
+      "tiles": [
+        {
+          "gpuMs": 662.2000000178814,
+          "readMs": 5.699999988079071,
+          "textureMB": 375.9111442565918
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 6.713533401489258,
+      "pngMs": 84.80000001192093,
+      "webpMB": 4.965053558349609,
+      "webpMs": 214.19999998807907,
+      "jpegMB": 0.9042949676513672,
+      "jpeg95MB": 1.1631574630737305,
+      "gpuProcessMB": {
+        "idle": 1994,
+        "peak": 1998
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "gi-4k",
+      "kind": "gi",
+      "size": "4k",
+      "k": 16,
+      "cropAt": [
+        0.3,
+        0.12,
+        0.125
+      ],
+      "width": 4096,
+      "height": 2731,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 3355.5,
+      "tiles": [
+        {
+          "gpuMs": 3330.9000000059605,
+          "readMs": 18.80000001192093,
+          "textureMB": 1480.1806755065918
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 26.539057731628418,
+      "pngMs": 337,
+      "webpMB": 19.66344451904297,
+      "webpMs": 1202.4000000059605,
+      "jpegMB": 3.5643625259399414,
+      "jpeg95MB": 4.601717948913574,
+      "gpuProcessMB": {
+        "idle": 1931,
+        "peak": 3639
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "gi-8k",
+      "kind": "gi",
+      "size": "8k",
+      "k": 16,
+      "compare": true,
+      "cropAt": [
+        0.3,
+        0.12,
+        0.125
+      ],
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 8192,
+        "maxBufferSize": 268435456
+      },
+      "ms": 18996.40000000596,
+      "tiles": [
+        {
+          "gpuMs": 18782.59999999404,
+          "readMs": 174.90000000596046,
+          "textureMB": 5895.641613006592
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 104.83793449401855,
+      "pngMs": 1522.0999999940395,
+      "webpMB": 78.65687370300293,
+      "webpMs": 5258.199999988079,
+      "jpegMB": 14.13830852508545,
+      "jpeg95MB": 18.293792724609375,
+      "gpuProcessMB": {
+        "idle": 1833,
+        "peak": 8788
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "line-8k-2x",
+      "kind": "line",
+      "size": "8k",
+      "lineScale": 2,
+      "limit": 16384,
+      "width": 8192,
+      "height": 5461,
+      "ok": true,
+      "lost": null,
+      "errors": [],
+      "limits": {
+        "maxTextureDimension2D": 16384,
+        "maxBufferSize": 268435456
+      },
+      "ms": 137.69999998807907,
+      "tiles": [
+        {
+          "gpuMs": 70,
+          "readMs": 50,
+          "textureMB": 1583.90625
+        }
+      ],
+      "seams": null,
+      "jump": null,
+      "pngMB": 2.056743621826172,
+      "pngMs": 262.19999998807907,
+      "webpMB": 1.4443187713623047,
+      "webpMs": 598.4000000059605,
+      "jpegMB": 2.6279897689819336,
+      "jpeg95MB": 2.98190975189209,
+      "gpuProcessMB": {
+        "idle": 2070,
+        "peak": 4302
+      },
+      "pageErrors": []
+    }
+  ],
+  "materials": [
+    {
+      "name": "2k",
+      "width": 2048,
+      "height": 1365,
+      "pngMB": 0.8643293380737305,
+      "pngMs": 27.700000017881393,
+      "webpMB": 0.6777477264404297,
+      "webpMs": 95.40000000596046,
+      "jpegMB": 0.20433712005615234,
+      "jpeg95MB": 0.2589683532714844
+    },
+    {
+      "name": "4k",
+      "width": 4096,
+      "height": 2731,
+      "pngMB": 2.569098472595215,
+      "pngMs": 79.59999999403954,
+      "webpMB": 2.199723243713379,
+      "webpMs": 343.40000000596046,
+      "jpegMB": 0.5808305740356445,
+      "jpeg95MB": 0.7268400192260742
+    },
+    {
+      "name": "8k",
+      "width": 8192,
+      "height": 5461,
+      "pngMB": 7.590548515319824,
+      "pngMs": 332.09999999403954,
+      "webpMB": 7.287242889404297,
+      "webpMs": 1074.800000011921,
+      "jpegMB": 1.6931533813476562,
+      "jpeg95MB": 2.070293426513672
+    },
+    {
+      "name": "8k-square",
+      "width": 8192,
+      "height": 8192,
+      "pngMB": 10.104829788208008,
+      "pngMs": 478,
+      "webpMB": 10.141868591308594,
+      "webpMs": 1659.1000000238419,
+      "jpegMB": 1.9173774719238281,
+      "jpeg95MB": 2.378631591796875
+    }
+  ],
+  "adapter": {
+    "maxTextureDimension2D": 16384,
+    "maxBufferSize": 4294967296
+  }
+}

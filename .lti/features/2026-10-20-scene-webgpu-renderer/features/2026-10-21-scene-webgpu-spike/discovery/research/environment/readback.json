@@ -1,0 +1,667 @@
+{
+  "format-webgpu": {
+    "backend": "webgpu",
+    "renderOutput": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        255,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        255,
+        0
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target+renderOutput": {
+      "grey": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        215,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "pipeline-default": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    }
+  },
+  "format-webgpu-constant": {
+    "backend": "webgpu",
+    "renderOutput": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "green": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "blue": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "green": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "blue": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target+renderOutput": {
+      "grey": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "red": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "green": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "blue": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "firstRawRow": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "pipeline-default": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "green": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "blue": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    }
+  },
+  "edges-webgpu-as-is": {
+    "backend": "webgpu",
+    "unpremultiply": false,
+    "edgePixels": 414,
+    "edgeRed": 115.73429951690821,
+    "edgeAlpha": 130.4830917874396,
+    "insideRed": 227
+  },
+  "edges-webgpu-straight": {
+    "backend": "webgpu",
+    "unpremultiply": true,
+    "edgePixels": 414,
+    "edgeRed": 227,
+    "edgeAlpha": 130.4830917874396,
+    "insideRed": 227
+  },
+  "canvas-webgpu": {
+    "backend": "webgpu",
+    "hidden": false,
+    "ms": 36.39999997615814,
+    "hash": "60ab4588897e4ae1",
+    "litShare": 0.4930029296875,
+    "vsTarget": 0
+  },
+  "format-webgl2": {
+    "backend": "webgl2",
+    "renderOutput": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target": {
+      "grey": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "red": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "firstRawRow": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target+renderOutput": {
+      "grey": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        215,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        0,
+        215,
+        0,
+        128
+      ],
+      "rawLength": 16384
+    },
+    "pipeline-default": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "rawLength": 16384
+    }
+  },
+  "format-webgl2-constant": {
+    "backend": "webgl2",
+    "renderOutput": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "green": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "blue": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "green": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "blue": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target+renderOutput": {
+      "grey": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "red": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "green": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "blue": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "firstRawRow": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "pipeline-default": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "green": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "blue": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    }
+  },
+  "edges-webgl2-as-is": {
+    "backend": "webgl2",
+    "unpremultiply": false,
+    "edgePixels": 414,
+    "edgeRed": 115.73429951690821,
+    "edgeAlpha": 130.4830917874396,
+    "insideRed": 227
+  },
+  "edges-webgl2-straight": {
+    "backend": "webgl2",
+    "unpremultiply": true,
+    "edgePixels": 414,
+    "edgeRed": 227,
+    "edgeAlpha": 130.4830917874396,
+    "insideRed": 227
+  },
+  "canvas-webgl2": {
+    "backend": "webgl2",
+    "hidden": false,
+    "ms": 289.30000001192093,
+    "hash": "9ac0a813d1edfe3b",
+    "litShare": 0.4930029296875,
+    "vsTarget": 0
+  },
+  "chrome": "Chrome/155.0.8059.85",
+  "visible": {
+    "visibility": "visible",
+    "encoding": {
+      "hidden": false,
+      "toDataURL": 59.79999998211861,
+      "toBlob": 45.20000001788139,
+      "convertToBlob": 48.19999998807907
+    },
+    "shot-webgpu": {
+      "backend": "webgpu",
+      "hashes": [
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e"
+      ],
+      "ms": [
+        101,
+        38,
+        31
+      ]
+    },
+    "canvas-webgpu": {
+      "backend": "webgpu",
+      "hidden": false,
+      "ms": 23.799999982118607,
+      "hash": "60ab4588897e4ae1",
+      "litShare": 0.4930029296875,
+      "vsTarget": null
+    },
+    "canvas-webgl2": {
+      "backend": "webgl2",
+      "hidden": false,
+      "ms": 45.30000001192093,
+      "hash": "9ac0a813d1edfe3b",
+      "litShare": 0.4930029296875,
+      "vsTarget": null
+    }
+  },
+  "hidden": {
+    "visibility": "hidden",
+    "encoding": {
+      "hidden": true,
+      "toDataURL": 50.30000001192093,
+      "toBlob": 56.900000005960464,
+      "convertToBlob": 49.400000005960464
+    },
+    "shot-webgpu": {
+      "backend": "webgpu",
+      "hashes": [
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e"
+      ],
+      "ms": [
+        68,
+        39,
+        42
+      ]
+    },
+    "canvas-webgpu": {
+      "backend": "webgpu",
+      "hidden": true,
+      "ms": 21.599999994039536,
+      "hash": "60ab4588897e4ae1",
+      "litShare": 0.4930029296875,
+      "vsTarget": null
+    },
+    "canvas-webgl2": {
+      "backend": "webgl2",
+      "hidden": true,
+      "ms": 40.39999997615814,
+      "hash": "9ac0a813d1edfe3b",
+      "litShare": 0.4930029296875,
+      "vsTarget": null
+    }
+  }
+}

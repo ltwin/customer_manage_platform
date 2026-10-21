@@ -1,0 +1,205 @@
+{
+  "environment": {
+    "sky": {
+      "kind": "procedural",
+      "sun_elevation_deg": 35,
+      "sun_azimuth_deg": 135,
+      "turbidity": 3
+    },
+    "ambient": {
+      "color": "#ffffff",
+      "intensity": 0.4
+    },
+    "fog": null
+  },
+  "render": {
+    "mode": "lit",
+    "exposure_ev": 0
+  },
+  "objects": [
+    {
+      "id": "sobj_ground",
+      "kind": "primitive",
+      "name": "地面",
+      "parent_id": null,
+      "order": 0,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": true,
+      "primitive": {
+        "builtin": "ground@1",
+        "params": {
+          "size": 40
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_near00000000000000000",
+      "kind": "primitive",
+      "name": "近处方块",
+      "order": 1,
+      "primitive": {
+        "builtin": "box@1"
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          4,
+          0,
+          -40
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          8,
+          3
+        ]
+      },
+      "id": "sobj_far000000000000000000",
+      "kind": "primitive",
+      "name": "远处塔",
+      "order": 2,
+      "primitive": {
+        "builtin": "box@1"
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_aim000000000000000000",
+      "kind": "group",
+      "name": "空物体 1",
+      "order": 3
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0.5,
+          8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_cama00000000000000000",
+      "kind": "camera",
+      "name": "cama",
+      "order": 4,
+      "camera": {
+        "focal_mm": 50,
+        "depth_of_field": true,
+        "f_stop": 1.4,
+        "focus_object_id": "sobj_aim000000000000000000"
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          6,
+          1.6,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_camb00000000000000000",
+      "kind": "camera",
+      "name": "camb",
+      "order": 5,
+      "camera": {
+        "focal_mm": 35,
+        "aspect": "2:3"
+      }
+    }
+  ]
+}

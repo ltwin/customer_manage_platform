@@ -1,0 +1,66 @@
+{
+  "workbench": [
+    {
+      "which": "legacyWorkbench",
+      "width": 2394,
+      "height": 1692,
+      "round": 0,
+      "ms": 11.746666666368643
+    },
+    {
+      "which": "webgpuWorkbench",
+      "width": 2394,
+      "height": 1692,
+      "round": 0,
+      "ms": 4.775
+    },
+    {
+      "which": "legacyWorkbench",
+      "width": 2394,
+      "height": 1692,
+      "round": 1,
+      "ms": 11.723333333432674
+    },
+    {
+      "which": "webgpuWorkbench",
+      "width": 2394,
+      "height": 1692,
+      "round": 1,
+      "ms": 4.778333333134651
+    },
+    {
+      "which": "legacyWorkbench",
+      "width": 3200,
+      "height": 2000,
+      "round": 0,
+      "ms": 18.323333333432675
+    },
+    {
+      "which": "webgpuWorkbench",
+      "width": 3200,
+      "height": 2000,
+      "round": 0,
+      "ms": 7.405000000198682
+    },
+    {
+      "which": "legacyWorkbench",
+      "width": 3200,
+      "height": 2000,
+      "round": 1,
+      "ms": 18.371666666865348
+    },
+    {
+      "which": "webgpuWorkbench",
+      "width": 3200,
+      "height": 2000,
+      "round": 1,
+      "ms": 7.406666666766008
+    }
+  ],
+  "line": {
+    "mean": 0.0025562328296703297,
+    "overShare": 0.000040064102564102564,
+    "max": 64
+  },
+  "errors": []
+}

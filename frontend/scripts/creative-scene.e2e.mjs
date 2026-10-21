@@ -5,6 +5,7 @@
 // (state/apply.ts); the Go tests own the real ones. Every check gets a fresh
 // browser context.
 import assert from 'node:assert/strict'
+import { execSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
@@ -3307,6 +3308,105 @@ await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd l
   assert.ok(lamps.all.mean > 40 && lamps.all.mean < 110 && lamps.all.bright < 0.02, 'the lamps light the room without blowing it out')
 })
 
+// --- WebGPU renderer R0: the reference scenes and their WebGL baseline -----------
+
+const referenceNames = ['noon', 'dusk', 'room', 'materials', 'dof', 'cornell']
+
+/** The editor's saved view (viewState.ts), orthographic from front right above, in view space (Z up). */
+const obliqueOrtho = {
+  camera: { position: [7, -9, 7], target: [0, 0, 0.5], ortho: true, zoom: 80 },
+  selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false,
+}
+
+/** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1. */
+function referenceScene(server, name) {
+  server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
+  for (const o of server.scene.objects) {
+    server.unitRevs[placement(o.id)] = '1'
+    server.unitRevs[content(o.id)] = '1'
+  }
+  server.history[0] = server.record(['*'], [], null)
+}
+
+await check('reference scenes: each opens and draws in clay and rendered without errors', async () => {
+  for (const name of referenceNames) {
+    const server = new SceneServer()
+    referenceScene(server, name)
+    const { context, page, errors } = await open(server)
+    const { box } = await viewportCenter(page)
+    await shading(page, '白模')
+    const clay = await settledShot(page, box)
+    await shading(page, '最终渲染')
+    const lit = await settledShot(page, box)
+    assert.ok((await pixelDiff(page, clay, lit)) > 0.05, `${name}: the rendered view differs from clay`)
+    assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+    await context.close()
+  }
+})
+
+// SCENE_E2E_BASELINE=<dir>: every reference scene exported in all three passes
+// on this machine's GPU, an orthographic clay view of each, and baseline.json
+// with the machine, the versions and the export times. The AC-9 case below
+// adds perf.json to the same directory. Run it before the renderer changes.
+if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes exported on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_BASELINE
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
+    for (const name of referenceNames) {
+      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
+      const server = new SceneServer()
+      referenceScene(server, name)
+      const { page, errors } = await open(server, { context, query: '?export=1' })
+      record.renderer ??= await page.evaluate(() => {
+        const gl = document.createElement('canvas').getContext('webgl2')
+        return gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+      })
+      await shading(page, '最终渲染')
+      await page.getByRole('button', { name: '导出' }).first().click()
+      const dialog = page.getByRole('dialog', { name: '导出分镜' })
+      await dialog.waitFor()
+      for (const pass of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(pass).isChecked(), `${name}: ${pass} ticked`)
+      const started = Date.now()
+      await dialog.getByRole('button', { name: '导出' }).click()
+      await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
+      const exportMs = Date.now() - started
+      await dialog.waitFor({ state: 'detached' })
+      const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
+      const images = []
+      for (const s of server.exports[0].payload.shots) {
+        for (const img of s.images) {
+          const png = server.uploadBytes.get(img.upload_id)
+          const file = `${name}-${cameras.get(s.camera_object_id)}-${img.pass}.png`
+          await writeFile(`${dir}/${file}`, png)
+          images.push({ file, ...pngSize(png), bytes: png.length })
+        }
+      }
+      // The saved orthographic view from front right above, in clay: the AO the orthographic GTAO must keep.
+      await shading(page, '白模')
+      const { x, y, box } = await viewportCenter(page)
+      await page.mouse.move(x, y)
+      await sleep(600)
+      await writeFile(`${dir}/${name}-ortho-clay.png`, await settledShot(page, box))
+      record.scenes[name] = { export_ms: exportMs, images }
+      console.log(`baseline ${name}: ${images.length} images in ${exportMs} ms`)
+      assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+      await context.close()
+    }
+    await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** The machine the baseline ran on: model, chip and OS, for the record. */
+function machineInfo() {
+  const run = (cmd) => { try { return execSync(cmd, { encoding: 'utf8' }).trim() } catch { return '' } }
+  return { model: run('sysctl -n hw.model'), chip: run('sysctl -n machdep.cpu.brand_string'), os: `${process.platform} ${run('sw_vers -productVersion') || run('uname -r')}` }
+}
+
 // --- AC-9 performance (opt-in: SCENE_E2E_PERF=1, needs the machine's GPU) ------
 
 /** About 200 objects in 8 materials, the sun and 4 lights of which 2 spots cast shadows (AC-9). */
@@ -3395,6 +3495,10 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference 
     await page.locator('.cc-scene-editor').focus()
     const remove = await hitch(() => page.keyboard.press(`${modKey}+KeyZ`))
     console.log(`  adding a light: longest frame ${add.toFixed(0)} ms; removing it: ${remove.toFixed(0)} ms`)
+    if (process.env.SCENE_E2E_BASELINE) {
+      const perf = { machine: machineInfo(), chromium: gpu.version(), renderer, canvas, modes: results, light_add_ms: add, light_remove_ms: remove }
+      await writeFile(`${process.env.SCENE_E2E_BASELINE}/perf.json`, `${JSON.stringify(perf, null, 2)}\n`)
+    }
     assert.ok(results.rendered.mean <= 33, `rendered mean frame ${results.rendered.mean.toFixed(1)} ms`)
     assert.ok(results.preview.mean <= results.rendered.mean, 'material preview is no slower')
     assert.ok(add < 1000 && remove < 1000, 'adding or removing a light hitches under a second')

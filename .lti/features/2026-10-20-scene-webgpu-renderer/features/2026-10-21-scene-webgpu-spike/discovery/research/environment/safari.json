@@ -1,0 +1,190 @@
+{
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15",
+  "webgpu": true,
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "apple",
+    "maxTextureDimension2D": 16384,
+    "maxBufferSize": 2147483644,
+    "features": [
+      "depth-clip-control",
+      "depth32float-stencil8",
+      "timestamp-query",
+      "texture-compression-bc",
+      "texture-compression-bc-sliced-3d",
+      "texture-compression-etc2",
+      "texture-compression-astc",
+      "texture-compression-astc-sliced-3d",
+      "indirect-first-instance",
+      "shader-f16",
+      "rg11b10ufloat-renderable",
+      "bgra8unorm-storage",
+      "float32-filterable",
+      "float32-blendable",
+      "float16-renderable",
+      "float32-renderable",
+      "core-features-and-limits",
+      "texture-formats-tier1"
+    ],
+    "ms": 2
+  },
+  "format": {
+    "backend": "webgpu",
+    "renderOutput": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        255,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        255,
+        0
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "srgb-target+renderOutput": {
+      "grey": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        215,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        223,
+        223,
+        223,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "pipeline-default": {
+      "grey": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "green": [
+        0,
+        173,
+        0,
+        128
+      ],
+      "blue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "firstRawRow": [
+        188,
+        188,
+        188,
+        255
+      ],
+      "rawLength": 16384
+    },
+    "ms": 166.0000000000001
+  },
+  "edges": {
+    "backend": "webgpu",
+    "unpremultiply": false,
+    "edgePixels": 414,
+    "edgeRed": 115.73429951690821,
+    "edgeAlpha": 130.4830917874396,
+    "insideRed": 227,
+    "ms": 235.9999999999999
+  },
+  "shooter": {
+    "backend": "webgpu",
+    "hashes": [
+      "fd778012e97d18f2",
+      "fd778012e97d18f2"
+    ],
+    "ms": 1579
+  },
+  "gi": {
+    "backend": "webgpu",
+    "msPerFrame": 6.2,
+    "ms": 2251
+  },
+  "safari": "26.5"
+}

@@ -1,0 +1,186 @@
+{
+  "backend": "webgpu",
+  "chrome": "Chrome/155.0.8059.85",
+  "visible": {
+    "probe": {
+      "visibility": "visible",
+      "raf": 121
+    },
+    "controlled": {
+      "backend": "webgpu",
+      "hidden": false,
+      "hashes": [
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e"
+      ],
+      "frameIds": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      ],
+      "ms": [
+        1167,
+        283
+      ]
+    },
+    "loop-async": {
+      "backend": "webgpu",
+      "hidden": false,
+      "hashes": [
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e"
+      ],
+      "frameIds": [
+        [
+          1,
+          5,
+          8,
+          11,
+          13,
+          16,
+          18,
+          21,
+          23,
+          26,
+          29,
+          31
+        ],
+        [
+          34,
+          38,
+          41,
+          44,
+          47,
+          49,
+          52,
+          55,
+          57,
+          60,
+          62,
+          65
+        ]
+      ],
+      "ms": [
+        285,
+        284
+      ]
+    }
+  },
+  "hidden": {
+    "probe": {
+      "visibility": "hidden",
+      "raf": 0
+    },
+    "controlled": {
+      "backend": "webgpu",
+      "hidden": true,
+      "hashes": [
+        "cac236f3cf4bb29e",
+        "cac236f3cf4bb29e"
+      ],
+      "frameIds": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      ],
+      "ms": [
+        122,
+        54
+      ]
+    },
+    "loop-async": {
+      "backend": "webgpu",
+      "hidden": true,
+      "hashes": [
+        "ce1d06ff40509480",
+        "ce1d06ff40509480"
+      ],
+      "frameIds": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "ms": [
+        11800,
+        12003
+      ]
+    }
+  },
+  "controlledSame": true,
+  "loopSame": false
+}

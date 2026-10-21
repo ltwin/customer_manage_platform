@@ -1,0 +1,32 @@
+{
+  "frameMs": {},
+  "switch": [
+    8,
+    11,
+    11,
+    14,
+    14,
+    17,
+    17,
+    20,
+    20,
+    23,
+    23,
+    26
+  ],
+  "compatibility": {
+    "compatibilityMode": false,
+    "samples": 0
+  },
+  "errors": [
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: Error while parsing WGSL: :9:8 error: structures must have at least one member\nstruct OutputType {\n       ^^^^^^^^^^\n\n\n - While calling [Device].CreateShaderModule([ShaderModuleDescriptor \"\"fragment\"\"]).\n",
+    "THREE.WebGPURenderer: Render pipeline creation failed (renderPipeline_MeshStandardNodeMaterial_36): [Invalid ShaderModule \"fragment\"] is invalid.\n - While validating fragment stage ([Invalid ShaderModule \"fragment\"], entryPoint: \"main\").\n - While validating fragment state.\n - While calling [Device].CreateRenderPipeline([RenderPipelineDescriptor \"\"renderPipeline_MeshStandardNodeMaterial_36\"\"]).\n",
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid RenderPipeline \"renderPipeline_MeshStandardNodeMaterial_36\"] is invalid.\n - While encoding [RenderPassEncoder (unlabeled)].SetPipeline([Invalid RenderPipeline \"renderPipeline_MeshStandardNodeMaterial_36\"]).\n - While finishing [CommandEncoder \"renderContext_1\"].\n",
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid CommandBuffer from CommandEncoder \"renderContext_1\"] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_1\"]])\n",
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid RenderPipeline \"renderPipeline_MeshStandardNodeMaterial_36\"] is invalid.\n - While encoding [RenderPassEncoder (unlabeled)].SetPipeline([Invalid RenderPipeline \"renderPipeline_MeshStandardNodeMaterial_36\"]).\n - While finishing [CommandEncoder \"renderContext_1\"].\n",
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid CommandBuffer from CommandEncoder \"renderContext_1\"] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_1\"]])\n",
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid RenderPipeline \"renderPipeline_MeshStandardNodeMaterial_36\"] is invalid.\n - While encoding [RenderPassEncoder (unlabeled)].SetPipeline([Invalid RenderPipeline \"renderPipeline_MeshStandardNodeMaterial_36\"]).\n - While finishing [CommandEncoder \"renderContext_1\"].\n",
+    "THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: [Invalid CommandBuffer from CommandEncoder \"renderContext_1\"] is invalid.\n - While calling [Queue].Submit([[Invalid CommandBuffer from CommandEncoder \"renderContext_1\"]])\n",
+    "THREE.WebGPURenderer [renderPipeline_MeshStandardNodeMaterial_36 / fragment error] at line 9:8: structures must have at least one member\n  struct OutputType {\n         ^"
+  ]
+}

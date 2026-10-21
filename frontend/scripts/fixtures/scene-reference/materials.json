@@ -1,0 +1,745 @@
+{
+  "environment": {
+    "sky": {
+      "kind": "procedural",
+      "sun_elevation_deg": 45,
+      "sun_azimuth_deg": 135,
+      "turbidity": 3
+    },
+    "ambient": {
+      "color": "#ffffff",
+      "intensity": 0.4
+    },
+    "fog": null
+  },
+  "render": {
+    "mode": "lit",
+    "exposure_ev": 0
+  },
+  "objects": [
+    {
+      "id": "sobj_ground",
+      "kind": "primitive",
+      "name": "地面",
+      "parent_id": null,
+      "order": 0,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": true,
+      "primitive": {
+        "builtin": "ground@1",
+        "params": {
+          "size": 40
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.4,
+          0,
+          -2.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_ma0000000000000000000",
+      "kind": "primitive",
+      "name": "ma",
+      "order": 10,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -0.7999999999999998,
+          0,
+          -2.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mb0000000000000000000",
+      "kind": "primitive",
+      "name": "mb",
+      "order": 11,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0.8000000000000003,
+          0,
+          -2.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mc0000000000000000000",
+      "kind": "primitive",
+      "name": "mc",
+      "order": 12,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "plaster@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          2.400000000000001,
+          0,
+          -2.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_md0000000000000000000",
+      "kind": "primitive",
+      "name": "md",
+      "order": 13,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "concrete@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.4,
+          0,
+          -0.7999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_me0000000000000000000",
+      "kind": "primitive",
+      "name": "me",
+      "order": 14,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "stone_brick@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -0.7999999999999998,
+          0,
+          -0.7999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mf0000000000000000000",
+      "kind": "primitive",
+      "name": "mf",
+      "order": 15,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "stone@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0.8000000000000003,
+          0,
+          -0.7999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mg0000000000000000000",
+      "kind": "primitive",
+      "name": "mg",
+      "order": 16,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "marble@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          2.400000000000001,
+          0,
+          -0.7999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mh0000000000000000000",
+      "kind": "primitive",
+      "name": "mh",
+      "order": 17,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "tile@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.4,
+          0,
+          0.8000000000000003
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mi0000000000000000000",
+      "kind": "primitive",
+      "name": "mi",
+      "order": 18,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "wood@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -0.7999999999999998,
+          0,
+          0.8000000000000003
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mj0000000000000000000",
+      "kind": "primitive",
+      "name": "mj",
+      "order": 19,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "wood_plank@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0.8000000000000003,
+          0,
+          0.8000000000000003
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mk0000000000000000000",
+      "kind": "primitive",
+      "name": "mk",
+      "order": 20,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "metal@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          2.400000000000001,
+          0,
+          0.8000000000000003
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_ml0000000000000000000",
+      "kind": "primitive",
+      "name": "ml",
+      "order": 21,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "fabric@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.4,
+          0,
+          2.400000000000001
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mm0000000000000000000",
+      "kind": "primitive",
+      "name": "mm",
+      "order": 22,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "dirt@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -0.7999999999999998,
+          0,
+          2.400000000000001
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mn0000000000000000000",
+      "kind": "primitive",
+      "name": "mn",
+      "order": 23,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "grass@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0.8000000000000003,
+          0,
+          2.400000000000001
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mo0000000000000000000",
+      "kind": "primitive",
+      "name": "mo",
+      "order": 24,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.2,
+          "depth": 1.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "emissive@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          2.4,
+          0,
+          2.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_glass0000000000000000",
+      "kind": "primitive",
+      "name": "glass",
+      "order": 30,
+      "primitive": {
+        "builtin": "sphere@1",
+        "params": {
+          "radius": 0.6,
+          "segments": 64
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#ffffff",
+            "roughness": 0.05,
+            "transmission": 1,
+            "thickness": 0.5,
+            "ior": 1.5
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          5.5,
+          7.5
+        ],
+        "rotation": [
+          -0.304864,
+          0,
+          0,
+          0.952396
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_board0000000000000000",
+      "kind": "camera",
+      "name": "board",
+      "order": 40,
+      "camera": {
+        "focal_mm": 35
+      }
+    }
+  ]
+}

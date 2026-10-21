@@ -1,0 +1,108 @@
+{
+  "backend": "webgl",
+  "chrome": "Chrome/155.0.8059.85",
+  "visible": {
+    "probe": {
+      "visibility": "visible",
+      "raf": 121
+    },
+    "controlled": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "224f3228df354732",
+        "224f3228df354732"
+      ],
+      "frameIds": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      ],
+      "ms": [
+        135,
+        67
+      ]
+    },
+    "loop-async": {
+      "backend": "webgl2",
+      "hidden": false,
+      "hashes": [
+        "224f3228df354732",
+        "224f3228df354732"
+      ],
+      "frameIds": [
+        [
+          1,
+          5,
+          9,
+          11,
+          14,
+          17,
+          19,
+          22,
+          24,
+          27,
+          29,
+          32
+        ],
+        [
+          36,
+          39,
+          42,
+          45,
+          47,
+          50,
+          52,
+          55,
+          58,
+          60,
+          63,
+          65
+        ]
+      ],
+      "ms": [
+        320,
+        307
+      ]
+    }
+  },
+  "hidden": {
+    "probe": {
+      "visibility": "hidden",
+      "raf": 0
+    },
+    "controlled": {
+      "error": "timed out after 90000 ms"
+    },
+    "loop-async": {
+      "error": "timed out after 90000 ms"
+    }
+  },
+  "controlledSame": false,
+  "loopSame": false
+}
