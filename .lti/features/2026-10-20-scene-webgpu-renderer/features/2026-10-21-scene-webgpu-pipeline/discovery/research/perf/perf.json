@@ -1,0 +1,41 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+  "canvas": [
+    2394,
+    1692
+  ],
+  "modes": {
+    "wireframe": {
+      "mean": 8.333125,
+      "p95": 9.100000000000364,
+      "max": 9.399999999999636,
+      "frames": 480
+    },
+    "solid": {
+      "mean": 8.333125,
+      "p95": 9.299999999999272,
+      "max": 9.399999999999636,
+      "frames": 480
+    },
+    "preview": {
+      "mean": 8.334791666666668,
+      "p95": 9.200000000000728,
+      "max": 9.300000000001091,
+      "frames": 480
+    },
+    "rendered": {
+      "mean": 8.342083333333335,
+      "p95": 9.200000000000728,
+      "max": 10.900000000001455,
+      "frames": 480
+    }
+  },
+  "light_add_ms": 2808.100000000002,
+  "light_remove_ms": 258.6999999999971
+}

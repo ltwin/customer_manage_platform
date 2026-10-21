@@ -3576,6 +3576,8 @@ if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor help
         const { box } = await viewportCenter(page)
         for (const mode of ortho ? ['白模'] : ['线框', '白模', '材质预览', '最终渲染']) {
           await shading(page, mode)
+          // New lights stay dark until compiled for the viewport's passes (objects/SceneLights.tsx).
+          await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name} ${mode}: compiled`, 60_000)
           await writeFile(`${dir}/${name}-${ortho ? 'ortho' : 'persp'}-${mode}.png`, await settledShot(page, box))
         }
         assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)

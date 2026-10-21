@@ -180,6 +180,8 @@ export const gpuTestHooks = {
     return n
   },
   armed: new Map<Role, number>(),
+  /** Compiles under way (SceneGPU.compile): a new light shows once its compile is done. */
+  compiling: 0,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)
@@ -278,7 +280,12 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     compiler: null,
     async compile(scene, camera) {
       if (backend !== 'webgpu' && document.hidden) return
-      await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
+      gpuTestHooks.compiling++
+      try {
+        await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
+      } finally {
+        gpuTestHooks.compiling--
+      }
     },
     advanceFrame() {
       const f = frame()
