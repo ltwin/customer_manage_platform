@@ -1,5 +1,6 @@
 import { LinearSRGBColorSpace, NoToneMapping, Source, type Camera, type Object3D, type Texture } from 'three'
 import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
+import { backgroundTicker } from '../host/ticker.ts'
 import { adapter } from './probe.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
@@ -87,6 +88,14 @@ export class DeviceLostError extends Error {
   }
 }
 
+/** A picture past its deadline, given up between two of its frames (host/render.ts). */
+export class ShotTimeout extends Error {
+  constructor() {
+    super('出图超时')
+    this.name = 'ShotTimeout'
+  }
+}
+
 export type SceneGPU = {
   readonly renderer: WebGPURenderer
   readonly backend: 'webgpu' | 'webgl2'
@@ -102,6 +111,14 @@ export type SceneGPU = {
    * nothing can wait between the drawing and the encoding.
    */
   capture(draw: () => void, type: string, quality?: number): Blob
+  /**
+   * Settles once the GPU has done the work submitted so far: between the
+   * frames of a picture, so the page's other work (lease renewals, progress,
+   * cancelling) runs and a long picture does not starve it. Timed by the
+   * background ticker, not animation frames, which a hidden tab has none of
+   * (r186 dropped renderer.waitForGPU()).
+   */
+  settle(): Promise<void>
   /** The next frame, a fixed step after the last. */
   advanceFrame(): void
   /** Back to frame 0, every node due again: the start of a picture. */
@@ -290,6 +307,20 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
         await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
       } finally {
         gpuTestHooks.compiling--
+      }
+    },
+    async settle() {
+      if (device.isLost() || device.disposed) return
+      const queue = (backendInfo.device as { queue?: { onSubmittedWorkDone(): Promise<void> } } | undefined)?.queue
+      if (queue) return queue.onSubmittedWorkDone()
+      if (!gl) return
+      const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+      if (!sync) return
+      gl.flush()
+      try {
+        while (!gl.isContextLost() && gl.clientWaitSync(sync, 0, 0) === gl.TIMEOUT_EXPIRED) await backgroundTicker().wait(1)
+      } finally {
+        gl.deleteSync(sync)
       }
     },
     advanceFrame() {

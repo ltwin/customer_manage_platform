@@ -1,5 +1,6 @@
 import { ApiError } from '../../api/transport.ts'
 import type { Upload } from '../../creative-canvas/editor/media.ts'
+import { jobRenderCapMs, viewBudgetMs } from '../render/engines.ts'
 import { DeviceLostError } from '../render/gpu.ts'
 import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, measureStage, type CompileError } from '../sandbox/protocol.ts'
@@ -42,9 +43,12 @@ export type JobOutcome =
   | { state: 'abandoned'; reason: string }
 
 /** A screenshot that has not come back by then will not; the job is the page's failure. */
-export const renderTimeoutMs = 60_000
-/** An export's pictures, up to 48 of them, get this long in all. */
-export const exportTimeoutMs = 10 * 60_000
+export const renderTimeoutMs = viewBudgetMs
+/**
+ * An export's pictures get at most this long in all; renderShots holds each
+ * image and the whole to what they cost, which is less for most exports.
+ */
+export const exportTimeoutMs = jobRenderCapMs
 const completeAttempts = 3
 const maxErrorChars = 4000
 
@@ -125,7 +129,7 @@ export class SceneExecutor {
       hold.signal.removeEventListener('abort', stopTimer)
     }
     if (hold.lost() || shot === 'stopped') return { state: 'lost' }
-    if (shot === 'timeout') return this.fail(job, 'host_error', '截图超过 60 秒没有完成')
+    if (shot === 'timeout') return this.fail(job, 'host_error', `截图超过 ${Math.round(renderTimeoutMs / 1000)} 秒没有完成`)
     if (!shot.ok) return this.fail(job, 'render_error', shot.message)
     measureStage('shot', started)
     const { image, revision } = shot

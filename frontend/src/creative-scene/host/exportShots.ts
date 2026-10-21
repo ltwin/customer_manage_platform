@@ -2,9 +2,10 @@ import { ApiError } from '../../api/transport.ts'
 import type { components } from '../../api/schema'
 import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { SceneDocument } from '../api.ts'
-import { DeviceLostError } from '../render/gpu.ts'
+import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { exportLongSide, cameraFraming, type Framing } from './framing.ts'
+import { effectiveEngine, engineOf, framesFor, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
 
 // Export (design「导出渲染」「导出接口」): every camera of the plan drawn
@@ -37,10 +38,6 @@ const maxImages = 48
 /** The passes the export dialog starts with: the lit look too when the view shows materials. */
 export const defaultPasses = (display: DisplayMode): ExportPass[] => (display === 'preview' || display === 'rendered' ? ['clay', 'line', 'lit'] : ['clay', 'line'])
 
-/** One image that takes longer than this, rendered and encoded, fails the export. */
-export const shotTimeoutMs = 30_000
-/** Mounting the lit look and compiling its materials longer than this fails the export. */
-export const lookTimeoutMs = 60_000
 const uploadConcurrency = 2
 
 export type RenderDeps = {
@@ -72,27 +69,51 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const total = framings.length * plan.passes.length
   const clayPasses = plan.passes.filter((p) => p !== 'lit')
   const lit = plan.passes.includes('lit')
+  // Each image's limit follows what it costs (R2 design「输出分辨率、编码与时限」): its pixels, the frames its
+  // renderer averages, its encoding; the whole export gets the lit look's switch and every image's limit.
+  const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass) => {
+    const engine = pass === 'line' ? 'workbench' : effectiveEngine(engineOf(doc.scene.render), pass, true)
+    return shotBudgetMs(engine, framing.width, framing.height, framesFor(engine, 'export'), 'image/png')
+  }
+  const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass), 0), 0)
+  const began = now()
   const shooter = await deps.open(doc, clayPasses.length ? 'clay' : 'lit')
   const drawn = new Map<string, Blob>()
   const key = (camera: string, pass: ExportPass) => `${camera}\n${pass}`
-  /** Draws one image; false when it took too long. */
-  const draw = (id: string, framing: Framing, pass: ExportPass) => {
+  /** Draws one image; the message when it took too long. */
+  const draw = async (shot: { id: string; framing: Framing }, pass: ExportPass): Promise<string | null> => {
     onProgress?.({ stage: 'render', done: drawn.size, total })
+    const budget = budgetOf(shot, pass)
     const started = now()
-    const blob = shooter.shoot(framing, { kind: pass as ShotKind, type: 'image/png', depthOfField: pass !== 'line' && framing.depthOfField })
-    if (now() - started > shotTimeoutMs) return false
-    drawn.set(key(id, pass), blob)
-    return true
+    const slow = `一张导出图渲染超过 ${Math.round(budget / 1000)} 秒`
+    let blob: Blob
+    try {
+      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: 'image/png', depthOfField: pass !== 'line' && shot.framing.depthOfField, deadline: performance.now() + budget })
+    } catch (err) {
+      if (err instanceof ShotTimeout) return slow
+      throw err
+    }
+    if (now() - started > budget) return slow
+    if (now() - began > totalMs) return `导出超过 ${Math.round(totalMs / 1000)} 秒没有完成`
+    drawn.set(key(shot.id, pass), blob)
+    return null
   }
-  const slow = { ok: false as const, message: `一张导出图渲染超过 ${shotTimeoutMs / 1000} 秒` }
   try {
-    for (const { id, framing } of framings) for (const pass of clayPasses) if (!draw(id, framing, pass)) return slow
+    for (const shot of framings) {
+      for (const pass of clayPasses) {
+        const slow = await draw(shot, pass)
+        if (slow) return { ok: false, message: slow }
+      }
+    }
     if (lit) {
       if (clayPasses.length) {
-        const switched = await Promise.race([shooter.setLook('lit').then(() => true), sleep(lookTimeoutMs).then(() => false)])
-        if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookTimeoutMs / 1000} 秒` }
+        const switched = await Promise.race([shooter.setLook('lit').then(() => true), sleep(lookBudgetMs).then(() => false)])
+        if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookBudgetMs / 1000} 秒` }
       }
-      for (const { id, framing } of framings) if (!draw(id, framing, 'lit')) return slow
+      for (const shot of framings) {
+        const slow = await draw(shot, 'lit')
+        if (slow) return { ok: false, message: slow }
+      }
     }
     // Nothing goes up drawn on a device lost on the way (render.ts).
     await shooter.confirm()

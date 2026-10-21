@@ -238,3 +238,23 @@ test('the renderer in effect: the scene’s for clay and lit in perspective, the
   assert.equal(convergeFrames('workbench'), 1)
   assert.ok(convergeFrames('realtime_gi') > 1)
 })
+
+test('time limits follow what a picture costs: pixels, frames, encoding; eight times the reference, with floors', async () => {
+  const { estimateMs, framesFor, jobRenderCapMs, shotBudgetMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+  const { exportTimeoutMs, renderTimeoutMs } = await import('../src/creative-scene/host/executor.ts')
+  assert.equal(framesFor('workbench', 'export'), 1)
+  assert.equal(framesFor('workbench', 'view'), 1)
+  assert.ok(framesFor('realtime_gi', 'export') > framesFor('realtime_gi', 'view'))
+  // The design's example: an 8K 3:2 real-time GI image at K = 64, about 87 s; its limit about 11.6 minutes.
+  const k = framesFor('realtime_gi', 'export')
+  assert.equal(k, 64)
+  const eightK = estimateMs('realtime_gi', 8192, 5461, k, 'image/png')
+  assert.ok(eightK > 80_000 && eightK < 100_000, `${eightK}`)
+  assert.equal(shotBudgetMs('realtime_gi', 8192, 5461, k, 'image/png'), 8 * eightK)
+  // A 2K workbench image keeps R1's 30 seconds.
+  assert.equal(shotBudgetMs('workbench', 2048, 1365, 1, 'image/png'), 30_000)
+  assert.equal(viewBudgetMs, 60_000, 'render_view keeps its minute')
+  assert.equal(renderTimeoutMs, viewBudgetMs)
+  assert.equal(exportTimeoutMs, jobRenderCapMs)
+  assert.equal(jobRenderCapMs, 25 * 60_000, 'within the job’s 30 minutes')
+})

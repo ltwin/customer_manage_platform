@@ -17,6 +17,7 @@ import {
 } from '../src/creative-scene/cameraOptics.ts'
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
 import { renderShots, submitExport, uploadShots, type ExportPass, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
+import { ShotTimeout } from '../src/creative-scene/render/gpu.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
 import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
 import { readFileSync } from 'node:fs'
@@ -80,7 +81,7 @@ const object = (o: Partial<SceneObject> & { id: string; kind: SceneObject['kind'
   ...o,
 })
 const sceneOf = (...objects: SceneObject[]): Scene =>
-  ({ environment: { sky: { kind: 'color', color: '#000000' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, render: { mode: 'clay' }, objects }) as Scene
+  ({ environment: { sky: { kind: 'color', color: '#000000' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '2k' }, objects }) as Scene
 const camera = (extra: Record<string, unknown> = {}) =>
   object({
     id: 'cam',
@@ -231,6 +232,28 @@ test('lit images come after every clay and line image, with the lit look mounted
   const stuck = await run(['clay', 'lit'], () => new Promise(() => {}), async () => {})
   assert.deepEqual(stuck.out, { ok: false, message: '切换到材质光照超过 60 秒' })
   assert.equal(stuck.events.at(-1), 'close', 'the shooter is closed all the same')
+})
+
+test('each image goes to the shooter with its deadline; one given up between frames fails the export as too slow', async () => {
+  const doc = { scene: sceneOf(camera()), models: {}, revision: '5' }
+  const read = async () => doc as never
+  const deadlines: number[] = []
+  const before = performance.now()
+  const shooter: Shooter = {
+    shoot: async (_f, o) => {
+      deadlines.push(o.deadline ?? NaN)
+      if (o.kind === 'line') throw new ShotTimeout()
+      return new Blob([o.kind])
+    },
+    setLook: async () => {},
+    confirm: async () => {},
+    close: () => {},
+  }
+  const out = await renderShots({ read, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['cam'], passes: ['clay', 'line'] })
+  // A 2K workbench image: the 30-second floor.
+  assert.deepEqual(out, { ok: false, message: '一张导出图渲染超过 30 秒' })
+  assert.equal(deadlines.length, 2)
+  for (const d of deadlines) assert.ok(d >= before + 30_000 && d <= performance.now() + 30_000, `deadline ${d}`)
 })
 
 // --- editor -----------------------------------------------------------------

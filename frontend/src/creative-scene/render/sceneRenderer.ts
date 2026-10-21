@@ -1,6 +1,6 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
-import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
-import { MeshBasicNodeMaterial, PassNode, RenderPipeline, type Node } from 'three/webgpu'
+import { ACESFilmicToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, Vector2, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
+import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
+import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
@@ -85,6 +85,12 @@ export type Frame = {
   quality?: Quality
   /** Real-time GI: screen-space reflections, the lit look's; clay has none. */
   reflections?: boolean
+  /**
+   * Averages every frame of this renderer so far, after the depth of field
+   * and before tone mapping: an export's or render_view's frames (R2 design
+   * 「累积与出图」). The viewport does not.
+   */
+  accumulate?: boolean
 }
 
 /**
@@ -214,9 +220,65 @@ export function mainLight(scene: Object3D): Shadowing | null {
 }
 
 /** How a frame is drawn, which decides the pipeline: the real-time GI with or without reflections, or the workbench. */
-type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit'; light: Shadowing | null }
+type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit'; light: Shadowing | null; accumulate: boolean }
 
-const keyOf = ({ wireframe, blur, gi, light }: Look) => (wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}:${light?.uuid ?? ''}`}${blur ? '+dof' : ''}`)
+const keyOf = ({ wireframe, blur, gi, light, accumulate }: Look) =>
+  wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}:${light?.uuid ?? ''}`}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+
+const accumulateSize = /*@__PURE__*/ new Vector2()
+let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
+
+/**
+ * The running average of a picture's frames, in linear half float:
+ * acc = mix(acc, frame, 1 / n), n the frames so far. Two targets in turn;
+ * the node is the latest average.
+ */
+class AccumulateNode extends TempNode {
+  private readonly input: Node<'vec4'>
+  private targets: [RenderTarget, RenderTarget] = [new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }), new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false })]
+  private readonly weight = uniform(1)
+  private readonly previous = texture(this.targets[0].texture)
+  private readonly latest = texture(this.targets[1].texture)
+  private readonly material = new NodeMaterial()
+  private readonly quad = new QuadMesh(this.material)
+  private frames = 0
+
+  constructor(input: Node<'vec4'>) {
+    super('vec4')
+    this.input = input
+    this.updateBeforeType = NodeUpdateType.FRAME
+  }
+
+  setup() {
+    this.material.fragmentNode = mix(this.previous.sample(uv()), this.input, this.weight)
+    this.material.needsUpdate = true
+    return this.latest
+  }
+
+  updateBefore(frame: NodeFrame): undefined {
+    const renderer = frame.renderer!
+    const { width, height } = renderer.getDrawingBufferSize(accumulateSize)
+    for (const t of this.targets) t.setSize(width, height)
+    const [read, write] = this.targets
+    this.frames++
+    this.weight.value = 1 / this.frames
+    this.previous.value = read.texture
+    // Made on the first call (three's own nodes keep theirs the same way).
+    accumulateState = RendererUtils.resetRendererState(renderer, accumulateState as never)
+    renderer.setRenderTarget(write)
+    this.quad.render(renderer)
+    RendererUtils.restoreRendererState(renderer, accumulateState)
+    this.latest.value = write.texture
+    this.targets = [write, read]
+    return undefined
+  }
+
+  dispose() {
+    super.dispose()
+    for (const t of this.targets) t.dispose()
+    this.material.dispose()
+  }
+}
 
 /** three's typings leave most display nodes untyped; these all give a colour. */
 const vec4Of = (node: Node) => node as Node<'vec4'>
@@ -386,6 +448,7 @@ export class SceneRenderer {
         disposables.push(dof)
         picture = dof.output
       }
+      if (look.accumulate) picture = own(new AccumulateNode(picture)) as unknown as Node<'vec4'>
     } else {
       const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
       beauty.setLayers(layers(0, ASIDE_LAYER))
@@ -461,7 +524,7 @@ export class SceneRenderer {
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     const dof = !wireframe && perspective ? frame.dof : null
     const gi = frame.engine === 'realtime_gi' && !wireframe && perspective ? (frame.reflections ? 'lit' : 'clay') : 'off'
-    const look: Look = { wireframe, blur: dof !== null, gi, light: gi === 'off' ? null : mainLight(this.scene) }
+    const look: Look = { wireframe, blur: dof !== null, gi, light: gi === 'off' ? null : mainLight(this.scene), accumulate: gi !== 'off' && frame.accumulate === true }
     const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()

@@ -3740,7 +3740,8 @@ window.__ready = true;
 // DevTools protocol, as creative-scene-agent-background.e2e.mjs does. The
 // material board with glass and two more cameras, clay, line and lit: once in
 // front, twice behind a blank tab, then once behind it on the WebGL2 backend.
-if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden tab are the foreground’s, pixel for pixel, on WebGPU and WebGL2', async () => {
+// R2 AC-R2-5: the real-time GI's exports too, averaged over K frames with the page yielding between them.
+if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden tab are the foreground’s, pixel for pixel, on WebGPU and WebGL2, workbench and real-time GI', async () => {
   const chromePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
   const port = 9334
   const profile = mkdtempSync(join(tmpdir(), 'scene-hidden-'))
@@ -3779,10 +3780,17 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const doc = { scene, models: {}, revision: '1' }
     const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
     const run = () => evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)})`)
+    const gi = { ...doc, scene: { ...scene, render: { ...scene.render, engine: 'realtime_gi' } } }
+    const runGI = () => evaluate(`window.__export(${JSON.stringify(gi)}, ${JSON.stringify(plan)})`, 900_000)
     assert.equal(await evaluate('document.visibilityState'), 'visible')
     const front = await run()
     assert.equal(front.length, 9)
     assert.equal(new Set(front.map((i) => i.hash)).size, 9, 'every camera and pass its own picture')
+    const startedGI = Date.now()
+    const frontGI = await runGI()
+    const giMs = Date.now() - startedGI
+    assert.deepEqual(frontGI.filter((i) => i.pass === 'line'), front.filter((i) => i.pass === 'line'), 'line art is the workbench’s')
+    assert.ok(frontGI.filter((i) => i.pass !== 'line').every((i) => !front.some((w) => w.hash === i.hash)), 'clay and lit are the real-time GI’s')
     await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
     await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab went into the background', 10_000)
     const raf = await evaluate('new Promise((res) => { let n = 0; const t = () => { n++; requestAnimationFrame(t) }; requestAnimationFrame(t); setTimeout(() => res(n), 1000) })')
@@ -3791,10 +3799,17 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     assert.equal(await evaluate('document.visibilityState'), 'hidden', 'still in the background')
     assert.deepEqual(first, front, 'hidden as in front')
     assert.deepEqual(second, first, 'twice the same')
+    const firstGI = await runGI()
+    const secondGI = await runGI()
+    assert.deepEqual(firstGI, frontGI, 'real-time GI: hidden as in front')
+    assert.deepEqual(secondGI, firstGI, 'real-time GI: twice the same')
     await evaluate('window.__sceneGPU.forceWebGL = true')
     const webgl = await run()
     const again = await run()
     assert.deepEqual(again, webgl, 'the WebGL2 backend, twice the same in the background')
+    const webglGI = await runGI()
+    assert.deepEqual(await runGI(), webglGI, 'real-time GI on the WebGL2 backend, twice the same in the background')
+    console.log(`determinism: the real-time GI export (9 images, K frames each) took ${giMs} ms in front`)
     console.log(`determinism: hidden (rAF ${raf}/s) = front on WebGPU; WebGL2 in the background repeats itself (${webgl.filter((w, i) => w.hash === front[i].hash).length}/9 equal to WebGPU)`)
   } finally {
     chrome.kill()
@@ -4158,7 +4173,8 @@ window.__shots = async (scene, n, side) => {
   const held = [];
   try {
     for (let i = 0; i < n; i++) {
-      shooter.shoot(framing, { kind: 'lit', type: 'image/png' });
+      // render_view's frame count: the pipeline is the same, a quarter of the frames on SwiftShader.
+      await shooter.shoot(framing, { kind: 'lit', type: 'image/png', use: 'view' });
       const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'offscreen').at(-1).info.memory;
       held.push({ textures, renderTargets, uniformBuffers, programs });
     }
@@ -4172,7 +4188,7 @@ window.__hash = async (scene, kind, side) => {
   const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
   try {
     const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
-    const blob = shooter.shoot(framing, { kind, type: 'image/png' });
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png', use: 'view' });
     return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
   } finally {
     shooter.close();

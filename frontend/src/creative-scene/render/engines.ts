@@ -29,12 +29,45 @@ export const longSideOf = (resolution: Resolution): number => ({ '1k': 1024, '2k
 /** The scene's renderer; the server completes a scene stored before R2 (design R-1). */
 export const engineOf = (render: SceneRender): Engine => render.engine
 
+/** What a picture is for: an export, or the assistant's look (render_view). */
+export type Use = 'export' | 'view'
+
 /**
- * The frames a real-time GI picture is drawn over before it is taken, so
- * its temporal nodes have a history to stand on. A stand-in for the K-frame
- * accumulation (R2 tasks 4.1), which replaces it.
+ * The frames a picture is averaged over (R2 design「累积与出图」): one for
+ * the workbench; for the real-time GI, K for an export and K_view for
+ * render_view, the same for every scene. Set by the calibration (tasks 5.1).
  */
-export const GI_WARMUP_FRAMES = 16
+export function framesFor(engine: Engine, use: Use): number {
+  if (engine === 'workbench') return 1
+  return use === 'export' ? 64 : 16
+}
+
+/** The reference device's time per pixel and frame, and per pixel encoded, rounded up (R0, design「输出分辨率、编码与时限」). */
+const frameNs: Record<Engine, number> = { workbench: 15, realtime_gi: 30 }
+const encodeNs: Record<'image/png' | 'image/jpeg', number> = { 'image/png': 40, 'image/jpeg': 15 }
+
+/** How long a picture should take on the reference device, in ms. */
+export function estimateMs(engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg'): number {
+  return (width * height * (frames * frameNs[engine] + encodeNs[type])) / 1e6
+}
+
+/** A slow device gets eight times the reference's time, and never less than these. */
+const slack = 8
+const minShotMs = 30_000
+const minViewMs = 60_000
+
+/** One export image's time limit, drawn and encoded. */
+export const shotBudgetMs = (engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg') =>
+  Math.max(minShotMs, slack * estimateMs(engine, width, height, frames, type))
+
+/** render_view's time limit: a JPEG of long side 1024, square at most, with the real-time GI's frames. */
+export const viewBudgetMs = Math.max(minViewMs, slack * estimateMs('realtime_gi', 1024, 1024, framesFor('realtime_gi', 'view'), 'image/jpeg'))
+
+/** Mounting the lit look and compiling its materials, within an export. */
+export const lookBudgetMs = 60_000
+
+/** An assistant's export ends within its job's 30 minutes, with five to spare for uploading and placing. */
+export const jobRenderCapMs = 25 * 60_000
 
 /** What is drawn: a viewport shading or an export pass. */
 export type Look = 'solid' | 'rendered' | 'wireframe' | 'preview' | 'clay' | 'lit' | 'line'
