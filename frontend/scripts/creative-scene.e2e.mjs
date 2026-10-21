@@ -3061,6 +3061,58 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   await context.close()
 })
 
+await check('lights: the rendered view warms its lights in one compile; adding, undoing and switching away and back leave nothing behind', async () => {
+  const server = new SceneServer()
+  const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+  const lamp = (name, order, position, light) => ({ id: gid(name), kind: 'light', name, order, transform: { position, rotation: down, scale: [1, 1, 1] }, light })
+  seed(server, [
+    boxOf('crate', 5, { position: [-1, 0, 0] }, { width: 1, height: 1, depth: 1 }, { preset: 'wood@1', params: {} }),
+    boxOf('post', 6, { position: [1, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 }),
+    lamp('spota', 10, [0, 3, 0], { type: 'spot', color: '#ffffff', intensity: 60, cast_shadow: true, distance: 0, decay: 2, angle: Math.PI / 6, penumbra: 0.2 }),
+    lamp('pointa', 11, [-2, 2, 2], { type: 'point', color: '#ffd9b0', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }),
+    lamp('pointb', 12, [2, 2, 2], { type: 'point', color: '#ffd9b0', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }),
+  ])
+  const { context, page, errors } = await open(server)
+  const { x, y, box } = await viewportCenter(page)
+  const compiles = () => page.evaluate(() => window.__sceneGPU.compiles)
+  const compiled = () => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+  const before = await compiles()
+  await shading(page, '最终渲染')
+  await compiled()
+  assert.equal((await compiles()) - before, 1, 'the three lights compile together')
+  /** What the viewport's renderer holds on the device. */
+  const memory = () =>
+    page.evaluate(() => {
+      const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').at(-1).info.memory
+      return { textures, renderTargets, uniformBuffers, programs }
+    })
+  const round = async (n) => {
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+    await waitFor(() => server.commands.length === 2 * n - 1, 'add a point light')
+    await compiled()
+    await saved(page)
+    await focusEditor(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.commands.length === 2 * n, 'undo')
+    await saved(page)
+    await shading(page, '白模')
+    // Past the second after which an unused material is freed (materials/instances.ts).
+    await sleep(1500)
+    await shading(page, '最终渲染')
+    await compiled()
+    await settledShot(page, box)
+  }
+  await round(1)
+  const settled = await memory()
+  await round(2)
+  await round(3)
+  assert.deepEqual(await memory(), settled, 'the same resources after two more rounds')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens shadows and turns the sky to dusk; Cmd+Z', async () => {
   const server = new SceneServer()
   const post = gid('post')
@@ -3944,6 +3996,71 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: frame times of the reference 
     // Both can sit at the display's refresh rate, where they differ only by noise.
     assert.ok(results.preview.mean <= results.rendered.mean + 0.5, 'material preview is no slower')
     assert.ok(add < 1000 && remove < 1000, 'adding or removing a light hitches under a second')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** rAF timestamps, each with the compiles under way (SceneGPU.compile), for ms while a swipe turns the view every frame. */
+const compileFrames = (page, ms) =>
+  page.evaluate((ms) => new Promise((resolve) => {
+    const el = document.querySelector('.cc-scene-editor canvas')
+    const frames = []
+    let sign = 1
+    const start = performance.now()
+    const tick = (t) => {
+      frames.push([t, window.__sceneGPU.compiling])
+      sign = -sign
+      el.dispatchEvent(new WheelEvent('wheel', { deltaX: 4 * sign, deltaY: 0, deltaMode: 0, bubbles: true, cancelable: true }))
+      if (t - start < ms) requestAnimationFrame(tick)
+      else resolve(frames)
+    }
+    requestAnimationFrame(tick)
+  }), ms)
+
+if (process.env.SCENE_E2E_PERF) await check('AC-9: switching to the rendered view of the reference scene, on this machine’s GPU', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    // The longest frame from the click on, and when the scene's lights came on (their compile done).
+    const measure = async (from) => {
+      await shading(page, from)
+      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+      // Past the second after which an unused material is freed (materials/instances.ts).
+      await sleep(1500)
+      const measuring = compileFrames(page, 6000)
+      await sleep(500)
+      const [at, before] = await page.evaluate(() => [performance.now(), window.__sceneGPU.compiles])
+      await shading(page, '最终渲染')
+      const after = (await measuring).filter(([t]) => t >= at)
+      const longest = Math.max(...gaps([at, ...after.map(([t]) => t)]))
+      const last = after.findLastIndex(([, compiling]) => compiling > 0)
+      const lightsOn = (after[last + 1] ?? after[0])[0] - at
+      const compiles = (await page.evaluate(() => window.__sceneGPU.compiles)) - before
+      return { longest_frame_ms: Math.round(longest), lights_on_ms: Math.round(lightsOn), compiles }
+    }
+    const switches = {
+      'solid → rendered, first': await measure('白模'),
+      'solid → rendered, again': await measure('白模'),
+      'preview → rendered': await measure('材质预览'),
+      'wireframe → rendered': await measure('线框'),
+    }
+    for (const [name, m] of Object.entries(switches)) console.log(`  ${name}: longest frame ${m.longest_frame_ms} ms, lights on after ${m.lights_on_ms} ms, ${m.compiles} compile(s)`)
+    const out = process.env.SCENE_E2E_PERF_OUT
+    if (out) await writeFile(`${out}/switch.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), switches }, null, 2)}\n`)
+    // The browser keeps compiled shaders between runs: with none kept the first switch's first frame took 1.7 s
+    // and its lights 3.7 s; compiling light by light, every switch took 7 to 10 s with stalls of 2.5 s.
+    for (const [name, m] of Object.entries(switches)) {
+      assert.equal(m.compiles, 1, `${name}: the four lights compile together`)
+      assert.ok(m.longest_frame_ms < 2000 && m.lights_on_ms < 5000, `${name}: longest frame ${m.longest_frame_ms} ms, lights on after ${m.lights_on_ms} ms`)
+    }
     assert.deepEqual(errors, [], errors.join('\n'))
     await context.close()
   } finally {

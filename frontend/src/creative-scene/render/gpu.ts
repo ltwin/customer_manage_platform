@@ -168,7 +168,7 @@ export const gpuTestHooks = {
   forceWebGL: false,
   /** Treats the device as compatibility mode: the workbench drops MSAA for SMAA (no such device to test on). */
   forceCompatibility: false,
-  live: new Set<{ role: Role; lose(afterCaptures?: number): void }>(),
+  live: new Set<{ role: Role; info: WebGPURenderer['info']; lose(afterCaptures?: number): void }>(),
   /** Loses the device of every live renderer in that role, now or after that many more captures. */
   loseDevice(role: Role, afterCaptures = 0): number {
     let n = 0
@@ -182,6 +182,8 @@ export const gpuTestHooks = {
   armed: new Map<Role, number>(),
   /** Compiles under way (SceneGPU.compile): a new light shows once its compile is done. */
   compiling: 0,
+  /** Compiles started (SceneGPU.compile). */
+  compiles: 0,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)
@@ -255,7 +257,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext()
     else backendInfo.device?.destroy()
   }
-  const hook = { role, lose: (afterCaptures = 0) => device.loseAfter(afterCaptures, loseNow) }
+  const hook = { role, info: renderer.info, lose: (afterCaptures = 0) => device.loseAfter(afterCaptures, loseNow) }
   gpuTestHooks.live.add(hook)
   const armed = gpuTestHooks.armed.get(role)
   if (armed !== undefined) {
@@ -281,6 +283,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     async compile(scene, camera) {
       if (backend !== 'webgpu' && document.hidden) return
       gpuTestHooks.compiling++
+      gpuTestHooks.compiles++
       try {
         await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
       } finally {

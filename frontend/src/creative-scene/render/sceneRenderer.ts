@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type Light, type Mesh, type Object3D, type PerspectiveCamera } from 'three'
+import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, PassNode, RenderPipeline, type Node } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -115,12 +115,14 @@ function fixedNoise(size = 64): DataTexture {
   return texture
 }
 
+type StandIn = { meshes: Group; lights: Scene }
+
 /**
  * What SceneRenderer.compile compiles: one copy of each kind of visible mesh
  * where the mesh is (geometry and material shared, its flags kept), and the
  * visible lights copied into a scene with the same environment and fog.
  */
-function standIn(scene: Scene): { meshes: Group; lights: Scene } {
+function standIn(scene: Scene): StandIn {
   const lights = new Scene()
   lights.environment = scene.environment
   lights.environmentIntensity = scene.environmentIntensity
@@ -151,6 +153,16 @@ function standIn(scene: Scene): { meshes: Group; lights: Scene } {
   })
   lights.updateMatrixWorld()
   return { meshes, lights }
+}
+
+/** Lets three free what it keeps for a stand-in: its meshes' render objects (and their pipelines), its lights' shadow maps. */
+function disposeStandIn({ meshes, lights }: StandIn) {
+  for (const m of meshes.children) m.dispose()
+  for (const l of lights.children as (Light & { shadow?: LightShadow })[]) {
+    // Never drawn into, so three never set up freeing its textures; the materials bound the depth.
+    l.shadow?.map?.depthTexture?.dispose()
+    l.dispose()
+  }
 }
 
 const keyOf = (wireframe: boolean, blur: boolean) => (wireframe ? 'wire' : blur ? 'shaded+dof' : 'shaded')
@@ -206,6 +218,15 @@ export class SceneRenderer {
   private height = -1
   private pixelRatio = -1
   private aoPixelRatio = -1
+  /**
+   * The last compile's stand-in, kept until the next compile is done: three
+   * frees a pipeline nothing draws with, and the meshes it stood in for take
+   * its pipelines only on the frame after the light shows. Each is freed in
+   * turn, so a session of light edits does not pile them up.
+   */
+  private kept: { standIn: StandIn; order: number } | null = null
+  private compiles = 0
+  private disposed = false
 
   /** `camera` is the one camera every frame is drawn from; the passes keep it. */
   private readonly camera: Camera
@@ -239,13 +260,23 @@ export class SceneRenderer {
     const renderer = this.gpu.renderer
     const { scene, camera } = this
     if (!this.built) return renderer.compileAsync(scene, camera)
-    const { meshes, lights } = standIn(scene)
+    const next = standIn(scene)
+    const { meshes, lights } = next
+    const order = ++this.compiles
+    // A pipeline depends on its target's formats and samples, not its size. The
+    // pass itself may be resized or rebuilt (the look changing) while this compiles:
+    // its targets would be freed under the compile.
+    const targets = this.built.passes.map(({ node }) => {
+      const t = node.renderTarget.clone()
+      t.setSize(1, 1)
+      return t
+    })
     // compileAsync reads the target and MRT before its first await; the passes' state is set only for that.
-    const compiling = this.built.passes.map(({ node, layers: drawn }) => {
+    const compiling = this.built.passes.map(({ node, layers: drawn }, i) => {
       const target = renderer.getRenderTarget()
       const targetMRT = renderer.getMRT()
       const mask = camera.layers.mask
-      renderer.setRenderTarget(node.renderTarget)
+      renderer.setRenderTarget(targets[i])
       renderer.setMRT(node.getMRT())
       camera.layers.mask = drawn.mask
       try {
@@ -256,7 +287,27 @@ export class SceneRenderer {
         camera.layers.mask = mask
       }
     })
-    return Promise.all(compiling).then(() => {})
+    const freeTargets = () => {
+      for (const t of targets) {
+        t.dispose()
+        // A cloned target's depth is not its own to three, which leaves it out of dispose().
+        t.depthTexture?.dispose()
+      }
+    }
+    return Promise.all(compiling).then(
+      () => {
+        freeTargets()
+        // Compiles may finish out of order; the last one asked for is the scene as it is.
+        if (this.disposed || (this.kept && this.kept.order > order)) return disposeStandIn(next)
+        if (this.kept) disposeStandIn(this.kept.standIn)
+        this.kept = { standIn: next, order }
+      },
+      (error: unknown) => {
+        freeTargets()
+        disposeStandIn(next)
+        throw error
+      },
+    )
   }
 
   private build(wireframe: boolean, blur: boolean): Built {
@@ -376,6 +427,9 @@ export class SceneRenderer {
   }
 
   dispose() {
+    this.disposed = true
+    if (this.kept) disposeStandIn(this.kept.standIn)
+    this.kept = null
     this.built?.dispose()
     this.built = null
     if (this.overlays !== noOverlays) this.gpu.compiler = null
