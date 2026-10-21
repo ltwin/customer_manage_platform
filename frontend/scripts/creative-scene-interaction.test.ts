@@ -357,7 +357,7 @@ test('the middle button and Alt + left drag both navigate; the right button neve
 
 // --- edits ----------------------------------------------------------------------
 
-import { clearOp, duplicate, newPrimitive, visibilityOp } from '../src/creative-scene/editing.ts'
+import { clearOp, duplicate, newPrimitive, rowOffsets, visibilityOp } from '../src/creative-scene/editing.ts'
 
 test('a new primitive goes last at the root, named after its builtin', () => {
   const o = newPrimitive('box@1', [1, 0, 2], [so(0), so(3)], () => sid(9))
@@ -482,6 +482,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     tool: 'move',
     toolbar: false,
     sidebar: true,
+    sidebarTab: 'assets',
     history: true,
     lastCamera: 'sobj_cam',
     guides: ['thirds', 'diagonals'],
@@ -489,8 +490,8 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     wireBack: 'preview',
   }
   assert.deepEqual(parseView(JSON.parse(JSON.stringify(view))), view)
-  const { lastCamera: _l, guides: _g, display: _d, wireBack: _w, ...before } = view
-  assert.deepEqual(parseView(before), { ...before, lastCamera: null, guides: [], display: null, wireBack: 'solid' }, 'a view saved before cameras comes back without them')
+  const { lastCamera: _l, guides: _g, display: _d, wireBack: _w, sidebarTab: _t, ...before } = view
+  assert.deepEqual(parseView(before), { ...before, sidebarTab: 'outliner', lastCamera: null, guides: [], display: null, wireBack: 'solid' }, 'a view saved before cameras and the asset panel comes back without them')
   assert.equal(parseView({ ...view, display: 'xray' })?.display, null, 'an unknown shading leaves it to the scene')
   assert.deepEqual(parseView({ ...view, guides: ['thirds', 'spiral'] })?.guides, ['thirds'], 'unknown guides are dropped')
   assert.deepEqual(parseView({ ...view, camera: null }), { ...view, camera: null })
@@ -504,7 +505,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
   assert.equal(readView(storage, 'k'), null)
   const saver = new ViewSaver(storage, 'k', view)
   saver.camera({ position: [0, -5, 2], target: [0, 0, 0], ortho: false, zoom: 1 })
-  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, history: false, lastCamera: null, guides: ['center'], display: 'wireframe', wireBack: 'rendered' })
+  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, sidebarTab: 'outliner', history: false, lastCamera: null, guides: ['center'], display: 'wireframe', wireBack: 'rendered' })
   assert.equal(storage.getItem('k'), '{broken', 'writes wait a moment')
   saver.flush()
   assert.deepEqual(readView(storage, 'k'), {
@@ -513,6 +514,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     tool: 'box',
     toolbar: true,
     sidebar: false,
+    sidebarTab: 'outliner',
     history: false,
     lastCamera: null,
     guides: ['center'],
@@ -530,4 +532,13 @@ test('the shading chosen here wins; until then the scene suggests it; Shift+Z go
   const wire = toggleWireframe({ wireBack: 'solid' }, 'rendered')
   assert.deepEqual(wire, { display: 'wireframe', wireBack: 'rendered' })
   assert.deepEqual(toggleWireframe(wire, 'wireframe'), { display: 'rendered', wireBack: 'rendered' })
+})
+
+test('models put in together stand in a row, gap apart, centred on the view', () => {
+  assert.deepEqual(rowOffsets([2]), [0])
+  assert.deepEqual(rowOffsets([1, 1], 0.5), [-0.75, 0.75])
+  const [a, b, c] = rowOffsets([2, 1, 3], 0.3)
+  assert.ok(Math.abs(b! - a! - (1 + 0.5 + 0.3)) < 1e-9, 'half of each width plus the gap between centres')
+  assert.ok(Math.abs(c! - b! - (0.5 + 1.5 + 0.3)) < 1e-9)
+  assert.ok(Math.abs(a! - 1 + 3.3) < 1e-9, 'the row is centred: left edge at -3.3')
 })

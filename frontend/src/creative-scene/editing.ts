@@ -153,6 +153,20 @@ export function transformOp(results: readonly { id: string; position: number[]; 
 }
 
 /** How a prompt names an edit of n objects, for example 「移动 3 个物件」. */
+/**
+ * Where models set side by side along X go: each one's centre offset, `gap`
+ * metres apart, the row centred on 0. Widths are the models' X extents.
+ */
+export function rowOffsets(widths: readonly number[], gap = 0.3): number[] {
+  const total = widths.reduce((sum, w) => sum + w, 0) + gap * Math.max(0, widths.length - 1)
+  let x = -total / 2
+  return widths.map((w) => {
+    const centre = x + w / 2
+    x += w + gap
+    return centre
+  })
+}
+
 export function objectsLabel(verb: string, n: number, name?: string): string {
   return n === 1 && name ? `${verb}「${name}」` : `${verb} ${n} 个物件`
 }

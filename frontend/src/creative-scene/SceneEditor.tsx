@@ -9,7 +9,7 @@ import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
-import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, objectsLabel, transformOp, visibilityOp } from './editing.ts'
+import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, objectsLabel, rowOffsets, transformOp, visibilityOp } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -27,6 +27,8 @@ import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
+import { AssetPanel } from './panels/AssetPanel.tsx'
+import { pushRecent, readRecent } from './library/recent.ts'
 import { EnvironmentPanel } from './panels/EnvironmentPanel.tsx'
 import { LightFields } from './panels/LightFields.tsx'
 import { MaterialSlots } from './panels/MaterialSlots.tsx'
@@ -126,8 +128,7 @@ export default function SceneEditor({
   canvasID,
   sceneNodeID,
   onSaveModel,
-  onOpenLibrary,
-  libraryDrag = null,
+  libraryTick = 0,
 }: {
   documentID: string
   onClose: () => void
@@ -136,10 +137,8 @@ export default function SceneEditor({
   sceneNodeID?: string
   /** Opens the canvas page's 「存入资产库」 dialog; without it the entries are hidden. */
   onSaveModel?: (request: SaveModelRequest) => void
-  /** Opens the asset drawer to pick a model; place puts the picked one in the scene. */
-  onOpenLibrary?: (place: (asset: LibraryAsset) => void) => void
-  /** A model being dragged from the asset drawer, null when nothing is. */
-  libraryDrag?: LibraryAsset | null
+  /** Changes when the page wrote to the asset library; the asset panel reads it again. */
+  libraryTick?: number
 }) {
   const session = useMemo(() => openScene(documentID), [documentID])
   // Attach and connect in effects, paired with their cleanup: StrictMode
@@ -169,6 +168,14 @@ export default function SceneEditor({
   const handle = useRef<ViewportHandle | null>(null)
   const root = useRef<HTMLElement>(null)
   const [confirmRestore, setConfirmRestore] = useState(false)
+  // The asset panel: the model being dragged out of it, the models last placed, and asks to focus its search.
+  const [libraryDrag, setLibraryDrag] = useState<LibraryAsset | null>(null)
+  const [recentAssets, setRecentAssets] = useState(() => readRecent(storage(), currentAccount()))
+  const [assetFocus, setAssetFocus] = useState(0)
+  // The asset panel mounts on its first showing and then stays, hidden behind
+  // the outliner tab, so going back to it does not read the library again.
+  const [assetsSeen, setAssetsSeen] = useState(false)
+  if (!assetsSeen && u.sidebar && u.sidebarTab === 'assets') setAssetsSeen(true)
   const [exportRun, setExportRun] = useState<{ busy: boolean; progress: Progress | null }>({ busy: false, progress: null })
   // The code sandbox starts with the first bake and goes with the editor.
   const sandbox = useRef<SandboxHost | null>(null)
@@ -451,23 +458,52 @@ export default function SceneEditor({
     } else notify(out.message)
   }
   /**
-   * An asset's model, where the menu was opened (on the ground under the
-   * pointer, else below the view's centre). Its summary is known at once, so
-   * the properties and the selection box are right before the next read.
+   * An asset's model dropped on the viewport, where it snapped. Its summary is
+   * known at once, so the properties and the selection box are right before
+   * the next read.
    */
-  const placeModel = (asset: LibraryAsset, where: { at?: { x: number; y: number }; placed?: Placed }) => {
+  const placeModel = (asset: LibraryAsset, placed: Placed) => {
     const model = dragModel(asset)
     if (!model) return notify('这个模型不可用')
-    const placed = where.placed ?? handle.current?.snapAt(where.at, model)
-    if (!placed) return
     modelCache.remember(model.revision, model.summary)
     const o = newModelInstance(model.revision, asset.title, placed, objects, assetMaterials(asset))
     if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
     select([o.id])
-    // The pick was made in the drawer: keys go back to the editor, so Cmd+Z undoes it at once.
+    setRecentAssets(pushRecent(storage(), currentAccount(), asset.id))
+    // The pick was made in the asset panel: keys go back to the editor, so Cmd+Z undoes it at once.
     root.current?.focus({ preventScroll: true })
   }
-  const openLibrary = (at?: { x: number; y: number }) => onOpenLibrary?.((asset) => placeModel(asset, { at }))
+  /**
+   * The asset panel's models, in a row on the ground below the view's centre
+   * (each by its mount, as with no pointer): one edit, all selected.
+   */
+  const placeModels = (assets: LibraryAsset[]) => {
+    const view = handle.current
+    const models = assets.flatMap((asset) => {
+      const model = dragModel(asset)
+      return model ? [{ asset, model }] : []
+    })
+    if (!models.length) return notify('这个模型不可用')
+    if (!view) return
+    const offsets = rowOffsets(models.map(({ model }) => (model.bounds.max[0] ?? 0) - (model.bounds.min[0] ?? 0)))
+    const added: SceneObject[] = []
+    models.forEach(({ asset, model }, i) => {
+      const placed = view.snapAt(undefined, model)
+      const [x, y, z] = placed.position
+      modelCache.remember(model.revision, model.summary)
+      added.push(newModelInstance(model.revision, asset.title, { ...placed, position: [x + (offsets[i] ?? 0), y, z] }, [...objects, ...added], assetMaterials(asset)))
+    })
+    if (!edit([{ op: 'add_objects', objects: added }], objectsLabel('添加', added.length, added[0]?.name))) return
+    select(added.map((o) => o.id))
+    // Newest first: the first picked ends up first in 最近使用.
+    for (const { asset } of [...models].reverse()) setRecentAssets(pushRecent(storage(), currentAccount(), asset.id))
+    root.current?.focus({ preventScroll: true })
+  }
+  /** Shows the asset panel in the sidebar, its search box taking the keys. */
+  const showAssets = () => {
+    ui.setState({ sidebar: true, sidebarTab: 'assets' })
+    setAssetFocus((n) => n + 1)
+  }
   const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : null), [libraryDrag])
   /** Adds where the menu was opened: Shift+A or a right click over the ground. */
   const addPrimitive = (builtin: string, at?: { x: number; y: number }) => {
@@ -642,6 +678,8 @@ export default function SceneEditor({
         return ui.setState({ toolbar: !u.toolbar })
       case 'toggle-sidebar':
         return ui.setState({ sidebar: !u.sidebar })
+      case 'toggle-assets':
+        return u.sidebar && u.sidebarTab === 'assets' ? ui.setState({ sidebarTab: 'outliner' }) : showAssets()
       case 'view-front':
       case 'view-back':
       case 'view-right':
@@ -733,7 +771,7 @@ export default function SceneEditor({
         ...builtins.filter((b) => b.builtin === groundBuiltin).map(item),
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
-        ...(onOpenLibrary ? [{ label: '从资产库添加…', run: () => openLibrary(at) }] : []),
+        { label: '从资产库添加…', shortcut: k('toggle-assets'), run: showAssets },
         { section: '灯光' },
         ...(['directional', 'point', 'spot'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
@@ -792,6 +830,7 @@ export default function SceneEditor({
       'separator',
       { label: '显示工具栏', shortcut: k('toggle-toolbar'), checked: u.toolbar, run: () => run('toggle-toolbar') },
       { label: '显示侧栏', shortcut: k('toggle-sidebar'), checked: u.sidebar, run: () => run('toggle-sidebar') },
+      { label: '资产面板', shortcut: k('toggle-assets'), checked: u.sidebar && u.sidebarTab === 'assets', run: () => run('toggle-assets') },
     ]
   }
 
@@ -880,6 +919,34 @@ export default function SceneEditor({
             {u.toolbar && <Toolbar tool={u.tool} disabled={readOnly} onTool={(tool) => ui.setState({ tool })} />}
             {u.sidebar && (
               <aside className="cc-scene-sidebar" aria-label="侧栏">
+                <div className="cc-scene-tabs" role="tablist" aria-label="侧栏内容">
+                  {(['outliner', 'assets'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={u.sidebarTab === tab}
+                      title={tab === 'assets' ? `资产 · ${shortcutFor('toggle-assets', mac)}` : '大纲'}
+                      onClick={() => (tab === 'assets' ? showAssets() : ui.setState({ sidebarTab: 'outliner' }))}
+                    >
+                      {tab === 'assets' ? '资产' : '大纲'}
+                    </button>
+                  ))}
+                </div>
+                {assetsSeen && (
+                  <AssetPanel
+                    refresh={libraryTick}
+                    hidden={u.sidebarTab !== 'assets'}
+                    recent={recentAssets}
+                    readOnly={readOnly}
+                    focus={assetFocus}
+                    placeable={(asset) => !!dragModel(asset)}
+                    onPlace={placeModels}
+                    onDrag={setLibraryDrag}
+                    onExit={() => root.current?.focus({ preventScroll: true })}
+                  />
+                )}
+                {u.sidebarTab !== 'assets' && (
                 <Outliner
                   objects={shown.objects}
                   selection={u.selection}
@@ -889,6 +956,7 @@ export default function SceneEditor({
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
                   onDrop={(moving, target, place) => drop(moving, target, place)}
                 />
+                )}
                 {!shownActive && !selected.length && shown ? (
                   <EnvironmentPanel
                     environment={shown.environment}
@@ -992,7 +1060,7 @@ export default function SceneEditor({
                 }}
                 onDragging={(dragging) => session.setDragging(dragging)}
                 libraryDrag={drag}
-                onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, { placed })}
+                onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, placed)}
               />
               <StatusBar hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />

@@ -28,6 +28,7 @@ export type Action =
   | 'toggle-tool'
   | 'toggle-toolbar'
   | 'toggle-sidebar'
+  | 'toggle-assets'
   | 'view-front'
   | 'view-back'
   | 'view-right'
@@ -101,6 +102,7 @@ export const bindings: readonly Binding[] = [
   { codes: ['KeyW'], contexts: idle, action: 'toggle-tool', label: '切换框选 / 调整', group: '选择' },
   { codes: ['KeyT'], contexts: viewing, action: 'toggle-toolbar', label: '工具栏', group: '视图' },
   { codes: ['KeyN'], contexts: viewing, action: 'toggle-sidebar', label: '侧栏', group: '视图' },
+  { codes: ['F1'], mods: { shift: true }, contexts: viewing, action: 'toggle-assets', label: '资产面板', group: '视图' },
   { codes: ['Digit1', 'Numpad1'], contexts: viewing, action: 'view-front', label: '前视', group: '视图' },
   { codes: ['Digit1', 'Numpad1'], mods: { mod: true }, contexts: viewing, action: 'view-back', label: '后视', group: '视图' },
   { codes: ['Digit3', 'Numpad3'], contexts: viewing, action: 'view-right', label: '右视', group: '视图' },

@@ -22,7 +22,48 @@
 .cc-scene-toolbar button:disabled { opacity: 0.35; cursor: default; }
 
 .cc-scene-sidebar { width: 280px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; }
+.cc-scene-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); flex: none; }
+.cc-scene-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 4px 10px 6px; font: inherit; font-size: 13px; cursor: pointer; }
+.cc-scene-tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 .cc-scene-outliner { flex: 1 1 45%; overflow: auto; padding: 6px 0; border-bottom: 1px solid var(--border); }
+/* 资产页签：筛选、卡片网格、选中卡片的说明；比大纲多占一些高度，属性栏仍留在下方。 */
+.cc-scene-assets { flex: 1 1 60%; min-height: 0; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); font-size: 13px; }
+.cc-scene-assets[hidden] { display: none; }
+.cc-scene-assets-filters { display: grid; gap: 6px; padding: 8px; flex: none; }
+.cc-scene-assets-search { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); }
+.cc-scene-assets-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--fg); font: inherit; outline: none; }
+.cc-scene-assets-search:focus-within { border-color: var(--accent); }
+.cc-scene-assets-row { display: flex; gap: 4px; align-items: center; }
+.cc-scene-assets-row select { flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
+.cc-scene-assets-size { display: flex; flex: none; }
+.cc-scene-assets-size button { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
+.cc-scene-assets-size button:first-child { border-radius: 6px 0 0 6px; }
+.cc-scene-assets-size button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.cc-scene-assets-size button[aria-pressed="true"] { color: var(--fg); background: #f28c2826; }
+.cc-scene-assets-body { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 8px; user-select: none; }
+/* 框选：坐标取自指针的视口坐标。 */
+.cc-scene-assets-marquee { position: fixed; z-index: 5; border: 1px solid var(--accent); background: #f28c281f; pointer-events: none; }
+.cc-scene-assets-body h3 { margin: 6px 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cc-scene-assets-grid { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cc-scene-assets-body.is-large .cc-scene-assets-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cc-scene-asset { display: flex; flex-direction: column; gap: 3px; padding: 3px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; user-select: none; outline: none; }
+.cc-scene-asset:hover { background: #ffffff0d; }
+.cc-scene-asset:focus-visible { border-color: var(--accent); }
+.cc-scene-asset.is-selected { border-color: var(--accent); background: #f28c2826; }
+.cc-scene-asset.is-unusable { opacity: 0.5; }
+/* 图片铺放沿用 .cc-media；这里只定方形和圆角。 */
+.cc-scene-asset-thumb { aspect-ratio: 1; border-radius: 6px; overflow: hidden; display: grid; place-items: center; }
+/* 卡片太小放不下失败说明：只留图标，文字仍给读屏。 */
+.cc-scene-asset-thumb .cc-media-retry { min-width: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; }
+.cc-scene-asset-thumb .cc-media-retry span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cc-scene-asset-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-scene-assets-note { margin: 12px 4px; color: var(--muted); line-height: 1.5; }
+.cc-scene-assets-end { min-height: 1px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.cc-scene-assets-detail { flex: none; display: grid; gap: 2px; padding: 8px; border-top: 1px solid var(--border); }
+.cc-scene-assets-detail strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-scene-assets-detail small { color: var(--muted); }
+.cc-scene-assets-actions { display: flex; gap: 6px; margin-top: 6px; }
+.cc-scene-assets-actions .btn { padding: 4px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
 .cc-scene-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; font-size: 13px; user-select: none; }
 .cc-scene-row:hover { background: #ffffff0d; }
 .cc-scene-row.is-selected { background: #f28c2826; }

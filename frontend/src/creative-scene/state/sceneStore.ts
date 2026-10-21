@@ -44,6 +44,8 @@ export type Popup =
  */
 export type CodeTarget = ({ kind: 'new'; position: [number, number, number] } | { kind: 'object'; id: string }) & { opened: number }
 
+export type SidebarTab = 'outliner' | 'assets'
+
 /** A revision from the history list, with the models its snapshot names. */
 export type Preview = { revision: string; scene: Scene; models: Record<string, SceneModel> }
 
@@ -52,6 +54,8 @@ export type EditorUI = {
   tool: Tool
   toolbar: boolean
   sidebar: boolean
+  /** What the sidebar's top half shows: the object list or the asset panel. */
+  sidebarTab: SidebarTab
   popup: Popup | null
   sheet: boolean
   history: boolean
@@ -92,6 +96,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     tool: saved?.tool ?? 'box',
     toolbar: saved?.toolbar ?? true,
     sidebar: saved?.sidebar ?? true,
+    sidebarTab: saved?.sidebarTab ?? 'outliner',
     popup: null,
     sheet: false,
     history: saved?.history ?? false,

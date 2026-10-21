@@ -26,7 +26,6 @@ import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
 import SaveModelDialog from '/src/creative-canvas/editor/SaveModelDialog.tsx';
-import LibraryDrawer from '/src/creative-canvas/editor/LibraryDrawer.tsx';
 import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
 import {sceneContext} from '/src/creative-scene/context.ts';
 import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
@@ -39,22 +38,19 @@ window.__closed = 0;
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
-// ?library=1 hands the editor the canvas page's 「存入资产库」 dialog and asset drawer.
-const noop = () => {};
+// ?library=1 hands the editor the canvas page's 「存入资产库」 dialog; a save makes the asset panel read again.
 function Editor({host}) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(null);
-  const [place, setPlace] = useState(null);
-  const [drag, setDrag] = useState(null);
+  const [tick, setTick] = useState(0);
   const [notice, setNotice] = useState('');
   window.__reopen = () => setOpen(true);
   const query = new URLSearchParams(location.search);
   const group = React.createElement('select', {name:'group'}, React.createElement('option', {value:''}, '不归类'), React.createElement('option', {value:'cgrp_qa'}, '柱子'));
   return open
     ? React.createElement(React.Fragment, null,
-        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, onOpenLibrary: (p) => setPlace(() => p), libraryDrag: drag} : {})}),
-        query.has('library') && React.createElement(LibraryDrawer, {hidden: !place, tick: 0, task: place ? {kind: 'scene-model'} : null, canPlace: false, onPlace: noop, onFill: noop, onPick: noop, onScenePlace: (a) => { setPlace(null); place?.(a) }, onSceneDrag: setDrag, onClose: () => setPlace(null), onWidth: noop, onAssets: noop, onCatalog: noop}),
-        saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: setNotice, onClose: () => setSaving(null)}),
+        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, libraryTick: tick} : {})}),
+        saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: (n) => { setNotice(n); setTick((t) => t + 1) }, onClose: () => setSaving(null)}),
         notice && React.createElement('p', {id:'notice'}, notice))
     : React.createElement('p', {id:'closed'}, 'closed');
 }
@@ -150,11 +146,12 @@ class SceneServer {
     this.saves = []
     // Set to make the next new library copy find its thumbnail upload expired.
     this.expireThumbnail = false
-    // The asset drawer's list, and the queries it sent.
+    // The asset panel's list, the queries it sent, and the single assets it read.
     this.library = []
     this.assetQueries = []
+    this.assetReads = []
   }
-  /** A model asset in the drawer: a library copy of the seeded revision with these materials, without its code. Returns the copy's revision. */
+  /** A model asset in the library: a library copy of the seeded revision with these materials, without its code. Returns the copy's revision. */
   libraryAsset(rev, title, materials = {}) {
     const m = this.models.get(rev)
     const copy = this.libraryCopy(rev, materials)
@@ -450,8 +447,14 @@ async function route(page, server) {
     if (path === '/assets' && request.method() === 'GET') {
       server.assetQueries.push(url.searchParams.toString())
       const kind = url.searchParams.get('kind')
-      const items = server.library.filter((a) => !kind || a.kind === kind)
+      const q = url.searchParams.get('q')
+      const items = server.library.filter((a) => (!kind || a.kind === kind) && (!q || a.title.includes(q)))
       return json(200, { items, next_cursor: '', total_count: items.length, library_revision: '1' })
+    }
+    if (path.startsWith('/assets/ccas_') && request.method() === 'GET') {
+      server.assetReads.push(path)
+      const asset = server.library.find((a) => a.id === path.slice('/assets/'.length))
+      return asset ? json(200, asset) : json(404, { error: { code: 'not_found', message: '资产不存在' } })
     }
     if (path === '/asset-groups') return json(200, { items: [], hierarchy_revision: '1', asset_counts: {} })
     if (path === '/tags' || path === '/tag-categories') return json(200, { items: [], hierarchy_revision: '1' })
@@ -729,22 +732,37 @@ await check('C6 save to library: the model with its materials, the card thumbnai
   await context.close()
 })
 
-await check('C6 place from the library: Shift+A 从资产库添加… puts the clicked model with its materials under the pointer, selected, one undo, drawer closes', async () => {
+await check('asset panel: Shift+A 从资产库添加… opens the 资产 tab; search narrows; a click selects, a double click puts the model with its materials in, selected, one undo; the panel stays; Enter and 最近使用; Shift+F1', async () => {
   const server = new SceneServer()
   const marble = { stone: { preset: 'marble@1', params: { scale: 1 } } }
   const rev = server.libraryAsset(server.seedModel(), '哥特束柱', marble)
+  server.libraryAsset(server.seedModel(), '石凳')
   const { context, page, errors } = await open(server, { query: '?library=1' })
   const { x, y } = await viewportCenter(page)
   await page.mouse.move(x + 120, y + 60)
   await page.keyboard.press('Shift+KeyA')
   await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
-  const drawer = page.locator('#creative-library')
-  await drawer.getByRole('heading', { name: '放入场景' }).waitFor()
-  await drawer.getByText('点一个模型放进场景，或拖到想放的位置').waitFor()
+  const panel = page.locator('.cc-scene-assets')
+  await panel.waitFor()
+  assert.equal(await page.getByRole('tab', { name: '资产' }).getAttribute('aria-selected'), 'true', 'the sidebar shows the asset tab')
+  const search = panel.getByRole('searchbox', { name: '搜索模型' })
+  await waitFor(() => search.evaluate((el) => el === document.activeElement), 'the search box takes the keys')
   await waitFor(() => server.assetQueries.some((q) => new URLSearchParams(q).get('kind') === 'model'), 'only models are listed')
+  const tile = (title, list = '模型') => panel.getByRole('listbox', { name: list, exact: true }).getByRole('option', { name: title, exact: true })
+  await tile('石凳').waitFor()
+  await search.fill('束柱')
+  await tile('石凳').waitFor({ state: 'detached' })
+  assert.ok(server.assetQueries.some((q) => new URLSearchParams(q).get('q') === '束柱'), 'the search goes to the server')
+
   const before = server.commands.length
-  await drawer.locator('.al-tile', { hasText: '哥特束柱' }).click()
-  await drawer.waitFor({ state: 'hidden' })
+  await tile('哥特束柱').click()
+  const detail = panel.locator('.cc-scene-assets-detail')
+  await detail.getByText('哥特束柱').waitFor()
+  await detail.getByText(/落地 · .* 米/).waitFor()
+  await shot(page, 'asset-panel')
+  await sleep(300)
+  assert.equal(server.commands.length, before, 'a click only selects')
+  await tile('哥特束柱').dblclick()
   await waitFor(() => server.commands.length === before + 1, 'place command')
   const [add] = server.commands.at(-1).payload.operations
   assert.equal(add.op, 'add_objects')
@@ -754,20 +772,109 @@ await check('C6 place from the library: Shift+A 从资产库添加… puts the c
   assert.deepEqual(placed.model, { content_revision_id: rev })
   assert.deepEqual(placed.material_slots, marble, 'the asset\'s materials come with it')
   assert.ok(close(placed.transform.position[1], 0, 1e-3), 'on the ground')
-  assert.ok(Math.hypot(placed.transform.position[0], placed.transform.position[2]) > 0.3, 'under the pointer, not at the origin')
-  const row = page.getByRole('treeitem', { name: /哥特束柱/ })
-  await row.waitFor()
-  assert.equal(await row.getAttribute('aria-selected'), 'true', 'the placed model is selected')
+  assert(await panel.isVisible(), 'the panel stays open')
   await page.locator('.cc-scene-model-info').filter({ hasText: '代码模型：柱' }).waitFor()
   await saved(page)
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
   await page.keyboard.press(`${mod}+KeyZ`)
-  await waitFor(() => !server.scene.objects.some((o) => o.id === placed.id), 'one undo removes it')
+  await waitFor(() => !server.scene.objects.some((o) => o.id === placed.id), 'keys went back to the editor: one undo removes it')
+
+  // With no search the model is under 最近使用; Enter on a card puts it in too.
+  await search.fill('')
+  const recent = tile('哥特束柱', '最近使用的模型')
+  await recent.waitFor()
+  const n = server.commands.length
+  await recent.focus()
+  await page.keyboard.press('Enter')
+  await waitFor(() => server.commands.length === n + 1, 'Enter places')
+  await saved(page)
+
+  assert.deepEqual(server.assetReads, [], 'a model already on the list is not read again for 最近使用')
+
+  // The object list shows it selected; Shift+F1 goes back to the assets.
+  await search.fill('石')
+  await tile('哥特束柱').waitFor({ state: 'detached' })
+  const queries = server.assetQueries.length
+  await page.getByRole('tab', { name: '大纲' }).click()
+  const row = page.getByRole('treeitem', { name: /哥特束柱/ })
+  await row.waitFor()
+  assert.equal(await row.getAttribute('aria-selected'), 'true', 'the placed model is selected')
+  await page.keyboard.press('Shift+F1')
+  await panel.waitFor()
+  await tile('石凳').waitFor()
+  assert.equal(await search.inputValue(), '石', 'the search is kept')
+  await sleep(300)
+  assert.equal(server.assetQueries.length, queries, 'switching tabs back does not read the library again')
+  assert.deepEqual(server.assetReads, [])
+  await page.keyboard.press('Escape') // clears the search
+  await page.keyboard.press('Escape') // keys go back to the editor
+  await page.keyboard.press('Shift+F1')
+  await panel.waitFor({ state: 'hidden' })
   assert.deepEqual(errors, [])
   await context.close()
 })
 
-await check('C6 drag in: a floor model lands on a box top, the drawer stays open; a ceiling model with no ceiling stands on what is below; let go elsewhere and nothing changes', async () => {
+await check('asset panel selection: a click on the blank clears; Cmd/Ctrl adds; a drag over the blank boxes; 放入 N 个模型 puts them in a row, all selected, one undo', async () => {
+  const server = new SceneServer()
+  for (const title of ['哥特束柱', '石凳', '方凳']) server.libraryAsset(server.seedModel(), title)
+  const { context, page, errors } = await open(server)
+  await page.keyboard.press('Shift+F1')
+  const panel = page.locator('.cc-scene-assets')
+  const body = panel.locator('.cc-scene-assets-body')
+  const tile = (title) => panel.getByRole('listbox', { name: '模型', exact: true }).getByRole('option', { name: title, exact: true })
+  const chosen = () => panel.getByRole('listbox', { name: '模型', exact: true }).getByRole('option', { selected: true }).count()
+  await tile('方凳').waitFor()
+  const area = await body.boundingBox()
+  const last = await tile('方凳').boundingBox()
+  // Just below the cards, inside the panel.
+  const blank = { x: area.x + area.width - 6, y: last.y + last.height + 16 }
+  assert.ok(blank.y < area.y + area.height, `room below the cards: ${JSON.stringify({ area, last })}`)
+
+  await tile('石凳').click()
+  assert.equal(await chosen(), 1)
+  await page.mouse.click(blank.x, blank.y)
+  assert.equal(await chosen(), 0, 'a click on the blank clears')
+
+  await tile('哥特束柱').click()
+  await tile('石凳').click({ modifiers: ['ControlOrMeta'] })
+  assert.equal(await chosen(), 2, 'Cmd/Ctrl adds')
+  await panel.getByText('已选 2 个模型').waitFor()
+  await tile('石凳').click({ modifiers: ['ControlOrMeta'] })
+  assert.equal(await chosen(), 1, 'and takes away')
+  await page.keyboard.press('Escape')
+  assert.equal(await chosen(), 0, 'Esc on a card clears')
+
+  await page.mouse.move(blank.x, blank.y)
+  await page.mouse.down()
+  await page.mouse.move(area.x + 4, area.y + 4, { steps: 8 })
+  await panel.locator('.cc-scene-assets-marquee').waitFor()
+  await page.mouse.up()
+  assert.equal(await chosen(), 3, 'the box takes every card it touches')
+  await panel.locator('.cc-scene-assets-marquee').waitFor({ state: 'detached' })
+  assert.equal(await chosen(), 3, 'letting go of the box does not clear it')
+  await shot(page, 'asset-panel-multi')
+
+  const before = server.commands.length
+  await panel.getByRole('button', { name: '放入 3 个模型' }).click()
+  await waitFor(() => server.commands.length === before + 1, 'one command')
+  const ops = server.commands.at(-1).payload.operations
+  assert.equal(ops.length, 1)
+  assert.deepEqual(ops[0].objects.map((o) => o.name), ['哥特束柱', '石凳', '方凳'])
+  const xs = ops[0].objects.map((o) => o.transform.position[0])
+  assert.ok(xs[0] < xs[1] && xs[1] < xs[2], `in a row: ${xs}`)
+  assert.ok(Math.abs(xs[0] + xs[2]) < 1e-6, 'centred')
+  assert.ok(ops[0].objects.every((o) => close(o.transform.position[1], 0, 1e-3)), 'on the ground')
+  await page.getByRole('tab', { name: '大纲' }).click()
+  for (const title of ['哥特束柱', '石凳', '方凳']) assert.equal(await page.getByRole('treeitem', { name: new RegExp(title) }).getAttribute('aria-selected'), 'true', `${title} selected`)
+  await saved(page)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => !server.scene.objects.some((o) => o.kind === 'model_instance'), 'one undo takes all three')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C6 drag in: a floor model lands on a box top, the asset panel stays open; a ceiling model with no ceiling stands on what is below; let go elsewhere and nothing changes', async () => {
   const server = new SceneServer()
   const block = 'sobj_B00000000000000000001'
   server.scene.objects.push({ id: block, kind: 'primitive', name: '台子', parent_id: null, order: 1, transform: identity(), visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 6, height: 1, depth: 6 } } })
@@ -782,8 +889,8 @@ await check('C6 drag in: a floor model lands on a box top, the drawer stays open
   await canvas.click({ position: { x: 20, y: 20 } })
   await page.keyboard.press('Shift+KeyA')
   await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
-  const drawer = page.locator('#creative-library')
-  const tile = (title) => drawer.locator('.al-tile', { hasText: title })
+  const panel = page.locator('.cc-scene-assets')
+  const tile = (title) => panel.getByRole('listbox', { name: '模型', exact: true }).getByRole('option', { name: title, exact: true })
   await tile('石凳').waitFor()
   const { box } = await viewportCenter(page)
   const centre = { x: box.width / 2, y: box.height / 2 }
@@ -801,7 +908,7 @@ await check('C6 drag in: a floor model lands on a box top, the drawer stays open
   assert.deepEqual(first.material_slots, wood, 'dragged in with the asset\'s materials')
   assert.ok(close(first.transform.position[1], 1, 1e-3), `stands on the block's top: ${first.transform.position}`)
   assert.deepEqual(first.transform.rotation, [0, 0, 0, 1], 'upright')
-  assert(await drawer.isVisible(), 'the drawer stays open after a drag')
+  assert(await panel.isVisible(), 'the panel stays open after a drag')
   const second = await dropAt('石凳', { x: centre.x + 60, y: centre.y + 20 })
   assert.ok(close(second.transform.position[1], 1, 1e-3))
   assert.notDeepEqual(second.transform.position, first.transform.position, 'each lands where it was let go')
@@ -812,7 +919,7 @@ await check('C6 drag in: a floor model lands on a box top, the drawer stays open
   const hung = await dropAt('吊灯', { x: centre.x - 40, y: centre.y + 10 })
   assert.ok(close(hung.transform.position[1], 1 - templateManifest.bounds.min[1], 1e-3), `on the block: ${hung.transform.position}`)
 
-  // A drag over the viewport shows the ghost; let go over the drawer and nothing is placed.
+  // A drag over the viewport shows the ghost; let go over the panel and nothing is placed.
   const still = await canvas.screenshot()
   const from = await tile('石凳').boundingBox()
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
@@ -843,7 +950,7 @@ await check('C6 copy semantics: a placed model changes only in this scene; editi
     await canvas().click({ position: { x: 20, y: 20 } })
     await page.keyboard.press('Shift+KeyA')
     await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
-    await page.locator('#creative-library .al-tile', { hasText: '哥特束柱' }).click()
+    await page.locator('.cc-scene-assets').getByRole('option', { name: '哥特束柱', exact: true }).first().dblclick()
     await waitFor(() => server.commands.length === before + 1, 'placed')
     await saved(page)
     return server.commands.at(-1).payload.operations[0].objects[0]
