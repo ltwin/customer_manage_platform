@@ -1,6 +1,6 @@
 {
   "uid": "24a57b62-e69e-4946-9cf4-9a95989b5240",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-webgpu-pipeline",
   "kind": "feature",
   "assurance": "governed",
@@ -28,7 +28,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-21T11:07:26.287Z",
-  "updatedAt": "2026-10-21T17:16:03.690Z",
+  "updatedAt": "2026-10-21T17:24:16.459Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-21T17:24:16.416Z",
+    "summary": "R1 以 --no-ff 合入 develop（合并提交 42e5a08d，分支 HEAD b3e3dda3），tsc -b 通过",
+    "method": "manual",
+    "limitations": "owner 已在 3D 编辑器中亲自试用，按约定合并后只跑前端编译检查（tsc -b 通过），未跑 check-merge；改动只涉及前端与 .lti 文档，develop 自分支创建后无新提交",
+    "sourceCommit": "b3e3dda372f2a41ffa19a7c25bab93e8adea0f33",
+    "targetCommit": "42e5a08dc3ae760ba6350ef2cdd95d0f9b872898",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "dbe7784b91ba68fc2bdf41b870485844c7040121c68e1a0de4ccd4942882de9b"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
