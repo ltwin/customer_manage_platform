@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { AmbientLight, BoxGeometry, DirectionalLight, Mesh, PerspectiveCamera, RenderTarget, Scene } from 'three'
 import { mrt, output } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PhysicalLightingModel, WebGPURenderer, type NodeMaterial } from 'three/webgpu'
-import { giAmbient, giBase, giEnvSpec, giSplitContext, installGISplit } from '../src/creative-scene/render/giSplit.ts'
+import { giAmbient, giBase, giEnvSpec, installGISplit, splitContext } from '../src/creative-scene/render/giSplit.ts'
 import { composite } from '../src/creative-scene/render/realtimeGI.ts'
 
 // The real-time GI (R2 tasks 1.1): the SSGI fork against three's node, the
@@ -80,7 +80,7 @@ function inLightingPass<T>(build: () => T): T {
   const context = renderer.contextNode
   r.getRenderTarget = () => target
   r.getMRT = () => split
-  renderer.contextNode = giSplitContext()
+  renderer.contextNode = splitContext(context)
   try {
     return build()
   } finally {
@@ -174,4 +174,50 @@ test('the composite: AO on the indirect light only, reflections in place of the 
   // Not taken apart (glass, the background): the picture as it is, whatever the effects say.
   const zero = new V(0, 0, 0, 0)
   near(composite({ ...neutral, ambient: zero, envSpec: zero, base: zero, ao: new V(0.2), contact: new V(0), reflection: new V(0.5, 0.5, 0.5), cover: new V(1), split: new V(0) }), [0.9, 0.7, 0.5])
+})
+
+test('the lighting pass’s context is one node per renderer context, so pictures share their render objects', async () => {
+  const { context } = await import('three/tsl')
+  const base = context()
+  const a = splitContext(base)
+  assert.equal(splitContext(base), a, 'the same node for the next picture')
+  assert.equal(a.getFlowContextData().giSplit, true)
+  base.value = { ...base.value, other: 1 }
+  base.version++
+  assert.notEqual(splitContext(base), a, 'made again when the renderer’s context changes')
+  assert.equal(splitContext(base).getFlowContextData().other, 1)
+  assert.notEqual(splitContext(context()), a, 'one per renderer context')
+})
+
+// --- contact shadows and freeing -------------------------------------------------
+
+test('the main light: the sun while up, else the shadow-casting light that lights most; never a point light', async () => {
+  const { Group, PointLight, SpotLight } = await import('three')
+  const { mainLight } = await import('../src/creative-scene/render/sceneRenderer.ts')
+  const sun = Object.assign(new DirectionalLight(0xffffff, 2), { userData: { sun: true } })
+  const fill = Object.assign(new DirectionalLight(0xffffff, 1), { castShadow: true })
+  const spot = Object.assign(new SpotLight(0xffffff, 150), { castShadow: true })
+  spot.position.set(0, 0, 3) // 150 cd at 3 m: about 16.7 on its target
+  const lamp = Object.assign(new PointLight(0xffffff, 1000), { castShadow: true })
+  const scene = new Group()
+  scene.add(sun, fill, spot, lamp)
+  assert.equal(mainLight(scene), sun)
+  sun.intensity = 0
+  assert.equal(mainLight(scene), spot, 'the sun below the horizon does not count; the spot lights more than the fill')
+  spot.position.set(0, 0, 20)
+  assert.equal(mainLight(scene), fill, 'far away the spot lights less')
+  fill.castShadow = false
+  spot.castShadow = false
+  assert.equal(mainLight(scene), null, 'lights without shadows and point lights give none')
+})
+
+test('TRAA keeps its first previous depth where realtimeGI frees it', () => {
+  const traa = read('../node_modules/three/examples/jsm/tsl/display/TRAANode.js')
+  assert.match(traa, /this\._previousDepthNode = texture\( new DepthTexture\( 1, 1 \) \);/)
+  assert.match(traa, /this\._previousDepthNode\.value = this\._historyRenderTarget\.depthTexture;/)
+  assert.doesNotMatch(traa.slice(traa.indexOf('\tdispose() {')), /_previousDepthNode/, 'three frees it now: drop realtimeGI’s own')
+  // A display node converts what is not a texture itself, and does not free it.
+  assert.match(read('../node_modules/three/examples/jsm/tsl/display/TRAANode.js'), /new TRAANode\( convertToTexture\( beautyNode \)/)
+  // Render state is per MRT node: one node for every pipeline.
+  assert.match(read('../node_modules/three/src/renderers/common/RenderContexts.js'), /const mrtState = \( mrt !== null \) \? mrt\.id : 'default';/)
 })

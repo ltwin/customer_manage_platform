@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera } from 'three'
+import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, PassNode, RenderPipeline, type Node } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -182,10 +182,41 @@ function disposeStandIn({ meshes, lights }: StandIn) {
   }
 }
 
-/** How a frame is drawn, which decides the pipeline: the real-time GI with or without reflections, or the workbench. */
-type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit' }
+type Shadowing = DirectionalLight | SpotLight
 
-const keyOf = ({ wireframe, blur, gi }: Look) => (wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}`}${blur ? '+dof' : ''}`)
+/**
+ * The light the real-time GI traces contact shadows from (R2 design「实时 GI
+ * 管线」): the sun (Lighting.tsx marks it) while it is up; else the
+ * shadow-casting light that lights the scene most, a directional light by
+ * its intensity, a spot by its intensity over the distance to its target
+ * squared. A point light has no one direction to trace along.
+ */
+export function mainLight(scene: Object3D): Shadowing | null {
+  let sun: Shadowing | null = null
+  let best: Shadowing | null = null
+  let most = 0
+  scene.traverseVisible((o) => {
+    const light = o as Shadowing
+    if (!(light as DirectionalLight).isDirectionalLight && !(light as SpotLight).isSpotLight) return
+    if (light.intensity <= 0) return
+    if (light.userData.sun === true) {
+      sun = light
+      return
+    }
+    if (!light.castShadow) return
+    const lux = (light as SpotLight).isSpotLight ? light.intensity / Math.max(light.position.distanceToSquared(light.target.position), 0.01) : light.intensity
+    if (lux > most) {
+      most = lux
+      best = light
+    }
+  })
+  return sun ?? best
+}
+
+/** How a frame is drawn, which decides the pipeline: the real-time GI with or without reflections, or the workbench. */
+type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit'; light: Shadowing | null }
+
+const keyOf = ({ wireframe, blur, gi, light }: Look) => (wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}:${light?.uuid ?? ''}`}${blur ? '+dof' : ''}`)
 
 /** three's typings leave most display nodes untyped; these all give a colour. */
 const vec4Of = (node: Node) => node as Node<'vec4'>
@@ -346,7 +377,7 @@ export class SceneRenderer {
     let dof: Dof | null = null
     let gi: RealtimeGI | null = null
     if (look.gi !== 'off') {
-      gi = own(realtimeGI(scene, camera, { reflections: look.gi === 'lit', prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise }))
+      gi = own(realtimeGI(scene, camera, { reflections: look.gi === 'lit', prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise, mainLight: look.light }))
       passes = gi.passes
       aoOn = gi.aoOn
       picture = gi.color
@@ -430,7 +461,7 @@ export class SceneRenderer {
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     const dof = !wireframe && perspective ? frame.dof : null
     const gi = frame.engine === 'realtime_gi' && !wireframe && perspective ? (frame.reflections ? 'lit' : 'clay') : 'off'
-    const look: Look = { wireframe, blur: dof !== null, gi }
+    const look: Look = { wireframe, blur: dof !== null, gi, light: gi === 'off' ? null : mainLight(this.scene) }
     const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()

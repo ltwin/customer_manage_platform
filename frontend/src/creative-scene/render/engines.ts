@@ -7,6 +7,15 @@ export type Engine = 'workbench' | 'realtime_gi'
 /** How hard the real-time GI works: the viewport's frames, or a picture to keep. */
 export type Quality = 'interactive' | 'final'
 
+/**
+ * The SSGI's indirect light, against three's default of 10, which washed
+ * out the shade beside sunlit walls (R2 tasks 1.2). Its own integral counts
+ * about a third of a lit hemisphere's light, so near 2.5 would keep energy;
+ * at 2.5 the box room's ceiling stays black. Provisional: set with the
+ * calibration (tasks 5.1) and the repaint comparison (AC-R2-10).
+ */
+export const GI_INTENSITY = 5
+
 /** The scene's renderer as stored; a scene from before R2 has none, which is the workbench. */
 export const engineOf = (render: object | undefined): Engine => ((render as { engine?: unknown } | undefined)?.engine === 'realtime_gi' ? 'realtime_gi' : 'workbench')
 

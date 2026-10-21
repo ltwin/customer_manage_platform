@@ -3,7 +3,8 @@ import { useThree } from '@react-three/fiber'
 import type { DirectionalLight, Mesh } from 'three'
 import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { SceneEnvironment } from '../api.ts'
-import { AMBIENT_FILL, sunLight } from '../render/litLook.ts'
+import type { Engine } from '../render/engines.ts'
+import { ambientFill, sunLight } from '../render/litLook.ts'
 import { gpuOf } from '../render/gpu.ts'
 import { claySky, disposeSky, litSky, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
@@ -21,10 +22,11 @@ import { wireBackground } from './wireframe.ts'
 /** Material preview's backdrop; the asset viewer's 3D preview uses it too. */
 export const previewBackground = '#5b5d61'
 
-export function Lighting({ environment, display }: { environment: SceneEnvironment; display: DisplayMode }) {
+/** engine: the renderer the picture is drawn with (render/engines.ts effectiveEngine); the lit fill follows it. */
+export function Lighting({ environment, display, engine = 'workbench' }: { environment: SceneEnvironment; display: DisplayMode; engine?: Engine }) {
   if (display === 'wireframe') return <color attach="background" args={[wireBackground]} />
   if (display === 'preview') return <RoomLighting />
-  if (display === 'rendered') return <LitLighting environment={environment} />
+  if (display === 'rendered') return <LitLighting environment={environment} engine={engine} />
   return <ClayLighting environment={environment} />
 }
 
@@ -77,7 +79,8 @@ export function ClayLights({ ambient, sun, up, sunRef }: { ambient: { color: str
       <ambientLight color={ambient.color} intensity={ambient.intensity + 0.3} />
       <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={up} />
       {/* The shadow camera's bounds and normal bias follow the scene (fitSunShadow). */}
-      <directionalLight ref={sunRef} position={sun} intensity={2.2} castShadow={!!sunRef} shadow-mapSize={[2048, 2048]} />
+      {/* The sun, which the real-time GI's contact shadows follow (render/sceneRenderer.ts mainLight). */}
+      <directionalLight ref={sunRef} position={sun} intensity={2.2} castShadow={!!sunRef} shadow-mapSize={[2048, 2048]} userData={{ sun: true }} />
     </>
   )
 }
@@ -110,7 +113,7 @@ const environmentEveryMs = 200
  * The lit look: the sky as background and as light (without its sun disc,
  * which the sun light counts), the sun, the ambient as a little fill, and fog.
  */
-function LitLighting({ environment }: { environment: SceneEnvironment }) {
+function LitLighting({ environment, engine }: { environment: SceneEnvironment; engine: Engine }) {
   const { gl, scene, invalidate } = useThree()
   const procedural = environment.sky.kind === 'procedural'
   const sky = useMemo(() => drawnAside(litSky()), [])
@@ -160,7 +163,7 @@ function LitLighting({ environment }: { environment: SceneEnvironment }) {
       {procedural ? <primitive object={sky} scale={1000} /> : <color attach="background" args={[environment.sky.color ?? '#8a8f98']} />}
       {procedural && <Sun environment={environment} />}
       {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
-      <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity * AMBIENT_FILL} />
+      <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity * ambientFill(engine)} />
     </>
   )
 }
@@ -179,6 +182,7 @@ function Sun({ environment }: { environment: SceneEnvironment }) {
       color={light.color}
       castShadow
       shadow-mapSize={[2048, 2048]}
+      userData={{ sun: true }}
     />
   )
 }

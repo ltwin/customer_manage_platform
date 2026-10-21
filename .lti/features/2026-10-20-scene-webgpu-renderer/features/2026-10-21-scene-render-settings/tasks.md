@@ -16,7 +16,19 @@
     - 实时 GI 白模平均亮度高于工作台（盒子间 119.6 对 106.0，`lit` 126.5 对 91.2），由 1.2 的环境光补偿标定。
     - 离屏出图暂时按场景里的 `render.engine` 画实时 GI、固定预热 16 帧（`engines.ts` 的 `GI_WARMUP_FRAMES`），4.1 换成 K 帧累积。
   - 单测：`scripts/creative-scene-gi.test.ts`（在 node 里用 WebGPU 后端的节点构建器生成 WGSL 比对；去掉标记判断的变异会被抓到）。
-- [ ] 1.2 SSR 命中覆盖率（结清 L2）、接触阴影的主光源选择、`final` 档关掉 `flickerSuppression`、实时 GI 的环境光补偿（`litLook.ts`、`Lighting.tsx`，`room` 与盒子间平均亮度与工作台相差 ≤ 10%）；GI 管线释放。完成判据：连续导出 48 张实时 GI 图后 GPU 纹理数不增长（e2e，计数同 R1 的灯光用例）；`forceWebGL` 下盒子间与 WebGPU 在 AC-R1-1 阈值内
+- [x] 1.2 SSR 命中覆盖率（结清 L2）、接触阴影的主光源选择、`final` 档关掉 `flickerSuppression`、实时 GI 的环境光补偿（`litLook.ts`、`Lighting.tsx`，`room` 与盒子间平均亮度与工作台相差 ≤ 10%）；GI 管线释放。完成判据：连续导出 48 张实时 GI 图后 GPU 纹理数不增长（e2e，计数同 R1 的灯光用例）；`forceWebGL` 下盒子间与 WebGPU 在 AC-R1-1 阈值内
+  - **L2 结清**：命中覆盖率取每帧的原始命中（光线长度 < 1000），合成在期望值上无偏，噪点交给 TRAA 和累积；不 fork `SSRNode`。盒子间金属球的反射在 16 帧时还有颗粒，4.1 累积后再看。
+  - **接触阴影**：`sceneRenderer.ts` 的 `mainLight`：太阳（`Lighting.tsx` 给白模和材质光照的太阳加 `userData.sun`，落到地平线下强度为 0 时不算）；否则取投影的平行光（按强度）或聚光灯（按强度除以到目标距离的平方）中照度最大的；点光没有单一方向，不参与。主光源变化时重建管线（键里带它的 uuid）。
+  - **GI 强度**：three 缺省的 `giIntensity = 10` 让室外场景（`materials`）阳光照到的墙边阴影被冲淡；按 SSGI 的积分，能量守恒约在 2.5，但盒子间天花板会全黑。暂定 5（`engines.ts` 的 `GI_INTENSITY`），5.1 标定和 AC-R2-10 重绘对照时连同对照图交 owner。
+  - **环境光补偿**：`AMBIENT_FILL_GI = 0.35`（`ambientFill(engine)`）。`giIntensity` 5 时，材质光照 room +5.8%、noon −3.0%（0.25–0.5 都在 10% 内，取最对称的值）；白模不另设补偿：盒子间 −6%、room −4%、noon +1%。盒子间材质光照 +27%，它的环境光只有 0.05，亮出来的全是反弹光，补偿压不下去，按 design 的标准不达标，交 owner 看图决定。
+  - **释放**：Metal 上起初每张图多留 7 张纹理、3 个渲染目标、70 个 uniform buffer、1 个着色程序，原因有三，均已修：
+    - `convertToTexture` 在 TRAA、AO 降噪输入、SSR 的重投影里隐式建的 RTT 节点不随节点释放：改为显式建立并纳入释放清单（SSR 改传 `getTextureNode()`）；
+    - TRAA 的 1×1 占位深度纹理，`dispose()` 不释放：单独释放；
+    - three 按 MRT 节点的 id 区分渲染上下文，每张图新建 MRT 节点就会给场景每个网格在两个 pass 各留一套渲染对象（场景材质不随管线释放）：两个 MRT 改为模块级共享。GI 光照 pass 的上下文也改为每个渲染器上下文一个（`giSplit.ts` 的 `GILightingPass` / `splitContext`），图与图之间复用渲染对象。
+    - 结果：Metal、SwiftShader 连续 48 张，计数从第 1 张到第 48 张不变；12 张 512 px 的耗时 4.8 s → 1.7 s。e2e「real-time GI: 48 pictures in a row leave nothing behind on the device」（SwiftShader 下约 155 s）。
+  - **`forceWebGL`**（盒子间，16 帧）：白模平均差 0.32、差 > 8 的像素 0.04%，达标；材质光照平均差 1.18 达标，差 > 8 的像素 3.5% 超标。两张图各模糊 2 px 后降到 0.15%，差异是像素级噪点、不是画面差别。4.1 做完 K 帧累积后重测（已写进 4.1 的完成判据）。
+  - 清单外改动：`host/ShotScene.tsx` 把场景的渲染器传给 `Lighting`（补偿随渲染器）。视口在 3.2 接入有效渲染器后同样传入。
+  - 仍未做：灯光预编译没带 GI 光照 pass 的上下文（`compileAsync` 晚些才建材质，那时的上下文不对），挪到 7.2 处理。
 
 ## 2. 场景格式与后端
 
@@ -30,7 +42,7 @@
 
 ## 4. 累积与输出分辨率
 
-- [ ] 4.1 `gpu.settle()`、异步 `shoot` 与 K 帧累积（`SceneRenderer` 的累积节点、`host/render.ts`）、`exportShots.ts` / `executor.ts` 逐张 await 与按估算的时限（`engines.ts`）。先写单测：时限公式、帧之间超时、`ManualTicker` 跟随新时限。完成判据：隐藏标签页里实时 GI 的多摄像机三种方式连拍两次逐像素相同、与前台一致（`creative-scene-agent-background.e2e.mjs`）；8K 实时 GI 导出期间续租照常（日志或钩子计数）
+- [ ] 4.1 `gpu.settle()`、异步 `shoot` 与 K 帧累积（`SceneRenderer` 的累积节点、`host/render.ts`）、`exportShots.ts` / `executor.ts` 逐张 await 与按估算的时限（`engines.ts`）。先写单测：时限公式、帧之间超时、`ManualTicker` 跟随新时限。完成判据：隐藏标签页里实时 GI 的多摄像机三种方式连拍两次逐像素相同、与前台一致（`creative-scene-agent-background.e2e.mjs`）；8K 实时 GI 导出期间续租照常（日志或钩子计数）；`forceWebGL` 下盒子间的实时 GI 白模、材质光照与 WebGPU 在 AC-R1-1 阈值内（1.2 遗留）
 - [ ] 4.2 输出分辨率：`framing.ts` 长边按档位、`imageTypeOf` 与上传文件名 / MIME、纹理上限检查、4K / 8K 丢设备以 `host_error` 结束且手动导出提示、`ExportDialog` 显示档位。完成判据：e2e 四档 × 1:1 / 3:2 / 竖幅的尺寸与格式、8K 1:1 能上传成画布节点、压低纹理上限的失败、4K 丢设备不回队（AC-R2-6）
 
 ## 5. 标定

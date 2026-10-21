@@ -4068,9 +4068,57 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: switching to the rendered vie
   }
 })
 
+// --- R2: the real-time GI ---------------------------------------------------------
+
+// The offscreen shooter on its own: shots in a row, and what its renderer holds after each.
+const giFixture = new URL('../.scene-gi-qa.html', import.meta.url)
+await writeFile(
+  giFixture,
+  `<html><body><script>window.__sceneTest = true</script><script type="module">
+import { openShooter } from '/src/creative-scene/host/render.ts';
+import { cameraFraming } from '/src/creative-scene/host/framing.ts';
+window.__shots = async (scene, n, side) => {
+  const shooter = await openShooter(scene, {}, 'lit');
+  const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+  const held = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      shooter.shoot(framing, { kind: 'lit', type: 'image/png' });
+      const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'offscreen').at(-1).info.memory;
+      held.push({ textures, renderTargets, uniformBuffers, programs });
+    }
+  } finally {
+    shooter.close();
+  }
+  return held;
+};
+window.__ready = true;
+</script></body></html>`,
+)
+
+// R2 tasks 1.2: every picture builds and frees a whole GI pipeline (prepass, lighting pass, SSGI, SSR, contact
+// shadows, denoisers, TRAA). Freed whole, the renderer holds as much after the 48th picture as after the first.
+await check('real-time GI: 48 pictures in a row leave nothing behind on the device', async () => {
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  await page.goto(`${base}/.scene-gi-qa.html`)
+  await page.waitForFunction(() => window.__ready === true)
+  const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/materials.json', import.meta.url), 'utf8'))
+  scene.render = { ...scene.render, engine: 'realtime_gi' }
+  const held = await page.evaluate(([s]) => window.__shots(s, 48, 128), [scene])
+  assert.equal(held.length, 48)
+  assert.deepEqual(held.at(-1), held[0], `after the first: ${JSON.stringify(held[0])}, after the 48th: ${JSON.stringify(held.at(-1))}`)
+  assert.deepEqual(errors, [], errors.join('\n'))
+  await context.close()
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
 await rm(hiddenFixture, { force: true })
+await rm(giFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)

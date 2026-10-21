@@ -1,13 +1,14 @@
-import { HalfFloatType, UnsignedByteType, type Camera, type DataTexture, type Layers, type PerspectiveCamera, type Scene } from 'three'
-import { float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, roughness, sample, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
-import type { Node, PassNode, TextureNode, UniformNode } from 'three/webgpu'
+import { HalfFloatType, UnsignedByteType, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
+import { convertToTexture, float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, roughness, sample, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
+import { PassNode, type Node, type TextureNode, type UniformNode } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js'
 import { ssr } from 'three/addons/tsl/display/SSRNode.js'
+import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { temporalReproject } from 'three/addons/tsl/display/TemporalReprojectNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
-import type { Quality } from './engines.ts'
-import { giAmbient, giBase, giEnvSpec, giSplitContext, installGISplit } from './giSplit.ts'
+import { GI_INTENSITY, type Quality } from './engines.ts'
+import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
 
 // The real-time GI's node graph (R2 design「实时 GI 管线」, Epic「实时 GI」):
@@ -34,6 +35,15 @@ type N = any
 /** Where an SSR sample missed: the ray length three writes for the environment. */
 const MISSED = 1e3
 
+// The passes' outputs, one node each for every pipeline: three keys a pass's
+// render state by its MRT node, and the scene's materials outlive a
+// pipeline built per picture; a new MRT per picture would leave a set of
+// render objects behind for every export.
+const prepassOutputs = mrt({ output: vec4(packNormalToRGB(normalView), roughness), velocity })
+const lightingOutputs = mrt({ output: outputNode, base: giBase, ambient: giAmbient, envSpec: giEnvSpec })
+// Blended as the picture is: glass writes alpha 0 there, which keeps what is behind it.
+for (const name of ['base', 'ambient', 'envSpec']) lightingOutputs.setBlendMode(name, lightingOutputs.getBlendMode('output'))
+
 export type RealtimeGIOptions = {
   /** Screen-space reflections: the lit look has them, clay does not (its environment reflection is all it gets). */
   reflections: boolean
@@ -42,6 +52,8 @@ export type RealtimeGIOptions = {
   pictureLayers: Layers
   /** The fixed-seed noise for the AO's DenoiseNode (sceneRenderer.ts fixedNoise). */
   noise: () => DataTexture
+  /** The light whose contact shadows are traced on screen (mainLight); none, none traced. */
+  mainLight: DirectionalLight | SpotLight | null
 }
 
 export type RealtimeGI = {
@@ -84,7 +96,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const prepass = own(pass(scene, camera, { samples: 0 }))
   prepass.transparent = false
   prepass.setLayers(options.prepassLayers)
-  prepass.setMRT(mrt({ output: vec4(packNormalToRGB(normalView), roughness), velocity }))
+  prepass.setMRT(prepassOutputs)
   prepass.getTexture('output').type = UnsignedByteType
   prepass.getTexture('velocity').type = HalfFloatType
   const normalPacked: N = prepass.getTextureNode()
@@ -93,13 +105,9 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // SSGI, SSR and DenoiseNode normalize what they sample; the temporal nodes unpack it themselves.
   const normal: N = sample((uv: N) => unpackRGBToNormal(normalPacked.sample(uv).rgb))
 
-  const lit = own(pass(scene, camera, { samples: 0 }))
+  const lit = own(new GILightingPass(PassNode.COLOR, scene, camera, { samples: 0 }))
   lit.setLayers(options.pictureLayers)
-  lit.contextNode = giSplitContext()
-  const split = mrt({ output: outputNode, base: giBase, ambient: giAmbient, envSpec: giEnvSpec })
-  // Blended as the picture is: glass writes alpha 0 there, which keeps what is behind it.
-  for (const name of ['base', 'ambient', 'envSpec']) split.setBlendMode(name, split.getBlendMode('output'))
-  lit.setMRT(split)
+  lit.setMRT(lightingOutputs)
   const output: N = lit.getTextureNode('output')
   const base: N = lit.getTextureNode('base')
   const ambient: N = lit.getTextureNode('ambient')
@@ -107,6 +115,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   lit.getTexture('base').type = UnsignedByteType
 
   const gi = own(ssgi(output, depth, normal, persp))
+  gi.giIntensity.value = GI_INTENSITY
   const giAO: N = gi.getTextureNode()
   const reprojected: N = own(temporalReproject(giAO, depth, normalPacked, vel, camera, { mode: 'diffuse', accumulate: false }))
   const denoised: N = own(recurrentDenoise(reprojected, camera, { depth, normal: normalPacked, raw: giAO, mode: 'diffuse', accumulate: true }))
@@ -115,7 +124,8 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // The history is last frame's denoised result; the denoiser is the one accumulator.
   reprojected.setHistoryTexture(denoised)
   // The denoiser does not give back a denoised AO: the AO is filtered on its own.
-  const aoClean: N = own(denoise(vec4(vec3(giAO.a), 1), depth, normal, camera))
+  // A node made into a texture here is freed with the rest; one the display nodes convert themselves would be left behind.
+  const aoClean: N = own(denoise(own(convertToTexture(vec4(vec3(giAO.a), 1))), depth, normal, camera))
   ;(aoClean.noiseNode as { value: DataTexture }).value = own(options.noise())
   const aoOn = uniform(1)
   const ao = mix(float(1), aoClean.r, aoOn)
@@ -125,7 +135,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const temporal: { flickerSuppression: UniformNode<'float', number> }[] = [reprojected, denoised]
   if (options.reflections) {
     const reflect: N = own(ssr(output, depth, normal, { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }))
-    const specReprojected: N = own(temporalReproject(reflect, depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
+    const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
     const specDenoised: N = own(
       recurrentDenoise(specReprojected, camera, {
         depth,
@@ -146,13 +156,25 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     cover = reflect.a.lessThan(MISSED).select(1, 0)
   }
 
+  // Contact shadows from the main light, along its direction (a spot's as if parallel: the rays are short).
+  let contact: N = float(1)
+  if (options.mainLight) {
+    // Typed for a directional light; it reads only the light's position and its target's.
+    const shadow: N = own(sss(depth, camera, options.mainLight as DirectionalLight))
+    // A new offset every frame, which TRAA and the accumulation average.
+    shadow.useTemporalFiltering = true
+    contact = shadow.r
+  }
+
   // Where the lighting pass took a material apart and the prepass saw a surface (not the background).
   const surface = ambient.a.mul(depth.r.lessThan(1).select(1, 0))
   const picture = vec4(
-    composite({ output, base, ambient, envSpec, gi: denoised.rgb, ao, contact: float(1), reflection, cover, split: surface }),
+    composite({ output, base, ambient, envSpec, gi: denoised.rgb, ao, contact, reflection, cover, split: surface }),
     output.a,
   )
-  const color: N = own(traa(picture, depth, vel, camera))
+  const color: N = own(traa(own(convertToTexture(picture)), depth, vel, camera))
+  // TRAA's stand-in for the previous depth, drawn with on the first frame and then replaced: its dispose() leaves it.
+  own(color._previousDepthNode.value as { dispose(): void })
 
   return {
     color,
