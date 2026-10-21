@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MutableRefObject, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MutableRefObject, type RefObject } from 'react'
 import { Aperture, Grid3x3 } from 'lucide-react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
@@ -6,7 +6,6 @@ import {
   CameraControlsImpl,
   GizmoHelper,
   GizmoViewport,
-  Grid,
   TransformControls,
 } from '@react-three/drei'
 import { useStore } from 'zustand'
@@ -23,7 +22,9 @@ import {
   Vector2,
   Vector3,
   type Camera,
+  type Group,
   type Mesh,
+  type MeshBasicMaterial,
 } from 'three'
 import { SelectionBox } from 'three/addons/interactive/SelectionBox.js'
 import type { Scene, SceneObject } from './api.ts'
@@ -60,7 +61,8 @@ import { docToView, positionToDoc, positionToView, transformToDoc } from './spac
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
-import { OVERLAY_LAYER, SceneRenderer } from './render/sceneRenderer.ts'
+import { OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
+import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
@@ -233,7 +235,7 @@ export function Viewport(props: ViewportProps) {
         camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
       >
         <Lighting environment={props.scene.environment} display={display} />
-        <Grid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} infiniteGrid cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
+        <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
         <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
         {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
         {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
@@ -270,10 +272,25 @@ export function Viewport(props: ViewportProps) {
  * heads instead (axisHeadAt) and uses the number-row views' code.
  */
 function AxisGizmo() {
+  // The widget is drawn straight onto the canvas after the picture, where
+  // nothing turns linear colour into sRGB (render/gpu.ts). Its heads and
+  // labels are canvas textures, written as painted; its lines are material
+  // colours, decoded to linear, so they go in encoded once over.
+  const lines = useRef<Group>(null)
+  useLayoutEffect(() => {
+    lines.current?.traverse((o) => {
+      const m = (o as Mesh).material as MeshBasicMaterial | undefined
+      if (!m?.isMeshBasicMaterial || m.map || m.userData.overlay) return
+      m.color.set(overlayColor(`#${m.color.getHexString()}`))
+      m.userData.overlay = true
+    })
+  })
   return (
     // After the clay view's frame (priority 1), over it.
     <GizmoHelper alignment="top-right" margin={[axisWidget.margin, axisWidget.margin]} renderPriority={2}>
-      <GizmoViewport disabled axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
+      <group ref={lines}>
+        <GizmoViewport disabled axisColors={['#e5484d', '#46a758', '#3e63dd']} labelColor="#ffffff" />
+      </group>
     </GizmoHelper>
   )
 }

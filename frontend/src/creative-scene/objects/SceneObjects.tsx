@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
-import { Edges, Outlines } from '@react-three/drei'
+import { EdgeLines } from './EdgeLines.tsx'
+import { Outline } from './Outline.tsx'
 import { BufferGeometry, Float32BufferAttribute, MeshStandardMaterial } from 'three'
 import type { Placeholder } from '../agentActivity.ts'
 import type { Scene, SceneObject } from '../api.ts'
@@ -137,7 +138,7 @@ function PlaceholderBlock({ placeholder }: { placeholder: Placeholder }) {
       <group quaternion={docToView}>
         <mesh position={[0, 0.5, 0]} material={placeholderMaterial} raycast={noRaycast}>
           <boxGeometry args={[1, 1, 1]} />
-          <Edges color={agentEdge} />
+          <EdgeLines color={agentEdge} />
         </mesh>
       </group>
     </group>
@@ -164,14 +165,14 @@ function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string
   if (slots)
     return (
       <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} doubleSided={flat} castShadow={!flat}>
-        {edge && (flat ? <Edges threshold={20} lineWidth={2} color={edge} /> : <Outlines thickness={3} color={edge} />)}
+        {edge && (flat ? <EdgeLines threshold={20} lineWidth={2} color={edge} /> : <Outline color={edge} />)}
       </SlotMesh>
     )
   return (
     <mesh geometry={geometry} castShadow={!flat} receiveShadow>
       <meshStandardMaterial name="slot:main" color={clay} roughness={0.92} metalness={0} side={flat ? 2 : 0} />
       {/* A hull outline reads on curved shapes; flat ones have no hull. */}
-      {edge && (flat ? <Edges threshold={20} lineWidth={2} color={edge} /> : <Outlines thickness={3} color={edge} />)}
+      {edge && (flat ? <EdgeLines threshold={20} lineWidth={2} color={edge} /> : <Outline color={edge} />)}
     </mesh>
   )
 }

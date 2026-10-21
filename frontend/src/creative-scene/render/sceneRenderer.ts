@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Layers, NoToneMapping, SRGBColorSpace, type Camera, type Object3D, type Scene } from 'three'
+import { ACESFilmicToneMapping, Color, Layers, NoToneMapping, SRGBColorSpace, type Camera, type Object3D, type Scene } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
 import { PassNode, RenderPipeline, type Node } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -68,11 +68,30 @@ export type Frame = {
   wireframe?: boolean
 }
 
+/**
+ * A colour for something drawn straight onto the 'pipeline' canvas after
+ * the picture (drei's axis widget): three writes it linear and nothing
+ * encodes it, so it is given encoded once more to show as asked.
+ */
+export function overlayColor(hex: string): string {
+  // Color decodes the hex to linear; written as is, that linear value shows
+  // as if it were sRGB. Encoding twice makes what is written the sRGB value.
+  const c = new Color(hex)
+  const encode = (x: number) => (x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055)
+  return `#${[c.r, c.g, c.b].map((x) => Math.round(Math.min(1, encode(encode(x))) * 255).toString(16).padStart(2, '0')).join('')}`
+}
+
 /** three's typings leave most display nodes untyped; these all give a colour. */
 const vec4Of = (node: Node) => node as Node<'vec4'>
 
-/** The overlay pass: no background, cleared to transparent, so only the gizmo covers the picture. */
-class OverlayPass extends PassNode {
+/**
+ * A pass drawn without the scene's background, cleared to transparent: the
+ * overlay pass, where only the gizmo may cover the picture, and wireframe's
+ * picture, whose plain background is laid under it after tone mapping (the
+ * WebGL viewport drew wireframe straight to the canvas, where the clear
+ * colour is not tone mapped).
+ */
+class BackgroundlessPass extends PassNode {
   updateBefore(frame: Parameters<PassNode['updateBefore']>[0]) {
     const scene = this.scene as Scene
     const renderer = frame.renderer!
@@ -95,6 +114,8 @@ type Built = {
   /** The AO node, when the look has one: its resolution follows aoPixelRatio. */
   ao: ReturnType<typeof ao> | null
   aoOn: { value: number } | null
+  /** Wireframe's plain background, laid under the tone-mapped picture. */
+  background: { value: Color }
   dispose(): void
 }
 
@@ -123,9 +144,10 @@ export class SceneRenderer {
     const disposables: { dispose(): void }[] = []
     const own = <T extends { dispose(): void }>(n: T) => (disposables.push(n), n)
     const msaa = gpu.compatibility ? 0 : 4
-    const beauty = own(pass(scene, camera, { samples: msaa }))
+    const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
     beauty.setLayers(layers(0, ASIDE_LAYER))
     let picture: Node<'vec4'> = beauty
+    const background = uniform(new Color())
     let aoNode: ReturnType<typeof ao> | null = null
     let aoOn: { value: number } | null = null
     if (!wireframe) {
@@ -146,15 +168,16 @@ export class SceneRenderer {
       // Frame.ao = false multiplies by one rather than rebuilding.
       const on = uniform(1)
       aoOn = on
-      picture = beauty.mul(mix(float(1), vec4Of(clean).r, on))
+      picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
     }
     let output = vec4Of(renderOutput(picture, ACESFilmicToneMapping, SRGBColorSpace))
+    if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
     if (msaa === 0) output = vec4Of(own(smaa(output)))
     const pipeline = new RenderPipeline(gpu.renderer)
     pipeline.outputColorTransform = false
     pipeline.outputNode = vec4(output.rgb, 1)
     if (this.overlays !== noOverlays) {
-      const overlay = own(new OverlayPass(PassNode.COLOR, scene, camera, { samples: msaa }))
+      const overlay = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }))
       overlay.setLayers(layers(OVERLAY_LAYER))
       // Premultiplied sRGB over the finished picture.
       const top = vec4Of(renderOutput(overlay, NoToneMapping, SRGBColorSpace))
@@ -165,6 +188,7 @@ export class SceneRenderer {
       pipeline,
       ao: aoNode,
       aoOn,
+      background,
       dispose() {
         pipeline.dispose()
         for (const d of disposables) d.dispose()
@@ -195,6 +219,8 @@ export class SceneRenderer {
       if (built.ao) built.ao.resolutionScale = aoRatio / ratio
     }
     if (built.aoOn) built.aoOn.value = frame.ao === false ? 0 : 1
+    const bg = this.scene.background
+    built.background.value.copy(bg instanceof Color ? bg : renderer.getClearColor(new Color()))
     for (const o of this.overlays.aside()) o?.traverse((c) => c.layers.set(ASIDE_LAYER))
     for (const o of this.overlays.top()) o?.traverse((c) => c.layers.set(OVERLAY_LAYER))
     // The output node reads the exposure from the renderer as it draws.

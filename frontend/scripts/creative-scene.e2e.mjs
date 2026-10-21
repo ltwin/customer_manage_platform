@@ -3401,6 +3401,43 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
   }
 })
 
+// SCENE_E2E_LOOK=<dir>: the four display modes and an orthographic clay view
+// of three reference scenes on this machine's GPU, the ball and the ground
+// selected and the move gizmo up, the grid and the axis widget showing. Run
+// on both sides of the WebGPU migration and compared by eye (R1 AC-R1-6).
+const lookView = (ortho) => ({
+  camera: ortho ? { position: [7, -9, 7], target: [0, 0, 0.5], ortho: true, zoom: 80 } : { position: [6, -8, 4], target: [0, 0, 0.6], ortho: false },
+  selection: { selected: ['sobj_ball00000000000000000', 'sobj_ground'], active: 'sobj_ball00000000000000000' },
+  tool: 'move', toolbar: true, sidebar: true, history: false,
+})
+if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor helpers on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_LOOK
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    for (const name of ['noon', 'materials', 'room']) {
+      for (const ortho of [false, true]) {
+        const context = await gpu.newContext({ viewport: { width: 1280, height: 820 }, deviceScaleFactor: 2 })
+        await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, lookView(ortho)])
+        const server = new SceneServer()
+        referenceScene(server, name)
+        // The ball of the noon yard; the other scenes get one in front.
+        if (!server.scene.objects.some((o) => o.id === 'sobj_ball00000000000000000'))
+          seed(server, [{ id: 'sobj_ball00000000000000000', kind: 'primitive', name: 'ball', order: 99, transform: { ...identity(), position: [0, 0, 1.5] }, primitive: { builtin: 'sphere@1', params: { radius: 0.4 } } }])
+        const { page, errors } = await open(server, { context })
+        const { box } = await viewportCenter(page)
+        for (const mode of ortho ? ['白模'] : ['线框', '白模', '材质预览', '最终渲染']) {
+          await shading(page, mode)
+          await writeFile(`${dir}/${name}-${ortho ? 'ortho' : 'persp'}-${mode}.png`, await settledShot(page, box))
+        }
+        assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+        await context.close()
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
 /** The machine the baseline ran on: model, chip and OS, for the record. */
 function machineInfo() {
   const run = (cmd) => { try { return execSync(cmd, { encoding: 'utf8' }).trim() } catch { return '' } }
