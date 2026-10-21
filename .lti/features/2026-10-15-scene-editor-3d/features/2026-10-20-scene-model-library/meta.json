@@ -1,6 +1,6 @@
 {
   "uid": "07c86d41-6dbb-4054-88aa-e92384e4d8bc",
-  "revision": 13,
+  "revision": 14,
   "id": "scene-model-library",
   "kind": "feature",
   "assurance": "governed",
@@ -43,7 +43,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-20T14:52:30.611Z",
-  "updatedAt": "2026-10-21T03:24:26.994Z",
+  "updatedAt": "2026-10-21T03:27:55.343Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-21T03:27:55.304Z",
+    "summary": "feat/scene-model-library 以 a3c3cea2 合入 develop，无冲突；owner 已自行体验 C6；合并后 go build ./... 与前端 tsc 通过",
+    "method": "manual",
+    "limitations": "按 owner 要求合并点不跑测试（含 make check-merge）：合并后的组合结果只做了编译检查；分支上的定向检查见 C6 技术验证记录",
+    "sourceCommit": "707a834286e75d7a7228eed4aa6e79d50b33ce7e",
+    "targetCommit": "a3c3cea2a5033d873951f0ff9aa441eca2337c71",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "fc39a7b0fb4853a65be19169b1e04c6391b99c11c4477cc8674deba3cd3cab70"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "data-migration",
