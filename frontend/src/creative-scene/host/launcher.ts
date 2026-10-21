@@ -4,7 +4,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import { ApiError } from '../../api/transport.ts'
 import { onCanvasInvalidate } from '../../creative-canvas/editor/canvasEvents.ts'
 import { jobApi, leaseEveryMs, newEditorSessionID, pageJobKinds, type JobApi, type SceneJob } from './jobs.ts'
-import { probeRender } from '../render/probe.ts'
+import { probeRender, recoverDevice } from '../render/probe.ts'
 import { LeaveGuard } from './leaveGuard.ts'
 import { backgroundTicker, type Ticker } from './ticker.ts'
 
@@ -25,6 +25,9 @@ export type LauncherDeps = {
   probe(): Promise<boolean>
   /** Loads the executor; called on the first job. */
   load(): Promise<PageRunner>
+  /** After a device loss: whether a device can be had again (render/probe.ts). */
+  recover(): Promise<boolean>
+  now?: () => number
 }
 
 export type HostState = {
@@ -37,12 +40,16 @@ export type HostState = {
 }
 
 const throttleMs = 500
+/** After a device loss, a wake tries for a device again at most this often. */
+export const recoverEveryMs = 10_000
 
 export class SceneJobLauncher {
   readonly store: StoreApi<HostState> = createStore<HostState>(() => ({ holding: null, resumed: null, capable: true }))
   private readonly deps: LauncherDeps
   private readonly preferred: string[] = []
   private probing: Promise<void> | null = null
+  /** When the device was last lost or last tried for since; null while the page has one. */
+  private lostAt: number | null = null
   private tookOver = false
   private busy = false
   private again = false
@@ -84,6 +91,28 @@ export class SceneJobLauncher {
     void this.loop()
   }
 
+  /**
+   * A job's device was lost: claim nothing until a wake (a notification,
+   * focus, a reconnect) at least 10 seconds on finds a device again, so the
+   * page does not take jobs only to give them back.
+   */
+  deviceLost(): void {
+    this.lostAt = this.now()
+  }
+
+  private now(): number {
+    return (this.deps.now ?? (() => performance.now()))()
+  }
+
+  private async recovered(): Promise<boolean> {
+    if (this.lostAt === null) return true
+    if (this.now() - this.lostAt < recoverEveryMs) return false
+    this.lostAt = this.now()
+    const ok = await this.deps.recover().catch(() => false)
+    if (ok) this.lostAt = null
+    return ok
+  }
+
   private async loop() {
     if (this.stopped || !(await this.capable())) return
     if (this.busy) {
@@ -92,7 +121,7 @@ export class SceneJobLauncher {
     }
     this.busy = true
     try {
-      while (!this.stopped && this.store.getState().capable) {
+      while (!this.stopped && this.store.getState().capable && (await this.recovered())) {
         this.again = false
         let job: SceneJob | null
         try {
@@ -201,12 +230,14 @@ export async function probeDevice(): Promise<boolean> {
 
 export function pageLauncher(account: string): SceneJobLauncher {
   const api = jobApi(account, newEditorSessionID())
-  return new SceneJobLauncher({
+  const launcher: SceneJobLauncher = new SceneJobLauncher({
     api,
     ticker: backgroundTicker(),
     probe: probeDevice,
-    load: () => import('./pageExecutor.ts').then((m) => m.createPageExecutor(api)),
+    load: () => import('./pageExecutor.ts').then((m) => m.createPageExecutor(api, () => launcher.deviceLost())),
+    recover: recoverDevice,
   })
+  return launcher
 }
 
 /**

@@ -1,5 +1,6 @@
 import { ApiError } from '../../api/transport.ts'
 import type { Upload } from '../../creative-canvas/editor/media.ts'
+import { DeviceLostError } from '../render/gpu.ts'
 import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, measureStage, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
@@ -26,6 +27,8 @@ export type ExecutorDeps = BakeDeps & {
   render(documentID: string, request: RenderRequest): Promise<Shot>
   /** Draws an export's images from the scene's confirmed snapshot. */
   exportImages(documentID: string, plan: ExportPlan): Promise<RenderedShots>
+  /** The device was lost while drawing (render/gpu.ts): the page stops claiming until it has one again. */
+  deviceLost(): void
 }
 
 type Sent = { ok: true; uploads: Upload[] } | { ok: false; cause: unknown; uploads: Upload[] }
@@ -115,6 +118,7 @@ export class SceneExecutor {
       shot = await Promise.race([rendering, this.deps.ticker.wait(renderTimeoutMs, timer.signal).then(() => 'timeout' as const, () => 'stopped' as const)])
     } catch (err) {
       if (hold.lost()) return { state: 'lost' }
+      if (err instanceof DeviceLostError) return this.deviceLost()
       return this.fail(job, 'host_error', `截图失败：${reason(err)}`)
     } finally {
       timer.abort()
@@ -150,6 +154,7 @@ export class SceneExecutor {
       rendered = await Promise.race([rendering, this.deps.ticker.wait(exportTimeoutMs, timer.signal).then(() => 'timeout' as const, () => 'stopped' as const)])
     } catch (err) {
       if (hold.lost()) return { state: 'lost' }
+      if (err instanceof DeviceLostError) return this.deviceLost()
       return this.fail(job, 'host_error', `导出图渲染失败：${reason(err)}`)
     } finally {
       timer.abort()
@@ -202,6 +207,16 @@ export class SceneExecutor {
       }
       uploads = again.uploads
     }
+  }
+
+  /**
+   * Nothing was handed on (the commit point, host/render.ts): not the job's
+   * failure, nor the scene's. It goes back to the queue when the lease runs
+   * out, for this page once it has a device again or for another.
+   */
+  private deviceLost(): JobOutcome {
+    this.deps.deviceLost()
+    return { state: 'abandoned', reason: '渲染设备丢失' }
   }
 
   private async fail(job: SceneJob, code: JobErrorCode, message: string): Promise<JobOutcome> {

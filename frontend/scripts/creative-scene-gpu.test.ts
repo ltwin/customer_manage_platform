@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { RenderTarget } from 'three'
 import { NodeFrame, ViewportTextureNode } from 'three/webgpu'
-import { advance, DeviceLostError, deviceState, reset, type FrameState } from '../src/creative-scene/render/gpu.ts'
+import { advance, DeviceLostError, deviceState, lossCounter, reset, type FrameState } from '../src/creative-scene/render/gpu.ts'
 
 // The renderer entry steps three's private frame state (render/gpu.ts). These
 // checks fail first when a three upgrade moves it.
@@ -145,4 +145,13 @@ test('a disposed render target’s viewport texture goes to the next target: non
   assert.notEqual(next, live)
   assert.notEqual(node.getTextureForReference(new RenderTarget(64, 64)), old, 'a live one is never shared')
   assert.equal(disposed, 0)
+})
+
+test('the viewport rebuilds on a lost device until the third loss within 10 seconds', () => {
+  const lost = lossCounter()
+  assert.equal(lost(0), 'rebuild')
+  assert.equal(lost(4000), 'rebuild')
+  assert.equal(lost(9999), 'stop')
+  const spaced = lossCounter()
+  assert.deepEqual([0, 6000, 12000, 18000].map(spaced), ['rebuild', 'rebuild', 'rebuild', 'rebuild'], 'never three within 10 seconds')
 })

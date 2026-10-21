@@ -6,6 +6,7 @@ import { bakeFailure, compileFailure, renderTimeoutMs, SceneExecutor, type Execu
 import type { ExportPlan, RenderedShots } from '../src/creative-scene/host/exportShots.ts'
 import { leaseEveryMs, type CompletePayload, type Completion, type SceneJob } from '../src/creative-scene/host/jobs.ts'
 import type { Ticker } from '../src/creative-scene/host/ticker.ts'
+import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
 import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
 import type { Manifest } from '../src/creative-scene/sandbox/inspect.ts'
 import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders, revisionObjects, type ActivityDeps } from '../src/creative-scene/agentActivity.ts'
@@ -83,6 +84,7 @@ class FakePage {
       { camera: 'camB', pass: 'line', blob: new Blob(['d']) },
     ],
   }
+  deviceLosses = 0
   /** Answers for complete, in order; past the end, a recorded success. */
   answers: (Completion | Error)[] = []
   private n = 0
@@ -111,6 +113,7 @@ class FakePage {
         this.exports.push({ documentID, plan })
         return this.exported instanceof Error ? Promise.reject(this.exported) : Promise.resolve(this.exported)
       },
+      deviceLost: () => { this.deviceLosses++ },
       api: {
         claim: () => Promise.resolve(null),
         lease: (jobID) => {
@@ -431,6 +434,19 @@ test('a model counts with its manifest bounds turned and scaled by its instance'
 
 // --- render_view jobs -------------------------------------------------------
 
+test('a device lost while drawing gives the job back unreported, render or export, and tells the page', async () => {
+  for (const job of [renderJob(), exportJob()]) {
+    const page = new FakePage()
+    page.shot = new DeviceLostError()
+    page.exported = new DeviceLostError()
+    const out = await new SceneExecutor(page.deps()).run(job)
+    assert.deepEqual(out, { state: 'abandoned', reason: '渲染设备丢失' })
+    assert.equal(page.completes.length, 0, 'neither failed nor completed: the lease runs out')
+    assert.equal(page.uploads.length, 0)
+    assert.equal(page.deviceLosses, 1)
+  }
+})
+
 const renderJob = (request: Record<string, unknown> = { preset: 'overview', mode: 'clay' }): SceneJob =>
   ({ ...bakeJob(), id: 'csj_2', kind: 'render_view', request })
 
@@ -553,7 +569,7 @@ test('peek hands over a loaded model at once, null for a failed one, nothing bef
 
 // --- the page's claim loop -------------------------------------------------
 
-import { SceneJobLauncher, type LauncherDeps, type PageRunner } from '../src/creative-scene/host/launcher.ts'
+import { recoverEveryMs, SceneJobLauncher, type LauncherDeps, type PageRunner } from '../src/creative-scene/host/launcher.ts'
 import { LeaveGuard } from '../src/creative-scene/host/leaveGuard.ts'
 
 class FakeHost {
@@ -571,11 +587,16 @@ class FakeHost {
   disposed = 0
   capable = true
   probes = 0
+  recovers = 0
+  recoverable = false
+  clock = 0
   claimError: unknown = null
   deps(): LauncherDeps {
     return {
       ticker: this.ticker,
       probe: async () => (this.probes++, this.capable),
+      recover: async () => (this.recovers++, this.recoverable),
+      now: () => this.clock,
       load: async () => {
         this.loads++
         if (this.loadGate) await this.loadGate.promise
@@ -991,4 +1012,31 @@ test('a run started from the scene editor carries its scene and at most 50 selec
   assert.equal('scene_context' in runStep(null).payload, false)
   const many = Array.from({ length: 60 }, (_, i) => `sobj_${String(i).padStart(21, '0')}`)
   assert.deepEqual(runStep({ documentID: 'cwdoc_1', selected: many }).payload.scene_context, { document_id: 'cwdoc_1', selected_object_ids: many.slice(0, 50) })
+})
+
+test('after a device loss the page claims nothing until a wake 10 seconds on finds a device', async () => {
+  const host = new FakeHost()
+  host.queue = [queued('csj_1'), queued('csj_2'), queued('csj_3')]
+  const launcher = new SceneJobLauncher(host.deps())
+  launcher.start()
+  launcher.deviceLost()
+  launcher.poke()
+  await settle()
+  assert.equal(host.claims.length, 0)
+  assert.equal(host.recovers, 0, 'not tried within 10 seconds')
+  host.clock = recoverEveryMs
+  launcher.poke()
+  await settle()
+  assert.equal(host.recovers, 1)
+  assert.equal(host.claims.length, 0, 'still no device')
+  host.clock += recoverEveryMs / 2
+  launcher.poke()
+  await settle()
+  assert.equal(host.recovers, 1, 'the next try waits another 10 seconds')
+  host.clock += recoverEveryMs
+  host.recoverable = true
+  launcher.poke()
+  await settle()
+  assert.equal(host.recovers, 2)
+  assert.ok(host.claims.length > 0, 'claiming again')
 })

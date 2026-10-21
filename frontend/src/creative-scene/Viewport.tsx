@@ -63,7 +63,7 @@ import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
 import { OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
-import { createRenderer, gpuOf } from './render/gpu.ts'
+import { createRenderer, gpuOf, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 
@@ -155,6 +155,12 @@ export function Viewport(props: ViewportProps) {
   const cameraView = useStore(props.ui, (s) => s.cameraView)
   const display = displayOf({ display: useStore(props.ui, (s) => s.display) }, props.scene.render)
   const grid = useRef<Mesh>(null)
+  // A lost device remounts the Canvas on a new one; edits, selection and the view live outside it.
+  const [canvasEpoch, setCanvasEpoch] = useState(0)
+  const [deviceGone, setDeviceGone] = useState(false)
+  const [losses] = useState(lossCounter)
+  // Only the renderer drawing now counts: one a remount left behind (StrictMode, an earlier loss) is given back.
+  const current = useRef<SceneGPU | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   useEffect(() => {
     const el = wrap.current
@@ -224,32 +230,50 @@ export function Viewport(props: ViewportProps) {
         if (placed) props.onDropModel?.(placed)
       }}
     >
-      <Canvas
-        frameloop="demand"
-        // Tone mapping and sRGB happen in the pipeline's output node (render/gpu.ts); R3F would set them back on the renderer.
-        linear
-        flat
-        shadows="percentage"
-        gl={({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport' }).then((g) => g.renderer)}
-        dpr={[1, 2]}
-        camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
-      >
-        <Lighting environment={props.scene.environment} display={display} />
-        <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
-        <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
-        {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
-        {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
-        <OrthoSwitch ortho={ortho} />
-        <CameraControls makeDefault />
-        <ViewKeeper initial={props.camera} onChange={props.onCamera} />
-        <CameraViewRig scene={props.scene} ui={props.ui} />
-        {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
-          <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
-        )}
-        <AxisGizmo />
-        <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} />
-        <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
-      </Canvas>
+      {deviceGone ? (
+        <p role="alert" className="cc-scene-message">
+          渲染设备不可用，请刷新页面
+        </p>
+      ) : (
+        <Canvas
+          key={canvasEpoch}
+          frameloop="demand"
+          // Tone mapping and sRGB happen in the pipeline's output node (render/gpu.ts); R3F would set them back on the renderer.
+          linear
+          flat
+          shadows="percentage"
+          gl={({ canvas }) =>
+            createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport' }).then((g) => {
+              current.current?.dispose()
+              current.current = g
+              void g.lost.then(() => {
+                if (current.current !== g) return
+                if (losses(performance.now()) === 'rebuild') setCanvasEpoch((n) => n + 1)
+                else setDeviceGone(true)
+              })
+              return g.renderer
+            })
+          }
+          dpr={[1, 2]}
+          camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
+        >
+          <Lighting environment={props.scene.environment} display={display} />
+          <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
+          <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
+          {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
+          {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
+          <OrthoSwitch ortho={ortho} />
+          <CameraControls makeDefault />
+          <ViewKeeper initial={props.camera} onChange={props.onCamera} />
+          <CameraViewRig scene={props.scene} ui={props.ui} />
+          {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
+            <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
+          )}
+          <AxisGizmo />
+          <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} />
+          <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
+        </Canvas>
+      )}
       {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
       {box && r && (
         <div

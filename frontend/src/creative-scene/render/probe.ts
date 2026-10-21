@@ -34,3 +34,21 @@ export async function adapter(): Promise<Adapter | null> {
 export async function probeRender(): Promise<boolean> {
   return webgl2Available() || (await adapter()) !== null
 }
+
+/**
+ * Whether a device can be had again after one was lost: a WebGPU device made
+ * and given back at once, or a WebGL2 context.
+ */
+export async function recoverDevice(): Promise<boolean> {
+  const found = await adapter()
+  if (found) {
+    try {
+      const device = await (found as Adapter & { requestDevice(): Promise<{ destroy(): void }> }).requestDevice()
+      device.destroy()
+      return true
+    } catch {
+      return false
+    }
+  }
+  return webgl2Available()
+}

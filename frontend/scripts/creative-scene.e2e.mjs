@@ -20,7 +20,7 @@ const fixture = new URL('../.scene-editor-qa.html', import.meta.url)
 const canvasFixture = new URL('../.scene-canvas-qa.html', import.meta.url)
 await writeFile(
   fixture,
-  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script type="module">
+  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script>window.__sceneTest = true</script><script type="module">
 import React, {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import '/src/index.css';
@@ -558,17 +558,21 @@ async function open(server, options = {}) {
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
-  const canvas = page.locator('.cc-scene-editor canvas')
-  await canvas.waitFor({ timeout: 20_000 })
-  // The renderer is made asynchronously (render/gpu.ts): the viewport takes keys and has its size once it is.
-  await canvas.evaluate((c) => new Promise((resolve) => {
-    const sized = () => (c.clientWidth === c.parentElement.clientWidth && c.clientHeight === c.parentElement.clientHeight ? resolve() : requestAnimationFrame(sized))
-    sized()
-  }))
+  await viewportReady(page)
   await page.getByRole('treeitem').first().waitFor()
   // Let R3F mount the scene and the camera settle.
   await sleep(400)
   return { context, page, errors }
+}
+
+/** The renderer is made asynchronously (render/gpu.ts): the viewport takes keys and has its size once it is. */
+async function viewportReady(page) {
+  const canvas = page.locator('.cc-scene-editor canvas')
+  await canvas.waitFor({ timeout: 20_000 })
+  await canvas.evaluate((c) => new Promise((resolve) => {
+    const sized = () => (c.clientWidth === c.parentElement.clientWidth && c.clientHeight === c.parentElement.clientHeight ? resolve() : requestAnimationFrame(sized))
+    sized()
+  }))
 }
 
 async function viewportCenter(page) {
@@ -3442,6 +3446,38 @@ if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor help
   } finally {
     await gpu.close()
   }
+})
+
+// --- R1 AC-R1-5: a lost device (render/gpu.ts test hooks) -------------------------
+
+await check('device loss: the viewport draws again on a new device; the selection, the view and the edits stay', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const id = await addBox(page, server)
+  await saved(page)
+  const { box } = await viewportCenter(page)
+  const before = await settledShot(page, box)
+  const view = await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('creative-scene-view:'))))
+  const old = await page.locator('.cc-scene-editor canvas').elementHandle()
+  assert.equal(await page.evaluate(() => window.__sceneGPU.loseDevice('viewport')), 1, 'one viewport renderer is live')
+  await waitFor(async () => !(await old.evaluate((c) => c.isConnected)), 'a new canvas')
+  await viewportReady(page)
+  const { box: again } = await viewportCenter(page)
+  const after = await settledShot(page, again)
+  assert.ok((await pixelDiff(page, before, after)) < 0.003, 'the same picture on the new device')
+  assert.equal(await page.getByRole('treeitem', { selected: true }).count(), 1, 'still selected')
+  assert.equal(await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('creative-scene-view:')))), view, 'the same view')
+  assert.ok(server.object(id), 'the box is in the scene')
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  // A device that keeps failing: the third loss within 10 seconds stops trying.
+  for (let i = 0; i < 2; i++) {
+    await viewportReady(page)
+    const canvas = await page.locator('.cc-scene-editor canvas').elementHandle()
+    await page.evaluate(() => window.__sceneGPU.loseDevice('viewport'))
+    await waitFor(async () => !(await canvas.evaluate((c) => c.isConnected)), 'gone')
+  }
+  await page.getByRole('alert').filter({ hasText: '渲染设备不可用，请刷新页面' }).waitFor()
+  await context.close()
 })
 
 /** The machine the baseline ran on: model, chip and OS, for the record. */

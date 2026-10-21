@@ -168,6 +168,22 @@ export const gpuTestHooks = {
     return n
   },
 }
+// The e2e fixture page sets __sceneTest before the editor loads.
+if ((globalThis as { __sceneTest?: boolean }).__sceneTest) Object.assign(globalThis, { __sceneGPU: gpuTestHooks })
+
+/**
+ * The viewport's answer to each lost device: draw again on a new one, until
+ * the third loss within 10 seconds, when a device that keeps failing is not
+ * worth another try (Epic design「设备丢失」).
+ */
+export function lossCounter(windowMs = 10_000, limit = 3): (now: number) => 'rebuild' | 'stop' {
+  const times: number[] = []
+  return (now) => {
+    times.push(now)
+    while (now - times[0] >= windowMs) times.shift()
+    return times.length >= limit ? 'stop' : 'rebuild'
+  }
+}
 
 const byRenderer = new WeakMap<object, SceneGPU>()
 
