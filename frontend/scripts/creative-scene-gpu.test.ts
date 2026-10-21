@@ -131,3 +131,18 @@ test('each render target’s viewport texture has a size of its own, as glass in
   assert.notEqual(viewport.source, shot.source)
   assert.notEqual(viewport.image.width, 2048)
 })
+
+test('a disposed render target’s viewport texture goes to the next target: none piles up, none is destroyed', () => {
+  const node = new ViewportTextureNode()
+  const first = new RenderTarget(64, 64)
+  const old = node.getTextureForReference(first)
+  let disposed = 0
+  old.addEventListener('dispose', () => disposed++)
+  const live = node.getTextureForReference(new RenderTarget(64, 64))
+  first.dispose()
+  const next = node.getTextureForReference(new RenderTarget(64, 64))
+  assert.equal(next, old, 'taken over')
+  assert.notEqual(next, live)
+  assert.notEqual(node.getTextureForReference(new RenderTarget(64, 64)), old, 'a live one is never shared')
+  assert.equal(disposed, 0)
+})

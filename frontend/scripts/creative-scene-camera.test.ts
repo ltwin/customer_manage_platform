@@ -18,6 +18,7 @@ import {
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
 import { renderShots, submitExport, uploadShots, type ExportPass, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
+import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
 import { readFileSync } from 'node:fs'
 
 const deg = (r: number) => (r * 180) / Math.PI
@@ -293,4 +294,36 @@ test('a manual export frees its uploads when it is refused or never answered', a
   const lost = await run(async () => { throw new TypeError('Failed to fetch') })
   assert.deepEqual(lost.out, { ok: false, message: '没能确认导出结果，请先看画布上是否已有这组图' })
   assert.equal(lost.discarded.length, 2)
+})
+
+test('a device lost while the shots were drawn hands none of them on: the shooter closes and a manual export uploads nothing', async () => {
+  const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
+  const doc = { scene: sceneOf(camera()), models: {}, revision: '4' }
+  let closed = 0
+  const shooter: Shooter = {
+    shoot: () => new Blob(['x']),
+    setLook: async () => {},
+    confirm: async () => { throw new DeviceLostError() },
+    close: () => { closed++ },
+  }
+  const plan = { cameraObjectIDs: ['cam'], passes: ['clay', 'line'] as ExportPass[] }
+  await assert.rejects(renderShots({ read: async () => doc as never, loadModels: async () => {}, open: async () => shooter }, 'doc', plan), DeviceLostError)
+  assert.equal(closed, 1)
+  const uploads: Blob[] = []
+  const out = await runManualExport(
+    {
+      read: async () => doc as never,
+      loadModels: async () => {},
+      open: async () => shooter,
+      upload: async (file) => (uploads.push(file), { id: 'ccup_1' }) as Upload,
+      discard: async () => {},
+      send: async () => ({ change_id: 'cwch', scene_revision: '4', nodes: [] }),
+      wait: async () => {},
+    },
+    { documentID: 'doc', canvasID: 'ccv', sceneNodeID: 'node', plan },
+    new AbortController().signal,
+  )
+  assert.deepEqual(out, { ok: false, message: '渲染设备暂时不可用，请重试' })
+  assert.equal(uploads.length, 0)
+  assert.equal(closed, 2)
 })

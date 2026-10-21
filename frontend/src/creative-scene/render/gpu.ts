@@ -16,28 +16,52 @@ import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
 // private fields are touched here only, and a unit test keeps them in sight.
 
 /**
- * Gives every viewport texture its own size. Glass samples what is behind it
- * through module-wide ViewportTextureNodes, which keep a texture per render
- * target, cloned from one: a clone shares its source, so the viewport's and
- * an export's sizes overwrite each other, and each renderer then remakes the
- * texture in the middle of a pass while its bindings still name the old one
- * (three r186; "Destroyed texture used in a submit").
+ * Gives every viewport texture its own size, and lets it go with its render
+ * target. Glass samples what is behind it through module-wide
+ * ViewportTextureNodes, which keep a texture per render target, cloned from
+ * one (three r186):
+ *  - a clone shares its source, so the viewport's and an export's sizes
+ *    overwrite each other, and each renderer then remakes the texture in the
+ *    middle of a pass while its bindings still name the old one ("Destroyed
+ *    texture used in a submit");
+ *  - nothing frees a clone, so a pipeline built per picture leaves one behind
+ *    for every picture with glass. Nor can one be freed with its target: the
+ *    node (and every copy a material took, which reads the node's value)
+ *    keeps the texture it was last given until its own pass runs, and is
+ *    bound before that. A target's texture goes back to the node instead,
+ *    for the next target to take: the count stays flat, and what a node
+ *    still holds is never a destroyed texture.
  */
 export function ownViewportTextures(node: typeof ViewportTextureNode.prototype) {
-  type Cached = { _cacheTextures: WeakMap<object, Texture>; referenceNode?: Cached }
   const get = node.getTextureForReference
-  node.getTextureForReference = function (this: Cached, reference = null) {
-    const cache = (this.referenceNode ?? this)._cacheTextures
-    const fresh = reference !== null && !cache.has(reference)
-    const texture: Texture = get.call(this, reference)
-    if (fresh) {
+  type Reference = NonNullable<Parameters<typeof get>[0]>
+  type Cached = { _cacheTextures: WeakMap<Reference, Texture>; referenceNode?: Cached }
+  const spares = new WeakMap<Cached, Texture[]>()
+  node.getTextureForReference = function (this: Cached, reference: Reference | null = null) {
+    const base = this.referenceNode ?? this
+    const cache = base._cacheTextures
+    if (reference === null || cache.has(reference)) return get.call(this, reference)
+    let spare = spares.get(base)
+    if (!spare) spares.set(base, (spare = []))
+    let texture = spare.pop()
+    if (texture) {
+      cache.set(reference, texture)
+    } else {
+      texture = get.call(this, reference) as Texture
       const { width, height } = texture.image as { width: number; height: number }
       texture.source = new Source({ width, height })
     }
+    const own = texture
+    const back = spare
+    ;(reference as { addEventListener(type: 'dispose', listener: () => void): void }).addEventListener('dispose', () => {
+      cache.delete(reference)
+      back.push(own)
+    })
     return texture
   }
 }
 ownViewportTextures(ViewportTextureNode.prototype)
+
 
 export type Output =
   /** Linear canvas, tone mapping and sRGB in the pipeline's output node, so overlays drawn after it do not wipe the picture. */

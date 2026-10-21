@@ -2,6 +2,7 @@ import { ApiError } from '../../api/transport.ts'
 import type { components } from '../../api/schema'
 import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { SceneDocument } from '../api.ts'
+import { DeviceLostError } from '../render/gpu.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { exportLongSide, cameraFraming, type Framing } from './framing.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
@@ -209,6 +210,8 @@ export async function runManualExport(deps: ManualExportDeps, job: ManualExport,
   try {
     rendered = await renderShots(deps, job.documentID, job.plan, onProgress)
   } catch (err) {
+    // The device came back or will (render/gpu.ts): nothing was handed on, a retry draws them all.
+    if (err instanceof DeviceLostError) return { ok: false, message: '渲染设备暂时不可用，请重试' }
     return { ok: false, message: `导出图渲染失败：${err instanceof Error ? err.message : String(err)}` }
   }
   if (!rendered.ok) return { ok: false, message: rendered.message }
