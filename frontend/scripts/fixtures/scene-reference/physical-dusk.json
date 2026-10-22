@@ -1,0 +1,264 @@
+{
+  "environment": {
+    "sky": {
+      "kind": "physical",
+      "sun_mode": "location",
+      "latitude_deg": 31.2304,
+      "longitude_deg": 121.4737,
+      "timezone": "Asia/Shanghai",
+      "place": "上海",
+      "date": "2026-09-23",
+      "local_time": "18:10",
+      "north_azimuth_deg": 180,
+      "sun_elevation_deg": 35,
+      "sun_azimuth_deg": 135,
+      "altitude_m": 0,
+      "air_density": 1,
+      "dust_density": 1,
+      "ozone_density": 1,
+      "sun_disc": true,
+      "sun_size_deg": 0.545,
+      "sun_strength": 1,
+      "sun_temperature_k": 6500
+    },
+    "ambient": {
+      "color": "#ffffff",
+      "intensity": 0.4
+    },
+    "fog": null
+  },
+  "render": {
+    "mode": "lit",
+    "exposure_ev": 0,
+    "engine": "workbench",
+    "resolution": "2k",
+    "exposure_ev100": 6
+  },
+  "objects": [
+    {
+      "id": "sobj_ground",
+      "kind": "primitive",
+      "name": "地面",
+      "parent_id": null,
+      "order": 0,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": true,
+      "primitive": {
+        "builtin": "ground@1",
+        "params": {
+          "size": 40
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -1.5,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_white0000000000000000",
+      "kind": "primitive",
+      "name": "white",
+      "order": 5,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1,
+          "height": 1,
+          "depth": 1
+        }
+      },
+      "material_slots": {}
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0.5,
+          0,
+          -2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_wall00000000000000000",
+      "kind": "primitive",
+      "name": "wall",
+      "order": 6,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 4,
+          "height": 2.5,
+          "depth": 0.2
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "concrete@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          1.2,
+          0,
+          0.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_crate0000000000000000",
+      "kind": "primitive",
+      "name": "crate",
+      "order": 7,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.8,
+          "height": 0.8,
+          "depth": 0.8
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "wood@1",
+          "params": {}
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0,
+          1.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_ball00000000000000000",
+      "kind": "primitive",
+      "name": "ball",
+      "order": 8,
+      "primitive": {
+        "builtin": "sphere@1",
+        "params": {
+          "radius": 0.4
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "metal@1",
+          "params": {
+            "rust": 0
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          1.4,
+          7
+        ],
+        "rotation": [
+          -0.069756,
+          0,
+          0,
+          0.997564
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_shot00000000000000000",
+      "kind": "camera",
+      "name": "shot",
+      "order": 20,
+      "camera": {
+        "focal_mm": 50,
+        "f_stop": 2.8,
+        "shutter_s": 0.03333333333333333,
+        "iso": 400
+      }
+    }
+  ]
+}

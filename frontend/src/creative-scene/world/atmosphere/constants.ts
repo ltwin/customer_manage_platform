@@ -118,3 +118,8 @@ export function sunTint(kelvin: number): Vec3 {
   const l = luminance(c)
   return c.map((v) => v / l) as Vec3
 }
+
+/** The sun's illuminance above the atmosphere per channel, lux: SUN_LUX × its strength × its colour temperature's tint (W2 design「太阳的亮度与色温」). */
+export function sunAbove(strength: number, kelvin: number): Vec3 {
+  return sunTint(kelvin).map((t) => SUN_LUX * strength * t) as Vec3
+}

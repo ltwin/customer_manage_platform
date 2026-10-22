@@ -1,4 +1,5 @@
 import { Body, Equator, Horizon, MakeTime, Observer, SearchAltitude, SearchHourAngle } from 'astronomy-engine'
+import { Vector3 } from 'three'
 import type { PhysicalSky } from './physicalSky.ts'
 
 // Where a physical sky's sun is (Epic design「地点与时间」). Pure: the time
@@ -99,6 +100,13 @@ export function sunAt(latitudeDeg: number, longitudeDeg: number, utcMs: number):
 /** A compass azimuth as the document's (sun_azimuth_deg's convention, counter-clockwise from +Z), given where north points. */
 export function documentAzimuth(compassDeg: number, northAzimuthDeg: number): number {
   return (((northAzimuthDeg - compassDeg) % 360) + 360) % 360
+}
+
+/** The unit vector toward the sun in document space (Y up) at an elevation and a document azimuth (counter-clockwise from +Z). */
+export function sunVector(elevationDeg: number, azimuthDeg: number): Vector3 {
+  const el = (elevationDeg * Math.PI) / 180
+  const az = (azimuthDeg * Math.PI) / 180
+  return new Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el))
 }
 
 /** A physical sky's sun in the document's terms: its manual angles, or where its place and time put it. */

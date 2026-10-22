@@ -4135,7 +4135,7 @@ async function atmosphereDrift(page, preset, sunElevationDeg) {
       }
       const a = stats(false)
       const b = stats(true)
-      return a.mean <= b.mean ? a : b
+      return a.mean <= b.mean ? { ...a, flipped: false } : { ...b, flipped: true }
     }
     const sun = [Math.sqrt(1 - sunMu * sunMu), sunMu, 0]
     const result = {
@@ -4151,6 +4151,61 @@ async function atmosphereDrift(page, preset, sunElevationDeg) {
         cpu.skyRadiance([s * lightCos, viewMu, s * Math.sqrt(Math.max(0, 1 - lightCos * lightCos))], sun, out)
       }),
     }
+    // The sky view as the sky draws it (sampleSkyView), toward directions across the sky and the ground:
+    // elevation from −10° to 60° down the rows, azimuth from the sun's side to the far one across.
+    // three as the app has it: the page cannot import a bare name, and a second copy would not share its renderer's classes.
+    const lutsSource = await (await fetch('/src/creative-scene/world/atmosphere/luts.ts')).text()
+    const dep = (name) => import(lutsSource.match(new RegExp(`from "(/node_modules/\\.vite/deps/${name}\\.js[^"]*)"`))[1])
+    const { FloatType } = await dep('three')
+    const tsl = await dep('three_tsl')
+    const { QuadMesh, NodeMaterial, RenderTarget } = await dep('three_webgpu')
+    const cols = 8, rows = 16
+    const elevation = (j) => -10 + (70 * j) / (rows - 1)
+    const azimuth = (i) => (180 * i) / (cols - 1)
+    const target = new RenderTarget(cols, rows, { type: FloatType, depthBuffer: false })
+    const material = new NodeMaterial()
+    material.fragmentNode = tsl.Fn(() => {
+      const p = tsl.uv()
+      const el = tsl.floor(p.y.mul(rows)).mul(70 / (rows - 1)).sub(10).mul(Math.PI / 180)
+      const az = tsl.floor(p.x.mul(cols)).mul(180 / (cols - 1)).mul(Math.PI / 180)
+      const d = tsl.vec3(tsl.cos(el).mul(tsl.cos(az)), tsl.sin(el), tsl.cos(el).mul(tsl.sin(az)))
+      return tsl.vec4(luts.sampleSkyView(d, tsl.vec3(...sun)), 1)
+    })()
+    const quad = new QuadMesh(material)
+    gpu.renderer.setRenderTarget(target)
+    quad.render(gpu.renderer)
+    gpu.renderer.setRenderTarget(null)
+    {
+      const data = await read(target)
+      const out = new Float64Array(3)
+      const stats = (flip) => {
+        let sum = 0, count = 0, max = 0, nonFinite = 0
+        for (let j = 0; j < rows; j++) {
+          for (let i = 0; i < cols; i++) {
+            const el = (elevation(j) * Math.PI) / 180
+            const az = (azimuth(i) * Math.PI) / 180
+            cpu.skyRadiance([Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)], sun, out)
+            const row = flip ? rows - 1 - j : j
+            for (let c = 0; c < 3; c++) {
+              const g = data[(row * cols + i) * 4 + c]
+              if (!Number.isFinite(g)) nonFinite++
+              else if (Math.abs(out[c]) > 1e-6) {
+                const rel = Math.abs(g - out[c]) / Math.abs(out[c])
+                sum += rel
+                count++
+                max = Math.max(max, rel)
+              }
+            }
+          }
+        }
+        return { mean: sum / Math.max(1, count), max, count, nonFinite }
+      }
+      const a = stats(false)
+      const b = stats(true)
+      result.skyDirections = a.mean <= b.mean ? { ...a, flipped: false } : { ...b, flipped: true }
+    }
+    target.dispose()
+    material.dispose()
     luts.dispose()
     gpu.dispose()
     return result
@@ -4164,12 +4219,14 @@ async function atmosphereDrift(page, preset, sunElevationDeg) {
 // that and no more.
 await check('W2 atmosphere drift: the GPU LUTs agree with the CPU at their texels', async () => {
   const server = new SceneServer()
-  const { context, page, errors } = await open(server)
+  // SCENE_E2E_W2_METAL: on this machine's GPU (the WebGPU backend) rather than SwiftShader's WebGL2.
+  const gpu = process.env.SCENE_E2E_W2_METAL ? await chromium.launch({ headless: true, args: metal }) : null
+  const { context, page, errors } = await open(server, gpu ? { context: await gpu.newContext() } : {})
   // The multiple scattering's largest relative errors are on texels near 0 (the sun below the horizon), a few 1e-5 off.
-  const limits = { transmittance: [0.002, 0.01], multiScattering: [0.005, 0.05], skyView: [0.005, 0.03] }
+  const limits = { transmittance: [0.002, 0.01], multiScattering: [0.005, 0.05], skyView: [0.005, 0.03], skyDirections: [0.02, 0.1] }
   for (const [preset, elevation] of [['clear', 30], ['dust', 8], ['highland', -3]]) {
     const out = await atmosphereDrift(page, preset, elevation)
-    console.log(`W2 drift ${preset} at ${elevation}° (${out.backend}): ${['transmittance', 'multiScattering', 'skyView'].map((k) => `${k} mean ${(out[k].mean * 100).toFixed(2)}% max ${(out[k].max * 100).toFixed(2)}% (${out[k].count})`).join(', ')}`)
+    console.log(`W2 drift ${preset} at ${elevation}° (${out.backend}): ${['transmittance', 'multiScattering', 'skyView', 'skyDirections'].map((k) => `${k} mean ${(out[k].mean * 100).toFixed(2)}% max ${(out[k].max * 100).toFixed(2)}% (${out[k].count}${out[k].flipped ? ', rows flipped' : ''})`).join(', ')}`)
     for (const [lut, [mean, max]] of Object.entries(limits)) {
       const r = out[lut]
       assert.equal(r.nonFinite, 0, `${preset} ${lut}: no Inf or NaN`)
@@ -4177,6 +4234,180 @@ await check('W2 atmosphere drift: the GPU LUTs agree with the CPU at their texel
       assert.ok(r.mean <= mean && r.max <= max, `${preset} at ${elevation}°, ${lut}: mean ${(r.mean * 100).toFixed(2)}%, max ${(r.max * 100).toFixed(2)}%`)
     }
   }
+  assert.deepEqual(errors, [])
+  await context.close()
+  await gpu?.close()
+})
+
+// --- W2 physical sky: exposure, the sun and lamps (AC-W2-3, AC-W2-4, AC-W2-5) -------
+
+/** The physical yard (scripts/fixtures/scene-reference): Shanghai on 2026-09-23 at noon, in the golden hour (17:30) and 20 minutes after sunset (18:10); its camera exposed by sunny 16 and its kin. */
+const physicalNames = ['physical-noon', 'physical-golden', 'physical-dusk']
+
+/** The yard opened in the rendered view at the editor's default view; change(ops) writes as another session would and waits for the picture. */
+async function physicalYard(name, edit) {
+  const server = new SceneServer()
+  referenceScene(server, name, edit)
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  const { box } = await viewportCenter(page)
+  await page.mouse.move(1, 1)
+  await shading(page, '最终渲染')
+  const settle = async () => {
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name}: compiled`, 60_000)
+    // The sky light is made at most every 200 ms.
+    await sleep(400)
+    return settledShot(page, box)
+  }
+  const change = async (ops) => {
+    server.external(ops)
+    await page.evaluate(() => window.__invalidate())
+    return settle()
+  }
+  const sky = (patch) => [{ op: 'set_environment', environment: { ...server.scene.environment, sky: { ...server.scene.environment.sky, ...patch } } }]
+  return { server, context, page, errors, box, settle, change, sky }
+}
+
+/** The metered EV of a physical sky: incident light on level ground (world/exposure.ts environmentEV), worked out in the page as PhysicalLighting does. */
+async function meteredEV(page, sky) {
+  return page.evaluate(async (sky) => {
+    const { physicalSun, sunVector } = await import('/src/creative-scene/world/astro.ts')
+    const { sunAbove } = await import('/src/creative-scene/world/atmosphere/constants.ts')
+    const { CpuAtmosphere } = await import('/src/creative-scene/world/atmosphere/cpu.ts')
+    const { environmentEV } = await import('/src/creative-scene/world/exposure.ts')
+    const where = physicalSun(sky)
+    const day = new CpuAtmosphere(sky).daylight(sunVector(where.elevationDeg, where.azimuthDeg).y, sunAbove(sky.sun_strength, sky.sun_temperature_k))
+    return environmentEV(day.horizontal)
+  }, sky)
+}
+
+// SCENE_E2E_W2_PICTURES=<dir>: the physical yard's exports (each camera at its
+// own exposure) for a look, on this machine's GPU when SCENE_E2E_W2_METAL is set.
+if (process.env.SCENE_E2E_W2_PICTURES) await check('W2 pictures: the physical yard exported at noon, in the golden hour and after sunset', async () => {
+  const dir = process.env.SCENE_E2E_W2_PICTURES
+  const gpu = await chromium.launch({ headless: true, args: process.env.SCENE_E2E_W2_METAL ? metal : [] })
+  try {
+    for (const name of physicalNames) {
+      const out = await exportReference(gpu, name)
+      for (const img of out.images.filter((i) => i.pass === 'lit')) await writeFile(`${dir}/${img.file}`, img.png)
+      const [view] = await viewportLooks(gpu, name, [['最终渲染', 'lit']])
+      await writeFile(`${dir}/${view.file}`, view.png)
+      console.log(`W2 pictures ${name}: viewport mean ${view.all.mean.toFixed(0)}`)
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('W2 sunny 16: noon at EV100 15 exposes the yard; 20 minutes after sunset meters 5 stops lower and comes out dark at the same exposure', async () => {
+  const { server, context, page, errors, settle, change, sky } = await physicalYard('physical-noon')
+  const noon = await lumaStats(page, await settle(), { level: 250 })
+  await shot(page, 'w2-noon-ev15')
+  const noonEV = await meteredEV(page, server.scene.environment.sky)
+  const dusk = await lumaStats(page, await change(sky({ local_time: '18:10' })), { level: 250 })
+  await shot(page, 'w2-dusk-ev15')
+  const duskEV = await meteredEV(page, server.scene.environment.sky)
+  console.log(`W2 sunny 16: noon meters EV ${noonEV.toFixed(1)}, mean ${noon.mean.toFixed(0)} (rgb ${[noon.r, noon.g, noon.b].map((v) => v.toFixed(0))}), clipped ${(noon.bright * 100).toFixed(2)}%; dusk meters EV ${duskEV.toFixed(1)}, mean ${dusk.mean.toFixed(1)}`)
+  assert.ok(Math.abs(noonEV - 15) < 1, 'a clear noon meters about sunny 16')
+  assert.ok(noon.mean > 120 && noon.mean < 220 && noon.bright < 0.01, 'exposed: neither dark nor blown')
+  assert.ok(Math.abs(noon.r - noon.b) < 15, 'daylight is about neutral')
+  assert.ok(noonEV - duskEV >= 5, 'after sunset the light is 5 stops down or more')
+  assert.ok(dusk.mean < noon.mean / 4, 'and at noon’s exposure the yard is dark')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 exposure and the sun: the camera view at the camera’s EV100, equal exposures alike, the sun’s strength in stops and its colour temperature', async () => {
+  const { server, context, page, errors, settle, change, sky } = await physicalYard('physical-noon')
+  const camera = server.scene.objects.find((o) => o.kind === 'camera')
+  const lens = (patch) => [{ op: 'update_objects', updates: [{ object_id: camera.id, camera: patch }] }]
+  const off = async (a, b) => (await compareShots(page, a, b, 2)).over
+  const free = await settle()
+  // 0 looks through the scene's camera, at f/16, 1/125 s, ISO 100: EV100 15 like the default exposure.
+  await focusEditor(page)
+  await page.keyboard.press('0')
+  const base = await settle()
+  await shot(page, 'w2-camera-f16')
+  assert.ok((await pixelDiff(page, free, base)) > 0.05, 'the camera view is the camera’s picture')
+  // The free view follows the default exposure; the camera view does not.
+  await change([{ op: 'set_render', render: { exposure_ev100: 12 } }])
+  assert.ok((await off(base, await settle())) < 0.05, 'the camera view keeps its own exposure')
+  const sameEV = await change(lens({ f_stop: 8, shutter_s: 1 / 500 }))
+  const two = await change(lens({ shutter_s: 1 / 125 }))
+  await shot(page, 'w2-camera-f8')
+  const strong = await change([...lens({ f_stop: 16 }), ...sky({ sun_strength: 4 })])
+  const warm = await change(sky({ sun_strength: 1, sun_temperature_k: 3000 }))
+  await shot(page, 'w2-camera-3000k')
+  // Left out, the colour temperature and strength are filled in (state/apply.ts completeSky): 6500 K, 1.
+  const { sun_temperature_k: _k, sun_strength: _s, ...unset } = server.scene.environment.sky
+  const plain = await change([{ op: 'set_environment', environment: { ...server.scene.environment, sky: unset } }])
+  const [b, t, w] = [await lumaStats(page, base), await lumaStats(page, two), await lumaStats(page, warm)]
+  const measured = { sameEV: await off(base, sameEV), strongVsTwo: await off(two, strong), unset: await off(base, plain) }
+  console.log(`W2 exposure: f/16 mean ${b.mean.toFixed(0)}, f/8 ${t.mean.toFixed(0)}; off by more than 2: same EV ${measured.sameEV.toFixed(3)}%, strength 4 against f/8 ${measured.strongVsTwo.toFixed(3)}%, unset against 6500 K ${measured.unset.toFixed(3)}%; R/B ${(b.r / b.b).toFixed(2)} → ${(w.r / w.b).toFixed(2)} at 3000 K`)
+  assert.ok(measured.sameEV < 0.05, 'f/8 at 1/500 s is f/16 at 1/125 s')
+  assert.ok(t.mean > b.mean * 1.3, 'two stops more is brighter')
+  assert.ok(measured.strongVsTwo < 1, 'a sun 4 × as strong is two stops more light, sky and all')
+  assert.equal(measured.unset, 0, 'the colour temperature and strength left out are 6500 K and 1')
+  assert.ok(w.r / w.b > (b.r / b.b) * 1.1, 'a lower colour temperature is warmer')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 lamps, emission and fog: invisible at noon, they show after sunset; fog is as bright as the lit ground', async () => {
+  // The lamp and the sign stand in the yard throughout (the editor draws the lamp's icon); only their light is turned up.
+  const bulb = (intensity) => ({ type: 'point', color: '#ffd9b0', intensity, cast_shadow: false, distance: 0, decay: 2 })
+  const lamp = { id: gid('lamp'), kind: 'light', name: 'lamp', order: 30, transform: { ...identity(), position: [-0.5, 1.2, 1] }, light: bulb(0) }
+  // A grey sign. (On a near-black board, 2 % of the sun's light, 50 cd/m² is about a tenth more: that shows, as it would.)
+  const glow = (intensity) => ({ preset: 'principled@1', params: { color: '#808080', emissive: '#ffffff', emissive_intensity: intensity } })
+  const sign = boxOf('sign', 31, { position: [1.8, 0, 1.5] }, { width: 0.5, height: 0.5, depth: 0.05 }, glow(0))
+  const { server, context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    for (const o of [lamp, sign]) scene.objects.push({ parent_id: null, visible: true, locked: false, ...o })
+  })
+  const off = async (a, b) => (await compareShots(page, a, b, 2)).over
+  const bare = await settle()
+  const addLamp = [{ op: 'update_objects', updates: [{ object_id: lamp.id, light: bulb(40) }] }]
+  const turnUp = [{ op: 'update_objects', updates: [{ object_id: sign.id, material_slots: { main: glow(50) } }] }]
+  const add = [...addLamp, ...turnUp]
+  const remove = [{ op: 'update_objects', updates: [{ object_id: lamp.id, light: bulb(0) }, { object_id: sign.id, material_slots: { main: glow(0) } }] }]
+  const withLamp = await change(addLamp)
+  const lampOff = await off(bare, withLamp)
+  const signOff = await off(withLamp, await change(turnUp))
+  // After sunset at the dusk camera's exposure (EV100 about 6).
+  await change([...remove, ...sky({ local_time: '18:10' }), { op: 'set_render', render: { exposure_ev100: 6 } }])
+  const night = await settle()
+  const lit = await change(add)
+  await shot(page, 'w2-dusk-lamp')
+  const nightOff = await off(night, lit)
+  const [n, l] = [await lumaStats(page, night), await lumaStats(page, lit)]
+  console.log(`W2 lamps: at noon the lamp changes ${lampOff.toFixed(4)}% of pixels, the sign's emission ${signOff.toFixed(4)}%; after sunset both ${nightOff.toFixed(2)}%, mean ${n.mean.toFixed(1)} → ${l.mean.toFixed(1)}`)
+  assert.ok(lampOff <= 0.01, 'a 40 cd lamp does not show at noon')
+  assert.ok(signOff <= 0.01, 'nor 50 cd/m² of emission on a grey sign')
+  assert.ok(nightOff > 1 && l.mean > n.mean, 'after sunset they light the yard')
+
+  // Fog at noon over grey ground: the fogged distance against the lit ground near by.
+  await change([...remove, ...sky({ local_time: '12:00' }), { op: 'set_render', render: { exposure_ev100: 15 } }])
+  const fogged = await change([{ op: 'set_environment', environment: { ...server.scene.environment, fog: { color: '#b4b4b4', near: 3, far: 25 } } }])
+  await shot(page, 'w2-noon-fog')
+  const { box } = await viewportCenter(page)
+  const far = await lumaStats(page, await settledShot(page, { x: box.x, y: box.y, width: box.width, height: box.height * 0.15 }))
+  const near = await lumaStats(page, await settledShot(page, { x: box.x, y: box.y + box.height * 0.85, width: box.width, height: box.height * 0.15 }))
+  console.log(`W2 fog: the fogged distance ${far.mean.toFixed(0)}, the ground near by ${near.mean.toFixed(0)}`)
+  assert.ok(fogged && far.mean > near.mean * 0.75 && far.mean < near.mean * 1.35, 'the fog is lit like the ground under it')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 back to another sky: switching the physical sky off leaves the lit view as it was, fog and all', async () => {
+  const fog = { color: '#c8d0d8', near: 4, far: 40 }
+  const { server, context, page, errors, settle, change } = await physicalYard('noon', (scene) => {
+    scene.environment.fog = fog
+  })
+  const before = await settle()
+  const procedural = server.scene.environment
+  const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+  await change([{ op: 'set_environment', environment: { ...procedural, sky: physical } }])
+  const back = await change([{ op: 'set_environment', environment: procedural }])
+  const m = await compareShots(page, before, back, 0)
+  assert.ok(!m.error && m.over === 0, `the procedural sky as before (${m.error ?? `${m.over.toFixed(4)}% differ`})`)
   assert.deepEqual(errors, [])
   await context.close()
 })
