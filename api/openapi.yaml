@@ -6471,6 +6471,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/agent-connections:
+    get:
+      tags: [external-agents]
+      operationId: listExternalAgentConnections
+      summary: 列出本账号的外部助手连接，并给出接入文字要用的 MCP 地址
+      description: 按授权时间倒序，最多返回最近 50 个。active=true 只返回有效且 5 分钟内调用过工具的连接（顶栏指示用）。MCP 未开放时为 404。
+      parameters:
+        - name: active
+          in: query
+          required: false
+          schema: {type: boolean}
+        - name: include_revoked
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        "200":
+          description: 连接列表
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ExternalAgentConnectionList"}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /creative/agent-connections/{id}/revoke:
+    post:
+      tags: [external-agents]
+      operationId: revokeExternalAgentConnection
+      summary: 断开一个外部助手连接
+      description: 同一事务作废它的 refresh token 链；它的下一次 MCP 请求即被拒绝。重复断开返回原对象，不改变 revoked_at。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: 已断开的连接
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ExternalAgentConnection"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /oauth/authorize/decision:
+    post:
+      tags: [external-agents]
+      operationId: decideOAuthAuthorization
+      summary: 授权确认页提交「允许」或「拒绝」
+      description: request 是 GET /oauth/authorize 校验通过后签发的请求包（10 分钟有效）。allow 时建立连接并签发一次性授权码。返回的 redirect_to 由前端跳转。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OAuthAuthorizeDecisionRequest"}
+      responses:
+        "200":
+          description: 跳回外部助手的地址
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OAuthAuthorizeDecisionResult"}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
 components:
   securitySchemes:
     bearerAuth:
@@ -6613,6 +6679,37 @@ components:
         application/json:
           schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   schemas:
+    ExternalAgentConnection:
+      type: object
+      required: [id, display_name, host_kind, created_at, last_used_at, active, revoked_at]
+      properties:
+        id: {type: string, description: "cxcon_…"}
+        display_name: {type: string, description: "界面署名：Claude、Claude Code、Codex、ChatGPT 或客户端自报的名称"}
+        host_kind: {type: string, enum: [claude, claude_code, codex, chatgpt, other]}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time, nullable: true, description: "从未调用过工具时为 null"}
+        active: {type: boolean, description: "有效且 last_used_at 在 5 分钟内"}
+        revoked_at: {type: string, format: date-time, nullable: true}
+    ExternalAgentConnectionList:
+      type: object
+      required: [mcp_url, items]
+      properties:
+        mcp_url: {type: string, description: "<PUBLIC_BASE_URL>/mcp，接入文字据此生成"}
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ExternalAgentConnection"}
+    OAuthAuthorizeDecisionRequest:
+      type: object
+      required: [request, decision]
+      additionalProperties: false
+      properties:
+        request: {type: string, minLength: 1, maxLength: 8192}
+        decision: {type: string, enum: [allow, deny]}
+    OAuthAuthorizeDecisionResult:
+      type: object
+      required: [redirect_to]
+      properties:
+        redirect_to: {type: string}
     CreativeLibraryResult:
       type: object
       additionalProperties: false

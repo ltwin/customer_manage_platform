@@ -41,6 +41,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/oauth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webfetch"
@@ -433,6 +434,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	authService := auth.NewService(s, tokenIssuer, authOptions...)
 	authReplayRunner := newAuthReplaySweepRunner(authService, logger)
+	// External agents (epic creative-mcp-server) stay unreachable until the
+	// deployment opts in: no authorization server, no /mcp, no metadata.
+	var externalAuth *oauth.Service
+	if cfg.MCPEnabled {
+		externalAuth, err = oauth.New(oauth.Config{BaseURL: cfg.PublicBaseURL, Secret: cfg.AuthTokenSecret, Store: s, Logger: logger})
+		if err != nil {
+			return err
+		}
+		logger.Info("external agent MCP endpoint enabled", slog.String("resource", externalAuth.Resource()))
+	}
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:                    logger,
 		DB:                        s,
@@ -477,6 +488,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		CreativeImageEdit:  imageEdit,
 		CreativeAgent:      creativeAgent,
 		CreativeGeneration: creativeGeneration,
+		OAuth:              externalAuth,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

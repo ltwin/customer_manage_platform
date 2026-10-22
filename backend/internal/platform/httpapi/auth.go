@@ -25,6 +25,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/oauth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/realtime"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
@@ -96,6 +97,7 @@ type handlers struct {
 	dataExportEncode    dataExportEncoder
 	telegramBinding     TelegramBindingIssuer
 	publicBaseURL       string
+	oauth               *oauth.Service
 	registrationEnabled bool
 	trustedProxyCIDRs   []netip.Prefix
 	now                 func() time.Time

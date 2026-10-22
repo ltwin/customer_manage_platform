@@ -68,6 +68,14 @@ func excerpt(text string, limit int) string {
 }
 
 func (h *runtimeHandler) searchAssets(ctx context.Context, raw string) (string, error) {
+	return h.service.searchAssets(ctx, h.scope, runReadAccess{h}, raw)
+}
+
+func (h *runtimeHandler) readLibrary(ctx context.Context, raw string) (string, error) {
+	return h.service.readLibrary(ctx, h.scope, runReadAccess{h}, raw)
+}
+
+func (s *Service) searchAssets(ctx context.Context, scope store.AccountScope, access readAccess, raw string) (string, error) {
 	var a assetSearchArgs
 	if err := strictArguments(raw, &a); err != nil {
 		return "", err
@@ -75,22 +83,22 @@ func (h *runtimeHandler) searchAssets(ctx context.Context, raw string) (string, 
 	if a.Limit < 1 || a.Limit > 20 || len(a.TagIDs) > 50 {
 		return "", refuseTool("每页 1 到 20 项、最多 50 个标签")
 	}
-	if err := h.requireLibrary(ctx, true); err != nil {
+	if err := access.libraryAllowed(ctx, true); err != nil {
 		return "", err
 	}
-	rawPage, err := creativelibrary.DiscoverAssets(ctx, h.scope, creativelibrary.Search{AssetID: a.AssetID, Untagged: a.Untagged, Q: a.Query, Kind: a.Kind, GroupID: a.GroupID, Descendants: a.Subgroups, TagIDs: a.TagIDs, TagMode: a.TagMode, MinRating: a.MinRating, Unrated: a.Unrated, Color: a.Color, Shape: a.Shape, View: a.View, Sort: a.Sort, Limit: a.Limit, Cursor: a.Cursor}, h.service.limits.ToolResultBytes)
+	rawPage, err := creativelibrary.DiscoverAssets(ctx, scope, creativelibrary.Search{AssetID: a.AssetID, Untagged: a.Untagged, Q: a.Query, Kind: a.Kind, GroupID: a.GroupID, Descendants: a.Subgroups, TagIDs: a.TagIDs, TagMode: a.TagMode, MinRating: a.MinRating, Unrated: a.Unrated, Color: a.Color, Shape: a.Shape, View: a.View, Sort: a.Sort, Limit: a.Limit, Cursor: a.Cursor}, s.limits.ToolResultBytes)
 	return string(rawPage), asRefusal(err)
 }
 
-func (h *runtimeHandler) readLibrary(ctx context.Context, raw string) (string, error) {
+func (s *Service) readLibrary(ctx context.Context, scope store.AccountScope, access readAccess, raw string) (string, error) {
 	var q creativelibrary.LibraryQuery
 	if err := strictArguments(raw, &q); err != nil {
 		return "", err
 	}
-	if err := h.requireLibrary(ctx, true); err != nil {
+	if err := access.libraryAllowed(ctx, true); err != nil {
 		return "", err
 	}
-	page, err := creativelibrary.BrowseLibrary(ctx, h.scope, q, h.service.limits.ToolResultBytes)
+	page, err := creativelibrary.BrowseLibrary(ctx, scope, q, s.limits.ToolResultBytes)
 	return string(page), asRefusal(err)
 }
 
