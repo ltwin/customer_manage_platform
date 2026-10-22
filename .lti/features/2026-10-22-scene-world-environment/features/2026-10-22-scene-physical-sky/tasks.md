@@ -46,7 +46,12 @@
 
 ## 5. 曝光与光照
 
-- [ ] 5.1 预曝光的管道，先不接物理天空：`world/exposure.ts` 加 `preExposure` uniform（模块单例，源码注明不得在写入和渲染之间插入 `await`）和 `applyExposure`；`objects/lights.ts:applyLight` 记 `userData.baseIntensity`；`materials/instances.ts:makeMaterial` 的自发光乘 `preExposure`；`render/sceneRenderer.ts` 的 `Frame.preExposure`，`render` 之前调用 `applyExposure`；`host/framing.ts` 的 `Framing.ev100` 与 `cameraFraming`；`state/apply.ts:cameraDefaults` 补 `iso`、`shutter_s`；`host/render.ts` 的 `shoot` 和 `Viewport.tsx:LookView` 求 k（相机视图的 EV100 单独求，不依赖只在景深预览时才算的 `framing`）。非物理天空下 k = 1，不写 `environmentIntensity`，不改雾。完成判据：「W2 other skies」逐像素仍然绿；单测覆盖 `applyExposure` 在非物理天空下不写环境强度
+- [x] 5.1 预曝光的管道，先不接物理天空：`world/exposure.ts` 加 `preExposure` uniform（模块单例，源码注明不得在写入和渲染之间插入 `await`）和 `applyExposure`；`objects/lights.ts:applyLight` 记 `userData.baseIntensity`；`materials/instances.ts:makeMaterial` 的自发光乘 `preExposure`；`render/sceneRenderer.ts` 的 `Frame.preExposure`，`render` 之前调用 `applyExposure`；`host/framing.ts` 的 `Framing.ev100` 与 `cameraFraming`；`state/apply.ts:cameraDefaults` 补 `iso`、`shutter_s`；`host/render.ts` 的 `shoot` 和 `Viewport.tsx:LookView` 求 k（相机视图的 EV100 单独求，不依赖只在景深预览时才算的 `framing`）。非物理天空下 k = 1，不写 `environmentIntensity`，不改雾。完成判据：「W2 other skies」逐像素仍然绿；单测覆盖 `applyExposure` 在非物理天空下不写环境强度
+  - 「W2 other skies」在 Metal 下逐像素绿，「calibration」在 SwiftShader 下绿；单测新增 2 项（非物理天空：灯光回到数据强度，没有 `baseIntensity` 的工作室光、环境强度和雾都不动；物理天空：灯光 × k、天空光照 k / s_env、雾 × E / π × k，换 k 时从数据重算），场景单测 255 项全绿。
+  - `SceneRenderer.render` 画完在 `finally` 里把 `preExposure` 写回 1，与 `toneMappingExposure` 的做法一样：缩略图（`library/thumbnail.ts`）和预览共用材质实例但不经过 `SceneRenderer`，画它们时读到的总是 1。
+  - k 的取法集中在 `render/litLook.ts:frameExposure`（白模、线框为 1；非物理天空沿用 `2^exposure_ev`；物理天空 `toneMappingExposure = 1`，k 取摄像机或默认曝光），`host/render.ts` 和 `Viewport.tsx` 共用。相机视图的 EV100 由 `host/framing.ts:cameraEV100` 直接从摄像机字段求，不依赖景深预览。
+  - `scene.userData.physical` 的形状定为 `PhysicalExposure { skyLightScale, fogColor, fogLux }`，由 5.2 的 `PhysicalLighting` 写入。天空背景节点（`sky.ts`）的 `relative`、`exposure` 还是自己的 uniform，5.2 接线时改为读 `preExposure`。
+  - `state/apply.ts:cameraDefaults` 的 `iso`、`shutter_s` 已在 2.2 加上。
 - [ ] 5.2 `objects/Lighting.tsx` 新增 `PhysicalLighting`：LUT 的生成，按大气键和环境键重算；太阳光（CPU 透射率 × 亮度 × 色温）、天空背景、天空光照（PMREM 200 ms 节流，记下这一份的 s_env）、雾（雾色 × E / π × k）、`scene.userData.physical`（卸载时清掉）；设备丢失时随渲染器重建。`render/sky.ts` 的 `sunDirection` 交给 `world/astro.ts`，`skyEnvironment` 不再处理物理天空。新增物理天空的参考场景（`fixtures/scene-reference/` 的院子：晴天正午、黄金时刻、日落后 20 分钟）。先写 e2e：AC-W2-3 阳光 16 法则（正午曝光正常，日落后 20 分钟测光低 5 档以上），改两级光圈亮度约变 2 档；AC-W2-4 太阳亮度 2 时线性亮度约为 2 倍，6500 K 与不设时逐像素相同，色温调低时 R/B 变大；AC-W2-5 40 cd 台灯在正午改动的像素 ≤ 0.01%，入夜后照亮的区域明显更亮；正午的雾与受光地面亮度相当；自发光白天几乎看不出；切回程序化天空后与基线逐像素相同。完成判据：用例先红后绿，「W2 other skies」仍然绿
 
 ## 6. 编辑界面

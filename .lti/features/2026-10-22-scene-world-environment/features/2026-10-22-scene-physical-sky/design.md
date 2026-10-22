@@ -91,7 +91,7 @@
 | `objects/lights.ts` | 灯光的数据强度记在 `userData.baseIntensity`，`intensity` 由 `applyExposure` 写入 | — |
 | `materials/instances.ts` | 自发光乘全局预曝光 uniform | — |
 | `render/sceneRenderer.ts` | `Frame.preExposure`；每次 `render` 前调用 `applyExposure` | 求 EV100 |
-| `render/gpu.ts` | 渲染器创建入口安装材质输出的钳制（一次） | — |
+| `render/gpu.ts` | 模块加载时安装材质输出的钳制（一次） | — |
 | `render/sky.ts` | `sunDirection` 交给 `world/astro.ts`；`skyEnvironment` 不再处理物理天空（由 `PhysicalLighting` 生成） | — |
 | `host/framing.ts` | `Framing.ev100`：摄像机取景带上它的 EV100 | — |
 | `host/render.ts`、`Viewport.tsx` | 求本帧的 k，传给 `SceneRenderer` | — |
@@ -153,7 +153,7 @@ sequenceDiagram
 
 ### 材质输出钳制
 
-`render/gpu.ts` 的 `createRenderer` 第一次被调用时，覆盖一次 `NodeMaterial.prototype.setupOutput`：
+`render/gpu.ts` 在模块加载时覆盖一次 `NodeMaterial.prototype.setupOutput`（视口、导出、缩略图的渲染器都经过这个模块；`outputClamped` 标记防止重复包裹）：
 
 ```
 setupOutput(builder, output) = 原 setupOutput(builder, vec4(min(output.rgb, 60000), output.a))
@@ -335,6 +335,7 @@ setupOutput(builder, output) = 原 setupOutput(builder, vec4(min(output.rgb, 600
 | 天空视图 384 × 216 | 8K 导出时太阳周围的晕不分段；重算仍在毫秒级 | 只在导出时翻倍会让视口和导出不一致 |
 | 米氏吸收比例不归一（平均 1.6 倍） | 与穿刺样张一致，owner 是看这组图选的方案 | 归一后沙尘在低太阳时偏黄明显变弱 |
 | 太阳参考逐分钟求高度再插值，不用时角公式 | 极昼、极夜和任意目标高度用同一套做法；一天 1440 次求值，耗时可以忽略 | 时角公式更省，但每个目标高度都要迭代，高纬度还要另判 |
+| 材质输出钳制在 `render/gpu.ts` 模块加载时安装，不放在 `createRenderer` 里（实施 4.2） | 改的是原型，与渲染器实例无关；模块加载即生效，不依赖哪个入口先创建渲染器 | MRT 的输出结构节点跳过，它不是颜色 |
 | 黄金时刻取 −4°…6°，蓝调时刻取 −6°…−4° | 摄影上常用的口径 | 各家口径略有不同，写进工具说明，助手和摄影师看到的是同一套 |
 
 与 Epic 的偏差：无。Epic 修订 v2 已包含本设计用到的全部共享决定。
@@ -369,7 +370,7 @@ setupOutput(builder, output) = 原 setupOutput(builder, vec4(min(output.rgb, 600
 | `frontend/src/creative-scene/materials/instances.ts:makeMaterial` | 修改 | 自发光乘 `preExposure` |
 | `frontend/src/creative-scene/render/sceneRenderer.ts:Frame` | 修改 | `preExposure` |
 | `frontend/src/creative-scene/render/sceneRenderer.ts:SceneRenderer.render` | 修改 | 出图前调用 `applyExposure` |
-| `frontend/src/creative-scene/render/gpu.ts:createRenderer` | 修改 | 安装材质输出钳制 |
+| `frontend/src/creative-scene/render/gpu.ts` | 修改 | 模块加载时安装材质输出钳制 |
 | `frontend/src/creative-scene/render/sky.ts:sunDirection` | 修改 | 物理天空交给 `world/astro.ts` |
 | `frontend/src/creative-scene/render/sky.ts:skyEnvironment` | 修改 | 遇到物理天空时不处理 |
 | `frontend/src/creative-scene/host/framing.ts:Framing` | 修改 | `ev100` |

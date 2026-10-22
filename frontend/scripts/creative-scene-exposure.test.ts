@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { Color, Fog, PointLight, Scene } from 'three'
 import { BOTTOM, coefficients, groundRadius, luminance, MIE_ABSORPTION, MIE_ABSORPTION_TINT, PRESETS, presetOf, SUN_LUX, sunTint, viewRadius, type Vec3 } from '../src/creative-scene/world/atmosphere/constants.ts'
 import { CpuAtmosphere } from '../src/creative-scene/world/atmosphere/cpu.ts'
-import { environmentEV, environmentScale, ev100, exposureScale, isoThirds, nearestStep, newCameraExposure, shutterThirds } from '../src/creative-scene/world/exposure.ts'
+import { applyExposure, environmentEV, environmentScale, ev100, exposureScale, isoThirds, nearestStep, newCameraExposure, preExposure, shutterThirds } from '../src/creative-scene/world/exposure.ts'
 
 // W2: the physical sky's light on the CPU and the exposure arithmetic
 // (AC-W2-3, AC-W2-4, design「曝光」「太阳的亮度与色温」).
@@ -99,4 +100,46 @@ test('the CPU atmosphere is quick enough to follow a slider (measured, not asser
   for (let i = 0; i < 5; i++) cpu.daylight(mu(10 + i), sunAbove)
   const t2 = performance.now()
   console.log(`CpuAtmosphere: atmosphere change ${(t1 - t0).toFixed(1)} ms, time change ${((t2 - t1) / 5).toFixed(2)} ms`)
+})
+
+// design「预曝光的落点」: k goes onto the three objects before every picture.
+
+function lampScene() {
+  const scene = new Scene()
+  const lamp = new PointLight('#ffffff', 40)
+  lamp.userData.baseIntensity = 40
+  const studio = new PointLight('#ffffff', 3)
+  scene.add(lamp, studio)
+  scene.environmentIntensity = 0.7
+  scene.fog = new Fog('#808080', 1, 100)
+  return { scene, lamp, studio }
+}
+
+test('under another sky k = 1: lights back at their data, the sky light and fog untouched', () => {
+  const { scene, lamp, studio } = lampScene()
+  lamp.intensity = 123
+  applyExposure(scene, 1)
+  assert.equal(lamp.intensity, 40)
+  assert.equal(studio.intensity, 3, 'a light without baseIntensity (the studio light) is not one of the scene’s')
+  assert.equal(scene.environmentIntensity, 0.7, 'the sky light is the look’s to set')
+  assert.equal(scene.fog!.color.getHexString(), '808080')
+  assert.equal(preExposure.value, 1)
+})
+
+test('under a physical sky k scales the lights, the sky light by k / s_env and the fog by E / π · k', () => {
+  const { scene, lamp, studio } = lampScene()
+  const k = exposureScale(15)
+  scene.userData.physical = { skyLightScale: 1e-4, fogColor: new Color(0.5, 0.5, 0.5), fogLux: 100_000 }
+  applyExposure(scene, k)
+  assert.equal(lamp.intensity, 40 * k)
+  assert.equal(studio.intensity, 3)
+  assert.ok(Math.abs(scene.environmentIntensity - k / 1e-4) < 1e-12)
+  const fog = 0.5 * (100_000 / Math.PI) * k
+  assert.ok(Math.abs(scene.fog!.color.r - fog) < 1e-9, `${scene.fog!.color.r} vs ${fog}`)
+  assert.equal(preExposure.value, k)
+  // Again at another k: from the data, not from what was written.
+  applyExposure(scene, 2 * k)
+  assert.equal(lamp.intensity, 80 * k)
+  assert.ok(Math.abs(scene.fog!.color.r - 2 * fog) < 1e-9)
+  applyExposure(scene, 1)
 })

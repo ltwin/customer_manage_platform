@@ -1,7 +1,8 @@
 import { Color, DoubleSide, FrontSide } from 'three'
-import { float, fwidth, length, max, modelScale, normalLocal, normalView, positionLocal, positionView, uniform, varying } from 'three/tsl'
+import { float, fwidth, length, materialEmissive, max, modelScale, normalLocal, normalView, positionLocal, positionView, uniform, varying } from 'three/tsl'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import type { ParamValue } from '../builtins/catalog.ts'
+import { preExposure } from '../world/exposure.ts'
 import { materialEntry } from './catalog.ts'
 import { bumpNormal, patternFns, type TSLNode } from './patterns.ts'
 import { principledProps, seeThrough } from './principled.ts'
@@ -46,10 +47,18 @@ const patPos: TSLNode = varying(positionLocal.mul(modelScale), 'vPatPos')
 const patNormal: TSLNode = varying(normalLocal.div(modelScale), 'vPatNormal')
 const footprint: TSLNode = max(length(fwidth(patPos)), float(1e-6))
 
+// Emission is a light: under a physical sky it is cd/m² and drawn × k like
+// the lamps (world/exposure.ts preExposure, 1 under any other sky).
+const exposedEmission: TSLNode = materialEmissive.mul(preExposure)
+
 export function makeMaterial(m: SlotMaterial, doubleSided: boolean): MeshPhysicalNodeMaterial {
   const side = doubleSided ? DoubleSide : FrontSide
   if (m.kind === 'unknown') return new MeshPhysicalNodeMaterial({ color: unknownGrey, roughness: 0.9, metalness: 0, side })
-  if (m.kind === 'principled') return new MeshPhysicalNodeMaterial({ ...principledProps(m.params), side, vertexColors: !!m.vertexColors })
+  if (m.kind === 'principled') {
+    const material = new MeshPhysicalNodeMaterial({ ...principledProps(m.params), side, vertexColors: !!m.vertexColors })
+    material.emissiveNode = exposedEmission
+    return material
+  }
   const p = m.params
   const entry = materialEntry(m.id)
   const fn = patternFns[m.id]
@@ -61,7 +70,7 @@ export function makeMaterial(m: SlotMaterial, doubleSided: boolean): MeshPhysica
   material.roughnessNode = o.rough
   material.metalnessNode = o.metal
   material.normalNode = bumpNormal(positionView, normalView, o.height)
-  material.emissiveNode = o.emission
+  material.emissiveNode = o.emission.mul(preExposure)
   material.name = m.id
   return material
 }

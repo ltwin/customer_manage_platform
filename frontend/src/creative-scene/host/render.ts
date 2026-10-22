@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
 import { drawnFrames, effectiveEngine, engineOf, type Use } from '../render/engines.ts'
-import { exposureOf } from '../render/litLook.ts'
+import { frameExposure } from '../render/litLook.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
@@ -172,7 +172,8 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           width,
           height,
           dof: options.depthOfField && framing.optics ? framing.optics : null,
-          exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1,
+          // A scene camera at its own exposure, a viewpoint or preset at the scene's default (physical sky).
+          ...frameExposure(scene, options.kind === 'lit', framing.ev100),
           engine,
           quality: 'final' as const,
           accumulate: frames > 1,

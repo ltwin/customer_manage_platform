@@ -57,11 +57,11 @@ import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
 import { Lighting } from './objects/Lighting.tsx'
 import { convergeFrames, effectiveEngine, engineOf } from './render/engines.ts'
-import { exposureOf } from './render/litLook.ts'
+import { frameExposure } from './render/litLook.ts'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
-import { cameraFraming } from './host/framing.ts'
+import { cameraEV100, cameraFraming } from './host/framing.ts'
 import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
@@ -1071,12 +1071,14 @@ function frameBox(size: Size, aspect: number) {
  */
 function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; display: DisplayMode }) {
   const wire = display === 'wireframe'
-  const exposure = display === 'rendered' ? exposureOf(scene.render) : 1
   const ortho = useStore(ui, (s) => s.ortho)
   const engine = effectiveEngine(engineOf(scene.render), display, !ortho)
   const { gl, scene: three, camera, invalidate } = useThree()
   const id = useStore(ui, (s) => s.cameraView)
   const preview = useStore(ui, (s) => s.dofPreview)
+  // The camera view at the camera's own exposure whether or not the depth of field is previewed (framing below is only then).
+  const viewed = id ? scene.objects.find((o) => o.id === id)?.camera : undefined
+  const { exposure, preExposure } = frameExposure(scene, display === 'rendered', viewed ? cameraEV100(viewed) : undefined)
   const renderer = useRef<SceneRenderer | null>(null)
   useEffect(() => {
     const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
@@ -1097,7 +1099,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   useEffect(() => {
     drawn.current.changed = true
     invalidate()
-  }, [scene, lensKey, wire, exposure, engine, invalidate])
+  }, [scene, lensKey, wire, exposure, preExposure, engine, invalidate])
   useFrame((state) => {
     const r = renderer.current
     if (!r) return
@@ -1121,6 +1123,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       dof: (!wire && lens?.optics) || null,
       pictureLongSide: box ? Math.max(box.width, box.height) * ratio : undefined,
       exposure,
+      preExposure,
       // Wireframe has no surfaces to shade: no AO, no blur.
       wireframe: wire,
       engine,

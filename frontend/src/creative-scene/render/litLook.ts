@@ -1,6 +1,7 @@
 import { Color } from 'three'
 import { luminance, skyIrradiance, transmittance, type Vec3 } from './atmosphere.ts'
-import type { SceneRender } from '../api.ts'
+import type { Scene, SceneRender } from '../api.ts'
+import { exposureScale } from '../world/exposure.ts'
 import type { Engine } from './engines.ts'
 
 // The lit look's constants (design「最终渲染的光照」). They set the balance
@@ -85,6 +86,19 @@ export function sunLight(elevationDeg: number, turbidity = reference.turbidity):
 
 /** toneMappingExposure for the lit look. */
 export const exposureOf = (render: Pick<SceneRender, 'exposure_ev'>) => 2 ** render.exposure_ev
+
+/**
+ * A frame's toneMappingExposure and pre-exposure k (W2 design「曝光」).
+ * Under a physical sky the lit look is exposed manually: a scene camera at
+ * its own EV100, any other view at the scene's default, and nothing is
+ * compensated after. Under another sky, as before. Clay and wireframe are
+ * neither.
+ */
+export function frameExposure(scene: Pick<Scene, 'environment' | 'render'>, lit: boolean, cameraEV100?: number): { exposure: number; preExposure: number } {
+  if (!lit) return { exposure: 1, preExposure: 1 }
+  if (scene.environment.sky.kind !== 'physical') return { exposure: exposureOf(scene.render), preExposure: 1 }
+  return { exposure: 1, preExposure: exposureScale(cameraEV100 ?? scene.render.exposure_ev100) }
+}
 
 /**
  * What a light added from the menu starts at: a desk lamp's point light, a

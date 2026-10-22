@@ -7,7 +7,9 @@ import { fitSunShadow } from '../render/sunShadow.ts'
 // with the document's fields as they are (the fields are three.js's), built
 // in the object's document-space group. Directional and spot lights shine
 // along the object's local −Z: their target is a child at (0, 0, −1), so it
-// turns with the object.
+// turns with the object. The data's intensity is kept in
+// userData.baseIntensity; each picture draws it × the exposure's k
+// (world/exposure.ts applyExposure), 1 under any sky but the physical one.
 
 type Light = NonNullable<SceneObject['light']>
 
@@ -32,6 +34,7 @@ export function applyLight(built: BuiltLight, l: Light) {
   const { light } = built
   const v = { ...lightDefaults, ...l }
   light.color.set(v.color)
+  light.userData.baseIntensity = v.intensity
   light.intensity = v.intensity
   if (light instanceof PointLight || light instanceof SpotLight) {
     light.distance = v.distance

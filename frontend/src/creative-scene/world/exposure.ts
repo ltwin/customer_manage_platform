@@ -4,6 +4,9 @@
 // by k = 1 / (1.2 · 2^EV100) before the GPU sees them (pre-exposure). The
 // sky and its light are stored in environment-relative units, × s_env.
 
+import type { Color, Light, Scene } from 'three'
+import { uniform } from 'three/tsl'
+
 /** EV100 of a camera: log₂(N² / t) − log₂(S / 100). */
 export const ev100 = (fStop: number, shutterS: number, iso: number) => Math.log2((fStop * fStop) / shutterS) - Math.log2(iso / 100)
 
@@ -58,4 +61,42 @@ export function newCameraExposure(ev: number, fStop: number): { iso: number; shu
   const shutter = t < first ? first : last
   const iso = (100 * fStop * fStop) / (shutter * 2 ** ev)
   return { iso: nearestStep(isoThirds, Math.min(isoThirds[isoThirds.length - 1], Math.max(isoThirds[0], iso))), shutter_s: shutter }
+}
+
+/**
+ * k for what is drawn now: the sky's background and sun disc and the
+ * materials' emission read it. One for the viewport and the offscreen
+ * shooter alike, so it is written and drawn in one synchronous call
+ * (SceneRenderer.render): WebGPU reads uniforms as it encodes. Do not put an
+ * `await` between writing it and drawing, nor make the drawing asynchronous.
+ * Outside a draw it is 1, so renderers that do not expose (thumbnails,
+ * previews) draw the materials as they are.
+ */
+export const preExposure = uniform(1)
+
+/**
+ * What PhysicalLighting leaves on the scene for the exposure
+ * (scene.userData.physical; cleared when it unmounts). The sky light is the
+ * PMREM made last, at that one's s_env; the fog is lit like level ground of
+ * its colour under E.
+ */
+export type PhysicalExposure = { skyLightScale: number; fogColor: Color | null; fogLux: number }
+
+/**
+ * Writes k onto the scene before a picture (design「预曝光的落点」): the
+ * scene's lights (those with userData.baseIntensity, their data's
+ * intensity) at base × k, and the global preExposure. Under a physical sky
+ * also the sky light, k / s_env, and the fog. Under another sky k is 1 and
+ * the sky light and fog are left as the look set them.
+ */
+export function applyExposure(scene: Scene, k: number) {
+  preExposure.value = k
+  scene.traverse((o) => {
+    const base = o.userData.baseIntensity as number | undefined
+    if (base !== undefined && (o as Light).isLight) (o as Light).intensity = base * k
+  })
+  const physical = scene.userData.physical as PhysicalExposure | undefined
+  if (!physical) return
+  scene.environmentIntensity = k / physical.skyLightScale
+  if (scene.fog && physical.fogColor) scene.fog.color.copy(physical.fogColor).multiplyScalar((physical.fogLux / Math.PI) * k)
 }
