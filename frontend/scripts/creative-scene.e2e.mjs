@@ -4246,6 +4246,17 @@ window.__heartbeat = async (scene, kind, side) => {
     shooter.close();
   }
 };
+// An export's images as drawn (host/exportShots.ts renderShots): each one's encoding and size.
+window.__sizes = async (doc, plan) => {
+  const { renderShots } = await import('/src/creative-scene/host/exportShots.ts');
+  const { loadModels } = await import('/src/creative-scene/host/render.ts');
+  const out = await renderShots({ read: async () => doc, loadModels: (d) => loadModels(d.scene, d.models), open: (d, look) => openShooter(d.scene, d.models, look) }, 'doc', plan);
+  if (!out.ok) return out;
+  return Promise.all(out.images.map(async (i) => {
+    const bitmap = await createImageBitmap(i.blob);
+    return { camera: i.camera, pass: i.pass, type: i.blob.type, width: bitmap.width, height: bitmap.height };
+  }));
+};
 // One picture's SHA-256: what the renderer in effect draws for a pass.
 window.__hash = async (scene, kind, side) => {
   const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
@@ -4355,6 +4366,86 @@ await check('renderer in effect: real-time GI converges in the viewport and stop
   assert.notEqual(hashes['realtime_gi:clay'], hashes['workbench:clay'], 'clay follows the renderer')
   assert.notEqual(hashes['realtime_gi:lit'], hashes['workbench:lit'], 'lit follows the renderer')
   await shots.close()
+})
+
+/** A JPEG's size, from its start-of-frame marker. */
+function jpegSize(bytes) {
+  for (let i = 2; i < bytes.length;) {
+    const marker = bytes[i + 1]
+    const length = bytes.readUInt16BE(i + 2)
+    if (marker >= 0xc0 && marker <= 0xc3) return { width: bytes.readUInt16BE(i + 7), height: bytes.readUInt16BE(i + 5) }
+    i += 2 + length
+  }
+  return null
+}
+
+// R2 AC-R2-6: the output resolution. Every level and three shapes through the export's own drawing; then the
+// editor's export at 8K, a device too small for 4K, and a device lost at 4K. 8K on this machine's GPU (the
+// reference device): SwiftShader loses its context drawing 8K, which is the failure checked at 4K below.
+await check('output resolution: 1K to 8K long sides at 1:1, 3:2 and portrait, 4K and 8K clay as JPEG; a device too small or lost at 4K fails and says so', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+  const shapes = { sq: '1:1', wide: '3:2', tall: '2:3' }
+  const cameras = Object.entries(shapes).map(([name, aspect], i) => cameraObject(objectID(`cam${name}`), name, 10 + i, { aspect }, [i * 2 - 2, 1.6, 8]))
+  const model = new SceneServer()
+  model.external([{ op: 'add_objects', objects: [{ ...boxObject(objectID('box'), '方块', 0, 1), transform: { ...identity(), position: [0, 0, 0] } }, ...cameras] }])
+  const shots = await gpu.newContext()
+  const shooter = await shots.newPage()
+  await shooter.goto(`${base}/.scene-gi-qa.html`)
+  await shooter.waitForFunction(() => window.__ready === true)
+  const plan = { cameraObjectIDs: cameras.map((c) => c.id), passes: ['clay', 'line'] }
+  for (const [resolution, side] of [['1k', 1024], ['2k', 2048], ['4k', 4096], ['8k', 8192]]) {
+    const doc = { scene: { ...structuredClone(model.scene), render: { ...model.scene.render, resolution } }, models: {}, revision: '1' }
+    const images = await shooter.evaluate(([d, p]) => window.__sizes(d, p), [doc, plan])
+    assert.ok(Array.isArray(images), `${resolution}: ${JSON.stringify(images)}`)
+    for (const img of images) {
+      const aspect = shapes[cameras.find((c) => c.id === img.camera).name]
+      const [w, h] = aspect.split(':').map(Number)
+      const want = w >= h ? { width: side, height: Math.round((side * h) / w) } : { width: Math.round((side * w) / h), height: side }
+      assert.deepEqual({ width: img.width, height: img.height }, want, `${resolution} ${aspect} ${img.pass}`)
+      const jpeg = img.pass === 'clay' && (resolution === '4k' || resolution === '8k')
+      assert.equal(img.type, jpeg ? 'image/jpeg' : 'image/png', `${resolution} ${img.pass}`)
+    }
+  }
+  await shots.close()
+
+  // The editor at 8K: the dialog says so, and an 8K square goes up as JPEG with line art as PNG.
+  const server = new SceneServer()
+  server.external([{ op: 'add_objects', objects: [{ ...boxObject(objectID('box'), '方块', 0, 1), transform: { ...identity(), position: [0, 0, 0] } }, cameraObject(objectID('camsq'), 'sq', 10, { aspect: '1:1' }, [0, 1.6, 8])] }])
+  server.scene.render.resolution = '8k'
+  const metal = await open(server, { query: '?export=1', context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+  await metal.page.getByRole('button', { name: '导出' }).first().click()
+  const big = metal.page.getByRole('dialog', { name: '导出分镜' })
+  await big.waitFor()
+  assert.match(await big.textContent(), /长边 8192（8K）/)
+  await big.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'the 8K export submitted', 600_000)
+  const [shot] = server.exports[0].payload.shots
+  const bytes = Object.fromEntries(shot.images.map((img) => [img.pass, server.uploadBytes.get(img.upload_id)]))
+  assert.deepEqual(jpegSize(bytes.clay), { width: 8192, height: 8192 }, 'clay: an 8K JPEG')
+  assert.deepEqual(pngSize(bytes.line), { width: 8192, height: 8192 }, 'line art: an 8K PNG')
+  console.log(`8K square: clay JPEG ${(bytes.clay.length / 1e6).toFixed(1)} MB, line PNG ${(bytes.line.length / 1e6).toFixed(1)} MB`)
+  assert.deepEqual(metal.errors, [])
+  await metal.context.close()
+
+  // A device too small for 4K fails before drawing; a device lost at 4K is not retried.
+  server.scene.render.resolution = '4k'
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await page.evaluate(() => { window.__sceneGPU.textureLimit = 2048 })
+  await page.getByRole('button', { name: '导出' }).first().click()
+  await dialog.waitFor()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await page.getByText('当前设备最大只能导出长边 2048 px 的图，请选更低的输出分辨率').waitFor({ timeout: 120_000 })
+  await page.evaluate(() => { window.__sceneGPU.textureLimit = null; window.__sceneGPU.loseNext('offscreen', 1) })
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await page.getByText('渲染设备在按 4K 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出').waitFor({ timeout: 300_000 })
+  assert.equal(server.exports.length, 1, 'nothing more placed')
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
+  } finally {
+    await gpu.close()
+  }
 })
 
 // SCENE_E2E_GPU_8K=1 (this machine's GPU): R2 tasks 4.1, an 8K real-time GI export does not starve the page.

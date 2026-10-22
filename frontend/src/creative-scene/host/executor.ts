@@ -166,7 +166,7 @@ export class SceneExecutor {
     }
     if (hold.lost() || rendered === 'stopped') return { state: 'lost' }
     if (rendered === 'timeout') return this.fail(job, 'host_error', `导出超过 ${exportTimeoutMs / 60_000} 分钟没有完成`)
-    if (!rendered.ok) return this.fail(job, 'render_error', rendered.message)
+    if (!rendered.ok) return this.fail(job, rendered.hostError ? 'host_error' : 'render_error', rendered.message)
     const { images, revision } = rendered
     const send = () => uploadShots(this.deps.upload, images, hold.signal)
     const sent = await send()

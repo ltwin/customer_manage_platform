@@ -1166,6 +1166,7 @@ export default function SceneEditor({
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
           display={display}
+          resolution={shown?.render.resolution ?? '2k'}
           busy={exportRun.busy}
           progress={exportRun.progress}
           onExport={(plan) => void startExport(plan)}

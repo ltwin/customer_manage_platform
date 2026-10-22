@@ -48,11 +48,15 @@ export type ShotOptions = {
   use?: Use
   /** performance.now() past which the picture is given up, checked between its frames. */
   deadline?: number
+  /** JPEG quality; render_view's 0.85 unless said. */
+  quality?: number
 }
 /** What the shooter has mounted: clay and line shots need clay, lit ones lit. */
 export type Look = 'clay' | 'lit'
 
 export type Shooter = {
+  /** The longest side the device can draw, in pixels. */
+  readonly maxTextureSize: number
   /**
    * Draws a picture's frames, yielding to the page between them
    * (SceneGPU.settle), then draws the last and encodes it in one go. The
@@ -141,6 +145,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     await g.compile(three, camera)
     let mounted = look
     return {
+      maxTextureSize: g.maxTextureSize,
       async setLook(next) {
         if (next === mounted) return
         await mount(next)
@@ -195,7 +200,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
               }
             },
             options.type,
-            options.type === 'image/jpeg' ? jpegQuality : undefined,
+            options.type === 'image/jpeg' ? (options.quality ?? jpegQuality) : undefined,
           )
         } finally {
           picture?.dispose()

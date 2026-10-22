@@ -60,7 +60,11 @@
     - 另有偶发的最低位差：四次导出中一次，某张实时 GI 材质光照约 1.8 万像素差 1，来源未定位（白模从未出现）。
   - **续租**：e2e「real-time GI: the page keeps its heartbeat through an 8K picture」（`SCENE_E2E_GPU_8K=1`，本机 Metal）：盒子间 8192×5461 实时 GI 白模 40.4 s，后台计时器每秒一次的心跳 38 次，最长间隔 2.1 s（最后一帧加编码），续租每 10 s 一次、租约 30 s。同一张图存成 PNG 有 47.2 MB，超过媒体上传的 25 MB，由 4.2 的 JPEG 解决（4.2 量 JPEG 大小确认）。
   - `forceWebGL` 的 1.2 遗留项挪到 7.1 一起做（届时 K 帧累积和标定都已就位）。
-- [ ] 4.2 输出分辨率：`framing.ts` 长边按档位、`imageTypeOf` 与上传文件名 / MIME、纹理上限检查、4K / 8K 丢设备以 `host_error` 结束且手动导出提示、`ExportDialog` 显示档位。完成判据：e2e 四档 × 1:1 / 3:2 / 竖幅的尺寸与格式、8K 1:1 能上传成画布节点、压低纹理上限的失败、4K 丢设备不回队（AC-R2-6）
+- [x] 4.2 输出分辨率：`framing.ts` 长边按档位、`imageTypeOf` 与上传文件名 / MIME、纹理上限检查、4K / 8K 丢设备以 `host_error` 结束且手动导出提示、`ExportDialog` 显示档位。完成判据：e2e 四档 × 1:1 / 3:2 / 竖幅的尺寸与格式、8K 1:1 能上传成画布节点、压低纹理上限的失败、4K 丢设备不回队（AC-R2-6）
+  - 已完成：`engines.ts` 的 `longSideOf`、`imageTypeOf`（4K / 8K 的白模和材质光照为 JPEG 0.95，线稿与 1K / 2K 为 PNG）、`extensionOf`；`framing.ts` 去掉固定的 `exportLongSide`，长边跟随 `render.resolution`；导出逐张按自己的格式编码，上传文件名 `.jpg` / `.png` 与 MIME 对应；`Shooter.maxTextureSize`（`gpuTestHooks.textureLimit` 可压低）不够时出图前就失败，提示「当前设备最大只能导出长边 N px 的图，请选更低的输出分辨率」；≥ 4096 时出图中丢设备提示「渲染设备在按 4K 出图时丢失……可以换低一档再导出」。两种失败带 `hostError`，执行器记 `host_error`、不交回队列（单测）；2K 及以下丢设备照旧回队。`ExportDialog` 显示「长边 X（XK）」。
+  - e2e「output resolution: 1K to 8K……」绿：四档 × 1:1 / 3:2 / 2:3 的尺寸与格式；编辑器 8K 1:1 导出上传成画布节点（白模 JPEG 0.6 MB、线稿 PNG 1.3 MB，单方块场景）；压低纹理上限的失败与 4K 丢设备不再放置。8K 部分在本机 Metal 浏览器里跑：SwiftShader 在 8K 会丢上下文（软件渲染的限制，不是产品行为）。「export: two cameras」「device loss: a manual export」「device loss: render_view and export_shots」仍绿。
+  - 盒子间、材质场景的 8K 实时 GI JPEG 体积留到 7.2（L4）一起量，4.1 量过同图 PNG 47.2 MB。
+  - `host/ShotScene.tsx` 不在挂载点内（3.2 已记），本任务未再动挂载点外的文件。
 
 ## 5. 标定
 

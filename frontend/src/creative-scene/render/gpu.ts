@@ -185,6 +185,8 @@ export const gpuTestHooks = {
   forceWebGL: false,
   /** Treats the device as compatibility mode: the workbench drops MSAA for SMAA (no such device to test on). */
   forceCompatibility: false,
+  /** Caps the texture size the renderers report: a device too small for an output resolution (R2 AC-R2-6). */
+  textureLimit: null as number | null,
   live: new Set<{ role: Role; info: WebGPURenderer['info']; lose(afterCaptures?: number): void }>(),
   /** Loses the device of every live renderer in that role, now or after that many more captures. */
   loseDevice(role: Role, afterCaptures = 0): number {
@@ -257,7 +259,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
   const backendInfo = renderer.backend as { isWebGPUBackend?: boolean; compatibilityMode?: boolean | null; device?: { destroy(): void; limits: { maxTextureDimension2D: number } } }
   const backend = backendInfo.isWebGPUBackend ? 'webgpu' : 'webgl2'
   const gl = backend === 'webgl2' ? (renderer.getContext() as WebGL2RenderingContext) : null
-  const maxTextureSize = backendInfo.device?.limits.maxTextureDimension2D ?? (gl?.getParameter(gl.MAX_TEXTURE_SIZE) as number | undefined) ?? 4096
+  const maxTextureSize = Math.min(backendInfo.device?.limits.maxTextureDimension2D ?? (gl?.getParameter(gl.MAX_TEXTURE_SIZE) as number | undefined) ?? 4096, gpuTestHooks.textureLimit ?? Infinity)
   console.info(`scene renderer (${role}): ${backend}${backendInfo.compatibilityMode ? ' compatibility' : ''}`)
 
   const device = deviceState(() => gl?.isContextLost() ?? false)

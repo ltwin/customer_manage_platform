@@ -26,6 +26,20 @@ export const resolutions: readonly Resolution[] = ['1k', '2k', '4k', '8k']
 /** The long side of an export at a resolution, in pixels. */
 export const longSideOf = (resolution: Resolution): number => ({ '1k': 1024, '2k': 2048, '4k': 4096, '8k': 8192 })[resolution]
 
+export type ImageType = 'image/png' | 'image/jpeg'
+
+/**
+ * How an export image is encoded (R2 design「输出分辨率、编码与时限」): a 4K
+ * or 8K clay or lit image as JPEG at 0.95, which keeps it within the media
+ * upload's size; line art, all flat white and lines, and smaller images as PNG.
+ */
+export function imageTypeOf(pass: 'clay' | 'line' | 'lit', resolution: Resolution): { type: ImageType; quality?: number } {
+  return pass !== 'line' && (resolution === '4k' || resolution === '8k') ? { type: 'image/jpeg', quality: 0.95 } : { type: 'image/png' }
+}
+
+/** The file extension uploads are named with. */
+export const extensionOf = (type: string) => (type === 'image/jpeg' ? 'jpg' : 'png')
+
 /** The scene's renderer; the server completes a scene stored before R2 (design R-1). */
 export const engineOf = (render: SceneRender): Engine => render.engine
 

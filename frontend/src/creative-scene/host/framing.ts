@@ -41,9 +41,8 @@ export type Framing = {
   depthOfField?: boolean
 }
 
-/** render_view's picture; exports are 2048. */
+/** render_view's picture; exports follow the scene's output resolution (render/engines.ts longSideOf). */
 export const longSide = 1024
-export const exportLongSide = 2048
 const presetFocalMM = 35
 const presetAspect = 4 / 3
 /** The framed bounds take up at most 1 / 1.1 of the picture. */

@@ -4,8 +4,8 @@ import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { SceneDocument } from '../api.ts'
 import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
-import { exportLongSide, cameraFraming, type Framing } from './framing.ts'
-import { effectiveEngine, engineOf, framesFor, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
+import { cameraFraming, type Framing } from './framing.ts'
+import { effectiveEngine, engineOf, extensionOf, framesFor, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
 
 // Export (design「导出渲染」「导出接口」): every camera of the plan drawn
@@ -22,7 +22,8 @@ export type ExportResult = components['schemas']['CreativeSceneExportResult']
 
 export type ExportPlan = { cameraObjectIDs: readonly string[]; passes: readonly ExportPass[] }
 export type ShotImage = { camera: string; pass: ExportPass; blob: Blob }
-export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string }
+/** hostError: the device cannot draw the chosen resolution; an assistant's job ends as host_error, not back in the queue. */
+export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string; hostError?: true }
 export type Progress = { stage: 'render' | 'upload' | 'place'; done: number; total: number }
 
 /** How many images an export makes, and why it cannot go ahead: none, or more than 48. */
@@ -59,9 +60,11 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const now = deps.now ?? (() => performance.now())
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const doc = await deps.read(documentID)
+  const { resolution } = doc.scene.render
+  const longSide = longSideOf(resolution)
   const framings: { id: string; framing: Framing }[] = []
   for (const id of plan.cameraObjectIDs) {
-    const framing = cameraFraming(doc.scene, id, exportLongSide)
+    const framing = cameraFraming(doc.scene, id, longSide)
     if ('error' in framing) return { ok: false, message: framing.error }
     framings.push({ id, framing })
   }
@@ -73,11 +76,16 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   // renderer averages, its encoding; the whole export gets the lit look's switch and every image's limit.
   const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass) => {
     const engine = pass === 'line' ? 'workbench' : effectiveEngine(engineOf(doc.scene.render), pass, true)
-    return shotBudgetMs(engine, framing.width, framing.height, framesFor(engine, 'export'), 'image/png')
+    return shotBudgetMs(engine, framing.width, framing.height, framesFor(engine, 'export'), imageTypeOf(pass, resolution).type)
   }
   const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass), 0), 0)
   const began = now()
   const shooter = await deps.open(doc, clayPasses.length ? 'clay' : 'lit')
+  // A device that cannot draw the resolution fails at once rather than drawing smaller (R2 design R-5).
+  if (longSide > shooter.maxTextureSize) {
+    shooter.close()
+    return { ok: false, message: `当前设备最大只能导出长边 ${shooter.maxTextureSize} px 的图，请选更低的输出分辨率`, hostError: true }
+  }
   const drawn = new Map<string, Blob>()
   const key = (camera: string, pass: ExportPass) => `${camera}\n${pass}`
   /** Draws one image; the message when it took too long. */
@@ -88,7 +96,8 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
     const slow = `一张导出图渲染超过 ${Math.round(budget / 1000)} 秒`
     let blob: Blob
     try {
-      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: 'image/png', depthOfField: pass !== 'line' && shot.framing.depthOfField, deadline: performance.now() + budget })
+      const encoding = imageTypeOf(pass, resolution)
+      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: encoding.type, quality: encoding.quality, depthOfField: pass !== 'line' && shot.framing.depthOfField, deadline: performance.now() + budget })
     } catch (err) {
       if (err instanceof ShotTimeout) return slow
       throw err
@@ -117,6 +126,12 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
     }
     // Nothing goes up drawn on a device lost on the way (render.ts).
     await shooter.confirm()
+  } catch (err) {
+    // At 4K and 8K a lost device is taken as one that cannot draw so large: no retry (R2 design R-5).
+    if (err instanceof DeviceLostError && longSide >= 4096) {
+      return { ok: false, message: `渲染设备在按 ${resolution.toUpperCase()} 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出`, hostError: true }
+    }
+    throw err
   } finally {
     shooter.close()
   }
@@ -139,7 +154,9 @@ export async function uploadShots(upload: UploadFn, images: readonly ShotImage[]
       const i = next++
       const { camera, pass, blob } = images[i]
       try {
-        out[i] = await upload(new File([blob], `${camera}-${pass}.png`, { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, signal)
+        // PNG or JPEG as it was encoded (render/engines.ts imageTypeOf).
+        const mime = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
+        out[i] = await upload(new File([blob], `${camera}-${pass}.${extensionOf(mime)}`, { type: mime }), { kind: 'image', mime }, signal)
         onProgress?.({ stage: 'upload', done: ++done, total: images.length })
       } catch (cause) {
         failure ??= { cause }
