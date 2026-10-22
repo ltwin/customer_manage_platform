@@ -714,29 +714,23 @@ class SSGINode extends TempNode {
 //		this._material.colorNode = gi();
 		// fork: end
 		// fork: the colour is the output.
-
 		// fork: was
 //		this._material.outputNode = outputNode;
-//
-		// fork: end		this._material.needsUpdate = true;
+		// fork: end
+		this._material.needsUpdate = true;
 
 		//
 
 		// fork: the node is vec4( GI, AO ).
 		return this._textureNode;
+		// fork: was
+//		return this._aoNode;
+		// fork: end
 
 	}
 
 	/**
-	 * Frees
-		// fork: was
-//		return this._aoNode;
-//
-//	}
-//
-//	/**
-//	 * Frees
-		// fork: end internal resources. This method should be called
+	 * Frees internal resources. This method should be called
 	 * when the effect is no longer required.
 	 */
 	dispose() {

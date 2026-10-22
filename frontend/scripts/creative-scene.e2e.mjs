@@ -4726,6 +4726,35 @@ await check('real-time GI: camera frustums and empties are drawn in the rendered
   }
 })
 
+// R2 tasks 7.5: the fog is laid over the real-time GI's composite, the indirect light and the reflections with
+// the rest. With every surface past the fog's far end, nothing of a box's colour shows; the materials' own fog
+// once left the GI and the AO it took apart and put back unfogged, and a red box showed through.
+await check('real-time GI: the fog covers the indirect light as it covers the rest', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const shots = []
+    for (const color of ['#ffffff', '#ff2020']) {
+      const server = new SceneServer()
+      server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+      server.scene.environment.fog = { color: '#808080', near: 0.01, far: 0.02 }
+      seed(server, [{ id: objectID('box'), kind: 'primitive', name: '盒子', order: 5, transform: { ...identity(), scale: [4, 4, 4] }, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'paint@1', params: { color } } } }])
+      const { page, errors } = await open(server, { context: await gpu.newContext() })
+      const { box } = await viewportCenter(page)
+      await shading(page, '最终渲染')
+      shots.push(await settledShot(page, box))
+      assert.deepEqual(errors, [])
+      if (shots.length === 2) {
+        if (process.env.SCENE_E2E_EVIDENCE) for (const [i, png] of shots.entries()) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/fog-${i}.png`, png)
+        const diff = await pixelDiff(page, shots[0], shots[1])
+        console.log(`real-time GI in full fog, a white box against a red one: ${(diff * 100).toFixed(2)}% of the view differs`)
+        assert.ok(diff < 0.005, `${(diff * 100).toFixed(2)}% of the view differs`)
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
 // R2 tasks 7.2: a light added in the real-time GI's rendered view is compiled first for both its passes, as the
 // workbench's is (R1): no pipeline refused (the prepass and the lighting pass once shared a stand-in's material),
 // no frame held while the lighting pass compiles (5 s before). R0's performance scene, this machine's GPU.

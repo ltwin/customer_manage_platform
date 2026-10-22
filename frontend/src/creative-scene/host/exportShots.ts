@@ -75,7 +75,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   // Each image's limit follows what it costs (R2 design「输出分辨率、编码与时限」): its pixels, the frames its
   // renderer averages, its encoding; the whole export gets the lit look's switch and every image's limit.
   const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass) => {
-    const engine = pass === 'line' ? 'workbench' : effectiveEngine(engineOf(doc.scene.render), pass, true)
+    const engine = effectiveEngine(engineOf(doc.scene.render), pass, true)
     return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export'), imageTypeOf(pass, resolution).type)
   }
   const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass), 0), 0)
@@ -97,6 +97,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
     let blob: Blob
     try {
       const encoding = imageTypeOf(pass, resolution)
+      // The shooter checks the deadline against its own clock, performance.now() (host/render.ts); `now` times the export.
       blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: encoding.type, quality: encoding.quality, depthOfField: pass !== 'line' && shot.framing.depthOfField, deadline: performance.now() + budget })
     } catch (err) {
       if (err instanceof ShotTimeout) return slow

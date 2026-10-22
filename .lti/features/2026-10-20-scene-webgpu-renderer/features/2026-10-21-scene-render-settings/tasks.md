@@ -103,3 +103,13 @@
   - **重绘样例**：实时 GI 的白模样例删去，组 2 改为白模 + 线稿 + 实时 GI 材质光照（`gi-repaint.md`）。
   - 验证：上面的 e2e 红→绿；「renderer in effect」「a 2K export of the box room is within its residual noise」绿；`effectiveEngine` 单测、`tsc`、`oxlint` 绿；`go test ./internal/creativescene -run Fingerprint`、`./internal/creativeagent -run 'TestSceneTools|Compaction|TestTheAssistantSwitches'` 绿。
   - 偏离 Epic 已批准的「渲染器同时作用于白模和最终渲染」（Epic proposal 修订记录 2026-10-21、design「渲染器与显示模式」、contracts `scene.render.engine`）：Epic 修订待 owner 批准；本子项的 proposal（AC-R2-2/3/4/8）、specs、design 已按新口径改。
+
+- [x] 7.5 代码审计逐项处理（2026-10-21）。完成判据：确认的问题修正并有回归检查，不改的写明理由
+  - **雾**：光照 pass 带雾，合成用带雾的 `output` 减去不带雾的间接光，再加回不带雾的 AO、GI、反射和接触阴影。改为光照 pass 不画雾（`GILightingPass` 暂时摘掉场景的线性雾，其他种类的雾留给材质），合成后按预通道深度统一叠雾。新增 e2e「real-time GI: the fog covers the indirect light as it covers the rest」（本机 Metal，雾止于 0.02 m，放大 4 倍的白盒子对红盒子）：修正前 1.09% 的像素不同（盒子在全雾里透出来，地面有暖色渗色），修正后 0.00%。
+  - **SSGI fork**：`// fork: end` 和 `this._material.needsUpdate = true;` 写在了同一行，后者被注释掉；`dispose()` 的文档注释也被 fork 块切开。按行拆开后，unfork 对照仍等于上游；对照测试新增一条：`fork: was` / `fork: end` 必须独占一行（旧文件上红，修正后绿）。
+  - **契约措辞**：`api/openapi.yaml` 里 `render.engine` 的说明改为「只作用于材质光照……白模、线稿、线框、材质预览和正交视图总按 workbench」，`make generate` 更新 `api.gen.go`、`schema.d.ts`。
+  - **主光**：主光不再进管线的键，接触阴影每帧现查主光，没有主光时不追踪、合成里权重为 0。太阳落山、换天空、两盏聚光强弱交替都不再重建整条管线和时域历史。聚光的距离改按世界坐标算（单测补上「挂在分组下」一例，红→绿）。主光仍是每画一帧遍历一次场景，数百个物件只要微秒级；视口只在交互和收敛时出帧，不再另做场景变化的通知。
+  - **辅助对象**：只排除出预通道还不够，它们仍画在光照 pass 里，SSGI、SSR 会把它们的颜色当成背后表面的光。改为视口里单独一个辅助对象 pass（8 位颜色，导出不建），雾之后、TRAA 之前按深度叠上（深度不大于预通道深度处可见，与同一 pass 的深度测试相同；代价是玻璃后面的辅助对象也画在玻璃上面）。审计说的「网格线处 split 降到约 0.5」不成立：网格在 `ambient` 等附件里写的是 alpha 0，按画面的混合方式保留底下的值（玻璃同理，见 `realtimeGI.ts`「Blended as the picture is」），现在网格也不进光照 pass 了。
+  - **低优先级**：`exportShots.ts` 的 `budgetOf` 去掉对线稿的特判（`effectiveEngine` 已返回工作台）；截止时间本来就和 `host/render.ts` 一样用 `performance.now()`，注入的 `now` 只计导出耗时，补注释说明。不改的几项：`gpu.ts` 引用 `host/ticker.ts`，ticker 是不依赖其他模块的计时工具，搬位置要改 5 处引用，收益只是目录上的分层；`fixedNoise()` 每次建管线生成 3 张 64×64 噪声纹理，耗时约 1 ms，按设备缓存要另管释放；8 位打包法线、`installGISplit` / `asItsPass` 对 three 内部的依赖由单测钉住，升级 three 时对照。
+  - **未验证、交 owner**：8K 的峰值内存（R0 记录约 9 GB），以及 Safari 的画布尺寸上限：8K 出图直接把画布设到 8192 × 5461，Safari 若超出画布上限可能静默出空图，纹理上限检查管不到。AC-R2-11 的 Safari 检查加上 4K、8K 材质光照导出（`gi-repaint.md`）。导出计划内复用渲染器、只重置时域状态，是后续优化，不在本次范围。
+  - 验证：上面两条红→绿；「camera frustums and empties…」0.05%、「renderer in effect」「48 pictures in a row」「a 2K export … residual noise」（仍是 1.232）「a light added in the rendered view」（最长一帧 108 ms）都绿；GI 单测 11 条、导出相关单测、`tsc`、`oxlint` 绿。视口帧时间没有重测（多一个只画辅助对象的 pass）。

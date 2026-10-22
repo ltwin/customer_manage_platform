@@ -1,5 +1,5 @@
 import { DirectionalLight as RayLight, HalfFloatType, UnsignedByteType, Vector3, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
-import { convertToTexture, float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, roughness, sample, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
+import { convertToTexture, float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, perspectiveDepthToViewZ, roughness, sample, smoothstep, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
 import { PassNode, type Node, type TextureNode, type UniformNode } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js'
@@ -18,9 +18,9 @@ import { ssgi } from './nodes/SSGINode.js'
 //  - An opaque prepass draws the materials as they are (no override: their
 //    roughness and bumped normals count) into packed normal + roughness and
 //    velocity; its depth is the depth every effect reads.
-//  - The lighting pass draws everything (glass and the grid too) with the
-//    materials taken apart (giSplit.ts): the whole picture, the base colour,
-//    and the indirect diffuse and specular light, 32 bytes a pixel.
+//  - The lighting pass draws the scene (glass too) with the materials taken
+//    apart and without the fog (giSplit.ts): the whole picture, the base
+//    colour, and the indirect diffuse and specular light, 32 bytes a pixel.
 //  - SSGI, temporally reprojected and recurrently denoised (design
 //    「SSGI 降噪」) in the viewport; in a picture to keep, filtered in space
 //    only and averaged over frames (sceneRenderer.ts AccumulateNode): the
@@ -28,8 +28,9 @@ import { ssgi } from './nodes/SSGINode.js'
 //    average hardly lowers its noise (R2 tasks 5.1). The stochastic SSR
 //    with three's own chain.
 //  - The composite (design「合成」) puts the AO on the indirect light only and
-//    the reflections in place of the environment's, then TRAA, outermost of
-//    the temporal nodes, antialiases and steadies the whole.
+//    the reflections in place of the environment's; then the fog, and the
+//    viewport's helpers over it where nothing opaque is in front; then TRAA,
+//    outermost of the temporal nodes, antialiases and steadies the whole.
 // Nothing in the chain draws with Math.random but the DenoiseNodes, which are
 // given the workbench's fixed noise.
 
@@ -51,13 +52,23 @@ for (const name of ['base', 'ambient', 'envSpec']) lightingOutputs.setBlendMode(
 export type RealtimeGIOptions = {
   /** The viewport's, or a picture to keep's: the SSGI's samples, its denoising and the flicker suppression. */
   quality: Quality
-  /** The layers the prepass draws (the opaque scene) and the lighting pass draws (the picture). */
-  prepassLayers: Layers
-  pictureLayers: Layers
+  /** The layers the prepass and the lighting pass draw. */
+  layers: Layers
+  /**
+   * The viewport's helpers (the grid, light icons, camera frustums), drawn by
+   * a pass of their own: in the lighting pass they would be in the picture
+   * the SSGI and the SSR sample, as light on the surface behind them. None in
+   * a picture to keep.
+   */
+  aside: { color: TextureNode; depth: TextureNode } | null
   /** The fixed-seed noise for the AO's DenoiseNode (sceneRenderer.ts fixedNoise). */
   noise: () => DataTexture
-  /** The light whose contact shadows are traced on screen (mainLight); none, none traced. */
-  mainLight: DirectionalLight | SpotLight | null
+  /**
+   * The light whose contact shadows are traced on screen (mainLight), asked
+   * every frame: the sun setting or another light taking over changes no
+   * pipeline. None, none traced.
+   */
+  mainLight: () => DirectionalLight | SpotLight | null
 }
 
 export type RealtimeGI = {
@@ -98,7 +109,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
 
   const prepass = own(pass(scene, camera, { samples: 0 }))
   prepass.transparent = false
-  prepass.setLayers(options.prepassLayers)
+  prepass.setLayers(options.layers)
   prepass.setMRT(prepassOutputs)
   prepass.getTexture('output').type = UnsignedByteType
   prepass.getTexture('velocity').type = HalfFloatType
@@ -109,7 +120,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const normal: N = sample((uv: N) => unpackRGBToNormal(normalPacked.sample(uv).rgb))
 
   const lit = own(new GILightingPass(PassNode.COLOR, scene, camera, { samples: 0 }))
-  lit.setLayers(options.pictureLayers)
+  lit.setLayers(options.layers)
   lit.setMRT(lightingOutputs)
   const output: N = lit.getTextureNode('output')
   const base: N = lit.getTextureNode('base')
@@ -174,41 +185,52 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const cover: N = reflect.a.lessThan(MISSED).select(1, 0)
 
   // Contact shadows from the main light, along its direction (a spot's as if parallel: the rays are short).
-  let contact: N = float(1)
-  if (options.mainLight) {
-    const main = options.mainLight
-    // SSSNode traces maxDistance times light − target, not made a unit: the sun stands 60 m from its target
-    // (objects/Lighting.tsx), and its rays would run 6 m. It traces along a stand-in a unit from the origin,
-    // set to the main light's direction every frame, which also gives that direction in view space.
-    const ray = new RayLight()
-    ray.matrixAutoUpdate = false
-    const at = new Vector3()
-    const to = new Vector3()
-    const toLight = uniform(new Vector3())
-    const shadow: N = own(sss(depth, camera, ray))
-    const before = shadow.updateBefore.bind(shadow)
-    shadow.updateBefore = (frame: unknown) => {
-      main.updateWorldMatrix(true, false)
-      main.target.updateWorldMatrix(true, false)
-      at.setFromMatrixPosition(main.matrixWorld).sub(to.setFromMatrixPosition(main.target.matrixWorld)).normalize()
-      ray.matrixWorld.makeTranslation(at)
-      toLight.value.copy(at).transformDirection(camera.matrixWorldInverse)
-      return before(frame)
-    }
-    // A new offset every frame, which TRAA and the accumulation average.
-    shadow.useTemporalFiltering = true
-    // Only where the main light reaches: the composite darkens all the direct light by it, and a surface turned
-    // away from the main light (its rays start inside it) shaded every other light on it in grain, cut off
-    // where the rays left the screen (R2 tasks 7.3, the studio set's back wall with the sun behind it).
-    contact = mix(float(1), shadow.r, normal.dot(toLight).mul(4).clamp(0, 1))
+  // SSSNode traces maxDistance times light − target, not made a unit: the sun stands 60 m from its target
+  // (objects/Lighting.tsx), and its rays would run 6 m. It traces along a stand-in a unit from the origin,
+  // set to the main light's direction every frame, which also gives that direction in view space.
+  const ray = new RayLight()
+  ray.matrixAutoUpdate = false
+  const at = new Vector3()
+  const to = new Vector3()
+  const toLight = uniform(new Vector3())
+  const contactOn = uniform(0)
+  const shadow: N = own(sss(depth, camera, ray))
+  const before = shadow.updateBefore.bind(shadow)
+  shadow.updateBefore = (frame: unknown) => {
+    const main = options.mainLight()
+    contactOn.value = main ? 1 : 0
+    // Nothing traced: the composite weighs the last trace by zero.
+    if (!main) return undefined
+    main.updateWorldMatrix(true, false)
+    main.target.updateWorldMatrix(true, false)
+    at.setFromMatrixPosition(main.matrixWorld).sub(to.setFromMatrixPosition(main.target.matrixWorld)).normalize()
+    ray.matrixWorld.makeTranslation(at)
+    toLight.value.copy(at).transformDirection(camera.matrixWorldInverse)
+    return before(frame)
   }
+  // A new offset every frame, which TRAA and the accumulation average.
+  shadow.useTemporalFiltering = true
+  // Only where the main light reaches: the composite darkens all the direct light by it, and a surface turned
+  // away from the main light (its rays start inside it) shaded every other light on it in grain, cut off
+  // where the rays left the screen (R2 tasks 7.3, the studio set's back wall with the sun behind it).
+  const contact: N = mix(float(1), shadow.r, normal.dot(toLight).mul(4).clamp(0, 1).mul(contactOn))
 
-  // Where the lighting pass took a material apart and the prepass saw a surface (not the background).
-  const surface = ambient.a.mul(depth.r.lessThan(1).select(1, 0))
-  const picture = vec4(
-    composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: surface }),
-    output.a,
-  )
+  // Where the prepass saw a surface (not the background), and the lighting pass took a material apart there.
+  const opaque = depth.r.lessThan(1).select(1, 0)
+  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.mul(opaque) })
+  // The fog as three's rangeFogFactor has it, by the view depth of the opaque surface: glass takes the fog of
+  // what is behind it. The background has none, as in three, where the sky box is too near for the fog.
+  const { fog } = lit
+  const cameraNear = uniform(0).onRenderUpdate(() => persp.near)
+  const cameraFar = uniform(0).onRenderUpdate(() => persp.far)
+  const fogged: N = mix(shaded, fog.color, smoothstep(fog.near, fog.far, perspectiveDepthToViewZ(depth.r, cameraNear, cameraFar).negate()).mul(fog.on).mul(opaque))
+  let picture: N = vec4(fogged, output.a)
+  if (options.aside) {
+    // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.
+    const { color: over, depth: overDepth } = options.aside
+    const front: N = overDepth.r.lessThanEqual(depth.r).select(1, 0)
+    picture = vec4(fogged.mul(over.a.mul(front).oneMinus()).add(over.rgb.mul(front)), output.a)
+  }
   const color: N = own(traa(own(convertToTexture(picture)), depth, vel, camera))
   // TRAA's stand-in for the previous depth, drawn with on the first frame and then replaced: its dispose() leaves it.
   own(color._previousDepthNode.value as { dispose(): void })
@@ -217,8 +239,8 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     color,
     depth,
     passes: [
-      { node: lit, layers: options.pictureLayers },
-      { node: prepass, layers: options.prepassLayers },
+      { node: lit, layers: options.layers },
+      { node: prepass, layers: options.layers },
     ],
     aoOn,
     dispose() {

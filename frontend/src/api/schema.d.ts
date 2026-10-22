@@ -7182,7 +7182,7 @@ export interface components {
             /** @description 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。 */
             exposure_ev: number;
             /**
-             * @description 渲染器，决定白模和最终渲染怎么出图（clay、lit 导出与 render_view）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。线稿、线框、材质预览和正交视图按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
+             * @description 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
              * @enum {string}
              */
             engine: "workbench" | "realtime_gi";

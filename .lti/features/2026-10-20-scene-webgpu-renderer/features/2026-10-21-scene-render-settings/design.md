@@ -103,21 +103,24 @@ flowchart LR
 ```mermaid
 flowchart LR
   PRE[不透明预通道 samples:0<br/>MRT: 打包法线+粗糙度, 速度; 深度] --> SSGI & SSR & TR & RD & SSS
-  LIT[GI 光照 pass samples:0<br/>giSplit 上下文<br/>MRT: output, base, ambient, envSpec] --> SSGI
+  LIT[GI 光照 pass samples:0<br/>giSplit 上下文, 不画雾<br/>MRT: output, base, ambient, envSpec] --> SSGI
   SSGI[SSGI fork<br/>vec4 GI, AO] --> TR[TemporalReproject<br/>diffuse, accumulate:false] --> RD[RecurrentDenoise<br/>accumulate:true, alphaSource ao]
   RD -. 历史 .-> TR
   LIT --> SSR[SSR 随机 GGX] --> TR2[TemporalReproject specular] --> RD2[RecurrentDenoise] -. 回灌 .-> SSR
   SSS[接触阴影 SSSNode]
-  RD & RD2 & SSS & LIT --> C[合成] --> TRAA --> DOF[景深] --> ACC[累积 K 帧<br/>仅导出/render_view] --> OUT[色调映射·sRGB]
+  ASIDE[辅助对象 pass<br/>仅视口]
+  RD & RD2 & SSS & LIT --> C[合成] --> FOG[雾] --> OV[叠辅助对象] --> TRAA --> DOF[景深] --> ACC[累积 K 帧<br/>仅导出/render_view] --> OUT[色调映射·sRGB]
+  ASIDE --> OV
 ```
 
 - **不透明预通道**：`pass(scene, camera, { samples: 0 })`，`transparent = false`，只画图层 0。与工作台的预通道不同，这里**不用**覆盖材质：要拿到材质（含程序化预设）的粗糙度和凹凸后的法线。MRT 输出 `vec4(packNormalToRGB(normalView), roughness)` 和 `velocity`，共 16 字节。法线有两种格式：`TemporalReprojectNode`、`RecurrentDenoiseNode` 内部会解包，要打包的；SSGI、SSR、`DenoiseNode` 直接 `normalize`，要解包后的（用一个 `unpackRGBToNormal` 采样节点）。
-- **GI 光照 pass**：`pass(scene, camera, { samples: 0 })`，画全部物件（含透明和透射，three 照常排序、透射照常取背景），图层 0 加 `ASIDE_LAYER`。`contextNode` 带 `giSplit` 标记，MRT 输出 `output`、`base = vec4(diffuseColor, metalness)`、`ambient`、`envSpec`，正好 32 字节（WebGPU 默认的 `maxColorAttachmentBytesPerSample`；`rgba8unorm` 也按 8 字节计）。
+- **GI 光照 pass**：`pass(scene, camera, { samples: 0 })`，画图层 0 的全部物件（含透明和透射，three 照常排序、透射照常取背景），不画雾（tasks 7.5）。`contextNode` 带 `giSplit` 标记，MRT 输出 `output`、`base = vec4(diffuseColor, metalness)`、`ambient`、`envSpec`，正好 32 字节（WebGPU 默认的 `maxColorAttachmentBytesPerSample`；`rgba8unorm` 也按 8 字节计）。
 - **SSGI**：fork 输入 GI 光照 pass 的 `output`、预通道的深度和解包法线；输出 `vec4(GI, AO)`。质量档：`interactive` 为 `sliceCount 2 / stepCount 8`，`final` 从同档起步，高档 `3 / 16` 是否采用由标定决定（Epic「质量档」）。`giIntensity`、`radius` 从 R0 的 10、12 起步，在参考场景上调。
-- **SSR**：照官方 `webgpu_postprocessing_ssr_denoise` 的链路（随机 GGX → specular 重投影 → 递归降噪 → 回灌）。白模不建 SSR。
-- **接触阴影**：`SSSNode`，主光源取太阳（程序化天空且太阳在地平线以上）；没有时取场景里强度最大的投影灯；都没有就不加。
+- **SSR**：照官方 `webgpu_postprocessing_ssr_denoise` 的链路（随机 GGX → specular 重投影 → 递归降噪 → 回灌），随实时 GI 常开。
+- **接触阴影**：`SSSNode`，主光源取太阳（程序化天空且太阳在地平线以上）；没有时取场景里照度最大的投影灯（聚光按世界坐标下到目标的距离算）；都没有就不加。主光每帧现查，不进管线的键：太阳落山、换天空、两盏灯强弱交替都不重建管线；没有主光时这一帧不追踪，合成里权重为 0（tasks 7.5）。
 - **TRAA** 必须是最外层的时域节点：它和 `TemporalReprojectNode` 都会去占视口偏移（`viewOffsetOwner`），只有 TRAA 做抖动。
-- **覆盖层**：`aside`（网格、描边外壳）随画面一起被 TRAA 抖动和累积；`top`（gizmo）在 TRAA 之后合成（Epic「抗锯齿切换」）。
+- **雾**：场景的雾是线性雾（`objects/Lighting.tsx`）。光照 pass 不画雾，合成之后按预通道深度统一叠雾，算法与 three 的 `rangeFogFactor` 相同（视空间深度上的 smoothstep），所以 GI、反射和接触阴影一起被雾衰减；背景不加雾（three 里天空盒离摄像机太近，也不受雾影响）；玻璃取它后面不透明表面的雾（tasks 7.5）。
+- **覆盖层**：视口的 `aside`（网格、描边外壳、灯光图标、摄像机视锥、空物体）单独一个 pass 画（不进光照 pass，也就不在 SSGI、SSR 采样的那张图里），雾之后、TRAA 之前按深度叠上：它的深度不大于预通道深度处可见，与同一 pass 里的深度测试相同；玻璃前后都画在玻璃上面。导出没有辅助对象，不建这个 pass。`top`（gizmo）在 TRAA 之后合成（Epic「抗锯齿切换」）。
 - **帧序号**：SSGI fork 和 `RecurrentDenoiseNode` 取渲染器的帧序号；SSR 和 TRAA 用各自私有的计数，所以导出每张图新建管线（R1 已如此）。GI 链里的节点都不用 `Math.random`（已核实），不需要像 R1 的 `DenoiseNode` 那样换固定种子的噪声。
 - **释放**：每张导出图新建、释放一整条 GI 管线。R0 发现 GI 管线每重建一次残留 12–24 字节/像素；R2 必须找到并释放，验证同 R1（连续导出 48 张纹理数不增长）。
 
@@ -244,6 +247,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 - **接触阴影只压朝向主光的表面**（tasks 7.3）：合成里接触阴影乘在全部直接光上（上面的 `direct × contact`），背对主光的表面会被它连同其他灯光一起压暗，还带颗粒；改为按法线与主光方向的点积淡入，N·L ≤ 0 时不压。代价是主光以外的灯光在朝向主光的面上仍会被主光方向的接触阴影压一点（无法逐灯拆开直接光），与原设计相同。
 - **渲染器只作用于最终渲染和材质光照**（tasks 7.4，owner 2026-10-21 验收前修订，偏离 Epic「渲染器同时作用于白模和最终渲染」，Epic 修订待批）：白模与 Blender 视口里 Rendered 以外的着色一样，总按工作台画，`clay` 导出和 `render_view` 的 `clay` 随之不变；R-2 的表、R-3 的指纹和助手说明一并改。白模 GI 那一支（`Frame.reflections`、`realtimeGI` 的 `reflections` 选项）没有调用方，删去，SSR 随实时 GI 常开。
 - **辅助对象不进预通道**（tasks 7.4）：灯光图标、摄像机视锥、空物体十字和分组坐标轴放进 aside 层（与网格、选中描边同层）：画进图里，但不进 AO 和实时 GI 的预通道，不遮挡、不投接触阴影、不进 SSGI；视口点选的射线也看 aside 层，点选不变（aside 层上的描边、线稿禁用射线，网格没有物件 ID）。之前它们在 layer 0，实时 GI 在它们周围的地面画出大片颗粒状黑斑，工作台的 AO 也算上它们。导出没有辅助对象，不受影响。
+- **雾、辅助对象与主光**（tasks 7.5，代码审计）：见上面「实时 GI 管线」的雾、覆盖层和接触阴影三条。之前光照 pass 带雾、合成从带雾的 `output` 里减去不带雾的间接光，再加回不带雾的 GI 和反射，全雾里物体照样透出来；辅助对象画在光照 pass 里，会作为背后表面的光被 SSGI、SSR 采到；主光的 uuid 在管线键里，主光一换就重建整条管线和时域历史。
 - **时限公式**与**逐帧让出主线程**（Epic 只说「公式由 R2 定」）。
 - **实时 GI 的环境光补偿**单独取值。
 - **后续**：Epic 的「实时 GI 的质量档位、采样数开放给摄影师」仍等 AC-8 结论；正交视图的 SSGI 不做（回落工作台）。

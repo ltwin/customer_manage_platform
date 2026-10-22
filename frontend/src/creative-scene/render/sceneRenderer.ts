@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, Vector2, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
+import { ACESFilmicToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -247,12 +247,16 @@ function asItsPass(renderer: SceneGPU['renderer']) {
 
 type Shadowing = DirectionalLight | SpotLight
 
+const lightAt = /*@__PURE__*/ new Vector3()
+const targetAt = /*@__PURE__*/ new Vector3()
+
 /**
  * The light the real-time GI traces contact shadows from (R2 design「实时 GI
  * 管线」): the sun (Lighting.tsx marks it) while it is up; else the
  * shadow-casting light that lights the scene most, a directional light by
  * its intensity, a spot by its intensity over the distance to its target
- * squared. A point light has no one direction to trace along.
+ * squared, both where the world has them. A point light has no one direction
+ * to trace along.
  */
 export function mainLight(scene: Object3D): Shadowing | null {
   let sun: Shadowing | null = null
@@ -267,7 +271,7 @@ export function mainLight(scene: Object3D): Shadowing | null {
       return
     }
     if (!light.castShadow) return
-    const lux = (light as SpotLight).isSpotLight ? light.intensity / Math.max(light.position.distanceToSquared(light.target.position), 0.01) : light.intensity
+    const lux = (light as SpotLight).isSpotLight ? light.intensity / Math.max(light.getWorldPosition(lightAt).distanceToSquared(light.target.getWorldPosition(targetAt)), 0.01) : light.intensity
     if (lux > most) {
       most = lux
       best = light
@@ -277,10 +281,9 @@ export function mainLight(scene: Object3D): Shadowing | null {
 }
 
 /** How a frame is drawn, which decides the pipeline: the real-time GI or the workbench. */
-type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; light: Shadowing | null; accumulate: boolean }
+type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean }
 
-const keyOf = ({ wireframe, blur, gi, quality, light, accumulate }: Look) =>
-  wireframe ? 'wire' : `${gi ? `gi-${quality}:${light?.uuid ?? ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+const keyOf = ({ wireframe, blur, gi, quality, accumulate }: Look) => (wireframe ? 'wire' : `${gi ? `gi-${quality}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`)
 
 const accumulateSize = /*@__PURE__*/ new Vector2()
 let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
@@ -505,8 +508,23 @@ export class SceneRenderer {
     let dof: Dof | null = null
     let gi: RealtimeGI | null = null
     if (look.gi) {
-      gi = own(realtimeGI(scene, camera, { quality: look.quality, prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise, mainLight: look.light }))
-      passes = gi.passes
+      // The viewport's helpers, apart from the GI and laid over it (realtimeGI.ts aside); an export has none.
+      let aside: PassNode | null = null
+      if (this.overlays !== noOverlays) {
+        aside = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: 0 }))
+        aside.setLayers(layers(ASIDE_LAYER))
+        aside.getTexture('output').type = UnsignedByteType
+      }
+      gi = own(
+        realtimeGI(scene, camera, {
+          quality: look.quality,
+          layers: layers(0),
+          aside: aside && { color: aside.getTextureNode(), depth: aside.getTextureNode('depth') },
+          noise: fixedNoise,
+          mainLight: () => mainLight(scene),
+        }),
+      )
+      passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
       aoOn = gi.aoOn
       picture = gi.color
       if (blur) {
@@ -595,7 +613,6 @@ export class SceneRenderer {
       blur: dof !== null,
       gi,
       quality: frame.quality ?? 'interactive',
-      light: gi ? mainLight(this.scene) : null,
       accumulate: gi && frame.accumulate === true,
     }
     const key = keyOf(look)

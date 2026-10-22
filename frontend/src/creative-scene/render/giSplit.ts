@@ -1,4 +1,5 @@
-import { context, diffuseColor, metalness, property, vec4 } from 'three/tsl'
+import { Color, type Fog, type Scene } from 'three'
+import { context, diffuseColor, metalness, property, uniform, vec4 } from 'three/tsl'
 import { PassNode, PhysicalLightingModel, type NodeBuilder } from 'three/webgpu'
 
 // The real-time GI's lighting pass takes the materials' indirect light apart
@@ -46,16 +47,36 @@ export function splitContext(base: Context): Context {
   return made.context
 }
 
-/** The real-time GI's lighting pass: draws with the materials taken apart. */
+/**
+ * The real-time GI's lighting pass: draws with the materials taken apart, and
+ * without the scene's fog (linear, objects/Lighting.tsx). Fogged here, the
+ * picture would have the fog where the composite takes the indirect light
+ * out, and none on the GI, reflections and contact shadows it puts in: the
+ * composite lays the fog over it all (realtimeGI.ts), from these uniforms.
+ */
 export class GILightingPass extends PassNode {
+  readonly fog = { on: uniform(0), color: uniform(new Color()), near: uniform(0), far: uniform(1) }
+
   updateBefore(frame: Parameters<PassNode['updateBefore']>[0]) {
     const renderer = frame.renderer!
+    const scene = this.scene as Scene
     const base = renderer.contextNode
+    const fog = scene.fog as Fog | null
+    // Another kind of fog (none the editor makes) stays the materials'.
+    const linear = fog?.isFog === true
+    this.fog.on.value = linear ? 1 : 0
+    if (linear) {
+      this.fog.color.value.copy(fog.color)
+      this.fog.near.value = fog.near
+      this.fog.far.value = fog.far
+      scene.fog = null
+    }
     renderer.contextNode = splitContext(base as Context)
     try {
       return super.updateBefore(frame)
     } finally {
       renderer.contextNode = base
+      scene.fog = fog
     }
   }
 }

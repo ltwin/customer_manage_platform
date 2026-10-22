@@ -23,7 +23,10 @@ export function unfork(text: string): string {
 
 test('the SSGI is three’s SSGINode but for its fork: blocks', () => {
   const upstream = read('../node_modules/three/examples/jsm/tsl/display/SSGINode.js')
-  const restored = unfork(read('../src/creative-scene/render/nodes/SSGINode.js'))
+  const fork = read('../src/creative-scene/render/nodes/SSGINode.js')
+  // A marker sharing its line with code would comment that code out in the fork and still restore cleanly.
+  for (const line of fork.split('\n').filter((l) => /^\t*\/\/ fork: (was|end)/.test(l))) assert.match(line, /^\t*\/\/ fork: (was|end)$/)
+  const restored = unfork(fork)
   assert.ok(!restored.includes('fork:'), 'every change is undone here')
   assert.equal(restored, upstream, 'three changed SSGINode: compare and port the fork')
 })
@@ -206,6 +209,12 @@ test('the main light: the sun while up, else the shadow-casting light that light
   assert.equal(mainLight(scene), spot, 'the sun below the horizon does not count; the spot lights more than the fill')
   spot.position.set(0, 0, 20)
   assert.equal(mainLight(scene), fill, 'far away the spot lights less')
+  spot.position.set(0, 0, 3)
+  const rig = new Group()
+  rig.position.set(0, 0, 17)
+  rig.add(spot)
+  scene.add(rig)
+  assert.equal(mainLight(scene), fill, 'in a group the spot is as far as the world has it, its target still at the origin')
   fill.castShadow = false
   spot.castShadow = false
   assert.equal(mainLight(scene), null, 'lights without shadows and point lights give none')
