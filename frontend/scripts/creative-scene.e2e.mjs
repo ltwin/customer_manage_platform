@@ -3587,6 +3587,46 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
   }
 })
 
+// SCENE_E2E_LOOKS=<dir> (W1 scene-display-look): the viewport of every
+// reference scene in the four display modes on this machine's GPU, with
+// looks.json measuring each picture and its lower quarter (ground). Run once
+// before W1's renderer changes for the baseline and again after them.
+const displayModes = [['线框', 'wireframe'], ['白模', 'clay'], ['材质预览', 'preview'], ['最终渲染', 'lit']]
+if (process.env.SCENE_E2E_LOOKS) await check('looks: the reference scenes in every display mode on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_LOOKS
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
+    for (const name of referenceNames) {
+      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+      const server = new SceneServer()
+      referenceScene(server, name)
+      const { page, errors } = await open(server, { context })
+      const { box } = await viewportCenter(page)
+      const ground = { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }
+      await page.mouse.move(1, 1)
+      record.scenes[name] = {}
+      for (const [mode, label] of displayModes) {
+        await shading(page, mode)
+        // New lights stay dark until compiled for the viewport's passes (objects/SceneLights.tsx).
+        await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name} ${mode}: compiled`, 60_000)
+        const png = await settledShot(page, box)
+        await writeFile(`${dir}/${name}-view-${label}.png`, png)
+        const all = await lumaStats(page, png, { level: 250 })
+        const low = await lumaStats(page, await settledShot(page, ground), { level: 250 })
+        const round = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v.toFixed(4))]))
+        record.scenes[name][label] = { all: round(all), ground: round(low) }
+        console.log(`looks ${name} ${label}: mean ${all.mean.toFixed(1)}, clipped ${(all.bright * 100).toFixed(2)}%, ground ${low.mean.toFixed(1)} (R−B ${(low.r - low.b).toFixed(1)})`)
+      }
+      assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+      await context.close()
+    }
+    await writeFile(`${dir}/looks.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
 // --- R1 AC-R1-1 / AC-R1-4: the same pictures as the WebGL baseline --------------
 
 const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer/features/2026-10-21-scene-webgpu-spike/discovery/research/baseline/', import.meta.url)

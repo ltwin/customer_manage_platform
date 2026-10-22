@@ -4,7 +4,10 @@
 
 ## 1. 基线
 
-- [ ] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取基线，存进 `discovery/research/baseline`：线框和线稿的参考图（AC-W1-3 逐像素对照用）；「calibration」的正午、黄昏 +2、两盏 40 cd 壁灯的室内，以及材质板（`fixtures/scene-reference/materials.json`）的 `clay`、`lit` 导出与材质预览截图，连同整幅和地面区域的平均亮度、过曝比例、地面 R−B；R1 性能场景的视口帧时间；一组机位的白模导出（AC-W1-4 重绘对照用）。完成判据：`baseline.md` 写明场景、机位、设备与测量值，图与测量能由脚本复现
+- [x] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取基线，存进 `discovery/research/baseline`：线框和线稿的参考图（AC-W1-3 逐像素对照用）；「calibration」的正午、黄昏 +2、两盏 40 cd 壁灯的室内，以及材质板（`fixtures/scene-reference/materials.json`）的 `clay`、`lit` 导出与材质预览截图，连同整幅和地面区域的平均亮度、过曝比例、地面 R−B；R1 性能场景的视口帧时间；一组机位的白模导出（AC-W1-4 重绘对照用）。完成判据：`baseline.md` 写明场景、机位、设备与测量值，图与测量能由脚本复现
+  - 结果见 `discovery/research/baseline.md`。e2e 新增 `SCENE_E2E_LOOKS` 用例截四种显示模式的视口，改完后用同一用例出对照。
+  - 设计挂载点之外的改动：`scripts/creative-assets.e2e.mjs` 多存两张查看浮窗的舞台截图，供 3.2、4.3 对照。
+  - 视口截图要先等着色器编译完：没等时 `room` 的最终渲染截在壁灯点亮之前。
 
 ## 2. 渲染指纹
 
