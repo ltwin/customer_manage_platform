@@ -66,7 +66,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		return &schema.ToolInfo{
 			Name: readSceneTool,
 			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
-				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。",
+				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。物理天空按地点和时间放太阳时带 sun（太阳参考，字段见 edit_scene 说明）。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":  doc,
 				"object_ids":   strs("只读这些物件的完整信息，最多 200 个"),
@@ -82,23 +82,37 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
 				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
 				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
-				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"）；" +
+				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）, iso:25…102400, shutter_s:1/8000…30（快门，秒；iso 和 shutter_s 只在物理天空下生效）}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"、100、1/4000）；" +
 				"视场角按画面长边对应传感器长边：同一焦距下 2:3 竖幅和 3:2 横幅拍到的范围一样大，只是方向不同；depth_of_field 打开后白模导出按光圈和对焦虚化（线稿不虚化）。" +
 				"空物体是没有子物件的 group，可以当对焦目标或父级。" +
 				"add_objects 和 update_objects 的条目可写 look_at:[x,y,z]（世界坐标）代替 transform.rotation：摄像机和灯光的 −Z、其余物件的 +Z 对准该点（同 three.js Object3D.lookAt），update 时 transform 可只写 position 或省略；父级在同一次修改里也被移动时会被拒绝，分两次提交。" +
 				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
-				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；set_render{render:{mode?:clay|lit, exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
+				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:physical, …见下}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；" +
+				"set_render{render:{mode?:clay|lit, exposure_ev?:-10…10（物理天空以外的曝光补偿）, exposure_ev100?:-10…20（物理天空下临时视点和预设取景的曝光）, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
+				"物理天空（真实的大气和太阳，调时间产生真实的光照变化）sky:{kind:physical, sun_mode:location（按地点和时间推算太阳）|manual（用 sun_elevation_deg、sun_azimuth_deg）, latitude_deg:-90…90, longitude_deg:-180…180（东经为正）, " +
+				"timezone（IANA 时区名，大小写与时区库一致，如 Asia/Shanghai、Europe/London；夏令时由时区处理）, place（显示用地名，≤80 字）, date:\"YYYY-MM-DD\"（必填）, local_time:\"HH:MM\"（当地时刻）, " +
+				"north_azimuth_deg:0…360（场景里正北的方位，与 sun_azimuth_deg 同一约定，默认 180 即 −Z 为北）, sun_elevation_deg:-10…90, sun_azimuth_deg（手动模式用）, altitude_m:0…20000（海拔，米）, air_density:0…10, dust_density:0…50, ozone_density:0…10, " +
+				"sun_disc:bool, sun_size_deg:0.1…10（太阳盘角直径，默认 0.545）, sun_strength:0…10（太阳亮度倍率）, sun_temperature_k:2000…12000（色温，6500 为原色，越低越暖）}：" +
+				"地点三项（latitude_deg、longitude_deg、timezone）一起写或都不写，date 必填，其余省略取默认（上海 31.2304、121.4737，12:00，晴朗，太阳盘开，亮度 1，6500 K）；不能带 turbidity、color。" +
+				"大气预设（写四个字段）：晴朗 altitude_m 0、air_density 1、dust_density 1、ozone_density 1；雾霾 dust_density 12（其余同晴朗）；高原 altitude_m 4000、dust_density 0.2；沙尘 dust_density 40。" +
+				"物理天空下天空光由大气算出，环境光不生效；太阳、天空和灯光都是物理单位（晴天正午约 10 万 lux，灯光坎德拉），雾按它所在处的照度着色。" +
+				"太阳参考：物理天空的地点模式下，read_scene 和写了 set_environment 的 edit_scene 结果带 sun：elevation_deg（当前视高度，含折射）、compass_deg（罗盘方位，正北 0° 顺时针）、" +
+				"scene_azimuth_deg（换成场景方位，与 sun_azimuth_deg 同一约定，已计入 north_azimuth_deg）、solar_noon、noon_elevation_deg、sunrise、sunset（太阳上缘过地平线）、polar（day 极昼、night 极夜）、" +
+				"morning 和 evening 里的 golden_hour 黄金时刻（太阳高度 −4°…6°）和 blue_hour 蓝调时刻（−6°…−4°），都是 [起, 止]；时刻都是场景时区的 HH:MM，当天没有的项省略。" +
+				"要黄金时刻、蓝调时刻或某个太阳高度时，按它选 local_time；摆逆光（摄像机朝向太阳）、侧光机位时用 scene_azimuth_deg。观感仍用 render_view 的 lit 确认。" +
 				"资产库里的模型：search_assets 按 kind:model 查到后，用它的 content_revision_id 写 add_objects 的 model{content_revision_id}，并把 model 要点里的 materials 原样写进 material_slots（资产带的材质）；可放多个实例，都引用同一版模型；size_m 与 mount 见搜索结果的 model 要点。" +
-				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit）。" +
+				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit；物理天空下改为手动曝光，见建议曝光）。" +
 				"渲染器 render.engine 只作用于材质光照（lit 的导出与回看；白模和线稿总按工作台画）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
 				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
-				"打光：室外由程序天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（太阳约 2.2）；投射阴影的灯光不超过 4 盏，太多会卡。" +
-				"建议曝光：太阳高于 30° 为 0，15°–30° 为 +1，5°–15° 为 +2，日落前后 +2～+3；只有灯光的室内 0～+1。配好材质、打好光后用 render_view 的 mode:lit 回看，过暗或过曝调 exposure_ev。" +
+				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；投射阴影的灯光不超过 4 盏，太多会卡。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
+				"建议曝光：物理天空按真实相机曝光，给摄像机设 iso 和 shutter_s（f_stop 同时决定景深），EV100 = log2(f_stop²/shutter_s) − log2(iso/100)，EV100 越大画面越暗；" +
+				"参考值：晴天 15、阴天 12–13、日落 9–12、蓝调时刻 5–8、城市夜景 3–5、月光 −3；render.exposure_ev100 只管临时视点和预设取景，不影响摄像机。" +
+				"其他天空用 exposure_ev：太阳高于 30° 为 0，15°–30° 为 +1，5°–15° 为 +2，日落前后 +2～+3；只有灯光的室内 0～+1。配好材质、打好光后用 render_view 的 mode:lit 回看，过暗或过曝调曝光。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +
 				"摆好摄像机后先用 render_view 按摄像机回看确认构图，再用 export_shots 导出。新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
@@ -154,7 +168,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	default:
 		return &schema.ToolInfo{
 			Name: renderViewTool,
-			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光补偿）出图，检查材质和打光。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
+			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光）出图，检查材质和打光；物理天空下摄像机按自己的 iso、shutter_s、f_stop 曝光，临时视点和预设取景按 render.exposure_ev100 曝光。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
 				"截图与编辑器视口的白模或最终渲染、对应的导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
 				"截图 mode:lit 按场景的渲染器（render.engine）画，素模按工作台；长边 1024；实时 GI 要多帧累积，比工作台慢。截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{

@@ -74,6 +74,11 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 - 渲染器（R1 起，`render/gpu.ts`、`render/sceneRenderer.ts`）：上面的 WebGL 链已换成 `WebGPURenderer` + TSL 的 `RenderPipeline`，WebGPU 不可用时退回它的 WebGL2 后端；画面与原先在阈值内一致，组成以 `sceneRenderer.ts` 头注释为准。
 - 渲染设置（R2，`render/engines.ts`）：场景的 `render.engine` 决定最终渲染和材质光照用工作台还是实时 GI（`render/realtimeGI.ts`：SSGI、SSR、接触阴影、TRAA）；白模、线框、材质预览、线稿和正交视图总是工作台（`effectiveEngine`）。灯光图标、摄像机视锥、空物体等辅助对象在 aside 层，画进视口但不进 AO 与实时 GI 的 prepass。实时 GI 的一张图先画 12 帧让时域节点稳定，再平均 K 帧（导出 64、`render_view` 16；工作台 1 帧，`drawnFrames`）；出图（`final`）的 GI 只做空间滤波，视口用递归降噪。帧之间 `gpu.settle()` 等 GPU 做完，查设备丢失和截止时间；单张时限按估算的 8 倍、至少 30 秒，`render_view` 至少 60 秒，助手导出整批以 25 分钟为上限。导出长边按 `render.resolution`（1K–8K），4K、8K 的 clay 与 lit 编成 JPEG 0.95，其余 PNG；长边超过设备纹理上限时出图前失败，4K、8K 出图时设备丢失以 `host_error` 结束、不回队列。
 - 白模与色调映射（W1，scene-display-look）：白模（视口、正交视图、`render_view` 与导出的 `clay`、资产库预览的「白模」）用固定的工作室光（`render/studio.ts`），与 Blender 实体模式的默认一致：一盏平行主光从视角左上方照来，`SceneRenderer.render` 画之前用 `aimStudio` 按摄像机转好（资产库预览在 `useFrame` 里调用），加半球补光和一点环境光，不投影，保留 AO，背景是中性灰 `STUDIO_BACKGROUND`；不读场景的天空、太阳、环境光、雾和灯光物件。所以 `clay` 的渲染指纹不计 `environment`，`clay`、`lit` 另带常量键 `view_transform: "agx"`（`creativescene/fingerprint.go`）：W1 之前的白模和材质光照导出各显示一次过时，线稿不受影响。输出节点除线框外都按 AgX 色调映射（线框保持 ACES Filmic，画面不变），资产库预览在 `onCreated` 设 AgX；最终渲染的常量在 AgX 下重新标定（`render/litLook.ts`）。
+- 物理天空与手动曝光（W2，scene-physical-sky）：
+  - 天空：`objects/Lighting.tsx:PhysicalLighting` 用 Hillaire 2020 的三张 LUT（`world/atmosphere/luts.ts`：透射率 256 × 64、多次散射 32 × 32、天空视图 384 × 216，RGBA16F）画背景，用不带太阳盘的同一节点生成天空光照（PMREM，200 ms 节流）。CPU 上另有一份同样的大气（`world/atmosphere/cpu.ts`）算太阳透射率和水平照度 E；两份只共享 `constants.ts`，e2e「W2 atmosphere drift」把 GPU 的 LUT 和 `sampleSkyView` 的方向采样与 CPU 对照。太阳位置由 `world/astro.ts`（`astronomy-engine`）按地点、日期、当地时刻算，换算 UTC 用 Temporal 的 compatible 规则。
+  - 单位：太阳约 12.8 万 lux（大气顶）× 亮度 × 色温，灯光坎德拉，自发光 cd/m²。天空视图和天空光照按 s_env（由 E 定的环境曝光）存进半精度，与摄像机无关。
+  - 预曝光：每次出图前 `SceneRenderer.render` 调 `world/exposure.ts:applyExposure(scene, k)`，灯光写 `userData.baseIntensity × k`、天空光照 `k / s_env`、雾 `雾色 × E / π × k`、全局 uniform `preExposure = k`（天空背景、太阳盘、自发光读它），画完把 `preExposure` 写回 1。k 由 `render/litLook.ts:frameExposure` 求：物理天空下 `1 / (1.2 · 2^EV100)`，场景摄像机的 EV100 由 ISO、快门、光圈得出（`host/framing.ts:cameraEV100`），临时视点、预设取景和视口自由视角用 `render.exposure_ev100`，`toneMappingExposure` 为 1；其他天空 k = 1，照旧按 `2^exposure_ev`。`render/gpu.ts` 在模块加载时给所有节点材质的输出钳到 60 000（SwiftShader 溢出会写 Inf）。
+  - 太阳参考：`creativescene/sun.go` 用 NOAA 公式在服务端算一份，物理天空的地点模式下随 `read_scene` 和写了环境的 `edit_scene` 结果给助手（`sun`），不存储、不进渲染指纹；口径与环境选项卡显示的一致（日出日落按 −0.833°，黄金时刻 −4°…6°，蓝调时刻 −6°…−4°）。
 
 ### 编辑视图
 
@@ -136,7 +141,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 - 单测：`node --test --experimental-transform-types scripts/creative-scene-agent.test.ts`（执行器、取景、认领循环、关闭提醒、编辑视图的活动、面板的清单逻辑）。
 - 浏览器：先在 `frontend/` 起 `npx vite --port 5179 --strictPort`，再跑
   - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
-  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5 起含最终渲染的标定检查（`calibration`）；
+  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5 起含最终渲染的标定检查（`calibration`）；W2 的检查都以 `W2 ` 开头（`SCENE_E2E_ONLY='W2 '`），`SCENE_E2E_W2_METAL=1` 让防漂移对照跑在本机 GPU 上，`SCENE_E2E_W2_PICTURES=<目录>` 导出物理天空参考场景的图，`SCENE_E2E_W2_SKIES=<基线目录>` 逐像素核对其他天空不变；
   - 帧时间（AC-9，只在点名时跑，需要本机 GPU）：`SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs`，用 Metal 后端的无头 Chromium、1600 × 1000、2 倍像素比，打印四种显示模式的平均与 p95 帧时间和加灯、删灯的最长一帧。
 - 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
 - 实测（只在点名时跑，经 `TestCreativeEditorBrowser` 起真实 API、媒体流水线和 PostgreSQL；测试端点 `/__test/scene-job` 像工具那样建任务，替身运行记下结果交回的时间）：
@@ -147,6 +152,6 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 
 - 后台标签页：真实 Chrome 隐藏 6.5 分钟后，烘焙与截图的耗时和前台相当（2026-10-18 实测 1.05 倍、1.00 倍）。前提是所有计时走 Worker 节拍、图片同步编码（`canvasBlob`）：Chrome 后台会把页面主线程的计时器和 `toBlob` 的空闲编码推迟到每秒乃至每分钟一次，新增等待时不要用页面计时器。
 - 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`）：C5 起助手可以编组、改挂，被改挂的物件和它进出的分组都不能单独恢复，按前后快照判断；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
-- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）。
+- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）；W2 加物理天空的字段、预设、太阳参考与两段曝光建议，`edit_scene` 从 7.7 KB 到 11.0 KB（约 1,900 字），`read_scene`、`render_view` 各加约 0.1 KB。`compaction_regression_test.go` 里最小的测试窗口随之从 8000 调到 9000 token。
 - 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

@@ -82,7 +82,11 @@
 
 ## 7. 助手与文档
 
-- [ ] 7.1 `scene_tools.go` 写入：`set_environment` 的物理天空写法（字段、单位、地点三项成组、IANA 时区名区分大小写、日期必填）；预设参数表；太阳的亮度与色温；物理天空下环境光不生效；太阳参考 `sun` 的字段、两个时段的口径和用法（按它选 `local_time`，用 `scene_azimuth_deg` 摆逆光、侧光的机位）；`set_render` 的 `exposure_ev100`；摄像机的 `iso`、`shutter_s`；两段曝光建议（物理天空给 EV100 参考值）；`render_view` 的临时视点按默认曝光。`scene_tools_test.go` 先固定关键句。`docs/dev/creative-scene-agent.md` 写物理天空、曝光和太阳参考，`docs/dev/agent-skills-tools.md` 记录说明的变更。完成判据：`make check-go PKG=./internal/creativeagent/...` 通过，说明增长的体积记进任务备注
+- [x] 7.1 `scene_tools.go` 写入：`set_environment` 的物理天空写法（字段、单位、地点三项成组、IANA 时区名区分大小写、日期必填）；预设参数表；太阳的亮度与色温；物理天空下环境光不生效；太阳参考 `sun` 的字段、两个时段的口径和用法（按它选 `local_time`，用 `scene_azimuth_deg` 摆逆光、侧光的机位）；`set_render` 的 `exposure_ev100`；摄像机的 `iso`、`shutter_s`；两段曝光建议（物理天空给 EV100 参考值）；`render_view` 的临时视点按默认曝光。`scene_tools_test.go` 先固定关键句。`docs/dev/creative-scene-agent.md` 写物理天空、曝光和太阳参考，`docs/dev/agent-skills-tools.md` 记录说明的变更。完成判据：`make check-go PKG=./internal/creativeagent/...` 通过，说明增长的体积记进任务备注
+  - `TestSceneToolsDescribeThePhysicalSky` 先红（26 句缺失）后绿，固定物理天空的字段与成组规则、时区大小写、`date` 必填、三个预设的数值、亮度与色温、环境光不生效、`exposure_ev100`、`iso`、`shutter_s`、EV100 公式与参考值、太阳参考与两个时段的口径、「按它选 local_time」，以及 `read_scene` 的 `sun`、`render_view` 的临时视点曝光。旧用例 `TestEditSceneDescribesThreejsFields` 固定的 `set_render` 整句随之改为两段（`exposure_ev` 后加了「物理天空以外的曝光补偿」）。`make check-go PKG=./internal/creativeagent/...` 与 `PKG=./internal/creativescene/...` 通过。
+  - 体积：`edit_scene` 从 7,682 字节（4,887 字）到 11,017 字节（6,784 字），多 3.3 KB；`read_scene` 391 → 491，`render_view` 1,005 → 1,132，`export_shots` 不变。
+  - 说明变长后，`compaction_regression_test.go:TestCompactionRejectsSummaryBeyondWindow` 的 8000 token 测试窗口放不下工具定义，正常的下一轮也失败；窗口调到 9000（最小可行值，超长摘要仍被拒绝），与 C3 加场景工具时调这些窗口的做法相同。这是挂载点清单外的改动。
+  - 文档：`docs/dev/creative-scene-agent.md` 加物理天空与手动曝光一节（LUT、单位、预曝光的落点、k 的取法、钳制、太阳参考）、W2 的 e2e 开关和说明体积；`docs/dev/agent-skills-tools.md` 的 `read_scene`、`edit_scene`、`render_view` 三行补 W2 的变化。
 
 ## 8. 验收证据
 
