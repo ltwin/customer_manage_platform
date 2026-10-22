@@ -286,7 +286,6 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 | `frontend/scripts/creative-scene-*.test.ts` | 修改 | 引擎函数、时限、拆分守护、SSGI fork 守护、导出尺寸 |
 | `frontend/scripts/creative-scene.e2e.mjs` | 修改 | AC-R2-1 至 AC-R2-6、AC-R2-8、AC-R2-9 用例 |
 | `frontend/scripts/creative-scene-agent.e2e.mjs` | 修改 | AC-R2-7 |
-| `frontend/scripts/creative-scene-agent-background.e2e.mjs` | 修改 | 隐藏标签页的实时 GI 连拍（AC-R2-5） |
 | `docs/dev/agent-skills-tools.md` | 修改 | 工具表与排空后升级记录 |
 | `docs/dev/creative-scene-agent.md` | 修改 | 导出尺寸与格式 |
 
@@ -298,7 +297,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
   - AC-R2-1、AC-R2-2：选项卡内容、自动切换、撤销、两个标签页同步、过时提示的三种情况；
   - AC-R2-3：盒子间的区域测量（红墙旁地面的红绿比、金属球区域与工作台的差、接触处亮度），图存 evidence；切回工作台对 R1 冻结参考图；
   - AC-R2-4：线框、材质预览、`line` 与工作台逐像素相同，正交角标；
-  - AC-R2-5：视口帧计数停在 N，残余噪点阈值；隐藏标签页实时 GI 连拍两次逐像素相同；
+  - AC-R2-5：视口帧计数停在 N，残余噪点阈值；隐藏标签页实时 GI 连拍两次、与前台在容差内（每通道差 ≤ 1，差 > 8 的像素 ≤ 0.01%），用例在 `creative-scene.e2e.mjs` 的 `SCENE_E2E_HIDDEN`（与 R1 的工作台确定性同一用例）；
   - AC-R2-6：四档 × 三种画幅的尺寸与格式，8K 1:1 能上传；纹理上限不够的失败（测试钩子把上限压低）；4K 丢设备的 `host_error`（R1 的丢设备钩子）；
   - AC-R2-7：助手脚本化回合；
   - AC-R2-8：`forceWebGL` 对照；SwiftShader 下出图不报错。

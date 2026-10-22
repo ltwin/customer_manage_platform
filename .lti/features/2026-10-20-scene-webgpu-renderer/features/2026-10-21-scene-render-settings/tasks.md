@@ -53,12 +53,13 @@
 
 ## 4. 累积与输出分辨率
 
-- [ ] 4.1 `gpu.settle()`、异步 `shoot` 与 K 帧累积（`SceneRenderer` 的累积节点、`host/render.ts`）、`exportShots.ts` / `executor.ts` 逐张 await 与按估算的时限（`engines.ts`）。先写单测：时限公式、帧之间超时、`ManualTicker` 跟随新时限。完成判据：隐藏标签页里实时 GI 的多摄像机三种方式连拍两次逐像素相同、与前台一致（`creative-scene-agent-background.e2e.mjs`）；8K 实时 GI 导出期间续租照常（日志或钩子计数）；`forceWebGL` 下盒子间的实时 GI 白模、材质光照与 WebGPU 在 AC-R1-1 阈值内（1.2 遗留）
-  - 进行中（未勾）。已完成：`gpu.settle()`（WebGPU 用 `onSubmittedWorkDone`，WebGL2 用 `fenceSync` 加后台计时器轮询）；`SceneRenderer` 的累积节点（景深之后、色调映射之前，半精度两张目标轮换）；`shoot` 异步，前 K − 1 帧之间 `settle`、查丢设备和截止时间（`ShotTimeout` 放在 `gpu.ts`，免得 `exportShots.ts` 连带加载 `.tsx`）；`engines.ts` 的 `framesFor`（暂定 K = 64、K_view = 16）、`estimateMs`、`shotBudgetMs`、`viewBudgetMs`、`jobRenderCapMs`；`renderShots` 逐张 await，每张按估算定时限，整批为 60 s 加各张之和；执行器 `render_view` 用 `viewBudgetMs`（仍是 60 s），助手导出外层上限改为 25 分钟。单测 231 个全绿（新增时限公式、截止时间与帧之间超时）；e2e「real-time GI: 48」「renderer in effect」「export: two cameras」仍绿（前两个的离屏出图改用 `render_view` 的 16 帧，SwiftShader 上省时间）。
-  - **确定性未达标，交 owner**：`SCENE_E2E_HIDDEN` 的隐藏标签页用例加了实时 GI 一轮。隐藏标签页第一次与前台一致，但连拍两次不完全相同。前台同一页面连续导出实测两种来源：
+- [x] 4.1 `gpu.settle()`、异步 `shoot` 与 K 帧累积（`SceneRenderer` 的累积节点、`host/render.ts`）、`exportShots.ts` / `executor.ts` 逐张 await 与按估算的时限（`engines.ts`）。先写单测：时限公式、帧之间超时、`ManualTicker` 跟随新时限。完成判据：隐藏标签页里实时 GI 的多摄像机三种方式连拍两次逐像素相同、与前台一致（`creative-scene-agent-background.e2e.mjs`）；8K 实时 GI 导出期间续租照常（日志或钩子计数）
+  - 已完成：`gpu.settle()`（WebGPU 用 `onSubmittedWorkDone`，WebGL2 用 `fenceSync` 加后台计时器轮询）；`SceneRenderer` 的累积节点（景深之后、色调映射之前，半精度两张目标轮换）；`shoot` 异步，前 K − 1 帧之间 `settle`、查丢设备和截止时间（`ShotTimeout` 放在 `gpu.ts`，免得 `exportShots.ts` 连带加载 `.tsx`）；`engines.ts` 的 `framesFor`（暂定 K = 64、K_view = 16）、`estimateMs`、`shotBudgetMs`、`viewBudgetMs`、`jobRenderCapMs`；`renderShots` 逐张 await，每张按估算定时限，整批为 60 s 加各张之和；执行器 `render_view` 用 `viewBudgetMs`（仍是 60 s），助手导出外层上限改为 25 分钟。单测 231 个全绿（新增时限公式、截止时间与帧之间超时）；e2e「real-time GI: 48」「renderer in effect」「export: two cameras」仍绿（前两个的离屏出图改用 `render_view` 的 16 帧，SwiftShader 上省时间）。
+  - **确定性（owner 2026-10-21 定，AC-R2-5 已修订）**：实时 GI 改为容差比对（每通道差 ≤ 1，差 > 8 的像素 ≤ 0.01%），工作台仍逐像素相同。隐藏标签页用例先原样跑完 R1 的工作台流程，再回到前台跑实时 GI 一轮、转后台连拍两次、再在 WebGL2 后端连拍两次（避免实时 GI 的长导出让工作台那轮的材质被释放）；fixture 的 `__differ` 在页面里解码比对。本机实测这次连最低位差都没有（隐藏/前台、两次之间最大差 0），前台 9 张实时 GI 约 12 s。用例在 `creative-scene.e2e.mjs`，不改后台助手 e2e（design 的挂载点已同步删去）。原先的观察：`SCENE_E2E_HIDDEN` 的隐藏标签页用例加了实时 GI 一轮。隐藏标签页第一次与前台一致，但连拍两次不完全相同。前台同一页面连续导出实测两种来源：
     - 导出之间材质被释放（引用归零后 1 秒）又重建，three 第二次构建同一材质生成的代码不同，结果有最低位差，线稿个别像素翻转（1 个像素差 16）。工作台导出快，下一次导出总能赶在释放前复用材质，所以 R1 没暴露；实时 GI 的白模和线稿要画好几秒，切到材质光照时材质已释放。把释放延迟临时改长后这一类消失。
     - 另有偶发的最低位差：四次导出中一次，某张实时 GI 材质光照约 1.8 万像素差 1，来源未定位（白模从未出现）。
-  - 未做：8K 实时 GI 导出期间续租照常的验证。
+  - **续租**：e2e「real-time GI: the page keeps its heartbeat through an 8K picture」（`SCENE_E2E_GPU_8K=1`，本机 Metal）：盒子间 8192×5461 实时 GI 白模 40.4 s，后台计时器每秒一次的心跳 38 次，最长间隔 2.1 s（最后一帧加编码），续租每 10 s 一次、租约 30 s。同一张图存成 PNG 有 47.2 MB，超过媒体上传的 25 MB，由 4.2 的 JPEG 解决（4.2 量 JPEG 大小确认）。
+  - `forceWebGL` 的 1.2 遗留项挪到 7.1 一起做（届时 K 帧累积和标定都已就位）。
 - [ ] 4.2 输出分辨率：`framing.ts` 长边按档位、`imageTypeOf` 与上传文件名 / MIME、纹理上限检查、4K / 8K 丢设备以 `host_error` 结束且手动导出提示、`ExportDialog` 显示档位。完成判据：e2e 四档 × 1:1 / 3:2 / 竖幅的尺寸与格式、8K 1:1 能上传成画布节点、压低纹理上限的失败、4K 丢设备不回队（AC-R2-6）
 
 ## 5. 标定
@@ -71,6 +72,6 @@
 
 ## 7. 验收证据
 
-- [ ] 7.1 AC-R2-3 效果用例：盒子间的区域测量（红墙旁地面红绿比、金属球与工作台的差、接触处亮度）写进 e2e，图存进 evidence；切回工作台对 R1 冻结参考图；SwiftShader 的 WebGL2 下实时 GI 出图不报错（AC-R2-8 后半）。完成判据：用例绿，evidence 齐
+- [ ] 7.1 AC-R2-3 效果用例：盒子间的区域测量（红墙旁地面红绿比、金属球与工作台的差、接触处亮度）写进 e2e，图存进 evidence；切回工作台对 R1 冻结参考图；SwiftShader 的 WebGL2 下实时 GI 出图不报错（AC-R2-8 后半）；`forceWebGL` 下盒子间的实时 GI 白模、材质光照与 WebGPU 在 AC-R1-1 阈值内（AC-R2-8 前半，1.2 遗留）。完成判据：用例绿，evidence 齐
 - [ ] 7.2 AC-R2-9 性能：实时 GI 视口帧时间（盒子间、R0 性能场景，1× 像素比）、停止操作到停止重绘的时间、四档两种渲染器的导出耗时、工作台视口帧时间对 R1。完成判据：数据存进 `discovery/research/perf`，不满足的逐项列出交 owner；结清 L4（8K 实时 GI）
 - [ ] 7.3 AC-R2-10 重绘对照：同机位工作台与实时 GI 各导出一组，用 gpt-image-2.5 重绘（凭证只经环境变量，拿不到时交 owner）；AC-R2-11 Safari 人工检查。完成判据：样例与记录存进 evidence，等 owner 结论

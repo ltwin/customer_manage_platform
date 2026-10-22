@@ -1,6 +1,6 @@
 {
   "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-render-settings",
   "kind": "feature",
   "assurance": "governed",
@@ -27,11 +27,11 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-21T17:25:44.922Z",
-  "updatedAt": "2026-10-21T18:07:41.217Z",
+  "updatedAt": "2026-10-22T01:52:06.019Z",
   "risk": {
     "factors": [
-      "perf-sensitive",
-      "broad-impact"
+      "broad-impact",
+      "perf-sensitive"
     ]
   },
   "approvals": {
@@ -47,7 +47,15 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
+  "revisions": [
+    {
+      "at": "2026-10-22T01:52:05.238Z",
+      "summary": "AC-R2-5 的隐藏标签页确定性：实时 GI 由逐像素相同改为容差（每通道差 ≤ 1、差 > 8 的像素 ≤ 0.01%），工作台仍逐像素相同；用例并入 creative-scene.e2e.mjs 的 SCENE_E2E_HIDDEN，不改后台助手 e2e。原因：three 重建材质后着色代码会变、实时 GI 有偶发最低位差。owner 2026-10-21 选定。",
+      "contentHash": "6c3c62da883f2314",
+      "added": [],
+      "removed": []
+    }
+  ],
   "baseline": {
     "commit": "bc3b1948c5dd58e1b52a6f12b3be0ffd50704f0b",
     "at": "2026-10-21T18:07:40.377Z",
