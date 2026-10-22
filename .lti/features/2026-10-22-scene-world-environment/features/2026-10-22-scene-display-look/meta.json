@@ -1,6 +1,6 @@
 {
   "uid": "10672724-36fa-4e3e-b860-84a7c5e6bccd",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-display-look",
   "kind": "feature",
   "assurance": "governed",
@@ -20,9 +20,9 @@
     ],
     "delivers": []
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-22T08:34:32.043Z",
-  "updatedAt": "2026-10-22T09:12:52.452Z",
+  "updatedAt": "2026-10-22T09:15:15.005Z",
   "risk": {
     "factors": [
       "broad-impact"
@@ -42,8 +42,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "f48841a344b52764e4ccc2df2c1f93e9b2f82178",
+    "at": "2026-10-22T09:15:14.736Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "fe7cccadff340368937d0e75d6638d52a84aef5f20f89e239b9749a047b8141c"
+    },
+    "preExisting": [
+      ".lti/snapshots/fe7cccadff340368937d0e75d6638d52a84aef5f20f89e239b9749a047b8141c.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
