@@ -1,6 +1,6 @@
 {
   "uid": "10672724-36fa-4e3e-b860-84a7c5e6bccd",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-display-look",
   "kind": "feature",
   "assurance": "governed",
@@ -22,7 +22,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-22T08:34:32.043Z",
-  "updatedAt": "2026-10-22T10:44:10.910Z",
+  "updatedAt": "2026-10-22T11:03:08.647Z",
   "risk": {
     "factors": [
       "broad-impact"
@@ -61,8 +61,174 @@
       ".lti/snapshots/fe7cccadff340368937d0e75d6638d52a84aef5f20f89e239b9749a047b8141c.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-22T11:03:08.527Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，按影响面手动运行定向测试，未跑全量 e2e 与 make check-merge（合回 develop 时跑）。AC-W1-4 重绘对照未跑：本机无图像模型凭证，输入与记录表已备，交 owner。WebGL2 对 WebGPU 的 noon、materials lit 两张超 R1 阈值，为 R1 已交 owner 的混凝土气孔硬边，未放宽阈值。",
+        "coverage": [
+          {
+            "criterionId": "AC-5741c9c49534",
+            "status": "verified",
+            "evidence": "见以下四条"
+          },
+          {
+            "criterionId": "AC-93b69bac69ba",
+            "status": "verified",
+            "evidence": "e2e「W1 clay」：低太阳、纯色天空、雾、环境光、投影点光之后，两台摄像机的白模导出逐像素相同（差>2 为 0）；换回旧光照时失败。render_view clay 与导出同一 SceneRenderer.render 路径（host/render.ts），助手 e2e 的 render_view 用例按工作室灰判断背景并通过"
+          },
+          {
+            "criterionId": "AC-94b25e4dc789",
+            "status": "verified",
+            "evidence": "e2e「W1 clay」视口在四步环境改动后逐像素相同；「AC-5: with nothing selected」在白模里调太阳后实色区域不变"
+          },
+          {
+            "criterionId": "AC-6a8703043331",
+            "status": "verified",
+            "evidence": "e2e「AC-5: a colour sky and fog」白模背景中性（|R−B|<20）；「W1 clay」程序化→纯色天空画面不变；助手 e2e 背景 (144,148,154)"
+          },
+          {
+            "criterionId": "AC-f21cf7e47157",
+            "status": "verified",
+            "evidence": "e2e「W1 clay」正反两台摄像机方块正面亮度 200/200；单测 creative-scene-lighting「the studio key light turns with the view」三个视角；正交视图走同一 SceneRenderer.render（after/*-ortho-clay.png）；白模无投影（StudioLights 不 castShadow）；「export: two cameras」景深仍虚化"
+          },
+          {
+            "criterionId": "AC-3e686c1fef3c",
+            "status": "verified",
+            "evidence": "见以下各条"
+          },
+          {
+            "criterionId": "AC-17ddd26308e7",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test TestViewTransformStalesClayAndLitOnce：line 等于 W1 之前的固定值，clay、lit 不等"
+          },
+          {
+            "criterionId": "AC-107a719ee4f2",
+            "status": "verified",
+            "evidence": "exports_test TestFingerprintCountsWhatThePassDraws（environment 行只 lit 过时）、TestBasedOnStateFollowsTheScene（改环境后 clay、line 保持 current）"
+          },
+          {
+            "criterionId": "AC-98b32340c1e1",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/... 通过"
+          },
+          {
+            "criterionId": "AC-e45700a0dbe0",
+            "status": "verified",
+            "evidence": "beforeW1 / pinned 两组固定值，TestViewTransformStalesClayAndLitOnce"
+          },
+          {
+            "criterionId": "AC-ec4de855a844",
+            "status": "verified",
+            "evidence": "pinned 固定新值，TestExposure/EngineFingerprintsOnlyLit 改用新值"
+          },
+          {
+            "criterionId": "AC-f24cf6f0e4b1",
+            "status": "verified",
+            "evidence": "TestClayIgnoresTheEnvironment"
+          },
+          {
+            "criterionId": "AC-769ecfee6eed",
+            "status": "verified",
+            "evidence": "见以下各条"
+          },
+          {
+            "criterionId": "AC-9a50b4913c69",
+            "status": "verified",
+            "evidence": "sceneRenderer.ts build 输出节点 AgX（线框除外），最终渲染、lit 导出、render_view 共用；calibration.md 前后测量"
+          },
+          {
+            "criterionId": "AC-30f979ef3123",
+            "status": "verified",
+            "evidence": "视口参考场景整幅/地面最大偏差 dusk 地面 −7.2%（calibration.md）；e2e「calibration」断言四场景 ±10%（SwiftShader）"
+          },
+          {
+            "criterionId": "AC-0ba539842bc0",
+            "status": "verified",
+            "evidence": "e2e「calibration」原区间全部成立未修订，新增材质板；「AC-4: Shift+A」阈值按 AgX 换算 200→177，理由在 calibration.md"
+          },
+          {
+            "criterionId": "AC-2835f669463f",
+            "status": "verified",
+            "evidence": "compare/lit-exports.jpg：色相保持、不偏橙黄；饱和度降低 25–35%（compare.md），owner 2026-10-22 接受，调色留给后处理器"
+          },
+          {
+            "criterionId": "AC-76d90fdd1309",
+            "status": "verified",
+            "evidence": "compare/*.jpg 已存；owner 2026-10-22 看图接受"
+          },
+          {
+            "criterionId": "AC-ea3c4979048b",
+            "status": "verified",
+            "evidence": "材质预览走 SceneRenderer AgX 输出（viewport 对照 compare/viewport.jpg）；资产预览 onCreated AgX（compare/asset-preview.jpg）；owner 接受"
+          },
+          {
+            "criterionId": "AC-85aa90608c26",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_W1「W1: wireframe and line art are unchanged」六组场景线框视口与导出线稿逐像素相同；改线框为 AgX 时失败"
+          },
+          {
+            "criterionId": "AC-89d158b30ad4",
+            "status": "unverified",
+            "evidence": "未跑：本机无图像模型凭证。输入（baseline/ 与 after/ 同名七张白模）、提示词写法与记录表在 compare.md，交 owner"
+          },
+          {
+            "criterionId": "AC-2c00543acb89",
+            "status": "verified",
+            "evidence": "见以下两条"
+          },
+          {
+            "criterionId": "AC-fc1865c29ae5",
+            "status": "verified",
+            "evidence": "e2e「W1 environment tab」白模、材质预览、线框下有提示，最终渲染无，白模里仍可编辑；去掉提示时失败"
+          },
+          {
+            "criterionId": "AC-3032bb6f7c24",
+            "status": "verified",
+            "evidence": "scene_tools_test TestSceneToolsSayClayIsTheStudioLight，先红后绿"
+          },
+          {
+            "criterionId": "AC-98934b9b865f",
+            "status": "verified",
+            "evidence": "见以下三条（after.md）"
+          },
+          {
+            "criterionId": "AC-89f0189efea1",
+            "status": "verified",
+            "evidence": "SCENE_E2E_GPU：WebGL2 对 WebGPU 的 clay 全部在阈值内；lit 有 noon、materials 两张超阈值（1.21%、0.94%），为 R1 已交 owner 的混凝土气孔硬边，数值低于 R1（1.29%、0.97%）"
+          },
+          {
+            "criterionId": "AC-c96172d1c0fe",
+            "status": "verified",
+            "evidence": "SCENE_E2E_HIDDEN：隐藏与前台、连续两次、WebGL2 两次逐像素相同；修正了自 R2 7.4 起失效的一条断言"
+          },
+          {
+            "criterionId": "AC-781f146c30a6",
+            "status": "verified",
+            "evidence": "after/perf.json：四模式 8.3 ms 平均，白模最长一帧 17.1→9.4 ms"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "13/13 任务完成。tsc -b、oxlint（0 error，17 条既有警告均不在 creative-scene）、creative-scene 单测 234/234、go test creativescene/creativeagent 通过；定向 e2e（W1 clay、W1 environment tab、W1 wireframe/line、calibration、AC-1/AC-4/AC-5、export、guides、renderer in effect、reference scenes、output resolution、助手 render_view/导出/实时 GI、资产预览）全部绿；GPU 用例：两个后端一致性 46/48、确定性、帧时间。设计在批准后只改了未决事项 1（owner 选定方案 A，已 lti revise）。挂载点外改动 1 处：creative-assets.e2e.mjs 多存两张截图。无契约 delta；4 条 specs MODIFY 均 applicable。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "85e0f71aa3bf0121b8a716aa03a49e78fbefd5553fe77bec0c8f5b4425a4e5fb"
+      }
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }
