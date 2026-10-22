@@ -67,3 +67,4 @@
 - [x] 8.2 AC-W1-3、AC-W1-4 的 owner 看图材料：参考场景的前后对照（含落日天空和饱和色灯光、背景与视口辅助对象的颜色）；同一组机位 W1 前后的白模交 gpt-image-2.5 重绘（凭证只经环境变量，拿不到时交 owner）。完成判据：样例与记录存进 `discovery/research/redraw` 和 `calibration`，等 owner 结论
   - 对照图和记录见 `discovery/research/compare.md`、`compare/`。本机没有图像模型凭证，重绘的输入（前后同名的七张白模导出）、提示词写法和记录表已备好，交 owner。
   - 需要 owner 判断的发现：AgX 下饱和色的饱和度降低约 25–35%（盒子间红墙 0.75 → 0.56，草地 0.57 → 0.38），色相保持。要补救可以像 Blender「Punchy」那样在 AgX 后加饱和度和对比度，但这会改变 Epic design「显示变换」，需先修订 Epic。
+  - owner 2026-10-22：饱和度接受、不改，调色留给以后的后处理器；本 feature 收尾。重绘对照没有跑（本机无凭证），owner 未给结论。
