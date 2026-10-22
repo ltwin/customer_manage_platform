@@ -133,10 +133,10 @@ payload = {client_id, client_name, redirect_uri, code_challenge, state, resource
 服务端：
   1. 解析客户端：https URL → CIMD 拉取；否则查 DCR 客户端。失败 → 302 /oauth/consent?error=invalid_client
   2. redirect_uri 精确匹配（回环地址忽略端口）。失败 → 302 /oauth/consent?error=invalid_redirect_uri
-  3. 其余参数：response_type=code、S256 的 code_challenge（43–128 字符）、resource 等于 MCP 地址、scope 为空或 creative
+  3. 其余参数：response_type=code、S256 的 code_challenge（43–128 字符）、resource 为空或等于 MCP 地址（只有一个资源，缺省就是它；换令牌同此规则）、scope 为空或 creative
      失败 → 302 redirect_uri?error=invalid_request|invalid_target|invalid_scope&state&iss
   4. 签请求包 → 302 /oauth/consent?request=…
-前端确认页（需要登录；未登录先去 /login，登录后带着原查询串回来）：
+前端确认页（需要登录；未登录时由这一页自己带着原查询串去 /login，通用的登录回跳仍只保留路径）：
   解码 payload 显示客户端名、回调主机、能做的事和数据去向
   点「允许」或「拒绝」→ POST /api/v1/oauth/authorize/decision {request, decision}
 服务端 decision：
@@ -228,7 +228,7 @@ type ExternalResult struct {
 | 限流 | `rate_limited` | 带 `retry_after_s` |
 | 其他 | `internal` | 「系统内部错误，原因已记录（编号 …）」，编号写进日志 |
 
-运行路径的错误分支（`runtime.go` 中 `executeTool` 的 `switch`）抽成 `toolFailure(err)`，两条路径共用。运行看到的 JSON 不变。
+外部路径的映射在 `external.go:externalRefusal`，按与运行路径相同的错误类型分支，领域写的拒绝原文原样透传。运行路径的 `switch` 没有抽出来（见「局部设计与偏差」第 7 条）。
 
 ### 宿主识别
 
@@ -254,7 +254,7 @@ type ExternalResult struct {
 
 ### 动态注册限流
 
-同一 IP 每小时 ≤ 20 次注册，超出返回 429 和 `Retry-After`。复用现有的 `securitybudget`（`store.ConsumeSecurityAttemptBudget`），IP 取自 `httpapi` 的可信代理解析（与登录相同）。
+同一 IP 每小时 ≤ 20 次注册，超出返回 429 和 `Retry-After`。计数在进程内存（与工具调用限流相同，见「局部设计与偏差」第 5 条），IP 取自 `httpapi` 的可信代理解析（与登录相同）。原计划复用 `securitybudget`，但它的 `action` 是库表 CHECK 枚举（迁移 0020），还要登记策略版本和摘要候选；为一个按 IP 的注册上限再加一次迁移不值得。
 
 ### get_capabilities 与 list_canvases
 
@@ -362,7 +362,10 @@ C2 起，各子项在这里补本批工具的规则。
 4. **会话**：用 SDK 默认的有状态会话（`Mcp-Session-Id`），不开 `Stateless`。
    - C2b 要按会话记住客户端是否声明了卡片扩展，无状态模式拿不到 `initialize` 的参数。
    - 服务重启后会话丢失，宿主按规范重新初始化。
-5. **限流计数在进程内存**：单进程部署（Epic 技术选型），重启清零可以接受。
+5. **限流计数在进程内存**：工具调用和 DCR 都是。单进程部署（Epic 技术选型），重启清零可以接受。
+6. **外部工具目录放在 `external.go`**：原计划在 `tool_registry.go` 的工具定义上加 `external` 标记。实际做成 `externalCatalog()`：同名工具复用内置工具的 `Info()` 和领域入口，外部只多 `title`、只读标记和说明附录。内置注册表不动，排除工具不会因为漏标而泄漏到外部。
+7. **`toolFailure` 没有抽出**：运行路径的错误分支还夹着运行自己的语义（停止运行、写工具消息），抽成共用函数要改运行路径的测试。外部路径改为 `externalRefusal` 按同样的错误类型映射，拒绝原文与内置助手一致（X-I4 的要求满足）。
+8. **断开后列表就地显示「已断开」**：接入页断开后，那一行换成服务端返回的连接，显示「已断开」；下一次刷新列表（每分钟，或回到页面时）才移走。实测时发现最初的实现是直接移走，与 AC-C1-5 不符，已改。
 
 ## 接口与数据契约
 
@@ -386,31 +389,30 @@ C2 起，各子项在这里补本批工具的规则。
 | `backend/internal/platform/store/migrations/0080_external_agent_oauth.down.sql` | 新增 | 有连接行时拒绝 |
 | `backend/internal/platform/store/oauth.go` | 新增 | `oauth.Store` 的实现 |
 | `backend/internal/platform/store/realtime_events.go:Store.RealtimeWatching` | 新增 | 账号有没有某类实时订阅 |
-| `backend/internal/platform/oauth/` | 新增 | `service.go`、`metadata.go`、`client.go`（DCR、CIMD、回调规则）、`authorize.go`（请求包、确认）、`token.go`（换令牌、refresh、访问令牌）、`hostkind.go`、`connections.go`、`errors.go` |
+| `backend/internal/platform/oauth/` | 新增 | `service.go`（配置、错误类型、DCR 限流）、`store.go`（存储接口）、`metadata.go`、`client.go`（DCR、CIMD、回调规则）、`authorize.go`（请求包、确认）、`token.go`（换令牌、refresh、访问令牌）、`hostkind.go`、`connections.go` |
 | `backend/internal/platform/auth/crypto.go:DerivePurposeKey` | 新增 | 导出按用途派生密钥，供 `oauth` 使用 |
 | `backend/internal/platform/config/config.go` | 修改 | `MCP_ENABLED` |
 | `backend/internal/platform/llmgateway/budget.go:Service.MonthBudget` | 新增 | 本月剩余额度只读查询 |
-| `backend/internal/creativemedia/agent.go:Service.AgentImageFit` | 新增 | 长边与字节上限内的图片 |
+| `backend/internal/creativemedia/agent.go:FitPreview` | 新增 | 长边与字节上限内的图片 |
 | `backend/internal/creativeagent/read_access.go` | 新增 | `readAccess` 接口与运行、外部两个实现 |
 | `backend/internal/creativeagent/context.go:runtimeHandler.readCanvas` | 修改 | 改为调用共用核心 `readCanvasView` |
 | `backend/internal/creativeagent/context.go:runtimeHandler.readAsset` | 修改 | 改为调用共用核心 `readAssetResult` |
 | `backend/internal/creativeagent/library_tools.go:runtimeHandler.searchAssets` | 修改 | 共用核心 |
 | `backend/internal/creativeagent/library_tools.go:runtimeHandler.readLibrary` | 修改 | 共用核心 |
-| `backend/internal/creativeagent/runtime.go:toolFailure` | 新增 | 从读工具执行的错误分支抽出，两条路径共用 |
-| `backend/internal/creativeagent/tool_registry.go:agentToolDefinition` | 修改 | 增加 `external` 标记；D6 的 6 个排除工具不标 |
-| `backend/internal/creativeagent/external.go` | 新增 | `ExternalTools`、`ExternalPrincipal`、`ExternalResult`、`List`、`Call`、错误映射 |
+| `backend/internal/creativeagent/external.go` | 新增 | `ExternalTools`、`ExternalPrincipal`、`ExternalResult`、工具目录 `externalCatalog`、`List`、`Call`、错误映射 `externalRefusal` |
 | `backend/internal/creativeagent/external_read.go` | 新增 | 6 个只读工具的外部实现与摘要 |
 | `backend/internal/creativeagent/instructions/external.md` | 新增 | 外部版本的 instructions |
-| `backend/internal/creativemcp/` | 新增 | `handler.go`（SDK server、工具注册、会话选项）、`result.go`、`ratelimit.go` |
+| `backend/internal/creativemcp/` | 新增 | `handler.go`（SDK server、工具注册、会话选项、结果转换）、`ratelimit.go` |
 | `backend/internal/platform/httpapi/oauth.go` | 新增 | 元数据、注册、授权请求、令牌、确认授权 |
 | `backend/internal/platform/httpapi/mcp.go` | 新增 | `/mcp` 挂载与主体注入 |
 | `backend/internal/platform/httpapi/agent_connections.go` | 新增 | 连接列表与断开 |
-| `backend/internal/platform/httpapi/router.go:NewRouter` | 修改 | `RouterDeps.OAuth`、`RouterDeps.MCP`，按开关挂载 |
+| `backend/internal/platform/httpapi/router.go:NewRouter` | 修改 | `RouterDeps.OAuth`，非空时挂协议端点与 `/mcp`；连接列表总是挂载，关闭时返回 404；协议路径的 NoRoute 返回 404 而不是前端页面 |
 | `backend/cmd/server/main.go` | 修改 | 装配 `oauth.Service`、`ExternalTools`、`creativemcp.Handler` |
 | `backend/go.mod` | 修改 | `github.com/modelcontextprotocol/go-sdk` v1.8.0 |
 | `api/openapi.yaml` | 修改 | 三个网页端接口 |
 | `frontend/src/creative-canvas/agents/` | 新增 | `AgentsPage.tsx`、`hostGuides.ts`、`api.ts`、`agents.css` |
-| `frontend/src/pages/auth/AgentConsentPage.tsx` | 新增 | 授权确认页 |
+| `frontend/src/pages/auth/AgentConsentPage.tsx` | 新增 | 授权确认页，`consentRequest.ts` 解码请求包 |
+| `frontend/src/pages/auth/AuthPageShell.tsx` | 修改 | 可替换左栏介绍（`pitch`）与底部说明（`legal`） |
 | `frontend/src/creative-canvas/editor/AgentConnectionBadge.tsx` | 新增 | 顶栏指示 |
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | 挂顶栏指示 |
 | `frontend/src/creative-canvas/home/AppSidebar.tsx` | 修改 | 「外部助手」入口 |
@@ -418,6 +420,7 @@ C2 起，各子项在这里补本批工具的规则。
 | `frontend/vite.config.ts` | 修改 | 开发代理 `/mcp`、`/oauth/(authorize\|token\|register)`、`/.well-known/oauth-*` |
 | `integrations/codex-plugin/` | 新增 | manifest、`.mcp.json` 模板、marketplace、`build.sh`、README |
 | `docs/dev/creative-mcp.md` | 新增 | 开关、本机接入与排错 |
+| `backend/internal/platform/store/store.go` | 修改 | 实时 hub 改为 `atomic.Pointer`（`RealtimeWatching` 与启动并发读写） |
 
 ## 验证与交付
 
@@ -451,7 +454,7 @@ C2 起，各子项在这里补本批工具的规则。
 
 | # | 问题 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|---|
-| U2 | 能否只做 CIMD | `/oauth/register` 是否保留 | owner 实测时看日志里各宿主走的注册方式 | C1 归档前（只会收窄） |
+| U2 | 能否只做 CIMD | `/oauth/register` 是否保留 | owner 实测时看日志里各宿主走的注册方式。已知 Codex CLI 0.161.0 走 CIMD（`host-runs.md`）；Claude Code 待测 | C1 归档前（只会收窄） |
 | U3 | Codex 插件的公开仓库与生产域名 | 接入页 Codex 的主路径 | owner 定仓库与域名；在此之前用手动添加 | 插件上线前，不阻塞 C1 |
 | U7 | Codex、ChatGPT 是否读取 `instructions`；45 秒等待在各宿主下是否安全 | C2 的长任务 | C1 实测 Codex；ChatGPT 等有域名的环境 | C2 design 批准前 |
 | U8 | Team 成员的回退路径 | 回退文字 | 按官方文档写，验收记为限制项 | C1 验收前 |

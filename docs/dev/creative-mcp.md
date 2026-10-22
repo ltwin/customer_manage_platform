@@ -47,7 +47,7 @@ Epic `creative-mcp-server`。Claude Code、Codex、Claude（桌面端与网页�
 |---|---|---|---|
 | Claude Code | `claude mcp add --transport http --scope user creative http://localhost:5173/mcp` | 进 Claude Code 输入 `/mcp`，选 `creative` | `claude mcp remove --scope user creative` |
 | Claude 桌面端（Code 模式） | 与 Claude Code 共用 `--scope user` 的配置 | 同上 | 同上 |
-| Codex CLI | `codex mcp add creative --url http://localhost:5173/mcp` | `codex mcp login creative` | `codex mcp remove creative` |
+| Codex CLI | `codex mcp add creative --url http://localhost:5173/mcp` | `add` 之后会自动开始登录并打开浏览器；没打开时用 `codex mcp login creative`（`--no-browser` 只打印地址） | `codex mcp remove creative` |
 
 `--scope user` 写进用户级配置（`~/.claude.json`），所有项目都能用；不加时只对当前目录生效。Codex 的 `mcp add` 本来就写全局的 `~/.codex/config.toml`。
 
