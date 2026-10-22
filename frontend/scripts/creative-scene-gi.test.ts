@@ -240,11 +240,14 @@ test('the renderer in effect: the scene’s for clay and lit in perspective, the
 })
 
 test('time limits follow what a picture costs: pixels, frames, encoding; eight times the reference, with floors', async () => {
-  const { estimateMs, framesFor, jobRenderCapMs, shotBudgetMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+  const { convergeFrames, drawnFrames, estimateMs, framesFor, jobRenderCapMs, shotBudgetMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
   const { exportTimeoutMs, renderTimeoutMs } = await import('../src/creative-scene/host/executor.ts')
   assert.equal(framesFor('workbench', 'export'), 1)
   assert.equal(framesFor('workbench', 'view'), 1)
   assert.ok(framesFor('realtime_gi', 'export') > framesFor('realtime_gi', 'view'))
+  // The real-time GI settles for the viewport's frames before it averages; the workbench draws one.
+  assert.equal(drawnFrames('workbench', 'export'), 1)
+  assert.equal(drawnFrames('realtime_gi', 'export'), convergeFrames('realtime_gi') + framesFor('realtime_gi', 'export'))
   // The design's example: an 8K 3:2 real-time GI image at K = 64, about 87 s; its limit about 11.6 minutes.
   const k = framesFor('realtime_gi', 'export')
   assert.equal(k, 64)

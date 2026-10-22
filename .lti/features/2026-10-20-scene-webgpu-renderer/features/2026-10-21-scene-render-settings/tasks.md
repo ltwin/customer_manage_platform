@@ -68,7 +68,11 @@
 
 ## 5. 标定
 
-- [ ] 5.1 在参考设备（Metal）上标定 N、K（导出与 `render_view`）、`final` 质量档、TRAA 的 `flickerReduction`、累积目标精度，方法见 design「收敛」「累积与出图」；常量写进 `engines.ts`，曲线与图存进 `discovery/research/calibration`。完成判据：残余噪点阈值写进 AC-R2-5 的 e2e 并通过；2K 实时 GI 一张的耗时记录在案
+- [x] 5.1 在参考设备（Metal）上标定 N、K（导出与 `render_view`）、`final` 质量档、TRAA 的 `flickerReduction`、累积目标精度，方法见 design「收敛」「累积与出图」；常量写进 `engines.ts`，曲线与图存进 `discovery/research/calibration`。完成判据：残余噪点阈值写进 AC-R2-5 的 e2e 并通过；2K 实时 GI 一张的耗时记录在案
+  - 记录见 `discovery/research/calibration.md` 与 `calibration/` 下的对比图。**N = 12**（四组冷启动相邻帧差都 < 0.2 的最小值）。`final` 档保持 2 × 8：3 × 16 噪点低 13%、耗时多 44%。TRAA 的 `flickerReduction` 不影响亮部，保留、不 fork。累积用半精度：K64 时与单精度没有像素差超过 2 级。
+  - **修正**：累积改为先预热 N 帧再平均（`AccumulateNode` 的 warm-up，`engines.ts` 的 `drawnFrames`，出图时限按 N + K 算）。时域节点第一帧的 HDR 值极大，原先 K16 的材质光照平均亮度 180，收敛值约 117。
+  - **owner 决定（2026-10-21）**：出图的 GI 只做空间滤波（design 的退路，视口不变），K = 64、K_view = 16。design 的 K 规则因噪点按 1/√K 一直下降而达不到。代价是盒子间后墙上部偏亮 25%，图上有低频斑驳，渗色变弱。design「局部设计与偏差」已补记。质量档改为建管线时固定（进入 `Look` 的缓存键，去掉 `setQuality`）；SSGI 的 slice / step 原先一直是 three 的默认 1 / 12，现在两档都按 design 设为 2 / 8。
+  - 验证：e2e「real-time GI: a 2K export of the box room is within its residual noise」新增并通过（本机 Metal：材质光照 1.232、阈值 1.5、3.4 s；白模 0.189、阈值 0.3、1.5 s）。「renderer in effect」（帧数改为 12）、「real-time GI: 48」、`SCENE_E2E_HIDDEN` 确定性（隐藏与前台最大差 0，两次之间最大差 1）仍绿。单测 65 个全绿。
 
 ## 6. 助手
 

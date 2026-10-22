@@ -5,7 +5,7 @@ import type { SceneDocument } from '../api.ts'
 import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { cameraFraming, type Framing } from './framing.ts'
-import { effectiveEngine, engineOf, extensionOf, framesFor, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
 
 // Export (design「导出渲染」「导出接口」): every camera of the plan drawn
@@ -76,7 +76,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   // renderer averages, its encoding; the whole export gets the lit look's switch and every image's limit.
   const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass) => {
     const engine = pass === 'line' ? 'workbench' : effectiveEngine(engineOf(doc.scene.render), pass, true)
-    return shotBudgetMs(engine, framing.width, framing.height, framesFor(engine, 'export'), imageTypeOf(pass, resolution).type)
+    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export'), imageTypeOf(pass, resolution).type)
   }
   const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass), 0), 0)
   const began = now()

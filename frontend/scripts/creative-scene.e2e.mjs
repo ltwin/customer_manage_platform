@@ -4268,6 +4268,44 @@ window.__hash = async (scene, kind, side) => {
     shooter.close();
   }
 };
+// One export picture's residual noise (R0's measure, R2 tasks 5.1): mean |grey − its Gaussian blur, σ 6 px at
+// 2048| over a box given as fractions of the picture; and how long the picture took.
+window.__noise = async (scene, kind, side, box) => {
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const started = performance.now();
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png' });
+    const ms = performance.now() - started;
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(bitmap, 0, 0);
+    const [x0, y0, x1, y1] = [box[0] * bitmap.width, box[1] * bitmap.height, box[2] * bitmap.width, box[3] * bitmap.height].map(Math.round);
+    const w = x1 - x0, h = y1 - y0;
+    const rgba = c2d.getImageData(x0, y0, w, h).data;
+    const grey = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) grey[i] = Math.round(0.299 * rgba[4 * i] + 0.587 * rgba[4 * i + 1] + 0.114 * rgba[4 * i + 2]);
+    const sigma = (6 * bitmap.width) / 2048, r = Math.ceil(3 * sigma);
+    const kernel = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sigma * sigma)));
+    const sum = kernel.reduce((a, b) => a + b);
+    const blur = (src, step, n, count, stride) => {
+      const out = new Float32Array(src.length);
+      for (let line = 0; line < count; line++) for (let i = 0; i < n; i++) {
+        let v = 0;
+        for (let k = -r; k <= r; k++) v += kernel[k + r] * src[line * stride + Math.min(n - 1, Math.max(0, i + k)) * step];
+        out[line * stride + i * step] = v / sum;
+      }
+      return out;
+    };
+    const blurred = blur(blur(grey, 1, w, h, w), w, h, w, 1);
+    let total = 0;
+    for (let i = 0; i < w * h; i++) total += Math.abs(grey[i] - blurred[i]);
+    return { noise: total / (w * h), ms, width: framing.width, height: framing.height };
+  } finally {
+    shooter.close();
+  }
+};
 window.__ready = true;
 </script></body></html>`,
 )
@@ -4317,11 +4355,12 @@ await check('renderer in effect: real-time GI converges in the viewport and stop
   }
   await engine('realtime_gi')
   await waitFor(() => server.scene.render.engine === 'realtime_gi', 'renderer written')
-  // The rendered view with the real-time GI draws on by itself, to its frame count, then stops.
-  await settledFrames(16, 'rendered, real-time GI')
+  // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames), then stops.
+  const giFrames = 12
+  await settledFrames(giFrames, 'rendered, real-time GI')
   assert.ok((await pixelDiff(page, look['最终渲染'], await settledShot(page, box))) > 0.01, 'the real-time GI changes the rendered view')
   await shading(page, '白模')
-  await settledFrames(16, 'clay, real-time GI')
+  await settledFrames(giFrames, 'clay, real-time GI')
   for (const mode of ['线框', '材质预览']) {
     await shading(page, mode)
     await settledFrames(1, `${mode}, real-time GI chosen`)
@@ -4443,6 +4482,29 @@ await check('output resolution: 1K to 8K long sides at 1:1, 3:2 and portrait, 4K
   assert.equal(server.exports.length, 1, 'nothing more placed')
   assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
   await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 AC-R2-5 (tasks 5.1): an export's residual noise in the box room, where only bounced light reaches the upper
+// back wall, the hardest of the reference scenes. This machine's GPU: SwiftShader takes minutes for K frames at 2K.
+await check('real-time GI: a 2K export of the box room is within its residual noise, K frames averaged after the warm-up', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+    scene.render = { ...scene.render, engine: 'realtime_gi' }
+    // The upper back wall, R0's box.
+    const wall = [0.22, 0.183, 0.781, 0.513]
+    const limits = { lit: 1.5, clay: 0.3 }
+    for (const kind of ['lit', 'clay']) {
+      const out = await page.evaluate(([s, k, b]) => window.__noise(s, k, 2048, b), [scene, kind, wall])
+      console.log(`residual noise, box room ${kind} ${out.width}×${out.height}: ${out.noise.toFixed(3)} (limit ${limits[kind]}), ${(out.ms / 1000).toFixed(1)} s`)
+      assert.ok(out.noise <= limits[kind], `${kind}: ${out.noise}`)
+    }
   } finally {
     await gpu.close()
   }

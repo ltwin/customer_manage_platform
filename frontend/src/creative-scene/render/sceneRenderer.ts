@@ -6,7 +6,7 @@ import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
-import type { Engine, Quality } from './engines.ts'
+import { convergeFrames, type Engine, type Quality } from './engines.ts'
 import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
@@ -86,9 +86,9 @@ export type Frame = {
   /** Real-time GI: screen-space reflections, the lit look's; clay has none. */
   reflections?: boolean
   /**
-   * Averages every frame of this renderer so far, after the depth of field
-   * and before tone mapping: an export's or render_view's frames (R2 design
-   * 「累积与出图」). The viewport does not.
+   * Averages this renderer's frames after the first convergeFrames, after
+   * the depth of field and before tone mapping: an export's or render_view's
+   * frames (R2 design「累积与出图」). The viewport does not.
    */
   accumulate?: boolean
 }
@@ -220,21 +220,25 @@ export function mainLight(scene: Object3D): Shadowing | null {
 }
 
 /** How a frame is drawn, which decides the pipeline: the real-time GI with or without reflections, or the workbench. */
-type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit'; light: Shadowing | null; accumulate: boolean }
+type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit'; quality: Quality; light: Shadowing | null; accumulate: boolean }
 
-const keyOf = ({ wireframe, blur, gi, light, accumulate }: Look) =>
-  wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}:${light?.uuid ?? ''}`}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+const keyOf = ({ wireframe, blur, gi, quality, light, accumulate }: Look) =>
+  wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}-${quality}:${light?.uuid ?? ''}`}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
 
 const accumulateSize = /*@__PURE__*/ new Vector2()
 let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
 
 /**
  * The running average of a picture's frames, in linear half float:
- * acc = mix(acc, frame, 1 / n), n the frames so far. Two targets in turn;
- * the node is the latest average.
+ * acc = mix(acc, frame, 1 / n), n the frames since the warm-up. The
+ * warm-up frames are kept, not averaged: the temporal nodes' first frame is
+ * far off in HDR (one frame of it brightened a 16-frame average by half, R2
+ * tasks 5.1), and they settle within the viewport's convergeFrames. Two
+ * targets in turn; the node is the latest average.
  */
 class AccumulateNode extends TempNode {
   private readonly input: Node<'vec4'>
+  private readonly warmup: number
   private targets: [RenderTarget, RenderTarget] = [new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }), new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false })]
   private readonly weight = uniform(1)
   private readonly previous = texture(this.targets[0].texture)
@@ -243,9 +247,10 @@ class AccumulateNode extends TempNode {
   private readonly quad = new QuadMesh(this.material)
   private frames = 0
 
-  constructor(input: Node<'vec4'>) {
+  constructor(input: Node<'vec4'>, warmup: number) {
     super('vec4')
     this.input = input
+    this.warmup = warmup
     this.updateBeforeType = NodeUpdateType.FRAME
   }
 
@@ -261,7 +266,7 @@ class AccumulateNode extends TempNode {
     for (const t of this.targets) t.setSize(width, height)
     const [read, write] = this.targets
     this.frames++
-    this.weight.value = 1 / this.frames
+    this.weight.value = 1 / Math.max(1, this.frames - this.warmup)
     this.previous.value = read.texture
     // Made on the first call (three's own nodes keep theirs the same way).
     accumulateState = RendererUtils.resetRendererState(renderer, accumulateState as never)
@@ -439,7 +444,7 @@ export class SceneRenderer {
     let dof: Dof | null = null
     let gi: RealtimeGI | null = null
     if (look.gi !== 'off') {
-      gi = own(realtimeGI(scene, camera, { reflections: look.gi === 'lit', prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise, mainLight: look.light }))
+      gi = own(realtimeGI(scene, camera, { quality: look.quality, reflections: look.gi === 'lit', prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise, mainLight: look.light }))
       passes = gi.passes
       aoOn = gi.aoOn
       picture = gi.color
@@ -448,7 +453,7 @@ export class SceneRenderer {
         disposables.push(dof)
         picture = dof.output
       }
-      if (look.accumulate) picture = own(new AccumulateNode(picture)) as unknown as Node<'vec4'>
+      if (look.accumulate) picture = own(new AccumulateNode(picture, convergeFrames('realtime_gi'))) as unknown as Node<'vec4'>
     } else {
       const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
       beauty.setLayers(layers(0, ASIDE_LAYER))
@@ -524,7 +529,14 @@ export class SceneRenderer {
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     const dof = !wireframe && perspective ? frame.dof : null
     const gi = frame.engine === 'realtime_gi' && !wireframe && perspective ? (frame.reflections ? 'lit' : 'clay') : 'off'
-    const look: Look = { wireframe, blur: dof !== null, gi, light: gi === 'off' ? null : mainLight(this.scene), accumulate: gi !== 'off' && frame.accumulate === true }
+    const look: Look = {
+      wireframe,
+      blur: dof !== null,
+      gi,
+      quality: frame.quality ?? 'interactive',
+      light: gi === 'off' ? null : mainLight(this.scene),
+      accumulate: gi !== 'off' && frame.accumulate === true,
+    }
     const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()
@@ -532,7 +544,6 @@ export class SceneRenderer {
       this.width = -1
     }
     const built = this.built
-    built.gi?.setQuality(frame.quality ?? 'interactive')
     const ratio = frame.pixelRatio ?? 1
     const aoRatio = Math.min(frame.aoPixelRatio ?? ratio, ratio)
     // R3F sets the renderer's pixel ratio on resizes of its own: it is checked as well as remembered.

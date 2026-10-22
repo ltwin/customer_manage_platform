@@ -7,7 +7,7 @@ import { ssr } from 'three/addons/tsl/display/SSRNode.js'
 import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { temporalReproject } from 'three/addons/tsl/display/TemporalReprojectNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
-import { GI_INTENSITY, type Quality } from './engines.ts'
+import { GI_INTENSITY, ssgiQuality, type Quality } from './engines.ts'
 import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
 
@@ -22,12 +22,16 @@ import { ssgi } from './nodes/SSGINode.js'
 //    materials taken apart (giSplit.ts): the whole picture, the base colour,
 //    and the indirect diffuse and specular light, 32 bytes a pixel.
 //  - SSGI, temporally reprojected and recurrently denoised (design
-//    「SSGI 降噪」), and for lit the stochastic SSR with three's own chain.
+//    「SSGI 降噪」) in the viewport; in a picture to keep, filtered in space
+//    only and averaged over frames (sceneRenderer.ts AccumulateNode): the
+//    recurrent denoiser's output changes slowly from frame to frame, so the
+//    average hardly lowers its noise (R2 tasks 5.1). For lit, the
+//    stochastic SSR with three's own chain.
 //  - The composite (design「合成」) puts the AO on the indirect light only and
 //    the reflections in place of the environment's, then TRAA, outermost of
 //    the temporal nodes, antialiases and steadies the whole.
-// Nothing in the chain draws with Math.random but the AO's DenoiseNode, which
-// is given the workbench's fixed noise.
+// Nothing in the chain draws with Math.random but the DenoiseNodes, which are
+// given the workbench's fixed noise.
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- three's typings leave the display nodes' TSL loosely typed */
 type N = any
@@ -45,6 +49,8 @@ const lightingOutputs = mrt({ output: outputNode, base: giBase, ambient: giAmbie
 for (const name of ['base', 'ambient', 'envSpec']) lightingOutputs.setBlendMode(name, lightingOutputs.getBlendMode('output'))
 
 export type RealtimeGIOptions = {
+  /** The viewport's, or a picture to keep's: the SSGI's samples, its denoising and the flicker suppression. */
+  quality: Quality
   /** Screen-space reflections: the lit look has them, clay does not (its environment reflection is all it gets). */
   reflections: boolean
   /** The layers the prepass draws (the opaque scene) and the lighting pass draws (the picture). */
@@ -65,7 +71,6 @@ export type RealtimeGI = {
   passes: { node: PassNode; layers: Layers }[]
   /** Frame.ao = false: the AO multiplies by one. */
   aoOn: UniformNode<'float', number>
-  setQuality(quality: Quality): void
   dispose(): void
 }
 
@@ -114,25 +119,42 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const envSpec: N = lit.getTextureNode('envSpec')
   lit.getTexture('base').type = UnsignedByteType
 
+  const final = options.quality === 'final'
   const gi = own(ssgi(output, depth, normal, persp))
   gi.giIntensity.value = GI_INTENSITY
+  gi.sliceCount.value = ssgiQuality[options.quality].slices
+  gi.stepCount.value = ssgiQuality[options.quality].steps
   const giAO: N = gi.getTextureNode()
-  const reprojected: N = own(temporalReproject(giAO, depth, normalPacked, vel, camera, { mode: 'diffuse', accumulate: false }))
-  const denoised: N = own(recurrentDenoise(reprojected, camera, { depth, normal: normalPacked, raw: giAO, mode: 'diffuse', accumulate: true }))
-  // raw.a is the AO: it sets the kernel and keeps AO edges.
-  denoised.alphaSource = 'ao'
-  // The history is last frame's denoised result; the denoiser is the one accumulator.
-  reprojected.setHistoryTexture(denoised)
-  // The denoiser does not give back a denoised AO: the AO is filtered on its own.
+  // Filtered in space with depth and normals, as the AO is; the fixed noise keeps a picture the same every time.
   // A node made into a texture here is freed with the rest; one the display nodes convert themselves would be left behind.
-  const aoClean: N = own(denoise(own(convertToTexture(vec4(vec3(giAO.a), 1))), depth, normal, camera))
-  ;(aoClean.noiseNode as { value: DataTexture }).value = own(options.noise())
+  const filtered = (n: N): N => {
+    const d: N = own(denoise(own(convertToTexture(n)), depth, normal, camera))
+    ;(d.noiseNode as { value: DataTexture }).value = own(options.noise())
+    return d
+  }
+  // Flicker suppression weighs bright samples down: steadier while moving, darker highlights in a picture.
+  const flicker = final ? 0 : 1
+  let indirect: N
+  if (final) {
+    indirect = filtered(vec4(giAO.rgb, 1)).rgb
+  } else {
+    const reprojected: N = own(temporalReproject(giAO, depth, normalPacked, vel, camera, { mode: 'diffuse', accumulate: false }))
+    const denoised: N = own(recurrentDenoise(reprojected, camera, { depth, normal: normalPacked, raw: giAO, mode: 'diffuse', accumulate: true }))
+    // raw.a is the AO: it sets the kernel and keeps AO edges.
+    denoised.alphaSource = 'ao'
+    // The history is last frame's denoised result; the denoiser is the one accumulator.
+    reprojected.setHistoryTexture(denoised)
+    reprojected.flickerSuppression.value = flicker
+    denoised.flickerSuppression.value = flicker
+    indirect = denoised.rgb
+  }
+  // The recurrent denoiser does not give back a denoised AO: the AO is filtered on its own.
+  const aoClean: N = filtered(vec4(vec3(giAO.a), 1))
   const aoOn = uniform(1)
   const ao = mix(float(1), aoClean.r, aoOn)
 
   let reflection: N = vec3(0)
   let cover: N = float(0)
-  const temporal: { flickerSuppression: UniformNode<'float', number> }[] = [reprojected, denoised]
   if (options.reflections) {
     const reflect: N = own(ssr(output, depth, normal, { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }))
     const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
@@ -150,7 +172,8 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     // Multi-bounce: the reflection reads last frame's.
     reflect.setHistory(specDenoised, vel)
     specReprojected.setHistoryTexture(specDenoised)
-    temporal.push(specReprojected, specDenoised)
+    specReprojected.flickerSuppression.value = flicker
+    specDenoised.flickerSuppression.value = flicker
     reflection = specDenoised.rgb
     // Where this frame's ray hit something on screen (design 未决事项 L2).
     cover = reflect.a.lessThan(MISSED).select(1, 0)
@@ -169,7 +192,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // Where the lighting pass took a material apart and the prepass saw a surface (not the background).
   const surface = ambient.a.mul(depth.r.lessThan(1).select(1, 0))
   const picture = vec4(
-    composite({ output, base, ambient, envSpec, gi: denoised.rgb, ao, contact, reflection, cover, split: surface }),
+    composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: surface }),
     output.a,
   )
   const color: N = own(traa(own(convertToTexture(picture)), depth, vel, camera))
@@ -184,10 +207,6 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
       { node: prepass, layers: options.prepassLayers },
     ],
     aoOn,
-    setQuality(quality) {
-      // Flicker suppression weighs bright samples down: steadier while moving, darker highlights in an export.
-      for (const t of temporal) t.flickerSuppression.value = quality === 'final' ? 0 : 1
-    },
     dispose() {
       for (const d of disposables) d.dispose()
     },

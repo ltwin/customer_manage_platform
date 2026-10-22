@@ -3,7 +3,7 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { effectiveEngine, engineOf, framesFor, type Use } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, type Use } from '../render/engines.ts'
 import { exposureOf } from '../render/litLook.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
@@ -167,7 +167,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         // Every picture gets a pipeline of its own: nodes that keep state between frames start afresh.
         const picture = options.kind === 'line' ? null : new SceneRenderer(g, three, camera)
         const engine = options.kind === 'line' ? 'workbench' : effectiveEngine(engineOf(scene.render), options.kind, true)
-        const frames = framesFor(engine, options.use ?? 'export')
+        const frames = drawnFrames(engine, options.use ?? 'export')
         const frame = {
           width,
           height,
