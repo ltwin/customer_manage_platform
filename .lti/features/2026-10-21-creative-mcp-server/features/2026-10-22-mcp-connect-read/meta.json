@@ -1,6 +1,6 @@
 {
   "uid": "5917e00c-4ab2-49c8-a023-cca859888e0b",
-  "revision": 3,
+  "revision": 4,
   "id": "mcp-connect-read",
   "kind": "feature",
   "assurance": "governed",
@@ -37,9 +37,9 @@
       "api:MCP 只读工具"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-22T13:53:43.715Z",
-  "updatedAt": "2026-10-22T13:59:54.449Z",
+  "updatedAt": "2026-10-22T14:00:20.480Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -61,8 +61,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "14195016efc3b707cedb80c43ac8f32674f5e48f",
+    "at": "2026-10-22T14:00:19.855Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "04aaaae52c03ff2990423ed3d700d340a28e8216439d1d745d425bc2bcd47ff9"
+    },
+    "preExisting": [
+      ".lti/snapshots/04aaaae52c03ff2990423ed3d700d340a28e8216439d1d745d425bc2bcd47ff9.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
