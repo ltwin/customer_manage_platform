@@ -6,6 +6,7 @@ import { aspectOf, equivalentFocal, fStopShortcuts, fStopThirds, presetOf, senso
 import { cameraDefaults } from '../state/apply.ts'
 import type { SceneModel } from '../models/cache.ts'
 import { transformToDoc, transformToView } from '../space.ts'
+import { ev100, isoThirds, shutterLabel, shutterThirds } from '../world/exposure.ts'
 
 /**
  * A number that commits 300 ms after typing stops, on Enter or on blur, and
@@ -159,10 +160,12 @@ export function ParamField({ name, spec, value, disabled, onCommit }: { name: st
  * Field commits carry a merge key, so typing in one field is one undo step
  * even when its commits wait to be sent together.
  */
-export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, objects = [], focusDistance, picking = false, onPickFocus, save, children }: {
+export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, objects = [], physical = false, focusDistance, picking = false, onPickFocus, save, children }: {
   object: SceneObject | null
   count: number
   readOnly: boolean
+  /** The sky is physical: a camera's exposure counts (W2). */
+  physical?: boolean
   /** The scene's objects, for a camera's focus list. */
   objects?: readonly SceneObject[]
   /** Where the active camera focuses, resolved from its focus object. */
@@ -264,6 +267,7 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
           object={object}
           objects={objects}
           readOnly={readOnly}
+          physical={physical}
           focusDistance={focusDistance}
           picking={picking}
           onPickFocus={onPickFocus}
@@ -284,10 +288,11 @@ const metres = (m: number) => (m === Infinity ? '∞' : `${m < 10 ? m.toFixed(2)
  * Every change is one update; sliders merge their commits like the number
  * fields do.
  */
-function CameraFields({ object, objects, readOnly, focusDistance, picking, onPickFocus, onCamera, onHeight }: {
+function CameraFields({ object, objects, readOnly, physical, focusDistance, picking, onPickFocus, onCamera, onHeight }: {
   object: SceneObject
   objects: readonly SceneObject[]
   readOnly: boolean
+  physical: boolean
   focusDistance?: number
   picking: boolean
   onPickFocus?: () => void
@@ -385,6 +390,7 @@ function CameraFields({ object, objects, readOnly, focusDistance, picking, onPic
           </small>
         </>
       )}
+      <CameraExposure camera={c} name={name} physical={physical} onCamera={onCamera} />
       <button type="button" className="btn cc-scene-more" aria-expanded={more} onClick={() => setMore(!more)}>
         {more ? '收起' : '更多'}
       </button>
@@ -414,6 +420,63 @@ function CameraFields({ object, objects, readOnly, focusDistance, picking, onPic
           <NumberField label="far（m）" value={c.far} step={10} min={0.01} onCommit={(v) => onCamera({ far: v }, `调整「${name}」远裁剪`, 'far')} />
         </>
       )}
+    </fieldset>
+  )
+}
+
+/** A stop list with the current value in it, should the assistant have written one between stops. */
+const withCurrent = (stops: readonly number[], v: number) => (stops.includes(v) ? stops : [...stops, v].sort((a, b) => a - b))
+
+/**
+ * A camera's exposure under a physical sky (W2 design「编辑界面」): ISO,
+ * shutter and aperture in thirds of a stop, and the EV100 they make. The
+ * aperture is the depth of field's too, and set here with the depth of field
+ * off. Greyed under any other sky, where the scene's compensation exposes.
+ */
+function CameraExposure({ camera, name, physical, onCamera }: {
+  camera: typeof cameraDefaults
+  name: string
+  physical: boolean
+  onCamera: (camera: NonNullable<ObjectUpdate['camera']>, label: string, merge?: string) => void
+}) {
+  return (
+    <fieldset className="cc-scene-camera-exposure" disabled={!physical} aria-label="曝光">
+      <legend>曝光</legend>
+      <label className="cc-scene-field">
+        <span>ISO</span>
+        <select aria-label="ISO" value={camera.iso} onChange={(e) => onCamera({ iso: Number(e.target.value) }, `调整「${name}」ISO`)}>
+          {withCurrent(isoThirds, camera.iso).map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="cc-scene-field">
+        <span>快门</span>
+        <select aria-label="快门" value={camera.shutter_s} onChange={(e) => onCamera({ shutter_s: Number(e.target.value) }, `调整「${name}」快门`)}>
+          {withCurrent(shutterThirds, camera.shutter_s).map((v) => (
+            <option key={v} value={v}>
+              {shutterLabel(v)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="cc-scene-field">
+        <span>光圈</span>
+        <select aria-label="光圈" value={camera.f_stop} onChange={(e) => onCamera({ f_stop: Number(e.target.value) }, `调整「${name}」光圈`)}>
+          {withCurrent(fStopThirds, camera.f_stop).map((v) => (
+            <option key={v} value={v}>
+              f/{v}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="cc-scene-field">
+        <span>EV100</span>
+        <output aria-label="EV100">{ev100(camera.f_stop, camera.shutter_s, camera.iso).toFixed(1)}</output>
+      </span>
+      {!physical && <small>只在物理天空下生效</small>}
     </fieldset>
   )
 }

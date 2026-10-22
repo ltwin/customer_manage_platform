@@ -74,7 +74,11 @@
   - 设计把「切手动的提交」「选城市一次写四项」列在 `SceneEditor.tsx`，实际都经面板的 `onEnvironment` 一次提交，`SceneEditor.tsx` 不用改；它在 6.3（添加摄像机的曝光）再改。
   - 时刻滑杆按分钟（0–1439），显示 HH:MM，合并键 `environment.local_time`；太阳方位显示罗盘读数（正北为 0°，带「北、东北…」），高度带符号。时区认不出时提示按经度推算的偏移。
   - e2e 的 `referenceScene` 给 W2 之前的参考场景补上 `render.exposure_ev100 = 15`，与服务端读旧文档时一致（`Render.UnmarshalJSON`）；不补时切到物理天空，k 为 NaN，画面全黑。
-- [ ] 6.3 曝光的界面：`RenderPanel.tsx` 在物理天空下显示默认曝光（EV100）和参考值，其他天空照旧显示曝光补偿；`Properties.tsx:CameraFields` 新增「曝光」一组（ISO、快门、与景深共用的光圈、只显示的 EV100），非物理天空下置灰；`editing.ts:newCamera` 和 `SceneEditor.tsx` 的添加摄像机按默认曝光写入曝光（4.1 的换算）。先写 e2e：自由视角下改默认曝光，视口变、相机视图和导出不变；默认曝光为 12 和 −5 时添加摄像机，相机视图与添加前的视口亮度相差 ≤ 1/3 档；程序化天空下曝光一组和默认曝光置灰。完成判据：用例先红后绿
+- [x] 6.3 曝光的界面：`RenderPanel.tsx` 在物理天空下显示默认曝光（EV100）和参考值，其他天空照旧显示曝光补偿；`Properties.tsx:CameraFields` 新增「曝光」一组（ISO、快门、与景深共用的光圈、只显示的 EV100），非物理天空下置灰；`editing.ts:newCamera` 和 `SceneEditor.tsx` 的添加摄像机按默认曝光写入曝光（4.1 的换算）。先写 e2e：自由视角下改默认曝光，视口变、相机视图和导出不变；默认曝光为 12 和 −5 时添加摄像机，相机视图与添加前的视口亮度相差 ≤ 1/3 档；程序化天空下曝光一组和默认曝光置灰。完成判据：用例先红后绿
+  - e2e 两项先红后绿：「W2 exposure controls: the default exposure …」黄金时刻的院子，物理天空下渲染选项卡没有曝光补偿、有参考值；默认曝光改到 11，自由视角变亮，相机视图不变（差 > 2 的像素 < 0.05%）；默认曝光 12 时添加摄像机写入 ISO 100、1/500 s（EV100 11.94），相机视图均值 106、添加前的视口 117；−5 时快门到 30 s、ISO 800（EV100 −4.94）。「… a camera’s ISO, shutter and aperture …」ISO、快门、光圈各写一次，景深关闭时光圈可调，EV100 显示随之变化；切回程序化天空后摄像机的曝光一组置灰并提示，渲染选项卡的默认曝光置灰、曝光补偿照常可用。旧用例「Add > 摄像机」「render tab」「AC-5: exposure +2」「Add > 空物体」仍然绿，场景单测 262 项全绿。
+  - 渲染选项卡：物理天空下只有默认曝光（−10…20，步长 1/3）和参考值、用途说明；其他天空下曝光补偿照旧，默认曝光置灰并提示「只在物理天空下生效」（design 只写了「换成」，任务的用例要求其他天空下默认曝光置灰，按任务做）。`Slider` 加了 `disabled`。
+  - 摄像机的「曝光」一组是 `CameraFields` 里的子 fieldset（`Properties.tsx:CameraExposure`），ISO、快门、光圈用下拉，当前值不在档位里时（助手写的任意值）也列出；光圈与景深一组共用 `f_stop`。`Properties` 新增 `physical` 属性。
+  - 添加摄像机：`editing.ts:newCamera` 多一个可选的曝光参数；`SceneEditor.tsx:addCamera` 在物理天空下按默认曝光和缺省光圈 f/2.8 求（`newCameraExposure`），其他天空下不写曝光字段，与以前相同。
 
 ## 7. 助手与文档
 

@@ -4573,6 +4573,94 @@ await check('W2 environment tab: manual angles keep the picture, undo goes back 
   await context.close()
 })
 
+// --- W2 the exposure's controls (AC-W2-3) --------------------------------------------
+
+const ev100Of = (c) => Math.log2((c.f_stop * c.f_stop) / c.shutter_s) - Math.log2(c.iso / 100)
+
+await check('W2 exposure controls: the default exposure moves the free view only; a camera added takes it, within a third of a stop, at 12 and at −5', async () => {
+  const { server, context, page, errors, settle } = await physicalYard('physical-golden')
+  const tabs = page.getByRole('tablist', { name: '属性' })
+  await tabs.getByRole('tab', { name: '渲染', exact: true }).click()
+  assert.equal(await page.getByRole('spinbutton', { name: '曝光补偿（EV）' }).count(), 0, 'no compensation under a physical sky')
+  await page.getByText(/晴天 15/).waitFor()
+  const free = await settle()
+  // Through the scene's camera, before and after the default exposure changes.
+  await focusEditor(page)
+  await page.keyboard.press('Digit0')
+  const through = await settle()
+  await page.keyboard.press('Digit0')
+  const setDefault = async (ev) => {
+    // Adding a camera selects it, which shows the object tab.
+    await tabs.getByRole('tab', { name: '渲染', exact: true }).click()
+    const field = page.getByRole('spinbutton', { name: '默认曝光（EV100）' })
+    await field.fill(String(ev))
+    await field.press('Enter')
+    await waitFor(() => Math.abs(server.scene.render.exposure_ev100 - ev) < 1e-9, `default exposure ${ev}`)
+    assert.deepEqual(server.commands.at(-1).payload.operations, [{ op: 'set_render', render: { exposure_ev100: ev } }])
+  }
+  await setDefault(11)
+  const brighter = await settle()
+  assert.ok((await pixelDiff(page, free, brighter)) > 0.05, 'the free view follows the default exposure')
+  await focusEditor(page)
+  await page.keyboard.press('Digit0')
+  assert.ok((await compareShots(page, through, await settle(), 2)).over < 0.05, 'the camera view keeps its own')
+  await page.keyboard.press('Digit0')
+
+  for (const ev of [12, -5]) {
+    await setDefault(ev)
+    const before = await lumaStats(page, await settle())
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '摄像机' }).click()
+    await waitFor(() => server.commands.at(-1).payload.operations[0].op === 'add_objects', 'camera added')
+    const camera = server.commands.at(-1).payload.operations[0].objects[0].camera
+    const written = ev100Of({ f_stop: 2.8, ...camera })
+    console.log(`W2 new camera at EV100 ${ev}: ISO ${camera.iso}, ${camera.shutter_s} s → EV100 ${written.toFixed(2)}`)
+    assert.ok(Math.abs(written - ev) <= 1 / 3, `as bright as the view, within a third of a stop (${written.toFixed(2)})`)
+    if (ev === -5) assert.deepEqual([camera.shutter_s, camera.iso > 100], [30, true], 'the shutter at 30 s, the ISO makes up the rest')
+    if (ev === 12) {
+      await page.mouse.move(1, 1)
+      await focusEditor(page)
+      await page.keyboard.press('Digit0')
+      const after = await lumaStats(page, await settle())
+      await page.keyboard.press('Digit0')
+      console.log(`W2 new camera at 12: the view ${before.mean.toFixed(0)}, through it ${after.mean.toFixed(0)}`)
+      assert.ok(Math.abs(after.mean / before.mean - 1) < 0.15, 'its picture is about as bright')
+    }
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 exposure controls: a camera’s ISO, shutter and aperture with its EV100; greyed under another sky, like the default exposure', async () => {
+  const { server, context, page, errors } = await physicalYard('physical-noon')
+  const camera = server.scene.objects.find((o) => o.kind === 'camera')
+  await page.getByRole('treeitem', { name: /shot/ }).click()
+  const exposure = page.getByRole('group', { name: '曝光' })
+  assert.match(await exposure.getByRole('status', { name: 'EV100' }).textContent(), /15\.0/)
+  await exposure.getByRole('combobox', { name: 'ISO' }).selectOption('400')
+  await waitFor(() => server.object(camera.id).camera.iso === 400, 'ISO written')
+  await exposure.getByRole('combobox', { name: '快门' }).selectOption({ label: '1/500 s' })
+  await waitFor(() => server.object(camera.id).camera.shutter_s === 1 / 500, 'shutter written')
+  await exposure.getByRole('combobox', { name: '光圈' }).selectOption('8')
+  await waitFor(() => server.object(camera.id).camera.f_stop === 8, 'aperture written with the depth of field off')
+  // f/8 at 1/500 s, ISO 400: log₂(64 × 500) − 2 = 13.0.
+  assert.match(await exposure.getByRole('status', { name: 'EV100' }).textContent(), /13\.0/)
+  assert.ok(!(await exposure.evaluate((f) => f.disabled)))
+
+  // Back to the procedural sky: the camera's exposure and the default exposure are greyed.
+  server.external([{ op: 'set_environment', environment: { ...server.scene.environment, sky: { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 } } }])
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => await exposure.evaluate((f) => f.disabled), 'the exposure group greyed')
+  await exposure.getByText('只在物理天空下生效').waitFor()
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
+  assert.ok(await page.getByRole('spinbutton', { name: '默认曝光（EV100）' }).isDisabled(), 'the default exposure greyed')
+  assert.ok(await page.getByRole('spinbutton', { name: '曝光补偿（EV）' }).isEnabled(), 'the compensation as before')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- R1 AC-R1-3: the same pictures in a hidden tab ------------------------------
 
 // The export as the assistant's page draws it, without the editor or the network.

@@ -10,11 +10,11 @@ type Environment = Scene['environment']
 const skyNames = { procedural: '程序化天空', physical: '物理天空', color: '纯色' } as const
 
 /** A number with a slider beside it, for what is dragged to judge: the sun and the exposure. */
-export function Slider({ label, value, min, max, step, onCommit }: { label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void }) {
+export function Slider({ label, value, min, max, step, disabled, onCommit }: { label: string; value: number; min: number; max: number; step: number; disabled?: boolean; onCommit: (v: number) => void }) {
   return (
     <div className="cc-scene-slider">
-      <NumberField label={label} value={value} step={step} min={min} max={max} onCommit={onCommit} />
-      <input type="range" aria-label={label} min={min} max={max} step={step} value={value} onChange={(e) => onCommit(Number(e.target.value))} />
+      <NumberField label={label} value={value} step={step} min={min} max={max} disabled={disabled} onCommit={onCommit} />
+      <input type="range" aria-label={label} min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onCommit(Number(e.target.value))} />
     </div>
   )
 }

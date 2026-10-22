@@ -178,7 +178,7 @@ export function objectsLabel(verb: string, n: number, name?: string): string {
  * the server's defaults for its lens. Named 「摄像机 N」 after the cameras
  * already there.
  */
-export function newCamera(pose: { position: number[]; rotation: number[] }, objects: readonly SceneObject[], makeID: () => string = newObjectID): SceneObject {
+export function newCamera(pose: { position: number[]; rotation: number[] }, objects: readonly SceneObject[], makeID: () => string = newObjectID, exposure?: { iso: number; shutter_s: number }): SceneObject {
   const n = objects.filter((o) => o.kind === 'camera').length + 1
   return {
     id: makeID(),
@@ -189,7 +189,8 @@ export function newCamera(pose: { position: number[]; rotation: number[] }, obje
     transform: { position: pose.position, rotation: pose.rotation, scale: [1, 1, 1] },
     visible: true,
     locked: false,
-    camera: {},
+    // Under a physical sky as bright as the view it was added from (world/exposure.ts newCameraExposure); otherwise the stored defaults.
+    camera: exposure ? { ...exposure } : {},
   }
 }
 
