@@ -4073,6 +4073,114 @@ if (process.env.SCENE_E2E_W2_SKIES) await check('W2 other skies: lit pictures ar
   assert.deepEqual(off, [])
 })
 
+/**
+ * The physical sky's LUTs drawn on the GPU against cpu.ts at the same
+ * texels, in the page: two implementations of one atmosphere that share
+ * only constants.ts. Errors are relative, over the channels whose value is
+ * above floor; WebGL2 reads rows back flipped, so both orders are tried.
+ */
+async function atmosphereDrift(page, preset, sunElevationDeg) {
+  return page.evaluate(async ([preset, sunElevationDeg]) => {
+    const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+    const { atmosphereLuts } = await import('/src/creative-scene/world/atmosphere/luts.ts')
+    const { CpuAtmosphere, transmittanceParams, skyViewParams } = await import('/src/creative-scene/world/atmosphere/cpu.ts')
+    const { PRESETS } = await import('/src/creative-scene/world/atmosphere/constants.ts')
+    const half = (h) => {
+      const e = (h & 0x7c00) >> 10
+      const f = h & 0x03ff
+      const sign = h & 0x8000 ? -1 : 1
+      if (e === 0) return sign * 2 ** -14 * (f / 1024)
+      if (e === 0x1f) return f ? NaN : sign * Infinity
+      return sign * 2 ** (e - 15) * (1 + f / 1024)
+    }
+    const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+    const params = PRESETS[preset]
+    const luts = atmosphereLuts()
+    const sunMu = Math.sin((sunElevationDeg * Math.PI) / 180)
+    luts.setAtmosphere(params)
+    luts.setSun(sunMu, [1, 1, 1])
+    luts.renderAtmosphere(gpu.renderer)
+    luts.renderSkyView(gpu.renderer)
+    const read = async (target) => {
+      const raw = await gpu.renderer.readRenderTargetPixelsAsync(target, 0, 0, target.width, target.height)
+      return raw instanceof Uint16Array ? Float32Array.from(raw, half) : Float32Array.from(raw)
+    }
+    // Tables at the LUTs' sizes: the product's coarser ones would hide a drift in their own error.
+    const cpu = new CpuAtmosphere(params, 'lut')
+    /** Errors at an n × n grid of texels: cpuAt(u, v, out) is the CPU's value at a texel centre. */
+    const compare = (data, target, n, floor, cpuAt) => {
+      const { width: w, height: h } = target
+      const out = new Float64Array(3)
+      const stats = (flip) => {
+        let sum = 0, count = 0, max = 0, nonFinite = 0
+        for (let j = 0; j < n; j++) {
+          for (let i = 0; i < n; i++) {
+            const x = Math.floor(((i + 0.5) / n) * w)
+            const y = Math.floor(((j + 0.5) / n) * h)
+            cpuAt((x + 0.5) / w, (y + 0.5) / h, out)
+            const row = flip ? h - 1 - y : y
+            for (let c = 0; c < 3; c++) {
+              const g = data[(row * w + x) * 4 + c]
+              if (!Number.isFinite(g)) nonFinite++
+              else if (Math.abs(out[c]) > floor) {
+                const rel = Math.abs(g - out[c]) / Math.abs(out[c])
+                sum += rel
+                count++
+                max = Math.max(max, rel)
+              }
+            }
+          }
+        }
+        return { mean: sum / Math.max(1, count), max, count, nonFinite }
+      }
+      const a = stats(false)
+      const b = stats(true)
+      return a.mean <= b.mean ? a : b
+    }
+    const sun = [Math.sqrt(1 - sunMu * sunMu), sunMu, 0]
+    const result = {
+      backend: gpu.backend,
+      transmittance: compare(await read(luts.transmittance), luts.transmittance, 12, 1e-4, (u, v, out) => {
+        const { r, mu } = transmittanceParams(u, v)
+        cpu.transmittance(r, mu, out)
+      }),
+      multiScattering: compare(await read(luts.multiScattering), luts.multiScattering, 6, 1e-6, (u, v, out) => cpu.multiScatteringTexel(u, v, out)),
+      skyView: compare(await read(luts.skyView), luts.skyView, 10, 1e-6, (u, v, out) => {
+        const { viewMu, lightCos } = skyViewParams(u, v, cpu.view, cpu.ground)
+        const s = Math.sqrt(Math.max(0, 1 - viewMu * viewMu))
+        cpu.skyRadiance([s * lightCos, viewMu, s * Math.sqrt(Math.max(0, 1 - lightCos * lightCos))], sun, out)
+      }),
+    }
+    luts.dispose()
+    gpu.dispose()
+    return result
+  }, [preset, sunElevationDeg])
+}
+
+// W2 (design「大气 LUT 与重算」): the GPU's LUTs and the CPU's tables are two
+// implementations of one atmosphere; a constant or a formula changed on one
+// side only shows here. With tables of one size the two agree to about
+// 0.2 % (half floats, the GPU's filtering); the thresholds leave room for
+// that and no more.
+await check('W2 atmosphere drift: the GPU LUTs agree with the CPU at their texels', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  // The multiple scattering's largest relative errors are on texels near 0 (the sun below the horizon), a few 1e-5 off.
+  const limits = { transmittance: [0.002, 0.01], multiScattering: [0.005, 0.05], skyView: [0.005, 0.03] }
+  for (const [preset, elevation] of [['clear', 30], ['dust', 8], ['highland', -3]]) {
+    const out = await atmosphereDrift(page, preset, elevation)
+    console.log(`W2 drift ${preset} at ${elevation}° (${out.backend}): ${['transmittance', 'multiScattering', 'skyView'].map((k) => `${k} mean ${(out[k].mean * 100).toFixed(2)}% max ${(out[k].max * 100).toFixed(2)}% (${out[k].count})`).join(', ')}`)
+    for (const [lut, [mean, max]] of Object.entries(limits)) {
+      const r = out[lut]
+      assert.equal(r.nonFinite, 0, `${preset} ${lut}: no Inf or NaN`)
+      assert.ok(r.count > 20, `${preset} ${lut}: compared ${r.count}`)
+      assert.ok(r.mean <= mean && r.max <= max, `${preset} at ${elevation}°, ${lut}: mean ${(r.mean * 100).toFixed(2)}%, max ${(r.max * 100).toFixed(2)}%`)
+    }
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- R1 AC-R1-3: the same pictures in a hidden tab ------------------------------
 
 // The export as the assistant's page draws it, without the editor or the network.

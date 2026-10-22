@@ -38,7 +38,11 @@
   - CPU 耗时（本机 M4 Pro，Node）：换大气参数 22 ms，换时刻 1.1 ms，都在设计目标内。CPU 的透射率表 64 × 32、多次散射表 16 × 16，比 GPU 的 LUT 粗，只给 CPU 的积分用。
   - 米氏散射基准取原型的「示例 × 5」（散射 0.01998 /km、吸收 0.00202 /km），design 写的 0.02、0.0222 是它的约数。
   - 星球地面的天空光（Ψms × 反照率）在 CPU 和 GPU 的天空视图里都加；原型里没有这一项，4.2 出图后由 8.2 的样张检查地平线。
-- [ ] 4.2 新增 `world/atmosphere/luts.ts`（透射率、多次散射、384 × 216 天空视图三个 TSL 片元 pass，RGBA16F）和 `world/atmosphere/sky.ts`（背景节点与生成天空光照用的节点），从原型 `atmoGpu.ts` 改写；`render/gpu.ts:createRenderer` 安装材质输出钳制（文件头注明 three 0.186.1）。先写 e2e「W2 atmosphere drift」：读回透射率和多次散射 LUT 的固定纹素、天空视图的几个方向，与 `cpu.ts` 比较，阈值参照穿刺的误差放宽；临时只改一边的常量，确认用例能抓到。完成判据：防漂移用例在 SwiftShader 下绿；「W2 other skies」仍然绿（钳制不改变非物理天空）
+- [x] 4.2 新增 `world/atmosphere/luts.ts`（透射率、多次散射、384 × 216 天空视图三个 TSL 片元 pass，RGBA16F）和 `world/atmosphere/sky.ts`（背景节点与生成天空光照用的节点），从原型 `atmoGpu.ts` 改写；`render/gpu.ts:createRenderer` 安装材质输出钳制（文件头注明 three 0.186.1）。先写 e2e「W2 atmosphere drift」：读回透射率和多次散射 LUT 的固定纹素、天空视图的几个方向，与 `cpu.ts` 比较，阈值参照穿刺的误差放宽；临时只改一边的常量，确认用例能抓到。完成判据：防漂移用例在 SwiftShader 下绿；「W2 other skies」仍然绿（钳制不改变非物理天空）
+  - 防漂移用例在 SwiftShader（WebGL2）下绿，三组的相对误差（均值 / 最大）：晴朗 30° 透射率 0.02% / 0.05%、多次散射 0.10% / 1.86%、天空视图 0.03% / 0.11%；沙尘 8° 0.02% / 0.15%、0.18% / 3.56%、0.04% / 0.27%；高原 −3° 0.02% / 0.06%、0.10% / 2.03%、0.03% / 0.20%。阈值取透射率 0.2% / 1%、多次散射 0.5% / 5%（最大误差落在太阳在地平线下、值约 1e-5 的纹素）、天空视图 0.5% / 3%。
+  - 临时把 `MIE_H` 只在 GPU 一侧乘 1.05，透射率最大误差 12.75%，用例失败，已还原。
+  - 起初沙尘差 6–8%，原因是 CPU 的表比 GPU 粗（4.1 备注），不是公式不同：`CpuAtmosphere` 加 `tables: 'fast' | 'lut'`，防漂移用例按 GPU 尺寸建表比较，编辑器仍用 `fast`。顺带把 `luts.ts` 里从摄像机到地面的求交改成不做大数相减（float32 消去），对误差没有可见影响，保留。
+  - 钳制在 `render/gpu.ts` 模块加载时装到 `NodeMaterial.prototype`，不放在 `createRenderer` 里：导出和缩略图的渲染器也要钳，且只装一次（`outputClamped` 标记）；MRT 的输出结构节点不钳。「W2 other skies」在 Metal 下逐像素绿，「reference scenes」「calibration」在 SwiftShader 下绿，场景单测 253 项全绿。
 
 ## 5. 曝光与光照
 

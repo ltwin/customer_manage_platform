@@ -24,9 +24,18 @@ import {
 // the sun light, s_env and the fog. Built once per atmosphere, asked once
 // per environment; typed arrays and scalars, nothing allocated per step.
 
-/** The CPU's tables are coarser than the GPU's LUTs: only these integrals read them. */
-const CPU_TRANSMITTANCE = { w: 64, h: 32 }
-const CPU_MULTI = { w: 16, h: 16 }
+/**
+ * The tables' sizes. The CPU's own ('fast') are coarser than the GPU's
+ * LUTs: under the dust preset its sky irradiance comes out about 8 % low
+ * (0.1 stop in s_env and the fog), while a sky light change takes 1 ms and
+ * an atmosphere change 22 ms. 'lut' builds them at the LUTs' sizes, to hold
+ * the two implementations to each other (e2e「W2 atmosphere drift」: then
+ * they agree to 0.2 %).
+ */
+const TABLES = {
+  fast: { tr: { w: 64, h: 32 }, ms: { w: 16, h: 16 } },
+  lut: { tr: { w: TRANSMITTANCE.w, h: TRANSMITTANCE.h }, ms: { w: MULTI.w, h: MULTI.h } },
+} as const
 /** The sky's irradiance: rings equal in sin² elevation (cosine-weighted), segments in azimuth. */
 const IRRADIANCE = { rings: 16, segments: 32 }
 
@@ -98,30 +107,34 @@ export class CpuAtmosphere {
   readonly ground: number
   readonly view: number
   private readonly c: Coefficients
-  private readonly tr = new Float64Array(CPU_TRANSMITTANCE.w * CPU_TRANSMITTANCE.h * 3)
-  private readonly ms = new Float64Array(CPU_MULTI.w * CPU_MULTI.h * 3)
+  private readonly size: (typeof TABLES)[keyof typeof TABLES]
+  private readonly tr: Float64Array
+  private readonly ms: Float64Array
   // Scratch: the medium (Rayleigh RGB, Mie, extinction RGB) and lookups.
   private readonly m = new Float64Array(7)
   private readonly t = new Float64Array(3)
   private readonly s = new Float64Array(3)
   private readonly sum = new Float64Array(6)
 
-  constructor(params: AtmosphereParams) {
+  constructor(params: AtmosphereParams, tables: keyof typeof TABLES = 'fast') {
     this.c = coefficients(params)
     this.ground = groundRadius(params)
     this.view = viewRadius(params)
+    const { tr, ms } = (this.size = TABLES[tables])
+    this.tr = new Float64Array(tr.w * tr.h * 3)
+    this.ms = new Float64Array(ms.w * ms.h * 3)
     const out = new Float64Array(3)
-    for (let y = 0; y < CPU_TRANSMITTANCE.h; y++) {
-      for (let x = 0; x < CPU_TRANSMITTANCE.w; x++) {
-        const { r, mu } = transmittanceParams((x + 0.5) / CPU_TRANSMITTANCE.w, (y + 0.5) / CPU_TRANSMITTANCE.h)
+    for (let y = 0; y < tr.h; y++) {
+      for (let x = 0; x < tr.w; x++) {
+        const { r, mu } = transmittanceParams((x + 0.5) / tr.w, (y + 0.5) / tr.h)
         this.transmittance(r, mu, out)
-        this.tr.set(out, (y * CPU_TRANSMITTANCE.w + x) * 3)
+        this.tr.set(out, (y * tr.w + x) * 3)
       }
     }
-    for (let y = 0; y < CPU_MULTI.h; y++) {
-      for (let x = 0; x < CPU_MULTI.w; x++) {
-        this.multiScatteringTexel((x + 0.5) / CPU_MULTI.w, (y + 0.5) / CPU_MULTI.h, out, CPU_MULTI.w, CPU_MULTI.h)
-        this.ms.set(out, (y * CPU_MULTI.w + x) * 3)
+    for (let y = 0; y < ms.h; y++) {
+      for (let x = 0; x < ms.w; x++) {
+        this.multiScatteringTexel((x + 0.5) / ms.w, (y + 0.5) / ms.h, out, ms.w, ms.h)
+        this.ms.set(out, (y * ms.w + x) * 3)
       }
     }
   }
@@ -180,11 +193,12 @@ export class CpuAtmosphere {
   }
 
   private lookupTransmittance(r: number, mu: number): void {
-    CpuAtmosphere.sample(this.tr, CPU_TRANSMITTANCE.w, CPU_TRANSMITTANCE.h, transmittanceU(r, mu), transmittanceV(r), this.t)
+    CpuAtmosphere.sample(this.tr, this.size.tr.w, this.size.tr.h, transmittanceU(r, mu), transmittanceV(r), this.t)
   }
 
   private lookupMulti(r: number, sunMu: number): void {
-    CpuAtmosphere.sample(this.ms, CPU_MULTI.w, CPU_MULTI.h, toSub(clamp01(sunMu * 0.5 + 0.5), CPU_MULTI.w), toSub(clamp01((r - BOTTOM) / (TOP - BOTTOM)), CPU_MULTI.h), this.s)
+    const { w, h } = this.size.ms
+    CpuAtmosphere.sample(this.ms, w, h, toSub(clamp01(sunMu * 0.5 + 0.5), w), toSub(clamp01((r - BOTTOM) / (TOP - BOTTOM)), h), this.s)
   }
 
   /**

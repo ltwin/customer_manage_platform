@@ -1,5 +1,7 @@
 import { LinearSRGBColorSpace, NoToneMapping, Source, type Camera, type Object3D, type Texture } from 'three'
-import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
+import * as tsl from 'three/tsl'
+import { NodeMaterial, ViewportTextureNode, WebGPURenderer, type Node, type NodeBuilder } from 'three/webgpu'
+import type { TSLNode } from '../materials/patterns.ts'
 import { backgroundTicker } from '../host/ticker.ts'
 import { adapter } from './probe.ts'
 
@@ -63,6 +65,33 @@ export function ownViewportTextures(node: typeof ViewportTextureNode.prototype) 
   }
 }
 ownViewportTextures(ViewportTextureNode.prototype)
+
+/** The most a material may write: under RGBA16F's 65 504, with room for blending. */
+export const MAX_OUTPUT = 60000
+
+/**
+ * Clamps every node material's colour to MAX_OUTPUT before it reaches a
+ * buffer (W2, Epic design「曝光的确定」), the materials three maps from the
+ * classic ones included. Under a physical sky a camera may overexpose by
+ * many stops, and past half float's top SwiftShader writes Inf, which AgX
+ * turns into NaN (74 % of a frame black, exposure.md section 2); what is
+ * clamped was far overexposed anyway. Full-screen passes (the sky's LUTs,
+ * post-processing) go through here too, far below the bound.
+ * three 0.186.1 NodeMaterial.setupOutput (fog, premultiplied alpha):
+ * compare on every upgrade (patterns「场景着色写法」).
+ */
+export function clampMaterialOutput(proto: { setupOutput(builder: NodeBuilder, output: Node): Node; outputClamped?: true }) {
+  if (proto.outputClamped) return
+  const setup = proto.setupOutput
+  const { min, vec3, vec4 } = tsl as unknown as Record<string, (...args: TSLNode[]) => TSLNode>
+  proto.setupOutput = function (this: unknown, builder: NodeBuilder, output: Node) {
+    const o = output as TSLNode
+    // A material writing several targets at once (MRT) is left as it is.
+    return setup.call(this, builder, o.isOutputStructNode === true ? o : vec4(min(o.rgb, vec3(MAX_OUTPUT)), o.a))
+  }
+  proto.outputClamped = true
+}
+clampMaterialOutput(NodeMaterial.prototype as unknown as Parameters<typeof clampMaterialOutput>[0])
 
 
 export type Output =
