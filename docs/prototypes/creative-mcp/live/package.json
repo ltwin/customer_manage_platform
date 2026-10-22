@@ -1,0 +1,20 @@
+{
+  "name": "creative-mcp-live-prototype",
+  "private": true,
+  "version": "0.0.0",
+  "description": "一次性活原型：假数据 MCP 服务，接进本机宿主核实卡片与结果文字的实际显示",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

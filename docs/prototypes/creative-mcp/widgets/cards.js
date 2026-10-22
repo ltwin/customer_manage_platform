@@ -20,6 +20,13 @@ window.Cards = (() => {
   const terminal = (t) => t.status === 'succeeded' || t.status === 'failed'
 
   let s = { view: null } // 当前显示的数据：structuredContent + _meta + 卡片本地状态
+  let input = {} // 工具调用的参数，卡片里点「生成」时原样复用
+  // 交给外部助手的上下文：规范规定每次更新覆盖上一次，所以维护一份累计摘要，每次发完整内容
+  const told = []
+  const tell = (line) => {
+    told.push(line)
+    return app.updateModelContext(told.join('\n'))
+  }
   let timer = 0
   let current = 0 // 全屏查看时的当前图
 
@@ -124,12 +131,12 @@ window.Cards = (() => {
   }
   async function poll() {
     const before = s.tasks.filter(terminal).length
-    const r = await app.callTool('wait_tasks', { task_ids: s.tasks.map((t) => t.id), timeout_sec: 10 })
+    const r = await app.callTool('wait_tasks', { task_ids: s.tasks.map((t) => t.id), timeout_s: 20 })
     s = fromResult(r)
     render()
     const done = s.tasks.filter((t) => t.status === 'succeeded')
     if (s.tasks.filter(terminal).length > before && done.length)
-      app.updateModelContext(
+      tell(
         `卡片显示：${done.map((t) => `任务 ${t.id}（${t.title}）已完成`).join('；')}。结果图片创作者已在卡片里看到，不必再调用 wait_tasks。`,
       )
     schedule()
@@ -149,17 +156,17 @@ window.Cards = (() => {
     if (act === 'decline') {
       s.local = { ...s.local, declined: true }
       render()
-      return app.updateModelContext('创作者在预检卡里选择了不生成，没有扣点。')
+      return tell('创作者在预检卡里选择了不生成，没有扣点。')
     }
     if (act === 'generate') {
       s.local = { ...s.local, submitting: true }
       render()
-      const r = await app.callTool('generate_node', { node_id: s.node.id, count: s.count, dry_run: false })
+      const r = await app.callTool('generate_node', { ...input, node_id: s.node.id, count: s.count, dry_run: false })
       s = fromResult(r)
       s.local = {}
       render()
       const t = s.tasks[0]
-      app.updateModelContext(`创作者在预检卡里确认了生成：已提交任务 ${t.id}（${t.count} 张，预计 ${t.cost} 点）。不要重复提交；进度和结果显示在卡片里。`)
+      tell(`创作者在预检卡里确认了生成：已提交任务 ${t.id}（${t.count} 张，预计 ${t.cost} 点）。不要重复提交；进度和结果显示在卡片里。`)
       return schedule()
     }
     if (act === 'save') {
@@ -167,9 +174,48 @@ window.Cards = (() => {
       await app.callTool('save_to_library', { task_id: s.tasks[0].id })
       s.local = { ...s.local, saved: true }
       render()
-      return app.updateModelContext(`创作者在卡片里把 ${n} 张结果存入了资产库「未归类」。`)
+      return tell(`创作者在卡片里把 ${n} 张结果存入了资产库「未归类」。`)
     }
   })
+
+  // 活原型诊断（window.CARD_DIAG）：把宿主给的上下文、图片加载、上下文更新结果回报给服务端日志。
+  // 经 app-only 工具 report_card_event，只在活原型服务里存在。
+  function report(event, data) {
+    app.callTool('report_card_event', { event, data: JSON.stringify(data).slice(0, 4000) }).catch(() => {})
+  }
+  function diag(res) {
+    const ctx = res?.hostContext ?? {}
+    report('init', {
+      host: res?.hostInfo,
+      caps: res?.hostCapabilities,
+      theme: ctx.theme,
+      displayMode: ctx.displayMode,
+      modes: ctx.availableDisplayModes,
+      platform: ctx.platform,
+      dims: ctx.containerDimensions,
+      safe: ctx.safeAreaInsets,
+      vars: Object.keys(ctx.styles?.variables ?? {}).length,
+      fonts: Boolean(ctx.styles?.css?.fonts),
+      width: innerWidth,
+    })
+    const seen = new Set()
+    el.addEventListener('load', (e) => e.target.tagName === 'IMG' && !seen.has(e.target.src) && (seen.add(e.target.src), report('img_ok', { src: e.target.src.slice(0, 120) })), true)
+    el.addEventListener('error', (e) => e.target.tagName === 'IMG' && report('img_error', { src: e.target.src.slice(0, 120) }), true)
+    const ctxUpdate = app.updateModelContext
+    app.updateModelContext = (text) =>
+      ctxUpdate(text).then(
+        (r) => (report('ctx_ok', { len: text.length }), r),
+        (err) => (report('ctx_error', { err: String(err?.message ?? err) }), Promise.reject(err)),
+      )
+    const open = app.openLink
+    app.openLink = (url) =>
+      open(url).then(
+        (r) => (report('open_ok', { url }), r),
+        (err) => (report('open_error', { url, err: String(err?.message ?? err) }), Promise.reject(err)),
+      )
+    const mode = app.requestDisplayMode
+    app.requestDisplayMode = (m) => mode(m).then((r) => (report('mode', { asked: m, got: r?.mode }), r))
+  }
 
   return {
     async mount(name) {
@@ -179,9 +225,11 @@ window.Cards = (() => {
         render()
         schedule()
       })
+      app.on('ui/notifications/tool-input', (p) => (input = p?.arguments ?? {}))
       app.on('ui/notifications/host-context-changed', render)
-      await app.connect({ name, modes: ['inline', 'fullscreen'] })
+      const res = await app.connect({ name, modes: ['inline', 'fullscreen'] })
       render()
+      if (window.CARD_DIAG) diag(res)
     },
   }
 })()

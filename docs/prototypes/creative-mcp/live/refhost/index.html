@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>参考宿主 · 活原型</title>
+    <style>
+      body { margin: 0; padding: 16px; font: 13px/1.5 system-ui, -apple-system, 'PingFang SC', sans-serif; background: #f5f4ed; display: grid; grid-template-columns: 420px 1fr; gap: 16px; }
+      #cards { display: grid; gap: 12px; align-content: start; }
+      iframe { width: 100%; height: 200px; border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 12px; background: #fff; }
+      #log { margin: 0; padding: 0 0 0 18px; font: 12px ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <div id="cards"></div>
+    <ol id="log"></ol>
+    <script type="module" src="../.build/refhost.js"></script>
+  </body>
+</html>

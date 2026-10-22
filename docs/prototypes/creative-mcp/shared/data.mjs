@@ -1,11 +1,16 @@
 // 原型共用的示例数据：账号、宿主、连接、画布、图片。全部是假数据，不连后端。
 const here = (p) => new URL(p, import.meta.url).href
 
+// 活原型（live/server.mjs）在 Node 里运行，用环境变量把图片和链接换成本机 http 地址
+const env = globalThis.process?.env ?? {}
+const file = (n) => `photo-${String(n).padStart(2, '0')}.jpg`
+
 // 图片沿用 v4 原型的样张；用绝对地址，iframe 里的卡片也能直接加载。
-export const photo = (n) => here(`../../creative-workspace/v4/assets/photo-${String(n).padStart(2, '0')}.jpg`)
+export const photo = (n) =>
+  env.CREATIVE_PHOTO_BASE ? `${env.CREATIVE_PHOTO_BASE}${file(n)}` : here(`../../creative-workspace/v4/assets/${file(n)}`)
 
 // 生产域名占位。文字里显示这个地址，点击时打开本地原型页面。
-export const ORIGIN = 'https://studio.example.com'
+export const ORIGIN = env.CREATIVE_ORIGIN ?? 'https://studio.example.com'
 export const MCP_URL = `${ORIGIN}/mcp`
 export const page = (path) => here(`../web/${path}`)
 

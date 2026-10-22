@@ -80,6 +80,6 @@ Epic `creative-mcp-server` 的第一层原型（D13）。它覆盖两块：
 - 对象存储图片在卡片里的 CSP 与签名有效期，以及 Claude 的 `ui.domain`（U11）。
 - 插件仓库地址待定（U3），接入页里用占位。
 
-## 还没做
+## 活原型
 
-第二层活原型（D13）：起一个假数据的 MCP 服务接进真宿主，复用 `widgets/` 和 `shared/results.mjs`。接 ChatGPT 和 claude.ai 网页要开公网隧道，开之前先确认。
+第二层活原型（D13）在 `live/`，见 [live/README.md](live/README.md)：一个假数据 MCP 服务，接进本机的 Claude Code、Codex CLI、Claude 桌面端。它复用这里的 `widgets/` 和 `shared/results.mjs`。ChatGPT 和 claude.ai 网页需要公网隧道，这次不接。
