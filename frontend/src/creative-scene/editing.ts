@@ -4,6 +4,8 @@ import { builtinSpec } from './builtins/catalog.ts'
 import { newObjectID } from './ids.ts'
 import { NEW_LIGHT_INTENSITY } from './render/litLook.ts'
 import { sameValue, subtree, type WireOp } from './state/apply.ts'
+import { PRESETS, type PresetName } from './world/atmosphere/constants.ts'
+import { physicalSkyDefaults } from './world/physicalSky.ts'
 
 // The edits behind menu items and shortcuts, each one intent's operations.
 
@@ -271,13 +273,44 @@ type Sky = Environment['sky']
 export const proceduralSky: Sky = { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }
 export const colorSky: Sky = { kind: 'color', color: '#a7b6c6' }
 
+/** Today on this machine's calendar, YYYY-MM-DD: what a new physical sky's date starts at. */
+export function localDate(now = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
 /**
  * The environment with the sky switched to kind: each kind carries only its
- * own fields, so the other kind's values are left behind.
+ * own fields, so the other kind's values are left behind. A physical sky
+ * starts from the contract's defaults (Shanghai at noon, clear) on today's
+ * date (W2 design「天空模式与太阳」).
  */
-export function withSkyKind(env: Environment, kind: 'procedural' | 'color'): Environment {
+export function withSkyKind(env: Environment, kind: 'procedural' | 'color' | 'physical', today = localDate()): Environment {
   if (env.sky.kind === kind) return env
+  if (kind === 'physical') return { ...env, sky: { kind, ...physicalSkyDefaults, date: today } }
   return { ...env, sky: kind === 'procedural' ? { ...proceduralSky } : { ...colorSky } }
+}
+
+/**
+ * A physical sky's sun mode. To manual the sun's angles as they are now
+ * (sun, from the place and time) go with it in one write, so the picture
+ * does not jump; below −10° (after dusk) the elevation stops at −10°. Back
+ * to the place only the mode changes: both sets of fields are kept.
+ */
+export function withSunMode(env: Environment, mode: 'location' | 'manual', sun: { elevationDeg: number; azimuthDeg: number }): Environment {
+  if (env.sky.sun_mode === mode) return env
+  if (mode === 'location') return { ...env, sky: { ...env.sky, sun_mode: mode } }
+  const azimuth = ((sun.azimuthDeg % 360) + 360) % 360
+  return { ...env, sky: { ...env.sky, sun_mode: mode, sun_elevation_deg: Math.min(90, Math.max(-10, sun.elevationDeg)), sun_azimuth_deg: azimuth } }
+}
+
+/** A chosen city: its coordinates, time zone and name in one write. */
+export function withCity(env: Environment, city: { name: string; latitude: number; longitude: number; timezone: string }): Environment {
+  return { ...env, sky: { ...env.sky, latitude_deg: city.latitude, longitude_deg: city.longitude, timezone: city.timezone, place: city.name } }
+}
+
+/** An atmosphere preset: its four fields, not the sun's strength or colour. */
+export function withPreset(env: Environment, preset: PresetName): Environment {
+  return { ...env, sky: { ...env.sky, ...PRESETS[preset] } }
 }
 
 /** Fog on starts 10 m to 100 m in a pale grey; off removes it. */

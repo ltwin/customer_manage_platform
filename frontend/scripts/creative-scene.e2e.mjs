@@ -3607,6 +3607,8 @@ const obliqueOrtho = {
 /** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1; edit changes it first. */
 function referenceScene(server, name, edit) {
   server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  // The default exposure the server reads documents from before W2 with (backend model.go Render.UnmarshalJSON).
+  server.scene.render.exposure_ev100 ??= 15
   edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
   for (const o of server.scene.objects) {
@@ -4408,6 +4410,165 @@ await check('W2 back to another sky: switching the physical sky off leaves the l
   const back = await change([{ op: 'set_environment', environment: procedural }])
   const m = await compareShots(page, before, back, 0)
   assert.ok(!m.error && m.over === 0, `the procedural sky as before (${m.error ?? `${m.over.toFixed(4)}% differ`})`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- W2 the environment tab under a physical sky (AC-W2-1, AC-W2-2, AC-W2-12) ----------
+
+/** The noon yard in the rendered view, its sky switched to physical from the environment tab. */
+async function physicalTab(edit) {
+  const server = new SceneServer()
+  referenceScene(server, 'noon', edit)
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.mouse.move(1, 1)
+  await shading(page, '最终渲染')
+  await page.getByRole('combobox', { name: '天空类型' }).selectOption('physical')
+  await waitFor(() => server.scene.environment.sky.kind === 'physical', 'the physical sky written')
+  await saved(page)
+  const settle = async () => {
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await sleep(400)
+    return settledShot(page, box)
+  }
+  const sky = () => server.scene.environment.sky
+  /** Sets the local time slider to hh:mm and waits for it to be written. */
+  const time = async (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number)
+    await page.getByRole('slider', { name: '当地时刻' }).fill(String(h * 60 + m))
+    await waitFor(() => sky().local_time === hhmm, `local time ${hhmm}`)
+  }
+  return { server, context, page, errors, box, settle, sky, time }
+}
+
+await check('W2 environment tab: the physical sky with its defaults and today’s date, a city from the search with GeoNames credited, the ambient light off', async () => {
+  const { server, context, page, errors, sky } = await physicalTab()
+  const today = await page.evaluate(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
+  assert.deepEqual(
+    { ...sky(), date: undefined },
+    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500 },
+  )
+  assert.equal(sky().date, today, 'today, on this machine')
+  assert.deepEqual(server.scene.environment.ambient, { color: '#ffffff', intensity: 0.4 }, 'the rest of the environment stays')
+  const ambient = page.locator('fieldset', { has: page.locator('legend', { hasText: '环境光' }) })
+  assert.ok(await ambient.evaluate((f) => f.disabled), 'the ambient light is greyed out')
+  await page.getByText('物理天空下天空光由大气算出，环境光不生效').waitFor()
+
+  // The city table is fetched when the search box is first used, not with the editor (gzip about 160 KB).
+  const asked = []
+  page.on('request', (r) => r.url().includes('cities.json') && asked.push(r.url()))
+  assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('cities.json'))), false, 'not loaded with the editor')
+  const search = page.getByRole('combobox', { name: '城市' })
+  await search.focus()
+  await waitFor(() => asked.length > 0, 'loaded on first focus')
+  await search.fill('伦敦')
+  const list = page.getByRole('listbox', { name: '城市' })
+  await waitFor(async () => (await list.getByRole('option').count()) >= 2, 'results')
+  assert.deepEqual((await list.getByRole('option').allTextContents()).slice(0, 2), ['伦敦 · 英国', '伦敦 · 加拿大'])
+  const credit = page.getByRole('link', { name: 'GeoNames（CC BY 4.0），已修改' })
+  assert.equal(await credit.getAttribute('href'), 'https://www.geonames.org/')
+  await shot(page, 'w2-city-search')
+  await search.fill('成都')
+  await list.getByRole('option', { name: '成都 · 中国' }).click()
+  await waitFor(() => sky().place === '成都', 'the city written')
+  assert.deepEqual([sky().latitude_deg, sky().longitude_deg, sky().timezone], [30.67, 104.07, 'Asia/Shanghai'])
+  assert.equal(server.commands.at(-1).payload.operations.length, 1, 'in one write')
+  await saved(page)
+  // A latitude typed in is no longer that city.
+  const latitude = page.getByRole('spinbutton', { name: '纬度（°）' })
+  await latitude.fill('30.5')
+  await latitude.press('Enter')
+  await waitFor(() => sky().latitude_deg === 30.5, 'latitude written')
+  assert.equal(sky().place, '', 'the place is cleared')
+  await page.getByRole('combobox', { name: '时区' }).selectOption('Asia/Tokyo')
+  await waitFor(() => sky().timezone === 'Asia/Tokyo', 'time zone written')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 environment tab: the time of day moves the sun and shows the day’s hours; north turns the shadows; in Sydney the noon sun is in the north', async () => {
+  const { context, page, errors, settle, sky, time } = await physicalTab()
+  await page.getByLabel('日期').fill('2026-06-21')
+  await waitFor(() => sky().date === '2026-06-21', 'date written')
+  const evidence = process.env.SCENE_E2E_W2_EVIDENCE
+  const elevations = []
+  for (const hhmm of ['05:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '19:00', '20:00']) {
+    await time(hhmm)
+    const png = await settle()
+    elevations.push(Number((await page.getByRole('status', { name: '太阳高度' }).textContent()).replace(/[^\d.−-]/g, '').replace('−', '-')))
+    if (evidence) await writeFile(`${evidence}/shanghai-solstice-${hhmm.replace(':', '')}.png`, png)
+  }
+  console.log(`W2 Shanghai on the solstice: elevation ${elevations.join(', ')}`)
+  assert.ok(elevations[0] < 2 && elevations[4] > 80 && elevations.at(-1) < 0, 'below the horizon at 05:00 and 20:00, about 82° at noon')
+  const day = await page.getByRole('region', { name: '太阳的一天' }).textContent()
+  assert.match(day, /日出 04:5\d/)
+  assert.match(day, /日落 19:0\d/)
+  assert.match(day, /黄金时刻/)
+  assert.match(day, /蓝调时刻/)
+  // A day's dragging folds into one step per pause (merge key environment.local_time).
+
+  await time('16:00')
+  const before = await settle()
+  await page.getByRole('slider', { name: '正北方向（°）' }).fill('90')
+  await waitFor(() => sky().north_azimuth_deg === 90, 'north written')
+  const turned = await settle()
+  const turn = await pixelDiff(page, before, turned)
+  if (process.env.SCENE_E2E_SHOTS) for (const [n, png] of [['before', before], ['turned', turned]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/w2-north-${n}.png`, png)
+  assert.ok(turn > 0.01, `the shadows turn with north (${(turn * 100).toFixed(2)}% of pixels)`)
+
+  await page.getByRole('combobox', { name: '城市' }).fill('悉尼')
+  await page.getByRole('listbox', { name: '城市' }).getByRole('option', { name: '悉尼 · 澳大利亚' }).click()
+  await waitFor(() => sky().timezone === 'Australia/Sydney', 'Sydney')
+  await time('12:00')
+  const bearing = Number((await page.getByRole('status', { name: '太阳方位' }).textContent()).replace(/[^\d.]/g, ''))
+  assert.ok(bearing < 20 || bearing > 340, `the noon sun is in the north in Sydney (${bearing}°)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 environment tab: manual angles keep the picture, undo goes back to the place; at night they stop at −10°; presets write the atmosphere', async () => {
+  const { server, context, page, errors, settle, sky, time } = await physicalTab()
+  await time('16:30')
+  const located = await settle()
+  await saved(page)
+  const position = page.getByRole('group', { name: '太阳位置' })
+  await position.getByRole('button', { name: '手动角度' }).click()
+  await waitFor(() => sky().sun_mode === 'manual', 'manual')
+  assert.deepEqual(server.commands.at(-1).payload.operations.length, 1, 'mode and angles in one write')
+  assert.ok(sky().sun_elevation_deg > 0 && sky().sun_elevation_deg < 40, `the sun’s angle written (${sky().sun_elevation_deg})`)
+  const manual = await settle()
+  const m = await compareShots(page, located, manual, 2)
+  assert.ok(m.over < 0.01, `the picture stays (${m.over.toFixed(4)}% off)`)
+  await page.getByRole('slider', { name: '太阳高度（°）' }).waitFor()
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => sky().sun_mode === 'location', 'undo goes back to the place')
+  await saved(page)
+  await time('23:00')
+  await position.getByRole('button', { name: '手动角度' }).click()
+  await waitFor(() => sky().sun_mode === 'manual', 'manual at night')
+  assert.equal(sky().sun_elevation_deg, -10, 'stops at −10°')
+  await position.getByRole('button', { name: '地点和时间' }).click()
+  await waitFor(() => sky().sun_mode === 'location', 'back')
+
+  const preset = page.getByRole('combobox', { name: '大气预设' })
+  assert.equal(await preset.inputValue(), 'clear')
+  await preset.selectOption('haze')
+  await waitFor(() => sky().dust_density === 12, 'haze written')
+  assert.deepEqual([sky().altitude_m, sky().air_density, sky().ozone_density, sky().sun_strength], [0, 1, 1, 1], 'the four fields, not the sun')
+  await preset.selectOption('highland')
+  await waitFor(() => sky().altitude_m === 4000 && sky().dust_density === 0.2, 'highland written')
+  const dust = page.getByRole('spinbutton', { name: '尘埃密度' })
+  await dust.fill('3')
+  await dust.press('Enter')
+  await waitFor(() => sky().dust_density === 3, 'dust written')
+  assert.equal(await preset.inputValue(), 'custom', 'custom once a field is changed')
   assert.deepEqual(errors, [])
   await context.close()
 })

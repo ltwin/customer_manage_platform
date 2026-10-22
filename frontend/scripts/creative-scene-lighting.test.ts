@@ -5,7 +5,7 @@ import { applyLight, buildLight } from '../src/creative-scene/objects/lights.ts'
 import { exposureOf, NEW_LIGHT_INTENSITY, SKY_GAIN, SKY_SHARE, SUN_MAX, sunLight } from '../src/creative-scene/render/litLook.ts'
 import { skyIrradiance } from '../src/creative-scene/render/atmosphere.ts'
 import { aimStudio } from '../src/creative-scene/render/studio.ts'
-import { colorSky, coneAngle, coneDegrees, newLight, newLightHeight, proceduralSky, withFog, withSkyKind } from '../src/creative-scene/editing.ts'
+import { colorSky, coneAngle, coneDegrees, localDate, newLight, newLightHeight, proceduralSky, withCity, withFog, withPreset, withSkyKind, withSunMode } from '../src/creative-scene/editing.ts'
 
 const close = (a: readonly number[], b: readonly number[], eps = 1e-9) =>
   assert.ok(a.every((v, i) => Math.abs(v - b[i]) < eps), `${JSON.stringify(a)} ≈ ${JSON.stringify(b)}`)
@@ -120,6 +120,31 @@ test('switching the sky keeps only the new kind\'s fields; fog toggles with a st
   assert.ok(foggy.fog && foggy.fog.near > 0 && foggy.fog.far > foggy.fog.near, 'the server accepts it')
   assert.equal(withFog(foggy, false).fog, null)
   assert.equal(withFog(env, false), env)
+})
+
+test('a physical sky starts from the contract’s defaults on today’s date; switching back keeps only the other kind’s fields', () => {
+  const env = { sky: { ...proceduralSky }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
+  const physical = withSkyKind(env, 'physical', '2026-10-22')
+  assert.equal(physical.sky.kind, 'physical')
+  assert.equal(physical.sky.date, '2026-10-22')
+  assert.deepEqual([physical.sky.timezone, physical.sky.local_time, physical.sky.sun_mode], ['Asia/Shanghai', '12:00', 'location'])
+  assert.equal(physical.ambient, env.ambient)
+  assert.deepEqual(withSkyKind(physical, 'procedural').sky, proceduralSky)
+  assert.equal(localDate(new Date(2026, 0, 5, 23, 59)), '2026-01-05', 'the local calendar day')
+})
+
+test('manual angles carry the sun as it is, stopped at −10°; back to the place only the mode changes; a city and a preset write their fields', () => {
+  const env = withSkyKind({ sky: { ...proceduralSky }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, 'physical', '2026-10-22')
+  const manual = withSunMode(env, 'manual', { elevationDeg: 23.5, azimuthDeg: -30 })
+  assert.deepEqual([manual.sky.sun_mode, manual.sky.sun_elevation_deg, manual.sky.sun_azimuth_deg], ['manual', 23.5, 330])
+  assert.equal(withSunMode(env, 'manual', { elevationDeg: -40, azimuthDeg: 10 }).sky.sun_elevation_deg, -10)
+  const back = withSunMode(manual, 'location', { elevationDeg: 0, azimuthDeg: 0 })
+  assert.deepEqual({ ...back.sky, sun_mode: 'manual' }, manual.sky, 'the angles are kept')
+  assert.equal(back.sky.sun_mode, 'location')
+  const city = withCity(env, { name: '成都', latitude: 30.67, longitude: 104.07, timezone: 'Asia/Shanghai' })
+  assert.deepEqual([city.sky.latitude_deg, city.sky.longitude_deg, city.sky.timezone, city.sky.place], [30.67, 104.07, 'Asia/Shanghai', '成都'])
+  const haze = withPreset({ ...env, sky: { ...env.sky, sun_strength: 2 } }, 'haze')
+  assert.deepEqual([haze.sky.altitude_m, haze.sky.air_density, haze.sky.dust_density, haze.sky.ozone_density, haze.sky.sun_strength], [0, 1, 12, 1, 2])
 })
 
 test('the studio key light turns with the view: from its upper left wherever the camera looks; other lights stay', () => {
