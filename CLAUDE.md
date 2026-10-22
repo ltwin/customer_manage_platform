@@ -45,6 +45,7 @@
 | 客户头像用户/开发/API 指南 | `docs/user/customer-avatar.md`、`docs/dev/customer-avatar.md`、`docs/api/customer-avatar.md` |
 | 对象存储驱动与 OSS bucket 初始化 | `docs/dev/object-storage.md` |
 | Skill 受信导入与回收 CLI | `docs/dev/creative-skill-import.md` |
+| 外部助手（MCP 端点、OAuth、本机接入与排错） | `docs/dev/creative-mcp.md` |
 | 头像 generation 模式沉淀 | `.codestable/compound/2026-07-13-avatar-immutable-generation-pattern.md` |
 | Go 编码规范 checklist | `docs/go-style-checklist.md`（决策：`.codestable/compound/2026-07-06-decision-go-uber-style-guide.md`） |
 | 前端编码规范 checklist | `docs/frontend-style-checklist.md`（决策：`.codestable/compound/2026-07-07-decision-frontend-toolchain-first-standard.md`） |
