@@ -1,10 +1,10 @@
 {
   "uid": "b117108c-c8a2-48a4-89e6-2b3bedc21cbe",
-  "revision": 8,
+  "revision": 10,
   "id": "scene-webgpu-renderer",
   "createdAt": "2026-10-21T06:56:11.282Z",
-  "updatedAt": "2026-10-22T06:48:37.661Z",
-  "state": "active",
+  "updatedAt": "2026-10-22T07:00:00.456Z",
+  "state": "accepted",
   "designBaselines": [
     {
       "version": 1,
@@ -410,8 +410,63 @@
     "at": "2026-10-21T07:35:14.395Z",
     "docHash": "04a480822e2cf2433df777a7b830be3e7a2bb6231bb79322c7504c4772b21a53"
   },
-  "verifications": [],
+  "verifications": [
+    {
+      "at": "2026-10-22T06:59:58.892Z",
+      "summary": "依据三个子项各自的验收：R0 scene-webgpu-spike、R1 scene-webgpu-pipeline、R2 scene-render-settings 均有 owner pass 并已归档、集成到 develop；目标契约 architecture:场景模块、patterns:场景着色写法、data:场景文档 均已交付",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 2026-10-22 决定不做 Epic 整体验证，未对组合结果另跑检查；R2 的重绘对照（AC-R2-10，回填未决事项 2 默认渲染器）与 Safari 检查延期，由 owner 后续验证"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "57063a761d5d97ef8592eb8ff10d6062f8062fec3027a5c22b80efa79374003f"
+      }
+    }
+  ],
+  "finalAcceptance": {
+    "by": "samson",
+    "at": "2026-10-22T07:00:00.327Z",
+    "summary": "owner 2026-10-22 接受：WebGPU/TSL 渲染管线迁移、渲染选项卡、实时 GI 渲染器（最终渲染与 lit）与 1K~8K 输出分辨率已交付；不做整体验证；重绘对照与 Safari 由 owner 后续验证",
+    "docHash": "d15218ea0d41825ecf0919b7f5728385adaccac85549d88293df1febb34ae5dd",
+    "integrationEvidence": "依据三个子项各自的验收：R0 scene-webgpu-spike、R1 scene-webgpu-pipeline、R2 scene-render-settings 均有 owner pass 并已归档、集成到 develop；目标契约 architecture:场景模块、patterns:场景着色写法、data:场景文档 均已交付",
+    "verification": {
+      "at": "2026-10-22T06:59:58.892Z",
+      "summary": "依据三个子项各自的验收：R0 scene-webgpu-spike、R1 scene-webgpu-pipeline、R2 scene-render-settings 均有 owner pass 并已归档、集成到 develop；目标契约 architecture:场景模块、patterns:场景着色写法、data:场景文档 均已交付",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 2026-10-22 决定不做 Epic 整体验证，未对组合结果另跑检查；R2 的重绘对照（AC-R2-10，回填未决事项 2 默认渲染器）与 Safari 检查延期，由 owner 后续验证"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "57063a761d5d97ef8592eb8ff10d6062f8062fec3027a5c22b80efa79374003f"
+      }
+    },
+    "children": [
+      {
+        "uid": "08a60d92-9939-45f9-b4d4-94b2e0f91d4c",
+        "changeId": "scene-webgpu-spike",
+        "outcome": "archived"
+      },
+      {
+        "uid": "24a57b62-e69e-4946-9cf4-9a95989b5240",
+        "changeId": "scene-webgpu-pipeline",
+        "outcome": "archived"
+      },
+      {
+        "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
+        "changeId": "scene-render-settings",
+        "outcome": "archived"
+      }
+    ]
+  },
   "resolutions": [],
   "type": "epic",
-  "stage": "develop"
+  "stage": "archived"
 }
