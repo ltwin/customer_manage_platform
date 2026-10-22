@@ -1,0 +1,50 @@
+{
+  "generated": "2026-10-22",
+  "astronomyEngineVersion": "2.1.19",
+  "location": {
+    "latitude": 31.2304,
+    "longitude": 121.4737
+  },
+  "local": {
+    "utc": "2026-10-01T13:00:00.000Z",
+    "moon": {
+      "altitude": 3.3015725802711557,
+      "azimuth": 60.49843507139572,
+      "distKm": 368970.83966418926
+    },
+    "phaseLongitudeDeg": 243.26766306553432,
+    "phaseAngleDeg": 63.25324158766141,
+    "phaseFraction": 0.7250239594015695,
+    "gastHours": 13.685238346294893,
+    "lastHours": 21.783485012961563,
+    "rotationEqjHorRow0": [
+      -0.429653323810129,
+      -0.5532813638157691,
+      0.7136369902079565
+    ]
+  },
+  "horizons": {
+    "header": [
+      "Date__(UT)__HR:MN:SC.fff",
+      "",
+      "",
+      "Azimuth_(r-app)",
+      "Elevation_(r-app)",
+      "L_Ap_Sid_Time",
+      "Illu%",
+      "S-T-O",
+      ""
+    ],
+    "row": [
+      "2026-Oct-01 13:00:00.000",
+      "",
+      "m",
+      "60.498924428",
+      "3.302126902",
+      "21.7834780273",
+      "71.94121",
+      "63.9736",
+      ""
+    ]
+  }
+}

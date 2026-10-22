@@ -1,0 +1,26 @@
+{
+ "cities": 34179,
+ "langCounts": {
+  "zh": 12104,
+  "zh-TW": 259,
+  "zh-CN": 833,
+  "zh-Hant": 662,
+  "zh-Hans": 356,
+  "zh-SG": 30,
+  "zh-HK": 376,
+  "zh-MO": 10,
+  "zh-MY": 3
+ },
+ "zhRule": {
+  "1": 8,
+  "2": 48,
+  "3": 1132,
+  "4": 7690,
+  "5": 2342,
+  "none": 22959
+ },
+ "zhFromTradFallback": 2342,
+ "zhtFilled": 941,
+ "altCjkOnly": 1068,
+ "wkdt": 10956
+}

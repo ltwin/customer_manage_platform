@@ -1,0 +1,173 @@
+{
+ "errors": [],
+ "report": {
+  "room-day-incident": {
+   "backend": "webgpu",
+   "kind": "room",
+   "sky": "physical",
+   "sunElevDeg": 30,
+   "E": 56070.266315152825,
+   "Esky": 7537.769215997901,
+   "Edirect": 48532.49709915493,
+   "Elamps": 0,
+   "meteredEv": 14.453020206805139,
+   "envEv": 14.453020206805139,
+   "ev": 13.25302020680514,
+   "k": 0.00008536151975663984,
+   "relative": 2.297396709994069,
+   "meterMs": 6.9000000059604645,
+   "timings": {
+    "luts": 21.80000001192093,
+    "frame": 17.599999994039536
+   },
+   "stats": {
+    "mean": 44.76881289300313,
+    "ground": 100.47855716141542,
+    "clipped": 0,
+    "hash": 1839652428
+   },
+   "hdr": {
+    "max": 1.359375,
+    "atClamp": 0,
+    "nonFinite": 0,
+    "subnormal": 0,
+    "logMean": -0.7474319786676692
+   }
+  },
+  "room-day-incident-sky": {
+   "backend": "webgpu",
+   "kind": "room",
+   "sky": "physical",
+   "sunElevDeg": 30,
+   "E": 56070.266315152825,
+   "Esky": 7537.769215997901,
+   "Edirect": 48532.49709915493,
+   "Elamps": 0,
+   "meteredEv": 14.453020206805139,
+   "envEv": 14.453020206805139,
+   "ev": 13.25302020680514,
+   "k": 0.00008536151975663984,
+   "relative": 2.297396709994069,
+   "meterMs": 7.5,
+   "timings": {
+    "luts": 6.5,
+    "pmrem": 15.599999994039536,
+    "frame": 11.900000005960464
+   },
+   "stats": {
+    "mean": 144.1903239548892,
+    "ground": 149.81714503107287,
+    "clipped": 0,
+    "hash": 1682385221
+   },
+   "hdr": {
+    "max": 1.46875,
+    "atClamp": 0,
+    "nonFinite": 0,
+    "subnormal": 0,
+    "logMean": -1.5747386093741633
+   }
+  },
+  "room-day-reflective": {
+   "backend": "webgpu",
+   "kind": "room",
+   "sky": "physical",
+   "sunElevDeg": 30,
+   "E": 56070.266315152825,
+   "Esky": 7537.769215997901,
+   "Edirect": 48532.49709915493,
+   "Elamps": 0,
+   "meteredEv": 14.453020206805139,
+   "envEv": 14.453020206805139,
+   "ev": 13.25302020680514,
+   "k": 0.00008536151975663984,
+   "relative": 2.297396709994069,
+   "meterMs": 6.0999999940395355,
+   "residualEv": 8,
+   "timings": {
+    "luts": 5.5,
+    "frame": 8.099999994039536
+   },
+   "stats": {
+    "mean": 63.51388888888888,
+    "ground": 147.57511111111108,
+    "clipped": 0.2490740740740741,
+    "hash": 1680719253
+   },
+   "hdr": {
+    "max": 1.359375,
+    "atClamp": 0,
+    "nonFinite": 0,
+    "subnormal": 0,
+    "logMean": -0.7474319786676692
+   }
+  },
+  "room-night-lamps-incident": {
+   "backend": "webgpu",
+   "kind": "room",
+   "sky": "physical",
+   "sunElevDeg": -18,
+   "E": 5.724853743269052,
+   "Esky": 0.000519720869590275,
+   "Edirect": 0,
+   "Elamps": 5.724334022399462,
+   "meteredEv": 1.195310741281915,
+   "envEv": -12,
+   "ev": -0.004689258718084899,
+   "k": 0.8360463621360394,
+   "relative": 0.0002449354576570428,
+   "meterMs": 4.5999999940395355,
+   "timings": {
+    "luts": 4.899999976158142,
+    "frame": 5.9000000059604645
+   },
+   "stats": {
+    "mean": 126.75293081524234,
+    "ground": 123.44034428277828,
+    "clipped": 0,
+    "hash": 3681621969
+   },
+   "hdr": {
+    "max": 8.40625,
+    "atClamp": 0,
+    "nonFinite": 0,
+    "subnormal": 0.0068196676557010765,
+    "logMean": -2.5336492811706424
+   }
+  },
+  "room-night-lamps-reflective": {
+   "backend": "webgpu",
+   "kind": "room",
+   "sky": "physical",
+   "sunElevDeg": -18,
+   "E": 5.724853743269052,
+   "Esky": 0.000519720869590275,
+   "Edirect": 0,
+   "Elamps": 5.724334022399462,
+   "meteredEv": 1.195310741281915,
+   "envEv": -12,
+   "ev": -0.004689258718084899,
+   "k": 0.8360463621360394,
+   "relative": 0.0002449354576570428,
+   "meterMs": 4.9000000059604645,
+   "residualEv": 0.5787243843078613,
+   "timings": {
+    "luts": 4.9000000059604645,
+    "frame": 7.199999988079071
+   },
+   "stats": {
+    "mean": 141.59521519347314,
+    "ground": 139.5625481880829,
+    "clipped": 0,
+    "hash": 2872875742
+   },
+   "hdr": {
+    "max": 8.40625,
+    "atClamp": 0,
+    "nonFinite": 0,
+    "subnormal": 0.0068196676557010765,
+    "logMean": -2.5336492811706424
+   }
+  }
+ }
+}

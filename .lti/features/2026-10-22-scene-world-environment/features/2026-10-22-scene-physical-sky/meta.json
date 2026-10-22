@@ -1,0 +1,63 @@
+{
+  "uid": "188beed6-152e-49c5-ab86-602f1e946382",
+  "revision": 4,
+  "id": "scene-physical-sky",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-world-environment",
+  "designBinding": {
+    "version": 2,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "patterns:场景着色写法",
+      "data:物理天空",
+      "data:摄像机曝光",
+      "data:夜空",
+      "data:空气透视",
+      "data:体积物件",
+      "api:提交场景命令"
+    ],
+    "delivers": [
+      "data:物理天空",
+      "data:摄像机曝光",
+      "architecture:场景模块",
+      "patterns:场景着色写法"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-22T11:37:31.579Z",
+  "updatedAt": "2026-10-22T13:33:16.399Z",
+  "risk": {
+    "factors": [
+      "broad-impact",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-22T13:33:16.293Z",
+      "contentHash": "fb05ba660c1f375f"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-22T13:33:16.293Z",
+      "contentHash": "fae64e6d2f6c9b2e"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

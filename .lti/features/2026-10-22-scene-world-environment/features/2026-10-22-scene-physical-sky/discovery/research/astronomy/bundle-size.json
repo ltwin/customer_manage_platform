@@ -1,0 +1,63 @@
+{
+  "generated": "2026-10-22",
+  "astronomyEngineVersion": "2.1.19",
+  "bundler": "rolldown 1.1.4",
+  "results": [
+    {
+      "entry": "w2-sun",
+      "minify": false,
+      "bytes": 129312,
+      "gzip": 40395,
+      "brotli": 32724
+    },
+    {
+      "entry": "w2-sun",
+      "minify": true,
+      "bytes": 53773,
+      "gzip": 23554,
+      "brotli": 19739
+    },
+    {
+      "entry": "w2+w3",
+      "minify": false,
+      "bytes": 143839,
+      "gzip": 44396,
+      "brotli": 36022
+    },
+    {
+      "entry": "w2+w3",
+      "minify": true,
+      "bytes": 56369,
+      "gzip": 24649,
+      "brotli": 20673
+    },
+    {
+      "entry": "w2+w3+Rotation_EQJ_HOR",
+      "minify": false,
+      "bytes": 154557,
+      "gzip": 46460,
+      "brotli": 37500
+    },
+    {
+      "entry": "w2+w3+Rotation_EQJ_HOR",
+      "minify": true,
+      "bytes": 58276,
+      "gzip": 25174,
+      "brotli": 21093
+    },
+    {
+      "entry": "whole-library",
+      "minify": false,
+      "bytes": 334322,
+      "gzip": 90010,
+      "brotli": 71585
+    },
+    {
+      "entry": "whole-library",
+      "minify": true,
+      "bytes": 106320,
+      "gzip": 43580,
+      "brotli": 36228
+    }
+  ]
+}

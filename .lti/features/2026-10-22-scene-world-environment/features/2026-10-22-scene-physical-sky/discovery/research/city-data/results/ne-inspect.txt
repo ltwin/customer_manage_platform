@@ -1,0 +1,52 @@
+features: 7342
+property keys (137): SCALERANK,NATSCALE,LABELRANK,FEATURECLA,NAME,NAMEPAR,NAMEALT,NAMEASCII,ADM0CAP,CAPIN,WORLDCITY,MEGACITY,SOV0NAME,SOV_A3,ADM0NAME,ADM0_A3,ADM1NAME,ISO_A2,NOTE,LATITUDE,LONGITUDE,POP_MAX,POP_MIN,POP_OTHER,RANK_MAX,RANK_MIN,MEGANAME,LS_NAME,MAX_POP10,MAX_POP20,MAX_POP50,MAX_POP300,MAX_POP310,MAX_NATSCA,MIN_AREAKM,MAX_AREAKM,MIN_AREAMI,MAX_AREAMI,MIN_PERKM,MAX_PERKM,MIN_PERMI,MAX_PERMI,MIN_BBXMIN,MAX_BBXMIN,MIN_BBXMAX,MAX_BBXMAX,MIN_BBYMIN,MAX_BBYMIN,MIN_BBYMAX,MAX_BBYMAX,MEAN_BBXC,MEAN_BBYC,TIMEZONE,UN_FID,POP1950,POP1955,POP1960,POP1965,POP1970,POP1975,POP1980,POP1985,POP1990,POP1995,POP2000,POP2005,POP2010,POP2015,POP2020,POP2025,POP2050,MIN_ZOOM,WIKIDATAID,WOF_ID,CAPALT,NAME_EN,NAME_DE,NAME_ES,NAME_FR,NAME_PT,NAME_RU,NAME_ZH,LABEL,NAME_AR,NAME_BN,NAME_EL,NAME_HI,NAME_HU,NAME_ID,NAME_IT,NAME_JA,NAME_KO,NAME_NL,NAME_PL,NAME_SV,NAME_TR,NAME_VI,NE_ID,NAME_FA,NAME_HE,NAME_UK,NAME_UR,NAME_ZHT,GEONAMESID,FCLASS_ISO,FCLASS_US,FCLASS_FR,FCLASS_RU,FCLASS_ES,FCLASS_CN,FCLASS_TW,FCLASS_IN,FCLASS_NP,FCLASS_PK,FCLASS_DE,FCLASS_GB,FCLASS_BR,FCLASS_IL,FCLASS_PS,FCLASS_SA,FCLASS_EG,FCLASS_MA,FCLASS_PT,FCLASS_AR,FCLASS_JP,FCLASS_KO,FCLASS_VN,FCLASS_TR,FCLASS_ID,FCLASS_PL,FCLASS_GR,FCLASS_IT,FCLASS_NL,FCLASS_SE,FCLASS_BD,FCLASS_UA,FCLASS_TLC
+SCALERANK: 7342/7342 (100.0%)
+LABELRANK: 7341/7342 (100.0%)
+FEATURECLA: 7342/7342 (100.0%)
+NAME: 7342/7342 (100.0%)
+NAMEASCII: 7342/7342 (100.0%)
+ADM0NAME: 7342/7342 (100.0%)
+ADM0_A3: 7342/7342 (100.0%)
+ADM1NAME: 7223/7342 (98.4%)
+ISO_A2: 7342/7342 (100.0%)
+LATITUDE: 7342/7342 (100.0%)
+LONGITUDE: 7342/7342 (100.0%)
+POP_MAX: 7342/7342 (100.0%)
+POP_MIN: 7342/7342 (100.0%)
+TIMEZONE: 6159/7342 (83.9%)
+MIN_ZOOM: 7342/7342 (100.0%)
+WIKIDATAID: 7192/7342 (98.0%)
+NAME_EN: 7342/7342 (100.0%)
+NAME_ZH: 7342/7342 (100.0%)
+NAME_JA: 7342/7342 (100.0%)
+NAME_ZHT: 7342/7342 (100.0%)
+distinct TIMEZONE: 320 invalid distinct: 0 invalid rows: 0
+invalid samples: []
+tz without slash: []
+alias (resolved differs): [["Asia/Ho_Chi_Minh","Asia/Saigon",52],["Asia/Kathmandu","Asia/Katmandu",13],["Atlantic/Faroe","Atlantic/Faeroe",1],["Asia/Kolkata","Asia/Calcutta",201],["America/Indiana/Indianapolis","America/Indianapolis",11],["America/Kentucky/Louisville","America/Louisville",2],["Europe/Zaporozhye","Europe/Kiev",19],["Europe/Uzhgorod","Europe/Kiev",9],["Asia/Chongqing","Asia/Shanghai",99],["Asia/Harbin","Asia/Shanghai",89],["America/Nipigon","America/Toronto",4],["America/Montreal","America/Toronto",20],["America/Argentina/Catamarca","America/Catamarca",5],["America/Argentina/Mendoza","America/Mendoza",3],["America/Argentina/Buenos_Aires","America/Buenos_Aires",25],["America/Argentina/Cordoba","America/Cordoba",29],["Africa/Asmara","Africa/Asmera",7],["America/Argentina/Jujuy","America/Jujuy",3],["Asia/Kashgar","Asia/Urumqi",4],["America/Pangnirtung","America/Iqaluit",1],["America/Yellowknife","America/Edmonton",1],["America/Thunder_Bay","America/Toronto",1]]
+no TIMEZONE samples: Medenine/Tunisia/61705; L'Ariana/Tunisia/97687; Kasserine/Tunisia/76243; Mahdia/Tunisia/45977; Monastir/Tunisia/71546; Luan Chau/Vietnam/7335; Thái Bình/Vietnam/210000; Tra Vinh/Vietnam/131360; Artvin/Turkey/32272; Bombo/Uganda/75000; Dar'a/Syria/146481; Karlskrona/Sweden/35212; Miercurea Cuic/Romania/42029; Salyan/Nepal/15000; An Nabk/Saudi Arabia/10000
+no TIMEZONE by country top: [["Canada",118],["Russia",99],["China",88],["United States of America",77],["Argentina",74],["Australia",63],["Antarctica",40],["Brazil",33],["Algeria",27],["Chile",26],["Bolivia",25],["Congo (Kinshasa)",23],["Angola",23],["Taiwan",18],["Indonesia",17]]
+Beijing | ZH=北京 | ZHT=北京市 | TZ=Asia/Harbin | POP=11106000 | China
+Shanghai | ZH=上海 | ZHT=上海市 | TZ=Asia/Shanghai | POP=14987000 | China
+Guangzhou | ZH=广州 | ZHT=廣州市 | TZ=Asia/Chongqing | POP=8829000 | China
+Taipei | ZH=台北 | ZHT=臺北市 | TZ=Asia/Taipei | POP=6900273 | Taiwan
+Hong Kong | ZH=香港 | ZHT=香港 | TZ=Asia/Hong_Kong | POP=7206000 | Hong Kong S.A.R.
+Tokyo | ZH=东京 | ZHT=東京 | TZ=Asia/Tokyo | POP=35676000 | Japan
+Kyoto | ZH=京都 | ZHT=京都市 | TZ=Asia/Tokyo | POP=1805000 | Japan
+Seoul | ZH=首尔 | ZHT=首爾 | TZ=Asia/Seoul | POP=9796000 | South Korea
+Paris | ZH=巴黎 | ZHT=巴黎 | TZ=Europe/Paris | POP=9904000 | France
+London | ZH=伦敦 | ZHT=伦敦 | TZ=America/New_York | POP=7844 | United States of America
+London | ZH=伦敦 | ZHT=倫敦 | TZ=America/Toronto | POP=346765 | Canada
+Lhasa | ZH=拉萨 | ZHT=拉薩市 | TZ=Asia/Chongqing | POP=219599 | China
+Ürümqi | ZH=乌鲁木齐 | ZHT=烏魯木齊 | TZ=Asia/Urumqi | POP=3575000 | China
+Kashgar | ZH=喀什 | ZHT=喀什市 | TZ=Asia/Kashgar | POP=506640 | China
+Harbin | ZH=哈尔滨 | ZHT=哈爾濱市 | TZ=Asia/Harbin | POP=3621000 | China
+Xiamen | ZH=厦门 | ZHT=廈門市 | TZ=Asia/Shanghai | POP=2519000 | China
+Reykjavík | ZH=雷克雅未克 | ZHT=雷克雅未克 | TZ=Atlantic/Reykjavik | POP=166212 | Iceland
+Auckland | ZH=奥克兰都会区 | ZHT=奧克蘭市 | TZ=Pacific/Auckland | POP=1377200 | New Zealand
+Cape Town | ZH=开普敦 | ZHT=開普敦 | TZ=Africa/Johannesburg | POP=3215000 | South Africa
+Los Angeles | ZH=洛桑赫莱斯 | ZHT=洛桑赫萊斯 | TZ=America/Santiago | POP=145239 | Chile
+Los Angeles | ZH=洛杉矶 | ZHT=洛杉磯 | TZ=America/Los_Angeles | POP=12500000 | United States of America
+New York | ZH=纽约 | ZHT=紐約 | TZ=America/New_York | POP=19040000 | United States of America
+China rows: 400 with NAME_ZH: 400
+Taiwan rows: 25

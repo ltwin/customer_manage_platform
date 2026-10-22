@@ -1,0 +1,876 @@
+{
+ "label": "ne-10m",
+ "source": "ne.json",
+ "top": "all",
+ "records": 7342,
+ "zhFilled": 7342,
+ "zhFilledPct": 100,
+ "zhWithTradCharHeuristic": 645,
+ "zhNotChinese": 0,
+ "tzFilled": 6159,
+ "tzDistinct": 320,
+ "tzInvalidIntl": [],
+ "tzAliasCount": 22,
+ "checklist": {
+  "total": 49,
+  "zh": 42,
+  "enOnly": 0,
+  "zhAltOnly": 0,
+  "miss": 7,
+  "found": 42,
+  "zhTop1": 41,
+  "cnFound": 27,
+  "cnTotal": 34,
+  "intlFound": 15,
+  "intlTotal": 15
+ },
+ "items": [
+  {
+   "item": "北京",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "北京",
+    "zht": "北京市",
+    "en": "Beijing",
+    "tz": "Asia/Harbin",
+    "pop": 11106000,
+    "cc": "CN",
+    "km": 3,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "上海",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "上海",
+    "zht": "上海市",
+    "en": "Shanghai",
+    "tz": "Asia/Shanghai",
+    "pop": 14987000,
+    "cc": "CN",
+    "km": 4,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "广州",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "广州",
+    "zht": "廣州市",
+    "en": "Guangzhou",
+    "tz": "Asia/Chongqing",
+    "pop": 8829000,
+    "cc": "CN",
+    "km": 6,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "深圳",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "深圳",
+    "zht": "深圳市",
+    "en": "Shenzhen",
+    "tz": "Asia/Chongqing",
+    "pop": 7581000,
+    "cc": "CN",
+    "km": 7,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "成都",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "成都",
+    "zht": "成都市",
+    "en": "Chengdu",
+    "tz": "Asia/Chongqing",
+    "pop": 4123000,
+    "cc": "CN",
+    "km": 11,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "重庆",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "重庆",
+    "zht": "重慶市",
+    "en": "Chongqing",
+    "tz": "Asia/Chongqing",
+    "pop": 6461000,
+    "cc": "CN",
+    "km": 4,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "杭州",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "杭州",
+    "zht": "杭州市",
+    "en": "Hangzhou",
+    "tz": "Asia/Shanghai",
+    "pop": 3007000,
+    "cc": "CN",
+    "km": 3,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "苏州",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "苏州",
+    "zht": "蘇州市",
+    "en": "Suzhou",
+    "tz": "Asia/Shanghai",
+    "pop": 1650000,
+    "cc": "CN",
+    "km": 3,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "南京",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "南京",
+    "zht": "南京市",
+    "en": "Nanjing",
+    "tz": "Asia/Shanghai",
+    "pop": 3679000,
+    "cc": "CN",
+    "km": 2,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 2,
+   "wrongZhSamples": [
+    "金斯顿 SE/Kingston SE/AU/206"
+   ]
+  },
+  {
+   "item": "西安",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "西安",
+    "zht": "西安市",
+    "en": "Xi'an",
+    "tz": "Asia/Chongqing",
+    "pop": 4009000,
+    "cc": "CN",
+    "km": 8,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "拉萨",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "拉萨",
+    "zht": "拉薩市",
+    "en": "Lhasa",
+    "tz": "Asia/Chongqing",
+    "pop": 219599,
+    "cc": "CN",
+    "km": 7,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 5,
+   "wrongZhSamples": [
+    "阿拉萨图巴/Araçatuba/BR/170024",
+    "拉萨罗卡德纳斯/Lázaro Cárdenas/MX/160087",
+    "卡拉萨/Karratha/AU/16796",
+    "拉萨尔/La Sarre/CA/7206"
+   ]
+  },
+  {
+   "item": "林芝",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "林芝",
+    "zht": "林芝地區",
+    "en": "Nyingchi",
+    "tz": null,
+    "pop": 100,
+    "cc": "CN",
+    "km": 14,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "大理",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "大理",
+    "zht": "大理市",
+    "en": "Dali",
+    "tz": "Asia/Chongqing",
+    "pop": 156685,
+    "cc": "CN",
+    "km": 14,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 2,
+   "wrongZhSamples": [
+    "大理/Dali/CN/109696"
+   ]
+  },
+  {
+   "item": "丽江",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "丽江",
+    "zht": "麗江市",
+    "en": "Lijiang",
+    "tz": null,
+    "pop": 18445,
+    "cc": "CN",
+    "km": 7,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "香格里拉",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "稻城",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "西宁",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "西宁",
+    "zht": "西寧市",
+    "en": "Xining",
+    "tz": "Asia/Chongqing",
+    "pop": 1048000,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 2,
+   "wrongZhSamples": [
+    "西宁/Tây Ninh/VN/126370"
+   ]
+  },
+  {
+   "item": "敦煌",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "敦煌",
+    "zht": "敦煌市",
+    "en": "Dunhuang",
+    "tz": null,
+    "pop": 140094,
+    "cc": "CN",
+    "km": 0,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "喀什",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "喀什",
+    "zht": "喀什市",
+    "en": "Kashgar City",
+    "tz": "Asia/Kashgar",
+    "pop": 506640,
+    "cc": "CN",
+    "km": 2,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 3,
+   "wrongZhSamples": [
+    "马拉喀什/Marrakesh/MA/872000",
+    "巴爾喀什/Balkhash/KZ/81364"
+   ]
+  },
+  {
+   "item": "乌鲁木齐",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "乌鲁木齐",
+    "zht": "烏魯木齊",
+    "en": "Ürümqi",
+    "tz": "Asia/Urumqi",
+    "pop": 3575000,
+    "cc": "CN",
+    "km": 4,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "哈尔滨",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "哈尔滨",
+    "zht": "哈爾濱市",
+    "en": "Harbin",
+    "tz": "Asia/Harbin",
+    "pop": 3621000,
+    "cc": "CN",
+    "km": 10,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "漠河",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "海拉尔(呼伦贝尔)",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "海拉尔区",
+    "zht": "海拉爾區",
+    "en": "Hailar",
+    "tz": "Asia/Harbin",
+    "pop": 231171,
+    "cc": "CN",
+    "km": 3,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "青岛",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "青岛",
+    "zht": "青島市",
+    "en": "Qingdao",
+    "tz": "Asia/Shanghai",
+    "pop": 2866000,
+    "cc": "CN",
+    "km": 6,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "厦门",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "厦门",
+    "zht": "廈門市",
+    "en": "Xiamen",
+    "tz": "Asia/Shanghai",
+    "pop": 2519000,
+    "cc": "CN",
+    "km": 3,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "桂林",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "桂林",
+    "zht": "桂林市",
+    "en": "Guilin",
+    "tz": "Asia/Chongqing",
+    "pop": 987000,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "阳朔",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "张家界",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "黄山",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "婺源",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 1,
+   "wrongZhSamples": [
+    "婺源/Wuyuan/CN/30057"
+   ]
+  },
+  {
+   "item": "三亚",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "三亚",
+    "zht": "三亞市",
+    "en": "Sanya",
+    "tz": "Asia/Chongqing",
+    "pop": 362689,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "香港",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "香港",
+    "zht": "香港",
+    "en": "Hong Kong",
+    "tz": "Asia/Hong_Kong",
+    "pop": 7206000,
+    "cc": "HK",
+    "km": 2,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "澳门",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "澳门",
+    "zht": "澳門",
+    "en": "Macau",
+    "tz": "America/Fortaleza",
+    "pop": 568700,
+    "cc": "MO",
+    "km": 0,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "台北",
+   "group": "cn",
+   "status": "zh",
+   "matched": {
+    "zh": "台北",
+    "zht": "臺北市",
+    "en": "Taipei",
+    "tz": "Asia/Taipei",
+    "pop": 6900273,
+    "cc": "TW",
+    "km": 0,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "东京",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "东京",
+    "zht": "東京",
+    "en": "Tokyo",
+    "tz": "Asia/Tokyo",
+    "pop": 35676000,
+    "cc": "JP",
+    "km": 5,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "京都",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "京都",
+    "zht": "京都市",
+    "en": "Kyoto",
+    "tz": "Asia/Tokyo",
+    "pop": 1805000,
+    "cc": "JP",
+    "km": 3,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "首尔",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "首尔",
+    "zht": "首爾",
+    "en": "Seoul",
+    "tz": "Asia/Seoul",
+    "pop": 9796000,
+    "cc": "KR",
+    "km": 2,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "曼谷",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "曼谷",
+    "zht": "曼谷",
+    "en": "Bangkok",
+    "tz": "Asia/Bangkok",
+    "pop": 6704000,
+    "cc": "TH",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "新加坡",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "新加坡",
+    "zht": "新加坡",
+    "en": "Singapore",
+    "tz": "Asia/Singapore",
+    "pop": 5183700,
+    "cc": "SG",
+    "km": 7,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "巴黎",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "巴黎",
+    "zht": "巴黎",
+    "en": "Paris",
+    "tz": "Europe/Paris",
+    "pop": 9904000,
+    "cc": "FR",
+    "km": 2,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "伦敦",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "伦敦",
+    "zht": "倫敦",
+    "en": "London",
+    "tz": "Europe/London",
+    "pop": 8567000,
+    "cc": "GB",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 6,
+   "wrongZhSamples": [
+    "阿伦敦/Allentown/US/496442",
+    "伦敦/London/CA/346765",
+    "东伦敦/East London/ZA/338627",
+    "新伦敦/New London/US/96178"
+   ]
+  },
+  {
+   "item": "罗马",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "罗马",
+    "zht": "羅馬",
+    "en": "Rome",
+    "tz": "Europe/Rome",
+    "pop": 3339000,
+    "cc": "IT",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 2,
+   "wrongZhSamples": [
+    "罗马/Roma/AU/5496"
+   ]
+  },
+  {
+   "item": "纽约",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "纽约",
+    "zht": "紐約",
+    "en": "New York City",
+    "tz": "America/New_York",
+    "pop": 19040000,
+    "cc": "US",
+    "km": 5,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "洛杉矶",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "洛杉矶",
+    "zht": "洛杉磯",
+    "en": "Los Angeles",
+    "tz": "America/Los_Angeles",
+    "pop": 12500000,
+    "cc": "US",
+    "km": 9,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "雷克雅未克",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "雷克雅未克",
+    "zht": "雷克雅未克",
+    "en": "Reykjavík",
+    "tz": "Atlantic/Reykjavik",
+    "pop": 166212,
+    "cc": "IS",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "开普敦",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "开普敦",
+    "zht": "開普敦",
+    "en": "Cape Town",
+    "tz": "Africa/Johannesburg",
+    "pop": 3215000,
+    "cc": "ZA",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "悉尼",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "悉尼",
+    "zht": "雪梨",
+    "en": "Sydney",
+    "tz": null,
+    "pop": 4630000,
+    "cc": "AU",
+    "km": 6,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 3,
+   "wrongZhSamples": [
+    "悉尼/Sydney/CA/37538",
+    "悉尼/Sidney/US/6492"
+   ]
+  },
+  {
+   "item": "奥克兰",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "奥克兰都会区",
+    "zht": "奧克蘭市",
+    "en": "Auckland",
+    "tz": "Pacific/Auckland",
+    "pop": 1377200,
+    "cc": "NZ",
+    "km": 0,
+    "zhAlts": []
+   },
+   "zhRank": 2,
+   "zhHitCount": 2,
+   "wrongZhSamples": [
+    "奥克兰/Oakland/US/1510271"
+   ]
+  },
+  {
+   "item": "布宜诺斯艾利斯",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "布宜诺斯艾利斯",
+    "zht": "布宜諾斯艾利斯",
+    "en": "Buenos Aires",
+    "tz": "America/Argentina/Buenos_Aires",
+    "pop": 12795000,
+    "cc": "AR",
+    "km": 2,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  }
+ ]
+}

@@ -1,0 +1,1 @@
+[{"name": "x-overflow-clamped", "args": {"sunElevDeg": 55, "atmosphere": {"altitudeM": 0, "air": 1, "dust": 1, "ozone": 1, "groundAlbedo": 0.3, "mieScale": 5}, "clampMaterials": true, "exposure": {"mode": "manual", "iso": 102400, "shutter": 30, "fStop": 0.5}}}]

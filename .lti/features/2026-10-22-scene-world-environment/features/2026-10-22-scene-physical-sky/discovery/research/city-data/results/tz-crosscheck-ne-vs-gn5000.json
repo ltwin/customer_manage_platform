@@ -1,0 +1,802 @@
+{
+ "neRecords": 7342,
+ "neWithTz": 6159,
+ "compared": 5955,
+ "sameOffset": 5876,
+ "differentOffset": 79,
+ "noNeighborWithin25km": 204,
+ "neMissingTz": 1183,
+ "neMissingTzFillableFromGn": 637,
+ "diffs": [
+  {
+   "ne": "Lagos/NG",
+   "neTz": "Europe/Athens",
+   "neSig": "GMT+02:00|GMT+03:00",
+   "gn": "Lagos",
+   "gnTz": "Africa/Lagos",
+   "gnSig": "GMT+01:00|GMT+01:00",
+   "km": 1,
+   "pop": 9466000
+  },
+  {
+   "ne": "Santiago/CL",
+   "neTz": "America/Sao_Paulo",
+   "neSig": "GMT-03:00|GMT-03:00",
+   "gn": "Santiago",
+   "gnTz": "America/Santiago",
+   "gnSig": "GMT-03:00|GMT-04:00",
+   "km": 2,
+   "pop": 5720000
+  },
+  {
+   "ne": "Santo Domingo/DO",
+   "neTz": "America/Bogota",
+   "neSig": "GMT-05:00|GMT-05:00",
+   "gn": "San Carlos",
+   "gnTz": "America/Santo_Domingo",
+   "gnSig": "GMT-04:00|GMT-04:00",
+   "km": 1,
+   "pop": 2154000
+  },
+  {
+   "ne": "Asunción/PY",
+   "neTz": "Asia/Manila",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Asunción",
+   "gnTz": "America/Asuncion",
+   "gnSig": "GMT-03:00|GMT-03:00",
+   "km": 1,
+   "pop": 1870000
+  },
+  {
+   "ne": "Montevideo/UY",
+   "neTz": "America/Chicago",
+   "neSig": "GMT-06:00|GMT-05:00",
+   "gn": "Montevideo",
+   "gnTz": "America/Montevideo",
+   "gnSig": "GMT-03:00|GMT-03:00",
+   "km": 5,
+   "pop": 1513000
+  },
+  {
+   "ne": "San Salvador/SV",
+   "neTz": "Asia/Manila",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Mejicanos",
+   "gnTz": "America/El_Salvador",
+   "gnSig": "GMT-06:00|GMT-06:00",
+   "km": 2,
+   "pop": 1433000
+  },
+  {
+   "ne": "Ciudad Juárez/MX",
+   "neTz": "America/Chihuahua",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Ciudad Juárez",
+   "gnTz": "America/Ciudad_Juarez",
+   "gnSig": "GMT-07:00|GMT-06:00",
+   "km": 4,
+   "pop": 1343000
+  },
+  {
+   "ne": "San José/CR",
+   "neTz": "America/Bogota",
+   "neSig": "GMT-05:00|GMT-05:00",
+   "gn": "San José",
+   "gnTz": "America/Costa_Rica",
+   "gnSig": "GMT-06:00|GMT-06:00",
+   "km": 0,
+   "pop": 1284000
+  },
+  {
+   "ne": "Prague/CZ",
+   "neTz": "America/Chicago",
+   "neSig": "GMT-06:00|GMT-05:00",
+   "gn": "Žižkov",
+   "gnTz": "Europe/Prague",
+   "gnSig": "GMT+01:00|GMT+02:00",
+   "km": 1,
+   "pop": 1162000
+  },
+  {
+   "ne": "Odessa/UA",
+   "neTz": "Europe/Simferopol",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Odesa",
+   "gnTz": "Europe/Kyiv",
+   "gnSig": "GMT+02:00|GMT+03:00",
+   "km": 3,
+   "pop": 991000
+  },
+  {
+   "ne": "Cardiff/GB",
+   "neTz": "Australia/Sydney",
+   "neSig": "GMT+11:00|GMT+10:00",
+   "gn": "Llandaff",
+   "gnTz": "Europe/London",
+   "gnSig": "GMT|GMT+01:00",
+   "km": 1,
+   "pop": 861400
+  },
+  {
+   "ne": "Valparaíso/CL",
+   "neTz": "America/Sao_Paulo",
+   "neSig": "GMT-03:00|GMT-03:00",
+   "gn": "Valparaíso",
+   "gnTz": "America/Santiago",
+   "gnSig": "GMT-03:00|GMT-04:00",
+   "km": 1,
+   "pop": 854000
+  },
+  {
+   "ne": "Saratov/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Saratov",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 5,
+   "pop": 843000
+  },
+  {
+   "ne": "Ulyanovsk/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Ulyanovsk",
+   "gnTz": "Europe/Ulyanovsk",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 2,
+   "pop": 640680
+  },
+  {
+   "ne": "Barnaul/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Barnaul",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 1,
+   "pop": 599579
+  },
+  {
+   "ne": "Macau/MO",
+   "neTz": "America/Fortaleza",
+   "neSig": "GMT-03:00|GMT-03:00",
+   "gn": "Santo António",
+   "gnTz": "Asia/Macau",
+   "gnSig": "GMT+08:00|GMT+08:00",
+   "km": 0,
+   "pop": 568700
+  },
+  {
+   "ne": "Matamoros/MX",
+   "neTz": "America/Monterrey",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Heroica Matamoros",
+   "gnTz": "America/Matamoros",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 0,
+   "pop": 538785
+  },
+  {
+   "ne": "Tripoli/LB",
+   "neTz": "Africa/Tripoli",
+   "neSig": "GMT+02:00|GMT+02:00",
+   "gn": "Tripoli",
+   "gnTz": "Asia/Beirut",
+   "gnSig": "GMT+02:00|GMT+03:00",
+   "km": 3,
+   "pop": 530000
+  },
+  {
+   "ne": "Astrakhan/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Astrakhan",
+   "gnTz": "Europe/Astrakhan",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 1,
+   "pop": 502533
+  },
+  {
+   "ne": "Reynosa/MX",
+   "neTz": "America/Monterrey",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Reynosa",
+   "gnTz": "America/Matamoros",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 2,
+   "pop": 498654
+  },
+  {
+   "ne": "Nuevo Laredo/MX",
+   "neTz": "America/Monterrey",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Nuevo Laredo",
+   "gnTz": "America/Matamoros",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 4,
+   "pop": 349550
+  },
+  {
+   "ne": "Kherson/UA",
+   "neTz": "Europe/Simferopol",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Kherson",
+   "gnTz": "Europe/Kyiv",
+   "gnSig": "GMT+02:00|GMT+03:00",
+   "km": 1,
+   "pop": 320477
+  },
+  {
+   "ne": "Singaraja/ID",
+   "neTz": "Asia/Jakarta",
+   "neSig": "GMT+07:00|GMT+07:00",
+   "gn": "Singaraja",
+   "gnTz": "Asia/Makassar",
+   "gnSig": "GMT+08:00|GMT+08:00",
+   "km": 1,
+   "pop": 234468
+  },
+  {
+   "ne": "Colombo/LK",
+   "neTz": "America/Sao_Paulo",
+   "neSig": "GMT-03:00|GMT-03:00",
+   "gn": "Colombo",
+   "gnTz": "Asia/Colombo",
+   "gnSig": "GMT+05:30|GMT+05:30",
+   "km": 1,
+   "pop": 217000
+  },
+  {
+   "ne": "Biysk/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Biysk",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 1,
+   "pop": 215430
+  },
+  {
+   "ne": "Balakovo/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Balakovo",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 0,
+   "pop": 199572
+  },
+  {
+   "ne": "Martapura/ID",
+   "neTz": "Asia/Jakarta",
+   "neSig": "GMT+07:00|GMT+07:00",
+   "gn": "Banjarbaru",
+   "gnTz": "Asia/Makassar",
+   "gnSig": "GMT+08:00|GMT+08:00",
+   "km": 3,
+   "pop": 198239
+  },
+  {
+   "ne": "Engels/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Engels",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 2,
+   "pop": 196011
+  },
+  {
+   "ne": "Bridgetown/BB",
+   "neTz": "Australia/Perth",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Bridgetown",
+   "gnTz": "America/Barbados",
+   "gnSig": "GMT-04:00|GMT-04:00",
+   "km": 1,
+   "pop": 191152
+  },
+  {
+   "ne": "Banyuwangi/ID",
+   "neTz": "Asia/Makassar",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Banyuwangi",
+   "gnTz": "Asia/Jakarta",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 4,
+   "pop": 172424
+  },
+  {
+   "ne": "Rubtsovsk/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Rubtsovsk",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 1,
+   "pop": 161065
+  },
+  {
+   "ne": "Jiayuguan City/CN",
+   "neTz": "Asia/Urumqi",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Jiayuguan",
+   "gnTz": "Asia/Shanghai",
+   "gnSig": "GMT+08:00|GMT+08:00",
+   "km": 2,
+   "pop": 148279
+  },
+  {
+   "ne": "Piedras Negras/MX",
+   "neTz": "America/Monterrey",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Piedras Negras",
+   "gnTz": "America/Matamoros",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 1,
+   "pop": 139619
+  },
+  {
+   "ne": "Dimitrovgrad/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Dimitrovgrad",
+   "gnTz": "Europe/Ulyanovsk",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 6,
+   "pop": 132226
+  },
+  {
+   "ne": "Punta Arenas/CL",
+   "neTz": "America/Santiago",
+   "neSig": "GMT-03:00|GMT-04:00",
+   "gn": "Punta Arenas",
+   "gnTz": "America/Punta_Arenas",
+   "gnSig": "GMT-03:00|GMT-03:00",
+   "km": 2,
+   "pop": 117430
+  },
+  {
+   "ne": "Malé/MV",
+   "neTz": "Europe/Rome",
+   "neSig": "GMT+01:00|GMT+02:00",
+   "gn": "Male",
+   "gnTz": "Indian/Maldives",
+   "gnSig": "GMT+05:00|GMT+05:00",
+   "km": 1,
+   "pop": 112927
+  },
+  {
+   "ne": "Balashov/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Balashov",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 1,
+   "pop": 98107
+  },
+  {
+   "ne": "Novoaltaysk/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Novoaltaysk",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 2,
+   "pop": 91386
+  },
+  {
+   "ne": "São Tomé/ST",
+   "neTz": "America/Fortaleza",
+   "neSig": "GMT-03:00|GMT-03:00",
+   "gn": "São Tomé",
+   "gnTz": "Africa/Sao_Tome",
+   "gnSig": "GMT|GMT",
+   "km": 1,
+   "pop": 88219
+  },
+  {
+   "ne": "Izmail/UA",
+   "neTz": "Europe/Simferopol",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Izmayil",
+   "gnTz": "Europe/Kyiv",
+   "gnSig": "GMT+02:00|GMT+03:00",
+   "km": 0,
+   "pop": 83194
+  },
+  {
+   "ne": "Yacuíba/AR",
+   "neTz": "America/La_Paz",
+   "neSig": "GMT-04:00|GMT-04:00",
+   "gn": "Salvador Mazza",
+   "gnTz": "America/Argentina/Salta",
+   "gnSig": "GMT-03:00|GMT-03:00",
+   "km": 2,
+   "pop": 82803
+  },
+  {
+   "ne": "Sukhumi/GE",
+   "neTz": "Asia/Tbilisi",
+   "neSig": "GMT+04:00|GMT+04:00",
+   "gn": "Sukhumi",
+   "gnTz": "Europe/Moscow",
+   "gnSig": "GMT+03:00|GMT+03:00",
+   "km": 3,
+   "pop": 81546
+  },
+  {
+   "ne": "Xigazê/CN",
+   "neTz": "Asia/Urumqi",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Xigazê",
+   "gnTz": "Asia/Shanghai",
+   "gnSig": "GMT+08:00|GMT+08:00",
+   "km": 0,
+   "pop": 80000
+  },
+  {
+   "ne": "Volsk/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Vol’sk",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 1,
+   "pop": 70500
+  },
+  {
+   "ne": "Coffs Harbour/AU",
+   "neTz": "Australia/Brisbane",
+   "neSig": "GMT+10:00|GMT+10:00",
+   "gn": "Coffs Harbour",
+   "gnTz": "Australia/Sydney",
+   "gnSig": "GMT+11:00|GMT+10:00",
+   "km": 1,
+   "pop": 62978
+  },
+  {
+   "ne": "Apia/WS",
+   "neTz": "America/Bogota",
+   "neSig": "GMT-05:00|GMT-05:00",
+   "gn": "Apia",
+   "gnTz": "Pacific/Apia",
+   "gnSig": "GMT+13:00|GMT+13:00",
+   "km": 3,
+   "pop": 61916
+  },
+  {
+   "ne": "Gorno-Altaysk/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Gorno-Altaysk",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 3,
+   "pop": 59868
+  },
+  {
+   "ne": "Chornomorsk/UA",
+   "neTz": "Europe/Simferopol",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Chornomors’k",
+   "gnTz": "Europe/Kyiv",
+   "gnSig": "GMT+02:00|GMT+03:00",
+   "km": 1,
+   "pop": 54102
+  },
+  {
+   "ne": "Kingstown/VC",
+   "neTz": "America/New_York",
+   "neSig": "GMT-05:00|GMT-04:00",
+   "gn": "Kingstown",
+   "gnTz": "America/St_Vincent",
+   "gnSig": "GMT-04:00|GMT-04:00",
+   "km": 2,
+   "pop": 49485
+  },
+  {
+   "ne": "Coyhaique/CL",
+   "neTz": "America/Santiago",
+   "neSig": "GMT-03:00|GMT-04:00",
+   "gn": "Coyhaique",
+   "gnTz": "America/Coyhaique",
+   "gnSig": "GMT-03:00|GMT-03:00",
+   "km": 1,
+   "pop": 45787
+  },
+  {
+   "ne": "Kamen-na-Obi/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Kamen’-na-Obi",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 1,
+   "pop": 44564
+  },
+  {
+   "ne": "Akhtubinsk/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Akhtubinsk",
+   "gnTz": "Europe/Astrakhan",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 1,
+   "pop": 44551
+  },
+  {
+   "ne": "Arawa/PG",
+   "neTz": "Pacific/Port_Moresby",
+   "neSig": "GMT+10:00|GMT+10:00",
+   "gn": "Arawa",
+   "gnTz": "Pacific/Bougainville",
+   "gnSig": "GMT+11:00|GMT+11:00",
+   "km": 0,
+   "pop": 40266
+  },
+  {
+   "ne": "Castries/LC",
+   "neTz": "Europe/Paris",
+   "neSig": "GMT+01:00|GMT+02:00",
+   "gn": "Castries",
+   "gnTz": "America/St_Lucia",
+   "gnSig": "GMT-04:00|GMT-04:00",
+   "km": 1,
+   "pop": 37963
+  },
+  {
+   "ne": "Ulaangom/MN",
+   "neTz": "Asia/Ulaanbaatar",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Ulaangom",
+   "gnTz": "Asia/Hovd",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 0,
+   "pop": 35796
+  },
+  {
+   "ne": "Ölgii/MN",
+   "neTz": "Asia/Ulaanbaatar",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Ölgii",
+   "gnTz": "Asia/Hovd",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 4,
+   "pop": 34934
+  },
+  {
+   "ne": "Slavgorod/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Slavgorod",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 2,
+   "pop": 34141
+  },
+  {
+   "ne": "Khovd/MN",
+   "neTz": "Asia/Ulaanbaatar",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Khovd",
+   "gnTz": "Asia/Hovd",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 1,
+   "pop": 30500
+  },
+  {
+   "ne": "Denpasar/ID",
+   "neTz": "Asia/Jakarta",
+   "neSig": "GMT+07:00|GMT+07:00",
+   "gn": "Kuta",
+   "gnTz": "Asia/Makassar",
+   "gnSig": "GMT+08:00|GMT+08:00",
+   "km": 2,
+   "pop": 30012
+  },
+  {
+   "ne": "Aleysk/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Aleysk",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 1,
+   "pop": 28019
+  },
+  {
+   "ne": "Atkarsk/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Atkarsk",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 1,
+   "pop": 27554
+  },
+  {
+   "ne": "Sena Madureira/BR",
+   "neTz": "America/Manaus",
+   "neSig": "GMT-04:00|GMT-04:00",
+   "gn": "Sena Madureira",
+   "gnTz": "America/Rio_Branco",
+   "gnSig": "GMT-05:00|GMT-05:00",
+   "km": 1,
+   "pop": 26192
+  },
+  {
+   "ne": "Krasnoarmeysk/RU",
+   "neTz": "Europe/Volgograd",
+   "neSig": "GMT+03:00|GMT+03:00",
+   "gn": "Krasnoarmeysk",
+   "gnTz": "Europe/Saratov",
+   "gnSig": "GMT+04:00|GMT+04:00",
+   "km": 1,
+   "pop": 25841
+  },
+  {
+   "ne": "Ojinaga/MX",
+   "neTz": "America/Chihuahua",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Manuel Ojinaga",
+   "gnTz": "America/Ojinaga",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 3,
+   "pop": 22128
+  },
+  {
+   "ne": "Eirunepé/BR",
+   "neTz": "America/Manaus",
+   "neSig": "GMT-04:00|GMT-04:00",
+   "gn": "Eirunepé",
+   "gnTz": "America/Eirunepe",
+   "gnSig": "GMT-05:00|GMT-05:00",
+   "km": 0,
+   "pop": 21750
+  },
+  {
+   "ne": "Puerto Natales/CL",
+   "neTz": "America/Santiago",
+   "neSig": "GMT-03:00|GMT-04:00",
+   "gn": "Puerto Natales",
+   "gnTz": "America/Punta_Arenas",
+   "gnSig": "GMT-03:00|GMT-03:00",
+   "km": 1,
+   "pop": 20000
+  },
+  {
+   "ne": "Gornyak/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Gornyak",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 2,
+   "pop": 15668
+  },
+  {
+   "ne": "Kulunda/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Kulunda",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 2,
+   "pop": 15345
+  },
+  {
+   "ne": "Ascensión/MX",
+   "neTz": "America/Chihuahua",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Ascención",
+   "gnTz": "America/Ciudad_Juarez",
+   "gnSig": "GMT-07:00|GMT-06:00",
+   "km": 0,
+   "pop": 11781
+  },
+  {
+   "ne": "Zmeinogorsk/RU",
+   "neTz": "Asia/Omsk",
+   "neSig": "GMT+06:00|GMT+06:00",
+   "gn": "Zmeinogorsk",
+   "gnTz": "Asia/Barnaul",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 0,
+   "pop": 11514
+  },
+  {
+   "ne": "Uliastai/MN",
+   "neTz": "Asia/Ulaanbaatar",
+   "neSig": "GMT+08:00|GMT+08:00",
+   "gn": "Uliastay",
+   "gnTz": "Asia/Hovd",
+   "gnSig": "GMT+07:00|GMT+07:00",
+   "km": 2,
+   "pop": 8056
+  },
+  {
+   "ne": "Kieta/PG",
+   "neTz": "Pacific/Port_Moresby",
+   "neSig": "GMT+10:00|GMT+10:00",
+   "gn": "Arawa",
+   "gnTz": "Pacific/Bougainville",
+   "gnSig": "GMT+11:00|GMT+11:00",
+   "km": 8,
+   "pop": 6958
+  },
+  {
+   "ne": "Flin Flon/CA",
+   "neTz": "America/Regina",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Flin Flon",
+   "gnTz": "America/Winnipeg",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 1,
+   "pop": 6393
+  },
+  {
+   "ne": "The Pas/CA",
+   "neTz": "America/Regina",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "The Pas",
+   "gnTz": "America/Winnipeg",
+   "gnSig": "GMT-06:00|GMT-05:00",
+   "km": 1,
+   "pop": 6055
+  },
+  {
+   "ne": "Creston/CA",
+   "neTz": "America/Vancouver",
+   "neSig": "GMT-08:00|GMT-07:00",
+   "gn": "Creston",
+   "gnTz": "America/Creston",
+   "gnSig": "GMT-07:00|GMT-07:00",
+   "km": 1,
+   "pop": 4816
+  },
+  {
+   "ne": "George Town/KY",
+   "neTz": "Australia/Hobart",
+   "neSig": "GMT+11:00|GMT+10:00",
+   "gn": "Prospect Park",
+   "gnTz": "America/Cayman",
+   "gnSig": "GMT-05:00|GMT-05:00",
+   "km": 0,
+   "pop": 4268
+  },
+  {
+   "ne": "Ygatimí/PY",
+   "neTz": "America/Asuncion",
+   "neSig": "GMT-03:00|GMT-03:00",
+   "gn": "Paranhos",
+   "gnTz": "America/Campo_Grande",
+   "gnSig": "GMT-04:00|GMT-04:00",
+   "km": 22,
+   "pop": 2809
+  },
+  {
+   "ne": "Sixaola/CR",
+   "neTz": "America/Costa_Rica",
+   "neSig": "GMT-06:00|GMT-06:00",
+   "gn": "Changuinola",
+   "gnTz": "America/Panama",
+   "gnSig": "GMT-05:00|GMT-05:00",
+   "km": 15,
+   "pop": 1823
+  },
+  {
+   "ne": "Waitangi/NZ",
+   "neTz": "Pacific/Auckland",
+   "neSig": "GMT+13:00|GMT+12:00",
+   "gn": "Waitangi",
+   "gnTz": "Pacific/Chatham",
+   "gnSig": "GMT+13:45|GMT+12:45",
+   "km": 17,
+   "pop": 300
+  }
+ ]
+}

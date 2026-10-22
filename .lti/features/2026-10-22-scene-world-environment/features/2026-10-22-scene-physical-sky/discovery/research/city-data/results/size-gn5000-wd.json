@@ -1,0 +1,726 @@
+{
+ "label": "gn5000-wd",
+ "source": "gn5000-wd.json",
+ "rows": [
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "A",
+   "zht": false,
+   "raw": 211355,
+   "gzip": 60465,
+   "brotli": 45627
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "A",
+   "zht": true,
+   "raw": 230973,
+   "gzip": 68458,
+   "brotli": 51854
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "B",
+   "zht": false,
+   "raw": 98897,
+   "gzip": 45916,
+   "brotli": 37140
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "B",
+   "zht": true,
+   "raw": 112533,
+   "gzip": 53147,
+   "brotli": 42934
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "C",
+   "zht": false,
+   "raw": 89241,
+   "gzip": 42362,
+   "brotli": 34142
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "C",
+   "zht": true,
+   "raw": 102877,
+   "gzip": 49508,
+   "brotli": 39870
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "D",
+   "zht": false,
+   "raw": 91269,
+   "gzip": 39903,
+   "brotli": 33870
+  },
+  {
+   "tier": "2000",
+   "n": 2000,
+   "zhFilled": 1679,
+   "shape": "D",
+   "zht": true,
+   "raw": 113917,
+   "gzip": 48370,
+   "brotli": 39326
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "A",
+   "zht": false,
+   "raw": 528345,
+   "gzip": 149266,
+   "brotli": 109204
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "A",
+   "zht": true,
+   "raw": 572424,
+   "gzip": 167238,
+   "brotli": 122894
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "B",
+   "zht": false,
+   "raw": 242372,
+   "gzip": 111786,
+   "brotli": 88259
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "B",
+   "zht": true,
+   "raw": 273407,
+   "gzip": 128081,
+   "brotli": 100959
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "C",
+   "zht": false,
+   "raw": 218391,
+   "gzip": 102811,
+   "brotli": 80839
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "C",
+   "zht": true,
+   "raw": 249426,
+   "gzip": 118919,
+   "brotli": 93206
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "D",
+   "zht": false,
+   "raw": 223419,
+   "gzip": 92534,
+   "brotli": 81706
+  },
+  {
+   "tier": "5000",
+   "n": 5000,
+   "zhFilled": 3766,
+   "shape": "D",
+   "zht": true,
+   "raw": 277935,
+   "gzip": 109503,
+   "brotli": 93626
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "A",
+   "zht": false,
+   "raw": 1049195,
+   "gzip": 292350,
+   "brotli": 208970
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "A",
+   "zht": true,
+   "raw": 1127110,
+   "gzip": 324678,
+   "brotli": 232774
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "B",
+   "zht": false,
+   "raw": 477005,
+   "gzip": 219264,
+   "brotli": 168765
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "B",
+   "zht": true,
+   "raw": 532132,
+   "gzip": 248570,
+   "brotli": 190791
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "C",
+   "zht": false,
+   "raw": 429030,
+   "gzip": 201192,
+   "brotli": 153704
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "C",
+   "zht": true,
+   "raw": 484157,
+   "gzip": 230183,
+   "brotli": 175023
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "D",
+   "zht": false,
+   "raw": 439058,
+   "gzip": 175951,
+   "brotli": 155188
+  },
+  {
+   "tier": "10000",
+   "n": 10000,
+   "zhFilled": 6817,
+   "shape": "D",
+   "zht": true,
+   "raw": 542794,
+   "gzip": 204405,
+   "brotli": 177263
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "A",
+   "zht": false,
+   "raw": 543505,
+   "gzip": 134280,
+   "brotli": 101812
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "A",
+   "zht": true,
+   "raw": 571279,
+   "gzip": 145869,
+   "brotli": 110948
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "B",
+   "zht": false,
+   "raw": 248783,
+   "gzip": 101344,
+   "brotli": 82187
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "B",
+   "zht": true,
+   "raw": 268013,
+   "gzip": 111750,
+   "brotli": 90444
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "C",
+   "zht": false,
+   "raw": 221104,
+   "gzip": 92236,
+   "brotli": 74400
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "C",
+   "zht": true,
+   "raw": 240334,
+   "gzip": 102572,
+   "brotli": 82490
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "D",
+   "zht": false,
+   "raw": 226380,
+   "gzip": 83580,
+   "brotli": 73568
+  },
+  {
+   "tier": "cn+2000",
+   "n": 5248,
+   "zhFilled": 4135,
+   "shape": "D",
+   "zht": true,
+   "raw": 272829,
+   "gzip": 95369,
+   "brotli": 81511
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "A",
+   "zht": false,
+   "raw": 861104,
+   "gzip": 224514,
+   "brotli": 165870
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "A",
+   "zht": true,
+   "raw": 913039,
+   "gzip": 245792,
+   "brotli": 182088
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "B",
+   "zht": false,
+   "raw": 392647,
+   "gzip": 168492,
+   "brotli": 133669
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "B",
+   "zht": true,
+   "raw": 429126,
+   "gzip": 187932,
+   "brotli": 148661
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "C",
+   "zht": false,
+   "raw": 350890,
+   "gzip": 153886,
+   "brotli": 121348
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "C",
+   "zht": true,
+   "raw": 387369,
+   "gzip": 173064,
+   "brotli": 135984
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "D",
+   "zht": false,
+   "raw": 359166,
+   "gzip": 137091,
+   "brotli": 121998
+  },
+  {
+   "tier": "cn+5000",
+   "n": 8248,
+   "zhFilled": 6129,
+   "shape": "D",
+   "zht": true,
+   "raw": 437408,
+   "gzip": 157484,
+   "brotli": 135681
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "A",
+   "zht": false,
+   "raw": 874293,
+   "gzip": 234380,
+   "brotli": 172804
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "A",
+   "zht": true,
+   "raw": 936510,
+   "gzip": 259026,
+   "brotli": 191227
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "B",
+   "zht": false,
+   "raw": 406849,
+   "gzip": 177789,
+   "brotli": 140755
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "B",
+   "zht": true,
+   "raw": 450622,
+   "gzip": 200017,
+   "brotli": 157701
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "C",
+   "zht": false,
+   "raw": 364953,
+   "gzip": 163106,
+   "brotli": 128229
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "C",
+   "zht": true,
+   "raw": 408726,
+   "gzip": 185084,
+   "brotli": 144724
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "D",
+   "zht": false,
+   "raw": 373229,
+   "gzip": 143930,
+   "brotli": 129012
+  },
+  {
+   "tier": "cn+5000z",
+   "n": 8248,
+   "zhFilled": 7556,
+   "shape": "D",
+   "zht": true,
+   "raw": 457271,
+   "gzip": 167082,
+   "brotli": 144292
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "A",
+   "zht": false,
+   "raw": 1382483,
+   "gzip": 370968,
+   "brotli": 266633
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "A",
+   "zht": true,
+   "raw": 1470527,
+   "gzip": 407770,
+   "brotli": 293381
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "B",
+   "zht": false,
+   "raw": 627890,
+   "gzip": 278917,
+   "brotli": 215134
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "B",
+   "zht": true,
+   "raw": 690254,
+   "gzip": 312079,
+   "brotli": 240123
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "C",
+   "zht": false,
+   "raw": 562578,
+   "gzip": 255082,
+   "brotli": 195168
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "C",
+   "zht": true,
+   "raw": 624942,
+   "gzip": 287984,
+   "brotli": 219218
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "D",
+   "zht": false,
+   "raw": 575854,
+   "gzip": 222169,
+   "brotli": 196636
+  },
+  {
+   "tier": "cn+10000",
+   "n": 13248,
+   "zhFilled": 9085,
+   "shape": "D",
+   "zht": true,
+   "raw": 704869,
+   "gzip": 254767,
+   "brotli": 221655
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "A",
+   "zht": false,
+   "raw": 3356527,
+   "gzip": 951597,
+   "brotli": 650400
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "A",
+   "zht": true,
+   "raw": 3616073,
+   "gzip": 1054431,
+   "brotli": 722054
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "B",
+   "zht": false,
+   "raw": 1602716,
+   "gzip": 741791,
+   "brotli": 542129
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "B",
+   "zht": true,
+   "raw": 1789662,
+   "gzip": 834946,
+   "brotli": 607693
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "C",
+   "zht": false,
+   "raw": 1446353,
+   "gzip": 683070,
+   "brotli": 492965
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "C",
+   "zht": true,
+   "raw": 1633299,
+   "gzip": 775517,
+   "brotli": 556186
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "D",
+   "zht": false,
+   "raw": 1477331,
+   "gzip": 576613,
+   "brotli": 506935
+  },
+  {
+   "tier": "cn+99999z",
+   "n": 30950,
+   "zhFilled": 30258,
+   "shape": "D",
+   "zht": true,
+   "raw": 1813680,
+   "gzip": 667832,
+   "brotli": 572404
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "A",
+   "zht": false,
+   "raw": 7192061,
+   "gzip": 1884476,
+   "brotli": 1262426
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "A",
+   "zht": true,
+   "raw": 7510451,
+   "gzip": 2026525,
+   "brotli": 1359758
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "B",
+   "zht": false,
+   "raw": 3210391,
+   "gzip": 1444714,
+   "brotli": 1036483
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "B",
+   "zht": true,
+   "raw": 3440179,
+   "gzip": 1572903,
+   "brotli": 1124135
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "C",
+   "zht": false,
+   "raw": 2873224,
+   "gzip": 1317328,
+   "brotli": 925038
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "C",
+   "zht": true,
+   "raw": 3103012,
+   "gzip": 1444396,
+   "brotli": 1011061
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "D",
+   "zht": false,
+   "raw": 2943188,
+   "gzip": 1107237,
+   "brotli": 957319
+  },
+  {
+   "tier": "all",
+   "n": 69936,
+   "zhFilled": 30258,
+   "shape": "D",
+   "zht": true,
+   "raw": 3548294,
+   "gzip": 1226390,
+   "brotli": 1043632
+  }
+ ]
+}

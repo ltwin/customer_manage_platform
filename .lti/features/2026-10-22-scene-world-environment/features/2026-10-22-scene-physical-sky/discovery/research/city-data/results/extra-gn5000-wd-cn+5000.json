@@ -1,0 +1,157 @@
+{
+ "label": "gn5000-wd-extra",
+ "source": "gn5000-wd.json",
+ "top": "cn+5000",
+ "records": 8248,
+ "zhFilled": 6129,
+ "zhFilledPct": 74.3,
+ "zhWithTradCharHeuristic": 8,
+ "zhNotChinese": 0,
+ "tzFilled": 8248,
+ "tzDistinct": 259,
+ "tzInvalidIntl": [],
+ "tzAliasCount": 13,
+ "checklist": {
+  "total": 12,
+  "zh": 0,
+  "enOnly": 2,
+  "zhAltOnly": 0,
+  "miss": 10,
+  "found": 2,
+  "zhTop1": 0,
+  "cnFound": 2,
+  "cnTotal": 4,
+  "intlFound": 0,
+  "intlTotal": 8
+ },
+ "items": [
+  {
+   "item": "皇后镇",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "班夫",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "采尔马特",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "因特拉肯",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "霞慕尼",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "箱根",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "哈尔施塔特",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "特罗姆瑟",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "凤凰",
+   "group": "cn",
+   "status": "en",
+   "matched": {
+    "zh": null,
+    "zht": null,
+    "en": "Fenghuang",
+    "tz": "Asia/Shanghai",
+    "pop": 370000,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": null,
+   "zhHitCount": 1,
+   "wrongZhSamples": [
+    "凤凰/Fenghuang/CN/14574"
+   ]
+  },
+  {
+   "item": "霞浦",
+   "group": "cn",
+   "status": "en",
+   "matched": {
+    "zh": "松城街道",
+    "zht": null,
+    "en": "Songcheng",
+    "tz": "Asia/Shanghai",
+    "pop": 165730,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "元阳",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "色达",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  }
+ ]
+}

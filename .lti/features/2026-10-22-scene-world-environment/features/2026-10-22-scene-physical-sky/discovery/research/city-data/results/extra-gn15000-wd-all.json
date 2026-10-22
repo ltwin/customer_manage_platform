@@ -1,0 +1,170 @@
+{
+ "label": "gn15000-wd-extra",
+ "source": "gn15000-wd.json",
+ "top": "all",
+ "records": 34179,
+ "zhFilled": 18250,
+ "zhFilledPct": 53.4,
+ "zhWithTradCharHeuristic": 41,
+ "zhNotChinese": 2,
+ "tzFilled": 34179,
+ "tzDistinct": 356,
+ "tzInvalidIntl": [],
+ "tzAliasCount": 16,
+ "checklist": {
+  "total": 12,
+  "zh": 1,
+  "enOnly": 2,
+  "zhAltOnly": 0,
+  "miss": 9,
+  "found": 3,
+  "zhTop1": 1,
+  "cnFound": 2,
+  "cnTotal": 4,
+  "intlFound": 1,
+  "intlTotal": 8
+ },
+ "items": [
+  {
+   "item": "皇后镇",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 1,
+   "wrongZhSamples": [
+    "皇后镇/Bourg-la-Reine/FR/18870"
+   ]
+  },
+  {
+   "item": "班夫",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "采尔马特",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "因特拉肯",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "霞慕尼",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "箱根",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "哈尔施塔特",
+   "group": "intl",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "特罗姆瑟",
+   "group": "intl",
+   "status": "zh",
+   "matched": {
+    "zh": "特罗姆瑟",
+    "zht": "特隆瑟",
+    "en": "Tromsø",
+    "tz": "Europe/Oslo",
+    "pop": 41915,
+    "cc": "NO",
+    "km": 0,
+    "zhAlts": []
+   },
+   "zhRank": 1,
+   "zhHitCount": 1,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "凤凰",
+   "group": "cn",
+   "status": "en",
+   "matched": {
+    "zh": null,
+    "zht": null,
+    "en": "Fenghuang",
+    "tz": "Asia/Shanghai",
+    "pop": 370000,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": null,
+   "zhHitCount": 1,
+   "wrongZhSamples": [
+    "凤凰城/Phenix City/US/37570"
+   ]
+  },
+  {
+   "item": "霞浦",
+   "group": "cn",
+   "status": "en",
+   "matched": {
+    "zh": "松城街道",
+    "zht": null,
+    "en": "Songcheng",
+    "tz": "Asia/Shanghai",
+    "pop": 165730,
+    "cc": "CN",
+    "km": 1,
+    "zhAlts": []
+   },
+   "zhRank": null,
+   "zhHitCount": 1,
+   "wrongZhSamples": [
+    "霞浦/Kasumigaura/JP/40087"
+   ]
+  },
+  {
+   "item": "元阳",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  },
+  {
+   "item": "色达",
+   "group": "cn",
+   "status": "miss",
+   "matched": null,
+   "zhRank": null,
+   "zhHitCount": 0,
+   "wrongZhSamples": []
+  }
+ ]
+}

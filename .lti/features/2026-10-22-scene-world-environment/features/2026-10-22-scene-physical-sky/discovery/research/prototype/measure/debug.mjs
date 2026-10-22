@@ -1,0 +1,10 @@
+import { chromium } from '/Users/samson/workspace/my_project/customer_manage_platform/frontend/node_modules/playwright/index.mjs'
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+const page = await browser.newPage()
+page.on('pageerror', (e) => console.log('PAGEERROR', e.message))
+page.on('console', (m) => console.log('CONSOLE', m.type(), m.text().slice(0, 300)))
+page.on('requestfailed', (r) => console.log('FAILED', r.url()))
+page.on('response', (r) => r.status() >= 400 && console.log('HTTP', r.status(), r.url()))
+await page.goto('http://localhost:5292/index.html')
+await page.waitForTimeout(15000)
+await browser.close()

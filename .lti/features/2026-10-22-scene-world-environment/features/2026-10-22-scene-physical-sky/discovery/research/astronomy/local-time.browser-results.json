@@ -1,0 +1,493 @@
+{
+  "chromium": {
+    "version": "145.0.7632.6",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+    "rows": [
+      {
+        "tz": "America/New_York",
+        "date": "2026-03-08",
+        "time": "02:30",
+        "expected": "2026-03-08T06:30:00.000Z",
+        "actual": "2026-03-08T06:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-11-01",
+        "time": "01:30",
+        "expected": "2026-11-01T05:30:00.000Z",
+        "actual": "2026-11-01T05:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Sydney",
+        "date": "2026-04-05",
+        "time": "02:30",
+        "expected": "2026-04-04T15:30:00.000Z",
+        "actual": "2026-04-04T15:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Sydney",
+        "date": "2026-10-04",
+        "time": "02:30",
+        "expected": "2026-10-03T15:30:00.000Z",
+        "actual": "2026-10-03T15:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "2026-06-21",
+        "time": "12:00",
+        "expected": "2026-06-21T04:00:00.000Z",
+        "actual": "2026-06-21T04:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "2026-06-21",
+        "time": "00:00",
+        "expected": "2026-06-20T16:00:00.000Z",
+        "actual": "2026-06-20T16:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "1988-07-01",
+        "time": "12:00",
+        "expected": "1988-07-01T03:00:00.000Z",
+        "actual": "1988-07-01T03:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "1900-01-01",
+        "time": "00:00",
+        "expected": "1899-12-31T15:54:17.000Z",
+        "actual": "1899-12-31T15:54:17.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "1900-01-01",
+        "time": "00:00",
+        "expected": "1900-01-01T05:00:00.000Z",
+        "actual": "1900-01-01T05:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "2100-12-31",
+        "time": "23:59",
+        "expected": "2100-12-31T15:59:00.000Z",
+        "actual": "2100-12-31T15:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2100-12-31",
+        "time": "23:59",
+        "expected": "2101-01-01T04:59:00.000Z",
+        "actual": "2101-01-01T04:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Sydney",
+        "date": "2100-12-31",
+        "time": "12:00",
+        "expected": "2100-12-31T01:00:00.000Z",
+        "actual": "2100-12-31T01:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Lord_Howe",
+        "date": "2026-10-04",
+        "time": "02:15",
+        "expected": "2026-10-03T15:15:00.000Z",
+        "actual": "2026-10-03T15:15:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Lord_Howe",
+        "date": "2026-04-05",
+        "time": "01:45",
+        "expected": "2026-04-04T14:45:00.000Z",
+        "actual": "2026-04-04T14:45:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Pacific/Apia",
+        "date": "2011-12-30",
+        "time": "12:00",
+        "expected": "2011-12-29T22:00:00.000Z",
+        "actual": "2011-12-29T22:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Kathmandu",
+        "date": "2026-06-21",
+        "time": "12:00",
+        "expected": "2026-06-21T06:15:00.000Z",
+        "actual": "2026-06-21T06:15:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-03-08",
+        "time": "01:59",
+        "expected": "2026-03-08T06:59:00.000Z",
+        "actual": "2026-03-08T06:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-03-08",
+        "time": "03:00",
+        "expected": "2026-03-08T07:00:00.000Z",
+        "actual": "2026-03-08T07:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-11-01",
+        "time": "00:59",
+        "expected": "2026-11-01T04:59:00.000Z",
+        "actual": "2026-11-01T04:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-11-01",
+        "time": "02:00",
+        "expected": "2026-11-01T07:00:00.000Z",
+        "actual": "2026-11-01T07:00:00.000Z",
+        "pass": true
+      }
+    ],
+    "invalid": [
+      {
+        "tz": "Mars/Phobos",
+        "threw": "RangeError"
+      },
+      {
+        "tz": "Local",
+        "threw": "RangeError"
+      },
+      {
+        "tz": "",
+        "threw": "RangeError"
+      }
+    ],
+    "aliases": [
+      {
+        "tz": "asia/shanghai",
+        "ok": true,
+        "resolved": "Asia/Shanghai"
+      },
+      {
+        "tz": "Asia/Calcutta",
+        "ok": true,
+        "resolved": "Asia/Calcutta"
+      },
+      {
+        "tz": "Europe/Kiev",
+        "ok": true,
+        "resolved": "Europe/Kiev"
+      },
+      {
+        "tz": "Europe/Kyiv",
+        "ok": true,
+        "resolved": "Europe/Kiev"
+      },
+      {
+        "tz": "America/Ciudad_Juarez",
+        "ok": true,
+        "resolved": "America/Ciudad_Juarez"
+      },
+      {
+        "tz": "+08:00",
+        "ok": true,
+        "resolved": "+08:00"
+      },
+      {
+        "tz": "UTC",
+        "ok": true,
+        "resolved": "UTC"
+      },
+      {
+        "tz": "Etc/GMT-8",
+        "ok": true,
+        "resolved": "Etc/GMT-8"
+      }
+    ]
+  },
+  "webkit": {
+    "version": "26.0",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+    "rows": [
+      {
+        "tz": "America/New_York",
+        "date": "2026-03-08",
+        "time": "02:30",
+        "expected": "2026-03-08T06:30:00.000Z",
+        "actual": "2026-03-08T06:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-11-01",
+        "time": "01:30",
+        "expected": "2026-11-01T05:30:00.000Z",
+        "actual": "2026-11-01T05:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Sydney",
+        "date": "2026-04-05",
+        "time": "02:30",
+        "expected": "2026-04-04T15:30:00.000Z",
+        "actual": "2026-04-04T15:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Sydney",
+        "date": "2026-10-04",
+        "time": "02:30",
+        "expected": "2026-10-03T15:30:00.000Z",
+        "actual": "2026-10-03T15:30:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "2026-06-21",
+        "time": "12:00",
+        "expected": "2026-06-21T04:00:00.000Z",
+        "actual": "2026-06-21T04:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "2026-06-21",
+        "time": "00:00",
+        "expected": "2026-06-20T16:00:00.000Z",
+        "actual": "2026-06-20T16:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "1988-07-01",
+        "time": "12:00",
+        "expected": "1988-07-01T03:00:00.000Z",
+        "actual": "1988-07-01T03:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "1900-01-01",
+        "time": "00:00",
+        "expected": "1899-12-31T15:54:17.000Z",
+        "actual": "1899-12-31T15:54:17.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "1900-01-01",
+        "time": "00:00",
+        "expected": "1900-01-01T05:00:00.000Z",
+        "actual": "1900-01-01T05:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Shanghai",
+        "date": "2100-12-31",
+        "time": "23:59",
+        "expected": "2100-12-31T15:59:00.000Z",
+        "actual": "2100-12-31T15:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2100-12-31",
+        "time": "23:59",
+        "expected": "2101-01-01T04:59:00.000Z",
+        "actual": "2101-01-01T04:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Sydney",
+        "date": "2100-12-31",
+        "time": "12:00",
+        "expected": "2100-12-31T01:00:00.000Z",
+        "actual": "2100-12-31T01:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Lord_Howe",
+        "date": "2026-10-04",
+        "time": "02:15",
+        "expected": "2026-10-03T15:15:00.000Z",
+        "actual": "2026-10-03T15:15:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Australia/Lord_Howe",
+        "date": "2026-04-05",
+        "time": "01:45",
+        "expected": "2026-04-04T14:45:00.000Z",
+        "actual": "2026-04-04T14:45:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Pacific/Apia",
+        "date": "2011-12-30",
+        "time": "12:00",
+        "expected": "2011-12-29T22:00:00.000Z",
+        "actual": "2011-12-29T22:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "Asia/Kathmandu",
+        "date": "2026-06-21",
+        "time": "12:00",
+        "expected": "2026-06-21T06:15:00.000Z",
+        "actual": "2026-06-21T06:15:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-03-08",
+        "time": "01:59",
+        "expected": "2026-03-08T06:59:00.000Z",
+        "actual": "2026-03-08T06:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-03-08",
+        "time": "03:00",
+        "expected": "2026-03-08T07:00:00.000Z",
+        "actual": "2026-03-08T07:00:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-11-01",
+        "time": "00:59",
+        "expected": "2026-11-01T04:59:00.000Z",
+        "actual": "2026-11-01T04:59:00.000Z",
+        "pass": true
+      },
+      {
+        "tz": "America/New_York",
+        "date": "2026-11-01",
+        "time": "02:00",
+        "expected": "2026-11-01T07:00:00.000Z",
+        "actual": "2026-11-01T07:00:00.000Z",
+        "pass": true
+      }
+    ],
+    "invalid": [
+      {
+        "tz": "Mars/Phobos",
+        "threw": "RangeError"
+      },
+      {
+        "tz": "Local",
+        "threw": "RangeError"
+      },
+      {
+        "tz": "",
+        "threw": "RangeError"
+      }
+    ],
+    "aliases": [
+      {
+        "tz": "asia/shanghai",
+        "ok": true,
+        "resolved": "Asia/Shanghai"
+      },
+      {
+        "tz": "Asia/Calcutta",
+        "ok": true,
+        "resolved": "Asia/Calcutta"
+      },
+      {
+        "tz": "Europe/Kiev",
+        "ok": true,
+        "resolved": "Europe/Kiev"
+      },
+      {
+        "tz": "Europe/Kyiv",
+        "ok": true,
+        "resolved": "Europe/Kyiv"
+      },
+      {
+        "tz": "America/Ciudad_Juarez",
+        "ok": true,
+        "resolved": "America/Ciudad_Juarez"
+      },
+      {
+        "tz": "+08:00",
+        "ok": true,
+        "resolved": "+08:00"
+      },
+      {
+        "tz": "UTC",
+        "ok": true,
+        "resolved": "UTC"
+      },
+      {
+        "tz": "Etc/GMT-8",
+        "ok": true,
+        "resolved": "Etc/GMT-8"
+      }
+    ]
+  },
+  "node": {
+    "version": "v24.12.0",
+    "icu": "77.1",
+    "tz": "2025b",
+    "aliases": [
+      {
+        "tz": "asia/shanghai",
+        "ok": true,
+        "resolved": "Asia/Shanghai"
+      },
+      {
+        "tz": "Asia/Calcutta",
+        "ok": true,
+        "resolved": "Asia/Calcutta"
+      },
+      {
+        "tz": "Europe/Kiev",
+        "ok": true,
+        "resolved": "Europe/Kiev"
+      },
+      {
+        "tz": "Europe/Kyiv",
+        "ok": true,
+        "resolved": "Europe/Kiev"
+      },
+      {
+        "tz": "America/Ciudad_Juarez",
+        "ok": true,
+        "resolved": "America/Ciudad_Juarez"
+      },
+      {
+        "tz": "+08:00",
+        "ok": true,
+        "resolved": "+08:00"
+      },
+      {
+        "tz": "UTC",
+        "ok": true,
+        "resolved": "UTC"
+      },
+      {
+        "tz": "Etc/GMT-8",
+        "ok": true,
+        "resolved": "Etc/GMT-8"
+      }
+    ]
+  }
+}

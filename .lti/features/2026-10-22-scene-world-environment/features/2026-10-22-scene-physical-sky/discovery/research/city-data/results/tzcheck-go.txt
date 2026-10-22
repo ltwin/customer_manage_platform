@@ -1,0 +1,4 @@
+go go1.25.5, zoneinfo.zip entries: 598
+cov-ne-all.tz.txt: 320 names, not in embedded tzdata: 0 [], LoadLocation failed: 0 []
+cov-gn15000-all.tz.txt: 356 names, not in embedded tzdata: 0 [], LoadLocation failed: 0 []
+cov-gn5000-all.tz.txt: 371 names, not in embedded tzdata: 0 [], LoadLocation failed: 0 []

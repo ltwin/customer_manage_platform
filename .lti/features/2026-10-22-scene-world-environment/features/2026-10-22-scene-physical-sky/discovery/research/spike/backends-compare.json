@@ -1,0 +1,114 @@
+{
+ "x-noon": {
+  "webgpu-webgl": {
+   "mean": 0.0,
+   "over8": 0.0,
+   "over2": 0.002,
+   "max": 19
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.06,
+   "over8": 0.008,
+   "over2": 0.011,
+   "max": 114
+  }
+ },
+ "x-golden": {
+  "webgpu-webgl": {
+   "mean": 0.001,
+   "over8": 0.001,
+   "over2": 0.005,
+   "max": 58
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.104,
+   "over8": 0.009,
+   "over2": 0.021,
+   "max": 118
+  }
+ },
+ "x-dusk4": {
+  "webgpu-webgl": {
+   "mean": 0.003,
+   "over8": 0.002,
+   "over2": 0.007,
+   "max": 72
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.182,
+   "over8": 0.01,
+   "over2": 0.095,
+   "max": 129
+  }
+ },
+ "x-twilight9": {
+  "webgpu-webgl": {
+   "mean": 0.002,
+   "over8": 0.001,
+   "over2": 0.004,
+   "max": 47
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.466,
+   "over8": 0.009,
+   "over2": 0.155,
+   "max": 116
+  }
+ },
+ "x-sun-in-view": {
+  "webgpu-webgl": {
+   "mean": 0.001,
+   "over8": 0.0,
+   "over2": 0.0,
+   "max": 1
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.03,
+   "over8": 0.0,
+   "over2": 0.0,
+   "max": 7
+  }
+ },
+ "x-night-lamp": {
+  "webgpu-webgl": {
+   "mean": 0.0,
+   "over8": 0.001,
+   "over2": 0.002,
+   "max": 47
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.017,
+   "over8": 0.004,
+   "over2": 0.012,
+   "max": 233
+  }
+ },
+ "x-dust": {
+  "webgpu-webgl": {
+   "mean": 0.002,
+   "over8": 0.001,
+   "over2": 0.004,
+   "max": 42
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.182,
+   "over8": 0.007,
+   "over2": 0.018,
+   "max": 74
+  }
+ },
+ "x-high": {
+  "webgpu-webgl": {
+   "mean": 0.001,
+   "over8": 0.001,
+   "over2": 0.004,
+   "max": 17
+  },
+  "webgpu-swiftshader": {
+   "mean": 0.048,
+   "over8": 0.008,
+   "over2": 0.013,
+   "max": 109
+  }
+ }
+}

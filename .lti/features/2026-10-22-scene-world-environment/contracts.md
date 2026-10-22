@@ -14,8 +14,8 @@
 - 前端 `frontend/src/creative-scene/`：编辑器外壳（R3F）、场景状态（快照 + outbox + 撤销栈）、沙箱宿主、渲染端（客户端任务执行器）、材质库、导出器。编辑视图嵌入画布的同一个助手面板。渲染端不依赖编辑器外壳：画布页在认领到任务时按需加载它，摄影师不打开场景也能让助手搭建；没有任务的画布页不加载 3D 引擎。
 - 渲染、烘焙、截图、导出只在浏览器完成；服务端不渲染。服务端经客户端任务派发工作，经暂存上传接收产物。
 - 渲染统一用 three.js 的 `WebGPURenderer`，WebGPU 不可用时用它的 WebGL2 后端；着色全部用 TSL（见 `patterns: 场景着色写法`）。视口、截图、导出、模型缩略图和资产 3D 预览都经同一个渲染器创建入口获得渲染器；视口、截图和导出经同一条渲染管线（`SceneRenderer`）出图。
-- 环境类效果（物理天空，以及之后在其上增加的环境效果）的换算与绘制只在渲染端：前端 `frontend/src/creative-scene/world/` 下的天文计算（`astro`）、物理大气（`atmosphere`）和曝光（`exposure`）是不依赖编辑器外壳的模块，画布页按需加载渲染端时同样可用。服务端只按数据契约校验字段（时区名用二进制内嵌的 `time/tzdata` 校验），不计算天体位置；渲染指纹照常由服务端从快照算出。
-- 曝光属于观看者：物理天空下，每次出图由场景摄像机或默认摄像机（视口自由视角、`render_view` 的临时视点）求出曝光，在送进 GPU 前乘到光源上（预曝光）；天空和环境贴图按只取决于环境的相对单位存储，再乘以相对系数。其他天空模式沿用场景级的 `render.exposure_ev`。白模不读取环境和灯光，用固定的工作室光。
+- 环境类效果（物理天空，以及之后在其上增加的环境效果）的换算与绘制只在渲染端：前端 `frontend/src/creative-scene/world/` 下的天文计算（`astro`）、物理大气（`atmosphere`）和曝光（`exposure`）是不依赖编辑器外壳的模块，画布页按需加载渲染端时同样可用。服务端按数据契约校验字段（时区名用二进制内嵌的 `time/tzdata` 校验），不参与画面上的天体换算；渲染指纹照常由服务端从快照算出。服务端另为助手算「太阳参考」（当前太阳的高度和方位、日出日落、正午、黄金时刻和蓝调时刻，NOAA 公式），只放在助手读写场景的结果里，不存储，不进指纹（修订 v2）。
+- 曝光属于观看者：物理天空下，每次出图由场景摄像机的手动曝光（ISO、快门、光圈）或默认摄像机（视口自由视角、`render_view` 的临时视点）的默认曝光值求出曝光，在送进 GPU 前乘到光源上（预曝光）；天空和环境贴图按只取决于环境的相对单位存储，再乘以相对系数。不做自动曝光。其他天空模式沿用场景级的 `render.exposure_ev`。白模不读取环境和灯光，用固定的工作室光。
 
 ### 关键数据流
 - 手动编辑：编辑器 outbox → `POST /creative/documents/{id}/commands` → 新文档修订 → 账号失效通知 → 其他标签页重读。
@@ -63,7 +63,7 @@
 | `sky.sun_mode` | `"location"` \| `"manual"` | `location` | 选择太阳由地点和时间推算，还是用下面的手动角度。两套字段都保存 |
 | `sky.latitude_deg` | number −90…90（北纬为正） | 31.2304 | 与 `longitude_deg`、`timezone` 要么都写，要么都省略；都省略时为上海。只写一部分返回 400 |
 | `sky.longitude_deg` | number −180…180（东经为正） | 121.4737 | 同上 |
-| `sky.timezone` | IANA 时区名，服务端 `time.LoadLocation` 能加载，且不是 `Local` 或空串（`LoadLocation("")` 会返回 UTC） | `Asia/Shanghai` | 同上；`local_time` 是这个时区的当地时间，夏令时由时区库处理 |
+| `sky.timezone` | IANA 时区名，区分大小写：服务端 `time.LoadLocation` 能加载，`loc.String()` 与原名完全相同，且不是 `Local` 或空串（`LoadLocation("")` 会返回 UTC） | `Asia/Shanghai` | 同上；`local_time` 是这个时区的当地时间，夏令时由时区库处理 |
 | `sky.place` | string ≤ 80 | `""` | 地点的显示名（例如「成都」），只用于界面和助手阅读，不参与计算 |
 | `sky.date` | `"YYYY-MM-DD"`，1900-01-01…2100-12-31，必须是存在的日期 | 无，**必填** | 当地日期。`set_environment` 整体替换，缺省值会在每次省略时重置日期，所以不设缺省；编辑器切到物理天空时写入本机的当天 |
 | `sky.local_time` | `"HH:MM"`，00:00…23:59 | `"12:00"` | 当地时刻，精确到分钟 |
@@ -72,15 +72,18 @@
 | `sky.sun_azimuth_deg` | number 0…360 | 135 | `sun_mode = manual` 时的太阳方位，含义同程序化天空 |
 | `sky.altitude_m` | number 0…20000 | 0 | 场景 Y = 0 处的海拔（米） |
 | `sky.air_density` | number 0…10 | 1 | 空气（瑞利散射）密度倍率，同 Blender Nishita 天空的 Air |
-| `sky.dust_density` | number 0…10 | 1 | 尘埃与气溶胶（米氏散射）密度倍率，同 Blender 的 Dust |
+| `sky.dust_density` | number 0…50 | 1 | 尘埃与气溶胶（米氏散射）密度倍率，同 Blender 的 Dust；基准与 Blender 同量级。上限比 Blender 的 10 大，是为了做出浓雾霾和沙尘（修订 v2） |
 | `sky.ozone_density` | number 0…10 | 1 | 臭氧吸收倍率，同 Blender 的 Ozone |
 | `sky.sun_disc` | boolean | true | 是否画太阳盘；不影响太阳光 |
 | `sky.sun_size_deg` | number 0.1…10 | 0.545 | 太阳盘的视直径（度） |
+| `sky.sun_strength` | number 0…10 | 1 | 太阳的亮度倍率：太阳光、太阳盘和它照亮的天空一起乘（修订 v2） |
+| `sky.sun_temperature_k` | number 2000…12000 | 6500 | 太阳的色温（开尔文），按黑体颜色相对 6500 K 换算；6500 为中性，调低更暖、调高更冷；同样作用于太阳光和天空（修订 v2） |
 
 - `physical` 时不得出现 `turbidity`、`color`、`hdri`，写了返回 400 并指出字段，与「天空只带自己类型的字段」一致。
+- 反过来，`procedural`、`hdri`、`color` 时不得出现上表中物理天空独有的字段（除 `kind`、`sun_elevation_deg`、`sun_azimuth_deg` 以外的各行），写了同样返回 400 并指出字段。否则这些字段会进入 `lit` 指纹，已有导出误报过时。
 - `sky.night`、`sky.aerial_perspective` 由 `data: 夜空`、`data: 空气透视` 定义，交付之前写入返回 400。
 - `sky.clouds` 和 `environment.weather` 保留给远期的云层和天气，现在写入返回 400。
-- 预设（晴朗、雾霾、高原、沙尘等）不是字段：选预设等于写入一组 `altitude_m`、`air_density`、`dust_density`、`ozone_density`。各预设的取值由 W2 定，列在助手工具说明和编辑器里。
+- 预设（晴朗、雾霾、高原、沙尘等）不是字段：选预设等于写入一组 `altitude_m`、`air_density`、`dust_density`、`ozone_density`。各预设的取值由 W2 定，列在助手工具说明和编辑器里。预设不改太阳的亮度和色温。
 
 **物理天空下其他字段的解释**（只改解释，不改存储）：
 
@@ -89,9 +92,12 @@
 | 平行光 `intensity` | 照度（lux） | 不变（three.js 的强度值，按 `litLook` 标定） |
 | 点光、聚光 `intensity` | 坎德拉（cd） | 坎德拉（cd） |
 | `environment.ambient` | 不生效（字段保留） | 不变 |
-| `environment.fog` | 雾色视为介质的反照率，亮度随天空光照变化 | 不变 |
-| `render.exposure_ev` | 默认摄像机（视口自由视角、`render_view` 的临时视点）的自动曝光补偿。编辑器在切换天空模式时（进入或离开物理天空），在同一次提交里把它归零，因为两种含义的取值不能通用 | 场景曝光补偿，`toneMappingExposure = 2^exposure_ev` |
-| 摄像机曝光字段 | 生效（`data: 摄像机曝光`） | 保存但不生效 |
+| `environment.fog` | 雾色视为介质的反照率，亮度随太阳直射与天空漫射的水平照度变化 | 不变 |
+| 材质的自发光（`emissive` × `emissive_intensity`，模型的 `KHR_materials_emissive_strength`） | 亮度（cd/m²），乘以预曝光（修订 v2） | 不变 |
+| `render.exposure_ev` | 不生效（字段保留） | 场景曝光补偿，`toneMappingExposure = 2^exposure_ev` |
+| `render.exposure_ev100`、摄像机曝光字段 | 生效（`data: 摄像机曝光`） | 保存但不生效 |
+
+切换天空模式时不改写任何曝光字段。
 
 已知限制：灯光的 `intensity` 上限仍是 1000（`data: 场景文档`「灯光」）。物理天空下按 lux 解释时，场景里的平行光最多约为正午阳光的 1%，只能用来补光，不能当第二个太阳。需要放宽时另行修订灯光的取值范围。
 
@@ -99,7 +105,7 @@
 - **写**：`set_environment` 整体替换 `environment`。服务端在同一事务里校验上表的约束（沿用场景文档的写入流程），补齐缺省值后存储。
 - **读**：随场景快照一起读。
 - **保证方**：取值范围、日期有效、三项地点字段成组、时区名可加载，都由应用（`creativescene`）保证。数据库不感知这些字段。
-- **渲染指纹**：`lit` 计入整个 `sky`。天空是 `physical` 时，`lit` 不计入 `render.exposure_ev`，因为导出总是通过场景摄像机。`clay`、`line` 不计入 `environment`（`scene-world-environment` design「渲染指纹」）。
+- **渲染指纹**：`lit` 计入整个 `sky`。天空是 `physical` 时，`lit` 不计入 `render.exposure_ev`，因为它在物理天空下不生效。`clay`、`line` 不计入 `environment`（`scene-world-environment` design「渲染指纹」）。
 
 ### 生命周期与演进
 - 新增取值，不迁移：已有快照不含 `physical`，读取不受影响。
@@ -115,46 +121,50 @@
  "fog": null}
 ```
 
-存储后，`sun_elevation_deg`、`sun_azimuth_deg`、`sun_disc`、`sun_size_deg` 都按缺省补齐。
+存储后，`sun_elevation_deg`、`sun_azimuth_deg`、`sun_disc`、`sun_size_deg`、`sun_strength`、`sun_temperature_k` 都按缺省补齐。
 
 ## data: ADD 摄像机曝光
 
 ### 用途与存储角色
-- **用途**：扩展 `data: 场景文档` 的 `objects[].camera`，加入曝光设置。曝光是摄像机的功能，只在物理天空下生效。
-- **存储**：与场景文档相同，位于摄像机对象的内容单元 `object:<id>:content` 内。
-- **角色**：权威主数据。实际的 EV100 和测光结果是渲染端的派生量，不落库。
+- **用途**：
+  - 扩展 `data: 场景文档` 的 `objects[].camera`，加入手动曝光的 ISO 和快门（光圈沿用现有的 `f_stop`）。
+  - 扩展 `scene.render`，加入默认摄像机（视口自由视角、`render_view` 的临时视点）的默认曝光值。
+  - 曝光只在物理天空下生效。首版只做手动曝光，不做自动曝光（修订 v2，owner 2026-10-22）。
+- **存储**：与场景文档相同。摄像机的字段位于摄像机对象的内容单元 `object:<id>:content` 内，默认曝光值位于 `render` 单元内。
+- **角色**：权威主数据。实际的 EV100 和预曝光系数是渲染端的派生量，不落库。
 - **所有权**：
-  - 由 `creativescene` 经 `add_objects`、`update_objects` 写入（摄像机属性、助手）。
+  - 摄像机的字段由 `creativescene` 经 `add_objects`、`update_objects` 写入（摄像机属性、助手）。
+  - 默认曝光值经 `set_render` 写入（渲染选项卡、助手）。
   - 读取方：渲染端、渲染指纹。
 
 ### 结构与身份
-新增的字段与现有摄像机字段平级，`update_objects` 里按键合并。各字段都可省略，存储时补齐缺省值。
+新增的摄像机字段与现有摄像机字段平级，`update_objects` 里按键合并；`render` 的新字段在 `set_render` 里按键合并。各字段都可省略，存储时补齐缺省值。
 
 | 路径 | 类型 / 约束 | 缺省 | 说明 |
 |---|---|---|---|
-| `camera.exposure_mode` | `"auto"` \| `"manual"` | `auto` | 自动曝光（测光加补偿），或手动曝光（ISO、快门、光圈） |
-| `camera.exposure_compensation_ev` | number −10…10 | 0 | 自动曝光的补偿（档），正值变亮 |
-| `camera.iso` | number 25…102400 | 100 | 手动曝光的感光度 |
-| `camera.shutter_s` | number 0.000125…30（秒，即 1/8000 s…30 s） | 0.008（1/125 s） | 手动曝光的快门 |
+| `camera.iso` | number 25…102400 | 100 | 感光度 |
+| `camera.shutter_s` | number 0.000125…30（秒，即 1/8000 s…30 s） | 0.00025（1/4000 s） | 快门 |
+| `render.exposure_ev100` | number −10…20 | 15 | 默认摄像机的曝光值（EV100）。15 约为晴天正午 |
 
-- 手动曝光：EV100 = log₂(`f_stop`² / `shutter_s`) − log₂(`iso` / 100)。用现有的 `f_stop`，与 `depth_of_field` 是否打开无关。
-- 自动曝光：EV100 = 测光值 − `exposure_compensation_ev`。测光方式见 `scene-world-environment` design「物理单位与曝光」。
-- 摄像机从自动切到手动时，编辑器用当前测光值反推 `shutter_s` 并一起写入；缺省值只用于从未设置过的摄像机。
-- 天空不是 `physical` 时，这些字段保存但不生效。
+- 摄像机的 EV100 = log₂(`f_stop`² / `shutter_s`) − log₂(`iso` / 100)。用现有的 `f_stop`，与 `depth_of_field` 是否打开无关。缺省值（ISO 100、1/4000 s、f/2.8）约为 EV100 15。
+- 编辑器在物理天空下添加摄像机时，按 `render.exposure_ev100` 写入曝光，新摄像机的画面与视口一样亮：先按 ISO 100 取最接近的 1/3 档快门，快门越界时取边界快门，再调 `iso`。缺省光圈 f/2.8 下可达 EV100 约 −11.9…17.9，超出时新摄像机偏暗（已知局限）。缺省值只用于没写曝光字段的写入。
+- 天空不是 `physical` 时，这些字段保存但不生效；切换天空模式时不改写它们。
 
 ### 访问模式与保证
-- **写**：按现有摄像机字段的规则校验和合并。取值范围由应用保证。
-- **读**：旧快照里的摄像机没有这些字段，服务端解码时补齐缺省值，读取场景的响应里也带齐（与修订 v8 的景深字段相同）。
+- **写**：按现有摄像机字段和渲染字段的规则校验和合并。取值范围由应用保证。
+- **读**：旧快照里的摄像机和 `render` 没有这些字段，服务端解码时补齐缺省值，读取场景的响应里也带齐（与修订 v8 的景深字段、修订 v10 的 `exposure_ev` 相同）。
 - **渲染指纹**：
-  - 只在 `lit` 且天空为 `physical` 时计入；
-  - 天空为 `physical`、摄像机为手动曝光时，即使景深关闭，`lit` 也计入 `f_stop`，因为光圈决定亮度；
-  - `clay`、`line`，以及非物理天空的 `lit`，都清除这些字段。
-  - 因此改一台摄像机的曝光，只让这台摄像机在物理天空下的 `lit` 导出过时。
+  - 摄像机的 `iso`、`shutter_s` 只在 `lit` 且天空为 `physical` 时计入；
+  - 天空为 `physical` 时，即使景深关闭，`lit` 也计入 `f_stop`，因为光圈决定亮度；
+  - `clay`、`line`，以及非物理天空的 `lit`，都清除摄像机的曝光字段；
+  - 任何导出方式都不计入 `render.exposure_ev100`：导出总是通过场景摄像机。
+  - 因此改一台摄像机的曝光，只让这台摄像机在物理天空下的 `lit` 导出过时；改默认曝光值不让任何导出过时。
 - 不进导出图来源的 `lens` 快照（`data: 导出图来源` 不变）。
 
 ### 生命周期与演进
 - 不迁移，读取时补齐。
 - 回滚到不认识这些字段的后端时，带这些字段的快照会读取失败，只做前向修复。
+- 将来加自动曝光时，另加模式字段，缺省为手动，已有场景不变。
 
 ## data: ADD 夜空
 
@@ -174,6 +184,7 @@
 | `sky.night.milky_way` | boolean | true | 银河 |
 
 - 夜空只在 `sun_mode = location` 时绘制；手动模式下字段保存但不生效。
+- 月亮和星空的亮度倍率、色温（与太阳的 `sun_strength`、`sun_temperature_k` 对应）由 W3 起草时经 Epic 修订补进本节（owner 2026-10-22）。
 - 天亮后夜空的亮度自然被天空盖过，不需要另外设开关。
 - 其他天空模式下写 `night` 返回 400。
 
@@ -374,7 +385,7 @@ Content-Type: application/json
 ### 兼容与变更
 在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
 
-`scene-world-environment` W5：`add_objects`、`update_objects` 放开 `kind = volume` 和它的内容字段 `volume`（见 `data: 体积物件`），`volume` 与 `light`、`camera` 一样按键合并，属于兼容扩展；旧客户端不会写出体积物件。物理天空、夜空、空气透视和摄像机曝光的新字段走已有的 `set_environment`（整体替换）和 `update_objects` 的 `camera`（按键合并），本接口的外形不变，只是按数据契约校验新字段。
+`scene-world-environment` W5：`add_objects`、`update_objects` 放开 `kind = volume` 和它的内容字段 `volume`（见 `data: 体积物件`），`volume` 与 `light`、`camera` 一样按键合并，属于兼容扩展；旧客户端不会写出体积物件。物理天空、夜空、空气透视和摄像机曝光的新字段走已有的 `set_environment`（整体替换）、`update_objects` 的 `camera`（按键合并）和 `set_render`（按键合并，默认曝光值），本接口的外形不变，只是按数据契约校验新字段。
 
 修订 v10（C5 起草时）：`set_render` 由整体替换改为按键合并（`render` 新增 `exposure_ev` 后，只写 `mode` 的旧写法不能把曝光重置为 0；旧客户端总是写全部字段，不受影响）。`reparent_objects` 增加可选的 `moves[].transform`、`create_groups` 和 `remove_groups`，编组和取消编组因此能在一次提交里完成：同一批里每个单元只能被一个操作涉及，「新建分组 + 改挂」或「改挂 + 删除分组」若拆成两个操作，会两次涉及 `objects`。旧请求不受影响；`remove_objects` 删除分组时仍连同后代一起删除。
 

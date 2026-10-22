@@ -1,0 +1,170 @@
+{
+  "generated": "2026-10-22",
+  "api": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "astronomyEngineVersion": "2.1.19",
+  "positions": [
+    {
+      "location": "shanghai",
+      "date": "2026-06-21",
+      "local": "12:00",
+      "utc": "2026-06-21T04:00:00.000Z",
+      "horizonsSource": "DE441",
+      "horizons": {
+        "az": 186.989660655,
+        "alt": 82.155273312
+      },
+      "ae": {
+        "az": 186.99301,
+        "alt": 82.15527
+      },
+      "noaa": {
+        "az": 186.97787,
+        "alt": 82.15586
+      },
+      "aeMinusHorizons": {
+        "dAz": 0.00335,
+        "dAlt": -0.00001
+      },
+      "noaaMinusHorizons": {
+        "dAz": -0.01179,
+        "dAlt": 0.00059
+      }
+    },
+    {
+      "location": "shanghai",
+      "date": "2026-06-21",
+      "local": "06:00",
+      "utc": "2026-06-20T22:00:00.000Z",
+      "horizonsSource": "DE441",
+      "horizons": {
+        "az": 70.138314232,
+        "alt": 12.814794152
+      },
+      "ae": {
+        "az": 70.13841,
+        "alt": 12.81514
+      },
+      "noaa": {
+        "az": 70.13724,
+        "alt": 12.81357
+      },
+      "aeMinusHorizons": {
+        "dAz": 0.0001,
+        "dAlt": 0.00035
+      },
+      "noaaMinusHorizons": {
+        "dAz": -0.00107,
+        "dAlt": -0.00122
+      }
+    },
+    {
+      "location": "beijing",
+      "date": "2026-03-20",
+      "local": "06:30",
+      "utc": "2026-03-19T22:30:00.000Z",
+      "horizonsSource": "DE441",
+      "horizons": {
+        "az": 91.493489401,
+        "alt": 1.694482507
+      },
+      "ae": {
+        "az": 91.49312,
+        "alt": 1.6942
+      },
+      "noaa": {
+        "az": 91.49201,
+        "alt": 1.69969
+      },
+      "aeMinusHorizons": {
+        "dAz": -0.00037,
+        "dAlt": -0.00028
+      },
+      "noaaMinusHorizons": {
+        "dAz": -0.00148,
+        "dAlt": 0.00521
+      }
+    },
+    {
+      "location": "chengdu",
+      "date": "2026-06-21",
+      "local": "13:00",
+      "utc": "2026-06-21T05:00:00.000Z",
+      "horizonsSource": "DE441",
+      "horizons": {
+        "az": 169.962171026,
+        "alt": 82.763267605
+      },
+      "ae": {
+        "az": 169.96544,
+        "alt": 82.76339
+      },
+      "noaa": {
+        "az": 169.949,
+        "alt": 82.76338
+      },
+      "aeMinusHorizons": {
+        "dAz": 0.00327,
+        "dAlt": 0.00012
+      },
+      "noaaMinusHorizons": {
+        "dAz": -0.01317,
+        "dAlt": 0.00011
+      }
+    },
+    {
+      "location": "sydney",
+      "date": "2026-12-21",
+      "local": "18:30",
+      "utc": "2026-12-21T07:30:00.000Z",
+      "horizonsSource": "DE441",
+      "horizons": {
+        "az": 253.021282866,
+        "alt": 17.413677195
+      },
+      "ae": {
+        "az": 253.02094,
+        "alt": 17.41336
+      },
+      "noaa": {
+        "az": 253.02223,
+        "alt": 17.41644
+      },
+      "aeMinusHorizons": {
+        "dAz": -0.00035,
+        "dAlt": -0.00032
+      },
+      "noaaMinusHorizons": {
+        "dAz": 0.00095,
+        "dAlt": 0.00276
+      }
+    }
+  ],
+  "events": [
+    {
+      "location": "shanghai",
+      "date": "2026-06-21",
+      "kind": "rise",
+      "horizonsSource": "DE441",
+      "horizonsCenterMinus0833": "2026-06-20T20:50:25.485Z",
+      "noaa": "2026-06-20T20:50:25.162Z",
+      "aeSearchRiseSet": "2026-06-20T20:50:26.695Z",
+      "aeSearchAltitude0833": "2026-06-20T20:50:25.382Z",
+      "noaaMinusHorizonsSec": -0.3,
+      "aeSearchRiseSetMinusHorizonsSec": 1.2,
+      "aeSearchAltitude0833MinusHorizonsSec": -0.1
+    },
+    {
+      "location": "sydney",
+      "date": "2026-06-21",
+      "kind": "set",
+      "horizonsSource": "DE441",
+      "horizonsCenterMinus0833": "2026-06-21T06:53:48.775Z",
+      "noaa": "2026-06-21T06:53:49.983Z",
+      "aeSearchRiseSet": "2026-06-21T06:53:47.329Z",
+      "aeSearchAltitude0833": "2026-06-21T06:53:48.680Z",
+      "noaaMinusHorizonsSec": 1.2,
+      "aeSearchRiseSetMinusHorizonsSec": -1.4,
+      "aeSearchAltitude0833MinusHorizonsSec": -0.1
+    }
+  ]
+}
