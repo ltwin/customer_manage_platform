@@ -4380,6 +4380,23 @@ window.__png = async (scene, kind, side, use, forceWebGL) => {
     window.__sceneGPU.forceWebGL = false;
   }
 };
+// One export image timed as the export draws and encodes it (exportShots.ts), on a shooter of its own; or why not.
+window.__timed = async (scene, kind, resolution) => {
+  const { imageTypeOf, longSideOf } = await import('/src/creative-scene/render/engines.ts');
+  const encoding = imageTypeOf(kind, resolution);
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, longSideOf(resolution));
+    const started = performance.now();
+    const blob = await shooter.shoot(framing, { kind, type: encoding.type, quality: encoding.quality });
+    await shooter.confirm();
+    return { ms: Math.round(performance.now() - started), bytes: blob.size, type: blob.type, width: framing.width, height: framing.height };
+  } catch (e) {
+    return { error: String(e?.message ?? e) };
+  } finally {
+    shooter.close();
+  }
+};
 window.__ready = true;
 </script></body></html>`,
 )
@@ -4694,6 +4711,123 @@ await check('real-time GI on WebGL2: the box room’s 2K export forced onto WebG
     for (const kind of ['clay', 'lit']) assert.ok(measured[kind].mean <= 1.5 && measured[kind].over_percent <= 1, `${kind}: ${JSON.stringify(measured[kind])}`)
     assert.deepEqual(errors, [])
   } finally {
+    await gpu.close()
+  }
+})
+
+// R2 tasks 7.2: a light added in the real-time GI's rendered view is compiled first for both its passes, as the
+// workbench's is (R1): no pipeline refused (the prepass and the lighting pass once shared a stand-in's material),
+// no frame held while the lighting pass compiles (5 s before). R0's performance scene, this machine's GPU.
+await check('real-time GI: a light added in the rendered view compiles first, without an error or a held frame', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await shading(page, '最终渲染')
+    await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+    await orbitFrames(page, 1000)
+    const measuring = orbitFrames(page, 3000)
+    await sleep(800)
+    const at = await page.evaluate(() => performance.now())
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+    const longest = Math.max(...gaps([at, ...(await measuring).filter((t) => t >= at)]))
+    console.log(`real-time GI: adding a light, longest frame ${longest.toFixed(0)} ms`)
+    assert.ok(longest < 1000, `longest frame ${longest} ms`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PERF_R2=<dir> (R2 AC-R2-9, tasks 7.2), this machine's GPU, 1600 × 1000 at 2× pixels as R1's AC-9:
+// the viewport's frame times with the real-time GI (its 1× pixels) in the box room and R0's performance scene, and
+// the workbench's in the latter against R1's perf.json; how long the viewport goes on drawing after the last
+// input; the longest frame when a light is added in the real-time GI's rendered view; each resolution's export
+// image time for both renderers (the box room, clay and lit, each on a fresh shooter after a warm one). perf.json
+// goes to <dir>; the limits are judged in the record, not here, except that nothing errs.
+if (process.env.SCENE_E2E_PERF_R2) await check('R2 performance: viewport frames, settling and export times on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_PERF_R2
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', viewport_frames: {}, settle: {}, exports: {} }
+  // rAF times and the viewport's frame count after the last of the input, until the count has not moved for 1.5 s.
+  const settle = (page) => page.evaluate(() => new Promise((resolve) => {
+    const el = document.querySelector('.cc-scene-editor canvas')
+    el.dispatchEvent(new WheelEvent('wheel', { deltaX: 4, deltaY: 0, deltaMode: 0, bubbles: true, cancelable: true }))
+    const start = performance.now()
+    let count = window.__sceneGPU.viewportFrames
+    let changed = start
+    const tick = (t) => {
+      const now = window.__sceneGPU.viewportFrames
+      if (now !== count) {
+        count = now
+        changed = t
+      }
+      if (t - changed < 1500) requestAnimationFrame(tick)
+      else resolve({ ms: Math.round(changed - start), frames: count })
+    }
+    requestAnimationFrame(tick)
+  }))
+  try {
+    for (const [name, engine] of [['perf', 'realtime_gi'], ['cornell', 'realtime_gi'], ['perf', 'workbench']]) {
+      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+      const server = new SceneServer()
+      if (name === 'perf') perfScene(server)
+      else referenceScene(server, name)
+      server.scene.render = { ...server.scene.render, engine }
+      const { page, errors } = await open(server, { context })
+      const { x, y } = await viewportCenter(page)
+      await page.mouse.move(x, y)
+      const label = `${name}-${engine}`
+      record.viewport_frames[label] = {}
+      record.settle[label] = {}
+      const modes = engine === 'workbench' ? [['线框', 'wireframe'], ['白模', 'solid'], ['材质预览', 'preview'], ['最终渲染', 'rendered']] : [['白模', 'solid'], ['最终渲染', 'rendered']]
+      for (const [mode, key] of modes) {
+        await shading(page, mode)
+        await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+        await orbitFrames(page, 1000)
+        const stats = frameStats(await orbitFrames(page, 4000))
+        record.viewport_frames[label][key] = Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Number(v.toFixed(1))]))
+        record.settle[label][key] = await settle(page)
+        console.log(`  ${label} ${key}: mean ${stats.mean.toFixed(1)} ms, p95 ${stats.p95.toFixed(1)} ms; settles in ${record.settle[label][key].ms} ms after ${record.settle[label][key].frames} frames`)
+      }
+      if (name === 'perf' && engine === 'realtime_gi') {
+        // The rendered view is up: a point light added, the longest frame after it.
+        const measuring = orbitFrames(page, 3000)
+        await sleep(800)
+        const at = await page.evaluate(() => performance.now())
+        await page.keyboard.press('Shift+KeyA')
+        await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+        const times = await measuring
+        record.gi_light_add_ms = Math.round(Math.max(...gaps([at, ...times.filter((t) => t >= at)])))
+        console.log(`  ${label}: adding a light, longest frame ${record.gi_light_add_ms} ms`)
+      }
+      assert.deepEqual(errors, [], `${label}: ${errors.join('\n')}`)
+      await context.close()
+    }
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const cornell = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+    for (const engine of ['workbench', 'realtime_gi']) {
+      const scene = { ...cornell, render: { ...cornell.render, engine } }
+      for (const kind of ['clay', 'lit']) {
+        await page.evaluate(([s, k]) => window.__timed(s, k, '1k'), [scene, kind]) // compiled, caches warm
+        for (const resolution of ['1k', '2k', '4k', '8k']) {
+          const out = await page.evaluate(([s, k, r]) => window.__timed(s, k, r), [scene, kind, resolution])
+          record.exports[`${engine}-${kind}-${resolution}`] = out
+          console.log(`  export ${engine} ${kind} ${resolution}: ${out.error ?? `${out.width}×${out.height} ${out.type} in ${(out.ms / 1000).toFixed(1)} s, ${(out.bytes / 1e6).toFixed(2)} MB`}`)
+        }
+      }
+    }
+  } finally {
+    await writeFile(`${dir}/perf.json`, `${JSON.stringify(record, null, 2)}\n`)
     await gpu.close()
   }
 })

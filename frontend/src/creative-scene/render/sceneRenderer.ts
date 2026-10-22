@@ -9,6 +9,7 @@ import { depthOfField, type Dof } from './dof.ts'
 import { convergeFrames, type Engine, type Quality } from './engines.ts'
 import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
+import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
@@ -185,6 +186,64 @@ function disposeStandIn({ meshes, lights }: StandIn) {
     // Never drawn into, so three never set up freeing its textures; the materials bound the depth.
     l.shadow?.map?.depthTexture?.dispose()
     l.dispose()
+  }
+}
+
+/** A stand-in being compiled: its meshes, and the passes it compiles for (with the target each compiles into) by their MRT (null: none). */
+type Compiling = { meshes: ReadonlySet<Object3D>; passes: ReadonlyMap<Node | null, { node: PassNode; target: RenderTarget }> }
+type RenderContext = { mrt: Node | null }
+type RenderObjects = { get(object: Object3D, material: unknown, scene: unknown, camera: unknown, lightsNode: unknown, renderContext: RenderContext, ...rest: unknown[]): unknown }
+type NodeManager = { getForRenderAsync(renderObject: { object: Object3D; context: RenderContext }): Promise<unknown> }
+const compiling = new Set<Compiling>()
+const wrapped = new WeakSet<object>()
+
+/**
+ * compileAsync (three r186) takes the renderer's target, MRT and context as
+ * each render object is made and its material built, a task or more after
+ * the call, with them as the frames have left them by then. The target and
+ * MRT give a material its outputs; the context matters to the
+ * real-time GI: its prepass and lighting pass draw the same materials, told
+ * apart by the lighting pass's context (render objects and built materials
+ * are cached by material and context, not by MRT). Compiled with the frames'
+ * context, the two passes' stand-ins shared one built material, and one of
+ * them got a shader of the wrong number of outputs (WebGPU refuses its
+ * pipeline); the lighting pass's real meshes then compiled on the next frame,
+ * holding the viewport for seconds. A render object reads the context when
+ * made and a material reads all three when its build starts
+ * (NodeBuilder.prebuild, synchronously), so for a stand-in's mesh the pass's
+ * are set around those two calls alone.
+ */
+function asItsPass(renderer: SceneGPU['renderer']) {
+  const inPass = <T>(object: Object3D, renderContext: RenderContext, call: () => T): T => {
+    for (const c of compiling) {
+      const pass = c.meshes.has(object) ? c.passes.get(renderContext.mrt) : undefined
+      if (!pass) continue
+      const target = renderer.getRenderTarget()
+      const mrt = renderer.getMRT()
+      const context = renderer.contextNode
+      renderer.setRenderTarget(pass.target)
+      renderer.setMRT(pass.node.getMRT())
+      if (pass.node instanceof GILightingPass) renderer.contextNode = splitContext(context as Parameters<typeof splitContext>[0])
+      try {
+        return call()
+      } finally {
+        renderer.setRenderTarget(target)
+        renderer.setMRT(mrt)
+        renderer.contextNode = context
+      }
+    }
+    return call()
+  }
+  const { _objects: objects, _nodes: nodes } = renderer as unknown as { _objects: RenderObjects; _nodes: NodeManager }
+  if (!wrapped.has(objects)) {
+    wrapped.add(objects)
+    const get = objects.get.bind(objects)
+    objects.get = (object, material, scene, camera, lightsNode, renderContext, ...rest) => inPass(object, renderContext, () => get(object, material, scene, camera, lightsNode, renderContext, ...rest))
+  }
+  if (!wrapped.has(nodes)) {
+    wrapped.add(nodes)
+    const build = nodes.getForRenderAsync.bind(nodes)
+    nodes.getForRenderAsync = (renderObject) => inPass(renderObject.object, renderObject.context, () => build(renderObject))
   }
 }
 
@@ -391,8 +450,11 @@ export class SceneRenderer {
       t.setSize(1, 1)
       return t
     })
-    // compileAsync reads the target and MRT before its first await; the passes' state is set only for that.
-    const compiling = this.built.passes.map(({ node, layers: drawn }, i) => {
+    asItsPass(renderer)
+    const entry: Compiling = { meshes: new Set(meshes.children), passes: new Map(this.built.passes.map(({ node }, i) => [node.getMRT(), { node, target: targets[i] }])) }
+    compiling.add(entry)
+    // compileAsync reads the target before its first await (the MRT and context again later: asItsPass).
+    const compiles = this.built.passes.map(({ node, layers: drawn }, i) => {
       const target = renderer.getRenderTarget()
       const targetMRT = renderer.getMRT()
       const mask = camera.layers.mask
@@ -408,13 +470,14 @@ export class SceneRenderer {
       }
     })
     const freeTargets = () => {
+      compiling.delete(entry)
       for (const t of targets) {
         t.dispose()
         // A cloned target's depth is not its own to three, which leaves it out of dispose().
         t.depthTexture?.dispose()
       }
     }
-    return Promise.all(compiling).then(
+    return Promise.all(compiles).then(
       () => {
         freeTargets()
         // Compiles may finish out of order; the last one asked for is the scene as it is.
