@@ -1,6 +1,6 @@
 {
   "uid": "10672724-36fa-4e3e-b860-84a7c5e6bccd",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-display-look",
   "kind": "feature",
   "assurance": "governed",
@@ -22,7 +22,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-22T08:34:32.043Z",
-  "updatedAt": "2026-10-22T11:31:36.406Z",
+  "updatedAt": "2026-10-22T11:32:23.004Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-22T11:32:22.948Z",
+    "summary": "feat/scene-display-look 已合入 develop（470af309，--no-ff）；合入后代码树与分支相同，develop 另一侧只有 creative-mcp-server 的 .lti 文档，沿用分支上的验证结果。",
+    "method": "manual",
+    "limitations": "项目未配置 lti checks；合入树与分支一致，未在 develop 上重跑测试。",
+    "sourceCommit": "bf9ae9e9ed4b02ebe6add85066e2c7d360f4852d",
+    "targetCommit": "470af309e76fdff33f77ed169a22b6e229cfceb5",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "ce88c292d8351659e3a96ab023316738d7a8da795c827bdb2d1d00ac334a4d45"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact"
