@@ -76,7 +76,10 @@
 
 ## 6. 助手
 
-- [ ] 6.1 `scene_tools.go` 三个工具的说明、`instructions/base.md`、`scene_tools_test.go`；`docs/dev/agent-skills-tools.md` 工具表与排空后升级记录、`docs/dev/creative-scene-agent.md`。完成判据：`make check-go PKG=./internal/creativeagent/...` 绿；助手脚本化回合 e2e「换成实时 GI，按 4K 导出」绿（AC-R2-7）
+- [x] 6.1 `scene_tools.go` 三个工具的说明、`instructions/base.md`、`scene_tools_test.go`；`docs/dev/agent-skills-tools.md` 工具表与排空后升级记录、`docs/dev/creative-scene-agent.md`。完成判据：`make check-go PKG=./internal/creativeagent/...` 绿；助手脚本化回合 e2e「换成实时 GI，按 4K 导出」绿（AC-R2-7）
+  - 三个工具的说明与 `base.md` 的场景段落按 design 改；`TestSceneToolsDescribeRendererAndResolution` 固定新写法。场景工具说明增长约 0.9 KB，压缩回归用例 `TestCompactionSummaryFallsBackWhenCurrentToolsOutgrowWindow` 的写死上限 40000 超出 129，改为与同文件其他用例一样取 `requestByteCeiling`（C5 同样处理过）。
+  - AC-R2-7 分两半：Go 脚本化回合 `TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K`（`set_render` 写入 `engine`、`resolution`，按键合并保留 `mode`；`render_view` lit 截图进入下一步；三种导出放上画布）；页面一半在 `creative-scene-agent.e2e.mjs`「after 「换成实时 GI，按 4K 导出」…」（Metal：实时 GI 的 `render_view` 与工作台不同，导出 clay、lit 为 4096 × 2731 JPEG、线稿 PNG，3 张约 15 s）。`duskDoc` 补齐 `engine`、`resolution`。
+  - `make check-go PKG=./internal/creativeagent/...` 绿（新增用例前跑；新增两个用例单独跑绿）。`docs/dev/creative-scene-agent.md` 另补了一条 R1 的渲染器说明：R1 没更新这份文档，渲染端仍写着 WebGL 的 `EffectComposer` 链。
 
 ## 7. 验收证据
 

@@ -144,7 +144,7 @@ function duskDoc() {
     light: { type: 'point', color: '#ffb46b', intensity: 40, cast_shadow: false, distance: 0, decay: 2 },
   })
   doc.scene.environment = { sky: { kind: 'procedural', sun_elevation_deg: 4, sun_azimuth_deg: 250, turbidity: 4 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }
-  doc.scene.render = { mode: 'lit', exposure_ev: 2 }
+  doc.scene.render = { mode: 'lit', exposure_ev: 2, engine: 'workbench', resolution: '2k' }
   doc.scene.objects = [
     ...doc.scene.objects.filter((o) => o.kind === 'camera'),
     { id: 'sobj_ground', kind: 'primitive', name: '地面', parent_id: null, order: 3, transform: identity(), visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 40 } }, material_slots: {} },
@@ -166,6 +166,8 @@ class Server {
     this.leases = []
     this.completes = []
     this.uploads = new Map()
+    // The bytes put for each upload.
+    this.bodies = new Map()
     this.media = 0
     // Set to a promise to keep uploads from completing until it settles.
     this.uploadHold = null
@@ -247,7 +249,10 @@ async function route(context, server) {
     }
     return json(404, { error: { code: 'not_found', message: `unmocked ${path}` } })
   })
-  await context.route('**/__upload/**', (r) => r.fulfill({ status: 200, body: '' }))
+  await context.route('**/__upload/**', (r) => {
+    server.bodies.set(new URL(r.request().url()).pathname.split('/').pop(), r.request().postDataBuffer())
+    return r.fulfill({ status: 200, body: '' })
+  })
   await context.route('**/__media/**', (r) => {
     server.media++
     return r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: pillarGLB })
@@ -268,6 +273,17 @@ async function tab(context, fixture) {
   await page.goto(`${base}/${fixture}`)
   await page.waitForFunction(() => window.__ready, null, { timeout: 30_000 })
   return { page, errors, requested }
+}
+
+/** A PNG's or a baseline/progressive JPEG's size, read from its header. */
+function imageSize(buf) {
+  if (buf.readUInt32BE(0) === 0x89504e47) return [buf.readUInt32BE(16), buf.readUInt32BE(20)]
+  for (let i = 2; i < buf.length; ) {
+    const marker = buf[i + 1]
+    if (marker === 0xc0 || marker === 0xc2) return [buf.readUInt16BE(i + 7), buf.readUInt16BE(i + 5)]
+    i += 2 + buf.readUInt16BE(i + 2)
+  }
+  throw new Error('not a PNG or JPEG')
 }
 
 async function openRender() {
@@ -568,6 +584,50 @@ try {
     assert.deepEqual(done.payload.export.shots.map((s) => [s.camera_object_id, s.images.map((i) => i.pass)]), [['sobj_cam', ['clay', 'line', 'lit']]])
     assert.deepEqual(t.errors, [])
     await context.close()
+  })
+
+  // AC-R2-7, the page's half of 「换成实时 GI，按 4K 导出」 (the assistant's
+  // half: creativeagent TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K).
+  // On the GPU: the real-time GI's 4K pictures are too slow for SwiftShader.
+  await check('after 「换成实时 GI，按 4K 导出」 the page looks through the real-time GI and exports a 4096 long side', async () => {
+    const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+    try {
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const server = new Server()
+      server.doc = duskDoc()
+      await route(context, server)
+      const t = await tab(context, '.scene-agent-host-qa.html')
+      await t.page.locator('#host', { hasText: 'idle' }).waitFor()
+      const look = async (id) => {
+        server.render(id, { camera_object_id: 'sobj_cam', mode: 'lit' })
+        await t.page.evaluate(() => window.__invalidate())
+        const done = await server.completed(id)
+        assert.equal(done.payload.outcome, 'succeeded', JSON.stringify(done.payload))
+        return server.bodies.get(done.payload.render.image_upload_id)
+      }
+      const workbench = await look('csj_workbench')
+      // What set_render{render:{engine:realtime_gi, resolution:4k}} writes.
+      server.doc = { ...server.doc, revision: '8', content_revision_id: 'ccrv_scene_8', scene: { ...server.doc.scene, render: { ...server.doc.scene.render, engine: 'realtime_gi', resolution: '4k' } } }
+      const started = Date.now()
+      const gi = await look('csj_gi')
+      console.log(`real-time GI render_view in ${Date.now() - started} ms`)
+      assert.deepEqual(imageSize(gi), imageSize(workbench))
+      assert.notDeepEqual(gi, workbench, 'render_view drew the same picture with the real-time GI')
+      server.export('csj_gi_export', { camera_object_ids: ['sobj_cam'], passes: ['clay', 'line', 'lit'], canvas_id: 'canvas', scene_node_id: 'node-scene' })
+      const exporting = Date.now()
+      await t.page.evaluate(() => window.__invalidate())
+      const done = await server.completed('csj_gi_export')
+      assert.equal(done.payload.outcome, 'succeeded', JSON.stringify(done.payload))
+      assert.equal(done.payload.export.scene_revision, '8')
+      const images = done.payload.export.shots[0].images.map((i) => [i.pass, server.uploads.get(i.upload_id).mime, imageSize(server.bodies.get(i.upload_id))])
+      console.log(`4K real-time GI export of 3 images in ${Date.now() - exporting} ms`)
+      // The camera is 3:2: 4096 × 2731.
+      assert.deepEqual(images, [['clay', 'image/jpeg', [4096, 2731]], ['line', 'image/png', [4096, 2731]], ['lit', 'image/jpeg', [4096, 2731]]])
+      assert.deepEqual(t.errors, [])
+      await context.close()
+    } finally {
+      await gpu.close()
+    }
   })
 
   await check('closing asks first only in the browser’s only workspace tab, and only while it holds a job', async () => {

@@ -624,7 +624,7 @@ func TestEditSceneDescribesThreejsFields(t *testing.T) {
 	}
 	for _, want := range []string{"light 字段同 three.js", "distance", "decay（默认 2）", "angle（弧度，光锥半角，≤π/2，默认 π/3）", "penumbra", "只有 type 必填",
 		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并",
-		"material_slots 按槽位合并，写 null 清除", "stone_brick@1 石砖(brick_size 0.05–2m", "暂无内置 HDRI", "exposure_ev?:-10…10}}（按键合并）", "点光 20–80 cd", "建议曝光", "mode:lit 回看"} {
+		"material_slots 按槽位合并，写 null 清除", "stone_brick@1 石砖(brick_size 0.05–2m", "暂无内置 HDRI", "exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）", "点光 20–80 cd", "建议曝光", "mode:lit 回看"} {
 		if !strings.Contains(info.Desc, want) {
 			t.Errorf("edit_scene does not say %q", want)
 		}
@@ -658,6 +658,31 @@ func TestRenderAndExportOfferTheLitLook(t *testing.T) {
 	}
 	if !strings.Contains(export.Desc, "lit（材质光照") {
 		t.Errorf("export_shots: %s", export.Desc)
+	}
+}
+
+// AC-R2-7: the assistant reads how to pick the renderer and the output
+// resolution in set_render, and that render_view and export_shots follow them.
+func TestSceneToolsDescribeRendererAndResolution(t *testing.T) {
+	descs := map[string][]string{
+		editSceneTool: {"engine?:workbench|realtime_gi", "resolution?:1k|2k|4k|8k", "作用于白模和材质光照", "realtime_gi 是实时 GI", "更慢", "path_tracing 还不能选",
+			"只决定 export_shots 导出图的长边", "4k 4096", "换低一档"},
+		renderViewTool:  {"按场景的渲染器（render.engine）画", "长边 1024", "比工作台慢"},
+		exportShotsTool: {"按场景的渲染器渲染", "长边按 render.resolution（缺省 2k 即 2048）", "4K、8K 的白模和材质光照是 JPEG"},
+	}
+	for name, wants := range descs {
+		info, err := (&sceneTool{name: name}).Info(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(info.Desc, want) {
+				t.Errorf("%s does not say %q", name, want)
+			}
+		}
+		if strings.Contains(info.Desc, "（长边 2048）") {
+			t.Errorf("%s still fixes the long side at 2048", name)
+		}
 	}
 }
 

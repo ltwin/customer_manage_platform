@@ -265,7 +265,7 @@ func TestCompactionSummaryFallsBackWhenCurrentToolsOutgrowWindow(t *testing.T) {
 	f.vendor.mu.Lock()
 	request := f.vendor.sent[len(f.vendor.sent)-1]
 	f.vendor.mu.Unlock()
-	if bytes := llmgateway.EstimateInputTokens(request); bytes > 40000 {
+	if bytes := llmgateway.EstimateInputTokens(request); bytes > int64(requestByteCeiling(f.service.limits, model)) {
 		t.Fatalf("actual request exceeded byte ceiling: %d", bytes)
 	}
 }

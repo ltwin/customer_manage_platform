@@ -89,10 +89,12 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
-				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写）；set_render{render:{mode?:clay|lit, exposure_ev?:-10…10}}（按键合并）；" +
+				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写）；set_render{render:{mode?:clay|lit, exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
 				"资产库里的模型：search_assets 按 kind:model 查到后，用它的 content_revision_id 写 add_objects 的 model{content_revision_id}，并把 model 要点里的 materials 原样写进 material_slots（资产带的材质）；可放多个实例，都引用同一版模型；size_m 与 mount 见搜索结果的 model 要点。" +
 				"渲染方式：clay 是素模，只有程序天空的太阳、纯色天空、环境光和雾生效，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit）。" +
+				"渲染器 render.engine 作用于白模和材质光照（clay、lit 的导出与回看，线稿不变）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
+				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
 				"打光：室外由程序天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（太阳约 2.2）；投射阴影的灯光不超过 4 盏，太多会卡。" +
@@ -142,7 +144,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		return &schema.ToolInfo{
 			Name: exportShotsTool,
 			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
-				"图在创作者的页面渲染（长边 2048），调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
+				"图在创作者的页面按场景的渲染器渲染，长边按 render.resolution（缺省 2k 即 2048）；4K、8K 的白模和材质光照是 JPEG，线稿是 PNG。调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
 				"camera_object_ids": strs("要导出的摄像机，省略为全部摄像机（按物件顺序），最多 32 台"),
@@ -154,7 +156,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: renderViewTool,
 			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模，检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空光照、曝光补偿）出图，检查材质和打光。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
 				"截图与编辑器视口的白模或最终渲染、对应的导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
-				"截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
+				"截图按场景的渲染器（render.engine）画，长边 1024；实时 GI 要多帧累积，比工作台慢。截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,
 				"camera_object_id": str("摄像机物件 ID"),
