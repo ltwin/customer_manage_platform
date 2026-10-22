@@ -23,6 +23,7 @@ const (
 	PassLit  = "lit"
 
 	fingerprintVersion = "v1"
+	viewTransformAgX   = "agx"
 )
 
 // Passes in node column order.
@@ -32,8 +33,10 @@ var Passes = []string{PassClay, PassLine, PassLit}
 // is false when the scene has no such camera. s comes from decodeScene, so
 // its cameras are complete.
 func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
+	// Clay draws with the fixed studio light and line art with none: the
+	// environment only lights lit images.
 	p := Scene{Environment: s.Environment}
-	if pass == PassLine {
+	if pass != PassLit {
 		p.Environment = Environment{}
 	}
 	found := false
@@ -75,12 +78,20 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 			render.Engine = s.Render.Engine
 		}
 	}
+	// Clay and lit images have been tone mapped with AgX since W1
+	// (scene-display-look); the key makes their older exports stale once
+	// without a version bump, and leaves line art's JSON as it was.
+	viewTransform := ""
+	if pass != PassLine {
+		viewTransform = viewTransformAgX
+	}
 	raw, err := json.Marshal(struct {
-		V        int              `json:"v"`
-		Pass     string           `json:"pass"`
-		CameraID string           `json:"camera_id"`
-		Scene    fingerprintScene `json:"scene"`
-	}{1, pass, cameraID, fingerprintScene{p.Environment, render, p.Objects}})
+		V             int              `json:"v"`
+		Pass          string           `json:"pass"`
+		CameraID      string           `json:"camera_id"`
+		ViewTransform string           `json:"view_transform,omitempty"`
+		Scene         fingerprintScene `json:"scene"`
+	}{1, pass, cameraID, viewTransform, fingerprintScene{p.Environment, render, p.Objects}})
 	if err != nil {
 		return "", false
 	}

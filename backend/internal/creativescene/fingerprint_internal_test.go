@@ -103,39 +103,87 @@ func BenchmarkFreshnessCheck(b *testing.B) {
 	}
 }
 
-// Exposure only brightens lit images. At 0 it is left out of the hash, so
-// fingerprints taken before the field existed still match (no version bump).
-func TestExposureFingerprintsOnlyLit(t *testing.T) {
-	scene := func(render string) Scene {
-		raw := `{"environment":{"sky":{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3},"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
-			"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
-			"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":{}},
-			{"id":"sobj_000000000000000000002","kind":"light","name":"","parent_id":null,"order":1,
-			"transform":{"position":[0,3,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"light":{"type":"point","intensity":50}}]}`
-		s, err := decodeScene(creativecontent.Payload{Scene: json.RawMessage(raw)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return s
+// pinnedScene has one camera and one light; render is its render settings
+// as JSON. The pins below are its fingerprints.
+func pinnedScene(t *testing.T, render string) Scene {
+	t.Helper()
+	raw := `{"environment":{"sky":{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3},"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
+		"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
+		"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":{}},
+		{"id":"sobj_000000000000000000002","kind":"light","name":"","parent_id":null,"order":1,
+		"transform":{"position":[0,3,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"light":{"type":"point","intensity":50}}]}`
+	s, err := decodeScene(creativecontent.Payload{Scene: json.RawMessage(raw)})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Taken before render.exposure_ev existed.
-	before := map[string]string{
+	return s
+}
+
+const pinnedCamera = "sobj_000000000000000000001"
+
+// The fingerprints of pinnedScene at exposure 0 on the workbench. beforeW1
+// were taken before W1 (scene-display-look) gave clay the fixed studio light
+// and clay and lit AgX; pinned are the ones since. Line art did not change.
+var (
+	beforeW1 = map[string]string{
 		PassClay: "v1:97cf4a21ba8b318b9d4f7127a87cde66902afca4c4ff687c0658dbe14eb5e92e",
 		PassLine: "v1:26a2cfb52279e30da0729c68d15b2acfdc0a362cbd546072dc2894f193844d72",
 		PassLit:  "v1:2e0a60a7fa1fe800852915a413dcba499be7baf9c35b3ceeb504a2760c86f6e5",
 	}
-	camera := "sobj_000000000000000000001"
+	pinned = map[string]string{
+		PassClay: "v1:ec5e772a3a1246db4f4e3c3be75f06963297881456d8ab0d70f0b275415d0d9b",
+		PassLine: beforeW1[PassLine],
+		PassLit:  "v1:ae03e71833a7ac86908f92c525e29e0c1682df2b502e7b11d8992ad47e504208",
+	}
+)
+
+// W1 changed how clay and lit images look without a version bump: their
+// exports from before read as stale once, line art stays current.
+func TestViewTransformStalesClayAndLitOnce(t *testing.T) {
+	s := pinnedScene(t, `{"mode":"lit"}`)
+	for _, pass := range Passes {
+		got, _ := Fingerprint(s, pinnedCamera, pass)
+		if got != pinned[pass] {
+			t.Fatalf("%s: %s, want %s", pass, got, pinned[pass])
+		}
+		if (got == beforeW1[pass]) != (pass == PassLine) {
+			t.Fatalf("%s: %s against the one before W1 %s", pass, got, beforeW1[pass])
+		}
+	}
+}
+
+// Clay draws with the fixed studio light: the sky, the ambient light and
+// the fog only count for lit images.
+func TestClayIgnoresTheEnvironment(t *testing.T) {
+	s := pinnedScene(t, `{"mode":"lit"}`)
+	blue := "#3355ff"
+	s.Environment = Environment{
+		Sky:     Sky{Kind: "color", Color: &blue},
+		Ambient: Ambient{Color: "#ffd0a0", Intensity: 1.2},
+		Fog:     &Fog{Color: "#c0c8d0", Near: 5, Far: 40},
+	}
+	for _, pass := range Passes {
+		got, _ := Fingerprint(s, pinnedCamera, pass)
+		if (got != pinned[pass]) != (pass == PassLit) {
+			t.Fatalf("another environment, %s: %s", pass, got)
+		}
+	}
+}
+
+// Exposure only brightens lit images. At 0 it is left out of the hash, so
+// fingerprints taken before the field existed still match (no version bump).
+func TestExposureFingerprintsOnlyLit(t *testing.T) {
 	for _, render := range []string{`{"mode":"lit"}`, `{"mode":"lit","exposure_ev":0}`} {
 		for _, pass := range Passes {
-			if got, _ := Fingerprint(scene(render), camera, pass); got != before[pass] {
-				t.Fatalf("%s %s: %s, want %s", render, pass, got, before[pass])
+			if got, _ := Fingerprint(pinnedScene(t, render), pinnedCamera, pass); got != pinned[pass] {
+				t.Fatalf("%s %s: %s, want %s", render, pass, got, pinned[pass])
 			}
 		}
 	}
-	brighter := scene(`{"mode":"lit","exposure_ev":2}`)
+	brighter := pinnedScene(t, `{"mode":"lit","exposure_ev":2}`)
 	for _, pass := range Passes {
-		got, _ := Fingerprint(brighter, camera, pass)
-		if (got != before[pass]) != (pass == PassLit) {
+		got, _ := Fingerprint(brighter, pinnedCamera, pass)
+		if (got != pinned[pass]) != (pass == PassLit) {
 			t.Fatalf("exposure 2, %s: %s", pass, got)
 		}
 	}
@@ -146,43 +194,24 @@ func TestExposureFingerprintsOnlyLit(t *testing.T) {
 // so fingerprints from before the field existed still match; the output
 // resolution never counts (R2 design R-3).
 func TestEngineFingerprintsOnlyLit(t *testing.T) {
-	scene := func(render string) Scene {
-		raw := `{"environment":{"sky":{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3},"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
-			"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
-			"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":{}},
-			{"id":"sobj_000000000000000000002","kind":"light","name":"","parent_id":null,"order":1,
-			"transform":{"position":[0,3,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"light":{"type":"point","intensity":50}}]}`
-		s, err := decodeScene(creativecontent.Payload{Scene: json.RawMessage(raw)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return s
-	}
-	// The v1 fingerprints of TestExposureFingerprintsOnlyLit, taken before render.engine existed.
-	before := map[string]string{
-		PassClay: "v1:97cf4a21ba8b318b9d4f7127a87cde66902afca4c4ff687c0658dbe14eb5e92e",
-		PassLine: "v1:26a2cfb52279e30da0729c68d15b2acfdc0a362cbd546072dc2894f193844d72",
-		PassLit:  "v1:2e0a60a7fa1fe800852915a413dcba499be7baf9c35b3ceeb504a2760c86f6e5",
-	}
-	camera := "sobj_000000000000000000001"
 	for _, render := range []string{
 		`{"mode":"lit","engine":"workbench"}`,
 		`{"mode":"lit","engine":"workbench","resolution":"8k"}`,
 		`{"mode":"lit","resolution":"1k"}`,
 	} {
 		for _, pass := range Passes {
-			if got, _ := Fingerprint(scene(render), camera, pass); got != before[pass] {
-				t.Fatalf("%s %s: %s, want %s", render, pass, got, before[pass])
+			if got, _ := Fingerprint(pinnedScene(t, render), pinnedCamera, pass); got != pinned[pass] {
+				t.Fatalf("%s %s: %s, want %s", render, pass, got, pinned[pass])
 			}
 		}
 	}
-	gi := scene(`{"mode":"lit","engine":"realtime_gi"}`)
+	gi := pinnedScene(t, `{"mode":"lit","engine":"realtime_gi"}`)
 	for _, pass := range Passes {
-		got, _ := Fingerprint(gi, camera, pass)
-		if (got != before[pass]) != (pass == PassLit) {
+		got, _ := Fingerprint(gi, pinnedCamera, pass)
+		if (got != pinned[pass]) != (pass == PassLit) {
 			t.Fatalf("realtime_gi, %s: %s", pass, got)
 		}
-		if other, _ := Fingerprint(scene(`{"mode":"lit","engine":"realtime_gi","resolution":"4k"}`), camera, pass); other != got {
+		if other, _ := Fingerprint(pinnedScene(t, `{"mode":"lit","engine":"realtime_gi","resolution":"4k"}`), pinnedCamera, pass); other != got {
 			t.Fatalf("realtime_gi at 4k, %s: %s, want %s", pass, other, got)
 		}
 	}

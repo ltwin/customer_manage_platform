@@ -11,7 +11,8 @@
 
 ## 2. 渲染指纹
 
-- [ ] 2.1 先改测试：`fingerprint_internal_test.go` 保留第 122–126、162–166 行 W1 之前的指纹，断言 `line` 等于旧值、`clay` 和 `lit` 不等于旧值，另外固定新值，新增「`clay` 与 `environment` 无关」；`exports_test.go` 的 `TestFingerprintCountsWhatThePassDraws` environment 一行改为只有 `lit` 过时，`TestBasedOnStateFollowsTheScene` 改环境后 `clay` 保持 current。再改 `fingerprint.go:Fingerprint`（`clay` 清空 `environment`，`clay`、`lit` 加 `view_transform: "agx"`，`line` 的 JSON 逐字节不变）。完成判据：测试先红后绿，`make check-go PKG=./internal/creativescene/...` 通过
+- [x] 2.1 先改测试：`fingerprint_internal_test.go` 保留第 122–126、162–166 行 W1 之前的指纹，断言 `line` 等于旧值、`clay` 和 `lit` 不等于旧值，另外固定新值，新增「`clay` 与 `environment` 无关」；`exports_test.go` 的 `TestFingerprintCountsWhatThePassDraws` environment 一行改为只有 `lit` 过时，`TestBasedOnStateFollowsTheScene` 改环境后 `clay` 保持 current。再改 `fingerprint.go:Fingerprint`（`clay` 清空 `environment`，`clay`、`lit` 加 `view_transform: "agx"`，`line` 的 JSON 逐字节不变）。完成判据：测试先红后绿，`make check-go PKG=./internal/creativescene/...` 通过
+  - 两个测试原先各自固定一份 W1 之前的指纹，现合成 `pinnedScene`、`beforeW1`、`pinned`，新增 `TestViewTransformStalesClayAndLitOnce`、`TestClayIgnoresTheEnvironment`。`TestBasedOnStateFollowsTheScene` 里改环境之后白模保持 current，所以后面「清掉线稿」一步的白模也从 stale 改为 current。
 
 ## 3. 色调映射
 
