@@ -1,0 +1,42 @@
+# Tasks
+
+先在改代码前截取非物理天空的基线，再按「后端字段 → 天文 → 大气 → 曝光与光照 → 编辑界面 → 助手 → 验收证据」推进。证据存进本子项的 `discovery/research/<主题>`。物理天空在第 6 组之前只能经固定数据、单测和 e2e 检查，界面在第 6 组才接上。每个任务结束时 `tsc -b`、`oxlint`、相关单测和 `check-go` 都通过；e2e 只按 `SCENE_E2E_ONLY` 跑受影响的用例，换端口避开 owner 的 Vite。
+
+## 1. 基线
+
+- [ ] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取 AC-W2-6 的基线，存进 `discovery/research/baseline`：参考场景（程序化天空的正午与黄昏、纯色天空加雾、室内壁灯、材质板）的 `lit` 导出、`render_view` 的 `lit` 和最终渲染的视口截图；另加一台程序化天空太阳入画、打开景深的摄像机；R1 性能场景在程序化天空下的视口帧时间（AC-W2-11 对照用）。e2e 新增「W2 other skies」用例，与基线逐像素比较（差 > 2 的像素为 0）。完成判据：用例在未改动的代码上绿，`baseline.md` 写明场景、机位、设备与测量值
+
+## 2. 数据契约与校验
+
+- [ ] 2.1 先写 `scene_test.go`：物理天空只写 `kind`、`date` 时补齐契约缺省值；读取旧快照时补齐 `iso`、`shutter_s`、`exposure_ev100`；返回 400 的写法逐一覆盖——地点三项缺一、时区无效、`asia/shanghai`（大小写不对）、`Local`、空串、日期不存在或越界、`local_time` 格式不对、各数值越界、物理天空带 `turbidity` / `hdri` / `color`、程序化 / HDRI / 纯色天空带任一物理天空独有的字段、写 `night` / `aerial_perspective` / `clouds` / `environment.weather`；`set_render` 写入 `exposure_ev100`（含 0）；摄像机 `iso`、`shutter_s` 的校验与合并。再改 `model.go`（`Sky`、`Camera`、`Render`、`renderPatch`、`validateEnvironment`、`validateCamera`、`mergeCamera`、`completeCamera`、`completeRenderSettings`、`Validate`），新增 `sky.go`（`completeSky`、物理天空的校验、三个非物理分支共用的「物理天空独有字段」判断、`time/tzdata`），改 `ops.go`（`setEnvironmentOp.apply` 写入时补齐、`set_render`）和 `view.go`；`api/openapi.yaml` 的四个 schema 加字段，运行 `make generate`。完成判据：测试先红后绿，`make check-go PKG=./internal/creativescene/...` 通过，生成物已更新
+- [ ] 2.2 先改 `fingerprint_internal_test.go`：W1 固定的旧指纹保持不变（旧场景补齐的曝光字段在非物理天空下被清掉）；每条规则一个用例——非 `lit` 或非物理天空下改 `iso`、`shutter_s` 不变；物理天空的 `lit` 下改曝光会变，景深关闭时改 `f_stop` 也会变，改 `render.exposure_ev` 不变；任何时候改 `exposure_ev100` 都不变；物理天空的字段只影响 `lit`。再改 `fingerprint.go`。完成判据：测试先红后绿，`check-go` 通过
+
+## 3. 天文与太阳参考
+
+- [ ] 3.1 先写 `creative-scene-astro.test.ts`：四个参考地点、三个日期的 NOAA 数据点（由 `astronomy/compare-results.json` 整理成 `frontend/scripts/fixtures/` 下的测试数据），按角距比较、只比视高度 ≥ 0 的点；日出日落相差 ≤ 2 分钟；`localToUtc` 的 20 个用例按 compatible 规则的期望值；悉尼正午太阳在北；罗盘方位换成文档方向（正北方向 180° 时正东是 +X）；手动模式直接给方向；早晚的黄金时刻（−4°…6°）和蓝调时刻（−6°…−4°）。再加 `astronomy-engine` 2.1.19（精确版本），新增 `world/astro.ts`；`creative-scene-shading.test.ts` 加墙钟时间的规则（`world/`、`render/` 里出现 `Date.now()` 或无参的 `new Date()` 时失败）。完成判据：单测先红后绿，`make check-frontend` 通过；上海夏至由前端算出的日出日落、黄金时刻和蓝调时刻写进后端测试数据，供 3.2 对照
+- [ ] 3.2 先写 `sun_test.go` 与 `testdata/noaa_sun.json`：同一组 NOAA 数据点（角距 ≤ 0.05°，日出日落 ≤ 1 分钟）、时间换算的 20 个用例、上海夏至各时刻与 3.1 的前端结果相差 ≤ 1 分钟、北极圈内的极昼和极夜（省略到不了的项，给出 `polar`）、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `sun`，手动模式、程序化天空、没写环境的编辑不带。再新增 `sun.go`，改 `agent.go` 的 `SceneRead`、`AgentReadInTx`、`EditResult`、`AgentEditInTx`。完成判据：测试先红后绿，`check-go` 通过
+
+## 4. 物理大气
+
+- [ ] 4.1 先写 `creative-scene-exposure.test.ts`：晴朗、太阳 60° 时 CPU 算出的水平照度在 100–130 klux；预设改变照度的方向（雾霾更暗、高原更亮）；EV100 公式；1/3 档的快门和 ISO 表；新建摄像机的曝光换算（EV 12 普通、EV −5 快门到 30 s 靠 ISO 补足、EV 19 不可达时封顶）；色温 6500 K 为 (1, 1, 1)，2000 K 各通道不小于 0，亮度不随色温变；s_env 夹在 −12…20；米氏吸收按 (0.6, 1.2, 3.0) 不归一。再新增 `world/atmosphere/constants.ts`、`world/atmosphere/cpu.ts`（typed array，无逐步分配；星球地面取场景地面高度，摄像机至少高出 10 m）和 `world/exposure.ts` 的纯函数部分。完成判据：单测先红后绿；本机测一次 CPU 部分的耗时（换大气参数、换时刻），超出设计目标的记进任务备注，由 8.1 在参考设备上复测
+- [ ] 4.2 新增 `world/atmosphere/luts.ts`（透射率、多次散射、384 × 216 天空视图三个 TSL 片元 pass，RGBA16F）和 `world/atmosphere/sky.ts`（背景节点与生成天空光照用的节点），从原型 `atmoGpu.ts` 改写；`render/gpu.ts:createRenderer` 安装材质输出钳制（文件头注明 three 0.186.1）。先写 e2e「W2 atmosphere drift」：读回透射率和多次散射 LUT 的固定纹素、天空视图的几个方向，与 `cpu.ts` 比较，阈值参照穿刺的误差放宽；临时只改一边的常量，确认用例能抓到。完成判据：防漂移用例在 SwiftShader 下绿；「W2 other skies」仍然绿（钳制不改变非物理天空）
+
+## 5. 曝光与光照
+
+- [ ] 5.1 预曝光的管道，先不接物理天空：`world/exposure.ts` 加 `preExposure` uniform（模块单例，源码注明不得在写入和渲染之间插入 `await`）和 `applyExposure`；`objects/lights.ts:applyLight` 记 `userData.baseIntensity`；`materials/instances.ts:makeMaterial` 的自发光乘 `preExposure`；`render/sceneRenderer.ts` 的 `Frame.preExposure`，`render` 之前调用 `applyExposure`；`host/framing.ts` 的 `Framing.ev100` 与 `cameraFraming`；`state/apply.ts:cameraDefaults` 补 `iso`、`shutter_s`；`host/render.ts` 的 `shoot` 和 `Viewport.tsx:LookView` 求 k（相机视图的 EV100 单独求，不依赖只在景深预览时才算的 `framing`）。非物理天空下 k = 1，不写 `environmentIntensity`，不改雾。完成判据：「W2 other skies」逐像素仍然绿；单测覆盖 `applyExposure` 在非物理天空下不写环境强度
+- [ ] 5.2 `objects/Lighting.tsx` 新增 `PhysicalLighting`：LUT 的生成，按大气键和环境键重算；太阳光（CPU 透射率 × 亮度 × 色温）、天空背景、天空光照（PMREM 200 ms 节流，记下这一份的 s_env）、雾（雾色 × E / π × k）、`scene.userData.physical`（卸载时清掉）；设备丢失时随渲染器重建。`render/sky.ts` 的 `sunDirection` 交给 `world/astro.ts`，`skyEnvironment` 不再处理物理天空。新增物理天空的参考场景（`fixtures/scene-reference/` 的院子：晴天正午、黄金时刻、日落后 20 分钟）。先写 e2e：AC-W2-3 阳光 16 法则（正午曝光正常，日落后 20 分钟测光低 5 档以上），改两级光圈亮度约变 2 档；AC-W2-4 太阳亮度 2 时线性亮度约为 2 倍，6500 K 与不设时逐像素相同，色温调低时 R/B 变大；AC-W2-5 40 cd 台灯在正午改动的像素 ≤ 0.01%，入夜后照亮的区域明显更亮；正午的雾与受光地面亮度相当；自发光白天几乎看不出；切回程序化天空后与基线逐像素相同。完成判据：用例先红后绿，「W2 other skies」仍然绿
+
+## 6. 编辑界面
+
+- [ ] 6.1 城市数据：`frontend/scripts/cities/` 的构建脚本与补丁表（婺源、稻城、漠河、林芝，以及 57 条缺中文名的条目；新疆的条目改为 `Asia/Shanghai`），生成 `world/cities.json`（带国家代码、不带人口，按人口排序，含 `attribution` 与取数日期）；`world/cities.ts` 按需加载与搜索（前缀先于包含，同类按行序，取前 8 项，显示「城市 · 国家」）；新建 `docs/third-party-notices.md`（GeoNames、`astronomy-engine`）。先写 `creative-scene-cities.test.ts`：「成都」「Chengdu」「稻城」排第一，搜「京都」不先出「东京都」，两条「伦敦」按国家区分，新疆的城市是 `Asia/Shanghai`。完成判据：单测先红后绿；城市表 gzip 不超过 170 KB，首屏包里没有它
+- [ ] 6.2 「环境」选项卡的物理天空：`editing.ts:withSkyKind` 加 `physical`（契约缺省值，`date` 取本机的当天）；`EnvironmentPanel.tsx` 按 design 的分组排列——城市搜索框（下拉底部署名）、时区下拉与退回推算时的提示、时间一组显示太阳高度方位、日出日落、黄金时刻和蓝调时刻，环境光置灰；`SceneEditor.tsx`：切到手动模式时在同一次提交里写入当前角度（低于 −10° 时夹到 −10°），选城市一次写入四项，手改经纬度清空 `place`，选预设写入四个大气参数。先写 e2e：AC-W2-1 上海夏至拖动时刻（时刻序列存进 evidence），改正北方向后影子转动，悉尼正午太阳在北；AC-W2-2 切到手动时 `render_view` 的 `lit` 逐像素相同，Cmd+Z 回到地点模式，入夜后切手动夹到 −10°；AC-W2-12 选城市后写入经纬度和时区，下拉有署名；物理天空下环境光置灰。完成判据：用例先红后绿
+- [ ] 6.3 曝光的界面：`RenderPanel.tsx` 在物理天空下显示默认曝光（EV100）和参考值，其他天空照旧显示曝光补偿；`Properties.tsx:CameraFields` 新增「曝光」一组（ISO、快门、与景深共用的光圈、只显示的 EV100），非物理天空下置灰；`editing.ts:newCamera` 和 `SceneEditor.tsx` 的添加摄像机按默认曝光写入曝光（4.1 的换算）。先写 e2e：自由视角下改默认曝光，视口变、相机视图和导出不变；默认曝光为 12 和 −5 时添加摄像机，相机视图与添加前的视口亮度相差 ≤ 1/3 档；程序化天空下曝光一组和默认曝光置灰。完成判据：用例先红后绿
+
+## 7. 助手与文档
+
+- [ ] 7.1 `scene_tools.go` 写入：`set_environment` 的物理天空写法（字段、单位、地点三项成组、IANA 时区名区分大小写、日期必填）；预设参数表；太阳的亮度与色温；物理天空下环境光不生效；太阳参考 `sun` 的字段、两个时段的口径和用法（按它选 `local_time`，用 `scene_azimuth_deg` 摆逆光、侧光的机位）；`set_render` 的 `exposure_ev100`；摄像机的 `iso`、`shutter_s`；两段曝光建议（物理天空给 EV100 参考值）；`render_view` 的临时视点按默认曝光。`scene_tools_test.go` 先固定关键句。`docs/dev/creative-scene-agent.md` 写物理天空、曝光和太阳参考，`docs/dev/agent-skills-tools.md` 记录说明的变更。完成判据：`make check-go PKG=./internal/creativeagent/...` 通过，说明增长的体积记进任务备注
+
+## 8. 验收证据
+
+- [ ] 8.1 AC-W2-8、AC-W2-9、AC-W2-11：`SCENE_E2E_GPU` 加物理天空参考场景的 WebGPU 与 `forceWebGL` 对照（含场景的画面沿用 R1 的 `lit` 阈值，只含天空的平均差 ≤ 0.5、差 > 8 的像素 ≤ 0.05%）；`SCENE_E2E_HIDDEN` 加物理天空的两次导出逐像素一致；e2e 走一遍「改时刻后 `lit` 过时、`clay` 不过时」和「只改一台摄像机的曝光」；`SCENE_E2E_PERF` 测物理天空静止时比 1.1 基线多出的帧时间、拖动时刻滑杆的帧率与天空光照跟上的时间、CPU 部分的耗时，热、冷着色器缓存分开写。完成判据：用例绿，数据存进 `discovery/research/after`；不满足的逐项列出交 owner（天空视图 384 × 216 超预算时按 design 让视口退回 192 × 108）
+- [ ] 8.2 owner 看图材料：AC-W2-1 上海夏至 05:00–20:00 的时刻序列；AC-W2-7 四个预设在正午和低太阳时的图，高原低太阳平视地平线，晴朗日落太阳入画的 8K 局部；正午手动曝光与程序化天空的对照（约暗 0.4 档）；太阳在 −6°…−9° 时的样张（晨昏蒙影偏亮的已知局限）；AC-W2-10 真实模型对话的提示词与检查点（时刻是否落在太阳参考的黄金时刻里），由 owner 验收时抽查。完成判据：样例与说明存进 `discovery/research/evidence`，等 owner 结论
