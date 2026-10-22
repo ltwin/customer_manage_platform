@@ -1,6 +1,6 @@
 {
   "uid": "10672724-36fa-4e3e-b860-84a7c5e6bccd",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-display-look",
   "kind": "feature",
   "assurance": "governed",
@@ -22,7 +22,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-22T08:34:32.043Z",
-  "updatedAt": "2026-10-22T09:15:15.005Z",
+  "updatedAt": "2026-10-22T10:44:10.910Z",
   "risk": {
     "factors": [
       "broad-impact"
@@ -41,7 +41,15 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
+  "revisions": [
+    {
+      "at": "2026-10-22T10:44:10.188Z",
+      "summary": "结清未决事项 1：owner 2026-10-22 看对照图选定白模方案 A（主光左 40°、上 40°，强度 6；背景 #8a8f98 不变）",
+      "contentHash": "dd807f6cd35c2eff",
+      "added": [],
+      "removed": []
+    }
+  ],
   "baseline": {
     "commit": "f48841a344b52764e4ccc2df2c1f93e9b2f82178",
     "at": "2026-10-22T09:15:14.736Z",

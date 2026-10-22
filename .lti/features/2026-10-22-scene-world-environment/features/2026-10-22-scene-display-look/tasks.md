@@ -35,7 +35,8 @@
   - 以上用例与「AC-1: lights」「reference scenes」「AC-2: polished metal」「guides stay」「output resolution」以及助手 e2e 的 `render_view`、导出、实时 GI 用例都已按 `ONLY` 过滤运行，全部绿。
 - [x] 4.3 `ModelPreview.tsx` 的白模改用 `StudioLights`，在 `useFrame` 里调 `aimStudio`（向上 +Y），背景仍是预览的灰色。完成判据：查看浮窗转动模型时光始终从视角左上方照来，截图存进 `discovery/research/calibration`
   - 查看浮窗白模截图 `calibration/model-preview-clay-studio.png`：光从左上方照来，右侧面较暗（旧光照见 `baseline/model-preview-clay.png`）。
-- [ ] 4.4 标定工作室光（结清未决事项 1）：受光面显示值 195–225，背光面至少暗 30，过曝 < 1%，背景显示值在目标 ±2 内；`STUDIO_BACKGROUND` 的最终取值和主光角度出截图给 owner 定。完成判据：owner 定下的取值写进 `studio.ts` 和 design 未决事项 1，截图与测量存进 `discovery/research/calibration`
+- [x] 4.4 标定工作室光（结清未决事项 1）：受光面显示值 195–225，背光面至少暗 30，过曝 < 1%，背景显示值在目标 ±2 内；`STUDIO_BACKGROUND` 的最终取值和主光角度出截图给 owner 定。完成判据：owner 定下的取值写进 `studio.ts` 和 design 未决事项 1，截图与测量存进 `discovery/research/calibration`
+  - owner 2026-10-22 看 `calibration/studio-choices.jpg` 选定方案 A（主光左 40°、上 40°，强度 6；补光、环境光沿用旧值；背景 `#8a8f98` 不变），写进 design 并 `lti revise`。院子白盒正面 195、背光面暗 61、过曝 0。
 
 ## 5. 最终渲染重新标定
 
