@@ -3784,6 +3784,10 @@ if (process.env.SCENE_E2E_W1) await check('W1: wireframe and line art are unchan
 // --- R1 AC-R1-1 / AC-R1-4: the same pictures as the WebGL baseline --------------
 
 const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer/features/2026-10-21-scene-webgpu-spike/discovery/research/baseline/', import.meta.url)
+// W1 (scene-display-look) changed clay (the studio light) and lit (AgX): their references since are W1's
+// exports on WebGPU; line art did not change and stays against R0's.
+const w1After = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-display-look/discovery/research/after/', import.meta.url)
+const referenceOf = (img) => (img.pass === 'line' ? { dir: r0Baseline, against: 'r0-webgl' } : { dir: w1After, against: 'w1-webgpu' })
 
 /**
  * The thresholds of AC-R1-1, tightened after the first full run to 1.5× the
@@ -3864,9 +3868,10 @@ if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match t
       assert.ok(webgpu.backends.some((b) => b === 'scene renderer (offscreen): webgpu'), `${name}: the export on WebGPU: ${webgpu.backends}`)
       page ??= await (await gpu.newContext()).newPage()
       for (const img of [...webgpu.images, webgpu.ortho]) {
-        const m = await compareShots(page, readFileSync(new URL(img.file, r0Baseline)), img.png)
+        const reference = referenceOf(img)
+        const m = await compareShots(page, readFileSync(new URL(img.file, reference.dir)), img.png)
         if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}.jpg`, m.sheet)
-        record('r0-webgl', img.file, img.pass, m)
+        record(reference.against, img.file, img.pass, m)
       }
       const webgl = await exportReference(gpu, name, { forceWebGL: true })
       exports[name] = { webgpu_ms: webgpu.exportMs, webgl2_ms: webgl.exportMs }
@@ -4091,8 +4096,9 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const startedGI = Date.now()
     const frontGI = await runGI('front')
     const giMs = Date.now() - startedGI
-    assert.deepEqual(frontGI.filter((i) => i.pass === 'line'), front.filter((i) => i.pass === 'line'), 'line art is the workbench’s')
-    assert.ok(frontGI.filter((i) => i.pass !== 'line').every((i) => !front.some((w) => w.hash === i.hash)), 'clay and lit are the real-time GI’s')
+    // Clay and line art are the workbench's whatever the renderer (R2 tasks 7.4, engines.ts effectiveEngine).
+    assert.deepEqual(frontGI.filter((i) => i.pass !== 'lit'), front.filter((i) => i.pass !== 'lit'), 'clay and line art are the workbench’s')
+    assert.ok(frontGI.filter((i) => i.pass === 'lit').every((i) => !front.some((w) => w.hash === i.hash)), 'lit is the real-time GI’s')
     await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
     await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab in the background again', 10_000)
     await runGI('first')

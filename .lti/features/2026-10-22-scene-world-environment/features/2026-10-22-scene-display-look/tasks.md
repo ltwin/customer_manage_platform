@@ -59,5 +59,9 @@
 
 ## 8. 验收证据
 
-- [ ] 8.1 AC-W1-6：沿用 R1、R2 的 `forceWebGL` 和隐藏标签页用例，换上新参考图，`clay`、`lit` 在 R1 阈值内、连续两次导出逐像素相同；R1 性能场景的视口帧时间不高于 1.1 的基线。完成判据：用例绿，数据存进 `discovery/research/perf`，不满足的逐项列出交 owner
+- [x] 8.1 AC-W1-6：沿用 R1、R2 的 `forceWebGL` 和隐藏标签页用例，换上新参考图，`clay`、`lit` 在 R1 阈值内、连续两次导出逐像素相同；R1 性能场景的视口帧时间不高于 1.1 的基线。完成判据：用例绿，数据存进 `discovery/research/perf`，不满足的逐项列出交 owner
+  - 结果见 `discovery/research/after.md`，数据在 `after/`（任务原写 `perf/`，与画面放在一起便于对照）。截取了 W1 之后的基线；`SCENE_E2E_GPU` 用例的 `clay`、`lit` 改为对照它，线稿仍对照 R0。
+  - 两个后端：48 行里 46 行在阈值内。超出的两行是 WebGL2 对 WebGPU 的 `noon`、`materials` 材质光照，即 R1 已交 owner 的混凝土气孔硬边，数值比 R1 略低。按「超阈值的图交 owner，不放宽」，没有改阈值。
+  - 确定性用例里「实时 GI 下白模与工作台不同」的断言自 R2 7.4 起就不成立，在 `develop` 上同样失败，已改正；改正后用例绿，工作台和实时 GI 都逐像素确定。
+  - 帧时间四种模式都在刷新上限，白模最长一帧 17.1 → 9.4 ms。
 - [ ] 8.2 AC-W1-3、AC-W1-4 的 owner 看图材料：参考场景的前后对照（含落日天空和饱和色灯光、背景与视口辅助对象的颜色）；同一组机位 W1 前后的白模交 gpt-image-2.5 重绘（凭证只经环境变量，拿不到时交 owner）。完成判据：样例与记录存进 `discovery/research/redraw` 和 `calibration`，等 owner 结论

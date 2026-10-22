@@ -1,0 +1,168 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "scenes": {
+    "noon": {
+      "export_ms": 495,
+      "images": [
+        {
+          "file": "noon-shot-clay.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 335251
+        },
+        {
+          "file": "noon-shot-line.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 76526
+        },
+        {
+          "file": "noon-shot-lit.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 952702
+        }
+      ]
+    },
+    "dusk": {
+      "export_ms": 467,
+      "images": [
+        {
+          "file": "dusk-shot-clay.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 335251
+        },
+        {
+          "file": "dusk-shot-line.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 76526
+        },
+        {
+          "file": "dusk-shot-lit.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 1012194
+        }
+      ]
+    },
+    "room": {
+      "export_ms": 528,
+      "images": [
+        {
+          "file": "room-shot-clay.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 370243
+        },
+        {
+          "file": "room-shot-line.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 75200
+        },
+        {
+          "file": "room-shot-lit.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 1620678
+        }
+      ]
+    },
+    "materials": {
+      "export_ms": 753,
+      "images": [
+        {
+          "file": "materials-board-clay.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 649633
+        },
+        {
+          "file": "materials-board-line.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 120342
+        },
+        {
+          "file": "materials-board-lit.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 1308845
+        }
+      ]
+    },
+    "dof": {
+      "export_ms": 510,
+      "images": [
+        {
+          "file": "dof-cama-clay.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 119720
+        },
+        {
+          "file": "dof-cama-line.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 59823
+        },
+        {
+          "file": "dof-cama-lit.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 367102
+        },
+        {
+          "file": "dof-camb-clay.png",
+          "width": 1365,
+          "height": 2048,
+          "bytes": 62768
+        },
+        {
+          "file": "dof-camb-line.png",
+          "width": 1365,
+          "height": 2048,
+          "bytes": 62570
+        },
+        {
+          "file": "dof-camb-lit.png",
+          "width": 1365,
+          "height": 2048,
+          "bytes": 431805
+        }
+      ]
+    },
+    "cornell": {
+      "export_ms": 531,
+      "images": [
+        {
+          "file": "cornell-shot-clay.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 623385
+        },
+        {
+          "file": "cornell-shot-line.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 83841
+        },
+        {
+          "file": "cornell-shot-lit.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 1141958
+        }
+      ]
+    }
+  },
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)"
+}
