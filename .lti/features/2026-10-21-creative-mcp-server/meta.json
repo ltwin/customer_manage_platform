@@ -1,10 +1,10 @@
 {
   "uid": "96a17630-277c-49b6-ba00-502f4bf12c13",
-  "revision": 3,
+  "revision": 4,
   "id": "creative-mcp-server",
   "title": "MCP 服务：让 Claude Code / Codex 插件获得内置创意助手几乎全部能力",
   "createdAt": "2026-10-22T03:32:30.061Z",
-  "updatedAt": "2026-10-22T12:42:23.869Z",
+  "updatedAt": "2026-10-22T13:53:43.802Z",
   "state": "active",
   "designBaselines": [
     {
@@ -484,7 +484,13 @@
       ]
     }
   ],
-  "children": [],
+  "children": [
+    {
+      "uid": "5917e00c-4ab2-49c8-a023-cca859888e0b",
+      "changeId": "mcp-connect-read",
+      "dependsOnUids": []
+    }
+  ],
   "policy": "serial",
   "activation": {
     "by": "samson",

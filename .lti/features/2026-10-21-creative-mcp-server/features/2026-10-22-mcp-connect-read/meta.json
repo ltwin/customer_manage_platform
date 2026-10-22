@@ -1,0 +1,68 @@
+{
+  "uid": "5917e00c-4ab2-49c8-a023-cca859888e0b",
+  "revision": 3,
+  "id": "mcp-connect-read",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "creative-mcp-server",
+  "designBinding": {
+    "version": 2,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:外部助手接入",
+      "glossary:外部助手",
+      "glossary:外部助手连接",
+      "data:外部助手连接与 OAuth",
+      "api:OAuth 授权服务器",
+      "api:MCP 端点",
+      "api:外部助手连接列表与断开",
+      "api:MCP 只读工具"
+    ],
+    "delivers": [
+      "architecture:外部助手接入",
+      "glossary:外部助手",
+      "glossary:外部助手连接",
+      "data:外部助手连接与 OAuth",
+      "api:OAuth 授权服务器",
+      "api:MCP 端点",
+      "api:外部助手连接列表与断开",
+      "api:MCP 只读工具"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-22T13:53:43.715Z",
+  "updatedAt": "2026-10-22T13:59:54.449Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "data-migration",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-22T13:59:54.339Z",
+      "contentHash": "7614f0debf07f8a1"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-22T13:59:54.339Z",
+      "contentHash": "0481094b185f7d0c"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
