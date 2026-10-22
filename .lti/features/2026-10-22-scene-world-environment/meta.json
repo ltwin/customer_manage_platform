@@ -1,10 +1,10 @@
 {
   "uid": "2f6c1440-f443-47c6-89da-7910ef412f88",
-  "revision": 2,
+  "revision": 3,
   "id": "scene-world-environment",
   "title": "世界环境系统：物理天空（首版），天气、云层与地表效果（远期）",
   "createdAt": "2026-10-22T07:27:55.155Z",
-  "updatedAt": "2026-10-22T08:34:11.621Z",
+  "updatedAt": "2026-10-22T08:34:32.115Z",
   "state": "active",
   "designBaselines": [
     {
@@ -168,7 +168,13 @@
       ]
     }
   ],
-  "children": [],
+  "children": [
+    {
+      "uid": "10672724-36fa-4e3e-b860-84a7c5e6bccd",
+      "changeId": "scene-display-look",
+      "dependsOnUids": []
+    }
+  ],
   "policy": "serial",
   "activation": {
     "by": "samson",
