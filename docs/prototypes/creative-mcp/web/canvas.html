@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0c" />
+    <title>九月，向海而行 · 创意空间</title>
+    <link rel="stylesheet" href="../../creative-workspace/v6/tokens.css" />
+    <link rel="stylesheet" href="web.css" />
+    <link rel="stylesheet" href="../shared/proto.css" />
+  </head>
+  <body class="canvas">
+    <div class="stage" id="stage"><div class="world" id="world"></div></div>
+
+    <div class="chrome tb-left">九月，向海而行 <small>原型 · 画布只是静态示意</small></div>
+    <div class="tb-right">
+      <span class="chrome credits">剩余 1,252 点</span>
+      <button class="chrome xa" id="xa" type="button" aria-expanded="false" hidden></button>
+      <button class="chrome hist-btn" id="hist" type="button" aria-pressed="false">场景历史</button>
+      <span class="avatar">S</span>
+    </div>
+
+    <div class="pop" id="pop" hidden></div>
+    <div class="banner" id="banner" hidden role="status"></div>
+    <aside class="drawer" id="drawer" hidden aria-label="场景历史"></aside>
+
+    <script type="module" src="canvas.mjs"></script>
+  </body>
+</html>

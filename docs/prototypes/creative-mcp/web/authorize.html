@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>授权外部助手 · 影约</title>
+    <link rel="stylesheet" href="auth.css" />
+    <link rel="stylesheet" href="../shared/proto.css" />
+  </head>
+  <body>
+    <div class="auth-shell">
+      <aside class="auth-aside">
+        <img src="../../../../frontend/public/marketing/hero-studio.jpg" alt="" />
+        <div class="brand"><span class="brand-mark" id="brand-mark"></span><span>影约 · 创意空间<small>外部助手授权</small></span></div>
+        <div class="pitch">
+          <h1>让你常用的助手，<br />直接在画布上干活</h1>
+          <p>授权后，它能读写你的画布、生成图片、整理资产库、搭 3D 场景。改动实时出现在浏览器里，署名为它的名字，随时可以回退。</p>
+        </div>
+        <p class="aside-foot">不需要把密码交给任何助手：授权只在这个页面完成。</p>
+      </aside>
+      <main class="auth-main"><div class="auth-card" id="card"></div></main>
+    </div>
+    <script type="module" src="authorize.mjs"></script>
+  </body>
+</html>

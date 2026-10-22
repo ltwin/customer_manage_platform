@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>卡片状态总览 · 外部助手原型</title>
+    <style>
+      body { margin: 0; padding: 20px 24px 48px; background: #ececea; color: #1d1d1b; font: 13px/1.5 system-ui, -apple-system, 'PingFang SC', sans-serif; }
+      header { display: flex; gap: 16px; align-items: baseline; margin-bottom: 16px; flex-wrap: wrap; }
+      h1 { margin: 0; font-size: 16px; }
+      header p { margin: 0; color: #666; }
+      a { color: inherit; }
+      table { border-collapse: separate; border-spacing: 12px 12px; margin: 0 -12px; }
+      th { text-align: left; font-weight: 600; font-size: 12px; color: #555; vertical-align: top; }
+      th small { display: block; font-weight: 400; color: #888; max-width: 140px; }
+      td { width: 340px; vertical-align: top; padding: 10px; border-radius: 14px; }
+      td.light.claude { background: #faf9f5; } td.dark.claude { background: #262624; }
+      td.light.chatgpt { background: #ffffff; } td.dark.chatgpt { background: #212121; }
+      .widget { border-radius: 12px; overflow: hidden; }
+      td.light .widget { border: 1px solid rgba(31, 30, 29, 0.15); background: #fff; }
+      td.dark.claude .widget { border: 1px solid rgba(222, 220, 209, 0.15); background: #30302e; }
+      td.dark.chatgpt .widget { border: 1px solid rgba(255, 255, 255, 0.1); background: #212121; }
+      .widget-frame { display: block; width: 100%; height: 160px; border: 0; }
+      #log { position: fixed; right: 12px; bottom: 12px; max-width: 360px; padding: 8px 12px; border-radius: 8px; background: #1d1d1b; color: #fff; font-size: 12px; }
+      #log:empty { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="../index.html">← 原型目录</a>
+      <h1>卡片状态总览</h1>
+      <p>U-2 生成与任务卡、U-3 镜头卡的全部状态，分别在 Claude、ChatGPT 的浅色和深色下。按钮可以点，动作只记在右下角，不推进状态。</p>
+    </header>
+    <table>
+      <thead>
+        <tr><th></th><th>Claude · 浅色</th><th>Claude · 深色</th><th>ChatGPT · 浅色</th><th>ChatGPT · 深色</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="log" role="status"></div>
+    <script type="module">
+      import * as R from '../shared/results.mjs'
+      import { mountWidget, hostContext } from '../hosts/host-bridge.mjs'
+
+      const gen = (status, progress = 0) => ({ id: 'cwexec_a1', kind: 'generate', status, progress })
+      const ren = (status, progress = 0) => ({ id: 'csjob_b2', kind: 'render', status, progress })
+      const STATES = [
+        ['预检', 'generate_node dry_run', 'tasks', R.generateDryRun()],
+        ['生成中', 'generate_node / wait_tasks', 'tasks', R.waitTasks([gen('running', 0.42)])],
+        ['生成完成', '两张 3:4 结果', 'tasks', R.waitTasks([gen('succeeded', 1)])],
+        ['生成失败', '没有扣点', 'tasks', R.waitTasks([gen('failed')])],
+        ['等待页面', 'render_view，没有打开的页面', 'shots', R.waitTasks([ren('waiting_for_page')])],
+        ['渲染中', '页面已认领', 'shots', R.waitTasks([ren('running', 0.6)])],
+        ['回看完成', 'render_view 单张', 'shots', R.waitTasks([ren('succeeded', 1)])],
+        ['导出分镜', 'export_shots 轮播', 'shots', R.exportShots()],
+      ]
+      const COLS = [['claude', 'light'], ['claude', 'dark'], ['chatgpt', 'light'], ['chatgpt', 'dark']]
+      // 冻结的服务：卡片轮询时原样返回同一个结果，让每格停在自己的状态
+      // 预检格点「生成」后停在「生成中」
+      const frozen = (r) => {
+        let last = r
+        return {
+          call: async (name) => {
+            if (name === 'generate_node') return (last = R.waitTasks([gen('running', 0.1)]))
+            if (name === 'wait_tasks') return last
+            return { content: [{ type: 'text', text: 'ok' }] }
+          },
+        }
+      }
+      const log = (t) => {
+        document.getElementById('log').textContent = t
+      }
+
+      const tbody = document.getElementById('rows')
+      for (const [label, sub, resource, result] of STATES) {
+        const tr = document.createElement('tr')
+        tr.innerHTML = `<th>${label}<small>${sub}</small></th>`
+        for (const [host, theme] of COLS) {
+          const td = document.createElement('td')
+          td.className = `${theme} ${host}`
+          const box = document.createElement('div')
+          box.className = 'widget'
+          td.append(box)
+          tr.append(td)
+          mountWidget(box, {
+            resource,
+            result,
+            args: {},
+            server: frozen(result),
+            hostName: host,
+            context: () => hostContext(host, theme),
+            onModelContext: (t) => log(`卡片 → 外部助手：${t}`),
+            onOpenLink: (u) => log(`打开链接：${u}`),
+            onDisplayMode: (m) => (log(`请求显示模式：${m}（总览页不切换）`), 'inline'),
+            onToolCall: (n) => log(`卡片调用 ${n}`),
+          })
+        }
+        tbody.append(tr)
+      }
+    </script>
+  </body>
+</html>

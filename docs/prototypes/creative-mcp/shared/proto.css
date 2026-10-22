@@ -1,0 +1,10 @@
+/* 原型状态面板：刻意做成和产品界面不同的样子（紫色虚线），走查时一眼能分清 */
+.proto-states {
+  position: fixed; right: 12px; bottom: 12px; z-index: 200; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  max-width: min(560px, calc(100vw - 24px)); padding: 6px 8px; border: 1px dashed #b456c9; border-radius: 10px;
+  background: rgba(30, 12, 36, 0.92); color: #e9c6f2; font: 12px/1.4 system-ui, -apple-system, 'PingFang SC', sans-serif;
+}
+.proto-states span { margin-right: 4px; opacity: 0.8; }
+.proto-states button { padding: 3px 8px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.proto-states button:hover { background: rgba(180, 86, 201, 0.2); }
+.proto-states button[aria-pressed='true'] { background: #b456c9; color: #fff; }

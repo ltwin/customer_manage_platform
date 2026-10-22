@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0c" />
+    <title>外部助手 · 创意空间</title>
+    <link rel="stylesheet" href="../../creative-workspace/v6/tokens.css" />
+    <link rel="stylesheet" href="../../creative-workspace/v6/side.css" />
+    <link rel="stylesheet" href="web.css" />
+    <link rel="stylesheet" href="../shared/proto.css" />
+  </head>
+  <body class="page">
+    <aside id="side"></aside>
+    <main class="main">
+      <div class="wrap">
+        <header class="page-head">
+          <h1>外部助手</h1>
+          <p>在 ChatGPT、Claude、Claude Code 或 Codex 里使用你的创意空间：读写画布、生成图片、整理资产库、搭 3D 场景。外部助手的对话不扣点，生成和你自己生成一样扣点。</p>
+        </header>
+
+        <div class="cols">
+          <section class="setup" aria-labelledby="setup-t">
+            <h2 id="setup-t" class="sr-only">接入步骤</h2>
+            <ol class="steps">
+              <li>
+                <h3><span class="n">1</span>选择你用的助手</h3>
+                <div class="hosts" id="hosts" role="radiogroup" aria-label="宿主"></div>
+              </li>
+              <li>
+                <h3><span class="n">2</span><span id="add-t">添加</span></h3>
+                <div id="add"></div>
+              </li>
+              <li>
+                <h3><span class="n">3</span>授权你的账号</h3>
+                <p class="p2">宿主会打开创意空间的授权页。确认是你的账号，点「允许」。授权后外部助手的能力和内置助手一样，随时可以在右边断开。</p>
+                <p class="p2"><a class="link" href="authorize.html">看看授权页 →</a></p>
+              </li>
+              <li>
+                <h3><span class="n">4</span>试一句</h3>
+                <div class="starters" id="starters"></div>
+                <p class="p2"><a class="link" href="../hosts/index.html">看四个宿主里实际会怎样 →</a></p>
+              </li>
+            </ol>
+          </section>
+
+          <aside class="side-col">
+            <section class="panel" aria-labelledby="conn-t">
+              <h2 id="conn-t">已连接</h2>
+              <ul class="conns" id="conns"></ul>
+            </section>
+            <section class="panel" aria-labelledby="url-t">
+              <h2 id="url-t">MCP 地址</h2>
+              <div class="field"><code id="mcp-url"></code><button class="icon-btn" id="copy-url" aria-label="复制 MCP 地址"></button></div>
+              <p class="p3">手动配置时用这个地址。授权方式是 OAuth，不需要填密钥。</p>
+            </section>
+            <section class="panel" aria-labelledby="note-t">
+              <h2 id="note-t">须知</h2>
+              <ul class="notes">
+                <li>生成按你自己的规则扣点，外部助手的对话本身不扣点。</li>
+                <li>建模、回看、导出分镜需要一个打开的创意空间页面，外部助手会给你链接。</li>
+                <li>外部助手的改动署名为宿主名，可以在历史里回退；你的 ⌘Z 只撤自己的改动。</li>
+                <li>外部助手看不到客户、订单、日程等经营数据。</li>
+              </ul>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="connect.mjs"></script>
+  </body>
+</html>

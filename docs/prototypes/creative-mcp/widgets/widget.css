@@ -1,0 +1,161 @@
+/* 卡片样式：只用 MCP Apps 标准 CSS 变量。宿主在 ui/initialize 时把变量写到 :root 上；
+   下面的值是宿主没给时的默认值（取 Claude 公布的浅色 / 深色值）。
+   不用创意空间 v6 的近黑主题，跟随宿主明暗；照片是卡片里唯一的高饱和内容。 */
+:root {
+  color-scheme: light;
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f5f4ed;
+  --color-background-tertiary: #faf9f5;
+  --color-background-inverse: #141413;
+  --color-background-warning: #f6eedf;
+  --color-background-danger: #f7ecec;
+  --color-text-primary: #141413;
+  --color-text-secondary: #3d3d3a;
+  --color-text-tertiary: #73726c;
+  --color-text-inverse: #ffffff;
+  --color-text-warning: #5a4815;
+  --color-text-danger: #7f2c28;
+  --color-text-success: #265b19;
+  --color-border-primary: rgba(31, 30, 29, 0.4);
+  --color-border-secondary: rgba(31, 30, 29, 0.3);
+  --color-border-tertiary: rgba(31, 30, 29, 0.15);
+  --color-ring-primary: rgba(20, 20, 19, 0.7);
+  --font-sans: system-ui, -apple-system, 'PingFang SC', sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --font-weight-normal: 400;
+  --font-weight-semibold: 600;
+  --font-text-xs-size: 12px;
+  --font-text-sm-size: 14px;
+  --font-text-md-size: 16px;
+  --font-heading-sm-size: 14px;
+  --font-heading-md-size: 16px;
+  --font-text-sm-line-height: 1.4;
+  --border-radius-sm: 6px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 10px;
+  --border-radius-full: 9999px;
+  --border-width-regular: 0.5px;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-background-primary: #30302e;
+  --color-background-secondary: #262624;
+  --color-background-tertiary: #141413;
+  --color-background-inverse: #faf9f5;
+  --color-background-warning: #483a0f;
+  --color-background-danger: #602a28;
+  --color-text-primary: #faf9f5;
+  --color-text-secondary: #c2c0b6;
+  --color-text-tertiary: #9c9a92;
+  --color-text-inverse: #141413;
+  --color-text-warning: #d1a041;
+  --color-text-danger: #ee8884;
+  --color-text-success: #7ab948;
+  --color-border-primary: rgba(222, 220, 209, 0.4);
+  --color-border-secondary: rgba(222, 220, 209, 0.3);
+  --color-border-tertiary: rgba(222, 220, 209, 0.15);
+  --color-ring-primary: rgba(250, 249, 245, 0.7);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; }
+body {
+  color: var(--color-text-primary); font: var(--font-text-sm-size) / var(--font-text-sm-line-height) var(--font-sans);
+  -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+}
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 2px; }
+img { display: block; max-width: 100%; }
+
+/* 宿主多数会给卡片加边框和内边距（prefersBorder），这里只留内容自己的间距 */
+.card { display: grid; gap: 12px; padding: 16px; }
+.head { display: flex; align-items: flex-start; gap: 8px; }
+.head .t { flex: 1; min-width: 0; }
+.title { margin: 0; font-size: var(--font-heading-md-size); font-weight: var(--font-weight-semibold); }
+.sub { margin: 2px 0 0; color: var(--color-text-tertiary); font-size: var(--font-text-xs-size); }
+.sub.row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.icon {
+  display: grid; place-items: center; width: 32px; height: 32px; flex: none;
+  border-radius: var(--border-radius-md); color: var(--color-text-secondary);
+}
+.icon:hover { background: var(--color-background-secondary); }
+.icon svg { width: 16px; height: 16px; }
+
+/* 状态标签：琥珀只表示「进行中 / 等待」，和创意空间的语义一致 */
+.status {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; flex: none;
+  border-radius: var(--border-radius-full); background: var(--color-background-secondary);
+  color: var(--color-text-secondary); font-size: var(--font-text-xs-size); white-space: nowrap;
+}
+.status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status.run { background: var(--color-background-warning); color: var(--color-text-warning); }
+.status.run i { animation: pulse 1.2s ease-in-out infinite; }
+.status.ok { color: var(--color-text-success); }
+.status.err { background: var(--color-background-danger); color: var(--color-text-danger); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+/* 数据点：最多 4–5 个 */
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; }
+.facts dt { color: var(--color-text-tertiary); }
+.facts dd { margin: 0; min-width: 0; }
+.facts b { font-weight: var(--font-weight-semibold); }
+.refs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.refs img { width: 28px; height: 28px; object-fit: cover; border-radius: var(--border-radius-sm); }
+.note { margin: 0; color: var(--color-text-secondary); }
+.muted { color: var(--color-text-tertiary); }
+
+/* 结果图：按原图比例排，不裁切；最多两列 */
+.grid { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 8px; }
+.shot { position: relative; margin: 0; }
+.shot img, .skel { width: 100%; border-radius: var(--border-radius-md); background: var(--color-background-secondary); }
+.shot figcaption { margin-top: 4px; color: var(--color-text-tertiary); font-size: var(--font-text-xs-size); }
+.skel { position: relative; overflow: hidden; }
+.skel::after {
+  content: ''; position: absolute; inset: 0; translate: -100% 0;
+  background: linear-gradient(90deg, transparent, var(--color-background-tertiary), transparent);
+  animation: sweep 1.4s ease-in-out infinite;
+}
+@keyframes sweep { to { translate: 100% 0; } }
+.bar { height: 4px; border-radius: 4px; background: var(--color-background-secondary); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--color-text-warning); transition: width 0.4s; }
+
+/* 动作：最多两个，放在底部；主按钮用宿主的反色 */
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px;
+  border-radius: var(--border-radius-md); border: var(--border-width-regular) solid var(--color-border-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.btn:hover:not(:disabled) { background: var(--color-background-secondary); }
+.btn.primary { border-color: transparent; background: var(--color-background-inverse); color: var(--color-text-inverse); }
+.btn.primary:hover:not(:disabled) { background: var(--color-background-inverse); opacity: 0.88; }
+.btn:disabled { opacity: 0.5; }
+.btn svg { width: 14px; height: 14px; }
+
+/* 轮播：3–8 项，横向滑动，下一张露出一截 */
+.rail {
+  display: grid; grid-auto-flow: column; grid-auto-columns: min(78%, 260px); gap: 10px;
+  overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; padding: 0 16px 4px;
+  margin: 0 -16px; scrollbar-width: none;
+}
+.rail::-webkit-scrollbar { display: none; }
+.item { display: grid; gap: 6px; align-content: start; scroll-snap-align: start; }
+.item img { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: var(--border-radius-md); }
+.item .name { font-weight: var(--font-weight-semibold); }
+.item .meta { color: var(--color-text-tertiary); font-size: var(--font-text-xs-size); }
+.item .link { justify-self: start; color: var(--color-text-secondary); font-size: var(--font-text-xs-size); text-decoration: underline; text-underline-offset: 2px; }
+
+/* 全屏：宿主的输入框压在底部，内容避开 safe area */
+:root[data-mode='fullscreen'] .card { align-content: start; padding-bottom: calc(16px + var(--safe-bottom, 0px)); }
+:root[data-mode='fullscreen'] .grid { --cols: 2; max-width: 960px; }
+.viewer { display: grid; gap: 12px; justify-items: center; }
+.viewer img { max-height: calc(100vh - 260px - var(--safe-bottom, 0px)); width: auto; border-radius: var(--border-radius-md); }
+.thumbs { display: flex; gap: 8px; }
+.thumbs button { width: 56px; height: 56px; border-radius: var(--border-radius-sm); overflow: hidden; opacity: 0.55; }
+.thumbs button[aria-current='true'] { opacity: 1; box-shadow: 0 0 0 2px var(--color-ring-primary); }
+.thumbs img { width: 100%; height: 100%; object-fit: cover; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

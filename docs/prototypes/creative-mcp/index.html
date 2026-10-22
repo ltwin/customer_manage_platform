@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0c" />
+    <title>外部助手原型</title>
+    <link rel="stylesheet" href="../creative-workspace/v6/tokens.css" />
+    <style>
+      html, body { overflow: auto; }
+      body { user-select: auto; }
+      main { max-width: 880px; margin: 0 auto; padding: 48px 24px 80px; }
+      h1 { margin: 0 0 8px; font-size: 24px; font-weight: 600; }
+      .lead { margin: 0 0 32px; color: var(--fg-2); max-width: 640px; }
+      h2 { margin: 32px 0 12px; font-size: 13px; color: var(--fg-3); font-weight: 600; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+      a.card { display: grid; gap: 4px; padding: 16px; border-radius: var(--r-lg); background: var(--s1); box-shadow: inset 0 0 0 1px var(--line); color: inherit; text-decoration: none; }
+      a.card:hover { background: var(--s2); box-shadow: inset 0 0 0 1px var(--line-3); }
+      a.card b { font-size: 14px; }
+      a.card span { color: var(--fg-2); }
+      a.card small { color: var(--fg-3); font-size: 11px; }
+      ul { margin: 0; padding-left: 18px; color: var(--fg-2); display: grid; gap: 4px; }
+      code { font: 12px ui-monospace, monospace; color: var(--fg); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>外部助手 · 原型</h1>
+      <p class="lead">Epic <code>creative-mcp-server</code> 的原型：网页端的接入、授权和交接，以及四个宿主里的交互（图形界面宿主有内嵌卡片，终端宿主只有文字和链接）。全部是假数据，不连后端。依据见 <code>.lti/features/2026-10-21-creative-mcp-server/discovery/research/host-ui-surfaces.md</code>（D10–D13）。</p>
+
+      <h2>宿主里的交互</h2>
+      <div class="grid">
+        <a class="card" href="hosts/index.html"><b>宿主对照</b><span>同一个剧本在 Claude、ChatGPT、Claude Code、Codex CLI 里同步推进，可标注每段内容是谁写的。</span><small>8 步 · ← → 键翻步</small></a>
+        <a class="card" href="widgets/gallery.html"><b>卡片状态总览</b><span>生成与任务卡、镜头卡的 8 种状态 × 两家宿主 × 明暗。</span><small>U-2 · U-3</small></a>
+        <a class="card" href="instructions.md"><b>服务端 instructions 草稿</b><span>所有宿主共用的使用说明，读者是外部助手。</span><small>Markdown</small></a>
+      </div>
+
+      <h2>网页端</h2>
+      <div class="grid">
+        <a class="card" href="web/connect.html"><b>W-1 外部助手接入页</b><span>选宿主、复制发给助手、Team 回退、已连接与断开。</span><small>状态：有连接 / 还没有连接</small></a>
+        <a class="card" href="web/authorize.html"><b>W-2 / W-3 授权页</b><span>谁在请求、授权给哪个账号、能做和不能做什么；完成、拒绝、出错。</span><small>7 种状态</small></a>
+        <a class="card" href="web/canvas.html?state=handoff&focus=shot-2"><b>W-4 / W-5 / W-6 画布交接</b><span>「外部助手已连接」指示、链接聚焦、等页面执行的任务、场景历史署名。</span><small>4 种状态</small></a>
+      </div>
+
+      <h2>走查时请特别看</h2>
+      <ul>
+        <li>终端里结果只露前 3–4 行：每个工具结果的第一行是不是结论。</li>
+        <li>图形界面里点了卡片按钮后，外部助手这一轮不会说话，靠「卡片动作日志」里的上下文知道发生了什么。</li>
+        <li>「等待页面」：卡片按钮、终端里的链接、打开后的横幅，这三处说的是不是同一件事。</li>
+        <li>授权页的「能做 / 不能做」够不够让创作者放心点「允许」。</li>
+        <li>宿主自带的许可提示和菜单名称都是近似的，等活原型在真宿主里核实。</li>
+      </ul>
+    </main>
+  </body>
+</html>

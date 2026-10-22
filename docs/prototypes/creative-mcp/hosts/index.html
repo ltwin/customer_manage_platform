@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>宿主对照 · 外部助手原型</title>
+    <link rel="stylesheet" href="hosts.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="back" href="../index.html">← 原型目录</a>
+      <h1>宿主对照</h1>
+      <nav id="tabs" role="tablist" aria-label="宿主"></nav>
+      <span class="grow"></span>
+      <div id="theme" class="seg" aria-label="宿主主题">
+        <button data-theme="light">浅色</button><button data-theme="dark">深色</button>
+      </div>
+      <label class="check"><input type="checkbox" id="annotate" />标注内容来源</label>
+    </header>
+
+    <div class="body">
+      <main id="stage" aria-live="polite"></main>
+      <aside class="rail">
+        <div class="nav">
+          <button id="prev" aria-label="上一步">←</button>
+          <div id="steps"></div>
+          <button id="next" aria-label="下一步">→</button>
+        </div>
+        <button id="replay" class="replay">从头重放</button>
+        <div id="notes"></div>
+        <div class="legend">
+          <h2>标注图例</h2>
+          <p><i class="ours"></i>我们写的：工具显示名、结果文字、卡片</p>
+          <p><i class="model"></i>外部助手写的：回复、工具参数</p>
+          <p><i class="host"></i>宿主自带：工具行外框、许可提示、输入框</p>
+          <p><i class="creator"></i>创作者说的</p>
+        </div>
+        <details id="instructions"><summary>服务端 instructions（草稿）</summary><pre></pre></details>
+      </aside>
+    </div>
+    <script type="module" src="hosts.mjs"></script>
+  </body>
+</html>

@@ -145,7 +145,9 @@
 - **D12**：卡片单列子项 `mcp-host-ui`，排在 C2 之后：C1 → C2 → `mcp-host-ui`（卡片通信基础与 U-2）→ C3（场景工具连同 U-3 镜头卡）。
 - **D13**：原型做两层：静态 HTML 原型，加假数据的活原型。活原型接 ChatGPT 和 claude.ai 网页时要开隧道，开之前单独确认。
 
-据此，第五节的 W-1 到 W-6 不变；第六节 `widgets/` 只做 U-2、U-3。Epic 的 proposal、contracts、roadmap 修订放在原型走查之后一并提交 owner 批准。
+据此，第五节的 W-1 到 W-6 不变；第六节 `widgets/` 只做 U-2、U-3。
+
+2026-10-22 静态原型完成，见 `docs/prototypes/creative-mcp/README.md`（含原型里定下的设计与待活原型核实的项）。Epic 的 proposal、contracts、roadmap 修订放在原型走查之后一并提交 owner 批准。
 
 ## 八、新增待核实项
 
