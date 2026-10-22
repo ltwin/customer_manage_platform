@@ -57,8 +57,8 @@ export function ClayLighting({ environment }: { environment: SceneEnvironment })
   return (
     <>
       {sky.kind === 'procedural' ? (
-        // drei's Sky stood 1000 away; the directions are taken from the world origin.
-        <primitive object={mesh} scale={1000} />
+        // Drawn around the camera; the directions are taken from the world origin (render/sky.ts claySky).
+        <primitive object={mesh} />
       ) : (
         <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
       )}
@@ -160,7 +160,7 @@ function LitLighting({ environment, engine }: { environment: SceneEnvironment; e
 
   return (
     <>
-      {procedural ? <primitive object={sky} scale={1000} /> : <color attach="background" args={[environment.sky.color ?? '#8a8f98']} />}
+      {procedural ? <primitive object={sky} /> : <color attach="background" args={[environment.sky.color ?? '#8a8f98']} />}
       {procedural && <Sun environment={environment} />}
       {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
       <ambientLight color={environment.ambient.color} intensity={environment.ambient.intensity * ambientFill(engine)} />

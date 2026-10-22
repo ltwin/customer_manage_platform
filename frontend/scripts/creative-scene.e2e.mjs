@@ -3204,6 +3204,32 @@ await check('AC-5: a colour sky and fog show as set', async () => {
   await context.close()
 })
 
+await check('AC-5: pulled far back, the procedural sky still fills the view', async () => {
+  // Over 2 km out, and an orthographic view some 25 km across: the sky's box
+  // used to stay 1000 across at the origin, and outside it only its far side
+  // showed, a square in the dark.
+  const views = { perspective: { position: [1500, -1500, 400], target: [0, 0, 0], ortho: false, zoom: 1 }, ortho: { position: [7, -9, 7], target: [0, 0, 0.5], ortho: true, zoom: 0.05 } }
+  for (const [name, camera] of Object.entries(views)) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+    await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, { camera, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false }])
+    const server = new SceneServer()
+    seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+    const { page, errors } = await open(server, { context })
+    const { box } = await viewportCenter(page)
+    const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => ({ x: box.x + 4 + u * (box.width - 48), y: box.y + 4 + v * (box.height - 48), width: 40, height: 40 }))
+    for (const mode of ['白模', '最终渲染']) {
+      await shading(page, mode)
+      await shot(page, `c5-far-sky-${name}-${mode}`)
+      for (const corner of corners) {
+        const { r, g, b } = await lumaStats(page, await settledShot(page, corner))
+        assert.ok(r + g + b > 60, `${name} ${mode}: sky at (${corner.x - box.x}, ${corner.y - box.y}), not the dark backdrop (rgb ${r.toFixed(0)}, ${g.toFixed(0)}, ${b.toFixed(0)})`)
+      }
+    }
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+})
+
 await check('AC-5: exposure +2 brightens the rendered view of a room lit by two wall lights, not the clay', async () => {
   const server = new SceneServer()
   server.scene.environment = structuredClone(night)

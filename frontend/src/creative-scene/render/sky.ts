@@ -24,12 +24,15 @@ import { SKY_GAIN } from './litLook.ts'
 // GLSL skies.
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { acos, clamp, cameraPosition, cos, dot, exp, float, max, min, mix, normalize, positionWorld, pow, smoothstep, uniform, vec3, vec4 } = tsl as unknown as Record<string, Op> & {
+const { abs, acos, clamp, cameraPosition, cos, dot, exp, float, max, min, mix, normalize, positionLocal, pow, sign, smoothstep, uniform, vec3, vec4 } = tsl as unknown as Record<string, Op> & {
   cameraPosition: TSLNode
-  positionWorld: TSLNode
+  positionLocal: TSLNode
 }
-const { modelViewProjection } = tsl as unknown as { modelViewProjection: TSLNode }
+const { cameraProjectionMatrix, cameraViewMatrix } = tsl as unknown as { cameraProjectionMatrix: TSLNode; cameraViewMatrix: TSLNode }
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
+
+/** Half the side of the box the clay sky took its directions from (drei's Sky, 1000 across, at the world origin). */
+const CLAY_SKY_HALF = 500
 
 const e = 2.718281828459045
 const totalRayleigh = vec3(5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5)
@@ -63,13 +66,23 @@ function scatter(direction: TSLNode, sunDirection: TSLNode, sunE: TSLNode, betaR
   return { Fex, cosTheta, Lin }
 }
 
-/** A box drawn inside out at the far plane, coloured by direction. */
+/**
+ * A box drawn inside out at the far plane, coloured by direction
+ * (normalize(positionLocal)). It turns with the camera but never moves from
+ * it, so however far the view pulls back the sky is all around (as three's
+ * Background draws its box; an orthographic box is scaled past the view's
+ * bounds). The mesh's own transform is not used.
+ */
 function skyMesh(colorNode: TSLNode): Mesh {
   const material = new NodeMaterial()
   material.side = BackSide
   material.depthWrite = false
   material.vertexNode = Fn(() => {
-    const position = modelViewProjection.toVar()
+    const isOrtho = cameraProjectionMatrix.element(3).element(3).equal(1)
+    const orthoScale = float(1).div(cameraProjectionMatrix.element(1).element(1)).mul(3)
+    const local = isOrtho.select(positionLocal.mul(orthoScale), positionLocal)
+    const view = cameraViewMatrix.mul(vec4(local, 0))
+    const position = cameraProjectionMatrix.mul(vec4(view.xyz, 1)).toVar()
     position.z.assign(position.w)
     return position
   })()
@@ -97,7 +110,7 @@ export function litSky(): LitSky {
     const sunfade = float(1).sub(clamp(float(1).sub(exp(sunPosition.y.div(450000))), 0, 1))
     const betaR = totalRayleigh.mul(rayleigh.sub(float(1).sub(sunfade))).toVar()
     const betaM = float(0.434).mul(float(0.2).mul(turbidity).mul(10e-18)).mul(MieConst).mul(mieCoefficient).toVar()
-    const v = normalize(positionWorld.sub(cameraPosition))
+    const v = normalize(positionLocal)
     const direction = vec3(v.x, v.z, v.y.negate()).toVar()
     const { Fex, cosTheta, Lin } = scatter(direction, sunDirection, sunE, betaR, betaM, g, direction.y, sunDirection.y)
     const L0 = vec3(0.1).mul(Fex)
@@ -125,7 +138,13 @@ export function claySky(): ClaySky {
     const sunfade = float(1).sub(clamp(float(1).sub(exp(sunPosition.y.div(450000))), 0, 1)).toVar()
     const betaR = totalRayleigh.mul(rayleigh.sub(float(1).sub(sunfade))).toVar()
     const betaM = float(0.434).mul(float(0.2).mul(turbidity).mul(10e-18)).mul(MieConst).mul(mieCoefficient).toVar()
-    const direction = normalize(positionWorld).toVar()
+    // Where the view ray leaves drei's box, seen from the world origin: as
+    // before while the camera is inside the box; from outside it, as from the
+    // nearest point within.
+    const ray = normalize(positionLocal).toVar()
+    const eye = clamp(cameraPosition, -(CLAY_SKY_HALF - 1), CLAY_SKY_HALF - 1).toVar()
+    const exits = float(CLAY_SKY_HALF).sub(eye.mul(sign(ray))).div(max(abs(ray), 1e-6))
+    const direction = normalize(eye.add(ray.mul(min(exits.x, min(exits.y, exits.z))))).toVar()
     const { Fex, cosTheta, Lin } = scatter(direction, sunDirection, sunE, betaR, betaM, g, dot(up, direction), dot(up, sunDirection))
     const sundisk = smoothstep(sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosTheta)
     const L0 = vec3(0.1).mul(Fex).add(sunE.mul(19000).mul(Fex).mul(sundisk))
@@ -160,7 +179,6 @@ export function skyEnvironment(pmrem: PMREMGenerator, env: SceneEnvironment): Re
     const scene = new Scene()
     const sky = litSky()
     setSky(sky, env, false)
-    sky.scale.setScalar(10)
     scene.add(sky)
     const target = pmrem.fromScene(scene, 0, 0.1, 100)
     disposeSky(sky)
