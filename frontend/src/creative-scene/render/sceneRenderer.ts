@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
+import { ACESFilmicToneMapping, AgXToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -570,7 +570,10 @@ export class SceneRenderer {
         }
       }
     }
-    let output = vec4Of(renderOutput(picture, ACESFilmicToneMapping, SRGBColorSpace))
+    // AgX (W1 scene-display-look): bright saturated colours go towards white
+    // without turning into another hue. Wireframe keeps ACES Filmic, so its
+    // lines and colours stay exactly what they were.
+    let output = vec4Of(renderOutput(picture, wireframe ? ACESFilmicToneMapping : AgXToneMapping, SRGBColorSpace))
     if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
     // The real-time GI is antialiased by its TRAA.
     if (msaa === 0 && !gi) output = vec4Of(own(smaa(output)))

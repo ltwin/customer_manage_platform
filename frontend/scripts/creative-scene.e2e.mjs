@@ -3587,44 +3587,82 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
   }
 })
 
-// SCENE_E2E_LOOKS=<dir> (W1 scene-display-look): the viewport of every
-// reference scene in the four display modes on this machine's GPU, with
-// looks.json measuring each picture and its lower quarter (ground). Run once
-// before W1's renderer changes for the baseline and again after them.
+// --- W1 scene-display-look: the looks it changes and the ones it keeps ----------
+
 const displayModes = [['线框', 'wireframe'], ['白模', 'clay'], ['材质预览', 'preview'], ['最终渲染', 'lit']]
+
+/** A reference scene's viewport from the editor's default view in each of modes ([label, file name]), on gpu at 1600 × 1000, 2× pixels. */
+async function viewportLooks(gpu, name, modes = displayModes) {
+  const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+  const server = new SceneServer()
+  referenceScene(server, name)
+  const { page, errors } = await open(server, { context })
+  const { box } = await viewportCenter(page)
+  const ground = { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }
+  await page.mouse.move(1, 1)
+  const out = []
+  for (const [mode, label] of modes) {
+    await shading(page, mode)
+    // New lights stay dark until compiled for the viewport's passes (objects/SceneLights.tsx).
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name} ${mode}: compiled`, 60_000)
+    const png = await settledShot(page, box)
+    out.push({ label, file: `${name}-view-${label}.png`, png, all: await lumaStats(page, png, { level: 250 }), ground: await lumaStats(page, await settledShot(page, ground), { level: 250 }) })
+  }
+  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  await context.close()
+  return out
+}
+
+const w1Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-display-look/discovery/research/baseline/', import.meta.url)
+
+// SCENE_E2E_LOOKS=<dir>: every reference scene's viewport in the four display
+// modes on this machine's GPU, with looks.json measuring each picture and its
+// lower quarter (ground). Run once before W1's renderer changes for the
+// baseline (w1Baseline) and again after them.
 if (process.env.SCENE_E2E_LOOKS) await check('looks: the reference scenes in every display mode on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_LOOKS
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
+    const round = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v.toFixed(4))]))
     for (const name of referenceNames) {
-      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
-      const server = new SceneServer()
-      referenceScene(server, name)
-      const { page, errors } = await open(server, { context })
-      const { box } = await viewportCenter(page)
-      const ground = { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }
-      await page.mouse.move(1, 1)
       record.scenes[name] = {}
-      for (const [mode, label] of displayModes) {
-        await shading(page, mode)
-        // New lights stay dark until compiled for the viewport's passes (objects/SceneLights.tsx).
-        await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name} ${mode}: compiled`, 60_000)
-        const png = await settledShot(page, box)
-        await writeFile(`${dir}/${name}-view-${label}.png`, png)
-        const all = await lumaStats(page, png, { level: 250 })
-        const low = await lumaStats(page, await settledShot(page, ground), { level: 250 })
-        const round = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v.toFixed(4))]))
-        record.scenes[name][label] = { all: round(all), ground: round(low) }
-        console.log(`looks ${name} ${label}: mean ${all.mean.toFixed(1)}, clipped ${(all.bright * 100).toFixed(2)}%, ground ${low.mean.toFixed(1)} (R−B ${(low.r - low.b).toFixed(1)})`)
+      for (const look of await viewportLooks(gpu, name)) {
+        await writeFile(`${dir}/${look.file}`, look.png)
+        record.scenes[name][look.label] = { all: round(look.all), ground: round(look.ground) }
+        console.log(`looks ${name} ${look.label}: mean ${look.all.mean.toFixed(1)}, clipped ${(look.all.bright * 100).toFixed(2)}%, ground ${look.ground.mean.toFixed(1)} (R−B ${(look.ground.r - look.ground.b).toFixed(1)})`)
       }
-      assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
-      await context.close()
     }
     await writeFile(`${dir}/looks.json`, `${JSON.stringify(record, null, 2)}\n`)
   } finally {
     await gpu.close()
   }
+})
+
+// SCENE_E2E_W1=<dir> (AC-W1-3): wireframe and line art are what they were
+// before W1, pixel for pixel, on this machine's GPU; sheets of any image
+// that is not go to the directory.
+if (process.env.SCENE_E2E_W1) await check('W1: wireframe and line art are unchanged on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W1
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const same = async (file, png) => {
+      const m = await compareShots(page, readFileSync(new URL(file, w1Baseline)), png, 2)
+      if (m.error || m.over > 0) {
+        off.push(`${file}: ${m.error ?? `${m.over.toFixed(4)}% of pixels off by more than 2`}`)
+        if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}.jpg`, m.sheet)
+      }
+    }
+    for (const name of referenceNames) {
+      for (const look of await viewportLooks(gpu, name, [['线框', 'wireframe']])) await same(look.file, look.png)
+      for (const img of (await exportReference(gpu, name)).images) if (img.pass === 'line') await same(img.file, img.png)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [])
 })
 
 // --- R1 AC-R1-1 / AC-R1-4: the same pictures as the WebGL baseline --------------
@@ -3639,9 +3677,9 @@ const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer
  */
 const parityLimits = { line: { mean: 0.0016, over: 0.0026 }, clay: { mean: 1.5, over: 0.62 }, lit: { mean: 0.63, over: 0.18 } }
 
-/** Mean difference per channel (0–255), the share of pixels with a channel off by more than 8 (%), and a + b + difference (×8) side by side as a JPEG. */
-async function compareShots(page, a, b) {
-  const out = await page.evaluate(async ([a, b]) => {
+/** Mean difference per channel (0–255), the share of pixels with a channel off by more than limit (%), and a + b + difference (×8) side by side as a JPEG. */
+async function compareShots(page, a, b, limit = 8) {
+  const out = await page.evaluate(async ([a, b, limit]) => {
     const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
     const [x, y] = await Promise.all([load(a), load(b)])
     const w = x.width
@@ -3669,7 +3707,7 @@ async function compareShots(page, a, b) {
         diff.data[k + c] = Math.min(255, d * 8)
       }
       diff.data[k + 3] = 255
-      if (most > 8) over++
+      if (most > limit) over++
     }
     const sheet = document.createElement('canvas')
     const scale = 0.5
@@ -3682,7 +3720,7 @@ async function compareShots(page, a, b) {
     d.getContext('2d').putImageData(diff, 0, 0)
     for (const [i, img] of [x, y, d].entries()) g.drawImage(img, i * Math.round(w * scale), 0, Math.round(w * scale), Math.round(h * scale))
     return { mean: sum / ((p.length / 4) * 3), over: (over / (p.length / 4)) * 100, sheet: sheet.toDataURL('image/jpeg', 0.85).split(',')[1] }
-  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, limit])
   return out.error ? out : { ...out, sheet: Buffer.from(out.sheet, 'base64') }
 }
 

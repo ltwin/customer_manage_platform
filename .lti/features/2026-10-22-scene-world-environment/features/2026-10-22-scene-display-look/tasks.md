@@ -16,8 +16,11 @@
 
 ## 3. 色调映射
 
-- [ ] 3.1 先写 e2e：线框和导出线稿与 1.1 的参考图逐像素比较（差 > 2 的像素为 0）。再改 `SceneRenderer.build` 的输出节点为 `renderOutput(picture, wireframe ? ACESFilmicToneMapping : AgXToneMapping, SRGBColorSpace)`，`toneMappingExposure` 的处理不变。完成判据：线框、线稿用例绿；白模、材质预览、最终渲染、`clay` / `lit` 导出和 `render_view` 经过 AgX（e2e 读回的输出节点或像素可证）
-- [ ] 3.2 `ModelPreview.tsx` 在 `onCreated` 里设 `AgXToneMapping`。完成判据：资产库查看浮窗的 3D 预览经过 AgX，前后截图存进 `discovery/research/calibration`
+- [x] 3.1 先写 e2e：线框和导出线稿与 1.1 的参考图逐像素比较（差 > 2 的像素为 0）。再改 `SceneRenderer.build` 的输出节点为 `renderOutput(picture, wireframe ? ACESFilmicToneMapping : AgXToneMapping, SRGBColorSpace)`，`toneMappingExposure` 的处理不变。完成判据：线框、线稿用例绿；白模、材质预览、最终渲染、`clay` / `lit` 导出和 `render_view` 经过 AgX（e2e 读回的输出节点或像素可证）
+  - 先把线框也换成 AgX 验证用例能抓到：六组场景的线框视口全部不同，线稿不受影响；再改回线框用 ACES，用例绿。e2e 新增 `SCENE_E2E_W1` 用例（线框视口、导出线稿对 1.1 基线逐像素）。
+  - 只换 AgX、未重标时的视口平均亮度（基线 → AgX）：`noon` 最终渲染 196.2 → 173.8，`room` 59.8 → 71.6，白模 `noon` 212.9 → 189.8；材质预览 201.4 → 186.0。亮面变暗、暗部变亮，与调研一致，由 4.4、5.1 标定。
+- [x] 3.2 `ModelPreview.tsx` 在 `onCreated` 里设 `AgXToneMapping`。完成判据：资产库查看浮窗的 3D 预览经过 AgX，前后截图存进 `discovery/research/calibration`
+  - 查看浮窗背景 (90, 92, 98) → (102, 105, 108)，略变亮，与 proposal 的风险说明一致。截图 `calibration/model-preview-*-agx.png`，基线见 `baseline/model-preview-*.png`。白模的灯在 4.3 换成工作室光后再出一次。
 
 ## 4. 白模工作室光
 

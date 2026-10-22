@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type RefObject } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { DoubleSide, MathUtils, MeshStandardMaterial, Vector3 } from 'three'
+import { AgXToneMapping, DoubleSide, MathUtils, MeshStandardMaterial, Vector3 } from 'three'
 import type { components } from '../../api/schema'
 import type { ModelParts } from '../models/cache.ts'
 import { clay } from '../objects/look.ts'
@@ -68,6 +68,10 @@ export default function ModelPreview({ revision, manifest, materials, title, thu
         gl={({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'direct', role: 'preview' }).then((g) => g.renderer)}
         dpr={[1, 2]}
         camera={{ fov, position: view.position, near: view.near, far: view.far }}
+        // R3F sets ACES Filmic once it has the renderer; AgX like the editor (render/sceneRenderer.ts).
+        onCreated={({ gl }) => {
+          gl.toneMapping = AgXToneMapping
+        }}
         aria-label={`「${title}」的 3D 预览`}
       >
         {look === 'clay' ? (
