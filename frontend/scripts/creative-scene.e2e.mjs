@@ -1172,11 +1172,15 @@ await check('reopening shows exactly what the server has', async () => {
   await again.context.close()
 })
 
-await check('fog written as three.js Fog {color, near, far} shows in the view', async () => {
-  const clear = await open(new SceneServer())
+await check('fog written as three.js Fog {color, near, far} shows in the rendered view', async () => {
+  // Both open rendered, as the scene suggests: clay has the studio light and no fog.
+  const plain = new SceneServer()
+  plain.scene.render.mode = 'lit'
+  const clear = await open(plain)
   const before = await clear.page.locator('.cc-scene-editor canvas').screenshot()
   await clear.context.close()
   const server = new SceneServer()
+  server.scene.render.mode = 'lit'
   server.scene.environment.fog = { color: '#ff00ff', near: 1, far: 8 }
   const foggy = await open(server)
   const after = await foggy.page.locator('.cc-scene-editor canvas').screenshot()
@@ -2347,13 +2351,16 @@ await check('export: two cameras × clay and line, 2048 PNGs at each camera’s 
   if (process.env.SCENE_E2E_SHOTS) {
     for (const [name, png] of [['clay', sClay], ['clay-dof', bClay], ['line', sharp[0].images[1].png], ['portrait', sharp[1].images[0].png]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c4-export-${name}.png`, png)
   }
-  // The far tower's right edge (40 m, out of focus) and the near box's left edge (8 m, in focus).
+  // The far tower's right edge (40 m, out of focus) and the near box's left edge (8 m, in focus),
+  // above the horizon: the horizon is out of focus, and in the studio light it is the strongest edge there.
   const tower = [0.62, 0.15, 0.7, 0.5]
-  const box = [0.37, 0.4, 0.45, 0.6]
+  const box = [0.38, 0.38, 0.44, 0.5]
   const whole = [await sharpness(page, sClay, tower), await sharpness(page, bClay, tower)]
   const centre = [await sharpness(page, sClay, box), await sharpness(page, bClay, box)]
   assert.ok(whole[1] < whole[0] * 0.6, `out of focus is softer: ${whole.map((v) => v.toFixed(3))}`)
-  assert.ok(centre[1] > centre[0] * 0.85, `in focus stays sharp: ${centre.map((v) => v.toFixed(3))}`)
+  // The blurred background spreads a pixel over the in-focus edge: against the studio's grey that
+  // is a good share of what the region has, so in focus is told by keeping far more than out of focus.
+  assert.ok(centre[1] / centre[0] > (whole[1] / whole[0]) * 4, `in focus stays sharp: ${centre.map((v) => v.toFixed(3))}, out of focus ${whole.map((v) => v.toFixed(3))}`)
   const lineDiff = await pixelDiff(page, sharp[0].images[1].png, blurred[0].images[1].png)
   assert.ok(lineDiff < 0.002, `line art is not blurred: ${lineDiff}`)
   console.log(`export 4 images ${ms} ms; sharpness out of focus ${whole.map((v) => v.toFixed(3))} centre ${centre.map((v) => v.toFixed(3))}`)
@@ -3113,7 +3120,7 @@ await check('lights: the rendered view warms its lights in one compile; adding, 
   await context.close()
 })
 
-await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens shadows and turns the sky to dusk; Cmd+Z', async () => {
+await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens rendered shadows and turns the sky to dusk, clay stays; Cmd+Z', async () => {
   const server = new SceneServer()
   const post = gid('post')
   seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
@@ -3139,10 +3146,11 @@ await check('AC-5: with nothing selected the environment shows; the sun at 5° l
     const band = await lumaStats(page, await settledShot(page, skyBand))
     return band.r / Math.max(1, band.b)
   }
-  const noon = await footprint('35')
+  const clayNoon = await settledShot(page, box)
   await shading(page, '最终渲染')
   const noonLit = await footprint('35-lit')
   const noonSky = await warmth()
+  // Set in clay, where the environment tab still edits it.
   await shading(page, '白模')
   const elevation = page.getByRole('spinbutton', { name: '太阳高度（°）' })
   await elevation.fill('5')
@@ -3150,8 +3158,9 @@ await check('AC-5: with nothing selected the environment shows; the sun at 5° l
   await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 5, 'the sun goes down')
   assert.deepEqual(server.scene.environment, { sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, 'only the elevation changes')
   assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
-  const dusk = await footprint('5')
-  assert.ok(dusk > noon * 1.5, `a longer clay shadow (${(noon * 100).toFixed(2)}% → ${(dusk * 100).toFixed(2)}% of the view)`)
+  // Solid areas only: the grid's thin lines are a helper and may differ once the view has been rendered.
+  const clayDusk = await solidDiff(page, clayNoon, await settledShot(page, box), 6)
+  assert.equal(clayDusk, 0, `clay stays: the studio light does not follow the sun (${(clayDusk * 100).toFixed(3)}% off)`)
   await shading(page, '最终渲染')
   const duskLit = await footprint('5-lit')
   assert.ok(duskLit > noonLit * 1.5, `a longer rendered shadow (${(noonLit * 100).toFixed(2)}% → ${(duskLit * 100).toFixed(2)}% of the view)`)
@@ -3195,11 +3204,12 @@ await check('AC-5: a colour sky and fog show as set', async () => {
   // Level with the horizon, the sky fills the top of the view; fog leaves the background alone.
   await page.keyboard.press('Digit1')
   const sky = { x: box.x, y: box.y + 10, width: box.width, height: 40 }
-  for (const mode of ['白模', '最终渲染']) {
-    await shading(page, mode)
-    const top = await lumaStats(page, await settledShot(page, sky))
-    assert.ok(top.b > top.r + 60, `${mode}: the sky is the colour set (rgb ${top.r.toFixed(0)}, ${top.g.toFixed(0)}, ${top.b.toFixed(0)})`)
-  }
+  const top = await lumaStats(page, await settledShot(page, sky))
+  assert.ok(top.b > top.r + 60, `the sky is the colour set (rgb ${top.r.toFixed(0)}, ${top.g.toFixed(0)}, ${top.b.toFixed(0)})`)
+  // Clay draws the studio's neutral background instead.
+  await shading(page, '白模')
+  const studio = await lumaStats(page, await settledShot(page, sky))
+  assert.ok(Math.abs(studio.r - studio.b) < 20, `clay: a neutral background, not the sky (rgb ${studio.r.toFixed(0)}, ${studio.g.toFixed(0)}, ${studio.b.toFixed(0)})`)
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -3217,7 +3227,8 @@ await check('AC-5: pulled far back, the procedural sky still fills the view', as
     const { page, errors } = await open(server, { context })
     const { box } = await viewportCenter(page)
     const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => ({ x: box.x + 4 + u * (box.width - 48), y: box.y + 4 + v * (box.height - 48), width: 40, height: 40 }))
-    for (const mode of ['白模', '最终渲染']) {
+    // Clay has the studio's background and no sky.
+    for (const mode of ['最终渲染']) {
       await shading(page, mode)
       await shot(page, `c5-far-sky-${name}-${mode}`)
       for (const corner of corners) {
@@ -3413,6 +3424,76 @@ await check('AC-6: in the rendered view the dialog ticks all three passes; 3 cam
   console.log(`lit export vs camera view: ${fromLit.toFixed(1)}; clay export vs camera view: ${fromClay.toFixed(1)}`)
   assert.ok(fromLit < 8, `the lit export looks like the rendered camera view (mean difference ${fromLit.toFixed(1)})`)
   assert.ok(fromClay > fromLit * 2, `and unlike the clay export (${fromClay.toFixed(1)})`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- W1 AC-W1-1: clay is the studio light, whatever the environment ------------
+
+await check('W1 clay: the sun, the sky, fog, ambient and a shadowing lamp change neither the clay view nor clay exports; every camera is lit from the front', async () => {
+  const server = new SceneServer()
+  const front = objectID('front'), back = objectID('back'), lamp = objectID('lamp')
+  server.external([{ op: 'add_objects', objects: [
+    { ...boxObject(objectID('box'), '方块', 0, 1), primitive: { builtin: 'box@1', params: { width: 1.2, height: 1.2, depth: 1.2 } } },
+    cameraObject(front, '前', 2, { focal_mm: 50 }, [0, 0.6, 6]),
+    // Turned to look back along +Z, at the box's other side.
+    { ...cameraObject(back, '后', 3, { focal_mm: 50 }, [0, 0.6, -6]), transform: { position: [0, 0.6, -6], rotation: [0, 1, 0, 0], scale: [1, 1, 1] } },
+  ] }])
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  const { box } = await viewportCenter(page)
+  await shading(page, '白模')
+  const change = async (ops) => {
+    server.external(ops)
+    await page.evaluate(() => window.__invalidate())
+    await sleep(600)
+  }
+  const environment = (patch) => [{ op: 'set_environment', environment: { ...server.scene.environment, ...patch } }]
+  const exportClay = async () => {
+    const n = server.exports.length
+    await page.getByRole('button', { name: '导出' }).first().click()
+    const dialog = page.getByRole('dialog', { name: '导出分镜' })
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: '导出' }).click()
+    await waitFor(() => server.exports.length === n + 1, 'export submitted', 180_000)
+    await dialog.waitFor({ state: 'detached' })
+    return server.exports.at(-1).payload.shots.map((s) => server.uploadBytes.get(s.images.find((i) => i.pass === 'clay').upload_id))
+  }
+  /** Pixels off by more than 2 in a channel; 0 is the same picture. */
+  const off = async (a, b) => (await compareShots(page, a, b, 2)).over
+
+  const view = await settledShot(page, box)
+  const shots = await exportClay()
+  const steps = [
+    ['a low sun', environment({ sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 250, turbidity: 3 } })],
+    ['a solid sky', environment({ sky: { kind: 'color', color: '#3355ff' } })],
+    ['fog', environment({ fog: { color: '#c0c8d0', near: 2, far: 12 } })],
+    ['ambient', environment({ ambient: { color: '#ffb070', intensity: 1.5 } })],
+  ]
+  for (const [step, ops] of steps) {
+    await change(ops)
+    assert.equal(await off(view, await settledShot(page, box)), 0, `${step}: the clay view is the same`)
+  }
+  // Not compared in the viewport, which draws the lamp's icon.
+  await change([{ op: 'add_objects', objects: [{ id: lamp, kind: 'light', name: '灯', parent_id: null, order: 4, transform: { ...identity(), position: [1.5, 2, 1.5] }, visible: true, locked: false, light: { type: 'point', color: '#ffb070', intensity: 60, cast_shadow: true } }] }])
+  const after = await exportClay()
+  for (const [i, png] of after.entries()) assert.equal(await off(shots[i], png), 0, `camera ${i}: the clay export is the same after all of it`)
+
+  // Both cameras see the face towards them lit: the light turns with the view.
+  const [a, b] = await Promise.all(after.map((png) => lumaStats(page, png)))
+  const centre = await Promise.all(after.map((png) => page.evaluate(async (src) => {
+    const i = new Image()
+    await new Promise((resolve) => { i.onload = resolve; i.src = src })
+    const c = document.createElement('canvas')
+    c.width = i.width
+    c.height = i.height
+    const g = c.getContext('2d')
+    g.drawImage(i, 0, 0)
+    const p = g.getImageData(i.width >> 1, i.height >> 1, 1, 1).data
+    return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
+  }, `data:image/png;base64,${png.toString('base64')}`)))
+  console.log(`clay box face, front ${centre[0].toFixed(0)}, back ${centre[1].toFixed(0)}; pictures ${a.mean.toFixed(0)}, ${b.mean.toFixed(0)}`)
+  assert.ok(Math.abs(centre[0] - centre[1]) < 6, `the box faces both cameras alike: ${centre.map((v) => v.toFixed(0))}`)
+  assert.ok(centre[0] > a.mean, 'the face towards the camera is lit')
   assert.deepEqual(errors, [])
   await context.close()
 })

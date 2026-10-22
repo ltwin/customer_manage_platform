@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type Ref } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import type { DirectionalLight, Mesh } from 'three'
 import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
@@ -6,7 +6,8 @@ import type { SceneEnvironment } from '../api.ts'
 import type { Engine } from '../render/engines.ts'
 import { ambientFill, sunLight } from '../render/litLook.ts'
 import { gpuOf } from '../render/gpu.ts'
-import { claySky, disposeSky, litSky, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
+import { disposeSky, litSky, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
+import { STUDIO_AMBIENT, STUDIO_BACKGROUND, STUDIO_FILL, STUDIO_KEY_INTENSITY } from '../render/studio.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
@@ -14,10 +15,10 @@ import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
 
 // What lights the scene in each shading (design「显示模式」): wireframe has
-// only a background; solid is the clay look, unchanged since C4; material
-// preview is a fixed studio light the scene cannot change; rendered is the lit
-// look the lit export also draws. The sun angles are document data (Y up);
-// the lights sit in view space (Z up).
+// only a background; solid is the clay look, a fixed studio light that turns
+// with the view (render/studio.ts); material preview is a fixed room the
+// scene cannot change; rendered is the lit look the lit export also draws.
+// The sun angles are document data (Y up); the lights sit in view space (Z up).
 
 /** Material preview's backdrop; the asset viewer's 3D preview uses it too. */
 export const previewBackground = '#5b5d61'
@@ -27,7 +28,7 @@ export function Lighting({ environment, display, engine = 'workbench' }: { envir
   if (display === 'wireframe') return <color attach="background" args={[wireBackground]} />
   if (display === 'preview') return <RoomLighting />
   if (display === 'rendered') return <LitLighting environment={environment} engine={engine} />
-  return <ClayLighting environment={environment} />
+  return <StudioLighting />
 }
 
 /** A sky is drawn in the picture, not in the AO's normals: it has no surface there. */
@@ -37,50 +38,29 @@ function drawnAside<T extends Mesh>(sky: T): T {
 }
 
 /**
- * Clay lighting: the scene's sky and ambient, one sun with shadows; tuned for
- * the clay look and kept as it was so clay exports do not change.
+ * Clay lighting: the fixed studio light on a neutral background (render/studio.ts);
+ * the scene's sky, sun, ambient, fog and lights do not count.
  */
-export function ClayLighting({ environment }: { environment: SceneEnvironment }) {
-  const sun = sunDirection(environment).multiplyScalar(60)
-  const sky = environment.sky
-  const mesh = useMemo(() => drawnAside(claySky()), [])
-  useEffect(() => () => disposeSky(mesh), [mesh])
-  const sunRef = useRef<DirectionalLight>(null)
-  const invalidate = useThree((s) => s.invalidate)
-  useLayoutEffect(() => {
-    mesh.sunPosition.value.set(...positionToView([sun.x, Math.max(sun.y, 0.5), sun.z]))
-    mesh.turbidity.value = sky.turbidity ?? 3
-    invalidate()
-  }, [mesh, sun.x, sun.y, sun.z, sky.turbidity, invalidate])
-  // Before the first frame: an offscreen shot draws only one.
-  useLayoutEffect(() => (sunRef.current ? fitSunShadow(sunRef.current) : undefined), [])
+function StudioLighting() {
   return (
     <>
-      {sky.kind === 'procedural' ? (
-        // Drawn around the camera; the directions are taken from the world origin (render/sky.ts claySky).
-        <primitive object={mesh} />
-      ) : (
-        <color attach="background" args={[sky.kind === 'color' ? (sky.color ?? '#8a8f98') : '#8a8f98']} />
-      )}
-      {environment.fog && <fog attach="fog" args={[environment.fog.color, environment.fog.near, environment.fog.far]} />}
-      <ClayLights ambient={environment.ambient} sun={positionToView([sun.x, Math.max(sun.y, 2), sun.z])} up={[0, 0, 1]} sunRef={sunRef} />
+      <color attach="background" args={[STUDIO_BACKGROUND]} />
+      <StudioLights up={[0, 0, 1]} />
     </>
   )
 }
 
 /**
- * The clay look's lights, without the scene around them: the ambient lifted
- * a little, a sky fill and one sun. A sun given a ref casts shadows, whose
- * bounds its owner fits.
+ * The studio's lights, without the background: a little ambient, a fill
+ * from up (the vertical: Z in the viewport, Y in the asset viewer) and the
+ * key light, which aimStudio turns with the camera. None casts shadows.
  */
-export function ClayLights({ ambient, sun, up, sunRef }: { ambient: { color: string; intensity: number }; sun: [number, number, number]; up: [number, number, number]; sunRef?: Ref<DirectionalLight> }) {
+export function StudioLights({ up }: { up: [number, number, number] }) {
   return (
     <>
-      <ambientLight color={ambient.color} intensity={ambient.intensity + 0.3} />
-      <hemisphereLight args={['#ffffff', '#6b6760', 0.6]} position={up} />
-      {/* The shadow camera's bounds and normal bias follow the scene (fitSunShadow). */}
-      {/* The sun, which the real-time GI's contact shadows follow (render/sceneRenderer.ts mainLight). */}
-      <directionalLight ref={sunRef} position={sun} intensity={2.2} castShadow={!!sunRef} shadow-mapSize={[2048, 2048]} userData={{ sun: true }} />
+      <ambientLight intensity={STUDIO_AMBIENT} />
+      <hemisphereLight args={[STUDIO_FILL.sky, STUDIO_FILL.ground, STUDIO_FILL.intensity]} position={up} />
+      <directionalLight intensity={STUDIO_KEY_INTENSITY} userData={{ studio: true }} />
     </>
   )
 }

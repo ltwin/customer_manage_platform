@@ -19,14 +19,22 @@
 - [x] 3.1 先写 e2e：线框和导出线稿与 1.1 的参考图逐像素比较（差 > 2 的像素为 0）。再改 `SceneRenderer.build` 的输出节点为 `renderOutput(picture, wireframe ? ACESFilmicToneMapping : AgXToneMapping, SRGBColorSpace)`，`toneMappingExposure` 的处理不变。完成判据：线框、线稿用例绿；白模、材质预览、最终渲染、`clay` / `lit` 导出和 `render_view` 经过 AgX（e2e 读回的输出节点或像素可证）
   - 先把线框也换成 AgX 验证用例能抓到：六组场景的线框视口全部不同，线稿不受影响；再改回线框用 ACES，用例绿。e2e 新增 `SCENE_E2E_W1` 用例（线框视口、导出线稿对 1.1 基线逐像素）。
   - 只换 AgX、未重标时的视口平均亮度（基线 → AgX）：`noon` 最终渲染 196.2 → 173.8，`room` 59.8 → 71.6，白模 `noon` 212.9 → 189.8；材质预览 201.4 → 186.0。亮面变暗、暗部变亮，与调研一致，由 4.4、5.1 标定。
+  - 当时没有跑日常 e2e。4.1 时发现 AgX 让两条用例不再成立，都是按亮度绝对阈值判断的：「AC-4: Shift+A adds a spot」（亮度 > 200 的像素，AgX 压低了亮部）和「renderer in effect」（实时 GI 改变的像素按 RGB 差 > 48 计）。在 `develop` 的渲染器上两条都绿。归入 5.1 和最终渲染一起标定。
 - [x] 3.2 `ModelPreview.tsx` 在 `onCreated` 里设 `AgXToneMapping`。完成判据：资产库查看浮窗的 3D 预览经过 AgX，前后截图存进 `discovery/research/calibration`
   - 查看浮窗背景 (90, 92, 98) → (102, 105, 108)，略变亮，与 proposal 的风险说明一致。截图 `calibration/model-preview-*-agx.png`，基线见 `baseline/model-preview-*.png`。白模的灯在 4.3 换成工作室光后再出一次。
 
 ## 4. 白模工作室光
 
-- [ ] 4.1 先写 e2e「白模不受环境影响」：依次改太阳高度和方位、换纯色天空、开雾、改环境光、在画面里加一盏投射阴影的点光，每步取同一摄像机的 `render_view` `clay` 和白模导出，与第一张逐像素比较；视口白模只比较环境的改动；程序化天空和纯色天空下背景是同一种中性灰。再新增 `render/studio.ts`（灯组常量、`STUDIO_BACKGROUND`、`aimStudio`），`Lighting.tsx` 的 `Lighting` 在白模下挂 `StudioLighting`、删除 `ClayLighting`、`ClayLights` 改为 `StudioLights`（主光带 `userData.studio`），删除 `sky.ts:claySky` 及只供它用的类型，`SceneRenderer.render` 画之前调 `aimStudio`。完成判据：新用例绿；两台摄像机和正交视图下都是左上方正面受光、无投影、有 AO，打开景深的摄像机仍按光圈虚化；白模不再画阴影贴图
-- [ ] 4.2 改写依赖旧白模的用例：`creative-scene.e2e.mjs` 第 1175 行（开雾后画面变化）、第 3154 行（影子变长）、第 3198–3202 行（天空颜色）、第 3207 行（拉远后天空铺满）改为在最终渲染下检查或改写断言；`creative-scene-agent.e2e.mjs` 第 100–104、443 行改按 `STUDIO_BACKGROUND` 的显示值判断有没有模型。完成判据：这些用例按 `ONLY` 过滤运行全部绿，没有删除覆盖面
-- [ ] 4.3 `ModelPreview.tsx` 的白模改用 `StudioLights`，在 `useFrame` 里调 `aimStudio`（向上 +Y），背景仍是预览的灰色。完成判据：查看浮窗转动模型时光始终从视角左上方照来，截图存进 `discovery/research/calibration`
+- [x] 4.1 先写 e2e「白模不受环境影响」：依次改太阳高度和方位、换纯色天空、开雾、改环境光、在画面里加一盏投射阴影的点光，每步取同一摄像机的 `render_view` `clay` 和白模导出，与第一张逐像素比较；视口白模只比较环境的改动；程序化天空和纯色天空下背景是同一种中性灰。再新增 `render/studio.ts`（灯组常量、`STUDIO_BACKGROUND`、`aimStudio`），`Lighting.tsx` 的 `Lighting` 在白模下挂 `StudioLighting`、删除 `ClayLighting`、`ClayLights` 改为 `StudioLights`（主光带 `userData.studio`），删除 `sky.ts:claySky` 及只供它用的类型，`SceneRenderer.render` 画之前调 `aimStudio`。完成判据：新用例绿；两台摄像机和正交视图下都是左上方正面受光、无投影、有 AO，打开景深的摄像机仍按光圈虚化；白模不再画阴影贴图
+  - e2e「W1 clay」：先把三个文件换回旧的白模光照，用例在「a low sun」一步失败；换回工作室光后绿。两台相对的摄像机看到的方块正面亮度相同（200 / 200）。
+  - `creative-scene-lighting.test.ts` 新增 `aimStudio` 单测：三个视角下主光都在视角左上前方，场景里其他平行光不动。
+- [x] 4.2 改写依赖旧白模的用例：`creative-scene.e2e.mjs` 第 1175 行（开雾后画面变化）、第 3154 行（影子变长）、第 3198–3202 行（天空颜色）、第 3207 行（拉远后天空铺满）改为在最终渲染下检查或改写断言；`creative-scene-agent.e2e.mjs` 第 100–104、443 行改按 `STUDIO_BACKGROUND` 的显示值判断有没有模型。完成判据：这些用例按 `ONLY` 过滤运行全部绿，没有删除覆盖面
+  - `creative-scene.e2e.mjs`：开雾改为在最终渲染下打开；太阳高度用例改为在白模里调太阳、白模不变（只比较实色区域，网格细线在渲染过最终渲染后会有差异），最终渲染的影子和天空照旧检查；纯色天空用例改为白模是中性灰背景；拉远看天空只检查最终渲染。
+  - 另有一条不在设计清单里的用例需要改写：「export: two cameras」的景深检查。原来用对焦区域的梯度能量保留 85% 判断清晰，靠的是暗方块对亮天空的强边缘；工作室光下方块和地面、背景接近，区域里最强的边缘是失焦的地平线，失焦的背景还会在清晰物体边缘外溢出一个像素。改为只量地平线以上的方块边缘，判据改为清晰区域保留的比例超过失焦区域的 4 倍（实测 0.71 对 0.12）。
+  - `creative-scene-agent.e2e.mjs`：背景色改为工作室灰的显示值 (144, 148, 154)，容差 24 → 12；黄昏样例原来比较白模的天空，改为白模是工作室灰、材质光照画出更暗的黄昏天空。
+  - 以上用例与「AC-1: lights」「reference scenes」「AC-2: polished metal」「guides stay」「output resolution」以及助手 e2e 的 `render_view`、导出、实时 GI 用例都已按 `ONLY` 过滤运行，全部绿。
+- [x] 4.3 `ModelPreview.tsx` 的白模改用 `StudioLights`，在 `useFrame` 里调 `aimStudio`（向上 +Y），背景仍是预览的灰色。完成判据：查看浮窗转动模型时光始终从视角左上方照来，截图存进 `discovery/research/calibration`
+  - 查看浮窗白模截图 `calibration/model-preview-clay-studio.png`：光从左上方照来，右侧面较暗（旧光照见 `baseline/model-preview-clay.png`）。
 - [ ] 4.4 标定工作室光（结清未决事项 1）：受光面显示值 195–225，背光面至少暗 30，过曝 < 1%，背景显示值在目标 ±2 内；`STUDIO_BACKGROUND` 的最终取值和主光角度出截图给 owner 定。完成判据：owner 定下的取值写进 `studio.ts` 和 design 未决事项 1，截图与测量存进 `discovery/research/calibration`
 
 ## 5. 最终渲染重新标定

@@ -8,31 +8,23 @@ import type { TSLNode } from '../materials/patterns.ts'
 import { MIE_COEFFICIENT, MIE_DIRECTIONAL_G, RAYLEIGH } from './atmosphere.ts'
 import { SKY_GAIN } from './litLook.ts'
 
-// The editor's two skies, in TSL (patterns「场景着色写法」: compare with the
-// sources on every three upgrade). Before R1 they were two shaders:
-//  - the lit look's: three's Sky (r186 examples/jsm/objects/Sky.js; its TSL
-//    twin is SkyMesh.js, where this is taken from), with the view direction
-//    turned to document space (view (x, y, z) → document (x, z, −y)), no
-//    clouds (they drift with time, and an export must not depend on when it
-//    is taken), the sun disc on or off, and the output times skyGain so
-//    background and sky light sit beside the sun light;
-//  - the clay look's: drei's Sky, which is three-stdlib's older Sky shader,
-//    with up = (0, 0, 1) as ClayLighting set it: its own sun disc, rayleigh
-//    0.5, sunfade from the view-space y, directions from the world origin and
-//    a final curve pow(c, 1 / (1.2 + 1.2·sunfade)). Kept as it was since C4.
-// R0 (scene-webgpu-spike, sky-shadow-outline.md): both within 1/255 of the
-// GLSL skies.
+// The lit look's sky, in TSL (patterns「场景着色写法」: compare with the
+// sources on every three upgrade): three's Sky (r186
+// examples/jsm/objects/Sky.js; its TSL twin is SkyMesh.js, where this is
+// taken from), with the view direction turned to document space (view
+// (x, y, z) → document (x, z, −y)), no clouds (they drift with time, and an
+// export must not depend on when it is taken), the sun disc on or off, and
+// the output times skyGain so background and sky light sit beside the sun
+// light. R0 (scene-webgpu-spike, sky-shadow-outline.md): within 1/255 of the
+// GLSL sky. The clay look's own sky went with W1 (scene-display-look): clay
+// draws a neutral background (render/studio.ts).
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, acos, clamp, cameraPosition, cos, dot, exp, float, max, min, mix, normalize, positionLocal, pow, sign, smoothstep, uniform, vec3, vec4 } = tsl as unknown as Record<string, Op> & {
-  cameraPosition: TSLNode
+const { acos, clamp, cos, dot, exp, float, max, min, mix, normalize, positionLocal, pow, uniform, vec3, vec4 } = tsl as unknown as Record<string, Op> & {
   positionLocal: TSLNode
 }
 const { cameraProjectionMatrix, cameraViewMatrix } = tsl as unknown as { cameraProjectionMatrix: TSLNode; cameraViewMatrix: TSLNode }
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
-
-/** Half the side of the box the clay sky took its directions from (drei's Sky, 1000 across, at the world origin). */
-const CLAY_SKY_HALF = 500
 
 const e = 2.718281828459045
 const totalRayleigh = vec3(5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5)
@@ -120,38 +112,6 @@ export function litSky(): LitSky {
     return vec4(texColor.mul(vec3(...SKY_GAIN)), 1)
   })()
   return Object.assign(skyMesh(color), { sunPosition, turbidity, showSunDisc }) as LitSky
-}
-
-export type ClaySky = Mesh & { sunPosition: Uniform<Vector3>; turbidity: Uniform<number> }
-
-/** The clay look's sky; sunPosition in view space (Z up). */
-export function claySky(): ClaySky {
-  const sunPosition = uniform(new Vector3(0, 0, 1))
-  const turbidity = uniform(3)
-  const up = vec3(0, 0, 1)
-  const rayleigh = float(0.5)
-  const mieCoefficient = float(0.005)
-  const g = float(0.8)
-  const color = Fn(() => {
-    const sunDirection = normalize(sunPosition).toVar()
-    const sunE = sunIntensity(dot(sunDirection, up)).toVar()
-    const sunfade = float(1).sub(clamp(float(1).sub(exp(sunPosition.y.div(450000))), 0, 1)).toVar()
-    const betaR = totalRayleigh.mul(rayleigh.sub(float(1).sub(sunfade))).toVar()
-    const betaM = float(0.434).mul(float(0.2).mul(turbidity).mul(10e-18)).mul(MieConst).mul(mieCoefficient).toVar()
-    // Where the view ray leaves drei's box, seen from the world origin: as
-    // before while the camera is inside the box; from outside it, as from the
-    // nearest point within.
-    const ray = normalize(positionLocal).toVar()
-    const eye = clamp(cameraPosition, -(CLAY_SKY_HALF - 1), CLAY_SKY_HALF - 1).toVar()
-    const exits = float(CLAY_SKY_HALF).sub(eye.mul(sign(ray))).div(max(abs(ray), 1e-6))
-    const direction = normalize(eye.add(ray.mul(min(exits.x, min(exits.y, exits.z))))).toVar()
-    const { Fex, cosTheta, Lin } = scatter(direction, sunDirection, sunE, betaR, betaM, g, dot(up, direction), dot(up, sunDirection))
-    const sundisk = smoothstep(sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosTheta)
-    const L0 = vec3(0.1).mul(Fex).add(sunE.mul(19000).mul(Fex).mul(sundisk))
-    const texColor = Lin.add(L0).mul(0.04).add(vec3(0, 0.0003, 0.00075))
-    return vec4(pow(texColor, vec3(float(1).div(float(1.2).add(sunfade.mul(1.2))))), 1)
-  })()
-  return Object.assign(skyMesh(color), { sunPosition, turbidity }) as ClaySky
 }
 
 export function disposeSky(sky: Mesh) {

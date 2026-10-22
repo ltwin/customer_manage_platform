@@ -11,6 +11,7 @@ import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
+import { aimStudio } from './studio.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -645,6 +646,8 @@ export class SceneRenderer {
     if (built.aoOn) built.aoOn.value = frame.ao === false ? 0 : 1
     const bg = this.scene.background
     built.background.value.copy(bg instanceof Color ? bg : renderer.getClearColor(new Color()))
+    // Clay's studio light comes from the view's upper left (render/studio.ts).
+    aimStudio(this.scene, camera)
     for (const o of this.overlays.aside()) o?.traverse((c) => c.layers.set(ASIDE_LAYER))
     for (const o of this.overlays.top()) o?.traverse((c) => c.layers.set(OVERLAY_LAYER))
     // The output node reads the exposure from the renderer as it draws.

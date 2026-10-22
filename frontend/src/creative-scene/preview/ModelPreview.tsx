@@ -5,17 +5,18 @@ import { AgXToneMapping, DoubleSide, MathUtils, MeshStandardMaterial, Vector3 } 
 import type { components } from '../../api/schema'
 import type { ModelParts } from '../models/cache.ts'
 import { clay } from '../objects/look.ts'
-import { ClayLights, RoomLighting, previewBackground } from '../objects/Lighting.tsx'
+import { RoomLighting, StudioLights, previewBackground } from '../objects/Lighting.tsx'
 import { SlotMesh } from '../objects/SlotMesh.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
 import { previewModels } from './cache.ts'
 import { createRenderer, gpuOf } from '../render/gpu.ts'
+import { aimStudio } from '../render/studio.ts'
 
 // The asset viewer's 3D stage, loaded only when a model is opened: drag to
 // turn, scroll to zoom, double-click to go back. 「材质」, where it opens like
 // the card thumbnail, is the materials the asset was saved with, a slot
 // without one resolving as in the editor, in the material preview's room;
-// 「白模」 is the editor's clay.
+// 「白模」 is the editor's clay: its studio light, without AO.
 
 type Manifest = components['schemas']['CreativeModelManifest']
 type Materials = components['schemas']['CreativeSceneMaterialSlots']
@@ -77,7 +78,7 @@ export default function ModelPreview({ revision, manifest, materials, title, thu
         {look === 'clay' ? (
           <>
             <color attach="background" args={[previewBackground]} />
-            <ClayLights ambient={{ color: '#ffffff', intensity: 0.4 }} sun={[3, 5, 4]} up={[0, 1, 0]} />
+            <StudioLights up={[0, 1, 0]} />
           </>
         ) : (
           <RoomLighting />
@@ -116,9 +117,12 @@ function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manif
 }
 
 /** Orbit around the model's centre; the opening view is what a double-click returns to. */
-/** Steps the renderer's frame before R3F draws one (render/gpu.ts owns the count). */
+/** Steps the renderer's frame before R3F draws one (render/gpu.ts owns the count); clay's key light turns with the view, as in the editor. */
 function FrameStep() {
-  useFrame((state) => gpuOf(state.gl).advanceFrame(), -1)
+  useFrame((state) => {
+    gpuOf(state.gl).advanceFrame()
+    aimStudio(state.scene, state.camera)
+  }, -1)
   return null
 }
 
