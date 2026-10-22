@@ -12,6 +12,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
+import { Euler, Quaternion } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
@@ -3603,9 +3604,10 @@ const obliqueOrtho = {
   selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false,
 }
 
-/** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1. */
-function referenceScene(server, name) {
+/** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1; edit changes it first. */
+function referenceScene(server, name, edit) {
   server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
   for (const o of server.scene.objects) {
     server.unitRevs[placement(o.id)] = '1'
@@ -3637,11 +3639,11 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * then the saved orthographic view in clay, on gpu (a Chromium on this
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend.
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
-  referenceScene(server, name)
+  referenceScene(server, name, edit)
   const backends = []
   context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
   const { page, errors } = await open(server, { context, query: '?export=1' })
@@ -3708,10 +3710,10 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
 const displayModes = [['线框', 'wireframe'], ['白模', 'clay'], ['材质预览', 'preview'], ['最终渲染', 'lit']]
 
 /** A reference scene's viewport from the editor's default view in each of modes ([label, file name]), on gpu at 1600 × 1000, 2× pixels. */
-async function viewportLooks(gpu, name, modes = displayModes) {
+async function viewportLooks(gpu, name, modes = displayModes, edit) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   const server = new SceneServer()
-  referenceScene(server, name)
+  referenceScene(server, name, edit)
   const { page, errors } = await open(server, { context })
   const { box } = await viewportCenter(page)
   const ground = { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }
@@ -3972,6 +3974,103 @@ if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor help
   } finally {
     await gpu.close()
   }
+})
+
+// --- W2 scene-physical-sky: the other skies stay as they were ---------------------
+
+const w2Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-physical-sky/discovery/research/baseline/', import.meta.url)
+
+/**
+ * What W1's pictures (w1After) leave out, made from reference scenes: global
+ * fog under the procedural and the solid sky, and a camera looking into the
+ * procedural sun through depth of field, which the material output clamp must
+ * leave alone.
+ */
+const w2Variants = {
+  'noon-fog': {
+    from: 'noon',
+    edit(scene) {
+      scene.environment.fog = { color: '#c8d0d8', near: 4, far: 40 }
+    },
+  },
+  // Without fog: the fog covers the sky, sun and all.
+  'noon-sun': {
+    from: 'noon',
+    edit(scene) {
+      const sky = scene.environment.sky
+      const facing = new Quaternion().setFromEuler(new Euler((sky.sun_elevation_deg * Math.PI) / 180, (sky.sun_azimuth_deg * Math.PI) / 180 + Math.PI, 0, 'YXZ'))
+      scene.objects.push({
+        parent_id: null, visible: true, locked: false,
+        transform: { position: [0, 1.6, 4], rotation: facing.toArray(), scale: [1, 1, 1] },
+        id: 'sobj_sun000000000000000000', kind: 'camera', name: 'sun', order: scene.objects.length,
+        camera: { focal_mm: 35, depth_of_field: true, f_stop: 1.4, focus: 2 },
+      })
+    },
+  },
+  'room-fog': {
+    from: 'room',
+    edit(scene) {
+      scene.environment.fog = { color: '#202428', near: 1, far: 12 }
+    },
+  },
+}
+
+/** The lit pictures of a scene that W2 must not change: its exports' lit images and the rendered viewport. */
+async function litPictures(gpu, name, edit) {
+  const pictures = (await exportReference(gpu, name, { edit })).images.filter((img) => img.pass === 'lit')
+  const [view] = await viewportLooks(gpu, name, [['最终渲染', 'lit']], edit)
+  return [...pictures, view]
+}
+
+// SCENE_E2E_W2_BASELINE=<dir>: the variants' lit pictures on this machine's
+// GPU, taken before W2 changes the renderer (w2Baseline).
+if (process.env.SCENE_E2E_W2_BASELINE) await check('W2 baseline: the variants’ lit pictures on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W2_BASELINE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', variants: {} }
+    for (const [name, { from, edit }] of Object.entries(w2Variants)) {
+      const files = []
+      for (const img of await litPictures(gpu, from, edit)) {
+        const file = img.file.replace(from, name)
+        await writeFile(`${dir}/${file}`, img.png)
+        files.push(file)
+      }
+      record.variants[name] = { from, files }
+      console.log(`W2 baseline ${name}: ${files.join(', ')}`)
+    }
+    await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W2_SKIES=<dir> (AC-W2-6): under the procedural and the solid sky,
+// lit exports (render_view draws through the same shoot) and the rendered
+// viewport are what they were before W2, pixel for pixel, on this machine's
+// GPU: the reference scenes against W1's pictures, the variants against
+// w2Baseline. Sheets of any image that is not go to the directory.
+if (process.env.SCENE_E2E_W2_SKIES) await check('W2 other skies: lit pictures are unchanged on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W2_SKIES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const same = async (base, file, png) => {
+      const m = await compareShots(page, readFileSync(new URL(file, base)), png, 2)
+      if (m.error || m.over > 0) {
+        off.push(`${file}: ${m.error ?? `${m.over.toFixed(4)}% of pixels off by more than 2`}`)
+        if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}.jpg`, m.sheet)
+      }
+    }
+    for (const name of referenceNames) for (const img of await litPictures(gpu, name)) await same(w1After, img.file, img.png)
+    for (const [name, { from, edit }] of Object.entries(w2Variants)) {
+      for (const img of await litPictures(gpu, from, edit)) await same(w2Baseline, img.file.replace(from, name), img.png)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [])
 })
 
 // --- R1 AC-R1-3: the same pictures in a hidden tab ------------------------------

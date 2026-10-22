@@ -4,7 +4,10 @@
 
 ## 1. 基线
 
-- [ ] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取 AC-W2-6 的基线，存进 `discovery/research/baseline`：参考场景（程序化天空的正午与黄昏、纯色天空加雾、室内壁灯、材质板）的 `lit` 导出、`render_view` 的 `lit` 和最终渲染的视口截图；另加一台程序化天空太阳入画、打开景深的摄像机；R1 性能场景在程序化天空下的视口帧时间（AC-W2-11 对照用）。e2e 新增「W2 other skies」用例，与基线逐像素比较（差 > 2 的像素为 0）。完成判据：用例在未改动的代码上绿，`baseline.md` 写明场景、机位、设备与测量值
+- [x] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取 AC-W2-6 的基线，存进 `discovery/research/baseline`：参考场景（程序化天空的正午与黄昏、纯色天空加雾、室内壁灯、材质板）的 `lit` 导出、`render_view` 的 `lit` 和最终渲染的视口截图；另加一台程序化天空太阳入画、打开景深的摄像机；R1 性能场景在程序化天空下的视口帧时间（AC-W2-11 对照用）。e2e 新增「W2 other skies」用例，与基线逐像素比较（差 > 2 的像素为 0）。完成判据：用例在未改动的代码上绿，`baseline.md` 写明场景、机位、设备与测量值
+  - 结果见 `discovery/research/baseline.md`。六个参考场景的 `lit` 导出与最终渲染视口直接对照 W1 的 `after/`（在未改动的代码上逐像素相同），不另存；本目录只存三个新场景：`noon-fog`、`room-fog`（两种天空下的雾）和 `noon-sun`（对着太阳、打开景深的摄像机）。雾会把天空连同太阳一起盖住，所以太阳入画单独成一个场景。
+  - e2e 新增「W2 baseline」（`SCENE_E2E_W2_BASELINE`）和「W2 other skies」（`SCENE_E2E_W2_SKIES`），都在本机 GPU 上跑；`referenceScene`、`exportReference`、`viewportLooks` 加了可选的 `edit`，用来在参考场景上做变体。
+  - `render_view` 与导出同经 `shoot` 出图，导出的 `lit` 覆盖它。帧时间四种模式都贴着 120 Hz 的刷新上限，AC-W2-11 在这台设备上按「是否仍在上限内」判断。
 
 ## 2. 数据契约与校验
 

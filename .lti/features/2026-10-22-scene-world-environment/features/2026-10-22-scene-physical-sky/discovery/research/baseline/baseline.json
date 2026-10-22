@@ -1,0 +1,33 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "variants": {
+    "noon-fog": {
+      "from": "noon",
+      "files": [
+        "noon-fog-shot-lit.png",
+        "noon-fog-view-lit.png"
+      ]
+    },
+    "noon-sun": {
+      "from": "noon",
+      "files": [
+        "noon-sun-shot-lit.png",
+        "noon-sun-sun-lit.png",
+        "noon-sun-view-lit.png"
+      ]
+    },
+    "room-fog": {
+      "from": "room",
+      "files": [
+        "room-fog-shot-lit.png",
+        "room-fog-view-lit.png"
+      ]
+    }
+  }
+}
