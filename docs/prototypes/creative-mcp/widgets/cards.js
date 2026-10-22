@@ -251,6 +251,20 @@ window.Cards = (() => {
 
   return {
     async mount(name) {
+      // 图片加载失败（宿主 CSP 拦截、签名过期）时换成占位，不露出浏览器的破图图标
+      el.addEventListener(
+        'error',
+        (e) => {
+          const img = e.target
+          if (img.tagName !== 'IMG') return
+          const box = document.createElement('div')
+          box.className = 'img-fail'
+          box.style.cssText = img.style.cssText
+          box.textContent = img.closest('.refs') ? '' : '图片没能加载'
+          img.replaceWith(box)
+        },
+        true,
+      )
       render()
       app.on('ui/notifications/tool-result', (r) => {
         s = fromResult(r)

@@ -26,6 +26,11 @@ const PHOTOS = path.join(PROTOTYPES, 'creative-workspace/v4/assets')
 const GEN_MS = Number(process.env.GEN_SECONDS ?? 25) * 1000 // 生成约 25 秒，比真实略长，能看到「进行中」
 const RENDER_MS = 6000
 const NO_STRUCTURED = process.env.NO_STRUCTURED === '1' // 对照实验：不返回 structuredContent（U9）
+// 卡片里的图片怎么给（U11）：
+// - url（默认）：本机 http 地址，CSP resourceDomains 声明本机；
+// - data：直接内联成 data: URI，不走网络，用来确认问题出在网络还是卡片本身；
+// - https：换成公网 https 图床（picsum.photos，图不一样），看宿主是不是只拦本机或 http。
+const PHOTO_MODE = process.env.PHOTO_MODE ?? 'url'
 
 // results.mjs 读取这两个变量，链接和图片换成本机地址；必须在导入之前设置
 process.env.CREATIVE_ORIGIN = ORIGIN
@@ -103,8 +108,22 @@ function toResult(r, { ui }) {
     ],
   }
   if (r.structuredContent && !NO_STRUCTURED) out.structuredContent = r.structuredContent
-  if (ui && r._meta) out._meta = r._meta
+  if (ui && r._meta) out._meta = photoUrls(r._meta)
   return out
+}
+// 按 PHOTO_MODE 改写 _meta 里的图片地址；结构化数据和文字里的链接不动
+const PHOTO_BASE = process.env.CREATIVE_PHOTO_BASE
+const PICSUM = { 2: 1018, 4: 1043, 5: 1027, 8: 1011, 10: 1039, 11: 1015 } // 本地图片编号 → picsum 图片编号
+function photoUrls(v) {
+  if (PHOTO_MODE === 'url') return v
+  if (typeof v === 'string' && v.startsWith(PHOTO_BASE)) {
+    const name = v.slice(PHOTO_BASE.length)
+    if (PHOTO_MODE === 'data') return `data:image/jpeg;base64,${fs.readFileSync(path.join(PHOTOS, name)).toString('base64')}`
+    return `https://picsum.photos/id/${PICSUM[Number(name.match(/\d+/)[0])] ?? 1015}/850/1275`
+  }
+  if (Array.isArray(v)) return v.map(photoUrls)
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, photoUrls(x)]))
+  return v
 }
 function imageData(url) {
   const name = url.split('/').pop()
@@ -121,7 +140,7 @@ function cardHtml(kind) {
 }
 const SERVER_URL = `${ORIGIN}/mcp`
 const UI_META = {
-  csp: { resourceDomains: [ORIGIN], connectDomains: [], frameDomains: [], baseUriDomains: [] },
+  csp: { resourceDomains: [ORIGIN, ...(PHOTO_MODE === 'https' ? ['https://picsum.photos', 'https://fastly.picsum.photos'] : [])], connectDomains: [], frameDomains: [], baseUriDomains: [] },
   prefersBorder: true,
 }
 
@@ -331,6 +350,6 @@ const web = http.createServer(async (req, res) => {
     if (!res.headersSent) res.writeHead(500).end('internal error')
   }
 })
-web.listen(PORT, '127.0.0.1', () => log({ event: 'listening', origin: ORIGIN, mcp: STDIO ? 'stdio' : SERVER_URL }))
+web.listen(PORT, '127.0.0.1', () => log({ event: 'listening', origin: ORIGIN, mcp: STDIO ? 'stdio' : SERVER_URL, photoMode: PHOTO_MODE, noStructured: NO_STRUCTURED }))
 
 if (STDIO) await createServer('stdio').connect(new StdioServerTransport())

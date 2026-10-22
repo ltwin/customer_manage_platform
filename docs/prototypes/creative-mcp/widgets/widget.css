@@ -159,3 +159,12 @@ img { display: block; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* 图片没能加载时的占位：和骨架同底色，但不闪 */
+.img-fail {
+  display: grid; place-items: center; width: 100%; min-height: 28px; border-radius: var(--border-radius-md);
+  background: var(--color-background-secondary); color: var(--color-text-tertiary); font-size: var(--font-text-xs-size, 12px);
+}
+.refs .img-fail { width: 28px; height: 28px; border-radius: var(--border-radius-sm); }
+.item .img-fail { aspect-ratio: 3 / 2; }
+.viewer .img-fail { min-height: 240px; }
