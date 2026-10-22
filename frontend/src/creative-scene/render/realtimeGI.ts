@@ -13,7 +13,7 @@ import { ssgi } from './nodes/SSGINode.js'
 
 // The real-time GI's node graph (R2 design「实时 GI 管线」, Epic「实时 GI」):
 // screen-space indirect light, reflections and AO over the workbench's own
-// lighting, for perspective views of the clay and lit looks.
+// lighting, for perspective views of the lit look.
 //
 //  - An opaque prepass draws the materials as they are (no override: their
 //    roughness and bumped normals count) into packed normal + roughness and
@@ -25,8 +25,8 @@ import { ssgi } from './nodes/SSGINode.js'
 //    「SSGI 降噪」) in the viewport; in a picture to keep, filtered in space
 //    only and averaged over frames (sceneRenderer.ts AccumulateNode): the
 //    recurrent denoiser's output changes slowly from frame to frame, so the
-//    average hardly lowers its noise (R2 tasks 5.1). For lit, the
-//    stochastic SSR with three's own chain.
+//    average hardly lowers its noise (R2 tasks 5.1). The stochastic SSR
+//    with three's own chain.
 //  - The composite (design「合成」) puts the AO on the indirect light only and
 //    the reflections in place of the environment's, then TRAA, outermost of
 //    the temporal nodes, antialiases and steadies the whole.
@@ -51,8 +51,6 @@ for (const name of ['base', 'ambient', 'envSpec']) lightingOutputs.setBlendMode(
 export type RealtimeGIOptions = {
   /** The viewport's, or a picture to keep's: the SSGI's samples, its denoising and the flicker suppression. */
   quality: Quality
-  /** Screen-space reflections: the lit look has them, clay does not (its environment reflection is all it gets). */
-  reflections: boolean
   /** The layers the prepass draws (the opaque scene) and the lighting pass draws (the picture). */
   prepassLayers: Layers
   pictureLayers: Layers
@@ -153,31 +151,27 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const aoOn = uniform(1)
   const ao = mix(float(1), aoClean.r, aoOn)
 
-  let reflection: N = vec3(0)
-  let cover: N = float(0)
-  if (options.reflections) {
-    const reflect: N = own(ssr(output, depth, normal, { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }))
-    const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
-    const specDenoised: N = own(
-      recurrentDenoise(specReprojected, camera, {
-        depth,
-        normal: normalPacked,
-        raw: reflect,
-        metalRoughness: sample((uv: N) => vec2(base.sample(uv).a, normalPacked.sample(uv).a)),
-        mode: 'specular',
-        accumulate: true,
-      }),
-    )
-    specDenoised.alphaSource = 'raylength'
-    // Multi-bounce: the reflection reads last frame's.
-    reflect.setHistory(specDenoised, vel)
-    specReprojected.setHistoryTexture(specDenoised)
-    specReprojected.flickerSuppression.value = flicker
-    specDenoised.flickerSuppression.value = flicker
-    reflection = specDenoised.rgb
-    // Where this frame's ray hit something on screen (design 未决事项 L2).
-    cover = reflect.a.lessThan(MISSED).select(1, 0)
-  }
+  const reflect: N = own(ssr(output, depth, normal, { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }))
+  const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
+  const specDenoised: N = own(
+    recurrentDenoise(specReprojected, camera, {
+      depth,
+      normal: normalPacked,
+      raw: reflect,
+      metalRoughness: sample((uv: N) => vec2(base.sample(uv).a, normalPacked.sample(uv).a)),
+      mode: 'specular',
+      accumulate: true,
+    }),
+  )
+  specDenoised.alphaSource = 'raylength'
+  // Multi-bounce: the reflection reads last frame's.
+  reflect.setHistory(specDenoised, vel)
+  specReprojected.setHistoryTexture(specDenoised)
+  specReprojected.flickerSuppression.value = flicker
+  specDenoised.flickerSuppression.value = flicker
+  const reflection: N = specDenoised.rgb
+  // Where this frame's ray hit something on screen (design 未决事项 L2).
+  const cover: N = reflect.a.lessThan(MISSED).select(1, 0)
 
   // Contact shadows from the main light, along its direction (a spot's as if parallel: the rays are short).
   let contact: N = float(1)

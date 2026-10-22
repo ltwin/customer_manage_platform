@@ -1,6 +1,7 @@
 // R2 AC-R2-10 source images: C5's AC-10 studio set (its lit-repaint-samples.mjs,
-// unchanged but for the renderer), three cameras, clay + line + lit, drawn by
-// the export pipeline (renderShots) once with each renderer, on this machine's GPU.
+// unchanged but for the renderer), three cameras, drawn by the export pipeline
+// (renderShots) on this machine's GPU: clay + line + lit with the workbench, lit
+// with the real-time GI (clay and line art are the workbench's whatever the renderer).
 // Run from frontend/ with Vite on CREATIVE_SCENE_URL (default :5179):  node <this> <out dir>
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -70,7 +71,7 @@ window.__export = async (engine) => {
   doc.scene.render.engine = engine;
   const deps = { read: async () => doc, loadModels: (x) => loadModels(x.scene, x.models), open: (x, look) => openShooter(x.scene, x.models, look) };
   const started = performance.now();
-  const r = await renderShots(deps, doc.id, { cameraObjectIDs: ['sobj_cam_a', 'sobj_cam_b', 'sobj_cam_c'], passes: ['clay', 'line', 'lit'] });
+  const r = await renderShots(deps, doc.id, { cameraObjectIDs: ['sobj_cam_a', 'sobj_cam_b', 'sobj_cam_c'], passes: engine === 'workbench' ? ['clay', 'line', 'lit'] : ['lit'] });
   if (!r.ok) return r;
   const ms = Math.round(performance.now() - started);
   return { ok: true, ms, images: await Promise.all(r.images.map(async (i) => ({ camera: i.camera, pass: i.pass, data: await b64(i.blob) }))) };
@@ -89,7 +90,7 @@ try {
   for (const engine of ['workbench', 'realtime_gi']) {
     const r = await page.evaluate((e) => window.__export(e), engine)
     if (!r.ok) throw new Error(r.message)
-    console.log(`${engine}: 9 images in ${r.ms} ms`)
+    console.log(`${engine}: ${r.images.length} images in ${r.ms} ms`)
     for (const i of r.images) await writeFile(path.join(out, `${engine}-${i.camera.replace('sobj_cam_', '')}-${i.pass}.png`), Buffer.from(i.data, 'base64'))
   }
 } finally {

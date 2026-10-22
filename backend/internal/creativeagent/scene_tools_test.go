@@ -665,10 +665,10 @@ func TestRenderAndExportOfferTheLitLook(t *testing.T) {
 // resolution in set_render, and that render_view and export_shots follow them.
 func TestSceneToolsDescribeRendererAndResolution(t *testing.T) {
 	descs := map[string][]string{
-		editSceneTool: {"engine?:workbench|realtime_gi", "resolution?:1k|2k|4k|8k", "作用于白模和材质光照", "realtime_gi 是实时 GI", "更慢", "path_tracing 还不能选",
+		editSceneTool: {"engine?:workbench|realtime_gi", "resolution?:1k|2k|4k|8k", "只作用于材质光照", "realtime_gi 是实时 GI", "更慢", "path_tracing 还不能选",
 			"只决定 export_shots 导出图的长边", "4k 4096", "换低一档"},
-		renderViewTool:  {"按场景的渲染器（render.engine）画", "长边 1024", "比工作台慢"},
-		exportShotsTool: {"按场景的渲染器渲染", "长边按 render.resolution（缺省 2k 即 2048）", "4K、8K 的白模和材质光照是 JPEG"},
+		renderViewTool:  {"mode:lit 按场景的渲染器（render.engine）画", "素模按工作台", "长边 1024", "比工作台慢"},
+		exportShotsTool: {"材质光照按场景的渲染器，白模和线稿按工作台", "长边按 render.resolution（缺省 2k 即 2048）", "4K、8K 的白模和材质光照是 JPEG"},
 	}
 	for name, wants := range descs {
 		info, err := (&sceneTool{name: name}).Info(t.Context())

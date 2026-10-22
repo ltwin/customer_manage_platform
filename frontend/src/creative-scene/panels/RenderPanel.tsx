@@ -40,6 +40,7 @@ export function RenderPanel({ render, backend, readOnly, display, onRender }: {
             </option>
           </select>
         </label>
+        {display !== 'rendered' && <small>渲染器只作用于「最终渲染」和材质光照导出</small>}
         {render.engine === 'realtime_gi' && <small>只计算画面里可见的表面：画面外和被遮挡的物体不产生反弹光，也不出现在反射里。正交视图按工作台显示。</small>}
       </fieldset>
       <fieldset disabled={readOnly}>
@@ -52,7 +53,7 @@ export function RenderPanel({ render, backend, readOnly, display, onRender }: {
           ))}
         </div>
         <small>导出图长边 {longSideOf(render.resolution)} px</small>
-        {render.resolution === '8k' && render.engine === 'realtime_gi' && <small>8K 实时 GI 每张约需一分钟以上，需要较大显存，设备画不了时导出会失败。</small>}
+        {render.resolution === '8k' && render.engine === 'realtime_gi' && <small>8K 实时 GI 的材质光照每张约需一分钟以上，需要较大显存，设备画不了时导出会失败。</small>}
       </fieldset>
       <fieldset disabled={readOnly}>
         <legend>曝光</legend>

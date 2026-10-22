@@ -23,11 +23,11 @@
 
   | 显示 / 出图 | 透视 | 正交 |
   |---|---|---|
-  | 白模、最终渲染、`clay`、`lit` 导出、`render_view` 的 `clay` / `lit` | `render.engine` | 工作台（视口角标提示） |
-  | 线框、材质预览、`line` 导出 | 工作台 | 工作台 |
+  | 最终渲染、`lit` 导出、`render_view` 的 `lit` | `render.engine` | 工作台（视口角标提示） |
+  | 白模、线框、材质预览、`clay`、`line` 导出、`render_view` 的 `clay` | 工作台 | 工作台 |
 
   导出和 `render_view` 总是透视摄像机。这张表只在一处实现（`render/engines.ts` 的 `effectiveEngine`），视口和离屏渲染端都调用它。
-- **R-3 指纹**：`fingerprintRender` 新增 `engine`（`omitempty`），只在 `clay`、`lit` 且值不是 `workbench` 时赋值；`resolution` 不进指纹。现有的 v1 指纹因此不变，不升指纹版本。
+- **R-3 指纹**：`fingerprintRender` 新增 `engine`（`omitempty`），只在 `lit` 且值不是 `workbench` 时赋值；`resolution` 不进指纹。现有的 v1 指纹因此不变，不升指纹版本。
 - **R-4 写入**：`set_render` 按键合并，「至少写一项」的判断与提示加上 `engine`、`resolution`；`path_tracing` 和未知档位返回 400 并指出字段。
 - **R-5 设备画不了的档位**：导出前所选档位的长边超过设备的纹理上限，或输出分辨率为 4K、8K 时出图丢失设备，都是「当前设备画不了这个档位」：明确失败，不回队、不降分辨率。2K 及以下丢设备沿用 R1：任务回队，手动导出提示重试。
 
@@ -223,7 +223,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 ### 助手
 
 - `scene_tools.go`：
-  - `edit_scene` 的 `set_render` 写法改为 `set_render{render:{mode?:clay|lit, exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）`，并说明：渲染器作用于白模和材质光照（`clay`、`lit` 导出与回看），实时 GI 加入屏幕空间的间接光、反射和接触阴影，出图更慢；输出分辨率只决定导出图的长边；`path_tracing` 还不能用。
+  - `edit_scene` 的 `set_render` 写法改为 `set_render{render:{mode?:clay|lit, exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）`，并说明：渲染器只作用于材质光照（`lit` 导出与回看，白模和线稿总按工作台），实时 GI 加入屏幕空间的间接光、反射和接触阴影，出图更慢；输出分辨率只决定导出图的长边；`path_tracing` 还不能用。
   - `render_view`：说明实时 GI 的回看更慢（多帧累积）。
   - `export_shots`：「长边 2048」改为「长边按 `render.resolution`（缺省 2K，即 2048）；4K、8K 的白模和材质光照是 JPEG」。
 - `instructions/base.md` 的场景段落补一句渲染器与输出分辨率的用法。
@@ -242,6 +242,8 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
   - 出图（`final` 档）的 GI 只做空间滤波，也就是「SSGI 降噪」的退路，视口仍用递归降噪。递归降噪的输出在帧间高度相关，K 帧平均几乎压不下它的噪点：1K 和 `render_view` 下颗粒明显。代价是暗处偏亮（盒子间后墙上部 +25%，递归降噪是 +10%），owner 2026-10-21 选定。
   - K 的选取规则（不超过 K = 256 的 1.2 倍）因为噪点没有平台而达不到，owner 改为按耗时定：K = 64、K_view = 16；N = 12。
 - **接触阴影只压朝向主光的表面**（tasks 7.3）：合成里接触阴影乘在全部直接光上（上面的 `direct × contact`），背对主光的表面会被它连同其他灯光一起压暗，还带颗粒；改为按法线与主光方向的点积淡入，N·L ≤ 0 时不压。代价是主光以外的灯光在朝向主光的面上仍会被主光方向的接触阴影压一点（无法逐灯拆开直接光），与原设计相同。
+- **渲染器只作用于最终渲染和材质光照**（tasks 7.4，owner 2026-10-21 验收前修订，偏离 Epic「渲染器同时作用于白模和最终渲染」，Epic 修订待批）：白模与 Blender 视口里 Rendered 以外的着色一样，总按工作台画，`clay` 导出和 `render_view` 的 `clay` 随之不变；R-2 的表、R-3 的指纹和助手说明一并改。白模 GI 那一支（`Frame.reflections`、`realtimeGI` 的 `reflections` 选项）没有调用方，删去，SSR 随实时 GI 常开。
+- **辅助对象不进预通道**（tasks 7.4）：灯光图标、摄像机视锥、空物体十字和分组坐标轴放进 aside 层（与网格、选中描边同层）：画进图里，但不进 AO 和实时 GI 的预通道，不遮挡、不投接触阴影、不进 SSGI；视口点选的射线也看 aside 层，点选不变（aside 层上的描边、线稿禁用射线，网格没有物件 ID）。之前它们在 layer 0，实时 GI 在它们周围的地面画出大片颗粒状黑斑，工作台的 AO 也算上它们。导出没有辅助对象，不受影响。
 - **时限公式**与**逐帧让出主线程**（Epic 只说「公式由 R2 定」）。
 - **实时 GI 的环境光补偿**单独取值。
 - **后续**：Epic 的「实时 GI 的质量档位、采样数开放给摄影师」仍等 AC-8 结论；正交视图的 SSGI 不做（回落工作台）。
@@ -280,6 +282,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | 有效渲染器、收敛、像素比、正交角标 |
 | `frontend/src/creative-scene/SceneEditor.tsx` | 修改 | 属性区选项卡、`RenderPanel` |
 | `frontend/src/creative-scene/panels/RenderPanel.tsx` | 新增 | 渲染选项卡 |
+| `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | 灯光图标、摄像机视锥、空物体和分组坐标轴放进 aside 层（tasks 7.4） |
 | `frontend/src/creative-scene/panels/EnvironmentPanel.tsx` | 修改 | 去掉曝光 |
 | `frontend/src/creative-scene/panels/ExportDialog.tsx` | 修改 | 显示当前档位 |
 | `frontend/src/creative-scene/state/sceneStore.ts` | 修改 | 属性区选项卡的 UI 状态 |

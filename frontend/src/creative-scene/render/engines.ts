@@ -104,14 +104,16 @@ export type Look = 'solid' | 'rendered' | 'wireframe' | 'preview' | 'clay' | 'li
 
 /**
  * The renderer a picture is drawn with (R2 design R-2): the scene's for the
- * clay and lit looks in a perspective view, the workbench otherwise.
- * Wireframe, material preview and line art are the workbench's; so is an
- * orthographic view, which the real-time GI does not take (the viewport
- * says so). Exports and render_view always look through a perspective camera.
+ * rendered view and the lit look in a perspective view, the workbench
+ * otherwise. Clay, wireframe, material preview and line art are the
+ * workbench's, as Blender's viewport shadings other than Rendered are;
+ * so is an orthographic view, which the real-time GI does not take (the
+ * viewport says so). Exports and render_view always look through a
+ * perspective camera.
  */
 export function effectiveEngine(engine: Engine, look: Look, perspective: boolean): Engine {
   if (!perspective) return 'workbench'
-  return look === 'solid' || look === 'rendered' || look === 'clay' || look === 'lit' ? engine : 'workbench'
+  return look === 'rendered' || look === 'lit' ? engine : 'workbench'
 }
 
 /**

@@ -141,11 +141,11 @@ func TestExposureFingerprintsOnlyLit(t *testing.T) {
 	}
 }
 
-// The renderer counts for the images it draws, clay and lit; line art is the
+// The renderer counts for the image it draws, lit; clay and line art are the
 // workbench's whatever the scene says. The workbench is left out of the hash,
 // so fingerprints from before the field existed still match; the output
 // resolution never counts (R2 design R-3).
-func TestEngineFingerprintsOnlyClayAndLit(t *testing.T) {
+func TestEngineFingerprintsOnlyLit(t *testing.T) {
 	scene := func(render string) Scene {
 		raw := `{"environment":{"sky":{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3},"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
 			"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
@@ -179,7 +179,7 @@ func TestEngineFingerprintsOnlyClayAndLit(t *testing.T) {
 	gi := scene(`{"mode":"lit","engine":"realtime_gi"}`)
 	for _, pass := range Passes {
 		got, _ := Fingerprint(gi, camera, pass)
-		if (got != before[pass]) != (pass != PassLine) {
+		if (got != before[pass]) != (pass == PassLit) {
 			t.Fatalf("realtime_gi, %s: %s", pass, got)
 		}
 		if other, _ := Fingerprint(scene(`{"mode":"lit","engine":"realtime_gi","resolution":"4k"}`), camera, pass); other != got {

@@ -175,7 +175,6 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1,
           engine,
           quality: 'final' as const,
-          reflections: options.kind === 'lit',
           accumulate: frames > 1,
         }
         try {

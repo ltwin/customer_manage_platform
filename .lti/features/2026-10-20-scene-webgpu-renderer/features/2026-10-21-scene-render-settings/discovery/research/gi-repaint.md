@@ -4,7 +4,7 @@
 
 ## 要回答的问题
 
-1. 同一机位用实时 GI 导出的白模和材质光照，交给 gpt-image-2.5 重绘，是否比工作台的更好：光影更可信（反弹光、接触阴影、反射），而结构不变。
+1. 同一机位用实时 GI 导出的材质光照，交给 gpt-image-2.5 重绘，是否比工作台的更好：光影更可信（反弹光、接触阴影、反射），而结构不变。渲染器只作用于材质光照（tasks 7.4），白模和线稿两组相同。
 2. 结论回填 Epic 未决事项 2：新场景的默认渲染器是工作台还是实时 GI。
 
 ## 样例场景与机位
@@ -13,15 +13,15 @@
 
 ## 导出原图
 
-由导出流程生成（`renderShots`，长边 2048），本机 GPU（M4 Pro，Metal）。仓库里存为 JPEG 0.92（产品里 2K 导出是 PNG）。线稿两种渲染器逐字节相同，只存一份。
+由导出流程生成（`renderShots`，长边 2048），本机 GPU（M4 Pro，Metal）。仓库里存为 JPEG 0.92（产品里 2K 导出是 PNG）。白模和线稿总按工作台画（tasks 7.4），只存一份。
 
-| 机位 | 线稿 | 工作台 白模 | 工作台 材质光照 | 实时 GI 白模 | 实时 GI 材质光照 |
-|---|---|---|---|---|---|
-| A | `gi-repaint/a-line.png` | `gi-repaint/workbench-a-clay.jpg` | `gi-repaint/workbench-a-lit.jpg` | `gi-repaint/realtime_gi-a-clay.jpg` | `gi-repaint/realtime_gi-a-lit.jpg` |
-| B | `gi-repaint/b-line.png` | `gi-repaint/workbench-b-clay.jpg` | `gi-repaint/workbench-b-lit.jpg` | `gi-repaint/realtime_gi-b-clay.jpg` | `gi-repaint/realtime_gi-b-lit.jpg` |
-| C | `gi-repaint/c-line.png` | `gi-repaint/workbench-c-clay.jpg` | `gi-repaint/workbench-c-lit.jpg` | `gi-repaint/realtime_gi-c-clay.jpg` | `gi-repaint/realtime_gi-c-lit.jpg` |
+| 机位 | 线稿 | 白模 | 工作台 材质光照 | 实时 GI 材质光照 |
+|---|---|---|---|---|
+| A | `gi-repaint/a-line.png` | `gi-repaint/workbench-a-clay.jpg` | `gi-repaint/workbench-a-lit.jpg` | `gi-repaint/realtime_gi-a-lit.jpg` |
+| B | `gi-repaint/b-line.png` | `gi-repaint/workbench-b-clay.jpg` | `gi-repaint/workbench-b-lit.jpg` | `gi-repaint/realtime_gi-b-lit.jpg` |
+| C | `gi-repaint/c-line.png` | `gi-repaint/workbench-c-clay.jpg` | `gi-repaint/workbench-c-lit.jpg` | `gi-repaint/realtime_gi-c-lit.jpg` |
 
-- 再生成：在 `frontend/` 下开 Vite，运行 `CREATIVE_SCENE_URL=<地址> node <本目录>/gi-repaint/gi-repaint-samples.mjs <输出目录>`；工作台 9 张约 1 s，实时 GI 9 张约 15 s。
+- 再生成：在 `frontend/` 下开 Vite，运行 `CREATIVE_SCENE_URL=<地址> node <本目录>/gi-repaint/gi-repaint-samples.mjs <输出目录>`；工作台 9 张约 1 s，实时 GI 3 张约 10 s。
 - 看图时注意：实时 GI 的背景墙带暖色反弹光，物体底部有接触阴影；人物（米色布料）在主光阴影里偏冷，两种渲染器相同（C5 已说明）。
 - 生成这组图时发现并修了一个实时 GI 的缺陷（tasks 7.3）：背对主光（这里是太阳）的表面被接触阴影整片压暗，满是颗粒，还有一条和画框平行的直边。修正后再生成的就是上表的图。
 
@@ -31,10 +31,10 @@
 
 | 组 | 输入图 | 每组张数 |
 |---|---|---|
-| 1 | 工作台：白模 + 线稿 + 材质光照 | 3 |
-| 2 | 实时 GI：白模 + 线稿 + 材质光照 | 3 |
+| 1 | 白模 + 线稿 + 工作台材质光照 | 3 |
+| 2 | 白模 + 线稿 + 实时 GI 材质光照 | 3 |
 
-共 6 次 gpt-image-2.5 调用。如果 C5 AC-10 的结论是不带材质光照图，两组都去掉第三张图，只比白模的差别。
+共 6 次 gpt-image-2.5 调用。两组只差第三张图；如果 C5 AC-10 的结论是不带材质光照图，渲染器对重绘就没有影响，本条只需记下这一点。
 
 提示词（两组共用，取 C5 AC-10 的组 2）：
 

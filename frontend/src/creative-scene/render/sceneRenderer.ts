@@ -28,8 +28,8 @@ import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 // 'pipeline'), so the transform gizmo, drawn by a pass of its own, is laid
 // over the finished picture in sRGB.
 //
-// The real-time GI (R2) is the other renderer for clay and lit in a
-// perspective view: its own passes and composite (render/realtimeGI.ts),
+// The real-time GI (R2) is the other renderer for the rendered view and lit
+// in a perspective view: its own passes and composite (render/realtimeGI.ts),
 // antialiased by TRAA instead of MSAA, then the same depth of field, tone
 // mapping and overlay. The workbench is drawn exactly as before.
 
@@ -84,8 +84,6 @@ export type Frame = {
   engine?: Engine
   /** Real-time GI: interactive unless said; a picture to keep is final. */
   quality?: Quality
-  /** Real-time GI: screen-space reflections, the lit look's; clay has none. */
-  reflections?: boolean
   /**
    * Averages this renderer's frames after the first convergeFrames, after
    * the depth of field and before tone mapping: an export's or render_view's
@@ -278,11 +276,11 @@ export function mainLight(scene: Object3D): Shadowing | null {
   return sun ?? best
 }
 
-/** How a frame is drawn, which decides the pipeline: the real-time GI with or without reflections, or the workbench. */
-type Look = { wireframe: boolean; blur: boolean; gi: 'off' | 'clay' | 'lit'; quality: Quality; light: Shadowing | null; accumulate: boolean }
+/** How a frame is drawn, which decides the pipeline: the real-time GI or the workbench. */
+type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; light: Shadowing | null; accumulate: boolean }
 
 const keyOf = ({ wireframe, blur, gi, quality, light, accumulate }: Look) =>
-  wireframe ? 'wire' : `${gi === 'off' ? 'shaded' : `gi-${gi}-${quality}:${light?.uuid ?? ''}`}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+  wireframe ? 'wire' : `${gi ? `gi-${quality}:${light?.uuid ?? ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
 
 const accumulateSize = /*@__PURE__*/ new Vector2()
 let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
@@ -506,8 +504,8 @@ export class SceneRenderer {
     let aoOn: { value: number } | null = null
     let dof: Dof | null = null
     let gi: RealtimeGI | null = null
-    if (look.gi !== 'off') {
-      gi = own(realtimeGI(scene, camera, { quality: look.quality, reflections: look.gi === 'lit', prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise, mainLight: look.light }))
+    if (look.gi) {
+      gi = own(realtimeGI(scene, camera, { quality: look.quality, prepassLayers: layers(0), pictureLayers: layers(0, ASIDE_LAYER), noise: fixedNoise, mainLight: look.light }))
       passes = gi.passes
       aoOn = gi.aoOn
       picture = gi.color
@@ -591,14 +589,14 @@ export class SceneRenderer {
     const wireframe = frame.wireframe === true
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     const dof = !wireframe && perspective ? frame.dof : null
-    const gi = frame.engine === 'realtime_gi' && !wireframe && perspective ? (frame.reflections ? 'lit' : 'clay') : 'off'
+    const gi = frame.engine === 'realtime_gi' && !wireframe && perspective
     const look: Look = {
       wireframe,
       blur: dof !== null,
       gi,
       quality: frame.quality ?? 'interactive',
-      light: gi === 'off' ? null : mainLight(this.scene),
-      accumulate: gi !== 'off' && frame.accumulate === true,
+      light: gi ? mainLight(this.scene) : null,
+      accumulate: gi && frame.accumulate === true,
     }
     const key = keyOf(look)
     if (this.built?.key !== key) {

@@ -2,6 +2,8 @@
 
 e2e「R2 performance」（`SCENE_E2E_PERF_R2=<本目录>/perf`；Apple M4 Pro，Chromium 145.0.7632.6，Metal，1600 × 1000、2× 像素，与 R1 的 AC-9 相同）。数据：`perf/perf.json`；R1：`scene-webgpu-pipeline/discovery/research/perf/perf.json`。R0 性能场景是 AC-9 的场景（约 200 个物件、8 种材质、太阳与 4 盏灯）。
 
+> tasks 7.4 之后白模总按工作台画，下文「实时 GI 白模」的视口与导出数据是改动前的记录；实时 GI 只剩最终渲染和材质光照。
+
 ## 结论
 
 | 要求 | 实测 | 结论 |

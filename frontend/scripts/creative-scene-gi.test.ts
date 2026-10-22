@@ -224,14 +224,14 @@ test('TRAA keeps its first previous depth where realtimeGI frees it', () => {
 
 // --- the renderer in effect ---------------------------------------------------------
 
-test('the renderer in effect: the scene’s for clay and lit in perspective, the workbench for the rest', async () => {
+test('the renderer in effect: the scene’s for the rendered view and lit in perspective, the workbench for the rest', async () => {
   const { convergeFrames, effectiveEngine } = await import('../src/creative-scene/render/engines.ts')
-  for (const look of ['solid', 'rendered', 'clay', 'lit'] as const) {
+  for (const look of ['rendered', 'lit'] as const) {
     assert.equal(effectiveEngine('realtime_gi', look, true), 'realtime_gi', look)
     assert.equal(effectiveEngine('realtime_gi', look, false), 'workbench', `${look}, orthographic`)
     assert.equal(effectiveEngine('workbench', look, true), 'workbench', look)
   }
-  for (const look of ['wireframe', 'preview', 'line'] as const) {
+  for (const look of ['solid', 'clay', 'wireframe', 'preview', 'line'] as const) {
     assert.equal(effectiveEngine('realtime_gi', look, true), 'workbench', look)
     assert.equal(effectiveEngine('realtime_gi', look, false), 'workbench', look)
   }

@@ -62,7 +62,7 @@ import { docToView, positionToDoc, positionToView, transformToDoc } from './spac
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraFraming } from './host/framing.ts'
-import { OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
+import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
@@ -277,7 +277,7 @@ export function Viewport(props: ViewportProps) {
         </Canvas>
       )}
       {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
-      {ortho && engineOf(props.scene.render) === 'realtime_gi' && (display === 'solid' || display === 'rendered') && (
+      {ortho && engineOf(props.scene.render) === 'realtime_gi' && display === 'rendered' && (
         <div className="cc-scene-viewbadge" role="status">
           正交视图按工作台显示
         </div>
@@ -445,6 +445,8 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
   useEffect(() => {
     const el = gl.domElement
     const raycaster = new Raycaster()
+    // Light icons, camera frustums and empties are drawn on the aside layer (objects/SceneObjects.tsx).
+    raycaster.layers.enable(ASIDE_LAYER)
     const rect = () => el.getBoundingClientRect()
     const ndc = (x: number, y: number) => {
       const r = rect()
@@ -1123,7 +1125,6 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       wireframe: wire,
       engine,
       quality: 'interactive',
-      reflections: display === 'rendered',
     })
     d.count++
     gpuTestHooks.viewportFrames = d.count

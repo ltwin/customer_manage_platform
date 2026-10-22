@@ -1,6 +1,6 @@
 {
   "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
-  "revision": 6,
+  "revision": 7,
   "id": "scene-render-settings",
   "kind": "feature",
   "assurance": "governed",
@@ -27,7 +27,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-21T17:25:44.922Z",
-  "updatedAt": "2026-10-22T02:43:54.037Z",
+  "updatedAt": "2026-10-22T04:22:16.961Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -59,6 +59,13 @@
       "at": "2026-10-22T02:43:53.343Z",
       "summary": "标定（tasks 5.1）：累积先预热 N=12 帧再平均（修正第一帧 HDR 偏差）；owner 2026-10-21 决定出图的 GI 改为只做空间滤波（design 退路，视口仍递归降噪），K 按耗时定为 64 / K_view 16（design 的 1.2 倍规则因噪点无平台不可达）；记录见 discovery/research/calibration.md",
       "contentHash": "6c3c62da883f2314",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-10-22T04:22:16.009Z",
+      "summary": "owner 2026-10-21 验收前提出：渲染器只作用于最终渲染视口和材质光照（lit）导出，白模、clay 导出、render_view 的 clay 改回工作台（AC-R2-2/3/4/8、specs、design R-2/R-3 随之改，偏离 Epic 已批准口径，Epic 修订待批）；辅助对象（灯光图标、摄像机视锥、空物体）不再进 AO 与实时 GI 的预通道（tasks 7.4）",
+      "contentHash": "9b4f28314e2dc5ad",
       "added": [],
       "removed": []
     }
