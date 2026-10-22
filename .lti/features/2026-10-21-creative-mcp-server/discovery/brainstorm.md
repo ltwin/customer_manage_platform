@@ -51,6 +51,15 @@
 - **D8 Claude 系列只用连接器**：参照 LibTV，Claude 桌面端、网页和登录 claude.ai 账号的 Claude Code 共用账号里的一个连接器，不做 Claude 插件；使用说明全靠服务端 `instructions`。必须有回退路径：Team 成员没有创建连接器的权限时，Claude Code 用本机 `claude mcp add`，桌面端给一段「发给管理员」的文字。
 - **D9 借鉴 LibTV**（见 `research/libtv-plugin.md`）：采纳 L1 接入页、L2 `get_capabilities` 自检、L3 画布交接链接、L5 生成预检 `dry_run`。L4（Codex 插件调大工具超时）和 L8（只发一个生产包）按技术建议采纳。不采纳 L7 细粒度 scope（维持 D5）。预检是 Agent 的可选操作：服务端说明只介绍它的用途，不强制；创作者希望全自动执行时，Agent 可以不再预检（owner 2026-10-22 补充）。
 
+## Owner 决定（2026-10-22 第 4 轮，宿主交互面调研后）
+
+见 `research/host-ui-surfaces.md`。先做原型设计，再修订 Epic。
+
+- **D10 内嵌卡片**：图形界面宿主（ChatGPT、Claude 桌面端和网页）采纳 MCP Apps 内嵌卡片，两家共用一套。文字加链接仍是所有宿主的基础，Codex CLI 和 Claude Code 只有文字加链接。
+- **D11 首批卡片**：生成与任务卡（`generate_node` 含预检、`wait_tasks`），以及镜头卡（`render_view`、`export_shots`）。不做画布卡、`show_canvas`、资产库卡片。
+- **D12 子项归属**：C2 之后单列 `mcp-host-ui`（卡片通信基础 + 生成与任务卡）；镜头卡随 C3。
+- **D13 原型**：静态 HTML 原型 + 假数据活原型（接真实宿主验证渲染与超时）；对外暴露的隧道开之前单独确认。
+
 ## 工作假设（进入设计时由我决定，必要时再提）
 
 - **A1 部署形态**：远程 streamable HTTP MCP，挂在现有 Go server 下（`/mcp`），复用账号隔离与领域服务；不做本地 stdio 进程。理由：SaaS 定位，账号数据都在服务端。
