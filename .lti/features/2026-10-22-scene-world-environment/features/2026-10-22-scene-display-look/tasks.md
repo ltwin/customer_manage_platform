@@ -64,4 +64,6 @@
   - 两个后端：48 行里 46 行在阈值内。超出的两行是 WebGL2 对 WebGPU 的 `noon`、`materials` 材质光照，即 R1 已交 owner 的混凝土气孔硬边，数值比 R1 略低。按「超阈值的图交 owner，不放宽」，没有改阈值。
   - 确定性用例里「实时 GI 下白模与工作台不同」的断言自 R2 7.4 起就不成立，在 `develop` 上同样失败，已改正；改正后用例绿，工作台和实时 GI 都逐像素确定。
   - 帧时间四种模式都在刷新上限，白模最长一帧 17.1 → 9.4 ms。
-- [ ] 8.2 AC-W1-3、AC-W1-4 的 owner 看图材料：参考场景的前后对照（含落日天空和饱和色灯光、背景与视口辅助对象的颜色）；同一组机位 W1 前后的白模交 gpt-image-2.5 重绘（凭证只经环境变量，拿不到时交 owner）。完成判据：样例与记录存进 `discovery/research/redraw` 和 `calibration`，等 owner 结论
+- [x] 8.2 AC-W1-3、AC-W1-4 的 owner 看图材料：参考场景的前后对照（含落日天空和饱和色灯光、背景与视口辅助对象的颜色）；同一组机位 W1 前后的白模交 gpt-image-2.5 重绘（凭证只经环境变量，拿不到时交 owner）。完成判据：样例与记录存进 `discovery/research/redraw` 和 `calibration`，等 owner 结论
+  - 对照图和记录见 `discovery/research/compare.md`、`compare/`。本机没有图像模型凭证，重绘的输入（前后同名的七张白模导出）、提示词写法和记录表已备好，交 owner。
+  - 需要 owner 判断的发现：AgX 下饱和色的饱和度降低约 25–35%（盒子间红墙 0.75 → 0.56，草地 0.57 → 0.38），色相保持。要补救可以像 Blender「Punchy」那样在 AgX 后加饱和度和对比度，但这会改变 Epic design「显示变换」，需先修订 Epic。
