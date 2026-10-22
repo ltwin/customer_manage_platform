@@ -26,7 +26,10 @@
   - 黄金时刻、蓝调时刻与日出日落同一口径：按太阳中心的几何高度（不含折射）判定，用 `SearchAltitude`。
   - 设计挂载点之外：新增 `world/physicalSky.ts`（物理天空的缺省值、`completeSky`、`isPhysical`，不引入 `astronomy-engine`，供编辑器外壳和 `state/apply.ts` 用）；`state/apply.ts` 的 `set_environment` 按服务端的规则补齐物理天空；测试数据 `scripts/fixtures/astro/`（`noaa-sun.json`、`local-time.json`）。
   - 墙钟规则加在 `creative-scene-shading.test.ts` 的同一个检查里，`make check-frontend` 的单测会跑到；`performance.now()` 和 `new Date(时刻)` 不算。
-- [ ] 3.2 先写 `sun_test.go` 与 `testdata/noaa_sun.json`：同一组 NOAA 数据点（角距 ≤ 0.05°，日出日落 ≤ 1 分钟）、时间换算的 20 个用例、上海夏至各时刻与 3.1 的前端结果相差 ≤ 1 分钟、北极圈内的极昼和极夜（省略到不了的项，给出 `polar`）、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `sun`，手动模式、程序化天空、没写环境的编辑不带。再新增 `sun.go`，改 `agent.go` 的 `SceneRead`、`AgentReadInTx`、`EditResult`、`AgentEditInTx`。完成判据：测试先红后绿，`check-go` 通过
+- [x] 3.2 先写 `sun_test.go` 与 `testdata/noaa_sun.json`：同一组 NOAA 数据点（角距 ≤ 0.05°，日出日落 ≤ 1 分钟）、时间换算的 20 个用例、上海夏至各时刻与 3.1 的前端结果相差 ≤ 1 分钟、北极圈内的极昼和极夜（省略到不了的项，给出 `polar`）、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `sun`，手动模式、程序化天空、没写环境的编辑不带。再新增 `sun.go`，改 `agent.go` 的 `SceneRead`、`AgentReadInTx`、`EditResult`、`AgentEditInTx`。完成判据：测试先红后绿，`check-go` 通过
+  - `sun.go` 直接按 UTC 时刻算 NOAA 的 `calcAzEl`（当地时区在真太阳时里抵消），当天各时刻逐分钟取几何高度、线性插值，正午取最高的一分钟再按抛物线细化。新增 `TestLocalTimeIsCompatible`、`TestSunMatchesNOAA`（400 多个可见点角距 ≤ 0.05°，日出日落 ≤ 1 分钟）、`TestSunReportMatchesTheFrontend`（上海夏至各时刻与前端相差 ≤ 1 分钟）、`TestSunReportAtThePlaceAndTime`、`TestSunReportAboveTheArcticCircle`、`TestSunReportOnlyForALocatedPhysicalSky`、`TestAgentReadsTheSun`，先编译失败再全绿。
+  - 编辑结果的太阳参考取自这次最后一个 `set_environment` 的环境（补齐后），不再读一次快照。
+  - 测试数据 `testdata/noaa_sun.json`、`local_time.json` 拷自前端的 `scripts/fixtures/astro/`；`sun_times_frontend.json` 是 3.1 前端单测钉住的上海夏至结果。
 
 ## 4. 物理大气
 

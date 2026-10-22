@@ -714,3 +714,59 @@ func TestAgentMaterialSlots(t *testing.T) {
 		}
 	}
 }
+
+// W2: under a physical sky placed by location, the assistant reads the sun
+// reference with the scene, and gets it back from an edit that wrote the
+// environment.
+func TestAgentReadsTheSun(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	sunOf := func(v any) map[string]any {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		sun, _ := m["sun"].(map[string]any)
+		return sun
+	}
+	read := func() (creativescene.SceneRead, map[string]any) {
+		r, err := agentRead(t, f.a, creativescene.ReadInput{DocumentID: doc})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r, sunOf(r)
+	}
+	edit := func(ops ...any) any {
+		r, _ := read()
+		out, err := agentEdit(t, f.a, creativescene.EditInput{DocumentID: doc, RunID: "ccrn_agent", BasedOn: r.Revision, Operations: raws(t, ops...)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if _, sun := read(); sun != nil {
+		t.Fatalf("procedural sky: %v", sun)
+	}
+	env := func(sky map[string]any) op {
+		return op{"op": "set_environment", "environment": map[string]any{"sky": sky, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}}
+	}
+	chengdu := map[string]any{"kind": "physical", "date": "2026-10-01", "local_time": "18:10", "latitude_deg": 30.6598, "longitude_deg": 104.0633, "timezone": "Asia/Shanghai", "place": "成都"}
+	written := sunOf(edit(env(chengdu)))
+	if written == nil || written["sunset"] == nil || written["evening"] == nil || written["scene_azimuth_deg"] == nil {
+		t.Fatalf("the edit that wrote the environment: %v", written)
+	}
+	if _, sun := read(); sun == nil || sun["sunset"] != written["sunset"] {
+		t.Fatalf("read %v, written %v", sun, written)
+	}
+	if moved := sunOf(edit(op{"op": "set_render", "render": map[string]any{"mode": "lit"}})); moved != nil {
+		t.Fatalf("an edit that left the environment: %v", moved)
+	}
+	chengdu["sun_mode"] = "manual"
+	if manual := sunOf(edit(env(chengdu))); manual != nil {
+		t.Fatalf("manual mode: %v", manual)
+	}
+}

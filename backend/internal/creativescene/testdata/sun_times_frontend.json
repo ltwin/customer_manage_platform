@@ -1,0 +1,12 @@
+{
+ "source": "frontend world/astro.ts sunTimes (astronomy-engine 2.1.19), pinned in frontend/scripts/creative-scene-astro.test.ts",
+ "sky": {"latitude_deg": 31.2304, "longitude_deg": 121.4737, "timezone": "Asia/Shanghai", "date": "2026-06-21"},
+ "times": {
+  "solar_noon": "11:56",
+  "sunrise": "04:50",
+  "sunset": "19:01",
+  "morning": {"blue_hour": ["04:22", "04:33"], "golden_hour": ["04:33", "05:26"]},
+  "evening": {"golden_hour": ["18:26", "19:18"], "blue_hour": ["19:18", "19:29"]}
+ },
+ "noon_elevation_deg": 82.21
+}

@@ -366,11 +366,13 @@ type ReadInput struct {
 // SceneRead is what read_scene returns. Revision is the baseline the next
 // write may be based on.
 type SceneRead struct {
-	DocumentID            string            `json:"document_id"`
-	Title                 string            `json:"title"`
-	Revision              int64             `json:"revision"`
-	Environment           Environment       `json:"environment"`
-	Render                Render            `json:"render"`
+	DocumentID  string      `json:"document_id"`
+	Title       string      `json:"title"`
+	Revision    int64       `json:"revision"`
+	Environment Environment `json:"environment"`
+	Render      Render      `json:"render"`
+	// Sun is where a physical sky placed by location puts the sun (sun.go).
+	Sun                   *SunReport        `json:"sun,omitempty"`
 	ObjectCount           int               `json:"object_count"`
 	Brief                 bool              `json:"brief,omitempty"`
 	Objects               []ObjectView      `json:"objects"`
@@ -485,7 +487,7 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 		return SceneRead{}, err
 	}
 	out := SceneRead{DocumentID: in.DocumentID, Title: cur.Title, Revision: cur.Revision,
-		Environment: scene.Environment, Render: scene.Render, ObjectCount: len(scene.Objects), Objects: []ObjectView{}}
+		Environment: scene.Environment, Render: scene.Render, Sun: sunReport(scene.Environment.Sky), ObjectCount: len(scene.Objects), Objects: []ObjectView{}}
 	listed := scene.Objects
 	if len(in.ObjectIDs) > 0 {
 		idx := indexObjects(scene.Objects)
@@ -772,10 +774,13 @@ type EditInput struct {
 
 // EditResult is a written edit. WrittenRevision only reports what was
 // written: it is never a baseline, since others may have written before it.
+// Sun is the sun reference of an environment the edit wrote, so the
+// assistant learns where the sun went without reading again.
 type EditResult struct {
-	WrittenRevision int64    `json:"written_revision"`
-	ChangedObjects  []string `json:"changed_objects"`
-	ChangedCount    int      `json:"changed_count"`
+	WrittenRevision int64      `json:"written_revision"`
+	ChangedObjects  []string   `json:"changed_objects"`
+	ChangedCount    int        `json:"changed_count"`
+	Sun             *SunReport `json:"sun,omitempty"`
 }
 
 // maxListedEntries bounds the lists an edit or revert result carries; counts
@@ -898,7 +903,24 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		return nil, err
 	}
 	changed := changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))
-	return EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed)}, nil
+	return EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed),
+		Sun: writtenSun(in.Operations, kinds)}, nil
+}
+
+// writtenSun is the sun reference of the environment the last
+// set_environment of a written edit stored.
+func writtenSun(ops []json.RawMessage, kinds []string) *SunReport {
+	for i := len(kinds) - 1; i >= 0; i-- {
+		if kinds[i] != "set_environment" {
+			continue
+		}
+		var op setEnvironmentOp
+		if json.Unmarshal(ops[i], &op) != nil || completeSky(&op.Environment.Sky) != nil {
+			return nil
+		}
+		return sunReport(op.Environment.Sky)
+	}
+	return nil
 }
 
 func changedObjects(units []string) []string {
