@@ -1,0 +1,102 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { BOTTOM, coefficients, groundRadius, luminance, MIE_ABSORPTION, MIE_ABSORPTION_TINT, PRESETS, presetOf, SUN_LUX, sunTint, viewRadius, type Vec3 } from '../src/creative-scene/world/atmosphere/constants.ts'
+import { CpuAtmosphere } from '../src/creative-scene/world/atmosphere/cpu.ts'
+import { environmentEV, environmentScale, ev100, exposureScale, isoThirds, nearestStep, newCameraExposure, shutterThirds } from '../src/creative-scene/world/exposure.ts'
+
+// W2: the physical sky's light on the CPU and the exposure arithmetic
+// (AC-W2-3, AC-W2-4, design「曝光」「太阳的亮度与色温」).
+
+const sunAbove: Vec3 = [SUN_LUX, SUN_LUX, SUN_LUX]
+const mu = (elevationDeg: number) => Math.sin((elevationDeg * Math.PI) / 180)
+
+test('a clear sky with the sun at 60° lights level ground with 100–130 klux, most of it the sun', () => {
+  const d = new CpuAtmosphere(PRESETS.clear).daylight(mu(60), sunAbove)
+  assert.ok(d.horizontal > 100_000 && d.horizontal < 130_000, `${d.horizontal.toFixed(0)} lux`)
+  assert.ok(luminance(d.sky) > 8_000 && luminance(d.sky) < 25_000, `sky ${luminance(d.sky).toFixed(0)} lux`)
+  assert.ok(d.sky[2] > d.sky[0], 'the sky light is blue')
+})
+
+test('haze darkens the day, a plateau brightens it; behind the ground the sun is gone', () => {
+  const at40 = (p: (typeof PRESETS)[keyof typeof PRESETS]) => new CpuAtmosphere(p).daylight(mu(40), sunAbove)
+  const clear = at40(PRESETS.clear)
+  assert.ok(at40(PRESETS.haze).horizontal < clear.horizontal * 0.9, 'haze')
+  assert.ok(at40(PRESETS.highland).horizontal > clear.horizontal, 'plateau')
+  const dust = at40(PRESETS.dust)
+  assert.ok(dust.sun[0] / dust.sun[2] > (clear.sun[0] / clear.sun[2]) * 1.5, 'dust turns the sun yellow')
+  const below = new CpuAtmosphere(PRESETS.clear).daylight(mu(-3), sunAbove)
+  assert.deepEqual(below.sun, [0, 0, 0])
+  assert.ok(below.horizontal > 0 && below.horizontal < 1000, `twilight ${below.horizontal.toFixed(1)} lux`)
+})
+
+test('the ground under the scene is at its altitude, the camera 10 m above it; Mie absorption is not normalised', () => {
+  assert.equal(groundRadius(PRESETS.highland), BOTTOM + 4)
+  assert.ok(Math.abs(viewRadius(PRESETS.highland) - (BOTTOM + 4.01)) < 1e-9)
+  assert.deepEqual(coefficients(PRESETS.clear).mieAbsorption, MIE_ABSORPTION_TINT.map((t) => t * MIE_ABSORPTION))
+  assert.equal(presetOf({ altitude_m: 0, air_density: 1, dust_density: 12, ozone_density: 1 }), 'haze')
+  assert.equal(presetOf({ altitude_m: 0, air_density: 1, dust_density: 13, ozone_density: 1 }), null)
+})
+
+test('EV100 is log₂(N² / t) − log₂(S / 100); sunny 16 is about 15', () => {
+  assert.ok(Math.abs(ev100(16, 1 / 125, 100) - 14.97) < 0.01)
+  assert.ok(Math.abs(ev100(2.8, 1 / 4000, 100) - 14.94) < 0.01, 'the camera defaults')
+  assert.ok(Math.abs(ev100(2.8, 1 / 30, 1600) - 3.88) < 0.01)
+  assert.equal(exposureScale(0), 1 / 1.2)
+  assert.ok(Math.abs(exposureScale(15) * 2 ** 15 * 1.2 - 1) < 1e-12)
+})
+
+test('shutters and ISOs go in thirds of a stop', () => {
+  for (const steps of [shutterThirds, isoThirds]) {
+    for (let i = 1; i < steps.length; i++) {
+      const third = Math.log2(steps[i] / steps[i - 1])
+      assert.ok(third > 0.2 && third < 0.48, `${steps[i - 1]} → ${steps[i]}: ${third.toFixed(2)} stops`)
+    }
+  }
+  assert.deepEqual([shutterThirds[0], shutterThirds.at(-1), isoThirds[0], isoThirds.at(-1)], [1 / 8000, 30, 25, 102400])
+  assert.equal(nearestStep(shutterThirds, 1 / 522), 1 / 500)
+})
+
+test('a camera added under a physical sky is as bright as the viewport, within a third of a stop, as far as f/2.8 reaches', () => {
+  const off = (ev: number) => {
+    const e = newCameraExposure(ev, 2.8)
+    return { ...e, off: ev100(2.8, e.shutter_s, e.iso) - ev }
+  }
+  assert.deepEqual(newCameraExposure(12, 2.8), { iso: 100, shutter_s: 1 / 500 })
+  assert.deepEqual(newCameraExposure(-5, 2.8), { iso: 800, shutter_s: 30 }, 'no shutter is long enough: the ISO makes up the rest')
+  // The marked thirds are rounded (0.6 s is 0.63 s): the nearest is up to about a fifth of a stop off.
+  for (let ev = -11.9; ev <= 17.9; ev += 0.1) assert.ok(Math.abs(off(ev).off) <= 0.25, `EV ${ev.toFixed(1)}: ${JSON.stringify(off(ev))}`)
+  const bright = off(19)
+  assert.deepEqual([bright.iso, bright.shutter_s], [25, 1 / 8000])
+  assert.ok(bright.off < -1 && bright.off > -1.2, 'past the reach it is darker, the known limit')
+})
+
+test('the sun at 6500 K is neutral; warmer and cooler change the colour, not the brightness', () => {
+  for (const v of sunTint(6500)) assert.ok(Math.abs(v - 1) < 1e-9)
+  for (const k of [2000, 3200, 5000, 8000, 12000]) {
+    const c = sunTint(k)
+    assert.ok(Math.abs(luminance(c) - 1) < 1e-9, `${k} K luminance ${luminance(c)}`)
+    assert.ok(c.every((v) => v >= 0), `${k} K: ${c.join(', ')}`)
+  }
+  const warm = sunTint(2000)
+  assert.ok(warm[0] > warm[1] && warm[1] > warm[2], 'warm: red over blue')
+  const cool = sunTint(12000)
+  assert.ok(cool[2] > cool[0], 'cool: blue over red')
+})
+
+test('s_env keeps noon and night near 1 in half floats; it clamps at EV −12 and 20', () => {
+  assert.equal(environmentEV(1e-9), -12)
+  assert.equal(environmentEV(1e12), 20)
+  const noon = new CpuAtmosphere(PRESETS.clear).daylight(mu(60), sunAbove)
+  // The sky's radiance at noon, stored × s_env: about E / π scaled down to O(0.1–1).
+  const stored = (luminance(noon.sky) / Math.PI) * environmentScale(noon.horizontal)
+  assert.ok(stored > 0.01 && stored < 2, String(stored))
+})
+
+test('the CPU atmosphere is quick enough to follow a slider (measured, not asserted: design targets 30 ms and 3 ms on the reference device)', () => {
+  const t0 = performance.now()
+  const cpu = new CpuAtmosphere(PRESETS.haze)
+  const t1 = performance.now()
+  for (let i = 0; i < 5; i++) cpu.daylight(mu(10 + i), sunAbove)
+  const t2 = performance.now()
+  console.log(`CpuAtmosphere: atmosphere change ${(t1 - t0).toFixed(1)} ms, time change ${((t2 - t1) / 5).toFixed(2)} ms`)
+})
