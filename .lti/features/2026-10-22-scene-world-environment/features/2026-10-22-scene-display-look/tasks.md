@@ -48,7 +48,8 @@
 
 ## 6. 环境提示
 
-- [ ] 6.1 `EnvironmentPanel` 新增 `display` 参数，不在最终渲染时显示「环境在「最终渲染」里生效」，写法沿用 `LightFields.tsx`、`RenderPanel.tsx`；`SceneEditor.tsx` 传入 `display`。先写 e2e：白模、材质预览、线框下打开「环境」选项卡看到提示且仍能编辑，最终渲染下没有提示。完成判据：用例绿
+- [x] 6.1 `EnvironmentPanel` 新增 `display` 参数，不在最终渲染时显示「环境在「最终渲染」里生效」，写法沿用 `LightFields.tsx`、`RenderPanel.tsx`；`SceneEditor.tsx` 传入 `display`。先写 e2e：白模、材质预览、线框下打开「环境」选项卡看到提示且仍能编辑，最终渲染下没有提示。完成判据：用例绿
+  - 提示放在选项卡最上方，与灯光、渲染选项卡的 `<small>` 提示同样写法。e2e「W1 environment tab」：去掉提示时失败，加上后绿。
 
 ## 7. 助手与文档
 

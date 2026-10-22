@@ -3499,6 +3499,28 @@ await check('W1 clay: the sun, the sky, fog, ambient and a shadowing lamp change
   await context.close()
 })
 
+await check('W1 environment tab: outside the rendered view it says the environment shows there, and still edits', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '环境' }).click()
+  const tab = page.getByRole('tabpanel', { name: '环境' })
+  const hint = tab.getByText('环境在「最终渲染」里生效', { exact: true })
+  for (const mode of ['白模', '材质预览', '线框']) {
+    await shading(page, mode)
+    await hint.waitFor()
+  }
+  await shading(page, '最终渲染')
+  await hint.waitFor({ state: 'detached' })
+  await shading(page, '白模')
+  const elevation = tab.getByRole('spinbutton', { name: '太阳高度（°）' })
+  await elevation.fill('20')
+  await elevation.press('Enter')
+  await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 20, 'edited in clay')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- 3.4 calibration: the reference scenes ----------------------------------
 
 /** A yard: a white box, a concrete wall, a wooden crate and a metal ball on the ground. */

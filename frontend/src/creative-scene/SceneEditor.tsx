@@ -996,6 +996,7 @@ export default function SceneEditor({
                   <EnvironmentPanel
                     environment={shown.environment}
                     readOnly={readOnly}
+                    display={display}
                     onEnvironment={(environment, text, merge) => edit([{ op: 'set_environment', environment }], text, merge ? { merge } : undefined)}
                   />
                 ) : (
