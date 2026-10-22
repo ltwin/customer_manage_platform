@@ -1,12 +1,12 @@
 {
   "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
-  "revision": 7,
+  "revision": 9,
   "id": "scene-render-settings",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-webgpu-renderer",
   "designBinding": {
-    "version": 3,
+    "version": 4,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -27,26 +27,39 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-21T17:25:44.922Z",
-  "updatedAt": "2026-10-22T04:22:16.961Z",
+  "updatedAt": "2026-10-22T06:49:35.460Z",
   "risk": {
     "factors": [
-      "broad-impact",
-      "perf-sensitive"
+      "perf-sensitive",
+      "broad-impact"
     ]
   },
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-21T18:03:43.275Z",
-      "contentHash": "5e4631c33f9f8333"
+      "at": "2026-10-22T06:49:35.263Z",
+      "contentHash": "9b4f28314e2dc5ad"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-21T18:03:43.275Z",
-      "contentHash": "3b135a40b1de585d"
+      "at": "2026-10-22T06:49:35.263Z",
+      "contentHash": "b0e57fc87eb8240d"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-21T18:03:43.275Z",
+      "contentHash": "5e4631c33f9f8333",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-21T18:03:43.275Z",
+      "contentHash": "3b135a40b1de585d",
+      "role": "design"
+    }
+  ],
   "revisions": [
     {
       "at": "2026-10-22T01:52:05.238Z",
