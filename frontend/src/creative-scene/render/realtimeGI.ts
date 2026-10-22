@@ -1,4 +1,4 @@
-import { HalfFloatType, UnsignedByteType, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
+import { DirectionalLight as RayLight, HalfFloatType, UnsignedByteType, Vector3, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
 import { convertToTexture, float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, roughness, sample, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
 import { PassNode, type Node, type TextureNode, type UniformNode } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -182,11 +182,31 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // Contact shadows from the main light, along its direction (a spot's as if parallel: the rays are short).
   let contact: N = float(1)
   if (options.mainLight) {
-    // Typed for a directional light; it reads only the light's position and its target's.
-    const shadow: N = own(sss(depth, camera, options.mainLight as DirectionalLight))
+    const main = options.mainLight
+    // SSSNode traces maxDistance times light − target, not made a unit: the sun stands 60 m from its target
+    // (objects/Lighting.tsx), and its rays would run 6 m. It traces along a stand-in a unit from the origin,
+    // set to the main light's direction every frame, which also gives that direction in view space.
+    const ray = new RayLight()
+    ray.matrixAutoUpdate = false
+    const at = new Vector3()
+    const to = new Vector3()
+    const toLight = uniform(new Vector3())
+    const shadow: N = own(sss(depth, camera, ray))
+    const before = shadow.updateBefore.bind(shadow)
+    shadow.updateBefore = (frame: unknown) => {
+      main.updateWorldMatrix(true, false)
+      main.target.updateWorldMatrix(true, false)
+      at.setFromMatrixPosition(main.matrixWorld).sub(to.setFromMatrixPosition(main.target.matrixWorld)).normalize()
+      ray.matrixWorld.makeTranslation(at)
+      toLight.value.copy(at).transformDirection(camera.matrixWorldInverse)
+      return before(frame)
+    }
     // A new offset every frame, which TRAA and the accumulation average.
     shadow.useTemporalFiltering = true
-    contact = shadow.r
+    // Only where the main light reaches: the composite darkens all the direct light by it, and a surface turned
+    // away from the main light (its rays start inside it) shaded every other light on it in grain, cut off
+    // where the rays left the screen (R2 tasks 7.3, the studio set's back wall with the sun behind it).
+    contact = mix(float(1), shadow.r, normal.dot(toLight).mul(4).clamp(0, 1))
   }
 
   // Where the lighting pass took a material apart and the prepass saw a surface (not the background).
