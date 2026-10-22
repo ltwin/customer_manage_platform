@@ -319,8 +319,13 @@ export default function AgentsPage() {
                         key={c.id}
                         c={c}
                         now={now}
-                        onRevoked={() =>
-                          setLoad({ ...load, items: load.items.filter((item) => item.id !== c.id) })
+                        // 断开的连接留在原处显示「已断开」，下一次刷新列表时才移走。
+                        onRevoked={(revoked) =>
+                          setLoad((prev) =>
+                            prev.kind === 'ready'
+                              ? { ...prev, items: prev.items.map((item) => (item.id === revoked.id ? revoked : item)) }
+                              : prev,
+                          )
                         }
                       />
                     ))}
