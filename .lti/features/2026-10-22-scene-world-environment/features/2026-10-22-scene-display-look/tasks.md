@@ -39,7 +39,12 @@
 
 ## 5. 最终渲染重新标定
 
-- [ ] 5.1 只调 `litLook.ts` 的 `SUN_MAX`、`SKY_SHARE`、`AMBIENT_FILL`、`AMBIENT_FILL_GI`，让正午、黄昏 +2、室内壁灯和材质板的整幅与地面平均亮度与 1.1 的基线相差 ≤ 10%；复核 `NEW_LIGHT_INTENSITY`；更新 `creative-scene-lighting.test.ts`；e2e「calibration」改为 AgX 下的区间并加入材质板，第 3592、3653 行改为对照本子项的新基线。完成判据：单测和「calibration」用例绿，区间修订理由与前后对照图存进 `discovery/research/calibration`；常量无法同时满足所有场景时逐项列出差距交 owner
+- [x] 5.1 只调 `litLook.ts` 的 `SUN_MAX`、`SKY_SHARE`、`AMBIENT_FILL`、`AMBIENT_FILL_GI`，让正午、黄昏 +2、室内壁灯和材质板的整幅与地面平均亮度与 1.1 的基线相差 ≤ 10%；复核 `NEW_LIGHT_INTENSITY`；更新 `creative-scene-lighting.test.ts`；e2e「calibration」改为 AgX 下的区间并加入材质板，第 3592、3653 行改为对照本子项的新基线。完成判据：单测和「calibration」用例绿，区间修订理由与前后对照图存进 `discovery/research/calibration`；常量无法同时满足所有场景时逐项列出差距交 owner
+  - 采用 `SUN_MAX` 3.2、`SKY_SHARE` 0.35、`AMBIENT_FILL` 0.25、`AMBIENT_FILL_GI` 0.2；五组可比的参考场景整幅和地面都在基线的 10% 以内（最大是 `dusk` 地面 −7.2%），过程见 `discovery/research/calibration.md`。
+  - e2e「calibration」加入材质板，并断言四个场景的整幅和地面都在 W1 之前的 10% 以内；原有的绝对区间仍然成立，没有修订。「AC-4: Shift+A」的亮度阈值按 AgX 换算为 177（理由见 calibration.md）。
+  - 新增 opt-in 用例 `SCENE_E2E_GI_FILL=1`，判定实时 GI 相对工作台的亮度变化与 W1 之前相差不超过 5 个百分点。R2 记录的数值用的是另一种测法，W1 之前的值在 `develop` 上按同一测法重测。
+  - `NEW_LIGHT_INTENSITY` 不变：室内参考场景的壁灯就是新点光的缺省强度 40 cd，亮度与基线相差 2%。`creative-scene-lighting.test.ts` 的断言跟着常量走，不用改。
+  - 第 3592、3653 行（现已移位）对照 R0 基线的 `SCENE_E2E_GPU` 用例，要等白模方案定下（4.4）后再截新基线，移到 8.1。
 
 ## 6. 环境提示
 

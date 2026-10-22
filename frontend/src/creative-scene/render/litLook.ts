@@ -7,26 +7,35 @@ import type { Engine } from './engines.ts'
 // within one scene: sun, sky light and ambient fill. How bright a scene is
 // overall is its own exposure compensation (render.exposure_ev). Calibrated
 // on the reference scenes (design 未决事项 1, the e2e「calibration」check):
-// a clear noon at EV 0, dusk at +2, a room lit by two 40 cd lamps at 0.
+// a clear noon at EV 0, dusk at +2, a room lit by two 40 cd lamps at 0, and
+// again under AgX (W1 scene-display-look tasks 5.1) to keep each scene's
+// mean brightness within 10% of what it was under ACES Filmic: AgX keeps
+// mid grey but lowers the lights and lifts the darks, so the sun and the
+// sky went up and the ambient fill down.
 
-/** The sun's brightness high in the sky (luminance in three.js units, on a surface facing it). */
-export const SUN_MAX = 2.2
+/** The sun's brightness high in the sky (luminance in three.js units, on a surface facing it); 2.2 under ACES Filmic. */
+export const SUN_MAX = 3.2
 /**
  * The sky's light on level ground against the sun's, on the reference clear
- * noon (sun 55° up, turbidity 3): about a quarter, as in a clear-day photograph.
+ * noon (sun 55° up, turbidity 3). A quarter under ACES Filmic, as in a
+ * clear-day photograph; a third under AgX, which took the dusk ground's light,
+ * mostly the sky's, down more than the rest.
  */
-export const SKY_SHARE = 0.25
-/** The sky map lights already; the scene's ambient only fills shadows a little. */
-export const AMBIENT_FILL = 0.5
+export const SKY_SHARE = 0.35
+/** The sky map lights already; the scene's ambient only fills shadows a little (0.5 under ACES Filmic, whose darks were darker). */
+export const AMBIENT_FILL = 0.25
 /**
  * The fill under the real-time GI (R2 design「合成」), whose bounced light
  * the workbench's fill stood in for. Calibrated on the room and noon
  * reference scenes, their average brightness within 10% of the workbench's
  * (R2 tasks 1.2: room +5.8%, noon −3.0%; anywhere from 0.25 to 0.5 stays
- * within, this is the most even). The box room, lit by a spot and almost no
- * ambient, is brighter by its bounce, which no fill takes back.
+ * within). The box room, lit by a spot and almost no ambient, is brighter by
+ * its bounce, which no fill takes back. 0.35 under ACES Filmic; under AgX it
+ * follows the workbench's fill down, and the lit exports stay as much
+ * brighter or darker than the workbench's as before (the e2e
+ * SCENE_E2E_GI_FILL check: room +7.8%, noon −16.6%, box room +37.6%).
  */
-export const AMBIENT_FILL_GI = 0.35
+export const AMBIENT_FILL_GI = 0.2
 
 /** The ambient fill of the lit look for a renderer. */
 export const ambientFill = (engine: Engine) => (engine === 'realtime_gi' ? AMBIENT_FILL_GI : AMBIENT_FILL)

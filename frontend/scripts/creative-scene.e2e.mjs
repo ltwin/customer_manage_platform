@@ -3035,8 +3035,9 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   server.external([{ op: 'update_objects', updates: [{ object_id: spot.id, transform: { ...spot.transform, position: [-1.5, 1.2, 0], rotation: [-0.1830127018922193, -0.6830127018922193, -0.18301270189221933, 0.6830127018922194] } }] }])
   await page.evaluate(() => window.__invalidate())
   await sleep(600)
-  // Brighter than the grid lines: only what the spot lights.
-  const lit = { level: 200 }
+  // Brighter than the grid lines: only what the spot lights. 177 is where AgX shows the light
+  // ACES Filmic showed as 200 (linear 0.53; W1 discovery/research/agx-vs-aces.md).
+  const lit = { level: 177 }
   const wide = await lumaStats(page, await settledShot(page, box), lit)
   assert.ok(wide.bright > 0.01, `the spot lights the ground (${(wide.bright * 100).toFixed(2)}% lit)`)
 
@@ -3526,11 +3527,16 @@ const room = (server, intensity) => {
   ])
 }
 
-await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd lamps at 0 render in range', async () => {
+/** The calibration scenes' mean brightness before W1 (ACES Filmic, develop f48841a3, SwiftShader): AgX keeps each within 10% (AC-W1-3). */
+const calibrationBeforeW1 = { noon: { all: 195, ground: 199 }, dusk: { all: 150, ground: 165 }, room: { all: 64, ground: 58 }, materials: { all: 183, ground: 191 } }
+
+await check('calibration: noon at EV 0, dusk at +2, a room lit by two 40 cd lamps at 0 and the material board render in range', async () => {
   const cases = [
     { name: 'noon', ev: 0, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 55, sun_azimuth_deg: 135, turbidity: 3 }) },
     { name: 'dusk', ev: 2, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }) },
     { name: 'room', ev: 0, setup: (s) => room(s, 40) },
+    // R0's material board: 15 presets under a 45° procedural sky (scripts/fixtures/scene-reference).
+    { name: 'materials', ev: 0, setup: (s) => referenceScene(s, 'materials') },
   ]
   const seen = {}
   for (const c of cases) {
@@ -3549,13 +3555,20 @@ await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd l
     assert.deepEqual(errors, [])
     await context.close()
   }
-  const { noon, dusk, room: lamps } = seen
+  const { noon, dusk, room: lamps, materials } = seen
+  for (const [name, before] of Object.entries(calibrationBeforeW1)) {
+    for (const part of ['all', 'ground']) {
+      const change = seen[name][part].mean / before[part] - 1
+      assert.ok(Math.abs(change) <= 0.1, `${name} ${part}: ${seen[name][part].mean.toFixed(0)} against ${before[part]} before W1 (${(change * 100).toFixed(1)}%)`)
+    }
+  }
   assert.ok(noon.ground.mean > 175 && noon.ground.mean < 220, 'sunlit light ground is bright, not blown')
   assert.ok(Math.abs(noon.ground.r - noon.ground.b) < 12, 'daylight is neutral')
   assert.ok(noon.all.bright < 0.01 && dusk.all.bright < 0.01, 'nothing clips outdoors')
   assert.ok(dusk.ground.mean > 130 && dusk.ground.mean < 200, 'dusk at +2 is a little darker than noon')
   assert.ok(dusk.ground.r - dusk.ground.b > 15, 'dusk light is warm')
   assert.ok(lamps.all.mean > 40 && lamps.all.mean < 110 && lamps.all.bright < 0.02, 'the lamps light the room without blowing it out')
+  assert.ok(materials.all.bright < 0.01, 'the material board does not clip')
 })
 
 // --- WebGPU renderer R0: the reference scenes and their WebGL baseline -----------
@@ -4776,6 +4789,36 @@ await check('real-time GI: a 2K export of the box room is within its residual no
     const out = await page.evaluate(([s, b]) => window.__noise(s, 'lit', 2048, b), [scene, wall])
     console.log(`residual noise, box room lit ${out.width}×${out.height}: ${out.noise.toFixed(3)} (limit 1.5), ${(out.ms / 1000).toFixed(1)} s`)
     assert.ok(out.noise <= 1.5, `lit: ${out.noise}`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// The real-time GI's ambient fill (litLook.ts AMBIENT_FILL_GI), again under AgX (W1 tasks 5.1): how much
+// brighter or darker each reference's lit export is with the real-time GI than with the workbench stays what
+// it was before W1, within 5 points. Measured the same way before W1 on develop f48841a3 (ACES Filmic), this
+// machine's GPU. Opt-in, SCENE_E2E_GI_FILL=1: about a minute.
+const giAgainstWorkbenchBeforeW1 = { room: 0.068, noon: -0.191, cornell: 0.329 }
+if (process.env.SCENE_E2E_GI_FILL) await check('real-time GI: against the workbench, the reference lit exports are as much brighter or darker as before W1', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const grey = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+    const off = []
+    for (const [name, before] of Object.entries(giAgainstWorkbenchBeforeW1)) {
+      const reference = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+      const mean = {}
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const r = await page.evaluate(([s]) => window.__regions(s, 'lit', 2048, [[0, 0, 1, 1]]), [{ ...reference, render: { ...reference.render, engine } }])
+        mean[engine] = grey(r.means[0])
+      }
+      const now = mean.realtime_gi / mean.workbench - 1
+      console.log(`${name}: workbench ${mean.workbench.toFixed(1)}, real-time GI ${mean.realtime_gi.toFixed(1)} (${(now * 100).toFixed(1)}%, before W1 ${(before * 100).toFixed(1)}%)`)
+      if (Math.abs(now - before) > 0.05) off.push(`${name} ${(now * 100).toFixed(1)}% against ${(before * 100).toFixed(1)}%`)
+    }
+    assert.deepEqual(off, [])
   } finally {
     await gpu.close()
   }
