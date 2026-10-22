@@ -1,6 +1,6 @@
 {
   "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
-  "revision": 12,
+  "revision": 13,
   "id": "scene-render-settings",
   "kind": "feature",
   "assurance": "governed",
@@ -27,7 +27,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-21T17:25:44.922Z",
-  "updatedAt": "2026-10-22T06:55:08.545Z",
+  "updatedAt": "2026-10-22T06:57:17.820Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-22T06:57:17.771Z",
+    "summary": "merge commit 6d49735a 合入 develop；合入树与 feat/scene-render-settings 完全相同，沿用分支上的定向验证；合入时 build、lint、generate-check、前端单测 759 条通过",
+    "method": "manual",
+    "limitations": "按 owner 要求不重跑分支上已做过的相同测试，Go 全量测试未跑完",
+    "sourceCommit": "52934e0f9809110f6a0f81b34ec01addec4f7c75",
+    "targetCommit": "6d49735a17a86a2947146b1f671f976771b27ee9",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a583f160318154f85620f32148652b02caae4ed333972c7ea9123905303ec9c1"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
