@@ -1,0 +1,172 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "rows": [
+    {
+      "file": "noon-shot-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "noon-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "noon-shot-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "noon-ortho-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dusk-shot-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dusk-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dusk-shot-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dusk-ortho-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "room-shot-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "room-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "room-shot-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "room-ortho-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "materials-board-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "materials-board-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "materials-board-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "materials-ortho-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-cama-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-cama-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-cama-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-camb-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-camb-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-camb-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "dof-ortho-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "cornell-shot-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "cornell-shot-line.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "cornell-shot-lit.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    },
+    {
+      "file": "cornell-ortho-clay.png",
+      "mean": 0,
+      "over_percent": 0,
+      "ok": true
+    }
+  ]
+}
