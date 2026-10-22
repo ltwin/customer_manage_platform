@@ -53,7 +53,8 @@
 
 ## 7. 助手与文档
 
-- [ ] 7.1 `scene_tools.go` 中 `edit_scene` 的渲染方式说明与 `set_environment`、`render_view`、`export_shots` 的说明写明 `clay` 用固定的工作室光、不受环境影响，环境只作用于 `lit`；`scene_tools_test.go` 先固定新文字；`docs/dev/agent-skills-tools.md` 记录说明变更，`docs/dev/creative-scene-agent.md` 写显示模式与导出的光照、色调映射。完成判据：`make check-go PKG=./internal/creativeagent/...` 通过
+- [x] 7.1 `scene_tools.go` 中 `edit_scene` 的渲染方式说明与 `set_environment`、`render_view`、`export_shots` 的说明写明 `clay` 用固定的工作室光、不受环境影响，环境只作用于 `lit`；`scene_tools_test.go` 先固定新文字；`docs/dev/agent-skills-tools.md` 记录说明变更，`docs/dev/creative-scene-agent.md` 写显示模式与导出的光照、色调映射。完成判据：`make check-go PKG=./internal/creativeagent/...` 通过
+  - 新增 `TestSceneToolsSayClayIsTheStudioLight`，先红后绿。说明共增长约 0.3 KB，参数和版本号不变，`agent-skills-tools.md` 记了排空后升级。`instructions/base.md` 没有与新行为矛盾的表述，未改。
 
 ## 8. 验收证据
 
