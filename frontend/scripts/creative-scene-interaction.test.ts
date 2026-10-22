@@ -523,7 +523,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
   })
 })
 
-import { displayOf, toggleWireframe } from '../src/creative-scene/state/sceneStore.ts'
+import { displayOf, tabAfterSelection, toggleWireframe } from '../src/creative-scene/state/sceneStore.ts'
 
 test('the shading chosen here wins; until then the scene suggests it; Shift+Z goes to wireframe and back', () => {
   assert.equal(displayOf({ display: null }, { mode: 'lit' }), 'rendered')
@@ -541,4 +541,16 @@ test('models put in together stand in a row, gap apart, centred on the view', ()
   assert.ok(Math.abs(b! - a! - (1 + 0.5 + 0.3)) < 1e-9, 'half of each width plus the gap between centres')
   assert.ok(Math.abs(c! - b! - (0.5 + 1.5 + 0.3)) < 1e-9)
   assert.ok(Math.abs(a! - 1 + 3.3) < 1e-9, 'the row is centred: left edge at -3.3')
+})
+
+test('the properties tab: selecting shows the object; clearing goes back to the scene tab stayed on, from the object tab only', () => {
+  const on = (propertiesTab: 'render' | 'environment' | 'object', sceneTab: 'render' | 'environment' = 'environment') => ({ propertiesTab, sceneTab })
+  assert.equal(tabAfterSelection(on('render', 'render'), false, true), 'object')
+  assert.equal(tabAfterSelection(on('object', 'render'), true, false), 'render')
+  assert.equal(tabAfterSelection(on('object'), true, false), 'environment')
+  // Picked by hand while selected: kept, and kept on clearing.
+  assert.equal(tabAfterSelection(on('environment', 'render'), true, false), 'environment')
+  // No change in whether something is selected: the tab stays.
+  assert.equal(tabAfterSelection(on('render', 'render'), true, true), 'render')
+  assert.equal(tabAfterSelection(on('render', 'render'), false, false), 'render')
 })

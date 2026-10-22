@@ -14,7 +14,9 @@
   },
   "render": {
     "mode": "lit",
-    "exposure_ev": 2
+    "exposure_ev": 2,
+    "engine": "workbench",
+    "resolution": "2k"
   },
   "objects": [
     {

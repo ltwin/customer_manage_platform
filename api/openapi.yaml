@@ -15005,6 +15005,8 @@ components:
       required:
       - mode
       - exposure_ev
+      - engine
+      - resolution
       properties:
         mode:
           type: string
@@ -15016,6 +15018,20 @@ components:
           minimum: -10
           maximum: 10
           description: 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。
+        engine:
+          type: string
+          enum:
+          - workbench
+          - realtime_gi
+          description: 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
+        resolution:
+          type: string
+          enum:
+          - 1k
+          - 2k
+          - 4k
+          - 8k
+          description: 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
     CreativeSceneRenderPatch:
       type: object
       additionalProperties: false
@@ -15031,6 +15047,18 @@ components:
           type: number
           minimum: -10
           maximum: 10
+        engine:
+          type: string
+          enum:
+          - workbench
+          - realtime_gi
+        resolution:
+          type: string
+          enum:
+          - 1k
+          - 2k
+          - 4k
+          - 8k
     CreativeSceneObject:
       type: object
       additionalProperties: false

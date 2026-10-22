@@ -3,9 +3,10 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
+import { drawnFrames, effectiveEngine, engineOf, type Use } from '../render/engines.ts'
 import { exposureOf } from '../render/litLook.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
-import { createRenderer, DeviceLostError, gpuOf, type SceneGPU } from '../render/gpu.ts'
+import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
 import { backgroundTicker } from './ticker.ts'
 import type { Shot } from './executor.ts'
@@ -39,12 +40,30 @@ extend(THREE as unknown as Parameters<typeof extend>[0])
  * and the export; line is the export's line art, drawn in either look.
  */
 export type ShotKind = 'clay' | 'line' | 'lit'
-export type ShotOptions = { kind: ShotKind; type: 'image/jpeg' | 'image/png'; depthOfField?: boolean }
+export type ShotOptions = {
+  kind: ShotKind
+  type: 'image/jpeg' | 'image/png'
+  depthOfField?: boolean
+  /** An export's image or render_view's; the real-time GI averages more frames for an export. */
+  use?: Use
+  /** performance.now() past which the picture is given up, checked between its frames. */
+  deadline?: number
+  /** JPEG quality; render_view's 0.85 unless said. */
+  quality?: number
+}
 /** What the shooter has mounted: clay and line shots need clay, lit ones lit. */
 export type Look = 'clay' | 'lit'
 
 export type Shooter = {
-  shoot(framing: Framing, options: ShotOptions): Blob
+  /** The longest side the device can draw, in pixels. */
+  readonly maxTextureSize: number
+  /**
+   * Draws a picture's frames, yielding to the page between them
+   * (SceneGPU.settle), then draws the last and encodes it in one go. The
+   * frames are numbered by the loop alone: a hidden tab's picture is the
+   * foreground's.
+   */
+  shoot(framing: Framing, options: ShotOptions): Promise<Blob>
   /** Throws DeviceLostError when the device was lost while the shots so far were drawn; call before handing them on. */
   confirm(): Promise<void>
   /** Mounts the other look and compiles its materials, so its first shot is complete. */
@@ -67,7 +86,7 @@ export async function renderView(documentID: string, request: RenderRequest, rea
   const look: Look = request.mode === 'lit' ? 'lit' : 'clay'
   const shooter = await openShooter(doc.scene, doc.models, look)
   try {
-    const image = shooter.shoot(framing, { kind: look, type: 'image/jpeg', depthOfField: request.depth_of_field === true })
+    const image = await shooter.shoot(framing, { kind: look, type: 'image/jpeg', depthOfField: request.depth_of_field === true, use: 'view' })
     await shooter.confirm()
     return { ok: true, image, revision: doc.revision }
   } finally {
@@ -78,7 +97,7 @@ export async function renderView(documentID: string, request: RenderRequest, rea
 export async function shoot(scene: Scene, models: Readonly<Record<string, SceneModel>>, framing: Framing): Promise<Blob> {
   const shooter = await openShooter(scene, models)
   try {
-    const image = shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg' })
+    const image = await shooter.shoot(framing, { kind: 'clay', type: 'image/jpeg' })
     await shooter.confirm()
     return image
   } finally {
@@ -126,13 +145,14 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     await g.compile(three, camera)
     let mounted = look
     return {
+      maxTextureSize: g.maxTextureSize,
       async setLook(next) {
         if (next === mounted) return
         await mount(next)
         mounted = next
         await g.compile(three, camera)
       },
-      shoot(framing, options) {
+      async shoot(framing, options) {
         if (options.kind !== 'line' && options.kind !== mounted) throw new Error(`拍${options.kind}图前须先切换渲染方式`)
         const { width, height } = framing
         camera.fov = framing.fov
@@ -146,12 +166,31 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         g.resetFrames()
         // Every picture gets a pipeline of its own: nodes that keep state between frames start afresh.
         const picture = options.kind === 'line' ? null : new SceneRenderer(g, three, camera)
+        const engine = options.kind === 'line' ? 'workbench' : effectiveEngine(engineOf(scene.render), options.kind, true)
+        const frames = drawnFrames(engine, options.use ?? 'export')
+        const frame = {
+          width,
+          height,
+          dof: options.depthOfField && framing.optics ? framing.optics : null,
+          exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1,
+          engine,
+          quality: 'final' as const,
+          accumulate: frames > 1,
+        }
         try {
+          for (let i = 1; i < frames; i++) {
+            g.advanceFrame()
+            picture!.render(camera, frame)
+            await g.settle()
+            if (g.isLost()) throw new DeviceLostError()
+            if (options.deadline !== undefined && performance.now() > options.deadline) throw new ShotTimeout()
+          }
+          // The last frame is drawn and encoded in one go (SceneGPU.capture).
           return g.capture(
             () => {
               g.advanceFrame()
               if (picture) {
-                picture.render(camera, { width, height, dof: options.depthOfField && framing.optics ? framing.optics : null, exposure: options.kind === 'lit' ? exposureOf(scene.render) : 1 })
+                picture.render(camera, frame)
               } else {
                 g.renderer.setPixelRatio(1)
                 g.renderer.setSize(width, height, false)
@@ -160,7 +199,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
               }
             },
             options.type,
-            options.type === 'image/jpeg' ? jpegQuality : undefined,
+            options.type === 'image/jpeg' ? (options.quality ?? jpegQuality) : undefined,
           )
         } finally {
           picture?.dispose()

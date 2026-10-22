@@ -30,6 +30,7 @@ import { Outliner } from './panels/Outliner.tsx'
 import { AssetPanel } from './panels/AssetPanel.tsx'
 import { pushRecent, readRecent } from './library/recent.ts'
 import { EnvironmentPanel } from './panels/EnvironmentPanel.tsx'
+import { RenderPanel } from './panels/RenderPanel.tsx'
 import { LightFields } from './panels/LightFields.tsx'
 import { MaterialSlots } from './panels/MaterialSlots.tsx'
 import { copyMaterials, slotsOf } from './materials/slotEdits.ts'
@@ -44,7 +45,7 @@ import { renderThumbnail } from './sandbox/thumbnail.ts'
 import { renderMaterialThumbnail } from './library/thumbnail.ts'
 import { openScene } from './session.ts'
 import type { WireOp } from './state/apply.ts'
-import { contextOf, createEditorStore, displayModes, displayOf, toggleWireframe, type MenuKind } from './state/sceneStore.ts'
+import { contextOf, createEditorStore, displayModes, displayOf, tabAfterSelection, toggleWireframe, type MenuKind, type PropertiesTab } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
 import { saveTarget, whenShown, type LibraryAsset, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
@@ -53,6 +54,13 @@ import { probeRender } from './render/probe.ts'
 import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
 import './scene.css'
+
+/** The properties area's tabs, in Blender's order. */
+const propertiesTabs: readonly [PropertiesTab, string][] = [
+  ['render', '渲染'],
+  ['environment', '环境'],
+  ['object', '物件'],
+]
 
 function storage(): Storage | undefined {
   try {
@@ -230,6 +238,16 @@ export default function SceneEditor({
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
   const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
   const shownModel = shownActive?.model?.content_revision_id
+  // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
+  const hasObject = !!shownActive || selected.length > 0
+  const hadObject = useRef(false)
+  useEffect(() => {
+    const had = hadObject.current
+    hadObject.current = hasObject
+    const now = ui.getState()
+    const tab = tabAfterSelection(now, had, hasObject)
+    if (tab !== now.propertiesTab) ui.setState({ propertiesTab: tab })
+  }, [hasObject, ui])
   // Bakes waiting for their uploads show on their instances, in the viewport only.
   const drawn = useMemo(() => (shown && !u.preview ? withPreviews(shown, baking.previews) : shown), [shown, u.preview, baking.previews])
   const activity = Object.values(baking.status).some((x) => x.state === 'baking')
@@ -959,14 +977,26 @@ export default function SceneEditor({
                   onDrop={(moving, target, place) => drop(moving, target, place)}
                 />
                 )}
-                {!shownActive && !selected.length && shown ? (
-                  <EnvironmentPanel
-                    environment={shown.environment}
-                    exposure={shown.render.exposure_ev ?? 0}
+                <div className="cc-scene-tabs" role="tablist" aria-label="属性">
+                  {propertiesTabs.map(([tab, name]) => (
+                    <button key={tab} type="button" role="tab" aria-selected={u.propertiesTab === tab} onClick={() => ui.setState(tab === 'object' ? { propertiesTab: tab } : { propertiesTab: tab, sceneTab: tab })}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                {u.propertiesTab === 'render' ? (
+                  <RenderPanel
+                    render={shown.render}
+                    backend={u.backend}
                     readOnly={readOnly}
                     display={display}
-                    onEnvironment={(environment, text, merge) => edit([{ op: 'set_environment', environment }], text, merge ? { merge } : undefined)}
                     onRender={(render, text, merge) => edit([{ op: 'set_render', render }], text, merge ? { merge } : undefined)}
+                  />
+                ) : u.propertiesTab === 'environment' ? (
+                  <EnvironmentPanel
+                    environment={shown.environment}
+                    readOnly={readOnly}
+                    onEnvironment={(environment, text, merge) => edit([{ op: 'set_environment', environment }], text, merge ? { merge } : undefined)}
                   />
                 ) : (
                 <Properties
@@ -1136,6 +1166,7 @@ export default function SceneEditor({
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
           display={display}
+          resolution={shown?.render.resolution ?? '2k'}
           busy={exportRun.busy}
           progress={exportRun.progress}
           onExport={(plan) => void startExport(plan)}

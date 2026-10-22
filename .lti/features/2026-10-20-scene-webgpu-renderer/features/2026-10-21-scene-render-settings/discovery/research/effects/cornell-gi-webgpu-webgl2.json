@@ -1,0 +1,18 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "measured": {
+    "clay": {
+      "mean": 0.07,
+      "over_percent": 0
+    },
+    "lit": {
+      "mean": 0.504,
+      "over_percent": 0.131
+    }
+  }
+}

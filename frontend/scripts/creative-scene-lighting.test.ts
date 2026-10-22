@@ -58,7 +58,8 @@ test('the lit sun dims below the horizon and warms when low; exposure is in stop
   assert.ok(low.color.b / low.color.r < (high.color.b / high.color.r) * 0.6, 'warmer near the horizon')
   assert.equal(exposureOf({ exposure_ev: 2 }), 4)
   assert.equal(exposureOf({ exposure_ev: -1 }), 0.5)
-  assert.equal(exposureOf(undefined), 1, 'scenes from before exposure render as before')
+  // A scene from before exposure reads 0 from the server (creativescene completeRenderSettings): 2^0.
+  assert.equal(exposureOf({ exposure_ev: 0 }), 1)
 })
 
 test('at the reference noon the sky lights level ground a quarter as much as the sun, and daylight comes out neutral', () => {

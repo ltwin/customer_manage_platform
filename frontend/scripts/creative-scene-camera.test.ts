@@ -17,6 +17,7 @@ import {
 } from '../src/creative-scene/cameraOptics.ts'
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
 import { renderShots, submitExport, uploadShots, type ExportPass, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
+import { ShotTimeout } from '../src/creative-scene/render/gpu.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
 import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
 import { readFileSync } from 'node:fs'
@@ -80,7 +81,7 @@ const object = (o: Partial<SceneObject> & { id: string; kind: SceneObject['kind'
   ...o,
 })
 const sceneOf = (...objects: SceneObject[]): Scene =>
-  ({ environment: { sky: { kind: 'color', color: '#000000' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, render: { mode: 'clay' }, objects }) as Scene
+  ({ environment: { sky: { kind: 'color', color: '#000000' }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '2k' }, objects }) as Scene
 const camera = (extra: Record<string, unknown> = {}) =>
   object({
     id: 'cam',
@@ -231,6 +232,77 @@ test('lit images come after every clay and line image, with the lit look mounted
   const stuck = await run(['clay', 'lit'], () => new Promise(() => {}), async () => {})
   assert.deepEqual(stuck.out, { ok: false, message: '切换到材质光照超过 60 秒' })
   assert.equal(stuck.events.at(-1), 'close', 'the shooter is closed all the same')
+})
+
+test('each image goes to the shooter with its deadline; one given up between frames fails the export as too slow', async () => {
+  const doc = { scene: sceneOf(camera()), models: {}, revision: '5' }
+  const read = async () => doc as never
+  const deadlines: number[] = []
+  const before = performance.now()
+  const shooter: Shooter = {
+    shoot: async (_f, o) => {
+      deadlines.push(o.deadline ?? NaN)
+      if (o.kind === 'line') throw new ShotTimeout()
+      return new Blob([o.kind])
+    },
+    setLook: async () => {},
+    confirm: async () => {},
+    close: () => {},
+  }
+  const out = await renderShots({ read, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['cam'], passes: ['clay', 'line'] })
+  // A 2K workbench image: the 30-second floor.
+  assert.deepEqual(out, { ok: false, message: '一张导出图渲染超过 30 秒' })
+  assert.equal(deadlines.length, 2)
+  for (const d of deadlines) assert.ok(d >= before + 30_000 && d <= performance.now() + 30_000, `deadline ${d}`)
+})
+
+test('the output resolution sets the long side and the encoding; a device too small fails at once, a lost one at 4K is not retried', async () => {
+  const { imageTypeOf } = await import('../src/creative-scene/render/engines.ts')
+  assert.deepEqual(imageTypeOf('clay', '2k'), { type: 'image/png' })
+  assert.deepEqual(imageTypeOf('lit', '4k'), { type: 'image/jpeg', quality: 0.95 })
+  assert.deepEqual(imageTypeOf('clay', '8k'), { type: 'image/jpeg', quality: 0.95 })
+  assert.deepEqual(imageTypeOf('line', '8k'), { type: 'image/png' }, 'line art stays PNG')
+  const docAt = (resolution: string) => ({ scene: { ...sceneOf(camera()), render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution } }, models: {}, revision: '5' })
+  const shots: { width: number; height: number; type: string; quality?: number }[] = []
+  let closed = 0
+  const shooterOf = (maxTextureSize: number, lose = false): Shooter => ({
+    maxTextureSize,
+    shoot: async (f, o) => {
+      if (lose) throw new DeviceLostError()
+      shots.push({ width: f.width, height: f.height, type: o.type, quality: o.quality })
+      return new Blob([o.kind], { type: o.type })
+    },
+    setLook: async () => {},
+    confirm: async () => {},
+    close: () => { closed++ },
+  })
+  const run = (resolution: string, shooter: Shooter) => renderShots({ read: async () => docAt(resolution) as never, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['cam'], passes: ['clay', 'line'] })
+  const fourK = await run('4k', shooterOf(16384))
+  assert.ok(fourK.ok)
+  assert.deepEqual(shots.map((s) => [Math.max(s.width, s.height), s.type, s.quality]), [[4096, 'image/jpeg', 0.95], [4096, 'image/png', undefined]])
+  shots.length = 0
+  assert.ok((await run('1k', shooterOf(16384))).ok)
+  assert.deepEqual(shots.map((s) => Math.max(s.width, s.height)), [1024, 1024])
+  shots.length = 0
+  closed = 0
+  const small = await run('8k', shooterOf(4096))
+  assert.deepEqual(small, { ok: false, message: '当前设备最大只能导出长边 4096 px 的图，请选更低的输出分辨率', hostError: true })
+  assert.equal(shots.length, 0, 'nothing drawn smaller')
+  assert.equal(closed, 1)
+  const lost = await run('4k', shooterOf(16384, true))
+  assert.deepEqual(lost, { ok: false, message: '渲染设备在按 4K 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出', hostError: true })
+  await assert.rejects(run('2k', shooterOf(16384, true)), DeviceLostError, 'at 2K a lost device goes back to the queue as before')
+})
+
+test('an export image goes up as it was encoded: JPEG named .jpg', async () => {
+  const names: [string, string, string][] = []
+  const images: ShotImage[] = [
+    { camera: 'cam', pass: 'clay', blob: new Blob(['j'], { type: 'image/jpeg' }) },
+    { camera: 'cam', pass: 'line', blob: new Blob(['p'], { type: 'image/png' }) },
+  ]
+  const out = await uploadShots(async (file, declared) => (names.push([file.name, file.type, declared.mime]), { id: file.name } as Upload), images, new AbortController().signal)
+  assert.ok(out.ok)
+  assert.deepEqual(names, [['cam-clay.jpg', 'image/jpeg', 'image/jpeg'], ['cam-line.png', 'image/png', 'image/png']])
 })
 
 // --- editor -----------------------------------------------------------------

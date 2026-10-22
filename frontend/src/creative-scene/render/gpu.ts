@@ -1,5 +1,6 @@
 import { LinearSRGBColorSpace, NoToneMapping, Source, type Camera, type Object3D, type Texture } from 'three'
 import { ViewportTextureNode, WebGPURenderer } from 'three/webgpu'
+import { backgroundTicker } from '../host/ticker.ts'
 import { adapter } from './probe.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
@@ -87,6 +88,14 @@ export class DeviceLostError extends Error {
   }
 }
 
+/** A picture past its deadline, given up between two of its frames (host/render.ts). */
+export class ShotTimeout extends Error {
+  constructor() {
+    super('出图超时')
+    this.name = 'ShotTimeout'
+  }
+}
+
 export type SceneGPU = {
   readonly renderer: WebGPURenderer
   readonly backend: 'webgpu' | 'webgl2'
@@ -102,6 +111,14 @@ export type SceneGPU = {
    * nothing can wait between the drawing and the encoding.
    */
   capture(draw: () => void, type: string, quality?: number): Blob
+  /**
+   * Settles once the GPU has done the work submitted so far: between the
+   * frames of a picture, so the page's other work (lease renewals, progress,
+   * cancelling) runs and a long picture does not starve it. Timed by the
+   * background ticker, not animation frames, which a hidden tab has none of
+   * (r186 dropped renderer.waitForGPU()).
+   */
+  settle(): Promise<void>
   /** The next frame, a fixed step after the last. */
   advanceFrame(): void
   /** Back to frame 0, every node due again: the start of a picture. */
@@ -168,6 +185,8 @@ export const gpuTestHooks = {
   forceWebGL: false,
   /** Treats the device as compatibility mode: the workbench drops MSAA for SMAA (no such device to test on). */
   forceCompatibility: false,
+  /** Caps the texture size the renderers report: a device too small for an output resolution (R2 AC-R2-6). */
+  textureLimit: null as number | null,
   live: new Set<{ role: Role; info: WebGPURenderer['info']; lose(afterCaptures?: number): void }>(),
   /** Loses the device of every live renderer in that role, now or after that many more captures. */
   loseDevice(role: Role, afterCaptures = 0): number {
@@ -184,6 +203,8 @@ export const gpuTestHooks = {
   compiling: 0,
   /** Compiles started (SceneGPU.compile). */
   compiles: 0,
+  /** The viewport's frames since the view last changed (Viewport.tsx LookView): where convergence stopped. */
+  viewportFrames: 0,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)
@@ -238,7 +259,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
   const backendInfo = renderer.backend as { isWebGPUBackend?: boolean; compatibilityMode?: boolean | null; device?: { destroy(): void; limits: { maxTextureDimension2D: number } } }
   const backend = backendInfo.isWebGPUBackend ? 'webgpu' : 'webgl2'
   const gl = backend === 'webgl2' ? (renderer.getContext() as WebGL2RenderingContext) : null
-  const maxTextureSize = backendInfo.device?.limits.maxTextureDimension2D ?? (gl?.getParameter(gl.MAX_TEXTURE_SIZE) as number | undefined) ?? 4096
+  const maxTextureSize = Math.min(backendInfo.device?.limits.maxTextureDimension2D ?? (gl?.getParameter(gl.MAX_TEXTURE_SIZE) as number | undefined) ?? 4096, gpuTestHooks.textureLimit ?? Infinity)
   console.info(`scene renderer (${role}): ${backend}${backendInfo.compatibilityMode ? ' compatibility' : ''}`)
 
   const device = deviceState(() => gl?.isContextLost() ?? false)
@@ -288,6 +309,20 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
         await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
       } finally {
         gpuTestHooks.compiling--
+      }
+    },
+    async settle() {
+      if (device.isLost() || device.disposed) return
+      const queue = (backendInfo.device as { queue?: { onSubmittedWorkDone(): Promise<void> } } | undefined)?.queue
+      if (queue) return queue.onSubmittedWorkDone()
+      if (!gl) return
+      const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+      if (!sync) return
+      gl.flush()
+      try {
+        while (!gl.isContextLost() && gl.clientWaitSync(sync, 0, 0) === gl.TIMEOUT_EXPIRED) await backgroundTicker().wait(1)
+      } finally {
+        gl.deleteSync(sync)
       }
     },
     advanceFrame() {

@@ -64,11 +64,16 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 		return "", false
 	}
 	slices.SortFunc(p.Objects, func(a, b Object) int { return strings.Compare(a.ID, b.ID) })
-	// The render settings never counted, except the exposure of a lit image;
-	// at 0 it is left out so fingerprints from before it existed still match.
+	// The render settings never counted, except the exposure and the
+	// renderer of a lit image (clay and line art are the workbench's); at 0
+	// and the workbench they are left out, so fingerprints from before they
+	// existed still match. The output resolution never counts.
 	render := fingerprintRender{}
 	if pass == PassLit {
 		render.ExposureEV = s.Render.ExposureEV
+		if s.Render.Engine != EngineWorkbench {
+			render.Engine = s.Render.Engine
+		}
 	}
 	raw, err := json.Marshal(struct {
 		V        int              `json:"v"`
@@ -93,6 +98,7 @@ type fingerprintScene struct {
 type fingerprintRender struct {
 	Mode       string  `json:"mode"`
 	ExposureEV float64 `json:"exposure_ev,omitempty"`
+	Engine     string  `json:"engine,omitempty"`
 }
 
 // Freshness is the canvas's ExportFreshness: it compares each export image's

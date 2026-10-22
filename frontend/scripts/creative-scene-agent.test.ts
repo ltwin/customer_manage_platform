@@ -500,6 +500,13 @@ test('an export that cannot be drawn or uploaded fails the job and frees what we
   assert.deepEqual(missing.completes[0].payload.error, { code: 'render_error', message: '摄像机 camB 已不在场景里' })
   assert.equal(missing.uploads.length, 0)
 
+  // A device that cannot draw the resolution is the page's problem, not the request's (R2 AC-R2-6): failed, not requeued.
+  const lost = new FakePage()
+  lost.exported = { ok: false, message: '渲染设备在按 4K 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出', hostError: true }
+  assert.equal((await new SceneExecutor(lost.deps()).run(exportJob())).state, 'completed')
+  assert.equal(lost.deviceLosses, 0, 'not handed back to the queue')
+  assert.deepEqual(lost.completes[0].payload.error, { code: 'host_error', message: '渲染设备在按 4K 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出' })
+
   const broken = new FakePage()
   broken.exported = new Error('WebGL 上下文丢失')
   await new SceneExecutor(broken.deps()).run(exportJob())

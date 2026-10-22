@@ -1,13 +1,16 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, type Camera, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera } from 'three'
-import { float, mix, mrt, normalView, pass, renderOutput, uniform, vec4 } from 'three/tsl'
-import { MeshBasicNodeMaterial, PassNode, RenderPipeline, type Node } from 'three/webgpu'
+import { ACESFilmicToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
+import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
+import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
+import { convergeFrames, type Engine, type Quality } from './engines.ts'
 import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
+import { GILightingPass, splitContext } from './giSplit.ts'
+import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -24,6 +27,11 @@ import { ao } from './nodes/GTAONode.js'
 // linear and tone mapping happens in the output node (render/gpu.ts,
 // 'pipeline'), so the transform gizmo, drawn by a pass of its own, is laid
 // over the finished picture in sRGB.
+//
+// The real-time GI (R2) is the other renderer for the rendered view and lit
+// in a perspective view: its own passes and composite (render/realtimeGI.ts),
+// antialiased by TRAA instead of MSAA, then the same depth of field, tone
+// mapping and overlay. The workbench is drawn exactly as before.
 
 /** Viewport helpers the clay look treats apart; an export has none. */
 export type Overlays = {
@@ -68,6 +76,20 @@ export type Frame = {
   exposure?: number
   /** Wireframe has no surfaces to shade: no AO, no blur. */
   wireframe?: boolean
+  /**
+   * The renderer (render/engines.ts effectiveEngine); the workbench unless
+   * said. The real-time GI needs a perspective camera and surfaces: an
+   * orthographic view and wireframe are drawn by the workbench whatever this says.
+   */
+  engine?: Engine
+  /** Real-time GI: interactive unless said; a picture to keep is final. */
+  quality?: Quality
+  /**
+   * Averages this renderer's frames after the first convergeFrames, after
+   * the depth of field and before tone mapping: an export's or render_view's
+   * frames (R2 design「累积与出图」). The viewport does not.
+   */
+  accumulate?: boolean
 }
 
 /**
@@ -165,7 +187,163 @@ function disposeStandIn({ meshes, lights }: StandIn) {
   }
 }
 
-const keyOf = (wireframe: boolean, blur: boolean) => (wireframe ? 'wire' : blur ? 'shaded+dof' : 'shaded')
+/** A stand-in being compiled: its meshes, and the passes it compiles for (with the target each compiles into) by their MRT (null: none). */
+type Compiling = { meshes: ReadonlySet<Object3D>; passes: ReadonlyMap<Node | null, { node: PassNode; target: RenderTarget }> }
+type RenderContext = { mrt: Node | null }
+type RenderObjects = { get(object: Object3D, material: unknown, scene: unknown, camera: unknown, lightsNode: unknown, renderContext: RenderContext, ...rest: unknown[]): unknown }
+type NodeManager = { getForRenderAsync(renderObject: { object: Object3D; context: RenderContext }): Promise<unknown> }
+const compiling = new Set<Compiling>()
+const wrapped = new WeakSet<object>()
+
+/**
+ * compileAsync (three r186) takes the renderer's target, MRT and context as
+ * each render object is made and its material built, a task or more after
+ * the call, with them as the frames have left them by then. The target and
+ * MRT give a material its outputs; the context matters to the
+ * real-time GI: its prepass and lighting pass draw the same materials, told
+ * apart by the lighting pass's context (render objects and built materials
+ * are cached by material and context, not by MRT). Compiled with the frames'
+ * context, the two passes' stand-ins shared one built material, and one of
+ * them got a shader of the wrong number of outputs (WebGPU refuses its
+ * pipeline); the lighting pass's real meshes then compiled on the next frame,
+ * holding the viewport for seconds. A render object reads the context when
+ * made and a material reads all three when its build starts
+ * (NodeBuilder.prebuild, synchronously), so for a stand-in's mesh the pass's
+ * are set around those two calls alone.
+ */
+function asItsPass(renderer: SceneGPU['renderer']) {
+  const inPass = <T>(object: Object3D, renderContext: RenderContext, call: () => T): T => {
+    for (const c of compiling) {
+      const pass = c.meshes.has(object) ? c.passes.get(renderContext.mrt) : undefined
+      if (!pass) continue
+      const target = renderer.getRenderTarget()
+      const mrt = renderer.getMRT()
+      const context = renderer.contextNode
+      renderer.setRenderTarget(pass.target)
+      renderer.setMRT(pass.node.getMRT())
+      if (pass.node instanceof GILightingPass) renderer.contextNode = splitContext(context as Parameters<typeof splitContext>[0])
+      try {
+        return call()
+      } finally {
+        renderer.setRenderTarget(target)
+        renderer.setMRT(mrt)
+        renderer.contextNode = context
+      }
+    }
+    return call()
+  }
+  const { _objects: objects, _nodes: nodes } = renderer as unknown as { _objects: RenderObjects; _nodes: NodeManager }
+  if (!wrapped.has(objects)) {
+    wrapped.add(objects)
+    const get = objects.get.bind(objects)
+    objects.get = (object, material, scene, camera, lightsNode, renderContext, ...rest) => inPass(object, renderContext, () => get(object, material, scene, camera, lightsNode, renderContext, ...rest))
+  }
+  if (!wrapped.has(nodes)) {
+    wrapped.add(nodes)
+    const build = nodes.getForRenderAsync.bind(nodes)
+    nodes.getForRenderAsync = (renderObject) => inPass(renderObject.object, renderObject.context, () => build(renderObject))
+  }
+}
+
+type Shadowing = DirectionalLight | SpotLight
+
+const lightAt = /*@__PURE__*/ new Vector3()
+const targetAt = /*@__PURE__*/ new Vector3()
+
+/**
+ * The light the real-time GI traces contact shadows from (R2 design「实时 GI
+ * 管线」): the sun (Lighting.tsx marks it) while it is up; else the
+ * shadow-casting light that lights the scene most, a directional light by
+ * its intensity, a spot by its intensity over the distance to its target
+ * squared, both where the world has them. A point light has no one direction
+ * to trace along.
+ */
+export function mainLight(scene: Object3D): Shadowing | null {
+  let sun: Shadowing | null = null
+  let best: Shadowing | null = null
+  let most = 0
+  scene.traverseVisible((o) => {
+    const light = o as Shadowing
+    if (!(light as DirectionalLight).isDirectionalLight && !(light as SpotLight).isSpotLight) return
+    if (light.intensity <= 0) return
+    if (light.userData.sun === true) {
+      sun = light
+      return
+    }
+    if (!light.castShadow) return
+    const lux = (light as SpotLight).isSpotLight ? light.intensity / Math.max(light.getWorldPosition(lightAt).distanceToSquared(light.target.getWorldPosition(targetAt)), 0.01) : light.intensity
+    if (lux > most) {
+      most = lux
+      best = light
+    }
+  })
+  return sun ?? best
+}
+
+/** How a frame is drawn, which decides the pipeline: the real-time GI or the workbench. */
+type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean }
+
+const keyOf = ({ wireframe, blur, gi, quality, accumulate }: Look) => (wireframe ? 'wire' : `${gi ? `gi-${quality}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`)
+
+const accumulateSize = /*@__PURE__*/ new Vector2()
+let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
+
+/**
+ * The running average of a picture's frames, in linear half float:
+ * acc = mix(acc, frame, 1 / n), n the frames since the warm-up. The
+ * warm-up frames are kept, not averaged: the temporal nodes' first frame is
+ * far off in HDR (one frame of it brightened a 16-frame average by half, R2
+ * tasks 5.1), and they settle within the viewport's convergeFrames. Two
+ * targets in turn; the node is the latest average.
+ */
+class AccumulateNode extends TempNode {
+  private readonly input: Node<'vec4'>
+  private readonly warmup: number
+  private targets: [RenderTarget, RenderTarget] = [new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }), new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false })]
+  private readonly weight = uniform(1)
+  private readonly previous = texture(this.targets[0].texture)
+  private readonly latest = texture(this.targets[1].texture)
+  private readonly material = new NodeMaterial()
+  private readonly quad = new QuadMesh(this.material)
+  private frames = 0
+
+  constructor(input: Node<'vec4'>, warmup: number) {
+    super('vec4')
+    this.input = input
+    this.warmup = warmup
+    this.updateBeforeType = NodeUpdateType.FRAME
+  }
+
+  setup() {
+    this.material.fragmentNode = mix(this.previous.sample(uv()), this.input, this.weight)
+    this.material.needsUpdate = true
+    return this.latest
+  }
+
+  updateBefore(frame: NodeFrame): undefined {
+    const renderer = frame.renderer!
+    const { width, height } = renderer.getDrawingBufferSize(accumulateSize)
+    for (const t of this.targets) t.setSize(width, height)
+    const [read, write] = this.targets
+    this.frames++
+    this.weight.value = 1 / Math.max(1, this.frames - this.warmup)
+    this.previous.value = read.texture
+    // Made on the first call (three's own nodes keep theirs the same way).
+    accumulateState = RendererUtils.resetRendererState(renderer, accumulateState as never)
+    renderer.setRenderTarget(write)
+    this.quad.render(renderer)
+    RendererUtils.restoreRendererState(renderer, accumulateState)
+    this.latest.value = write.texture
+    this.targets = [write, read]
+    return undefined
+  }
+
+  dispose() {
+    super.dispose()
+    for (const t of this.targets) t.dispose()
+    this.material.dispose()
+  }
+}
 
 /** three's typings leave most display nodes untyped; these all give a colour. */
 const vec4Of = (node: Node) => node as Node<'vec4'>
@@ -206,6 +384,8 @@ type Built = {
   dof: Dof | null
   /** Wireframe's plain background, laid under the tone-mapped picture. */
   background: { value: Color }
+  /** The real-time GI's graph, when this is one. */
+  gi: RealtimeGI | null
   dispose(): void
 }
 
@@ -271,8 +451,11 @@ export class SceneRenderer {
       t.setSize(1, 1)
       return t
     })
-    // compileAsync reads the target and MRT before its first await; the passes' state is set only for that.
-    const compiling = this.built.passes.map(({ node, layers: drawn }, i) => {
+    asItsPass(renderer)
+    const entry: Compiling = { meshes: new Set(meshes.children), passes: new Map(this.built.passes.map(({ node }, i) => [node.getMRT(), { node, target: targets[i] }])) }
+    compiling.add(entry)
+    // compileAsync reads the target before its first await (the MRT and context again later: asItsPass).
+    const compiles = this.built.passes.map(({ node, layers: drawn }, i) => {
       const target = renderer.getRenderTarget()
       const targetMRT = renderer.getMRT()
       const mask = camera.layers.mask
@@ -288,13 +471,14 @@ export class SceneRenderer {
       }
     })
     const freeTargets = () => {
+      compiling.delete(entry)
       for (const t of targets) {
         t.dispose()
         // A cloned target's depth is not its own to three, which leaves it out of dispose().
         t.depthTexture?.dispose()
       }
     }
-    return Promise.all(compiling).then(
+    return Promise.all(compiles).then(
       () => {
         freeTargets()
         // Compiles may finish out of order; the last one asked for is the scene as it is.
@@ -310,53 +494,86 @@ export class SceneRenderer {
     )
   }
 
-  private build(wireframe: boolean, blur: boolean): Built {
+  private build(look: Look): Built {
+    const { wireframe, blur } = look
     const { scene, camera, gpu } = this
     const disposables: { dispose(): void }[] = []
     const own = <T extends { dispose(): void }>(n: T) => (disposables.push(n), n)
     const msaa = gpu.compatibility ? 0 : 4
-    const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
-    beauty.setLayers(layers(0, ASIDE_LAYER))
-    const passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER) }]
-    let picture: Node<'vec4'> = beauty
+    let passes: Built['passes']
+    let picture: Node<'vec4'>
     const background = uniform(new Color())
     let aoNode: ReturnType<typeof ao> | null = null
     let aoOn: { value: number } | null = null
     let dof: Dof | null = null
-    if (!wireframe) {
-      // Multisampled depth cannot be sampled by the AO: the prepass has none.
-      const prepass = own(pass(scene, camera, { samples: 0 }))
-      prepass.transparent = false
-      // The surfaces' own normals, as GTAOPass drew them (MeshNormalMaterial over the scene): no
-      // maps, and no lights, so a new light compiles only the picture's materials.
-      prepass.overrideMaterial = own(new MeshBasicNodeMaterial())
-      prepass.setLayers(layers(0))
-      prepass.setMRT(mrt({ output: normalView }))
-      passes.push({ node: prepass, layers: layers(0) })
-      const normal = prepass.getTextureNode()
-      const depth = prepass.getTextureNode('depth')
-      aoNode = own(ao(depth, normal, camera))
-      // GTAOPass's Poisson denoise, as it was set up there.
-      const clean = own(denoise(aoNode.getTextureNode(), depth, normal, camera))
-      clean.lumaPhi.value = 10
-      clean.depthPhi.value = 2
-      clean.normalPhi.value = 3
-      clean.radius.value = 8
-      ;(clean.noiseNode as unknown as { value: DataTexture }).value = own(fixedNoise())
-      // Frame.ao = false multiplies by one rather than rebuilding.
-      const on = uniform(1)
-      aoOn = on
-      picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
-      // AO comes before the blur, so contact shadows out of focus soften with everything else.
+    let gi: RealtimeGI | null = null
+    if (look.gi) {
+      // The viewport's helpers, apart from the GI and laid over it (realtimeGI.ts aside); an export has none.
+      let aside: PassNode | null = null
+      if (this.overlays !== noOverlays) {
+        aside = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: 0 }))
+        aside.setLayers(layers(ASIDE_LAYER))
+        aside.getTexture('output').type = UnsignedByteType
+      }
+      gi = own(
+        realtimeGI(scene, camera, {
+          quality: look.quality,
+          layers: layers(0),
+          aside: aside && { color: aside.getTextureNode(), depth: aside.getTextureNode('depth') },
+          noise: fixedNoise,
+          mainLight: () => mainLight(scene),
+        }),
+      )
+      passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
+      aoOn = gi.aoOn
+      picture = gi.color
       if (blur) {
-        dof = depthOfField(picture, depth)
+        dof = depthOfField(picture, gi.depth)
         disposables.push(dof)
         picture = dof.output
+      }
+      if (look.accumulate) picture = own(new AccumulateNode(picture, convergeFrames('realtime_gi'))) as unknown as Node<'vec4'>
+    } else {
+      const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
+      beauty.setLayers(layers(0, ASIDE_LAYER))
+      passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER) }]
+      picture = beauty
+      if (!wireframe) {
+        // Multisampled depth cannot be sampled by the AO: the prepass has none.
+        const prepass = own(pass(scene, camera, { samples: 0 }))
+        prepass.transparent = false
+        // The surfaces' own normals, as GTAOPass drew them (MeshNormalMaterial over the scene): no
+        // maps, and no lights, so a new light compiles only the picture's materials.
+        prepass.overrideMaterial = own(new MeshBasicNodeMaterial())
+        prepass.setLayers(layers(0))
+        prepass.setMRT(mrt({ output: normalView }))
+        passes.push({ node: prepass, layers: layers(0) })
+        const normal = prepass.getTextureNode()
+        const depth = prepass.getTextureNode('depth')
+        aoNode = own(ao(depth, normal, camera))
+        // GTAOPass's Poisson denoise, as it was set up there.
+        const clean = own(denoise(aoNode.getTextureNode(), depth, normal, camera))
+        clean.lumaPhi.value = 10
+        clean.depthPhi.value = 2
+        clean.normalPhi.value = 3
+        clean.radius.value = 8
+        ;(clean.noiseNode as unknown as { value: DataTexture }).value = own(fixedNoise())
+        // Frame.ao = false multiplies by one rather than rebuilding.
+        const on = uniform(1)
+        aoOn = on
+        picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
+        // AO comes before the blur, so contact shadows out of focus soften with everything else.
+        if (blur) {
+          dof = depthOfField(picture, depth)
+          disposables.push(dof)
+          picture = dof.output
+        }
       }
     }
     let output = vec4Of(renderOutput(picture, ACESFilmicToneMapping, SRGBColorSpace))
     if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
-    if (msaa === 0) output = vec4Of(own(smaa(output)))
+    // The real-time GI is antialiased by its TRAA.
+    if (msaa === 0 && !gi) output = vec4Of(own(smaa(output)))
     const pipeline = new RenderPipeline(gpu.renderer)
     pipeline.outputColorTransform = false
     pipeline.outputNode = vec4(output.rgb, 1)
@@ -368,13 +585,14 @@ export class SceneRenderer {
       pipeline.outputNode = vec4(output.rgb.mul(top.a.oneMinus()).add(top.rgb), 1)
     }
     return {
-      key: keyOf(wireframe, blur),
+      key: keyOf(look),
       dof,
       pipeline,
       passes,
       ao: aoNode,
       aoOn,
       background,
+      gi,
       dispose() {
         pipeline.dispose()
         for (const d of disposables) d.dispose()
@@ -387,17 +605,27 @@ export class SceneRenderer {
     if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
     const renderer = this.gpu.renderer
     const wireframe = frame.wireframe === true
-    const dof = !wireframe && (camera as PerspectiveCamera).isPerspectiveCamera ? frame.dof : null
-    const key = keyOf(wireframe, dof !== null)
+    const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
+    const dof = !wireframe && perspective ? frame.dof : null
+    const gi = frame.engine === 'realtime_gi' && !wireframe && perspective
+    const look: Look = {
+      wireframe,
+      blur: dof !== null,
+      gi,
+      quality: frame.quality ?? 'interactive',
+      accumulate: gi && frame.accumulate === true,
+    }
+    const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()
-      this.built = this.build(wireframe, dof !== null)
+      this.built = this.build(look)
       this.width = -1
     }
     const built = this.built
     const ratio = frame.pixelRatio ?? 1
     const aoRatio = Math.min(frame.aoPixelRatio ?? ratio, ratio)
-    if (ratio !== this.pixelRatio || aoRatio !== this.aoPixelRatio || frame.width !== this.width || frame.height !== this.height) {
+    // R3F sets the renderer's pixel ratio on resizes of its own: it is checked as well as remembered.
+    if (ratio !== this.pixelRatio || renderer.getPixelRatio() !== ratio || aoRatio !== this.aoPixelRatio || frame.width !== this.width || frame.height !== this.height) {
       this.pixelRatio = ratio
       this.aoPixelRatio = aoRatio
       this.width = frame.width

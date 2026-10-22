@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { SceneObject } from '../api.ts'
 import { defaultPasses, exportCount, type ExportPass, type ExportPlan, type Progress } from '../host/exportShots.ts'
+import { longSideOf, type Resolution } from '../render/engines.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 
 // The export dialog (design「导出对话框」「lit 导出与 render_view」): which
@@ -17,10 +18,12 @@ const passes: { pass: ExportPass; label: string }[] = [
 const progressText = (p: Progress | null) =>
   !p ? '准备中…' : p.stage === 'render' ? `正在渲染 ${p.done}/${p.total}` : p.stage === 'upload' ? `正在上传 ${p.done}/${p.total}` : '正在放到画布…'
 
-export function ExportDialog({ cameras, display, busy, progress, onExport, onClose }: {
+export function ExportDialog({ cameras, display, resolution, busy, progress, onExport, onClose }: {
   cameras: readonly SceneObject[]
   /** The view's shading when the dialog opened. */
   display: DisplayMode
+  /** The scene's output resolution: the images' long side. */
+  resolution: Resolution
   busy: boolean
   progress: Progress | null
   onExport: (plan: ExportPlan) => void
@@ -63,7 +66,7 @@ export function ExportDialog({ cameras, display, busy, progress, onExport, onClo
                 </label>
               ))}
             </fieldset>
-            <p role="status">{busy ? progressText(progress) : (problem ?? `共 ${count} 张，长边 2048，放在场景节点右侧`)}</p>
+            <p role="status">{busy ? progressText(progress) : (problem ?? `共 ${count} 张，长边 ${longSideOf(resolution)}（${resolution.toUpperCase()}），放在场景节点右侧`)}</p>
           </>
         )}
         <footer>

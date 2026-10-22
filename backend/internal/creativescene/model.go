@@ -79,18 +79,45 @@ type Fog struct {
 	Far   float64 `json:"far"`
 }
 
-// Render is how the scene suggests it be shown and the lit look's exposure
-// compensation in stops (toneMappingExposure = 2^exposure_ev); scenes stored
-// before exposure existed read 0.
+// Render is how the scene suggests it be shown, the lit look's exposure
+// compensation in stops (toneMappingExposure = 2^exposure_ev), the renderer
+// of the clay and lit images, and the exports' output resolution. Scenes
+// stored before a field existed read its default (completeRenderSettings).
 type Render struct {
 	Mode       string  `json:"mode"`
 	ExposureEV float64 `json:"exposure_ev"`
+	Engine     string  `json:"engine"`
+	Resolution string  `json:"resolution"`
 }
+
+// The renderers a scene may choose; path tracing is planned, not yet one of them.
+const (
+	EngineWorkbench  = "workbench"
+	EngineRealtimeGI = "realtime_gi"
+)
+
+// Output resolutions by the export's long side: 1024, 2048, 4096, 8192 px.
+var resolutions = []string{"1k", "2k", "4k", "8k"}
+
+const defaultResolution = "2k"
 
 // renderPatch is set_render: only what it carries changes.
 type renderPatch struct {
 	Mode       *string  `json:"mode,omitempty"`
 	ExposureEV *float64 `json:"exposure_ev,omitempty"`
+	Engine     *string  `json:"engine,omitempty"`
+	Resolution *string  `json:"resolution,omitempty"`
+}
+
+// completeRenderSettings gives a render stored before engine and resolution existed
+// their defaults. exposure_ev's default is its zero value.
+func completeRenderSettings(r *Render) {
+	if r.Engine == "" {
+		r.Engine = EngineWorkbench
+	}
+	if r.Resolution == "" {
+		r.Resolution = defaultResolution
+	}
 }
 
 // Object is one node of the scene tree. Placement (name, transform, visible,
@@ -197,12 +224,14 @@ func invalid(format string, args ...any) error {
 // decodeScene reads a stored snapshot. Numbers inside free-form params come
 // back as json.Number and are made float64 so comparisons and re-encoding
 // behave like freshly applied values. Cameras stored before the depth of
-// field fields existed are completed here instead of by a migration.
+// field fields existed are completed here instead of by a migration, and so
+// is a render stored before its engine and resolution.
 func decodeScene(p creativecontent.Payload) (Scene, error) {
 	var s Scene
 	if err := creativeops.Decode(p.Scene, &s); err != nil {
 		return Scene{}, err
 	}
+	completeRenderSettings(&s.Render)
 	for i := range s.Objects {
 		canonicalNumbers(&s.Objects[i])
 		if c := s.Objects[i].Camera; c != nil {
@@ -440,6 +469,15 @@ func Validate(s Scene) error {
 	}
 	if !in(s.Render.ExposureEV, -maxExposureEV, maxExposureEV) {
 		return invalid("曝光补偿须在 −%d…%d 档之间", maxExposureEV, maxExposureEV)
+	}
+	if s.Render.Engine != EngineWorkbench && s.Render.Engine != EngineRealtimeGI {
+		if s.Render.Engine == "path_tracing" {
+			return invalid("渲染器 engine 还不能选路径追踪（path_tracing），可选 workbench 或 realtime_gi")
+		}
+		return invalid("渲染器 engine 须为 workbench 或 realtime_gi")
+	}
+	if !slices.Contains(resolutions, s.Render.Resolution) {
+		return invalid("输出分辨率 resolution 须为 1k、2k、4k 或 8k")
 	}
 	byID := make(map[string]*Object, len(s.Objects))
 	cameras := 0

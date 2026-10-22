@@ -2375,6 +2375,24 @@ func (e CreativeScenePass) Valid() bool {
 	}
 }
 
+// Defines values for CreativeSceneRenderEngine.
+const (
+	RealtimeGi CreativeSceneRenderEngine = "realtime_gi"
+	Workbench  CreativeSceneRenderEngine = "workbench"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneRenderEngine enum.
+func (e CreativeSceneRenderEngine) Valid() bool {
+	switch e {
+	case RealtimeGi:
+		return true
+	case Workbench:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneRenderMode.
 const (
 	CreativeSceneRenderModeClay CreativeSceneRenderMode = "clay"
@@ -2387,6 +2405,30 @@ func (e CreativeSceneRenderMode) Valid() bool {
 	case CreativeSceneRenderModeClay:
 		return true
 	case CreativeSceneRenderModeLit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneRenderResolution.
+const (
+	N1k CreativeSceneRenderResolution = "1k"
+	N2k CreativeSceneRenderResolution = "2k"
+	N4k CreativeSceneRenderResolution = "4k"
+	N8k CreativeSceneRenderResolution = "8k"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneRenderResolution enum.
+func (e CreativeSceneRenderResolution) Valid() bool {
+	switch e {
+	case N1k:
+		return true
+	case N2k:
+		return true
+	case N4k:
+		return true
+	case N8k:
 		return true
 	default:
 		return false
@@ -7124,13 +7166,25 @@ type CreativeScenePrimitive struct {
 
 // CreativeSceneRender defines model for CreativeSceneRender.
 type CreativeSceneRender struct {
+	// Engine 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
+	Engine CreativeSceneRenderEngine `json:"engine"`
+
 	// ExposureEv 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。
 	ExposureEv float32                 `json:"exposure_ev"`
 	Mode       CreativeSceneRenderMode `json:"mode"`
+
+	// Resolution 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
+	Resolution CreativeSceneRenderResolution `json:"resolution"`
 }
+
+// CreativeSceneRenderEngine 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
+type CreativeSceneRenderEngine string
 
 // CreativeSceneRenderMode defines model for CreativeSceneRender.Mode.
 type CreativeSceneRenderMode string
+
+// CreativeSceneRenderResolution 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
+type CreativeSceneRenderResolution string
 
 // CreativeSceneRestoreBatch 一条 restore_units 命令的内容：来源修订、单元和预期版本。
 type CreativeSceneRestoreBatch struct {

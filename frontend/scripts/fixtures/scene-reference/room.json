@@ -12,7 +12,9 @@
   },
   "render": {
     "mode": "lit",
-    "exposure_ev": 0
+    "exposure_ev": 0,
+    "engine": "workbench",
+    "resolution": "2k"
   },
   "objects": [
     {

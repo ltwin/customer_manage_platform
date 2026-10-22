@@ -1,0 +1,220 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "viewport_frames": {
+    "perf-realtime_gi": {
+      "solid": {
+        "mean": 8.3,
+        "p95": 9.2,
+        "max": 9.4,
+        "frames": 480
+      },
+      "rendered": {
+        "mean": 10.6,
+        "p95": 16.8,
+        "max": 17.6,
+        "frames": 377
+      }
+    },
+    "cornell-realtime_gi": {
+      "solid": {
+        "mean": 8.3,
+        "p95": 9.2,
+        "max": 9.4,
+        "frames": 480
+      },
+      "rendered": {
+        "mean": 8.5,
+        "p95": 9.2,
+        "max": 17.2,
+        "frames": 470
+      }
+    },
+    "perf-workbench": {
+      "wireframe": {
+        "mean": 8.3,
+        "p95": 9.1,
+        "max": 9.3,
+        "frames": 480
+      },
+      "solid": {
+        "mean": 8.3,
+        "p95": 9.1,
+        "max": 9.4,
+        "frames": 481
+      },
+      "preview": {
+        "mean": 8.3,
+        "p95": 9.1,
+        "max": 9.4,
+        "frames": 480
+      },
+      "rendered": {
+        "mean": 8.3,
+        "p95": 9.2,
+        "max": 9.4,
+        "frames": 480
+      }
+    }
+  },
+  "settle": {
+    "perf-realtime_gi": {
+      "solid": {
+        "ms": 95,
+        "frames": 12
+      },
+      "rendered": {
+        "ms": 130,
+        "frames": 12
+      }
+    },
+    "cornell-realtime_gi": {
+      "solid": {
+        "ms": 91,
+        "frames": 12
+      },
+      "rendered": {
+        "ms": 89,
+        "frames": 12
+      }
+    },
+    "perf-workbench": {
+      "wireframe": {
+        "ms": 0,
+        "frames": 1
+      },
+      "solid": {
+        "ms": 0,
+        "frames": 1
+      },
+      "preview": {
+        "ms": 0,
+        "frames": 1
+      },
+      "rendered": {
+        "ms": 0,
+        "frames": 1
+      }
+    }
+  },
+  "exports": {
+    "workbench-clay-1k": {
+      "ms": 29,
+      "bytes": 221422,
+      "type": "image/png",
+      "width": 1024,
+      "height": 683
+    },
+    "workbench-clay-2k": {
+      "ms": 49,
+      "bytes": 689486,
+      "type": "image/png",
+      "width": 2048,
+      "height": 1365
+    },
+    "workbench-clay-4k": {
+      "ms": 150,
+      "bytes": 252767,
+      "type": "image/jpeg",
+      "width": 4096,
+      "height": 2731
+    },
+    "workbench-clay-8k": {
+      "ms": 720,
+      "bytes": 850734,
+      "type": "image/jpeg",
+      "width": 8192,
+      "height": 5461
+    },
+    "workbench-lit-1k": {
+      "ms": 78,
+      "bytes": 340947,
+      "type": "image/png",
+      "width": 1024,
+      "height": 683
+    },
+    "workbench-lit-2k": {
+      "ms": 100,
+      "bytes": 1132491,
+      "type": "image/png",
+      "width": 2048,
+      "height": 1365
+    },
+    "workbench-lit-4k": {
+      "ms": 173,
+      "bytes": 453574,
+      "type": "image/jpeg",
+      "width": 4096,
+      "height": 2731
+    },
+    "workbench-lit-8k": {
+      "ms": 523,
+      "bytes": 1446755,
+      "type": "image/jpeg",
+      "width": 8192,
+      "height": 5461
+    },
+    "realtime_gi-clay-1k": {
+      "ms": 363,
+      "bytes": 492917,
+      "type": "image/png",
+      "width": 1024,
+      "height": 683
+    },
+    "realtime_gi-clay-2k": {
+      "ms": 1465,
+      "bytes": 1748468,
+      "type": "image/png",
+      "width": 2048,
+      "height": 1365
+    },
+    "realtime_gi-clay-4k": {
+      "ms": 7705,
+      "bytes": 393595,
+      "type": "image/jpeg",
+      "width": 4096,
+      "height": 2731
+    },
+    "realtime_gi-clay-8k": {
+      "ms": 43747,
+      "bytes": 1284408,
+      "type": "image/jpeg",
+      "width": 8192,
+      "height": 5461
+    },
+    "realtime_gi-lit-1k": {
+      "ms": 792,
+      "bytes": 745374,
+      "type": "image/png",
+      "width": 1024,
+      "height": 683
+    },
+    "realtime_gi-lit-2k": {
+      "ms": 3370,
+      "bytes": 2781299,
+      "type": "image/png",
+      "width": 2048,
+      "height": 1365
+    },
+    "realtime_gi-lit-4k": {
+      "ms": 16845,
+      "bytes": 967434,
+      "type": "image/jpeg",
+      "width": 4096,
+      "height": 2731
+    },
+    "realtime_gi-lit-8k": {
+      "ms": 95295,
+      "bytes": 3478314,
+      "type": "image/jpeg",
+      "width": 8192,
+      "height": 5461
+    }
+  },
+  "gi_light_add_ms": 116
+}

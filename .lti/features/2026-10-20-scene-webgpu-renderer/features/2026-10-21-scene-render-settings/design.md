@@ -23,11 +23,11 @@
 
   | 显示 / 出图 | 透视 | 正交 |
   |---|---|---|
-  | 白模、最终渲染、`clay`、`lit` 导出、`render_view` 的 `clay` / `lit` | `render.engine` | 工作台（视口角标提示） |
-  | 线框、材质预览、`line` 导出 | 工作台 | 工作台 |
+  | 最终渲染、`lit` 导出、`render_view` 的 `lit` | `render.engine` | 工作台（视口角标提示） |
+  | 白模、线框、材质预览、`clay`、`line` 导出、`render_view` 的 `clay` | 工作台 | 工作台 |
 
   导出和 `render_view` 总是透视摄像机。这张表只在一处实现（`render/engines.ts` 的 `effectiveEngine`），视口和离屏渲染端都调用它。
-- **R-3 指纹**：`fingerprintRender` 新增 `engine`（`omitempty`），只在 `clay`、`lit` 且值不是 `workbench` 时赋值；`resolution` 不进指纹。现有的 v1 指纹因此不变，不升指纹版本。
+- **R-3 指纹**：`fingerprintRender` 新增 `engine`（`omitempty`），只在 `lit` 且值不是 `workbench` 时赋值；`resolution` 不进指纹。现有的 v1 指纹因此不变，不升指纹版本。
 - **R-4 写入**：`set_render` 按键合并，「至少写一项」的判断与提示加上 `engine`、`resolution`；`path_tracing` 和未知档位返回 400 并指出字段。
 - **R-5 设备画不了的档位**：导出前所选档位的长边超过设备的纹理上限，或输出分辨率为 4K、8K 时出图丢失设备，都是「当前设备画不了这个档位」：明确失败，不回队、不降分辨率。2K 及以下丢设备沿用 R1：任务回队，手动导出提示重试。
 
@@ -103,21 +103,24 @@ flowchart LR
 ```mermaid
 flowchart LR
   PRE[不透明预通道 samples:0<br/>MRT: 打包法线+粗糙度, 速度; 深度] --> SSGI & SSR & TR & RD & SSS
-  LIT[GI 光照 pass samples:0<br/>giSplit 上下文<br/>MRT: output, base, ambient, envSpec] --> SSGI
+  LIT[GI 光照 pass samples:0<br/>giSplit 上下文, 不画雾<br/>MRT: output, base, ambient, envSpec] --> SSGI
   SSGI[SSGI fork<br/>vec4 GI, AO] --> TR[TemporalReproject<br/>diffuse, accumulate:false] --> RD[RecurrentDenoise<br/>accumulate:true, alphaSource ao]
   RD -. 历史 .-> TR
   LIT --> SSR[SSR 随机 GGX] --> TR2[TemporalReproject specular] --> RD2[RecurrentDenoise] -. 回灌 .-> SSR
   SSS[接触阴影 SSSNode]
-  RD & RD2 & SSS & LIT --> C[合成] --> TRAA --> DOF[景深] --> ACC[累积 K 帧<br/>仅导出/render_view] --> OUT[色调映射·sRGB]
+  ASIDE[辅助对象 pass<br/>仅视口]
+  RD & RD2 & SSS & LIT --> C[合成] --> FOG[雾] --> OV[叠辅助对象] --> TRAA --> DOF[景深] --> ACC[累积 K 帧<br/>仅导出/render_view] --> OUT[色调映射·sRGB]
+  ASIDE --> OV
 ```
 
 - **不透明预通道**：`pass(scene, camera, { samples: 0 })`，`transparent = false`，只画图层 0。与工作台的预通道不同，这里**不用**覆盖材质：要拿到材质（含程序化预设）的粗糙度和凹凸后的法线。MRT 输出 `vec4(packNormalToRGB(normalView), roughness)` 和 `velocity`，共 16 字节。法线有两种格式：`TemporalReprojectNode`、`RecurrentDenoiseNode` 内部会解包，要打包的；SSGI、SSR、`DenoiseNode` 直接 `normalize`，要解包后的（用一个 `unpackRGBToNormal` 采样节点）。
-- **GI 光照 pass**：`pass(scene, camera, { samples: 0 })`，画全部物件（含透明和透射，three 照常排序、透射照常取背景），图层 0 加 `ASIDE_LAYER`。`contextNode` 带 `giSplit` 标记，MRT 输出 `output`、`base = vec4(diffuseColor, metalness)`、`ambient`、`envSpec`，正好 32 字节（WebGPU 默认的 `maxColorAttachmentBytesPerSample`；`rgba8unorm` 也按 8 字节计）。
+- **GI 光照 pass**：`pass(scene, camera, { samples: 0 })`，画图层 0 的全部物件（含透明和透射，three 照常排序、透射照常取背景），不画雾（tasks 7.5）。`contextNode` 带 `giSplit` 标记，MRT 输出 `output`、`base = vec4(diffuseColor, metalness)`、`ambient`、`envSpec`，正好 32 字节（WebGPU 默认的 `maxColorAttachmentBytesPerSample`；`rgba8unorm` 也按 8 字节计）。
 - **SSGI**：fork 输入 GI 光照 pass 的 `output`、预通道的深度和解包法线；输出 `vec4(GI, AO)`。质量档：`interactive` 为 `sliceCount 2 / stepCount 8`，`final` 从同档起步，高档 `3 / 16` 是否采用由标定决定（Epic「质量档」）。`giIntensity`、`radius` 从 R0 的 10、12 起步，在参考场景上调。
-- **SSR**：照官方 `webgpu_postprocessing_ssr_denoise` 的链路（随机 GGX → specular 重投影 → 递归降噪 → 回灌）。白模不建 SSR。
-- **接触阴影**：`SSSNode`，主光源取太阳（程序化天空且太阳在地平线以上）；没有时取场景里强度最大的投影灯；都没有就不加。
+- **SSR**：照官方 `webgpu_postprocessing_ssr_denoise` 的链路（随机 GGX → specular 重投影 → 递归降噪 → 回灌），随实时 GI 常开。
+- **接触阴影**：`SSSNode`，主光源取太阳（程序化天空且太阳在地平线以上）；没有时取场景里照度最大的投影灯（聚光按世界坐标下到目标的距离算）；都没有就不加。主光每帧现查，不进管线的键：太阳落山、换天空、两盏灯强弱交替都不重建管线；没有主光时这一帧不追踪，合成里权重为 0（tasks 7.5）。
 - **TRAA** 必须是最外层的时域节点：它和 `TemporalReprojectNode` 都会去占视口偏移（`viewOffsetOwner`），只有 TRAA 做抖动。
-- **覆盖层**：`aside`（网格、描边外壳）随画面一起被 TRAA 抖动和累积；`top`（gizmo）在 TRAA 之后合成（Epic「抗锯齿切换」）。
+- **雾**：场景的雾是线性雾（`objects/Lighting.tsx`）。光照 pass 不画雾，合成之后按预通道深度统一叠雾，算法与 three 的 `rangeFogFactor` 相同（视空间深度上的 smoothstep），所以 GI、反射和接触阴影一起被雾衰减；背景不加雾（three 里天空盒离摄像机太近，也不受雾影响）；玻璃取它后面不透明表面的雾（tasks 7.5）。
+- **覆盖层**：视口的 `aside`（网格、描边外壳、灯光图标、摄像机视锥、空物体）单独一个 pass 画（不进光照 pass，也就不在 SSGI、SSR 采样的那张图里），雾之后、TRAA 之前按深度叠上：它的深度不大于预通道深度处可见，与同一 pass 里的深度测试相同；玻璃前后都画在玻璃上面。导出没有辅助对象，不建这个 pass。`top`（gizmo）在 TRAA 之后合成（Epic「抗锯齿切换」）。
 - **帧序号**：SSGI fork 和 `RecurrentDenoiseNode` 取渲染器的帧序号；SSR 和 TRAA 用各自私有的计数，所以导出每张图新建管线（R1 已如此）。GI 链里的节点都不用 `Math.random`（已核实），不需要像 R1 的 `DenoiseNode` 那样换固定种子的噪声。
 - **释放**：每张导出图新建、释放一整条 GI 管线。R0 发现 GI 管线每重建一次残留 12–24 字节/像素；R2 必须找到并释放，验证同 R1（连续导出 48 张纹理数不增长）。
 
@@ -223,7 +226,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 ### 助手
 
 - `scene_tools.go`：
-  - `edit_scene` 的 `set_render` 写法改为 `set_render{render:{mode?:clay|lit, exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）`，并说明：渲染器作用于白模和材质光照（`clay`、`lit` 导出与回看），实时 GI 加入屏幕空间的间接光、反射和接触阴影，出图更慢；输出分辨率只决定导出图的长边；`path_tracing` 还不能用。
+  - `edit_scene` 的 `set_render` 写法改为 `set_render{render:{mode?:clay|lit, exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）`，并说明：渲染器只作用于材质光照（`lit` 导出与回看，白模和线稿总按工作台），实时 GI 加入屏幕空间的间接光、反射和接触阴影，出图更慢；输出分辨率只决定导出图的长边；`path_tracing` 还不能用。
   - `render_view`：说明实时 GI 的回看更慢（多帧累积）。
   - `export_shots`：「长边 2048」改为「长边按 `render.resolution`（缺省 2K，即 2048）；4K、8K 的白模和材质光照是 JPEG」。
 - `instructions/base.md` 的场景段落补一句渲染器与输出分辨率的用法。
@@ -237,6 +240,14 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 - **光照 pass 不清零、合成时再拆**：为透明和透射物体背后的画面保留环境光。
 - **两个 pass**：不透明预通道（法线、粗糙度、速度）加 GI 光照 pass（颜色和三个间接光通道），而不是 R0 的单 pass 四附件：单 pass 加上间接光通道会超过 32 字节，透明物体也会写坏法线。代价是预通道要做完整的材质求值（工作台的预通道用覆盖材质，代价更低）。
 - **K 固定**：不按场景自适应，标定取保守值；暗部多的场景如果噪点明显，再考虑按场景加帧（后续）。
+- **标定后的调整（tasks 5.1，记录见 `discovery/research/calibration.md`）**：
+  - 累积先预热 N 帧，之后的 K 帧才平均。时域节点的第一帧在 HDR 里偏差极大，原先从第 1 帧平均时，K16 的材质光照亮了一半。
+  - 出图（`final` 档）的 GI 只做空间滤波，也就是「SSGI 降噪」的退路，视口仍用递归降噪。递归降噪的输出在帧间高度相关，K 帧平均几乎压不下它的噪点：1K 和 `render_view` 下颗粒明显。代价是暗处偏亮（盒子间后墙上部 +25%，递归降噪是 +10%），owner 2026-10-21 选定。
+  - K 的选取规则（不超过 K = 256 的 1.2 倍）因为噪点没有平台而达不到，owner 改为按耗时定：K = 64、K_view = 16；N = 12。
+- **接触阴影只压朝向主光的表面**（tasks 7.3）：合成里接触阴影乘在全部直接光上（上面的 `direct × contact`），背对主光的表面会被它连同其他灯光一起压暗，还带颗粒；改为按法线与主光方向的点积淡入，N·L ≤ 0 时不压。代价是主光以外的灯光在朝向主光的面上仍会被主光方向的接触阴影压一点（无法逐灯拆开直接光），与原设计相同。
+- **渲染器只作用于最终渲染和材质光照**（tasks 7.4，owner 2026-10-21 验收前修订，偏离 Epic「渲染器同时作用于白模和最终渲染」，Epic 修订待批）：白模与 Blender 视口里 Rendered 以外的着色一样，总按工作台画，`clay` 导出和 `render_view` 的 `clay` 随之不变；R-2 的表、R-3 的指纹和助手说明一并改。白模 GI 那一支（`Frame.reflections`、`realtimeGI` 的 `reflections` 选项）没有调用方，删去，SSR 随实时 GI 常开。
+- **辅助对象不进预通道**（tasks 7.4）：灯光图标、摄像机视锥、空物体十字和分组坐标轴放进 aside 层（与网格、选中描边同层）：画进图里，但不进 AO 和实时 GI 的预通道，不遮挡、不投接触阴影、不进 SSGI；视口点选的射线也看 aside 层，点选不变（aside 层上的描边、线稿禁用射线，网格没有物件 ID）。之前它们在 layer 0，实时 GI 在它们周围的地面画出大片颗粒状黑斑，工作台的 AO 也算上它们。导出没有辅助对象，不受影响。
+- **雾、辅助对象与主光**（tasks 7.5，代码审计）：见上面「实时 GI 管线」的雾、覆盖层和接触阴影三条。之前光照 pass 带雾、合成从带雾的 `output` 里减去不带雾的间接光，再加回不带雾的 GI 和反射，全雾里物体照样透出来；辅助对象画在光照 pass 里，会作为背后表面的光被 SSGI、SSR 采到；主光的 uuid 在管线键里，主光一换就重建整条管线和时域历史。
 - **时限公式**与**逐帧让出主线程**（Epic 只说「公式由 R2 定」）。
 - **实时 GI 的环境光补偿**单独取值。
 - **后续**：Epic 的「实时 GI 的质量档位、采样数开放给摄影师」仍等 AC-8 结论；正交视图的 SSGI 不做（回落工作台）。
@@ -275,6 +286,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | 有效渲染器、收敛、像素比、正交角标 |
 | `frontend/src/creative-scene/SceneEditor.tsx` | 修改 | 属性区选项卡、`RenderPanel` |
 | `frontend/src/creative-scene/panels/RenderPanel.tsx` | 新增 | 渲染选项卡 |
+| `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | 灯光图标、摄像机视锥、空物体和分组坐标轴放进 aside 层（tasks 7.4） |
 | `frontend/src/creative-scene/panels/EnvironmentPanel.tsx` | 修改 | 去掉曝光 |
 | `frontend/src/creative-scene/panels/ExportDialog.tsx` | 修改 | 显示当前档位 |
 | `frontend/src/creative-scene/state/sceneStore.ts` | 修改 | 属性区选项卡的 UI 状态 |
@@ -286,7 +298,6 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
 | `frontend/scripts/creative-scene-*.test.ts` | 修改 | 引擎函数、时限、拆分守护、SSGI fork 守护、导出尺寸 |
 | `frontend/scripts/creative-scene.e2e.mjs` | 修改 | AC-R2-1 至 AC-R2-6、AC-R2-8、AC-R2-9 用例 |
 | `frontend/scripts/creative-scene-agent.e2e.mjs` | 修改 | AC-R2-7 |
-| `frontend/scripts/creative-scene-agent-background.e2e.mjs` | 修改 | 隐藏标签页的实时 GI 连拍（AC-R2-5） |
 | `docs/dev/agent-skills-tools.md` | 修改 | 工具表与排空后升级记录 |
 | `docs/dev/creative-scene-agent.md` | 修改 | 导出尺寸与格式 |
 
@@ -298,7 +309,7 @@ const AO = denoise(vec4(vec3(giAO.a), 1), depth, normalView, camera).r   // 降�
   - AC-R2-1、AC-R2-2：选项卡内容、自动切换、撤销、两个标签页同步、过时提示的三种情况；
   - AC-R2-3：盒子间的区域测量（红墙旁地面的红绿比、金属球区域与工作台的差、接触处亮度），图存 evidence；切回工作台对 R1 冻结参考图；
   - AC-R2-4：线框、材质预览、`line` 与工作台逐像素相同，正交角标；
-  - AC-R2-5：视口帧计数停在 N，残余噪点阈值；隐藏标签页实时 GI 连拍两次逐像素相同；
+  - AC-R2-5：视口帧计数停在 N，残余噪点阈值；隐藏标签页实时 GI 连拍两次、与前台在容差内（每通道差 ≤ 1，差 > 8 的像素 ≤ 0.01%），用例在 `creative-scene.e2e.mjs` 的 `SCENE_E2E_HIDDEN`（与 R1 的工作台确定性同一用例）；
   - AC-R2-6：四档 × 三种画幅的尺寸与格式，8K 1:1 能上传；纹理上限不够的失败（测试钩子把上限压低）；4K 丢设备的 `host_error`（R1 的丢设备钩子）；
   - AC-R2-7：助手脚本化回合；
   - AC-R2-8：`forceWebGL` 对照；SwiftShader 下出图不报错。

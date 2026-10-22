@@ -146,6 +146,85 @@ func TestTheAssistantAimsLooksAndExports(t *testing.T) {
 	}
 }
 
+// AC-R2-7: 「换成实时 GI，按 4K 导出」 — the assistant writes engine and
+// resolution with set_render, looks at the real-time GI with render_view and
+// exports; the page draws both from the revision that carries them
+// (frontend/scripts/creative-scene-agent.e2e.mjs checks the pictures).
+func TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K(t *testing.T) {
+	f, c, consent, doc := visualScene(t, true)
+	f.placeOnCanvas(doc)
+	cam := "sobj_CAM000000000000000001"
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", editSceneTool, map[string]any{"document_id": doc, "based_on_revision": 1, "operations": []any{
+				map[string]any{"op": "add_objects", "objects": []any{
+					map[string]any{"id": cam, "kind": "camera", "name": "摄像机 1", "parent_id": nil, "order": 1, "visible": true, "locked": false,
+						"transform": map[string]any{"position": []float64{0, 1, 5}}, "look_at": []float64{0, 1, 0}, "camera": map[string]any{}},
+				}},
+				map[string]any{"op": "set_render", "render": map[string]any{"engine": "realtime_gi", "resolution": "4k"}},
+			}}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("b", renderViewTool, map[string]any{"document_id": doc, "camera_object_id": cam, "mode": "lit"}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("c", exportShotsTool, map[string]any{"document_id": doc, "passes": []string{"clay", "line", "lit"}}))
+		},
+	}}
+	f.vendor.script = s.answer
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
+	t.Cleanup(func() { creativecanvas.SetExportFreshness(nil) })
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "换成实时 GI，按 4K 导出"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunWaitingClient {
+		t.Fatalf("after render_view: %s %s", got.State, got.ErrorCode)
+	}
+	edited := lastTool(s.request(2))
+	if edited["written_revision"] == nil {
+		t.Fatalf("edit_scene result %v", edited)
+	}
+	var raw []byte
+	if err := f.db.QueryRow(`SELECT r.payload->'scene'->'render' FROM creative_documents d JOIN creative_content_revisions r ON r.id=d.content_revision_id AND r.account_id=d.account_id WHERE d.id=$1`, doc).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var render creativescene.Render
+	if err := json.Unmarshal(raw, &render); err != nil {
+		t.Fatal(err)
+	}
+	// set_render merges by key: the mode and the exposure stay as they were.
+	if render != (creativescene.Render{Mode: "clay", ExposureEV: 0, Engine: creativescene.EngineRealtimeGI, Resolution: "4k"}) {
+		t.Fatalf("render %+v", render)
+	}
+	var request creativescene.RenderRequest
+	if err := f.db.QueryRow(`SELECT request FROM creative_scene_jobs WHERE run_id=$1 AND kind='render_view'`, run.ID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &request); err != nil || request.Mode != "lit" || request.CameraObjectID != cam {
+		t.Fatalf("render request %s", raw)
+	}
+	if resp := f.hostCompletes(); resp.State != creativescene.JobSucceeded {
+		t.Fatalf("render %+v", resp)
+	}
+	if got := f.resume(run.ID); got.State != RunWaitingClient {
+		t.Fatalf("after export_shots: %s %s", got.State, got.ErrorCode)
+	}
+	if ok, _ := hasImage(s.request(3)); !ok {
+		t.Fatal("the real-time GI screenshot is not in the request after render_view")
+	}
+	if resp := f.hostCompletes(); resp.State != creativescene.JobSucceeded {
+		t.Fatalf("export %+v", resp)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("finished %s %s", got.State, got.ErrorCode)
+	}
+	exported := lastTool(s.request(4))
+	if nodes, _ := exported["nodes"].([]any); exported["status"] != "succeeded" || len(nodes) != 3 {
+		t.Fatalf("export_shots result %v", exported)
+	}
+}
+
 // A scene that is not on the run's canvas is refused before any job.
 func TestExportShotsNeedsTheSceneOnTheCanvas(t *testing.T) {
 	f, c, consent, doc := visualScene(t, true)

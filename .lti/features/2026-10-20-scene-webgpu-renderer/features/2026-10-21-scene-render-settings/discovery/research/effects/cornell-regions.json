@@ -1,0 +1,207 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "boxes": {
+    "floor_by_red_wall": [
+      0.11,
+      0.94,
+      0.22,
+      0.99
+    ],
+    "cube_face_to_red_wall": [
+      0.243,
+      0.7,
+      0.257,
+      0.88
+    ],
+    "ball": [
+      0.61,
+      0.7,
+      0.77,
+      0.9
+    ],
+    "floor_by_green_wall": [
+      0.8,
+      0.94,
+      0.88,
+      0.99
+    ],
+    "cube_front_foot": [
+      0.3,
+      0.9,
+      0.42,
+      0.925
+    ],
+    "cube_contact": [
+      0.3,
+      0.955,
+      0.42,
+      0.975
+    ]
+  },
+  "means": {
+    "workbench-lit": {
+      "floor_by_red_wall": [
+        199.52,
+        198.6,
+        196.6
+      ],
+      "cube_face_to_red_wall": [
+        6,
+        6.31,
+        7
+      ],
+      "ball": [
+        82.14,
+        80.84,
+        79.08
+      ],
+      "floor_by_green_wall": [
+        127.59,
+        126.52,
+        125.26
+      ],
+      "cube_front_foot": [
+        194.81,
+        189.58,
+        180.44
+      ],
+      "cube_contact": [
+        248.17,
+        247.29,
+        245.61
+      ]
+    },
+    "workbench-clay": {
+      "floor_by_red_wall": [
+        135.93,
+        132.94,
+        126.95
+      ],
+      "cube_face_to_red_wall": [
+        111,
+        108,
+        102.49
+      ],
+      "ball": [
+        119.17,
+        116.22,
+        110.36
+      ],
+      "floor_by_green_wall": [
+        136,
+        133,
+        127
+      ],
+      "cube_front_foot": [
+        102.56,
+        99.69,
+        94.08
+      ],
+      "cube_contact": [
+        135.93,
+        132.95,
+        126.97
+      ]
+    },
+    "realtime_gi-lit": {
+      "floor_by_red_wall": [
+        231.86,
+        209.86,
+        206.7
+      ],
+      "cube_face_to_red_wall": [
+        228.14,
+        142.07,
+        125.9
+      ],
+      "ball": [
+        101.78,
+        108.38,
+        98.79
+      ],
+      "floor_by_green_wall": [
+        169.75,
+        195.07,
+        162.11
+      ],
+      "cube_front_foot": [
+        236.66,
+        234.52,
+        230.23
+      ],
+      "cube_contact": [
+        248.88,
+        247.99,
+        246.46
+      ]
+    },
+    "realtime_gi-clay": {
+      "floor_by_red_wall": [
+        118.23,
+        114.6,
+        107.41
+      ],
+      "cube_face_to_red_wall": [
+        126.25,
+        121.48,
+        111.91
+      ],
+      "ball": [
+        118.1,
+        114.84,
+        108.39
+      ],
+      "floor_by_green_wall": [
+        115.23,
+        111.54,
+        104.32
+      ],
+      "cube_front_foot": [
+        109.9,
+        106.19,
+        99.07
+      ],
+      "cube_contact": [
+        124.84,
+        121.33,
+        114.28
+      ]
+    }
+  },
+  "measured": {
+    "lit_floor_by_red_wall_red_green": [
+      1.0046324269889226,
+      1.104831792623654
+    ],
+    "lit_cube_face_red_green": [
+      0.9508716323296356,
+      1.6058281129020906
+    ],
+    "lit_ball_difference": 22.296666666666667,
+    "lit_floor_by_green_wall_green_red": [
+      0.9916137628340779,
+      1.149160530191458
+    ],
+    "lit_cube_front_foot_grey": [
+      190.10181,
+      234.67079999999999
+    ],
+    "lit_cube_contact_grey": [
+      247.36159999999998,
+      248.08169
+    ],
+    "clay_cube_front_foot_grey": [
+      99.90859,
+      106.48761
+    ],
+    "clay_cube_contact_grey": [
+      133.1593,
+      121.57578999999998
+    ]
+  }
+}

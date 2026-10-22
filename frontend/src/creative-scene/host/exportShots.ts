@@ -2,9 +2,10 @@ import { ApiError } from '../../api/transport.ts'
 import type { components } from '../../api/schema'
 import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { SceneDocument } from '../api.ts'
-import { DeviceLostError } from '../render/gpu.ts'
+import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
-import { exportLongSide, cameraFraming, type Framing } from './framing.ts'
+import { cameraFraming, type Framing } from './framing.ts'
+import { drawnFrames, effectiveEngine, engineOf, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
 
 // Export (design「导出渲染」「导出接口」): every camera of the plan drawn
@@ -21,7 +22,8 @@ export type ExportResult = components['schemas']['CreativeSceneExportResult']
 
 export type ExportPlan = { cameraObjectIDs: readonly string[]; passes: readonly ExportPass[] }
 export type ShotImage = { camera: string; pass: ExportPass; blob: Blob }
-export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string }
+/** hostError: the device cannot draw the chosen resolution; an assistant's job ends as host_error, not back in the queue. */
+export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string; hostError?: true }
 export type Progress = { stage: 'render' | 'upload' | 'place'; done: number; total: number }
 
 /** How many images an export makes, and why it cannot go ahead: none, or more than 48. */
@@ -37,10 +39,6 @@ const maxImages = 48
 /** The passes the export dialog starts with: the lit look too when the view shows materials. */
 export const defaultPasses = (display: DisplayMode): ExportPass[] => (display === 'preview' || display === 'rendered' ? ['clay', 'line', 'lit'] : ['clay', 'line'])
 
-/** One image that takes longer than this, rendered and encoded, fails the export. */
-export const shotTimeoutMs = 30_000
-/** Mounting the lit look and compiling its materials longer than this fails the export. */
-export const lookTimeoutMs = 60_000
 const uploadConcurrency = 2
 
 export type RenderDeps = {
@@ -62,9 +60,11 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const now = deps.now ?? (() => performance.now())
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const doc = await deps.read(documentID)
+  const { resolution } = doc.scene.render
+  const longSide = longSideOf(resolution)
   const framings: { id: string; framing: Framing }[] = []
   for (const id of plan.cameraObjectIDs) {
-    const framing = cameraFraming(doc.scene, id, exportLongSide)
+    const framing = cameraFraming(doc.scene, id, longSide)
     if ('error' in framing) return { ok: false, message: framing.error }
     framings.push({ id, framing })
   }
@@ -72,30 +72,67 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const total = framings.length * plan.passes.length
   const clayPasses = plan.passes.filter((p) => p !== 'lit')
   const lit = plan.passes.includes('lit')
+  // Each image's limit follows what it costs (R2 design「输出分辨率、编码与时限」): its pixels, the frames its
+  // renderer averages, its encoding; the whole export gets the lit look's switch and every image's limit.
+  const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass) => {
+    const engine = effectiveEngine(engineOf(doc.scene.render), pass, true)
+    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export'), imageTypeOf(pass, resolution).type)
+  }
+  const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass), 0), 0)
+  const began = now()
   const shooter = await deps.open(doc, clayPasses.length ? 'clay' : 'lit')
+  // A device that cannot draw the resolution fails at once rather than drawing smaller (R2 design R-5).
+  if (longSide > shooter.maxTextureSize) {
+    shooter.close()
+    return { ok: false, message: `当前设备最大只能导出长边 ${shooter.maxTextureSize} px 的图，请选更低的输出分辨率`, hostError: true }
+  }
   const drawn = new Map<string, Blob>()
   const key = (camera: string, pass: ExportPass) => `${camera}\n${pass}`
-  /** Draws one image; false when it took too long. */
-  const draw = (id: string, framing: Framing, pass: ExportPass) => {
+  /** Draws one image; the message when it took too long. */
+  const draw = async (shot: { id: string; framing: Framing }, pass: ExportPass): Promise<string | null> => {
     onProgress?.({ stage: 'render', done: drawn.size, total })
+    const budget = budgetOf(shot, pass)
     const started = now()
-    const blob = shooter.shoot(framing, { kind: pass as ShotKind, type: 'image/png', depthOfField: pass !== 'line' && framing.depthOfField })
-    if (now() - started > shotTimeoutMs) return false
-    drawn.set(key(id, pass), blob)
-    return true
+    const slow = `一张导出图渲染超过 ${Math.round(budget / 1000)} 秒`
+    let blob: Blob
+    try {
+      const encoding = imageTypeOf(pass, resolution)
+      // The shooter checks the deadline against its own clock, performance.now() (host/render.ts); `now` times the export.
+      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: encoding.type, quality: encoding.quality, depthOfField: pass !== 'line' && shot.framing.depthOfField, deadline: performance.now() + budget })
+    } catch (err) {
+      if (err instanceof ShotTimeout) return slow
+      throw err
+    }
+    if (now() - started > budget) return slow
+    if (now() - began > totalMs) return `导出超过 ${Math.round(totalMs / 1000)} 秒没有完成`
+    drawn.set(key(shot.id, pass), blob)
+    return null
   }
-  const slow = { ok: false as const, message: `一张导出图渲染超过 ${shotTimeoutMs / 1000} 秒` }
   try {
-    for (const { id, framing } of framings) for (const pass of clayPasses) if (!draw(id, framing, pass)) return slow
+    for (const shot of framings) {
+      for (const pass of clayPasses) {
+        const slow = await draw(shot, pass)
+        if (slow) return { ok: false, message: slow }
+      }
+    }
     if (lit) {
       if (clayPasses.length) {
-        const switched = await Promise.race([shooter.setLook('lit').then(() => true), sleep(lookTimeoutMs).then(() => false)])
-        if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookTimeoutMs / 1000} 秒` }
+        const switched = await Promise.race([shooter.setLook('lit').then(() => true), sleep(lookBudgetMs).then(() => false)])
+        if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookBudgetMs / 1000} 秒` }
       }
-      for (const { id, framing } of framings) if (!draw(id, framing, 'lit')) return slow
+      for (const shot of framings) {
+        const slow = await draw(shot, 'lit')
+        if (slow) return { ok: false, message: slow }
+      }
     }
     // Nothing goes up drawn on a device lost on the way (render.ts).
     await shooter.confirm()
+  } catch (err) {
+    // At 4K and 8K a lost device is taken as one that cannot draw so large: no retry (R2 design R-5).
+    if (err instanceof DeviceLostError && longSide >= 4096) {
+      return { ok: false, message: `渲染设备在按 ${resolution.toUpperCase()} 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出`, hostError: true }
+    }
+    throw err
   } finally {
     shooter.close()
   }
@@ -118,7 +155,9 @@ export async function uploadShots(upload: UploadFn, images: readonly ShotImage[]
       const i = next++
       const { camera, pass, blob } = images[i]
       try {
-        out[i] = await upload(new File([blob], `${camera}-${pass}.png`, { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, signal)
+        // PNG or JPEG as it was encoded (render/engines.ts imageTypeOf).
+        const mime = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
+        out[i] = await upload(new File([blob], `${camera}-${pass}.${extensionOf(mime)}`, { type: mime }), { kind: 'image', mime }, signal)
         onProgress?.({ stage: 'upload', done: ++done, total: images.length })
       } catch (cause) {
         failure ??= { cause }

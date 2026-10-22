@@ -107,7 +107,7 @@ class SceneServer {
         ambient: { color: '#ffffff', intensity: 0.4 },
         fog: null,
       },
-      render: { mode: 'clay' },
+      render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '2k' },
       objects: [
         {
           id: 'sobj_ground',
@@ -3219,6 +3219,8 @@ await check('AC-5: exposure +2 brightens the rendered view of a room lit by two 
   await shot(page, 'c5-room-clay')
   await shading(page, '最终渲染')
   const before = await lumaStats(page, await settledShot(page, box))
+  // The exposure is on the render tab (R2).
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染' }).click()
   const ev = page.getByRole('spinbutton', { name: '曝光补偿（EV）' })
   await ev.fill('2')
   await ev.press('Enter')
@@ -3233,6 +3235,79 @@ await check('AC-5: exposure +2 brightens the rendered view of a room lit by two 
   const clay = await pixelDiff(page, clayBefore, clayAfter)
   // An exposure leaking into the clay would change nearly every pixel; far grid lines flicker a little.
   assert.ok(clay < 0.005, `the clay does not change (${(clay * 100).toFixed(3)}% differ)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- R2 AC-R2-1: the render tab ------------------------------------------------------
+
+await check('render tab: renderer, output resolution, exposure and backend; path tracing planned; selecting shows the object and clearing goes back', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const tabs = page.getByRole('tablist', { name: '属性' })
+  const tab = (name) => tabs.getByRole('tab', { name, exact: true })
+  const selectedTab = async () => (await tabs.getByRole('tab', { selected: true }).textContent())?.trim()
+  assert.deepEqual(await tabs.getByRole('tab').allTextContents(), ['渲染', '环境', '物件'], 'Blender’s order')
+  assert.equal(await selectedTab(), '环境', 'nothing selected: the environment, as before')
+  assert.equal(await page.getByRole('spinbutton', { name: '曝光补偿（EV）' }).count(), 0, 'the exposure left the environment tab')
+
+  await tab('渲染').click()
+  const engine = page.getByRole('combobox', { name: '渲染器' })
+  assert.equal(await engine.inputValue(), 'workbench')
+  const planned = engine.locator('option', { hasText: '路径追踪 · 规划中' })
+  assert.equal(await planned.count(), 1)
+  assert.ok(await planned.evaluate((o) => o.disabled), 'path tracing is shown, not selectable')
+  const resolution = page.getByRole('group', { name: '输出分辨率' })
+  assert.deepEqual(await resolution.getByRole('button').allTextContents(), ['1K', '2K', '4K', '8K'])
+  assert.equal(await resolution.getByRole('button', { name: '2K' }).getAttribute('aria-pressed'), 'true')
+  await page.getByText('导出图长边 2048 px').waitFor()
+  // SwiftShader has no WebGPU adapter: the WebGL2 backend.
+  await waitFor(async () => (await page.locator('output[aria-label="渲染后端"]').textContent()) === '兼容模式', 'the backend shown')
+
+  await engine.selectOption('realtime_gi')
+  await waitFor(() => server.scene.render.engine === 'realtime_gi', 'renderer written')
+  assert.deepEqual(server.commands.at(-1).payload.operations, [{ op: 'set_render', render: { engine: 'realtime_gi' } }], 'only the renderer is written')
+  await page.getByText(/只计算画面里可见的表面/).waitFor()
+  await resolution.getByRole('button', { name: '8K' }).click()
+  await waitFor(() => server.scene.render.resolution === '8k', 'resolution written')
+  assert.deepEqual(server.commands.at(-1).payload.operations, [{ op: 'set_render', render: { resolution: '8k' } }])
+  await page.getByText('导出图长边 8192 px').waitFor()
+  await page.getByText(/8K 实时 GI 的材质光照每张约需一分钟以上/).waitFor()
+  await shot(page, 'r2-render-tab')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.scene.render.resolution === '2k', 'undo the resolution')
+  assert.equal(server.scene.render.engine, 'realtime_gi', 'one step at a time')
+  await saved(page)
+
+  // Selecting shows the object; clearing goes back to the render tab stayed on.
+  await page.getByRole('treeitem', { name: /post/ }).click()
+  await waitFor(async () => (await selectedTab()) === '物件', 'the object tab on selecting')
+  await focusEditor(page)
+  await page.keyboard.press('Alt+KeyA')
+  await waitFor(async () => (await selectedTab()) === '渲染', 'back to the render tab')
+  // A tab picked by hand stays while the selection holds, and clearing from it leaves it.
+  await page.getByRole('treeitem', { name: /post/ }).click()
+  await waitFor(async () => (await selectedTab()) === '物件', 'the object tab again')
+  await tab('环境').click()
+  await focusEditor(page)
+  await page.keyboard.press('Alt+KeyA')
+  await sleep(200)
+  assert.equal(await selectedTab(), '环境')
+  await tab('物件').click()
+  await page.getByText('选中物件后在这里调整').waitFor()
+
+  // A revision from the history: every tab shows, read only.
+  await page.getByRole('button', { name: '历史' }).click()
+  const panel = page.getByRole('complementary', { name: '历史版本' })
+  await waitFor(async () => (await panel.locator('li').count()) >= 1, 'history items')
+  await panel.locator('li button').last().click()
+  await page.getByText(/正在预览第 1 版/).first().waitFor()
+  await tab('渲染').click()
+  assert.ok(await page.getByRole('combobox', { name: '渲染器' }).isDisabled(), 'read only in a preview')
+  assert.ok(await page.getByRole('group', { name: '输出分辨率' }).getByRole('button', { name: '4K' }).isDisabled())
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -3602,6 +3677,39 @@ if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match t
   assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
 })
 
+// SCENE_E2E_WORKBENCH=<dir> (R2 AC-R2-3, last part): with the scenes' renderer the workbench, the reference scenes
+// export as R1 drew them, within the frozen threshold (Epic AC-1: mean ≤ 0.05, no pixel off by more than 8).
+// R1 kept no pictures, so its references are drawn first by R1's code on the same machine and browser:
+// SCENE_E2E_WORKBENCH_WRITE=1 against a Vite server of develop writes them to <dir>; without it, this branch's
+// exports are compared with them, and a sheet of each image over the threshold goes to <dir>/over.
+if (process.env.SCENE_E2E_WORKBENCH) await check('workbench: the reference scenes export as R1 drew them', async () => {
+  const dir = process.env.SCENE_E2E_WORKBENCH
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  try {
+    let page = null
+    for (const name of referenceNames) {
+      const out = await exportReference(gpu, name)
+      for (const img of [...out.images, out.ortho]) {
+        if (process.env.SCENE_E2E_WORKBENCH_WRITE) {
+          await writeFile(`${dir}/${img.file}`, img.png)
+          continue
+        }
+        page ??= await (await gpu.newContext()).newPage()
+        const m = await compareShots(page, readFileSync(`${dir}/${img.file}`), img.png)
+        const ok = !m.error && m.mean <= 0.05 && m.over === 0
+        if (!ok && m.sheet) await writeFile(`${dir}/over/${img.file.replace('.png', '')}.jpg`, m.sheet)
+        rows.push({ file: img.file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), ok, ...(m.error ? { error: m.error } : {}) })
+      }
+      console.log(`workbench ${name}: ${out.images.length + 1} images`)
+    }
+    if (!process.env.SCENE_E2E_WORKBENCH_WRITE) await writeFile(`${dir}/workbench.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(rows.filter((r) => !r.ok), [])
+})
+
 // SCENE_E2E_LOOK=<dir>: the four display modes and an orthographic clay view
 // of three reference scenes on this machine's GPU, the ball and the ground
 // selected and the move gizmo up, the grid and the axis widget showing. Run
@@ -3650,11 +3758,36 @@ await writeFile(
   `<html><body><script>window.__sceneTest = true</script><script type="module">
 import { renderShots } from '/src/creative-scene/host/exportShots.ts';
 import { loadModels, openShooter } from '/src/creative-scene/host/render.ts';
-window.__export = async (doc, plan) => {
+window.__kept = {};
+// keep: a name to keep the images under, for __differ.
+window.__export = async (doc, plan, keep) => {
   const out = await renderShots({ read: async () => doc, loadModels: (d) => loadModels(d.scene, d.models), open: (d, look) => openShooter(d.scene, d.models, look) }, 'doc', plan);
   if (!out.ok) throw new Error(out.message);
+  if (keep) window.__kept[keep] = out.images.map((i) => i.blob);
   const hex = async (blob) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
   return Promise.all(out.images.map(async (i) => ({ camera: i.camera, pass: i.pass, hash: await hex(i.blob) })));
+};
+// Per image of two kept exports: the largest channel difference and the share of pixels off by more than 8.
+window.__differ = async (a, b) => {
+  const pixels = async (blob) => {
+    const bitmap = await createImageBitmap(blob);
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const g = c.getContext('2d');
+    g.drawImage(bitmap, 0, 0);
+    return g.getImageData(0, 0, c.width, c.height).data;
+  };
+  const out = [];
+  for (let i = 0; i < window.__kept[a].length; i++) {
+    const [p, q] = await Promise.all([pixels(window.__kept[a][i]), pixels(window.__kept[b][i])]);
+    let max = 0, over = 0;
+    for (let k = 0; k < p.length; k += 4) {
+      const d = Math.max(Math.abs(p[k] - q[k]), Math.abs(p[k + 1] - q[k + 1]), Math.abs(p[k + 2] - q[k + 2]));
+      if (d > max) max = d;
+      if (d > 8) over++;
+    }
+    out.push({ max, over: over / (p.length / 4) });
+  }
+  return out;
 };
 window.__ready = true;
 </script></body></html>`,
@@ -3665,7 +3798,8 @@ window.__ready = true;
 // DevTools protocol, as creative-scene-agent-background.e2e.mjs does. The
 // material board with glass and two more cameras, clay, line and lit: once in
 // front, twice behind a blank tab, then once behind it on the WebGL2 backend.
-if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden tab are the foreground’s, pixel for pixel, on WebGPU and WebGL2', async () => {
+// R2 AC-R2-5: the real-time GI's exports too, averaged over K frames with the page yielding between them.
+if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden tab are the foreground’s on WebGPU and WebGL2, the workbench’s pixel for pixel, the real-time GI’s within a level', async () => {
   const chromePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
   const port = 9334
   const profile = mkdtempSync(join(tmpdir(), 'scene-hidden-'))
@@ -3704,6 +3838,14 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const doc = { scene, models: {}, revision: '1' }
     const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
     const run = () => evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)})`)
+    const gi = { ...doc, scene: { ...scene, render: { ...scene.render, engine: 'realtime_gi' } } }
+    const runGI = (keep) => evaluate(`window.__export(${JSON.stringify(gi)}, ${JSON.stringify(plan)}, ${JSON.stringify(keep)})`, 900_000)
+    /** AC-R2-5: the real-time GI within one level per channel, and next to no pixel off by more than 8. */
+    const near = async (a, b, what) => {
+      const diffs = await evaluate(`window.__differ(${JSON.stringify(a)}, ${JSON.stringify(b)})`)
+      diffs.forEach((d, i) => assert.ok(d.max <= 1 || d.over <= 0.0001, `${what}, image ${i}: largest difference ${d.max}, ${(d.over * 100).toFixed(4)}% of pixels off by more than 8`))
+      return diffs
+    }
     assert.equal(await evaluate('document.visibilityState'), 'visible')
     const front = await run()
     assert.equal(front.length, 9)
@@ -3720,6 +3862,30 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const webgl = await run()
     const again = await run()
     assert.deepEqual(again, webgl, 'the WebGL2 backend, twice the same in the background')
+    // The real-time GI after the workbench's whole run, so its long export frees no material the workbench reuses:
+    // in front again, then twice behind the blank tab, then twice on the WebGL2 backend.
+    await evaluate('window.__sceneGPU.forceWebGL = false')
+    const blank = await fetch(`${devtools}/json`).then((r) => r.json()).then((list) => list.find((t) => t.type === 'page' && t.url === 'about:blank'))
+    await fetch(`${devtools}/json/close/${blank.id}`)
+    await waitFor(async () => (await evaluate('document.visibilityState')) === 'visible', 'the tab in front again', 10_000)
+    const startedGI = Date.now()
+    const frontGI = await runGI('front')
+    const giMs = Date.now() - startedGI
+    assert.deepEqual(frontGI.filter((i) => i.pass === 'line'), front.filter((i) => i.pass === 'line'), 'line art is the workbench’s')
+    assert.ok(frontGI.filter((i) => i.pass !== 'line').every((i) => !front.some((w) => w.hash === i.hash)), 'clay and lit are the real-time GI’s')
+    await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
+    await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab in the background again', 10_000)
+    await runGI('first')
+    await runGI('second')
+    assert.equal(await evaluate('document.visibilityState'), 'hidden', 'still in the background')
+    const hiddenVsFront = await near('first', 'front', 'real-time GI: hidden as in front')
+    const twice = await near('second', 'first', 'real-time GI: twice the same')
+    await evaluate('window.__sceneGPU.forceWebGL = true')
+    await runGI('webgl1')
+    await runGI('webgl2')
+    await near('webgl2', 'webgl1', 'real-time GI on the WebGL2 backend, twice the same in the background')
+    const largest = (diffs) => Math.max(...diffs.map((d) => d.max))
+    console.log(`determinism: the real-time GI export (9 images, K frames each) took ${giMs} ms in front; largest difference hidden/front ${largest(hiddenVsFront)}, twice ${largest(twice)}`)
     console.log(`determinism: hidden (rAF ${raf}/s) = front on WebGPU; WebGL2 in the background repeats itself (${webgl.filter((w, i) => w.hash === front[i].hash).length}/9 equal to WebGPU)`)
   } finally {
     chrome.kill()
@@ -4068,9 +4234,668 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: switching to the rendered vie
   }
 })
 
+// --- R2: the real-time GI ---------------------------------------------------------
+
+// The offscreen shooter on its own: shots in a row, and what its renderer holds after each.
+const giFixture = new URL('../.scene-gi-qa.html', import.meta.url)
+await writeFile(
+  giFixture,
+  `<html><body><script>window.__sceneTest = true</script><script type="module">
+import { openShooter } from '/src/creative-scene/host/render.ts';
+import { cameraFraming } from '/src/creative-scene/host/framing.ts';
+window.__shots = async (scene, n, side) => {
+  const shooter = await openShooter(scene, {}, 'lit');
+  const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+  const held = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      // render_view's frame count: the pipeline is the same, a quarter of the frames on SwiftShader.
+      await shooter.shoot(framing, { kind: 'lit', type: 'image/png', use: 'view' });
+      const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'offscreen').at(-1).info.memory;
+      held.push({ textures, renderTargets, uniformBuffers, programs });
+    }
+  } finally {
+    shooter.close();
+  }
+  return held;
+};
+// One picture drawn while a background-ticker heartbeat beats every second (the executor's lease renewal is
+// one): the beats and the longest gap between them.
+window.__heartbeat = async (scene, kind, side) => {
+  const { backgroundTicker } = await import('/src/creative-scene/host/ticker.ts');
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  const beats = [performance.now()];
+  const stop = backgroundTicker().every(1000, () => beats.push(performance.now()));
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const started = performance.now();
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png' });
+    const ms = performance.now() - started;
+    beats.push(performance.now());
+    const gaps = beats.slice(1).map((t, i) => t - beats[i]);
+    return { ms, beats: beats.length - 2, longest: Math.max(...gaps), width: framing.width, height: framing.height, bytes: blob.size };
+  } finally {
+    stop();
+    shooter.close();
+  }
+};
+// An export's images as drawn (host/exportShots.ts renderShots): each one's encoding and size.
+window.__sizes = async (doc, plan) => {
+  const { renderShots } = await import('/src/creative-scene/host/exportShots.ts');
+  const { loadModels } = await import('/src/creative-scene/host/render.ts');
+  const out = await renderShots({ read: async () => doc, loadModels: (d) => loadModels(d.scene, d.models), open: (d, look) => openShooter(d.scene, d.models, look) }, 'doc', plan);
+  if (!out.ok) return out;
+  return Promise.all(out.images.map(async (i) => {
+    const bitmap = await createImageBitmap(i.blob);
+    return { camera: i.camera, pass: i.pass, type: i.blob.type, width: bitmap.width, height: bitmap.height };
+  }));
+};
+// One picture's SHA-256: what the renderer in effect draws for a pass.
+window.__hash = async (scene, kind, side) => {
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png', use: 'view' });
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } finally {
+    shooter.close();
+  }
+};
+// One export picture's residual noise (R0's measure, R2 tasks 5.1): mean |grey − its Gaussian blur, σ 6 px at
+// 2048| over a box given as fractions of the picture; and how long the picture took.
+window.__noise = async (scene, kind, side, box) => {
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const started = performance.now();
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png' });
+    const ms = performance.now() - started;
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(bitmap, 0, 0);
+    const [x0, y0, x1, y1] = [box[0] * bitmap.width, box[1] * bitmap.height, box[2] * bitmap.width, box[3] * bitmap.height].map(Math.round);
+    const w = x1 - x0, h = y1 - y0;
+    const rgba = c2d.getImageData(x0, y0, w, h).data;
+    const grey = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) grey[i] = Math.round(0.299 * rgba[4 * i] + 0.587 * rgba[4 * i + 1] + 0.114 * rgba[4 * i + 2]);
+    const sigma = (6 * bitmap.width) / 2048, r = Math.ceil(3 * sigma);
+    const kernel = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sigma * sigma)));
+    const sum = kernel.reduce((a, b) => a + b);
+    const blur = (src, step, n, count, stride) => {
+      const out = new Float32Array(src.length);
+      for (let line = 0; line < count; line++) for (let i = 0; i < n; i++) {
+        let v = 0;
+        for (let k = -r; k <= r; k++) v += kernel[k + r] * src[line * stride + Math.min(n - 1, Math.max(0, i + k)) * step];
+        out[line * stride + i * step] = v / sum;
+      }
+      return out;
+    };
+    const blurred = blur(blur(grey, 1, w, h, w), w, h, w, 1);
+    let total = 0;
+    for (let i = 0; i < w * h; i++) total += Math.abs(grey[i] - blurred[i]);
+    return { noise: total / (w * h), ms, width: framing.width, height: framing.height };
+  } finally {
+    shooter.close();
+  }
+};
+// One export picture (R2 AC-R2-3): the mean colour of boxes given as fractions of it, and the picture as a JPEG.
+window.__regions = async (scene, kind, side, boxes) => {
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png' });
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(bitmap, 0, 0);
+    const means = boxes.map((box) => {
+      const [x0, y0, x1, y1] = [box[0] * bitmap.width, box[1] * bitmap.height, box[2] * bitmap.width, box[3] * bitmap.height].map(Math.round);
+      const d = c2d.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+      const sum = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += d[i + c];
+      return sum.map((v) => v / (d.length / 4));
+    });
+    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+    const bytes = new Uint8Array(await jpeg.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { means, jpeg: btoa(binary), width: bitmap.width, height: bitmap.height };
+  } finally {
+    shooter.close();
+  }
+};
+// One picture as a PNG, base64, through the backend asked for (forceWebGL: the WebGL2 one).
+window.__png = async (scene, kind, side, use, forceWebGL) => {
+  window.__sceneGPU.forceWebGL = forceWebGL;
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const bytes = new Uint8Array(await (await shooter.shoot(framing, { kind, type: 'image/png', use })).arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  } finally {
+    shooter.close();
+    window.__sceneGPU.forceWebGL = false;
+  }
+};
+// One export image timed as the export draws and encodes it (exportShots.ts), on a shooter of its own; or why not.
+window.__timed = async (scene, kind, resolution) => {
+  const { imageTypeOf, longSideOf } = await import('/src/creative-scene/render/engines.ts');
+  const encoding = imageTypeOf(kind, resolution);
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, longSideOf(resolution));
+    const started = performance.now();
+    const blob = await shooter.shoot(framing, { kind, type: encoding.type, quality: encoding.quality });
+    await shooter.confirm();
+    return { ms: Math.round(performance.now() - started), bytes: blob.size, type: blob.type, width: framing.width, height: framing.height };
+  } catch (e) {
+    return { error: String(e?.message ?? e) };
+  } finally {
+    shooter.close();
+  }
+};
+window.__ready = true;
+</script></body></html>`,
+)
+
+// R2 tasks 1.2: every picture builds and frees a whole GI pipeline (prepass, lighting pass, SSGI, SSR, contact
+// shadows, denoisers, TRAA). Freed whole, the renderer holds as much after the 48th picture as after the first.
+await check('real-time GI: 48 pictures in a row leave nothing behind on the device', async () => {
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  await page.goto(`${base}/.scene-gi-qa.html`)
+  await page.waitForFunction(() => window.__ready === true)
+  const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/materials.json', import.meta.url), 'utf8'))
+  scene.render = { ...scene.render, engine: 'realtime_gi' }
+  const held = await page.evaluate(([s]) => window.__shots(s, 48, 128), [scene])
+  assert.equal(held.length, 48)
+  assert.deepEqual(held.at(-1), held[0], `after the first: ${JSON.stringify(held[0])}, after the 48th: ${JSON.stringify(held.at(-1))}`)
+  assert.deepEqual(errors, [], errors.join('\n'))
+  await context.close()
+})
+
+// R2 AC-R2-2 and AC-R2-4: the renderer in effect (render/engines.ts effectiveEngine). The staleness of exports is
+// the server's fingerprint (creativescene TestEngineFingerprintsOnlyClayAndLit); the in-memory server has none.
+await check('renderer in effect: real-time GI converges in the rendered view and stops; clay, wireframe, material preview, line art and orthographic views stay the workbench’s', async () => {
+  const server = new SceneServer()
+  seed(server, [
+    boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.6, height: 1.5, depth: 0.6 }),
+    boxOf('wall', 6, { position: [1.2, 0, -1] }, { width: 3, height: 2, depth: 0.2 }, { preset: 'paint@1', params: { color: '#c03020' } }),
+  ])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  const frames = () => page.evaluate(() => window.__sceneGPU.viewportFrames)
+  const settledFrames = async (n, what) => {
+    await waitFor(async () => (await frames()) === n, what, 60_000)
+    await sleep(500)
+    assert.equal(await frames(), n, `${what}: stays at ${n}`)
+  }
+  const engine = (value) => page.getByRole('combobox', { name: '渲染器' }).selectOption(value)
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染' }).click()
+  const look = {}
+  for (const mode of ['线框', '材质预览', '白模', '最终渲染']) {
+    await shading(page, mode)
+    await settledFrames(1, `${mode}, workbench`)
+    look[mode] = await settledShot(page, box)
+  }
+  await engine('realtime_gi')
+  await waitFor(() => server.scene.render.engine === 'realtime_gi', 'renderer written')
+  // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames), then stops.
+  const giFrames = 12
+  await settledFrames(giFrames, 'rendered, real-time GI')
+  assert.ok((await pixelDiff(page, look['最终渲染'], await settledShot(page, box))) > 0.01, 'the real-time GI changes the rendered view')
+  for (const mode of ['白模', '线框', '材质预览']) {
+    await shading(page, mode)
+    await settledFrames(1, `${mode}, real-time GI chosen`)
+    assert.equal(await pixelDiff(page, look[mode], await settledShot(page, box), 0), 0, `${mode} is the workbench’s, pixel for pixel`)
+  }
+  // An orthographic view is drawn by the workbench and says so.
+  await shading(page, '最终渲染')
+  await focusEditor(page)
+  await page.keyboard.press('Digit5')
+  await page.getByRole('status').filter({ hasText: '正交视图按工作台显示' }).waitFor()
+  await settledFrames(1, 'orthographic')
+  await page.keyboard.press('Digit5')
+  await waitFor(async () => (await page.getByRole('status').filter({ hasText: '正交视图按工作台显示' }).count()) === 0, 'the badge goes in perspective')
+
+  // Another tab of the same scene follows; Cmd+Z takes the renderer back.
+  const other = await open(server)
+  await other.page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染' }).click()
+  assert.equal(await other.page.getByRole('combobox', { name: '渲染器' }).inputValue(), 'realtime_gi', 'the other tab reads the renderer')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.scene.render.engine === 'workbench', 'undo')
+  await other.page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await other.page.getByRole('combobox', { name: '渲染器' }).inputValue()) === 'workbench', 'the other tab follows the undo')
+  assert.deepEqual(other.errors, [])
+  await other.context.close()
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Exports: lit is drawn by the scene's renderer, clay and line art by the workbench whatever it says.
+  const shots = await browser.newContext()
+  const shooter = await shots.newPage()
+  await shooter.goto(`${base}/.scene-gi-qa.html`)
+  await shooter.waitForFunction(() => window.__ready === true)
+  const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+  const hashes = {}
+  for (const engineName of ['workbench', 'realtime_gi']) {
+    scene.render = { ...scene.render, engine: engineName }
+    for (const kind of ['clay', 'line', 'lit']) hashes[`${engineName}:${kind}`] = await shooter.evaluate(([s, k]) => window.__hash(s, k, 256), [scene, kind])
+  }
+  assert.equal(hashes['realtime_gi:line'], hashes['workbench:line'], 'line art is the workbench’s')
+  assert.equal(hashes['realtime_gi:clay'], hashes['workbench:clay'], 'clay is the workbench’s')
+  assert.notEqual(hashes['realtime_gi:lit'], hashes['workbench:lit'], 'lit follows the renderer')
+  await shots.close()
+})
+
+/** A JPEG's size, from its start-of-frame marker. */
+function jpegSize(bytes) {
+  for (let i = 2; i < bytes.length;) {
+    const marker = bytes[i + 1]
+    const length = bytes.readUInt16BE(i + 2)
+    if (marker >= 0xc0 && marker <= 0xc3) return { width: bytes.readUInt16BE(i + 7), height: bytes.readUInt16BE(i + 5) }
+    i += 2 + length
+  }
+  return null
+}
+
+// R2 AC-R2-6: the output resolution. Every level and three shapes through the export's own drawing; then the
+// editor's export at 8K, a device too small for 4K, and a device lost at 4K. 8K on this machine's GPU (the
+// reference device): SwiftShader loses its context drawing 8K, which is the failure checked at 4K below.
+await check('output resolution: 1K to 8K long sides at 1:1, 3:2 and portrait, 4K and 8K clay as JPEG; a device too small or lost at 4K fails and says so', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+  const shapes = { sq: '1:1', wide: '3:2', tall: '2:3' }
+  const cameras = Object.entries(shapes).map(([name, aspect], i) => cameraObject(objectID(`cam${name}`), name, 10 + i, { aspect }, [i * 2 - 2, 1.6, 8]))
+  const model = new SceneServer()
+  model.external([{ op: 'add_objects', objects: [{ ...boxObject(objectID('box'), '方块', 0, 1), transform: { ...identity(), position: [0, 0, 0] } }, ...cameras] }])
+  const shots = await gpu.newContext()
+  const shooter = await shots.newPage()
+  await shooter.goto(`${base}/.scene-gi-qa.html`)
+  await shooter.waitForFunction(() => window.__ready === true)
+  const plan = { cameraObjectIDs: cameras.map((c) => c.id), passes: ['clay', 'line'] }
+  for (const [resolution, side] of [['1k', 1024], ['2k', 2048], ['4k', 4096], ['8k', 8192]]) {
+    const doc = { scene: { ...structuredClone(model.scene), render: { ...model.scene.render, resolution } }, models: {}, revision: '1' }
+    const images = await shooter.evaluate(([d, p]) => window.__sizes(d, p), [doc, plan])
+    assert.ok(Array.isArray(images), `${resolution}: ${JSON.stringify(images)}`)
+    for (const img of images) {
+      const aspect = shapes[cameras.find((c) => c.id === img.camera).name]
+      const [w, h] = aspect.split(':').map(Number)
+      const want = w >= h ? { width: side, height: Math.round((side * h) / w) } : { width: Math.round((side * w) / h), height: side }
+      assert.deepEqual({ width: img.width, height: img.height }, want, `${resolution} ${aspect} ${img.pass}`)
+      const jpeg = img.pass === 'clay' && (resolution === '4k' || resolution === '8k')
+      assert.equal(img.type, jpeg ? 'image/jpeg' : 'image/png', `${resolution} ${img.pass}`)
+    }
+  }
+  await shots.close()
+
+  // The editor at 8K: the dialog says so, and an 8K square goes up as JPEG with line art as PNG.
+  const server = new SceneServer()
+  server.external([{ op: 'add_objects', objects: [{ ...boxObject(objectID('box'), '方块', 0, 1), transform: { ...identity(), position: [0, 0, 0] } }, cameraObject(objectID('camsq'), 'sq', 10, { aspect: '1:1' }, [0, 1.6, 8])] }])
+  server.scene.render.resolution = '8k'
+  const metal = await open(server, { query: '?export=1', context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+  await metal.page.getByRole('button', { name: '导出' }).first().click()
+  const big = metal.page.getByRole('dialog', { name: '导出分镜' })
+  await big.waitFor()
+  assert.match(await big.textContent(), /长边 8192（8K）/)
+  await big.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'the 8K export submitted', 600_000)
+  const [shot] = server.exports[0].payload.shots
+  const bytes = Object.fromEntries(shot.images.map((img) => [img.pass, server.uploadBytes.get(img.upload_id)]))
+  assert.deepEqual(jpegSize(bytes.clay), { width: 8192, height: 8192 }, 'clay: an 8K JPEG')
+  assert.deepEqual(pngSize(bytes.line), { width: 8192, height: 8192 }, 'line art: an 8K PNG')
+  console.log(`8K square: clay JPEG ${(bytes.clay.length / 1e6).toFixed(1)} MB, line PNG ${(bytes.line.length / 1e6).toFixed(1)} MB`)
+  assert.deepEqual(metal.errors, [])
+  await metal.context.close()
+
+  // A device too small for 4K fails before drawing; a device lost at 4K is not retried.
+  server.scene.render.resolution = '4k'
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await page.evaluate(() => { window.__sceneGPU.textureLimit = 2048 })
+  await page.getByRole('button', { name: '导出' }).first().click()
+  await dialog.waitFor()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await page.getByText('当前设备最大只能导出长边 2048 px 的图，请选更低的输出分辨率').waitFor({ timeout: 120_000 })
+  await page.evaluate(() => { window.__sceneGPU.textureLimit = null; window.__sceneGPU.loseNext('offscreen', 1) })
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await page.getByText('渲染设备在按 4K 出图时丢失，当前设备可能画不了这个分辨率，可以换低一档再导出').waitFor({ timeout: 300_000 })
+  assert.equal(server.exports.length, 1, 'nothing more placed')
+  assert.deepEqual(errors.filter((e) => !/lost|Lost/.test(e)), [])
+  await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 AC-R2-5 (tasks 5.1): an export's residual noise in the box room, where only bounced light reaches the upper
+// back wall, the hardest of the reference scenes. This machine's GPU: SwiftShader takes minutes for K frames at 2K.
+await check('real-time GI: a 2K export of the box room is within its residual noise, K frames averaged after the warm-up', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+    scene.render = { ...scene.render, engine: 'realtime_gi' }
+    // The upper back wall, R0's box.
+    const wall = [0.22, 0.183, 0.781, 0.513]
+    const out = await page.evaluate(([s, b]) => window.__noise(s, 'lit', 2048, b), [scene, wall])
+    console.log(`residual noise, box room lit ${out.width}×${out.height}: ${out.noise.toFixed(3)} (limit 1.5), ${(out.ms / 1000).toFixed(1)} s`)
+    assert.ok(out.noise <= 1.5, `lit: ${out.noise}`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 AC-R2-3 (tasks 7.1): what the real-time GI adds to the box room, measured in boxes of its 2K export against the
+// workbench's: the floor by the red wall and the cube's face towards it turn red, the metal ball and the glossy
+// floor show the walls, the cube's front takes the floor's bounce. The contact is recorded, not compared: the spot
+// light clips the floor at the cube's foot to white in both, and the workbench's shadows are already black. Clay
+// is the workbench's whatever the renderer (engines.ts effectiveEngine). SCENE_E2E_EVIDENCE=<dir> keeps the two
+// pictures and the numbers for the owner. This machine's GPU.
+await check('real-time GI: the box room bleeds red beside the red wall, mirrors the walls in the ball and darkens contacts, against the workbench', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const cornell = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+    const boxes = {
+      floor_by_red_wall: [0.11, 0.94, 0.22, 0.99],
+      cube_face_to_red_wall: [0.243, 0.7, 0.257, 0.88],
+      ball: [0.61, 0.7, 0.77, 0.9],
+      floor_by_green_wall: [0.8, 0.94, 0.88, 0.99],
+      cube_front_foot: [0.3, 0.9, 0.42, 0.925],
+      cube_contact: [0.3, 0.955, 0.42, 0.975],
+    }
+    const names = Object.keys(boxes)
+    const out = {}
+    for (const engine of ['workbench', 'realtime_gi']) {
+      const scene = { ...cornell, render: { ...cornell.render, engine } }
+      const r = await page.evaluate(([s, b]) => window.__regions(s, 'lit', 2048, b), [scene, Object.values(boxes)])
+      out[`${engine}-lit`] = Object.fromEntries(names.map((n, i) => [n, r.means[i].map((v) => Number(v.toFixed(2)))]))
+      if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/cornell-${engine}-lit.jpg`, Buffer.from(r.jpeg, 'base64'))
+    }
+    const redGreen = ([r, g]) => r / g
+    const grey = ([r, g, b]) => 0.299 * r + 0.587 * g + 0.114 * b
+    const meanDiff = (a, b) => (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3
+    const wb = out['workbench-lit']
+    const gi = out['realtime_gi-lit']
+    const measured = {
+      lit_floor_by_red_wall_red_green: [redGreen(wb.floor_by_red_wall), redGreen(gi.floor_by_red_wall)],
+      lit_cube_face_red_green: [redGreen(wb.cube_face_to_red_wall), redGreen(gi.cube_face_to_red_wall)],
+      lit_ball_difference: meanDiff(wb.ball, gi.ball),
+      lit_floor_by_green_wall_green_red: [1 / redGreen(wb.floor_by_green_wall), 1 / redGreen(gi.floor_by_green_wall)],
+      lit_cube_front_foot_grey: [grey(wb.cube_front_foot), grey(gi.cube_front_foot)],
+      lit_cube_contact_grey: [grey(wb.cube_contact), grey(gi.cube_contact)],
+    }
+    console.log(JSON.stringify(measured, (_, v) => (typeof v === 'number' ? Number(v.toFixed(3)) : v)))
+    if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/cornell-regions.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), boxes, means: out, measured }, null, 2)}\n`)
+    // 2026-10-21, M4 Pro: 1.005 → 1.105, 0.951 → 1.606, 22.2; the floor's red was 1.21 with the recurrent denoiser (tasks 1.1).
+    assert.ok(measured.lit_floor_by_red_wall_red_green[1] >= measured.lit_floor_by_red_wall_red_green[0] + 0.07, 'the floor by the red wall turns red')
+    assert.ok(measured.lit_cube_face_red_green[1] >= measured.lit_cube_face_red_green[0] + 0.3, 'the cube’s face to the red wall turns red')
+    assert.ok(measured.lit_ball_difference >= 10, 'the ball mirrors more than the workbench’s environment')
+    assert.ok(measured.lit_floor_by_green_wall_green_red[1] > measured.lit_floor_by_green_wall_green_red[0], 'the glossy floor mirrors the green wall')
+    assert.ok(measured.lit_cube_front_foot_grey[1] > measured.lit_cube_front_foot_grey[0], 'the cube’s front takes the floor’s bounce')
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 AC-R2-8: the real-time GI on the WebGL2 backend. On SwiftShader (no WebGPU there) the box room's lit draws
+// without an error, at render_view's frames; on this machine's GPU, forced onto WebGL2, its 2K export is within
+// AC-R1-1's limits of the WebGPU one (Epic: mean ≤ 1.5, pixels off by more than 8 ≤ 1 %). Clay is the workbench's.
+async function giOnWebGL2(target, side, use, forceWebGL) {
+  const page = await target.newPage()
+  const errors = []
+  const backends = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+    if (m.text().startsWith('scene renderer')) backends.push(m.text())
+  })
+  await page.goto(`${base}/.scene-gi-qa.html`)
+  await page.waitForFunction(() => window.__ready === true)
+  const cornell = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+  const scene = { ...cornell, render: { ...cornell.render, engine: 'realtime_gi' } }
+  const pictures = {}
+  for (const force of forceWebGL) pictures[force] = Buffer.from(await page.evaluate(([s, n, u, f]) => window.__png(s, 'lit', n, u, f), [scene, side, use, force]), 'base64')
+  return { page, errors, backends, pictures }
+}
+
+await check('real-time GI on WebGL2: SwiftShader draws the box room’s lit without an error', async () => {
+  const context = await browser.newContext()
+  const { errors, backends, pictures } = await giOnWebGL2(context, 512, 'view', [false])
+  assert.ok(backends.length > 0 && backends.every((b) => b === 'scene renderer (offscreen): webgl2'), backends.join(', '))
+  assert.ok(pictures.false.length > 10_000)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('real-time GI on WebGL2: the box room’s 2K export forced onto WebGL2 is within AC-R1-1 of WebGPU’s', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const { page, errors, backends, pictures } = await giOnWebGL2(gpu, 2048, 'export', [false, true])
+    assert.ok(backends.includes('scene renderer (offscreen): webgpu') && backends.includes('scene renderer (offscreen): webgl2'), backends.join(', '))
+    const m = await compareShots(page, pictures.false, pictures.true)
+    const measured = { lit: { mean: Number(m.mean.toFixed(3)), over_percent: Number(m.over.toFixed(3)) } }
+    if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/cornell-gi-lit-webgpu-webgl2.jpg`, m.sheet)
+    console.log(`real-time GI, WebGPU against WebGL2: ${JSON.stringify(measured)}`)
+    if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/cornell-gi-webgpu-webgl2.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), measured }, null, 2)}\n`)
+    assert.ok(measured.lit.mean <= 1.5 && measured.lit.over_percent <= 1, JSON.stringify(measured.lit))
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 tasks 7.4: a camera's frustum and an empty's cross are drawn in the real-time GI's rendered view, but are not
+// in the scene it lights: they once stood in its prepass, and the contact shadows and the SSGI darkened the ground
+// around them in grain. With and without them, the view differs by little more than their lines.
+await check('real-time GI: camera frustums and empties are drawn in the rendered view but neither shade nor occlude', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const shots = []
+    for (const helpers of [false, true]) {
+      const server = new SceneServer()
+      server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+      if (helpers) seed(server, [cameraObject(objectID('cam'), '机位', 5, {}, [0, 0.15, 0]), emptyObject(objectID('empty'), '空物体', 6, [0.8, 0.1, 0.4])])
+      const { page, errors } = await open(server, { context: await gpu.newContext() })
+      const { box } = await viewportCenter(page)
+      await shading(page, '最终渲染')
+      shots.push(await settledShot(page, box))
+      assert.deepEqual(errors, [])
+      if (helpers) {
+        if (process.env.SCENE_E2E_EVIDENCE) for (const [i, png] of shots.entries()) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/helpers-${i}.png`, png)
+        const diff = await pixelDiff(page, shots[0], shots[1])
+        console.log(`real-time GI with a camera and an empty: ${(diff * 100).toFixed(2)}% of the view differs`)
+        assert.ok(diff < 0.01, `${(diff * 100).toFixed(2)}% of the view differs`)
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 tasks 7.5: the fog is laid over the real-time GI's composite, the indirect light and the reflections with
+// the rest. With every surface past the fog's far end, nothing of a box's colour shows; the materials' own fog
+// once left the GI and the AO it took apart and put back unfogged, and a red box showed through.
+await check('real-time GI: the fog covers the indirect light as it covers the rest', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const shots = []
+    for (const color of ['#ffffff', '#ff2020']) {
+      const server = new SceneServer()
+      server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+      server.scene.environment.fog = { color: '#808080', near: 0.01, far: 0.02 }
+      seed(server, [{ id: objectID('box'), kind: 'primitive', name: '盒子', order: 5, transform: { ...identity(), scale: [4, 4, 4] }, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'paint@1', params: { color } } } }])
+      const { page, errors } = await open(server, { context: await gpu.newContext() })
+      const { box } = await viewportCenter(page)
+      await shading(page, '最终渲染')
+      shots.push(await settledShot(page, box))
+      assert.deepEqual(errors, [])
+      if (shots.length === 2) {
+        if (process.env.SCENE_E2E_EVIDENCE) for (const [i, png] of shots.entries()) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/fog-${i}.png`, png)
+        const diff = await pixelDiff(page, shots[0], shots[1])
+        console.log(`real-time GI in full fog, a white box against a red one: ${(diff * 100).toFixed(2)}% of the view differs`)
+        assert.ok(diff < 0.005, `${(diff * 100).toFixed(2)}% of the view differs`)
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// R2 tasks 7.2: a light added in the real-time GI's rendered view is compiled first for both its passes, as the
+// workbench's is (R1): no pipeline refused (the prepass and the lighting pass once shared a stand-in's material),
+// no frame held while the lighting pass compiles (5 s before). R0's performance scene, this machine's GPU.
+await check('real-time GI: a light added in the rendered view compiles first, without an error or a held frame', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await shading(page, '最终渲染')
+    await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+    await orbitFrames(page, 1000)
+    const measuring = orbitFrames(page, 3000)
+    await sleep(800)
+    const at = await page.evaluate(() => performance.now())
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+    const longest = Math.max(...gaps([at, ...(await measuring).filter((t) => t >= at)]))
+    console.log(`real-time GI: adding a light, longest frame ${longest.toFixed(0)} ms`)
+    assert.ok(longest < 1000, `longest frame ${longest} ms`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PERF_R2=<dir> (R2 AC-R2-9, tasks 7.2), this machine's GPU, 1600 × 1000 at 2× pixels as R1's AC-9:
+// the viewport's frame times with the real-time GI (its 1× pixels) in the box room and R0's performance scene, and
+// the workbench's in the latter against R1's perf.json; how long the viewport goes on drawing after the last
+// input; the longest frame when a light is added in the real-time GI's rendered view; each resolution's export
+// image time for both renderers (the box room, clay and lit, each on a fresh shooter after a warm one). perf.json
+// goes to <dir>; the limits are judged in the record, not here, except that nothing errs.
+if (process.env.SCENE_E2E_PERF_R2) await check('R2 performance: viewport frames, settling and export times on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_PERF_R2
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', viewport_frames: {}, settle: {}, exports: {} }
+  // rAF times and the viewport's frame count after the last of the input, until the count has not moved for 1.5 s.
+  const settle = (page) => page.evaluate(() => new Promise((resolve) => {
+    const el = document.querySelector('.cc-scene-editor canvas')
+    el.dispatchEvent(new WheelEvent('wheel', { deltaX: 4, deltaY: 0, deltaMode: 0, bubbles: true, cancelable: true }))
+    const start = performance.now()
+    let count = window.__sceneGPU.viewportFrames
+    let changed = start
+    const tick = (t) => {
+      const now = window.__sceneGPU.viewportFrames
+      if (now !== count) {
+        count = now
+        changed = t
+      }
+      if (t - changed < 1500) requestAnimationFrame(tick)
+      else resolve({ ms: Math.round(changed - start), frames: count })
+    }
+    requestAnimationFrame(tick)
+  }))
+  try {
+    for (const [name, engine] of [['perf', 'realtime_gi'], ['cornell', 'realtime_gi'], ['perf', 'workbench']]) {
+      const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+      const server = new SceneServer()
+      if (name === 'perf') perfScene(server)
+      else referenceScene(server, name)
+      server.scene.render = { ...server.scene.render, engine }
+      const { page, errors } = await open(server, { context })
+      const { x, y } = await viewportCenter(page)
+      await page.mouse.move(x, y)
+      const label = `${name}-${engine}`
+      record.viewport_frames[label] = {}
+      record.settle[label] = {}
+      const modes = engine === 'workbench' ? [['线框', 'wireframe'], ['白模', 'solid'], ['材质预览', 'preview'], ['最终渲染', 'rendered']] : [['最终渲染', 'rendered']]
+      for (const [mode, key] of modes) {
+        await shading(page, mode)
+        await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+        await orbitFrames(page, 1000)
+        const stats = frameStats(await orbitFrames(page, 4000))
+        record.viewport_frames[label][key] = Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Number(v.toFixed(1))]))
+        record.settle[label][key] = await settle(page)
+        console.log(`  ${label} ${key}: mean ${stats.mean.toFixed(1)} ms, p95 ${stats.p95.toFixed(1)} ms; settles in ${record.settle[label][key].ms} ms after ${record.settle[label][key].frames} frames`)
+      }
+      if (name === 'perf' && engine === 'realtime_gi') {
+        // The rendered view is up: a point light added, the longest frame after it.
+        const measuring = orbitFrames(page, 3000)
+        await sleep(800)
+        const at = await page.evaluate(() => performance.now())
+        await page.keyboard.press('Shift+KeyA')
+        await page.getByRole('menuitem', { name: '点光', exact: true }).click()
+        const times = await measuring
+        record.gi_light_add_ms = Math.round(Math.max(...gaps([at, ...times.filter((t) => t >= at)])))
+        console.log(`  ${label}: adding a light, longest frame ${record.gi_light_add_ms} ms`)
+      }
+      assert.deepEqual(errors, [], `${label}: ${errors.join('\n')}`)
+      await context.close()
+    }
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const cornell = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+    for (const engine of ['workbench', 'realtime_gi']) {
+      const scene = { ...cornell, render: { ...cornell.render, engine } }
+      // Clay is the workbench's whatever the renderer.
+      for (const kind of engine === 'workbench' ? ['clay', 'lit'] : ['lit']) {
+        await page.evaluate(([s, k]) => window.__timed(s, k, '1k'), [scene, kind]) // compiled, caches warm
+        for (const resolution of ['1k', '2k', '4k', '8k']) {
+          const out = await page.evaluate(([s, k, r]) => window.__timed(s, k, r), [scene, kind, resolution])
+          record.exports[`${engine}-${kind}-${resolution}`] = out
+          console.log(`  export ${engine} ${kind} ${resolution}: ${out.error ?? `${out.width}×${out.height} ${out.type} in ${(out.ms / 1000).toFixed(1)} s, ${(out.bytes / 1e6).toFixed(2)} MB`}`)
+        }
+      }
+    }
+  } finally {
+    await writeFile(`${dir}/perf.json`, `${JSON.stringify(record, null, 2)}\n`)
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_GPU_8K=1 (this machine's GPU): R2 tasks 4.1, an 8K real-time GI export does not starve the page.
+// The frames yield between them (SceneGPU.settle); only the last frame and its encoding run in one task.
+if (process.env.SCENE_E2E_GPU_8K) await check('real-time GI: the page keeps its heartbeat through an 8K picture, as the lease renewal needs', async () => {
+  const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/cornell.json', import.meta.url), 'utf8'))
+    scene.render = { ...scene.render, engine: 'realtime_gi' }
+    const out = await page.evaluate(([s]) => window.__heartbeat(s, 'lit', 8192), [scene])
+    console.log(`8K real-time GI: ${out.width}×${out.height} in ${(out.ms / 1000).toFixed(1)} s, ${out.beats} beats, longest gap ${(out.longest / 1000).toFixed(1)} s, ${(out.bytes / 1e6).toFixed(1)} MB`)
+    // The lease runs 30 s and is renewed every 10 s (host/jobs.ts).
+    assert.ok(out.longest < 10_000, `longest gap ${out.longest} ms`)
+  } finally {
+    await gpu.close()
+  }
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
 await rm(hiddenFixture, { force: true })
+await rm(giFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)

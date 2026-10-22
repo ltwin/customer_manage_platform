@@ -81,6 +81,15 @@
 .cc-scene-props fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
 .cc-scene-props fieldset:last-of-type { grid-template-columns: minmax(0, 1fr); }
 .cc-scene-props legend { color: var(--muted); padding: 0 4px; font-size: 12px; }
+/* 渲染选项卡：输出分辨率的分段按钮占满一行，说明与只读的渲染后端各占一行。 */
+.cc-scene-render fieldset { grid-template-columns: minmax(0, 1fr); }
+.cc-scene-segmented { display: flex; }
+.cc-scene-segmented button { flex: 1; padding: 4px 0; border: 1px solid var(--border); border-left-width: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.cc-scene-segmented button:first-child { border-left-width: 1px; border-radius: 6px 0 0 6px; }
+.cc-scene-segmented button:last-child { border-radius: 0 6px 6px 0; }
+.cc-scene-segmented button[aria-pressed="true"] { color: var(--fg); background: #f28c2826; }
+.cc-scene-segmented button:disabled { cursor: default; }
+.cc-scene-render output { color: var(--fg); }
 .cc-scene-props small { color: var(--muted); }
 .cc-scene-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cc-scene-field span { color: var(--muted); font-size: 11px; }
@@ -166,6 +175,8 @@
 }
 
 /* The camera view's frame (0): the camera's picture, everything else dimmed. */
+/* 实时 GI 不画正交视图：左上角说明按工作台显示。 */
+.cc-scene-viewbadge { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 3px 8px; border-radius: 6px; background: #000000a6; color: #fff; font-size: 12px; pointer-events: none; }
 .cc-scene-camframe { position: absolute; z-index: 2; pointer-events: none; outline: 1px solid #ffffffb3; box-shadow: 0 0 0 100vmax #0000006b; }
 .cc-scene-viewport { overflow: hidden; }
 .cc-scene-camframe > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }

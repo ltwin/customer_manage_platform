@@ -16,6 +16,7 @@ import { ModelMesh } from './ModelMesh.tsx'
 import { SceneLight } from './SceneLights.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
+import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import { disposeEdges } from './wireframe.ts'
 import { WireMesh } from './WireMesh.tsx'
 
@@ -180,6 +181,11 @@ function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string
 /** Slant length of a spot's cone icon: wide cones stay short instead of reaching out. */
 const coneSlant = 0.6
 
+// The helpers below (light icons, camera frustums, empties, a group's axes) are
+// drawn in the picture but are not part of the scene: on the aside layer, out of
+// the prepasses, they neither shade, occlude nor bounce light in the AO or the
+// real-time GI (R2 tasks 7.4). Picking looks on that layer too (Viewport.tsx).
+
 /**
  * A light's icon: a ball, with a spot's cone at its real angle and a
  * directional light's beam, both along local −Z where the light shines.
@@ -190,19 +196,19 @@ function LightIcon({ light, edge }: { light: SceneObject['light']; edge: string 
   const height = coneSlant * Math.cos(angle)
   return (
     <group>
-      <mesh>
+      <mesh layers={ASIDE_LAYER}>
         <sphereGeometry args={[0.15, 16, 8]} />
         <meshBasicMaterial color={color} />
       </mesh>
       {light?.type === 'spot' && (
         // three's cone points +Y from its middle; turned to −Z with the tip at the light.
-        <mesh position={[0, 0, -height / 2]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh layers={ASIDE_LAYER} position={[0, 0, -height / 2]} rotation={[Math.PI / 2, 0, 0]}>
           <coneGeometry args={[coneSlant * Math.sin(angle), height, 16, 1, true]} />
           <meshBasicMaterial color={color} wireframe />
         </mesh>
       )}
       {light?.type === 'directional' && (
-        <mesh position={[0, 0, -0.4]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh layers={ASIDE_LAYER} position={[0, 0, -0.4]} rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.02, 0.02, 0.5, 6]} />
           <meshBasicMaterial color={color} />
         </mesh>
@@ -259,14 +265,14 @@ function CameraFrustum({ scene, object, edge }: { scene: Scene; object: SceneObj
   useEffect(() => () => marks.dispose(), [marks])
   return (
     <group>
-      <lineSegments geometry={geometry}>
+      <lineSegments layers={ASIDE_LAYER} geometry={geometry}>
         <lineBasicMaterial color={edge ?? '#3b3b3b'} />
       </lineSegments>
-      <lineSegments geometry={marks} raycast={noRaycast}>
+      <lineSegments layers={ASIDE_LAYER} geometry={marks} raycast={noRaycast}>
         <lineBasicMaterial color={edge ?? (dof ? '#c2410c' : '#3b3b3b')} />
       </lineSegments>
       {/* An invisible body so the frustum can be clicked. */}
-      <mesh position={[0, 0, -0.3]}>
+      <mesh layers={ASIDE_LAYER} position={[0, 0, -0.3]}>
         <boxGeometry args={[0.3, 0.3, 0.6]} />
         <meshBasicMaterial visible={false} />
       </mesh>
@@ -295,7 +301,7 @@ export function GhostModel({ revision, position, rotation = upright, summary, ou
 
 /** Groups draw nothing; while selected they show their axes. */
 function GroupMarker() {
-  return <axesHelper args={[0.5]} />
+  return <axesHelper layers={ASIDE_LAYER} args={[0.5]} />
 }
 
 const emptyCross = (() => {
@@ -313,10 +319,10 @@ const emptyCross = (() => {
 function EmptyMarker({ edge }: { edge: string | null }) {
   return (
     <group>
-      <lineSegments geometry={emptyCross}>
+      <lineSegments layers={ASIDE_LAYER} geometry={emptyCross}>
         <lineBasicMaterial color={edge ?? '#5b5b5b'} />
       </lineSegments>
-      <mesh>
+      <mesh layers={ASIDE_LAYER}>
         <sphereGeometry args={[0.15, 8, 6]} />
         <meshBasicMaterial visible={false} />
       </mesh>

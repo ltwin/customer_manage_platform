@@ -1,5 +1,7 @@
 import { Color } from 'three'
 import { luminance, skyIrradiance, transmittance, type Vec3 } from './atmosphere.ts'
+import type { SceneRender } from '../api.ts'
+import type { Engine } from './engines.ts'
 
 // The lit look's constants (design「最终渲染的光照」). They set the balance
 // within one scene: sun, sky light and ambient fill. How bright a scene is
@@ -16,6 +18,18 @@ export const SUN_MAX = 2.2
 export const SKY_SHARE = 0.25
 /** The sky map lights already; the scene's ambient only fills shadows a little. */
 export const AMBIENT_FILL = 0.5
+/**
+ * The fill under the real-time GI (R2 design「合成」), whose bounced light
+ * the workbench's fill stood in for. Calibrated on the room and noon
+ * reference scenes, their average brightness within 10% of the workbench's
+ * (R2 tasks 1.2: room +5.8%, noon −3.0%; anywhere from 0.25 to 0.5 stays
+ * within, this is the most even). The box room, lit by a spot and almost no
+ * ambient, is brighter by its bounce, which no fill takes back.
+ */
+export const AMBIENT_FILL_GI = 0.35
+
+/** The ambient fill of the lit look for a renderer. */
+export const ambientFill = (engine: Engine) => (engine === 'realtime_gi' ? AMBIENT_FILL_GI : AMBIENT_FILL)
 
 const reference = { elevationDeg: 55, turbidity: 3 }
 const toY = (deg: number) => Math.sin((deg * Math.PI) / 180)
@@ -61,7 +75,7 @@ export function sunLight(elevationDeg: number, turbidity = reference.turbidity):
 }
 
 /** toneMappingExposure for the lit look. */
-export const exposureOf = (render: { exposure_ev?: number } | undefined) => 2 ** (render?.exposure_ev ?? 0)
+export const exposureOf = (render: Pick<SceneRender, 'exposure_ev'>) => 2 ** render.exposure_ev
 
 /**
  * What a light added from the menu starts at: a desk lamp's point light, a

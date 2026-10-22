@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
@@ -163,5 +165,36 @@ func TestOldCameraIsCompletedOnRead(t *testing.T) {
 	addObjects(t, f.a, doc, box(objectID(2), nil, 2))
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("camera after write = %v, want %v", got, want)
+	}
+}
+
+// Snapshots stored before render.engine and render.resolution existed (and
+// before exposure_ev) read back with every render field, and any write
+// stores them: the new fields are strings, so a missing one would fail the
+// write's validation (R2 design R-1).
+func TestOldRenderIsCompletedOnRead(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	if _, err := f.db.Exec(`UPDATE creative_content_revisions SET payload = jsonb_set(payload, '{scene,render}', '{"mode":"lit"}') WHERE account_id = 'scene-a' AND payload ? 'scene'`); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := creativedocument.Read(t.Context(), f.a, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "lit", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k"}) {
+		t.Fatalf("full read of an old render: %v", got)
+	}
+	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", Engine: creativescene.EngineWorkbench, Resolution: "2k"}) {
+		t.Fatalf("decoded old render %+v", r)
+	}
+	// A write to another unit validates the whole snapshot, old render included, and stores it whole.
+	addObjects(t, f.a, doc, box(objectID(1), nil, 1))
+	var stored string
+	if err := f.db.QueryRow(`SELECT r.payload->'scene'->>'render' FROM creative_documents d JOIN creative_content_revisions r ON r.account_id = d.account_id AND r.id = d.content_revision_id WHERE d.account_id = 'scene-a' AND d.id = $1`, doc).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"mode": "lit", "engine": "workbench", "resolution": "2k", "exposure_ev": 0}`; stored != want {
+		t.Fatalf("stored render after a write = %s, want %s", stored, want)
 	}
 }

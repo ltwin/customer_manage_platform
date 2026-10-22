@@ -591,8 +591,8 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"render":{"mode":"clay","exposure_ev":0}`) {
-		t.Fatalf("a new scene reads without exposure: %s", raw)
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k"}) {
+		t.Fatalf("a new scene reads without every render field: %v", got)
 	}
 	set := func(render map[string]any) error {
 		v := readScene(t, f.a, doc)
@@ -606,22 +606,39 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err := set(map[string]any{"mode": "lit"}); err != nil {
 		t.Fatal(err)
 	}
-	if r := readScene(t, f.a, doc).Scene.Render; r.Mode != "lit" || r.ExposureEV != 2.5 {
+	if err := set(map[string]any{"engine": "realtime_gi"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := set(map[string]any{"resolution": "4k"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k"}) {
 		t.Fatalf("render %+v", r)
 	}
 	for name, render := range map[string]map[string]any{
-		"too bright":   {"exposure_ev": 10.5},
-		"too dark":     {"exposure_ev": -11},
-		"null":         {"exposure_ev": nil},
-		"nothing":      {},
-		"unknown mode": {"mode": "path"},
+		"too bright":         {"exposure_ev": 10.5},
+		"too dark":           {"exposure_ev": -11},
+		"null":               {"exposure_ev": nil},
+		"nothing":            {},
+		"unknown mode":       {"mode": "path"},
+		"path tracing":       {"engine": "path_tracing"},
+		"unknown engine":     {"engine": "eevee"},
+		"empty engine":       {"engine": ""},
+		"null engine":        {"engine": nil},
+		"unknown resolution": {"resolution": "16k"},
+		"empty resolution":   {"resolution": ""},
+		"null resolution":    {"resolution": nil},
 	} {
 		t.Run(name, func(t *testing.T) { wantErr(t, set(render), creativeops.ErrValidation) })
 	}
 	// An empty patch is refused as such, not as a conflict with a stale baseline.
 	_, err = send(t, f.a, batch{DocumentID: doc, Expected: stale, Operations: []any{op{"op": "set_render", "render": map[string]any{}}}})
-	if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "至少写一项") {
+	if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "至少写一项") || !strings.Contains(err.Error(), "engine") || !strings.Contains(err.Error(), "resolution") {
 		t.Fatalf("empty patch on a stale baseline: %v", err)
+	}
+	// Path tracing is planned: refused with what can be chosen.
+	if err := set(map[string]any{"engine": "path_tracing"}); err == nil || !strings.Contains(err.Error(), "workbench") || !strings.Contains(err.Error(), "realtime_gi") {
+		t.Fatalf("path tracing: %v", err)
 	}
 }
 
@@ -911,4 +928,18 @@ func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("camera = %v, want %v", got, want)
 	}
+}
+
+// renderOf is the render of a full read, as JSON reads it.
+func renderOf(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var doc struct {
+		Scene struct {
+			Render map[string]any `json:"render"`
+		} `json:"scene"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc.Scene.Render
 }
