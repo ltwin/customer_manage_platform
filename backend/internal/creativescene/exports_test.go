@@ -312,11 +312,11 @@ func TestBasedOnStateFollowsTheScene(t *testing.T) {
 	move(0)
 	expect("moved back", "current", "current")
 
-	// The environment is not in line art.
+	// The environment is in neither clay, drawn with the fixed studio light, nor line art.
 	v = readScene(t, f.a, sc.doc)
 	env := map[string]any{"sky": map[string]any{"kind": "color", "color": "#203040"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}
 	mustSend(t, f.a, batch{DocumentID: sc.doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": env}}})
-	expect("environment", "stale", "current")
+	expect("environment", "current", "current")
 
 	if _, err := creativedocument.Trash(t.Context(), f.a, command(t, map[string]any{"document_id": sc.doc})); err != nil {
 		t.Fatal(err)
@@ -336,7 +336,7 @@ func TestBasedOnStateFollowsTheScene(t *testing.T) {
 	if _, err := creativecanvas.ApplyCommands(t.Context(), f.a, command(t, clear)); err != nil {
 		t.Fatal(err)
 	}
-	expect("line cleared", "stale", "")
+	expect("line cleared", "current", "")
 
 	// Removing the camera makes the image stale.
 	remove(t, f.a, sc.doc, []string{cam}, cam)
@@ -376,7 +376,7 @@ func TestFingerprintCountsWhatThePassDraws(t *testing.T) {
 		{"reparent and add a camera", func(s *creativescene.Scene) { s.Objects[1].ParentID = nil; s.Objects[1].Order = 7; otherCamera(s) }, true, true, true},
 		{"hide geometry", obj(1, func(o *creativescene.Object) { o.Visible = false }), true, true, true},
 		{"move this camera", obj(3, func(o *creativescene.Object) { o.Transform.Position[1] = 2 }), true, true, true},
-		{"environment", func(s *creativescene.Scene) { s.Environment.Ambient.Intensity = 2 }, true, false, true},
+		{"environment", func(s *creativescene.Scene) { s.Environment.Ambient.Intensity = 2 }, false, false, true},
 		{"add another camera", otherCamera, false, false, false},
 		{"light", obj(2, func(o *creativescene.Object) { o.Light.Intensity = f64(80) }), false, false, true},
 		{"material slots", obj(1, func(o *creativescene.Object) { o.MaterialSlots = nil }), false, false, true},

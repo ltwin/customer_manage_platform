@@ -97,11 +97,13 @@ const testdata = new URL('../../backend/internal/creativeglb/testdata/', import.
 const pillarGLB = readFileSync(new URL('exported-template.glb', testdata))
 const pillarManifest = JSON.parse(readFileSync(new URL('cases.json', testdata), 'utf8')).find((c) => c.name === 'exported-template').manifest
 const identity = () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] })
-// A saturated background (#3355ff), so "the model is there" reads off one
-// pixel. Screenshots draw in the clay look, whose tone mapping takes the
-// background with everything else: #3355ff comes out about (62, 85, 227).
-const background = [62, 85, 227]
-const isBackground = (px) => px.every((v, i) => Math.abs(v - background[i]) < 24)
+// "The model is there" reads off one pixel against the background.
+// Screenshots draw in the clay look, whatever the sky (#3355ff here): the
+// studio's grey (render/studio.ts STUDIO_BACKGROUND), tone mapped with
+// everything else, comes out about (144, 148, 154); the lit model is far
+// brighter.
+const background = [144, 148, 154]
+const isBackground = (px) => px.every((v, i) => Math.abs(v - background[i]) < 12)
 const threeURL = (u) => /\/(three|@react-three)[/_.]/.test(u) || /deps\/(three|@react-three)/.test(u)
 
 function sceneDoc() {
@@ -496,7 +498,9 @@ try {
     assert.ok(r > b + 20 && g > b, `the brick wall in warm lamp light: ${lit.probes[0]}`)
     const [cr, , cb] = clay.probes[0]
     assert.ok(Math.abs(cr - cb) < 20, `the clay wall stays grey: ${clay.probes[0]}`)
-    assert.ok(lit.corner[2] < clay.corner[2] - 40, `a darker dusk sky than the clay's: ${clay.corner} → ${lit.corner}`)
+    // Clay has the studio's grey whatever the sky; the lit look draws the dusk sky.
+    assert.ok(isBackground(clay.corner), `the clay background is the studio's: ${clay.corner}`)
+    assert.ok(lit.corner[0] < clay.corner[0] - 40, `a dusk sky, darker than the studio's grey: ${clay.corner} → ${lit.corner}`)
     assert.deepEqual(t.errors, [])
     await t.context.close()
   })

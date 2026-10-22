@@ -686,6 +686,30 @@ func TestSceneToolsDescribeRendererAndResolution(t *testing.T) {
 	}
 }
 
+// AC-W1-5: clay is the fixed studio light whatever the environment; the
+// sky, sun, ambient, fog and lights only light lit (W1 scene-display-look).
+func TestSceneToolsSayClayIsTheStudioLight(t *testing.T) {
+	descs := map[string][]string{
+		editSceneTool:   {"clay 是素模，用固定的工作室光", "不受天空、太阳、环境光、雾和灯光物件影响", "环境只作用于 lit"},
+		renderViewTool:  {"mode:clay 素模（固定的工作室光，不受环境和灯光影响）"},
+		exportShotsTool: {"clay（白模：固定的工作室光，不受环境和灯光影响"},
+	}
+	for name, wants := range descs {
+		info, err := (&sceneTool{name: name}).Info(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(info.Desc, want) {
+				t.Errorf("%s does not say %q", name, want)
+			}
+		}
+		if strings.Contains(info.Desc, "只有程序天空的太阳、纯色天空、环境光和雾生效") {
+			t.Errorf("%s still says clay follows the environment", name)
+		}
+	}
+}
+
 func TestSceneRefusalNeverSpeaksOfGeneration(t *testing.T) {
 	var refused *toolRefusal
 	if err := sceneRefusal(fmt.Errorf("%w: trailing data", creativeops.ErrValidation)); !errors.As(err, &refused) || strings.Contains(refused.message, "图片") {

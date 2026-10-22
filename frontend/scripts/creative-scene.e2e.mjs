@@ -1172,11 +1172,15 @@ await check('reopening shows exactly what the server has', async () => {
   await again.context.close()
 })
 
-await check('fog written as three.js Fog {color, near, far} shows in the view', async () => {
-  const clear = await open(new SceneServer())
+await check('fog written as three.js Fog {color, near, far} shows in the rendered view', async () => {
+  // Both open rendered, as the scene suggests: clay has the studio light and no fog.
+  const plain = new SceneServer()
+  plain.scene.render.mode = 'lit'
+  const clear = await open(plain)
   const before = await clear.page.locator('.cc-scene-editor canvas').screenshot()
   await clear.context.close()
   const server = new SceneServer()
+  server.scene.render.mode = 'lit'
   server.scene.environment.fog = { color: '#ff00ff', near: 1, far: 8 }
   const foggy = await open(server)
   const after = await foggy.page.locator('.cc-scene-editor canvas').screenshot()
@@ -2347,13 +2351,16 @@ await check('export: two cameras × clay and line, 2048 PNGs at each camera’s 
   if (process.env.SCENE_E2E_SHOTS) {
     for (const [name, png] of [['clay', sClay], ['clay-dof', bClay], ['line', sharp[0].images[1].png], ['portrait', sharp[1].images[0].png]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c4-export-${name}.png`, png)
   }
-  // The far tower's right edge (40 m, out of focus) and the near box's left edge (8 m, in focus).
+  // The far tower's right edge (40 m, out of focus) and the near box's left edge (8 m, in focus),
+  // above the horizon: the horizon is out of focus, and in the studio light it is the strongest edge there.
   const tower = [0.62, 0.15, 0.7, 0.5]
-  const box = [0.37, 0.4, 0.45, 0.6]
+  const box = [0.38, 0.38, 0.44, 0.5]
   const whole = [await sharpness(page, sClay, tower), await sharpness(page, bClay, tower)]
   const centre = [await sharpness(page, sClay, box), await sharpness(page, bClay, box)]
   assert.ok(whole[1] < whole[0] * 0.6, `out of focus is softer: ${whole.map((v) => v.toFixed(3))}`)
-  assert.ok(centre[1] > centre[0] * 0.85, `in focus stays sharp: ${centre.map((v) => v.toFixed(3))}`)
+  // The blurred background spreads a pixel over the in-focus edge: against the studio's grey that
+  // is a good share of what the region has, so in focus is told by keeping far more than out of focus.
+  assert.ok(centre[1] / centre[0] > (whole[1] / whole[0]) * 4, `in focus stays sharp: ${centre.map((v) => v.toFixed(3))}, out of focus ${whole.map((v) => v.toFixed(3))}`)
   const lineDiff = await pixelDiff(page, sharp[0].images[1].png, blurred[0].images[1].png)
   assert.ok(lineDiff < 0.002, `line art is not blurred: ${lineDiff}`)
   console.log(`export 4 images ${ms} ms; sharpness out of focus ${whole.map((v) => v.toFixed(3))} centre ${centre.map((v) => v.toFixed(3))}`)
@@ -3028,8 +3035,9 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   server.external([{ op: 'update_objects', updates: [{ object_id: spot.id, transform: { ...spot.transform, position: [-1.5, 1.2, 0], rotation: [-0.1830127018922193, -0.6830127018922193, -0.18301270189221933, 0.6830127018922194] } }] }])
   await page.evaluate(() => window.__invalidate())
   await sleep(600)
-  // Brighter than the grid lines: only what the spot lights.
-  const lit = { level: 200 }
+  // Brighter than the grid lines: only what the spot lights. 177 is where AgX shows the light
+  // ACES Filmic showed as 200 (linear 0.53; W1 discovery/research/agx-vs-aces.md).
+  const lit = { level: 177 }
   const wide = await lumaStats(page, await settledShot(page, box), lit)
   assert.ok(wide.bright > 0.01, `the spot lights the ground (${(wide.bright * 100).toFixed(2)}% lit)`)
 
@@ -3113,7 +3121,7 @@ await check('lights: the rendered view warms its lights in one compile; adding, 
   await context.close()
 })
 
-await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens shadows and turns the sky to dusk; Cmd+Z', async () => {
+await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens rendered shadows and turns the sky to dusk, clay stays; Cmd+Z', async () => {
   const server = new SceneServer()
   const post = gid('post')
   seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
@@ -3139,10 +3147,11 @@ await check('AC-5: with nothing selected the environment shows; the sun at 5° l
     const band = await lumaStats(page, await settledShot(page, skyBand))
     return band.r / Math.max(1, band.b)
   }
-  const noon = await footprint('35')
+  const clayNoon = await settledShot(page, box)
   await shading(page, '最终渲染')
   const noonLit = await footprint('35-lit')
   const noonSky = await warmth()
+  // Set in clay, where the environment tab still edits it.
   await shading(page, '白模')
   const elevation = page.getByRole('spinbutton', { name: '太阳高度（°）' })
   await elevation.fill('5')
@@ -3150,8 +3159,9 @@ await check('AC-5: with nothing selected the environment shows; the sun at 5° l
   await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 5, 'the sun goes down')
   assert.deepEqual(server.scene.environment, { sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null }, 'only the elevation changes')
   assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
-  const dusk = await footprint('5')
-  assert.ok(dusk > noon * 1.5, `a longer clay shadow (${(noon * 100).toFixed(2)}% → ${(dusk * 100).toFixed(2)}% of the view)`)
+  // Solid areas only: the grid's thin lines are a helper and may differ once the view has been rendered.
+  const clayDusk = await solidDiff(page, clayNoon, await settledShot(page, box), 6)
+  assert.equal(clayDusk, 0, `clay stays: the studio light does not follow the sun (${(clayDusk * 100).toFixed(3)}% off)`)
   await shading(page, '最终渲染')
   const duskLit = await footprint('5-lit')
   assert.ok(duskLit > noonLit * 1.5, `a longer rendered shadow (${(noonLit * 100).toFixed(2)}% → ${(duskLit * 100).toFixed(2)}% of the view)`)
@@ -3195,11 +3205,12 @@ await check('AC-5: a colour sky and fog show as set', async () => {
   // Level with the horizon, the sky fills the top of the view; fog leaves the background alone.
   await page.keyboard.press('Digit1')
   const sky = { x: box.x, y: box.y + 10, width: box.width, height: 40 }
-  for (const mode of ['白模', '最终渲染']) {
-    await shading(page, mode)
-    const top = await lumaStats(page, await settledShot(page, sky))
-    assert.ok(top.b > top.r + 60, `${mode}: the sky is the colour set (rgb ${top.r.toFixed(0)}, ${top.g.toFixed(0)}, ${top.b.toFixed(0)})`)
-  }
+  const top = await lumaStats(page, await settledShot(page, sky))
+  assert.ok(top.b > top.r + 60, `the sky is the colour set (rgb ${top.r.toFixed(0)}, ${top.g.toFixed(0)}, ${top.b.toFixed(0)})`)
+  // Clay draws the studio's neutral background instead.
+  await shading(page, '白模')
+  const studio = await lumaStats(page, await settledShot(page, sky))
+  assert.ok(Math.abs(studio.r - studio.b) < 20, `clay: a neutral background, not the sky (rgb ${studio.r.toFixed(0)}, ${studio.g.toFixed(0)}, ${studio.b.toFixed(0)})`)
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -3217,7 +3228,8 @@ await check('AC-5: pulled far back, the procedural sky still fills the view', as
     const { page, errors } = await open(server, { context })
     const { box } = await viewportCenter(page)
     const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => ({ x: box.x + 4 + u * (box.width - 48), y: box.y + 4 + v * (box.height - 48), width: 40, height: 40 }))
-    for (const mode of ['白模', '最终渲染']) {
+    // Clay has the studio's background and no sky.
+    for (const mode of ['最终渲染']) {
       await shading(page, mode)
       await shot(page, `c5-far-sky-${name}-${mode}`)
       for (const corner of corners) {
@@ -3417,6 +3429,98 @@ await check('AC-6: in the rendered view the dialog ticks all three passes; 3 cam
   await context.close()
 })
 
+// --- W1 AC-W1-1: clay is the studio light, whatever the environment ------------
+
+await check('W1 clay: the sun, the sky, fog, ambient and a shadowing lamp change neither the clay view nor clay exports; every camera is lit from the front', async () => {
+  const server = new SceneServer()
+  const front = objectID('front'), back = objectID('back'), lamp = objectID('lamp')
+  server.external([{ op: 'add_objects', objects: [
+    { ...boxObject(objectID('box'), '方块', 0, 1), primitive: { builtin: 'box@1', params: { width: 1.2, height: 1.2, depth: 1.2 } } },
+    cameraObject(front, '前', 2, { focal_mm: 50 }, [0, 0.6, 6]),
+    // Turned to look back along +Z, at the box's other side.
+    { ...cameraObject(back, '后', 3, { focal_mm: 50 }, [0, 0.6, -6]), transform: { position: [0, 0.6, -6], rotation: [0, 1, 0, 0], scale: [1, 1, 1] } },
+  ] }])
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  const { box } = await viewportCenter(page)
+  await shading(page, '白模')
+  const change = async (ops) => {
+    server.external(ops)
+    await page.evaluate(() => window.__invalidate())
+    await sleep(600)
+  }
+  const environment = (patch) => [{ op: 'set_environment', environment: { ...server.scene.environment, ...patch } }]
+  const exportClay = async () => {
+    const n = server.exports.length
+    await page.getByRole('button', { name: '导出' }).first().click()
+    const dialog = page.getByRole('dialog', { name: '导出分镜' })
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: '导出' }).click()
+    await waitFor(() => server.exports.length === n + 1, 'export submitted', 180_000)
+    await dialog.waitFor({ state: 'detached' })
+    return server.exports.at(-1).payload.shots.map((s) => server.uploadBytes.get(s.images.find((i) => i.pass === 'clay').upload_id))
+  }
+  /** Pixels off by more than 2 in a channel; 0 is the same picture. */
+  const off = async (a, b) => (await compareShots(page, a, b, 2)).over
+
+  const view = await settledShot(page, box)
+  const shots = await exportClay()
+  const steps = [
+    ['a low sun', environment({ sky: { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 250, turbidity: 3 } })],
+    ['a solid sky', environment({ sky: { kind: 'color', color: '#3355ff' } })],
+    ['fog', environment({ fog: { color: '#c0c8d0', near: 2, far: 12 } })],
+    ['ambient', environment({ ambient: { color: '#ffb070', intensity: 1.5 } })],
+  ]
+  for (const [step, ops] of steps) {
+    await change(ops)
+    assert.equal(await off(view, await settledShot(page, box)), 0, `${step}: the clay view is the same`)
+  }
+  // Not compared in the viewport, which draws the lamp's icon.
+  await change([{ op: 'add_objects', objects: [{ id: lamp, kind: 'light', name: '灯', parent_id: null, order: 4, transform: { ...identity(), position: [1.5, 2, 1.5] }, visible: true, locked: false, light: { type: 'point', color: '#ffb070', intensity: 60, cast_shadow: true } }] }])
+  const after = await exportClay()
+  for (const [i, png] of after.entries()) assert.equal(await off(shots[i], png), 0, `camera ${i}: the clay export is the same after all of it`)
+
+  // Both cameras see the face towards them lit: the light turns with the view.
+  const [a, b] = await Promise.all(after.map((png) => lumaStats(page, png)))
+  const centre = await Promise.all(after.map((png) => page.evaluate(async (src) => {
+    const i = new Image()
+    await new Promise((resolve) => { i.onload = resolve; i.src = src })
+    const c = document.createElement('canvas')
+    c.width = i.width
+    c.height = i.height
+    const g = c.getContext('2d')
+    g.drawImage(i, 0, 0)
+    const p = g.getImageData(i.width >> 1, i.height >> 1, 1, 1).data
+    return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
+  }, `data:image/png;base64,${png.toString('base64')}`)))
+  console.log(`clay box face, front ${centre[0].toFixed(0)}, back ${centre[1].toFixed(0)}; pictures ${a.mean.toFixed(0)}, ${b.mean.toFixed(0)}`)
+  assert.ok(Math.abs(centre[0] - centre[1]) < 6, `the box faces both cameras alike: ${centre.map((v) => v.toFixed(0))}`)
+  assert.ok(centre[0] > a.mean, 'the face towards the camera is lit')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W1 environment tab: outside the rendered view it says the environment shows there, and still edits', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '环境' }).click()
+  const tab = page.getByRole('tabpanel', { name: '环境' })
+  const hint = tab.getByText('环境在「最终渲染」里生效', { exact: true })
+  for (const mode of ['白模', '材质预览', '线框']) {
+    await shading(page, mode)
+    await hint.waitFor()
+  }
+  await shading(page, '最终渲染')
+  await hint.waitFor({ state: 'detached' })
+  await shading(page, '白模')
+  const elevation = tab.getByRole('spinbutton', { name: '太阳高度（°）' })
+  await elevation.fill('20')
+  await elevation.press('Enter')
+  await waitFor(() => server.scene.environment.sky.sun_elevation_deg === 20, 'edited in clay')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- 3.4 calibration: the reference scenes ----------------------------------
 
 /** A yard: a white box, a concrete wall, a wooden crate and a metal ball on the ground. */
@@ -3445,11 +3549,16 @@ const room = (server, intensity) => {
   ])
 }
 
-await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd lamps at 0 render in range', async () => {
+/** The calibration scenes' mean brightness before W1 (ACES Filmic, develop f48841a3, SwiftShader): AgX keeps each within 10% (AC-W1-3). */
+const calibrationBeforeW1 = { noon: { all: 195, ground: 199 }, dusk: { all: 150, ground: 165 }, room: { all: 64, ground: 58 }, materials: { all: 183, ground: 191 } }
+
+await check('calibration: noon at EV 0, dusk at +2, a room lit by two 40 cd lamps at 0 and the material board render in range', async () => {
   const cases = [
     { name: 'noon', ev: 0, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 55, sun_azimuth_deg: 135, turbidity: 3 }) },
     { name: 'dusk', ev: 2, setup: (s) => yard(s, { kind: 'procedural', sun_elevation_deg: 5, sun_azimuth_deg: 135, turbidity: 3 }) },
     { name: 'room', ev: 0, setup: (s) => room(s, 40) },
+    // R0's material board: 15 presets under a 45° procedural sky (scripts/fixtures/scene-reference).
+    { name: 'materials', ev: 0, setup: (s) => referenceScene(s, 'materials') },
   ]
   const seen = {}
   for (const c of cases) {
@@ -3468,13 +3577,20 @@ await check('calibration: noon at EV 0, dusk at +2 and a room lit by two 40 cd l
     assert.deepEqual(errors, [])
     await context.close()
   }
-  const { noon, dusk, room: lamps } = seen
+  const { noon, dusk, room: lamps, materials } = seen
+  for (const [name, before] of Object.entries(calibrationBeforeW1)) {
+    for (const part of ['all', 'ground']) {
+      const change = seen[name][part].mean / before[part] - 1
+      assert.ok(Math.abs(change) <= 0.1, `${name} ${part}: ${seen[name][part].mean.toFixed(0)} against ${before[part]} before W1 (${(change * 100).toFixed(1)}%)`)
+    }
+  }
   assert.ok(noon.ground.mean > 175 && noon.ground.mean < 220, 'sunlit light ground is bright, not blown')
   assert.ok(Math.abs(noon.ground.r - noon.ground.b) < 12, 'daylight is neutral')
   assert.ok(noon.all.bright < 0.01 && dusk.all.bright < 0.01, 'nothing clips outdoors')
   assert.ok(dusk.ground.mean > 130 && dusk.ground.mean < 200, 'dusk at +2 is a little darker than noon')
   assert.ok(dusk.ground.r - dusk.ground.b > 15, 'dusk light is warm')
   assert.ok(lamps.all.mean > 40 && lamps.all.mean < 110 && lamps.all.bright < 0.02, 'the lamps light the room without blowing it out')
+  assert.ok(materials.all.bright < 0.01, 'the material board does not clip')
 })
 
 // --- WebGPU renderer R0: the reference scenes and their WebGL baseline -----------
@@ -3587,9 +3703,91 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
   }
 })
 
+// --- W1 scene-display-look: the looks it changes and the ones it keeps ----------
+
+const displayModes = [['线框', 'wireframe'], ['白模', 'clay'], ['材质预览', 'preview'], ['最终渲染', 'lit']]
+
+/** A reference scene's viewport from the editor's default view in each of modes ([label, file name]), on gpu at 1600 × 1000, 2× pixels. */
+async function viewportLooks(gpu, name, modes = displayModes) {
+  const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+  const server = new SceneServer()
+  referenceScene(server, name)
+  const { page, errors } = await open(server, { context })
+  const { box } = await viewportCenter(page)
+  const ground = { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }
+  await page.mouse.move(1, 1)
+  const out = []
+  for (const [mode, label] of modes) {
+    await shading(page, mode)
+    // New lights stay dark until compiled for the viewport's passes (objects/SceneLights.tsx).
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name} ${mode}: compiled`, 60_000)
+    const png = await settledShot(page, box)
+    out.push({ label, file: `${name}-view-${label}.png`, png, all: await lumaStats(page, png, { level: 250 }), ground: await lumaStats(page, await settledShot(page, ground), { level: 250 }) })
+  }
+  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  await context.close()
+  return out
+}
+
+const w1Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-display-look/discovery/research/baseline/', import.meta.url)
+
+// SCENE_E2E_LOOKS=<dir>: every reference scene's viewport in the four display
+// modes on this machine's GPU, with looks.json measuring each picture and its
+// lower quarter (ground). Run once before W1's renderer changes for the
+// baseline (w1Baseline) and again after them.
+if (process.env.SCENE_E2E_LOOKS) await check('looks: the reference scenes in every display mode on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_LOOKS
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
+    const round = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v.toFixed(4))]))
+    for (const name of referenceNames) {
+      record.scenes[name] = {}
+      for (const look of await viewportLooks(gpu, name)) {
+        await writeFile(`${dir}/${look.file}`, look.png)
+        record.scenes[name][look.label] = { all: round(look.all), ground: round(look.ground) }
+        console.log(`looks ${name} ${look.label}: mean ${look.all.mean.toFixed(1)}, clipped ${(look.all.bright * 100).toFixed(2)}%, ground ${look.ground.mean.toFixed(1)} (R−B ${(look.ground.r - look.ground.b).toFixed(1)})`)
+      }
+    }
+    await writeFile(`${dir}/looks.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W1=<dir> (AC-W1-3): wireframe and line art are what they were
+// before W1, pixel for pixel, on this machine's GPU; sheets of any image
+// that is not go to the directory.
+if (process.env.SCENE_E2E_W1) await check('W1: wireframe and line art are unchanged on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W1
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const same = async (file, png) => {
+      const m = await compareShots(page, readFileSync(new URL(file, w1Baseline)), png, 2)
+      if (m.error || m.over > 0) {
+        off.push(`${file}: ${m.error ?? `${m.over.toFixed(4)}% of pixels off by more than 2`}`)
+        if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}.jpg`, m.sheet)
+      }
+    }
+    for (const name of referenceNames) {
+      for (const look of await viewportLooks(gpu, name, [['线框', 'wireframe']])) await same(look.file, look.png)
+      for (const img of (await exportReference(gpu, name)).images) if (img.pass === 'line') await same(img.file, img.png)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [])
+})
+
 // --- R1 AC-R1-1 / AC-R1-4: the same pictures as the WebGL baseline --------------
 
 const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer/features/2026-10-21-scene-webgpu-spike/discovery/research/baseline/', import.meta.url)
+// W1 (scene-display-look) changed clay (the studio light) and lit (AgX): their references since are W1's
+// exports on WebGPU; line art did not change and stays against R0's.
+const w1After = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-display-look/discovery/research/after/', import.meta.url)
+const referenceOf = (img) => (img.pass === 'line' ? { dir: r0Baseline, against: 'r0-webgl' } : { dir: w1After, against: 'w1-webgpu' })
 
 /**
  * The thresholds of AC-R1-1, tightened after the first full run to 1.5× the
@@ -3599,9 +3797,9 @@ const r0Baseline = new URL('../../.lti/features/2026-10-20-scene-webgpu-renderer
  */
 const parityLimits = { line: { mean: 0.0016, over: 0.0026 }, clay: { mean: 1.5, over: 0.62 }, lit: { mean: 0.63, over: 0.18 } }
 
-/** Mean difference per channel (0–255), the share of pixels with a channel off by more than 8 (%), and a + b + difference (×8) side by side as a JPEG. */
-async function compareShots(page, a, b) {
-  const out = await page.evaluate(async ([a, b]) => {
+/** Mean difference per channel (0–255), the share of pixels with a channel off by more than limit (%), and a + b + difference (×8) side by side as a JPEG. */
+async function compareShots(page, a, b, limit = 8) {
+  const out = await page.evaluate(async ([a, b, limit]) => {
     const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
     const [x, y] = await Promise.all([load(a), load(b)])
     const w = x.width
@@ -3629,7 +3827,7 @@ async function compareShots(page, a, b) {
         diff.data[k + c] = Math.min(255, d * 8)
       }
       diff.data[k + 3] = 255
-      if (most > 8) over++
+      if (most > limit) over++
     }
     const sheet = document.createElement('canvas')
     const scale = 0.5
@@ -3642,7 +3840,7 @@ async function compareShots(page, a, b) {
     d.getContext('2d').putImageData(diff, 0, 0)
     for (const [i, img] of [x, y, d].entries()) g.drawImage(img, i * Math.round(w * scale), 0, Math.round(w * scale), Math.round(h * scale))
     return { mean: sum / ((p.length / 4) * 3), over: (over / (p.length / 4)) * 100, sheet: sheet.toDataURL('image/jpeg', 0.85).split(',')[1] }
-  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, limit])
   return out.error ? out : { ...out, sheet: Buffer.from(out.sheet, 'base64') }
 }
 
@@ -3670,9 +3868,10 @@ if (process.env.SCENE_E2E_GPU) await check('parity: the reference scenes match t
       assert.ok(webgpu.backends.some((b) => b === 'scene renderer (offscreen): webgpu'), `${name}: the export on WebGPU: ${webgpu.backends}`)
       page ??= await (await gpu.newContext()).newPage()
       for (const img of [...webgpu.images, webgpu.ortho]) {
-        const m = await compareShots(page, readFileSync(new URL(img.file, r0Baseline)), img.png)
+        const reference = referenceOf(img)
+        const m = await compareShots(page, readFileSync(new URL(img.file, reference.dir)), img.png)
         if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}.jpg`, m.sheet)
-        record('r0-webgl', img.file, img.pass, m)
+        record(reference.against, img.file, img.pass, m)
       }
       const webgl = await exportReference(gpu, name, { forceWebGL: true })
       exports[name] = { webgpu_ms: webgpu.exportMs, webgl2_ms: webgl.exportMs }
@@ -3897,8 +4096,9 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const startedGI = Date.now()
     const frontGI = await runGI('front')
     const giMs = Date.now() - startedGI
-    assert.deepEqual(frontGI.filter((i) => i.pass === 'line'), front.filter((i) => i.pass === 'line'), 'line art is the workbench’s')
-    assert.ok(frontGI.filter((i) => i.pass !== 'line').every((i) => !front.some((w) => w.hash === i.hash)), 'clay and lit are the real-time GI’s')
+    // Clay and line art are the workbench's whatever the renderer (R2 tasks 7.4, engines.ts effectiveEngine).
+    assert.deepEqual(frontGI.filter((i) => i.pass !== 'lit'), front.filter((i) => i.pass !== 'lit'), 'clay and line art are the workbench’s')
+    assert.ok(frontGI.filter((i) => i.pass === 'lit').every((i) => !front.some((w) => w.hash === i.hash)), 'lit is the real-time GI’s')
     await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
     await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab in the background again', 10_000)
     await runGI('first')
@@ -4617,6 +4817,36 @@ await check('real-time GI: a 2K export of the box room is within its residual no
     const out = await page.evaluate(([s, b]) => window.__noise(s, 'lit', 2048, b), [scene, wall])
     console.log(`residual noise, box room lit ${out.width}×${out.height}: ${out.noise.toFixed(3)} (limit 1.5), ${(out.ms / 1000).toFixed(1)} s`)
     assert.ok(out.noise <= 1.5, `lit: ${out.noise}`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// The real-time GI's ambient fill (litLook.ts AMBIENT_FILL_GI), again under AgX (W1 tasks 5.1): how much
+// brighter or darker each reference's lit export is with the real-time GI than with the workbench stays what
+// it was before W1, within 5 points. Measured the same way before W1 on develop f48841a3 (ACES Filmic), this
+// machine's GPU. Opt-in, SCENE_E2E_GI_FILL=1: about a minute.
+const giAgainstWorkbenchBeforeW1 = { room: 0.068, noon: -0.191, cornell: 0.329 }
+if (process.env.SCENE_E2E_GI_FILL) await check('real-time GI: against the workbench, the reference lit exports are as much brighter or darker as before W1', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await gpu.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const grey = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+    const off = []
+    for (const [name, before] of Object.entries(giAgainstWorkbenchBeforeW1)) {
+      const reference = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+      const mean = {}
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const r = await page.evaluate(([s]) => window.__regions(s, 'lit', 2048, [[0, 0, 1, 1]]), [{ ...reference, render: { ...reference.render, engine } }])
+        mean[engine] = grey(r.means[0])
+      }
+      const now = mean.realtime_gi / mean.workbench - 1
+      console.log(`${name}: workbench ${mean.workbench.toFixed(1)}, real-time GI ${mean.realtime_gi.toFixed(1)} (${(now * 100).toFixed(1)}%, before W1 ${(before * 100).toFixed(1)}%)`)
+      if (Math.abs(now - before) > 0.05) off.push(`${name} ${(now * 100).toFixed(1)}% against ${(before * 100).toFixed(1)}%`)
+    }
+    assert.deepEqual(off, [])
   } finally {
     await gpu.close()
   }

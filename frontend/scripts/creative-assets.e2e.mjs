@@ -4,7 +4,7 @@
 // Run against the Vite dev server: node scripts/creative-assets.e2e.mjs.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
@@ -1625,6 +1625,9 @@ await check('C6-model-preview', async () => {
   assert(!turned.equals(clay), 'clay looks different from the materials')
   assert((await red(clay)) < 0.001, 'clay has no paint')
   await page.screenshot({ path: `${output}/model-preview.png` })
+  // The stage alone in both looks, for comparing how the preview renders (W1 scene-display-look).
+  writeFileSync(`${output}/model-preview-materials.png`, front)
+  writeFileSync(`${output}/model-preview-clay.png`, clay)
 
   const ticket = page.waitForRequest((r) => r.url().endsWith('/media-access-tickets') && r.postDataJSON()?.purpose === 'download')
   const download = page.waitForEvent('download')

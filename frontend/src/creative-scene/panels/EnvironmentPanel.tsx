@@ -1,5 +1,6 @@
 import type { Scene } from '../api.ts'
 import { proceduralSky, withFog, withSkyKind } from '../editing.ts'
+import type { DisplayMode } from '../state/sceneStore.ts'
 import { NumberField } from './Properties.tsx'
 
 type Environment = Scene['environment']
@@ -19,11 +20,13 @@ export function Slider({ label, value, min, max, step, onCommit }: { label: stri
  * ambient light and fog; the exposure moved to the render tab.
  * set_environment writes the environment whole, so each field edit sends
  * the current one with that field changed; a drag's commits fold by their
- * merge key while unsent.
+ * merge key while unsent. Only the rendered view and lit exports show it:
+ * clay has the fixed studio light (render/studio.ts), and says so here.
  */
-export function EnvironmentPanel({ environment, readOnly, onEnvironment }: {
+export function EnvironmentPanel({ environment, readOnly, display, onEnvironment }: {
   environment: Environment
   readOnly: boolean
+  display: DisplayMode
   onEnvironment: (env: Environment, label: string, merge?: string) => void
 }) {
   const { sky, ambient, fog } = environment
@@ -31,6 +34,7 @@ export function EnvironmentPanel({ environment, readOnly, onEnvironment }: {
   const setSky = (patch: Partial<Environment['sky']>, what: string, field: string) => set({ ...environment, sky: { ...sky, ...patch } }, what, field)
   return (
     <div className="cc-scene-props cc-scene-environment" aria-label="环境" role="tabpanel">
+      {display !== 'rendered' && <small>环境在「最终渲染」里生效</small>}
       <fieldset disabled={readOnly}>
         <legend>天空</legend>
         <label className="cc-scene-field">

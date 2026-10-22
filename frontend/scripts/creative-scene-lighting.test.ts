@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DirectionalLight, Group, PointLight, Quaternion, SpotLight, Vector3 } from 'three'
+import { DirectionalLight, Euler, Group, PerspectiveCamera, PointLight, Quaternion, Scene, SpotLight, Vector3 } from 'three'
 import { applyLight, buildLight } from '../src/creative-scene/objects/lights.ts'
 import { exposureOf, NEW_LIGHT_INTENSITY, SKY_GAIN, SKY_SHARE, SUN_MAX, sunLight } from '../src/creative-scene/render/litLook.ts'
 import { skyIrradiance } from '../src/creative-scene/render/atmosphere.ts'
+import { aimStudio } from '../src/creative-scene/render/studio.ts'
 import { colorSky, coneAngle, coneDegrees, newLight, newLightHeight, proceduralSky, withFog, withSkyKind } from '../src/creative-scene/editing.ts'
 
 const close = (a: readonly number[], b: readonly number[], eps = 1e-9) =>
@@ -119,4 +120,26 @@ test('switching the sky keeps only the new kind\'s fields; fog toggles with a st
   assert.ok(foggy.fog && foggy.fog.near > 0 && foggy.fog.far > foggy.fog.near, 'the server accepts it')
   assert.equal(withFog(foggy, false).fog, null)
   assert.equal(withFog(env, false), env)
+})
+
+test('the studio key light turns with the view: from its upper left wherever the camera looks; other lights stay', () => {
+  const scene = new Scene()
+  const key = new DirectionalLight()
+  key.userData.studio = true
+  const sun = new DirectionalLight()
+  sun.position.set(1, 2, 3)
+  scene.add(new Group().add(key), sun)
+  const camera = new PerspectiveCamera()
+  const seen: number[][] = []
+  for (const turn of [new Euler(0, 0, 0), new Euler(-0.4, 2.5, 0), new Euler(-Math.PI / 2, 0, 0.7)]) {
+    camera.quaternion.setFromEuler(turn)
+    aimStudio(scene, camera)
+    // The light's direction in the camera's frame: x right, y up, z towards the viewer.
+    const inView = key.position.clone().sub(key.target.position).normalize().applyQuaternion(camera.quaternion.clone().invert())
+    seen.push(inView.toArray().map((v) => Math.round(v * 1e6) / 1e6))
+  }
+  assert.ok(seen.every((d) => d[0] < -0.3 && d[1] > 0.5 && d[2] > 0.4), `from the upper left, in front: ${JSON.stringify(seen)}`)
+  close(seen[1], seen[0], 1e-5)
+  close(seen[2], seen[0], 1e-5)
+  close(sun.position.toArray(), [1, 2, 3])
 })

@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
+import { ACESFilmicToneMapping, AgXToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -11,6 +11,7 @@ import type { SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
+import { aimStudio } from './studio.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -570,7 +571,10 @@ export class SceneRenderer {
         }
       }
     }
-    let output = vec4Of(renderOutput(picture, ACESFilmicToneMapping, SRGBColorSpace))
+    // AgX (W1 scene-display-look): bright saturated colours go towards white
+    // without turning into another hue. Wireframe keeps ACES Filmic, so its
+    // lines and colours stay exactly what they were.
+    let output = vec4Of(renderOutput(picture, wireframe ? ACESFilmicToneMapping : AgXToneMapping, SRGBColorSpace))
     if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
     // The real-time GI is antialiased by its TRAA.
     if (msaa === 0 && !gi) output = vec4Of(own(smaa(output)))
@@ -642,6 +646,8 @@ export class SceneRenderer {
     if (built.aoOn) built.aoOn.value = frame.ao === false ? 0 : 1
     const bg = this.scene.background
     built.background.value.copy(bg instanceof Color ? bg : renderer.getClearColor(new Color()))
+    // Clay's studio light comes from the view's upper left (render/studio.ts).
+    aimStudio(this.scene, camera)
     for (const o of this.overlays.aside()) o?.traverse((c) => c.layers.set(ASIDE_LAYER))
     for (const o of this.overlays.top()) o?.traverse((c) => c.layers.set(OVERLAY_LAYER))
     // The output node reads the exposure from the renderer as it draws.
