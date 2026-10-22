@@ -28,6 +28,11 @@ const (
 	actionTokenSize    = actionSelectorSize + 1 + actionSecretSize
 )
 
+// DerivePurposeKey derives a 32-byte key for one purpose from the root auth
+// secret. Keys of different labels are independent, so a token signed for one
+// purpose never verifies for another.
+func DerivePurposeKey(rootSecret, label string) []byte { return deriveKey(rootSecret, label) }
+
 func deriveKey(rootSecret, label string) []byte {
 	// RFC 5869：salt=nil 等价于 HashLen 个 0；本协议只取 32 bytes，
 	// 因此 Expand 只有 T(1)=HMAC(PRK, info || 0x01)。
