@@ -61,7 +61,13 @@
 
 ## 6. 编辑界面
 
-- [ ] 6.1 城市数据：`frontend/scripts/cities/` 的构建脚本与补丁表（婺源、稻城、漠河、林芝，以及 57 条缺中文名的条目；新疆的条目改为 `Asia/Shanghai`），生成 `world/cities.json`（带国家代码、不带人口，按人口排序，含 `attribution` 与取数日期）；`world/cities.ts` 按需加载与搜索（前缀先于包含，同类按行序，取前 8 项，显示「城市 · 国家」）；新建 `docs/third-party-notices.md`（GeoNames、`astronomy-engine`）。先写 `creative-scene-cities.test.ts`：「成都」「Chengdu」「稻城」排第一，搜「京都」不先出「东京都」，两条「伦敦」按国家区分，新疆的城市是 `Asia/Shanghai`。完成判据：单测先红后绿；城市表 gzip 不超过 170 KB，首屏包里没有它
+- [x] 6.1 城市数据：`frontend/scripts/cities/` 的构建脚本与补丁表（婺源、稻城、漠河、林芝，以及 57 条缺中文名的条目；新疆的条目改为 `Asia/Shanghai`），生成 `world/cities.json`（带国家代码、不带人口，按人口排序，含 `attribution` 与取数日期）；`world/cities.ts` 按需加载与搜索（前缀先于包含，同类按行序，取前 8 项，显示「城市 · 国家」）；新建 `docs/third-party-notices.md`（GeoNames、`astronomy-engine`）。先写 `creative-scene-cities.test.ts`：「成都」「Chengdu」「稻城」排第一，搜「京都」不先出「东京都」，两条「伦敦」按国家区分，新疆的城市是 `Asia/Shanghai`。完成判据：单测先红后绿；城市表 gzip 不超过 170 KB，首屏包里没有它
+  - 单测 5 项先红后绿：「成都」「Chengdu」「chengdu」「稻城」「婺源」排第一；「京都」先出京都、「喀什」先出喀什，东京都仍在后面；两条「伦敦」显示为「伦敦 · 英国」「伦敦 · 加拿大」；「臺北」找到台北；乌鲁木齐、喀什是 `Asia/Shanghai`；最多 8 项；署名与取数日期。
+  - 构建：`node scripts/cities/build.mjs <数据目录>` 一条命令，缺的下载才去取（GeoNames 三个文件、Wikidata 约 86 次查询）。这次用调研当天（2026-10-22）下载在本机的数据离线构建，没有重新联网。结果 7,338 条（中国 2,338 条），258 个时区全部能被 `Intl` 加载，新疆 115 条改为 `Asia/Shanghai`；原始 292,185 字节，gzip 160,284 字节。与调研的数字一致（7,337 条、gzip 160,023，多出的一条是婺源）。
+  - 补丁表：稻城改名、漠河改名改坐标（52.97°N、122.54°E）、林芝补中文名、婺源新增；57 条人口 10 万以上缺中文名的中国条目，中文名是我按拼音、省份代码和坐标逐条判断的，其中和村、绣林、旧堡、大屯、临水、吉舒、辛寨几个镇街标了「按坐标核对」，请 owner 过目；海外 8 条简体列残留的繁体名改成简体（如「雷諾」→「里诺」）。构建时打印的两份核对清单都清零。
+  - 港澳台的国家名用「中国香港」「中国澳门」「中国台湾」，不用 `Intl.DisplayNames` 的「中国香港特别行政区」（太长）。
+  - 「首屏包里没有它」：`cities.ts` 用 `import()` 加载 JSON，目前还没有页面引用它；6.2 接进环境选项卡后用构建产物核对。
+  - 新建 `docs/third-party-notices.md`：GeoNames（CC BY 4.0、修改说明、免责声明原文）、Wikidata（CC0）、`astronomy-engine`（MIT）。
 - [ ] 6.2 「环境」选项卡的物理天空：`editing.ts:withSkyKind` 加 `physical`（契约缺省值，`date` 取本机的当天）；`EnvironmentPanel.tsx` 按 design 的分组排列——城市搜索框（下拉底部署名）、时区下拉与退回推算时的提示、时间一组显示太阳高度方位、日出日落、黄金时刻和蓝调时刻，环境光置灰；`SceneEditor.tsx`：切到手动模式时在同一次提交里写入当前角度（低于 −10° 时夹到 −10°），选城市一次写入四项，手改经纬度清空 `place`，选预设写入四个大气参数。先写 e2e：AC-W2-1 上海夏至拖动时刻（时刻序列存进 evidence），改正北方向后影子转动，悉尼正午太阳在北；AC-W2-2 切到手动时 `render_view` 的 `lit` 逐像素相同，Cmd+Z 回到地点模式，入夜后切手动夹到 −10°；AC-W2-12 选城市后写入经纬度和时区，下拉有署名；物理天空下环境光置灰。完成判据：用例先红后绿
 - [ ] 6.3 曝光的界面：`RenderPanel.tsx` 在物理天空下显示默认曝光（EV100）和参考值，其他天空照旧显示曝光补偿；`Properties.tsx:CameraFields` 新增「曝光」一组（ISO、快门、与景深共用的光圈、只显示的 EV100），非物理天空下置灰；`editing.ts:newCamera` 和 `SceneEditor.tsx` 的添加摄像机按默认曝光写入曝光（4.1 的换算）。先写 e2e：自由视角下改默认曝光，视口变、相机视图和导出不变；默认曝光为 12 和 −5 时添加摄像机，相机视图与添加前的视口亮度相差 ≤ 1/3 档；程序化天空下曝光一组和默认曝光置灰。完成判据：用例先红后绿
 
