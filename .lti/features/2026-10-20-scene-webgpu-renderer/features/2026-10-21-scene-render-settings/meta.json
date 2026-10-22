@@ -1,6 +1,6 @@
 {
   "uid": "2a3bf48d-e987-45fa-9b6a-ac66170a99e5",
-  "revision": 9,
+  "revision": 12,
   "id": "scene-render-settings",
   "kind": "feature",
   "assurance": "governed",
@@ -25,9 +25,9 @@
       "data:场景文档"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-21T17:25:44.922Z",
-  "updatedAt": "2026-10-22T06:49:35.460Z",
+  "updatedAt": "2026-10-22T06:55:08.545Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -94,8 +94,344 @@
       ".lti/snapshots/e23640cf13f9d58336666e56e65a78f7ba2540ffc9b34d48c8c5357d9155c355.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-22T06:54:37.620Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，按定向检查人工记录；全量 e2e、全量单测未跑（合回 develop 时跑 make check-merge）；Safari、8K 峰值内存与其他设备未测；重绘效果未验证",
+        "coverage": [
+          {
+            "criterionId": "AC-676ff993168b",
+            "status": "verified",
+            "evidence": "panels/RenderPanel.tsx、SceneEditor.tsx；e2e「render tab: …」「AC-5: exposure」；tabAfterSelection 单测（tasks 3.1）"
+          },
+          {
+            "criterionId": "AC-eb174dd36381",
+            "status": "verified",
+            "evidence": "见下面三条（tasks 3.2、7.4）"
+          },
+          {
+            "criterionId": "AC-92c7b23959f3",
+            "status": "verified",
+            "evidence": "engines.ts effectiveEngine（单测决策表）；e2e「renderer in effect: …」（撤销、另一标签页同步、离屏 lit 不同 / clay、line 哈希相同）；fingerprint.go TestEngineFingerprintsOnlyLit（只有 lit 过时）"
+          },
+          {
+            "criterionId": "AC-7ffcb933640a",
+            "status": "verified",
+            "evidence": "fingerprint.go 不计 resolution；fingerprint_internal_test.go"
+          },
+          {
+            "criterionId": "AC-a086ba991254",
+            "status": "verified",
+            "evidence": "completeRenderSettings 读取补齐、v1 指纹单测固定（fingerprint_internal_test.go、scene_test.go）"
+          },
+          {
+            "criterionId": "AC-4b7a9c6a73b0",
+            "status": "verified",
+            "evidence": "Validate 枚举；scene_test.go 400 用例"
+          },
+          {
+            "criterionId": "AC-34d15b27f14d",
+            "status": "verified",
+            "evidence": "见下两条（tasks 7.1）"
+          },
+          {
+            "criterionId": "AC-d737b26285ba",
+            "status": "verified",
+            "evidence": "e2e「real-time GI: the box room bleeds red …, mirrors the walls in the ball and darkens contacts, against the workbench」区域测量（红墙旁红绿比、金属球差）；接触处更暗在 lit 下量不出，owner 2026-10-22 决定按看图接受（tasks 7.4）"
+          },
+          {
+            "criterionId": "AC-8b9f2174f597",
+            "status": "verified",
+            "evidence": "同上 e2e 切回工作台对 R1 冻结参考图"
+          },
+          {
+            "criterionId": "AC-980a256ad1c7",
+            "status": "verified",
+            "evidence": "e2e「renderer in effect」白模、线框、材质预览、线稿与工作台逐像素相同、正交角标；e2e「camera frustums and empties … neither shade nor occlude」0.05%（修正前 1.76%）"
+          },
+          {
+            "criterionId": "AC-512e896ae459",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-aa68453e5fac",
+            "status": "verified",
+            "evidence": "e2e「renderer in effect」实时 GI 帧计数停在 12、工作台停在 1"
+          },
+          {
+            "criterionId": "AC-c939bd25277b",
+            "status": "verified",
+            "evidence": "e2e「a 2K export of the box room is within its residual noise」1.232 ≤ 1.5（7.5 后复跑相同）"
+          },
+          {
+            "criterionId": "AC-b7cb0af9519c",
+            "status": "verified",
+            "evidence": "creative-scene-agent-background.e2e.mjs（SCENE_E2E_HIDDEN）隐藏与前台最大差 0，两次之间最大差 1（tasks 4.1、5.1）"
+          },
+          {
+            "criterionId": "AC-253923ba8c9e",
+            "status": "verified",
+            "evidence": "见下三条（tasks 4.2）"
+          },
+          {
+            "criterionId": "AC-aa630c6a497d",
+            "status": "verified",
+            "evidence": "e2e「output resolution: 1K to 8K……」四档 × 1:1 / 3:2 / 2:3；8K 1:1 上传成画布节点"
+          },
+          {
+            "criterionId": "AC-3769df61547a",
+            "status": "verified",
+            "evidence": "同上 e2e 压低纹理上限与 4K 丢设备；creative-scene-agent.test.ts device lost 用例"
+          },
+          {
+            "criterionId": "AC-96b689615bab",
+            "status": "verified",
+            "evidence": "perf.md：8K 实时 GI 材质光照 95.3 s 本机导出成功；SCENE_E2E_GPU_8K 心跳；保留 8K 档位、峰值内存与其他设备未测（L4，owner 验收接受）"
+          },
+          {
+            "criterionId": "AC-26a8f0ae0e08",
+            "status": "verified",
+            "evidence": "scene_export_tools_test.go TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K；creative-scene-agent.e2e.mjs；scene_tools_test.go"
+          },
+          {
+            "criterionId": "AC-42769e8184e5",
+            "status": "verified",
+            "evidence": "e2e「real-time GI on WebGL2: SwiftShader draws …」「… forced onto WebGL2 is within AC-R1-1 of WebGPU's」"
+          },
+          {
+            "criterionId": "AC-e8039fcb7e28",
+            "status": "verified",
+            "evidence": "discovery/research/perf.md（tasks 7.2，7.5 后复测见 tasks）"
+          },
+          {
+            "criterionId": "AC-b01d04fba082",
+            "status": "verified",
+            "evidence": "perf.md：R0 性能场景最终渲染平均 10.6、p95 16.8 ms，盒子间 8.5 / 9.2 ms；7.5 后复测 10.7 / 16.8 ms、8.3 / 9.1 ms"
+          },
+          {
+            "criterionId": "AC-0ef125cb2f05",
+            "status": "verified",
+            "evidence": "perf.md 停止操作后 12 帧、89–130 ms"
+          },
+          {
+            "criterionId": "AC-59e7adec3d0b",
+            "status": "verified",
+            "evidence": "perf.md 2K 实时 GI 材质光照 3.4 s"
+          },
+          {
+            "criterionId": "AC-05fe0c6e766c",
+            "status": "verified",
+            "evidence": "perf.md 工作台四种模式与 R1 相同"
+          },
+          {
+            "criterionId": "AC-a4b78a5ae075",
+            "status": "verified",
+            "evidence": "e2e「real-time GI: 48 pictures in a row leave nothing behind on the device」（7.5 后复跑绿）"
+          },
+          {
+            "criterionId": "AC-ca16239d7ece",
+            "status": "deferred",
+            "evidence": "原图与记录模板在 discovery/research/gi-repaint.md；owner 2026-10-22 决定重绘效果后续自行验证"
+          },
+          {
+            "criterionId": "AC-6ce9a9402feb",
+            "status": "deferred",
+            "evidence": "owner 2026-10-22：Safari 暂不作为重点支持，后续验证（含 4K/8K 导出，gi-repaint.md）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "spec：AC-R2-1~9 逐条有实现与用例（映射见 coverage），AC-R2-10/11 按 owner 决定延期；design：计划外改动为测试、参考场景 fixture 补字段、ShotScene.tsx（已交 owner）、SSGINode.d.ts（随 .js），挂载点通配已覆盖；tests：各任务的定向 e2e 与单测红→绿，7.5 后复跑辅助对象、renderer in effect、48 张不泄漏、2K 残余噪声 1.232、加灯预编译、雾与 GI，GI 单测 11 条、tsc、oxlint 绿；contracts：data:场景文档 按 Epic v4 交付，openapi 与生成物一致；living-specs：4 条 delta 均 applicable；performance：7.5 后同条件复测视口与导出与 7.2 相同；blast-radius：effectiveEngine 调用方 Viewport、ShotScene、render.ts、exportShots、Lighting 均有 e2e/单测覆盖，realtimeGI/mainLight/GILightingPass 只被 sceneRenderer 使用",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "edeed759ae970bba4374ed70861a58439f613fe1b53e4076718cc76a9fe2475c"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-22T06:54:55.682Z",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "重绘对照（AC-R2-10）与 Safari（AC-R2-11，含 4K/8K 导出）未验证：owner 决定后续自行验证，Safari 暂不作为重点支持；8K 峰值内存与 8 GB 内存设备、独显未测",
+        "followUp": "samson 后续用 gpt-image-2.5 按 discovery/research/gi-repaint.md 做两组重绘对照并填写结论（回填 Epic 未决事项 2：新场景默认渲染器）；Safari 26.5 视口与 1K~8K 导出检查在 Safari 列为重点支持前完成；发现问题另开 issue Change",
+        "coverage": [
+          {
+            "criterionId": "AC-676ff993168b",
+            "status": "verified",
+            "evidence": "panels/RenderPanel.tsx、SceneEditor.tsx；e2e「render tab: …」「AC-5: exposure」；tabAfterSelection 单测（tasks 3.1）"
+          },
+          {
+            "criterionId": "AC-eb174dd36381",
+            "status": "verified",
+            "evidence": "见下面三条（tasks 3.2、7.4）"
+          },
+          {
+            "criterionId": "AC-92c7b23959f3",
+            "status": "verified",
+            "evidence": "engines.ts effectiveEngine（单测决策表）；e2e「renderer in effect: …」（撤销、另一标签页同步、离屏 lit 不同 / clay、line 哈希相同）；fingerprint.go TestEngineFingerprintsOnlyLit（只有 lit 过时）"
+          },
+          {
+            "criterionId": "AC-7ffcb933640a",
+            "status": "verified",
+            "evidence": "fingerprint.go 不计 resolution；fingerprint_internal_test.go"
+          },
+          {
+            "criterionId": "AC-a086ba991254",
+            "status": "verified",
+            "evidence": "completeRenderSettings 读取补齐、v1 指纹单测固定（fingerprint_internal_test.go、scene_test.go）"
+          },
+          {
+            "criterionId": "AC-4b7a9c6a73b0",
+            "status": "verified",
+            "evidence": "Validate 枚举；scene_test.go 400 用例"
+          },
+          {
+            "criterionId": "AC-34d15b27f14d",
+            "status": "verified",
+            "evidence": "见下两条（tasks 7.1）"
+          },
+          {
+            "criterionId": "AC-d737b26285ba",
+            "status": "verified",
+            "evidence": "e2e「real-time GI: the box room bleeds red …, mirrors the walls in the ball and darkens contacts, against the workbench」区域测量（红墙旁红绿比、金属球差）；接触处更暗在 lit 下量不出，owner 2026-10-22 决定按看图接受（tasks 7.4）"
+          },
+          {
+            "criterionId": "AC-8b9f2174f597",
+            "status": "verified",
+            "evidence": "同上 e2e 切回工作台对 R1 冻结参考图"
+          },
+          {
+            "criterionId": "AC-980a256ad1c7",
+            "status": "verified",
+            "evidence": "e2e「renderer in effect」白模、线框、材质预览、线稿与工作台逐像素相同、正交角标；e2e「camera frustums and empties … neither shade nor occlude」0.05%（修正前 1.76%）"
+          },
+          {
+            "criterionId": "AC-512e896ae459",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-aa68453e5fac",
+            "status": "verified",
+            "evidence": "e2e「renderer in effect」实时 GI 帧计数停在 12、工作台停在 1"
+          },
+          {
+            "criterionId": "AC-c939bd25277b",
+            "status": "verified",
+            "evidence": "e2e「a 2K export of the box room is within its residual noise」1.232 ≤ 1.5（7.5 后复跑相同）"
+          },
+          {
+            "criterionId": "AC-b7cb0af9519c",
+            "status": "verified",
+            "evidence": "creative-scene-agent-background.e2e.mjs（SCENE_E2E_HIDDEN）隐藏与前台最大差 0，两次之间最大差 1（tasks 4.1、5.1）"
+          },
+          {
+            "criterionId": "AC-253923ba8c9e",
+            "status": "verified",
+            "evidence": "见下三条（tasks 4.2）"
+          },
+          {
+            "criterionId": "AC-aa630c6a497d",
+            "status": "verified",
+            "evidence": "e2e「output resolution: 1K to 8K……」四档 × 1:1 / 3:2 / 2:3；8K 1:1 上传成画布节点"
+          },
+          {
+            "criterionId": "AC-3769df61547a",
+            "status": "verified",
+            "evidence": "同上 e2e 压低纹理上限与 4K 丢设备；creative-scene-agent.test.ts device lost 用例"
+          },
+          {
+            "criterionId": "AC-96b689615bab",
+            "status": "verified",
+            "evidence": "perf.md：8K 实时 GI 材质光照 95.3 s 本机导出成功；SCENE_E2E_GPU_8K 心跳；保留 8K 档位、峰值内存与其他设备未测（L4，owner 验收接受）"
+          },
+          {
+            "criterionId": "AC-26a8f0ae0e08",
+            "status": "verified",
+            "evidence": "scene_export_tools_test.go TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K；creative-scene-agent.e2e.mjs；scene_tools_test.go"
+          },
+          {
+            "criterionId": "AC-42769e8184e5",
+            "status": "verified",
+            "evidence": "e2e「real-time GI on WebGL2: SwiftShader draws …」「… forced onto WebGL2 is within AC-R1-1 of WebGPU's」"
+          },
+          {
+            "criterionId": "AC-e8039fcb7e28",
+            "status": "verified",
+            "evidence": "discovery/research/perf.md（tasks 7.2，7.5 后复测见 tasks）"
+          },
+          {
+            "criterionId": "AC-b01d04fba082",
+            "status": "verified",
+            "evidence": "perf.md：R0 性能场景最终渲染平均 10.6、p95 16.8 ms，盒子间 8.5 / 9.2 ms；7.5 后复测 10.7 / 16.8 ms、8.3 / 9.1 ms"
+          },
+          {
+            "criterionId": "AC-0ef125cb2f05",
+            "status": "verified",
+            "evidence": "perf.md 停止操作后 12 帧、89–130 ms"
+          },
+          {
+            "criterionId": "AC-59e7adec3d0b",
+            "status": "verified",
+            "evidence": "perf.md 2K 实时 GI 材质光照 3.4 s"
+          },
+          {
+            "criterionId": "AC-05fe0c6e766c",
+            "status": "verified",
+            "evidence": "perf.md 工作台四种模式与 R1 相同"
+          },
+          {
+            "criterionId": "AC-a4b78a5ae075",
+            "status": "verified",
+            "evidence": "e2e「real-time GI: 48 pictures in a row leave nothing behind on the device」（7.5 后复跑绿）"
+          },
+          {
+            "criterionId": "AC-ca16239d7ece",
+            "status": "deferred",
+            "evidence": "原图与记录模板在 discovery/research/gi-repaint.md；owner 2026-10-22 决定重绘效果后续自行验证"
+          },
+          {
+            "criterionId": "AC-6ce9a9402feb",
+            "status": "deferred",
+            "evidence": "owner 2026-10-22：Safari 暂不作为重点支持，后续验证（含 4K/8K 导出，gi-repaint.md）"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-22 接受 R2：渲染选项卡、实时 GI（最终渲染与 lit）、输出分辨率与助手按技术验收结果通过；AC-R2-3 接触处更暗按看图接受；保留 8K 档位；7.4/7.5 的修正与 Epic v4 一致",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "edeed759ae970bba4374ed70861a58439f613fe1b53e4076718cc76a9fe2475c"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-22T06:55:08.403Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "archived"
 }
