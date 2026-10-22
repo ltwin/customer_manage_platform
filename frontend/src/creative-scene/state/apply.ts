@@ -8,6 +8,7 @@ import type {
 } from '../api.ts'
 import { builtinSpec, defaultParams } from '../builtins/catalog.ts'
 import { sameTransform } from './world.ts'
+import { completeSky } from '../world/physicalSky.ts'
 
 // The client's copy of the server's operation semantics, used only to show
 // edits before their receipt. Anything the server would reject is skipped
@@ -161,8 +162,9 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
       return { ...state, title: op.title }
     case 'restore_units':
       return state
+    // A physical sky is stored complete, as the server's completeSky does.
     case 'set_environment':
-      return { ...state, scene: { ...scene, environment: op.environment } }
+      return { ...state, scene: { ...scene, environment: { ...op.environment, sky: completeSky(op.environment.sky) } } }
     // Merged by key, as the server does: writing the mode keeps the exposure.
     case 'set_render':
       return { ...state, scene: { ...scene, render: { ...scene.render, ...op.render } } }

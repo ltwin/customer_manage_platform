@@ -20,7 +20,12 @@
 
 ## 3. 天文与太阳参考
 
-- [ ] 3.1 先写 `creative-scene-astro.test.ts`：四个参考地点、三个日期的 NOAA 数据点（由 `astronomy/compare-results.json` 整理成 `frontend/scripts/fixtures/` 下的测试数据），按角距比较、只比视高度 ≥ 0 的点；日出日落相差 ≤ 2 分钟；`localToUtc` 的 20 个用例按 compatible 规则的期望值；悉尼正午太阳在北；罗盘方位换成文档方向（正北方向 180° 时正东是 +X）；手动模式直接给方向；早晚的黄金时刻（−4°…6°）和蓝调时刻（−6°…−4°）。再加 `astronomy-engine` 2.1.19（精确版本），新增 `world/astro.ts`；`creative-scene-shading.test.ts` 加墙钟时间的规则（`world/`、`render/` 里出现 `Date.now()` 或无参的 `new Date()` 时失败）。完成判据：单测先红后绿，`make check-frontend` 通过；上海夏至由前端算出的日出日落、黄金时刻和蓝调时刻写进后端测试数据，供 3.2 对照
+- [x] 3.1 先写 `creative-scene-astro.test.ts`：四个参考地点、三个日期的 NOAA 数据点（由 `astronomy/compare-results.json` 整理成 `frontend/scripts/fixtures/` 下的测试数据），按角距比较、只比视高度 ≥ 0 的点；日出日落相差 ≤ 2 分钟；`localToUtc` 的 20 个用例按 compatible 规则的期望值；悉尼正午太阳在北；罗盘方位换成文档方向（正北方向 180° 时正东是 +X）；手动模式直接给方向；早晚的黄金时刻（−4°…6°）和蓝调时刻（−6°…−4°）。再加 `astronomy-engine` 2.1.19（精确版本），新增 `world/astro.ts`；`creative-scene-shading.test.ts` 加墙钟时间的规则（`world/`、`render/` 里出现 `Date.now()` 或无参的 `new Date()` 时失败）。完成判据：单测先红后绿，`make check-frontend` 通过；上海夏至由前端算出的日出日落、黄金时刻和蓝调时刻写进后端测试数据，供 3.2 对照
+  - 新增 `world/astro.ts`（`localToUtcMs`、`skyInstant`、`sunAt`、`documentAzimuth`、`physicalSun`、`sunTimes`）；单测 10 项全绿：时区换算 20 例与 Python zoneinfo（fold=0，即 compatible）逐一一致，四个参考地点三个日期太阳方向与 NOAA 的角距都在 0.02° 内，日出日落与 NOAA 相差不超过 1 分钟，北极圈内的极昼和极夜。测试与实现同时写成，没有单独跑出失败；上海夏至一组期望值先失败（手填的正午 11:54 有误，按经度和时差核算应为 11:56），核对边界高度后改正。
+  - 调研的 `local-time.mjs` 是 `earlier` 规则（纽约 02:30 落在 01:30），改为 compatible：跳过的时刻用跳变之前的偏移。用例里 4 个「不存在的时刻」的期望值随之改写。
+  - 黄金时刻、蓝调时刻与日出日落同一口径：按太阳中心的几何高度（不含折射）判定，用 `SearchAltitude`。
+  - 设计挂载点之外：新增 `world/physicalSky.ts`（物理天空的缺省值、`completeSky`、`isPhysical`，不引入 `astronomy-engine`，供编辑器外壳和 `state/apply.ts` 用）；`state/apply.ts` 的 `set_environment` 按服务端的规则补齐物理天空；测试数据 `scripts/fixtures/astro/`（`noaa-sun.json`、`local-time.json`）。
+  - 墙钟规则加在 `creative-scene-shading.test.ts` 的同一个检查里，`make check-frontend` 的单测会跑到；`performance.now()` 和 `new Date(时刻)` 不算。
 - [ ] 3.2 先写 `sun_test.go` 与 `testdata/noaa_sun.json`：同一组 NOAA 数据点（角距 ≤ 0.05°，日出日落 ≤ 1 分钟）、时间换算的 20 个用例、上海夏至各时刻与 3.1 的前端结果相差 ≤ 1 分钟、北极圈内的极昼和极夜（省略到不了的项，给出 `polar`）、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `sun`，手动模式、程序化天空、没写环境的编辑不带。再新增 `sun.go`，改 `agent.go` 的 `SceneRead`、`AgentReadInTx`、`EditResult`、`AgentEditInTx`。完成判据：测试先红后绿，`check-go` 通过
 
 ## 4. 物理大气
