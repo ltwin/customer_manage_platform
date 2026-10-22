@@ -34,6 +34,8 @@ import PrivacyPage from './pages/privacy/PrivacyPage'
 const CreativeHomePage = lazy(() => import('./creative-canvas/home/HomePage'))
 const CreativeProjectsPage = lazy(() => import('./creative-canvas/home/ProjectsPage'))
 const CreativeAssetsPage = lazy(() => import('./creative-canvas/assets/AssetsPage'))
+const CreativeAgentsPage = lazy(() => import('./creative-canvas/agents/AgentsPage'))
+const AgentConsentPage = lazy(() => import('./pages/auth/AgentConsentPage'))
 
 const CreativeCanvasPage = lazy(() => import('./creative-canvas/editor/WorkspacePage'))
 
@@ -129,6 +131,7 @@ export default function App() {
         <Route path="/creative/projects" element={<Suspense fallback={<p role="status">正在打开项目…</p>}><CreativeProjectsPage /></Suspense>} />
         <Route path="/creative/canvases/:canvasID" element={<Suspense fallback={<p role="status">正在打开创作台…</p>}><CreativeCanvasPage /></Suspense>} />
         <Route path="/creative/library" element={<Suspense fallback={<p role="status">正在打开资产库…</p>}><CreativeAssetsPage /></Suspense>} />
+        <Route path="/creative/agents" element={<Suspense fallback={<p role="status">正在打开外部助手…</p>}><CreativeAgentsPage /></Suspense>} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/shoot-plans" element={<ShootPlansPage />} />
         <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
@@ -145,6 +148,7 @@ export default function App() {
           <Route path="settings" element={<AccountSettingsPage />} />
         </Route>
       </Route>
+      <Route path="/oauth/consent" element={<Suspense fallback={<p role="status">正在打开授权页…</p>}><AgentConsentPage /></Suspense>} />
       <Route path="/shoot-plans/:id/run" element={<RequireAuth status={auth.status}><ShootPlanRunPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

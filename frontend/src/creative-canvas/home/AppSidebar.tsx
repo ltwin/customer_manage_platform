@@ -2,6 +2,7 @@ import {
   Aperture,
   ArrowLeft,
   Folder,
+  Plug,
   Library,
   PanelLeftClose,
   PanelLeftOpen,
@@ -26,13 +27,14 @@ import './sidebar.css'
 // 创意空间的应用侧栏：首页、项目页、资产库共用。展开显示全称，折叠只剩图标，
 // 图标位置不变。结构从上到下：品牌 / 导航 / 最近打开 / 返回 CRM 与账号。
 
-export type SidebarView = 'home' | 'projects' | 'library'
+export type SidebarView = 'home' | 'projects' | 'library' | 'agents'
 
 const storageKey = 'creative-side-collapsed'
 const navItems = [
   { view: 'home', label: '首页', to: '/creative', icon: Sparkles },
   { view: 'projects', label: '项目', to: '/creative/projects', icon: Folder },
   { view: 'library', label: '资产库', to: '/creative/library', icon: Library },
+  { view: 'agents', label: '外部助手', to: '/creative/agents', icon: Plug },
 ] as const
 
 function readCollapsed(): boolean {
