@@ -2,7 +2,7 @@
 
 ## 设计上下文
 
-需求见 proposal.md，探索共识与代码事实见 `discovery/brainstorm.md`（D1–D9），竞品 LibTV 的接入方式见 `discovery/research/libtv-plugin.md`。采用方案一句话概括：在现有 Go server 上新增一个只服务外部助手的 OAuth 授权服务器和一个远程 MCP 端点；把内置助手工具里「运行」的身份抽象成「助手主体」，让「外部助手连接」与运行并列；MCP 端点只做协议转换，工具语义和说明仍由 `creativeagent` 唯一维护。四个首批宿主共用这一个端点，差别只在接入方式（Codex 插件、Claude 连接器、ChatGPT 应用）。所有宿主共用的使用说明是服务端 `instructions`，图形界面宿主不读插件 Skill。
+需求见 proposal.md，探索共识与代码事实见 `discovery/brainstorm.md`（D1–D9），竞品 LibTV 的接入方式见 `discovery/research/libtv-plugin.md`。采用方案一句话概括：在现有 Go server 上新增一个只服务外部助手的 OAuth 授权服务器和一个远程 MCP 端点；把内置助手工具里「运行」的身份抽象成「助手主体」，让「外部助手连接」与运行并列；MCP 端点只做协议转换，工具语义和说明仍由 `creativeagent` 唯一维护。四个首批宿主共用这一个端点，差别只在接入方式（Codex 插件、Claude 连接器、ChatGPT 应用）。所有宿主共用的使用说明是服务端 `instructions`，图形界面宿主不读插件 Skill。所有宿主都靠工具结果的文字工作；ChatGPT 和 Claude 桌面端、网页另外按 MCP Apps 标准把生成和场景结果显示成内嵌卡片（D10–D13，调研见 `discovery/research/host-ui-surfaces.md`，原型见 `docs/prototypes/creative-mcp/`，owner 2026-10-22 走查通过）。
 
 调研依据（2026-10-21）：
 - 内置工具与运行的耦合有 6 处：admit（claim/lease）、consent 与可读判定、文档写入者必须带 `run_id`、场景任务必须带 `run_id` + `tool_call_id` 并经 Waiter 唤醒运行、资产库日志 `run_id`/`conversation_id` 非空、Skill 版本固定在运行上（`creativeagent/execute.go:650`、`context.go:45`、迁移 `0072`、`creativescene/jobs.go:367`、迁移 `0064`、`skill_runtime.go:152`）。领域命令本身大多只要 `AccountScope` 加参数（`creativecanvas.ApplyCommandsAs`、`creativegeneration` 的 `Admit` 可选、`creativelibrary.*`）。
@@ -48,7 +48,7 @@
 ### 模块职责与依赖方向
 
 ```
-宿主 (Claude Code / Codex)
+宿主（ChatGPT / Claude / Claude Code / Codex）
   │  OAuth 2.1 + PKCE          │  MCP streamable HTTP (Bearer)
   ▼                            ▼
 platform/httpapi ──► platform/oauth        platform/httpapi ──► creativemcp ──► creativeagent (外部工具门面)
@@ -59,7 +59,7 @@ platform/httpapi ──► platform/oauth        platform/httpapi ──► crea
 ```
 
 - **`backend/internal/platform/oauth`（新增）**：授权服务器。元数据、客户端注册（CIMD、DCR，含网页端连接器使用的机密客户端）、授权请求校验与授权码、令牌签发与 refresh 轮换、撤销、连接的增删查与活动状态。依赖 `platform/store`、`platform/auth`（复用网页登录态确认授权人身份、复用密钥派生）。不依赖任何 `creative*` 包。
-- **`backend/internal/creativemcp`（新增）**：MCP 协议适配。用官方 Go SDK 建 server，把 `creativeagent` 的外部工具目录逐个注册为 MCP 工具，把领域错误映射成 MCP 工具错误，把图片结果转成 `ImageContent`。服务端 `instructions` 也由它下发，正文由 `creativeagent` 维护（与内置助手的 `instructions/base.md` 同目录，单独一份外部版本）。它是一个 `http.Handler`，不 import gin（ADR-003）。不含业务规则。
+- **`backend/internal/creativemcp`（新增）**：MCP 协议适配。用官方 Go SDK 建 server，把 `creativeagent` 的外部工具目录逐个注册为 MCP 工具，把领域错误映射成 MCP 工具错误，把图片结果转成 `ImageContent`。服务端 `instructions` 也由它下发，正文由 `creativeagent` 维护（与内置助手的 `instructions/base.md` 同目录，单独一份外部版本）。客户端声明 MCP Apps 扩展时，它提供两个界面资源（卡片 HTML 随服务端一起发布），并给挂卡片的工具附上 `_meta.ui`、给结果附上卡片数据（见「内嵌卡片」）。它是一个 `http.Handler`，不 import gin（ADR-003）。不含业务规则。
 - **`backend/internal/creativeagent`（扩展）**：新增外部工具门面 `ExternalTools`：`List()` 返回外部可用的工具定义；`Call(ctx, principal, name, args)` 执行一次调用。工具实现从「依赖 `runtimeHandler`」改为「依赖一个调用者接口」，运行和外部连接各自实现它（见「助手主体」）。工具注册表 `agentToolDefinitions` 增加一个字段，标明该工具是否对外部开放（D6 的 6 个排除工具不开放）。
 - **`platform/httpapi`（扩展）**：挂载 `/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`、`/oauth/*` 和 `/mcp`；`/mcp` 前面是 SDK 的 Bearer 中间件，校验器由 `platform/oauth` 提供；令牌通过后注入外部连接主体，再交给 `creativemcp`。连接管理接口在 `/api/v1/creative/agent-connections`，走网页端鉴权。
 - **前端（扩展）**：
@@ -67,6 +67,8 @@ platform/httpapi ──► platform/oauth        platform/httpapi ──► crea
   - `/oauth/authorize` 授权确认页：未登录先走现有登录，再显示「允许 <客户端名> 访问你的创意空间」，列出它能做什么，以及数据会被发给外部助手的模型厂商。
   - 创意空间顶栏的「外部助手已连接」指示。
   - 场景历史按外部连接分组和署名。
+  - 以上页面的视觉和交互依据 `docs/prototypes/creative-mcp/web/`。
+- **内嵌卡片（新增）**：生成与任务卡、镜头卡，各是一个内联了样式和脚本的 HTML 文档，在宿主的沙箱 iframe 里运行，只经宿主与服务端通信。源码位置与构建方式由 C2b 定（U12），产物由 `creativemcp` 随服务端发布，不依赖创意空间的前端包。
 - **Codex 插件目录 `integrations/codex-plugin/`（新增）**：manifest（含展示名、简介、起步提示）、MCP 配置（调大 `tool_timeout_sec`）、marketplace 文件。只发一个指向生产地址的包，不按环境拆包。不含平台 Skill 正文（D3），使用说明以服务端 `instructions` 为准。
 
 依赖方向只新增 `httpapi → platform/oauth`、`httpapi → creativemcp → creativeagent`。`creativeagent` 不知道 MCP 和 OAuth 的存在，只认助手主体。
@@ -111,6 +113,8 @@ platform/httpapi ──► platform/oauth        platform/httpapi ──► crea
 | refresh token | 不透明随机串，只存哈希，每次使用轮换；空闲 30 天、绝对 90 天失效；已轮换的旧串被重放时断开整个连接 | 规范要求公共客户端轮换；重放即视为泄漏，沿用网页端 refresh 的处理思路（`platform/auth/service.go:19`）。 |
 | 长任务 | 任务句柄 + `wait_tasks` 长轮询，单次等待 ≤ 45 秒 | 手动配置的 Codex 默认 60 秒超时，ChatGPT 和 claude.ai 连接器的超时未公开，45 秒是对所有宿主都安全的值；Claude Code 超过 2 分钟会转后台，45 秒也不触发。Codex 插件另把 `tool_timeout_sec` 调到 300 秒，作为余量，不改变 45 秒上限。不依赖 progress 通知（Codex 不展示）。 |
 | 图片回传 | MCP `ImageContent`，长边缩到 ≤ 1024、JPEG/WebP，单次结果 ≤ 4 张 | 外部模型需要看图判断；原图经 `read_asset` 的媒体 URL 可另取。尺寸上限与内置助手的图像输入一致。 |
+| 内嵌卡片 | MCP Apps 扩展（`io.modelcontextprotocol/ui`，规范 2026-01-26）；不用 OpenAI 旧的 `openai/outputTemplate` | ChatGPT 当前就按这个标准渲染，旧字段只是兼容别名；Claude 网页、桌面端也支持，一套卡片两家共用（D10）。线协议是 postMessage 上的 JSON-RPC，卡片可以直接实现，也可以用官方 `@modelcontextprotocol/ext-apps` 的 `App` 类，C2b 决定。只做两张卡（D11），其余工具不挂卡片，免得外部助手连续操作时刷屏。 |
+| 工具结果文字 | 摘要（结论、链接、下一步）+ 结构化结果 JSON | Claude Code、Codex CLI 只显示结果的前几行，第一行要能单独看懂；规范说 `structuredContent` 不进模型上下文，OpenAI 文档又说 ChatGPT 的模型会读，所以 `content` 必须自给自足，JSON 仍保留给模型用。 |
 | 接入方式 | 按宿主区分：Codex 插件；Claude 连接器；ChatGPT 应用（Developer Mode） | 参照 LibTV（research L1、L8）。Claude 系列只用连接器（D8）：一个连接器覆盖桌面端、网页和登录 claude.ai 账号的 Claude Code，避免插件和连接器同时装时出现两份工具。Codex 插件放在本仓库 `integrations/codex-plugin/`，发布时同步到一个公开 Git 仓库作为 marketplace 源（主仓库不公开），同步方式由 C1 定（U3）。 |
 
 ## 关键机制
@@ -172,7 +176,11 @@ platform/httpapi ──► platform/oauth        platform/httpapi ──► crea
   - 长任务用 `wait_tasks`，盯住句柄、不重复提交；
   - 场景任务需要打开的页面；
   - 写入失败先读再重试；
-  - 生成要花额度，`dry_run` 是可选的预检。
+  - 生成要花额度，`dry_run` 是可选的预检；
+  - 汇报时给可点击的链接，不贴 JSON 和内部 ID；
+  - 对话里显示了卡片时不复述卡片内容；收到卡片传来的创作者决定（确认生成、不生成、存入资产库）时以它为准，不重复提交。
+
+  草稿见 `docs/prototypes/creative-mcp/instructions.md`。
 
   篇幅按图形界面宿主能接受的长度控制，细节放进各工具说明。
 - `get_capabilities`（外部专用，只读）返回：
@@ -194,11 +202,49 @@ platform/httpapi ──► platform/oauth        platform/httpapi ──► crea
 - 是否预检由外部助手决定。`instructions` 只说明它在什么时候有用（首次用某个模型、预计花费较大），不要求每次都做；创作者要求全自动执行时，外部助手可以不再预检（owner 2026-10-22）。
 - 预计扣费沿用网关的生成价格估算，与实际扣费可能有差异；结果里注明是估算。
 
+### 工具结果的文字
+
+- 每个工具的 `content` 文字分两段：
+  - 摘要：第一行是结论，随后是关键字段、Markdown 格式的画布链接和给外部助手的下一步提示，不超过 8 行；
+  - 结构化结果的 JSON。
+- 摘要由 `creativeagent` 外部工具门面按工具生成，和工具说明放在一起维护（X-I4 不受影响：领域结果相同，只多了一段说明文字）。
+- 写法：
+  - 没完成的任务写明「再调用一次 `wait_tasks`」；
+  - 排队等页面时说清楚为什么等、要打开哪个链接；
+  - 预检写明「没有生成，没有扣点」。
+- 工具的 `title` 用中文动作（检查连接、列出画布、写提示词、生成、回看、导出分镜……），宿主的工具行和许可提示里显示它。读工具标 `readOnlyHint`，删除类标 `destructiveHint`，宿主据此决定是否弹确认。
+- 原型里的各工具摘要见 `docs/prototypes/creative-mcp/shared/results.mjs`，各子项实现本批工具时以它为起点。
+
+### 内嵌卡片
+
+```
+宿主 ──initialize（声明 io.modelcontextprotocol/ui）──► 服务端记住本会话可用卡片
+宿主 ──tools/list──► generate_node / wait_tasks 带 _meta.ui.resourceUri；其余工具 visibility=["model"]
+宿主 ──resources/read ui://creative/tasks/v1──► 卡片 HTML（可预取、缓存）
+外部助手 ──tools/call generate_node(dry_run)──► 结果（文字 + structuredContent + _meta.creative）
+宿主 ──在沙箱 iframe 里渲染卡片，推送结果──► 卡片显示预检
+创作者点「生成」──► 卡片 ─(宿主代为)─► tools/call generate_node ──► 任务句柄
+卡片 ─(宿主代为)─► wait_tasks 长轮询 … ──► 结果图
+卡片 ──ui/update-model-context──► 宿主 ──（下一轮）──► 外部助手得知「已提交、已完成」
+```
+
+- **只增强、不替代**：没有声明扩展的宿主收到的内容和以前完全一样。声明了扩展的宿主，模型读到的文字也完全一样；卡片只是同一结果的另一种呈现。
+- **卡片的数据**：大部分读 `structuredContent`；只给卡片用的签名缩略图地址、要打开的链接放 `_meta.creative`，外部助手的模型看不到。
+- **卡片的动作**：经宿主调用工具，只能调用 `visibility` 含 `app` 的 `generate_node`、`wait_tasks`、`save_to_library`。这一限制由宿主执行，服务端分辨不出调用来自卡片还是模型，所以服务端的准入、限流、计费照旧，不为卡片开后门，也不为它加闸门。
+- **告诉外部助手**：卡片把创作者的决定写成一份累计摘要，用 `ui/update-model-context` 交给宿主。宿主一般等创作者的下一条消息才交给模型，所以点卡片按钮后，外部助手这一轮不会说话（原型已演示，owner 接受）。
+- **安全**：
+  - 卡片在宿主的沙箱 iframe 里，碰不到宿主页面和创意空间的登录态。
+  - CSP 只放行图片所在的对象存储或 CDN 域名，不放行任何网络接口，也不嵌套 iframe。Claude 目前限制嵌套 iframe，所以不能把创意空间整页嵌进卡片，深度编辑一律回到创意空间页面。
+  - 卡片不申请设备权限。
+- **展示**：跟随宿主的明暗和字体，只用标准 CSS 变量，不用创意空间 v6 的近黑主题；琥珀色只表示进行中或等待，和创意空间的语义一致。行内最多两个动作；全屏只用于放大查看。
+- **版本**：资源 URI 带版本号（`/v1`），与结果数据不兼容的改动发布新 URI。
+
 ### 工具集与异步句柄
 
 - **C1 只读**：`get_capabilities`（外部专用，见上）、`list_canvases`（外部专用：按最近更新列出画布，供外部助手选择）、`read_canvas`、`read_asset`、`search_assets`、`read_library`。
 - **C2 写入与生成**：`edit_canvas`、`set_node_prompt`、`generate_node`、`compress_image`、`save_to_library`、`organize_assets`、`manage_library`、`trash_assets`、`restore_assets`、`read_library_result`，以及外部专用的 `wait_tasks`。
-- **C3 场景与 Skill**：`read_scene`、`edit_scene`、`write_model`、`render_view`、`export_shots`、`search_skills`、`load_skill`、`read_skill_resource`。
+- **C2b 内嵌卡片**：卡片协商、两张卡共用的资源规则、生成与任务卡（`ui://creative/tasks/v1`），以及 `generate_node`、`wait_tasks`、`save_to_library` 的卡片元数据。
+- **C3 场景与 Skill**：`read_scene`、`edit_scene`、`write_model`、`render_view`、`export_shots`、`search_skills`、`load_skill`、`read_skill_resource`，以及镜头卡（`ui://creative/shots/v1`）。
 
 异步规则（`generate_node` 和 C3 的 4 个场景任务工具）：
 
@@ -262,6 +308,11 @@ wait_tasks(task_ids ≤ 8, timeout_s ≤ 45) ─► 任一终态或超时即返�
   - X-I4：同一组输入在内置路径和外部路径上的领域结果对照（每个子项覆盖本批工具）。
   - X-I5：场景撤销 e2e（C3）。
 - **宿主实测**：C1 起，每个子项都在真实的 ChatGPT、Codex CLI、Claude Code、Claude 桌面端上跑一遍本批工具（AC-10），记录宿主版本。
+- **活原型**（D13）：C1 设计前，用假数据的 MCP 服务接进四个真实宿主，复用 `docs/prototypes/creative-mcp/` 的卡片和结果文字，核实 U1、U7、U9–U11。接 ChatGPT 和 claude.ai 网页需要临时的公网隧道，开之前由 owner 确认。活原型是一次性代码，不进生产。
+- **卡片**（C2b、C3）：
+  - 两家宿主实测卡片的显示、明暗、首次许可提示、卡片里的工具调用和上下文更新（AC-11）；
+  - 不声明扩展的客户端拿到的工具列表和结果不含任何卡片字段；
+  - 卡片 HTML 的 CSP 检查。
 - **观测**：日志按连接 ID 和工具名记录调用、耗时、错误码；授权失败（PKCE、受众、回调不符、refresh 重放）单独记录，不写令牌明文。
 - **灰度与回滚**：`MCP_ENABLED` 环境变量控制 `/mcp` 和 `/oauth/*` 是否挂载；关闭后元数据端点也不暴露。迁移只加列，回滚代码不需要回滚数据。
 
@@ -272,7 +323,11 @@ wait_tasks(task_ids ≤ 8, timeout_s ≤ 45) ─► 任一终态或超时即返�
 | U1 | 调研得到的规范与宿主行为需要对照原文核实：2026-07-28 版无状态协议、SDK `Stateless` 配置、四个宿主的注册方式（CIMD/DCR、公共/机密客户端）、回调地址、超时 | C1 | C1 设计时读官方文档，并在四个宿主上实测 | C1 design 批准前 |
 | U2 | 能否只做 CIMD、不做 DCR | C1 的 `api: OAuth 授权服务器` 范围 | C1 实测 Claude Code 在授权服务器声明支持 CIMD 时是否改走 CIMD；不能就保留 DCR | C1 实施中，改动只收窄契约 |
 | U3 | Codex 插件同步到公开仓库的方式（手动、CI、发布脚本）和公开仓库的位置 | C1 插件交付 | C1 设计时由 owner 定仓库位置 | C1 design 批准前 |
-| U7 | ChatGPT 与 claude.ai 连接器的工具超时、图片结果展示、`instructions` 是否被读取 | C1 的长任务与说明策略 | C1 实测；`instructions` 不被读取时，把关键规则同时写进 `get_capabilities` 的结果和工具说明 | C1 实施中 |
+| U7 | ChatGPT 与 claude.ai 连接器的工具超时、图片结果展示、`instructions` 是否被读取；各宿主许可提示的样子和时机 | C1 的长任务与说明策略 | 活原型先测，C1 再在真实服务上复测；`instructions` 不被读取时，把关键规则同时写进 `get_capabilities` 的结果和工具说明 | C1 design 批准前（活原型结论），C1 实施中（复测） |
+| U9 | Claude Code 是否渲染卡片；结果同时含图片与 `structuredContent` 时 `content` 是否被丢弃（有问题报告） | C1、C2b | 活原型实测；有问题就只在声明了扩展的客户端上返回 `structuredContent` | C1 design 批准前 |
+| U10 | ChatGPT 的模型是否读取 `structuredContent`（与规范说法不一致） | C2b | 活原型实测；结论只影响 `structuredContent` 的精简程度，`content` 的规则不变 | C2b design 批准前 |
+| U11 | 卡片里显示对象存储签名图片：CSP 域名、签名有效期；Claude `ui.domain` 在生产与本地开发两套地址下怎么算；ChatGPT 的 `domain` 字段 | C2b | 活原型实测，C2b 设计时定 | C2b design 批准前 |
+| U12 | 卡片源码放在哪、怎么构建（复用前端工具链，还是放在 `creativemcp` 里用原生 JS），产物怎么随服务端发布 | C2b | C2b 设计时定 | C2b design 批准前 |
 | U8 | Claude Team 成员能否添加个人连接器、管理员添加组织连接器的实际步骤；ChatGPT 工作区对 Developer Mode 的管控 | C1 的回退文字 | C1 用真实 Team 账号实测；没有账号时按官方文档写，验收记为限制项 | C1 验收前 |
 | U4 | 画布写入署名与 `canvas-undo-own-changes` 谁先落地 | C2 | 见 roadmap「与其他工作的衔接」 | C2 design 批准前 |
 | U5 | 场景编辑器「助手正在修改」高亮与撤回自己改动的范围，是否对外部连接同样生效 | C3 | C3 设计时按 C1、C2 的使用情况定 | C3 design 批准前 |

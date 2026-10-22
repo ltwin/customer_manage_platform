@@ -5,7 +5,7 @@
 ### 职责与边界
 - 外部助手（首批宿主为 ChatGPT、Codex CLI、Claude Code、Claude 桌面端（含网页））经远程 MCP 端点 `<PUBLIC_BASE_URL>/mcp` 使用创意空间工具，经本系统自带的 OAuth 授权服务器取得令牌。
 - `backend/internal/platform/oauth`：授权服务器。负责元数据、客户端注册（CIMD、DCR，含网页端连接器的机密客户端）、授权码与 PKCE、访问令牌签发与校验、refresh 轮换、外部助手连接的增删查、活动状态。不依赖任何 `creative*` 包。
-- `backend/internal/creativemcp`：MCP 协议适配，基于官方 Go SDK。把 `creativeagent` 的外部工具目录注册为 MCP 工具，下发服务端 `instructions`（正文由 `creativeagent` 维护），转换错误和图片结果。是一个 `http.Handler`，不 import gin，不含业务规则。
+- `backend/internal/creativemcp`：MCP 协议适配，基于官方 Go SDK。把 `creativeagent` 的外部工具目录注册为 MCP 工具，下发服务端 `instructions`（正文由 `creativeagent` 维护），转换错误和图片结果。客户端声明 MCP Apps 扩展（`io.modelcontextprotocol/ui`）时，另外提供两个界面资源（生成与任务卡、镜头卡），并给挂卡片的工具附上卡片元数据；没声明时不出现任何卡片相关内容。是一个 `http.Handler`，不 import gin，不含业务规则。
 - `backend/internal/creativeagent`：外部工具门面 `ExternalTools`（`List` / `Call`）。工具实现依赖「助手主体」调用者接口，运行和外部连接各自实现它；同名工具在两条路径上执行同一个领域入口，说明出自同一个 `Info()`。
 - `platform/httpapi`：挂载 `/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`、`/oauth/*`、`/mcp`，以及网页端的 `/api/v1/creative/agent-connections`。`/mcp` 的 Bearer 校验器由 `platform/oauth` 提供，通过后把外部连接主体交给 `creativemcp`。
 - 前端：「外部助手」接入页（按宿主给出接入文字与回退方法，连接列表与断开）、`/oauth/authorize` 授权确认页、创意空间的「外部助手已连接」指示、场景历史的外部助手署名。
@@ -21,6 +21,7 @@
 - 工具调用：`/mcp` Bearer 校验（签名、受众、过期、连接有效）→ `creativemcp` → `ExternalTools.Call`（外部准入、限流）→ 与内置助手相同的领域入口，写入者为外部连接 → 结果、图片或任务句柄。
 - 异步：生成与场景任务超过 40 秒未完成时返回任务句柄，外部助手用 `wait_tasks` 长轮询（单次 ≤ 45 秒）。场景任务由打开的页面认领执行，完成时只落结果，不唤醒运行。
 - 断开：同事务标记连接、作废 refresh 链、取消非终态场景任务 → 账号失效通道通知页面。
+- 卡片：图形界面宿主（ChatGPT、Claude 桌面端和网页）读取界面资源，把工具结果渲染成沙箱里的卡片；卡片里的动作由宿主代为调用本服务的工具（同一个连接、同一个令牌），再把创作者的决定作为上下文交给外部助手。服务端分辨不出一次调用来自卡片还是模型，两者的准入和语义完全相同。
 
 ### 长期约束
 - 网页端令牌与 MCP 令牌受众不同、签名密钥按用途派生，互不通用。
@@ -363,13 +364,17 @@ grant_type=authorization_code&client_id=oclient_3b2c1d0e-9f8a-4b7c-8d6e-5f4a3b2c
 - **权限**：`Authorization: Bearer <access_token>`，令牌来自 `api: OAuth 授权服务器`。校验顺序：签名 → `aud` 等于 `<PUBLIC_BASE_URL>/mcp` → 未过期 → 连接未断开。账号范围只来自令牌所属连接（ADR-001）。
 
 ### 请求
-- MCP 方法：工具发现（`tools/list` 或新版协议的发现方法）与 `tools/call`。不提供 resources、prompts、sampling。
+- MCP 方法：工具发现（`tools/list` 或新版协议的发现方法）与 `tools/call`；客户端声明 MCP Apps 扩展时另有 `resources/read`，只用于读取界面资源（见 `api: MCP 生成与任务卡`）。不提供 prompts、sampling；除界面资源外不提供 resources。
 - `tools/call` 的 `name` 与 `arguments` 按 `api: MCP 只读工具`、`api: MCP 写入与生成工具`、`api: MCP 场景与 Skill 工具` 定义。工具清单随子项交付逐步增加，未交付的工具不出现在发现结果里。
 
 ### 成功响应
 - 连接建立时（`initialize` 或新版协议的发现方法）下发服务端 `instructions`：所有宿主共用的使用说明与运行规则（design「服务端 instructions 与自检」），≤ 4000 字符。
-- 工具发现：返回当前部署可用的外部工具，每个带 `name`、`description`（与内置助手同一份说明加外部差异）、`inputSchema`。部署条件与内置相同：没有生成模型时不列 `set_node_prompt`、`generate_node`；没有压缩器时不列 `compress_image`。
-- `tools/call`：`content` 为文字（结构化结果的 JSON 文本）加可选图片（`ImageContent`，长边 ≤ 1024，单次 ≤ 4 张）；`structuredContent` 为同一结构化结果。
+- 工具发现：返回当前部署可用的外部工具，每个带 `name`、`title`（中文显示名，宿主的工具行和许可提示会显示它，例如「列出画布」「写提示词」「生成」「回看」）、`description`（与内置助手同一份说明加外部差异）、`inputSchema` 和 `annotations`（只读工具 `readOnlyHint: true`；`trash_assets` 等删除类工具 `destructiveHint: true`）。部署条件与内置相同：没有生成模型时不列 `set_node_prompt`、`generate_node`；没有压缩器时不列 `compress_image`。客户端声明 MCP Apps 扩展时，挂卡片的工具另带 `_meta.ui`（见两个卡片契约），其余工具带 `_meta.ui.visibility: ["model"]`，卡片不能调用它们。
+- `tools/call`：
+  - `content` 的第一项是文字，分两段。前一段是摘要：第一行是结论（终端宿主往往只显示前 3–4 行），随后是关键字段、Markdown 格式的画布链接和给外部助手的下一步提示，不超过 8 行。后一段是结构化结果的 JSON 文本，供不读 `structuredContent` 的宿主使用。两段之间空一行。之后是可选的图片（`ImageContent`，长边 ≤ 1024，单次 ≤ 4 张）。
+  - `structuredContent` 为同一结构化结果。
+  - 只给卡片用的数据（例如带签名的缩略图地址）放在 `_meta.creative`，只在客户端声明 MCP Apps 扩展时返回；外部助手的模型看不到 `_meta`。
+  - 摘要由 `creativeagent` 的外部工具门面按工具生成，和工具说明一起维护；不同宿主拿到的文字相同。
 
 ### 失败响应
 | 信号 | 触发条件 | 调用方处理 |
@@ -395,7 +400,7 @@ Accept: application/json, text/event-stream
 {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "list_canvases", "arguments": {"limit": 2}}}
 ```
 ```json
-{"jsonrpc": "2.0", "id": 7, "result": {"content": [{"type": "text", "text": "{\"items\":[{\"canvas_id\":\"ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f\",\"title\":\"教堂中殿分镜\",\"updated_at\":\"2026-10-21T08:10:00Z\",\"canvas_url\":\"https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f\"}],\"next_cursor\":\"\"}"}], "structuredContent": {"items": [{"canvas_id": "ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "title": "教堂中殿分镜", "updated_at": "2026-10-21T08:10:00Z", "canvas_url": "https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"}], "next_cursor": ""}}}
+{"jsonrpc": "2.0", "id": 7, "result": {"content": [{"type": "text", "text": "最近编辑的 1 张画布：\n1. [教堂中殿分镜](https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f) · 10 月 21 日编辑 · `ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f`\n下一步：用 read_canvas(canvas_id) 读取内容。\n\n{\"items\":[{\"canvas_id\":\"ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f\",\"title\":\"教堂中殿分镜\",\"updated_at\":\"2026-10-21T08:10:00Z\",\"canvas_url\":\"https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f\"}],\"next_cursor\":\"\"}"}], "structuredContent": {"items": [{"canvas_id": "ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "title": "教堂中殿分镜", "updated_at": "2026-10-21T08:10:00Z", "canvas_url": "https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"}], "next_cursor": ""}}}
 ```
 ```http
 HTTP/1.1 401 Unauthorized
@@ -574,11 +579,11 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/revisi
 - `canvas_url`（string）：打开该画布的链接。
 - `focus`（string[]）：本次改动涉及的节点 ID；带在 `canvas_url` 的查询参数里，打开后定位到这些节点。
 
-外部助手应把链接交给创作者打开，或在能内置浏览器的宿主里自己打开；打开与否不影响写入。
+外部助手应把链接交给创作者打开，或在能内置浏览器的宿主里自己打开；打开与否不影响写入。图形界面宿主里，`generate_node`、`wait_tasks` 的结果另以生成与任务卡显示（`api: MCP 生成与任务卡`）。
 
 #### generate_node 的 dry_run
 - `dry_run`（boolean，可选，缺省 `false`）。
-- 为 `true` 时走完生成前的全部校验（节点、模型、参数、参考、`draft_revision`、额度），不创建生成执行、不扣费。返回 `{dry_run: true, model, node_type, references:[{node_id, content_revision_id}], estimated_cost:{amount, unit, is_estimate: true}}`。
+- 为 `true` 时走完生成前的全部校验（节点、模型、参数、参考、`draft_revision`、额度），不创建生成执行、不扣费。返回 `{dry_run: true, model, node_type, parameters, references:[{node_id, content_revision_id}], estimated_cost:{amount, unit, is_estimate: true}, budget:{remaining, unit}}`：`parameters` 是将要使用的生成参数（数量、画幅等，键与内置 `generate_node` 相同），`budget` 与 `get_capabilities` 的生成预算一致。
 - 校验不通过时返回与真实生成相同的错误码。
 - 是否预检由外部助手决定；工具说明和 `instructions` 不要求每次预检，创作者要求全自动执行时可以不做。
 
@@ -633,7 +638,7 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/revisi
 | `load_skill` | 新增可选 `skill_version_id`；缺省时加载该 Skill 当前可用版本；返回正文与资源目录（D3：正文经已授权连接下发）；不记录到运行 |
 | `read_skill_resource` | 新增必传 `skill_version_id`（`load_skill` 返回的版本），因为没有运行固定版本 |
 
-场景任务没有被页面认领时，`wait_tasks` 返回 `waiting_for_page` 与 `open_url`（见 `api: MCP 写入与生成工具`）。
+场景任务没有被页面认领时，`wait_tasks` 返回 `waiting_for_page` 与 `open_url`（见 `api: MCP 写入与生成工具`）。图形界面宿主里，`render_view`、`export_shots` 的结果另以镜头卡显示（`api: MCP 镜头卡`）。
 
 ### 失败响应
 沿用内置工具的错误码。另有：已停用的 Skill 版本 `load_skill` 返回 `not_found`（与发现结果一致）；`export_shots` 的场景不在 `canvas_id` 画布上时 `validation_failed`。
@@ -648,3 +653,140 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/revisi
 
 ### 兼容与变更
 首次定义。内置工具行为不变。`catalog.go` 中「Skill 正文不离开服务端」的约定改为「不经浏览器接口暴露；经已授权的外部助手连接可读」（D3）。
+
+## api: ADD MCP 生成与任务卡
+
+### 用途与调用
+- **用途**：在支持卡片的图形界面宿主里，把 `generate_node`（含预检）和 `wait_tasks` 的结果显示成内嵌卡片：预检后由创作者确认、进度、结果图、等待页面。本契约同时定义两张卡片共用的界面资源规则，`api: MCP 镜头卡` 引用这些规则。
+- **消费者**：MCP Apps 宿主（首批为 ChatGPT、Claude 桌面端和网页），以及卡片本身。Codex CLI 与 Claude Code 不渲染卡片，只用 `content` 文字。
+- **调用**：宿主经 `api: MCP 端点` 的 `resources/read` 读取 `ui://creative/tasks/v1`，在沙箱 iframe 里渲染；卡片经宿主发起 `tools/call`，走同一个连接和令牌。
+- **权限**：与 `api: MCP 端点` 相同。卡片发起的调用和模型发起的调用在服务端无法区分，准入、限流、计费完全相同。
+
+### 协商
+- 客户端声明 MCP Apps 扩展 `io.modelcontextprotocol/ui`（并支持 `text/html;profile=mcp-app`）时启用。
+- 没有声明时：工具发现不带 `_meta.ui`，工具结果不带 `_meta.creative`，`resources/read` 读界面资源返回资源不存在。工具行为与文字结果完全不变。
+
+### 界面资源（两张卡共用）
+| 字段 | 值 |
+|---|---|
+| `uri` | `ui://creative/tasks/v1`（镜头卡为 `ui://creative/shots/v1`）。URI 是宿主的缓存键，卡片与结果数据不兼容的改动发布新版本号，旧版本保留到新版本上线 30 天后 |
+| `mimeType` | `text/html;profile=mcp-app` |
+| `text` | 单个 HTML5 文档，样式与脚本全部内联，不加载外部脚本、样式和字体 |
+| `_meta.ui.csp.resourceDomains` | 卡片要显示的图片所在的对象存储或 CDN 域名，按部署配置生成 |
+| `_meta.ui.csp.connectDomains`、`frameDomains`、`baseUriDomains` | 空数组：卡片不直接访问任何网络接口，动作都经宿主调用工具；不嵌套 iframe |
+| `_meta.ui.permissions` | 不申请（不用摄像头、麦克风、定位、剪贴板） |
+| `_meta.ui.domain` | Claude：`<PUBLIC_BASE_URL>/mcp` 的 SHA-256 前 32 位十六进制 + `.claudemcpcontent.com`；其他宿主按各自格式给出或省略（U11） |
+| `_meta.ui.prefersBorder` | `true` |
+
+卡片的展示规则：
+- 颜色、字体、圆角只用宿主下发的标准 CSS 变量，并为每个变量写默认值；跟随宿主明暗；照片之外不用品牌色铺底。
+- 行内卡片最多两个动作，放在底部；不嵌套滚动；不用菜单和弹出层。
+- 可以请求全屏，只用于放大查看结果图，不做编辑。深度编辑一律回到创意空间页面（`canvas_url`）。
+- 加载中用骨架屏；「等待页面」不放骨架屏，免得像在运行。
+
+### 工具元数据
+| 工具 | `_meta.ui.resourceUri` | `_meta.ui.visibility` |
+|---|---|---|
+| `generate_node` | `ui://creative/tasks/v1` | `["model", "app"]` |
+| `wait_tasks` | `ui://creative/tasks/v1` | `["model", "app"]` |
+| `save_to_library` | 无 | `["model", "app"]` |
+| `render_view`、`export_shots` | `ui://creative/shots/v1`（`api: MCP 镜头卡`） | `["model"]` |
+| 其他外部工具 | 无 | `["model"]` |
+
+### 卡片数据 `_meta.creative`
+`generate_node`、`wait_tasks` 的结果另带（只在协商启用时）：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+| `canvas_url` | string | 是 | 带 `focus` 的画布链接，与结构化结果里的相同 |
+| `references` | `[{node_id, title, thumbnail_url}]` | `dry_run` 时 | 参考的缩略图，签名地址 |
+| `tasks` | `{<task_id>: {results, open_url}}` | 有任务句柄时 | `results` 为 `[{url, width, height, label}]`，成功时是结果图（签名地址，长边 ≤ 1024），否则为空数组；`open_url` 在 `waiting_for_page` 时为要打开的创意空间链接，否则为 null |
+
+签名地址的有效期至少 1 小时（U11）。卡片的其余数据（模型、数量、预计扣费、任务状态）读 `structuredContent`，不在 `_meta` 里重复。
+
+### 卡片状态与动作
+| 结构化结果 | 卡片显示 | 动作 |
+|---|---|---|
+| `dry_run: true` | 预检：模型、数量与比例、参考缩略图、预计扣费与剩余额度（≤ 5 个数据点） | 「生成 · N 点」：用工具输入的同一组参数调用 `generate_node`，去掉 `dry_run`；「不生成」 |
+| `pending` / `running` | 进行中：按比例的骨架屏、进度 | 「在画布中查看进度」 |
+| `succeeded` | 结果图，按原比例；可全屏查看 | 「在画布中查看」；「存入资产库」：调用 `save_to_library` 保存这些产物 |
+| `failed` / `cancelled` / `expired` | 错误码对应的中文说明 | 「在画布中查看」 |
+| `waiting_for_page`（场景任务） | 「回看要由一个打开的创意空间页面来渲染」 | 「打开创意空间」：`ui/open-link` 打开 `open_url` |
+
+- 非终态时，卡片用 `wait_tasks` 长轮询（`timeout_s` ≤ 20），收到结果立即发下一次；卡片被宿主销毁时停止。轮询计入连接限流；遇到 `rate_limited` 按 `retry_after_s` 延后。
+- 卡片发起的调用失败时，卡片显示错误说明并回到原状态（例如预检卡恢复可点），不自动重试写操作。
+
+### 告诉外部助手
+创作者在卡片里做的决定，卡片用 `ui/update-model-context` 交给外部助手。规范规定每次更新覆盖上一次，宿主也可能等到创作者的下一条消息才交给模型，所以卡片维护一份累计的摘要，每次发送完整内容：
+
+| 时机 | 摘要里追加的一行 |
+|---|---|
+| 点「生成」且提交成功 | 创作者在预检卡里确认了生成：已提交任务 `<task_id>`（N 张，预计 M 点）。不要重复提交；进度和结果显示在卡片里。 |
+| 点「不生成」 | 创作者在预检卡里选择了不生成，没有扣点。 |
+| 任务到达终态 | 卡片显示：任务 `<task_id>`（`<节点标题>`）已完成 / 失败（错误说明）。结果创作者已在卡片里看到，不必再调用 `wait_tasks`。 |
+| 存入资产库成功 | 创作者在卡片里把 N 张结果存入了资产库。 |
+
+这一轮外部助手不会因为卡片动作而发言。服务端 `instructions` 写明：收到这类上下文时以它为准。
+
+### 失败响应
+| 信号 | 触发条件 | 调用方处理 |
+|---|---|---|
+| JSON-RPC 错误 `-32002`（资源不存在） | 未声明扩展时读界面资源；URI 版本不存在 | 宿主不渲染卡片，按文字结果显示 |
+| 工具结果 `isError: true` | 卡片调用的工具被领域拒绝（同 `api: MCP 端点`） | 卡片显示说明并回到原状态 |
+| 宿主拒绝 `ui/open-link` | 创作者或宿主策略拒绝打开链接 | 卡片保留按钮，不重试 |
+
+### 调用示例
+```json
+{"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "ui://creative/tasks/v1"}}
+```
+```json
+{"jsonrpc": "2.0", "id": 3, "result": {"contents": [{"uri": "ui://creative/tasks/v1", "mimeType": "text/html;profile=mcp-app", "text": "<!doctype html><html lang=\"zh-CN\">…</html>", "_meta": {"ui": {"csp": {"resourceDomains": ["https://media.crm.example.com"], "connectDomains": [], "frameDomains": [], "baseUriDomains": []}, "domain": "3f1c9a0e7b2d4c6a8e0f1b3d5c7e9a2b.claudemcpcontent.com", "prefersBorder": true}}}]}}
+```
+工具发现里的一项：
+```json
+{"name": "generate_node", "title": "生成", "description": "…", "inputSchema": {"type": "object"}, "_meta": {"ui": {"resourceUri": "ui://creative/tasks/v1", "visibility": ["model", "app"]}}}
+```
+预检结果（卡片部分）：
+```json
+{"structuredContent": {"dry_run": true, "model": "gpt-image-2.5", "node_type": "image", "parameters": {"count": 2, "aspect_ratio": "3:4"}, "references": [{"node_id": "cnode_2", "content_revision_id": "ccrev_9"}], "estimated_cost": {"amount": 40, "unit": "points", "is_estimate": true}, "budget": {"remaining": 1252, "unit": "points"}}, "_meta": {"creative": {"canvas_url": "https://crm.example.com/creative/canvases/ccvs_1c2d?focus=cnode_5", "references": [{"node_id": "cnode_2", "title": "参考 · 海风", "thumbnail_url": "https://media.crm.example.com/t/…?sig=…"}]}}}
+```
+
+### 兼容与变更
+首次定义，资源版本 v1。不声明扩展的客户端完全不受影响。卡片的视觉与交互依据 `docs/prototypes/creative-mcp/`（owner 2026-10-22 走查通过）。
+
+## api: ADD MCP 镜头卡
+
+### 用途与调用
+- **用途**：在支持卡片的图形界面宿主里，把 `render_view` 的回看截图和 `export_shots` 导出的分镜显示成卡片；任务排队等页面时给出「打开创意空间」。
+- **消费者、调用、权限、协商、资源规则**：同 `api: MCP 生成与任务卡`，资源为 `ui://creative/shots/v1`。工具元数据见该契约的「工具元数据」表。
+
+### 卡片数据 `_meta.creative`
+`render_view`、`export_shots` 的结果另带（只在协商启用时）：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+| `canvas_url` | string | 是 | 场景或导出目标画布的链接 |
+| `shots` | `[{url, width, height, label, meta, canvas_url}]` | 成功时 | `url` 为截图（签名地址，长边 ≤ 1024）；`label` 如「镜头 02 · 逆光长裙」；`meta` 为最多 2 行的机位说明（焦距、机位高度等）；`canvas_url` 聚焦到对应的导出节点 |
+| `tasks` | 同 `api: MCP 生成与任务卡` | 返回任务句柄时 | 排队、渲染中、等待页面时使用 |
+
+### 卡片状态与动作
+| 情况 | 卡片显示 | 动作 |
+|---|---|---|
+| 任务未完成（`pending` / `running` / `waiting_for_page`） | 同生成与任务卡 | 同生成与任务卡 |
+| `render_view` 成功 | 单张截图（横图按原比例，行内最宽 560px）、机位说明；可全屏 | 「在画布中查看」 |
+| `export_shots` 成功 | 横向轮播，3–8 项；每项一张图、标题、最多 2 行机位说明；超过 8 项只显示前 8 项并注明总数 | 每项一个「在画布中查看」 |
+
+- 任务到达终态时，卡片按 `api: MCP 生成与任务卡` 的「告诉外部助手」规则追加一行：「卡片显示：回看 / 导出已完成（N 个镜头）。」
+- 镜头卡不发起写操作。
+
+### 失败响应
+同 `api: MCP 生成与任务卡`。
+
+### 调用示例
+`export_shots` 成功结果里的卡片部分（`structuredContent` 沿用内置 `export_shots`）：
+```json
+{"_meta": {"creative": {"canvas_url": "https://crm.example.com/creative/canvases/ccvs_1c2d", "shots": [{"url": "https://media.crm.example.com/s/…?sig=…", "width": 1024, "height": 683, "label": "镜头 01 · 礁石远景", "meta": ["24mm · 机位高 1.6m"], "canvas_url": "https://crm.example.com/creative/canvases/ccvs_1c2d?focus=cnode_31"}]}}}
+```
+
+### 兼容与变更
+首次定义，资源版本 v1，随 C3 交付。

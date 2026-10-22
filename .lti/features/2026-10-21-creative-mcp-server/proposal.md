@@ -1,6 +1,6 @@
 # Epic: creative-mcp-server — 外部助手经 MCP 使用创意空间
 
-永久需求文档：本 Epic 的目标、边界和交付计划。整体方案见 design.md，目标契约见 contracts.md。项目 `.lti/contracts/` 记录当前已交付事实。探索共识见 `discovery/brainstorm.md`（Owner 决定 D1–D9），竞品调研见 `discovery/research/libtv-plugin.md`。
+永久需求文档：本 Epic 的目标、边界和交付计划。整体方案见 design.md，目标契约见 contracts.md。项目 `.lti/contracts/` 记录当前已交付事实。探索共识见 `discovery/brainstorm.md`（Owner 决定 D1–D13）。调研见 `discovery/research/`：`libtv-plugin.md` 是竞品，`host-ui-surfaces.md` 是宿主交互面。原型见 `docs/prototypes/creative-mcp/`。
 
 ## 目标
 
@@ -12,8 +12,14 @@
    - ChatGPT：在 Developer Mode 里添加应用。
    - 没有权限新建连接器或应用时（例如 Team 成员），接入页给出回退方法。
 2. 在宿主里让外部助手读画布、改画布、写提示词、生成图片、整理资产库、搭 3D 场景并回看、导出分镜，用平台 Skill 做策划。外部助手给出画布链接，创作者在浏览器里实时看到变化。
-3. 在历史里看到「Claude」「Codex」「ChatGPT」的署名，回退它的改动；自己的 Cmd+Z 不会撤掉外部助手的改动。
-4. 在接入页看到已连接的外部助手，随时断开。
+3. 在 ChatGPT 和 Claude 桌面端、网页里，生成和场景结果以内嵌卡片出现：
+   - 生成前的预检可以直接点「生成」确认；
+   - 提交后卡片自己显示进度和结果图；
+   - 回看排队等页面时，卡片给出「打开创意空间」。
+
+   Codex CLI 和 Claude Code 只有文字和链接，流程不受影响。
+4. 在历史里看到「Claude」「Codex」「ChatGPT」的署名，回退它的改动；自己的 Cmd+Z 不会撤掉外部助手的改动。
+5. 在接入页看到已连接的外部助手，随时断开。
 
 外部助手拿到的能力与内置助手一致：同样的领域规则、同样的工具语义、同样的生成计费。只是对话和计划由外部助手自己负责。
 
@@ -26,6 +32,14 @@
     - 服务端 `instructions` 写明工具用法和运行规则，是所有宿主共用的使用说明。
   - 「外部助手连接」作为与「运行」并列的助手主体，接入文档署名、生成记录、资产库日志、场景客户端任务和 consent。
   - 画布交接：写工具的结果带画布链接（可聚焦到节点）；`generate_node` 支持 `dry_run` 预检，由外部助手自己决定是否使用。
+  - 工具结果文字：
+    - 第一行是结论，随后是链接和下一步，再附结构化结果；
+    - 终端宿主只显示前几行时也能看懂；
+    - 工具有中文显示名和只读、删除标注。
+  - 内嵌卡片（MCP Apps，D10–D11），ChatGPT 与 Claude 共用：
+    - 生成与任务卡：`generate_node`、`wait_tasks`；
+    - 镜头卡：`render_view`、`export_shots`；
+    - 只对声明支持卡片的宿主下发，其他宿主只收文字结果。
   - 前端：
     - 「外部助手」接入页：选宿主，复制接入文字，查看回退方法；连接列表与断开也在这里。
     - 授权确认页。
@@ -43,6 +57,7 @@
   - Claude 插件（D8）；Claude 桌面扩展（`.mcpb`）形式的本地代理。
   - 国内宿主（OpenClaw、Hermes、CodeBuddy 等），以及 Codex 桌面 app、IDE 扩展的首批验收。
   - 上架官方目录（Claude 连接器目录、ChatGPT 应用目录、OpenAI 插件目录）。
+  - 其他卡片：画布卡、资产库卡片、Skill 卡片、画中画；在卡片里编辑画布（深度编辑回到创意空间页面）（D11）。
   - CRM 业务数据（客户、订单、日程）。
   - 本地 stdio MCP 进程。
 
@@ -60,6 +75,7 @@
   - `api: ADD OAuth 授权服务器`、`api: ADD MCP 端点`
   - `api: ADD 外部助手连接列表与断开`、`api: MODIFY 列出文档修订`
   - `api: ADD MCP 只读工具`、`api: ADD MCP 写入与生成工具`、`api: ADD MCP 场景与 Skill 工具`
+  - `api: ADD MCP 生成与任务卡`、`api: ADD MCP 镜头卡`
 
 既有约定沿用：账号隔离（ADR-001）、`ErrorEnvelope`、`creativeops` 的 operation id 幂等与回执、暂存上传、`/api/v1/creative/...` 路径前缀、账号级失效通道。
 
@@ -79,11 +95,17 @@
 - **AC-9 感知与断开**：
   - **WHEN** 外部助手在最近 5 分钟内调用过工具，**THEN** 创意空间显示「外部助手已连接」及其名称。
   - **WHEN** 创作者在接入页断开连接，**THEN** 该连接的下一次调用立即被拒绝，排队中的场景任务被取消，宿主需要重新授权。
-- **AC-10 四个宿主**：ChatGPT、Codex CLI、Claude Code、Claude 桌面端都完成 AC-1、AC-3、AC-4 的流程；C3 归档前补测 AC-6、AC-8。
+- **AC-10 四个宿主**：ChatGPT、Codex CLI、Claude Code、Claude 桌面端都完成 AC-1、AC-3、AC-4 的流程；C2b 归档前在 ChatGPT、Claude 桌面端补测 AC-11 的生成与任务卡；C3 归档前补测 AC-6、AC-8 与镜头卡。
+- **AC-11 内嵌卡片**：
+  - **WHEN** 外部助手在 ChatGPT 或 Claude 桌面端里用 `dry_run` 调用 `generate_node`，**THEN** 对话里出现预检卡，显示模型、参考、预计扣费；创作者点「生成」即提交，不需要再对外部助手说一句话。
+  - **WHEN** 生成已提交，**THEN** 卡片自己显示进度和结果图，可以全屏查看、存入资产库；外部助手在下一轮得知创作者在卡片里做的决定，不重复提交。
+  - **WHEN** 回看或导出分镜，**THEN** 出现镜头卡；任务排队等页面时，卡片给出「打开创意空间」，打开后自动继续。
+  - **WHEN** 宿主不支持卡片（Codex CLI、Claude Code），**THEN** 同一工具只返回文字，AC-4、AC-6 照常完成。
+  - 卡片跟随宿主的明暗主题。
 
 ## 交付路线
 
-见 roadmap.md。三批串行：连接与只读（C1）→ 写入与生成（C2）→ 场景与 Skill（C3）。
+见 roadmap.md。四批串行：连接与只读（C1）→ 写入与生成（C2）→ 内嵌卡片（C2b）→ 场景与 Skill（C3，含镜头卡）。C1 设计前先做活原型，在真实宿主里核实宿主行为（D13）。
 
 ## 决策记录
 
@@ -97,3 +119,8 @@
 - 2026-10-22 D7：图形界面宿主纳入本 Epic；首批宿主为 ChatGPT、Codex CLI、Claude Code、Claude 桌面端。
 - 2026-10-22 D8：Claude 系列只用连接器，不做 Claude 插件；Team 成员无权限时要有回退路径。
 - 2026-10-22 D9：借鉴 LibTV：接入页、`get_capabilities`、画布交接链接、生成预检（Agent 可选）；Codex 插件调大工具超时、只发生产包。
+- 2026-10-22 D10：图形界面宿主采用 MCP Apps 内嵌卡片，ChatGPT 与 Claude 共用一套；文字加链接仍是所有宿主的基础。
+- 2026-10-22 D11：首批只做生成与任务卡、镜头卡。
+- 2026-10-22 D12：卡片单列子项 `mcp-host-ui`（C2b），排在 C2 之后；镜头卡随 C3。
+- 2026-10-22 D13：原型分两层：静态原型（已完成，owner 走查通过），以及接真实宿主的假数据活原型（C1 设计前）。
+- 2026-10-22：工具结果文字改为「摘要 + 结构化结果」，摘要第一行是结论（原型走查中确定）。
