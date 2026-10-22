@@ -28,6 +28,9 @@ window.Cards = (() => {
     return app.updateModelContext(told.join('\n'))
   }
   let timer = 0
+  // 卡片能不能自己调用工具：宿主没声明 serverTools，或调用失败、超时，就当不能。
+  // 不能时卡片只显示提交那一刻的快照，不假装在刷新，结果交给外部助手后面的工具结果。
+  let offline = false
   let current = 0 // 全屏查看时的当前图
 
   function fromResult(r) {
@@ -49,6 +52,8 @@ window.Cards = (() => {
       </dl>`
     if (d.local.declined)
       return `<div class="card">${head}<p class="note muted">你选择了不生成。要调整就直接在对话里说。</p></div>`
+    if (offline)
+      return `<div class="card">${head}${facts}<p class="note muted">${d.local.failed ? '卡片没能提交，没有扣点。' : ''}要生成，请在对话里回复「生成」。</p></div>`
     const busy = d.local.submitting
     return `<div class="card">${head}${facts}
       <div class="actions">
@@ -61,6 +66,7 @@ window.Cards = (() => {
     if (t.status === 'succeeded') return `<span class="status ok">${IC.check.replace('<svg', '<svg width="12" height="12"')}已完成${t.cost ? ` · 扣 ${t.cost} 点` : ''}</span>`
     if (t.status === 'failed') return `<span class="status err"><i></i>失败</span>`
     if (t.status === 'waiting_for_page') return `<span class="status run"><i></i>等待页面</span>`
+    if (offline) return `<span class="status run"><i></i>已提交</span>`
     return `<span class="status run"><i></i>${t.kind === 'generate' ? '生成中' : '渲染中'} ${pct(t.progress)}</span>`
   }
 
@@ -94,8 +100,11 @@ window.Cards = (() => {
       return `${head}<p class="note">${esc(t.error ?? '生成失败：模型服务超时。没有扣点。')}</p><div class="actions"><button class="btn" data-act="open" data-url="${esc(m.canvas_url)}">在画布中查看</button></div>`
     const skels = `<div class="grid" style="--cols:${n === 1 && ratio >= 1 ? 1 : 2}">${Array.from({ length: n }, () => `<div class="skel" style="aspect-ratio:${rw}/${rh}"></div>`).join('')}</div>`
     if (t.status === 'waiting_for_page')
-      return `${head}<p class="note">回看要由一个打开的创意空间页面来渲染，现在没有。打开后会自动继续，完成前请保持页面开着。</p>
+      return `${head}<p class="note">回看要由一个打开的创意空间页面来渲染，现在没有。打开后会自动继续，完成前请保持页面开着。${offline ? '这张卡片不会自己刷新，结果由外部助手在后面的回复里给出。' : ''}</p>
         <div class="actions"><button class="btn primary" data-act="open" data-url="${esc(m.open_url)}">${IC.open}打开创意空间</button></div>`
+    if (offline)
+      return `${head}<p class="note muted">这张卡片不会自己刷新。完成后，外部助手会在后面的回复里给出结果。</p>
+        <div class="actions"><button class="btn" data-act="open" data-url="${esc(m.canvas_url)}">在画布中查看进度</button></div>`
     return `${head}${skels}<div class="bar"><i style="width:${pct(t.progress)}"></i></div>
       <div class="actions"><button class="btn" data-act="open" data-url="${esc(m.canvas_url)}">在画布中查看进度</button></div>`
   }
@@ -126,12 +135,17 @@ window.Cards = (() => {
   // ---- 轮询：卡片自己经宿主调用 wait_tasks（visibility 含 "app"）----
   function schedule() {
     clearTimeout(timer)
-    if (s.view !== 'tasks' || (s.tasks ?? []).every(terminal)) return
+    if (offline || s.view !== 'tasks' || (s.tasks ?? []).every(terminal)) return
     timer = setTimeout(poll, 1500)
   }
   async function poll() {
     const before = s.tasks.filter(terminal).length
-    const r = await app.callTool('wait_tasks', { task_ids: s.tasks.map((t) => t.id), timeout_s: 20 })
+    let r
+    try {
+      r = await app.callTool('wait_tasks', { task_ids: s.tasks.map((t) => t.id), timeout_s: 20 })
+    } catch (err) {
+      return goOffline('wait_tasks', err)
+    }
     s = fromResult(r)
     render()
     const done = s.tasks.filter((t) => t.status === 'succeeded')
@@ -140,6 +154,12 @@ window.Cards = (() => {
         `卡片显示：${done.map((t) => `任务 ${t.id}（${t.title}）已完成`).join('；')}。结果图片创作者已在卡片里看到，不必再调用 wait_tasks。`,
       )
     schedule()
+  }
+
+  function goOffline(tool, err) {
+    offline = true
+    beacon('tool_error', { tool, err: String(err?.message ?? err) })
+    render()
   }
 
   // ---- 动作 ----
@@ -161,7 +181,13 @@ window.Cards = (() => {
     if (act === 'generate') {
       s.local = { ...s.local, submitting: true }
       render()
-      const r = await app.callTool('generate_node', { ...input, node_id: s.node.id, count: s.count, dry_run: false })
+      let r
+      try {
+        r = await app.callTool('generate_node', { ...input, node_id: s.node.id, count: s.count, dry_run: false })
+      } catch (err) {
+        s.local = { failed: true }
+        return goOffline('generate_node', err)
+      }
       s = fromResult(r)
       s.local = {}
       render()
@@ -179,9 +205,15 @@ window.Cards = (() => {
   })
 
   // 活原型诊断（window.CARD_DIAG）：把宿主给的上下文、图片加载、上下文更新结果回报给服务端日志。
-  // 经 app-only 工具 report_card_event，只在活原型服务里存在。
+  // 两条路：图片请求打到服务端的 /diag（不依赖宿主转发工具调用），和 app-only 工具 report_card_event
+  // （服务端收到它就说明卡片能调用工具）。两者都只在活原型服务里存在。
+  function beacon(event, data) {
+    if (!window.CARD_DIAG?.beacon) return
+    new Image().src = `${window.CARD_DIAG.beacon}?e=${encodeURIComponent(event)}&d=${encodeURIComponent(JSON.stringify(data).slice(0, 1500))}`
+  }
   function report(event, data) {
-    app.callTool('report_card_event', { event, data: JSON.stringify(data).slice(0, 4000) }).catch(() => {})
+    beacon(event, data)
+    if (app.canCallTools()) app.callTool('report_card_event', { event, data: JSON.stringify(data).slice(0, 4000) }).catch(() => {})
   }
   function diag(res) {
     const ctx = res?.hostContext ?? {}
@@ -228,6 +260,7 @@ window.Cards = (() => {
       app.on('ui/notifications/tool-input', (p) => (input = p?.arguments ?? {}))
       app.on('ui/notifications/host-context-changed', render)
       const res = await app.connect({ name, modes: ['inline', 'fullscreen'] })
+      offline = !app.canCallTools()
       render()
       if (window.CARD_DIAG) diag(res)
     },

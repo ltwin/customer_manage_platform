@@ -9,7 +9,10 @@ const log = (...a) => {
   li.textContent = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')
   document.getElementById('log').append(li)
 }
-const theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light'
+const q = new URLSearchParams(location.search)
+const theme = q.get('theme') === 'dark' ? 'dark' : 'light'
+// ?notools=1：不声明 serverTools，模拟卡片不能调用工具的宿主
+const hostCaps = { openLinks: {}, updateModelContext: { text: {} }, ...(q.get('notools') ? {} : { serverTools: {} }) }
 
 const client = new Client(
   { name: 'refhost', version: '0' },
@@ -30,7 +33,7 @@ async function show(name, args) {
   iframe.style.colorScheme = theme
   iframe.srcdoc = res.contents[0].text
   document.getElementById('cards').append(iframe)
-  const bridge = new AppBridge(client, { name: 'refhost', version: '0' }, { openLinks: {}, serverTools: {}, updateModelContext: { text: {} } }, {
+  const bridge = new AppBridge(client, { name: 'refhost', version: '0' }, hostCaps, {
     hostContext: { theme, displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'], platform: 'web', locale: 'zh-CN' },
   })
   bridge.oninitialized = () => {
@@ -55,5 +58,6 @@ async function show(name, args) {
 }
 
 await show('generate_node', { canvas_id: 'cv_9f2a', node_id: 'shot-2', count: 2, dry_run: true })
+await show('generate_node', { canvas_id: 'cv_9f2a', node_id: 'shot-2', count: 2 })
 await show('render_view', { node_id: 'scene-1' })
 await show('export_shots', { canvas_id: 'cv_9f2a', node_id: 'scene-1' })

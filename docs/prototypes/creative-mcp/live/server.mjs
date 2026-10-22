@@ -116,7 +116,7 @@ function cardHtml(kind) {
   const w = (f) => fs.readFileSync(path.join(PROTOTYPES, 'creative-mcp/widgets', f), 'utf8')
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${w('widget.css')}</style></head><body><main id="app"></main>
-<script>window.CARD_DIAG = true</script><script>${w('bridge.js')}</script><script>${w('cards.js')}</script>
+<script>window.CARD_DIAG = { beacon: '${ORIGIN}/diag' }</script><script>${w('bridge.js')}</script><script>${w('cards.js')}</script>
 <script>Cards.mount('creative-${kind}')</script></body></html>`
 }
 const SERVER_URL = `${ORIGIN}/mcp`
@@ -237,7 +237,7 @@ function createServer(sessionTag) {
         'report_card_event',
         { title: '卡片诊断', description: '活原型诊断：卡片回报宿主行为。', inputSchema: z.object({ event: S, data: S.optional() }), visibility: ['app'] },
         (a) => {
-          log({ session: sessionTag, client: client.name, event: 'card', card: a.event, data: a.data })
+          log({ session: sessionTag, client: client.name, event: 'card', via: 'tool', card: a.event, data: a.data })
           return { content: [{ type: 'text', text: 'ok' }] }
         },
       )
@@ -314,6 +314,11 @@ const web = http.createServer(async (req, res) => {
     if (url.pathname === '/mcp' && !STDIO) return await handleMcp(req, res)
     if (url.pathname.startsWith('/p/')) return serveStatic(req, res, url)
     if (url.pathname.startsWith('/creative/canvases/')) return landCanvas(req, res, url)
+    // 卡片诊断的图片信标：不依赖宿主转发工具调用，卡片能加载图片就能回报
+    if (url.pathname === '/diag') {
+      log({ event: 'card', via: 'beacon', card: url.searchParams.get('e'), data: url.searchParams.get('d') })
+      return res.writeHead(204).end()
+    }
     if (url.pathname === '/reset') {
       tasks.clear()
       pageOpenedAt = 0

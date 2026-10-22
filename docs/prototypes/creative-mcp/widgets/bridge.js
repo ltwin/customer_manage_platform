@@ -7,12 +7,18 @@ window.McpApp = (() => {
   const listeners = {}
   const root = document.documentElement
   let context = {}
+  let caps = {} // 宿主在 ui/initialize 里声明的能力；没有 serverTools 就不能从卡片调用工具
 
   const post = (msg) => parent.postMessage({ jsonrpc: '2.0', ...msg }, '*')
-  const request = (method, params) =>
+  // 宿主不应答时按超时失败，免得卡片停在「提交中」「生成中」。wait_tasks 卡片一侧最多等 20 秒，留出余量
+  const request = (method, params, ms = 30000) =>
     new Promise((resolve, reject) => {
       const id = ++seq
-      pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => pending.delete(id) && reject({ message: `${method} 超时` }), ms)
+      pending.set(id, {
+        resolve: (v) => (clearTimeout(timer), resolve(v)),
+        reject: (e) => (clearTimeout(timer), reject(e)),
+      })
       post({ id, method, params })
     })
   const notify = (method, params) => post({ method, params })
@@ -52,11 +58,13 @@ window.McpApp = (() => {
         appCapabilities: { availableDisplayModes: modes },
       })
       apply(res?.hostContext)
+      caps = res?.hostCapabilities ?? {}
       notify('ui/notifications/initialized', {})
-      // 行内卡片高度随内容，内容变了就告诉宿主
+      // 行内卡片高度随内容，内容变了就告诉宿主。量 body 而不是 documentElement.scrollHeight：
+      // 后者不会小于 iframe 当前高度，卡片内容变矮时（预检 → 已提交）报不出来
       let last = 0
       new ResizeObserver(() => {
-        const h = Math.ceil(document.documentElement.scrollHeight)
+        const h = Math.ceil(document.body.getBoundingClientRect().height)
         if (h !== last) notify('ui/notifications/size-changed', { width: innerWidth, height: (last = h) })
       }).observe(document.body)
       return res
@@ -68,6 +76,7 @@ window.McpApp = (() => {
       return context
     },
     canUse: (mode) => (context.availableDisplayModes ?? []).includes(mode),
+    canCallTools: () => Boolean(caps.serverTools),
     callTool: (name, args) => request('tools/call', { name, arguments: args }),
     // 创作者在卡片里做的事要告诉外部助手，否则它下一轮可能重复提交。宿主可能等到下一条消息才交给模型。
     updateModelContext: (text) => request('ui/update-model-context', { content: [{ type: 'text', text }] }),
