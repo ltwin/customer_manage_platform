@@ -2460,6 +2460,7 @@ func (e CreativeSceneRunChangeChange) Valid() bool {
 const (
 	Color      CreativeSceneSkyKind = "color"
 	Hdri       CreativeSceneSkyKind = "hdri"
+	Physical   CreativeSceneSkyKind = "physical"
 	Procedural CreativeSceneSkyKind = "procedural"
 )
 
@@ -2470,7 +2471,27 @@ func (e CreativeSceneSkyKind) Valid() bool {
 		return true
 	case Hdri:
 		return true
+	case Physical:
+		return true
 	case Procedural:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneSkySunMode.
+const (
+	CreativeSceneSkySunModeLocation CreativeSceneSkySunMode = "location"
+	CreativeSceneSkySunModeManual   CreativeSceneSkySunMode = "manual"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneSkySunMode enum.
+func (e CreativeSceneSkySunMode) Valid() bool {
+	switch e {
+	case CreativeSceneSkySunModeLocation:
+		return true
+	case CreativeSceneSkySunModeManual:
 		return true
 	default:
 		return false
@@ -6783,7 +6804,7 @@ type CreativeSceneAmbient struct {
 	Intensity float32            `json:"intensity"`
 }
 
-// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
+// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 type CreativeSceneCamera struct {
 	Aspect *string `json:"aspect,omitempty"`
 
@@ -6801,10 +6822,16 @@ type CreativeSceneCamera struct {
 	Focus *float32 `json:"focus,omitempty"`
 
 	// FocusObjectId 非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group， 且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。
-	FocusObjectId *string    `json:"focus_object_id,omitempty"`
-	Label         *string    `json:"label,omitempty"`
-	Near          *float32   `json:"near,omitempty"`
-	SensorMm      *[]float32 `json:"sensor_mm,omitempty"`
+	FocusObjectId *string `json:"focus_object_id,omitempty"`
+
+	// Iso 感光度。物理天空下与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。
+	Iso      *float32   `json:"iso,omitempty"`
+	Label    *string    `json:"label,omitempty"`
+	Near     *float32   `json:"near,omitempty"`
+	SensorMm *[]float32 `json:"sensor_mm,omitempty"`
+
+	// ShutterS 快门（秒），1/8000 s…30 s。只在物理天空下生效。
+	ShutterS *float32 `json:"shutter_s,omitempty"`
 }
 
 // CreativeSceneChangeBlocked defines model for CreativeSceneChangeBlocked.
@@ -6870,7 +6897,7 @@ type CreativeSceneEnvironment struct {
 	Ambient CreativeSceneAmbient                `json:"ambient"`
 	Fog     nullable.Nullable[CreativeSceneFog] `json:"fog"`
 
-	// Sky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
+	// Sky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color； physical 带 date 和下列物理天空的字段（太阳高度、方位只在 sun_mode = manual 时生效），写其他类型的字段返回 400。 physical 除 kind、date 外都可省略，存储时补齐缺省值，响应里总是带齐。
 	Sky CreativeSceneSky `json:"sky"`
 }
 
@@ -7120,7 +7147,7 @@ type CreativeSceneModelRef struct {
 
 // CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
-	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
+	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
 	Id     string                  `json:"id"`
 	Kind   CreativeSceneObjectKind `json:"kind"`
@@ -7170,8 +7197,11 @@ type CreativeSceneRender struct {
 	Engine CreativeSceneRenderEngine `json:"engine"`
 
 	// ExposureEv 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。
-	ExposureEv float32                 `json:"exposure_ev"`
-	Mode       CreativeSceneRenderMode `json:"mode"`
+	ExposureEv float32 `json:"exposure_ev"`
+
+	// ExposureEv100 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下的曝光值 EV100；场景摄像机用自己的 ISO、快门和光圈。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。
+	ExposureEv100 float32                 `json:"exposure_ev100"`
+	Mode          CreativeSceneRenderMode `json:"mode"`
 
 	// Resolution 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
 	Resolution CreativeSceneRenderResolution `json:"resolution"`
@@ -7229,18 +7259,72 @@ type CreativeSceneRunChanges struct {
 	UndoAll []CreativeSceneRestoreBatch `json:"undo_all"`
 }
 
-// CreativeSceneSky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
+// CreativeSceneSky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color； physical 带 date 和下列物理天空的字段（太阳高度、方位只在 sun_mode = manual 时生效），写其他类型的字段返回 400。 physical 除 kind、date 外都可省略，存储时补齐缺省值，响应里总是带齐。
 type CreativeSceneSky struct {
-	Color           *CreativeSceneColor  `json:"color,omitempty"`
-	Hdri            *string              `json:"hdri,omitempty"`
-	Kind            CreativeSceneSkyKind `json:"kind"`
-	SunAzimuthDeg   *float32             `json:"sun_azimuth_deg,omitempty"`
-	SunElevationDeg *float32             `json:"sun_elevation_deg,omitempty"`
-	Turbidity       *float32             `json:"turbidity,omitempty"`
+	// AirDensity 空气（瑞利散射）密度倍率，同 Blender Nishita 天空的 Air。缺省 1。
+	AirDensity *float32 `json:"air_density,omitempty"`
+
+	// AltitudeM 场景 Y = 0 处的海拔（米）。缺省 0。
+	AltitudeM *float32            `json:"altitude_m,omitempty"`
+	Color     *CreativeSceneColor `json:"color,omitempty"`
+
+	// Date 当地日期 YYYY-MM-DD，1900-01-01…2100-12-31 之间存在的日期。physical 必填，没有缺省值。
+	Date *string `json:"date,omitempty"`
+
+	// DustDensity 尘埃与气溶胶（米氏散射）密度倍率，同 Blender 的 Dust。缺省 1。
+	DustDensity *float32             `json:"dust_density,omitempty"`
+	Hdri        *string              `json:"hdri,omitempty"`
+	Kind        CreativeSceneSkyKind `json:"kind"`
+
+	// LatitudeDeg 北纬为正。与 longitude_deg、timezone 要么都写，要么都省略（都省略时为上海 31.2304, 121.4737, Asia/Shanghai）。
+	LatitudeDeg *float32 `json:"latitude_deg,omitempty"`
+
+	// LocalTime 当地时刻 HH:MM。缺省 12:00。
+	LocalTime *string `json:"local_time,omitempty"`
+
+	// LongitudeDeg 东经为正。
+	LongitudeDeg *float32 `json:"longitude_deg,omitempty"`
+
+	// NorthAzimuthDeg 正北在文档坐标中的方位，约定同 sun_azimuth_deg；缺省 180，即正北指向 −Z。
+	NorthAzimuthDeg *float32 `json:"north_azimuth_deg,omitempty"`
+
+	// OzoneDensity 臭氧吸收倍率，同 Blender 的 Ozone。缺省 1。
+	OzoneDensity *float32 `json:"ozone_density,omitempty"`
+
+	// Place 地点的显示名，不参与计算。缺省空串。
+	Place *string `json:"place,omitempty"`
+
+	// SunAzimuthDeg physical 缺省 135。
+	SunAzimuthDeg *float32 `json:"sun_azimuth_deg,omitempty"`
+
+	// SunDisc 是否画太阳盘，不影响太阳光。缺省 true。
+	SunDisc *bool `json:"sun_disc,omitempty"`
+
+	// SunElevationDeg physical 缺省 35。
+	SunElevationDeg *float32 `json:"sun_elevation_deg,omitempty"`
+
+	// SunMode location 按地点、日期和当地时刻推算太阳；manual 用 sun_elevation_deg、sun_azimuth_deg。两套字段都保存。缺省 location。
+	SunMode *CreativeSceneSkySunMode `json:"sun_mode,omitempty"`
+
+	// SunSizeDeg 太阳盘的视直径（度）。缺省 0.545。
+	SunSizeDeg *float32 `json:"sun_size_deg,omitempty"`
+
+	// SunStrength 太阳的亮度倍率，太阳光、太阳盘和它照亮的天空一起乘。缺省 1。
+	SunStrength *float32 `json:"sun_strength,omitempty"`
+
+	// SunTemperatureK 太阳的色温（开尔文），6500 为中性，调低更暖、调高更冷，同样作用于太阳光和天空。缺省 6500。
+	SunTemperatureK *float32 `json:"sun_temperature_k,omitempty"`
+
+	// Timezone IANA 时区名，大小写与时区库一致（如 Asia/Shanghai）；不能是 Local 或空串。local_time 是这个时区的当地时间，夏令时由时区库处理。
+	Timezone  *string  `json:"timezone,omitempty"`
+	Turbidity *float32 `json:"turbidity,omitempty"`
 }
 
 // CreativeSceneSkyKind defines model for CreativeSceneSky.Kind.
 type CreativeSceneSkyKind string
+
+// CreativeSceneSkySunMode location 按地点、日期和当地时刻推算太阳；manual 用 sun_elevation_deg、sun_azimuth_deg。两套字段都保存。缺省 location。
+type CreativeSceneSkySunMode string
 
 // CreativeSceneTransform defines model for CreativeSceneTransform.
 type CreativeSceneTransform struct {

@@ -119,6 +119,8 @@ export const cameraDefaults: Required<Camera> = {
   f_stop: 2.8,
   focus: 10,
   focus_object_id: '',
+  iso: 100,
+  shutter_s: 1 / 4000,
 }
 
 /**

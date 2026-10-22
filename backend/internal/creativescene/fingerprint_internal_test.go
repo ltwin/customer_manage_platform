@@ -3,6 +3,7 @@ package creativescene
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -107,9 +108,20 @@ func BenchmarkFreshnessCheck(b *testing.B) {
 // as JSON. The pins below are its fingerprints.
 func pinnedScene(t *testing.T, render string) Scene {
 	t.Helper()
-	raw := `{"environment":{"sky":{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3},"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
+	return sceneOf(t, proceduralSky, render, `{}`)
+}
+
+const (
+	proceduralSky = `{"kind":"procedural","sun_elevation_deg":35,"sun_azimuth_deg":135,"turbidity":3}`
+	physicalSky   = `{"kind":"physical","date":"2026-06-21"}`
+)
+
+// sceneOf is pinnedScene with its sky, render settings and camera fields as JSON.
+func sceneOf(t *testing.T, sky, render, camera string) Scene {
+	t.Helper()
+	raw := `{"environment":{"sky":` + sky + `,"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
 		"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
-		"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":{}},
+		"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":` + camera + `},
 		{"id":"sobj_000000000000000000002","kind":"light","name":"","parent_id":null,"order":1,
 		"transform":{"position":[0,3,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"light":{"type":"point","intensity":50}}]}`
 	s, err := decodeScene(creativecontent.Payload{Scene: json.RawMessage(raw)})
@@ -213,6 +225,94 @@ func TestEngineFingerprintsOnlyLit(t *testing.T) {
 		}
 		if other, _ := Fingerprint(pinnedScene(t, `{"mode":"lit","engine":"realtime_gi","resolution":"4k"}`), pinnedCamera, pass); other != got {
 			t.Fatalf("realtime_gi at 4k, %s: %s, want %s", pass, other, got)
+		}
+	}
+}
+
+// fingerprints are a scene's fingerprints of pinnedCamera in every pass.
+func fingerprints(s Scene) map[string]string {
+	out := map[string]string{}
+	for _, pass := range Passes {
+		out[pass], _ = Fingerprint(s, pinnedCamera, pass)
+	}
+	return out
+}
+
+// sameIn reports for each pass whether a and b fingerprint alike.
+func sameIn(a, b Scene) map[string]bool {
+	fa, fb := fingerprints(a), fingerprints(b)
+	return map[string]bool{PassClay: fa[PassClay] == fb[PassClay], PassLine: fa[PassLine] == fb[PassLine], PassLit: fa[PassLit] == fb[PassLit]}
+}
+
+var onlyLitChanges = map[string]bool{PassClay: true, PassLine: true, PassLit: false}
+var nothingChanges = map[string]bool{PassClay: true, PassLine: true, PassLit: true}
+
+// W2: a camera's ISO and shutter only expose a lit image under a physical
+// sky. Elsewhere they are cleared, the defaults a read fills in included, so
+// fingerprints from before the fields existed still match the pins.
+func TestCameraExposureFingerprintsOnlyPhysicalLit(t *testing.T) {
+	for _, camera := range []string{`{"iso":1600}`, `{"shutter_s":0.5}`, `{"iso":25,"shutter_s":30}`} {
+		for pass, got := range fingerprints(sceneOf(t, proceduralSky, `{"mode":"lit"}`, camera)) {
+			if got != pinned[pass] {
+				t.Fatalf("procedural sky, camera %s, %s: %s, want %s", camera, pass, got, pinned[pass])
+			}
+		}
+		base := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+		if got := sameIn(base, sceneOf(t, physicalSky, `{"mode":"lit"}`, camera)); !maps.Equal(got, onlyLitChanges) {
+			t.Fatalf("physical sky, camera %s: alike %v", camera, got)
+		}
+	}
+}
+
+// Under a physical sky the aperture exposes a lit image even with depth of
+// field off, and the exposure compensation does not count: the camera's
+// exposure has replaced it. Focus still only counts with depth of field on.
+func TestPhysicalLitCountsTheApertureNotTheCompensation(t *testing.T) {
+	base := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+	for _, tc := range []struct {
+		name         string
+		render, cam  string
+		want         map[string]bool
+		inProcedural map[string]bool
+	}{
+		{"aperture with depth of field off", `{"mode":"lit"}`, `{"f_stop":8}`, onlyLitChanges, nothingChanges},
+		{"focus with depth of field off", `{"mode":"lit"}`, `{"focus":3}`, nothingChanges, nothingChanges},
+		{"exposure compensation", `{"mode":"lit","exposure_ev":2}`, `{}`, nothingChanges, onlyLitChanges},
+	} {
+		if got := sameIn(base, sceneOf(t, physicalSky, tc.render, tc.cam)); !maps.Equal(got, tc.want) {
+			t.Fatalf("%s under a physical sky: alike %v, want %v", tc.name, got, tc.want)
+		}
+		if got := sameIn(pinnedScene(t, `{"mode":"lit"}`), sceneOf(t, proceduralSky, tc.render, tc.cam)); !maps.Equal(got, tc.inProcedural) {
+			t.Fatalf("%s under the procedural sky: alike %v, want %v", tc.name, got, tc.inProcedural)
+		}
+	}
+}
+
+// The default camera's exposure never counts: exports come from scene cameras.
+func TestDefaultExposureNeverCounts(t *testing.T) {
+	for _, sky := range []string{proceduralSky, physicalSky} {
+		a := sceneOf(t, sky, `{"mode":"lit","exposure_ev100":15}`, `{}`)
+		for _, render := range []string{`{"mode":"lit"}`, `{"mode":"lit","exposure_ev100":0}`, `{"mode":"lit","exposure_ev100":-10}`} {
+			if got := sameIn(a, sceneOf(t, sky, render, `{}`)); !maps.Equal(got, nothingChanges) {
+				t.Fatalf("%s, %s: alike %v", sky, render, got)
+			}
+		}
+	}
+}
+
+// The physical sky's fields only count for lit images, like the rest of
+// the environment.
+func TestPhysicalSkyFingerprintsOnlyLit(t *testing.T) {
+	base := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+	for _, sky := range []string{
+		`{"kind":"physical","date":"2026-06-21","local_time":"18:30"}`,
+		`{"kind":"physical","date":"2026-06-22"}`,
+		`{"kind":"physical","date":"2026-06-21","dust_density":12}`,
+		`{"kind":"physical","date":"2026-06-21","sun_temperature_k":4000}`,
+		`{"kind":"physical","date":"2026-06-21","latitude_deg":30.66,"longitude_deg":104.06,"timezone":"Asia/Shanghai"}`,
+	} {
+		if got := sameIn(base, sceneOf(t, sky, `{"mode":"lit"}`, `{}`)); !maps.Equal(got, onlyLitChanges) {
+			t.Fatalf("%s: alike %v", sky, got)
 		}
 	}
 }

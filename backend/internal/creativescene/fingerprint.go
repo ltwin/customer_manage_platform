@@ -39,6 +39,9 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 	if pass != PassLit {
 		p.Environment = Environment{}
 	}
+	// Under a physical sky a lit image is exposed by its camera: ISO, shutter
+	// and aperture (W2). Anywhere else the camera's exposure draws nothing.
+	physicalLit := pass == PassLit && s.Environment.Sky.Kind == SkyPhysical
 	found := false
 	for _, o := range s.Objects {
 		if o.Kind == KindCamera && o.ID != cameraID || o.Kind == KindLight && pass != PassLit {
@@ -54,7 +57,15 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 			c.Label = nil
 			// Depth of field only blurs clay and lit images.
 			if pass == PassLine || c.DepthOfField != nil && !*c.DepthOfField {
-				c.FStop, c.Focus, c.FocusObjectID = nil, nil, nil
+				c.Focus, c.FocusObjectID = nil, nil
+				if !physicalLit {
+					c.FStop = nil
+				}
+			}
+			// Cleared rather than left as read: a camera stored before the
+			// fields existed fingerprints as it did.
+			if !physicalLit {
+				c.ISO, c.ShutterS = nil, nil
 			}
 			if pass == PassLine {
 				c.DepthOfField = nil
@@ -67,13 +78,18 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 		return "", false
 	}
 	slices.SortFunc(p.Objects, func(a, b Object) int { return strings.Compare(a.ID, b.ID) })
-	// The render settings never counted, except the exposure and the
-	// renderer of a lit image (clay and line art are the workbench's); at 0
-	// and the workbench they are left out, so fingerprints from before they
-	// existed still match. The output resolution never counts.
+	// The render settings never counted, except the exposure compensation
+	// and the renderer of a lit image (clay and line art are the
+	// workbench's); at 0 and the workbench they are left out, so
+	// fingerprints from before they existed still match. Under a physical
+	// sky the camera's exposure replaces the compensation. The output
+	// resolution and the default camera's exposure never count: no export
+	// comes from the default camera.
 	render := fingerprintRender{}
 	if pass == PassLit {
-		render.ExposureEV = s.Render.ExposureEV
+		if !physicalLit {
+			render.ExposureEV = s.Render.ExposureEV
+		}
 		if s.Render.Engine != EngineWorkbench {
 			render.Engine = s.Render.Engine
 		}

@@ -840,7 +840,7 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 			return nil, invalid("第 %d 个操作 %s 不可用：%s", i+1, head.Op, why)
 		}
 		if head.Op == "set_environment" && head.Environment != nil && head.Environment.Sky.Kind == "hdri" {
-			return nil, invalid("第 %d 个操作：暂无内置 HDRI，请用程序化天空（procedural）或纯色（color）", i+1)
+			return nil, invalid("第 %d 个操作：暂无内置 HDRI，请用程序化天空（procedural）、物理天空（physical）或纯色（color）", i+1)
 		}
 		if slices.Contains(opsOnTheObjectList, head.Op) {
 			onTheList++

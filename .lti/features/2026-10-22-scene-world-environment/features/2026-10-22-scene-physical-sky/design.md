@@ -247,14 +247,14 @@ setupOutput(builder, output) = 原 setupOutput(builder, vec4(min(output.rgb, 600
   - `physical` 分支不得带 `turbidity`、`hdri`、`color`；
   - `sun_mode` 只能是 `location` 或 `manual`；
   - 经度、纬度、时区要么都写，要么都省略；
-  - 时区要能用 `time.LoadLocation` 加载，`loc.String()` 与原名完全相同，并且不是 `Local` 或空串。macOS 的文件系统不区分大小写，`asia/shanghai` 在开发机上能加载，Linux 生产会拒绝（`astronomy.md` 第 4.4 节）；
+  - 时区要能用 `time.LoadLocation` 加载，写法与时区文件完全一致（区分大小写），并且不是 `Local` 或空串。macOS 的文件系统不区分大小写，`asia/shanghai` 在开发机上能加载，Linux 生产会拒绝（`astronomy.md` 第 4.4 节）。`loc.String()` 只回显传入的名字，比较它拦不住（实施时实测）；做法是加载成功后逐级对照系统时区目录里文件的实际写法，只有大小写不同的同名文件时拒绝；系统目录里没有的名字来自 Go 内嵌的时区数据，它本身区分大小写；
   - `place` 不超过 80 个字符；
   - `date` 必填，必须是 1900-01-01…2100-12-31 之间存在的日期；
   - `local_time` 是 `HH:MM`；
   - 数值都按契约的范围。
 
   错误文字指出字段，助手据此修正。
-- **补齐**：`completeSky`（写入和读取时）、`completeCamera` 补 `iso`、`shutter_s`，`completeRenderSettings` 补 `exposure_ev100`。`Render.ExposureEV100` 用指针，因为 0 是合法值，需要区分「没有」。
+- **补齐**：`completeSky`（写入和读取时）、`completeCamera` 补 `iso`、`shutter_s`，`completeRenderSettings` 补 `exposure_ev100`。`Render.ExposureEV100` 是数值字段，0 是合法值：`Render.UnmarshalJSON` 先填缺省值 15 再解码，旧快照没有这个字段时读出 15，写了 0 就是 0；`Render` 仍可直接比较。
 - **时区数据**：`creativescene` 引入 `time/tzdata`，开发机和生产用同一份数据。
 - **渲染指纹**（`fingerprint.go`）：
 

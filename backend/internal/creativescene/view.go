@@ -54,14 +54,15 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 
 // storedRender tells which render fields a stored snapshot holds.
 type storedRender struct {
-	ExposureEV *float64 `json:"exposure_ev"`
-	Engine     *string  `json:"engine"`
-	Resolution *string  `json:"resolution"`
+	ExposureEV    *float64 `json:"exposure_ev"`
+	Engine        *string  `json:"engine"`
+	Resolution    *string  `json:"resolution"`
+	ExposureEV100 *float64 `json:"exposure_ev100"`
 }
 
 // complete reports whether the render needs no completion before it is shown.
 func (r storedRender) complete() bool {
-	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil
+	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil && r.ExposureEV100 != nil
 }
 
 // unitView narrows a read to the listed units. Each object appears once with

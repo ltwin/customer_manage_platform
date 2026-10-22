@@ -1,6 +1,7 @@
 package creativescene
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -57,7 +58,8 @@ type Environment struct {
 	Fog     *Fog    `json:"fog"`
 }
 
-// Sky carries only the fields of its kind.
+// Sky carries only the fields of its kind. The physical sky (sky.go) shares
+// the manual sun angles with the procedural one; the rest are its own.
 type Sky struct {
 	Kind            string   `json:"kind"`
 	SunElevationDeg *float64 `json:"sun_elevation_deg,omitempty"`
@@ -65,6 +67,22 @@ type Sky struct {
 	Turbidity       *float64 `json:"turbidity,omitempty"`
 	HDRI            *string  `json:"hdri,omitempty"`
 	Color           *string  `json:"color,omitempty"`
+	SunMode         *string  `json:"sun_mode,omitempty"`
+	LatitudeDeg     *float64 `json:"latitude_deg,omitempty"`
+	LongitudeDeg    *float64 `json:"longitude_deg,omitempty"`
+	Timezone        *string  `json:"timezone,omitempty"`
+	Place           *string  `json:"place,omitempty"`
+	Date            *string  `json:"date,omitempty"`
+	LocalTime       *string  `json:"local_time,omitempty"`
+	NorthAzimuthDeg *float64 `json:"north_azimuth_deg,omitempty"`
+	AltitudeM       *float64 `json:"altitude_m,omitempty"`
+	AirDensity      *float64 `json:"air_density,omitempty"`
+	DustDensity     *float64 `json:"dust_density,omitempty"`
+	OzoneDensity    *float64 `json:"ozone_density,omitempty"`
+	SunDisc         *bool    `json:"sun_disc,omitempty"`
+	SunSizeDeg      *float64 `json:"sun_size_deg,omitempty"`
+	SunStrength     *float64 `json:"sun_strength,omitempty"`
+	SunTemperatureK *float64 `json:"sun_temperature_k,omitempty"`
 }
 
 type Ambient struct {
@@ -81,13 +99,37 @@ type Fog struct {
 
 // Render is how the scene suggests it be shown, the lit look's exposure
 // compensation in stops (toneMappingExposure = 2^exposure_ev), the renderer
-// of the clay and lit images, and the exports' output resolution. Scenes
-// stored before a field existed read its default (completeRenderSettings).
+// of the clay and lit images, the exports' output resolution, and the
+// default camera's exposure under a physical sky (EV100). Scenes stored
+// before a field existed read its default (completeRenderSettings, and
+// UnmarshalJSON for exposure_ev100, whose zero is a value).
 type Render struct {
-	Mode       string  `json:"mode"`
-	ExposureEV float64 `json:"exposure_ev"`
-	Engine     string  `json:"engine"`
-	Resolution string  `json:"resolution"`
+	Mode          string  `json:"mode"`
+	ExposureEV    float64 `json:"exposure_ev"`
+	Engine        string  `json:"engine"`
+	Resolution    string  `json:"resolution"`
+	ExposureEV100 float64 `json:"exposure_ev100"`
+}
+
+// The default camera's exposure: 15 is a sunny day.
+const (
+	defaultExposureEV100 = 15
+	minExposureEV100     = -10
+	maxExposureEV100     = 20
+)
+
+// UnmarshalJSON reads a render stored before exposure_ev100 existed with its
+// default, strictly like the rest of the snapshot.
+func (r *Render) UnmarshalJSON(raw []byte) error {
+	type plain Render
+	p := plain{ExposureEV100: defaultExposureEV100}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&p); err != nil {
+		return err
+	}
+	*r = Render(p)
+	return nil
 }
 
 // The renderers a scene may choose; path tracing is planned, not yet one of them.
@@ -103,10 +145,11 @@ const defaultResolution = "2k"
 
 // renderPatch is set_render: only what it carries changes.
 type renderPatch struct {
-	Mode       *string  `json:"mode,omitempty"`
-	ExposureEV *float64 `json:"exposure_ev,omitempty"`
-	Engine     *string  `json:"engine,omitempty"`
-	Resolution *string  `json:"resolution,omitempty"`
+	Mode          *string  `json:"mode,omitempty"`
+	ExposureEV    *float64 `json:"exposure_ev,omitempty"`
+	Engine        *string  `json:"engine,omitempty"`
+	Resolution    *string  `json:"resolution,omitempty"`
+	ExposureEV100 *float64 `json:"exposure_ev100,omitempty"`
 }
 
 // completeRenderSettings gives a render stored before engine and resolution existed
@@ -200,6 +243,8 @@ type Camera struct {
 	FStop         *float64  `json:"f_stop,omitempty"`
 	Focus         *float64  `json:"focus,omitempty"`
 	FocusObjectID *string   `json:"focus_object_id,omitempty"`
+	ISO           *float64  `json:"iso,omitempty"`
+	ShutterS      *float64  `json:"shutter_s,omitempty"`
 }
 
 func placementUnit(id string) string { return "object:" + id }
@@ -232,6 +277,9 @@ func decodeScene(p creativecontent.Payload) (Scene, error) {
 		return Scene{}, err
 	}
 	completeRenderSettings(&s.Render)
+	if err := completeSky(&s.Environment.Sky); err != nil {
+		return Scene{}, err
+	}
 	for i := range s.Objects {
 		canonicalNumbers(&s.Objects[i])
 		if c := s.Objects[i].Camera; c != nil {
@@ -479,6 +527,9 @@ func Validate(s Scene) error {
 	if !slices.Contains(resolutions, s.Render.Resolution) {
 		return invalid("输出分辨率 resolution 须为 1k、2k、4k 或 8k")
 	}
+	if !in(s.Render.ExposureEV100, minExposureEV100, maxExposureEV100) {
+		return invalid("默认曝光 exposure_ev100 须在 %d…%d 之间", minExposureEV100, maxExposureEV100)
+	}
 	byID := make(map[string]*Object, len(s.Objects))
 	cameras := 0
 	for i := range s.Objects {
@@ -508,6 +559,9 @@ func Validate(s Scene) error {
 
 func validateEnvironment(e Environment) error {
 	sky := e.Sky
+	if names := sky.physicalOnly(); sky.Kind != SkyPhysical && len(names) > 0 {
+		return invalid("%s 是物理天空（physical）的字段，%s 天空不带", strings.Join(names, "、"), sky.Kind)
+	}
 	switch sky.Kind {
 	case "procedural":
 		if sky.HDRI != nil || sky.Color != nil || !between(sky.SunElevationDeg, -10, 90) || !between(sky.SunAzimuthDeg, 0, 360) || !between(sky.Turbidity, 1, 20) {
@@ -520,6 +574,10 @@ func validateEnvironment(e Environment) error {
 	case "color":
 		if sky.Color == nil || !colorPattern.MatchString(*sky.Color) || sky.HDRI != nil || sky.SunElevationDeg != nil || sky.SunAzimuthDeg != nil || sky.Turbidity != nil {
 			return invalid("纯色天空须有 #rrggbb 颜色，且不带其他字段")
+		}
+	case SkyPhysical:
+		if err := validatePhysicalSky(sky); err != nil {
+			return err
 		}
 	default:
 		return invalid("未知天空类型 %q", sky.Kind)
@@ -759,13 +817,15 @@ func completeCamera(c *Camera) {
 	fill(&c.FStop, 2.8)
 	fill(&c.Focus, 10.0)
 	fill(&c.FocusObjectID, "")
+	fill(&c.ISO, 100.0)
+	fill(&c.ShutterS, 1.0/4000)
 }
 
 // cameraComplete reports whether c already holds every field, so a stored
 // snapshot needs no completion before it is shown.
 func cameraComplete(c Camera) bool {
 	return c.FocalMM != nil && c.SensorMM != nil && c.Aspect != nil && c.Near != nil && c.Far != nil && c.Label != nil &&
-		c.DepthOfField != nil && c.FStop != nil && c.Focus != nil && c.FocusObjectID != nil
+		c.DepthOfField != nil && c.FStop != nil && c.Focus != nil && c.FocusObjectID != nil && c.ISO != nil && c.ShutterS != nil
 }
 
 // mergeCamera is L4 for cameras: p changes only what it carries. Merging
@@ -783,6 +843,8 @@ func mergeCamera(cur, p Camera) Camera {
 	keep(&p.FStop, cur.FStop)
 	keep(&p.Focus, cur.Focus)
 	keep(&p.FocusObjectID, cur.FocusObjectID)
+	keep(&p.ISO, cur.ISO)
+	keep(&p.ShutterS, cur.ShutterS)
 	completeCamera(&p)
 	return p
 }
@@ -858,6 +920,12 @@ func validateCamera(c Camera) error {
 	}
 	if id := *c.FocusObjectID; id != "" && !objectIDPattern.MatchString(id) {
 		return objectIDProblem(id)
+	}
+	if !in(*c.ISO, 25, 102400) {
+		return errors.New("感光度 iso 须在 25…102400 之间")
+	}
+	if !in(*c.ShutterS, 1.0/8000, 30) {
+		return errors.New("快门 shutter_s 须在 0.000125…30 秒（1/8000 s…30 s）之间")
 	}
 	return nil
 }

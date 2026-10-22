@@ -194,7 +194,7 @@ func TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K(t *testing.T) {
 		t.Fatal(err)
 	}
 	// set_render merges by key: the mode and the exposure stay as they were.
-	if render != (creativescene.Render{Mode: "clay", ExposureEV: 0, Engine: creativescene.EngineRealtimeGI, Resolution: "4k"}) {
+	if render != (creativescene.Render{Mode: "clay", ExposureEV: 0, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15}) {
 		t.Fatalf("render %+v", render)
 	}
 	var request creativescene.RenderRequest
