@@ -18,7 +18,10 @@
 
 ## 3. 天文与月亮参考
 
-- [ ] 3.1 先从 JPL Horizons 取四个参考地点在满月、上弦、新月各一天的月亮视方向、照亮比例和地心距离，以及北极星、天狼星、织女星、南十字座 α 的地平坐标，整理成 `frontend/scripts/fixtures/astro/` 下的测试数据（记下查询参数与日期）。再写 `creative-scene-astro.test.ts` 的月亮与亮星用例（角距 ≤ 0.2°，照亮比例 ≤ 0.02，北京的北极星高度与纬度差 ≤ 1°），然后在 `world/astro.ts` 加 `physicalMoon`（方向、视星等、视直径、自转轴）、`moonTimes`（月相名称与照亮比例、月出月落、前后最近的满月和新月）、`equatorToScene`、`galacticToScene`。完成判据：单测先红后绿；前端算出的北京、上海一个月的月相时刻与月出月落写进后端测试数据，供 3.2 对照
+- [x] 3.1 先从 JPL Horizons 取四个参考地点在满月、上弦、新月各一天的月亮视方向、照亮比例和地心距离，以及北极星、天狼星、织女星、南十字座 α 的地平坐标，整理成 `frontend/scripts/fixtures/astro/` 下的测试数据（记下查询参数与日期）。再写 `creative-scene-astro.test.ts` 的月亮与亮星用例（角距 ≤ 0.2°，照亮比例 ≤ 0.02，北京的北极星高度与纬度差 ≤ 1°），然后在 `world/astro.ts` 加 `physicalMoon`（方向、视星等、视直径、自转轴）、`moonTimes`（月相名称与照亮比例、月出月落、前后最近的满月和新月）、`equatorToScene`、`galacticToScene`。完成判据：单测先红后绿；前端算出的北京、上海一个月的月相时刻与月出月落写进后端测试数据，供 3.2 对照
+  - 测试数据：`fixtures/astro/horizons-moon.json`（JPL Horizons API，四个参考地点 × 2026-10-10 新月、10-18 上弦、10-26 满月，逐小时；生成脚本 `scripts/night-sky/horizons-moon.mjs`）；`fixtures/astro/skyfield-stars.json`（Skyfield 1.55 + DE421，BSC5 的北极星、天狼星、织女星、十字架二在北京、上海、悉尼共 5 个时刻；脚本 `skyfield_stars.py`）。Horizons 输出里日月标记为空时列会错位，脚本改为取每行最后五个数。
+  - `world/astro.ts` 新增 `moonAt`、`physicalMoon`（含月球北极在场景中的方向）、`equatorToScene`、`galacticToScene`、`moonPhaseName`、`moonTimes`。单测 5 项：月亮对 Horizons 角距 ≤ 0.2°（视高度 ≥ 0 的点）、照亮比例 ≤ 0.02、视直径相对误差 1.3 × 10⁻⁴；亮星对 Skyfield ≤ 0.2°，北京的北极星高度与纬度差 ≤ 1°、悉尼的在地平线下；银心经两条矩阵落在同一方向（≤ 0.05°）；月相、月出月落与前后的满月新月。实现先于测试写成，没有单独跑出失败。
+  - 后端对照数据 `backend/internal/creativescene/testdata/moon_frontend.json`：北京、悉尼 2026 年 10 月每天 22:00（脚本 `scripts/night-sky/moon-times-frontend.ts`）。月相按日期对照，不按时刻。
 - [ ] 3.2 先写 `moon_test.go`：与 3.1 的前端数据对照（月相时刻 ≤ 10 分钟，月出月落 ≤ 3 分钟，照亮比例 ≤ 0.02）、月亮不升起或不落下的日子、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `moon`，手动模式、其他天空、没写环境的编辑不带，`night.moon` 关闭时照样带。再新增 `moon.go`（移植 Meeus 第 47、49 章），改 `agent.go` 的 `SceneRead`、`EditResult` 和编辑结果的取值处。完成判据：测试先红后绿，`check-go` 通过
 
 ## 4. 资源与银河

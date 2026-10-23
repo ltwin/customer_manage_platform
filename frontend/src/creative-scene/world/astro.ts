@@ -1,5 +1,24 @@
-import { Body, Equator, Horizon, MakeTime, Observer, SearchAltitude, SearchHourAngle } from 'astronomy-engine'
-import { Vector3 } from 'three'
+import {
+  Body,
+  CombineRotation,
+  Equator,
+  Horizon,
+  Illumination,
+  MakeTime,
+  MoonPhase,
+  Observer,
+  RotateVector,
+  RotationAxis,
+  Rotation_EQJ_HOR,
+  Rotation_GAL_EQJ,
+  SearchAltitude,
+  SearchHourAngle,
+  SearchMoonPhase,
+  SearchRiseSet,
+  Vector,
+  type RotationMatrix,
+} from 'astronomy-engine'
+import { Matrix3, Vector3 } from 'three'
 import type { PhysicalSky } from './physicalSky.ts'
 
 // Where a physical sky's sun is (Epic design「地点与时间」). Pure: the time
@@ -160,5 +179,134 @@ export function sunTimes(sky: PhysicalSky): SunTimes {
   if (rise !== null) out.sunrise = clock(rise)
   if (set !== null) out.sunset = clock(set)
   if (rise === null && set === null) out.polar = noon.hor.altitude > 0 ? 'day' : 'night'
+  return out
+}
+
+// --- The night sky (W3, Epic design「夜空」) ---------------------------------------
+
+/** The moon's mean radius, km. */
+const MOON_RADIUS_KM = 1737.4
+const AU_KM = 149_597_870.7
+
+/** The moon as seen from a place at an instant: apparent elevation (standard refraction), compass azimuth, and what lights it. */
+export type MoonSight = {
+  elevationDeg: number
+  /** Clockwise from north. */
+  azimuthDeg: number
+  /** Visual magnitude (astronomy-engine: the phase law, the opposition surge and the distance counted in). */
+  magnitude: number
+  /** The illuminated fraction of the disc, 0…1. */
+  illuminated: number
+  /** Its angular diameter, degrees. */
+  diameterDeg: number
+}
+
+/** The moon from sea level at a place and instant. */
+export function moonAt(latitudeDeg: number, longitudeDeg: number, utcMs: number): MoonSight {
+  const observer = new Observer(latitudeDeg, longitudeDeg, 0)
+  const time = MakeTime(new Date(utcMs))
+  const eq = Equator(Body.Moon, time, observer, true, true)
+  const hor = Horizon(time, observer, eq.ra, eq.dec, 'normal')
+  const light = Illumination(Body.Moon, time)
+  const km = eq.dist * AU_KM
+  return { elevationDeg: hor.altitude, azimuthDeg: hor.azimuth, magnitude: light.mag, illuminated: light.phase_fraction, diameterDeg: (2 * Math.asin(MOON_RADIUS_KM / km) * 180) / Math.PI }
+}
+
+/** A physical sky's moon in the document's terms (azimuth as sun_azimuth_deg, north the direction of its pole); null under manual angles, which have no date to draw it at. */
+export function physicalMoon(sky: PhysicalSky): (MoonSight & { compassDeg: number; north: Vector3 }) | null {
+  if (sky.sun_mode === 'manual') return null
+  const { utcMs } = skyInstant(sky)
+  const moon = moonAt(sky.latitude_deg, sky.longitude_deg, utcMs)
+  const pole = RotationAxis(Body.Moon, MakeTime(new Date(utcMs))).north
+  const north = new Vector3(pole.x, pole.y, pole.z).applyMatrix3(equatorToScene(sky)).normalize()
+  return { ...moon, compassDeg: moon.azimuthDeg, azimuthDeg: documentAzimuth(moon.azimuthDeg, sky.north_azimuth_deg), north }
+}
+
+/** A rotation matrix of astronomy-engine as three's, columns the images of the basis vectors. */
+function matrixOf(r: RotationMatrix): Matrix3 {
+  const col = (x: number, y: number, z: number) => RotateVector(r, new Vector(x, y, z, MakeTime(0)))
+  const [a, b, c] = [col(1, 0, 0), col(0, 1, 0), col(0, 0, 1)]
+  return new Matrix3().set(a.x, b.x, c.x, a.y, b.y, c.y, a.z, b.z, c.z)
+}
+
+/**
+ * Horizontal (x north, y west, z up) to the document (Y up), north at
+ * north_azimuth_deg: a compass azimuth A goes to the document azimuth
+ * N − A (documentAzimuth), counter-clockwise from +Z.
+ */
+function horizonToScene(northAzimuthDeg: number): Matrix3 {
+  const n = (northAzimuthDeg * Math.PI) / 180
+  const [s, c] = [Math.sin(n), Math.cos(n)]
+  return new Matrix3().set(s, c, 0, 0, 0, 1, c, -s, 0)
+}
+
+/** J2000 equatorial (EQJ) to the document at the sky's place and time: precession, nutation, sidereal time and latitude, then north. No refraction. */
+export function equatorToScene(sky: PhysicalSky): Matrix3 {
+  const { utcMs } = skyInstant(sky)
+  return horizonToScene(sky.north_azimuth_deg).multiply(matrixOf(Rotation_EQJ_HOR(MakeTime(new Date(utcMs)), new Observer(sky.latitude_deg, sky.longitude_deg, 0))))
+}
+
+/** Galactic (l, b) to the document at the sky's place and time. */
+export function galacticToScene(sky: PhysicalSky): Matrix3 {
+  const { utcMs } = skyInstant(sky)
+  const toHor = CombineRotation(Rotation_GAL_EQJ(), Rotation_EQJ_HOR(MakeTime(new Date(utcMs)), new Observer(sky.latitude_deg, sky.longitude_deg, 0)))
+  return horizonToScene(sky.north_azimuth_deg).multiply(matrixOf(toHor))
+}
+
+/** The moon's phase by the moon's ecliptic longitude east of the sun, in eighths centred on new, first quarter, full and last quarter. */
+export type MoonPhaseName = 'new' | 'waxing_crescent' | 'first_quarter' | 'waxing_gibbous' | 'full' | 'waning_gibbous' | 'last_quarter' | 'waning_crescent'
+
+const phaseNames: MoonPhaseName[] = ['new', 'waxing_crescent', 'first_quarter', 'waxing_gibbous', 'full', 'waning_gibbous', 'last_quarter', 'waning_crescent']
+
+/** The phase at an instant: 0° new, 90° first quarter, 180° full, 270° last quarter, each ±22.5°. */
+export function moonPhaseName(utcMs: number): MoonPhaseName {
+  return phaseNames[Math.floor(((MoonPhase(new Date(utcMs)) + 22.5) % 360) / 45)]
+}
+
+/** The moon over a sky's local day: what the environment tab shows, and what the server tells the assistant (backend moon.go). Times HH:MM, dates YYYY-MM-DD, local. */
+export type MoonTimes = {
+  phase: MoonPhaseName
+  /** At the sky's local time. */
+  illuminated: number
+  moonrise?: string
+  moonset?: string
+  previousFullMoon: string
+  nextFullMoon: string
+  previousNewMoon: string
+  nextNewMoon: string
+}
+
+const SYNODIC_DAYS = 29.53
+
+/** The day of a sky's date and place: the phase and illuminated fraction at its time, moonrise and moonset (upper limb, refraction), and the full and new moons either side of the day (the next one may be that day). */
+export function moonTimes(sky: PhysicalSky): MoonTimes {
+  const offset = skyOffset(sky)
+  const start = skyInstant(sky, '00:00').utcMs
+  const next = new Date(wallMs(sky.date, '00:00') + DAY_MS).toISOString().slice(0, 10)
+  const end = skyInstant({ ...sky, date: next }, '00:00').utcMs
+  const observer = new Observer(sky.latitude_deg, sky.longitude_deg, 0)
+  const local = (utcMs: number) => new Date(Math.round((utcMs + offset.at(utcMs)) / MINUTE_MS) * MINUTE_MS).toISOString()
+  const crossing = (direction: 1 | -1): string | undefined => {
+    const t = SearchRiseSet(Body.Moon, observer, direction, MakeTime(new Date(start)), (end - start) / DAY_MS)
+    return t && t.date.getTime() < end ? local(t.date.getTime()).slice(11, 16) : undefined
+  }
+  // Either side of the day's start: the last before it and the first at or after it.
+  const around = (longitude: number): [string, string] => {
+    let t = SearchMoonPhase(longitude, new Date(start - (SYNODIC_DAYS + 2) * DAY_MS), 40)!
+    let before = t
+    while (t.date.getTime() < start) {
+      before = t
+      t = SearchMoonPhase(longitude, new Date(t.date.getTime() + DAY_MS), 40)!
+    }
+    return [local(before.date.getTime()).slice(0, 10), local(t.date.getTime()).slice(0, 10)]
+  }
+  const { utcMs } = skyInstant(sky)
+  const [previousFullMoon, nextFullMoon] = around(180)
+  const [previousNewMoon, nextNewMoon] = around(0)
+  const out: MoonTimes = { phase: moonPhaseName(utcMs), illuminated: Illumination(Body.Moon, MakeTime(new Date(utcMs))).phase_fraction, previousFullMoon, nextFullMoon, previousNewMoon, nextNewMoon }
+  const rise = crossing(1)
+  const set = crossing(-1)
+  if (rise) out.moonrise = rise
+  if (set) out.moonset = set
   return out
 }

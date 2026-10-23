@@ -1,0 +1,2142 @@
+{
+ "source": "JPL Horizons API, target 301 (Moon), observer coord@399 geodetic at sea level, QUANTITIES 4 (apparent az/el, refracted), 10 (illuminated %), 20 (range)",
+ "fetched": "2026-10-23",
+ "cases": [
+  {
+   "location": "Shanghai",
+   "latitude": 31.2304,
+   "longitude": 121.4737,
+   "timezone": "Asia/Shanghai",
+   "phase": "new",
+   "date": "2026-10-10",
+   "points": [
+    {
+     "utc": "2026-10-09T16:00:00Z",
+     "azimuth": 34.200547,
+     "elevation": -58.658207,
+     "illuminated": 0.011177399999999999,
+     "distance_km": 389439
+    },
+    {
+     "utc": "2026-10-09T17:00:00Z",
+     "azimuth": 54.586476,
+     "elevation": -50.210476,
+     "illuminated": 0.0099901,
+     "distance_km": 389043
+    },
+    {
+     "utc": "2026-10-09T18:00:00Z",
+     "azimuth": 68.36757,
+     "elevation": -39.555926,
+     "illuminated": 0.0089149,
+     "distance_km": 388352
+    },
+    {
+     "utc": "2026-10-09T19:00:00Z",
+     "azimuth": 78.553369,
+     "elevation": -27.885359,
+     "illuminated": 0.007960700000000001,
+     "distance_km": 387420
+    },
+    {
+     "utc": "2026-10-09T20:00:00Z",
+     "azimuth": 86.982728,
+     "elevation": -15.760775,
+     "illuminated": 0.0071306,
+     "distance_km": 386317
+    },
+    {
+     "utc": "2026-10-09T21:00:00Z",
+     "azimuth": 94.746981,
+     "elevation": -3.495867,
+     "illuminated": 0.006422,
+     "distance_km": 385121
+    },
+    {
+     "utc": "2026-10-09T22:00:00Z",
+     "azimuth": 102.631647,
+     "elevation": 8.131498,
+     "illuminated": 0.0058277,
+     "distance_km": 383921
+    },
+    {
+     "utc": "2026-10-09T23:00:00Z",
+     "azimuth": 111.387967,
+     "elevation": 19.864301,
+     "illuminated": 0.0053366,
+     "distance_km": 382805
+    },
+    {
+     "utc": "2026-10-10T00:00:00Z",
+     "azimuth": 121.933109,
+     "elevation": 30.886335,
+     "illuminated": 0.0049345,
+     "distance_km": 381855
+    },
+    {
+     "utc": "2026-10-10T01:00:00Z",
+     "azimuth": 135.483447,
+     "elevation": 40.513812,
+     "illuminated": 0.0046051,
+     "distance_km": 381145
+    },
+    {
+     "utc": "2026-10-10T02:00:00Z",
+     "azimuth": 153.307267,
+     "elevation": 47.659378,
+     "illuminated": 0.0043307,
+     "distance_km": 380733
+    },
+    {
+     "utc": "2026-10-10T03:00:00Z",
+     "azimuth": 175.258241,
+     "elevation": 50.859016,
+     "illuminated": 0.0040933,
+     "distance_km": 380656
+    },
+    {
+     "utc": "2026-10-10T04:00:00Z",
+     "azimuth": 197.928384,
+     "elevation": 49.141608,
+     "illuminated": 0.0038755,
+     "distance_km": 380932
+    },
+    {
+     "utc": "2026-10-10T05:00:00Z",
+     "azimuth": 217.136172,
+     "elevation": 43.048618,
+     "illuminated": 0.0036618,
+     "distance_km": 381552
+    },
+    {
+     "utc": "2026-10-10T06:00:00Z",
+     "azimuth": 231.798318,
+     "elevation": 34.02201,
+     "illuminated": 0.0034397,
+     "distance_km": 382485
+    },
+    {
+     "utc": "2026-10-10T07:00:00Z",
+     "azimuth": 242.964471,
+     "elevation": 23.293397,
+     "illuminated": 0.0032013000000000002,
+     "distance_km": 383681
+    },
+    {
+     "utc": "2026-10-10T08:00:00Z",
+     "azimuth": 251.914318,
+     "elevation": 11.63967,
+     "illuminated": 0.0029434,
+     "distance_km": 385072
+    },
+    {
+     "utc": "2026-10-10T09:00:00Z",
+     "azimuth": 259.623658,
+     "elevation": -0.058742,
+     "illuminated": 0.0026688000000000003,
+     "distance_km": 386577
+    },
+    {
+     "utc": "2026-10-10T10:00:00Z",
+     "azimuth": 266.831741,
+     "elevation": -12.44365,
+     "illuminated": 0.0023854,
+     "distance_km": 388111
+    },
+    {
+     "utc": "2026-10-10T11:00:00Z",
+     "azimuth": 274.219691,
+     "elevation": -24.927887,
+     "illuminated": 0.0021054,
+     "distance_km": 389585
+    },
+    {
+     "utc": "2026-10-10T12:00:00Z",
+     "azimuth": 282.645927,
+     "elevation": -37.244111,
+     "illuminated": 0.0018443,
+     "distance_km": 390917
+    },
+    {
+     "utc": "2026-10-10T13:00:00Z",
+     "azimuth": 293.579181,
+     "elevation": -49.070813,
+     "illuminated": 0.0016184,
+     "distance_km": 392035
+    },
+    {
+     "utc": "2026-10-10T14:00:00Z",
+     "azimuth": 310.078438,
+     "elevation": -59.696009,
+     "illuminated": 0.0014437,
+     "distance_km": 392879
+    },
+    {
+     "utc": "2026-10-10T15:00:00Z",
+     "azimuth": 337.907149,
+     "elevation": -67.236695,
+     "illuminated": 0.0013335,
+     "distance_km": 393410
+    }
+   ]
+  },
+  {
+   "location": "Shanghai",
+   "latitude": 31.2304,
+   "longitude": 121.4737,
+   "timezone": "Asia/Shanghai",
+   "phase": "first-quarter",
+   "date": "2026-10-18",
+   "points": [
+    {
+     "utc": "2026-10-17T16:00:00Z",
+     "azimuth": 252.42169,
+     "elevation": -23.710932,
+     "illuminated": 0.39977559999999995,
+     "distance_km": 406942
+    },
+    {
+     "utc": "2026-10-17T17:00:00Z",
+     "azimuth": 258.275548,
+     "elevation": -35.575039,
+     "illuminated": 0.4042675,
+     "distance_km": 408052
+    },
+    {
+     "utc": "2026-10-17T18:00:00Z",
+     "azimuth": 264.252309,
+     "elevation": -47.666262,
+     "illuminated": 0.40912930000000003,
+     "distance_km": 409017
+    },
+    {
+     "utc": "2026-10-17T19:00:00Z",
+     "azimuth": 271.2748,
+     "elevation": -59.863718,
+     "illuminated": 0.4142957,
+     "distance_km": 409773
+    },
+    {
+     "utc": "2026-10-17T20:00:00Z",
+     "azimuth": 282.386056,
+     "elevation": -71.967969,
+     "illuminated": 0.41968330000000004,
+     "distance_km": 410271
+    },
+    {
+     "utc": "2026-10-17T21:00:00Z",
+     "azimuth": 320.762641,
+     "elevation": -82.705328,
+     "illuminated": 0.4251962,
+     "distance_km": 410476
+    },
+    {
+     "utc": "2026-10-17T22:00:00Z",
+     "azimuth": 60.159569,
+     "elevation": -79.378898,
+     "illuminated": 0.4307315,
+     "distance_km": 410371
+    },
+    {
+     "utc": "2026-10-17T23:00:00Z",
+     "azimuth": 81.599093,
+     "elevation": -67.712576,
+     "illuminated": 0.436185,
+     "distance_km": 409960
+    },
+    {
+     "utc": "2026-10-18T00:00:00Z",
+     "azimuth": 90.545453,
+     "elevation": -55.486237,
+     "illuminated": 0.44145740000000006,
+     "distance_km": 409263
+    },
+    {
+     "utc": "2026-10-18T01:00:00Z",
+     "azimuth": 96.995617,
+     "elevation": -43.234351,
+     "illuminated": 0.44645989999999997,
+     "distance_km": 408320
+    },
+    {
+     "utc": "2026-10-18T02:00:00Z",
+     "azimuth": 102.808956,
+     "elevation": -31.102899,
+     "illuminated": 0.4511196,
+     "distance_km": 407185
+    },
+    {
+     "utc": "2026-10-18T03:00:00Z",
+     "azimuth": 108.681955,
+     "elevation": -19.207665,
+     "illuminated": 0.45538460000000003,
+     "distance_km": 405924
+    },
+    {
+     "utc": "2026-10-18T04:00:00Z",
+     "azimuth": 115.049318,
+     "elevation": -7.691108,
+     "illuminated": 0.45922739999999995,
+     "distance_km": 404614
+    },
+    {
+     "utc": "2026-10-18T05:00:00Z",
+     "azimuth": 122.306663,
+     "elevation": 2.845829,
+     "illuminated": 0.4626479,
+     "distance_km": 403332
+    },
+    {
+     "utc": "2026-10-18T06:00:00Z",
+     "azimuth": 130.886895,
+     "elevation": 12.729926,
+     "illuminated": 0.4656744,
+     "distance_km": 402156
+    },
+    {
+     "utc": "2026-10-18T07:00:00Z",
+     "azimuth": 141.257412,
+     "elevation": 21.445162,
+     "illuminated": 0.468362,
+     "distance_km": 401160
+    },
+    {
+     "utc": "2026-10-18T08:00:00Z",
+     "azimuth": 153.787338,
+     "elevation": 28.258725,
+     "illuminated": 0.4707902,
+     "distance_km": 400402
+    },
+    {
+     "utc": "2026-10-18T09:00:00Z",
+     "azimuth": 168.407961,
+     "elevation": 32.435195,
+     "illuminated": 0.47305729999999996,
+     "distance_km": 399928
+    },
+    {
+     "utc": "2026-10-18T10:00:00Z",
+     "azimuth": 184.224098,
+     "elevation": 33.360833,
+     "illuminated": 0.47527369999999997,
+     "distance_km": 399765
+    },
+    {
+     "utc": "2026-10-18T11:00:00Z",
+     "azimuth": 199.678448,
+     "elevation": 30.875322,
+     "illuminated": 0.4775541,
+     "distance_km": 399919
+    },
+    {
+     "utc": "2026-10-18T12:00:00Z",
+     "azimuth": 213.439679,
+     "elevation": 25.380553,
+     "illuminated": 0.4800085,
+     "distance_km": 400374
+    },
+    {
+     "utc": "2026-10-18T13:00:00Z",
+     "azimuth": 225.025078,
+     "elevation": 17.583732,
+     "illuminated": 0.4827346,
+     "distance_km": 401096
+    },
+    {
+     "utc": "2026-10-18T14:00:00Z",
+     "azimuth": 234.628813,
+     "elevation": 8.200012,
+     "illuminated": 0.4858107,
+     "distance_km": 402031
+    },
+    {
+     "utc": "2026-10-18T15:00:00Z",
+     "azimuth": 242.706855,
+     "elevation": -1.800706,
+     "illuminated": 0.48929049999999996,
+     "distance_km": 403113
+    }
+   ]
+  },
+  {
+   "location": "Shanghai",
+   "latitude": 31.2304,
+   "longitude": 121.4737,
+   "timezone": "Asia/Shanghai",
+   "phase": "full",
+   "date": "2026-10-26",
+   "points": [
+    {
+     "utc": "2026-10-25T16:00:00Z",
+     "azimuth": 218.500807,
+     "elevation": 68.282035,
+     "illuminated": 0.994978,
+     "distance_km": 364835
+    },
+    {
+     "utc": "2026-10-25T17:00:00Z",
+     "azimuth": 242.588719,
+     "elevation": 58.64739,
+     "illuminated": 0.9952951,
+     "distance_km": 365141
+    },
+    {
+     "utc": "2026-10-25T18:00:00Z",
+     "azimuth": 256.338893,
+     "elevation": 47.019739,
+     "illuminated": 0.9956255,
+     "distance_km": 365748
+    },
+    {
+     "utc": "2026-10-25T19:00:00Z",
+     "azimuth": 265.866876,
+     "elevation": 34.780748,
+     "illuminated": 0.9959782,
+     "distance_km": 366604
+    },
+    {
+     "utc": "2026-10-25T20:00:00Z",
+     "azimuth": 273.676818,
+     "elevation": 22.435206,
+     "illuminated": 0.9963559,
+     "distance_km": 367641
+    },
+    {
+     "utc": "2026-10-25T21:00:00Z",
+     "azimuth": 280.943679,
+     "elevation": 10.267563,
+     "illuminated": 0.9967545,
+     "distance_km": 368780
+    },
+    {
+     "utc": "2026-10-25T22:00:00Z",
+     "azimuth": 288.396901,
+     "elevation": -1.036547,
+     "illuminated": 0.9971639,
+     "distance_km": 369938
+    },
+    {
+     "utc": "2026-10-25T23:00:00Z",
+     "azimuth": 296.656034,
+     "elevation": -12.307379,
+     "illuminated": 0.9975687000000001,
+     "distance_km": 371029
+    },
+    {
+     "utc": "2026-10-26T00:00:00Z",
+     "azimuth": 306.385012,
+     "elevation": -22.653033,
+     "illuminated": 0.9979501000000001,
+     "distance_km": 371977
+    },
+    {
+     "utc": "2026-10-26T01:00:00Z",
+     "azimuth": 318.331751,
+     "elevation": -31.564488,
+     "illuminated": 0.9982882,
+     "distance_km": 372711
+    },
+    {
+     "utc": "2026-10-26T02:00:00Z",
+     "azimuth": 333.131699,
+     "elevation": -38.288486,
+     "illuminated": 0.9985636999999999,
+     "distance_km": 373177
+    },
+    {
+     "utc": "2026-10-26T03:00:00Z",
+     "azimuth": 350.652462,
+     "elevation": -41.893949,
+     "illuminated": 0.9987605,
+     "distance_km": 373338
+    },
+    {
+     "utc": "2026-10-26T04:00:00Z",
+     "azimuth": 9.255145,
+     "elevation": -41.67413,
+     "illuminated": 0.9988670000000001,
+     "distance_km": 373175
+    },
+    {
+     "utc": "2026-10-26T05:00:00Z",
+     "azimuth": 26.471894,
+     "elevation": -37.678827,
+     "illuminated": 0.9988769999999999,
+     "distance_km": 372690
+    },
+    {
+     "utc": "2026-10-26T06:00:00Z",
+     "azimuth": 40.834807,
+     "elevation": -30.67069,
+     "illuminated": 0.9987909,
+     "distance_km": 371902
+    },
+    {
+     "utc": "2026-10-26T07:00:00Z",
+     "azimuth": 52.335094,
+     "elevation": -21.572261,
+     "illuminated": 0.9986145000000001,
+     "distance_km": 370853
+    },
+    {
+     "utc": "2026-10-26T08:00:00Z",
+     "azimuth": 61.62756,
+     "elevation": -11.104622,
+     "illuminated": 0.9983587,
+     "distance_km": 369597
+    },
+    {
+     "utc": "2026-10-26T09:00:00Z",
+     "azimuth": 69.42621,
+     "elevation": 0.151015,
+     "illuminated": 0.9980379,
+     "distance_km": 368204
+    },
+    {
+     "utc": "2026-10-26T10:00:00Z",
+     "azimuth": 76.337993,
+     "elevation": 11.627978,
+     "illuminated": 0.9976684,
+     "distance_km": 366753
+    },
+    {
+     "utc": "2026-10-26T11:00:00Z",
+     "azimuth": 82.90074,
+     "elevation": 23.903796,
+     "illuminated": 0.9972667,
+     "distance_km": 365325
+    },
+    {
+     "utc": "2026-10-26T12:00:00Z",
+     "azimuth": 89.713513,
+     "elevation": 36.416543,
+     "illuminated": 0.9968474999999999,
+     "distance_km": 364004
+    },
+    {
+     "utc": "2026-10-26T13:00:00Z",
+     "azimuth": 97.725836,
+     "elevation": 48.971677,
+     "illuminated": 0.9964225999999999,
+     "distance_km": 362863
+    },
+    {
+     "utc": "2026-10-26T14:00:00Z",
+     "azimuth": 109.12491,
+     "elevation": 61.261719,
+     "illuminated": 0.9959999,
+     "distance_km": 361969
+    },
+    {
+     "utc": "2026-10-26T15:00:00Z",
+     "azimuth": 131.0135,
+     "elevation": 72.346689,
+     "illuminated": 0.9955825,
+     "distance_km": 361370
+    }
+   ]
+  },
+  {
+   "location": "Beijing",
+   "latitude": 39.9042,
+   "longitude": 116.4074,
+   "timezone": "Asia/Shanghai",
+   "phase": "new",
+   "date": "2026-10-10",
+   "points": [
+    {
+     "utc": "2026-10-09T16:00:00Z",
+     "azimuth": 19.955862,
+     "elevation": -52.861338,
+     "illuminated": 0.0113036,
+     "distance_km": 389079
+    },
+    {
+     "utc": "2026-10-09T17:00:00Z",
+     "azimuth": 41.064721,
+     "elevation": -47.464784,
+     "illuminated": 0.0101359,
+     "distance_km": 388843
+    },
+    {
+     "utc": "2026-10-09T18:00:00Z",
+     "azimuth": 57.521124,
+     "elevation": -39.28821,
+     "illuminated": 0.0090681,
+     "distance_km": 388330
+    },
+    {
+     "utc": "2026-10-09T19:00:00Z",
+     "azimuth": 70.443163,
+     "elevation": -29.53536,
+     "illuminated": 0.0081104,
+     "distance_km": 387583
+    },
+    {
+     "utc": "2026-10-09T20:00:00Z",
+     "azimuth": 81.235253,
+     "elevation": -18.965161,
+     "illuminated": 0.0072673,
+     "distance_km": 386658
+    },
+    {
+     "utc": "2026-10-09T21:00:00Z",
+     "azimuth": 90.977999,
+     "elevation": -8.048054,
+     "illuminated": 0.0065383,
+     "distance_km": 385626
+    },
+    {
+     "utc": "2026-10-09T22:00:00Z",
+     "azimuth": 100.491374,
+     "elevation": 2.494405,
+     "illuminated": 0.005918099999999999,
+     "distance_km": 384563
+    },
+    {
+     "utc": "2026-10-09T23:00:00Z",
+     "azimuth": 110.489353,
+     "elevation": 12.898599,
+     "illuminated": 0.0053979,
+     "distance_km": 383547
+    },
+    {
+     "utc": "2026-10-10T00:00:00Z",
+     "azimuth": 121.699791,
+     "elevation": 22.755508,
+     "illuminated": 0.0049655,
+     "distance_km": 382656
+    },
+    {
+     "utc": "2026-10-10T01:00:00Z",
+     "azimuth": 134.902365,
+     "elevation": 31.372923,
+     "illuminated": 0.0046066,
+     "distance_km": 381959
+    },
+    {
+     "utc": "2026-10-10T02:00:00Z",
+     "azimuth": 150.751789,
+     "elevation": 37.967613,
+     "illuminated": 0.0043055,
+     "distance_km": 381513
+    },
+    {
+     "utc": "2026-10-10T03:00:00Z",
+     "azimuth": 169.18381,
+     "elevation": 41.603105,
+     "illuminated": 0.0040462,
+     "distance_km": 381358
+    },
+    {
+     "utc": "2026-10-10T04:00:00Z",
+     "azimuth": 188.729686,
+     "elevation": 41.55642,
+     "illuminated": 0.0038127,
+     "distance_km": 381516
+    },
+    {
+     "utc": "2026-10-10T05:00:00Z",
+     "azimuth": 207.082389,
+     "elevation": 37.829057,
+     "illuminated": 0.0035909,
+     "distance_km": 381987
+    },
+    {
+     "utc": "2026-10-10T06:00:00Z",
+     "azimuth": 222.791672,
+     "elevation": 31.142087,
+     "illuminated": 0.0033689,
+     "distance_km": 382751
+    },
+    {
+     "utc": "2026-10-10T07:00:00Z",
+     "azimuth": 235.803088,
+     "elevation": 22.422514,
+     "illuminated": 0.0031385000000000002,
+     "distance_km": 383768
+    },
+    {
+     "utc": "2026-10-10T08:00:00Z",
+     "azimuth": 246.764113,
+     "elevation": 12.440839,
+     "illuminated": 0.002896,
+     "distance_km": 384983
+    },
+    {
+     "utc": "2026-10-10T09:00:00Z",
+     "azimuth": 256.4353,
+     "elevation": 1.908424,
+     "illuminated": 0.0026423,
+     "distance_km": 386327
+    },
+    {
+     "utc": "2026-10-10T10:00:00Z",
+     "azimuth": 265.516808,
+     "elevation": -8.910487,
+     "illuminated": 0.0023832000000000002,
+     "distance_km": 387723
+    },
+    {
+     "utc": "2026-10-10T11:00:00Z",
+     "azimuth": 274.688858,
+     "elevation": -20.163022,
+     "illuminated": 0.0021284,
+     "distance_km": 389094
+    },
+    {
+     "utc": "2026-10-10T12:00:00Z",
+     "azimuth": 284.745122,
+     "elevation": -31.226974,
+     "illuminated": 0.0018908,
+     "distance_km": 390363
+    },
+    {
+     "utc": "2026-10-10T13:00:00Z",
+     "azimuth": 296.810396,
+     "elevation": -41.718267,
+     "illuminated": 0.0016847000000000001,
+     "distance_km": 391461
+    },
+    {
+     "utc": "2026-10-10T14:00:00Z",
+     "azimuth": 312.629932,
+     "elevation": -50.978717,
+     "illuminated": 0.0015244,
+     "distance_km": 392331
+    },
+    {
+     "utc": "2026-10-10T15:00:00Z",
+     "azimuth": 334.425035,
+     "elevation": -57.7802,
+     "illuminated": 0.0014225,
+     "distance_km": 392929
+    }
+   ]
+  },
+  {
+   "location": "Beijing",
+   "latitude": 39.9042,
+   "longitude": 116.4074,
+   "timezone": "Asia/Shanghai",
+   "phase": "first-quarter",
+   "date": "2026-10-18",
+   "points": [
+    {
+     "utc": "2026-10-17T16:00:00Z",
+     "azimuth": 253.473455,
+     "elevation": -22.31415,
+     "illuminated": 0.4002339,
+     "distance_km": 406798
+    },
+    {
+     "utc": "2026-10-17T17:00:00Z",
+     "azimuth": 261.629434,
+     "elevation": -33.039405,
+     "illuminated": 0.4045312,
+     "distance_km": 407818
+    },
+    {
+     "utc": "2026-10-17T18:00:00Z",
+     "azimuth": 270.440446,
+     "elevation": -43.970418,
+     "illuminated": 0.40917760000000003,
+     "distance_km": 408730
+    },
+    {
+     "utc": "2026-10-17T19:00:00Z",
+     "azimuth": 281.208272,
+     "elevation": -54.84778,
+     "illuminated": 0.41412109999999996,
+     "distance_km": 409473
+    },
+    {
+     "utc": "2026-10-17T20:00:00Z",
+     "azimuth": 297.072084,
+     "elevation": -65.170543,
+     "illuminated": 0.4192919,
+     "distance_km": 409999
+    },
+    {
+     "utc": "2026-10-17T21:00:00Z",
+     "azimuth": 326.705918,
+     "elevation": -73.391835,
+     "illuminated": 0.424607,
+     "distance_km": 410270
+    },
+    {
+     "utc": "2026-10-17T22:00:00Z",
+     "azimuth": 16.964484,
+     "elevation": -74.959054,
+     "illuminated": 0.42997529999999995,
+     "distance_km": 410266
+    },
+    {
+     "utc": "2026-10-17T23:00:00Z",
+     "azimuth": 54.303453,
+     "elevation": -68.287648,
+     "illuminated": 0.43530250000000004,
+     "distance_km": 409984
+    },
+    {
+     "utc": "2026-10-18T00:00:00Z",
+     "azimuth": 73.372462,
+     "elevation": -58.34803,
+     "illuminated": 0.4404971,
+     "distance_km": 409437
+    },
+    {
+     "utc": "2026-10-18T01:00:00Z",
+     "azimuth": 85.310036,
+     "elevation": -47.504469,
+     "illuminated": 0.4454753,
+     "distance_km": 408654
+    },
+    {
+     "utc": "2026-10-18T02:00:00Z",
+     "azimuth": 94.54237,
+     "elevation": -36.454297,
+     "illuminated": 0.4501663,
+     "distance_km": 407681
+    },
+    {
+     "utc": "2026-10-18T03:00:00Z",
+     "azimuth": 102.774042,
+     "elevation": -25.498906,
+     "illuminated": 0.4545167,
+     "distance_km": 406572
+    },
+    {
+     "utc": "2026-10-18T04:00:00Z",
+     "azimuth": 110.846534,
+     "elevation": -14.85303,
+     "illuminated": 0.45849429999999997,
+     "distance_km": 405395
+    },
+    {
+     "utc": "2026-10-18T05:00:00Z",
+     "azimuth": 119.30391,
+     "elevation": -4.738735,
+     "illuminated": 0.4620909,
+     "distance_km": 404219
+    },
+    {
+     "utc": "2026-10-18T06:00:00Z",
+     "azimuth": 128.582725,
+     "elevation": 4.113783,
+     "illuminated": 0.4653233,
+     "distance_km": 403114
+    },
+    {
+     "utc": "2026-10-18T07:00:00Z",
+     "azimuth": 139.05894,
+     "elevation": 12.137103,
+     "illuminated": 0.46823329999999996,
+     "distance_km": 402148
+    },
+    {
+     "utc": "2026-10-18T08:00:00Z",
+     "azimuth": 150.993688,
+     "elevation": 18.624647,
+     "illuminated": 0.47088500000000005,
+     "distance_km": 401378
+    },
+    {
+     "utc": "2026-10-18T09:00:00Z",
+     "azimuth": 164.380147,
+     "elevation": 22.983345,
+     "illuminated": 0.4733613,
+     "distance_km": 400851
+    },
+    {
+     "utc": "2026-10-18T10:00:00Z",
+     "azimuth": 178.769275,
+     "elevation": 24.743065,
+     "illuminated": 0.4757578,
+     "distance_km": 400595
+    },
+    {
+     "utc": "2026-10-18T11:00:00Z",
+     "azimuth": 193.295466,
+     "elevation": 23.682498,
+     "illuminated": 0.4781765,
+     "distance_km": 400624
+    },
+    {
+     "utc": "2026-10-18T12:00:00Z",
+     "azimuth": 207.035104,
+     "elevation": 19.936129,
+     "illuminated": 0.4807177,
+     "distance_km": 400928
+    },
+    {
+     "utc": "2026-10-18T13:00:00Z",
+     "azimuth": 219.420708,
+     "elevation": 13.927085,
+     "illuminated": 0.4834733,
+     "distance_km": 401485
+    },
+    {
+     "utc": "2026-10-18T14:00:00Z",
+     "azimuth": 230.352893,
+     "elevation": 6.215576,
+     "illuminated": 0.48652009999999996,
+     "distance_km": 402251
+    },
+    {
+     "utc": "2026-10-18T15:00:00Z",
+     "azimuth": 240.053706,
+     "elevation": -2.332462,
+     "illuminated": 0.48991439999999997,
+     "distance_km": 403171
+    }
+   ]
+  },
+  {
+   "location": "Beijing",
+   "latitude": 39.9042,
+   "longitude": 116.4074,
+   "timezone": "Asia/Shanghai",
+   "phase": "full",
+   "date": "2026-10-26",
+   "points": [
+    {
+     "utc": "2026-10-25T16:00:00Z",
+     "azimuth": 198.225273,
+     "elevation": 62.452087,
+     "illuminated": 0.9951064,
+     "distance_km": 365100
+    },
+    {
+     "utc": "2026-10-25T17:00:00Z",
+     "azimuth": 224.349255,
+     "elevation": 56.755236,
+     "illuminated": 0.9954409,
+     "distance_km": 365251
+    },
+    {
+     "utc": "2026-10-25T18:00:00Z",
+     "azimuth": 242.686751,
+     "elevation": 47.865969,
+     "illuminated": 0.9957784,
+     "distance_km": 365684
+    },
+    {
+     "utc": "2026-10-25T19:00:00Z",
+     "azimuth": 255.969325,
+     "elevation": 37.522003,
+     "illuminated": 0.9961281,
+     "distance_km": 366359
+    },
+    {
+     "utc": "2026-10-25T20:00:00Z",
+     "azimuth": 266.602189,
+     "elevation": 26.614385,
+     "illuminated": 0.996494,
+     "distance_km": 367220
+    },
+    {
+     "utc": "2026-10-25T21:00:00Z",
+     "azimuth": 276.021636,
+     "elevation": 15.625993,
+     "illuminated": 0.9968741,
+     "distance_km": 368198
+    },
+    {
+     "utc": "2026-10-25T22:00:00Z",
+     "azimuth": 285.125528,
+     "elevation": 4.943823,
+     "illuminated": 0.9972611,
+     "distance_km": 369220
+    },
+    {
+     "utc": "2026-10-25T23:00:00Z",
+     "azimuth": 294.576988,
+     "elevation": -4.854463,
+     "illuminated": 0.9976425,
+     "distance_km": 370210
+    },
+    {
+     "utc": "2026-10-26T00:00:00Z",
+     "azimuth": 304.955498,
+     "elevation": -14.290118,
+     "illuminated": 0.9980028,
+     "distance_km": 371094
+    },
+    {
+     "utc": "2026-10-26T01:00:00Z",
+     "azimuth": 316.794493,
+     "elevation": -22.455019,
+     "illuminated": 0.9983245,
+     "distance_km": 371808
+    },
+    {
+     "utc": "2026-10-26T02:00:00Z",
+     "azimuth": 330.479019,
+     "elevation": -28.792719,
+     "illuminated": 0.9985903,
+     "distance_km": 372297
+    },
+    {
+     "utc": "2026-10-26T03:00:00Z",
+     "azimuth": 345.962702,
+     "elevation": -32.666077,
+     "illuminated": 0.9987851000000001,
+     "distance_km": 372523
+    },
+    {
+     "utc": "2026-10-26T04:00:00Z",
+     "azimuth": 2.463953,
+     "elevation": -33.550144,
+     "illuminated": 0.9988971999999999,
+     "distance_km": 372461
+    },
+    {
+     "utc": "2026-10-26T05:00:00Z",
+     "azimuth": 18.630963,
+     "elevation": -31.305197,
+     "illuminated": 0.9989197,
+     "distance_km": 372107
+    },
+    {
+     "utc": "2026-10-26T06:00:00Z",
+     "azimuth": 33.290902,
+     "elevation": -26.265472,
+     "illuminated": 0.9988511,
+     "distance_km": 371473
+    },
+    {
+     "utc": "2026-10-26T07:00:00Z",
+     "azimuth": 45.996956,
+     "elevation": -19.034638,
+     "illuminated": 0.9986951000000001,
+     "distance_km": 370590
+    },
+    {
+     "utc": "2026-10-26T08:00:00Z",
+     "azimuth": 56.922997,
+     "elevation": -10.22282,
+     "illuminated": 0.99846,
+     "distance_km": 369503
+    },
+    {
+     "utc": "2026-10-26T09:00:00Z",
+     "azimuth": 66.521573,
+     "elevation": -0.325996,
+     "illuminated": 0.9981577,
+     "distance_km": 368270
+    },
+    {
+     "utc": "2026-10-26T10:00:00Z",
+     "azimuth": 75.314605,
+     "elevation": 9.754842,
+     "illuminated": 0.9978027,
+     "distance_km": 366960
+    },
+    {
+     "utc": "2026-10-26T11:00:00Z",
+     "azimuth": 83.851433,
+     "elevation": 20.783797,
+     "illuminated": 0.9974095,
+     "distance_km": 365646
+    },
+    {
+     "utc": "2026-10-26T12:00:00Z",
+     "azimuth": 92.784356,
+     "elevation": 32.051413,
+     "illuminated": 0.9969922,
+     "distance_km": 364402
+    },
+    {
+     "utc": "2026-10-26T13:00:00Z",
+     "azimuth": 103.076448,
+     "elevation": 43.258506,
+     "illuminated": 0.9965624,
+     "distance_km": 363299
+    },
+    {
+     "utc": "2026-10-26T14:00:00Z",
+     "azimuth": 116.485601,
+     "elevation": 53.959853,
+     "illuminated": 0.9961285,
+     "distance_km": 362398
+    },
+    {
+     "utc": "2026-10-26T15:00:00Z",
+     "azimuth": 136.565367,
+     "elevation": 63.200685,
+     "illuminated": 0.9956946999999999,
+     "distance_km": 361749
+    }
+   ]
+  },
+  {
+   "location": "Chengdu",
+   "latitude": 30.6598,
+   "longitude": 104.0633,
+   "timezone": "Asia/Shanghai",
+   "phase": "new",
+   "date": "2026-10-10",
+   "points": [
+    {
+     "utc": "2026-10-09T16:00:00Z",
+     "azimuth": 359.010087,
+     "elevation": -63.544919,
+     "illuminated": 0.011621699999999999,
+     "distance_km": 389701
+    },
+    {
+     "utc": "2026-10-09T17:00:00Z",
+     "azimuth": 29.906286,
+     "elevation": -60.642978,
+     "illuminated": 0.0103824,
+     "distance_km": 389699
+    },
+    {
+     "utc": "2026-10-09T18:00:00Z",
+     "azimuth": 52.133612,
+     "elevation": -52.671378,
+     "illuminated": 0.0092356,
+     "distance_km": 389362
+    },
+    {
+     "utc": "2026-10-09T19:00:00Z",
+     "azimuth": 66.812552,
+     "elevation": -42.166199,
+     "illuminated": 0.0081969,
+     "distance_km": 388721
+    },
+    {
+     "utc": "2026-10-09T20:00:00Z",
+     "azimuth": 77.352794,
+     "elevation": -30.518144,
+     "illuminated": 0.007275899999999999,
+     "distance_km": 387827
+    },
+    {
+     "utc": "2026-10-09T21:00:00Z",
+     "azimuth": 85.865324,
+     "elevation": -18.360387,
+     "illuminated": 0.0064759,
+     "distance_km": 386745
+    },
+    {
+     "utc": "2026-10-09T22:00:00Z",
+     "azimuth": 93.552416,
+     "elevation": -6.025956,
+     "illuminated": 0.005795,
+     "distance_km": 385554
+    },
+    {
+     "utc": "2026-10-09T23:00:00Z",
+     "azimuth": 101.23044,
+     "elevation": 5.747637,
+     "illuminated": 0.005226499999999999,
+     "distance_km": 384341
+    },
+    {
+     "utc": "2026-10-10T00:00:00Z",
+     "azimuth": 109.636671,
+     "elevation": 17.612829,
+     "illuminated": 0.0047598,
+     "distance_km": 383194
+    },
+    {
+     "utc": "2026-10-10T01:00:00Z",
+     "azimuth": 119.642463,
+     "elevation": 28.888478,
+     "illuminated": 0.0043813,
+     "distance_km": 382199
+    },
+    {
+     "utc": "2026-10-10T02:00:00Z",
+     "azimuth": 132.415706,
+     "elevation": 38.931813,
+     "illuminated": 0.0040755999999999995,
+     "distance_km": 381433
+    },
+    {
+     "utc": "2026-10-10T03:00:00Z",
+     "azimuth": 149.31111,
+     "elevation": 46.744159,
+     "illuminated": 0.0038257,
+     "distance_km": 380955
+    },
+    {
+     "utc": "2026-10-10T04:00:00Z",
+     "azimuth": 170.68435,
+     "elevation": 50.878008,
+     "illuminated": 0.0036144,
+     "distance_km": 380809
+    },
+    {
+     "utc": "2026-10-10T05:00:00Z",
+     "azimuth": 193.714543,
+     "elevation": 50.130994,
+     "illuminated": 0.0034251,
+     "distance_km": 381016
+    },
+    {
+     "utc": "2026-10-10T06:00:00Z",
+     "azimuth": 213.848383,
+     "elevation": 44.743011,
+     "illuminated": 0.0032427,
+     "distance_km": 381572
+    },
+    {
+     "utc": "2026-10-10T07:00:00Z",
+     "azimuth": 229.315779,
+     "elevation": 36.114873,
+     "illuminated": 0.0030551,
+     "distance_km": 382452
+    },
+    {
+     "utc": "2026-10-10T08:00:00Z",
+     "azimuth": 240.978095,
+     "elevation": 25.581879,
+     "illuminated": 0.0028543,
+     "distance_km": 383606
+    },
+    {
+     "utc": "2026-10-10T09:00:00Z",
+     "azimuth": 250.172898,
+     "elevation": 14.002406,
+     "illuminated": 0.0026368999999999997,
+     "distance_km": 384971
+    },
+    {
+     "utc": "2026-10-10T10:00:00Z",
+     "azimuth": 257.945874,
+     "elevation": 2.046342,
+     "illuminated": 0.0024052,
+     "distance_km": 386468
+    },
+    {
+     "utc": "2026-10-10T11:00:00Z",
+     "azimuth": 265.068075,
+     "elevation": -10.083684,
+     "illuminated": 0.0021664,
+     "distance_km": 388009
+    },
+    {
+     "utc": "2026-10-10T12:00:00Z",
+     "azimuth": 272.209266,
+     "elevation": -22.644205,
+     "illuminated": 0.0019321,
+     "distance_km": 389509
+    },
+    {
+     "utc": "2026-10-10T13:00:00Z",
+     "azimuth": 280.157972,
+     "elevation": -35.0969,
+     "illuminated": 0.0017173,
+     "distance_km": 390881
+    },
+    {
+     "utc": "2026-10-10T14:00:00Z",
+     "azimuth": 290.202127,
+     "elevation": -47.16971,
+     "illuminated": 0.0015379999999999999,
+     "distance_km": 392051
+    },
+    {
+     "utc": "2026-10-10T15:00:00Z",
+     "azimuth": 305.01711,
+     "elevation": -58.288783,
+     "illuminated": 0.0014098,
+     "distance_km": 392957
+    }
+   ]
+  },
+  {
+   "location": "Chengdu",
+   "latitude": 30.6598,
+   "longitude": 104.0633,
+   "timezone": "Asia/Shanghai",
+   "phase": "first-quarter",
+   "date": "2026-10-18",
+   "points": [
+    {
+     "utc": "2026-10-17T16:00:00Z",
+     "azimuth": 244.876864,
+     "elevation": -9.667964,
+     "illuminated": 0.3994979,
+     "distance_km": 405446
+    },
+    {
+     "utc": "2026-10-17T17:00:00Z",
+     "azimuth": 251.103181,
+     "elevation": -21.142273,
+     "illuminated": 0.4035038,
+     "distance_km": 406639
+    },
+    {
+     "utc": "2026-10-17T18:00:00Z",
+     "azimuth": 256.860452,
+     "elevation": -33.007268,
+     "illuminated": 0.4079314,
+     "distance_km": 407774
+    },
+    {
+     "utc": "2026-10-17T19:00:00Z",
+     "azimuth": 262.579791,
+     "elevation": -45.123554,
+     "illuminated": 0.4127415,
+     "distance_km": 408778
+    },
+    {
+     "utc": "2026-10-17T20:00:00Z",
+     "azimuth": 268.989802,
+     "elevation": -57.377053,
+     "illuminated": 0.4178721,
+     "distance_km": 409584
+    },
+    {
+     "utc": "2026-10-17T21:00:00Z",
+     "azimuth": 278.202187,
+     "elevation": -69.618542,
+     "illuminated": 0.4232423,
+     "distance_km": 410138
+    },
+    {
+     "utc": "2026-10-17T22:00:00Z",
+     "azimuth": 303.813357,
+     "elevation": -81.188026,
+     "illuminated": 0.42875729999999995,
+     "distance_km": 410403
+    },
+    {
+     "utc": "2026-10-17T23:00:00Z",
+     "azimuth": 52.413759,
+     "elevation": -81.679455,
+     "illuminated": 0.4343145,
+     "distance_km": 410359
+    },
+    {
+     "utc": "2026-10-18T00:00:00Z",
+     "azimuth": 80.300521,
+     "elevation": -70.194343,
+     "illuminated": 0.43980870000000005,
+     "distance_km": 410003
+    },
+    {
+     "utc": "2026-10-18T01:00:00Z",
+     "azimuth": 89.763666,
+     "elevation": -57.914157,
+     "illuminated": 0.4451387,
+     "distance_km": 409354
+    },
+    {
+     "utc": "2026-10-18T02:00:00Z",
+     "azimuth": 96.204645,
+     "elevation": -45.584435,
+     "illuminated": 0.4502127,
+     "distance_km": 408448
+    },
+    {
+     "utc": "2026-10-18T03:00:00Z",
+     "azimuth": 101.887245,
+     "elevation": -33.356648,
+     "illuminated": 0.45495399999999997,
+     "distance_km": 407337
+    },
+    {
+     "utc": "2026-10-18T04:00:00Z",
+     "azimuth": 107.569673,
+     "elevation": -21.339792,
+     "illuminated": 0.45930590000000004,
+     "distance_km": 406084
+    },
+    {
+     "utc": "2026-10-18T05:00:00Z",
+     "azimuth": 113.692821,
+     "elevation": -9.664904,
+     "illuminated": 0.46323590000000003,
+     "distance_km": 404765
+    },
+    {
+     "utc": "2026-10-18T06:00:00Z",
+     "azimuth": 120.644669,
+     "elevation": 1.215582,
+     "illuminated": 0.4667387,
+     "distance_km": 403460
+    },
+    {
+     "utc": "2026-10-18T07:00:00Z",
+     "azimuth": 128.850393,
+     "elevation": 11.26555,
+     "illuminated": 0.4698371,
+     "distance_km": 402246
+    },
+    {
+     "utc": "2026-10-18T08:00:00Z",
+     "azimuth": 138.787236,
+     "elevation": 20.369225,
+     "illuminated": 0.4725817,
+     "distance_km": 401199
+    },
+    {
+     "utc": "2026-10-18T09:00:00Z",
+     "azimuth": 150.88479,
+     "elevation": 27.708293,
+     "illuminated": 0.475048,
+     "distance_km": 400381
+    },
+    {
+     "utc": "2026-10-18T10:00:00Z",
+     "azimuth": 165.216018,
+     "elevation": 32.537361,
+     "illuminated": 0.47733190000000003,
+     "distance_km": 399842
+    },
+    {
+     "utc": "2026-10-18T11:00:00Z",
+     "azimuth": 181.051364,
+     "elevation": 34.169328,
+     "illuminated": 0.4795427,
+     "distance_km": 399612
+    },
+    {
+     "utc": "2026-10-18T12:00:00Z",
+     "azimuth": 196.848849,
+     "elevation": 32.320863,
+     "illuminated": 0.48179560000000005,
+     "distance_km": 399702
+    },
+    {
+     "utc": "2026-10-18T13:00:00Z",
+     "azimuth": 211.098545,
+     "elevation": 27.305217,
+     "illuminated": 0.4842029,
+     "distance_km": 400100
+    },
+    {
+     "utc": "2026-10-18T14:00:00Z",
+     "azimuth": 223.12976,
+     "elevation": 19.819856,
+     "illuminated": 0.4868658,
+     "distance_km": 400775
+    },
+    {
+     "utc": "2026-10-18T15:00:00Z",
+     "azimuth": 233.055743,
+     "elevation": 10.606239,
+     "illuminated": 0.4898671,
+     "distance_km": 401677
+    }
+   ]
+  },
+  {
+   "location": "Chengdu",
+   "latitude": 30.6598,
+   "longitude": 104.0633,
+   "timezone": "Asia/Shanghai",
+   "phase": "full",
+   "date": "2026-10-26",
+   "points": [
+    {
+     "utc": "2026-10-25T16:00:00Z",
+     "azimuth": 167.076358,
+     "elevation": 72.504318,
+     "illuminated": 0.9952867000000001,
+     "distance_km": 364680
+    },
+    {
+     "utc": "2026-10-25T17:00:00Z",
+     "azimuth": 212.739682,
+     "elevation": 70.451501,
+     "illuminated": 0.9955708,
+     "distance_km": 364585
+    },
+    {
+     "utc": "2026-10-25T18:00:00Z",
+     "azimuth": 240.229656,
+     "elevation": 61.31585,
+     "illuminated": 0.9958502,
+     "distance_km": 364830
+    },
+    {
+     "utc": "2026-10-25T19:00:00Z",
+     "azimuth": 255.071478,
+     "elevation": 49.751842,
+     "illuminated": 0.9961391999999999,
+     "distance_km": 365386
+    },
+    {
+     "utc": "2026-10-25T20:00:00Z",
+     "azimuth": 264.900769,
+     "elevation": 37.468788,
+     "illuminated": 0.9964467,
+     "distance_km": 366204
+    },
+    {
+     "utc": "2026-10-25T21:00:00Z",
+     "azimuth": 272.727398,
+     "elevation": 25.037893,
+     "illuminated": 0.9967758999999999,
+     "distance_km": 367218
+    },
+    {
+     "utc": "2026-10-25T22:00:00Z",
+     "azimuth": 279.871251,
+     "elevation": 12.746508,
+     "illuminated": 0.9971232999999999,
+     "distance_km": 368352
+    },
+    {
+     "utc": "2026-10-25T23:00:00Z",
+     "azimuth": 287.098957,
+     "elevation": 1.063273,
+     "illuminated": 0.9974793,
+     "distance_km": 369521
+    },
+    {
+     "utc": "2026-10-26T00:00:00Z",
+     "azimuth": 295.027174,
+     "elevation": -10.155947,
+     "illuminated": 0.9978292999999999,
+     "distance_km": 370641
+    },
+    {
+     "utc": "2026-10-26T01:00:00Z",
+     "azimuth": 304.300948,
+     "elevation": -20.77869,
+     "illuminated": 0.998155,
+     "distance_km": 371631
+    },
+    {
+     "utc": "2026-10-26T02:00:00Z",
+     "azimuth": 315.661565,
+     "elevation": -30.090051,
+     "illuminated": 0.9984367000000001,
+     "distance_km": 372421
+    },
+    {
+     "utc": "2026-10-26T03:00:00Z",
+     "azimuth": 329.818169,
+     "elevation": -37.384828,
+     "illuminated": 0.9986557,
+     "distance_km": 372951
+    },
+    {
+     "utc": "2026-10-26T04:00:00Z",
+     "azimuth": 346.883193,
+     "elevation": -41.736918,
+     "illuminated": 0.9987956,
+     "distance_km": 373180
+    },
+    {
+     "utc": "2026-10-26T05:00:00Z",
+     "azimuth": 5.520025,
+     "elevation": -42.330214,
+     "illuminated": 0.9988449,
+     "distance_km": 373087
+    },
+    {
+     "utc": "2026-10-26T06:00:00Z",
+     "azimuth": 23.227662,
+     "elevation": -39.034156,
+     "illuminated": 0.9987976000000001,
+     "distance_km": 372668
+    },
+    {
+     "utc": "2026-10-26T07:00:00Z",
+     "azimuth": 38.19642,
+     "elevation": -32.518554,
+     "illuminated": 0.9986538,
+     "distance_km": 371940
+    },
+    {
+     "utc": "2026-10-26T08:00:00Z",
+     "azimuth": 50.177444,
+     "elevation": -23.729402,
+     "illuminated": 0.9984195,
+     "distance_km": 370939
+    },
+    {
+     "utc": "2026-10-26T09:00:00Z",
+     "azimuth": 59.772521,
+     "elevation": -13.446108,
+     "illuminated": 0.9981061,
+     "distance_km": 369718
+    },
+    {
+     "utc": "2026-10-26T10:00:00Z",
+     "azimuth": 67.71624,
+     "elevation": -2.192847,
+     "illuminated": 0.9977283,
+     "distance_km": 368345
+    },
+    {
+     "utc": "2026-10-26T11:00:00Z",
+     "azimuth": 74.637951,
+     "elevation": 9.148203,
+     "illuminated": 0.9973031,
+     "distance_km": 366896
+    },
+    {
+     "utc": "2026-10-26T12:00:00Z",
+     "azimuth": 81.074119,
+     "elevation": 21.396198,
+     "illuminated": 0.9968477,
+     "distance_km": 365455
+    },
+    {
+     "utc": "2026-10-26T13:00:00Z",
+     "azimuth": 87.578556,
+     "elevation": 33.933483,
+     "illuminated": 0.9963774999999999,
+     "distance_km": 364102
+    },
+    {
+     "utc": "2026-10-26T14:00:00Z",
+     "azimuth": 94.955099,
+     "elevation": 46.572438,
+     "illuminated": 0.9959048,
+     "distance_km": 362918
+    },
+    {
+     "utc": "2026-10-26T15:00:00Z",
+     "azimuth": 104.928594,
+     "elevation": 59.070347,
+     "illuminated": 0.995438,
+     "distance_km": 361968
+    }
+   ]
+  },
+  {
+   "location": "Sydney",
+   "latitude": -33.8688,
+   "longitude": 151.2093,
+   "timezone": "Australia/Sydney",
+   "phase": "new",
+   "date": "2026-10-10",
+   "points": [
+    {
+     "utc": "2026-10-09T13:00:00Z",
+     "azimuth": 175.003417,
+     "elevation": -52.272552,
+     "illuminated": 0.0148374,
+     "distance_km": 388598
+    },
+    {
+     "utc": "2026-10-09T14:00:00Z",
+     "azimuth": 152.788903,
+     "elevation": -48.680049,
+     "illuminated": 0.013422499999999999,
+     "distance_km": 388491
+    },
+    {
+     "utc": "2026-10-09T15:00:00Z",
+     "azimuth": 135.021272,
+     "elevation": -41.38701,
+     "illuminated": 0.0121048,
+     "distance_km": 388065
+    },
+    {
+     "utc": "2026-10-09T16:00:00Z",
+     "azimuth": 121.539275,
+     "elevation": -31.788579,
+     "illuminated": 0.0109004,
+     "distance_km": 387354
+    },
+    {
+     "utc": "2026-10-09T17:00:00Z",
+     "azimuth": 110.983885,
+     "elevation": -20.864112,
+     "illuminated": 0.0098192,
+     "distance_km": 386411
+    },
+    {
+     "utc": "2026-10-09T18:00:00Z",
+     "azimuth": 102.146197,
+     "elevation": -9.187835,
+     "illuminated": 0.0088648,
+     "distance_km": 385305
+    },
+    {
+     "utc": "2026-10-09T19:00:00Z",
+     "azimuth": 94.132933,
+     "elevation": 2.51446,
+     "illuminated": 0.0080357,
+     "distance_km": 384112
+    },
+    {
+     "utc": "2026-10-09T20:00:00Z",
+     "azimuth": 86.215399,
+     "elevation": 14.553227,
+     "illuminated": 0.0073249,
+     "distance_km": 382919
+    },
+    {
+     "utc": "2026-10-09T21:00:00Z",
+     "azimuth": 77.633022,
+     "elevation": 26.690576,
+     "illuminated": 0.0067218,
+     "distance_km": 381810
+    },
+    {
+     "utc": "2026-10-09T22:00:00Z",
+     "azimuth": 67.336298,
+     "elevation": 38.455091,
+     "illuminated": 0.006212,
+     "distance_km": 380867
+    },
+    {
+     "utc": "2026-10-09T23:00:00Z",
+     "azimuth": 53.575924,
+     "elevation": 49.271101,
+     "illuminated": 0.0057791000000000006,
+     "distance_km": 380161
+    },
+    {
+     "utc": "2026-10-10T00:00:00Z",
+     "azimuth": 33.498305,
+     "elevation": 57.967777,
+     "illuminated": 0.0054047999999999995,
+     "distance_km": 379746
+    },
+    {
+     "utc": "2026-10-10T01:00:00Z",
+     "azimuth": 5.086187,
+     "elevation": 62.340133,
+     "illuminated": 0.0050702,
+     "distance_km": 379660
+    },
+    {
+     "utc": "2026-10-10T02:00:00Z",
+     "azimuth": 334.484806,
+     "elevation": 60.37599,
+     "illuminated": 0.0047571,
+     "distance_km": 379917
+    },
+    {
+     "utc": "2026-10-10T03:00:00Z",
+     "azimuth": 311.06821,
+     "elevation": 53.112835,
+     "illuminated": 0.0044487,
+     "distance_km": 380508
+    },
+    {
+     "utc": "2026-10-10T04:00:00Z",
+     "azimuth": 295.132037,
+     "elevation": 43.027187,
+     "illuminated": 0.0041316999999999994,
+     "distance_km": 381404
+    },
+    {
+     "utc": "2026-10-10T05:00:00Z",
+     "azimuth": 283.596198,
+     "elevation": 31.678839,
+     "illuminated": 0.0037969,
+     "distance_km": 382553
+    },
+    {
+     "utc": "2026-10-10T06:00:00Z",
+     "azimuth": 274.286922,
+     "elevation": 19.82743,
+     "illuminated": 0.0034402,
+     "distance_km": 383889
+    },
+    {
+     "utc": "2026-10-10T07:00:00Z",
+     "azimuth": 265.928452,
+     "elevation": 7.911882,
+     "illuminated": 0.0030634,
+     "distance_km": 385334
+    },
+    {
+     "utc": "2026-10-10T08:00:00Z",
+     "azimuth": 257.670982,
+     "elevation": -3.369857,
+     "illuminated": 0.0026736999999999998,
+     "distance_km": 386803
+    },
+    {
+     "utc": "2026-10-10T09:00:00Z",
+     "azimuth": 248.793526,
+     "elevation": -14.751804,
+     "illuminated": 0.0022828,
+     "distance_km": 388211
+    },
+    {
+     "utc": "2026-10-10T10:00:00Z",
+     "azimuth": 238.52255,
+     "elevation": -25.35424,
+     "illuminated": 0.0019056000000000001,
+     "distance_km": 389478
+    },
+    {
+     "utc": "2026-10-10T11:00:00Z",
+     "azimuth": 225.941021,
+     "elevation": -34.654155,
+     "illuminated": 0.0015587,
+     "distance_km": 390533
+    },
+    {
+     "utc": "2026-10-10T12:00:00Z",
+     "azimuth": 210.140908,
+     "elevation": -41.841745,
+     "illuminated": 0.0012579000000000002,
+     "distance_km": 391320
+    }
+   ]
+  },
+  {
+   "location": "Sydney",
+   "latitude": -33.8688,
+   "longitude": 151.2093,
+   "timezone": "Australia/Sydney",
+   "phase": "first-quarter",
+   "date": "2026-10-18",
+   "points": [
+    {
+     "utc": "2026-10-17T13:00:00Z",
+     "azimuth": 247.909141,
+     "elevation": 14.399514,
+     "illuminated": 0.3887646,
+     "distance_km": 402846
+    },
+    {
+     "utc": "2026-10-17T14:00:00Z",
+     "azimuth": 240.765255,
+     "elevation": 3.628628,
+     "illuminated": 0.3928714,
+     "distance_km": 404012
+    },
+    {
+     "utc": "2026-10-17T15:00:00Z",
+     "azimuth": 232.632065,
+     "elevation": -6.043634,
+     "illuminated": 0.3973808,
+     "distance_km": 405102
+    },
+    {
+     "utc": "2026-10-17T16:00:00Z",
+     "azimuth": 223.10884,
+     "elevation": -15.010646,
+     "illuminated": 0.4022497,
+     "distance_km": 406048
+    },
+    {
+     "utc": "2026-10-17T17:00:00Z",
+     "azimuth": 211.843906,
+     "elevation": -22.378946,
+     "illuminated": 0.40741390000000005,
+     "distance_km": 406788
+    },
+    {
+     "utc": "2026-10-17T18:00:00Z",
+     "azimuth": 198.722122,
+     "elevation": -27.579499,
+     "illuminated": 0.4127918,
+     "distance_km": 407272
+    },
+    {
+     "utc": "2026-10-17T19:00:00Z",
+     "azimuth": 184.155003,
+     "elevation": -30.044057,
+     "illuminated": 0.4182893,
+     "distance_km": 407470
+    },
+    {
+     "utc": "2026-10-17T20:00:00Z",
+     "azimuth": 169.184973,
+     "elevation": -29.435468,
+     "illuminated": 0.423806,
+     "distance_km": 407366
+    },
+    {
+     "utc": "2026-10-17T21:00:00Z",
+     "azimuth": 155.062375,
+     "elevation": -25.839444,
+     "illuminated": 0.42924019999999996,
+     "distance_km": 406962
+    },
+    {
+     "utc": "2026-10-17T22:00:00Z",
+     "azimuth": 142.60177,
+     "elevation": -19.711644,
+     "illuminated": 0.43449509999999997,
+     "distance_km": 406282
+    },
+    {
+     "utc": "2026-10-17T23:00:00Z",
+     "azimuth": 131.974008,
+     "elevation": -11.641965,
+     "illuminated": 0.4394843,
+     "distance_km": 405363
+    },
+    {
+     "utc": "2026-10-18T00:00:00Z",
+     "azimuth": 122.933029,
+     "elevation": -2.162437,
+     "illuminated": 0.4441373,
+     "distance_km": 404260
+    },
+    {
+     "utc": "2026-10-18T01:00:00Z",
+     "azimuth": 115.081076,
+     "elevation": 7.786216,
+     "illuminated": 0.4484038,
+     "distance_km": 403039
+    },
+    {
+     "utc": "2026-10-18T02:00:00Z",
+     "azimuth": 107.995801,
+     "elevation": 18.908468,
+     "illuminated": 0.452258,
+     "distance_km": 401772
+    },
+    {
+     "utc": "2026-10-18T03:00:00Z",
+     "azimuth": 101.235338,
+     "elevation": 30.566784,
+     "illuminated": 0.4557005,
+     "distance_km": 400538
+    },
+    {
+     "utc": "2026-10-18T04:00:00Z",
+     "azimuth": 94.23806,
+     "elevation": 42.552574,
+     "illuminated": 0.45875970000000005,
+     "distance_km": 399413
+    },
+    {
+     "utc": "2026-10-18T05:00:00Z",
+     "azimuth": 86.002738,
+     "elevation": 54.682658,
+     "illuminated": 0.46149039999999997,
+     "distance_km": 398465
+    },
+    {
+     "utc": "2026-10-18T06:00:00Z",
+     "azimuth": 73.857471,
+     "elevation": 66.654715,
+     "illuminated": 0.4639706,
+     "distance_km": 397753
+    },
+    {
+     "utc": "2026-10-18T07:00:00Z",
+     "azimuth": 46.598475,
+     "elevation": 77.346971,
+     "illuminated": 0.46629689999999996,
+     "distance_km": 397320
+    },
+    {
+     "utc": "2026-10-18T08:00:00Z",
+     "azimuth": 335.200235,
+     "elevation": 79.938632,
+     "illuminated": 0.4685773,
+     "distance_km": 397191
+    },
+    {
+     "utc": "2026-10-18T09:00:00Z",
+     "azimuth": 293.962253,
+     "elevation": 70.748651,
+     "illuminated": 0.47092350000000005,
+     "distance_km": 397372
+    },
+    {
+     "utc": "2026-10-18T10:00:00Z",
+     "azimuth": 278.717696,
+     "elevation": 58.948435,
+     "illuminated": 0.47344299999999995,
+     "distance_km": 397845
+    },
+    {
+     "utc": "2026-10-18T11:00:00Z",
+     "azimuth": 269.601335,
+     "elevation": 46.741969,
+     "illuminated": 0.47623040000000005,
+     "distance_km": 398576
+    },
+    {
+     "utc": "2026-10-18T12:00:00Z",
+     "azimuth": 262.372484,
+     "elevation": 34.563227,
+     "illuminated": 0.47936169999999995,
+     "distance_km": 399513
+    }
+   ]
+  },
+  {
+   "location": "Sydney",
+   "latitude": -33.8688,
+   "longitude": 151.2093,
+   "timezone": "Australia/Sydney",
+   "phase": "full",
+   "date": "2026-10-26",
+   "points": [
+    {
+     "utc": "2026-10-25T13:00:00Z",
+     "azimuth": 0.302108,
+     "elevation": 42.329311,
+     "illuminated": 0.9932137,
+     "distance_km": 366944
+    },
+    {
+     "utc": "2026-10-25T14:00:00Z",
+     "azimuth": 341.514185,
+     "elevation": 40.143992,
+     "illuminated": 0.9935615,
+     "distance_km": 366954
+    },
+    {
+     "utc": "2026-10-25T15:00:00Z",
+     "azimuth": 325.087275,
+     "elevation": 34.428983,
+     "illuminated": 0.9939113999999999,
+     "distance_km": 367285
+    },
+    {
+     "utc": "2026-10-25T16:00:00Z",
+     "azimuth": 311.700615,
+     "elevation": 26.15829,
+     "illuminated": 0.9942789999999999,
+     "distance_km": 367907
+    },
+    {
+     "utc": "2026-10-25T17:00:00Z",
+     "azimuth": 300.885162,
+     "elevation": 16.240238,
+     "illuminated": 0.994674,
+     "distance_km": 368766
+    },
+    {
+     "utc": "2026-10-25T18:00:00Z",
+     "azimuth": 291.868201,
+     "elevation": 5.374587,
+     "illuminated": 0.9951000000000001,
+     "distance_km": 369796
+    },
+    {
+     "utc": "2026-10-25T19:00:00Z",
+     "azimuth": 283.93883,
+     "elevation": -5.710498,
+     "illuminated": 0.9955533,
+     "distance_km": 370922
+    },
+    {
+     "utc": "2026-10-25T20:00:00Z",
+     "azimuth": 276.476266,
+     "elevation": -17.621161,
+     "illuminated": 0.9960238,
+     "distance_km": 372060
+    },
+    {
+     "utc": "2026-10-25T21:00:00Z",
+     "azimuth": 268.844342,
+     "elevation": -29.658857,
+     "illuminated": 0.996496,
+     "distance_km": 373130
+    },
+    {
+     "utc": "2026-10-25T22:00:00Z",
+     "azimuth": 260.175545,
+     "elevation": -41.616994,
+     "illuminated": 0.9969507,
+     "distance_km": 374057
+    },
+    {
+     "utc": "2026-10-25T23:00:00Z",
+     "azimuth": 248.873349,
+     "elevation": -53.183417,
+     "illuminated": 0.9973674,
+     "distance_km": 374773
+    },
+    {
+     "utc": "2026-10-26T00:00:00Z",
+     "azimuth": 231.272743,
+     "elevation": -63.63924,
+     "illuminated": 0.9977258,
+     "distance_km": 375227
+    },
+    {
+     "utc": "2026-10-26T01:00:00Z",
+     "azimuth": 199.582669,
+     "elevation": -70.859497,
+     "illuminated": 0.9980087000000001,
+     "distance_km": 375384
+    },
+    {
+     "utc": "2026-10-26T02:00:00Z",
+     "azimuth": 155.807289,
+     "elevation": -70.600813,
+     "illuminated": 0.9982028,
+     "distance_km": 375225
+    },
+    {
+     "utc": "2026-10-26T03:00:00Z",
+     "azimuth": 125.206083,
+     "elevation": -63.11952,
+     "illuminated": 0.9983008,
+     "distance_km": 374755
+    },
+    {
+     "utc": "2026-10-26T04:00:00Z",
+     "azimuth": 108.113604,
+     "elevation": -52.655452,
+     "illuminated": 0.9983008,
+     "distance_km": 373993
+    },
+    {
+     "utc": "2026-10-26T05:00:00Z",
+     "azimuth": 96.945556,
+     "elevation": -41.204616,
+     "illuminated": 0.9982071,
+     "distance_km": 372980
+    },
+    {
+     "utc": "2026-10-26T06:00:00Z",
+     "azimuth": 88.230915,
+     "elevation": -29.452007,
+     "illuminated": 0.9980288,
+     "distance_km": 371771
+    },
+    {
+     "utc": "2026-10-26T07:00:00Z",
+     "azimuth": 80.44148,
+     "elevation": -17.711014,
+     "illuminated": 0.997779,
+     "distance_km": 370433
+    },
+    {
+     "utc": "2026-10-26T08:00:00Z",
+     "azimuth": 72.734764,
+     "elevation": -6.204332,
+     "illuminated": 0.9974729999999999,
+     "distance_km": 369043
+    },
+    {
+     "utc": "2026-10-26T09:00:00Z",
+     "azimuth": 64.493339,
+     "elevation": 4.370288,
+     "illuminated": 0.9971266,
+     "distance_km": 367680
+    },
+    {
+     "utc": "2026-10-26T10:00:00Z",
+     "azimuth": 55.13891,
+     "elevation": 14.509434,
+     "illuminated": 0.9967547,
+     "distance_km": 366425
+    },
+    {
+     "utc": "2026-10-26T11:00:00Z",
+     "azimuth": 44.07528,
+     "elevation": 23.519613,
+     "illuminated": 0.99637,
+     "distance_km": 365350
+    },
+    {
+     "utc": "2026-10-26T12:00:00Z",
+     "azimuth": 30.787641,
+     "elevation": 30.69168,
+     "illuminated": 0.9959817,
+     "distance_km": 364515
+    }
+   ]
+  }
+ ]
+}
