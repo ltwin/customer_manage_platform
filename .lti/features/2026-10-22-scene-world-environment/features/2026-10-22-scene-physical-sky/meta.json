@@ -1,12 +1,12 @@
 {
   "uid": "188beed6-152e-49c5-ab86-602f1e946382",
-  "revision": 5,
+  "revision": 9,
   "id": "scene-physical-sky",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-world-environment",
   "designBinding": {
-    "version": 2,
+    "version": 3,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -35,7 +35,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-22T11:37:31.579Z",
-  "updatedAt": "2026-10-22T13:37:26.150Z",
+  "updatedAt": "2026-10-23T06:13:05.910Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -45,16 +45,29 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-22T13:33:16.293Z",
+      "at": "2026-10-23T06:12:20.558Z",
       "contentHash": "fb05ba660c1f375f"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-22T13:33:16.293Z",
-      "contentHash": "fae64e6d2f6c9b2e"
+      "at": "2026-10-23T06:12:20.558Z",
+      "contentHash": "dbc69512cacde795"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-22T13:33:16.293Z",
+      "contentHash": "fb05ba660c1f375f",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-22T13:33:16.293Z",
+      "contentHash": "fae64e6d2f6c9b2e",
+      "role": "design"
+    }
+  ],
   "revisions": [],
   "baseline": {
     "commit": "e02d89a749b263e1acbf28a730f33c3d0748c481",
@@ -67,8 +80,492 @@
       ".lti/snapshots/795a851355cf236dca82b1c8dad54ee8256970babf2b16b4c178e791e8c2dd9b.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-23T03:56:58.597Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，测试由 agent 手动运行；GPU 相关 e2e 未在 5f381098 上重跑（该提交只改后端）；AC-W2-10 需要 owner 的模型密钥，由 owner 抽查；观感项（AC-W2-1 序列、AC-W2-7 预设）只能由 owner 判断",
+        "coverage": [
+          {
+            "criterionId": "AC-ff09fd086857",
+            "status": "verified",
+            "evidence": "分项见 1–8"
+          },
+          {
+            "criterionId": "AC-bf8441139006",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: the time of day moves the sun…」；时刻序列 evidence/shanghai-solstice-*.jpg"
+          },
+          {
+            "criterionId": "AC-4c91fdc66681",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts 对照 NOAA 数据点（角距）；sun_test.go 同组数据 ≤0.05°"
+          },
+          {
+            "criterionId": "AC-288252860698",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts 日出日落 ≤1 分钟；sun_test.go"
+          },
+          {
+            "criterionId": "AC-b81c5abf8b70",
+            "status": "verified",
+            "evidence": "evidence/shanghai-solstice-0500…2000.jpg，owner 2026-10-22 看过「没有可见的大问题」"
+          },
+          {
+            "criterionId": "AC-1077c256f4ff",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: … north turns the shadows …」"
+          },
+          {
+            "criterionId": "AC-0a40d8f6104f",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「… in Sydney the noon sun is in the north」；astro 单测"
+          },
+          {
+            "criterionId": "AC-c8cf7e685ee0",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts 与 sun_test.go 的 localToUtc 20 个用例（compatible 规则）"
+          },
+          {
+            "criterionId": "AC-c67e53b3061e",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts，四个参考地点"
+          },
+          {
+            "criterionId": "AC-f4b9d97495fb",
+            "status": "verified",
+            "evidence": "分项见 10–11"
+          },
+          {
+            "criterionId": "AC-3dd4a85d7de6",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: manual angles keep the picture …」"
+          },
+          {
+            "criterionId": "AC-4ccf7af74600",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 同上：切手动 render_view lit 逐像素相同、Cmd+Z 回地点模式、入夜夹到 −10°"
+          },
+          {
+            "criterionId": "AC-107c17808ef1",
+            "status": "verified",
+            "evidence": "分项见 13–17"
+          },
+          {
+            "criterionId": "AC-90b56507f7c1",
+            "status": "verified",
+            "evidence": "creative-scene-exposure.test.ts 晴朗 60° 水平照度 100–130 klux"
+          },
+          {
+            "criterionId": "AC-7eed3d7b6f5e",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 sunny 16」：正午测光 EV 15.3、日落后 EV 3.9"
+          },
+          {
+            "criterionId": "AC-256a924bb2b7",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure and the sun」：f/16 均值 136、f/8 183；景深沿用 camera_dof"
+          },
+          {
+            "criterionId": "AC-ddd57e29b20f",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure controls: the default exposure moves the free view only…」"
+          },
+          {
+            "criterionId": "AC-0861808ac361",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 同上：EV 12 与 −5 下新摄像机 ≤1/3 档"
+          },
+          {
+            "criterionId": "AC-1070c684d328",
+            "status": "verified",
+            "evidence": "分项见 19–20"
+          },
+          {
+            "criterionId": "AC-ad35a5e9cd00",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure and the sun」：亮度 4 对 f/8 差>2 像素 0%"
+          },
+          {
+            "criterionId": "AC-04ff13415c40",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 同上：未设与 6500 K 差>2 像素 0%，3000 K R/B 1.04→1.69"
+          },
+          {
+            "criterionId": "AC-575246dae176",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 lamps, emission and fog」：正午变化 0%，日落后 3.94%"
+          },
+          {
+            "criterionId": "AC-09f0745f1f14",
+            "status": "verified",
+            "evidence": "分项见 23–25"
+          },
+          {
+            "criterionId": "AC-07a0df082602",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 other skies」GPU 用例对照 discovery/research/baseline（8.1 时运行，其后前端未改）；fingerprint_internal_test.go W1 旧指纹不变"
+          },
+          {
+            "criterionId": "AC-ad05ae6b06e9",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure controls: … greyed under another sky …」"
+          },
+          {
+            "criterionId": "AC-0259119bb2a7",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: the physical sky with its defaults … the ambient light off」"
+          },
+          {
+            "criterionId": "AC-8f6aec87fae4",
+            "status": "unverified",
+            "evidence": "预设样张 evidence/preset-*.jpg；地平线不下沉已满足，但所有样张场景地面尽头露出一道星球地面色带（owner 决定事项 c）"
+          },
+          {
+            "criterionId": "AC-7af65d66cf6c",
+            "status": "unverified",
+            "evidence": "after/w2-parity.json：只含天空 3 张达标；含场景 3 张差>8 像素 0.76–1.52%，超 R1 阈值 0.18%（owner 决定事项 a）"
+          },
+          {
+            "criterionId": "AC-0de78b615791",
+            "status": "verified",
+            "evidence": "分项见 29–32"
+          },
+          {
+            "criterionId": "AC-f82efd4537b6",
+            "status": "verified",
+            "evidence": "SCENE_E2E_HIDDEN 物理天空两次导出逐像素一致（8.1，WebGPU 与 WebGL2）"
+          },
+          {
+            "criterionId": "AC-b1a50ad46279",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go 每字段用例；e2e「改时刻后 lit 过时、clay 不过时」（8.1）"
+          },
+          {
+            "criterionId": "AC-05b0e6afe311",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go 与 e2e「只改一台摄像机的曝光」（8.1）"
+          },
+          {
+            "criterionId": "AC-6f8c1ef20b05",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go"
+          },
+          {
+            "criterionId": "AC-76d9f724c8ec",
+            "status": "verified",
+            "evidence": "分项见 34–36"
+          },
+          {
+            "criterionId": "AC-70234b452633",
+            "status": "deferred",
+            "evidence": "需要 owner 的模型密钥，真实模型对话未跑；提示词与检查点见 evidence/README.md 第五节，由 owner 抽查"
+          },
+          {
+            "criterionId": "AC-746b66b73e3f",
+            "status": "verified",
+            "evidence": "agent_tools_test.go（地点模式带 sun，手动与其他天空不带）；sun_test.go 与前端结果 ≤1 分钟"
+          },
+          {
+            "criterionId": "AC-25a5887142ec",
+            "status": "verified",
+            "evidence": "scene_test.go 的 400 用例；scene_tools_test.go「TestABadSceneCallSaysWhatToFix」"
+          },
+          {
+            "criterionId": "AC-c8efad6a44c6",
+            "status": "unverified",
+            "evidence": "分项见 38–39"
+          },
+          {
+            "criterionId": "AC-8b43803540ff",
+            "status": "unverified",
+            "evidence": "after/w2-perf.json：拖动均值 40 ms/帧（25 fps，目标 30）；天空光照最后一次后 10 ms 跟上（owner 决定事项 b）"
+          },
+          {
+            "criterionId": "AC-dfd0c039034d",
+            "status": "verified",
+            "evidence": "after/w2-perf.json：物理 8.333 ms 对程序化 8.328 ms"
+          },
+          {
+            "criterionId": "AC-00d165b173df",
+            "status": "verified",
+            "evidence": "分项见 41–42"
+          },
+          {
+            "criterionId": "AC-5a7bec9e606b",
+            "status": "verified",
+            "evidence": "creative-scene-cities.test.ts；e2e 环境选项卡选城市写入四项"
+          },
+          {
+            "criterionId": "AC-b2008a4f4fba",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「… a city from the search with GeoNames credited …」"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "15/15 任务完成。2026-10-22 在 5f381098 上重跑：前端 6 个场景单测文件 90/90、tsc -b、oxlint 0 error；go test creativescene 与 creativeagent 场景相关用例、go vet、golangci-lint 0 issues；e2e SCENE_E2E_ONLY=W2 默认 10 个用例全绿（端口 5293）。GPU 对照、隐藏页、性能、看图材料用例在 4c750eae 运行（其后前端未改），数据在 discovery/research/after 与 evidence。契约 4 条与 living spec 5 条 delta 均 applicable，MODIFY 正文已对照 currentBody。design 批准后有 4 处实施细节修订（快门/ISO 误差口径、钳制安装位置、时区大小写校验做法、ExposureEV100 改数值字段+UnmarshalJSON 缺省）。未达标：AC-W2-8 含场景三张两后端对照超 R1 阈值（0.76–1.52% 对 0.18%）；AC-W2-11 拖动时刻 25 fps（目标 30）；AC-W2-7 场景地面尽头露出星球地面色带；AC-W2-10 真实模型对话未跑。清单外改动：5f381098 读不出存储场景时如实告知助手并记日志。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "18c99fd18635b20ad7a702d522e41b6a0a2b223b5a6a3ac46f676f754296aeb6"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T06:13:05.764Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "测试由 agent 在 5f381098 上手动运行（项目未配置 lti checks）；GPU 用例在 4c750eae 运行、其后前端未改；Epic v3 只改文档措辞，未重跑测试",
+        "followUp": "另开项：拖动时刻滑杆 30 fps（编辑器 React 重渲染）；程序化天空的天空光照改为复用渲染目标；W4 空气透视处理地平线色带；7 个城市中文名（和村、绣林、旧堡、大屯、临水、吉舒、辛寨）待 owner 核对",
+        "coverage": [
+          {
+            "criterionId": "AC-ff09fd086857",
+            "status": "verified",
+            "evidence": "分项见 1–8"
+          },
+          {
+            "criterionId": "AC-bf8441139006",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: the time of day moves the sun…」；时刻序列 evidence/shanghai-solstice-*.jpg"
+          },
+          {
+            "criterionId": "AC-4c91fdc66681",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts 对照 NOAA 数据点（角距）；sun_test.go 同组数据 ≤0.05°"
+          },
+          {
+            "criterionId": "AC-288252860698",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts 日出日落 ≤1 分钟；sun_test.go"
+          },
+          {
+            "criterionId": "AC-b81c5abf8b70",
+            "status": "verified",
+            "evidence": "evidence/shanghai-solstice-0500…2000.jpg，owner 2026-10-22 看过「没有可见的大问题」"
+          },
+          {
+            "criterionId": "AC-1077c256f4ff",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: … north turns the shadows …」"
+          },
+          {
+            "criterionId": "AC-0a40d8f6104f",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「… in Sydney the noon sun is in the north」；astro 单测"
+          },
+          {
+            "criterionId": "AC-c8cf7e685ee0",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts 与 sun_test.go 的 localToUtc 20 个用例（compatible 规则）"
+          },
+          {
+            "criterionId": "AC-c67e53b3061e",
+            "status": "verified",
+            "evidence": "creative-scene-astro.test.ts，四个参考地点"
+          },
+          {
+            "criterionId": "AC-f4b9d97495fb",
+            "status": "verified",
+            "evidence": "分项见 10–11"
+          },
+          {
+            "criterionId": "AC-3dd4a85d7de6",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: manual angles keep the picture …」"
+          },
+          {
+            "criterionId": "AC-4ccf7af74600",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 同上：切手动 render_view lit 逐像素相同、Cmd+Z 回地点模式、入夜夹到 −10°"
+          },
+          {
+            "criterionId": "AC-107c17808ef1",
+            "status": "verified",
+            "evidence": "分项见 13–17"
+          },
+          {
+            "criterionId": "AC-90b56507f7c1",
+            "status": "verified",
+            "evidence": "creative-scene-exposure.test.ts 晴朗 60° 水平照度 100–130 klux"
+          },
+          {
+            "criterionId": "AC-7eed3d7b6f5e",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 sunny 16」：正午测光 EV 15.3、日落后 EV 3.9"
+          },
+          {
+            "criterionId": "AC-256a924bb2b7",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure and the sun」：f/16 均值 136、f/8 183；景深沿用 camera_dof"
+          },
+          {
+            "criterionId": "AC-ddd57e29b20f",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure controls: the default exposure moves the free view only…」"
+          },
+          {
+            "criterionId": "AC-0861808ac361",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 同上：EV 12 与 −5 下新摄像机 ≤1/3 档"
+          },
+          {
+            "criterionId": "AC-1070c684d328",
+            "status": "verified",
+            "evidence": "分项见 19–20"
+          },
+          {
+            "criterionId": "AC-ad35a5e9cd00",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure and the sun」：亮度 4 对 f/8 差>2 像素 0%"
+          },
+          {
+            "criterionId": "AC-04ff13415c40",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs 同上：未设与 6500 K 差>2 像素 0%，3000 K R/B 1.04→1.69"
+          },
+          {
+            "criterionId": "AC-575246dae176",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 lamps, emission and fog」：正午变化 0%，日落后 3.94%"
+          },
+          {
+            "criterionId": "AC-09f0745f1f14",
+            "status": "verified",
+            "evidence": "分项见 23–25"
+          },
+          {
+            "criterionId": "AC-07a0df082602",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 other skies」GPU 用例对照 discovery/research/baseline（8.1 时运行，其后前端未改）；fingerprint_internal_test.go W1 旧指纹不变"
+          },
+          {
+            "criterionId": "AC-ad05ae6b06e9",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 exposure controls: … greyed under another sky …」"
+          },
+          {
+            "criterionId": "AC-0259119bb2a7",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「W2 environment tab: the physical sky with its defaults … the ambient light off」"
+          },
+          {
+            "criterionId": "AC-8f6aec87fae4",
+            "status": "unverified",
+            "evidence": "预设与地平线不下沉满足；场景地面尽头的星球地面色带 owner 2026-10-22 接受，留给 W4 空气透视"
+          },
+          {
+            "criterionId": "AC-7af65d66cf6c",
+            "status": "unverified",
+            "evidence": "只含天空 3 张达标；含场景 3 张超 R1 阈值，差在混凝土孔洞硬边、R1 既有的后端采样差异，owner 2026-10-22 接受，阈值不放宽"
+          },
+          {
+            "criterionId": "AC-0de78b615791",
+            "status": "verified",
+            "evidence": "分项见 29–32"
+          },
+          {
+            "criterionId": "AC-f82efd4537b6",
+            "status": "verified",
+            "evidence": "SCENE_E2E_HIDDEN 物理天空两次导出逐像素一致（8.1，WebGPU 与 WebGL2）"
+          },
+          {
+            "criterionId": "AC-b1a50ad46279",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go 每字段用例；e2e「改时刻后 lit 过时、clay 不过时」（8.1）"
+          },
+          {
+            "criterionId": "AC-05b0e6afe311",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go 与 e2e「只改一台摄像机的曝光」（8.1）"
+          },
+          {
+            "criterionId": "AC-6f8c1ef20b05",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go"
+          },
+          {
+            "criterionId": "AC-76d9f724c8ec",
+            "status": "verified",
+            "evidence": "分项见 34–36"
+          },
+          {
+            "criterionId": "AC-70234b452633",
+            "status": "verified",
+            "evidence": "owner 2026-10-22 已验证真实模型对话（evidence/README.md 第五节）"
+          },
+          {
+            "criterionId": "AC-746b66b73e3f",
+            "status": "verified",
+            "evidence": "agent_tools_test.go（地点模式带 sun，手动与其他天空不带）；sun_test.go 与前端结果 ≤1 分钟"
+          },
+          {
+            "criterionId": "AC-25a5887142ec",
+            "status": "verified",
+            "evidence": "scene_test.go 的 400 用例；scene_tools_test.go「TestABadSceneCallSaysWhatToFix」"
+          },
+          {
+            "criterionId": "AC-c8efad6a44c6",
+            "status": "unverified",
+            "evidence": "见 38、39"
+          },
+          {
+            "criterionId": "AC-8b43803540ff",
+            "status": "unverified",
+            "evidence": "拖动 25 fps（目标 30），瓶颈在编辑器 React 重渲染、W2 之前就有；owner 2026-10-22 接受，另开一项处理"
+          },
+          {
+            "criterionId": "AC-dfd0c039034d",
+            "status": "verified",
+            "evidence": "after/w2-perf.json：物理 8.333 ms 对程序化 8.328 ms"
+          },
+          {
+            "criterionId": "AC-00d165b173df",
+            "status": "verified",
+            "evidence": "分项见 41–42"
+          },
+          {
+            "criterionId": "AC-5a7bec9e606b",
+            "status": "verified",
+            "evidence": "creative-scene-cities.test.ts；e2e 环境选项卡选城市写入四项"
+          },
+          {
+            "criterionId": "AC-b2008a4f4fba",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-scene.e2e.mjs「… a city from the search with GeoNames credited …」"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-22 简单验收，没有可见的大问题；AC-W2-10 真实模型对话已验证。接受的偏差：(a) 两后端对照含场景三张超 R1 阈值，阈值不放宽；(b) 拖动时刻 25 fps，另开一项处理编辑器重渲染；(c) 地平线星球地面色带留给 W4 空气透视。晨昏偏紫、8K 淡圈、正午暗 0.3 档一并接受。Epic 修订 v3（时区名校验措辞）后重新绑定并按原内容重新批准。清单外改动 5f381098（读不出存储场景时如实告诉助手并记日志）一并接受。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "09b21460be9464479a5b095832c622acf49f1e003f7ad28acfc78bb5642b4b85"
+      }
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }
