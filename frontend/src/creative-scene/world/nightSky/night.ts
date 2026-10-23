@@ -4,7 +4,7 @@ import type { CpuAtmosphere, Daylight } from '../atmosphere/cpu.ts'
 import type { Vec3 } from '../atmosphere/constants.ts'
 import { discSolidAngle } from '../atmosphere/sky.ts'
 import type { PhysicalSky } from '../physicalSky.ts'
-import { AIRGLOW_LUX, AIRGLOW_TINT, AIRGLOW_ZENITH, MILKY_WAY_PEAK, moonAbove, starsScale } from './light.ts'
+import { AIRGLOW_GAIN, AIRGLOW_LUX, AIRGLOW_TINT, AIRGLOW_ZENITH, MILKY_WAY_PEAK, moonAbove, starsScale } from './light.ts'
 import { milkyWayMean } from './milkyWay.ts'
 
 // What a physical sky's night puts in the picture (W3 design「夜空何时画」
@@ -81,7 +81,7 @@ export function nightOf(sky: PhysicalSky, sun: Vector3): NightParts {
   const night = sky.night
   const scale = starsScale(night.stars_strength, night.stars_temperature_k)
   const stars = night.stars ? scale : zero
-  const lux = ((night.stars ? STARLIGHT_LUX + AIRGLOW_LUX : 0) + (night.milky_way ? MILKY_WAY_LUX : 0)) * night.stars_strength
+  const lux = ((night.stars ? STARLIGHT_LUX + AIRGLOW_LUX * AIRGLOW_GAIN : 0) + (night.milky_way ? MILKY_WAY_LUX : 0)) * night.stars_strength
   let moon: NightMoon | null = null
   const where = night.moon ? physicalMoon(sky) : null
   if (where && where.elevationDeg > -1) {
@@ -95,7 +95,7 @@ export function nightOf(sky: PhysicalSky, sun: Vector3): NightParts {
     moon,
     stars,
     milkyWay: night.milky_way ? times(scale, [1, 1, 1], MILKY_WAY_PEAK) : zero,
-    airglow: night.stars ? times(scale, AIRGLOW_TINT, AIRGLOW_ZENITH) : zero,
+    airglow: night.stars ? times(scale, AIRGLOW_TINT, AIRGLOW_ZENITH * AIRGLOW_GAIN) : zero,
     lux,
   }
 }

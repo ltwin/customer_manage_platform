@@ -48,12 +48,22 @@ export function starsScale(strength: number, kelvin: number): Vec3 {
 
 /**
  * The airglow: the clear moonless sky's own light, at the zenith 21.8
- * magnitudes per square arcsecond (about 2 × 10⁻⁴ cd/m²) of a slightly warm
- * grey, brighter toward the horizon by the van Rhijn factor of a thin layer
- * 90 km up (about 6 at the horizon) before the atmosphere's extinction.
+ * magnitudes per square arcsecond (about 2 × 10⁻⁴ cd/m²), brighter toward
+ * the horizon by the van Rhijn factor of a thin layer 90 km up (about 6 at
+ * the horizon) before the atmosphere's extinction. Its colour is a look, not
+ * the real faint yellow-green: a deep blue, so a moonless night reads as a
+ * night sky rather than grey (Epic revision v5, owner 2026-10-23), luminance
+ * 1 so E is unchanged. AIRGLOW_GAIN brightens it as a look too, the sky and
+ * the light it puts on the scene alike; both settled from samples (Epic open
+ * question 10).
  */
 export const AIRGLOW_ZENITH = surfaceLuminance(21.8)
-export const AIRGLOW_TINT: Vec3 = bvTint(0.8)
+export const AIRGLOW_TINT: Vec3 = (() => {
+  const c: Vec3 = [0.45, 0.6, 1.6]
+  const l = luminance(c)
+  return c.map((v) => v / l) as Vec3
+})()
+export const AIRGLOW_GAIN = 1
 const AIRGLOW_RATIO = 6371 / (6371 + 90)
 
 /** The van Rhijn factor at the zenith cosine mu (≥ 0). */

@@ -1117,7 +1117,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
     d.view = view
     gpuOf(state.gl).advanceFrame()
     // Exposed as it is drawn: the automatic exposure meters E, which PhysicalLighting writes after this component renders.
-    const { exposure, preExposure } = frameExposure(scene, lit, viewer, sceneLux(state.scene))
+    const { exposure, preExposure, nightLook } = frameExposure(scene, lit, viewer, sceneLux(state.scene))
     r.render(state.camera, {
       width: state.size.width,
       height: state.size.height,
@@ -1129,6 +1129,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       pictureLongSide: box ? Math.max(box.width, box.height) * ratio : undefined,
       exposure,
       preExposure,
+      nightLook,
       // Wireframe has no surfaces to shade: no AO, no blur.
       wireframe: wire,
       engine,

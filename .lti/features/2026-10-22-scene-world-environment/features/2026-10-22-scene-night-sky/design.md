@@ -196,7 +196,7 @@ Epic design「物理单位与曝光」定了公式和压暗曲线，本节只写
 - **`world/nightLook.ts`（新增）**：
   - `nightLookWeight(lux, nightLook)` = `nightLook` × smoothstep：EV_m ≥ 4 时 0，EV_m ≤ −4 时 1（EV_m 即 `environmentEV(lux)`）。
   - `nightLookNode(color, weight)`（TSL）：Y = dot(c, Rec.709 的亮度系数)，c′ = mix(c, Y · tint, weight · s)。tint 的亮度归一到 1，Y 不变。
-  - 起点数值：tint 取约 9000 K 的黑体色调并按亮度归一（偏蓝），s = 0.6。四张对照图后由 owner 定稿（Epic 未决事项 10）。
+  - 起点数值：tint 取约 20000 K 的黑体色调并按亮度归一（偏蓝），s = 0.75：满月夜偏暖的院子（约 rgb 95/86/75）变为约 80/87/107。实施时试过 9000 K、s = 0.6，只把暖色拉回中性灰，看不出偏蓝。四张对照图后由 owner 定稿（Epic 未决事项 10）。
 - **接入**：`SceneRenderer` 的输出节点里，`picture` 在送进 `renderOutput` 之前经过 `nightLookNode`。权重是一个 uniform，每帧随 `exposure` 一起由 frame 参数写入；`frameExposure` 一并返回它，非物理天空、白模、线框、线稿时为 0。输出节点不随权重重建，入夜不重新编译。
 - **夜空增益**：`world/nightSky/light.ts` 的 `AIRGLOW_TINT` 从偏暖（B−V 0.8）改为深蓝，另加 `AIRGLOW_GAIN`（起点 1），`AIRGLOW_ZENITH` 与常数项 `AIRGLOW_LUX` 一并乘上，天空与它照亮的场景保持一致（E2）。数值由样例定稿。
 - **界面**：「夜空」一组加「夜色」滑杆（0…1）；手动太阳模式下这一组置灰，只有夜色可调。

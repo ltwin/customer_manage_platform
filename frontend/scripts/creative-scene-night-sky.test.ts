@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { luminance } from '../src/creative-scene/world/atmosphere/constants.ts'
 import { loadNightAssets, nightAssetLoaders, nightNeeds, parseStars, resetNightAssets } from '../src/creative-scene/world/nightSky/assets.ts'
-import { AIRGLOW_LUX, AIRGLOW_ZENITH, bvTint, magnitudeLux, moonAbove, starlightLux, starsScale, surfaceLuminance, vanRhijn } from '../src/creative-scene/world/nightSky/light.ts'
+import { AIRGLOW_GAIN, AIRGLOW_LUX, AIRGLOW_TINT, AIRGLOW_ZENITH, bvTint, magnitudeLux, moonAbove, starlightLux, starsScale, surfaceLuminance, vanRhijn } from '../src/creative-scene/world/nightSky/light.ts'
 import { completeSky, type PhysicalSky } from '../src/creative-scene/world/physicalSky.ts'
 import { milkyWayAt, milkyWayMean } from '../src/creative-scene/world/nightSky/milkyWay.ts'
 import { refraction, spriteShare, STAR_SIGMA, starSpread } from '../src/creative-scene/world/nightSky/stars.ts'
@@ -58,6 +58,9 @@ test('the airglow brightens toward the horizon and lights level ground with abou
   assert.ok(vanRhijn(0) > 5 && vanRhijn(0) < 7)
   assert.ok(AIRGLOW_ZENITH > 1.5e-4 && AIRGLOW_ZENITH < 2.5e-4)
   assert.ok(AIRGLOW_LUX > 4e-4 && AIRGLOW_LUX < 2e-3, `airglow ${AIRGLOW_LUX}`)
+  // Its look (Epic revision v5): a deep blue of luminance 1, not the real yellow-green.
+  assert.ok(Math.abs(luminance(AIRGLOW_TINT) - 1) < 1e-9 && AIRGLOW_TINT[2] > 2 * AIRGLOW_TINT[0], `airglow tint ${AIRGLOW_TINT.join(', ')}`)
+  assert.ok(AIRGLOW_GAIN >= 1)
   // All the catalogue's stars together light level ground less than the airglow.
   const stars = starlightLux(catalogue.v)
   assert.ok(stars > 1e-5 && stars < AIRGLOW_LUX, `starlight ${stars}`)
@@ -164,11 +167,11 @@ test('the stars’ constant term: the catalogue’s starlight as worked out, the
   // The airglow is most of a moonless night's light, the Milky Way next.
   assert.ok(AIRGLOW_LUX > MILKY_WAY_LUX && MILKY_WAY_LUX > STARLIGHT_LUX)
   const all = nightOf(beijing({ local_time: '22:00' }), sunVector(-40, 0)).lux
-  assert.ok(Math.abs(all - (STARLIGHT_LUX + AIRGLOW_LUX + MILKY_WAY_LUX)) < 1e-12)
+  assert.ok(Math.abs(all - (STARLIGHT_LUX + AIRGLOW_LUX * AIRGLOW_GAIN + MILKY_WAY_LUX)) < 1e-12)
   const off = (night: Partial<PhysicalSky['night']>) => nightOf(beijing({ local_time: '22:00', night: { ...beijing({}).night, ...night } }), sunVector(-40, 0))
   assert.ok(Math.abs(off({ stars: false }).lux - MILKY_WAY_LUX) < 1e-12, 'the stars take the airglow with them')
   assert.deepEqual(off({ stars: false }).airglow, [0, 0, 0])
-  assert.ok(Math.abs(off({ milky_way: false }).lux - (STARLIGHT_LUX + AIRGLOW_LUX)) < 1e-12)
+  assert.ok(Math.abs(off({ milky_way: false }).lux - (STARLIGHT_LUX + AIRGLOW_LUX * AIRGLOW_GAIN)) < 1e-12)
   assert.ok(Math.abs(off({ stars_strength: 2 }).lux - 2 * all) < 1e-12)
   assert.equal(off({ moon: false }).moon, null)
   // Manual angles draw no night.

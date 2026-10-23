@@ -83,7 +83,12 @@
   - 新摄像机：默认摄像机自动时写自动和同样的补偿，手动时写手动加 `newCameraExposure`（`SceneEditor.tsx`；`editing.ts:newCamera` 的参数放宽为摄像机字段）。
   - e2e：模拟服务端按后端规则补齐（`render` 补自动，已存的摄像机补手动）；`physicalYard` 让 W2 的检查显式用手动曝光，「W3 stars」同样显式手动；「W3 moonlight」改为默认设置：正午均值 160，22:00 自动曝光 87、无过曝，手动 −3 为 144；入夜程序数 44 → 44。W2 的全部非门控用例（10 项）、「W3 stars」通过；「W2 environment tab」的缺省夜空期望加 `night_look`。
   - `tsc -b`、`oxlint` 通过。Prettier：改动的文件在改动前就不符合 Prettier（这部分代码沿用更宽的行），未顺带重排。
-- [ ] 5.6 夜色与夜空增益：先写单测（`nightLookWeight` 在 EV_m ≥ 4 为 0、≤ −4 为 `night_look`；节点保持 Rec.709 亮度）。再新增 `world/nightLook.ts`，`render/sceneRenderer.ts` 的输出节点接入（权重 uniform，随 frame 写入，非物理天空、白模、线框、线稿为 0）；`world/nightSky/light.ts` 的夜天光改深蓝、加 `AIRGLOW_GAIN`，常数项随之更新（`night.ts` 的单测数值跟着改）。完成判据：单测绿；「W3 day unchanged」仍逐像素相同；满月之夜 `night_look` 0 与 1 的平均亮度相差 < 3%
+- [x] 5.6 夜色与夜空增益：先写单测（`nightLookWeight` 在 EV_m ≥ 4 为 0、≤ −4 为 `night_look`；节点保持 Rec.709 亮度）。再新增 `world/nightLook.ts`，`render/sceneRenderer.ts` 的输出节点接入（权重 uniform，随 frame 写入，非物理天空、白模、线框、线稿为 0）；`world/nightSky/light.ts` 的夜天光改深蓝、加 `AIRGLOW_GAIN`，常数项随之更新（`night.ts` 的单测数值跟着改）。完成判据：单测绿；「W3 day unchanged」仍逐像素相同；满月之夜 `night_look` 0 与 1 的平均亮度相差 < 3%
+  - 单测先红（`world/nightLook.ts` 不存在）后绿：`creative-scene-exposure.test.ts` 再加 2 项、共 16 项（权重在 EV_m ≥ 4 为 0、≤ −4 为 `night_look`、EV 0 处为一半；颜色保持 Rec.709 亮度、更偏蓝、权重 0 不变）；`frameExposure` 的用例加上夜色权重。夜空单测 13 项：夜天光色调亮度为 1、偏深蓝，`AIRGLOW_GAIN ≥ 1`，常数项按增益计。
+  - `world/nightLook.ts`：`nightLookWeight`（smoothstep，EV 4 → −4）、`nightLookColor`（供测试）、`nightLookNode`。`SceneRenderer` 在色调映射前接入，权重是输出节点的 uniform，随 `Frame.nightLook` 写入；线框不接。`frameExposure` 一并返回权重（只在物理天空的 `lit` 下非 0，按 E 与 `night.night_look`）。
+  - 起点数值：试过 9000 K、降饱和 0.6，满月夜偏暖的院子只拉回中性灰（rgb 88/88/91）；改为 20000 K、0.75，得 81/90/107，亮度均值 89.1 对 87.1。design 的起点数值同步更新，最终由 owner 看样例定。
+  - 夜空增益：`AIRGLOW_TINT` 改为深蓝（亮度归一），`AIRGLOW_GAIN` 起点 1，`night.ts` 的天空亮度与常数项都乘上它。
+  - e2e：新增「W3 night look」（满月夜 `night_look` 1 与 0 亮度差 < 3%、1 时 B/R 更大；正午两者逐像素相同）。「W3 day unchanged」（Metal）逐像素通过：用例的视口改为显式手动曝光、手动角度那张关掉夜色，与 W3 之前的基线同条件比较——默认摄像机改自动、夜色在手动角度下也生效，这两项是 v5 的预期变化，由各自的用例检查。W2 全部非门控用例（10 项）与 W3 的四项回归通过。`tsc -b`、`oxlint` 通过。
 
 ## 6. 编辑界面
 

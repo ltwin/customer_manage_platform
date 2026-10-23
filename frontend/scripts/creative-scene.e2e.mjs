@@ -5389,12 +5389,21 @@ const w3Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environme
  * 49° below the horizon) and the same with the sun at manual angles after
  * sunset, where no night sky is drawn.
  */
+// The free view exposed by hand as the baseline was (Epic revision v5 makes it automatic, an intended change of its
+// own), and the manual sky's twilight without the night look (it works under manual angles too): what is left is
+// what the night sky itself does by day.
 const w3Variants = {
-  'physical-noon': { from: 'physical-noon' },
+  'physical-noon': {
+    from: 'physical-noon',
+    edit(scene) {
+      scene.render.exposure_mode = 'manual'
+    },
+  },
   'physical-manual': {
     from: 'physical-noon',
     edit(scene) {
-      Object.assign(scene.environment.sky, { sun_mode: 'manual', sun_elevation_deg: -8, sun_azimuth_deg: 250 })
+      scene.render.exposure_mode = 'manual'
+      Object.assign(scene.environment.sky, { sun_mode: 'manual', sun_elevation_deg: -8, sun_azimuth_deg: 250, night: { night_look: 0 } })
     },
   },
 }
@@ -5625,6 +5634,29 @@ await check('W3 moonlight: by default the full moon’s yard is seen, darker tha
   assert.equal(after, before, 'no shader program built from dusk to night')
   assert.ok(night.mean > 40 && night.mean < noon.mean - 20 && night.bright < 0.02, 'automatically the yard is seen, darker than at noon')
   assert.ok(manual.mean > 60 && manual.mean < 220 && manual.bright < 0.02, 'by hand at −3 the yard is seen: neither dark nor blown')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W3 night look: by a full moon it turns the yard blue at the same brightness; at noon it does nothing', async () => {
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
+  const { context, page, errors, settle, change, sky, server } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { local_time: '22:00' })
+    Object.assign(scene.render, { exposure_mode: 'auto', exposure_compensation: 0 })
+  })
+  const look = (v) => sky({ night: { ...server.scene.environment.sky.night, night_look: v } })
+  const on = await lumaStats(page, await settle(), { level: 250 })
+  await shot(page, 'w3-night-look-1')
+  const off = await lumaStats(page, await change(look(0)), { level: 250 })
+  await shot(page, 'w3-night-look-0')
+  const noonOff = await change([...sky({ local_time: '12:00' })])
+  const noonOn = await change(look(1))
+  const noon = await compareShots(page, noonOff, noonOn, 0)
+  const rgb = (l) => [l.r, l.g, l.b].map((v) => v.toFixed(0))
+  console.log(`W3 night look: 22:00 at 1 mean ${on.mean.toFixed(1)} (rgb ${rgb(on)}), at 0 ${off.mean.toFixed(1)} (rgb ${rgb(off)}); noon off by ${noon.error ?? `${noon.over}%`}`)
+  assert.ok(Math.abs(on.mean / off.mean - 1) < 0.03, 'the same brightness')
+  assert.ok(on.b / on.r > (off.b / off.r) * 1.1, 'bluer')
+  assert.ok(!noon.error && noon.over === 0, 'nothing at noon')
   assert.deepEqual(errors, [])
   await context.close()
 })
