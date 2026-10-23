@@ -53,11 +53,11 @@ func (s *Store) SubscribeRealtime(ctx context.Context, scope AccountScope, kind,
 	s.realtimeOnce.Do(func() {
 		runCtx, cancel := context.WithCancel(context.Background())
 		h := &realtimeHub{subscribers: make(map[realtimeTopic]map[chan struct{}]struct{}), cancel: cancel, done: make(chan struct{})}
-		s.realtime = h
+		s.realtime.Store(h)
 		config := s.pool.Config().ConnConfig.Copy()
 		go h.run(runCtx, config)
 	})
-	h := s.realtime
+	h := s.realtime.Load()
 	if h == nil {
 		return nil, nil, errRealtimeStopped
 	}
@@ -110,12 +110,30 @@ func (s *Store) SubscribeRealtime(ctx context.Context, scope AccountScope, kind,
 	}
 }
 
+// RealtimeWatching reports whether this process holds a live subscription of
+// the kind in the account, such as an open canvas page. Other instances'
+// subscribers are not seen, so callers use it only as a hint.
+func (s *Store) RealtimeWatching(accountID, kind string) bool {
+	h := s.realtime.Load()
+	if h == nil || accountID == "" {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for topic, subscribers := range h.subscribers {
+		if topic.Account == accountID && topic.Kind == kind && len(subscribers) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // StopRealtime closes live streams before HTTP shutdown waits for handlers.
 // It is idempotent and permanently prevents new subscriptions on this Store.
 func (s *Store) StopRealtime() {
 	s.realtimeOnce.Do(func() {})
-	if s.realtime != nil {
-		s.realtime.close()
+	if h := s.realtime.Load(); h != nil {
+		h.close()
 	}
 }
 

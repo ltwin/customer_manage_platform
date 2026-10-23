@@ -1,6 +1,6 @@
 {
   "uid": "5917e00c-4ab2-49c8-a023-cca859888e0b",
-  "revision": 3,
+  "revision": 8,
   "id": "mcp-connect-read",
   "kind": "feature",
   "assurance": "governed",
@@ -37,9 +37,9 @@
       "api:MCP 只读工具"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-22T13:53:43.715Z",
-  "updatedAt": "2026-10-22T13:59:54.449Z",
+  "updatedAt": "2026-10-23T08:49:28.725Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -61,8 +61,177 @@
   },
   "approvalHistory": [],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "14195016efc3b707cedb80c43ac8f32674f5e48f",
+    "at": "2026-10-22T14:00:19.855Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "04aaaae52c03ff2990423ed3d700d340a28e8216439d1d745d425bc2bcd47ff9"
+    },
+    "preExisting": [
+      ".lti/snapshots/04aaaae52c03ff2990423ed3d700d340a28e8216439d1d745d425bc2bcd47ff9.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-22T18:09:33.761Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，按定向检查人工记录；全量 e2e 未跑（合回 develop 时跑 make check-merge）；Claude Code、Claude 桌面端真实宿主与 Codex 实际调用工具待 owner 实测（Codex 调用要跑模型，花 owner 额度，没跑）；宿主 1 小时后自动续期未测；read_asset 读图片只有单元测试；claude.ai 连接器、ChatGPT 需要公网 https，本机测不了；Claude Team 回退路径无账号，记为限制项",
+        "coverage": [
+          {
+            "criterionId": "AC-8150a3279856",
+            "status": "verified",
+            "evidence": "oauth/client.go Register、resolveClient（DCR、CIMD）、authorize.go、httpapi/oauth.go、AgentConsentPage.tsx；httpapi/mcp_test.go TestMCPEndpointEndToEnd（Go SDK 客户端 DCR → authorize → decision → token → tools/list 6 个）；host-runs.md：Codex CLI 0.161.0 真实登录（CIMD，未登录 → 登录 → 确认 → 回调，codex mcp list 显示 OAuth），模拟宿主 DCR 走通。Claude Code 真实宿主待 owner 实测"
+          },
+          {
+            "criterionId": "AC-195303ccce90",
+            "status": "deferred",
+            "evidence": "协议部分已验证：oauth/token.go RedeemRefresh；oauth/service_test.go 轮换、重放断开；host-runs.md 模拟宿主 refresh 轮换、重放旧 refresh 得 invalid_grant 且新令牌 401。宿主在 1 小时过期后自动续期未测，待 owner 实测"
+          },
+          {
+            "criterionId": "AC-ee76e12ad8a8",
+            "status": "verified",
+            "evidence": "creativeagent/external_read.go 6 个工具；external_test.go（摘要、get_capabilities 各字段、read_asset 图片长边 ≤ 1024）；creativemedia/fit_preview_test.go；host-runs.md 模拟宿主在实时服务上调通 get_capabilities、list_canvases（Markdown 链接）、read_canvas、search_assets、read_library。read_asset 读图片只有单元测试，测试画布没有图片"
+          },
+          {
+            "criterionId": "AC-7dd5f5ca9efe",
+            "status": "verified",
+            "evidence": "external_test.go 两账号越权得 not_found；mcp_test.go:275-279 网页令牌调 /mcp 401、MCP 令牌调 /api/v1 401（访问令牌 aud 与密钥按用途派生，auth.DerivePurposeKey）；host-runs.md 模拟宿主不存在的画布 not_found、MCP 令牌调 /api/v1/me 401"
+          },
+          {
+            "criterionId": "AC-128d5dd99602",
+            "status": "verified",
+            "evidence": "AgentConnectionBadge.tsx、AgentsPage.tsx（c5ffddc0 断开后就地显示「已断开」）、oauth/connections.go Revoke、VerifyAccess 每次查连接；mcp_test.go 断开后 401；host-runs.md 模拟宿主 + Playwright：顶栏「Claude Code 已连接」、接入页断开后显示「已断开」、下一次 /mcp 401 带 resource_metadata、顶栏指示消失（截图）"
+          },
+          {
+            "criterionId": "AC-18d4f33b4163",
+            "status": "verified",
+            "evidence": "external_read.go 摘要第一行结论、Markdown 画布链接；creativemcp/handler.go success() 不下发卡片字段；external_test.go 摘要断言；host-runs.md 模拟宿主看到的文字。在 Claude Code、Codex 界面里的显示效果待 owner 实测"
+          },
+          {
+            "criterionId": "AC-7e1d1a75ff7c",
+            "status": "verified",
+            "evidence": "config.go MCP_ENABLED；router.go OAuth 为 nil 时不挂协议端点、NoRoute 对协议路径 404；mcp_test.go TestMCPSwitchedOffIsNotThere；AgentsPage.tsx 404 → 暂未开放；内置助手代码路径未改（运行路径现有测试全绿）"
+          },
+          {
+            "criterionId": "AC-72668e40b061",
+            "status": "deferred",
+            "evidence": "hostGuides.ts 四个宿主的接入文字与回退文字（creative-agents.test.ts）；没有 Claude Team 成员账号，实测记为限制项（roadmap「验收责任」）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "定向检查：make check-frontend（oxlint、build、762 单测）与 make check-go（10 个受影响包，golangci-lint 0 issues，测试全绿，含 MCP 端到端与迁移回滚链）通过。宿主实测见 discovery/research/host-runs.md：Codex CLI 0.161.0 真实登录（CIMD），模拟宿主在实时服务上走通 AC-C1-1/2/3/4/5，实测中发现的断开列表问题已修（c5ffddc0）。design 在批准后同步了实现偏差（resource 缺省、DCR 限流在内存、外部工具目录、toolFailure 未抽出、断开就地显示、挂载点），并补了 specs.md（creative/external-agents，按已批准 AC 写），待 owner 确认。迁移：scratch 库升到 0080 并在其上运行；down 在有连接时拒绝（迁移测试覆盖）；新表只被新代码读，旧代码不感知。信任边界：VerifyAccess、请求包验签、PKCE、回调规则、CIMD SSRF 防护、按用途派生密钥，越权与错误凭据用例见 service_test、mcp_test、external_test。影响面：AuthPageShell 的 6 个页面、读工具共用核心的运行路径、Store.realtime、NoRoute，均由上述测试覆盖",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "863a6ec6e939cdcaa1fa37c3bb4758e499c819460eeea1930938c7927360aee8"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-10-23T08:48:33.323Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，按定向检查人工记录；全量 e2e 未跑（合回 develop 时跑 make check-merge）；Claude 桌面端与 Codex 实际调用工具未测（Codex 调用要跑模型，花 owner 额度）；Claude Code 的版本、instructions 是否读到、顶栏署名未记录；宿主 1 小时后自动续期未测；read_asset 读图片只有单元测试；claude.ai 连接器、ChatGPT 需要公网 https，本机测不了；Claude Team 回退路径无账号，记为限制项",
+        "coverage": [
+          {
+            "criterionId": "AC-8150a3279856",
+            "status": "verified",
+            "evidence": "oauth/client.go Register、resolveClient（DCR、CIMD）、authorize.go、httpapi/oauth.go、AgentConsentPage.tsx；httpapi/mcp_test.go TestMCPEndpointEndToEnd（Go SDK 客户端 DCR → authorize → decision → token → tools/list 6 个）；host-runs.md：Codex CLI 0.161.0 真实登录（CIMD，未登录 → 登录 → 确认 → 回调，codex mcp list 显示 OAuth），模拟宿主 DCR 走通。2026-10-23 owner 在 Claude Code 真实宿主实测：CIMD 授权成功、工具可调用；实测发现重新授权后旧会话 403，已修（f56eeec7，mcp_test.go TestMCPSessionSurvivesReauthorization）"
+          },
+          {
+            "criterionId": "AC-195303ccce90",
+            "status": "deferred",
+            "evidence": "协议部分已验证：oauth/token.go RedeemRefresh；oauth/service_test.go 轮换、重放断开；host-runs.md 模拟宿主 refresh 轮换、重放旧 refresh 得 invalid_grant 且新令牌 401。宿主在 1 小时过期后自动续期未测，待 owner 实测"
+          },
+          {
+            "criterionId": "AC-ee76e12ad8a8",
+            "status": "verified",
+            "evidence": "creativeagent/external_read.go 6 个工具；external_test.go（摘要、get_capabilities 各字段、read_asset 图片长边 ≤ 1024）；creativemedia/fit_preview_test.go；host-runs.md 模拟宿主在实时服务上调通 get_capabilities、list_canvases（Markdown 链接）、read_canvas、search_assets、read_library。read_asset 读图片只有单元测试，测试画布没有图片"
+          },
+          {
+            "criterionId": "AC-7dd5f5ca9efe",
+            "status": "verified",
+            "evidence": "external_test.go 两账号越权得 not_found；mcp_test.go:275-279 网页令牌调 /mcp 401、MCP 令牌调 /api/v1 401（访问令牌 aud 与密钥按用途派生，auth.DerivePurposeKey）；host-runs.md 模拟宿主不存在的画布 not_found、MCP 令牌调 /api/v1/me 401"
+          },
+          {
+            "criterionId": "AC-128d5dd99602",
+            "status": "verified",
+            "evidence": "AgentConnectionBadge.tsx、AgentsPage.tsx（c5ffddc0 断开后就地显示「已断开」）、oauth/connections.go Revoke、VerifyAccess 每次查连接；mcp_test.go 断开后 401；host-runs.md 模拟宿主 + Playwright：顶栏「Claude Code 已连接」、接入页断开后显示「已断开」、下一次 /mcp 401 带 resource_metadata、顶栏指示消失（截图）"
+          },
+          {
+            "criterionId": "AC-18d4f33b4163",
+            "status": "verified",
+            "evidence": "external_read.go 摘要第一行结论、Markdown 画布链接；creativemcp/handler.go success() 不下发卡片字段；external_test.go 摘要断言；host-runs.md 模拟宿主看到的文字。owner 在 Claude Code 里调用 get_capabilities、list_canvases、read_library 后确认可用；Codex 界面里的显示未测"
+          },
+          {
+            "criterionId": "AC-7e1d1a75ff7c",
+            "status": "verified",
+            "evidence": "config.go MCP_ENABLED；router.go OAuth 为 nil 时不挂协议端点、NoRoute 对协议路径 404；mcp_test.go TestMCPSwitchedOffIsNotThere；AgentsPage.tsx 404 → 暂未开放；内置助手代码路径未改（运行路径现有测试全绿）"
+          },
+          {
+            "criterionId": "AC-72668e40b061",
+            "status": "deferred",
+            "evidence": "hostGuides.ts 四个宿主的接入文字与回退文字（creative-agents.test.ts）；没有 Claude Team 成员账号，实测记为限制项（roadmap「验收责任」）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "f56eeec7（MCP 会话按账号绑定）之后重跑：creativemcp、httpapi 两包 build、golangci-lint 0 issues、go test 通过（含新增 TestMCPSessionSurvivesReauthorization：重新授权后旧会话可用、调用归到最新连接、别的账号持同一会话 403）。其余包与前端自 df5c1193 后没有改动，沿用当时结果（check-go 10 个包、前端 762 个测试）。owner 2026-10-23 在 Claude Code 真实宿主实测可用，确认 C1 没有问题",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "73a7d1995c04590cc8c31b17df154e6bb8d7b6ef91216bbb9d5fd54d0e0523f9"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T08:49:10.628Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "Claude 桌面端、Codex 实际调用工具、宿主 1 小时后自动续期未实测；claude.ai 连接器、ChatGPT 需要公网 https；Claude Team 回退无账号"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-23 在 Claude Code 真实宿主实测：授权后 get_capabilities、list_canvases、read_library 可用；实测中重新授权后旧会话 403 的问题已修（f56eeec7）。owner 结论：「看起来这个C1是没什么问题的，你可以继续往下推进」",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "73a7d1995c04590cc8c31b17df154e6bb8d7b6ef91216bbb9d5fd54d0e0523f9"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-23T08:49:28.564Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

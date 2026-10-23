@@ -52,6 +52,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:8080',
+      // 外部助手（epic creative-mcp-server）：MCP 端点与 OAuth 协议端点在后端；
+      // /oauth/consent 是前端的授权确认页，不转发。
+      '/mcp': 'http://localhost:8080',
+      '^/oauth/(authorize|token|register)': 'http://localhost:8080',
+      '^/\\.well-known/oauth-': 'http://localhost:8080',
     },
     // 浏览器回归在测试开始时才写入 .*-qa.html 夹具；冷启动时监听到这次写入
     // 会把正在测的页面整页刷新，测试随之丢掉状态。夹具照常可访问，只是不监听。

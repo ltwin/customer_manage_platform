@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackCreativeAssetModel is the head of the rollback chain: every older
+// rollbackCreativeAssetModel undoes 0080 and then 0079; every older
 // migration's rollback helper undoes this one first.
 func rollbackCreativeAssetModel(t *testing.T, url string) {
 	t.Helper()
+	rollbackExternalAgentOAuth(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-asset-model", err)
 	}
@@ -42,6 +43,7 @@ func TestCreativeAssetModelMigrationAddsKindAndRefusesLossyRollback(t *testing.T
 	if _, err = db.Exec(modelAssetInsert); err != nil {
 		t.Fatal("model asset rejected", err)
 	}
+	rollbackExternalAgentOAuth(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "model assets exist") {
 		t.Fatal("lossy model asset rollback allowed", err)
 	}

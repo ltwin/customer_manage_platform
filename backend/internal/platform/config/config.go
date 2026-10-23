@@ -43,6 +43,7 @@ type Config struct {
 	CreativeMediaQuotaBytes       int64  // CREATIVE_MEDIA_QUOTA_BYTES（每账号媒体额度；默认 20GiB）
 	CreativeSkillLocalRoot        string // CREATIVE_SKILL_LOCAL_ROOT（local driver；缺省 AvatarLocalRoot 同级 creative-skills）
 	CreativeSkillPackagesDir      string // CREATIVE_SKILL_PACKAGES_DIR（内置 Skill 包目录，启动时同步进平台目录；留空不同步）
+	MCPEnabled                    bool   // MCP_ENABLED（默认 false；开启后挂载外部助手的 /mcp 与 OAuth 授权服务器）
 }
 
 // AccountAuthConfig 是 server/accountctl 共享的认证 composition 配置。
@@ -80,6 +81,7 @@ var (
 	ErrOSSRegionMissing               = errors.New("OSS_REGION 未设置：oss driver 必填")
 	ErrOSSBucketMissing               = errors.New("OSS_BUCKET 未设置：oss driver 必填")
 	ErrOSSUseCNameInvalid             = errors.New("OSS_USE_CNAME 必须是 true 或 false")
+	ErrMCPEnabledInvalid              = errors.New("MCP_ENABLED 必须是 true 或 false")
 	ErrOSSCNameEndpointMissing        = errors.New("OSS_ENDPOINT 未设置：OSS_USE_CNAME=true 时必填")
 	ErrAvatarLocalRootMissing         = errors.New("AVATAR_LOCAL_ROOT 未设置")
 	ErrAvatarLocalRequireMountInvalid = errors.New("AVATAR_LOCAL_REQUIRE_MOUNT 必须是 true 或 false")
@@ -121,6 +123,11 @@ func Load() (Config, error) {
 	// are retained until a general collection exists to decide otherwise.
 	cfg.CreativeSkillLocalRoot = strings.TrimSpace(os.Getenv("CREATIVE_SKILL_LOCAL_ROOT"))
 	cfg.CreativeSkillPackagesDir = strings.TrimSpace(os.Getenv("CREATIVE_SKILL_PACKAGES_DIR"))
+	mcpEnabled, err := parseOptionalBool("MCP_ENABLED", strings.TrimSpace(os.Getenv("MCP_ENABLED")), ErrMCPEnabledInvalid)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MCPEnabled = mcpEnabled
 	cfg.CreativeFFProbe = strings.TrimSpace(os.Getenv("CREATIVE_FFPROBE"))
 	if cfg.CreativeFFProbe == "" {
 		cfg.CreativeFFProbe = "ffprobe"

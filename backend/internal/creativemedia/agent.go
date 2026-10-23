@@ -138,3 +138,39 @@ func agentPreview(ctx context.Context, open func(context.Context) (io.ReadCloser
 	}
 	return nil, &ImagePreviewLimitError{SizeBytes: size, LimitBytes: maxBytes}
 }
+
+// FitPreview bounds an image for an external agent: the longest edge at most
+// maxSide and the bytes at most maxBytes. An image already within both is
+// returned as it is; anything else is re-encoded as a JPEG laid on white, the
+// way the canvas shows transparency.
+func FitPreview(data []byte, mimeType string, maxSide int, maxBytes int64) ([]byte, string, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", ErrUnsupported
+	}
+	if max(cfg.Width, cfg.Height) <= maxSide && int64(len(data)) <= maxBytes && (mimeType == "image/jpeg" || mimeType == "image/png") {
+		return data, mimeType, nil
+	}
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", ErrUnsupported
+	}
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if longest := max(w, h); longest > maxSide {
+		w, h = max(1, w*maxSide/longest), max(1, h*maxSide/longest)
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(dst, dst.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Over, nil)
+	for _, quality := range []int{85, 70, 55} {
+		var out bytes.Buffer
+		if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: quality}); err != nil {
+			return nil, "", err
+		}
+		if int64(out.Len()) <= maxBytes {
+			return out.Bytes(), "image/jpeg", nil
+		}
+	}
+	return nil, "", &ImagePreviewLimitError{SizeBytes: int64(len(data)), LimitBytes: maxBytes}
+}

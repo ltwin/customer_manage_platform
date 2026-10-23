@@ -1,3 +1,4 @@
+import AgentConnectionBadge from './AgentConnectionBadge.tsx'
 import {
   Archive,
   ArchiveRestore,
@@ -1286,6 +1287,7 @@ function Workspace({ account }: { account: string }) {
             ，关闭页面会中断
           </span>
         )}
+        {canvasID && <AgentConnectionBadge signal={canvas} />}
       </header>
       {projectMenu && activeProject && (
         <>

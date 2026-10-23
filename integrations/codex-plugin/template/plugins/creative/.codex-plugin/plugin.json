@@ -1,0 +1,19 @@
+{
+  "name": "creative",
+  "version": "0.1.0",
+  "description": "在 Codex 里使用你的创意空间：读取画布、素材和资产库。",
+  "interface": {
+    "displayName": "创意空间",
+    "shortDescription": "读取你的画布、素材和资产库",
+    "longDescription": "连接你的创意空间账号后，Codex 可以列出画布、读取节点和引用素材的图片、查找和浏览资产库。授权在浏览器里完成，Codex 拿不到你的密码；随时可以在创意空间的「外部助手」页面断开。",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "看看我最近的画布",
+      "读一下最近那张画布，说说用了哪些参考图",
+      "在资产库里找海边的素材"
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

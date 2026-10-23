@@ -2852,6 +2852,33 @@ func (e ExportDocumentSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for ExternalAgentConnectionHostKind.
+const (
+	Chatgpt    ExternalAgentConnectionHostKind = "chatgpt"
+	Claude     ExternalAgentConnectionHostKind = "claude"
+	ClaudeCode ExternalAgentConnectionHostKind = "claude_code"
+	Codex      ExternalAgentConnectionHostKind = "codex"
+	Other      ExternalAgentConnectionHostKind = "other"
+)
+
+// Valid indicates whether the value is a known member of the ExternalAgentConnectionHostKind enum.
+func (e ExternalAgentConnectionHostKind) Valid() bool {
+	switch e {
+	case Chatgpt:
+		return true
+	case Claude:
+		return true
+	case ClaudeCode:
+		return true
+	case Codex:
+		return true
+	case Other:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FeedbackCreateResultV1TargetKind.
 const (
 	FeedbackCreateResultV1TargetKindPlan FeedbackCreateResultV1TargetKind = "plan"
@@ -2882,6 +2909,24 @@ func (e NonShootScheduleSlotListItemType) Valid() bool {
 	case NonShootScheduleSlotListItemTypeBusy:
 		return true
 	case NonShootScheduleSlotListItemTypeHold:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OAuthAuthorizeDecisionRequestDecision.
+const (
+	Allow OAuthAuthorizeDecisionRequestDecision = "allow"
+	Deny  OAuthAuthorizeDecisionRequestDecision = "deny"
+)
+
+// Valid indicates whether the value is a known member of the OAuthAuthorizeDecisionRequestDecision enum.
+func (e OAuthAuthorizeDecisionRequestDecision) Valid() bool {
+	switch e {
+	case Allow:
+		return true
+	case Deny:
 		return true
 	default:
 		return false
@@ -7896,6 +7941,35 @@ type ExportDocument struct {
 // ExportDocumentSchemaVersion defines model for ExportDocument.SchemaVersion.
 type ExportDocumentSchemaVersion int
 
+// ExternalAgentConnection defines model for ExternalAgentConnection.
+type ExternalAgentConnection struct {
+	// Active 有效且 last_used_at 在 5 分钟内
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// DisplayName 界面署名：Claude、Claude Code、Codex、ChatGPT 或客户端自报的名称
+	DisplayName string                          `json:"display_name"`
+	HostKind    ExternalAgentConnectionHostKind `json:"host_kind"`
+
+	// Id cxcon_…
+	Id string `json:"id"`
+
+	// LastUsedAt 从未调用过工具时为 null
+	LastUsedAt nullable.Nullable[time.Time] `json:"last_used_at"`
+	RevokedAt  nullable.Nullable[time.Time] `json:"revoked_at"`
+}
+
+// ExternalAgentConnectionHostKind defines model for ExternalAgentConnection.HostKind.
+type ExternalAgentConnectionHostKind string
+
+// ExternalAgentConnectionList defines model for ExternalAgentConnectionList.
+type ExternalAgentConnectionList struct {
+	Items []ExternalAgentConnection `json:"items"`
+
+	// McpUrl <PUBLIC_BASE_URL>/mcp，接入文字据此生成
+	McpUrl string `json:"mcp_url"`
+}
+
 // FeedbackCreateResultV1 defines model for FeedbackCreateResultV1.
 type FeedbackCreateResultV1 struct {
 	CreatedAt  time.Time                        `json:"created_at"`
@@ -7955,6 +8029,20 @@ type NonShootScheduleSlotListItem struct {
 
 // NonShootScheduleSlotListItemType hold/busy 不带订单或客户引用摘要
 type NonShootScheduleSlotListItemType string
+
+// OAuthAuthorizeDecisionRequest defines model for OAuthAuthorizeDecisionRequest.
+type OAuthAuthorizeDecisionRequest struct {
+	Decision OAuthAuthorizeDecisionRequestDecision `json:"decision"`
+	Request  string                                `json:"request"`
+}
+
+// OAuthAuthorizeDecisionRequestDecision defines model for OAuthAuthorizeDecisionRequest.Decision.
+type OAuthAuthorizeDecisionRequestDecision string
+
+// OAuthAuthorizeDecisionResult defines model for OAuthAuthorizeDecisionResult.
+type OAuthAuthorizeDecisionResult struct {
+	RedirectTo string `json:"redirect_to"`
+}
 
 // Order defines model for Order.
 type Order struct {
@@ -9018,6 +9106,12 @@ type RegisterJSONBody struct {
 	Password string `json:"password"`
 }
 
+// ListExternalAgentConnectionsParams defines parameters for ListExternalAgentConnections.
+type ListExternalAgentConnectionsParams struct {
+	Active         *bool `form:"active,omitempty" json:"active,omitempty"`
+	IncludeRevoked *bool `form:"include_revoked,omitempty" json:"include_revoked,omitempty"`
+}
+
 // CancelCreativeAgentRunParams defines parameters for CancelCreativeAgentRun.
 type CancelCreativeAgentRunParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -10005,6 +10099,9 @@ type MergeCustomerJSONRequestBody MergeCustomerJSONBody
 
 // AddCustomerNoteJSONRequestBody defines body for AddCustomerNote for application/json ContentType.
 type AddCustomerNoteJSONRequestBody AddCustomerNoteJSONBody
+
+// DecideOAuthAuthorizationJSONRequestBody defines body for DecideOAuthAuthorization for application/json ContentType.
+type DecideOAuthAuthorizationJSONRequestBody = OAuthAuthorizeDecisionRequest
 
 // CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
 type CreateOrderJSONRequestBody CreateOrderJSONBody
@@ -11992,6 +12089,12 @@ type ServerInterface interface {
 	// 注册 pending_verification 账号并尝试发送验证邮件
 	// (POST /auth/register)
 	Register(c *gin.Context)
+	// 列出本账号的外部助手连接，并给出接入文字要用的 MCP 地址
+	// (GET /creative/agent-connections)
+	ListExternalAgentConnections(c *gin.Context, params ListExternalAgentConnectionsParams)
+	// 断开一个外部助手连接
+	// (POST /creative/agent-connections/{id}/revoke)
+	RevokeExternalAgentConnection(c *gin.Context, id string)
 	// 一次运行的快照：状态、费用投影与全部有序块
 	// (GET /creative/agent-runs/{id})
 	GetCreativeAgentRun(c *gin.Context, id string)
@@ -12343,6 +12446,9 @@ type ServerInterface interface {
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
+	// 授权确认页提交「允许」或「拒绝」
+	// (POST /oauth/authorize/decision)
+	DecideOAuthAuthorization(c *gin.Context)
 	// 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3）
 	// (GET /orders)
 	ListOrders(c *gin.Context, params ListOrdersParams)
@@ -12795,6 +12901,70 @@ func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
 	}
 
 	siw.Handler.Register(c)
+}
+
+// ListExternalAgentConnections operation middleware
+func (siw *ServerInterfaceWrapper) ListExternalAgentConnections(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListExternalAgentConnectionsParams
+
+	// ------------- Optional query parameter "active" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "active", c.Request.URL.Query(), &params.Active, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter active: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "include_revoked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_revoked", c.Request.URL.Query(), &params.IncludeRevoked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter include_revoked: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListExternalAgentConnections(c, params)
+}
+
+// RevokeExternalAgentConnection operation middleware
+func (siw *ServerInterfaceWrapper) RevokeExternalAgentConnection(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RevokeExternalAgentConnection(c, id)
 }
 
 // GetCreativeAgentRun operation middleware
@@ -17661,6 +17831,21 @@ func (siw *ServerInterfaceWrapper) GetMe(c *gin.Context) {
 	siw.Handler.GetMe(c)
 }
 
+// DecideOAuthAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) DecideOAuthAuthorization(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DecideOAuthAuthorization(c)
+}
+
 // ListOrders operation middleware
 func (siw *ServerInterfaceWrapper) ListOrders(c *gin.Context) {
 
@@ -18931,6 +19116,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
+	router.GET(options.BaseURL+"/creative/agent-connections", wrapper.ListExternalAgentConnections)
+	router.POST(options.BaseURL+"/creative/agent-connections/:id/revoke", wrapper.RevokeExternalAgentConnection)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id", wrapper.GetCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id/blocks/:block_id/detail", wrapper.GetCreativeAgentRunBlockDetail)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/cancel", wrapper.CancelCreativeAgentRun)
@@ -19048,6 +19235,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/dashboard/v2", wrapper.GetDashboardV2)
 	router.GET(options.BaseURL+"/export", wrapper.ExportAll)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
+	router.POST(options.BaseURL+"/oauth/authorize/decision", wrapper.DecideOAuthAuthorization)
 	router.GET(options.BaseURL+"/orders", wrapper.ListOrders)
 	router.POST(options.BaseURL+"/orders", wrapper.CreateOrder)
 	router.DELETE(options.BaseURL+"/orders/:id", wrapper.DeleteOrder)

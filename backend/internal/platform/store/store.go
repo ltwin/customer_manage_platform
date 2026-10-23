@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -14,7 +15,9 @@ import (
 type Store struct {
 	pool         *pgxpool.Pool
 	realtimeOnce sync.Once
-	realtime     *realtimeHub
+	// realtime is set once, inside realtimeOnce; RealtimeWatching reads it
+	// without going through the Once.
+	realtime atomic.Pointer[realtimeHub]
 }
 
 type ScopedAccount struct {

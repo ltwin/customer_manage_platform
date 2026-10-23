@@ -25,3 +25,4 @@ output-options:
     - account-profile
     - planning-media
     - plan-share-anonymous
+    - external-agents

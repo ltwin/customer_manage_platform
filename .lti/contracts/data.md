@@ -521,3 +521,66 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 不迁移，读取时补齐。
 - 回滚到不认识这些字段的后端时，带这些字段的快照会读取失败，只做前向修复。
 - 将来加自动曝光时，另加模式字段，缺省为手动，已有场景不变。
+
+## 外部助手连接与 OAuth
+
+### 用途与存储角色
+- **用途**：外部助手的授权与身份：连接、OAuth 客户端、授权码、refresh token。
+- **存储**：PostgreSQL，新表 `external_agent_connections`、`oauth_clients`、`oauth_authorization_codes`、`oauth_refresh_tokens`。
+- **角色**：连接是权威主数据；客户端、授权码、refresh token 是授权服务器内部数据。
+- **所有权**：只有 `platform/oauth` 读写。业务模块只拿到连接 ID 和展示名（经助手主体传入），不读这些表。
+
+### 结构与身份
+
+`external_agent_connections`：
+
+| 列 | 类型 | 必须 | 约束与含义 |
+|---|---|---|---|
+| `id` | text | 是 | `cxcon_<uuid>`，主键 |
+| `account_id` | text | 是 | 账号隔离；外键到账号 |
+| `client_id` | text | 是 | OAuth 客户端标识：CIMD 时是元数据 URL，DCR 时是 `oclient_<uuid>` |
+| `client_name` | text ≤ 100 | 是 | 授权时客户端声明的名称，原样保存，用于确认页和审计 |
+| `host_kind` | text | 是 | `claude`（claude.ai 连接器，含共用它的 Claude Code）/ `claude_code`（本机添加的 Claude Code）/ `codex` / `chatgpt` / `other`（CHECK）；授权时按客户端元数据（客户端名、回调地址主机、CIMD 地址）识别，识别规则在 C1 实测后固定 |
+| `display_name` | text ≤ 100 | 是 | 界面署名：「Claude」「Claude Code」「Codex」「ChatGPT」，`other` 取 `client_name` |
+| `scopes` | text[] | 是 | 当前只有 `{creative}` |
+| `created_at` | timestamptz | 是 | 授权时间 |
+| `last_used_at` | timestamptz | 否 | 最近一次工具调用；每分钟最多更新一次 |
+| `revoked_at` | timestamptz | 否 | null 表示有效 |
+| `revoked_reason` | text | 否 | `user`（摄影师在接入页断开）/ `refresh_replay`（检测到已轮换的 refresh token 被重放）/ `account_disabled`（CHECK）；`revoked_at` 非空时必填 |
+
+索引：`(account_id, revoked_at, last_used_at DESC)`。
+
+`oauth_clients`：
+
+| 列 | 类型 | 必须 | 约束与含义 |
+|---|---|---|---|
+| `client_id` | text | 是 | 主键 |
+| `registration` | text | 是 | `cimd` / `dcr`（CHECK） |
+| `client_name` | text ≤ 100 | 是 | — |
+| `redirect_uris` | text[] | 是 | 1–5 个；每个都是回环地址（`http://127.0.0.1:*`、`http://localhost:*`，命令行宿主）或 https（网页端宿主的服务端回调，例如 claude.ai、ChatGPT） |
+| `token_endpoint_auth_method` | text | 是 | `none`（公共客户端）/ `client_secret_post` / `client_secret_basic`（机密客户端，网页端宿主）（CHECK）；CIMD 客户端只能是 `none` |
+| `client_secret_hash` | text | 机密客户端时 | 注册时签发的密钥的 SHA-256；明文只在注册响应里返回一次 |
+| `metadata` | jsonb | 是 | 注册时或 CIMD 拉取到的原始元数据（≤ 5 KB） |
+| `fetched_at` | timestamptz | CIMD 时 | 上次拉取时间；超过缓存期（≤ 24 小时）再用时重新拉取 |
+| `created_at` | timestamptz | 是 | — |
+
+客户端不属于任何账号：同一个客户端（例如 claude.ai 的连接器）可被多个账号授权。DCR 客户端 90 天没有被任何连接使用时由维护任务删除。
+
+`oauth_authorization_codes`：主键 `code_hash`（SHA-256），列 `client_id`、`account_id`、`connection_id`、`redirect_uri`、`code_challenge`（S256）、`resource`、`expires_at`（签发后 60 秒）、`used_at`。只能用一次；第二次使用时断开对应连接。过期一天后删除。
+
+`oauth_refresh_tokens`：主键 `token_hash`（SHA-256），列 `connection_id`、`account_id`、`state`（`current` / `rotated` / `revoked`，CHECK）、`created_at`、`last_used_at`、`absolute_expires_at`（连接内第一张 refresh token 签发后 90 天）。每个连接同时最多一行 `current`（部分唯一索引）。空闲超过 30 天视为失效。
+
+### 访问模式与保证
+- **授权确认**：同一事务建连接、写授权码。同一账号对同一 `client_id` 再次授权时新建一个连接，不复用旧连接（旧连接保持原状，摄影师可以在接入页断开）。
+- **换令牌**：锁授权码行 → 校验未用、未过期、`redirect_uri`、PKCE、`resource` → 标记已用 → 写第一张 refresh token。
+- **refresh**：锁 refresh 行 → `current` 则改为 `rotated` 并写新的 `current`；`rotated` 则断开连接（`refresh_replay`）、把该连接所有行改为 `revoked`。
+- **每次 MCP 请求**：按 `id` 读连接，`revoked_at` 为 null 才放行。
+- **断开**：同一事务写 `revoked_at`、作废 refresh 链，并通过 `creativescene` 的端口取消该连接非终态的场景客户端任务（C3 起）；提交后发账号失效通知。
+- **保证方**：
+  - 由数据库保证：主键唯一、CHECK、每连接一行 `current`。
+  - 由应用保证：授权码一次性、PKCE 与 `resource` 校验、断开的级联。
+
+### 生命周期与演进
+- 连接永不物理删除。业务表用它的 ID 做署名，已断开的连接仍是署名来源。
+- 账号停用时，维护任务断开它的全部连接（`account_disabled`）。
+- 以后做细粒度授权时扩展 `scopes`，存量连接保持 `{creative}`。

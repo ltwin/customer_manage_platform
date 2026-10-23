@@ -446,18 +446,29 @@ func (h *runtimeHandler) readCanvas(ctx context.Context, raw string) (string, er
 	if err != nil {
 		return "", err
 	}
-	canvas, err := creativecanvas.GetCanvas(ctx, h.scope, canvasID)
+	view, err := readCanvasView(ctx, h.scope, runReadAccess{h}, canvasID, args.Offset, args.Limit)
 	if err != nil {
 		return "", err
 	}
-	view := canvasView(canvas, args.Offset, args.Limit)
-	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+	out, err := json.Marshal(view)
+	return string(out), err
+}
+
+// readCanvasView pages a canvas for a caller. A text node's opening lines are
+// shown only when the caller may read that revision.
+func readCanvasView(ctx context.Context, scope store.AccountScope, access readAccess, canvasID string, offset, limit int) (canvasContext, error) {
+	canvas, err := creativecanvas.GetCanvas(ctx, scope, canvasID)
+	if err != nil {
+		return canvasContext{}, err
+	}
+	view := canvasView(canvas, offset, limit)
+	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		for i := range view.Nodes {
 			node := &view.Nodes[i]
 			if node.Text == "" || node.Revision == nil {
 				continue
 			}
-			readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, *node.Revision)
+			readable, err := access.readable(ctx, tx, *node.Revision, true)
 			if err != nil {
 				return err
 			}
@@ -474,11 +485,7 @@ func (h *runtimeHandler) readCanvas(ctx context.Context, raw string) (string, er
 		}
 		return nil
 	})
-	if err != nil {
-		return "", err
-	}
-	out, err := json.Marshal(view)
-	return string(out), err
+	return view, err
 }
 
 func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, error) {
@@ -490,28 +497,39 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 	if err := strictArguments(raw, &args); err != nil {
 		return "", err
 	}
-	if args.RevisionID == "" || args.Offset < 0 || args.Limit < 1 || args.Limit > 8192 {
-		return "", creativeops.ErrValidation
+	result, err := h.service.readAssetResult(ctx, h.scope, runReadAccess{h}, args.RevisionID, args.Offset, args.Limit)
+	if err != nil {
+		return "", err
+	}
+	out, err := json.Marshal(result)
+	return string(out), err
+}
+
+// readAssetResult reads one revision for a caller: a text page, a model's
+// facts, or an image locator the caller binds or fetches itself.
+func (s *Service) readAssetResult(ctx context.Context, scope store.AccountScope, access readAccess, revisionID string, offset, limit int) (map[string]any, error) {
+	if revisionID == "" || offset < 0 || limit < 1 || limit > 8192 {
+		return nil, creativeops.ErrValidation
 	}
 	var result map[string]any
-	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		c, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		c, err := access.consent(ctx, tx)
 		if err != nil {
 			return err
 		}
 		// Checked against the database, never against what the model claims.
-		readable, err := readableInTx(ctx, tx, h.held.RunID, c.ID, args.RevisionID)
+		readable, err := access.readable(ctx, tx, revisionID, true)
 		if err != nil {
 			return err
 		}
 		if !readable {
 			return errReadRefused
 		}
-		ref, err := h.service.readReference(ctx, tx, args.RevisionID, c, h.held.Model.Capability.ImageInput)
+		ref, err := s.readReference(ctx, tx, revisionID, c, access.imageCapable())
 		if err != nil {
 			return err
 		}
-		result = map[string]any{"reference": referenceLabel(args.RevisionID), "content_revision_id": args.RevisionID}
+		result = map[string]any{"reference": referenceLabel(revisionID), "content_revision_id": revisionID}
 		if ref.image != "" {
 			result["image_revision_id"] = ref.image
 		}
@@ -520,34 +538,30 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 			if ref.thumbnailOmitted != "" {
 				result["thumbnail_omitted"] = ref.thumbnailOmitted
 			}
-			return fitModelFacts(result, *ref.model, h.service.limits.ToolResultBytes)
+			return fitModelFacts(result, *ref.model, s.limits.ToolResultBytes)
 		}
 		if ref.image != "" {
 			return nil
 		}
-		message, err := referenceMessage(args.RevisionID, ref)
+		message, err := referenceMessage(revisionID, ref)
 		if err != nil {
 			return err
 		}
-		if args.Offset > len(message.Content) {
+		if offset > len(message.Content) {
 			return creativeops.ErrValidation
 		}
-		text := message.Content[args.Offset:]
-		if !validTextBoundary(message.Content, args.Offset) {
+		text := message.Content[offset:]
+		if !validTextBoundary(message.Content, offset) {
 			return creativeops.ErrValidation
 		}
-		text = utf8Prefix(text, args.Limit)
+		text = utf8Prefix(text, limit)
 		result["text"] = text
-		result["offset"] = args.Offset
-		result["next_offset"] = args.Offset + len(text)
-		result["has_more"] = args.Offset+len(text) < len(message.Content)
+		result["offset"] = offset
+		result["next_offset"] = offset + len(text)
+		result["has_more"] = offset+len(text) < len(message.Content)
 		return nil
 	})
-	if err != nil {
-		return "", err
-	}
-	out, err := json.Marshal(result)
-	return string(out), err
+	return result, err
 }
 
 // fitModelFacts puts a model's facts into a read_asset result of at most

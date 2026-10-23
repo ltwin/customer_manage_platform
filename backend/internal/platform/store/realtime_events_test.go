@@ -166,3 +166,22 @@ func TestRealtimeProjectEditedAtIsQuiet(t *testing.T) {
 		t.Fatal("rename did not notify")
 	}
 }
+
+// get_capabilities reports an open workspace from the live subscriptions.
+func TestRealtimeWatchingFollowsSubscriptions(t *testing.T) {
+	db, scope := openReadSnapshotTestStore(t, "watching-a")
+	if db.RealtimeWatching("watching-a", "canvas") {
+		t.Fatal("watching before any subscription")
+	}
+	_, stop, err := db.SubscribeRealtime(t.Context(), scope, "canvas", "canvas-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !db.RealtimeWatching("watching-a", "canvas") || db.RealtimeWatching("watching-b", "canvas") || db.RealtimeWatching("watching-a", "agent_run") {
+		t.Fatal("watching does not follow account and kind")
+	}
+	stop()
+	if db.RealtimeWatching("watching-a", "canvas") {
+		t.Fatal("watching after unsubscribe")
+	}
+}

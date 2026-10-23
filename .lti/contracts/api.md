@@ -1116,3 +1116,295 @@ Content-Type: application/json
 
 ### 兼容与变更
 首次定义。**从资产库放入场景**不新增接口：编辑器用资产的 `content_revision_id` 调 `add_objects`（`kind=model_instance`），`material_slots` 写资产的 `materials`。之后编辑总是分叉（`data: 模型资产`「库副本只属于资产库」），资产不受影响。修订 v12 新增必填的 `thumbnail_upload_id`；接口尚未上线，不保留旧形态。`CreativeAssetCreateResult` 已于 C6 起草时（2026-10-20）核对，示例与之一致。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `model`，是兼容扩展。
+
+## OAuth 授权服务器
+
+### 用途与调用
+- **用途**：让外部助手按 MCP 授权规范取得、续期访问令牌。成功的标志是宿主拿到受众为 `<PUBLIC_BASE_URL>/mcp` 的访问令牌和 refresh token。
+- **消费者**：四个首批宿主的 MCP 客户端（Codex CLI、Claude Code 在本机发起；claude.ai 连接器、ChatGPT 在各自服务端发起）；`/oauth/authorize` 的确认页（前端）。
+- **调用**：
+  - `GET /.well-known/oauth-protected-resource/mcp`：受保护资源元数据（RFC 9728）。
+  - `GET /.well-known/oauth-authorization-server`：授权服务器元数据（RFC 8414）。
+  - `POST /oauth/register`：动态客户端注册（RFC 7591，兼容用途）。
+  - `GET /oauth/authorize`：授权请求，由前端页面承接。
+  - `POST /api/v1/oauth/authorize/decision`：确认页提交「允许」或「拒绝」（网页端鉴权）。
+  - `POST /oauth/token`：授权码换令牌、refresh。
+- **格式**：元数据、注册、令牌接口为 `application/json`；令牌请求体为 `application/x-www-form-urlencoded`（OAuth 规定）。错误体使用 OAuth 标准错误格式 `{error, error_description}`，不使用项目 `ErrorEnvelope`，因为调用方是遵循 OAuth 的通用客户端。`decision` 接口是网页端接口，沿用 `ErrorEnvelope`。
+- **权限**：元数据、注册、授权请求、令牌接口无需鉴权（OAuth 协议本身的公开端点），访问边界由 PKCE、回调地址校验和一次性授权码保证。`decision` 需要网页端 Bearer（已登录的摄影师），连接建在该账号下。
+
+### 受保护资源元数据
+`GET /.well-known/oauth-protected-resource/mcp`，无请求参数。200：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+| `resource` | string | 是 | `<PUBLIC_BASE_URL>/mcp` |
+| `authorization_servers` | string[] | 是 | `[<PUBLIC_BASE_URL>]` |
+| `scopes_supported` | string[] | 是 | `["creative"]` |
+| `bearer_methods_supported` | string[] | 是 | `["header"]` |
+| `resource_name` | string | 是 | 「创意空间」 |
+
+### 授权服务器元数据
+`GET /.well-known/oauth-authorization-server`，无请求参数。200：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+| `issuer` | string | 是 | `<PUBLIC_BASE_URL>` |
+| `authorization_endpoint` | string | 是 | `<PUBLIC_BASE_URL>/oauth/authorize` |
+| `token_endpoint` | string | 是 | `<PUBLIC_BASE_URL>/oauth/token` |
+| `registration_endpoint` | string | DCR 保留时 | `<PUBLIC_BASE_URL>/oauth/register`（见 design U2） |
+| `response_types_supported` | string[] | 是 | `["code"]` |
+| `grant_types_supported` | string[] | 是 | `["authorization_code", "refresh_token"]` |
+| `code_challenge_methods_supported` | string[] | 是 | `["S256"]` |
+| `token_endpoint_auth_methods_supported` | string[] | 是 | `["none", "client_secret_post", "client_secret_basic"]` |
+| `scopes_supported` | string[] | 是 | `["creative"]` |
+| `client_id_metadata_document_supported` | boolean | 是 | `true` |
+| `authorization_response_iss_parameter_supported` | boolean | 是 | `true` |
+
+### 动态客户端注册
+`POST /oauth/register`，body JSON：
+
+| 字段 | 类型 | 必传 | 约束 |
+|---|---|---|---|
+| `client_name` | string | 是 | 1–100 字符 |
+| `redirect_uris` | string[] | 是 | 1–5 个，回环地址或 https |
+| `grant_types` | string[] | 否 | 缺省 `["authorization_code","refresh_token"]`；只能是这两个的子集 |
+| `token_endpoint_auth_method` | string | 否 | 缺省 `none`；可为 `client_secret_post`、`client_secret_basic`；其他值拒绝 |
+| 其他 RFC 7591 字段 | — | 否 | 原样存入 `metadata`，不影响行为 |
+
+201：`{client_id, client_id_issued_at, client_name, redirect_uris, grant_types, token_endpoint_auth_method, client_secret, client_secret_expires_at}`。`client_secret` 只在机密客户端时返回（只返回这一次），`client_secret_expires_at` 为 `0`（不过期）；公共客户端不含这两个字段。
+
+失败（400）：`invalid_redirect_uri`（不是回环或 https、超过 5 个）；`invalid_client_metadata`（缺 `client_name`、不支持的认证方式或授权类型）。同一 IP 每小时注册 ≤ 20 次，超出 429，带 `Retry-After`。
+
+### 授权请求
+`GET /oauth/authorize`，query：`response_type=code`、`client_id`、`redirect_uri`、`code_challenge`、`code_challenge_method=S256`、`state`、`resource`（必须等于 `<PUBLIC_BASE_URL>/mcp`）、`scope`（可选，只能是 `creative`）。
+
+- 服务端先校验客户端：`client_id` 是 https URL 时按 CIMD 拉取元数据（只允许 https、公网地址、≤ 5 KB、3 秒超时，元数据里的 `client_id` 必须等于该 URL）；否则必须是已注册的 DCR 客户端。`redirect_uri` 必须精确匹配（回环地址允许端口不同）。
+- 客户端或回调地址不合法时，**不重定向**，直接显示错误页（防止开放重定向）。
+- 其他参数错误（缺 PKCE、`resource` 不符、`scope` 不支持）时，重定向回 `redirect_uri`，带 `error=invalid_request|invalid_scope|invalid_target`、`state`、`iss`。
+- 合法时返回前端确认页。前端未登录则走现有登录，登录后回到确认页。确认页显示 `client_name`、回调地址主机、能做的事和数据去向（design「授权与 consent」）。
+
+### 确认授权
+`POST /api/v1/oauth/authorize/decision`，网页端 Bearer，body JSON：
+
+| 字段 | 类型 | 必传 | 说明 |
+|---|---|---|---|
+| `request` | string | 是 | 授权请求页面拿到的签名请求包（服务端校验过的 authorize 参数，10 分钟有效，防篡改） |
+| `decision` | string | 是 | `allow` / `deny` |
+
+200：`{redirect_to}`，前端跳转。`allow` 时建连接和授权码，`redirect_to` 带 `code`、`state`、`iss`；`deny` 时 `redirect_to` 带 `error=access_denied`、`state`、`iss`。
+
+失败：400 `validation_failed`（请求包过期或签名不符，前端提示重新从外部助手发起）；401 沿用网页端处理；403 `forbidden`（账号没有创意空间能力）。
+
+### 令牌
+`POST /oauth/token`，form：
+
+| 字段 | 必传 | 说明 |
+|---|---|---|
+| `grant_type` | 是 | `authorization_code` 或 `refresh_token` |
+| `client_id` | 是 | 必须与授权码或 refresh token 所属连接的客户端一致；机密客户端按注册的认证方式另带密钥（表单 `client_secret` 或 HTTP Basic），不符时 `invalid_client` |
+| `code`、`redirect_uri`、`code_verifier` | `authorization_code` 时 | `redirect_uri` 与授权请求一致；`code_verifier` 经 S256 后等于 `code_challenge` |
+| `refresh_token` | `refresh_token` 时 | — |
+| `resource` | 是 | 必须等于 `<PUBLIC_BASE_URL>/mcp` |
+
+200（`Cache-Control: no-store`）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `access_token` | string | JWT，`aud=<PUBLIC_BASE_URL>/mcp`、`sub=<connection_id>`、`acct=<account_id>`、`scope=creative`，HS256，签名密钥按用途从网页 JWT 密钥派生 |
+| `token_type` | string | `Bearer` |
+| `expires_in` | integer | 3600 |
+| `refresh_token` | string | 新的 refresh token；每次 refresh 都轮换 |
+| `scope` | string | `creative` |
+
+失败（400，OAuth 错误格式）：
+- `invalid_grant`：授权码无效、过期、已用（已用时同时断开连接）；PKCE 不符；`redirect_uri` 不符；refresh token 无效、过期、已轮换（已轮换时断开连接）；连接已断开。宿主需要重新授权。
+- `invalid_client`：`client_id` 不符。
+- `invalid_target`：`resource` 不符。
+- `unsupported_grant_type`：其他授权类型。
+
+### 调用示例
+```http
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&client_id=oclient_3b2c1d0e-9f8a-4b7c-8d6e-5f4a3b2c1d0e&code=Qm9n7kYp2sV1xZ4c&redirect_uri=http%3A%2F%2F127.0.0.1%3A43117%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk&resource=https%3A%2F%2Fcrm.example.com%2Fmcp
+```
+```json
+{"access_token": "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJodHRwczovL2NybS5leGFtcGxlLmNvbS9tY3AifQ.sig", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1.8f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c", "scope": "creative"}
+```
+```json
+{"error": "invalid_grant", "error_description": "授权码已使用"}
+```
+
+### 兼容与变更
+首次定义，无已有消费者。DCR 按 MCP 规范已弃用，保留为兼容；若 C1 实测四个宿主都走 CIMD，则不提供 `/oauth/register`，元数据不返回 `registration_endpoint`（只收窄，不影响其他字段）。
+
+## MCP 端点
+
+### 用途与调用
+- **用途**：外部助手调用创意空间工具的唯一入口。
+- **消费者**：ChatGPT、Codex CLI、Claude Code、Claude 桌面端（含网页）的 MCP 客户端，经 Codex 插件、Claude 连接器、ChatGPT 应用或本机手动配置接入。
+- **调用**：`<PUBLIC_BASE_URL>/mcp`，MCP streamable HTTP 传输，JSON-RPC 2.0。协议版本由官方 Go SDK 协商，服务端按 MCP 2026-07-28 实现，兼容 SDK 支持的旧版本。
+- **权限**：`Authorization: Bearer <access_token>`，令牌来自 `api: OAuth 授权服务器`。校验顺序：签名 → `aud` 等于 `<PUBLIC_BASE_URL>/mcp` → 未过期 → 连接未断开。账号范围只来自令牌所属连接（ADR-001）。
+
+### 请求
+- MCP 方法：工具发现（`tools/list` 或新版协议的发现方法）与 `tools/call`；客户端声明 MCP Apps 扩展时另有 `resources/read`，只用于读取界面资源（见 `api: MCP 生成与任务卡`）。不提供 prompts、sampling；除界面资源外不提供 resources。
+- `tools/call` 的 `name` 与 `arguments` 按 `api: MCP 只读工具`、`api: MCP 写入与生成工具`、`api: MCP 场景与 Skill 工具` 定义。工具清单随子项交付逐步增加，未交付的工具不出现在发现结果里。
+
+### 成功响应
+- 连接建立时（`initialize` 或新版协议的发现方法）下发服务端 `instructions`：所有宿主共用的使用说明与运行规则（design「服务端 instructions 与自检」），≤ 4000 字符。
+- 工具发现：返回当前部署可用的外部工具，每个带 `name`、`title`（中文显示名，宿主的工具行和许可提示会显示它，例如「列出画布」「写提示词」「生成」「回看」）、`description`（与内置助手同一份说明加外部差异）、`inputSchema` 和 `annotations`（只读工具 `readOnlyHint: true`；`trash_assets` 等删除类工具 `destructiveHint: true`）。部署条件与内置相同：没有生成模型时不列 `set_node_prompt`、`generate_node`；没有压缩器时不列 `compress_image`。客户端声明 MCP Apps 扩展时，挂卡片的工具另带 `_meta.ui`（见两个卡片契约），其余工具带 `_meta.ui.visibility: ["model"]`，卡片不能调用它们。
+- `tools/call`：
+  - `content` 的第一项是文字，分两段。前一段是摘要：第一行是结论（终端宿主往往只显示前 3–4 行），随后是关键字段、Markdown 格式的画布链接和给外部助手的下一步提示，不超过 8 行。后一段是结构化结果的 JSON 文本，供不读 `structuredContent` 的宿主使用。两段之间空一行。之后是可选的图片（`ImageContent`，长边 ≤ 1024，单次 ≤ 4 张）。
+  - `structuredContent` 为同一结构化结果。
+  - 只给卡片用的数据（例如带签名的缩略图地址）放在 `_meta.creative`，只在客户端声明 MCP Apps 扩展时返回；外部助手的模型看不到 `_meta`。
+  - 摘要由 `creativeagent` 的外部工具门面按工具生成，和工具说明一起维护；不同宿主拿到的文字相同。
+
+### 失败响应
+| 信号 | 触发条件 | 调用方处理 |
+|---|---|---|
+| HTTP 401 + `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_BASE_URL>/.well-known/oauth-protected-resource/mcp", scope="creative"` | 缺令牌、签名或受众不符、过期、连接已断开 | 宿主先 refresh，失败则重新授权 |
+| HTTP 403（同上 `WWW-Authenticate`，`error="insufficient_scope"`） | 以后的细粒度授权；当前不会出现 | — |
+| JSON-RPC 错误 `-32602` | 工具不存在、参数不符合 `inputSchema` | 修正调用 |
+| 工具结果 `isError: true`，文字内容为 `{"code": "<领域错误码>", "message": "<中文说明>", "retry_after_s": <可选>}` | 领域拒绝：`not_found`、`validation_failed`、`conflict`、`forbidden`（账号无创意能力）、`budget_exhausted`（生成额度不足）、`rate_limited`（连接限流，带 `retry_after_s`）、以及各工具已有的错误码 | 按错误码处理；与内置助手看到的错误一致 |
+
+### 交互规则
+- **限流**：每个连接每分钟工具调用 ≤ 120 次，同时等待中的任务句柄 ≤ 8 个（初始值，上线后调整，不作承诺）。
+- **超时**：单次 `tools/call` 服务端最长处理 45 秒；会超过的工作改为任务句柄（见 `api: MCP 写入与生成工具` 的 `wait_tasks`）。
+- **重复调用**：MCP 没有幂等键。宿主重试同一调用可能重复执行写工具；工具说明提示「写入失败后先读再决定是否重试」。领域层已有的版本检查（`draft_revision`、场景 `base_revision` 等）照常拦截过时写入。
+- **活动状态**：成功通过鉴权的调用节流更新连接的 `last_used_at`（≤ 1 次/分钟）。
+
+### 调用示例
+```http
+POST /mcp
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJodHRwczovL2NybS5leGFtcGxlLmNvbS9tY3AifQ.sig
+Content-Type: application/json
+Accept: application/json, text/event-stream
+
+{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "list_canvases", "arguments": {"limit": 2}}}
+```
+```json
+{"jsonrpc": "2.0", "id": 7, "result": {"content": [{"type": "text", "text": "最近编辑的 1 张画布：\n1. [教堂中殿分镜](https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f) · 10 月 21 日编辑 · `ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f`\n下一步：用 read_canvas(canvas_id) 读取内容。\n\n{\"items\":[{\"canvas_id\":\"ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f\",\"title\":\"教堂中殿分镜\",\"updated_at\":\"2026-10-21T08:10:00Z\",\"canvas_url\":\"https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f\"}],\"next_cursor\":\"\"}"}], "structuredContent": {"items": [{"canvas_id": "ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "title": "教堂中殿分镜", "updated_at": "2026-10-21T08:10:00Z", "canvas_url": "https://crm.example.com/creative/canvases/ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"}], "next_cursor": ""}}}
+```
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer resource_metadata="https://crm.example.com/.well-known/oauth-protected-resource/mcp", scope="creative"
+```
+
+### 兼容与变更
+首次定义。工具的增加是兼容扩展；工具 schema 跟随内置工具的 `ToolEntry.Version`，破坏性变化（删字段、改语义）时在工具说明里写明版本，并在本契约记录。
+
+## 外部助手连接列表与断开
+
+### 用途与调用
+- **用途**：接入页列出和断开外部助手连接，并拿到接入文字要用的 MCP 地址；创意空间顶栏显示「外部助手已连接」。
+- **消费者**：前端「外部助手」接入页、创意空间顶栏。
+- **调用**：`GET /api/v1/creative/agent-connections`；`POST /api/v1/creative/agent-connections/{id}/revoke`。
+- **格式**：`application/json`，错误沿用 `ErrorEnvelope`。
+- **权限**：网页端 Bearer；列表要 `creative_read`，断开要 `manual_write`；只能看到和断开本账号的连接。
+
+### 请求
+列表 query：
+
+| 字段 | 类型 | 必传 | 缺省 | 说明 |
+|---|---|---|---|---|
+| `active` | boolean | 否 | 不过滤 | `true` 只返回有效且 5 分钟内用过的连接（顶栏用） |
+| `include_revoked` | boolean | 否 | `false` | `true` 时一并返回已断开的连接 |
+
+不分页：一个账号的连接数量很小；返回最近创建的 50 个，超出部分不返回（接入页提示「只显示最近 50 个」）。
+
+断开：path `id`，无请求体。
+
+### 成功响应
+列表 200：`{mcp_url, items:[…]}`。`mcp_url`（string，必返）为 `<PUBLIC_BASE_URL>/mcp`，接入页据此生成各宿主的接入文字，不在前端写死。`items` 按 `created_at` 倒序：
+
+| 字段 | 类型 | 必返 | 可为 null | 说明 |
+|---|---|---|---|---|
+| `id` | string | 是 | 否 | `cxcon_…` |
+| `display_name` | string | 是 | 否 | 「Claude」「Claude Code」「Codex」「ChatGPT」或客户端名 |
+| `host_kind` | string | 是 | 否 | `claude` / `claude_code` / `codex` / `chatgpt` / `other` |
+| `created_at` | string(date-time) | 是 | 否 | 授权时间 |
+| `last_used_at` | string(date-time) | 是 | 是 | 从未调用过工具时为 null |
+| `active` | boolean | 是 | 否 | 有效且 `last_used_at` 在 5 分钟内 |
+| `revoked_at` | string(date-time) | 是 | 是 | 有效时为 null |
+
+断开 200：返回该连接的上述对象（`revoked_at` 非空）。重复断开已断开的连接返回 200 与原对象，不改变 `revoked_at`。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | query 参数不是布尔值 | 修正 |
+| 404 | `not_found` | 连接不存在或不属于本账号 | 刷新列表 |
+| 403 | 现有 `CodeForbidden` | 账号没有创意空间能力 | 沿用现有处理 |
+
+### 交互规则
+- 断开的副作用见 `data: 外部助手连接与 OAuth` 的「断开」，在一个事务里完成；提交后发账号失效通知，顶栏和接入页重读列表。
+- 连接由不活动变为活动时也发账号失效通知；变为不活动不通知，前端按 `last_used_at + 5 分钟` 自行到期隐藏。
+
+### 调用示例
+```http
+GET /api/v1/creative/agent-connections?active=true
+Authorization: Bearer <token>
+```
+```json
+{"mcp_url": "https://crm.example.com/mcp", "items": [{"id": "cxcon_7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d", "display_name": "Claude Code", "host_kind": "claude_code", "created_at": "2026-10-21T07:58:12Z", "last_used_at": "2026-10-21T08:10:03Z", "active": true, "revoked_at": null}]}
+```
+```http
+POST /api/v1/creative/agent-connections/cxcon_0000aaaa-1111-4bbb-8ccc-2222dddd3333/revoke
+Authorization: Bearer <token>
+```
+```json
+{"error": {"code": "not_found", "message": "连接不存在"}}
+```
+
+### 兼容与变更
+首次定义，无已有消费者。
+
+## MCP 只读工具
+
+### 用途与调用
+- **用途**：外部助手自检、找到画布、读取画布与引用素材、查找和浏览资产库。
+- **调用**：经 `api: MCP 端点` 的 `tools/call`。
+- **权限**：连接有效；账号 `creative_read`。授权即账号级 consent（design「授权与 consent」）：本账号未进回收站的画布、内容和资产都可读，不再按对话判定可读范围。
+
+### 工具
+| 工具 | 来源 | 与内置工具的差异 |
+|---|---|---|
+| `get_capabilities` | 外部专用 | 见下 |
+| `list_canvases` | 外部专用 | 见下 |
+| `read_canvas` | 内置同名 | 新增必传 `canvas_id`（string，`list_canvases` 返回的 ID）；文字节点全部可读；结果另带 `canvas_url` |
+| `read_asset` | 内置同名 | 入参不变；可读范围为整个账号；图片结果以 `ImageContent` 返回，长边 ≤ 1024；账号模型能力不再参与判定（外部助手自己决定能否看图） |
+| `search_assets` | 内置同名 | 入参与结果不变；不需要资产库 consent |
+| `read_library` | 内置同名 | 入参与结果不变；不需要资产库 consent |
+
+#### get_capabilities
+- 入参：无。
+- 结果：
+  - `account`：`{display_name}`，授权账号的显示名。
+  - `connection`：`{id, display_name, host_kind}`。
+  - `generation`：`{models:[{key, display_name, node_type, parameters_summary}], budget}`。`budget` 为 `{remaining, unit, period_end}`，沿用网关的生成预算；积分落地后 `unit` 改为积分，字段不变。部署没有生成模型时 `models` 为空数组。
+  - `workspace_open`：boolean，当前有没有打开的创意空间页面。这是账号级实时通道是否有活动订阅的近似判断，只作提示，不作保证。
+  - `skills`：`{count}`，可用 Skill 数量（平台加账号自己的）。
+  - `hints`：string[]，给外部助手的简短提醒，例如没有打开页面时提示场景任务需要页面。
+- 不返回部署配置、版本号或内部地址。
+- 错误：只有 `api: MCP 端点` 的通用错误。
+
+#### list_canvases
+- 入参：`query`（string，可选，按标题包含匹配，≤ 100 字符）、`limit`（integer，可选，1–50，缺省 20）、`cursor`（string，可选，上一页的 `next_cursor`）。
+- 结果：`{items:[{canvas_id, title, updated_at, canvas_url}], next_cursor}`，按 `updated_at` 倒序；`canvas_url` 是创意空间里打开该画布的链接；`next_cursor` 为空字符串表示末页。不含已归档画布。
+- 错误：`validation_failed`（参数越界、游标非法）。
+
+### 失败响应
+各工具沿用内置工具的错误码；另有 `api: MCP 端点` 的通用错误。`read_canvas` 的 `canvas_id` 不存在或不属于本账号时为 `not_found`。
+
+### 调用示例
+```json
+{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "read_canvas", "arguments": {"canvas_id": "ccvs_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"}}}
+```
+成功时结构化结果与内置 `read_canvas` 相同。失败示例：
+```json
+{"jsonrpc": "2.0", "id": 8, "result": {"isError": true, "content": [{"type": "text", "text": "{\"code\":\"not_found\",\"message\":\"画布不存在\"}"}]}}
+```
+
+### 兼容与变更
+首次定义。内置工具的行为不变。
