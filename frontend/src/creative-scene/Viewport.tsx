@@ -661,8 +661,11 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       },
       centrePoint: () => {
         raycaster.setFromCamera(new Vector2(0, 0), camera)
+        const byID = objectsByID()
         for (const hit of raycaster.intersectObjects(scene.children, true)) {
-          if (objectOf(hit.object)) return positionToDoc(hit.point.toArray())
+          // A volume's bounds are lines in the air: a new object lands on what is behind them.
+          const id = objectOf(hit.object)
+          if (id && byID.get(id)?.kind !== 'volume') return positionToDoc(hit.point.toArray())
         }
         const ahead = camera.getWorldPosition(new Vector3()).addScaledVector(camera.getWorldDirection(new Vector3()), 3)
         return positionToDoc(ahead.toArray())

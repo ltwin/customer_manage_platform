@@ -15,6 +15,9 @@ import { aimStudio } from './studio.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
 import { nightLookNode } from '../world/nightLook.ts'
 import { aerialBehind, finishAerial, prepareAerial } from '../world/atmosphere/aerial.ts'
+import { applyVolumes } from './volumes/composite.ts'
+import { VolumeNode } from './volumes/march.ts'
+import { finishVolumes, prepareVolumes } from './volumes/state.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -588,6 +591,9 @@ export class SceneRenderer {
         picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
         // The aerial perspective after the AO (design「合成顺序」), before the blur; off it is the picture as it was.
         picture = vec4(aerialBehind(picture.rgb, depth, camera), beauty.a)
+        // Then the volumes, the air before and behind them apart (Epic revision v9); none drawn, the picture as it was.
+        const volumes = own(new VolumeNode(depth, camera, [beauty]))
+        picture = vec4(applyVolumes(picture.rgb, depth, camera, volumes), beauty.a)
         // AO comes before the blur, so contact shadows out of focus soften with everything else.
         if (blur) {
           dof = depthOfField(picture, depth)
@@ -686,12 +692,14 @@ export class SceneRenderer {
     // Written and drawn in one synchronous call: no await between (world/exposure.ts preExposure).
     applyExposure(this.scene, frame.preExposure ?? 1)
     prepareAerial(this.scene, renderer, camera, !wireframe)
+    prepareVolumes(this.scene, camera, !wireframe)
     try {
       built.pipeline.render()
     } finally {
       renderer.toneMappingExposure = exposure
       preExposure.value = 1
       finishAerial()
+      finishVolumes()
     }
   }
 

@@ -12,10 +12,11 @@ import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
-import { Euler, Quaternion } from 'three'
+import { Euler, Matrix4, Quaternion, Vector3 } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { completeSky } from '../src/creative-scene/world/physicalSky.ts'
 import { documentAzimuth, sunVector } from '../src/creative-scene/world/astro.ts'
+import { positionToView } from '../src/creative-scene/space.ts'
 import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
@@ -6159,9 +6160,194 @@ window.__timed = async (scene, kind, resolution) => {
     shooter.close();
   }
 };
+// W5: one picture through the scene's camera as RGBA (base64), and where document-space points land in it.
+window.__picture = async (scene, kind, side, points = []) => {
+  const THREE = await import('three');
+  const { positionToView } = await import('/src/creative-scene/space.ts');
+  const shooter = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const blob = await shooter.shoot(framing, { kind, type: 'image/png' });
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(bitmap, 0, 0);
+    const bytes = c2d.getImageData(0, 0, bitmap.width, bitmap.height).data;
+    const camera = new THREE.PerspectiveCamera(framing.fov, framing.width / framing.height, framing.near, framing.far);
+    camera.position.fromArray(framing.position);
+    camera.quaternion.fromArray(framing.quaternion);
+    camera.updateMatrixWorld();
+    const at = points.map((p) => {
+      const v = new THREE.Vector3(...positionToView(p)).project(camera);
+      return [((v.x + 1) / 2) * bitmap.width, ((1 - v.y) / 2) * bitmap.height];
+    });
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { width: bitmap.width, height: bitmap.height, rgba: btoa(binary), at, framing };
+  } finally {
+    shooter.close();
+  }
+};
 window.__ready = true;
 </script></body></html>`,
 )
+
+// W5 scene-volumes ---------------------------------------------------------------------------------------------
+
+/** A volume object as add_objects takes it, its fields left out taking their defaults. */
+const volumeObject = (name, position, scale, volume = {}, order = 80) => ({ id: gid(name), kind: 'volume', name, parent_id: null, order, transform: { ...identity(), position, scale }, visible: true, locked: false, volume })
+
+/** A document-space camera at eye looking at target, as the scene stores it (three's camera lookAt, Y up). */
+function cameraAt(name, eye, target, order = 90) {
+  const m = new Matrix4().lookAt(new Vector3(...eye), new Vector3(...target), new Vector3(0, 1, 0))
+  const q = new Quaternion().setFromRotationMatrix(m)
+  return { id: gid(name), kind: 'camera', name, parent_id: null, order, transform: { position: eye, rotation: [q.x, q.y, q.z, q.w], scale: [1, 1, 1] }, visible: true, locked: false, camera: {} }
+}
+
+const roomBox = (name, position, [width, height, depth], order) => ({ id: gid(name), kind: 'primitive', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width, height, depth } } })
+
+/**
+ * AC-W5-1's room: 6 m square, 3 m high, a window 2 m wide and 1.4 m high in the +X wall with a bar 0.24 m wide
+ * down its middle; the sun 35° up from +X, the camera inside on the bar's plane (z = 0) looking at the window, so
+ * the bar's shadow in the beam is a band down the middle of the picture.
+ */
+function windowRoom(volume) {
+  const scene = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8'))
+  scene.environment.sky = completeSky({ ...scene.environment.sky, sun_mode: 'manual', sun_elevation_deg: 35, sun_azimuth_deg: 90 })
+  Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0, exposure_ev100: 15 })
+  scene.objects = [
+    scene.objects.find((o) => o.primitive?.builtin === 'ground@1'),
+    roomBox('back', [0, 0, -3], [6.4, 3, 0.2], 1),
+    roomBox('front', [0, 0, 3], [6.4, 3, 0.2], 2),
+    roomBox('left', [-3, 0, 0], [0.2, 3, 6], 3),
+    roomBox('sill', [3, 0, 0], [0.2, 1, 6], 4),
+    roomBox('lintel', [3, 2.4, 0], [0.2, 0.6, 6], 5),
+    roomBox('jamba', [3, 1, -2], [0.2, 1.4, 2], 6),
+    roomBox('jambb', [3, 1, 2], [0.2, 1.4, 2], 7),
+    roomBox('bar', [3, 1, 0], [0.2, 1.4, 0.24], 8),
+    roomBox('ceiling', [0, 3, 0], [6.4, 0.2, 6.4], 9),
+    cameraAt('inside', [-2.6, 1.5, 0], [3, 0.9, 0]),
+    ...(volume ? [volumeObject('room', [0, 1.5, 0], [5.8, 2.9, 5.8], volume)] : []),
+  ]
+  return scene
+}
+
+/** A picture's mean sRGB luma in a 7 × 7 patch at (x, y). */
+function lumaAt(p, [x, y]) {
+  const data = Buffer.from(p.rgba, 'base64')
+  let sum = 0
+  let n = 0
+  for (let dy = -3; dy <= 3; dy++)
+    for (let dx = -3; dx <= 3; dx++) {
+      const px = Math.min(Math.max(Math.round(x) + dx, 0), p.width - 1)
+      const py = Math.min(Math.max(Math.round(y) + dy, 0), p.height - 1)
+      const k = (py * p.width + px) * 4
+      sum += 0.2126 * data[k] + 0.7152 * data[k + 1] + 0.0722 * data[k + 2]
+      n++
+    }
+  return sum / n
+}
+
+/** The GI fixture page on gpu (or SwiftShader), for pictures through the export's path. */
+async function shooterPage(gpu) {
+  const page = await (gpu ?? browser).newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  await page.goto(`${base}/.scene-gi-qa.html`)
+  await page.waitForFunction(() => window.__ready === true)
+  return { page, errors }
+}
+
+const w5Metal = () => (process.env.SCENE_E2E_W5_METAL ? chromium.launch({ headless: true, args: metal }) : null)
+
+// AC-W5-1: the sun through the window makes a beam in the room's air, and the window's bar a dark band in it.
+// Through the export's path (one workbench frame): what the volume adds where the beam is, against beside it in
+// the same air, and in the bar's shadow.
+await check('W5 window: a beam through the window, and the bar’s band in it', async () => {
+  const gpu = await w5Metal()
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    // In the beam half a metre off the bar's plane, in the bar's shadow, and above the beam: all 1.2 m in from the window.
+    const points = [[1.8, 0.84, 0.55], [1.8, 0.84, 0], [1.8, 2.3, 0.55]]
+    const picture = (scene) => page.evaluate(([s, p]) => window.__picture(s, 'lit', 1024, p), [scene, points])
+    const empty = await picture(windowRoom(null))
+    const fogged = await picture(windowRoom({ scatter_density: 0.1, anisotropy: 0.6 }))
+    if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/w5-window${gpu ? '-metal' : ''}.png`, await page.evaluate(([w, h, rgba]) => {
+      const c = new OffscreenCanvas(w, h)
+      c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(Uint8Array.from(atob(rgba), (ch) => ch.charCodeAt(0))), w, h), 0, 0)
+      return c.convertToBlob({ type: 'image/png' }).then((b) => b.arrayBuffer()).then((a) => [...new Uint8Array(a)])
+    }, [fogged.width, fogged.height, fogged.rgba]).then((a) => Buffer.from(a)))
+    const added = fogged.at.map((at) => lumaAt(fogged, at) - lumaAt(empty, at))
+    const [beam, band, beside] = added
+    console.log(`W5 window: luma added in the beam ${beam.toFixed(1)}, in the bar's band ${band.toFixed(1)}, beside the beam ${beside.toFixed(1)} (points at ${fogged.at.map(([x, y]) => `${x.toFixed(0)},${y.toFixed(0)}`).join(' ')})`)
+    // The room's air takes the sky light too, unshadowed (Epic design 局限), so the beam stands out by about 2.5×.
+    assert.ok(beam > 2 * Math.max(beside, 1), 'the beam is brighter than the air beside it')
+    assert.ok(band < 0.6 * beam, 'the bar leaves a dark band in the beam')
+    assert.deepEqual(errors, [])
+
+    // The viewport through the same eye: the bar's plane is the middle column, the beam on either side of it.
+    const context = await (gpu ?? browser).newContext({ viewport: { width: 1280, height: 820 } })
+    const eye = [-2.6, 1.5, 0]
+    const view = { camera: { position: positionToView(eye), target: positionToView([3, 0.9, 0]), ortho: false, zoom: 1 }, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false }
+    await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, view])
+    const server = new SceneServer()
+    referenceScene(server, 'physical-noon', (scene) => Object.assign(scene, windowRoom(null)))
+    const editor = await open(server, { context })
+    const { box: area } = await viewportCenter(editor.page)
+    await shading(editor.page, '最终渲染')
+    const settle = async () => {
+      await waitFor(async () => (await editor.page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+      await sleep(400)
+      return settledShot(editor.page, area)
+    }
+    const before = await settle()
+    server.external([{ op: 'add_objects', objects: [volumeObject('room', [0, 1.5, 0], [5.8, 2.9, 5.8], { scatter_density: 0.1, anisotropy: 0.6 })] }])
+    await editor.page.evaluate(() => window.__invalidate())
+    const after = await settle()
+    await shot(editor.page, `w5-window-viewport${gpu ? '-metal' : ''}`)
+    if (process.env.SCENE_E2E_SHOTS) for (const [n, png] of [['before', before], ['after', after]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/w5-window-viewport-${n}.png`, png)
+    const rows = await editor.page.evaluate(async ([a, b]) => {
+      const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+      const pixels = (img) => {
+        const c = document.createElement('canvas')
+        c.width = img.width
+        c.height = img.height
+        const g = c.getContext('2d')
+        g.drawImage(img, 0, 0)
+        return g.getImageData(0, 0, img.width, img.height).data
+      }
+      const [x, y] = await Promise.all([load(a), load(b)])
+      const p = pixels(x)
+      const q = pixels(y)
+      const w = x.width
+      const luma = (d, k) => 0.2126 * d[k] + 0.7152 * d[k + 1] + 0.0722 * d[k + 2]
+      // What the volume adds, averaged over 7 columns at the middle and a twentieth of the width to each side.
+      const added = (row, col) => {
+        let sum = 0
+        for (let c = col - 3; c <= col + 3; c++) sum += luma(q, (row * w + c) * 4) - luma(p, (row * w + c) * 4)
+        return sum / 7
+      }
+      const mid = Math.round(w / 2)
+      const off = Math.round(w / 20)
+      return Array.from({ length: x.height }, (_, r) => ({ band: added(r, mid), side: (added(r, mid - off) + added(r, mid + off)) / 2 }))
+    }, [`data:image/png;base64,${before.toString('base64')}`, `data:image/png;base64,${after.toString('base64')}`])
+    // Below the window and above the floor (half to two thirds of the way down), and the air at the top of the room
+    // (the lintel and the ceiling). Medians: the volume's outline and the grid are lines a pixel thin.
+    const median = (list) => [...list].sort((m, n) => m - n)[Math.floor(list.length / 2)]
+    const span = (from, to) => rows.slice(Math.round(rows.length * from), Math.round(rows.length * to))
+    const beamRows = span(0.5, 0.65)
+    const brightest = { side: median(beamRows.map((r) => r.side)), band: median(beamRows.map((r) => r.band)) }
+    const air = median(span(0, 0.15).map((r) => r.side))
+    console.log(`W5 window viewport: luma added in the beam ${brightest.side.toFixed(1)}, in the bar's band there ${brightest.band.toFixed(1)}, in the air at the top ${air.toFixed(1)}`)
+    assert.ok(brightest.side > 2 * Math.max(air, 1), 'the viewport: the beam is brighter than the air above it')
+    assert.ok(brightest.band < 0.6 * brightest.side, 'the viewport: the bar leaves a dark band in the beam')
+    assert.deepEqual(editor.errors, [])
+    await context.close()
+  } finally {
+    await gpu?.close()
+  }
+})
 
 // R2 tasks 1.2: every picture builds and frees a whole GI pipeline (prepass, lighting pass, SSGI, SSR, contact
 // shadows, denoisers, TRAA). Freed whole, the renderer holds as much after the 48th picture as after the first.

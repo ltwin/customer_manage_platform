@@ -11,6 +11,8 @@ import { GI_INTENSITY, ssgiQuality, type Quality } from './engines.ts'
 import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
 import { aerialBehind } from '../world/atmosphere/aerial.ts'
+import { applyVolumes } from './volumes/composite.ts'
+import { VolumeNode } from './volumes/march.ts'
 
 // The real-time GI's node graph (R2 design「实时 GI 管线」, Epic「实时 GI」):
 // screen-space indirect light, reflections and AO over the workbench's own
@@ -29,8 +31,9 @@ import { aerialBehind } from '../world/atmosphere/aerial.ts'
 //    average hardly lowers its noise (R2 tasks 5.1). The stochastic SSR
 //    with three's own chain.
 //  - The composite (design「合成」) puts the AO on the indirect light only and
-//    the reflections in place of the environment's; then the fog, and the
-//    viewport's helpers over it where nothing opaque is in front; then TRAA,
+//    the reflections in place of the environment's; then the fog, the aerial
+//    perspective and the volumes (W5, render/volumes/), and the viewport's
+//    helpers over it where nothing opaque is in front; then TRAA,
 //    outermost of the temporal nodes, antialiases and steadies the whole.
 // Nothing in the chain draws with Math.random but the DenoiseNodes, which are
 // given the workbench's fixed noise.
@@ -227,11 +230,13 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const { fog } = lit
   const cameraNear = uniform(0).onRenderUpdate(() => persp.near)
   const cameraFar = uniform(0).onRenderUpdate(() => persp.far)
-  const fogged: N = aerialBehind(
+  const aerial: N = aerialBehind(
     mix(shaded, fog.color, smoothstep(fog.near, fog.far, perspectiveDepthToViewZ(depth.r, cameraNear, cameraFar).negate()).mul(fog.on).mul(opaque)),
     depth,
     camera,
   )
+  // The volumes after the lighting pass, which draws the shadow maps they read (same fixed noise: an export needs no settled frames).
+  const fogged: N = applyVolumes(aerial, depth, camera, own(new VolumeNode(depth, camera, [output])))
   let picture: N = vec4(fogged, output.a)
   if (options.aside) {
     // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.

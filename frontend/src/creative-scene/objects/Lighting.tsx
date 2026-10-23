@@ -103,11 +103,27 @@ function PreviewLighting({ room }: { room: () => ReturnType<typeof roomEnvironme
 const environmentEveryMs = 200
 
 /**
+ * The lit looks draw volume objects' media (render/volumes/state.ts
+ * prepareVolumes reads the mark); clay, wireframe and material preview only
+ * their outlines, so no clay export ever has a volume in it.
+ */
+function useVolumesDrawn() {
+  const scene = useThree((s) => s.scene)
+  useLayoutEffect(() => {
+    scene.userData.volumes = true
+    return () => {
+      delete scene.userData.volumes
+    }
+  }, [scene])
+}
+
+/**
  * The lit look: the sky as background and as light (without its sun disc,
  * which the sun light counts), the sun, the ambient as a little fill, and fog.
  */
 function LitLighting({ environment, engine }: { environment: SceneEnvironment; engine: Engine }) {
   const { gl, scene, invalidate } = useThree()
+  useVolumesDrawn()
   const procedural = environment.sky.kind === 'procedural'
   const sky = useMemo(() => drawnAsSky(litSky()), [])
   useEffect(() => () => disposeSky(sky), [sky])
@@ -207,6 +223,7 @@ function useNightAsset<T>(now: (arrived?: () => void) => T | null, wanted: boole
 
 function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironment['fog'] }) {
   const { gl, scene, invalidate } = useThree()
+  useVolumesDrawn()
   const latest = useRef(sky)
   latest.current = sky
   const parts = useMemo(() => {

@@ -1,5 +1,7 @@
 import { Color } from 'three'
+import * as tsl from 'three/tsl'
 import type { components } from '../../../api/schema'
+import type { TSLNode } from '../../materials/patterns.ts'
 
 // A volume object's medium (W5, data: 体积物件; scene-volumes design「领域模型
 // 与业务规则」): a unit box or sphere in its object's local space, scattering
@@ -33,3 +35,56 @@ export function coefficients(v: Volume): Coefficients {
  * falloff no longer reads too dark.
  */
 export const chordFactor = (v: Volume) => 1 - v.edge_falloff / 2
+
+// The same medium in TSL, over the uniforms of state.ts: V.inv (world to the
+// unit shape), V.ext.w the edge falloff, V.shp.x the shape, V.shp.y the chord factor.
+
+type Op = (...args: TSLNode[]) => TSLNode
+const { abs, dot, float, length, max, min, select, smoothstep, sqrt, vec2, vec3, vec4 } = tsl as unknown as Record<string, Op>
+const If = tsl.If as unknown as (cond: TSLNode, then: () => void) => { Else(otherwise: () => void): void }
+
+type Medium = { inv: TSLNode; ext: TSLNode; shp: TSLNode }
+
+const safe = (x: TSLNode) => select(abs(x).lessThan(1e-7), float(1e-7), x)
+
+/** Where the world ray o + t·d crosses volume i: vec2(t in, t out); in ≥ out for a miss. */
+export function hitVolume(V: Medium, i: TSLNode, o: TSLNode, d: TSLNode): TSLNode {
+  const m = V.inv.element(i)
+  const ol = m.mul(vec4(o, 1)).xyz.toVar()
+  const dl = m.mul(vec4(d, 0)).xyz.toVar()
+  const r = vec2(1e9, -1e9).toVar()
+  If(V.shp.element(i).x.lessThan(0.5), () => {
+    // The slab test against the unit box.
+    const id = vec3(1).div(vec3(safe(dl.x), safe(dl.y), safe(dl.z)))
+    const a = vec3(-0.5).sub(ol).mul(id)
+    const b = vec3(0.5).sub(ol).mul(id)
+    const lo = min(a, b)
+    const hi = max(a, b)
+    r.assign(vec2(max(max(lo.x, lo.y), lo.z), min(min(hi.x, hi.y), hi.z)))
+  }).Else(() => {
+    // The unit sphere, radius 0.5.
+    const A = dot(dl, dl)
+    const B = dot(ol, dl)
+    const disc = B.mul(B).sub(A.mul(dot(ol, ol).sub(0.25)))
+    If(disc.greaterThan(0), () => {
+      const s = sqrt(disc)
+      r.assign(vec2(B.negate().sub(s), B.negate().add(s)).div(A))
+    })
+  })
+  return r
+}
+
+/** Volume i's density share at world p: 1 inside, from 0 at the boundary over edge_falloff of the way to the centre. */
+export function volumeDensity(V: Medium, i: TSLNode, p: TSLNode): TSLNode {
+  const l = V.inv.element(i).mul(vec4(p, 1)).xyz
+  const q = abs(l)
+  const e = select(V.shp.element(i).x.lessThan(0.5), float(1).sub(max(max(q.x, q.y), q.z).mul(2)), float(1).sub(length(l).mul(2)))
+  const edge = V.ext.element(i).w
+  return select(e.lessThanEqual(0), float(0), select(edge.lessThan(1e-4), float(1), smoothstep(0, edge, e)))
+}
+
+/** How much of volume i lies along p + t·toward for t in 0…maxT, times its mean density along a chord (chordFactor): the analytic depth for its σt. */
+export function chordThrough(V: Medium, i: TSLNode, p: TSLNode, toward: TSLNode, maxT: TSLNode): TSLNode {
+  const h = hitVolume(V, i, p, toward)
+  return max(min(h.y, maxT).sub(max(h.x, 0)), 0).mul(V.shp.element(i).y)
+}

@@ -15,6 +15,7 @@ import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
 import { SceneLight } from './SceneLights.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
+import { Volume } from './Volume.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import { disposeEdges } from './wireframe.ts'
@@ -116,6 +117,8 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
         {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} />}
         {helpers && o.kind === 'light' && <LightIcon light={o.light} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
+        {/* Registered in every look and shot; the lit looks draw its medium (render/volumes/). */}
+        {o.kind === 'volume' && o.volume && <Volume id={o.id} volume={o.volume} rank={tree.scene.objects.indexOf(o)} edge={edge} helpers={helpers} />}
       </group>
       {(tree.childrenOf.get(o.id) ?? []).map((c) => (
         <ObjectNode key={c.id} object={c} tree={tree} />
