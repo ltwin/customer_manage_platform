@@ -63,7 +63,7 @@
 | `sky.sun_mode` | `"location"` \| `"manual"` | `location` | 选择太阳由地点和时间推算，还是用下面的手动角度。两套字段都保存 |
 | `sky.latitude_deg` | number −90…90（北纬为正） | 31.2304 | 与 `longitude_deg`、`timezone` 要么都写，要么都省略；都省略时为上海。只写一部分返回 400 |
 | `sky.longitude_deg` | number −180…180（东经为正） | 121.4737 | 同上 |
-| `sky.timezone` | IANA 时区名，区分大小写：服务端 `time.LoadLocation` 能加载，`loc.String()` 与原名完全相同，且不是 `Local` 或空串（`LoadLocation("")` 会返回 UTC） | `Asia/Shanghai` | 同上；`local_time` 是这个时区的当地时间，夏令时由时区库处理 |
+| `sky.timezone` | IANA 时区名，区分大小写：服务端 `time.LoadLocation` 能加载，写法与时区数据里的名字完全一致（`asia/shanghai` 拒绝），且不是 `Local` 或空串（`LoadLocation("")` 会返回 UTC） | `Asia/Shanghai` | 同上；`local_time` 是这个时区的当地时间，夏令时由时区库处理 |
 | `sky.place` | string ≤ 80 | `""` | 地点的显示名（例如「成都」），只用于界面和助手阅读，不参与计算 |
 | `sky.date` | `"YYYY-MM-DD"`，1900-01-01…2100-12-31，必须是存在的日期 | 无，**必填** | 当地日期。`set_environment` 整体替换，缺省值会在每次省略时重置日期，所以不设缺省；编辑器切到物理天空时写入本机的当天 |
 | `sky.local_time` | `"HH:MM"`，00:00…23:59 | `"12:00"` | 当地时刻，精确到分钟 |

@@ -96,7 +96,7 @@
 **后端 `backend/internal/creativescene`**
 - 解码与校验新字段，读取时补齐缺省值（沿用修订 v8 的做法）。
 - 渲染指纹：见「渲染指纹」。
-- 用 `time.LoadLocation` 校验时区名，并要求 `loc.String()` 与原名完全相同：macOS 的文件系统不区分大小写，`asia/shanghai` 在开发机上能加载，Linux 生产会拒绝。二进制里嵌入 `time/tzdata`，不依赖服务器上的时区文件。
+- 用 `time.LoadLocation` 校验时区名，并要求写法与时区数据里的名字完全一致（区分大小写）：macOS 的文件系统不区分大小写，`asia/shanghai` 在开发机上能加载，Linux 生产会拒绝。`loc.String()` 只回显传入的名字，比较它拦不住，具体做法见 W2 design「校验」。二进制里嵌入 `time/tzdata`，不依赖服务器上的时区文件。
 
 - 太阳参考：移植 NOAA 的太阳公式（W2 调研的 `noaa-solar.mjs`），纯函数，无外部依赖。`read_scene` 的结果和写入了环境的 `edit_scene` 结果带上它。前端的 `astronomy-engine` 与 NOAA 相差不到 0.02°、日出日落差约 3 秒，两边用同一组 NOAA 数据点测试，助手看到的时刻与画面一致。
 
