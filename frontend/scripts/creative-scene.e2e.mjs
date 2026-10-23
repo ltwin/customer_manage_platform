@@ -6543,6 +6543,99 @@ if (process.env.SCENE_E2E_W5_METAL) await check('W5 many lights: no march withou
   }
 })
 
+// AC-W5-5: dense smoke casting a shadow darkens the sunlit ground behind it; with cast_shadow off the picture
+// beyond the smoke's outline is the one without it (the sun 45° up from +X, the shadow 1.5 m toward −X).
+await check('W5 cast shadow: a casting volume darkens the sunlit ground; off, the ground is as without it', async () => {
+  const gpu = await w5Metal()
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const yard = (...objects) => {
+      const scene = fixtureScene('physical-noon', ...objects)
+      scene.environment.sky = completeSky({ ...scene.environment.sky, sun_mode: 'manual', sun_elevation_deg: 45, sun_azimuth_deg: 90 })
+      return scene
+    }
+    const smoke = (cast) => volumeObject('smoke', [2, 1.5, 3], [1, 1, 1], { scatter_density: 0.5, absorption_density: 8, edge_falloff: 0, cast_shadow: cast })
+    // On the ground in the smoke's shadow, and in the sun beyond it (clear of the ball's shadow).
+    const points = [[0.5, 0, 3], [0.6, 0, 1.9]]
+    const picture = (scene) => page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 768, p), [scene, points])
+    const empty = await picture(yard())
+    const casting = await picture(yard(smoke(true)))
+    const notCasting = await picture(yard(smoke(false)))
+    await savePicture(page, `w5-cast-shadow${gpu ? '-metal' : ''}`, casting)
+    const [shaded, lit] = casting.at.map((at) => [lumaAt(empty, at), lumaAt(casting, at)])
+    console.log(`W5 cast shadow: the ground in the smoke's shadow ${shaded[0].toFixed(0)} → ${shaded[1].toFixed(0)}, in the sun beside it ${lit[0].toFixed(0)} → ${lit[1].toFixed(0)}`)
+    assert.ok(shaded[1] < shaded[0] * 0.7, 'the ground behind the smoke darkens')
+    assert.ok(Math.abs(lit[1] - lit[0]) < 2, 'the ground beside the shadow stays')
+    const c = changedPixels(empty, notCasting, volumeCoverage(notCasting, smoke(false)))
+    assert.equal(c.outside, 0, 'with cast_shadow off nothing beyond the outline changes')
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// scene-volumes design「选灯与编译」「表面阴影系数」: a new casting light changes the march's lights, and the march
+// compiles ahead of the frame; the frames after it build no more shader than in the same scene without volumes
+// (develop's materials compile again on a new light's frames whatever the volumes: three numbers a stand-in's
+// shader apart from the real one's). A light whose shadow is turned off frees its map as the scene pass builds:
+// the march, rebuilt first, never reads it.
+await check('W5 no recompile: a new casting light compiles no more on its frames with volumes than without; a shadow turned off draws on', async () => {
+  const gpu = await w5Metal()
+  try {
+    const run = async (volume) => {
+      const server = new SceneServer()
+      referenceScene(server, 'cornell', (scene) => volume && scene.objects.push(volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, cast_shadow: true })))
+      const { context, page, errors } = await open(server, gpu ? { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) } : {})
+      const { box: area } = await viewportCenter(page)
+      await shading(page, '最终渲染')
+      const settle = async () => {
+        await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+        await sleep(600)
+        return settledShot(page, area)
+      }
+      const change = async (ops) => {
+        server.external(ops)
+        await page.evaluate(() => window.__invalidate())
+        return settle()
+      }
+      await settle()
+      // The programs the viewport's frames build themselves, outside any compile ahead.
+      await page.evaluate(() => {
+        window.__built = []
+        for (const h of window.__sceneGPU.live) {
+          if (h.role !== 'viewport') continue
+          const create = h.info.createProgram.bind(h.info)
+          h.info.createProgram = (program) => {
+            if (window.__sceneGPU.compiling === 0) window.__built.push(program.name || '-')
+            create(program)
+          }
+        }
+      })
+      const built = () => page.evaluate(() => window.__built.splice(0))
+      const light = (name, type, position, order) => ({ id: gid(name), kind: 'light', name, parent_id: null, order, transform: { position, rotation: [-0.707107, 0, 0, 0.707107], scale: [1, 1, 1] }, visible: true, locked: false, light: { type, intensity: type === 'spot' ? 40 : 2, cast_shadow: true } })
+      await change([{ op: 'add_objects', objects: [light('lamp', 'spot', [0.8, 2.8, -1], 50)] }])
+      const spot = await built()
+      await change([{ op: 'add_objects', objects: [light('key', 'directional', [0, 5, 0], 51)] }])
+      const directional = await built()
+      const off = await change([{ op: 'update_objects', updates: [{ object_id: gid('lamp'), light: { cast_shadow: false } }, { object_id: 'sobj_spot00000000000000000', light: { cast_shadow: false } }] }])
+      if (volume) await shot(page, `w5-shadow-off${gpu ? '-metal' : ''}`)
+      const lit = await lumaStats(page, off, { level: 250 })
+      await context.close()
+      return { spot, directional, lit, errors }
+    }
+    const without = await run(false)
+    const withVolume = await run(true)
+    const fmt = (r) => `a spot ${r.spot.length} (${r.spot.join(' ')}), a directional light ${r.directional.length}`
+    console.log(`W5 no recompile: programs built on the frames without volumes: ${fmt(without)}; with: ${fmt(withVolume)}`)
+    assert.ok(![...withVolume.spot, ...withVolume.directional].includes('Volumes'), 'the march compiles ahead, not on a frame')
+    assert.ok(withVolume.spot.length <= without.spot.length && withVolume.directional.length <= without.directional.length, 'no more than without volumes')
+    assert.ok(withVolume.lit.mean > 5, 'the picture draws on with the shadows off')
+    assert.deepEqual([...without.errors, ...withVolume.errors], [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
 // The orthographic views draw lit with the workbench (render/engines.ts): rays from the near plane, the volume
 // where it stands, nothing beyond its outline.
 await check('W5 ortho: a volume draws in an orthographic view', async () => {

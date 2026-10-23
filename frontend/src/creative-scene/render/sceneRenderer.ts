@@ -12,11 +12,13 @@ import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
+import { cascadeSunShadow } from './sunShadow.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
 import { nightLookNode } from '../world/nightLook.ts'
 import { aerialBehind, finishAerial, prepareAerial } from '../world/atmosphere/aerial.ts'
 import { applyVolumes } from './volumes/composite.ts'
 import { VolumeNode } from './volumes/march.ts'
+import { shadowLike } from './volumes/shadow.ts'
 import { finishVolumes, prepareVolumes } from './volumes/state.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
@@ -161,14 +163,18 @@ function fixedNoise(size = 64): DataTexture {
   return texture
 }
 
-type StandIn = { meshes: Group; lights: Scene }
+type StandIn = { meshes: Group; lights: Scene; shadows: (() => void)[] }
 
 /**
  * What SceneRenderer.compile compiles: one copy of each kind of visible mesh
  * where the mesh is (geometry and material shared, its flags kept), and the
- * visible lights copied into a scene with the same environment and fog.
+ * visible lights copied into a scene with the same environment and fog. A
+ * copied light gets a shadow node of the kind its light has (three's
+ * LightShadow.copy leaves it out, and the default one builds another shader:
+ * the real materials compiled again on the next frame).
  */
 function standIn(scene: Scene): StandIn {
+  const shadows: (() => void)[] = []
   const lights = new Scene()
   lights.environment = scene.environment
   lights.environmentIntensity = scene.environmentIntensity
@@ -184,7 +190,10 @@ function standIn(scene: Scene): StandIn {
       return c
     }
     if ((o as Light).isLight) {
-      lights.add(copyAt(o.clone(false)))
+      const copy = o.clone(false) as Light
+      const undo = shadowLike(o as Light, copy, cascadeSunShadow)
+      if (undo) shadows.push(undo)
+      lights.add(copyAt(copy))
       return
     }
     const mesh = o as Mesh
@@ -198,11 +207,12 @@ function standIn(scene: Scene): StandIn {
     meshes.add(copyAt(mesh.clone(false)))
   })
   lights.updateMatrixWorld()
-  return { meshes, lights }
+  return { meshes, lights, shadows }
 }
 
 /** Lets three free what it keeps for a stand-in: its meshes' render objects (and their pipelines), its lights' shadow maps. */
-function disposeStandIn({ meshes, lights }: StandIn) {
+function disposeStandIn({ meshes, lights, shadows }: StandIn) {
+  for (const undo of shadows) undo()
   for (const m of meshes.children) m.dispose()
   for (const l of lights.children as (Light & { shadow?: LightShadow })[]) {
     // Never drawn into, so three never set up freeing its textures; the materials bound the depth.

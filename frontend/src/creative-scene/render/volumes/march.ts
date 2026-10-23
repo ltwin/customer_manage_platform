@@ -1,4 +1,4 @@
-import { HalfFloatType, NearestFilter, Vector2, type Camera, type Texture } from 'three'
+import { HalfFloatType, Mesh, NearestFilter, OrthographicCamera, PlaneGeometry, Vector2, type Camera, type Texture } from 'three'
 import * as tsl from 'three/tsl'
 import { NodeMaterial, NodeUpdateType, QuadMesh, RenderTarget, RendererUtils, TempNode, type NodeBuilder, type NodeFrame } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
@@ -118,11 +118,19 @@ export class VolumeNode extends TempNode {
   private readonly blurX = new NodeMaterial()
   private readonly blurY = new NodeMaterial()
   private readonly quad = new QuadMesh(this.blurX)
-  /** The march's own quad: compileAsync builds its render object later, with the material it has then. */
-  private readonly marchQuad = new QuadMesh(this.blurX)
+  /**
+   * The march's own quad, a plain mesh: compileAsync builds a QuadMesh's vertex stage unlike its draw does (the
+   * draw takes the full-screen triangle from the vertex index), and the frame compiled it again. A plane in front
+   * of an orthographic camera compiles ahead as it draws.
+   */
+  private readonly marchQuad = new Mesh(new PlaneGeometry(2, 2), this.blurX)
+  private readonly marchCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
   constructor(depth: TSLNode, camera: Camera, after: readonly TSLNode[] = [], warm: (() => void) | null = null) {
     super('vec4')
+    this.marchQuad.frustumCulled = false
+    this.marchCamera.position.z = 0.5
+    this.marchCamera.updateMatrixWorld()
     this.depth = depth
     this.after = after
     this.warm = warm
@@ -318,7 +326,7 @@ export class VolumeNode extends TempNode {
     bindVolumeTextures(this.lights!.maps, this.lights!.skies)
     rendererState = RendererUtils.resetRendererState(renderer, rendererState as never)
     renderer.setRenderTarget(this.marched)
-    this.marchQuad.render(renderer)
+    renderer.render(this.marchQuad, this.marchCamera)
     for (const [material, into] of [
       [this.blurX, this.across],
       [this.blurY, this.blurred],
@@ -337,13 +345,16 @@ export class VolumeNode extends TempNode {
     this.compiling = true
     gpuTestHooks.compiling++
     const target = renderer.getRenderTarget()
-    // compileAsync takes the target's formats before its first await.
+    const mrt = renderer.getMRT()
+    // compileAsync takes the target's formats and the MRT before its first await: the march's, not the pass the frame is in.
     renderer.setRenderTarget(this.marched)
+    renderer.setMRT(null)
     let done: Promise<void>
     try {
-      done = renderer.compileAsync(this.marchQuad, (this.marchQuad as unknown as { camera: Camera }).camera)
+      done = renderer.compileAsync(this.marchQuad, this.marchCamera)
     } finally {
       renderer.setRenderTarget(target)
+      renderer.setMRT(mrt)
     }
     void done
       .catch((error: unknown) => console.warn('volumes: the march did not compile ahead', error))
@@ -365,6 +376,7 @@ export class VolumeNode extends TempNode {
     for (const t of [this.marched, this.across, this.blurred]) t.dispose()
     this.march?.dispose()
     this.march = null
+    this.marchQuad.geometry.dispose()
     this.blurX.dispose()
     this.blurY.dispose()
   }

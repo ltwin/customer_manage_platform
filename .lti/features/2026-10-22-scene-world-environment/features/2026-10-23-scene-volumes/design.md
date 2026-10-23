@@ -101,6 +101,7 @@ SceneRenderer.render(camera, frame)
 - **结构签名**：每个灯位的类型与是否投影、有没有环境贴图。灯的位置、颜色、强度、锥角走 uniform，不进签名。
 - **重建**：签名变了只重建步进材质，不重建管线（重建管线会清掉 TRAA 和降噪的历史，视口会闪）。
 - **首次编译**：场景里第一次出现体积时才建步进材质。视口先异步编译，编好之前这一帧不画体积，与新灯的预热相同（`SceneLights.tsx`）；导出在出图前等它编好。
+- **步进用平面网格绘制**（实施时调整）：`QuadMesh` 绘制时按顶点序号生成全屏三角形，`compileAsync` 编出的顶点着色器与之不同，预编译不命中；步进改用平面网格加正交摄像机。
 
 ### 纹理绑定
 
@@ -171,6 +172,7 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
 - **平行光（太阳、月光、文档里的平行光）**：`SunCascades` 重写 `setup`，返回 `super.setup(builder).mul(volumeShadow(...))`，toLight 取自它已有的光照方向。
 - **聚光和点光**：`lights.ts` 在 `buildLight` 时装上 `ShadowNode`、`PointShadowNode` 的子类，子类同样重写 `setup`。three 只采用一盏灯第一次构建的阴影节点，所以只在建灯时装一次（与 `cascadeSunShadow` 相同）。`disposeLight` 释放它们（`BuiltLight.stop` 现在只管平行光）。
 - **替身灯**：`SceneRenderer.compile` 用 `standIn` 克隆的灯预编译，three 的 `LightShadow.copy` 不复制 `shadowNode`，替身灯会用默认节点，生成的着色器与真实的灯不同，真实材质在下一帧全部重新编译。`standIn` 克隆灯时按原灯装同类的阴影节点，`disposeStandIn` 一并释放。体积的 uniform 是全局的，所以替身与真实的灯生成同一份代码。这也修好了现有的 `SunCascades` 错配。
+- **实施时的发现**：develop 上新加一盏投影灯后，之后的帧仍会重新编译材质（WebGPU 与 WebGL2 都是），替身与真实材质的着色器只差生成的变量编号和 uniform 顺序，来自 three 的构建顺序，与阴影节点无关，不在本次范围。本次保证有体积时不比没有体积时多，即不比 develop 多（AC-W5-11）。
 
 ### 数据与服务端
 
@@ -274,7 +276,7 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
   - W5 aerial：物理天空、空气透视加大 `distance_scale`，一团烟跨在地平线上，上下两侧没有接缝。
   - W5 shadow off：关掉一盏灯的投影后立即导出，画面正确，没有读到已释放的纹理。
   - W5 many lights：超过上限的投影灯，步进管线照常建出，超出的灯只照亮表面。
-  - W5 no recompile：加一盏投影的聚光后，下一帧没有材质重新编译。
+  - W5 no recompile：加一盏投影的聚光或平行光后，帧里重新编译的程序数与没有体积时相同，步进材质不在其中（实施时调整，见「表面阴影系数」）。
   - 回归：W3 的「day unchanged」、「sun shadows」、W4 的 far 和 GI，确认没有体积时画面不变。
 - **助手**（AC-W5-10）：按工具说明在开发环境里请助手做一次，存截图到 evidence。
 - **性能**（AC-W5-11）：在参考设备上用穿刺的计时方法对产品视口实测（WebGPU，1280 × 720 CSS 像素、DPR 2），记入 evidence：

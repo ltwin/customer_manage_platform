@@ -1,6 +1,8 @@
 import { Box3, Matrix4, Vector3, type Camera, type DirectionalLight, type DirectionalLightShadow, type Mesh, type Object3D, type OrthographicCamera, type PerspectiveCamera, type Vector2 } from 'three'
-import type { NodeFrame } from 'three/webgpu'
+import { uniform } from 'three/tsl'
+import type { NodeBuilder, NodeFrame } from 'three/webgpu'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
+import { towardSun } from './volumes/shadow.ts'
 
 // The sun's shadow in cascades. One map over every caster spent its texels
 // on whatever stood far off: a big box 200 m away made the shadows by the
@@ -29,9 +31,18 @@ export type CascadeLight = Object3D & { target: Object3D; shadow?: DirectionalLi
 class SunCascades extends CSMShadowNode {
   /** Each cascade's slice as a share of near..far, which the shader picks the map by. */
   declare _cascades: Vector2[]
+  /** Toward the light, a unit vector, as each render starts: the volumes' shadow (W5) goes that way. */
+  private readonly toward = new Vector3()
 
   constructor(light: DirectionalLight) {
     super(light, { cascades })
+  }
+
+  // The cascades' shadow times what the casting volumes let through toward the light (render/volumes/shadow.ts).
+  override setup(builder: NodeBuilder) {
+    const light = this.light as DirectionalLight
+    const toward = uniform(this.toward).onRenderUpdate(() => this.toward.subVectors(light.getWorldPosition(lightAt), light.target.getWorldPosition(targetAt)).normalize())
+    return towardSun(super.setup(builder), toward)
   }
 
   // Replaces three's placement, which takes the camera of the first build and the light's local position.

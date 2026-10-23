@@ -22,7 +22,13 @@
 - [x] 2.3 首次编译与重建：步进材质在第一个体积出现时才建，视口异步编译、编好前不画，导出等编好；签名变化只重建步进材质。完成判据：e2e「W5 many lights」通过；没有体积时不建步进材质
   - `SceneRenderer` 增加 `redraw` 参数（视口传 `invalidate`），步进节点编译期间 `ready = 0`，合成不画体积；`gpu.ts` 的测试钩子加 `marches` 计数（挂载点外，只加一个计数字段）。
   - W5 many lights（9 盏投影灯，只在 Metal 上跑，SwiftShader 过慢）：步进材质 1 个，体积照常画出；「没有体积不建步进材质」放进 W5 ortho，SwiftShader 上也跑。
-- [ ] 2.4 表面阴影：`shadow.ts` 的 `volumeShadow` 与两个阴影节点子类；`SunCascades.setup` 乘系数；`lights.ts:buildLight` 装节点、`disposeLight` 释放；`standIn` 按原灯装同类阴影节点。完成判据：e2e「W5 cast shadow」「W5 shadow off」「W5 no recompile」通过；「sun shadows」仍绿
+- [x] 2.4 表面阴影：`shadow.ts` 的 `volumeShadow` 与两个阴影节点子类；`SunCascades.setup` 乘系数；`lights.ts:buildLight` 装节点、`disposeLight` 释放；`standIn` 按原灯装同类阴影节点。完成判据：e2e「W5 cast shadow」「W5 shadow off」「W5 no recompile」通过；「sun shadows」仍绿
+  - W5 cast shadow：浓烟投影处的地面 162 → 78，旁边受光的地面不变；关闭投射阴影后轮廓外 0 个像素变化。
+  - **替身灯没有消除新灯后的重新编译**：develop 上加一盏投影的聚光，之后的帧仍重新编译 9 个材质程序（WebGPU 与 WebGL2 都一样），本分支没有体积时也是 9 个。对比着色器代码，替身编译与真实材质的差别只在生成的变量编号和 uniform 顺序，是 three 构建顺序造成的，不是阴影节点。阴影节点同类仍然装上（否则代码结构就不同），按 id 排序替身灯试过无效，已撤回。
+  - 「W5 no recompile」改为：同一场景有体积和没有体积时，加一盏投影的聚光或平行光后帧里重新编译的程序数相同（都是 9），且步进材质不在其中；关掉投影后画面照常。满足 AC-W5-11「不比 develop 多」。
+  - 步进材质的预编译最初没有命中：`QuadMesh` 绘制时按顶点序号生成全屏三角形，`compileAsync` 编出的顶点着色器不同。步进改用平面网格加正交摄像机绘制，预编译与绘制一致。
+  - 「shadow off」并入「W5 no recompile」：关掉两盏聚光的投影后画面照常、无报错。
+  - 回归：「sun shadows」「W4 far」「W4 real-time GI」「AC-1」「AC-4」通过。「W3 day unchanged」与「lights: the rendered view warms…」在 develop 上同样失败（环境原因，非本次引入）；改用逐像素对照：用 develop 与本分支分别出 W3 基线的 4 张图（正午与手动天空的导出和视口），逐像素完全相同。
 
 ## 3. 编辑界面与助手
 
