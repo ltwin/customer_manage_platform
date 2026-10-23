@@ -114,8 +114,9 @@ func TestCompactionSmallWindowCanContinue(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
-	// (about 1 KB) and the materials, lighting and lit look (about 3 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 22000 })
+	// (about 1 KB), the materials, lighting and lit look (about 3 KB) and W4's
+	// aerial perspective were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 23000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for i := 0; i < 4; i++ {
@@ -137,8 +138,9 @@ func TestCompactionOriginalsLeaveRoomForRecentTurns(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
-	// (about 1 KB) and the materials, lighting and lit look (about 3 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 22000 })
+	// (about 1 KB), the materials, lighting and lit look (about 3 KB) and W4's
+	// aerial perspective were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 23000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for _, text := range []string{strings.Repeat("x", 20000), strings.Repeat("y", 20000), "最近方案甲", "最近方案乙"} {

@@ -5859,6 +5859,29 @@ await check('W4 real-time GI: the aerial perspective blues the yard there too, a
   await context.close()
 })
 
+await check('W4 environment tab: the aerial perspective’s switch and distance scale, the scale greyed while off, undo', async () => {
+  const { context, page, errors, sky } = await physicalTab()
+  const group = page.getByRole('group', { name: '空气透视' })
+  const scale = group.getByRole('spinbutton', { name: '距离倍率' })
+  assert.equal(await scale.inputValue(), '1')
+  await scale.fill('100')
+  await scale.press('Enter')
+  await waitFor(() => sky().aerial_perspective.distance_scale === 100, 'the scale written')
+  // The slider is on a log scale: its middle, 10^1, is ×10.
+  const slider = group.getByRole('slider', { name: '距离倍率' })
+  await slider.fill('1')
+  await waitFor(() => sky().aerial_perspective.distance_scale === 10, 'the slider writes ×10 at its 10^1')
+  await group.getByRole('checkbox', { name: '空气透视' }).uncheck()
+  await waitFor(() => sky().aerial_perspective.enabled === false, 'off')
+  assert.ok(await scale.isDisabled(), 'the scale greyed while off')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => sky().aerial_perspective.enabled === true, 'undo turns it back on')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky at night on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_W3_PERF
   const label = process.env.SCENE_E2E_W3_PERF_LABEL ?? 'after'

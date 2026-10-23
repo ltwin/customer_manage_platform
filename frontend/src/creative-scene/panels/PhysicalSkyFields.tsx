@@ -4,7 +4,7 @@ import { withCity, withPreset, withSunMode } from '../editing.ts'
 import { moonIlluminated, moonPhaseName, moonTimes, physicalSun, skyInstant, sunAt, sunTimes, type MoonPhaseName, type Span } from '../world/astro.ts'
 import { presetOf, type PresetName } from '../world/atmosphere/constants.ts'
 import { loadCities, searchCities, type City, type CityTable } from '../world/cities.ts'
-import type { NightSky, PhysicalSky } from '../world/physicalSky.ts'
+import type { AerialPerspective, NightSky, PhysicalSky } from '../world/physicalSky.ts'
 import { Slider } from './EnvironmentPanel.tsx'
 import { NumberField } from './Properties.tsx'
 
@@ -64,6 +64,9 @@ export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }:
   const moonDay = useMemo(() => (dayKey ? moonTimes(latest.current) : null), [dayKey])
   const now = skyInstant(sky).utcMs
   const setNight = (patch: Partial<NightSky>, what: string, field?: string) => setSky({ night: { ...sky.night, ...patch } }, what, field && `night.${field}`)
+  const setAerial = (patch: Partial<AerialPerspective>, what: string, field?: string) =>
+    setSky({ aerial_perspective: { ...sky.aerial_perspective, ...patch } }, what, field && `aerial_perspective.${field}`)
+  const aerial = sky.aerial_perspective
   const toDate = (date: string, what: string) => date !== sky.date && onEnvironment({ ...environment, sky: { ...sky, date } }, `日期改为${what}（${monthDay(date)}）`)
   const moonDate = (date: string, what: string) => (
     <button type="button" aria-label={`${what} ${date}`} onClick={() => toDate(date, what)}>
@@ -207,6 +210,28 @@ export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }:
           <input type="checkbox" aria-label="太阳盘" checked={sky.sun_disc} onChange={(e) => setSky({ sun_disc: e.target.checked }, e.target.checked ? '显示太阳盘' : '隐藏太阳盘')} />
         </label>
         <NumberField label="太阳盘大小（°）" value={sky.sun_size_deg} step={0.05} min={0.1} max={10} onCommit={(v) => setSky({ sun_size_deg: v }, '太阳盘大小', 'sun_size_deg')} />
+      </fieldset>
+      <fieldset disabled={readOnly} aria-label="空气透视">
+        <legend>空气透视</legend>
+        <label className="cc-scene-field">
+          <span>空气透视</span>
+          <input type="checkbox" aria-label="空气透视" checked={aerial.enabled} onChange={(e) => setAerial({ enabled: e.target.checked }, e.target.checked ? '打开空气透视' : '关闭空气透视')} />
+        </label>
+        <div className="cc-scene-slider">
+          <NumberField label="距离倍率" value={aerial.distance_scale} step={1} min={0.1} max={1000} disabled={!aerial.enabled} onCommit={(v) => setAerial({ distance_scale: v }, '距离倍率', 'distance_scale')} />
+          {/* 0.1…1000 on a log scale, to two significant figures while dragged. */}
+          <input
+            type="range"
+            aria-label="距离倍率"
+            min={-1}
+            max={3}
+            step={0.01}
+            value={Math.log10(aerial.distance_scale)}
+            disabled={!aerial.enabled}
+            onChange={(e) => setAerial({ distance_scale: Math.min(1000, Math.max(0.1, Number((10 ** Number(e.target.value)).toPrecision(2)))) }, '距离倍率', 'distance_scale')}
+          />
+        </div>
+        <small>远处景物因大气变蓝变淡，天空不受影响。真实尺度下几百米内很弱，院子、街道这类场景调到 50–200 才看得出</small>
       </fieldset>
       <fieldset disabled={readOnly} aria-label="夜空">
         <legend>夜空</legend>

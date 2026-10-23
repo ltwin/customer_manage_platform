@@ -116,7 +116,6 @@ applyAerial(color, depth):
 | `frontend/src/creative-scene/objects/Lighting.tsx:PhysicalLighting` | 修改 | 写空气透视的开关、倍率、光源 |
 | `frontend/src/creative-scene/world/physicalSky.ts` | 修改 | 缺省值、`completeSky`、`isPhysical` |
 | `frontend/src/creative-scene/panels/PhysicalSkyFields.tsx` | 修改 | 「空气透视」一组 |
-| `frontend/src/creative-scene/editing.ts` | 修改 | 空气透视的提交与合并键（如需） |
 | `backend/internal/creativescene/model.go` | 修改 | `AerialPerspective` 类型 |
 | `backend/internal/creativescene/sky.go` | 修改 | `physicalOnly`、`completeSky`、校验 |
 | `backend/internal/creativescene/view.go:completedScene` | 修改 | 读取响应判断快照是否缺空气透视（实施中补入：响应只在缺字段时解码补齐） |

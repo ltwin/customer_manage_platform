@@ -19,8 +19,10 @@
 
 ## 3. 编辑界面与助手
 
-- [ ] 3.1 `PhysicalSkyFields.tsx`「空气透视」一组（开关、对数倍率滑杆、关闭时置灰），`editing.ts` 的提交。完成判据：e2e 走一遍开关、拖倍率、Cmd+Z 撤回
-- [ ] 3.2 `creativeagent/scene_tools.go` 的 `edit_scene` 说明与 `scene_tools_test.go` 关键句；`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md`。完成判据：`go test ./internal/creativeagent/` 通过
+- [x] 3.1 `PhysicalSkyFields.tsx`「空气透视」一组（开关、对数倍率滑杆、关闭时置灰），`editing.ts` 的提交。完成判据：e2e 走一遍开关、拖倍率、Cmd+Z 撤回
+  - e2e「W4 environment tab」通过：输入倍率 100、对数滑杆取 10^1 写 ×10、关闭后倍率置灰、Cmd+Z 撤回为开启。`editing.ts` 不需改：合并键按 `environment.aerial_perspective.distance_scale` 走通用逻辑。
+- [x] 3.2 `creativeagent/scene_tools.go` 的 `edit_scene` 说明与 `scene_tools_test.go` 关键句；`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md`。完成判据：`go test ./internal/creativeagent/` 通过
+  - 说明压到一句；工具定义变长后 `compaction_regression_test.go` 的两个 22000 token 窗口有一个不够，按 W2、W3 的做法调到 23000（注释写明原因）。`go test ./internal/creativeagent/` 全部通过。
 
 ## 4. 验收
 
