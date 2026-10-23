@@ -11,7 +11,7 @@ import { disposeSky, litSky, physicalSkyMesh, roomEnvironment, setSky, skyEnviro
 import { STUDIO_AMBIENT, STUDIO_BACKGROUND, STUDIO_FILL, STUDIO_KEY_INTENSITY } from '../render/studio.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
-import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
+import { SKY_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
 import { equatorToScene, galacticToScene, physicalSun, sunVector } from '../world/astro.ts'
@@ -45,8 +45,8 @@ export function Lighting({ environment, display, engine = 'workbench' }: { envir
 }
 
 /** A sky is drawn in the picture, not in the AO's normals: it has no surface there. */
-function drawnAside<T extends Mesh>(sky: T): T {
-  sky.layers.set(ASIDE_LAYER)
+function drawnAsSky<T extends Mesh>(sky: T): T {
+  sky.layers.set(SKY_LAYER)
   return sky
 }
 
@@ -109,7 +109,7 @@ const environmentEveryMs = 200
 function LitLighting({ environment, engine }: { environment: SceneEnvironment; engine: Engine }) {
   const { gl, scene, invalidate } = useThree()
   const procedural = environment.sky.kind === 'procedural'
-  const sky = useMemo(() => drawnAside(litSky()), [])
+  const sky = useMemo(() => drawnAsSky(litSky()), [])
   useEffect(() => () => disposeSky(sky), [sky])
   useLayoutEffect(() => {
     setSky(sky, environment, true)
@@ -212,7 +212,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
   const parts = useMemo(() => {
     const luts = atmosphereLuts()
     const lutScale = uniform(1)
-    const background = drawnAside(physicalSkyMesh(luts, lutScale, 'background'))
+    const background = drawnAsSky(physicalSkyMesh(luts, lutScale, 'background'))
     const source = physicalSkyMesh(luts, lutScale, 'source')
     const sun = new DirectionalLight()
     sun.castShadow = true
@@ -274,7 +274,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
   const catalogue = useNightAsset(starsNow, needs.stars)
   const moonMap = useNightAsset(moonNow, needs.moon)
   // The stars' sprites, made once the catalogue is here and kept after, so nightfall compiles nothing new.
-  const stars = useMemo(() => catalogue && drawnAside(starField(catalogue, parts.luts, parts.background.sky.night)), [catalogue, parts])
+  const stars = useMemo(() => catalogue && drawnAsSky(starField(catalogue, parts.luts, parts.background.sky.night)), [catalogue, parts])
   useEffect(() => () => void (stars && disposeStars(stars)), [stars])
 
   const skyKey = JSON.stringify(sky)

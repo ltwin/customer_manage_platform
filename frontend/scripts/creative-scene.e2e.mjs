@@ -6182,6 +6182,38 @@ await check('real-time GI: 48 pictures in a row leave nothing behind on the devi
   await context.close()
 })
 
+// The sky is the picture's (render/sceneRenderer.ts SKY_LAYER), drawn behind the scene by the real-time GI's lighting
+// pass as by the workbench. On the helpers' layer it had gone with them into the viewport's own pass, which a picture to
+// keep has not: the procedural and the physical sky were black behind every real-time GI export (R2 c5b302eb).
+await check('real-time GI: a lit picture draws the sky behind the scene, procedural and physical, as the workbench does', async () => {
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  await page.goto(`${base}/.scene-gi-qa.html`)
+  await page.waitForFunction(() => window.__ready === true)
+  // The top left of both yards is sky (scripts/fixtures/scene-reference).
+  const sky = [0.02, 0.02, 0.2, 0.15]
+  for (const name of ['noon', 'physical-noon']) {
+    const scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+    // As the server reads it out (referenceScene): the sky completed, the stored camera exposed by hand.
+    scene.environment.sky = completeSky(scene.environment.sky)
+    for (const o of scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
+    const seen = {}
+    for (const engine of ['workbench', 'realtime_gi']) {
+      scene.render = { ...scene.render, engine }
+      const { means } = await page.evaluate(([s, box]) => window.__regions(s, 'lit', 256, [box]), [scene, sky])
+      seen[engine] = means[0]
+    }
+    const [r, , b] = seen.realtime_gi
+    assert.ok(b > 60 && b >= r, `${name}: the real-time GI's sky is a sky: ${seen.realtime_gi.map(Math.round)}`)
+    for (let c = 0; c < 3; c++) assert.ok(Math.abs(seen.realtime_gi[c] - seen.workbench[c]) < 12, `${name}: the same sky as the workbench's: ${seen.realtime_gi.map(Math.round)} against ${seen.workbench.map(Math.round)}`)
+  }
+  assert.deepEqual(errors, [], errors.join('\n'))
+  await context.close()
+})
+
 // R2 AC-R2-2 and AC-R2-4: the renderer in effect (render/engines.ts effectiveEngine). The staleness of exports is
 // the server's fingerprint (creativescene TestEngineFingerprintsOnlyClayAndLit); the in-memory server has none.
 await check('renderer in effect: real-time GI converges in the rendered view and stops; clay, wireframe, material preview, line art and orthographic views stay the workbench’s', async () => {
@@ -6211,7 +6243,9 @@ await check('renderer in effect: real-time GI converges in the rendered view and
   // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames), then stops.
   const giFrames = 12
   await settledFrames(giFrames, 'rendered, real-time GI')
-  assert.ok((await pixelDiff(page, look['最终渲染'], await settledShot(page, box))) > 0.01, 'the real-time GI changes the rendered view')
+  // By more than 24 levels: the GI's bounce on a post and a wall is gentle. More than 48 once held only because the sky
+  // was drawn with the helpers, and the grid laid over it took its colour (2.3% of pixels past 24, 0.8% past 48).
+  assert.ok((await pixelDiff(page, look['最终渲染'], await settledShot(page, box), 24)) > 0.01, 'the real-time GI changes the rendered view')
   for (const mode of ['白模', '线框', '材质预览']) {
     await shading(page, mode)
     await settledFrames(1, `${mode}, real-time GI chosen`)

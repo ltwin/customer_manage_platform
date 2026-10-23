@@ -53,8 +53,10 @@ for (const name of ['base', 'ambient', 'envSpec']) lightingOutputs.setBlendMode(
 export type RealtimeGIOptions = {
   /** The viewport's, or a picture to keep's: the SSGI's samples, its denoising and the flicker suppression. */
   quality: Quality
-  /** The layers the prepass and the lighting pass draw. */
+  /** The layers the prepass draws: what has a surface. */
   layers: Layers
+  /** The layers the lighting pass draws: those and the sky behind them. */
+  pictureLayers: Layers
   /**
    * The viewport's helpers (the grid, light icons, camera frustums), drawn by
    * a pass of their own: in the lighting pass they would be in the picture
@@ -121,7 +123,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const normal: N = sample((uv: N) => unpackRGBToNormal(normalPacked.sample(uv).rgb))
 
   const lit = own(new GILightingPass(PassNode.COLOR, scene, camera, { samples: 0 }))
-  lit.setLayers(options.layers)
+  lit.setLayers(options.pictureLayers)
   lit.setMRT(lightingOutputs)
   const output: N = lit.getTextureNode('output')
   const base: N = lit.getTextureNode('base')
@@ -245,7 +247,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     color,
     depth,
     passes: [
-      { node: lit, layers: options.layers },
+      { node: lit, layers: options.pictureLayers },
       { node: prepass, layers: options.layers },
     ],
     aoOn,

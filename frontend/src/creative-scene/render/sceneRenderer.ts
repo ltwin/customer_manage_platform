@@ -47,8 +47,17 @@ export type Overlays = {
 
 const noOverlays: Overlays = { aside: () => [], top: () => [] }
 
-/** The layer the picture draws but the AO's prepass leaves out. */
+/**
+ * The layer of the viewport's helpers: the workbench's picture draws it, the real-time GI a pass of its own
+ * over its picture (realtimeGI.ts aside); no prepass does.
+ */
 export const ASIDE_LAYER = 30
+/**
+ * The layer of the sky (objects/Lighting.tsx): the picture draws it, the workbench's and the real-time GI's
+ * lighting pass alike; no prepass does, as it has no surface there. Not the helpers' layer: a picture to keep
+ * has no pass for those.
+ */
+export const SKY_LAYER = 29
 /** The layer only the overlay pass draws; the gizmo's raycaster has to see it too. */
 export const OVERLAY_LAYER = 31
 
@@ -533,6 +542,7 @@ export class SceneRenderer {
         realtimeGI(scene, camera, {
           quality: look.quality,
           layers: layers(0),
+          pictureLayers: layers(0, SKY_LAYER),
           aside: aside && { color: aside.getTextureNode(), depth: aside.getTextureNode('depth') },
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
@@ -549,8 +559,8 @@ export class SceneRenderer {
       if (look.accumulate) picture = own(new AccumulateNode(picture, convergeFrames('realtime_gi'))) as unknown as Node<'vec4'>
     } else {
       const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
-      beauty.setLayers(layers(0, ASIDE_LAYER))
-      passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER) }]
+      beauty.setLayers(layers(0, ASIDE_LAYER, SKY_LAYER))
+      passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER, SKY_LAYER) }]
       picture = beauty
       if (!wireframe) {
         // Multisampled depth cannot be sampled by the AO: the prepass has none.
