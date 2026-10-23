@@ -50,7 +50,13 @@
   - 跑过：「W3 day unchanged」（Metal）、「W2 atmosphere drift」、「W2 sunny 16」、「W2 lamps」、「W2 back to another sky」、「W2 environment tab」三项、「W2 exposure」三项、「W3 milky way drift」全绿。「W2 parity」超阈值，三张图的数值与 W2 验收时记录的完全一致（noon 0.3566 / 1.517%），是 W2 已交 owner 的既有差异，不是本次引入。
   - 「月亮关闭、星空关闭时背景与 W2 相同」：本任务里夜空 uniform 尚无人写入，新增项都乘 0，白天与入夜的背景都与 W2 相同；开关真正生效后的对照放进 8.1 的 W3 用例。
   - 加了 `SCENE_E2E_CONSOLE=1`，打印页面的全部控制台消息（WGSL 编译错误是 warning，原有的错误收集看不到）。
-- [ ] 5.2 `world/nightSky/stars.ts`：星星精灵（`PointsNodeMaterial`，按画面高度缩放、能量守恒、亮星略大、经透射率衰减、地平线以下与月盘内不画、折射）。完成判据：e2e 在 WebGPU 与 SwiftShader 下各出一张北京入夜朝北的图，北极星的像素位置与 3.1 的方向一致
+- [x] 5.2 `world/nightSky/stars.ts`：星星精灵（`PointsNodeMaterial`，按画面高度缩放、能量守恒、亮星略大、经透射率衰减、地平线以下与月盘内不画、折射）。完成判据：e2e 在 WebGPU 与 SwiftShader 下各出一张北京入夜朝北的图，北极星的像素位置与 3.1 的方向一致
+  - 不用 `PointsNodeMaterial` 的精灵路径（它按模型矩阵平移，星星在无穷远）：`InstancedBufferGeometry` 每颗星一个四边形，自写 `vertexNode`，与天空盒同样只取视图旋转、钉在远平面；两个后端同一份 TSL。顶点阶段算折射、透射率、隐藏条件和像素立体角，片元只乘高斯轮廓；叠加混合（`One, One`，alpha 不变），排在透明物体最前，玻璃盖在星星上。
+  - 精灵 σ = 0.9 px × 画面高度 / 1080，亮于 1 等时每等大 1/5（天狼星约 1.5 倍）；四边形半宽 3.5σ。单测：精灵中心落在像素的任何位置、1080 与 8K、亮星，像素和都在 1 ± 0.5% 内（能量守恒）；折射与 astronomy-engine `Refraction('normal')` 逐点相同。正交视图不画星星（天空在那里只是背景）。
+  - 已挂进 `PhysicalLighting`（5.3 的「挂上星星」先做了，e2e 要看到图）：天空第一次需要星表时加载，到位后建网格并常驻，入夜不再新建材质；首帧直接取已缓存的星表，供 5.3 的 `openShooter` 等资源后首帧即有星星。地点模式且 `stars` 打开时亮度为 `starsScale`，否则为 0。
+  - e2e「W3 stars」：北京 2026-10-26 22:00，自由视角对准 Skyfield 的北极星方向（加 astronomy-engine 的折射），量画面中心附近最亮点的质心。SwiftShader（WebGL2）偏 0.010°，Metal（WebGPU）0.009°（阈值 0.2°）。图：`discovery/research/stars/polaris-webgl2.png`、`polaris-webgpu.png`（EV100 −2，月亮关；银河与夜天光要等 5.3 写入 uniform，背景暂为黑）。
+  - 回归：「W3 day unchanged」（Metal）、「W2 sunny 16」「W2 lamps」「W2 back to another sky」「W2 environment tab: manual」全绿。
+  - 踩坑：`StarField` 的亮度 uniform 起初叫 `scale`，与 `Object3D.scale` 撞名，`Object.assign` 抛错、画布崩溃；改名 `brightness`。`SCENE_E2E_CONSOLE` 顺带打印 pageerror。
 - [ ] 5.3 `objects/Lighting.tsx:PhysicalLighting`：主光、副光的分配（太阳高于 −6° 或月亮在地平线下时主光取太阳）；月光由 `daylight` 求；太阳低于 0° 时重算月亮的天空视图；E 加上月光、月光照亮的天空与星空常数项，求 s_env；挂上星星；资源到位时 `invalidate`。`host/render.ts:openShooter` 挂载前 `await loadNightAssets`，失败时这张图失败，原因写「夜空资源加载失败，请稍后重试」。先写单测：满月高于 30°、太阳 −18° 时 CPU 的 E 在 0.1–0.4 lux；新月时月亮项为 0；主光切换的边界。完成判据：单测先红后绿；e2e 的满月之夜在 EV100 −3 下能看清院子，入夜前后材质没有重新编译（e2e 记录编译次数）
 
 ## 6. 编辑界面

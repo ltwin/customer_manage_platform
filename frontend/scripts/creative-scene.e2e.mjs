@@ -15,6 +15,8 @@ import { chromium } from 'playwright'
 import { Euler, Quaternion } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { completeSky } from '../src/creative-scene/world/physicalSky.ts'
+import { documentAzimuth, sunVector } from '../src/creative-scene/world/astro.ts'
+import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
@@ -569,7 +571,10 @@ async function open(server, options = {}) {
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()))
   // SCENE_E2E_CONSOLE=1 prints every console message, warnings (WGSL compile errors among them) included.
-  if (process.env.SCENE_E2E_CONSOLE) page.on('console', (m) => console.log(`[console ${m.type()}] ${m.text().slice(0, 2000)}`))
+  if (process.env.SCENE_E2E_CONSOLE) {
+    page.on('console', (m) => console.log(`[console ${m.type()}] ${m.text().slice(0, 2000)}`))
+    page.on('pageerror', (e) => console.log(`[pageerror] ${e.stack?.slice(0, 2000)}`))
+  }
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
@@ -5511,6 +5516,78 @@ await check('W3 milky way drift: the baked map agrees with the CPU model', async
     assert.deepEqual(errors, [])
   } finally {
     await (context ?? own).close()
+    await gpu?.close()
+  }
+})
+
+// W3 (design「星星」): Beijing at 22:00 on 2026-10-26, the free view at Polaris where Skyfield puts it
+// (scripts/fixtures/astro, refracted as astronomy-engine does): the star is the brightest point by the
+// view's centre, within 0.2°. SwiftShader (WebGL2), and this machine's GPU (WebGPU) with SCENE_E2E_W2_METAL;
+// SCENE_E2E_W3_STARS=<dir> saves the pictures.
+await check('W3 stars: Polaris drawn where the sky puts it, at the view’s centre', async () => {
+  const polaris = JSON.parse(readFileSync(new URL('fixtures/astro/skyfield-stars.json', import.meta.url), 'utf8')).points.find((p) => p.star === 'Polaris' && p.location === 'Beijing')
+  assert.equal(polaris.utc, '2026-10-26T14:00:00Z')
+  const elevation = polaris.elevation + Refraction('normal', polaris.elevation)
+  const d = sunVector(elevation, documentAzimuth(polaris.azimuth, 180))
+  // View space (Z up): document (x, y, z) is (x, −z, y). The camera stands where the yard's does.
+  const position = [0, -4, 1.6]
+  const target = [position[0] + d.x * 50, position[1] - d.z * 50, position[2] + d.y * 50]
+  const view = { camera: { position, target, ortho: false, zoom: 1 }, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false }
+  const gpu = process.env.SCENE_E2E_W2_METAL ? await chromium.launch({ headless: true, args: metal }) : null
+  try {
+    for (const [backend, b] of [['webgl2', browser], ...(gpu ? [['webgpu', gpu]] : [])]) {
+      const context = await b.newContext({ viewport: { width: 1280, height: 820 } })
+      await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, view])
+      const server = new SceneServer()
+      referenceScene(server, 'physical-noon', (scene) => {
+        Object.assign(scene.environment.sky, { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26', local_time: '22:00' })
+        scene.environment.sky.night = { moon: false, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500 }
+        scene.render.exposure_ev100 = -2
+      })
+      const { page, errors } = await open(server, { context })
+      await shading(page, '最终渲染')
+      const { box } = await viewportCenter(page)
+      let star = null
+      await waitFor(async () => {
+        const png = await settledShot(page, box)
+        star = await page.evaluate(async (src) => {
+          const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+          const c = document.createElement('canvas')
+          c.width = img.width
+          c.height = img.height
+          const g = c.getContext('2d')
+          g.drawImage(img, 0, 0)
+          const p = g.getImageData(0, 0, c.width, c.height).data
+          const at = (x, y) => p[(y * c.width + x) * 4] + p[(y * c.width + x) * 4 + 1] + p[(y * c.width + x) * 4 + 2]
+          const [cx, cy] = [c.width / 2, c.height / 2]
+          // The brightest pixel within 40 px of the centre, then the light-weighted centre about it over the background.
+          let best = { x: 0, y: 0, v: -1 }
+          for (let y = Math.floor(cy - 40); y <= cy + 40; y++) for (let x = Math.floor(cx - 40); x <= cx + 40; x++) if (at(x, y) > best.v) best = { x, y, v: at(x, y) }
+          let background = 0
+          for (let x = -40; x <= 40; x++) background += at(Math.floor(cx) + x, Math.floor(cy) - 40)
+          background /= 81
+          let [w, sx, sy] = [0, 0, 0]
+          for (let y = best.y - 4; y <= best.y + 4; y++) for (let x = best.x - 4; x <= best.x + 4; x++) {
+            const v = Math.max(0, at(x, y) - background)
+            w += v
+            sx += v * x
+            sy += v * y
+          }
+          // Pixel x covers x to x + 1.
+          return { x: sx / w + 0.5, y: sy / w + 0.5, cx, cy, peak: best.v, background, height: c.height, png: src }
+        }, `data:image/png;base64,${png.toString('base64')}`)
+        return star.peak - star.background > 60
+      }, `${backend}: a star by the centre`, 30_000)
+      if (process.env.SCENE_E2E_W3_STARS) await writeFile(`${process.env.SCENE_E2E_W3_STARS}/polaris-${backend}.png`, Buffer.from(star.png.split(',')[1], 'base64'))
+      // The free view's vertical field of view is 45°.
+      const pxPerDeg = star.height / (2 * Math.tan((22.5 * Math.PI) / 180)) * (Math.PI / 180)
+      const offDeg = Math.hypot(star.x - star.cx, star.y - star.cy) / pxPerDeg
+      console.log(`W3 stars ${backend}: Polaris at (${star.x.toFixed(1)}, ${star.y.toFixed(1)}), the centre (${star.cx}, ${star.cy}): ${offDeg.toFixed(3)}° off; peak ${star.peak} over ${star.background.toFixed(0)}`)
+      assert.ok(offDeg <= 0.2, `${backend}: ${offDeg.toFixed(3)}° off`)
+      assert.deepEqual(errors, [])
+      await context.close()
+    }
+  } finally {
     await gpu?.close()
   }
 })

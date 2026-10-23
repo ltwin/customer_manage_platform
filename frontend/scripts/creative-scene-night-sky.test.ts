@@ -6,6 +6,8 @@ import { loadNightAssets, nightAssetLoaders, nightNeeds, parseStars, resetNightA
 import { AIRGLOW_LUX, AIRGLOW_ZENITH, bvTint, magnitudeLux, moonAbove, starlightLux, starsScale, surfaceLuminance, vanRhijn } from '../src/creative-scene/world/nightSky/light.ts'
 import { completeSky, type PhysicalSky } from '../src/creative-scene/world/physicalSky.ts'
 import { milkyWayAt, milkyWayMean } from '../src/creative-scene/world/nightSky/milkyWay.ts'
+import { refraction, spriteShare, STAR_SIGMA, starSpread } from '../src/creative-scene/world/nightSky/stars.ts'
+import { Refraction } from 'astronomy-engine'
 
 // W3: the night sky's light and assets (design「亮度与颜色的单一来源」「资源与确定性」).
 
@@ -114,4 +116,25 @@ test('the Milky Way: brightest by the galactic centre, a band along the plane, t
   // The Large Magellanic Cloud stands out of the dark southern sky.
   assert.ok(L(280.5, -32.9) > 5 * L(260, -32.9))
   assert.ok(milkyWayMean() > 0.02 && milkyWayMean() < 0.2, `mean ${milkyWayMean()}`)
+})
+
+test('a star sprite keeps the star’s light: its pixels sum to 1 wherever the centre falls, at 1080 px and at 8K, the bright ones too', () => {
+  for (const sigma of [STAR_SIGMA, STAR_SIGMA * starSpread(-1.46), STAR_SIGMA * 4]) {
+    for (const [fx, fy] of [[0, 0], [0.5, 0.5], [0.3, 0.8]]) {
+      let sum = 0
+      const reach = Math.ceil(4 * sigma) + 1
+      for (let y = -reach; y <= reach; y++) for (let x = -reach; x <= reach; x++) sum += spriteShare(x - fx, y - fy, sigma)
+      assert.ok(Math.abs(sum - 1) < 0.005, `σ ${sigma.toFixed(2)} at (${fx}, ${fy}): ${sum}`)
+    }
+  }
+  // Brighter than magnitude 1 the sprite grows, Sirius about half as large again.
+  assert.equal(starSpread(1), 1)
+  assert.equal(starSpread(5), 1)
+  assert.ok(Math.abs(starSpread(-1.46) - 1.49) < 0.01)
+})
+
+test('stars are refracted as the sun and the moon are (astronomy-engine’s normal refraction)', () => {
+  for (const h of [-0.5, 0, 0.5, 2, 10, 30, 60, 89]) assert.ok(Math.abs(refraction(h) - Refraction('normal', h)) < 1e-9, `${h}°: ${refraction(h)} against ${Refraction('normal', h)}`)
+  // By true altitude: about 0.48° at the horizon (0.57° by the apparent one), an arcminute at 45°.
+  assert.ok(Math.abs(refraction(0) - 0.48) < 0.01 && Math.abs(refraction(45) - 1 / 60) < 0.002)
 })

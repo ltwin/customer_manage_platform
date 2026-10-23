@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useThree } from '@react-three/fiber'
 import { Color, DirectionalLight, Scene, type Mesh } from 'three'
 import { uniform } from 'three/tsl'
@@ -14,12 +14,15 @@ import { positionToView } from '../space.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
-import { physicalSun, sunVector } from '../world/astro.ts'
+import { equatorToScene, physicalSun, sunVector } from '../world/astro.ts'
 import { sunAbove } from '../world/atmosphere/constants.ts'
 import { CpuAtmosphere } from '../world/atmosphere/cpu.ts'
 import { atmosphereLuts } from '../world/atmosphere/luts.ts'
 import { discSolidAngle } from '../world/atmosphere/sky.ts'
 import { environmentScale, type PhysicalExposure } from '../world/exposure.ts'
+import { nightNeeds, starsNow, type StarCatalogue } from '../world/nightSky/assets.ts'
+import { starsScale } from '../world/nightSky/light.ts'
+import { disposeStars, starField } from '../world/nightSky/stars.ts'
 import { isPhysical, type PhysicalSky } from '../world/physicalSky.ts'
 
 // What lights the scene in each shading (design「显示模式」): wireframe has
@@ -256,6 +259,26 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     invalidate()
   }, [parts, renderer, skyKey, invalidate])
 
+  // The stars: asked for when the sky first needs them, drawn once they come and kept after, so nightfall compiles nothing new.
+  // Already here, they are in the first frame (an offscreen picture waits for them before it mounts).
+  const wantStars = nightNeeds(sky).stars
+  const [catalogue, setCatalogue] = useState<StarCatalogue | null>(() => (wantStars ? starsNow() : null))
+  useEffect(() => {
+    if (!wantStars || catalogue) return
+    const now = starsNow(() => setCatalogue(starsNow()))
+    if (now) setCatalogue(now)
+  }, [wantStars, catalogue])
+  const stars = useMemo(() => catalogue && drawnAside(starField(catalogue, parts.luts, parts.background.sky.night)), [catalogue, parts])
+  useEffect(() => () => void (stars && disposeStars(stars)), [stars])
+  useLayoutEffect(() => {
+    if (!stars) return
+    const s = latest.current
+    stars.equator.value.copy(equatorToScene(s))
+    const on = s.sun_mode === 'location' && s.night.stars
+    stars.brightness.value.fromArray(on ? starsScale(s.night.stars_strength, s.night.stars_temperature_k) : [0, 0, 0])
+    invalidate()
+  }, [stars, skyKey, invalidate])
+
   const fogKey = fog ? fog.color : ''
   useLayoutEffect(() => {
     parts.physical.fogColor = fogKey ? new Color(fogKey) : null
@@ -298,6 +321,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
   return (
     <>
       <primitive object={parts.background} />
+      {stars && <primitive object={stars} />}
       <primitive object={parts.sun} />
       {fog && <fog attach="fog" args={[fog.color, fog.near, fog.far]} />}
     </>
