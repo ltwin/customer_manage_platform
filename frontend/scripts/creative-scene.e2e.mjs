@@ -5683,6 +5683,25 @@ await check('W3 night look: by a full moon it turns the yard blue at the same br
   await context.close()
 })
 
+await check('W3 new moon: by default the moonless yard is darker than the full moon’s yet not black; the same night draws alike twice', async () => {
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', local_time: '22:00' }
+  const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { date: '2026-10-26' })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const full = await lumaStats(page, await settle(), { level: 250 })
+  const first = await change(sky({ date: '2026-11-09' }))
+  await shot(page, 'w3-new-moon-auto')
+  const again = await change(sky({ local_time: '22:00' }))
+  const moonless = await lumaStats(page, first, { level: 250 })
+  const twice = await compareShots(page, first, again, 0)
+  console.log(`W3 new moon: full moon mean ${full.mean.toFixed(0)}, new moon ${moonless.mean.toFixed(0)}; drawn twice off by ${twice.error ?? `${twice.over}%`}`)
+  assert.ok(moonless.mean < full.mean && moonless.mean > 20, 'darker than the full moon, yet not black')
+  assert.ok(!twice.error && twice.over === 0, 'the same night draws alike')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('W3 environment tab: the night sky’s switches, strengths and look; the moon’s day with a jump to a new moon and back; the exposure modes of a camera and of the default camera', async () => {
   const { server, context, page, errors, sky, time } = await physicalTab()
   const city = page.getByRole('combobox', { name: '城市' })
