@@ -1,11 +1,62 @@
 {
   "uid": "47e54703-f35f-43e1-a4a1-d9d19ff7d7bc",
+  "revision": 4,
   "id": "scene-volumes",
   "title": "W5 体积物件开工前穿刺：逐像素光线步进与 froxel 的帧时间、WebGL2 可行性、与实时 GI 的合成顺序、体积物件上限（Epic 未决事项 2、7）",
-  "type": null,
-  "stage": "explore",
-  "revision": 0,
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-world-environment",
+  "designBinding": {
+    "version": 9,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "patterns:场景着色写法",
+      "data:物理天空",
+      "data:摄像机曝光",
+      "data:夜空",
+      "data:空气透视",
+      "data:体积物件",
+      "api:提交场景命令"
+    ],
+    "delivers": [
+      "data:体积物件",
+      "api:提交场景命令"
+    ]
+  },
+  "state": "approved",
   "createdAt": "2026-10-23T14:52:56.443Z",
-  "updatedAt": "2026-10-23T14:52:56.443Z",
-  "epic": "scene-world-environment"
+  "updatedAt": "2026-10-23T16:56:34.945Z",
+  "risk": {
+    "factors": [
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-23T16:56:34.771Z",
+      "contentHash": "5b6ab2fa64580ca6"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-23T16:56:34.771Z",
+      "contentHash": "6bcde35ed54400f1"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
 }
