@@ -1,17 +1,17 @@
-import { ClampToEdgeWrapping, HalfFloatType, LinearFilter, Vector3 } from 'three'
+import { ClampToEdgeWrapping, HalfFloatType, LinearFilter, Matrix3, Matrix4, Vector3, type Camera } from 'three'
 import * as tsl from 'three/tsl'
 import { NodeMaterial, QuadMesh, RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { BOTTOM, CAMERA_ABOVE_GROUND, coefficients, GROUND_ALBEDO, groundRadius, MIE_G, MIE_H, MULTI, OZONE_HALF_WIDTH, OZONE_PEAK, RAYLEIGH_H, SKYVIEW, TOP, TRANSMITTANCE, viewRadius, type AtmosphereParams, type Vec3 } from './constants.ts'
+import { AERIAL, BOTTOM, CAMERA_ABOVE_GROUND, coefficients, GROUND_ALBEDO, groundRadius, MIE_G, MIE_H, MULTI, OZONE_HALF_WIDTH, OZONE_PEAK, RAYLEIGH_H, SKYVIEW, TOP, TRANSMITTANCE, viewRadius, type AtmosphereParams, type Vec3 } from './constants.ts'
 
-// Hillaire 2020's transmittance, multiple-scattering and sky-view LUTs as
-// full-screen fragment passes: one TSL source for WebGPU and WebGL2, whose
+// Hillaire 2020's transmittance, multiple-scattering and sky-view LUTs, and
+// the aerial perspective's froxels (W4), as full-screen fragment passes: one TSL source for WebGPU and WebGL2, whose
 // backend cannot write storage textures (Epic design「物理大气与 LUT」). All
 // RGBA16F; the sky view holds environment-relative radiance (× s_env).
 // Discretised as cpu.ts is, which e2e「W2 atmosphere drift」 holds them to.
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, acos, clamp, cos, dot, exp, float, length, max, min, normalize, select, sqrt, texture, uniform, uv, vec2, vec3, vec4 } = tsl as unknown as Record<string, Op>
+const { abs, acos, clamp, cos, dot, exp, float, floor, fract, length, max, min, normalize, select, sqrt, texture, uniform, uv, vec2, vec3, vec4 } = tsl as unknown as Record<string, Op>
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
 const Loop = tsl.Loop as unknown as (range: { start: number; end: number; name: string }, body: (i: Record<string, TSLNode>) => void) => void
 
@@ -69,6 +69,17 @@ export type AtmosphereLuts = {
   setAtmosphere(params: AtmosphereParams): void
   /** The moon's sky view (W3): the same sky lit by the moon, parametrised about the moon's azimuth, so it cannot share the sun's. */
   readonly moonSkyView: RenderTarget
+  /**
+   * The aerial perspective's froxels (W4, constants.ts AERIAL): per slice and
+   * view direction the light scattered toward the camera (× scale, as the sky
+   * view) in rgb and the mean transmittance in a, from the camera to the
+   * slice's distance. world/atmosphere/aerial.ts looks them up.
+   */
+  readonly aerial: RenderTarget
+  /** The sun's and the moon's directions (document space, Y up) for the froxels: before renderAerial. */
+  setDirections(sun: Vector3, moon: Vector3): void
+  /** The froxels for a camera, its matrices as they are: before each picture that shows them. */
+  renderAerial(renderer: WebGPURenderer, camera: Camera): void
   /** The sun's zenith cosine and what the sky view's radiance per unit sun illuminance is multiplied by (the sun's illuminance per channel × s_env): before renderSkyView. */
   setSun(sunMu: number, scale: Readonly<Vec3>): void
   /** As setSun for the moon's sky view: the moon's zenith cosine and illuminance per channel × s_env. */
@@ -100,11 +111,16 @@ export function atmosphereLuts(): AtmosphereLuts {
     scale: uniform(new Vector3(1, 1, 1)) as Uniform<Vector3>,
     moonMu: uniform(-1) as Uniform<number>,
     moonScale: uniform(new Vector3()) as Uniform<Vector3>,
+    sun: uniform(new Vector3(0, 1, 0)) as Uniform<Vector3>,
+    moon: uniform(new Vector3(0, -1, 0)) as Uniform<Vector3>,
+    projectionInverse: uniform(new Matrix4()) as Uniform<Matrix4>,
+    cameraToDoc: uniform(new Matrix3()) as Uniform<Matrix3>,
   }
   const tr = lutTarget(TRANSMITTANCE.w, TRANSMITTANCE.h)
   const ms = lutTarget(MULTI.w, MULTI.h)
   const sv = lutTarget(SKYVIEW.w, SKYVIEW.h)
   const mv = lutTarget(SKYVIEW.w, SKYVIEW.h)
+  const ap = lutTarget(AERIAL.w * AERIAL.slices, AERIAL.h)
   const trTex = texture(tr.texture)
   const msTex = texture(ms.texture)
   const svTex = texture(sv.texture)
@@ -157,13 +173,15 @@ export function atmosphereLuts(): AtmosphereLuts {
   /**
    * IntegrateScatteredLuminance for a sun of illuminance 1: the sky view over
    * the scene's ground (view), or the multiple-scattering pass over sea
-   * level, isotropic.
+   * level, isotropic. With a limit (km, the aerial perspective's froxels) it
+   * stops there, short of the ground, and leaves the ground out.
    */
-  function integrate(ro: TSLNode, rd: TSLNode, sun: TSLNode, steps: number, view: boolean) {
+  function integrate(ro: TSLNode, rd: TSLNode, sun: TSLNode, steps: number, view: boolean, limit?: TSLNode) {
     const ground = view ? u.groundRadius : float(BOTTOM)
     const tGround = (view ? rayGroundFromCamera(u.viewRadius, rd, ground) : raySphere(ro, rd, ground)).toVar()
     const tTop = raySphere(ro, rd, TOP)
-    const tMax = min(select(tGround.greaterThanEqual(0), tGround, tTop), 9000).toVar()
+    const tEnd = min(select(tGround.greaterThanEqual(0), tGround, tTop), 9000)
+    const tMax = (limit ? min(tEnd, limit) : tEnd).toVar()
     const cosTheta = dot(rd, sun)
     const phaseR = view ? float(3 / (16 * PI)).mul(cosTheta.mul(cosTheta).add(1)) : float(1 / (4 * PI))
     const denom = float(1 + MIE_G * MIE_G).sub(cosTheta.mul(2 * MIE_G))
@@ -190,6 +208,7 @@ export function atmosphereLuts(): AtmosphereLuts {
     // The planet's ground: lit by the sun through the atmosphere, and in the
     // sky view also by the sky, Ψms × albedo, so the horizon has no dark seam
     // at twilight (atmosphere-luts.md section 4).
+    if (limit) return { L, f, throughput }
     const hit = tGround.greaterThan(0).and(tMax.equal(tGround))
     const p = ro.add(rd.mul(tGround))
     const pr = length(p)
@@ -198,7 +217,7 @@ export function atmosphereLuts(): AtmosphereLuts {
     const sunLit = sampleTransmittance(pr, sunMu).mul(clamp(sunMu, 0, 1)).mul(GROUND_ALBEDO / PI)
     const groundL = view ? sunLit.add(sampleMulti(pr, sunMu).mul(GROUND_ALBEDO)) : sunLit
     L.addAssign(select(hit, throughput.mul(groundL), vec3(0)))
-    return { L, f }
+    return { L, f, throughput }
   }
 
   // Ψms per texel: a loop over 8 × 8 directions in each pixel instead of the sample's compute reduction.
@@ -260,6 +279,32 @@ export function atmosphereLuts(): AtmosphereLuts {
   const mvMaterial = skyViewMaterial(u.moonMu, u.moonScale)
   const mvQuad = new QuadMesh(mvMaterial)
 
+  // The froxels: the texel's slice and view direction from the camera's matrices, then the sky view's integral to the
+  // slice's distance for the sun and for the moon (zero scale when it is not a light), from the camera's height.
+  const apMaterial = new NodeMaterial()
+  apMaterial.fragmentNode = Fn(() => {
+    const p = uv()
+    const x = p.x.mul(AERIAL.slices)
+    const slice = floor(x)
+    const ndc = vec2(fract(x), p.y).mul(2).sub(1)
+    // Two points on the texel's ray, whichever depth range the backend has: its direction for a perspective or an orthographic camera.
+    const near = u.projectionInverse.mul(vec4(ndc, 0.25, 1))
+    const far = u.projectionInverse.mul(vec4(ndc, 0.75, 1))
+    const view = normalize(u.cameraToDoc.mul(far.xyz.div(far.w).sub(near.xyz.div(near.w))))
+    // Level where it looks down: the scene stands on the ground, so a distance scaled up spreads it over the plain
+    // instead of sinking it into the planet a few metres below the camera.
+    const rd = normalize(vec3(view.x, max(view.y, 0), view.z)).toVar()
+    const along = slice.add(0.5).div(AERIAL.slices)
+    const km = along.mul(along).mul(AERIAL.maxKm).toVar()
+    const ro = vec3(0, u.viewRadius, 0)
+    const bySun = integrate(ro, rd, normalize(u.sun), AERIAL.steps, true, km)
+    const byMoon = integrate(ro, rd, normalize(u.moon), AERIAL.steps, true, km)
+    const T = bySun.throughput
+    return vec4(bySun.L.mul(u.scale).add(byMoon.L.mul(u.moonScale)), T.x.add(T.y).add(T.z).div(3))
+  })()
+  const apQuad = new QuadMesh(apMaterial)
+  const toDoc = new Matrix3().set(1, 0, 0, 0, 0, 1, 0, -1, 0)
+
   const sampleSkyView = (d: TSLNode, sun: TSLNode) => sampleView(svTex, d, sun)
   const sampleMoonSkyView = (d: TSLNode, moon: TSLNode) => sampleView(mvTex, d, moon)
 
@@ -287,6 +332,7 @@ export function atmosphereLuts(): AtmosphereLuts {
     multiScattering: ms,
     skyView: sv,
     moonSkyView: mv,
+    aerial: ap,
     viewRadius: u.viewRadius,
     groundRadius: u.groundRadius,
     setAtmosphere(params) {
@@ -316,12 +362,23 @@ export function atmosphereLuts(): AtmosphereLuts {
     renderMoonSkyView(renderer) {
       pass(renderer, mv, mvQuad)
     },
+    setDirections(sun, moon) {
+      u.sun.value.copy(sun)
+      u.moon.value.copy(moon)
+    },
+    renderAerial(renderer, camera) {
+      camera.updateMatrixWorld()
+      u.projectionInverse.value.copy(camera.projectionMatrixInverse)
+      // The camera's axes in the view's world (Z up, space.ts), then into document space (Y up).
+      u.cameraToDoc.value.setFromMatrix4(camera.matrixWorld).premultiply(toDoc)
+      pass(renderer, ap, apQuad)
+    },
     sampleTransmittance,
     sampleSkyView,
     sampleMoonSkyView,
     dispose() {
-      for (const t of [tr, ms, sv, mv]) t.dispose()
-      for (const m of [trMaterial, msMaterial, svMaterial, mvMaterial]) m.dispose()
+      for (const t of [tr, ms, sv, mv, ap]) t.dispose()
+      for (const m of [trMaterial, msMaterial, svMaterial, mvMaterial, apMaterial]) m.dispose()
     },
   }
 }
