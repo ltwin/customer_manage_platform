@@ -456,7 +456,7 @@ C2 起，各子项在这里补本批工具的规则。
 
 | # | 问题 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|---|
-| U2 | 能否只做 CIMD | `/oauth/register` 是否保留 | owner 实测时看日志里各宿主走的注册方式。已知 Codex CLI 0.161.0 走 CIMD（`host-runs.md`）；Claude Code 待测 | C1 归档前（只会收窄） |
+| U2 | 能否只做 CIMD | `/oauth/register` 是否保留 | owner 实测时看日志里各宿主走的注册方式。已知 Codex CLI 0.161.0 与 Claude Code 都走 CIMD（`host-runs.md`）；Claude 桌面端待测 | C1 归档前（只会收窄） |
 | U3 | Codex 插件的公开仓库与生产域名 | 接入页 Codex 的主路径 | owner 定仓库与域名；在此之前用手动添加 | 插件上线前，不阻塞 C1 |
 | U7 | Codex、ChatGPT 是否读取 `instructions`；45 秒等待在各宿主下是否安全 | C2 的长任务 | C1 实测 Codex；ChatGPT 等有域名的环境 | C2 design 批准前 |
 | U8 | Team 成员的回退路径 | 回退文字 | 按官方文档写，验收记为限制项 | C1 验收前 |

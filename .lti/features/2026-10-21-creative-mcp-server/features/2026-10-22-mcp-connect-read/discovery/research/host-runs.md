@@ -71,6 +71,6 @@ Codex 这一遍没有让它真正调用工具：调用要跑模型，会花 owne
 | 日期 | 宿主与版本 | 注册方式（`registration`） | `client_name` | `host_kind` | 读到 `instructions` | 顶栏署名 | 问题 |
 |---|---|---|---|---|---|---|---|
 | 2026-10-22 | Codex CLI 0.161.0（只做了登录） | cimd | Codex | codex | 未测 | — | — |
-|  | Claude Code |  |  |  |  |  |  |
+| 2026-10-23 | Claude Code（owner 实测，版本待补） | cimd（`https://claude.ai/oauth/claude-code-client-metadata`） | Claude Code | claude_code | 待补 | 待补 | 第一次认证后调用工具全部提示重新登录：重新授权建了新连接，Claude Code 沿用旧会话，会话绑连接 ID 导致 403；已改为按账号绑定（f56eeec7）。再认证一次后可用 |
 |  | Claude 桌面端（Code 模式） |  |  |  |  |  |  |
 |  | Codex CLI（调用工具） |  |  |  |  |  |  |
