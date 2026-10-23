@@ -1,6 +1,6 @@
 {
   "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-night-sky",
   "kind": "feature",
   "assurance": "governed",
@@ -34,13 +34,24 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-23T06:27:33.127Z",
-  "updatedAt": "2026-10-23T09:22:06.684Z",
+  "updatedAt": "2026-10-23T09:28:37.256Z",
   "risk": {
     "factors": [
       "perf-sensitive"
     ]
   },
-  "approvals": {},
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-23T09:28:37.022Z",
+      "contentHash": "67f13b7fb94ee98b"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-23T09:28:37.022Z",
+      "contentHash": "1783bdf3ff9ddb94"
+    }
+  },
   "approvalHistory": [
     {
       "by": "samson",
