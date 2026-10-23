@@ -89,6 +89,12 @@ queued ──认领──> claimed ──完成──> succeeded / failed
   - 数据：物理天空的 `aerial_perspective`（`enabled` 缺省 true，`distance_scale` 0.1–1000 缺省 1）；旧快照读取补齐，`view.go:completedScene` 判断快照缺它时才解码补齐。
   - froxel：`world/atmosphere/luts.ts:renderAerial` 每张图前按本次摄像机生成 32 × 32 × 32 froxel（1024 × 32 的 RGBA16F 图集，rgb 散射 × s_env、a 平均透射率），太阳与月亮各积分一次（月亮不是光源时照度为 0）；切片按距离平方分布到 32 km；向下的视线按水平积分（场景立在地面上，放大的距离铺在平地上）。CPU 参考 `cpu.ts:CpuAtmosphere.aerial`。
   - 合成：`world/atmosphere/aerial.ts:prepareAerial` 在 `applyExposure` 之后、`pipeline.render()` 之前，从 `scene.userData.aerial`（`PhysicalLighting` 写）生成 froxel 并写全局 uniform；`aerialBehind` 按不透明表面的深度查表，color · T + S · k / s_env。工作台路径接在 AO 之后、景深之前，实时 GI 路径接在全局雾之后、叠加辅助对象之前。天空背景（深度 1）不叠加；玻璃取它后面表面的空气透视。
+- 体积物件（W5，scene-volumes）：
+  - 数据：`kind = "volume"`，内容字段 `volume`（`shape` box / sphere 单位体，`scatter_color`、`scatter_density`、`anisotropy`、`absorption_color`、`absorption_density`、`edge_falloff`、`cast_shadow`），写入时补齐缺省、`update_objects` 按键合并；每个场景最多 8 个，超出 413；指纹只计入 `lit`。
+  - 登记：`objects/Volume.tsx` 把自己的文档空间分组登记到 `scene.userData.volumeObjects`，视口里画范围线框（辅助层，按 6 CSS px 拾取）；`Lighting.tsx` 的两种最终渲染光照置 `scene.userData.volumes`，白模、线框和材质预览不置，所以不画介质。
+  - 绘制：`render/volumes/state.ts:prepareVolumes` 在 `prepareAerial` 之后写全局 uniform 并选灯（最多 6 盏、12 张阴影图，投影的太阳或月亮在前，其余按对体积的估计照度）；`march.ts:VolumeNode` 在场景 pass 之后按 CSS 像素的一半步进（区间排序合并，48 步按长度分配、每段至少 4 步）并做两次深度加权模糊；`composite.ts:applyVolumes` 在全分辨率求交，不穿过体积的像素原样，穿过的按 S(d_v)·(1 − T) + T(d_v)·L + T·AP(C) 与空气透视合成。工作台接在空气透视之后、景深之前，实时 GI 接在空气透视之后、辅助对象和 TRAA 之前。没有体积时不建步进材质。
+  - 编译：灯光组合（每盏的类型、是否投影、有无环境贴图）变了只重建步进材质；视口里异步预编译，编好前不画体积（步进用平面网格绘制，`QuadMesh` 的预编译与绘制的顶点着色器不同）。
+  - 投影：`render/volumes/shadow.ts` 的阴影节点（平行光在 `SunCascades.setup`，聚光、点光在 `lights.ts:buildLight` 装上）把打开 `cast_shadow` 的体积的透射率乘进阴影，投影列表是 uniform；`SceneRenderer.compile` 的替身灯装同类的阴影节点。
   - 月亮参考：`creativescene/moon.go` 移植 Meeus 的月亮位置与月相时刻，随太阳参考一起给助手（`moon`：月相、照亮比例、高度与方位、月出月落、前后最近的满月和新月），不存储、不进指纹；与前端 `astronomy-engine` 用同一组日期对照测试。
 
 ### 编辑视图
@@ -163,6 +169,6 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 
 - 后台标签页：真实 Chrome 隐藏 6.5 分钟后，烘焙与截图的耗时和前台相当（2026-10-18 实测 1.05 倍、1.00 倍）。前提是所有计时走 Worker 节拍、图片同步编码（`canvasBlob`）：Chrome 后台会把页面主线程的计时器和 `toBlob` 的空闲编码推迟到每秒乃至每分钟一次，新增等待时不要用页面计时器。
 - 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`）：C5 起助手可以编组、改挂，被改挂的物件和它进出的分组都不能单独恢复，按前后快照判断；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
-- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）；W2 加物理天空的字段、预设、太阳参考与两段曝光建议，`edit_scene` 从 7.7 KB 到 11.0 KB（约 1,900 字），`read_scene`、`render_view` 各加约 0.1 KB。`compaction_regression_test.go` 里最小的测试窗口随之从 8000 调到 9000 token。W3 再加夜空字段、月亮参考与自动曝光的说明，最小测试窗口调到 10000 token。W4 加空气透视一句（压到最短），两个 22000 token 的压缩回归窗口调到 23000。
+- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）；W2 加物理天空的字段、预设、太阳参考与两段曝光建议，`edit_scene` 从 7.7 KB 到 11.0 KB（约 1,900 字），`read_scene`、`render_view` 各加约 0.1 KB。`compaction_regression_test.go` 里最小的测试窗口随之从 8000 调到 9000 token。W3 再加夜空字段、月亮参考与自动曝光的说明，最小测试窗口调到 10000 token。W4 加空气透视一句（压到最短），两个 22000 token 的压缩回归窗口调到 23000。W5 加体积物件的字段、上限、密度提示和一个样例（约 1 KB），14000 token 的压缩回归窗口调到 15000。
 - 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

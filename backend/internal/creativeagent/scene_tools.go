@@ -79,15 +79,18 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: editSceneTool,
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
-				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, material_slots?, primitive{builtin,params}|light|camera|model{content_revision_id}}]}；" +
+				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance|volume, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, material_slots?, primitive{builtin,params}|light|camera|volume|model{content_revision_id}}]}；" +
 				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
 				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
 				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
 				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）, iso:25…102400, shutter_s:1/8000…30（快门，秒）, exposure_mode:ambient|manual（物理天空下的曝光模式：ambient 环境测光，按场景的环境光测光、不看画面；写入时省略为 ambient）, exposure_compensation:-5…5（环境测光的补偿，档，正值变亮）；iso 和 shutter_s 只在物理天空下手动曝光时生效}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"、100、1/4000、ambient、0）；" +
 				"视场角按画面长边对应传感器长边：同一焦距下 2:3 竖幅和 3:2 横幅拍到的范围一样大，只是方向不同；depth_of_field 打开后白模导出按光圈和对焦虚化（线稿不虚化）。" +
 				"空物体是没有子物件的 group，可以当对焦目标或父级。" +
+				"体积物件（雾、烟、光束，同 Blender 的 Volume Scatter 加 Volume Absorption）kind:volume，volume{shape:box|sphere（边长或直径 1 m 的单位体，大小用 transform.scale）, scatter_color, scatter_density:0…100（每米）, anisotropy:-0.95…0.95（正值前向散射，逆光更亮）, absorption_color（透过后保留的颜色）, absorption_density:0…100, edge_falloff:0…1（边缘柔化，0 硬边）, cast_shadow（在被太阳、聚光、点光照到的表面上投影）}，均可省略（默认 box、#cccccc、0.1、0、#cccccc、0、0.1、false）；" +
+				"密度 0.05–0.3 是薄雾，2 以上是浓烟；每个场景最多 8 个；只在 lit 里看得到，clay 和线稿里没有；灯光照进体积才有光束，要看光束用 render_view 的 lit 回看。" +
+				"例（窗前的雾）：{kind:volume, transform:{position:[0,1.5,-2], rotation:[0,0,0,1], scale:[4,3,3]}, volume:{scatter_color:\"#e8e4dc\", scatter_density:0.3, anisotropy:0.6, edge_falloff:0.2}}。" +
 				"add_objects 和 update_objects 的条目可写 look_at:[x,y,z]（世界坐标）代替 transform.rotation：摄像机和灯光的 −Z、其余物件的 +Z 对准该点（同 three.js Object3D.lookAt），update 时 transform 可只写 position 或省略；父级在同一次修改里也被移动时会被拒绝，分两次提交。" +
-				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
+				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera、volume 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:physical, …见下}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；" +

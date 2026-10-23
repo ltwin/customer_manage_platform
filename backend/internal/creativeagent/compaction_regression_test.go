@@ -281,8 +281,9 @@ func TestCompactionReplacementAtSameCoverageUsesNewSummary(t *testing.T) {
 	}
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
-	// (about 1 KB) and the materials, lighting and lit look (about 3 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 14000 })
+	// (about 1 KB), the materials, lighting and lit look (about 3 KB) and W5's
+	// volume objects (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 15000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = compactionScript(testSummary + "\nreplacement-small-summary")

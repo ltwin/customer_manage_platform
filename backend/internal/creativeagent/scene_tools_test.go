@@ -626,7 +626,7 @@ func TestEditSceneDescribesThreejsFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"light 字段同 three.js", "distance", "decay（默认 2）", "angle（弧度，光锥半角，≤π/2，默认 π/3）", "penumbra", "只有 type 必填",
-		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并",
+		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera、volume 按键合并",
 		"material_slots 按槽位合并，写 null 清除", "stone_brick@1 石砖(brick_size 0.05–2m", "暂无内置 HDRI", "exposure_ev?:-10…10（物理天空以外的曝光补偿）", "engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）", "点光 20–80 cd", "建议曝光", "mode:lit 回看"} {
 		if !strings.Contains(info.Desc, want) {
 			t.Errorf("edit_scene does not say %q", want)
@@ -861,5 +861,21 @@ func TestTheAssistantCreatesASceneOnTheCanvas(t *testing.T) {
 	}
 	if n := f.count("creative_nodes", "canvas_id=$1 AND type_key='core.scene' AND document_id=$2", f.canvasID, doc); n != 1 {
 		t.Fatalf("scene nodes %d", n)
+	}
+}
+
+// W5: the volume object's fields, ranges, limit and a sample.
+func TestSceneToolsDescribeVolumes(t *testing.T) {
+	info, err := (&sceneTool{name: editSceneTool}).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"kind:primitive|light|camera|group|model_instance|volume", "volume{shape:box|sphere", "scatter_density:0…100", "anisotropy:-0.95…0.95",
+		"absorption_color", "edge_falloff:0…1", "cast_shadow", "密度 0.05–0.3 是薄雾，2 以上是浓烟", "每个场景最多 8 个", "例（窗前的雾）", "light、camera、volume 按键合并",
+	} {
+		if !strings.Contains(info.Desc, want) {
+			t.Errorf("edit_scene does not say %q", want)
+		}
 	}
 }
