@@ -7310,6 +7310,8 @@ export interface components {
             stars_strength?: number;
             /** @description 星空的色温（开尔文），含义同月亮。缺省 6500。 */
             stars_temperature_k?: number;
+            /** @description 夜色强度：入夜后画面偏蓝、降饱和的程度，0 为纯物理颜色。缺省 1。地点和手动两种太阳模式下都生效。 */
+            night_look?: number;
         };
         CreativeSceneColor: string;
         CreativeSceneAmbient: {
@@ -7338,8 +7340,15 @@ export interface components {
              * @enum {string}
              */
             resolution: "1k" | "2k" | "4k" | "8k";
-            /** @description 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下的曝光值 EV100；场景摄像机用自己的 ISO、快门和光圈。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。 */
+            /** @description 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下手动曝光时的曝光值 EV100；场景摄像机用自己的曝光。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。 */
             exposure_ev100: number;
+            /**
+             * @description 默认摄像机在物理天空下的曝光模式。auto 按场景照度测光并叠加夜间压暗（入夜只比正午暗 2–4 档）；manual 用 exposure_ev100。不计入渲染指纹。缺省与之前保存的场景都读出为 auto。
+             * @enum {string}
+             */
+            exposure_mode: "auto" | "manual";
+            /** @description 默认摄像机自动曝光的补偿（档），正值变亮。不计入渲染指纹。缺省 0。 */
+            exposure_compensation: number;
         };
         /** @description set_render 按键合并，只改写到的字段。 */
         CreativeSceneRenderPatch: {
@@ -7351,6 +7360,9 @@ export interface components {
             /** @enum {string} */
             resolution?: "1k" | "2k" | "4k" | "8k";
             exposure_ev100?: number;
+            /** @enum {string} */
+            exposure_mode?: "auto" | "manual";
+            exposure_compensation?: number;
         };
         /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
         CreativeSceneObject: {
@@ -7433,7 +7445,7 @@ export interface components {
             angle?: number;
             penumbra?: number;
         };
-        /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。 */
+        /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode auto、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。 */
         CreativeSceneCamera: {
             focal_mm?: number;
             sensor_mm?: number[];
@@ -7450,10 +7462,17 @@ export interface components {
             focus?: number;
             /** @description 非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group， 且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。 */
             focus_object_id?: string;
-            /** @description 感光度。物理天空下与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。 */
+            /** @description 感光度。物理天空下手动曝光时与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。 */
             iso?: number;
-            /** @description 快门（秒），1/8000 s…30 s。只在物理天空下生效。 */
+            /** @description 快门（秒），1/8000 s…30 s。只在物理天空下手动曝光时生效。 */
             shutter_s?: number;
+            /**
+             * @description 物理天空下的曝光模式。auto 按场景照度测光并叠加夜间压暗，光圈只决定景深；manual 用 iso、shutter_s、f_stop。写入时省略为 auto；之前保存、没有这个字段的摄像机读出为 manual。
+             * @enum {string}
+             */
+            exposure_mode?: "auto" | "manual";
+            /** @description 自动曝光的补偿（档），正值变亮；手动时保存但不生效。缺省 0。 */
+            exposure_compensation?: number;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
         CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];

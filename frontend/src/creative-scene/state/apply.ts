@@ -122,6 +122,8 @@ export const cameraDefaults: Required<Camera> = {
   focus_object_id: '',
   iso: 100,
   shutter_s: 1 / 4000,
+  exposure_mode: 'auto',
+  exposure_compensation: 0,
 }
 
 /**

@@ -15180,6 +15180,11 @@ components:
           minimum: 2000
           maximum: 12000
           description: 星空的色温（开尔文），含义同月亮。缺省 6500。
+        night_look:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 夜色强度：入夜后画面偏蓝、降饱和的程度，0 为纯物理颜色。缺省 1。地点和手动两种太阳模式下都生效。
     CreativeSceneColor:
       type: string
       pattern: ^#[0-9a-fA-F]{6}$
@@ -15223,6 +15228,8 @@ components:
       - engine
       - resolution
       - exposure_ev100
+      - exposure_mode
+      - exposure_compensation
       properties:
         mode:
           type: string
@@ -15252,7 +15259,18 @@ components:
           type: number
           minimum: -10
           maximum: 20
-          description: 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下的曝光值 EV100；场景摄像机用自己的 ISO、快门和光圈。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。
+          description: 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下手动曝光时的曝光值 EV100；场景摄像机用自己的曝光。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。
+        exposure_mode:
+          type: string
+          enum:
+          - auto
+          - manual
+          description: 默认摄像机在物理天空下的曝光模式。auto 按场景照度测光并叠加夜间压暗（入夜只比正午暗 2–4 档）；manual 用 exposure_ev100。不计入渲染指纹。缺省与之前保存的场景都读出为 auto。
+        exposure_compensation:
+          type: number
+          minimum: -5
+          maximum: 5
+          description: 默认摄像机自动曝光的补偿（档），正值变亮。不计入渲染指纹。缺省 0。
     CreativeSceneRenderPatch:
       type: object
       additionalProperties: false
@@ -15284,6 +15302,15 @@ components:
           type: number
           minimum: -10
           maximum: 20
+        exposure_mode:
+          type: string
+          enum:
+          - auto
+          - manual
+        exposure_compensation:
+          type: number
+          minimum: -5
+          maximum: 5
     CreativeSceneObject:
       type: object
       additionalProperties: false
@@ -15497,7 +15524,8 @@ components:
       additionalProperties: false
       description: >-
         写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、
-        depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。
+        depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode auto、exposure_compensation 0；
+        响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。
         near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边：
         tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。
         update_objects 里只改写到的字段。
@@ -15549,12 +15577,23 @@ components:
           type: number
           minimum: 25
           maximum: 102400
-          description: 感光度。物理天空下与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。
+          description: 感光度。物理天空下手动曝光时与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。
         shutter_s:
           type: number
           minimum: 0.000125
           maximum: 30
-          description: 快门（秒），1/8000 s…30 s。只在物理天空下生效。
+          description: 快门（秒），1/8000 s…30 s。只在物理天空下手动曝光时生效。
+        exposure_mode:
+          type: string
+          enum:
+          - auto
+          - manual
+          description: 物理天空下的曝光模式。auto 按场景照度测光并叠加夜间压暗，光圈只决定景深；manual 用 iso、shutter_s、f_stop。写入时省略为 auto；之前保存、没有这个字段的摄像机读出为 manual。
+        exposure_compensation:
+          type: number
+          minimum: -5
+          maximum: 5
+          description: 自动曝光的补偿（档），正值变亮；手动时保存但不生效。缺省 0。
     CreativeSceneOperation:
       description: 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。
       oneOf:

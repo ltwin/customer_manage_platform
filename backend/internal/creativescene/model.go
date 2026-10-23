@@ -88,7 +88,9 @@ type Sky struct {
 
 // Night is a physical sky's night sky (W3, data: 夜空): the moon, the stars
 // (with the airglow) and the Milky Way, and the moon's and the stars'
-// strength and colour temperature, as the sun's.
+// strength and colour temperature, as the sun's. NightLook is how blue and
+// desaturated the picture turns at night, 0 being the physical colours
+// (Epic revision v5); unlike the rest it also works under manual angles.
 type Night struct {
 	Moon              *bool    `json:"moon,omitempty"`
 	Stars             *bool    `json:"stars,omitempty"`
@@ -97,6 +99,7 @@ type Night struct {
 	MoonTemperatureK  *float64 `json:"moon_temperature_k,omitempty"`
 	StarsStrength     *float64 `json:"stars_strength,omitempty"`
 	StarsTemperatureK *float64 `json:"stars_temperature_k,omitempty"`
+	NightLook         *float64 `json:"night_look,omitempty"`
 }
 
 type Ambient struct {
@@ -114,15 +117,18 @@ type Fog struct {
 // Render is how the scene suggests it be shown, the lit look's exposure
 // compensation in stops (toneMappingExposure = 2^exposure_ev), the renderer
 // of the clay and lit images, the exports' output resolution, and the
-// default camera's exposure under a physical sky (EV100). Scenes stored
-// before a field existed read its default (completeRenderSettings, and
-// UnmarshalJSON for exposure_ev100, whose zero is a value).
+// default camera's exposure under a physical sky: automatic with a
+// compensation in stops, or manual at an EV100 (Epic revision v5). Scenes
+// stored before a field existed read its default (completeRenderSettings,
+// and UnmarshalJSON for exposure_ev100, whose zero is a value).
 type Render struct {
-	Mode          string  `json:"mode"`
-	ExposureEV    float64 `json:"exposure_ev"`
-	Engine        string  `json:"engine"`
-	Resolution    string  `json:"resolution"`
-	ExposureEV100 float64 `json:"exposure_ev100"`
+	Mode                 string  `json:"mode"`
+	ExposureEV           float64 `json:"exposure_ev"`
+	Engine               string  `json:"engine"`
+	Resolution           string  `json:"resolution"`
+	ExposureEV100        float64 `json:"exposure_ev100"`
+	ExposureMode         string  `json:"exposure_mode"`
+	ExposureCompensation float64 `json:"exposure_compensation"`
 }
 
 // The default camera's exposure: 15 is a sunny day.
@@ -130,6 +136,16 @@ const (
 	defaultExposureEV100 = 15
 	minExposureEV100     = -10
 	maxExposureEV100     = 20
+)
+
+// Exposure modes of a camera and of the default camera (Epic revision v5):
+// auto meters the scene's light, manual is W2's ISO, shutter and aperture
+// (or the default camera's EV100).
+const (
+	ExposureAuto   = "auto"
+	ExposureManual = "manual"
+	// The automatic exposure's compensation, ± stops.
+	maxExposureCompensation = 5
 )
 
 // UnmarshalJSON reads a render stored before exposure_ev100 existed with its
@@ -164,6 +180,9 @@ type renderPatch struct {
 	Engine        *string  `json:"engine,omitempty"`
 	Resolution    *string  `json:"resolution,omitempty"`
 	ExposureEV100 *float64 `json:"exposure_ev100,omitempty"`
+	ExposureMode  *string  `json:"exposure_mode,omitempty"`
+	// The compensation's zero is a value: null is refused by set_render.
+	ExposureCompensation *float64 `json:"exposure_compensation,omitempty"`
 }
 
 // completeRenderSettings gives a render stored before engine and resolution existed
@@ -174,6 +193,11 @@ func completeRenderSettings(r *Render) {
 	}
 	if r.Resolution == "" {
 		r.Resolution = defaultResolution
+	}
+	// The default camera only shows the viewport, so reading an older one
+	// as automatic stales no export.
+	if r.ExposureMode == "" {
+		r.ExposureMode = ExposureAuto
 	}
 }
 
@@ -259,6 +283,10 @@ type Camera struct {
 	FocusObjectID *string   `json:"focus_object_id,omitempty"`
 	ISO           *float64  `json:"iso,omitempty"`
 	ShutterS      *float64  `json:"shutter_s,omitempty"`
+	// ExposureMode is auto or manual; ExposureCompensation, in stops, only
+	// exposes an automatic camera (Epic revision v5).
+	ExposureMode         *string  `json:"exposure_mode,omitempty"`
+	ExposureCompensation *float64 `json:"exposure_compensation,omitempty"`
 }
 
 func placementUnit(id string) string { return "object:" + id }
@@ -304,7 +332,8 @@ func decodeScene(p creativecontent.Payload) (Scene, error) {
 	for i := range s.Objects {
 		canonicalNumbers(&s.Objects[i])
 		if c := s.Objects[i].Camera; c != nil {
-			completeCamera(c)
+			// Stored before the mode existed, a camera was exposed by hand (W2).
+			completeCamera(c, ExposureManual)
 		}
 	}
 	return s, nil
@@ -550,6 +579,12 @@ func Validate(s Scene) error {
 	}
 	if !in(s.Render.ExposureEV100, minExposureEV100, maxExposureEV100) {
 		return invalid("默认曝光 exposure_ev100 须在 %d…%d 之间", minExposureEV100, maxExposureEV100)
+	}
+	if s.Render.ExposureMode != ExposureAuto && s.Render.ExposureMode != ExposureManual {
+		return invalid("默认摄像机的曝光模式 exposure_mode 须为 auto 或 manual")
+	}
+	if !in(s.Render.ExposureCompensation, -maxExposureCompensation, maxExposureCompensation) {
+		return invalid("默认摄像机的曝光补偿 exposure_compensation 须在 −%d…%d 档之间", maxExposureCompensation, maxExposureCompensation)
 	}
 	byID := make(map[string]*Object, len(s.Objects))
 	cameras := 0
@@ -824,8 +859,10 @@ func mergeLight(cur Light, p lightPatch) (Light, error) {
 	return next, completeLight(&next)
 }
 
-// completeCamera fills every field c leaves out (L3).
-func completeCamera(c *Camera) {
+// completeCamera fills every field c leaves out (L3); a missing exposure
+// mode becomes mode: auto for a camera being written, manual for one read
+// from a snapshot stored before the mode existed.
+func completeCamera(c *Camera, mode string) {
 	fill(&c.FocalMM, 35.0)
 	if c.SensorMM == nil {
 		c.SensorMM = []float64{36, 24}
@@ -840,13 +877,16 @@ func completeCamera(c *Camera) {
 	fill(&c.FocusObjectID, "")
 	fill(&c.ISO, 100.0)
 	fill(&c.ShutterS, 1.0/4000)
+	fill(&c.ExposureMode, mode)
+	fill(&c.ExposureCompensation, 0.0)
 }
 
 // cameraComplete reports whether c already holds every field, so a stored
 // snapshot needs no completion before it is shown.
 func cameraComplete(c Camera) bool {
 	return c.FocalMM != nil && c.SensorMM != nil && c.Aspect != nil && c.Near != nil && c.Far != nil && c.Label != nil &&
-		c.DepthOfField != nil && c.FStop != nil && c.Focus != nil && c.FocusObjectID != nil && c.ISO != nil && c.ShutterS != nil
+		c.DepthOfField != nil && c.FStop != nil && c.Focus != nil && c.FocusObjectID != nil && c.ISO != nil && c.ShutterS != nil &&
+		c.ExposureMode != nil && c.ExposureCompensation != nil
 }
 
 // mergeCamera is L4 for cameras: p changes only what it carries. Merging
@@ -866,7 +906,9 @@ func mergeCamera(cur, p Camera) Camera {
 	keep(&p.FocusObjectID, cur.FocusObjectID)
 	keep(&p.ISO, cur.ISO)
 	keep(&p.ShutterS, cur.ShutterS)
-	completeCamera(&p)
+	keep(&p.ExposureMode, cur.ExposureMode)
+	keep(&p.ExposureCompensation, cur.ExposureCompensation)
+	completeCamera(&p, ExposureAuto)
 	return p
 }
 
@@ -947,6 +989,12 @@ func validateCamera(c Camera) error {
 	}
 	if !in(*c.ShutterS, 1.0/8000, 30) {
 		return errors.New("快门 shutter_s 须在 0.000125…30 秒（1/8000 s…30 s）之间")
+	}
+	if m := *c.ExposureMode; m != ExposureAuto && m != ExposureManual {
+		return errors.New("曝光模式 exposure_mode 须为 auto 或 manual")
+	}
+	if !in(*c.ExposureCompensation, -maxExposureCompensation, maxExposureCompensation) {
+		return fmt.Errorf("曝光补偿 exposure_compensation 须在 −%d…%d 档之间", maxExposureCompensation, maxExposureCompensation)
 	}
 	return nil
 }

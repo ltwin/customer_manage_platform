@@ -21,6 +21,7 @@ export const nightSkyDefaults = {
   moon_temperature_k: 6500,
   stars_strength: 1,
   stars_temperature_k: 6500,
+  night_look: 1,
 } as const satisfies NightSky
 
 /** What the server stores for the fields a physical sky leaves out (backend sky.go): Shanghai at noon under a clear sky. The date has none. */

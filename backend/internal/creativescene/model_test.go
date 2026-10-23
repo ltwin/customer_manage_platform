@@ -27,7 +27,7 @@ func validScene() creativescene.Scene {
 			Sky:     creativescene.Sky{Kind: "procedural", SunElevationDeg: f64(35), SunAzimuthDeg: f64(135), Turbidity: f64(3)},
 			Ambient: creativescene.Ambient{Color: "#ffffff", Intensity: 0.4},
 		},
-		Render: creativescene.Render{Mode: "clay", Engine: creativescene.EngineWorkbench, Resolution: "2k"},
+		Render: creativescene.Render{Mode: "clay", Engine: creativescene.EngineWorkbench, Resolution: "2k", ExposureMode: creativescene.ExposureAuto},
 		Objects: []creativescene.Object{
 			{ID: g, Kind: "group", Transform: validTransform(), Visible: true},
 			{ID: objectID(2), Kind: "primitive", ParentID: &g, Transform: validTransform(), Visible: true,
@@ -37,7 +37,7 @@ func validScene() creativescene.Scene {
 				Light: &creativescene.Light{Type: "spot", Color: ptr("#ffeedd"), Intensity: f64(50), CastShadow: flag(false), Distance: f64(20), Decay: f64(2), Angle: f64(0.26), Penumbra: f64(0.2)}},
 			{ID: objectID(4), Kind: "camera", Order: 2, Transform: validTransform(), Visible: true,
 				Camera: &creativescene.Camera{FocalMM: f64(35), SensorMM: []float64{36, 24}, Aspect: ptr("3:2"), Near: f64(0.1), Far: f64(1000), Label: ptr(""),
-					DepthOfField: flag(false), FStop: f64(2.8), Focus: f64(10), FocusObjectID: ptr(""), ISO: f64(100), ShutterS: f64(1.0 / 4000)}},
+					DepthOfField: flag(false), FStop: f64(2.8), Focus: f64(10), FocusObjectID: ptr(""), ISO: f64(100), ShutterS: f64(1.0 / 4000), ExposureMode: ptr(creativescene.ExposureAuto), ExposureCompensation: f64(0)}},
 		},
 	}
 }

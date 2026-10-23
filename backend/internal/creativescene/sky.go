@@ -84,6 +84,7 @@ func completeSky(s *Sky) error {
 	fill(&n.MoonTemperatureK, 6500.0)
 	fill(&n.StarsStrength, 1.0)
 	fill(&n.StarsTemperatureK, 6500.0)
+	fill(&n.NightLook, 1.0)
 	return nil
 }
 
@@ -159,6 +160,7 @@ func validatePhysicalSky(s Sky) error {
 		{"night.moon_temperature_k", n.MoonTemperatureK, 2000, 12000},
 		{"night.stars_strength", n.StarsStrength, 0, 10},
 		{"night.stars_temperature_k", n.StarsTemperatureK, 2000, 12000},
+		{"night.night_look", n.NightLook, 0, 1},
 	} {
 		if !between(r.v, r.lo, r.hi) {
 			return invalid("%s 须在 %g…%g 之间", r.name, r.lo, r.hi)

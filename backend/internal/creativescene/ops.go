@@ -147,8 +147,9 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
 		}
-		if op.Render.Mode == nil && op.Render.ExposureEV == nil && op.Render.Engine == nil && op.Render.Resolution == nil && op.Render.ExposureEV100 == nil {
-			return nil, invalid("render 至少写一项：mode、exposure_ev、engine、resolution 或 exposure_ev100")
+		r := op.Render
+		if r.Mode == nil && r.ExposureEV == nil && r.Engine == nil && r.Resolution == nil && r.ExposureEV100 == nil && r.ExposureMode == nil && r.ExposureCompensation == nil {
+			return nil, invalid("render 至少写一项：mode、exposure_ev、engine、resolution、exposure_ev100、exposure_mode 或 exposure_compensation")
 		}
 		return &op, nil
 	case "commit_model":
@@ -260,7 +261,7 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			if o.Camera.FocusObjectID != nil {
 				c.focus[o.ID] = true
 			}
-			completeCamera(o.Camera)
+			completeCamera(o.Camera, ExposureAuto)
 		}
 		canonicalNumbers(&o)
 		s.Objects = append(s.Objects, o)
@@ -573,6 +574,12 @@ func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	}
 	if p.ExposureEV100 != nil {
 		s.Render.ExposureEV100 = *p.ExposureEV100
+	}
+	if p.ExposureMode != nil {
+		s.Render.ExposureMode = *p.ExposureMode
+	}
+	if p.ExposureCompensation != nil {
+		s.Render.ExposureCompensation = *p.ExposureCompensation
 	}
 	c.change(unitRender)
 	return nil
