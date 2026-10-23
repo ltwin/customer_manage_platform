@@ -37,7 +37,11 @@ export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }:
     const compass = sunAt(sky.latitude_deg, sky.longitude_deg, instant.utcMs)
     return { ...compass, zoneKnown: instant.zoneKnown }
   }, [sky])
-  const day = useMemo(() => (location ? sunTimes(sky) : null), [location, sky])
+  // The day's hours depend on the date and the place, not the time: dragging the time does not recompute them.
+  const dayKey = location ? [sky.date, sky.latitude_deg, sky.longitude_deg, sky.timezone].join('|') : ''
+  const latest = useRef(sky)
+  latest.current = sky
+  const day = useMemo(() => (dayKey ? sunTimes(latest.current) : null), [dayKey])
   const zones = useMemo(() => {
     const all = Intl.supportedValuesOf('timeZone')
     return all.includes(sky.timezone) ? all : [sky.timezone, ...all]

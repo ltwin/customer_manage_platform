@@ -4414,6 +4414,110 @@ await check('W2 back to another sky: switching the physical sky off leaves the l
   await context.close()
 })
 
+// SCENE_E2E_W2_GPU=<dir> (AC-W2-8): the physical yard on this machine's GPU,
+// exported on WebGPU and again on the WebGL2 backend. Pictures with the scene
+// in them are held to R1's lit threshold; a camera looking up at the sky
+// alone to a mean of 0.5 and 0.05 % of pixels off by more than 8. Sheets and
+// w2-parity.json go to the directory.
+const skyOnly = { mean: 0.5, over: 0.05 }
+const lookingUp = (scene) => {
+  const up = (35 * Math.PI) / 180
+  scene.objects.push({
+    parent_id: null, visible: true, locked: false, id: 'sobj_skyup00000000000000000', kind: 'camera', name: 'sky', order: scene.objects.length + 20,
+    transform: { position: [0, 1.6, 4], rotation: [Math.sin(up / 2), 0, 0, Math.cos(up / 2)], scale: [1, 1, 1] },
+    camera: { focal_mm: 35, f_stop: 2.8, shutter_s: scene.objects.find((o) => o.kind === 'camera').camera.shutter_s, iso: scene.objects.find((o) => o.kind === 'camera').camera.iso },
+  })
+  // The scene's camera's EV100 for the sky camera too: same ISO and shutter, its aperture matched.
+  scene.objects.at(-1).camera.f_stop = scene.objects.find((o) => o.kind === 'camera').camera.f_stop
+}
+if (process.env.SCENE_E2E_W2_GPU) await check('W2 parity: the physical yard on WebGPU and on the WebGL2 backend', async () => {
+  const dir = process.env.SCENE_E2E_W2_GPU
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  const over = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const name of physicalNames) {
+      const webgpu = await exportReference(gpu, name, { edit: lookingUp })
+      const webgl = await exportReference(gpu, name, { edit: lookingUp, forceWebGL: true })
+      assert.ok(webgpu.backends.some((b) => b === 'scene renderer (offscreen): webgpu'), `${name}: ${webgpu.backends}`)
+      assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: ${webgl.backends}`)
+      for (const img of webgl.images.filter((i) => i.pass === 'lit')) {
+        const m = await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png)
+        const limit = img.file.includes('-sky-') ? skyOnly : parityLimits.lit
+        const ok = !m.error && m.mean <= limit.mean && m.over <= limit.over
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}-webgl2.jpg`, m.sheet)
+        rows.push({ file: img.file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), limit, ok })
+        if (!ok) over.push(`${img.file}: ${m.error ?? `mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(3)}%`}`)
+        console.log(`W2 parity ${img.file}: mean ${m.mean?.toFixed(3)}, > 8 ${m.over?.toFixed(4)}%${ok ? '' : ' (over)'}`)
+      }
+    }
+    await writeFile(`${dir}/w2-parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: { scene: parityLimits.lit, sky: skyOnly }, rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
+})
+
+// SCENE_E2E_W2_EVIDENCE=<dir> (W2 tasks 8.2, for the owner), this machine's GPU: the physical yard's lit
+// exports, each camera exposed at the EV its light meters (environmentEV), so the pictures compare by
+// colour and air rather than by brightness. The four presets at noon and in the golden hour; the plateau
+// at a low sun looking level at the horizon; a clear sunset with the sun in the picture at 8K; the sun at
+// −6° to −9° (twilight); and noon under the physical sky at EV100 15 against the procedural noon at EV 0.
+if (process.env.SCENE_E2E_W2_EVIDENCE) await check('W2 evidence: presets, the plateau’s horizon, the sunset at 8K, twilight, and noon against the procedural sky', async () => {
+  const dir = process.env.SCENE_E2E_W2_EVIDENCE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const notes = {}
+  try {
+    const meter = await (await gpu.newContext()).newPage()
+    await meter.goto(`${base}/`)
+    const baseSky = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+    const presets = { clear: {}, haze: { dust_density: 12 }, highland: { altitude_m: 4000, dust_density: 0.2 }, dust: { dust_density: 40 } }
+    /** The yard with this sky, every camera exposed at f/8 and ISO 100 for the metered EV; only the cameras kept. */
+    const shoot = async (file, sky, { cameras, resolution } = {}) => {
+      const ev = await meteredEV(meter, sky)
+      const edit = (scene) => {
+        scene.environment.sky = sky
+        if (resolution) scene.render.resolution = resolution
+        if (cameras) scene.objects = [...scene.objects.filter((o) => o.kind !== 'camera'), ...cameras]
+        for (const o of scene.objects) if (o.kind === 'camera') o.camera = { ...o.camera, f_stop: 8, iso: 100, shutter_s: 64 / 2 ** ev }
+      }
+      const out = await exportReference(gpu, 'physical-noon', { edit })
+      for (const img of out.images.filter((i) => i.pass === 'lit')) await writeFile(`${dir}/${file}-${img.file.split('-').at(-2)}.png`, img.png)
+      notes[file] = { metered_ev100: Number(ev.toFixed(2)), sky: { local_time: sky.local_time, altitude_m: sky.altitude_m, dust_density: sky.dust_density } }
+      console.log(`W2 evidence ${file}: metered EV100 ${ev.toFixed(1)}`)
+      return out
+    }
+    const level = (name, yawDeg, position = [0, 1.6, 4]) => ({
+      parent_id: null, visible: true, locked: false, id: gid(`ev${name}`), kind: 'camera', name, order: 50,
+      transform: { position, rotation: [0, Math.sin((yawDeg * Math.PI) / 360), 0, Math.cos((yawDeg * Math.PI) / 360)], scale: [1, 1, 1] },
+      camera: { focal_mm: 35 },
+    })
+    for (const [name, patch] of Object.entries(presets)) {
+      await shoot(`preset-${name}-noon`, { ...baseSky, ...patch, local_time: '12:00' })
+      await shoot(`preset-${name}-golden`, { ...baseSky, ...patch, local_time: '17:30' })
+    }
+    // The plateau at a low sun, level with the horizon: no sea-level band between the ground and the sky.
+    await shoot('highland-horizon', { ...baseSky, ...presets.highland, local_time: '17:40' }, { cameras: [level('horizon', 0)] })
+    // A clear sunset with the sun in the picture (it sets in the west, the scene's −X with north at 180°), at 8K.
+    await shoot('sunset-8k', { ...baseSky, local_time: '17:45' }, { cameras: [level('sunset', 90)], resolution: '8k' })
+    // Twilight: Shanghai on 2026-09-23 has the sun at about −6° at 18:16 and −9° at 18:30.
+    for (const t of ['18:16', '18:23', '18:30']) await shoot(`twilight-${t.replace(':', '')}`, { ...baseSky, local_time: t })
+    // Noon: the physical sky at EV100 15 (sunny 16) against the procedural noon at EV 0.
+    const physicalNoon = await exportReference(gpu, 'physical-noon')
+    const proceduralNoon = await exportReference(gpu, 'noon')
+    const lit = (out) => out.images.find((i) => i.pass === 'lit' && i.file.includes('-shot-')).png
+    const [p, q] = [await lumaStats(meter, lit(physicalNoon)), await lumaStats(meter, lit(proceduralNoon))]
+    await writeFile(`${dir}/noon-physical-ev15.png`, lit(physicalNoon))
+    await writeFile(`${dir}/noon-procedural-ev0.png`, lit(proceduralNoon))
+    notes.noon = { physical_mean: Number(p.mean.toFixed(1)), procedural_mean: Number(q.mean.toFixed(1)) }
+    console.log(`W2 evidence noon: physical at EV100 15 mean ${p.mean.toFixed(1)}, procedural at EV 0 mean ${q.mean.toFixed(1)}`)
+    await writeFile(`${dir}/evidence.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), notes }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
 // --- W2 the environment tab under a physical sky (AC-W2-1, AC-W2-2, AC-W2-12) ----------
 
 /** The noon yard in the rendered view, its sky switched to physical from the environment tab. */
@@ -4774,6 +4878,17 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const webgl = await run()
     const again = await run()
     assert.deepEqual(again, webgl, 'the WebGL2 backend, twice the same in the background')
+    // W2 AC-W2-9: the physical sky in the background, twice the same on each backend (its LUTs and sky light are made before the first frame).
+    const sky = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-golden.json', import.meta.url), 'utf8'))
+    const skyDoc = { scene: sky, models: {}, revision: '1' }
+    const skyPlan = { cameraObjectIDs: sky.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'lit'] }
+    const runSky = () => evaluate(`window.__export(${JSON.stringify(skyDoc)}, ${JSON.stringify(skyPlan)})`)
+    const skyWebGL = [await runSky(), await runSky()]
+    assert.deepEqual(skyWebGL[1], skyWebGL[0], 'the physical sky on WebGL2, twice the same in the background')
+    await evaluate('window.__sceneGPU.forceWebGL = false')
+    const skyWebGPU = [await runSky(), await runSky()]
+    assert.deepEqual(skyWebGPU[1], skyWebGPU[0], 'the physical sky on WebGPU, twice the same in the background')
+    console.log(`W2 determinism: the physical sky's lit export ${skyWebGPU[0].find((i) => i.pass === 'lit').hash.slice(0, 12)} on WebGPU, ${skyWebGL[0].find((i) => i.pass === 'lit').hash.slice(0, 12)} on WebGL2`)
     // The real-time GI after the workbench's whole run, so its long export frees no material the workbench reuses:
     // in front again, then twice behind the blank tab, then twice on the WebGL2 backend.
     await evaluate('window.__sceneGPU.forceWebGL = false')
@@ -5141,6 +5256,101 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: switching to the rendered vie
       assert.ok(m.longest_frame_ms < 2000 && m.lights_on_ms < 5000, `${name}: longest frame ${m.longest_frame_ms} ms, lights on after ${m.lights_on_ms} ms`)
     }
     assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W2_PERF=<dir> (AC-W2-11), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
+// physical sky at noon. The first switch to the rendered view in a fresh browser (shader cache cold) and
+// again (warm); frame times against the procedural sky in the same page; dragging the time of day, the
+// frame times while dragging and how long after the last move the sky light caught up; the CPU part's
+// time (an atmosphere change, a time change). Written to w2-perf.json in the directory.
+if (process.env.SCENE_E2E_W2_PERF) await check('W2 performance: the physical sky on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W2_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+    const procedural = server.scene.environment.sky
+    server.scene.environment.sky = physical
+    server.scene.render.exposure_ev100 = 15
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scene: 'AC-9 (about 200 objects, 4 lights) under the physical sky, Shanghai at noon' }
+
+    // Switching to the rendered view: until the first frame with the sky light made.
+    const switchTo = async () => {
+      await shading(page, '白模')
+      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+      await sleep(1500)
+      const measuring = orbitFrames(page, 6000)
+      await sleep(300)
+      const at = await page.evaluate(() => performance.now())
+      await shading(page, '最终渲染')
+      const after = (await measuring).filter((t) => t >= at)
+      const lit = await page.evaluate(() => window.__sceneGPU.skyLightAt)
+      return { longest_frame_ms: Math.round(Math.max(...gaps([at, ...after]))), sky_light_ms: Math.round(lit - at) }
+    }
+    record.switch = { cold: await switchTo(), warm: await switchTo() }
+
+    // Standing still (the view turned a little each frame so every frame renders), physical then procedural.
+    await orbitFrames(page, 1000)
+    record.frames = { physical: frameStats(await orbitFrames(page, 4000)) }
+    server.external([{ op: 'set_environment', environment: { ...server.scene.environment, sky: procedural } }])
+    await page.evaluate(() => window.__invalidate())
+    await sleep(1000)
+    await orbitFrames(page, 1000)
+    record.frames.procedural = frameStats(await orbitFrames(page, 4000))
+    server.external([{ op: 'set_environment', environment: { ...server.scene.environment, sky: physical } }])
+    await page.evaluate(() => window.__invalidate())
+    await sleep(1000)
+
+    // Dragging the time of day: a minute further each frame for 3 s, from 06:00.
+    const drag = await page.evaluate(() => new Promise((resolve) => {
+      const slider = document.querySelector('input[type=range][aria-label="当地时刻"]')
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      const times = []
+      let minute = 360
+      const start = performance.now()
+      const tick = (t) => {
+        times.push(t)
+        set.call(slider, String(minute++))
+        slider.dispatchEvent(new Event('input', { bubbles: true }))
+        if (t - start < 3000) requestAnimationFrame(tick)
+        else resolve({ times, last: performance.now() })
+      }
+      requestAnimationFrame(tick)
+    }))
+    await sleep(1500)
+    const caughtUp = await page.evaluate(() => window.__sceneGPU.skyLightAt)
+    record.drag = { ...frameStats(drag.times), sky_light_after_last_ms: Math.round(caughtUp - drag.last) }
+
+    // The CPU part (world/atmosphere/cpu.ts), as PhysicalLighting runs it: tables on an atmosphere change, the day's light on a time change.
+    record.cpu = await page.evaluate(async () => {
+      const { CpuAtmosphere } = await import('/src/creative-scene/world/atmosphere/cpu.ts')
+      const { PRESETS, sunAbove } = await import('/src/creative-scene/world/atmosphere/constants.ts')
+      const time = (fn, n) => {
+        fn()
+        const t0 = performance.now()
+        for (let i = 0; i < n; i++) fn()
+        return (performance.now() - t0) / n
+      }
+      let a = new CpuAtmosphere(PRESETS.clear)
+      const top = sunAbove(1, 6500)
+      return {
+        atmosphere_change_ms: Number(time(() => { a = new CpuAtmosphere(PRESETS.haze) }, 10).toFixed(2)),
+        time_change_ms: Number(time(() => a.daylight(0.5, top), 50).toFixed(2)),
+      }
+    })
+    record.baseline = JSON.parse(readFileSync(new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-physical-sky/discovery/research/baseline/perf.json', import.meta.url), 'utf8')).modes.rendered
+    console.log(`W2 performance: ${JSON.stringify(record, null, 1)}`)
+    await writeFile(`${dir}/w2-perf.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [])
     await context.close()
   } finally {
     await gpu.close()

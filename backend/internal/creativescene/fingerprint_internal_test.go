@@ -316,3 +316,34 @@ func TestPhysicalSkyFingerprintsOnlyLit(t *testing.T) {
 		}
 	}
 }
+
+// AC-W2-9: changing one camera's exposure stales that camera's lit image
+// only: each camera's fingerprint leaves the other cameras out.
+func TestOneCamerasExposureStalesOnlyItsLit(t *testing.T) {
+	const other = "sobj_000000000000000000003"
+	withSecond := func(camera string) Scene {
+		s := sceneOf(t, physicalSky, `{"mode":"lit"}`, camera)
+		second := s.Objects[0]
+		second.ID = other
+		second.Order = 2
+		second.Transform.Position = []float64{2, 1, 5}
+		s.Objects = append(s.Objects, second)
+		return s
+	}
+	before := withSecond(`{}`)
+	after := withSecond(`{"iso":400,"shutter_s":0.004}`)
+	// The second camera is a copy of the first, so give it back its own exposure.
+	after.Objects[2].Camera = before.Objects[2].Camera
+	for _, pass := range Passes {
+		a, _ := Fingerprint(before, pinnedCamera, pass)
+		b, _ := Fingerprint(after, pinnedCamera, pass)
+		if (a == b) != (pass != PassLit) {
+			t.Errorf("the changed camera's %s: alike %v", pass, a == b)
+		}
+		a, _ = Fingerprint(before, other, pass)
+		b, _ = Fingerprint(after, other, pass)
+		if a != b {
+			t.Errorf("the other camera's %s went stale", pass)
+		}
+	}
+}

@@ -6,7 +6,7 @@ import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/we
 import type { SceneEnvironment } from '../api.ts'
 import type { Engine } from '../render/engines.ts'
 import { ambientFill, sunLight } from '../render/litLook.ts'
-import { gpuOf } from '../render/gpu.ts'
+import { gpuOf, gpuTestHooks } from '../render/gpu.ts'
 import { disposeSky, litSky, physicalSkyMesh, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { STUDIO_AMBIENT, STUDIO_BACKGROUND, STUDIO_FILL, STUDIO_KEY_INTENSITY } from '../render/studio.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
@@ -281,11 +281,12 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     const run = () => {
       l.timer = null
       l.at = performance.now()
-      const next = l.pmrem.fromScene(parts.sourceScene, 0, 0.1, 100)
-      l.target?.dispose()
-      l.target = next
-      scene.environment = next.texture
+      // Into the same target each time: a new environment texture would have three rebuild every material's nodes
+      // (about 150 ms a commit for AC-9's scene while the time of day is dragged).
+      l.target = l.pmrem.fromScene(parts.sourceScene, 0, 0.1, 100, l.target ? { renderTarget: l.target } : {})
+      scene.environment = l.target.texture
       parts.physical.skyLightScale = parts.lutEnv
+      gpuTestHooks.skyLightAt = performance.now()
       invalidate()
     }
     if (l.timer !== null) window.clearTimeout(l.timer)

@@ -234,6 +234,8 @@ export const gpuTestHooks = {
   compiles: 0,
   /** The viewport's frames since the view last changed (Viewport.tsx LookView): where convergence stopped. */
   viewportFrames: 0,
+  /** performance.now() when a physical sky's light (its PMREM) was last made (objects/Lighting.tsx PhysicalLighting). */
+  skyLightAt: 0,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)
