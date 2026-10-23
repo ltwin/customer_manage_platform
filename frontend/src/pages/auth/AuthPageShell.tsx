@@ -8,6 +8,9 @@ type AuthPageShellProps = {
   subtitle: string
   children: ReactNode
   footer?: ReactNode
+  // pitch 替换左栏标题下的介绍与要点（授权外部助手时用）；legal 替换卡片底部的说明。
+  pitch?: ReactNode
+  legal?: ReactNode
 }
 
 export default function AuthPageShell({
@@ -16,6 +19,8 @@ export default function AuthPageShell({
   subtitle,
   children,
   footer,
+  pitch,
+  legal = '客户资料仅存于你的账号内，不做跨账号共享，可随时整包导出。',
 }: AuthPageShellProps) {
   return (
     <div className="auth-shell">
@@ -37,39 +42,43 @@ export default function AuthPageShell({
             <Sparkles aria-hidden="true" />
             {eyebrow}
           </span>
-          <h1>
-            把客户、档期、套系
-            <br />
-            都收进<em>一个工作台</em>
-          </h1>
-          <p>散落在微信、QQ、Telegram 的聊天记录，不该是你唯一的客户档案。</p>
+          {pitch ?? (
+            <>
+              <h1>
+                把客户、档期、套系
+                <br />
+                都收进<em>一个工作台</em>
+              </h1>
+              <p>散落在微信、QQ、Telegram 的聊天记录，不该是你唯一的客户档案。</p>
 
-          <ul className="auth-proof">
-            <li>
-              <span className="auth-proof-dot" aria-hidden="true">
-                <Check strokeWidth={3} />
-              </span>
-              <span>
-                <b>客户画像自动累积</b>　生日、偏好、复购节奏都留在档案里
-              </span>
-            </li>
-            <li>
-              <span className="auth-proof-dot" aria-hidden="true">
-                <Check strokeWidth={3} />
-              </span>
-              <span>
-                <b>档期冲突当场拦下</b>　同一时段重复约拍，保存前就会被拦住
-              </span>
-            </li>
-            <li>
-              <span className="auth-proof-dot" aria-hidden="true">
-                <Check strokeWidth={3} />
-              </span>
-              <span>
-                <b>该跟进的人不会漏</b>　定金、修图、回访到点提醒
-              </span>
-            </li>
-          </ul>
+              <ul className="auth-proof">
+                <li>
+                  <span className="auth-proof-dot" aria-hidden="true">
+                    <Check strokeWidth={3} />
+                  </span>
+                  <span>
+                    <b>客户画像自动累积</b>　生日、偏好、复购节奏都留在档案里
+                  </span>
+                </li>
+                <li>
+                  <span className="auth-proof-dot" aria-hidden="true">
+                    <Check strokeWidth={3} />
+                  </span>
+                  <span>
+                    <b>档期冲突当场拦下</b>　同一时段重复约拍，保存前就会被拦住
+                  </span>
+                </li>
+                <li>
+                  <span className="auth-proof-dot" aria-hidden="true">
+                    <Check strokeWidth={3} />
+                  </span>
+                  <span>
+                    <b>该跟进的人不会漏</b>　定金、修图、回访到点提醒
+                  </span>
+                </li>
+              </ul>
+            </>
+          )}
         </div>
 
         <div className="auth-aside-foot" data-od-id="aside-foot">
@@ -92,9 +101,7 @@ export default function AuthPageShell({
           </header>
           {children}
           {footer}
-          <p className="auth-legal">
-            客户资料仅存于你的账号内，不做跨账号共享，可随时整包导出。
-          </p>
+          <p className="auth-legal">{legal}</p>
         </div>
       </main>
     </div>

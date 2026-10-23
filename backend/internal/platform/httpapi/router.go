@@ -28,6 +28,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/planshare"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/oauth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/realtime"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
@@ -83,6 +84,9 @@ type RouterDeps struct {
 	CreativeMedia             *creativemedia.Service
 	CreativeGeneration        *creativegeneration.Product
 	CreativeAgent             *creativeagent.Service
+	// OAuth is the external agents' authorization server. Nil (MCP_ENABLED
+	// off) mounts neither it nor /mcp.
+	OAuth *oauth.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -136,6 +140,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		creativeImageEdit:   deps.CreativeImageEdit,
 		creativeGeneration:  deps.CreativeGeneration,
 		creativeAgent:       deps.CreativeAgent,
+		oauth:               deps.OAuth,
 	}
 	// The store's LISTEN hub is the wake-up bus; a factory without one (unit
 	// fakes) simply serves no streams.
@@ -190,6 +195,13 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected := api.Group("", authMiddleware(deps.Auth))
 	registerCreativeCanvas(protected, h)
 	registerCreativeAgent(protected, h)
+	registerAgentConnections(protected, h)
+	if h.oauth != nil && deps.CreativeAgent != nil {
+		registerOAuth(r, h)
+		if err := registerMCP(r, h, deps.CreativeAgent, timezone); err != nil {
+			deps.Logger.Error("mcp endpoint not mounted", "error", err.Error())
+		}
+	}
 	protected.GET("/creative/capabilities", h.GetCreativeCapabilities)
 	protected.GET("/creative/operations/:operation_id", func(c *gin.Context) {
 		id, err := uuid.Parse(c.Param("operation_id"))
@@ -268,6 +280,10 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	r.NoRoute(func(c *gin.Context) {
 		if isAPIPath(c.Request.URL.Path) {
 			abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
+			return
+		}
+		if protocolPath(c.Request.URL.Path) {
+			c.Status(http.StatusNotFound)
 			return
 		}
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {

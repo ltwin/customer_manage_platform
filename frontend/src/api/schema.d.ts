@@ -2838,10 +2838,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/agent-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 列出本账号的外部助手连接，并给出接入文字要用的 MCP 地址
+         * @description 按授权时间倒序，最多返回最近 50 个。active=true 只返回有效且 5 分钟内调用过工具的连接（顶栏指示用）。MCP 未开放时为 404。
+         */
+        get: operations["listExternalAgentConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-connections/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 断开一个外部助手连接
+         * @description 同一事务作废它的 refresh token 链；它的下一次 MCP 请求即被拒绝。重复断开返回原对象，不改变 revoked_at。
+         */
+        post: operations["revokeExternalAgentConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/authorize/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 授权确认页提交「允许」或「拒绝」
+         * @description request 是 GET /oauth/authorize 校验通过后签发的请求包（10 分钟有效）。allow 时建立连接并签发一次性授权码。返回的 redirect_to 由前端跳转。
+         */
+        post: operations["decideOAuthAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ExternalAgentConnection: {
+            /** @description cxcon_… */
+            id: string;
+            /** @description 界面署名：Claude、Claude Code、Codex、ChatGPT 或客户端自报的名称 */
+            display_name: string;
+            /** @enum {string} */
+            host_kind: "claude" | "claude_code" | "codex" | "chatgpt" | "other";
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description 从未调用过工具时为 null
+             */
+            last_used_at: string | null;
+            /** @description 有效且 last_used_at 在 5 分钟内 */
+            active: boolean;
+            /** Format: date-time */
+            revoked_at: string | null;
+        };
+        ExternalAgentConnectionList: {
+            /** @description <PUBLIC_BASE_URL>/mcp，接入文字据此生成 */
+            mcp_url: string;
+            items: components["schemas"]["ExternalAgentConnection"][];
+        };
+        OAuthAuthorizeDecisionRequest: {
+            request: string;
+            /** @enum {string} */
+            decision: "allow" | "deny";
+        };
+        OAuthAuthorizeDecisionResult: {
+            redirect_to: string;
+        };
         CreativeLibraryResult: {
             /** Format: int64 */
             affected_asset_count?: number;
@@ -15031,6 +15123,86 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+        };
+    };
+    listExternalAgentConnections: {
+        parameters: {
+            query?: {
+                active?: boolean;
+                include_revoked?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 连接列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalAgentConnectionList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revokeExternalAgentConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已断开的连接 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalAgentConnection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    decideOAuthAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthAuthorizeDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description 跳回外部助手的地址 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthAuthorizeDecisionResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

@@ -1,0 +1,145 @@
+/* 外部助手授权确认页：沿用登录页的外壳与 token，视觉依据 docs/prototypes/creative-mcp/web/auth.css。 */
+
+.consent-warn {
+  border-color: var(--accent-tint);
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+.consent-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.consent-av {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-weight: 700;
+}
+.consent-account div {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+.consent-account b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.consent-account small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.consent-text-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.consent-text-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.consent-scope {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.consent-scope h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.consent-scope ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.consent-scope li {
+  display: flex;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.consent-scope li svg,
+.consent-egress svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 4px;
+}
+.consent-can svg {
+  color: var(--success);
+}
+.consent-cannot svg {
+  color: var(--muted);
+}
+.consent-scope li small {
+  color: var(--muted);
+}
+.consent-egress {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.consent-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 24px;
+}
+.consent-actions .btn {
+  min-height: 44px;
+}
+.consent-result {
+  text-align: center;
+}
+.consent-big {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 8px;
+  border-radius: 50%;
+  background: var(--success-weak);
+  color: var(--success);
+}
+.consent-big.no {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.consent-big.err {
+  background: var(--danger-weak);
+  color: var(--danger);
+}
+.consent-big svg {
+  width: 26px;
+  height: 26px;
+}
+.consent-fine {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.auth-legal code,
+.consent-fine code {
+  font: 11.5px var(--font-mono, ui-monospace, monospace);
+}
