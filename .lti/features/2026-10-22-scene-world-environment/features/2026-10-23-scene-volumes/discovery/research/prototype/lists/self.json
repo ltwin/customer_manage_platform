@@ -1,0 +1,7 @@
+[
+ {"name":"A-n1-none","method":"A","blur":true,"fill":"two"},
+ {"name":"A-n1-own","method":"A","blur":true,"fill":"two","selfShadow":"own"},
+ {"name":"A-n1-all","method":"A","blur":true,"fill":"two","selfShadow":"all"},
+ {"name":"A-n8-own","method":"A","blur":true,"count":8,"selfShadow":"own","shot":false},
+ {"name":"A-n8-all","method":"A","blur":true,"count":8,"selfShadow":"all","shot":false}
+]

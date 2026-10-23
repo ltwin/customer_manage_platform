@@ -1,0 +1,6 @@
+[
+ {"name":"yard-noamb","method":"A","blur":true,"selfShadow":"own","fill":"yard","outside":true,"repeat":0,"width":1280,"height":720},
+ {"name":"yard-amb","method":"A","blur":true,"selfShadow":"own","fill":"yard","outside":true,"ambient":true,"repeat":0,"width":1280,"height":720},
+ {"name":"room-noamb","method":"A","blur":true,"selfShadow":"own","repeat":0,"width":1280,"height":720},
+ {"name":"room-amb","method":"A","blur":true,"selfShadow":"own","ambient":true,"repeat":0,"width":1280,"height":720}
+]

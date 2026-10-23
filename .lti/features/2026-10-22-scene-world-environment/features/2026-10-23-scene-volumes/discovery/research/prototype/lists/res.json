@@ -1,0 +1,7 @@
+[
+ {"name":"1440-s50","method":"A","blur":true,"selfShadow":"own","width":2560,"height":1440,"scale":0.5},
+ {"name":"1440-s375","method":"A","blur":true,"selfShadow":"own","width":2560,"height":1440,"scale":0.375},
+ {"name":"1440-s25","method":"A","blur":true,"selfShadow":"own","width":2560,"height":1440,"scale":0.25},
+ {"name":"1440-s25-spot","method":"A","blur":true,"selfShadow":"own","width":2560,"height":1440,"scale":0.25,"view":"spot"},
+ {"name":"1440-s50-spot","method":"A","blur":true,"selfShadow":"own","width":2560,"height":1440,"scale":0.5,"view":"spot","repeat":0}
+]

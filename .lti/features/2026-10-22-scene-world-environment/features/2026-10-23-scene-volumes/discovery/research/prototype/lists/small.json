@@ -1,0 +1,5 @@
+[
+ {"name":"window-A","method":"A","blur":true,"selfShadow":"own","width":480,"height":270,"repeat":0},
+ {"name":"window-B","method":"B","width":480,"height":270,"repeat":0},
+ {"name":"two-A","method":"A","blur":true,"fill":"two","selfShadow":"own","width":480,"height":270,"repeat":0}
+]

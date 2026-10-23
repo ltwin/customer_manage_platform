@@ -1,0 +1,7 @@
+[
+ {"name":"vp-n1","method":"A","blur":true,"selfShadow":"own","ambient":true,"width":2560,"height":1440,"scale":0.25,"shot":false},
+ {"name":"vp-n8","method":"A","blur":true,"selfShadow":"own","ambient":true,"count":8,"width":2560,"height":1440,"scale":0.25,"shot":false},
+ {"name":"vp-n1-sun","method":"A","blur":true,"selfShadow":"own","ambient":true,"spot":false,"point":false,"width":2560,"height":1440,"scale":0.25,"shot":false},
+ {"name":"vp-n1-sunspot","method":"A","blur":true,"selfShadow":"own","ambient":true,"point":false,"width":2560,"height":1440,"scale":0.25,"shot":false},
+ {"name":"exp-4k-n1","method":"A","blur":true,"selfShadow":"own","ambient":true,"width":3840,"height":2160,"scale":0.5,"shot":false,"repeat":10}
+]

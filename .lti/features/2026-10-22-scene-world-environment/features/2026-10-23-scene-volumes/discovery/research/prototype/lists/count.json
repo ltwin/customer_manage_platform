@@ -1,0 +1,11 @@
+[
+ {"name":"n1-own","method":"A","blur":true,"count":1,"selfShadow":"own","shot":false},
+ {"name":"n2-own","method":"A","blur":true,"count":2,"selfShadow":"own","shot":false},
+ {"name":"n4-own","method":"A","blur":true,"count":4,"selfShadow":"own","shot":false},
+ {"name":"n8-own","method":"A","blur":true,"count":8,"selfShadow":"own","shot":false},
+ {"name":"n8-own-nomask","method":"A","blur":true,"count":8,"selfShadow":"own","useMask":false,"shot":false},
+ {"name":"room-own","method":"A","blur":true,"selfShadow":"own"},
+ {"name":"room-own-1440p","method":"A","blur":true,"selfShadow":"own","width":2560,"height":1440,"shot":false},
+ {"name":"n8-own-1440p","method":"A","blur":true,"count":8,"selfShadow":"own","width":2560,"height":1440,"shot":false},
+ {"name":"room-own-4k","method":"A","blur":true,"selfShadow":"own","width":3840,"height":2160,"shot":false}
+]

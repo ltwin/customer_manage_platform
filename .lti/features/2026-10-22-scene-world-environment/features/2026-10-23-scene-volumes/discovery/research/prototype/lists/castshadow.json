@@ -1,0 +1,6 @@
+[
+ {"name":"smoke-out-off","method":"A","blur":true,"selfShadow":"own","ambient":true,"fill":"smoke","outside":true,"repeat":0,"width":1280,"height":720},
+ {"name":"smoke-out-on","method":"A","blur":true,"selfShadow":"own","ambient":true,"fill":"smoke","outside":true,"castShadow":true,"repeat":0,"width":1280,"height":720},
+ {"name":"smoke-spot-off","method":"A","blur":true,"selfShadow":"own","ambient":true,"fill":"smoke","view":"spot","repeat":0,"width":1280,"height":720},
+ {"name":"smoke-spot-on","method":"A","blur":true,"selfShadow":"own","ambient":true,"fill":"smoke","view":"spot","castShadow":true,"repeat":0,"width":1280,"height":720}
+]

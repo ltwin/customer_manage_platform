@@ -1,0 +1,9 @@
+[
+ {"name":"window-A","method":"A","blur":true,"repeat":0},
+ {"name":"window-B","method":"B","repeat":0},
+ {"name":"spot-A","method":"A","blur":true,"view":"spot","repeat":0},
+ {"name":"spot-B","method":"B","view":"spot","repeat":0},
+ {"name":"two-A-self","method":"A","blur":true,"fill":"two","selfShadow":true,"repeat":0},
+ {"name":"two-A","method":"A","blur":true,"fill":"two","repeat":0},
+ {"name":"none","method":"none","repeat":0}
+]

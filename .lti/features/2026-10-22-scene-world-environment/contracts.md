@@ -268,9 +268,10 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 | `volume.absorption_color` | `#rrggbb` | `#cccccc` | 吸收颜色，即透过介质后保留的颜色 |
 | `volume.absorption_density` | number 0…100（每米） | 0 | 吸收密度。吸收系数 σa = `absorption_density` × (1 − `absorption_color`)（线性值），同 Blender 的 Volume Absorption |
 | `volume.edge_falloff` | number 0…1 | 0.1 | 从边界向内、密度从 0 升到满值所占的比例；0 为硬边 |
+| `volume.cast_shadow` | boolean | false | 在表面上投影：太阳、聚光、点光照到被它遮住的表面时，按穿过它的透射率（含吸收颜色）变暗。只在灯本身 `cast_shadow` 为 true、表面接收阴影时生效。关闭时只影响视线（散射与透射）。与灯光的 `cast_shadow` 同名同义（three.js `castShadow`）（修订 v8） |
 
 - 体积物件不得带 `material_slots`、`primitive`、`model`、`light`、`camera`，写了返回 400。
-- 每个场景最多 8 个体积物件，超出返回 413（上限待 W5 穿刺确认，`scene-world-environment` design 未决事项 7）。
+- 每个场景最多 8 个体积物件，超出返回 413（W5 穿刺确认，`scene-world-environment` 修订 v8）。
 - 体积物件计入现有的 2000 个对象上限。
 
 ### 访问模式与保证
@@ -279,12 +280,12 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
   - 只在最终渲染、`lit` 导出和 `render_view` 的 `lit` 里绘制。
   - 在白模、线框和材质预览的视口里只显示范围线框，和灯光、摄像机等辅助对象一样不参与着色。白模导出、线稿导出和 `render_view` 的 `clay` 不画辅助对象，所以完全看不到体积物件。
   - 所有天空模式下都可用。在物理天空下，按物理单位受光。
+  - 受太阳、月光、聚光、点光和天空光照照亮；WebGPU 和 WebGL2 两个后端都绘制（W5 穿刺，修订 v8）。
 - **渲染指纹**：`lit` 计入体积物件，`clay`、`line` 清除。
 
 ### 生命周期与演进
 - 新增对象类型，不迁移。
 - 回滚到不认识 `volume` 的后端时，含体积物件的场景会读取失败，只做前向修复。
-- 如果 W5 穿刺决定体积只支持 WebGPU，按 `scene-world-environment` design「只支持 WebGPU 的统一规则」处理，并由 Epic 修订补上客户端任务的能力认领。本条目的数据外形不变。
 - 示例（`add_objects` 的一项）：
 
 ```json
@@ -292,7 +293,7 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
  "transform": {"position": [0, 1.5, -2], "rotation": [0, 0, 0, 1], "scale": [4, 3, 3]},
  "visible": true, "locked": false,
  "volume": {"shape": "box", "scatter_color": "#e8e4dc", "scatter_density": 0.3, "anisotropy": 0.6,
-            "absorption_color": "#cccccc", "absorption_density": 0, "edge_falloff": 0.2}}
+            "absorption_color": "#cccccc", "absorption_density": 0, "edge_falloff": 0.2, "cast_shadow": false}}
 ```
 
 ## api: MODIFY 提交场景命令

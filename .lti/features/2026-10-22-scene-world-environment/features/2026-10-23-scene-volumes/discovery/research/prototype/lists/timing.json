@@ -1,0 +1,15 @@
+[
+ {"name":"A-h48-blur","method":"A","scale":0.5,"steps":48,"blur":true},
+ {"name":"A-h32-blur","method":"A","scale":0.5,"steps":32,"blur":true},
+ {"name":"A-h64-blur","method":"A","scale":0.5,"steps":64,"blur":true},
+ {"name":"A-h48","method":"A","scale":0.5,"steps":48},
+ {"name":"A-f48","method":"A","scale":1,"steps":48},
+ {"name":"A-h48-blur-self","method":"A","scale":0.5,"steps":48,"blur":true,"selfShadow":true},
+ {"name":"A-h48-blur-n8","method":"A","scale":0.5,"steps":48,"blur":true,"count":8},
+ {"name":"A-h48-blur-n8-self","method":"A","scale":0.5,"steps":48,"blur":true,"count":8,"selfShadow":true},
+ {"name":"A-h48-blur-sun","method":"A","scale":0.5,"steps":48,"blur":true,"spot":false,"point":false},
+ {"name":"B-160x90x64","method":"B","fx":160,"fy":90,"fz":64},
+ {"name":"B-160x90x128","method":"B","fx":160,"fy":90,"fz":128},
+ {"name":"B-240x135x64","method":"B","fx":240,"fy":135,"fz":64},
+ {"name":"B-160x90x64-n8","method":"B","fx":160,"fy":90,"fz":64,"count":8}
+]

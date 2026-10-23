@@ -1,0 +1,11 @@
+{
+  "uid": "47e54703-f35f-43e1-a4a1-d9d19ff7d7bc",
+  "id": "scene-volumes",
+  "title": "W5 体积物件开工前穿刺：逐像素光线步进与 froxel 的帧时间、WebGL2 可行性、与实时 GI 的合成顺序、体积物件上限（Epic 未决事项 2、7）",
+  "type": null,
+  "stage": "explore",
+  "revision": 0,
+  "createdAt": "2026-10-23T14:52:56.443Z",
+  "updatedAt": "2026-10-23T14:52:56.443Z",
+  "epic": "scene-world-environment"
+}
