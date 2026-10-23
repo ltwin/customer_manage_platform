@@ -1,12 +1,12 @@
 {
   "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
-  "revision": 6,
+  "revision": 7,
   "id": "scene-night-sky",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-world-environment",
   "designBinding": {
-    "version": 5,
+    "version": 6,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -34,24 +34,13 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-23T06:27:33.127Z",
-  "updatedAt": "2026-10-23T09:28:37.256Z",
+  "updatedAt": "2026-10-23T12:56:18.088Z",
   "risk": {
     "factors": [
       "perf-sensitive"
     ]
   },
-  "approvals": {
-    "proposal": {
-      "by": "samson",
-      "at": "2026-10-23T09:28:37.022Z",
-      "contentHash": "67f13b7fb94ee98b"
-    },
-    "design": {
-      "by": "samson",
-      "at": "2026-10-23T09:28:37.022Z",
-      "contentHash": "1783bdf3ff9ddb94"
-    }
-  },
+  "approvals": {},
   "approvalHistory": [
     {
       "by": "samson",
@@ -63,6 +52,18 @@
       "by": "samson",
       "at": "2026-10-23T07:18:04.823Z",
       "contentHash": "8ff8866d94f872d8",
+      "role": "design"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T09:28:37.022Z",
+      "contentHash": "67f13b7fb94ee98b",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T09:28:37.022Z",
+      "contentHash": "1783bdf3ff9ddb94",
       "role": "design"
     }
   ],
