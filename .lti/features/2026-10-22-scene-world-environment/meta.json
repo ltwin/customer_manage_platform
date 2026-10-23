@@ -1,10 +1,10 @@
 {
   "uid": "2f6c1440-f443-47c6-89da-7910ef412f88",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-world-environment",
   "title": "世界环境系统：物理天空（首版），天气、云层与地表效果（远期）",
   "createdAt": "2026-10-22T07:27:55.155Z",
-  "updatedAt": "2026-10-23T12:55:52.510Z",
+  "updatedAt": "2026-10-23T13:07:53.582Z",
   "state": "active",
   "designBaselines": [
     {
@@ -982,6 +982,11 @@
     {
       "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
       "changeId": "scene-night-sky",
+      "dependsOnUids": []
+    },
+    {
+      "uid": "b6da8241-71c0-4091-9d33-f69541b54db3",
+      "changeId": "scene-aerial-perspective",
       "dependsOnUids": []
     }
   ],

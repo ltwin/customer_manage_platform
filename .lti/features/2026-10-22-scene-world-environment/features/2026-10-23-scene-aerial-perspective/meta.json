@@ -1,0 +1,59 @@
+{
+  "uid": "b6da8241-71c0-4091-9d33-f69541b54db3",
+  "revision": 3,
+  "id": "scene-aerial-perspective",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-world-environment",
+  "designBinding": {
+    "version": 6,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "patterns:场景着色写法",
+      "data:物理天空",
+      "data:摄像机曝光",
+      "data:夜空",
+      "data:空气透视",
+      "data:体积物件",
+      "api:提交场景命令"
+    ],
+    "delivers": [
+      "data:空气透视"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-23T13:07:53.471Z",
+  "updatedAt": "2026-10-23T13:15:52.918Z",
+  "risk": {
+    "factors": [
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-23T13:15:52.793Z",
+      "contentHash": "82b08d51297acfd9"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-23T13:15:52.793Z",
+      "contentHash": "1b5c4aa3227f8bed"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
