@@ -48,8 +48,8 @@ async function query(place, date) {
 const cases = []
 for (const place of places) {
   for (const day of days) {
-    const { utcOffset, ...where } = place
-    cases.push({ ...where, ...day, points: await query(place, day.date) })
+    const { location, latitude, longitude, timezone } = place
+    cases.push({ location, latitude, longitude, timezone, ...day, points: await query(place, day.date) })
     console.log(place.location, day.date)
   }
 }
