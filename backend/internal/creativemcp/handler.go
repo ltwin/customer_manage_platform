@@ -79,9 +79,13 @@ func New(opts Options) (http.Handler, error) {
 		if err != nil {
 			return nil, err
 		}
-		// UserID ties the MCP session to its connection: another connection
-		// presenting the same session id is refused by the SDK.
-		return &auth.TokenInfo{UserID: p.ConnectionID, Scopes: []string{Scope}, Expiration: exp, Extra: map[string]any{principalKey: p}}, nil
+		// UserID ties the MCP session to its account: another account
+		// presenting the session id gets 403 from the SDK. Not to the
+		// connection: signing in again makes a new connection, and a host may
+		// keep the session it already holds (Claude Code does); a 403 there
+		// reads to the host as "sign in again", forever. Tool calls still act
+		// for the connection of the token on each request.
+		return &auth.TokenInfo{UserID: p.Scope.AccountID(), Scopes: []string{Scope}, Expiration: exp, Extra: map[string]any{principalKey: p}}, nil
 	}
 	return auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{ResourceMetadataURL: opts.ResourceMetadataURL, Scopes: []string{Scope}})(stream), nil
 }

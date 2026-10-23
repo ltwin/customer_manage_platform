@@ -190,13 +190,15 @@ Authorization: Bearer …
   → JWT：HS256、iss、aud = MCP 地址、未过期、sub 形如 cxcon_…
   → 按 id 读连接：revoked_at 为 null，账号 status=active
   → 节流写 last_used_at（为 null 或早于 1 分钟前才写；单条 UPDATE 带条件，不加锁）
-  → TokenInfo{UserID: 连接 ID, Scopes: [creative], Expiration, Extra: {principal}}
+  → TokenInfo{UserID: 账号 ID, Scopes: [creative], Expiration, Extra: {principal}}
   → 限流：每个连接 60 秒滑动窗口 ≤ 120 次 tools/call，超出返回 isError rate_limited 和 retry_after_s
   → SDK 处理 JSON-RPC；tools/call → ExternalTools.Call(principal, name, args)
 ```
 
 - 任一步失败返回 401 和 `WWW-Authenticate`，宿主据此先 refresh、再重新授权。
-- `TokenInfo.UserID` 设为连接 ID，SDK 会拒绝别的连接用同一个会话 ID（防会话劫持）。
+- `TokenInfo.UserID` 设为账号 ID，SDK 会拒绝别的账号用同一个会话 ID（防会话劫持，返回 403）。
+  - 不设为连接 ID：重新授权会建新连接，宿主可能继续用已有的会话（Claude Code 就是这样）。绑连接时每次请求都是 403，宿主当成要重新登录，永远连不上（owner 2026-10-23 实测发现）。
+  - 工具调用的署名仍取每次请求令牌上的连接。
 - 账号停用时连接还在，但请求被拒。维护任务批量断开（`account_disabled`）留到账号停用流程出现时再做，现在没有停用入口。
 
 ### 工具结果

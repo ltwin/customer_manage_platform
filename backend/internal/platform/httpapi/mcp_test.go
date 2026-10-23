@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,6 +40,7 @@ const (
 type mcpFixture struct {
 	server   *httptest.Server
 	web      string // the photographer's web token
+	otherWeb string // another account's web token
 	canvasID string
 	st       *store.Store
 }
@@ -108,7 +110,7 @@ func newMCPFixture(t *testing.T, enabled bool) mcpFixture {
 	}
 	mine := canvas(testAcctID, "九月，向海而行")
 	canvas("mcp-other", "别人的项目")
-	return mcpFixture{server: server, web: issueToken(t, tokens, testAcctID), canvasID: mine, st: s}
+	return mcpFixture{server: server, web: issueToken(t, tokens, testAcctID), otherWeb: issueToken(t, tokens, "mcp-other"), canvasID: mine, st: s}
 }
 
 var noRedirect = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -144,6 +146,12 @@ func decodeBody(t *testing.T, resp *http.Response, out any) {
 // returns its tokens.
 func (f mcpFixture) connect(t *testing.T) oauth.TokenResponse {
 	t.Helper()
+	return f.connectAs(t, f.web)
+}
+
+// connectAs authorizes as the account signed in with web.
+func (f mcpFixture) connectAs(t *testing.T, web string) oauth.TokenResponse {
+	t.Helper()
 	reg := f.do(t, http.MethodPost, "/oauth/register", "", "application/json", `{"client_name":"Claude Code (creative)","redirect_uris":["`+mcpCallback+`"]}`)
 	if reg.StatusCode != http.StatusCreated {
 		t.Fatalf("register status %d", reg.StatusCode)
@@ -159,7 +167,7 @@ func (f mcpFixture) connect(t *testing.T) oauth.TokenResponse {
 		t.Fatalf("authorize %d %s", authz.StatusCode, authz.Header.Get("Location"))
 	}
 	body, _ := json.Marshal(map[string]string{"request": consent.Query().Get("request"), "decision": "allow"})
-	decision := f.do(t, http.MethodPost, "/api/v1/oauth/authorize/decision", f.web, "application/json", string(body))
+	decision := f.do(t, http.MethodPost, "/api/v1/oauth/authorize/decision", web, "application/json", string(body))
 	if decision.StatusCode != http.StatusOK {
 		t.Fatalf("decision status %d", decision.StatusCode)
 	}
@@ -183,6 +191,26 @@ func (f mcpFixture) connect(t *testing.T) oauth.TokenResponse {
 }
 
 type bearer struct{ token string }
+
+// swappable is a host's token store: re-authorizing replaces the token while
+// the MCP session it already holds stays open.
+type swappable struct {
+	mu    sync.Mutex
+	token string
+}
+
+func (b *swappable) set(token string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.token = token
+}
+
+func (b *swappable) RoundTrip(r *http.Request) (*http.Response, error) {
+	b.mu.Lock()
+	token := b.token
+	b.mu.Unlock()
+	return bearer{token}.RoundTrip(r)
+}
 
 func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
@@ -345,5 +373,58 @@ func TestMCPSwitchedOffIsNotThere(t *testing.T) {
 	}
 	if r := f.do(t, http.MethodGet, "/api/v1/creative/agent-connections", f.web, "", ""); r.StatusCode != http.StatusNotFound {
 		t.Fatalf("connections with MCP off: %d", r.StatusCode)
+	}
+}
+
+// A host that signs in again gets a new connection but may keep the MCP
+// session it opened before (Claude Code does). The session belongs to the
+// account, so the next call works and is attributed to the new connection;
+// another account presenting the session is still refused.
+func TestMCPSessionSurvivesReauthorization(t *testing.T) {
+	f := newMCPFixture(t, true)
+	tokens := &swappable{token: f.connect(t).AccessToken}
+	client := mcp.NewClient(&mcp.Implementation{Name: "claude-code", Version: "test"}, nil)
+	session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: f.server.URL + "/mcp", HTTPClient: &http.Client{Transport: tokens}, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+
+	tokens.set(f.connect(t).AccessToken)
+	got, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "get_capabilities", Arguments: map[string]any{}})
+	if err != nil || got.IsError {
+		t.Fatalf("call after signing in again: %v %+v", err, got)
+	}
+	var list struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	decodeBody(t, f.do(t, http.MethodGet, "/api/v1/creative/agent-connections", f.web, "", ""), &list)
+	var caps struct {
+		Connection struct {
+			ID string `json:"id"`
+		} `json:"connection"`
+	}
+	if err := json.Unmarshal([]byte(strings.SplitN(toolText(t, got), "\n\n", 2)[1]), &caps); err != nil || len(list.Items) != 2 || caps.Connection.ID != list.Items[0].ID {
+		t.Fatalf("attributed to %q, connections %+v (%v)", caps.Connection.ID, list.Items, err)
+	}
+
+	other := f.connectAs(t, f.otherWeb)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.server.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":9,"method":"tools/list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+other.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Session-Id", session.ID())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("another account on this session: %d", resp.StatusCode)
 	}
 }

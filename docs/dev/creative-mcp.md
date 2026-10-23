@@ -55,6 +55,7 @@ claude.ai 连接器（Claude 桌面端与网页的「添加自定义连接器」
 
 ## 排错
 
+- **认证成功但调用工具提示重新登录**：看 `/mcp` 是不是 403「session user mismatch」。会话按账号绑定，同一账号重新授权后旧会话仍可用；换了账号授权时，宿主要重新连接（Claude Code 里 `/mcp` → Reconnect）。
 - **宿主一直提示需要授权**：看 `/mcp` 的 401 是否带 `WWW-Authenticate: Bearer resource_metadata="…"`；元数据里的 `resource` 必须与宿主填的地址逐字相同（含 `http`/`https`、端口）。
 - **授权页显示「发起连接的客户端无法识别」**：DCR 客户端不存在（换过数据库），或 CIMD 地址拉取失败（只允许公网 https、3 秒、5 KB）。
 - **「回调地址不在它登记的范围内」**：回环地址只忽略端口，路径必须一致。
