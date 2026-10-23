@@ -4,7 +4,8 @@
 
 ## 1. 基线
 
-- [ ] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取 AC-W3-6 的基线，存进 `discovery/research/baseline`：物理天空正午（月亮不入画）的 `lit` 导出与最终渲染视口；同一场景切到手动模式、太阳 −8° 的 `lit` 导出；R1 性能场景在物理天空入夜（W2 的黑夜）下的视口帧时间与拖动时刻的帧率（AC-W3-10 对照用）。e2e 新增「W3 day unchanged」用例，与基线逐像素比较（差 > 2 的像素为 0）。完成判据：用例在未改动的代码上绿，`baseline.md` 写明场景、机位、设备与测量值
+- [x] 1.1 在实施分支第一次改代码之前（与 `develop` 相同）截取 AC-W3-6 的基线，存进 `discovery/research/baseline`：物理天空正午（月亮不入画）的 `lit` 导出与最终渲染视口；同一场景切到手动模式、太阳 −8° 的 `lit` 导出；R1 性能场景在物理天空入夜（W2 的黑夜）下的视口帧时间与拖动时刻的帧率（AC-W3-10 对照用）。e2e 新增「W3 day unchanged」用例，与基线逐像素比较（差 > 2 的像素为 0）。完成判据：用例在未改动的代码上绿，`baseline.md` 写明场景、机位、设备与测量值
+  - 结果见 `discovery/research/baseline.md`：`physical-noon`（月亮在地平线下 49°）与 `physical-manual`（太阳 −8°）两组，「W3 day unchanged」在未改动的代码上通过；入夜静止 8.3 ms，拖动约 26 fps（与 W2 的 25 fps 一致）。性能用例另写成「W3 performance」（`SCENE_E2E_W3_PERF`），8.2 复用。
 
 ## 2. 数据契约与校验
 

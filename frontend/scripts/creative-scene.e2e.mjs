@@ -5357,6 +5357,120 @@ if (process.env.SCENE_E2E_W2_PERF) await check('W2 performance: the physical sky
   }
 })
 
+// --- W3 scene-night-sky: the day stays as it was ----------------------------------
+
+const w3Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-night-sky/discovery/research/baseline/', import.meta.url)
+
+/**
+ * Physical skies W3 must leave alone (AC-W3-6): the yard at noon (the moon is
+ * 49° below the horizon) and the same with the sun at manual angles after
+ * sunset, where no night sky is drawn.
+ */
+const w3Variants = {
+  'physical-noon': { from: 'physical-noon' },
+  'physical-manual': {
+    from: 'physical-noon',
+    edit(scene) {
+      Object.assign(scene.environment.sky, { sun_mode: 'manual', sun_elevation_deg: -8, sun_azimuth_deg: 250 })
+    },
+  },
+}
+
+// SCENE_E2E_W3_BASELINE=<dir>: the variants' lit pictures on this machine's GPU, taken before W3 changes the renderer (w3Baseline).
+if (process.env.SCENE_E2E_W3_BASELINE) await check('W3 baseline: the day’s and the manual sky’s lit pictures on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W3_BASELINE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', variants: {} }
+    for (const [name, { from, edit }] of Object.entries(w3Variants)) {
+      const files = []
+      for (const img of await litPictures(gpu, from, edit)) {
+        const file = img.file.replace(from, name)
+        await writeFile(`${dir}/${file}`, img.png)
+        files.push(file)
+      }
+      record.variants[name] = { from, files }
+      console.log(`W3 baseline ${name}: ${files.join(', ')}`)
+    }
+    await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W3_DAY=<dir> (AC-W3-6): the variants' lit exports and rendered viewport are what they were before
+// W3, pixel for pixel, on this machine's GPU. Sheets of any image that is not go to the directory.
+if (process.env.SCENE_E2E_W3_DAY) await check('W3 day unchanged: noon and the manual sky draw as before W3 on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W3_DAY
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const [name, { from, edit }] of Object.entries(w3Variants)) {
+      for (const img of await litPictures(gpu, from, edit)) {
+        const file = img.file.replace(from, name)
+        const m = await compareShots(page, readFileSync(new URL(file, w3Baseline)), img.png, 2)
+        if (m.error || m.over > 0) {
+          off.push(`${file}: ${m.error ?? `${m.over.toFixed(4)}% of pixels off by more than 2`}`)
+          if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}.jpg`, m.sheet)
+        }
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [])
+})
+
+// SCENE_E2E_W3_PERF=<dir> (AC-W3-10), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
+// physical sky at night (Shanghai, 2026-09-23 at 21:00, a gibbous moon up). Frame times standing still, and
+// dragging the time of day a minute a frame from 19:00 for 3 s. Written to w3-perf-<SCENE_E2E_W3_PERF_LABEL>.json.
+if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky at night on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W3_PERF
+  const label = process.env.SCENE_E2E_W3_PERF_LABEL ?? 'after'
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+    server.scene.environment.sky = { ...physical, local_time: '21:00' }
+    server.scene.render.exposure_ev100 = -3
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await shading(page, '最终渲染')
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await sleep(1500)
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scene: 'AC-9 (about 200 objects, 4 lights) under the physical sky, Shanghai 2026-09-23 at 21:00, EV100 −3', label }
+    await orbitFrames(page, 1000)
+    record.frames = frameStats(await orbitFrames(page, 4000))
+    const drag = await page.evaluate(() => new Promise((resolve) => {
+      const slider = document.querySelector('input[type=range][aria-label="当地时刻"]')
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      const times = []
+      let minute = 19 * 60
+      const start = performance.now()
+      const tick = (t) => {
+        times.push(t)
+        set.call(slider, String(minute++))
+        slider.dispatchEvent(new Event('input', { bubbles: true }))
+        if (t - start < 3000) requestAnimationFrame(tick)
+        else resolve({ times })
+      }
+      requestAnimationFrame(tick)
+    }))
+    record.drag = frameStats(drag.times)
+    record.requests = await page.evaluate(() => performance.getEntriesByType('resource').map((r) => r.name).filter((n) => /nightSky|stars|moon/.test(n)))
+    console.log(`W3 performance: ${JSON.stringify(record, null, 1)}`)
+    await writeFile(`${dir}/w3-perf-${label}.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [])
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // --- R2: the real-time GI ---------------------------------------------------------
 
 // The offscreen shooter on its own: shots in a row, and what its renderer holds after each.

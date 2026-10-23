@@ -1,0 +1,25 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "variants": {
+    "physical-noon": {
+      "from": "physical-noon",
+      "files": [
+        "physical-noon-shot-lit.png",
+        "physical-noon-view-lit.png"
+      ]
+    },
+    "physical-manual": {
+      "from": "physical-noon",
+      "files": [
+        "physical-manual-shot-lit.png",
+        "physical-manual-view-lit.png"
+      ]
+    }
+  }
+}
