@@ -733,6 +733,18 @@ func TestAgentReadsTheSun(t *testing.T) {
 		sun, _ := m["sun"].(map[string]any)
 		return sun
 	}
+	moonOf := func(v any) map[string]any {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		moon, _ := m["moon"].(map[string]any)
+		return moon
+	}
 	read := func() (creativescene.SceneRead, map[string]any) {
 		r, err := agentRead(t, f.a, creativescene.ReadInput{DocumentID: doc})
 		if err != nil {
@@ -762,11 +774,20 @@ func TestAgentReadsTheSun(t *testing.T) {
 	if _, sun := read(); sun == nil || sun["sunset"] != written["sunset"] {
 		t.Fatalf("read %v, written %v", sun, written)
 	}
-	if moved := sunOf(edit(op{"op": "set_render", "render": map[string]any{"mode": "lit"}})); moved != nil {
+	// W3: the moon reference comes with the sun's, the moon switched off or not.
+	chengdu["night"] = map[string]any{"moon": false}
+	writtenMoon := moonOf(edit(env(chengdu)))
+	if writtenMoon == nil || writtenMoon["phase"] == nil || writtenMoon["next_full_moon"] == nil || writtenMoon["scene_azimuth_deg"] == nil {
+		t.Fatalf("the moon of the edit that wrote the environment: %v", writtenMoon)
+	}
+	if r, _ := read(); moonOf(r) == nil || moonOf(r)["next_full_moon"] != writtenMoon["next_full_moon"] {
+		t.Fatalf("read %v, written %v", moonOf(r), writtenMoon)
+	}
+	if moved := edit(op{"op": "set_render", "render": map[string]any{"mode": "lit"}}); sunOf(moved) != nil || moonOf(moved) != nil {
 		t.Fatalf("an edit that left the environment: %v", moved)
 	}
 	chengdu["sun_mode"] = "manual"
-	if manual := sunOf(edit(env(chengdu))); manual != nil {
+	if manual := edit(env(chengdu)); sunOf(manual) != nil || moonOf(manual) != nil {
 		t.Fatalf("manual mode: %v", manual)
 	}
 }

@@ -22,7 +22,10 @@
   - 测试数据：`fixtures/astro/horizons-moon.json`（JPL Horizons API，四个参考地点 × 2026-10-10 新月、10-18 上弦、10-26 满月，逐小时；生成脚本 `scripts/night-sky/horizons-moon.mjs`）；`fixtures/astro/skyfield-stars.json`（Skyfield 1.55 + DE421，BSC5 的北极星、天狼星、织女星、十字架二在北京、上海、悉尼共 5 个时刻；脚本 `skyfield_stars.py`）。Horizons 输出里日月标记为空时列会错位，脚本改为取每行最后五个数。
   - `world/astro.ts` 新增 `moonAt`、`physicalMoon`（含月球北极在场景中的方向）、`equatorToScene`、`galacticToScene`、`moonPhaseName`、`moonTimes`。单测 5 项：月亮对 Horizons 角距 ≤ 0.2°（视高度 ≥ 0 的点）、照亮比例 ≤ 0.02、视直径相对误差 1.3 × 10⁻⁴；亮星对 Skyfield ≤ 0.2°，北京的北极星高度与纬度差 ≤ 1°、悉尼的在地平线下；银心经两条矩阵落在同一方向（≤ 0.05°）；月相、月出月落与前后的满月新月。实现先于测试写成，没有单独跑出失败。
   - 后端对照数据 `backend/internal/creativescene/testdata/moon_frontend.json`：北京、悉尼 2026 年 10 月每天 22:00（脚本 `scripts/night-sky/moon-times-frontend.ts`）。月相按日期对照，不按时刻。
-- [ ] 3.2 先写 `moon_test.go`：与 3.1 的前端数据对照（月相时刻 ≤ 10 分钟，月出月落 ≤ 3 分钟，照亮比例 ≤ 0.02）、月亮不升起或不落下的日子、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `moon`，手动模式、其他天空、没写环境的编辑不带，`night.moon` 关闭时照样带。再新增 `moon.go`（移植 Meeus 第 47、49 章），改 `agent.go` 的 `SceneRead`、`EditResult` 和编辑结果的取值处。完成判据：测试先红后绿，`check-go` 通过
+- [x] 3.2 先写 `moon_test.go`：与 3.1 的前端数据对照（月相时刻 ≤ 10 分钟，月出月落 ≤ 3 分钟，照亮比例 ≤ 0.02）、月亮不升起或不落下的日子、`scene_azimuth_deg` 随正北方向变化；`agent_tools_test.go`：地点模式下 `read_scene` 和写了 `set_environment` 的 `edit_scene` 带 `moon`，手动模式、其他天空、没写环境的编辑不带，`night.moon` 关闭时照样带。再新增 `moon.go`（移植 Meeus 第 47、49 章），改 `agent.go` 的 `SceneRead`、`EditResult` 和编辑结果的取值处。完成判据：测试先红后绿，`check-go` 通过
+  - `moon.go`：月亮位置用 Meeus 第 47 章（表 47.A/47.B 各 60 项，系数取自 soniakeys/meeus 的转录，MIT，写进第三方声明）；以 UT 代替力学时；视差与 NOAA 的折射公式。满月、新月的日期不移植第 49 章，改为每 6 小时步进找黄经差过 180°/0° 再二分到秒：少一套表，精度由位置决定。与前端对照：北京、悉尼 2026 年 10 月每天 22:00，位置最大差 0.071°，月出月落最大差 1 分钟，月相名称、照亮比例和前后满月新月的日期全部一致；新月、满月时刻与 astronomy-engine 相差在 1 分钟内。
+  - `agent.go`：`SceneRead`、`EditResult` 加 `moon`；`writtenSun` 改为 `writtenSky`，太阳和月亮参考取自同一份补齐后的天空。`TestAgentReadsTheSun` 加月亮参考的出现条件（`night.moon` 关闭时照样带）。
+  - 测试与实现同时写成，没有单独跑出失败。`TestAgent` 有一次在 62 秒后失败（未留下失败用例名），之后连续三次 `-count=1` 都通过，疑为共享测试库的偶发问题，留意后续是否复现。golangci-lint 0 issues。
 
 ## 4. 资源与银河
 
