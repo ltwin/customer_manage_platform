@@ -1,6 +1,6 @@
 {
   "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-night-sky",
   "kind": "feature",
   "assurance": "governed",
@@ -31,9 +31,9 @@
       "architecture:场景模块"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-23T06:27:33.127Z",
-  "updatedAt": "2026-10-23T07:18:04.942Z",
+  "updatedAt": "2026-10-23T07:20:07.077Z",
   "risk": {
     "factors": [
       "perf-sensitive"
@@ -53,8 +53,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "356111775cd871420d030f84aa830ef51cd2d792",
+    "at": "2026-10-23T07:20:05.821Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "71ed7825caea8d762cb37f1af1e3493eda1d34f8265714f2c3f533d5baa486f2"
+    },
+    "preExisting": [
+      ".lti/snapshots/71ed7825caea8d762cb37f1af1e3493eda1d34f8265714f2c3f533d5baa486f2.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
