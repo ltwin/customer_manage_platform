@@ -79,6 +79,13 @@ queued ──认领──> claimed ──完成──> succeeded / failed
   - 单位：太阳约 12.8 万 lux（大气顶）× 亮度 × 色温，灯光坎德拉，自发光 cd/m²。天空视图和天空光照按 s_env（由 E 定的环境曝光）存进半精度，与摄像机无关。
   - 预曝光：每次出图前 `SceneRenderer.render` 调 `world/exposure.ts:applyExposure(scene, k)`，灯光写 `userData.baseIntensity × k`、天空光照 `k / s_env`、雾 `雾色 × E / π × k`、全局 uniform `preExposure = k`（天空背景、太阳盘、自发光读它），画完把 `preExposure` 写回 1。k 由 `render/litLook.ts:frameExposure` 求：物理天空下 `1 / (1.2 · 2^EV100)`，场景摄像机的 EV100 由 ISO、快门、光圈得出（`host/framing.ts:cameraEV100`），临时视点、预设取景和视口自由视角用 `render.exposure_ev100`，`toneMappingExposure` 为 1；其他天空 k = 1，照旧按 `2^exposure_ev`。`render/gpu.ts` 在模块加载时给所有节点材质的输出钳到 60 000（SwiftShader 溢出会写 Inf）。
   - 太阳参考：`creativescene/sun.go` 用 NOAA 公式在服务端算一份，物理天空的地点模式下随 `read_scene` 和写了环境的 `edit_scene` 结果给助手（`sun`），不存储、不进渲染指纹；口径与环境选项卡显示的一致（日出日落按 −0.833°，黄金时刻 −4°…6°，蓝调时刻 −6°…−4°）。
+- 夜空、环境测光与夜色（W3，scene-night-sky；Epic 修订 v5「物理为底、观感优先」）：
+  - 夜空：地点模式下 `PhysicalLighting` 按 `world/nightSky/night.ts:nightOf` 组装月亮（月盘、月光、月光照亮的第二张天空视图）、星星（`world/nightSky/stars.ts`，BSC5 的 8404 颗，实例化精灵、能量守恒）、程序化银河（`milkyWay.ts`，第一次入夜时烘焙）和夜天光。两盏平行光常驻，按 `sunLeads` 由太阳或月亮担任投影的主光，入夜不重新编译材质。星表和月面贴图按需加载（`world/nightSky/assets.ts`）；离屏出图在 `host/render.ts:openShooter` 挂载前等它们到位，失败时这张图失败（「夜空资源加载失败，请稍后重试」）。
+  - 场景照度 E = 太阳与天空 + 月光与月光照亮的天空 + 星空常数项；写在 `scene.userData.physical.lux`，雾、s_env 和环境测光同用它。
+  - 曝光：摄像机与默认摄像机（`render`）都有 `exposure_mode`（`ambient` / `manual`）和 `exposure_compensation`。`ambient` 叫「环境测光」而不叫自动曝光（owner 2026-10-23）：它只测天空给场景的光，不看画面，进暗处不会变亮，免得摄影师误会成相机的自动曝光；W3 开发期间存下的 `auto` 读作 `ambient`。`render/litLook.ts:frameExposure(scene, lit, camera, lux, lowSun)` 按观看者求 k：手动同 W2；环境测光 EV100 = 测光值 + max(夜间压暗 D, 低太阳压暗) − 补偿（`world/exposure.ts:ambientEV100`）。D 是一条直线：EV 15 以上为 0，EV −11 以下为 3.5 档。低太阳压暗（`world/nightSky/night.ts:lowSunStops`）让朝太阳的面不比当天正午亮，随太阳下落只增不减。视口在 `useFrame` 里求（E 与低太阳压暗在 `PhysicalLighting` 的布局 effect 里写入，晚于组件渲染），出图在 `shoot` 时从 three 场景取。旧快照的摄像机读作手动，新写入的摄像机和 `render` 缺省环境测光；渲染指纹在环境测光时计模式与补偿、不计 ISO 和快门。
+  - `render_view` 的结果在物理天空的 `lit` 下带 `exposure`（`creativescene/shot_exposure.go`，按截图所画的修订求：`by` 为 `camera` 或 `default_camera`，`mode`，环境测光的 `compensation` 或手动的 `ev100`），说明提醒助手临时视点和预设取景的亮度可能与摄像机不同，判断最终明暗要按摄像机回看。
+  - 夜色：`world/nightLook.ts`，色调映射前把画面按亮度混向偏蓝的单色（亮度不变），强度 = `night.night_look` × smoothstep(EV_m 4 → −4)，是 `SceneRenderer` 输出节点的 uniform（`Frame.nightLook`），只在物理天空的 `lit` 下非 0。夜天光的颜色改为深蓝（`AIRGLOW_TINT`），另有观感增益 `AIRGLOW_GAIN`。压暗曲线、夜色色调与夜天光增益的数值由 owner 看对照样例定稿。
+  - 月亮参考：`creativescene/moon.go` 移植 Meeus 的月亮位置与月相时刻，随太阳参考一起给助手（`moon`：月相、照亮比例、高度与方位、月出月落、前后最近的满月和新月），不存储、不进指纹；与前端 `astronomy-engine` 用同一组日期对照测试。
 
 ### 编辑视图
 
@@ -141,7 +148,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 - 单测：`node --test --experimental-transform-types scripts/creative-scene-agent.test.ts`（执行器、取景、认领循环、关闭提醒、编辑视图的活动、面板的清单逻辑）。
 - 浏览器：先在 `frontend/` 起 `npx vite --port 5179 --strictPort`，再跑
   - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
-  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5 起含最终渲染的标定检查（`calibration`）；W2 的检查都以 `W2 ` 开头（`SCENE_E2E_ONLY='W2 '`），`SCENE_E2E_W2_METAL=1` 让防漂移对照跑在本机 GPU 上，`SCENE_E2E_W2_PICTURES=<目录>` 导出物理天空参考场景的图，`SCENE_E2E_W2_SKIES=<基线目录>` 逐像素核对其他天空不变；
+  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5 起含最终渲染的标定检查（`calibration`）；W2、W3 的检查分别以 `W2 `、`W3 ` 开头（`SCENE_E2E_ONLY='W3 '`），`SCENE_E2E_W3_DAY=<目录>` 在本机 GPU 上逐像素核对白天与手动角度的画面不受夜空影响，`SCENE_E2E_W2_METAL=1` 让防漂移对照跑在本机 GPU 上，`SCENE_E2E_W2_PICTURES=<目录>` 导出物理天空参考场景的图，`SCENE_E2E_W2_SKIES=<基线目录>` 逐像素核对其他天空不变；
   - 帧时间（AC-9，只在点名时跑，需要本机 GPU）：`SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs`，用 Metal 后端的无头 Chromium、1600 × 1000、2 倍像素比，打印四种显示模式的平均与 p95 帧时间和加灯、删灯的最长一帧。
 - 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
 - 实测（只在点名时跑，经 `TestCreativeEditorBrowser` 起真实 API、媒体流水线和 PostgreSQL；测试端点 `/__test/scene-job` 像工具那样建任务，替身运行记下结果交回的时间）：
@@ -152,6 +159,6 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 
 - 后台标签页：真实 Chrome 隐藏 6.5 分钟后，烘焙与截图的耗时和前台相当（2026-10-18 实测 1.05 倍、1.00 倍）。前提是所有计时走 Worker 节拍、图片同步编码（`canvasBlob`）：Chrome 后台会把页面主线程的计时器和 `toBlob` 的空闲编码推迟到每秒乃至每分钟一次，新增等待时不要用页面计时器。
 - 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`）：C5 起助手可以编组、改挂，被改挂的物件和它进出的分组都不能单独恢复，按前后快照判断；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
-- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）；W2 加物理天空的字段、预设、太阳参考与两段曝光建议，`edit_scene` 从 7.7 KB 到 11.0 KB（约 1,900 字），`read_scene`、`render_view` 各加约 0.1 KB。`compaction_regression_test.go` 里最小的测试窗口随之从 8000 调到 9000 token。
+- 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）；W2 加物理天空的字段、预设、太阳参考与两段曝光建议，`edit_scene` 从 7.7 KB 到 11.0 KB（约 1,900 字），`read_scene`、`render_view` 各加约 0.1 KB。`compaction_regression_test.go` 里最小的测试窗口随之从 8000 调到 9000 token。W3 再加夜空字段、月亮参考与自动曝光的说明，最小测试窗口调到 10000 token。
 - 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

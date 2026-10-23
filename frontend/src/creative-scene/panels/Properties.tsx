@@ -428,10 +428,12 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
 const withCurrent = (stops: readonly number[], v: number) => (stops.includes(v) ? stops : [...stops, v].sort((a, b) => a - b))
 
 /**
- * A camera's exposure under a physical sky (W2 design「编辑界面」): ISO,
- * shutter and aperture in thirds of a stop, and the EV100 they make. The
- * aperture is the depth of field's too, and set here with the depth of field
- * off. Greyed under any other sky, where the scene's compensation exposes.
+ * A camera's exposure under a physical sky (W2 design「编辑界面」, Epic
+ * revision v5): ambient metering with a compensation, or by hand at ISO, shutter
+ * and aperture in thirds of a stop with the EV100 they make. The aperture is
+ * the depth of field's too, set here with the depth of field off; under the
+ * ambient metering it only blurs. Greyed under any other sky, where the
+ * scene's compensation exposes.
  */
 function CameraExposure({ camera, name, physical, onCamera }: {
   camera: typeof cameraDefaults
@@ -439,29 +441,48 @@ function CameraExposure({ camera, name, physical, onCamera }: {
   physical: boolean
   onCamera: (camera: NonNullable<ObjectUpdate['camera']>, label: string, merge?: string) => void
 }) {
+  const manual = camera.exposure_mode === 'manual'
   return (
     <fieldset className="cc-scene-camera-exposure" disabled={!physical} aria-label="曝光">
       <legend>曝光</legend>
-      <label className="cc-scene-field">
-        <span>ISO</span>
-        <select aria-label="ISO" value={camera.iso} onChange={(e) => onCamera({ iso: Number(e.target.value) }, `调整「${name}」ISO`)}>
-          {withCurrent(isoThirds, camera.iso).map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="cc-scene-field">
-        <span>快门</span>
-        <select aria-label="快门" value={camera.shutter_s} onChange={(e) => onCamera({ shutter_s: Number(e.target.value) }, `调整「${name}」快门`)}>
-          {withCurrent(shutterThirds, camera.shutter_s).map((v) => (
-            <option key={v} value={v}>
-              {shutterLabel(v)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="cc-scene-segmented" role="group" aria-label="曝光模式">
+        <button type="button" aria-pressed={!manual} onClick={() => manual && onCamera({ exposure_mode: 'ambient' }, `「${name}」改为环境测光`)}>
+          环境测光
+        </button>
+        <button type="button" aria-pressed={manual} onClick={() => !manual && onCamera({ exposure_mode: 'manual' }, `「${name}」改为手动曝光`)}>
+          手动
+        </button>
+      </div>
+      {!manual && (
+        <>
+          <NumberField label="曝光补偿（档）" value={camera.exposure_compensation} min={-5} max={5} step={1 / 3} onCommit={(v) => onCamera({ exposure_compensation: v }, `调整「${name}」曝光补偿`, 'exposure_compensation')} />
+          <small>按场景的环境光测光，不看画面；入夜后只比正午暗 2–4 档；光圈只决定景深</small>
+        </>
+      )}
+      {manual && (
+        <>
+          <label className="cc-scene-field">
+            <span>ISO</span>
+            <select aria-label="ISO" value={camera.iso} onChange={(e) => onCamera({ iso: Number(e.target.value) }, `调整「${name}」ISO`)}>
+              {withCurrent(isoThirds, camera.iso).map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="cc-scene-field">
+            <span>快门</span>
+            <select aria-label="快门" value={camera.shutter_s} onChange={(e) => onCamera({ shutter_s: Number(e.target.value) }, `调整「${name}」快门`)}>
+              {withCurrent(shutterThirds, camera.shutter_s).map((v) => (
+                <option key={v} value={v}>
+                  {shutterLabel(v)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
       <label className="cc-scene-field">
         <span>光圈</span>
         <select aria-label="光圈" value={camera.f_stop} onChange={(e) => onCamera({ f_stop: Number(e.target.value) }, `调整「${name}」光圈`)}>
@@ -472,10 +493,12 @@ function CameraExposure({ camera, name, physical, onCamera }: {
           ))}
         </select>
       </label>
-      <span className="cc-scene-field">
-        <span>EV100</span>
-        <output aria-label="EV100">{ev100(camera.f_stop, camera.shutter_s, camera.iso).toFixed(1)}</output>
-      </span>
+      {manual && (
+        <span className="cc-scene-field">
+          <span>EV100</span>
+          <output aria-label="EV100">{ev100(camera.f_stop, camera.shutter_s, camera.iso).toFixed(1)}</output>
+        </span>
+      )}
       {!physical && <small>只在物理天空下生效</small>}
     </fieldset>
   )

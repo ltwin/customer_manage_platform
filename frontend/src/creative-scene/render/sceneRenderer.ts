@@ -13,6 +13,7 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
+import { nightLookNode } from '../world/nightLook.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -82,6 +83,8 @@ export type Frame = {
    * and the global uniform just before drawing.
    */
   preExposure?: number
+  /** The night look's strength for this frame (world/nightLook.ts): lit under a physical sky after dusk, 0 otherwise. */
+  nightLook?: number
   /** Wireframe has no surfaces to shade: no AO, no blur. */
   wireframe?: boolean
   /**
@@ -388,6 +391,8 @@ type Built = {
   /** The AO node, when the look has one: its resolution follows aoPixelRatio. */
   ao: ReturnType<typeof ao> | null
   aoOn: { value: number } | null
+  /** The night look's strength, a uniform of the output node. */
+  nightLook: { value: number }
   /** The blur, when the look has it. */
   dof: Dof | null
   /** Wireframe's plain background, laid under the tone-mapped picture. */
@@ -578,6 +583,9 @@ export class SceneRenderer {
         }
       }
     }
+    // The night look before the tone mapping (Epic revision v5): at 0 the picture is as it was. Wireframe's lines keep their colours.
+    const nightLook = uniform(0)
+    if (!wireframe) picture = nightLookNode(picture, nightLook)
     // AgX (W1 scene-display-look): bright saturated colours go towards white
     // without turning into another hue. Wireframe keeps ACES Filmic, so its
     // lines and colours stay exactly what they were.
@@ -602,6 +610,7 @@ export class SceneRenderer {
       passes,
       ao: aoNode,
       aoOn,
+      nightLook,
       background,
       gi,
       dispose() {
@@ -651,6 +660,7 @@ export class SceneRenderer {
       built.dof.setLens(dof, persp.near, persp.far, frame.pictureLongSide ?? Math.max(frame.width, frame.height) * ratio)
     }
     if (built.aoOn) built.aoOn.value = frame.ao === false ? 0 : 1
+    built.nightLook.value = frame.nightLook ?? 0
     const bg = this.scene.background
     built.background.value.copy(bg instanceof Color ? bg : renderer.getClearColor(new Color()))
     // Clay's studio light comes from the view's upper left (render/studio.ts).

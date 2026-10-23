@@ -194,7 +194,7 @@ func TestTheAssistantSwitchesToRealtimeGIAndExportsIn4K(t *testing.T) {
 		t.Fatal(err)
 	}
 	// set_render merges by key: the mode and the exposure stay as they were.
-	if render != (creativescene.Render{Mode: "clay", ExposureEV: 0, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15}) {
+	if render != (creativescene.Render{Mode: "clay", ExposureEV: 0, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15, ExposureMode: creativescene.ExposureAmbient}) {
 		t.Fatalf("render %+v", render)
 	}
 	var request creativescene.RenderRequest
@@ -246,5 +246,53 @@ func TestExportShotsNeedsTheSceneOnTheCanvas(t *testing.T) {
 	}
 	if n := f.count("creative_scene_jobs", "run_id=$1", run.ID); n != 0 {
 		t.Fatalf("%d jobs", n)
+	}
+}
+
+// A lit screenshot under a physical sky says how it was exposed, so the
+// assistant can tell a viewpoint's brightness from a camera's (owner
+// 2026-10-23): here a manual camera at f/8, 1/125 s, ISO 100.
+func TestRenderViewReportsTheExposure(t *testing.T) {
+	f, c, consent, doc := visualScene(t, true)
+	cam := "sobj_CAM000000000000000001"
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", editSceneTool, map[string]any{"document_id": doc, "based_on_revision": 1, "operations": []any{
+				map[string]any{"op": "set_environment", "environment": map[string]any{"sky": map[string]any{"kind": "physical", "date": "2026-10-01"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}},
+				map[string]any{"op": "add_objects", "objects": []any{
+					map[string]any{"id": cam, "kind": "camera", "name": "摄像机 1", "parent_id": nil, "order": 1, "visible": true, "locked": false,
+						"transform": map[string]any{"position": []float64{0, 1, 5}}, "look_at": []float64{0, 1, 0},
+						"camera": map[string]any{"exposure_mode": "manual", "f_stop": 8, "shutter_s": 1.0 / 125, "iso": 100}},
+				}},
+			}}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("b", renderViewTool, map[string]any{"document_id": doc, "camera_object_id": cam, "mode": "lit"}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("c", renderViewTool, map[string]any{"document_id": doc, "preset": "overview", "mode": "lit"}))
+		},
+	}}
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "用摄像机看看傍晚的效果"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []string{"camera", "overview"} {
+		if got := f.resume(run.ID); got.State != RunWaitingClient {
+			t.Fatalf("before the %s shot: %s %s", step, got.State, got.ErrorCode)
+		}
+		if resp := f.hostCompletes(); resp.State != creativescene.JobSucceeded {
+			t.Fatalf("%s shot %+v", step, resp)
+		}
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("finished %s %s", got.State, got.ErrorCode)
+	}
+	if got := lastTool(s.request(3))["exposure"]; !reflect.DeepEqual(got, map[string]any{"by": "camera", "mode": "manual", "ev100": 12.97}) {
+		t.Fatalf("the camera's shot: %v", got)
+	}
+	if got := lastTool(s.request(4))["exposure"]; !reflect.DeepEqual(got, map[string]any{"by": "default_camera", "mode": "ambient", "compensation": 0.0}) {
+		t.Fatalf("the overview: %v", got)
 	}
 }

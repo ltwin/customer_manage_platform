@@ -292,9 +292,46 @@ func TestPhysicalLitCountsTheApertureNotTheCompensation(t *testing.T) {
 func TestDefaultExposureNeverCounts(t *testing.T) {
 	for _, sky := range []string{proceduralSky, physicalSky} {
 		a := sceneOf(t, sky, `{"mode":"lit","exposure_ev100":15}`, `{}`)
-		for _, render := range []string{`{"mode":"lit"}`, `{"mode":"lit","exposure_ev100":0}`, `{"mode":"lit","exposure_ev100":-10}`} {
+		for _, render := range []string{`{"mode":"lit"}`, `{"mode":"lit","exposure_ev100":0}`, `{"mode":"lit","exposure_ev100":-10}`,
+			`{"mode":"lit","exposure_ev100":15,"exposure_mode":"manual"}`, `{"mode":"lit","exposure_ev100":15,"exposure_compensation":3}`} {
 			if got := sameIn(a, sceneOf(t, sky, render, `{}`)); !maps.Equal(got, nothingChanges) {
 				t.Fatalf("%s, %s: alike %v", sky, render, got)
+			}
+		}
+	}
+}
+
+// Epic revision v5: an automatic camera exposes a lit image under a physical
+// sky by its mode and compensation, not by its ISO, shutter or aperture
+// (the aperture only blurs). A manual camera counts as in W2, its mode and
+// compensation left out, so one read as manual (stored before the mode
+// existed) fingerprints as it did. Under another sky none of it counts.
+func TestAutoExposureFingerprints(t *testing.T) {
+	manual := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+	auto := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{"exposure_mode":"ambient"}`)
+	for _, tc := range []struct {
+		name string
+		base Scene
+		cam  string
+		want map[string]bool
+	}{
+		{"manual to auto", manual, `{"exposure_mode":"ambient"}`, onlyLitChanges},
+		{"auto compensation", auto, `{"exposure_mode":"ambient","exposure_compensation":1}`, onlyLitChanges},
+		{"auto ISO", auto, `{"exposure_mode":"ambient","iso":3200}`, nothingChanges},
+		{"auto shutter", auto, `{"exposure_mode":"ambient","shutter_s":4}`, nothingChanges},
+		{"auto aperture, depth of field off", auto, `{"exposure_mode":"ambient","f_stop":8}`, nothingChanges},
+		{"auto aperture, depth of field on", sceneOf(t, physicalSky, `{"mode":"lit"}`, `{"exposure_mode":"ambient","depth_of_field":true}`), `{"exposure_mode":"ambient","depth_of_field":true,"f_stop":8}`, map[string]bool{PassClay: false, PassLine: true, PassLit: false}},
+		{"manual compensation", manual, `{"exposure_mode":"manual","exposure_compensation":2}`, nothingChanges},
+		{"manual written", manual, `{"exposure_mode":"manual"}`, nothingChanges},
+	} {
+		if got := sameIn(tc.base, sceneOf(t, physicalSky, `{"mode":"lit"}`, tc.cam)); !maps.Equal(got, tc.want) {
+			t.Fatalf("%s: alike %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	for _, camera := range []string{`{"exposure_mode":"ambient"}`, `{"exposure_mode":"ambient","exposure_compensation":-2}`} {
+		for pass, got := range fingerprints(sceneOf(t, proceduralSky, `{"mode":"lit"}`, camera)) {
+			if got != pinned[pass] {
+				t.Fatalf("procedural sky, camera %s, %s: %s, want %s", camera, pass, got, pinned[pass])
 			}
 		}
 	}
@@ -310,10 +347,33 @@ func TestPhysicalSkyFingerprintsOnlyLit(t *testing.T) {
 		`{"kind":"physical","date":"2026-06-21","dust_density":12}`,
 		`{"kind":"physical","date":"2026-06-21","sun_temperature_k":4000}`,
 		`{"kind":"physical","date":"2026-06-21","latitude_deg":30.66,"longitude_deg":104.06,"timezone":"Asia/Shanghai"}`,
+		// W3: each of the night sky's fields.
+		`{"kind":"physical","date":"2026-06-21","night":{"moon":false}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"stars":false}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"milky_way":false}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"moon_strength":2}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"moon_temperature_k":4000}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"stars_strength":0.5}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"stars_temperature_k":9000}}`,
 	} {
 		if got := sameIn(base, sceneOf(t, sky, `{"mode":"lit"}`, `{}`)); !maps.Equal(got, onlyLitChanges) {
 			t.Fatalf("%s: alike %v", sky, got)
 		}
+	}
+}
+
+// W3 (data: 夜空): a physical sky stored before the night sky had none and
+// fingerprinted without it; read now, it is completed with one, so its lit
+// exports read as stale once. Clay and line art leave the environment out.
+func TestThePhysicalSkysNightStalesItsLitOnce(t *testing.T) {
+	now := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+	if now.Environment.Sky.Night == nil {
+		t.Fatal("the night sky was not completed")
+	}
+	before := now
+	before.Environment.Sky.Night = nil
+	if got := sameIn(before, now); !maps.Equal(got, onlyLitChanges) {
+		t.Fatalf("alike %v", got)
 	}
 }
 

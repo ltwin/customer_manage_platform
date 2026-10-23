@@ -122,15 +122,19 @@ export function litSky(): LitSky {
 export type PhysicalSkyMesh = Mesh & { sky: PhysicalSkyNode }
 
 /**
- * A physical sky's box from its LUTs. As the background (lutScale given) the
- * sky view × k / s_env and the disc × k, k being the frame's pre-exposure;
- * as the sky light's source (lutScale null) the sky view as stored, no disc.
+ * A physical sky's box from its LUTs; lutScale is s_env. As the background
+ * the sky views × k / s_env and the discs, the Milky Way and the airglow × k,
+ * k being the frame's pre-exposure; as the sky light's source the sky views
+ * as stored, the Milky Way and the airglow × s_env, no discs (W3).
  */
-export function physicalSkyMesh(luts: AtmosphereLuts, lutScale: (TSLNode & Uniform<number>) | null): PhysicalSkyMesh {
+export function physicalSkyMesh(luts: AtmosphereLuts, lutScale: TSLNode & Uniform<number>, role: 'background' | 'source'): PhysicalSkyMesh {
   const v = normalize(positionLocal)
   const direction = vec3(v.x, v.z, v.y.negate())
-  const sky = lutScale ? physicalSkyColor(luts, direction, preExposure.div(lutScale), preExposure) : physicalSkyColor(luts, direction, float(1), float(0))
-  if (!lutScale) sky.disc.value = 0
+  const sky =
+    role === 'background'
+      ? physicalSkyColor(luts, direction, preExposure.div(lutScale), preExposure, preExposure)
+      : physicalSkyColor(luts, direction, float(1), float(0), lutScale)
+  if (role === 'source') sky.disc.value = 0
   return Object.assign(skyMesh(sky.color), { sky })
 }
 

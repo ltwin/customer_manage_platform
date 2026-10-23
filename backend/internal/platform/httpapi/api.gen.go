@@ -2129,6 +2129,24 @@ func (e CreativeSavePromptPayloadType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeSceneCameraExposureMode.
+const (
+	CreativeSceneCameraExposureModeAmbient CreativeSceneCameraExposureMode = "ambient"
+	CreativeSceneCameraExposureModeManual  CreativeSceneCameraExposureMode = "manual"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneCameraExposureMode enum.
+func (e CreativeSceneCameraExposureMode) Valid() bool {
+	switch e {
+	case CreativeSceneCameraExposureModeAmbient:
+		return true
+	case CreativeSceneCameraExposureModeManual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneChangeBlockedActorKind.
 const (
 	CreativeSceneChangeBlockedActorKindAgent        CreativeSceneChangeBlockedActorKind = "agent"
@@ -2387,6 +2405,24 @@ func (e CreativeSceneRenderEngine) Valid() bool {
 	case RealtimeGi:
 		return true
 	case Workbench:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneRenderExposureMode.
+const (
+	CreativeSceneRenderExposureModeAmbient CreativeSceneRenderExposureMode = "ambient"
+	CreativeSceneRenderExposureModeManual  CreativeSceneRenderExposureMode = "manual"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneRenderExposureMode enum.
+func (e CreativeSceneRenderExposureMode) Valid() bool {
+	switch e {
+	case CreativeSceneRenderExposureModeAmbient:
+		return true
+	case CreativeSceneRenderExposureModeManual:
 		return true
 	default:
 		return false
@@ -6849,12 +6885,18 @@ type CreativeSceneAmbient struct {
 	Intensity float32            `json:"intensity"`
 }
 
-// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
+// CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 type CreativeSceneCamera struct {
 	Aspect *string `json:"aspect,omitempty"`
 
 	// DepthOfField 打开后白模导出和景深预览按光圈和对焦虚化；线稿不虚化。
 	DepthOfField *bool `json:"depth_of_field,omitempty"`
+
+	// ExposureCompensation 环境测光的补偿（档），正值变亮；手动时保存但不生效。缺省 0。
+	ExposureCompensation *float32 `json:"exposure_compensation,omitempty"`
+
+	// ExposureMode 物理天空下的曝光模式。ambient 环境测光：按场景的环境光（照度）测光、不看画面，并叠加夜间与低太阳压暗，光圈只决定景深；manual 用 iso、shutter_s、f_stop。写入时省略为 ambient；之前保存、没有这个字段的摄像机读出为 manual。
+	ExposureMode *CreativeSceneCameraExposureMode `json:"exposure_mode,omitempty"`
 
 	// FStop 光圈值 N。
 	FStop *float32 `json:"f_stop,omitempty"`
@@ -6869,15 +6911,18 @@ type CreativeSceneCamera struct {
 	// FocusObjectId 非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group， 且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。
 	FocusObjectId *string `json:"focus_object_id,omitempty"`
 
-	// Iso 感光度。物理天空下与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。
+	// Iso 感光度。物理天空下手动曝光时与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。
 	Iso      *float32   `json:"iso,omitempty"`
 	Label    *string    `json:"label,omitempty"`
 	Near     *float32   `json:"near,omitempty"`
 	SensorMm *[]float32 `json:"sensor_mm,omitempty"`
 
-	// ShutterS 快门（秒），1/8000 s…30 s。只在物理天空下生效。
+	// ShutterS 快门（秒），1/8000 s…30 s。只在物理天空下手动曝光时生效。
 	ShutterS *float32 `json:"shutter_s,omitempty"`
 }
+
+// CreativeSceneCameraExposureMode 物理天空下的曝光模式。ambient 环境测光：按场景的环境光（照度）测光、不看画面，并叠加夜间与低太阳压暗，光圈只决定景深；manual 用 iso、shutter_s、f_stop。写入时省略为 ambient；之前保存、没有这个字段的摄像机读出为 manual。
+type CreativeSceneCameraExposureMode string
 
 // CreativeSceneChangeBlocked defines model for CreativeSceneChangeBlocked.
 type CreativeSceneChangeBlocked struct {
@@ -7190,9 +7235,36 @@ type CreativeSceneModelRef struct {
 	Ref               *string `json:"ref,omitempty"`
 }
 
+// CreativeSceneNight 物理天空的夜空（只在 kind = physical 时允许，其他天空写它返回 400）：月亮、星星（含夜天光）、银河， 以及月亮和星空的亮度与色温。只在 sun_mode = location 时绘制。读取时补齐缺省值，只写一部分时逐项补齐。
+type CreativeSceneNight struct {
+	// MilkyWay 银河（渲染端程序化生成）。缺省 true。
+	MilkyWay *bool `json:"milky_way,omitempty"`
+
+	// Moon 月亮（月盘、月光、月光照亮的天空）。缺省 true。
+	Moon *bool `json:"moon,omitempty"`
+
+	// MoonStrength 月亮的亮度倍率，月盘、月光和月光照亮的天空一起变化。缺省 1。
+	MoonStrength *float32 `json:"moon_strength,omitempty"`
+
+	// MoonTemperatureK 月亮的色温（开尔文），6500 为物理计算的颜色，调低更暖、调高更冷。缺省 6500。
+	MoonTemperatureK *float32 `json:"moon_temperature_k,omitempty"`
+
+	// NightLook 夜色强度：入夜后画面偏蓝、降饱和的程度，0 为纯物理颜色。缺省 1。地点和手动两种太阳模式下都生效。
+	NightLook *float32 `json:"night_look,omitempty"`
+
+	// Stars 星表中的亮星与夜天光。缺省 true。
+	Stars *bool `json:"stars,omitempty"`
+
+	// StarsStrength 星空的亮度倍率，星星、银河和夜天光一起变化。缺省 1。
+	StarsStrength *float32 `json:"stars_strength,omitempty"`
+
+	// StarsTemperatureK 星空的色温（开尔文），含义同月亮。缺省 6500。
+	StarsTemperatureK *float32 `json:"stars_temperature_k,omitempty"`
+}
+
 // CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
-	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
+	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
 	Id     string                  `json:"id"`
 	Kind   CreativeSceneObjectKind `json:"kind"`
@@ -7241,12 +7313,18 @@ type CreativeSceneRender struct {
 	// Engine 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
 	Engine CreativeSceneRenderEngine `json:"engine"`
 
+	// ExposureCompensation 默认摄像机环境测光的补偿（档），正值变亮。不计入渲染指纹。缺省 0。
+	ExposureCompensation float32 `json:"exposure_compensation"`
+
 	// ExposureEv 曝光补偿（档），只作用于 lit：toneMappingExposure = 2^exposure_ev；之前保存的场景读出为 0。
 	ExposureEv float32 `json:"exposure_ev"`
 
-	// ExposureEv100 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下的曝光值 EV100；场景摄像机用自己的 ISO、快门和光圈。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。
-	ExposureEv100 float32                 `json:"exposure_ev100"`
-	Mode          CreativeSceneRenderMode `json:"mode"`
+	// ExposureEv100 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下手动曝光时的曝光值 EV100；场景摄像机用自己的曝光。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。
+	ExposureEv100 float32 `json:"exposure_ev100"`
+
+	// ExposureMode 默认摄像机在物理天空下的曝光模式。ambient 环境测光：按场景的环境光（照度）测光、不看画面，并叠加夜间与低太阳压暗（入夜只比正午暗 2–4 档）；manual 用 exposure_ev100。不计入渲染指纹。缺省与之前保存的场景都读出为 ambient。
+	ExposureMode CreativeSceneRenderExposureMode `json:"exposure_mode"`
+	Mode         CreativeSceneRenderMode         `json:"mode"`
 
 	// Resolution 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
 	Resolution CreativeSceneRenderResolution `json:"resolution"`
@@ -7254,6 +7332,9 @@ type CreativeSceneRender struct {
 
 // CreativeSceneRenderEngine 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
 type CreativeSceneRenderEngine string
+
+// CreativeSceneRenderExposureMode 默认摄像机在物理天空下的曝光模式。ambient 环境测光：按场景的环境光（照度）测光、不看画面，并叠加夜间与低太阳压暗（入夜只比正午暗 2–4 档）；manual 用 exposure_ev100。不计入渲染指纹。缺省与之前保存的场景都读出为 ambient。
+type CreativeSceneRenderExposureMode string
 
 // CreativeSceneRenderMode defines model for CreativeSceneRender.Mode.
 type CreativeSceneRenderMode string
@@ -7329,6 +7410,9 @@ type CreativeSceneSky struct {
 
 	// LongitudeDeg 东经为正。
 	LongitudeDeg *float32 `json:"longitude_deg,omitempty"`
+
+	// Night 物理天空的夜空（只在 kind = physical 时允许，其他天空写它返回 400）：月亮、星星（含夜天光）、银河， 以及月亮和星空的亮度与色温。只在 sun_mode = location 时绘制。读取时补齐缺省值，只写一部分时逐项补齐。
+	Night *CreativeSceneNight `json:"night,omitempty"`
 
 	// NorthAzimuthDeg 正北在文档坐标中的方位，约定同 sun_azimuth_deg；缺省 180，即正北指向 −Z。
 	NorthAzimuthDeg *float32 `json:"north_azimuth_deg,omitempty"`

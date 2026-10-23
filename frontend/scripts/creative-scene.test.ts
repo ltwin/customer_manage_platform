@@ -127,10 +127,10 @@ test('light and camera updates merge by key as the server does, a type change ke
   update(3, { light: { type: 'spot', angle: 0.5 } })
   assert.deepEqual(at(3).light, { type: 'spot', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, angle: 0.5, penumbra: 0 })
   update(4, { camera: { far: 200 } })
-  assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A', depth_of_field: false, f_stop: 2.8, focus: 10, focus_object_id: '', iso: 100, shutter_s: 1 / 4000 })
+  assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A', depth_of_field: false, f_stop: 2.8, focus: 10, focus_object_id: '', iso: 100, shutter_s: 1 / 4000, exposure_mode: 'ambient', exposure_compensation: 0 })
   update(4, { camera: { depth_of_field: true, focus_object_id: id(1) } })
   update(4, { camera: { focus_object_id: '' } })
-  assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A', depth_of_field: true, f_stop: 2.8, focus: 10, focus_object_id: '', iso: 100, shutter_s: 1 / 4000 }, 'an empty string clears the focus object')
+  assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A', depth_of_field: true, f_stop: 2.8, focus: 10, focus_object_id: '', iso: 100, shutter_s: 1 / 4000, exposure_mode: 'ambient', exposure_compensation: 0 }, 'an empty string clears the focus object')
 })
 
 test('an undo patch puts objects back under a returning group and replaces only listed fields', () => {

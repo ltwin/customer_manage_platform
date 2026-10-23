@@ -389,7 +389,14 @@ export default function SceneEditor({
   const addCamera = () => {
     const pose = handle.current?.viewPose()
     if (!pose) return
-    const exposure = shown?.environment.sky.kind === 'physical' ? newCameraExposure(shown.render.exposure_ev100, cameraDefaults.f_stop) : undefined
+    // Under a physical sky the default camera's exposure carries over (Epic revision v5): ambient metering with its compensation, or by hand as bright as the view.
+    const render = shown?.render
+    const exposure =
+      shown?.environment.sky.kind !== 'physical' || !render
+        ? undefined
+        : render.exposure_mode === 'manual'
+          ? { exposure_mode: 'manual' as const, ...newCameraExposure(render.exposure_ev100, cameraDefaults.f_stop) }
+          : { exposure_mode: 'ambient' as const, exposure_compensation: render.exposure_compensation }
     const o = newCamera(pose, objects, undefined, exposure)
     if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) {
       select([o.id])

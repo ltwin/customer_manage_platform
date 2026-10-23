@@ -11,7 +11,10 @@ decisionsPending: false
 
 ## Why
 
-本子项是 Epic `scene-world-environment` 的 W3，建在 W2（物理天空与摄像机曝光，已合入 develop）之上。它交付 Epic 目标 4「夜空」，承担 Epic 的 AC-5，以及 AC-8、AC-9、AC-10 中与夜空有关的部分。
+本子项是 Epic `scene-world-environment` 的 W3，建在 W2（物理天空与摄像机曝光，已合入 develop）之上。它交付 Epic 目标 4「夜空」和目标 3 中修订 v5 新增的环境测光与夜色，承担 Epic 的 AC-5、AC-3 中环境测光的部分，以及 AC-8、AC-9、AC-10 中与夜空、曝光有关的部分。
+
+- **修订 v5（owner 2026-10-23）**：按真实照度实现月光和星空后，切到夜晚亮度骤降十几档，只能大幅调相机曝光，默认的视口近乎全黑。owner 指出 CG 的亮暗宽容度有限，本产品服务于 CG 制作而不是现实模拟，观感优先于完全仿真。Epic 修订 v5 因此加入环境测光（场景测光、夜间压暗曲线、补偿，缺省自动）、夜色和夜空增益，并入本子项交付（owner 选择「并入 W3」「夜晚比正午暗 2–4 档」）。已完成的天文、星星、月光、银河与出图等资源的代码全部保留。
+- **修订 v6（owner 2026-10-23）**：实测后压暗改为直线并加低太阳压暗；「自动曝光」改称「环境测光」，取值 `auto` → `ambient`；`render_view` 回报截图曝光；对照样例改为 owner 在视口里直接认可（tasks 5.8–5.10、8.2）。
 
 - W2 交付后，太阳落下，天空经晨昏蒙影变黑，夜里只剩灯光。摄影师预演夜景、月光人像、星空时没有可用的环境。
 - Epic design「夜空（W3）」已定下月亮、星星、银河的算法与单位；本子项补齐它留给 W3 的三件事：
@@ -38,10 +41,20 @@ decisionsPending: false
 5. **后端**：
    - 按数据契约校验和补齐 `sky.night`：只在物理天空下允许；其他天空写 `night` 返回 400。`aerial_perspective`、`clouds`、`environment.weather` 仍返回 400。
    - `api/openapi.yaml` 的 `CreativeSceneSky` 加 `night`，运行 `make generate`，提交两份生成物。
-6. **助手**：`edit_scene` / `read_scene` 的说明写入夜空字段、月光和星空的 EV100 参考值（满月夜约 −3，新月星空约 −6 到 −8，取决于是否要拍出银河），以及「按月亮参考选满月或新月的日期」。`docs/dev/agent-skills-tools.md` 记录变更。
+6. **助手**：`edit_scene` / `read_scene` 的说明写入夜空字段（含 `night_look`）、摄像机和默认摄像机的曝光模式与补偿（缺省自动，夜景不必调曝光；要写实时用手动，满月夜约 EV100 −3，新月星空约 −6 到 −8），以及「按月亮参考选满月或新月的日期」。`docs/dev/agent-skills-tools.md` 记录变更。
 7. **静态资源**：星表（BSC5，gzip 后约 67 KB）和月面贴图（NASA SVS CGI Moon Kit，公有领域，约 49 KB）是前端的静态资源，按需加载：星表在太阳落到地平线以下时才下载，月面贴图在月亮升起时才下载；不进数据库，也不进场景。银河在渲染端生成，不下载。来源与署名（Hoffleit & Warren 1991、CDS/VizieR；NASA/GSFC SVS）写进 `docs/third-party-notices.md`，并在「夜空」一组底部注明星表出处。
 8. **参考数据**（Epic design「验证与交付」）：补充参考场景「满月之夜」「新月之夜」，内容沿用 W2 的「院子」，地点北京。
-9. **规格**：修订 `creative/scene` 的「物理天空」（去掉「月亮和星空还没有」，加入夜空的场景），新增「夜空」一条要求（specs.md）。
+9. **规格**：修订 `creative/scene` 的「物理天空」（去掉「月亮和星空还没有」，加入夜空的场景），新增「夜空」一条要求；修订 v5 另改「摄像机曝光」「导出图提示场景已更新」「渲染器与输出分辨率」三条（specs.md）。
+10. **环境测光**（`data: MODIFY 摄像机曝光`，Epic 修订 v5）：
+   - 摄像机和「渲染」选项卡的默认摄像机都可选自动或手动曝光；自动时调补偿（±5 档），手动时沿用 W2 的 ISO、快门、光圈或默认曝光值。新建的摄像机和默认摄像机缺省自动。
+   - 环境测光按场景原点的水平照度 E 测光（与 s_env 同一个 E），再按夜间压暗曲线少补 D 档：正午 0，黄金时刻约 0.5，满月之夜约 2.5，新月之夜约 3.5（Epic design「物理单位与曝光」）。转视角不变，导出确定。
+   - 编辑器在物理天空下添加摄像机时沿用默认摄像机的曝光设置；助手不带曝光添加的摄像机为自动。
+   - 已存储的摄像机读作手动，画面和导出不变；`render` 读作自动，视口会变，但不影响导出。
+   - 后端：两组字段的校验、补齐（摄像机读旧数据补 `manual`、写入缺省 `ambient`）与合并；渲染指纹按 Epic 的规则改（自动计入模式和补偿、不计 ISO 和快门）；OpenAPI 的 `CreativeSceneCamera`、`CreativeSceneRender` 加字段。
+11. **夜色与夜空增益**（`data: ADD 夜空` 加 `night_look`，Epic 修订 v5）：
+   - 夜色：入夜后画面渐进偏蓝、降饱和，强度随场景照度从黄金时刻后开始、满月之夜达到最大，乘 `night_look`（0…1，缺省 1）；作用在曝光之后、色调映射之前，亮度不变。地点和手动两种太阳模式下都生效。
+   - 夜空增益：夜天光改为深蓝，亮度乘观感增益，计入 E 的常数项。
+   - 压暗曲线、夜色和夜空增益的数值按四张对照图（默认设置下的正午、黄昏、满月之夜、新月之夜）由 owner 定稿。
 
 不在本子项：
 - 空气透视（W4）、体积物件（W5）。
@@ -57,14 +70,15 @@ decisionsPending: false
   - 由 `world/astro.ts` 的单元测试对照 JPL Horizons 的数据点验证，覆盖四个参考地点。
 - **AC-W3-2 月光**（Epic AC-5）：
   - **WHEN** 满月高于 30°、太阳低于 −18°，**THEN** 场景原点处的水平照度在 0.1–0.4 lux 之间。
-  - **WHEN** 摄像机手动曝光调到 EV100 约 −3（例如 ISO 3200、4 s、f/2.8），**THEN** 能看清月光照亮的场景，影子方向与月亮方向一致。
+  - **WHEN** 默认设置（环境测光、夜色 1）下看满月之夜，**THEN** 不调曝光就能看清月光照亮的场景，影子方向与月亮方向一致，画面略偏蓝（修订 v5）。
+  - **WHEN** 摄像机手动曝光调到 EV100 约 −3（例如 ISO 3200、4 s、f/2.8），**THEN** 同样能看清。
   - **WHEN** 太阳高于 −6°，**THEN** 月光不投影。
 - **AC-W3-3 星空**（Epic AC-5）：
   - **WHEN** 北京入夜，**THEN** 北极星位于正北，高度与纬度相差不超过 1°；拖动时刻，星空绕北天极旋转。
   - **WHEN** 换成悉尼，**THEN** 能看到南十字座，北极星在地平线以下。
   - **WHEN** 改正北方向，**THEN** 星空、月亮和银河跟着太阳一起绕场景转动。
   - 星星位置由单元测试对照几颗亮星（北极星、天狼星、织女星、南十字座 α）的 JPL Horizons 地平坐标验证。
-- **AC-W3-4 新月之夜**（Epic AC-5）：**WHEN** 换成新月之夜，用同样的曝光，**THEN** 没有月光，场景只剩星光、银河、夜天光和灯光；把曝光调到约 EV100 −7 能看清银河。
+- **AC-W3-4 新月之夜**（Epic AC-5）：**WHEN** 换成新月之夜，**THEN** 没有月光，场景只剩星光、银河、夜天光和灯光；默认设置下天空是深蓝而不是黑色，银河和亮星可见，场景仍能分辨（修订 v5）。手动曝光调到约 EV100 −7 同样能看清银河。
 - **AC-W3-5 亮度与色温**（Epic AC-5）：
   - **WHEN** 把月亮亮度调到 2，**THEN** 月盘、月光、月光照亮的天空一起变亮一档；调星空亮度时，星星和银河一起变化。
   - **WHEN** 把月亮色温调高，**THEN** 月光和月盘一起变冷；调回 6500 K 时与物理计算逐像素相同。
@@ -84,7 +98,18 @@ decisionsPending: false
   - **WHEN** 在参考设备上夜里拖动时刻滑杆，**THEN** 视口帧率不低于 W2 的实测（25 fps，W2 已接受的偏差）减 2 fps。
   - **WHEN** 夜空静止，**THEN** 视口帧时间比 W2 同场景多不超过 1 ms。
   - **WHEN** 白天首次打开物理天空，**THEN** 不下载星表；月面贴图只在月亮升到地平线以上时下载。
-- **AC-W3-11 夜景可用**（owner 判断）：满月之夜、新月之夜、黄昏后月亮初升三组样例存进 evidence，由 owner 判断夜景是否可信、是否可用。
+- **AC-W3-11 夜景可用**（owner 判断）：默认设置下正午、黄昏、满月之夜、新月之夜四张对照图，加上黄昏后月亮初升一组，存进 evidence，标出各自的测光值 EV_m、压暗量 D 和中灰的显示值；由 owner 判断夜景是否好看、跨时段的亮度是否均衡，并定压暗曲线、夜色和夜空增益的数值。
+- **AC-W3-12 环境测光**（Epic AC-3，修订 v5）：
+  - **WHEN** 默认设置下把时刻从正午拖到深夜，**THEN** 画面亮度连续变化、没有台阶；场景中灰的显示亮度比正午低：黄金时刻约 0.5 档，满月之夜 2–3 档，新月之夜 3–4 档。
+  - **WHEN** 环境测光加 1 档补偿，**THEN** 画面亮 1 档；转动视角时曝光不变。
+  - **WHEN** 摄像机或默认摄像机切到手动，**THEN** 按 W2 的规则曝光，画面与 W2 相同。
+  - **WHEN** 打开 W3 之前存的物理天空场景，**THEN** 摄像机仍是手动曝光，画面不变；视口的自由视角为环境测光。
+  - **WHEN** 在物理天空下添加摄像机，**THEN** 沿用默认摄像机的曝光设置，相机视图与视口一样亮；助手不带曝光添加的摄像机为自动。
+  - **WHEN** 改一台摄像机的模式或补偿，**THEN** 只有它的 `lit` 导出过时；改默认摄像机的曝光，没有导出过时。
+- **AC-W3-13 夜色**（Epic AC-5，修订 v5）：
+  - **WHEN** 满月之夜把 `night_look` 调到 0，**THEN** 蓝调和降饱和消失，颜色为物理计算，亮度不变。
+  - **WHEN** 时刻在黄金时刻之前，**THEN** 画面与没有夜色时相同。
+  - **WHEN** 切到白模或线稿，**THEN** 不受夜色影响。
 
 ## Impact
 
@@ -98,7 +123,8 @@ decisionsPending: false
   - `panels/EnvironmentPanel.tsx`（及其物理天空子面板）：夜空一组、月亮信息；
   - 静态资源：星表（二进制）、月面贴图，以及生成它们的脚本。
 - 后端：`backend/internal/creativescene` 的 `model.go`、`sky.go`（`night` 的校验与补齐）、新增 `moon.go`（月亮参考）、`agent.go`、`fingerprint_internal_test.go`；`backend/internal/creativeagent/scene_tools.go`。
-- 契约：`api/openapi.yaml` 与两份生成物；交付 `data: ADD 夜空`（`epic bind --deliver`），Epic 修订 v4 先补字段。
+- 契约：`api/openapi.yaml` 与两份生成物；交付 `data: ADD 夜空`、`data: MODIFY 摄像机曝光`、`architecture: MODIFY 场景模块`（`epic bind --deliver`）。
+- 修订 v5 的曝光与夜色：前端 `world/exposure.ts`（测光、压暗曲线）、新增 `world/nightLook.ts`、`render/litLook.ts:frameExposure`、`host/framing.ts`、`render/sceneRenderer.ts` 的输出节点、`Viewport.tsx`、`host/render.ts`、`panels/Properties.tsx`（摄像机曝光）、`panels/RenderPanel.tsx`、`SceneEditor.tsx`（新摄像机）、`state/apply.ts`；后端 `creativescene` 的 `model.go`、`ops.go`、`view.go`、`fingerprint.go` 及测试。
 - 测试：`frontend/scripts/creative-scene.e2e.mjs`（`SCENE_E2E_ONLY=W3`）及固定数据、前端单测、后端单测。
 - 文档：`docs/third-party-notices.md`、`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md`。
 - 规格：`creative/scene`（specs.md）。
@@ -107,7 +133,8 @@ decisionsPending: false
 
 - **性能（perf-sensitive）**：
   - 月光照亮的天空需要第二份天空视图 LUT（天空视图按太阳方位参数化，月亮的不能叠进同一张），拖动时刻时多一次 LUT pass；只在月光对天空的贡献不可忽略时（太阳低于 −6°、月亮在地平线附近或以上）才重算。
-  - 月亮和太阳只有一盏投影：太阳低于 −6° 时阴影从太阳交给月亮。切换时 three 会重建一次材质（热缓存下约 0.4 s，lesson `webgpu-perf-warm-shader-cache`），只在越过这个界限时发生一次。
+  - 月亮和太阳只有一盏投影：两盏固定的平行光交换角色，入夜不重新编译材质（修订 v4，e2e「W3 moonlight」检查着色器程序数不变）。
+  - 夜色是输出节点里的一次颜色运算，不新增 pass；强度为 0 时照常计算（输出节点不随强度重建）。
   - 星星约 9 千个精灵，开销可以忽略；W2 的拖动帧率偏差（25 fps）沿用，不在本子项解决（W2 follow-up）。
 - **晨昏蒙影偏亮**（W2 已知局限）：太阳在 −6° 到 −9° 时天空比实际亮 2–3 档，亮星会比实拍晚一点显现。
 - **授权**（Epic 未决事项 6，已定）：
@@ -122,3 +149,5 @@ decisionsPending: false
   4. **月亮与太阳只有一盏投影**（见「性能」）；月亮照度由视星等求，不用 Epic 原来的朗伯相函数公式（design「局部设计与偏差」1，写进修订 v4）。
   5. **星表、银河、月面贴图**（Epic 未决事项 6，owner 2026-10-23）：BSC5；程序化银河；NASA SVS CGI Moon Kit。
   6. **补齐缺省值导致的过时**：W2 与 W3 之间存的物理天空场景，`lit` 导出各过时一次（Epic 已预期）。
+  7. **物理为底、观感优先**（Epic 修订 v5，owner 2026-10-23）：环境测光、夜间压暗曲线、夜色和夜空增益并入本子项；数值按样例由 owner 定稿（Epic 未决事项 10）。
+- **环境测光的局限**：测光只看场景原点的天光，室内、浓荫下或远离原点的取景会偏暗或偏亮，用补偿调整（Epic 已接受）。

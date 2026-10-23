@@ -34,7 +34,8 @@ func TestCameraDepthOfFieldMergesByKey(t *testing.T) {
 	}
 	base := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": ""}
 	with := func(kv map[string]any) map[string]any {
-		out := map[string]any{"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025}
+		out := map[string]any{"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025,
+			"exposure_mode": "ambient", "exposure_compensation": 0.0}
 		for k, v := range base {
 			out[k] = v
 		}
@@ -157,7 +158,8 @@ func TestOldCameraIsCompletedOnRead(t *testing.T) {
 		t.Fatalf("fixture did not strip the fields: %v %v", stripped, err)
 	}
 	want := map[string]any{"focal_mm": 85.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": "",
-		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025}
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025,
+		"exposure_mode": "ambient", "exposure_compensation": 0.0}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("read camera = %v, want %v", got, want)
 	}
@@ -182,10 +184,10 @@ func TestOldRenderIsCompletedOnRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "lit", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0}) {
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "lit", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
 		t.Fatalf("full read of an old render: %v", got)
 	}
-	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", Engine: creativescene.EngineWorkbench, Resolution: "2k", ExposureEV100: 15}) {
+	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", Engine: creativescene.EngineWorkbench, Resolution: "2k", ExposureEV100: 15, ExposureMode: creativescene.ExposureAmbient}) {
 		t.Fatalf("decoded old render %+v", r)
 	}
 	// A write to another unit validates the whole snapshot, old render included, and stores it whole.
@@ -194,7 +196,7 @@ func TestOldRenderIsCompletedOnRead(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT r.payload->'scene'->>'render' FROM creative_documents d JOIN creative_content_revisions r ON r.account_id = d.account_id AND r.id = d.content_revision_id WHERE d.account_id = 'scene-a' AND d.id = $1`, doc).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"mode": "lit", "engine": "workbench", "resolution": "2k", "exposure_ev": 0, "exposure_ev100": 15}`; stored != want {
+	if want := `{"mode": "lit", "engine": "workbench", "resolution": "2k", "exposure_ev": 0, "exposure_mode": "ambient", "exposure_ev100": 15, "exposure_compensation": 0}`; stored != want {
 		t.Fatalf("stored render after a write = %s, want %s", stored, want)
 	}
 }

@@ -24,12 +24,20 @@ func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument
 	return json.Marshal(map[string]any{"scene": scene, "models": models})
 }
 
-// completedScene is the stored snapshot as is, unless a camera predates a
-// camera field: then the snapshot is decoded, which completes it, so the
-// response always carries every camera field.
+// completedScene is the stored snapshot as is, unless a camera, the render
+// or a physical sky predates one of its fields: then the snapshot is
+// decoded, which completes it, so the response always carries every field.
+// A physical sky's night (W3) is checked as a whole: completeSky fills it in
+// one go.
 func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 	var stored struct {
-		Render  storedRender `json:"render"`
+		Render      storedRender `json:"render"`
+		Environment struct {
+			Sky struct {
+				Kind  string           `json:"kind"`
+				Night *json.RawMessage `json:"night"`
+			} `json:"sky"`
+		} `json:"environment"`
 		Objects []struct {
 			Camera *Camera `json:"camera"`
 		} `json:"objects"`
@@ -37,7 +45,8 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 	if err := json.Unmarshal(p.Scene, &stored); err != nil {
 		return nil, err
 	}
-	complete := stored.Render.complete()
+	sky := stored.Environment.Sky
+	complete := stored.Render.complete() && (sky.Kind != SkyPhysical || sky.Night != nil && nightComplete(*sky.Night))
 	for _, o := range stored.Objects {
 		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera))
 	}
@@ -58,11 +67,12 @@ type storedRender struct {
 	Engine        *string  `json:"engine"`
 	Resolution    *string  `json:"resolution"`
 	ExposureEV100 *float64 `json:"exposure_ev100"`
+	ExposureMode  *string  `json:"exposure_mode"`
 }
 
 // complete reports whether the render needs no completion before it is shown.
 func (r storedRender) complete() bool {
-	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil && r.ExposureEV100 != nil
+	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil && r.ExposureEV100 != nil && r.ExposureMode != nil && *r.ExposureMode != exposureAuto
 }
 
 // unitView narrows a read to the listed units. Each object appears once with
@@ -152,4 +162,14 @@ func summary(cur creativedocument.Current) (json.RawMessage, error) {
 		}
 	}
 	return json.Marshal(counts)
+}
+
+// nightComplete reports whether a stored night sky holds every field.
+func nightComplete(raw json.RawMessage) bool {
+	var n Night
+	if json.Unmarshal(raw, &n) != nil {
+		return false
+	}
+	return n.Moon != nil && n.Stars != nil && n.MilkyWay != nil && n.MoonStrength != nil && n.MoonTemperatureK != nil &&
+		n.StarsStrength != nil && n.StarsTemperatureK != nil && n.NightLook != nil
 }

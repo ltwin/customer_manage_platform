@@ -1,12 +1,12 @@
 {
   "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
-  "revision": 3,
+  "revision": 10,
   "id": "scene-night-sky",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-world-environment",
   "designBinding": {
-    "version": 4,
+    "version": 6,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -28,12 +28,13 @@
     ],
     "delivers": [
       "data:夜空",
-      "architecture:场景模块"
+      "architecture:场景模块",
+      "data:摄像机曝光"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-23T06:27:33.127Z",
-  "updatedAt": "2026-10-23T07:18:04.942Z",
+  "updatedAt": "2026-10-23T12:59:19.885Z",
   "risk": {
     "factors": [
       "perf-sensitive"
@@ -42,19 +43,83 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-23T07:18:04.823Z",
-      "contentHash": "e39f01b95813c899"
+      "at": "2026-10-23T12:58:56.510Z",
+      "contentHash": "7a5e5ff5054a8208"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-23T07:18:04.823Z",
-      "contentHash": "8ff8866d94f872d8"
+      "at": "2026-10-23T12:58:56.510Z",
+      "contentHash": "e189570cf4b6db81"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-23T07:18:04.823Z",
+      "contentHash": "e39f01b95813c899",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T07:18:04.823Z",
+      "contentHash": "8ff8866d94f872d8",
+      "role": "design"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T09:28:37.022Z",
+      "contentHash": "67f13b7fb94ee98b",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T09:28:37.022Z",
+      "contentHash": "1783bdf3ff9ddb94",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "356111775cd871420d030f84aa830ef51cd2d792",
+    "at": "2026-10-23T07:20:05.821Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "71ed7825caea8d762cb37f1af1e3493eda1d34f8265714f2c3f533d5baa486f2"
+    },
+    "preExisting": [
+      ".lti/snapshots/71ed7825caea8d762cb37f1af1e3493eda1d34f8265714f2c3f533d5baa486f2.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "samson",
+      "at": "2026-10-23T12:59:10.350Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "只跑定向测试，未跑 make check-frontend/check 全量；SCENE_E2E_HIDDEN 连拍与双后端逐项对照未单独补用例（北极星用例两个后端各跑一次）；AC-W3-10 拖动时刻 22.2 fps 比基线 25.7 fps 低 3.5 fps，未达「不低于基线减 2 fps」，owner 接受，随 W2 拖动性能 follow-up 处理；AC-W3-11 未另出对照样例图，以 owner 视口体验代替"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner samson 2026-10-23 在视口亲自体验正午、黄昏、满月、新月、银河与环境测光/手动切换后接受 W3（「这次大部分东西我体验和验收了」「都同意」）。定向测试：go test creativescene/creativeagent 通过；tsc -b 0；单测 exposure 17、night-sky 14、astro 15、creative-scene 51 全过；e2e W3 全部用例与 W2 10 项通过（新增新月之夜）。子项设计与规格已同步 Epic v6（直线压暗、低太阳压暗、环境测光/ambient、render_view 回报曝光）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "dca53d7f79ae363a7373cff911869d2fe7667c05be6085883acea70085aeaac8"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-23T12:59:19.699Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

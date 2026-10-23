@@ -5,6 +5,7 @@ import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
 import { drawnFrames, effectiveEngine, engineOf, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
+import { sceneLowSun, sceneLux } from '../world/exposure.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
@@ -12,6 +13,7 @@ import { backgroundTicker } from './ticker.ts'
 import type { Shot } from './executor.ts'
 import { framingFor, type Framing, type RenderRequest } from './framing.ts'
 import { ShotScene } from './ShotScene.tsx'
+import { loadNightAssets } from '../world/nightSky/assets.ts'
 
 // Pictures of the confirmed scene drawn as the viewport draws it (the clay
 // look: the scene's sky and sun with AO; or the lit look: materials, lights,
@@ -105,8 +107,16 @@ export async function shoot(scene: Scene, models: Readonly<Record<string, SceneM
   }
 }
 
+/** Why a picture failed whose night sky's assets did not load: a deployment or network matter, said plainly. */
+export const NIGHT_ASSETS_FAILED = '夜空资源加载失败，请稍后重试'
+
 /** Mounts the scene on a hidden canvas in a look; every shot moves one camera. */
 export async function openShooter(scene: Scene, models: Readonly<Record<string, SceneModel>>, look: Look = 'clay'): Promise<Shooter> {
+  // The night sky's stars and moon map first (W3 design「资源与确定性」): a picture without them would not be the scene.
+  await loadNightAssets(scene).catch((err: unknown) => {
+    console.warn('night sky: an asset did not load', err)
+    throw new Error(NIGHT_ASSETS_FAILED)
+  })
   const canvas = document.createElement('canvas')
   const camera = new THREE.PerspectiveCamera()
   camera.up.set(0, 0, 1)
@@ -172,8 +182,8 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           width,
           height,
           dof: options.depthOfField && framing.optics ? framing.optics : null,
-          // A scene camera at its own exposure, a viewpoint or preset at the scene's default (physical sky).
-          ...frameExposure(scene, options.kind === 'lit', framing.ev100),
+          // A scene camera at its own exposure, a viewpoint or preset at the default camera's (physical sky), metering E as PhysicalLighting left it.
+          ...frameExposure(scene, options.kind === 'lit', framing.exposure, sceneLux(three), sceneLowSun(three)),
           engine,
           quality: 'final' as const,
           accumulate: frames > 1,

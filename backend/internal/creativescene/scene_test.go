@@ -592,7 +592,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0}) {
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
 		t.Fatalf("a new scene reads without every render field: %v", got)
 	}
 	set := func(render map[string]any) error {
@@ -613,7 +613,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err := set(map[string]any{"resolution": "4k"}); err != nil {
 		t.Fatal(err)
 	}
-	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15}) {
+	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15, ExposureMode: creativescene.ExposureAmbient}) {
 		t.Fatalf("render %+v", r)
 	}
 	for name, render := range map[string]map[string]any{
@@ -866,7 +866,8 @@ func TestLightAndCameraDefaults(t *testing.T) {
 		}
 	}
 	want := map[string]any{"focal_mm": 35.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": "",
-		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025}
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025,
+		"exposure_mode": "ambient", "exposure_compensation": 0.0}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Errorf("camera = %v, want %v", got, want)
 	}
@@ -925,7 +926,8 @@ func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 200.0, "label": "A",
-		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025}
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025,
+		"exposure_mode": "ambient", "exposure_compensation": 0.0}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("camera = %v, want %v", got, want)
 	}
@@ -992,20 +994,30 @@ func TestPhysicalSkyIsCompleted(t *testing.T) {
 	want := map[string]any{"kind": "physical", "sun_mode": "location", "latitude_deg": 31.2304, "longitude_deg": 121.4737, "timezone": "Asia/Shanghai",
 		"place": "", "date": "2026-06-21", "local_time": "12:00", "north_azimuth_deg": 180.0, "sun_elevation_deg": 35.0, "sun_azimuth_deg": 135.0,
 		"altitude_m": 0.0, "air_density": 1.0, "dust_density": 1.0, "ozone_density": 1.0,
-		"sun_disc": true, "sun_size_deg": 0.545, "sun_strength": 1.0, "sun_temperature_k": 6500.0}
+		"sun_disc": true, "sun_size_deg": 0.545, "sun_strength": 1.0, "sun_temperature_k": 6500.0,
+		"night": map[string]any{"moon": true, "stars": true, "milky_way": true, "moon_strength": 1.0, "moon_temperature_k": 6500.0, "stars_strength": 1.0, "stars_temperature_k": 6500.0, "night_look": 1.0}}
 	if got := skyOf(t, f.a, doc); !reflect.DeepEqual(got, want) {
 		t.Fatalf("sky = %v, want %v", got, want)
 	}
 	written := map[string]any{"sun_mode": "manual", "latitude_deg": 30.6598, "longitude_deg": 104.0633, "timezone": "Asia/Shanghai",
 		"place": "成都", "date": "2026-10-01", "local_time": "17:45", "north_azimuth_deg": 90.0, "sun_elevation_deg": -10.0, "sun_azimuth_deg": 359.5,
 		"altitude_m": 4000.0, "air_density": 0.0, "dust_density": 50.0, "ozone_density": 10.0,
-		"sun_disc": false, "sun_size_deg": 10.0, "sun_strength": 0.0, "sun_temperature_k": 2000.0}
+		"sun_disc": false, "sun_size_deg": 10.0, "sun_strength": 0.0, "sun_temperature_k": 2000.0,
+		"night": map[string]any{"moon": false, "stars": false, "milky_way": false, "moon_strength": 10.0, "moon_temperature_k": 2000.0, "stars_strength": 0.0, "stars_temperature_k": 12000.0, "night_look": 0.0}}
 	if err := setEnvironment(t, f.a, doc, physicalEnv(maps.Clone(written))); err != nil {
 		t.Fatal(err)
 	}
 	written["kind"] = "physical"
 	if got := skyOf(t, f.a, doc); !reflect.DeepEqual(got, written) {
 		t.Fatalf("sky = %v, want %v", got, written)
+	}
+	// Part of the night sky: the rest is filled field by field.
+	if err := setEnvironment(t, f.a, doc, physicalEnv(map[string]any{"date": "2026-06-21", "night": map[string]any{"milky_way": false, "stars_strength": 2}})); err != nil {
+		t.Fatal(err)
+	}
+	wantNight := map[string]any{"moon": true, "stars": true, "milky_way": false, "moon_strength": 1.0, "moon_temperature_k": 6500.0, "stars_strength": 2.0, "stars_temperature_k": 6500.0, "night_look": 1.0}
+	if got := skyOf(t, f.a, doc)["night"]; !reflect.DeepEqual(got, wantNight) {
+		t.Fatalf("night = %v, want %v", got, wantNight)
 	}
 }
 
@@ -1058,7 +1070,12 @@ func TestPhysicalSkyRefusesBadFields(t *testing.T) {
 		"hot sun":                     {with(map[string]any{"sun_temperature_k": 12001}), "sun_temperature_k"},
 		"turbidity":                   {with(map[string]any{"turbidity": 3}), "turbidity"},
 		"color":                       {with(map[string]any{"color": "#ffffff"}), "color"},
-		"the night sky before W3":     {with(map[string]any{"night": map[string]any{}}), "night"},
+		"moon strength":               {with(map[string]any{"night": map[string]any{"moon_strength": 10.5}}), "moon_strength"},
+		"cold moon":                   {with(map[string]any{"night": map[string]any{"moon_temperature_k": 1999}}), "moon_temperature_k"},
+		"stars strength":              {with(map[string]any{"night": map[string]any{"stars_strength": -0.1}}), "stars_strength"},
+		"hot stars":                   {with(map[string]any{"night": map[string]any{"stars_temperature_k": 12001}}), "stars_temperature_k"},
+		"night look past 1":           {with(map[string]any{"night": map[string]any{"night_look": 1.1}}), "night_look"},
+		"planets in the night sky":    {with(map[string]any{"night": map[string]any{"planets": true}}), "planets"},
 		"aerial perspective":          {with(map[string]any{"aerial_perspective": map[string]any{}}), "aerial_perspective"},
 		"clouds":                      {with(map[string]any{"clouds": map[string]any{}}), "clouds"},
 		"weather":                     {map[string]any{"sky": map[string]any{"kind": "physical", "date": "2026-10-01"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil, "weather": map[string]any{}}, "weather"},
@@ -1094,12 +1111,13 @@ func TestOtherSkiesRefusePhysicalFields(t *testing.T) {
 		env  map[string]any
 		want string
 	}{
-		"procedural with a date":     {procedural(map[string]any{"date": "2026-10-01"}), "date"},
-		"procedural with a latitude": {procedural(map[string]any{"latitude_deg": 30}), "latitude_deg"},
-		"procedural with sun mode":   {procedural(map[string]any{"sun_mode": "manual"}), "sun_mode"},
-		"hdri with sun strength":     {env(map[string]any{"kind": "hdri", "hdri": "studio@1", "sun_strength": 2}), "sun_strength"},
-		"color with dust":            {env(map[string]any{"kind": "color", "color": "#203040", "dust_density": 5}), "dust_density"},
-		"color without the sun disc": {env(map[string]any{"kind": "color", "color": "#203040", "sun_disc": false}), "sun_disc"},
+		"procedural with a date":      {procedural(map[string]any{"date": "2026-10-01"}), "date"},
+		"procedural with a latitude":  {procedural(map[string]any{"latitude_deg": 30}), "latitude_deg"},
+		"procedural with sun mode":    {procedural(map[string]any{"sun_mode": "manual"}), "sun_mode"},
+		"hdri with sun strength":      {env(map[string]any{"kind": "hdri", "hdri": "studio@1", "sun_strength": 2}), "sun_strength"},
+		"color with dust":             {env(map[string]any{"kind": "color", "color": "#203040", "dust_density": 5}), "dust_density"},
+		"color without the sun disc":  {env(map[string]any{"kind": "color", "color": "#203040", "sun_disc": false}), "sun_disc"},
+		"procedural with a night sky": {procedural(map[string]any{"night": map[string]any{"moon": true}}), "night"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := setEnvironment(t, f.a, doc, tc.env)
@@ -1172,6 +1190,28 @@ func TestCameraExposure(t *testing.T) {
 	for _, edge := range []map[string]any{{"iso": 25}, {"iso": 102400}, {"shutter_s": 0.000125}, {"shutter_s": 30}} {
 		if err := update(edge); err != nil {
 			t.Fatalf("%v: %v", edge, err)
+		}
+	}
+}
+
+// A physical sky stored before W3 has no night, or one without night_look
+// (Epic revision v5): a read completes it like any other older field.
+func TestOldPhysicalSkyReadsWithItsNight(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	if err := setEnvironment(t, f.a, doc, physicalEnv(map[string]any{"date": "2026-06-21"})); err != nil {
+		t.Fatal(err)
+	}
+	full := map[string]any{"moon": true, "stars": true, "milky_way": true, "moon_strength": 1.0, "moon_temperature_k": 6500.0, "stars_strength": 1.0, "stars_temperature_k": 6500.0, "night_look": 1.0}
+	for name, strip := range map[string]string{
+		"W2, no night":      `(payload #- '{scene,environment,sky,night}')`,
+		"W3, no night_look": `(payload #- '{scene,environment,sky,night,night_look}')`,
+	} {
+		if _, err := f.db.Exec(`UPDATE creative_content_revisions SET payload = ` + strip + ` WHERE account_id = 'scene-a' AND payload ? 'scene'`); err != nil {
+			t.Fatal(err)
+		}
+		if got := skyOf(t, f.a, doc)["night"]; !reflect.DeepEqual(got, full) {
+			t.Fatalf("%s: night = %v, want %v", name, got, full)
 		}
 	}
 }

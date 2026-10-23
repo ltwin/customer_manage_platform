@@ -2,9 +2,9 @@
 
 ## 继承的设计
 
-- **Epic 基线**：`scene-world-environment` 修订 v4（与本设计一起批准；v4 只补 W3 需要的部分，见「接口与数据契约」）。适用条目：
-  - design：「领域模型与业务规则」「每帧的数据流」「何时重算」「物理单位与曝光」「显示变换」「夜空（W3）」「渲染指纹」「验证与交付」；
-  - 本次交付 `data: ADD 夜空`。
+- **Epic 基线**：`scene-world-environment` 修订 v5（v4 补 W3 的夜空字段与算法；v5 加环境测光、夜色与夜空增益，owner 2026-10-23 批准）。适用条目：
+  - design：「领域模型与业务规则」「每帧的数据流」「何时重算」「物理单位与曝光」「显示变换」「合成顺序」「夜空（W3）」「渲染指纹」「验证与交付」；
+  - 本次交付 `data: ADD 夜空`、`data: MODIFY 摄像机曝光`、`architecture: MODIFY 场景模块`。
 - **本次承担**：Epic 目标 4；AC-5，以及 AC-8、AC-9、AC-10、AC-11 中与夜空有关的部分（proposal「Acceptance Criteria」）。
 - **依据**：
   - 本子项 `discovery/research/star-milky-way-assets.md`：星表、银河图、月面贴图的授权与体积（Epic 未决事项 6）。owner 2026-10-23 定为：星表 BSC5；银河程序化生成；月面贴图 NASA SVS CGI Moon Kit（Epic 修订 v4「技术选型」）；
@@ -36,11 +36,12 @@
 
 | 天体 | 大气顶的照度（lux，每通道） | 颜色 |
 |---|---|---|
-| 月亮 | E_moon = 10^((−14.18 − m) / 2.5)，m 为 `astronomy-engine` `Illumination(Body.Moon)` 的视星等（已含相位律、冲日增亮和地月距离） | 太阳光谱 × 月面反照的色调（月亮的 B−V 约 0.92，比太阳红约 0.27），再乘 `moon_temperature_k` 的色调 |
-| 星星 | 每颗 E = 10^((−14.18 − V) / 2.5) | 由 B−V 换算色温（Ballesteros 2012），黑体色调与太阳相同的函数（`constants.ts:sunTint`）；再乘 `stars_temperature_k` 的色调 |
+| 月亮 | E_moon = SUN_LUX × 10^(−0.4 (m + 26.74))，m 为 `astronomy-engine` `Illumination(Body.Moon)` 的视星等（已含相位律、冲日增亮和地月距离） | 太阳光谱 × 月面反照的色调（月亮的 B−V 约 0.92，比太阳红约 0.27），再乘 `moon_temperature_k` 的色调 |
+| 星星 | 每颗 E = SUN_LUX × 10^(−0.4 (V + 26.74)) | 由 B−V 换算色温（Ballesteros 2012），黑体色调与太阳相同的函数（`constants.ts:sunTint`）；再乘 `stars_temperature_k` 的色调 |
 | 银河 | 程序化模型的相对亮度 × 标定常数，银心方向的面亮度约 20.5 等/平方角秒 | 模型的颜色（核球偏暖、外侧银盘中性，暗尘带偏红）× `stars_temperature_k` 的色调 |
 | 夜天光 | 天顶 21.8 等/平方角秒（约 2 × 10⁻⁴ cd/m²），按 van Rhijn 函数向地平线增亮 | 中性偏暖 |
 
+- 视星等换照度相对太阳取：E = SUN_LUX × 10^(−0.4 (m + 26.74))，与渲染端太阳在大气顶的 128 klux 一致（实施时定；文献常用的 10^((−14.18 − m) / 2.5) 对应 106 klux 的太阳，两者差约 21%）。星星的色调以太阳的 B−V 0.65 为白，与太阳光在大气顶为白一致。
 - 等/平方角秒换 cd/m²：L = 10.8 × 10⁴ × 10^(−0.4 μ)。
 - 亮度倍率乘在大气顶的照度上，所以月盘、月光和月光照亮的天空同时变化（AC-W3-5）。色温 6500 K 时色调为 (1, 1, 1)，与物理计算逐像素相同。
 - **与 Epic 公式的关系**：Epic design 写的是 L = E_sun · T · 0.12 · Φ(α) / π。满月时两者一致（星等法约 0.26 lux，公式约 0.31 lux）；偏离满月时星等法更准（朗伯相函数在上弦月处高估约 3 倍）。修订 v4 把 Epic 那一条改成「由星等求照度」。
@@ -137,15 +138,16 @@ flowchart LR
 在银道坐标 (l, b) 上求相对亮度和颜色（TSL 片元 pass，烘焙到等距柱状纹理，固定种子）：
 
 ```
-银盘   D(l, b) = (0.35 + 0.65 · exp(−(l/60°)²)) · exp(−|b| / h(l))，h 在银心方向约 6°、反银心方向约 3°
-核球   B(l, b) = 1.5 · exp(−(l/12°)² − (b/8°)²)
-团块   C = 0.55 + 0.9 · fbm(单位向量 × 12, 4 个八度)           // 星云的明暗起伏
-暗尘带 τ(l, b) = 1.6 · exp(−((b − b₀(l)) / 1.8°)²) · [|l| < 70°] · (0.4 + 1.2 · fbm(单位向量 × 20))
-亮度   L = (D + B) · C · exp(−τ) + 麦哲伦云（两个各向异性高斯，大云 l=280.5°, b=−32.9°，小云 l=302.8°, b=−44.3°）
-颜色   核球偏暖（约 4500 K）、外侧银盘中性（约 6000 K），暗尘带处按 τ 偏红
+银盘   D(l, b) = (0.3 + 0.7 · exp(−(l/70°)²)) · sech(|b| / h(l))，h = 4° + 6° · exp(−(l/45°)²)
+核球   B(l, b) = 1.3 · exp(−(l/11°)² − (b/7°)²)
+团块   C = 0.25 + 1.5 · n²，n = fbm(单位向量 × 7, 4 个八度)        // 星云的明暗起伏
+暗尘   τ = (2.6 · 大暗隙 + 蛇夫座 + 煤袋) · (0.3 + 1.4 d) + 1.8 · 内盘斑驳 · d²，d = fbm(单位向量 × 14)
+       大暗隙 = exp(−((b − 1.2° − 3° (d − 0.5)) / 2.6°)²) · exp(−((l − 35°)/55°)⁴)，中线随噪声摆动，边缘参差
+亮度   L = (D · C + B) · exp(−τ · 红化) + 麦哲伦云（大云 l=280.5°, b=−32.9°，σ 3.2°；小云 l=302.8°, b=−44.3°，σ 1.4°）
+颜色   核球偏暖（约 4500 K）、外侧银盘约 6000 K，红化 (0.85, 1, 1.2)
 ```
 
-- 噪声在三维单位向量上取，没有接缝；只用整数哈希，两个后端结果一致。
+- 噪声在三维单位向量上取，没有接缝；哈希用 Hoskins 的无正弦哈希，输入是小整数，两个后端在 float32 下结果一致（e2e「W3 milky way drift」）。角距一律由弦长求（`acos` 在 1 附近精度差，过 −1 得 NaN）；不用 `pow` 求平方（负底数未定义）。
 - 标定：L 的银心附近峰值对应 20.5 等/平方角秒，换成 cd/m² 后乘 `stars_strength` 与色调。
 - 参数（尺度、暗尘带的位置 b₀(l)、强度）实施时对照公开的银河照片调到「位置对、观感像」，由 owner 看图判断（AC-W3-11）；不追求与照片一一对应。
 - 烘焙一次约 2048 × 1024 个片元、每个十几次噪声采样，预计在毫秒级；实施时实测并记入 evidence。
@@ -170,10 +172,44 @@ flowchart LR
   - 月亮：亮度倍率、色温；星空：亮度倍率、色温（作用于星星、银河和夜天光）。滑杆与太阳的同款，拖动按合并键折叠。
   - 底部注明需要署名的图源。
 - 时间一组新增一行月亮信息：月相名称（新月、蛾眉月、上弦月、盈凸月、满月、亏凸月、下弦月、残月）与照亮比例、月出月落；前后最近的满月、新月日期，点击日期即把日期改成那一天（一次可撤销的提交）。
-- 曝光提示：渲染选项卡默认曝光值旁的参考值加上「满月夜约 −3」「银河约 −7」。
+- 曝光（修订 v5）：
+  - 摄像机属性的「曝光」一组加「自动 / 手动」切换：自动时显示补偿滑杆（−5…+5，步长 1/3 档）和当前的等效 EV100（只读），手动时是 W2 的 ISO、快门和 EV100。光圈在两种模式下都显示（它同时属于景深）。
+  - 「渲染」选项卡的曝光一栏同样加切换：自动显示补偿，手动显示默认曝光值；手动时的参考值加上「满月夜约 −3」「银河约 −7」。
+  - 非物理天空下整组置灰（W2 规则）。
+
+### 环境测光（修订 v5）
+
+Epic design「物理单位与曝光」定了公式和压暗曲线，本节只写代码落点。
+
+- **`world/exposure.ts`**：
+  - `nightDarkening(evm)`：Epic 修订 v6 的直线 3.5 · clamp((15 − EV_m) / 26, 0, 1)。
+  - 低太阳压暗（修订 v6）：`world/atmosphere/cpu.ts` 的 `sunFacing`、`sunFacingPeak`，`world/nightSky/night.ts:lowSunStops`；`PhysicalLighting` 写进 `scene.userData.physical.lowSun`，`ambientEV100` 取 max(D, L)。
+  - `render_view` 的曝光回报（修订 v6）：`creativescene/shot_exposure.go`，`creativeagent/scene_tools.go:renderSucceeded`。
+  - `autoEV100(lux, compensation) = environmentEV(lux) + nightDarkening(environmentEV(lux)) − compensation`。
+  - `type ViewerExposure = { mode: 'ambient'; compensation: number } | { mode: 'manual'; ev100: number }`；`cameraExposure(camera)` 与 `defaultExposure(render)` 把文档字段换成它。手动的摄像机仍按 `ev100(f_stop, shutter_s, iso)`。
+- **E 从哪来**：`PhysicalLighting` 已求出场景原点的水平照度（`light.horizontal`），现写在 `scene.userData.physical.fogLux`。改名为 `lux`，雾与测光同用一个值，与 s_env 同一时机写入。
+- **每帧的曝光**：`render/litLook.ts:frameExposure(scene, lit, viewer, lux)`：物理天空下，手动取 `viewer.ev100`，自动取 `autoEV100(lux, viewer.compensation)`。`lux` 由调用方从 three 场景的 `userData.physical` 取：视口在 `Viewport.tsx`，离屏出图在 `host/render.ts`。`PhysicalLighting` 的布局 effect 在出图前已经写好它，所以视口与导出一致；没有物理光照时（其他天空、白模）不读它。
+- **取景**：`host/framing.ts` 的 `Framing.ev100` 换成 `exposure: ViewerExposure`，`cameraEV100` 换成 `cameraExposure`；`render_view` 的临时视点和预设视角用 `defaultExposure(scene.render)`。
+- **新摄像机**：`SceneEditor.tsx` 按默认摄像机的模式写：自动时写 `exposure_mode: 'ambient'` 和同样的补偿；手动时写 `exposure_mode: 'manual'` 加 `newCameraExposure` 的 ISO 和快门（W2 的做法）。`editing.ts:newCamera` 的 `exposure` 参数随之扩展。
+- **前端补齐**：`state/apply.ts` 的 `cameraDefaults` 加 `exposure_mode: 'ambient'`、`exposure_compensation: 0`，`render` 的缺省加 `exposure_mode: 'ambient'`、`exposure_compensation: 0`。服务端总是带齐字段，前端的缺省只用于乐观应用。
+
+### 夜色与夜空增益（修订 v5）
+
+- **`world/nightLook.ts`（新增）**：
+  - `nightLookWeight(lux, nightLook)` = `nightLook` × smoothstep：EV_m ≥ 4 时 0，EV_m ≤ −4 时 1（EV_m 即 `environmentEV(lux)`）。
+  - `nightLookNode(color, weight)`（TSL）：Y = dot(c, Rec.709 的亮度系数)，c′ = mix(c, Y · tint, weight · s)。tint 的亮度归一到 1，Y 不变。
+  - 起点数值：tint 取约 20000 K 的黑体色调并按亮度归一（偏蓝），s = 0.75：满月夜偏暖的院子（约 rgb 95/86/75）变为约 80/87/107。实施时试过 9000 K、s = 0.6，只把暖色拉回中性灰，看不出偏蓝。四张对照图后由 owner 定稿（Epic 未决事项 10）。
+- **接入**：`SceneRenderer` 的输出节点里，`picture` 在送进 `renderOutput` 之前经过 `nightLookNode`。权重是一个 uniform，每帧随 `exposure` 一起由 frame 参数写入；`frameExposure` 一并返回它，非物理天空、白模、线框、线稿时为 0。输出节点不随权重重建，入夜不重新编译。
+- **夜空增益**：`world/nightSky/light.ts` 的 `AIRGLOW_TINT` 从偏暖（B−V 0.8）改为深蓝，另加 `AIRGLOW_GAIN`（起点 1），`AIRGLOW_ZENITH` 与常数项 `AIRGLOW_LUX` 一并乘上，天空与它照亮的场景保持一致（E2）。数值由样例定稿。
+- **界面**：「夜空」一组加「夜色」滑杆（0…1）；手动太阳模式下这一组置灰，只有夜色可调。
 
 ### 服务端
 
+- **曝光字段**（修订 v5，`model.go`、`ops.go`、`view.go`）：
+  - `Camera` 加 `ExposureMode *string`、`ExposureCompensation *float64`。`completeCamera` 加一个参数，说明缺模式时补什么：解码已存储的快照（`model.go` 读取时的补齐）补 `manual`，`add_objects` 写入前（`ops.go`）补 `ambient`；补偿都补 0。`mergeCamera` 在补齐后的旧值上合并，只改 ISO 的旧摄像机仍是手动。
+  - `Render` 加 `ExposureMode`、`ExposureCompensation`，缺省 `ambient`、0；`set_render` 的「至少写一项」加上这两项。
+  - 校验：模式只能是 `ambient`、`manual`；补偿在 −5…5；越界返回 400 并写字段名。
+  - 指纹（`fingerprint.go`）：物理天空的 `lit` 下，自动时清除 `ISO`、`ShutterS`，`FStop` 按景深的现有规则；手动时清除 `ExposureMode`、`ExposureCompensation`，W2 时期的摄像机补齐为手动后哈希输入不变。其他情形连同两个新字段一起清除。`render` 的三个曝光字段都不计入。
 - **校验与补齐**（`sky.go`）：`night` 只在 `kind = physical` 时允许，其他天空返回 400，原因写「night（夜空）只属于物理天空」。补齐时 `night` 缺省为全部开关打开、倍率 1、色温 6500。四个数值的范围按契约，越界返回 400 并写字段名。
 - **月亮参考**（`moon.go`，proposal「新增决定」2，owner 2026-10-22 同意）：
   - 移植 Meeus《天文算法》第 47 章（月亮位置，取主要的周期项，精度约 0.1°）与第 49 章（月相时刻）；月出月落按视高度 +0.125°（地平线 −0.833° 加月亮的地平视差）用二分搜索求。
@@ -184,9 +220,11 @@ flowchart LR
 
 ### 助手说明
 
-`edit_scene` 的物理天空一段加 `night:{moon, stars, milky_way, moon_strength, moon_temperature_k, stars_strength, stars_temperature_k}` 的说明；`read_scene` 说明 `moon` 参考。要点：
+`edit_scene` 的物理天空一段加 `night:{moon, stars, milky_way, moon_strength, moon_temperature_k, stars_strength, stars_temperature_k, night_look}` 的说明；摄像机与 `set_render` 加 `exposure_mode`、`exposure_compensation`；`read_scene` 说明 `moon` 参考。要点：
 - 夜空只在地点模式下画；手动模式没有月亮和星空。
-- 满月夜 EV100 约 −3（ISO 3200、4 s、f/2.8 附近），银河约 −7（ISO 6400、20 s、f/2.8 附近）。
+- 曝光缺省自动：入夜不必改曝光，画面会比正午暗 2–4 档；要更亮或更暗用补偿。
+- 要按真实照度写实时用手动：满月夜 EV100 约 −3（ISO 3200、4 s、f/2.8 附近），银河约 −7（ISO 6400、20 s、f/2.8 附近）。
+- `night_look` 调夜色的蓝调，0 为纯物理颜色。
 - 「满月之夜」「新月看银河」先读月亮参考选日期，再写时刻。
 
 ## 局部设计与偏差
@@ -200,6 +238,10 @@ flowchart LR
 | 5 | 夜天光随「星星」开关（owner 同意） | 见「夜空何时画」 | 单独开关：没有拍摄用途 |
 | 6 | 离屏出图等资源到位，加载失败则这张图失败 | 导出与快照一致（E3） | 失败时照样出图：静默缺星星 |
 | 7 | 不计天平动、自行、地照 | 视觉影响小；地照需要地球反照的模型 | — |
+| 9 | 视星等换照度以渲染端的太阳为准（SUN_LUX 对应 −26.74 等），不用 Epic「夜空」写的 10^((−14.18 − m) / 2.5)；月亮和星星因此亮约 21% | E2 单一来源：月光本是太阳光的反射，按同一个太阳标定，月光与太阳光的比例才对 | 照抄 Epic 的常数：月光与渲染端太阳的比例偏差 21%。**这条与 Epic 已批准的正文不同，验收时交 owner 决定，随下一次 Epic 修订更正** |
+| 10 | 环境测光的测光值取 `PhysicalLighting` 已算出的 E，经 three 场景的 `userData.physical` 交给出图（修订 v5） | E 只在渲染端算出（CPU 大气表），出图前已经就位；与 s_env、雾同一个值 | 在 `frameExposure` 里另算一次 E：要重复构建 CPU 大气表 |
+| 11 | 夜色放在输出节点里，权重是 uniform（修订 v5） | 一次颜色运算，两个后端相同，不新增 pass，入夜不重编译 | 作为后处理 pass：多一次全屏读写；放进各材质：天空和透明物件要各写一遍 |
+| 12 | 测光用的 CPU 大气表改用 GPU LUT 的尺寸（透射率 256 × 64、多次散射 32 × 32），去掉 W2 的粗表（owner 2026-10-23 验收发现、同意性能代价） | 粗表把太阳 −7°…−11° 的暮光高估最多 6 档，到 −11° 又在 1° 内掉 6 档；环境测光按它测光，黄昏画面先压黑（18:10 均值 20）再跳亮（18:20 均值 86）。同尺寸表与画出的天空一致（「W2 atmosphere drift」0.2%） | 保留粗表、只给测光另建细表：同一个 E 有两个值，s_env、雾与测光不一致。代价：换大气参数 22 ms → 约 90 ms，超出 W2 设计的 30 ms 目标；换时刻不变（1.1 ms）。拖大气滑杆卡顿时再把重建放到空闲时 |
 | 8 | 银河程序化生成，烘焙成纹理（owner 2026-10-23） | 没有授权问题，不下载；位置和朝向真实 | 全天图（NASA SVS / ESO）：画质更真，但授权链不清或要醒目署名、含亮星。逐像素实时求模型：8K 导出时每个像素十几次噪声，烘焙一次后采样更省 |
 
 ## 接口与数据契约
@@ -221,7 +263,8 @@ flowchart LR
   - design「技术选型」：星表 BSC5 的授权结论；新增「银河」「月面贴图」两行；未决事项 6 划掉。
   - design「数据所有权与一致性」「技术选型」与 contracts `architecture: MODIFY 场景模块`、`data: ADD 夜空`「访问模式」：太阳参考扩展为「太阳和月亮参考」。该节已由 W2 交付，修订时以 `.lti/contracts/architecture.md` 的现状为底改写，由本子项再次交付（lesson `epic-delivered-contract-modify`）；若 lti 不允许同一条目交付两次，改为在 `data: 夜空` 的「访问模式」里写月亮参考，架构契约只在归档后随 follow-up 修正。
   - 未决事项 6 划掉，写结论。
-- **OpenAPI**：`CreativeSceneSky` 加 `night`（七个字段）；`SceneRead`、`EditResult` 对应的助手工具结果不在 OpenAPI 里（它们是工具输出，W2 同）。运行 `make generate`，提交两份生成物。
+- **Epic 修订 v5**（owner 2026-10-23 批准，已 `lti epic revise` 并重新 bind）：`data: MODIFY 摄像机曝光`（摄像机与 `render` 加 `exposure_mode`、`exposure_compensation`，缺省规则见服务端一节）；`data: ADD 夜空` 加 `night_look`；`architecture: MODIFY 场景模块` 的曝光一句改为自动或手动。三者由本子项交付。
+- **OpenAPI**：`CreativeSceneSky` 加 `night`（八个字段）；`CreativeSceneCamera` 与 `CreativeSceneRender` 加 `exposure_mode`、`exposure_compensation`；`SceneRead`、`EditResult` 对应的助手工具结果不在 OpenAPI 里（它们是工具输出，W2 同）。运行 `make generate`，提交两份生成物。
 - **本 Change 的 contracts.md**：无局部增量。
 
 ## 挂载点
@@ -244,9 +287,21 @@ flowchart LR
 | `frontend/src/creative-scene/objects/Lighting.tsx:PhysicalLighting` | 修改 | 主光、副光；月亮天空视图；星星；E 与 s_env；资源到位时重画 |
 | `frontend/src/creative-scene/host/render.ts:openShooter` | 修改 | 挂载前等夜空资源：`render_view`、导出、客户端任务和编辑器内的出图都经过它 |
 | `frontend/src/creative-scene/panels/PhysicalSkyFields.tsx` | 修改 | 夜空一组、月亮信息、署名 |
-| `frontend/src/creative-scene/panels/RenderPanel.tsx` | 修改 | 夜景的 EV100 参考值 |
+| `frontend/src/creative-scene/panels/RenderPanel.tsx` | 修改 | 默认摄像机的自动 / 手动与补偿；夜景的 EV100 参考值 |
 | `frontend/src/creative-scene/editing.ts` | 修改 | 改夜空字段、跳到满月/新月日期的提交 |
 | `frontend/scripts/night-sky/` | 新增 | 星表、月面贴图的构建脚本 |
+| `frontend/src/creative-scene/world/exposure.ts` | 修改 | `nightDarkening`、`autoEV100`、`ViewerExposure`；`PhysicalExposure.fogLux` 改名 `lux`（修订 v5） |
+| `frontend/src/creative-scene/world/nightLook.ts` | 新增 | 夜色权重与 TSL 节点（修订 v5） |
+| `frontend/src/creative-scene/render/litLook.ts:frameExposure` | 修改 | 按观看者的曝光模式求 k，一并返回夜色权重 |
+| `frontend/src/creative-scene/render/sceneRenderer.ts` | 修改 | 输出节点接入夜色；frame 参数加权重 |
+| `frontend/src/creative-scene/host/framing.ts` | 修改 | `Framing.exposure` 取代 `ev100` |
+| `frontend/src/creative-scene/host/render.ts`、`Viewport.tsx` | 修改 | 从 `userData.physical` 取 E 求曝光与夜色 |
+| `frontend/src/creative-scene/panels/Properties.tsx` | 修改 | 摄像机曝光的自动 / 手动与补偿 |
+| `frontend/src/creative-scene/SceneEditor.tsx` | 修改 | 新摄像机沿用默认摄像机的曝光设置 |
+| `frontend/src/creative-scene/state/apply.ts` | 修改 | 摄像机与 `render` 的新缺省值 |
+| `frontend/scripts/creative-scene-exposure.test.ts` | 新增 | 压暗曲线、自动 EV、夜色权重（修订 v5） |
+| `backend/internal/creativescene/model.go`、`ops.go`、`view.go`、`fingerprint.go` | 修改 | 曝光模式与补偿的补齐、合并、校验与指纹（修订 v5） |
+| `backend/internal/creativescene/camera_dof_test.go` 或新的 `camera_exposure_test.go` | 修改 | 读旧数据补手动、写入补自动、合并、越界 |
 | `frontend/scripts/creative-scene-astro.test.ts` | 修改 | 月亮与亮星对照 JPL Horizons |
 | `frontend/scripts/creative-scene-night-sky.test.ts` | 新增 | 照度换算、色调、常数项、资源加载失败 |
 | `frontend/scripts/creative-scene.e2e.mjs` | 修改 | W3 的检查 |
@@ -261,7 +316,7 @@ flowchart LR
 | `backend/internal/creativescene/fingerprint_internal_test.go` | 修改 | 夜空字段计入 `lit`、不计入 `clay`/`line`；W2 时期快照补齐后指纹变化 |
 | `backend/internal/creativescene/agent_tools_test.go` | 修改 | 读写结果带 `moon` 的条件 |
 | `backend/internal/creativeagent/scene_tools.go`、`scene_tools_test.go` | 修改 | 工具说明 |
-| `api/openapi.yaml` 及 `make generate` 的生成物 | 修改 | `CreativeSceneSky.night` |
+| `api/openapi.yaml` 及 `make generate` 的生成物 | 修改 | `CreativeSceneSky.night`；摄像机与 `render` 的曝光模式和补偿 |
 | `docs/third-party-notices.md` | 修改 | BSC5（Hoffleit & Warren 1991、CDS/VizieR）、NASA SVS CGI Moon Kit |
 | `docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md` | 修改 | 夜空与月亮参考 |
 
@@ -270,16 +325,18 @@ flowchart LR
 | 验收 | 怎么验证 |
 |---|---|
 | AC-W3-1 月亮 | `creative-scene-astro.test.ts`：四个参考地点、满月/上弦/新月各一天的 JPL Horizons 数据点，按角距 ≤ 0.2°（验收线 1°）；照亮比例 ≤ 0.02。e2e：上弦月傍晚的 `lit` 图里月盘亮面朝向太阳一侧（盘内左右半边亮度比） |
-| AC-W3-2 月光 | 单测：满月高于 30°、太阳 −18° 时 CPU 的 E 在 0.1–0.4 lux。e2e：EV100 −3 下院子的平均亮度与正午阳光 16 法则的相差在 2 档内；影子方向（像素比较）；太阳 −5° 时主光仍是太阳 |
+| AC-W3-2 月光 | 单测：满月高于 30°、太阳 −18° 时 CPU 的 E 在 0.1–0.4 lux。e2e「W3 moonlight」改为默认设置（环境测光）：入夜着色器程序数不变；院子的平均亮度在可读范围、比正午暗 2–3 档；手动 EV100 −3 下同样可读；影子方向（像素比较）；太阳 −5° 时主光仍是太阳 |
 | AC-W3-3 星空 | 单测：北极星、天狼星、织女星、南十字座 α 的场景方向对照 JPL Horizons（≤ 0.2°）；北京的北极星高度与纬度差 ≤ 1°。e2e：改正北方向后星空图像随之旋转 |
-| AC-W3-4 新月 | e2e：新月之夜的 E 中月亮项为 0；EV100 −7 的导出存进 evidence |
+| AC-W3-4 新月 | e2e：新月之夜的 E 中月亮项为 0；默认设置下天空区域的平均颜色 B > R 且不为黑，场景比正午暗 3–4 档；默认设置与手动 EV100 −7 的导出存进 evidence |
 | AC-W3-5 亮度与色温 | e2e：月亮倍率 2 时月盘区域的线性亮度约为 2 倍；6500 K 与不写时逐像素相同；色温调高时 B/R 变大 |
 | AC-W3-6 开关与模式 | e2e：逐个关开关，对应区域变化、其余区域不变；手动模式与 W3 之前同场景逐像素相同；白天正午（月亮不入画）与 W3 之前逐像素相同（差 > 2 的像素为 0），基线在实施前从 `develop` 导出 |
 | AC-W3-7 两个后端 | 沿用 `SCENE_E2E_GPU` 的对照，加满月、新月两个场景；W2 的天空阈值 |
 | AC-W3-8 确定性与过时 | 沿用 `SCENE_E2E_HIDDEN`，加满月之夜；`fingerprint_internal_test.go` 每条规则一个用例；资源加载失败时 `render_view` 返回明确原因（单测模拟） |
 | AC-W3-9 助手 | 后端单测：`night` 的错误写法；`moon_test.go` 对照前端数据；`agent_tools_test.go` 的出现条件。真实模型对话由 owner 验收时抽查 |
 | AC-W3-10 性能 | 沿用 `SCENE_E2E_PERF`：入夜拖动时刻的帧率、静止帧时间；白天打开时网络请求里没有星表；银河烘焙的耗时 |
-| AC-W3-11 夜景可用 | 三组样例存进 evidence，owner 判断 |
+| AC-W3-11 夜景可用 | 默认设置下正午、黄昏、满月之夜、新月之夜四张对照图（标出 EV_m、D、中灰的显示值）与月亮初升一组存进 evidence，owner 判断并定数值 |
+| AC-W3-12 环境测光 | `creative-scene-exposure.test.ts`：压暗曲线过五个点、连续；补偿 +1 时 EV 减 1。后端单测：读旧摄像机补手动、`add_objects` 补自动、只改 ISO 仍为手动、越界 400；`fingerprint_internal_test.go`：自动时改补偿只让这台摄像机的 `lit` 过时、改 ISO 不过时，手动的旧摄像机指纹不变，`render` 的曝光不计入。e2e：拖动时刻的若干时刻上亮度单调变化、相邻时刻差不超过 1 档；转视角曝光不变；新摄像机的相机视图与视口亮度一致 |
+| AC-W3-13 夜色 | 单测：权重在 EV_m ≥ 4 为 0、≤ −4 为 `night_look`；节点保持亮度。e2e：满月之夜 `night_look` 0 与 1 的平均亮度相差 < 3%，1 时 B/R 更大；正午与无夜色逐像素相同；白模不变 |
 
 - 只跑定向测试：单测按文件，e2e 用 `SCENE_E2E_ONLY=W3`，端口 5293（项目约定）。
 - **上线与回滚**：W2 之后存的物理天空场景读取时补齐 `night`，`lit` 导出各过时一次（Epic 预期）；回滚到 W2 的后端时，含 `night` 的场景读取失败，只做前向修复（Epic「接口设计」）。没有迁移。
@@ -290,3 +347,4 @@ flowchart LR
 |---|---|---|---|
 | 星星精灵的大小与亮星的增大规则 | 观感 | 实施时出样例，owner 看图 | 验收时（不阻塞开工） |
 | 银河模型的参数、银河与夜天光的标定常数 | 新月之夜的观感 | 按文献值实施，owner 看图 | 验收时（不阻塞开工） |
+| 压暗曲线、夜色 tint 与降饱和比例、夜天光的颜色与增益（Epic 未决事项 10） | 默认设置下的夜景观感 | 按起点数值实施，出四张对照图，owner 看图定稿 | 验收时（不阻塞开工） |

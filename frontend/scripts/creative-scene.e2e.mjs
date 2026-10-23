@@ -14,6 +14,9 @@ import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { Euler, Quaternion } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
+import { completeSky } from '../src/creative-scene/world/physicalSky.ts'
+import { documentAzimuth, sunVector } from '../src/creative-scene/world/astro.ts'
+import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
@@ -97,6 +100,13 @@ const placement = (id) => `object:${id}`
 const content = (id) => `object:${id}:content`
 /** JSON with object keys sorted, for comparing material assignments. */
 const canonical = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x))
+
+/** A scene as the server reads it out: a physical sky completed with the fields it left out (backend sky.go completeSky), the night sky among them. */
+const served = (scene) => {
+  const out = structuredClone(scene)
+  out.environment.sky = completeSky(out.environment.sky)
+  return out
+}
 
 /** One scene document with revisions, conflict checks and trash. */
 class SceneServer {
@@ -288,7 +298,7 @@ class SceneServer {
       actor,
       revision: String(this.revision),
       title: this.title,
-      scene: structuredClone(this.scene),
+      scene: served(this.scene),
       unit_revs: { ...this.unitRevs },
       changed_units: changed,
       removed_units: removed,
@@ -307,7 +317,7 @@ class SceneServer {
       trashed_at: this.trashedAt,
       created_at: '2026-10-16T09:00:00Z',
       updated_at: '2026-10-16T09:00:00Z',
-      scene: structuredClone(this.scene),
+      scene: served(this.scene),
       models: this.modelSummaries(this.scene),
     }
   }
@@ -560,6 +570,11 @@ async function open(server, options = {}) {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()))
+  // SCENE_E2E_CONSOLE=1 prints every console message, warnings (WGSL compile errors among them) included.
+  if (process.env.SCENE_E2E_CONSOLE) {
+    page.on('console', (m) => console.log(`[console ${m.type()}] ${m.text().slice(0, 2000)}`))
+    page.on('pageerror', (e) => console.log(`[pageerror] ${e.stack?.slice(0, 2000)}`))
+  }
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
@@ -3607,8 +3622,12 @@ const obliqueOrtho = {
 /** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1; edit changes it first. */
 function referenceScene(server, name, edit) {
   server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
-  // The default exposure the server reads documents from before W2 with (backend model.go Render.UnmarshalJSON).
+  // The exposure the server reads documents from before W2 and W3 with (backend model.go): the default camera at 15 and
+  // ambient metering, a stored camera by hand (Epic revision v5).
   server.scene.render.exposure_ev100 ??= 15
+  server.scene.render.exposure_mode ??= 'ambient'
+  server.scene.render.exposure_compensation ??= 0
+  for (const o of server.scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
   edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
   for (const o of server.scene.objects) {
@@ -4107,8 +4126,7 @@ async function atmosphereDrift(page, preset, sunElevationDeg) {
       const raw = await gpu.renderer.readRenderTargetPixelsAsync(target, 0, 0, target.width, target.height)
       return raw instanceof Uint16Array ? Float32Array.from(raw, half) : Float32Array.from(raw)
     }
-    // Tables at the LUTs' sizes: the product's coarser ones would hide a drift in their own error.
-    const cpu = new CpuAtmosphere(params, 'lut')
+    const cpu = new CpuAtmosphere(params)
     /** Errors at an n × n grid of texels: cpuAt(u, v, out) is the CPU's value at a texel centre. */
     const compare = (data, target, n, floor, cpuAt) => {
       const { width: w, height: h } = target
@@ -4249,7 +4267,11 @@ const physicalNames = ['physical-noon', 'physical-golden', 'physical-dusk']
 /** The yard opened in the rendered view at the editor's default view; change(ops) writes as another session would and waits for the picture. */
 async function physicalYard(name, edit) {
   const server = new SceneServer()
-  referenceScene(server, name, edit)
+  // W2's checks expose the free view by hand at render.exposure_ev100; W3's that want ambient metering say so.
+  referenceScene(server, name, (scene) => {
+    scene.render.exposure_mode = 'manual'
+    edit?.(scene)
+  })
   const { context, page, errors } = await open(server, { query: '?export=1' })
   const { box } = await viewportCenter(page)
   await page.mouse.move(1, 1)
@@ -4555,7 +4577,7 @@ await check('W2 environment tab: the physical sky with its defaults and today’
   assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
   assert.deepEqual(
     { ...sky(), date: undefined },
-    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500 },
+    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500, night: { moon: true, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500, night_look: 1 } },
   )
   assert.equal(sky().date, today, 'today, on this machine')
   assert.deepEqual(server.scene.environment.ambient, { color: '#ffffff', intensity: 0.4 }, 'the rest of the environment stays')
@@ -4741,7 +4763,7 @@ await check('W2 exposure controls: a camera’s ISO, shutter and aperture with i
   const { server, context, page, errors } = await physicalYard('physical-noon')
   const camera = server.scene.objects.find((o) => o.kind === 'camera')
   await page.getByRole('treeitem', { name: /shot/ }).click()
-  const exposure = page.getByRole('group', { name: '曝光' })
+  const exposure = page.getByRole('group', { name: '曝光', exact: true })
   assert.match(await exposure.getByRole('status', { name: 'EV100' }).textContent(), /15\.0/)
   await exposure.getByRole('combobox', { name: 'ISO' }).selectOption('400')
   await waitFor(() => server.object(camera.id).camera.iso === 400, 'ISO written')
@@ -5350,6 +5372,447 @@ if (process.env.SCENE_E2E_W2_PERF) await check('W2 performance: the physical sky
     record.baseline = JSON.parse(readFileSync(new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-physical-sky/discovery/research/baseline/perf.json', import.meta.url), 'utf8')).modes.rendered
     console.log(`W2 performance: ${JSON.stringify(record, null, 1)}`)
     await writeFile(`${dir}/w2-perf.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [])
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// --- W3 scene-night-sky: the day stays as it was ----------------------------------
+
+const w3Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-night-sky/discovery/research/baseline/', import.meta.url)
+
+/**
+ * Physical skies W3 must leave alone (AC-W3-6): the yard at noon (the moon is
+ * 49° below the horizon) and the same with the sun at manual angles after
+ * sunset, where no night sky is drawn.
+ */
+// The free view exposed by hand as the baseline was (Epic revision v5 meters it from the ambient light, an intended change of its
+// own), and the manual sky's twilight without the night look (it works under manual angles too): what is left is
+// what the night sky itself does by day.
+const w3Variants = {
+  'physical-noon': {
+    from: 'physical-noon',
+    edit(scene) {
+      scene.render.exposure_mode = 'manual'
+    },
+  },
+  'physical-manual': {
+    from: 'physical-noon',
+    edit(scene) {
+      scene.render.exposure_mode = 'manual'
+      Object.assign(scene.environment.sky, { sun_mode: 'manual', sun_elevation_deg: -8, sun_azimuth_deg: 250, night: { night_look: 0 } })
+    },
+  },
+}
+
+// SCENE_E2E_W3_BASELINE=<dir>: the variants' lit pictures on this machine's GPU, taken before W3 changes the renderer (w3Baseline).
+if (process.env.SCENE_E2E_W3_BASELINE) await check('W3 baseline: the day’s and the manual sky’s lit pictures on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W3_BASELINE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', variants: {} }
+    for (const [name, { from, edit }] of Object.entries(w3Variants)) {
+      const files = []
+      for (const img of await litPictures(gpu, from, edit)) {
+        const file = img.file.replace(from, name)
+        await writeFile(`${dir}/${file}`, img.png)
+        files.push(file)
+      }
+      record.variants[name] = { from, files }
+      console.log(`W3 baseline ${name}: ${files.join(', ')}`)
+    }
+    await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W3_DAY=<dir> (AC-W3-6): the variants' lit exports and rendered viewport are what they were before
+// W3, pixel for pixel, on this machine's GPU. Sheets of any image that is not go to the directory.
+if (process.env.SCENE_E2E_W3_DAY) await check('W3 day unchanged: noon and the manual sky draw as before W3 on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W3_DAY
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const [name, { from, edit }] of Object.entries(w3Variants)) {
+      for (const img of await litPictures(gpu, from, edit)) {
+        const file = img.file.replace(from, name)
+        const m = await compareShots(page, readFileSync(new URL(file, w3Baseline)), img.png, 2)
+        if (m.error || m.over > 0) {
+          off.push(`${file}: ${m.error ?? `${m.over.toFixed(4)}% of pixels off by more than 2`}`)
+          if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}.jpg`, m.sheet)
+        }
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [])
+})
+
+// W3 (design「程序化银河」): the Milky Way's map baked on the GPU against milkyWayAt on the CPU at a grid of
+// texels; the two are one model written twice. SCENE_E2E_W3_MILKY_WAY=<dir> also saves the baked map
+// (sRGB, its brightest at white) as milky-way-<backend>.png; SCENE_E2E_W2_METAL runs it on this machine's GPU.
+await check('W3 milky way drift: the baked map agrees with the CPU model', async () => {
+  const gpu = process.env.SCENE_E2E_W2_METAL ? await chromium.launch({ headless: true, args: metal }) : null
+  const context = gpu ? await gpu.newContext() : null
+  const { page, errors, context: own } = await open(new SceneServer(), context ? { context } : {})
+  try {
+    const out = await page.evaluate(async () => {
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { bakeMilkyWay, milkyWayAt, MILKY_WAY_SIZE } = await import('/src/creative-scene/world/nightSky/milkyWay.ts')
+      const half = (h) => {
+        const e = (h & 0x7c00) >> 10
+        const f = h & 0x03ff
+        const sign = h & 0x8000 ? -1 : 1
+        if (e === 0) return sign * 2 ** -14 * (f / 1024)
+        if (e === 0x1f) return f ? NaN : sign * Infinity
+        return sign * 2 ** (e - 15) * (1 + f / 1024)
+      }
+      const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+      const started = performance.now()
+      const map = bakeMilkyWay(gpu.renderer)
+      const raw = await gpu.renderer.readRenderTargetPixelsAsync(map, 0, 0, map.width, map.height)
+      const bakeMs = performance.now() - started
+      const data = raw instanceof Uint16Array ? Float32Array.from(raw, half) : Float32Array.from(raw)
+      const { w, h } = MILKY_WAY_SIZE
+      const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+      const stats = (flip) => {
+        let sum = 0, count = 0, max = 0, nonFinite = 0
+        for (let j = 0; j < 64; j++) {
+          for (let i = 0; i < 128; i++) {
+            const x = Math.floor(((i + 0.5) / 128) * w)
+            const y = Math.floor(((j + 0.5) / 64) * h)
+            const c = milkyWayAt(((x + 0.5) / w) * 360 - 180, ((y + 0.5) / h) * 180 - 90)
+            const row = flip ? h - 1 - y : y
+            const k = (row * w + x) * 4
+            const g = lum(data[k], data[k + 1], data[k + 2])
+            if (!Number.isFinite(g)) nonFinite++
+            const want = lum(...c)
+            // Relative where it shows, absolute against 1 % of the peak where it is dark.
+            const err = Math.abs(g - want) / Math.max(want, 0.01)
+            sum += err
+            count++
+            max = Math.max(max, err)
+          }
+        }
+        return { mean: sum / count, max, nonFinite, flipped: flip }
+      }
+      const a = stats(false)
+      const b = stats(true)
+      // The picture, l increasing to the left as on sky charts, north up.
+      const canvas = document.createElement('canvas')
+      canvas.width = w / 2
+      canvas.height = h / 2
+      const ctx = canvas.getContext('2d')
+      const img = ctx.createImageData(w / 2, h / 2)
+      const flip = b.mean < a.mean
+      for (let y = 0; y < h / 2; y++) {
+        for (let x = 0; x < w / 2; x++) {
+          const sx = w - 1 - x * 2
+          const sy = flip ? y * 2 : h - 1 - y * 2
+          for (let c = 0; c < 3; c++) img.data[(y * (w / 2) + x) * 4 + c] = Math.round(255 * Math.min(1, Math.max(0, data[(sy * w + sx) * 4 + c]) ** (1 / 2.2)))
+          img.data[(y * (w / 2) + x) * 4 + 3] = 255
+        }
+      }
+      ctx.putImageData(img, 0, 0)
+      const result = { backend: gpu.backend, bakeMs, ...(a.mean <= b.mean ? a : b), png: canvas.toDataURL('image/png') }
+      map.dispose()
+      gpu.dispose()
+      return result
+    })
+    console.log(`W3 milky way drift (${out.backend}): mean ${(out.mean * 100).toFixed(3)}%, max ${(out.max * 100).toFixed(2)}%, baked and read in ${out.bakeMs.toFixed(0)} ms${out.flipped ? ', rows flipped' : ''}`)
+    if (process.env.SCENE_E2E_W3_MILKY_WAY) await writeFile(`${process.env.SCENE_E2E_W3_MILKY_WAY}/milky-way-${out.backend}.png`, Buffer.from(out.png.split(',')[1], 'base64'))
+    assert.equal(out.nonFinite, 0)
+    // On average they agree to about 0.05 %; at the dust lanes' edges float32 noise through exp(−τ) reaches about 12 % (both backends).
+    assert.ok(out.mean < 0.005 && out.max < 0.15, `mean ${out.mean}, max ${out.max}`)
+    assert.deepEqual(errors, [])
+  } finally {
+    await (context ?? own).close()
+    await gpu?.close()
+  }
+})
+
+// W3 (design「星星」): Beijing at 22:00 on 2026-10-26, the free view at Polaris where Skyfield puts it
+// (scripts/fixtures/astro, refracted as astronomy-engine does): the star is the brightest point by the
+// view's centre, within 0.2°. SwiftShader (WebGL2), and this machine's GPU (WebGPU) with SCENE_E2E_W2_METAL;
+// SCENE_E2E_W3_STARS=<dir> saves the pictures.
+await check('W3 stars: Polaris drawn where the sky puts it, at the view’s centre', async () => {
+  const polaris = JSON.parse(readFileSync(new URL('fixtures/astro/skyfield-stars.json', import.meta.url), 'utf8')).points.find((p) => p.star === 'Polaris' && p.location === 'Beijing')
+  assert.equal(polaris.utc, '2026-10-26T14:00:00Z')
+  const elevation = polaris.elevation + Refraction('normal', polaris.elevation)
+  const d = sunVector(elevation, documentAzimuth(polaris.azimuth, 180))
+  // View space (Z up): document (x, y, z) is (x, −z, y). The camera stands where the yard's does.
+  const position = [0, -4, 1.6]
+  const target = [position[0] + d.x * 50, position[1] - d.z * 50, position[2] + d.y * 50]
+  const view = { camera: { position, target, ortho: false, zoom: 1 }, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false }
+  const gpu = process.env.SCENE_E2E_W2_METAL ? await chromium.launch({ headless: true, args: metal }) : null
+  try {
+    for (const [backend, b] of [['webgl2', browser], ...(gpu ? [['webgpu', gpu]] : [])]) {
+      const context = await b.newContext({ viewport: { width: 1280, height: 820 } })
+      await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, view])
+      const server = new SceneServer()
+      referenceScene(server, 'physical-noon', (scene) => {
+        Object.assign(scene.environment.sky, { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26', local_time: '22:00' })
+        scene.environment.sky.night = { moon: false, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500, night_look: 1 }
+        Object.assign(scene.render, { exposure_mode: 'manual', exposure_ev100: -2 })
+      })
+      const { page, errors } = await open(server, { context })
+      await shading(page, '最终渲染')
+      const { box } = await viewportCenter(page)
+      let star = null
+      await waitFor(async () => {
+        const png = await settledShot(page, box)
+        star = await page.evaluate(async (src) => {
+          const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+          const c = document.createElement('canvas')
+          c.width = img.width
+          c.height = img.height
+          const g = c.getContext('2d')
+          g.drawImage(img, 0, 0)
+          const p = g.getImageData(0, 0, c.width, c.height).data
+          const at = (x, y) => p[(y * c.width + x) * 4] + p[(y * c.width + x) * 4 + 1] + p[(y * c.width + x) * 4 + 2]
+          const [cx, cy] = [c.width / 2, c.height / 2]
+          // The brightest pixel within 40 px of the centre, then the light-weighted centre about it over the background.
+          let best = { x: 0, y: 0, v: -1 }
+          for (let y = Math.floor(cy - 40); y <= cy + 40; y++) for (let x = Math.floor(cx - 40); x <= cx + 40; x++) if (at(x, y) > best.v) best = { x, y, v: at(x, y) }
+          let background = 0
+          for (let x = -40; x <= 40; x++) background += at(Math.floor(cx) + x, Math.floor(cy) - 40)
+          background /= 81
+          let [w, sx, sy] = [0, 0, 0]
+          for (let y = best.y - 4; y <= best.y + 4; y++) for (let x = best.x - 4; x <= best.x + 4; x++) {
+            const v = Math.max(0, at(x, y) - background)
+            w += v
+            sx += v * x
+            sy += v * y
+          }
+          // Pixel x covers x to x + 1.
+          return { x: sx / w + 0.5, y: sy / w + 0.5, cx, cy, peak: best.v, background, height: c.height, png: src }
+        }, `data:image/png;base64,${png.toString('base64')}`)
+        return star.peak - star.background > 60
+      }, `${backend}: a star by the centre`, 30_000)
+      if (process.env.SCENE_E2E_W3_STARS) await writeFile(`${process.env.SCENE_E2E_W3_STARS}/polaris-${backend}.png`, Buffer.from(star.png.split(',')[1], 'base64'))
+      // The free view's vertical field of view is 45°.
+      const pxPerDeg = star.height / (2 * Math.tan((22.5 * Math.PI) / 180)) * (Math.PI / 180)
+      const offDeg = Math.hypot(star.x - star.cx, star.y - star.cy) / pxPerDeg
+      console.log(`W3 stars ${backend}: Polaris at (${star.x.toFixed(1)}, ${star.y.toFixed(1)}), the centre (${star.cx}, ${star.cy}): ${offDeg.toFixed(3)}° off; peak ${star.peak} over ${star.background.toFixed(0)}`)
+      assert.ok(offDeg <= 0.2, `${backend}: ${offDeg.toFixed(3)}° off`)
+      assert.deepEqual(errors, [])
+      await context.close()
+    }
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// W3 (design「光照」): Beijing on 2026-10-26, the full moon. From 17:40 (the sun just down, still the shadowing
+// light) to 18:40 (the moon takes it) and 22:00 (the moon 54° up): no shader program is built, so nightfall
+// compiles nothing; at 22:00 the yard at EV100 −3 is seen, about as noon at sunny 16 (0.22 lux of moonlight).
+await check('W3 dusk: by default the picture dims steadily from late afternoon to night, without going dark and jumping back', async () => {
+  // The meter and the drawn sky once disagreed by up to 6 stops with the sun 7–11° down: dark at 18:10, bright again at 18:20 (owner 2026-10-23).
+  // The low sun's darkening holds from about 4° up until the night's takes over, so the afterglow may lift the picture a little (up to about 4).
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
+  const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { local_time: '17:00' })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const rows = [[ '17:00', (await lumaStats(page, await settle(), { level: 250 })).mean ]]
+  for (let m = 17 * 60 + 5; m <= 19 * 60; m += 5) {
+    const t = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+    rows.push([t, (await lumaStats(page, await change(sky({ local_time: t })), { level: 250 })).mean])
+  }
+  console.log(`W3 dusk: ${rows.map(([t, v]) => `${t} ${v.toFixed(0)}`).join(', ')}`)
+  for (let i = 1; i < rows.length; i++) {
+    const step = rows[i][1] - rows[i - 1][1]
+    assert.ok(step > -20 && step < 5, `${rows[i - 1][0]} → ${rows[i][0]}: ${step.toFixed(1)}`)
+  }
+  assert.ok(Math.min(...rows.map(([, v]) => v)) > 70, 'never dark')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W3 moonlight: by default the full moon’s yard is seen, darker than noon; by hand at EV100 −3 too; nightfall builds no shader', async () => {
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
+  // The default camera as a new scene has it (Epic revision v5): ambient metering, no compensation.
+  const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { local_time: '12:00' })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const programs = () => page.evaluate(() => [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').reduce((n, h) => n + h.programs, 0))
+  const noon = await lumaStats(page, await settle(), { level: 250 })
+  await change(sky({ local_time: '17:40' }))
+  const before = await programs()
+  await change(sky({ local_time: '18:40' }))
+  const night = await lumaStats(page, await change(sky({ local_time: '22:00' })), { level: 250 })
+  const after = await programs()
+  await shot(page, 'w3-full-moon-auto')
+  const manual = await lumaStats(page, await change([{ op: 'set_render', render: { exposure_mode: 'manual', exposure_ev100: -3 } }]), { level: 250 })
+  await shot(page, 'w3-full-moon-ev-3')
+  const rgb = (l) => [l.r, l.g, l.b].map((v) => v.toFixed(0))
+  console.log(`W3 moonlight: noon mean ${noon.mean.toFixed(0)}; 22:00 ambient ${night.mean.toFixed(0)} (rgb ${rgb(night)}), clipped ${(night.bright * 100).toFixed(2)}%; by hand at −3 ${manual.mean.toFixed(0)} (rgb ${rgb(manual)}); programs ${before} → ${after}`)
+  assert.equal(after, before, 'no shader program built from dusk to night')
+  assert.ok(night.mean > 40 && night.mean < noon.mean - 20 && night.bright < 0.02, 'metered from the ambient light the yard is seen, darker than at noon')
+  assert.ok(manual.mean > 60 && manual.mean < 220 && manual.bright < 0.02, 'by hand at −3 the yard is seen: neither dark nor blown')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W3 night look: by a full moon it turns the yard blue at the same brightness; at noon it does nothing', async () => {
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
+  const { context, page, errors, settle, change, sky, server } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { local_time: '22:00' })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const look = (v) => sky({ night: { ...server.scene.environment.sky.night, night_look: v } })
+  const on = await lumaStats(page, await settle(), { level: 250 })
+  await shot(page, 'w3-night-look-1')
+  const off = await lumaStats(page, await change(look(0)), { level: 250 })
+  await shot(page, 'w3-night-look-0')
+  const noonOff = await change([...sky({ local_time: '12:00' })])
+  const noonOn = await change(look(1))
+  const noon = await compareShots(page, noonOff, noonOn, 0)
+  const rgb = (l) => [l.r, l.g, l.b].map((v) => v.toFixed(0))
+  console.log(`W3 night look: 22:00 at 1 mean ${on.mean.toFixed(1)} (rgb ${rgb(on)}), at 0 ${off.mean.toFixed(1)} (rgb ${rgb(off)}); noon off by ${noon.error ?? `${noon.over}%`}`)
+  assert.ok(Math.abs(on.mean / off.mean - 1) < 0.03, 'the same brightness')
+  assert.ok(on.b / on.r > (off.b / off.r) * 1.1, 'bluer')
+  assert.ok(!noon.error && noon.over === 0, 'nothing at noon')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W3 new moon: by default the moonless yard is darker than the full moon’s yet not black; the same night draws alike twice', async () => {
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', local_time: '22:00' }
+  const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { date: '2026-10-26' })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const full = await lumaStats(page, await settle(), { level: 250 })
+  const first = await change(sky({ date: '2026-11-09' }))
+  await shot(page, 'w3-new-moon-auto')
+  const again = await change(sky({ local_time: '22:00' }))
+  const moonless = await lumaStats(page, first, { level: 250 })
+  const twice = await compareShots(page, first, again, 0)
+  console.log(`W3 new moon: full moon mean ${full.mean.toFixed(0)}, new moon ${moonless.mean.toFixed(0)}; drawn twice off by ${twice.error ?? `${twice.over}%`}`)
+  assert.ok(moonless.mean < full.mean && moonless.mean > 20, 'darker than the full moon, yet not black')
+  assert.ok(!twice.error && twice.over === 0, 'the same night draws alike')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W3 environment tab: the night sky’s switches, strengths and look; the moon’s day with a jump to a new moon and back; the exposure modes of a camera and of the default camera', async () => {
+  const { server, context, page, errors, sky, time } = await physicalTab()
+  const city = page.getByRole('combobox', { name: '城市' })
+  await city.fill('北京')
+  await page.getByRole('option', { name: /北京/ }).first().click()
+  await waitFor(() => sky().place === '北京', 'Beijing')
+  await page.getByLabel('日期').fill('2026-10-26')
+  await waitFor(() => sky().date === '2026-10-26', 'the date')
+  await time('22:00')
+  const moonDay = page.getByRole('region', { name: '月亮的一天' })
+  assert.equal(await moonDay.getByRole('status', { name: '月相' }).textContent(), '满月')
+  assert.match(await moonDay.getByRole('status', { name: '月亮照亮比例' }).textContent(), /^(9[5-9]|100)%$/)
+  await saved(page)
+  await moonDay.getByRole('button', { name: /^下一个新月/ }).click()
+  await waitFor(() => sky().date === '2026-11-09', 'the next new moon')
+  assert.equal(await moonDay.getByRole('status', { name: '月相' }).textContent(), '新月')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => sky().date === '2026-10-26', 'undo goes back to the full moon')
+
+  const night = page.getByRole('group', { name: '夜空' })
+  await night.getByRole('checkbox', { name: '月亮' }).uncheck()
+  await waitFor(() => sky().night.moon === false, 'the moon off')
+  await night.getByRole('checkbox', { name: '月亮' }).check()
+  await waitFor(() => sky().night.moon === true, 'the moon on')
+  for (const [label, key, value] of [['月亮亮度', 'moon_strength', 2], ['星空亮度', 'stars_strength', 0.5], ['夜色', 'night_look', 0.5]]) {
+    const field = night.getByRole('spinbutton', { name: label })
+    await field.fill(String(value))
+    await field.press('Enter')
+    await waitFor(() => sky().night[key] === value, `${key} written`)
+  }
+  await page.getByRole('group', { name: '太阳位置' }).getByRole('button', { name: '手动角度' }).click()
+  await waitFor(() => sky().sun_mode === 'manual', 'manual angles')
+  assert.ok(await night.getByRole('checkbox', { name: '银河' }).isDisabled(), 'the night sky greyed under manual angles')
+  assert.ok(await night.getByRole('spinbutton', { name: '夜色' }).isEnabled(), 'the night look still works')
+  await night.getByText('只在「地点和时间」下生效').waitFor()
+
+  // A camera stored before the exposure modes reads as manual; switched to ambient metering it shows the compensation.
+  await page.getByRole('treeitem', { name: /shot/ }).click()
+  const exposure = page.getByRole('group', { name: '曝光', exact: true })
+  const camera = server.scene.objects.find((o) => o.kind === 'camera')
+  assert.equal(await exposure.getByRole('combobox', { name: 'ISO' }).count(), 1, 'manual: ISO and shutter')
+  await exposure.getByRole('group', { name: '曝光模式' }).getByRole('button', { name: '环境测光' }).click()
+  await waitFor(() => server.object(camera.id).camera.exposure_mode === 'ambient', 'the camera metered from the ambient light')
+  assert.equal(await exposure.getByRole('combobox', { name: 'ISO' }).count(), 0, 'ambient metering: no ISO')
+  const compensation = exposure.getByRole('spinbutton', { name: '曝光补偿（档）' })
+  await compensation.fill('1')
+  await compensation.press('Enter')
+  await waitFor(() => server.object(camera.id).camera.exposure_compensation === 1, 'the compensation written')
+  await page.keyboard.press('Escape')
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
+  const modes = page.getByRole('group', { name: '默认摄像机曝光' })
+  assert.equal(await modes.getByRole('button', { name: '环境测光' }).getAttribute('aria-pressed'), 'true', 'the default camera on ambient metering')
+  const fill = async (label, value) => {
+    const f = page.getByRole('spinbutton', { name: label })
+    await f.fill(String(value))
+    await f.press('Enter')
+  }
+  await fill('环境测光补偿（档）', -1)
+  await waitFor(() => server.scene.render.exposure_compensation === -1, 'the default compensation written')
+  await modes.getByRole('button', { name: '手动' }).click()
+  await waitFor(() => server.scene.render.exposure_mode === 'manual', 'the default camera by hand')
+  await page.getByText(/银河 −7/).waitFor()
+  assert.ok(await page.getByRole('spinbutton', { name: '默认曝光（EV100）' }).isEnabled())
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// SCENE_E2E_W3_PERF=<dir> (AC-W3-10), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
+// physical sky at night (Shanghai, 2026-09-23 at 21:00, a gibbous moon up). Frame times standing still, and
+// dragging the time of day a minute a frame from 19:00 for 3 s. Written to w3-perf-<SCENE_E2E_W3_PERF_LABEL>.json.
+if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky at night on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W3_PERF
+  const label = process.env.SCENE_E2E_W3_PERF_LABEL ?? 'after'
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+    server.scene.environment.sky = { ...physical, local_time: '21:00' }
+    server.scene.render.exposure_ev100 = -3
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await shading(page, '最终渲染')
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await sleep(1500)
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scene: 'AC-9 (about 200 objects, 4 lights) under the physical sky, Shanghai 2026-09-23 at 21:00, EV100 −3', label }
+    await orbitFrames(page, 1000)
+    record.frames = frameStats(await orbitFrames(page, 4000))
+    const drag = await page.evaluate(() => new Promise((resolve) => {
+      const slider = document.querySelector('input[type=range][aria-label="当地时刻"]')
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      const times = []
+      let minute = 19 * 60
+      const start = performance.now()
+      const tick = (t) => {
+        times.push(t)
+        set.call(slider, String(minute++))
+        slider.dispatchEvent(new Event('input', { bubbles: true }))
+        if (t - start < 3000) requestAnimationFrame(tick)
+        else resolve({ times })
+      }
+      requestAnimationFrame(tick)
+    }))
+    record.drag = frameStats(drag.times)
+    record.requests = await page.evaluate(() => performance.getEntriesByType('resource').map((r) => r.name).filter((n) => /nightSky|stars|moon/.test(n)))
+    console.log(`W3 performance: ${JSON.stringify(record, null, 1)}`)
+    await writeFile(`${dir}/w3-perf-${label}.json`, `${JSON.stringify(record, null, 2)}\n`)
     assert.deepEqual(errors, [])
     await context.close()
   } finally {
