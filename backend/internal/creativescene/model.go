@@ -266,6 +266,13 @@ func invalid(format string, args ...any) error {
 	return creativeops.Explain(creativeops.ErrValidation, format, args...)
 }
 
+// ErrUnreadable is a stored scene this server cannot read: most often one
+// written by a newer version, with a field this one does not know. It is
+// never the caller's mistake, so callers word it apart from a refused
+// operation. It still matches creativeops.ErrValidation, so status mapping
+// is unchanged.
+var ErrUnreadable = errors.New("creative scene: stored scene unreadable")
+
 // decodeScene reads a stored snapshot. Numbers inside free-form params come
 // back as json.Number and are made float64 so comparisons and re-encoding
 // behave like freshly applied values. Cameras stored before the depth of
@@ -274,11 +281,11 @@ func invalid(format string, args ...any) error {
 func decodeScene(p creativecontent.Payload) (Scene, error) {
 	var s Scene
 	if err := creativeops.Decode(p.Scene, &s); err != nil {
-		return Scene{}, err
+		return Scene{}, fmt.Errorf("%w: %w", ErrUnreadable, err)
 	}
 	completeRenderSettings(&s.Render)
 	if err := completeSky(&s.Environment.Sky); err != nil {
-		return Scene{}, err
+		return Scene{}, fmt.Errorf("%w: %w", ErrUnreadable, err)
 	}
 	for i := range s.Objects {
 		canonicalNumbers(&s.Objects[i])

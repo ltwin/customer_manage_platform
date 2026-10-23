@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -207,6 +208,11 @@ func (t *sceneTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opti
 		out, err = h.renderView(ctx, step, raw)
 	}
 	if err != nil {
+		if errors.Is(err, creativescene.ErrUnreadable) {
+			// The stored scene is at fault, not the call: its detail goes to the log.
+			h.service.logger.ErrorContext(ctx, "creative scene unreadable",
+				slog.String("run_id", h.held.RunID), slog.String("step_id", step), slog.String("tool", t.name), slog.String("error", err.Error()))
+		}
 		return "", sceneRefusal(err)
 	}
 	result, err := json.Marshal(out)
@@ -231,6 +237,10 @@ func sceneRefusal(err error) error {
 	switch {
 	case errors.As(err, &parked):
 		return err
+	case errors.Is(err, creativescene.ErrUnreadable):
+		// Before any explanation it carries: rewriting the call cannot help.
+		return refuseTool("这个场景存着的数据当前服务读不出来（多半是更新版本的服务写入了它不认识的内容），不是这次调用写错了。" +
+			"不要改写参数重试，也不要换别的场景工具绕开；告诉创作者这个场景暂时无法读写、原因已记录，稍后再试")
 	case errors.Is(err, creativedocument.ErrTrashed):
 		return refuseTool("场景在回收站里，恢复后才能读写")
 	case errors.Is(err, creativedocument.ErrNotFound):

@@ -1,10 +1,12 @@
 package creativeagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -750,6 +752,47 @@ func TestSceneRefusalNeverSpeaksOfGeneration(t *testing.T) {
 	}
 	if err := sceneRefusal(errToolArguments); !errors.As(err, &refused) || !strings.Contains(refused.message, "参数不符合工具说明") {
 		t.Fatalf("arguments: %v", err)
+	}
+	if err := sceneRefusal(fmt.Errorf("%w: %w", creativescene.ErrUnreadable, explained)); !errors.As(err, &refused) || !strings.Contains(refused.message, "不是这次调用写错了") {
+		t.Fatalf("unreadable scene: %v", err)
+	}
+}
+
+// A scene this server cannot read (here: a field from a newer version) is
+// not the call's fault: read and edit both say so instead of asking for a
+// rewrite, and the detail goes to the log.
+func TestAnUnreadableSceneIsNotTheCallsFault(t *testing.T) {
+	f, c, consent, doc := visualScene(t, false)
+	var logs bytes.Buffer
+	f.service.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	if _, err := f.db.Exec(`UPDATE creative_content_revisions SET payload = jsonb_set(payload, '{scene,render,from_a_newer_version}', 'true')
+		WHERE id = (SELECT content_revision_id FROM creative_document_revisions WHERE document_id=$1 ORDER BY revision DESC LIMIT 1)`, doc); err != nil {
+		t.Fatal(err)
+	}
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", readSceneTool, map[string]any{"document_id": doc}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("b", editSceneTool, map[string]any{"document_id": doc, "based_on_revision": 1,
+				"operations": []any{map[string]any{"op": "set_render", "render": map[string]any{"mode": "lit"}}}}))
+		},
+	}}
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "改成最终渲染"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+	for i, tool := range []string{readSceneTool, editSceneTool} {
+		if got := lastTool(s.request(i + 2)); got["code"] != "creative_tool_refused" || !strings.Contains(got["message"].(string), "不是这次调用写错了") {
+			t.Errorf("%s answered %v", tool, got)
+		}
+	}
+	if n := strings.Count(logs.String(), "creative scene unreadable"); n != 2 || !strings.Contains(logs.String(), "from_a_newer_version") {
+		t.Errorf("logged %d times:\n%s", n, logs.String())
 	}
 }
 
