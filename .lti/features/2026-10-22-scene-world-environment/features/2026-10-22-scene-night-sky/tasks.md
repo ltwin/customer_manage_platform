@@ -104,7 +104,10 @@
 
 ## 7. 助手
 
-- [ ] 7.1 `creativeagent/scene_tools.go`：`edit_scene` 加 `night` 的字段与范围（含 `night_look`）、「只在地点模式下画」；摄像机与 `set_render` 的 `exposure_mode`、`exposure_compensation`（缺省自动，入夜不必改曝光；写实时用手动和夜景的 EV100 参考值）；`read_scene` 说明 `moon` 参考与「满月、新月先读月亮参考选日期」；`scene_tools_test.go` 固定关键句。`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md` 记录变更；`docs/third-party-notices.md` 加 BSC5 与 NASA SVS CGI Moon Kit。完成判据：`check-go` 通过
+- [x] 7.1 `creativeagent/scene_tools.go`：`edit_scene` 加 `night` 的字段与范围（含 `night_look`）、「只在地点模式下画」；摄像机与 `set_render` 的 `exposure_mode`、`exposure_compensation`（缺省自动，入夜不必改曝光；写实时用手动和夜景的 EV100 参考值）；`read_scene` 说明 `moon` 参考与「满月、新月先读月亮参考选日期」；`scene_tools_test.go` 固定关键句。`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md` 记录变更；`docs/third-party-notices.md` 加 BSC5 与 NASA SVS CGI Moon Kit。完成判据：`check-go` 通过
+  - `scene_tools.go`：摄像机与 `set_render` 加 `exposure_mode`、`exposure_compensation`；物理天空的 `night` 字段、范围与「只在地点模式下画」；月亮参考的说明；曝光建议改为「默认自动、入夜不必改曝光、只比正午暗 2–4 档；要按真实相机曝光时写 manual，银河 −7」；`read_scene` 提到 moon（月亮参考），`render_view` 说明各视点的曝光来源。`scene_tools_test.go` 新增 `TestSceneToolsDescribeTheNightAndTheExposure` 固定关键句，原有的期望句子跟着改。
+  - 工具说明变长，`compaction_regression_test.go` 的最小测试窗口 9000 → 10000 token（只为装下工具定义，压缩逻辑不变）。
+  - 文档：`docs/dev/creative-scene-agent.md` 加 W3 一段与 e2e 说明，`docs/dev/agent-skills-tools.md` 更新三个工具，`docs/third-party-notices.md` 加 BSC5、NASA SVS CGI Moon Kit 与程序化银河。`go test ./internal/creativeagent/` 全部通过，gofmt 干净。
 
 ## 8. 验收证据
 

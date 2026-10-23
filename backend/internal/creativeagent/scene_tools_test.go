@@ -722,11 +722,38 @@ func TestSceneToolsDescribeThePhysicalSky(t *testing.T) {
 			"雾霾 dust_density 12", "高原 altitude_m 4000、dust_density 0.2", "沙尘 dust_density 40",
 			"sun_strength:0…10", "sun_temperature_k:2000…12000", "物理天空下天空光由大气算出，环境光不生效",
 			"exposure_ev100?:-10…20", "iso:25…102400", "shutter_s:1/8000…30",
-			"EV100 = log2(f_stop²/shutter_s) − log2(iso/100)", "晴天 15、阴天 12–13、日落 9–12、蓝调时刻 5–8、城市夜景 3–5、月光 −3",
+			"EV100 = log2(f_stop²/shutter_s) − log2(iso/100)", "晴天 15、阴天 12–13、日落 9–12、蓝调时刻 5–8、城市夜景 3–5、月光 −3、银河 −7",
 			"太阳参考", "scene_azimuth_deg", "黄金时刻（太阳高度 −4°…6°）", "蓝调时刻（−6°…−4°）", "按它选 local_time",
 		},
 		readSceneTool:  {"带 sun（太阳参考"},
-		renderViewTool: {"临时视点和预设取景按 render.exposure_ev100 曝光"},
+		renderViewTool: {"临时视点和预设取景按 render 的曝光设置"},
+	}
+	for name, wants := range descs {
+		info, err := (&sceneTool{name: name}).Info(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(info.Desc, want) {
+				t.Errorf("%s does not say %q", name, want)
+			}
+		}
+	}
+}
+
+// W3: the night sky's fields, the moon reference and, from Epic revision v5,
+// the automatic exposure that makes a night need no exposure change.
+func TestSceneToolsDescribeTheNightAndTheExposure(t *testing.T) {
+	descs := map[string][]string{
+		editSceneTool: {
+			"night:{moon:bool", "milky_way:bool", "moon_strength:0…10", "moon_temperature_k:2000…12000", "stars_strength:0…10", "stars_temperature_k:2000…12000", "night_look:0…1",
+			"夜空只在 sun_mode:location 下画", "night_look 照常生效",
+			"月亮参考", "phase", "illumination", "previous_full_moon", "next_full_moon", "previous_new_moon", "next_new_moon", "先按它选 date",
+			"exposure_mode:auto|manual", "exposure_compensation:-5…5", "exposure_mode?:auto|manual", "exposure_compensation?:-5…5",
+			"默认自动曝光", "入夜不必改曝光", "只比正午暗 2–4 档", "要按真实相机曝光时写 exposure_mode:manual",
+		},
+		readSceneTool:  {"moon（月亮参考）"},
+		renderViewTool: {"摄像机按自己的曝光"},
 	}
 	for name, wants := range descs {
 		info, err := (&sceneTool{name: name}).Info(t.Context())
