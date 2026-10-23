@@ -1,6 +1,6 @@
 {
   "uid": "47e54703-f35f-43e1-a4a1-d9d19ff7d7bc",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-volumes",
   "title": "W5 体积物件开工前穿刺：逐像素光线步进与 froxel 的帧时间、WebGL2 可行性、与实时 GI 的合成顺序、体积物件上限（Epic 未决事项 2、7）",
   "kind": "feature",
@@ -32,9 +32,9 @@
       "api:提交场景命令"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-23T14:52:56.443Z",
-  "updatedAt": "2026-10-23T16:56:34.945Z",
+  "updatedAt": "2026-10-23T16:57:49.987Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -55,8 +55,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "934f08ba0c36e97139f8c95328031bcac168555a",
+    "at": "2026-10-23T16:57:49.002Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "67b2f0adebca98f2fede3b3047fafe43b54ff7cedd7c80e538419a1a0c28a31e"
+    },
+    "preExisting": [
+      ".lti/snapshots/67b2f0adebca98f2fede3b3047fafe43b54ff7cedd7c80e538419a1a0c28a31e.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
