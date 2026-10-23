@@ -1,6 +1,6 @@
 {
   "uid": "188beed6-152e-49c5-ab86-602f1e946382",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-physical-sky",
   "kind": "feature",
   "assurance": "governed",
@@ -35,7 +35,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-22T11:37:31.579Z",
-  "updatedAt": "2026-10-23T06:13:26.706Z",
+  "updatedAt": "2026-10-23T06:14:21.061Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-23T06:14:21.014Z",
+    "summary": "feat/scene-physical-sky（faa5d1eb）以 --no-ff 合入 develop（40b509a4）；合入树与分支树的差别只有 develop 上的 creative-mcp-server 文档与原型文件，没有应用代码",
+    "method": "manual",
+    "limitations": "分支上的验证（定向单测、Go 测试、W2 e2e、GPU 用例）原样适用，合并后未重跑测试",
+    "sourceCommit": "faa5d1eb12c0091a346778e85f2acaf9dbac9ae0",
+    "targetCommit": "40b509a4d730cad348a54df11321a78fc41a2d05",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "e5c883d001f040e42e529868d84557a500063e8fcc8c6422c2b795260f0ab3ca"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
