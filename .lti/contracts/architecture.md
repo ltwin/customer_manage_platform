@@ -34,3 +34,30 @@
 - 手动编辑：编辑器 outbox → `POST /creative/documents/{id}/commands` → 新文档修订 → 账号失效通知 → 其他标签页重读。
 - 助手写模型 / 截图 / 导出：工具创建客户端任务 → 运行进入 `waiting_client` 并释放槽位 → 渲染端（场景编辑视图，或按需加载渲染模块的画布页）认领、执行、暂存上传 → 完成任务 → 同事务落结果并让运行继续。
 - 导出：渲染端暂存上传导出图。摄影师手动导出时调 `POST /creative/documents/{id}/scene-exports`；助手导出（`export_shots`）把图片清单随完成任务提交，在完成事务里放置。两条路径走同一个放置流程：画布命令层建图片节点，写入 `based_on`。读画布时经上述端口为导出图节点计算过时状态。
+
+## 外部助手接入
+
+### 职责与边界
+- 外部助手（首批宿主为 ChatGPT、Codex CLI、Claude Code、Claude 桌面端（含网页））经远程 MCP 端点 `<PUBLIC_BASE_URL>/mcp` 使用创意空间工具，经本系统自带的 OAuth 授权服务器取得令牌。
+- `backend/internal/platform/oauth`：授权服务器。负责元数据、客户端注册（CIMD、DCR，含网页端连接器的机密客户端）、授权码与 PKCE、访问令牌签发与校验、refresh 轮换、外部助手连接的增删查、活动状态。不依赖任何 `creative*` 包。
+- `backend/internal/creativemcp`：MCP 协议适配，基于官方 Go SDK。把 `creativeagent` 的外部工具目录注册为 MCP 工具，下发服务端 `instructions`（正文由 `creativeagent` 维护），转换错误和图片结果。客户端声明 MCP Apps 扩展（`io.modelcontextprotocol/ui`）时，另外提供两个界面资源（生成与任务卡、镜头卡），并给挂卡片的工具附上卡片元数据；没声明时不出现任何卡片相关内容。是一个 `http.Handler`，不 import gin，不含业务规则。
+- `backend/internal/creativeagent`：外部工具门面 `ExternalTools`（`List` / `Call`）。工具实现依赖「助手主体」调用者接口，运行和外部连接各自实现它；同名工具在两条路径上执行同一个领域入口，说明出自同一个 `Info()`。
+- `platform/httpapi`：挂载 `/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`、`/oauth/*`、`/mcp`，以及网页端的 `/api/v1/creative/agent-connections`。`/mcp` 的 Bearer 校验器由 `platform/oauth` 提供，通过后把外部连接主体交给 `creativemcp`。
+- 前端：「外部助手」接入页（按宿主给出接入文字与回退方法，连接列表与断开）、`/oauth/authorize` 授权确认页、创意空间的「外部助手已连接」指示、场景历史的外部助手署名。
+- 接入物料：
+  - Codex 插件 `integrations/codex-plugin/`：manifest、MCP 配置（调大 `tool_timeout_sec`）、marketplace；只发生产包，不含平台 Skill 正文。
+  - Claude 系列只用连接器（桌面端、网页与登录 claude.ai 账号的 Claude Code 共用），ChatGPT 用 Developer Mode 应用，两者都没有插件。
+  - 所有宿主共用的使用说明是服务端 `instructions`。
+- 不职责：服务端渲染（场景客户端任务仍由打开的创意空间页面执行）；外部助手的对话、计划和模型计费。
+- 依赖方向：`httpapi` → `platform/oauth`；`httpapi` → `creativemcp` → `creativeagent` → 各创意领域包。`creativeagent` 不知道 MCP 与 OAuth，只认助手主体。业务表只保存外部连接 ID 作为署名与归属，不读授权服务器的表。
+
+### 关键数据流
+- 授权：宿主读受保护资源元数据 → 授权服务器元数据 → CIMD 或 DCR → 浏览器授权确认页（复用网页登录态）→ 授权码 + PKCE 换令牌。
+- 工具调用：`/mcp` Bearer 校验（签名、受众、过期、连接有效）→ `creativemcp` → `ExternalTools.Call`（外部准入、限流）→ 与内置助手相同的领域入口，写入者为外部连接 → 结果、图片或任务句柄。
+- 异步：生成与场景任务超过 40 秒未完成时返回任务句柄，外部助手用 `wait_tasks` 长轮询（单次 ≤ 45 秒）。场景任务由打开的页面认领执行，完成时只落结果，不唤醒运行。
+- 断开：同事务标记连接、作废 refresh 链、取消非终态场景任务 → 账号失效通道通知页面。
+- 卡片：图形界面宿主（ChatGPT、Claude 桌面端和网页）读取界面资源，把工具结果渲染成沙箱里的卡片；卡片里的动作由宿主代为调用本服务的工具（同一个连接、同一个令牌），再把创作者的决定作为上下文交给外部助手。服务端分辨不出一次调用来自卡片还是模型，两者的准入和语义完全相同。
+
+### 长期约束
+- 网页端令牌与 MCP 令牌受众不同、签名密钥按用途派生，互不通用。
+- `MCP_ENABLED` 关闭时 `/mcp`、`/oauth/*` 与两个元数据端点都不挂载。
