@@ -1,6 +1,6 @@
 {
   "uid": "b6da8241-71c0-4091-9d33-f69541b54db3",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-aerial-perspective",
   "kind": "feature",
   "assurance": "governed",
@@ -30,9 +30,9 @@
       "data:空气透视"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-23T13:07:53.471Z",
-  "updatedAt": "2026-10-23T13:15:52.918Z",
+  "updatedAt": "2026-10-23T13:16:30.045Z",
   "risk": {
     "factors": [
       "perf-sensitive"
@@ -52,8 +52,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "03c05d097618a2032e9c1d35eefdea5e5890fe01",
+    "at": "2026-10-23T13:16:29.408Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "3472e6ed58284d8ddea1de46f7dfd23c86976a5f4c77da1aa542933effed087c"
+    },
+    "preExisting": [
+      ".lti/snapshots/3472e6ed58284d8ddea1de46f7dfd23c86976a5f4c77da1aa542933effed087c.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
