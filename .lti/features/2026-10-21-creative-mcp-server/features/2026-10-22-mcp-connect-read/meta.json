@@ -1,6 +1,6 @@
 {
   "uid": "5917e00c-4ab2-49c8-a023-cca859888e0b",
-  "revision": 8,
+  "revision": 9,
   "id": "mcp-connect-read",
   "kind": "feature",
   "assurance": "governed",
@@ -39,7 +39,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-22T13:53:43.715Z",
-  "updatedAt": "2026-10-23T08:49:28.725Z",
+  "updatedAt": "2026-10-23T09:01:19.081Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-23T09:01:19.032Z",
+    "summary": "feat/mcp-connect-read（acc77bfa）以 --no-ff 合入 develop（63e1a7ed）；契约冲突在 architecture.md、data.md，W2 与 C1 各自新增的章节都保留；合并后在主检出跑 make check-merge 全部通过（build、lint、generate-check、前端单测、后端全部包；scripts/deploy/Dockerfile 未变，跳过 test-ops）",
+    "method": "manual",
+    "limitations": "项目未配置 lti checks，按 make check-merge 人工记录；全量 e2e 未跑（门禁不要求）",
+    "sourceCommit": "acc77bfa785f1a06c67719467554d4a000b1a05d",
+    "targetCommit": "63e1a7edae7f8cb97b93de0a3f69c79ede5a6edd",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "36ae81b95c53ff17fc9f62122cf7721fe4f6ef1ef4938619f44cec2f71f586e5"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
