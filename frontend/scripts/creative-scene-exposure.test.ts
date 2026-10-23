@@ -32,6 +32,21 @@ test('haze darkens the day, a plateau brightens it; behind the ground the sun is
   assert.ok(below.horizontal > 0 && below.horizontal < 1000, `twilight ${below.horizontal.toFixed(1)} lux`)
 })
 
+// Twilight as drawn: with coarser tables the meter stayed 6 stops up with the
+// sun 7–11° down, then fell 6 stops within a degree, and the automatic
+// exposure went dark at dusk, then jumped bright (owner 2026-10-23).
+test('twilight dims smoothly, as the GPU draws it: no cliff down to the sun 12° below', () => {
+  const cpu = new CpuAtmosphere(PRESETS.clear)
+  const ev = (elevationDeg: number) => environmentEV(cpu.daylight(mu(elevationDeg), sunAbove).horizontal)
+  let last = ev(4)
+  for (let e = 3.5; e >= -12; e -= 0.5) {
+    const now = ev(e)
+    assert.ok(now < last && last - now < 2, `${e}°: EV ${now.toFixed(2)} after ${last.toFixed(2)}`)
+    last = now
+  }
+  assert.ok(ev(-9) < -2 && ev(-9) > -5, `the sun 9° down meters ${ev(-9).toFixed(2)}`)
+})
+
 test('the ground under the scene is at its altitude, the camera 10 m above it; Mie absorption is not normalised', () => {
   assert.equal(groundRadius(PRESETS.highland), BOTTOM + 4)
   assert.ok(Math.abs(viewRadius(PRESETS.highland) - (BOTTOM + 4.01)) < 1e-9)

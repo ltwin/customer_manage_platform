@@ -4126,8 +4126,7 @@ async function atmosphereDrift(page, preset, sunElevationDeg) {
       const raw = await gpu.renderer.readRenderTargetPixelsAsync(target, 0, 0, target.width, target.height)
       return raw instanceof Uint16Array ? Float32Array.from(raw, half) : Float32Array.from(raw)
     }
-    // Tables at the LUTs' sizes: the product's coarser ones would hide a drift in their own error.
-    const cpu = new CpuAtmosphere(params, 'lut')
+    const cpu = new CpuAtmosphere(params)
     /** Errors at an n × n grid of texels: cpuAt(u, v, out) is the CPU's value at a texel centre. */
     const compare = (data, target, n, floor, cpuAt) => {
       const { width: w, height: h } = target
@@ -5612,6 +5611,28 @@ await check('W3 stars: Polaris drawn where the sky puts it, at the view’s cent
 // W3 (design「光照」): Beijing on 2026-10-26, the full moon. From 17:40 (the sun just down, still the shadowing
 // light) to 18:40 (the moon takes it) and 22:00 (the moon 54° up): no shader program is built, so nightfall
 // compiles nothing; at 22:00 the yard at EV100 −3 is seen, about as noon at sunny 16 (0.22 lux of moonlight).
+await check('W3 dusk: by default the picture dims steadily from late afternoon to night, without going dark and jumping back', async () => {
+  // The meter and the drawn sky once disagreed by up to 6 stops with the sun 7–11° down: dark at 18:10, bright again at 18:20 (owner 2026-10-23).
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
+  const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { local_time: '17:00' })
+    Object.assign(scene.render, { exposure_mode: 'auto', exposure_compensation: 0 })
+  })
+  const rows = [[ '17:00', (await lumaStats(page, await settle(), { level: 250 })).mean ]]
+  for (let m = 17 * 60 + 5; m <= 19 * 60; m += 5) {
+    const t = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+    rows.push([t, (await lumaStats(page, await change(sky({ local_time: t })), { level: 250 })).mean])
+  }
+  console.log(`W3 dusk: ${rows.map(([t, v]) => `${t} ${v.toFixed(0)}`).join(', ')}`)
+  for (let i = 1; i < rows.length; i++) {
+    const step = rows[i][1] - rows[i - 1][1]
+    assert.ok(step > -20 && step < 3, `${rows[i - 1][0]} → ${rows[i][0]}: ${step.toFixed(1)}`)
+  }
+  assert.ok(Math.min(...rows.map(([, v]) => v)) > 70, 'never dark')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('W3 moonlight: by default the full moon’s yard is seen, darker than noon; by hand at EV100 −3 too; nightfall builds no shader', async () => {
   const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
   // The default camera as a new scene has it (Epic revision v5): automatic, no compensation.
