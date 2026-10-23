@@ -5422,6 +5422,89 @@ if (process.env.SCENE_E2E_W3_DAY) await check('W3 day unchanged: noon and the ma
   assert.deepEqual(off, [])
 })
 
+// W3 (design「程序化银河」): the Milky Way's map baked on the GPU against milkyWayAt on the CPU at a grid of
+// texels; the two are one model written twice. SCENE_E2E_W3_MILKY_WAY=<dir> also saves the baked map
+// (sRGB, its brightest at white) as milky-way-<backend>.png; SCENE_E2E_W2_METAL runs it on this machine's GPU.
+await check('W3 milky way drift: the baked map agrees with the CPU model', async () => {
+  const gpu = process.env.SCENE_E2E_W2_METAL ? await chromium.launch({ headless: true, args: metal }) : null
+  const context = gpu ? await gpu.newContext() : null
+  const { page, errors, context: own } = await open(new SceneServer(), context ? { context } : {})
+  try {
+    const out = await page.evaluate(async () => {
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { bakeMilkyWay, milkyWayAt, MILKY_WAY_SIZE } = await import('/src/creative-scene/world/nightSky/milkyWay.ts')
+      const half = (h) => {
+        const e = (h & 0x7c00) >> 10
+        const f = h & 0x03ff
+        const sign = h & 0x8000 ? -1 : 1
+        if (e === 0) return sign * 2 ** -14 * (f / 1024)
+        if (e === 0x1f) return f ? NaN : sign * Infinity
+        return sign * 2 ** (e - 15) * (1 + f / 1024)
+      }
+      const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+      const started = performance.now()
+      const map = bakeMilkyWay(gpu.renderer)
+      const raw = await gpu.renderer.readRenderTargetPixelsAsync(map, 0, 0, map.width, map.height)
+      const bakeMs = performance.now() - started
+      const data = raw instanceof Uint16Array ? Float32Array.from(raw, half) : Float32Array.from(raw)
+      const { w, h } = MILKY_WAY_SIZE
+      const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+      const stats = (flip) => {
+        let sum = 0, count = 0, max = 0, nonFinite = 0
+        for (let j = 0; j < 64; j++) {
+          for (let i = 0; i < 128; i++) {
+            const x = Math.floor(((i + 0.5) / 128) * w)
+            const y = Math.floor(((j + 0.5) / 64) * h)
+            const c = milkyWayAt(((x + 0.5) / w) * 360 - 180, ((y + 0.5) / h) * 180 - 90)
+            const row = flip ? h - 1 - y : y
+            const k = (row * w + x) * 4
+            const g = lum(data[k], data[k + 1], data[k + 2])
+            if (!Number.isFinite(g)) nonFinite++
+            const want = lum(...c)
+            // Relative where it shows, absolute against 1 % of the peak where it is dark.
+            const err = Math.abs(g - want) / Math.max(want, 0.01)
+            sum += err
+            count++
+            max = Math.max(max, err)
+          }
+        }
+        return { mean: sum / count, max, nonFinite, flipped: flip }
+      }
+      const a = stats(false)
+      const b = stats(true)
+      // The picture, l increasing to the left as on sky charts, north up.
+      const canvas = document.createElement('canvas')
+      canvas.width = w / 2
+      canvas.height = h / 2
+      const ctx = canvas.getContext('2d')
+      const img = ctx.createImageData(w / 2, h / 2)
+      const flip = b.mean < a.mean
+      for (let y = 0; y < h / 2; y++) {
+        for (let x = 0; x < w / 2; x++) {
+          const sx = w - 1 - x * 2
+          const sy = flip ? y * 2 : h - 1 - y * 2
+          for (let c = 0; c < 3; c++) img.data[(y * (w / 2) + x) * 4 + c] = Math.round(255 * Math.min(1, Math.max(0, data[(sy * w + sx) * 4 + c]) ** (1 / 2.2)))
+          img.data[(y * (w / 2) + x) * 4 + 3] = 255
+        }
+      }
+      ctx.putImageData(img, 0, 0)
+      const result = { backend: gpu.backend, bakeMs, ...(a.mean <= b.mean ? a : b), png: canvas.toDataURL('image/png') }
+      map.dispose()
+      gpu.dispose()
+      return result
+    })
+    console.log(`W3 milky way drift (${out.backend}): mean ${(out.mean * 100).toFixed(3)}%, max ${(out.max * 100).toFixed(2)}%, baked and read in ${out.bakeMs.toFixed(0)} ms${out.flipped ? ', rows flipped' : ''}`)
+    if (process.env.SCENE_E2E_W3_MILKY_WAY) await writeFile(`${process.env.SCENE_E2E_W3_MILKY_WAY}/milky-way-${out.backend}.png`, Buffer.from(out.png.split(',')[1], 'base64'))
+    assert.equal(out.nonFinite, 0)
+    // On average they agree to about 0.05 %; at the dust lanes' edges float32 noise through exp(−τ) reaches about 12 % (both backends).
+    assert.ok(out.mean < 0.005 && out.max < 0.15, `mean ${out.mean}, max ${out.max}`)
+    assert.deepEqual(errors, [])
+  } finally {
+    await (context ?? own).close()
+    await gpu?.close()
+  }
+})
+
 // SCENE_E2E_W3_PERF=<dir> (AC-W3-10), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
 // physical sky at night (Shanghai, 2026-09-23 at 21:00, a gibbous moon up). Frame times standing still, and
 // dragging the time of day a minute a frame from 19:00 for 3 s. Written to w3-perf-<SCENE_E2E_W3_PERF_LABEL>.json.

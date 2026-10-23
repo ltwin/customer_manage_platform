@@ -5,6 +5,7 @@ import { luminance } from '../src/creative-scene/world/atmosphere/constants.ts'
 import { loadNightAssets, nightAssetLoaders, nightNeeds, parseStars, resetNightAssets } from '../src/creative-scene/world/nightSky/assets.ts'
 import { AIRGLOW_LUX, AIRGLOW_ZENITH, bvTint, magnitudeLux, moonAbove, starlightLux, starsScale, surfaceLuminance, vanRhijn } from '../src/creative-scene/world/nightSky/light.ts'
 import { completeSky, type PhysicalSky } from '../src/creative-scene/world/physicalSky.ts'
+import { milkyWayAt, milkyWayMean } from '../src/creative-scene/world/nightSky/milkyWay.ts'
 
 // W3: the night sky's light and assets (design「亮度与颜色的单一来源」「资源与确定性」).
 
@@ -91,4 +92,26 @@ test('an offscreen picture waits for the assets it needs and fails when one does
     Object.assign(nightAssetLoaders, loaders)
     resetNightAssets()
   }
+})
+
+test('the Milky Way: brightest by the galactic centre, a band along the plane, the Great Rift darker than its sides, the Magellanic Clouds in the south', () => {
+  const L = (l: number, b: number) => luminance(milkyWayAt(l, b))
+  // The Sagittarius star cloud, just south of the centre.
+  const sagittarius = L(2, -5)
+  assert.ok(sagittarius > 0.6 && sagittarius < 1.4, `Sagittarius ${sagittarius}`)
+  // Away from the plane it fades: at 30° it is a twentieth of the band.
+  for (const l of [-120, -60, 0, 60, 120, 180]) assert.ok(L(l, 30) < L(l, -2) / 8, `l ${l}`)
+  // Toward the anticentre the band is fainter than toward the centre.
+  assert.ok(L(180, 0) < L(10, -3) / 2)
+  // The rift: the plane at l 30°–50° is darker than 5° to either side, on average.
+  let lane = 0
+  let sides = 0
+  for (let l = 30; l <= 50; l += 2) {
+    lane += L(l, 1.5)
+    sides += (L(l, 7) + L(l, -5)) / 2
+  }
+  assert.ok(lane < sides, `rift ${lane} against ${sides}`)
+  // The Large Magellanic Cloud stands out of the dark southern sky.
+  assert.ok(L(280.5, -32.9) > 5 * L(260, -32.9))
+  assert.ok(milkyWayMean() > 0.02 && milkyWayMean() < 0.2, `mean ${milkyWayMean()}`)
 })
