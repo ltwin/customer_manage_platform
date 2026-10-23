@@ -28,6 +28,10 @@ function forbiddenImport(path: string): string | null {
   return null
 }
 
+// What a picture shows must not depend on when it is taken (W2, patterns:
+// 场景着色写法): the sky's time comes from the scene, never from the clock.
+const clockless = /^creative-scene\/(world|render)\//
+
 export type Hit = { line: number; rule: string; text: string }
 
 export function check(fileName: string, source: string): Hit[] {
@@ -50,6 +54,10 @@ export function check(fileName: string, source: string): Hit[] {
     if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
       const why = forbiddenImport(node.arguments[0].text)
       if (why) hit(node, why, node.arguments[0].text)
+    }
+    if (clockless.test(fileName)) {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'Date' && node.expression.name.text === 'now') hit(node, 'wall clock', 'Date.now()')
+      if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'Date' && (node.arguments ?? []).length === 0) hit(node, 'wall clock', 'new Date()')
     }
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       for (const g of glsl) if (node.text.includes(g)) hit(node, 'GLSL', g)
@@ -90,9 +98,13 @@ test('the check finds each kind of breach, and not a name in a comment', () => {
   assert.deepEqual(rules(`import { Edges, CameraControls } from '@react-three/drei'`, 'a.tsx'), ['drei outside the list'])
   assert.deepEqual(rules('const fragment = `void main() { gl_FragColor = vec4(1.0); }`'), ['GLSL', 'GLSL'])
   assert.deepEqual(rules(`const s = '#include <common>'`), ['GLSL'])
+  assert.deepEqual(rules(`const t = Date.now()\nconst d = new Date()\nconst e = new Date`, 'creative-scene/world/astro.ts'), ['wall clock', 'wall clock', 'wall clock'])
+  assert.deepEqual(rules(`const t = Date.now()`, 'creative-scene/render/sky.ts'), ['wall clock'])
   // Not breaches.
   assert.deepEqual(rules(`// three's ShaderMaterial and onBeforeCompile are gone; void main( lives in no string.\n/* WebGLRenderer */\nconst x = 1`), [])
   assert.deepEqual(rules(`import { LineSegments2 } from 'three/addons/lines/webgpu/LineSegments2.js'\nimport { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'`), [])
   assert.deepEqual(rules(`import { GizmoHelper, GizmoViewport } from '@react-three/drei'`, 'a.tsx'), [])
   assert.deepEqual(rules(`const label = 'ShaderMaterial'`), [], 'a string naming the class is no use of it')
+  assert.deepEqual(rules(`const d = new Date(utcMs)\nconst t = performance.now()`, 'creative-scene/world/astro.ts'), [], 'an instant from the scene, and timing')
+  assert.deepEqual(rules(`const t = Date.now()`, 'creative-scene/objects/Lighting.tsx'), [], 'the clock is for the editor, outside world/ and render/')
 })

@@ -1,0 +1,118 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "notes": {
+    "preset-clear-noon": {
+      "metered_ev100": 15.32,
+      "sky": {
+        "local_time": "12:00",
+        "altitude_m": 0,
+        "dust_density": 1
+      }
+    },
+    "preset-clear-golden": {
+      "metered_ev100": 10.65,
+      "sky": {
+        "local_time": "17:30",
+        "altitude_m": 0,
+        "dust_density": 1
+      }
+    },
+    "preset-haze-noon": {
+      "metered_ev100": 15.23,
+      "sky": {
+        "local_time": "12:00",
+        "altitude_m": 0,
+        "dust_density": 12
+      }
+    },
+    "preset-haze-golden": {
+      "metered_ev100": 9.95,
+      "sky": {
+        "local_time": "17:30",
+        "altitude_m": 0,
+        "dust_density": 12
+      }
+    },
+    "preset-highland-noon": {
+      "metered_ev100": 15.34,
+      "sky": {
+        "local_time": "12:00",
+        "altitude_m": 4000,
+        "dust_density": 0.2
+      }
+    },
+    "preset-highland-golden": {
+      "metered_ev100": 10.99,
+      "sky": {
+        "local_time": "17:30",
+        "altitude_m": 4000,
+        "dust_density": 0.2
+      }
+    },
+    "preset-dust-noon": {
+      "metered_ev100": 14.89,
+      "sky": {
+        "local_time": "12:00",
+        "altitude_m": 0,
+        "dust_density": 40
+      }
+    },
+    "preset-dust-golden": {
+      "metered_ev100": 9.44,
+      "sky": {
+        "local_time": "17:30",
+        "altitude_m": 0,
+        "dust_density": 40
+      }
+    },
+    "highland-horizon": {
+      "metered_ev100": 9.9,
+      "sky": {
+        "local_time": "17:40",
+        "altitude_m": 4000,
+        "dust_density": 0.2
+      }
+    },
+    "sunset-8k": {
+      "metered_ev100": 9.13,
+      "sky": {
+        "local_time": "17:45",
+        "altitude_m": 0,
+        "dust_density": 1
+      }
+    },
+    "twilight-1816": {
+      "metered_ev100": 2.56,
+      "sky": {
+        "local_time": "18:16",
+        "altitude_m": 0,
+        "dust_density": 1
+      }
+    },
+    "twilight-1823": {
+      "metered_ev100": 1.55,
+      "sky": {
+        "local_time": "18:23",
+        "altitude_m": 0,
+        "dust_density": 1
+      }
+    },
+    "twilight-1830": {
+      "metered_ev100": 0.73,
+      "sky": {
+        "local_time": "18:30",
+        "altitude_m": 0,
+        "dust_density": 1
+      }
+    },
+    "noon": {
+      "physical_mean": 152.7,
+      "procedural_mean": 167.2
+    }
+  }
+}

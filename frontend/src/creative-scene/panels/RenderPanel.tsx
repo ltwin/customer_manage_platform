@@ -9,15 +9,18 @@ const engineNames: Record<Engine, string> = { workbench: '工作台', realtime_g
 
 /**
  * The render tab (R2 design「属性区选项卡」): the renderer, the exports'
- * output resolution, the lit look's exposure and, read only, the renderer
+ * output resolution, the lit look's exposure (under a physical sky the
+ * default EV100 of views without a camera, W2) and, read only, the renderer
  * backend the viewport draws with. Each field writes set_render with only
  * itself; the exposure drag folds by its merge key as before.
  */
-export function RenderPanel({ render, backend, readOnly, display, onRender }: {
+export function RenderPanel({ render, backend, readOnly, display, physical, onRender }: {
   render: SceneRender
   backend: Backend | null
   readOnly: boolean
   display: DisplayMode
+  /** The sky is physical: the lit look is exposed manually (W2), not compensated. */
+  physical: boolean
   onRender: (patch: RenderPatch, label: string, merge?: string) => void
 }) {
   return (
@@ -57,8 +60,17 @@ export function RenderPanel({ render, backend, readOnly, display, onRender }: {
       </fieldset>
       <fieldset disabled={readOnly}>
         <legend>曝光</legend>
-        {display !== 'rendered' && <small>曝光补偿只作用于「最终渲染」和材质光照导出</small>}
-        <Slider label="曝光补偿（EV）" value={render.exposure_ev} min={-10} max={10} step={0.1} onCommit={(v) => onRender({ exposure_ev: v }, '调整曝光补偿', 'render.exposure_ev')} />
+        {display !== 'rendered' && <small>曝光只作用于「最终渲染」和材质光照导出</small>}
+        {!physical && <Slider label="曝光补偿（EV）" value={render.exposure_ev} min={-10} max={10} step={0.1} onCommit={(v) => onRender({ exposure_ev: v }, '调整曝光补偿', 'render.exposure_ev')} />}
+        <Slider label="默认曝光（EV100）" value={render.exposure_ev100} min={-10} max={20} step={1 / 3} disabled={!physical} onCommit={(v) => onRender({ exposure_ev100: v }, '调整默认曝光', 'render.exposure_ev100')} />
+        {physical ? (
+          <>
+            <small>参考：晴天 15 · 阴天 12–13 · 日落 9–12 · 蓝调时刻 5–8 · 城市夜景 3–5 · 月光 −3</small>
+            <small>只用于视口的自由视角和助手的临时视点，摄像机用自己的曝光</small>
+          </>
+        ) : (
+          <small>默认曝光只在物理天空下生效</small>
+        )}
       </fieldset>
       <fieldset>
         <legend>渲染后端</legend>

@@ -12,6 +12,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
+import { Euler, Quaternion } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
@@ -3603,9 +3604,12 @@ const obliqueOrtho = {
   selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false,
 }
 
-/** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1. */
-function referenceScene(server, name) {
+/** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1; edit changes it first. */
+function referenceScene(server, name, edit) {
   server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  // The default exposure the server reads documents from before W2 with (backend model.go Render.UnmarshalJSON).
+  server.scene.render.exposure_ev100 ??= 15
+  edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
   for (const o of server.scene.objects) {
     server.unitRevs[placement(o.id)] = '1'
@@ -3637,11 +3641,11 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * then the saved orthographic view in clay, on gpu (a Chromium on this
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend.
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
-  referenceScene(server, name)
+  referenceScene(server, name, edit)
   const backends = []
   context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
   const { page, errors } = await open(server, { context, query: '?export=1' })
@@ -3708,10 +3712,10 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
 const displayModes = [['线框', 'wireframe'], ['白模', 'clay'], ['材质预览', 'preview'], ['最终渲染', 'lit']]
 
 /** A reference scene's viewport from the editor's default view in each of modes ([label, file name]), on gpu at 1600 × 1000, 2× pixels. */
-async function viewportLooks(gpu, name, modes = displayModes) {
+async function viewportLooks(gpu, name, modes = displayModes, edit) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   const server = new SceneServer()
-  referenceScene(server, name)
+  referenceScene(server, name, edit)
   const { page, errors } = await open(server, { context })
   const { box } = await viewportCenter(page)
   const ground = { x: box.x, y: box.y + box.height * 0.75, width: box.width, height: box.height * 0.25 }
@@ -3974,6 +3978,793 @@ if (process.env.SCENE_E2E_LOOK) await check('look: display modes and editor help
   }
 })
 
+// --- W2 scene-physical-sky: the other skies stay as they were ---------------------
+
+const w2Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-physical-sky/discovery/research/baseline/', import.meta.url)
+
+/**
+ * What W1's pictures (w1After) leave out, made from reference scenes: global
+ * fog under the procedural and the solid sky, and a camera looking into the
+ * procedural sun through depth of field, which the material output clamp must
+ * leave alone.
+ */
+const w2Variants = {
+  'noon-fog': {
+    from: 'noon',
+    edit(scene) {
+      scene.environment.fog = { color: '#c8d0d8', near: 4, far: 40 }
+    },
+  },
+  // Without fog: the fog covers the sky, sun and all.
+  'noon-sun': {
+    from: 'noon',
+    edit(scene) {
+      const sky = scene.environment.sky
+      const facing = new Quaternion().setFromEuler(new Euler((sky.sun_elevation_deg * Math.PI) / 180, (sky.sun_azimuth_deg * Math.PI) / 180 + Math.PI, 0, 'YXZ'))
+      scene.objects.push({
+        parent_id: null, visible: true, locked: false,
+        transform: { position: [0, 1.6, 4], rotation: facing.toArray(), scale: [1, 1, 1] },
+        id: 'sobj_sun000000000000000000', kind: 'camera', name: 'sun', order: scene.objects.length,
+        camera: { focal_mm: 35, depth_of_field: true, f_stop: 1.4, focus: 2 },
+      })
+    },
+  },
+  'room-fog': {
+    from: 'room',
+    edit(scene) {
+      scene.environment.fog = { color: '#202428', near: 1, far: 12 }
+    },
+  },
+}
+
+/** The lit pictures of a scene that W2 must not change: its exports' lit images and the rendered viewport. */
+async function litPictures(gpu, name, edit) {
+  const pictures = (await exportReference(gpu, name, { edit })).images.filter((img) => img.pass === 'lit')
+  const [view] = await viewportLooks(gpu, name, [['最终渲染', 'lit']], edit)
+  return [...pictures, view]
+}
+
+// SCENE_E2E_W2_BASELINE=<dir>: the variants' lit pictures on this machine's
+// GPU, taken before W2 changes the renderer (w2Baseline).
+if (process.env.SCENE_E2E_W2_BASELINE) await check('W2 baseline: the variants’ lit pictures on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W2_BASELINE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', variants: {} }
+    for (const [name, { from, edit }] of Object.entries(w2Variants)) {
+      const files = []
+      for (const img of await litPictures(gpu, from, edit)) {
+        const file = img.file.replace(from, name)
+        await writeFile(`${dir}/${file}`, img.png)
+        files.push(file)
+      }
+      record.variants[name] = { from, files }
+      console.log(`W2 baseline ${name}: ${files.join(', ')}`)
+    }
+    await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W2_SKIES=<dir> (AC-W2-6): under the procedural and the solid sky,
+// lit exports (render_view draws through the same shoot) and the rendered
+// viewport are what they were before W2, pixel for pixel, on this machine's
+// GPU: the reference scenes against W1's pictures, the variants against
+// w2Baseline. Sheets of any image that is not go to the directory.
+if (process.env.SCENE_E2E_W2_SKIES) await check('W2 other skies: lit pictures are unchanged on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W2_SKIES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const same = async (base, file, png) => {
+      const m = await compareShots(page, readFileSync(new URL(file, base)), png, 2)
+      if (m.error || m.over > 0) {
+        off.push(`${file}: ${m.error ?? `${m.over.toFixed(4)}% of pixels off by more than 2`}`)
+        if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}.jpg`, m.sheet)
+      }
+    }
+    for (const name of referenceNames) for (const img of await litPictures(gpu, name)) await same(w1After, img.file, img.png)
+    for (const [name, { from, edit }] of Object.entries(w2Variants)) {
+      for (const img of await litPictures(gpu, from, edit)) await same(w2Baseline, img.file.replace(from, name), img.png)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [])
+})
+
+/**
+ * The physical sky's LUTs drawn on the GPU against cpu.ts at the same
+ * texels, in the page: two implementations of one atmosphere that share
+ * only constants.ts. Errors are relative, over the channels whose value is
+ * above floor; WebGL2 reads rows back flipped, so both orders are tried.
+ */
+async function atmosphereDrift(page, preset, sunElevationDeg) {
+  return page.evaluate(async ([preset, sunElevationDeg]) => {
+    const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+    const { atmosphereLuts } = await import('/src/creative-scene/world/atmosphere/luts.ts')
+    const { CpuAtmosphere, transmittanceParams, skyViewParams } = await import('/src/creative-scene/world/atmosphere/cpu.ts')
+    const { PRESETS } = await import('/src/creative-scene/world/atmosphere/constants.ts')
+    const half = (h) => {
+      const e = (h & 0x7c00) >> 10
+      const f = h & 0x03ff
+      const sign = h & 0x8000 ? -1 : 1
+      if (e === 0) return sign * 2 ** -14 * (f / 1024)
+      if (e === 0x1f) return f ? NaN : sign * Infinity
+      return sign * 2 ** (e - 15) * (1 + f / 1024)
+    }
+    const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+    const params = PRESETS[preset]
+    const luts = atmosphereLuts()
+    const sunMu = Math.sin((sunElevationDeg * Math.PI) / 180)
+    luts.setAtmosphere(params)
+    luts.setSun(sunMu, [1, 1, 1])
+    luts.renderAtmosphere(gpu.renderer)
+    luts.renderSkyView(gpu.renderer)
+    const read = async (target) => {
+      const raw = await gpu.renderer.readRenderTargetPixelsAsync(target, 0, 0, target.width, target.height)
+      return raw instanceof Uint16Array ? Float32Array.from(raw, half) : Float32Array.from(raw)
+    }
+    // Tables at the LUTs' sizes: the product's coarser ones would hide a drift in their own error.
+    const cpu = new CpuAtmosphere(params, 'lut')
+    /** Errors at an n × n grid of texels: cpuAt(u, v, out) is the CPU's value at a texel centre. */
+    const compare = (data, target, n, floor, cpuAt) => {
+      const { width: w, height: h } = target
+      const out = new Float64Array(3)
+      const stats = (flip) => {
+        let sum = 0, count = 0, max = 0, nonFinite = 0
+        for (let j = 0; j < n; j++) {
+          for (let i = 0; i < n; i++) {
+            const x = Math.floor(((i + 0.5) / n) * w)
+            const y = Math.floor(((j + 0.5) / n) * h)
+            cpuAt((x + 0.5) / w, (y + 0.5) / h, out)
+            const row = flip ? h - 1 - y : y
+            for (let c = 0; c < 3; c++) {
+              const g = data[(row * w + x) * 4 + c]
+              if (!Number.isFinite(g)) nonFinite++
+              else if (Math.abs(out[c]) > floor) {
+                const rel = Math.abs(g - out[c]) / Math.abs(out[c])
+                sum += rel
+                count++
+                max = Math.max(max, rel)
+              }
+            }
+          }
+        }
+        return { mean: sum / Math.max(1, count), max, count, nonFinite }
+      }
+      const a = stats(false)
+      const b = stats(true)
+      return a.mean <= b.mean ? { ...a, flipped: false } : { ...b, flipped: true }
+    }
+    const sun = [Math.sqrt(1 - sunMu * sunMu), sunMu, 0]
+    const result = {
+      backend: gpu.backend,
+      transmittance: compare(await read(luts.transmittance), luts.transmittance, 12, 1e-4, (u, v, out) => {
+        const { r, mu } = transmittanceParams(u, v)
+        cpu.transmittance(r, mu, out)
+      }),
+      multiScattering: compare(await read(luts.multiScattering), luts.multiScattering, 6, 1e-6, (u, v, out) => cpu.multiScatteringTexel(u, v, out)),
+      skyView: compare(await read(luts.skyView), luts.skyView, 10, 1e-6, (u, v, out) => {
+        const { viewMu, lightCos } = skyViewParams(u, v, cpu.view, cpu.ground)
+        const s = Math.sqrt(Math.max(0, 1 - viewMu * viewMu))
+        cpu.skyRadiance([s * lightCos, viewMu, s * Math.sqrt(Math.max(0, 1 - lightCos * lightCos))], sun, out)
+      }),
+    }
+    // The sky view as the sky draws it (sampleSkyView), toward directions across the sky and the ground:
+    // elevation from −10° to 60° down the rows, azimuth from the sun's side to the far one across.
+    // three as the app has it: the page cannot import a bare name, and a second copy would not share its renderer's classes.
+    const lutsSource = await (await fetch('/src/creative-scene/world/atmosphere/luts.ts')).text()
+    const dep = (name) => import(lutsSource.match(new RegExp(`from "(/node_modules/\\.vite/deps/${name}\\.js[^"]*)"`))[1])
+    const { FloatType } = await dep('three')
+    const tsl = await dep('three_tsl')
+    const { QuadMesh, NodeMaterial, RenderTarget } = await dep('three_webgpu')
+    const cols = 8, rows = 16
+    const elevation = (j) => -10 + (70 * j) / (rows - 1)
+    const azimuth = (i) => (180 * i) / (cols - 1)
+    const target = new RenderTarget(cols, rows, { type: FloatType, depthBuffer: false })
+    const material = new NodeMaterial()
+    material.fragmentNode = tsl.Fn(() => {
+      const p = tsl.uv()
+      const el = tsl.floor(p.y.mul(rows)).mul(70 / (rows - 1)).sub(10).mul(Math.PI / 180)
+      const az = tsl.floor(p.x.mul(cols)).mul(180 / (cols - 1)).mul(Math.PI / 180)
+      const d = tsl.vec3(tsl.cos(el).mul(tsl.cos(az)), tsl.sin(el), tsl.cos(el).mul(tsl.sin(az)))
+      return tsl.vec4(luts.sampleSkyView(d, tsl.vec3(...sun)), 1)
+    })()
+    const quad = new QuadMesh(material)
+    gpu.renderer.setRenderTarget(target)
+    quad.render(gpu.renderer)
+    gpu.renderer.setRenderTarget(null)
+    {
+      const data = await read(target)
+      const out = new Float64Array(3)
+      const stats = (flip) => {
+        let sum = 0, count = 0, max = 0, nonFinite = 0
+        for (let j = 0; j < rows; j++) {
+          for (let i = 0; i < cols; i++) {
+            const el = (elevation(j) * Math.PI) / 180
+            const az = (azimuth(i) * Math.PI) / 180
+            cpu.skyRadiance([Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)], sun, out)
+            const row = flip ? rows - 1 - j : j
+            for (let c = 0; c < 3; c++) {
+              const g = data[(row * cols + i) * 4 + c]
+              if (!Number.isFinite(g)) nonFinite++
+              else if (Math.abs(out[c]) > 1e-6) {
+                const rel = Math.abs(g - out[c]) / Math.abs(out[c])
+                sum += rel
+                count++
+                max = Math.max(max, rel)
+              }
+            }
+          }
+        }
+        return { mean: sum / Math.max(1, count), max, count, nonFinite }
+      }
+      const a = stats(false)
+      const b = stats(true)
+      result.skyDirections = a.mean <= b.mean ? { ...a, flipped: false } : { ...b, flipped: true }
+    }
+    target.dispose()
+    material.dispose()
+    luts.dispose()
+    gpu.dispose()
+    return result
+  }, [preset, sunElevationDeg])
+}
+
+// W2 (design「大气 LUT 与重算」): the GPU's LUTs and the CPU's tables are two
+// implementations of one atmosphere; a constant or a formula changed on one
+// side only shows here. With tables of one size the two agree to about
+// 0.2 % (half floats, the GPU's filtering); the thresholds leave room for
+// that and no more.
+await check('W2 atmosphere drift: the GPU LUTs agree with the CPU at their texels', async () => {
+  const server = new SceneServer()
+  // SCENE_E2E_W2_METAL: on this machine's GPU (the WebGPU backend) rather than SwiftShader's WebGL2.
+  const gpu = process.env.SCENE_E2E_W2_METAL ? await chromium.launch({ headless: true, args: metal }) : null
+  const { context, page, errors } = await open(server, gpu ? { context: await gpu.newContext() } : {})
+  // The multiple scattering's largest relative errors are on texels near 0 (the sun below the horizon), a few 1e-5 off.
+  const limits = { transmittance: [0.002, 0.01], multiScattering: [0.005, 0.05], skyView: [0.005, 0.03], skyDirections: [0.02, 0.1] }
+  for (const [preset, elevation] of [['clear', 30], ['dust', 8], ['highland', -3]]) {
+    const out = await atmosphereDrift(page, preset, elevation)
+    console.log(`W2 drift ${preset} at ${elevation}° (${out.backend}): ${['transmittance', 'multiScattering', 'skyView', 'skyDirections'].map((k) => `${k} mean ${(out[k].mean * 100).toFixed(2)}% max ${(out[k].max * 100).toFixed(2)}% (${out[k].count}${out[k].flipped ? ', rows flipped' : ''})`).join(', ')}`)
+    for (const [lut, [mean, max]] of Object.entries(limits)) {
+      const r = out[lut]
+      assert.equal(r.nonFinite, 0, `${preset} ${lut}: no Inf or NaN`)
+      assert.ok(r.count > 20, `${preset} ${lut}: compared ${r.count}`)
+      assert.ok(r.mean <= mean && r.max <= max, `${preset} at ${elevation}°, ${lut}: mean ${(r.mean * 100).toFixed(2)}%, max ${(r.max * 100).toFixed(2)}%`)
+    }
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+  await gpu?.close()
+})
+
+// --- W2 physical sky: exposure, the sun and lamps (AC-W2-3, AC-W2-4, AC-W2-5) -------
+
+/** The physical yard (scripts/fixtures/scene-reference): Shanghai on 2026-09-23 at noon, in the golden hour (17:30) and 20 minutes after sunset (18:10); its camera exposed by sunny 16 and its kin. */
+const physicalNames = ['physical-noon', 'physical-golden', 'physical-dusk']
+
+/** The yard opened in the rendered view at the editor's default view; change(ops) writes as another session would and waits for the picture. */
+async function physicalYard(name, edit) {
+  const server = new SceneServer()
+  referenceScene(server, name, edit)
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  const { box } = await viewportCenter(page)
+  await page.mouse.move(1, 1)
+  await shading(page, '最终渲染')
+  const settle = async () => {
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name}: compiled`, 60_000)
+    // The sky light is made at most every 200 ms.
+    await sleep(400)
+    return settledShot(page, box)
+  }
+  const change = async (ops) => {
+    server.external(ops)
+    await page.evaluate(() => window.__invalidate())
+    return settle()
+  }
+  const sky = (patch) => [{ op: 'set_environment', environment: { ...server.scene.environment, sky: { ...server.scene.environment.sky, ...patch } } }]
+  return { server, context, page, errors, box, settle, change, sky }
+}
+
+/** The metered EV of a physical sky: incident light on level ground (world/exposure.ts environmentEV), worked out in the page as PhysicalLighting does. */
+async function meteredEV(page, sky) {
+  return page.evaluate(async (sky) => {
+    const { physicalSun, sunVector } = await import('/src/creative-scene/world/astro.ts')
+    const { sunAbove } = await import('/src/creative-scene/world/atmosphere/constants.ts')
+    const { CpuAtmosphere } = await import('/src/creative-scene/world/atmosphere/cpu.ts')
+    const { environmentEV } = await import('/src/creative-scene/world/exposure.ts')
+    const where = physicalSun(sky)
+    const day = new CpuAtmosphere(sky).daylight(sunVector(where.elevationDeg, where.azimuthDeg).y, sunAbove(sky.sun_strength, sky.sun_temperature_k))
+    return environmentEV(day.horizontal)
+  }, sky)
+}
+
+// SCENE_E2E_W2_PICTURES=<dir>: the physical yard's exports (each camera at its
+// own exposure) for a look, on this machine's GPU when SCENE_E2E_W2_METAL is set.
+if (process.env.SCENE_E2E_W2_PICTURES) await check('W2 pictures: the physical yard exported at noon, in the golden hour and after sunset', async () => {
+  const dir = process.env.SCENE_E2E_W2_PICTURES
+  const gpu = await chromium.launch({ headless: true, args: process.env.SCENE_E2E_W2_METAL ? metal : [] })
+  try {
+    for (const name of physicalNames) {
+      const out = await exportReference(gpu, name)
+      for (const img of out.images.filter((i) => i.pass === 'lit')) await writeFile(`${dir}/${img.file}`, img.png)
+      const [view] = await viewportLooks(gpu, name, [['最终渲染', 'lit']])
+      await writeFile(`${dir}/${view.file}`, view.png)
+      console.log(`W2 pictures ${name}: viewport mean ${view.all.mean.toFixed(0)}`)
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('W2 sunny 16: noon at EV100 15 exposes the yard; 20 minutes after sunset meters 5 stops lower and comes out dark at the same exposure', async () => {
+  const { server, context, page, errors, settle, change, sky } = await physicalYard('physical-noon')
+  const noon = await lumaStats(page, await settle(), { level: 250 })
+  await shot(page, 'w2-noon-ev15')
+  const noonEV = await meteredEV(page, server.scene.environment.sky)
+  const dusk = await lumaStats(page, await change(sky({ local_time: '18:10' })), { level: 250 })
+  await shot(page, 'w2-dusk-ev15')
+  const duskEV = await meteredEV(page, server.scene.environment.sky)
+  console.log(`W2 sunny 16: noon meters EV ${noonEV.toFixed(1)}, mean ${noon.mean.toFixed(0)} (rgb ${[noon.r, noon.g, noon.b].map((v) => v.toFixed(0))}), clipped ${(noon.bright * 100).toFixed(2)}%; dusk meters EV ${duskEV.toFixed(1)}, mean ${dusk.mean.toFixed(1)}`)
+  assert.ok(Math.abs(noonEV - 15) < 1, 'a clear noon meters about sunny 16')
+  assert.ok(noon.mean > 120 && noon.mean < 220 && noon.bright < 0.01, 'exposed: neither dark nor blown')
+  assert.ok(Math.abs(noon.r - noon.b) < 15, 'daylight is about neutral')
+  assert.ok(noonEV - duskEV >= 5, 'after sunset the light is 5 stops down or more')
+  assert.ok(dusk.mean < noon.mean / 4, 'and at noon’s exposure the yard is dark')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 exposure and the sun: the camera view at the camera’s EV100, equal exposures alike, the sun’s strength in stops and its colour temperature', async () => {
+  const { server, context, page, errors, settle, change, sky } = await physicalYard('physical-noon')
+  const camera = server.scene.objects.find((o) => o.kind === 'camera')
+  const lens = (patch) => [{ op: 'update_objects', updates: [{ object_id: camera.id, camera: patch }] }]
+  const off = async (a, b) => (await compareShots(page, a, b, 2)).over
+  const free = await settle()
+  // 0 looks through the scene's camera, at f/16, 1/125 s, ISO 100: EV100 15 like the default exposure.
+  await focusEditor(page)
+  await page.keyboard.press('0')
+  const base = await settle()
+  await shot(page, 'w2-camera-f16')
+  assert.ok((await pixelDiff(page, free, base)) > 0.05, 'the camera view is the camera’s picture')
+  // The free view follows the default exposure; the camera view does not.
+  await change([{ op: 'set_render', render: { exposure_ev100: 12 } }])
+  assert.ok((await off(base, await settle())) < 0.05, 'the camera view keeps its own exposure')
+  const sameEV = await change(lens({ f_stop: 8, shutter_s: 1 / 500 }))
+  const two = await change(lens({ shutter_s: 1 / 125 }))
+  await shot(page, 'w2-camera-f8')
+  const strong = await change([...lens({ f_stop: 16 }), ...sky({ sun_strength: 4 })])
+  const warm = await change(sky({ sun_strength: 1, sun_temperature_k: 3000 }))
+  await shot(page, 'w2-camera-3000k')
+  // Left out, the colour temperature and strength are filled in (state/apply.ts completeSky): 6500 K, 1.
+  const { sun_temperature_k: _k, sun_strength: _s, ...unset } = server.scene.environment.sky
+  const plain = await change([{ op: 'set_environment', environment: { ...server.scene.environment, sky: unset } }])
+  const [b, t, w] = [await lumaStats(page, base), await lumaStats(page, two), await lumaStats(page, warm)]
+  const measured = { sameEV: await off(base, sameEV), strongVsTwo: await off(two, strong), unset: await off(base, plain) }
+  console.log(`W2 exposure: f/16 mean ${b.mean.toFixed(0)}, f/8 ${t.mean.toFixed(0)}; off by more than 2: same EV ${measured.sameEV.toFixed(3)}%, strength 4 against f/8 ${measured.strongVsTwo.toFixed(3)}%, unset against 6500 K ${measured.unset.toFixed(3)}%; R/B ${(b.r / b.b).toFixed(2)} → ${(w.r / w.b).toFixed(2)} at 3000 K`)
+  assert.ok(measured.sameEV < 0.05, 'f/8 at 1/500 s is f/16 at 1/125 s')
+  assert.ok(t.mean > b.mean * 1.3, 'two stops more is brighter')
+  assert.ok(measured.strongVsTwo < 1, 'a sun 4 × as strong is two stops more light, sky and all')
+  assert.equal(measured.unset, 0, 'the colour temperature and strength left out are 6500 K and 1')
+  assert.ok(w.r / w.b > (b.r / b.b) * 1.1, 'a lower colour temperature is warmer')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 lamps, emission and fog: invisible at noon, they show after sunset; fog is as bright as the lit ground', async () => {
+  // The lamp and the sign stand in the yard throughout (the editor draws the lamp's icon); only their light is turned up.
+  const bulb = (intensity) => ({ type: 'point', color: '#ffd9b0', intensity, cast_shadow: false, distance: 0, decay: 2 })
+  const lamp = { id: gid('lamp'), kind: 'light', name: 'lamp', order: 30, transform: { ...identity(), position: [-0.5, 1.2, 1] }, light: bulb(0) }
+  // A grey sign. (On a near-black board, 2 % of the sun's light, 50 cd/m² is about a tenth more: that shows, as it would.)
+  const glow = (intensity) => ({ preset: 'principled@1', params: { color: '#808080', emissive: '#ffffff', emissive_intensity: intensity } })
+  const sign = boxOf('sign', 31, { position: [1.8, 0, 1.5] }, { width: 0.5, height: 0.5, depth: 0.05 }, glow(0))
+  const { server, context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    for (const o of [lamp, sign]) scene.objects.push({ parent_id: null, visible: true, locked: false, ...o })
+  })
+  const off = async (a, b) => (await compareShots(page, a, b, 2)).over
+  const bare = await settle()
+  const addLamp = [{ op: 'update_objects', updates: [{ object_id: lamp.id, light: bulb(40) }] }]
+  const turnUp = [{ op: 'update_objects', updates: [{ object_id: sign.id, material_slots: { main: glow(50) } }] }]
+  const add = [...addLamp, ...turnUp]
+  const remove = [{ op: 'update_objects', updates: [{ object_id: lamp.id, light: bulb(0) }, { object_id: sign.id, material_slots: { main: glow(0) } }] }]
+  const withLamp = await change(addLamp)
+  const lampOff = await off(bare, withLamp)
+  const signOff = await off(withLamp, await change(turnUp))
+  // After sunset at the dusk camera's exposure (EV100 about 6).
+  await change([...remove, ...sky({ local_time: '18:10' }), { op: 'set_render', render: { exposure_ev100: 6 } }])
+  const night = await settle()
+  const lit = await change(add)
+  await shot(page, 'w2-dusk-lamp')
+  const nightOff = await off(night, lit)
+  const [n, l] = [await lumaStats(page, night), await lumaStats(page, lit)]
+  console.log(`W2 lamps: at noon the lamp changes ${lampOff.toFixed(4)}% of pixels, the sign's emission ${signOff.toFixed(4)}%; after sunset both ${nightOff.toFixed(2)}%, mean ${n.mean.toFixed(1)} → ${l.mean.toFixed(1)}`)
+  assert.ok(lampOff <= 0.01, 'a 40 cd lamp does not show at noon')
+  assert.ok(signOff <= 0.01, 'nor 50 cd/m² of emission on a grey sign')
+  assert.ok(nightOff > 1 && l.mean > n.mean, 'after sunset they light the yard')
+
+  // Fog at noon over grey ground: the fogged distance against the lit ground near by.
+  await change([...remove, ...sky({ local_time: '12:00' }), { op: 'set_render', render: { exposure_ev100: 15 } }])
+  const fogged = await change([{ op: 'set_environment', environment: { ...server.scene.environment, fog: { color: '#b4b4b4', near: 3, far: 25 } } }])
+  await shot(page, 'w2-noon-fog')
+  const { box } = await viewportCenter(page)
+  const far = await lumaStats(page, await settledShot(page, { x: box.x, y: box.y, width: box.width, height: box.height * 0.15 }))
+  const near = await lumaStats(page, await settledShot(page, { x: box.x, y: box.y + box.height * 0.85, width: box.width, height: box.height * 0.15 }))
+  console.log(`W2 fog: the fogged distance ${far.mean.toFixed(0)}, the ground near by ${near.mean.toFixed(0)}`)
+  assert.ok(fogged && far.mean > near.mean * 0.75 && far.mean < near.mean * 1.35, 'the fog is lit like the ground under it')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 back to another sky: switching the physical sky off leaves the lit view as it was, fog and all', async () => {
+  const fog = { color: '#c8d0d8', near: 4, far: 40 }
+  const { server, context, page, errors, settle, change } = await physicalYard('noon', (scene) => {
+    scene.environment.fog = fog
+  })
+  const before = await settle()
+  const procedural = server.scene.environment
+  const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+  await change([{ op: 'set_environment', environment: { ...procedural, sky: physical } }])
+  const back = await change([{ op: 'set_environment', environment: procedural }])
+  const m = await compareShots(page, before, back, 0)
+  assert.ok(!m.error && m.over === 0, `the procedural sky as before (${m.error ?? `${m.over.toFixed(4)}% differ`})`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// SCENE_E2E_W2_GPU=<dir> (AC-W2-8): the physical yard on this machine's GPU,
+// exported on WebGPU and again on the WebGL2 backend. Pictures with the scene
+// in them are held to R1's lit threshold; a camera looking up at the sky
+// alone to a mean of 0.5 and 0.05 % of pixels off by more than 8. Sheets and
+// w2-parity.json go to the directory.
+const skyOnly = { mean: 0.5, over: 0.05 }
+const lookingUp = (scene) => {
+  const up = (35 * Math.PI) / 180
+  scene.objects.push({
+    parent_id: null, visible: true, locked: false, id: 'sobj_skyup00000000000000000', kind: 'camera', name: 'sky', order: scene.objects.length + 20,
+    transform: { position: [0, 1.6, 4], rotation: [Math.sin(up / 2), 0, 0, Math.cos(up / 2)], scale: [1, 1, 1] },
+    camera: { focal_mm: 35, f_stop: 2.8, shutter_s: scene.objects.find((o) => o.kind === 'camera').camera.shutter_s, iso: scene.objects.find((o) => o.kind === 'camera').camera.iso },
+  })
+  // The scene's camera's EV100 for the sky camera too: same ISO and shutter, its aperture matched.
+  scene.objects.at(-1).camera.f_stop = scene.objects.find((o) => o.kind === 'camera').camera.f_stop
+}
+if (process.env.SCENE_E2E_W2_GPU) await check('W2 parity: the physical yard on WebGPU and on the WebGL2 backend', async () => {
+  const dir = process.env.SCENE_E2E_W2_GPU
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  const over = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const name of physicalNames) {
+      const webgpu = await exportReference(gpu, name, { edit: lookingUp })
+      const webgl = await exportReference(gpu, name, { edit: lookingUp, forceWebGL: true })
+      assert.ok(webgpu.backends.some((b) => b === 'scene renderer (offscreen): webgpu'), `${name}: ${webgpu.backends}`)
+      assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: ${webgl.backends}`)
+      for (const img of webgl.images.filter((i) => i.pass === 'lit')) {
+        const m = await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png)
+        const limit = img.file.includes('-sky-') ? skyOnly : parityLimits.lit
+        const ok = !m.error && m.mean <= limit.mean && m.over <= limit.over
+        if (m.sheet) await writeFile(`${dir}/${img.file.replace('.png', '')}-webgl2.jpg`, m.sheet)
+        rows.push({ file: img.file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), limit, ok })
+        if (!ok) over.push(`${img.file}: ${m.error ?? `mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(3)}%`}`)
+        console.log(`W2 parity ${img.file}: mean ${m.mean?.toFixed(3)}, > 8 ${m.over?.toFixed(4)}%${ok ? '' : ' (over)'}`)
+      }
+    }
+    await writeFile(`${dir}/w2-parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: { scene: parityLimits.lit, sky: skyOnly }, rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
+})
+
+// SCENE_E2E_W2_EVIDENCE=<dir> (W2 tasks 8.2, for the owner), this machine's GPU: the physical yard's lit
+// exports, each camera exposed at the EV its light meters (environmentEV), so the pictures compare by
+// colour and air rather than by brightness. The four presets at noon and in the golden hour; the plateau
+// at a low sun looking level at the horizon; a clear sunset with the sun in the picture at 8K; the sun at
+// −6° to −9° (twilight); and noon under the physical sky at EV100 15 against the procedural noon at EV 0.
+if (process.env.SCENE_E2E_W2_EVIDENCE) await check('W2 evidence: presets, the plateau’s horizon, the sunset at 8K, twilight, and noon against the procedural sky', async () => {
+  const dir = process.env.SCENE_E2E_W2_EVIDENCE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const notes = {}
+  try {
+    const meter = await (await gpu.newContext()).newPage()
+    await meter.goto(`${base}/`)
+    const baseSky = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+    const presets = { clear: {}, haze: { dust_density: 12 }, highland: { altitude_m: 4000, dust_density: 0.2 }, dust: { dust_density: 40 } }
+    /** The yard with this sky, every camera exposed at f/8 and ISO 100 for the metered EV; only the cameras kept. */
+    const shoot = async (file, sky, { cameras, resolution } = {}) => {
+      const ev = await meteredEV(meter, sky)
+      const edit = (scene) => {
+        scene.environment.sky = sky
+        if (resolution) scene.render.resolution = resolution
+        if (cameras) scene.objects = [...scene.objects.filter((o) => o.kind !== 'camera'), ...cameras]
+        for (const o of scene.objects) if (o.kind === 'camera') o.camera = { ...o.camera, f_stop: 8, iso: 100, shutter_s: 64 / 2 ** ev }
+      }
+      const out = await exportReference(gpu, 'physical-noon', { edit })
+      for (const img of out.images.filter((i) => i.pass === 'lit')) await writeFile(`${dir}/${file}-${img.file.split('-').at(-2)}.png`, img.png)
+      notes[file] = { metered_ev100: Number(ev.toFixed(2)), sky: { local_time: sky.local_time, altitude_m: sky.altitude_m, dust_density: sky.dust_density } }
+      console.log(`W2 evidence ${file}: metered EV100 ${ev.toFixed(1)}`)
+      return out
+    }
+    const level = (name, yawDeg, position = [0, 1.6, 4]) => ({
+      parent_id: null, visible: true, locked: false, id: gid(`ev${name}`), kind: 'camera', name, order: 50,
+      transform: { position, rotation: [0, Math.sin((yawDeg * Math.PI) / 360), 0, Math.cos((yawDeg * Math.PI) / 360)], scale: [1, 1, 1] },
+      camera: { focal_mm: 35 },
+    })
+    for (const [name, patch] of Object.entries(presets)) {
+      await shoot(`preset-${name}-noon`, { ...baseSky, ...patch, local_time: '12:00' })
+      await shoot(`preset-${name}-golden`, { ...baseSky, ...patch, local_time: '17:30' })
+    }
+    // The plateau at a low sun, level with the horizon: no sea-level band between the ground and the sky.
+    await shoot('highland-horizon', { ...baseSky, ...presets.highland, local_time: '17:40' }, { cameras: [level('horizon', 0)] })
+    // A clear sunset with the sun in the picture (it sets in the west, the scene's −X with north at 180°), at 8K.
+    await shoot('sunset-8k', { ...baseSky, local_time: '17:45' }, { cameras: [level('sunset', 90)], resolution: '8k' })
+    // Twilight: Shanghai on 2026-09-23 has the sun at about −6° at 18:16 and −9° at 18:30.
+    for (const t of ['18:16', '18:23', '18:30']) await shoot(`twilight-${t.replace(':', '')}`, { ...baseSky, local_time: t })
+    // Noon: the physical sky at EV100 15 (sunny 16) against the procedural noon at EV 0.
+    const physicalNoon = await exportReference(gpu, 'physical-noon')
+    const proceduralNoon = await exportReference(gpu, 'noon')
+    const lit = (out) => out.images.find((i) => i.pass === 'lit' && i.file.includes('-shot-')).png
+    const [p, q] = [await lumaStats(meter, lit(physicalNoon)), await lumaStats(meter, lit(proceduralNoon))]
+    await writeFile(`${dir}/noon-physical-ev15.png`, lit(physicalNoon))
+    await writeFile(`${dir}/noon-procedural-ev0.png`, lit(proceduralNoon))
+    notes.noon = { physical_mean: Number(p.mean.toFixed(1)), procedural_mean: Number(q.mean.toFixed(1)) }
+    console.log(`W2 evidence noon: physical at EV100 15 mean ${p.mean.toFixed(1)}, procedural at EV 0 mean ${q.mean.toFixed(1)}`)
+    await writeFile(`${dir}/evidence.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), notes }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// --- W2 the environment tab under a physical sky (AC-W2-1, AC-W2-2, AC-W2-12) ----------
+
+/** The noon yard in the rendered view, its sky switched to physical from the environment tab. */
+async function physicalTab(edit) {
+  const server = new SceneServer()
+  referenceScene(server, 'noon', edit)
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.mouse.move(1, 1)
+  await shading(page, '最终渲染')
+  await page.getByRole('combobox', { name: '天空类型' }).selectOption('physical')
+  await waitFor(() => server.scene.environment.sky.kind === 'physical', 'the physical sky written')
+  await saved(page)
+  const settle = async () => {
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await sleep(400)
+    return settledShot(page, box)
+  }
+  const sky = () => server.scene.environment.sky
+  /** Sets the local time slider to hh:mm and waits for it to be written. */
+  const time = async (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number)
+    await page.getByRole('slider', { name: '当地时刻' }).fill(String(h * 60 + m))
+    await waitFor(() => sky().local_time === hhmm, `local time ${hhmm}`)
+  }
+  return { server, context, page, errors, box, settle, sky, time }
+}
+
+await check('W2 environment tab: the physical sky with its defaults and today’s date, a city from the search with GeoNames credited, the ambient light off', async () => {
+  const { server, context, page, errors, sky } = await physicalTab()
+  const today = await page.evaluate(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
+  assert.deepEqual(
+    { ...sky(), date: undefined },
+    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500 },
+  )
+  assert.equal(sky().date, today, 'today, on this machine')
+  assert.deepEqual(server.scene.environment.ambient, { color: '#ffffff', intensity: 0.4 }, 'the rest of the environment stays')
+  const ambient = page.locator('fieldset', { has: page.locator('legend', { hasText: '环境光' }) })
+  assert.ok(await ambient.evaluate((f) => f.disabled), 'the ambient light is greyed out')
+  await page.getByText('物理天空下天空光由大气算出，环境光不生效').waitFor()
+
+  // The city table is fetched when the search box is first used, not with the editor (gzip about 160 KB).
+  const asked = []
+  page.on('request', (r) => r.url().includes('cities.json') && asked.push(r.url()))
+  assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('cities.json'))), false, 'not loaded with the editor')
+  const search = page.getByRole('combobox', { name: '城市' })
+  await search.focus()
+  await waitFor(() => asked.length > 0, 'loaded on first focus')
+  await search.fill('伦敦')
+  const list = page.getByRole('listbox', { name: '城市' })
+  await waitFor(async () => (await list.getByRole('option').count()) >= 2, 'results')
+  assert.deepEqual((await list.getByRole('option').allTextContents()).slice(0, 2), ['伦敦 · 英国', '伦敦 · 加拿大'])
+  const credit = page.getByRole('link', { name: 'GeoNames（CC BY 4.0），已修改' })
+  assert.equal(await credit.getAttribute('href'), 'https://www.geonames.org/')
+  await shot(page, 'w2-city-search')
+  await search.fill('成都')
+  await list.getByRole('option', { name: '成都 · 中国' }).click()
+  await waitFor(() => sky().place === '成都', 'the city written')
+  assert.deepEqual([sky().latitude_deg, sky().longitude_deg, sky().timezone], [30.67, 104.07, 'Asia/Shanghai'])
+  assert.equal(server.commands.at(-1).payload.operations.length, 1, 'in one write')
+  await saved(page)
+  // A latitude typed in is no longer that city.
+  const latitude = page.getByRole('spinbutton', { name: '纬度（°）' })
+  await latitude.fill('30.5')
+  await latitude.press('Enter')
+  await waitFor(() => sky().latitude_deg === 30.5, 'latitude written')
+  assert.equal(sky().place, '', 'the place is cleared')
+  await page.getByRole('combobox', { name: '时区' }).selectOption('Asia/Tokyo')
+  await waitFor(() => sky().timezone === 'Asia/Tokyo', 'time zone written')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 environment tab: the time of day moves the sun and shows the day’s hours; north turns the shadows; in Sydney the noon sun is in the north', async () => {
+  const { context, page, errors, settle, sky, time } = await physicalTab()
+  await page.getByLabel('日期').fill('2026-06-21')
+  await waitFor(() => sky().date === '2026-06-21', 'date written')
+  const evidence = process.env.SCENE_E2E_W2_EVIDENCE
+  const elevations = []
+  for (const hhmm of ['05:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '19:00', '20:00']) {
+    await time(hhmm)
+    const png = await settle()
+    elevations.push(Number((await page.getByRole('status', { name: '太阳高度' }).textContent()).replace(/[^\d.−-]/g, '').replace('−', '-')))
+    if (evidence) await writeFile(`${evidence}/shanghai-solstice-${hhmm.replace(':', '')}.png`, png)
+  }
+  console.log(`W2 Shanghai on the solstice: elevation ${elevations.join(', ')}`)
+  assert.ok(elevations[0] < 2 && elevations[4] > 80 && elevations.at(-1) < 0, 'below the horizon at 05:00 and 20:00, about 82° at noon')
+  const day = await page.getByRole('region', { name: '太阳的一天' }).textContent()
+  assert.match(day, /日出 04:5\d/)
+  assert.match(day, /日落 19:0\d/)
+  assert.match(day, /黄金时刻/)
+  assert.match(day, /蓝调时刻/)
+  // A day's dragging folds into one step per pause (merge key environment.local_time).
+
+  await time('16:00')
+  const before = await settle()
+  await page.getByRole('slider', { name: '正北方向（°）' }).fill('90')
+  await waitFor(() => sky().north_azimuth_deg === 90, 'north written')
+  const turned = await settle()
+  const turn = await pixelDiff(page, before, turned)
+  if (process.env.SCENE_E2E_SHOTS) for (const [n, png] of [['before', before], ['turned', turned]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/w2-north-${n}.png`, png)
+  assert.ok(turn > 0.01, `the shadows turn with north (${(turn * 100).toFixed(2)}% of pixels)`)
+
+  await page.getByRole('combobox', { name: '城市' }).fill('悉尼')
+  await page.getByRole('listbox', { name: '城市' }).getByRole('option', { name: '悉尼 · 澳大利亚' }).click()
+  await waitFor(() => sky().timezone === 'Australia/Sydney', 'Sydney')
+  await time('12:00')
+  const bearing = Number((await page.getByRole('status', { name: '太阳方位' }).textContent()).replace(/[^\d.]/g, ''))
+  assert.ok(bearing < 20 || bearing > 340, `the noon sun is in the north in Sydney (${bearing}°)`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 environment tab: manual angles keep the picture, undo goes back to the place; at night they stop at −10°; presets write the atmosphere', async () => {
+  const { server, context, page, errors, settle, sky, time } = await physicalTab()
+  await time('16:30')
+  const located = await settle()
+  await saved(page)
+  const position = page.getByRole('group', { name: '太阳位置' })
+  await position.getByRole('button', { name: '手动角度' }).click()
+  await waitFor(() => sky().sun_mode === 'manual', 'manual')
+  assert.deepEqual(server.commands.at(-1).payload.operations.length, 1, 'mode and angles in one write')
+  assert.ok(sky().sun_elevation_deg > 0 && sky().sun_elevation_deg < 40, `the sun’s angle written (${sky().sun_elevation_deg})`)
+  const manual = await settle()
+  const m = await compareShots(page, located, manual, 2)
+  assert.ok(m.over < 0.01, `the picture stays (${m.over.toFixed(4)}% off)`)
+  await page.getByRole('slider', { name: '太阳高度（°）' }).waitFor()
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => sky().sun_mode === 'location', 'undo goes back to the place')
+  await saved(page)
+  await time('23:00')
+  await position.getByRole('button', { name: '手动角度' }).click()
+  await waitFor(() => sky().sun_mode === 'manual', 'manual at night')
+  assert.equal(sky().sun_elevation_deg, -10, 'stops at −10°')
+  await position.getByRole('button', { name: '地点和时间' }).click()
+  await waitFor(() => sky().sun_mode === 'location', 'back')
+
+  const preset = page.getByRole('combobox', { name: '大气预设' })
+  assert.equal(await preset.inputValue(), 'clear')
+  await preset.selectOption('haze')
+  await waitFor(() => sky().dust_density === 12, 'haze written')
+  assert.deepEqual([sky().altitude_m, sky().air_density, sky().ozone_density, sky().sun_strength], [0, 1, 1, 1], 'the four fields, not the sun')
+  await preset.selectOption('highland')
+  await waitFor(() => sky().altitude_m === 4000 && sky().dust_density === 0.2, 'highland written')
+  const dust = page.getByRole('spinbutton', { name: '尘埃密度' })
+  await dust.fill('3')
+  await dust.press('Enter')
+  await waitFor(() => sky().dust_density === 3, 'dust written')
+  assert.equal(await preset.inputValue(), 'custom', 'custom once a field is changed')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// --- W2 the exposure's controls (AC-W2-3) --------------------------------------------
+
+const ev100Of = (c) => Math.log2((c.f_stop * c.f_stop) / c.shutter_s) - Math.log2(c.iso / 100)
+
+await check('W2 exposure controls: the default exposure moves the free view only; a camera added takes it, within a third of a stop, at 12 and at −5', async () => {
+  const { server, context, page, errors, settle } = await physicalYard('physical-golden')
+  const tabs = page.getByRole('tablist', { name: '属性' })
+  await tabs.getByRole('tab', { name: '渲染', exact: true }).click()
+  assert.equal(await page.getByRole('spinbutton', { name: '曝光补偿（EV）' }).count(), 0, 'no compensation under a physical sky')
+  await page.getByText(/晴天 15/).waitFor()
+  const free = await settle()
+  // Through the scene's camera, before and after the default exposure changes.
+  await focusEditor(page)
+  await page.keyboard.press('Digit0')
+  const through = await settle()
+  await page.keyboard.press('Digit0')
+  const setDefault = async (ev) => {
+    // Adding a camera selects it, which shows the object tab.
+    await tabs.getByRole('tab', { name: '渲染', exact: true }).click()
+    const field = page.getByRole('spinbutton', { name: '默认曝光（EV100）' })
+    await field.fill(String(ev))
+    await field.press('Enter')
+    await waitFor(() => Math.abs(server.scene.render.exposure_ev100 - ev) < 1e-9, `default exposure ${ev}`)
+    assert.deepEqual(server.commands.at(-1).payload.operations, [{ op: 'set_render', render: { exposure_ev100: ev } }])
+  }
+  await setDefault(11)
+  const brighter = await settle()
+  assert.ok((await pixelDiff(page, free, brighter)) > 0.05, 'the free view follows the default exposure')
+  await focusEditor(page)
+  await page.keyboard.press('Digit0')
+  assert.ok((await compareShots(page, through, await settle(), 2)).over < 0.05, 'the camera view keeps its own')
+  await page.keyboard.press('Digit0')
+
+  for (const ev of [12, -5]) {
+    await setDefault(ev)
+    const before = await lumaStats(page, await settle())
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '摄像机' }).click()
+    await waitFor(() => server.commands.at(-1).payload.operations[0].op === 'add_objects', 'camera added')
+    const camera = server.commands.at(-1).payload.operations[0].objects[0].camera
+    const written = ev100Of({ f_stop: 2.8, ...camera })
+    console.log(`W2 new camera at EV100 ${ev}: ISO ${camera.iso}, ${camera.shutter_s} s → EV100 ${written.toFixed(2)}`)
+    assert.ok(Math.abs(written - ev) <= 1 / 3, `as bright as the view, within a third of a stop (${written.toFixed(2)})`)
+    if (ev === -5) assert.deepEqual([camera.shutter_s, camera.iso > 100], [30, true], 'the shutter at 30 s, the ISO makes up the rest')
+    if (ev === 12) {
+      await page.mouse.move(1, 1)
+      await focusEditor(page)
+      await page.keyboard.press('Digit0')
+      const after = await lumaStats(page, await settle())
+      await page.keyboard.press('Digit0')
+      console.log(`W2 new camera at 12: the view ${before.mean.toFixed(0)}, through it ${after.mean.toFixed(0)}`)
+      assert.ok(Math.abs(after.mean / before.mean - 1) < 0.15, 'its picture is about as bright')
+    }
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W2 exposure controls: a camera’s ISO, shutter and aperture with its EV100; greyed under another sky, like the default exposure', async () => {
+  const { server, context, page, errors } = await physicalYard('physical-noon')
+  const camera = server.scene.objects.find((o) => o.kind === 'camera')
+  await page.getByRole('treeitem', { name: /shot/ }).click()
+  const exposure = page.getByRole('group', { name: '曝光' })
+  assert.match(await exposure.getByRole('status', { name: 'EV100' }).textContent(), /15\.0/)
+  await exposure.getByRole('combobox', { name: 'ISO' }).selectOption('400')
+  await waitFor(() => server.object(camera.id).camera.iso === 400, 'ISO written')
+  await exposure.getByRole('combobox', { name: '快门' }).selectOption({ label: '1/500 s' })
+  await waitFor(() => server.object(camera.id).camera.shutter_s === 1 / 500, 'shutter written')
+  await exposure.getByRole('combobox', { name: '光圈' }).selectOption('8')
+  await waitFor(() => server.object(camera.id).camera.f_stop === 8, 'aperture written with the depth of field off')
+  // f/8 at 1/500 s, ISO 400: log₂(64 × 500) − 2 = 13.0.
+  assert.match(await exposure.getByRole('status', { name: 'EV100' }).textContent(), /13\.0/)
+  assert.ok(!(await exposure.evaluate((f) => f.disabled)))
+
+  // Back to the procedural sky: the camera's exposure and the default exposure are greyed.
+  server.external([{ op: 'set_environment', environment: { ...server.scene.environment, sky: { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 } } }])
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => await exposure.evaluate((f) => f.disabled), 'the exposure group greyed')
+  await exposure.getByText('只在物理天空下生效').waitFor()
+  await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
+  assert.ok(await page.getByRole('spinbutton', { name: '默认曝光（EV100）' }).isDisabled(), 'the default exposure greyed')
+  assert.ok(await page.getByRole('spinbutton', { name: '曝光补偿（EV）' }).isEnabled(), 'the compensation as before')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- R1 AC-R1-3: the same pictures in a hidden tab ------------------------------
 
 // The export as the assistant's page draws it, without the editor or the network.
@@ -4087,6 +4878,17 @@ if (process.env.SCENE_E2E_HIDDEN) await check('determinism: exports in a hidden 
     const webgl = await run()
     const again = await run()
     assert.deepEqual(again, webgl, 'the WebGL2 backend, twice the same in the background')
+    // W2 AC-W2-9: the physical sky in the background, twice the same on each backend (its LUTs and sky light are made before the first frame).
+    const sky = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-golden.json', import.meta.url), 'utf8'))
+    const skyDoc = { scene: sky, models: {}, revision: '1' }
+    const skyPlan = { cameraObjectIDs: sky.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'lit'] }
+    const runSky = () => evaluate(`window.__export(${JSON.stringify(skyDoc)}, ${JSON.stringify(skyPlan)})`)
+    const skyWebGL = [await runSky(), await runSky()]
+    assert.deepEqual(skyWebGL[1], skyWebGL[0], 'the physical sky on WebGL2, twice the same in the background')
+    await evaluate('window.__sceneGPU.forceWebGL = false')
+    const skyWebGPU = [await runSky(), await runSky()]
+    assert.deepEqual(skyWebGPU[1], skyWebGPU[0], 'the physical sky on WebGPU, twice the same in the background')
+    console.log(`W2 determinism: the physical sky's lit export ${skyWebGPU[0].find((i) => i.pass === 'lit').hash.slice(0, 12)} on WebGPU, ${skyWebGL[0].find((i) => i.pass === 'lit').hash.slice(0, 12)} on WebGL2`)
     // The real-time GI after the workbench's whole run, so its long export frees no material the workbench reuses:
     // in front again, then twice behind the blank tab, then twice on the WebGL2 backend.
     await evaluate('window.__sceneGPU.forceWebGL = false')
@@ -4454,6 +5256,101 @@ if (process.env.SCENE_E2E_PERF) await check('AC-9: switching to the rendered vie
       assert.ok(m.longest_frame_ms < 2000 && m.lights_on_ms < 5000, `${name}: longest frame ${m.longest_frame_ms} ms, lights on after ${m.lights_on_ms} ms`)
     }
     assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W2_PERF=<dir> (AC-W2-11), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
+// physical sky at noon. The first switch to the rendered view in a fresh browser (shader cache cold) and
+// again (warm); frame times against the procedural sky in the same page; dragging the time of day, the
+// frame times while dragging and how long after the last move the sky light caught up; the CPU part's
+// time (an atmosphere change, a time change). Written to w2-perf.json in the directory.
+if (process.env.SCENE_E2E_W2_PERF) await check('W2 performance: the physical sky on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W2_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const server = new SceneServer()
+    perfScene(server)
+    const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
+    const procedural = server.scene.environment.sky
+    server.scene.environment.sky = physical
+    server.scene.render.exposure_ev100 = 15
+    const { page, errors } = await open(server, { context })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scene: 'AC-9 (about 200 objects, 4 lights) under the physical sky, Shanghai at noon' }
+
+    // Switching to the rendered view: until the first frame with the sky light made.
+    const switchTo = async () => {
+      await shading(page, '白模')
+      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+      await sleep(1500)
+      const measuring = orbitFrames(page, 6000)
+      await sleep(300)
+      const at = await page.evaluate(() => performance.now())
+      await shading(page, '最终渲染')
+      const after = (await measuring).filter((t) => t >= at)
+      const lit = await page.evaluate(() => window.__sceneGPU.skyLightAt)
+      return { longest_frame_ms: Math.round(Math.max(...gaps([at, ...after]))), sky_light_ms: Math.round(lit - at) }
+    }
+    record.switch = { cold: await switchTo(), warm: await switchTo() }
+
+    // Standing still (the view turned a little each frame so every frame renders), physical then procedural.
+    await orbitFrames(page, 1000)
+    record.frames = { physical: frameStats(await orbitFrames(page, 4000)) }
+    server.external([{ op: 'set_environment', environment: { ...server.scene.environment, sky: procedural } }])
+    await page.evaluate(() => window.__invalidate())
+    await sleep(1000)
+    await orbitFrames(page, 1000)
+    record.frames.procedural = frameStats(await orbitFrames(page, 4000))
+    server.external([{ op: 'set_environment', environment: { ...server.scene.environment, sky: physical } }])
+    await page.evaluate(() => window.__invalidate())
+    await sleep(1000)
+
+    // Dragging the time of day: a minute further each frame for 3 s, from 06:00.
+    const drag = await page.evaluate(() => new Promise((resolve) => {
+      const slider = document.querySelector('input[type=range][aria-label="当地时刻"]')
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      const times = []
+      let minute = 360
+      const start = performance.now()
+      const tick = (t) => {
+        times.push(t)
+        set.call(slider, String(minute++))
+        slider.dispatchEvent(new Event('input', { bubbles: true }))
+        if (t - start < 3000) requestAnimationFrame(tick)
+        else resolve({ times, last: performance.now() })
+      }
+      requestAnimationFrame(tick)
+    }))
+    await sleep(1500)
+    const caughtUp = await page.evaluate(() => window.__sceneGPU.skyLightAt)
+    record.drag = { ...frameStats(drag.times), sky_light_after_last_ms: Math.round(caughtUp - drag.last) }
+
+    // The CPU part (world/atmosphere/cpu.ts), as PhysicalLighting runs it: tables on an atmosphere change, the day's light on a time change.
+    record.cpu = await page.evaluate(async () => {
+      const { CpuAtmosphere } = await import('/src/creative-scene/world/atmosphere/cpu.ts')
+      const { PRESETS, sunAbove } = await import('/src/creative-scene/world/atmosphere/constants.ts')
+      const time = (fn, n) => {
+        fn()
+        const t0 = performance.now()
+        for (let i = 0; i < n; i++) fn()
+        return (performance.now() - t0) / n
+      }
+      let a = new CpuAtmosphere(PRESETS.clear)
+      const top = sunAbove(1, 6500)
+      return {
+        atmosphere_change_ms: Number(time(() => { a = new CpuAtmosphere(PRESETS.haze) }, 10).toFixed(2)),
+        time_change_ms: Number(time(() => a.daylight(0.5, top), 50).toFixed(2)),
+      }
+    })
+    record.baseline = JSON.parse(readFileSync(new URL('../../.lti/features/2026-10-22-scene-world-environment/features/2026-10-22-scene-physical-sky/discovery/research/baseline/perf.json', import.meta.url), 'utf8')).modes.rendered
+    console.log(`W2 performance: ${JSON.stringify(record, null, 1)}`)
+    await writeFile(`${dir}/w2-perf.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [])
     await context.close()
   } finally {
     await gpu.close()

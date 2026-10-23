@@ -44,7 +44,7 @@ import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
 import { renderMaterialThumbnail } from './library/thumbnail.ts'
 import { openScene } from './session.ts'
-import type { WireOp } from './state/apply.ts'
+import { cameraDefaults, type WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, tabAfterSelection, toggleWireframe, type MenuKind, type PropertiesTab } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
@@ -53,6 +53,7 @@ import { readView, viewKey, ViewSaver } from './viewState.ts'
 import { probeRender } from './render/probe.ts'
 import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
+import { newCameraExposure } from './world/exposure.ts'
 import './scene.css'
 
 /** The properties area's tabs, in Blender's order. */
@@ -388,7 +389,8 @@ export default function SceneEditor({
   const addCamera = () => {
     const pose = handle.current?.viewPose()
     if (!pose) return
-    const o = newCamera(pose, objects)
+    const exposure = shown?.environment.sky.kind === 'physical' ? newCameraExposure(shown.render.exposure_ev100, cameraDefaults.f_stop) : undefined
+    const o = newCamera(pose, objects, undefined, exposure)
     if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) {
       select([o.id])
       ui.setState({ lastCamera: o.id })
@@ -990,6 +992,7 @@ export default function SceneEditor({
                     backend={u.backend}
                     readOnly={readOnly}
                     display={display}
+                    physical={shown.environment.sky.kind === 'physical'}
                     onRender={(render, text, merge) => edit([{ op: 'set_render', render }], text, merge ? { merge } : undefined)}
                   />
                 ) : u.propertiesTab === 'environment' ? (
@@ -1008,6 +1011,7 @@ export default function SceneEditor({
                   modelFailed={!!shownModel && !!failedModels[shownModel]}
                   onUpdate={(update: ObjectUpdate, text, merge) => edit([{ op: 'update_objects', updates: [update] }], text, merge ? { merge } : undefined)}
                   objects={shown.objects}
+                  physical={shown.environment.sky.kind === 'physical'}
                   focusDistance={shownActive?.kind === 'camera' ? focusOf(shown, shownActive.id) : undefined}
                   picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
                   onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}

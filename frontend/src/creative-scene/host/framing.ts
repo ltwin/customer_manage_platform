@@ -4,6 +4,7 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, clampFocus, fullFrame, verticalFov, type DepthOfField } from '../cameraOptics.ts'
 import { cameraDefaults } from '../state/apply.ts'
 import type { SceneModel } from '../models/cache.ts'
+import { ev100 } from '../world/exposure.ts'
 import { docToView, positionToView, type Quat, type Vec3 } from '../space.ts'
 
 // Where render_view's and the export's camera stands. Everything here is in
@@ -39,6 +40,8 @@ export type Framing = {
   height: number
   optics?: DepthOfField
   depthOfField?: boolean
+  /** A scene camera's EV100 from its ISO, shutter and aperture; the others take the scene's default (render.exposure_ev100). */
+  ev100?: number
 }
 
 /** render_view's picture; exports follow the scene's output resolution (render/engines.ts longSideOf). */
@@ -116,7 +119,14 @@ export function cameraFraming(scene: Scene, id: string, side = longSide): Framin
       sensorLongMM: Math.max(camera.sensor_mm[0], camera.sensor_mm[1]),
     },
     depthOfField: camera.depth_of_field,
+    ev100: cameraEV100(camera),
   }
+}
+
+/** A scene camera's EV100 (W2 design「曝光」); the server stores every field. */
+export function cameraEV100(c: NonNullable<SceneObject['camera']>): number {
+  const camera = { ...cameraDefaults, ...c }
+  return ev100(camera.f_stop, camera.shutter_s, camera.iso)
 }
 
 /**

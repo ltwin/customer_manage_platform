@@ -1,0 +1,166 @@
+{
+ "rule": "Temporal 'compatible': a time the clocks skip moves forward by the gap; a repeated time is the earlier one",
+ "source": "W2 discovery/research/astronomy/local-time.cases.mjs, checked with Python zoneinfo; the skipped times re-derived for compatible",
+ "cases": [
+  {
+   "timezone": "America/New_York",
+   "date": "2026-03-08",
+   "local_time": "02:30",
+   "utc": "2026-03-08T07:30:00.000Z",
+   "kind": "nonexistent",
+   "note": "02:00 EST 跳到 03:00 EDT；往后推一个跳变量，即 03:30 EDT"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "2026-11-01",
+   "local_time": "01:30",
+   "utc": "2026-11-01T05:30:00.000Z",
+   "kind": "repeated",
+   "note": "01:00–01:59 出现两次；取较早的 EDT（−4）"
+  },
+  {
+   "timezone": "Australia/Sydney",
+   "date": "2026-04-05",
+   "local_time": "02:30",
+   "utc": "2026-04-04T15:30:00.000Z",
+   "kind": "repeated",
+   "note": "03:00 AEDT 拨回 02:00 AEST；取较早的 AEDT（+11）"
+  },
+  {
+   "timezone": "Australia/Sydney",
+   "date": "2026-10-04",
+   "local_time": "02:30",
+   "utc": "2026-10-03T16:30:00.000Z",
+   "kind": "nonexistent",
+   "note": "02:00 AEST 跳到 03:00 AEDT；往后推，即 03:30 AEDT"
+  },
+  {
+   "timezone": "Asia/Shanghai",
+   "date": "2026-06-21",
+   "local_time": "12:00",
+   "utc": "2026-06-21T04:00:00.000Z",
+   "kind": "normal",
+   "note": "+8"
+  },
+  {
+   "timezone": "Asia/Shanghai",
+   "date": "2026-06-21",
+   "local_time": "00:00",
+   "utc": "2026-06-20T16:00:00.000Z",
+   "kind": "normal",
+   "note": "当地零点落在前一天 UTC"
+  },
+  {
+   "timezone": "Asia/Shanghai",
+   "date": "1988-07-01",
+   "local_time": "12:00",
+   "utc": "1988-07-01T03:00:00.000Z",
+   "kind": "normal",
+   "note": "中国 1986–1991 实行过夏令时，+9"
+  },
+  {
+   "timezone": "Asia/Shanghai",
+   "date": "1900-01-01",
+   "local_time": "00:00",
+   "utc": "1899-12-31T15:54:17.000Z",
+   "kind": "normal",
+   "note": "1901 年前是地方平时 LMT +8:05:43"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "1900-01-01",
+   "local_time": "00:00",
+   "utc": "1900-01-01T05:00:00.000Z",
+   "kind": "normal",
+   "note": "EST −5"
+  },
+  {
+   "timezone": "Asia/Shanghai",
+   "date": "2100-12-31",
+   "local_time": "23:59",
+   "utc": "2100-12-31T15:59:00.000Z",
+   "kind": "normal",
+   "note": "上边界"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "2100-12-31",
+   "local_time": "23:59",
+   "utc": "2101-01-01T04:59:00.000Z",
+   "kind": "normal",
+   "note": "上边界，跨到 UTC 次年"
+  },
+  {
+   "timezone": "Australia/Sydney",
+   "date": "2100-12-31",
+   "local_time": "12:00",
+   "utc": "2100-12-31T01:00:00.000Z",
+   "kind": "normal",
+   "note": "上边界，夏令时规则外推，+11"
+  },
+  {
+   "timezone": "Australia/Lord_Howe",
+   "date": "2026-10-04",
+   "local_time": "02:15",
+   "utc": "2026-10-03T15:45:00.000Z",
+   "kind": "nonexistent",
+   "note": "半小时夏令时：02:00 跳到 02:30；往后推，即 02:45"
+  },
+  {
+   "timezone": "Australia/Lord_Howe",
+   "date": "2026-04-05",
+   "local_time": "01:45",
+   "utc": "2026-04-04T14:45:00.000Z",
+   "kind": "repeated",
+   "note": "半小时夏令时：02:00 拨回 01:30"
+  },
+  {
+   "timezone": "Pacific/Apia",
+   "date": "2011-12-30",
+   "local_time": "12:00",
+   "utc": "2011-12-30T22:00:00.000Z",
+   "kind": "nonexistent",
+   "note": "萨摩亚跳过整天 2011-12-30；往后推一天，即 12-31 12:00 +14"
+  },
+  {
+   "timezone": "Asia/Kathmandu",
+   "date": "2026-06-21",
+   "local_time": "12:00",
+   "utc": "2026-06-21T06:15:00.000Z",
+   "kind": "normal",
+   "note": "+5:45"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "2026-03-08",
+   "local_time": "01:59",
+   "utc": "2026-03-08T06:59:00.000Z",
+   "kind": "normal",
+   "note": "跳变前一分钟"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "2026-03-08",
+   "local_time": "03:00",
+   "utc": "2026-03-08T07:00:00.000Z",
+   "kind": "normal",
+   "note": "跳变后第一分钟"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "2026-11-01",
+   "local_time": "00:59",
+   "utc": "2026-11-01T04:59:00.000Z",
+   "kind": "normal",
+   "note": "重复区间前一分钟"
+  },
+  {
+   "timezone": "America/New_York",
+   "date": "2026-11-01",
+   "local_time": "02:00",
+   "utc": "2026-11-01T07:00:00.000Z",
+   "kind": "normal",
+   "note": "重复区间后第一分钟"
+  }
+ ]
+}

@@ -1,18 +1,26 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
-import type { DirectionalLight, Mesh } from 'three'
+import { Color, DirectionalLight, Scene, type Mesh } from 'three'
+import { uniform } from 'three/tsl'
 import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { SceneEnvironment } from '../api.ts'
 import type { Engine } from '../render/engines.ts'
 import { ambientFill, sunLight } from '../render/litLook.ts'
-import { gpuOf } from '../render/gpu.ts'
-import { disposeSky, litSky, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
+import { gpuOf, gpuTestHooks } from '../render/gpu.ts'
+import { disposeSky, litSky, physicalSkyMesh, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { STUDIO_AMBIENT, STUDIO_BACKGROUND, STUDIO_FILL, STUDIO_KEY_INTENSITY } from '../render/studio.ts'
 import { fitSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
+import { physicalSun, sunVector } from '../world/astro.ts'
+import { sunAbove } from '../world/atmosphere/constants.ts'
+import { CpuAtmosphere } from '../world/atmosphere/cpu.ts'
+import { atmosphereLuts } from '../world/atmosphere/luts.ts'
+import { discSolidAngle } from '../world/atmosphere/sky.ts'
+import { environmentScale, type PhysicalExposure } from '../world/exposure.ts'
+import { isPhysical, type PhysicalSky } from '../world/physicalSky.ts'
 
 // What lights the scene in each shading (design「显示模式」): wireframe has
 // only a background; solid is the clay look, a fixed studio light that turns
@@ -27,7 +35,7 @@ export const previewBackground = '#5b5d61'
 export function Lighting({ environment, display, engine = 'workbench' }: { environment: SceneEnvironment; display: DisplayMode; engine?: Engine }) {
   if (display === 'wireframe') return <color attach="background" args={[wireBackground]} />
   if (display === 'preview') return <RoomLighting />
-  if (display === 'rendered') return <LitLighting environment={environment} engine={engine} />
+  if (display === 'rendered') return isPhysical(environment.sky) ? <PhysicalLighting sky={environment.sky} fog={environment.fog} /> : <LitLighting environment={environment} engine={engine} />
   return <StudioLighting />
 }
 
@@ -164,5 +172,134 @@ function Sun({ environment }: { environment: SceneEnvironment }) {
       shadow-mapSize={[2048, 2048]}
       userData={{ sun: true }}
     />
+  )
+}
+
+/**
+ * The lit look under a physical sky (W2 design「大气 LUT 与重算」「预曝光的落点」):
+ * the atmosphere's LUTs and the CPU's tables, remade when its four fields
+ * change; the sky view, the sun light and the fog's light when anything of
+ * the sky does; the sky light from the sky view without the disc, at most
+ * every 200 ms like the other skies'. Everything is stored in physical
+ * units or × s_env; the frame's exposure is written over it just before
+ * drawing (world/exposure.ts applyExposure, from scene.userData.physical).
+ * No ambient: the sky light is the fill. A new renderer (the device lost)
+ * draws the LUTs and the sky light anew.
+ */
+function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironment['fog'] }) {
+  const { gl, scene, invalidate } = useThree()
+  const latest = useRef(sky)
+  latest.current = sky
+  const parts = useMemo(() => {
+    const luts = atmosphereLuts()
+    const lutScale = uniform(1)
+    const background = drawnAside(physicalSkyMesh(luts, lutScale))
+    const source = physicalSkyMesh(luts, null)
+    const sun = new DirectionalLight()
+    sun.castShadow = true
+    sun.shadow.mapSize.set(2048, 2048)
+    sun.userData = { sun: true, baseIntensity: 0 }
+    const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, fogLux: 0 }
+    return { luts, lutScale, background, source, sourceScene: new Scene().add(source), sun, physical, cpu: null as CpuAtmosphere | null, lutEnv: 1 }
+  }, [])
+  useEffect(
+    () => () => {
+      parts.luts.dispose()
+      disposeSky(parts.background)
+      disposeSky(parts.source)
+      parts.sun.dispose()
+    },
+    [parts],
+  )
+  useLayoutEffect(() => fitSunShadow(parts.sun), [parts])
+  useLayoutEffect(() => {
+    scene.userData.physical = parts.physical
+    return () => {
+      if (scene.userData.physical === parts.physical) delete scene.userData.physical
+      scene.environmentIntensity = 1
+    }
+  }, [scene, parts])
+
+  const renderer = gl as unknown as WebGPURenderer
+  const atmosphereKey = [sky.altitude_m, sky.air_density, sky.dust_density, sky.ozone_density].join()
+  useLayoutEffect(() => {
+    const s = latest.current
+    parts.luts.setAtmosphere(s)
+    parts.luts.renderAtmosphere(renderer)
+    parts.cpu = new CpuAtmosphere(s)
+  }, [parts, renderer, atmosphereKey])
+
+  const skyKey = JSON.stringify(sky)
+  useLayoutEffect(() => {
+    const s = latest.current
+    const where = physicalSun(s)
+    const toward = sunVector(where.elevationDeg, where.azimuthDeg)
+    const top = sunAbove(s.sun_strength, s.sun_temperature_k)
+    const day = parts.cpu!.daylight(toward.y, top)
+    const sEnv = environmentScale(day.horizontal)
+    parts.luts.setSun(toward.y, [top[0] * sEnv, top[1] * sEnv, top[2] * sEnv])
+    parts.luts.renderSkyView(renderer)
+    parts.lutScale.value = sEnv
+    parts.lutEnv = sEnv
+    for (const mesh of [parts.background, parts.source]) mesh.sky.sun.value.copy(toward)
+    const omega = discSolidAngle(s.sun_size_deg)
+    parts.background.sky.sunRadiance.value.set(top[0] / omega, top[1] / omega, top[2] / omega)
+    parts.background.sky.sunCosRadius.value = Math.cos(((s.sun_size_deg / 2) * Math.PI) / 180)
+    parts.background.sky.disc.value = s.sun_disc ? 1 : 0
+    // The sun light in lux on a surface facing it, its colour what the atmosphere let through.
+    const peak = Math.max(...day.sun)
+    parts.sun.userData.baseIntensity = peak
+    const [r, g, b] = peak > 0 ? day.sun.map((c) => c / peak) : [1, 1, 1]
+    parts.sun.color.setRGB(r, g, b)
+    parts.sun.position.fromArray(positionToView([toward.x * 60, toward.y * 60, toward.z * 60]))
+    parts.physical.fogLux = day.horizontal
+    invalidate()
+  }, [parts, renderer, skyKey, invalidate])
+
+  const fogKey = fog ? fog.color : ''
+  useLayoutEffect(() => {
+    parts.physical.fogColor = fogKey ? new Color(fogKey) : null
+    invalidate()
+  }, [parts, fogKey, invalidate])
+
+  // The sky light, from the sky view as it is now and at its s_env: made before the first frame, then at most every 200 ms.
+  const lighting = useRef<{ pmrem: PMREMGenerator; target: RenderTarget | null; at: number; timer: number | null } | null>(null)
+  useLayoutEffect(() => {
+    const l = { pmrem: new PMREMGenerator(renderer), target: null as RenderTarget | null, at: -Infinity, timer: null as number | null }
+    lighting.current = l
+    return () => {
+      if (l.timer !== null) window.clearTimeout(l.timer)
+      if (l.target && scene.environment === l.target.texture) scene.environment = null
+      l.target?.dispose()
+      l.pmrem.dispose()
+      lighting.current = null
+    }
+  }, [renderer, scene])
+  useLayoutEffect(() => {
+    const l = lighting.current
+    if (!l) return
+    const run = () => {
+      l.timer = null
+      l.at = performance.now()
+      // Into the same target each time: a new environment texture would have three rebuild every material's nodes
+      // (about 150 ms a commit for AC-9's scene while the time of day is dragged).
+      l.target = l.pmrem.fromScene(parts.sourceScene, 0, 0.1, 100, l.target ? { renderTarget: l.target } : {})
+      scene.environment = l.target.texture
+      parts.physical.skyLightScale = parts.lutEnv
+      gpuTestHooks.skyLightAt = performance.now()
+      invalidate()
+    }
+    if (l.timer !== null) window.clearTimeout(l.timer)
+    const wait = l.at + environmentEveryMs - performance.now()
+    if (wait <= 0) run()
+    else l.timer = window.setTimeout(run, wait)
+  }, [parts, skyKey, scene, invalidate])
+
+  return (
+    <>
+      <primitive object={parts.background} />
+      <primitive object={parts.sun} />
+      {fog && <fog attach="fog" args={[fog.color, fog.near, fog.far]} />}
+    </>
   )
 }

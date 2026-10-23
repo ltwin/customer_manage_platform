@@ -1,23 +1,28 @@
 import type { Scene } from '../api.ts'
 import { proceduralSky, withFog, withSkyKind } from '../editing.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
+import { isPhysical } from '../world/physicalSky.ts'
+import { PhysicalSkyFields } from './PhysicalSkyFields.tsx'
 import { NumberField } from './Properties.tsx'
 
 type Environment = Scene['environment']
 
+const skyNames = { procedural: '程序化天空', physical: '物理天空', color: '纯色' } as const
+
 /** A number with a slider beside it, for what is dragged to judge: the sun and the exposure. */
-export function Slider({ label, value, min, max, step, onCommit }: { label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void }) {
+export function Slider({ label, value, min, max, step, disabled, onCommit }: { label: string; value: number; min: number; max: number; step: number; disabled?: boolean; onCommit: (v: number) => void }) {
   return (
     <div className="cc-scene-slider">
-      <NumberField label={label} value={value} step={step} min={min} max={max} onCommit={onCommit} />
-      <input type="range" aria-label={label} min={min} max={max} step={step} value={value} onChange={(e) => onCommit(Number(e.target.value))} />
+      <NumberField label={label} value={value} step={step} min={min} max={max} disabled={disabled} onCommit={onCommit} />
+      <input type="range" aria-label={label} min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onCommit(Number(e.target.value))} />
     </div>
   )
 }
 
 /**
  * The environment tab (design「属性栏与复制材质」, R2「属性区选项卡」): sky,
- * ambient light and fog; the exposure moved to the render tab.
+ * ambient light and fog; the exposure moved to the render tab. A physical
+ * sky has its own groups (PhysicalSkyFields) and no ambient light.
  * set_environment writes the environment whole, so each field edit sends
  * the current one with that field changed; a drag's commits fold by their
  * merge key while unsent. Only the rendered view and lit exports show it:
@@ -44,10 +49,11 @@ export function EnvironmentPanel({ environment, readOnly, display, onEnvironment
             value={sky.kind}
             onChange={(e) => {
               const kind = e.target.value
-              if (kind === 'procedural' || kind === 'color') onEnvironment(withSkyKind(environment, kind), kind === 'color' ? '天空改为纯色' : '天空改为程序化天空')
+              if (kind === 'procedural' || kind === 'color' || kind === 'physical') onEnvironment(withSkyKind(environment, kind), `天空改为${skyNames[kind]}`)
             }}
           >
             <option value="procedural">程序化天空</option>
+            <option value="physical">物理天空</option>
             <option value="color">纯色</option>
             {sky.kind === 'hdri' && <option value="hdri">HDRI（暂不支持）</option>}
           </select>
@@ -67,8 +73,10 @@ export function EnvironmentPanel({ environment, readOnly, display, onEnvironment
         )}
         {sky.kind === 'hdri' && <small>暂无内置 HDRI，请改用程序化天空或纯色</small>}
       </fieldset>
-      <fieldset disabled={readOnly}>
+      {isPhysical(sky) && <PhysicalSkyFields environment={environment} sky={sky} readOnly={readOnly} onEnvironment={onEnvironment} />}
+      <fieldset disabled={readOnly || sky.kind === 'physical'}>
         <legend>环境光</legend>
+        {sky.kind === 'physical' && <small>物理天空下天空光由大气算出，环境光不生效</small>}
         <label className="cc-scene-field">
           <span>颜色</span>
           <input type="color" aria-label="环境光颜色" value={ambient.color} onChange={(e) => set({ ...environment, ambient: { ...ambient, color: e.target.value } }, '环境光颜色', 'ambient_color')} />

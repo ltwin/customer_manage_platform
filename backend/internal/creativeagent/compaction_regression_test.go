@@ -494,7 +494,8 @@ func TestCompactionRejectsSummaryBeyondWindow(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
-			useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 8000 })
+			// Room for the tool definitions (W2's physical sky made edit_scene's longer), not for the summary.
+			useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 9000 })
 			f.queue()
 			f.service.limits.AutoCompactPercent = 0
 			f.threeTurns()

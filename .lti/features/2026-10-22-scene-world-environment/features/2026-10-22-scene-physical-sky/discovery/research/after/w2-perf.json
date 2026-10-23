@@ -1,0 +1,51 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "scene": "AC-9 (about 200 objects, 4 lights) under the physical sky, Shanghai at noon",
+  "switch": {
+    "cold": {
+      "longest_frame_ms": 333,
+      "sky_light_ms": 211
+    },
+    "warm": {
+      "longest_frame_ms": 333,
+      "sky_light_ms": 234
+    }
+  },
+  "frames": {
+    "physical": {
+      "mean": 8.333125000000003,
+      "p95": 9.099999999998545,
+      "max": 9.30000000000291,
+      "frames": 480
+    },
+    "procedural": {
+      "mean": 8.327708333333332,
+      "p95": 9.19999999999709,
+      "max": 9.399999999997817,
+      "frames": 480
+    }
+  },
+  "drag": {
+    "mean": 40.02763157894735,
+    "p95": 116.79999999999927,
+    "max": 133.70000000000073,
+    "frames": 76,
+    "sky_light_after_last_ms": 10
+  },
+  "cpu": {
+    "atmosphere_change_ms": 22.01,
+    "time_change_ms": 1.15
+  },
+  "baseline": {
+    "mean": 8.333749999999993,
+    "p95": 9.200000000000728,
+    "max": 9.400000000001455,
+    "frames": 480
+  }
+}

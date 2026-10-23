@@ -7,6 +7,11 @@ import type { SceneEnvironment } from '../api.ts'
 import type { TSLNode } from '../materials/patterns.ts'
 import { MIE_COEFFICIENT, MIE_DIRECTIONAL_G, RAYLEIGH } from './atmosphere.ts'
 import { SKY_GAIN } from './litLook.ts'
+import { physicalSun, sunVector } from '../world/astro.ts'
+import { isPhysical } from '../world/physicalSky.ts'
+import { preExposure } from '../world/exposure.ts'
+import type { AtmosphereLuts } from '../world/atmosphere/luts.ts'
+import { physicalSkyColor, type PhysicalSkyNode } from '../world/atmosphere/sky.ts'
 
 // The lit look's sky, in TSL (patterns「场景着色写法」: compare with the
 // sources on every three upgrade): three's Sky (r186
@@ -65,7 +70,7 @@ function scatter(direction: TSLNode, sunDirection: TSLNode, sunE: TSLNode, betaR
  * Background draws its box; an orthographic box is scaled past the view's
  * bounds). The mesh's own transform is not used.
  */
-function skyMesh(colorNode: TSLNode): Mesh {
+export function skyMesh(colorNode: TSLNode): Mesh {
   const material = new NodeMaterial()
   material.side = BackSide
   material.depthWrite = false
@@ -114,17 +119,34 @@ export function litSky(): LitSky {
   return Object.assign(skyMesh(color), { sunPosition, turbidity, showSunDisc }) as LitSky
 }
 
+export type PhysicalSkyMesh = Mesh & { sky: PhysicalSkyNode }
+
+/**
+ * A physical sky's box from its LUTs. As the background (lutScale given) the
+ * sky view × k / s_env and the disc × k, k being the frame's pre-exposure;
+ * as the sky light's source (lutScale null) the sky view as stored, no disc.
+ */
+export function physicalSkyMesh(luts: AtmosphereLuts, lutScale: (TSLNode & Uniform<number>) | null): PhysicalSkyMesh {
+  const v = normalize(positionLocal)
+  const direction = vec3(v.x, v.z, v.y.negate())
+  const sky = lutScale ? physicalSkyColor(luts, direction, preExposure.div(lutScale), preExposure) : physicalSkyColor(luts, direction, float(1), float(0))
+  if (!lutScale) sky.disc.value = 0
+  return Object.assign(skyMesh(sky.color), { sky })
+}
+
 export function disposeSky(sky: Mesh) {
   sky.geometry.dispose()
   ;(sky.material as NodeMaterial).dispose()
 }
 
-/** The sun's direction in document space (Y up) from the sky's angles. */
+/** The sun's direction in document space (Y up): a physical sky's where its place and time put it (world/astro.ts), any other's from its angles. */
 export function sunDirection(env: SceneEnvironment): Vector3 {
   const sky = env.sky
-  const el = ((sky.sun_elevation_deg ?? 35) * Math.PI) / 180
-  const az = ((sky.sun_azimuth_deg ?? 135) * Math.PI) / 180
-  return new Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el))
+  if (isPhysical(sky)) {
+    const sun = physicalSun(sky)
+    return sunVector(sun.elevationDeg, sun.azimuthDeg)
+  }
+  return sunVector(sky.sun_elevation_deg ?? 35, sky.sun_azimuth_deg ?? 135)
 }
 
 export function setSky(sky: LitSky, env: SceneEnvironment, sunDisc: boolean) {
@@ -133,7 +155,7 @@ export function setSky(sky: LitSky, env: SceneEnvironment, sunDisc: boolean) {
   sky.showSunDisc.value = sunDisc ? 1 : 0
 }
 
-/** What lights a lit scene besides its lights: the sky without the sun disc, or the sky colour. */
+/** What lights a lit scene besides its lights: the sky without the sun disc, or the sky colour. A physical sky's is PhysicalLighting's (objects/Lighting.tsx). */
 export function skyEnvironment(pmrem: PMREMGenerator, env: SceneEnvironment): RenderTarget {
   if (env.sky.kind === 'procedural') {
     const scene = new Scene()

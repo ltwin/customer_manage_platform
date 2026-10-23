@@ -12,6 +12,7 @@ import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
+import { applyExposure, preExposure } from '../world/exposure.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -73,8 +74,14 @@ export type Frame = {
   pictureLongSide?: number
   /** Ambient occlusion; on unless turned off. */
   ao?: boolean
-  /** toneMappingExposure for this frame: 2^exposure_ev for lit, 1 otherwise. */
+  /** toneMappingExposure for this frame: 2^exposure_ev for lit under any sky but the physical one, 1 otherwise. */
   exposure?: number
+  /**
+   * The pre-exposure k for this frame (world/exposure.ts): 1 / (1.2 · 2^EV100)
+   * for lit under a physical sky, 1 otherwise. Written onto the scene's lights
+   * and the global uniform just before drawing.
+   */
+  preExposure?: number
   /** Wireframe has no surfaces to shade: no AO, no blur. */
   wireframe?: boolean
   /**
@@ -653,10 +660,13 @@ export class SceneRenderer {
     // The output node reads the exposure from the renderer as it draws.
     const exposure = renderer.toneMappingExposure
     renderer.toneMappingExposure = frame.exposure ?? 1
+    // Written and drawn in one synchronous call: no await between (world/exposure.ts preExposure).
+    applyExposure(this.scene, frame.preExposure ?? 1)
     try {
       built.pipeline.render()
     } finally {
       renderer.toneMappingExposure = exposure
+      preExposure.value = 1
     }
   }
 

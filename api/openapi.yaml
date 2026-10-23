@@ -14938,7 +14938,10 @@ components:
     CreativeSceneSky:
       type: object
       additionalProperties: false
-      description: 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color。
+      description: >-
+        只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color；
+        physical 带 date 和下列物理天空的字段（太阳高度、方位只在 sun_mode = manual 时生效），写其他类型的字段返回 400。
+        physical 除 kind、date 外都可省略，存储时补齐缺省值，响应里总是带齐。
       required:
       - kind
       properties:
@@ -14948,14 +14951,17 @@ components:
           - procedural
           - hdri
           - color
+          - physical
         sun_elevation_deg:
           type: number
           minimum: -10
           maximum: 90
+          description: physical 缺省 35。
         sun_azimuth_deg:
           type: number
           minimum: 0
           maximum: 360
+          description: physical 缺省 135。
         turbidity:
           type: number
           minimum: 1
@@ -14965,6 +14971,80 @@ components:
           pattern: ^[a-z0-9_]+@[1-9][0-9]*$
         color:
           $ref: '#/components/schemas/CreativeSceneColor'
+        sun_mode:
+          type: string
+          enum:
+          - location
+          - manual
+          description: location 按地点、日期和当地时刻推算太阳；manual 用 sun_elevation_deg、sun_azimuth_deg。两套字段都保存。缺省 location。
+        latitude_deg:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: 北纬为正。与 longitude_deg、timezone 要么都写，要么都省略（都省略时为上海 31.2304, 121.4737, Asia/Shanghai）。
+        longitude_deg:
+          type: number
+          minimum: -180
+          maximum: 180
+          description: 东经为正。
+        timezone:
+          type: string
+          description: IANA 时区名，大小写与时区库一致（如 Asia/Shanghai）；不能是 Local 或空串。local_time 是这个时区的当地时间，夏令时由时区库处理。
+        place:
+          type: string
+          maxLength: 80
+          description: 地点的显示名，不参与计算。缺省空串。
+        date:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: 当地日期 YYYY-MM-DD，1900-01-01…2100-12-31 之间存在的日期。physical 必填，没有缺省值。
+        local_time:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          description: 当地时刻 HH:MM。缺省 12:00。
+        north_azimuth_deg:
+          type: number
+          minimum: 0
+          maximum: 360
+          description: 正北在文档坐标中的方位，约定同 sun_azimuth_deg；缺省 180，即正北指向 −Z。
+        altitude_m:
+          type: number
+          minimum: 0
+          maximum: 20000
+          description: 场景 Y = 0 处的海拔（米）。缺省 0。
+        air_density:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: 空气（瑞利散射）密度倍率，同 Blender Nishita 天空的 Air。缺省 1。
+        dust_density:
+          type: number
+          minimum: 0
+          maximum: 50
+          description: 尘埃与气溶胶（米氏散射）密度倍率，同 Blender 的 Dust。缺省 1。
+        ozone_density:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: 臭氧吸收倍率，同 Blender 的 Ozone。缺省 1。
+        sun_disc:
+          type: boolean
+          description: 是否画太阳盘，不影响太阳光。缺省 true。
+        sun_size_deg:
+          type: number
+          minimum: 0.1
+          maximum: 10
+          description: 太阳盘的视直径（度）。缺省 0.545。
+        sun_strength:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: 太阳的亮度倍率，太阳光、太阳盘和它照亮的天空一起乘。缺省 1。
+        sun_temperature_k:
+          type: number
+          minimum: 2000
+          maximum: 12000
+          description: 太阳的色温（开尔文），6500 为中性，调低更暖、调高更冷，同样作用于太阳光和天空。缺省 6500。
     CreativeSceneColor:
       type: string
       pattern: ^#[0-9a-fA-F]{6}$
@@ -15007,6 +15087,7 @@ components:
       - exposure_ev
       - engine
       - resolution
+      - exposure_ev100
       properties:
         mode:
           type: string
@@ -15032,6 +15113,11 @@ components:
           - 4k
           - 8k
           description: 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
+        exposure_ev100:
+          type: number
+          minimum: -10
+          maximum: 20
+          description: 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下的曝光值 EV100；场景摄像机用自己的 ISO、快门和光圈。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。
     CreativeSceneRenderPatch:
       type: object
       additionalProperties: false
@@ -15059,6 +15145,10 @@ components:
           - 2k
           - 4k
           - 8k
+        exposure_ev100:
+          type: number
+          minimum: -10
+          maximum: 20
     CreativeSceneObject:
       type: object
       additionalProperties: false
@@ -15272,7 +15362,7 @@ components:
       additionalProperties: false
       description: >-
         写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、
-        depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空；响应里总是带齐（旧快照在读取时补齐）。
+        depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。
         near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边：
         tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。
         update_objects 里只改写到的字段。
@@ -15320,6 +15410,16 @@ components:
           description: >-
             非空时按该物件原点沿视线方向的深度对焦。写入时必须指向修改后场景里的 primitive、model_instance 或 group，
             且不是摄像机自己；之后目标被删除时按 focus 对焦。写空字符串取消。
+        iso:
+          type: number
+          minimum: 25
+          maximum: 102400
+          description: 感光度。物理天空下与 shutter_s、f_stop 一起决定曝光：EV100 = log₂(f_stop² / shutter_s) − log₂(iso / 100)；其他天空下不生效。
+        shutter_s:
+          type: number
+          minimum: 0.000125
+          maximum: 30
+          description: 快门（秒），1/8000 s…30 s。只在物理天空下生效。
     CreativeSceneOperation:
       description: 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。
       oneOf:

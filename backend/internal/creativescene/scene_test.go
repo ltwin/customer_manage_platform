@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"sort"
@@ -591,7 +592,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k"}) {
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0}) {
 		t.Fatalf("a new scene reads without every render field: %v", got)
 	}
 	set := func(render map[string]any) error {
@@ -612,7 +613,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err := set(map[string]any{"resolution": "4k"}); err != nil {
 		t.Fatal(err)
 	}
-	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k"}) {
+	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15}) {
 		t.Fatalf("render %+v", r)
 	}
 	for name, render := range map[string]map[string]any{
@@ -865,7 +866,7 @@ func TestLightAndCameraDefaults(t *testing.T) {
 		}
 	}
 	want := map[string]any{"focal_mm": 35.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": "",
-		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": ""}
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Errorf("camera = %v, want %v", got, want)
 	}
@@ -924,7 +925,7 @@ func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 200.0, "label": "A",
-		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": ""}
+		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("camera = %v, want %v", got, want)
 	}
@@ -942,4 +943,235 @@ func renderOf(t *testing.T, raw []byte) map[string]any {
 		t.Fatal(err)
 	}
 	return doc.Scene.Render
+}
+
+// W2 scene-physical-sky ----------------------------------------------------------
+
+// physicalEnv is an environment under a physical sky with the fields given.
+func physicalEnv(sky map[string]any) map[string]any {
+	sky["kind"] = "physical"
+	return map[string]any{"sky": sky, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}
+}
+
+func setEnvironment(t *testing.T, scope store.AccountScope, doc string, env map[string]any) error {
+	t.Helper()
+	v := readScene(t, scope, doc)
+	_, err := send(t, scope, batch{DocumentID: doc, Expected: v.expect("environment"), Operations: []any{op{"op": "set_environment", "environment": env}}})
+	return err
+}
+
+// skyOf is the sky of a full read, as JSON reads it.
+func skyOf(t *testing.T, scope store.AccountScope, doc string) map[string]any {
+	t.Helper()
+	raw, err := creativedocument.Read(t.Context(), scope, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Scene struct {
+			Environment struct {
+				Sky map[string]any `json:"sky"`
+			} `json:"environment"`
+		} `json:"scene"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v.Scene.Environment.Sky
+}
+
+// A physical sky stores every field: the ones it leaves out at the
+// contract's defaults (Shanghai at noon, a clear sky), the ones it writes as
+// written, zeros included.
+func TestPhysicalSkyIsCompleted(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	if err := setEnvironment(t, f.a, doc, physicalEnv(map[string]any{"date": "2026-06-21"})); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"kind": "physical", "sun_mode": "location", "latitude_deg": 31.2304, "longitude_deg": 121.4737, "timezone": "Asia/Shanghai",
+		"place": "", "date": "2026-06-21", "local_time": "12:00", "north_azimuth_deg": 180.0, "sun_elevation_deg": 35.0, "sun_azimuth_deg": 135.0,
+		"altitude_m": 0.0, "air_density": 1.0, "dust_density": 1.0, "ozone_density": 1.0,
+		"sun_disc": true, "sun_size_deg": 0.545, "sun_strength": 1.0, "sun_temperature_k": 6500.0}
+	if got := skyOf(t, f.a, doc); !reflect.DeepEqual(got, want) {
+		t.Fatalf("sky = %v, want %v", got, want)
+	}
+	written := map[string]any{"sun_mode": "manual", "latitude_deg": 30.6598, "longitude_deg": 104.0633, "timezone": "Asia/Shanghai",
+		"place": "成都", "date": "2026-10-01", "local_time": "17:45", "north_azimuth_deg": 90.0, "sun_elevation_deg": -10.0, "sun_azimuth_deg": 359.5,
+		"altitude_m": 4000.0, "air_density": 0.0, "dust_density": 50.0, "ozone_density": 10.0,
+		"sun_disc": false, "sun_size_deg": 10.0, "sun_strength": 0.0, "sun_temperature_k": 2000.0}
+	if err := setEnvironment(t, f.a, doc, physicalEnv(maps.Clone(written))); err != nil {
+		t.Fatal(err)
+	}
+	written["kind"] = "physical"
+	if got := skyOf(t, f.a, doc); !reflect.DeepEqual(got, written) {
+		t.Fatalf("sky = %v, want %v", got, written)
+	}
+}
+
+// Each wrong physical sky is refused with the field it got wrong, and
+// writes nothing.
+func TestPhysicalSkyRefusesBadFields(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	place := map[string]any{"latitude_deg": 30.66, "longitude_deg": 104.06, "timezone": "Asia/Shanghai"}
+	with := func(kv map[string]any) map[string]any {
+		sky := map[string]any{"date": "2026-10-01"}
+		maps.Copy(sky, kv)
+		return physicalEnv(sky)
+	}
+	zone := func(name string) map[string]any {
+		return with(map[string]any{"latitude_deg": 30.66, "longitude_deg": 104.06, "timezone": name})
+	}
+	for name, tc := range map[string]struct {
+		env  map[string]any
+		want string
+	}{
+		"place without a time zone":   {with(map[string]any{"latitude_deg": 30.66, "longitude_deg": 104.06}), "latitude_deg、longitude_deg、timezone"},
+		"a time zone alone":           {with(map[string]any{"timezone": "Asia/Tokyo"}), "latitude_deg、longitude_deg、timezone"},
+		"unknown time zone":           {zone("Mars/Olympus"), "timezone"},
+		"time zone in the wrong case": {zone("asia/shanghai"), "timezone"},
+		"Local":                       {zone("Local"), "timezone"},
+		"empty time zone":             {zone(""), "timezone"},
+		"no date":                     {physicalEnv(maps.Clone(place)), "date"},
+		"a date that does not exist":  {with(map[string]any{"date": "2026-02-30"}), "date"},
+		"before 1900":                 {with(map[string]any{"date": "1899-12-31"}), "date"},
+		"after 2100":                  {with(map[string]any{"date": "2101-01-01"}), "date"},
+		"one-digit month":             {with(map[string]any{"date": "2026-6-21"}), "date"},
+		"24:00":                       {with(map[string]any{"local_time": "24:00"}), "local_time"},
+		"one-digit hour":              {with(map[string]any{"local_time": "7:30"}), "local_time"},
+		"sun mode":                    {with(map[string]any{"sun_mode": "auto"}), "sun_mode"},
+		"place name too long":         {with(map[string]any{"place": strings.Repeat("地", 81)}), "place"},
+		"latitude":                    {with(map[string]any{"latitude_deg": 90.5, "longitude_deg": 0, "timezone": "UTC"}), "latitude_deg"},
+		"longitude":                   {with(map[string]any{"latitude_deg": 0, "longitude_deg": -181, "timezone": "UTC"}), "longitude_deg"},
+		"north":                       {with(map[string]any{"north_azimuth_deg": 361}), "north_azimuth_deg"},
+		"sun below −10°":              {with(map[string]any{"sun_elevation_deg": -11}), "sun_elevation_deg"},
+		"sun azimuth":                 {with(map[string]any{"sun_azimuth_deg": 360.5}), "sun_azimuth_deg"},
+		"below sea level":             {with(map[string]any{"altitude_m": -1}), "altitude_m"},
+		"above 20 km":                 {with(map[string]any{"altitude_m": 20001}), "altitude_m"},
+		"air":                         {with(map[string]any{"air_density": 10.5}), "air_density"},
+		"dust":                        {with(map[string]any{"dust_density": 51}), "dust_density"},
+		"ozone":                       {with(map[string]any{"ozone_density": -0.1}), "ozone_density"},
+		"sun size":                    {with(map[string]any{"sun_size_deg": 0.05}), "sun_size_deg"},
+		"sun strength":                {with(map[string]any{"sun_strength": 10.5}), "sun_strength"},
+		"cold sun":                    {with(map[string]any{"sun_temperature_k": 1999}), "sun_temperature_k"},
+		"hot sun":                     {with(map[string]any{"sun_temperature_k": 12001}), "sun_temperature_k"},
+		"turbidity":                   {with(map[string]any{"turbidity": 3}), "turbidity"},
+		"color":                       {with(map[string]any{"color": "#ffffff"}), "color"},
+		"the night sky before W3":     {with(map[string]any{"night": map[string]any{}}), "night"},
+		"aerial perspective":          {with(map[string]any{"aerial_perspective": map[string]any{}}), "aerial_perspective"},
+		"clouds":                      {with(map[string]any{"clouds": map[string]any{}}), "clouds"},
+		"weather":                     {map[string]any{"sky": map[string]any{"kind": "physical", "date": "2026-10-01"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil, "weather": map[string]any{}}, "weather"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := readScene(t, f.a, doc).Revision
+			err := setEnvironment(t, f.a, doc, tc.env)
+			var public creativeops.Public
+			if !errors.As(err, &public) || !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(public.PublicMessage(), tc.want) {
+				t.Fatalf("want a refusal naming %q, got %v", tc.want, err)
+			}
+			if after := readScene(t, f.a, doc).Revision; after != before {
+				t.Fatalf("a refused sky wrote revision %d", after)
+			}
+		})
+	}
+}
+
+// The other skies refuse the physical sky's fields too: stored, they would
+// enter the lit fingerprint and stale exports that did not change.
+func TestOtherSkiesRefusePhysicalFields(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	env := func(sky map[string]any) map[string]any {
+		return map[string]any{"sky": sky, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil}
+	}
+	procedural := func(kv map[string]any) map[string]any {
+		sky := map[string]any{"kind": "procedural", "sun_elevation_deg": 35, "sun_azimuth_deg": 135, "turbidity": 3}
+		maps.Copy(sky, kv)
+		return env(sky)
+	}
+	for name, tc := range map[string]struct {
+		env  map[string]any
+		want string
+	}{
+		"procedural with a date":     {procedural(map[string]any{"date": "2026-10-01"}), "date"},
+		"procedural with a latitude": {procedural(map[string]any{"latitude_deg": 30}), "latitude_deg"},
+		"procedural with sun mode":   {procedural(map[string]any{"sun_mode": "manual"}), "sun_mode"},
+		"hdri with sun strength":     {env(map[string]any{"kind": "hdri", "hdri": "studio@1", "sun_strength": 2}), "sun_strength"},
+		"color with dust":            {env(map[string]any{"kind": "color", "color": "#203040", "dust_density": 5}), "dust_density"},
+		"color without the sun disc": {env(map[string]any{"kind": "color", "color": "#203040", "sun_disc": false}), "sun_disc"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := setEnvironment(t, f.a, doc, tc.env)
+			var public creativeops.Public
+			if !errors.As(err, &public) || !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(public.PublicMessage(), tc.want) || !strings.Contains(public.PublicMessage(), "物理天空") {
+				t.Fatalf("want a refusal naming %q as the physical sky's, got %v", tc.want, err)
+			}
+		})
+	}
+	if got := skyOf(t, f.a, doc); !reflect.DeepEqual(got, map[string]any{"kind": "procedural", "sun_elevation_deg": 35.0, "sun_azimuth_deg": 135.0, "turbidity": 3.0}) {
+		t.Fatalf("sky after the refusals = %v", got)
+	}
+}
+
+// render.exposure_ev100 is the default camera's exposure under a physical
+// sky: 15 unless written, 0 a value like any other.
+func TestDefaultExposure(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	set := func(ev any) error {
+		v := readScene(t, f.a, doc)
+		_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"exposure_ev100": ev}}}})
+		return err
+	}
+	for _, ev := range []float64{0, -10, 20, 12.333} {
+		if err := set(ev); err != nil {
+			t.Fatalf("%v: %v", ev, err)
+		}
+		if got := readScene(t, f.a, doc).Scene.Render.ExposureEV100; got != ev {
+			t.Fatalf("exposure_ev100 = %v, want %v", got, ev)
+		}
+	}
+	for _, ev := range []any{-10.5, 20.5, nil, "15"} {
+		if err := set(ev); err == nil {
+			t.Fatalf("%v: accepted", ev)
+		}
+	}
+}
+
+// A camera's ISO and shutter: their defaults, merged by key, and their ranges.
+func TestCameraExposure(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	c := objectID(1)
+	addObjects(t, f.a, doc, withContent(c, "camera", 1, map[string]any{"iso": 1600}))
+	update := func(fields map[string]any) error {
+		v := readScene(t, f.a, doc)
+		_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect(content(c)), Operations: []any{
+			op{"op": "update_objects", "updates": []any{map[string]any{"object_id": c, "camera": fields}}}}})
+		return err
+	}
+	exposure := func() (any, any) {
+		cam := storedContent(t, f.a, doc, c, "camera")
+		return cam["iso"], cam["shutter_s"]
+	}
+	if iso, shutter := exposure(); iso != 1600.0 || shutter != 0.00025 {
+		t.Fatalf("iso %v shutter %v, want 1600 and 1/4000 s", iso, shutter)
+	}
+	if err := update(map[string]any{"shutter_s": 1.0 / 30}); err != nil {
+		t.Fatal(err)
+	}
+	if iso, shutter := exposure(); iso != 1600.0 || shutter != 1.0/30 {
+		t.Fatalf("iso %v shutter %v after writing the shutter", iso, shutter)
+	}
+	for _, bad := range []map[string]any{{"iso": 24}, {"iso": 102401}, {"shutter_s": 0.0001}, {"shutter_s": 31}, {"shutter_s": 0}} {
+		if err := update(bad); !errors.Is(err, creativeops.ErrValidation) {
+			t.Fatalf("%v: %v", bad, err)
+		}
+	}
+	for _, edge := range []map[string]any{{"iso": 25}, {"iso": 102400}, {"shutter_s": 0.000125}, {"shutter_s": 30}} {
+		if err := update(edge); err != nil {
+			t.Fatalf("%v: %v", edge, err)
+		}
+	}
 }

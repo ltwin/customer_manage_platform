@@ -147,8 +147,8 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
 		}
-		if op.Render.Mode == nil && op.Render.ExposureEV == nil && op.Render.Engine == nil && op.Render.Resolution == nil {
-			return nil, invalid("render 至少写一项：mode、exposure_ev、engine 或 resolution")
+		if op.Render.Mode == nil && op.Render.ExposureEV == nil && op.Render.Engine == nil && op.Render.Resolution == nil && op.Render.ExposureEV100 == nil {
+			return nil, invalid("render 至少写一项：mode、exposure_ev、engine、resolution 或 exposure_ev100")
 		}
 		return &op, nil
 	case "commit_model":
@@ -541,8 +541,13 @@ func (op *setEnvironmentOp) touched(Scene, map[string]int) ([]string, error) {
 	return []string{unitEnvironment}, nil
 }
 
+// apply replaces the environment whole; a physical sky is stored complete.
 func (op *setEnvironmentOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
-	s.Environment = op.Environment
+	env := op.Environment
+	if err := completeSky(&env.Sky); err != nil {
+		return err
+	}
+	s.Environment = env
 	c.change(unitEnvironment)
 	return nil
 }
@@ -565,6 +570,9 @@ func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	}
 	if p.Resolution != nil {
 		s.Render.Resolution = *p.Resolution
+	}
+	if p.ExposureEV100 != nil {
+		s.Render.ExposureEV100 = *p.ExposureEV100
 	}
 	c.change(unitRender)
 	return nil

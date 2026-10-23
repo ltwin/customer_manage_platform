@@ -1,10 +1,12 @@
 package creativeagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -624,7 +626,7 @@ func TestEditSceneDescribesThreejsFields(t *testing.T) {
 	}
 	for _, want := range []string{"light 字段同 three.js", "distance", "decay（默认 2）", "angle（弧度，光锥半角，≤π/2，默认 π/3）", "penumbra", "只有 type 必填",
 		"坎德拉", "局部 −Z", "near, far, label, ", "focus_object_id", "均可省略（默认 35、[36,24]、3:2、0.1、1000", "look_at:[x,y,z]", "视场角按画面长边", "fog:{color, near, far}", "0 朝 +Z、90 朝 +X", "light、camera 按键合并",
-		"material_slots 按槽位合并，写 null 清除", "stone_brick@1 石砖(brick_size 0.05–2m", "暂无内置 HDRI", "exposure_ev?:-10…10, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）", "点光 20–80 cd", "建议曝光", "mode:lit 回看"} {
+		"material_slots 按槽位合并，写 null 清除", "stone_brick@1 石砖(brick_size 0.05–2m", "暂无内置 HDRI", "exposure_ev?:-10…10（物理天空以外的曝光补偿）", "engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）", "点光 20–80 cd", "建议曝光", "mode:lit 回看"} {
 		if !strings.Contains(info.Desc, want) {
 			t.Errorf("edit_scene does not say %q", want)
 		}
@@ -710,6 +712,35 @@ func TestSceneToolsSayClayIsTheStudioLight(t *testing.T) {
 	}
 }
 
+// W2 scene-physical-sky (AC-W2-10): the physical sky, the exposure and the
+// sun reference as the assistant is told them.
+func TestSceneToolsDescribeThePhysicalSky(t *testing.T) {
+	descs := map[string][]string{
+		editSceneTool: {
+			"kind:physical", "sun_mode:location", "地点三项（latitude_deg、longitude_deg、timezone）一起写或都不写", "IANA 时区名，大小写与时区库一致", "date:\"YYYY-MM-DD\"（必填）", "local_time:\"HH:MM\"",
+			"north_azimuth_deg", "不能带 turbidity、color",
+			"雾霾 dust_density 12", "高原 altitude_m 4000、dust_density 0.2", "沙尘 dust_density 40",
+			"sun_strength:0…10", "sun_temperature_k:2000…12000", "物理天空下天空光由大气算出，环境光不生效",
+			"exposure_ev100?:-10…20", "iso:25…102400", "shutter_s:1/8000…30",
+			"EV100 = log2(f_stop²/shutter_s) − log2(iso/100)", "晴天 15、阴天 12–13、日落 9–12、蓝调时刻 5–8、城市夜景 3–5、月光 −3",
+			"太阳参考", "scene_azimuth_deg", "黄金时刻（太阳高度 −4°…6°）", "蓝调时刻（−6°…−4°）", "按它选 local_time",
+		},
+		readSceneTool:  {"带 sun（太阳参考"},
+		renderViewTool: {"临时视点和预设取景按 render.exposure_ev100 曝光"},
+	}
+	for name, wants := range descs {
+		info, err := (&sceneTool{name: name}).Info(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(info.Desc, want) {
+				t.Errorf("%s does not say %q", name, want)
+			}
+		}
+	}
+}
+
 func TestSceneRefusalNeverSpeaksOfGeneration(t *testing.T) {
 	var refused *toolRefusal
 	if err := sceneRefusal(fmt.Errorf("%w: trailing data", creativeops.ErrValidation)); !errors.As(err, &refused) || strings.Contains(refused.message, "图片") {
@@ -721,6 +752,47 @@ func TestSceneRefusalNeverSpeaksOfGeneration(t *testing.T) {
 	}
 	if err := sceneRefusal(errToolArguments); !errors.As(err, &refused) || !strings.Contains(refused.message, "参数不符合工具说明") {
 		t.Fatalf("arguments: %v", err)
+	}
+	if err := sceneRefusal(fmt.Errorf("%w: %w", creativescene.ErrUnreadable, explained)); !errors.As(err, &refused) || !strings.Contains(refused.message, "不是这次调用写错了") {
+		t.Fatalf("unreadable scene: %v", err)
+	}
+}
+
+// A scene this server cannot read (here: a field from a newer version) is
+// not the call's fault: read and edit both say so instead of asking for a
+// rewrite, and the detail goes to the log.
+func TestAnUnreadableSceneIsNotTheCallsFault(t *testing.T) {
+	f, c, consent, doc := visualScene(t, false)
+	var logs bytes.Buffer
+	f.service.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	if _, err := f.db.Exec(`UPDATE creative_content_revisions SET payload = jsonb_set(payload, '{scene,render,from_a_newer_version}', 'true')
+		WHERE id = (SELECT content_revision_id FROM creative_document_revisions WHERE document_id=$1 ORDER BY revision DESC LIMIT 1)`, doc); err != nil {
+		t.Fatal(err)
+	}
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", readSceneTool, map[string]any{"document_id": doc}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("b", editSceneTool, map[string]any{"document_id": doc, "based_on_revision": 1,
+				"operations": []any{map[string]any{"op": "set_render", "render": map[string]any{"mode": "lit"}}}}))
+		},
+	}}
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "改成最终渲染"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+	for i, tool := range []string{readSceneTool, editSceneTool} {
+		if got := lastTool(s.request(i + 2)); got["code"] != "creative_tool_refused" || !strings.Contains(got["message"].(string), "不是这次调用写错了") {
+			t.Errorf("%s answered %v", tool, got)
+		}
+	}
+	if n := strings.Count(logs.String(), "creative scene unreadable"); n != 2 || !strings.Contains(logs.String(), "from_a_newer_version") {
+		t.Errorf("logged %d times:\n%s", n, logs.String())
 	}
 }
 
