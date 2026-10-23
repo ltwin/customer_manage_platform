@@ -76,7 +76,13 @@
   - `night.night_look`（0…1，缺省 1）随本任务一起加进后端、OpenAPI 与前端缺省值。
   - **顺带修复**（挂载点外的小改动，`view.go`）：读场景的快速路径原先只看 `render` 和摄像机是否齐全，W2 时期存的物理天空没有 `night` 时会原样返回、响应缺字段（违反 `data: 夜空`「读取时补齐」）。现在物理天空的 `night` 不全也走解码补齐；新增 `TestOldPhysicalSkyReadsWithItsNight`（缺整个 `night`、缺 `night_look` 两种）。
   - OpenAPI：`CreativeSceneCamera`、`CreativeSceneRender`（含 patch）加 `exposure_mode`、`exposure_compensation`，`CreativeSceneSky.night` 加 `night_look`；`make generate`。`check-go`（creativescene、creativeagent）全绿，`tsc -b` 通过，夜空单测 13 项通过。
-- [ ] 5.5 自动曝光：先写 `creative-scene-exposure.test.ts`（压暗曲线过五个点、连续、两端取端点值；补偿 +1 时 EV 减 1；手动取值与 W2 相同）。再改 `world/exposure.ts`（`nightDarkening`、`autoEV100`、`ViewerExposure`，`fogLux` 改名 `lux`）、`render/litLook.ts:frameExposure`、`host/framing.ts`、`Viewport.tsx`、`host/render.ts`、`SceneEditor.tsx`（新摄像机沿用默认摄像机的曝光）。e2e「W3 moonlight」改为默认设置：入夜程序数不变，满月之夜院子可读、比正午暗 2–3 档；手动 EV100 −3 同样可读；W2 的曝光用例（显式手动的）保持绿。完成判据：单测先红后绿；`SCENE_E2E_ONLY` 跑「W3 moonlight」与 W2 曝光相关用例全绿
+- [x] 5.5 自动曝光：先写 `creative-scene-exposure.test.ts`（压暗曲线过五个点、连续、两端取端点值；补偿 +1 时 EV 减 1；手动取值与 W2 相同）。再改 `world/exposure.ts`（`nightDarkening`、`autoEV100`、`ViewerExposure`，`fogLux` 改名 `lux`）、`render/litLook.ts:frameExposure`、`host/framing.ts`、`Viewport.tsx`、`host/render.ts`、`SceneEditor.tsx`（新摄像机沿用默认摄像机的曝光）。e2e「W3 moonlight」改为默认设置：入夜程序数不变，满月之夜院子可读、比正午暗 2–3 档；手动 EV100 −3 同样可读；W2 的曝光用例（显式手动的）保持绿。完成判据：单测先红后绿；`SCENE_E2E_ONLY` 跑「W3 moonlight」与 W2 曝光相关用例全绿
+  - 单测先红（`autoEV100` 未导出）后绿，`creative-scene-exposure.test.ts` 新增 3 项、共 14 项：压暗曲线过五个点、两端平、步长 0.01 时单调且无台阶；自动 EV = 测光 + D − 补偿，2026-10-26 北京满月（0.221 lux）比正午暗 2.4 档、新月常数项（1.0 × 10⁻³ lux）暗 3.5 档；`frameExposure` 的六种观看者（默认摄像机自动 / 手动、场景摄像机自动 / 手动、白模、其他天空）。
+  - `world/exposure.ts`：`nightDarkening`、`autoEV100`、`ViewerExposure`、`viewerEV100`、`sceneLux`；`PhysicalExposure.fogLux` 改名 `lux`（雾与测光同用）。`render/litLook.ts`：`defaultExposure(render)`，`frameExposure(scene, lit, camera, lux)`。`host/framing.ts`：`cameraExposure` 取代 `cameraEV100`，`Framing.exposure` 取代 `ev100`。
+  - 视口改在 `useFrame` 里求曝光：自动曝光读的 E 由 `PhysicalLighting` 的布局 effect 在组件渲染之后写入，在渲染期求会晚一帧。离屏出图在 `shoot` 时从 three 场景取 E。
+  - 新摄像机：默认摄像机自动时写自动和同样的补偿，手动时写手动加 `newCameraExposure`（`SceneEditor.tsx`；`editing.ts:newCamera` 的参数放宽为摄像机字段）。
+  - e2e：模拟服务端按后端规则补齐（`render` 补自动，已存的摄像机补手动）；`physicalYard` 让 W2 的检查显式用手动曝光，「W3 stars」同样显式手动；「W3 moonlight」改为默认设置：正午均值 160，22:00 自动曝光 87、无过曝，手动 −3 为 144；入夜程序数 44 → 44。W2 的全部非门控用例（10 项）、「W3 stars」通过；「W2 environment tab」的缺省夜空期望加 `night_look`。
+  - `tsc -b`、`oxlint` 通过。Prettier：改动的文件在改动前就不符合 Prettier（这部分代码沿用更宽的行），未顺带重排。
 - [ ] 5.6 夜色与夜空增益：先写单测（`nightLookWeight` 在 EV_m ≥ 4 为 0、≤ −4 为 `night_look`；节点保持 Rec.709 亮度）。再新增 `world/nightLook.ts`，`render/sceneRenderer.ts` 的输出节点接入（权重 uniform，随 frame 写入，非物理天空、白模、线框、线稿为 0）；`world/nightSky/light.ts` 的夜天光改深蓝、加 `AIRGLOW_GAIN`，常数项随之更新（`night.ts` 的单测数值跟着改）。完成判据：单测绿；「W3 day unchanged」仍逐像素相同；满月之夜 `night_look` 0 与 1 的平均亮度相差 < 3%
 
 ## 6. 编辑界面

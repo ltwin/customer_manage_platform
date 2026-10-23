@@ -220,7 +220,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     // Two lights day and night (design「投影」): the shadowing one takes the sun or the moon, the other the other, so nightfall compiles nothing.
     const aside = new DirectionalLight()
     aside.userData = { baseIntensity: 0 }
-    const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, fogLux: 0 }
+    const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, lux: 0 }
     return {
       luts,
       lutScale,
@@ -331,7 +331,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
       l.color.setRGB(...b.color)
       l.position.fromArray(positionToView([b.toward.x * 60, b.toward.y * 60, b.toward.z * 60]))
     }
-    parts.physical.fogLux = light.horizontal
+    parts.physical.lux = light.horizontal
     invalidate()
   }, [parts, renderer, skyKey, stars, moonMap, invalidate])
 

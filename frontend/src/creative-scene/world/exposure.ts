@@ -1,8 +1,11 @@
-// Exposure under a physical sky (Epic design「物理单位与曝光」): manual only
-// (owner 2026-10-22). A scene camera's ISO, shutter and aperture, or the
-// default camera's render.exposure_ev100, give EV100; lights are multiplied
-// by k = 1 / (1.2 · 2^EV100) before the GPU sees them (pre-exposure). The
-// sky and its light are stored in environment-relative units, × s_env.
+// Exposure under a physical sky (Epic design「物理单位与曝光」). Each viewer,
+// a scene camera or the default camera, is exposed automatically or by hand
+// (Epic revision v5, owner 2026-10-23). By hand a camera's ISO, shutter and
+// aperture, or the default camera's render.exposure_ev100, give EV100;
+// automatically the scene's light is metered and the night darkened by a few
+// stops only. Lights are multiplied by k = 1 / (1.2 · 2^EV100) before the
+// GPU sees them (pre-exposure). The sky and its light are stored in
+// environment-relative units, × s_env.
 
 import type { Color, Light, Scene } from 'three'
 import { uniform } from 'three/tsl'
@@ -22,6 +25,45 @@ export const environmentEV = (lux: number) => Math.min(20, Math.max(-12, Math.lo
  * depends on the environment only, never on the camera.
  */
 export const environmentScale = (lux: number) => exposureScale(environmentEV(lux))
+
+/**
+ * How many stops the automatic exposure leaves a metered EV under a proper
+ * exposure: none by day, a few at night, so night looks like night yet
+ * needs no exposure change (Epic design「夜间压暗曲线」). Linear between
+ * the points, flat beyond them.
+ */
+const darkening: readonly (readonly [ev: number, stops: number])[] = [
+  [-11, 3.5], // a moonless night
+  [-4, 2.5], // a full moon
+  [0, 1.5], // the end of civil twilight
+  [6, 0.5], // the golden hour
+  [12, 0], // overcast or brighter
+]
+
+/** The night darkening D at a metered EV100. */
+export function nightDarkening(evm: number): number {
+  if (evm <= darkening[0][0]) return darkening[0][1]
+  for (let i = 1; i < darkening.length; i++) {
+    const [e1, d1] = darkening[i]
+    if (evm <= e1) {
+      const [e0, d0] = darkening[i - 1]
+      return d0 + ((d1 - d0) * (evm - e0)) / (e1 - e0)
+    }
+  }
+  return 0
+}
+
+/** The automatic exposure's EV100 under a level-ground illuminance E (lux): metered as s_env is, darkened at night, less the compensation in stops. */
+export function autoEV100(lux: number, compensation: number): number {
+  const metered = environmentEV(lux)
+  return metered + nightDarkening(metered) - compensation
+}
+
+/** A viewer's exposure: automatic with a compensation, or by hand at an EV100. */
+export type ViewerExposure = { mode: 'auto'; compensation: number } | { mode: 'manual'; ev100: number }
+
+/** A viewer's EV100 under a level-ground illuminance E (lux). */
+export const viewerEV100 = (v: ViewerExposure, lux: number) => (v.mode === 'manual' ? v.ev100 : autoEV100(lux, v.compensation))
 
 /** Shutter speeds in thirds of a stop, 1/8000 s…30 s, as cameras mark them. */
 export const shutterThirds: readonly number[] = [
@@ -77,10 +119,14 @@ export const preExposure = uniform(1)
 /**
  * What PhysicalLighting leaves on the scene for the exposure
  * (scene.userData.physical; cleared when it unmounts). The sky light is the
- * PMREM made last, at that one's s_env; the fog is lit like level ground of
- * its colour under E.
+ * PMREM made last, at that one's s_env; lux is E, the level ground's
+ * illuminance at the origin: the fog is lit like ground of its colour under
+ * it, and the automatic exposure meters it.
  */
-export type PhysicalExposure = { skyLightScale: number; fogColor: Color | null; fogLux: number }
+export type PhysicalExposure = { skyLightScale: number; fogColor: Color | null; lux: number }
+
+/** E as PhysicalLighting left it on a three scene; 0 without one. */
+export const sceneLux = (scene: Scene) => (scene.userData.physical as PhysicalExposure | undefined)?.lux ?? 0
 
 /**
  * Writes k onto the scene before a picture (design「预曝光的落点」): the
@@ -98,5 +144,5 @@ export function applyExposure(scene: Scene, k: number) {
   const physical = scene.userData.physical as PhysicalExposure | undefined
   if (!physical) return
   scene.environmentIntensity = k / physical.skyLightScale
-  if (scene.fog && physical.fogColor) scene.fog.color.copy(physical.fogColor).multiplyScalar((physical.fogLux / Math.PI) * k)
+  if (scene.fog && physical.fogColor) scene.fog.color.copy(physical.fogColor).multiplyScalar((physical.lux / Math.PI) * k)
 }

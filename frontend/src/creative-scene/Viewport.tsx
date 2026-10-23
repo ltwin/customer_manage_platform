@@ -61,7 +61,8 @@ import { frameExposure } from './render/litLook.ts'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
-import { cameraEV100, cameraFraming } from './host/framing.ts'
+import { cameraExposure, cameraFraming } from './host/framing.ts'
+import { sceneLux } from './world/exposure.ts'
 import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
@@ -1078,7 +1079,9 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   const preview = useStore(ui, (s) => s.dofPreview)
   // The camera view at the camera's own exposure whether or not the depth of field is previewed (framing below is only then).
   const viewed = id ? scene.objects.find((o) => o.id === id)?.camera : undefined
-  const { exposure, preExposure } = frameExposure(scene, display === 'rendered', viewed ? cameraEV100(viewed) : undefined)
+  const viewer = viewed ? cameraExposure(viewed) : undefined
+  const viewerKey = JSON.stringify(viewer)
+  const lit = display === 'rendered'
   const renderer = useRef<SceneRenderer | null>(null)
   useEffect(() => {
     const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
@@ -1099,7 +1102,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   useEffect(() => {
     drawn.current.changed = true
     invalidate()
-  }, [scene, lensKey, wire, exposure, preExposure, engine, invalidate])
+  }, [scene, lensKey, wire, lit, viewerKey, engine, invalidate])
   useFrame((state) => {
     const r = renderer.current
     if (!r) return
@@ -1113,6 +1116,8 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
     d.changed = false
     d.view = view
     gpuOf(state.gl).advanceFrame()
+    // Exposed as it is drawn: the automatic exposure meters E, which PhysicalLighting writes after this component renders.
+    const { exposure, preExposure } = frameExposure(scene, lit, viewer, sceneLux(state.scene))
     r.render(state.camera, {
       width: state.size.width,
       height: state.size.height,
