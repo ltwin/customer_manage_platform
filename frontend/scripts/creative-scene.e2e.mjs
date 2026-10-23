@@ -5822,6 +5822,9 @@ await check('W4 far: the aerial perspective blues and pales the yard as the dist
   const on100 = await change(aerial({ enabled: true, distance_scale: 100 }))
   const on1000 = await change(aerial({ distance_scale: 1000 }))
   await shot(page, 'w4-1000')
+  // AC-W4-8: the same picture drawn again is the same, pixel for pixel.
+  const again = await compareShots(page, on1000, await settle(), 0)
+  assert.ok(!again.error && again.over === 0, `drawn again: ${again.error ?? `${again.over}% off`}`)
   const hazy = await change(sky({ dust_density: 12 }))
   const hazyOff = await change(aerial({ enabled: false }))
   const duskOff = await change(sky({ dust_density: 1, local_time: '17:45' }))
@@ -5882,6 +5885,49 @@ await check('W4 environment tab: the aerial perspective’s switch and distance 
   await context.close()
 })
 
+// AC-W4-5, this machine's GPU: the yard looking up at × 1000 exported on WebGPU and through the WebGL2 backend. W2's
+// limits, or where W2's own picture is already over them (physical-noon-shot, accepted in W2), no further off than
+// the same picture without the aerial perspective.
+if (process.env.SCENE_E2E_W4_GPU) await check('W4 parity: the aerial perspective on WebGPU and on the WebGL2 backend', async () => {
+  const dir = process.env.SCENE_E2E_W4_GPU
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  const over = []
+  const edit = (enabled) => (scene) => {
+    lookingUp(scene)
+    scene.environment.sky.aerial_perspective = { enabled, distance_scale: 1000 }
+  }
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const name of ['physical-noon', 'physical-dusk']) {
+      const pair = async (enabled) => {
+        const webgpu = await exportReference(gpu, name, { edit: edit(enabled) })
+        const webgl = await exportReference(gpu, name, { edit: edit(enabled), forceWebGL: true })
+        assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: ${webgl.backends}`)
+        const out = {}
+        for (const img of webgl.images.filter((i) => i.pass === 'lit')) out[img.file] = { m: await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png), file: img.file }
+        return out
+      }
+      const on = await pair(true)
+      const off = await pair(false)
+      for (const [file, { m }] of Object.entries(on)) {
+        const without = off[file].m
+        const within = !m.error && m.mean <= parityLimits.lit.mean && m.over <= parityLimits.lit.over
+        const noWorse = !m.error && !without.error && m.mean <= without.mean + 0.1 && m.over <= without.over + 0.05
+        const ok = within || noWorse
+        if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}-w4-webgl2.jpg`, m.sheet)
+        rows.push({ file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), without: without.error ? null : { mean: Number(without.mean.toFixed(4)), over_percent: Number(without.over.toFixed(4)) }, ok })
+        if (!ok) over.push(`${file}: ${m.error ?? `mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(3)}%`}`)
+        console.log(`W4 parity ${file}: mean ${m.mean?.toFixed(3)}, > 8 ${m.over?.toFixed(4)}%; without ${without.mean?.toFixed(3)}, ${without.over?.toFixed(4)}%${ok ? '' : ' (over)'}`)
+      }
+    }
+    await writeFile(`${dir}/w4-parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits.lit, rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
+})
+
 if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky at night on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_W3_PERF
   const label = process.env.SCENE_E2E_W3_PERF_LABEL ?? 'after'
@@ -5892,6 +5938,8 @@ if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky
     perfScene(server)
     const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
     server.scene.environment.sky = { ...physical, local_time: '21:00' }
+    // W4: SCENE_E2E_W3_PERF_AERIAL=off measures without the aerial perspective (AC-W4-9 against it on, the default).
+    if (process.env.SCENE_E2E_W3_PERF_AERIAL === 'off') server.scene.environment.sky.aerial_perspective = { enabled: false, distance_scale: 1 }
     server.scene.render.exposure_ev100 = -3
     const { page, errors } = await open(server, { context })
     const { x, y } = await viewportCenter(page)

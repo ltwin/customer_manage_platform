@@ -26,4 +26,7 @@
 
 ## 4. 验收
 
-- [ ] 4.1 e2e「W4」：确定性（AC-W4-8）、`SCENE_E2E_GPU` 下两个后端对照（AC-W4-5）、性能（AC-W4-9，复用「W3 performance」做开关对照，结果存进 `discovery/research/evidence/`）。完成判据：`SCENE_E2E_ONLY=W4` 全绿，性能数据齐全，未达标项写明原因
+- [x] 4.1 e2e「W4」：确定性（AC-W4-8）、`SCENE_E2E_GPU` 下两个后端对照（AC-W4-5）、性能（AC-W4-9，复用「W3 performance」做开关对照，结果存进 `discovery/research/evidence/`）。完成判据：`SCENE_E2E_ONLY=W4` 全绿，性能数据齐全，未达标项写明原因
+  - `SCENE_E2E_ONLY=W4`：W4 far、W4 real-time GI、W4 environment tab 全绿。确定性（AC-W4-8）放在 W4 far 里：倍率 1000 的画面重画一次逐像素一致。
+  - 两个后端（AC-W4-5，`SCENE_E2E_W4_GPU`，`evidence/w4-parity.json`）：黄昏 mean 0.044、> 8 的像素 0.0035%，在 W2 阈值内；正午 mean 0.224、1.29%，超 W2 阈值的 0.18%，但同一张图关闭空气透视时是 0.357、1.517%（W2 已接受的偏差），开启后反而更接近。断言改为「在 W2 阈值内，或不比关闭时差」。
+  - 性能（AC-W4-9，`evidence/w3-perf-w4-on.json`、`w3-perf-w4-off.json`，M4 Pro，W3 的入夜性能场景）：静止帧 开 8.33 ms / 关 8.44 ms；拖动时刻 开 23.9 fps / 关 23.0 fps（W3 实测 22.2）。达标。局限：8.33 ms 正是 120 Hz 刷新的上限，静止帧受垂直同步限制，1 ms 以下的额外开销测不出，只能说明没有掉帧。
