@@ -15,6 +15,7 @@ import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
 import { equatorToScene, galacticToScene, physicalSun, sunVector } from '../world/astro.ts'
+import type { SceneAerial } from '../world/atmosphere/aerial.ts'
 import { sunAbove } from '../world/atmosphere/constants.ts'
 import { CpuAtmosphere } from '../world/atmosphere/cpu.ts'
 import { atmosphereLuts } from '../world/atmosphere/luts.ts'
@@ -221,8 +222,10 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     const aside = new DirectionalLight()
     aside.userData = { baseIntensity: 0 }
     const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, lux: 0, lowSun: 0 }
+    const aerial: SceneAerial = { luts, enabled: false, distanceScale: 1, envScale: 1 }
     return {
       luts,
+      aerial,
       lutScale,
       background,
       source,
@@ -249,8 +252,10 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
   useLayoutEffect(() => fitSunShadow(parts.sun), [parts])
   useLayoutEffect(() => {
     scene.userData.physical = parts.physical
+    scene.userData.aerial = parts.aerial
     return () => {
       if (scene.userData.physical === parts.physical) delete scene.userData.physical
+      if (scene.userData.aerial === parts.aerial) delete scene.userData.aerial
       scene.environmentIntensity = 1
     }
   }, [scene, parts])
@@ -289,7 +294,10 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     if (moonSky) {
       parts.luts.setMoon(moon.direction.y, [moon.top[0] * sEnv, moon.top[1] * sEnv, moon.top[2] * sEnv])
       parts.luts.renderMoonSkyView(renderer)
-    }
+    } else parts.luts.setMoon(-1, [0, 0, 0])
+    // The aerial perspective's froxels are made per picture (world/atmosphere/aerial.ts) from these.
+    parts.luts.setDirections(toward, moon?.direction ?? down)
+    Object.assign(parts.aerial, { enabled: s.aerial_perspective.enabled, distanceScale: s.aerial_perspective.distance_scale, envScale: sEnv })
     // The Milky Way's map is baked the first time a night draws it.
     if (night.milkyWay[1] > 0 && where.elevationDeg < 0) parts.milkyWay ??= bakeMilkyWay(renderer)
     parts.lutScale.value = sEnv

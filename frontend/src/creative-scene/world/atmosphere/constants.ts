@@ -51,6 +51,12 @@ export const CAMERA_ABOVE_GROUND = 0.01
 export const TRANSMITTANCE = { w: 256, h: 64, steps: 40 } as const
 export const MULTI = { w: 32, h: 32, dirs: 8, steps: 20 } as const
 export const SKYVIEW = { w: 384, h: 216, steps: 30 } as const
+/**
+ * The aerial perspective's froxels (W4, Epic design「LUT 规格」): 32 slices of
+ * 32 × 32 view directions side by side in a 1024 × 32 atlas, the slices
+ * quadratically from the camera to maxKm (finer near), steps per froxel.
+ */
+export const AERIAL = { w: 32, h: 32, slices: 32, steps: 16, maxKm: 32 } as const
 
 /** What the atmosphere's fields are (data: 物理天空). */
 export type AtmosphereParams = { altitude_m: number; air_density: number; dust_density: number; ozone_density: number }

@@ -97,10 +97,12 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"timezone（IANA 时区名，大小写与时区库一致，如 Asia/Shanghai、Europe/London；夏令时由时区处理）, place（显示用地名，≤80 字）, date:\"YYYY-MM-DD\"（必填）, local_time:\"HH:MM\"（当地时刻）, " +
 				"north_azimuth_deg:0…360（场景里正北的方位，与 sun_azimuth_deg 同一约定，默认 180 即 −Z 为北）, sun_elevation_deg:-10…90, sun_azimuth_deg（手动模式用）, altitude_m:0…20000（海拔，米）, air_density:0…10, dust_density:0…50, ozone_density:0…10, " +
 				"sun_disc:bool, sun_size_deg:0.1…10（太阳盘角直径，默认 0.545）, sun_strength:0…10（太阳亮度倍率）, sun_temperature_k:2000…12000（色温，6500 为原色，越低越暖）, " +
-				"night:{moon:bool, stars:bool（含无月晴夜天空本身的夜天光）, milky_way:bool, moon_strength:0…10, moon_temperature_k:2000…12000, stars_strength:0…10（星星、银河、夜天光）, stars_temperature_k:2000…12000, night_look:0…1（夜色：入夜后画面偏蓝、降饱和，0 为物理颜色）}}：" +
+				"night:{moon:bool, stars:bool（含无月晴夜天空本身的夜天光）, milky_way:bool, moon_strength:0…10, moon_temperature_k:2000…12000, stars_strength:0…10（星星、银河、夜天光）, stars_temperature_k:2000…12000, night_look:0…1（夜色：入夜后画面偏蓝、降饱和，0 为物理颜色）}, " +
+				"aerial_perspective:{enabled:bool, distance_scale:0.1…1000}}：" +
 				"地点三项（latitude_deg、longitude_deg、timezone）一起写或都不写，date 必填，其余省略取默认（上海 31.2304、121.4737，12:00，晴朗，太阳盘开，亮度 1，6500 K）；不能带 turbidity、color。" +
 				"大气预设（写四个字段）：晴朗 altitude_m 0、air_density 1、dust_density 1、ozone_density 1；雾霾 dust_density 12（其余同晴朗）；高原 altitude_m 4000、dust_density 0.2；沙尘 dust_density 40。" +
 				"夜空只在 sun_mode:location 下画：月亮按真实位置、月相和月光，星星、银河随地点和时刻转动；手动模式没有月亮和星空，night_look 照常生效；night 省略或少写的项取默认（全开、亮度 1、6500 K、夜色 1）。" +
+				"空气透视让远处变蓝变淡，天空背景不受影响；distance_scale 乘到距离上，院子、街道调到 50–200 才看得出；默认开启、倍率 1。" +
 				"物理天空下天空光由大气算出，环境光不生效；太阳、天空和灯光都是物理单位（晴天正午约 10 万 lux，灯光坎德拉），雾按它所在处的照度着色。" +
 				"太阳参考：物理天空的地点模式下，read_scene 和写了 set_environment 的 edit_scene 结果带 sun：elevation_deg（当前视高度，含折射）、compass_deg（罗盘方位，正北 0° 顺时针）、" +
 				"scene_azimuth_deg（换成场景方位，与 sun_azimuth_deg 同一约定，已计入 north_azimuth_deg）、solar_noon、noon_elevation_deg、sunrise、sunset（太阳上缘过地平线）、polar（day 极昼、night 极夜）、" +

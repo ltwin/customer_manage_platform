@@ -355,6 +355,9 @@ func TestPhysicalSkyFingerprintsOnlyLit(t *testing.T) {
 		`{"kind":"physical","date":"2026-06-21","night":{"moon_temperature_k":4000}}`,
 		`{"kind":"physical","date":"2026-06-21","night":{"stars_strength":0.5}}`,
 		`{"kind":"physical","date":"2026-06-21","night":{"stars_temperature_k":9000}}`,
+		// W4: each of the aerial perspective's fields.
+		`{"kind":"physical","date":"2026-06-21","aerial_perspective":{"enabled":false}}`,
+		`{"kind":"physical","date":"2026-06-21","aerial_perspective":{"distance_scale":100}}`,
 	} {
 		if got := sameIn(base, sceneOf(t, sky, `{"mode":"lit"}`, `{}`)); !maps.Equal(got, onlyLitChanges) {
 			t.Fatalf("%s: alike %v", sky, got)
@@ -372,6 +375,20 @@ func TestThePhysicalSkysNightStalesItsLitOnce(t *testing.T) {
 	}
 	before := now
 	before.Environment.Sky.Night = nil
+	if got := sameIn(before, now); !maps.Equal(got, onlyLitChanges) {
+		t.Fatalf("alike %v", got)
+	}
+}
+
+// W4 (data: 空气透视): as the night sky, a physical sky stored before the
+// aerial perspective is completed with one and its lit exports stale once.
+func TestThePhysicalSkysAerialPerspectiveStalesItsLitOnce(t *testing.T) {
+	now := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+	if now.Environment.Sky.AerialPerspective == nil {
+		t.Fatal("the aerial perspective was not completed")
+	}
+	before := now
+	before.Environment.Sky.AerialPerspective = nil
 	if got := sameIn(before, now); !maps.Equal(got, onlyLitChanges) {
 		t.Fatalf("alike %v", got)
 	}

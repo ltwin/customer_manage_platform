@@ -7293,6 +7293,14 @@ export interface components {
             /** @description 太阳的色温（开尔文），6500 为中性，调低更暖、调高更冷，同样作用于太阳光和天空。缺省 6500。 */
             sun_temperature_k?: number;
             night?: components["schemas"]["CreativeSceneNight"];
+            aerial_perspective?: components["schemas"]["CreativeSceneAerialPerspective"];
+        };
+        /** @description 物理天空的空气透视（只在 kind = physical 时允许，其他天空写它返回 400）：摄像机与表面之间的大气让远处景物变蓝变淡， 颜色来自同一套大气模型；天空背景不受影响。地点和手动两种太阳模式下都生效。读取时补齐缺省值，只写一部分时逐项补齐。 */
+        CreativeSceneAerialPerspective: {
+            /** @description 开关。缺省 true。 */
+            enabled?: boolean;
+            /** @description 距离倍率：计算空气透视时，摄像机到表面的距离乘以它。真实尺度下几百米内的空气透视很弱， 院子、街道这类场景调到 50–200 才看得出。缺省 1。 */
+            distance_scale?: number;
         };
         /** @description 物理天空的夜空（只在 kind = physical 时允许，其他天空写它返回 400）：月亮、星星（含夜天光）、银河， 以及月亮和星空的亮度与色温。只在 sun_mode = location 时绘制。读取时补齐缺省值，只写一部分时逐项补齐。 */
         CreativeSceneNight: {

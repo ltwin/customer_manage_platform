@@ -6879,6 +6879,15 @@ type CreativeScene struct {
 	Render      CreativeSceneRender      `json:"render"`
 }
 
+// CreativeSceneAerialPerspective 物理天空的空气透视（只在 kind = physical 时允许，其他天空写它返回 400）：摄像机与表面之间的大气让远处景物变蓝变淡， 颜色来自同一套大气模型；天空背景不受影响。地点和手动两种太阳模式下都生效。读取时补齐缺省值，只写一部分时逐项补齐。
+type CreativeSceneAerialPerspective struct {
+	// DistanceScale 距离倍率：计算空气透视时，摄像机到表面的距离乘以它。真实尺度下几百米内的空气透视很弱， 院子、街道这类场景调到 50–200 才看得出。缺省 1。
+	DistanceScale *float32 `json:"distance_scale,omitempty"`
+
+	// Enabled 开关。缺省 true。
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
 // CreativeSceneAmbient defines model for CreativeSceneAmbient.
 type CreativeSceneAmbient struct {
 	Color     CreativeSceneColor `json:"color"`
@@ -7387,6 +7396,9 @@ type CreativeSceneRunChanges struct {
 
 // CreativeSceneSky 只带本类型的字段：procedural 带太阳高度、方位和浑浊度；hdri 带 hdri；color 带 color； physical 带 date 和下列物理天空的字段（太阳高度、方位只在 sun_mode = manual 时生效），写其他类型的字段返回 400。 physical 除 kind、date 外都可省略，存储时补齐缺省值，响应里总是带齐。
 type CreativeSceneSky struct {
+	// AerialPerspective 物理天空的空气透视（只在 kind = physical 时允许，其他天空写它返回 400）：摄像机与表面之间的大气让远处景物变蓝变淡， 颜色来自同一套大气模型；天空背景不受影响。地点和手动两种太阳模式下都生效。读取时补齐缺省值，只写一部分时逐项补齐。
+	AerialPerspective *CreativeSceneAerialPerspective `json:"aerial_perspective,omitempty"`
+
 	// AirDensity 空气（瑞利散射）密度倍率，同 Blender Nishita 天空的 Air。缺省 1。
 	AirDensity *float32 `json:"air_density,omitempty"`
 

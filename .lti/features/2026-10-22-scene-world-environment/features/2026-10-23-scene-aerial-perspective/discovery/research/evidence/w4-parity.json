@@ -1,0 +1,54 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "limits": {
+    "mean": 0.63,
+    "over": 0.18
+  },
+  "rows": [
+    {
+      "file": "physical-noon-shot-lit.png",
+      "mean": 0.2238,
+      "over_percent": 1.2913,
+      "without": {
+        "mean": 0.3566,
+        "over_percent": 1.517
+      },
+      "ok": true
+    },
+    {
+      "file": "physical-noon-sky-lit.png",
+      "mean": 0.0049,
+      "over_percent": 0,
+      "without": {
+        "mean": 0.0049,
+        "over_percent": 0
+      },
+      "ok": true
+    },
+    {
+      "file": "physical-dusk-shot-lit.png",
+      "mean": 0.0444,
+      "over_percent": 0.0035,
+      "without": {
+        "mean": 0.1226,
+        "over_percent": 0.754
+      },
+      "ok": true
+    },
+    {
+      "file": "physical-dusk-sky-lit.png",
+      "mean": 0.0007,
+      "over_percent": 0,
+      "without": {
+        "mean": 0.0007,
+        "over_percent": 0
+      },
+      "ok": true
+    }
+  ]
+}

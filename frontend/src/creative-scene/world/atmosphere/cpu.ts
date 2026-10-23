@@ -1,4 +1,5 @@
 import {
+  AERIAL,
   BOTTOM,
   coefficients,
   GROUND_ALBEDO,
@@ -115,6 +116,7 @@ export class CpuAtmosphere {
   private readonly t = new Float64Array(3)
   private readonly s = new Float64Array(3)
   private readonly sum = new Float64Array(6)
+  private readonly through = new Float64Array(3)
 
   constructor(params: AtmosphereParams) {
     this.c = coefficients(params)
@@ -206,14 +208,16 @@ export class CpuAtmosphere {
    * (0, r, 0) along d: into this.sum[0..2] the radiance, into [3..5] the
    * multiple scattering's transfer. view: the sky view, over the scene's
    * ground, with the phases and the multiple scattering; else the
-   * multiple-scattering pass, over the sea-level ground, isotropic.
+   * multiple-scattering pass, over the sea-level ground, isotropic. With a
+   * limit (km, the aerial perspective, as luts.ts) it stops there and leaves
+   * the ground out; the transmittance to the end goes into this.through.
    */
-  private integrate(r: number, dx: number, dy: number, dz: number, sx: number, sy: number, sz: number, steps: number, view: boolean): void {
+  private integrate(r: number, dx: number, dy: number, dz: number, sx: number, sy: number, sz: number, steps: number, view: boolean, limit = Infinity): void {
     const ground = view ? this.ground : BOTTOM
     const tGround = raySphere(0, r, 0, dx, dy, dz, ground)
     const tTop = raySphere(0, r, 0, dx, dy, dz, TOP)
-    const hit = tGround >= 0
-    const tMax = Math.min(hit ? tGround : tTop, 9000)
+    const hit = tGround >= 0 && limit === Infinity
+    const tMax = Math.min(tGround >= 0 ? tGround : tTop, 9000, limit)
     const cosTheta = dx * sx + dy * sy + dz * sz
     const phaseR = view ? rayleighPhase(cosTheta) : 1 / (4 * Math.PI)
     const phaseM = view ? miePhase(cosTheta) : 1 / (4 * Math.PI)
@@ -261,6 +265,21 @@ export class CpuAtmosphere {
     }
     this.sum[0] = L0; this.sum[1] = L1; this.sum[2] = L2
     this.sum[3] = f0; this.sum[4] = f1; this.sum[5] = f2
+    this.through[0] = T0; this.through[1] = T1; this.through[2] = T2
+  }
+
+  /**
+   * The aerial perspective (W4) from the camera along dir (Y up) to km, the
+   * sun at sun: the light scattered toward the camera per unit sun
+   * illuminance and the transmittance per channel, integrated as a froxel is
+   * (luts.ts, AERIAL.steps): level where dir looks down.
+   */
+  aerial(dir: Readonly<Vec3>, sun: Readonly<Vec3>, km: number): { scattered: Vec3; transmittance: Vec3 } {
+    // Level where it looks down, as the froxels.
+    const y = Math.max(dir[1], 0)
+    const n = Math.hypot(dir[0], y, dir[2])
+    this.integrate(this.view, dir[0] / n, y / n, dir[2] / n, sun[0], sun[1], sun[2], AERIAL.steps, true, km)
+    return { scattered: [this.sum[0], this.sum[1], this.sum[2]], transmittance: [this.through[0], this.through[1], this.through[2]] }
   }
 
   /** Ψms at a texel of a w × h multiple-scattering table: the sample's NewMultiScattCS, a loop over directions per texel. */

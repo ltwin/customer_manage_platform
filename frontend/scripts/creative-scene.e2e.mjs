@@ -4577,7 +4577,7 @@ await check('W2 environment tab: the physical sky with its defaults and today’
   assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
   assert.deepEqual(
     { ...sky(), date: undefined },
-    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500, night: { moon: true, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500, night_look: 1 } },
+    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500, night: { moon: true, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500, night_look: 1 }, aerial_perspective: { enabled: true, distance_scale: 1 } },
   )
   assert.equal(sky().date, today, 'today, on this machine')
   assert.deepEqual(server.scene.environment.ambient, { color: '#ffffff', intensity: 0.4 }, 'the rest of the environment stays')
@@ -5774,6 +5774,160 @@ await check('W3 environment tab: the night sky’s switches, strengths and look;
 // SCENE_E2E_W3_PERF=<dir> (AC-W3-10), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
 // physical sky at night (Shanghai, 2026-09-23 at 21:00, a gibbous moon up). Frame times standing still, and
 // dragging the time of day a minute a frame from 19:00 for 3 s. Written to w3-perf-<SCENE_E2E_W3_PERF_LABEL>.json.
+/** Per pixel between two pictures of one view: how many changed (by more than 2), the changed pixels' mean colour in each, and the top row's largest change. */
+async function pixelChange(page, a, b) {
+  return page.evaluate(async ([a, b]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const pixels = (img) => {
+      const c = document.createElement('canvas')
+      c.width = img.width
+      c.height = img.height
+      const g = c.getContext('2d')
+      g.drawImage(img, 0, 0)
+      return g.getImageData(0, 0, img.width, img.height).data
+    }
+    const p = pixels(x)
+    const q = pixels(y)
+    const before = [0, 0, 0]
+    const after = [0, 0, 0]
+    let changed = 0
+    let top = 0
+    for (let k = 0; k < p.length; k += 4) {
+      const most = Math.max(Math.abs(p[k] - q[k]), Math.abs(p[k + 1] - q[k + 1]), Math.abs(p[k + 2] - q[k + 2]))
+      if (k < x.width * 4) top = Math.max(top, most)
+      if (most <= 2) continue
+      changed++
+      for (let c = 0; c < 3; c++) {
+        before[c] += p[k + c]
+        after[c] += q[k + c]
+      }
+    }
+    const n = Math.max(changed, 1)
+    return { changed: changed / (p.length / 4), before: before.map((v) => v / n), after: after.map((v) => v / n), top }
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+}
+
+// W4 (design「关键机制」): the yard at noon, its surfaces a few metres to some tens away. At the true distance the air
+// between does next to nothing; × 1000 they stand kilometres off and go blue, grey in haze, warm at dusk; off, the
+// picture is W3's. The sky's background is the same throughout.
+await check('W4 far: the aerial perspective blues and pales the yard as the distance scale grows; off it is gone; the sky is left alone', async () => {
+  const { context, page, errors, settle, change, sky, server } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const aerial = (patch) => sky({ aerial_perspective: { ...server.scene.environment.sky.aerial_perspective, ...patch } })
+  const on1 = await settle()
+  const off = await change(aerial({ enabled: false }))
+  await shot(page, 'w4-off')
+  const on100 = await change(aerial({ enabled: true, distance_scale: 100 }))
+  const on1000 = await change(aerial({ distance_scale: 1000 }))
+  await shot(page, 'w4-1000')
+  // AC-W4-8: the same picture drawn again is the same, pixel for pixel.
+  const again = await compareShots(page, on1000, await settle(), 0)
+  assert.ok(!again.error && again.over === 0, `drawn again: ${again.error ?? `${again.over}% off`}`)
+  const hazy = await change(sky({ dust_density: 12 }))
+  const hazyOff = await change(aerial({ enabled: false }))
+  const duskOff = await change(sky({ dust_density: 1, local_time: '17:45' }))
+  const dusk = await change(aerial({ enabled: true }))
+  const at1 = await pixelChange(page, off, on1)
+  const at100 = await pixelChange(page, off, on100)
+  const at1000 = await pixelChange(page, off, on1000)
+  const atHaze = await pixelChange(page, hazyOff, hazy)
+  const atDusk = await pixelChange(page, duskOff, dusk)
+  const fmt = (c) => `${(c.changed * 100).toFixed(1)}% changed, rgb ${c.before.map((v) => v.toFixed(0))} → ${c.after.map((v) => v.toFixed(0))}, top row ${c.top}`
+  console.log(`W4 far: ×1 ${fmt(at1)}; ×100 ${fmt(at100)}; ×1000 ${fmt(at1000)}; hazy ×1000 ${fmt(atHaze)}; dusk ×1000 ${fmt(atDusk)}`)
+  const blue = (rgb) => rgb[2] / rgb[0]
+  assert.ok(at1.changed < 0.005, 'at the true distance a yard shows next to nothing')
+  assert.ok(at100.changed > 0.1 && at1000.changed > 0.6, 'more of the yard changes as the scale grows')
+  assert.ok(blue(at1000.after) > blue(at1000.before) * 1.05, 'bluer at noon')
+  // Haze scatters little sideways and away from the sun but takes much out: greyer, not bluer (not brighter unless facing the sun).
+  assert.ok(blue(atHaze.after) < blue(at1000.after), 'greyer in haze than in clear air')
+  assert.ok(blue(atDusk.after) < blue(atDusk.before), 'warmer at dusk')
+  for (const c of [at1, at100, at1000, atHaze, atDusk]) assert.equal(c.top, 0, 'the sky at the top is left alone')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W4 real-time GI: the aerial perspective blues the yard there too, after the GI and the fog', async () => {
+  const { context, page, errors, settle, change, sky, server } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0, engine: 'realtime_gi' })
+    scene.environment.sky.aerial_perspective = { enabled: true, distance_scale: 1000 }
+  })
+  const on = await lumaStats(page, await settle(), { level: 250 })
+  await shot(page, 'w4-gi-1000')
+  const off = await lumaStats(page, await change(sky({ aerial_perspective: { ...server.scene.environment.sky.aerial_perspective, enabled: false } })), { level: 250 })
+  console.log(`W4 real-time GI: ×1000 rgb ${[on.r, on.g, on.b].map((v) => v.toFixed(0))}, off ${[off.r, off.g, off.b].map((v) => v.toFixed(0))}`)
+  assert.ok(on.b / on.r > (off.b / off.r) * 1.03, 'bluer with the aerial perspective')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('W4 environment tab: the aerial perspective’s switch and distance scale, the scale greyed while off, undo', async () => {
+  const { context, page, errors, sky } = await physicalTab()
+  const group = page.getByRole('group', { name: '空气透视' })
+  const scale = group.getByRole('spinbutton', { name: '距离倍率' })
+  assert.equal(await scale.inputValue(), '1')
+  await scale.fill('100')
+  await scale.press('Enter')
+  await waitFor(() => sky().aerial_perspective.distance_scale === 100, 'the scale written')
+  // The slider is on a log scale: its middle, 10^1, is ×10.
+  const slider = group.getByRole('slider', { name: '距离倍率' })
+  await slider.fill('1')
+  await waitFor(() => sky().aerial_perspective.distance_scale === 10, 'the slider writes ×10 at its 10^1')
+  await group.getByRole('checkbox', { name: '空气透视' }).uncheck()
+  await waitFor(() => sky().aerial_perspective.enabled === false, 'off')
+  assert.ok(await scale.isDisabled(), 'the scale greyed while off')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => sky().aerial_perspective.enabled === true, 'undo turns it back on')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// AC-W4-5, this machine's GPU: the yard looking up at × 1000 exported on WebGPU and through the WebGL2 backend. W2's
+// limits, or where W2's own picture is already over them (physical-noon-shot, accepted in W2), no further off than
+// the same picture without the aerial perspective.
+if (process.env.SCENE_E2E_W4_GPU) await check('W4 parity: the aerial perspective on WebGPU and on the WebGL2 backend', async () => {
+  const dir = process.env.SCENE_E2E_W4_GPU
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  const over = []
+  const edit = (enabled) => (scene) => {
+    lookingUp(scene)
+    scene.environment.sky.aerial_perspective = { enabled, distance_scale: 1000 }
+  }
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const name of ['physical-noon', 'physical-dusk']) {
+      const pair = async (enabled) => {
+        const webgpu = await exportReference(gpu, name, { edit: edit(enabled) })
+        const webgl = await exportReference(gpu, name, { edit: edit(enabled), forceWebGL: true })
+        assert.ok(webgl.backends.some((b) => b === 'scene renderer (offscreen): webgl2'), `${name}: ${webgl.backends}`)
+        const out = {}
+        for (const img of webgl.images.filter((i) => i.pass === 'lit')) out[img.file] = { m: await compareShots(page, webgpu.images.find((i) => i.file === img.file).png, img.png), file: img.file }
+        return out
+      }
+      const on = await pair(true)
+      const off = await pair(false)
+      for (const [file, { m }] of Object.entries(on)) {
+        const without = off[file].m
+        const within = !m.error && m.mean <= parityLimits.lit.mean && m.over <= parityLimits.lit.over
+        const noWorse = !m.error && !without.error && m.mean <= without.mean + 0.1 && m.over <= without.over + 0.05
+        const ok = within || noWorse
+        if (m.sheet) await writeFile(`${dir}/${file.replace('.png', '')}-w4-webgl2.jpg`, m.sheet)
+        rows.push({ file, mean: m.error ? null : Number(m.mean.toFixed(4)), over_percent: m.error ? null : Number(m.over.toFixed(4)), without: without.error ? null : { mean: Number(without.mean.toFixed(4)), over_percent: Number(without.over.toFixed(4)) }, ok })
+        if (!ok) over.push(`${file}: ${m.error ?? `mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(3)}%`}`)
+        console.log(`W4 parity ${file}: mean ${m.mean?.toFixed(3)}, > 8 ${m.over?.toFixed(4)}%; without ${without.mean?.toFixed(3)}, ${without.over?.toFixed(4)}%${ok ? '' : ' (over)'}`)
+      }
+    }
+    await writeFile(`${dir}/w4-parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits.lit, rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(over, [], 'over the threshold: for the owner to look at')
+})
+
 if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky at night on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_W3_PERF
   const label = process.env.SCENE_E2E_W3_PERF_LABEL ?? 'after'
@@ -5784,6 +5938,8 @@ if (process.env.SCENE_E2E_W3_PERF) await check('W3 performance: the physical sky
     perfScene(server)
     const physical = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8')).environment.sky
     server.scene.environment.sky = { ...physical, local_time: '21:00' }
+    // W4: SCENE_E2E_W3_PERF_AERIAL=off measures without the aerial perspective (AC-W4-9 against it on, the default).
+    if (process.env.SCENE_E2E_W3_PERF_AERIAL === 'off') server.scene.environment.sky.aerial_perspective = { enabled: false, distance_scale: 1 }
     server.scene.render.exposure_ev100 = -3
     const { page, errors } = await open(server, { context })
     const { x, y } = await viewportCenter(page)

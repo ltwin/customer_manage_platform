@@ -36,7 +36,7 @@ func (s Sky) physicalOnly() []string {
 		{"north_azimuth_deg", s.NorthAzimuthDeg != nil}, {"altitude_m", s.AltitudeM != nil}, {"air_density", s.AirDensity != nil},
 		{"dust_density", s.DustDensity != nil}, {"ozone_density", s.OzoneDensity != nil}, {"sun_disc", s.SunDisc != nil},
 		{"sun_size_deg", s.SunSizeDeg != nil}, {"sun_strength", s.SunStrength != nil}, {"sun_temperature_k", s.SunTemperatureK != nil},
-		{"night", s.Night != nil},
+		{"night", s.Night != nil}, {"aerial_perspective", s.AerialPerspective != nil},
 	} {
 		if f.set {
 			names = append(names, f.name)
@@ -85,6 +85,11 @@ func completeSky(s *Sky) error {
 	fill(&n.StarsStrength, 1.0)
 	fill(&n.StarsTemperatureK, 6500.0)
 	fill(&n.NightLook, 1.0)
+	if s.AerialPerspective == nil {
+		s.AerialPerspective = &AerialPerspective{}
+	}
+	fill(&s.AerialPerspective.Enabled, true)
+	fill(&s.AerialPerspective.DistanceScale, 1.0)
 	return nil
 }
 
@@ -139,6 +144,10 @@ func validatePhysicalSky(s Sky) error {
 	if n == nil || n.Moon == nil || n.Stars == nil || n.MilkyWay == nil {
 		return invalid("物理天空缺少 night（夜空）的开关")
 	}
+	ap := s.AerialPerspective
+	if ap == nil || ap.Enabled == nil {
+		return invalid("物理天空缺少 aerial_perspective（空气透视）的开关")
+	}
 	for _, r := range []struct {
 		name   string
 		v      *float64
@@ -161,6 +170,7 @@ func validatePhysicalSky(s Sky) error {
 		{"night.stars_strength", n.StarsStrength, 0, 10},
 		{"night.stars_temperature_k", n.StarsTemperatureK, 2000, 12000},
 		{"night.night_look", n.NightLook, 0, 1},
+		{"aerial_perspective.distance_scale", ap.DistanceScale, 0.1, 1000},
 	} {
 		if !between(r.v, r.lo, r.hi) {
 			return invalid("%s 须在 %g…%g 之间", r.name, r.lo, r.hi)

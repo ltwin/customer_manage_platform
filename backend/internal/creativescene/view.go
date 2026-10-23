@@ -27,15 +27,16 @@ func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument
 // completedScene is the stored snapshot as is, unless a camera, the render
 // or a physical sky predates one of its fields: then the snapshot is
 // decoded, which completes it, so the response always carries every field.
-// A physical sky's night (W3) is checked as a whole: completeSky fills it in
-// one go.
+// A physical sky's night (W3) and aerial perspective (W4) are each checked
+// as a whole: completeSky fills them in one go.
 func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 	var stored struct {
 		Render      storedRender `json:"render"`
 		Environment struct {
 			Sky struct {
-				Kind  string           `json:"kind"`
-				Night *json.RawMessage `json:"night"`
+				Kind              string           `json:"kind"`
+				Night             *json.RawMessage `json:"night"`
+				AerialPerspective *json.RawMessage `json:"aerial_perspective"`
 			} `json:"sky"`
 		} `json:"environment"`
 		Objects []struct {
@@ -46,7 +47,8 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 		return nil, err
 	}
 	sky := stored.Environment.Sky
-	complete := stored.Render.complete() && (sky.Kind != SkyPhysical || sky.Night != nil && nightComplete(*sky.Night))
+	complete := stored.Render.complete() && (sky.Kind != SkyPhysical ||
+		sky.Night != nil && nightComplete(*sky.Night) && sky.AerialPerspective != nil && aerialComplete(*sky.AerialPerspective))
 	for _, o := range stored.Objects {
 		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera))
 	}
@@ -162,6 +164,12 @@ func summary(cur creativedocument.Current) (json.RawMessage, error) {
 		}
 	}
 	return json.Marshal(counts)
+}
+
+// aerialComplete reports whether a stored aerial perspective holds every field.
+func aerialComplete(raw json.RawMessage) bool {
+	var a AerialPerspective
+	return json.Unmarshal(raw, &a) == nil && a.Enabled != nil && a.DistanceScale != nil
 }
 
 // nightComplete reports whether a stored night sky holds every field.

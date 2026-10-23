@@ -10,6 +10,7 @@ import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { GI_INTENSITY, ssgiQuality, type Quality } from './engines.ts'
 import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
+import { aerialBehind } from '../world/atmosphere/aerial.ts'
 
 // The real-time GI's node graph (R2 design「实时 GI 管线」, Epic「实时 GI」):
 // screen-space indirect light, reflections and AO over the workbench's own
@@ -220,10 +221,15 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.mul(opaque) })
   // The fog as three's rangeFogFactor has it, by the view depth of the opaque surface: glass takes the fog of
   // what is behind it. The background has none, as in three, where the sky box is too near for the fog.
+  // Then the aerial perspective (W4, world/atmosphere/aerial.ts), likewise by the opaque surface.
   const { fog } = lit
   const cameraNear = uniform(0).onRenderUpdate(() => persp.near)
   const cameraFar = uniform(0).onRenderUpdate(() => persp.far)
-  const fogged: N = mix(shaded, fog.color, smoothstep(fog.near, fog.far, perspectiveDepthToViewZ(depth.r, cameraNear, cameraFar).negate()).mul(fog.on).mul(opaque))
+  const fogged: N = aerialBehind(
+    mix(shaded, fog.color, smoothstep(fog.near, fog.far, perspectiveDepthToViewZ(depth.r, cameraNear, cameraFar).negate()).mul(fog.on).mul(opaque)),
+    depth,
+    camera,
+  )
   let picture: N = vec4(fogged, output.a)
   if (options.aside) {
     // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.
