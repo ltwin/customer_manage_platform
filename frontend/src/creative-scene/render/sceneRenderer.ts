@@ -436,12 +436,15 @@ export class SceneRenderer {
 
   /** `camera` is the one camera every frame is drawn from; the passes keep it. */
   private readonly camera: Camera
+  /** The viewport's: asks for a frame once what compiles ahead of it is ready. */
+  private readonly redraw: (() => void) | null
 
-  constructor(gpu: SceneGPU, scene: Scene, camera: Camera, overlays: Overlays = noOverlays) {
+  constructor(gpu: SceneGPU, scene: Scene, camera: Camera, overlays: Overlays = noOverlays, redraw: (() => void) | null = null) {
     this.gpu = gpu
     this.camera = camera
     this.scene = scene
     this.overlays = overlays
+    this.redraw = redraw
     // The viewport's pipeline is the one a new light is compiled for (objects/SceneLights.tsx).
     if (overlays !== noOverlays) gpu.compiler = () => this.compile()
   }
@@ -549,6 +552,7 @@ export class SceneRenderer {
           aside: aside && { color: aside.getTextureNode(), depth: aside.getTextureNode('depth') },
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
+          redraw: this.redraw,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
@@ -592,7 +596,7 @@ export class SceneRenderer {
         // The aerial perspective after the AO (design「合成顺序」), before the blur; off it is the picture as it was.
         picture = vec4(aerialBehind(picture.rgb, depth, camera), beauty.a)
         // Then the volumes, the air before and behind them apart (Epic revision v9); none drawn, the picture as it was.
-        const volumes = own(new VolumeNode(depth, camera, [beauty]))
+        const volumes = own(new VolumeNode(depth, camera, [beauty], this.redraw))
         picture = vec4(applyVolumes(picture.rgb, depth, camera, volumes), beauty.a)
         // AO comes before the blur, so contact shadows out of focus soften with everything else.
         if (blur) {

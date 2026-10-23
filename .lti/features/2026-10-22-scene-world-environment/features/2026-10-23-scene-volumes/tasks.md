@@ -11,9 +11,17 @@
 
 ## 2. 渲染
 
-- [ ] 2.1 `render/volumes/state.ts`：体积登记表、`prepareVolumes` / `finishVolumes`、选灯排序与上限、结构签名、投影列表；`LitLighting` 登记「体积可画」。单测补选灯、签名、投影列表。完成判据：单测通过，`tsc -b` 通过
-- [ ] 2.2 `medium.ts` 的 TSL 求交、密度、弦长；`lights.ts`；`march.ts` 的 `VolumeNode`（区间合并、步数分配、积分、两次模糊、纹理换图）；`composite.ts` 的覆盖掩码、上采样与分段合成；`aerial.ts:aerialAt`。接入 `sceneRenderer.ts` 工作台路径与 `realtimeGI.ts`；`objects/Volume.tsx` 的线框与登记，`SceneObjects.tsx` 渲染它。完成判据：e2e「W5 window」（视口与单帧导出）、「W5 spot」、「W5 range」、「W5 clay」、「W5 ortho」、「W5 aerial」通过；W3「day unchanged」、W4 far 与 GI 仍绿
-- [ ] 2.3 首次编译与重建：步进材质在第一个体积出现时才建，视口异步编译、编好前不画，导出等编好；签名变化只重建步进材质。完成判据：e2e「W5 many lights」通过；没有体积时不建步进材质
+- [x] 2.1 `render/volumes/state.ts`：体积登记表、`prepareVolumes` / `finishVolumes`、选灯排序与上限、结构签名、投影列表；`LitLighting` 登记「体积可画」。单测补选灯、签名、投影列表。完成判据：单测通过，`tsc -b` 通过
+  - 登记「体积可画」放在 `Lighting.tsx` 的 `useVolumesDrawn`，`LitLighting` 和 `PhysicalLighting` 都调用：物理天空下的最终渲染不经 `LitLighting`。
+  - 投影的灯在阴影图建好之前按不投影计入签名（阴影图在材质第一次构建时才有），建好后下一帧重建一次步进材质；不用 1×1 占位深度纹理。
+  - 单测 6 项通过（另有区间排序网络对 8 个输入的全部 0/1 排列）。
+- [x] 2.2 `medium.ts` 的 TSL 求交、密度、弦长；`lights.ts`；`march.ts` 的 `VolumeNode`（区间合并、步数分配、积分、两次模糊、纹理换图）；`composite.ts` 的覆盖掩码、上采样与分段合成；`aerial.ts:aerialAt`。接入 `sceneRenderer.ts` 工作台路径与 `realtimeGI.ts`；`objects/Volume.tsx` 的线框与登记，`SceneObjects.tsx` 渲染它。完成判据：e2e「W5 window」（视口与单帧导出）、「W5 spot」、「W5 range」、「W5 clay」、「W5 ortho」、「W5 aerial」通过；W3「day unchanged」、W4 far 与 GI 仍绿
+  - 每个步进节点各自持有阴影图和环境贴图的纹理节点，每帧换图（视口和离屏出图的管线各自绑定）。
+  - e2e（Metal 与 SwiftShader 结果一致）：W5 window 导出光束内外 15.1 / 6.1、窗棂暗带 6.1，视口 14.4 / 6.3 / 6.1，阈值定为 2 倍与 0.6；W5 spot 锥内 203.8、锥外 0.9，GI 路径 191.4 / −1.3；W5 range 两种摆放下轮廓外 0 个像素变化，白模、线稿与无体积哈希相同，lit 连拍两次相同；W5 aerial 地平线上下 20.9 / 20.9，旁边的远处地面 165.3；W5 ortho 通过。
+  - 「W3 day unchanged」需要 develop 的基线，在 2.4 之后一起跑（2.4 改所有投影灯的阴影节点）。
+- [x] 2.3 首次编译与重建：步进材质在第一个体积出现时才建，视口异步编译、编好前不画，导出等编好；签名变化只重建步进材质。完成判据：e2e「W5 many lights」通过；没有体积时不建步进材质
+  - `SceneRenderer` 增加 `redraw` 参数（视口传 `invalidate`），步进节点编译期间 `ready = 0`，合成不画体积；`gpu.ts` 的测试钩子加 `marches` 计数（挂载点外，只加一个计数字段）。
+  - W5 many lights（9 盏投影灯，只在 Metal 上跑，SwiftShader 过慢）：步进材质 1 个，体积照常画出；「没有体积不建步进材质」放进 W5 ortho，SwiftShader 上也跑。
 - [ ] 2.4 表面阴影：`shadow.ts` 的 `volumeShadow` 与两个阴影节点子类；`SunCascades.setup` 乘系数；`lights.ts:buildLight` 装节点、`disposeLight` 释放；`standIn` 按原灯装同类阴影节点。完成判据：e2e「W5 cast shadow」「W5 shadow off」「W5 no recompile」通过；「sun shadows」仍绿
 
 ## 3. 编辑界面与助手

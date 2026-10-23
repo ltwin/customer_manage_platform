@@ -12,11 +12,11 @@ import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
-import { Euler, Matrix4, Quaternion, Vector3 } from 'three'
+import { Box3, Euler, Matrix4, PerspectiveCamera, Quaternion, Ray, Vector3 } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
 import { completeSky } from '../src/creative-scene/world/physicalSky.ts'
 import { documentAzimuth, sunVector } from '../src/creative-scene/world/astro.ts'
-import { positionToView } from '../src/creative-scene/space.ts'
+import { positionToDoc, positionToView } from '../src/creative-scene/space.ts'
 import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
@@ -6259,6 +6259,17 @@ async function shooterPage(gpu) {
   return { page, errors }
 }
 
+/** SCENE_E2E_SHOTS: a picture of window.__picture as a PNG. */
+async function savePicture(page, name, picture) {
+  if (!process.env.SCENE_E2E_SHOTS) return
+  const png = await page.evaluate(([w, h, rgba]) => {
+    const c = new OffscreenCanvas(w, h)
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(Uint8Array.from(atob(rgba), (ch) => ch.charCodeAt(0))), w, h), 0, 0)
+    return c.convertToBlob({ type: 'image/png' }).then((b) => b.arrayBuffer()).then((a) => [...new Uint8Array(a)])
+  }, [picture.width, picture.height, picture.rgba])
+  await writeFile(`${process.env.SCENE_E2E_SHOTS}/${name}.png`, Buffer.from(png))
+}
+
 const w5Metal = () => (process.env.SCENE_E2E_W5_METAL ? chromium.launch({ headless: true, args: metal }) : null)
 
 // AC-W5-1: the sun through the window makes a beam in the room's air, and the window's bar a dark band in it.
@@ -6273,11 +6284,7 @@ await check('W5 window: a beam through the window, and the bar’s band in it', 
     const picture = (scene) => page.evaluate(([s, p]) => window.__picture(s, 'lit', 1024, p), [scene, points])
     const empty = await picture(windowRoom(null))
     const fogged = await picture(windowRoom({ scatter_density: 0.1, anisotropy: 0.6 }))
-    if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/w5-window${gpu ? '-metal' : ''}.png`, await page.evaluate(([w, h, rgba]) => {
-      const c = new OffscreenCanvas(w, h)
-      c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(Uint8Array.from(atob(rgba), (ch) => ch.charCodeAt(0))), w, h), 0, 0)
-      return c.convertToBlob({ type: 'image/png' }).then((b) => b.arrayBuffer()).then((a) => [...new Uint8Array(a)])
-    }, [fogged.width, fogged.height, fogged.rgba]).then((a) => Buffer.from(a)))
+    await savePicture(page, `w5-window${gpu ? '-metal' : ''}`, fogged)
     const added = fogged.at.map((at) => lumaAt(fogged, at) - lumaAt(empty, at))
     const [beam, band, beside] = added
     console.log(`W5 window: luma added in the beam ${beam.toFixed(1)}, in the bar's band ${band.toFixed(1)}, beside the beam ${beside.toFixed(1)} (points at ${fogged.at.map(([x, y]) => `${x.toFixed(0)},${y.toFixed(0)}`).join(' ')})`)
@@ -6347,6 +6354,221 @@ await check('W5 window: a beam through the window, and the bar’s band in it', 
   } finally {
     await gpu?.close()
   }
+})
+
+/** A reference scene (scripts/fixtures/scene-reference) as JSON, with objects added. */
+const fixtureScene = (name, ...objects) => {
+  const scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  scene.objects.push(...objects)
+  return scene
+}
+
+// AC-W5-2: a spot into the volume lights a cone of it; outside the cone the spot adds nothing.
+await check('W5 spot: the spot lights a cone of the volume, none outside it', async () => {
+  const gpu = await w5Metal()
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    // On the spot's axis, and up by the ceiling outside its 60° cone (the ray there stays outside it all the way).
+    const points = [[0, 2.0, -1.0], [-1.6, 2.75, -1.5]]
+    const picture = (scene) => page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 1024, p), [scene, points])
+    const empty = await picture(fixtureScene('cornell'))
+    const fogged = await picture(fixtureScene('cornell', volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, anisotropy: 0.3 })))
+    await savePicture(page, `w5-spot${gpu ? '-metal' : ''}`, fogged)
+    const [inside, outside] = fogged.at.map((at) => lumaAt(fogged, at) - lumaAt(empty, at))
+    console.log(`W5 spot: luma added in the cone ${inside.toFixed(1)}, outside it ${outside.toFixed(1)} (at ${fogged.at.map(([x, y]) => `${x.toFixed(0)},${y.toFixed(0)}`).join(' ')})`)
+    assert.ok(inside > 10, 'the cone shows')
+    assert.ok(outside < 0.2 * inside, 'outside the cone the spot adds next to nothing')
+    // The real-time GI's composite draws them too, after the lighting pass that draws the spot's shadow map.
+    const gi = (scene) => {
+      scene.render = { ...scene.render, engine: 'realtime_gi' }
+      return page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 512, p), [scene, points])
+    }
+    const giEmpty = await gi(fixtureScene('cornell'))
+    const giFogged = await gi(fixtureScene('cornell', volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, anisotropy: 0.3 })))
+    await savePicture(page, `w5-spot-gi${gpu ? '-metal' : ''}`, giFogged)
+    const [giInside, giOutside] = giFogged.at.map((at) => lumaAt(giFogged, at) - lumaAt(giEmpty, at))
+    console.log(`W5 spot, real-time GI: luma added in the cone ${giInside.toFixed(1)}, outside it ${giOutside.toFixed(1)}`)
+    assert.ok(giInside > 10 && giOutside < 0.2 * giInside, 'the real-time GI: the cone, none outside it')
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
+/**
+ * Which pixels of a picture the camera's rays could see the box volume v through, grown by `grow` pixels: the
+ * rest must be the picture without it, pixel for pixel (AC-W5-3).
+ */
+function volumeCoverage(picture, v, grow = 2) {
+  const { width, height, framing } = picture
+  const camera = new PerspectiveCamera(framing.fov, width / height, framing.near, framing.far)
+  camera.position.fromArray(framing.position)
+  camera.quaternion.fromArray(framing.quaternion)
+  camera.updateMatrixWorld()
+  const local = new Matrix4().compose(new Vector3(...v.transform.position), new Quaternion(...v.transform.rotation), new Vector3(...v.transform.scale)).invert()
+  const hit = new Uint8Array(width * height)
+  const o = new Vector3()
+  const d = new Vector3()
+  const ray = new Ray()
+  const unit = new Box3(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5))
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const at = new Vector3(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2, 0.5).unproject(camera)
+      o.fromArray(positionToDoc(camera.position.toArray())).applyMatrix4(local)
+      d.fromArray(positionToDoc(at.toArray())).applyMatrix4(local).sub(o)
+      ray.set(o, d.normalize())
+      if (ray.intersectsBox(unit)) hit[y * width + x] = 1
+    }
+  const grown = new Uint8Array(width * height)
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      if (!hit[y * width + x]) continue
+      for (let dy = -grow; dy <= grow; dy++)
+        for (let dx = -grow; dx <= grow; dx++) {
+          const px = x + dx
+          const py = y + dy
+          if (px >= 0 && py >= 0 && px < width && py < height) grown[py * width + px] = 1
+        }
+    }
+  return grown
+}
+
+/** Pixels of b unlike a: outside the mask and inside it. */
+function changedPixels(a, b, mask) {
+  const p = Buffer.from(a.rgba, 'base64')
+  const q = Buffer.from(b.rgba, 'base64')
+  let outside = 0
+  let inside = 0
+  for (let i = 0; i < mask.length; i++) {
+    const k = i * 4
+    if (p[k] === q[k] && p[k + 1] === q[k + 1] && p[k + 2] === q[k + 2]) continue
+    if (mask[i]) inside++
+    else outside++
+  }
+  return { outside, inside }
+}
+
+// AC-W5-3: moved and scaled, a volume changes only what it covers; beyond its outline the picture is the one
+// without it, pixel for pixel. Through the export's path, and the same in the clay and line art picture (AC-W5-6).
+await check('W5 range: a volume changes only the pixels it covers; clay and line art never show it', async () => {
+  const gpu = await w5Metal()
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const picture = (scene) => page.evaluate(([sc]) => window.__picture(sc, 'lit', 768), [scene])
+    const empty = await picture(fixtureScene('physical-noon'))
+    for (const v of [
+      volumeObject('haze', [0, 1, 0], [2, 2, 2], { scatter_density: 0.5 }),
+      volumeObject('haze', [1.2, 1.5, 1], [1, 3, 1.5], { scatter_density: 0.5, edge_falloff: 0 }),
+    ]) {
+      const fogged = await picture(fixtureScene('physical-noon', v))
+      const c = changedPixels(empty, fogged, volumeCoverage(fogged, v))
+      console.log(`W5 range at ${v.transform.position} × ${v.transform.scale}: ${c.inside} pixels changed within the outline, ${c.outside} beyond it`)
+      assert.ok(c.inside > 1000, 'the volume shows')
+      assert.equal(c.outside, 0, 'beyond the outline the picture is the one without the volume')
+    }
+    const hash = (scene, kind) => page.evaluate(([sc, k]) => window.__hash(sc, k, 512), [scene, kind])
+    const withVolume = fixtureScene('physical-noon', volumeObject('haze', [0, 1, 0], [2, 2, 2], { scatter_density: 2 }))
+    for (const kind of ['clay', 'line']) assert.equal(await hash(withVolume, kind), await hash(fixtureScene('physical-noon'), kind), `${kind}: the same as without the volume`)
+    // AC-W5-9: the same lit picture twice is the same, pixel for pixel.
+    assert.equal(await hash(withVolume, 'lit'), await hash(withVolume, 'lit'), 'lit twice alike')
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// AC-W5-12: under the physical sky with the aerial perspective × 100, dense smoke across the horizon: the air
+// behind it is not laid over it, so it reads the same above the horizon (the sky behind) and below (far ground),
+// darker than the hazed ground beside it.
+await check('W5 aerial: smoke across the horizon has no seam and no haze from behind laid over it', async () => {
+  const gpu = await w5Metal()
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const scene = fixtureScene('physical-noon')
+    scene.environment.sky = completeSky({ ...scene.environment.sky, aerial_perspective: { enabled: true, distance_scale: 100 } })
+    scene.objects = [
+      { ...scene.objects.find((o) => o.primitive?.builtin === 'ground@1'), primitive: { builtin: 'ground@1', params: { size: 1000 } } },
+      cameraAt('far', [0, 1.5, 0], [0, 1.5, -100]),
+      volumeObject('smoke', [0, 1.5, -40], [12, 8, 4], { scatter_color: '#808080', scatter_density: 1, absorption_color: '#202020', absorption_density: 4, edge_falloff: 0 }),
+    ]
+    // In the smoke a little above and below the ground's far edge, and the ground beside the smoke.
+    const points = [[0, 2.5, -38], [0, 0.6, -38], [-12, 0.3, -30]]
+    const fogged = await page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 1024, p), [scene, points])
+    const [above, below, ground] = fogged.at.map((at) => lumaAt(fogged, at))
+    console.log(`W5 aerial: smoke above the horizon ${above.toFixed(1)}, below ${below.toFixed(1)}; the hazed ground beside ${ground.toFixed(1)}`)
+    assert.ok(Math.abs(above - below) < 6, 'no seam at the horizon')
+    assert.ok(below < ground - 10, 'the haze behind the smoke is not laid over it')
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// scene-volumes design「选灯与编译」: a scene without volumes builds no march; the first volume builds it, ahead
+// of the frame in the viewport. Past the cap of 6 lights and 12 shadow maps the march still builds (WebGPU allows
+// 16 textures a stage) and the rest light the surfaces only.
+// On this machine's GPU (SCENE_E2E_W5_METAL): nine casting lights are too slow for SwiftShader.
+if (process.env.SCENE_E2E_W5_METAL) await check('W5 many lights: no march without volumes; over the light cap the march still builds and draws', async () => {
+  const gpu = await w5Metal()
+  const context = await (gpu ?? browser).newContext({ viewport: { width: 1280, height: 820 } })
+  try {
+    const server = new SceneServer()
+    referenceScene(server, 'cornell', (scene) => {
+      for (let i = 0; i < 8; i++)
+        scene.objects.push({ id: gid(`lamp${i}`), kind: 'light', name: `lamp${i}`, parent_id: null, order: 40 + i, transform: { position: [-1.6 + (i % 4) * 1.05, 2.8, i < 4 ? -2.4 : -0.6], rotation: [-0.707107, 0, 0, 0.707107], scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'spot', color: '#ffffff', intensity: 30, cast_shadow: true, distance: 0, decay: 2, angle: 0.5, penumbra: 0.2 } })
+    })
+    const { page, errors } = await open(server, { context })
+    const { box: area } = await viewportCenter(page)
+    await shading(page, '最终渲染')
+    const settle = async () => {
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+      await sleep(400)
+      return settledShot(page, area)
+    }
+    const before = await settle()
+    assert.equal(await page.evaluate(() => window.__sceneGPU.marches), 0, 'no march without volumes')
+    server.external([{ op: 'add_objects', objects: [volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15 })] }])
+    await page.evaluate(() => window.__invalidate())
+    const after = await settle()
+    await shot(page, `w5-many-lights${gpu ? '-metal' : ''}`)
+    const c = await pixelChange(page, before, after)
+    const marches = await page.evaluate(() => window.__sceneGPU.marches)
+    console.log(`W5 many lights: ${marches} march built, ${(c.changed * 100).toFixed(1)}% changed`)
+    assert.ok(marches >= 1, 'the first volume builds the march')
+    assert.ok(c.changed > 0.01, 'the volume draws')
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await gpu?.close()
+  }
+})
+
+// The orthographic views draw lit with the workbench (render/engines.ts): rays from the near plane, the volume
+// where it stands, nothing beyond its outline.
+await check('W5 ortho: a volume draws in an orthographic view', async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
+  const server = new SceneServer()
+  referenceScene(server, 'physical-noon', (scene) => Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 }))
+  const { page, errors } = await open(server, { context })
+  const { box: area } = await viewportCenter(page)
+  await shading(page, '最终渲染')
+  const settle = async () => {
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await sleep(400)
+    return settledShot(page, area)
+  }
+  const before = await settle()
+  assert.equal(await page.evaluate(() => window.__sceneGPU.marches), 0, 'no march without volumes')
+  server.external([{ op: 'add_objects', objects: [volumeObject('haze', [0, 1, 0], [2, 2, 2], { scatter_density: 0.8 })] }])
+  await page.evaluate(() => window.__invalidate())
+  const after = await settle()
+  await shot(page, 'w5-ortho')
+  const c = await pixelChange(page, before, after)
+  console.log(`W5 ortho: ${(c.changed * 100).toFixed(1)}% changed`)
+  assert.ok(c.changed > 0.01 && c.changed < 0.3, 'the volume shows, and only where it stands')
+  assert.deepEqual(errors, [])
+  await context.close()
 })
 
 // R2 tasks 1.2: every picture builds and frees a whole GI pipeline (prepass, lighting pass, SSGI, SSR, contact

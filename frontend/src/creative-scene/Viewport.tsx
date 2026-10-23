@@ -1087,7 +1087,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   const lit = display === 'rendered'
   const renderer = useRef<SceneRenderer | null>(null)
   useEffect(() => {
-    const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] })
+    const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] }, invalidate)
     renderer.current = r
     invalidate()
     return () => {

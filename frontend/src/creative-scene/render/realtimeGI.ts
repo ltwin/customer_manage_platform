@@ -75,6 +75,8 @@ export type RealtimeGIOptions = {
    * pipeline. None, none traced.
    */
   mainLight: () => DirectionalLight | SpotLight | null
+  /** The viewport's redraw: a new march for the volumes compiles ahead and draws then (volumes/march.ts). */
+  redraw: (() => void) | null
 }
 
 export type RealtimeGI = {
@@ -236,7 +238,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     camera,
   )
   // The volumes after the lighting pass, which draws the shadow maps they read (same fixed noise: an export needs no settled frames).
-  const fogged: N = applyVolumes(aerial, depth, camera, own(new VolumeNode(depth, camera, [output])))
+  const fogged: N = applyVolumes(aerial, depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
   let picture: N = vec4(fogged, output.a)
   if (options.aside) {
     // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.

@@ -40,7 +40,8 @@ export function applyVolumes(color: TSLNode, depth: TSLNode, camera: Camera, nod
   return Fn(() => {
     const picture = vec3(color).toVar()
     const out = vec3(picture).toVar()
-    If(V.on.greaterThan(0.5), () => {
+    // node.ready: not while the march for new lights compiles (march.ts).
+    If(V.on.mul(node.ready).greaterThan(0.5), () => {
       const uv = screenUV
       const ray = viewRay(uv, depth.sample(uv).r, projectionInverse)
       const origin = world.mul(vec4(ray.start, 1)).xyz
@@ -49,7 +50,9 @@ export function applyVolumes(color: TSLNode, depth: TSLNode, camera: Camera, nod
       for (let i = 0; i < MAX_VOLUMES; i++)
         If(int(i).lessThan(V.count), () => {
           const h = hitVolume(V, int(i), origin, dir)
-          If(min(h.y, ray.end).greaterThan(max(h.x, 0)), () => covered.assign(1))
+          If(min(h.y, ray.end).greaterThan(max(h.x, 0)), () => {
+            covered.assign(1)
+          })
         })
       If(covered.greaterThan(0.5), () => {
         // Four texels, by bilinear share times how alike their view depth is to the pixel's.

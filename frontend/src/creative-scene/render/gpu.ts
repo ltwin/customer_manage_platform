@@ -237,6 +237,8 @@ export const gpuTestHooks = {
   viewportFrames: 0,
   /** performance.now() when a physical sky's light (its PMREM) was last made (objects/Lighting.tsx PhysicalLighting). */
   skyLightAt: 0,
+  /** Volume marches built (render/volumes/march.ts): none while a scene has no volume, one more per change of its lights. */
+  marches: 0,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)

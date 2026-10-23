@@ -37,3 +37,37 @@ test('a volume added with some fields is completed, and an update merges by key,
   const updated = applyOp(added, { op: 'update_objects', updates: [{ object_id: 'sobj_V1o2l3u4m5e6F7o8g9x0q', volume: { edge_falloff: 0 } }] })
   assert.deepEqual(updated.scene.objects[0].volume, { ...volumeDefaults, anisotropy: 0.6, edge_falloff: 0 })
 })
+
+test('the lights for the volumes: a casting sun first, then by the light at the volumes; at most 6 lights and 12 maps', async () => {
+  const { Sphere, Vector3 } = await import('three')
+  const { selectLights, MAX_LIGHTS } = await import('../src/creative-scene/render/volumes/state.ts')
+  const at = (x: number) => new Vector3(x, 0, 0)
+  const bounds = [new Sphere(new Vector3(0, 0, 0), 1)]
+  const sun = { kind: 'directional' as const, cast: true, sun: true, intensity: 1, position: at(50), decay: 0 }
+  const near = { kind: 'point' as const, cast: false, sun: false, intensity: 10, position: at(2), decay: 2 }
+  const far = { kind: 'spot' as const, cast: true, sun: false, intensity: 10, position: at(11), decay: 2 }
+  // The sun leads although the point light near the volume brings more; the far spot (10 / 10²) comes last.
+  assert.deepEqual(selectLights([far, near, sun], bounds), [2, 1, 0])
+  // Three casting directional lights take 12 maps: a fourth casting light finds no room, a non-casting one does
+  // (the point light by the volume, 10 / 1², before the directional ones at 5).
+  const dir = { ...sun, sun: false, intensity: 5 }
+  assert.deepEqual(selectLights([sun, dir, dir, far, near], bounds), [0, 4, 1, 2])
+  assert.equal(selectLights(Array.from({ length: 9 }, () => near), bounds).length, MAX_LIGHTS)
+})
+
+test('the march rebuilds on its structure only, and the cast list holds the casting volumes in order', async () => {
+  const { castList, signatureOf } = await import('../src/creative-scene/render/volumes/state.ts')
+  assert.equal(signatureOf([{ kind: 'directional', cast: true }, { kind: 'spot', cast: false }], true), 'directional+,spot|env')
+  assert.notEqual(signatureOf([{ kind: 'spot', cast: true }], false), signatureOf([{ kind: 'spot', cast: false }], false))
+  assert.deepEqual(castList([{ cast_shadow: false }, { cast_shadow: true }, { cast_shadow: true }]), [1, 2])
+})
+
+test('the crossings are sorted by the network for every order of 8', async () => {
+  const { SORT8 } = await import('../src/creative-scene/render/volumes/march.ts')
+  // Every 0/1 input sorts, so every input does (the 0-1 principle).
+  for (let bits = 0; bits < 256; bits++) {
+    const v = Array.from({ length: 8 }, (_, i) => (bits >> i) & 1)
+    for (const [x, y] of SORT8) if (v[y] < v[x]) [v[x], v[y]] = [v[y], v[x]]
+    assert.deepEqual(v, [...v].sort((a, b) => a - b), `input ${bits.toString(2)}`)
+  }
+})

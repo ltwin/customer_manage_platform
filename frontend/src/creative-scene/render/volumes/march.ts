@@ -2,6 +2,7 @@ import { HalfFloatType, NearestFilter, Vector2, type Camera, type Texture } from
 import * as tsl from 'three/tsl'
 import { NodeMaterial, NodeUpdateType, QuadMesh, RenderTarget, RendererUtils, TempNode, type NodeBuilder, type NodeFrame } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
+import { gpuTestHooks } from '../gpu.ts'
 import { chordThrough, hitVolume, volumeDensity } from './medium.ts'
 import { volumeLights } from './lights.ts'
 import { bindVolumeTextures, lighting, MAX_VOLUMES, V } from './state.ts'
@@ -103,17 +104,28 @@ export class VolumeNode extends TempNode {
   /** The blurred light (rgb) and view depth (a); what is let through (rgb) and where (a). */
   readonly light: TSLNode
   readonly transmittance: TSLNode
+  /** 1 once the march for the lights as they are has drawn: the composite leaves the picture alone until then. */
+  readonly ready = uniform(0) as Uniform<number>
+  /**
+   * The viewport's: compile a new march on the driver's threads and draw again once it is ready, as a new light
+   * warms (objects/SceneLights.tsx). Without it (a shot) the first frame compiles it as it draws.
+   */
+  private readonly warm: (() => void) | null
   private march: NodeMaterial | null = null
+  private compiling = false
   private signature = ''
   private lights: ReturnType<typeof volumeLights> | null = null
   private readonly blurX = new NodeMaterial()
   private readonly blurY = new NodeMaterial()
   private readonly quad = new QuadMesh(this.blurX)
+  /** The march's own quad: compileAsync builds its render object later, with the material it has then. */
+  private readonly marchQuad = new QuadMesh(this.blurX)
 
-  constructor(depth: TSLNode, camera: Camera, after: readonly TSLNode[] = []) {
+  constructor(depth: TSLNode, camera: Camera, after: readonly TSLNode[] = [], warm: (() => void) | null = null) {
     super('vec4')
     this.depth = depth
     this.after = after
+    this.warm = warm
     this.projectionInverse = uniform(camera.projectionMatrixInverse)
     this.world = uniform(camera.matrixWorld)
     this.updateBeforeType = NodeUpdateType.FRAME
@@ -127,6 +139,7 @@ export class VolumeNode extends TempNode {
   private marchMaterial(): NodeMaterial {
     const lights = volumeLights(lighting.slots, lighting.environment)
     this.lights = lights
+    gpuTestHooks.marches++
     const { depth, projectionInverse, world } = this
     const material = new NodeMaterial()
     material.name = 'Volumes'
@@ -295,12 +308,18 @@ export class VolumeNode extends TempNode {
     if (!this.march || this.signature !== lighting.signature) {
       this.march?.dispose()
       this.march = this.marchMaterial()
+      this.marchQuad.material = this.march
       this.signature = lighting.signature
+      this.ready.value = 0
+      if (this.warm) this.compile(renderer, this.march)
     }
+    // Lights the scene no longer has are not drawn while the new march compiles.
+    if (this.compiling) return undefined
     bindVolumeTextures(this.lights!.maps, this.lights!.skies)
     rendererState = RendererUtils.resetRendererState(renderer, rendererState as never)
+    renderer.setRenderTarget(this.marched)
+    this.marchQuad.render(renderer)
     for (const [material, into] of [
-      [this.march, this.marched],
       [this.blurX, this.across],
       [this.blurY, this.blurred],
     ] as const) {
@@ -309,7 +328,31 @@ export class VolumeNode extends TempNode {
       this.quad.render(renderer)
     }
     RendererUtils.restoreRendererState(renderer, rendererState)
+    this.ready.value = 1
     return undefined
+  }
+
+  /** The march compiled for its target on the driver's threads; then drawn on the frame warm asks for. */
+  private compile(renderer: NodeFrame['renderer'] & object, material: NodeMaterial) {
+    this.compiling = true
+    gpuTestHooks.compiling++
+    const target = renderer.getRenderTarget()
+    // compileAsync takes the target's formats before its first await.
+    renderer.setRenderTarget(this.marched)
+    let done: Promise<void>
+    try {
+      done = renderer.compileAsync(this.marchQuad, (this.marchQuad as unknown as { camera: Camera }).camera)
+    } finally {
+      renderer.setRenderTarget(target)
+    }
+    void done
+      .catch((error: unknown) => console.warn('volumes: the march did not compile ahead', error))
+      .finally(() => {
+        gpuTestHooks.compiling--
+        if (this.march !== material) return
+        this.compiling = false
+        this.warm?.()
+      })
   }
 
   /** The textures the composite reads, for its upsampling. */
@@ -321,6 +364,7 @@ export class VolumeNode extends TempNode {
     super.dispose()
     for (const t of [this.marched, this.across, this.blurred]) t.dispose()
     this.march?.dispose()
+    this.march = null
     this.blurX.dispose()
     this.blurY.dispose()
   }
