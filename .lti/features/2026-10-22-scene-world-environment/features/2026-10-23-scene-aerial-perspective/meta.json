@@ -1,6 +1,6 @@
 {
   "uid": "b6da8241-71c0-4091-9d33-f69541b54db3",
-  "revision": 7,
+  "revision": 8,
   "id": "scene-aerial-perspective",
   "kind": "feature",
   "assurance": "governed",
@@ -32,7 +32,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-23T13:07:53.471Z",
-  "updatedAt": "2026-10-23T14:08:40.347Z",
+  "updatedAt": "2026-10-23T14:08:57.452Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-23T14:08:57.385Z",
+    "summary": "feat/scene-aerial-perspective 以 --no-ff 合入 develop（6f4c3757）；develop 为分支祖先，合入树与分支一致，沿用分支上已通过的定向测试与 e2e",
+    "method": "manual",
+    "limitations": "未在合入后重跑测试：合入树与分支相同",
+    "sourceCommit": "3f21de586b1ddb4853617344f2bb1b2e503f72e4",
+    "targetCommit": "6f4c37575e3f6628ecf41b00b92d2904e8f8ba36",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5ae499bd882a0346cadca4439d97b5d737557a97bbefea86bd22e5b78da0f018"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive"
