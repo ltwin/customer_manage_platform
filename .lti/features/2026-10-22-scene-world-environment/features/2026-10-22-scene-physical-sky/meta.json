@@ -1,6 +1,6 @@
 {
   "uid": "188beed6-152e-49c5-ab86-602f1e946382",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-physical-sky",
   "kind": "feature",
   "assurance": "governed",
@@ -33,9 +33,9 @@
       "patterns:场景着色写法"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-22T11:37:31.579Z",
-  "updatedAt": "2026-10-23T06:13:05.910Z",
+  "updatedAt": "2026-10-23T06:13:26.706Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -566,6 +566,10 @@
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-23T06:13:26.532Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
