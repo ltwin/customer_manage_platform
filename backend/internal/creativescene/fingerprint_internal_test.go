@@ -310,10 +310,33 @@ func TestPhysicalSkyFingerprintsOnlyLit(t *testing.T) {
 		`{"kind":"physical","date":"2026-06-21","dust_density":12}`,
 		`{"kind":"physical","date":"2026-06-21","sun_temperature_k":4000}`,
 		`{"kind":"physical","date":"2026-06-21","latitude_deg":30.66,"longitude_deg":104.06,"timezone":"Asia/Shanghai"}`,
+		// W3: each of the night sky's fields.
+		`{"kind":"physical","date":"2026-06-21","night":{"moon":false}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"stars":false}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"milky_way":false}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"moon_strength":2}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"moon_temperature_k":4000}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"stars_strength":0.5}}`,
+		`{"kind":"physical","date":"2026-06-21","night":{"stars_temperature_k":9000}}`,
 	} {
 		if got := sameIn(base, sceneOf(t, sky, `{"mode":"lit"}`, `{}`)); !maps.Equal(got, onlyLitChanges) {
 			t.Fatalf("%s: alike %v", sky, got)
 		}
+	}
+}
+
+// W3 (data: 夜空): a physical sky stored before the night sky had none and
+// fingerprinted without it; read now, it is completed with one, so its lit
+// exports read as stale once. Clay and line art leave the environment out.
+func TestThePhysicalSkysNightStalesItsLitOnce(t *testing.T) {
+	now := sceneOf(t, physicalSky, `{"mode":"lit"}`, `{}`)
+	if now.Environment.Sky.Night == nil {
+		t.Fatal("the night sky was not completed")
+	}
+	before := now
+	before.Environment.Sky.Night = nil
+	if got := sameIn(before, now); !maps.Equal(got, onlyLitChanges) {
+		t.Fatalf("alike %v", got)
 	}
 }
 

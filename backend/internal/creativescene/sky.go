@@ -36,6 +36,7 @@ func (s Sky) physicalOnly() []string {
 		{"north_azimuth_deg", s.NorthAzimuthDeg != nil}, {"altitude_m", s.AltitudeM != nil}, {"air_density", s.AirDensity != nil},
 		{"dust_density", s.DustDensity != nil}, {"ozone_density", s.OzoneDensity != nil}, {"sun_disc", s.SunDisc != nil},
 		{"sun_size_deg", s.SunSizeDeg != nil}, {"sun_strength", s.SunStrength != nil}, {"sun_temperature_k", s.SunTemperatureK != nil},
+		{"night", s.Night != nil},
 	} {
 		if f.set {
 			names = append(names, f.name)
@@ -72,6 +73,17 @@ func completeSky(s *Sky) error {
 	fill(&s.SunSizeDeg, 0.545)
 	fill(&s.SunStrength, 1.0)
 	fill(&s.SunTemperatureK, 6500.0)
+	if s.Night == nil {
+		s.Night = &Night{}
+	}
+	n := s.Night
+	fill(&n.Moon, true)
+	fill(&n.Stars, true)
+	fill(&n.MilkyWay, true)
+	fill(&n.MoonStrength, 1.0)
+	fill(&n.MoonTemperatureK, 6500.0)
+	fill(&n.StarsStrength, 1.0)
+	fill(&n.StarsTemperatureK, 6500.0)
 	return nil
 }
 
@@ -122,6 +134,10 @@ func validatePhysicalSky(s Sky) error {
 	if s.SunDisc == nil {
 		return invalid("物理天空缺少 sun_disc")
 	}
+	n := s.Night
+	if n == nil || n.Moon == nil || n.Stars == nil || n.MilkyWay == nil {
+		return invalid("物理天空缺少 night（夜空）的开关")
+	}
 	for _, r := range []struct {
 		name   string
 		v      *float64
@@ -139,6 +155,10 @@ func validatePhysicalSky(s Sky) error {
 		{"sun_size_deg", s.SunSizeDeg, 0.1, 10},
 		{"sun_strength", s.SunStrength, 0, 10},
 		{"sun_temperature_k", s.SunTemperatureK, 2000, 12000},
+		{"night.moon_strength", n.MoonStrength, 0, 10},
+		{"night.moon_temperature_k", n.MoonTemperatureK, 2000, 12000},
+		{"night.stars_strength", n.StarsStrength, 0, 10},
+		{"night.stars_temperature_k", n.StarsTemperatureK, 2000, 12000},
 	} {
 		if !between(r.v, r.lo, r.hi) {
 			return invalid("%s 须在 %g…%g 之间", r.name, r.lo, r.hi)

@@ -9,9 +9,12 @@
 
 ## 2. 数据契约与校验
 
-- [ ] 2.1 先写 `scene_test.go`：物理天空只写 `night` 的一部分时逐项补齐；W2 时期没有 `night` 的快照读取后补齐为缺省值；返回 400 的写法——程序化、HDRI、纯色天空带 `night`，四个数值越界，`night` 里写未知字段；删去「night 在 W3 前返回 400」的用例，`aerial_perspective`、`clouds`、`environment.weather` 仍返回 400。再改 `model.go:Sky`（`Night`）、`sky.go`（`physicalOnly`、`completeSky`、`validatePhysicalSky`）；`api/openapi.yaml` 的 `CreativeSceneSky` 加 `night`，运行 `make generate`。完成判据：测试先红后绿，`make check-go PKG=./internal/creativescene/...` 通过，生成物已更新
-- [ ] 2.2 先改 `fingerprint_internal_test.go`：改夜空任一字段，`lit` 指纹变、`clay` 与 `line` 不变；W2 时期的物理天空快照补齐 `night` 后 `lit` 指纹变化（预期的一次过时）；程序化与纯色天空的旧指纹不变。完成判据：测试绿，`fingerprint.go` 不需改动（如需改动，写明原因）
-- [ ] 2.3 前端 `world/physicalSky.ts`：`physicalSkyDefaults` 加 `night` 缺省值，`completeSky` 逐项补齐，`isPhysical` 要求 `night` 已补齐；`state/apply.ts` 的 `set_environment` 跟着补齐。完成判据：`creative-scene.test.ts` 加补齐用例并通过，`tsc -b` 通过
+- [x] 2.1 先写 `scene_test.go`：物理天空只写 `night` 的一部分时逐项补齐；W2 时期没有 `night` 的快照读取后补齐为缺省值；返回 400 的写法——程序化、HDRI、纯色天空带 `night`，四个数值越界，`night` 里写未知字段；删去「night 在 W3 前返回 400」的用例，`aerial_perspective`、`clouds`、`environment.weather` 仍返回 400。再改 `model.go:Sky`（`Night`）、`sky.go`（`physicalOnly`、`completeSky`、`validatePhysicalSky`）；`api/openapi.yaml` 的 `CreativeSceneSky` 加 `night`，运行 `make generate`。完成判据：测试先红后绿，`make check-go PKG=./internal/creativescene/...` 通过，生成物已更新
+  - `TestPhysicalSkyIsCompleted` 加缺省与逐项补齐，`TestPhysicalSkyRefusesBadFields` 加四个越界与 `night` 里的未知字段（报错写 `night.moon_strength` 等字段名），`TestOtherSkiesRefusePhysicalFields` 加程序化天空带 `night`；先红（`没有字段 night`）后绿。`Night` 用指针字段，与 `Sky` 其他字段一致；未知字段沿用通用的形状检查。旧快照解码与写入都经 `completeSky`，同一处补齐。`make check-go PKG=./internal/creativescene/...` 通过（lint 0 issues）；`api.gen.go`、`schema.d.ts` 已更新，`tool_schemas.gen.go` 无变化。
+- [x] 2.2 先改 `fingerprint_internal_test.go`：改夜空任一字段，`lit` 指纹变、`clay` 与 `line` 不变；W2 时期的物理天空快照补齐 `night` 后 `lit` 指纹变化（预期的一次过时）；程序化与纯色天空的旧指纹不变。完成判据：测试绿，`fingerprint.go` 不需改动（如需改动，写明原因）
+  - `TestPhysicalSkyFingerprintsOnlyLit` 加七个夜空字段；新增 `TestThePhysicalSkysNightStalesItsLitOnce`：W2 时期的快照没有 `night`（`omitempty`，哈希输入里没有这个键），补齐后 `lit` 变、`clay`/`line` 不变。程序化天空的固定指纹（`pinned`）不变。`fingerprint.go` 未改。
+- [x] 2.3 前端 `world/physicalSky.ts`：`physicalSkyDefaults` 加 `night` 缺省值，`completeSky` 逐项补齐，`isPhysical` 要求 `night` 已补齐；`state/apply.ts` 的 `set_environment` 跟着补齐。完成判据：`creative-scene.test.ts` 加补齐用例并通过，`tsc -b` 通过
+  - `PhysicalSky` 的 `night` 为完整的 `NightSky`，新增 `nightSkyDefaults`；补齐用例加在已有的「物理天空按服务端规则补齐」单测里（`creative-scene-astro.test.ts`，而非 `creative-scene.test.ts`），与实现同时写成。`state/apply.ts` 经 `completeSky` 自动补齐，未改。`tsc -b` 通过。
 
 ## 3. 天文与月亮参考
 

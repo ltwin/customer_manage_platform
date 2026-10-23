@@ -7145,6 +7145,30 @@ type CreativeSceneModelRef struct {
 	Ref               *string `json:"ref,omitempty"`
 }
 
+// CreativeSceneNight 物理天空的夜空（只在 kind = physical 时允许，其他天空写它返回 400）：月亮、星星（含夜天光）、银河， 以及月亮和星空的亮度与色温。只在 sun_mode = location 时绘制。读取时补齐缺省值，只写一部分时逐项补齐。
+type CreativeSceneNight struct {
+	// MilkyWay 银河（渲染端程序化生成）。缺省 true。
+	MilkyWay *bool `json:"milky_way,omitempty"`
+
+	// Moon 月亮（月盘、月光、月光照亮的天空）。缺省 true。
+	Moon *bool `json:"moon,omitempty"`
+
+	// MoonStrength 月亮的亮度倍率，月盘、月光和月光照亮的天空一起变化。缺省 1。
+	MoonStrength *float32 `json:"moon_strength,omitempty"`
+
+	// MoonTemperatureK 月亮的色温（开尔文），6500 为物理计算的颜色，调低更暖、调高更冷。缺省 6500。
+	MoonTemperatureK *float32 `json:"moon_temperature_k,omitempty"`
+
+	// Stars 星表中的亮星与夜天光。缺省 true。
+	Stars *bool `json:"stars,omitempty"`
+
+	// StarsStrength 星空的亮度倍率，星星、银河和夜天光一起变化。缺省 1。
+	StarsStrength *float32 `json:"stars_strength,omitempty"`
+
+	// StarsTemperatureK 星空的色温（开尔文），含义同月亮。缺省 6500。
+	StarsTemperatureK *float32 `json:"stars_temperature_k,omitempty"`
+}
+
 // CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
 	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025；响应里总是带齐（旧快照在读取时补齐）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
@@ -7284,6 +7308,9 @@ type CreativeSceneSky struct {
 
 	// LongitudeDeg 东经为正。
 	LongitudeDeg *float32 `json:"longitude_deg,omitempty"`
+
+	// Night 物理天空的夜空（只在 kind = physical 时允许，其他天空写它返回 400）：月亮、星星（含夜天光）、银河， 以及月亮和星空的亮度与色温。只在 sun_mode = location 时绘制。读取时补齐缺省值，只写一部分时逐项补齐。
+	Night *CreativeSceneNight `json:"night,omitempty"`
 
 	// NorthAzimuthDeg 正北在文档坐标中的方位，约定同 sun_azimuth_deg；缺省 180，即正北指向 −Z。
 	NorthAzimuthDeg *float32 `json:"north_azimuth_deg,omitempty"`

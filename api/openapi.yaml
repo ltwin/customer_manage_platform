@@ -15045,6 +15045,44 @@ components:
           minimum: 2000
           maximum: 12000
           description: 太阳的色温（开尔文），6500 为中性，调低更暖、调高更冷，同样作用于太阳光和天空。缺省 6500。
+        night:
+          $ref: '#/components/schemas/CreativeSceneNight'
+    CreativeSceneNight:
+      type: object
+      additionalProperties: false
+      description: >-
+        物理天空的夜空（只在 kind = physical 时允许，其他天空写它返回 400）：月亮、星星（含夜天光）、银河，
+        以及月亮和星空的亮度与色温。只在 sun_mode = location 时绘制。读取时补齐缺省值，只写一部分时逐项补齐。
+      properties:
+        moon:
+          type: boolean
+          description: 月亮（月盘、月光、月光照亮的天空）。缺省 true。
+        stars:
+          type: boolean
+          description: 星表中的亮星与夜天光。缺省 true。
+        milky_way:
+          type: boolean
+          description: 银河（渲染端程序化生成）。缺省 true。
+        moon_strength:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: 月亮的亮度倍率，月盘、月光和月光照亮的天空一起变化。缺省 1。
+        moon_temperature_k:
+          type: number
+          minimum: 2000
+          maximum: 12000
+          description: 月亮的色温（开尔文），6500 为物理计算的颜色，调低更暖、调高更冷。缺省 6500。
+        stars_strength:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: 星空的亮度倍率，星星、银河和夜天光一起变化。缺省 1。
+        stars_temperature_k:
+          type: number
+          minimum: 2000
+          maximum: 12000
+          description: 星空的色温（开尔文），含义同月亮。缺省 6500。
     CreativeSceneColor:
       type: string
       pattern: ^#[0-9a-fA-F]{6}$

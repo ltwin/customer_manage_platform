@@ -119,6 +119,13 @@ test('a physical sky is completed as the server completes it; one with part of a
   assert.ok(isPhysical(done))
   assert.equal(done.timezone, 'Asia/Shanghai')
   assert.equal(done.local_time, '12:00')
+  assert.deepEqual(done.night, { moon: true, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500 })
+  // Part of the night sky: the rest field by field (W3, data: 夜空).
+  const night = applyOps(state, [env({ night: { milky_way: false, stars_strength: 2 } })]).scene.environment.sky
+  assert.ok(isPhysical(night))
+  assert.deepEqual(night.night, { moon: true, stars: true, milky_way: false, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 2, stars_temperature_k: 6500 })
+  // What the renderer draws as a physical sky has its night sky complete.
+  assert.equal(isPhysical({ ...done, night: { moon: true } }), false)
   const partial = applyOps(state, [env({ latitude_deg: 30 })]).scene.environment.sky
   assert.equal(partial.timezone, undefined)
 })

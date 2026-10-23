@@ -83,6 +83,20 @@ type Sky struct {
 	SunSizeDeg      *float64 `json:"sun_size_deg,omitempty"`
 	SunStrength     *float64 `json:"sun_strength,omitempty"`
 	SunTemperatureK *float64 `json:"sun_temperature_k,omitempty"`
+	Night           *Night   `json:"night,omitempty"`
+}
+
+// Night is a physical sky's night sky (W3, data: 夜空): the moon, the stars
+// (with the airglow) and the Milky Way, and the moon's and the stars'
+// strength and colour temperature, as the sun's.
+type Night struct {
+	Moon              *bool    `json:"moon,omitempty"`
+	Stars             *bool    `json:"stars,omitempty"`
+	MilkyWay          *bool    `json:"milky_way,omitempty"`
+	MoonStrength      *float64 `json:"moon_strength,omitempty"`
+	MoonTemperatureK  *float64 `json:"moon_temperature_k,omitempty"`
+	StarsStrength     *float64 `json:"stars_strength,omitempty"`
+	StarsTemperatureK *float64 `json:"stars_temperature_k,omitempty"`
 }
 
 type Ambient struct {

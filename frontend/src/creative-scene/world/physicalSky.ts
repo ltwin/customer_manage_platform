@@ -6,8 +6,22 @@ import type { SceneEnvironment } from '../api.ts'
 
 type Sky = SceneEnvironment['sky']
 
+/** A physical sky's night sky with every field (W3, data: 夜空). */
+export type NightSky = Required<NonNullable<Sky['night']>>
+
 /** A physical sky with every field, as the server stores it. */
-export type PhysicalSky = Required<Omit<Sky, 'turbidity' | 'hdri' | 'color'>> & { kind: 'physical' }
+export type PhysicalSky = Required<Omit<Sky, 'turbidity' | 'hdri' | 'color' | 'night'>> & { kind: 'physical'; night: NightSky }
+
+/** What the server stores for the night sky's fields left out: everything drawn, at the strength and colour worked out. */
+export const nightSkyDefaults = {
+  moon: true,
+  stars: true,
+  milky_way: true,
+  moon_strength: 1,
+  moon_temperature_k: 6500,
+  stars_strength: 1,
+  stars_temperature_k: 6500,
+} as const satisfies NightSky
 
 /** What the server stores for the fields a physical sky leaves out (backend sky.go): Shanghai at noon under a clear sky. The date has none. */
 export const physicalSkyDefaults = {
@@ -28,6 +42,7 @@ export const physicalSkyDefaults = {
   sun_size_deg: 0.545,
   sun_strength: 1,
   sun_temperature_k: 6500,
+  night: nightSkyDefaults,
 } as const satisfies Omit<PhysicalSky, 'kind' | 'date'>
 
 /** As the server's completeSky. Other skies, and a physical sky with part of a place (the server refuses it), stay as they are. */
@@ -35,10 +50,15 @@ export function completeSky(sky: Sky): Sky {
   if (sky.kind !== 'physical') return sky
   const place = [sky.latitude_deg, sky.longitude_deg, sky.timezone].filter((v) => v !== undefined).length
   if (place !== 0 && place !== 3) return sky
-  return { ...physicalSkyDefaults, ...sky }
+  return { ...physicalSkyDefaults, ...sky, night: { ...nightSkyDefaults, ...sky.night } }
 }
 
 /** Whether sky is a physical sky with every field, the only kind the renderer draws as one. */
 export function isPhysical(sky: Sky): sky is PhysicalSky {
-  return sky.kind === 'physical' && sky.date !== undefined && Object.keys(physicalSkyDefaults).every((k) => sky[k as keyof Sky] !== undefined)
+  return (
+    sky.kind === 'physical' &&
+    sky.date !== undefined &&
+    Object.keys(physicalSkyDefaults).every((k) => sky[k as keyof Sky] !== undefined) &&
+    Object.keys(nightSkyDefaults).every((k) => sky.night?.[k as keyof NightSky] !== undefined)
+  )
 }
