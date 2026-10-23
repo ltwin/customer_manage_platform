@@ -32,7 +32,9 @@
 
 ## 3. 编辑界面与助手
 
-- [ ] 3.1 `editing.ts:newVolume`（落点单测）、`SceneEditor.tsx` 添加菜单两项与属性栏、`panels/VolumeFields.tsx`、`Outliner.tsx` 图标、`Volume.tsx` 的像素阈值拾取、`Viewport.tsx:centrePoint` 跳过体积。完成判据：e2e 走一遍添加、改密度、Cmd+Z 撤回；「W5 params」通过
+- [x] 3.1 `editing.ts:newVolume`（落点单测）、`SceneEditor.tsx` 添加菜单两项与属性栏、`panels/VolumeFields.tsx`、`Outliner.tsx` 图标、`Volume.tsx` 的像素阈值拾取、`Viewport.tsx:centrePoint` 跳过体积。完成判据：e2e 走一遍添加、改密度、Cmd+Z 撤回；「W5 params」通过
+  - W5 editing：Shift+A 添加立方体体积（2 m，底面落在视口中心对着的物件上），数字框与对数滑杆改散射密度（最左一档为 0），打开投射阴影后 Cmd+Z 撤回，范围里面点击选中后面的物件而不是体积。e2e 的测试服务器 `restoreUnits` 补上 `volume`（测试夹具，不是产品代码）。
+  - W5 params：光束处散射密度 0.1 → 0.3 亮度增量 11.2 → 20.0，各向异性 0 → 0.6（逆光）11.2 → 15.1；透过吸收体看白盒，红蓝比 0.79，保留红色时 0.91，保留蓝色时 0.50。AgX 先混合通道再过曲线，被保留的通道也会略暗，所以按色相方向判断。
 - [ ] 3.2 `creativeagent/scene_tools.go` 的 `edit_scene` 说明与测试关键句；`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md`。完成判据：`go test ./internal/creativeagent/` 通过
 
 ## 4. 验收

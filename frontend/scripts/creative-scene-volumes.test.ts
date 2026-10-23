@@ -71,3 +71,12 @@ test('the crossings are sorted by the network for every order of 8', async () =>
     assert.deepEqual(v, [...v].sort((a, b) => a - b), `input ${bits.toString(2)}`)
   }
 })
+
+test('a new volume from the add menu: 2 m, standing on the point the view looks at, its fields left to the defaults', async () => {
+  const { newVolume } = await import('../src/creative-scene/editing.ts')
+  const v = newVolume('sphere', [1, 0.5, -2], [volume({})], () => 'sobj_000000000000000000002')
+  assert.deepEqual(v.transform, { position: [1, 1.5, -2], rotation: [0, 0, 0, 1], scale: [2, 2, 2] })
+  assert.equal(v.kind, 'volume')
+  assert.equal(v.name, '体积 2')
+  assert.deepEqual(v.volume, { shape: 'sphere' })
+})

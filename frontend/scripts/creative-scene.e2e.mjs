@@ -393,7 +393,7 @@ class SceneServer {
         const now = objects.find((o) => o.id === id)
         if (!was) objects = objects.filter((o) => o.id !== id)
         else if (!now) objects.push(structuredClone(was))
-        else if (unit.endsWith(':content')) Object.assign(now, { primitive: was.primitive, model: was.model, material_slots: was.material_slots, light: was.light, camera: was.camera })
+        else if (unit.endsWith(':content')) Object.assign(now, { primitive: was.primitive, model: was.model, material_slots: was.material_slots, light: was.light, camera: was.camera, volume: was.volume })
         else Object.assign(now, { name: was.name, transform: was.transform, visible: was.visible, locked: was.locked })
       }
     }
@@ -6631,6 +6631,99 @@ await check('W5 no recompile: a new casting light compiles no more on its frames
     assert.ok(withVolume.spot.length <= without.spot.length && withVolume.directional.length <= without.directional.length, 'no more than without volumes')
     assert.ok(withVolume.lit.mean > 5, 'the picture draws on with the shadows off')
     assert.deepEqual([...without.errors, ...withVolume.errors], [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// scene-volumes design「编辑与拾取」: the add menu puts a 2 m volume on what the view's centre looks at; its bounds
+// are picked only near a line, so a click inside it goes to what is behind; the properties write by key; Cmd+Z.
+await check('W5 editing: add a volume, a click inside it picks what is behind, its density by number and slider, undo', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('post', 5, { position: [0, 0, 0] }, { width: 0.4, height: 1, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '体积（立方体）' }).click()
+  await waitFor(() => server.commands.length === 1, 'add a volume')
+  const added = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([added.kind, added.name, added.transform.scale, added.volume], ['volume', '体积 1', [2, 2, 2], { shape: 'box' }])
+  // Its base on what the centre looks at, the post or the ground by it (a metre below its centre).
+  const base = added.transform.position[1] - 1
+  assert.ok(base >= -1e-6 && base <= 1 + 1e-6, `on what the centre looks at: ${added.transform.position}`)
+  assert.equal(await page.getByRole('treeitem', { name: /体积 1/ }).getAttribute('aria-selected'), 'true', 'the new volume is selected')
+  await saved(page)
+
+  const volumeAt = () => server.object(added.id).volume
+  const group = page.getByRole('group', { name: '体积' })
+  const density = group.getByRole('spinbutton', { name: '散射密度' })
+  await density.fill('0.5')
+  await density.press('Enter')
+  await waitFor(() => volumeAt().scatter_density === 0.5, 'the density by number')
+  assert.equal(volumeAt().anisotropy, 0, 'the rest as it was')
+  await group.getByRole('slider', { name: '散射密度' }).fill('-3.5')
+  await waitFor(() => volumeAt().scatter_density === 0, 'the slider’s leftmost step is 0')
+  await group.getByRole('slider', { name: '散射密度' }).fill('0')
+  await waitFor(() => volumeAt().scatter_density === 1, 'the slider writes 10^0')
+  await group.getByLabel('投射阴影').check()
+  await waitFor(() => volumeAt().cast_shadow === true, 'cast shadow on')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => volumeAt().cast_shadow === false, 'undo')
+
+  // Inside the bounds, away from their lines: the click picks the post, not the volume around it.
+  await page.mouse.click(x, y + 10)
+  await waitFor(async () => (await page.getByRole('treeitem', { name: /体积 1/ }).getAttribute('aria-selected')) !== 'true', 'a click inside does not pick the volume')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+/** A picture's mean sRGB colour in a 7 × 7 patch at (x, y). */
+function rgbAt(p, [x, y]) {
+  const data = Buffer.from(p.rgba, 'base64')
+  const sum = [0, 0, 0]
+  for (let dy = -3; dy <= 3; dy++)
+    for (let dx = -3; dx <= 3; dx++) {
+      const k = (Math.min(Math.max(Math.round(y) + dy, 0), p.height - 1) * p.width + Math.min(Math.max(Math.round(x) + dx, 0), p.width - 1)) * 4
+      for (let c = 0; c < 3; c++) sum[c] += data[k + c]
+    }
+  return sum.map((v) => v / 49)
+}
+
+// AC-W5-4: the fields move the picture as Blender's Volume Scatter and Volume Absorption do: denser is brighter,
+// what shows through takes the absorption colour, and forward scattering is brighter looking into the light.
+await check('W5 params: density, absorption colour and anisotropy move the picture as in Blender', async () => {
+  const gpu = await w5Metal()
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const beamAt = [[1.8, 0.84, 0.55]]
+    const room = (volume) => page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 768, p), [windowRoom(volume), beamAt])
+    const empty = await room(null)
+    const added = async (volume) => {
+      const p = await room(volume)
+      return lumaAt(p, p.at[0]) - lumaAt(empty, p.at[0])
+    }
+    // The camera looks into the window, the sun's light coming toward it.
+    const thin = await added({ scatter_density: 0.1, anisotropy: 0 })
+    const dense = await added({ scatter_density: 0.3, anisotropy: 0 })
+    const forward = await added({ scatter_density: 0.1, anisotropy: 0.6 })
+    // The white box seen through an absorber that keeps red, and one that keeps blue. AgX mixes the channels before its
+    // curve, so the kept channel dims a little too: the hue is what moves (red over blue up, then down).
+    const face = [[-1.5, 0.5, 0.5]]
+    const yard = (...objects) => page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 768, p), [fixtureScene('physical-noon', ...objects), face])
+    const through = async (color) => {
+      const p = color ? await yard(volumeObject('glass', [-1.5, 0.6, 1.2], [1.2, 1.2, 0.6], { scatter_density: 0, absorption_color: color, absorption_density: 3, edge_falloff: 0 })) : await yard()
+      const [r, , b] = rgbAt(p, p.at[0])
+      return r / b
+    }
+    const [clear, red, blue] = [await through(null), await through('#ff4040'), await through('#4040ff')]
+    console.log(`W5 params: added in the beam at 0.1 ${thin.toFixed(1)}, at 0.3 ${dense.toFixed(1)}, at 0.1 forward (g 0.6) ${forward.toFixed(1)}; the white box's red over blue ${clear.toFixed(2)}, through red ${red.toFixed(2)}, through blue ${blue.toFixed(2)}`)
+    assert.ok(dense > thin * 1.3, 'denser is brighter')
+    assert.ok(forward > thin * 1.2, 'forward scattering is brighter looking into the light')
+    assert.ok(red > clear * 1.1 && blue < clear * 0.9, 'what shows through takes the absorption colour')
+    assert.deepEqual(errors, [])
   } finally {
     await gpu?.close()
   }
