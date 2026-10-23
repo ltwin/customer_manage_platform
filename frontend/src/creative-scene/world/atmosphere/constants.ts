@@ -95,7 +95,7 @@ export const viewRadius = (p: Pick<AtmosphereParams, 'altitude_m'>) => groundRad
 export const luminance = (c: Readonly<Vec3>) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
 
 /** The colour of a black body at kelvin, linear sRGB, from Kim et al.'s fit of the Planckian locus (1667–25000 K), clamped at 0. */
-function blackBody(kelvin: number): Vec3 {
+export function blackBody(kelvin: number): Vec3 {
   const t = Math.min(25000, Math.max(1667, kelvin))
   const x = t <= 4000 ? -0.2661239e9 / t ** 3 - 0.2343589e6 / t ** 2 + 0.8776956e3 / t + 0.17991 : -3.0258469e9 / t ** 3 + 2.1070379e6 / t ** 2 + 0.2226347e3 / t + 0.24039
   const y =

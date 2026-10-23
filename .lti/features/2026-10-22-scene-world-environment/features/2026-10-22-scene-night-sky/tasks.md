@@ -29,7 +29,12 @@
 
 ## 4. 资源与银河
 
-- [ ] 4.1 `frontend/scripts/night-sky/`：从 BSC5 生成 `stars.bin`（V ≤ 6.5，按列打包，缺 B−V 取 0.6），从 NASA SVS CGI Moon Kit 生成 1024 × 512 灰度 `moon.webp`（均值归一），脚本里写下载地址与校验和，产物文件名带内容哈希。新增 `world/nightSky/assets.ts`（按需加载与缓存、`loadNightAssets(scene)`：不需要时立即返回，失败时 reject）和 `world/nightSky/light.ts`（星等→照度、B−V→色调、夜天光与银河的标定、星空常数项）。先写 `creative-scene-night-sky.test.ts`：天狼星照度、满月视星等对应 0.2–0.3 lux、B−V 0.65 的色调接近太阳、色温 6500 时色调为 (1, 1, 1)、白天或手动模式不需要资源、加载失败时 reject。完成判据：单测先红后绿；`stars.bin` 恰为 8404 颗，体积与调研相符
+- [x] 4.1 `frontend/scripts/night-sky/`：从 BSC5 生成 `stars.bin`（V ≤ 6.5，按列打包，缺 B−V 取 0.6），从 NASA SVS CGI Moon Kit 生成 1024 × 512 灰度 `moon.webp`（均值归一），脚本里写下载地址与校验和，产物文件名带内容哈希。新增 `world/nightSky/assets.ts`（按需加载与缓存、`loadNightAssets(scene)`：不需要时立即返回，失败时 reject）和 `world/nightSky/light.ts`（星等→照度、B−V→色调、夜天光与银河的标定、星空常数项）。先写 `creative-scene-night-sky.test.ts`：天狼星照度、满月视星等对应 0.2–0.3 lux、B−V 0.65 的色调接近太阳、色温 6500 时色调为 (1, 1, 1)、白天或手动模式不需要资源、加载失败时 reject。完成判据：单测先红后绿；`stars.bin` 恰为 8404 颗，体积与调研相符
+  - `stars.bin` 8404 颗、84 048 B，gzip 后 67.5 KB；`moon.webp` 1024 × 512 灰度 68 KB（调研估 49 KB，差在把线性均值缩放到 0.5 之后的细节；原图线性均值 0.507，SVS 的图偏亮，缩放 0.986，没有截断）。脚本校验原始文件的 sha256，依赖 libvips 与 cwebp。
+  - 资源 URL 用 `new URL('./stars.bin', import.meta.url)`，Vite 构建时会给文件名加哈希；Node 单测通过可替换的 `nightAssetLoaders` 注入。
+  - 偏差（回写 design）：星等换照度不用 −14.18 这个常数，改为相对太阳：E = SUN_LUX × 10^(−0.4 (m + 26.74))，与渲染端太阳的 128 klux 一致；满月 −12.7 等为 0.31 lux（原常数下为 0.26 lux）。星星的颜色以太阳（B−V 0.65）为白，与太阳光在大气顶为白一致；月面反照的色调取 B−V 0.92。
+  - 实测：夜天光的水平照度 8.9 × 10⁻⁴ lux，星表全部亮星 4.9 × 10⁻⁵ lux（实际星光的大部分来自更暗的星，这里只有亮星）。
+  - 单测 6 项全绿，与实现同时写成，没有单独跑出失败。
 - [ ] 4.2 `world/nightSky/milkyWay.ts`：按 design「程序化银河」的模型写 TSL 烘焙 pass（2048 × 1024 RGBA16F，固定种子，整数哈希噪声），以及 CPU 上同一模型的粗网格积分（供常数项）。单测：CPU 模型的银心方向最亮、银纬 30° 以外接近 0、大暗隙处比两侧暗、麦哲伦云在南天。完成判据：单测通过；e2e 导出一张银河的等距柱状图存进 `discovery/research/milky-way/`，与公开照片并排供 owner 看；烘焙耗时记进备注
 
 ## 5. 天空与光照
