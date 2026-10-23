@@ -6259,15 +6259,19 @@ async function shooterPage(gpu) {
   return { page, errors }
 }
 
-/** SCENE_E2E_SHOTS: a picture of window.__picture as a PNG. */
-async function savePicture(page, name, picture) {
-  if (!process.env.SCENE_E2E_SHOTS) return
-  const png = await page.evaluate(([w, h, rgba]) => {
+/** A picture of window.__picture encoded, as the page encodes it. */
+async function encodePicture(page, picture, type = 'image/png') {
+  const bytes = await page.evaluate(([w, h, rgba, t]) => {
     const c = new OffscreenCanvas(w, h)
     c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(Uint8Array.from(atob(rgba), (ch) => ch.charCodeAt(0))), w, h), 0, 0)
-    return c.convertToBlob({ type: 'image/png' }).then((b) => b.arrayBuffer()).then((a) => [...new Uint8Array(a)])
-  }, [picture.width, picture.height, picture.rgba])
-  await writeFile(`${process.env.SCENE_E2E_SHOTS}/${name}.png`, Buffer.from(png))
+    return c.convertToBlob({ type: t, quality: 0.9 }).then((b) => b.arrayBuffer()).then((a) => [...new Uint8Array(a)])
+  }, [picture.width, picture.height, picture.rgba, type])
+  return Buffer.from(bytes)
+}
+
+/** SCENE_E2E_SHOTS: a picture of window.__picture as a PNG. */
+async function savePicture(page, name, picture) {
+  if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/${name}.png`, await encodePicture(page, picture))
 }
 
 const w5Metal = () => (process.env.SCENE_E2E_W5_METAL ? chromium.launch({ headless: true, args: metal }) : null)
@@ -6726,6 +6730,160 @@ await check('W5 params: density, absorption colour and anisotropy move the pictu
     assert.deepEqual(errors, [])
   } finally {
     await gpu?.close()
+  }
+})
+
+/** Two RGBA pictures apart: the mean difference per channel (0–255) and the share of pixels a channel off by more than 8 (%). */
+function pictureDiff(a, b) {
+  const p = Buffer.from(a.rgba, 'base64')
+  const q = Buffer.from(b.rgba, 'base64')
+  let sum = 0
+  let over = 0
+  for (let k = 0; k < p.length; k += 4) {
+    let most = 0
+    for (let c = 0; c < 3; c++) {
+      const d = Math.abs(p[k + c] - q[k + c])
+      sum += d
+      most = Math.max(most, d)
+    }
+    if (most > 8) over++
+  }
+  return { mean: sum / ((p.length / 4) * 3), over: (over / (p.length / 4)) * 100 }
+}
+
+// AC-W5-7 (SCENE_E2E_W5_METAL): the same volumes on WebGPU (this machine's GPU) and on the WebGL2 backend under
+// SwiftShader differ by no more than the Epic's lit threshold (W2 parity), or no more than the same pictures
+// without the volumes do. SCENE_E2E_W5_EVIDENCE=<dir> keeps the numbers.
+if (process.env.SCENE_E2E_W5_METAL) await check('W5 backends: the volumes on WebGPU and on WebGL2 under SwiftShader alike', async () => {
+  const gpu = await w5Metal()
+  try {
+    const metalPage = await shooterPage(gpu)
+    const swiftPage = await shooterPage(null)
+    const backends = []
+    for (const p of [metalPage.page, swiftPage.page]) p.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
+    const shoot = (p, scene) => p.evaluate(([sc]) => window.__picture(sc, 'lit', 1024), [scene])
+    const scenes = {
+      window: [windowRoom({ scatter_density: 0.1, anisotropy: 0.6 }), windowRoom(null)],
+      spot: [fixtureScene('cornell', volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, anisotropy: 0.3 })), fixtureScene('cornell')],
+    }
+    const rows = {}
+    for (const [name, [withVolume, without]] of Object.entries(scenes)) {
+      const m = pictureDiff(await shoot(metalPage.page, withVolume), await shoot(swiftPage.page, withVolume))
+      const o = pictureDiff(await shoot(metalPage.page, without), await shoot(swiftPage.page, without))
+      const within = m.mean <= parityLimits.lit.mean && m.over <= parityLimits.lit.over
+      const noWorse = m.mean <= o.mean + 0.1 && m.over <= o.over + 0.05
+      rows[name] = { mean: Number(m.mean.toFixed(4)), over_percent: Number(m.over.toFixed(4)), without: { mean: Number(o.mean.toFixed(4)), over_percent: Number(o.over.toFixed(4)) }, ok: within || noWorse }
+      console.log(`W5 backends ${name}: mean ${m.mean.toFixed(3)}, > 8 ${m.over.toFixed(4)}%; without the volume ${o.mean.toFixed(3)}, ${o.over.toFixed(4)}%`)
+    }
+    console.log(`W5 backends: ${[...new Set(backends)].join('; ')}`)
+    if (process.env.SCENE_E2E_W5_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_W5_EVIDENCE}/w5-parity.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), limits: parityLimits.lit, backends: [...new Set(backends)], rows }, null, 2)}\n`)
+    assert.ok(backends.includes('scene renderer (offscreen): webgpu') && backends.some((b) => b.includes('webgl2')), `both backends drew: ${backends}`)
+    for (const [name, r] of Object.entries(rows)) assert.ok(r.ok, `${name}: mean ${r.mean}, > 8 ${r.over_percent}%`)
+    assert.deepEqual([...metalPage.errors, ...swiftPage.errors], [])
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// SCENE_E2E_W5_SAMPLES=<dir> (scene-volumes design「验证与交付」): the owner's four samples at 2K on this machine's
+// GPU, through the export's path: the beam through the window, the spot's cone, dense smoke shadowing the yard, and
+// the room's two point lights in its air (the uniform steps' 1/d² near a point light: look for bright spots or bands).
+if (process.env.SCENE_E2E_W5_SAMPLES) await check('W5 samples: the window, the spot, the smoke’s shadow and point lights in the air, for the owner', async () => {
+  const dir = process.env.SCENE_E2E_W5_SAMPLES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const window = windowRoom({ scatter_density: 0.1, anisotropy: 0.6 })
+    window.objects = window.objects.map((o) => (o.kind === 'camera' ? cameraAt('inside', [-2.6, 1.4, 1.6], [3, 1.0, -0.4]) : o))
+    const smoke = fixtureScene('physical-noon', volumeObject('smoke', [2, 1.5, 3], [1.4, 1.2, 1.4], { scatter_color: '#9a9a9a', scatter_density: 1.5, absorption_density: 1, edge_falloff: 0.4, cast_shadow: true }))
+    smoke.environment.sky = completeSky({ ...smoke.environment.sky, sun_mode: 'manual', sun_elevation_deg: 45, sun_azimuth_deg: 90 })
+    smoke.objects = smoke.objects.map((o) => (o.kind === 'camera' ? cameraAt('side', [3.5, 2.2, 8], [1, 0.7, 2.6]) : o))
+    const samples = {
+      'w5-sample-window': window,
+      'w5-sample-spot': fixtureScene('cornell', volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, anisotropy: 0.3 })),
+      'w5-sample-smoke-shadow': smoke,
+      'w5-sample-point-lights': fixtureScene('room', volumeObject('air', [0, 1.5, 0], [6, 3, 4], { scatter_density: 0.15, anisotropy: 0.2 })),
+      ...(process.env.SCENE_E2E_W5_DEBUG ? { 'w5-sample-point-lights-empty': fixtureScene('room') } : {}),
+    }
+    for (const [name, scene] of Object.entries(samples)) {
+      const picture = await page.evaluate(([sc]) => window.__picture(sc, 'lit', 2048), [scene])
+      await writeFile(`${dir}/${name}.jpg`, await encodePicture(page, picture, 'image/jpeg'))
+      console.log(`W5 samples: ${name}.jpg ${picture.width} × ${picture.height}`)
+    }
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_W5_PERF=<dir> (AC-W5-11), this machine's GPU: the viewport at 1280 × 720 CSS pixels, 2× pixels, WebGPU,
+// the window room under the sun with two casting spots (three casting lights). Throughput as the spike measured it
+// (scene-volumes discovery/research/volume-lighting.md 第 2 节): the frame drawn 30 times in a row and waited for once,
+// the least of three medians of 9 rounds, without volumes, with 1, 8 and 8 all casting; and how long a new casting spot takes from
+// the edit to its compile being done. SCENE_E2E_W5_PERF_NOVOLUME=1 measures the scene without volumes only (and runs
+// on develop with the same hook, for the comparison). Written to w5-perf-<SCENE_E2E_W5_PERF_LABEL>.json.
+if (process.env.SCENE_E2E_W5_PERF) await check('W5 performance: the volumes’ frame time in the viewport on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_W5_PERF
+  const label = process.env.SCENE_E2E_W5_PERF_LABEL ?? 'after'
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1356, height: 874 }, deviceScaleFactor: 2 })
+    await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, { camera: { position: positionToView([-2.6, 1.5, 0]), target: positionToView([3, 0.9, 0]), ortho: false, zoom: 1 }, selection: { selected: [], active: null }, tool: 'box', toolbar: false, sidebar: false, history: false }])
+    const server = new SceneServer()
+    const spot = (name, position, order) => ({ id: gid(name), kind: 'light', name, parent_id: null, order, transform: { position, rotation: [-0.707107, 0, 0, 0.707107], scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'spot', intensity: 40, cast_shadow: true, angle: 0.6, penumbra: 0.3 } })
+    referenceScene(server, 'physical-noon', (scene) => {
+      Object.assign(scene, windowRoom(null))
+      scene.objects.push(spot('spota', [-1.5, 2.8, -1.5], 30), spot('spotb', [-1.5, 2.8, 1.5], 31))
+    })
+    const { page, errors } = await open(server, { context, viewport: false })
+    await viewportReady(page)
+    await sleep(400)
+    await shading(page, '最终渲染')
+    const compiled = () => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    const measure = async () => {
+      await compiled()
+      await sleep(800)
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(30))
+      // The least of three medians: other work on the machine only ever slows a round down.
+      const medians = []
+      for (let k = 0; k < 3; k++) {
+        const rounds = []
+        for (let i = 0; i < 9; i++) rounds.push((await page.evaluate(() => window.__sceneGPU.redrawViewport(30))) / 30)
+        rounds.sort((a, b) => a - b)
+        medians.push(rounds[4])
+      }
+      return Number(Math.min(...medians).toFixed(2))
+    }
+    const change = async (ops) => {
+      server.external(ops)
+      await page.evaluate(() => window.__invalidate())
+    }
+    const canvas = await page.evaluate(() => { const r = document.querySelector('.cc-scene-editor canvas').getBoundingClientRect(); return `${Math.round(r.width)} × ${Math.round(r.height)}` })
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: `${canvas} CSS pixels, 2× pixels, WebGPU`, scene: 'AC-W5-1 window room, the sun and two spots casting', label, ms: {} }
+    record.ms.none = await measure()
+    // A new casting spot: from the edit to its compile done (warm shader cache: the same scene has run before).
+    const started = await page.evaluate(() => performance.now())
+    await change([{ op: 'add_objects', objects: [spot('spotc', [1.5, 2.8, 0], 32)] }])
+    await sleep(50)
+    await compiled()
+    record.new_light_compile_ms = Math.round((await page.evaluate(() => performance.now())) - started)
+    await change([{ op: 'remove_objects', object_ids: [gid('spotc')] }])
+    if (!process.env.SCENE_E2E_W5_PERF_NOVOLUME) {
+      await change([{ op: 'add_objects', objects: [volumeObject('room', [0, 1.5, 0], [5.8, 2.9, 5.8], { scatter_density: 0.1, anisotropy: 0.6 })] }])
+      record.ms.one = await measure()
+      const eight = Array.from({ length: 7 }, (_, i) => volumeObject(`v${i}`, [-2 + (i % 4) * 1.3, 0.8 + Math.floor(i / 4) * 1.2, -1.5 + (i % 3) * 1.4], [1.2, 1, 1.2], { scatter_density: 0.3 }, 81 + i))
+      await change([{ op: 'add_objects', objects: eight }])
+      record.ms.eight = await measure()
+      await change([{ op: 'update_objects', updates: [gid('room'), ...eight.map((v) => v.id)].map((id) => ({ object_id: id, volume: { cast_shadow: true } })) }])
+      record.ms.eight_casting = await measure()
+      record.added_ms = { one: Number((record.ms.one - record.ms.none).toFixed(2)), eight: Number((record.ms.eight - record.ms.none).toFixed(2)), eight_casting_over_eight: Number((record.ms.eight_casting - record.ms.eight).toFixed(2)) }
+    }
+    console.log(`W5 performance: ${JSON.stringify(record, null, 1)}`)
+    await writeFile(`${dir}/w5-perf-${label}.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
   }
 })
 

@@ -220,7 +220,8 @@ export class VolumeNode extends TempNode {
         const taken = float(0).toVar()
         const spare = float(STEPS).sub(float(segments).mul(MIN_STEPS))
         const jitter = interleavedGradientNoise(screenCoordinate.xy)
-        const sky = lights.sky()
+        // Evaluated here, once a pixel: used first inside the loop it would be sampled at every step.
+        const sky = vec3(lights.sky()).toVar()
         Loop(segments, ({ i: j }) => {
           let a = from[MAX_VOLUMES - 1]
           let b = to[MAX_VOLUMES - 1]

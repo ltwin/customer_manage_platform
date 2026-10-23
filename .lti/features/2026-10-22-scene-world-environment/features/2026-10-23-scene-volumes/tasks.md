@@ -40,5 +40,14 @@
 
 ## 4. 验收
 
-- [ ] 4.1 e2e「W5 twice」「W5 backends」；AC-W5-1 亮度比阈值按样张实测写进 e2e；owner 样张四张（窗口光束、聚光光锥、浓烟投影、介质里的点光）存进 `discovery/research/evidence/`。完成判据：`SCENE_E2E_ONLY=W5` 全绿，样张交 owner
-- [ ] 4.2 性能（AC-W5-11）：1 个、8 个、8 个都投影三组，以及没有体积时帧时间和加灯编译时间与 develop 对照，记入 evidence；助手走一次（AC-W5-10）存截图。完成判据：数据齐全，未达标项写明原因
+- [x] 4.1 e2e「W5 twice」「W5 backends」；AC-W5-1 亮度比阈值按样张实测写进 e2e；owner 样张四张（窗口光束、聚光光锥、浓烟投影、介质里的点光）存进 `discovery/research/evidence/`。完成判据：`SCENE_E2E_ONLY=W5` 全绿，样张交 owner
+  - 连拍两次逐像素一致放在「W5 range」里（lit 两次哈希相同）。
+  - W5 backends（`SCENE_E2E_W5_METAL`，`evidence/w5-parity.json`）：窗口屋子 0.249 / 0.121%，在 Epic lit 阈值内；Cornell 聚光 0.761 / 1.107%，比同一张图没有体积时更接近。
+  - 样张 4 张见 `evidence/README.md`（e2e「W5 samples」，`SCENE_E2E_W5_SAMPLES` 生成）。点光图里墙上的方块亮斑与环纹没有体积时也有，是现有的点光阴影现象。
+  - `SCENE_E2E_ONLY="W5 "` 在 SwiftShader 上 9 项全绿；Metal 上另有 many lights、backends、samples、performance。
+- [x] 4.2 性能（AC-W5-11）：1 个、8 个、8 个都投影三组，以及没有体积时帧时间和加灯编译时间与 develop 对照，记入 evidence。完成判据：数据齐全，未达标项写明原因
+  - 视口测量加了测试钩子 `gpuTestHooks.redrawViewport`（`Viewport.tsx` 只在 e2e 页面上设置，挂载点外）；develop 的对照在临时 worktree 里打同样的钩子。
+  - 测量中发现天空光照项在循环里每一步都采样（节点在循环外创建、第一次在循环里用），提前求值后 1 个体积从 +3.7 ms 降到 +3.0 ms。
+  - 结果（`evidence/README.md`）：1 个 +2.98–3.01 ms、8 个 +4.42–4.51 ms、8 个都投影再 +2.04–2.25 ms，都在目标上（前两项余量为零）；没有体积时帧时间比 develop 多约 0.1 ms（测量波动内）。
+  - **未达标**：没有体积时加一盏投影的聚光，预编译 217–240 ms，develop 166–182 ms，多约 50 ms。来自每盏投影灯阴影里的体积透射率循环（打桩成 1 时 186–188 ms）。试过把它做成着色器函数（three 复用函数代码时不声明其中引用的 uniform 和缓冲，不可行）和无分支版本（无改善），都已撤回。要做到不多，只能在场景里出现投影体积之后才把这段代码放进材质，代价是第一次打开投射阴影时所有受光材质重新编译一次，与 design「切换开关不重新编译」冲突，交 owner 决定。
+- [ ] 4.3 助手走一次（AC-W5-10）：请助手「在窗前放一团能看到光束的雾」，存截图。需要开发环境里的真实模型，本次没有跑。

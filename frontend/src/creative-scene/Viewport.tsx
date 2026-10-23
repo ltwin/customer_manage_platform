@@ -63,7 +63,7 @@ import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraExposure, cameraFraming } from './host/framing.ts'
 import { sceneLowSun, sceneLux } from './world/exposure.ts'
-import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
+import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor, type Frame } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
@@ -1121,7 +1121,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
     gpuOf(state.gl).advanceFrame()
     // Exposed as it is drawn: ambient metering meters E, which PhysicalLighting writes after this component renders.
     const { exposure, preExposure, nightLook } = frameExposure(scene, lit, viewer, sceneLux(state.scene), sceneLowSun(state.scene))
-    r.render(state.camera, {
+    const frame: Frame = {
       width: state.size.width,
       height: state.size.height,
       // The real-time GI at device pixels on a 2× screen takes about five times as long (R0): CSS pixels.
@@ -1137,9 +1137,23 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       wireframe: wire,
       engine,
       quality: 'interactive',
-    })
+    }
+    r.render(state.camera, frame)
     d.count++
     gpuTestHooks.viewportFrames = d.count
+    // The e2e's frame times (W5 performance): this frame drawn n times in a row, then waited for once.
+    if (sceneTest) {
+      const gpu = gpuOf(state.gl)
+      gpuTestHooks.redrawViewport = async (n) => {
+        const started = performance.now()
+        for (let i = 0; i < n; i++) {
+          gpu.advanceFrame()
+          r.render(state.camera, frame)
+        }
+        await gpu.settle()
+        return performance.now() - started
+      }
+    }
     if (d.count < convergeFrames(engine)) {
       d.asked = true
       state.invalidate()
@@ -1147,6 +1161,9 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   }, 1)
   return null
 }
+
+/** The e2e fixture page sets __sceneTest before the editor loads (render/gpu.ts). */
+const sceneTest = (globalThis as { __sceneTest?: boolean }).__sceneTest === true
 
 /**
  * The camera view's frame: the picture the camera takes, the rest dimmed,

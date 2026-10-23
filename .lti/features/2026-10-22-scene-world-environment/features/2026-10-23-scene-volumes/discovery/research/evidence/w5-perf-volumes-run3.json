@@ -1,0 +1,23 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1280 × 720 CSS pixels, 2× pixels, WebGPU",
+  "scene": "AC-W5-1 window room, the sun and two spots casting",
+  "label": "n3",
+  "ms": {
+    "none": 4.22,
+    "one": 7.23,
+    "eight": 8.73,
+    "eight_casting": 10.93
+  },
+  "new_light_compile_ms": 214,
+  "added_ms": {
+    "one": 3.01,
+    "eight": 4.51,
+    "eight_casting_over_eight": 2.2
+  }
+}
