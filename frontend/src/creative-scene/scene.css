@@ -224,6 +224,7 @@
 .cc-scene-sun-now { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
 .cc-scene-sun-now output { color: var(--fg); }
 .cc-scene-sun-day { display: grid; gap: 2px; }
+.cc-scene-moon-dates button { padding: 0 2px; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
 .cc-scene-camera-exposure { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; margin: 4px 0 0; }
 .cc-scene-camera-exposure small { grid-column: 1 / -1; }
 .cc-scene-camera-exposure output { color: var(--fg); padding: 4px 0; }

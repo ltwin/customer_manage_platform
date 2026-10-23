@@ -263,6 +263,9 @@ export function moonPhaseName(utcMs: number): MoonPhaseName {
   return phaseNames[Math.floor(((MoonPhase(new Date(utcMs)) + 22.5) % 360) / 45)]
 }
 
+/** The moon's illuminated fraction at an instant, 0…1. */
+export const moonIlluminated = (utcMs: number) => Illumination(Body.Moon, MakeTime(new Date(utcMs))).phase_fraction
+
 /** The moon over a sky's local day: what the environment tab shows, and what the server tells the assistant (backend moon.go). Times HH:MM, dates YYYY-MM-DD, local. */
 export type MoonTimes = {
   phase: MoonPhaseName
@@ -303,7 +306,7 @@ export function moonTimes(sky: PhysicalSky): MoonTimes {
   const { utcMs } = skyInstant(sky)
   const [previousFullMoon, nextFullMoon] = around(180)
   const [previousNewMoon, nextNewMoon] = around(0)
-  const out: MoonTimes = { phase: moonPhaseName(utcMs), illuminated: Illumination(Body.Moon, MakeTime(new Date(utcMs))).phase_fraction, previousFullMoon, nextFullMoon, previousNewMoon, nextNewMoon }
+  const out: MoonTimes = { phase: moonPhaseName(utcMs), illuminated: moonIlluminated(utcMs), previousFullMoon, nextFullMoon, previousNewMoon, nextNewMoon }
   const rise = crossing(1)
   const set = crossing(-1)
   if (rise) out.moonrise = rise

@@ -1,17 +1,18 @@
 import { useMemo, useRef, useState } from 'react'
 import type { Scene } from '../api.ts'
 import { withCity, withPreset, withSunMode } from '../editing.ts'
-import { physicalSun, skyInstant, sunAt, sunTimes, type Span } from '../world/astro.ts'
+import { moonIlluminated, moonPhaseName, moonTimes, physicalSun, skyInstant, sunAt, sunTimes, type MoonPhaseName, type Span } from '../world/astro.ts'
 import { presetOf, type PresetName } from '../world/atmosphere/constants.ts'
 import { loadCities, searchCities, type City, type CityTable } from '../world/cities.ts'
-import type { PhysicalSky } from '../world/physicalSky.ts'
+import type { NightSky, PhysicalSky } from '../world/physicalSky.ts'
 import { Slider } from './EnvironmentPanel.tsx'
 import { NumberField } from './Properties.tsx'
 
 // The environment tab's physical sky (W2 design「编辑界面」): where the sun
 // is (a place and a time, or manual angles), north, the atmosphere and the
-// sun itself. The sun's hours of the day are shown, never stored: the same
-// figures the assistant reads (backend sun.go).
+// sun itself, and the night sky (W3 design「编辑界面」). The sun's and the
+// moon's hours of the day are shown, never stored: the same figures the
+// assistant reads (backend sun.go, moon.go).
 
 type Environment = Scene['environment']
 
@@ -23,6 +24,23 @@ const degrees = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}°
 const points = ['北', '东北', '东', '东南', '南', '西南', '西', '西北']
 const bearing = (deg: number) => `${deg.toFixed(0)}°（${points[Math.round(deg / 45) % 8]}）`
 const span = (s?: Span) => (s ? `${s[0]}–${s[1]}` : null)
+const phaseNames: Record<MoonPhaseName, string> = {
+  new: '新月',
+  waxing_crescent: '蛾眉月',
+  first_quarter: '上弦月',
+  waxing_gibbous: '盈凸月',
+  full: '满月',
+  waning_gibbous: '亏凸月',
+  last_quarter: '下弦月',
+  waning_crescent: '残月',
+}
+/** 2026-10-26 as 10月26日. */
+const monthDay = (date: string) => `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`
+const nightSwitches = [
+  ['moon', '月亮'],
+  ['stars', '星星'],
+  ['milky_way', '银河'],
+] as const
 
 export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }: {
   environment: Environment
@@ -42,6 +60,16 @@ export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }:
   const latest = useRef(sky)
   latest.current = sky
   const day = useMemo(() => (dayKey ? sunTimes(latest.current) : null), [dayKey])
+  // The moon's day likewise; its phase and lit fraction follow the time.
+  const moonDay = useMemo(() => (dayKey ? moonTimes(latest.current) : null), [dayKey])
+  const now = skyInstant(sky).utcMs
+  const setNight = (patch: Partial<NightSky>, what: string, field?: string) => setSky({ night: { ...sky.night, ...patch } }, what, field && `night.${field}`)
+  const toDate = (date: string, what: string) => date !== sky.date && onEnvironment({ ...environment, sky: { ...sky, date } }, `日期改为${what}（${monthDay(date)}）`)
+  const moonDate = (date: string, what: string) => (
+    <button type="button" aria-label={`${what} ${date}`} onClick={() => toDate(date, what)}>
+      {monthDay(date)}
+    </button>
+  )
   const zones = useMemo(() => {
     const all = Intl.supportedValuesOf('timeZone')
     return all.includes(sky.timezone) ? all : [sky.timezone, ...all]
@@ -118,6 +146,22 @@ export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }:
                 {(day.morning.blueHour || day.evening.blueHour) && <small>蓝调时刻 {[span(day.morning.blueHour), span(day.evening.blueHour)].filter(Boolean).join('、')}</small>}
               </section>
             )}
+            {moonDay && (
+              <section className="cc-scene-sun-day" aria-label="月亮的一天">
+                <small>
+                  <output aria-label="月相">{phaseNames[moonPhaseName(now)]}</output>，照亮 <output aria-label="月亮照亮比例">{Math.round(moonIlluminated(now) * 100)}%</output>
+                </small>
+                <small>
+                  月出 {moonDay.moonrise ?? '—'} · 月落 {moonDay.moonset ?? '—'}
+                </small>
+                <small className="cc-scene-moon-dates">
+                  满月 {moonDate(moonDay.previousFullMoon, '上一个满月')} {moonDate(moonDay.nextFullMoon, '下一个满月')}
+                </small>
+                <small className="cc-scene-moon-dates">
+                  新月 {moonDate(moonDay.previousNewMoon, '上一个新月')} {moonDate(moonDay.nextNewMoon, '下一个新月')}
+                </small>
+              </section>
+            )}
             {!where.zoneKnown && <small>浏览器不认识时区「{sky.timezone}」，时刻按经度推算（UTC{sky.longitude_deg >= 0 ? '+' : '−'}{Math.abs(Math.round(sky.longitude_deg / 15))}）</small>}
           </fieldset>
           <fieldset disabled={readOnly}>
@@ -163,6 +207,24 @@ export function PhysicalSkyFields({ environment, sky, readOnly, onEnvironment }:
           <input type="checkbox" aria-label="太阳盘" checked={sky.sun_disc} onChange={(e) => setSky({ sun_disc: e.target.checked }, e.target.checked ? '显示太阳盘' : '隐藏太阳盘')} />
         </label>
         <NumberField label="太阳盘大小（°）" value={sky.sun_size_deg} step={0.05} min={0.1} max={10} onCommit={(v) => setSky({ sun_size_deg: v }, '太阳盘大小', 'sun_size_deg')} />
+      </fieldset>
+      <fieldset disabled={readOnly} aria-label="夜空">
+        <legend>夜空</legend>
+        {!location && <small>月亮和星空需要日期和地点，只在「地点和时间」下生效；夜色照常生效</small>}
+        {nightSwitches.map(([key, label]) => (
+          <label key={key} className="cc-scene-field">
+            <span>{label}</span>
+            <input type="checkbox" aria-label={label} checked={sky.night[key]} disabled={!location} onChange={(e) => setNight({ [key]: e.target.checked }, `${e.target.checked ? '显示' : '隐藏'}${label}`)} />
+          </label>
+        ))}
+        {location && sky.night.stars && <small>星星包括无月晴夜天空本身的微光（夜天光）</small>}
+        <NumberField label="月亮亮度" value={sky.night.moon_strength} step={0.1} min={0} max={10} disabled={!location} onCommit={(v) => setNight({ moon_strength: v }, '月亮亮度', 'moon_strength')} />
+        <Slider label="月亮色温（K）" value={sky.night.moon_temperature_k} min={2000} max={12000} step={100} disabled={!location} onCommit={(v) => setNight({ moon_temperature_k: v }, '月亮色温', 'moon_temperature_k')} />
+        <NumberField label="星空亮度" value={sky.night.stars_strength} step={0.1} min={0} max={10} disabled={!location} onCommit={(v) => setNight({ stars_strength: v }, '星空亮度', 'stars_strength')} />
+        <Slider label="星空色温（K）" value={sky.night.stars_temperature_k} min={2000} max={12000} step={100} disabled={!location} onCommit={(v) => setNight({ stars_temperature_k: v }, '星空色温', 'stars_temperature_k')} />
+        <Slider label="夜色" value={sky.night.night_look} min={0} max={1} step={0.05} onCommit={(v) => setNight({ night_look: v }, '夜色', 'night_look')} />
+        <small>夜色：入夜后画面偏蓝、降饱和，0 为物理计算的颜色</small>
+        <small>星表：Yale 亮星星表（Hoffleit &amp; Warren 1991，经 CDS/VizieR）；月面：NASA SVS</small>
       </fieldset>
     </>
   )
