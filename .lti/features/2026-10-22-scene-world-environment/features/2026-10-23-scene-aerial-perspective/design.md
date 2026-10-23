@@ -116,6 +116,7 @@ applyAerial(color, depth):
 | `frontend/src/creative-scene/editing.ts` | 修改 | 空气透视的提交与合并键（如需） |
 | `backend/internal/creativescene/model.go` | 修改 | `AerialPerspective` 类型 |
 | `backend/internal/creativescene/sky.go` | 修改 | `physicalOnly`、`completeSky`、校验 |
+| `backend/internal/creativescene/view.go:completedScene` | 修改 | 读取响应判断快照是否缺空气透视（实施中补入：响应只在缺字段时解码补齐） |
 | `backend/internal/creativeagent/scene_tools.go` | 修改 | `edit_scene` 说明 |
 | `api/openapi.yaml` | 修改 | `CreativeSceneSky.aerial_perspective` |
 | `backend/internal/platform/httpapi/api.gen.go` | 生成 | — |

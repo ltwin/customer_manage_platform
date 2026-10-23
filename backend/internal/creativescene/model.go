@@ -84,6 +84,8 @@ type Sky struct {
 	SunStrength     *float64 `json:"sun_strength,omitempty"`
 	SunTemperatureK *float64 `json:"sun_temperature_k,omitempty"`
 	Night           *Night   `json:"night,omitempty"`
+	// AerialPerspective is W4's (data: 空气透视).
+	AerialPerspective *AerialPerspective `json:"aerial_perspective,omitempty"`
 }
 
 // Night is a physical sky's night sky (W3, data: 夜空): the moon, the stars
@@ -100,6 +102,14 @@ type Night struct {
 	StarsStrength     *float64 `json:"stars_strength,omitempty"`
 	StarsTemperatureK *float64 `json:"stars_temperature_k,omitempty"`
 	NightLook         *float64 `json:"night_look,omitempty"`
+}
+
+// AerialPerspective is a physical sky's aerial perspective (W4, data: 空气透视):
+// the air between the camera and a surface, blueing and fading what is far.
+// DistanceScale multiplies that distance, so a small scene shows it too.
+type AerialPerspective struct {
+	Enabled       *bool    `json:"enabled,omitempty"`
+	DistanceScale *float64 `json:"distance_scale,omitempty"`
 }
 
 type Ambient struct {

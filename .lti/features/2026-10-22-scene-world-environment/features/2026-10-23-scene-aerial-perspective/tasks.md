@@ -2,8 +2,9 @@
 
 ## 1. 数据
 
-- [ ] 1.1 后端：先改 `scene_test.go`（部分字段补齐、W3 时期快照补齐为开启与倍率 1、非物理天空写它返回 400、倍率越界与未知字段返回 400，删去「aerial_perspective 返回 400」的旧用例）与 `fingerprint_internal_test.go`（改空气透视 `lit` 指纹变、`clay`/`line` 不变）；再改 `model.go`、`sky.go`；`api/openapi.yaml` 加 `CreativeSceneAerialPerspective`，直接运行生成器。完成判据：测试先红后绿，`go test ./internal/creativescene/` 通过，生成物已更新
-- [ ] 1.2 前端：`world/physicalSky.ts` 的缺省值、`completeSky`、`isPhysical`；更新期望整份物理天空的单测（`creative-scene-astro.test.ts`、`creative-scene.test.ts`）。完成判据：单测通过，`tsc -b` 通过
+- [x] 1.1 后端：先改 `scene_test.go`（部分字段补齐、W3 时期快照补齐为开启与倍率 1、非物理天空写它返回 400、倍率越界与未知字段返回 400，删去「aerial_perspective 返回 400」的旧用例）与 `fingerprint_internal_test.go`（改空气透视 `lit` 指纹变、`clay`/`line` 不变）；再改 `model.go`、`sky.go`；`api/openapi.yaml` 加 `CreativeSceneAerialPerspective`，直接运行生成器。完成判据：测试先红后绿，`go test ./internal/creativescene/` 通过，生成物已更新
+  - 另改 `view.go:completedScene`：读取响应只在快照缺字段时才解码补齐，判断条件加上空气透视（`aerialComplete`），否则旧快照的读取响应不带它。`creativeagent` 测试通过。
+- [x] 1.2 前端：`world/physicalSky.ts` 的缺省值、`completeSky`、`isPhysical`；更新期望整份物理天空的单测（`creative-scene-astro.test.ts`、`creative-scene.test.ts`）。完成判据：单测通过，`tsc -b` 通过
 
 ## 2. 渲染
 

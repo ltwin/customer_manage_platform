@@ -995,7 +995,8 @@ func TestPhysicalSkyIsCompleted(t *testing.T) {
 		"place": "", "date": "2026-06-21", "local_time": "12:00", "north_azimuth_deg": 180.0, "sun_elevation_deg": 35.0, "sun_azimuth_deg": 135.0,
 		"altitude_m": 0.0, "air_density": 1.0, "dust_density": 1.0, "ozone_density": 1.0,
 		"sun_disc": true, "sun_size_deg": 0.545, "sun_strength": 1.0, "sun_temperature_k": 6500.0,
-		"night": map[string]any{"moon": true, "stars": true, "milky_way": true, "moon_strength": 1.0, "moon_temperature_k": 6500.0, "stars_strength": 1.0, "stars_temperature_k": 6500.0, "night_look": 1.0}}
+		"night":              map[string]any{"moon": true, "stars": true, "milky_way": true, "moon_strength": 1.0, "moon_temperature_k": 6500.0, "stars_strength": 1.0, "stars_temperature_k": 6500.0, "night_look": 1.0},
+		"aerial_perspective": map[string]any{"enabled": true, "distance_scale": 1.0}}
 	if got := skyOf(t, f.a, doc); !reflect.DeepEqual(got, want) {
 		t.Fatalf("sky = %v, want %v", got, want)
 	}
@@ -1003,7 +1004,8 @@ func TestPhysicalSkyIsCompleted(t *testing.T) {
 		"place": "成都", "date": "2026-10-01", "local_time": "17:45", "north_azimuth_deg": 90.0, "sun_elevation_deg": -10.0, "sun_azimuth_deg": 359.5,
 		"altitude_m": 4000.0, "air_density": 0.0, "dust_density": 50.0, "ozone_density": 10.0,
 		"sun_disc": false, "sun_size_deg": 10.0, "sun_strength": 0.0, "sun_temperature_k": 2000.0,
-		"night": map[string]any{"moon": false, "stars": false, "milky_way": false, "moon_strength": 10.0, "moon_temperature_k": 2000.0, "stars_strength": 0.0, "stars_temperature_k": 12000.0, "night_look": 0.0}}
+		"night":              map[string]any{"moon": false, "stars": false, "milky_way": false, "moon_strength": 10.0, "moon_temperature_k": 2000.0, "stars_strength": 0.0, "stars_temperature_k": 12000.0, "night_look": 0.0},
+		"aerial_perspective": map[string]any{"enabled": false, "distance_scale": 1000.0}}
 	if err := setEnvironment(t, f.a, doc, physicalEnv(maps.Clone(written))); err != nil {
 		t.Fatal(err)
 	}
@@ -1018,6 +1020,14 @@ func TestPhysicalSkyIsCompleted(t *testing.T) {
 	wantNight := map[string]any{"moon": true, "stars": true, "milky_way": false, "moon_strength": 1.0, "moon_temperature_k": 6500.0, "stars_strength": 2.0, "stars_temperature_k": 6500.0, "night_look": 1.0}
 	if got := skyOf(t, f.a, doc)["night"]; !reflect.DeepEqual(got, wantNight) {
 		t.Fatalf("night = %v, want %v", got, wantNight)
+	}
+	// Part of the aerial perspective (W4, data: 空气透视), as the night sky.
+	if err := setEnvironment(t, f.a, doc, physicalEnv(map[string]any{"date": "2026-06-21", "aerial_perspective": map[string]any{"distance_scale": 0.1}})); err != nil {
+		t.Fatal(err)
+	}
+	wantAerial := map[string]any{"enabled": true, "distance_scale": 0.1}
+	if got := skyOf(t, f.a, doc)["aerial_perspective"]; !reflect.DeepEqual(got, wantAerial) {
+		t.Fatalf("aerial_perspective = %v, want %v", got, wantAerial)
 	}
 }
 
@@ -1076,7 +1086,9 @@ func TestPhysicalSkyRefusesBadFields(t *testing.T) {
 		"hot stars":                   {with(map[string]any{"night": map[string]any{"stars_temperature_k": 12001}}), "stars_temperature_k"},
 		"night look past 1":           {with(map[string]any{"night": map[string]any{"night_look": 1.1}}), "night_look"},
 		"planets in the night sky":    {with(map[string]any{"night": map[string]any{"planets": true}}), "planets"},
-		"aerial perspective":          {with(map[string]any{"aerial_perspective": map[string]any{}}), "aerial_perspective"},
+		"aerial distance below 0.1":   {with(map[string]any{"aerial_perspective": map[string]any{"distance_scale": 0.05}}), "aerial_perspective.distance_scale"},
+		"aerial distance past 1000":   {with(map[string]any{"aerial_perspective": map[string]any{"distance_scale": 1001}}), "aerial_perspective.distance_scale"},
+		"shadows in the aerial":       {with(map[string]any{"aerial_perspective": map[string]any{"shadows": true}}), "shadows"},
 		"clouds":                      {with(map[string]any{"clouds": map[string]any{}}), "clouds"},
 		"weather":                     {map[string]any{"sky": map[string]any{"kind": "physical", "date": "2026-10-01"}, "ambient": map[string]any{"color": "#ffffff", "intensity": 0.4}, "fog": nil, "weather": map[string]any{}}, "weather"},
 	} {
@@ -1118,6 +1130,7 @@ func TestOtherSkiesRefusePhysicalFields(t *testing.T) {
 		"color with dust":             {env(map[string]any{"kind": "color", "color": "#203040", "dust_density": 5}), "dust_density"},
 		"color without the sun disc":  {env(map[string]any{"kind": "color", "color": "#203040", "sun_disc": false}), "sun_disc"},
 		"procedural with a night sky": {procedural(map[string]any{"night": map[string]any{"moon": true}}), "night"},
+		"color with aerial":           {env(map[string]any{"kind": "color", "color": "#203040", "aerial_perspective": map[string]any{"enabled": true}}), "aerial_perspective"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := setEnvironment(t, f.a, doc, tc.env)
@@ -1213,5 +1226,22 @@ func TestOldPhysicalSkyReadsWithItsNight(t *testing.T) {
 		if got := skyOf(t, f.a, doc)["night"]; !reflect.DeepEqual(got, full) {
 			t.Fatalf("%s: night = %v, want %v", name, got, full)
 		}
+	}
+}
+
+// A physical sky stored before W4 has no aerial perspective: a read turns it
+// on at a distance scale of 1 (data: 空气透视).
+func TestOldPhysicalSkyReadsWithItsAerialPerspective(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	if err := setEnvironment(t, f.a, doc, physicalEnv(map[string]any{"date": "2026-06-21", "aerial_perspective": map[string]any{"enabled": false}})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_content_revisions SET payload = (payload #- '{scene,environment,sky,aerial_perspective}') WHERE account_id = 'scene-a' AND payload ? 'scene'`); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"enabled": true, "distance_scale": 1.0}
+	if got := skyOf(t, f.a, doc)["aerial_perspective"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("aerial_perspective = %v, want %v", got, want)
 	}
 }
