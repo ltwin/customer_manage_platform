@@ -1,12 +1,12 @@
 {
   "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-night-sky",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-world-environment",
   "designBinding": {
-    "version": 4,
+    "version": 5,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -28,30 +28,33 @@
     ],
     "delivers": [
       "data:夜空",
-      "architecture:场景模块"
+      "architecture:场景模块",
+      "data:摄像机曝光"
     ]
   },
   "state": "in-progress",
   "createdAt": "2026-10-23T06:27:33.127Z",
-  "updatedAt": "2026-10-23T07:20:07.077Z",
+  "updatedAt": "2026-10-23T09:22:06.684Z",
   "risk": {
     "factors": [
       "perf-sensitive"
     ]
   },
-  "approvals": {
-    "proposal": {
+  "approvals": {},
+  "approvalHistory": [
+    {
       "by": "samson",
       "at": "2026-10-23T07:18:04.823Z",
-      "contentHash": "e39f01b95813c899"
+      "contentHash": "e39f01b95813c899",
+      "role": "proposal"
     },
-    "design": {
+    {
       "by": "samson",
       "at": "2026-10-23T07:18:04.823Z",
-      "contentHash": "8ff8866d94f872d8"
+      "contentHash": "8ff8866d94f872d8",
+      "role": "design"
     }
-  },
-  "approvalHistory": [],
+  ],
   "revisions": [],
   "baseline": {
     "commit": "356111775cd871420d030f84aa830ef51cd2d792",

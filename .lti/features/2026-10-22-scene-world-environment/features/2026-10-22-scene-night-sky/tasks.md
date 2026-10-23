@@ -1,6 +1,6 @@
 # Tasks
 
-改代码前先截取白天与手动模式的基线，再按「数据 → 天文 → 资源与银河 → 天空与光照 → 编辑界面 → 助手 → 验收证据」推进。证据存进本子项的 `discovery/research/<主题>`。每个任务结束时 `tsc -b`、`oxlint`、相关单测和 `check-go` 都通过；e2e 只按 `SCENE_E2E_ONLY=W3` 跑受影响的用例，端口 5293 避开 owner 的 Vite。
+改代码前先截取白天与手动模式的基线，再按「数据 → 天文 → 资源与银河 → 天空与光照 → 自动曝光与夜色（修订 v5）→ 编辑界面 → 助手 → 验收证据」推进。证据存进本子项的 `discovery/research/<主题>`。每个任务结束时 `tsc -b`、`oxlint`、相关单测和 `check-go` 都通过；e2e 只按 `SCENE_E2E_ONLY=W3` 跑受影响的用例，端口 5293 避开 owner 的 Vite。
 
 ## 1. 基线
 
@@ -68,15 +68,21 @@
   - e2e「W3 moonlight」（SwiftShader）：北京 10-26，17:40 → 18:40（月亮接过主光）→ 22:00，程序数 44 → 44；22:00 在 EV100 −3 下院子平均亮度 144、无过曝，色调偏暖（rgb 153/142/130），有月影。Metal 上的对照放进 8.1。
   - 回归全绿：「W3 day unchanged」（Metal）、「W3 stars」两个后端、「W2 atmosphere drift」「sunny 16」「lamps」「back to another sky」「environment tab」三项、「exposure」三项、「W3 milky way drift」、灯光编译用例；单测 61 项。
 
+## 5b. 自动曝光与夜色（Epic 修订 v5）
+
+- [ ] 5.4 数据与后端：先写测试——`camera_exposure_test.go`（或扩展 `camera_dof_test.go`）：读取没有 `exposure_mode` 的已存储摄像机补 `manual`，`add_objects` 不带曝光补 `auto`，只改 ISO 的旧摄像机仍为手动，模式非法与补偿越界返回 400；`render` 缺模式补 `auto`，`set_render` 只写模式或补偿也算一项；`fingerprint_internal_test.go`：物理天空 `lit` 下自动时改补偿只让这台摄像机过时、改 ISO 不过时，手动的旧摄像机补齐后指纹不变，`render` 的曝光不计入。再改 `model.go`（`completeCamera` 按调用方补模式）、`ops.go`、`view.go`、`fingerprint.go`；`api/openapi.yaml` 的 `CreativeSceneCamera`、`CreativeSceneRender` 加字段、`CreativeSceneSky.night` 加 `night_look`，`make generate`；前端 `state/apply.ts` 与 `world/physicalSky.ts` 的缺省值。完成判据：测试先红后绿，`check-go PKG=./internal/creativescene/...` 通过，`tsc -b` 通过
+- [ ] 5.5 自动曝光：先写 `creative-scene-exposure.test.ts`（压暗曲线过五个点、连续、两端取端点值；补偿 +1 时 EV 减 1；手动取值与 W2 相同）。再改 `world/exposure.ts`（`nightDarkening`、`autoEV100`、`ViewerExposure`，`fogLux` 改名 `lux`）、`render/litLook.ts:frameExposure`、`host/framing.ts`、`Viewport.tsx`、`host/render.ts`、`SceneEditor.tsx`（新摄像机沿用默认摄像机的曝光）。e2e「W3 moonlight」改为默认设置：入夜程序数不变，满月之夜院子可读、比正午暗 2–3 档；手动 EV100 −3 同样可读；W2 的曝光用例（显式手动的）保持绿。完成判据：单测先红后绿；`SCENE_E2E_ONLY` 跑「W3 moonlight」与 W2 曝光相关用例全绿
+- [ ] 5.6 夜色与夜空增益：先写单测（`nightLookWeight` 在 EV_m ≥ 4 为 0、≤ −4 为 `night_look`；节点保持 Rec.709 亮度）。再新增 `world/nightLook.ts`，`render/sceneRenderer.ts` 的输出节点接入（权重 uniform，随 frame 写入，非物理天空、白模、线框、线稿为 0）；`world/nightSky/light.ts` 的夜天光改深蓝、加 `AIRGLOW_GAIN`，常数项随之更新（`night.ts` 的单测数值跟着改）。完成判据：单测绿；「W3 day unchanged」仍逐像素相同；满月之夜 `night_look` 0 与 1 的平均亮度相差 < 3%
+
 ## 6. 编辑界面
 
-- [ ] 6.1 `panels/PhysicalSkyFields.tsx`：「夜空」一组（三个开关、月亮与星空的亮度和色温，手动模式置灰并说明原因，底部注明星表出处）；时间一组的月亮信息（月相与照亮比例、月出月落、前后最近的满月和新月，点日期改成那一天）；`panels/RenderPanel.tsx` 的 EV100 参考值加夜景；`editing.ts` 的相应提交。完成判据：e2e 走一遍——开关夜空各部分、调倍率与色温、点「下一个满月」、Cmd+Z 撤回；手动模式下一组置灰
+- [ ] 6.1 `panels/PhysicalSkyFields.tsx`：「夜空」一组（三个开关、月亮与星空的亮度和色温，手动模式置灰并说明原因，底部注明星表出处）；时间一组的月亮信息（月相与照亮比例、月出月落、前后最近的满月和新月，点日期改成那一天）；「夜色」滑杆（手动太阳模式下仍可调）；`panels/Properties.tsx` 摄像机曝光的自动 / 手动切换、补偿与等效 EV100；`panels/RenderPanel.tsx` 默认摄像机的自动 / 手动与补偿，手动时的 EV100 参考值加夜景；`editing.ts` 的相应提交。完成判据：e2e 走一遍——开关夜空各部分、调倍率与色温和夜色、点「下一个满月」、切换摄像机与默认摄像机的曝光模式并调补偿、Cmd+Z 撤回；手动模式下一组置灰
 
 ## 7. 助手
 
-- [ ] 7.1 `creativeagent/scene_tools.go`：`edit_scene` 加 `night` 的字段与范围、「只在地点模式下画」、夜景的 EV100 参考值；`read_scene` 说明 `moon` 参考与「满月、新月先读月亮参考选日期」；`scene_tools_test.go` 固定关键句。`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md` 记录变更；`docs/third-party-notices.md` 加 BSC5 与 NASA SVS CGI Moon Kit。完成判据：`check-go` 通过
+- [ ] 7.1 `creativeagent/scene_tools.go`：`edit_scene` 加 `night` 的字段与范围（含 `night_look`）、「只在地点模式下画」；摄像机与 `set_render` 的 `exposure_mode`、`exposure_compensation`（缺省自动，入夜不必改曝光；写实时用手动和夜景的 EV100 参考值）；`read_scene` 说明 `moon` 参考与「满月、新月先读月亮参考选日期」；`scene_tools_test.go` 固定关键句。`docs/dev/creative-scene-agent.md`、`docs/dev/agent-skills-tools.md` 记录变更；`docs/third-party-notices.md` 加 BSC5 与 NASA SVS CGI Moon Kit。完成判据：`check-go` 通过
 
 ## 8. 验收证据
 
-- [ ] 8.1 e2e「W3」用例覆盖 AC-W3-1 至 AC-W3-8 中能自动检查的项（design「验证与交付」），参考场景加「满月之夜」「新月之夜」（院子，北京）；`SCENE_E2E_GPU` 下两个后端对照，`SCENE_E2E_HIDDEN` 下满月之夜连拍两次逐像素一致。完成判据：`SCENE_E2E_ONLY=W3` 全绿，GPU 门控项的结果记进 `discovery/research/`
-- [ ] 8.2 在参考设备上测 AC-W3-10（入夜拖动时刻的帧率、静止帧时间，与 1.1 对照；白天的网络请求里没有星表）；导出 AC-W3-11 的三组样例（满月之夜、新月之夜 EV100 −7 的银河、黄昏后月亮初升），存进 `discovery/research/evidence/`，交 owner 判断。完成判据：数据与样例齐全，未达标项写明原因与建议
+- [ ] 8.1 e2e「W3」用例覆盖 AC-W3-1 至 AC-W3-8、AC-W3-12、AC-W3-13 中能自动检查的项（design「验证与交付」），参考场景加「满月之夜」「新月之夜」（院子，北京）；`SCENE_E2E_GPU` 下两个后端对照，`SCENE_E2E_HIDDEN` 下满月之夜连拍两次逐像素一致。完成判据：`SCENE_E2E_ONLY=W3` 全绿，GPU 门控项的结果记进 `discovery/research/`
+- [ ] 8.2 在参考设备上测 AC-W3-10（入夜拖动时刻的帧率、静止帧时间，与 1.1 对照；白天的网络请求里没有星表）；导出 AC-W3-11 的样例：默认设置下正午、黄昏、满月之夜、新月之夜四张对照图（标出 EV_m、D、中灰的显示值），黄昏后月亮初升，以及新月之夜手动 EV100 −7 的银河，存进 `discovery/research/evidence/`，交 owner 判断并定压暗曲线、夜色和夜空增益的数值。完成判据：数据与样例齐全，未达标项写明原因与建议
