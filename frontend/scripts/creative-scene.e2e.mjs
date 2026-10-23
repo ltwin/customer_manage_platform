@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { Euler, Quaternion } from 'three'
 import { applyOps } from '../src/creative-scene/state/apply.ts'
+import { completeSky } from '../src/creative-scene/world/physicalSky.ts'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
@@ -97,6 +98,13 @@ const placement = (id) => `object:${id}`
 const content = (id) => `object:${id}:content`
 /** JSON with object keys sorted, for comparing material assignments. */
 const canonical = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x))
+
+/** A scene as the server reads it out: a physical sky completed with the fields it left out (backend sky.go completeSky), the night sky among them. */
+const served = (scene) => {
+  const out = structuredClone(scene)
+  out.environment.sky = completeSky(out.environment.sky)
+  return out
+}
 
 /** One scene document with revisions, conflict checks and trash. */
 class SceneServer {
@@ -288,7 +296,7 @@ class SceneServer {
       actor,
       revision: String(this.revision),
       title: this.title,
-      scene: structuredClone(this.scene),
+      scene: served(this.scene),
       unit_revs: { ...this.unitRevs },
       changed_units: changed,
       removed_units: removed,
@@ -307,7 +315,7 @@ class SceneServer {
       trashed_at: this.trashedAt,
       created_at: '2026-10-16T09:00:00Z',
       updated_at: '2026-10-16T09:00:00Z',
-      scene: structuredClone(this.scene),
+      scene: served(this.scene),
       models: this.modelSummaries(this.scene),
     }
   }
@@ -560,6 +568,8 @@ async function open(server, options = {}) {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(m.text()))
+  // SCENE_E2E_CONSOLE=1 prints every console message, warnings (WGSL compile errors among them) included.
+  if (process.env.SCENE_E2E_CONSOLE) page.on('console', (m) => console.log(`[console ${m.type()}] ${m.text().slice(0, 2000)}`))
   await route(page, server)
   await routeFiles(page, server)
   await page.goto(`${base}/.scene-editor-qa.html${options.query ?? ''}`)
@@ -4555,7 +4565,7 @@ await check('W2 environment tab: the physical sky with its defaults and today’
   assert.deepEqual(server.commands.at(-1).payload.operations.map((o) => o.op), ['set_environment'])
   assert.deepEqual(
     { ...sky(), date: undefined },
-    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500 },
+    { kind: 'physical', sun_mode: 'location', latitude_deg: 31.2304, longitude_deg: 121.4737, timezone: 'Asia/Shanghai', place: '', date: undefined, local_time: '12:00', north_azimuth_deg: 180, sun_elevation_deg: 35, sun_azimuth_deg: 135, altitude_m: 0, air_density: 1, dust_density: 1, ozone_density: 1, sun_disc: true, sun_size_deg: 0.545, sun_strength: 1, sun_temperature_k: 6500, night: { moon: true, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500 } },
   )
   assert.equal(sky().date, today, 'today, on this machine')
   assert.deepEqual(server.scene.environment.ambient, { color: '#ffffff', intensity: 0.4 }, 'the rest of the environment stays')

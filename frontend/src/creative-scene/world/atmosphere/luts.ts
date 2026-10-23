@@ -67,16 +67,24 @@ export type AtmosphereLuts = {
   readonly groundRadius: Uniform<number>
   /** The atmosphere's coefficients and radii: before renderAtmosphere. */
   setAtmosphere(params: AtmosphereParams): void
+  /** The moon's sky view (W3): the same sky lit by the moon, parametrised about the moon's azimuth, so it cannot share the sun's. */
+  readonly moonSkyView: RenderTarget
   /** The sun's zenith cosine and what the sky view's radiance per unit sun illuminance is multiplied by (the sun's illuminance per channel × s_env): before renderSkyView. */
   setSun(sunMu: number, scale: Readonly<Vec3>): void
+  /** As setSun for the moon's sky view: the moon's zenith cosine and illuminance per channel × s_env. */
+  setMoon(moonMu: number, scale: Readonly<Vec3>): void
   /** Transmittance and multiple scattering: on an atmosphere change. */
   renderAtmosphere(renderer: WebGPURenderer): void
   /** The sky view: on an environment change. */
   renderSkyView(renderer: WebGPURenderer): void
+  /** The moon's sky view: on an environment change by night. */
+  renderMoonSkyView(renderer: WebGPURenderer): void
   /** The transmittance LUT at a radius and zenith cosine. */
   sampleTransmittance(r: TSLNode, mu: TSLNode): TSLNode
   /** The sky view LUT toward a unit direction d (document space, Y up), the sun at the unit vector sun. */
   sampleSkyView(d: TSLNode, sun: TSLNode): TSLNode
+  /** The moon's sky view toward d, the moon at the unit vector moon. */
+  sampleMoonSkyView(d: TSLNode, moon: TSLNode): TSLNode
   dispose(): void
 }
 
@@ -90,13 +98,17 @@ export function atmosphereLuts(): AtmosphereLuts {
     groundRadius: uniform(BOTTOM) as Uniform<number>,
     sunMu: uniform(1) as Uniform<number>,
     scale: uniform(new Vector3(1, 1, 1)) as Uniform<Vector3>,
+    moonMu: uniform(-1) as Uniform<number>,
+    moonScale: uniform(new Vector3()) as Uniform<Vector3>,
   }
   const tr = lutTarget(TRANSMITTANCE.w, TRANSMITTANCE.h)
   const ms = lutTarget(MULTI.w, MULTI.h)
   const sv = lutTarget(SKYVIEW.w, SKYVIEW.h)
+  const mv = lutTarget(SKYVIEW.w, SKYVIEW.h)
   const trTex = texture(tr.texture)
   const msTex = texture(ms.texture)
   const svTex = texture(sv.texture)
+  const mvTex = texture(mv.texture)
 
   function medium(h: TSLNode) {
     const hh = max(h, 0)
@@ -222,26 +234,36 @@ export function atmosphereLuts(): AtmosphereLuts {
     return { r, beta, zenithHorizon: float(PI).sub(beta).toVar() }
   }
 
-  // The sky view from the camera's height (the sample's UvToSkyViewLutParams): radiance per unit sun illuminance × scale.
-  const svMaterial = new NodeMaterial()
-  svMaterial.fragmentNode = Fn(() => {
-    const p = uv()
-    const uu = fromSub(p.x, SKYVIEW.w)
-    const vv = fromSub(p.y, SKYVIEW.h)
-    const { r, beta, zenithHorizon } = horizon()
-    const above = float(1).sub(vv.mul(2))
-    const below = vv.mul(2).sub(1)
-    const viewZenith = select(vv.lessThan(0.5), zenithHorizon.mul(float(1).sub(above.mul(above))), zenithHorizon.add(beta.mul(below.mul(below))))
-    const viewMu = cos(viewZenith).toVar()
-    const lightCos = uu.mul(uu).mul(2).sub(1).negate().toVar()
-    const vs = sqrt(max(float(1).sub(viewMu.mul(viewMu)), 0))
-    const rd = vec3(vs.mul(lightCos), viewMu, vs.mul(sqrt(max(float(1).sub(lightCos.mul(lightCos)), 0))))
-    const sun = vec3(sqrt(max(float(1).sub(u.sunMu.mul(u.sunMu)), 0)), u.sunMu, 0).toVar()
-    return vec4(integrate(vec3(0, r, 0), rd, sun, SKYVIEW.steps, true).L.mul(u.scale), 1)
-  })()
+  // The sky view from the camera's height (the sample's UvToSkyViewLutParams): radiance per unit light illuminance × scale,
+  // for the sun and, the same pass with its own uniforms, for the moon (W3).
+  const skyViewMaterial = (lightMu: Uniform<number>, scale: Uniform<Vector3>) => {
+    const material = new NodeMaterial()
+    material.fragmentNode = Fn(() => {
+      const p = uv()
+      const uu = fromSub(p.x, SKYVIEW.w)
+      const vv = fromSub(p.y, SKYVIEW.h)
+      const { r, beta, zenithHorizon } = horizon()
+      const above = float(1).sub(vv.mul(2))
+      const below = vv.mul(2).sub(1)
+      const viewZenith = select(vv.lessThan(0.5), zenithHorizon.mul(float(1).sub(above.mul(above))), zenithHorizon.add(beta.mul(below.mul(below))))
+      const viewMu = cos(viewZenith).toVar()
+      const lightCos = uu.mul(uu).mul(2).sub(1).negate().toVar()
+      const vs = sqrt(max(float(1).sub(viewMu.mul(viewMu)), 0))
+      const rd = vec3(vs.mul(lightCos), viewMu, vs.mul(sqrt(max(float(1).sub(lightCos.mul(lightCos)), 0))))
+      const light = vec3(sqrt(max(float(1).sub(lightMu.mul(lightMu)), 0)), lightMu, 0).toVar()
+      return vec4(integrate(vec3(0, r, 0), rd, light, SKYVIEW.steps, true).L.mul(scale), 1)
+    })()
+    return material
+  }
+  const svMaterial = skyViewMaterial(u.sunMu, u.scale)
   const svQuad = new QuadMesh(svMaterial)
+  const mvMaterial = skyViewMaterial(u.moonMu, u.moonScale)
+  const mvQuad = new QuadMesh(mvMaterial)
 
-  function sampleSkyView(d: TSLNode, sun: TSLNode): TSLNode {
+  const sampleSkyView = (d: TSLNode, sun: TSLNode) => sampleView(svTex, d, sun)
+  const sampleMoonSkyView = (d: TSLNode, moon: TSLNode) => sampleView(mvTex, d, moon)
+
+  function sampleView(view: TSLNode, d: TSLNode, sun: TSLNode): TSLNode {
     const { r, beta, zenithHorizon } = horizon()
     const ground = rayGroundFromCamera(r, d, u.groundRadius).greaterThanEqual(0)
     const za = acos(clamp(d.y, -1, 1)).toVar()
@@ -250,7 +272,7 @@ export function atmosphereLuts(): AtmosphereLuts {
     const lh = length(vec2(d.x, d.z)).mul(length(vec2(sun.x, sun.z)))
     const lightCos = select(lh.greaterThan(1e-6), dot(vec2(d.x, d.z), vec2(sun.x, sun.z)).div(max(lh, 1e-6)), float(1))
     const uu = sqrt(max(lightCos.mul(-0.5).add(0.5), 0))
-    return svTex.sample(vec2(toSub(uu, SKYVIEW.w), toSub(select(ground, below, above), SKYVIEW.h))).level(0).rgb
+    return view.sample(vec2(toSub(uu, SKYVIEW.w), toSub(select(ground, below, above), SKYVIEW.h))).level(0).rgb
   }
 
   const pass = (renderer: WebGPURenderer, target: RenderTarget, quad: QuadMesh) => {
@@ -264,6 +286,7 @@ export function atmosphereLuts(): AtmosphereLuts {
     transmittance: tr,
     multiScattering: ms,
     skyView: sv,
+    moonSkyView: mv,
     viewRadius: u.viewRadius,
     groundRadius: u.groundRadius,
     setAtmosphere(params) {
@@ -279,6 +302,10 @@ export function atmosphereLuts(): AtmosphereLuts {
       u.sunMu.value = sunMu
       u.scale.value.set(...scale)
     },
+    setMoon(moonMu, scale) {
+      u.moonMu.value = moonMu
+      u.moonScale.value.set(...scale)
+    },
     renderAtmosphere(renderer) {
       pass(renderer, tr, trQuad)
       pass(renderer, ms, msQuad)
@@ -286,11 +313,15 @@ export function atmosphereLuts(): AtmosphereLuts {
     renderSkyView(renderer) {
       pass(renderer, sv, svQuad)
     },
+    renderMoonSkyView(renderer) {
+      pass(renderer, mv, mvQuad)
+    },
     sampleTransmittance,
     sampleSkyView,
+    sampleMoonSkyView,
     dispose() {
-      for (const t of [tr, ms, sv]) t.dispose()
-      for (const m of [trMaterial, msMaterial, svMaterial]) m.dispose()
+      for (const t of [tr, ms, sv, mv]) t.dispose()
+      for (const m of [trMaterial, msMaterial, svMaterial, mvMaterial]) m.dispose()
     },
   }
 }

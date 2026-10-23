@@ -134,7 +134,7 @@ export function milkyWayMean(): number {
 // --- the same model, baked on the GPU ---------------------------------------------
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, acos, asin, atan, clamp, cos, dot, exp, float, floor, length, max, min, mix, sin, texture, uv, vec2, vec3, vec4 } = tsl as unknown as Record<string, Op>
+const { abs, asin, cos, dot, exp, float, floor, length, max, min, mix, sin, uv, vec3, vec4 } = tsl as unknown as Record<string, Op>
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
 
 const fractNode = (x: TSLNode) => x.sub(floor(x))
@@ -219,13 +219,4 @@ export function bakeMilkyWay(renderer: WebGPURenderer): RenderTarget {
   renderer.setRenderTarget(previous)
   material.dispose()
   return target
-}
-
-/** The map toward a galactic unit vector g (x the centre, z the north pole), relative radiance. */
-export function sampleMilkyWay(map: RenderTarget, g: TSLNode): TSLNode {
-  const l = atan(g.y, g.x)
-  const b = acos(clamp(g.z, -1, 1)).negate().add(Math.PI / 2)
-  return texture(map.texture)
-    .sample(vec2(l.div(2 * Math.PI).add(0.5), b.div(Math.PI).add(0.5)))
-    .level(0).rgb
 }

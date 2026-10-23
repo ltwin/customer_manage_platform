@@ -193,8 +193,8 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
   const parts = useMemo(() => {
     const luts = atmosphereLuts()
     const lutScale = uniform(1)
-    const background = drawnAside(physicalSkyMesh(luts, lutScale))
-    const source = physicalSkyMesh(luts, null)
+    const background = drawnAside(physicalSkyMesh(luts, lutScale, 'background'))
+    const source = physicalSkyMesh(luts, lutScale, 'source')
     const sun = new DirectionalLight()
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
