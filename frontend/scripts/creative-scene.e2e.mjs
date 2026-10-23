@@ -6915,6 +6915,33 @@ await check('W5 ortho: a volume draws in an orthographic view', async () => {
   await context.close()
 })
 
+// The real-time GI's viewport composites the helpers' pass over the picture too: with the volumes' textures in the
+// same pass it sampled 17, over WebGPU's 16 a stage, and drew black (realtimeGI.ts). SwiftShader allows more.
+await check('W5 real-time GI viewport: the rendered view draws, with and without a volume, the helpers over it', async () => {
+  const gpu = await w5Metal()
+  try {
+    for (const volume of [false, true]) {
+      const server = new SceneServer()
+      referenceScene(server, 'cornell', (scene) => {
+        scene.render = { ...scene.render, engine: 'realtime_gi' }
+        if (volume) scene.objects.push(volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, cast_shadow: true }))
+      })
+      const { context, page, errors } = await open(server, gpu ? { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) } : {})
+      const { box: area } = await viewportCenter(page)
+      await shading(page, '最终渲染')
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+      await sleep(1000)
+      const lit = await lumaStats(page, await settledShot(page, area), { level: 250 })
+      console.log(`W5 real-time GI viewport${volume ? ' with a volume' : ''}: mean ${lit.mean.toFixed(1)}`)
+      assert.ok(lit.mean > 10, `the picture draws${volume ? ' with a volume' : ''}: mean ${lit.mean.toFixed(1)}`)
+      assert.deepEqual(errors, [])
+      await context.close()
+    }
+  } finally {
+    await gpu?.close()
+  }
+})
+
 // R2 tasks 1.2: every picture builds and frees a whole GI pipeline (prepass, lighting pass, SSGI, SSR, contact
 // shadows, denoisers, TRAA). Freed whole, the renderer holds as much after the 48th picture as after the first.
 await check('real-time GI: 48 pictures in a row leave nothing behind on the device', async () => {
