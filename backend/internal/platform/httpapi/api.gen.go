@@ -2352,6 +2352,7 @@ const (
 	Light         CreativeSceneObjectKind = "light"
 	ModelInstance CreativeSceneObjectKind = "model_instance"
 	Primitive     CreativeSceneObjectKind = "primitive"
+	Volume        CreativeSceneObjectKind = "volume"
 )
 
 // Valid indicates whether the value is a known member of the CreativeSceneObjectKind enum.
@@ -2366,6 +2367,8 @@ func (e CreativeSceneObjectKind) Valid() bool {
 	case ModelInstance:
 		return true
 	case Primitive:
+		return true
+	case Volume:
 		return true
 	default:
 		return false
@@ -2528,6 +2531,24 @@ func (e CreativeSceneSkySunMode) Valid() bool {
 	case CreativeSceneSkySunModeLocation:
 		return true
 	case CreativeSceneSkySunModeManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneVolumeShape.
+const (
+	Box    CreativeSceneVolumeShape = "box"
+	Sphere CreativeSceneVolumeShape = "sphere"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneVolumeShape enum.
+func (e CreativeSceneVolumeShape) Valid() bool {
+	switch e {
+	case Box:
+		return true
+	case Sphere:
 		return true
 	default:
 		return false
@@ -7271,7 +7292,7 @@ type CreativeSceneNight struct {
 	StarsTemperatureK *float32 `json:"stars_temperature_k,omitempty"`
 }
 
-// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
 type CreativeSceneObject struct {
 	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
@@ -7297,6 +7318,9 @@ type CreativeSceneObject struct {
 	Primitive *CreativeScenePrimitive   `json:"primitive,omitempty"`
 	Transform CreativeSceneTransform    `json:"transform"`
 	Visible   bool                      `json:"visible"`
+
+	// Volume 体积物件的介质：单位立方体（边长 1 m）或单位球（直径 1 m），由 transform 缩放，散射与吸收同 Blender 的 Volume Scatter、Volume Absorption。 写入时各字段可省略，缺省为 shape box、scatter_color #cccccc、scatter_density 0.1、anisotropy 0、absorption_color #cccccc、 absorption_density 0、edge_falloff 0.1、cast_shadow false；响应里总是带齐全部字段。update_objects 里按键合并，只改写到的字段。 每个场景最多 8 个体积物件。
+	Volume *CreativeSceneVolume `json:"volume,omitempty"`
 }
 
 // CreativeSceneObjectKind defines model for CreativeSceneObject.Kind.
@@ -7478,6 +7502,31 @@ type CreativeSceneTransform struct {
 	// Scale 每项 0.001…1000。
 	Scale []float32 `json:"scale"`
 }
+
+// CreativeSceneVolume 体积物件的介质：单位立方体（边长 1 m）或单位球（直径 1 m），由 transform 缩放，散射与吸收同 Blender 的 Volume Scatter、Volume Absorption。 写入时各字段可省略，缺省为 shape box、scatter_color #cccccc、scatter_density 0.1、anisotropy 0、absorption_color #cccccc、 absorption_density 0、edge_falloff 0.1、cast_shadow false；响应里总是带齐全部字段。update_objects 里按键合并，只改写到的字段。 每个场景最多 8 个体积物件。
+type CreativeSceneVolume struct {
+	AbsorptionColor *CreativeSceneColor `json:"absorption_color,omitempty"`
+
+	// AbsorptionDensity 吸收密度（每米）；吸收系数 = absorption_density × (1 − absorption_color)（线性值）。
+	AbsorptionDensity *float32 `json:"absorption_density,omitempty"`
+
+	// Anisotropy Henyey–Greenstein 相函数的 g；正值为前向散射。
+	Anisotropy *float32 `json:"anisotropy,omitempty"`
+
+	// CastShadow 在表面上投影；只在灯本身 cast_shadow 为 true、表面接收阴影时生效。
+	CastShadow *bool `json:"cast_shadow,omitempty"`
+
+	// EdgeFalloff 从边界向内、密度从 0 升到满值所占的比例；0 为硬边。
+	EdgeFalloff  *float32            `json:"edge_falloff,omitempty"`
+	ScatterColor *CreativeSceneColor `json:"scatter_color,omitempty"`
+
+	// ScatterDensity 散射密度（每米）；散射系数 = scatter_density × scatter_color（线性值）。
+	ScatterDensity *float32                  `json:"scatter_density,omitempty"`
+	Shape          *CreativeSceneVolumeShape `json:"shape,omitempty"`
+}
+
+// CreativeSceneVolumeShape defines model for CreativeSceneVolume.Shape.
+type CreativeSceneVolumeShape string
 
 // CreativeSequence 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
 type CreativeSequence = string

@@ -165,3 +165,61 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// validVolume is a completed volume object at order 3.
+func validVolume(n int) creativescene.Object {
+	return creativescene.Object{ID: objectID(n), Kind: "volume", Order: 3 + n, Transform: validTransform(), Visible: true,
+		Volume: &creativescene.Volume{Shape: ptr("box"), ScatterColor: ptr("#cccccc"), ScatterDensity: f64(0.1), Anisotropy: f64(0),
+			AbsorptionColor: ptr("#cccccc"), AbsorptionDensity: f64(0), EdgeFalloff: f64(0.1), CastShadow: flag(false)}}
+}
+
+// W5 (data: 体积物件): ranges, content fields matching the kind, and at
+// most 8 volumes, refused as a size limit.
+func TestValidateVolumes(t *testing.T) {
+	s := validScene()
+	s.Objects = append(s.Objects, validVolume(10))
+	if err := creativescene.Validate(s); err != nil {
+		t.Fatalf("valid volume rejected: %v", err)
+	}
+	for name, c := range map[string]struct {
+		m     func(o *creativescene.Object)
+		field string
+	}{
+		"shape":             {func(o *creativescene.Object) { o.Volume.Shape = ptr("cone") }, "volume.shape"},
+		"scatter colour":    {func(o *creativescene.Object) { o.Volume.ScatterColor = ptr("white") }, "volume.scatter_color"},
+		"scatter density":   {func(o *creativescene.Object) { o.Volume.ScatterDensity = f64(101) }, "volume.scatter_density"},
+		"negative density":  {func(o *creativescene.Object) { o.Volume.AbsorptionDensity = f64(-1) }, "volume.absorption_density"},
+		"anisotropy":        {func(o *creativescene.Object) { o.Volume.Anisotropy = f64(0.96) }, "volume.anisotropy"},
+		"absorption colour": {func(o *creativescene.Object) { o.Volume.AbsorptionColor = ptr("#ccc") }, "volume.absorption_color"},
+		"edge falloff":      {func(o *creativescene.Object) { o.Volume.EdgeFalloff = f64(1.5) }, "volume.edge_falloff"},
+		"missing field":     {func(o *creativescene.Object) { o.Volume.CastShadow = nil }, "volume.cast_shadow"},
+		"no volume":         {func(o *creativescene.Object) { o.Volume = nil }, "volume"},
+		"material slots": {func(o *creativescene.Object) {
+			o.MaterialSlots = map[string]creativescene.MaterialSlot{"main": {Preset: "stone@1"}}
+		}, "material_slots"},
+		"volume on a light": {nil, "volume"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := validScene()
+			v := validVolume(10)
+			if c.m != nil {
+				c.m(&v)
+				s.Objects = append(s.Objects, v)
+			} else {
+				s.Objects[2].Volume = v.Volume
+			}
+			err := creativescene.Validate(s)
+			if !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), c.field) {
+				t.Fatalf("want a validation error naming %s, got %v", c.field, err)
+			}
+		})
+	}
+
+	s = validScene()
+	for i := range 9 {
+		s.Objects = append(s.Objects, validVolume(10+i))
+	}
+	if err := creativescene.Validate(s); !errors.Is(err, creativedocument.ErrSizeLimit) || !strings.Contains(err.Error(), "8") {
+		t.Fatalf("9 volumes: want a size limit naming 8, got %v", err)
+	}
+}

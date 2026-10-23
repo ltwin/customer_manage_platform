@@ -7372,11 +7372,11 @@ export interface components {
             exposure_mode?: "ambient" | "manual";
             exposure_compensation?: number;
         };
-        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
+        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
         CreativeSceneObject: {
             id: string;
             /** @enum {string} */
-            kind: "primitive" | "model_instance" | "light" | "camera" | "group";
+            kind: "primitive" | "model_instance" | "light" | "camera" | "group" | "volume";
             name: string;
             /** @description null 为根；父对象必须是 group，不能成环。 */
             parent_id: string | null;
@@ -7390,6 +7390,24 @@ export interface components {
             material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
             light?: components["schemas"]["CreativeSceneLight"];
             camera?: components["schemas"]["CreativeSceneCamera"];
+            volume?: components["schemas"]["CreativeSceneVolume"];
+        };
+        /** @description 体积物件的介质：单位立方体（边长 1 m）或单位球（直径 1 m），由 transform 缩放，散射与吸收同 Blender 的 Volume Scatter、Volume Absorption。 写入时各字段可省略，缺省为 shape box、scatter_color #cccccc、scatter_density 0.1、anisotropy 0、absorption_color #cccccc、 absorption_density 0、edge_falloff 0.1、cast_shadow false；响应里总是带齐全部字段。update_objects 里按键合并，只改写到的字段。 每个场景最多 8 个体积物件。 */
+        CreativeSceneVolume: {
+            /** @enum {string} */
+            shape?: "box" | "sphere";
+            scatter_color?: components["schemas"]["CreativeSceneColor"];
+            /** @description 散射密度（每米）；散射系数 = scatter_density × scatter_color（线性值）。 */
+            scatter_density?: number;
+            /** @description Henyey–Greenstein 相函数的 g；正值为前向散射。 */
+            anisotropy?: number;
+            absorption_color?: components["schemas"]["CreativeSceneColor"];
+            /** @description 吸收密度（每米）；吸收系数 = absorption_density × (1 − absorption_color)（线性值）。 */
+            absorption_density?: number;
+            /** @description 从边界向内、密度从 0 升到满值所占的比例；0 为硬边。 */
+            edge_falloff?: number;
+            /** @description 在表面上投影；只在灯本身 cast_shadow 为 true、表面接收阴影时生效。 */
+            cast_shadow?: boolean;
         };
         /** @description model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。 */
         CreativeSceneModelRef: {
@@ -7501,7 +7519,7 @@ export interface components {
             op: "update_objects";
             updates: components["schemas"]["CreativeSceneObjectUpdate"][];
         };
-        /** @description 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params、light、camera 按键合并，material_slots 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。 */
+        /** @description 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params、light、camera、volume 按键合并，material_slots 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。 */
         CreativeSceneObjectUpdate: {
             object_id: string;
             name?: string;
@@ -7514,6 +7532,7 @@ export interface components {
             material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
             light?: components["schemas"]["CreativeSceneLightPatch"];
             camera?: components["schemas"]["CreativeSceneCamera"];
+            volume?: components["schemas"]["CreativeSceneVolume"];
         };
         /** @description 分组连同后代一起删除；涉及 objects 以及每个被删对象的两个单元。 */
         CreativeSceneRemoveObjects: {

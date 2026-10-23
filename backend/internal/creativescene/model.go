@@ -24,9 +24,11 @@ const (
 	KindLight     = "light"
 	KindCamera    = "camera"
 	KindGroup     = "group"
+	KindVolume    = "volume"
 
 	maxObjects       = 2000
 	maxCameras       = 32
+	maxVolumes       = 8
 	maxNameRunes     = 80
 	maxLabelRunes    = 40
 	maxPositionM     = 100000
@@ -216,7 +218,8 @@ func completeRenderSettings(r *Render) {
 
 // Object is one node of the scene tree. Placement (name, transform, visible,
 // locked) and content (primitive, model, material_slots, light, camera) are
-// separate units; parent_id and order belong to the objects unit.
+// separate units; parent_id and order belong to the objects unit. A volume's
+// content is volume (W5).
 type Object struct {
 	ID            string                  `json:"id"`
 	Kind          string                  `json:"kind"`
@@ -231,6 +234,7 @@ type Object struct {
 	MaterialSlots map[string]MaterialSlot `json:"material_slots,omitempty"`
 	Light         *Light                  `json:"light,omitempty"`
 	Camera        *Camera                 `json:"camera,omitempty"`
+	Volume        *Volume                 `json:"volume,omitempty"`
 }
 
 type Transform struct {
@@ -301,6 +305,28 @@ type Camera struct {
 	ExposureMode         *string  `json:"exposure_mode,omitempty"`
 	ExposureCompensation *float64 `json:"exposure_compensation,omitempty"`
 }
+
+// Volume is a volume object's medium (W5, data: 体积物件): a unit box or
+// sphere, scaled by the transform, that scatters and absorbs as Blender's
+// Volume Scatter and Volume Absorption do. Input may leave out any field;
+// the stored snapshot holds every one (completeVolume), and update_objects
+// merges it by key (mergeVolume).
+type Volume struct {
+	Shape             *string  `json:"shape,omitempty"`
+	ScatterColor      *string  `json:"scatter_color,omitempty"`
+	ScatterDensity    *float64 `json:"scatter_density,omitempty"`
+	Anisotropy        *float64 `json:"anisotropy,omitempty"`
+	AbsorptionColor   *string  `json:"absorption_color,omitempty"`
+	AbsorptionDensity *float64 `json:"absorption_density,omitempty"`
+	EdgeFalloff       *float64 `json:"edge_falloff,omitempty"`
+	CastShadow        *bool    `json:"cast_shadow,omitempty"`
+}
+
+// A volume's densities are per metre; anisotropy is the Henyey–Greenstein g.
+const (
+	maxVolumeDensity    = 100
+	maxVolumeAnisotropy = 0.95
+)
 
 func placementUnit(id string) string { return "object:" + id }
 func contentUnit(id string) string   { return "object:" + id + ":content" }
@@ -600,7 +626,7 @@ func Validate(s Scene) error {
 		return invalid("默认摄像机的曝光补偿 exposure_compensation 须在 −%d…%d 档之间", maxExposureCompensation, maxExposureCompensation)
 	}
 	byID := make(map[string]*Object, len(s.Objects))
-	cameras := 0
+	cameras, volumes := 0, 0
 	for i := range s.Objects {
 		o := &s.Objects[i]
 		if !objectIDPattern.MatchString(o.ID) {
@@ -613,12 +639,18 @@ func Validate(s Scene) error {
 		if err := validateObject(o); err != nil {
 			return invalid("物件 %s：%v", o.ID, err)
 		}
-		if o.Kind == KindCamera {
+		switch o.Kind {
+		case KindCamera:
 			cameras++
+		case KindVolume:
+			volumes++
 		}
 	}
 	if cameras > maxCameras {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "摄像机不能超过 %d 台", maxCameras)
+	}
+	if volumes > maxVolumes {
+		return creativeops.Explain(creativedocument.ErrSizeLimit, "体积物件不能超过 %d 个", maxVolumes)
 	}
 	if n := len(modelRefs(s.Objects)); n > maxSceneModels {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "一个场景引用的模型不能超过 %d 个，现有 %d 个", maxSceneModels, n)
@@ -670,7 +702,7 @@ func validateObject(o *Object) error {
 	if err := validateTransform(o.Transform); err != nil {
 		return err
 	}
-	content := map[string]bool{"primitive": o.Primitive != nil, "model": o.Model != nil, "light": o.Light != nil, "camera": o.Camera != nil, "material_slots": len(o.MaterialSlots) > 0}
+	content := map[string]bool{"primitive": o.Primitive != nil, "model": o.Model != nil, "light": o.Light != nil, "camera": o.Camera != nil, "volume": o.Volume != nil, "material_slots": len(o.MaterialSlots) > 0}
 	var allowed []string
 	switch o.Kind {
 	case KindPrimitive:
@@ -681,6 +713,8 @@ func validateObject(o *Object) error {
 		allowed = []string{"light"}
 	case KindCamera:
 		allowed = []string{"camera"}
+	case KindVolume:
+		allowed = []string{"volume"}
 	case KindGroup:
 	default:
 		return fmt.Errorf("不支持的类型 %q", o.Kind)
@@ -718,6 +752,11 @@ func validateObject(o *Object) error {
 			return errors.New("缺少 camera")
 		}
 		return validateCamera(*o.Camera)
+	case KindVolume:
+		if o.Volume == nil {
+			return errors.New("缺少 volume")
+		}
+		return validateVolume(*o.Volume)
 	}
 	return nil
 }
@@ -926,6 +965,56 @@ func mergeCamera(cur, p Camera) Camera {
 	keep(&p.ExposureCompensation, cur.ExposureCompensation)
 	completeCamera(&p, ExposureAmbient)
 	return p
+}
+
+// completeVolume fills every field v leaves out (data: 体积物件).
+func completeVolume(v *Volume) {
+	fill(&v.Shape, "box")
+	fill(&v.ScatterColor, "#cccccc")
+	fill(&v.ScatterDensity, 0.1)
+	fill(&v.Anisotropy, 0.0)
+	fill(&v.AbsorptionColor, "#cccccc")
+	fill(&v.AbsorptionDensity, 0.0)
+	fill(&v.EdgeFalloff, 0.1)
+	fill(&v.CastShadow, false)
+}
+
+// mergeVolume changes only what p carries.
+func mergeVolume(cur, p Volume) Volume {
+	keep(&p.Shape, cur.Shape)
+	keep(&p.ScatterColor, cur.ScatterColor)
+	keep(&p.ScatterDensity, cur.ScatterDensity)
+	keep(&p.Anisotropy, cur.Anisotropy)
+	keep(&p.AbsorptionColor, cur.AbsorptionColor)
+	keep(&p.AbsorptionDensity, cur.AbsorptionDensity)
+	keep(&p.EdgeFalloff, cur.EdgeFalloff)
+	keep(&p.CastShadow, cur.CastShadow)
+	completeVolume(&p)
+	return p
+}
+
+// validateVolume checks a completed volume against the contract's ranges,
+// naming the field.
+func validateVolume(v Volume) error {
+	switch {
+	case v.Shape == nil || *v.Shape != "box" && *v.Shape != "sphere":
+		return errors.New("volume.shape 须为 box 或 sphere")
+	case v.ScatterColor == nil || !colorPattern.MatchString(*v.ScatterColor):
+		return errors.New("volume.scatter_color 须为 #rrggbb")
+	case v.ScatterDensity == nil || !in(*v.ScatterDensity, 0, maxVolumeDensity):
+		return fmt.Errorf("volume.scatter_density 须在 0…%d 之间（每米）", maxVolumeDensity)
+	case v.Anisotropy == nil || !in(*v.Anisotropy, -maxVolumeAnisotropy, maxVolumeAnisotropy):
+		return fmt.Errorf("volume.anisotropy 须在 −%g…%g 之间", maxVolumeAnisotropy, maxVolumeAnisotropy)
+	case v.AbsorptionColor == nil || !colorPattern.MatchString(*v.AbsorptionColor):
+		return errors.New("volume.absorption_color 须为 #rrggbb")
+	case v.AbsorptionDensity == nil || !in(*v.AbsorptionDensity, 0, maxVolumeDensity):
+		return fmt.Errorf("volume.absorption_density 须在 0…%d 之间（每米）", maxVolumeDensity)
+	case v.EdgeFalloff == nil || !in(*v.EdgeFalloff, 0, 1):
+		return errors.New("volume.edge_falloff 须在 0…1 之间")
+	case v.CastShadow == nil:
+		return errors.New("缺少 volume.cast_shadow")
+	}
+	return nil
 }
 
 // fill sets *p to v when it was not written.

@@ -47,6 +47,7 @@ export const contentKeys = [
   'material_slots',
   'light',
   'camera',
+  'volume',
 ] as const
 
 /** Splits an object unit name; null for any other unit. */
@@ -76,8 +77,9 @@ export function subtree(objects: readonly SceneObject[], ids: Iterable<string>):
   return out
 }
 
-/** Fills missing primitive params with catalog defaults, as the server does. */
+/** Fills missing primitive params and volume fields with their defaults, as the server does. */
 export function completeObject(o: SceneObject): SceneObject {
+  if (o.volume) return { ...o, volume: { ...volumeDefaults, ...o.volume } }
   if (!o.primitive) return o
   return {
     ...o,
@@ -91,6 +93,7 @@ export function completeObject(o: SceneObject): SceneObject {
 type Light = NonNullable<SceneObject['light']>
 type LightField = Exclude<keyof Light, 'type'>
 type Camera = NonNullable<SceneObject['camera']>
+type Volume = NonNullable<SceneObject['volume']>
 
 // The light table of data: 场景文档 — the fields each type has besides type,
 // and the three.js defaults the server stores for those left out.
@@ -126,6 +129,21 @@ export const cameraDefaults: Required<Camera> = {
   exposure_compensation: 0,
 }
 
+/** The volume fields the server stores for those left out (data: 体积物件). */
+export const volumeDefaults: Required<Volume> = {
+  shape: 'box',
+  scatter_color: '#cccccc',
+  scatter_density: 0.1,
+  anisotropy: 0,
+  absorption_color: '#cccccc',
+  absorption_density: 0,
+  edge_falloff: 0.1,
+  cast_shadow: false,
+}
+
+/** As the server's mergeVolume: the update changes only what it carries. */
+export const mergeVolume = (cur: Volume, patch: Volume): Required<Volume> => ({ ...volumeDefaults, ...cur, ...patch })
+
 /**
  * As the server's mergeLight: the update changes only what it carries, a new
  * type keeps the fields it shares and fills the ones it gains. Null where the
@@ -154,6 +172,7 @@ export function updateObject(o: SceneObject, u: ObjectUpdate): SceneObject {
   if (u.material_slots !== undefined) next.material_slots = u.material_slots
   if (u.light && o.light) next.light = mergeLight(o.light, u.light) ?? o.light
   if (u.camera && o.camera) next.camera = { ...cameraDefaults, ...o.camera, ...u.camera }
+  if (u.volume && o.volume) next.volume = mergeVolume(o.volume, u.volume)
   return next
 }
 
@@ -308,7 +327,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
   return ka.length === kb.length && ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
 }
 
-const updateKeys = ['name', 'transform', 'visible', 'locked', 'material_slots', 'light', 'camera'] as const
+const updateKeys = ['name', 'transform', 'visible', 'locked', 'material_slots', 'light', 'camera', 'volume'] as const
 
 /** The fields of u that would change o; null when none would. */
 function changedPart(o: SceneObject, u: ObjectUpdate): ObjectUpdate | null {

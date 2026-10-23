@@ -2,8 +2,12 @@
 
 ## 1. 数据
 
-- [ ] 1.1 后端：先改 `model_test.go`（部分字段补齐、越界与类型不符返回 400 并带 `volume.<field>`、体积带 `material_slots` 返回 400、第 9 个体积返回 413、`update_objects` 只改一个字段时其余不变）与 `fingerprint_internal_test.go`（改体积 `lit` 指纹变、`clay`/`line` 不变）；再改 `model.go`、`ops.go`、`fingerprint.go`；`api/openapi.yaml` 加 `CreativeSceneVolume`，运行生成器。完成判据：测试先红后绿，`go test ./internal/creativescene/` 通过，两份生成物已更新
-- [ ] 1.2 前端：`state/apply.ts` 的 `contentKeys`、`updateKeys`、`mergeVolume` 与缺省值；`render/volumes/medium.ts` 的 JS 侧系数换算；单测 `creative-scene-volumes.test.ts`（系数换算、`mergeVolume`）。完成判据：单测通过，`tsc -b` 通过
+- [x] 1.1 后端：先改 `model_test.go`（部分字段补齐、越界与类型不符返回 400 并带 `volume.<field>`、体积带 `material_slots` 返回 400、第 9 个体积返回 413、`update_objects` 只改一个字段时其余不变）与 `fingerprint_internal_test.go`（改体积 `lit` 指纹变、`clay`/`line` 不变）；再改 `model.go`、`ops.go`、`fingerprint.go`；`api/openapi.yaml` 加 `CreativeSceneVolume`，运行生成器。完成判据：测试先红后绿，`go test ./internal/creativescene/` 通过，两份生成物已更新
+  - 体积的内容补丁直接用 `Volume`（字段全可选），与 `camera` 相同，不另设 `volumePatch`；OpenAPI 的更新项同样引用 `CreativeSceneVolume`。
+  - 设计挂载点外另改 `view.go`：读取运行改动时内容单元带上 `volume`，否则助手读不到体积字段。
+  - DB 级用例写在 `scene_test.go`（补齐与按键合并、带 `material_slots` 与第 9 个），`model_test.go` 写 `Validate` 的范围与上限。全包测试通过。
+- [x] 1.2 前端：`state/apply.ts` 的 `contentKeys`、`updateKeys`、`mergeVolume` 与缺省值；`render/volumes/medium.ts` 的 JS 侧系数换算；单测 `creative-scene-volumes.test.ts`（系数换算、`mergeVolume`）。完成判据：单测通过，`tsc -b` 通过
+  - `completeObject` 同时补齐体积的缺省值；单测 3 项通过。
 
 ## 2. 渲染
 

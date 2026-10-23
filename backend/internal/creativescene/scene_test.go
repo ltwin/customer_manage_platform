@@ -1245,3 +1245,77 @@ func TestOldPhysicalSkyReadsWithItsAerialPerspective(t *testing.T) {
 		t.Fatalf("aerial_perspective = %v, want %v", got, want)
 	}
 }
+
+// W5 scene-volumes ----------------------------------------------------------------
+
+// AC-W5-8: a volume's fields left out take their defaults, update_objects
+// changes only the fields it carries, and a bad field is named.
+func TestVolumesAreCompletedAndMergeByKey(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	v := objectID(1)
+	addObjects(t, f.a, doc, withContent(v, "volume", 1, map[string]any{"scatter_density": 0.3, "anisotropy": 0.6}))
+	want := map[string]any{"shape": "box", "scatter_color": "#cccccc", "scatter_density": 0.3, "anisotropy": 0.6,
+		"absorption_color": "#cccccc", "absorption_density": 0.0, "edge_falloff": 0.1, "cast_shadow": false}
+	if got := storedContent(t, f.a, doc, v, "volume"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("volume = %v, want %v", got, want)
+	}
+
+	update := func(id string, fields map[string]any) error {
+		s := readScene(t, f.a, doc)
+		_, err := send(t, f.a, batch{DocumentID: doc, Expected: s.expect(content(id)), Operations: []any{
+			op{"op": "update_objects", "updates": []any{map[string]any{"object_id": id, "volume": fields}}}}})
+		return err
+	}
+	if err := update(v, map[string]any{"cast_shadow": true}); err != nil {
+		t.Fatal(err)
+	}
+	want["cast_shadow"] = true
+	if got := storedContent(t, f.a, doc, v, "volume"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after cast_shadow: volume = %v, want %v", got, want)
+	}
+
+	before := readScene(t, f.a, doc).Revision
+	for _, bad := range []struct {
+		fields map[string]any
+		field  string
+	}{
+		{map[string]any{"scatter_density": 200}, "volume.scatter_density"},
+		{map[string]any{"shape": "cone"}, "volume.shape"},
+	} {
+		err := update(v, bad.fields)
+		var public creativeops.Public
+		if !errors.As(err, &public) || !strings.Contains(public.PublicMessage(), bad.field) {
+			t.Fatalf("%v: %v", bad.fields, err)
+		}
+	}
+	l := objectID(2)
+	addObjects(t, f.a, doc, withContent(l, "light", 2, map[string]any{"type": "point"}))
+	if err := update(l, map[string]any{"scatter_density": 1}); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("volume fields on a light: %v", err)
+	}
+	if after := readScene(t, f.a, doc).Revision; after != before+1 {
+		t.Fatalf("refused updates wrote revisions: %d after %d", after, before)
+	}
+}
+
+// AC-W5-8: a volume with material_slots is refused, and so is a ninth one.
+func TestVolumeKindAndLimit(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	v := readScene(t, f.a, doc)
+	o := withContent(objectID(1), "volume", 1, map[string]any{})
+	o["material_slots"] = map[string]any{"main": map[string]any{"preset": "stone@1", "params": map[string]any{}}}
+	_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": []any{o}}}})
+	wantErr(t, err, creativeops.ErrValidation)
+
+	objects := make([]any, 9)
+	for i := range objects {
+		objects[i] = withContent(objectID(i+1), "volume", i+1, map[string]any{})
+	}
+	_, err = send(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{op{"op": "add_objects", "objects": objects}}})
+	wantErr(t, err, creativedocument.ErrSizeLimit)
+	if after := readScene(t, f.a, doc); after.Revision != v.Revision {
+		t.Fatalf("refused commands wrote revision %d", after.Revision)
+	}
+}
