@@ -1,10 +1,10 @@
 {
   "uid": "0bd5bbb1-9ba2-468a-b64c-ffa40133324b",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-world-space-gi",
   "title": "实时 GI 的屏幕外光照与反射：仿 Lumen 的世界空间追踪层的方案与工作量",
   "createdAt": "2026-10-23T14:06:06.412Z",
-  "updatedAt": "2026-10-23T15:10:18.360Z",
+  "updatedAt": "2026-10-23T17:46:24.247Z",
   "state": "active",
   "designBaselines": [
     {
@@ -178,7 +178,13 @@
       ]
     }
   ],
-  "children": [],
+  "children": [
+    {
+      "uid": "fa8a5415-fa2a-4fd8-ba13-5bf72fa67830",
+      "changeId": "scene-trace-spike",
+      "dependsOnUids": []
+    }
+  ],
   "policy": "serial",
   "activation": {
     "by": "samson",
