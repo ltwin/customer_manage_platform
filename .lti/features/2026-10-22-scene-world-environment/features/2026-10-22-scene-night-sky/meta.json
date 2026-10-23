@@ -1,6 +1,6 @@
 {
   "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-night-sky",
   "kind": "feature",
   "assurance": "governed",
@@ -34,7 +34,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-23T06:27:33.127Z",
-  "updatedAt": "2026-10-23T12:59:19.885Z",
+  "updatedAt": "2026-10-23T13:00:55.181Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-23T13:00:55.095Z",
+    "summary": "feat/scene-night-sky 以 --no-ff 合入 develop（ab3d2526）；分支上 go test creativescene/creativeagent、tsc -b、W3 单测（exposure/night-sky/astro/creative-scene）、W2/W3 e2e、oxlint、golangci-lint、gofmt 均通过",
+    "method": "manual",
+    "limitations": "未跑 make check-merge：合入树与分支完全相同（develop 为祖先），按 owner 2026-10-23 的「合入树与分支相同就不重跑」约定只用分支上的定向测试与静态检查；未跑全量前端单测和全量 e2e",
+    "sourceCommit": "c877a891912987baa0510939800816f068119c72",
+    "targetCommit": "ab3d2526bd2afd45fb92edaf5a5ce3943ed87ccc",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "2bcb80acac04155382a9183fed9fb592ba1509c546882bd0e5ba01cfad13cf5b"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive"
