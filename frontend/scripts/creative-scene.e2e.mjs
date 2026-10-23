@@ -5592,6 +5592,29 @@ await check('W3 stars: Polaris drawn where the sky puts it, at the view’s cent
   }
 })
 
+// W3 (design「光照」): Beijing on 2026-10-26, the full moon. From 17:40 (the sun just down, still the shadowing
+// light) to 18:40 (the moon takes it) and 22:00 (the moon 54° up): no shader program is built, so nightfall
+// compiles nothing; at 22:00 the yard at EV100 −3 is seen, about as noon at sunny 16 (0.22 lux of moonlight).
+await check('W3 moonlight: the full moon lights the yard at EV100 −3; nightfall builds no shader', async () => {
+  const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
+  const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.environment.sky, beijing, { local_time: '17:40' })
+    scene.render.exposure_ev100 = -3
+  })
+  const programs = () => page.evaluate(() => [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').reduce((n, h) => n + h.programs, 0))
+  await settle()
+  const before = await programs()
+  await change(sky({ local_time: '18:40' }))
+  const night = await lumaStats(page, await change(sky({ local_time: '22:00' })), { level: 250 })
+  const after = await programs()
+  await shot(page, 'w3-full-moon-ev-3')
+  console.log(`W3 moonlight: 22:00 mean ${night.mean.toFixed(0)} (rgb ${[night.r, night.g, night.b].map((v) => v.toFixed(0))}), clipped ${(night.bright * 100).toFixed(2)}%; programs ${before} → ${after}`)
+  assert.equal(after, before, 'no shader program built from dusk to night')
+  assert.ok(night.mean > 60 && night.mean < 220 && night.bright < 0.02, 'the yard is seen: neither dark nor blown')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // SCENE_E2E_W3_PERF=<dir> (AC-W3-10), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
 // physical sky at night (Shanghai, 2026-09-23 at 21:00, a gibbous moon up). Frame times standing still, and
 // dragging the time of day a minute a frame from 19:00 for 3 s. Written to w3-perf-<SCENE_E2E_W3_PERF_LABEL>.json.

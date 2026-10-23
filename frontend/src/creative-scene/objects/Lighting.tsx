@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useThree } from '@react-three/fiber'
-import { Color, DirectionalLight, Scene, type Mesh } from 'three'
+import { Color, DirectionalLight, Scene, Vector3, type Mesh } from 'three'
 import { uniform } from 'three/tsl'
 import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { SceneEnvironment } from '../api.ts'
@@ -14,14 +14,15 @@ import { positionToView } from '../space.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { wireBackground } from './wireframe.ts'
-import { equatorToScene, physicalSun, sunVector } from '../world/astro.ts'
+import { equatorToScene, galacticToScene, physicalSun, sunVector } from '../world/astro.ts'
 import { sunAbove } from '../world/atmosphere/constants.ts'
 import { CpuAtmosphere } from '../world/atmosphere/cpu.ts'
 import { atmosphereLuts } from '../world/atmosphere/luts.ts'
 import { discSolidAngle } from '../world/atmosphere/sky.ts'
 import { environmentScale, type PhysicalExposure } from '../world/exposure.ts'
-import { nightNeeds, starsNow, type StarCatalogue } from '../world/nightSky/assets.ts'
-import { starsScale } from '../world/nightSky/light.ts'
+import { moonNow, nightNeeds, starsNow } from '../world/nightSky/assets.ts'
+import { bakeMilkyWay } from '../world/nightSky/milkyWay.ts'
+import { lightOf, nightOf, sceneLight, sunLeads } from '../world/nightSky/night.ts'
 import { disposeStars, starField } from '../world/nightSky/stars.ts'
 import { isPhysical, type PhysicalSky } from '../world/physicalSky.ts'
 
@@ -189,6 +190,20 @@ function Sun({ environment }: { environment: SceneEnvironment }) {
  * No ambient: the sky light is the fill. A new renderer (the device lost)
  * draws the LUTs and the sky light anew.
  */
+const down = new Vector3(0, -1, 0)
+const north = new Vector3(0, 0, 1)
+
+/** A night asset (world/nightSky/assets.ts) once it is here: asked for when first wanted and kept; already here, it is in the first frame (an offscreen picture waits for it before it mounts). */
+function useNightAsset<T>(now: (arrived?: () => void) => T | null, wanted: boolean): T | null {
+  const [value, setValue] = useState<T | null>(() => (wanted ? now() : null))
+  useEffect(() => {
+    if (!wanted || value) return
+    const here = now(() => setValue(now()))
+    if (here) setValue(here)
+  }, [now, wanted, value])
+  return value
+}
+
 function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironment['fog'] }) {
   const { gl, scene, invalidate } = useThree()
   const latest = useRef(sky)
@@ -202,8 +217,23 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     sun.userData = { sun: true, baseIntensity: 0 }
+    // Two lights day and night (design「投影」): the shadowing one takes the sun or the moon, the other the other, so nightfall compiles nothing.
+    const aside = new DirectionalLight()
+    aside.userData = { baseIntensity: 0 }
     const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, fogLux: 0 }
-    return { luts, lutScale, background, source, sourceScene: new Scene().add(source), sun, physical, cpu: null as CpuAtmosphere | null, lutEnv: 1 }
+    return {
+      luts,
+      lutScale,
+      background,
+      source,
+      sourceScene: new Scene().add(source),
+      sun,
+      aside,
+      physical,
+      cpu: null as CpuAtmosphere | null,
+      lutEnv: 1,
+      milkyWay: null as RenderTarget | null,
+    }
   }, [])
   useEffect(
     () => () => {
@@ -211,6 +241,8 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
       disposeSky(parts.background)
       disposeSky(parts.source)
       parts.sun.dispose()
+      parts.aside.dispose()
+      parts.milkyWay?.dispose()
     },
     [parts],
   )
@@ -232,52 +264,76 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     parts.cpu = new CpuAtmosphere(s)
   }, [parts, renderer, atmosphereKey])
 
+  // The night's assets (world/nightSky/assets.ts): asked for when the sky first needs them, drawn once they come.
+  const needs = nightNeeds(sky)
+  const catalogue = useNightAsset(starsNow, needs.stars)
+  const moonMap = useNightAsset(moonNow, needs.moon)
+  // The stars' sprites, made once the catalogue is here and kept after, so nightfall compiles nothing new.
+  const stars = useMemo(() => catalogue && drawnAside(starField(catalogue, parts.luts, parts.background.sky.night)), [catalogue, parts])
+  useEffect(() => () => void (stars && disposeStars(stars)), [stars])
+
   const skyKey = JSON.stringify(sky)
   useLayoutEffect(() => {
     const s = latest.current
     const where = physicalSun(s)
     const toward = sunVector(where.elevationDeg, where.azimuthDeg)
     const top = sunAbove(s.sun_strength, s.sun_temperature_k)
-    const day = parts.cpu!.daylight(toward.y, top)
-    const sEnv = environmentScale(day.horizontal)
+    const night = nightOf(s, toward)
+    const light = sceneLight(parts.cpu!, toward, top, night)
+    const sEnv = environmentScale(light.horizontal)
     parts.luts.setSun(toward.y, [top[0] * sEnv, top[1] * sEnv, top[2] * sEnv])
     parts.luts.renderSkyView(renderer)
+    // The moonlit sky only once the sun is down: by day it is far below the sun's.
+    const moon = night.moon
+    const moonSky = moon !== null && where.elevationDeg < 0
+    if (moonSky) {
+      parts.luts.setMoon(moon.direction.y, [moon.top[0] * sEnv, moon.top[1] * sEnv, moon.top[2] * sEnv])
+      parts.luts.renderMoonSkyView(renderer)
+    }
+    // The Milky Way's map is baked the first time a night draws it.
+    if (night.milkyWay[1] > 0 && where.elevationDeg < 0) parts.milkyWay ??= bakeMilkyWay(renderer)
     parts.lutScale.value = sEnv
     parts.lutEnv = sEnv
-    for (const mesh of [parts.background, parts.source]) mesh.sky.sun.value.copy(toward)
+    const galactic = galacticToScene(s).transpose()
+    for (const mesh of [parts.background, parts.source]) {
+      const n = mesh.sky.night
+      mesh.sky.sun.value.copy(toward)
+      n.moon.value.copy(moon?.direction ?? down)
+      n.moonNorth.value.copy(moon?.north ?? north)
+      n.moonCosRadius.value = Math.cos((((moon?.diameterDeg ?? 0.5) / 2) * Math.PI) / 180)
+      n.moonRadiance.value.fromArray(moon ? moon.radiance : [0, 0, 0])
+      n.moonSky.value = moonSky ? 1 : 0
+      if (moonMap) n.moonMap.value = moonMap
+      n.galactic.value.copy(galactic)
+      if (parts.milkyWay) n.milkyWayMap.value = parts.milkyWay.texture
+      n.milkyWay.value.fromArray(night.milkyWay)
+      n.airglow.value.fromArray(night.airglow)
+    }
     const omega = discSolidAngle(s.sun_size_deg)
     parts.background.sky.sunRadiance.value.set(top[0] / omega, top[1] / omega, top[2] / omega)
     parts.background.sky.sunCosRadius.value = Math.cos(((s.sun_size_deg / 2) * Math.PI) / 180)
     parts.background.sky.disc.value = s.sun_disc ? 1 : 0
-    // The sun light in lux on a surface facing it, its colour what the atmosphere let through.
-    const peak = Math.max(...day.sun)
-    parts.sun.userData.baseIntensity = peak
-    const [r, g, b] = peak > 0 ? day.sun.map((c) => c / peak) : [1, 1, 1]
-    parts.sun.color.setRGB(r, g, b)
-    parts.sun.position.fromArray(positionToView([toward.x * 60, toward.y * 60, toward.z * 60]))
-    parts.physical.fogLux = day.horizontal
+    if (stars) {
+      stars.equator.value.copy(equatorToScene(s))
+      stars.brightness.value.fromArray(night.stars)
+    }
+    // Lux on a surface facing each body, its colour what the atmosphere let through; the shadow goes with the one that leads.
+    const bodies = [
+      { toward, ...lightOf(light.sun) },
+      { toward: moon?.direction ?? down, ...lightOf(light.moon) },
+    ]
+    const [lead, other] = sunLeads(where.elevationDeg, moon) ? bodies : [bodies[1], bodies[0]]
+    for (const [l, b] of [
+      [parts.sun, lead],
+      [parts.aside, other],
+    ] as const) {
+      l.userData.baseIntensity = b.intensity
+      l.color.setRGB(...b.color)
+      l.position.fromArray(positionToView([b.toward.x * 60, b.toward.y * 60, b.toward.z * 60]))
+    }
+    parts.physical.fogLux = light.horizontal
     invalidate()
-  }, [parts, renderer, skyKey, invalidate])
-
-  // The stars: asked for when the sky first needs them, drawn once they come and kept after, so nightfall compiles nothing new.
-  // Already here, they are in the first frame (an offscreen picture waits for them before it mounts).
-  const wantStars = nightNeeds(sky).stars
-  const [catalogue, setCatalogue] = useState<StarCatalogue | null>(() => (wantStars ? starsNow() : null))
-  useEffect(() => {
-    if (!wantStars || catalogue) return
-    const now = starsNow(() => setCatalogue(starsNow()))
-    if (now) setCatalogue(now)
-  }, [wantStars, catalogue])
-  const stars = useMemo(() => catalogue && drawnAside(starField(catalogue, parts.luts, parts.background.sky.night)), [catalogue, parts])
-  useEffect(() => () => void (stars && disposeStars(stars)), [stars])
-  useLayoutEffect(() => {
-    if (!stars) return
-    const s = latest.current
-    stars.equator.value.copy(equatorToScene(s))
-    const on = s.sun_mode === 'location' && s.night.stars
-    stars.brightness.value.fromArray(on ? starsScale(s.night.stars_strength, s.night.stars_temperature_k) : [0, 0, 0])
-    invalidate()
-  }, [stars, skyKey, invalidate])
+  }, [parts, renderer, skyKey, stars, moonMap, invalidate])
 
   const fogKey = fog ? fog.color : ''
   useLayoutEffect(() => {
@@ -323,6 +379,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
       <primitive object={parts.background} />
       {stars && <primitive object={stars} />}
       <primitive object={parts.sun} />
+      <primitive object={parts.aside} />
       {fog && <fog attach="fog" args={[fog.color, fog.near, fog.far]} />}
     </>
   )

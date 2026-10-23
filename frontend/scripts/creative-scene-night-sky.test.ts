@@ -8,6 +8,10 @@ import { completeSky, type PhysicalSky } from '../src/creative-scene/world/physi
 import { milkyWayAt, milkyWayMean } from '../src/creative-scene/world/nightSky/milkyWay.ts'
 import { refraction, spriteShare, STAR_SIGMA, starSpread } from '../src/creative-scene/world/nightSky/stars.ts'
 import { Refraction } from 'astronomy-engine'
+import { lightOf, lommelSeeligerMean, MILKY_WAY_LUX, nightOf, sceneLight, STARLIGHT_LUX, sunLeads } from '../src/creative-scene/world/nightSky/night.ts'
+import { physicalSun, sunVector } from '../src/creative-scene/world/astro.ts'
+import { CpuAtmosphere } from '../src/creative-scene/world/atmosphere/cpu.ts'
+import { sunAbove } from '../src/creative-scene/world/atmosphere/constants.ts'
 
 // W3: the night sky's light and assets (design「亮度与颜色的单一来源」「资源与确定性」).
 
@@ -137,4 +141,66 @@ test('stars are refracted as the sun and the moon are (astronomy-engine’s norm
   for (const h of [-0.5, 0, 0.5, 2, 10, 30, 60, 89]) assert.ok(Math.abs(refraction(h) - Refraction('normal', h)) < 1e-9, `${h}°: ${refraction(h)} against ${Refraction('normal', h)}`)
   // By true altitude: about 0.48° at the horizon (0.57° by the apparent one), an arcminute at 45°.
   assert.ok(Math.abs(refraction(0) - 0.48) < 0.01 && Math.abs(refraction(45) - 1 / 60) < 0.002)
+})
+
+/** A sky's night as PhysicalLighting works it out: the parts, the sun, its light and E. */
+function lightAt(sky: PhysicalSky) {
+  const where = physicalSun(sky)
+  const sun = sunVector(where.elevationDeg, where.azimuthDeg)
+  const night = nightOf(sky, sun)
+  return { where, night, light: sceneLight(new CpuAtmosphere(sky), sun, sunAbove(sky.sun_strength, sky.sun_temperature_k), night) }
+}
+
+test('the moon’s disc is scaled by Lommel-Seeliger’s shading over it: a half at full, less toward new', () => {
+  assert.ok(Math.abs(lommelSeeligerMean(1) - 0.5) < 1e-9)
+  const quarter = lommelSeeligerMean(0)
+  assert.ok(quarter > 0.1 && quarter < 0.3, `quarter ${quarter}`)
+  assert.ok(lommelSeeligerMean(-0.999) < 0.01)
+  for (const c of [0.9, 0.5, 0, -0.5]) assert.ok(lommelSeeligerMean(c) < lommelSeeligerMean(c + 0.1))
+})
+
+test('the stars’ constant term: the catalogue’s starlight as worked out, the Milky Way’s and the airglow’s; switches and strength', () => {
+  assert.ok(Math.abs(STARLIGHT_LUX / starlightLux(catalogue.v) - 1) < 0.002, `${starlightLux(catalogue.v)}`)
+  // The airglow is most of a moonless night's light, the Milky Way next.
+  assert.ok(AIRGLOW_LUX > MILKY_WAY_LUX && MILKY_WAY_LUX > STARLIGHT_LUX)
+  const all = nightOf(beijing({ local_time: '22:00' }), sunVector(-40, 0)).lux
+  assert.ok(Math.abs(all - (STARLIGHT_LUX + AIRGLOW_LUX + MILKY_WAY_LUX)) < 1e-12)
+  const off = (night: Partial<PhysicalSky['night']>) => nightOf(beijing({ local_time: '22:00', night: { ...beijing({}).night, ...night } }), sunVector(-40, 0))
+  assert.ok(Math.abs(off({ stars: false }).lux - MILKY_WAY_LUX) < 1e-12, 'the stars take the airglow with them')
+  assert.deepEqual(off({ stars: false }).airglow, [0, 0, 0])
+  assert.ok(Math.abs(off({ milky_way: false }).lux - (STARLIGHT_LUX + AIRGLOW_LUX)) < 1e-12)
+  assert.ok(Math.abs(off({ stars_strength: 2 }).lux - 2 * all) < 1e-12)
+  assert.equal(off({ moon: false }).moon, null)
+  // Manual angles draw no night.
+  const manual = nightOf(beijing({ local_time: '22:00', sun_mode: 'manual', sun_elevation_deg: -20, sun_azimuth_deg: 0 }), sunVector(-20, 0))
+  assert.deepEqual([manual.moon, manual.lux, manual.stars], [null, 0, [0, 0, 0]])
+})
+
+test('a full moon high on a dark night lights the ground with 0.1 to 0.4 lux; a new moon adds nothing', () => {
+  // 10-26 at 22:00 in Beijing: the full moon about 45° up, the sun far below.
+  const full = lightAt(beijing({ local_time: '22:00' }))
+  assert.ok(full.night.moon && full.night.moon.elevationDeg > 30, `moon at ${full.night.moon?.elevationDeg}`)
+  assert.ok(full.where.elevationDeg < -18, `sun at ${full.where.elevationDeg}`)
+  assert.ok(full.light.horizontal > 0.1 && full.light.horizontal < 0.4, `E ${full.light.horizontal}`)
+  assert.ok(full.light.moon!.horizontal > 0.9 * (full.light.horizontal - full.night.lux), 'nearly all of it the moon’s')
+  // Its strength doubles the moon's share (AC-W3-5).
+  const twice = lightAt(beijing({ local_time: '22:00', night: { ...beijing({}).night, moon_strength: 2 } }))
+  assert.ok(Math.abs(twice.light.moon!.horizontal / full.light.moon!.horizontal - 2) < 1e-9)
+  // 11-09: new moon, below the horizon all night.
+  const dark = lightAt(beijing({ date: '2026-11-09', local_time: '22:00' }))
+  assert.equal(dark.light.moon, null)
+  assert.ok(Math.abs(dark.light.horizontal - dark.light.sun.horizontal - dark.night.lux) < 1e-15)
+})
+
+test('the shadowing light: the sun above −6° or with no moon up, otherwise the moon', () => {
+  const moon = nightOf(beijing({ local_time: '22:00' }), sunVector(-40, 0)).moon!
+  assert.equal(sunLeads(-5.9, moon), true)
+  assert.equal(sunLeads(-6.1, moon), false)
+  assert.equal(sunLeads(-30, { ...moon, elevationDeg: -0.5 }), true, 'the moon set')
+  assert.equal(sunLeads(-30, null), true, 'no moon drawn')
+  // Each light's intensity is its brightest channel's lux, its colour the rest.
+  const { light } = lightAt(beijing({ local_time: '22:00' }))
+  const moonLight = lightOf(light.moon)
+  assert.ok(moonLight.intensity > 0.1 && Math.max(...moonLight.color) === 1)
+  assert.deepEqual(lightOf(null), { intensity: 0, color: [1, 1, 1] })
 })

@@ -216,7 +216,8 @@ export const gpuTestHooks = {
   forceCompatibility: false,
   /** Caps the texture size the renderers report: a device too small for an output resolution (R2 AC-R2-6). */
   textureLimit: null as number | null,
-  live: new Set<{ role: Role; info: WebGPURenderer['info']; lose(afterCaptures?: number): void }>(),
+  /** The live renderers; programs counts the shader programs each has built (a recompile builds new ones). */
+  live: new Set<{ role: Role; info: WebGPURenderer['info']; lose(afterCaptures?: number): void; programs: number }>(),
   /** Loses the device of every live renderer in that role, now or after that many more captures. */
   loseDevice(role: Role, afterCaptures = 0): number {
     let n = 0
@@ -309,7 +310,14 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext()
     else backendInfo.device?.destroy()
   }
-  const hook = { role, info: renderer.info, lose: (afterCaptures = 0) => device.loseAfter(afterCaptures, loseNow) }
+  const hook = { role, info: renderer.info, lose: (afterCaptures = 0) => device.loseAfter(afterCaptures, loseNow), programs: 0 }
+  // Info.createProgram is three's (Pipelines calls it for each program it builds), untyped in @types/three.
+  const info = renderer.info as unknown as { createProgram(program: unknown): void }
+  const createProgram = info.createProgram.bind(info)
+  info.createProgram = (program) => {
+    hook.programs++
+    createProgram(program)
+  }
   gpuTestHooks.live.add(hook)
   const armed = gpuTestHooks.armed.get(role)
   if (armed !== undefined) {

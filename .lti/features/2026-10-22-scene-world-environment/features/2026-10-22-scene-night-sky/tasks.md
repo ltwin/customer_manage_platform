@@ -57,7 +57,16 @@
   - e2e「W3 stars」：北京 2026-10-26 22:00，自由视角对准 Skyfield 的北极星方向（加 astronomy-engine 的折射），量画面中心附近最亮点的质心。SwiftShader（WebGL2）偏 0.010°，Metal（WebGPU）0.009°（阈值 0.2°）。图：`discovery/research/stars/polaris-webgl2.png`、`polaris-webgpu.png`（EV100 −2，月亮关；银河与夜天光要等 5.3 写入 uniform，背景暂为黑）。
   - 回归：「W3 day unchanged」（Metal）、「W2 sunny 16」「W2 lamps」「W2 back to another sky」「W2 environment tab: manual」全绿。
   - 踩坑：`StarField` 的亮度 uniform 起初叫 `scale`，与 `Object3D.scale` 撞名，`Object.assign` 抛错、画布崩溃；改名 `brightness`。`SCENE_E2E_CONSOLE` 顺带打印 pageerror。
-- [ ] 5.3 `objects/Lighting.tsx:PhysicalLighting`：主光、副光的分配（太阳高于 −6° 或月亮在地平线下时主光取太阳）；月光由 `daylight` 求；太阳低于 0° 时重算月亮的天空视图；E 加上月光、月光照亮的天空与星空常数项，求 s_env；挂上星星；资源到位时 `invalidate`。`host/render.ts:openShooter` 挂载前 `await loadNightAssets`，失败时这张图失败，原因写「夜空资源加载失败，请稍后重试」。先写单测：满月高于 30°、太阳 −18° 时 CPU 的 E 在 0.1–0.4 lux；新月时月亮项为 0；主光切换的边界。完成判据：单测先红后绿；e2e 的满月之夜在 EV100 −3 下能看清院子，入夜前后材质没有重新编译（e2e 记录编译次数）
+- [x] 5.3 `objects/Lighting.tsx:PhysicalLighting`：主光、副光的分配（太阳高于 −6° 或月亮在地平线下时主光取太阳）；月光由 `daylight` 求；太阳低于 0° 时重算月亮的天空视图；E 加上月光、月光照亮的天空与星空常数项，求 s_env；挂上星星；资源到位时 `invalidate`。`host/render.ts:openShooter` 挂载前 `await loadNightAssets`，失败时这张图失败，原因写「夜空资源加载失败，请稍后重试」。先写单测：满月高于 30°、太阳 −18° 时 CPU 的 E 在 0.1–0.4 lux；新月时月亮项为 0；主光切换的边界。完成判据：单测先红后绿；e2e 的满月之夜在 EV100 −3 下能看清院子，入夜前后材质没有重新编译（e2e 记录编译次数）
+  - 纯计算抽成新文件 `world/nightSky/night.ts`（挂载点外，理由：要在没有 GPU 的单测里验证 E 与主光规则；`PhysicalLighting` 只负责组装）：`nightOf`（夜空何时画、月亮的方向/照度/月盘亮度、星空倍率、银河与夜天光亮度、常数项）、`sunLeads`（主光规则）、`sceneLight`（太阳与月亮各自的 `daylight`，E = 两者 + 常数项）、`lightOf`。
+  - 月盘亮度按 Lommel-Seeliger 在盘内的平均值归一（满月 0.5，新月趋 0），使盘内亮度对立体角的积分等于 E_moon。
+  - 星空常数项：星表 4.87 × 10⁻⁵ lux（单测对照 `stars.bin`）、夜天光 8.9 × 10⁻⁴、银河 7.8 × 10⁻⁵。**小偏差**：design 写银河为「平均亮度 × π」，实现另乘 0.8 的平均透射率，与星星、夜天光的处理一致。
+  - 单测 4 项（共 13 项全绿）：北京 10-26 22:00 满月 54° 高、太阳 −52°，E = 0.221 lux（月亮占 0.220）；`moon_strength` 2 时月亮项正好翻倍；11-09 新月月亮项为 0，E 只剩常数项 1.0 × 10⁻³ lux；主光在 −5.9° / −6.1° 与月落时切换。与实现同时写成，没有单独跑出红。
+  - `PhysicalLighting`：两盏平行光常驻（主光投影、副光不投影），按 `sunLeads` 分配太阳和月亮；太阳低于 0° 且有月亮时渲染月亮的天空视图；银河在第一次入夜需要时烘焙一次，随组件释放；月面贴图与星表用同一个 `useNightAsset`，已缓存时首帧即有。白天多出的副光强度为 0，「W3 day unchanged」仍逐像素相同。
+  - `openShooter` 挂载前 `await loadNightAssets`，失败时抛「夜空资源加载失败，请稍后重试」（`NIGHT_ASSETS_FAILED`，原始错误只进控制台），外层包装成「截图失败：…」「导出图渲染失败：…」。失败路径的 e2e 放进 8.1（AC-W3-8）。
+  - `render/gpu.ts` 的测试钩子（挂载点外）：每个渲染器累计创建的着色器程序数 `programs`，供「没有重新编译」的检查。
+  - e2e「W3 moonlight」（SwiftShader）：北京 10-26，17:40 → 18:40（月亮接过主光）→ 22:00，程序数 44 → 44；22:00 在 EV100 −3 下院子平均亮度 144、无过曝，色调偏暖（rgb 153/142/130），有月影。Metal 上的对照放进 8.1。
+  - 回归全绿：「W3 day unchanged」（Metal）、「W3 stars」两个后端、「W2 atmosphere drift」「sunny 16」「lamps」「back to another sky」「environment tab」三项、「exposure」三项、「W3 milky way drift」、灯光编译用例；单测 61 项。
 
 ## 6. 编辑界面
 
