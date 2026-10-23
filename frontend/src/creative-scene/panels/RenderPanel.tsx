@@ -10,7 +10,7 @@ const engineNames: Record<Engine, string> = { workbench: '工作台', realtime_g
 /**
  * The render tab (R2 design「属性区选项卡」): the renderer, the exports'
  * output resolution, the lit look's exposure (under a physical sky the
- * default camera's, for views without a camera: automatic with a
+ * default camera's, for views without a camera: ambient metering with a
  * compensation or by hand at an EV100, W2 and Epic revision v5) and, read
  * only, the renderer backend the viewport draws with. Each field writes
  * set_render with only itself; the exposure drag folds by its merge key as
@@ -66,8 +66,8 @@ export function RenderPanel({ render, backend, readOnly, display, physical, onRe
         {display !== 'rendered' && <small>曝光只作用于「最终渲染」和材质光照导出</small>}
         {!physical && <Slider label="曝光补偿（EV）" value={render.exposure_ev} min={-10} max={10} step={0.1} onCommit={(v) => onRender({ exposure_ev: v }, '调整曝光补偿', 'render.exposure_ev')} />}
         <div className="cc-scene-segmented" role="group" aria-label="默认摄像机曝光">
-          <button type="button" aria-pressed={!manual} disabled={!physical} onClick={() => manual && onRender({ exposure_mode: 'auto' }, '默认摄像机改为自动曝光')}>
-            自动
+          <button type="button" aria-pressed={!manual} disabled={!physical} onClick={() => manual && onRender({ exposure_mode: 'ambient' }, '默认摄像机改为环境测光')}>
+            环境测光
           </button>
           <button type="button" aria-pressed={manual} disabled={!physical} onClick={() => !manual && onRender({ exposure_mode: 'manual' }, '默认摄像机改为手动曝光')}>
             手动
@@ -76,11 +76,11 @@ export function RenderPanel({ render, backend, readOnly, display, physical, onRe
         {manual ? (
           <Slider label="默认曝光（EV100）" value={render.exposure_ev100} min={-10} max={20} step={1 / 3} disabled={!physical} onCommit={(v) => onRender({ exposure_ev100: v }, '调整默认曝光', 'render.exposure_ev100')} />
         ) : (
-          <Slider label="自动曝光补偿（档）" value={render.exposure_compensation} min={-5} max={5} step={1 / 3} disabled={!physical} onCommit={(v) => onRender({ exposure_compensation: v }, '调整自动曝光补偿', 'render.exposure_compensation')} />
+          <Slider label="环境测光补偿（档）" value={render.exposure_compensation} min={-5} max={5} step={1 / 3} disabled={!physical} onCommit={(v) => onRender({ exposure_compensation: v }, '调整环境测光补偿', 'render.exposure_compensation')} />
         )}
         {physical ? (
           <>
-            {manual ? <small>参考：晴天 15 · 阴天 12–13 · 日落 9–12 · 蓝调时刻 5–8 · 城市夜景 3–5 · 月光 −3 · 银河 −7</small> : <small>按场景的光测光：入夜后平滑变暗，满月之夜约比正午暗 2.5 档、新月之夜约 3.5 档</small>}
+            {manual ? <small>参考：晴天 15 · 阴天 12–13 · 日落 9–12 · 蓝调时刻 5–8 · 城市夜景 3–5 · 月光 −3 · 银河 −7</small> : <small>按场景的环境光测光，不看画面：入夜后平滑变暗，满月之夜约比正午暗 2.5 档、新月之夜约 3.5 档</small>}
             <small>只用于视口的自由视角和助手的临时视点，摄像机用自己的曝光</small>
           </>
         ) : (

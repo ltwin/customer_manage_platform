@@ -90,22 +90,22 @@ export const exposureOf = (render: Pick<SceneRender, 'exposure_ev'>) => 2 ** ren
 
 /** The default camera's exposure (the free view, render_view's viewpoints and presets): render's mode, compensation and EV100. */
 export const defaultExposure = (render: SceneRender): ViewerExposure =>
-  render.exposure_mode === 'manual' ? { mode: 'manual', ev100: render.exposure_ev100 } : { mode: 'auto', compensation: render.exposure_compensation }
+  render.exposure_mode === 'manual' ? { mode: 'manual', ev100: render.exposure_ev100 } : { mode: 'ambient', compensation: render.exposure_compensation }
 
 /**
  * A frame's toneMappingExposure, pre-exposure k and night look (W2 design「曝光」).
  * The night look follows E and the sky's night_look, whoever the viewer.
  * Under a physical sky the lit look is exposed by its viewer, a scene camera
- * or else the default camera, automatically from E (lux, the level ground's
+ * or else the default camera, by ambient metering from E (lux, the level ground's
  * illuminance PhysicalLighting worked out: world/exposure.ts sceneLux) or by
  * hand (Epic revision v5); nothing is compensated after. Under another sky,
  * as before. Clay and wireframe are neither.
  */
-export function frameExposure(scene: Pick<Scene, 'environment' | 'render'>, lit: boolean, camera: ViewerExposure | undefined, lux: number): { exposure: number; preExposure: number; nightLook: number } {
+export function frameExposure(scene: Pick<Scene, 'environment' | 'render'>, lit: boolean, camera: ViewerExposure | undefined, lux: number, lowSun = 0): { exposure: number; preExposure: number; nightLook: number } {
   if (!lit) return { exposure: 1, preExposure: 1, nightLook: 0 }
   const sky = scene.environment.sky
   if (sky.kind !== 'physical') return { exposure: exposureOf(scene.render), preExposure: 1, nightLook: 0 }
-  return { exposure: 1, preExposure: exposureScale(viewerEV100(camera ?? defaultExposure(scene.render), lux)), nightLook: nightLookWeight(lux, sky.night?.night_look ?? 1) }
+  return { exposure: 1, preExposure: exposureScale(viewerEV100(camera ?? defaultExposure(scene.render), lux, lowSun)), nightLook: nightLookWeight(lux, sky.night?.night_look ?? 1) }
 }
 
 /**

@@ -123,10 +123,10 @@ export function cameraFraming(scene: Scene, id: string, side = longSide): Framin
   }
 }
 
-/** A scene camera's exposure: automatic with its compensation, or by hand at its ISO, shutter and aperture (W2 design「曝光」, Epic revision v5); the server stores every field. */
+/** A scene camera's exposure: ambient metering with its compensation, or by hand at its ISO, shutter and aperture (W2 design「曝光」, Epic revision v5); the server stores every field. */
 export function cameraExposure(c: NonNullable<SceneObject['camera']>): ViewerExposure {
   const camera = { ...cameraDefaults, ...c }
-  return camera.exposure_mode === 'manual' ? { mode: 'manual', ev100: ev100(camera.f_stop, camera.shutter_s, camera.iso) } : { mode: 'auto', compensation: camera.exposure_compensation }
+  return camera.exposure_mode === 'manual' ? { mode: 'manual', ev100: ev100(camera.f_stop, camera.shutter_s, camera.iso) } : { mode: 'ambient', compensation: camera.exposure_compensation }
 }
 
 /**

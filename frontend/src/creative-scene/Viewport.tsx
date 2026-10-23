@@ -62,7 +62,7 @@ import { docToView, positionToDoc, positionToView, transformToDoc } from './spac
 import type { CameraView } from './viewState.ts'
 import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraExposure, cameraFraming } from './host/framing.ts'
-import { sceneLux } from './world/exposure.ts'
+import { sceneLowSun, sceneLux } from './world/exposure.ts'
 import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor } from './render/sceneRenderer.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
@@ -1116,8 +1116,8 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
     d.changed = false
     d.view = view
     gpuOf(state.gl).advanceFrame()
-    // Exposed as it is drawn: the automatic exposure meters E, which PhysicalLighting writes after this component renders.
-    const { exposure, preExposure, nightLook } = frameExposure(scene, lit, viewer, sceneLux(state.scene))
+    // Exposed as it is drawn: ambient metering meters E, which PhysicalLighting writes after this component renders.
+    const { exposure, preExposure, nightLook } = frameExposure(scene, lit, viewer, sceneLux(state.scene), sceneLowSun(state.scene))
     r.render(state.camera, {
       width: state.size.width,
       height: state.size.height,

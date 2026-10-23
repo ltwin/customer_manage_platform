@@ -5,7 +5,7 @@ import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
 import { drawnFrames, effectiveEngine, engineOf, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
-import { sceneLux } from '../world/exposure.ts'
+import { sceneLowSun, sceneLux } from '../world/exposure.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
@@ -183,7 +183,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           height,
           dof: options.depthOfField && framing.optics ? framing.optics : null,
           // A scene camera at its own exposure, a viewpoint or preset at the default camera's (physical sky), metering E as PhysicalLighting left it.
-          ...frameExposure(scene, options.kind === 'lit', framing.exposure, sceneLux(three)),
+          ...frameExposure(scene, options.kind === 'lit', framing.exposure, sceneLux(three), sceneLowSun(three)),
           engine,
           quality: 'final' as const,
           accumulate: frames > 1,

@@ -1,5 +1,5 @@
 import { Vector3 } from 'three'
-import { physicalMoon, sunVector } from '../astro.ts'
+import { physicalMoon, sunTimes, sunVector } from '../astro.ts'
 import type { CpuAtmosphere, Daylight } from '../atmosphere/cpu.ts'
 import type { Vec3 } from '../atmosphere/constants.ts'
 import { discSolidAngle } from '../atmosphere/sky.ts'
@@ -111,6 +111,28 @@ export function sceneLight(cpu: CpuAtmosphere, sun: Vector3, sunTop: Readonly<Ve
   const moon = night.moon && cpu.daylight(night.moon.direction.y, night.moon.top)
   return { sun: day, moon, horizontal: day.horizontal + (moon?.horizontal ?? 0) + night.lux }
 }
+
+/**
+ * How many stops ambient metering darkens for a low sun (owner
+ * 2026-10-23). It meters level ground, which a low sun lights little while a
+ * surface facing it gets nearly a noon's light: unchecked, what the setting
+ * sun lights is brighter than at noon. So the picture is darkened by as many
+ * stops as the most a surface facing the sun outshines level ground, between
+ * the sun's height now and the day's noon, exceeds the noon's: what the sun
+ * lights is never brighter than at noon, and the darkening only grows as the
+ * sun goes down and stays once it has set (the night's darkening takes over
+ * from it, ambientEV100).
+ */
+export function lowSunStops(cpu: CpuAtmosphere, elevationDeg: number, noonElevationDeg: number): number {
+  const peak = cpu.sunFacingPeak()
+  const noon = cpu.sunFacing(noonElevationDeg)
+  if (noonElevationDeg <= peak.elevationDeg || elevationDeg >= noonElevationDeg) return 0
+  const most = elevationDeg >= peak.elevationDeg ? cpu.sunFacing(elevationDeg) : peak.ratio
+  return Math.max(0, Math.log2(most / noon))
+}
+
+/** The noon a lowSunStops holds a sky's sun to: its date's and place's highest sun, a manual sun's too, so taking the angles keeps the picture. */
+export const noonElevation = (sky: PhysicalSky) => sunTimes(sky).noonElevationDeg
 
 /** The light a daylight puts on a surface facing its body, as a light's intensity (lux at its brightest channel) and colour. */
 export function lightOf(d: Daylight | null): { intensity: number; color: Vec3 } {

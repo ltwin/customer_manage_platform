@@ -8,7 +8,8 @@ import { completeSky, type PhysicalSky } from '../src/creative-scene/world/physi
 import { milkyWayAt, milkyWayMean } from '../src/creative-scene/world/nightSky/milkyWay.ts'
 import { refraction, spriteShare, STAR_SIGMA, starSpread } from '../src/creative-scene/world/nightSky/stars.ts'
 import { Refraction } from 'astronomy-engine'
-import { lightOf, lommelSeeligerMean, MILKY_WAY_LUX, nightOf, sceneLight, STARLIGHT_LUX, sunLeads } from '../src/creative-scene/world/nightSky/night.ts'
+import { lightOf, lommelSeeligerMean, lowSunStops, MILKY_WAY_LUX, nightOf, sceneLight, STARLIGHT_LUX, sunLeads } from '../src/creative-scene/world/nightSky/night.ts'
+import { ambientEV100 } from '../src/creative-scene/world/exposure.ts'
 import { physicalSun, sunVector } from '../src/creative-scene/world/astro.ts'
 import { CpuAtmosphere } from '../src/creative-scene/world/atmosphere/cpu.ts'
 import { sunAbove } from '../src/creative-scene/world/atmosphere/constants.ts'
@@ -206,4 +207,33 @@ test('the shadowing light: the sun above −6° or with no moon up, otherwise th
   const moonLight = lightOf(light.moon)
   assert.ok(moonLight.intensity > 0.1 && Math.max(...moonLight.color) === 1)
   assert.deepEqual(lightOf(null), { intensity: 0, color: [1, 1, 1] })
+})
+
+// owner 2026-10-23: ambient metering reads level ground, which a low sun
+// lights little; unchecked, a wall facing the setting sun came out over a
+// stop brighter than at noon. The low sun's darkening keeps it at the noon's,
+// grows only as the sun goes down and stays after sunset.
+test('what the low sun lights is never brighter than at the day’s noon, and the darkening only grows', () => {
+  const cpu = new CpuAtmosphere(completeSky({ kind: 'physical', date: '2026-10-26' }) as PhysicalSky)
+  const noon = 37
+  const facing = (e: number) => {
+    const d = cpu.daylight(Math.sin((e * Math.PI) / 180), sunAbove(1, 6500))
+    return Math.log2(luminance(d.sun)) - ambientEV100(d.horizontal, 0, lowSunStops(cpu, e, noon))
+  }
+  const atNoon = facing(noon)
+  let last = 0
+  for (let e = noon; e >= -6; e -= 0.5) {
+    const stops = lowSunStops(cpu, e, noon)
+    assert.ok(stops >= last - 1e-9, `${e}°: ${stops.toFixed(2)} after ${last.toFixed(2)}`)
+    last = stops
+    if (e > 0.5) assert.ok(facing(e) < atNoon + 0.1, `${e}°: ${(facing(e) - atNoon).toFixed(2)} stops over noon`)
+  }
+  assert.ok(last > 1.5 && last < 2.5, `held at ${last.toFixed(2)}`)
+  // A day whose noon sun stays below the peak, and a sun at its noon, are not darkened.
+  assert.equal(lowSunStops(cpu, 2, 3), 0)
+  assert.equal(lowSunStops(cpu, noon, noon), 0)
+  // Hazy air peaks higher and darkens less.
+  const hazy = new CpuAtmosphere(completeSky({ kind: 'physical', date: '2026-10-26', dust_density: 12 }) as PhysicalSky)
+  assert.ok(hazy.sunFacingPeak().elevationDeg > cpu.sunFacingPeak().elevationDeg)
+  assert.ok(lowSunStops(hazy, 0, noon) < lowSunStops(cpu, 0, noon))
 })

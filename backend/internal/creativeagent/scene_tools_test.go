@@ -297,7 +297,8 @@ func TestTheAssistantBuildsASceneAndLooksAtIt(t *testing.T) {
 		t.Fatalf("write_model result %v", baked)
 	}
 	shot := lastTool(s.request(5))
-	if shot["image_revision_id"] == nil || shot["scene_revision"] == nil {
+	// A clay screenshot has no exposure to report.
+	if shot["image_revision_id"] == nil || shot["scene_revision"] == nil || shot["exposure"] != nil {
 		t.Fatalf("render_view result %v", shot)
 	}
 	if ok, label := hasImage(s.request(5)); !ok || !strings.Contains(label, "render_view 截图") {
@@ -749,11 +750,11 @@ func TestSceneToolsDescribeTheNightAndTheExposure(t *testing.T) {
 			"night:{moon:bool", "milky_way:bool", "moon_strength:0…10", "moon_temperature_k:2000…12000", "stars_strength:0…10", "stars_temperature_k:2000…12000", "night_look:0…1",
 			"夜空只在 sun_mode:location 下画", "night_look 照常生效",
 			"月亮参考", "phase", "illumination", "previous_full_moon", "next_full_moon", "previous_new_moon", "next_new_moon", "先按它选 date",
-			"exposure_mode:auto|manual", "exposure_compensation:-5…5", "exposure_mode?:auto|manual", "exposure_compensation?:-5…5",
-			"默认自动曝光", "入夜不必改曝光", "只比正午暗 2–4 档", "要按真实相机曝光时写 exposure_mode:manual",
+			"exposure_mode:ambient|manual", "ambient 环境测光", "exposure_compensation:-5…5", "exposure_mode?:ambient|manual", "exposure_compensation?:-5…5",
+			"默认环境测光", "不看画面", "入夜不必改曝光", "只比正午暗 2–4 档", "要按真实相机曝光时写 exposure_mode:manual",
 		},
 		readSceneTool:  {"moon（月亮参考）"},
-		renderViewTool: {"摄像机按自己的曝光"},
+		renderViewTool: {"摄像机按自己的曝光", "要按那台摄像机回看", "结果的 exposure"},
 	}
 	for name, wants := range descs {
 		info, err := (&sceneTool{name: name}).Info(t.Context())

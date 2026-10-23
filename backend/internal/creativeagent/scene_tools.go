@@ -83,7 +83,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
 				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
 				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
-				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）, iso:25…102400, shutter_s:1/8000…30（快门，秒）, exposure_mode:auto|manual（物理天空下的曝光模式，写入时省略为 auto）, exposure_compensation:-5…5（自动曝光的补偿，档，正值变亮）；iso 和 shutter_s 只在物理天空下手动曝光时生效}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"、100、1/4000、auto、0）；" +
+				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）, iso:25…102400, shutter_s:1/8000…30（快门，秒）, exposure_mode:ambient|manual（物理天空下的曝光模式：ambient 环境测光，按场景的环境光测光、不看画面；写入时省略为 ambient）, exposure_compensation:-5…5（环境测光的补偿，档，正值变亮）；iso 和 shutter_s 只在物理天空下手动曝光时生效}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"、100、1/4000、ambient、0）；" +
 				"视场角按画面长边对应传感器长边：同一焦距下 2:3 竖幅和 3:2 横幅拍到的范围一样大，只是方向不同；depth_of_field 打开后白模导出按光圈和对焦虚化（线稿不虚化）。" +
 				"空物体是没有子物件的 group，可以当对焦目标或父级。" +
 				"add_objects 和 update_objects 的条目可写 look_at:[x,y,z]（世界坐标）代替 transform.rotation：摄像机和灯光的 −Z、其余物件的 +Z 对准该点（同 three.js Object3D.lookAt），update 时 transform 可只写 position 或省略；父级在同一次修改里也被移动时会被拒绝，分两次提交。" +
@@ -91,7 +91,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:physical, …见下}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；" +
-				"set_render{render:{mode?:clay|lit, exposure_ev?:-10…10（物理天空以外的曝光补偿）, exposure_mode?:auto|manual（物理天空下临时视点和预设取景的曝光模式，默认 auto）, exposure_compensation?:-5…5（它们自动曝光的补偿）, exposure_ev100?:-10…20（它们手动曝光时的 EV100）, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
+				"set_render{render:{mode?:clay|lit, exposure_ev?:-10…10（物理天空以外的曝光补偿）, exposure_mode?:ambient|manual（物理天空下临时视点和预设取景的曝光模式，默认 ambient 环境测光）, exposure_compensation?:-5…5（它们环境测光的补偿）, exposure_ev100?:-10…20（它们手动曝光时的 EV100）, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
 				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
 				"物理天空（真实的大气和太阳，调时间产生真实的光照变化）sky:{kind:physical, sun_mode:location（按地点和时间推算太阳）|manual（用 sun_elevation_deg、sun_azimuth_deg）, latitude_deg:-90…90, longitude_deg:-180…180（东经为正）, " +
 				"timezone（IANA 时区名，大小写与时区库一致，如 Asia/Shanghai、Europe/London；夏令时由时区处理）, place（显示用地名，≤80 字）, date:\"YYYY-MM-DD\"（必填）, local_time:\"HH:MM\"（当地时刻）, " +
@@ -109,13 +109,13 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"月亮参考：同样的情况下结果带 moon：phase（new、waxing_crescent、first_quarter、waxing_gibbous、full、waning_gibbous、last_quarter、waning_crescent）、illumination（照亮比例 0…1）、elevation_deg、compass_deg、scene_azimuth_deg、moonrise、moonset，" +
 				"以及 previous_full_moon、next_full_moon、previous_new_moon、next_new_moon（当地日期）；「满月之夜」「新月看银河」先按它选 date，再写 local_time，月亮在天上时 elevation_deg > 0。" +
 				"资产库里的模型：search_assets 按 kind:model 查到后，用它的 content_revision_id 写 add_objects 的 model{content_revision_id}，并把 model 要点里的 materials 原样写进 material_slots（资产带的材质）；可放多个实例，都引用同一版模型；size_m 与 mount 见搜索结果的 model 要点。" +
-				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit；物理天空下改为摄像机的自动或手动曝光，见建议曝光）。" +
+				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit；物理天空下改为摄像机的环境测光或手动曝光，见建议曝光）。" +
 				"渲染器 render.engine 只作用于材质光照（lit 的导出与回看；白模和线稿总按工作台画）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
 				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
 				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；投射阴影的灯光不超过 4 盏，太多会卡。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
-				"建议曝光：物理天空下摄像机和临时视点默认自动曝光：按场景的光测光，入夜后平滑变暗，只比正午暗 2–4 档（满月之夜约 2.5 档，新月之夜约 3.5 档，天空深蓝、看得见银河），入夜不必改曝光；" +
+				"建议曝光：物理天空下摄像机和临时视点默认环境测光：按场景的环境光测光（不看画面，不随取景变），入夜后平滑变暗，只比正午暗 2–4 档（满月之夜约 2.5 档，新月之夜约 3.5 档，天空深蓝、看得见银河），入夜不必改曝光；" +
 				"要更亮或更暗写 exposure_compensation；测光看的是场景原点的天光，室内或浓荫下的取景偏暗，补偿 +1～+2。" +
 				"要按真实相机曝光时写 exposure_mode:manual，给摄像机设 iso 和 shutter_s（f_stop 同时决定景深），EV100 = log2(f_stop²/shutter_s) − log2(iso/100)，EV100 越大画面越暗；" +
 				"参考值：晴天 15、阴天 12–13、日落 9–12、蓝调时刻 5–8、城市夜景 3–5、月光 −3、银河 −7；render.exposure_ev100 只管临时视点和预设取景的手动曝光，不影响摄像机。" +
@@ -175,7 +175,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	default:
 		return &schema.ToolInfo{
 			Name: renderViewTool,
-			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光）出图，检查材质和打光；物理天空下摄像机按自己的曝光（自动，或 iso、shutter_s、f_stop 手动），临时视点和预设取景按 render 的曝光设置（默认自动）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
+			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光）出图，检查材质和打光；物理天空下摄像机按自己的曝光（环境测光，或 iso、shutter_s、f_stop 手动），临时视点和预设取景按 render 的曝光设置（默认环境测光），所以它们的亮度可能和摄像机拍出来的不同，手动曝光的摄像机尤其如此：判断最终画面的明暗要按那台摄像机回看；结果的 exposure 写着这张截图怎么曝光（by:camera|default_camera，mode，环境测光的 compensation 或手动的 ev100）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
 				"截图与编辑器视口的白模或最终渲染、对应的导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
 				"截图 mode:lit 按场景的渲染器（render.engine）画，素模按工作台；长边 1024；实时 GI 要多帧累积，比工作台慢。截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
@@ -515,9 +515,17 @@ func bakeSucceeded(ctx context.Context, tx store.TxAccountScope, bake creativesc
 }
 
 // renderSucceeded is render_view's answer: the screenshot, bound to the next
-// request as an image, and the revision it shows.
-func renderSucceeded(ctx context.Context, tx store.TxAccountScope, render creativescene.RenderResult) (any, error) {
+// request as an image, the revision it shows and, lit under a physical sky,
+// how it was exposed.
+func renderSucceeded(ctx context.Context, tx store.TxAccountScope, job creativescene.Job, render creativescene.RenderResult) (any, error) {
 	out := map[string]any{"image_revision_id": render.ContentRevisionID, "content_revision_id": render.ContentRevisionID, "scene_revision": int64(render.SceneRevision)}
+	exposure, err := creativescene.RenderExposureInTx(ctx, tx, job, render.SceneRevision)
+	if err != nil {
+		return nil, err
+	}
+	if exposure != nil {
+		out["exposure"] = exposure
+	}
 	batch, err := creativecontent.ReadDisplayBatchInTx(ctx, tx, []string{render.ContentRevisionID})
 	if err != nil {
 		return nil, err
@@ -557,7 +565,7 @@ func sceneToolResult(ctx context.Context, tx store.TxAccountScope, job creatives
 	case res.Bake != nil:
 		out, err = bakeSucceeded(ctx, tx, *res.Bake)
 	case res.Render != nil:
-		out, err = renderSucceeded(ctx, tx, *res.Render)
+		out, err = renderSucceeded(ctx, tx, job, *res.Render)
 	case res.Export != nil:
 		out = exportSucceeded(*res.Export)
 	case res.Failure != nil:

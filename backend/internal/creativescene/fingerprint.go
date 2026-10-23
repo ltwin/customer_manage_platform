@@ -65,13 +65,13 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 			// Cleared rather than left as read: a camera stored before the
 			// fields existed fingerprints as it did. Under a physical sky a
 			// manual camera is exposed by its ISO, shutter and aperture (W2),
-			// an automatic one by its mode and compensation (Epic revision
+			// an ambient-metered one by its mode and compensation (Epic revision
 			// v5); a manual camera's mode is left out, so one read as manual
 			// fingerprints as it did in W2.
 			switch {
 			case !physicalLit:
 				c.ISO, c.ShutterS, c.ExposureMode, c.ExposureCompensation = nil, nil, nil, nil
-			case *c.ExposureMode == ExposureAuto:
+			case *c.ExposureMode == ExposureAmbient:
 				c.ISO, c.ShutterS = nil, nil
 				if !*c.DepthOfField {
 					c.FStop = nil

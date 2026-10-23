@@ -72,7 +72,7 @@ type storedRender struct {
 
 // complete reports whether the render needs no completion before it is shown.
 func (r storedRender) complete() bool {
-	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil && r.ExposureEV100 != nil && r.ExposureMode != nil
+	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil && r.ExposureEV100 != nil && r.ExposureMode != nil && *r.ExposureMode != exposureAuto
 }
 
 // unitView narrows a read to the listed units. Each object appears once with

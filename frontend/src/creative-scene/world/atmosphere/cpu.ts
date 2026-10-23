@@ -29,7 +29,7 @@ import {
  * light drawn (e2e「W2 atmosphere drift」: they agree to 0.2 %). Coarser
  * ones (16 × 16 for the multiple scattering) put twilight up to 6 stops
  * above the drawn sky with the sun 7–11° down and then let it drop 6 stops
- * within a degree, and the automatic exposure meters it: the picture went
+ * within a degree, and ambient metering meters it: the picture went
  * dark at dusk, then jumped bright (owner 2026-10-23). An atmosphere change
  * takes about 90 ms, a sky light change 1 ms.
  */
@@ -327,5 +327,35 @@ export class CpuAtmosphere {
     const sun = tSun.map((t, i) => t * top[i]) as Vec3
     const skyLux = sky.map((e, i) => e * top[i]) as Vec3
     return { sun, sky: skyLux, horizontal: luminance(sun) * Math.max(0, sunMu) + luminance(skyLux) }
+  }
+
+  /** How many times level ground's light a surface facing the sun at an elevation gets (white sun): 0 once it is behind the ground. */
+  sunFacing(elevationDeg: number): number {
+    const d = this.daylight(Math.sin((elevationDeg * Math.PI) / 180), [1, 1, 1])
+    return d.horizontal > 0 ? luminance(d.sun) / d.horizontal : 0
+  }
+
+  private peak: { elevationDeg: number; ratio: number } | null = null
+  /** Where sunFacing is highest, a few degrees up in clear air and higher in haze (to a quarter degree, by golden section): once per atmosphere. */
+  sunFacingPeak(): { elevationDeg: number; ratio: number } {
+    if (this.peak) return this.peak
+    const g = (Math.sqrt(5) - 1) / 2
+    let [a, b] = [0, 60]
+    let [c, d] = [b - g * (b - a), a + g * (b - a)]
+    let [fc, fd] = [this.sunFacing(c), this.sunFacing(d)]
+    while (b - a > 0.25) {
+      if (fc > fd) {
+        ;[b, d, fd] = [d, c, fc]
+        c = b - g * (b - a)
+        fc = this.sunFacing(c)
+      } else {
+        ;[a, c, fc] = [c, d, fd]
+        d = a + g * (b - a)
+        fd = this.sunFacing(d)
+      }
+    }
+    const elevationDeg = (a + b) / 2
+    this.peak = { elevationDeg, ratio: this.sunFacing(elevationDeg) }
+    return this.peak
   }
 }

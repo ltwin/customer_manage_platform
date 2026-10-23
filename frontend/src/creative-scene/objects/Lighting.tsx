@@ -22,7 +22,7 @@ import { discSolidAngle } from '../world/atmosphere/sky.ts'
 import { environmentScale, type PhysicalExposure } from '../world/exposure.ts'
 import { moonNow, nightNeeds, starsNow } from '../world/nightSky/assets.ts'
 import { bakeMilkyWay } from '../world/nightSky/milkyWay.ts'
-import { lightOf, nightOf, sceneLight, sunLeads } from '../world/nightSky/night.ts'
+import { lightOf, lowSunStops, nightOf, noonElevation, sceneLight, sunLeads } from '../world/nightSky/night.ts'
 import { disposeStars, starField } from '../world/nightSky/stars.ts'
 import { isPhysical, type PhysicalSky } from '../world/physicalSky.ts'
 
@@ -220,7 +220,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     // Two lights day and night (design「投影」): the shadowing one takes the sun or the moon, the other the other, so nightfall compiles nothing.
     const aside = new DirectionalLight()
     aside.userData = { baseIntensity: 0 }
-    const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, lux: 0 }
+    const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, lux: 0, lowSun: 0 }
     return {
       luts,
       lutScale,
@@ -332,6 +332,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
       l.position.fromArray(positionToView([b.toward.x * 60, b.toward.y * 60, b.toward.z * 60]))
     }
     parts.physical.lux = light.horizontal
+    parts.physical.lowSun = lowSunStops(parts.cpu!, where.elevationDeg, noonElevation(s))
     invalidate()
   }, [parts, renderer, skyKey, stars, moonMap, invalidate])
 

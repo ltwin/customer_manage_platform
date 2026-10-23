@@ -10,7 +10,7 @@ import (
 )
 
 // Epic revision v5 (data: 摄像机曝光): a camera written without an exposure
-// mode is exposed automatically; one stored before the mode existed was
+// mode is metered from the ambient light; one stored before the mode existed was
 // exposed by hand (W2) and reads as manual, so its pictures do not change.
 // Merging works on the completed camera: changing only its ISO keeps it
 // manual.
@@ -19,7 +19,7 @@ func TestCameraExposureModeDefaults(t *testing.T) {
 	doc := createScene(t, f.a)
 	fresh, old := objectID(1), objectID(2)
 	addObjects(t, f.a, doc, withContent(fresh, "camera", 1, map[string]any{}), withContent(old, "camera", 2, map[string]any{"iso": 400}))
-	if got := storedContent(t, f.a, doc, fresh, "camera"); got["exposure_mode"] != "auto" || got["exposure_compensation"] != 0.0 {
+	if got := storedContent(t, f.a, doc, fresh, "camera"); got["exposure_mode"] != "ambient" || got["exposure_compensation"] != 0.0 {
 		t.Fatalf("a camera written without exposure: %v", got)
 	}
 	// As W2 stored it: no mode, no compensation.
@@ -35,6 +35,19 @@ func TestCameraExposureModeDefaults(t *testing.T) {
 	if got := storedContent(t, f.a, doc, old, "camera"); got["exposure_mode"] != "manual" || got["exposure_compensation"] != 0.0 || got["iso"] != 400.0 {
 		t.Fatalf("a camera stored before the exposure mode: %v", got)
 	}
+	// Saved as auto while W3 was being built: reads as ambient.
+	if _, err := f.db.Exec(`
+		UPDATE creative_content_revisions r SET payload = jsonb_set(r.payload, '{scene,objects}', (
+			SELECT jsonb_agg(CASE WHEN o->>'id' = $1
+				THEN jsonb_set(o, '{camera,exposure_mode}', '"auto"')
+				ELSE o END ORDER BY n)
+			FROM jsonb_array_elements(r.payload->'scene'->'objects') WITH ORDINALITY AS t(o, n)))
+		WHERE r.account_id = 'scene-a' AND r.payload ? 'scene'`, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedContent(t, f.a, doc, fresh, "camera"); got["exposure_mode"] != "ambient" {
+		t.Fatalf("a camera saved as auto: %v", got)
+	}
 	update := func(fields map[string]any) error {
 		v := readScene(t, f.a, doc)
 		_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect(content(old)), Operations: []any{
@@ -47,11 +60,11 @@ func TestCameraExposureModeDefaults(t *testing.T) {
 	if got := storedContent(t, f.a, doc, old, "camera"); got["exposure_mode"] != "manual" || got["iso"] != 800.0 {
 		t.Fatalf("an old camera after changing its ISO: %v", got)
 	}
-	if err := update(map[string]any{"exposure_mode": "auto", "exposure_compensation": -1.5}); err != nil {
+	if err := update(map[string]any{"exposure_mode": "ambient", "exposure_compensation": -1.5}); err != nil {
 		t.Fatal(err)
 	}
-	if got := storedContent(t, f.a, doc, old, "camera"); got["exposure_mode"] != "auto" || got["exposure_compensation"] != -1.5 || got["iso"] != 800.0 {
-		t.Fatalf("switched to auto: %v", got)
+	if got := storedContent(t, f.a, doc, old, "camera"); got["exposure_mode"] != "ambient" || got["exposure_compensation"] != -1.5 || got["iso"] != 800.0 {
+		t.Fatalf("switched to ambient metering: %v", got)
 	}
 
 	before := readScene(t, f.a, doc).Revision
@@ -75,7 +88,7 @@ func TestCameraExposureModeDefaults(t *testing.T) {
 	}
 }
 
-// The default camera's exposure mode reads as auto, also for a render stored
+// The default camera's exposure mode reads as ambient, also for a render stored
 // before it existed, and set_render takes the mode or the compensation alone.
 func TestDefaultCameraExposureMode(t *testing.T) {
 	f := setup(t)
@@ -87,8 +100,18 @@ func TestDefaultCameraExposureMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); got["exposure_mode"] != "auto" || got["exposure_compensation"] != 0.0 || got["exposure_ev100"] != -3.0 {
+	if got := renderOf(t, raw); got["exposure_mode"] != "ambient" || got["exposure_compensation"] != 0.0 || got["exposure_ev100"] != -3.0 {
 		t.Fatalf("an old render reads %v", got)
+	}
+	// Saved while W3 was being built, before the mode was named ambient.
+	if _, err := f.db.Exec(`UPDATE creative_content_revisions SET payload = jsonb_set(payload, '{scene,render,exposure_mode}', '"auto"') WHERE account_id = 'scene-a' AND payload ? 'scene'`); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err = creativedocument.Read(t.Context(), f.a, doc); err != nil {
+		t.Fatal(err)
+	}
+	if got := renderOf(t, raw)["exposure_mode"]; got != "ambient" {
+		t.Fatalf("a render saved as auto reads %v", got)
 	}
 	set := func(render map[string]any) error {
 		v := readScene(t, f.a, doc)

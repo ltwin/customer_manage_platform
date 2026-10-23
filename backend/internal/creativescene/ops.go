@@ -261,7 +261,7 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			if o.Camera.FocusObjectID != nil {
 				c.focus[o.ID] = true
 			}
-			completeCamera(o.Camera, ExposureAuto)
+			completeCamera(o.Camera, ExposureAmbient)
 		}
 		canonicalNumbers(&o)
 		s.Objects = append(s.Objects, o)

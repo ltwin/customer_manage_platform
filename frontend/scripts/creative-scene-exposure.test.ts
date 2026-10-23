@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Color, Fog, PointLight, Scene } from 'three'
 import { BOTTOM, coefficients, groundRadius, luminance, MIE_ABSORPTION, MIE_ABSORPTION_TINT, PRESETS, presetOf, SUN_LUX, sunTint, viewRadius, type Vec3 } from '../src/creative-scene/world/atmosphere/constants.ts'
 import { CpuAtmosphere } from '../src/creative-scene/world/atmosphere/cpu.ts'
-import { applyExposure, autoEV100, environmentEV, environmentScale, ev100, exposureScale, isoThirds, nearestStep, newCameraExposure, nightDarkening, preExposure, shutterThirds, viewerEV100 } from '../src/creative-scene/world/exposure.ts'
+import { applyExposure, ambientEV100, environmentEV, environmentScale, ev100, exposureScale, isoThirds, nearestStep, newCameraExposure, nightDarkening, preExposure, shutterThirds, viewerEV100 } from '../src/creative-scene/world/exposure.ts'
 import { frameExposure } from '../src/creative-scene/render/litLook.ts'
 import { NIGHT_TINT, nightLookColor, nightLookWeight } from '../src/creative-scene/world/nightLook.ts'
 
@@ -161,7 +161,7 @@ test('under a physical sky k scales the lights, the sky light by k / s_env and t
   applyExposure(scene, 1)
 })
 
-// Epic revision v5: the automatic exposure meters the scene's light and
+// Epic revision v5: ambient metering meters the scene's light and
 // darkens the night by a few stops only (design「物理单位与曝光」「夜间压暗曲线」).
 
 test('the night darkening is a straight line from a sunny noon to a moonless night, flat beyond them', () => {
@@ -176,31 +176,31 @@ test('the night darkening is a straight line from a sunny noon to a moonless nig
   }
 })
 
-test('the automatic exposure is the incident meter plus the darkening, less the compensation', () => {
-  const noon = autoEV100(100_000, 0)
+test('ambient metering is the incident meter plus the darkening, less the compensation', () => {
+  const noon = ambientEV100(100_000, 0)
   assert.ok(Math.abs(noon - environmentEV(100_000)) < 1e-12, 'noon is metered as it is')
-  assert.ok(Math.abs(autoEV100(100_000, 1) - (noon - 1)) < 1e-12, '+1 is a stop brighter')
+  assert.ok(Math.abs(ambientEV100(100_000, 1) - (noon - 1)) < 1e-12, '+1 is a stop brighter')
   // Mid grey lit like the origin shows D stops under noon's: the full moon of 2026-10-26 in Beijing, the new moon's constant term.
-  const under = (lux: number) => autoEV100(lux, 0) - environmentEV(lux)
+  const under = (lux: number) => ambientEV100(lux, 0) - environmentEV(lux)
   assert.ok(under(0.221) >= 2 && under(0.221) <= 3, `full moon ${under(0.221).toFixed(2)} stops`)
   assert.ok(under(1.013e-3) >= 3 && under(1.013e-3) <= 4, `new moon ${under(1.013e-3).toFixed(2)} stops`)
   assert.equal(viewerEV100({ mode: 'manual', ev100: -3 }, 0.221), -3, 'manual keeps its EV100')
-  assert.equal(viewerEV100({ mode: 'auto', compensation: -0.5 }, 0.221), autoEV100(0.221, -0.5))
+  assert.equal(viewerEV100({ mode: 'ambient', compensation: -0.5 }, 0.221), ambientEV100(0.221, -0.5))
 })
 
 test('a frame under a physical sky is exposed by its viewer: a camera, or else the default camera; the night look follows the scene', () => {
-  const physical = { environment: { sky: { kind: 'physical', night: { night_look: 0.5 } } }, render: { exposure_ev: 2, exposure_ev100: 12, exposure_mode: 'auto', exposure_compensation: 1 } } as unknown as Parameters<typeof frameExposure>[0]
+  const physical = { environment: { sky: { kind: 'physical', night: { night_look: 0.5 } } }, render: { exposure_ev: 2, exposure_ev100: 12, exposure_mode: 'ambient', exposure_compensation: 1 } } as unknown as Parameters<typeof frameExposure>[0]
   const lux = 0.221
   const look = nightLookWeight(lux, 0.5)
   assert.ok(look > 0.49 && look <= 0.5, `a full moon's look at night_look 0.5: ${look}`)
-  assert.deepEqual(frameExposure(physical, true, undefined, lux), { exposure: 1, preExposure: exposureScale(autoEV100(lux, 1)), nightLook: look }, 'the default camera, automatic')
+  assert.deepEqual(frameExposure(physical, true, undefined, lux), { exposure: 1, preExposure: exposureScale(ambientEV100(lux, 1)), nightLook: look }, 'the default camera, ambient metering')
   const manual = { ...physical, render: { ...physical.render, exposure_mode: 'manual' } } as typeof physical
   assert.deepEqual(frameExposure(manual, true, undefined, lux), { exposure: 1, preExposure: exposureScale(12), nightLook: look }, 'the default camera, manual')
-  assert.deepEqual(frameExposure(manual, true, { mode: 'auto', compensation: 0 }, lux), { exposure: 1, preExposure: exposureScale(autoEV100(lux, 0)), nightLook: look }, 'a scene camera, automatic')
+  assert.deepEqual(frameExposure(manual, true, { mode: 'ambient', compensation: 0 }, lux), { exposure: 1, preExposure: exposureScale(ambientEV100(lux, 0)), nightLook: look }, 'a scene camera, ambient metering')
   assert.deepEqual(frameExposure(physical, true, { mode: 'manual', ev100: -3 }, lux), { exposure: 1, preExposure: exposureScale(-3), nightLook: look }, 'a scene camera, manual')
   assert.deepEqual(frameExposure(physical, false, undefined, lux), { exposure: 1, preExposure: 1, nightLook: 0 }, 'clay')
   const procedural = { ...physical, environment: { sky: { kind: 'procedural' } } } as typeof physical
-  assert.deepEqual(frameExposure(procedural, true, { mode: 'auto', compensation: 0 }, lux), { exposure: 4, preExposure: 1, nightLook: 0 }, 'another sky: the compensation of old')
+  assert.deepEqual(frameExposure(procedural, true, { mode: 'ambient', compensation: 0 }, lux), { exposure: 4, preExposure: 1, nightLook: 0 }, 'another sky: the compensation of old')
 })
 
 // Epic revision v5: the night look turns the picture blue and paler as night falls, keeping its brightness.

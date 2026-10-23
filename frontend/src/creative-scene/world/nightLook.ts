@@ -5,7 +5,7 @@ import { environmentEV } from './exposure.ts'
 
 // The night look (Epic design「夜空」「夜色」, revision v5): as night falls the
 // picture turns blue and paler, as eyes see at night and as day-for-night is
-// graded; without it the automatic exposure makes a moonlit night a darker
+// graded; without it ambient metering makes a moonlit night a darker
 // day. A colour change after the exposure and before tone mapping that keeps
 // each pixel's luminance. It follows the scene's light, not the camera, so
 // every camera and both exposure modes see the same; night_look 0 keeps the

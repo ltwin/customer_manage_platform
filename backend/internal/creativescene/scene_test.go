@@ -592,7 +592,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0, "exposure_mode": "auto", "exposure_compensation": 0.0}) {
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
 		t.Fatalf("a new scene reads without every render field: %v", got)
 	}
 	set := func(render map[string]any) error {
@@ -613,7 +613,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err := set(map[string]any{"resolution": "4k"}); err != nil {
 		t.Fatal(err)
 	}
-	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15, ExposureMode: creativescene.ExposureAuto}) {
+	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", ExposureEV: 2.5, Engine: creativescene.EngineRealtimeGI, Resolution: "4k", ExposureEV100: 15, ExposureMode: creativescene.ExposureAmbient}) {
 		t.Fatalf("render %+v", r)
 	}
 	for name, render := range map[string]map[string]any{
@@ -867,7 +867,7 @@ func TestLightAndCameraDefaults(t *testing.T) {
 	}
 	want := map[string]any{"focal_mm": 35.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 1000.0, "label": "",
 		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025,
-		"exposure_mode": "auto", "exposure_compensation": 0.0}
+		"exposure_mode": "ambient", "exposure_compensation": 0.0}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Errorf("camera = %v, want %v", got, want)
 	}
@@ -927,7 +927,7 @@ func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
 	}
 	want := map[string]any{"focal_mm": 50.0, "sensor_mm": []any{36.0, 24.0}, "aspect": "3:2", "near": 0.1, "far": 200.0, "label": "A",
 		"depth_of_field": false, "f_stop": 2.8, "focus": 10.0, "focus_object_id": "", "iso": 100.0, "shutter_s": 0.00025,
-		"exposure_mode": "auto", "exposure_compensation": 0.0}
+		"exposure_mode": "ambient", "exposure_compensation": 0.0}
 	if got := storedContent(t, f.a, doc, c, "camera"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("camera = %v, want %v", got, want)
 	}

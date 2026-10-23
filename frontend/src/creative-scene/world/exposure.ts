@@ -1,9 +1,10 @@
 // Exposure under a physical sky (Epic design「物理单位与曝光」). Each viewer,
-// a scene camera or the default camera, is exposed automatically or by hand
-// (Epic revision v5, owner 2026-10-23). By hand a camera's ISO, shutter and
-// aperture, or the default camera's render.exposure_ev100, give EV100;
-// automatically the scene's light is metered and the night darkened by a few
-// stops only. Lights are multiplied by k = 1 / (1.2 · 2^EV100) before the
+// a scene camera or the default camera, is exposed by ambient metering or by
+// hand (Epic revision v5, owner 2026-10-23). By hand a camera's ISO, shutter
+// and aperture, or the default camera's render.exposure_ev100, give EV100;
+// ambient metering meters the scene's ambient light, never the picture (so
+// named for photographers: it is no camera's automatic exposure), and darkens
+// the night and a low sun by a few stops only. Lights are multiplied by k = 1 / (1.2 · 2^EV100) before the
 // GPU sees them (pre-exposure). The sky and its light are stored in
 // environment-relative units, × s_env.
 
@@ -27,7 +28,7 @@ export const environmentEV = (lux: number) => Math.min(20, Math.max(-12, Math.lo
 export const environmentScale = (lux: number) => exposureScale(environmentEV(lux))
 
 /**
- * How many stops the automatic exposure leaves a metered EV under a proper
+ * How many stops ambient metering leaves a metered EV under a proper
  * exposure: none from a sunny noon up, the most from a moonless night down,
  * and in between in proportion to the stops the light has fallen (owner
  * 2026-10-23: a straight line, about 0.13 of a stop per stop), so night
@@ -41,17 +42,21 @@ const NIGHT_STOPS = 3.5
 /** The night darkening D at a metered EV100. */
 export const nightDarkening = (evm: number) => NIGHT_STOPS * Math.min(1, Math.max(0, (DAY_EV - evm) / (DAY_EV - NIGHT_EV)))
 
-/** The automatic exposure's EV100 under a level-ground illuminance E (lux): metered as s_env is, darkened at night, less the compensation in stops. */
-export function autoEV100(lux: number, compensation: number): number {
+/**
+ * The ambient metering's EV100 under a level-ground illuminance E (lux):
+ * metered as s_env is, darkened at night or for a low sun (lowSunStops), the
+ * more of the two, less the compensation in stops.
+ */
+export function ambientEV100(lux: number, compensation: number, lowSun = 0): number {
   const metered = environmentEV(lux)
-  return metered + nightDarkening(metered) - compensation
+  return metered + Math.max(nightDarkening(metered), lowSun) - compensation
 }
 
-/** A viewer's exposure: automatic with a compensation, or by hand at an EV100. */
-export type ViewerExposure = { mode: 'auto'; compensation: number } | { mode: 'manual'; ev100: number }
+/** A viewer's exposure: ambient metering with a compensation, or by hand at an EV100. */
+export type ViewerExposure = { mode: 'ambient'; compensation: number } | { mode: 'manual'; ev100: number }
 
-/** A viewer's EV100 under a level-ground illuminance E (lux). */
-export const viewerEV100 = (v: ViewerExposure, lux: number) => (v.mode === 'manual' ? v.ev100 : autoEV100(lux, v.compensation))
+/** A viewer's EV100 under a level-ground illuminance E (lux) and a low sun's darkening. */
+export const viewerEV100 = (v: ViewerExposure, lux: number, lowSun = 0) => (v.mode === 'manual' ? v.ev100 : ambientEV100(lux, v.compensation, lowSun))
 
 /** Shutter speeds in thirds of a stop, 1/8000 s…30 s, as cameras mark them. */
 export const shutterThirds: readonly number[] = [
@@ -109,12 +114,14 @@ export const preExposure = uniform(1)
  * (scene.userData.physical; cleared when it unmounts). The sky light is the
  * PMREM made last, at that one's s_env; lux is E, the level ground's
  * illuminance at the origin: the fog is lit like ground of its colour under
- * it, and the automatic exposure meters it.
+ * it, and ambient metering meters it. lowSun is the stops it darkens
+ * for a low sun (world/nightSky/night.ts lowSunStops).
  */
-export type PhysicalExposure = { skyLightScale: number; fogColor: Color | null; lux: number }
+export type PhysicalExposure = { skyLightScale: number; fogColor: Color | null; lux: number; lowSun: number }
 
-/** E as PhysicalLighting left it on a three scene; 0 without one. */
+/** E and the low sun's darkening as PhysicalLighting left them on a three scene; 0 without one. */
 export const sceneLux = (scene: Scene) => (scene.userData.physical as PhysicalExposure | undefined)?.lux ?? 0
+export const sceneLowSun = (scene: Scene) => (scene.userData.physical as PhysicalExposure | undefined)?.lowSun ?? 0
 
 /**
  * Writes k onto the scene before a picture (design「预曝光的落点」): the

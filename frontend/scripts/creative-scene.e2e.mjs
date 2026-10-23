@@ -3623,9 +3623,9 @@ const obliqueOrtho = {
 function referenceScene(server, name, edit) {
   server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
   // The exposure the server reads documents from before W2 and W3 with (backend model.go): the default camera at 15 and
-  // automatic, a stored camera by hand (Epic revision v5).
+  // ambient metering, a stored camera by hand (Epic revision v5).
   server.scene.render.exposure_ev100 ??= 15
-  server.scene.render.exposure_mode ??= 'auto'
+  server.scene.render.exposure_mode ??= 'ambient'
   server.scene.render.exposure_compensation ??= 0
   for (const o of server.scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
   edit?.(server.scene)
@@ -4267,7 +4267,7 @@ const physicalNames = ['physical-noon', 'physical-golden', 'physical-dusk']
 /** The yard opened in the rendered view at the editor's default view; change(ops) writes as another session would and waits for the picture. */
 async function physicalYard(name, edit) {
   const server = new SceneServer()
-  // W2's checks expose the free view by hand at render.exposure_ev100; W3's that want the automatic exposure say so.
+  // W2's checks expose the free view by hand at render.exposure_ev100; W3's that want ambient metering say so.
   referenceScene(server, name, (scene) => {
     scene.render.exposure_mode = 'manual'
     edit?.(scene)
@@ -5388,7 +5388,7 @@ const w3Baseline = new URL('../../.lti/features/2026-10-22-scene-world-environme
  * 49° below the horizon) and the same with the sun at manual angles after
  * sunset, where no night sky is drawn.
  */
-// The free view exposed by hand as the baseline was (Epic revision v5 makes it automatic, an intended change of its
+// The free view exposed by hand as the baseline was (Epic revision v5 meters it from the ambient light, an intended change of its
 // own), and the manual sky's twilight without the night look (it works under manual angles too): what is left is
 // what the night sky itself does by day.
 const w3Variants = {
@@ -5613,10 +5613,11 @@ await check('W3 stars: Polaris drawn where the sky puts it, at the view’s cent
 // compiles nothing; at 22:00 the yard at EV100 −3 is seen, about as noon at sunny 16 (0.22 lux of moonlight).
 await check('W3 dusk: by default the picture dims steadily from late afternoon to night, without going dark and jumping back', async () => {
   // The meter and the drawn sky once disagreed by up to 6 stops with the sun 7–11° down: dark at 18:10, bright again at 18:20 (owner 2026-10-23).
+  // The low sun's darkening holds from about 4° up until the night's takes over, so the afterglow may lift the picture a little (up to about 4).
   const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
   const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
     Object.assign(scene.environment.sky, beijing, { local_time: '17:00' })
-    Object.assign(scene.render, { exposure_mode: 'auto', exposure_compensation: 0 })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
   })
   const rows = [[ '17:00', (await lumaStats(page, await settle(), { level: 250 })).mean ]]
   for (let m = 17 * 60 + 5; m <= 19 * 60; m += 5) {
@@ -5626,7 +5627,7 @@ await check('W3 dusk: by default the picture dims steadily from late afternoon t
   console.log(`W3 dusk: ${rows.map(([t, v]) => `${t} ${v.toFixed(0)}`).join(', ')}`)
   for (let i = 1; i < rows.length; i++) {
     const step = rows[i][1] - rows[i - 1][1]
-    assert.ok(step > -20 && step < 3, `${rows[i - 1][0]} → ${rows[i][0]}: ${step.toFixed(1)}`)
+    assert.ok(step > -20 && step < 5, `${rows[i - 1][0]} → ${rows[i][0]}: ${step.toFixed(1)}`)
   }
   assert.ok(Math.min(...rows.map(([, v]) => v)) > 70, 'never dark')
   assert.deepEqual(errors, [])
@@ -5635,10 +5636,10 @@ await check('W3 dusk: by default the picture dims steadily from late afternoon t
 
 await check('W3 moonlight: by default the full moon’s yard is seen, darker than noon; by hand at EV100 −3 too; nightfall builds no shader', async () => {
   const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
-  // The default camera as a new scene has it (Epic revision v5): automatic, no compensation.
+  // The default camera as a new scene has it (Epic revision v5): ambient metering, no compensation.
   const { context, page, errors, settle, change, sky } = await physicalYard('physical-noon', (scene) => {
     Object.assign(scene.environment.sky, beijing, { local_time: '12:00' })
-    Object.assign(scene.render, { exposure_mode: 'auto', exposure_compensation: 0 })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
   })
   const programs = () => page.evaluate(() => [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').reduce((n, h) => n + h.programs, 0))
   const noon = await lumaStats(page, await settle(), { level: 250 })
@@ -5651,9 +5652,9 @@ await check('W3 moonlight: by default the full moon’s yard is seen, darker tha
   const manual = await lumaStats(page, await change([{ op: 'set_render', render: { exposure_mode: 'manual', exposure_ev100: -3 } }]), { level: 250 })
   await shot(page, 'w3-full-moon-ev-3')
   const rgb = (l) => [l.r, l.g, l.b].map((v) => v.toFixed(0))
-  console.log(`W3 moonlight: noon mean ${noon.mean.toFixed(0)}; 22:00 automatic ${night.mean.toFixed(0)} (rgb ${rgb(night)}), clipped ${(night.bright * 100).toFixed(2)}%; by hand at −3 ${manual.mean.toFixed(0)} (rgb ${rgb(manual)}); programs ${before} → ${after}`)
+  console.log(`W3 moonlight: noon mean ${noon.mean.toFixed(0)}; 22:00 ambient ${night.mean.toFixed(0)} (rgb ${rgb(night)}), clipped ${(night.bright * 100).toFixed(2)}%; by hand at −3 ${manual.mean.toFixed(0)} (rgb ${rgb(manual)}); programs ${before} → ${after}`)
   assert.equal(after, before, 'no shader program built from dusk to night')
-  assert.ok(night.mean > 40 && night.mean < noon.mean - 20 && night.bright < 0.02, 'automatically the yard is seen, darker than at noon')
+  assert.ok(night.mean > 40 && night.mean < noon.mean - 20 && night.bright < 0.02, 'metered from the ambient light the yard is seen, darker than at noon')
   assert.ok(manual.mean > 60 && manual.mean < 220 && manual.bright < 0.02, 'by hand at −3 the yard is seen: neither dark nor blown')
   assert.deepEqual(errors, [])
   await context.close()
@@ -5663,7 +5664,7 @@ await check('W3 night look: by a full moon it turns the yard blue at the same br
   const beijing = { latitude_deg: 39.9042, longitude_deg: 116.4074, timezone: 'Asia/Shanghai', place: '北京', date: '2026-10-26' }
   const { context, page, errors, settle, change, sky, server } = await physicalYard('physical-noon', (scene) => {
     Object.assign(scene.environment.sky, beijing, { local_time: '22:00' })
-    Object.assign(scene.render, { exposure_mode: 'auto', exposure_compensation: 0 })
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
   })
   const look = (v) => sky({ night: { ...server.scene.environment.sky.night, night_look: v } })
   const on = await lumaStats(page, await settle(), { level: 250 })
@@ -5720,14 +5721,14 @@ await check('W3 environment tab: the night sky’s switches, strengths and look;
   assert.ok(await night.getByRole('spinbutton', { name: '夜色' }).isEnabled(), 'the night look still works')
   await night.getByText('只在「地点和时间」下生效').waitFor()
 
-  // A camera stored before the exposure modes reads as manual; switched to automatic it shows the compensation.
+  // A camera stored before the exposure modes reads as manual; switched to ambient metering it shows the compensation.
   await page.getByRole('treeitem', { name: /shot/ }).click()
   const exposure = page.getByRole('group', { name: '曝光', exact: true })
   const camera = server.scene.objects.find((o) => o.kind === 'camera')
   assert.equal(await exposure.getByRole('combobox', { name: 'ISO' }).count(), 1, 'manual: ISO and shutter')
-  await exposure.getByRole('group', { name: '曝光模式' }).getByRole('button', { name: '自动' }).click()
-  await waitFor(() => server.object(camera.id).camera.exposure_mode === 'auto', 'the camera automatic')
-  assert.equal(await exposure.getByRole('combobox', { name: 'ISO' }).count(), 0, 'automatic: no ISO')
+  await exposure.getByRole('group', { name: '曝光模式' }).getByRole('button', { name: '环境测光' }).click()
+  await waitFor(() => server.object(camera.id).camera.exposure_mode === 'ambient', 'the camera metered from the ambient light')
+  assert.equal(await exposure.getByRole('combobox', { name: 'ISO' }).count(), 0, 'ambient metering: no ISO')
   const compensation = exposure.getByRole('spinbutton', { name: '曝光补偿（档）' })
   await compensation.fill('1')
   await compensation.press('Enter')
@@ -5735,13 +5736,13 @@ await check('W3 environment tab: the night sky’s switches, strengths and look;
   await page.keyboard.press('Escape')
   await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
   const modes = page.getByRole('group', { name: '默认摄像机曝光' })
-  assert.equal(await modes.getByRole('button', { name: '自动' }).getAttribute('aria-pressed'), 'true', 'the default camera automatic')
+  assert.equal(await modes.getByRole('button', { name: '环境测光' }).getAttribute('aria-pressed'), 'true', 'the default camera on ambient metering')
   const fill = async (label, value) => {
     const f = page.getByRole('spinbutton', { name: label })
     await f.fill(String(value))
     await f.press('Enter')
   }
-  await fill('自动曝光补偿（档）', -1)
+  await fill('环境测光补偿（档）', -1)
   await waitFor(() => server.scene.render.exposure_compensation === -1, 'the default compensation written')
   await modes.getByRole('button', { name: '手动' }).click()
   await waitFor(() => server.scene.render.exposure_mode === 'manual', 'the default camera by hand')

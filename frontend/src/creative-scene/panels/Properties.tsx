@@ -429,10 +429,10 @@ const withCurrent = (stops: readonly number[], v: number) => (stops.includes(v) 
 
 /**
  * A camera's exposure under a physical sky (W2 design「编辑界面」, Epic
- * revision v5): automatic with a compensation, or by hand at ISO, shutter
+ * revision v5): ambient metering with a compensation, or by hand at ISO, shutter
  * and aperture in thirds of a stop with the EV100 they make. The aperture is
  * the depth of field's too, set here with the depth of field off; under the
- * automatic exposure it only blurs. Greyed under any other sky, where the
+ * ambient metering it only blurs. Greyed under any other sky, where the
  * scene's compensation exposes.
  */
 function CameraExposure({ camera, name, physical, onCamera }: {
@@ -446,8 +446,8 @@ function CameraExposure({ camera, name, physical, onCamera }: {
     <fieldset className="cc-scene-camera-exposure" disabled={!physical} aria-label="曝光">
       <legend>曝光</legend>
       <div className="cc-scene-segmented" role="group" aria-label="曝光模式">
-        <button type="button" aria-pressed={!manual} onClick={() => manual && onCamera({ exposure_mode: 'auto' }, `「${name}」改为自动曝光`)}>
-          自动
+        <button type="button" aria-pressed={!manual} onClick={() => manual && onCamera({ exposure_mode: 'ambient' }, `「${name}」改为环境测光`)}>
+          环境测光
         </button>
         <button type="button" aria-pressed={manual} onClick={() => !manual && onCamera({ exposure_mode: 'manual' }, `「${name}」改为手动曝光`)}>
           手动
@@ -456,7 +456,7 @@ function CameraExposure({ camera, name, physical, onCamera }: {
       {!manual && (
         <>
           <NumberField label="曝光补偿（档）" value={camera.exposure_compensation} min={-5} max={5} step={1 / 3} onCommit={(v) => onCamera({ exposure_compensation: v }, `调整「${name}」曝光补偿`, 'exposure_compensation')} />
-          <small>按场景的光测光，入夜后只比正午暗 2–4 档；光圈只决定景深</small>
+          <small>按场景的环境光测光，不看画面；入夜后只比正午暗 2–4 档；光圈只决定景深</small>
         </>
       )}
       {manual && (
