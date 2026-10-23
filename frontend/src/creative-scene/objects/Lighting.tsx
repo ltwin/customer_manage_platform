@@ -9,7 +9,7 @@ import { ambientFill, sunLight } from '../render/litLook.ts'
 import { gpuOf, gpuTestHooks } from '../render/gpu.ts'
 import { disposeSky, litSky, physicalSkyMesh, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { STUDIO_AMBIENT, STUDIO_BACKGROUND, STUDIO_FILL, STUDIO_KEY_INTENSITY } from '../render/studio.ts'
-import { fitSunShadow } from '../render/sunShadow.ts'
+import { cascadeSunShadow } from '../render/sunShadow.ts'
 import { positionToView } from '../space.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
@@ -161,10 +161,10 @@ function LitLighting({ environment, engine }: { environment: SceneEnvironment; e
   )
 }
 
-/** The lit sun: dimming and warming as it sets; shadows fitted like the clay sun's. */
+/** The lit sun: dimming and warming as it sets; shadows in cascades. */
 function Sun({ environment }: { environment: SceneEnvironment }) {
   const ref = useRef<DirectionalLight>(null)
-  useLayoutEffect(() => (ref.current ? fitSunShadow(ref.current) : undefined), [])
+  useLayoutEffect(() => (ref.current ? cascadeSunShadow(ref.current) : undefined), [])
   const position = sunDirection(environment).multiplyScalar(60)
   const light = sunLight(environment.sky.sun_elevation_deg ?? 35, environment.sky.turbidity ?? 3)
   return (
@@ -249,7 +249,7 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     },
     [parts],
   )
-  useLayoutEffect(() => fitSunShadow(parts.sun), [parts])
+  useLayoutEffect(() => cascadeSunShadow(parts.sun), [parts])
   useLayoutEffect(() => {
     scene.userData.physical = parts.physical
     scene.userData.aerial = parts.aerial
