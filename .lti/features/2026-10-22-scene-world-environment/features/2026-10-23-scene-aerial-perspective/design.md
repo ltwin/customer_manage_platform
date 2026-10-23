@@ -94,6 +94,8 @@ applyAerial(color, depth):
 - **froxel 存成 2D 图集，不用 `RenderTarget3D`**（Epic roadmap 留给 W4 的问题）：片元 pass 写 3D 纹理的切片在 WebGL2 后端需要逐层绑定，three 0.186 的 `RenderPipeline` 也没有现成写法；2D 图集一次 pass 写完，两个后端相同，查表多一次切片间的手动插值。
 - **与实时 GI 的合成顺序**（Epic roadmap 留给 W4 的问题）：放在 GI 合成与全局雾之后，GI 不看空气透视；与 Epic「合成顺序」1→2→4 一致。体积物件（W5）将插在全局雾与空气透视之间。
 - **不按摄像机缓存 froxel**：见上，超标时再加。
+- **向下的视线按水平积分**（实施中补入）：摄像机在地面上方 10 m，向下的视线几十米就碰到行星地面，放大倍率后地面几乎没有空气透视；场景立在地面上，放大的距离理解为铺在平地上，froxel 积分时视线俯角取 0。
+- **froxel pass 放在 `luts.ts`**（实施中调整）：它要用 `luts.ts` 内部的介质、多次散射采样和 uniform；`aerial.ts` 只放全局 uniform、`prepareAerial` 与查表节点。
 - 没有改变 Epic 共享设计的决定。
 
 ## 接口与数据契约
@@ -107,7 +109,8 @@ applyAerial(color, depth):
 |---|---|---|
 | `frontend/src/creative-scene/world/atmosphere/aerial.ts` | 新增 | froxel 生成 pass、`applyAerial`、全局 uniform |
 | `frontend/src/creative-scene/world/atmosphere/constants.ts` | 修改 | `AERIAL` 尺寸与 D_MAX |
-| `frontend/src/creative-scene/world/atmosphere/luts.ts` | 修改 | 导出 froxel 积分要用的系数与多次散射采样 |
+| `frontend/src/creative-scene/world/atmosphere/luts.ts` | 修改 | froxel 生成 pass（`aerial`、`setDirections`、`renderAerial`），`integrate` 加距离上限 |
+| `frontend/src/creative-scene/world/atmosphere/cpu.ts:CpuAtmosphere` | 修改 | CPU 参考 `aerial`（实施中补入） |
 | `frontend/src/creative-scene/render/sceneRenderer.ts:SceneRenderer` | 修改 | 出图前生成 froxel；工作台路径接 `applyAerial` |
 | `frontend/src/creative-scene/render/realtimeGI.ts:realtimeGI` | 修改 | GI 路径接 `applyAerial` |
 | `frontend/src/creative-scene/objects/Lighting.tsx:PhysicalLighting` | 修改 | 写空气透视的开关、倍率、光源 |

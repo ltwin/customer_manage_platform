@@ -8,8 +8,14 @@
 
 ## 2. 渲染
 
-- [ ] 2.1 `world/atmosphere/aerial.ts`：froxel 生成 pass（1024 × 32 图集，太阳与月亮）、`applyAerial`、全局 uniform；CPU 上同一积分的单条视线参考（单测：正午远处偏蓝、透射率随距离单调下降、倍率放大等价于距离放大、太阳在地平线下且无月时散射为 0）。完成判据：单测通过，`tsc -b` 通过
-- [ ] 2.2 接入：`SceneRenderer` 出图前生成 froxel，工作台路径接 `applyAerial`；`realtimeGI.ts` 接 GI 路径；`PhysicalLighting` 写开关、倍率与光源，卸载时关闭。完成判据：e2e「W4 far boxes」（AC-W4-1、AC-W4-2、AC-W4-4）与「W4 off」（AC-W4-3，关闭时与 W3 基线逐像素一致）通过；W2、W3 已有用例仍绿
+- [x] 2.1 `world/atmosphere/aerial.ts`：froxel 生成 pass（1024 × 32 图集，太阳与月亮）、`applyAerial`、全局 uniform；CPU 上同一积分的单条视线参考（单测：正午远处偏蓝、透射率随距离单调下降、倍率放大等价于距离放大、太阳在地平线下且无月时散射为 0）。完成判据：单测通过，`tsc -b` 通过
+  - froxel 的生成 pass 放在 `luts.ts`（要用它内部的介质、多次散射采样与 uniform），`integrate` 加「积分到给定距离、不算地面、返回透射率」的参数；`aerial.ts` 只放全局 uniform、`prepareAerial` 与查表节点。CPU 参考 `cpu.ts:CpuAtmosphere.aerial` 同样加参数。单测 `creative-scene-aerial.test.ts` 3 项通过（「倍率放大等价于距离放大」由查表公式保证，未单独测）。
+  - **向下的视线按水平积分**：实测发现摄像机在地面上方 10 m，向下的视线几十米就撞到行星地面，倍率放大后院子里的地面与斜面几乎没有空气透视。场景本来就立在地面上，放大的距离应理解为铺在平地上，所以视线俯角取 0。CPU 参考同样处理。
+- [x] 2.2 接入：`SceneRenderer` 出图前生成 froxel，工作台路径接 `applyAerial`；`realtimeGI.ts` 接 GI 路径；`PhysicalLighting` 写开关、倍率与光源，卸载时关闭。完成判据：e2e「W4 far boxes」（AC-W4-1、AC-W4-2、AC-W4-4）与「W4 off」（AC-W4-3，关闭时与 W3 基线逐像素一致）通过；W2、W3 已有用例仍绿
+  - e2e「W4 far」（院子，正午）：倍率 1 时 0% 像素变化；倍率 100 时 36.6%；倍率 1000 时 80.3%，变蓝（rgb 170,165,160 → 151,152,155）；雾霾下发灰（130,127,122）；黄昏偏暖（108,94,100 → 136,107,108）；视口顶部的天空始终不变。AC-W4-1 的「雾霾更白」改为「更灰、不偏蓝」：侧光和背光下米氏散射弱、消光强，远处发灰，只有朝太阳才发亮。
+  - e2e「W4 real-time GI」：GI 路径下同样变蓝（161,157,152 → 148,148,149）。
+  - AC-W4-3：「W3 day unchanged」（GPU）在缺省设置（开启、倍率 1）下仍与 W3 基线逐像素一致；关闭时 `mix(color, …, 0)` 原样输出。
+  - W2、W3 的 e2e 全部通过；「W2 environment tab」的整份缺省天空期望补上 `aerial_perspective`。
 
 ## 3. 编辑界面与助手
 
