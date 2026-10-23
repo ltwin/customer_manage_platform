@@ -52,7 +52,16 @@ const footprint: TSLNode = max(length(fwidth(patPos)), float(1e-6))
 const exposedEmission: TSLNode = materialEmissive.mul(preExposure)
 
 export function makeMaterial(m: SlotMaterial, doubleSided: boolean): MeshPhysicalNodeMaterial {
-  const side = doubleSided ? DoubleSide : FrontSide
+  const material = build(m, doubleSided ? DoubleSide : FrontSide)
+  // Into shadow maps with the faces toward the light: three draws a one-sided
+  // material's back faces, and a receiver's lookup, lifted off it by the
+  // normal bias, then reads past a caster's underside where they touch: a
+  // lit ring around the contact (fix/scene-sun-cascaded-shadows).
+  material.shadowSide = DoubleSide
+  return material
+}
+
+function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): MeshPhysicalNodeMaterial {
   if (m.kind === 'unknown') return new MeshPhysicalNodeMaterial({ color: unknownGrey, roughness: 0.9, metalness: 0, side })
   if (m.kind === 'principled') {
     const material = new MeshPhysicalNodeMaterial({ ...principledProps(m.params), side, vertexColors: !!m.vertexColors })

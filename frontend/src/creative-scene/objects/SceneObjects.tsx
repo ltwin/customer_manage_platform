@@ -171,7 +171,7 @@ function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string
     )
   return (
     <mesh geometry={geometry} castShadow={!flat} receiveShadow>
-      <meshStandardMaterial name="slot:main" color={clay} roughness={0.92} metalness={0} side={flat ? 2 : 0} />
+      <meshStandardMaterial name="slot:main" color={clay} roughness={0.92} metalness={0} side={flat ? 2 : 0} shadowSide={2} />
       {/* A hull outline reads on curved shapes; flat ones have no hull. */}
       {edge && (flat ? <EdgeLines threshold={20} lineWidth={2} color={edge} /> : <Outline color={edge} />)}
     </mesh>

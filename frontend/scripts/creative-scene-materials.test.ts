@@ -138,6 +138,8 @@ test('instances are shared by key; a preset has one program whatever its paramet
   const glass = makeMaterial(catalogMaterial('principled@1', { transmission: 1, roughness: 0 })!, true)
   assert.deepEqual([glass.transmission, glass.side], [1, 2])
   assert.equal(makeMaterial({ kind: 'unknown' }, false).color.getHexString(), '8a8a8a')
+  // Shadow maps take the faces toward the light: no lit ring where a one-sided caster touches the ground.
+  for (const m of [ma, glass, makeMaterial({ kind: 'unknown' }, false)]) assert.equal(m.shadowSide, 2)
 })
 
 import type { SceneObject } from '../src/creative-scene/api.ts'
