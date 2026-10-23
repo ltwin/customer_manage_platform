@@ -85,3 +85,11 @@
 - **U4 兼容模式**：按「质量层」降级，客户端任务不路由。`scene-world-environment` 修订 v7 同步修改了统一规则。
 - **U7 已有导出**：S2 上线后，已有的实时 GI `lit` 导出各提示一次「场景已更新」。
 - **批准 Epic 基线 v1**：设计评审一轮的结论已并入，以 Epic 的 proposal、design、roadmap、contracts 为准。
+- **复杂场景，画质优先**（Epic 修订 v2）：
+  - 精度分档：探针追误差受控的代理，反射追原始几何，超出容量时逐档降级并提示；
+  - 构建移进 Worker，结果在本机缓存；
+  - 增量打包；
+  - 级联探针；
+  - 渐进就绪。
+
+  不改用 SDF；光栅 LOD 另立 Epic。规模目标为去重后约 2000 万面、约 2000 个实例。依据见 `research/complex-scene-scaling.md`。
