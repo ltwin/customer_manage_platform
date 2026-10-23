@@ -28,30 +28,18 @@ export const environmentScale = (lux: number) => exposureScale(environmentEV(lux
 
 /**
  * How many stops the automatic exposure leaves a metered EV under a proper
- * exposure: none by day, a few at night, so night looks like night yet
- * needs no exposure change (Epic design「夜间压暗曲线」). Linear between
- * the points, flat beyond them.
+ * exposure: none from a sunny noon up, the most from a moonless night down,
+ * and in between in proportion to the stops the light has fallen (owner
+ * 2026-10-23: a straight line, about 0.13 of a stop per stop), so night
+ * looks like night yet needs no exposure change and the picture dims at one
+ * pace from the afternoon on (Epic design「夜间压暗曲线」).
  */
-const darkening: readonly (readonly [ev: number, stops: number])[] = [
-  [-11, 3.5], // a moonless night
-  [-4, 2.5], // a full moon
-  [0, 1.5], // the end of civil twilight
-  [6, 0.5], // the golden hour
-  [12, 0], // overcast or brighter
-]
+const DAY_EV = 15
+const NIGHT_EV = -11
+const NIGHT_STOPS = 3.5
 
 /** The night darkening D at a metered EV100. */
-export function nightDarkening(evm: number): number {
-  if (evm <= darkening[0][0]) return darkening[0][1]
-  for (let i = 1; i < darkening.length; i++) {
-    const [e1, d1] = darkening[i]
-    if (evm <= e1) {
-      const [e0, d0] = darkening[i - 1]
-      return d0 + ((d1 - d0) * (evm - e0)) / (e1 - e0)
-    }
-  }
-  return 0
-}
+export const nightDarkening = (evm: number) => NIGHT_STOPS * Math.min(1, Math.max(0, (DAY_EV - evm) / (DAY_EV - NIGHT_EV)))
 
 /** The automatic exposure's EV100 under a level-ground illuminance E (lux): metered as s_env is, darkened at night, less the compensation in stops. */
 export function autoEV100(lux: number, compensation: number): number {

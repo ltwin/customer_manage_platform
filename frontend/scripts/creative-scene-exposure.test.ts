@@ -164,8 +164,8 @@ test('under a physical sky k scales the lights, the sky light by k / s_env and t
 // Epic revision v5: the automatic exposure meters the scene's light and
 // darkens the night by a few stops only (design「物理单位与曝光」「夜间压暗曲线」).
 
-test('the night darkening goes through its five points, flat beyond them, without a step', () => {
-  for (const [evm, d] of [[20, 0], [12, 0], [6, 0.5], [0, 1.5], [-4, 2.5], [-11, 3.5], [-12, 3.5]] as const) {
+test('the night darkening is a straight line from a sunny noon to a moonless night, flat beyond them', () => {
+  for (const [evm, d] of [[20, 0], [15, 0], [2, 1.75], [-11, 3.5], [-12, 3.5]] as const) {
     assert.ok(Math.abs(nightDarkening(evm) - d) < 1e-12, `EV ${evm}: ${nightDarkening(evm)}, want ${d}`)
   }
   let last = nightDarkening(20)
