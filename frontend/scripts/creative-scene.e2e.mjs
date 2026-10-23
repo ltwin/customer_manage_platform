@@ -5774,9 +5774,9 @@ await check('W3 environment tab: the night sky’s switches, strengths and look;
 // SCENE_E2E_W3_PERF=<dir> (AC-W3-10), this machine's GPU at 1600 × 1000, 2× pixels: AC-9's scene under the
 // physical sky at night (Shanghai, 2026-09-23 at 21:00, a gibbous moon up). Frame times standing still, and
 // dragging the time of day a minute a frame from 19:00 for 3 s. Written to w3-perf-<SCENE_E2E_W3_PERF_LABEL>.json.
-/** Per pixel between two pictures of one view: how many changed (by more than 2), the changed pixels' mean colour in each, and the top row's largest change. */
-async function pixelChange(page, a, b) {
-  return page.evaluate(async ([a, b]) => {
+/** Per pixel between two pictures of one view, from the row at share `from` of its height down: how many changed (by more than 2), the changed pixels' mean colour in each, and the top row's largest change. */
+async function pixelChange(page, a, b, from = 0) {
+  return page.evaluate(async ([a, b, from]) => {
     const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
     const [x, y] = await Promise.all([load(a), load(b)])
     const pixels = (img) => {
@@ -5793,7 +5793,8 @@ async function pixelChange(page, a, b) {
     const after = [0, 0, 0]
     let changed = 0
     let top = 0
-    for (let k = 0; k < p.length; k += 4) {
+    const start = Math.floor(x.height * from) * x.width * 4
+    for (let k = start; k < p.length; k += 4) {
       const most = Math.max(Math.abs(p[k] - q[k]), Math.abs(p[k + 1] - q[k + 1]), Math.abs(p[k + 2] - q[k + 2]))
       if (k < x.width * 4) top = Math.max(top, most)
       if (most <= 2) continue
@@ -5804,8 +5805,8 @@ async function pixelChange(page, a, b) {
       }
     }
     const n = Math.max(changed, 1)
-    return { changed: changed / (p.length / 4), before: before.map((v) => v / n), after: after.map((v) => v / n), top }
-  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
+    return { changed: changed / ((p.length - start) / 4), before: before.map((v) => v / n), after: after.map((v) => v / n), top }
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, from])
 }
 
 // W4 (design「关键机制」): the yard at noon, its surfaces a few metres to some tens away. At the true distance the air
@@ -5881,6 +5882,25 @@ await check('W4 environment tab: the aerial perspective’s switch and distance 
   await focusEditor(page)
   await page.keyboard.press(`${modKey}+KeyZ`)
   await waitFor(() => sky().aerial_perspective.enabled === true, 'undo turns it back on')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// fix/scene-sun-cascaded-shadows: one shadow map over every caster spent its texels on a big box far off, and the
+// shadows in the yard went jagged and came off their casters. In cascades, the map by the camera covers the yard
+// alone: the box 200 m off changes nothing in the lower half of the view, where the yard's shadows are.
+await check('sun shadows: a big box 200 m off leaves the yard’s shadows as they were', async () => {
+  const { context, page, errors, settle, change } = await physicalYard('physical-noon', (scene) => {
+    Object.assign(scene.render, { exposure_mode: 'ambient', exposure_compensation: 0 })
+  })
+  const before = await settle()
+  await shot(page, 'sun-shadow-yard')
+  const tower = { id: gid('tower'), kind: 'primitive', name: '远处大楼', parent_id: null, order: 90, transform: { ...identity(), position: [-150, 0, -180] }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 40, height: 40, depth: 40 } } }
+  const after = await change([{ op: 'add_objects', objects: [tower] }])
+  await shot(page, 'sun-shadow-tower')
+  const lower = await pixelChange(page, before, after, 0.5)
+  console.log(`sun shadows: the tower changes ${(lower.changed * 100).toFixed(3)}% of the lower half`)
+  assert.ok(lower.changed < 0.001, `the yard's shadows as they were (${(lower.changed * 100).toFixed(3)}% changed)`)
   assert.deepEqual(errors, [])
   await context.close()
 })

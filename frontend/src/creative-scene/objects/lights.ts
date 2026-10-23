@@ -1,7 +1,7 @@
 import { DirectionalLight, Object3D, PointLight, SpotLight, type Light as ThreeLight } from 'three'
 import type { SceneObject } from '../api.ts'
 import { lightDefaults } from '../state/apply.ts'
-import { fitSunShadow } from '../render/sunShadow.ts'
+import { cascadeSunShadow } from '../render/sunShadow.ts'
 
 // Light objects in the lit look (design「最终渲染的光照」): three.js lights
 // with the document's fields as they are (the fields are three.js's), built
@@ -13,7 +13,7 @@ import { fitSunShadow } from '../render/sunShadow.ts'
 
 type Light = NonNullable<SceneObject['light']>
 
-/** Shadow maps of point and spot lights; directional ones fit like the sun. */
+/** Shadow maps of every light; a directional one's, one per cascade like the sun's. */
 const shadowMapSize = 1024
 
 export type BuiltLight = { light: DirectionalLight | PointLight | SpotLight; target: Object3D | null; stop: (() => void) | null }
@@ -47,10 +47,10 @@ export function applyLight(built: BuiltLight, l: Light) {
   const shadows = v.cast_shadow
   if (light.castShadow !== shadows) {
     light.castShadow = shadows
-    if (shadows && !(light instanceof DirectionalLight)) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
+    if (shadows) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
   }
-  built.stop?.()
-  built.stop = shadows && light instanceof DirectionalLight ? fitSunShadow(light) : null
+  // Once, and kept: three's light node holds on to the first shadow node it builds.
+  if (shadows && light instanceof DirectionalLight && !built.stop) built.stop = cascadeSunShadow(light)
 }
 
 export function disposeLight(built: BuiltLight) {
