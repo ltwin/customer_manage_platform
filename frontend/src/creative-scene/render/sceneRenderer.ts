@@ -12,9 +12,14 @@ import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
+import { cascadeSunShadow } from './sunShadow.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
 import { nightLookNode } from '../world/nightLook.ts'
 import { aerialBehind, finishAerial, prepareAerial } from '../world/atmosphere/aerial.ts'
+import { applyVolumes } from './volumes/composite.ts'
+import { VolumeNode } from './volumes/march.ts'
+import { shadowLike } from './volumes/shadow.ts'
+import { finishVolumes, prepareVolumes } from './volumes/state.ts'
 
 // The rendered looks (design「导出渲染」, owner 2026-10-19): the scene as
 // mounted, lit as its look says (objects/Lighting.tsx), with ambient
@@ -158,14 +163,18 @@ function fixedNoise(size = 64): DataTexture {
   return texture
 }
 
-type StandIn = { meshes: Group; lights: Scene }
+type StandIn = { meshes: Group; lights: Scene; shadows: (() => void)[] }
 
 /**
  * What SceneRenderer.compile compiles: one copy of each kind of visible mesh
  * where the mesh is (geometry and material shared, its flags kept), and the
- * visible lights copied into a scene with the same environment and fog.
+ * visible lights copied into a scene with the same environment and fog. A
+ * copied light gets a shadow node of the kind its light has (three's
+ * LightShadow.copy leaves it out, and the default one builds another shader:
+ * the real materials compiled again on the next frame).
  */
 function standIn(scene: Scene): StandIn {
+  const shadows: (() => void)[] = []
   const lights = new Scene()
   lights.environment = scene.environment
   lights.environmentIntensity = scene.environmentIntensity
@@ -181,7 +190,10 @@ function standIn(scene: Scene): StandIn {
       return c
     }
     if ((o as Light).isLight) {
-      lights.add(copyAt(o.clone(false)))
+      const copy = o.clone(false) as Light
+      const undo = shadowLike(o as Light, copy, cascadeSunShadow)
+      if (undo) shadows.push(undo)
+      lights.add(copyAt(copy))
       return
     }
     const mesh = o as Mesh
@@ -195,11 +207,12 @@ function standIn(scene: Scene): StandIn {
     meshes.add(copyAt(mesh.clone(false)))
   })
   lights.updateMatrixWorld()
-  return { meshes, lights }
+  return { meshes, lights, shadows }
 }
 
 /** Lets three free what it keeps for a stand-in: its meshes' render objects (and their pipelines), its lights' shadow maps. */
-function disposeStandIn({ meshes, lights }: StandIn) {
+function disposeStandIn({ meshes, lights, shadows }: StandIn) {
+  for (const undo of shadows) undo()
   for (const m of meshes.children) m.dispose()
   for (const l of lights.children as (Light & { shadow?: LightShadow })[]) {
     // Never drawn into, so three never set up freeing its textures; the materials bound the depth.
@@ -433,12 +446,15 @@ export class SceneRenderer {
 
   /** `camera` is the one camera every frame is drawn from; the passes keep it. */
   private readonly camera: Camera
+  /** The viewport's: asks for a frame once what compiles ahead of it is ready. */
+  private readonly redraw: (() => void) | null
 
-  constructor(gpu: SceneGPU, scene: Scene, camera: Camera, overlays: Overlays = noOverlays) {
+  constructor(gpu: SceneGPU, scene: Scene, camera: Camera, overlays: Overlays = noOverlays, redraw: (() => void) | null = null) {
     this.gpu = gpu
     this.camera = camera
     this.scene = scene
     this.overlays = overlays
+    this.redraw = redraw
     // The viewport's pipeline is the one a new light is compiled for (objects/SceneLights.tsx).
     if (overlays !== noOverlays) gpu.compiler = () => this.compile()
   }
@@ -546,6 +562,7 @@ export class SceneRenderer {
           aside: aside && { color: aside.getTextureNode(), depth: aside.getTextureNode('depth') },
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
+          redraw: this.redraw,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
@@ -588,6 +605,9 @@ export class SceneRenderer {
         picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
         // The aerial perspective after the AO (design「合成顺序」), before the blur; off it is the picture as it was.
         picture = vec4(aerialBehind(picture.rgb, depth, camera), beauty.a)
+        // Then the volumes, the air before and behind them apart (Epic revision v9); none drawn, the picture as it was.
+        const volumes = own(new VolumeNode(depth, camera, [beauty], this.redraw))
+        picture = vec4(applyVolumes(picture.rgb, depth, camera, volumes), beauty.a)
         // AO comes before the blur, so contact shadows out of focus soften with everything else.
         if (blur) {
           dof = depthOfField(picture, depth)
@@ -686,12 +706,14 @@ export class SceneRenderer {
     // Written and drawn in one synchronous call: no await between (world/exposure.ts preExposure).
     applyExposure(this.scene, frame.preExposure ?? 1)
     prepareAerial(this.scene, renderer, camera, !wireframe)
+    prepareVolumes(this.scene, camera, !wireframe)
     try {
       built.pipeline.render()
     } finally {
       renderer.toneMappingExposure = exposure
       preExposure.value = 1
       finishAerial()
+      finishVolumes()
     }
   }
 

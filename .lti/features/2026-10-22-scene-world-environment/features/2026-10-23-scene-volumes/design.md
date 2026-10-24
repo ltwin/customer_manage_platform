@@ -99,8 +99,11 @@ SceneRenderer.render(camera, frame)
 - **上限**：最多 6 盏，阴影贴图最多 12 张（平行光每盏 4 张级联，聚光 1 张，点光 1 张立方体图）。加上深度和环境贴图共 14 张，在 WebGPU 缺省每阶段 16 张之内，`gpu.ts` 不调高上限。
 - **排序**：投影的太阳或月光总在前；其余按对体积的估计照度排序：灯的强度 × 到所有体积包围球最近点的距离衰减（平行光按强度）。超出上限的灯只照亮表面。
 - **结构签名**：每个灯位的类型与是否投影、有没有环境贴图。灯的位置、颜色、强度、锥角走 uniform，不进签名。
+- **灯位顺序**（实施时调整）：排序只决定选哪几盏；选出的灯按类型（平行光、聚光、点光）、投影在前、再按场景顺序放进灯位。按估计照度排灯位时，拖动灯、体积或调强度让两盏不同类型的灯换了先后，签名就变，视口重编步进期间体积消失、导出卡一次编译。
 - **重建**：签名变了只重建步进材质，不重建管线（重建管线会清掉 TRAA 和降噪的历史，视口会闪）。
 - **首次编译**：场景里第一次出现体积时才建步进材质。视口先异步编译，编好之前这一帧不画体积，与新灯的预热相同（`SceneLights.tsx`）；导出在出图前等它编好。
+- **步进用平面网格绘制**（实施时调整）：`QuadMesh` 绘制时按顶点序号生成全屏三角形，`compileAsync` 编出的顶点着色器与之不同，预编译不命中；步进改用平面网格加正交摄像机。
+- **实时 GI 的体积合成单独一个 pass**（实施时调整）：实时 GI 视口的最终合成原本把 GI 合成、雾、空气透视、体积与辅助对象叠加放在同一个全屏 pass，加上体积的两张输出后片元阶段采样 17 张纹理，超过 WebGPU 每阶段 16 张，管线创建失败，视口全黑（出图没有辅助对象 pass，15 张，不受影响）。改为体积合成之前的画面先转成一张中间纹理（`convertToTexture`），体积合成与辅助对象叠加在下一个 pass；视口多一次全屏读写；没有辅助对象叠加时（导出）仍在同一个 pass，不多这次读写。无体积时中间纹理与 TRAA 输入同为半浮点、在像素中心采样，按理逐像素不变（未做逐字节对比；实时 GI 出图的相关 e2e 均通过）。回归检查：e2e「W5 real-time GI viewport」（Metal 下才红，SwiftShader 上限更高）。
 
 ### 纹理绑定
 
@@ -134,7 +137,7 @@ SceneRenderer.render(camera, frame)
   - **点光**：three 的 `getDistanceAttenuation`，比较采样立方体阴影图（深度按 `viewZToPerspectiveDepth`）。
   - 不投影的灯可见性为 1。
 - **天空光照项**：
-  - 环境贴图在 6 个轴向上按糙度 1 采样取平均，乘 `environmentIntensity`；
+  - 环境贴图在 6 个轴向上按糙度 1 采样取平均，乘 `environmentIntensity`；6 个方向由同一个 `PMREMNode` 子类采样，只占 1 个纹理绑定（实施时调整：每个方向一个 `PMREMNode` 时，PMREM 生成之前各自持有不同的占位纹理，会占 6 个绑定）；
   - 再加上 `AmbientLight` 的 color × intensity / π、`HemisphereLight` 的 (sky + ground) × intensity / 2π；
   - 每个像素算一次，不放在步进循环里。
 - **弦长的边缘柔化**：自遮挡和表面投影用的解析弦长乘 (1 − `edge_falloff` / 2)，即沿弦从边到中心的平均密度，宽柔化的烟团不再偏暗。
@@ -167,10 +170,16 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
   return exp(−τ)                           // RGB，乘在 three 的阴影值上
 ```
 
-- `castList`（8 个下标）和 `castCount` 是 uniform：切换开关、增删体积都不重新编译材质；没有打开投射阴影的体积时循环 0 次。
+- `castList`（8 个下标）和 `castCount` 是 uniform：已有投射阴影的体积时，再打开、增删体积都不重新编译材质。
+- **只在有投射阴影的体积时编进材质**（owner 2026-10-23 拍板，取代原来的「切换开关不重新编译」）：受光材质只在场景里有打开投射阴影的体积时才带 `volumeShadow`，没有时与 develop 生成同样的代码，新加一盏投影灯的编译时间不比 develop 多（AC-W5-11）。
+  - 标志：lit 外观下文档里有 `cast_shadow` 的体积（隐藏的也算，隐藏体积不触发编译）时，场景里挂一盏强度为 0 的环境光，`userData.volumesCast`（`SceneLights.tsx` `VolumesCastLight`）。阴影节点在 `setup` 时看 `builder.lightsNode` 的灯里有没有它。
+  - 为什么用一盏灯：three 只按灯的组合（`LightsNode` 的缓存键）决定是否重建材质，`material.needsUpdate` 在缓存键不变时不重建；灯的组合变化正好只重建这个场景的材质。替身灯复制可见的灯，预编译带同一个标志。
+  - 代价：第一个体积打开投射阴影时，所有受光材质重编一次。视口里这盏灯按新灯预热（编好前不显示，表面暂时没有体积阴影），帧里不编译；最后一个关掉时在下一帧同步重编，与删掉一盏灯相同。导出在拍摄前整体编译。
+- 体积的 uniform 和灯的方向、位置都放在 `renderGroup`（与 `CSMShadowNode` 的级联相同）：每次渲染写一次，不复制进每个物体的 uniform 缓冲、逐物体比较上传（实施时调整，three 的 uniform 缺省属于 `objectGroup`）。
 - **平行光（太阳、月光、文档里的平行光）**：`SunCascades` 重写 `setup`，返回 `super.setup(builder).mul(volumeShadow(...))`，toLight 取自它已有的光照方向。
 - **聚光和点光**：`lights.ts` 在 `buildLight` 时装上 `ShadowNode`、`PointShadowNode` 的子类，子类同样重写 `setup`。three 只采用一盏灯第一次构建的阴影节点，所以只在建灯时装一次（与 `cascadeSunShadow` 相同）。`disposeLight` 释放它们（`BuiltLight.stop` 现在只管平行光）。
 - **替身灯**：`SceneRenderer.compile` 用 `standIn` 克隆的灯预编译，three 的 `LightShadow.copy` 不复制 `shadowNode`，替身灯会用默认节点，生成的着色器与真实的灯不同，真实材质在下一帧全部重新编译。`standIn` 克隆灯时按原灯装同类的阴影节点，`disposeStandIn` 一并释放。体积的 uniform 是全局的，所以替身与真实的灯生成同一份代码。这也修好了现有的 `SunCascades` 错配。
+- **实施时的发现**：develop 上新加一盏投影灯后，之后的帧仍会重新编译材质（WebGPU 与 WebGL2 都是），替身与真实材质的着色器只差生成的变量编号和 uniform 顺序，来自 three 的构建顺序，与阴影节点无关，不在本次范围。本次保证有体积时不比没有体积时多，即不比 develop 多（AC-W5-11）。
 
 ### 数据与服务端
 
@@ -198,6 +207,10 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
 - **天空光照取 PMREM 的 6 个方向平均：** 与材质用的是同一张图，同源（E2）。不读回 CPU，物理天空和程序化天空都适用。
 - **GI 路径不用帧间抖动：** 先求确定和简单。TRAA 下的帧间抖动是后续调优，不在本次。Epic 允许用帧间抖动，本次不用。
 - **GI 导出不缓存步进结果：** 每帧仍步进一次。TRAA 每帧的子像素抖动让结果不完全相同，4K 下约多 1 s，可接受。
+- **多盏投影平行光的级联 uniform 重名（实施时调整，develop 上已有）：** three 的 `CSMShadowNode` 把 uniform 固定命名为 `cascades`、`shadowFar`，同一个材质里有两盏以上投影平行光（每盏都走级联，`objects/lights.ts`）时 WGSL 重复声明，表面材质编译失败。`sunShadow.ts` 在构建期间给这两个名字加上节点 id。回归检查：e2e「W5 many lights under a sky」（太阳加两盏投影平行光、天空，12 张阴影图）。
+- **天空光照项不受遮挡（已知边界）：** 环境光照对体积内每一点都按全向可见计算，室内的雾会被均匀的天光抬亮，光束对比度下降（窗口光束样张光束外的亮度多半来自这一项）。后续可按体积给天空可见度系数，或用太阳阴影图做粗略代理。
+- **体积之间不互相遮挡（owner 2026-10-24 决定不做）：** 步进里每个体积只算自己沿灯方向的弦长，表面阴影则累加所有投射阴影的体积；太阳和雾之间隔着浓烟时，地面有影子，雾里没有阴影带。每步对每盏灯再遍历投射阴影的体积会增加步进开销，帧时间已没有余量。
+- **全局线性雾与景深只作用在表面深度上（已知边界）：** 体积的散射光不再叠全局线性雾；景深按表面深度虚化，清晰的雾放在虚化的背景前会被一起虚化。留给后续调优。
 - **介质里的点光：** 均匀步进下 1/d² 的奇点可能出亮斑或条带。先在样张里加一张点光图，有问题再改 equi-angular 采样。
 
 ## 接口与数据契约
@@ -237,7 +250,8 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
 | `frontend/src/creative-scene/render/realtimeGI.ts` | 修改 | GI 路径接入 |
 | `frontend/src/creative-scene/render/sunShadow.ts:SunCascades` | 修改 | `setup` 乘 `volumeShadow`；替身灯装同类节点 |
 | `frontend/src/creative-scene/objects/lights.ts:buildLight` | 修改 | 聚光、点光装带体积系数的阴影节点；`disposeLight` 释放 |
-| `frontend/src/creative-scene/objects/SceneObjects.tsx:ObjectNode` | 修改 | 渲染 `<Volume>` |
+| `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | `ObjectNode` 渲染 `<Volume>`；有投射阴影的体积时挂 `VolumesCastLight` |
+| `frontend/src/creative-scene/objects/SceneLights.tsx` | 修改 | 预热抽成 `useWarm`；`VolumesCastLight` |
 | `frontend/src/creative-scene/editing.ts` | 修改 | `newVolume` |
 | `frontend/src/creative-scene/SceneEditor.tsx` | 修改 | 添加菜单、属性栏 |
 | `frontend/src/creative-scene/panels/Outliner.tsx` | 修改 | 图标 |
@@ -274,7 +288,7 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
   - W5 aerial：物理天空、空气透视加大 `distance_scale`，一团烟跨在地平线上，上下两侧没有接缝。
   - W5 shadow off：关掉一盏灯的投影后立即导出，画面正确，没有读到已释放的纹理。
   - W5 many lights：超过上限的投影灯，步进管线照常建出，超出的灯只照亮表面。
-  - W5 no recompile：加一盏投影的聚光后，下一帧没有材质重新编译。
+  - W5 no recompile：加一盏投影的聚光或平行光后，帧里重新编译的程序数与没有体积时相同，步进材质不在其中（实施时调整，见「表面阴影系数」）。
   - 回归：W3 的「day unchanged」、「sun shadows」、W4 的 far 和 GI，确认没有体积时画面不变。
 - **助手**（AC-W5-10）：按工具说明在开发环境里请助手做一次，存截图到 evidence。
 - **性能**（AC-W5-11）：在参考设备上用穿刺的计时方法对产品视口实测（WebGPU，1280 × 720 CSS 像素、DPR 2），记入 evidence：

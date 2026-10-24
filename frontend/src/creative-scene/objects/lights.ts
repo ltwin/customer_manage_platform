@@ -2,6 +2,7 @@ import { DirectionalLight, Object3D, PointLight, SpotLight, type Light as ThreeL
 import type { SceneObject } from '../api.ts'
 import { lightDefaults } from '../state/apply.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
+import { volumeShadowNode } from '../render/volumes/shadow.ts'
 
 // Light objects in the lit look (design「最终渲染的光照」): three.js lights
 // with the document's fields as they are (the fields are three.js's), built
@@ -10,23 +11,30 @@ import { cascadeSunShadow } from '../render/sunShadow.ts'
 // turns with the object. The data's intensity is kept in
 // userData.baseIntensity; each picture draws it × the exposure's k
 // (world/exposure.ts applyExposure), 1 under any sky but the physical one.
+// A spot's and a point's shadow nodes take the volumes' shadows (W5,
+// render/volumes/shadow.ts); a directional light's cascades do too.
 
 type Light = NonNullable<SceneObject['light']>
 
 /** Shadow maps of every light; a directional one's, one per cascade like the sun's. */
 const shadowMapSize = 1024
 
+/** stop undoes the light's shadow node: a directional light's cascades once it casts, a spot's or point's from the start. */
 export type BuiltLight = { light: DirectionalLight | PointLight | SpotLight; target: Object3D | null; stop: (() => void) | null }
 
 export function buildLight(type: Light['type']): BuiltLight {
-  if (type === 'point') return { light: new PointLight(), target: null, stop: null }
+  // Before the light first builds: three keeps the shadow node it builds first.
+  if (type === 'point') {
+    const light = new PointLight()
+    return { light, target: null, stop: volumeShadowNode(light) }
+  }
   const target = new Object3D()
   target.position.set(0, 0, -1)
   const light = type === 'spot' ? new SpotLight() : new DirectionalLight()
   light.target = target
   // three puts a directional light at (0, 1, 0); here it sits at the object's origin.
   light.position.set(0, 0, 0)
-  return { light, target, stop: null }
+  return { light, target, stop: light instanceof SpotLight ? volumeShadowNode(light) : null }
 }
 
 /** Writes the document's fields onto a light built for the same type. */

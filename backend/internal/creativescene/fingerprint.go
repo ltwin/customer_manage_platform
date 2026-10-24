@@ -44,7 +44,8 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 	physicalLit := pass == PassLit && s.Environment.Sky.Kind == SkyPhysical
 	found := false
 	for _, o := range s.Objects {
-		if o.Kind == KindCamera && o.ID != cameraID || o.Kind == KindLight && pass != PassLit {
+		// Lights and volumes only draw in lit images (W5, data: 体积物件).
+		if o.Kind == KindCamera && o.ID != cameraID || (o.Kind == KindLight || o.Kind == KindVolume) && pass != PassLit {
 			continue
 		}
 		o.Name, o.Locked, o.Order = "", false, 0

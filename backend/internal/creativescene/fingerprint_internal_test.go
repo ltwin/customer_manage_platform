@@ -424,3 +424,26 @@ func TestOneCamerasExposureStalesOnlyItsLit(t *testing.T) {
 		}
 	}
 }
+
+// W5: a volume object only draws in lit images; clay and line art show
+// nothing of it (data: 体积物件).
+func TestVolumesFingerprintOnlyLit(t *testing.T) {
+	base := pinnedScene(t, `{"mode":"lit"}`)
+	withVolume := func(density float64) Scene {
+		s := pinnedScene(t, `{"mode":"lit"}`)
+		shape, scatter, absorption := "box", "#cccccc", "#cccccc"
+		g, a, e, cast := 0.0, 0.0, 0.1, false
+		s.Objects = append(s.Objects, Object{ID: "sobj_V1o2l3u4m5e6F7o8g9x0q", Kind: KindVolume, Order: 9,
+			Transform: Transform{Position: []float64{0, 1, 0}, Rotation: []float64{0, 0, 0, 1}, Scale: []float64{2, 2, 2}}, Visible: true,
+			Volume: &Volume{Shape: &shape, ScatterColor: &scatter, ScatterDensity: &density, Anisotropy: &g,
+				AbsorptionColor: &absorption, AbsorptionDensity: &a, EdgeFalloff: &e, CastShadow: &cast}})
+		return s
+	}
+	thin := withVolume(0.1)
+	if got := sameIn(base, thin); !maps.Equal(got, onlyLitChanges) {
+		t.Fatalf("adding a volume: %v", got)
+	}
+	if got := sameIn(thin, withVolume(2)); !maps.Equal(got, onlyLitChanges) {
+		t.Fatalf("a denser volume: %v", got)
+	}
+}

@@ -15333,7 +15333,7 @@ components:
     CreativeSceneObject:
       type: object
       additionalProperties: false
-      description: 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+      description: 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
       required:
       - id
       - kind
@@ -15355,6 +15355,7 @@ components:
           - light
           - camera
           - group
+          - volume
         name:
           type: string
           maxLength: 80
@@ -15382,6 +15383,49 @@ components:
           $ref: '#/components/schemas/CreativeSceneLight'
         camera:
           $ref: '#/components/schemas/CreativeSceneCamera'
+        volume:
+          $ref: '#/components/schemas/CreativeSceneVolume'
+    CreativeSceneVolume:
+      type: object
+      additionalProperties: false
+      description: >-
+        体积物件的介质：单位立方体（边长 1 m）或单位球（直径 1 m），由 transform 缩放，散射与吸收同 Blender 的 Volume Scatter、Volume Absorption。
+        写入时各字段可省略，缺省为 shape box、scatter_color #cccccc、scatter_density 0.1、anisotropy 0、absorption_color #cccccc、
+        absorption_density 0、edge_falloff 0.1、cast_shadow false；响应里总是带齐全部字段。update_objects 里按键合并，只改写到的字段。
+        每个场景最多 8 个体积物件。
+      properties:
+        shape:
+          type: string
+          enum:
+          - box
+          - sphere
+        scatter_color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+        scatter_density:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: 散射密度（每米）；散射系数 = scatter_density × scatter_color（线性值）。
+        anisotropy:
+          type: number
+          minimum: -0.95
+          maximum: 0.95
+          description: Henyey–Greenstein 相函数的 g；正值为前向散射。
+        absorption_color:
+          $ref: '#/components/schemas/CreativeSceneColor'
+        absorption_density:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: 吸收密度（每米）；吸收系数 = absorption_density × (1 − absorption_color)（线性值）。
+        edge_falloff:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 从边界向内、密度从 0 升到满值所占的比例；0 为硬边。
+        cast_shadow:
+          type: boolean
+          description: 在表面上投影；只在灯本身 cast_shadow 为 true、表面接收阴影时生效。
     CreativeSceneModelRef:
       type: object
       additionalProperties: false
@@ -15673,7 +15717,7 @@ components:
     CreativeSceneObjectUpdate:
       type: object
       additionalProperties: false
-      description: 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params、light、camera 按键合并，material_slots 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。
+      description: 省略的字段不改，至少改一项；同一物件在一个操作里只能出现一次。改摆放字段涉及 object:<id>，改内容字段涉及 object:<id>:content。primitive.params、light、camera、volume 按键合并，material_slots 整体替换；字段须与物件的 kind 相符。引用不存在的物件返回 400。
       required:
       - object_id
       properties:
@@ -15702,6 +15746,8 @@ components:
           $ref: '#/components/schemas/CreativeSceneLightPatch'
         camera:
           $ref: '#/components/schemas/CreativeSceneCamera'
+        volume:
+          $ref: '#/components/schemas/CreativeSceneVolume'
     CreativeSceneRemoveObjects:
       type: object
       additionalProperties: false

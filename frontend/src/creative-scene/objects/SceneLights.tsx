@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo } from 'react'
 import { useThree } from '@react-three/fiber'
-import type { Camera, Object3D } from 'three'
+import { AmbientLight, type Camera, type Object3D } from 'three'
 import type { SceneObject } from '../api.ts'
 import { gpuOf, type SceneGPU } from '../render/gpu.ts'
 import { applyLight, buildLight, disposeLight } from './lights.ts'
@@ -42,6 +42,28 @@ function warm(gpu: SceneGPU, scene: Object3D, camera: Camera, w: Warming) {
   batch.lights.push(w)
 }
 
+/** With warm, light stays dark until the viewport's passes have compiled for it, again whenever shadows changes. */
+function useWarm(light: Object3D, warmed: boolean, shadows: boolean) {
+  const { gl, scene, camera, invalidate } = useThree()
+  useLayoutEffect(() => {
+    if (!warmed) return
+    const w: Warming = {
+      light,
+      live: true,
+      show: () => {
+        light.visible = true
+        invalidate()
+      },
+    }
+    light.visible = false
+    warm(gpuOf(gl), scene, camera, w)
+    return () => {
+      w.live = false
+      light.visible = true
+    }
+  }, [warmed, light, shadows, gl, scene, camera, invalidate])
+}
+
 /**
  * A light object as a three.js light, in its object's document-space group;
  * mounted only in the lit look. A new type builds a new light; other fields
@@ -55,30 +77,13 @@ function warm(gpu: SceneGPU, scene: Object3D, camera: Camera, w: Warming) {
  * shot compiles its whole scene before shooting and passes warm false.
  */
 export function SceneLight({ light, warm: warmed }: { light: Light; warm: boolean }) {
-  const { gl, scene, camera, invalidate } = useThree()
+  const invalidate = useThree((s) => s.invalidate)
   const built = useMemo(() => buildLight(light.type), [light.type])
   useLayoutEffect(() => {
     applyLight(built, light)
     invalidate()
   }, [built, light, invalidate])
-  const shadows = light.cast_shadow ?? false
-  useLayoutEffect(() => {
-    if (!warmed) return
-    const w: Warming = {
-      light: built.light,
-      live: true,
-      show: () => {
-        built.light.visible = true
-        invalidate()
-      },
-    }
-    built.light.visible = false
-    warm(gpuOf(gl), scene, camera, w)
-    return () => {
-      w.live = false
-      built.light.visible = true
-    }
-  }, [warmed, built, shadows, gl, scene, camera, invalidate])
+  useWarm(built.light, warmed, light.cast_shadow ?? false)
   useEffect(() => () => disposeLight(built), [built])
   return (
     <>
@@ -86,4 +91,23 @@ export function SceneLight({ light, warm: warmed }: { light: Light; warm: boolea
       {built.target && <primitive object={built.target} />}
     </>
   )
+}
+
+/**
+ * While a volume casts shadows on surfaces, a light of no intensity that the
+ * lit materials' shadows look for (render/volumes/shadow.ts volumesCast):
+ * only then do they carry the volumes' shadow, and a new casting light
+ * compiles no more than without volumes (AC-W5-11, owner 2026-10-23). It
+ * changes the scene's lights, so three compiles every lit material again:
+ * warmed as a new light is, once as the first volume starts casting.
+ */
+export function VolumesCastLight({ warm: warmed }: { warm: boolean }) {
+  const light = useMemo(() => {
+    const l = new AmbientLight(0xffffff, 0)
+    l.userData.volumesCast = true
+    return l
+  }, [])
+  useWarm(light, warmed, false)
+  useEffect(() => () => light.dispose(), [light])
+  return <primitive object={light} />
 }

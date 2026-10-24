@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from 'react'
-import { Box, Camera, Eye, EyeOff, Folder, Lightbulb, Lock, LockOpen, Shapes } from 'lucide-react'
+import { Box, Camera, Cloud, Eye, EyeOff, Folder, Lightbulb, Lock, LockOpen, Shapes } from 'lucide-react'
 import type { SceneObject } from '../api.ts'
 import { canDrop, draggedObjects, type DropPlace } from '../grouping.ts'
 import type { Selection } from '../input/selection.ts'
@@ -24,7 +24,7 @@ function rows(objects: readonly SceneObject[]): Row[] {
   return out
 }
 
-const icon = { primitive: Box, model_instance: Shapes, light: Lightbulb, camera: Camera, group: Folder } as const
+const icon = { primitive: Box, model_instance: Shapes, light: Lightbulb, camera: Camera, group: Folder, volume: Cloud } as const
 
 /**
  * Where on a row a drop lands: the top and bottom quarter go before and

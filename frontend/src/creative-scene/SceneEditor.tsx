@@ -9,7 +9,7 @@ import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
-import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, objectsLabel, rowOffsets, transformOp, visibilityOp } from './editing.ts'
+import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, newVolume, objectsLabel, rowOffsets, transformOp, visibilityOp, volumeLabels } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -32,6 +32,7 @@ import { pushRecent, readRecent } from './library/recent.ts'
 import { EnvironmentPanel } from './panels/EnvironmentPanel.tsx'
 import { RenderPanel } from './panels/RenderPanel.tsx'
 import { LightFields } from './panels/LightFields.tsx'
+import { VolumeFields } from './panels/VolumeFields.tsx'
 import { MaterialSlots } from './panels/MaterialSlots.tsx'
 import { copyMaterials, slotsOf } from './materials/slotEdits.ts'
 import { Properties } from './panels/Properties.tsx'
@@ -412,6 +413,11 @@ export default function SceneEditor({
   }
   const addEmpty = () => {
     const o = newEmpty(handle.current?.centrePoint() ?? [0, 0, 0], objects)
+    if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) select([o.id])
+  }
+  /** On what the view's centre looks at; another volume's bounds are passed through (Viewport.tsx centrePoint). */
+  const addVolume = (shape: keyof typeof volumeLabels) => {
+    const o = newVolume(shape, handle.current?.centrePoint() ?? [0, 0, 0], objects)
     if (edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) select([o.id])
   }
   /**
@@ -806,6 +812,7 @@ export default function SceneEditor({
         { section: '其他' },
         { label: '摄像机', run: addCamera },
         { label: '空物体', run: addEmpty },
+        ...(['box', 'sphere'] as const).map((shape) => ({ label: `体积（${volumeLabels[shape]}）`, run: () => addVolume(shape) })),
       ]
     }
     if (menu === 'object')
@@ -1045,6 +1052,15 @@ export default function SceneEditor({
                       readOnly={readOnly}
                       display={display}
                       onLight={(light, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, light }] }], text, merge ? { merge } : undefined)}
+                    />
+                  )}
+                  {shownActive?.volume && (
+                    <VolumeFields
+                      key={`volume:${shownActive.id}`}
+                      object={{ ...shownActive, volume: shownActive.volume }}
+                      readOnly={readOnly}
+                      display={display}
+                      onVolume={(volume, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, volume }] }], text, merge ? { merge } : undefined)}
                     />
                   )}
                   {shownActive?.kind === 'model_instance' && shownModel && (

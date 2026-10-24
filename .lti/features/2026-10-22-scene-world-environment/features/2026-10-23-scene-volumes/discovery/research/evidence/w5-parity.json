@@ -1,0 +1,36 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "limits": {
+    "mean": 0.63,
+    "over": 0.18
+  },
+  "backends": [
+    "scene renderer (offscreen): webgpu",
+    "scene renderer (offscreen): webgl2"
+  ],
+  "rows": {
+    "window": {
+      "mean": 0.2494,
+      "over_percent": 0.121,
+      "without": {
+        "mean": 0.1939,
+        "over_percent": 0.1394
+      },
+      "ok": true
+    },
+    "spot": {
+      "mean": 0.7606,
+      "over_percent": 1.1068,
+      "without": {
+        "mean": 1.4487,
+        "over_percent": 1.2416
+      },
+      "ok": true
+    }
+  }
+}

@@ -36,8 +36,8 @@ type updateObjectsOp struct {
 }
 
 // objectUpdate changes only what it carries: placement fields are replaced,
-// primitive.params, light and camera are merged by key (mergeLight,
-// mergeCamera), and material_slots is replaced whole.
+// primitive.params, light, camera and volume are merged by key (mergeLight,
+// mergeCamera, mergeVolume), and material_slots is replaced whole.
 type objectUpdate struct {
 	ObjectID      string                   `json:"object_id"`
 	Name          *string                  `json:"name,omitempty"`
@@ -48,6 +48,7 @@ type objectUpdate struct {
 	MaterialSlots *map[string]MaterialSlot `json:"material_slots,omitempty"`
 	Light         *lightPatch              `json:"light,omitempty"`
 	Camera        *Camera                  `json:"camera,omitempty"`
+	Volume        *Volume                  `json:"volume,omitempty"`
 }
 
 type primitivePatch struct {
@@ -263,6 +264,9 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			}
 			completeCamera(o.Camera, ExposureAmbient)
 		}
+		if o.Volume != nil {
+			completeVolume(o.Volume)
+		}
 		canonicalNumbers(&o)
 		s.Objects = append(s.Objects, o)
 		c.change(unitObjects, placementUnit(o.ID), contentUnit(o.ID))
@@ -275,7 +279,7 @@ func (u objectUpdate) placement() bool {
 }
 
 func (u objectUpdate) content() bool {
-	return u.Primitive != nil || u.MaterialSlots != nil || u.Light != nil || u.Camera != nil
+	return u.Primitive != nil || u.MaterialSlots != nil || u.Light != nil || u.Camera != nil || u.Volume != nil
 }
 
 func (u objectUpdate) units() []string {
@@ -361,6 +365,13 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 			}
 			cam := mergeCamera(*o.Camera, *u.Camera)
 			o.Camera = &cam
+		}
+		if u.Volume != nil {
+			if o.Volume == nil {
+				return invalid("物件 %s 不是体积物件", o.ID)
+			}
+			v := mergeVolume(*o.Volume, *u.Volume)
+			o.Volume = &v
 		}
 		canonicalNumbers(o)
 		c.change(u.units()...)

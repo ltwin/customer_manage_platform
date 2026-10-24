@@ -114,7 +114,7 @@ func unitView(ctx context.Context, tx store.ReadTxAccountScope, s Scene, units [
 		}
 		o := s.Objects[i]
 		if content {
-			add(id, map[string]any{"primitive": o.Primitive, "model": o.Model, "material_slots": o.MaterialSlots, "light": o.Light, "camera": o.Camera})
+			add(id, map[string]any{"primitive": o.Primitive, "model": o.Model, "material_slots": o.MaterialSlots, "light": o.Light, "camera": o.Camera, "volume": o.Volume})
 			listed = append(listed, o)
 		} else {
 			add(id, map[string]any{"name": o.Name, "transform": o.Transform, "visible": o.Visible, "locked": o.Locked})

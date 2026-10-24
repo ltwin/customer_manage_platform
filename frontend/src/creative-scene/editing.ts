@@ -267,6 +267,33 @@ export function newLight(
   }
 }
 
+type VolumeShape = NonNullable<NonNullable<SceneObject['volume']>['shape']>
+export const volumeLabels: Record<VolumeShape, string> = { box: '立方体', sphere: '球体' }
+
+/** A new volume's size: a 2 m box or ball. */
+export const newVolumeSize = 2
+
+/**
+ * A volume from the add menu (W5, scene-volumes design「编辑与拾取」): 2 m,
+ * standing on the point the view's centre looks at (document space is Y up),
+ * its other fields the stored defaults. Named 「体积 N」.
+ */
+export function newVolume(shape: VolumeShape, ground: [number, number, number], objects: readonly SceneObject[], makeID: () => string = newObjectID): SceneObject {
+  const n = objects.filter((o) => o.kind === 'volume').length + 1
+  const s = newVolumeSize
+  return {
+    id: makeID(),
+    kind: 'volume',
+    name: `体积 ${n}`,
+    parent_id: null,
+    order: nextOrder(objects, null),
+    transform: { position: [ground[0], ground[1] + s / 2, ground[2]], rotation: [0, 0, 0, 1], scale: [s, s, s] },
+    visible: true,
+    locked: false,
+    volume: { shape },
+  }
+}
+
 type Environment = Scene['environment']
 type Sky = Environment['sky']
 

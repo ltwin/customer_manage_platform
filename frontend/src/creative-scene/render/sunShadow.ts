@@ -1,6 +1,9 @@
 import { Box3, Matrix4, Vector3, type Camera, type DirectionalLight, type DirectionalLightShadow, type Mesh, type Object3D, type OrthographicCamera, type PerspectiveCamera, type Vector2 } from 'three'
-import type { NodeFrame } from 'three/webgpu'
+import { renderGroup, uniform } from 'three/tsl'
+import { ReferenceNode, UniformNode, type NodeBuilder, type NodeFrame } from 'three/webgpu'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
+import { towardSun, volumesCast } from './volumes/shadow.ts'
+import { CASCADES } from './volumes/state.ts'
 
 // The sun's shadow in cascades. One map over every caster spent its texels
 // on whatever stood far off: a big box 200 m away made the shadows by the
@@ -13,7 +16,6 @@ import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 // viewport's or an offscreen shot's), in world space (a document light sits
 // in its object's group).
 
-const cascades = 4
 /** Where the log split of the view starts (metres): 0.5–5, 5–50, 50–500 m and on, under the viewport's 5000 m far. */
 const splitFrom = 0.5
 /** Receivers look up their shadow this many texels out along their normal: no self-shadowing stripes. */
@@ -29,9 +31,21 @@ export type CascadeLight = Object3D & { target: Object3D; shadow?: DirectionalLi
 class SunCascades extends CSMShadowNode {
   /** Each cascade's slice as a share of near..far, which the shader picks the map by. */
   declare _cascades: Vector2[]
+  /** Toward the light, a unit vector, as each render starts: the volumes' shadow (W5) goes that way. */
+  private readonly toward
 
   constructor(light: DirectionalLight) {
-    super(light, { cascades })
+    super(light, { cascades: CASCADES })
+    const toward = new Vector3()
+    this.toward = uniform(toward)
+      .setGroup(renderGroup)
+      .onRenderUpdate(() => toward.subVectors(light.getWorldPosition(lightAt), light.target.getWorldPosition(targetAt)).normalize())
+  }
+
+  // The cascades' shadow times what the casting volumes let through toward the light (render/volumes/shadow.ts).
+  override setup(builder: NodeBuilder) {
+    const shadow = ownNames(`csm${this.id}`, () => super.setup(builder))
+    return volumesCast(builder) ? towardSun(shadow, this.toward) : shadow
   }
 
   // Replaces three's placement, which takes the camera of the first build and the light's local position.
@@ -39,6 +53,24 @@ class SunCascades extends CSMShadowNode {
     if (!frame.camera) return
     this.camera = frame.camera
     fitCascades(frame.camera, this.light as DirectionalLight, this.lights, this._cascades)
+  }
+}
+
+type Named = { setName(name: string): unknown }
+
+/**
+ * three's CSMShadowNode names its uniforms 'cascades' and 'shadowFar' alike
+ * for every light: with two casting directional lights a material declared
+ * them twice and did not compile. While a node builds them, its own.
+ */
+function ownNames<T>(suffix: string, build: () => T): T {
+  const kinds = [ReferenceNode.prototype, UniformNode.prototype] as unknown as Named[]
+  const setNames = kinds.map((k) => k.setName)
+  kinds.forEach((k, i) => (k.setName = function (this: Named, name: string) { return setNames[i].call(this, `${name}_${suffix}`) }))
+  try {
+    return build()
+  } finally {
+    kinds.forEach((k, i) => (k.setName = setNames[i]))
   }
 }
 

@@ -69,12 +69,8 @@ function slice(index: TSLNode, at: TSLNode): TSLNode {
   return froxels.sample(vec2(index.add(x).div(AERIAL.slices), y)).level(0)
 }
 
-/**
- * The aerial perspective over colour (linear, pre-exposed) at an opaque
- * surface whose view-space position is viewPosition, for a camera whose
- * projection is projection: colour where it is off or on the background.
- */
-export function applyAerial(color: TSLNode, viewPosition: TSLNode, projection: Uniform<Matrix4>, opaque: TSLNode): TSLNode {
+/** The froxels at view-space position viewPosition: the light scattered in on the way there (rgb, the sky view's units) and what is let through (a). */
+function lookup(viewPosition: TSLNode, projection: Uniform<Matrix4>): TSLNode {
   const clip = projection.mul(vec4(viewPosition, 1))
   const at = clip.xy.div(clip.w).mul(0.5).add(0.5)
   const km = length(viewPosition).mul(distanceScale).div(1000)
@@ -84,9 +80,30 @@ export function applyAerial(color: TSLNode, viewPosition: TSLNode, projection: U
   const i1 = min(i0.add(1), AERIAL.slices - 1)
   const between = mix(slice(i0, at), slice(i1, at), clamp(s.sub(i0), 0, 1))
   const near = clamp(s.add(0.5).mul(2), 0, 1)
-  const ap = select(s.lessThan(0), mix(vec4(0, 0, 0, 1), slice(float(0), at), near), between)
+  return select(s.lessThan(0), mix(vec4(0, 0, 0, 1), slice(float(0), at), near), between)
+}
+
+/**
+ * The aerial perspective over colour (linear, pre-exposed) at an opaque
+ * surface whose view-space position is viewPosition, for a camera whose
+ * projection is projection: colour where it is off or on the background.
+ */
+export function applyAerial(color: TSLNode, viewPosition: TSLNode, projection: Uniform<Matrix4>, opaque: TSLNode): TSLNode {
+  const ap = lookup(viewPosition, projection)
   const fogged = color.mul(ap.a).add(ap.rgb.mul(relative))
   return mix(color, fogged, on.mul(opaque))
+}
+
+/**
+ * The air between the camera and view-space position viewPosition, in the
+ * picture's units: the light it scatters in (rgb, S) and what it lets
+ * through (a, T); none, vec4(0, 0, 0, 1), where the aerial perspective is
+ * off. The volumes take the air in front of them and behind them apart
+ * (Epic design「合成顺序」, revision v9).
+ */
+export function aerialAt(viewPosition: TSLNode, projection: Uniform<Matrix4>): TSLNode {
+  const ap = lookup(viewPosition, projection)
+  return mix(vec4(0, 0, 0, 1), vec4(ap.rgb.mul(relative), ap.a), on)
 }
 
 /**
