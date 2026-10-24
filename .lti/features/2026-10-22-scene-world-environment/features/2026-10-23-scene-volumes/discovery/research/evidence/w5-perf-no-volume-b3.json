@@ -7,9 +7,9 @@
   "chromium": "145.0.7632.6",
   "viewport": "1280 × 720 CSS pixels, 2× pixels, WebGPU",
   "scene": "AC-W5-1 window room, the sun and two spots casting",
-  "label": "bn2",
+  "label": "no-volume-b3",
   "ms": {
-    "none": 4.27
+    "none": 4.17
   },
-  "new_light_compile_ms": 240
+  "new_light_compile_ms": 201
 }

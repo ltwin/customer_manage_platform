@@ -7,17 +7,18 @@
   "chromium": "145.0.7632.6",
   "viewport": "1280 × 720 CSS pixels, 2× pixels, WebGPU",
   "scene": "AC-W5-1 window room, the sun and two spots casting",
-  "label": "n2",
+  "label": "volumes-run5",
   "ms": {
-    "none": 4.23,
+    "none": 4.21,
     "one": 7.22,
-    "eight": 8.72,
-    "eight_casting": 10.97
+    "eight": 8.73,
+    "eight_casting": 10.92
   },
-  "new_light_compile_ms": 215,
+  "new_light_compile_ms": 214,
+  "new_light_compile_casting_ms": 437,
   "added_ms": {
-    "one": 2.99,
-    "eight": 4.49,
-    "eight_casting_over_eight": 2.25
+    "one": 3.01,
+    "eight": 4.52,
+    "eight_casting_over_eight": 2.19
   }
 }
