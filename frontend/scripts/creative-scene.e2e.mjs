@@ -3614,6 +3614,13 @@ await check('calibration: noon at EV 0, dusk at +2, a room lit by two 40 cd lamp
 
 const referenceNames = ['noon', 'dusk', 'room', 'materials', 'dof', 'cornell']
 
+/**
+ * scene-world-space-gi S0's reference scenes, what lies off-screen: a room lit from behind the camera, a
+ * room of thin boards, mirrors with things behind the camera. Apart from referenceNames, which the W1 and
+ * R1 cases compare against their stored baselines.
+ */
+const traceReferenceNames = ['backlit-room', 'thin-wall', 'mirror-board']
+
 /** The editor's saved view (viewState.ts), orthographic from front right above, in view space (Z up). */
 const obliqueOrtho = {
   camera: { position: [7, -9, 7], target: [0, 0, 0.5], ortho: true, zoom: 80 },
@@ -3639,7 +3646,7 @@ function referenceScene(server, name, edit) {
 }
 
 await check('reference scenes: each opens and draws in clay and rendered without errors', async () => {
-  for (const name of referenceNames) {
+  for (const name of [...referenceNames, ...traceReferenceNames]) {
     const server = new SceneServer()
     referenceScene(server, name)
     const { context, page, errors } = await open(server)
@@ -3659,9 +3666,10 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
 /**
  * A reference scene exported in all three passes from the rendered view,
  * then the saved orthographic view in clay, on gpu (a Chromium on this
- * machine's GPU); forceWebGL draws the export through the WebGL2 backend.
+ * machine's GPU); forceWebGL draws the export through the WebGL2 backend,
+ * litOnly exports the lit pass alone.
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
@@ -3680,6 +3688,7 @@ async function exportReference(gpu, name, { forceWebGL = false, forceCompatibili
   const dialog = page.getByRole('dialog', { name: '导出分镜' })
   await dialog.waitFor()
   for (const pass of ['白模（clay）', '线稿', '材质光照']) assert.ok(await dialog.getByLabel(pass).isChecked(), `${name}: ${pass} ticked`)
+  if (litOnly) for (const pass of ['白模（clay）', '线稿']) await dialog.getByLabel(pass).uncheck()
   const started = Date.now()
   await dialog.getByRole('button', { name: '导出' }).click()
   await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
@@ -3726,6 +3735,86 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
     await gpu.close()
   }
 })
+
+// --- scene-world-space-gi S0: the real-time GI before its world-space layer -----
+
+/** The scenes the world-space layer is judged on: S0's own, and the earlier ones it should keep. */
+const giBaselineNames = [...traceReferenceNames, 'noon', 'room', 'materials', 'cornell']
+
+/** Regions of a scene's lit export, [x0, y0, x1, y1] in fractions of its size, whose brightness S1 and S2 compare. */
+const giRegions = JSON.parse(readFileSync(new URL('fixtures/scene-reference/gi-regions.json', import.meta.url), 'utf8'))
+
+const realtimeGI = (scene) => {
+  scene.render.engine = 'realtime_gi'
+}
+
+/** png cut to a region [x0, y0, x1, y1] in fractions of its size, as a PNG. */
+async function cropPNG(page, png, [x0, y0, x1, y1]) {
+  const url = await page.evaluate(async ([src, x0, y0, x1, y1]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = Math.round((x1 - x0) * img.width)
+    c.height = Math.round((y1 - y0) * img.height)
+    c.getContext('2d').drawImage(img, -Math.round(x0 * img.width), -Math.round(y0 * img.height))
+    return c.toDataURL('image/png')
+  }, [`data:image/png;base64,${png.toString('base64')}`, x0, y0, x1, y1])
+  return Buffer.from(url.slice(url.indexOf(',') + 1), 'base64')
+}
+
+/** A reference scene as the server reads it out (referenceScene), for the page's shooter: the sky completed, the stored camera exposed by hand. */
+function shooterScene(name, edit) {
+  const scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  scene.environment.sky = completeSky(scene.environment.sky)
+  for (const o of scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
+  edit?.(scene)
+  return scene
+}
+
+/**
+ * A point of a scene (document space) seen by its camera turned in place to each yaw (degrees about the
+ * vertical, from where it looks): the brightness of a small box about the point in each lit picture, 1024
+ * wide, drawn by the page's shooter. A surface the sun does not reach is lit by the sky and by what bounces; the
+ * real-time GI before the world-space layer only by what bounces on screen, so it brightens when a lit surface
+ * comes into view. The world-space layer should keep it (Epic AC-2).
+ */
+async function pointAcrossViews(page, name, point, yaws) {
+  const scene = shooterScene(name, realtimeGI)
+  const shot = scene.objects.find((o) => o.kind === 'camera')
+  const facing = new Quaternion(...shot.transform.rotation)
+  const out = []
+  for (const yaw of yaws) {
+    const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (yaw * Math.PI) / 180).multiply(facing)
+    shot.transform.rotation = [q.x, q.y, q.z, q.w]
+    const v = new Vector3(...point).sub(new Vector3(...shot.transform.position)).applyQuaternion(q.clone().invert())
+    // Full frame at 3:2: the long side spans the sensor's 36 mm (cameraOptics.ts verticalFov).
+    const across = 18 / shot.camera.focal_mm
+    const u = 0.5 + (0.5 * v.x) / (-v.z * across)
+    const w = 0.5 - (0.5 * v.y) / ((-v.z * across * 2) / 3)
+    assert.ok(v.z < 0 && u > 0.05 && u < 0.95 && w > 0.05 && w < 0.95, `${name}: the point in view at ${yaw}°: ${u}, ${w}`)
+    const box = [u - 0.015, w - 0.0225, u + 0.015, w + 0.0225]
+    const { means } = await page.evaluate(([s, b]) => window.__regions(s, 'lit', 1024, [b]), [scene, box])
+    const [r, g, b] = means[0]
+    out.push({ yaw_deg: yaw, box: box.map((c) => Number(c.toFixed(4))), luma: 0.2126 * r + 0.7152 * g + 0.0722 * b })
+  }
+  return out
+}
+
+/** Frame times while the viewport turns, in a scene's rendered view in real-time GI. */
+async function giFrameTimes(gpu, name) {
+  const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+  const server = new SceneServer()
+  referenceScene(server, name, realtimeGI)
+  const { page, errors } = await open(server, { context })
+  await shading(page, '最终渲染')
+  await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name}: compiled`, 60_000)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await orbitFrames(page, 1000)
+  const stats = frameStats(await orbitFrames(page, 3000))
+  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  await context.close()
+  return stats
+}
 
 // --- W1 scene-display-look: the looks it changes and the ones it keeps ----------
 
@@ -6191,6 +6280,48 @@ window.__picture = async (scene, kind, side, points = []) => {
 window.__ready = true;
 </script></body></html>`,
 )
+
+// SCENE_E2E_GI_BASELINE=<dir>: the reference scenes in real-time GI as they are before the world-space layer,
+// on this machine's GPU: each lit export through WebGPU and through the WebGL2 backend (AC-6 keeps the latter
+// as it is), the brightness of the regions in gi-regions.json, the viewport's frame times, and the room lit
+// from behind: a wall out of the sun, with the sunlit wall off screen and on (pointAcrossViews). SCENE_E2E_GI_SCENES=<a,b> draws these reference scenes instead.
+if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference scenes in real-time GI before the world-space layer, on this machine’s GPU', async () => {
+  const dir = process.env.SCENE_E2E_GI_BASELINE
+  const only = process.env.SCENE_E2E_GI_SCENES?.split(',')
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
+    const context = await gpu.newContext()
+    const page = await context.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    for (const name of only ?? giBaselineNames) {
+      const entry = (record.scenes[name] = { exports: {} })
+      for (const [backend, forceWebGL] of [['webgpu', false], ['webgl2', true]]) {
+        const out = await exportReference(gpu, name, { forceWebGL, edit: realtimeGI, litOnly: true })
+        assert.ok(out.backends.some((b) => b === `scene renderer (offscreen): ${backend}`), `${name}: the export on ${backend}: ${out.backends}`)
+        record.renderer ??= out.renderer
+        const [img] = out.images
+        const file = img.file.replace('-lit.png', `-${backend}-lit.png`)
+        await writeFile(`${dir}/${file}`, img.png)
+        const regions = {}
+        for (const [region, rect] of Object.entries(giRegions[name] ?? {})) regions[region] = await lumaStats(page, await cropPNG(page, img.png, rect))
+        entry.exports[backend] = { file, ...pngSize(img.png), export_ms: out.exportMs, all: await lumaStats(page, img.png), regions }
+      }
+      entry.viewport = await giFrameTimes(gpu, name)
+      console.log(`gi-baseline ${name}: ${JSON.stringify(entry.viewport)}`)
+    }
+    if (!only || only.includes('backlit-room')) {
+      // The room's left wall, out of the sun, with the sunlit wall behind the camera off screen (45°) and partly on (100°).
+      const views = await pointAcrossViews(page, 'backlit-room', [-2.49, 1.2, 1.4], [45, 100])
+      record.lit_wall_in_view = { scene: 'backlit-room', point: [-2.49, 1.2, 1.4], views, ratio: views[1].luma / views[0].luma }
+    }
+    await context.close()
+    await writeFile(`${dir}/gi-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
 
 // W5 scene-volumes ---------------------------------------------------------------------------------------------
 

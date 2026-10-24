@@ -34,13 +34,13 @@
 
 ### 新参考场景
 
-三个场景存成完整的场景文档 JSON（`environment`、`render`、`objects`），格式与现有的 `cornell.json` 相同，只用内置基础体，加入 `referenceNames`：
+三个场景存成完整的场景文档 JSON（`environment`、`render`、`objects`），格式与现有的 `cornell.json` 相同，只用内置基础体。它们另列在 `traceReferenceNames` 里，不加入 `referenceNames`：后者在 W1、R1 的用例里要和存档的基线图逐张比对，新场景没有存档。「每个参考场景都能打开」的检查同时遍历两份列表：
 
 | 文件 | 内容 | 导出机位 | 服务 |
 |---|---|---|---|
-| `backlit-room.json` | 6 × 5 × 3 m 的房间，没有天花板，阳光高度 35°。摄像机朝向房间深处；摄像机背后约 1 m 处有一面被阳光直射的白墙，墙前有一个红色和一个蓝色的 `paint@1` 方块。画面里有白地面、灰色家具（方块和圆柱）。物理天空，上海、秋分、15:00 | 一台 35mm 机位，背后的墙和彩色方块都不在画面里 | AC-1、AC-2 |
-| `thin-wall.json` | 4 × 4 × 3 m 的封闭房间，四面墙和天花板都是 2 cm 厚的 `box@1`，有一扇窗洞。窗外阳光高度 40°，室内只有窗洞透进的光 | 一台 24mm 机位，看墙角和远离窗洞的那面墙 | AC-3 漏光 |
-| `mirror-board.json` | 光滑地板（`principled@1`，糙度 0.05），镜面柜（`principled@1` 方块，金属度 1、糙度 0），金属球（`metal@1`，`rust = 0`）。摄像机背后有红、绿、黄三个方块和一根圆柱 | 一台 50mm 机位，正对镜面柜，背后的物件不在画面里 | AC-1、AC-12 的反射部分 |
+| `backlit-room.json` | 进深 6 m、宽 5 m、高 3 m 的房间，没有天花板。物理天空，手动太阳角度：高度 35°，方位 180°。摄像机朝向房间深处；摄像机背后约 1 m 处有一面被阳光直射的白墙，墙前有一个红色和一个蓝色的 `paint@1` 方块。画面里有白地面、灰色家具（方块和圆柱），全部在远墙的阴影里 | 一台 24mm 机位（手动曝光，EV100 约 13），背后的墙和彩色方块都不在画面里 | AC-1、AC-2 |
+| `thin-wall.json` | 4 × 4 × 3 m 的封闭房间，四面墙和天花板都是 2 cm 厚的 `box@1`，左墙有一扇窗洞。窗外阳光高度 40°，室内只有窗洞透进的光 | 一台 24mm 机位（手动曝光，EV100 约 12），看窗洞所在的墙面和旁边的墙角 | AC-3 漏光 |
+| `mirror-board.json` | 光滑地板（`principled@1`，糙度 0.05），镜面柜（`principled@1` 方块，金属度 1、糙度 0），金属球（`metal@1`，`rust = 0`）。摄像机背后有红、绿、黄三个方块和一根圆柱 | 一台 35mm 机位（手动曝光，EV100 约 15），正对镜面柜，背后的物件不在画面里 | AC-1、AC-12 的反射部分 |
 
 现有的 `noon`、`room`、`materials`、`cornell` 继续作为对照场景，`cornell` 就是 Epic 里说的盒子间。
 
@@ -53,15 +53,20 @@
   - 几何列表：每项是类型、参数和目标面数；
   - 实例布局：网格摆放规则、缩放和朝向的随机范围。
 - **`generate.mjs`**：纯 ES 模块，不依赖 three 和 DOM，浏览器和 Node 都能 `import`。
-  - `generate(spec)` 返回 `{geometries: [{id, positions: Float32Array, normals: Float32Array, indices: Uint32Array}], instances: [{geometry, matrix: number[16]}]}`。
+  - `generate(spec, { only })` 返回 `{geometries: [{id, type, positions: Float32Array, normals: Float32Array, indices: Uint32Array}], instances: [{geometry, matrix: number[16]}]}`，矩阵按列存储（同 three 的 `Matrix4.elements`）。`only` 只生成列出的几何，实例不受影响。
+  - `counts(spec)` 不生成几何，直接算出面数、几何数和实例数。
+  - 每个几何用独立的随机数流，所以单独生成和全量生成的结果相同。
   - 随机数用固定种子的 `mulberry32`。
 
 **几何类型**：位移细分球、扭结环面、带凹槽的柱体和起伏地块。这几类都有平滑曲面和薄结构，用来检验代理的画质。
 
 **规格**：
 
-- 67 个约 30 万面的几何，另加 2 个 150 万面的；
-- 实例约 2000 个，摆成 30 × 20 m 的室内布局：地面、四面墙、按网格排列的物件，靠近摄像机的地方放几件高面数的。
+- 57 个约 30 万面的几何，另加 2 个 150 万面的，再加 1 个房间外壳用的立方体，去重后共 2011 万面；
+- 实例 2000 个，摆成 30 × 20 m 的室内布局：
+  - 地面和四面墙共 5 个实例，都用那个立方体；
+  - 两个高面数几何放大 2.5 倍，放在摄像机前方两侧；
+  - 其余 1993 个按网格排列，位置加随机偏移，缩放和朝向也随机。
 
 **确定性**：AC-S0-1 由 `generate.test.mjs` 检查。同一个种子生成两次，几何的哈希相同；去重后的面数和实例数在规格的 ±5% 以内。
 
@@ -77,8 +82,10 @@ S0 的穿刺页面直接用 `generate()` 的结果建 `BufferGeometry`，不经�
    - `backlit-room`：地面、家具朝向背后墙的那一面；
    - `thin-wall`：墙角、远墙；
    - `cornell`：红墙旁的地面。
-4. **转动序列**：`backlit-room` 的摄像机原地每转 45° 截一次视口，共 8 张，等收敛后记录整图的平均亮度。序列的波动幅度，就是「本 Epic 之前」转动时间接光的变化量，作为 AC-2 阈值的起点。
-5. **汇总**：写 `<dir>/gi-baseline.json`，内容包括设备、版本、每张图的尺寸、导出耗时、帧时间、区域亮度和转动序列。
+4. **固定点的转动对照**（`pointAcrossViews`）：取 `backlit-room` 左墙内侧一个没有直射光的点，把场景摄像机原地转到两个角度，用夹具页面的出图测这个点所在小区域的亮度。两个角度是 45°（亮墙完全在画面外）和 100°（亮墙进入画面），两者之比作为 AC-2 的依据。
+   - 最初的方案是原地转一圈截视口、记录整图平均亮度。实测发现它主要反映「画面里有没有亮墙」，不能反映间接光，所以改成现在的固定点（实施时调整，见 research `gi-baseline.md`）。
+5. **汇总**：写 `<dir>/gi-baseline.json`，内容包括设备、版本、每张图的尺寸、导出耗时、帧时间、区域亮度和固定点的转动对照。
+   - 无头浏览器里按 rAF 测的视口帧时间，两次运行之间相差可达两倍，只作参考；AC-7 的性能基线由组 2 用 GPU 时间戳测量。
 
 ### 穿刺页面
 
@@ -119,10 +126,29 @@ S0 的穿刺页面直接用 `generate()` 的结果建 `BufferGeometry`，不经�
 
 ## 局部设计与偏差
 
-- **压力场景提交生成器**：67 个 30 万面的几何有数百 MB，不能进 git。生成器是确定性的，S1 的 AC-11 用例可以在 Node 里用同一个生成器写出 GLB。代价是 S1 还要补一个 GLB 写出函数。
+- **压力场景提交生成器**：去重后约 2000 万面的几何有数百 MB，不能进 git。生成器是确定性的，S1 的 AC-11 用例可以在 Node 里用同一个生成器写出 GLB。代价是 S1 还要补一个 GLB 写出函数。
 - **穿刺页面直接用 `WebGPURenderer`，不用 R3F**：原型的重点是 compute pass、帧推进和缓冲管理，不需要编辑器外壳。R0 已经证明 R3F 能接住 `WebGPURenderer`，S1 产品化时再接回 `SceneRenderer`。
 - **`meshoptimizer` 用现有的间接依赖**：原型只在 S0 分支上存在，不改 `package.json`。改成直接依赖并锁定版本由 S1 交付（Epic 技术选型）。
 - **基线用例按需运行**：依赖本机 GPU，不能进日常 e2e，与现有的性能和基线用例一致。
+- **实施时的调整**（2026-10-23）：
+  - 新场景另列 `traceReferenceNames`，不加入 `referenceNames`；
+  - 转动序列改为固定点在两个视角下的对照；
+  - 基线用例写在页面夹具 `.scene-gi-qa.html` 之后，因为固定点要用夹具的出图。
+  - 发现并修复了实时 GI 导出天空发黑的回归，修复在 develop 上（`73067304`），见 research `gi-baseline.md`。
+  - 压力场景生成器：扭结环的 p、q 改为互质（组 2 发现）。原来约三分之一的扭结环 p、q 不互质，曲线把同一条路走好几遍，管面重叠，meshoptimizer 因重合顶点一个面也简化不掉。随机数的消耗次数不变，其他几何不受影响，面数和实例数不变。
+  - 组 3：宽度函数副本做了全部 14 个预设，而不只 `wood@1` 和 `marble@1`，因为测内联编译耗时需要全部预设都能在 compute 里调用。光栅与命中点的对照放在 `materials` 场景（14 个预设齐全），受光颜色按同一曝光系数换算后比较，否则过曝的像素会掩盖差异。另补测了朝太阳的阴影光线，因为产品的太阳阴影已改为按视锥拟合的级联阴影（见 research `hit-shading.md`）。
+  - 组 4：管线只取实时 GI 的反射项（产品的预通道、拆分光照 pass 和合成公式），去掉时域重投影和降噪，每张图取 SSR 64 帧的平均，这样比较的只是补追本身；打包用组 2 的 `TraceLayer`，参考场景的 BVH 在主线程上建；压力场景没有测帧时间，由组 2 的吞吐估算。
+  - 组 2 的 Worker 构建：用多个普通 Worker 并行处理不同几何，不用 `ParallelMeshBVHWorker`。后者依赖 `SharedArrayBuffer`，页面需要跨源隔离，产品页面没有这个设置。两者的对比见 research `throughput.md`。
+  - 组 6：
+    - 加测了 `backlit-room`（亮墙在摄像机背后），用来看大房间和第 0 级覆盖全画面的情况。
+    - 光照去掉了半球光，所以数字是同一套光照下的辐照度，不与 `gi-baseline` 的产品亮度直接对照。
+    - 参考改为每像素的多次反弹路径（3 次命中，只有最后一次读探针）。第一版在第一次命中就读探针，继承了探针的漏光。
+    - 除任务写的合成外，另比较了不乘 AO 和乘一半 AO 两种合成、八种更新方式和六组配置，因为 Epic 的合成与预热在实测下不成立，需要给出替代方案的依据（见 research `probes.md`）。
+  - 组 5：
+    - 两个参考场景全由盒子组成，`LockBorder` 下简化不掉任何面，代理与原始相同，所以画质结论主要来自压力场景。
+    - 压力场景没有测量区域，只给整图指标。
+    - 实测误差另按表面到表面的最近距离双向取点测量，因为 meshoptimizer 报告的误差只是估计值。
+    - 出图在页面里逐像素比较未压缩的图；证据只保留半尺寸的并排图和差异图（30 MB 的规则）。
 
 ## 接口与数据契约
 
@@ -132,8 +158,9 @@ S0 的穿刺页面直接用 `generate()` 的结果建 `BufferGeometry`，不经�
 
 | 位置 | 动作 | 说明 |
 |---|---|---|
-| `frontend/scripts/creative-scene.e2e.mjs:referenceNames` | 修改 | 加入 `backlit-room`、`thin-wall`、`mirror-board` |
-| `frontend/scripts/creative-scene.e2e.mjs` | 修改 | 新增 `SCENE_E2E_GI_BASELINE` 用例与区域定义的读取 |
+| `frontend/scripts/creative-scene.e2e.mjs:traceReferenceNames` | 新增 | `backlit-room`、`thin-wall`、`mirror-board`；「每个参考场景都能打开」的检查同时遍历它 |
+| `frontend/scripts/creative-scene.e2e.mjs:exportReference` | 修改 | 新增可选的 `litOnly`，缺省行为不变 |
+| `frontend/scripts/creative-scene.e2e.mjs` | 修改 | 新增 `SCENE_E2E_GI_BASELINE` 用例、区域定义的读取、`shooterScene`、`pointAcrossViews`；`three` 的导入加上 `Vector3` |
 | `frontend/scripts/fixtures/scene-reference/` | 新增 | `backlit-room.json`、`thin-wall.json`、`mirror-board.json`，以及区域定义 `gi-regions.json` |
 | `frontend/scripts/fixtures/scene-stress/` | 新增 | `spec.json`、`generate.mjs`、`generate.test.mjs` |
 | `frontend/spike-trace.html` | 临时新增 | 穿刺页面入口，S0 结束时移进 discovery |

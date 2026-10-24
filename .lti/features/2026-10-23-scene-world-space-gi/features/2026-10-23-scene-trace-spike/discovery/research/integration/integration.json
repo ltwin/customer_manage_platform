@@ -1,0 +1,215 @@
+{
+  "chromium": "145.0.7632.6",
+  "scenes": {
+    "cornell": {
+      "meshes": 9,
+      "triangles": 4054,
+      "packMs": 10,
+      "traceMs": [
+        138,
+        15
+      ],
+      "gpuMs": [
+        8.192,
+        8.126464
+      ],
+      "deterministic": true,
+      "probe": [
+        6.200000762939453,
+        0,
+        0,
+        1
+      ],
+      "rows": {
+        "asRead": 1,
+        "flipped": 0.6349817911783854
+      },
+      "pixels": {
+        "compared": 1533352,
+        "edges": 34396,
+        "off": 1,
+        "offFraction": 6.521659736316254e-07,
+        "missMismatch": 0,
+        "idOff": 0,
+        "distOff": 1,
+        "normalOff": 1
+      },
+      "errors": []
+    },
+    "materials": {
+      "meshes": 17,
+      "triangles": 4150,
+      "packMs": 8,
+      "traceMs": [
+        64,
+        12
+      ],
+      "gpuMs": [
+        5.832704,
+        5.832704
+      ],
+      "deterministic": true,
+      "probe": [
+        9.46684455871582,
+        0,
+        1,
+        6.123234262925839e-17
+      ],
+      "rows": {
+        "asRead": 0.9999968210856119,
+        "flipped": 0.4792531331380208
+      },
+      "pixels": {
+        "compared": 1508356,
+        "edges": 59392,
+        "off": 2,
+        "offFraction": 1.3259469249964862e-06,
+        "missMismatch": 0,
+        "idOff": 0,
+        "distOff": 0,
+        "normalOff": 2
+      },
+      "errors": []
+    },
+    "backlit-room": {
+      "meshes": 11,
+      "triangles": 302,
+      "packMs": 4,
+      "traceMs": [
+        30,
+        13
+      ],
+      "gpuMs": [
+        6.422528,
+        6.422528
+      ],
+      "deterministic": true,
+      "probe": [
+        4.163609504699707,
+        0,
+        0,
+        1
+      ],
+      "rows": {
+        "asRead": 0.9999987284342448,
+        "flipped": 0.16816838582356772
+      },
+      "pixels": {
+        "compared": 1535503,
+        "edges": 32245,
+        "off": 1,
+        "offFraction": 6.512523909103401e-07,
+        "missMismatch": 0,
+        "idOff": 0,
+        "distOff": 0,
+        "normalOff": 1
+      },
+      "errors": []
+    },
+    "thin-wall": {
+      "meshes": 11,
+      "triangles": 122,
+      "packMs": 6,
+      "traceMs": [
+        28,
+        13
+      ],
+      "gpuMs": [
+        6.094848,
+        6.094848
+      ],
+      "deterministic": true,
+      "probe": [
+        21.35442352294922,
+        0,
+        1,
+        6.123234262925839e-17
+      ],
+      "rows": {
+        "asRead": 0.9999942779541016,
+        "flipped": 0.2791023254394531
+      },
+      "pixels": {
+        "compared": 1554570,
+        "edges": 13178,
+        "off": 0,
+        "offFraction": 0,
+        "missMismatch": 0,
+        "idOff": 0,
+        "distOff": 0,
+        "normalOff": 0
+      },
+      "errors": []
+    },
+    "mirror-board": {
+      "meshes": 8,
+      "triangles": 4222,
+      "packMs": 9,
+      "traceMs": [
+        28,
+        11
+      ],
+      "gpuMs": [
+        5.046272,
+        4.980736
+      ],
+      "deterministic": true,
+      "probe": [
+        4.097590446472168,
+        0,
+        0,
+        1
+      ],
+      "rows": {
+        "asRead": 0.9999993642171224,
+        "flipped": 0.2360858917236328
+      },
+      "pixels": {
+        "compared": 1530298,
+        "edges": 37450,
+        "off": 0,
+        "offFraction": 0,
+        "missMismatch": 0,
+        "idOff": 0,
+        "distOff": 0,
+        "normalOff": 0
+      },
+      "errors": []
+    },
+    "noon": {
+      "meshes": 5,
+      "triangles": 998,
+      "packMs": 4,
+      "traceMs": [
+        26,
+        11
+      ],
+      "gpuMs": [
+        4.718592,
+        4.653056
+      ],
+      "deterministic": true,
+      "probe": [
+        5.255852222442627,
+        0.07591507583856583,
+        0.6325622797012329,
+        0.770780086517334
+      ],
+      "rows": {
+        "asRead": 0.9999955495198568,
+        "flipped": 0.21179771423339844
+      },
+      "pixels": {
+        "compared": 1539655,
+        "edges": 28093,
+        "off": 2,
+        "offFraction": 1.2989923067180635e-06,
+        "missMismatch": 0,
+        "idOff": 0,
+        "distOff": 0,
+        "normalOff": 2
+      },
+      "errors": []
+    }
+  }
+}

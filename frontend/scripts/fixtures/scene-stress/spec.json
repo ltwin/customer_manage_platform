@@ -1,0 +1,14 @@
+{
+  "seed": 20261023,
+  "geometries": [
+    { "type": "blob", "count": 15, "triangles": 300000 },
+    { "type": "knot", "count": 14, "triangles": 300000 },
+    { "type": "column", "count": 14, "triangles": 300000 },
+    { "type": "terrain", "count": 14, "triangles": 300000 },
+    { "type": "blob", "count": 1, "triangles": 1500000, "hero": true },
+    { "type": "knot", "count": 1, "triangles": 1500000, "hero": true }
+  ],
+  "room": { "width": 30, "depth": 20, "height": 4, "wall": 0.2 },
+  "layout": { "instances": 1993, "margin": 1, "scale": [0.8, 1.25], "heroScale": 2.5 },
+  "camera": { "position": [0, 1.6, 9], "target": [0, 0.6, 0], "focal_mm": 24 }
+}

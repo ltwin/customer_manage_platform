@@ -1,0 +1,1429 @@
+{
+  "chromium": "145.0.7632.6",
+  "runs": {
+    "cornell/adapter/0.01/cold": {
+      "pageMs": 696,
+      "report": {
+        "scene": "cornell",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 9,
+          "triangles": 4054,
+          "buildMs": 10
+        },
+        "firstRenderMs": 56,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "cornell",
+        "maxBinding": 4294967292,
+        "cache": "clear",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 9,
+          "fromCache": 0,
+          "built": 9,
+          "workers": 11,
+          "wallMs": 77,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 0,
+            "put": 5
+          },
+          "cacheBytes": 52021,
+          "workerMs": {
+            "bvh": 19,
+            "simplify": 5,
+            "proxyBvh": 3
+          },
+          "slowest": {
+            "key": "cornell/7/3968/0.01",
+            "ms": {
+              "bvh": 12,
+              "simplify": 3.599999964237213,
+              "proxyBvh": 2.300000011920929
+            },
+            "triangles": 3968,
+            "proxyTriangles": 442
+          },
+          "triangles": {
+            "original": 4054,
+            "proxy": 528,
+            "ratio": 0.1302
+          },
+          "proxyError": {
+            "max": 0.009894230403006077,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 11,
+            "proxy": 8
+          }
+        },
+        "libraryTopLeaves": 104,
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 3,
+            "bytes": 215628,
+            "mib": 0.2,
+            "needBytes": {
+              "nodes": 35776,
+              "index": 48648,
+              "attributes": 74144
+            },
+            "need": {
+              "nodes": 1101,
+              "indices": 12162,
+              "vertices": 2317,
+              "tlasNodes": 17,
+              "depth": 11
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 11,
+              "traversal": 15
+            },
+            "tlasNodes": 17,
+            "uploadBytes": 215628
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 1,
+            "bytes": 49872,
+            "mib": 0,
+            "needBytes": {
+              "nodes": 4992,
+              "index": 6336,
+              "attributes": 14656
+            },
+            "need": {
+              "nodes": 139,
+              "indices": 1584,
+              "vertices": 458,
+              "tlasNodes": 17,
+              "depth": 8
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 8,
+              "traversal": 12
+            },
+            "tlasNodes": 17,
+            "uploadBytes": 49872
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 133,
+          "firstFrameMs": 41,
+          "sceneBuildMs": 10
+        }
+      },
+      "errors": []
+    },
+    "cornell/adapter/0.01/warm": {
+      "pageMs": 640,
+      "report": {
+        "scene": "cornell",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 9,
+          "triangles": 4054,
+          "buildMs": 11
+        },
+        "firstRenderMs": 62,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "cornell",
+        "maxBinding": 4294967292,
+        "cache": "use",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 9,
+          "fromCache": 9,
+          "built": 0,
+          "workers": 11,
+          "wallMs": 6,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 6,
+            "put": 0
+          },
+          "cacheBytes": 52021,
+          "workerMs": {
+            "bvh": 19,
+            "simplify": 5,
+            "proxyBvh": 3
+          },
+          "slowest": {
+            "key": "cornell/7/3968/0.01",
+            "ms": {
+              "bvh": 12,
+              "simplify": 3.599999964237213,
+              "proxyBvh": 2.300000011920929
+            },
+            "triangles": 3968,
+            "proxyTriangles": 442
+          },
+          "triangles": {
+            "original": 4054,
+            "proxy": 528,
+            "ratio": 0.1302
+          },
+          "proxyError": {
+            "max": 0.009894230403006077,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 11,
+            "proxy": 8
+          }
+        },
+        "libraryTopLeaves": 104,
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 3,
+            "bytes": 215628,
+            "mib": 0.2,
+            "needBytes": {
+              "nodes": 35776,
+              "index": 48648,
+              "attributes": 74144
+            },
+            "need": {
+              "nodes": 1101,
+              "indices": 12162,
+              "vertices": 2317,
+              "tlasNodes": 17,
+              "depth": 11
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 11,
+              "traversal": 15
+            },
+            "tlasNodes": 17,
+            "uploadBytes": 215628
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 1,
+            "bytes": 49872,
+            "mib": 0,
+            "needBytes": {
+              "nodes": 4992,
+              "index": 6336,
+              "attributes": 14656
+            },
+            "need": {
+              "nodes": 139,
+              "indices": 1584,
+              "vertices": 458,
+              "tlasNodes": 17,
+              "depth": 8
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 8,
+              "traversal": 12
+            },
+            "tlasNodes": 17,
+            "uploadBytes": 49872
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 55,
+          "firstFrameMs": 41,
+          "sceneBuildMs": 11
+        },
+        "check": {
+          "compared": 1564562,
+          "edges": 3186,
+          "off": 0,
+          "missMismatch": 0,
+          "tracedNearer": 0,
+          "offFraction": 0
+        }
+      },
+      "errors": []
+    },
+    "mirror-board/adapter/0.01/cold": {
+      "pageMs": 640,
+      "report": {
+        "scene": "mirror-board",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 8,
+          "triangles": 4222,
+          "buildMs": 10
+        },
+        "firstRenderMs": 29,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "mirror-board",
+        "maxBinding": 4294967292,
+        "cache": "clear",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 8,
+          "fromCache": 0,
+          "built": 8,
+          "workers": 11,
+          "wallMs": 88,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 0,
+            "put": 4
+          },
+          "cacheBytes": 76069,
+          "workerMs": {
+            "bvh": 18,
+            "simplify": 6,
+            "proxyBvh": 4
+          },
+          "slowest": {
+            "key": "mirror-board/3/3968/0.01",
+            "ms": {
+              "bvh": 10.100000023841858,
+              "simplify": 3.5,
+              "proxyBvh": 2.099999964237213
+            },
+            "triangles": 3968,
+            "proxyTriangles": 404
+          },
+          "triangles": {
+            "original": 4222,
+            "proxy": 658,
+            "ratio": 0.1559
+          },
+          "proxyError": {
+            "max": 0.00990963727235794,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 11,
+            "proxy": 9
+          }
+        },
+        "libraryTopLeaves": 106,
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 4,
+            "bytes": 229796,
+            "mib": 0.2,
+            "needBytes": {
+              "nodes": 37536,
+              "index": 50664,
+              "attributes": 81952
+            },
+            "need": {
+              "nodes": 1158,
+              "indices": 12666,
+              "vertices": 2561,
+              "tlasNodes": 15,
+              "depth": 11
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 11,
+              "traversal": 15
+            },
+            "tlasNodes": 15,
+            "uploadBytes": 229796
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 1,
+            "bytes": 62896,
+            "mib": 0.1,
+            "needBytes": {
+              "nodes": 6816,
+              "index": 7896,
+              "attributes": 21920
+            },
+            "need": {
+              "nodes": 198,
+              "indices": 1974,
+              "vertices": 685,
+              "tlasNodes": 15,
+              "depth": 9
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 9,
+              "traversal": 13
+            },
+            "tlasNodes": 15,
+            "uploadBytes": 62896
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 139,
+          "firstFrameMs": 37,
+          "sceneBuildMs": 10
+        }
+      },
+      "errors": []
+    },
+    "mirror-board/adapter/0.01/warm": {
+      "pageMs": 593,
+      "report": {
+        "scene": "mirror-board",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 8,
+          "triangles": 4222,
+          "buildMs": 10
+        },
+        "firstRenderMs": 28,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "mirror-board",
+        "maxBinding": 4294967292,
+        "cache": "use",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 8,
+          "fromCache": 8,
+          "built": 0,
+          "workers": 11,
+          "wallMs": 2,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 2,
+            "put": 0
+          },
+          "cacheBytes": 76069,
+          "workerMs": {
+            "bvh": 18,
+            "simplify": 6,
+            "proxyBvh": 4
+          },
+          "slowest": {
+            "key": "mirror-board/3/3968/0.01",
+            "ms": {
+              "bvh": 10.100000023841858,
+              "simplify": 3.5,
+              "proxyBvh": 2.099999964237213
+            },
+            "triangles": 3968,
+            "proxyTriangles": 404
+          },
+          "triangles": {
+            "original": 4222,
+            "proxy": 658,
+            "ratio": 0.1559
+          },
+          "proxyError": {
+            "max": 0.00990963727235794,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 11,
+            "proxy": 9
+          }
+        },
+        "libraryTopLeaves": 106,
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 4,
+            "bytes": 229796,
+            "mib": 0.2,
+            "needBytes": {
+              "nodes": 37536,
+              "index": 50664,
+              "attributes": 81952
+            },
+            "need": {
+              "nodes": 1158,
+              "indices": 12666,
+              "vertices": 2561,
+              "tlasNodes": 15,
+              "depth": 11
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 11,
+              "traversal": 15
+            },
+            "tlasNodes": 15,
+            "uploadBytes": 229796
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 0,
+            "bytes": 62896,
+            "mib": 0.1,
+            "needBytes": {
+              "nodes": 6816,
+              "index": 7896,
+              "attributes": 21920
+            },
+            "need": {
+              "nodes": 198,
+              "indices": 1974,
+              "vertices": 685,
+              "tlasNodes": 15,
+              "depth": 9
+            },
+            "depth": {
+              "tlas": 5,
+              "blas": 9,
+              "traversal": 13
+            },
+            "tlasNodes": 15,
+            "uploadBytes": 62896
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 48,
+          "firstFrameMs": 36,
+          "sceneBuildMs": 10
+        },
+        "check": {
+          "compared": 1560370,
+          "edges": 7378,
+          "off": 0,
+          "missMismatch": 0,
+          "tracedNearer": 0,
+          "offFraction": 0
+        }
+      },
+      "errors": []
+    },
+    "backlit-room/adapter/0.01/cold": {
+      "pageMs": 694,
+      "report": {
+        "scene": "backlit-room",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 11,
+          "triangles": 302,
+          "buildMs": 10
+        },
+        "firstRenderMs": 59,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "backlit-room",
+        "maxBinding": 4294967292,
+        "cache": "clear",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 11,
+          "fromCache": 0,
+          "built": 11,
+          "workers": 11,
+          "wallMs": 87,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 0,
+            "put": 6
+          },
+          "cacheBytes": 34961,
+          "workerMs": {
+            "bvh": 13,
+            "simplify": 2,
+            "proxyBvh": 2
+          },
+          "slowest": {
+            "key": "backlit-room/10/192/0.01",
+            "ms": {
+              "bvh": 6.100000023841858,
+              "simplify": 0.30000001192092896,
+              "proxyBvh": 1.199999988079071
+            },
+            "triangles": 192,
+            "proxyTriangles": 192
+          },
+          "triangles": {
+            "original": 302,
+            "proxy": 302,
+            "ratio": 1
+          },
+          "proxyError": {
+            "max": 0,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 7,
+            "proxy": 7
+          }
+        },
+        "libraryTopLeaves": 14,
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 2,
+            "bytes": 47156,
+            "mib": 0,
+            "needBytes": {
+              "nodes": 3584,
+              "index": 3624,
+              "attributes": 16384
+            },
+            "need": {
+              "nodes": 91,
+              "indices": 906,
+              "vertices": 512,
+              "tlasNodes": 21,
+              "depth": 7
+            },
+            "depth": {
+              "tlas": 6,
+              "blas": 7,
+              "traversal": 12
+            },
+            "tlasNodes": 21,
+            "uploadBytes": 47156
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 1,
+            "bytes": 47156,
+            "mib": 0,
+            "needBytes": {
+              "nodes": 3584,
+              "index": 3624,
+              "attributes": 16384
+            },
+            "need": {
+              "nodes": 91,
+              "indices": 906,
+              "vertices": 512,
+              "tlasNodes": 21,
+              "depth": 7
+            },
+            "depth": {
+              "tlas": 6,
+              "blas": 7,
+              "traversal": 12
+            },
+            "tlasNodes": 21,
+            "uploadBytes": 47156
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 138,
+          "firstFrameMs": 37,
+          "sceneBuildMs": 10
+        }
+      },
+      "errors": []
+    },
+    "backlit-room/adapter/0.01/warm": {
+      "pageMs": 634,
+      "report": {
+        "scene": "backlit-room",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 11,
+          "triangles": 302,
+          "buildMs": 9
+        },
+        "firstRenderMs": 59,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "backlit-room",
+        "maxBinding": 4294967292,
+        "cache": "use",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 11,
+          "fromCache": 11,
+          "built": 0,
+          "workers": 11,
+          "wallMs": 2,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 2,
+            "put": 0
+          },
+          "cacheBytes": 34961,
+          "workerMs": {
+            "bvh": 13,
+            "simplify": 2,
+            "proxyBvh": 2
+          },
+          "slowest": {
+            "key": "backlit-room/10/192/0.01",
+            "ms": {
+              "bvh": 6.100000023841858,
+              "simplify": 0.30000001192092896,
+              "proxyBvh": 1.199999988079071
+            },
+            "triangles": 192,
+            "proxyTriangles": 192
+          },
+          "triangles": {
+            "original": 302,
+            "proxy": 302,
+            "ratio": 1
+          },
+          "proxyError": {
+            "max": 0,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 7,
+            "proxy": 7
+          }
+        },
+        "libraryTopLeaves": 14,
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 2,
+            "bytes": 47156,
+            "mib": 0,
+            "needBytes": {
+              "nodes": 3584,
+              "index": 3624,
+              "attributes": 16384
+            },
+            "need": {
+              "nodes": 91,
+              "indices": 906,
+              "vertices": 512,
+              "tlasNodes": 21,
+              "depth": 7
+            },
+            "depth": {
+              "tlas": 6,
+              "blas": 7,
+              "traversal": 12
+            },
+            "tlasNodes": 21,
+            "uploadBytes": 47156
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 1,
+            "bytes": 47156,
+            "mib": 0,
+            "needBytes": {
+              "nodes": 3584,
+              "index": 3624,
+              "attributes": 16384
+            },
+            "need": {
+              "nodes": 91,
+              "indices": 906,
+              "vertices": 512,
+              "tlasNodes": 21,
+              "depth": 7
+            },
+            "depth": {
+              "tlas": 6,
+              "blas": 7,
+              "traversal": 12
+            },
+            "tlasNodes": 21,
+            "uploadBytes": 47156
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 48,
+          "firstFrameMs": 36,
+          "sceneBuildMs": 9
+        },
+        "check": {
+          "compared": 1562446,
+          "edges": 5302,
+          "off": 0,
+          "missMismatch": 0,
+          "tracedNearer": 0,
+          "offFraction": 0
+        }
+      },
+      "errors": []
+    },
+    "stress/adapter/0.01/cold": {
+      "pageMs": 9217,
+      "report": {
+        "scene": "stress",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 2000,
+          "triangles": 20115680,
+          "buildMs": 2215,
+          "generateMs": 2127
+        },
+        "firstRenderMs": 110,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "stress",
+        "maxBinding": 4294967292,
+        "cache": "clear",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 60,
+          "fromCache": 0,
+          "built": 60,
+          "workers": 11,
+          "wallMs": 3797,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 1,
+            "put": 729
+          },
+          "cacheBytes": 242057915,
+          "workerMs": {
+            "bvh": 31676,
+            "simplify": 5403,
+            "proxyBvh": 183
+          },
+          "slowest": {
+            "key": "stress/1/1498176/0.01",
+            "ms": {
+              "bvh": 2560.2000000476837,
+              "simplify": 528,
+              "proxyBvh": 19.299999952316284
+            },
+            "triangles": 1498176,
+            "proxyTriangles": 6604
+          },
+          "triangles": {
+            "original": 20115680,
+            "proxy": 91170,
+            "ratio": 0.0045
+          },
+          "proxyError": {
+            "max": 0.009999057951584622,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 24,
+            "proxy": 16
+          }
+        },
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 638,
+            "bytes": 937090784,
+            "mib": 893.7,
+            "needBytes": {
+              "nodes": 184458464,
+              "index": 241388160,
+              "attributes": 323525504
+            },
+            "need": {
+              "nodes": 5760328,
+              "indices": 60347040,
+              "vertices": 10110172,
+              "tlasNodes": 3999,
+              "depth": 24
+            },
+            "depth": {
+              "tlas": 15,
+              "blas": 24,
+              "traversal": 38
+            },
+            "tlasNodes": 3999,
+            "uploadBytes": 937090784
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 17,
+            "bytes": 5608064,
+            "mib": 5.3,
+            "needBytes": {
+              "nodes": 845536,
+              "index": 1094040,
+              "attributes": 2246368
+            },
+            "need": {
+              "nodes": 22424,
+              "indices": 273510,
+              "vertices": 70199,
+              "tlasNodes": 3999,
+              "depth": 16
+            },
+            "depth": {
+              "tlas": 15,
+              "blas": 16,
+              "traversal": 30
+            },
+            "tlasNodes": 3999,
+            "uploadBytes": 5608064
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 6280,
+          "firstFrameMs": 891,
+          "sceneBuildMs": 2215
+        }
+      },
+      "errors": []
+    },
+    "stress/adapter/0.01/warm": {
+      "pageMs": 4092,
+      "report": {
+        "scene": "stress",
+        "limitsAsked": "adapter",
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "device": "",
+            "description": ""
+          },
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          }
+        },
+        "device": {
+          "limits": {
+            "maxStorageBufferBindingSize": 4294967292,
+            "maxBufferSize": 4294967296,
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxComputeWorkgroupStorageSize": 32768,
+            "maxComputeInvocationsPerWorkgroup": 1024
+          },
+          "features": [
+            "bgra8unorm-storage",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-compression-astc",
+            "texture-compression-astc-sliced-3d",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-compression-etc2",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "scene_stats": {
+          "meshes": 2000,
+          "triangles": 20115680,
+          "buildMs": 2122,
+          "generateMs": 2039
+        },
+        "firstRenderMs": 94,
+        "coldSalt": 0
+      },
+      "result": {
+        "scene": "stress",
+        "maxBinding": 4294967292,
+        "cache": "use",
+        "epsilon": 0.01,
+        "prepare": {
+          "geometries": 60,
+          "fromCache": 60,
+          "built": 0,
+          "workers": 11,
+          "wallMs": 368,
+          "main": {
+            "longTasks": 0,
+            "longestTaskMs": 0,
+            "blockedMs": 0
+          },
+          "cacheMs": {
+            "get": 368,
+            "put": 0
+          },
+          "cacheBytes": 242057915,
+          "workerMs": {
+            "bvh": 31676,
+            "simplify": 5403,
+            "proxyBvh": 183
+          },
+          "slowest": {
+            "key": "stress/1/1498176/0.01",
+            "ms": {
+              "bvh": 2560.2000000476837,
+              "simplify": 528,
+              "proxyBvh": 19.299999952316284
+            },
+            "triangles": 1498176,
+            "proxyTriangles": 6604
+          },
+          "triangles": {
+            "original": 20115680,
+            "proxy": 91170,
+            "ratio": 0.0045
+          },
+          "proxyError": {
+            "max": 0.009999057951584622,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 24,
+            "proxy": 16
+          }
+        },
+        "pack": {
+          "original": {
+            "fits": true,
+            "packMs": 637,
+            "bytes": 937090784,
+            "mib": 893.7,
+            "needBytes": {
+              "nodes": 184458464,
+              "index": 241388160,
+              "attributes": 323525504
+            },
+            "need": {
+              "nodes": 5760328,
+              "indices": 60347040,
+              "vertices": 10110172,
+              "tlasNodes": 3999,
+              "depth": 24
+            },
+            "depth": {
+              "tlas": 15,
+              "blas": 24,
+              "traversal": 38
+            },
+            "tlasNodes": 3999,
+            "uploadBytes": 937090784
+          },
+          "proxy": {
+            "fits": true,
+            "packMs": 18,
+            "bytes": 5608064,
+            "mib": 5.3,
+            "needBytes": {
+              "nodes": 845536,
+              "index": 1094040,
+              "attributes": 2246368
+            },
+            "need": {
+              "nodes": 22424,
+              "indices": 273510,
+              "vertices": 70199,
+              "tlasNodes": 3999,
+              "depth": 16
+            },
+            "depth": {
+              "tlas": 15,
+              "blas": 16,
+              "traversal": 30
+            },
+            "tlasNodes": 3999,
+            "uploadBytes": 5608064
+          }
+        },
+        "tier": 1,
+        "ready": {
+          "totalMs": 1628,
+          "firstFrameMs": 434,
+          "sceneBuildMs": 2122
+        },
+        "check": {
+          "compared": 1500730,
+          "edges": 67018,
+          "off": 38,
+          "missMismatch": 0,
+          "tracedNearer": 7,
+          "offFraction": 0.000025321010441585097
+        }
+      },
+      "errors": []
+    }
+  }
+}

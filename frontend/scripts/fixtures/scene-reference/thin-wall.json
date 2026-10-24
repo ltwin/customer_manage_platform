@@ -1,0 +1,536 @@
+{
+  "environment": {
+    "sky": {
+      "kind": "physical",
+      "sun_mode": "manual",
+      "latitude_deg": 31.2304,
+      "longitude_deg": 121.4737,
+      "timezone": "Asia/Shanghai",
+      "place": "上海",
+      "date": "2026-09-23",
+      "local_time": "12:00",
+      "north_azimuth_deg": 180,
+      "sun_elevation_deg": 40,
+      "sun_azimuth_deg": 270,
+      "altitude_m": 0,
+      "air_density": 1,
+      "dust_density": 1,
+      "ozone_density": 1,
+      "sun_disc": true,
+      "sun_size_deg": 0.545,
+      "sun_strength": 1,
+      "sun_temperature_k": 6500
+    },
+    "ambient": {
+      "color": "#ffffff",
+      "intensity": 0.4
+    },
+    "fog": null
+  },
+  "render": {
+    "mode": "lit",
+    "exposure_ev": 0,
+    "engine": "workbench",
+    "resolution": "2k",
+    "exposure_ev100": 15
+  },
+  "objects": [
+    {
+      "id": "sobj_ground",
+      "kind": "primitive",
+      "name": "地面",
+      "parent_id": null,
+      "order": 0,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": true,
+      "primitive": {
+        "builtin": "ground@1",
+        "params": {
+          "size": 40
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_floor0000000000000000",
+      "kind": "primitive",
+      "name": "floor",
+      "order": 5,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 4,
+          "height": 0.02,
+          "depth": 4
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#c8c8c4"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          3,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_ceiling00000000000000",
+      "kind": "primitive",
+      "name": "ceiling",
+      "order": 6,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 4.04,
+          "height": 0.02,
+          "depth": 4.04
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          2.01,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_rightwall000000000000",
+      "kind": "primitive",
+      "name": "rightwall",
+      "order": 7,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.02,
+          "height": 3,
+          "depth": 4.04
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0,
+          -2.01
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_frontwall000000000000",
+      "kind": "primitive",
+      "name": "frontwall",
+      "order": 8,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 4,
+          "height": 3,
+          "depth": 0.02
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0,
+          2.01
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_backwall0000000000000",
+      "kind": "primitive",
+      "name": "backwall",
+      "order": 9,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 4,
+          "height": 3,
+          "depth": 0.02
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.01,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_leftbelow000000000000",
+      "kind": "primitive",
+      "name": "leftbelow",
+      "order": 10,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.02,
+          "height": 1.0,
+          "depth": 4.04
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.01,
+          2.2,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_leftabove000000000000",
+      "kind": "primitive",
+      "name": "leftabove",
+      "order": 11,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.02,
+          "height": 0.8,
+          "depth": 4.04
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.01,
+          1.0,
+          1.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_leftnear0000000000000",
+      "kind": "primitive",
+      "name": "leftnear",
+      "order": 12,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.02,
+          "height": 1.2,
+          "depth": 1.42
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -2.01,
+          1.0,
+          -1.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_leftfar00000000000000",
+      "kind": "primitive",
+      "name": "leftfar",
+      "order": 13,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.02,
+          "height": 1.2,
+          "depth": 1.42
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#f0f0ec"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          1.5,
+          0.02,
+          -1.7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_cabinet00000000000000",
+      "kind": "primitive",
+      "name": "cabinet",
+      "order": 14,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.6,
+          "height": 0.9,
+          "depth": 0.4
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#7a6a5a"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          1.5,
+          1.5,
+          1.5
+        ],
+        "rotation": [
+          -0.030193,
+          0.501205,
+          0.017502,
+          0.864624
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_shot00000000000000000",
+      "kind": "camera",
+      "name": "shot",
+      "order": 15,
+      "camera": {
+        "focal_mm": 24,
+        "exposure_mode": "manual",
+        "f_stop": 4,
+        "shutter_s": 0.004,
+        "iso": 100
+      }
+    }
+  ]
+}

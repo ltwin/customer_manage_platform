@@ -1,0 +1,50 @@
+{
+  "chromium": "145.0.7632.6",
+  "asServed": {
+    "result": {
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 12,
+      "blob-00": {
+        "triangles": 300304,
+        "oneWorkerMs": 378,
+        "parallelMs": "not cross-origin isolated"
+      },
+      "blob-57": {
+        "triangles": 1498176,
+        "oneWorkerMs": 1905,
+        "parallelMs": "not cross-origin isolated"
+      },
+      "knot-58": {
+        "triangles": 1499912,
+        "oneWorkerMs": 1827,
+        "parallelMs": "not cross-origin isolated"
+      }
+    },
+    "errors": []
+  },
+  "isolated": {
+    "result": {
+      "crossOriginIsolated": true,
+      "hardwareConcurrency": 12,
+      "blob-00": {
+        "triangles": 300304,
+        "oneWorkerMs": 376,
+        "parallelMs": 789,
+        "parallelWorkers": 12
+      },
+      "blob-57": {
+        "triangles": 1498176,
+        "oneWorkerMs": 1903,
+        "parallelMs": 1311,
+        "parallelWorkers": 12
+      },
+      "knot-58": {
+        "triangles": 1499912,
+        "oneWorkerMs": 1830,
+        "parallelMs": 1181,
+        "parallelWorkers": 12
+      }
+    },
+    "errors": []
+  }
+}

@@ -1,12 +1,12 @@
 {
   "uid": "fa8a5415-fa2a-4fd8-ba13-5bf72fa67830",
-  "revision": 2,
+  "revision": 8,
   "id": "scene-trace-spike",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-world-space-gi",
   "designBinding": {
-    "version": 2,
+    "version": 3,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -21,28 +21,315 @@
     ],
     "delivers": []
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-23T17:46:24.131Z",
-  "updatedAt": "2026-10-23T17:54:38.239Z",
+  "updatedAt": "2026-10-24T10:14:01.311Z",
   "risk": {
     "factors": []
   },
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-23T17:54:38.097Z",
-      "contentHash": "7bc045476e32fe37"
+      "at": "2026-10-24T09:38:19.021Z",
+      "contentHash": "5cffef3c6497763d"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-23T17:54:38.097Z",
-      "contentHash": "4542aaba3c6aa31f"
+      "at": "2026-10-24T09:38:19.021Z",
+      "contentHash": "028e05c9c8a1a9bc"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-23T17:54:38.097Z",
+      "contentHash": "7bc045476e32fe37",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-23T17:54:38.097Z",
+      "contentHash": "4542aaba3c6aa31f",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "3373bd14fe678bfb157c938c123faad30f9f1317",
+    "at": "2026-10-23T17:55:13.122Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "de789b6e7c3d0fc392e473a1491a2890d2a066e85035741f3eedc38d39ccba2a"
+    },
+    "preExisting": [
+      ".lti/snapshots/de789b6e7c3d0fc392e473a1491a2890d2a066e85035741f3eedc38d39ccba2a.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-24T09:43:18.889Z",
+      "assessment": {
+        "method": "code-review",
+        "limitations": "项目未在 .lti/config.yaml 配置 checks，测试为手动定向运行；穿刺数据来自实施期间的测量，本次未重跑；工作台导出未重跑；只有一台设备（M4 Pro）",
+        "coverage": [
+          {
+            "criterionId": "AC-2da377337420",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-e5dc560e9f0f",
+            "status": "verified",
+            "evidence": "本次重跑 e2e「reference scenes: each opens and draws in clay and rendered without errors」通过（含 traceReferenceNames 三个新场景，工作台下白模与最终渲染）；实时 GI 的 lit 导出见 discovery/research/gi-baseline/*-webgpu-lit.png 与 gi-baseline.json；工作台出图在天空修复时核对过（gi-baseline.md「发现的回归」），本次未重跑"
+          },
+          {
+            "criterionId": "AC-dc8f6fe6408c",
+            "status": "verified",
+            "evidence": "本次重跑 node --test frontend/scripts/fixtures/scene-stress/generate.test.mjs，3/3 通过：同一种子逐字节相同、单独生成与全量相同、约 2000 万面 2000 实例（实测 2011 万）"
+          },
+          {
+            "criterionId": "AC-aade8c26538f",
+            "status": "verified",
+            "evidence": "discovery/research/gi-baseline/gi-baseline.json 的 machine、chromium 字段；gi-baseline.md「环境」"
+          },
+          {
+            "criterionId": "AC-7a9b47731902",
+            "status": "verified",
+            "evidence": "WebGPU 一套在 discovery/research/gi-baseline/；WebGL2 一套因 30 MB 规则移出工作树，在提交 10759b60，可按 gi-baseline.md 的命令重新生成"
+          },
+          {
+            "criterionId": "AC-95b90b75320e",
+            "status": "verified",
+            "evidence": "gi-baseline.json 的 viewport；无头 rAF 帧时间不稳定只作参考，AC-7 基线改由 throughput.md 的 GPU 时间戳"
+          },
+          {
+            "criterionId": "AC-9cca8d4a48c3",
+            "status": "verified",
+            "evidence": "gi-baseline.json 的 lumaStats，区域按 frontend/scripts/fixtures/scene-reference/gi-regions.json"
+          },
+          {
+            "criterionId": "AC-1bc1327c8f40",
+            "status": "verified",
+            "evidence": "按 owner 重新批准的 design 改为固定点两视角对照（pointAcrossViews，gi-baseline.json 的 lit_wall_in_view）；原「转动序列」只反映画面里有没有亮墙，见 gi-baseline.md"
+          },
+          {
+            "criterionId": "AC-11013637b40b",
+            "status": "verified",
+            "evidence": "见下四条"
+          },
+          {
+            "criterionId": "AC-3b9487ebe2c9",
+            "status": "verified",
+            "evidence": "discovery/research 下 environment、integration、throughput、hit-shading、reflections、proxy-quality、probes 七篇，汇总在 summary.md"
+          },
+          {
+            "criterionId": "AC-f0d5bd44de02",
+            "status": "verified",
+            "evidence": "summary.md「未决事项的建议」U1、U2、U3、U5、U9 各一节，附依据文档"
+          },
+          {
+            "criterionId": "AC-3d51325a9cf2",
+            "status": "verified",
+            "evidence": "summary.md「阈值建议」六节；已按 owner 决定回填 Epic v3 proposal（0f275428）"
+          },
+          {
+            "criterionId": "AC-f2eb38f18a54",
+            "status": "verified",
+            "evidence": "hit-shading.md 编译表的冷 / 热两列（?cold=1 注入随机常量）；throughput.md 冷启动 / 热启动表"
+          },
+          {
+            "criterionId": "AC-e86e8e0090ff",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-f875a114ed48",
+            "status": "verified",
+            "evidence": "discovery/research/proxy-quality/stress-proxy-strip.jpg、stress-proxy-differences8x.jpg 与 probes.json（四个 ε）；参考场景代理与原始逐字节相同，出图差 0，未提交图"
+          },
+          {
+            "criterionId": "AC-1f896837dd2f",
+            "status": "verified",
+            "evidence": "discovery/research/proxy-quality/mirror-board-proxy-strip.jpg、mirror-board-proxy-differences8x.jpg 与 reflections.json；该场景可简化物件少，局限见 proxy-quality.md"
+          },
+          {
+            "criterionId": "AC-9a226f34251c",
+            "status": "verified",
+            "evidence": "owner 回复「全部按推荐」：ε_probe = 3 mm、第 1 档原始层 ≤ 1 GiB，写入 Epic v3（0f275428）"
+          },
+          {
+            "criterionId": "AC-adcf0ec7a044",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-1d216db2b756",
+            "status": "verified",
+            "evidence": "git diff --stat develop（排除 .lti）只有 frontend/scripts 下 8 个文件：creative-scene.e2e.mjs、scene-reference 的 4 个 JSON、scene-stress 的生成器、测试与规格；原型在 S0 的 discovery/research/prototype/"
+          },
+          {
+            "criterionId": "AC-09360702fb2d",
+            "status": "verified",
+            "evidence": "git diff --stat develop -- frontend/src frontend/package.json frontend/package-lock.json package.json 为空"
+          },
+          {
+            "criterionId": "AC-60d8d164bb12",
+            "status": "verified",
+            "evidence": "草稿已呈给 owner；lti epic revise 记为 v3 并提交 develop（0f275428）；S0 重新绑定（eb8bf1fb）并重新批准（4cbbbeb6）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "6 条 AC 逐项核对满足；design 的 unplanned 6 个文件来自合入 develop 的 73067304、3e3c392f（已在 develop），S0 相对 develop 只改 frontend/scripts；原型按任务 5.2 移入 discovery；无契约与 Living Spec 变化；定向重跑生成器单测 3/3、参考场景打开 e2e 通过",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "1525b6857c882437278e5e4f1d8fa3cc4443b35f7c44ec7c76bce14b9c696ece"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-24T10:13:19.988Z",
+      "assessment": {
+        "method": "code-review",
+        "limitations": "项目未配置 checks，测试为手动定向运行（生成器单测、参考场景打开 e2e）；穿刺数据来自实施期间的测量，未重跑；工作台导出未重跑；只有一台设备（M4 Pro）",
+        "coverage": [
+          {
+            "criterionId": "AC-2da377337420",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-e5dc560e9f0f",
+            "status": "verified",
+            "evidence": "本次重跑 e2e「reference scenes: each opens and draws in clay and rendered without errors」通过（含 traceReferenceNames 三个新场景，工作台下白模与最终渲染）；实时 GI 的 lit 导出见 discovery/research/gi-baseline/*-webgpu-lit.png 与 gi-baseline.json；工作台出图在天空修复时核对过（gi-baseline.md「发现的回归」），本次未重跑"
+          },
+          {
+            "criterionId": "AC-dc8f6fe6408c",
+            "status": "verified",
+            "evidence": "本次重跑 node --test frontend/scripts/fixtures/scene-stress/generate.test.mjs，3/3 通过：同一种子逐字节相同、单独生成与全量相同、约 2000 万面 2000 实例（实测 2011 万）"
+          },
+          {
+            "criterionId": "AC-aade8c26538f",
+            "status": "verified",
+            "evidence": "discovery/research/gi-baseline/gi-baseline.json 的 machine、chromium 字段；gi-baseline.md「环境」"
+          },
+          {
+            "criterionId": "AC-7a9b47731902",
+            "status": "verified",
+            "evidence": "WebGPU 一套在 discovery/research/gi-baseline/；WebGL2 一套因 30 MB 规则移出工作树，在提交 10759b60，可按 gi-baseline.md 的命令重新生成"
+          },
+          {
+            "criterionId": "AC-95b90b75320e",
+            "status": "verified",
+            "evidence": "gi-baseline.json 的 viewport；无头 rAF 帧时间不稳定只作参考，AC-7 基线改由 throughput.md 的 GPU 时间戳"
+          },
+          {
+            "criterionId": "AC-9cca8d4a48c3",
+            "status": "verified",
+            "evidence": "gi-baseline.json 的 lumaStats，区域按 frontend/scripts/fixtures/scene-reference/gi-regions.json"
+          },
+          {
+            "criterionId": "AC-1bc1327c8f40",
+            "status": "verified",
+            "evidence": "按 owner 重新批准的 design 改为固定点两视角对照（pointAcrossViews，gi-baseline.json 的 lit_wall_in_view）；原「转动序列」只反映画面里有没有亮墙，见 gi-baseline.md"
+          },
+          {
+            "criterionId": "AC-11013637b40b",
+            "status": "verified",
+            "evidence": "见下四条"
+          },
+          {
+            "criterionId": "AC-3b9487ebe2c9",
+            "status": "verified",
+            "evidence": "discovery/research 下 environment、integration、throughput、hit-shading、reflections、proxy-quality、probes 七篇，汇总在 summary.md"
+          },
+          {
+            "criterionId": "AC-f0d5bd44de02",
+            "status": "verified",
+            "evidence": "summary.md「未决事项的建议」U1、U2、U3、U5、U9 各一节，附依据文档"
+          },
+          {
+            "criterionId": "AC-3d51325a9cf2",
+            "status": "verified",
+            "evidence": "summary.md「阈值建议」六节；已按 owner 决定回填 Epic v3 proposal（0f275428）"
+          },
+          {
+            "criterionId": "AC-f2eb38f18a54",
+            "status": "verified",
+            "evidence": "hit-shading.md 编译表的冷 / 热两列（?cold=1 注入随机常量）；throughput.md 冷启动 / 热启动表"
+          },
+          {
+            "criterionId": "AC-e86e8e0090ff",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-f875a114ed48",
+            "status": "verified",
+            "evidence": "discovery/research/proxy-quality/stress-proxy-strip.jpg、stress-proxy-differences8x.jpg 与 probes.json（四个 ε）；参考场景代理与原始逐字节相同，出图差 0，未提交图"
+          },
+          {
+            "criterionId": "AC-1f896837dd2f",
+            "status": "verified",
+            "evidence": "discovery/research/proxy-quality/mirror-board-proxy-strip.jpg、mirror-board-proxy-differences8x.jpg 与 reflections.json；该场景可简化物件少，局限见 proxy-quality.md"
+          },
+          {
+            "criterionId": "AC-9a226f34251c",
+            "status": "verified",
+            "evidence": "owner 回复「全部按推荐」：ε_probe = 3 mm、第 1 档原始层 ≤ 1 GiB，写入 Epic v3（0f275428）"
+          },
+          {
+            "criterionId": "AC-adcf0ec7a044",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-1d216db2b756",
+            "status": "verified",
+            "evidence": "git diff --stat develop（排除 .lti）只有 frontend/scripts 下 8 个文件：creative-scene.e2e.mjs、scene-reference 的 4 个 JSON、scene-stress 的生成器、测试与规格；原型在 S0 的 discovery/research/prototype/"
+          },
+          {
+            "criterionId": "AC-09360702fb2d",
+            "status": "verified",
+            "evidence": "git diff --stat develop -- frontend/src frontend/package.json frontend/package-lock.json package.json 为空"
+          },
+          {
+            "criterionId": "AC-60d8d164bb12",
+            "status": "verified",
+            "evidence": "草稿已呈给 owner；lti epic revise 记为 v3 并提交 develop（0f275428）；S0 重新绑定（eb8bf1fb）并重新批准（4cbbbeb6）"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 验收通过：6 条 AC 满足；看过代理对照后同意 ε_probe = 3 mm（AC-S0-4）；Epic v3 已批准（0f275428）",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "1525b6857c882437278e5e4f1d8fa3cc4443b35f7c44ec7c76bce14b9c696ece"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-24T10:14:01.135Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

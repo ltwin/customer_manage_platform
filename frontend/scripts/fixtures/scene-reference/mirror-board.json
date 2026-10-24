@@ -1,0 +1,410 @@
+{
+  "environment": {
+    "sky": {
+      "kind": "physical",
+      "sun_mode": "manual",
+      "latitude_deg": 31.2304,
+      "longitude_deg": 121.4737,
+      "timezone": "Asia/Shanghai",
+      "place": "上海",
+      "date": "2026-09-23",
+      "local_time": "12:00",
+      "north_azimuth_deg": 180,
+      "sun_elevation_deg": 45,
+      "sun_azimuth_deg": 135,
+      "altitude_m": 0,
+      "air_density": 1,
+      "dust_density": 1,
+      "ozone_density": 1,
+      "sun_disc": true,
+      "sun_size_deg": 0.545,
+      "sun_strength": 1,
+      "sun_temperature_k": 6500
+    },
+    "ambient": {
+      "color": "#ffffff",
+      "intensity": 0.4
+    },
+    "fog": null
+  },
+  "render": {
+    "mode": "lit",
+    "exposure_ev": 0,
+    "engine": "workbench",
+    "resolution": "2k",
+    "exposure_ev100": 15
+  },
+  "objects": [
+    {
+      "id": "sobj_ground",
+      "kind": "primitive",
+      "name": "地面",
+      "parent_id": null,
+      "order": 0,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": true,
+      "primitive": {
+        "builtin": "ground@1",
+        "params": {
+          "size": 40
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_floor0000000000000000",
+      "kind": "primitive",
+      "name": "floor",
+      "order": 5,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 6,
+          "height": 0.02,
+          "depth": 7
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#d0d0d0",
+            "roughness": 0.05
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          0.02,
+          -2.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_mirror000000000000000",
+      "kind": "primitive",
+      "name": "mirror",
+      "order": 6,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.2,
+          "height": 1.6,
+          "depth": 0.25
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#ffffff",
+            "metalness": 1,
+            "roughness": 0
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          1.1,
+          0.02,
+          -1.2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_ball00000000000000000",
+      "kind": "primitive",
+      "name": "ball",
+      "order": 7,
+      "primitive": {
+        "builtin": "sphere@1",
+        "params": {
+          "radius": 0.4,
+          "segments": 64
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "metal@1",
+          "params": {
+            "rust": 0
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -0.8,
+          0.02,
+          3.2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_redblock0000000000000",
+      "kind": "primitive",
+      "name": "redblock",
+      "order": 8,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.6,
+          "height": 0.6,
+          "depth": 0.6
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#b0201c"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0.4,
+          0.02,
+          3.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_greenblock00000000000",
+      "kind": "primitive",
+      "name": "greenblock",
+      "order": 9,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.6,
+          "height": 0.9,
+          "depth": 0.6
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#2a8a2a"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          1.4,
+          0.02,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_yellowblock0000000000",
+      "kind": "primitive",
+      "name": "yellowblock",
+      "order": 10,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.6,
+          "height": 0.5,
+          "depth": 0.6
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#d8b020"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          -1.8,
+          0.02,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_column000000000000000",
+      "kind": "primitive",
+      "name": "column",
+      "order": 11,
+      "primitive": {
+        "builtin": "cylinder@1",
+        "params": {
+          "radius_top": 0.25,
+          "radius_bottom": 0.25,
+          "height": 1.8,
+          "radial_segments": 48
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "paint@1",
+          "params": {
+            "color": "#e8e8e4"
+          }
+        }
+      }
+    },
+    {
+      "parent_id": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "position": [
+          0,
+          1.2,
+          2.2
+        ],
+        "rotation": [
+          -0.052336,
+          0.0,
+          0.0,
+          0.99863
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "id": "sobj_shot00000000000000000",
+      "kind": "camera",
+      "name": "shot",
+      "order": 12,
+      "camera": {
+        "focal_mm": 35,
+        "exposure_mode": "manual",
+        "f_stop": 16,
+        "shutter_s": 0.008,
+        "iso": 100
+      }
+    }
+  ]
+}

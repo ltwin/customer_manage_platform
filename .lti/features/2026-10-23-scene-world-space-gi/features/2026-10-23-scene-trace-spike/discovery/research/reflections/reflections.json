@@ -1,0 +1,537 @@
+{
+  "chromium": "145.0.7632.6",
+  "scenes": {
+    "mirror-board": {
+      "pageMs": 15498,
+      "scene": "mirror-board",
+      "layer": "TraceLayer",
+      "firstFrameMs": {
+        "ssr": 127,
+        "A": 1270,
+        "B": 1195
+      },
+      "exposure": 0.5346,
+      "compareAB": {
+        "mean": 0.004,
+        "over2": 0.0004,
+        "ssrVsA": 10.782
+      },
+      "timing": {
+        "ssr": {
+          "medianMs": 1.8,
+          "minMs": 1.6,
+          "maxMs": 7.9
+        },
+        "A": {
+          "medianMs": 2.7,
+          "minMs": 2.5,
+          "maxMs": 12.7
+        },
+        "B": {
+          "medianMs": 3,
+          "minMs": 2.8,
+          "maxMs": 6.5
+        }
+      },
+      "readback": {
+        "ssr": [
+          1536,
+          1024
+        ],
+        "prepass": [
+          1536,
+          1024
+        ]
+      },
+      "rayDirections": {
+        "nan": 0,
+        "nearZero": 0
+      },
+      "rays": {
+        "pixels": 1572864,
+        "byRoughnessBelow": {
+          "1": {
+            "pixels": 231590,
+            "rays": 228421,
+            "raysShareOfPicture": 0.1452,
+            "shareSum": 228421
+          },
+          "0.1": {
+            "pixels": 677170,
+            "rays": 518344,
+            "raysShareOfPicture": 0.3296,
+            "shareSum": 494845
+          },
+          "0.25": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.5": {
+            "pixels": 98772,
+            "rays": 67655,
+            "raysShareOfPicture": 0.043,
+            "shareSum": 67651
+          },
+          "0.75": {
+            "pixels": 1136,
+            "rays": 678,
+            "raysShareOfPicture": 0.0004,
+            "shareSum": 678
+          }
+        }
+      },
+      "pitch": [
+        {
+          "pitchDeg": 0,
+          "point": [
+            1231,
+            1040
+          ],
+          "ballBottomOnScreen": true,
+          "ssr": null,
+          "A": null
+        },
+        {
+          "pitchDeg": -6,
+          "point": [
+            1217,
+            870
+          ],
+          "ballBottomOnScreen": true,
+          "ssr": 0.6817,
+          "A": 0.6817
+        },
+        {
+          "pitchDeg": -12,
+          "point": [
+            1208,
+            708
+          ],
+          "ballBottomOnScreen": true,
+          "ssr": 0.6816,
+          "A": 0.6816
+        },
+        {
+          "pitchDeg": -18,
+          "point": [
+            1204,
+            550
+          ],
+          "ballBottomOnScreen": true,
+          "ssr": 0.6816,
+          "A": 0.6816
+        },
+        {
+          "pitchDeg": -24,
+          "point": [
+            1206,
+            394
+          ],
+          "ballBottomOnScreen": true,
+          "ssr": 0.6816,
+          "A": 0.6816
+        },
+        {
+          "pitchDeg": -30,
+          "point": [
+            1212,
+            235
+          ],
+          "ballBottomOnScreen": true,
+          "ssr": 0.7619,
+          "A": 0.6851
+        },
+        {
+          "pitchDeg": -36,
+          "point": [
+            1223,
+            69
+          ],
+          "ballBottomOnScreen": false,
+          "ssr": 0.7615,
+          "A": 0.6851
+        }
+      ],
+      "limits": {
+        "device": {
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 4294967292
+        },
+        "compatibilityAdapter": {
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageBuffersInFragmentStage": null,
+            "maxStorageBuffersInVertexStage": null,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxStorageTexturesInFragmentStage": null,
+            "maxColorAttachments": 8,
+            "maxStorageBufferBindingSize": 4294967292
+          }
+        },
+        "compatibilityDeviceDefaults": {
+          "maxStorageBuffersPerShaderStage": 8,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 4,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 134217728
+        }
+      },
+      "errors": []
+    },
+    "backlit-room": {
+      "pageMs": 6692,
+      "scene": "backlit-room",
+      "layer": "TraceLayer",
+      "firstFrameMs": {
+        "ssr": 345,
+        "A": 415,
+        "B": 397
+      },
+      "exposure": 0.5384,
+      "compareAB": {
+        "mean": 0.001,
+        "over2": 0,
+        "ssrVsA": 1.684
+      },
+      "timing": {
+        "ssr": {
+          "medianMs": 3.4,
+          "minMs": 3.3,
+          "maxMs": 14.8
+        },
+        "A": {
+          "medianMs": 7.9,
+          "minMs": 7.8,
+          "maxMs": 14
+        },
+        "B": {
+          "medianMs": 8.7,
+          "minMs": 8.5,
+          "maxMs": 11.7
+        }
+      },
+      "readback": {
+        "ssr": [
+          1536,
+          1024
+        ],
+        "prepass": [
+          1536,
+          1024
+        ]
+      },
+      "rayDirections": {
+        "nan": 0,
+        "nearZero": 0
+      },
+      "rays": {
+        "pixels": 1572864,
+        "byRoughnessBelow": {
+          "1": {
+            "pixels": 30,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.1": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.25": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.5": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.75": {
+            "pixels": 1572834,
+            "rays": 1090131,
+            "raysShareOfPicture": 0.6931,
+            "shareSum": 1090050
+          }
+        }
+      },
+      "limits": {
+        "device": {
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 4294967292
+        },
+        "compatibilityAdapter": {
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageBuffersInFragmentStage": null,
+            "maxStorageBuffersInVertexStage": null,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxStorageTexturesInFragmentStage": null,
+            "maxColorAttachments": 8,
+            "maxStorageBufferBindingSize": 4294967292
+          }
+        },
+        "compatibilityDeviceDefaults": {
+          "maxStorageBuffersPerShaderStage": 8,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 4,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 134217728
+        }
+      },
+      "errors": []
+    },
+    "materials": {
+      "pageMs": 6720,
+      "scene": "materials",
+      "layer": "TraceLayer",
+      "firstFrameMs": {
+        "ssr": 347,
+        "A": 500,
+        "B": 480
+      },
+      "exposure": 0.1502,
+      "compareAB": {
+        "mean": 0,
+        "over2": 0,
+        "ssrVsA": 0.726
+      },
+      "timing": {
+        "ssr": {
+          "medianMs": 3,
+          "minMs": 2.9,
+          "maxMs": 11.7
+        },
+        "A": {
+          "medianMs": 5.1,
+          "minMs": 5,
+          "maxMs": 7.8
+        },
+        "B": {
+          "medianMs": 5.8,
+          "minMs": 5.7,
+          "maxMs": 6.1
+        }
+      },
+      "readback": {
+        "ssr": [
+          1536,
+          1024
+        ],
+        "prepass": [
+          1536,
+          1024
+        ]
+      },
+      "rayDirections": {
+        "nan": 0,
+        "nearZero": 0
+      },
+      "rays": {
+        "pixels": 1572864,
+        "byRoughnessBelow": {
+          "1": {
+            "pixels": 1238809,
+            "rays": 1112948,
+            "raysShareOfPicture": 0.7076,
+            "shareSum": 1112930
+          },
+          "0.1": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.25": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.5": {
+            "pixels": 97917,
+            "rays": 95656,
+            "raysShareOfPicture": 0.0608,
+            "shareSum": 95656
+          },
+          "0.75": {
+            "pixels": 236138,
+            "rays": 207186,
+            "raysShareOfPicture": 0.1317,
+            "shareSum": 207175
+          }
+        }
+      },
+      "limits": {
+        "device": {
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 4294967292
+        },
+        "compatibilityAdapter": {
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageBuffersInFragmentStage": null,
+            "maxStorageBuffersInVertexStage": null,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxStorageTexturesInFragmentStage": null,
+            "maxColorAttachments": 8,
+            "maxStorageBufferBindingSize": 4294967292
+          }
+        },
+        "compatibilityDeviceDefaults": {
+          "maxStorageBuffersPerShaderStage": 8,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 4,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 134217728
+        }
+      },
+      "errors": []
+    },
+    "cornell": {
+      "pageMs": 8776,
+      "scene": "cornell",
+      "layer": "TraceLayer",
+      "firstFrameMs": {
+        "ssr": 1739,
+        "A": 446,
+        "B": 387
+      },
+      "exposure": 0.1663,
+      "compareAB": {
+        "mean": 0.001,
+        "over2": 0,
+        "ssrVsA": 1.98
+      },
+      "timing": {
+        "ssr": {
+          "medianMs": 3.6,
+          "minMs": 3.2,
+          "maxMs": 15.2
+        },
+        "A": {
+          "medianMs": 9.6,
+          "minMs": 9.3,
+          "maxMs": 13.8
+        },
+        "B": {
+          "medianMs": 10.1,
+          "minMs": 9.9,
+          "maxMs": 10.3
+        }
+      },
+      "readback": {
+        "ssr": [
+          1536,
+          1024
+        ],
+        "prepass": [
+          1536,
+          1024
+        ]
+      },
+      "rayDirections": {
+        "nan": 0,
+        "nearZero": 0
+      },
+      "rays": {
+        "pixels": 1572864,
+        "byRoughnessBelow": {
+          "1": {
+            "pixels": 26,
+            "rays": 16,
+            "raysShareOfPicture": 0,
+            "shareSum": 16
+          },
+          "0.1": {
+            "pixels": 68508,
+            "rays": 22474,
+            "raysShareOfPicture": 0.0143,
+            "shareSum": 9229
+          },
+          "0.25": {
+            "pixels": 0,
+            "rays": 0,
+            "raysShareOfPicture": 0,
+            "shareSum": 0
+          },
+          "0.5": {
+            "pixels": 63361,
+            "rays": 43419,
+            "raysShareOfPicture": 0.0276,
+            "shareSum": 43402
+          },
+          "0.75": {
+            "pixels": 1440969,
+            "rays": 757255,
+            "raysShareOfPicture": 0.4814,
+            "shareSum": 757217
+          }
+        }
+      },
+      "limits": {
+        "device": {
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 4294967292
+        },
+        "compatibilityAdapter": {
+          "featureLevel": null,
+          "limits": {
+            "maxStorageBuffersPerShaderStage": 10,
+            "maxStorageBuffersInFragmentStage": null,
+            "maxStorageBuffersInVertexStage": null,
+            "maxStorageTexturesPerShaderStage": 8,
+            "maxStorageTexturesInFragmentStage": null,
+            "maxColorAttachments": 8,
+            "maxStorageBufferBindingSize": 4294967292
+          }
+        },
+        "compatibilityDeviceDefaults": {
+          "maxStorageBuffersPerShaderStage": 8,
+          "maxStorageBuffersInFragmentStage": null,
+          "maxStorageBuffersInVertexStage": null,
+          "maxStorageTexturesPerShaderStage": 4,
+          "maxStorageTexturesInFragmentStage": null,
+          "maxColorAttachments": 8,
+          "maxStorageBufferBindingSize": 134217728
+        }
+      },
+      "errors": []
+    }
+  }
+}

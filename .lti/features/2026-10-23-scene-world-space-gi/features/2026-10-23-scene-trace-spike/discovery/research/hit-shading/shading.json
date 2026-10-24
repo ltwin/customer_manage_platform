@@ -1,0 +1,3195 @@
+{
+  "chromium": "145.0.7632.6",
+  "scene": "materials",
+  "loads": {
+    "cold": {
+      "pageMs": 5829,
+      "salt": 0.6893179855984957,
+      "productTwice": {
+        "dirt@1": true
+      },
+      "copyVsProductAgain": {
+        "dirt@1": false
+      },
+      "raster": {
+        "sameWGSL": {
+          "paint@1": true,
+          "plaster@1": true,
+          "concrete@1": true,
+          "stone_brick@1": true,
+          "stone@1": true,
+          "marble@1": true,
+          "tile@1": true,
+          "wood@1": true,
+          "wood_plank@1": true,
+          "metal@1": true,
+          "fabric@1": true,
+          "dirt@1": false,
+          "grass@1": true,
+          "emissive@1": true
+        },
+        "pixels": {
+          "values": 6291456,
+          "differing": 0,
+          "maxDiff": 0
+        }
+      },
+      "compile": {
+        "diff": {
+          "wgslMs": 116,
+          "pipelineAndFirstRunMs": 1200,
+          "secondRunMs": 6.2,
+          "wgslChars": 185539,
+          "wgslKiB": 181.2
+        },
+        "zero": {
+          "wgslMs": 59,
+          "pipelineAndFirstRunMs": 592,
+          "secondRunMs": 7.4,
+          "wgslChars": 104596,
+          "wgslKiB": 102.1
+        }
+      },
+      "exposure": 0.1502,
+      "compare": {
+        "principled@1#0": {
+          "albedo/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0.01,
+            "over2": 0.001
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0.01,
+            "over2": 0.001
+          }
+        },
+        "principled@1#1": {
+          "albedo/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0209
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0209
+          }
+        },
+        "paint@1#2": {
+          "albedo/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.1,
+            "over2": 0.0212
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.1,
+            "over2": 0.0212
+          }
+        },
+        "plaster@1#3": {
+          "albedo/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 16215,
+            "mean": 0.06,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 16215,
+            "mean": 0.06,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.13,
+            "over2": 0.0194
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.19,
+            "over2": 0.0165
+          }
+        },
+        "concrete@1#4": {
+          "albedo/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 21517,
+            "mean": 0.05,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 21517,
+            "mean": 0.05,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0086
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.15,
+            "over2": 0.0101
+          }
+        },
+        "stone_brick@1#5": {
+          "albedo/diff": {
+            "pixels": 32371,
+            "mean": 0.55,
+            "over2": 0.0531
+          },
+          "roughMetal/diff": {
+            "pixels": 32371,
+            "mean": 0.14,
+            "over2": 0.0369
+          },
+          "litFlat/diff": {
+            "pixels": 32371,
+            "mean": 0.3,
+            "over2": 0.0368
+          },
+          "litBump/diff": {
+            "pixels": 32371,
+            "mean": 1.05,
+            "over2": 0.1265
+          },
+          "albedo/zero": {
+            "pixels": 32371,
+            "mean": 2.75,
+            "over2": 0.2849
+          },
+          "roughMetal/zero": {
+            "pixels": 32371,
+            "mean": 0.66,
+            "over2": 0.2074
+          },
+          "litFlat/zero": {
+            "pixels": 32371,
+            "mean": 1.45,
+            "over2": 0.2204
+          },
+          "litBump/zero": {
+            "pixels": 32371,
+            "mean": 1.95,
+            "over2": 0.253
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 2,
+            "over2": 0.2786
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 0.66,
+            "over2": 0.2074
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.06,
+            "over2": 0.2027
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.62,
+            "over2": 0.245
+          }
+        },
+        "stone@1#6": {
+          "albedo/diff": {
+            "pixels": 24637,
+            "mean": 0.45,
+            "over2": 0.0312
+          },
+          "roughMetal/diff": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 24637,
+            "mean": 0.25,
+            "over2": 0.0255
+          },
+          "litBump/diff": {
+            "pixels": 24637,
+            "mean": 0.79,
+            "over2": 0.0827
+          },
+          "albedo/zero": {
+            "pixels": 24637,
+            "mean": 1.52,
+            "over2": 0.0945
+          },
+          "roughMetal/zero": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 24637,
+            "mean": 0.85,
+            "over2": 0.0851
+          },
+          "litBump/zero": {
+            "pixels": 24637,
+            "mean": 1.3,
+            "over2": 0.108
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 1.46,
+            "over2": 0.1262
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.83,
+            "over2": 0.1133
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 1.27,
+            "over2": 0.1287
+          }
+        },
+        "marble@1#7": {
+          "albedo/diff": {
+            "pixels": 24637,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 24637,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 24637,
+            "mean": 0.13,
+            "over2": 0.0074
+          },
+          "albedo/zero": {
+            "pixels": 24637,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 24637,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 24637,
+            "mean": 0.13,
+            "over2": 0.0074
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.35,
+            "over2": 0.0428
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.3,
+            "over2": 0.0322
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.33,
+            "over2": 0.0367
+          }
+        },
+        "tile@1#8": {
+          "albedo/diff": {
+            "pixels": 32371,
+            "mean": 0.11,
+            "over2": 0.0083
+          },
+          "roughMetal/diff": {
+            "pixels": 32371,
+            "mean": 0.13,
+            "over2": 0.0223
+          },
+          "litFlat/diff": {
+            "pixels": 32371,
+            "mean": 0.07,
+            "over2": 0.0074
+          },
+          "litBump/diff": {
+            "pixels": 32371,
+            "mean": 0.85,
+            "over2": 0.0943
+          },
+          "albedo/zero": {
+            "pixels": 32371,
+            "mean": 2.68,
+            "over2": 0.0286
+          },
+          "roughMetal/zero": {
+            "pixels": 32371,
+            "mean": 3.01,
+            "over2": 0.9818
+          },
+          "litFlat/zero": {
+            "pixels": 32371,
+            "mean": 1.67,
+            "over2": 0.0272
+          },
+          "litBump/zero": {
+            "pixels": 32371,
+            "mean": 2.1,
+            "over2": 0.1069
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 2.33,
+            "over2": 0.0709
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 3.01,
+            "over2": 0.9818
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.5,
+            "over2": 0.0649
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.73,
+            "over2": 0.112
+          }
+        },
+        "wood@1#9": {
+          "albedo/diff": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 51514,
+            "mean": 0.08,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 51514,
+            "mean": 0.08,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.3,
+            "over2": 0.0396
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.18,
+            "over2": 0.0134
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.21,
+            "over2": 0.0129
+          }
+        },
+        "wood_plank@1#10": {
+          "albedo/diff": {
+            "pixels": 39656,
+            "mean": 0.05,
+            "over2": 0.0014
+          },
+          "roughMetal/diff": {
+            "pixels": 39656,
+            "mean": 0.02,
+            "over2": 0.0012
+          },
+          "litFlat/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0.0013
+          },
+          "litBump/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0.0017
+          },
+          "albedo/zero": {
+            "pixels": 39656,
+            "mean": 1.27,
+            "over2": 0.0101
+          },
+          "roughMetal/zero": {
+            "pixels": 39656,
+            "mean": 0.39,
+            "over2": 0.0099
+          },
+          "litFlat/zero": {
+            "pixels": 39656,
+            "mean": 0.68,
+            "over2": 0.0099
+          },
+          "litBump/zero": {
+            "pixels": 39656,
+            "mean": 0.68,
+            "over2": 0.0103
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 1.58,
+            "over2": 0.0721
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.39,
+            "over2": 0.0099
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.89,
+            "over2": 0.071
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.89,
+            "over2": 0.071
+          }
+        },
+        "metal@1#11": {
+          "albedo/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.1,
+            "over2": 0.009
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.12,
+            "over2": 0.009
+          }
+        },
+        "fabric@1#12": {
+          "albedo/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 78142,
+            "mean": 2.29,
+            "over2": 0.7471
+          },
+          "roughMetal/zero": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 78142,
+            "mean": 1.08,
+            "over2": 0.4896
+          },
+          "litBump/zero": {
+            "pixels": 78142,
+            "mean": 1.08,
+            "over2": 0.4896
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.78,
+            "over2": 0.1811
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.39,
+            "over2": 0.0161
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.39,
+            "over2": 0.0161
+          }
+        },
+        "dirt@1#13": {
+          "albedo/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 116040,
+            "mean": 0.24,
+            "over2": 0.0339
+          },
+          "albedo/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 116040,
+            "mean": 0.24,
+            "over2": 0.0339
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.07,
+            "over2": 0.0098
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.05,
+            "over2": 0.0035
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.27,
+            "over2": 0.039
+          }
+        },
+        "grass@1#14": {
+          "albedo/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 100823,
+            "mean": 0.04,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 100823,
+            "mean": 0.04,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.02,
+            "over2": 0.0029
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.05,
+            "over2": 0.0029
+          }
+        },
+        "emissive@1#15": {
+          "albedo/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0.0026
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0.0026
+          }
+        }
+      },
+      "meshes": [
+        "principled@1",
+        "principled@1",
+        "paint@1",
+        "plaster@1",
+        "concrete@1",
+        "stone_brick@1",
+        "stone@1",
+        "marble@1",
+        "tile@1",
+        "wood@1",
+        "wood_plank@1",
+        "metal@1",
+        "fabric@1",
+        "dirt@1",
+        "grass@1",
+        "emissive@1"
+      ],
+      "errors": []
+    },
+    "warm1": {
+      "pageMs": 3812,
+      "salt": 0,
+      "productTwice": {
+        "dirt@1": true
+      },
+      "copyVsProductAgain": {
+        "dirt@1": false
+      },
+      "raster": {
+        "sameWGSL": {
+          "paint@1": true,
+          "plaster@1": true,
+          "concrete@1": true,
+          "stone_brick@1": true,
+          "stone@1": true,
+          "marble@1": true,
+          "tile@1": true,
+          "wood@1": true,
+          "wood_plank@1": true,
+          "metal@1": true,
+          "fabric@1": true,
+          "dirt@1": false,
+          "grass@1": true,
+          "emissive@1": true
+        },
+        "pixels": {
+          "values": 6291456,
+          "differing": 0,
+          "maxDiff": 0
+        }
+      },
+      "compile": {
+        "diff": {
+          "wgslMs": 111,
+          "pipelineAndFirstRunMs": 63,
+          "secondRunMs": 4.8,
+          "wgslChars": 185521,
+          "wgslKiB": 181.2
+        },
+        "zero": {
+          "wgslMs": 58,
+          "pipelineAndFirstRunMs": 42,
+          "secondRunMs": 7.7,
+          "wgslChars": 104578,
+          "wgslKiB": 102.1
+        }
+      },
+      "exposure": 0.1502,
+      "compare": {
+        "principled@1#0": {
+          "albedo/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0.01,
+            "over2": 0.001
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0.01,
+            "over2": 0.001
+          }
+        },
+        "principled@1#1": {
+          "albedo/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0209
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0209
+          }
+        },
+        "paint@1#2": {
+          "albedo/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.1,
+            "over2": 0.0212
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.1,
+            "over2": 0.0212
+          }
+        },
+        "plaster@1#3": {
+          "albedo/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 16215,
+            "mean": 0.06,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 16215,
+            "mean": 0.06,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.13,
+            "over2": 0.0194
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.19,
+            "over2": 0.0165
+          }
+        },
+        "concrete@1#4": {
+          "albedo/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 21517,
+            "mean": 0.05,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 21517,
+            "mean": 0.05,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0086
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.15,
+            "over2": 0.0101
+          }
+        },
+        "stone_brick@1#5": {
+          "albedo/diff": {
+            "pixels": 32371,
+            "mean": 0.55,
+            "over2": 0.0531
+          },
+          "roughMetal/diff": {
+            "pixels": 32371,
+            "mean": 0.14,
+            "over2": 0.0369
+          },
+          "litFlat/diff": {
+            "pixels": 32371,
+            "mean": 0.3,
+            "over2": 0.0368
+          },
+          "litBump/diff": {
+            "pixels": 32371,
+            "mean": 1.05,
+            "over2": 0.1265
+          },
+          "albedo/zero": {
+            "pixels": 32371,
+            "mean": 2.75,
+            "over2": 0.2849
+          },
+          "roughMetal/zero": {
+            "pixels": 32371,
+            "mean": 0.66,
+            "over2": 0.2074
+          },
+          "litFlat/zero": {
+            "pixels": 32371,
+            "mean": 1.45,
+            "over2": 0.2204
+          },
+          "litBump/zero": {
+            "pixels": 32371,
+            "mean": 1.95,
+            "over2": 0.253
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 2,
+            "over2": 0.2786
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 0.66,
+            "over2": 0.2074
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.06,
+            "over2": 0.2027
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.62,
+            "over2": 0.245
+          }
+        },
+        "stone@1#6": {
+          "albedo/diff": {
+            "pixels": 24637,
+            "mean": 0.45,
+            "over2": 0.0312
+          },
+          "roughMetal/diff": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 24637,
+            "mean": 0.25,
+            "over2": 0.0255
+          },
+          "litBump/diff": {
+            "pixels": 24637,
+            "mean": 0.79,
+            "over2": 0.0827
+          },
+          "albedo/zero": {
+            "pixels": 24637,
+            "mean": 1.52,
+            "over2": 0.0945
+          },
+          "roughMetal/zero": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 24637,
+            "mean": 0.85,
+            "over2": 0.0851
+          },
+          "litBump/zero": {
+            "pixels": 24637,
+            "mean": 1.3,
+            "over2": 0.108
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 1.46,
+            "over2": 0.1262
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.83,
+            "over2": 0.1133
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 1.27,
+            "over2": 0.1287
+          }
+        },
+        "marble@1#7": {
+          "albedo/diff": {
+            "pixels": 24637,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 24637,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 24637,
+            "mean": 0.13,
+            "over2": 0.0074
+          },
+          "albedo/zero": {
+            "pixels": 24637,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 24637,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 24637,
+            "mean": 0.13,
+            "over2": 0.0074
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.35,
+            "over2": 0.0428
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.3,
+            "over2": 0.0322
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.33,
+            "over2": 0.0367
+          }
+        },
+        "tile@1#8": {
+          "albedo/diff": {
+            "pixels": 32371,
+            "mean": 0.11,
+            "over2": 0.0083
+          },
+          "roughMetal/diff": {
+            "pixels": 32371,
+            "mean": 0.13,
+            "over2": 0.0223
+          },
+          "litFlat/diff": {
+            "pixels": 32371,
+            "mean": 0.07,
+            "over2": 0.0074
+          },
+          "litBump/diff": {
+            "pixels": 32371,
+            "mean": 0.85,
+            "over2": 0.0943
+          },
+          "albedo/zero": {
+            "pixels": 32371,
+            "mean": 2.68,
+            "over2": 0.0286
+          },
+          "roughMetal/zero": {
+            "pixels": 32371,
+            "mean": 3.01,
+            "over2": 0.9818
+          },
+          "litFlat/zero": {
+            "pixels": 32371,
+            "mean": 1.67,
+            "over2": 0.0272
+          },
+          "litBump/zero": {
+            "pixels": 32371,
+            "mean": 2.1,
+            "over2": 0.1069
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 2.33,
+            "over2": 0.0709
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 3.01,
+            "over2": 0.9818
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.5,
+            "over2": 0.0649
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.73,
+            "over2": 0.112
+          }
+        },
+        "wood@1#9": {
+          "albedo/diff": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 51514,
+            "mean": 0.08,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 51514,
+            "mean": 0.08,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.3,
+            "over2": 0.0396
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.18,
+            "over2": 0.0134
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.21,
+            "over2": 0.0129
+          }
+        },
+        "wood_plank@1#10": {
+          "albedo/diff": {
+            "pixels": 39656,
+            "mean": 0.05,
+            "over2": 0.0014
+          },
+          "roughMetal/diff": {
+            "pixels": 39656,
+            "mean": 0.02,
+            "over2": 0.0012
+          },
+          "litFlat/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0.0013
+          },
+          "litBump/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0.0017
+          },
+          "albedo/zero": {
+            "pixels": 39656,
+            "mean": 1.27,
+            "over2": 0.0101
+          },
+          "roughMetal/zero": {
+            "pixels": 39656,
+            "mean": 0.39,
+            "over2": 0.0099
+          },
+          "litFlat/zero": {
+            "pixels": 39656,
+            "mean": 0.68,
+            "over2": 0.0099
+          },
+          "litBump/zero": {
+            "pixels": 39656,
+            "mean": 0.68,
+            "over2": 0.0103
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 1.58,
+            "over2": 0.0721
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.39,
+            "over2": 0.0099
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.89,
+            "over2": 0.071
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.89,
+            "over2": 0.071
+          }
+        },
+        "metal@1#11": {
+          "albedo/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.1,
+            "over2": 0.009
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.12,
+            "over2": 0.009
+          }
+        },
+        "fabric@1#12": {
+          "albedo/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 78142,
+            "mean": 2.29,
+            "over2": 0.7471
+          },
+          "roughMetal/zero": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 78142,
+            "mean": 1.08,
+            "over2": 0.4896
+          },
+          "litBump/zero": {
+            "pixels": 78142,
+            "mean": 1.08,
+            "over2": 0.4896
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.78,
+            "over2": 0.1811
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.39,
+            "over2": 0.0161
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.39,
+            "over2": 0.0161
+          }
+        },
+        "dirt@1#13": {
+          "albedo/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 116040,
+            "mean": 0.24,
+            "over2": 0.0339
+          },
+          "albedo/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 116040,
+            "mean": 0.24,
+            "over2": 0.0339
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.07,
+            "over2": 0.0098
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.05,
+            "over2": 0.0035
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.27,
+            "over2": 0.039
+          }
+        },
+        "grass@1#14": {
+          "albedo/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 100823,
+            "mean": 0.04,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 100823,
+            "mean": 0.04,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.02,
+            "over2": 0.0029
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.05,
+            "over2": 0.0029
+          }
+        },
+        "emissive@1#15": {
+          "albedo/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0.0026
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0.0026
+          }
+        }
+      },
+      "meshes": [
+        "principled@1",
+        "principled@1",
+        "paint@1",
+        "plaster@1",
+        "concrete@1",
+        "stone_brick@1",
+        "stone@1",
+        "marble@1",
+        "tile@1",
+        "wood@1",
+        "wood_plank@1",
+        "metal@1",
+        "fabric@1",
+        "dirt@1",
+        "grass@1",
+        "emissive@1"
+      ],
+      "errors": []
+    },
+    "warm2": {
+      "pageMs": 3825,
+      "salt": 0,
+      "productTwice": {
+        "dirt@1": true
+      },
+      "copyVsProductAgain": {
+        "dirt@1": false
+      },
+      "raster": {
+        "sameWGSL": {
+          "paint@1": true,
+          "plaster@1": true,
+          "concrete@1": true,
+          "stone_brick@1": true,
+          "stone@1": true,
+          "marble@1": true,
+          "tile@1": true,
+          "wood@1": true,
+          "wood_plank@1": true,
+          "metal@1": true,
+          "fabric@1": true,
+          "dirt@1": false,
+          "grass@1": true,
+          "emissive@1": true
+        },
+        "pixels": {
+          "values": 6291456,
+          "differing": 0,
+          "maxDiff": 0
+        }
+      },
+      "compile": {
+        "diff": {
+          "wgslMs": 114,
+          "pipelineAndFirstRunMs": 60,
+          "secondRunMs": 4.8,
+          "wgslChars": 185521,
+          "wgslKiB": 181.2
+        },
+        "zero": {
+          "wgslMs": 61,
+          "pipelineAndFirstRunMs": 38,
+          "secondRunMs": 4.8,
+          "wgslChars": 104578,
+          "wgslKiB": 102.1
+        }
+      },
+      "exposure": 0.1502,
+      "compare": {
+        "principled@1#0": {
+          "albedo/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0.01,
+            "over2": 0.001
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 829798,
+            "mean": 0.01,
+            "over2": 0.001
+          }
+        },
+        "principled@1#1": {
+          "albedo/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0209
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0209
+          }
+        },
+        "paint@1#2": {
+          "albedo/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.1,
+            "over2": 0.0212
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.1,
+            "over2": 0.0212
+          }
+        },
+        "plaster@1#3": {
+          "albedo/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 16215,
+            "mean": 0.06,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 16215,
+            "mean": 0.06,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.13,
+            "over2": 0.0194
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 16215,
+            "mean": 0.19,
+            "over2": 0.0165
+          }
+        },
+        "concrete@1#4": {
+          "albedo/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 21517,
+            "mean": 0.05,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 21517,
+            "mean": 0.05,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.1,
+            "over2": 0.0086
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 21517,
+            "mean": 0.15,
+            "over2": 0.0101
+          }
+        },
+        "stone_brick@1#5": {
+          "albedo/diff": {
+            "pixels": 32371,
+            "mean": 0.55,
+            "over2": 0.0531
+          },
+          "roughMetal/diff": {
+            "pixels": 32371,
+            "mean": 0.14,
+            "over2": 0.0369
+          },
+          "litFlat/diff": {
+            "pixels": 32371,
+            "mean": 0.3,
+            "over2": 0.0368
+          },
+          "litBump/diff": {
+            "pixels": 32371,
+            "mean": 1.05,
+            "over2": 0.1265
+          },
+          "albedo/zero": {
+            "pixels": 32371,
+            "mean": 2.75,
+            "over2": 0.2849
+          },
+          "roughMetal/zero": {
+            "pixels": 32371,
+            "mean": 0.66,
+            "over2": 0.2074
+          },
+          "litFlat/zero": {
+            "pixels": 32371,
+            "mean": 1.45,
+            "over2": 0.2204
+          },
+          "litBump/zero": {
+            "pixels": 32371,
+            "mean": 1.95,
+            "over2": 0.253
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 2,
+            "over2": 0.2786
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 0.66,
+            "over2": 0.2074
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.06,
+            "over2": 0.2027
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.62,
+            "over2": 0.245
+          }
+        },
+        "stone@1#6": {
+          "albedo/diff": {
+            "pixels": 24637,
+            "mean": 0.45,
+            "over2": 0.0312
+          },
+          "roughMetal/diff": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 24637,
+            "mean": 0.25,
+            "over2": 0.0255
+          },
+          "litBump/diff": {
+            "pixels": 24637,
+            "mean": 0.79,
+            "over2": 0.0827
+          },
+          "albedo/zero": {
+            "pixels": 24637,
+            "mean": 1.52,
+            "over2": 0.0945
+          },
+          "roughMetal/zero": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 24637,
+            "mean": 0.85,
+            "over2": 0.0851
+          },
+          "litBump/zero": {
+            "pixels": 24637,
+            "mean": 1.3,
+            "over2": 0.108
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 1.46,
+            "over2": 0.1262
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.83,
+            "over2": 0.1133
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 1.27,
+            "over2": 0.1287
+          }
+        },
+        "marble@1#7": {
+          "albedo/diff": {
+            "pixels": 24637,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 24637,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 24637,
+            "mean": 0.13,
+            "over2": 0.0074
+          },
+          "albedo/zero": {
+            "pixels": 24637,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 24637,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 24637,
+            "mean": 0.13,
+            "over2": 0.0074
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.35,
+            "over2": 0.0428
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.3,
+            "over2": 0.0322
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 24637,
+            "mean": 0.33,
+            "over2": 0.0367
+          }
+        },
+        "tile@1#8": {
+          "albedo/diff": {
+            "pixels": 32371,
+            "mean": 0.11,
+            "over2": 0.0083
+          },
+          "roughMetal/diff": {
+            "pixels": 32371,
+            "mean": 0.13,
+            "over2": 0.0223
+          },
+          "litFlat/diff": {
+            "pixels": 32371,
+            "mean": 0.07,
+            "over2": 0.0074
+          },
+          "litBump/diff": {
+            "pixels": 32371,
+            "mean": 0.85,
+            "over2": 0.0943
+          },
+          "albedo/zero": {
+            "pixels": 32371,
+            "mean": 2.68,
+            "over2": 0.0286
+          },
+          "roughMetal/zero": {
+            "pixels": 32371,
+            "mean": 3.01,
+            "over2": 0.9818
+          },
+          "litFlat/zero": {
+            "pixels": 32371,
+            "mean": 1.67,
+            "over2": 0.0272
+          },
+          "litBump/zero": {
+            "pixels": 32371,
+            "mean": 2.1,
+            "over2": 0.1069
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 2.33,
+            "over2": 0.0709
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 3.01,
+            "over2": 0.9818
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.5,
+            "over2": 0.0649
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 32371,
+            "mean": 1.73,
+            "over2": 0.112
+          }
+        },
+        "wood@1#9": {
+          "albedo/diff": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 51514,
+            "mean": 0.08,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 51514,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 51514,
+            "mean": 0.08,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.3,
+            "over2": 0.0396
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.18,
+            "over2": 0.0134
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 51514,
+            "mean": 0.21,
+            "over2": 0.0129
+          }
+        },
+        "wood_plank@1#10": {
+          "albedo/diff": {
+            "pixels": 39656,
+            "mean": 0.05,
+            "over2": 0.0014
+          },
+          "roughMetal/diff": {
+            "pixels": 39656,
+            "mean": 0.02,
+            "over2": 0.0012
+          },
+          "litFlat/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0.0013
+          },
+          "litBump/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0.0017
+          },
+          "albedo/zero": {
+            "pixels": 39656,
+            "mean": 1.27,
+            "over2": 0.0101
+          },
+          "roughMetal/zero": {
+            "pixels": 39656,
+            "mean": 0.39,
+            "over2": 0.0099
+          },
+          "litFlat/zero": {
+            "pixels": 39656,
+            "mean": 0.68,
+            "over2": 0.0099
+          },
+          "litBump/zero": {
+            "pixels": 39656,
+            "mean": 0.68,
+            "over2": 0.0103
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 1.58,
+            "over2": 0.0721
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.39,
+            "over2": 0.0099
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.89,
+            "over2": 0.071
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.89,
+            "over2": 0.071
+          }
+        },
+        "metal@1#11": {
+          "albedo/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 39656,
+            "mean": 0.03,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.02,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.1,
+            "over2": 0.009
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 39656,
+            "mean": 0.12,
+            "over2": 0.009
+          }
+        },
+        "fabric@1#12": {
+          "albedo/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 78142,
+            "mean": 2.29,
+            "over2": 0.7471
+          },
+          "roughMetal/zero": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 78142,
+            "mean": 1.08,
+            "over2": 0.4896
+          },
+          "litBump/zero": {
+            "pixels": 78142,
+            "mean": 1.08,
+            "over2": 0.4896
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.78,
+            "over2": 0.1811
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.39,
+            "over2": 0.0161
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 78142,
+            "mean": 0.39,
+            "over2": 0.0161
+          }
+        },
+        "dirt@1#13": {
+          "albedo/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 116040,
+            "mean": 0.24,
+            "over2": 0.0339
+          },
+          "albedo/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 116040,
+            "mean": 0.24,
+            "over2": 0.0339
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.07,
+            "over2": 0.0098
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.05,
+            "over2": 0.0035
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 116040,
+            "mean": 0.27,
+            "over2": 0.039
+          }
+        },
+        "grass@1#14": {
+          "albedo/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 100823,
+            "mean": 0.04,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 100823,
+            "mean": 0.04,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.02,
+            "over2": 0.0029
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.05,
+            "over2": 0.0029
+          }
+        },
+        "emissive@1#15": {
+          "albedo/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/diff": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litBump/zero": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "albedo/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "roughMetal/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0,
+            "over2": 0
+          },
+          "litFlat/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0.0026
+          },
+          "litBump/zeroAccumulated": {
+            "pixels": 100823,
+            "mean": 0.01,
+            "over2": 0.0026
+          }
+        }
+      },
+      "meshes": [
+        "principled@1",
+        "principled@1",
+        "paint@1",
+        "plaster@1",
+        "concrete@1",
+        "stone_brick@1",
+        "stone@1",
+        "marble@1",
+        "tile@1",
+        "wood@1",
+        "wood_plank@1",
+        "metal@1",
+        "fabric@1",
+        "dirt@1",
+        "grass@1",
+        "emissive@1"
+      ],
+      "errors": []
+    }
+  }
+}

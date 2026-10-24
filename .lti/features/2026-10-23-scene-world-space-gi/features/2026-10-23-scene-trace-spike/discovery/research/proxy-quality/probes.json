@@ -1,0 +1,661 @@
+{
+  "chromium": "145.0.7632.6",
+  "scenes": {
+    "backlit-room": {
+      "pageMs": 7060,
+      "scene": "backlit-room",
+      "cascade": {
+        "dims": [
+          16,
+          16,
+          16
+        ],
+        "below": 0.5,
+        "ahead": 0.5,
+        "octDepth": 16,
+        "rays": 64,
+        "spacing": [
+          0.4,
+          0.8
+        ],
+        "origins": [
+          [
+            -3.2,
+            -2,
+            -4.4
+          ],
+          [
+            -6.4,
+            -5.6,
+            -8
+          ]
+        ],
+        "probes": 8192
+      },
+      "proxies": [
+        {
+          "name": "original",
+          "layerMiB": 0,
+          "convergeMs": 711,
+          "E_probe": {
+            "floor_in_shade": 0.8977,
+            "far_wall": 0.9463,
+            "sofa_face_to_lit_wall": 0.9231,
+            "table_face_to_lit_wall": 1.0153
+          }
+        },
+        {
+          "name": "eps0.001",
+          "layerMiB": 0,
+          "convergeMs": 689,
+          "epsilon": 0.001,
+          "triangles": {
+            "original": 302,
+            "proxy": 302,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.001
+          },
+          "depth": {
+            "original": 7,
+            "proxy": 7
+          },
+          "workerMs": {
+            "bvh": 13,
+            "simplify": 3,
+            "proxyBvh": 2
+          },
+          "wallMs": 98,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 115,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "floor_in_shade": 0,
+            "far_wall": 0,
+            "sofa_face_to_lit_wall": 0,
+            "table_face_to_lit_wall": 0
+          }
+        },
+        {
+          "name": "eps0.003",
+          "layerMiB": 0,
+          "convergeMs": 705,
+          "epsilon": 0.003,
+          "triangles": {
+            "original": 302,
+            "proxy": 302,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.003
+          },
+          "depth": {
+            "original": 7,
+            "proxy": 7
+          },
+          "workerMs": {
+            "bvh": 14,
+            "simplify": 2,
+            "proxyBvh": 3
+          },
+          "wallMs": 102,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 113,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "floor_in_shade": 0,
+            "far_wall": 0,
+            "sofa_face_to_lit_wall": 0,
+            "table_face_to_lit_wall": 0
+          }
+        },
+        {
+          "name": "eps0.01",
+          "layerMiB": 0,
+          "convergeMs": 690,
+          "epsilon": 0.01,
+          "triangles": {
+            "original": 302,
+            "proxy": 302,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 7,
+            "proxy": 7
+          },
+          "workerMs": {
+            "bvh": 9,
+            "simplify": 2,
+            "proxyBvh": 2
+          },
+          "wallMs": 80,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 109,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "floor_in_shade": 0,
+            "far_wall": 0,
+            "sofa_face_to_lit_wall": 0,
+            "table_face_to_lit_wall": 0
+          }
+        },
+        {
+          "name": "eps0.03",
+          "layerMiB": 0,
+          "convergeMs": 696,
+          "epsilon": 0.03,
+          "triangles": {
+            "original": 302,
+            "proxy": 302,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.03
+          },
+          "depth": {
+            "original": 7,
+            "proxy": 7
+          },
+          "workerMs": {
+            "bvh": 10,
+            "simplify": 2,
+            "proxyBvh": 2
+          },
+          "wallMs": 71,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 108,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "floor_in_shade": 0,
+            "far_wall": 0,
+            "sofa_face_to_lit_wall": 0,
+            "table_face_to_lit_wall": 0
+          }
+        }
+      ],
+      "exposure": 3.2348,
+      "errors": []
+    },
+    "thin-wall": {
+      "pageMs": 7122,
+      "scene": "thin-wall",
+      "cascade": {
+        "dims": [
+          16,
+          16,
+          16
+        ],
+        "below": 0.5,
+        "ahead": 0.5,
+        "octDepth": 16,
+        "rays": 64,
+        "spacing": [
+          0.25,
+          0.5
+        ],
+        "origins": [
+          [
+            -2.25,
+            -0.5,
+            -1.5
+          ],
+          [
+            -4.5,
+            -2.5,
+            -3.5
+          ]
+        ],
+        "probes": 8192
+      },
+      "proxies": [
+        {
+          "name": "original",
+          "layerMiB": 0,
+          "convergeMs": 759,
+          "E_probe": {
+            "window_wall_below": 0.2663,
+            "corner": 0.3038,
+            "floor_in_shade": 0.2644,
+            "ceiling": 0.4011
+          }
+        },
+        {
+          "name": "eps0.001",
+          "layerMiB": 0,
+          "convergeMs": 749,
+          "epsilon": 0.001,
+          "triangles": {
+            "original": 122,
+            "proxy": 122,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.001
+          },
+          "depth": {
+            "original": 2,
+            "proxy": 2
+          },
+          "workerMs": {
+            "bvh": 8,
+            "simplify": 2,
+            "proxyBvh": 1
+          },
+          "wallMs": 69,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 105,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "window_wall_below": 0,
+            "corner": 0,
+            "floor_in_shade": 0,
+            "ceiling": 0
+          }
+        },
+        {
+          "name": "eps0.003",
+          "layerMiB": 0,
+          "convergeMs": 741,
+          "epsilon": 0.003,
+          "triangles": {
+            "original": 122,
+            "proxy": 122,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.003
+          },
+          "depth": {
+            "original": 2,
+            "proxy": 2
+          },
+          "workerMs": {
+            "bvh": 9,
+            "simplify": 2,
+            "proxyBvh": 1
+          },
+          "wallMs": 69,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 106,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "window_wall_below": 0,
+            "corner": 0,
+            "floor_in_shade": 0,
+            "ceiling": 0
+          }
+        },
+        {
+          "name": "eps0.01",
+          "layerMiB": 0,
+          "convergeMs": 740,
+          "epsilon": 0.01,
+          "triangles": {
+            "original": 122,
+            "proxy": 122,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 2,
+            "proxy": 2
+          },
+          "workerMs": {
+            "bvh": 12,
+            "simplify": 2,
+            "proxyBvh": 4
+          },
+          "wallMs": 69,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 102,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "window_wall_below": 0,
+            "corner": 0,
+            "floor_in_shade": 0,
+            "ceiling": 0
+          }
+        },
+        {
+          "name": "eps0.03",
+          "layerMiB": 0,
+          "convergeMs": 742,
+          "epsilon": 0.03,
+          "triangles": {
+            "original": 122,
+            "proxy": 122,
+            "ratio": 1
+          },
+          "boundReported": {
+            "max": 0,
+            "bound": 0.03
+          },
+          "depth": {
+            "original": 2,
+            "proxy": 2
+          },
+          "workerMs": {
+            "bvh": 10,
+            "simplify": 2,
+            "proxyBvh": 1
+          },
+          "wallMs": 80,
+          "errorMm": {
+            "samples": 88000,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0,
+            "overBound": 0
+          },
+          "measureMs": 102,
+          "picture": {
+            "mean": 0,
+            "over2": 0,
+            "max": 0
+          },
+          "regions": {
+            "window_wall_below": 0,
+            "corner": 0,
+            "floor_in_shade": 0,
+            "ceiling": 0
+          }
+        }
+      ],
+      "exposure": 1.8995,
+      "errors": []
+    },
+    "stress": {
+      "pageMs": 49098,
+      "scene": "stress",
+      "cascade": {
+        "dims": [
+          16,
+          16,
+          16
+        ],
+        "below": 0.5,
+        "ahead": 0.5,
+        "octDepth": 16,
+        "rays": 64,
+        "spacing": [
+          0.5,
+          1
+        ],
+        "origins": [
+          [
+            -4,
+            -2.5,
+            1
+          ],
+          [
+            -8,
+            -7,
+            -3
+          ]
+        ],
+        "probes": 8192
+      },
+      "proxies": [
+        {
+          "name": "original",
+          "layerMiB": 893.7,
+          "convergeMs": 2293,
+          "E_probe": {}
+        },
+        {
+          "name": "eps0.001",
+          "layerMiB": 19.7,
+          "convergeMs": 1390,
+          "epsilon": 0.001,
+          "triangles": {
+            "original": 20115680,
+            "proxy": 411590,
+            "ratio": 0.0205
+          },
+          "boundReported": {
+            "max": 0.00099983863414869,
+            "bound": 0.001
+          },
+          "depth": {
+            "original": 24,
+            "proxy": 19
+          },
+          "workerMs": {
+            "bvh": 32331,
+            "simplify": 5813,
+            "proxyBvh": 757
+          },
+          "wallMs": 3957,
+          "errorMm": {
+            "samples": 120000,
+            "p50": 0.3,
+            "p95": 0.92,
+            "p99": 1.26,
+            "max": 4.1,
+            "overBound": 0.03482
+          },
+          "measureMs": 1704,
+          "picture": {
+            "mean": 0.052,
+            "over2": 0.00081,
+            "max": 46
+          },
+          "regions": {}
+        },
+        {
+          "name": "eps0.003",
+          "layerMiB": 8.8,
+          "convergeMs": 1369,
+          "epsilon": 0.003,
+          "triangles": {
+            "original": 20115680,
+            "proxy": 168768,
+            "ratio": 0.0084
+          },
+          "boundReported": {
+            "max": 0.0029995976365171373,
+            "bound": 0.003
+          },
+          "depth": {
+            "original": 24,
+            "proxy": 17
+          },
+          "workerMs": {
+            "bvh": 34052,
+            "simplify": 6902,
+            "proxyBvh": 343
+          },
+          "wallMs": 4245,
+          "errorMm": {
+            "samples": 120000,
+            "p50": 0.82,
+            "p95": 2.72,
+            "p99": 3.74,
+            "max": 12.81,
+            "overBound": 0.03315
+          },
+          "measureMs": 1729,
+          "picture": {
+            "mean": 0.099,
+            "over2": 0.00258,
+            "max": 66
+          },
+          "regions": {}
+        },
+        {
+          "name": "eps0.01",
+          "layerMiB": 5.3,
+          "convergeMs": 1334,
+          "epsilon": 0.01,
+          "triangles": {
+            "original": 20115680,
+            "proxy": 91140,
+            "ratio": 0.0045
+          },
+          "boundReported": {
+            "max": 0.009999707879977332,
+            "bound": 0.01
+          },
+          "depth": {
+            "original": 24,
+            "proxy": 15
+          },
+          "workerMs": {
+            "bvh": 35411,
+            "simplify": 6819,
+            "proxyBvh": 174
+          },
+          "wallMs": 4370,
+          "errorMm": {
+            "samples": 120000,
+            "p50": 2.12,
+            "p95": 8.25,
+            "p99": 11.6,
+            "max": 36.35,
+            "overBound": 0.02222
+          },
+          "measureMs": 1843,
+          "picture": {
+            "mean": 0.253,
+            "over2": 0.01024,
+            "max": 89
+          },
+          "regions": {}
+        },
+        {
+          "name": "eps0.03",
+          "layerMiB": 4.4,
+          "convergeMs": 1476,
+          "epsilon": 0.03,
+          "triangles": {
+            "original": 20115680,
+            "proxy": 71564,
+            "ratio": 0.0036
+          },
+          "boundReported": {
+            "max": 0.029995092281260672,
+            "bound": 0.03
+          },
+          "depth": {
+            "original": 24,
+            "proxy": 15
+          },
+          "workerMs": {
+            "bvh": 34227,
+            "simplify": 7043,
+            "proxyBvh": 173
+          },
+          "wallMs": 4156,
+          "errorMm": {
+            "samples": 120000,
+            "p50": 5.4,
+            "p95": 22.94,
+            "p99": 31.74,
+            "max": 60.07,
+            "overBound": 0.01464
+          },
+          "measureMs": 2224,
+          "picture": {
+            "mean": 0.9,
+            "over2": 0.10155,
+            "max": 88
+          },
+          "regions": {}
+        }
+      ],
+      "exposure": 2.0467,
+      "errors": []
+    }
+  }
+}
