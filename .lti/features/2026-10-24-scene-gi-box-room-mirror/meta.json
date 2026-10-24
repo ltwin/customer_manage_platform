@@ -1,0 +1,17 @@
+{
+  "uid": "f7e57edd-936d-4206-bd91-2a9278bad56b",
+  "revision": 1,
+  "id": "scene-gi-box-room-mirror",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-24T09:10:28.127Z",
+  "updatedAt": "2026-10-24T09:10:28.164Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

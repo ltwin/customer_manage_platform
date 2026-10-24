@@ -1,0 +1,17 @@
+{
+  "uid": "06cefff3-032a-4c27-b968-515d1cdc4801",
+  "revision": 1,
+  "id": "scene-precompile-flaky",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-24T09:10:22.889Z",
+  "updatedAt": "2026-10-24T09:10:22.927Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
