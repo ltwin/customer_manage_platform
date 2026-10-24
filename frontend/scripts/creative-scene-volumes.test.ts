@@ -62,6 +62,21 @@ test('the march rebuilds on its structure only, and the cast list holds the cast
   assert.deepEqual(castList([{ cast_shadow: false }, { cast_shadow: true }, { cast_shadow: true }]), [1, 2])
 })
 
+test('the slots go by kind, casting first, then in the scene\'s order: lights swapping places at the volumes build no march', async () => {
+  const { signatureOf, slotOrder } = await import('../src/creative-scene/render/volumes/state.ts')
+  const lights = [
+    { kind: 'point' as const, cast: true },
+    { kind: 'spot' as const, cast: false },
+    { kind: 'spot' as const, cast: true },
+    { kind: 'directional' as const, cast: false },
+  ]
+  assert.deepEqual(slotOrder(lights, [0, 1, 2, 3]), [3, 2, 1, 0])
+  // Whichever brings more light to the volumes, the slots are the same.
+  const signature = (chosen: number[]) => signatureOf(slotOrder(lights, chosen).map((i) => lights[i]), false)
+  assert.equal(signature([0, 2]), signature([2, 0]))
+  assert.equal(signature([0, 2]), 'spot+,point+|')
+})
+
 test('the crossings are sorted by the network for every order of 8', async () => {
   const { SORT8 } = await import('../src/creative-scene/render/volumes/march.ts')
   // Every 0/1 input sorts, so every input does (the 0-1 principle).

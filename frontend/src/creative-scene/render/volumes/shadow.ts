@@ -15,7 +15,7 @@ import { V } from './state.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { exp, float, length, normalize, uniform, vec3 } = tsl as unknown as Record<string, Op>
-const { positionWorld } = tsl as unknown as Record<string, TSLNode>
+const { positionWorld, renderGroup } = tsl as unknown as Record<string, TSLNode>
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
 const Loop = tsl.Loop as unknown as (count: TSLNode | number, body: (i: { i: TSLNode }) => void) => void
 type Uniform<T> = TSLNode & { value: T }
@@ -47,7 +47,7 @@ export function towardSun(shadow: TSLNode, toward: TSLNode): TSLNode {
 /** A light's world position, read as each render starts. */
 function positionOf(light: Light): Uniform<Vector3> {
   const at = new Vector3()
-  return uniform(at).onRenderUpdate(() => light.getWorldPosition(at))
+  return uniform(at).setGroup(renderGroup).onRenderUpdate(() => light.getWorldPosition(at))
 }
 
 /** A spot's shadow with the volumes' (objects/lights.ts buildLight). */

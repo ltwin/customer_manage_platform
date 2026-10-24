@@ -1,7 +1,7 @@
 import { Color, Matrix4, Sphere, Vector2, Vector3, Vector4, type AmbientLight, type Camera, type DirectionalLight, type HemisphereLight, type Light, type Object3D, type OrthographicCamera, type PerspectiveCamera, type PointLight, type Scene, type SpotLight, type Texture } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { chordFactor, coefficients, type Volume } from './medium.ts'
+import { chordFactor, coefficients, type Coefficients, type Volume } from './medium.ts'
 
 // What every volume pass reads (scene-volumes design「登记与出图」「选灯与编译」):
 // the volumes of the scene being drawn and the lights that light them, as
@@ -13,6 +13,7 @@ import { chordFactor, coefficients, type Volume } from './medium.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { uniform, uniformArray } = tsl as unknown as Record<string, Op>
+const { renderGroup } = tsl as unknown as Record<string, TSLNode>
 type Uniform<T> = TSLNode & { value: T }
 type Swappable = TSLNode & { value: Texture }
 
@@ -20,6 +21,8 @@ export const MAX_VOLUMES = 8
 /** Lights that light the volumes, and their shadow maps: 4 a casting directional light (its cascades), 1 a spot or point. With the depth and the environment, 14 of WebGPU's 16 textures a stage. */
 export const MAX_LIGHTS = 6
 export const MAX_MAPS = 12
+/** A casting directional light's cascades (render/sunShadow.ts): its maps. */
+export const CASCADES = 4
 
 /** A volume object as <Volume> registers it: its document-space group, read live, and its fields. */
 export type VolumeEntry = { object: Object3D; volume: Volume; rank: number }
@@ -54,15 +57,18 @@ export type VolumeUniforms = {
   castCount: Uniform<number>
 }
 
+// Every lit material's shadow reads them (shadow.ts): in the render's group, written once a render, not into each object's.
+const shared = <T extends TSLNode>(node: T): T => (node as TSLNode & { setGroup(group: TSLNode): T }).setGroup(renderGroup)
+
 export const V: VolumeUniforms = {
-  inv: uniformArray(inv, 'mat4'),
-  sct: uniformArray(sct, 'vec4'),
-  ext: uniformArray(ext, 'vec4'),
-  shp: uniformArray(shp, 'vec4'),
-  count: uniform(0, 'int') as Uniform<number>,
-  on: uniform(0) as Uniform<number>,
-  castList: uniformArray(casting, 'int'),
-  castCount: uniform(0, 'int') as Uniform<number>,
+  inv: shared(uniformArray(inv, 'mat4')),
+  sct: shared(uniformArray(sct, 'vec4')),
+  ext: shared(uniformArray(ext, 'vec4')),
+  shp: shared(uniformArray(shp, 'vec4')),
+  count: shared(uniform(0, 'int') as Uniform<number>),
+  on: shared(uniform(0) as Uniform<number>),
+  castList: shared(uniformArray(casting, 'int')),
+  castCount: shared(uniform(0, 'int') as Uniform<number>),
 }
 
 export type SlotKind = 'directional' | 'spot' | 'point'
@@ -81,7 +87,7 @@ export type SlotUniforms = {
   cone: Uniform<Vector2>
   /** distance (0: none) and decay. */
   falloff: Uniform<Vector2>
-  /** A point's shadow camera near and far. */
+  /** A point's shadow camera near and far; the view's near and far a directional light's cascades split (far no further than maxFar, as CSMShadowNode). */
   range: Uniform<Vector2>
   /** The shadow matrices (one, or a cascade's each) and biases. */
   matrices: Uniform<Matrix4>[]
@@ -90,8 +96,6 @@ export type SlotUniforms = {
   cascades: Uniform<Vector2>[]
 }
 
-const cascadeCount = 4
-
 export const slotUniforms: SlotUniforms[] = Array.from({ length: MAX_LIGHTS }, () => ({
   radiance: uniform(new Color()) as Uniform<Color>,
   position: uniform(new Vector3()) as Uniform<Vector3>,
@@ -99,28 +103,27 @@ export const slotUniforms: SlotUniforms[] = Array.from({ length: MAX_LIGHTS }, (
   cone: uniform(new Vector2()) as Uniform<Vector2>,
   falloff: uniform(new Vector2()) as Uniform<Vector2>,
   range: uniform(new Vector2()) as Uniform<Vector2>,
-  matrices: Array.from({ length: cascadeCount }, () => uniform(new Matrix4()) as Uniform<Matrix4>),
-  biases: Array.from({ length: cascadeCount }, () => uniform(0) as Uniform<number>),
-  cascades: Array.from({ length: cascadeCount }, () => uniform(new Vector2()) as Uniform<Vector2>),
+  matrices: Array.from({ length: CASCADES }, () => uniform(new Matrix4()) as Uniform<Matrix4>),
+  biases: Array.from({ length: CASCADES }, () => uniform(0) as Uniform<number>),
+  cascades: Array.from({ length: CASCADES }, () => uniform(new Vector2()) as Uniform<Vector2>),
 }))
 
-/** The camera's near and far for picking a cascade (as CSMShadowNode does), the sky light from the ambient and hemisphere lights, the environment's intensity. */
-export const viewRange = uniform(new Vector2(0.1, 1000)) as Uniform<Vector2>
+/** The sky light from the ambient and hemisphere lights, the environment's intensity. */
 export const ambientRadiance = uniform(new Color()) as Uniform<Color>
 export const environmentIntensity = uniform(1) as Uniform<number>
 
-type Cascaded = { lights: { shadow?: { map?: { depthTexture?: Texture | null } | null; matrix: Matrix4; bias: number } }[]; _cascades: Vector2[] }
+type Cascaded = { lights: { shadow?: { map?: { depthTexture?: Texture | null } | null; matrix: Matrix4; bias: number } }[]; _cascades: Vector2[]; maxFar: number }
 type Lit = DirectionalLight | SpotLight | PointLight
 
 const cascadesOf = (light: DirectionalLight) => (light.shadow as { shadowNode?: Partial<Cascaded> }).shadowNode as Cascaded | undefined
-const mapsOf = (kind: SlotKind) => (kind === 'directional' ? cascadeCount : 1)
+const mapsOf = (kind: SlotKind) => (kind === 'directional' ? CASCADES : 1)
 
 /** Whether a light's shadow maps exist to be sampled: three makes them when a material first builds the light's shadow. */
 function castsNow(light: Lit): boolean {
   if (!light.castShadow) return false
   if ((light as DirectionalLight).isDirectionalLight) {
     const node = cascadesOf(light as DirectionalLight)
-    return node?.lights?.length === cascadeCount && node.lights.every((l) => !!l.shadow?.map?.depthTexture)
+    return node?.lights?.length === CASCADES && node.lights.every((l) => !!l.shadow?.map?.depthTexture)
   }
   return !!light.shadow.map?.depthTexture
 }
@@ -157,6 +160,18 @@ export function selectLights(candidates: readonly Candidate[], bounds: readonly 
   return out
 }
 
+const structure = (c: Pick<Candidate, 'kind' | 'cast'>) => ['directional', 'spot', 'point'].indexOf(c.kind) * 2 + (c.cast ? 0 : 1)
+
+/**
+ * The slots the chosen lights go in: by kind, casting first, then in the
+ * scene's order, whatever their light at the volumes. The signature then
+ * changes only with the kinds and how many: a light dragged past another
+ * swaps no slots, so builds no march.
+ */
+export function slotOrder(candidates: readonly Pick<Candidate, 'kind' | 'cast'>[], chosen: readonly number[]): number[] {
+  return [...chosen].sort((a, b) => structure(candidates[a]) - structure(candidates[b]) || a - b)
+}
+
 /** The march's structure: each slot's kind and whether it casts, and whether there is an environment. */
 export const signatureOf = (slots: readonly Pick<Slot, 'kind' | 'cast'>[], environment: boolean) => `${slots.map((s) => `${s.kind}${s.cast ? '+' : ''}`).join(',')}|${environment ? 'env' : ''}`
 
@@ -175,8 +190,10 @@ function visibleInScene(o: Object3D): boolean {
   return true
 }
 
-const sphere = new Sphere()
+const spheres = Array.from({ length: MAX_VOLUMES }, () => new Sphere())
 const bounds: Sphere[] = []
+const positions: Vector3[] = []
+const media = new WeakMap<Volume, Coefficients>()
 const corner = new Vector3()
 const targetAt = new Vector3()
 const tint = new Color()
@@ -188,7 +205,7 @@ const tint = new Color()
  * no volume is visible. After applyExposure, whose intensities it reads.
  */
 export function prepareVolumes(scene: Scene, camera: Camera, drawn: boolean) {
-  const entries = drawn && scene.userData.volumes === true ? [...volumeObjects(scene).values()].filter((e) => visibleInScene(e.object)) : []
+  const entries = drawn && (scene.userData.volumes as number | undefined) ? [...volumeObjects(scene).values()].filter((e) => visibleInScene(e.object)) : []
   if (entries.length === 0) {
     V.on.value = 0
     V.count.value = 0
@@ -201,24 +218,24 @@ export function prepareVolumes(scene: Scene, camera: Camera, drawn: boolean) {
   list.forEach(({ object, volume }, i) => {
     object.updateWorldMatrix(true, false)
     inv[i].copy(object.matrixWorld).invert()
-    const c = coefficients(volume)
+    // The fields are a new object when they change (objects/Volume.tsx).
+    let c = media.get(volume)
+    if (!c) media.set(volume, (c = coefficients(volume)))
     sct[i].set(c.scatter[0], c.scatter[1], c.scatter[2], volume.anisotropy)
     ext[i].set(c.extinction[0], c.extinction[1], c.extinction[2], volume.edge_falloff)
     shp[i].set(volume.shape === 'sphere' ? 1 : 0, chordFactor(volume), 0, 0)
     // The unit box's corners bound either shape.
+    const sphere = spheres[i]
     sphere.center.setFromMatrixPosition(object.matrixWorld)
     sphere.radius = corner.set(0.5, 0.5, 0.5).applyMatrix4(object.matrixWorld).distanceTo(sphere.center)
     for (const [x, y, z] of [[-0.5, 0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, -0.5]] as const) sphere.radius = Math.max(sphere.radius, corner.set(x, y, z).applyMatrix4(object.matrixWorld).distanceTo(sphere.center))
-    bounds.push(sphere.clone())
+    bounds.push(sphere)
   })
   V.count.value = list.length
   const casts = castList(list.map((e) => e.volume))
   casts.forEach((v, k) => (casting[k] = v))
   V.castCount.value = casts.length
   V.on.value = 1
-
-  const { near, far } = camera as PerspectiveCamera | OrthographicCamera
-  viewRange.value.set(near, far)
 
   // The lights, in the scene's order.
   const lights: Lit[] = []
@@ -233,25 +250,25 @@ export function prepareVolumes(scene: Scene, camera: Camera, drawn: boolean) {
       ambientRadiance.value.add(tint.copy(h.color).add(h.groundColor).multiplyScalar(h.intensity / (2 * Math.PI)))
     } else if ((l as DirectionalLight).isDirectionalLight || (l as SpotLight).isSpotLight || (l as PointLight).isPointLight) lights.push(l as Lit)
   })
-  const candidates = lights.map((light): Candidate => {
+  const candidates = lights.map((light, i): Candidate => {
     const kind: SlotKind = (light as DirectionalLight).isDirectionalLight ? 'directional' : (light as SpotLight).isSpotLight ? 'spot' : 'point'
-    return { kind, cast: castsNow(light), sun: light.userData.sun === true, intensity: light.intensity, position: light.getWorldPosition(new Vector3()), decay: kind === 'directional' ? 0 : (light as PointLight).decay }
+    return { kind, cast: castsNow(light), sun: light.userData.sun === true, intensity: light.intensity, position: light.getWorldPosition((positions[i] ??= new Vector3())), decay: kind === 'directional' ? 0 : (light as PointLight).decay }
   })
-  const slots = selectLights(candidates, bounds).map((i): Slot => ({ kind: candidates[i].kind, cast: candidates[i].cast, light: lights[i] }))
-  slots.forEach((slot, k) => writeSlot(slotUniforms[k], slot))
+  const slots = slotOrder(candidates, selectLights(candidates, bounds)).map((i): Slot => ({ kind: candidates[i].kind, cast: candidates[i].cast, light: lights[i] }))
+  const { near, far } = camera as PerspectiveCamera | OrthographicCamera
+  slots.forEach((slot, k) => writeSlot(slotUniforms[k], slot, near, far))
   lighting.slots = slots
   lighting.environment = scene.environment
   environmentIntensity.value = scene.environmentIntensity
   lighting.signature = signatureOf(slots, scene.environment !== null)
 }
 
-function writeSlot(u: SlotUniforms, { kind, cast, light }: Slot) {
+function writeSlot(u: SlotUniforms, { kind, cast, light }: Slot, near: number, far: number) {
   u.radiance.value.copy(light.color).multiplyScalar(light.intensity)
   light.getWorldPosition(u.position.value)
   if (kind === 'point') {
     const p = light as PointLight
     u.falloff.value.set(p.distance, p.decay)
-    u.range.value.set(p.shadow.camera.near, p.shadow.camera.far)
     if (cast) u.biases[0].value = p.shadow.bias
     return
   }
@@ -259,6 +276,7 @@ function writeSlot(u: SlotUniforms, { kind, cast, light }: Slot) {
   aimed.target.getWorldPosition(targetAt)
   if (kind === 'directional') {
     u.direction.value.subVectors(u.position.value, targetAt).normalize()
+    u.range.value.set(near, Math.min(far, cascadesOf(light as DirectionalLight)?.maxFar ?? far))
     return
   }
   const s = light as SpotLight
@@ -293,6 +311,8 @@ export function bindVolumeTextures(maps: readonly (readonly Swappable[])[], skie
     const map = light.shadow.map?.depthTexture
     if (map && maps[k][0]) maps[k][0].value = map
     u.matrices[0].value.copy(light.shadow.matrix)
+    // three sets a point's shadow far to its distance as it draws the map, this frame's.
+    if (kind === 'point') u.range.value.set(light.shadow.camera.near, light.shadow.camera.far)
   })
   if (lighting.environment) for (const s of skies) s.value = lighting.environment
 }

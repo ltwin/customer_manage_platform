@@ -6547,6 +6547,41 @@ if (process.env.SCENE_E2E_W5_METAL) await check('W5 many lights: no march withou
   }
 })
 
+// The cap's other end: three casting directional lights (12 maps, the sun's and two more) under a sky, the march
+// at 14 of WebGPU's 16 textures a stage. The surfaces' material has three lights in cascades: three's
+// CSMShadowNode named their uniforms alike and the material did not compile (render/sunShadow.ts ownNames).
+if (process.env.SCENE_E2E_W5_METAL) await check('W5 many lights under a sky: the sun and two casting directional lights, the march builds and draws', async () => {
+  const gpu = await w5Metal()
+  const context = await (gpu ?? browser).newContext({ viewport: { width: 1280, height: 820 } })
+  try {
+    const server = new SceneServer()
+    referenceScene(server, 'physical-noon', (scene) => {
+      for (const [i, x] of [[0, -4], [1, 4]])
+        scene.objects.push({ id: gid(`key${i}`), kind: 'light', name: `key${i}`, parent_id: null, order: 40 + i, transform: { position: [x, 5, 2], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'directional', color: '#ffffff', intensity: 1, cast_shadow: true } })
+    })
+    const { page, errors } = await open(server, { context })
+    const { box: area } = await viewportCenter(page)
+    await shading(page, '最终渲染')
+    const settle = async () => {
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+      await sleep(400)
+      return settledShot(page, area)
+    }
+    const before = await settle()
+    server.external([{ op: 'add_objects', objects: [volumeObject('fog', [0, 1.5, 0], [6, 3, 6], { scatter_density: 0.15, cast_shadow: true })] }])
+    await page.evaluate(() => window.__invalidate())
+    const after = await settle()
+    await shot(page, `w5-many-lights-sky${gpu ? '-metal' : ''}`)
+    const c = await pixelChange(page, before, after)
+    console.log(`W5 many lights under a sky: ${(c.changed * 100).toFixed(1)}% changed`)
+    assert.ok(c.changed > 0.01, 'the volume draws')
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await gpu?.close()
+  }
+})
+
 // AC-W5-5: dense smoke casting a shadow darkens the sunlit ground behind it; with cast_shadow off the picture
 // beyond the smoke's outline is the one without it (the sun 45° up from +X, the shadow 1.5 m toward −X).
 await check('W5 cast shadow: a casting volume darkens the sunlit ground; off, the ground is as without it', async () => {

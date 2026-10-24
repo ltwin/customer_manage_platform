@@ -110,9 +110,10 @@ const environmentEveryMs = 200
 function useVolumesDrawn() {
   const scene = useThree((s) => s.scene)
   useLayoutEffect(() => {
-    scene.userData.volumes = true
+    // A count, not a flag: the look switching mounts one lit look as the other goes.
+    scene.userData.volumes = ((scene.userData.volumes as number | undefined) ?? 0) + 1
     return () => {
-      delete scene.userData.volumes
+      scene.userData.volumes = (scene.userData.volumes as number) - 1
     }
   }, [scene])
 }

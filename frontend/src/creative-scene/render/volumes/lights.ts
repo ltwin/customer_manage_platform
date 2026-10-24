@@ -1,7 +1,8 @@
 import type { CubeTexture, Texture } from 'three'
 import * as tsl from 'three/tsl'
+import { PMREMNode, type NodeBuilder } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { ambientRadiance, environmentIntensity, slotMaps, slotUniforms, viewRange, type Slot, type SlotUniforms } from './state.ts'
+import { ambientRadiance, environmentIntensity, slotMaps, slotUniforms, type Slot, type SlotUniforms } from './state.ts'
 
 // How the lights light a volume (scene-volumes design「步进」光源): each slot of
 // state.ts as three lights a surface, its distance falloff
@@ -11,7 +12,7 @@ import { ambientRadiance, environmentIntensity, slotMaps, slotUniforms, viewRang
 // round. Built for one structure of slots; the march rebuilds on another.
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, cubeTexture, dot, float, getDistanceAttenuation, length, max, pmremTexture, select, smoothstep, texture, vec2, vec3, vec4, viewZToOrthographicDepth, viewZToPerspectiveDepth } = tsl as unknown as Record<string, Op>
+const { abs, cubeTexture, dot, float, getDistanceAttenuation, length, max, select, smoothstep, texture, vec2, vec3, vec4, viewZToOrthographicDepth, viewZToPerspectiveDepth } = tsl as unknown as Record<string, Op>
 const If = tsl.If as unknown as (cond: TSLNode, then: () => void) => void
 
 /** A light at a point: the radiance arriving (shadowed), the unit direction toward it, how far it is. */
@@ -32,7 +33,7 @@ function directional(slot: Slot, u: SlotUniforms, maps: Swappable[], p: TSLNode,
   let visible: TSLNode = float(1)
   if (slot.cast) {
     // The slices are shares of near..far of the view depth, as the surfaces pick them.
-    const share = viewZToOrthographicDepth(viewZ, viewRange.x, viewRange.y)
+    const share = viewZToOrthographicDepth(viewZ, u.range.x, u.range.y)
     const v = float(1).toVar()
     maps.forEach((map, c) => {
       If(share.greaterThanEqual(u.cascades[c].x).and(share.lessThanEqual(u.cascades[c].y)), () => {
@@ -82,6 +83,28 @@ const axes = [
 ] as const
 
 /**
+ * The sky light: the environment's PMREM at roughness 1 averaged over the
+ * axes, all six from one node's texture. A PMREMNode an axis shared one
+ * binding only once the PMREM was made (three shares a texture by its
+ * uuid); before that each held a placeholder of its own, six of the stage's
+ * 16, over the limit with the depth and 12 shadow maps.
+ */
+class SkyLightNode extends PMREMNode {
+  constructor(environment: Texture) {
+    super(environment, null, float(1) as never)
+  }
+
+  setup(builder: NodeBuilder) {
+    let sum: TSLNode = vec3(0)
+    for (const a of axes) {
+      this.uvNode = vec3(...a) as never
+      sum = sum.add(super.setup(builder) as unknown as TSLNode)
+    }
+    return sum.div(axes.length) as never
+  }
+}
+
+/**
  * The lights of slots as one march builds them. Each slot's texture nodes
  * are made here with the maps as they are now and swapped every frame after
  * (state.ts bindVolumeTextures); environment, the scene's environment
@@ -89,13 +112,9 @@ const axes = [
  */
 export function volumeLights(slots: readonly Slot[], environment: Texture | null) {
   const maps = slots.map((slot) => (slot.cast ? slotMaps(slot).map((map) => (slot.kind === 'point' ? cubeTexture(map as CubeTexture) : texture(map)) as Swappable) : []))
-  const skies: Swappable[] = environment ? axes.map((a) => pmremTexture(environment, vec3(...a), float(1)) as Swappable) : []
-  // Per pixel, not per step: the environment averaged over the axes (roughness 1), and the ambient and hemisphere lights.
-  const sky = (): TSLNode => {
-    let sum: TSLNode = vec3(0)
-    for (const s of skies) sum = sum.add(s.rgb)
-    return skies.length ? sum.div(skies.length).mul(environmentIntensity).add(ambientRadiance) : ambientRadiance
-  }
+  const skies: Swappable[] = environment ? [new SkyLightNode(environment) as unknown as Swappable] : []
+  // Per pixel, not per step: the environment's, and the ambient and hemisphere lights.
+  const sky = (): TSLNode => (skies.length ? vec3(skies[0]).mul(environmentIntensity).add(ambientRadiance) : ambientRadiance)
   return {
     /** Each slot's shadow texture nodes, and the sky light's: what bindVolumeTextures swaps. */
     maps,

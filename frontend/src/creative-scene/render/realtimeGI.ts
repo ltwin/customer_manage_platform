@@ -238,9 +238,9 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     camera,
   )
   // The volumes after the lighting pass, which draws the shadow maps they read (same fixed noise: an export needs no settled frames).
-  // Over the picture so far as a texture of its own: in the one pass, its textures, the volumes' and the helpers' were
-  // 17, over WebGPU's 16 a stage, and the viewport drew nothing.
-  const fogged: N = applyVolumes(own(convertToTexture(aerial)), depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
+  // With the helpers over it, over the picture so far as a texture of its own: in the one pass, its textures, the
+  // volumes' and the helpers' were 17, over WebGPU's 16 a stage, and the viewport drew nothing. An export has no helpers.
+  const fogged: N = applyVolumes(options.aside ? own(convertToTexture(aerial)) : aerial, depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
   let picture: N = vec4(fogged, output.a)
   if (options.aside) {
     // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.
