@@ -8,12 +8,12 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, sharpRange, verticalFov } from '../cameraOptics.ts'
 import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
-import { cameraDefaults, lightDefaults } from '../state/apply.ts'
+import { cameraDefaults, lightDefaults, volumeDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
-import { SceneLight } from './SceneLights.tsx'
+import { SceneLight, VolumesCastLight } from './SceneLights.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
 import { Volume } from './Volume.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
@@ -87,8 +87,11 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
   const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered' }
+  // Hidden ones too: hiding a volume compiles nothing.
+  const volumesCast = scene.objects.some((o) => o.kind === 'volume' && (o.volume?.cast_shadow ?? volumeDefaults.cast_shadow))
   return (
     <>
+      {tree.lit && volumesCast && <VolumesCastLight warm={helpers} />}
       {(childrenOf.get('') ?? []).map((o) => (
         <ObjectNode key={o.id} object={o} tree={tree} />
       ))}

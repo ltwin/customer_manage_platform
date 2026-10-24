@@ -170,7 +170,11 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
   return exp(−τ)                           // RGB，乘在 three 的阴影值上
 ```
 
-- `castList`（8 个下标）和 `castCount` 是 uniform：切换开关、增删体积都不重新编译材质；没有打开投射阴影的体积时循环 0 次。
+- `castList`（8 个下标）和 `castCount` 是 uniform：已有投射阴影的体积时，再打开、增删体积都不重新编译材质。
+- **只在有投射阴影的体积时编进材质**（owner 2026-10-23 拍板，取代原来的「切换开关不重新编译」）：受光材质只在场景里有打开投射阴影的体积时才带 `volumeShadow`，没有时与 develop 生成同样的代码，新加一盏投影灯的编译时间不比 develop 多（AC-W5-11）。
+  - 标志：lit 外观下文档里有 `cast_shadow` 的体积（隐藏的也算，隐藏体积不触发编译）时，场景里挂一盏强度为 0 的环境光，`userData.volumesCast`（`SceneLights.tsx` `VolumesCastLight`）。阴影节点在 `setup` 时看 `builder.lightsNode` 的灯里有没有它。
+  - 为什么用一盏灯：three 只按灯的组合（`LightsNode` 的缓存键）决定是否重建材质，`material.needsUpdate` 在缓存键不变时不重建；灯的组合变化正好只重建这个场景的材质。替身灯复制可见的灯，预编译带同一个标志。
+  - 代价：第一个体积打开投射阴影时，所有受光材质重编一次。视口里这盏灯按新灯预热（编好前不显示，表面暂时没有体积阴影），帧里不编译；最后一个关掉时在下一帧同步重编，与删掉一盏灯相同。导出在拍摄前整体编译。
 - 体积的 uniform 和灯的方向、位置都放在 `renderGroup`（与 `CSMShadowNode` 的级联相同）：每次渲染写一次，不复制进每个物体的 uniform 缓冲、逐物体比较上传（实施时调整，three 的 uniform 缺省属于 `objectGroup`）。
 - **平行光（太阳、月光、文档里的平行光）**：`SunCascades` 重写 `setup`，返回 `super.setup(builder).mul(volumeShadow(...))`，toLight 取自它已有的光照方向。
 - **聚光和点光**：`lights.ts` 在 `buildLight` 时装上 `ShadowNode`、`PointShadowNode` 的子类，子类同样重写 `setup`。three 只采用一盏灯第一次构建的阴影节点，所以只在建灯时装一次（与 `cascadeSunShadow` 相同）。`disposeLight` 释放它们（`BuiltLight.stop` 现在只管平行光）。
@@ -245,7 +249,8 @@ volumeShadow(position, toLight, maxT):     // 在材质的阴影节点里，每�
 | `frontend/src/creative-scene/render/realtimeGI.ts` | 修改 | GI 路径接入 |
 | `frontend/src/creative-scene/render/sunShadow.ts:SunCascades` | 修改 | `setup` 乘 `volumeShadow`；替身灯装同类节点 |
 | `frontend/src/creative-scene/objects/lights.ts:buildLight` | 修改 | 聚光、点光装带体积系数的阴影节点；`disposeLight` 释放 |
-| `frontend/src/creative-scene/objects/SceneObjects.tsx:ObjectNode` | 修改 | 渲染 `<Volume>` |
+| `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | `ObjectNode` 渲染 `<Volume>`；有投射阴影的体积时挂 `VolumesCastLight` |
+| `frontend/src/creative-scene/objects/SceneLights.tsx` | 修改 | 预热抽成 `useWarm`；`VolumesCastLight` |
 | `frontend/src/creative-scene/editing.ts` | 修改 | `newVolume` |
 | `frontend/src/creative-scene/SceneEditor.tsx` | 修改 | 添加菜单、属性栏 |
 | `frontend/src/creative-scene/panels/Outliner.tsx` | 修改 | 图标 |

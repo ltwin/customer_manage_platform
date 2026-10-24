@@ -1,4 +1,4 @@
-import { Vector3, type DirectionalLight, type Light, type LightShadow, type PointLight, type SpotLight } from 'three'
+import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type PointLight, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import { PointShadowNode, ShadowNode, type NodeBuilder } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
@@ -9,9 +9,12 @@ import { V } from './state.ts'
 // 「表面阴影系数」): a light's shadow at a surface times what the casting
 // volumes between the surface and the light let through, each its σt over
 // its chord toward the light. The casting volumes are a uniform list
-// (V.castList, V.castCount): switching one on or adding one compiles
-// nothing, and with none the loop runs no times. three takes the first
-// shadow node a light builds, so the nodes go on when the light is made.
+// (V.castList, V.castCount): more of them compile nothing. The materials
+// carry it only while a volume casts (volumesCast): the first to cast
+// compiles them again, once, and a scene without one compiles no more for a
+// new casting light than before W5 (AC-W5-11, owner 2026-10-23). three takes
+// the first shadow node a light builds, so the nodes go on when the light is
+// made.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { exp, float, length, normalize, uniform, vec3 } = tsl as unknown as Record<string, Op>
@@ -19,6 +22,12 @@ const { positionWorld, renderGroup } = tsl as unknown as Record<string, TSLNode>
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
 const Loop = tsl.Loop as unknown as (count: TSLNode | number, body: (i: { i: TSLNode }) => void) => void
 type Uniform<T> = TSLNode & { value: T }
+
+/** Whether the lights a material is built for include the mark that a volume casts (objects/SceneLights.tsx VolumesCastLight). */
+export function volumesCast(builder: NodeBuilder): boolean {
+  const lights = (builder as unknown as { lightsNode?: { getLights(): Object3D[] } | null }).lightsNode?.getLights() ?? []
+  return lights.some((l) => l.userData.volumesCast === true)
+}
 
 /** What the casting volumes let through from world p toward a light along toward, as far as maxT. */
 export function volumeShadow(p: TSLNode, toward: TSLNode, maxT: TSLNode): TSLNode {
@@ -61,7 +70,7 @@ export class VolumeShadowNode extends ShadowNode {
 
   setup(builder: NodeBuilder) {
     const shadow = super.setup(builder)
-    return shadow && fromPosition(shadow, this.at)
+    return shadow && volumesCast(builder) ? fromPosition(shadow, this.at) : shadow
   }
 }
 
@@ -76,7 +85,7 @@ export class VolumePointShadowNode extends PointShadowNode {
 
   setup(builder: NodeBuilder) {
     const shadow = super.setup(builder)
-    return shadow && fromPosition(shadow, this.at)
+    return shadow && volumesCast(builder) ? fromPosition(shadow, this.at) : shadow
   }
 }
 

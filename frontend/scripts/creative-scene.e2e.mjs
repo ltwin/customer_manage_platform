@@ -6669,7 +6669,60 @@ await check('W5 no recompile: a new casting light compiles no more on its frames
     assert.ok(![...withVolume.spot, ...withVolume.directional].includes('Volumes'), 'the march compiles ahead, not on a frame')
     assert.ok(withVolume.spot.length <= without.spot.length && withVolume.directional.length <= without.directional.length, 'no more than without volumes')
     assert.ok(withVolume.lit.mean > 5, 'the picture draws on with the shadows off')
-    assert.deepEqual([...without.errors, ...withVolume.errors], [])
+    const errors = [...without.errors, ...withVolume.errors]
+    assert.deepEqual(errors, [], JSON.stringify(errors).slice(0, 1500))
+  } finally {
+    await gpu?.close()
+  }
+})
+
+// AC-W5-11, owner 2026-10-23: the lit materials carry the volumes' shadow only while a volume casts. The first to
+// cast compiles them again, ahead, as a new light (objects/SceneLights.tsx VolumesCastLight); then the shadow shows.
+await check('W5 first casting volume: the materials compile again ahead of the frames, then the shadow shows', async () => {
+  const gpu = await w5Metal()
+  try {
+    const server = new SceneServer()
+    // The yard of「W5 cast shadow」: the sun 45° up from +X.
+    referenceScene(server, 'physical-noon', (scene) => {
+      scene.environment.sky = completeSky({ ...scene.environment.sky, sun_mode: 'manual', sun_elevation_deg: 45, sun_azimuth_deg: 90 })
+      scene.objects.push(volumeObject('smoke', [2, 1.5, 3], [1, 1, 1], { scatter_density: 0.5, absorption_density: 8, edge_falloff: 0, cast_shadow: false }))
+    })
+    const { context, page, errors } = await open(server, gpu ? { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) } : {})
+    const { box: area } = await viewportCenter(page)
+    await shading(page, '最终渲染')
+    const settle = async () => {
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+      await sleep(600)
+      return settledShot(page, area)
+    }
+    const before = await settle()
+    await shot(page, `w5-first-cast-before${gpu ? '-metal' : ''}`)
+    await page.evaluate(() => {
+      window.__built = []
+      for (const h of window.__sceneGPU.live) {
+        if (h.role !== 'viewport') continue
+        const create = h.info.createProgram.bind(h.info)
+        h.info.createProgram = (program) => {
+          if (window.__sceneGPU.compiling === 0) window.__built.push(program.name || '-')
+          create(program)
+        }
+      }
+    })
+    const compiles = await page.evaluate(() => window.__sceneGPU.compiles)
+    server.external([{ op: 'update_objects', updates: [{ object_id: gid('smoke'), volume: { cast_shadow: true } }] }])
+    await page.evaluate(() => window.__invalidate())
+    // The materials compile again for the mark, longer than a frame or two: done once that compile is.
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiles)) > compiles, 'the compile ahead starts', 10_000)
+    const after = await settle()
+    await shot(page, `w5-first-cast${gpu ? '-metal' : ''}`)
+    const built = await page.evaluate(() => window.__built.splice(0))
+    const c = await pixelChange(page, before, after)
+    // Programs the frames still build are three's, as for a new light (「W5 no recompile」, design「表面阴影系数」).
+    console.log(`W5 first casting volume: programs built on the frames ${built.length} (${built.join(' ')}), ${(c.changed * 100).toFixed(2)}% changed`)
+    assert.ok(!built.includes('Volumes'), 'the march does not compile again')
+    assert.ok(c.changed > 0.003, 'the shadow shows')
+    assert.deepEqual(errors, [])
+    await context.close()
   } finally {
     await gpu?.close()
   }
@@ -6897,12 +6950,17 @@ if (process.env.SCENE_E2E_W5_PERF) await check('W5 performance: the volumes’ f
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: `${canvas} CSS pixels, 2× pixels, WebGPU`, scene: 'AC-W5-1 window room, the sun and two spots casting', label, ms: {} }
     record.ms.none = await measure()
     // A new casting spot: from the edit to its compile done (warm shader cache: the same scene has run before).
-    const started = await page.evaluate(() => performance.now())
-    await change([{ op: 'add_objects', objects: [spot('spotc', [1.5, 2.8, 0], 32)] }])
-    await sleep(50)
-    await compiled()
-    record.new_light_compile_ms = Math.round((await page.evaluate(() => performance.now())) - started)
-    await change([{ op: 'remove_objects', object_ids: [gid('spotc')] }])
+    const newLight = async () => {
+      const started = await page.evaluate(() => performance.now())
+      await change([{ op: 'add_objects', objects: [spot('spotc', [1.5, 2.8, 0], 32)] }])
+      await sleep(50)
+      await compiled()
+      const ms = Math.round((await page.evaluate(() => performance.now())) - started)
+      await change([{ op: 'remove_objects', object_ids: [gid('spotc')] }])
+      await compiled()
+      return ms
+    }
+    record.new_light_compile_ms = await newLight()
     if (!process.env.SCENE_E2E_W5_PERF_NOVOLUME) {
       await change([{ op: 'add_objects', objects: [volumeObject('room', [0, 1.5, 0], [5.8, 2.9, 5.8], { scatter_density: 0.1, anisotropy: 0.6 })] }])
       record.ms.one = await measure()
@@ -6911,6 +6969,8 @@ if (process.env.SCENE_E2E_W5_PERF) await check('W5 performance: the volumes’ f
       record.ms.eight = await measure()
       await change([{ op: 'update_objects', updates: [gid('room'), ...eight.map((v) => v.id)].map((id) => ({ object_id: id, volume: { cast_shadow: true } })) }])
       record.ms.eight_casting = await measure()
+      // With volumes casting the materials carry their shadow (AC-W5-11, owner 2026-10-23): what a new light costs then.
+      record.new_light_compile_casting_ms = await newLight()
       record.added_ms = { one: Number((record.ms.one - record.ms.none).toFixed(2)), eight: Number((record.ms.eight - record.ms.none).toFixed(2)), eight_casting_over_eight: Number((record.ms.eight_casting - record.ms.eight).toFixed(2)) }
     }
     console.log(`W5 performance: ${JSON.stringify(record, null, 1)}`)
