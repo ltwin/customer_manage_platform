@@ -1,6 +1,6 @@
 {
   "uid": "47e54703-f35f-43e1-a4a1-d9d19ff7d7bc",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-volumes",
   "title": "W5 体积物件开工前穿刺：逐像素光线步进与 froxel 的帧时间、WebGL2 可行性、与实时 GI 的合成顺序、体积物件上限（Epic 未决事项 2、7）",
   "kind": "feature",
@@ -34,7 +34,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-23T14:52:56.443Z",
-  "updatedAt": "2026-10-24T09:59:41.819Z",
+  "updatedAt": "2026-10-24T10:20:03.749Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-24T10:20:03.695Z",
+    "summary": "W5 以 --no-ff 合入 develop（c447893c）；合并后在主检出跑 creativescene、creativeagent 的 check-go、generate-check、前端 tsc -b 通过；与 develop 的基础体说明叠加后放宽一处压缩测试的上下文窗口（19000→20000）。",
+    "method": "code-review",
+    "limitations": "项目未配置统一 checks，按合并影响面做定向检查（develop 新增代码只在 creativescene）；未跑 check-merge 全量。",
+    "sourceCommit": "dbfd88ea5c04e7a33214c7f23c5d02cdd51ee321",
+    "targetCommit": "f672a0e838b597b39710699f4da7d08f08aeed24",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "f1803d8dbfc9ad50d4557d44f081fd7936584c3deaae3d890636772b42b67a03"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
