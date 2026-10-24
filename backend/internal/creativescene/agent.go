@@ -1102,7 +1102,8 @@ func BakedModelInTx(ctx context.Context, tx store.TxAccountScope, revisionID str
 }
 
 // BuiltinCatalog lists the builtin primitives for the assistant: each with
-// its parameter names, sorted.
+// its parameters, sorted, and the range and default each accepts, so the
+// assistant writes valid values instead of learning them from refusals.
 func BuiltinCatalog() string {
 	keys := make([]string, 0, len(builtins))
 	for k := range builtins {
@@ -1119,7 +1120,11 @@ func BuiltinCatalog() string {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		parts = append(parts, fmt.Sprintf("%s %s(%s)", k, spec.Label, strings.Join(names, ",")))
+		params := make([]string, len(names))
+		for i, n := range names {
+			params[i] = n + " " + spec.Params[n].hint()
+		}
+		parts = append(parts, fmt.Sprintf("%s %s(%s)", k, spec.Label, strings.Join(params, ",")))
 	}
 	return strings.Join(parts, "；")
 }

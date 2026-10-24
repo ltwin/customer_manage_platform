@@ -631,6 +631,23 @@ func TestAgentTextNamesNoProfession(t *testing.T) {
 	})
 }
 
+// The builtin catalog the assistant reads states each parameter's range and
+// default, so it does not learn them from refusals (segments below 8 was one).
+func TestBuiltinCatalogStatesRanges(t *testing.T) {
+	got := creativescene.BuiltinCatalog()
+	for _, want := range []string{
+		"sphere@1 球体(radius 0.01–500m 默认 0.5,segments 整数 8–128 默认 32)",
+		"radial_segments 整数 3–128 默认 32",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("catalog lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ground@1") {
+		t.Errorf("catalog lists the ground: %s", got)
+	}
+}
+
 // The assistant's material slots merge by slot, null clearing one, and are
 // checked against the object and the catalog; the sky cannot be an HDRI
 // (design「助手：材质、灯光与环境」).

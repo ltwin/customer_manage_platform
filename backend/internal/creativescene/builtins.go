@@ -9,6 +9,7 @@ import (
 	"math"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // builtinsJSON is the only copy of the catalog; make generate copies it to
@@ -109,6 +110,25 @@ func (p paramSpec) value(v any) (any, error) {
 		return nil, errors.New("须为 #rrggbb 颜色")
 	}
 	return nil, fmt.Errorf("未知参数类型 %q", p.Type)
+}
+
+// hint states what value accepts, for the assistant's catalog: the range and
+// unit of a number, the options of an enum, plus the default.
+func (p paramSpec) hint() string {
+	var accepts string
+	switch p.Type {
+	case "number":
+		accepts = fmt.Sprintf("%g–%g%s", *p.Min, *p.Max, p.Unit)
+	case "integer":
+		accepts = fmt.Sprintf("整数 %g–%g%s", *p.Min, *p.Max, p.Unit)
+	case "boolean":
+		accepts = "布尔"
+	case "enum":
+		accepts = strings.Join(p.Options, "|")
+	case "color":
+		accepts = "#rrggbb"
+	}
+	return fmt.Sprintf("%s 默认 %v", accepts, p.Default)
 }
 
 func number(v any) (float64, bool) {
