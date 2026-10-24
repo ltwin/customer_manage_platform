@@ -4,7 +4,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx'
 import * as api from '../editor/api.ts'
 import '../editor/workspace.css'
-import AppSidebar from './AppSidebar.tsx'
+import { useCreativeShell } from './creativeShell.ts'
 import HomeComposer, { type ComposerControls } from './HomeComposer.tsx'
 import ProjectCover, { CoverMedia } from './ProjectCover.tsx'
 import {
@@ -36,6 +36,10 @@ function Home({ account }: { account: string }) {
   const profile = center?.profile.kind === 'ready' ? center.profile.data : null
   const name = profile?.display_name?.trim() ?? ''
   const composer = useRef<ComposerControls>(null)
+  const { setHomeRecent } = useCreativeShell()
+  useEffect(() => {
+    if (page) setHomeRecent(page.items)
+  }, [page, setHomeRecent])
 
   useEffect(() => {
     const previous = document.title
@@ -47,72 +51,69 @@ function Home({ account }: { account: string }) {
 
   const continuing = page?.items.slice(0, 4) ?? []
   return (
-    <div className="cc-workspace cs-app">
-      <AppSidebar current="home" recent={page?.items ?? []} />
-      <main className="cs-main">
-        <div className="hp-view">
-          <section className="hp-hero">
-            <p className="hp-hello">
-              {greeting(
-                new Date().getHours(),
-                name,
-                page?.activity_counts ?? { running: 0, waiting: 0 },
-              )}
-            </p>
-            <h1>这次想拍点什么？</h1>
-            <HomeComposer account={account} controls={composer} />
-          </section>
-          <section className="hp-block" aria-labelledby="homeContinueTitle">
-            <div className="hp-block-head">
-              <h2 id="homeContinueTitle">继续创作</h2>
-              <Link className="hp-more" to="/creative/projects">
-                全部项目
-                <ChevronRight size={14} />
+    <main className="cs-main">
+      <div className="hp-view">
+        <section className="hp-hero">
+          <p className="hp-hello">
+            {greeting(
+              new Date().getHours(),
+              name,
+              page?.activity_counts ?? { running: 0, waiting: 0 },
+            )}
+          </p>
+          <h1>这次想拍点什么？</h1>
+          <HomeComposer account={account} controls={composer} />
+        </section>
+        <section className="hp-block" aria-labelledby="homeContinueTitle">
+          <div className="hp-block-head">
+            <h2 id="homeContinueTitle">继续创作</h2>
+            <Link className="hp-more" to="/creative/projects">
+              全部项目
+              <ChevronRight size={14} />
+            </Link>
+          </div>
+          {error ? (
+            <div className="hp-state" role="alert">
+              <p>{error}</p>
+              <button className="btn" type="button" onClick={reload}>
+                重试
+              </button>
+            </div>
+          ) : !page ? (
+            <div className="hp-state" role="status">
+              正在加载项目…
+            </div>
+          ) : continuing.length ? (
+            <div className="hp-grid">
+              {continuing.map((project) => (
+                <Link
+                  key={project.id}
+                  className="hp-card"
+                  to={canvasPath(project)}
+                  aria-label={`打开项目：${project.name}`}
+                >
+                  <ProjectCover
+                    project={project}
+                    state={projectState(project)}
+                  />
+                  <strong>{project.name}</strong>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="hp-state">
+              <p>还没有项目</p>
+              <Link className="btn" to="/creative/projects">
+                去项目页新建
               </Link>
             </div>
-            {error ? (
-              <div className="hp-state" role="alert">
-                <p>{error}</p>
-                <button className="btn" type="button" onClick={reload}>
-                  重试
-                </button>
-              </div>
-            ) : !page ? (
-              <div className="hp-state" role="status">
-                正在加载项目…
-              </div>
-            ) : continuing.length ? (
-              <div className="hp-grid">
-                {continuing.map((project) => (
-                  <Link
-                    key={project.id}
-                    className="hp-card"
-                    to={canvasPath(project)}
-                    aria-label={`打开项目：${project.name}`}
-                  >
-                    <ProjectCover
-                      project={project}
-                      state={projectState(project)}
-                    />
-                    <strong>{project.name}</strong>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="hp-state">
-                <p>还没有项目</p>
-                <Link className="btn" to="/creative/projects">
-                  去项目页新建
-                </Link>
-              </div>
-            )}
-          </section>
-          <RecentAssets
-            onAdd={(id, title) => composer.current?.addReference(id, title)}
-          />
-        </div>
-      </main>
-    </div>
+          )}
+        </section>
+        <RecentAssets
+          onAdd={(id, title) => composer.current?.addReference(id, title)}
+        />
+      </div>
+    </main>
   )
 }
 

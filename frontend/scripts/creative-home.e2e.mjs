@@ -98,6 +98,9 @@ async function fresh({ width = 1280, height = 800, init, clock = false, notice =
   if (clock) await page.clock.install()
   page.setDefaultTimeout(6000)
   page.on('pageerror', (error) => errors.push(error.message))
+  // 开发模式按模块逐个请求，默认 250 条的 Resource Timing 缓冲在页面接口发出前就满了，
+  // 用例里按 performance 条目等待的请求会记不进去。
+  await page.addInitScript(() => performance.setResourceTimingBufferSize(5000))
   if (notice) await page.addInitScript((version) => localStorage.setItem('creative-egress-notice:qa-home', version), notice)
   if (init) await page.addInitScript(init)
   // 开发模式的 StrictMode 会挂载两次、取消第一次请求，只数真正完成的读取。

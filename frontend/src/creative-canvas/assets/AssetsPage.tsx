@@ -10,7 +10,7 @@ import CanvasContextMenu, {
 } from '../editor/CanvasContextMenu.tsx'
 import '../editor/workspace.css'
 import '../editor/library.css'
-import AppSidebar from '../home/AppSidebar.tsx'
+import { useCreativeShell, useSidebarRefresh } from '../home/creativeShell.ts'
 import AssetBrowser from './AssetBrowser.tsx'
 import AssetInspector from './AssetInspector.tsx'
 import LibraryTree from './LibraryTree.tsx'
@@ -126,6 +126,13 @@ function Assets({ account }: { account: string }) {
     },
   })
   const blocked = actions.blocked || selected.length > 100
+  useSidebarRefresh(refresh)
+  const navigationBlocked = actions.blocked || importer.busy
+  const { setNavigationBlocked } = useCreativeShell()
+  useEffect(() => {
+    setNavigationBlocked(navigationBlocked)
+    return () => setNavigationBlocked(false)
+  }, [navigationBlocked, setNavigationBlocked])
   function pick(id: string | null, keys: Modifiers = {}) {
     if (!id) return clear()
     setSelection((s) =>
@@ -229,18 +236,7 @@ function Assets({ account }: { account: string }) {
     return () => document.removeEventListener('keydown', key)
   }, [])
   return (
-    <div
-      className="cc-workspace cs-app"
-      onClickCapture={(e) => {
-        if (
-          (actions.blocked || importer.busy) &&
-          e.target instanceof Element &&
-          e.target.closest('a[href]')
-        )
-          e.preventDefault()
-      }}
-    >
-      <AppSidebar current="library" refresh={refresh} />
+    <>
       <main
         aria-busy={actions.busy}
         className={`cs-main al-page${prefs.inspector ? '' : ' no-inspector'}`}
@@ -358,6 +354,6 @@ function Assets({ account }: { account: string }) {
       ) : (
         organization.overlays
       )}
-    </div>
+    </>
   )
 }

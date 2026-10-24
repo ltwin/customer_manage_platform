@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError, fetchMe } from '../api/client'
 import { AccountCenterProvider } from '../account/AccountCenterContext.tsx'
+import { preloadLinkTarget } from '../creative-canvas/pages.ts'
 import AccountMenu from '../account/AccountMenu.tsx'
 import type { ShellContext } from './shellContext'
 import StateNotice from './StateNotice'
@@ -109,7 +110,11 @@ export default function AppShell() {
     <AccountCenterProvider theme={theme} setTheme={setTheme} notify={notify}>
       <div className={studio ? 'app-shell app-shell--studio' : 'app-shell'}>
         {!studio && (
-          <aside className="sidebar">
+          <aside
+            className="sidebar"
+            onPointerOver={(e) => preloadLinkTarget(e.target)}
+            onFocus={(e) => preloadLinkTarget(e.target)}
+          >
             <NavLink className="brand" to="/dashboard">
               <span className="brand-mark">影</span>
               <span>
@@ -142,7 +147,12 @@ export default function AppShell() {
       </div>
 
       {!studio && (
-        <nav className="bottom-nav" aria-label="主导航">
+        <nav
+          className="bottom-nav"
+          aria-label="主导航"
+          onPointerOver={(e) => preloadLinkTarget(e.target)}
+          onFocus={(e) => preloadLinkTarget(e.target)}
+        >
           {navItems.map((item) => {
             const Icon = item.icon
             return (

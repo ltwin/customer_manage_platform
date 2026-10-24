@@ -14,7 +14,7 @@ import * as api from '../editor/api.ts'
 import { errorMessage } from '../editor/queue.ts'
 import { useJournal } from '../editor/useJournal.ts'
 import '../editor/workspace.css'
-import AppSidebar from './AppSidebar.tsx'
+import { useSidebarRefresh } from './creativeShell.ts'
 import ProjectCover from './ProjectCover.tsx'
 import {
   canvasPath,
@@ -105,6 +105,7 @@ function Projects({ account }: { account: string }) {
   const [menu, setMenu] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [changes, setChanges] = useState(0)
+  useSidebarRefresh(changes)
   const lifetime = useRef(0)
   useEffect(() => {
     lifetime.current += 1
@@ -301,8 +302,7 @@ function Projects({ account }: { account: string }) {
 
   const empty = page && !page.items.length
   return (
-    <div className="cc-workspace cs-app">
-      <AppSidebar current="projects" refresh={changes} />
+    <>
       <main className="cs-main">
         <div className="pp-view">
           <header className="pp-head">
@@ -519,7 +519,7 @@ function Projects({ account }: { account: string }) {
           )}
         </div>
       )}
-    </div>
+    </>
   )
 }
 

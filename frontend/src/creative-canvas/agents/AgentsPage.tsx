@@ -2,7 +2,6 @@ import { Check, Copy } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../../api/transport.ts'
 import '../editor/workspace.css'
-import AppSidebar from '../home/AppSidebar.tsx'
 import {
   activeUntil,
   isUnavailable,
@@ -233,128 +232,125 @@ export default function AgentsPage() {
   const guide = guides.find((g) => g.id === host) ?? guides[0]
 
   return (
-    <div className="cc-workspace cs-app">
-      <AppSidebar current="agents" />
-      <main className="cs-main">
-        <div className="xa-wrap">
-          <header className="xa-head">
-            <h1>外部助手</h1>
-            <p>
-              在 Claude、Claude Code、Codex 或 ChatGPT 里使用你的创意空间。现在可以读取画布、素材和资产库；修改画布、生成图片、搭 3D 场景会陆续开放。外部助手的对话不花你的额度。
-            </p>
-          </header>
-          {load.kind === 'loading' && <p className="xa-state" role="status">正在读取…</p>}
-          {load.kind === 'unavailable' && (
-            <p className="xa-state" role="status">
-              外部助手暂未开放。
-            </p>
-          )}
-          {load.kind === 'error' && (
-            <div className="xa-state" role="alert">
-              <p>{load.message}</p>
-              <button type="button" className="btn" onClick={() => reload()}>
-                重试
-              </button>
-            </div>
-          )}
-          {load.kind === 'ready' && (
-            <div className="xa-cols">
-              <section className="xa-setup" aria-labelledby="xaSetupTitle">
-                <h2 id="xaSetupTitle" className="xa-sr">接入步骤</h2>
-                <ol className="xa-steps">
-                  <li>
-                    <h3>
-                      <span className="xa-n">1</span>选择你用的助手
-                    </h3>
-                    <div className="xa-hosts" role="radiogroup" aria-label="宿主">
-                      {guides.map((g) => (
-                        <button key={g.id} type="button" role="radio" aria-checked={g.id === host} onClick={() => setHost(g.id)}>
-                          <span className="xa-mark" aria-hidden="true">{g.mark}</span>
-                          <span className="xa-hn">{g.name}</span>
-                          <span className="xa-hs">{g.sub}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </li>
-                  <li>
-                    <h3>
-                      <span className="xa-n">2</span>
-                      {guide.title}
-                    </h3>
-                    <Guide guide={guide} mcpUrl={load.mcpUrl} copied={copied} onCopy={copy} onSwitch={setHost} />
-                    <p className="xa-p3">宿主的菜单名称以它当前的界面为准。</p>
-                  </li>
-                  <li>
-                    <h3>
-                      <span className="xa-n">3</span>授权你的账号
-                    </h3>
-                    <p className="xa-p2">
-                      宿主会打开创意空间的授权页。确认是你的账号，点「允许」。授权后可以随时在右边断开。
-                    </p>
-                  </li>
-                  <li>
-                    <h3>
-                      <span className="xa-n">4</span>试一句
-                    </h3>
-                    <div className="xa-starters">
-                      {starters.map((s) => (
-                        <button key={s} type="button" className="xa-starter" onClick={() => copy(s)}>
-                          {copied === s ? <Check size={13} /> : <Copy size={13} />}
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </li>
-                </ol>
-              </section>
-              <aside className="xa-side-col">
-                <section className="xa-panel" aria-labelledby="xaConnTitle">
-                  <h2 id="xaConnTitle">已连接</h2>
-                  <ul className="xa-conns">
-                    {load.items.length === 0 && (
-                      <li className="xa-empty">还没有外部助手连接。按左边的步骤接入后，会出现在这里。</li>
-                    )}
-                    {load.items.map((c) => (
-                      <ConnectionRow
-                        key={c.id}
-                        c={c}
-                        now={now}
-                        // 断开的连接留在原处显示「已断开」，下一次刷新列表时才移走。
-                        onRevoked={(revoked) =>
-                          setLoad((prev) =>
-                            prev.kind === 'ready'
-                              ? { ...prev, items: prev.items.map((item) => (item.id === revoked.id ? revoked : item)) }
-                              : prev,
-                          )
-                        }
-                      />
+    <main className="cs-main">
+      <div className="xa-wrap">
+        <header className="xa-head">
+          <h1>外部助手</h1>
+          <p>
+            在 Claude、Claude Code、Codex 或 ChatGPT 里使用你的创意空间。现在可以读取画布、素材和资产库；修改画布、生成图片、搭 3D 场景会陆续开放。外部助手的对话不花你的额度。
+          </p>
+        </header>
+        {load.kind === 'loading' && <p className="xa-state" role="status">正在读取…</p>}
+        {load.kind === 'unavailable' && (
+          <p className="xa-state" role="status">
+            外部助手暂未开放。
+          </p>
+        )}
+        {load.kind === 'error' && (
+          <div className="xa-state" role="alert">
+            <p>{load.message}</p>
+            <button type="button" className="btn" onClick={() => reload()}>
+              重试
+            </button>
+          </div>
+        )}
+        {load.kind === 'ready' && (
+          <div className="xa-cols">
+            <section className="xa-setup" aria-labelledby="xaSetupTitle">
+              <h2 id="xaSetupTitle" className="xa-sr">接入步骤</h2>
+              <ol className="xa-steps">
+                <li>
+                  <h3>
+                    <span className="xa-n">1</span>选择你用的助手
+                  </h3>
+                  <div className="xa-hosts" role="radiogroup" aria-label="宿主">
+                    {guides.map((g) => (
+                      <button key={g.id} type="button" role="radio" aria-checked={g.id === host} onClick={() => setHost(g.id)}>
+                        <span className="xa-mark" aria-hidden="true">{g.mark}</span>
+                        <span className="xa-hn">{g.name}</span>
+                        <span className="xa-hs">{g.sub}</span>
+                      </button>
                     ))}
-                  </ul>
-                  {load.items.length >= 50 && <p className="xa-p3">只显示最近 50 个。</p>}
-                </section>
-                <section className="xa-panel" aria-labelledby="xaUrlTitle">
-                  <h2 id="xaUrlTitle">MCP 地址</h2>
-                  <div className="xa-field">
-                    <code>{load.mcpUrl}</code>
-                    <button type="button" className="xa-icon-btn" aria-label="复制 MCP 地址" onClick={() => copy(load.mcpUrl)}>
-                      {copied === load.mcpUrl ? <Check size={14} /> : <Copy size={14} />}
-                    </button>
                   </div>
-                  <p className="xa-p3">手动配置时用这个地址。授权方式是 OAuth，不需要填密钥。</p>
-                </section>
-                <section className="xa-panel" aria-labelledby="xaNoteTitle">
-                  <h2 id="xaNoteTitle">须知</h2>
-                  <ul className="xa-notes">
-                    <li>授权后，外部助手读到的内容会发给它使用的 AI 模型服务。</li>
-                    <li>外部助手看不到客户、订单、日程等经营数据。</li>
-                    <li>断开后，它的下一次调用立即失效，需要重新授权。</li>
-                  </ul>
-                </section>
-              </aside>
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
+                </li>
+                <li>
+                  <h3>
+                    <span className="xa-n">2</span>
+                    {guide.title}
+                  </h3>
+                  <Guide guide={guide} mcpUrl={load.mcpUrl} copied={copied} onCopy={copy} onSwitch={setHost} />
+                  <p className="xa-p3">宿主的菜单名称以它当前的界面为准。</p>
+                </li>
+                <li>
+                  <h3>
+                    <span className="xa-n">3</span>授权你的账号
+                  </h3>
+                  <p className="xa-p2">
+                    宿主会打开创意空间的授权页。确认是你的账号，点「允许」。授权后可以随时在右边断开。
+                  </p>
+                </li>
+                <li>
+                  <h3>
+                    <span className="xa-n">4</span>试一句
+                  </h3>
+                  <div className="xa-starters">
+                    {starters.map((s) => (
+                      <button key={s} type="button" className="xa-starter" onClick={() => copy(s)}>
+                        {copied === s ? <Check size={13} /> : <Copy size={13} />}
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              </ol>
+            </section>
+            <aside className="xa-side-col">
+              <section className="xa-panel" aria-labelledby="xaConnTitle">
+                <h2 id="xaConnTitle">已连接</h2>
+                <ul className="xa-conns">
+                  {load.items.length === 0 && (
+                    <li className="xa-empty">还没有外部助手连接。按左边的步骤接入后，会出现在这里。</li>
+                  )}
+                  {load.items.map((c) => (
+                    <ConnectionRow
+                      key={c.id}
+                      c={c}
+                      now={now}
+                      // 断开的连接留在原处显示「已断开」，下一次刷新列表时才移走。
+                      onRevoked={(revoked) =>
+                        setLoad((prev) =>
+                          prev.kind === 'ready'
+                            ? { ...prev, items: prev.items.map((item) => (item.id === revoked.id ? revoked : item)) }
+                            : prev,
+                        )
+                      }
+                    />
+                  ))}
+                </ul>
+                {load.items.length >= 50 && <p className="xa-p3">只显示最近 50 个。</p>}
+              </section>
+              <section className="xa-panel" aria-labelledby="xaUrlTitle">
+                <h2 id="xaUrlTitle">MCP 地址</h2>
+                <div className="xa-field">
+                  <code>{load.mcpUrl}</code>
+                  <button type="button" className="xa-icon-btn" aria-label="复制 MCP 地址" onClick={() => copy(load.mcpUrl)}>
+                    {copied === load.mcpUrl ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+                <p className="xa-p3">手动配置时用这个地址。授权方式是 OAuth，不需要填密钥。</p>
+              </section>
+              <section className="xa-panel" aria-labelledby="xaNoteTitle">
+                <h2 id="xaNoteTitle">须知</h2>
+                <ul className="xa-notes">
+                  <li>授权后，外部助手读到的内容会发给它使用的 AI 模型服务。</li>
+                  <li>外部助手看不到客户、订单、日程等经营数据。</li>
+                  <li>断开后，它的下一次调用立即失效，需要重新授权。</li>
+                </ul>
+              </section>
+            </aside>
+          </div>
+        )}
+      </div>
+    </main>
   )
 }

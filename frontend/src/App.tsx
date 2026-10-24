@@ -31,18 +31,21 @@ import ShootPlanIngestionPage from './planning/ShootPlanIngestionPage'
 import SharedPlanPage from './planning/share/SharedPlanPage'
 import PrivacyPage from './pages/privacy/PrivacyPage'
 
-const CreativeHomePage = lazy(() => import('./creative-canvas/home/HomePage'))
-const CreativeProjectsPage = lazy(() => import('./creative-canvas/home/ProjectsPage'))
-const CreativeAssetsPage = lazy(() => import('./creative-canvas/assets/AssetsPage'))
-const CreativeAgentsPage = lazy(() => import('./creative-canvas/agents/AgentsPage'))
-const AgentConsentPage = lazy(() => import('./pages/auth/AgentConsentPage'))
+import CreativeLayout, { CanvasLoading } from './creative-canvas/home/CreativeLayout.tsx'
+import {
+  CreativeAgentsPage,
+  CreativeAssetsPage,
+  CreativeCanvasPage,
+  CreativeHomePage,
+  CreativeProjectsPage,
+} from './creative-canvas/pages.ts'
 
-const CreativeCanvasPage = lazy(() => import('./creative-canvas/editor/WorkspacePage'))
+const AgentConsentPage = lazy(() => import('./pages/auth/AgentConsentPage'))
 
 // 懒加载路由的 Suspense 各带不同 key：路由元素本身没有 key，同类型的 Suspense 会被
 // React 复用成「已显示」的边界，而 React Router 把导航放在 transition 里，结果是
 // 旧页面一直留在屏幕上、点了也不跳，直到新页面 chunk 下载完。独立 key 让导航立刻
-// 卸下旧页面并显示 fallback。
+// 卸下旧页面并显示 fallback。创意空间的四个页面在 CreativeLayout 里按同样的方式处理。
 
 type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
 
@@ -132,11 +135,13 @@ export default function App() {
         <Route path="/customers/new" element={<CustomerNewPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/creative" element={<Suspense key="creative-home" fallback={<p role="status">正在打开创意空间…</p>}><CreativeHomePage /></Suspense>} />
-        <Route path="/creative/projects" element={<Suspense key="creative-projects" fallback={<p role="status">正在打开项目…</p>}><CreativeProjectsPage /></Suspense>} />
-        <Route path="/creative/canvases/:canvasID" element={<Suspense key="creative-canvas" fallback={<p role="status">正在打开创作台…</p>}><CreativeCanvasPage /></Suspense>} />
-        <Route path="/creative/library" element={<Suspense key="creative-library" fallback={<p role="status">正在打开资产库…</p>}><CreativeAssetsPage /></Suspense>} />
-        <Route path="/creative/agents" element={<Suspense key="creative-agents" fallback={<p role="status">正在打开外部助手…</p>}><CreativeAgentsPage /></Suspense>} />
+        <Route element={<CreativeLayout />}>
+          <Route path="/creative" element={<CreativeHomePage />} />
+          <Route path="/creative/projects" element={<CreativeProjectsPage />} />
+          <Route path="/creative/library" element={<CreativeAssetsPage />} />
+          <Route path="/creative/agents" element={<CreativeAgentsPage />} />
+        </Route>
+        <Route path="/creative/canvases/:canvasID" element={<Suspense key="creative-canvas" fallback={<CanvasLoading />}><CreativeCanvasPage /></Suspense>} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/shoot-plans" element={<ShootPlansPage />} />
         <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
