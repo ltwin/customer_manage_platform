@@ -662,3 +662,55 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 ### 生命周期与演进
 - 不迁移。W4 交付之前存储的物理天空没有这个字段，读取时补齐为缺省值（开启，倍率 1）。W4 上线后，这些场景出现空气透视；渲染指纹按补齐后的快照计算，因此它们的 `lit` 导出各提示一次「场景已更新」。这是预期行为：画面确实变了。
 - 回滚同 `data: 物理天空`。
+
+## 体积物件
+
+### 用途与存储角色
+- **用途**：扩展 `data: 场景文档` 的对象类型，新增 `kind = "volume"`：立方体或球体范围内的均匀介质，有散射和吸收，受太阳、聚光和点光照亮，形成光束和阴影。参照 Blender 中赋予了 Volume Scatter 和 Volume Absorption 的物体。
+- **存储**：与场景文档相同，位于快照载荷的 `objects[]` 内。摆放字段在 `object:<id>`，内容字段 `volume` 在 `object:<id>:content`。
+- **角色**：权威主数据。
+- **所有权**：
+  - 由 `creativescene` 经 `add_objects`、`update_objects`、`remove_objects`、`reparent_objects` 写入（添加菜单、属性栏、物件列表、助手）。
+  - 读取方：渲染端、物件列表、助手、渲染指纹。
+
+### 结构与身份
+ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其他对象相同。体积物件的父对象只能是 `group`（现有规则）；它不能做父对象，因为父对象只能是 `group`。
+
+| 路径 | 类型 / 约束 | 缺省 | 说明 |
+|---|---|---|---|
+| `objects[].kind` | 新增取值 `"volume"` | — | — |
+| `objects[].volume` | object | 下列缺省 | `kind = volume` 时必须有（字段可省略，存储时补齐）；其他类型不得出现 |
+| `volume.shape` | `"box"` \| `"sphere"` | `box` | 单位体：边长 1 m 的立方体，或直径 1 m 的球；中心在物件原点，大小和形状由 `transform.scale` 决定 |
+| `volume.scatter_color` | `#rrggbb` | `#cccccc` | 散射颜色 |
+| `volume.scatter_density` | number 0…100（每米） | 0.1 | 散射密度。散射系数 σs = `scatter_density` × `scatter_color`（线性值），同 Blender 的 Volume Scatter |
+| `volume.anisotropy` | number −0.95…0.95 | 0 | Henyey–Greenstein 相函数的 g；正值为前向散射，逆光时光束更亮。同 Blender |
+| `volume.absorption_color` | `#rrggbb` | `#cccccc` | 吸收颜色，即透过介质后保留的颜色 |
+| `volume.absorption_density` | number 0…100（每米） | 0 | 吸收密度。吸收系数 σa = `absorption_density` × (1 − `absorption_color`)（线性值），同 Blender 的 Volume Absorption |
+| `volume.edge_falloff` | number 0…1 | 0.1 | 从边界向内、密度从 0 升到满值所占的比例；0 为硬边 |
+| `volume.cast_shadow` | boolean | false | 在表面上投影：太阳、聚光、点光照到被它遮住的表面时，按穿过它的透射率（含吸收颜色）变暗。只在灯本身 `cast_shadow` 为 true、表面接收阴影时生效。关闭时只影响视线（散射与透射）。与灯光的 `cast_shadow` 同名同义（three.js `castShadow`）（修订 v8） |
+
+- 体积物件不得带 `material_slots`、`primitive`、`model`、`light`、`camera`，写了返回 400。
+- 每个场景最多 8 个体积物件，超出返回 413（W5 穿刺确认，`scene-world-environment` 修订 v8）。
+- 体积物件计入现有的 2000 个对象上限。
+
+### 访问模式与保证
+- **写**：沿用对象的写入流程。`update_objects` 里的 `volume` 按键合并（`api: 提交场景命令`）。上限、取值范围和类型匹配由应用保证。
+- **绘制**：
+  - 只在最终渲染、`lit` 导出和 `render_view` 的 `lit` 里绘制。
+  - 在白模、线框和材质预览的视口里只显示范围线框，和灯光、摄像机等辅助对象一样不参与着色。白模导出、线稿导出和 `render_view` 的 `clay` 不画辅助对象，所以完全看不到体积物件。
+  - 所有天空模式下都可用。在物理天空下，按物理单位受光。
+  - 受太阳、月光、平行光、聚光、点光和天空光照照亮；WebGPU 和 WebGL2 两个后端都绘制（W5 穿刺，修订 v8）。灯多时按对体积的贡献取前几盏照亮体积，其余只照亮表面（修订 v9）。
+- **渲染指纹**：`lit` 计入体积物件，`clay`、`line` 清除。
+
+### 生命周期与演进
+- 新增对象类型，不迁移。
+- 回滚到不认识 `volume` 的后端时，含体积物件的场景会读取失败，只做前向修复。
+- 示例（`add_objects` 的一项）：
+
+```json
+{"id": "sobj_V1o2l3u4m5e6F7o8g9x0q", "kind": "volume", "name": "窗前的雾", "parent_id": null, "order": 4,
+ "transform": {"position": [0, 1.5, -2], "rotation": [0, 0, 0, 1], "scale": [4, 3, 3]},
+ "visible": true, "locked": false,
+ "volume": {"shape": "box", "scatter_color": "#e8e4dc", "scatter_density": 0.3, "anisotropy": 0.6,
+            "absorption_color": "#cccccc", "absorption_density": 0, "edge_falloff": 0.2, "cast_shadow": false}}
+```

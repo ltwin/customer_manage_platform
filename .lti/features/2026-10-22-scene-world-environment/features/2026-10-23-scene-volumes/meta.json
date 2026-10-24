@@ -1,6 +1,6 @@
 {
   "uid": "47e54703-f35f-43e1-a4a1-d9d19ff7d7bc",
-  "revision": 6,
+  "revision": 8,
   "id": "scene-volumes",
   "title": "W5 体积物件开工前穿刺：逐像素光线步进与 froxel 的帧时间、WebGL2 可行性、与实时 GI 的合成顺序、体积物件上限（Epic 未决事项 2、7）",
   "kind": "feature",
@@ -32,9 +32,9 @@
       "api:提交场景命令"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-23T14:52:56.443Z",
-  "updatedAt": "2026-10-24T09:45:31.900Z",
+  "updatedAt": "2026-10-24T09:59:41.819Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -177,9 +177,37 @@
         "version": 2,
         "digest": "87af2da49869428ea192506f048076deab42b0bed301b7a6a64a7d73d08a723d"
       }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-24T09:59:34.525Z",
+      "assessment": {
+        "method": "code-review",
+        "limitations": "沿用技术验收的限制：只跑定向测试与 W5、相关回归 e2e；AC-W5-9 未在隐藏标签页单独复现；W5 no recompile 偶发失败根因未查明。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 验收通过：助手实测（AC-W5-10）owner 亲自完成并放行；AC-W5-11 采用「只在有投射阴影的体积时编进材质」，接受加灯编译多约 34 ms（替身太阳级联节点）；G1 不做、G3 留给云层；未解决问题记为 issue scene-precompile-flaky、scene-gi-box-room-mirror。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "87af2da49869428ea192506f048076deab42b0bed301b7a6a64a7d73d08a723d"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-24T09:59:41.641Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
