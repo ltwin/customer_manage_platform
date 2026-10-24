@@ -1,6 +1,6 @@
 {
   "uid": "fa8a5415-fa2a-4fd8-ba13-5bf72fa67830",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-trace-spike",
   "kind": "feature",
   "assurance": "governed",
@@ -23,7 +23,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-23T17:46:24.131Z",
-  "updatedAt": "2026-10-24T10:14:01.311Z",
+  "updatedAt": "2026-10-24T10:19:19.065Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-24T10:19:19.013Z",
+    "summary": "squash 合入 develop（6a5f2b63），树与分支归档后合入 develop 的提交 bcfbccf8 逐文件相同；分支已 reset --keep 到 squash 提交，原历史在本地标签 archive/scene-trace-spike。合并后在 worktree 重跑 e2e「reference scenes: each opens」通过",
+    "method": "manual",
+    "limitations": "S0 不改产品代码，只改 e2e、固定数据和生成器；与 W5 的合并只在 creative-scene.e2e.mjs 有冲突（两边各自新增，保留两边），node --check 通过；未跑 check-merge，未重跑基线和穿刺测量",
+    "sourceCommit": "6a5f2b63463e17ebed035db98fe1cbb0c0746a1f",
+    "targetCommit": "6a5f2b63463e17ebed035db98fe1cbb0c0746a1f",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b84d2a64938cf1426a815d5167c29dfdd13459ab883611a9700b6d28453b4b85"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": []
   },
