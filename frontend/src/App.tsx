@@ -39,6 +39,11 @@ const AgentConsentPage = lazy(() => import('./pages/auth/AgentConsentPage'))
 
 const CreativeCanvasPage = lazy(() => import('./creative-canvas/editor/WorkspacePage'))
 
+// 懒加载路由的 Suspense 各带不同 key：路由元素本身没有 key，同类型的 Suspense 会被
+// React 复用成「已显示」的边界，而 React Router 把导航放在 transition 里，结果是
+// 旧页面一直留在屏幕上、点了也不跳，直到新页面 chunk 下载完。独立 key 让导航立刻
+// 卸下旧页面并显示 fallback。
+
 type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
 
 function RequireAuth({ children, status }: { children: ReactElement; status: AuthStatus }) {
@@ -127,11 +132,11 @@ export default function App() {
         <Route path="/customers/new" element={<CustomerNewPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/creative" element={<Suspense fallback={<p role="status">正在打开创意空间…</p>}><CreativeHomePage /></Suspense>} />
-        <Route path="/creative/projects" element={<Suspense fallback={<p role="status">正在打开项目…</p>}><CreativeProjectsPage /></Suspense>} />
-        <Route path="/creative/canvases/:canvasID" element={<Suspense fallback={<p role="status">正在打开创作台…</p>}><CreativeCanvasPage /></Suspense>} />
-        <Route path="/creative/library" element={<Suspense fallback={<p role="status">正在打开资产库…</p>}><CreativeAssetsPage /></Suspense>} />
-        <Route path="/creative/agents" element={<Suspense fallback={<p role="status">正在打开外部助手…</p>}><CreativeAgentsPage /></Suspense>} />
+        <Route path="/creative" element={<Suspense key="creative-home" fallback={<p role="status">正在打开创意空间…</p>}><CreativeHomePage /></Suspense>} />
+        <Route path="/creative/projects" element={<Suspense key="creative-projects" fallback={<p role="status">正在打开项目…</p>}><CreativeProjectsPage /></Suspense>} />
+        <Route path="/creative/canvases/:canvasID" element={<Suspense key="creative-canvas" fallback={<p role="status">正在打开创作台…</p>}><CreativeCanvasPage /></Suspense>} />
+        <Route path="/creative/library" element={<Suspense key="creative-library" fallback={<p role="status">正在打开资产库…</p>}><CreativeAssetsPage /></Suspense>} />
+        <Route path="/creative/agents" element={<Suspense key="creative-agents" fallback={<p role="status">正在打开外部助手…</p>}><CreativeAgentsPage /></Suspense>} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/shoot-plans" element={<ShootPlansPage />} />
         <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
@@ -148,7 +153,7 @@ export default function App() {
           <Route path="settings" element={<AccountSettingsPage />} />
         </Route>
       </Route>
-      <Route path="/oauth/consent" element={<Suspense fallback={<p role="status">正在打开授权页…</p>}><AgentConsentPage /></Suspense>} />
+      <Route path="/oauth/consent" element={<Suspense key="oauth-consent" fallback={<p role="status">正在打开授权页…</p>}><AgentConsentPage /></Suspense>} />
       <Route path="/shoot-plans/:id/run" element={<RequireAuth status={auth.status}><ShootPlanRunPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
