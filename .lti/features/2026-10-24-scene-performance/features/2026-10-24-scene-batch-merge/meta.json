@@ -1,0 +1,51 @@
+{
+  "uid": "20e81d62-87f9-4942-b226-d44c450cbf77",
+  "revision": 4,
+  "id": "scene-batch-merge",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-performance",
+  "designBinding": {
+    "version": 2,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:已知限制",
+      "design:验证与交付",
+      "patterns:场景渲染批次"
+    ],
+    "delivers": [
+      "patterns:场景渲染批次"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-25T05:41:27.826Z",
+  "updatedAt": "2026-10-25T08:12:20.859Z",
+  "risk": {
+    "factors": [
+      "broad-impact",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-25T08:12:20.703Z",
+      "contentHash": "44e1b0e2e2a35950"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-25T08:12:20.703Z",
+      "contentHash": "105d952001840af5"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
