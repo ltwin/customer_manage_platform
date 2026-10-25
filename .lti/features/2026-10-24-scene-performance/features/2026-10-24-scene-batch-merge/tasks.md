@@ -2,8 +2,8 @@
 
 ## 1. 压力场景与每帧统计
 
-- [ ] 1.1 新增 `frontend/scripts/scene-stress.mjs`，提供 `multiPart`、`primitives`、`scaleScene`、`equivalence` 四类场景；同一输入两次生成的 GLB 逐字节相同，全部通过 `inspect()`。统计开发库现有场景里带槽位覆盖的模型实例占比，作为 `scaleScene` 的 `overrides` 默认值（统计不到取 30% 并注明）。单测断言确定性和规模（面数、实例数、网格片数、覆盖比例）
-- [ ] 1.2 `SceneRenderer.render` 记录 `lastFrame`（draw 数、三角面、CPU 毫秒），取 `render()` 前后的差值，不切换 `info.autoReset`；`gpuTestHooks.lastFrame` 在测试下随帧更新；单测断言两次渲染之间的差值正确
+- [x] 1.1 新增 `frontend/scripts/scene-stress.mjs`，提供 `multiPart`、`primitives`、`scaleScene`、`equivalence` 四类场景；同一输入两次生成的 GLB 逐字节相同，全部通过 `inspect()`。统计开发库现有场景里带槽位覆盖的模型实例占比，作为 `scaleScene` 的 `overrides` 默认值（统计不到取 30% 并注明）。单测断言确定性和规模（面数、实例数、网格片数、覆盖比例）
+- [x] 1.2 `SceneRenderer.render` 记录 `lastFrame`（draw 数、三角面、CPU 毫秒），取 `render()` 前后的差值，不切换 `info.autoReset`；`gpuTestHooks.lastFrame` 在测试下随帧更新；单测断言两次渲染之间的差值正确
 - [ ] 1.3 e2e fixture 支持 `?nomerge=1`（设 `__sceneNoMerge`）；`SCENE_E2E_PERF` 新增压力场景帧时检查：Metal、四种显示模式，记录帧时均值、p95 和每帧 draw 数到 `perf.json`。先在合并前跑一遍，把基线记进 evidence
 
 ## 2. 合并网格片

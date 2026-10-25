@@ -1145,6 +1145,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
     gpuTestHooks.viewportFrames = d.count
     // The e2e's frame times (W5 performance): this frame drawn n times in a row, then waited for once.
     if (sceneTest) {
+      gpuTestHooks.lastFrame = r.lastFrame
       const gpu = gpuOf(state.gl)
       gpuTestHooks.redrawViewport = async (n) => {
         const started = performance.now()

@@ -25,6 +25,7 @@ import {
 import { createLib1 } from '../src/creative-scene/sandbox/lib.ts'
 import { ModelCache, modelSummaries, partsOf, type ModelMeshPart, type SceneModel } from '../src/creative-scene/models/cache.ts'
 import { mergeParts } from '../src/creative-scene/models/merge.ts'
+import { parseGLB } from '../src/creative-scene/sandbox/gltf.ts'
 import { disposePieceViews, expandByPieces, pieceViews, piecesOf } from '../src/creative-scene/render/pieces.ts'
 import { edgesOf, shellOf } from '../src/creative-scene/objects/wireframe.ts'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -859,4 +860,35 @@ test('framing a turned merged model bounds what its parts did, selection shells 
   const merged = partsOf(partsModel()).meshes
   assert.deepEqual(box(expandByPieces(new THREE.Box3(), mount(merged))), before)
   assert.notDeepEqual(box(new THREE.Box3().expandByObject(mount(merged))), before, "three's own, with one box over the slot, bounds more")
+})
+
+test('the stress scenes come out byte for byte the same each time, at their sizes', async () => {
+  const { equivalence, multiPart, primitives, scaleScene } = await import('./scene-stress.mjs')
+  const a = await multiPart()
+  assert.ok(a.models.parts.glb.equals((await multiPart()).models.parts.glb), 'the same arguments, the same bytes')
+  assert.equal(a.models.parts.manifest.triangles, 1000 * 12)
+  assert.deepEqual(a.models.parts.manifest.slots.map((s: { id: string }) => s.id), ['a', 'b'])
+  assert.equal(a.objects.length, 4)
+  const bytes = a.models.parts.glb
+  assert.equal(partsOf(await parseGLB(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))).meshes.length, 2, '1000 parts in 2 slots draw as 2')
+
+  assert.equal(primitives().objects.length, 1000)
+
+  const big = await scaleScene()
+  const again = await scaleScene()
+  for (const [name, m] of Object.entries(big.models)) assert.ok(m.glb.equals(again.models[name].glb), name)
+  assert.deepEqual(big.objects, again.objects)
+  const instances = big.objects.filter((o: { kind: string }) => o.kind === 'model_instance')
+  assert.equal(Object.keys(big.models).length, 30)
+  assert.equal(instances.length, 2000)
+  assert.equal(big.objects.filter((o: { kind: string }) => o.kind === 'primitive').length, 300)
+  const triangles = instances.reduce((n: number, o: { model: { name: string } }) => n + big.models[o.model.name].manifest.triangles, 0)
+  assert.ok(triangles <= 5e6, `${triangles} triangles in the instances`)
+  const recoloured = instances.filter((o: { material_slots: object }) => Object.keys(o.material_slots).length > 0).length
+  assert.equal(recoloured, 860, '43% of the instances have their slots recoloured')
+  assert.equal(big.objects.filter((o: { kind: string; light?: { cast_shadow: boolean } }) => o.kind === 'light' && o.light?.cast_shadow).length, 3, 'with the sun, four lights cast shadows')
+
+  const eq = await equivalence()
+  for (const name of ['glass', 'stone', 'wall', 'stacked']) assert.ok(eq.models[name].glb.equals((await equivalence()).models[name].glb), name)
+  assert.equal(eq.objects.filter((o: { kind: string }) => o.kind === 'camera').length, 2, 'a camera on each set')
 })
