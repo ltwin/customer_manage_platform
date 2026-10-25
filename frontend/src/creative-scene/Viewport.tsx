@@ -52,6 +52,7 @@ import {
 import { modelCache, type SceneModel } from './models/cache.ts'
 import { snap, type Bounds, type Hit, type Mount, type Placed, type Ray } from './placement/snap.ts'
 import { accelerateModels, ghostOf } from './placement/raycast.ts'
+import { expandByPieces } from './render/pieces.ts'
 import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
@@ -681,7 +682,8 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const bounds = new Box3()
         for (const id of ids) {
           const n = node(id)
-          if (n) bounds.expandByObject(n)
+          // A merged model geometry bounds as its parts did (render/pieces.ts).
+          if (n) expandByPieces(bounds, n)
         }
         if (!bounds.isEmpty()) void controls.fitToBox(bounds, true, { paddingTop: 0.5, paddingBottom: 0.5, paddingLeft: 0.5, paddingRight: 0.5 })
       },
@@ -1143,6 +1145,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
     gpuTestHooks.viewportFrames = d.count
     // The e2e's frame times (W5 performance): this frame drawn n times in a row, then waited for once.
     if (sceneTest) {
+      gpuTestHooks.lastFrame = r.lastFrame
       const gpu = gpuOf(state.gl)
       gpuTestHooks.redrawViewport = async (n) => {
         const started = performance.now()

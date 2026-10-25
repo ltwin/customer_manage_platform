@@ -4,6 +4,7 @@ import { NodeMaterial, ViewportTextureNode, WebGPURenderer, type Node, type Node
 import type { TSLNode } from '../materials/patterns.ts'
 import { backgroundTicker } from '../host/ticker.ts'
 import { adapter } from './probe.ts'
+import type { FrameStats } from './sceneRenderer.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -239,6 +240,8 @@ export const gpuTestHooks = {
   skyLightAt: 0,
   /** Volume marches built (render/volumes/march.ts): none while a scene has no volume, one more per change of its lights. */
   marches: 0,
+  /** What the viewport's last frame drew (SceneRenderer.lastFrame; Viewport.tsx LookView, e2e only). */
+  lastFrame: null as FrameStats | null,
   /** The viewport's last frame drawn n times and waited for once, its milliseconds (Viewport.tsx LookView; e2e only). */
   redrawViewport: null as ((n: number) => Promise<number>) | null,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */

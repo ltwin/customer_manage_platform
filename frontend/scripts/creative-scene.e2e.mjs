@@ -21,13 +21,14 @@ import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
+import { capModel, equivalence, multiPart, primitives, scaleScene } from './scene-stress.mjs'
 
 const DOC = 'cwdoc_scene'
 const fixture = new URL('../.scene-editor-qa.html', import.meta.url)
 const canvasFixture = new URL('../.scene-canvas-qa.html', import.meta.url)
 await writeFile(
   fixture,
-  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script>window.__sceneTest = true</script><script type="module">
+  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script>window.__sceneTest = true; if (new URLSearchParams(location.search).has('nomerge')) window.__sceneNoMerge = true</script><script type="module">
 import React, {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import '/src/index.css';
@@ -47,6 +48,7 @@ window.__closed = 0;
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
 // ?library=1 hands the editor the canvas page's 「存入资产库」 dialog; a save makes the asset panel read again.
+// ?nomerge=1 draws every model part on its own, as before scene-performance P1 (models/merge.ts).
 function Editor({host}) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(null);
@@ -7722,6 +7724,289 @@ if (process.env.SCENE_E2E_GPU_8K) await check('real-time GI: the page keeps its 
     await gpu.close()
   }
 })
+
+// --- scene-performance P1 (scene-batch-merge): model parts merged by slot ------------
+// ?nomerge=1 draws the same scene with every part on its own, as before the merge, in the same build.
+
+/** A stress scene (scripts/scene-stress.mjs) in place of the server's: its models seeded, its environment, its objects naming them. */
+function stressSeed(server, { models, objects, environment }) {
+  const revs = Object.fromEntries(Object.entries(models).map(([name, m]) => [name, server.seedModel({ glb: m.glb, manifest: m.manifest })]))
+  if (environment) server.scene.environment = { ...server.scene.environment, ...environment }
+  seed(server, objects.map((o) => (o.model ? { ...o, model: { content_revision_id: revs[o.model.name] } } : o)))
+}
+
+/** The equivalence scene exported in all three passes by its two cameras: '<camera>-<pass>' → PNG or JPEG bytes. */
+async function exportEquivalence(gpu, { nomerge = false, engine = 'workbench', hide = [] } = {}) {
+  const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+  const server = new SceneServer()
+  stressSeed(server, await equivalence())
+  server.scene.render = { ...server.scene.render, engine, resolution: '1k' }
+  for (const o of server.scene.objects) if (hide.includes(o.name)) o.visible = false
+  const { page, errors } = await open(server, { context, query: `?export=1${nomerge ? '&nomerge=1' : ''}` })
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  for (const pass of ['白模（clay）', '线稿', '材质光照']) await dialog.getByLabel(pass).check()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 600_000)
+  await dialog.waitFor({ state: 'detached' })
+  const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
+  const images = {}
+  for (const s of server.exports[0].payload.shots) for (const img of s.images) images[`${cameras.get(s.camera_object_id)}-${img.pass}`] = server.uploadBytes.get(img.upload_id)
+  assert.deepEqual(errors, [], errors.join('\n'))
+  await context.close()
+  return images
+}
+
+/** Saved views (view space, Z up) on set A, the glass model selected, and on set B. */
+const equivalenceViews = {
+  a: { camera: { position: [3.5, -6.5, 3.2], target: [0.2, 0.6, 0.7], ortho: false, zoom: 1 }, selection: { selected: [gid('glassx'), gid('stonex')], active: gid('glassx') }, tool: 'box', toolbar: true, sidebar: true, history: false },
+  b: { camera: { position: [32.5, -3.2, 2.2], target: [30.6, 0, 0.5], ortho: false, zoom: 1 }, selection: { selected: [gid('stackedx')], active: gid('stackedx') }, tool: 'box', toolbar: true, sidebar: true, history: false },
+}
+
+/** The viewport on a set, selection outlined, in clay and in wireframe. */
+async function equivalenceViewport({ nomerge = false, view }) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, equivalenceViews[view]])
+  const server = new SceneServer()
+  stressSeed(server, await equivalence())
+  const { page, errors } = await open(server, { context, query: nomerge ? '?nomerge=1' : '' })
+  const { box } = await viewportCenter(page)
+  await page.mouse.move(1, 1)
+  await shading(page, '白模')
+  const clay = await settledShot(page, box)
+  await shading(page, '线框')
+  const wire = await settledShot(page, box)
+  assert.deepEqual(errors, [], errors.join('\n'))
+  await context.close()
+  return { clay, wire }
+}
+
+/** The differences of one comparison, rounded for the record. */
+const rounded = (m) => (m.error ? { error: m.error } : { mean: Number(m.mean.toFixed(4)), over_percent: Number(m.over.toFixed(4)) })
+
+// SCENE_E2E_P1_EVIDENCE=<dir> keeps the side-by-side sheets (before, after, difference ×8) and p1-parity.json.
+await check('P1 AC-2: merged parts draw what each part on its own drew: exports pixel for pixel where no surfaces meet, the selection outline and wireframe alike; exported twice alike', async () => {
+  const dir = process.env.SCENE_E2E_P1_EVIDENCE
+  const before = await exportEquivalence(browser, { nomerge: true })
+  const after = await exportEquivalence(browser)
+  if (dir) for (const [name, png] of Object.entries(after)) await Promise.all([writeFile(`${dir}/p1-${name}-before.png`, before[name]), writeFile(`${dir}/p1-${name}-after.png`, png)])
+  const page = await (await browser.newContext()).newPage()
+  const rows = []
+  const keep = async (name, m) => {
+    if (dir && m.sheet) await writeFile(`${dir}/p1-${name}.jpg`, m.sheet)
+  }
+  for (const [name, png] of Object.entries(after)) {
+    const [camera, pass] = name.split('-')
+    if (camera === 'shota') {
+      // A: no two surfaces ever at one depth; the same triangles and shaders give the same pixels.
+      const m = await compareShots(page, before[name], png, 0)
+      rows.push({ name, set: 'A', criterion: 'pixel for pixel', ...rounded(m) })
+      await keep(name, m)
+      assert.ok(!m.error && m.mean === 0 && m.over === 0, `${name}: ${m.error ?? `mean ${m.mean}, ${m.over}% of pixels differ`}`)
+    } else {
+      // B: where two surfaces are at one depth, which shows was the objects' sort and is the parts' order now.
+      const limit = parityLimits[pass]
+      const m = await compareShots(page, before[name], png)
+      rows.push({ name, set: 'B', criterion: limit, ...rounded(m) })
+      await keep(name, m)
+      assert.ok(!m.error && m.mean <= limit.mean && m.over <= limit.over, `${name}: ${m.error ?? `mean ${m.mean.toFixed(4)}, > 8 ${m.over.toFixed(4)}% (limit ${limit.mean} / ${limit.over}%)`}`)
+    }
+  }
+  assert.equal(rows.length, 6, 'both cameras, all three passes')
+  // AC-4: the merged scene exported again is the same, pixel for pixel.
+  const again = await exportEquivalence(browser)
+  for (const [name, png] of Object.entries(again)) {
+    const m = await compareShots(page, after[name], png, 0)
+    rows.push({ name: `${name}-again`, criterion: 'merged, exported twice: pixel for pixel', ...rounded(m) })
+    assert.ok(!m.error && m.mean === 0 && m.over === 0, `${name} exported again: ${m.error ?? `mean ${m.mean}`}`)
+  }
+  for (const view of ['a', 'b']) {
+    const was = await equivalenceViewport({ nomerge: true, view })
+    const now = await equivalenceViewport({ view })
+    for (const look of ['clay', 'wire']) {
+      const name = `viewport-${view}-${look}`
+      const m = await compareShots(page, was[look], now[look])
+      rows.push({ name, criterion: parityLimits.line, ...rounded(m) })
+      await keep(name, m)
+      assert.ok(!m.error && m.mean <= parityLimits.line.mean && m.over <= parityLimits.line.over, `${name}: ${m.error ?? `mean ${m.mean.toFixed(4)}, > 8 ${m.over.toFixed(4)}%`}`)
+    }
+  }
+  if (dir) await writeFile(`${dir}/p1-parity.json`, `${JSON.stringify({ chromium: browser.version(), backend: 'swiftshader', rows }, null, 2)}\n`)
+  await page.context().close()
+})
+
+/** Mean and p95 frame times while the view turns, and what the last frame drew (SceneRenderer.lastFrame). */
+async function stressFrames(page, warm = 1000, ms = 4000) {
+  await orbitFrames(page, warm)
+  const stats = frameStats(await orbitFrames(page, ms))
+  const last = await page.evaluate(() => window.__sceneGPU.lastFrame)
+  return { mean: Number(stats.mean.toFixed(2)), p95: Number(stats.p95.toFixed(2)), frames: stats.frames, draws: last.draws, triangles: last.triangles, cpu_ms: Number(last.cpuMs.toFixed(2)) }
+}
+
+/**
+ * A stress scene on this machine's GPU in each look, merged or each part on
+ * its own: a page each, opened in its look (the saved view's display), so a
+ * scene that takes seconds a frame needs no click; slow skips waiting for
+ * the picture to settle.
+ */
+async function stressRun(gpu, scene, { nomerge = false, slow = false } = {}) {
+  const out = {}
+  const looks = [
+    ['clay', 'solid', 'workbench'],
+    ['preview', 'preview', 'workbench'],
+    ['workbench', 'rendered', 'workbench'],
+    ['realtime_gi', 'rendered', 'realtime_gi'],
+  ]
+  for (const [label, display, engine] of looks) {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const view = { camera: null, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false, display }
+    await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, view])
+    context.setDefaultTimeout(slow ? 600_000 : 30_000)
+    const server = new SceneServer()
+    stressSeed(server, scene)
+    server.scene.render = { ...server.scene.render, engine }
+    const { page, errors } = await open(server, { context, query: nomerge ? '?nomerge=1' : '' })
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    if (slow) await sleep(5000)
+    else await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+    out[label] = await stressFrames(page, slow ? 500 : 1000, slow ? 3000 : 4000)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  }
+  return out
+}
+
+// SCENE_E2E_PERF (this machine's GPU), with SCENE_E2E_PERF_OUT=<dir> for p1-perf.json:
+// the stress scenes merged and each part on its own (AC-1, AC-5 baseline), the GI picture against it (AC-2),
+// and the limit model's merge and a click, merged and not.
+if (process.env.SCENE_E2E_PERF) await check('P1 AC-1: a model of a thousand parts turns at 60 fps in every look, its draws independent of its parts', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', shader_cache: 'warm (one second of frames before measuring)', scenes: {} }
+    const scenes = { multi_part: await multiPart(), primitives: primitives(), scale: await scaleScene() }
+    for (const [name, scene] of Object.entries(scenes)) {
+      // Each part on its own, the scale scene draws some 200 000 meshes a frame: seconds a frame.
+      record.scenes[name] = { before: await stressRun(gpu, scene, { nomerge: true, slow: name === 'scale' }), after: await stressRun(gpu, scene) }
+      console.log(`P1 ${name}: ${JSON.stringify(record.scenes[name])}`)
+    }
+    const multi = record.scenes.multi_part.after
+    for (const [look, r] of Object.entries(multi)) assert.ok(r.mean <= 16.7, `${look}: mean frame ${r.mean} ms`)
+    assert.ok(multi.clay.draws <= 40, `clay draws ${multi.clay.draws} a frame`)
+
+    // AC-2 on this GPU: the real-time GI picture, the glass by itself where hiding it changes the picture.
+    const gi = { before: await exportEquivalence(gpu, { nomerge: true, engine: 'realtime_gi' }), after: await exportEquivalence(gpu, { engine: 'realtime_gi' }), bare: await exportEquivalence(gpu, { engine: 'realtime_gi', hide: ['glassx'] }) }
+    const page = await (await gpu.newContext()).newPage()
+    record.gi = {}
+    for (const name of ['shota-lit', 'shotb-lit']) {
+      const m = await compareShots(page, gi.before[name], gi.after[name])
+      record.gi[name] = rounded(m)
+      if (process.env.SCENE_E2E_PERF_OUT && m.sheet) await writeFile(`${process.env.SCENE_E2E_PERF_OUT}/p1-gi-${name}.jpg`, m.sheet)
+      assert.ok(!m.error && m.mean <= parityLimits.lit.mean && m.over <= parityLimits.lit.over, `GI ${name}: ${m.error ?? `mean ${m.mean.toFixed(4)}, > 8 ${m.over.toFixed(4)}%`}`)
+    }
+    const glass = await maskedCompare(page, gi.before['shota-lit'], gi.after['shota-lit'], gi.bare['shota-lit'])
+    record.gi.glass = glass
+    assert.ok(glass.pixels > 1000, `the glass covers ${glass.pixels} pixels`)
+    assert.ok(glass.mean <= parityLimits.lit.mean && glass.over <= parityLimits.lit.over, `GI glass: mean ${glass.mean}, > 8 ${glass.over}%`)
+    await page.context().close()
+
+    record.limit_model = await limitModelTimes()
+    console.log(`P1 limit model: ${JSON.stringify(record.limit_model)}`)
+    if (process.env.SCENE_E2E_PERF_OUT) await writeFile(`${process.env.SCENE_E2E_PERF_OUT}/p1-perf.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** Differences between a and b where bare (the picture without the glass) differs from b: the glass and what it changes. */
+async function maskedCompare(page, a, b, bare) {
+  return page.evaluate(async (srcs) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const imgs = await Promise.all(srcs.map(load))
+    const data = imgs.map((img) => {
+      const c = document.createElement('canvas')
+      c.width = img.width
+      c.height = img.height
+      const g = c.getContext('2d')
+      g.drawImage(img, 0, 0)
+      return g.getImageData(0, 0, img.width, img.height).data
+    })
+    const [p, q, r] = data
+    let pixels = 0
+    let sum = 0
+    let over = 0
+    for (let k = 0; k < p.length; k += 4) {
+      let glass = 0
+      for (let c = 0; c < 3; c++) glass = Math.max(glass, Math.abs(q[k + c] - r[k + c]))
+      if (glass <= 8) continue
+      pixels++
+      let most = 0
+      for (let c = 0; c < 3; c++) {
+        const d = Math.abs(p[k + c] - q[k + c])
+        sum += d
+        most = Math.max(most, d)
+      }
+      if (most > 8) over++
+    }
+    return { pixels, mean: Number((sum / Math.max(pixels * 3, 1)).toFixed(4)), over: Number(((over / Math.max(pixels, 1)) * 100).toFixed(4)) }
+  }, [a, b, bare].map((png) => `data:image/png;base64,${png.toString('base64')}`))
+}
+
+/**
+ * The model at the triangle limit in 2000 parts, in Node (V8, as the page's
+ * main thread): partsOf with and without the merge, and a click's pick
+ * through an instance of it before snapping has made a BVH.
+ */
+async function limitModelTimes() {
+  const { partsOf } = await import('../src/creative-scene/models/cache.ts')
+  const { parseGLB } = await import('../src/creative-scene/sandbox/gltf.ts')
+  const { raycastPieces } = await import('../src/creative-scene/placement/raycast.ts')
+  const { Mesh, Group, Raycaster, MeshBasicMaterial, DoubleSide } = await import('three')
+  const { glb } = await capModel()
+  const bytes = () => glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength)
+  const timed = async (nomerge) => {
+    globalThis.__sceneNoMerge = nomerge
+    try {
+      const root = await parseGLB(bytes())
+      const started = performance.now()
+      const parts = partsOf(root)
+      return { parts, ms: performance.now() - started }
+    } finally {
+      delete globalThis.__sceneNoMerge
+    }
+  }
+  const click = (parts, pick) => {
+    const group = new Group()
+    const material = new MeshBasicMaterial({ side: DoubleSide })
+    for (const p of parts.meshes) {
+      const m = new Mesh(p.geometry, material)
+      if (pick) m.raycast = pick
+      group.add(m)
+    }
+    group.scale.setScalar(4)
+    group.updateMatrixWorld(true)
+    const raycaster = new Raycaster()
+    const times = []
+    for (let i = 0; i < 20; i++) {
+      raycaster.ray.origin.set(-2 + i * 0.2, 6, 3)
+      raycaster.ray.direction.set(0, -1, -0.5).normalize()
+      const started = performance.now()
+      raycaster.intersectObject(group, true)
+      times.push(performance.now() - started)
+    }
+    times.sort((a, b) => a - b)
+    return Number(times[10].toFixed(2))
+  }
+  const before = await timed(true)
+  const after = await timed(false)
+  return {
+    triangles: 2000 * 144,
+    parts: { before: before.parts.meshes.length, after: after.parts.meshes.length },
+    merge_ms: { before: Number(before.ms.toFixed(1)), after: Number(after.ms.toFixed(1)) },
+    click_median_ms: { before: click(before.parts), after_by_piece: click(after.parts, raycastPieces), after_whole_geometry: click(after.parts) },
+  }
+}
 
 await browser.close()
 await rm(fixture, { force: true })

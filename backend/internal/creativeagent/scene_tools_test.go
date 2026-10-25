@@ -879,3 +879,20 @@ func TestSceneToolsDescribeVolumes(t *testing.T) {
 		}
 	}
 }
+
+// scene-performance P1: the cost model is the number of objects and slots,
+// not triangles; parts of one slot are merged when drawn.
+func TestSceneToolsDescribeTheCostModel(t *testing.T) {
+	for tool, want := range map[string]string{
+		writeModelTool: "视口流畅度取决于场景里的物件数和每个模型的材质槽数，与三角面关系不大：同一槽位的零件渲染时会自动合并，不必为了性能减少分段数或零件。",
+		editSceneTool:  "成批的相同小件（栅栏、砖、书本）写成一个代码模型（lib.array/radial），比逐个加基础体流畅得多；重复出现的东西放同一模型的多个实例。",
+	} {
+		info, err := (&sceneTool{name: tool}).Info(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(info.Desc, want) {
+			t.Errorf("%s does not say %q", tool, want)
+		}
+	}
+}

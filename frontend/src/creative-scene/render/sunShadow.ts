@@ -4,6 +4,7 @@ import { ReferenceNode, UniformNode, type NodeBuilder, type NodeFrame } from 'th
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { towardSun, volumesCast } from './volumes/shadow.ts'
 import { CASCADES } from './volumes/state.ts'
+import { piecesOf } from './pieces.ts'
 
 // The sun's shadow in cascades. One map over every caster spent its texels
 // on whatever stood far off: a big box 200 m away made the shadows by the
@@ -121,12 +122,20 @@ export function fitCascades(camera: Camera, sun: DirectionalLight, lights: reado
   fromLight.lookAt(origin, direction, lights[0].shadow!.camera.up)
   toLight.copy(fromLight).invert()
 
+  // A merged model geometry's pieces are its casters, each with its own box,
+  // as its parts were: one box over the slot would size the maps to the
+  // empty space between them (render/pieces.ts).
   let count = 0
   rootOf(sun).traverseVisible((o) => {
     if (!o.castShadow || !(o as Mesh).isMesh) return
     const geometry = (o as Mesh).geometry
-    if (!geometry.boundingBox) geometry.computeBoundingBox()
     toCaster.multiplyMatrices(toLight, o.matrixWorld)
+    const pieces = piecesOf(geometry)
+    if (pieces) {
+      for (const p of pieces) (casters[count++] ??= new Box3()).copy(p.box).applyMatrix4(toCaster)
+      return
+    }
+    if (!geometry.boundingBox) geometry.computeBoundingBox()
     ;(casters[count++] ??= new Box3()).copy(geometry.boundingBox!).applyMatrix4(toCaster)
   })
 

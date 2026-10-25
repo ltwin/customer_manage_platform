@@ -7,12 +7,20 @@ import { clay, unavailableGrey } from './look.ts'
 import { WireMesh } from './WireMesh.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
+import { drawnGeometries } from '../materials/instances.ts'
+import { raycastPieces } from '../placement/raycast.ts'
+import { pieceViews } from '../render/pieces.ts'
 import type { SceneObject } from '../api.ts'
 
 // A model instance. Every instance of a revision draws the same cached
 // geometries in clay; the module's own materials only name slots. Until the
 // GLB is in, an outline of the manifest's bounds stands in; a model that
 // cannot be shown is a grey block of the same size.
+//
+// A part is the model's parts of one slot merged (models/merge.ts), one draw.
+// What must draw as before the merge draws its pieces' range views instead: a
+// see-through slot and a ghost, which three sorts mesh by mesh. Picking goes
+// piece by piece (placement/raycast.ts).
 
 // Code-built models are often open (a lathe without caps), so both sides draw.
 const clayMaterial = new MeshStandardMaterial({ color: clay, roughness: 0.92, metalness: 0, side: DoubleSide })
@@ -54,7 +62,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
     return (
       <group>
         {loaded.parts.meshes.map((m, i) => (
-          <WireMesh key={i} geometry={m.geometry} edge={edge} />
+          <WireMesh key={i} geometry={m.geometry} edge={edge} raycast={raycastPieces} />
         ))}
       </group>
     )
@@ -62,21 +70,26 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
     const hints = new Map((summary?.manifest?.slots ?? []).map((x) => [x.id, x.hint]))
     return (
       <group>
-        {loaded.parts.meshes.map((m, i) => (
-          <SlotMesh key={i} geometry={m.geometry} material={resolveSlot(m.slot, slots, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material} doubleSided castShadow>
-            {edge && <Outline color={edge} />}
-          </SlotMesh>
-        ))}
+        {loaded.parts.meshes.map((m, i) => {
+          const material = resolveSlot(m.slot, slots, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material
+          return drawnGeometries(m.geometry, material).map((g, j) => (
+            <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow raycast={raycastPieces}>
+              {edge && <Outline color={edge} />}
+            </SlotMesh>
+          ))
+        })}
       </group>
     )
   }
   return (
     <group>
-      {loaded.parts.meshes.map((m, i) => (
-        <mesh key={i} geometry={m.geometry} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} {...(ghost ? { raycast: noRaycast } : {})}>
-          {edge && <Outline color={edge} />}
-        </mesh>
-      ))}
+      {loaded.parts.meshes.map((m, i) =>
+        (ghost ? pieceViews(m.geometry) : [m.geometry]).map((g, j) => (
+          <mesh key={`${i}:${j}`} geometry={g} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} raycast={ghost ? noRaycast : raycastPieces}>
+            {edge && <Outline color={edge} />}
+          </mesh>
+        )),
+      )}
     </group>
   )
 }

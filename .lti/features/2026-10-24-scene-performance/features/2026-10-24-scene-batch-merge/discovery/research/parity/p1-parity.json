@@ -1,0 +1,129 @@
+{
+  "chromium": "145.0.7632.6",
+  "backend": "swiftshader",
+  "rows": [
+    {
+      "name": "shota-clay",
+      "set": "A",
+      "criterion": "pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-line",
+      "set": "A",
+      "criterion": "pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-lit",
+      "set": "A",
+      "criterion": "pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-clay",
+      "set": "B",
+      "criterion": {
+        "mean": 1.5,
+        "over": 0.62
+      },
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-line",
+      "set": "B",
+      "criterion": {
+        "mean": 0.0016,
+        "over": 0.0026
+      },
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-lit",
+      "set": "B",
+      "criterion": {
+        "mean": 0.63,
+        "over": 0.18
+      },
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-clay-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-line-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-lit-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-clay-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-line-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-lit-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "viewport-a-clay",
+      "criterion": {
+        "mean": 0.0016,
+        "over": 0.0026
+      },
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "viewport-a-wire",
+      "criterion": {
+        "mean": 0.0016,
+        "over": 0.0026
+      },
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "viewport-b-clay",
+      "criterion": {
+        "mean": 0.0016,
+        "over": 0.0026
+      },
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "viewport-b-wire",
+      "criterion": {
+        "mean": 0.0016,
+        "over": 0.0026
+      },
+      "mean": 0,
+      "over_percent": 0
+    }
+  ]
+}

@@ -2,15 +2,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BackSide, Color, Mesh, type BufferGeometry } from 'three'
 import * as tsl from 'three/tsl'
 import { MeshBasicNodeMaterial } from 'three/webgpu'
-import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { TSLNode } from '../materials/patterns.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
+import { shellOf } from './wireframe.ts'
 
 // The selection outline (Epic design「编辑器辅助显示」): drei's Outlines in
 // TSL. A copy of its parent's geometry with the normals averaged across
-// creases, drawn back faces only and pushed out along the normal in clip
-// space by a fixed number of device pixels, so thin rods and whole groups
-// read alike. R0: no measurable cost.
+// creases (per piece of a merged model: wireframe.ts shellOf), drawn back
+// faces only and pushed out along the normal in clip space by a fixed number
+// of device pixels, so thin rods and whole groups read alike. R0: no
+// measurable cost.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { normalize, uniform, vec4 } = tsl as unknown as Record<string, Op>
@@ -47,7 +48,7 @@ export function Outline({ color, thickness = 3 }: { color: string; thickness?: n
     const geometry = parent?.geometry ?? null
     if (geometry && geometry !== from.current) {
       const previous = from.current && shell.geometry
-      shell.geometry = toCreasedNormals(geometry, Math.PI)
+      shell.geometry = shellOf(geometry)
       previous?.dispose()
       from.current = geometry
     }

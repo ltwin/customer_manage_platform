@@ -1,0 +1,27 @@
+total 4003 ms, idle+program 636 ms
+--- self ---
+   628 ms  15.7%  (program) (native):0
+   510 ms  12.8%  setFromPoints three.core-pPfE6jXf.js:12145
+   345 ms   8.6%  _projectObject three_webgpu.js:44575
+   302 ms   7.5%  applyMatrix4 three.core-pPfE6jXf.js:4368
+   281 ms   7.0%  updateMatrixWorld three.core-pPfE6jXf.js:10058
+   225 ms   5.6%  _renderObjectDirect three_webgpu.js:44865
+   201 ms   5.0%  applyMatrix4 three.core-pPfE6jXf.js:12529
+   154 ms   3.8%  fitCascades sunShadow.ts:98
+   152 ms   3.8%  multiplyMatrices three.core-pPfE6jXf.js:8264
+   121 ms   3.0%  (garbage collector) (native):0
+    94 ms   2.3%  getForRender three_webgpu.js:22292
+    82 ms   2.1%  _draw three_webgpu.js:59885
+--- inclusive ---
+  4003 ms 100.0%  (root) (native):0
+  3205 ms  80.1%  loop react-three-fiber.esm-BAF9Dj-w.js:10148
+  3205 ms  80.1%  update react-three-fiber.esm-BAF9Dj-w.js:10127
+  3201 ms  80.0%  (anon) Viewport.tsx:1498
+  3201 ms  80.0%  render sceneRenderer.ts:588
+  3173 ms  79.3%  render three_webgpu.js:43485
+  3173 ms  79.3%  _renderScene three_webgpu.js:43583
+  3171 ms  79.2%  renderObject three_webgpu.js:44783
+  3170 ms  79.2%  _renderObjects three_webgpu.js:44674
+  3170 ms  79.2%  _renderObjectDirect three_webgpu.js:44865
+  3170 ms  79.2%  measure sceneRenderer.ts:49
+  3170 ms  79.2%  (anon) sceneRenderer.ts:643

@@ -1,6 +1,6 @@
 {
   "uid": "20e81d62-87f9-4942-b226-d44c450cbf77",
-  "revision": 4,
+  "revision": 10,
   "id": "scene-batch-merge",
   "kind": "feature",
   "assurance": "governed",
@@ -21,9 +21,9 @@
       "patterns:场景渲染批次"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-25T05:41:27.826Z",
-  "updatedAt": "2026-10-25T08:12:20.859Z",
+  "updatedAt": "2026-10-25T10:13:06.906Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -43,9 +43,300 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
-  "verify": [],
+  "revisions": [
+    {
+      "at": "2026-10-25T09:01:41.465Z",
+      "summary": "AC-2 对照场景的 A/B 分组按实测收紧：穿插零件的交线、立在地面上的接触与共面接触同属「同深度表面」，归入 B 组（阈值）；A 组改为零件之间、零件与地面互不接触、不穿插（间隙 1–2 cm），断言逐像素相同。判据未放宽。另：SlotMesh、WireMesh 加可选 raycast 属性（挂点清单外补充），描边外壳几何移到 wireframe.ts:shellOf。",
+      "contentHash": "72914ef76057694d",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "a342fa90d585657c24b17cf90dbda34eaa687c8a",
+    "at": "2026-10-25T08:12:54.422Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "f5801a60e06cc32b48eb90d61918f0494f18e75e9833b1a7d0b0d716617a9389"
+    },
+    "preExisting": [
+      ".lti/snapshots/f5801a60e06cc32b48eb90d61918f0494f18e75e9833b1a7d0b0d716617a9389.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-25T09:37:15.322Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目 config 未配置 checks，按 targeted-verification 手动跑定向测试：改过的 6 个单测文件（63 项）、creativeagent 的工具说明用例、P1 新增 e2e（SwiftShader 等价对照；Metal 性能与实时 GI 对照）、13 项相关场景 e2e 与资产 3D 预览。未跑全量单测、全量 e2e、make check-merge（合回 develop 时跑）。AC-3 中助手高亮与助手占位框两条现有 e2e 在 develop 上同样失败，无法用它们证明这两项行为；owner 尚未看并排图。",
+        "coverage": [
+          {
+            "criterionId": "AC-47f283092e5d",
+            "status": "verified",
+            "evidence": "见下列 AC-1 各项"
+          },
+          {
+            "criterionId": "AC-74ea5cf6362c",
+            "status": "verified",
+            "evidence": "SCENE_E2E_PERF 'P1 AC-1'（Metal，M4 Pro）：合并后白模/材质预览/工作台 8.3 ms、实时 GI 9.3 ms，白模 21 draw/帧；断言均值 ≤16.7、白模 draw ≤40；perf/p1-perf.json"
+          },
+          {
+            "criterionId": "AC-a65e60cb19d4",
+            "status": "verified",
+            "evidence": "同一次运行 ?nomerge=1 基线：白模 16.2、工作台 63.4、实时 GI 81.7 ms；discovery/research/p1-evidence.md"
+          },
+          {
+            "criterionId": "AC-af786b260e57",
+            "status": "verified",
+            "evidence": "见下列 AC-2 各项"
+          },
+          {
+            "criterionId": "AC-cec657be011f",
+            "status": "verified",
+            "evidence": "e2e 'P1 AC-2'（SwiftShader）：A 组 clay/line/lit 逐像素相同（compareShots limit 0）；parity/p1-parity.json"
+          },
+          {
+            "criterionId": "AC-9463e0406549",
+            "status": "verified",
+            "evidence": "同上 B 组 3/3 逐像素相同；Metal 实时 GI lit 两组逐像素相同（'P1 AC-1' 检查内）"
+          },
+          {
+            "criterionId": "AC-9ed3574f6791",
+            "status": "verified",
+            "evidence": "line 判据用 parityLimits.line（0.0016 / 0.0026%，严于 0.1 / 0.05%）；实测 0"
+          },
+          {
+            "criterionId": "AC-88681a3f73e1",
+            "status": "verified",
+            "evidence": "clay、lit 用 parityLimits（严于 1.5 / 1%）；实测 0"
+          },
+          {
+            "criterionId": "AC-61948d5c8ae6",
+            "status": "verified",
+            "evidence": "首版对照场景 L 形墙穿插处线稿差 2 像素（均值 0.00018），归入 B 组；同状态导出两次逐像素相同证明来自合并；discovery/research/p1-evidence.md"
+          },
+          {
+            "criterionId": "AC-1683e4323487",
+            "status": "verified",
+            "evidence": "e2e 'P1 AC-2'：视口 A/B 组选中描边（白模）与线框 4/4 逐像素相同"
+          },
+          {
+            "criterionId": "AC-fe1214d60cb5",
+            "status": "verified",
+            "evidence": "creative-scene-shadow.test.ts \"a merged model's cascades are fitted to its parts' boxes, value for value\"；去掉网格片时断言结果不同"
+          },
+          {
+            "criterionId": "AC-dc2f0d25e2ff",
+            "status": "verified",
+            "evidence": "SwiftShader 下 A 组整图逐像素相同（含玻璃）；Metal 实时 GI 玻璃区域 101802 像素单独比较，逐像素相同"
+          },
+          {
+            "criterionId": "AC-5f470d659a65",
+            "status": "unverified",
+            "evidence": "待 owner 看 parity/*.jpg、perf/p1-gi-*.jpg 并排图"
+          },
+          {
+            "criterionId": "AC-591414dc0097",
+            "status": "unverified",
+            "evidence": "单测：creative-scene-snap.test.ts（点选/吸附命中相同、外壳不被加速）、creative-scene-model.test.ts（取景逐值相等、描边/线框按网格片）；定向 e2e 13 项通过；'the assistant’s changes are outlined' 与 'a model the assistant is adding' 两项失败，develop a342fa90 上同样失败（同一断言），与本次无关，但「相关用例都要通过」未满足"
+          },
+          {
+            "criterionId": "AC-dc330635e3c5",
+            "status": "verified",
+            "evidence": "e2e 'P1 AC-2'：合并后同一场景再导出一次，6/6 逐像素相同"
+          },
+          {
+            "criterionId": "AC-5b967886e42d",
+            "status": "verified",
+            "evidence": "见下列 AC-5 各项"
+          },
+          {
+            "criterionId": "AC-ae691dde733b",
+            "status": "verified",
+            "evidence": "perf/p1-perf.json scenes.scale before/after；建议与 profile 见 discovery/research/p1-evidence.md"
+          },
+          {
+            "criterionId": "AC-dae64c2efe91",
+            "status": "verified",
+            "evidence": "p1-perf.json limit_model：合并 26.3→37.2 ms，点选 0.14→0.10 ms（不剔除 10.4 ms）"
+          },
+          {
+            "criterionId": "AC-9bd3d9494ee4",
+            "status": "verified",
+            "evidence": "go test ./internal/creativeagent -run 'TestSceneToolsDescribe'（TestSceneToolsDescribeTheCostModel 先红后绿）；docs/dev/agent-skills-tools.md 已同步"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "15/15 任务完成。AC-1 达标（多部件场景四种模式 8.3–9.3 ms，白模 21 draw/帧）；AC-2 对照 16 项与 Metal 实时 GI 均逐像素相同；级联、取景、点选、吸附与合并前逐值相同（单测）；AC-5 基线与上限模型耗时已记录；工具说明有单测。待 owner：proposal AC-2 分组措辞批准后有修改、看并排图、AC-3 两条预先存在的失败。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f79aee5d7c6c4a598d2e83029391365b8df646173e14114cdef20735465bda4e"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-10-25T10:09:33.328Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 checks，按定向验证手动跑：4 个改过的前端单测文件 51 项、tsc；审计修复后重跑 5 条相关 e2e（SwiftShader）。性能数字与 Metal 对照沿用审计前的运行（审计修复不改绘制路径）。未跑全量单测、全量 e2e、make check-merge（合回 develop 时跑）。AC-3 中助手高亮与助手占位框两条 e2e 在 develop a342fa90 上同样失败，未覆盖。",
+        "coverage": [
+          {
+            "criterionId": "AC-47f283092e5d",
+            "status": "verified",
+            "evidence": "见下列 AC-1 各项"
+          },
+          {
+            "criterionId": "AC-74ea5cf6362c",
+            "status": "verified",
+            "evidence": "SCENE_E2E_PERF 'P1 AC-1'（Metal，M4 Pro）：合并后白模/材质预览/工作台 8.3 ms、实时 GI 9.3 ms，白模 21 draw/帧；断言均值 ≤16.7、白模 draw ≤40；perf/p1-perf.json"
+          },
+          {
+            "criterionId": "AC-a65e60cb19d4",
+            "status": "verified",
+            "evidence": "同一次运行 ?nomerge=1 基线：白模 16.2、工作台 63.4、实时 GI 81.7 ms；discovery/research/p1-evidence.md"
+          },
+          {
+            "criterionId": "AC-af786b260e57",
+            "status": "verified",
+            "evidence": "见下列 AC-2 各项"
+          },
+          {
+            "criterionId": "AC-cec657be011f",
+            "status": "verified",
+            "evidence": "e2e 'P1 AC-2'（SwiftShader）：A 组 clay/line/lit 逐像素相同（compareShots limit 0）；parity/p1-parity.json"
+          },
+          {
+            "criterionId": "AC-9463e0406549",
+            "status": "verified",
+            "evidence": "同上 B 组 3/3 逐像素相同；Metal 实时 GI lit 两组逐像素相同（'P1 AC-1' 检查内）"
+          },
+          {
+            "criterionId": "AC-9ed3574f6791",
+            "status": "verified",
+            "evidence": "line 判据用 parityLimits.line（0.0016 / 0.0026%，严于 0.1 / 0.05%）；实测 0"
+          },
+          {
+            "criterionId": "AC-88681a3f73e1",
+            "status": "verified",
+            "evidence": "clay、lit 用 parityLimits（严于 1.5 / 1%）；实测 0"
+          },
+          {
+            "criterionId": "AC-61948d5c8ae6",
+            "status": "verified",
+            "evidence": "首版对照场景 L 形墙穿插处线稿差 2 像素（均值 0.00018），归入 B 组；同状态导出两次逐像素相同证明来自合并；discovery/research/p1-evidence.md"
+          },
+          {
+            "criterionId": "AC-1683e4323487",
+            "status": "verified",
+            "evidence": "e2e 'P1 AC-2'：视口 A/B 组选中描边（白模）与线框 4/4 逐像素相同"
+          },
+          {
+            "criterionId": "AC-fe1214d60cb5",
+            "status": "verified",
+            "evidence": "creative-scene-shadow.test.ts \"a merged model's cascades are fitted to its parts' boxes, value for value\"；去掉网格片时断言结果不同"
+          },
+          {
+            "criterionId": "AC-dc2f0d25e2ff",
+            "status": "verified",
+            "evidence": "SwiftShader 下 A 组整图逐像素相同（含玻璃）；Metal 实时 GI 玻璃区域 101802 像素单独比较，逐像素相同"
+          },
+          {
+            "criterionId": "AC-5f470d659a65",
+            "status": "unverified",
+            "evidence": "待 owner 看 parity/*.jpg、perf/p1-gi-*.jpg 并排图"
+          },
+          {
+            "criterionId": "AC-591414dc0097",
+            "status": "unverified",
+            "evidence": "单测：creative-scene-snap.test.ts（点选/吸附命中相同、外壳不被加速）、creative-scene-model.test.ts（取景逐值相等、描边/线框按网格片）；定向 e2e 13 项通过；'the assistant’s changes are outlined' 与 'a model the assistant is adding' 两项失败，develop a342fa90 上同样失败（同一断言），与本次无关，但「相关用例都要通过」未满足；代码审计后补：mesh 换几何后吸附 BVH 随几何重建（creative-scene-snap.test.ts 先红后绿），重跑 C6 drag in、move tool、C6 copy semantics、AC-1 Z 切换、P1 AC-2 均通过"
+          },
+          {
+            "criterionId": "AC-dc330635e3c5",
+            "status": "verified",
+            "evidence": "e2e 'P1 AC-2'：合并后同一场景再导出一次，6/6 逐像素相同"
+          },
+          {
+            "criterionId": "AC-5b967886e42d",
+            "status": "verified",
+            "evidence": "见下列 AC-5 各项"
+          },
+          {
+            "criterionId": "AC-ae691dde733b",
+            "status": "verified",
+            "evidence": "perf/p1-perf.json scenes.scale before/after；建议与 profile 见 discovery/research/p1-evidence.md"
+          },
+          {
+            "criterionId": "AC-dae64c2efe91",
+            "status": "verified",
+            "evidence": "p1-perf.json limit_model：合并 26.3→37.2 ms，点选 0.14→0.10 ms（不剔除 10.4 ms）"
+          },
+          {
+            "criterionId": "AC-9bd3d9494ee4",
+            "status": "verified",
+            "evidence": "go test ./internal/creativeagent -run 'TestSceneToolsDescribe'（TestSceneToolsDescribeTheCostModel 先红后绿）；docs/dev/agent-skills-tools.md 已同步"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "代码审计 8 条已核：1/4/5/6/7/8 已修（吸附 BVH 按几何缓存且有回归测试、perPiece 合并失败整体生成、外壳拷贝 position、drawnGeometries、注释）；2 证据补三角面（白模 +14%、最终渲染 +6–7%）；3 需 Epic 修订待 owner。其余结论同上一轮：AC-1 达标、AC-2 逐像素相同、AC-4 两次导出相同、AC-5/AC-6 已记录。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "1136cd8557e92ce861b304ca2343d4996b47e864efb23a37b507d085187219b7"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-25T10:12:52.233Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "定向验证，未跑全量单测与全量 e2e；make check-merge 在合回 develop 时跑。AC-3 助手高亮与助手占位框两条 e2e 在 develop 上同样失败，另开修复。",
+        "followUp": "samson：另开 issue 修复助手高亮与占位框两条 e2e；P4/P5 实测后修订 Epic AC-3 阈值"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-25 验收通过：实测性能显著提升；接受 AC-2 分组措辞修订（同深度表面归 B 组）与并排图；代码审计 8 条已核，6 条已修、三角面证据已补；AC-3 两条 develop 上已有的 e2e 失败另开修复；AC-3 阈值待 P4/P5 实测再定；drawRange 约定、P5 级联包围盒复用与同深度表面例外走 Epic 修订。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "1136cd8557e92ce861b304ca2343d4996b47e864efb23a37b507d085187219b7"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-25T10:13:06.708Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

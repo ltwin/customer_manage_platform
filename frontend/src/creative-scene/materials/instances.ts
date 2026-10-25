@@ -1,7 +1,8 @@
-import { Color, DoubleSide, FrontSide } from 'three'
+import { Color, DoubleSide, FrontSide, type BufferGeometry } from 'three'
 import { float, fwidth, length, materialEmissive, max, modelScale, normalLocal, normalView, positionLocal, positionView, uniform, varying } from 'three/tsl'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import type { ParamValue } from '../builtins/catalog.ts'
+import { pieceViews } from '../render/pieces.ts'
 import { preExposure } from '../world/exposure.ts'
 import { materialEntry } from './catalog.ts'
 import { bumpNormal, patternFns, type TSLNode } from './patterns.ts'
@@ -39,6 +40,11 @@ export function keyOf(m: SlotMaterial, doubleSided: boolean): string {
  */
 export function isSeeThrough(m: SlotMaterial): boolean {
   return m.kind === 'principled' && seeThrough(m.params)
+}
+
+/** The geometries a slot of material m is drawn as: piece by piece if see-through, sorted as its parts were (render/pieces.ts). */
+export function drawnGeometries(geometry: BufferGeometry, m: SlotMaterial): readonly BufferGeometry[] {
+  return isSeeThrough(m) ? pieceViews(geometry) : [geometry]
 }
 
 // The object-space position in true metres, so a scaled object does not

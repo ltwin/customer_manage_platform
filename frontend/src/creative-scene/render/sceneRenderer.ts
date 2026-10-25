@@ -119,6 +119,25 @@ export type Frame = {
 }
 
 /**
+ * One frame's load (scene-performance「每帧统计」): the draws and triangles
+ * three counted in the pipeline's passes, and the CPU milliseconds of all of
+ * render(), its preparations (aerial perspective, volumes) included.
+ */
+export type FrameStats = { readonly draws: number; readonly triangles: number; readonly cpuMs: number }
+
+/**
+ * What run draws: three's render counts after it less before. three resets
+ * them only as its animation loop begins a frame (r186 Animation.js), never
+ * inside a render, so autoReset is left as it is.
+ */
+export function measure(counts: { readonly drawCalls: number; readonly triangles: number }, run: () => void, started = performance.now()): FrameStats {
+  const draws = counts.drawCalls
+  const triangles = counts.triangles
+  run()
+  return { draws: counts.drawCalls - draws, triangles: counts.triangles - triangles, cpuMs: performance.now() - started }
+}
+
+/**
  * A colour for something drawn straight onto the 'pipeline' canvas after
  * the picture (drei's axis widget): three writes it linear and nothing
  * encodes it, so it is given encoded once more to show as asked.
@@ -443,6 +462,7 @@ export class SceneRenderer {
   private kept: { standIn: StandIn; order: number } | null = null
   private compiles = 0
   private disposed = false
+  private stats: FrameStats = { draws: 0, triangles: 0, cpuMs: 0 }
 
   /** `camera` is the one camera every frame is drawn from; the passes keep it. */
   private readonly camera: Camera
@@ -653,8 +673,15 @@ export class SceneRenderer {
     }
   }
 
+  /** What the last render() drew (e2e performance checks, P2's statistics overlay). */
+  get lastFrame(): FrameStats {
+    return this.stats
+  }
+
   /** Draws a frame into the renderer's canvas. */
+
   render(camera: Camera, frame: Frame) {
+    const started = performance.now()
     if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
     const renderer = this.gpu.renderer
     const wireframe = frame.wireframe === true
@@ -708,7 +735,7 @@ export class SceneRenderer {
     prepareAerial(this.scene, renderer, camera, !wireframe)
     prepareVolumes(this.scene, camera, !wireframe)
     try {
-      built.pipeline.render()
+      this.stats = measure(renderer.info.render, () => built.pipeline.render(), started)
     } finally {
       renderer.toneMappingExposure = exposure
       preExposure.value = 1

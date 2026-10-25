@@ -23,7 +23,12 @@ import {
   type Manifest,
 } from '../src/creative-scene/sandbox/inspect.ts'
 import { createLib1 } from '../src/creative-scene/sandbox/lib.ts'
-import { ModelCache, modelSummaries, type SceneModel } from '../src/creative-scene/models/cache.ts'
+import { ModelCache, modelSummaries, partsOf, type ModelMeshPart, type SceneModel } from '../src/creative-scene/models/cache.ts'
+import { mergeParts } from '../src/creative-scene/models/merge.ts'
+import { parseGLB } from '../src/creative-scene/sandbox/gltf.ts'
+import { disposePieceViews, expandByPieces, perPiece, pieceViews, piecesOf } from '../src/creative-scene/render/pieces.ts'
+import { edgesOf, shellOf } from '../src/creative-scene/objects/wireframe.ts'
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   localContent,
   localRevision,
@@ -596,7 +601,7 @@ test('the model cache downloads, inspects and parses each revision once', async 
   const [a, b] = await Promise.all([cache.load('ccrv_1'), cache.load('ccrv_1')])
   assert.equal(a, b)
   assert.deepEqual(downloads, ['ccrv_1'], 'one download for any number of instances')
-  assert.equal(a.meshes.length, 3, 'base, shaft and capital')
+  assert.equal(a.meshes.length, 2, 'base and capital share the trim slot and are drawn as one; the shaft is stone')
   // Each part's transform is baked into its geometry (model space).
   const top = a.meshes.map((m) => {
     m.geometry.computeBoundingBox()
@@ -653,4 +658,252 @@ test('the preview cache keeps the eight most recently opened models and frees th
   assert.equal(freed, first.meshes.length, 'an evicted model frees its geometries')
   await models.load('ccrv_0')
   assert.equal(downloads.filter((r) => r === 'ccrv_0').length, 2, 'an evicted model is downloaded again')
+})
+
+/**
+ * A code-built model's tree (scene-performance P1): parts of slot a that draw
+ * alike (0, 2 and 6, one of them under a material object of its own), and
+ * parts of slot a that must stay apart from them: another slot (1), no index
+ * (3), other constants (4), vertex colours (5).
+ */
+function partsModel(): THREE.Group {
+  const root = new THREE.Group()
+  const material = (slot: string, params: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ name: `slot:${slot}`, color: '#aa0000', ...params })
+  const a = material('a')
+  const add = (geometry: THREE.BufferGeometry, m: THREE.Material, at: [number, number, number], turn = 0) => {
+    const mesh = new THREE.Mesh(geometry, m)
+    mesh.position.set(...at)
+    mesh.rotation.set(0.3 * turn, turn, 0)
+    root.add(mesh)
+  }
+  const coloured = new THREE.BoxGeometry(1, 1, 1)
+  coloured.setAttribute('color', new THREE.Float32BufferAttribute(new Array(24 * 3).fill(1), 3))
+  add(new THREE.BoxGeometry(1, 2, 1), a, [-2, 0, 0])
+  add(new THREE.SphereGeometry(0.5, 8, 6), material('b'), [0, 1, 0])
+  add(new THREE.CylinderGeometry(0.2, 0.4, 1, 7), material('a'), [2, 0, 0], 0.7)
+  add(new THREE.BoxGeometry(1, 1, 1).toNonIndexed(), a, [0, 0, 3])
+  add(new THREE.BoxGeometry(1, 1, 1), material('a', { roughness: 0.3 }), [0, 0, -3])
+  add(coloured, a, [3, 0, 3])
+  add(new THREE.TorusGeometry(0.5, 0.1, 6, 12), a, [-3, 0, -3], 1.1)
+  return root
+}
+
+/** The parts as they were before the merge: the e2e fixture's ?nomerge=1. */
+function unmerged(root: THREE.Object3D): ModelMeshPart[] {
+  const g = globalThis as { __sceneNoMerge?: boolean }
+  g.__sceneNoMerge = true
+  try {
+    return partsOf(root).meshes
+  } finally {
+    delete g.__sceneNoMerge
+  }
+}
+
+const bounds = (sphere: THREE.Sphere, box: THREE.Box3) => [...sphere.center.toArray(), sphere.radius, ...box.min.toArray(), ...box.max.toArray()]
+
+test("a model's parts that draw alike are merged; each part stays a piece with the bounds three gave it", () => {
+  const before = unmerged(partsModel())
+  assert.equal(before.length, 7, 'the e2e switch draws every part on its own, as before')
+  const { meshes } = partsOf(partsModel())
+  assert.deepEqual(
+    meshes.map((m) => [m.slot, m.constants.roughness, m.geometry.index !== null, 'color' in m.geometry.attributes]),
+    [
+      ['a', 1, true, false],
+      ['b', 1, true, false],
+      ['a', 1, false, false],
+      ['a', 0.3, true, false],
+      ['a', 1, true, true],
+    ],
+    'groups in the order each first appears',
+  )
+  const merged = meshes[0].geometry
+  const members = [before[0], before[2], before[6]].map((m) => m.geometry)
+  const pieces = piecesOf(merged)!
+  assert.equal(pieces.length, 3)
+  let at = 0
+  let base = 0
+  pieces.forEach((p, i) => {
+    const g = members[i]
+    assert.deepEqual([p.start, p.count], [at, g.index!.count])
+    g.computeBoundingSphere()
+    g.computeBoundingBox()
+    assert.deepEqual(bounds(p.sphere, p.box), bounds(g.boundingSphere!, g.boundingBox!), 'the bounds three sorts and culls by, bit for bit')
+    const triangles = Array.from(merged.index!.array.slice(p.start, p.start + p.count))
+    assert.deepEqual(triangles, Array.from(g.index!.array, (v) => v + base), "a piece's triangles are its part's")
+    at += p.count
+    base += g.attributes.position.count
+  })
+  assert.equal(at, merged.index!.count, 'the pieces run end to end over the whole index')
+  assert.deepEqual(Array.from(merged.attributes.position.array), members.flatMap((g) => Array.from(g.attributes.position.array)))
+  for (const m of meshes.slice(1)) assert.equal(piecesOf(m.geometry), undefined, 'a part alone keeps its geometry')
+  assert.equal(piecesOf(merged.clone()), undefined, 'a clone has no pieces: all of it is one')
+})
+
+test('a group three cannot merge after all stays as its parts', () => {
+  const parts = unmerged(partsModel())
+  const out = mergeParts(parts, () => null)
+  assert.deepEqual(
+    out.map((p) => p.geometry),
+    [0, 2, 6, 1, 3, 4, 5].map((i) => parts[i].geometry),
+  )
+  for (const p of out) assert.equal(piecesOf(p.geometry), undefined)
+})
+
+test('range views share the merged buffers, draw their piece and are made once', () => {
+  const { meshes } = partsOf(partsModel())
+  const merged = meshes[0].geometry
+  const pieces = piecesOf(merged)!
+  const views = pieceViews(merged)
+  assert.equal(pieceViews(merged), views, 'made once, kept with the geometry')
+  assert.deepEqual(pieceViews(meshes[1].geometry), [meshes[1].geometry], 'a geometry without pieces is its own view')
+  views.forEach((v, i) => {
+    assert.equal(v.index, merged.index)
+    for (const name of Object.keys(merged.attributes)) assert.equal(v.attributes[name], merged.attributes[name], `${name} shared`)
+    assert.deepEqual([v.drawRange.start, v.drawRange.count], [pieces[i].start, pieces[i].count])
+    assert.deepEqual(bounds(v.boundingSphere!, v.boundingBox!), bounds(pieces[i].sphere, pieces[i].box))
+    assert.notEqual(v.boundingSphere, pieces[i].sphere, 'its own copy: three computes into what it finds there')
+    assert.deepEqual(piecesOf(v), [pieces[i]])
+  })
+  let freed = 0
+  for (const v of views) v.addEventListener('dispose', () => freed++)
+  merged.addEventListener('dispose', () => assert.fail('the merged geometry goes with its model, not with its views'))
+  disposePieceViews(merged)
+  assert.equal(freed, views.length)
+})
+
+/** Boxes stacked face to face, the top one turned, a torus beside them and two floor tiles edge to edge: one slot. */
+function stacked(): THREE.Group {
+  const root = new THREE.Group()
+  const a = new THREE.MeshStandardMaterial({ name: 'slot:a' })
+  for (const [y, turn] of [
+    [0.5, 0],
+    [1.5, 0],
+    [2.5, 0.4],
+  ]) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), a)
+    box.position.y = y
+    box.rotation.y = turn
+    root.add(box)
+  }
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.15, 8, 16), a)
+  torus.position.set(2, 0.5, 0)
+  root.add(torus)
+  for (const x of [3, 4]) {
+    const tile = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), a)
+    tile.rotation.x = -Math.PI / 2
+    tile.position.set(x, 0, 2)
+    root.add(tile)
+  }
+  return root
+}
+
+const values = (g: THREE.BufferGeometry, name: string) => Array.from(g.attributes[name].array)
+
+test('outline shells and wire edges are made per piece: the same as each part on its own', () => {
+  const before = unmerged(stacked()).map((p) => p.geometry)
+  const { meshes } = partsOf(stacked())
+  assert.equal(meshes.length, 1)
+  const merged = meshes[0].geometry
+
+  const shell = shellOf(merged)
+  const shells = before.map((g) => toCreasedNormals(g, Math.PI))
+  for (const name of ['position', 'normal'])
+    assert.deepEqual(
+      values(shell, name),
+      shells.flatMap((g) => values(g, name)),
+      `shell ${name}: normals never averaged across two parts`,
+    )
+  let start = 0
+  assert.deepEqual(
+    piecesOf(shell)!.map((p) => [p.start, p.count, p.box]),
+    shells.map((g, i) => {
+      const at = [start, g.attributes.position.count, piecesOf(merged)![i].box]
+      start += g.attributes.position.count
+      return at
+    }),
+    "the shell's pieces: its own ranges, the parts' boxes",
+  )
+
+  const edges = edgesOf(merged)
+  assert.equal(edgesOf(merged), edges, 'worked out once per geometry')
+  const each = before.flatMap((g) => values(new THREE.EdgesGeometry(g, 30), 'position'))
+  assert.deepEqual(values(edges, 'position'), each, 'edges where parts touch show as they did')
+  assert.notDeepEqual(values(new THREE.EdgesGeometry(merged, 30), 'position'), each, 'across the whole geometry the seam between the tiles would go')
+  assert.notDeepEqual(values(toCreasedNormals(merged, Math.PI), 'normal'), shells.flatMap((g) => values(g, 'normal')), 'and the shell would round over the stacked boxes')
+
+  const view = pieceViews(merged)[2]
+  assert.deepEqual(values(shellOf(view), 'position'), values(shells[2], 'position'), "a range view's shell is its piece alone")
+
+  const loose = new THREE.BoxGeometry(1, 1, 1).toNonIndexed()
+  const normal = loose.attributes.normal
+  const looseShell = shellOf(loose)
+  assert.equal(loose.attributes.normal, normal, 'a geometry without an index keeps its own normals')
+  assert.notEqual(looseShell.attributes.position, loose.attributes.position, 'and its positions: freeing the shell frees none of its buffers')
+})
+
+test('pieces made unlike each other, which three cannot merge, are made whole instead', (t) => {
+  const merged = partsOf(stacked()).meshes[0].geometry
+  const error = t.mock.method(console, 'error', () => {})
+  let n = 0
+  const made = perPiece(merged, (g) => {
+    const out = g.clone()
+    if (n++ === 0) out.deleteAttribute('normal')
+    return out
+  })
+  assert.ok(error.mock.callCount() > 0, 'three said why')
+  assert.equal(made.attributes.position.count, merged.attributes.position.count)
+  assert.equal(piecesOf(made), undefined, 'one piece: all of it')
+})
+
+test('framing a turned merged model bounds what its parts did, selection shells included', () => {
+  const mount = (parts: ModelMeshPart[]) => {
+    const group = new THREE.Group()
+    group.quaternion.setFromEuler(new THREE.Euler(0.4, 0.9, 0.2))
+    group.position.set(1, 0, -2)
+    group.scale.set(1.5, 1, 2)
+    for (const p of parts) {
+      const mesh = new THREE.Mesh(p.geometry)
+      const shell = new THREE.Mesh(shellOf(p.geometry))
+      mesh.add(shell)
+      group.add(mesh)
+    }
+    for (const g of pieceViews(parts[0].geometry)) group.add(new THREE.Mesh(g))
+    return group
+  }
+  const box = (b: THREE.Box3) => [...b.min.toArray(), ...b.max.toArray()]
+  const before = box(new THREE.Box3().expandByObject(mount(unmerged(partsModel()))))
+  const merged = partsOf(partsModel()).meshes
+  assert.deepEqual(box(expandByPieces(new THREE.Box3(), mount(merged))), before)
+  assert.notDeepEqual(box(new THREE.Box3().expandByObject(mount(merged))), before, "three's own, with one box over the slot, bounds more")
+})
+
+test('the stress scenes come out byte for byte the same each time, at their sizes', async () => {
+  const { equivalence, multiPart, primitives, scaleScene } = await import('./scene-stress.mjs')
+  const a = await multiPart()
+  assert.ok(a.models.parts.glb.equals((await multiPart()).models.parts.glb), 'the same arguments, the same bytes')
+  assert.equal(a.models.parts.manifest.triangles, 1000 * 12)
+  assert.deepEqual(a.models.parts.manifest.slots.map((s: { id: string }) => s.id), ['a', 'b'])
+  assert.equal(a.objects.length, 4)
+  const bytes = a.models.parts.glb
+  assert.equal(partsOf(await parseGLB(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))).meshes.length, 2, '1000 parts in 2 slots draw as 2')
+
+  assert.equal(primitives().objects.length, 1000)
+
+  const big = await scaleScene()
+  const again = await scaleScene()
+  for (const [name, m] of Object.entries(big.models)) assert.ok(m.glb.equals(again.models[name].glb), name)
+  assert.deepEqual(big.objects, again.objects)
+  const instances = big.objects.filter((o: { kind: string }) => o.kind === 'model_instance')
+  assert.equal(Object.keys(big.models).length, 30)
+  assert.equal(instances.length, 2000)
+  assert.equal(big.objects.filter((o: { kind: string }) => o.kind === 'primitive').length, 300)
+  const triangles = instances.reduce((n: number, o: { model: { name: string } }) => n + big.models[o.model.name].manifest.triangles, 0)
+  assert.ok(triangles <= 5e6, `${triangles} triangles in the instances`)
+  const recoloured = instances.filter((o: { material_slots: object }) => Object.keys(o.material_slots).length > 0).length
+  assert.equal(recoloured, 860, '43% of the instances have their slots recoloured')
+  assert.equal(big.objects.filter((o: { kind: string; light?: { cast_shadow: boolean } }) => o.kind === 'light' && o.light?.cast_shadow).length, 3, 'with the sun, four lights cast shadows')
+
+  const eq = await equivalence()
+  for (const name of ['glass', 'stone', 'wall', 'stacked']) assert.ok(eq.models[name].glb.equals((await equivalence()).models[name].glb), name)
+  assert.equal(eq.objects.filter((o: { kind: string }) => o.kind === 'camera').length, 2, 'a camera on each set')
 })

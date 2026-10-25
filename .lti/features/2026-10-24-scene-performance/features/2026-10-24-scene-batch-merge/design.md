@@ -55,7 +55,7 @@ export function piecesOf(geometry: BufferGeometry): readonly Piece[] | undefined
 | 新模块 `models/merge.ts` | 纯函数：分组键、`mergeGeometries`、合并失败时回退、算包围体并登记网格片 |
 | 新模块 `render/pieces.ts` | 只依赖 three：`Piece`、登记与 `piecesOf`、`extractPiece`、`pieceViews` / `disposePieceViews`、`expandByPieces` |
 | `models/cache.ts` | 下载、解析、缓存不变；`partsOf` 调 `mergeParts`；`disposeParts` 的释放顺序 |
-| `objects/ModelMesh.tsx`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 按决策表画合并几何或 `pieceViews` |
+| `objects/ModelMesh.tsx`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 按决策表画合并几何或 `pieceViews`（半透明槽位经 `materials/instances.ts:drawnGeometries`） |
 | `objects/Outline.tsx`、`objects/wireframe.ts` | 有网格片时按网格片取出、分别计算再拼接 |
 | `placement/raycast.ts` | 吸附用 indirect BVH、跳过辅助图层；点选按网格片剔除（`raycastPieces`） |
 | `render/sunShadow.ts` | 级联拟合逐网格片读包围盒 |
@@ -99,7 +99,7 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
 
 | 消费方 | 做法 |
 |---|---|
-| `Outline` | `piecesOf(geometry)` 为空时照旧处理。否则对每个网格片用 `extractPiece` 取出独立几何（共用 attribute，index 取该区间的拷贝；无索引时拷贝顶点区间），分别 `toCreasedNormals(·, π)`，再 `mergeGeometries` 成一个外壳，并登记同样区间的网格片。结果与合并前「每个网格片各一个外壳」的三角形完全相同 |
+| `Outline`（外壳几何由 `objects/wireframe.ts:shellOf` 生成，便于单测） | `piecesOf(geometry)` 为空时照旧处理。否则对每个网格片用 `extractPiece` 取出独立几何（共用 attribute，index 取该区间的拷贝；无索引时拷贝顶点区间），分别 `toCreasedNormals(·, π)`，再 `mergeGeometries` 成一个外壳，并登记网格片（外壳自己的区间，原网格片的包围盒）。结果与合并前「每个网格片各一个外壳」的三角形完全相同。无索引几何只传位置给 `toCreasedNormals`：它会把法线写回传入的几何，原来的写法会改掉模型自身的法线 |
 | `edgesOf`（线框） | 同上，每个网格片分别 `EdgesGeometry(·, 30°)`，再拼接成一个 `BufferGeometry`。贴合网格片之间的边线照常显示 |
 | `accelerateModels` | `new MeshBVH(geometry, { indirect: true })`：indirect 模式排的是自己的间接缓冲，既不重排 index，也不补 index（`GeometryBVH.js:145-154`）。同时跳过不在 0 号图层上的对象（选中描边外壳、边线），它们原本是 `noRaycast`，现在会被换成 `acceleratedRaycast` 并单独建树 |
 
@@ -109,7 +109,7 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
 |---|---|
 | `fitCascades`（`render/sunShadow.ts:125-131`） | 有网格片时把每个网格片的 `box` 放进投影物列表，否则照旧用几何包围盒。列表与合并前逐 mesh 的盒子相同，级联的尺寸、texel、normalBias 和深度范围也就相同。遍历次数和现在一样 |
 | 取景（`Viewport.tsx` 的 `frame`） | `expandByPieces(bounds, object)`：与 `Box3.expandByObject` 的非精确模式相同，只是有网格片的几何逐个网格片取盒。物件旋转时，合并盒变换后的轴对齐盒比各网格片的并集大，不这样做取景会偏松 |
-| 点选（`Viewport.tsx` 的 `objectAt`） | 合并几何的 mesh 用 `raycastPieces`：逐网格片用 three 默认的 `Mesh.raycast` 测它的范围视图（先测包围球、包围盒，再测区间内的三角形），命中的 `object` 改回原 mesh。开销与合并前相同，不需要先建 BVH。吸附建好 BVH 后照旧换成 `acceleratedRaycast` |
+| 点选（`Viewport.tsx` 的 `objectAt`） | 模型的 mesh 都用 `raycastPieces`（经 `SlotMesh`、`WireMesh` 新增的可选 `raycast` 属性传入；没有网格片的几何等同 three 默认）：逐网格片用 three 默认的 `Mesh.raycast` 测它的范围视图（先测包围球、包围盒，再测区间内的三角形），命中的 `object` 改回原 mesh。开销与合并前相同，不需要先建 BVH。吸附建好 BVH 后照旧换成 `acceleratedRaycast` |
 
 `SceneRenderer.compile` 的替身按「顶点布局 + 材质 + 标志」区分种类，合并几何和范围视图的顶点布局不变，不用改。
 
@@ -136,8 +136,9 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
     - 总面数不超过 500 万；
     - 投影灯：太阳、2 盏聚光、1 盏点光。
   - `equivalence()`：对照场景，分两组。
-    - A 组没有跨网格片的共面接触：同一槽位互相重叠的三块玻璃板（`principled@1`，opacity 0.4）、缩放 2.5 倍的程序化材质模型、受太阳光照的 L 形墙（两段墙同一槽位，合并盒会盖住内角的空地）；
-    - B 组：贴合堆叠的盒子，用来看线框接缝。
+    - A 组没有任何两个表面处在同一深度：零件之间、零件与地面之间都不接触、不穿插，相隔 1–2 cm。包括同一槽位互相重叠的三块玻璃板（`principled@1`，opacity 0.4）、缩放 2.5 倍的程序化材质模型、受太阳光照的 L 形墙（两段墙同一槽位，合并盒会盖住内角的空地）；
+    - B 组是会出现同深度表面的情况：贴合堆叠、立在地面上的盒子，边对边的地砖，穿过方块的圆杆。两个表面深度相同时谁显示，合并前取决于逐物件的深度排序，合并后取决于拼接顺序。
+    - 实施中的发现：两段墙互相穿插时，交线上两个零件深度相同，线稿导出差了 2 个像素（均值 0.00018，在 `line` 阈值内）。穿插和贴地与共面接触是同一种情况，所以都放进 B 组。
 - `overrides` 的默认值：实施时统计开发库现有场景里带槽位覆盖的模型实例占比，写进 evidence。统计不到时取 30%，并在 evidence 里注明是假设。
 
 ## 局部设计与偏差
@@ -164,20 +165,26 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
 | `frontend/src/creative-scene/models/cache.ts:disposeParts` | 修改 | 先释放范围视图，再释放合并几何 |
 | `frontend/src/creative-scene/render/pieces.ts` | 新增 | `Piece`、`piecesOf`、`extractPiece`、`pieceViews`、`disposePieceViews`、`expandByPieces` |
 | `frontend/src/creative-scene/objects/ModelMesh.tsx:ModelMesh` | 修改 | 按决策表画合并几何或范围视图（材质槽位路径和幽灵路径） |
-| `frontend/src/creative-scene/objects/Outline.tsx:Outline` | 修改 | 有网格片时按网格片生成外壳并登记 |
+| `frontend/src/creative-scene/objects/Outline.tsx:Outline` | 修改 | 外壳改用 `shellOf` |
+| `frontend/src/creative-scene/objects/SlotMesh.tsx:SlotMesh` | 修改（清单外补充） | 可选的 `raycast` 属性，模型的 mesh 按网格片点选 |
+| `frontend/src/creative-scene/objects/WireMesh.tsx:WireMesh` | 修改（清单外补充） | 同上，线框模式下的点选 |
 | `frontend/src/creative-scene/objects/wireframe.ts:edgesOf` | 修改 | 有网格片时按网格片生成边线 |
+| `frontend/src/creative-scene/objects/wireframe.ts:shellOf` | 新增 | 选中描边外壳的几何，按网格片生成 |
 | `frontend/src/creative-scene/placement/raycast.ts:accelerateModels` | 修改 | `indirect: true`；跳过不在 0 号图层的对象 |
 | `frontend/src/creative-scene/placement/raycast.ts:raycastPieces` | 新增 | 点选按网格片剔除 |
 | `frontend/src/creative-scene/render/sunShadow.ts:fitCascades` | 修改 | 逐网格片读包围盒 |
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | `frame` 用 `expandByPieces`；`LookView` 测试下写 `gpuTestHooks.lastFrame` |
 | `frontend/src/creative-scene/preview/ModelPreview.tsx:Meshes` | 修改 | 按决策表画 |
 | `frontend/src/creative-scene/library/thumbnail.ts:renderMaterialThumbnail` | 修改 | 按决策表画 |
+| `frontend/src/creative-scene/materials/instances.ts:drawnGeometries` | 新增 | 决策表里半透明一行：三处共用（代码审计 2026-10-25） |
 | `frontend/src/creative-scene/render/sceneRenderer.ts:SceneRenderer.render` | 修改 | `lastFrame` |
 | `frontend/src/creative-scene/render/gpu.ts:gpuTestHooks` | 修改 | 加 `lastFrame` |
-| `frontend/scripts/scene-stress.mjs` | 新增 | 压力场景与对照场景生成器 |
+| `frontend/scripts/scene-stress.mjs` | 新增 | 压力场景、对照场景与上限模型（`capModel`）生成器 |
 | `frontend/scripts/creative-scene.e2e.mjs` | 修改 | fixture 支持 `?nomerge=1`；等价对照检查；`SCENE_E2E_PERF` 的压力场景帧时检查 |
 | `frontend/scripts/creative-scene-model.test.ts` | 修改 | 合并分组、顺序、网格片、范围视图、描边和边线的等价性单测 |
-| `frontend/scripts/creative-scene-*.test.ts`（级联、取景、拾取相关的现有文件） | 修改 | 级联逐值相等、取景范围相等、点选和吸附命中相同 |
+| `frontend/scripts/creative-scene-shadow.test.ts` | 修改 | 级联逐值相等（L 形墙） |
+| `frontend/scripts/creative-scene-snap.test.ts` | 修改 | 点选和吸附命中与合并前相同、描边外壳不被加速 |
+| `frontend/scripts/creative-scene-gpu.test.ts` | 修改 | three 只在动画循环开头重置统计、`measure` 的差值 |
 | `backend/internal/creativeagent/scene_tools.go` | 修改 | `write_model`、`edit_scene` 说明各加一句 |
 | `backend/internal/creativeagent/scene_tools_test.go` | 修改 | 断言新句子 |
 | `docs/dev/agent-skills-tools.md` | 修改 | 场景工具表注明 P1 的说明变化 |
@@ -189,7 +196,7 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
   - 用 `?nomerge=1` 再跑一遍，作为同一次运行里的基线。
   - 数字取热着色器缓存，记入 evidence 的 `perf.json`。
 - **AC-2 画面等价**：
-  - 默认套件里新增一条检查（SwiftShader）：对照场景在 `?nomerge=1` 和默认下各导出一次 `clay`、`line`、`lit`（工作台）。A 组断言逐像素相同；B 组用 `compareShots` 和 `parityLimits` 比较。视口的选中描边和线框模式截图按 `line` 阈值比较。玻璃区域裁出来单独比。
+  - 默认套件里新增一条检查（SwiftShader）：对照场景在 `?nomerge=1` 和默认下各导出一次 `clay`、`line`、`lit`（工作台）。A 组断言逐像素相同；B 组用 `compareShots` 和 `parityLimits` 比较。同一构建、同一状态导出两次逐像素相同（已核实 SwiftShader 确定），所以 A 组的任何差异都来自合并。视口的选中描边和线框模式截图按 `line` 阈值比较。玻璃区域裁出来单独比。
   - 单测：L 形墙加太阳的场景，同一镜头下 `fitCascades` 在合并前后算出的每级灯位置和正交范围逐值相等。
   - `SCENE_E2E_PERF` 的 Metal 检查里，补实时 GI 的 `lit` 对照（阈值）。
   - 并排图存进 evidence，交 owner 看。

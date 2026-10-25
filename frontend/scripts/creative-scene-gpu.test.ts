@@ -155,3 +155,27 @@ test('the viewport rebuilds on a lost device until the third loss within 10 seco
   const spaced = lossCounter()
   assert.deepEqual([0, 6000, 12000, 18000].map(spaced), ['rebuild', 'rebuild', 'rebuild', 'rebuild'], 'never three within 10 seconds')
 })
+
+// scene-performance「每帧统计」: SceneRenderer.lastFrame is three's counts after a render less before.
+
+import { measure } from '../src/creative-scene/render/sceneRenderer.ts'
+
+test('three resets its render counts only as its animation loop begins a frame', () => {
+  const resets = (path: string) => (three(path).match(/info\.reset\(\)|this\.reset\(\)/g) ?? []).length
+  assert.equal(resets('renderers/common/Animation.js'), 1)
+  assert.equal(resets('renderers/common/Renderer.js'), 0, 'not inside a render: the counts before and after one subtract')
+})
+
+test('a frame counts what its render drew, whatever came before it', () => {
+  const counts = { drawCalls: 5000, triangles: 1e6 }
+  const draw = (n: number) => () => {
+    counts.drawCalls += n
+    counts.triangles += n * 12
+  }
+  const first = measure(counts, draw(40))
+  assert.deepEqual([first.draws, first.triangles], [40, 480])
+  const second = measure(counts, draw(3))
+  assert.deepEqual([second.draws, second.triangles], [3, 36])
+  assert.ok(second.cpuMs >= 0)
+  assert.ok(measure(counts, () => {}, performance.now() - 20).cpuMs >= 20, 'timed from when render() began')
+})
