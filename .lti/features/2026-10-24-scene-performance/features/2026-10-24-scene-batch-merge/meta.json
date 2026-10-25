@@ -1,6 +1,6 @@
 {
   "uid": "20e81d62-87f9-4942-b226-d44c450cbf77",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-batch-merge",
   "kind": "feature",
   "assurance": "governed",
@@ -23,7 +23,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-25T05:41:27.826Z",
-  "updatedAt": "2026-10-25T10:13:06.906Z",
+  "updatedAt": "2026-10-25T10:14:21.099Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-25T10:14:21.043Z",
+    "summary": "已 --no-ff 合入 develop（fc750f1a），合入树与分支树相同；合并后 go build ./... 与前端 tsc -b 通过。owner 已实测性能提升。",
+    "method": "manual",
+    "limitations": "按 owner 约定（已亲自体验、合入树与分支相同）未跑 make check-merge；分支上的定向单测与 e2e 原样适用。",
+    "sourceCommit": "a1ea80d5461782fd7a2262a5c34628f097e7b73c",
+    "targetCommit": "fc750f1a8212b475c09f33221b5024abe5f43dde",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "70db62618e8f41f0f6cceac2778ff76584b2c7bb343146771894aa62fe327e84"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
