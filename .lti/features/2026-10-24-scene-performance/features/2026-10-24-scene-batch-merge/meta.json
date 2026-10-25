@@ -1,6 +1,6 @@
 {
   "uid": "20e81d62-87f9-4942-b226-d44c450cbf77",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-batch-merge",
   "kind": "feature",
   "assurance": "governed",
@@ -21,9 +21,9 @@
       "patterns:场景渲染批次"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-25T05:41:27.826Z",
-  "updatedAt": "2026-10-25T08:12:20.859Z",
+  "updatedAt": "2026-10-25T08:12:55.085Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -44,8 +44,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "a342fa90d585657c24b17cf90dbda34eaa687c8a",
+    "at": "2026-10-25T08:12:54.422Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "f5801a60e06cc32b48eb90d61918f0494f18e75e9833b1a7d0b0d716617a9389"
+    },
+    "preExisting": [
+      ".lti/snapshots/f5801a60e06cc32b48eb90d61918f0494f18e75e9833b1a7d0b0d716617a9389.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
