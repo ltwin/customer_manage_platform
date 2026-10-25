@@ -79,9 +79,9 @@
 **数据所有权**：
 
 - BVH、材质表、探针和反射历史都是渲染端的 GPU 派生状态，来源是已挂载的 three 场景图，不是场景文档。
-- 底座按渲染器实例持有（每个 `SceneRenderer` 一份），跨导出图复用，随渲染器销毁释放。不跨标签页共享。
+- 底座按渲染设备持有（每个 `SceneGPU` 一份，修订 v4），跨导出图复用，随设备释放。不跨标签页共享。导出为每张图新建 `SceneRenderer`（`host/render.ts`），挂在它上面就不能跨图复用。
 - 探针和反射历史属于每条管线，每张导出图清空（I3）。
-- **几何缓存**（修订 v2）：代理几何和 BVH 的序列化结果存进本机 IndexedDB。
+- **几何缓存**（修订 v2）：原始几何和代理按 GPU 格式打好的区段（基址为 0，修订 v4）存进本机 IndexedDB。
   - 键是「几何身份（模型内容修订或内置基础体参数的哈希）+ 构建算法版本」，算法或 ε 变化时版本号随之变化。
   - 缓存只是加速用的派生数据：随时可以清除或读取失败，失败就重建，从不作为事实来源，也不上传。
   - 容量上限 2 GiB，按模型修订做 LRU 淘汰，写入前用 `navigator.storage.estimate()` 检查配额（修订 v3）。压力场景约 440 MB（每面约 22 B）。
@@ -91,7 +91,7 @@
 
 ```mermaid
 flowchart LR
-  SG[three 场景图<br/>网格·材质·灯光·环境贴图] --> TS[光追底座 render/trace<br/>每个 SceneRenderer 一份]
+  SG[three 场景图<br/>网格·材质·灯光·环境贴图] --> TS[光追底座 render/trace<br/>每个渲染设备一份]
   SR[SceneRenderer] --> TS
   TS <--> WK[构建 Worker<br/>BVH·代理简化]
   WK <--> DB[(本机几何缓存<br/>IndexedDB)]
@@ -116,7 +116,7 @@ flowchart LR
   - **构建与缓存**：在 Worker 里为每个几何构建原始 BVH，以及追踪代理和它的 BVH，结果按几何身份缓存（I8、I9，见「一次性开销与缓存」）。
   - **打包与同步**：增量打包两份底层几何（原始与代理）、顶层和材质表，每帧比对变化并按需更新（见「场景同步」）。
   - **提供函数**：TSL 的求交函数（按精度档选原始或代理，经包装模块调用库的求交，见「使用要点」）和命中点着色函数。
-  - **打包移出主线程**：压力场景的原始层在主线程上打包要 0.64–0.74 s（S0），改为在 Worker 里写好可转移的缓冲，或者分帧执行；写缓存放到就绪之后。
+  - **打包移出主线程**：压力场景的原始层在主线程上打包要 0.64–0.74 s（S0），改为由 Worker 写好基址为 0 的区段，主线程只改基址并分帧提交（修订 v4）；写缓存放到回传之后。
   - **报告状态**：能力和容量（见「能力与容量」）。
   - 不负责：降噪、合成、帧推进和任何场景数据。
 - **世界空间追踪层**（`realtimeGI` 管线内部）：
@@ -145,7 +145,7 @@ flowchart LR
 | BVH 与求交 | `three-mesh-bvh` 0.9.15（已是 npm 依赖，锁定版本）的 `three-mesh-bvh/webgpu` | 路径追踪 Epic 已选定它（`scene-webgpu-renderer` proposal）。遍历是 WGSL（`wgslTagFn`），作为 `patterns` 的例外接受；它以 npm 依赖的形式使用，不拷进仓库（见下文「使用要点」）。整套 API 上游标为不稳定。在 r186 上从 TSL 调用它的求交，需要一个很小的 WGSL 包装函数，例外范围扩大到 `render/trace/` 里这一个包装模块（修订 v3），同时向上游提 PR |
 | 漫反射 | DDGI：以摄像机为中心的两级级联、八面体辐照度、Chebyshev 可见性（深度矩）、探针挪位与停用、读上一帧探针实现多次反弹（Majercik 等，JCGT 2019「Dynamic Diffuse Global Illumination with Ray-Traced Irradiance Fields」） | 比 Lumen 的 Screen Probe 加 Radiance Cache 简单得多，天然支持多次反弹。级联让探针数与场景范围无关，近处比均匀网格更密（修订 v2）。漏光是它的已知弱点，用挪位、停用和深度矩来压（S2）。S0 原型的方向见「探针体」（修订 v3） |
 | 追踪代理 | `meshoptimizer`（改为直接依赖，锁定版本）的 `MeshoptSimplifier.simplify`，用 `ErrorAbsolute` 按米指定误差，用 `LockBorder` 防止部件之间出现裂缝，并检查返回的实际误差 | 误差可以指定，也可以逐个模型检查，I8 才能写成可验证的上限。它的误差是二次误差的估计，不是严格的豪斯多夫距离（S0 实测有 1.5%–3.5% 的点超出 ε），所以由出图对照把关（AC-12；research「误差怎么受控」） |
-| 构建与缓存 | 多个普通模块 Worker（核数减一），按几何分给各个 Worker；`MeshBVH.serialize` / `deserialize`；本机 IndexedDB | 一次性开销移出主线程，同一个模型修订在同一台设备上只构建一次。首版不改契约；烘焙时生成并随模型内容存储，留到外部 GLB 导入之后。不用 `ParallelMeshBVHWorker`（修订 v3）：它依赖 `SharedArrayBuffer`，页面要开启跨源隔离，而几何多时按几何分配已经能用满所有核（S0 `throughput.md`） |
+| 构建与缓存 | 多个普通模块 Worker（核数减一），按几何分给各个 Worker；Worker 产出按 GPU 格式打好的区段，缓存存区段（修订 v4）；本机 IndexedDB | 一次性开销移出主线程，同一个模型修订在同一台设备上只构建一次；热启动只拷贝和改基址，不反序列化、也不在主线程打包。首版不改契约；烘焙时生成并随模型内容存储，留到外部 GLB 导入之后。不用 `ParallelMeshBVHWorker`（修订 v3）：它依赖 `SharedArrayBuffer`，页面要开启跨源隔离，而几何多时按几何分配已经能用满所有核（S0 `throughput.md`） |
 | 反射 | 在项目内 fork 的 `SSRNode` 里，对没命中和边缘淡出的采样沿同一 GGX 方向补追，命中点直接着色（hit lighting） | 和 SSR 同方向、同权重，才能共用现有的重投影、降噪和多次反弹回灌，不另建一条降噪链。fork 按 `patterns` 的 fork 规则在文件头注明上游版本和改动的行 |
 | 没命中时的光 | 场景环境贴图（`scene.environment`，`objects/Lighting.tsx` 生成的 PMREM） | 和材质的环境光照同一来源，天空类型（物理天空、夜空、纯色）自动一致（I2），不各自接入大气 LUT |
 | 命中点的阴影 | 朝太阳和灯光发阴影光线（求交到灯光距离为止）（修订 v3） | 产品的太阳阴影已改为按视锥拟合的级联阴影（`f8b2f34e`），屏幕外的命中点不在任何一级的覆盖范围内。阴影光线比不相干光线快 2.5–4 倍（S0 `hit-shading.md`），在反射补追里约占四成耗时 |
@@ -156,7 +156,7 @@ flowchart LR
 **`three-mesh-bvh/webgpu` 的使用要点**（评审核对 0.9.15 源码）：
 
 - **结构**：
-  - 顶层是 `ClusteredBVH`，底层每个几何一棵 `MeshBVH`。底层会复用 `geometry.boundsTree`，放置功能已经设置了它（`placement/raycast.ts`）。
+  - 顶层是 `ClusteredBVH`，底层每个几何一棵 `MeshBVH`。底层在 Worker 里按 SAH 构建，不复用放置功能的 `geometry.boundsTree`：那棵树在主线程上按 CENTER 策略建，只有拖动过的网格才有（修订 v4）。
   - **顶层一个根一项**（修订 v3）：构建 `ClusteredBVH` 时传 `shouldCluster: () => true`。库的默认做法把普通网格拆成不到 64 面一簇，压力场景的顶层会有约 1400 万项。
   - 网格有多个 group 时，每个 group 是一个根，在顶层各占一项、各占一个变换槽；预留空间按根数算。多槽位模型的材质索引因此可以按「实例 + 槽位」写进各自的变换槽。
   - 每个变换槽存正矩阵、逆矩阵和可见标志。
@@ -259,13 +259,13 @@ shaded  = direct · contact'
 | 灯光、天空、曝光变化 | 底座不变；命中点着色读同一组 uniform 和环境贴图 |
 
 - 底层缓冲按容量预分配并留出余量，超出时扩容一次再整体上传。扩容是唯一一种整体上传，频率按指数扩容来控制。
-- 导出时每张图新建 `realtimeGI` 管线（`realtimeGI.ts` 的 MRT 注释），底座挂在 `SceneRenderer` 上，跨图复用，不随管线重建 BVH 或重新编译。
+- 导出时每张图新建 `realtimeGI` 管线（`realtimeGI.ts` 的 MRT 注释），底座挂在渲染设备（`SceneGPU`）上，跨图复用，不随管线重建 BVH 或重新编译（修订 v4）。
 
 ### 一次性开销与缓存
 
 | 开销 | 何时发生 | 处理 |
 |---|---|---|
-| 原始 BVH 构建（SAH） | 每个新几何 | 在 Worker 池里构建，结果序列化后存入本机几何缓存。放置功能已经为 `geometry.boundsTree` 建过的就直接复用。压力场景 11 个 Worker 墙钟 4.4–5.7 s；30 万面的几何在一个 Worker 里 0.38–0.41 s |
+| 原始 BVH 构建（SAH） | 每个新几何 | 在 Worker 池里构建并打包成区段，存入本机几何缓存（修订 v4）。压力场景 11 个 Worker 墙钟 4.4–5.7 s；30 万面的几何在一个 Worker 里 0.38–0.41 s |
 | 代理简化和代理 BVH | 每个新几何 | 在 Worker 里用 `meshoptimizer`，按 ε_probe 简化（目标面数 0，`ErrorAbsolute`、`LockBorder`）。简化不掉时（例如重合顶点被锁住），代理就是原始几何，不放宽误差（I8）。内置基础体的盒子每个面各有一组顶点，边全是边界，代理与原始相同 |
 | 上传 GPU | 打开场景，或新几何就绪 | 按几何分段上传，不阻塞编辑 |
 | 着色器编译 | 每个渲染器第一次 | 材质表是数据驱动的，场景内容变化不会触发重编译。编译时间计入 `lookBudgetMs` |
