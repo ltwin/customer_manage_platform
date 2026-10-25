@@ -7786,7 +7786,7 @@ async function equivalenceViewport({ nomerge = false, view }) {
 const rounded = (m) => (m.error ? { error: m.error } : { mean: Number(m.mean.toFixed(4)), over_percent: Number(m.over.toFixed(4)) })
 
 // SCENE_E2E_P1_EVIDENCE=<dir> keeps the side-by-side sheets (before, after, difference ×8) and p1-parity.json.
-await check('P1 AC-2: merged parts draw what each part on its own drew: exports pixel for pixel where no surfaces meet, the selection outline and wireframe alike', async () => {
+await check('P1 AC-2: merged parts draw what each part on its own drew: exports pixel for pixel where no surfaces meet, the selection outline and wireframe alike; exported twice alike', async () => {
   const dir = process.env.SCENE_E2E_P1_EVIDENCE
   const before = await exportEquivalence(browser, { nomerge: true })
   const after = await exportEquivalence(browser)
@@ -7814,6 +7814,13 @@ await check('P1 AC-2: merged parts draw what each part on its own drew: exports 
     }
   }
   assert.equal(rows.length, 6, 'both cameras, all three passes')
+  // AC-4: the merged scene exported again is the same, pixel for pixel.
+  const again = await exportEquivalence(browser)
+  for (const [name, png] of Object.entries(again)) {
+    const m = await compareShots(page, after[name], png, 0)
+    rows.push({ name: `${name}-again`, criterion: 'merged, exported twice: pixel for pixel', ...rounded(m) })
+    assert.ok(!m.error && m.mean === 0 && m.over === 0, `${name} exported again: ${m.error ?? `mean ${m.mean}`}`)
+  }
   for (const view of ['a', 'b']) {
     const was = await equivalenceViewport({ nomerge: true, view })
     const now = await equivalenceViewport({ view })

@@ -54,6 +54,42 @@
       "over_percent": 0
     },
     {
+      "name": "shota-clay-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-line-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shota-lit-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-clay-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-line-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
+      "name": "shotb-lit-again",
+      "criterion": "merged, exported twice: pixel for pixel",
+      "mean": 0,
+      "over_percent": 0
+    },
+    {
       "name": "viewport-a-clay",
       "criterion": {
         "mean": 0.0016,

@@ -181,7 +181,9 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
 | `frontend/scripts/scene-stress.mjs` | 新增 | 压力场景、对照场景与上限模型（`capModel`）生成器 |
 | `frontend/scripts/creative-scene.e2e.mjs` | 修改 | fixture 支持 `?nomerge=1`；等价对照检查；`SCENE_E2E_PERF` 的压力场景帧时检查 |
 | `frontend/scripts/creative-scene-model.test.ts` | 修改 | 合并分组、顺序、网格片、范围视图、描边和边线的等价性单测 |
-| `frontend/scripts/creative-scene-*.test.ts`（`-shadow` 级联、`-snap` 点选与吸附、`-gpu` 每帧统计） | 修改 | 级联逐值相等、点选和吸附命中相同、three 只在动画循环开头重置统计 |
+| `frontend/scripts/creative-scene-shadow.test.ts` | 修改 | 级联逐值相等（L 形墙） |
+| `frontend/scripts/creative-scene-snap.test.ts` | 修改 | 点选和吸附命中与合并前相同、描边外壳不被加速 |
+| `frontend/scripts/creative-scene-gpu.test.ts` | 修改 | three 只在动画循环开头重置统计、`measure` 的差值 |
 | `backend/internal/creativeagent/scene_tools.go` | 修改 | `write_model`、`edit_scene` 说明各加一句 |
 | `backend/internal/creativeagent/scene_tools_test.go` | 修改 | 断言新句子 |
 | `docs/dev/agent-skills-tools.md` | 修改 | 场景工具表注明 P1 的说明变化 |
