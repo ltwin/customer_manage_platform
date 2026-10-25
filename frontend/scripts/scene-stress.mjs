@@ -90,6 +90,23 @@ export async function multiPart({ parts = 1000, slots = 2, instances = 4 } = {})
   return { models: { parts: await bake(root) }, objects }
 }
 
+/**
+ * A model at the triangle limit (300 000, sandbox/inspect.ts) in many parts:
+ * 2000 spheres of 144 triangles in 2 slots, a metre wide.
+ */
+export async function capModel() {
+  const root = new Group()
+  const materials = slotMaterials(['a', 'b'])
+  const side = Math.ceil(Math.sqrt(2000))
+  const cell = 1 / side
+  for (let i = 0; i < 2000; i++) {
+    const m = new Mesh(new SphereGeometry(cell * 0.45, 12, 7), materials[i % 2 ? 'b' : 'a'])
+    m.position.set((i % side) * cell - 0.5, cell / 2, Math.floor(i / side) * cell - 0.5)
+    root.add(m)
+  }
+  return bake(root)
+}
+
 /** n box primitives of one size on a grid. */
 export function primitives(n = 1000) {
   const objects = []
@@ -187,11 +204,14 @@ export async function scaleScene({ overrides = 0.43, seed = 7 } = {}) {
 
 /**
  * The equivalence scene (P1 AC-2), two sets far apart, each with its camera.
- *  - A, no two parts touching: three overlapping panes of one glass slot in
- *    a frame, a model of procedural stone 2.5 times its size, an L of wall
- *    with a post in the sun (one box over the L would cover its corner).
- *  - B: boxes stacked face to face and floor tiles edge to edge, where
- *    surfaces of two parts meet at one depth.
+ *  - A, where no two surfaces of different parts or objects are ever at one
+ *    depth (nothing touches, crosses or stands on the ground: a centimetre or
+ *    two apart): three overlapping panes of one glass slot over a frame, a
+ *    model of procedural stone 2.5 times its size, an L of wall with a post
+ *    in the sun (one box over the L would cover its corner).
+ *  - B, where they are: boxes stacked face to face on the ground, floor
+ *    tiles edge to edge, a rod through a block. Which of two surfaces at one
+ *    depth shows went by the objects' sort and goes by the parts' order now.
  */
 export async function equivalence() {
   const add = (root, geometry, material, at, turn = 0) => {
@@ -202,22 +222,21 @@ export async function equivalence() {
   }
   const glass = new Group()
   const g = slotMaterials(['glass', 'frame'])
-  // Above the base, not on it: nothing in A meets at one depth.
   for (let i = 0; i < 3; i++) add(glass, new BoxGeometry(1.2, 1.4, 0.02), g.glass, [i * 0.25 - 0.25, 0.85 + i * 0.1, i * 0.3], i * 0.2)
-  add(glass, new BoxGeometry(1.8, 0.1, 1.2), g.frame, [0, 0.05, 0.3])
-  add(glass, new BoxGeometry(0.08, 1.6, 0.08), g.frame, [-0.85, 0.8, -0.2])
+  add(glass, new BoxGeometry(1.8, 0.1, 1.2), g.frame, [0, 0.06, 0.3])
+  add(glass, new BoxGeometry(0.08, 1.6, 0.08), g.frame, [-0.85, 0.93, -0.2])
 
   const stone = new Group()
   const s = slotMaterials(['stone'])
-  add(stone, new BoxGeometry(0.6, 0.3, 0.6), s.stone, [0, 0.15, 0])
-  add(stone, new CylinderGeometry(0.15, 0.2, 0.8, 12), s.stone, [0, 0.72, 0], 0.4)
-  add(stone, new SphereGeometry(0.18, 12, 8), s.stone, [0, 1.25, 0])
+  add(stone, new BoxGeometry(0.6, 0.3, 0.6), s.stone, [0, 0.16, 0])
+  add(stone, new CylinderGeometry(0.15, 0.2, 0.8, 12), s.stone, [0, 0.73, 0], 0.4)
+  add(stone, new SphereGeometry(0.18, 12, 8), s.stone, [0, 1.33, 0])
 
   const wall = new Group()
   const w = slotMaterials(['wall'])
-  add(wall, new BoxGeometry(3, 1.6, 0.15), w.wall, [0, 0.8, -1.5])
-  add(wall, new BoxGeometry(0.15, 1.5, 3), w.wall, [1.5, 0.75, 0])
-  add(wall, new BoxGeometry(0.12, 2.2, 0.12), w.wall, [-1, 1.1, 1])
+  add(wall, new BoxGeometry(2.9, 1.6, 0.15), w.wall, [-0.05, 0.81, -1.5])
+  add(wall, new BoxGeometry(0.15, 1.5, 3), w.wall, [1.5, 0.76, 0])
+  add(wall, new BoxGeometry(0.12, 2.2, 0.12), w.wall, [-1, 1.11, 1])
 
   const stacked = new Group()
   const b = slotMaterials(['block'])
@@ -233,6 +252,8 @@ export async function equivalence() {
     tile.position.set(x, 0.01, 0)
     stacked.add(tile)
   }
+  add(stacked, new BoxGeometry(0.4, 0.4, 0.4), b.block, [-0.8, 0.2, 0], 0.3)
+  add(stacked, new CylinderGeometry(0.06, 0.06, 1.2, 12), b.block, [-0.8, 0.5, 0])
 
   const models = { glass: await bake(glass), stone: await bake(stone), wall: await bake(wall), stacked: await bake(stacked) }
   const pane = { preset: 'principled@1', params: { color: '#a8c8e0', opacity: 0.4, roughness: 0.1 } }

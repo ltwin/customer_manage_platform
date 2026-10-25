@@ -1,6 +1,6 @@
 {
   "uid": "20e81d62-87f9-4942-b226-d44c450cbf77",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-batch-merge",
   "kind": "feature",
   "assurance": "governed",
@@ -23,7 +23,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-25T05:41:27.826Z",
-  "updatedAt": "2026-10-25T08:12:55.085Z",
+  "updatedAt": "2026-10-25T09:01:42.476Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -43,7 +43,15 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
+  "revisions": [
+    {
+      "at": "2026-10-25T09:01:41.465Z",
+      "summary": "AC-2 对照场景的 A/B 分组按实测收紧：穿插零件的交线、立在地面上的接触与共面接触同属「同深度表面」，归入 B 组（阈值）；A 组改为零件之间、零件与地面互不接触、不穿插（间隙 1–2 cm），断言逐像素相同。判据未放宽。另：SlotMesh、WireMesh 加可选 raycast 属性（挂点清单外补充），描边外壳几何移到 wireframe.ts:shellOf。",
+      "contentHash": "72914ef76057694d",
+      "added": [],
+      "removed": []
+    }
+  ],
   "baseline": {
     "commit": "a342fa90d585657c24b17cf90dbda34eaa687c8a",
     "at": "2026-10-25T08:12:54.422Z",

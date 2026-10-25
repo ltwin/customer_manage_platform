@@ -19,7 +19,7 @@
 
 ## 3. 画面等价与交互回归
 
-- [ ] 3.1 默认套件新增等价对照检查（SwiftShader）：`equivalence` 场景在 `?nomerge=1` 与默认下各导出 `clay`、`line`、`lit`（工作台），A 组断言逐像素相同，B 组用 `compareShots` 和 `parityLimits` 比较；截选中描边和线框模式的视口，按 `line` 阈值比较；玻璃区域单独比较；并排图写进 evidence
+- [x] 3.1 默认套件新增等价对照检查（SwiftShader）：`equivalence` 场景在 `?nomerge=1` 与默认下各导出 `clay`、`line`、`lit`（工作台），A 组断言逐像素相同，B 组用 `compareShots` 和 `parityLimits` 比较；截选中描边和线框模式的视口，按 `line` 阈值比较；玻璃区域单独比较；并排图写进 evidence
 - [ ] 3.2 `SCENE_E2E_PERF` 的 Metal 检查补实时 GI 的 `lit` 对照，以及多部件场景的 AC-1 断言（帧时均值 ≤ 16.7 ms，白模 draw ≤ 40）；记录合并后的规模场景数字和「确认或修订 Epic AC-3」的建议
 - [ ] 3.3 定向回归现有 e2e 中与模型、选择、框选、吸附放置、取景、G/R/S、幽灵、资产预览、缩略图、导出确定性相关的用例（`SCENE_E2E_ONLY`），全部通过
 
