@@ -25,4 +25,4 @@
 
 ## 4. 工具说明
 
-- [ ] 4.1 `scene_tools_test.go` 先加断言（红），再给 `scene_tools.go` 的 `write_model`、`edit_scene` 说明各加一句成本模型（绿）；同步 `docs/dev/agent-skills-tools.md` 的场景工具表
+- [x] 4.1 `scene_tools_test.go` 先加断言（红），再给 `scene_tools.go` 的 `write_model`、`edit_scene` 说明各加一句成本模型（绿）；同步 `docs/dev/agent-skills-tools.md` 的场景工具表
