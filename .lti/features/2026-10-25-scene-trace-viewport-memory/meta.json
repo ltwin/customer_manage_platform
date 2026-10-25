@@ -1,0 +1,17 @@
+{
+  "uid": "4e33c6a9-8c2e-4995-a09b-70a8dbec7eba",
+  "revision": 1,
+  "id": "scene-trace-viewport-memory",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-25T16:07:57.896Z",
+  "updatedAt": "2026-10-25T16:07:57.935Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

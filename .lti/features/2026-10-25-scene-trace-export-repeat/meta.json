@@ -1,0 +1,17 @@
+{
+  "uid": "81d513d3-667d-4404-bd70-785229921f7d",
+  "revision": 1,
+  "id": "scene-trace-export-repeat",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-25T16:07:57.411Z",
+  "updatedAt": "2026-10-25T16:07:57.449Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

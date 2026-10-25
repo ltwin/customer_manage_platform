@@ -1,0 +1,17 @@
+{
+  "uid": "13dae5a0-bc41-4c02-a3ea-b30b7213450d",
+  "revision": 1,
+  "id": "scene-export-geometry-budget",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-25T16:07:58.860Z",
+  "updatedAt": "2026-10-25T16:07:58.898Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

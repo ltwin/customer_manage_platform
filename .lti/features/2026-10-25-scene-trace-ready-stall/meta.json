@@ -1,0 +1,17 @@
+{
+  "uid": "a004702b-c6a3-43e6-81f0-7caf8af3481d",
+  "revision": 1,
+  "id": "scene-trace-ready-stall",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-25T16:07:58.379Z",
+  "updatedAt": "2026-10-25T16:07:58.417Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
