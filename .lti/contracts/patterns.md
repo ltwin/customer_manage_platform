@@ -110,3 +110,25 @@ export default function build({ params, THREE, lib, rng }) {
 - **不适用于**：不做 3D 渲染的 2D canvas（例如画布页的生成遮罩用 2D context）；沙箱里的几何代码只生成几何、不渲染。
 - **检查**：`make check-frontend` 中的静态检查（`scene-webgpu-renderer` R1 交付）：`frontend/src` 里出现 `WebGLRenderer`、`WebGLRenderTarget`、`ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`、`ShaderLib`、`ShaderChunk`、GLSL 模板字符串、`three/examples/jsm/postprocessing/*`、`three/addons/objects/Sky.js`、非 WebGPU 版的 `lines/*`，或白名单以外的 drei 组件时失败。`frontend/src/creative-scene/world/` 和 `render/` 里出现 `Date.now()` 或无参的 `new Date()` 时也失败（`scene-world-environment` W2 交付；节流用的 `performance.now()` 不影响画面，不在此列）。
 - **例子**：`frontend/src/creative-scene/materials/patterns.ts` 的预设函数和 `render/` 下的渲染器创建入口（R1 改写后）。
+
+## 场景渲染批次
+
+- **约定**：
+  - **身份**：场景图里每个物件都有一个以物件 ID 命名的 group，它是身份、变换、可见性和拾取的唯一来源。渲染端为了少画几次而做的合并、共享和实例化，统称「渲染批次」，都是派生状态：可以随时重建，不写进场景文档、GLB 或 manifest，也不进渲染指纹。
+  - **画质优先**（owner 2026-10-24）：批次层和阴影缓存不得改变画面，包括透明排序、幽灵模型、选中描边和线框边线。允许近似的优化（视口 LOD、阴影隔帧更新）要由 owner 看图确认肉眼看不出，而且出图（导出、`render_view`）不用。
+  - **合并只在加载后做**：模型的网格片（`partsOf` 产出的 `ModelMeshPart`，即 GLB 里的每个 mesh，不是命名部件 `part:<id>`）在 `models/cache.ts` 的 `partsOf` 里合并：
+    - 分组键是「槽位、hint、材质常量全部字段、顶点属性签名（名称、`itemSize`、`normalized`、数组类型）、是否有索引」；
+    - 用 `mergeGeometries(geoms, false)`，不生成 group；
+    - 组按场景树遍历中首次出现的顺序排列，组内按遍历顺序拼接，只有一个成员的组沿用原几何；
+    - 合并时记录每个网格片的索引区间（非索引几何记顶点区间）和它自己的包围球、包围盒，用 three 的 `computeBoundingSphere` / `computeBoundingBox` 在原网格片上算。
+
+    消费方看到的仍是 `{geometry, slot, hint, constants}`，网格片范围经 `piecesOf(geometry)` 只读获取。
+  - **需要等价的地方按网格片画**：槽位解析出的材质半透明或透射时，以及幽灵模型，按网格片绘制「范围视图」几何：与合并几何共用 attribute 和 index，只设 `drawRange` 和该网格片的 `boundingSphere`。选中描边的外壳、线框边线也按网格片分别生成再拼接，不跨网格片计算。
+  - **按包围体工作的地方逐个网格片读**：原来逐 mesh 读几何包围盒的模块（太阳级联拟合、视口取景）改为逐网格片读，点选先按网格片的包围体剔除。新增这类模块时同样处理，否则合并会悄悄改变阴影或取景。
+  - **模型代码不负责合并**：沙箱的 `lib` 不提供合并，Skill 和工具说明也不要求作者合并。部件（`part:`）和挂点（`anchor:`）在 GLB 里保持原样。
+  - **按 draw 数衡量性能**：视口开销以「每帧 draw 数」为主要指标，由 `SceneRenderer` 每帧记录（draw 数、三角面、`render()` 的 CPU 毫秒）。新增渲染 pass 或阴影类型时，在设计里写明它让每个物件每帧多画几次。
+- **为什么**：three r186 的 `WebGPURenderer` 每次 draw 约 3 µs CPU，帧时随 draw 数线性增长，与显卡无关。代码模型的 part 原样成为 draw，是视口卡顿的根因（`scene-performance` 的 `drawcall-diagnosis.md`）。合并放在渲染端，任何来源的模型都能受益（助手、创作者改的代码、资产库、以后的外部导入），GLB 也保留了部件结构。
+- **不适用于**：
+  - 辅助显示（灯光图标、摄像机视锥、网格、gizmo）：它们不在 0 号图层的主体里，数量少，不参与批次；
+  - 占位块（模型加载中或不可用时画的包围盒）：它不是模型几何。
+- **例子**：`frontend/src/creative-scene/models/cache.ts` 的 `partsOf`（P1 交付后）。

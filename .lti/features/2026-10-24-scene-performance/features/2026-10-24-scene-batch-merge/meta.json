@@ -1,6 +1,6 @@
 {
   "uid": "20e81d62-87f9-4942-b226-d44c450cbf77",
-  "revision": 8,
+  "revision": 10,
   "id": "scene-batch-merge",
   "kind": "feature",
   "assurance": "governed",
@@ -21,9 +21,9 @@
       "patterns:场景渲染批次"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-25T05:41:27.826Z",
-  "updatedAt": "2026-10-25T10:09:33.478Z",
+  "updatedAt": "2026-10-25T10:13:06.906Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -305,9 +305,38 @@
         "version": 2,
         "digest": "1136cd8557e92ce861b304ca2343d4996b47e864efb23a37b507d085187219b7"
       }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-25T10:12:52.233Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "定向验证，未跑全量单测与全量 e2e；make check-merge 在合回 develop 时跑。AC-3 助手高亮与助手占位框两条 e2e 在 develop 上同样失败，另开修复。",
+        "followUp": "samson：另开 issue 修复助手高亮与占位框两条 e2e；P4/P5 实测后修订 Epic AC-3 阈值"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-25 验收通过：实测性能显著提升；接受 AC-2 分组措辞修订（同深度表面归 B 组）与并排图；代码审计 8 条已核，6 条已修、三角面证据已补；AC-3 两条 develop 上已有的 e2e 失败另开修复；AC-3 阈值待 P4/P5 实测再定；drawRange 约定、P5 级联包围盒复用与同深度表面例外走 Epic 修订。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "1136cd8557e92ce861b304ca2343d4996b47e864efb23a37b507d085187219b7"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-25T10:13:06.708Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
