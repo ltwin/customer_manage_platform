@@ -1,13 +1,14 @@
 # Diagnosis
 
-> 状态：先记录（owner 2026-10-25「一时半会儿难以解决的问题可以先记issue，然后往后续推进」）。症状已实测，原因已知，修法改动较大，留给后续。来源是 `scene-offscreen-reflections`（S1）的未决事项 S1-U3。S1 只做 design A5，即离屏底座上传后释放 CPU 侧数组；视口这一份在本 issue 处理。代码在 `feat/scene-offscreen-reflections`，合入 develop 之前按该分支复现。
+> 状态：先记录（owner 2026-10-25「一时半会儿难以解决的问题可以先记issue，然后往后续推进」）。症状已实测，原因已知，修法改动较大，留给后续。来源是 `scene-offscreen-reflections`（S1）的未决事项 S1-U3。S1 只做 design A5，即离屏底座画完第一帧后释放 CPU 侧数组；视口这一份，以及导出打包时的瞬时峰值，在本 issue 处理。代码在 `feat/scene-offscreen-reflections`，合入 develop 之前按该分支复现。
 
 ## Symptom
 
 大厅（2001 万面、67 个模型）在编辑器里以实时 GI 打开，世界空间追踪层就绪后：
 
-- 只开视口时，JS 堆加类型化数组约 1.6–1.9 GiB；
-- 视口开着时再导出，两份底座并存，峰值约 2.8 GiB（S1 做 A5 之前测，做完后的数字以 S1 tasks 8.2 为准）；
+- 只开视口时，JS 堆加类型化数组 1407 MiB（先做 GC 再读；不做 GC 时读到 1.6–1.9 GiB）；
+- 视口开着时再导出，峰值约 2.8 GiB。S1 做了 A5 之后峰值不变：离屏层打包之后、画第一帧之前，CPU 侧仍有一整份数组；
+- A5 之后，导出画帧期间 1567 MiB（先做 GC 再读），也就是只多占约 160 MiB；A5 之前要多占 700 MiB 以上；
 - 这一层每个设备约 697 MiB（731,289,072 B），显存一份，视口还在 CPU 侧另留一份镜像。
 
 期望（S1 design S1-U3）：视口的 JS 堆超过 1 GB 时，改为按区段直接写 GPU 缓冲，不保留 CPU 镜像。
@@ -28,7 +29,7 @@ cd frontend && SCENE_E2E_TRACE_PERF=<目录> SCENE_E2E_ONLY="trace perf: AC-S1-8
   CREATIVE_SCENE_URL=http://localhost:<port> node scripts/creative-scene.e2e.mjs
 ```
 
-2026-10-25（Apple M4 Pro）：`heap.viewport` 1909 MiB，`heap.peak` 2835 MiB；`open.bytes` 731,289,072。
+2026-10-25（Apple M4 Pro）：A5 之前 `heap.viewport` 1909 MiB（未做 GC）、`heap.peak` 2835 MiB；A5 之后 `heap.viewport` 1407 MiB、`heap.peak` 2836 MiB、`heap.drawing` 1567 MiB（前后两项都先做 GC）；`open.bytes` 731,289,072。
 
 ## Blast Radius
 
@@ -38,6 +39,6 @@ cd frontend && SCENE_E2E_TRACE_PERF=<目录> SCENE_E2E_ONLY="trace perf: AC-S1-8
 
 ## Fix Direction
 
-1. 视口的层改为直接写 GPU 缓冲：追加和区间更新用 `queue.writeBuffer`，扩容和压缩用 `copyBufferToBuffer`，取 three 后端的 `GPUBuffer`。CPU 侧只保留分配表、变换槽之类的小数据。需要先确认 three r186 有没有稳定的入口，必要时加限定范围的补丁（`patterns` 已允许）。
+1. 视口的层和导出打包都改为直接写 GPU 缓冲（导出的峰值也随之降下来）：追加和区间更新用 `queue.writeBuffer`，扩容和压缩用 `copyBufferToBuffer`，取 three 后端的 `GPUBuffer`。CPU 侧只保留分配表、变换槽之类的小数据。需要先确认 three r186 有没有稳定的入口，必要时加限定范围的补丁（`patterns` 已允许）。
 2. 判档和实例更新改为读分配表，不读数组。
 3. 两个设备共用一份内存账，按总量判档；或者在视口占用较大时，让导出降档。降档会影响画质，交 owner 决定。
