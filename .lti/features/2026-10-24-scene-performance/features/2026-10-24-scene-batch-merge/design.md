@@ -55,7 +55,7 @@ export function piecesOf(geometry: BufferGeometry): readonly Piece[] | undefined
 | 新模块 `models/merge.ts` | 纯函数：分组键、`mergeGeometries`、合并失败时回退、算包围体并登记网格片 |
 | 新模块 `render/pieces.ts` | 只依赖 three：`Piece`、登记与 `piecesOf`、`extractPiece`、`pieceViews` / `disposePieceViews`、`expandByPieces` |
 | `models/cache.ts` | 下载、解析、缓存不变；`partsOf` 调 `mergeParts`；`disposeParts` 的释放顺序 |
-| `objects/ModelMesh.tsx`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 按决策表画合并几何或 `pieceViews` |
+| `objects/ModelMesh.tsx`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 按决策表画合并几何或 `pieceViews`（半透明槽位经 `materials/instances.ts:drawnGeometries`） |
 | `objects/Outline.tsx`、`objects/wireframe.ts` | 有网格片时按网格片取出、分别计算再拼接 |
 | `placement/raycast.ts` | 吸附用 indirect BVH、跳过辅助图层；点选按网格片剔除（`raycastPieces`） |
 | `render/sunShadow.ts` | 级联拟合逐网格片读包围盒 |
@@ -176,6 +176,7 @@ three 的绘制、`Mesh.raycast` 都按 `drawRange` 处理，`three-mesh-bvh` �
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | `frame` 用 `expandByPieces`；`LookView` 测试下写 `gpuTestHooks.lastFrame` |
 | `frontend/src/creative-scene/preview/ModelPreview.tsx:Meshes` | 修改 | 按决策表画 |
 | `frontend/src/creative-scene/library/thumbnail.ts:renderMaterialThumbnail` | 修改 | 按决策表画 |
+| `frontend/src/creative-scene/materials/instances.ts:drawnGeometries` | 新增 | 决策表里半透明一行：三处共用（代码审计 2026-10-25） |
 | `frontend/src/creative-scene/render/sceneRenderer.ts:SceneRenderer.render` | 修改 | `lastFrame` |
 | `frontend/src/creative-scene/render/gpu.ts:gpuTestHooks` | 修改 | 加 `lastFrame` |
 | `frontend/scripts/scene-stress.mjs` | 新增 | 压力场景、对照场景与上限模型（`capModel`）生成器 |
