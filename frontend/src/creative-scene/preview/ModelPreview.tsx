@@ -8,8 +8,7 @@ import { clay } from '../objects/look.ts'
 import { RoomLighting, StudioLights, previewBackground } from '../objects/Lighting.tsx'
 import { SlotMesh } from '../objects/SlotMesh.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
-import { isSeeThrough } from '../materials/instances.ts'
-import { pieceViews } from '../render/pieces.ts'
+import { drawnGeometries } from '../materials/instances.ts'
 import { previewModels } from './cache.ts'
 import { createRenderer, gpuOf } from '../render/gpu.ts'
 import { aimStudio } from '../render/studio.ts'
@@ -111,7 +110,7 @@ function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manif
         if (look === 'clay') return <mesh key={i} geometry={m.geometry} material={clayMaterial} />
         const material = resolveSlot(m.slot, materials, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material
         // See-through: piece by piece, as the editor draws it (objects/ModelMesh.tsx).
-        return (isSeeThrough(material) ? pieceViews(m.geometry) : [m.geometry]).map((g, j) => <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow={false} />)
+        return drawnGeometries(m.geometry, material).map((g, j) => <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow={false} />)
       })}
     </group>
   )

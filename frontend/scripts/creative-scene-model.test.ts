@@ -26,7 +26,7 @@ import { createLib1 } from '../src/creative-scene/sandbox/lib.ts'
 import { ModelCache, modelSummaries, partsOf, type ModelMeshPart, type SceneModel } from '../src/creative-scene/models/cache.ts'
 import { mergeParts } from '../src/creative-scene/models/merge.ts'
 import { parseGLB } from '../src/creative-scene/sandbox/gltf.ts'
-import { disposePieceViews, expandByPieces, pieceViews, piecesOf } from '../src/creative-scene/render/pieces.ts'
+import { disposePieceViews, expandByPieces, perPiece, pieceViews, piecesOf } from '../src/creative-scene/render/pieces.ts'
 import { edgesOf, shellOf } from '../src/creative-scene/objects/wireframe.ts'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
@@ -836,8 +836,23 @@ test('outline shells and wire edges are made per piece: the same as each part on
 
   const loose = new THREE.BoxGeometry(1, 1, 1).toNonIndexed()
   const normal = loose.attributes.normal
-  shellOf(loose)
+  const looseShell = shellOf(loose)
   assert.equal(loose.attributes.normal, normal, 'a geometry without an index keeps its own normals')
+  assert.notEqual(looseShell.attributes.position, loose.attributes.position, 'and its positions: freeing the shell frees none of its buffers')
+})
+
+test('pieces made unlike each other, which three cannot merge, are made whole instead', (t) => {
+  const merged = partsOf(stacked()).meshes[0].geometry
+  const error = t.mock.method(console, 'error', () => {})
+  let n = 0
+  const made = perPiece(merged, (g) => {
+    const out = g.clone()
+    if (n++ === 0) out.deleteAttribute('normal')
+    return out
+  })
+  assert.ok(error.mock.callCount() > 0, 'three said why')
+  assert.equal(made.attributes.position.count, merged.attributes.position.count)
+  assert.equal(piecesOf(made), undefined, 'one piece: all of it')
 })
 
 test('framing a turned merged model bounds what its parts did, selection shells included', () => {

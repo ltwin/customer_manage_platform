@@ -7,7 +7,7 @@ import { clay, unavailableGrey } from './look.ts'
 import { WireMesh } from './WireMesh.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
 import { resolveSlot } from '../materials/resolve.ts'
-import { isSeeThrough } from '../materials/instances.ts'
+import { drawnGeometries } from '../materials/instances.ts'
 import { raycastPieces } from '../placement/raycast.ts'
 import { pieceViews } from '../render/pieces.ts'
 import type { SceneObject } from '../api.ts'
@@ -72,7 +72,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
       <group>
         {loaded.parts.meshes.map((m, i) => {
           const material = resolveSlot(m.slot, slots, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material
-          return (isSeeThrough(material) ? pieceViews(m.geometry) : [m.geometry]).map((g, j) => (
+          return drawnGeometries(m.geometry, material).map((g, j) => (
             <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow raycast={raycastPieces}>
               {edge && <Outline color={edge} />}
             </SlotMesh>

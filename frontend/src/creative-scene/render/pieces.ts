@@ -64,8 +64,12 @@ export function perPiece(geometry: BufferGeometry, make: (piece: BufferGeometry)
   const pieces = registry.get(geometry)
   if (!pieces) return make(geometry)
   const made = pieces.map((p) => make(extractPiece(geometry, p)))
-  // Made alike from one geometry, they merge.
-  const out = made.length === 1 ? made[0] : (mergeGeometries(made, false) as BufferGeometry)
+  // Made alike from one geometry, they merge; if not (as partsOf), it is made whole.
+  const out = made.length === 1 ? made[0] : mergeGeometries(made, false)
+  if (!out) {
+    for (const g of made) g.dispose()
+    return make(geometry)
+  }
   let start = 0
   registry.set(
     out,

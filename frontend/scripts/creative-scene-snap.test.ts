@@ -168,3 +168,13 @@ test('a merged model is picked and snapped onto as its parts were; the BVH leave
     assert.equal(s.geometry.boundsTree, undefined, 'and gets no BVH')
   }
 })
+
+test('a mesh given another geometry (glass made opaque, a new revision) is snapped onto through a BVH of it', () => {
+  const parts = partsOf(model()).meshes
+  const root = instance(parts, 'm2', raycastPieces)
+  accelerateModels(root, () => true)
+  const mesh = root.children[0] as THREE.Mesh
+  mesh.geometry = partsOf(model()).meshes[0].geometry
+  accelerateModels(root, () => true)
+  assert.ok(mesh.geometry.boundsTree, 'the new geometry has its BVH')
+})

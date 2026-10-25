@@ -6,9 +6,9 @@ import { pieceViews } from '../render/pieces.ts'
 // model may have 300 000 triangles. Model meshes get a BVH the first time it
 // is needed, kept on their shared geometry, and raycast through it. The BVH
 // is indirect: it sorts a buffer of its own and leaves the index alone, where
-// a merged geometry keeps its pieces' ranges (render/pieces.ts).
-
-const accelerated = new WeakSet<Mesh>()
+// a merged geometry keeps its pieces' ranges (render/pieces.ts). Kept by
+// geometry, not by mesh: a mesh keeps its key when its geometry changes
+// (glass made opaque draws the merged geometry, a new revision its parts).
 
 export function accelerateModels(root: Object3D, isModel: (objectID: string) => boolean) {
   root.traverse((node) => {
@@ -16,10 +16,9 @@ export function accelerateModels(root: Object3D, isModel: (objectID: string) => 
     if (typeof id !== 'string' || !isModel(id)) return
     node.traverse((m) => {
       // Not the outline's shell or edge lines on the aside layer: they pick nothing.
-      if (!(m instanceof Mesh) || accelerated.has(m) || !m.layers.isEnabled(0)) return
+      if (!(m instanceof Mesh) || !m.layers.isEnabled(0)) return
       m.geometry.boundsTree ??= new MeshBVH(m.geometry, { indirect: true })
       m.raycast = acceleratedRaycast
-      accelerated.add(m)
     })
   })
 }

@@ -118,7 +118,11 @@ export type Frame = {
   accumulate?: boolean
 }
 
-/** One frame's load (scene-performance「每帧统计」): the draws and triangles three counted, and render()'s CPU milliseconds. */
+/**
+ * One frame's load (scene-performance「每帧统计」): the draws and triangles
+ * three counted in the pipeline's passes, and the CPU milliseconds of all of
+ * render(), its preparations (aerial perspective, volumes) included.
+ */
 export type FrameStats = { readonly draws: number; readonly triangles: number; readonly cpuMs: number }
 
 /**
@@ -669,11 +673,12 @@ export class SceneRenderer {
     }
   }
 
-  /** Draws a frame into the renderer's canvas. */
   /** What the last render() drew (e2e performance checks, P2's statistics overlay). */
   get lastFrame(): FrameStats {
     return this.stats
   }
+
+  /** Draws a frame into the renderer's canvas. */
 
   render(camera: Camera, frame: Frame) {
     const started = performance.now()

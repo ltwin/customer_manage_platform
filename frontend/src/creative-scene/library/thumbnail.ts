@@ -1,9 +1,8 @@
 import * as THREE from 'three'
 import type { SceneObject } from '../api.ts'
-import { isSeeThrough, keyOf, materialFor } from '../materials/instances.ts'
+import { drawnGeometries, keyOf, materialFor } from '../materials/instances.ts'
 import { resolveSlot } from '../materials/resolve.ts'
 import type { ModelParts } from '../models/cache.ts'
-import { pieceViews } from '../render/pieces.ts'
 import { roomEnvironment } from '../render/sky.ts'
 import { drawThumbnail, frame, onThumbnailGPU } from '../sandbox/thumbnail.ts'
 import type { WebGPURenderer } from 'three/webgpu'
@@ -26,7 +25,7 @@ export function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, m
     const resolved = resolveSlot(m.slot, materials, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material
     // The geometries belong to the model cache: drawn here, never disposed.
     // See-through: piece by piece, as the editor draws it (objects/ModelMesh.tsx).
-    for (const g of isSeeThrough(resolved) ? pieceViews(m.geometry) : [m.geometry]) scene.add(new THREE.Mesh(g, materialFor(keyOf(resolved, true), resolved, true)))
+    for (const g of drawnGeometries(m.geometry, resolved)) scene.add(new THREE.Mesh(g, materialFor(keyOf(resolved, true), resolved, true)))
   }
   const camera = new THREE.PerspectiveCamera(30, 1)
   frame(camera, manifest)

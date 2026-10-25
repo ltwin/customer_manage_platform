@@ -30,10 +30,11 @@ export function edgesOf(geometry: BufferGeometry): BufferGeometry {
 /**
  * The selection outline's shell (objects/Outline.tsx): a copy with the
  * normals averaged across creases, per piece. Without an index three writes
- * the normals into the geometry it is given, so it gets the positions alone.
+ * the normals into the geometry it is given, so it gets a copy of the
+ * positions alone: freeing the shell frees no buffer of the model's.
  */
 export function shellOf(geometry: BufferGeometry): BufferGeometry {
-  return perPiece(geometry, (g) => toCreasedNormals(g.index ? g : new BufferGeometry().setAttribute('position', g.attributes.position), Math.PI))
+  return perPiece(geometry, (g) => toCreasedNormals(g.index ? g : new BufferGeometry().setAttribute('position', g.attributes.position.clone()), Math.PI))
 }
 
 /** Frees a geometry's edges along with the geometry. */
