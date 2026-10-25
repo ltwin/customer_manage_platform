@@ -8,9 +8,10 @@ import { shellOf } from './wireframe.ts'
 
 // The selection outline (Epic design「编辑器辅助显示」): drei's Outlines in
 // TSL. A copy of its parent's geometry with the normals averaged across
-// creases (per piece of a merged model, wireframe.ts shellOf), drawn back faces only and pushed out along the normal in clip
-// space by a fixed number of device pixels, so thin rods and whole groups
-// read alike. R0: no measurable cost.
+// creases (per piece of a merged model: wireframe.ts shellOf), drawn back
+// faces only and pushed out along the normal in clip space by a fixed number
+// of device pixels, so thin rods and whole groups read alike. R0: no
+// measurable cost.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { normalize, uniform, vec4 } = tsl as unknown as Record<string, Op>

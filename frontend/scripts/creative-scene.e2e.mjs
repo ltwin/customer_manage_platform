@@ -7837,23 +7837,34 @@ async function stressFrames(page, warm = 1000, ms = 4000) {
   return { mean: Number(stats.mean.toFixed(2)), p95: Number(stats.p95.toFixed(2)), frames: stats.frames, draws: last.draws, triangles: last.triangles, cpu_ms: Number(last.cpuMs.toFixed(2)) }
 }
 
-/** A stress scene on this machine's GPU in each look, merged or each part on its own; real-time GI is a page of its own. */
-async function stressRun(gpu, scene, { nomerge = false, warm, ms } = {}) {
+/**
+ * A stress scene on this machine's GPU in each look, merged or each part on
+ * its own: a page each, opened in its look (the saved view's display), so a
+ * scene that takes seconds a frame needs no click; slow skips waiting for
+ * the picture to settle.
+ */
+async function stressRun(gpu, scene, { nomerge = false, slow = false } = {}) {
   const out = {}
-  for (const engine of ['workbench', 'realtime_gi']) {
+  const looks = [
+    ['clay', 'solid', 'workbench'],
+    ['preview', 'preview', 'workbench'],
+    ['workbench', 'rendered', 'workbench'],
+    ['realtime_gi', 'rendered', 'realtime_gi'],
+  ]
+  for (const [label, display, engine] of looks) {
     const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    const view = { camera: null, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false, display }
+    await context.addInitScript(([key, v]) => localStorage.setItem(key, JSON.stringify(v)), [`creative-scene-view:qa-account:${DOC}`, view])
+    context.setDefaultTimeout(slow ? 600_000 : 30_000)
     const server = new SceneServer()
     stressSeed(server, scene)
     server.scene.render = { ...server.scene.render, engine }
     const { page, errors } = await open(server, { context, query: nomerge ? '?nomerge=1' : '' })
     const { x, y } = await viewportCenter(page)
     await page.mouse.move(x, y)
-    const modes = engine === 'workbench' ? [['白模', 'clay'], ['材质预览', 'preview'], ['最终渲染', 'workbench']] : [['最终渲染', 'realtime_gi']]
-    for (const [mode, label] of modes) {
-      await shading(page, mode)
-      await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
-      out[label] = await stressFrames(page, warm, ms)
-    }
+    if (slow) await sleep(5000)
+    else await settledShot(page, { x: x - 50, y: y - 50, width: 100, height: 100 })
+    out[label] = await stressFrames(page, slow ? 500 : 1000, slow ? 3000 : 4000)
     assert.deepEqual(errors, [], errors.join('\n'))
     await context.close()
   }
@@ -7869,9 +7880,8 @@ if (process.env.SCENE_E2E_PERF) await check('P1 AC-1: a model of a thousand part
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', shader_cache: 'warm (one second of frames before measuring)', scenes: {} }
     const scenes = { multi_part: await multiPart(), primitives: primitives(), scale: await scaleScene() }
     for (const [name, scene] of Object.entries(scenes)) {
-      // Each part on its own, the scale scene draws some 200 000 meshes a frame: a shorter look.
-      const slow = name === 'scale' ? { warm: 500, ms: 3000 } : {}
-      record.scenes[name] = { before: await stressRun(gpu, scene, { nomerge: true, ...slow }), after: await stressRun(gpu, scene) }
+      // Each part on its own, the scale scene draws some 200 000 meshes a frame: seconds a frame.
+      record.scenes[name] = { before: await stressRun(gpu, scene, { nomerge: true, slow: name === 'scale' }), after: await stressRun(gpu, scene) }
       console.log(`P1 ${name}: ${JSON.stringify(record.scenes[name])}`)
     }
     const multi = record.scenes.multi_part.after

@@ -1,0 +1,253 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "shader_cache": "warm (one second of frames before measuring)",
+  "scenes": {
+    "multi_part": {
+      "before": {
+        "clay": {
+          "mean": 16.19,
+          "p95": 18.5,
+          "frames": 248,
+          "draws": 8005,
+          "triangles": 96008,
+          "cpu_ms": 15.3
+        },
+        "preview": {
+          "mean": 24,
+          "p95": 26.7,
+          "frames": 167,
+          "draws": 8005,
+          "triangles": 96008,
+          "cpu_ms": 23.9
+        },
+        "workbench": {
+          "mean": 63.41,
+          "p95": 74.7,
+          "frames": 64,
+          "draws": 20006,
+          "triangles": 240020,
+          "cpu_ms": 61.4
+        },
+        "realtime_gi": {
+          "mean": 81.65,
+          "p95": 85,
+          "frames": 50,
+          "draws": 20016,
+          "triangles": 240030,
+          "cpu_ms": 85
+        }
+      },
+      "after": {
+        "clay": {
+          "mean": 8.34,
+          "p95": 10.1,
+          "frames": 480,
+          "draws": 21,
+          "triangles": 96008,
+          "cpu_ms": 0.1
+        },
+        "preview": {
+          "mean": 8.34,
+          "p95": 9.9,
+          "frames": 479,
+          "draws": 21,
+          "triangles": 96008,
+          "cpu_ms": 0.8
+        },
+        "workbench": {
+          "mean": 8.34,
+          "p95": 10,
+          "frames": 479,
+          "draws": 46,
+          "triangles": 240020,
+          "cpu_ms": 1.4
+        },
+        "realtime_gi": {
+          "mean": 9.26,
+          "p95": 16.6,
+          "frames": 432,
+          "draws": 56,
+          "triangles": 240030,
+          "cpu_ms": 3.2
+        }
+      }
+    },
+    "primitives": {
+      "before": {
+        "clay": {
+          "mean": 8.34,
+          "p95": 9.3,
+          "frames": 480,
+          "draws": 1981,
+          "triangles": 23720,
+          "cpu_ms": 7.3
+        },
+        "preview": {
+          "mean": 8.33,
+          "p95": 9.2,
+          "frames": 481,
+          "draws": 1981,
+          "triangles": 23720,
+          "cpu_ms": 6.5
+        },
+        "workbench": {
+          "mean": 17.86,
+          "p95": 25,
+          "frames": 225,
+          "draws": 4984,
+          "triangles": 59756,
+          "cpu_ms": 17.6
+        },
+        "realtime_gi": {
+          "mean": 23.72,
+          "p95": 25.9,
+          "frames": 169,
+          "draws": 4992,
+          "triangles": 59742,
+          "cpu_ms": 22.4
+        }
+      },
+      "after": {
+        "clay": {
+          "mean": 8.33,
+          "p95": 9.3,
+          "frames": 480,
+          "draws": 1981,
+          "triangles": 23720,
+          "cpu_ms": 6.6
+        },
+        "preview": {
+          "mean": 8.33,
+          "p95": 9.3,
+          "frames": 480,
+          "draws": 1981,
+          "triangles": 23720,
+          "cpu_ms": 6.6
+        },
+        "workbench": {
+          "mean": 18.51,
+          "p95": 25.4,
+          "frames": 217,
+          "draws": 4982,
+          "triangles": 59732,
+          "cpu_ms": 17.2
+        },
+        "realtime_gi": {
+          "mean": 24.35,
+          "p95": 26,
+          "frames": 165,
+          "draws": 4994,
+          "triangles": 59766,
+          "cpu_ms": 28.5
+        }
+      }
+    },
+    "scale": {
+      "before": {
+        "clay": {
+          "mean": 259.63,
+          "p95": 274.7,
+          "frames": 12,
+          "draws": 59913,
+          "triangles": 1251248,
+          "cpu_ms": 251.4
+        },
+        "preview": {
+          "mean": 392.59,
+          "p95": 408.5,
+          "frames": 8,
+          "draws": 59913,
+          "triangles": 1251248,
+          "cpu_ms": 394.8
+        },
+        "workbench": {
+          "mean": 10512.8,
+          "p95": 10512.8,
+          "frames": 1,
+          "draws": 636347,
+          "triangles": 13535408,
+          "cpu_ms": 9863.6
+        },
+        "realtime_gi": {
+          "mean": 13974.1,
+          "p95": 13974.1,
+          "frames": 1,
+          "draws": 637560,
+          "triangles": 13560502,
+          "cpu_ms": 12720.9
+        }
+      },
+      "after": {
+        "clay": {
+          "mean": 12.57,
+          "p95": 18,
+          "frames": 319,
+          "draws": 2650,
+          "triangles": 1420856,
+          "cpu_ms": 12.4
+        },
+        "preview": {
+          "mean": 15.6,
+          "p95": 18.2,
+          "frames": 257,
+          "draws": 2666,
+          "triangles": 1433816,
+          "cpu_ms": 15.2
+        },
+        "workbench": {
+          "mean": 156.68,
+          "p95": 167.3,
+          "frames": 26,
+          "draws": 16275,
+          "triangles": 14433820,
+          "cpu_ms": 152.3
+        },
+        "realtime_gi": {
+          "mean": 215.39,
+          "p95": 276.6,
+          "frames": 19,
+          "draws": 16285,
+          "triangles": 14433830,
+          "cpu_ms": 207.8
+        }
+      }
+    }
+  },
+  "gi": {
+    "shota-lit": {
+      "mean": 0,
+      "over_percent": 0
+    },
+    "shotb-lit": {
+      "mean": 0,
+      "over_percent": 0
+    },
+    "glass": {
+      "pixels": 101802,
+      "mean": 0,
+      "over": 0
+    }
+  },
+  "limit_model": {
+    "triangles": 288000,
+    "parts": {
+      "before": 2000,
+      "after": 2
+    },
+    "merge_ms": {
+      "before": 26.3,
+      "after": 37.2
+    },
+    "click_median_ms": {
+      "before": 0.14,
+      "after_by_piece": 0.1,
+      "after_whole_geometry": 10.42
+    }
+  }
+}
