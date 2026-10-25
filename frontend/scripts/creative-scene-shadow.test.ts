@@ -123,3 +123,65 @@ test('the camera moving a little moves no texel: the maps keep their size and sn
     for (const v of [moved.x / texel(l), moved.y / texel(l)]) assert.ok(Math.abs(v - Math.round(v)) < 1e-3, `cascade ${i} moved ${v} texels`)
   })
 })
+
+// scene-performance P1 (review B1): a model's parts of one slot are one
+// merged geometry; the cascades still fit to each part's box, as before.
+
+import { Group, MeshStandardMaterial } from 'three'
+import { partsOf, type ModelMeshPart } from '../src/creative-scene/models/cache.ts'
+
+/** An L of wall in one slot, and a post in it, turned: one box over the L would cover its open corner. */
+function wall(): Group {
+  const root = new Group()
+  const stone = new MeshStandardMaterial({ name: 'slot:stone' })
+  const add = (size: [number, number, number], at: [number, number, number]) => {
+    const m = new Mesh(new BoxGeometry(...size), stone)
+    m.position.set(...at)
+    root.add(m)
+  }
+  add([6, 0.3, 2.5], [0, -3, 1.25])
+  add([0.3, 6, 2.5], [3, 0, 1.25])
+  add([0.2, 0.2, 4], [-2, 2, 2])
+  return root
+}
+
+function placed(s: ReturnType<typeof sunScene>, parts: ModelMeshPart[]) {
+  const group = new Group()
+  group.rotation.z = 0.6
+  group.position.set(1, 2, 0)
+  for (const p of parts) {
+    const m = new Mesh(p.geometry)
+    m.castShadow = true
+    group.add(m)
+  }
+  s.scene.add(group)
+  return group
+}
+
+const cascades = (s: ReturnType<typeof sunScene>) =>
+  s.lights.map((l) => {
+    const c = l.shadow!.camera
+    return [...l.position.toArray(), c.left, c.right, c.top, c.bottom, c.near, c.far, l.shadow!.normalBias]
+  })
+
+test("a merged model's cascades are fitted to its parts' boxes, value for value", () => {
+  const g = globalThis as { __sceneNoMerge?: boolean }
+  g.__sceneNoMerge = true
+  const before = partsOf(wall()).meshes
+  delete g.__sceneNoMerge
+  const merged = partsOf(wall()).meshes
+  assert.equal(merged.length, 1, 'one slot, one geometry')
+
+  const fitted = (parts: ModelMeshPart[]) => {
+    const s = sunScene([20, -30, 25])
+    s.camera.position.set(4, -9, 3)
+    s.camera.lookAt(1, 1, 1)
+    placed(s, parts)
+    fit(s)
+    return cascades(s)
+  }
+  const expected = fitted(before)
+  assert.deepEqual(fitted(merged), expected)
+  // One box over the slot (the geometry without its pieces) fits otherwise.
+  assert.notDeepEqual(fitted([{ ...merged[0], geometry: merged[0].geometry.clone() }]), expected)
+})

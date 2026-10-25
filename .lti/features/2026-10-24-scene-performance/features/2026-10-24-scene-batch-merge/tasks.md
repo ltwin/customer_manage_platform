@@ -8,13 +8,13 @@
 
 ## 2. 合并网格片
 
-- [ ] 2.1 先写单测（红）：`mergeParts` 的分组键（槽位、hint、常量、是否有索引、几何签名含 `gpuType`、变形属性和 `morphTargetsRelative`）、组顺序与组内顺序、网格片首尾相接且覆盖全部、包围球和包围盒与成员几何 `computeBoundingSphere` / `computeBoundingBox` 的结果按位相同、`mergeGeometries` 返回 null 时该组退回不合并、克隆的几何 `piecesOf` 查不到、`__sceneNoMerge` 下与现在相同
-- [ ] 2.2 实现 `models/merge.ts` 的 `mergeParts` 和 `render/pieces.ts` 的登记与 `piecesOf`，`partsOf` 改为调用它，2.1 转绿；`disposeParts` 先释放范围视图，再释放合并几何
-- [ ] 2.3 `render/pieces.ts` 补 `extractPiece`、`pieceViews`、`disposePieceViews`、`expandByPieces`；单测断言范围视图共用 attribute 和 index、`drawRange` 与包围体正确、按合并几何缓存、登记为自己那一项
-- [ ] 2.4 `ModelMesh` 按决策表绘制：半透明或透射的槽位、幽灵模型用范围视图，其余用合并几何；`ModelPreview`、`renderMaterialThumbnail` 同样按决策表
-- [ ] 2.5 `Outline`、`edgesOf` 有网格片时按网格片生成，外壳登记同样区间的网格片；单测断言外壳三角形和边线集合与「每个网格片各自计算」逐项相等（含贴合堆叠的盒子）
-- [ ] 2.6 `accelerateModels` 改用 `indirect` BVH，并跳过不在 0 号图层的对象；单测断言建 BVH 后 index 不变、同一组射线对合并几何和范围视图的命中与合并前相同、描边外壳仍是 `noRaycast` 且没有建树
-- [ ] 2.7 `fitCascades` 有网格片时逐网格片读包围盒；单测：L 形墙加太阳的场景，同一镜头下合并前后每级灯的位置和正交范围逐值相等
+- [x] 2.1 先写单测（红）：`mergeParts` 的分组键（槽位、hint、常量、是否有索引、几何签名含 `gpuType`、变形属性和 `morphTargetsRelative`）、组顺序与组内顺序、网格片首尾相接且覆盖全部、包围球和包围盒与成员几何 `computeBoundingSphere` / `computeBoundingBox` 的结果按位相同、`mergeGeometries` 返回 null 时该组退回不合并、克隆的几何 `piecesOf` 查不到、`__sceneNoMerge` 下与现在相同
+- [x] 2.2 实现 `models/merge.ts` 的 `mergeParts` 和 `render/pieces.ts` 的登记与 `piecesOf`，`partsOf` 改为调用它，2.1 转绿；`disposeParts` 先释放范围视图，再释放合并几何
+- [x] 2.3 `render/pieces.ts` 补 `extractPiece`、`pieceViews`、`disposePieceViews`、`expandByPieces`；单测断言范围视图共用 attribute 和 index、`drawRange` 与包围体正确、按合并几何缓存、登记为自己那一项
+- [x] 2.4 `ModelMesh` 按决策表绘制：半透明或透射的槽位、幽灵模型用范围视图，其余用合并几何；`ModelPreview`、`renderMaterialThumbnail` 同样按决策表
+- [x] 2.5 `Outline`、`edgesOf` 有网格片时按网格片生成，外壳登记同样区间的网格片；单测断言外壳三角形和边线集合与「每个网格片各自计算」逐项相等（含贴合堆叠的盒子）
+- [x] 2.6 `accelerateModels` 改用 `indirect` BVH，并跳过不在 0 号图层的对象；单测断言建 BVH 后 index 不变、同一组射线对合并几何和范围视图的命中与合并前相同、描边外壳仍是 `noRaycast` 且没有建树
+- [x] 2.7 `fitCascades` 有网格片时逐网格片读包围盒；单测：L 形墙加太阳的场景，同一镜头下合并前后每级灯的位置和正交范围逐值相等
 - [ ] 2.8 视口取景改用 `expandByPieces`，点选给合并几何用 `raycastPieces`；单测：旋转过的多部件模型取景范围与合并前逐值相等，点选命中的物件和距离与合并前相同；上限模型（30 万面）的合并耗时和点选耗时，合并前后记进 evidence
 
 ## 3. 画面等价与交互回归

@@ -63,3 +63,108 @@ test('dragging towards the sky lands at the view\'s ground point', () => {
   assertPlaced(snap({ hits: [], ray: sky, mount: 'floor', bounds: box, fallback }), [3, 0, -2])
   assertPlaced(snap({ hits: [], ray: null, mount: 'free', bounds: centred, fallback }), [3, 1, -2])
 })
+
+// scene-performance P1: a model's merged geometry is picked and snapped onto
+// as its parts were, and the snapping BVH leaves its pieces' ranges alone.
+
+import * as THREE from 'three'
+import { partsOf, type ModelMeshPart } from '../src/creative-scene/models/cache.ts'
+import { accelerateModels, raycastPieces } from '../src/creative-scene/placement/raycast.ts'
+import { ASIDE_LAYER } from '../src/creative-scene/render/sceneRenderer.ts'
+import { piecesOf } from '../src/creative-scene/render/pieces.ts'
+import { shellOf } from '../src/creative-scene/objects/wireframe.ts'
+
+/** Parts of one slot, turned and spread out, a lathe among them, and one of another slot. */
+function model(): THREE.Group {
+  const root = new THREE.Group()
+  const a = new THREE.MeshStandardMaterial({ name: 'slot:a' })
+  const geometries = [new THREE.BoxGeometry(1, 2, 1), new THREE.CylinderGeometry(0.3, 0.5, 1.5, 9), new THREE.TorusGeometry(0.6, 0.2, 8, 16), new THREE.LatheGeometry([new THREE.Vector2(0.2, 0), new THREE.Vector2(0.6, 0.5), new THREE.Vector2(0.3, 1.2)], 10)]
+  geometries.forEach((g, i) => {
+    const m = new THREE.Mesh(g, a)
+    m.position.set(i * 1.6 - 2.4, 0.3 * i, (i % 2) - 0.5)
+    m.rotation.set(0.2 * i, 0.7 * i, 0)
+    root.add(m)
+  })
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), new THREE.MeshStandardMaterial({ name: 'slot:b' }))
+  b.position.set(0, 2, 0)
+  root.add(b)
+  return root
+}
+
+function unmerged(): ModelMeshPart[] {
+  const g = globalThis as { __sceneNoMerge?: boolean }
+  g.__sceneNoMerge = true
+  try {
+    return partsOf(model()).meshes
+  } finally {
+    delete g.__sceneNoMerge
+  }
+}
+
+const pickNothing = () => {}
+
+/** A model instance as the editor mounts it: a group named by its object, turned and scaled, with a selection shell on each mesh. */
+function instance(parts: ModelMeshPart[], id: string, pick?: THREE.Mesh['raycast']): THREE.Group {
+  const group = new THREE.Group()
+  group.userData.objectID = id
+  group.position.set(0.5, 0, -1)
+  group.quaternion.setFromEuler(new THREE.Euler(0.1, 0.8, 0))
+  group.scale.setScalar(1.5)
+  const material = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide })
+  for (const p of parts) {
+    const mesh = new THREE.Mesh(p.geometry, material)
+    if (pick) mesh.raycast = pick
+    const shell = new THREE.Mesh(shellOf(p.geometry), new THREE.MeshBasicMaterial({ side: THREE.BackSide }))
+    shell.raycast = pickNothing
+    shell.layers.set(ASIDE_LAYER)
+    mesh.add(shell)
+    group.add(mesh)
+  }
+  group.updateMatrixWorld(true)
+  return group
+}
+
+/** What a ray hits, by distance: the point and the face's normal. */
+function hits(root: THREE.Object3D, rays: THREE.Ray[]): number[][][] {
+  const raycaster = new THREE.Raycaster()
+  raycaster.layers.enableAll()
+  return rays.map((r) => {
+    raycaster.ray.copy(r)
+    return raycaster
+      .intersectObject(root, true)
+      .map((h) => [h.distance, ...h.point.toArray(), ...h.face!.normal.toArray()])
+      .sort((x, y) => x[0] - y[0] || x[1] - y[1] || x[2] - y[2])
+  })
+}
+
+const rays = Array.from({ length: 80 }, (_, i) => {
+  const from = new THREE.Vector3().setFromSphericalCoords(9, 0.3 + (i % 8) * 0.3, i * 0.9)
+  const at = new THREE.Vector3(((i * 7) % 11) / 2.5 - 2, ((i * 3) % 7) / 3 - 0.5, ((i * 5) % 9) / 4 - 1)
+  return new THREE.Ray(from, at.sub(from).normalize())
+})
+
+test('a merged model is picked and snapped onto as its parts were; the BVH leaves its ranges alone', () => {
+  const before = hits(instance(unmerged(), 'm0'), rays)
+  assert.ok(before.filter((h) => h.length > 0).length > 40, 'most rays hit the model')
+
+  const parts = partsOf(model()).meshes
+  assert.equal(piecesOf(parts[0].geometry)!.length, 4)
+  const root = instance(parts, 'm1', raycastPieces)
+  assert.deepEqual(hits(root, rays), before, 'picked piece by piece: the same hits')
+
+  const index = Array.from(parts[0].geometry.index!.array)
+  accelerateModels(root, () => true)
+  assert.deepEqual(Array.from(parts[0].geometry.index!.array), index, "the BVH sorts a buffer of its own, not the pieces' index")
+  const after = hits(root, rays)
+  assert.equal(after.length, before.length)
+  after.forEach((h, i) => {
+    assert.equal(h.length, before[i].length, `ray ${i}: as many hits through the BVH`)
+    h.forEach((x, j) => x.forEach((v, k) => assert.ok(Math.abs(v - before[i][j][k]) < 1e-9, `ray ${i} hit ${j}: ${x} vs ${before[i][j]}`)))
+  })
+
+  const shells = root.children.map((m) => m.children[0] as THREE.Mesh)
+  for (const s of shells) {
+    assert.equal(s.raycast, pickNothing, "the outline's shell still picks nothing")
+    assert.equal(s.geometry.boundsTree, undefined, 'and gets no BVH')
+  }
+})

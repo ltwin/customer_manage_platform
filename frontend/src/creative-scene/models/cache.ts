@@ -6,6 +6,8 @@ import { mediaTicket } from '../../creative-canvas/editor/media.ts'
 import { parseGLB } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
+import { disposePieceViews } from '../render/pieces.ts'
+import { mergeParts } from './merge.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -32,7 +34,7 @@ export type MeshConstants = {
  */
 export type ModelMeshPart = { geometry: BufferGeometry; slot: string | null; hint: string | null; constants: MeshConstants }
 
-/** What a model draws: shared geometries in model space. */
+/** What a model draws: shared geometries in model space, parts that draw alike merged (models/merge.ts). */
 export type ModelParts = { meshes: ModelMeshPart[] }
 
 /**
@@ -119,7 +121,7 @@ export function partsOf(root: Object3D): ModelParts {
     const hint = typeof material.userData.hint === 'string' ? material.userData.hint : null
     return { geometry, slot, hint, constants: constantsOf(material) }
   })
-  return { meshes }
+  return { meshes: mergeParts(meshes) }
 }
 
 export class ModelCache {
@@ -265,7 +267,7 @@ export class ModelCache {
   }
 }
 
-/** Frees each geometry once, as its load settles. */
+/** Frees each geometry once, as its load settles: its range views first, which share its buffers. */
 function disposeParts(parts: Promise<ModelParts>[]) {
   const seen = new Set<BufferGeometry>()
   for (const p of parts)
@@ -274,6 +276,7 @@ function disposeParts(parts: Promise<ModelParts>[]) {
         for (const m of meshes) {
           if (seen.has(m.geometry)) continue
           seen.add(m.geometry)
+          disposePieceViews(m.geometry)
           m.geometry.dispose()
         }
       },
