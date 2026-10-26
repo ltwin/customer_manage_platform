@@ -1,0 +1,19 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "smtrace",
+  "size": 0.3,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 8537a45a: shadow map tracing r 0.3 m, 8 rays × 16 steps, at most 48 texels",
+    "PointLight 2f858b1c: product PCF (smtrace: spot lights only so far)",
+    "DirectionalLight 6b8c276b: product PCF (smtrace: spot lights only so far)"
+  ],
+  "compileMs": 216,
+  "firstMs": 3157,
+  "drawMs": 6094,
+  "coldSalt": 0
+}

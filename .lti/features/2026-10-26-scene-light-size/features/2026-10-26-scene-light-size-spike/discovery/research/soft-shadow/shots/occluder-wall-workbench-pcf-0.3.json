@@ -1,0 +1,19 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcf",
+  "size": 0.3,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight a6850ce1: product PCF",
+    "PointLight 342fbd03: product PCF",
+    "DirectionalLight fce839aa: product PCF"
+  ],
+  "compileMs": 40,
+  "firstMs": 83,
+  "drawMs": 83,
+  "coldSalt": 0
+}

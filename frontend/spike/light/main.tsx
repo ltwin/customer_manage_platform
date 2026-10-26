@@ -46,8 +46,11 @@ const size = Number(query.get('size') ?? '0')
 const side = Number(query.get('side') ?? '1200')
 if (query.get('backend') === 'webgl') gpuTestHooks.forceWebGL = true
 
-/** A constant that differs every load when ?cold=1: built into a shader, it misses every cached pipeline (lesson webgpu-perf-warm-shader-cache). */
-export const coldSalt = query.get('cold') === '1' ? Math.random() : 0
+/**
+ * Unused: a measure of cold compiles needs no salt, since every measure launch is a fresh browser profile; the warm
+ * case loads twice in one browser (measure/shot.mjs SPIKE_WARM). Kept in the report as 0.
+ */
+export const coldSalt = 0
 
 type Spike = { done: boolean; error: string | null; report: Record<string, unknown>; data?: Comparison }
 const spike: Spike = { done: false, error: null, report: {} }

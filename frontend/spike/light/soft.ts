@@ -7,15 +7,18 @@
 //                (2D maps) for now. Kernels turn with the frame (IGN offset by frameId: TRAA averages them), and a
 //                receiver plane depth bias from the screen derivatives keeps a wide kernel off the receiver itself
 //                (Epic design「技术选型」阴影偏置). ?search= ?samples= samples, ?maxTexels= the widest penumbra.
+//   smtrace      shadow map tracing (EEVEE's way): rays to points on the light, each marched through the depth map
+//                and blocked where it passes through a surface; spot lights for now. ?rays= ?steps=, ?maxTexels= the
+//                longest trace, ?epsM= metres a ray must be behind a surface, ?spacing= how much denser steps are near.
 import type { DirectionalLight, Light, LightShadow, Object3D, PointLight, SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 
-export type Method = 'pcf' | 'pcf-radius' | 'pcss'
+export type Method = 'pcf' | 'pcf-radius' | 'pcss' | 'smtrace'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { Fn, abs, clamp, dFdx, dFdy, dot, float, interleavedGradientNoise, ivec2, max, min, perspectiveDepthToViewZ, reference, select, texture, textureLoad, uniform, vec2, vogelDiskSample } = T
+const { Fn, abs, clamp, dFdx, dFdy, dot, float, interleavedGradientNoise, ivec2, length, max, min, perspectiveDepthToViewZ, reference, select, texture, textureLoad, uniform, vec2, vogelDiskSample } = T
 const { frameId, renderGroup, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
 
 type Shadowing = DirectionalLight | PointLight | SpotLight
@@ -108,6 +111,75 @@ function spotPCSS(light: SpotLight, r: number) {
   })
 }
 
+/**
+ * Shadow map tracing for a perspective (spot) shadow map, light of radius r metres. A ray runs from the receiver to
+ * a point on the light's disc; projected from the light's centre it is a straight line in the map, along which 1/z
+ * is linear. It is blocked where, behind a surface at one step, it is past that surface's depth at the next (it went
+ * through, rather than off the surface's edge), or when it is still behind one where the trace stops.
+ */
+function spotTrace(light: SpotLight, r: number) {
+  const cam = light.shadow.camera
+  const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
+  const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
+  const tanHalf = uniform(1).setGroup(renderGroup).onRenderUpdate(() => Math.tan((cam.fov * Math.PI) / 360))
+  const radius = uniform(r)
+  const raysN = num('rays', 8)
+  const stepsN = num('steps', 16)
+  const maxTexels = num('maxTexels', 48)
+  const epsM = num('epsM', 0.03)
+  const spacing = num('spacing', 2)
+  return Fn(({ depthTexture, shadowCoord, shadow }: Record<string, TSLNode>) => {
+    const mapSize = reference('mapSize', 'vec2', shadow).setGroup(renderGroup)
+    const texel = float(1).div(mapSize.x)
+    const uv = shadowCoord.xy.toVar()
+    const z = shadowCoord.z.toVar()
+    const linear = (d: TSLNode) => perspectiveDepthToViewZ(d, near, far).negate()
+    const depthAt = (at: TSLNode) => linear(textureLoad(depthTexture, ivec2(clamp(at.mul(mapSize), vec2(0), mapSize.sub(1)))).x)
+    const zR = linear(z).toVar()
+    const plane = receiverPlane(shadowCoord).toVar()
+    const eps = texel.mul(num('epsTexels', 2.5)).mul(abs(plane.x).add(abs(plane.y))).add(num('epsConst', 1e-4)).toVar()
+    // The first use of the map decides its sampler (depth-read-backends.md); this compare also says whether the
+    // receiver starts behind a surface, seen from the light's centre.
+    const centre = texture(depthTexture, uv).compare(z.sub(eps)).toVar()
+    const startBehind = select(centre.lessThan(0.5), float(1), float(0)).toVar()
+    const startSurface = depthAt(uv).toVar()
+    // The receiver in the light's frame: lateral metres at its depth.
+    const lateral = uv.sub(0.5).mul(zR.mul(tanHalf).mul(2)).toVar()
+    const reachNear = float(1).sub(near.div(zR)).toVar()
+    const phi = turn().toVar()
+    const visible = float(0).toVar()
+    for (let k = 0; k < raysN; k++) {
+      const q = vogelDiskSample(k, raysN, phi).mul(radius)
+      // Where the ray meets the near plane, in the map; the trace stops maxTexels along the way to it.
+      const atNear = lateral.add(q.sub(lateral).mul(reachNear)).div(near.mul(tanHalf).mul(2)).add(0.5)
+      const way = atNear.sub(uv).toVar()
+      const stop = min(float(1), texel.mul(maxTexels).div(max(length(way), 1e-8))).toVar()
+      const behind = startBehind.toVar()
+      const surface = startSurface.toVar()
+      const hit = float(0).toVar()
+      const lastRay = zR.toVar()
+      for (let i = 1; i <= stepsN; i++) {
+        // Denser near the receiver (?spacing= the power): a crossing close to it is a short way in the map.
+        const t = stop.mul((i / stepsN) ** spacing)
+        const zRay = float(1).div(float(1).div(zR).add(t.mul(float(1).div(near).sub(float(1).div(zR)))))
+        const zs = depthAt(uv.add(way.mul(t))).toVar()
+        const nowBehind = select(zRay.greaterThan(zs.add(epsM)), float(1), float(0)).toVar()
+        // Behind the last step's surface then, in front of that surface's depth now: the ray went through it. And
+        // the same seen from this end: this step's surface between the ray's depths then and now (not off the
+        // receiver's own surface on the first step).
+        const crossed = behind.mul(select(zRay.lessThan(surface.add(epsM)), float(1), float(0)))
+        const met = i === 1 ? float(0) : select(lastRay.greaterThan(zs.add(epsM)), float(1), float(0)).mul(float(1).sub(nowBehind))
+        hit.assign(max(hit, max(crossed, query.get('meet') === '0' ? float(0) : met)))
+        behind.assign(nowBehind)
+        surface.assign(zs)
+        lastRay.assign(zRay)
+      }
+      visible.addAssign(float(1).sub(max(hit, behind)))
+    }
+    return visible.div(raysN).add(centre.mul(0))
+  })
+}
+
 /** What each method does to a light that casts: returns a line for the report. */
 /** ?normalBias= metres on the PCF methods: their stripes off, so their edges can be measured against PCSS's. */
 function normalBias(light: Shadowing): string {
@@ -128,6 +200,11 @@ export const methods: Record<Method, (light: Shadowing, size: number) => string>
     if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: spot lights only so far)'
     ;(light.shadow as Filtered).filterNode = spotPCSS(light as SpotLight, size)
     return `PCSS r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
+  },
+  smtrace: (light, size) => {
+    if (!(light as SpotLight).isSpotLight) return 'product PCF (smtrace: spot lights only so far)'
+    ;(light.shadow as Filtered).filterNode = spotTrace(light as SpotLight, size)
+    return `shadow map tracing r ${size} m, ${num('rays', 8)} rays × ${num('steps', 16)} steps, at most ${num('maxTexels', 48)} texels`
   },
 }
 

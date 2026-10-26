@@ -1,0 +1,19 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcss",
+  "size": 0.3,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight a3d38b6d: PCSS r 0.3 m, 16 + 32 samples, at most 48 texels",
+    "PointLight 9879b329: product PCF (pcss: spot lights only so far)",
+    "DirectionalLight b780fbdd: product PCF (pcss: spot lights only so far)"
+  ],
+  "compileMs": 71,
+  "firstMs": 102,
+  "drawMs": 102,
+  "coldSalt": 0
+}
