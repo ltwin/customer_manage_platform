@@ -175,3 +175,7 @@
 ## 7. 收尾
 
 - [ ] 7.1 门禁与契约（AC-S2-11）：`make check-frontend` 通过；逐条核对 `architecture: 场景模块`、`patterns: 场景着色写法`、`data: 场景文档` 与实现一致，不一致的先提 Epic 修订
+
+  进行中（2026-10-26，5.x 未完，先做了一遍）：
+  - `make check-frontend`：lint、构建通过；单测 885 项里 3 项失败，在 S1 的代码（a81f639c）上同样失败，与 S2 无关，留给 owner 定：`creative-scene-agent` 的「a render that cannot be taken says why」（截图时限文字仍写 60 秒，S1 起实际是 75 秒）、`creative-scene-lighting` 的「light fields go onto three.js lights」（一个字段断言为 null，实际是函数）、`v1-hardening` 的「mobile shell keeps Customers and Calendar direct」（底部导航的写法与现在的 `AppShell` 不符）；
+  - 三条目标契约逐条核对，与实现一致：探针追代理、锐利反射追原始几何；每张导出图帧序号从 0 起、探针随之重建（两次导出探针缓冲逐字节相同）；重新标定的常数（收敛帧数、时限、`GI_INTENSITY`）只在这一层构建时生效；`lookup.ts` 的采样显式指定 LOD；`world_trace` 计入实时 GI 的 `lit` 指纹、前缀不升级。`make check-go PKG=./internal/creativescene/...` 通过
