@@ -2,12 +2,18 @@
 
 ## 1. 准备
 
-- [ ] 1.1 改动前的基线：
+- [x] 1.1 改动前的基线：
   - 在兼容模式、`forceCompatibility`、`traceUnsupported`、`traceDelayMs`（就绪前）下导出参考场景集的实时 GI `lit`，作为 AC-S2-5 的「S2 之前」存档；
   - 导出 `backlit-room` 在 45° 和 100° 的图，以及 30° 到 120° 每 15° 一格的扫视，作为 AC-S2-1 的并排对照；
   - 跑一次 S1 的 `SCENE_E2E_TRACE_PERF`，作为 AC-S2-6「不带这一层」的一侧。
 
   只保存到 S2 的 `discovery/research/evidence/`，超过 30 MB 的部分留在本机并记下重新生成的命令
+
+  结果见 `evidence/README.md` 的 `before/`：
+  - 五套导出，`traceOff` 等四套与 S1 的存档亮度相同；
+  - `traceDelayMs` 下导出会等底座、等不到就失败，所以「就绪前」改在视口里核对；
+  - 扫视里靠近亮墙的点在亮墙进入画面时变亮 16%；
+  - 这一轮机器比 S1 合入时慢 10%–20%，帧时间只作参考
 - [ ] 1.2 S2-U1 的最小 compute 用例：在 three r186 的 compute 里显式 LOD 采样（`textureSampleLevel`）和向 RGBA16F 存储纹理写入（`textureStore`）各写一个，读回核对。不行的部分在 `trace/computePatches.ts` 里补（连同 `TextureNode.grad()`、PMREM 的环境旋转）；仍不行时按 design 的退路改用 `textureLoad` 加手工双线性。完成判据：用例读回正确，结论写进 design 的 S2-U1
 
 ## 2. 不构建时的两处改动（AC-S2-5，各自单独提交）

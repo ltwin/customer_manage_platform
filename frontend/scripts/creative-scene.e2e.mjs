@@ -3692,16 +3692,16 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * A reference scene exported in all three passes from the rendered view,
  * then the saved orthographic view in clay, on gpu (a Chromium on this
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend,
- * litOnly exports the lit pass alone.
+ * litOnly exports the lit pass alone, hooks are gpuTestHooks for the page's query (?gpu=…).
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false, hooks } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
   referenceScene(server, name, edit)
   const backends = []
   context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
-  const { page, errors } = await open(server, { context, query: '?export=1' })
+  const { page, errors } = await open(server, { context, query: hooks ? `?export=1&gpu=${hooks}` : '?export=1' })
   if (forceWebGL) await page.evaluate(() => { window.__sceneGPU.forceWebGL = true })
   if (forceCompatibility) await page.evaluate(() => { window.__sceneGPU.forceCompatibility = true })
   const renderer = await page.evaluate(() => {
@@ -3808,21 +3808,50 @@ async function pointAcrossViews(page, name, point, yaws) {
   const facing = new Quaternion(...shot.transform.rotation)
   const out = []
   for (const yaw of yaws) {
-    const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (yaw * Math.PI) / 180).multiply(facing)
-    shot.transform.rotation = [q.x, q.y, q.z, q.w]
-    const v = new Vector3(...point).sub(new Vector3(...shot.transform.position)).applyQuaternion(q.clone().invert())
-    // Full frame at 3:2: the long side spans the sensor's 36 mm (cameraOptics.ts verticalFov).
-    const across = 18 / shot.camera.focal_mm
-    const u = 0.5 + (0.5 * v.x) / (-v.z * across)
-    const w = 0.5 - (0.5 * v.y) / ((-v.z * across * 2) / 3)
-    assert.ok(v.z < 0 && u > 0.05 && u < 0.95 && w > 0.05 && w < 0.95, `${name}: the point in view at ${yaw}°: ${u}, ${w}`)
-    const box = [u - 0.015, w - 0.0225, u + 0.015, w + 0.0225]
+    const box = turnedBox(shot, facing, yaw, point)
+    assert.ok(box, `${name}: the point in view at ${yaw}°`)
     const { means } = await page.evaluate(([s, b]) => window.__regions(s, 'lit', 1024, [b]), [scene, box])
-    const [r, g, b] = means[0]
-    out.push({ yaw_deg: yaw, box: box.map((c) => Number(c.toFixed(4))), luma: 0.2126 * r + 0.7152 * g + 0.0722 * b })
+    out.push({ yaw_deg: yaw, box: box.map((c) => Number(c.toFixed(4))), luma: luma(means[0]) })
   }
   return out
 }
+
+/**
+ * Points of a scene seen as pointAcrossViews does, one picture per yaw: the brightness about each point in
+ * view at that yaw (null where it is out of the frame) and their mean. S2's AC-S2-1 sweeps the left wall of
+ * backlit-room with it, from 30° to 120°.
+ */
+async function pointsAcrossViews(page, name, points, yaws) {
+  const scene = shooterScene(name, realtimeGI)
+  const shot = scene.objects.find((o) => o.kind === 'camera')
+  const facing = new Quaternion(...shot.transform.rotation)
+  const out = []
+  for (const yaw of yaws) {
+    const boxes = points.map((p) => turnedBox(shot, facing, yaw, p))
+    const shown = boxes.filter(Boolean)
+    const { means } = await page.evaluate(([s, b]) => window.__regions(s, 'lit', 1024, b), [scene, shown])
+    const lumas = means.map(luma)
+    let i = 0
+    out.push({ yaw_deg: yaw, lumas: boxes.map((b) => (b ? lumas[i++] : null)), mean: lumas.reduce((a, l) => a + l, 0) / lumas.length })
+  }
+  return { points, views: out }
+}
+
+/** The small box about a point (document space) in the picture of shot turned in place by yaw degrees from facing; null out of the frame. Sets the shot's rotation. */
+function turnedBox(shot, facing, yaw, point) {
+  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (yaw * Math.PI) / 180).multiply(facing)
+  shot.transform.rotation = [q.x, q.y, q.z, q.w]
+  const v = new Vector3(...point).sub(new Vector3(...shot.transform.position)).applyQuaternion(q.clone().invert())
+  // Full frame at 3:2: the long side spans the sensor's 36 mm (cameraOptics.ts verticalFov).
+  const across = 18 / shot.camera.focal_mm
+  const u = 0.5 + (0.5 * v.x) / (-v.z * across)
+  const w = 0.5 - (0.5 * v.y) / ((-v.z * across * 2) / 3)
+  if (!(v.z < 0 && u > 0.05 && u < 0.95 && w > 0.05 && w < 0.95)) return null
+  return [u - 0.015, w - 0.0225, u + 0.015, w + 0.0225]
+}
+
+/** Rec. 709 luma of a region's mean [r, g, b]. */
+const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 /** Frame times while the viewport turns, in a scene's rendered view in real-time GI. */
 async function giFrameTimes(gpu, name) {
@@ -6311,13 +6340,16 @@ window.__ready = true;
 // as it is), the brightness of the regions in gi-regions.json, the viewport's frame times, and the room lit
 // from behind: a wall out of the sun, with the sunlit wall off screen and on (pointAcrossViews). SCENE_E2E_GI_SCENES=<a,b> draws these reference scenes instead.
 // SCENE_E2E_GI_COMPAT=1 adds a third export, WebGPU taken for a compatibility device (forceCompatibility): S1's
-// AC-S1-6 holds that one as it is too.
+// AC-S1-6 holds that one as it is too. SCENE_E2E_GI_OFF=1 adds two more, a device the e2e calls unsupported
+// (traceUnsupported) and the developer switch (traceOff), and sweeps the room's left wall from 30° to 120°: S2's
+// AC-S2-5 and AC-S2-1 hold these against the archive taken before S2.
 if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference scenes in real-time GI before the world-space layer, on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_GI_BASELINE
   const only = process.env.SCENE_E2E_GI_SCENES?.split(',')
   /** [file label, the backend the renderer reports, exportReference's options]. */
   const backends = [['webgpu', 'webgpu', {}], ['webgl2', 'webgl2', { forceWebGL: true }]]
   if (process.env.SCENE_E2E_GI_COMPAT) backends.push(['webgpu-compat', 'webgpu', { forceCompatibility: true }])
+  if (process.env.SCENE_E2E_GI_OFF) backends.push(['webgpu-unsupported', 'webgpu', { hooks: 'traceUnsupported' }], ['webgpu-off', 'webgpu', { hooks: 'traceOff' }])
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
@@ -6345,6 +6377,10 @@ if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference s
       // The room's left wall, out of the sun, with the sunlit wall behind the camera off screen (45°) and partly on (100°).
       const views = await pointAcrossViews(page, 'backlit-room', [-2.49, 1.2, 1.4], [45, 100])
       record.lit_wall_in_view = { scene: 'backlit-room', point: [-2.49, 1.2, 1.4], views, ratio: views[1].luma / views[0].luma }
+      if (process.env.SCENE_E2E_GI_OFF) {
+        const wall = [-2.4, -1.2, 0, 1.2, 2.4].flatMap((z) => [0.9, 1.8].map((y) => [-2.49, y, z]))
+        record.left_wall_sweep = await pointsAcrossViews(page, 'backlit-room', wall, [30, 45, 60, 75, 90, 105, 120])
+      }
     }
     await context.close()
     await writeFile(`${dir}/gi-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
