@@ -1,6 +1,6 @@
 # 第 3 组：同一张阴影深度图上的比较采样与原始读取（U7）
 
-> 状态：WebGPU 上 2D 和立方体贴图都有结论，WebGL2 待测。
+> 状态：完成。WebGPU 和 WebGL2 上，2D 和立方体贴图都有结论。
 
 PCSS 先搜索遮挡物，这一步要读原始深度；后面的滤波用比较采样。three r186 给阴影深度纹理设了 `compareFunction`（`ShadowNode.js:338`、`PointShadowNode.js:225`），问题是同一个着色器里能不能两者都做。
 
@@ -30,4 +30,22 @@ PCSS 先搜索遮挡物，这一步要读原始深度；后面的滤波用比较
 
 ## WebGL2
 
-待测（任务 3.2）。GLSL ES 3.0 不允许对 `sampler2DShadow` 使用 `texelFetch`，而 three 的 WebGL2 后端是否给 `textureLoad` 另外生成一个 `sampler2D` uniform，指向同一张纹理，还要实测。比较模式是纹理的状态，同一张纹理在一个着色器里既做比较又读原始值，结果没有定义（评审 B3）。如果不可行，就用 design 的备选：阴影 pass 额外输出一张线性深度。
+参考设备上 Chromium 的 WebGL2（ANGLE，Metal），原型页加 `?backend=webgl`。
+
+1. **比较采样加 `textureLoad` 不可行**：three 给一张纹理只声明一个 uniform，深度图设了 `compareFunction` 就声明为 `sampler2DShadow`，GLSL ES 3.0 不允许对它用 `texelFetch`，着色器编译失败（评审 B3 的预判）。
+   - 失败是静默的：页面照常报告完成，画面上这部分着色缺失。
+2. **全部原始读取、手动比较可行**，但要同时满足两点：
+   - 去掉深度图的 `compareFunction`，否则 GL 纹理停在比较模式，用普通采样器读是未定义的。three 的 WebGL 后端只在 `compareFunction` 非空时设置比较模式，设成 null 并不会改回 NONE，所以要在纹理建好之前设。原型在滤波函数构建时设，早于第一次绘制阴影，有效。
+   - 改用最近点过滤。PCF 模式下 three 把阴影深度图设成线性过滤（`ShadowNode.js:368`）；没有比较模式的深度纹理在 GLES 3.0 里不能线性过滤，纹理变得不完整，每次读都返回 0，画面全黑。
+3. **立方体贴图**：GLSL 允许在分支里用隐式 level 的 `texture()`。three 给深度纹理生成的 `textureLod` 漏掉了普通 `texture()` 会追加的 `.x`（`GLSLNodeBuilder.generateTexture` 对比 `generateTextureLevel`），返回的 vec4 被赋给 float，编译失败。所以 WebGL 上用 `texture()`，WebGPU 上用 `level(expression('0u', 'float'))`，两边各有一个 three 的缺陷要绕。
+4. **结果**：三种灯在 WebGL2 上的成片与 WebGPU 逐像素对比，平均差 0.00–0.04 级，p99 不超过 1 级。
+
+## 建议（U7）
+
+**两个后端统一用一套写法**：深度图去掉比较、改为最近点过滤，所有读取都用原始值、手动比较。
+
+- 画质：WebGPU 上与「比较采样加 `textureLoad`」相比，误差均值、半影宽度、剖面误差都在测量噪声以内。例如聚光半径 0.3 m 时，3 m 板剖面平均差都是 0.010，最大差 0.080 对 0.079。失去硬件比较的双线性，在 32 个滤波样本加逐帧旋转下看不出来。
+- 好处：不再依赖「比较采样必须写在最前面」这种代码生成顺序；2D 和立方体贴图同一种写法；WebGL2 只要多绕一个 three 的缺陷。
+- 代价：带尺寸的灯，阴影图不能再给硬件 PCF 用。尺寸为 0 的路径也要改成手动比较，无法逐像素复现原来的硬件双线性。这与 Epic「尺寸为 0 与基线差异不超过 1/255」的要求冲突，留到第 4 组（`integration.md`）给出处理方案。
+- S1 的防回退：WebGL2 和 WebGPU 各有一个 e2e，检查带尺寸的灯所在之处有正确的着色，而不是缺失或全黑（lesson `webgpu-detect-shader-failure`）。
+- 原型参数：WebGL 后端自动走这条路径；WebGPU 上用 `?compare=off` 开启。

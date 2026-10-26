@@ -12,7 +12,7 @@
 //   smtrace      shadow map tracing (EEVEE's way): rays to points on the light, each marched through the depth map
 //                and blocked where it passes through a surface; spot lights for now. ?rays= ?steps=, ?maxTexels= the
 //                longest trace, ?epsM= metres a ray must be behind a surface, ?spacing= how much denser steps are near.
-import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type OrthographicCamera, type PointLight, type SpotLight } from 'three'
+import { NearestFilter, Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type OrthographicCamera, type PointLight, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 
@@ -30,6 +30,20 @@ type Cascaded = { _init?: (builder: unknown) => void; lights: { shadow: LightSha
 
 const query = new URLSearchParams(location.search)
 const num = (k: string, d: number) => Number(query.get(k) ?? d)
+
+type Builder = { renderer: { backend: { isWebGLBackend?: boolean } } }
+
+/**
+ * Whether a map is read raw throughout, compared by hand: on ?compare=off, and always under WebGL2, which has no raw
+ * read of a sampler2DShadow while three gives a map one uniform a shader (depth-read-backends.md). The map then
+ * keeps no compare function, and is read nearest: three filters a PCF map linearly (ShadowNode.js:368), which
+ * leaves a depth texture without compare incomplete in WebGL2, every read 0.
+ */
+function rawOnly(depthTexture: unknown, builder: Builder): boolean {
+  if (query.get('compare') !== 'off' && !builder.renderer.backend.isWebGLBackend) return false
+  Object.assign(depthTexture as object, { compareFunction: null, minFilter: NearestFilter, magFilter: NearestFilter })
+  return true
+}
 
 /** The kernel's turn this pixel and frame: IGN shifted every frame (Jimenez 2014's 5.588238 step), so TRAA averages it. */
 const turn = () => interleavedGradientNoise(screenCoordinate.xy.add(float(frameId).mul(5.588238))).mul(Math.PI * 2)
@@ -104,7 +118,7 @@ function mapPCSS({ linear, slope, search, penumbra }: MapGeometry) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
-  return Fn(({ depthTexture, shadowCoord, shadow }: Record<string, TSLNode>) => {
+  return Fn(({ depthTexture, shadowCoord, shadow }: Record<string, TSLNode>, builder: Builder) => {
     const mapSize = reference('mapSize', 'vec2', shadow).setGroup(renderGroup)
     const texel = float(1).div(mapSize.x)
     const uv = shadowCoord.xy.toVar()
@@ -119,7 +133,7 @@ function mapPCSS({ linear, slope, search, penumbra }: MapGeometry) {
     // Raw depths: three declares one sampler a texture per shader, of the kind its first sampled use needs (S0 group
     // 3, depth-read-backends.md). ?read=load reads texels without a sampler (textureLoad), so the filter keeps the
     // hardware compare and its bilinear taps; ?read=raw samples raw depths throughout and compares by hand.
-    const raw = query.get('read') === 'raw'
+    const raw = rawOnly(depthTexture, builder) || query.get('read') === 'raw'
     // The texel the sampler's nearest pick reads: floor(uv · size), the same way up as uv (S0 measured both ways).
     const depthAt = (at: TSLNode) => (raw ? texture(depthTexture, at).x : textureLoad(depthTexture, ivec2(clamp(at.mul(mapSize), vec2(0), mapSize.sub(1)))).x)
     // The first use of the map in the shader decides its sampler: a compare first, so the filter's compares build.
@@ -150,6 +164,9 @@ function mapPCSS({ linear, slope, search, penumbra }: MapGeometry) {
       return same(at(uv)).mul(0.25).add(same(at(vec2(uv.x, float(1).sub(uv.y)))).mul(0.5)).add(0.125)
     }
     if (query.get('softDebug') === 'blockers') return blockers.div(searchN).add(centre.mul(0))
+    // Whether the raw read and the receiver's depth look like depths 10 m off (about 0.95): white where above 0.9.
+    if (query.get('softDebug') === 'rawAbove') return select(depthAt(uv).greaterThan(num('above', 0.9)), float(1), float(0)).add(centre.mul(0)).add(lit.mul(0))
+    if (query.get('softDebug') === 'zAbove') return select(z.greaterThan(0.9), float(1), float(0)).add(centre.mul(0)).add(lit.mul(0))
     // The estimate's inputs, scaled into 0…1: depths ÷ 20 m, the kernel ÷ 64 texels.
     const scaled: Record<string, () => TSLNode> = { zB: () => zB.div(20), zR: () => zR.div(20), kernel: () => penumbraUV.div(texel).div(64) }
     const debug = scaled[query.get('softDebug') ?? '']
@@ -244,7 +261,15 @@ function pointPCSS(light: PointLight, r: number) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
-  return Fn(({ depthTexture, bd3D, shadow }: Record<string, TSLNode>) => {
+  return Fn(({ depthTexture, bd3D, shadow }: Record<string, TSLNode>, builder: Builder) => {
+    // Raw reads throughout here anyway; under WebGL2 the map must also drop its compare and read nearest.
+    rawOnly(depthTexture, builder)
+    // A read inside PointShadowNode's per-pixel If: WGSL needs an explicit level there, an integer for a depth cube,
+    // which three r186 writes as a float for a filterable texture (WGSLNodeBuilder.generateTextureLevel); a
+    // float-typed expression that reads 0u gets past it. GLSL takes an implicit level anywhere, and three's
+    // textureLod for a depth texture leaves out the .x its plain texture() adds (GLSLNodeBuilder.generateTexture).
+    const gl = builder.renderer.backend.isWebGLBackend
+    const read = (d: TSLNode) => (gl ? cubeTexture(depthTexture, d) : cubeTexture(depthTexture, d).level(expression('0u', 'float'))).x
     const mapSize = reference('mapSize', 'vec2', shadow).setGroup(renderGroup)
     // A texel at the middle of a face, a metre from the light: the face spans 2 across.
     const texel = float(2).div(mapSize.x)
@@ -261,9 +286,7 @@ function pointPCSS(light: PointLight, r: number) {
     const stored = (d: TSLNode) => {
       const a = abs(d)
       const axis = max(max(a.x, a.y), a.z)
-      // A depth cube's level is an integer in WGSL, but three r186 writes a filterable texture's level as a float
-      // (WGSLNodeBuilder.generateTextureLevel): a float-typed expression that reads 0u gets past it.
-      return perspectiveDepthToViewZ(cubeTexture(depthTexture, d).level(expression('0u', 'float')).x, near, far).negate().div(axis)
+      return perspectiveDepthToViewZ(read(d), near, far).negate().div(axis)
     }
     /** The receiver's plane's distance along d, held near the receiver's own where the plane runs along d. */
     const receiverAt = (d: TSLNode) => clamp(planeDistance.div(min(dot(n, d), -1e-4)), dR.mul(0.5), dR.mul(2))
