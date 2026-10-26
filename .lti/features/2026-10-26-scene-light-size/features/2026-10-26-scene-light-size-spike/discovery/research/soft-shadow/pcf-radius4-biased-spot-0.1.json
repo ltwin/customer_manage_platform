@@ -1,0 +1,214 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcf-radius",
+  "size": 0.1,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight cf59e833: PCF radius 4 texels, normalBias 0.05 m",
+    "PointLight c04bf583: PCF radius 4 texels, normalBias 0.05 m",
+    "DirectionalLight 25a4bce6: PCF radius 4 texels, normalBias 0.05 m"
+  ],
+  "compileMs": 38,
+  "firstMs": 74,
+  "drawMs": 74,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 640
+    },
+    "refFrames": 8192,
+    "rasterFrames": 64,
+    "referenceMs": 1767,
+    "rasterMs": 25,
+    "averaged": {
+      "mean": 0.027174009941340827,
+      "p95": 0.192990243434906,
+      "max": 1,
+      "pixels": 447073
+    },
+    "first": {
+      "mean": 0.027173884877704002,
+      "p95": 0.19299018383026123,
+      "max": 1,
+      "pixels": 447073
+    },
+    "convergence": null,
+    "penumbrae": {
+      "0.05 m": {
+        "reference": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "first": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        }
+      },
+      "0.5 m": {
+        "reference": {
+          "left": {
+            "width": null,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.020000000000000018,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.010000000000000009,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.010000000000000009,
+            "lo": 0
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": null,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.135,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.10500000000000001,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.11500000000000002,
+            "lo": 0
+          }
+        },
+        "first": {
+          "left": {
+            "width": null,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.135,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.10500000000000001,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.11500000000000002,
+            "lo": 0
+          }
+        }
+      },
+      "3 m": {
+        "reference": {
+          "left": {
+            "width": 0.16000000000000003,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.17000000000000004,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.10500000000000004,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.10500000000000004,
+            "lo": 0
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": null,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.265,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.19,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.16999999999999998,
+            "lo": 0
+          }
+        },
+        "first": {
+          "left": {
+            "width": null,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.265,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.19,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.16999999999999998,
+            "lo": 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -36,8 +36,10 @@ function receiverPlane(coord: TSLNode): TSLNode {
   const dy = dFdy(coord).toVar()
   const det = dx.x.mul(dy.y).sub(dx.y.mul(dy.x)).toVar()
   const g = vec2(dy.y.mul(dx.z).sub(dx.y.mul(dy.z)), dx.x.mul(dy.z).sub(dy.x.mul(dx.z)))
-  // Flat in screen space (det ~ 0), or a silhouette's huge gradient: no plane, and a bound on how far it may lean.
-  return select(abs(det).greaterThan(1e-12), clamp(g.div(det), vec2(-0.05), vec2(0.05)), vec2(0))
+  // Flat in screen space (det ~ 0), or a silhouette's huge gradient: no plane, and a bound on how far it may lean
+  // (?planeMax=; a wall 11 m off at a grazing angle leans 0.08 a uv).
+  const most = num('planeMax', 0.2)
+  return select(abs(det).greaterThan(1e-12), clamp(g.div(det), vec2(-most), vec2(most)), vec2(0))
 }
 
 /** PCSS for a perspective (spot) shadow map: light of radius r metres. */
@@ -72,8 +74,9 @@ function spotPCSS(light: SpotLight, r: number) {
     const depthAt = (at: TSLNode) => (raw ? texture(depthTexture, at).x : textureLoad(depthTexture, ivec2(clamp(at.mul(mapSize), vec2(0), mapSize.sub(1)))).x)
     // The first use of the map in the shader decides its sampler: a compare first, so the filter's compares build.
     const centre = (raw ? float(1) : texture(depthTexture, uv).compare(z.sub(eps))).toVar()
-    for (let i = 0; i < searchN; i++) {
-      const o = vogelDiskSample(i, searchN, phi).mul(searchUV)
+    // The texel under the receiver searched too: a blocker the sparse disk misses still darkens the umbra.
+    for (let i = -1; i < searchN; i++) {
+      const o = i < 0 ? vec2(0) : vogelDiskSample(i, searchN, phi).mul(searchUV)
       const d = depthAt(uv.add(o))
       const blocks = select(d.lessThan(z.add(dot(plane, o)).sub(eps)), float(1), float(0))
       blockers.addAssign(blocks)
@@ -97,18 +100,29 @@ function spotPCSS(light: SpotLight, r: number) {
       return same(at(uv)).mul(0.25).add(same(at(vec2(uv.x, float(1).sub(uv.y)))).mul(0.5)).add(0.125)
     }
     if (query.get('softDebug') === 'blockers') return blockers.div(searchN).add(centre.mul(0))
+    // The estimate's inputs, scaled into 0…1: depths ÷ 20 m, the kernel ÷ 64 texels, near ÷ 10, far ÷ 1000.
+    const scaled: Record<string, () => TSLNode> = { zB: () => zB.div(20), zR: () => zR.div(20), kernel: () => penumbraUV.div(texel).div(64), near: () => near.div(10), far: () => far.div(1000) }
+    const debug = scaled[query.get('softDebug') ?? '']
+    if (debug) return debug().add(centre.mul(0)).add(lit.mul(0))
     return select(blockers.lessThan(0.5), centre.mul(0).add(1), lit.div(filterN))
   })
 }
 
 /** What each method does to a light that casts: returns a line for the report. */
+/** ?normalBias= metres on the PCF methods: their stripes off, so their edges can be measured against PCSS's. */
+function normalBias(light: Shadowing): string {
+  if (!query.has('normalBias')) return ''
+  light.shadow.normalBias = num('normalBias', 0)
+  return `, normalBias ${light.shadow.normalBias} m`
+}
+
 export const methods: Record<Method, (light: Shadowing, size: number) => string> = {
-  pcf: () => 'product PCF',
+  pcf: (light) => `product PCF${normalBias(light)}`,
   // The control: the product's PCF with a wider radius, the same everywhere (Epic design「不采用」).
   'pcf-radius': (light) => {
     const radius = num('radius', 4)
     ;(light.shadow as LightShadow).radius = radius
-    return `PCF radius ${radius} texels`
+    return `PCF radius ${radius} texels${normalBias(light)}`
   },
   pcss: (light, size) => {
     if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: spot lights only so far)'

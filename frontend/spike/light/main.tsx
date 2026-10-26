@@ -32,6 +32,7 @@ import { SceneRenderer } from '../../src/creative-scene/render/sceneRenderer.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
 import { sceneLowSun, sceneLux } from '../../src/creative-scene/world/exposure.ts'
 import { convergence, drawPanels, shadowError } from './panels.ts'
+import { penumbrae, penumbraLines } from './penumbra.ts'
 import { compare, refLights, type Comparison } from './reference.ts'
 import { methods, softShadows, type Method } from './soft.ts'
 
@@ -185,8 +186,9 @@ async function boot() {
     const panels = drawPanels(c, query.get('flip') === '1')
     document.body.append(panels)
     canvas.style.display = 'none'
-    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c) } }
-    show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`])
+    const widths = sceneName === 'occluder-wall' ? penumbrae(c, error) : null
+    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths } }
+    show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`, ...(widths ? penumbraLines(widths) : [])])
     spike.data = c
   }
   spike.done = true

@@ -277,6 +277,8 @@ function referenceMaterial(layer: TraceLayer, lights: readonly RefLight[], g: Re
 export type Comparison = {
   size: Size
   frames: number
+  /** World position xyz of each pixel's surface (w 1, 0 where none), rows as below. */
+  position: Float32Array
   /** Linear RGBA, rows bottom up as three reads them: the reference's sums ÷ frames, and the raster's mean. */
   reference: { shadowed: Float32Array; unshadowed: Float32Array }
   raster: { shadowed: Float32Array; unshadowed: Float32Array; first: Float32Array }
@@ -415,9 +417,16 @@ export async function compare(renderer: WebGPURenderer, scene: Scene, camera: Pe
   })
   try {
     const converged = converge ? { at: await readBack(renderer, atN, size, 1 / refFrames), twice: await readBack(renderer, sums.shadowed, size, 1 / (2 * refFrames)) } : undefined
+    // The G-buffer is drawn by renderer.render, its rows the other way from the quads' sums: turned to match them.
+    const drawn = await readBack(renderer, targets.position, size)
+    const row = size.width * 4
+    const position = new Float32Array(drawn.length)
+    for (let y = 0; y < size.height; y++) position.set(drawn.subarray((size.height - 1 - y) * row, (size.height - y) * row), y * row)
+    for (let i = 0; i < position.length; i += 4) for (let k = 0; k < 3; k++) position[i + k] -= POSITION_OFFSET
     return {
       size,
       frames: refFrames,
+      position,
       converge: converged,
       reference: { shadowed: converged ? converged.twice : await readBack(renderer, sums.shadowed, size, 1 / refFrames), unshadowed: await readBack(renderer, sums.unshadowed, size, 1 / refFrames) },
       raster: { shadowed: await readBack(renderer, raster.shadowed, size, 1 / rasterFrames), unshadowed: await readBack(renderer, raster.unshadowed, size), first: await readBack(renderer, raster.first, size) },
