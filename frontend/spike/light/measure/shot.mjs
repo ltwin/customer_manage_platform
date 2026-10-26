@@ -15,7 +15,8 @@ try {
   const spike = await page.evaluate(() => window.__spike)
   if (spike.error) throw new Error(spike.error)
   await page.locator('#info').evaluate((e) => (e.style.display = 'none'))
-  await page.locator('#view').screenshot({ path: out })
+  const panels = page.locator('#panels')
+  await ((await panels.count()) ? panels : page.locator('#view')).screenshot({ path: out })
   await writeFile(out.replace(/\.png$/, '.json'), `${JSON.stringify(spike.report, null, 2)}\n`)
   console.log(JSON.stringify(spike.report))
 } finally {

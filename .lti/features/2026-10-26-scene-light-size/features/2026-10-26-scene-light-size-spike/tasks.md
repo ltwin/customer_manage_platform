@@ -16,7 +16,10 @@
   - 结果：三个场景在 `workbench` 和 `realtime_gi` 下都能出图。`frame-two-lights` 的 `realtime_gi` 编译约 2.5 s，76 帧共 6.4 s。`vite.config.ts` 没有 `rollupOptions.input`，构建只打包 `index.html`。
   - 实施时调整：页面挂载产品的 `ShotScene`，用 `SceneRenderer` 出图，流程同 `openShooter`；候选滤波在 `g.compile` 之前装上。`area-studio` 的面光源缺省 100 cd/m²，保证能看清（`?nits=` 可调）；10000 cd/m² 在这个场景下全白，留给第 9 组。
   - 测量脚本 `spike/light/measure/shot.mjs`。
-- [ ] 2.2 第 1 组，参考解：按 design「参考解」实现，覆盖球、圆盘、矩形和椭圆，输出 `direct`、`directUnshadowed` 和 `visibility`。完成判据：第 1024 帧与第 2048 帧的差异每通道不超过 1/255（AC-S0-3）。结论写进 `reference.md`。
+- [x] 2.2 第 1 组，参考解：按 design「参考解」实现，覆盖球、圆盘、矩形和椭圆，输出 `direct`、`directUnshadowed` 和 `visibility`。完成判据：第 1024 帧与第 2048 帧的差异每通道不超过 1/255（AC-S0-3）。结论写进 `reference.md`。
+  - 结果：可行。不带阴影时，参考值与 three 的光栅值相差不超过 0.15%。半径 0.1 m 时，远处照度与 `I/d²` 相差 0.03%–0.15%。
+  - 实施时调整：1024 对 2048 帧最大差 3 级，参考解改用 8192 帧。8192 对 16384 帧时，五种光源都不超过 1 级。
+  - 顺带测出：聚光和点光的阴影 `bias` 为 0，造成自阴影条纹，未被遮挡的墙面被压暗到 66%；PCF 的旋转不随帧变化，TRAA 平均不掉。都交给第 2 组。
 
 ## 3. 软阴影
 

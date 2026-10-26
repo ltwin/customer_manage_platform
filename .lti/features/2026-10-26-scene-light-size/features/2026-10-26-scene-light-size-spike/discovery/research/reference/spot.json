@@ -1,0 +1,47 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcf",
+  "size": 0.1,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 71d849b8: product PCF",
+    "PointLight 460bbd6c: product PCF",
+    "DirectionalLight eb45f4c4: product PCF"
+  ],
+  "compileMs": 41,
+  "firstMs": 82,
+  "drawMs": 82,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 640
+    },
+    "refFrames": 8192,
+    "rasterFrames": 1,
+    "referenceMs": 3641,
+    "rasterMs": 14,
+    "averaged": {
+      "mean": 0.3077709305834812,
+      "p95": 0.7459899187088013,
+      "max": 0.9999334812164307,
+      "pixels": 447073
+    },
+    "first": {
+      "mean": 0.3077709305834812,
+      "p95": 0.7459899187088013,
+      "max": 0.9999334812164307,
+      "pixels": 447073
+    },
+    "convergence": {
+      "maxLevels": 1,
+      "overOne": 0
+    }
+  }
+}

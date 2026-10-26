@@ -1,0 +1,47 @@
+{
+  "scene": "area-studio",
+  "light": null,
+  "method": "pcf",
+  "size": 0,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 0b625432: product PCF",
+    "PointLight 654fc2c9: product PCF",
+    "DirectionalLight 5842484e: product PCF"
+  ],
+  "compileMs": 41,
+  "firstMs": 81,
+  "drawMs": 81,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 640
+    },
+    "refFrames": 8192,
+    "rasterFrames": 1,
+    "referenceMs": 4099,
+    "rasterMs": 10,
+    "averaged": {
+      "mean": 0.031474798188324465,
+      "p95": 0.03061455488204956,
+      "max": 1,
+      "pixels": 448432
+    },
+    "first": {
+      "mean": 0.031474798188324465,
+      "p95": 0.03061455488204956,
+      "max": 1,
+      "pixels": 448432
+    },
+    "convergence": {
+      "maxLevels": 1,
+      "overOne": 0
+    }
+  }
+}

@@ -12,6 +12,8 @@
 //   ?side=<px>                                     the picture's long side (1200 by default)
 //   ?backend=webgl                                 draws through the WebGL2 backend
 //   ?cold=1                                        a constant new every load in the spike's shaders
+//   ?view=compare                                  the reference against the raster's direct light (reference.ts):
+//     &refFrames= &rasterFrames= &width= &shape=ellipse &flip=1
 //
 // window.__spike tells the measure scripts when the picture is done and what was drawn.
 import { createElement } from 'react'
@@ -29,6 +31,8 @@ import { frameExposure } from '../../src/creative-scene/render/litLook.ts'
 import { SceneRenderer } from '../../src/creative-scene/render/sceneRenderer.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
 import { sceneLowSun, sceneLux } from '../../src/creative-scene/world/exposure.ts'
+import { convergence, drawPanels, shadowError } from './panels.ts'
+import { compare, refLights, type Comparison } from './reference.ts'
 import { methods, softShadows, type Method } from './soft.ts'
 
 extend(THREE as unknown as Parameters<typeof extend>[0])
@@ -44,7 +48,7 @@ if (query.get('backend') === 'webgl') gpuTestHooks.forceWebGL = true
 /** A constant that differs every load when ?cold=1: built into a shader, it misses every cached pipeline (lesson webgpu-perf-warm-shader-cache). */
 export const coldSalt = query.get('cold') === '1' ? Math.random() : 0
 
-type Spike = { done: boolean; error: string | null; report: Record<string, unknown> }
+type Spike = { done: boolean; error: string | null; report: Record<string, unknown>; data?: Comparison }
 const spike: Spike = { done: false, error: null, report: {} }
 ;(window as unknown as { __spike: Spike }).__spike = spike
 
@@ -162,7 +166,29 @@ async function boot() {
   }
   const drawMs = performance.now() - drawStarted
   spike.report = { scene: sceneName, light: sceneName === 'occluder-wall' ? lightName : null, method, size, engine, frames, width: framing.width, height: framing.height, lights, compileMs: Math.round(compileMs), firstMs: Math.round(firstMs), drawMs: Math.round(drawMs), coldSalt }
-  show([`${sceneName}${sceneName === 'occluder-wall' ? ` (${lightName})` : ''} · ${method} · size ${size} · ${engine} · ${frames} frames`, `compile ${Math.round(compileMs)} ms, first frame ${Math.round(firstMs)} ms, all ${Math.round(drawMs)} ms`])
+  const head = `${sceneName}${sceneName === 'occluder-wall' ? ` (${lightName})` : ''} · ${method} · size ${size} · ${engine} · ${frames} frames`
+  show([head, `compile ${Math.round(compileMs)} ms, first frame ${Math.round(firstMs)} ms, all ${Math.round(drawMs)} ms`])
+
+  // ?view=compare: the reference against the raster's direct light, under this frame's exposure (design「参考解」).
+  if (query.get('view') === 'compare') {
+    const base = traceBase(g, three, { incremental: false })
+    if (!(await base.ready(traceWaitMs))) throw new Error('the world-space layer was not ready')
+    const handle = base.handle()
+    if (!handle) throw new Error('the world-space layer has no handle')
+    const width = Number(query.get('width') ?? 960)
+    const cmpSize = { width, height: Math.max(16, Math.round(width / camera.aspect / 16) * 16) }
+    const refFrames = Number(query.get('refFrames') ?? 8192)
+    const rasterFrames = Number(query.get('rasterFrames') ?? 64)
+    const shape = query.get('shape') === 'ellipse' ? 'ellipse' : 'rectangle'
+    const c = await compare(g.renderer, three, camera, handle.layer, refLights(three, size, shape), cmpSize, refFrames, rasterFrames, query.get('converge') === '1')
+    const error = shadowError(c)
+    const panels = drawPanels(c, query.get('flip') === '1')
+    document.body.append(panels)
+    canvas.style.display = 'none'
+    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c) } }
+    show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`])
+    spike.data = c
+  }
   spike.done = true
 }
 
