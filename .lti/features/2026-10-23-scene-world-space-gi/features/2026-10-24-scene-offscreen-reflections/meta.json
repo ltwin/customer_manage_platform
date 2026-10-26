@@ -1,6 +1,6 @@
 {
   "uid": "679ca314-5a9a-49ef-bb72-691f46cd716b",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-offscreen-reflections",
   "kind": "feature",
   "assurance": "governed",
@@ -23,7 +23,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-24T10:29:11.962Z",
-  "updatedAt": "2026-10-26T08:11:44.472Z",
+  "updatedAt": "2026-10-26T08:15:51.931Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-26T08:15:51.866Z",
+    "summary": "squash 合入 develop（a81f639c，原分支 HEAD dd7f0cd3，打了本地标签 archive/scene-offscreen-reflections）。合入前先把 develop 合进分支，squash 后暂存区与分支树逐文件相同，分支上的验证原样适用：场景单测 8 组、oxlint、npm run build、W5 全部 15 条 e2e（本机 Metal）2026-10-26 在分支上通过，trace 12 条 e2e 在 d2d115a5 上通过、其后只改了文档与体积代码。",
+    "method": "manual",
+    "limitations": "合并点没有重跑测试：合入树与分支树相同（memory merge-gate-check-merge）；分支上的验证本身是手动定向的，未跑全量单测和全量 e2e；集成确认时把只留在本机的 evidence/before 等 322 个证据文件临时移出 worktree，确认后原样放回",
+    "sourceCommit": "a81f639c9d46ebde7745b69e0c2bf25726c48121",
+    "targetCommit": "a81f639c9d46ebde7745b69e0c2bf25726c48121",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b6101e0b543fd7c98ca35997a2e401cb859933c5347a6b4141ff187fb34b8c69"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
