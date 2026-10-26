@@ -38,12 +38,20 @@
     - 新增 `?layout=stack`（多层遮挡）、`?sunSize=`、`?maxSlope=` 和 `SPIKE_WARM`，`?cold=` 停用。
 - [x] 3.2 第 3 组，读取原始深度（U7）：在 WebGL2 和 WebGPU 上，验证同一张设了 `compareFunction` 的阴影深度图能否在一个着色器里同时做比较采样和原始读取。不行时，验证阴影 pass 额外输出线性深度的备选方案。结论写进 `depth-read-backends.md`。
   - 结果：比较采样加原始读取在 WebGPU 上有条件可行，在 WebGL2 上不可行；「去掉比较、最近点过滤、全部手动比较」在两个后端都可行，画质与前者相同，建议统一采用。WebGPU 和 WebGL2 各需绕开一个 three r186 的缺陷。线性深度备选不需要了。
-- [ ] 3.3 第 4 组，接法：
+- [x] 3.3 第 4 组，接法：
   - `PhysicalLightingModel` 新入口的包装方式，以及 clearcoat 和 sheen 的处理；
   - 四个滤波接入点：2D、立方体（`dp` 线性化）、`SunCascades` 逐级设置、standIn 编出同一个着色器；
   - 尺寸为 0 时按 uniform 分支走原来的 PCF，与基线的差异不超过 1/255，且不把比较采样放进按像素分叉的分支。
 
   结论写进 `integration.md`。
+  - 结果：
+    - 滤波函数只从它所过滤的 `shadow` 读参数，阴影的 `copy()` 带上 `filterNode` 和尺寸，四个接入点就共用同一个滤波函数。
+    - standIn 编出的着色器本来就与真实的不同（产品现有限制），带上滤波函数后，聚光和点光的停顿从约 0.3 s 降到几十毫秒；平行光级联因 `ownNames` 编号对不上，交给 S1。
+    - 尺寸为 0 的灯不挂滤波函数，与基线逐像素一致。
+    - 高光推荐「混合」模型：能量在 8% 以内、面积在 15% 以内、峰值在 20% 以内；Karis 原版在小半径时高光面积大了约 2 倍。
+  - 实施时调整：
+    - 尺寸为 0 不走 uniform 分支，改为不挂滤波函数，理由见 `integration.md`「尺寸为 0」；
+    - `addLight` 换不掉 three 内置的灯光类，原型直接改写 `lightNodes`，S1 用自己的灯光子类。
 
 ## 4. 面光源、接触阴影、近似与对照
 
@@ -59,6 +67,7 @@
   - 球形光源的地平线裁剪：Snyder 和代表点两种做法，都必须做出包裹，以及 sheen 近似的误差（U6）。
 
   结论分别写进 `contact-shadow.md`、`sphere-horizon-sheen.md`。
+  - 进展：第 6 组完成。主光有尺寸时关掉屏幕空间接触阴影：它在有尺寸的灯下只会叠出硬暗带和颗粒虚线，抖动追踪方向也几乎没有改善。第 7 组待做。
 - [ ] 4.3 第 8 组，Blender Cycles 对照的做法（后续验收项）：写 `blender-cycles.md`，包括 `occluder-wall` 的搭建步骤、Cycles 渲染设置、要读的相对量和读法，以及参考解给出的预期值；同时写明 U8 的核对步骤。本机不渲染（owner 2026-10-26）。
 - [ ] 4.4 第 9 组，缺省值的观感：在 `frame-two-lights` 上看半径 0.1 m 的效果，在 `area-studio` 上看 10000 cd/m² 的面光源效果。图交 owner 看，结论写进 `defaults-look.md`。
 

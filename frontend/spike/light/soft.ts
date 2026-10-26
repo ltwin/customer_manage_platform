@@ -12,7 +12,7 @@
 //   smtrace      shadow map tracing (EEVEE's way): rays to points on the light, each marched through the depth map
 //                and blocked where it passes through a surface; spot lights for now. ?rays= ?steps=, ?maxTexels= the
 //                longest trace, ?epsM= metres a ray must be behind a surface, ?spacing= how much denser steps are near.
-import { NearestFilter, Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type OrthographicCamera, type PointLight, type SpotLight } from 'three'
+import { LightShadow, NearestFilter, type DirectionalLight, type Light, type Object3D, type PointLight, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 
@@ -25,8 +25,7 @@ const { frameId, positionWorld, renderGroup, screenCoordinate } = tsl as unknown
 
 type Shadowing = DirectionalLight | PointLight | SpotLight
 type Filtered = LightShadow & { filterNode?: unknown }
-/** three's CSMShadowNode as SunCascades is one: its cascades' lights, made by _init on the first build. */
-type Cascaded = { _init?: (builder: unknown) => void; lights: { shadow: LightShadow }[] }
+
 
 const query = new URLSearchParams(location.search)
 const num = (k: string, d: number) => Number(query.get(k) ?? d)
@@ -78,13 +77,19 @@ type MapGeometry = {
   penumbra: (zR: TSLNode, zB: TSLNode) => TSLNode
 }
 
-/** A spot light's perspective map, light of radius r metres: uv per metre at depth d is 1 / (2 d tan(fov/2)). */
-function spotGeometry(light: SpotLight, r: number): MapGeometry {
-  const cam = light.shadow.camera
-  const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
-  const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
-  const tanHalf = uniform(1).setGroup(renderGroup).onRenderUpdate(() => Math.tan((cam.fov * Math.PI) / 360))
-  const radius = uniform(r)
+/** A number the shadow holds (dotted paths reach its camera), read as each render starts. */
+const held = (shadow: TSLNode, path: string, type = 'float') => reference(path, type, shadow).setGroup(renderGroup)
+
+/**
+ * A spot light's perspective map, the light of radius shadow.lightSize metres: uv per metre at depth d is
+ * 1 / (2 d tan(fov/2)). Everything is read from the shadow it filters, so the filter carries over to a copy of the
+ * shadow (SceneRenderer's stand-in) with nothing bound to the light it was made for.
+ */
+function spotGeometry(shadow: TSLNode): MapGeometry {
+  const near = held(shadow, 'camera.near')
+  const far = held(shadow, 'camera.far')
+  const tanHalf = T.tan(held(shadow, 'camera.fov').mul(Math.PI / 360))
+  const radius = held(shadow, 'lightSize')
   return {
     linear: (d) => perspectiveDepthToViewZ(d, near, far).negate(),
     // d(depth)/dz = near far / ((far − near) z²), and a uv is 2 z tan(fov/2) metres across.
@@ -95,16 +100,15 @@ function spotGeometry(light: SpotLight, r: number): MapGeometry {
 }
 
 /**
- * A cascade's orthographic map, the sun a disc θ degrees across: depth runs linearly near..far, a metre is
- * 1 / width of uv, and blockers zR − zB above a receiver spread its edge (zR − zB) tan(θ/2) either way. The camera
- * moves every frame (fitCascades), so its numbers are read as each render starts.
+ * A cascade's orthographic map, the sun a disc shadow.lightSize degrees across: depth runs linearly near..far, a
+ * metre is 1 / width of uv, and blockers zR − zB above a receiver spread its edge (zR − zB) tan(θ/2) either way.
+ * Each cascade's camera moves every frame (fitCascades); its shadow is a copy of the light's, the filter with it.
  */
-function sunGeometry(shadow: LightShadow, thetaDeg: number): MapGeometry {
-  const cam = shadow.camera as OrthographicCamera
-  const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
-  const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
-  const width = uniform(1).setGroup(renderGroup).onRenderUpdate(() => (cam.right - cam.left) / cam.zoom)
-  const tanHalf = uniform(Math.tan((thetaDeg * Math.PI) / 360))
+function sunGeometry(shadow: TSLNode): MapGeometry {
+  const near = held(shadow, 'camera.near')
+  const far = held(shadow, 'camera.far')
+  const width = held(shadow, 'camera.right').sub(held(shadow, 'camera.left')).div(held(shadow, 'camera.zoom'))
+  const tanHalf = T.tan(held(shadow, 'lightSize').mul(Math.PI / 360))
   return {
     linear: (d) => near.add(d.mul(far.sub(near))),
     slope: () => width.div(far.sub(near)),
@@ -113,12 +117,13 @@ function sunGeometry(shadow: LightShadow, thetaDeg: number): MapGeometry {
   }
 }
 
-/** PCSS on a 2D shadow map (a spot light's, or a sun cascade's), the light's geometry as given. */
-function mapPCSS({ linear, slope, search, penumbra }: MapGeometry) {
+/** PCSS on a 2D shadow map (a spot light's, or a sun cascade's), the light's geometry from the shadow it filters. */
+function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
   return Fn(({ depthTexture, shadowCoord, shadow }: Record<string, TSLNode>, builder: Builder) => {
+    const { linear, slope, search, penumbra } = geometry(shadow)
     const mapSize = reference('mapSize', 'vec2', shadow).setGroup(renderGroup)
     const texel = float(1).div(mapSize.x)
     const uv = shadowCoord.xy.toVar()
@@ -251,17 +256,17 @@ function spotTrace(light: SpotLight, r: number) {
  * The receiver's plane, from the screen derivatives of its place relative to the light, gives its distance along
  * every sampled direction: a wide kernel compares against the plane, not the receiver's own distance.
  */
-function pointPCSS(light: PointLight, r: number) {
-  const cam = light.shadow.camera
-  const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
-  const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
-  const radius = uniform(r)
-  // PointShadowNode hands its filter the receiver only as a direction (and dp): its place less the light's, whole.
-  const lightAt = uniform(new Vector3()).setGroup(renderGroup).onRenderUpdate(() => light.getWorldPosition(new Vector3()))
+function pointPCSS() {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
   return Fn(({ depthTexture, bd3D, shadow }: Record<string, TSLNode>, builder: Builder) => {
+    const near = held(shadow, 'camera.near')
+    const far = held(shadow, 'camera.far')
+    const radius = held(shadow, 'lightSize')
+    // PointShadowNode hands its filter the receiver only as a direction (and dp): its place less the light's,
+    // whole. The shadow's camera stands where the light is (PointLightShadow.updateMatrices).
+    const lightAt = held(shadow, 'camera.position', 'vec3')
     // Raw reads throughout here anyway; under WebGL2 the map must also drop its compare and read nearest.
     rawOnly(depthTexture, builder)
     // A read inside PointShadowNode's per-pixel If: WGSL needs an explicit level there, an integer for a depth cube,
@@ -313,6 +318,23 @@ function pointPCSS(light: PointLight, r: number) {
   })
 }
 
+/**
+ * A shadow's copy keeps its filter and the light's size (three's LightShadow.copy leaves out filterNode): what S1's
+ * shadow subclasses do by overriding copy() (Epic design, the stand-in attach point). Copies are made by
+ * SunCascades for its cascades and by SceneRenderer.compile for its stand-in's lights. ?copyFilter=0 leaves three's
+ * copy as it is, to see what the stand-in compiles without it.
+ */
+const carried = query.get('copyFilter') !== '0'
+if (carried) {
+  const copy = LightShadow.prototype.copy
+  LightShadow.prototype.copy = function (this: Filtered & { lightSize?: number }, source: Filtered & { lightSize?: number }) {
+    copy.call(this, source)
+    if (source.filterNode) this.filterNode = source.filterNode
+    if (source.lightSize !== undefined) this.lightSize = source.lightSize
+    return this
+  } as typeof copy
+}
+
 /** What each method does to a light that casts: returns a line for the report. */
 /** ?normalBias= metres on the PCF methods: their stripes off, so their edges can be measured against PCSS's. */
 function normalBias(light: Shadowing): string {
@@ -330,25 +352,25 @@ export const methods: Record<Method, (light: Shadowing, size: number) => string>
     return `PCF radius ${radius} texels${normalBias(light)}`
   },
   pcss: (light, size) => {
+    // A light of no size keeps three's PCF and its map's compare: no filter, the shader the product has today
+    // (integration.md「尺寸为 0」). Its size moving off 0 puts the filter on, and its materials build again.
+    if (size === 0) return 'product PCF (size 0)'
+    const shadow = light.shadow as Filtered & { lightSize?: number }
+    shadow.lightSize = size
+    const how = `${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
     if ((light as PointLight).isPointLight) {
-      ;(light.shadow as Filtered).filterNode = pointPCSS(light as PointLight, size)
-      return `PCSS (cube, raw compares) r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
+      shadow.filterNode = pointPCSS()
+      return `PCSS (cube, raw compares) r ${size} m, ${how}`
     }
     if ((light as DirectionalLight).isDirectionalLight) {
-      // SunCascades clones the light's shadow for each cascade as it first builds, and a clone drops filterNode
-      // (LightShadow.copy): put one on each cascade's shadow once they exist, before their nodes build.
-      const node = (light.shadow as LightShadow & { shadowNode?: Cascaded }).shadowNode
-      if (!node?._init) return 'product PCF (pcss: the sun has no cascades)'
-      const init = node._init.bind(node)
-      node._init = (builder) => {
-        init(builder)
-        for (const l of node.lights) (l.shadow as Filtered).filterNode = mapPCSS(sunGeometry(l.shadow, size))
-      }
-      return `PCSS (cascades) θ ${size}°, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
+      // SunCascades clones the light's shadow for each cascade as it first builds: the filter goes with the copy.
+      if (!carried) return 'product PCF (pcss: the sun needs ?copyFilter on)'
+      shadow.filterNode = mapPCSS(sunGeometry)
+      return `PCSS (cascades) θ ${size}°, ${how}`
     }
     if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: no such light)'
-    ;(light.shadow as Filtered).filterNode = mapPCSS(spotGeometry(light as SpotLight, size))
-    return `PCSS r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
+    shadow.filterNode = mapPCSS(spotGeometry)
+    return `PCSS r ${size} m, ${how}`
   },
   smtrace: (light, size) => {
     if (!(light as SpotLight).isSpotLight) return 'product PCF (smtrace: spot lights only so far)'

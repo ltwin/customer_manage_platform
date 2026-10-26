@@ -1,0 +1,289 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcss",
+  "size": 0.3,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 89015712: PCSS r 0.3 m, 16 + 32 samples, at most 48 texels",
+    "PointLight bfd20057: PCSS (cube, raw compares) r 0.3 m, 16 + 32 samples, at most 48 texels",
+    "DirectionalLight 9cd8752a: PCSS (cascades) θ 0.3°, 16 + 32 samples, at most 48 texels",
+    "sphere lights r 0.3 m: falloff from max(d, r), highlights from the representative point (α' with r / 2d)"
+  ],
+  "compileMs": 67,
+  "firstMs": 93,
+  "drawMs": 93,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 640
+    },
+    "refFrames": 8192,
+    "rasterFrames": 16,
+    "referenceMs": 1630,
+    "rasterMs": 26,
+    "averaged": {
+      "mean": 0.0015392789005875967,
+      "p95": 1.7881393432617188e-7,
+      "max": 1,
+      "pixels": 447073
+    },
+    "first": {
+      "mean": 0.0017724458050037784,
+      "p95": 0,
+      "max": 1,
+      "pixels": 447073
+    },
+    "convergence": null,
+    "penumbrae": {
+      "0.05 m": {
+        "reference": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "first": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0050346399409729676,
+            "max": 0.5054080442990501
+          },
+          "first": {
+            "mean": 0.004983151243237538,
+            "max": 0.46650670532441535
+          }
+        }
+      },
+      "0.5 m": {
+        "reference": {
+          "left": {
+            "width": 0,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.03999999999999998,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.03,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.03,
+            "lo": 0
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": 0,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.04999999999999999,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.044999999999999984,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.03,
+            "lo": 0
+          }
+        },
+        "first": {
+          "left": {
+            "width": 0,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.04999999999999999,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.044999999999999984,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.03,
+            "lo": 0
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0022807575542641064,
+            "max": 0.10449727873007453
+          },
+          "first": {
+            "mean": 0.0023430125554801525,
+            "max": 0.15683280924956006
+          }
+        }
+      },
+      "3 m": {
+        "reference": {
+          "left": {
+            "width": 0.49,
+            "lo": 0.0026405685115605594
+          },
+          "right": {
+            "width": null,
+            "lo": 0.00004519644062384032
+          },
+          "lower": {
+            "width": 0.32,
+            "lo": 0.005640915650777363
+          },
+          "upper": {
+            "width": 0.32,
+            "lo": 0.00561660831226618
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": 0.48,
+            "lo": 0.0024033010646235197
+          },
+          "right": {
+            "width": null,
+            "lo": 0.004206877993419766
+          },
+          "lower": {
+            "width": 0.33,
+            "lo": 0.0040516171720810235
+          },
+          "upper": {
+            "width": 0.3,
+            "lo": 0.004399956592048208
+          }
+        },
+        "first": {
+          "left": {
+            "width": 0.47,
+            "lo": 0.0014613969251513481
+          },
+          "right": {
+            "width": null,
+            "lo": 0.0014231003820896148
+          },
+          "lower": {
+            "width": 0.32,
+            "lo": 0.004147518484387547
+          },
+          "upper": {
+            "width": 0.3,
+            "lo": 0.00015701593171494702
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.009631497005130593,
+            "max": 0.09258433183034254
+          },
+          "first": {
+            "mean": 0.010877971412968403,
+            "max": 0.1928665041923523
+          }
+        }
+      }
+    },
+    "regions": {
+      "wall": {
+        "averaged": {
+          "mean": 0.002126686102992157,
+          "p99": 0.04485279321670532
+        },
+        "first": {
+          "mean": 0.0025178678887940427,
+          "p99": 0.03555816411972046
+        }
+      },
+      "ground": {
+        "averaged": {
+          "mean": 0.0007483091193282093,
+          "p99": 1.7881393432617188e-7
+        },
+        "first": {
+          "mean": 0.0007509103021371733,
+          "p99": 0
+        }
+      }
+    },
+    "highlight": {
+      "pixels": 8742,
+      "energy": {
+        "reference": 34652.60565310007,
+        "raster": 31936.921542136173,
+        "ratio": 0.9216311714579262
+      },
+      "lobe": {
+        "reference": 25911.558629126168,
+        "raster": 22380.842739522926,
+        "ratio": 0.8637397332928285
+      },
+      "peak": {
+        "reference": 17.329193394088744,
+        "raster": 14.487133336448668
+      },
+      "area": {
+        "reference": 1076,
+        "raster": 1061,
+        "ratio": 0.9860594795539034
+      }
+    }
+  }
+}

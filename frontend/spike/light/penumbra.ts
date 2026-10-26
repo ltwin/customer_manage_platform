@@ -142,3 +142,38 @@ export function regionErrors(c: Comparison, s: { ref: Float32Array; averagedShad
   }
   return out
 }
+
+/**
+ * The gloss panel's highlight (AC-4): on its face (doc x −3.74…−2.74, height 2.36…3.36, z −2.93), the light it
+ * sends back unshadowed, the reference's and the raster's: the sum (energy), the peak, and how many pixels pass
+ * half of their own peak (area).
+ */
+export function highlight(c: Comparison) {
+  const sums = { reference: 0, raster: 0 }
+  const values: Record<'reference' | 'raster', number[]> = { reference: [], raster: [] }
+  for (let i = 0; i < c.size.width * c.size.height; i++) {
+    const [x, y, z] = docOf(c.position, i)
+    if (Math.abs(z + 2.93) > 0.004 || x < -3.74 || x > -2.74 || y < 2.36 || y > 3.36) continue
+    for (const [k, a] of [['reference', c.reference.unshadowed], ['raster', c.raster.unshadowed]] as const) {
+      const v = 0.2126 * a[i * 4] + 0.7152 * a[i * 4 + 1] + 0.0722 * a[i * 4 + 2]
+      sums[k] += v
+      values[k].push(v)
+    }
+  }
+  const peak = (a: number[]) => a.reduce((m, v) => Math.max(m, v), 0)
+  // The panel's diffuse, its dimmest 5%: the highlight is what stands above it.
+  const floor = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length * 0.05)] ?? 0
+  const above = (a: number[]) => a.map((v) => Math.max(0, v - floor(a)))
+  const area = (a: number[]) => {
+    const h = above(a)
+    return h.filter((v) => v > peak(h) / 2).length
+  }
+  const lobe = (a: number[]) => above(a).reduce((x, y) => x + y, 0)
+  return {
+    pixels: values.reference.length,
+    energy: { reference: sums.reference, raster: sums.raster, ratio: sums.raster / sums.reference },
+    lobe: { reference: lobe(values.reference), raster: lobe(values.raster), ratio: lobe(values.raster) / lobe(values.reference) },
+    peak: { reference: peak(values.reference), raster: peak(values.raster) },
+    area: { reference: area(values.reference), raster: area(values.raster), ratio: area(values.raster) / Math.max(1, area(values.reference)) },
+  }
+}

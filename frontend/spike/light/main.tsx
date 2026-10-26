@@ -20,7 +20,7 @@ import { createElement } from 'react'
 import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
-import { RectAreaLightNode } from 'three/webgpu'
+import { MeshLambertNodeMaterial, MeshPhysicalNodeMaterial, RectAreaLightNode } from 'three/webgpu'
 import type { Scene } from '../../src/creative-scene/api.ts'
 import { ShotScene } from '../../src/creative-scene/host/ShotScene.tsx'
 import { cameraFraming } from '../../src/creative-scene/host/framing.ts'
@@ -32,9 +32,11 @@ import { SceneRenderer } from '../../src/creative-scene/render/sceneRenderer.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
 import { sceneLowSun, sceneLux } from '../../src/creative-scene/world/exposure.ts'
 import { convergence, drawPanels, shadowError } from './panels.ts'
-import { penumbrae, penumbraLines, regionErrors } from './penumbra.ts'
+import { highlight, penumbrae, penumbraLines, regionErrors } from './penumbra.ts'
 import { compare, refLights, type Comparison } from './reference.ts'
 import { methods, softShadows, type Method } from './soft.ts'
+import { sphereLights } from './sphere.ts'
+import { contactShadows } from './contact.ts'
 
 extend(THREE as unknown as Parameters<typeof extend>[0])
 
@@ -139,6 +141,10 @@ async function boot() {
   if (sceneName === 'area-studio') addSoftbox(three)
   // Before anything builds: three keeps the first shadow node a light makes.
   const lights = softShadows(three, method, size)
+  const contact = contactShadows()
+  if (contact) lights.push(contact)
+  // Sphere lights (highlights and falloff, sphere.ts) unless ?sphere=0: the product's point lights.
+  if (query.get('sphere') !== '0') lights.push(sphereLights(g.renderer, three, size))
 
   const engine = effectiveEngine(engineOf(scene.render), 'lit', true)
   const compileStarted = performance.now()
@@ -179,6 +185,36 @@ async function boot() {
   const head = `${sceneName}${sceneName === 'occluder-wall' ? ` (${lightName})` : ''} · ${method} · size ${size} · ${engine} · ${frames} frames`
   show([head, `compile ${Math.round(compileMs)} ms, first frame ${Math.round(firstMs)} ms, all ${Math.round(drawMs)} ms`])
 
+  // ?standIn=1: whether SceneRenderer.compile's stand-in compiles what the next frame draws (design「挂载点」
+  // standIn): a new kind of material appears, compile() runs, and the frame after it should build no new shader.
+  if (query.get('standIn') === '1') {
+    const shaders = () => new Set((g.renderer as unknown as { _pipelines: { programs: { fragment: Map<string, unknown> } } })._pipelines.programs.fragment.keys())
+    const programs = () => shaders().size
+    const known = shaders()
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.3, 48, 24), query.get('standInMaterial') === 'lambert' ? new MeshLambertNodeMaterial({ color: 0x8899aa }) : new MeshPhysicalNodeMaterial({ color: 0x8899aa, roughness: 0.4, clearcoat: 1, sheen: 1 }))
+    ball.position.set(1, -1, 0.3)
+    ball.castShadow = ball.receiveShadow = true
+    const before = programs()
+    three.add(ball)
+    const compileStarted = performance.now()
+    await picture.compile()
+    const compiled = programs()
+    ;(window as unknown as { __atCompile?: Set<string> }).__atCompile = shaders()
+    const compileMs = performance.now() - compileStarted
+    const frameStarted = performance.now()
+    g.advanceFrame()
+    picture.render(camera, frame)
+    await g.settle()
+    const frameMs = performance.now() - frameStarted
+    const after = programs()
+    // What the frame built that the compile had not: its size, and a few marks of what it holds.
+    const atCompile = (window as unknown as { __atCompile?: Set<string> }).__atCompile ?? known
+    const fresh = [...shaders()].filter((c) => !atCompile.has(c)).map((c) => ({ chars: c.length, csm: (c.match(/_csm\d+/g) ?? []).slice(0, 3), loads: (c.match(/textureLoad|textureSampleLevel|texelFetch/g) ?? []).length, compares: (c.match(/textureSampleCompare|texture\( *\w*[Ss]hadow/g) ?? []).length }))
+    ;(spike.report as Record<string, unknown>).fresh = fresh
+    spike.report = { ...spike.report, standIn: { before, compiled, after, newAtFrame: after - compiled, compileMs: Math.round(compileMs), frameMs: Math.round(frameMs) } }
+    show([head, `stand-in: ${before} → compile ${compiled} → frame ${after} fragment shaders (${after - compiled} new at the frame, ${Math.round(frameMs)} ms)`])
+  }
+
   // ?view=compare: the reference against the raster's direct light, under this frame's exposure (design「参考解」).
   if (query.get('view') === 'compare') {
     const base = traceBase(g, three, { incremental: false })
@@ -196,7 +232,7 @@ async function boot() {
     document.body.append(panels)
     canvas.style.display = 'none'
     const widths = sceneName === 'occluder-wall' ? penumbrae(c, error) : null
-    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'occluder-wall' ? regionErrors(c, error) : null } }
+    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'occluder-wall' ? regionErrors(c, error) : null, highlight: sceneName === 'occluder-wall' ? highlight(c) : null } }
     show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`, ...(widths ? penumbraLines(widths) : [])])
     spike.data = c
   }
