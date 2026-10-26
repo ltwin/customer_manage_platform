@@ -8,13 +8,13 @@
   "width": 1200,
   "height": 800,
   "lights": [
-    "SpotLight b32b3e9b: PCSS r 0.1 m, 16 + 32 samples, at most 48 texels",
-    "PointLight 3f683de6: product PCF (pcss: spot lights only so far)",
-    "DirectionalLight f1c91240: product PCF (pcss: spot lights only so far)"
+    "SpotLight 3b2e49d4: PCSS r 0.1 m, 16 + 32 samples, at most 48 texels",
+    "PointLight e98ef58c: product PCF (pcss: spot lights only so far)",
+    "DirectionalLight 004544f5: product PCF (pcss: spot lights only so far)"
   ],
-  "compileMs": 66,
-  "firstMs": 97,
-  "drawMs": 97,
+  "compileMs": 71,
+  "firstMs": 115,
+  "drawMs": 115,
   "coldSalt": 0,
   "view": "compare",
   "tier": "full",
@@ -25,16 +25,16 @@
     },
     "refFrames": 8192,
     "rasterFrames": 64,
-    "referenceMs": 1784,
-    "rasterMs": 35,
+    "referenceMs": 2358,
+    "rasterMs": 46,
     "averaged": {
-      "mean": 0.0014071116622535239,
+      "mean": 0.0014071116631867776,
       "p95": 7.152557373046875e-7,
       "max": 1,
       "pixels": 447073
     },
     "first": {
-      "mean": 0.001492728786135962,
+      "mean": 0.0014927287876025034,
       "p95": 0,
       "max": 1,
       "pixels": 447073
@@ -95,12 +95,22 @@
             "width": null,
             "lo": 1
           }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.005828211164829421,
+            "max": 0.5114983916282654
+          },
+          "first": {
+            "mean": 0.005773292222069008,
+            "max": 0.466556857029597
+          }
         }
       },
       "0.5 m": {
         "reference": {
           "left": {
-            "width": null,
+            "width": 0,
             "lo": 0
           },
           "right": {
@@ -118,7 +128,7 @@
         },
         "averaged": {
           "left": {
-            "width": null,
+            "width": 0,
             "lo": 0
           },
           "right": {
@@ -136,7 +146,7 @@
         },
         "first": {
           "left": {
-            "width": null,
+            "width": 0,
             "lo": 0
           },
           "right": {
@@ -150,6 +160,16 @@
           "upper": {
             "width": 0.03,
             "lo": 0
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0055148190459976005,
+            "max": 0.3456815170745055
+          },
+          "first": {
+            "mean": 0.005683961361868766,
+            "max": 0.39954114332795143
           }
         }
       },
@@ -206,6 +226,16 @@
           "upper": {
             "width": 0.10500000000000004,
             "lo": 0
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0037447676742153294,
+            "max": 0.07543562650680535
+          },
+          "first": {
+            "mean": 0.004182338257533085,
+            "max": 0.17114908695220943
           }
         }
       }

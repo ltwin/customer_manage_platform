@@ -32,7 +32,7 @@ import { SceneRenderer } from '../../src/creative-scene/render/sceneRenderer.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
 import { sceneLowSun, sceneLux } from '../../src/creative-scene/world/exposure.ts'
 import { convergence, drawPanels, shadowError } from './panels.ts'
-import { penumbrae, penumbraLines } from './penumbra.ts'
+import { penumbrae, penumbraLines, regionErrors } from './penumbra.ts'
 import { compare, refLights, type Comparison } from './reference.ts'
 import { methods, softShadows, type Method } from './soft.ts'
 
@@ -84,6 +84,12 @@ async function load(): Promise<{ scene: Scene; models: Record<string, SceneModel
   scene.render.exposure_compensation ??= 0
   for (const o of scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
   if (sceneName === 'occluder-wall') for (const o of scene.objects) if (o.kind === 'light') o.visible = o.name === occluderLights[lightName]
+  // ?layout=stack: the 3 m board on the way from the lights to the 0.5 m board, so their shadows lie one in the
+  // other: two layers of blockers for one receiver (design「测量与判定」多层遮挡). A box stands on its base.
+  if (sceneName === 'occluder-wall' && query.get('layout') === 'stack') {
+    const far = scene.objects.find((o) => o.name === '遮挡板 3 m')!
+    far.transform.position = [-2.988, 2.787, 0.06]
+  }
   const engine = query.get('engine')
   if (engine === 'workbench' || engine === 'realtime_gi') scene.render.engine = engine
   const models: Record<string, SceneModel> = {}
@@ -187,7 +193,7 @@ async function boot() {
     document.body.append(panels)
     canvas.style.display = 'none'
     const widths = sceneName === 'occluder-wall' ? penumbrae(c, error) : null
-    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths } }
+    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'occluder-wall' ? regionErrors(c, error) : null } }
     show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`, ...(widths ? penumbraLines(widths) : [])])
     spike.data = c
   }

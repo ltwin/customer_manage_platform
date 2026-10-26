@@ -17,11 +17,12 @@ export const boards = [
 
 const BIN = 0.005
 const BAND = 0.03
-const REACH = 0.6
+const REACH = 1.2
 
 export type Edge = { width: number | null; lo: number }
 export type BoardWidths = Record<'left' | 'right' | 'lower' | 'upper', Edge>
-export type Penumbrae = Record<string, Record<'reference' | 'averaged' | 'first', BoardWidths>>
+export type ProfileError = { mean: number; max: number }
+export type Penumbrae = Record<string, Record<'reference' | 'averaged' | 'first', BoardWidths> & { profile: Record<'averaged' | 'first', ProfileError> }>
 
 /** Doc coordinates from three's: the scene is z up, doc y up (x, −z, y). */
 const docOf = (p: Float32Array, i: number) => [p[i * 4], p[i * 4 + 2], -p[i * 4 + 1]] as const
@@ -79,9 +80,30 @@ function widths(c: Comparison, shadow: Float32Array, centre: readonly [number, n
   return { left: edge(h, -1), right: edge(h, 1), lower: edge(v, -1), upper: edge(v, 1) }
 }
 
+/**
+ * How far the raster's profiles are from the reference's, bin by bin, both axes: what still compares when a shadow
+ * has no umbra and its 10%–90% width means nothing.
+ */
+function profileError(c: Comparison, ref: Float32Array, raster: Float32Array, centre: readonly [number, number]): ProfileError {
+  const d: number[] = []
+  for (const along of [0, 1] as const) {
+    const a = profile(c, ref, centre, along)
+    const b = profile(c, raster, centre, along)
+    a.forEach((v, k) => v != null && b[k] != null && d.push(Math.abs(v - b[k]!)))
+  }
+  return { mean: d.length ? d.reduce((x, y) => x + y, 0) / d.length : 0, max: d.length ? Math.max(...d) : 0 }
+}
+
 export function penumbrae(c: Comparison, s: { ref: Float32Array; averagedShadow: Float32Array; firstShadow: Float32Array }): Penumbrae {
   const out: Penumbrae = {}
-  for (const b of boards) out[b.name] = { reference: widths(c, s.ref, b.at), averaged: widths(c, s.averagedShadow, b.at), first: widths(c, s.firstShadow, b.at) }
+  for (const b of boards) {
+    out[b.name] = {
+      reference: widths(c, s.ref, b.at),
+      averaged: widths(c, s.averagedShadow, b.at),
+      first: widths(c, s.firstShadow, b.at),
+      profile: { averaged: profileError(c, s.ref, s.averagedShadow, b.at), first: profileError(c, s.ref, s.firstShadow, b.at) },
+    }
+  }
   return out
 }
 
@@ -89,4 +111,21 @@ export function penumbrae(c: Comparison, s: { ref: Float32Array; averagedShadow:
 export function penumbraLines(p: Penumbrae): string[] {
   const cm = (e: Edge) => (e.width == null ? '–' : (e.width * 100).toFixed(1))
   return Object.entries(p).map(([name, w]) => `${name}: ` + (['left', 'right', 'lower', 'upper'] as const).map((k) => `${k} ${cm(w.reference[k])}→${cm(w.averaged[k])}/${cm(w.first[k])}`).join(' · ') + ' cm')
+}
+
+/** Mean and p99 |Δ shadow| on the wall's face and on the ground, averaged and first frame: where a bias shows. */
+export function regionErrors(c: Comparison, s: { ref: Float32Array; averagedShadow: Float32Array; firstShadow: Float32Array }) {
+  const regions = { wall: (p: readonly number[]) => Math.abs(p[2] - WALL_Z) < 0.004, ground: (p: readonly number[]) => Math.abs(p[1]) < 0.004 }
+  const out: Record<string, Record<'averaged' | 'first', { mean: number; p99: number }>> = {}
+  for (const [name, inside] of Object.entries(regions)) {
+    const e: Record<'averaged' | 'first', number[]> = { averaged: [], first: [] }
+    for (let i = 0; i < c.size.width * c.size.height; i++) {
+      if (Number.isNaN(s.ref[i]) || Number.isNaN(s.averagedShadow[i]) || !inside(docOf(c.position, i))) continue
+      e.averaged.push(Math.abs(s.averagedShadow[i] - s.ref[i]))
+      e.first.push(Math.abs(s.firstShadow[i] - s.ref[i]))
+    }
+    const stat = (a: number[]) => (a.sort((x, y) => x - y), { mean: a.reduce((x, y) => x + y, 0) / Math.max(1, a.length), p99: a[Math.floor(a.length * 0.99)] ?? 0 })
+    out[name] = { averaged: stat(e.averaged), first: stat(e.first) }
+  }
+  return out
 }
