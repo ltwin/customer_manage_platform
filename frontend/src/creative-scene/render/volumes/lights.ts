@@ -12,7 +12,7 @@ import { ambientRadiance, environmentIntensity, slotMaps, slotUniforms, type Slo
 // round. Built for one structure of slots; the march rebuilds on another.
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, cubeTexture, dot, float, getDistanceAttenuation, length, max, select, smoothstep, texture, vec2, vec3, vec4, viewZToOrthographicDepth, viewZToPerspectiveDepth } = tsl as unknown as Record<string, Op>
+const { abs, cubeTexture, dot, float, getDistanceAttenuation, length, max, mix, select, smoothstep, step, texture, vec2, vec3, vec4, viewZToOrthographicDepth, viewZToPerspectiveDepth } = tsl as unknown as Record<string, Op>
 const If = tsl.If as unknown as (cond: TSLNode, then: () => void) => void
 
 /** A light at a point: the radiance arriving (shadowed), the unit direction toward it, how far it is. */
@@ -65,9 +65,13 @@ function point(slot: Slot, u: SlotUniforms, maps: Swappable[], p: TSLNode): Ligh
     // As PointShadowNode: the cube face's depth is the largest axis of the way from the light.
     const q = abs(v)
     const m = max(max(q.x, q.y), q.z)
-    const depth = viewZToPerspectiveDepth(m.negate(), u.range.x, u.range.y).add(u.biases[0])
-    const within = m.greaterThanEqual(u.range.x).and(m.lessThanEqual(u.range.y))
-    visible = select(within, maps[0].sample(v.div(max(d, 1e-4))).compare(depth), float(1))
+    const depth = viewZToPerspectiveDepth(max(m, u.range.x).negate(), u.range.x, u.range.y).add(u.biases[0])
+    // Sampled at every step and masked by arithmetic, never in a branch: three makes an if of a select and turns
+    // off WGSL's derivative uniformity, and a lane that had not taken the branch held a zero direction, so the
+    // quad's derivatives of the cube coordinate came out NaN, and so the light (owner 2026-10-26: the volume
+    // white across a casting point light's reach).
+    const within = step(u.range.x, m).mul(step(m, u.range.y))
+    visible = mix(float(1), maps[0].sample(v.div(max(d, 1e-4))).compare(depth), within)
   }
   return { radiance: u.radiance.mul(falloff).mul(visible), toward, distance: d }
 }

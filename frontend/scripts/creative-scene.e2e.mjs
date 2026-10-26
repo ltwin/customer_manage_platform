@@ -6746,6 +6746,52 @@ await check('W5 cast shadow: a casting volume darkens the sunlit ground; off, th
   }
 })
 
+// owner 2026-10-26 (工业科幻大厅): a casting point light with a distance, by the floor of a volume seen from
+// behind its reach. The march sampled the cube shadow map in the branch three makes of a select; a lane that
+// had not taken it held a zero direction, the quad's derivatives came out NaN, and the volume white across the
+// light's reach. A slab over the light shades the air above it; beside the slab the shadow changes nothing.
+// On this machine's GPU: SwiftShader's derivatives never came out NaN.
+await check('W5 point shadow: a casting point light with a distance shades the volume above a slab, and is the same beside it', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const hall = (cast, lit = true) => {
+      const scene = fixtureScene('physical-noon')
+      scene.environment = { sky: { kind: 'color', color: '#1c1a24' }, ambient: { color: '#c0bce0', intensity: 0.05 } }
+      scene.objects = [
+        scene.objects.find((o) => o.primitive?.builtin === 'ground@1'),
+        ...(lit ? [{ id: gid('fire'), kind: 'light', name: 'fire', parent_id: null, order: 5, transform: { ...identity(), position: [1.5, 0.2, 1.2] }, visible: true, locked: false, light: { type: 'point', color: '#ff6a1a', intensity: 40, distance: 3, decay: 2, cast_shadow: cast } }] : []),
+        roomBox('slab', [1.5, 0.75, 1.2], [1.2, 0.1, 1.2], 6),
+        volumeObject('haze', [0, 5, -2], [14, 10, 10], { scatter_density: 0.15, anisotropy: 0.5, edge_falloff: 0.3 }),
+        cameraAt('back', [0.5, 3, 15], [0, 2, 0]),
+      ]
+      return scene
+    }
+    // In the air over the slab, and beside the light clear of the slab's shadow, both within its reach.
+    const points = [[1.5, 1.6, 1.2], [3.4, 0.5, 1.2]]
+    const picture = (scene) => page.evaluate(([sc, p]) => window.__picture(sc, 'lit', 768, p), [scene, points])
+    const casting = await picture(hall(true))
+    const plain = await picture(hall(false))
+    const dark = await picture(hall(false, false))
+    await savePicture(page, 'w5-point-shadow', casting)
+    // White casting where it is not without the shadow: the ground under the light is white either way.
+    const a = Buffer.from(casting.rgba, 'base64')
+    const b = Buffer.from(plain.rgba, 'base64')
+    const white = (d, k) => d[k] === 255 && d[k + 1] === 255 && d[k + 2] === 255
+    let whiter = 0
+    for (let k = 0; k < a.length; k += 4) if (white(a, k) && !white(b, k)) whiter++
+    const [over, beside] = casting.at.map((at) => [lumaAt(dark, at), lumaAt(plain, at), lumaAt(casting, at)])
+    const fmt = (l) => l.map((v) => v.toFixed(1)).join(', ')
+    console.log(`W5 point shadow: ${whiter} pixels white only casting; luma without the light, lit, lit casting: over the slab ${fmt(over)}, beside it ${fmt(beside)}`)
+    assert.equal(whiter, 0, 'no white across the light’s reach')
+    assert.ok(over[2] - over[0] < 0.3 * (over[1] - over[0]), 'the slab shades the air above it')
+    assert.ok(Math.abs(beside[2] - beside[1]) < 1, 'beside the slab the shadow changes nothing')
+    assert.deepEqual(errors, [])
+  } finally {
+    await gpu.close()
+  }
+})
+
 // scene-volumes design「选灯与编译」「表面阴影系数」: a new casting light changes the march's lights, and the march
 // compiles ahead of the frame; the frames after it build no more shader than in the same scene without volumes
 // (develop's materials compile again on a new light's frames whatever the volumes: three numbers a stand-in's
