@@ -108,9 +108,9 @@
   - 参考的路径追原始几何（`handle.reflect`），不追代理，以免代理的误差混进「探针自身的误差」；
   - 参考和像素的表面点都从主光线命中得到，不读光栅的深度和法线：一个 pass 里就能拿到命中点、法线和 `kd · c`；
   - `hit.ts` 的 `radiance` 拆出 `bounce`，给出继续路径需要的命中点和反照率。探针光线的结果不变
-- [ ] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
+- [x] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
 
-  进行中（2026-10-26），等 owner 看图，详见 `evidence/ac-s2-2.md`：
+  结果（2026-10-26），详见 `evidence/ac-s2-2.md`。owner 当天定了三件事：`cornell` 立方体那一处按已知偏差接受；AC-S2-1 用逐点读法判定；S2-U7 不加短 AO。漏光图和 AC-S2-1 的前后对照留到验收时由 owner 看图：
   - 采样点偏移从 0.3 × 间距调到 0.5 × 间距；
   - 按 AC 的口径，只剩 `cornell` 立方体朝红墙的面 +21% 超出 ±15%。试过偏移的大小与方向、重定位、Chebyshev 指数，都改不了它；
   - 3 次命中的参考低估了薄墙场景的误差：追 6 次时 `thin-wall` 是 +7% 到 +19%，`@level2` 室内是 +31%；

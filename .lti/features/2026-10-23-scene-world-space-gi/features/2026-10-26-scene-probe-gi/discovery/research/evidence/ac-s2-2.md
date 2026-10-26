@@ -1,5 +1,7 @@
 # AC-S2-1、AC-S2-2：亮度、漏光与转视角（任务 5.2）
 
+**owner 2026-10-26**：`cornell` 立方体朝红墙的面（+21%）按已知偏差接受；AC-S2-1 的扫视用逐点读法判定；S2-U7 不加短 AO。漏光是否明显、AC-S2-1 的改善是否成立，留到验收时看图。
+
 2026-10-26，本机 M4 Pro。数值在 `after/probes-5.2.json`，图在 `after/` 下。重新生成的命令见 README「`after/probes-5.1.json`」，`SCENE_E2E_PROBE_VIEWS`、`SCENE_E2E_PROBE_BOUNCES`、`SCENE_E2E_PROBE_RAW`、`SCENE_E2E_PROBE_AO` 的用法见用例注释。
 
 ## AC-S2-2：区域辐照度对照逐像素参考
