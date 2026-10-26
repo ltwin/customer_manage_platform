@@ -254,35 +254,6 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const aoOn = uniform(1)
   const ao = mix(float(1), aoClean.r, aoOn)
 
-  const reflected = { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }
-  const reflect: N = own(options.trace ? ssrTrace(output, depth, normal, { ...reflected, trace: options.trace, rMax: retraceBelow[options.quality] }) : ssr(output, depth, normal, reflected))
-  const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
-  const specDenoised: N = own(
-    recurrentDenoise(specReprojected, camera, {
-      depth,
-      normal: normalPacked,
-      raw: reflect,
-      metalRoughness: sample((uv: N) => vec2(base.sample(uv).a, normalPacked.sample(uv).a)),
-      mode: 'specular',
-      accumulate: true,
-    }),
-  )
-  specDenoised.alphaSource = 'raylength'
-  // Multi-bounce: the reflection reads last frame's.
-  reflect.setHistory(specDenoised, vel)
-  specReprojected.setHistoryTexture(specDenoised)
-  specReprojected.flickerSuppression.value = flicker
-  specDenoised.flickerSuppression.value = flicker
-  // A mirror's reflection is left out of the denoiser where the layer draws (S1 design A11): its lobe has little
-  // noise to filter, while the spatial filter's radius has a floor (√roughness at least 0.01) and grows with the
-  // ray's length, so a retraced ray's mirror took eight taps from up to some 7 pixels off, other objects' colours
-  // among them. The denoiser's temporal accumulation goes with it (specDenoised is both): a mirror's edges are
-  // antialiased by the TRAA alone. Up to MIRROR_ROUGHNESS this frame's colour, faded into the denoised one by
-  // twice that.
-  const reflection: N = options.trace ? mix(reflect.rgb, specDenoised.rgb, smoothstep(MIRROR_ROUGHNESS, MIRROR_ROUGHNESS * 2, normalPacked.a)) : specDenoised.rgb
-  // Where this frame's ray hit something on screen (design 未决事项 L2).
-  const cover: N = reflect.a.lessThan(MISSED).select(1, 0)
-
   // Contact shadows from the main light, along its direction (a spot's as if parallel: the rays are short).
   // SSSNode traces maxDistance times light − target, not made a unit: the sun stands 60 m from its target
   // (objects/Lighting.tsx), and its rays would run 6 m. It traces along a stand-in a unit from the origin,
@@ -317,7 +288,45 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // Where the prepass saw a surface (not the background), and the lighting pass took a material apart there
   // (its c, above 0: giSplit.ts diffuseShare).
   const opaque = depth.r.lessThan(1).select(1, 0)
-  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.greaterThan(0).select(opaque, 0), world: world ? { ...probeLight(world, depth, normal, camera, own), probeAO: world.ao ? ao : undefined } : undefined })
+  const probes = world ? { ...probeLight(world, depth, normal, camera, own), probeAO: world.ao ? ao : undefined } : undefined
+  const split = ambient.a.greaterThan(0).select(opaque, 0)
+  // What a ray the screen-space march ends on shows, with the layer: the picture as the composite lights it, less
+  // the reflections and the environment's specular (S2 tasks 5.2b). The lighting pass's own output has the
+  // environment's irradiance and its specular where the composite has the probes' light and the reflections: the
+  // sky unoccluded, a room's wall in a mirror brighter than out of it, blue at a grazing view. Its own reflection
+  // comes in as before, the hit's last frame's (SSRTraceNode's multi-bounce).
+  const seen: N = options.trace ? own(convertToTexture(composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection: vec3(0), cover: float(1), split, world: probes }))) : output
+
+  const reflected = { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }
+  const reflect: N = own(options.trace ? ssrTrace(seen, depth, normal, { ...reflected, trace: options.trace, rMax: retraceBelow[options.quality] }) : ssr(output, depth, normal, reflected))
+  const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
+  const specDenoised: N = own(
+    recurrentDenoise(specReprojected, camera, {
+      depth,
+      normal: normalPacked,
+      raw: reflect,
+      metalRoughness: sample((uv: N) => vec2(base.sample(uv).a, normalPacked.sample(uv).a)),
+      mode: 'specular',
+      accumulate: true,
+    }),
+  )
+  specDenoised.alphaSource = 'raylength'
+  // Multi-bounce: the reflection reads last frame's.
+  reflect.setHistory(specDenoised, vel)
+  specReprojected.setHistoryTexture(specDenoised)
+  specReprojected.flickerSuppression.value = flicker
+  specDenoised.flickerSuppression.value = flicker
+  // A mirror's reflection is left out of the denoiser where the layer draws (S1 design A11): its lobe has little
+  // noise to filter, while the spatial filter's radius has a floor (√roughness at least 0.01) and grows with the
+  // ray's length, so a retraced ray's mirror took eight taps from up to some 7 pixels off, other objects' colours
+  // among them. The denoiser's temporal accumulation goes with it (specDenoised is both): a mirror's edges are
+  // antialiased by the TRAA alone. Up to MIRROR_ROUGHNESS this frame's colour, faded into the denoised one by
+  // twice that.
+  const reflection: N = options.trace ? mix(reflect.rgb, specDenoised.rgb, smoothstep(MIRROR_ROUGHNESS, MIRROR_ROUGHNESS * 2, normalPacked.a)) : specDenoised.rgb
+  // Where this frame's ray hit something on screen (design 未决事项 L2).
+  const cover: N = reflect.a.lessThan(MISSED).select(1, 0)
+
+  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split, world: probes })
   // The fog as three's rangeFogFactor has it, by the view depth of the opaque surface: glass takes the fog of
   // what is behind it. The background has none, as in three, where the sky box is too near for the fog.
   // Then the aerial perspective (W4, world/atmosphere/aerial.ts), likewise by the opaque surface.

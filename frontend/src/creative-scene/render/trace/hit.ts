@@ -145,9 +145,9 @@ function atHit(fn: (i: PatternInput) => PatternOut, base: Omit<PatternInput, 'wi
 
 /**
  * Shading at the hits of rays through one layer: the reflections' (handle.reflect) or the probes' (handle.probes).
- * world, the probes once the screen draws with them (S2 design「命中点的间接光」): shade's diffuse light from the
- * environment's irradiance becomes the probes' where they cover the hit, the ambient lights' times fill. Without
- * (the probes' own rays, checks.ts's hitCheck), the environment's.
+ * world, the probes once the screen draws with them (S2 design「命中点的间接光」): shade's light from the
+ * environment, its irradiance and its radiance along the reflection, becomes the probes' where they cover the hit,
+ * the ambient lights' times fill. Without (the probes' own rays, checks.ts's hitCheck), the environment's.
  */
 export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene, world: { probes: ProbeNodes; fill: number } | null = null): HitShading {
   const table = tables.node
@@ -278,18 +278,23 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     // The environment (EnvironmentNode): radiance along the reflection bent towards the normal as roughness grows,
     // irradiance at its roughest level (over π, as three's diffuse and multiscatter terms take it); turned as the
     // scene's materials turn it (tables.ts environmentLookup).
+    // With the probes, where they cover the hit, both are theirs: the irradiance their E over π, the radiance along r
+    // their E about r over π (DDGI's glossy fallback). A hit has no reflections of its own, and the environment's
+    // radiance is the sky unoccluded: indoors, at a grazing view, a wall or floor in a mirror turned sky blue.
+    const r = normalize(mix(reflect(v.negate(), n), n, pow(roughness, 4))).toVar()
     const irradiance = (environment ? environmentAt(n, float(1)) : vec3(0)).toVar()
-    if (environment) {
-      const [ssM, msM] = multiscatter(s.albedo)
-      const r = normalize(mix(reflect(v.negate(), n), n, pow(roughness, 4)))
-      const radiance = environmentAt(r, roughness)
-      light.addAssign(radiance.mul(mix(ssD, ssM, s.metal)).add(mix(msD, msM, s.metal).mul(irradiance)))
-    }
-    // The diffuse layer's: the probes' where they cover the hit (their E over π), the environment's for the rest (as the composite's).
+    const radiance = (environment ? environmentAt(r, roughness) : vec3(0)).toVar()
     if (world) {
-      const probes = probeIrradiance(world.probes, P, n, v)
-      light.addAssign(diffuseContribution.mul(keptDiffuse).mul(irradiance.mul(float(1).sub(probes.coverage)).add(probes.pre.div(Math.PI))))
-    } else if (environment) light.addAssign(diffuseContribution.mul(keptDiffuse).mul(irradiance))
+      const diffuse = probeIrradiance(world.probes, P, n, v)
+      const along = probeIrradiance(world.probes, P, r, v)
+      irradiance.assign(irradiance.mul(float(1).sub(diffuse.coverage)).add(diffuse.pre.div(Math.PI)))
+      radiance.assign(radiance.mul(float(1).sub(along.coverage)).add(along.pre.div(Math.PI)))
+    }
+    if (environment || world) {
+      const [ssM, msM] = multiscatter(s.albedo)
+      light.addAssign(radiance.mul(mix(ssD, ssM, s.metal)).add(mix(msD, msM, s.metal).mul(irradiance)))
+      light.addAssign(diffuseContribution.mul(keptDiffuse).mul(irradiance))
+    }
     return light.add(s.emission)
   }
 
@@ -465,7 +470,9 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
         const Favg = float(0.04).add(float(0.96).mul(0.047619))
         const c = float(1).sub(FssEss.add(FssEss.mul(Favg).div(float(1).sub(float(1).sub(Ess).mul(Favg))).mul(float(1).sub(Ess))))
         const kd = s.albedo.mul(float(1).sub(s.metal))
-        const albedo = kd.mul(c).toVar()
+        // A metal's specular reflectance taken as diffuse (S2 tasks 5.2b): diffuse alone, a mirror is black to the
+        // probes, and a ball before it, lit by its probes there, black in the mirror where it sees the sky.
+        const albedo = kd.mul(c).add(s.albedo.mul(s.metal)).toVar()
         const E = directAt(P, n, lifted, seed).add(indirect(P, n)).add(header(1).xyz.mul(fill))
         out.L.assign(albedo.mul(E).div(Math.PI).add(s.emission))
         out.t.assign(t)

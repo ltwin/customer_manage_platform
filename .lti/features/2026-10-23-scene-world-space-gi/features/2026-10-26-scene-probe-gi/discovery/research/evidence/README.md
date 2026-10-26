@@ -88,3 +88,12 @@ SCENE_E2E_ONLY="probes: AC-S2-1 and AC-S2-2" SCENE_E2E_PROBES=<目录> \
 - `after/probes-5.2a.json`：原参考视角加拉远视角的全部数值，以及 AC-S2-1。
 
 **重新生成**：命令同 5.1，视角已列在 e2e 的 `probeViews` 里（`SCENE_E2E_PROBE_VIEWS=cornell@mid,cornell@far,thin-wall@far,physical-noon@far` 只跑拉远的四个）。改前的图要先检出 `98e35bac` 再跑。
+
+## 任务 5.2b：镜中光照与画面不一致
+
+- `after/mirror-compare.jpg`，上下两行：
+  - 上：thin-wall 加一面白色金属镜（粗糙度 0）和一个红球，改前与改后。改前镜中的地面和靠近镜子的右墙泛蓝白色，镜中的球泛紫；
+  - 下：`trace: a ball close to the mirror` 的 0.3 m，只把命中点高光改读探针时球背面变黑（73%），探针光线把金属当漫反射后为 100%。
+- 墙面逐点数值：在 e2e 输出里，`mirror.json` 写在给定目录下。
+
+**重新生成**：`SCENE_E2E_ONLY="probes diag: a wall seen in a mirror" SCENE_E2E_PROBE_MIRROR=<dir> node scripts/creative-scene.e2e.mjs`；加 `SCENE_E2E_PROBE_MIRROR_SHADE=object,distance` 另出命中点按物体或距离着色的图（看哪里是世界追踪命中）。球的那一行：`SCENE_E2E_ONLY="trace: a ball close to the mirror" SCENE_E2E_TRACE=<dir>`。改前的图要先检出 `46a24366` 再跑。

@@ -6660,9 +6660,10 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as 
     // The mirror is small from the editor's view: a few per cent of the middle, where nothing else changes.
     assert.ok(changed > 0.005, `the viewport drew the layer once it was ready: ${(changed * 100).toFixed(1)} %`)
     // The probes too, warmed in the background (S2): the SSGI's light goes unused, its reprojection and denoiser
-    // (two draws) go and the probes' screen pass (one) comes (realtimeGI.ts).
+    // (two draws) go and the probes' screen pass (one) comes; with the layer, what the reflections' screen-space hits
+    // show is a pass of its own (one, S2 tasks 5.2b; realtimeGI.ts).
     assert.equal(await v.page.evaluate(() => window.__sceneGPU.probeStats?.drawn), true, 'the probes drawn too')
-    assert.equal(drawsAfter, drawsBefore - 1, 'as many draws a frame, less the denoiser for the probes')
+    assert.equal(drawsAfter, drawsBefore, 'as many draws a frame: less the denoiser, the probes and what the hits show more')
     // S2-U2: the reflections' fragment shaders (those tracing the layer) with the probes' three textures, against
     // WebGPU's 16 sampled textures a stage.
     const sampled = (await v.page.evaluate(() => window.__wgsl))
@@ -9865,6 +9866,76 @@ if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the 
     record.left_wall_sweep = { ...sweep, ratios: sweep.views.map((s) => s.mean / mean), perPoint, perPointRange: [Math.min(...pointRatios), Math.max(...pointRatios)] }
     console.log(`  AC-S2-1: the left wall at 100° over 45° ${record.lit_wall_in_view.ratio.toFixed(3)}; swept, each view over their mean ${record.left_wall_sweep.ratios.map((r) => r.toFixed(3)).join(', ')}; each point over its own mean ${record.left_wall_sweep.perPointRange.map((r) => r.toFixed(3)).join('–')}`)
     if (dir) await writeFile(`${dir}/probes.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBE_MIRROR=<dir>: a mirror in thin-wall's room and a red ball by its right wall (the owner's report,
+// 2026-10-26: the ball's bounce on the wall brighter in the mirror than out of it, blue in the mirror where nothing
+// blue is). A white metal at roughness 0 gives back what it sees: each point of the wall where the picture shows it
+// and where the mirror shows it should be alike. The pictures, and those points' two colours.
+if (process.env.SCENE_E2E_PROBE_MIRROR) await check('probes diag: a wall seen in a mirror and out of it', async () => {
+  const dir = process.env.SCENE_E2E_PROBE_MIRROR
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    // The mirror's face, z = face, x across [mx0, mx1], y up to top; the ball by the right wall (x = 2).
+    const [face, mx0, mx1, top] = [-1.875, -0.4, 1.6, 1.62]
+    const ball = { centre: new Vector3(1.4, 0.42, -0.6), radius: 0.4 }
+    const scene = shooterScene('thin-wall', (s) => {
+      realtimeGI(s)
+      const like = s.objects.find((o) => o.name === 'cabinet')
+      s.objects = s.objects.filter((o) => o.name !== 'cabinet')
+      s.objects.push(
+        { ...structuredClone(like), id: 'sobj_mirror000000000000000', name: 'mirror', transform: { position: [(mx0 + mx1) / 2, 0.02, face - 0.025], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, primitive: { builtin: 'box@1', params: { width: mx1 - mx0, height: top - 0.02, depth: 0.05 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0 } } } },
+        { ...structuredClone(like), id: 'sobj_redball00000000000000', name: 'ball', transform: { position: [ball.centre.x, 0.02, ball.centre.z], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, primitive: { builtin: 'sphere@1', params: { radius: ball.radius, segments: 64 } }, material_slots: { main: { preset: 'paint@1', params: { color: '#b0201c' } } } },
+      )
+      const shot = s.objects.find((o) => o.kind === 'camera')
+      const cam = new PerspectiveCamera()
+      cam.position.set(-1.3, 1.4, 1.6)
+      cam.lookAt(1.0, 0.7, -1.2)
+      shot.transform.position = cam.position.toArray()
+      shot.transform.rotation = cam.quaternion.toArray()
+      shot.camera.focal_mm = 20
+    })
+    const eye = new Vector3(...scene.objects.find((o) => o.kind === 'camera').transform.position)
+    /** Whether the segment a → b passes clear of the ball. */
+    const clear = (a, b) => {
+      const d = b.clone().sub(a)
+      const t = Math.min(1, Math.max(0, ball.centre.clone().sub(a).dot(d) / d.lengthSq()))
+      return a.clone().addScaledVector(d, t).distanceTo(ball.centre) > ball.radius + 0.03
+    }
+    // The right wall's points and their images behind the mirror, kept where the camera sees both.
+    const wall = []
+    for (const y of [0.2, 0.4, 0.6, 0.8, 1.1]) for (const z of [-0.1, -0.4, -0.7, -1.0, -1.3]) {
+      const w = new Vector3(1.995, y, z)
+      const image = new Vector3(w.x, w.y, 2 * face - w.z)
+      const t = (face - eye.z) / (image.z - eye.z)
+      const on = eye.clone().lerp(image, t)
+      if (on.x < mx0 + 0.05 || on.x > mx1 - 0.05 || on.y < 0.08 || on.y > top - 0.05) continue
+      if (!clear(eye, w) || !clear(eye, on) || !clear(on, w)) continue
+      wall.push([w, image])
+    }
+    // SCENE_E2E_PROBE_MIRROR_SHADE=<mode>: the hits shaded so too (render/trace/hit.ts ShadeMode), what a defect comes from.
+    for (const mode of (process.env.SCENE_E2E_PROBE_MIRROR_SHADE ?? '').split(',').filter(Boolean)) {
+      await page.evaluate((m) => { window.__sceneGPU.traceShade = m }, mode)
+      await writeFile(`${dir}/mirror-${mode}.png`, await encodePicture(page, await page.evaluate((s) => window.__picture(s, 'lit', 1024), scene)))
+      await page.evaluate(() => { window.__sceneGPU.traceShade = null })
+    }
+    const pic = await page.evaluate(([s, p]) => window.__picture(s, 'lit', 1024, p), [scene, wall.flatMap(([w, i]) => [w.toArray(), i.toArray()])])
+    await writeFile(`${dir}/mirror.png`, await encodePicture(page, pic))
+    const rgba = Buffer.from(pic.rgba, 'base64')
+    const mean = ([x, y]) => {
+      const sum = [0, 0, 0]
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) for (let c = 0; c < 3; c++) sum[c] += rgba[((Math.round(y) + dy) * pic.width + Math.round(x) + dx) * 4 + c]
+      return sum.map((v) => Math.round(v / 25))
+    }
+    const rows = wall.map(([w], k) => ({ point: w.toArray(), direct: mean(pic.at[2 * k]), mirrored: mean(pic.at[2 * k + 1]), at: pic.at.slice(2 * k, 2 * k + 2).map((p) => p.map(Math.round)) }))
+    for (const r of rows) console.log(`  wall ${r.point.map((v) => v.toFixed(2)).join(',')}: direct ${r.direct.join(',')} mirrored ${r.mirrored.join(',')}  at ${JSON.stringify(r.at)}`)
+    await writeFile(`${dir}/mirror.json`, `${JSON.stringify(rows, null, 2)}\n`)
+    assert.ok(rows.length > 3, `${rows.length} wall points seen both ways`)
     assert.deepEqual(errors, [], errors.join('\n'))
   } finally {
     await gpu.close()

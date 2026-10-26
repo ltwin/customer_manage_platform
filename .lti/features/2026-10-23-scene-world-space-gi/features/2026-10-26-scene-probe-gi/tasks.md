@@ -125,6 +125,15 @@
   - 级数门槛从「前方覆盖 12 m」改为「完全覆盖 10.5 m」，对角线在 10.5–12 m 之间的场景从三级变为四级（`probes:` 冒烟场景就是一例）；
   - 新增 e2e `probes: the viewport pulled back past cornell…`：滚轮拉远后从 4 级扩到 5 级，期间每帧都画着探针；`trace: 5.2`、冒烟用例照过；
   - `trace: 5.2` 接入时的长任务这次是 486–872 ms（5.2 时 470–675 ms），留给 5.5 一起看
+- [x] 5.2b 镜中光照与画面不一致（owner 2026-10-26 报告：镜子里墙上的球反光比画面里亮，镜中有不合逻辑的蓝色）：屏幕命中取合成后的画面，命中点的高光读探针，探针光线把金属当漫反射（design D20）。完成判据：同一面墙直接看与镜中一致，S1 镜面用例与 AC-S2-2 数值不退，对照图交 owner
+
+  结果（2026-10-26），图在 `evidence/after/mirror-compare.jpg`：
+  - 新增诊断 e2e `probes diag: a wall seen in a mirror and out of it`（`SCENE_E2E_PROBE_MIRROR=<dir>`）：thin-wall 加镜子和红球，右墙 11 个点直接看与镜中比较。改前斜看的四个点镜中 211–216、直接看 141–158（蓝白色）；改后各点相差 4% 以内；
+  - 根因有二：屏幕命中取的是光照 pass 的原始输出（不受遮挡的天光与环境高光），世界追踪命中的高光也是天空；
+  - 只改高光时 `trace: a ball close to the mirror` 0.3 m 降到 73%（球背面朝镜子，探针把镜子当黑色），探针光线改后三种间距都是 100%；
+  - AC-S2-2：cornell +15 / +21 / −5，thin-wall +6 / +2 / +5 / +1，physical-noon −0 / −2 / +2 / +4（5.2 时 +14 / +21 / −6、同、−0 / −2 / +3 / +6）；`trace: AC-S1-1` 照过；
+  - `trace: 5.2` 每帧 draw 数改为与接入前相同（多出 `seen` 一趟）；接入时的长任务 946–1134 ms（5.2a 时 486–872 ms），留给 5.5；
+  - 剩下一处小瑕疵：镜中斜看的地面上有一行零星的亮点，是屏幕命中带里几个改走世界追踪的像素，后者算进了斜看的菲涅耳高光
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
 - [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
 - [ ] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图
