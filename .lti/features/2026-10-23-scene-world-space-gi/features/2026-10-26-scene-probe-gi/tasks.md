@@ -44,7 +44,20 @@
   结果：`creative-scene-probes.test.ts` 12 项通过。两处局部调整：
   - 轮转的错开由「按级号偏移」改为逐级贪心选偏移（`offsetsFor`）。按级号偏移在大厅的周期（4, 4, 8, 8, 16）下，有的帧更新两级、有的帧一级都不更新；贪心之后每帧最多比其他帧多一级；
   - 八面体图块的边框由「每个内部纹素写哪几个边框纹素」（`bordersOf`）给出，单测核对每个边框纹素只有一个来源，且折回之后与来源是同一方向。TSL 版本的编解码在任务 4.2 的 GPU 对照里核对
-- [ ] 4.2 `probes/volume.ts`、`probes/kernels.ts`：`ProbeVolume` 按 `n_alloc` 分配；`step(frame)`，先派发所有级的光线、再派发所有级的更新（P2）；原点锁定、世界格核对；s_env 换算内核；`hit.ts` 的 `radiance`（含单面材质的背面、没命中取 PMREM 粗糙度 0.5）。`checks.ts` 加 GPU 侧的对照：槽号与世界格（含负坐标）、八面体编码，与 JS 结果比较。`gpu.ts` 的 `make` 包住 `createComputePipeline`，`pipelineFailed` 也看 compute 管线。完成判据：GPU 对照与 JS 一致；compute 管线失败时走 S1 的失败处理
+- [x] 4.2 `probes/volume.ts`、`probes/kernels.ts`：`ProbeVolume` 按 `n_alloc` 分配；`step(frame)`，先派发所有级的光线、再派发所有级的更新（P2）；原点锁定、世界格核对；s_env 换算内核；`hit.ts` 的 `radiance`（含单面材质的背面、没命中取 PMREM 粗糙度 0.5）。`checks.ts` 加 GPU 侧的对照：槽号与世界格（含负坐标）、八面体编码，与 JS 结果比较。`gpu.ts` 的 `make` 包住 `createComputePipeline`，`pipelineFailed` 也看 compute 管线。完成判据：GPU 对照与 JS 一致；compute 管线失败时走 S1 的失败处理
+
+  结果：`SCENE_E2E_PROBES` 的两个新用例通过，S1 的 `trace: AC-S1-*` 5 个用例照过：
+  - GPU 对照：72 组带负坐标的世界格和槽号、128 个方向的八面体编解码，与 JS 逐值一致；
+  - 冒烟测试：小场景上的导出探针体跑 64 帧。值全部有限；第 0 级每个探针都更新了 64 次；方块内部 64 个探针全部停用，方块外没有停用的；墙边比空旷处亮；两次运行逐位相同。
+  - `gpu.ts` 的 `computeFailed()` 已就位，由任务 4.3 的 SceneRenderer 接到底座的 `fail(true)`。
+
+  实现上的局部调整，记理由：
+  - 光线缓冲每个探针体一份，按级分区，不是每级一个缓冲。每帧先把所有到期级的光线一次派发完，再一次派发所有更新，P2 照样成立，绑定更少；
+  - 各级的原点和到期级用单独的 uniform，不用 `uniformArray`：后者每次 render 只上传一次，导出预热在两次 render 之间要派发多帧；
+  - 光线内核从状态纹理读偏移和世界格，不读状态缓冲：这样只绑 7 个存储缓冲，在 WebGPU 默认的 8 个以内；
+  - 逐级回退的覆盖度按 1 − Π(1 − cᵢ) 合成，不是 design 写的 max：它与「逐级 mix」严格对应，合成按覆盖度混合时不会重复计入；
+  - 场景变大、要多分配一级时，探针体整个重建（冷启动），不把已有级的数据拷过去（design「分配」写的是拷过去）。这种情况很少见，S2 先这样做；
+  - TSL 的 `If` 回调不能返回语句节点（`textureStore`、`addAssign`），否则会被当成分支的值去生成，报「Invalid generated code」。一律写成块体
 - [ ] 4.3 `probes/lookup.ts` 与合成：`probeIrradiance` 逐级回退；`realtimeGI.ts` 的屏幕采样 pass，`composite` 的 `world` 分支，`world` 时不建 SSGI 漫反射降噪链、`GI_INTENSITY` 取 0；`RealtimeGIOptions` 收 `TraceHandle` 和 `ProbeVolume`。`sceneRenderer.ts` 的 `build` 交出两者，`render` 由视口的 `SceneRenderer` 持有探针体（按代理层身份做键，管线重建时保留）并 `step`，底座就绪后在后台预热到数据年龄 ≥ A0 + 14 再切换。先在 `creative-scene-gi.test.ts` 写 `world` 分支的纯数值单测（`coverage` 为 0 时等于 `A_env · ao + A_lt · ao`）。完成判据：单测通过；`backlit-room` 能看到摄像机背后墙的反弹光
 - [ ] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
 

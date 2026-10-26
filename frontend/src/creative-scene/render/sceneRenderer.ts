@@ -592,7 +592,7 @@ export class SceneRenderer {
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
           redraw: this.redraw,
-          trace: look.trace && hitShading(look.trace, scene),
+          trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene),
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes

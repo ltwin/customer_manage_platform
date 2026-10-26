@@ -11,6 +11,9 @@ import type { TraceHandle } from './base.ts'
 import { collectLights, collectMeshes, type Slot, type Traced } from './collect.ts'
 import { hitShading, type ShadeMode } from './hit.ts'
 import type { TraceLayer } from './layer.ts'
+import { cellOf, slotOf as probeSlot } from '../probes/cascade.ts'
+import { cellNode, slotNode } from '../probes/lookup.ts'
+import { decodeOct, encodeOct, octDecode, octEncode } from '../probes/octahedral.ts'
 import { traceFirst } from './wgsl.ts'
 
 // The e2e's checks of the layer against the raster, on the viewport's own
@@ -25,6 +28,8 @@ import { traceFirst } from './wgsl.ts'
 // Both draw the traced meshes alone, and the lights.
 //  - atlasCheck (S2 design S2-U1): what the probe kernels need of three in
 //    compute, an RGBA16F storage texture written, then loaded and sampled.
+//  - probeGridCheck (S2 design「验证与交付」): the probes' TSL grid and
+//    octahedral functions against their JS twins, negative cells included.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
@@ -262,7 +267,7 @@ export async function hitCheck(renderer: WebGPURenderer, scene: Scene, camera: P
 async function check(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, slots: readonly Slot[], width: number): Promise<HitReport> {
   const size = sizeOf(camera, width)
   const traced = collectMeshes(scene, slotOf)
-  const shading = hitShading(handle, scene)
+  const shading = hitShading(handle.reflect, handle.tables, scene)
   shading.update()
   const modes: ShadeMode[] = ['id', 'albedo', 'outputs', 'unshadowed', 'direct', 'directUnshadowed']
   const hits = new Map(
@@ -494,3 +499,95 @@ export async function atlasCheck(renderer: WebGPURenderer): Promise<AtlasCheck> 
     read.dispose()
   }
 }
+
+export type GridCheck = {
+  /** Slots whose world cell (cellOf) the GPU gives as the JS does, of all tried; the same for the slot of a cell (slotOf). */
+  cells: number
+  slots: number
+  tried: number
+  /** Directions the GPU encodes within 1e-5 of the JS, and decodes back within 1e-5, of all tried. */
+  encoded: number
+  decoded: number
+  directions: number
+  /** The first few that differ, for the report. */
+  samples: unknown[]
+}
+
+/**
+ * The probes' grid and octahedral functions in TSL against their JS twins
+ * (cascade.ts, octahedral.ts), on this device: for boxes with negative and
+ * positive origins, each slot's world cell and that cell's slot back; for
+ * directions over the sphere (the axes and the folds among them), the
+ * octahedral point and the direction it decodes to.
+ */
+export async function probeGridCheck(renderer: WebGPURenderer): Promise<GridCheck> {
+  const origins: [number, number, number][] = [[0, 0, 0], [-8, -3, -4], [-23, 5, -17], [-1, -1, -1], [-16, -32, 48], [7, -100, 3]]
+  const slots = [0, 1, 15, 16, 17, 255, 256, 257, 1234, 2047, 3000, 4095]
+  const pairs = origins.flatMap((o) => slots.map((slot) => [...o, slot]))
+  const directions: [number, number, number][] = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [1, 1, 0], [-1, 0, -1], [0.3, -0.2, -0.9], [-0.7, 0.7, 0]]
+  for (let k = 0; k < 118; k++) {
+    const y = 1 - (2 * (k + 0.5)) / 118
+    const r = Math.sqrt(1 - y * y)
+    const a = k * Math.PI * (3 - Math.sqrt(5))
+    directions.push([r * Math.cos(a), r * Math.sin(a), y])
+  }
+  const unitDirs = directions.map((d) => {
+    const l = Math.hypot(...d)
+    return d.map((x) => x / l) as [number, number, number]
+  })
+  const T2 = tsl as unknown as Record<string, Op>
+  const { instanceIndex } = tsl as unknown as Record<string, TSLNode>
+  const input = T2.instancedArray(new Float32Array(pairs.flat()), 'vec4')
+  const cellsOut = T2.instancedArray(pairs.length, 'vec4')
+  const dirIn = T2.instancedArray(new Float32Array(unitDirs.flatMap((d) => [...d, 0])), 'vec4')
+  const octOut = T2.instancedArray(unitDirs.length, 'vec4')
+  const grid = Fn(() => {
+    const at = input.element(instanceIndex)
+    const cell = cellNode(T2.uint(at.w), at.xyz).toVar()
+    cellsOut.element(instanceIndex).assign(vec4(cell, float(slotNode(cell))))
+  })().compute(pairs.length)
+  const oct = Fn(() => {
+    const e = octEncode(dirIn.element(instanceIndex).xyz).toVar()
+    const back = octDecode(e)
+    octOut.element(instanceIndex).assign(vec4(e, back.xy))
+  })().compute(unitDirs.length)
+  // The decoded direction's z, separately: four floats a result.
+  const octZ = T2.instancedArray(unitDirs.length, 'float')
+  const z = Fn(() => {
+    octZ.element(instanceIndex).assign(octDecode(octEncode(dirIn.element(instanceIndex).xyz)).z)
+  })().compute(unitDirs.length)
+  try {
+    await renderer.computeAsync([grid, oct, z])
+    const c = new Float32Array(await renderer.getArrayBufferAsync(cellsOut.value))
+    const o = new Float32Array(await renderer.getArrayBufferAsync(octOut.value))
+    const oz = new Float32Array(await renderer.getArrayBufferAsync(octZ.value))
+    const samples: unknown[] = []
+    let cells = 0
+    let slotsBack = 0
+    pairs.forEach(([x, y, zz, slot], i) => {
+      const want = cellOf(slot, [x, y, zz])
+      const got = [c[4 * i], c[4 * i + 1], c[4 * i + 2]]
+      if (want.every((w, k) => w === got[k])) cells++
+      else if (samples.length < 8) samples.push({ origin: [x, y, zz], slot, want, got })
+      if (c[4 * i + 3] === probeSlot(want) && probeSlot(want) === slot) slotsBack++
+      else if (samples.length < 8) samples.push({ cell: want, slot, gpu: c[4 * i + 3] })
+    })
+    let encoded = 0
+    let decoded = 0
+    unitDirs.forEach((d, i) => {
+      const e = encodeOct(d)
+      const back = decodeOct(e)
+      if (Math.abs(o[4 * i] - e[0]) <= 1e-5 && Math.abs(o[4 * i + 1] - e[1]) <= 1e-5) encoded++
+      else if (samples.length < 8) samples.push({ dir: d, want: e, got: [o[4 * i], o[4 * i + 1]] })
+      const got = [o[4 * i + 2], o[4 * i + 3], oz[i]]
+      if (got.every((g, k) => Math.abs(g - back[k]) <= 1e-5 && Math.abs(g - d[k]) <= 1e-5)) decoded++
+      else if (samples.length < 8) samples.push({ dir: d, decoded: got })
+    })
+    return { cells, slots: slotsBack, tried: pairs.length, encoded, decoded, directions: unitDirs.length, samples }
+  } finally {
+    grid.dispose()
+    oct.dispose()
+    z.dispose()
+  }
+}
+

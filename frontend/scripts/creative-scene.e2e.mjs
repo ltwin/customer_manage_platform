@@ -9543,6 +9543,143 @@ async function limitModelTimes() {
 
 // --- S2 scene-probe-gi ---------------------------------------------------------
 
+// A page of the probes' own: a small scene built in three on its own device, a base made for it as an export's,
+// and a picture's probe volume stepped (render/probes/volume.ts), its data read back.
+const probesFixture = new URL('../.scene-probes-qa.html', import.meta.url)
+await writeFile(
+  probesFixture,
+  `<html><body><script>window.__sceneTest = true</script><script type="module">
+import * as THREE from 'three';
+import { createRenderer } from '/src/creative-scene/render/gpu.ts';
+import { TraceBase } from '/src/creative-scene/render/trace/base.ts';
+import { ProbeVolume } from '/src/creative-scene/render/probes/volume.ts';
+import { makeMaterial } from '/src/creative-scene/materials/instances.ts';
+import { PROBES, spacingOf } from '/src/creative-scene/render/probes/cascade.ts';
+// A floor, a wall the sun lights from +x, a solid block; no environment (a miss is black).
+window.__probeSmoke = async (frames) => {
+  const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' });
+  const scene = new THREE.Scene();
+  const paint = (c) => makeMaterial({ kind: 'pattern', id: 'paint@1', params: { color: c, roughness: 0.5, metalness: 0 } }, false);
+  const add = (id, size, at, color) => {
+    const g = new THREE.Group();
+    g.userData = { objectID: id };
+    const geometry = new THREE.BoxGeometry(...size);
+    geometry.userData.traceKey = 'qa:' + id;
+    const m = new THREE.Mesh(geometry, paint(color));
+    m.position.set(...at);
+    g.add(m);
+    scene.add(g);
+  };
+  add('floor', [8, 0.1, 8], [0, -0.05, 0], '#ffffff');
+  add('wall', [0.1, 3, 8], [-2, 1.5, 0], '#ffffff');
+  add('block', [1, 1, 1], [1, 0.5, 1], '#ff0000');
+  const sun = new THREE.DirectionalLight(0xffffff, 3);
+  sun.position.set(5, 4, 1);
+  sun.castShadow = true;
+  scene.add(sun, sun.target);
+  scene.updateMatrixWorld();
+  const base = new TraceBase(gpu, scene, { incremental: false });
+  if (!(await base.ready(30000))) return { error: 'not ready', state: base.state };
+  const camera = new THREE.PerspectiveCamera(50, 1.5, 0.1, 100);
+  camera.position.set(0, 1.4, 3);
+  camera.lookAt(0, 1, 0);
+  camera.updateMatrixWorld();
+  const volume = new ProbeVolume(gpu.renderer, base.handle(), scene, base, 'picture', (a) => gpu.release(a));
+  const started = performance.now();
+  for (let f = 0; f < frames; f++) {
+    base.sync();
+    volume.step(f, camera);
+  }
+  await gpu.settle();
+  const ms = performance.now() - started;
+  const d = await volume.inspect();
+  const s = spacingOf(0);
+  const at = (p) => [0, 1, 2].map((k) => (d.cells[4 * p + k] + 0.5) * s);
+  const lum = (p) => {
+    let sum = 0;
+    for (let t = 0; t < 64; t++) sum += 0.2126 * d.irradiance[4 * (p * 64 + t)] + 0.7152 * d.irradiance[4 * (p * 64 + t) + 1] + 0.0722 * d.irradiance[4 * (p * 64 + t) + 2];
+    return sum / 64;
+  };
+  const level0 = Array.from({ length: PROBES }, (_, p) => p);
+  const finite = d.irradiance.every(Number.isFinite) && d.offsets.every(Number.isFinite);
+  // The block's whole inside (0.5–1.5, 0–1, 0.5–1.5): 4 × 4 × 4 probe centres.
+  const inBlock = level0.filter((p) => { const [x, y, z] = at(p); return Math.abs(x - 1) < 0.5 && y > 0 && y < 1 && Math.abs(z - 1) < 0.5; });
+  const byWall = level0.filter((p) => { const [x, y, z] = at(p); return x > -1.9 && x < -1.4 && y > 1 && y < 2 && Math.abs(z) < 1; });
+  const open = level0.filter((p) => { const [x, y, z] = at(p); return x > -1 && x < 0 && y > 1 && y < 2 && Math.abs(z) < 1; });
+  const mean = (list, f) => list.reduce((n, p) => n + f(p), 0) / Math.max(list.length, 1);
+  const out = {
+    ms, allocated: volume.allocated, levels: volume.levels, finite, origins: d.origins.slice(0, volume.levels),
+    ages: [Math.min(...level0.map((p) => d.ages[4 * p])), Math.max(...level0.map((p) => d.ages[4 * p]))],
+    off: level0.filter((p) => d.offsets[4 * p + 3] < 0.5).length,
+    block: { probes: inBlock.length, off: inBlock.filter((p) => d.offsets[4 * p + 3] < 0.5).length },
+    wall: { probes: byWall.length, luma: mean(byWall, lum) },
+    open: { probes: open.length, luma: mean(open, lum) },
+    computeFailed: gpu.computeFailed(),
+  };
+  volume.dispose();
+  base.dispose();
+  gpu.dispose();
+  return out;
+};
+window.__ready = true;
+</script></body></html>`,
+)
+
+// SCENE_E2E_PROBES: the probes' functions on the GPU against JS (S2 design「验证与交付」): each slot's world cell and
+// back, negative cells included; the octahedral map.
+if (process.env.SCENE_E2E_PROBES) await check('probes: the grid and the octahedral map compute on the GPU as in JS, negative cells included', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const out = await page.evaluate(async () => {
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { probeGridCheck } = await import('/src/creative-scene/render/trace/checks.ts')
+      const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+      try {
+        return await probeGridCheck(gpu.renderer)
+      } finally {
+        gpu.dispose()
+      }
+    })
+    console.log(`  ${JSON.stringify(out)}`)
+    assert.equal(out.cells, out.tried, 'every slot’s world cell')
+    assert.equal(out.slots, out.tried, 'every cell’s slot')
+    assert.equal(out.encoded, out.directions, 'every direction encoded')
+    assert.equal(out.decoded, out.directions, 'and decoded back')
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBES: a picture's volume on a small scene (S2 tasks 4.2): the kernels build and run on this device,
+// what they gather is finite, lit where the sun's wall bounces, the probes inside a block switch off once their
+// relocation window closes, every probe updated every frame.
+if (process.env.SCENE_E2E_PROBES) await check('probes: a picture’s volume gathers on this device: finite, lit by the bounce, off inside a block', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${base}/.scene-probes-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const out = await page.evaluate((frames) => window.__probeSmoke(frames), 64)
+    console.log(`  ${JSON.stringify(out)}`)
+    assert.deepEqual(errors, [], errors.join('\n').slice(0, 3000))
+    assert.ok(!out.error, out.error)
+    assert.equal(out.computeFailed, false)
+    assert.ok(out.finite, 'no NaN or infinity')
+    assert.deepEqual(out.ages, [64, 64], 'every probe of level 0 updated each of 64 frames')
+    assert.ok(out.block.probes === 64 && out.block.off === out.block.probes, `inside the block: ${out.block.off} of ${out.block.probes} off`)
+    assert.equal(out.off, out.block.probes, 'none off outside it')
+    assert.ok(out.wall.luma > 0 && out.open.luma > 0, 'light gathered')
+  } finally {
+    await gpu.close()
+  }
+})
+
 // SCENE_E2E_PROBES=<dir>: S2's checks on this machine's GPU. S2-U1 first: a compute pass writes an RGBA16F
 // storage texture, the next loads it back and samples it at an explicit level (render/trace/checks.ts atlasCheck).
 if (process.env.SCENE_E2E_PROBES) await check('probes: S2-U1, compute writes an RGBA16F storage texture, then loads and samples it at an explicit level', async () => {
@@ -9579,5 +9716,6 @@ await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
 await rm(hiddenFixture, { force: true })
 await rm(giFixture, { force: true })
+await rm(probesFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)

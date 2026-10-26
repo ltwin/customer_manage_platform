@@ -184,6 +184,12 @@ export type SceneGPU = {
    * design A13). Known a GPU round trip after the pipeline is built.
    */
   pipelineFailed(material: object): boolean
+  /**
+   * Whether a compute pipeline of the probes' (a compute node named probe_…,
+   * render/probes/kernels.ts) failed, as pipelineFailed tells for a
+   * material (S2 design「能力与显存」: the layer then fails for good).
+   */
+  computeFailed(): boolean
   /** Called with each uncaptured device error's message; returns the unsubscribe. */
   onError(listener: (message: string) => void): () => void
   dispose(): void
@@ -215,6 +221,7 @@ type Internals = {
 /** The backend's side of a render pipeline (WebGPUPipelineUtils): error is set once the device has refused it. */
 type PipelineBackend = {
   createRenderPipeline(renderObject: { material: { userData: Record<string, unknown> }; pipeline: object }, promises: unknown): void
+  createComputePipeline(pipeline: { computeProgram: { name?: string } }, bindings: unknown, promises?: unknown): void
   get(object: object): { error?: boolean }
 }
 
@@ -404,12 +411,20 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
 
   // The pipeline last built for each watched material, to tell whether it failed (pipelineFailed).
   const watched = new WeakMap<object, object>()
+  // The probes' compute pipelines, by kernel name: the last built of each.
+  const computes = new Map<string, object>()
   const pipelines = renderer.backend as unknown as PipelineBackend
   if (backend === 'webgpu') {
     const create = pipelines.createRenderPipeline.bind(pipelines)
     pipelines.createRenderPipeline = (renderObject, promises) => {
       create(renderObject, promises)
       if (renderObject.material.userData.watchPipeline === true) watched.set(renderObject.material, renderObject.pipeline)
+    }
+    const createCompute = pipelines.createComputePipeline.bind(pipelines)
+    pipelines.createComputePipeline = (pipeline, bindings, promises) => {
+      createCompute(pipeline, bindings, promises)
+      const name = pipeline.computeProgram.name ?? ''
+      if (name.startsWith('probe_')) computes.set(name, pipeline)
     }
   }
   const errorListeners = new Set<(message: string) => void>()
@@ -468,6 +483,10 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     pipelineFailed(material) {
       const p = watched.get(material)
       return p !== undefined && pipelines.get(p).error === true
+    },
+    computeFailed() {
+      for (const p of computes.values()) if (pipelines.get(p).error === true) return true
+      return false
     },
     onError(listener) {
       errorListeners.add(listener)
