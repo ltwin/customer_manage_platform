@@ -1,6 +1,7 @@
 import { Color, type Fog, type Scene } from 'three'
 import { context, diffuseColor, float, Fn, luminance, metalness, normalView, positionViewDirection, property, sheen, sheenRoughness, specularColor, specularF90, uniform, vec3, vec4 } from 'three/tsl'
 import { PassNode, PhysicalLightingModel, type NodeBuilder } from 'three/webgpu'
+import type { TSLNode } from '../materials/patterns.ts'
 
 // The real-time GI's lighting pass takes the materials' indirect light apart
 // (R2 design「合成」): the AO is to shade only the indirect light, and the
@@ -88,14 +89,14 @@ export class GILightingPass extends PassNode {
 type Node = ReturnType<typeof vec4>
 
 type Builder = NodeBuilder & {
-  context: Record<string, unknown> & { reflectedLight: { indirectDiffuse: Node; indirectSpecular: Node }; ambientOcclusion: Node }
+  context: Record<string, unknown> & { reflectedLight: { indirectDiffuse: Node; indirectSpecular: Node }; ambientOcclusion: TSLNode }
   material: { transparent: boolean; transmission?: number }
 }
 
 /** The PhysicalLightingModel's members diffuseShare reads, untyped in @types/three. */
 type Model = {
-  computeMultiscattering(singleScatter: Node, multiScatter: Node, specularF90: Node, f0: Node, iridescenceF0?: Node | null): void
-  iridescenceF0Dielectric: Node | null
+  computeMultiscattering(singleScatter: TSLNode, multiScatter: TSLNode, specularF90: TSLNode, f0: TSLNode, iridescenceF0?: TSLNode): void
+  iridescenceF0Dielectric: TSLNode
   sheen: boolean
 }
 
@@ -104,7 +105,7 @@ type Model = {
  * it does not export: the sheen's albedo indirectDiffuse compensates the
  * diffuse layer for. A unit test keeps it the same as three's.
  */
-const sheenAlbedo = Fn(([normal, viewDir, roughness]: Node[]) => {
+const sheenAlbedo = Fn(([normal, viewDir, roughness]: TSLNode[]) => {
   const dotNV = normal.dot(viewDir).saturate()
   const r2 = roughness.mul(roughness)
   const rInv = roughness.add(0.1).reciprocal()
@@ -123,11 +124,11 @@ const sheenAlbedo = Fn(([normal, viewDir, roughness]: Node[]) => {
  * 1e-3: a smooth dielectric at grazing angles leaves the diffuse layer about
  * a tenth, and the composite tells a material taken apart by alpha above 0.
  */
-function diffuseShare(model: Model, ambientOcclusion: Node): Node {
+function diffuseShare(model: Model, ambientOcclusion: TSLNode): TSLNode {
   const single = vec3().toVar()
   const multi = vec3().toVar()
   model.computeMultiscattering(single, multi, specularF90, specularColor, model.iridescenceF0Dielectric)
-  let share = luminance(single.add(multi).oneMinus())
+  let share: TSLNode = luminance(single.add(multi).oneMinus())
   if (model.sheen === true) share = share.mul(sheen.r.max(sheen.g).max(sheen.b).mul(sheenAlbedo(normalView, positionViewDirection, sheenRoughness)).oneMinus())
   return share.mul(ambientOcclusion).max(1e-3)
 }
