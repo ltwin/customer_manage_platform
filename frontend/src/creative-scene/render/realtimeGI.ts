@@ -100,9 +100,12 @@ export type RealtimeGIOptions = {
    * The probes, once warm (S2 design「合成」): the composite takes their
    * irradiance in place of the environment's where they cover; ambient is the
    * scene's ambient lights as the base's tables last added them up (exposed,
-   * L_amb). None, the screen-space indirect light as before (P1).
+   * L_amb). None, the screen-space indirect light as before (P1). ao, the
+   * e2e's S2-U7 comparison alone (gpuTestHooks.probeAO): the probes' light
+   * times the SSGI's AO at that radius in metres, contact shadows smaller
+   * than a probe cell.
    */
-  world: { probes: ProbeNodes; ambient: Color; fill: number } | null
+  world: { probes: ProbeNodes; ambient: Color; fill: number; ao?: number | null } | null
 }
 
 export type RealtimeGI = {
@@ -132,7 +135,7 @@ export type RealtimeGI = {
  * (their visibility is their own); the ambient lights keep theirs with the AO
  * and the fill. The SSGI's light is not added: the probes carry the bounces.
  */
-export function composite(i: { output: N; base: N; ambient: N; envSpec: N; gi: N; ao: N; contact: N; reflection: N; cover: N; split: N; world?: { probe: N; ambientLight: N; fill: N } }): N {
+export function composite(i: { output: N; base: N; ambient: N; envSpec: N; gi: N; ao: N; contact: N; reflection: N; cover: N; split: N; world?: { probe: N; ambientLight: N; fill: N; probeAO?: N } }): N {
   // Diffuse colour times (1 − metalness): what the indirect diffuse light is coloured by.
   const kd = i.base.rgb.mul(i.base.a.oneMinus())
   // Direct light and emission: the whole picture without its indirect light.
@@ -143,12 +146,12 @@ export function composite(i: { output: N; base: N; ambient: N; envSpec: N; gi: N
     .add(i.envSpec.rgb.mul(i.ao).mul(i.cover.oneMinus()))
     .add(i.reflection.mul(i.split))
   if (!i.world) return lit.add(i.ambient.rgb.mul(i.ao)).add(kd.mul(i.gi))
-  const { probe, ambientLight, fill } = i.world
+  const { probe, ambientLight, fill, probeAO } = i.world
   const share = kd.mul(i.ambient.a).mul(1 / Math.PI)
   const aLight = share.mul(ambientLight)
   const aEnv = i.ambient.rgb.sub(aLight).max(0)
   const covered = probe.a
-  const fromProbes = share.mul(probe.rgb)
+  const fromProbes = probeAO ? share.mul(probe.rgb).mul(probeAO) : share.mul(probe.rgb)
   // mix(A_env · ao, D_probe, coverage) + A_light · fill · ao
   const diffuse = aEnv.mul(i.ao).mul(covered.oneMinus()).add(fromProbes.mul(covered)).add(aLight.mul(fill).mul(i.ao))
   return lit.add(diffuse)
@@ -214,6 +217,10 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const gi = own(ssgi(output, depth, normal, persp))
   // With the probes the SSGI gives the AO alone: its light is not composited (Epic I6, S2 design D10).
   gi.giIntensity.value = world ? 0 : GI_INTENSITY
+  if (world?.ao) {
+    gi.useScreenSpaceSampling.value = false
+    gi.radius.value = world.ao
+  }
   gi.sliceCount.value = ssgiQuality[options.quality].slices
   gi.stepCount.value = ssgiQuality[options.quality].steps
   const giAO: N = gi.getTextureNode()
@@ -310,7 +317,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // Where the prepass saw a surface (not the background), and the lighting pass took a material apart there
   // (its c, above 0: giSplit.ts diffuseShare).
   const opaque = depth.r.lessThan(1).select(1, 0)
-  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.greaterThan(0).select(opaque, 0), world: world ? probeLight(world, depth, normal, camera, own) : undefined })
+  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.greaterThan(0).select(opaque, 0), world: world ? { ...probeLight(world, depth, normal, camera, own), probeAO: world.ao ? ao : undefined } : undefined })
   // The fog as three's rangeFogFactor has it, by the view depth of the opaque surface: glass takes the fog of
   // what is behind it. The background has none, as in three, where the sky box is too near for the fog.
   // Then the aerial perspective (W4, world/atmosphere/aerial.ts), likewise by the opaque surface.

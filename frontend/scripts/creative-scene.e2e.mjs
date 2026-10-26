@@ -6299,7 +6299,7 @@ window.__probeRegions = async (scene, side, request) => {
       c2d.putImageData(img, 0, 0);
       return b64(new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()));
     };
-    return { ...numbers, white, png: b64(new Uint8Array(await blob.arrayBuffer())), drawnPng: await grey(drawn), referencePng: await grey(reference) };
+    return { ...numbers, white, png: b64(new Uint8Array(await blob.arrayBuffer())), drawnPng: await grey(drawn), referencePng: await grey(reference), raw: request.raw ? { drawn, reference } : undefined };
   } finally {
     window.__sceneGPU.probeRegions = null;
     shooter.close();
@@ -9776,7 +9776,8 @@ const probeViews = [
 // judged by (S2 tasks 5.1, judged in 5.2). AC-S2-2: each view's lit picture, its regions' indirect irradiance
 // from the probes against the per-pixel reference (256 paths a pixel, 3 hits, the probes read at the last), and
 // the two irradiances as pictures. AC-S2-1: backlit-room's left wall, out of the sun, at 45° and 100° and swept
-// from 30° to 120° (pointAcrossViews, pointsAcrossViews), as gi-baseline took it before S2.
+// from 30° to 120° (pointAcrossViews, pointsAcrossViews), as gi-baseline took it before S2. SCENE_E2E_PROBE_VIEWS=<a,b>
+// takes those views alone and skips AC-S2-1; SCENE_E2E_PROBE_RAW=1 writes the two irradiances as numbers too.
 if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the numbers: the left wall across views, each region against a per-pixel reference', async () => {
   const dir = process.env.SCENE_E2E_PROBES === '1' ? null : process.env.SCENE_E2E_PROBES
   const gpu = await chromium.launch({ headless: true, args: metal })
@@ -9788,23 +9789,25 @@ if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the 
     await page.goto(`${base}/.scene-gi-qa.html`)
     await page.waitForFunction(() => window.__ready === true)
     const record = { machine: machineInfo(), chromium: gpu.version(), views: {} }
-    for (const v of probeViews) {
+    for (const v of probeViews.filter((p) => !process.env.SCENE_E2E_PROBE_VIEWS || process.env.SCENE_E2E_PROBE_VIEWS.split(',').includes(p.view))) {
       const scene = shooterScene(v.scene, (s) => {
         realtimeGI(s)
         const shot = s.objects.find((o) => o.kind === 'camera')
         if (v.camera) Object.assign(shot.transform, { position: v.camera.position, rotation: v.camera.rotation })
         if (v.camera?.focal_mm) shot.camera.focal_mm = v.camera.focal_mm
       })
-      const out = await page.evaluate(([s, r]) => window.__probeRegions(s, 1024, r), [scene, { regions: giRegions[v.view] ?? {}, width: 384, passes: 32 }])
+      const out = await page.evaluate(([s, r]) => window.__probeRegions(s, 1024, r), [scene, { regions: giRegions[v.view] ?? {}, width: Number(process.env.SCENE_E2E_PROBE_WIDTH ?? 384), passes: 32, bounces: Number(process.env.SCENE_E2E_PROBE_BOUNCES ?? 3), raw: Boolean(process.env.SCENE_E2E_PROBE_RAW) }])
       assert.ok(!out.error, `${v.view}: ${out.error}`)
-      const { png, drawnPng, referencePng, ...numbers } = out
+      const { png, drawnPng, referencePng, raw, ...numbers } = out
       record.views[v.view] = numbers
       const regions = Object.entries(numbers.regions).map(([n, r]) => `${n} ${r.error >= 0 ? '+' : ''}${(r.error * 100).toFixed(0)} % (cover ${r.coverage.toFixed(2)})`)
       console.log(`  ${v.view}: ${numbers.pathsPerPixel} paths a pixel in ${numbers.ms} ms, levels ${JSON.stringify(numbers.levels)}; mean difference ${(numbers.meanDifference * 100).toFixed(1)} %; ${regions.join(', ') || 'no regions yet'}`)
       if (dir) for (const [kind, data] of [['lit', png], ['probes', drawnPng], ['reference', referencePng]]) await writeFile(`${dir}/${v.view}-${kind}.png`, Buffer.from(data, 'base64'))
+      if (dir && raw) await writeFile(`${dir}/${v.view}-irradiance.json`, JSON.stringify({ width: numbers.width, height: numbers.height, ...raw }))
       for (const [n, r] of Object.entries(numbers.regions)) assert.ok(r.pixels > 0 && Number.isFinite(r.error), `${v.view} ${n}: ${JSON.stringify(r)}`)
       assert.ok(Number.isFinite(numbers.meanDifference), `${v.view}: the mean difference ${numbers.meanDifference}`)
     }
+    if (process.env.SCENE_E2E_PROBE_VIEWS) return
     const views = await pointAcrossViews(page, 'backlit-room', [-2.49, 1.2, 1.4], [45, 100])
     record.lit_wall_in_view = { scene: 'backlit-room', point: [-2.49, 1.2, 1.4], views, ratio: views[1].luma / views[0].luma }
     const wall = [-2.4, -1.2, 0, 1.2, 2.4].flatMap((z) => [0.9, 1.8].map((y) => [-2.49, y, z]))
@@ -9822,6 +9825,39 @@ if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the 
     console.log(`  AC-S2-1: the left wall at 100° over 45° ${record.lit_wall_in_view.ratio.toFixed(3)}; swept, each view over their mean ${record.left_wall_sweep.ratios.map((r) => r.toFixed(3)).join(', ')}; each point over its own mean ${record.left_wall_sweep.perPointRange.map((r) => r.toFixed(3)).join('–')}`)
     if (dir) await writeFile(`${dir}/probes.json`, `${JSON.stringify(record, null, 2)}\n`)
     assert.deepEqual(errors, [], errors.join('\n'))
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBES=<dir> with SCENE_E2E_PROBE_AO=<metres>: S2-U7's pictures for the owner, each scene's lit export
+// as shipped and with the probes' light times the SSGI's AO at that radius (gpuTestHooks.probeAO): whether
+// contact shadows smaller than a probe cell want it (S2 design; shipped without unless the owner says).
+if (process.env.SCENE_E2E_PROBES && process.env.SCENE_E2E_PROBE_AO) await check('probes: S2-U7, the lit exports with and without a short-radius AO on the probes’ light', async () => {
+  const dir = process.env.SCENE_E2E_PROBES
+  const radius = Number(process.env.SCENE_E2E_PROBE_AO)
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    for (const name of ['backlit-room', 'cornell', 'thin-wall', 'physical-noon']) {
+      const scene = shooterScene(name, realtimeGI)
+      const shots = {}
+      for (const ao of [null, radius]) {
+        const png = await page.evaluate(async ([s, a]) => {
+          window.__sceneGPU.probeAO = a
+          try {
+            return await window.__png(s, 'lit', 1536, 'export', false)
+          } finally {
+            window.__sceneGPU.probeAO = null
+          }
+        }, [scene, ao])
+        shots[ao ?? 'off'] = Buffer.from(png, 'base64')
+        await writeFile(`${dir}/${name}-ao-${ao ?? 'off'}.png`, shots[ao ?? 'off'])
+      }
+      console.log(`  ${name}: ${(await lumaStats(page, shots.off)).mean.toFixed(1)} without, ${(await lumaStats(page, shots[radius])).mean.toFixed(1)} with the AO at ${radius} m`)
+    }
   } finally {
     await gpu.close()
   }

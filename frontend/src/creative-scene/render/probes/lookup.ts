@@ -94,7 +94,7 @@ function atlasUV(n: TSLNode, slot: TSLNode, level: TSLNode, tile: number, interi
 function levelAt(v: ProbeNodes, k: number, P: TSLNode, n: TSLNode, V: TSLNode) {
   const s = spacingOf(k)
   const origin = v.origins[k].xyz
-  const biased = P.add(n.mul(0.2).add(V.mul(0.8)).mul(0.3 * s)).toVar()
+  const biased = P.add(n.mul(0.2).add(V.mul(0.8)).mul(0.5 * s)).toVar()
   const local = biased.div(s).sub(origin).toVar()
   const g = local.sub(0.5)
   const base = floor(g).toVar()

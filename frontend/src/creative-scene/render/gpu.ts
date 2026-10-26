@@ -313,7 +313,9 @@ export const gpuTestHooks = {
    * (fractions of the picture: x0, y0, x1, y1) irradiance from the probes and from a per-pixel reference
    * (render/trace/checks.ts probeCheck; host/render.ts shoot) into result.
    */
-  probeRegions: null as { regions: Record<string, readonly number[]>; width?: number; passes?: number; result?: unknown } | null,
+  probeRegions: null as { regions: Record<string, readonly number[]>; width?: number; passes?: number; bounces?: number; result?: unknown } | null,
+  /** S2-U7's comparison: the probes' light times the SSGI's AO at this radius in metres (render/realtimeGI.ts), set before a picture's pipeline is built; null, as shipped. */
+  probeAO: null as number | null,
   /** What the probes trace (render/trace/base.ts handle): the proxies, as always; 'original' at tier 1 traces the original instead, for S2's AC-S2-8. */
   probeLayer: 'proxy' as 'proxy' | 'original',
   /** The same rays shaded at their hits against the raster, mesh by mesh (AC-S1-2; as traceDepth). */

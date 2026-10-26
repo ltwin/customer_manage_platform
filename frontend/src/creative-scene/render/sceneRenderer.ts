@@ -7,7 +7,7 @@ import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
 import { convergeFrames, type Engine, type Quality } from './engines.ts'
-import type { SceneGPU } from './gpu.ts'
+import { gpuTestHooks, type SceneGPU } from './gpu.ts'
 import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
@@ -604,7 +604,7 @@ export class SceneRenderer {
           redraw: this.redraw,
           // The reflections' hits lit by the probes as the screen is (S2 design「命中点的间接光」).
           trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene, look.world && { probes: look.world.nodes, fill: AMBIENT_FILL }),
-          world: look.trace && look.world ? { probes: look.world.nodes, ambient: look.trace.tables.ambient, fill: AMBIENT_FILL } : null,
+          world: look.trace && look.world ? { probes: look.world.nodes, ambient: look.trace.tables.ambient, fill: AMBIENT_FILL, ao: gpuTestHooks.probeAO } : null,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes

@@ -109,6 +109,14 @@
   - 参考和像素的表面点都从主光线命中得到，不读光栅的深度和法线：一个 pass 里就能拿到命中点、法线和 `kd · c`；
   - `hit.ts` 的 `radiance` 拆出 `bounce`，给出继续路径需要的命中点和反照率。探针光线的结果不变
 - [ ] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
+
+  进行中（2026-10-26），等 owner 看图，详见 `evidence/ac-s2-2.md`：
+  - 采样点偏移从 0.3 × 间距调到 0.5 × 间距；
+  - 按 AC 的口径，只剩 `cornell` 立方体朝红墙的面 +21% 超出 ±15%。试过偏移的大小与方向、重定位、Chebyshev 指数，都改不了它；
+  - 3 次命中的参考低估了薄墙场景的误差：追 6 次时 `thin-wall` 是 +7% 到 +19%，`@level2` 室内是 +31%；
+  - AC-S2-1：逐点读法 0.977–1.032，均值读法 0.898–1.063；
+  - S2-U6：`r_fill` 维持 1；S2-U7：对照图已出，缺省不加；
+  - 测试钩子 `gpuTestHooks.probeAO`，只给 S2-U7 的对照用
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
 - [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
 - [ ] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图

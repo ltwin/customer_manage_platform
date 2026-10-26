@@ -644,7 +644,7 @@ export type ProbeCheck = {
  * composite). Exposed as the picture is: run with its preExposure set.
  * regions are fractions of the picture (x0, y0, x1, y1, from the top left).
  */
-export async function probeCheck(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, { regions, width = 384, passes = 32 }: { regions: Record<string, readonly number[]>; width?: number; passes?: number }): Promise<ProbeCheck> {
+export async function probeCheck(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, { regions, width = 384, passes = 32, bounces = BOUNCES }: { regions: Record<string, readonly number[]>; width?: number; passes?: number; bounces?: number }): Promise<ProbeCheck> {
   const started = performance.now()
   const size = sizeOf(camera, width)
   const { Loop, abs: absN, cos, cross, sin, sqrt, uint, uvec2: uv2 } = tsl as unknown as Record<string, Op>
@@ -697,10 +697,10 @@ export async function probeCheck(renderer: WebGPURenderer, scene: Scene, camera:
         const d = cosineAbout(first.n, path).toVar()
         const through = vec3(1).toVar()
         const alive = float(1).toVar()
-        Loop(BOUNCES, ({ i: b }: { i: TSLNode }) => {
+        Loop(bounces, ({ i: b }: { i: TSLNode }) => {
           If(alive.greaterThan(0.5), () => {
             const h = pcg(path.add(uint(b).add(1).mul(uint(0xc2b2ae35)))).toVar()
-            const last = select(uint(b).equal(uint(BOUNCES - 1)), float(1), float(0)).toVar()
+            const last = select(uint(b).equal(uint(bounces - 1)), float(1), float(0)).toVar()
             const r = shading.bounce(o, d, h, (P, n) => fromProbes(P, n, d.negate()).E.mul(last), fill)
             sum.addAssign(through.mul(r.L))
             // On from a front face that is not the last, toward a new cosine-weighted direction.

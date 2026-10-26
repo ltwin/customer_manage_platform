@@ -73,3 +73,7 @@ cd frontend
 SCENE_E2E_ONLY="probes: AC-S2-1 and AC-S2-2" SCENE_E2E_PROBES=<目录> \
   CREATIVE_SCENE_URL=http://localhost:5192 node scripts/creative-scene.e2e.mjs      # 约 70 秒，写 probes.json 和 15 张图
 ```
+
+## 任务 5.2
+
+见 `ac-s2-2.md`：数值在 `after/probes-5.2.json`，对照图是 `after/ac-s2-2-views.jpg`、`after/ac-s2-2-bias.jpg`、`after/ac-s2-1-before-after.jpg`、`after/s2-u7-ao.jpg`。
