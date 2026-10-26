@@ -1,4 +1,4 @@
-import type { Matrix4, Mesh, Scene } from 'three'
+import { Box3, type Matrix4, type Mesh, type Scene } from 'three'
 import { slotOf } from '../../materials/instances.ts'
 import { backgroundTicker } from '../../host/ticker.ts'
 import { gpuTestHooks, type SceneGPU } from '../gpu.ts'
@@ -16,9 +16,18 @@ import { TraceTables } from './tables.ts'
 // in; an export waits for every build and packs once, in a fixed order
 // (L3). Nothing here reads the scene document (L4).
 //
-// Two precisions, the original and the proxies (tier 2; D3: built only
-// there). The target is built for the scene as it is; while the tier
-// changes, the other goes on serving till the target is in and judged.
+// Two precisions, the original and the proxies, both served at tier 1:
+// the reflections trace the original, the probes the proxies (S2 design
+// 「底座的两份精度」; S2 revises S1's D3, the proxies are always built). At
+// tier 2 the reflections trace the proxies too. The base is ready once, when
+// all it is building is in: a pipeline is built once, not first for the
+// proxies and again for the original. While the tier changes, what serves
+// goes on serving till the other is in and judged (S1 A4).
+//
+// What changes the light the probes gather is counted (S2 design「编辑的
+// 分类」): geometryVersion for what they trace, lightingVersion for the
+// materials, lights and environment it is lit by; the probes take those
+// against the counts they last saw.
 //
 // A geometry whose build fails is left out, the rest traced (S1 design
 // A13); the layer as a whole fails on what touches all of it: a worker that
@@ -32,11 +41,14 @@ export type TraceStatus =
   | { state: 'failed' }
 
 /**
- * What the reflections bind (render/nodes/SSRTraceNode.js): the layer at the
- * tier, and the tables. key changes with the layer: a pipeline is built
- * again for another (sceneRenderer.ts keyOf).
+ * What the layer's users bind: reflect, the layer the reflections trace
+ * (render/nodes/SSRTraceNode.js), the original at tier 1 and the proxies at
+ * tier 2; probes, the one the probes trace, the proxies at either tier (the
+ * original only for the e2e's gpuTestHooks.probeLayer); and the tables. key
+ * changes with either layer: a pipeline is built again for another
+ * (sceneRenderer.ts keyOf).
  */
-export type TraceHandle = { readonly layer: TraceLayer; readonly tables: TraceTables; readonly tier: 'full' | 'proxy'; readonly key: string }
+export type TraceHandle = { readonly reflect: TraceLayer; readonly probes: TraceLayer; readonly tables: TraceTables; readonly tier: 'full' | 'proxy'; readonly key: string }
 
 /** An export's wait for the base ran out (D7): the picture fails, the build goes on. */
 export class TraceNotReady extends Error {
@@ -106,6 +118,12 @@ class Precision {
   }
 }
 
+/** A traced mesh as the last sync saw it: what it drew where, and its world bounds. */
+type Placed = { geometry: unknown; matrix: number[]; box: Box3; ground: boolean }
+
+/** The builtin ground's geometries (builtins/geometry.ts traceKey). */
+const isGround = (t: Traced) => t.key.startsWith('builtin:ground@')
+
 type Options = {
   /** The viewport's: commits as builds come back; an export packs once, in order. */
   incremental: boolean
@@ -132,16 +150,18 @@ export class TraceBase {
   /** Geometries whose build failed (GeometryFailed), not traced till they leave the scene and come back. */
   private readonly broken = new Set<string>()
   private readonly unsubscribe: (() => void)[]
-  /** The precision built for the scene as it is. */
-  private target: Precision | null = null
-  /** The precision traced. */
-  private serving: Precision | null = null
+  /** The precision the reflections trace: the original at tier 1, the proxies at tier 2. */
+  private reflecting: Precision | null = null
+  /** The precision the probes trace: the proxies, once ready. */
+  private probing: Precision | null = null
   private tooLarge = false
+  /** Whether the first sync with a scene has chosen whether to build the original. */
+  private chosen = false
   /** Tier 2 → 1: below this many triangles, and with the estimate in the budget, the original is tried again. */
   private retryBelow = Infinity
   /** The original's bytes a triangle, as last measured (capacity.ts's estimate till then). */
   private perTriangle = BYTES_PER_TRIANGLE
-  /** The proxy level each geometry is built at (tier 2). */
+  /** The proxy level each geometry is built at. */
   private readonly levels = new Map<string, number>()
   /** Last frame's traced meshes: a change retries a failure, unblocks commits and ends too large. */
   private traced: Traced[] = []
@@ -161,6 +181,20 @@ export class TraceBase {
   /** Segments come back, from the local cache or built (the e2e's warm start). */
   private readonly arrivals = { cached: 0, built: 0 }
   private disposed = false
+  /**
+   * Counts a change of what the probes trace: a traced mesh in or out,
+   * shown or hidden, moved, or a geometry of it committed (S2 design「编辑
+   * 的分类」).
+   */
+  geometryVersion = 0
+  /** Counts a change of what the probes' hits are lit by: a material row, a light (unexposed), the ambient light, the environment. */
+  lightingVersion = 0
+  /** The traced meshes' bounds, the builtin ground left out (it reaches past the scene, lit by the sky where it does): how many probe levels the scene takes. */
+  readonly bounds = new Box3()
+  /** Where traced meshes changed since takeEdits last took them: where the probes relocate again once the edit is over. */
+  private readonly edited = new Box3()
+  /** The traced meshes' world bounds as the last sync saw them, by mesh: a mesh that goes or moves changes where it was too. */
+  private placedAt = new Map<Mesh, Placed>()
   /** Asks the viewport for a frame (SceneRenderer's redraw); none offscreen. */
   redraw: (() => void) | null = null
 
@@ -211,11 +245,20 @@ export class TraceBase {
     return this.rows
   }
 
-  /** What the reflections trace, once ready. */
+  /** What the reflections and the probes trace, once ready. */
   handle(): TraceHandle | null {
     const s = this.status
-    if (s.state !== 'ready' || !this.serving) return null
-    return { layer: this.serving.layer, tables: this.tables, tier: s.tier, key: `${s.tier}#${this.serving.serial}` }
+    const reflect = this.reflecting
+    if (s.state !== 'ready' || !reflect || !this.probing) return null
+    const probes = gpuTestHooks.probeLayer === 'original' && reflect.kind === 'original' ? reflect : this.probing
+    return { reflect: reflect.layer, probes: probes.layer, tables: this.tables, tier: s.tier, key: `${s.tier}#${reflect.serial}+${probes.serial}` }
+  }
+
+  /** Where traced meshes changed since the last call (an empty box for nowhere), and none from then on. */
+  takeEdits(): Box3 {
+    const out = this.edited.clone()
+    this.edited.makeEmpty()
+    return out
   }
 
   /**
@@ -229,6 +272,8 @@ export class TraceBase {
     if (forGood) this.forGood = this.retried = true
     if (this.status.state === 'failed') return
     for (const p of Object.values(this.precisions)) this.drop(p)
+    // Tried again as from the start: whether to build the original too.
+    this.chosen = false
     this.set({ state: 'failed' })
   }
 
@@ -243,8 +288,14 @@ export class TraceBase {
   private drop(p: Precision) {
     this.retired.push(p.layer)
     delete this.precisions[p.kind]
-    if (this.serving === p) this.serving = null
-    if (this.target === p) this.target = null
+    if (this.probing === p) this.probing = null
+    // The original dropped at tier 1: the reflections trace the proxies the probes do, if they serve.
+    if (this.reflecting === p) this.reflecting = this.probing
+  }
+
+  /** Whether a precision serves: the reflections or the probes trace it. */
+  private served(p: Precision): boolean {
+    return p === this.reflecting || p === this.probing
   }
 
   /** The segment a traced geometry is built as in a precision. */
@@ -313,26 +364,31 @@ export class TraceBase {
       this.tooLarge = false
       for (const p of Object.values(this.precisions)) p.blocked = false
     }
-    this.restyle(traced)
+    if (this.restyle(traced)) this.lightingVersion++
     const geometries = new Map(traced.map((t) => [t.key, t.triangles]))
     this.geometries = geometries
     const total = [...geometries.values()].reduce((n, x) => n + x, 0)
-    const target = this.choose(total)
-    if (target.kind === 'proxy') this.updateLevels(traced)
-    for (const t of traced) this.ask(target, t)
+    // The proxies always (the probes trace them), the original when it may fit.
+    const proxy = this.precision('proxy')
+    const original = this.wantsOriginal(total) ? this.precision('original') : null
+    this.updateLevels(traced)
+    for (const p of [original, proxy]) if (p) for (const t of traced) this.ask(p, t)
     let commitMs = 0
-    for (const p of new Set([this.serving, target])) {
-      if (!p) continue
+    let committed = false
+    for (const p of Object.values(this.precisions)) {
       const waiting = p.arrived.size
       commitMs += this.commit(p, geometries)
       if (this.precisions[p.kind] !== p) continue
-      // An edit's segments in the layer the viewport draws: it draws again.
-      if (p === this.serving && p.arrived.size < waiting) this.redraw?.()
+      if (this.served(p) && p.arrived.size < waiting) {
+        // An edit's segments in a layer the viewport draws: it draws again, and the probes gather again where they trace it.
+        this.redraw?.()
+        committed ||= p === this.probing
+      }
       this.instances(p, traced, changed)
     }
-    this.tables.setLights(collectLights(this.scene), this.scene)
-    // The target, or the one packing it again (repack).
-    this.judge(this.target ?? target, geometries, total)
+    this.track(traced, committed)
+    if (this.tables.setLights(collectLights(this.scene), this.scene)) this.lightingVersion++
+    this.judge(geometries, total)
     this.report(geometries)
     if (this.incremental && sceneTest) gpuTestHooks.traceStats = this.stats(commitMs, performance.now() - started)
     if (this.incremental && this.committable()) this.pump()
@@ -367,11 +423,10 @@ export class TraceBase {
         // Only the commits between frames; the rest of a sync (the top level, the tier) once they are in.
         const started = performance.now()
         let commitMs = 0
-        for (const p of new Set([this.serving, this.target])) {
-          if (!p) continue
+        for (const p of Object.values(this.precisions)) {
           const waiting = p.arrived.size
           commitMs += this.commit(p, this.geometries)
-          shown ||= p === this.serving && p.arrived.size < waiting
+          shown ||= this.served(p) && p.arrived.size < waiting
         }
         if (sceneTest) gpuTestHooks.traceStats = this.stats(commitMs, performance.now() - started)
       }
@@ -383,9 +438,10 @@ export class TraceBase {
     })()
   }
 
-  /** The material rows, the traced meshes' slots in turn: each written when it holds something else than it did. */
-  private restyle(traced: readonly Traced[]) {
+  /** The material rows, the traced meshes' slots in turn: each written when it holds something else than it did. Whether any was. */
+  private restyle(traced: readonly Traced[]): boolean {
     let row = 0
+    let written = false
     this.firstRow = traced.map((t) => {
       const first = row
       for (const s of t.slots) {
@@ -393,19 +449,59 @@ export class TraceBase {
         if (!was || was.material !== s.material || was.doubleSided !== s.doubleSided) {
           this.rows[row] = s
           this.tables.setMaterial(row, s.material, s.doubleSided)
+          written = true
         }
         row++
       }
       return first
     })
     this.rows.length = row
+    return written
   }
 
-  /** The precision to build: the original unless it plainly cannot fit, or did not and the scene has not shrunk well below that (D9). */
-  private choose(total: number): Precision {
-    if (!this.target) return (this.target = this.precision(buildsOriginal(total, this.budget) ? 'original' : 'proxy'))
-    if (this.target.kind === 'proxy' && total < this.retryBelow && total * this.perTriangle * SPARE <= this.budget) this.target = this.precision('original')
-    return this.target
+  /**
+   * The traced meshes against the last sync's: one in or out, moved, or
+   * drawing another geometry counts as a change of what the probes trace,
+   * where it was and where it is now as edited; so does a segment committed
+   * into the layer they trace. The bounds follow.
+   */
+  private track(traced: readonly Traced[], committed: boolean) {
+    const next = new Map<Mesh, Placed>()
+    let changed = committed
+    for (const t of traced) {
+      const was = this.placedAt.get(t.mesh)
+      const m = t.mesh.matrixWorld.elements
+      if (was && was.geometry === t.geometry && was.matrix.every((v, i) => v === m[i])) {
+        next.set(t.mesh, was)
+        continue
+      }
+      if (!t.geometry.boundingBox) t.geometry.computeBoundingBox()
+      const box = t.geometry.boundingBox!.clone().applyMatrix4(t.mesh.matrixWorld)
+      next.set(t.mesh, { geometry: t.geometry, matrix: [...m], box, ground: isGround(t) })
+      if (was) this.edited.union(was.box)
+      this.edited.union(box)
+      changed = true
+    }
+    for (const [mesh, was] of this.placedAt) {
+      if (next.has(mesh)) continue
+      this.edited.union(was.box)
+      changed = true
+    }
+    this.placedAt = next
+    if (!changed) return
+    this.geometryVersion++
+    this.bounds.makeEmpty()
+    for (const p of next.values()) if (!p.ground) this.bounds.union(p.box)
+  }
+
+  /** Whether to build the original: unless it plainly cannot fit, or did not and the scene has not shrunk well below that (D9). */
+  private wantsOriginal(total: number): boolean {
+    if (this.precisions.original) return true
+    if (!this.chosen) {
+      this.chosen = true
+      return buildsOriginal(total, this.budget)
+    }
+    return total < this.retryBelow && total * this.perTriangle * SPARE <= this.budget
   }
 
   /** Each geometry's proxy level, by the largest scale an instance of it has; a finer level asks for a new build. */
@@ -417,7 +513,7 @@ export class TraceBase {
 
   /** Whether p fills before it serves: an export's precisions, and the viewport's till they serve. */
   private filling(p: Precision): boolean {
-    return !this.incremental || p !== this.serving
+    return !this.incremental || !this.served(p)
   }
 
   /** The top level's leaves over the traced meshes in p: a root each (a segment not back yet counted as one). */
@@ -495,7 +591,7 @@ export class TraceBase {
   private repack(p: Precision) {
     const kind = p.kind
     this.drop(p)
-    this.target = this.precision(kind)
+    this.precision(kind)
   }
 
   /** On a frame with nothing to commit, a fragmented layer is compacted (S1 design「收集与比对」). */
@@ -541,46 +637,66 @@ export class TraceBase {
     p.layer.move(moved)
   }
 
-  /** The tier, judged on the target once all of it is in (S1 design「分档」). */
-  private judge(target: Precision, geometries: ReadonlyMap<string, number>, total: number) {
+  /**
+   * The tier, judged on what is built once all of it is in (S1 design「分档」,
+   * S2 design「底座的两份精度」): the proxies first, which the probes need at
+   * either tier, then the original with them. Ready once, when everything
+   * built is in; what serves goes on serving while an edit or a change of
+   * tier is under way.
+   */
+  private judge(geometries: ReadonlyMap<string, number>, total: number) {
     if (this.status.state === 'failed') return
+    const complete = (p: Precision) => p.missing(geometries) === 0 && p.building.size === 0
+    const proxy = this.precisions.proxy!
+    let proxies: boolean | null = null
+    if (proxy.blocked) proxies = false
+    else if (complete(proxy)) proxies = tierOf(null, proxy.layer.size, this.budget, this.maxBinding) !== 'tooLarge'
+    if (proxies === false) {
+      for (const p of Object.values(this.precisions)) this.drop(p)
+      this.tooLarge = true
+      return
+    }
+    const original = this.precisions.original
     let fits: boolean | null = null
-    if (target.blocked) fits = false
-    else if (target.missing(geometries) === 0 && target.building.size === 0) {
-      const size = target.layer.size
-      fits = (target.kind === 'original' ? tierOf(size, null, this.budget, this.maxBinding) : tierOf(null, size, this.budget, this.maxBinding)) !== 'tooLarge'
-      if (target.kind === 'original' && total > 0) this.perTriangle = size.bytes / total
+    if (original?.blocked) fits = false
+    else if (original && proxies && complete(original)) {
+      const size = original.layer.size
+      fits = tierOf(size, proxy.layer.size, this.budget, this.maxBinding) === 'full'
+      if (total > 0) this.perTriangle = size.bytes / total
     }
-    if (fits === null) return
-    if (fits) {
-      for (const p of Object.values(this.precisions)) if (p !== target) this.drop(p)
-      this.serving = target
-      if (target.kind === 'original') this.retryBelow = Infinity
-      return
-    }
-    if (target.kind === 'original') {
-      // Tier 2. The original goes on serving, if it was, till the proxies are in.
+    if (original && fits === false) {
+      // Tier 2: the reflections go to the proxies with the probes; the original is tried again well below this.
       this.retryBelow = total * retryShare
-      if (this.serving !== target) this.drop(target)
-      this.target = this.precision('proxy')
+      this.drop(original)
+    }
+    if (!proxies) return
+    this.probing = proxy
+    if (original && fits) {
+      this.reflecting = original
+      this.retryBelow = Infinity
       return
     }
-    for (const p of Object.values(this.precisions)) if (p !== target) this.drop(p)
-    this.serving = null
-    this.tooLarge = true
+    // The original still building: the first time, ready waits for it; later the proxies or the original go on serving.
+    if (original && fits === null && !this.reflecting) {
+      if (this.status.state !== 'ready') this.probing = null
+      else this.reflecting = proxy
+      return
+    }
+    if (!this.precisions.original) this.reflecting = proxy
   }
 
   private report(geometries: ReadonlyMap<string, number>) {
     if (this.status.state === 'failed') return
     if (this.tooLarge) return this.set({ state: 'tooLarge' })
-    const s = this.serving
-    if (s) {
+    const r = this.reflecting
+    const p = this.probing
+    if (r && p) {
       // Ready again: a later failure is retried once more (a shader that did not build never is).
       if (!this.forGood) this.retried = false
-      return this.set({ state: 'ready', tier: s.kind === 'original' ? 'full' : 'proxy', pending: s.missing(geometries) })
+      return this.set({ state: 'ready', tier: r.kind === 'original' ? 'full' : 'proxy', pending: Math.max(r.missing(geometries), p.missing(geometries)) })
     }
-    const t = this.target
-    this.set({ state: 'preparing', done: t ? geometries.size - t.missing(geometries) : 0, total: geometries.size })
+    const missing = Math.max(0, ...Object.values(this.precisions).map((x) => x.missing(geometries)))
+    this.set({ state: 'preparing', done: geometries.size - missing, total: geometries.size })
   }
 
   /**
@@ -602,26 +718,31 @@ export class TraceBase {
 
   /** A frame has drawn with the layer: an export's lets the CPU's copies go (design A5); the viewport's keeps them for its edits. */
   drawn() {
-    const layer = this.serving?.layer
-    if (this.incremental || !layer || layer.dropped) return
-    layer.dropArrays()
-    gpuTestHooks.traceDropped++
+    if (this.incremental) return
+    for (const p of new Set([this.reflecting, this.probing])) {
+      if (!p || p.layer.dropped) continue
+      p.layer.dropArrays()
+      gpuTestHooks.traceDropped++
+    }
   }
 
-  /** For the e2e (gpuTestHooks.traceDigests): the serving layer's buffers and the tables, each a SHA-256. */
+  /** For the e2e (gpuTestHooks.traceDigests): the serving layers' buffers and the tables, each a SHA-256. */
   private async digest(into: Record<string, string>[]) {
-    const s = this.serving
-    if (!s) return
+    const r = this.reflecting
+    const p = this.probing
+    if (!r || !p) return
     const hex = async (a: ArrayBufferView) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', a as ArrayBufferView<ArrayBuffer>))].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
-    const arrays: Record<string, ArrayBufferView> = { ...s.layer.arrays, tables: this.tables.data }
-    const out: Record<string, string> = { layer: s.kind }
+    const arrays: Record<string, ArrayBufferView> = { tables: this.tables.data }
+    for (const [name, a] of Object.entries(r.layer.arrays)) arrays[name] = a
+    if (p !== r) for (const [name, a] of Object.entries(p.layer.arrays)) arrays[`probes.${name}`] = a
+    const out: Record<string, string> = { layer: r.kind }
     for (const [name, a] of Object.entries(arrays)) out[name] = await hex(a)
     into.push(out)
   }
 
   /** For the e2e: syncMs is this sync's main-thread time, commitMs its share committing segments. */
   private stats(commitMs: number, syncMs: number) {
-    const s = this.serving
+    const s = this.reflecting
     const status = this.status
     return {
       state: status.state,
@@ -629,7 +750,11 @@ export class TraceBase {
       tier: status.state === 'ready' ? status.tier : null,
       pending: status.state === 'ready' ? status.pending : null,
       layer: s?.kind ?? null,
-      target: this.target?.kind ?? null,
+      /** What the reflections are built toward: the original while it is built, else the proxies. */
+      target: this.precisions.original ? 'original' : this.precisions.proxy ? 'proxy' : null,
+      probes: this.probing?.kind ?? null,
+      geometryVersion: this.geometryVersion,
+      lightingVersion: this.lightingVersion,
       bytes: Object.values(this.precisions).reduce((n, p) => n + p.layer.bytes, 0),
       uploaded: Object.values(this.precisions).reduce((n, p) => n + p.layer.take(), 0),
       commitMs,

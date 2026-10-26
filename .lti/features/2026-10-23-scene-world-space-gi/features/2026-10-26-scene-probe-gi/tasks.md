@@ -29,7 +29,13 @@
 
 ## 3. 底座的两份精度
 
-- [ ] 3.1 `base.ts`、`capacity.ts`：两份精度同时服务，代理始终构建；`geometryVersion` 与 `lightingVersion`；场景包围盒（不含 `ground@*`）和改动的实例包围盒；`TraceHandle` 改为 `{reflect, probes, tables, tier, key}`；两份一起估算与判档。`tables.ts` 交出 `L_amb`，灯光与环境的变化计入 `lightingVersion`。先在 `creative-scene-trace.test.ts` 写单测：编排（一次就绪、换档、几何失败）、版本号、包围盒。完成判据：单测通过；S1 的 `SCENE_E2E_TRACE` 用例照过
+- [x] 3.1 `base.ts`、`capacity.ts`：两份精度同时服务，代理始终构建；`geometryVersion` 与 `lightingVersion`；场景包围盒（不含 `ground@*`）和改动的实例包围盒；`TraceHandle` 改为 `{reflect, probes, tables, tier, key}`；两份一起估算与判档。`tables.ts` 交出 `L_amb`，灯光与环境的变化计入 `lightingVersion`。先在 `creative-scene-trace.test.ts` 写单测：编排（一次就绪、换档、几何失败）、版本号、包围盒。完成判据：单测通过；S1 的 `SCENE_E2E_TRACE` 用例照过
+
+  结果：`creative-scene-trace.test.ts` 26 项通过（新增判档的三行、两份精度的编排、版本号与包围盒）；`SCENE_E2E_TRACE` 的 12 个 `trace:` 用例全部通过。实现上的取舍：
+  - 第 1 档的判定改为原始与代理合计 × 1.25 不超过预算，且两份都在设备上限以内；
+  - 灯光是否变化按「已曝光值 ÷ k」比较，留 1e-5 的相对容差（经过 float32 和除法）。场景的环境光不参与预曝光，但 k 只在物理天空下不为 1，那时没有环境光；
+  - 失败重试时重新判定要不要建原始几何；
+  - `traceStats` 多了 `probes`、`geometryVersion`、`lightingVersion`，`target` 改为反射正在建的那一份
 
 ## 4. 探针体
 

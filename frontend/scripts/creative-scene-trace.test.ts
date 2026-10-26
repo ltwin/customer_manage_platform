@@ -30,7 +30,7 @@ test('the original is not built when its estimate is past the budget by half aga
   assert.equal(buildsOriginal(1000, 1000), false, 'gpuTestHooks.traceBudget pressed down')
 })
 
-test('the tier follows the layer as built: the original in budget, else the proxies, else too large (design「分档」)', () => {
+test('the tier follows the layers as built: the original with the proxies in budget, else the proxies, else too large (design「分档」, S2 design「底座的两份精度」)', () => {
   const size = (bytes: number, largest = bytes / 2, depth = 40): LayerSize => ({ bytes, largest, depth })
   const binding = 2 * gib
   // Each row: [original, proxy, tier].
@@ -46,6 +46,10 @@ test('the tier follows the layer as built: the original in budget, else the prox
     [null, size(0.2 * gib, 0.1 * gib, 61), 'tooLarge'],
     [size(0.5 * gib, 0.25 * gib, 60), null, 'full'],
     [null, null, 'tooLarge'],
+    // S2: at tier 1 the proxies are served too, for the probes: the two together in the budget, both bound.
+    [size(0.5 * gib), size(0.2 * gib), 'full'], // 0.7 × 1.25 within 1 GiB
+    [size(0.7 * gib), size(0.2 * gib), 'proxy'], // the original alone would fit; with the proxies, 0.9 × 1.25 does not
+    [size(0.5 * gib), size(0.2 * gib, 0.1 * gib, 61), 'tooLarge'], // the proxies’ traversal overruns the stack: no tier traces them
   ]
   for (const [original, proxy, tier] of rows) assert.equal(tierOf(original, proxy, BUDGET, binding), tier, JSON.stringify({ original, proxy }))
 })
@@ -633,7 +637,7 @@ test('an export’s layer is laid out once for all it holds, the top level’s r
   const base = new TraceBase(gpu, scene, { incremental: false, builds: buildsOf() })
   assert.ok(await base.ready(5000))
   assert.deepEqual(base.state, { state: 'ready', tier: 'full', pending: 0 })
-  const layer = base.handle()!.layer
+  const layer = base.handle()!.reflect
   assert.equal(layer.layouts, 1, 'one layout, the top level’s 121 leaves made room for with the rest')
   assert.equal(layer.placed.get('builtin:box@1:{"faces":1}+groups')!.rootBases.length, 6, 'a root a group, drawn a material a group')
   assert.equal(layer.placed.get('builtin:box@1:{"faces":1}')!.rootBases.length, 1, 'one material: one root')
@@ -679,7 +683,7 @@ test('a geometry whose build fails is left out and the rest traced; the layer fa
     add('sobj_c', new Mesh(keyed('c'), materials.red))
     const base = new TraceBase(gpu, scene, { incremental: false, builds: buildsOf(fails) })
     await until(base, ready('full'), 'the rest')
-    assert.deepEqual([...base.handle()!.layer.placed.keys()].sort(), ['a', 'c'])
+    assert.deepEqual([...base.handle()!.reflect.placed.keys()].sort(), ['a', 'c'])
     // A worker that did not load: the layer fails, its layers go; a scene change tries again.
     fails.set('lost', new Error('构建线程出错'))
     const lost = add('sobj_d', new Mesh(keyed('lost'), materials.red))
@@ -718,11 +722,11 @@ test('buffers laid out again go at once, a dropped layer’s at the next sync (t
   const base = new TraceBase(gpu, scene, { incremental: false, builds: buildsOf() })
   assert.ok(await base.ready(5000))
   const first = base.handle()!
-  const nodesOf = (h: { layer: TraceLayer }) => (h.layer.stores.nodes as unknown as { value: object }).value
+  const nodesOf = (h: { reflect: TraceLayer }) => (h.reflect.stores.nodes as unknown as { value: object }).value
   const kept = nodesOf(first)
   assert.ok(released.size >= 4 && !released.has(kept), 'the first layout’s buffers let go, not the ones in use')
   base.drawn()
-  assert.ok(first.layer.dropped)
+  assert.ok(first.reflect.dropped)
   // A new geometry for a layer that let its arrays go: packed again in a new layer.
   add('sobj_b', new Mesh(keyed('b', new SphereGeometry(1, 8, 6)), materials.red))
   base.sync()
@@ -730,4 +734,114 @@ test('buffers laid out again go at once, a dropped layer’s at the next sync (t
   await until(base, ready('full'), 'packed again')
   assert.notEqual(base.handle()!.key, first.key)
   assert.ok(released.has(kept), 'at a later sync')
+})
+
+// --- S2 scene-probe-gi: both precisions served, and what the probes are told -----
+
+import { preExposure } from '../src/creative-scene/world/exposure.ts'
+import { gpuTestHooks } from '../src/creative-scene/render/gpu.ts'
+
+test('at tier 1 the reflections trace the original and the probes the proxies, ready once both are in; at tier 2 both trace the proxies (S2 design「底座的两份精度」)', async () => {
+  await MeshoptSimplifier.ready
+  const { gpu } = deviceOf()
+  const { scene, materials, add, keyed } = sceneWith()
+  add('sobj_a', new Mesh(keyed('a'), materials.red))
+  add('sobj_b', new Mesh(keyed('b', new SphereGeometry(1, 8, 6)), materials.red)).position.set(3, 0, 0)
+  const base = new TraceBase(gpu, scene, { incremental: false, builds: buildsOf() })
+  const seen: string[] = []
+  base.subscribe((s) => seen.push(s.state === 'ready' ? `ready/${s.tier}` : s.state))
+  assert.ok(await base.ready(5000))
+  assert.deepEqual(seen.filter((s) => s.startsWith('ready')), ['ready/full'], 'ready once, at tier 1: never at tier 2 first')
+  const h = base.handle()!
+  assert.notEqual(h.reflect, h.probes)
+  assert.deepEqual([...h.reflect.placed.keys()].sort(), ['a', 'b'], 'the reflections: the original')
+  assert.ok([...h.probes.placed.keys()].every((k) => /^[ab]@-?\d+$/.test(k)), `the probes: the proxies, ${[...h.probes.placed.keys()]}`)
+  // The e2e's AC-S2-8: the probes trace the original at tier 1, another key.
+  gpuTestHooks.probeLayer = 'original'
+  try {
+    assert.equal(base.handle()!.probes, h.reflect)
+    assert.notEqual(base.handle()!.key, h.key)
+  } finally {
+    gpuTestHooks.probeLayer = 'proxy'
+  }
+  base.drawn()
+  assert.ok(h.reflect.dropped && h.probes.dropped, 'an export lets both layers’ arrays go once drawn')
+
+  // Tier 2: the original past what the device binds (as the tier test above); the reflections trace the proxies the probes do.
+  const small = deviceOf(40_000)
+  const plane = sceneWith()
+  plane.add('sobj_a', new Mesh(new PlaneGeometry(1, 1, 60, 60), plane.materials.red))
+  const tier2 = new TraceBase(small.gpu, plane.scene, { incremental: false, builds: buildsOf() })
+  await until(tier2, ready('proxy'), 'to the proxies')
+  assert.equal(tier2.handle()!.reflect, tier2.handle()!.probes)
+  gpuTestHooks.probeLayer = 'original'
+  try {
+    assert.equal(tier2.handle()!.probes, tier2.handle()!.reflect, 'no original to trace at tier 2: the proxies still')
+  } finally {
+    gpuTestHooks.probeLayer = 'proxy'
+  }
+})
+
+test('the probes are told what changed: geometry by geometryVersion and where (takeEdits), light by lightingVersion, the exposure not (S2 design「编辑的分类」)', async () => {
+  await MeshoptSimplifier.ready
+  const { gpu } = deviceOf()
+  const { scene, materials, add, remove, keyed } = sceneWith()
+  const sun = new DirectionalLight(0xffffff, 3)
+  sun.userData.baseIntensity = 3
+  // The scene's ambient light is not exposed (objects/Lighting.tsx) and k is 1 wherever there is one; here it is
+  // scaled with the sun, so that only the exposure moves.
+  const fill = new AmbientLight(0xffffff, 0.5)
+  scene.add(sun, fill)
+  const a = add('sobj_a', new Mesh(keyed('a'), materials.red))
+  add('sobj_ground', new Mesh(keyed('builtin:ground@1:{}', new PlaneGeometry(200, 200)), materials.red))
+  const base = new TraceBase(gpu, scene, { incremental: false, builds: buildsOf() })
+  assert.ok(await base.ready(5000))
+  base.takeEdits()
+  const sync = () => (base.sync(), { geometry: base.geometryVersion, lighting: base.lightingVersion })
+  const still = sync()
+  assert.deepEqual(sync(), still, 'nothing changed: neither counts')
+  // The ground is left out of the bounds: the unit box alone.
+  assert.deepEqual([base.bounds.min.toArray(), base.bounds.max.toArray()], [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]])
+
+  // A move: a geometry change, edited where it was and where it is.
+  a.position.set(4, 0, 0)
+  scene.updateMatrixWorld()
+  assert.deepEqual(sync(), { ...still, geometry: still.geometry + 1 })
+  const edited = base.takeEdits()
+  assert.deepEqual([edited.min.toArray(), edited.max.toArray()], [[-0.5, -0.5, -0.5], [4.5, 0.5, 0.5]])
+  assert.ok(base.takeEdits().isEmpty(), 'taken once')
+  assert.deepEqual([base.bounds.min.x, base.bounds.max.x], [3.5, 4.5], 'the bounds follow')
+  // Hidden, and shown again: each a change.
+  a.visible = false
+  assert.equal(sync().geometry, still.geometry + 2)
+  a.visible = true
+  assert.equal(sync().geometry, still.geometry + 3)
+
+  // The exposure alone: the lights scaled by k, k with them; neither counts.
+  const lit = sync()
+  preExposure.value = 4
+  try {
+    sun.intensity = 3 * 4
+    fill.intensity = 0.5 * 4
+    assert.deepEqual(sync(), lit, 'the exposure is not a change of light')
+    // A light changed, unexposed: the lighting counts, the geometry not.
+    sun.color.set(0xffeedd)
+    assert.deepEqual(sync(), { ...lit, lighting: lit.lighting + 1 })
+    sun.position.set(1, 2, 3)
+    scene.updateMatrixWorld()
+    assert.equal(sync().lighting, lit.lighting + 2, 'the sun turned')
+    // A material: its row written again.
+    a.material = materials.blue
+    const recoloured = sync()
+    assert.equal(recoloured.lighting, lit.lighting + 3)
+    assert.equal(recoloured.geometry, lit.geometry, 'a material is no geometry change')
+  } finally {
+    preExposure.value = 1
+  }
+  // One gone: a change where it was.
+  remove(a)
+  base.takeEdits()
+  assert.equal(sync().geometry, lit.geometry + 1)
+  assert.deepEqual(base.takeEdits().max.toArray(), [4.5, 0.5, 0.5])
+  assert.ok(base.bounds.isEmpty(), 'nothing but the ground')
 })

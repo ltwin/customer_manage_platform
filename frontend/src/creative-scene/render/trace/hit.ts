@@ -102,7 +102,7 @@ function atHit(fn: (i: PatternInput) => PatternOut, base: Omit<PatternInput, 'wi
 }
 
 export function hitShading(handle: TraceHandle, scene: Scene): HitShading {
-  const { layer, tables } = handle
+  const { reflect: layer, tables } = handle
   const table = tables.node
   const { transforms, attributes } = layer.stores
   const colors = layer.colorsNode

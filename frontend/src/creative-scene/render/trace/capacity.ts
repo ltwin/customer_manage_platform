@@ -67,13 +67,15 @@ export type Tier = 'full' | 'proxy' | 'tooLarge'
 const binds = (s: LayerSize, maxBinding: number) => s.largest * SPARE <= maxBinding && s.depth <= STACK_DEPTH
 
 /**
- * Tier 1 when the original fits the budget and the device; tier 2 when the
- * proxies fit the device; else too large. original is null when it was not
- * built (buildsOriginal). proxy is null until the proxies are built: then
- * anything but 'full' says to build them.
+ * Tier 1 when the original and the proxies, both served there (S2 design
+ * 「底座的两份精度」: the probes trace the proxies), fit the budget together
+ * and the device each; tier 2 when the proxies fit the device; else too
+ * large. original is null when it was not built (buildsOriginal); proxy null
+ * when only the original's size is known, which is judged alone.
  */
 export function tierOf(original: LayerSize | null, proxy: LayerSize | null, budget: number, maxBinding: number): Tier {
-  if (original && original.bytes * SPARE <= budget && binds(original, maxBinding)) return 'full'
+  const proxies = !proxy || binds(proxy, maxBinding)
+  if (original && proxies && (original.bytes + (proxy?.bytes ?? 0)) * SPARE <= budget && binds(original, maxBinding)) return 'full'
   if (proxy && binds(proxy, maxBinding)) return 'proxy'
   return 'tooLarge'
 }

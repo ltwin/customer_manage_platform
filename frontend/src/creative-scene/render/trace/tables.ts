@@ -5,6 +5,7 @@ import { materialEntry } from '../../materials/catalog.ts'
 import { unknownGrey } from '../../materials/instances.ts'
 import { patternFns, type TSLNode } from '../../materials/patterns.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
+import { preExposure } from '../../world/exposure.ts'
 import type { Lighting } from './collect.ts'
 
 // What a hit point is shaded with, in one storage buffer of vec4s (S1
@@ -93,6 +94,11 @@ export class TraceTables {
   /** Rows there is room for: the lights start after the materials' room. */
   private room = { materials: 0, lights: 0 }
   private readonly release: (attribute: object) => void
+  /** The scene's ambient lights added up, exposed, as setLights last wrote them: L_amb, which the world-space composite takes out of the materials' indirect light (S2 design「合成」). */
+  readonly ambient = new Color()
+  /** setLights' header and light rows unexposed, and the environment's texture: what relit compares with. */
+  private lit: number[] = []
+  private environment: string | null = null
 
   /** @param release lets a buffer's GPU copy go (SceneGPU.release) */
   constructor(release: (attribute: object) => void = () => {}) {
@@ -154,8 +160,13 @@ export class TraceTables {
     this.dirty(HEADER + r * MATERIAL_ROW, MATERIAL_ROW)
   }
 
-  /** The header and the light rows, every frame after applyExposure (S1 design「命中点着色」). */
-  setLights(lighting: Lighting, scene: Scene) {
+  /**
+   * The header and the light rows, every frame after applyExposure (S1
+   * design「命中点着色」). Whether the light a hit is lit by changed since
+   * the last call, unexposed (S2 design「编辑的分类」): the exposure alone
+   * moving does not make the probes gather again.
+   */
+  setLights(lighting: Lighting, scene: Scene): boolean {
     const { lights, ambient } = lighting
     this.reserve(this.room.materials, lights.length)
     const f = this.f32
@@ -165,6 +176,30 @@ export class TraceTables {
     lights.forEach((l, i) => this.writeLight(first + i * LIGHT_ROW, l))
     this.dirty(0, HEADER)
     if (lights.length > 0) this.dirty(first, lights.length * LIGHT_ROW)
+    this.ambient.copy(ambient)
+    return this.relit(scene, first, lights.length)
+  }
+
+  /**
+   * The header and the light rows as last written, the exposure k taken out
+   * of what it scales (ambient, environment intensity, the lights' colour ×
+   * intensity), against the last call's: a relative 1e-5 apart or more is a
+   * change (they come through float32 and a division by k).
+   */
+  private relit(scene: Scene, first: number, lights: number): boolean {
+    const f = this.f32
+    const k = preExposure.value
+    const now = Array.from(f.subarray(0, (first + lights * LIGHT_ROW) * 4))
+    for (const at of [4, 5, 6, 8]) now[at] /= k
+    for (let i = 0; i < lights; i++) for (const c of [8, 9, 10]) now[(first + i * LIGHT_ROW) * 4 + c] /= k
+    // The rows between the header and the lights are the materials': restyle counts those.
+    now.splice(HEADER * 4, (first - HEADER) * 4)
+    const environment = scene.environment?.uuid ?? null
+    const was = this.lit
+    this.lit = now
+    const changed = environment !== this.environment || was.length !== now.length || now.some((x, i) => Math.abs(x - was[i]) > 1e-5 * Math.max(Math.abs(x), Math.abs(was[i]), 1e-30))
+    this.environment = environment
+    return changed
   }
 
   private writeLight(vec4: number, l: Light) {

@@ -1168,7 +1168,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
         return performance.now() - started
       }
       gpuTestHooks.traceDepth = async (width, bias) => {
-        const layer = engine === 'realtime_gi' ? r.trace().handle()?.layer : undefined
+        const layer = engine === 'realtime_gi' ? r.trace().handle()?.reflect : undefined
         if (!layer) return null
         const { depthCheck } = await import('./render/trace/checks.ts')
         return depthCheck(gpu.renderer, state.scene, state.camera as PerspectiveCamera, layer, width, bias)
