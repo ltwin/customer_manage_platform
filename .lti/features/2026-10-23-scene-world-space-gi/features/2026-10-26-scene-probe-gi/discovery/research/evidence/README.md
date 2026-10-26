@@ -50,3 +50,26 @@ SCENE_E2E_ONLY="gi-baseline" SCENE_E2E_GI_BASELINE=<目录> SCENE_E2E_GI_COMPAT=
 SCENE_E2E_ONLY="trace perf: AC-S1-7" SCENE_E2E_TRACE_PERF=<目录> \
   CREATIVE_SCENE_URL=http://localhost:5192 node scripts/creative-scene.e2e.mjs      # 约 6 分钟，大厅一项按 S1 的阈值报 FAIL
 ```
+
+## `after/probes-5.1.json`：探针的数值（任务 5.1）
+
+代码：任务 5.1 的提交。`probes: AC-S2-1 and AC-S2-2` 用例的输出，5.2 据此判定：
+
+- `views`：AC-S2-2 的 5 个视图（`cornell`、`thin-wall`，`thin-wall` 的两个远机位 `@level1`、`@level2`，`physical-noon`），各自的区域在 `gi-regions.json`。每个区域记录以下各项（亮度，曝光与导出相同）：
+  - 合成用的间接光辐照度（`drawn`）；
+  - 探针单独的值与覆盖度；
+  - 环境贴图的值；
+  - 逐像素参考（每像素 256 条路径，每条 3 次命中，只有最后一次读探针）；
+  - 相对误差。
+
+  另有整图平均差和每级探针的状态。不计像素自己的环境光灯（合成里单独加）。
+- `lit_wall_in_view`、`left_wall_sweep`：AC-S2-1 的固定点与扫视，取法与 `before/` 相同。扫视多了逐点的比值（`perPoint`，每个点在它可见的各角度之间、相对它自己的均值）。
+- 对照图（每个视图三张：导出、探针的辐照度、参考的辐照度，后两张同一曝光）只在本机生成，5.2 选图交 owner。
+
+**重新生成**：
+
+```sh
+cd frontend
+SCENE_E2E_ONLY="probes: AC-S2-1 and AC-S2-2" SCENE_E2E_PROBES=<目录> \
+  CREATIVE_SCENE_URL=http://localhost:5192 node scripts/creative-scene.e2e.mjs      # 约 70 秒，写 probes.json 和 15 张图
+```

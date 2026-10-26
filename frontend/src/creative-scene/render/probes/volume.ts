@@ -196,9 +196,7 @@ export class ProbeVolume {
     this.nodes.levels.value = this.levels
     const periods = this.mode === 'picture' || warming ? [1, 1, 1, 1, 1] : periodsFor(this.source.slots.length)
     const due = Array.from({ length: this.levels }, (_, l) => l).filter((l) => isDue(l, frame, periods))
-    // The forward direction's horizontal part, not normalised (cascade.ts originCell).
-    const forward = [look.x, 0, look.z] as const
-    for (const l of due) (this.nodes.origins[l].value as Vector4).set(...originCell(l, [eye.x, eye.y, eye.z], forward), 0)
+    for (const l of due) (this.nodes.origins[l].value as Vector4).set(...originCell(l, [eye.x, eye.y, eye.z], [look.x, look.y, look.z]), 0)
     this.follow()
     const u = this.data.u
     const physical = this.scene.userData.physical as PhysicalExposure | undefined

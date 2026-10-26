@@ -74,11 +74,20 @@ export type HitShading = {
    * casts its shadow.
    */
   radiance(origin: TSLNode, dir: TSLNode, seed: TSLNode, indirect: (P: TSLNode, n: TSLNode) => TSLNode, fill: TSLNode): TSLNode
+  /**
+   * radiance's hit and where a path goes on from it (checks.ts's per-pixel
+   * reference): L and t as radiance gives them; on a front face, the point,
+   * the point a ray leaves from (lifted), the normal towards the ray and the
+   * diffuse albedo kd · c (front 1); a miss or a back face, front 0.
+   */
+  bounce(origin: TSLNode, dir: TSLNode, seed: TSLNode, indirect: (P: TSLNode, n: TSLNode) => TSLNode, fill: TSLNode): Bounce
   /** The environment's irradiance at a normal, exposed, turned as the scene's materials turn it: what the probes fall back to. */
   environmentIrradiance(n: TSLNode): TSLNode
   /** Before each frame: the environment as the scene lights with it now (a new sky is a new texture, not a new shader). */
   update(): void
 }
+
+export type Bounce = { L: TSLNode; t: TSLNode; P: TSLNode; lifted: TSLNode; n: TSLNode; albedo: TSLNode; front: TSLNode }
 
 /** What radiance gives as the distance of a ray that hits nothing: past any probe's depth range. */
 export const MISS = 1e4
@@ -94,7 +103,7 @@ export function pcg(v: TSLNode): TSLNode {
 }
 
 /** A uniform number in [0, 1) from a hash. */
-const unit = (h: TSLNode) => float(h.shiftRight(uint(8))).div(16777216)
+export const unit = (h: TSLNode) => float(h.shiftRight(uint(8))).div(16777216)
 
 /** The unit normal an encoded w stands for (normals.ts decodeNormal). */
 function decodeNormal(w: TSLNode): TSLNode {
@@ -437,13 +446,14 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     return e
   }
 
-  function radiance(origin: TSLNode, dir: TSLNode, seed: TSLNode, indirect: (P: TSLNode, n: TSLNode) => TSLNode, fill: TSLNode): TSLNode {
-    const out = vec4(environmentAt(dir, float(0.5)), MISS).toVar()
+  function bounce(origin: TSLNode, dir: TSLNode, seed: TSLNode, indirect: (P: TSLNode, n: TSLNode) => TSLNode, fill: TSLNode): Bounce {
+    const out = { L: environmentAt(dir, float(0.5)).toVar(), t: float(MISS).toVar(), P: vec3(0).toVar(), lifted: vec3(0).toVar(), n: vec3(0, 1, 0).toVar(), albedo: vec3(0).toVar(), front: float(0).toVar() }
     const hit = traceFirst(layer, origin, dir).toVar() as Hit
     If(hit.get('didHit'), () => {
       const t = hit.get('dist').toVar()
       If(hit.get('side').lessThan(0), () => {
-        out.assign(vec4(0, 0, 0, t.negate()))
+        out.L.assign(vec3(0))
+        out.t.assign(t.negate())
       }).Else(() => {
         // The cone a probe's ray covers, from a point.
         const { P, n, s, lifted } = surfaceHit(origin, dir, hit, t, float(0), float(PROBE_SPREAD))
@@ -455,16 +465,29 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
         const Favg = float(0.04).add(float(0.96).mul(0.047619))
         const c = float(1).sub(FssEss.add(FssEss.mul(Favg).div(float(1).sub(float(1).sub(Ess).mul(Favg))).mul(float(1).sub(Ess))))
         const kd = s.albedo.mul(float(1).sub(s.metal))
+        const albedo = kd.mul(c).toVar()
         const E = directAt(P, n, lifted, seed).add(indirect(P, n)).add(header(1).xyz.mul(fill))
-        out.assign(vec4(kd.mul(c).mul(E).div(Math.PI).add(s.emission), t))
+        out.L.assign(albedo.mul(E).div(Math.PI).add(s.emission))
+        out.t.assign(t)
+        out.P.assign(P)
+        out.lifted.assign(lifted)
+        out.n.assign(n)
+        out.albedo.assign(albedo)
+        out.front.assign(1)
       })
     })
     return out
   }
 
+  function radiance(origin: TSLNode, dir: TSLNode, seed: TSLNode, indirect: (P: TSLNode, n: TSLNode) => TSLNode, fill: TSLNode): TSLNode {
+    const b = bounce(origin, dir, seed, indirect, fill)
+    return vec4(b.L, b.t)
+  }
+
   return {
     shade,
     radiance,
+    bounce,
     // π: the roughest level is the cosine-weighted mean radiance, as EnvironmentNode's irradiance multiplies it.
     environmentIrradiance: (n) => environmentAt(n, float(1)).mul(Math.PI),
     update() {

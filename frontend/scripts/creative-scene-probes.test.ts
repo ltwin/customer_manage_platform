@@ -50,16 +50,19 @@ test('a level once on stays down to 3/4 of where it came on, and never past what
 })
 
 test('a box sits 3/4 ahead of the camera, 1/4 behind, centred up and down, on its own grid', () => {
-  const eye = [0.1, 1.4, 2.1] as const
-  // Looking along −Z: level 0 is 4 m wide, its centre 1 m ahead.
-  assert.deepEqual(originCell(0, eye, [0, 0, -1]), [-8, -3, -4])
+  // The view's world is Z up (space.ts): the camera 1.4 m high.
+  const eye = [0.1, 2.1, 1.4] as const
+  // Looking along −Y (the editor's front): level 0 is 4 m wide, its centre 1 m ahead.
+  assert.deepEqual(originCell(0, eye, [0, -1, 0]), [-8, -4, -3])
   // Cells are spacing-sized: the box's lowest corner, in metres, a multiple of 0.25.
-  const [x, y, z] = originCell(0, eye, [0, 0, -1]).map((c) => c * spacingOf(0))
-  assert.ok(x <= 0.1 - 2 && x > 0.1 - 2 - 0.25 && y <= 1.4 - 2 && z <= 2.1 - 1 - 2 && z > 2.1 - 1 - 2 - 0.25, `${x}, ${y}, ${z}`)
+  const [x, y, z] = originCell(0, eye, [0, -1, 0]).map((c) => c * spacingOf(0))
+  assert.ok(x <= 0.1 - 2 && x > 0.1 - 2 - 0.25 && y <= 2.1 - 1 - 2 && y > 2.1 - 1 - 2 - 0.25 && z <= 1.4 - 2, `${x}, ${y}, ${z}`)
   // Looking straight down, the horizontal part is zero: centred on the camera.
-  assert.deepEqual(originCell(2, eye, [0, -1, 0]), [-8, -7, -6])
-  // Level 2, 16 m wide, looking along +X tilted down: the horizontal part, not normalised, sets how far ahead.
-  assert.deepEqual(originCell(2, [0, 0, 0], [0.5, -0.866, 0]), [-6, -8, -8])
+  assert.deepEqual(originCell(2, eye, [0, 0, -1]), [-8, -6, -7])
+  // Level 2, 16 m wide, looking along +X tilted down: the horizontal part, not normalised, sets how far ahead; the
+  // box stays centred on the camera's height.
+  assert.deepEqual(originCell(2, [0, 0, 0], [0.5, 0, -0.866]), [-6, -8, -8])
+  assert.deepEqual(originCell(2, [0, 0, 0], [0, 0.5, -0.866]), [-8, -6, -8])
 })
 
 test('slots wrap each axis modulo 16, negative cells included (Euclidean, not WGSL’s %)', () => {

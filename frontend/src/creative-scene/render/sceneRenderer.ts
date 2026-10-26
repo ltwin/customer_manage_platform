@@ -700,6 +700,12 @@ export class SceneRenderer {
     return this.probes && { ...this.probes.stats, drawn: this.built?.key.includes(`+probes-${this.probes.serial}`) === true }
   }
 
+  /** The probes and the layer the last render() drew with (e2e, checks.ts probeCheck); null without the probes. */
+  get world(): { volume: ProbeVolume; handle: TraceHandle } | null {
+    const handle = this.trace().handle()
+    return this.probes && handle && this.probeStats?.drawn ? { volume: this.probes, handle } : null
+  }
+
   /** What the last render() drew (e2e performance checks, P2's statistics overlay). */
   get lastFrame(): FrameStats {
     return this.stats

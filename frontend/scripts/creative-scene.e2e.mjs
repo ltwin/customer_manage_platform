@@ -6271,6 +6271,40 @@ window.__regions = async (scene, kind, side, boxes) => {
     shooter.close();
   }
 };
+// S2's AC-S2-2: one lit picture at side, and the indirect irradiance its probes give each region against a
+// per-pixel reference (gpuTestHooks.probeRegions, render/trace/checks.ts probeCheck), the two as grey pictures
+// at one exposure (twice the reference's mean white; nothing hit dark purple).
+window.__probeRegions = async (scene, side, request) => {
+  const b64 = (bytes) => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  };
+  window.__sceneGPU.probeRegions = { ...request };
+  const shooter = await openShooter(scene, {}, 'lit');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const blob = await shooter.shoot(framing, { kind: 'lit', type: 'image/png' });
+    const result = window.__sceneGPU.probeRegions.result;
+    if (!result) return { error: 'the picture drew no probes' };
+    const { drawn, reference, ...numbers } = result;
+    const known = reference.filter((v) => v !== null);
+    const white = (2 * known.reduce((a, v) => a + v, 0)) / Math.max(known.length, 1);
+    const srgb = (v) => 255 * Math.min(1, Math.max(0, v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055));
+    const grey = async (values) => {
+      const canvas = new OffscreenCanvas(numbers.width, numbers.height);
+      const c2d = canvas.getContext('2d');
+      const img = c2d.createImageData(numbers.width, numbers.height);
+      values.forEach((v, i) => img.data.set(v === null ? [40, 0, 40, 255] : [srgb(v / white), srgb(v / white), srgb(v / white), 255], 4 * i));
+      c2d.putImageData(img, 0, 0);
+      return b64(new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()));
+    };
+    return { ...numbers, white, png: b64(new Uint8Array(await blob.arrayBuffer())), drawnPng: await grey(drawn), referencePng: await grey(reference) };
+  } finally {
+    window.__sceneGPU.probeRegions = null;
+    shooter.close();
+  }
+};
 // One picture as a PNG, base64, through the backend asked for (forceWebGL: the WebGL2 one).
 window.__png = async (scene, kind, side, use, forceWebGL) => {
   window.__sceneGPU.forceWebGL = forceWebGL;
@@ -9565,7 +9599,8 @@ import { TraceBase } from '/src/creative-scene/render/trace/base.ts';
 import { ProbeVolume } from '/src/creative-scene/render/probes/volume.ts';
 import { makeMaterial } from '/src/creative-scene/materials/instances.ts';
 import { PROBES, spacingOf } from '/src/creative-scene/render/probes/cascade.ts';
-// A floor, a wall the sun lights from +x, a solid block; no environment (a miss is black).
+// A floor, a wall the sun lights from +x, a solid block; no environment (a miss is black). Z up, as the editor's
+// world is (space.ts): the probes' boxes reach ahead horizontally.
 window.__probeSmoke = async (frames) => {
   const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' });
   const scene = new THREE.Scene();
@@ -9580,19 +9615,20 @@ window.__probeSmoke = async (frames) => {
     g.add(m);
     scene.add(g);
   };
-  add('floor', [8, 0.1, 8], [0, -0.05, 0], '#ffffff');
-  add('wall', [0.1, 3, 8], [-2, 1.5, 0], '#ffffff');
-  add('block', [1, 1, 1], [1, 0.5, 1], '#ff0000');
+  add('floor', [8, 8, 0.1], [0, 0, -0.05], '#ffffff');
+  add('wall', [0.1, 8, 3], [-2, 0, 1.5], '#ffffff');
+  add('block', [1, 1, 1], [1, -1, 0.5], '#ff0000');
   const sun = new THREE.DirectionalLight(0xffffff, 3);
-  sun.position.set(5, 4, 1);
+  sun.position.set(5, -1, 4);
   sun.castShadow = true;
   scene.add(sun, sun.target);
   scene.updateMatrixWorld();
   const base = new TraceBase(gpu, scene, { incremental: false });
   if (!(await base.ready(30000))) return { error: 'not ready', state: base.state };
   const camera = new THREE.PerspectiveCamera(50, 1.5, 0.1, 100);
-  camera.position.set(0, 1.4, 3);
-  camera.lookAt(0, 1, 0);
+  camera.up.set(0, 0, 1);
+  camera.position.set(0, -3, 1.4);
+  camera.lookAt(0, 0, 1);
   camera.updateMatrixWorld();
   const volume = new ProbeVolume(gpu.renderer, base.handle(), scene, base, 'picture', (a) => gpu.release(a));
   const started = performance.now();
@@ -9612,10 +9648,10 @@ window.__probeSmoke = async (frames) => {
   };
   const level0 = Array.from({ length: PROBES }, (_, p) => p);
   const finite = d.irradiance.every(Number.isFinite) && d.offsets.every(Number.isFinite);
-  // The block's whole inside (0.5–1.5, 0–1, 0.5–1.5): 4 × 4 × 4 probe centres.
-  const inBlock = level0.filter((p) => { const [x, y, z] = at(p); return Math.abs(x - 1) < 0.5 && y > 0 && y < 1 && Math.abs(z - 1) < 0.5; });
-  const byWall = level0.filter((p) => { const [x, y, z] = at(p); return x > -1.9 && x < -1.4 && y > 1 && y < 2 && Math.abs(z) < 1; });
-  const open = level0.filter((p) => { const [x, y, z] = at(p); return x > -1 && x < 0 && y > 1 && y < 2 && Math.abs(z) < 1; });
+  // The block's whole inside (0.5–1.5, −1.5–−0.5, 0–1): 4 × 4 × 4 probe centres.
+  const inBlock = level0.filter((p) => { const [x, y, z] = at(p); return Math.abs(x - 1) < 0.5 && Math.abs(y + 1) < 0.5 && z > 0 && z < 1; });
+  const byWall = level0.filter((p) => { const [x, y, z] = at(p); return x > -1.9 && x < -1.4 && z > 1 && z < 2 && Math.abs(y) < 1; });
+  const open = level0.filter((p) => { const [x, y, z] = at(p); return x > -1 && x < 0 && z > 1 && z < 2 && Math.abs(y) < 1; });
   const mean = (list, f) => list.reduce((n, p) => n + f(p), 0) / Math.max(list.length, 1);
   const out = {
     ms, allocated: volume.allocated, levels: volume.levels, finite, origins: d.origins.slice(0, volume.levels),
@@ -9716,6 +9752,76 @@ if (process.env.SCENE_E2E_PROBES) await check('probes: S2-U1, compute writes an 
     assert.equal(out.backend, 'webgpu')
     assert.equal(out.stored, out.texels, 'every texel loads back as written')
     assert.equal(out.sampled, out.samples, `every sample bilinear within tolerance (worst ${out.worst})`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+/**
+ * The views AC-S2-2 compares with the per-pixel reference (S2 design「验证与交付」): the three scenes from their
+ * cameras, and thin-wall twice more from farther, its walls in level 1 alone (from a corner across the room,
+ * 5.5 m: past level 0's 3 m ahead) and in level 2 alone (from outside, 5.5 m off the window at 85 mm, the room
+ * 6–9.5 m away: past level 1's 6 m, two cells inside level 2's 12 m; the room is wholly in level 1's box from
+ * anywhere inside it). gi-regions.json names each view's regions.
+ */
+const probeViews = [
+  { view: 'cornell', scene: 'cornell' },
+  { view: 'thin-wall', scene: 'thin-wall' },
+  { view: 'thin-wall@level1', scene: 'thin-wall', camera: { position: [1.9, 1.5, 1.9], rotation: [0, 0.382683, 0, 0.92388] } },
+  { view: 'thin-wall@level2', scene: 'thin-wall', camera: { position: [-7.5, 1.6, 0], rotation: [0, -0.707107, 0, 0.707107], focal_mm: 85 } },
+  { view: 'physical-noon', scene: 'physical-noon' },
+]
+
+// SCENE_E2E_PROBES (=<dir>: the pictures and probes.json there): the numbers S2's AC-S2-1 and AC-S2-2 are
+// judged by (S2 tasks 5.1, judged in 5.2). AC-S2-2: each view's lit picture, its regions' indirect irradiance
+// from the probes against the per-pixel reference (256 paths a pixel, 3 hits, the probes read at the last), and
+// the two irradiances as pictures. AC-S2-1: backlit-room's left wall, out of the sun, at 45° and 100° and swept
+// from 30° to 120° (pointAcrossViews, pointsAcrossViews), as gi-baseline took it before S2.
+if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the numbers: the left wall across views, each region against a per-pixel reference', async () => {
+  const dir = process.env.SCENE_E2E_PROBES === '1' ? null : process.env.SCENE_E2E_PROBES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const record = { machine: machineInfo(), chromium: gpu.version(), views: {} }
+    for (const v of probeViews) {
+      const scene = shooterScene(v.scene, (s) => {
+        realtimeGI(s)
+        const shot = s.objects.find((o) => o.kind === 'camera')
+        if (v.camera) Object.assign(shot.transform, { position: v.camera.position, rotation: v.camera.rotation })
+        if (v.camera?.focal_mm) shot.camera.focal_mm = v.camera.focal_mm
+      })
+      const out = await page.evaluate(([s, r]) => window.__probeRegions(s, 1024, r), [scene, { regions: giRegions[v.view] ?? {}, width: 384, passes: 32 }])
+      assert.ok(!out.error, `${v.view}: ${out.error}`)
+      const { png, drawnPng, referencePng, ...numbers } = out
+      record.views[v.view] = numbers
+      const regions = Object.entries(numbers.regions).map(([n, r]) => `${n} ${r.error >= 0 ? '+' : ''}${(r.error * 100).toFixed(0)} % (cover ${r.coverage.toFixed(2)})`)
+      console.log(`  ${v.view}: ${numbers.pathsPerPixel} paths a pixel in ${numbers.ms} ms, levels ${JSON.stringify(numbers.levels)}; mean difference ${(numbers.meanDifference * 100).toFixed(1)} %; ${regions.join(', ') || 'no regions yet'}`)
+      if (dir) for (const [kind, data] of [['lit', png], ['probes', drawnPng], ['reference', referencePng]]) await writeFile(`${dir}/${v.view}-${kind}.png`, Buffer.from(data, 'base64'))
+      for (const [n, r] of Object.entries(numbers.regions)) assert.ok(r.pixels > 0 && Number.isFinite(r.error), `${v.view} ${n}: ${JSON.stringify(r)}`)
+      assert.ok(Number.isFinite(numbers.meanDifference), `${v.view}: the mean difference ${numbers.meanDifference}`)
+    }
+    const views = await pointAcrossViews(page, 'backlit-room', [-2.49, 1.2, 1.4], [45, 100])
+    record.lit_wall_in_view = { scene: 'backlit-room', point: [-2.49, 1.2, 1.4], views, ratio: views[1].luma / views[0].luma }
+    const wall = [-2.4, -1.2, 0, 1.2, 2.4].flatMap((z) => [0.9, 1.8].map((y) => [-2.49, y, z]))
+    const sweep = await pointsAcrossViews(page, 'backlit-room', wall, [30, 45, 60, 75, 90, 105, 120])
+    const mean = sweep.views.reduce((a, s) => a + s.mean, 0) / sweep.views.length
+    // Two readings (evidence/README.md): each view's mean over all views'; and each point at each yaw it is in view
+    // at over its own mean there, which leaves out which part of the wall a view shows.
+    const perPoint = wall.map((_, k) => {
+      const seen = sweep.views.map((s) => s.lumas[k]).filter((l) => l !== null)
+      const own = seen.reduce((a, l) => a + l, 0) / seen.length
+      return sweep.views.map((s) => (s.lumas[k] === null ? null : s.lumas[k] / own))
+    })
+    const pointRatios = perPoint.flat().filter((r) => r !== null)
+    record.left_wall_sweep = { ...sweep, ratios: sweep.views.map((s) => s.mean / mean), perPoint, perPointRange: [Math.min(...pointRatios), Math.max(...pointRatios)] }
+    console.log(`  AC-S2-1: the left wall at 100° over 45° ${record.lit_wall_in_view.ratio.toFixed(3)}; swept, each view over their mean ${record.left_wall_sweep.ratios.map((r) => r.toFixed(3)).join(', ')}; each point over its own mean ${record.left_wall_sweep.perPointRange.map((r) => r.toFixed(3)).join('–')}`)
+    if (dir) await writeFile(`${dir}/probes.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n'))
   } finally {
     await gpu.close()
   }

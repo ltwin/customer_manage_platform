@@ -84,7 +84,30 @@
 
   顺带修了 4.2 的一个缺陷：`environmentIrradiance` 返回的是 PMREM 最粗一级，即 E/π，少乘了 π（three 的 `EnvironmentNode` 会乘），探针光线却把它当 E 用。结果是探针覆盖不到的命中点，二次反弹的环境光偏暗 π 倍。现在返回 E。命中点着色沿用 three 的 E/π 约定，探针那份除以 π 后再混合。
   另记一项给 5.5：视口接入层时的长任务变长了，第 4 到 6 个从 250–330 ms 增到 470–675 ms（反射着色器多了探针查找）
-- [ ] 5.1 e2e 用例 `SCENE_E2E_PROBES` 与 `gpuTestHooks`（`probeLayer`、`probeStats`、`probeRegions`、`probeFreeze`）；逐像素参考搬进 `checks.ts`（每像素 256 条路径、3 次命中、最后一次才读探针）。完成判据：AC-S2-1 的比值和扫视、AC-S2-2 的区域辐照度（含 `thin-wall` 的两个新机位）能跑出数值
+- [x] 5.1 e2e 用例 `SCENE_E2E_PROBES` 与 `gpuTestHooks`（`probeLayer`、`probeStats`、`probeRegions`、`probeFreeze`）；逐像素参考搬进 `checks.ts`（每像素 256 条路径、3 次命中、最后一次才读探针）。完成判据：AC-S2-1 的比值和扫视、AC-S2-2 的区域辐照度（含 `thin-wall` 的两个新机位）能跑出数值
+
+  结果：`probes:` 的 4 个用例通过，数值在 `evidence/after/probes-5.1.json`，判定留给 5.2：
+  - AC-S2-2，区域误差（合成用的间接光对逐像素参考）：
+    - `cornell`：红墙旁地面 +13%，立方体朝红墙的面 +19%，金属球 −3%；
+    - `thin-wall`：窗下墙面 +9%，墙角 +8%，阴影里的地面 +12%，天花板 +20%；
+    - `@level1`：+7% 到 +13%；
+    - `@level2`：隔窗的室内 +18%，墙外 −2%；
+    - `physical-noon`：−3% 到 +6%；
+    - 整图平均差 5.5%–13.1%。
+    `@level1` 的探针图里，天花板接缝和窗下沿有成串的亮斑；
+  - AC-S2-1：固定点 100° 对 45° 为 1.001。扫视按「各角度可见点的均值」是 0.896–1.064，按「每个点在各角度之间」是 0.977–1.029；
+  - 钩子：`probeStats`（4.3 已加），`probeRegions`（导出最后一帧之后用这张图的探针体跑 `checks.ts` 的 `probeCheck`，`host/render.ts` 的 `shoot` 调用）。`probeFreeze` 属于 S2-U9 的开关，随 5.4 加；
+  - `thin-wall` 的两个远机位定义在用例的 `probeViews` 里。`@level1` 从房间一角看对角，相距 5.5 m，超出第 0 级前方的 3 m。`@level2` 在屋外隔窗看，用 85 mm 镜头，室内离摄像机 6–9.5 m。在屋里怎么站，房间都整个落在第 1 级的盒子里，所以第 2 级只能从屋外测。
+
+  修了 4.1/4.2 的一个缺陷：编辑器的视图世界 Z 朝上（`space.ts`），`originCell` 却按 Y 朝上取「水平分量」。后果有两个：
+  - 沿视图 y 轴看的摄像机，盒子不往前推，第 2 级只覆盖到前方 8 m。`physical-noon` 9 m 外的墙因此覆盖度为 0，误差 −28%；
+  - 俯仰时盒子会上下偏移。
+  改为按 Z 朝上之后：`physical-noon` 的整图平均差从 17.6% 降到 5.5%，`cornell` 从 16.2% 降到 13.0%，`thin-wall` 天花板从 +26% 降到 +20%。单测和冒烟夹具都改成了 Z 朝上。
+
+  实现上的局部调整，记理由：
+  - 参考的路径追原始几何（`handle.reflect`），不追代理，以免代理的误差混进「探针自身的误差」；
+  - 参考和像素的表面点都从主光线命中得到，不读光栅的深度和法线：一个 pass 里就能拿到命中点、法线和 `kd · c`；
+  - `hit.ts` 的 `radiance` 拆出 `bounce`，给出继续路径需要的命中点和反照率。探针光线的结果不变
 - [ ] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
 - [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner

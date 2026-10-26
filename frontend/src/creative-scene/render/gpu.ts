@@ -308,6 +308,12 @@ export const gpuTestHooks = {
   traceShade: null as ShadeMode | null,
   /** The viewport's layer against its raster, a primary ray a pixel (render/trace/checks.ts; Viewport.tsx LookView, e2e only); null till it is ready. */
   traceDepth: null as ((width?: number, bias?: number) => Promise<DepthCheck | null>) | null,
+  /**
+   * Set before an export: its first lit picture drawn with the probes reads, after its last frame, the regions'
+   * (fractions of the picture: x0, y0, x1, y1) irradiance from the probes and from a per-pixel reference
+   * (render/trace/checks.ts probeCheck; host/render.ts shoot) into result.
+   */
+  probeRegions: null as { regions: Record<string, readonly number[]>; width?: number; passes?: number; result?: unknown } | null,
   /** What the probes trace (render/trace/base.ts handle): the proxies, as always; 'original' at tier 1 traces the original instead, for S2's AC-S2-8. */
   probeLayer: 'proxy' as 'proxy' | 'original',
   /** The same rays shaded at their hits against the raster, mesh by mesh (AC-S1-2; as traceDepth). */

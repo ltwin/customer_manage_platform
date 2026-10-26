@@ -53,15 +53,16 @@ export function activeLevels(allocated: number, farthest: number, previous: numb
 type Vec3 = readonly [number, number, number]
 
 /**
- * Level k's box placed for a camera at eye looking along forward (world
- * space, Y up): the cell its lowest corner is in. The box reaches 3/4 of
- * its width ahead along forward's horizontal part, which is not normalised:
- * looking straight down the box falls back to centred on the camera.
+ * Level k's box placed for a camera at eye looking along look (the view's
+ * world space, Z up: space.ts): the cell its lowest corner is in. The box
+ * reaches 3/4 of its width ahead along look's horizontal part, which is not
+ * normalised: looking straight down the box falls back to centred on the
+ * camera; vertically it is centred on the camera.
  */
-export function originCell(k: number, eye: Vec3, forward: Vec3): [number, number, number] {
+export function originCell(k: number, eye: Vec3, look: Vec3): [number, number, number] {
   const s = spacingOf(k)
   const w = widthOf(k)
-  const centre = [eye[0] + (forward[0] * w) / 4, eye[1], eye[2] + (forward[2] * w) / 4]
+  const centre = [eye[0] + (look[0] * w) / 4, eye[1] + (look[1] * w) / 4, eye[2]]
   return centre.map((c) => Math.floor((c - w / 2) / s)) as [number, number, number]
 }
 

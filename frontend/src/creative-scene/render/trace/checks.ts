@@ -9,10 +9,11 @@ import { preExposure } from '../../world/exposure.ts'
 import { gpuOf } from '../gpu.ts'
 import type { TraceHandle } from './base.ts'
 import { collectLights, collectMeshes, type Slot, type Traced } from './collect.ts'
-import { hitShading, type ShadeMode } from './hit.ts'
+import { hitShading, pcg, unit, type ShadeMode } from './hit.ts'
 import type { TraceLayer } from './layer.ts'
-import { cellOf, slotOf as probeSlot } from '../probes/cascade.ts'
-import { cellNode, slotNode } from '../probes/lookup.ts'
+import { AMBIENT_FILL, cellOf, PROBES, slotOf as probeSlot } from '../probes/cascade.ts'
+import { cellNode, probeIrradiance, slotNode } from '../probes/lookup.ts'
+import type { ProbeVolume } from '../probes/volume.ts'
 import { decodeOct, encodeOct, octDecode, octEncode } from '../probes/octahedral.ts'
 import { traceFirst } from './wgsl.ts'
 
@@ -30,6 +31,8 @@ import { traceFirst } from './wgsl.ts'
 //    compute, an RGBA16F storage texture written, then loaded and sampled.
 //  - probeGridCheck (S2 design「验证与交付」): the probes' TSL grid and
 //    octahedral functions against their JS twins, negative cells included.
+//  - probeCheck (AC-S2-2): the indirect irradiance a picture's probes give
+//    each pixel against a per-pixel reference, region by region.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
@@ -591,3 +594,197 @@ export async function probeGridCheck(renderer: WebGPURenderer): Promise<GridChec
   }
 }
 
+
+// --- probeCheck --------------------------------------------------------------------------------------------------
+
+/** Paths a reference pass traces from each pixel, and the hits each path goes to (S0 probes.md「参考」). */
+const PATHS = 8
+const BOUNCES = 3
+
+export type ProbeRegion = {
+  /** Pixels in the region the layer hits. */
+  pixels: number
+  /** The indirect irradiance as the composite takes it: the probes' as far as they cover, the environment's for the rest (luminance, exposed). */
+  drawn: number
+  /** The probes' alone, where they cover; and how far they cover, on average. */
+  probes: number
+  coverage: number
+  /** The environment's (A_env's irradiance). */
+  environment: number
+  /** The reference's. */
+  reference: number
+  /** drawn over reference, less 1. */
+  error: number
+}
+
+export type ProbeCheck = {
+  width: number
+  height: number
+  pathsPerPixel: number
+  ms: number
+  probes: ProbeVolume['stats']
+  /** Each level allocated: its box's lowest cell, the probes on, and their mean data age. */
+  levels: { origin: number[]; on: number; dataAge: number }[]
+  regions: Record<string, ProbeRegion>
+  /** Over every pixel hit: the mean difference |drawn − reference| over the mean reference. */
+  meanDifference: number
+  /** Per pixel, row 0 at the top: the drawn and the reference irradiance's luminance, null where nothing is hit. */
+  drawn: (number | null)[]
+  reference: (number | null)[]
+}
+
+/**
+ * The indirect irradiance at each pixel's surface, from a picture's probes
+ * as the composite draws it and from a reference: the pixel's own cosine-
+ * weighted paths, BOUNCES hits each shaded as the probes' rays shade theirs,
+ * through the layer's original geometry; the last hit alone reads the
+ * probes, so their leaks reach the reference only through two albedos (S0
+ * probes.md: the first version read them at the first hit and hid half the
+ * error). Neither counts the pixel's own ambient lights (A_lt, apart in the
+ * composite). Exposed as the picture is: run with its preExposure set.
+ * regions are fractions of the picture (x0, y0, x1, y1, from the top left).
+ */
+export async function probeCheck(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, { regions, width = 384, passes = 32 }: { regions: Record<string, readonly number[]>; width?: number; passes?: number }): Promise<ProbeCheck> {
+  const started = performance.now()
+  const size = sizeOf(camera, width)
+  const { Loop, abs: absN, cos, cross, sin, sqrt, uint, uvec2: uv2 } = tsl as unknown as Record<string, Op>
+  const shading = hitShading(handle.reflect, handle.tables, scene)
+  shading.update()
+  const fill = float(AMBIENT_FILL)
+  const none = () => vec3(0)
+  /** The irradiance at a point from the probes as the composite takes it, toward V: (rgb, coverage). */
+  const fromProbes = (P: TSLNode, n: TSLNode, V: TSLNode) => {
+    const { pre, coverage } = probeIrradiance(volume.nodes, P, n, V)
+    return { E: pre.add(shading.environmentIrradiance(n).mul(float(1).sub(coverage))), pre, coverage }
+  }
+  const pixelKey = () => {
+    const xy = uv2(screenUV.mul(vec2(size.width, size.height)))
+    return xy.x.add(xy.y.mul(uint(size.width)))
+  }
+  /** A cosine-weighted direction about n from a hash (Duff et al. 2017's basis). */
+  const cosineAbout = (n: TSLNode, h: TSLNode) => {
+    const u1 = unit(pcg(h.bitXor(uint(0x68e31da4)))).toVar()
+    const u2 = unit(pcg(h.bitXor(uint(0xb5297a4d)))).toVar()
+    const sz = select(n.z.lessThan(0), float(-1), float(1))
+    const a = float(-1).div(sz.add(n.z))
+    const t = vec3(float(1).add(sz.mul(n.x).mul(n.x).mul(a)), sz.mul(n.x).mul(n.y).mul(a), sz.mul(n.x).negate())
+    const b = cross(n, t)
+    const r = sqrt(u1)
+    const phi = u2.mul(2 * Math.PI)
+    return normalize(t.mul(r.mul(cos(phi))).add(b.mul(r.mul(sin(phi)))).add(n.mul(sqrt(absN(float(1).sub(u1))))))
+  }
+  const lum = (v: TSLNode) => luminance(v)
+  // (drawn, environment, coverage, the probes' pre-multiplied), the luminances; coverage −1 where nothing is hit.
+  const surface = rayPass(camera, size, (eye, dir) => {
+    const first = shading.bounce(eye, dir, uint(0), none, fill)
+    const out = vec4(0, 0, -1, 0).toVar()
+    If(first.front.greaterThan(0.5), () => {
+      const p = fromProbes(first.P, first.n, dir.negate())
+      out.assign(vec4(lum(p.E), lum(shading.environmentIrradiance(first.n)), p.coverage, lum(p.pre)))
+    })
+    return out
+  })
+  const seed = uniform(0, 'uint')
+  const reference = rayPass(camera, size, (eye, dir) => {
+    const first = shading.bounce(eye, dir, uint(0), none, fill)
+    const sum = vec3(0).toVar()
+    If(first.front.greaterThan(0.5), () => {
+      const key = pcg(pixelKey().bitXor(pcg(seed.add(uint(0x9e3779b9))))).toVar()
+      // Loops, not unrolled: each hit's shading inlines every preset and the probes.
+      Loop(PATHS, ({ i }: { i: TSLNode }) => {
+        const path = pcg(key.add(uint(i).mul(uint(0x85ebca6b)))).toVar()
+        const o = first.lifted.toVar()
+        const d = cosineAbout(first.n, path).toVar()
+        const through = vec3(1).toVar()
+        const alive = float(1).toVar()
+        Loop(BOUNCES, ({ i: b }: { i: TSLNode }) => {
+          If(alive.greaterThan(0.5), () => {
+            const h = pcg(path.add(uint(b).add(1).mul(uint(0xc2b2ae35)))).toVar()
+            const last = select(uint(b).equal(uint(BOUNCES - 1)), float(1), float(0)).toVar()
+            const r = shading.bounce(o, d, h, (P, n) => fromProbes(P, n, d.negate()).E.mul(last), fill)
+            sum.addAssign(through.mul(r.L))
+            // On from a front face that is not the last, toward a new cosine-weighted direction.
+            alive.assign(r.front.mul(float(1).sub(last)))
+            through.mulAssign(r.albedo)
+            o.assign(r.lifted)
+            d.assign(cosineAbout(r.n, pcg(h)))
+          })
+        })
+      })
+    })
+    return vec4(sum, select(first.front.greaterThan(0.5), float(PATHS), float(0)))
+  })
+  const targets = [floatTarget(size, false), floatTarget(size, false)]
+  const state = RendererUtils.resetRendererState(renderer, undefined as never)
+  const n = size.width * size.height
+  const sums = new Float64Array(n * 4)
+  let pixels: Float32Array
+  try {
+    renderer.setRenderTarget(targets[0])
+    surface.quad.render(renderer)
+    pixels = await readBack(renderer, targets[0], size)
+    for (let k = 0; k < passes; k++) {
+      seed.value = k
+      renderer.setRenderTarget(targets[1])
+      reference.quad.render(renderer)
+      const got = await readBack(renderer, targets[1], size)
+      for (let i = 0; i < n * 4; i++) sums[i] += got[i]
+    }
+  } finally {
+    RendererUtils.restoreRendererState(renderer, state)
+    for (const d of [...targets, surface, reference]) d.dispose()
+  }
+  const held = await volume.inspect()
+  const levels = Array.from({ length: volume.allocated }, (_, l) => {
+    let on = 0
+    let age = 0
+    for (let p = l * PROBES; p < (l + 1) * PROBES; p++) {
+      if (held.offsets[4 * p + 3] > 0.5) on++
+      age += held.ages[4 * p]
+    }
+    return { origin: held.origins[l], on, dataAge: age / PROBES }
+  })
+  const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+  const drawn: (number | null)[] = new Array(n).fill(null)
+  const ref: (number | null)[] = new Array(n).fill(null)
+  let difference = 0
+  let total = 0
+  for (let i = 0; i < n; i++) {
+    if (pixels[4 * i + 2] < 0 || sums[4 * i + 3] <= 0) continue
+    drawn[i] = pixels[4 * i]
+    ref[i] = (Math.PI * lumOf(sums[4 * i], sums[4 * i + 1], sums[4 * i + 2])) / sums[4 * i + 3]
+    difference += Math.abs(drawn[i]! - ref[i]!)
+    total += ref[i]!
+  }
+  const out: Record<string, ProbeRegion> = {}
+  for (const [name, [x0, y0, x1, y1]] of Object.entries(regions)) {
+    const acc = { pixels: 0, drawn: 0, probes: 0, covered: 0, coverage: 0, environment: 0, reference: 0 }
+    for (let y = Math.floor(y0 * size.height); y < Math.floor(y1 * size.height); y++) {
+      for (let x = Math.floor(x0 * size.width); x < Math.floor(x1 * size.width); x++) {
+        const i = y * size.width + x
+        if (drawn[i] === null) continue
+        const c = pixels[4 * i + 2]
+        acc.pixels++
+        acc.drawn += drawn[i]!
+        acc.environment += pixels[4 * i + 1]
+        acc.coverage += c
+        acc.reference += ref[i]!
+        if (c > 0) {
+          acc.probes += pixels[4 * i + 3] / c
+          acc.covered++
+        }
+      }
+    }
+    const m = Math.max(acc.pixels, 1)
+    out[name] = {
+      pixels: acc.pixels,
+      drawn: acc.drawn / m,
+      probes: acc.probes / Math.max(acc.covered, 1),
+      coverage: acc.coverage / m,
+      environment: acc.environment / m,
+      reference: acc.reference / m,
+      error: acc.drawn / Math.max(acc.reference, 1e-12) - 1,
+    }
+  }
+  return { ...size, pathsPerPixel: passes * PATHS, ms: Math.round(performance.now() - started), probes: volume.stats, levels, regions: out, meanDifference: difference / Math.max(total, 1e-12), drawn, reference: ref }
+}
