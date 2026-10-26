@@ -1,6 +1,6 @@
 # 第 3 组：同一张阴影深度图上的比较采样与原始读取（U7）
 
-> 状态：WebGPU 已有结论，WebGL2 待测。
+> 状态：WebGPU 上 2D 和立方体贴图都有结论，WebGL2 待测。
 
 PCSS 先搜索遮挡物，这一步要读原始深度；后面的滤波用比较采样。three r186 给阴影深度纹理设了 `compareFunction`（`ShadowNode.js:338`、`PointShadowNode.js:225`），问题是同一个着色器里能不能两者都做。
 
@@ -15,6 +15,18 @@ PCSS 先搜索遮挡物，这一步要读原始深度；后面的滤波用比较
    - `textureLoad` 的坐标取 `floor(uv · mapSize)`，方向与 uv 相同，不需要翻转 v。按原始采样逐点核对过：翻转 v 的读法读到的是别的位置，用 `uv · (size − 1)` 取整，在深度变化处会差一个 texel。
 3. **备选写法**：全部改用原始采样，滤波时手动比较深度，可以编译，但没有硬件双线性，边缘更粗糙。
 4. **待办**：比较采样在先、`textureLoad` 在后，依赖 three 生成代码的顺序。S1 要把这个约束写进代码注释，并用 e2e 防止回退：着色器编译失败时，画面上这一处会直接缺失（lesson `webgpu-detect-shader-failure`）。
+
+### 立方体贴图（点光）
+
+结论：**只能全部用原始采样、手动比较**，没有硬件比较的双线性。
+
+1. WGSL 没有针对 `texture_depth_cube` 的 `textureLoad`，2D 上「先比较采样，再用 `textureLoad`」的写法走不通。
+2. three 在一个按像素分叉的 `If` 里调用点光的滤波函数（`PointShadowNode.js:111`），因此不能用依赖导数的 `textureSample`，只能用 `textureSampleLevel`。
+3. **three r186 的缺陷**：对可过滤的深度立方体贴图调用 `.level()` 时，three 把 level 当 float 输出（`WGSLNodeBuilder.generateTextureLevel`），而 WGSL 要求整数，编译失败。只有不可过滤的贴图才走输出 `u32` 的那条路径（`generateTextureLod`）。
+   - `setSampler(false)` 也不行：生成的是 `textureLoad(texture_depth_cube, vec3<i32>, u32)`，同样不存在。
+   - 原型的绕法：`level(expression('0u', 'float'))`。表达式声明为 float，three 就不再包一层转换，实际输出整数。S1 要么沿用这个写法并加注释和 e2e，要么给 three 提补丁。
+   - 编译失败时，页面上这盏灯的着色整个缺失，原型页会一直等不到完成（lesson `webgpu-detect-shader-failure`）。
+4. 效果见 `soft-shadow-candidates.md`「点光」：在 occluder-wall 上，手动比较的效果与参考解吻合，看不到立方体面接缝。
 
 ## WebGL2
 

@@ -7,10 +7,12 @@
 //                (2D maps) for now. Kernels turn with the frame (IGN offset by frameId: TRAA averages them), and a
 //                receiver plane depth bias from the screen derivatives keeps a wide kernel off the receiver itself
 //                (Epic design「技术选型」阴影偏置). ?search= ?samples= samples, ?maxTexels= the widest penumbra.
+//                Point lights (cube maps) compare by hand on raw samples: WGSL has no textureLoad for a depth cube,
+//                and three gives the map one sampler a shader (depth-read-backends.md). ?cubeEps= texels of bias.
 //   smtrace      shadow map tracing (EEVEE's way): rays to points on the light, each marched through the depth map
 //                and blocked where it passes through a surface; spot lights for now. ?rays= ?steps=, ?maxTexels= the
 //                longest trace, ?epsM= metres a ray must be behind a surface, ?spacing= how much denser steps are near.
-import type { DirectionalLight, Light, LightShadow, Object3D, PointLight, SpotLight } from 'three'
+import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type PointLight, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 
@@ -18,8 +20,8 @@ export type Method = 'pcf' | 'pcf-radius' | 'pcss' | 'smtrace'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { Fn, abs, clamp, dFdx, dFdy, dot, float, interleavedGradientNoise, ivec2, length, max, min, perspectiveDepthToViewZ, reference, select, texture, textureLoad, uniform, vec2, vogelDiskSample } = T
-const { frameId, renderGroup, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
+const { Fn, abs, clamp, cross, cubeTexture, dFdx, dFdy, dot, expression, float, interleavedGradientNoise, ivec2, length, max, min, normalize, perspectiveDepthToViewZ, reference, select, texture, textureLoad, uniform, vec2, vec3, vogelDiskSample } = T
+const { frameId, positionWorld, renderGroup, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
 
 type Shadowing = DirectionalLight | PointLight | SpotLight
 type Filtered = LightShadow & { filterNode?: unknown }
@@ -180,6 +182,69 @@ function spotTrace(light: SpotLight, r: number) {
   })
 }
 
+/**
+ * PCSS for a point light's cube map, light of radius r metres. Directions stand for positions: an offset o in the
+ * plane across the way to the receiver is a direction bd3D + o, o in metres at a metre from the light. Depths are
+ * radial distances (a face's depth over the direction's largest component), so samples on different faces agree.
+ * The receiver's plane, from the screen derivatives of its place relative to the light, gives its distance along
+ * every sampled direction: a wide kernel compares against the plane, not the receiver's own distance.
+ */
+function pointPCSS(light: PointLight, r: number) {
+  const cam = light.shadow.camera
+  const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
+  const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
+  const radius = uniform(r)
+  // PointShadowNode hands its filter the receiver only as a direction (and dp): its place less the light's, whole.
+  const lightAt = uniform(new Vector3()).setGroup(renderGroup).onRenderUpdate(() => light.getWorldPosition(new Vector3()))
+  const searchN = num('search', 16)
+  const filterN = num('samples', 32)
+  const maxTexels = num('maxTexels', 48)
+  return Fn(({ depthTexture, bd3D, shadow }: Record<string, TSLNode>) => {
+    const mapSize = reference('mapSize', 'vec2', shadow).setGroup(renderGroup)
+    // A texel at the middle of a face, a metre from the light: the face spans 2 across.
+    const texel = float(2).div(mapSize.x)
+    const shadowPosition = positionWorld.sub(lightAt).toVar()
+    const dR = length(shadowPosition).toVar()
+    const normalOf = normalize(cross(dFdx(shadowPosition), dFdy(shadowPosition)))
+    const n = select(length(cross(dFdx(shadowPosition), dFdy(shadowPosition))).greaterThan(1e-12), normalOf, bd3D.negate()).toVar()
+    const planeDistance = dot(n, shadowPosition).toVar()
+    const absDir = abs(bd3D)
+    const tangent = normalize(cross(bd3D, select(absDir.x.greaterThan(absDir.z), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar()
+    const bitangent = cross(bd3D, tangent).toVar()
+    const along = (o: TSLNode) => normalize(bd3D.add(tangent.mul(o.x)).add(bitangent.mul(o.y)))
+    /** The radial distance the map holds along unit direction d. */
+    const stored = (d: TSLNode) => {
+      const a = abs(d)
+      const axis = max(max(a.x, a.y), a.z)
+      // A depth cube's level is an integer in WGSL, but three r186 writes a filterable texture's level as a float
+      // (WGSLNodeBuilder.generateTextureLevel): a float-typed expression that reads 0u gets past it.
+      return perspectiveDepthToViewZ(cubeTexture(depthTexture, d).level(expression('0u', 'float')).x, near, far).negate().div(axis)
+    }
+    /** The receiver's plane's distance along d, held near the receiver's own where the plane runs along d. */
+    const receiverAt = (d: TSLNode) => clamp(planeDistance.div(min(dot(n, d), -1e-4)), dR.mul(0.5), dR.mul(2))
+    const eps = dR.mul(texel).mul(num('cubeEps', 1.5)).add(0.005).toVar()
+    const phi = turn().toVar()
+    const searchU = min(radius.mul(dR.sub(near)).div(dR.mul(near)), texel.mul(maxTexels)).toVar()
+    const blockers = float(0).toVar()
+    const distanceSum = float(0).toVar()
+    for (let i = -1; i < searchN; i++) {
+      const d = i < 0 ? bd3D : along(vogelDiskSample(i, searchN, phi).mul(searchU))
+      const at = stored(d).toVar()
+      const blocks = select(at.lessThan(receiverAt(d).sub(eps)), float(1), float(0))
+      blockers.addAssign(blocks)
+      distanceSum.addAssign(blocks.mul(at))
+    }
+    const dB = distanceSum.div(max(blockers, 1)).toVar()
+    const penumbra = clamp(radius.mul(dR.sub(dB)).div(dB.mul(dR)), texel.mul(0.5), texel.mul(maxTexels)).toVar()
+    const lit = float(0).toVar()
+    for (let i = 0; i < filterN; i++) {
+      const d = along(vogelDiskSample(i, filterN, phi).mul(penumbra))
+      lit.addAssign(select(stored(d).lessThan(receiverAt(d).sub(eps)), float(0), float(1)))
+    }
+    return select(blockers.lessThan(0.5), float(1), lit.div(filterN))
+  })
+}
+
 /** What each method does to a light that casts: returns a line for the report. */
 /** ?normalBias= metres on the PCF methods: their stripes off, so their edges can be measured against PCSS's. */
 function normalBias(light: Shadowing): string {
@@ -197,7 +262,11 @@ export const methods: Record<Method, (light: Shadowing, size: number) => string>
     return `PCF radius ${radius} texels${normalBias(light)}`
   },
   pcss: (light, size) => {
-    if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: spot lights only so far)'
+    if ((light as PointLight).isPointLight) {
+      ;(light.shadow as Filtered).filterNode = pointPCSS(light as PointLight, size)
+      return `PCSS (cube, raw compares) r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
+    }
+    if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: spot and point lights so far)'
     ;(light.shadow as Filtered).filterNode = spotPCSS(light as SpotLight, size)
     return `PCSS r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
   },
