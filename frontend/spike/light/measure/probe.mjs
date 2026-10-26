@@ -18,7 +18,7 @@ try {
     const at = (a, x, y, rows) => { const i = (rows === 'top' ? y : h - 1 - y) * w + x; return [a[i * 4], a[i * 4 + 1], a[i * 4 + 2], a[i * 4 + 3]].map((v) => +v.toFixed(5)) }
     return points.map((p) => {
       const [x, y] = p.split(',').map(Number)
-      return { p, top: { refS: at(c.reference.shadowed, x, y, 'top'), refU: at(c.reference.unshadowed, x, y, 'top'), rasS: at(c.raster.shadowed, x, y, 'top'), rasU: at(c.raster.unshadowed, x, y, 'top') } }
+      return { p, top: { refS: at(c.reference.shadowed, x, y, 'top'), refU: at(c.reference.unshadowed, x, y, 'top'), rasS: at(c.raster.shadowed, x, y, 'top'), rasU: at(c.raster.unshadowed, x, y, 'top'), rasF: at(c.raster.first, x, y, 'top') } }
     })
   }, points)
   console.log(JSON.stringify(out, null, 1))
