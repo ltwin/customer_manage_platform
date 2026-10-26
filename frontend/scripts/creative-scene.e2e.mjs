@@ -6588,11 +6588,14 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 3.5, the budget pressed dow
 })
 
 /** Waits till the viewport has stopped drawing: its convergence count at the real-time GI's 12 and still there a moment later. */
+// Stopped at its own count: the real-time GI's 12, or with the probes drawn theirs (SceneRenderer.settleFrames, S2 design「收敛与重绘」).
 async function viewportStill(page, what, timeout = 60_000) {
+  const at = () => page.evaluate(() => ({ frames: window.__sceneGPU.viewportFrames, settle: window.__sceneGPU.viewportSettle }))
   await waitFor(async () => {
-    const a = await page.evaluate(() => window.__sceneGPU.viewportFrames)
+    const a = await at()
     await sleep(400)
-    return a === 12 && (await page.evaluate(() => window.__sceneGPU.viewportFrames)) === 12
+    const b = await at()
+    return a.frames === a.settle && b.frames === a.frames && b.settle === a.settle
   }, `${what}: the viewport stopped`, timeout)
 }
 
@@ -8861,8 +8864,11 @@ await check('renderer in effect: real-time GI converges in the rendered view and
   }
   await engine('realtime_gi')
   await waitFor(() => server.scene.render.engine === 'realtime_gi', 'renderer written')
-  // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames), then stops.
-  const giFrames = 12
+  // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames; with
+  // the probes drawn, theirs: SceneRenderer.settleFrames), then stops.
+  await waitFor(async () => (await frames()) > 0 && (await frames()) === (await page.evaluate(() => window.__sceneGPU.viewportSettle)), 'rendered, real-time GI', 60_000)
+  const giFrames = await frames()
+  assert.ok(giFrames >= 12, `at least the GI's 12 frames: ${giFrames}`)
   await settledFrames(giFrames, 'rendered, real-time GI')
   // By more than 24 levels: the GI's bounce on a post and a wall is gentle. More than 48 once held only because the sky
   // was drawn with the helpers, and the grid laid over it took its colour (2.3% of pixels past 24, 0.8% past 48).
@@ -9868,6 +9874,242 @@ if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the 
     if (dir) await writeFile(`${dir}/probes.json`, `${JSON.stringify(record, null, 2)}\n`)
     assert.deepEqual(errors, [], errors.join('\n'))
   } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBE_EDITS (=<dir>: edits.json there): AC-S2-3 in the viewport (S2 task 5.3). cornell's cube grabbed
+// and dragged along x, cornell's spot turned off, physical-noon's sun lowered (its clock from 12:00 to 15:30). Measured as S0 measured
+// it (trace-spike research probes.md「闪烁」): through the scene's camera, the viewport's picture as the probes light
+// it (gpu.ts probeView), gi-regions.json's regions' means, read as the viewport draws on by itself, by the frames since the edit (each level's least
+// edit age times its period, the slowest's: gpu.ts probeMean). Every region within 10 % of where it settles by 24
+// frames; while dragging, the volume drawn kept and no probe's data age back under A0, so their coverage stays;
+// still, the viewport stops at its own count (SceneRenderer settleFrames), within 64, and over eight frames more a
+// pixel moves by under 1 % of the mean a frame. SCENE_E2E_PROBE_FOLLOW_VIDEO=1 records the drag twice more into
+// <dir>, A0 = 12 with α = 0 (as shipped) and with α = 0.5 (gpu.ts probeFollow), for S2-U5. SCENE_E2E_PROBE_EDITS_HALL=1
+// records S0's hall too, judged by nothing but errors (owner 2026-10-26): an instance moved, the sun turned; its
+// picture's 3 × 3 regions from the hall's view, 480 frames stepped.
+if (process.env.SCENE_E2E_PROBE_EDITS) await check('probes: AC-S2-3, an edit caught up within 24 frames, coverage kept while dragging; still, the viewport settles within 64 and stops', async () => {
+  const dir = process.env.SCENE_E2E_PROBE_EDITS === '1' ? null : process.env.SCENE_E2E_PROBE_EDITS
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const A0 = 12
+  const record = { machine: machineInfo(), edits: {} }
+  const viewport = async (scene, { video, follow } = {}) => {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 }, ...(video ? { recordVideo: { dir: video, size: { width: 1280, height: 820 } } } : {}) })
+    if (follow !== undefined) await context.addInitScript((f) => { window.__sceneGPUHooks = { ...window.__sceneGPUHooks, probeFollow: f } }, follow)
+    const server = new SceneServer()
+    referenceScene(server, scene, realtimeGI)
+    const opened = await open(server, { context })
+    await shading(opened.page, '最终渲染')
+    await traceReady(opened.page, scene, 60_000)
+    await waitFor(async () => (await opened.page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, `${scene}: the probes taken up`, 60_000)
+    // Through the scene's camera, its regions where its picture's frame is in the viewport's.
+    await opened.page.getByRole('treeitem', { name: 'shot' }).click()
+    await opened.page.keyboard.press('Digit0')
+    const frame = opened.page.locator('.cc-scene-camframe')
+    await frame.waitFor()
+    const fb = await frame.boundingBox()
+    const { box } = await viewportCenter(opened.page)
+    const rects = Object.values(giRegions[scene]).map(([x0, y0, x1, y1]) => [
+      (fb.x - box.x + x0 * fb.width) / box.width, (fb.y - box.y + y0 * fb.height) / box.height,
+      (fb.x - box.x + x1 * fb.width) / box.width, (fb.y - box.y + y1 * fb.height) / box.height,
+    ])
+    await viewportStill(opened.page, `${scene} through its camera`)
+    return { context, server, rects, ...opened }
+  }
+  let rects = []
+  // A reading's regions' means over the pixels hit, null where none is.
+  const regionsOf = (v) => rects.map(([x0, y0, x1, y1]) => {
+    let sum = 0
+    let n = 0
+    for (let y = Math.floor(y0 * v.height); y < Math.ceil(y1 * v.height); y++) {
+      for (let x = Math.floor(x0 * v.width); x < Math.ceil(x1 * v.width); x++) {
+        const l = v.lumas[y * v.width + x]
+        if (l >= 0) {
+          sum += l
+          n++
+        }
+      }
+    }
+    return n > 0 ? sum / n : null
+  })
+  const read = (page) => page.evaluate(async () => {
+    const [view, mean] = [await window.__sceneGPU.probeView(384), await window.__sceneGPU.probeMean()]
+    return view && mean && view.serial === mean.serial ? { ...view, ages: mean.ages } : null
+  })
+  // Read back while editing, the viewport drawing as the edit asks; then a frame at a time, each read, 64 of them.
+  const follow = async (page, edit, steps = 64) => {
+    const before = await read(page)
+    const stats = await page.evaluate(() => window.__sceneGPU.probeStats)
+    await page.evaluate(() => { window.__sceneGPU.viewportHold = true })
+    let editing = true
+    // Settled either way, so a reading that throws does not leave the edit's rejection unhandled.
+    const edited = edit().finally(() => (editing = false))
+    edited.catch(() => {})
+    const samples = []
+    // Volumes other than the one drawn before the edit: a cold start, its coverage from 0 (S2 design B2).
+    const volumes = new Set()
+    // Before the edit lands every level's least edit age is past the warm-up's; after, it counts from 0 again.
+    const landed = (m) => m.ages.every((a, l) => a.edit < before.ages[l].edit)
+    const sample = (m, during) => {
+      if (m.serial !== before.serial) volumes.add(m.serial)
+      else if (landed(m)) samples.push({ during, frames: Math.max(...m.ages.map((a, l) => a.edit * stats.periods[l])), regions: regionsOf(m), data: Math.min(...m.ages.map((a) => a.data)) })
+    }
+    while (editing) {
+      const m = await read(page)
+      if (m) sample(m, editing)
+    }
+    await edited
+    // Landed: an external edit comes through the server's next answer; a frame drawn each wait, for what takes more
+    // than one (a physical sky's light is made again a frame after its change: objects/Lighting.tsx).
+    const started = Date.now()
+    while (!landed(await read(page))) {
+      if (Date.now() - started > 30_000) throw new Error('the edit never reached the probes')
+      await sleep(50)
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+    }
+    for (let i = 0; i < steps && volumes.size === 0; i++) {
+      sample(await read(page), false)
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+    }
+    assert.deepEqual([...volumes], [], `the probes drawn before the edit kept through it: volume ${before.serial} (${JSON.stringify(stats)}), then ${[...volumes].join(', ')}`)
+    await page.evaluate(() => {
+      window.__sceneGPU.viewportHold = false
+      window.__sceneGPU.invalidateViewport()
+    })
+    await viewportStill(page, 'after the edit', 300_000)
+    const stopped = await page.evaluate(() => ({ count: window.__sceneGPU.viewportFrames, settle: window.__sceneGPU.viewportSettle }))
+    // Eight frames more: where it settles is their mean; the flicker each pixel's change a frame over the mean.
+    const more = [await read(page)]
+    for (let i = 0; i < 8; i++) {
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+      more.push(await read(page))
+    }
+    const target = regionsOf(more[0]).map((_, k) => {
+      const at = more.map((m) => regionsOf(m)[k])
+      return at[0] === null ? null : at.reduce((a, v) => a + v, 0) / at.length
+    })
+    const flicker = more.slice(1).map((m, i) => {
+      let d = 0
+      let sum = 0
+      let n = 0
+      for (let p = 0; p < m.lumas.length; p++) {
+        if (m.lumas[p] < 0 || more[i].lumas[p] < 0) continue
+        d += Math.abs(m.lumas[p] - more[i].lumas[p])
+        sum += m.lumas[p]
+        n++
+      }
+      return d / Math.max(sum, 1e-12)
+    })
+    const was = regionsOf(before)
+    // Two readings: off the settled value over it (the AC's words), and over the change too where that is larger
+    // (what is left of the change: a light turned off settles near 0, where the first is ill-conditioned).
+    const off = (s, change = false) => Math.max(...s.regions.map((v, k) => (v === null || target[k] === null ? 0 : Math.abs(v - target[k]) / Math.max(target[k], change && was[k] !== null ? Math.abs(was[k] - target[k]) : 0, 1e-6))))
+    // Caught up: the frames after the edit from which every later reading is within 10 %.
+    const after = samples.filter((s) => !s.during)
+    const by = (change) => {
+      const late = after.findIndex((_, i) => after.slice(i).every((s) => off(s, change) <= 0.1))
+      return late < 0 ? null : after[late].frames
+    }
+    return {
+      before: was, settled: target, periods: stats.periods,
+      caughtUp: by(false), caughtUpOfChange: by(true), samples: samples.map((s) => ({ during: s.during, frames: s.frames, data: s.data, off: Number(off(s).toFixed(4)), offOfChange: Number(off(s, true).toFixed(4)) })),
+      leastData: Math.min(...samples.map((s) => s.data)), stoppedAt: stopped.count, settleFrames: stopped.settle, flicker: flicker.map((f) => Number(f.toFixed(5))),
+    }
+  }
+  const grab = async (page, steps = 30) => {
+    await page.getByRole('treeitem', { name: 'cube' }).click()
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('KeyG')
+    await waitFor(async () => /移动/.test(await page.locator('.cc-scene-hint').textContent()), 'grab running')
+    // Along x, within the room: past its walls the scene's bounds, and so its levels, would grow (volume.ts outgrown),
+    // a volume of its own warming in the background (S2 task 5.2a), not what this follows.
+    await page.keyboard.press('KeyX')
+    // Over and back for a longer drag (the videos), 45 pixels at most.
+    for (let i = 1; i <= steps; i++) {
+      await page.mouse.move(x + 1.5 * (30 - Math.abs(30 - (i % 60))), y)
+      await sleep(30)
+    }
+    await page.keyboard.press('Enter')
+  }
+  const failed = []
+  try {
+    // SCENE_E2E_PROBE_EDITS_HALL=only: the hall alone.
+    for (const [name, scene, edit] of process.env.SCENE_E2E_PROBE_EDITS_HALL === 'only' ? [] : [
+      // The camera view's picture is where the cube is: grabbed in it, along x.
+      ['cube dragged', 'cornell', async (v) => {
+        await grab(v.page)
+        await waitFor(() => v.server.object('sobj_cube00000000000000000').transform.position[0] !== -0.9, 'the drag saved')
+      }],
+      ['spot off', 'cornell', async (v) => {
+        const spot = v.server.object('sobj_spot00000000000000000')
+        v.server.external([{ op: 'update_objects', updates: [{ object_id: spot.id, light: { ...spot.light, intensity: 0 } }] }])
+        await v.page.evaluate(() => window.__invalidate())
+      }],
+      // Its sun from the place and the time: lowered by the clock, 12:00 to 15:30.
+      ['sun lowered', 'physical-noon', async (v) => {
+        const env = v.server.scene.environment
+        v.server.external([{ op: 'set_environment', environment: { ...env, sky: { ...env.sky, local_time: '15:30' } } }])
+        await v.page.evaluate(() => window.__invalidate())
+      }],
+    ]) {
+      const v = await viewport(scene)
+      rects = v.rects
+      const levels = (await v.page.evaluate(() => window.__sceneGPU.probeStats)).levels
+      const r = await follow(v.page, () => edit(v))
+      const moved = Math.max(...r.before.map((b, k) => (b === null || r.settled[k] === null ? 0 : Math.abs(b - r.settled[k]) / Math.max(r.settled[k], 1e-6))))
+      record.edits[name] = { scene, levels, moved, ...r }
+      console.log(`  ${name} (${scene}, ${levels} levels, periods ${r.periods.join('/')}): regions ${r.before.map((b) => b?.toFixed(3)).join('/')} → ${r.settled.map((b) => b?.toFixed(3)).join('/')}; within 10 % by ${r.caughtUp} frames, of the change by ${r.caughtUpOfChange} (${r.samples.filter((s) => !s.during).length} readings after, ${r.samples.filter((s) => s.during).length} during); least data age ${r.leastData}; stopped at ${r.stoppedAt} of ${r.settleFrames}; flicker ${r.flicker.map((f) => (f * 100).toFixed(2)).join(', ')} %`)
+      // Every edit measured before any is judged.
+      if (!(r.caughtUp !== null && r.caughtUp <= 24)) failed.push(`${name}: within 10 % by 24 frames: ${r.caughtUp}`)
+      if (!(r.leastData >= A0)) failed.push(`${name}: no probe's data cleared by the edit, the coverage kept: least data age ${r.leastData}`)
+      if (!(r.stoppedAt === r.settleFrames && r.settleFrames <= 64)) failed.push(`${name}: stopped at its count, within 64: ${r.stoppedAt} of ${r.settleFrames}`)
+      if (!(Math.max(...r.flicker) < 0.01)) failed.push(`${name}: under 1 % a frame once settled: ${r.flicker.join(', ')}`)
+      assert.deepEqual(v.errors, [], v.errors.join('\n'))
+      await v.context.close()
+    }
+    if (dir && process.env.SCENE_E2E_PROBE_FOLLOW_VIDEO) {
+      for (const [name, f] of [['follow-alpha-0', 0], ['follow-alpha-0.5', 0.5]]) {
+        const video = `${dir}/${name}`
+        await mkdir(video, { recursive: true })
+        const v = await viewport('cornell', { video, follow: f })
+        await grab(v.page, 150)
+        await viewportStill(v.page, `${name}: after the drag`)
+        await v.context.close()
+        console.log(`  ${name}: ${await v.page.video().path()}`)
+      }
+    }
+    if (process.env.SCENE_E2E_PROBE_EDITS_HALL) {
+      const hall = await hallScene()
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+      const server = new SceneServer()
+      hallSeed(server, hall)
+      const { page, errors } = await open(server, { context })
+      await hallReady(page, hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length, 'the hall')
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, 'the hall: the probes taken up', 300_000)
+      await viewportStill(page, 'the hall', 300_000)
+      rects = [0, 1, 2].flatMap((y) => [0, 1, 2].map((x) => [x / 3, y / 3, (x + 1) / 3, (y + 1) / 3]))
+      const moved = hall.objects.find((o) => o.kind === 'model_instance')
+      for (const [name, ops] of [
+        ['hall: an instance moved', [{ op: 'update_objects', updates: [{ object_id: moved.id, transform: { ...moved.transform, position: [moved.transform.position[0] + 0.5, ...moved.transform.position.slice(1)] } }] }]],
+        ['hall: the sun turned', [{ op: 'set_environment', environment: { ...server.scene.environment, sky: { ...server.scene.environment.sky, sun_azimuth_deg: 225 } } }]],
+      ]) {
+        const levels = (await page.evaluate(() => window.__sceneGPU.probeStats)).levels
+        const r = await follow(page, async () => {
+          server.external(ops)
+          await page.evaluate(() => window.__invalidate())
+        }, 480)
+        record.edits[name] = { scene: 'hall', levels, ...r }
+        console.log(`  ${name} (${levels} levels, periods ${r.periods.join('/')}): within 10 % by ${r.caughtUp} frames, of the change by ${r.caughtUpOfChange}; stopped at ${r.stoppedAt} of ${r.settleFrames}; flicker ${r.flicker.map((f) => (f * 100).toFixed(2)).join(', ')} %`)
+      }
+      assert.deepEqual(errors, [], errors.join('\n'))
+      await context.close()
+    }
+    assert.deepEqual(failed, [], failed.join('\n'))
+  } finally {
+    if (dir) await writeFile(`${dir}/edits.json`, `${JSON.stringify(record, null, 2)}\n`)
     await gpu.close()
   }
 })

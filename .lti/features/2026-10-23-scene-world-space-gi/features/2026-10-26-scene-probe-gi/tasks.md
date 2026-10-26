@@ -135,6 +135,24 @@
   - `trace: 5.2` 每帧 draw 数改为与接入前相同（多出 `seen` 一趟）；接入时的长任务 946–1134 ms（5.2a 时 486–872 ms），留给 5.5；
   - 剩下一处小瑕疵：镜中斜看的地面上有一行零星的亮点，是屏幕命中带里几个改走世界追踪的像素，后者算进了斜看的菲涅耳高光
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
+
+  进行中（2026-10-26），数值在 `evidence/after/probes-5.3.json`，视频在 `evidence/after/follow-compare.mp4`。等 owner 定两件事：关灯的读法、S2-U5 用哪种跟随：
+  - 视口改用 `SceneRenderer.settleFrames`（有探针时为 `viewportSettleFrames`，否则仍是 12）。后台预热期间持续请求帧，5.2a 已经做了；
+  - 新增 e2e `probes: AC-S2-3`（`SCENE_E2E_PROBE_EDITS=<dir>`），测法与 S0 相同，见 evidence README。结果：
+
+    | 编辑 | 回到收敛值 10% 以内 | 按变化量算 | 停止重绘 | 停下后闪烁 |
+    |---|---|---|---|---|
+    | cornell 拖动立方体（X 轴约 0.45 m） | 22–26 帧（两次） | 同左 | 52 / 52 帧 | 0.22%–0.38% |
+    | cornell 关聚光灯 | **42–46 帧** | 4 帧 | 52 / 52 帧 | 0.08%–0.19% |
+    | physical-noon 太阳调低（12:00 → 15:30） | 4 帧 | 4 帧 | 52 / 52 帧 | 0.02%–0.19% |
+    | 大厅：移动一个实例 0.5 m（只记录） | 72 帧 | 72 帧 | 416 / 416 帧 | 0.13% 以内 |
+    | 大厅：太阳方位 135° → 225°（只记录） | 48 帧 | 48 帧 | 416 / 416 帧 | 0.13% 以内 |
+
+  - 关灯后收敛值只剩环境光（原来的 0.6%），残留的多次反弹相对这个很小的值衰减得慢；按「剩下的变化量占变化量的比例」读是 4 帧。用例现在按字面读法判定，这一项不过；
+  - 拖动期间探针体没有换、最小数据年龄不低于 28，`coverage` 不归零；
+  - 拖动的 22–26 帧受跟随期噪声左右，最差的是立方体朝红墙那个窄区域；
+  - 测试钩子：`probeFollow`（跟随期 α，只给 S2-U5 的对照用，内核里多一个 uniform，缺省为 0）、`probeView`、`probeMean`、`viewportHold`、`invalidateViewport`、`viewportSettle`；e2e 的 `viewportStill` 改为等视口停在自己的帧数上；
+  - 排查中顺带确认：拖动把立方体推出房间时，包围盒变大，探针体会按 5.2a 的规则扩级，期间一直画着旧的探针，不是编辑清了数据
 - [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
 - [ ] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图
 

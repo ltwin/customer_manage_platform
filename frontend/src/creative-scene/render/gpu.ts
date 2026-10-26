@@ -318,6 +318,18 @@ export const gpuTestHooks = {
   probeAO: null as number | null,
   /** What the probes trace (render/trace/base.ts handle): the proxies, as always; 'original' at tier 1 traces the original instead, for S2's AC-S2-8. */
   probeLayer: 'proxy' as 'proxy' | 'original',
+  /** S2-U5's comparison: the viewport's probes keep this much history in the A0 updates after an edit (render/probes/kernels.ts); null, none, as shipped. */
+  probeFollow: null as number | null,
+  /** The viewport asks for no frame of its own while set: the e2e draws them one at a time (redrawViewport), reading between (AC-S2-3). */
+  viewportHold: false,
+  /** Asks the viewport for a frame (R3F's invalidate; Viewport.tsx LookView, e2e only). */
+  invalidateViewport: null as (() => void) | null,
+  /** The frames the viewport draws on its own once still (SceneRenderer.settleFrames; Viewport.tsx LookView, e2e only). */
+  viewportSettle: 0,
+  /** The viewport's probes read back: each level drawn's mean irradiance as stored over the probes on and gathered (Viewport.tsx LookView, e2e only); null without. */
+  /** The viewport's picture as the probes light it, width pixels across: each pixel's irradiance luminance, −1 where nothing is hit (render/trace/checks.ts probeView; Viewport.tsx LookView, e2e only); null without. */
+  probeView: null as ((width?: number) => Promise<{ width: number; height: number; serial: number; lumas: number[] } | null>) | null,
+  probeMean: null as (() => Promise<{ serial: number; levels: number[][]; ages: { data: number; edit: number }[] } | null>) | null,
   /** The same rays shaded at their hits against the raster, mesh by mesh (AC-S1-2; as traceDepth). */
   traceHits: null as ((width?: number, turn?: [number, number, number]) => Promise<HitReport | null>) | null,
 }

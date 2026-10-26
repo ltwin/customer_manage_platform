@@ -13,7 +13,7 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
-import { AMBIENT_FILL } from './probes/cascade.ts'
+import { AMBIENT_FILL, viewportSettleFrames } from './probes/cascade.ts'
 import { ProbeVolume } from './probes/volume.ts'
 import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
 import { hitShading } from './trace/hit.ts'
@@ -700,6 +700,15 @@ export class SceneRenderer {
   /** The probes as the last render() left them, and whether it drew with them (e2e, gpu.ts probeStats); null without. */
   get probeStats(): (ProbeVolume['stats'] & { drawn: boolean }) | null {
     return this.probes && { ...this.probes.stats, drawn: this.built?.key.includes(`+probes-${this.probes.serial}`) === true }
+  }
+
+  /**
+   * The frames the viewport draws on its own once still (S2 design「收敛与重绘」): the probes drawn, their slowest
+   * level's catching up and settling; else the engine's own convergeFrames.
+   */
+  settleFrames(engine: Engine): number {
+    const drawn = this.probeStats?.drawn ? this.probes : null
+    return viewportSettleFrames(engine, drawn !== null, drawn?.levels ?? 0, drawn?.periods ?? [])
   }
 
   /** The probes and the layer the last render() drew with (e2e, checks.ts probeCheck); null without the probes. */

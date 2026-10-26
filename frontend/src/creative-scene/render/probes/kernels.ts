@@ -46,6 +46,8 @@ export type ProbeData = {
     /** The hysteresis (cascade.ts Hysteresis). */
     A0: TSLNode
     alphaMax: TSLNode
+    /** The history's weight in the A0 updates after an edit: 0, as shipped (gpu.ts probeFollow, S2-U5's comparison). */
+    follow: TSLNode
     editCount: TSLNode
     relocationCount: TSLNode
     /** Where geometry changed, for the relocation count (world, empty as min > max). */
@@ -162,9 +164,9 @@ export function updateKernel(d: ProbeData, count: number) {
     const reset = names(was, p.cell).not().toVar()
     const dataAge = select(reset, float(0), ages.x).toVar()
     const editAge = select(reset.or(was.w.notEqual(float(d.u.editCount))), float(0), ages.y).toVar()
-    // No history for data age 0 (a slot just cleared); none for A0 updates after an edit, then rising to alphaMax.
+    // No history for data age 0 (a slot just cleared); follow (none, as shipped) for A0 updates after an edit, then rising to alphaMax.
     const rising = min(d.u.alphaMax, float(1).sub(float(1).div(editAge.sub(d.u.A0).add(2))))
-    const alpha = select(dataAge.equal(0).or(editAge.lessThan(d.u.A0)), float(0), rising).toVar()
+    const alpha = select(dataAge.equal(0), float(0), select(editAge.lessThan(d.u.A0), d.u.follow, rising)).toVar()
     workgroupBarrier()
 
     // The irradiance texel of this lane: the cosine-weighted mean radiance, × π (S0「辐照度的归一化」).

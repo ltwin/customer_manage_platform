@@ -409,6 +409,7 @@ shaded = direct · contact' + diffuse + envSpec · ao · (1 − cover') + reflec
   - 压力场景用五级，P 最大为 16，要 416 帧。按 owner 2026-10-26 的决定，压力场景只记录、不判定。
 - **重新计数**：沿用 `LookView` 现有的规则，不是它自己要的帧、视角变化或场景变化，都让计数归零。底座版本号的变化来自编辑或区段提交，这些本来就会请求一帧，所以照常归零。后台预热期间，视口持续请求帧。
 - **不空转**：计数达到之后不再请求帧（Epic AC-4）。
+- **实现**（任务 5.3）：`LookView` 读 `SceneRenderer.settleFrames(engine)`，有探针在画时按所画探针体的级数和周期算，没有时仍是 `convergeFrames`。
 
 ### 导出预热与时限
 

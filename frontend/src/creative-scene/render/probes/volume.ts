@@ -2,6 +2,7 @@ import { Box3, FloatType, HalfFloatType, LinearFilter, Matrix3, Matrix4, Nearest
 import * as tsl from 'three/tsl'
 import { StorageTexture, type ComputeNode, type WebGPURenderer } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
+import { gpuTestHooks } from '../gpu.ts'
 import { preExposure, type PhysicalExposure } from '../../world/exposure.ts'
 import type { TraceHandle } from '../trace/base.ts'
 import { hitShading, type HitShading } from '../trace/hit.ts'
@@ -100,6 +101,7 @@ export class ProbeVolume {
   private still = 0
   private readonly pending = new Box3()
   private sEnv: number | null = null
+  private disposed = false
 
   constructor(renderer: WebGPURenderer, handle: TraceHandle, scene: Scene, source: ProbeSource, camera: Camera, mode: Mode, release: (attribute: object) => void) {
     this.renderer = renderer
@@ -156,6 +158,7 @@ export class ProbeVolume {
         frame: uniform(0, 'uint'),
         A0: uniform(this.hysteresis.A0),
         alphaMax: uniform(this.hysteresis.alphaMax),
+        follow: uniform(0),
         editCount: uniform(0),
         relocationCount: uniform(0),
         editedMin: uniform(new Vector3(Infinity, Infinity, Infinity)),
@@ -178,9 +181,14 @@ export class ProbeVolume {
     return this.updates.slice(0, this.levels).every((u) => u >= this.hysteresis.A0 + SETTLE_UPDATES)
   }
 
-  /** For the e2e (gpu.ts probeStats): the levels allocated and drawn, each one's updates since it was cleared, warm. */
-  get stats(): { serial: number; allocated: number; levels: number; updates: number[]; warm: boolean } {
-    return { serial: this.serial, allocated: this.allocated, levels: this.levels, updates: this.updates.slice(0, this.allocated), warm: this.warm }
+  /** Frames between a level's updates: the viewport rotates its levels (cascade.ts periodsFor), a picture updates every one every frame. */
+  get periods(): readonly number[] {
+    return this.mode === 'picture' ? [1, 1, 1, 1, 1] : periodsFor(this.source.slots.length)
+  }
+
+  /** For the e2e (gpu.ts probeStats): the levels allocated and drawn, each one's updates since it was cleared and period, warm. */
+  get stats(): { serial: number; allocated: number; levels: number; updates: number[]; periods: number[]; warm: boolean } {
+    return { serial: this.serial, allocated: this.allocated, levels: this.levels, updates: this.updates.slice(0, this.allocated), periods: this.periods.slice(0, this.allocated), warm: this.warm }
   }
 
   /** The kernels, built once, and again if the scene gained an environment since (hit.ts takes it as it builds). */
@@ -209,7 +217,7 @@ export class ProbeVolume {
     this.wanted = levelsAt(this.source.bounds, eye)
     this.levels = activeLevels(this.allocated, farthestOf(this.source.bounds, eye), this.levels)
     this.nodes.levels.value = this.levels
-    const periods = this.mode === 'picture' || warming ? [1, 1, 1, 1, 1] : periodsFor(this.source.slots.length)
+    const periods = warming ? [1, 1, 1, 1, 1] : this.periods
     const due = Array.from({ length: this.levels }, (_, l) => l).filter((l) => isDue(l, frame, periods))
     for (const l of due) (this.nodes.origins[l].value as Vector4).set(...originCell(l, [eye.x, eye.y, eye.z], [look.x, look.y, look.z]), 0)
     // The coarsest level's fade at each face, for its box as last locked.
@@ -232,6 +240,7 @@ export class ProbeVolume {
     this.nodes.toExposed.value = preExposure.value / sEnv
     frameRotation(frame, u.rotation.value as Matrix3)
     u.frame.value = frame >>> 0
+    u.follow.value = this.mode === 'viewport' ? (gpuTestHooks.probeFollow ?? 0) : 0
     due.forEach((l, i) => (u.due[i].value = l))
     if (due.length === 0) return
     const threads = due.length * PROBES * RAYS
@@ -281,6 +290,39 @@ export class ProbeVolume {
     }
   }
 
+  /**
+   * For the e2e (AC-S2-3): each level drawn's mean irradiance as stored (rgb)
+   * over its probes on and gathered, and the least data and edit age among
+   * them; null when the volume was let go as it was read.
+   */
+  async means(): Promise<{ serial: number; levels: number[][]; ages: { data: number; edit: number }[] } | null> {
+    const read = await this.inspect().catch((e: unknown) => {
+      if (this.disposed) return null
+      throw e
+    })
+    if (!read) return null
+    const { irradiance, offsets, ages } = read
+    const texels = IRRADIANCE_TEXELS ** 2
+    const levels: number[][] = []
+    const least: { data: number; edit: number }[] = []
+    for (let l = 0; l < this.levels; l++) {
+      const sum = [0, 0, 0]
+      let n = 0
+      let data = Infinity
+      let edit = Infinity
+      for (let p = l * PROBES; p < (l + 1) * PROBES; p++) {
+        if (offsets[p * 4 + 3] <= 0 || ages[p * 4] <= 0) continue
+        for (let t = 0; t < texels; t++) for (let c = 0; c < 3; c++) sum[c] += irradiance[(p * texels + t) * 4 + c]
+        n += texels
+        data = Math.min(data, ages[p * 4])
+        edit = Math.min(edit, ages[p * 4 + 1])
+      }
+      levels.push(sum.map((v) => v / Math.max(n, 1)))
+      least.push({ data, edit })
+    }
+    return { serial: this.serial, levels, ages: least }
+  }
+
   private disposeKernels() {
     if (!this.kernels) return
     for (const c of [this.kernels.rays, this.kernels.update, this.kernels.rescale]) c.dispose()
@@ -288,6 +330,7 @@ export class ProbeVolume {
   }
 
   dispose() {
+    this.disposed = true
     this.disposeKernels()
     for (const b of this.buffers) this.release((b as { value: object }).value)
     for (const t of Object.values(this.data.atlases)) t.dispose()

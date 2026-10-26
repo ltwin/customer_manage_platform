@@ -97,3 +97,12 @@ SCENE_E2E_ONLY="probes: AC-S2-1 and AC-S2-2" SCENE_E2E_PROBES=<目录> \
 - 墙面逐点数值：在 e2e 输出里，`mirror.json` 写在给定目录下。
 
 **重新生成**：`SCENE_E2E_ONLY="probes diag: a wall seen in a mirror" SCENE_E2E_PROBE_MIRROR=<dir> node scripts/creative-scene.e2e.mjs`；加 `SCENE_E2E_PROBE_MIRROR_SHADE=object,distance` 另出命中点按物体或距离着色的图（看哪里是世界追踪命中）。球的那一行：`SCENE_E2E_ONLY="trace: a ball close to the mirror" SCENE_E2E_TRACE=<dir>`。改前的图要先检出 `46a24366` 再跑。
+
+## 任务 5.3：编辑与收敛
+
+- `after/probes-5.3.json`：每种编辑的读数。`samples` 是逐帧的读回（`during` 表示还在拖动），`off` 是各区域相对收敛值的最大偏差，`offOfChange` 是相对「收敛值与变化量中较大的那个」的偏差；`flicker` 是停下后 8 帧里逐像素逐帧变化之和占均值的比例（S0 的口径）。
+- 测法与 S0 相同：视口切到场景摄像机，按 `gi-regions.json` 的区域，在每个像素第一次命中处取探针给出的辐照度（`gpuTestHooks.probeView`）。编辑落地后视口暂停自行请求帧（`viewportHold`），用例每画一帧读一次。帧数取各级最小编辑年龄乘周期中的最大值。
+- `after/follow-compare.mp4`：cornell 里拖动立方体约 5 秒，左为 A0 = 12、跟随期 α = 0（现行），右为 α = 0.5（S2-U5）。两段各录一次，时间没有严格对齐。
+- 大厅的两项只记录（owner 2026-10-26）。一次连跑参考场景、视频和大厅时，大厅「转动太阳」那一步页面发生了一次导航（`Execution context was destroyed`），单独重跑没有复现，原因未查。
+
+**重新生成**：`SCENE_E2E_ONLY="probes: AC-S2-3" SCENE_E2E_PROBE_EDITS=<dir> node scripts/creative-scene.e2e.mjs`，约 3 分钟；加 `SCENE_E2E_PROBE_FOLLOW_VIDEO=1` 录两段视频，加 `SCENE_E2E_PROBE_EDITS_HALL=1` 另记大厅（约 22 分钟），`=only` 只跑大厅。对照视频由两段 webm 剪成：`ffmpeg -ss 6 -i <α=0>.webm -ss 6 -i <α=0.5>.webm -filter_complex "[0:v]crop=900:640:330:100,scale=640:-2[a];[1:v]crop=900:640:330:100,scale=640:-2[b];[a][b]hstack" -c:v libx264 -pix_fmt yuv420p -crf 23 follow-compare.mp4`。

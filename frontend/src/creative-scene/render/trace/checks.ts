@@ -644,6 +644,51 @@ export type ProbeCheck = {
  * composite). Exposed as the picture is: run with its preExposure set.
  * regions are fractions of the picture (x0, y0, x1, y1, from the top left).
  */
+/** The probes' irradiance at each pixel of a small picture, read again each frame (probeView). */
+export type ProbeView = { width: number; height: number; read(): Promise<Float32Array>; dispose(): void }
+
+/**
+ * The irradiance a camera's picture takes from the probes as the composite
+ * does (AC-S2-3, S2 task 5.3): at each pixel's first hit, their light, the
+ * environment's where they do not cover it; its luminance in r, −1 where
+ * nothing is hit, the coverage in g. Made once for a camera and a volume,
+ * then read as often as the viewport draws.
+ */
+export function probeView(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, width = 192): ProbeView {
+  const size = sizeOf(camera, width)
+  const { uint } = tsl as unknown as Record<string, Op>
+  const shading = hitShading(handle.reflect, handle.tables, scene)
+  const fill = float(AMBIENT_FILL)
+  const pass = rayPass(camera, size, (eye, dir) => {
+    const first = shading.bounce(eye, dir, uint(0), () => vec3(0), fill)
+    const out = vec4(-1, 0, 0, 0).toVar()
+    If(first.front.greaterThan(0.5), () => {
+      const { pre, coverage } = probeIrradiance(volume.nodes, first.P, first.n, dir.negate())
+      out.assign(vec4(luminance(pre.add(shading.environmentIrradiance(first.n).mul(float(1).sub(coverage)))), coverage, 0, 0))
+    })
+    return out
+  })
+  const target = floatTarget(size, false)
+  return {
+    ...size,
+    async read() {
+      shading.update()
+      const state = RendererUtils.resetRendererState(renderer, undefined as never)
+      try {
+        renderer.setRenderTarget(target)
+        pass.quad.render(renderer)
+      } finally {
+        RendererUtils.restoreRendererState(renderer, state)
+      }
+      return readBack(renderer, target, size)
+    },
+    dispose() {
+      pass.dispose()
+      target.dispose()
+    },
+  }
+}
+
 export async function probeCheck(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, { regions, width = 384, passes = 32, bounces = BOUNCES }: { regions: Record<string, readonly number[]>; width?: number; passes?: number; bounces?: number }): Promise<ProbeCheck> {
   const started = performance.now()
   const size = sizeOf(camera, width)
