@@ -218,5 +218,8 @@ export function sphereLights(renderer: WebGPURenderer, root: { traverse(f: (o: u
     const l = o as PointLight & { radius?: number }
     if (l.isPointLight || (l as unknown as SpotLight).isSpotLight) l.radius = r
   })
-  return query.get('highlight') === 'point' ? `sphere lights r ${r} m: falloff from max(d, r), highlights from the centre` : `sphere lights r ${r} m: falloff from max(d, r), highlights from the representative point (α' with r / ${Number(query.get('normDiv') ?? 2)}d)`
+  const norm = query.get('norm') ?? 'hybrid'
+  return query.get('highlight') === 'point'
+    ? `sphere lights r ${r} m: falloff from max(d, r), highlights from the centre`
+    : `sphere lights r ${r} m: falloff from max(d, r), highlights ${norm === 'hybrid' ? 'widened, then moved toward the representative point (hybrid)' : `by ?norm=${norm}`}, diffuse by ${query.get('horizon') ?? 'snyder'}`
 }

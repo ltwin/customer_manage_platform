@@ -1,0 +1,20 @@
+{
+  "scene": "frame-two-lights",
+  "light": null,
+  "method": "pcss",
+  "size": 0.1,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 800,
+  "height": 1200,
+  "lights": [
+    "DirectionalLight ae191df1: PCSS (cascades) θ 0.545°, 16 + 32 samples, at most 48 texels",
+    "PointLight 8f15636b: PCSS (cube, raw compares) r 0.1 m, 16 + 32 samples, at most 48 texels",
+    "contact shadows off",
+    "sphere lights r 0.1 m: falloff from max(d, r), highlights from the representative point (α' with r / 2d)"
+  ],
+  "compileMs": 7494,
+  "firstMs": 4715,
+  "drawMs": 4715,
+  "coldSalt": 0
+}

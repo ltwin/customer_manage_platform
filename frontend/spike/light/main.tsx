@@ -242,7 +242,7 @@ async function boot() {
     document.body.append(panels)
     canvas.style.display = 'none'
     const widths = sceneName === 'occluder-wall' || sceneName === 'area-studio' ? penumbrae(c, error) : null
-    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'frame-two-lights' ? null : regionErrors(c, error), highlight: sceneName === 'occluder-wall' ? highlight(c) : null, terminator: query.get('layout') === 'near' ? terminator(c) : null } }
+    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'frame-two-lights' ? null : regionErrors(c, error), highlight: sceneName === 'frame-two-lights' ? null : highlight(c), terminator: query.get('layout') === 'near' ? terminator(c) : null } }
     show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`, ...(widths ? penumbraLines(widths) : [])])
     spike.data = c
   }

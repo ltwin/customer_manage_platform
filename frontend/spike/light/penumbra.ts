@@ -155,6 +155,12 @@ export function regionErrors(c: Comparison, s: { ref: Float32Array; averagedShad
  * half of their own peak (area).
  */
 export function highlight(c: Comparison) {
+  // The wall's light, unshadowed: the diffuse the light gives, raster over reference (AC-3, AC-5).
+  const wall = { reference: 0, raster: 0 }
+  for (let i = 0; i < c.size.width * c.size.height; i++) {
+    if (Math.abs(docOf(c.position, i)[2] - WALL_Z) > 0.004) continue
+    for (const [k, a] of [['reference', c.reference.unshadowed], ['raster', c.raster.unshadowed]] as const) wall[k] += 0.2126 * a[i * 4] + 0.7152 * a[i * 4 + 1] + 0.0722 * a[i * 4 + 2]
+  }
   const sums = { reference: 0, raster: 0 }
   const values: Record<'reference' | 'raster', number[]> = { reference: [], raster: [] }
   for (let i = 0; i < c.size.width * c.size.height; i++) {
@@ -177,6 +183,7 @@ export function highlight(c: Comparison) {
   const lobe = (a: number[]) => above(a).reduce((x, y) => x + y, 0)
   return {
     pixels: values.reference.length,
+    wall: wall.raster / wall.reference,
     energy: { reference: sums.reference, raster: sums.raster, ratio: sums.raster / sums.reference },
     lobe: { reference: lobe(values.reference), raster: lobe(values.raster), ratio: lobe(values.raster) / lobe(values.reference) },
     peak: { reference: peak(values.reference), raster: peak(values.raster) },

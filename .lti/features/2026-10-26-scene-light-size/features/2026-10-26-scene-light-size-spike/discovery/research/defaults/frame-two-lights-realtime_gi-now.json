@@ -1,0 +1,18 @@
+{
+  "scene": "frame-two-lights",
+  "light": null,
+  "method": "pcf",
+  "size": 0,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 800,
+  "height": 1200,
+  "lights": [
+    "DirectionalLight 2b9677e8: product PCF",
+    "PointLight daa7205b: product PCF"
+  ],
+  "compileMs": 445,
+  "firstMs": 1464,
+  "drawMs": 6959,
+  "coldSalt": 0
+}

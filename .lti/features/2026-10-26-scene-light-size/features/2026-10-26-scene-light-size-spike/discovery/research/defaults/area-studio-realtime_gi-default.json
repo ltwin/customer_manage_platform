@@ -1,0 +1,21 @@
+{
+  "scene": "area-studio",
+  "light": null,
+  "method": "pcss",
+  "size": 0,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight f351f9fb: product PCF (size 0)",
+    "PointLight cd1a0be8: product PCF (size 0)",
+    "DirectionalLight 2d0da76b: product PCF (size 0)",
+    "area light 0.25×0.25 m shadowed by a cube map 1024, PCSS with the rectangle's kernel",
+    "sphere lights r 0 m: falloff from max(d, r), highlights widened, then moved toward the representative point (hybrid), diffuse by snyder"
+  ],
+  "compileMs": 173,
+  "firstMs": 3639,
+  "drawMs": 5693,
+  "coldSalt": 0
+}
