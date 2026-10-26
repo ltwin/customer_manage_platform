@@ -43,6 +43,9 @@ export type ProbeNodes = {
   readonly origins: readonly TSLNode[]
   /** Levels drawn now (uint). */
   readonly levels: TSLNode
+  /** The cells the coarsest level drawn fades out over at its box's low faces and high (vec3 each: cascade.ts fadeSpans). */
+  readonly fadeLo: TSLNode
+  readonly fadeHi: TSLNode
   /** Updates a probe's data fades in over (A0, float). */
   readonly fadeIn: TSLNode
   /** k / s_env: from what the probes store to what is drawn (S2 design P4). */
@@ -89,7 +92,8 @@ function atlasUV(n: TSLNode, slot: TSLNode, level: TSLNode, tile: number, interi
  * visibility and whether they are on; where its state names another world
  * cell (moved since, not yet updated: S2 design B3), a probe weighs 0.
  * Returns the irradiance as stored and how far the level covers P: its
- * probes' maturity, faded over the box's outer cell.
+ * probes' maturity, faded over the box's outer cell, or over the cells
+ * fadeSpans gives when it is the coarsest level drawn.
  */
 function levelAt(v: ProbeNodes, k: number, P: TSLNode, n: TSLNode, V: TSLNode) {
   const s = spacingOf(k)
@@ -99,8 +103,9 @@ function levelAt(v: ProbeNodes, k: number, P: TSLNode, n: TSLNode, V: TSLNode) {
   const g = local.sub(0.5)
   const base = floor(g).toVar()
   const f = g.sub(base).toVar()
-  const edge = min(min(local, vec3(GRID).sub(local)).x, min(min(local, vec3(GRID).sub(local)).y, min(local, vec3(GRID).sub(local)).z))
-  const fade = clamp(edge.sub(0.5), 0, 1)
+  const outer = v.levels.equal(uint(k + 1))
+  const faded = min(clamp(local.sub(0.5).div(select(outer, v.fadeLo, vec3(1))), 0, 1), clamp(vec3(GRID).sub(local).sub(0.5).div(select(outer, v.fadeHi, vec3(1))), 0, 1))
+  const fade = min(faded.x, min(faded.y, faded.z))
   const sum = vec3(0).toVar()
   const weights = float(0).toVar()
   const mature = float(0).toVar()

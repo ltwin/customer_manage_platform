@@ -31,10 +31,13 @@ export const widthOf = (k: number) => GRID * spacingOf(k)
 /** How far ahead of the camera level k reaches: three quarters of its box. */
 export const reachOf = (k: number) => (widthOf(k) * 3) / 4
 
-/** The levels a distance d (metres) needs: the last one's reach ahead at least d, within 3 … 5. */
+/** How far ahead level k covers whole: its reach less the cell and a half its box's edge fades over at least (lookup.ts). */
+export const coveredOf = (k: number) => reachOf(k) - 1.5 * spacingOf(k)
+
+/** The levels a distance d (metres) needs: the last one covering at least d ahead, within 3 … 5. */
 export function levelsFor(d: number): number {
-  if (!(d > reachOf(LEVELS_MIN - 1))) return LEVELS_MIN
-  return Math.min(LEVELS_MAX, LEVELS_MIN + Math.ceil(Math.log2(d / reachOf(LEVELS_MIN - 1))))
+  if (!(d > coveredOf(LEVELS_MIN - 1))) return LEVELS_MIN
+  return Math.min(LEVELS_MAX, LEVELS_MIN + Math.ceil(Math.log2(d / coveredOf(LEVELS_MIN - 1))))
 }
 
 /**
@@ -45,8 +48,8 @@ export function levelsFor(d: number): number {
  */
 export function activeLevels(allocated: number, farthest: number, previous: number): number {
   let n = levelsFor(farthest)
-  // n + 1 levels come on beyond level n − 1's reach (levelsFor) and stay on down to 3/4 of it.
-  while (n < previous && farthest > (reachOf(n - 1) * 3) / 4) n++
+  // n + 1 levels come on beyond what level n − 1 covers (levelsFor) and stay on down to 3/4 of it.
+  while (n < previous && farthest > (coveredOf(n - 1) * 3) / 4) n++
   return Math.min(allocated, n)
 }
 
@@ -64,6 +67,31 @@ export function originCell(k: number, eye: Vec3, look: Vec3): [number, number, n
   const w = widthOf(k)
   const centre = [eye[0] + (look[0] * w) / 4, eye[1] + (look[1] * w) / 4, eye[2]]
   return centre.map((c) => Math.floor((c - w / 2) / s)) as [number, number, number]
+}
+
+/** The most cells the coarsest level drawn fades out over at a face of its box (fadeSpans). */
+export const OUTER_FADE = 4
+
+/**
+ * The cells the coarsest level drawn fades out over at each face of its box
+ * (S2 design「采样」), low faces and high: as far as the box reaches past the
+ * scene's bounds (half a cell kept before them) and a third of the camera's
+ * distance from the face, within 1 … OUTER_FADE. So the scene stays covered
+ * whole and the ground beyond it fades softly into the sky. A scene sticking
+ * out of a face fades over the one cell a finer level does, unless no coarser
+ * level can come on (capped): then over a third of the camera's distance.
+ */
+export function fadeSpans(k: number, origin: Vec3, bounds: { min: Vec3; max: Vec3 } | null, eye: Vec3, capped: boolean): { lo: number[]; hi: number[] } {
+  const s = spacingOf(k)
+  const span = (gap: number, toEye: number) => {
+    const room = gap >= 1.5 || !capped ? gap - 0.5 : Infinity
+    return Math.min(OUTER_FADE, Math.max(1, Math.min(room, toEye / 3)))
+  }
+  const axes = [0, 1, 2]
+  return {
+    lo: axes.map((i) => span(bounds ? bounds.min[i] / s - origin[i] : Infinity, eye[i] / s - origin[i])),
+    hi: axes.map((i) => span(bounds ? origin[i] + GRID - bounds.max[i] / s : Infinity, origin[i] + GRID - eye[i] / s)),
+  }
 }
 
 /** a modulo n, never negative (WGSL's % truncates like JS's). */

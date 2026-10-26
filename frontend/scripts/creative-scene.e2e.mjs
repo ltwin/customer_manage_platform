@@ -6678,6 +6678,42 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as 
   }
 })
 
+// The viewport pulled back past the scene (S2 task 5.2a): its probes take more
+// levels, as the camera's distance needs (volume.ts levelsAt), warmed in the
+// background while the ones it has keep drawing: no frame without probes.
+if (process.env.SCENE_E2E_TRACE) await check('probes: the viewport pulled back past cornell takes more levels, drawing with probes all along', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'cornell', realtimeGI)
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'cornell', 60_000)
+    const stats = () => page.evaluate(() => window.__sceneGPU.probeStats)
+    await waitFor(async () => (await stats())?.drawn === true, 'the probes taken up', 60_000)
+    const first = await stats()
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const seen = []
+    for (let i = 0; i < 80; i++) {
+      await page.mouse.wheel(0, 120)
+      await sleep(50)
+      const s = await stats()
+      seen.push(s)
+      if (s.serial !== first.serial && s.allocated > first.allocated && s.drawn) break
+    }
+    const last = seen.at(-1)
+    console.log(`  levels allocated ${first.allocated} → ${last.allocated} (volume ${first.serial} → ${last.serial}), drawn ${last.levels}; ${seen.length} wheels`)
+    assert.ok(last.allocated > first.allocated && last.serial !== first.serial, `more levels pulled back: ${JSON.stringify(last)}`)
+    assert.deepEqual(seen.filter((s) => !s.drawn).length, 0, 'drawn with probes at every look, the old ones till the new are warm')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // SCENE_E2E_TRACE=1 (or a directory for the pictures): mirror-board's lit
 // export in real-time GI, the layer off and on: the mirror cabinet shows the
 // red, green and yellow blocks behind the camera only with it (AC-S1-1, the
@@ -9630,7 +9666,7 @@ window.__probeSmoke = async (frames) => {
   camera.position.set(0, -3, 1.4);
   camera.lookAt(0, 0, 1);
   camera.updateMatrixWorld();
-  const volume = new ProbeVolume(gpu.renderer, base.handle(), scene, base, 'picture', (a) => gpu.release(a));
+  const volume = new ProbeVolume(gpu.renderer, base.handle(), scene, base, camera, 'picture', (a) => gpu.release(a));
   const started = performance.now();
   for (let f = 0; f < frames; f++) {
     base.sync();
@@ -9770,6 +9806,11 @@ const probeViews = [
   { view: 'thin-wall@level1', scene: 'thin-wall', camera: { position: [1.9, 1.5, 1.9], rotation: [0, 0.382683, 0, 0.92388] } },
   { view: 'thin-wall@level2', scene: 'thin-wall', camera: { position: [-7.5, 1.6, 0], rotation: [0, -0.707107, 0, 0.707107], focal_mm: 85 } },
   { view: 'physical-noon', scene: 'physical-noon' },
+  // Pulled back past the scene (S2 task 5.2a): the levels follow the camera, and the coarsest fades out softly.
+  { view: 'cornell@mid', scene: 'cornell', camera: { position: [0, 1.5, 10], rotation: [0, 0, 0, 1], focal_mm: 50 } },
+  { view: 'cornell@far', scene: 'cornell', camera: { position: [0, 1.5, 18], rotation: [0, 0, 0, 1], focal_mm: 85 } },
+  { view: 'thin-wall@far', scene: 'thin-wall', camera: { position: [-16, 1.6, 0], rotation: [0, -0.707107, 0, 0.707107], focal_mm: 85 } },
+  { view: 'physical-noon@far', scene: 'physical-noon', camera: { position: [0, 3, 20], rotation: [-0.049742, 0, 0, 0.998762] } },
 ]
 
 // SCENE_E2E_PROBES (=<dir>: the pictures and probes.json there): the numbers S2's AC-S2-1 and AC-S2-2 are

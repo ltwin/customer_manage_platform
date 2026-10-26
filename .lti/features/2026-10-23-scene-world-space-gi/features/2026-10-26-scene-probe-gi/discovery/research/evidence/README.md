@@ -77,3 +77,14 @@ SCENE_E2E_ONLY="probes: AC-S2-1 and AC-S2-2" SCENE_E2E_PROBES=<目录> \
 ## 任务 5.2
 
 见 `ac-s2-2.md`：数值在 `after/probes-5.2.json`，对照图是 `after/ac-s2-2-views.jpg`、`after/ac-s2-2-bias.jpg`、`after/ac-s2-1-before-after.jpg`、`after/s2-u7-ao.jpg`。
+
+## 任务 5.2a：拉远后的割裂
+
+- `after/far-compare.jpg`：四个拉远的视角，每行依次是：改前的成图、改后的成图、改后探针给的间接辐照度、逐像素参考。改前探针盒子够不着场景，辐照度图里是全黑。
+  - `cornell@mid`：13 m；
+  - `cornell@far`：19 m，85 mm；
+  - `thin-wall@far`：从窗外 16 m 处看；
+  - `physical-noon@far`：22 m。
+- `after/probes-5.2a.json`：原参考视角加拉远视角的全部数值，以及 AC-S2-1。
+
+**重新生成**：命令同 5.1，视角已列在 e2e 的 `probeViews` 里（`SCENE_E2E_PROBE_VIEWS=cornell@mid,cornell@far,thin-wall@far,physical-noon@far` 只跑拉远的四个）。改前的图要先检出 `98e35bac` 再跑。

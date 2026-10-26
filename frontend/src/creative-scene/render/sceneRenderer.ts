@@ -479,6 +479,8 @@ export class SceneRenderer {
    * while the proxies they trace are the same layer; a picture's its own.
    */
   private probes: ProbeVolume | null = null
+  /** The viewport's probes for more levels, warming in the background while these draw (S2 design「级数」). */
+  private growing: ProbeVolume | null = null
   /** Frames this renderer has stepped its probes for: their rays' turn and random numbers come from it alone (P3). */
   private frames = 0
 
@@ -722,17 +724,40 @@ export class SceneRenderer {
     return base
   }
 
-  /** The probes for the layer the base serves: these, or new ones for another layer or a scene grown past their levels (a cold start). */
-  private probesFor(handle: TraceHandle): ProbeVolume {
+  /**
+   * The probes for the layer the base serves: these, or new ones for another
+   * layer (a cold start). Grown past their levels (the scene, or the camera
+   * pulled back from it), the viewport's warm ones keep drawing while ones
+   * with more levels warm in the background, and give way once those are warm.
+   */
+  private probesFor(handle: TraceHandle, camera: Camera): ProbeVolume {
     const p = this.probes
-    if (p && p.layer === handle.probes && !p.outgrown) return p
-    p?.dispose()
-    const gpu = this.gpu
-    this.probes = new ProbeVolume(gpu.renderer, handle, this.scene, this.trace(), this.viewport ? 'viewport' : 'picture', (a) => gpu.release(a))
+    if (!p || p.layer !== handle.probes || (p.outgrown && !(this.viewport && p.warm))) {
+      this.dropProbes()
+      return (this.probes = this.newProbes(handle, camera))
+    }
+    if (!p.outgrown) return p
+    if (this.growing?.outgrown) this.dropGrowing()
+    this.growing ??= this.newProbes(handle, camera)
+    if (!this.growing.warm) return p
+    p.dispose()
+    this.probes = this.growing
+    this.growing = null
     return this.probes
   }
 
+  private newProbes(handle: TraceHandle, camera: Camera): ProbeVolume {
+    const gpu = this.gpu
+    return new ProbeVolume(gpu.renderer, handle, this.scene, this.trace(), camera, this.viewport ? 'viewport' : 'picture', (a) => gpu.release(a))
+  }
+
+  private dropGrowing() {
+    this.growing?.dispose()
+    this.growing = null
+  }
+
   private dropProbes(): null {
+    this.dropGrowing()
     this.probes?.dispose()
     this.probes = null
     return null
@@ -749,7 +774,7 @@ export class SceneRenderer {
     if (frame.engine !== 'realtime_gi' || frame.wireframe === true || !perspective) return
     const handle = this.trace().handle()
     if (!handle) return
-    const probes = this.probesFor(handle)
+    const probes = this.probesFor(handle, camera)
     applyExposure(this.scene, frame.preExposure ?? 1)
     try {
       if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
@@ -784,7 +809,7 @@ export class SceneRenderer {
       world: null,
     }
     // The probes once warm: the viewport warms them in the background first, drawing as before (S2 design「就绪的那一刻」).
-    const probes = look.trace ? this.probesFor(look.trace) : this.dropProbes()
+    const probes = look.trace ? this.probesFor(look.trace, camera) : this.dropProbes()
     if (probes?.warm) look.world = probes
     const key = keyOf(look)
     if (this.built?.key !== key) {
@@ -831,8 +856,10 @@ export class SceneRenderer {
       if (probes) {
         // A cold start's levels every frame till they are warm, the viewport asking for frames meanwhile.
         const warming = !probes.warm
-        probes.step(this.frames++, camera, warming)
-        if (warming) this.redraw?.()
+        const frame = this.frames++
+        probes.step(frame, camera, warming)
+        this.growing?.step(frame, camera, true)
+        if (warming || this.growing) this.redraw?.()
       }
     }
     prepareAerial(this.scene, renderer, camera, !wireframe)

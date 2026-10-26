@@ -6,7 +6,7 @@ import { preExposure, type PhysicalExposure } from '../../world/exposure.ts'
 import type { TraceHandle } from '../trace/base.ts'
 import { hitShading, type HitShading } from '../trace/hit.ts'
 import type { TraceLayer } from '../trace/layer.ts'
-import { AMBIENT_FILL, activeLevels, DEPTH_TEXELS, IRRADIANCE_TEXELS, isDue, LEVELS_MAX, LEVELS_MIN, levelsFor, originCell, periodsFor, PICTURE, PROBES, RAYS, SETTLE_UPDATES, VIEWPORT, type Hysteresis } from './cascade.ts'
+import { AMBIENT_FILL, activeLevels, fadeSpans, DEPTH_TEXELS, IRRADIANCE_TEXELS, isDue, LEVELS_MAX, LEVELS_MIN, levelsFor, originCell, periodsFor, PICTURE, PROBES, RAYS, SETTLE_UPDATES, VIEWPORT, type Hysteresis } from './cascade.ts'
 import { rayKernel, rescaleKernel, updateKernel, type ProbeData } from './kernels.ts'
 import { DEPTH_TILE, IRRADIANCE_TILE, TILES, type ProbeNodes } from './lookup.ts'
 
@@ -59,6 +59,18 @@ const corner = new Vector3()
 const eye = new Vector3()
 const look = new Vector3()
 
+/** The distance from eye to the farthest corner of bounds; 0 for none. */
+function farthestOf(bounds: Box3, eye: Vector3): number {
+  let d = 0
+  if (!bounds.isEmpty()) for (let c = 0; c < 8; c++) d = Math.max(d, eye.distanceTo(corner.set(c & 1 ? bounds.max.x : bounds.min.x, c & 2 ? bounds.max.y : bounds.min.y, c & 4 ? bounds.max.z : bounds.min.z)))
+  return d
+}
+
+/** The levels a scene's bounds take for a camera at eye: as many as its diagonal needs, or the camera's distance to their farthest corner when that is more (S2 design「级数」). */
+function levelsAt(bounds: Box3, eye: Vector3): number {
+  return levelsFor(Math.max(bounds.isEmpty() ? 0 : bounds.getSize(corner).length(), farthestOf(bounds, eye)))
+}
+
 export class ProbeVolume {
   /** The layer the probes trace: the volume's identity (a new one is a cold start). */
   readonly layer: TraceLayer
@@ -80,6 +92,8 @@ export class ProbeVolume {
   private kernels: { rays: ComputeNode; update: ComputeNode; rescale: ComputeNode; shading: HitShading; environment: boolean } | null = null
   /** Updates each level has had since it was cleared: the viewport's warm-up reads it (warm). */
   private readonly updates = new Array<number>(LEVELS_MAX).fill(0)
+  /** The levels the scene and the camera took at the last step (levelsAt): more than allocated is outgrown. */
+  private wanted: number
   private seen: { geometry: number; lighting: number } | null = null
   private edits = 0
   private relocations = 0
@@ -87,7 +101,7 @@ export class ProbeVolume {
   private readonly pending = new Box3()
   private sEnv: number | null = null
 
-  constructor(renderer: WebGPURenderer, handle: TraceHandle, scene: Scene, source: ProbeSource, mode: Mode, release: (attribute: object) => void) {
+  constructor(renderer: WebGPURenderer, handle: TraceHandle, scene: Scene, source: ProbeSource, camera: Camera, mode: Mode, release: (attribute: object) => void) {
     this.renderer = renderer
     this.handle = handle
     this.layer = handle.probes
@@ -96,8 +110,8 @@ export class ProbeVolume {
     this.mode = mode
     this.release = release
     this.hysteresis = mode === 'picture' ? PICTURE : VIEWPORT
-    // As many levels as the scene's diagonal needs: a camera inside it is never farther from a corner (S2 design「级数」).
-    this.allocated = levelsFor(source.bounds.isEmpty() ? 0 : source.bounds.getSize(corner).length())
+    // As many levels as the scene and the camera now need; a camera pulled back past them later outgrows these (S2 design「级数」).
+    this.allocated = this.wanted = levelsAt(source.bounds, camera.getWorldPosition(eye))
     const n = this.allocated
     const atlas = (width: number, height: number, type: typeof HalfFloatType | typeof FloatType, filter: typeof LinearFilter | typeof NearestFilter) => {
       const t = new StorageTexture(width, height)
@@ -122,6 +136,8 @@ export class ProbeVolume {
       state: texture(atlases.state),
       origins: Array.from({ length: LEVELS_MAX }, () => uniform(new Vector4())),
       levels: uniform(LEVELS_MIN, 'uint'),
+      fadeLo: uniform(new Vector3(1, 1, 1)),
+      fadeHi: uniform(new Vector3(1, 1, 1)),
       fadeIn: uniform(this.hysteresis.A0),
       toExposed: uniform(1),
     }
@@ -151,9 +167,10 @@ export class ProbeVolume {
     }
   }
 
-  /** Whether the scene has grown past the levels allocated: the owner makes a new volume (a cold start). */
+  /** Whether the scene, or the camera's distance from it, has grown past the levels allocated: the owner makes a new volume (a cold start). */
   get outgrown(): boolean {
-    return levelsFor(this.source.bounds.isEmpty() ? 0 : this.source.bounds.getSize(corner).length()) > this.allocated
+    const b = this.source.bounds
+    return Math.max(this.wanted, levelsFor(b.isEmpty() ? 0 : b.getSize(corner).length())) > this.allocated
   }
 
   /** Whether every level drawn has had A0 + 14 updates since it was cleared: the viewport takes the probes up then (S2 design「就绪的那一刻」). */
@@ -189,14 +206,19 @@ export class ProbeVolume {
     k.shading.update()
     camera.getWorldPosition(eye)
     camera.getWorldDirection(look)
-    const b = this.source.bounds
-    let farthest = 0
-    if (!b.isEmpty()) for (let c = 0; c < 8; c++) farthest = Math.max(farthest, eye.distanceTo(corner.set(c & 1 ? b.max.x : b.min.x, c & 2 ? b.max.y : b.min.y, c & 4 ? b.max.z : b.min.z)))
-    this.levels = activeLevels(this.allocated, farthest, this.levels)
+    this.wanted = levelsAt(this.source.bounds, eye)
+    this.levels = activeLevels(this.allocated, farthestOf(this.source.bounds, eye), this.levels)
     this.nodes.levels.value = this.levels
     const periods = this.mode === 'picture' || warming ? [1, 1, 1, 1, 1] : periodsFor(this.source.slots.length)
     const due = Array.from({ length: this.levels }, (_, l) => l).filter((l) => isDue(l, frame, periods))
     for (const l of due) (this.nodes.origins[l].value as Vector4).set(...originCell(l, [eye.x, eye.y, eye.z], [look.x, look.y, look.z]), 0)
+    // The coarsest level's fade at each face, for its box as last locked.
+    const top = this.levels - 1
+    const o = this.nodes.origins[top].value as Vector4
+    const b = this.source.bounds
+    const spans = fadeSpans(top, [o.x, o.y, o.z], b.isEmpty() ? null : { min: b.min.toArray(), max: b.max.toArray() }, [eye.x, eye.y, eye.z], this.levels === LEVELS_MAX)
+    ;(this.nodes.fadeLo.value as Vector3).fromArray(spans.lo)
+    ;(this.nodes.fadeHi.value as Vector3).fromArray(spans.hi)
     this.follow()
     const u = this.data.u
     const physical = this.scene.userData.physical as PhysicalExposure | undefined

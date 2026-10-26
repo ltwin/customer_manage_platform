@@ -117,6 +117,14 @@
   - AC-S2-1：逐点读法 0.977–1.032，均值读法 0.898–1.063；
   - S2-U6：`r_fill` 维持 1；S2-U7：对照图已出，缺省不加；
   - 测试钩子 `gpuTestHooks.probeAO`，只给 S2-U7 的对照用
+- [x] 5.2a 拉远后的割裂（owner 2026-10-26 看图后提出，选定方案 A + B1）：级数按摄像机到场景最远角的距离分配，视口在后台预热级数更多的探针体，热好再切；最粗一级的淡出宽度按盒面到场景的余量取。完成判据：拉远的视角不再只剩天光，原参考视角的 AC 数值不变，对照图交 owner
+
+  结果（2026-10-26），图在 `evidence/after/far-compare.jpg`，数值在 `evidence/after/probes-5.2a.json`：
+  - 拉远的四个视角（`cornell@mid` 13 m、`cornell@far` 19 m、`thin-wall@far`、`physical-noon@far` 22 m）与逐像素参考相比：`cornell@mid` 后墙 −99% → −23%，`cornell@far` 后墙 −100% → −19%，`thin-wall@far` 隔窗的室内 +91% → +7%，`physical-noon@far` 的墙 −32% → +5%；
+  - 原参考视角 AC-S2-2 各区域与 5.2 相同，AC-S2-1 逐点 0.977–1.032 不变；
+  - 级数门槛从「前方覆盖 12 m」改为「完全覆盖 10.5 m」，对角线在 10.5–12 m 之间的场景从三级变为四级（`probes:` 冒烟场景就是一例）；
+  - 新增 e2e `probes: the viewport pulled back past cornell…`：滚轮拉远后从 4 级扩到 5 级，期间每帧都画着探针；`trace: 5.2`、冒烟用例照过；
+  - `trace: 5.2` 接入时的长任务这次是 486–872 ms（5.2 时 470–675 ms），留给 5.5 一起看
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
 - [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
 - [ ] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图

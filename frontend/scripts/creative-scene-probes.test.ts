@@ -4,7 +4,9 @@ import {
   activeLevels,
   alphaOf,
   cellOf,
+  coveredOf,
   emod,
+  fadeSpans,
   GRID,
   isDue,
   levelsFor,
@@ -26,27 +28,40 @@ import { bordersOf, decodeOct, encodeOct, texelCentre } from '../src/creative-sc
 test('levels are 0.25 m apart at the finest and double each level; a box reaches 3/4 of its width ahead', () => {
   assert.deepEqual([0, 1, 2, 3, 4].map(spacingOf), [0.25, 0.5, 1, 2, 4])
   assert.deepEqual([0, 1, 2, 3, 4].map(reachOf), [3, 6, 12, 24, 48], 'the design’s coverage table, ahead')
+  assert.deepEqual([2, 3, 4].map(coveredOf), [10.5, 21, 42], 'covered whole: the cell and a half the edge fades over kept')
 })
 
-test('a scene takes three levels within 12 m, a fourth to 24 m and a fifth beyond (owner 2026-10-26)', () => {
+test('a distance takes three levels within 10.5 m, a fourth to 21 m and a fifth beyond (owner 2026-10-26)', () => {
   assert.equal(levelsFor(0), 3)
   assert.equal(levelsFor(8), 3, 'the reference scenes, within 10 m')
-  assert.equal(levelsFor(12), 3)
-  assert.equal(levelsFor(12.01), 4)
-  assert.equal(levelsFor(24), 4)
-  assert.equal(levelsFor(24.01), 5)
+  assert.equal(levelsFor(10.5), 3)
+  assert.equal(levelsFor(10.51), 4)
+  assert.equal(levelsFor(21), 4)
+  assert.equal(levelsFor(21.01), 5)
   assert.equal(levelsFor(36), 5, 'the 30 × 20 m hall')
   assert.equal(levelsFor(500), 5, 'never more than five')
   assert.equal(levelsFor(Number.NaN), 3)
 })
 
 test('a level once on stays down to 3/4 of where it came on, and never past what is allocated', () => {
-  assert.equal(activeLevels(5, 13, 3), 4, 'on past 12 m')
-  assert.equal(activeLevels(5, 10, 4), 4, 'kept at 10 m: above 9 m')
-  assert.equal(activeLevels(5, 9, 4), 3, 'off at 9 m')
-  assert.equal(activeLevels(5, 20, 5), 5, 'the fifth, on past 24 m, kept down to 18 m')
-  assert.equal(activeLevels(5, 17, 5), 4, 'and below that down to the fourth, kept above 9 m')
-  assert.equal(activeLevels(3, 30, 3), 3, 'a small scene allocates three; a camera far out of it takes no more')
+  assert.equal(activeLevels(5, 11, 3), 4, 'on past 10.5 m')
+  assert.equal(activeLevels(5, 8, 4), 4, 'kept at 8 m: above 7.875 m')
+  assert.equal(activeLevels(5, 7.8, 4), 3, 'off below it')
+  assert.equal(activeLevels(5, 16, 5), 5, 'the fifth, on past 21 m, kept down to 15.75 m')
+  assert.equal(activeLevels(5, 15.7, 5), 4, 'and below that down to the fourth')
+  assert.equal(activeLevels(3, 30, 3), 3, 'no more than allocated: a camera pulled back past them makes a volume with more (volume.ts outgrown)')
+})
+
+test('the coarsest level fades over the room its box has past the scene, the camera’s surroundings kept', () => {
+  // Level 2 (1 m cells), its box [0, 16) on each axis; the camera at 4 cells along x, 8 along y and z.
+  const eye = [4, 8, 8] as const
+  const scene = { min: [2, 3, 6], max: [10, 13, 9.2] } as const
+  const { lo, hi } = fadeSpans(2, [0, 0, 0], scene, eye, false)
+  assert.deepEqual(lo, [1.3333333333333333, 2.5, 2.6666666666666665], 'behind the camera a third of its 4 cells; below, the room before the scene less half a cell')
+  assert.deepEqual(hi, [4, 2.5, 2.6666666666666665], 'ahead the most; up to the scene 3 cells, less half; or a third of the camera’s 8')
+  assert.deepEqual(fadeSpans(2, [0, 0, 0], { min: [-3, 0, 0], max: [17, 16, 16] }, eye, false), { lo: [1, 1, 1], hi: [1, 1, 1] }, 'a scene out of every face: the one cell, coarser levels taking over')
+  assert.deepEqual(fadeSpans(4, [0, 0, 0], { min: [-3, 0, 0], max: [17, 16, 16] }, [1, 2, 2].map((c) => c * 16) as unknown as readonly [number, number, number], true).hi, [4, 2.6666666666666665, 2.6666666666666665], 'five levels on, no coarser to come: a third of the camera’s distance (4 m cells)')
+  assert.deepEqual(fadeSpans(2, [0, 0, 0], null, eye, false).hi, [4, 2.6666666666666665, 2.6666666666666665], 'no scene: the camera’s distance alone')
 })
 
 test('a box sits 3/4 ahead of the camera, 1/4 behind, centred up and down, on its own grid', () => {
