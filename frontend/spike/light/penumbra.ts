@@ -177,3 +177,44 @@ export function highlight(c: Comparison) {
     area: { reference: area(values.reference), raster: area(values.raster), ratio: area(values.raster) / Math.max(1, area(values.reference)) },
   }
 }
+
+/** The ball's centre (doc; a sphere primitive stands on its base) and the point light's place under ?layout=near. */
+const BALL = [2.6, 0.25, -1.4] as const
+const NEAR_LIGHT = [0.6, 0.6, -1.4] as const
+
+/**
+ * Where the ball's terminator lies (design「测量与判定」包裹): on the ball, the angle between a point's normal and
+ * the way to the light's centre, in 1° bins of the mean unshadowed light; the largest angle whose bin still has 1%
+ * of the brightest bin. 90° for a point light; past it as a sphere light wraps.
+ */
+export function terminator(c: Comparison) {
+  const bins = { reference: new Float64Array(181), raster: new Float64Array(181) }
+  const count = new Uint32Array(181)
+  const toLight = NEAR_LIGHT.map((v, k) => v - BALL[k])
+  const len = Math.hypot(...toLight)
+  for (let i = 0; i < c.size.width * c.size.height; i++) {
+    const p = docOf(c.position, i)
+    const n = p.map((v, k) => v - BALL[k])
+    const r = Math.hypot(...n)
+    // On the ball, not the ground ring as far from its centre where it touches down.
+    if (Math.abs(r - 0.25) > 0.01 || p[1] < 0.005) continue
+    const cos = (n[0] * toLight[0] + n[1] * toLight[1] + n[2] * toLight[2]) / (r * len)
+    const b = Math.round((Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI)
+    count[b]++
+    for (const [k, a] of [['reference', c.reference.unshadowed], ['raster', c.raster.unshadowed]] as const) bins[k][b] += 0.2126 * a[i * 4] + 0.7152 * a[i * 4 + 1] + 0.0722 * a[i * 4 + 2]
+  }
+  const edge = (a: Float64Array) => {
+    const mean = Array.from(a, (v, b) => (count[b] ? v / count[b] : Number.NaN))
+    const peak = mean.reduce((m, v) => (Number.isNaN(v) ? m : Math.max(m, v)), 0)
+    let last = -1
+    mean.forEach((v, b) => !Number.isNaN(v) && v >= peak * 0.01 && (last = b))
+    return last
+  }
+  // Every 10°, each bin's mean as a share of its brightest: the curves behind the two numbers.
+  const curve = (a: Float64Array) => {
+    const mean = Array.from(a, (v, b) => (count[b] ? v / count[b] : Number.NaN))
+    const peak = mean.reduce((m, v) => (Number.isNaN(v) ? m : Math.max(m, v)), 0)
+    return mean.filter((_, b) => b % 10 === 0).map((v) => (Number.isNaN(v) ? null : +(v / peak).toFixed(4)))
+  }
+  return { curves: { reference: curve(bins.reference), raster: curve(bins.raster) }, reference: edge(bins.reference), raster: edge(bins.raster), seen: [count.findIndex((n) => n > 0), 180 - [...count].reverse().findIndex((n) => n > 0)] }
+}

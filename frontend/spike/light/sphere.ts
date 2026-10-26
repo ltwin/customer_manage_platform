@@ -1,9 +1,9 @@
 // Sphere lights in the raster (S0 group 4, Epic design「高光」): point and spot lights of radius r, as the page
 // installs them before anything builds. Their nodes hand the lighting model the way to the light's centre and r
 // besides the usual direction and colour, and fall off with max(d, r) in place of d (the Epic's effective
-// distance). PhysicalLightingModel.direct, wrapped, lights the specular layers (the base's, the clearcoat's, the
-// sheen) from Karis 2013's representative point, the sphere's point nearest the reflected ray, its energy kept by
-// (α / α')²; the diffuse from the centre, as before.
+// distance). PhysicalLightingModel.direct, wrapped, lights the specular layers (the base's and the clearcoat's) by
+// the hybrid of a widened lobe and Karis 2013's representative point (hybrid()); the diffuse and the sheen toward
+// the sphere as the surface's horizon cuts it (horizon(), Snyder's exact irradiance).
 //   ?highlight=point   the product's: highlights from the centre whatever r (the falloff still takes max(d, r))
 //   ?norm=hybrid       (default) widen the lobe for the sphere's size up to 1.5 α, move toward it beyond (hybrid())
 //   ?norm=karis        Karis's point: α' = saturate(α + r / (normDiv · d)), normDiv 2 (or 3)
@@ -16,7 +16,7 @@ import type { TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { clamp, dot, length, max, normalize, reference, vec3 } = T
+const { clamp, dot, float, length, max, normalize, reference, vec3 } = T
 const { clearcoatRoughness, normalView, positionViewDirection, roughness, renderGroup } = tsl as unknown as Record<string, TSLNode>
 
 const query = new URLSearchParams(location.search)
@@ -89,20 +89,55 @@ function hybrid(this: { clearcoat: boolean; sheen: boolean }, input: DirectInput
   roughness.assign(w.rough)
   clearcoatRoughness.assign(widen(coat).rough)
   const specular = { directDiffuse: vec3(0).toVar(), directSpecular: vec3(0).toVar() }
-  directOf.call(this, { ...input, lightDirection: toward, lightColor: input.lightColor.mul(w.energy), reflectedLight: specular }, builder)
+  // The sheen goes with the diffuse below: a lobe as wide as velvet's sees the sphere as the diffuse does.
+  const { clearcoat, sheen } = this
+  this.sheen = false
+  try {
+    directOf.call(this, { ...input, lightDirection: toward, lightColor: input.lightColor.mul(w.energy), reflectedLight: specular }, builder)
+  } finally {
+    this.sheen = sheen
+  }
   roughness.assign(base)
   clearcoatRoughness.assign(coat)
   input.reflectedLight.directSpecular.addAssign(specular.directSpecular)
+  // The diffuse (and the sheen) toward the sphere as the horizon cuts it; the clearcoat counted above.
   const diffuse = { directDiffuse: vec3(0).toVar(), directSpecular: vec3(0).toVar() }
-  const { clearcoat, sheen } = this
-  this.clearcoat = this.sheen = false
+  this.clearcoat = false
   try {
-    directOf.call(this, { ...input, reflectedLight: diffuse }, builder)
+    directOf.call(this, { ...input, lightDirection: horizon(lightVector, radius), reflectedLight: diffuse }, builder)
   } finally {
     this.clearcoat = clearcoat
-    this.sheen = sheen
   }
   input.reflectedLight.directDiffuse.addAssign(diffuse.directDiffuse)
+}
+
+/**
+ * The way the diffuse takes to a sphere light, which may sit partly below the surface's horizon (U6):
+ *   ?horizon=snyder (default)  the sphere's irradiance, clipped by the horizon, exactly (Snyder 1996, as Lagarde and
+ *                              de Rousiers 2014 write it): as a cosine F, the direction bent toward the normal so
+ *                              N·L' = F (I/d² F is the irradiance)
+ *   ?horizon=rep               the centre moved r toward the normal: the sphere's point the surface faces most
+ *   ?horizon=none              the centre, as a point light
+ */
+function horizon(lightVector: TSLNode, radius: TSLNode): TSLNode {
+  const mode = query.get('horizon') ?? 'snyder'
+  const L = normalize(lightVector)
+  if (mode === 'none') return L
+  if (mode === 'rep') return normalize(lightVector.add(normalView.mul(radius)))
+  const sin2 = T.min(radius.div(length(lightVector)).pow(2), 0.9999).toVar()
+  const cosT = clamp(dot(normalView, L), -1, 1).toVar()
+  const sinT = T.sqrt(float(1).sub(cosT.mul(cosT))).toVar()
+  const x = T.sqrt(float(1).div(sin2).sub(1)).toVar()
+  const y = clamp(x.negate().mul(cosT).div(max(sinT, 1e-4)), -1, 1).toVar()
+  const sinTy = sinT.mul(T.sqrt(float(1).sub(y.mul(y)))).toVar()
+  const clipped = cosT.mul(T.acos(y)).sub(x.mul(sinTy)).mul(sin2).add(T.atan(sinTy.div(x)))
+  const unclipped = sin2.mul(Math.PI).mul(max(cosT, 0))
+  const E = max(T.select(cosT.mul(cosT).greaterThan(sin2), unclipped, clipped), 0)
+  const F = clamp(E.div(sin2.mul(Math.PI)), 0, 1).toVar()
+  // L less its part along N, made a unit: the way to bend along (any tangent where L is the normal).
+  const along = L.sub(normalView.mul(cosT))
+  const tangent = T.select(length(along).greaterThan(1e-4), normalize(along), normalize(T.cross(normalView, vec3(0, 1, 0.1))))
+  return normalize(normalView.mul(F).add(tangent.mul(T.sqrt(float(1).sub(F.mul(F))))))
 }
 
 /** three's own PhysicalLightingModel.direct, as it was before the wrap. */
