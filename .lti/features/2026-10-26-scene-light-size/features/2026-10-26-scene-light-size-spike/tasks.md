@@ -12,7 +12,10 @@
 
 ## 2. 穿刺页面与参考解
 
-- [ ] 2.1 页面骨架：新增 `frontend/spike-light.html` 和 `frontend/spike/light/`，design「穿刺页面」里的参数都能用。原型的有尺寸灯光子类经 `addLight` 注册，`PhysicalLightingModel` 的包装只在页面里装。完成判据：两个场景和 `area-studio` 都能显示；`vite build` 的产物不包含这个页面。
+- [x] 2.1 页面骨架：新增 `frontend/spike-light.html` 和 `frontend/spike/light/`，design「穿刺页面」里的参数都能用。原型的有尺寸灯光子类经 `addLight` 注册，`PhysicalLightingModel` 的包装只在页面里装。完成判据：两个场景和 `area-studio` 都能显示；`vite build` 的产物不包含这个页面。
+  - 结果：三个场景在 `workbench` 和 `realtime_gi` 下都能出图。`frame-two-lights` 的 `realtime_gi` 编译约 2.5 s，76 帧共 6.4 s。`vite.config.ts` 没有 `rollupOptions.input`，构建只打包 `index.html`。
+  - 实施时调整：页面挂载产品的 `ShotScene`，用 `SceneRenderer` 出图，流程同 `openShooter`；候选滤波在 `g.compile` 之前装上。`area-studio` 的面光源缺省 100 cd/m²，保证能看清（`?nits=` 可调）；10000 cd/m² 在这个场景下全白，留给第 9 组。
+  - 测量脚本 `spike/light/measure/shot.mjs`。
 - [ ] 2.2 第 1 组，参考解：按 design「参考解」实现，覆盖球、圆盘、矩形和椭圆，输出 `direct`、`directUnshadowed` 和 `visibility`。完成判据：第 1024 帧与第 2048 帧的差异每通道不超过 1/255（AC-S0-3）。结论写进 `reference.md`。
 
 ## 3. 软阴影
