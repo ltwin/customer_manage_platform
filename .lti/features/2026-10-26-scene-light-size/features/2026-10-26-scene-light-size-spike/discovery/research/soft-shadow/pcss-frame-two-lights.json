@@ -1,0 +1,45 @@
+{
+  "scene": "frame-two-lights",
+  "light": null,
+  "method": "pcss",
+  "size": 0.1,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 800,
+  "height": 1200,
+  "lights": [
+    "DirectionalLight 29a67389: PCSS (cascades) θ 0.545°, 16 + 32 samples, at most 48 texels",
+    "PointLight 060807db: PCSS (cube, raw compares) r 0.1 m, 16 + 32 samples, at most 48 texels"
+  ],
+  "compileMs": 5189,
+  "firstMs": 8808,
+  "drawMs": 11764,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 1440
+    },
+    "refFrames": 8192,
+    "rasterFrames": 64,
+    "referenceMs": 41517,
+    "rasterMs": 3201,
+    "averaged": {
+      "mean": 0.022435358308958958,
+      "p95": 0.07108479738235474,
+      "max": 1,
+      "pixels": 1303207
+    },
+    "first": {
+      "mean": 0.022487147846715096,
+      "p95": 0.07245194911956787,
+      "max": 1,
+      "pixels": 1303207
+    },
+    "convergence": null,
+    "penumbrae": null,
+    "regions": null
+  }
+}

@@ -1,0 +1,266 @@
+{
+  "scene": "occluder-wall",
+  "light": "sun",
+  "method": "pcss",
+  "size": 10,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 4d07f026: PCSS r 10 m, 16 + 32 samples, at most 48 texels",
+    "PointLight 52ef99e5: PCSS (cube, raw compares) r 10 m, 16 + 32 samples, at most 48 texels",
+    "DirectionalLight c69043f4: PCSS (cascades) θ 10°, 16 + 32 samples, at most 48 texels"
+  ],
+  "compileMs": 855,
+  "firstMs": 913,
+  "drawMs": 913,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 640
+    },
+    "refFrames": 8192,
+    "rasterFrames": 64,
+    "referenceMs": 9707,
+    "rasterMs": 578,
+    "averaged": {
+      "mean": 0.0023571687208954434,
+      "p95": 8.344650268554688e-7,
+      "max": 1,
+      "pixels": 448516
+    },
+    "first": {
+      "mean": 0.0027005824619728593,
+      "p95": 0,
+      "max": 1,
+      "pixels": 448516
+    },
+    "convergence": null,
+    "penumbrae": {
+      "0.05 m": {
+        "reference": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "first": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0028928387507866256,
+            "max": 0.42417667433619505
+          },
+          "first": {
+            "mean": 0.0028681039532532852,
+            "max": 0.42924823487798375
+          }
+        }
+      },
+      "0.5 m": {
+        "reference": {
+          "left": {
+            "width": 0.10500000000000001,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.10500000000000001,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.08499999999999999,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.07499999999999998,
+            "lo": 0
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": 0.08500000000000002,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.11499999999999999,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.08499999999999999,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.08499999999999999,
+            "lo": 0
+          }
+        },
+        "first": {
+          "left": {
+            "width": 0.07500000000000001,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.11499999999999999,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.08499999999999999,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.08499999999999999,
+            "lo": 0
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.004089063328978164,
+            "max": 0.09065501540899278
+          },
+          "first": {
+            "mean": 0.004239514053261794,
+            "max": 0.09409950971603392
+          }
+        }
+      },
+      "3 m": {
+        "reference": {
+          "left": {
+            "width": 0.31000000000000005,
+            "lo": 0.6293150583902994
+          },
+          "right": {
+            "width": 0.42999999999999994,
+            "lo": 0.6501661340395609
+          },
+          "lower": {
+            "width": 0.33999999999999997,
+            "lo": 0.6487242778142294
+          },
+          "upper": {
+            "width": 0.32,
+            "lo": 0.6433538496494293
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": 0.30000000000000004,
+            "lo": 0.6427425146102905
+          },
+          "right": {
+            "width": 0.3500000000000001,
+            "lo": 0.6516437828540802
+          },
+          "lower": {
+            "width": 0.32999999999999996,
+            "lo": 0.6515362560749054
+          },
+          "upper": {
+            "width": 0.31,
+            "lo": 0.6484783093134562
+          }
+        },
+        "first": {
+          "left": {
+            "width": 0.30000000000000004,
+            "lo": 0.6326861679553986
+          },
+          "right": {
+            "width": 0.48000000000000004,
+            "lo": 0.6426586210727692
+          },
+          "lower": {
+            "width": 0.33999999999999997,
+            "lo": 0.6356950104236603
+          },
+          "upper": {
+            "width": 0.37,
+            "lo": 0.6247434417406718
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.002612100846663459,
+            "max": 0.022515396277109745
+          },
+          "first": {
+            "mean": 0.004357869613637594,
+            "max": 0.036021480957666996
+          }
+        }
+      }
+    },
+    "regions": {
+      "wall": {
+        "averaged": {
+          "mean": 0.001599538195687968,
+          "p99": 0.01764780282974243
+        },
+        "first": {
+          "mean": 0.0020920038961395357,
+          "p99": 0.03558182716369629
+        }
+      },
+      "ground": {
+        "averaged": {
+          "mean": 0.003805373303131599,
+          "p99": 0.15452957153320312
+        },
+        "first": {
+          "mean": 0.003946848401202906,
+          "p99": 0.15210622549057007
+        }
+      }
+    }
+  }
+}

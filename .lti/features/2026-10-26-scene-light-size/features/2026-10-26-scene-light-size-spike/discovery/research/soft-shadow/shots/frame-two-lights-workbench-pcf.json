@@ -1,0 +1,18 @@
+{
+  "scene": "frame-two-lights",
+  "light": null,
+  "method": "pcf",
+  "size": 0.1,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 800,
+  "height": 1200,
+  "lights": [
+    "DirectionalLight 5617fdee: product PCF",
+    "PointLight 5ec03ab7: product PCF"
+  ],
+  "compileMs": 224,
+  "firstMs": 1188,
+  "drawMs": 1188,
+  "coldSalt": 0
+}

@@ -12,7 +12,7 @@
 //   smtrace      shadow map tracing (EEVEE's way): rays to points on the light, each marched through the depth map
 //                and blocked where it passes through a surface; spot lights for now. ?rays= ?steps=, ?maxTexels= the
 //                longest trace, ?epsM= metres a ray must be behind a surface, ?spacing= how much denser steps are near.
-import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type PointLight, type SpotLight } from 'three'
+import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type OrthographicCamera, type PointLight, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 
@@ -25,6 +25,8 @@ const { frameId, positionWorld, renderGroup, screenCoordinate } = tsl as unknown
 
 type Shadowing = DirectionalLight | PointLight | SpotLight
 type Filtered = LightShadow & { filterNode?: unknown }
+/** three's CSMShadowNode as SunCascades is one: its cascades' lights, made by _init on the first build. */
+type Cascaded = { _init?: (builder: unknown) => void; lights: { shadow: LightShadow }[] }
 
 const query = new URLSearchParams(location.search)
 const num = (k: string, d: number) => Number(query.get(k) ?? d)
@@ -36,24 +38,69 @@ const turn = () => interleavedGradientNoise(screenCoordinate.xy.add(float(frameI
  * The depth gradient across the receiver's plane in shadow-map uv (receiver plane depth bias, Isidoro 2006): how
  * much the receiver's own depth changes over an offset, so a wide kernel compares against the plane, not its centre.
  */
-function receiverPlane(coord: TSLNode): TSLNode {
+function receiverPlane(coord: TSLNode, most: TSLNode): TSLNode {
   const dx = dFdx(coord).toVar()
   const dy = dFdy(coord).toVar()
   const det = dx.x.mul(dy.y).sub(dx.y.mul(dy.x)).toVar()
   const g = vec2(dy.y.mul(dx.z).sub(dx.y.mul(dy.z)), dx.x.mul(dy.z).sub(dy.x.mul(dx.z)))
-  // Flat in screen space (det ~ 0), or a silhouette's huge gradient: no plane, and a bound on how far it may lean
-  // (?planeMax=; a wall 11 m off at a grazing angle leans 0.08 a uv).
-  const most = num('planeMax', 0.2)
-  return select(abs(det).greaterThan(1e-12), clamp(g.div(det), vec2(-most), vec2(most)), vec2(0))
+  // Flat in screen space (det ~ 0), or a silhouette's huge gradient: no plane, and a bound on how far it may lean,
+  // most in the map's depth a uv (MapGeometry.slope).
+  return select(abs(det).greaterThan(1e-12), clamp(g.div(det), vec2(most.negate()), vec2(most)), vec2(0))
 }
 
-/** PCSS for a perspective (spot) shadow map: light of radius r metres. */
-function spotPCSS(light: SpotLight, r: number) {
+/**
+ * How a 2D shadow map's light stands to its receivers: depths in metres from the map's, the uv radius to search
+ * for blockers of a receiver zR metres from the light, and the penumbra's uv radius for blockers at zB.
+ */
+type MapGeometry = {
+  linear: (d: TSLNode) => TSLNode
+  /**
+   * The map's depth a uv for a receiver zR metres off that leans a metre deeper a metre across: the receiver
+   * plane's bound is ?maxSlope= (20, about 87°) of these. A fixed bound in the map's units fitted one projection
+   * and not another: 0.2 held a spot light's wall, and narrowed a sun cascade's penumbrae by half.
+   */
+  slope: (zR: TSLNode) => TSLNode
+  search: (zR: TSLNode) => TSLNode
+  penumbra: (zR: TSLNode, zB: TSLNode) => TSLNode
+}
+
+/** A spot light's perspective map, light of radius r metres: uv per metre at depth d is 1 / (2 d tan(fov/2)). */
+function spotGeometry(light: SpotLight, r: number): MapGeometry {
   const cam = light.shadow.camera
   const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
   const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
   const tanHalf = uniform(1).setGroup(renderGroup).onRenderUpdate(() => Math.tan((cam.fov * Math.PI) / 360))
   const radius = uniform(r)
+  return {
+    linear: (d) => perspectiveDepthToViewZ(d, near, far).negate(),
+    // d(depth)/dz = near far / ((far − near) z²), and a uv is 2 z tan(fov/2) metres across.
+    slope: (zR) => tanHalf.mul(2).mul(near).mul(far).div(far.sub(near).mul(zR)),
+    search: (zR) => radius.mul(zR.sub(near)).div(zR.mul(near).mul(tanHalf).mul(2)),
+    penumbra: (zR, zB) => radius.mul(zR.sub(zB)).div(zB.mul(zR).mul(tanHalf).mul(2)),
+  }
+}
+
+/**
+ * A cascade's orthographic map, the sun a disc θ degrees across: depth runs linearly near..far, a metre is
+ * 1 / width of uv, and blockers zR − zB above a receiver spread its edge (zR − zB) tan(θ/2) either way. The camera
+ * moves every frame (fitCascades), so its numbers are read as each render starts.
+ */
+function sunGeometry(shadow: LightShadow, thetaDeg: number): MapGeometry {
+  const cam = shadow.camera as OrthographicCamera
+  const near = uniform(0.5).setGroup(renderGroup).onRenderUpdate(() => cam.near)
+  const far = uniform(500).setGroup(renderGroup).onRenderUpdate(() => cam.far)
+  const width = uniform(1).setGroup(renderGroup).onRenderUpdate(() => (cam.right - cam.left) / cam.zoom)
+  const tanHalf = uniform(Math.tan((thetaDeg * Math.PI) / 360))
+  return {
+    linear: (d) => near.add(d.mul(far.sub(near))),
+    slope: () => width.div(far.sub(near)),
+    search: (zR) => zR.sub(near).mul(tanHalf).div(width),
+    penumbra: (zR, zB) => zR.sub(zB).mul(tanHalf).div(width),
+  }
+}
+
+/** PCSS on a 2D shadow map (a spot light's, or a sun cascade's), the light's geometry as given. */
+function mapPCSS({ linear, slope, search, penumbra }: MapGeometry) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
@@ -62,13 +109,11 @@ function spotPCSS(light: SpotLight, r: number) {
     const texel = float(1).div(mapSize.x)
     const uv = shadowCoord.xy.toVar()
     const z = shadowCoord.z.toVar()
-    const linear = (d: TSLNode) => perspectiveDepthToViewZ(d, near, far).negate()
     const zR = linear(z).toVar()
-    const plane = receiverPlane(shadowCoord).toVar()
+    const plane = receiverPlane(shadowCoord, slope(zR).mul(num('maxSlope', 20))).toVar()
     const phi = turn().toVar()
     const eps = texel.mul(num('epsTexels', 2.5)).mul(abs(plane.x).add(abs(plane.y))).add(num('epsConst', 1e-4)).toVar()
-    // uv per metre at depth d: 1 / (2 d tan(fov/2)).
-    const searchUV = min(radius.mul(zR.sub(near)).div(zR.mul(near).mul(tanHalf).mul(2)), texel.mul(maxTexels)).toVar()
+    const searchUV = min(search(zR), texel.mul(maxTexels)).toVar()
     const blockers = float(0).toVar()
     const depthSum = float(0).toVar()
     // Raw depths: three declares one sampler a texture per shader, of the kind its first sampled use needs (S0 group
@@ -88,7 +133,7 @@ function spotPCSS(light: SpotLight, r: number) {
       depthSum.addAssign(blocks.mul(linear(d)))
     }
     const zB = depthSum.div(max(blockers, 1)).toVar()
-    const penumbraUV = clamp(radius.mul(zR.sub(zB)).div(zB.mul(zR).mul(tanHalf).mul(2)), texel, texel.mul(maxTexels)).toVar()
+    const penumbraUV = clamp(penumbra(zR, zB), texel, texel.mul(maxTexels)).toVar()
     const lit = float(0).toVar()
     for (let i = 0; i < filterN; i++) {
       const o = vogelDiskSample(i, filterN, phi).mul(penumbraUV)
@@ -105,8 +150,8 @@ function spotPCSS(light: SpotLight, r: number) {
       return same(at(uv)).mul(0.25).add(same(at(vec2(uv.x, float(1).sub(uv.y)))).mul(0.5)).add(0.125)
     }
     if (query.get('softDebug') === 'blockers') return blockers.div(searchN).add(centre.mul(0))
-    // The estimate's inputs, scaled into 0…1: depths ÷ 20 m, the kernel ÷ 64 texels, near ÷ 10, far ÷ 1000.
-    const scaled: Record<string, () => TSLNode> = { zB: () => zB.div(20), zR: () => zR.div(20), kernel: () => penumbraUV.div(texel).div(64), near: () => near.div(10), far: () => far.div(1000) }
+    // The estimate's inputs, scaled into 0…1: depths ÷ 20 m, the kernel ÷ 64 texels.
+    const scaled: Record<string, () => TSLNode> = { zB: () => zB.div(20), zR: () => zR.div(20), kernel: () => penumbraUV.div(texel).div(64) }
     const debug = scaled[query.get('softDebug') ?? '']
     if (debug) return debug().add(centre.mul(0)).add(lit.mul(0))
     return select(blockers.lessThan(0.5), centre.mul(0).add(1), lit.div(filterN))
@@ -138,7 +183,7 @@ function spotTrace(light: SpotLight, r: number) {
     const linear = (d: TSLNode) => perspectiveDepthToViewZ(d, near, far).negate()
     const depthAt = (at: TSLNode) => linear(textureLoad(depthTexture, ivec2(clamp(at.mul(mapSize), vec2(0), mapSize.sub(1)))).x)
     const zR = linear(z).toVar()
-    const plane = receiverPlane(shadowCoord).toVar()
+    const plane = receiverPlane(shadowCoord, tanHalf.mul(2).mul(near).mul(far).div(far.sub(near).mul(zR)).mul(num('maxSlope', 20))).toVar()
     const eps = texel.mul(num('epsTexels', 2.5)).mul(abs(plane.x).add(abs(plane.y))).add(num('epsConst', 1e-4)).toVar()
     // The first use of the map decides its sampler (depth-read-backends.md); this compare also says whether the
     // receiver starts behind a surface, seen from the light's centre.
@@ -266,8 +311,20 @@ export const methods: Record<Method, (light: Shadowing, size: number) => string>
       ;(light.shadow as Filtered).filterNode = pointPCSS(light as PointLight, size)
       return `PCSS (cube, raw compares) r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
     }
-    if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: spot and point lights so far)'
-    ;(light.shadow as Filtered).filterNode = spotPCSS(light as SpotLight, size)
+    if ((light as DirectionalLight).isDirectionalLight) {
+      // SunCascades clones the light's shadow for each cascade as it first builds, and a clone drops filterNode
+      // (LightShadow.copy): put one on each cascade's shadow once they exist, before their nodes build.
+      const node = (light.shadow as LightShadow & { shadowNode?: Cascaded }).shadowNode
+      if (!node?._init) return 'product PCF (pcss: the sun has no cascades)'
+      const init = node._init.bind(node)
+      node._init = (builder) => {
+        init(builder)
+        for (const l of node.lights) (l.shadow as Filtered).filterNode = mapPCSS(sunGeometry(l.shadow, size))
+      }
+      return `PCSS (cascades) θ ${size}°, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
+    }
+    if (!(light as SpotLight).isSpotLight) return 'product PCF (pcss: no such light)'
+    ;(light.shadow as Filtered).filterNode = mapPCSS(spotGeometry(light as SpotLight, size))
     return `PCSS r ${size} m, ${num('search', 16)} + ${num('samples', 32)} samples, at most ${num('maxTexels', 48)} texels`
   },
   smtrace: (light, size) => {
@@ -283,7 +340,9 @@ export function softShadows(root: Object3D, method: Method, size: number): strin
   root.traverse((o) => {
     const light = o as Light
     if (!light.isLight || !light.castShadow) return
-    done.push(`${light.type} ${light.name || light.uuid.slice(0, 8)}: ${methods[method](light as Shadowing, size)}`)
+    // The sun's size is an angle (degrees across): ?sunSize= where a scene has both kinds, else the same number.
+    const own = (light as DirectionalLight).isDirectionalLight ? num('sunSize', size) : size
+    done.push(`${light.type} ${light.name || light.uuid.slice(0, 8)}: ${methods[method](light as Shadowing, own)}`)
   })
   return done
 }

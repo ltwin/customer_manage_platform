@@ -39,8 +39,8 @@ export type RefLight =
   | { kind: 'disc'; toward: Vector3; irradiance: Color; angle: number }
   | { kind: 'rectangle' | 'ellipse'; position: Vector3; x: Vector3; y: Vector3; emits: Vector3; width: number; height: number; luminance: Color }
 
-/** The lights the raster draws (their intensities as this frame has them, the exposure on them), with sizes. */
-export function refLights(scene: Scene, size: number, shape: 'rectangle' | 'ellipse' = 'rectangle'): RefLight[] {
+/** The lights the raster draws (their intensities as this frame has them, the exposure on them), with sizes: r metres, the sun sunSize degrees across. */
+export function refLights(scene: Scene, size: number, shape: 'rectangle' | 'ellipse' = 'rectangle', sunSize = size): RefLight[] {
   const out: RefLight[] = []
   scene.updateMatrixWorld()
   scene.traverseVisible((o) => {
@@ -58,7 +58,7 @@ export function refLights(scene: Scene, size: number, shape: 'rectangle' | 'elli
     } else if ((l as DirectionalLight).isDirectionalLight) {
       const d = l as DirectionalLight
       const toward = at.clone().sub(d.target.getWorldPosition(new Vector3())).normalize()
-      out.push({ kind: 'disc', toward, irradiance: color, angle: (size * Math.PI) / 180 })
+      out.push({ kind: 'disc', toward, irradiance: color, angle: (sunSize * Math.PI) / 180 })
     } else if ((l as RectAreaLight).isRectAreaLight) {
       const r = l as RectAreaLight
       const e = r.matrixWorld.elements

@@ -190,7 +190,7 @@ async function boot() {
     const refFrames = Number(query.get('refFrames') ?? 8192)
     const rasterFrames = Number(query.get('rasterFrames') ?? 64)
     const shape = query.get('shape') === 'ellipse' ? 'ellipse' : 'rectangle'
-    const c = await compare(g.renderer, three, camera, handle.layer, refLights(three, size, shape), cmpSize, refFrames, rasterFrames, query.get('converge') === '1')
+    const c = await compare(g.renderer, three, camera, handle.layer, refLights(three, size, shape, Number(query.get('sunSize') ?? size)), cmpSize, refFrames, rasterFrames, query.get('converge') === '1')
     const error = shadowError(c)
     const panels = drawPanels(c, query.get('flip') === '1')
     document.body.append(panels)

@@ -7,13 +7,26 @@
 // reaches lo + 0.1·(1 − lo) and lo + 0.9·(1 − lo), lo being the profile's lowest near the centre.
 import type { Comparison } from './reference.ts'
 
-/** The wall's front face, and the boards' shadow centres on it (doc x, height), by the light's centre: occluder-wall-layout.py. */
+/**
+ * The wall's front face, and the boards' shadow centres on it (doc x, height): from the light's centre for the
+ * point and spot lights (occluder-wall-layout.py), along the sun's way for the sun (the lights' place toward the
+ * wall's middle at (0, 1.8, −2.95)).
+ */
 const WALL_Z = -2.95
-export const boards = [
-  { name: '0.05 m', at: [-2.775, 0.98] },
-  { name: '0.5 m', at: [-1.075, 2.52] },
-  { name: '3 m', at: [3.496, 2.54] },
-] as const
+const centres = {
+  near: [
+    { name: '0.05 m', at: [-2.775, 0.98] },
+    { name: '0.5 m', at: [-1.075, 2.52] },
+    { name: '3 m', at: [3.496, 2.54] },
+  ],
+  sun: [
+    { name: '0.05 m', at: [-2.76, 0.987] },
+    { name: '0.5 m', at: [-0.989, 2.465] },
+    { name: '3 m', at: [1.994, 2.218] },
+  ],
+} as const
+const query = new URLSearchParams(location.search)
+const boards = centres[query.get('light') === 'sun' ? 'sun' : 'near']
 
 const BIN = 0.005
 const BAND = 0.03

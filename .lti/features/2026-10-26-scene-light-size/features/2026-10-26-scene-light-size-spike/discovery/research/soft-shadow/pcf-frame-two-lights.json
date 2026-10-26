@@ -1,0 +1,45 @@
+{
+  "scene": "frame-two-lights",
+  "light": null,
+  "method": "pcf",
+  "size": 0.1,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 800,
+  "height": 1200,
+  "lights": [
+    "DirectionalLight d32eeb30: product PCF",
+    "PointLight eec5679e: product PCF"
+  ],
+  "compileMs": 1437,
+  "firstMs": 4682,
+  "drawMs": 17562,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 1440
+    },
+    "refFrames": 8192,
+    "rasterFrames": 64,
+    "referenceMs": 98044,
+    "rasterMs": 3085,
+    "averaged": {
+      "mean": 0.09933637947207037,
+      "p95": 0.6627239286899567,
+      "max": 1,
+      "pixels": 1303207
+    },
+    "first": {
+      "mean": 0.09933635839638898,
+      "p95": 0.6627242267131805,
+      "max": 1,
+      "pixels": 1303207
+    },
+    "convergence": null,
+    "penumbrae": null,
+    "regions": null
+  }
+}
