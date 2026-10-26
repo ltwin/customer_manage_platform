@@ -10,7 +10,7 @@ import type { ModelMeshPart } from './cache.ts'
 // (render/pieces.ts) for whatever must look or act as before the merge.
 
 /** e2e only: the fixture page's ?nomerge=1, to draw a scene as before the merge beside it. */
-const noMerge = () => (globalThis as { __sceneNoMerge?: boolean }).__sceneNoMerge === true
+export const noMerge = () => (globalThis as { __sceneNoMerge?: boolean }).__sceneNoMerge === true
 
 function attributeKey(name: string, a: BufferAttribute | InterleavedBufferAttribute): string {
   return `${name}:${a.itemSize}:${a.normalized}:${a.array.constructor.name}:${(a as BufferAttribute).gpuType}`
@@ -27,6 +27,7 @@ function layoutKey(g: BufferGeometry): string {
   return `${attributes.join('|')}#${morphs.join('|')}#${g.morphTargetsRelative}#${g.index !== null}`
 }
 
+/** A change in how parts group renumbers the merged geometries: bump render/trace/cache.ts BUILDER_VERSION with it, or the local cache serves trees of other geometries. */
 function groupKey(p: ModelMeshPart): string {
   const c = p.constants
   return JSON.stringify([p.slot, p.hint, c.color, c.roughness, c.metalness, c.emissive, c.emissiveIntensity, c.vertexColors, layoutKey(p.geometry)])

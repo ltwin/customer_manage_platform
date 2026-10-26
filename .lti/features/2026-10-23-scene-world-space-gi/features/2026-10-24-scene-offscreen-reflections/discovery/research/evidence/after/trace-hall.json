@@ -1,0 +1,185 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "meshes": 2009,
+  "off": {
+    "operable": 7837,
+    "loadedMs": 10695,
+    "longTasks": 10,
+    "longestTask": 636
+  },
+  "open": {
+    "operable": 8420,
+    "fullAt": 8312,
+    "readyAt": 14296,
+    "readyMs": 5984,
+    "arrivedMs": 5589,
+    "longestSync": 43.4,
+    "longTasks": 11,
+    "longestTask": 634,
+    "switchTasks": [
+      816,
+      207,
+      374
+    ],
+    "built": 71,
+    "cached": 0,
+    "tier": "full",
+    "bytes": 731288592,
+    "layouts": 2,
+    "syncs": [
+      {
+        "at": 14296,
+        "syncMs": 43.4,
+        "commitMs": 0
+      },
+      {
+        "at": 13900,
+        "syncMs": 39.4,
+        "commitMs": 39.3
+      },
+      {
+        "at": 13980,
+        "syncMs": 20.8,
+        "commitMs": 20.8
+      },
+      {
+        "at": 13919,
+        "syncMs": 17.8,
+        "commitMs": 17.8
+      }
+    ]
+  },
+  "cold": {
+    "fullAt": 9970,
+    "readyAt": 16436,
+    "readyMs": 6466,
+    "arrivedMs": 6204,
+    "longestSync": 40.5,
+    "longTasks": 12,
+    "longestTask": 851,
+    "switchTasks": [
+      703,
+      210,
+      373
+    ],
+    "built": 71,
+    "cached": 0,
+    "tier": "full",
+    "bytes": 731288592,
+    "layouts": 2,
+    "syncs": [
+      {
+        "at": 16174,
+        "syncMs": 40.5,
+        "commitMs": 40.5
+      },
+      {
+        "at": 16436,
+        "syncMs": 37.8,
+        "commitMs": 0
+      },
+      {
+        "at": 14840,
+        "syncMs": 16.9,
+        "commitMs": 0
+      },
+      {
+        "at": 16303,
+        "syncMs": 11.5,
+        "commitMs": 11.5
+      }
+    ]
+  },
+  "errorsAfter": {
+    "cold": 0,
+    "warm": 0,
+    "drag": 0,
+    "added": 0,
+    "removed": 0,
+    "exports": 0
+  },
+  "warm": {
+    "fullAt": 12854,
+    "readyAt": 15221,
+    "readyMs": 2367,
+    "arrivedMs": 2128,
+    "longestSync": 68.1,
+    "longTasks": 20,
+    "longestTask": 933,
+    "switchTasks": [
+      692,
+      218,
+      628
+    ],
+    "built": 0,
+    "cached": 71,
+    "tier": "full",
+    "bytes": 731288592,
+    "layouts": 2,
+    "syncs": [
+      {
+        "at": 14788,
+        "syncMs": 68.1,
+        "commitMs": 0
+      },
+      {
+        "at": 14982,
+        "syncMs": 64.6,
+        "commitMs": 64.5
+      },
+      {
+        "at": 14636,
+        "syncMs": 63.4,
+        "commitMs": 0
+      },
+      {
+        "at": 15221,
+        "syncMs": 26.8,
+        "commitMs": 0
+      }
+    ]
+  },
+  "drag": {
+    "frames": 3,
+    "stillMedian": 450.4,
+    "longest": 604.1,
+    "maxUpload": 128688,
+    "longestSync": 8.8
+  },
+  "added": {
+    "uploaded": 10308720,
+    "longestSync": 24.2,
+    "bytes": [
+      731288592,
+      731288592
+    ],
+    "perTriangle": 35.8
+  },
+  "removed": {
+    "uploaded": 417840,
+    "longestSync": 19.9,
+    "bytes": [
+      731288592,
+      731288592
+    ]
+  },
+  "heap": {
+    "viewport": 1407,
+    "peak": 2838,
+    "drawing": 1543
+  },
+  "exports": {
+    "identical": false,
+    "max": 3,
+    "over": 0
+  },
+  "exportsWithout": {
+    "identical": true,
+    "max": 0,
+    "over": 0
+  }
+}

@@ -98,7 +98,7 @@ test('model parts are baked into model space; a mirrored part keeps its faces fa
   assert.deepEqual(Array.from(g.index!.array), before)
 })
 
-import { uniform, vec3, float } from 'three/tsl'
+import { uniform, vec3, float, fwidth } from 'three/tsl'
 import { instanceCount, keyOf, makeMaterial, materialFor, release, retain } from '../src/creative-scene/materials/instances.ts'
 import { patternFns } from '../src/creative-scene/materials/patterns.ts'
 import { catalogMaterial } from '../src/creative-scene/materials/resolve.ts'
@@ -109,8 +109,19 @@ test('every preset in the catalog has its TSL function, and it gives all five ou
   assert.deepEqual(Object.keys(patternFns).sort(), pattern.map((m) => m.id).sort())
   for (const m of pattern) {
     const pm = Object.fromEntries(Object.entries(m.params).map(([k, spec]) => [k, spec.type === 'color' ? uniform(vec3(0.5)) : uniform(0.5)]))
-    const out = patternFns[m.id]({ pos: vec3(1, 2, 3), normal: vec3(0, 0, 1), footprint: float(0.001), pm })
+    const out = patternFns[m.id]({ pos: vec3(1, 2, 3), width: fwidth, normal: vec3(0, 0, 1), footprint: float(0.001), pm })
     for (const k of ['albedo', 'rough', 'metal', 'height', 'emission'] as const) assert.ok(out[k]?.isNode, `${m.id}: ${k}`)
+  }
+})
+
+test('a preset takes the width of a pixel from its input, never from fwidth itself (scene-world-space-gi I7)', () => {
+  // The presets that antialias: those with joints (brick, tile, planks), stone's cracks, marble's veins, wood's rings, fabric's weave.
+  const antialiased = ['stone_brick@1', 'stone@1', 'marble@1', 'tile@1', 'wood@1', 'wood_plank@1', 'fabric@1']
+  for (const m of materialCatalog.materials.filter((x) => x.kind === 'pattern')) {
+    const pm = Object.fromEntries(Object.entries(m.params).map(([k, spec]) => [k, spec.type === 'color' ? uniform(vec3(0.5)) : uniform(0.5)]))
+    let asked = 0
+    patternFns[m.id]({ pos: vec3(1, 2, 3), width: (x: unknown) => (asked++, fwidth(x as never)), normal: vec3(0, 0, 1), footprint: float(0.001), pm })
+    assert.equal(asked > 0, antialiased.includes(m.id), m.id)
   }
 })
 

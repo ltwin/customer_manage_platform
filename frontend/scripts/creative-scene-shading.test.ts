@@ -14,7 +14,12 @@ const src = fileURLToPath(new URL('../src/', import.meta.url))
 /** three's nodes forked into the project, compared with upstream on every upgrade; a file cannot exempt itself. */
 const exempt = new Set(['creative-scene/render/nodes/GTAONode.js'])
 
-const identifiers = new Set(['WebGLRenderer', 'WebGLRenderTarget', 'ShaderMaterial', 'RawShaderMaterial', 'onBeforeCompile', 'ShaderLib', 'ShaderChunk', 'glslFn', 'wgslFn'])
+const identifiers = new Set(['WebGLRenderer', 'WebGLRenderTarget', 'ShaderMaterial', 'RawShaderMaterial', 'onBeforeCompile', 'ShaderLib', 'ShaderChunk'])
+// Shader code by hand: TSL only, but for the one module that calls
+// three-mesh-bvh's intersection from TSL (scene-world-space-gi). wgslTagFn
+// interpolates nodes into WGSL text, so nothing gets it.
+const handWritten = new Set(['glslFn', 'wgslFn', 'wgslTagFn'])
+const wgslHome = 'creative-scene/render/trace/wgsl.ts'
 const drei = new Set(['CameraControls', 'CameraControlsImpl', 'OrbitControls', 'GizmoHelper', 'GizmoViewport', 'TransformControls'])
 const glsl = ['gl_FragColor', 'gl_Position', '#include <', 'precision highp', 'precision mediump', 'void main(']
 // The fat-line geometries carry no shader; lines/webgpu/ builds on them.
@@ -41,6 +46,7 @@ export function check(fileName: string, source: string): Hit[] {
   const visit = (node: ts.Node) => {
     if (ts.isIdentifier(node) && identifiers.has(node.text)) hit(node, 'WebGL identifier', node.text)
     else if (ts.isPrivateIdentifier(node) && identifiers.has(node.text.slice(1))) hit(node, 'WebGL identifier', node.text)
+    else if (ts.isIdentifier(node) && handWritten.has(node.text) && !(node.text === 'wgslFn' && fileName === wgslHome)) hit(node, 'hand-written shader', node.text)
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
       const path = node.moduleSpecifier.text
       const why = forbiddenImport(path)
@@ -100,7 +106,11 @@ test('the check finds each kind of breach, and not a name in a comment', () => {
   assert.deepEqual(rules(`const s = '#include <common>'`), ['GLSL'])
   assert.deepEqual(rules(`const t = Date.now()\nconst d = new Date()\nconst e = new Date`, 'creative-scene/world/astro.ts'), ['wall clock', 'wall clock', 'wall clock'])
   assert.deepEqual(rules(`const t = Date.now()`, 'creative-scene/render/sky.ts'), ['wall clock'])
+  assert.deepEqual(rules(`import { wgslFn } from 'three/tsl'\nconst f = wgslFn('fn one() -> f32 { return 1.0; }')`, 'creative-scene/render/trace/hit.ts'), ['hand-written shader', 'hand-written shader'], 'WGSL outside its one module')
+  assert.deepEqual(rules(`import { wgslTagFn } from 'three/tsl'`, 'creative-scene/render/trace/wgsl.ts'), ['hand-written shader'], 'no wgslTagFn, even there')
+  assert.deepEqual(rules(`const f = glslFn('float one() { return 1.0; }')`), ['hand-written shader'])
   // Not breaches.
+  assert.deepEqual(rules(`import { wgslFn } from 'three/tsl'\nconst f = wgslFn('fn one() -> f32 { return 1.0; }')`, 'creative-scene/render/trace/wgsl.ts'), [], 'the one WGSL module')
   assert.deepEqual(rules(`// three's ShaderMaterial and onBeforeCompile are gone; void main( lives in no string.\n/* WebGLRenderer */\nconst x = 1`), [])
   assert.deepEqual(rules(`import { LineSegments2 } from 'three/addons/lines/webgpu/LineSegments2.js'\nimport { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'`), [])
   assert.deepEqual(rules(`import { GizmoHelper, GizmoViewport } from '@react-three/drei'`, 'a.tsx'), [])

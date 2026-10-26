@@ -1,0 +1,41 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "bytes": {
+    "original": 585025696,
+    "proxy": 7070464
+  },
+  "whole": {
+    "originalTwice": {
+      "identical": true,
+      "max": 0,
+      "over": 0
+    },
+    "proxyAgainstOriginal": {
+      "identical": false,
+      "max": 58,
+      "over": 0.013568495306776557
+    }
+  },
+  "mirror": {
+    "region": {
+      "x": 1000,
+      "y": 120,
+      "width": 680,
+      "height": 400
+    },
+    "originalTwice": {
+      "max": 0,
+      "over": 0,
+      "mean": 0
+    },
+    "proxyAgainstOriginal": {
+      "max": 55,
+      "over": 0.03021691176470588,
+      "mean": 1.4340085784313725
+    }
+  }
+}

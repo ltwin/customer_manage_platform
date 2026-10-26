@@ -10,6 +10,8 @@ import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { GI_INTENSITY, ssgiQuality, type Quality } from './engines.ts'
 import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
+import { ssrTrace } from './nodes/SSRTraceNode.js'
+import type { HitShading } from './trace/hit.ts'
 import { aerialBehind } from '../world/atmosphere/aerial.ts'
 import { applyVolumes } from './volumes/composite.ts'
 import { VolumeNode } from './volumes/march.ts'
@@ -41,8 +43,18 @@ import { VolumeNode } from './volumes/march.ts'
 /* eslint-disable @typescript-eslint/no-explicit-any -- three's typings leave the display nodes' TSL loosely typed */
 type N = any
 
+/**
+ * The prepass roughness at and below which a reflection is a mirror's, not filtered in space where the layer draws:
+ * three's getRoughness puts a floor of 0.0525 under it (the base mip of a 256 cubemap), and the normal's derivatives
+ * add a little.
+ */
+export const MIRROR_ROUGHNESS = 0.06
+
 /** Where an SSR sample missed: the ray length three writes for the environment. */
 const MISSED = 1e3
+
+/** The roughness below which the reflections retrace what the screen missed (S1 design「反射补追」, Epic U3): all of it in a picture to keep. */
+export const retraceBelow: Record<Quality, number> = { interactive: 0.5, final: 1 }
 
 // The passes' outputs, one node each for every pipeline: three keys a pass's
 // render state by its MRT node, and the scene's materials outlive a
@@ -77,6 +89,12 @@ export type RealtimeGIOptions = {
   mainLight: () => DirectionalLight | SpotLight | null
   /** The viewport's redraw: a new march for the volumes compiles ahead and draws then (volumes/march.ts). */
   redraw: (() => void) | null
+  /**
+   * The world-space layer, once it is ready (render/trace/base.ts): the
+   * reflections retrace what the screen missed through it. None, three's
+   * SSR as before (S1 L1).
+   */
+  trace: HitShading | null
 }
 
 export type RealtimeGI = {
@@ -88,6 +106,8 @@ export type RealtimeGI = {
   passes: { node: PassNode; layers: Layers }[]
   /** Frame.ao = false: the AO multiplies by one. */
   aoOn: UniformNode<'float', number>
+  /** The reflections' material when they trace, its pipeline watched (SceneGPU.pipelineFailed); null without the layer. */
+  traced: object | null
   dispose(): void
 }
 
@@ -170,7 +190,8 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const aoOn = uniform(1)
   const ao = mix(float(1), aoClean.r, aoOn)
 
-  const reflect: N = own(ssr(output, depth, normal, { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }))
+  const reflected = { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }
+  const reflect: N = own(options.trace ? ssrTrace(output, depth, normal, { ...reflected, trace: options.trace, rMax: retraceBelow[options.quality] }) : ssr(output, depth, normal, reflected))
   const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
   const specDenoised: N = own(
     recurrentDenoise(specReprojected, camera, {
@@ -188,7 +209,13 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   specReprojected.setHistoryTexture(specDenoised)
   specReprojected.flickerSuppression.value = flicker
   specDenoised.flickerSuppression.value = flicker
-  const reflection: N = specDenoised.rgb
+  // A mirror's reflection is left out of the denoiser where the layer draws (S1 design A11): its lobe has little
+  // noise to filter, while the spatial filter's radius has a floor (√roughness at least 0.01) and grows with the
+  // ray's length, so a retraced ray's mirror took eight taps from up to some 7 pixels off, other objects' colours
+  // among them. The denoiser's temporal accumulation goes with it (specDenoised is both): a mirror's edges are
+  // antialiased by the TRAA alone. Up to MIRROR_ROUGHNESS this frame's colour, faded into the denoised one by
+  // twice that.
+  const reflection: N = options.trace ? mix(reflect.rgb, specDenoised.rgb, smoothstep(MIRROR_ROUGHNESS, MIRROR_ROUGHNESS * 2, normalPacked.a)) : specDenoised.rgb
   // Where this frame's ray hit something on screen (design 未决事项 L2).
   const cover: N = reflect.a.lessThan(MISSED).select(1, 0)
 
@@ -260,6 +287,8 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
       { node: prepass, layers: options.layers },
     ],
     aoOn,
+    // Our fork's own material (nodes/SSRTraceNode.js), not upstream's API.
+    traced: options.trace ? (reflect as unknown as { _ssrMaterial: object })._ssrMaterial : null,
     dispose() {
       for (const d of disposables) d.dispose()
     },

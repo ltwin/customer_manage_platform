@@ -2,6 +2,7 @@ import { ApiError } from '../../api/transport.ts'
 import type { Upload } from '../../creative-canvas/editor/media.ts'
 import { jobRenderCapMs, viewBudgetMs } from '../render/engines.ts'
 import { DeviceLostError } from '../render/gpu.ts'
+import { TraceNotReady } from '../render/trace/base.ts'
 import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, measureStage, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
@@ -123,6 +124,8 @@ export class SceneExecutor {
     } catch (err) {
       if (hold.lost()) return { state: 'lost' }
       if (err instanceof DeviceLostError) return this.deviceLost()
+      // The world-space layer is still being built (D7): the assistant is told to try again later.
+      if (err instanceof TraceNotReady) return this.fail(job, 'host_error', err.message)
       return this.fail(job, 'host_error', `截图失败：${reason(err)}`)
     } finally {
       timer.abort()
@@ -159,6 +162,7 @@ export class SceneExecutor {
     } catch (err) {
       if (hold.lost()) return { state: 'lost' }
       if (err instanceof DeviceLostError) return this.deviceLost()
+      if (err instanceof TraceNotReady) return this.fail(job, 'host_error', err.message)
       return this.fail(job, 'host_error', `导出图渲染失败：${reason(err)}`)
     } finally {
       timer.abort()

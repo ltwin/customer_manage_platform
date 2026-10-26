@@ -1,5 +1,6 @@
 import type { SceneRender } from '../api.ts'
 import { longSideOf, resolutions, type Engine, type Resolution } from '../render/engines.ts'
+import type { TraceStatus } from '../render/trace/base.ts'
 import type { Backend, DisplayMode } from '../state/sceneStore.ts'
 import { Slider } from './EnvironmentPanel.tsx'
 
@@ -7,18 +8,36 @@ type RenderPatch = Partial<SceneRender>
 
 const engineNames: Record<Engine, string> = { workbench: '工作台', realtime_gi: '实时 GI' }
 
+/** The world-space layer's note beside the backend (S1 design「降级与提示」): none when it draws in full or is switched off by hand. */
+function traceNote(trace: TraceStatus): string | null {
+  switch (trace.state) {
+    case 'off':
+      return trace.reason === 'compatibility' ? '兼容模式：未绘制屏幕外的反射' : trace.reason === 'device' ? '当前设备不支持屏幕外的反射' : null
+    case 'preparing':
+      return '正在准备屏幕外的反射'
+    case 'ready':
+      return trace.tier === 'proxy' ? '场景较大：屏幕外的反射使用简化几何' : null
+    case 'tooLarge':
+      return '场景过大：未绘制屏幕外的反射'
+    case 'failed':
+      return '屏幕外的反射暂时不可用'
+  }
+}
+
 /**
  * The render tab (R2 design「属性区选项卡」): the renderer, the exports'
  * output resolution, the lit look's exposure (under a physical sky the
  * default camera's, for views without a camera: ambient metering with a
  * compensation or by hand at an EV100, W2 and Epic revision v5) and, read
- * only, the renderer backend the viewport draws with. Each field writes
- * set_render with only itself; the exposure drag folds by its merge key as
- * before.
+ * only, the renderer backend the viewport draws with and, in the real-time
+ * GI, its world-space layer's state. Each field writes set_render with only
+ * itself; the exposure drag folds by its merge key as before.
  */
-export function RenderPanel({ render, backend, readOnly, display, physical, onRender }: {
+export function RenderPanel({ render, backend, trace, readOnly, display, physical, onRender }: {
   render: SceneRender
   backend: Backend | null
+  /** The viewport's world-space layer, once known (sceneStore ui.trace). */
+  trace: TraceStatus | null
   readOnly: boolean
   display: DisplayMode
   /** The sky is physical: the lit look is exposed by the default camera's exposure, not compensated. */
@@ -26,6 +45,8 @@ export function RenderPanel({ render, backend, readOnly, display, physical, onRe
   onRender: (patch: RenderPatch, label: string, merge?: string) => void
 }) {
   const manual = render.exposure_mode === 'manual'
+  const gi = render.engine === 'realtime_gi'
+  const note = gi && trace !== null ? traceNote(trace) : null
   return (
     <div className="cc-scene-props cc-scene-render" aria-label="渲染" role="tabpanel">
       <fieldset disabled={readOnly}>
@@ -47,7 +68,7 @@ export function RenderPanel({ render, backend, readOnly, display, physical, onRe
           </select>
         </label>
         {display !== 'rendered' && <small>渲染器只作用于「最终渲染」和材质光照导出</small>}
-        {render.engine === 'realtime_gi' && <small>只计算画面里可见的表面：画面外和被遮挡的物体不产生反弹光，也不出现在反射里。正交视图按工作台显示。</small>}
+        {gi && (trace?.state === 'ready' ? <small>画面外的物体也会出现在反射里；间接光只计算画面里可见的表面。正交视图按工作台显示。</small> : <small>只计算画面里可见的表面：画面外和被遮挡的物体不产生反弹光，也不出现在反射里。正交视图按工作台显示。</small>)}
       </fieldset>
       <fieldset disabled={readOnly}>
         <legend>输出分辨率</legend>
@@ -59,7 +80,7 @@ export function RenderPanel({ render, backend, readOnly, display, physical, onRe
           ))}
         </div>
         <small>导出图长边 {longSideOf(render.resolution)} px</small>
-        {render.resolution === '8k' && render.engine === 'realtime_gi' && <small>8K 实时 GI 的材质光照每张约需一分钟以上，需要较大显存，设备画不了时导出会失败。</small>}
+        {render.resolution === '8k' && gi && <small>8K 实时 GI 的材质光照每张约需一分钟以上，需要较大显存，设备画不了时导出会失败。</small>}
       </fieldset>
       <fieldset disabled={readOnly}>
         <legend>曝光</legend>
@@ -90,6 +111,7 @@ export function RenderPanel({ render, backend, readOnly, display, physical, onRe
       <fieldset>
         <legend>渲染后端</legend>
         <output aria-label="渲染后端">{backend === null ? '—' : backend.kind === 'webgpu' && !backend.compatibility ? 'WebGPU' : '兼容模式'}</output>
+        {note && <small>{note}</small>}
       </fieldset>
     </div>
   )

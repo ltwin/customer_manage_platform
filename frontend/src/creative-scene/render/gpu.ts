@@ -5,6 +5,9 @@ import type { TSLNode } from '../materials/patterns.ts'
 import { backgroundTicker } from '../host/ticker.ts'
 import { adapter } from './probe.ts'
 import type { FrameStats } from './sceneRenderer.ts'
+import { capabilityOf, type Capability, type StorageLimits } from './trace/capacity.ts'
+import type { DepthCheck, HitReport } from './trace/checks.ts'
+import type { ShadeMode } from './trace/hit.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -132,6 +135,8 @@ export type SceneGPU = {
   /** A WebGPU device without core-features-and-limits: three draws it with no MSAA. */
   readonly compatibility: boolean
   readonly maxTextureSize: number
+  /** Whether the world-space layer is built on this device, and how much one of its buffers may hold (render/trace/capacity.ts). */
+  readonly trace: Capability
   isLost(): boolean
   /** Settles when the device is lost; never when it is disposed. */
   readonly lost: Promise<DeviceLostError>
@@ -165,6 +170,22 @@ export type SceneGPU = {
   compiler: (() => Promise<void>) | null
   /** A GPU resource that lives as long as this device. */
   cache<T extends { dispose(): void }>(key: string, create: () => T): T
+  /**
+   * Lets a storage buffer's GPU copy go now, not when the attribute is
+   * collected (three r186's BufferAttribute.dispose() only sends an event,
+   * which nothing hears for a storage buffer): for one no frame still to be
+   * drawn binds. A frame already submitted keeps it till the GPU is done.
+   */
+  release(attribute: object): void
+  /**
+   * Whether the render pipeline last built for a material marked
+   * userData.watchPipeline failed: three logs the failure and skips the
+   * material's draws, and nothing else is told (the reflections' trace, S1
+   * design A13). Known a GPU round trip after the pipeline is built.
+   */
+  pipelineFailed(material: object): boolean
+  /** Called with each uncaptured device error's message; returns the unsubscribe. */
+  onError(listener: (message: string) => void): () => void
   dispose(): void
 }
 
@@ -186,6 +207,15 @@ type Internals = {
   _animation: { stop(): void } | null
   _nodes: { nodeFrame: FrameState } | null
   info: { frame: number }
+  /** Frees an attribute's GPU buffer (backend.destroyAttribute); null once the renderer is disposed. */
+  _attributes: { delete(attribute: object): unknown } | null
+  onError(info: { message?: string }): void
+}
+
+/** The backend's side of a render pipeline (WebGPUPipelineUtils): error is set once the device has refused it. */
+type PipelineBackend = {
+  createRenderPipeline(renderObject: { material: { userData: Record<string, unknown> }; pipeline: object }, promises: unknown): void
+  get(object: object): { error?: boolean }
 }
 
 export function advance(frame: FrameState): void {
@@ -248,9 +278,33 @@ export const gpuTestHooks = {
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)
   },
+  /**
+   * The world-space layer's budget in bytes in place of 1 GiB, and, set before the layer is made, the most one of its
+   * buffers may hold: pressed down, a scene goes to tier 2, then too large (render/trace/capacity.ts).
+   */
+  traceBudget: null as number | null,
+  /** No world-space layer, as the developer switch (localStorage scene.trace = off) gives. */
+  traceOff: false,
+  /** Takes the device for one the layer does not support: no such device to test on. */
+  traceUnsupported: false,
+  /** Holds each build's answer this long: preparing, and an export's wait running out. */
+  traceDelayMs: 0,
+  /** What the viewport's layer did last (render/trace/base.ts), e2e only. */
+  traceStats: null as unknown,
+  /** Set to [] and an export's layer, as it turns ready, adds a digest of each of its buffers (render/trace/base.ts): two exports laid out alike or not. */
+  traceDigests: null as Record<string, string>[] | null,
+  /** Export layers that let their CPU arrays go after a frame (render/trace/base.ts drawn, design A5). */
+  traceDropped: 0,
+  /** The reflections' hits shaded another way than lit (render/trace/hit.ts ShadeMode), set before their shader is built: what a defect comes from. */
+  traceShade: null as ShadeMode | null,
+  /** The viewport's layer against its raster, a primary ray a pixel (render/trace/checks.ts; Viewport.tsx LookView, e2e only); null till it is ready. */
+  traceDepth: null as ((width?: number, bias?: number) => Promise<DepthCheck | null>) | null,
+  /** The same rays shaded at their hits against the raster, mesh by mesh (AC-S1-2; as traceDepth). */
+  traceHits: null as ((width?: number, turn?: [number, number, number]) => Promise<HitReport | null>) | null,
 }
-// The e2e fixture page sets __sceneTest before the editor loads.
-if ((globalThis as { __sceneTest?: boolean }).__sceneTest) Object.assign(globalThis, { __sceneGPU: gpuTestHooks })
+// The e2e fixture page sets __sceneTest before the editor loads, and __sceneGPUHooks for switches the viewport's device is made with (?gpu=…).
+const fixture = globalThis as { __sceneTest?: boolean; __sceneGPUHooks?: Partial<typeof gpuTestHooks> }
+if (fixture.__sceneTest) Object.assign(globalThis, { __sceneGPU: Object.assign(gpuTestHooks, fixture.__sceneGPUHooks) })
 
 /**
  * The viewport's answer to each lost device: draw again on a new one, until
@@ -284,7 +338,15 @@ export async function createRenderer(options: GPUOptions): Promise<SceneGPU> {
 async function make({ canvas, alpha = false, output, role }: GPUOptions): Promise<SceneGPU> {
   const found = gpuTestHooks.forceWebGL ? null : await adapter()
   const limits = found?.limits
-  const requiredLimits = limits ? { maxTextureDimension2D: Math.min(limits.maxTextureDimension2D, textureCeiling), maxBufferSize: limits.maxBufferSize } : undefined
+  // The adapter's storage limits too: the world-space layer binds buffers of up to a GiB and more, six in one fragment.
+  const requiredLimits = limits
+    ? {
+        maxTextureDimension2D: Math.min(limits.maxTextureDimension2D, textureCeiling),
+        maxBufferSize: limits.maxBufferSize,
+        maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
+        maxStorageBuffersPerShaderStage: limits.maxStorageBuffersPerShaderStage,
+      }
+    : undefined
   const renderer = new WebGPURenderer({ canvas, alpha, antialias: false, requiredLimits, forceWebGL: gpuTestHooks.forceWebGL || !found })
   await renderer.init()
   const internals = renderer as unknown as Internals
@@ -295,7 +357,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     renderer.toneMapping = NoToneMapping
     renderer.outputColorSpace = LinearSRGBColorSpace
   }
-  const backendInfo = renderer.backend as { isWebGPUBackend?: boolean; compatibilityMode?: boolean | null; device?: { destroy(): void; limits: { maxTextureDimension2D: number } } }
+  const backendInfo = renderer.backend as { isWebGPUBackend?: boolean; compatibilityMode?: boolean | null; device?: { destroy(): void; limits: StorageLimits & { maxTextureDimension2D: number } } }
   const backend = backendInfo.isWebGPUBackend ? 'webgpu' : 'webgl2'
   const gl = backend === 'webgl2' ? (renderer.getContext() as WebGL2RenderingContext) : null
   const maxTextureSize = Math.min(backendInfo.device?.limits.maxTextureDimension2D ?? (gl?.getParameter(gl.MAX_TEXTURE_SIZE) as number | undefined) ?? 4096, gpuTestHooks.textureLimit ?? Infinity)
@@ -338,11 +400,30 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     return f
   }
 
+  // The pipeline last built for each watched material, to tell whether it failed (pipelineFailed).
+  const watched = new WeakMap<object, object>()
+  const pipelines = renderer.backend as unknown as PipelineBackend
+  if (backend === 'webgpu') {
+    const create = pipelines.createRenderPipeline.bind(pipelines)
+    pipelines.createRenderPipeline = (renderObject, promises) => {
+      create(renderObject, promises)
+      if (renderObject.material.userData.watchPipeline === true) watched.set(renderObject.material, renderObject.pipeline)
+    }
+  }
+  const errorListeners = new Set<(message: string) => void>()
+  const onError = internals.onError.bind(renderer)
+  internals.onError = (info) => {
+    onError(info)
+    for (const l of errorListeners) l(info.message ?? '')
+  }
+
+  const compatibility = backendInfo.compatibilityMode === true || gpuTestHooks.forceCompatibility
   const gpu: SceneGPU = {
     renderer,
     backend,
-    compatibility: backendInfo.compatibilityMode === true || gpuTestHooks.forceCompatibility,
+    compatibility,
     maxTextureSize,
+    trace: capabilityOf({ backend, compatibility, limits: backendInfo.device?.limits ?? null, unsupported: gpuTestHooks.traceUnsupported }),
     isLost: device.isLost,
     lost: device.lost,
     capture: (draw, type, quality) => device.capture(draw, () => canvasBlob(renderer.domElement, type, quality)),
@@ -381,6 +462,15 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
       internals.info.frame = 0
     },
     cache: device.cache,
+    release: (attribute) => void internals._attributes?.delete(attribute),
+    pipelineFailed(material) {
+      const p = watched.get(material)
+      return p !== undefined && pipelines.get(p).error === true
+    },
+    onError(listener) {
+      errorListeners.add(listener)
+      return () => errorListeners.delete(listener)
+    },
     dispose() {
       if (device.disposed) return
       device.dispose()

@@ -57,8 +57,15 @@ const footprint: TSLNode = max(length(fwidth(patPos)), float(1e-6))
 // the lamps (world/exposure.ts preExposure, 1 under any other sky).
 const exposedEmission: TSLNode = materialEmissive.mul(preExposure)
 
+/** The slot material each instance was made from, for the world-space layer's material table (render/trace). */
+const madeFrom = new WeakMap<object, SlotMaterial>()
+
+/** The slot material a mesh's material instance draws, or undefined for any other material (clay, ghosts, helpers). */
+export const slotOf = (material: object): SlotMaterial | undefined => madeFrom.get(material)
+
 export function makeMaterial(m: SlotMaterial, doubleSided: boolean): MeshPhysicalNodeMaterial {
   const material = build(m, doubleSided ? DoubleSide : FrontSide)
+  madeFrom.set(material, m)
   // Into shadow maps with the faces toward the light: three draws a one-sided
   // material's back faces, and a receiver's lookup, lifted off it by the
   // normal bias, then reads past a caster's underside where they touch: a
@@ -80,7 +87,7 @@ function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): Mes
   const material = new MeshPhysicalNodeMaterial({ color: p.color as string, roughness: p.roughness as number, metalness: p.metalness as number, side })
   if (!entry || !fn) return material
   const pm = Object.fromEntries(Object.entries(entry.params).map(([k, spec]) => [k, spec.type === 'color' ? uniform(new Color(p[k] as string)) : uniform(p[k] as number)]))
-  const o = fn({ pos: patPos, normal: patNormal, footprint, pm })
+  const o = fn({ pos: patPos, width: fwidth, normal: patNormal, footprint, pm })
   material.colorNode = o.albedo
   material.roughnessNode = o.rough
   material.metalnessNode = o.metal

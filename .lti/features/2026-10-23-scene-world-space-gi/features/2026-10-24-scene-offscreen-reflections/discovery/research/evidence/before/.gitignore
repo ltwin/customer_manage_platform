@@ -1,0 +1,4 @@
+# 改动前的全套导出图（PNG）和 WGSL 原文共约 53 MB，只留在本机；重新生成的命令见 ../README.md。
+*.png
+wgsl/
+wgsl-now/

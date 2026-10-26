@@ -1,6 +1,6 @@
 {
   "uid": "679ca314-5a9a-49ef-bb72-691f46cd716b",
-  "revision": 4,
+  "revision": 10,
   "id": "scene-offscreen-reflections",
   "kind": "feature",
   "assurance": "governed",
@@ -21,13 +21,13 @@
     ],
     "delivers": []
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-24T10:29:11.962Z",
-  "updatedAt": "2026-10-25T10:19:09.015Z",
+  "updatedAt": "2026-10-26T08:11:44.472Z",
   "risk": {
     "factors": [
-      "perf-sensitive",
-      "broad-impact"
+      "broad-impact",
+      "perf-sensitive"
     ]
   },
   "approvals": {
@@ -43,9 +43,623 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
-  "verify": [],
+  "revisions": [
+    {
+      "at": "2026-10-25T16:12:38.296Z",
+      "summary": "按 owner 2026-10-25 的决定修订验收口径：AC-S1-3 实时 GI 一项改为不超过同一份代码两次运行之间的差异（A2）；AC-S1-7 压力场景阈值 6 ms 改为 8 ms（实测 7.5 ms，S1-U4）；AC-S1-8 的 100 ms 只判这一层自己的主线程工作，多出的长任务与切换帧记为 issue scene-trace-ready-stall；压力场景两次导出不逐像素相同记为已知问题，另立 issue scene-trace-export-repeat（S1-U5）",
+      "contentHash": "5cba25b610cdb4ab",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-10-25T18:25:22.273Z",
+      "summary": "按 owner 2026-10-25 要求先解决镜中斑点（任务 8.4，design A11）：根因是反射的空间降噪对镜面也取样且按 frameId 旋转，画这一层时镜面反射不再做空间降噪；大厅两次导出因此逐字节相同，AC-S1-8 撤回「压力场景两次导出记为已知问题」的说明，恢复原判据",
+      "contentHash": "9dc4075ff47d5a49",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "4d4b761f38917b3511fdb5a546c979f26a5beacc",
+    "at": "2026-10-25T10:19:48.322Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "e320e17d6b118737b8a24f944e20f4f38ac1d4c9bc4ab20538c10233bef6e6a9"
+    },
+    "preExisting": [
+      ".lti/snapshots/e320e17d6b118737b8a24f944e20f4f38ac1d4c9bc4ab20538c10233bef6e6a9.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-26T08:08:42.706Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 checks，测试由代理按影响面手动运行；未跑全量单测和全量 e2e；trace e2e 沿用 d2d115a5 的结果（其后只有 tasks 文档和 volumes/lights.ts 变化）；性能数据来自 2026-10-25 的 trace-*.json，机器负载较高",
+        "coverage": [
+          {
+            "criterionId": "AC-e9c8d934b9f7",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-9d1ea0e01258",
+            "status": "unverified",
+            "evidence": "e2e「trace: AC-S1-1」：镜面柜区域 15.8% 的像素变化超过 16 级，映出背后的红、绿方块和白色地板；并排图 evidence/before 与 evidence/after 待 owner 判断（tasks 5.1、8.4）"
+          },
+          {
+            "criterionId": "AC-2c91224ec35f",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-1」下压序列：倒影亮度最大变化 0.7%（只有 SSR 时 +5.2%）（tasks 5.1、8.5）"
+          },
+          {
+            "criterionId": "AC-3fda2530fafd",
+            "status": "verified",
+            "evidence": "见下三条，e2e「trace: AC-S1-2」"
+          },
+          {
+            "criterionId": "AC-7e86c14f2bb8",
+            "status": "verified",
+            "evidence": "材质输出最大 0.52 级（tasks 4.1；8.6 之后与修复前相同）"
+          },
+          {
+            "criterionId": "AC-49112462fc0c",
+            "status": "verified",
+            "evidence": "受光最大 0.23 级（tasks 4.1）"
+          },
+          {
+            "criterionId": "AC-a5c691dab34f",
+            "status": "verified",
+            "evidence": "阴影判定 234 793 个像素全部一致（tasks 4.1）"
+          },
+          {
+            "criterionId": "AC-6b1ca13298ff",
+            "status": "verified",
+            "evidence": "见下四条，evidence/ac-s1-3.md"
+          },
+          {
+            "criterionId": "AC-f434c1a6b635",
+            "status": "verified",
+            "evidence": "14 个预设 WGSL 哈希与改动前相同（tasks 2.1，evidence/ac-s1-3.md）"
+          },
+          {
+            "criterionId": "AC-03dc87442639",
+            "status": "verified",
+            "evidence": "SCENE_E2E_WORKBENCH 与 W1 存档对照通过（tasks 2.1）"
+          },
+          {
+            "criterionId": "AC-b310635ed361",
+            "status": "verified",
+            "evidence": "改动前后差异在同一份代码两次运行的范围内（最大差 5 级），owner 2026-10-25 确认口径（tasks 2.1，design A2）"
+          },
+          {
+            "criterionId": "AC-9deacda5a241",
+            "status": "verified",
+            "evidence": "预设版本未改，materials 单测 13/13（2026-10-26 重跑）"
+          },
+          {
+            "criterionId": "AC-3e000f166002",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-4」：隐藏标签页两次导出 9 张图逐像素相同，带与不带这一层都是（tasks 6.1、8.6）"
+          },
+          {
+            "criterionId": "AC-558dea91f275",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-d62034f318fa",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-5」移动、增加、删除、换材质、改玻璃后逐帧补追；单测 TraceBase 编排（tasks 3.4、8.6）"
+          },
+          {
+            "criterionId": "AC-0f06a6b5beda",
+            "status": "verified",
+            "evidence": "每次最多 2 个像素不符（0.003%），反向对照加 1 cm 每次都能发现（tasks 3.4）"
+          },
+          {
+            "criterionId": "AC-2ce3341359e2",
+            "status": "verified",
+            "evidence": "见下各条"
+          },
+          {
+            "criterionId": "AC-c6f0f0984fba",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-6」状态 off/compatibility、off/device（tasks 3.1）"
+          },
+          {
+            "criterionId": "AC-6f64afbc6ebf",
+            "status": "verified",
+            "evidence": "evidence/ac-s1-3.md：webgl2 与 webgpu-compat 导出改动前后 0.00%"
+          },
+          {
+            "criterionId": "AC-c27f7a812d3f",
+            "status": "verified",
+            "evidence": "e2e「trace: 7.1」各情况只出现对应的一条说明"
+          },
+          {
+            "criterionId": "AC-5f1b722f3410",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-6」断言没有页面报错"
+          },
+          {
+            "criterionId": "AC-0fd50f921268",
+            "status": "verified",
+            "evidence": "e2e「trace: 3.5」「trace: 7.1」压低预算转第 2 档并提示"
+          },
+          {
+            "criterionId": "AC-1d44c68ff34b",
+            "status": "verified",
+            "evidence": "e2e「trace: 3.5」预算 4 KB 进入「场景过大」并提示"
+          },
+          {
+            "criterionId": "AC-6effcc372263",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-6fb7ce9a5ebd",
+            "status": "unverified",
+            "evidence": "参考场景 −0.1 到 0.3 ms（≤ 2 ms，满足）；大厅 8 ms 的判据时过时不过：8.5 当天修复前后各测四次，平均 8.8、8.9 ms，trace-frames.json 一轮 10 ms，波动约 ±3 ms，待 owner 决定（tasks 8.5）"
+          },
+          {
+            "criterionId": "AC-4c84e4ab8238",
+            "status": "verified",
+            "evidence": "2K lit 2.3–4.6 s（时限 69 s）、render_view 1.0–1.5 s（时限 75 s）（tasks 6.2）"
+          },
+          {
+            "criterionId": "AC-b7b62622f993",
+            "status": "verified",
+            "evidence": "首次挂载 46–217 ms（lookBudgetMs 60 s）（tasks 6.2）"
+          },
+          {
+            "criterionId": "AC-3d1fb43fd115",
+            "status": "verified",
+            "evidence": "见下各条，evidence/after/trace-hall.json"
+          },
+          {
+            "criterionId": "AC-900a540cc075",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-25d38f9eac44",
+            "status": "unverified",
+            "evidence": "可点击时间是不带这一层时的 1.18、1.39、1.27、1.22 倍，用例判据 1.2 倍加 0.5 s 有两次超出；多出的长任务记为 issue scene-trace-ready-stall，待 owner 决定（tasks 8.2）"
+          },
+          {
+            "criterionId": "AC-26c3307c96ff",
+            "status": "verified",
+            "evidence": "最长一次 sync 43、41、68 ms（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-ed016b088784",
+            "status": "verified",
+            "evidence": "e2e「trace: 5.2」视口停着时就绪后自动接上（tasks 5.2）"
+          },
+          {
+            "criterionId": "AC-075c45fca504",
+            "status": "verified",
+            "evidence": "冷启动 6.5 s，缓存命中 2.4 s（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-5ccc8113dc16",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-f6088692f5c9",
+            "status": "verified",
+            "evidence": "每帧最多上传 126 KiB（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-aa4b3dde4387",
+            "status": "verified",
+            "evidence": "sync 8.8 ms（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-75500154fd8d",
+            "status": "verified",
+            "evidence": "最长帧是静止帧的 1.3 倍（tasks 8.2）"
+          },
+          {
+            "criterionId": "AC-ded59337069e",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-64d90503b886",
+            "status": "verified",
+            "evidence": "增删最长 sync 24、20 ms（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-e0e29c3ff2c1",
+            "status": "verified",
+            "evidence": "每个新面 35.8 B（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-e6ae2c496068",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-6754c95ef9e6",
+            "status": "verified",
+            "evidence": "6.1：挂载 lit 时等 ready，最多 15 s；e2e「trace: 6.1」超时按说明失败"
+          },
+          {
+            "criterionId": "AC-6db96e530c3c",
+            "status": "verified",
+            "evidence": "大厅导出在时限内完成（tasks 8.2、8.6）"
+          },
+          {
+            "criterionId": "AC-645bccac746b",
+            "status": "unverified",
+            "evidence": "带这一层两次导出偶发相差 1–3 级、没有像素差超过 8 级，修复前也有；owner 2026-10-26 按已知问题接受，记在 issue scene-trace-export-repeat（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-ac5fe3cc01b4",
+            "status": "verified",
+            "evidence": "见下各条"
+          },
+          {
+            "criterionId": "AC-bed6251c4efe",
+            "status": "verified",
+            "evidence": "mirror-board（3.5）、大厅（8.1）、AC-S1-9 用例断言追原始层"
+          },
+          {
+            "criterionId": "AC-1916018b33f0",
+            "status": "verified",
+            "evidence": "e2e「trace perf: AC-S1-9」强制第 2 档"
+          },
+          {
+            "criterionId": "AC-b84559ec1c66",
+            "status": "verified",
+            "evidence": "evidence/after/hall-proxy-mirror.png、trace-proxy.json：代理对原始全图 1.36%、镜子区域 3.02% 的像素差超过 8 级（tasks 8.3、8.5）"
+          },
+          {
+            "criterionId": "AC-4826d0c8b253",
+            "status": "unverified",
+            "evidence": "待 owner 看 hall-proxy-mirror.png 判断（tasks 8.3）"
+          },
+          {
+            "criterionId": "AC-cd56cef4a8ff",
+            "status": "verified",
+            "evidence": "单测：槽位接缝两侧保留全部顶点、每个根查自己槽位的行（tasks 3.5；trace 单测 24/24，2026-10-26 重跑）"
+          },
+          {
+            "criterionId": "AC-2e5b8ea01ba9",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-2306f20d7a91",
+            "status": "verified",
+            "evidence": "creative-scene-shading 单测 2/2（静态检查）、oxlint、npm run build 通过（2026-10-26）"
+          },
+          {
+            "criterionId": "AC-d3f55e20a2d8",
+            "status": "verified",
+            "evidence": "package.json：three-mesh-bvh 0.9.15、meshoptimizer 1.1.1 精确版本"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "53 条验收标准中 48 条有证据满足；未满足或待 owner：AC-S1-1 并排图待 owner 判断；AC-S1-7 大厅 8 ms 时过时不过（平均 8.8–8.9 ms，一轮 10 ms）；AC-S1-8 打开后可点击时间两次超过 1.2 倍加 0.5 s（issue scene-trace-ready-stall）；AC-S1-8 两次导出偶发 1–3 级差异（owner 2026-10-26 按已知问题接受，issue scene-trace-export-repeat）；AC-S1-9 第 2 档画质待 owner 判断。设计：计划外 7 个文件均有理由（单测 3 个、merge.ts 注释与导出、bvh.d.ts、checks.ts、volumes/lights.ts 为 develop 体积修复 f3c4807f 拣入），未动的是符号与引用。契约：按 Epic 修订 v4 S1 不交付契约，API/后端未改。Living Spec：1 条 ADD、2 条 MODIFY 只追加，没有丢失。测试（2026-10-26 重跑）：trace 24、gi 13、shading 2、materials 13、camera 18、model 26、gpu 13、volumes 8 单测全过，oxlint 与 npm run build 通过，W5 全部 15 条 e2e 在 S1 代码上（本机 Metal）通过；trace 12 条 e2e 在 d2d115a5 上通过，之后只改了文档与体积代码。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "8f192e301ac044f5a64402c78b49a2ffff10ab6062f6c452c547fab1a5a1174f"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-26T08:10:58.344Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "沿用同日技术记录的手动定向验证：项目未配置 checks，未跑全量单测和全量 e2e；性能数据来自 2026-10-25，机器负载较高；三项 AC 差距按 owner 决定延期",
+        "followUp": "AC-S1-7：S2 交付时按 Epic AC-7（整层 12 ms）在大厅复测；AC-S1-8 可操作时间：issue scene-trace-ready-stall；AC-S1-8 两次导出：issue scene-trace-export-repeat（机器空闲时新旧代码交替各测约 8 轮）；上游草稿：owner 决定发时先搜已有 issue",
+        "coverage": [
+          {
+            "criterionId": "AC-e9c8d934b9f7",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-9d1ea0e01258",
+            "status": "verified",
+            "evidence": "owner 2026-10-26 看过并排图后按现状接受；e2e「trace: AC-S1-1」镜面柜区域 15.8% 的像素变化超过 16 级"
+          },
+          {
+            "criterionId": "AC-2c91224ec35f",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-1」下压序列：倒影亮度最大变化 0.7%（只有 SSR 时 +5.2%）（tasks 5.1、8.5）"
+          },
+          {
+            "criterionId": "AC-3fda2530fafd",
+            "status": "verified",
+            "evidence": "见下三条，e2e「trace: AC-S1-2」"
+          },
+          {
+            "criterionId": "AC-7e86c14f2bb8",
+            "status": "verified",
+            "evidence": "材质输出最大 0.52 级（tasks 4.1；8.6 之后与修复前相同）"
+          },
+          {
+            "criterionId": "AC-49112462fc0c",
+            "status": "verified",
+            "evidence": "受光最大 0.23 级（tasks 4.1）"
+          },
+          {
+            "criterionId": "AC-a5c691dab34f",
+            "status": "verified",
+            "evidence": "阴影判定 234 793 个像素全部一致（tasks 4.1）"
+          },
+          {
+            "criterionId": "AC-6b1ca13298ff",
+            "status": "verified",
+            "evidence": "见下四条，evidence/ac-s1-3.md"
+          },
+          {
+            "criterionId": "AC-f434c1a6b635",
+            "status": "verified",
+            "evidence": "14 个预设 WGSL 哈希与改动前相同（tasks 2.1，evidence/ac-s1-3.md）"
+          },
+          {
+            "criterionId": "AC-03dc87442639",
+            "status": "verified",
+            "evidence": "SCENE_E2E_WORKBENCH 与 W1 存档对照通过（tasks 2.1）"
+          },
+          {
+            "criterionId": "AC-b310635ed361",
+            "status": "verified",
+            "evidence": "改动前后差异在同一份代码两次运行的范围内（最大差 5 级），owner 2026-10-25 确认口径（tasks 2.1，design A2）"
+          },
+          {
+            "criterionId": "AC-9deacda5a241",
+            "status": "verified",
+            "evidence": "预设版本未改，materials 单测 13/13（2026-10-26 重跑）"
+          },
+          {
+            "criterionId": "AC-3e000f166002",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-4」：隐藏标签页两次导出 9 张图逐像素相同，带与不带这一层都是（tasks 6.1、8.6）"
+          },
+          {
+            "criterionId": "AC-558dea91f275",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-d62034f318fa",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-5」移动、增加、删除、换材质、改玻璃后逐帧补追；单测 TraceBase 编排（tasks 3.4、8.6）"
+          },
+          {
+            "criterionId": "AC-0f06a6b5beda",
+            "status": "verified",
+            "evidence": "每次最多 2 个像素不符（0.003%），反向对照加 1 cm 每次都能发现（tasks 3.4）"
+          },
+          {
+            "criterionId": "AC-2ce3341359e2",
+            "status": "verified",
+            "evidence": "见下各条"
+          },
+          {
+            "criterionId": "AC-c6f0f0984fba",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-6」状态 off/compatibility、off/device（tasks 3.1）"
+          },
+          {
+            "criterionId": "AC-6f64afbc6ebf",
+            "status": "verified",
+            "evidence": "evidence/ac-s1-3.md：webgl2 与 webgpu-compat 导出改动前后 0.00%"
+          },
+          {
+            "criterionId": "AC-c27f7a812d3f",
+            "status": "verified",
+            "evidence": "e2e「trace: 7.1」各情况只出现对应的一条说明"
+          },
+          {
+            "criterionId": "AC-5f1b722f3410",
+            "status": "verified",
+            "evidence": "e2e「trace: AC-S1-6」断言没有页面报错"
+          },
+          {
+            "criterionId": "AC-0fd50f921268",
+            "status": "verified",
+            "evidence": "e2e「trace: 3.5」「trace: 7.1」压低预算转第 2 档并提示"
+          },
+          {
+            "criterionId": "AC-1d44c68ff34b",
+            "status": "verified",
+            "evidence": "e2e「trace: 3.5」预算 4 KB 进入「场景过大」并提示"
+          },
+          {
+            "criterionId": "AC-6effcc372263",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-6fb7ce9a5ebd",
+            "status": "deferred",
+            "evidence": "参考场景满足；大厅 8 ms 时过时不过（平均 8.8–8.9 ms），owner 2026-10-26 按现状接受，随 S2 按 Epic AC-7 整层 12 ms 复测"
+          },
+          {
+            "criterionId": "AC-4c84e4ab8238",
+            "status": "verified",
+            "evidence": "2K lit 2.3–4.6 s（时限 69 s）、render_view 1.0–1.5 s（时限 75 s）（tasks 6.2）"
+          },
+          {
+            "criterionId": "AC-b7b62622f993",
+            "status": "verified",
+            "evidence": "首次挂载 46–217 ms（lookBudgetMs 60 s）（tasks 6.2）"
+          },
+          {
+            "criterionId": "AC-3d1fb43fd115",
+            "status": "verified",
+            "evidence": "见下各条，evidence/after/trace-hall.json"
+          },
+          {
+            "criterionId": "AC-900a540cc075",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-25d38f9eac44",
+            "status": "deferred",
+            "evidence": "可点击时间两次超过 1.2 倍加 0.5 s，owner 2026-10-26 按现状接受，原因随 issue scene-trace-ready-stall 排查"
+          },
+          {
+            "criterionId": "AC-26c3307c96ff",
+            "status": "verified",
+            "evidence": "最长一次 sync 43、41、68 ms（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-ed016b088784",
+            "status": "verified",
+            "evidence": "e2e「trace: 5.2」视口停着时就绪后自动接上（tasks 5.2）"
+          },
+          {
+            "criterionId": "AC-075c45fca504",
+            "status": "verified",
+            "evidence": "冷启动 6.5 s，缓存命中 2.4 s（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-5ccc8113dc16",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-f6088692f5c9",
+            "status": "verified",
+            "evidence": "每帧最多上传 126 KiB（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-aa4b3dde4387",
+            "status": "verified",
+            "evidence": "sync 8.8 ms（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-75500154fd8d",
+            "status": "verified",
+            "evidence": "最长帧是静止帧的 1.3 倍（tasks 8.2）"
+          },
+          {
+            "criterionId": "AC-ded59337069e",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-64d90503b886",
+            "status": "verified",
+            "evidence": "增删最长 sync 24、20 ms（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-e0e29c3ff2c1",
+            "status": "verified",
+            "evidence": "每个新面 35.8 B（tasks 8.6）"
+          },
+          {
+            "criterionId": "AC-e6ae2c496068",
+            "status": "verified",
+            "evidence": "见下三条"
+          },
+          {
+            "criterionId": "AC-6754c95ef9e6",
+            "status": "verified",
+            "evidence": "6.1：挂载 lit 时等 ready，最多 15 s；e2e「trace: 6.1」超时按说明失败"
+          },
+          {
+            "criterionId": "AC-6db96e530c3c",
+            "status": "verified",
+            "evidence": "大厅导出在时限内完成（tasks 8.2、8.6）"
+          },
+          {
+            "criterionId": "AC-645bccac746b",
+            "status": "deferred",
+            "evidence": "偶发 1–3 级差异，owner 2026-10-26 按已知问题接受，issue scene-trace-export-repeat"
+          },
+          {
+            "criterionId": "AC-ac5fe3cc01b4",
+            "status": "verified",
+            "evidence": "见下各条"
+          },
+          {
+            "criterionId": "AC-bed6251c4efe",
+            "status": "verified",
+            "evidence": "mirror-board（3.5）、大厅（8.1）、AC-S1-9 用例断言追原始层"
+          },
+          {
+            "criterionId": "AC-1916018b33f0",
+            "status": "verified",
+            "evidence": "e2e「trace perf: AC-S1-9」强制第 2 档"
+          },
+          {
+            "criterionId": "AC-b84559ec1c66",
+            "status": "verified",
+            "evidence": "evidence/after/hall-proxy-mirror.png、trace-proxy.json：代理对原始全图 1.36%、镜子区域 3.02% 的像素差超过 8 级（tasks 8.3、8.5）"
+          },
+          {
+            "criterionId": "AC-4826d0c8b253",
+            "status": "verified",
+            "evidence": "owner 2026-10-26 接受第 2 档画质（hall-proxy-mirror.png：镜子区域 3.02% 的像素差超过 8 级）"
+          },
+          {
+            "criterionId": "AC-cd56cef4a8ff",
+            "status": "verified",
+            "evidence": "单测：槽位接缝两侧保留全部顶点、每个根查自己槽位的行（tasks 3.5；trace 单测 24/24，2026-10-26 重跑）"
+          },
+          {
+            "criterionId": "AC-2e5b8ea01ba9",
+            "status": "verified",
+            "evidence": "见下两条"
+          },
+          {
+            "criterionId": "AC-2306f20d7a91",
+            "status": "verified",
+            "evidence": "creative-scene-shading 单测 2/2（静态检查）、oxlint、npm run build 通过（2026-10-26）"
+          },
+          {
+            "criterionId": "AC-d3f55e20a2d8",
+            "status": "verified",
+            "evidence": "package.json：three-mesh-bvh 0.9.15、meshoptimizer 1.1.1 精确版本"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-26：「本 feature 可以收尾结束了」，并选择按现状接受五项：AC-S1-1 并排图成立；AC-S1-9 第 2 档画质可以接受；AC-S1-7 大厅 8 ms 时过时不过、AC-S1-8 打开后可点击时间两次超出 1.2 倍加 0.5 s、两次导出偶发 1–3 级差异，按现状接受并延期。proposal 批准后的三处口径修改（AC-S1-3、AC-S1-7、AC-S1-8）均为 owner 2026-10-25 的决定。上游报告草稿 5 份先不发，留在 discovery。其余 48 条有证据满足，依据同技术记录。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "8f192e301ac044f5a64402c78b49a2ffff10ab6062f6c452c547fab1a5a1174f"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-26T08:11:44.288Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

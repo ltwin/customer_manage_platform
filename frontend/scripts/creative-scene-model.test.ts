@@ -602,6 +602,7 @@ test('the model cache downloads, inspects and parses each revision once', async 
   assert.equal(a, b)
   assert.deepEqual(downloads, ['ccrv_1'], 'one download for any number of instances')
   assert.equal(a.meshes.length, 2, 'base and capital share the trim slot and are drawn as one; the shaft is stone')
+  assert.deepEqual(a.meshes.map((m) => m.geometry.userData.traceKey), ['model:ccrv_1#0', 'model:ccrv_1#1'], 'the world-space layer caches each merged geometry under its revision and place')
   // Each part's transform is baked into its geometry (model space).
   const top = a.meshes.map((m) => {
     m.geometry.computeBoundingBox()
@@ -623,8 +624,10 @@ test('the model cache downloads, inspects and parses each revision once', async 
   const before = downloads.length
   const local = await cache.load('local:i1:m')
   assert.equal(downloads.length, before, 'a local bake needs no download')
+  assert.ok(local.meshes.every((m) => m.geometry.userData.traceKey === undefined), 'a bake not saved yet is not cached')
   cache.alias('local:i1:m', 'ccrv_9', 'ccnt_9')
   assert.equal(await cache.load('ccrv_9'), local, 'the receipt\'s revision reuses the parsed model')
+  assert.deepEqual(local.meshes.map((m) => m.geometry.userData.traceKey), ['model:ccrv_9#0', 'model:ccrv_9#1'], 'saved, it is cached under its revision')
   assert.equal(cache.local.getState()['ccrv_9'].summary.content_id, 'ccnt_9')
   await assert.rejects(cache.load('local:gone:m'), /本机模型已不在/)
 
@@ -906,4 +909,28 @@ test('the stress scenes come out byte for byte the same each time, at their size
   const eq = await equivalence()
   for (const name of ['glass', 'stone', 'wall', 'stacked']) assert.ok(eq.models[name].glb.equals((await equivalence()).models[name].glb), name)
   assert.equal(eq.objects.filter((o: { kind: string }) => o.kind === 'camera').length, 2, 'a camera on each set')
+})
+
+test('S0’s hall as models within the sandbox’s limit: the same bytes each time, a hero cut into pieces placed together (S1 tasks 8.1)', async () => {
+  const { hallScene, hallSpec } = await import('./scene-stress.mjs')
+  const { cells, counts } = await import('./fixtures/scene-stress/generate.mjs')
+  const c = counts(hallSpec)
+  assert.ok(Math.abs(c.triangles / 20e6 - 1) <= 0.05, `${c.triangles} triangles`)
+  const only = ['blob-00', 'knot-58']
+  const a = await hallScene({ only })
+  const b = await hallScene({ only })
+  for (const [name, m] of Object.entries(a.models)) assert.ok(m.glb.equals(b.models[name].glb), name)
+  assert.deepEqual(a.objects, b.objects)
+  assert.deepEqual(Object.keys(a.models), ['blob-00', 'knot-58.0', 'knot-58.1', 'knot-58.2', 'knot-58.3', 'knot-58.4'])
+  for (const [name, m] of Object.entries(a.models)) assert.ok(m.manifest.triangles <= 300_000, `${name}: ${m.manifest.triangles}`)
+  // The knot hero whole, in five pieces standing in one place.
+  const [nu, nv] = cells('knot', 1_500_000)
+  const knot = Object.entries(a.models).filter(([name]) => name.startsWith('knot-58.'))
+  assert.equal(knot.reduce((n, [, m]) => n + m.manifest.triangles, 0), 2 * nu * nv)
+  const pieces = a.objects.filter((o: { model?: { name: string } }) => o.model?.name.startsWith('knot-58.'))
+  assert.equal(pieces.length, 5)
+  for (const p of pieces) assert.deepEqual(p.transform, pieces[0].transform)
+  // 1993 surfaces and the two heroes' pieces; the room's 5 boxes and the mirror; the camera.
+  const kinds = (kind: string) => a.objects.filter((o: { kind: string }) => o.kind === kind).length
+  assert.deepEqual([kinds('model_instance'), kinds('primitive'), kinds('camera')], [1993 + 10, 6, 1])
 })

@@ -256,6 +256,34 @@ test('each image goes to the shooter with its deadline; one given up between fra
   for (const d of deadlines) assert.ok(d >= before + 30_000 && d <= performance.now() + 30_000, `deadline ${d}`)
 })
 
+test('a real-time GI lit image that draws the world-space layer gets the longer limit; clay keeps the workbench’s (S1 tasks 6.2)', async () => {
+  const { drawnFrames, shotBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+  const doc = { scene: { ...sceneOf(camera()), render: { mode: 'lit', exposure_ev: 0, engine: 'realtime_gi', resolution: '2k' } }, models: {}, revision: '5' }
+  const limits = async (world: boolean) => {
+    const out: { kind: string; ms: number; width: number; height: number }[] = []
+    const shooter: Shooter = {
+      maxTextureSize: 16384,
+      world,
+      shoot: async (f, o) => {
+        out.push({ kind: o.kind, ms: (o.deadline ?? NaN) - performance.now(), width: f.width, height: f.height })
+        return new Blob([o.kind])
+      },
+      setLook: async () => {},
+      confirm: async () => {},
+      close: () => {},
+    }
+    const done = await renderShots({ read: async () => doc as never, loadModels: async () => {}, open: async () => shooter }, 'doc', { cameraObjectIDs: ['cam'], passes: ['clay', 'lit'] })
+    assert.ok(done.ok)
+    return out
+  }
+  for (const world of [false, true]) {
+    const [clay, lit] = await limits(world)
+    assert.ok(Math.abs(clay.ms - 30_000) < 100, `${String(world)}: clay ${String(clay.ms)}`)
+    const want = shotBudgetMs('realtime_gi', lit.width, lit.height, drawnFrames('realtime_gi', 'export'), 'image/png', world)
+    assert.ok(Math.abs(lit.ms - want) < 100, `${String(world)}: lit ${String(lit.ms)}, want ${String(want)}`)
+  }
+})
+
 test('the output resolution sets the long side and the encoding; a device too small fails at once, a lost one at 4K is not retried', async () => {
   const { imageTypeOf } = await import('../src/creative-scene/render/engines.ts')
   assert.deepEqual(imageTypeOf('clay', '2k'), { type: 'image/png' })
@@ -267,6 +295,7 @@ test('the output resolution sets the long side and the encoding; a device too sm
   let closed = 0
   const shooterOf = (maxTextureSize: number, lose = false): Shooter => ({
     maxTextureSize,
+    world: false,
     shoot: async (f, o) => {
       if (lose) throw new DeviceLostError()
       shots.push({ width: f.width, height: f.height, type: o.type, quality: o.quality })

@@ -3,12 +3,13 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { drawnFrames, effectiveEngine, engineOf, type Use } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { sceneLowSun, sceneLux } from '../world/exposure.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
+import { TraceNotReady, traceBase } from '../render/trace/base.ts'
 import { backgroundTicker } from './ticker.ts'
 import type { Shot } from './executor.ts'
 import { framingFor, type Framing, type RenderRequest } from './framing.ts'
@@ -59,6 +60,8 @@ export type Look = 'clay' | 'lit'
 export type Shooter = {
   /** The longest side the device can draw, in pixels. */
   readonly maxTextureSize: number
+  /** Whether the lit look's pictures draw the world-space layer (its time limit counts it: engines.ts shotBudgetMs). */
+  readonly world: boolean
   /**
    * Draws a picture's frames, yielding to the page between them
    * (SceneGPU.settle), then draws the last and encodes it in one go. The
@@ -68,7 +71,11 @@ export type Shooter = {
   shoot(framing: Framing, options: ShotOptions): Promise<Blob>
   /** Throws DeviceLostError when the device was lost while the shots so far were drawn; call before handing them on. */
   confirm(): Promise<void>
-  /** Mounts the other look and compiles its materials, so its first shot is complete. */
+  /**
+   * Mounts the other look and compiles its materials, so its first shot is
+   * complete; the lit look in the real-time GI waits for the world-space
+   * layer too, and throws TraceNotReady when it is not ready in time.
+   */
   setLook(look: Look): Promise<void>
   close(): void
 }
@@ -110,7 +117,7 @@ export async function shoot(scene: Scene, models: Readonly<Record<string, SceneM
 /** Why a picture failed whose night sky's assets did not load: a deployment or network matter, said plainly. */
 export const NIGHT_ASSETS_FAILED = '夜空资源加载失败，请稍后重试'
 
-/** Mounts the scene on a hidden canvas in a look; every shot moves one camera. */
+/** Mounts the scene on a hidden canvas in a look; every shot moves one camera. Throws TraceNotReady as setLook. */
 export async function openShooter(scene: Scene, models: Readonly<Record<string, SceneModel>>, look: Look = 'clay'): Promise<Shooter> {
   // The night sky's stars and moon map first (W3 design「资源与确定性」): a picture without them would not be the scene.
   await loadNightAssets(scene).catch((err: unknown) => {
@@ -151,16 +158,26 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     const g = gpuOf(state.gl)
     gpu = g
     const three = state.scene
+    // The real-time GI's lit pictures draw the world-space layer: the device's base packed before the first (D7).
+    const traced = (on: Look) => on === 'lit' && effectiveEngine(engineOf(scene.render), 'lit', true) === 'realtime_gi'
+    const traceReady = async (on: Look) => {
+      if (traced(on) && !(await traceBase(g, three, { incremental: false }).ready(traceWaitMs))) throw new TraceNotReady()
+    }
     // Materials compile now, in parallel where the browser can, not inside the first shot.
     await g.compile(three, camera)
+    await traceReady(look)
     let mounted = look
     return {
       maxTextureSize: g.maxTextureSize,
+      get world() {
+        return traced(mounted) && traceBase(g, three, { incremental: false }).state.state === 'ready'
+      },
       async setLook(next) {
         if (next === mounted) return
         await mount(next)
         mounted = next
         await g.compile(three, camera)
+        await traceReady(next)
       },
       async shoot(framing, options) {
         if (options.kind !== 'line' && options.kind !== mounted) throw new Error(`拍${options.kind}图前须先切换渲染方式`)

@@ -5,6 +5,7 @@ import type { SceneModel } from '../models/cache.ts'
 import type { Device, DevicePreference } from '../input/navigation.ts'
 import { emptySelection, type Selection } from '../input/selection.ts'
 import type { CameraView, SavedView } from '../viewState.ts'
+import type { TraceStatus } from '../render/trace/base.ts'
 
 // Editor UI state, never part of the document: what is selected, which tool
 // and panels are showing, open menus and prompts. The selection, tool,
@@ -69,6 +70,12 @@ export type EditorUI = {
   sceneTab: SceneTab
   /** The viewport's renderer once made. */
   backend: Backend | null
+  /**
+   * The viewport's world-space layer (render/trace/base.ts): off and why
+   * from the start, the rest once the real-time GI's lit look has drawn
+   * (the render panel's notes, S1 design「降级与提示」).
+   */
+  trace: TraceStatus | null
   popup: Popup | null
   sheet: boolean
   history: boolean
@@ -113,6 +120,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     propertiesTab: 'environment',
     sceneTab: 'environment',
     backend: null,
+    trace: null,
     popup: null,
     sheet: false,
     history: saved?.history ?? false,

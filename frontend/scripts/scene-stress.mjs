@@ -5,11 +5,15 @@
 // objects as the scene document has them, a model instance naming its model
 // by `model: { name }` until the e2e seeds it and puts in its revision.
 // Everything comes from a fixed seed: the same arguments give the same bytes.
+import { readFileSync } from 'node:fs'
 import {
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   CylinderGeometry,
   Group,
   LatheGeometry,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
@@ -17,9 +21,11 @@ import {
   Euler,
   SphereGeometry,
   Vector2,
+  Vector3,
 } from 'three'
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js'
-import { inspect } from '../src/creative-scene/sandbox/inspect.ts'
+import { defaultLimits, inspect } from '../src/creative-scene/sandbox/inspect.ts'
+import { cells, generate } from './fixtures/scene-stress/generate.mjs'
 
 // GLTFExporter reads its binary chunks through FileReader, which Node does not have.
 globalThis.FileReader ??= class {
@@ -267,4 +273,123 @@ export async function equivalence() {
     camera('shotb', 21, [30.6, 1.2, 3], -0.2),
   ]
   return { models, objects, environment: { sky: { kind: 'procedural', sun_elevation_deg: 40, sun_azimuth_deg: 150, turbidity: 3 } } }
+}
+
+const maxTriangles = defaultLimits.maxTriangles
+
+/**
+ * S0's hall (fixtures/scene-stress/spec.json) as models fit to the sandbox's
+ * limit: each plain surface a model, its triangles brought down from 300 000
+ * to the most its grid keeps within 300 000; each hero of 1.5 million cut into
+ * models of at most 300 000, placed together. About 20 million triangles.
+ */
+export const hallSpec = (() => {
+  const spec = JSON.parse(readFileSync(new URL('fixtures/scene-stress/spec.json', import.meta.url), 'utf8'))
+  const within = (type, triangles) => {
+    let t = triangles
+    while (2 * cells(type, t)[0] * cells(type, t)[1] > maxTriangles) t -= 1000
+    return t
+  }
+  return { ...spec, geometries: spec.geometries.map((f) => (f.hero ? f : { ...f, triangles: within(f.type, f.triangles) })) }
+})()
+
+/** A surface cut into pieces of at most max triangles, each with only the vertices it uses. */
+function pieces({ positions, normals, indices }, max) {
+  const out = []
+  const remap = new Int32Array(positions.length / 3)
+  for (let t = 0; t < indices.length; t += max * 3) {
+    const triangles = indices.subarray(t, Math.min(indices.length, t + max * 3))
+    remap.fill(-1)
+    const index = new Uint32Array(triangles.length)
+    let used = 0
+    for (let k = 0; k < triangles.length; k++) {
+      if (remap[triangles[k]] < 0) remap[triangles[k]] = used++
+      index[k] = remap[triangles[k]]
+    }
+    const p = new Float32Array(used * 3)
+    const n = new Float32Array(used * 3)
+    for (let v = 0; v < remap.length; v++) {
+      if (remap[v] < 0) continue
+      p.set(positions.subarray(v * 3, v * 3 + 3), remap[v] * 3)
+      n.set(normals.subarray(v * 3, v * 3 + 3), remap[v] * 3)
+    }
+    out.push({ positions: p, normals: n, indices: index })
+  }
+  return out
+}
+
+/** A model of one surface in one slot, as a bake writes it. */
+function surfaceModel({ positions, normals, indices }) {
+  const g = new BufferGeometry()
+  g.setAttribute('position', new BufferAttribute(positions, 3))
+  g.setAttribute('normal', new BufferAttribute(normals, 3))
+  g.setIndex(new BufferAttribute(indices, 1))
+  const root = new Group()
+  root.add(new Mesh(g, slotMaterials(['a']).a))
+  return bake(root)
+}
+
+/**
+ * S0's stress scene in the editor (S1 tasks 8.1): the hall's floor and walls as
+ * boxes, its 2000 instances of the surfaces as model instances (43% of them
+ * recoloured, as scaleScene), its camera, and a mirror hung behind the knot
+ * hero above the clutter, tilted to show the camera the knot. only (geometry
+ * ids) bakes just those models; the objects are all there either way.
+ */
+export async function hallScene({ only } = {}) {
+  const { instances } = generate(hallSpec, { only: [] })
+  /** Model names by geometry id, numbered as generate() numbers them: a hero's pieces. */
+  const named = {}
+  let serial = 0
+  for (const family of hallSpec.geometries) {
+    const [nu, nv] = cells(family.type, family.triangles)
+    const count = Math.ceil((2 * nu * nv) / maxTriangles)
+    for (let k = 0; k < family.count; k++, serial++) {
+      const id = `${family.type}-${String(serial).padStart(2, '0')}`
+      named[id] = count > 1 ? Array.from({ length: count }, (_, p) => `${id}.${p}`) : [id]
+    }
+  }
+  const models = {}
+  for (const id of only ?? Object.keys(named)) {
+    const [surface] = generate(hallSpec, { only: [id] }).geometries
+    const parts = named[id].length > 1 ? pieces(surface, maxTriangles) : [surface]
+    for (const [k, part] of parts.entries()) models[named[id][k]] = await surfaceModel(part)
+  }
+  const rand = random(hallSpec.seed)
+  const objects = []
+  const { width, depth, height, wall } = hallSpec.room
+  const box = (name, order, position, [w, h, d], slots = {}, turn = 0) => ({ id: objectID(name), kind: 'primitive', name, order, transform: placed(position, turn), primitive: { builtin: 'box@1', params: { width: w, height: h, depth: d } }, material_slots: slots })
+  // box@1 stands on y = 0: the floor's top at 0, the walls on it.
+  objects.push(
+    box('hallfloor', 1, [0, -wall, 0], [width, wall, depth]),
+    box('wallback', 2, [0, 0, -depth / 2 - wall / 2], [width, height, wall]),
+    box('wallfront', 3, [0, 0, depth / 2 + wall / 2], [width, height, wall]),
+    box('wallleft', 4, [-width / 2 - wall / 2, 0, 0], [wall, height, depth]),
+    box('wallright', 5, [width / 2 + wall / 2, 0, 0], [wall, height, depth]),
+  )
+  let order = 10
+  let knot = null
+  instances.forEach((inst, n) => {
+    if (inst.geometry === 'room') return
+    const m = inst.matrix
+    const scale = Math.hypot(m[0], m[1], m[2])
+    const transform = placed([m[12], m[13], m[14]], Math.atan2(m[8], m[0]), scale)
+    const recoloured = Math.floor((n + 1) * 0.43) > Math.floor(n * 0.43)
+    const slots = recoloured ? { a: overridePalette[Math.floor(rand() * overridePalette.length)] } : {}
+    named[inst.geometry].forEach((model, k) => objects.push(instance(named[inst.geometry].length > 1 ? `h${n}p${k}x` : `h${String(n).padStart(4, '0')}x`, order++, model, transform, slots)))
+      // The knot hero's middle: it stands on the floor, about 1.4 m high at its scale.
+    if (named[inst.geometry].length > 1 && inst.geometry.startsWith('knot-')) knot = new Vector3(m[12], 0.7, m[14])
+  })
+  const { position: eye, target, focal_mm } = hallSpec.camera
+  const look = new Quaternion().setFromRotationMatrix(new Matrix4().lookAt(new Vector3(...eye), new Vector3(...target), new Vector3(0, 1, 0)))
+  objects.push({ id: objectID('hallcam'), kind: 'camera', name: 'hall', order: order++, transform: { position: eye, rotation: look.toArray(), scale: [1, 1, 1] }, camera: { focal_mm } })
+  // The mirror 3 m behind the knot and 2.6 m up, over the clutter from the camera; its face half way between the
+  // camera and the knot, so the camera sees the knot in it. A box turns about the middle of its base.
+  const centre = new Vector3(knot.x, 2.6, knot.z - 3)
+  const face = new Vector3(...eye).sub(centre).normalize().add(knot.clone().sub(centre).normalize()).normalize()
+  const tilt = new Quaternion().setFromEuler(new Euler(Math.asin(-face.y), Math.atan2(face.x, face.z), 0, 'YXZ'))
+  const [w, h] = [3, 1.8]
+  const base = centre.clone().sub(new Vector3(0, h / 2, 0).applyQuaternion(tilt))
+  objects.push({ ...box('hallmirror', order++, base.toArray(), [w, h, 0.05], { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0 } } }), transform: { position: base.toArray(), rotation: tilt.toArray(), scale: [1, 1, 1] } })
+  return { models, objects, environment: { sky: { kind: 'procedural', sun_elevation_deg: 45, sun_azimuth_deg: 135, turbidity: 3 } } }
 }

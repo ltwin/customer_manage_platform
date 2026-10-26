@@ -13,6 +13,8 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
+import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
+import { hitShading } from './trace/hit.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
 import { nightLookNode } from '../world/nightLook.ts'
 import { aerialBehind, finishAerial, prepareAerial } from '../world/atmosphere/aerial.ts'
@@ -333,10 +335,14 @@ export function mainLight(scene: Object3D): Shadowing | null {
   return sun ?? best
 }
 
-/** How a frame is drawn, which decides the pipeline: the real-time GI or the workbench. */
-type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean }
+/**
+ * How a frame is drawn, which decides the pipeline: the real-time GI or the
+ * workbench; the real-time GI's world-space layer, once ready (S1).
+ */
+type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null }
 
-const keyOf = ({ wireframe, blur, gi, quality, accumulate }: Look) => (wireframe ? 'wire' : `${gi ? `gi-${quality}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`)
+const keyOf = ({ wireframe, blur, gi, quality, accumulate, trace }: Look) =>
+  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
 
 const accumulateSize = /*@__PURE__*/ new Vector2()
 let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
@@ -448,6 +454,8 @@ export class SceneRenderer {
   private readonly gpu: SceneGPU
   private readonly scene: Scene
   private readonly overlays: Overlays
+  /** The viewport's renderer, the one with overlays to draw; an export's has none. */
+  private readonly viewport: boolean
   private built: Built | null = null
   private width = -1
   private height = -1
@@ -474,9 +482,10 @@ export class SceneRenderer {
     this.camera = camera
     this.scene = scene
     this.overlays = overlays
+    this.viewport = overlays !== noOverlays
     this.redraw = redraw
     // The viewport's pipeline is the one a new light is compiled for (objects/SceneLights.tsx).
-    if (overlays !== noOverlays) gpu.compiler = () => this.compile()
+    if (this.viewport) gpu.compiler = () => this.compile()
   }
 
   /**
@@ -569,7 +578,7 @@ export class SceneRenderer {
     if (look.gi) {
       // The viewport's helpers, apart from the GI and laid over it (realtimeGI.ts aside); an export has none.
       let aside: PassNode | null = null
-      if (this.overlays !== noOverlays) {
+      if (this.viewport) {
         aside = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: 0 }))
         aside.setLayers(layers(ASIDE_LAYER))
         aside.getTexture('output').type = UnsignedByteType
@@ -583,6 +592,7 @@ export class SceneRenderer {
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
           redraw: this.redraw,
+          trace: look.trace && hitShading(look.trace, scene),
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
@@ -649,7 +659,7 @@ export class SceneRenderer {
     const pipeline = new RenderPipeline(gpu.renderer)
     pipeline.outputColorTransform = false
     pipeline.outputNode = vec4(output.rgb, 1)
-    if (this.overlays !== noOverlays) {
+    if (this.viewport) {
       const overlay = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }))
       overlay.setLayers(layers(OVERLAY_LAYER))
       // Premultiplied sRGB over the finished picture.
@@ -678,6 +688,17 @@ export class SceneRenderer {
     return this.stats
   }
 
+  /**
+   * The device's world-space layer (render/trace/base.ts): the viewport's
+   * commits builds as they come and asks for frames while it does; an
+   * export's packs once, in order.
+   */
+  trace(): TraceBase {
+    const base = traceBase(this.gpu, this.scene, { incremental: this.viewport })
+    base.redraw = this.redraw
+    return base
+  }
+
   /** Draws a frame into the renderer's canvas. */
 
   render(camera: Camera, frame: Frame) {
@@ -694,6 +715,8 @@ export class SceneRenderer {
       gi,
       quality: frame.quality ?? 'interactive',
       accumulate: gi && frame.accumulate === true,
+      // As last frame's sync left it: becoming ready asks for the frame that draws with it (base.ts).
+      trace: gi ? this.trace().handle() : null,
     }
     const key = keyOf(look)
     if (this.built?.key !== key) {
@@ -732,10 +755,23 @@ export class SceneRenderer {
     renderer.toneMappingExposure = frame.exposure ?? 1
     // Written and drawn in one synchronous call: no await between (world/exposure.ts preExposure).
     applyExposure(this.scene, frame.preExposure ?? 1)
+    // The layer in step with the scene, its light rows as exposed for this frame (S1 design「主流程」), its meshes
+    // where this frame draws them: three brings matrixWorld up to date only as it renders.
+    if (gi) {
+      if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
+      this.trace().sync()
+    }
     prepareAerial(this.scene, renderer, camera, !wireframe)
     prepareVolumes(this.scene, camera, !wireframe)
     try {
       this.stats = measure(renderer.info.render, () => built.pipeline.render(), started)
+      if (look.trace) {
+        // Drawn: the layer's buffers are on the GPU whole.
+        this.trace().drawn()
+        // The reflections' pipeline refused on this device (known a GPU round trip after it was built): upstream's
+        // SSR from the next frame on (S1 design A13).
+        if (built.gi?.traced && this.gpu.pipelineFailed(built.gi.traced)) this.trace().fail(true)
+      }
     } finally {
       renderer.toneMappingExposure = exposure
       preExposure.value = 1
@@ -750,6 +786,6 @@ export class SceneRenderer {
     this.kept = null
     this.built?.dispose()
     this.built = null
-    if (this.overlays !== noOverlays) this.gpu.compiler = null
+    if (this.viewport) this.gpu.compiler = null
   }
 }

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { execSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
-import { rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -21,14 +21,14 @@ import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
-import { capModel, equivalence, multiPart, primitives, scaleScene } from './scene-stress.mjs'
+import { capModel, equivalence, hallScene, multiPart, primitives, scaleScene } from './scene-stress.mjs'
 
 const DOC = 'cwdoc_scene'
 const fixture = new URL('../.scene-editor-qa.html', import.meta.url)
 const canvasFixture = new URL('../.scene-canvas-qa.html', import.meta.url)
 await writeFile(
   fixture,
-  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script>window.__sceneTest = true; if (new URLSearchParams(location.search).has('nomerge')) window.__sceneNoMerge = true</script><script type="module">
+  `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script>window.__sceneTest = true; const q = new URLSearchParams(location.search); if (q.has('nomerge')) window.__sceneNoMerge = true; if (q.has('gpu')) window.__sceneGPUHooks = Object.fromEntries(q.get('gpu').split(',').map((k) => k.split(':')).map(([k, v]) => [k, v === undefined ? true : Number.isNaN(Number(v)) ? v : Number(v)]))</script><script type="module">
 import React, {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import '/src/index.css';
@@ -49,6 +49,7 @@ window.__closed = 0;
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
 // ?library=1 hands the editor the canvas page's 「存入资产库」 dialog; a save makes the asset panel read again.
 // ?nomerge=1 draws every model part on its own, as before scene-performance P1 (models/merge.ts).
+// ?gpu=forceWebGL,traceBudget:4096,traceShade:albedo,… sets those gpuTestHooks (on, to the number, or to the word) before the viewport's device is made (render/gpu.ts).
 function Editor({host}) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(null);
@@ -623,6 +624,28 @@ async function pixelDiff(page, a, b, min = 48) {
     for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > min) n++
     return n / (p.length / 4)
   }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
+}
+
+/** Two pictures of one size, decoded in the page: the largest channel difference and the share of pixels off by more than 8 (R2 AC-R2-5). */
+async function imageApart(page, a, b) {
+  return page.evaluate(async ([a, b]) => {
+    const pixels = async (src) => {
+      const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+      const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+      const g = c.getContext('2d')
+      g.drawImage(bitmap, 0, 0)
+      return g.getImageData(0, 0, c.width, c.height).data
+    }
+    const [p, q] = await Promise.all([pixels(a), pixels(b)])
+    let max = 0
+    let over = 0
+    for (let k = 0; k < p.length; k += 4) {
+      const d = Math.max(Math.abs(p[k] - q[k]), Math.abs(p[k + 1] - q[k + 1]), Math.abs(p[k + 2] - q[k + 2]))
+      if (d > max) max = d
+      if (d > 8) over++
+    }
+    return { max, over: over / (p.length / 4) }
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`])
 }
 
 async function waitFor(check, message, timeout = 5000) {
@@ -6287,9 +6310,14 @@ window.__ready = true;
 // on this machine's GPU: each lit export through WebGPU and through the WebGL2 backend (AC-6 keeps the latter
 // as it is), the brightness of the regions in gi-regions.json, the viewport's frame times, and the room lit
 // from behind: a wall out of the sun, with the sunlit wall off screen and on (pointAcrossViews). SCENE_E2E_GI_SCENES=<a,b> draws these reference scenes instead.
+// SCENE_E2E_GI_COMPAT=1 adds a third export, WebGPU taken for a compatibility device (forceCompatibility): S1's
+// AC-S1-6 holds that one as it is too.
 if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference scenes in real-time GI before the world-space layer, on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_GI_BASELINE
   const only = process.env.SCENE_E2E_GI_SCENES?.split(',')
+  /** [file label, the backend the renderer reports, exportReference's options]. */
+  const backends = [['webgpu', 'webgpu', {}], ['webgl2', 'webgl2', { forceWebGL: true }]]
+  if (process.env.SCENE_E2E_GI_COMPAT) backends.push(['webgpu-compat', 'webgpu', { forceCompatibility: true }])
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
@@ -6299,9 +6327,9 @@ if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference s
     await page.waitForFunction(() => window.__ready === true)
     for (const name of only ?? giBaselineNames) {
       const entry = (record.scenes[name] = { exports: {} })
-      for (const [backend, forceWebGL] of [['webgpu', false], ['webgl2', true]]) {
-        const out = await exportReference(gpu, name, { forceWebGL, edit: realtimeGI, litOnly: true })
-        assert.ok(out.backends.some((b) => b === `scene renderer (offscreen): ${backend}`), `${name}: the export on ${backend}: ${out.backends}`)
+      for (const [backend, reported, force] of backends) {
+        const out = await exportReference(gpu, name, { ...force, edit: realtimeGI, litOnly: true })
+        assert.ok(out.backends.some((b) => b === `scene renderer (offscreen): ${reported}`), `${name}: the export on ${backend}: ${out.backends}`)
         record.renderer ??= out.renderer
         const [img] = out.images
         const file = img.file.replace('-lit.png', `-${backend}-lit.png`)
@@ -6320,6 +6348,1429 @@ if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference s
     }
     await context.close()
     await writeFile(`${dir}/gi-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_WGSL=<dir> (S1 AC-S1-3): the WGSL each material draws with stays as it was when the presets take
+// their antialiasing width as an input. Each material of the material board is built alone, its box and the
+// ground on a page of their own (the node builder numbers what it meets in order), lit in the workbench and in
+// real-time GI; every shader module the page makes is hashed. SCENE_E2E_WGSL_WRITE=1 writes the hashes to
+// <dir>/wgsl.json and the shaders to <dir>/wgsl/; without it, this checkout's are compared with them, and the
+// shaders not among them go to <dir>/wgsl-now/.
+if (process.env.SCENE_E2E_WGSL) await check('wgsl: each material draws with the shaders it did', async () => {
+  const dir = process.env.SCENE_E2E_WGSL
+  const write = Boolean(process.env.SCENE_E2E_WGSL_WRITE)
+  const board = JSON.parse(readFileSync(new URL('fixtures/scene-reference/materials.json', import.meta.url), 'utf8'))
+  // The glass is principled again, as the first box is.
+  const boxes = board.objects.filter((o) => o.material_slots && o.name !== 'glass')
+  const sha = (code) => createHash('sha256').update(code).digest('hex').slice(0, 16)
+  const materials = {}
+  const shaders = new Map()
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const box of boxes) {
+      const preset = box.material_slots.main.preset
+      materials[preset] = {}
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const context = await gpu.newContext()
+        await context.addInitScript(() => {
+          window.__wgsl = []
+          const create = GPUDevice.prototype.createShaderModule
+          GPUDevice.prototype.createShaderModule = function (descriptor) {
+            window.__wgsl.push(descriptor.code)
+            return create.call(this, descriptor)
+          }
+        })
+        const page = await context.newPage()
+        await page.goto(`${base}/.scene-gi-qa.html`)
+        await page.waitForFunction(() => window.__ready === true)
+        const scene = { ...board, render: { ...board.render, engine }, objects: board.objects.filter((o) => !o.material_slots || o === box) }
+        await page.evaluate(([s]) => window.__png(s, 'lit', 256, undefined, false), [scene])
+        const codes = await page.evaluate(() => window.__wgsl)
+        assert.ok(codes.length > 0, `${preset} ${engine}: drawn through WebGPU`)
+        for (const code of codes) shaders.set(sha(code), code)
+        materials[preset][engine] = [...new Set(codes.map(sha))].sort()
+        await context.close()
+      }
+      console.log(`wgsl ${preset}: ${materials[preset].workbench.length} + ${materials[preset].realtime_gi.length} modules`)
+    }
+  } finally {
+    await gpu.close()
+  }
+  const record = { machine: machineInfo(), materials }
+  if (write) {
+    await mkdir(`${dir}/wgsl`, { recursive: true })
+    await writeFile(`${dir}/wgsl.json`, `${JSON.stringify(record, null, 2)}\n`)
+    for (const [hash, code] of shaders) await writeFile(`${dir}/wgsl/${hash}.wgsl`, code)
+    return
+  }
+  const before = JSON.parse(readFileSync(`${dir}/wgsl.json`, 'utf8'))
+  const known = new Set(Object.values(before.materials).flatMap((m) => Object.values(m).flat()))
+  await mkdir(`${dir}/wgsl-now`, { recursive: true })
+  for (const [hash, code] of shaders) if (!known.has(hash)) await writeFile(`${dir}/wgsl-now/${hash}.wgsl`, code)
+  assert.deepEqual(materials, before.materials)
+})
+
+// --- scene-offscreen-reflections S1: the world-space layer ----------------------------------------------------
+
+/** Waits for the viewport's layer to be ready (render/trace/base.ts traceStats). */
+const traceReady = (page, what, timeout = 120_000) => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.traceStats?.state)) === 'ready', `${what}: the layer ready`, timeout)
+
+/** The viewport's layer against its raster, a primary ray a pixel (render/trace/depthCheck.ts). */
+const traceDepth = (page, bias = 0) => page.evaluate((bias) => window.__sceneGPU.traceDepth?.(320, bias), bias)
+
+/** No more than 0.01 % of the pixels apart (S1 tasks 3.4). */
+const depthAgrees = (d) => d !== null && d.hits > 1000 && d.mismatched <= d.width * d.height * 1e-4
+
+/** Waits till the check sees the scene as want says and agrees; its last result. */
+async function depthAfter(page, what, want, timeout = 30_000) {
+  let last = null
+  try {
+    await waitFor(async () => {
+      last = await traceDepth(page)
+      return last !== null && want(last) && depthAgrees(last)
+    }, what, timeout)
+  } catch (e) {
+    e.message += ` ${JSON.stringify(last)}`
+    throw e
+  }
+  return last
+}
+
+// SCENE_E2E_TRACE=1: a reference scene opened cold and again warm in the
+// same browser: the second time every segment comes from the local cache
+// (S1 tasks 3.3).
+if (process.env.SCENE_E2E_TRACE) await check('trace: 3.3, a scene opened again takes every segment from the local cache', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', realtimeGI)
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'cold')
+    const cold = await page.evaluate(() => window.__sceneGPU.traceStats)
+    assert.ok(cold.built > 0 && cold.cached === 0, `cold: built ${cold.built}, cached ${cold.cached}`)
+    // The workers write the cache after they answer.
+    await sleep(2000)
+    await page.reload()
+    await viewportReady(page)
+    await shading(page, '最终渲染')
+    await traceReady(page, 'warm')
+    const warm = await page.evaluate(() => window.__sceneGPU.traceStats)
+    assert.deepEqual([warm.built, warm.cached], [0, cold.built], `warm: built ${warm.built}, cached ${warm.cached}`)
+    console.log(`  mirror-board: ${cold.built} segments built cold, ${warm.cached} from the cache warm`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: tier 1 traces the original layer. The budget pressed
+// below its size, the proxies take over, the original serving till they are
+// in (design A4); pressed far down before the layer is made, neither fits
+// and the scene is too large (S1 tasks 3.5, AC-S1-9).
+if (process.env.SCENE_E2E_TRACE) await check('trace: 3.5, the budget pressed down takes the layer to the proxies, then too large', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const stats = (page) => page.evaluate(() => window.__sceneGPU.traceStats)
+  const mirrorBoard = async (query) => {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', realtimeGI)
+    return { context, ...(await open(server, { context, query })) }
+  }
+  try {
+    const { context, page, errors } = await mirrorBoard()
+    await shading(page, '最终渲染')
+    await traceReady(page, 'tier 1')
+    const full = await stats(page)
+    assert.deepEqual([full.tier, full.layer], ['full', 'original'], 'tier 1 traces the original')
+    await page.evaluate((bytes) => { window.__sceneGPU.traceBudget = bytes }, full.original.bytes)
+    const seen = new Set()
+    await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+    await waitFor(async () => {
+      const s = await stats(page)
+      seen.add(`${s.state}/${s.tier}/${s.layer}`)
+      return s.tier === 'proxy' && s.layer === 'proxy'
+    }, 'tier 2', 60_000)
+    const proxy = await stats(page)
+    assert.ok([...seen].every((s) => s.startsWith('ready/')), `ready all along: ${[...seen]}`)
+    assert.equal(proxy.original, null, 'the original let go')
+    console.log(`  mirror-board: original ${full.original.bytes} bytes, proxies ${proxy.proxy.bytes}; on the way ${[...seen].join(', ')}`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+    const small = await mirrorBoard('?gpu=traceBudget:4096')
+    await shading(small.page, '最终渲染')
+    let last = null
+    await waitFor(async () => (last = await stats(small.page))?.state === 'tooLarge', 'too large', 60_000).catch((e) => {
+      e.message += ` ${JSON.stringify(last)} ${small.errors.join('\n')}`
+      throw e
+    })
+    assert.equal(await traceDepth(small.page), null, 'nothing traced')
+    assert.deepEqual(small.errors, [], small.errors.join('\n'))
+    await small.context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** Waits till the viewport has stopped drawing: its convergence count at the real-time GI's 12 and still there a moment later. */
+async function viewportStill(page, what, timeout = 60_000) {
+  await waitFor(async () => {
+    const a = await page.evaluate(() => window.__sceneGPU.viewportFrames)
+    await sleep(400)
+    return a === 12 && (await page.evaluate(() => window.__sceneGPU.viewportFrames)) === 12
+  }, `${what}: the viewport stopped`, timeout)
+}
+
+// SCENE_E2E_TRACE=1: the viewport before the layer is ready draws as before
+// it (L1): the shaders it builds while the builds are held back are those it
+// builds with the layer off, every one. And, left alone, it takes the layer
+// up once it is ready: it draws again, the mirror shows more, then it
+// converges and stops as before, with as many draws a frame (S1 tasks 5.2).
+if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as before till the layer is ready, then takes it up by itself and stops again', async () => {
+  const sha = (code) => createHash('sha256').update(code).digest('hex').slice(0, 16)
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const viewport = async (query) => {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    await context.addInitScript(() => {
+      window.__wgsl = []
+      const create = GPUDevice.prototype.createShaderModule
+      GPUDevice.prototype.createShaderModule = function (descriptor) {
+        window.__wgsl.push(descriptor.code)
+        return create.call(this, descriptor)
+      }
+      window.__longTasks = []
+      new PerformanceObserver((list) => window.__longTasks.push(...list.getEntries().map((e) => ({ at: e.startTime, ms: e.duration })))).observe({ type: 'longtask', buffered: true })
+    })
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', realtimeGI)
+    const opened = await open(server, { context, query })
+    await shading(opened.page, '最终渲染')
+    await waitFor(async () => (await opened.page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await viewportStill(opened.page, query)
+    return { context, ...opened }
+  }
+  try {
+    const shaders = {}
+    for (const query of ['?gpu=traceOff', '?gpu=traceDelayMs:120000']) {
+      const v = await viewport(query)
+      const state = await v.page.evaluate(() => window.__sceneGPU.traceStats.state)
+      assert.equal(state, query.includes('Off') ? 'off' : 'preparing', `${query}: the layer ${state}`)
+      shaders[query] = new Set((await v.page.evaluate(() => window.__wgsl)).map(sha))
+      assert.deepEqual(v.errors, [], v.errors.join('\n'))
+      await v.context.close()
+    }
+    const [off, held] = Object.values(shaders)
+    console.log(`  the viewport's shaders: ${off.size} with the layer off, ${held.size} with it preparing, ${[...held].filter((h) => !off.has(h)).length} not among the first`)
+    assert.deepEqual([...held].sort(), [...off].sort(), 'the same shaders, every one')
+    // Builds held 3 s: the viewport stops first, then takes the layer up on its own. Twice in one browser: the
+    // switch's long tasks, the second time with what the browser keeps of the first's shaders (S1-U2).
+    for (const run of ['first', 'again']) {
+    const v = await viewport('?gpu=traceDelayMs:3000')
+    const { box } = await viewportCenter(v.page)
+    const clip = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.2, width: box.width * 0.4, height: box.height * 0.5 }
+    assert.equal(await v.page.evaluate(() => window.__sceneGPU.traceStats.state), 'preparing', 'still preparing when the viewport stopped')
+    const before = await v.page.screenshot({ clip })
+    const drawsBefore = await v.page.evaluate(() => window.__sceneGPU.lastFrame.draws)
+    const held = await v.page.evaluate(() => performance.now())
+    await traceReady(v.page, 'held 3 s', 60_000)
+    await waitFor(async () => (await v.page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+    await viewportStill(v.page, 'after ready')
+    const after = await v.page.screenshot({ clip })
+    const drawsAfter = await v.page.evaluate(() => window.__sceneGPU.lastFrame.draws)
+    const switching = (await v.page.evaluate(() => window.__longTasks)).filter((t) => t.at > held)
+    console.log(`  ${run}: long tasks while taking the layer up ${switching.map((t) => Math.round(t.ms)).join(', ') || 'none'} ms`)
+    if (process.env.SCENE_E2E_SHOTS) for (const [n, png] of [['before', before], ['after', after]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/trace-taken-up-${n}.png`, png)
+    const changed = await pixelDiff(v.page, before, after)
+    console.log(`  taken up by itself: ${(changed * 100).toFixed(1)} % of the middle changed, ${drawsBefore} draws a frame before, ${drawsAfter} after`)
+    // The mirror is small from the editor's view: a few per cent of the middle, where nothing else changes.
+    assert.ok(changed > 0.005, `the viewport drew the layer once it was ready: ${(changed * 100).toFixed(1)} %`)
+    assert.equal(drawsAfter, drawsBefore, 'as many draws a frame')
+    assert.deepEqual(v.errors, [], v.errors.join('\n'))
+    await v.context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1 (or a directory for the pictures): mirror-board's lit
+// export in real-time GI, the layer off and on: the mirror cabinet shows the
+// red, green and yellow blocks behind the camera only with it (AC-S1-1, the
+// side by side for the owner against evidence/before). Then the camera
+// pitched down step by step till the metal ball leaves the top of the
+// picture: the floor's reflection of it, 11 × 11 pixels where the ball's
+// centre mirrored in the floor lands, changes by no more than 2 %.
+if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-1, the mirror shows what is behind the camera; the floor keeps the ball’s reflection as it leaves the picture', async () => {
+  const dir = process.env.SCENE_E2E_TRACE === '1' ? null : process.env.SCENE_E2E_TRACE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', realtimeGI)
+    const scene = server.scene
+    const mirror = giRegions['mirror-board'].mirror
+    // The mirror region of a picture: its pixels, and how many lean red. The scene's light is blue: everything
+    // else has less red than green, the red block behind the camera (dark in its shade) more.
+    const region = (pic) => {
+      const rgba = Buffer.from(pic.rgba, 'base64')
+      const [x0, y0, x1, y1] = [mirror[0] * pic.width, mirror[1] * pic.height, mirror[2] * pic.width, mirror[3] * pic.height].map(Math.round)
+      const px = []
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) px.push((y * pic.width + x) * 4)
+      return { rgba, px, red: px.filter((i) => rgba[i] > rgba[i + 1] + 3).length }
+    }
+    const pics = {}
+    for (const off of [true, false]) {
+      await page.evaluate((off) => { window.__sceneGPU.traceOff = off }, off)
+      pics[off ? 'off' : 'on'] = region(await page.evaluate(([s]) => window.__picture(s, 'lit', 1024), [scene]))
+      if (dir) {
+        const shot = await page.evaluate(([s, box]) => window.__regions(s, 'lit', 2048, [box]), [scene, mirror])
+        await writeFile(`${dir}/mirror-board-shot-webgpu-lit${off ? '-off' : ''}.jpg`, Buffer.from(shot.jpeg, 'base64'))
+      }
+    }
+    const { off, on } = pics
+    const changed = on.px.filter((i) => Math.max(...[0, 1, 2].map((c) => Math.abs(on.rgba[i + c] - off.rgba[i + c]))) > 16).length / on.px.length
+    console.log(`  mirror-board: the layer changes ${(changed * 100).toFixed(1)} % of the mirror by more than 16 levels; red-leaning pixels off ${off.red}, on ${on.red}`)
+    assert.ok(changed > 0.05, `the mirror shows more with the layer: ${(changed * 100).toFixed(1)} %`)
+    assert.ok(on.red > 1000 && off.red < on.red / 20, `the red block behind the camera in the mirror: off ${off.red}, on ${on.red}`)
+    // The pitch sequence: the camera's rotation about x (6° down as the scene has it), from where the reflection is in the picture.
+    const ball = scene.objects.find((o) => o.name === 'ball')
+    const centre = [ball.transform.position[0], ball.transform.position[1] + ball.primitive.params.radius, ball.transform.position[2]]
+    const floorTop = 0.02
+    const mirrored = [centre[0], 2 * floorTop - centre[1], centre[2]]
+    // The ball has left the picture once the lowest point of it is above the top edge.
+    const bottom = [centre[0], floorTop, centre[2]]
+    const camera = scene.objects.find((o) => o.kind === 'camera')
+    /** The picture pitched down deg: the reflection's brightness, 11 × 11 pixels where the mirrored centre lands. */
+    const pitched = async (deg, off) => {
+      const half = (-deg * Math.PI) / 360
+      camera.transform.rotation = [Math.sin(half), 0, 0, Math.cos(half)]
+      await page.evaluate((off) => { window.__sceneGPU.traceOff = off }, off)
+      const pic = await page.evaluate(([s, points]) => window.__picture(s, 'lit', 1024, points), [scene, [mirrored, bottom]])
+      const rgba = Buffer.from(pic.rgba, 'base64')
+      const [[mx, my], [, by]] = pic.at
+      let sum = 0
+      for (let y = Math.round(my) - 5; y <= Math.round(my) + 5; y++)
+        for (let x = Math.round(mx) - 5; x <= Math.round(mx) + 5; x++) {
+          const i = (y * pic.width + x) * 4
+          sum += (0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2]) / 255
+        }
+      if (dir) await writeFile(`${dir}/mirror-board-pitch-${deg}${off ? '-off' : ''}.png`, await encodePicture(page, pic))
+      return { deg, luma: sum / 121, ballInPicture: by > 0, at: [Math.round(mx), Math.round(my)] }
+    }
+    const rows = []
+    for (const deg of [12, 18, 24, 30, 36, 42]) rows.push(await pitched(deg, false))
+    // The control: three's SSR alone, which loses the ball's reflection with the ball.
+    const alone = [await pitched(12, true), await pitched(42, true)]
+    camera.transform.rotation = [Math.sin((-6 * Math.PI) / 360), 0, 0, Math.cos((-6 * Math.PI) / 360)]
+    const change = (r, from) => r.luma / from.luma - 1
+    for (const r of rows) console.log(`    pitched ${r.deg}°: ${r.luma.toFixed(4)} (${(change(r, rows[0]) * 100).toFixed(1)} %) at ${r.at}, the ball ${r.ballInPicture ? 'in' : 'out of'} the picture`)
+    console.log(`    the SSR alone: ${alone[0].luma.toFixed(4)} at 12°, ${alone[1].luma.toFixed(4)} at 42° (${(change(alone[1], alone[0]) * 100).toFixed(1)} %)`)
+    assert.ok(rows.at(-1).ballInPicture === false && rows[0].ballInPicture, 'the ball leaves the picture on the way')
+    for (const r of rows) assert.ok(Math.abs(change(r, rows[0])) <= 0.02, `pitched ${r.deg}°: the reflection ${(change(r, rows[0]) * 100).toFixed(1)} % off`)
+    assert.ok(Math.abs(change(alone[1], alone[0])) > 0.02, 'the measure sees the SSR alone lose it')
+    await page.evaluate(() => { window.__sceneGPU.traceOff = false })
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await page.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1 (or a directory for the pictures): a red ball close to
+// mirror-board's mirror, a box scaled thin (the owner's report, 2026-10-25),
+// seen from three places. The ball's reflection is its back, which the screen
+// does not show: with the layer it is red all over, where the screen-space
+// march once went behind the ball and took the floor beyond it, or the ball's
+// front, for it (SSRTraceNode's march, S1 tasks 8.5). Without the layer the
+// reflection is cut, as it always was.
+if (process.env.SCENE_E2E_TRACE) await check('trace: a ball close to the mirror reflected whole', async () => {
+  const dir = process.env.SCENE_E2E_TRACE === '1' ? null : process.env.SCENE_E2E_TRACE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const radius = 0.4
+    const front = -2 + 0.025
+    // [the gap to the mirror, the camera's place, its pitch down, whether the screen alone cuts the image there]: 0.05 m
+    // from the mirror the screen puts the ball's front for its back, red too.
+    for (const [gap, cam, pitch, cut] of [[0.3, [-0.5, 1.5, 0.5], 12, true], [0.2, [-0.6, 2.2, 0.8], 34, true], [0.05, [-0.4, 1.8, 0.4], 28, false]]) {
+      const centre = [0.2, 0.02 + radius, front + gap + radius]
+      const scene = shooterScene('mirror-board', (s) => {
+        realtimeGI(s)
+        const mirror = s.objects.find((o) => o.name === 'mirror')
+        mirror.primitive.params = { width: 1, height: 1, depth: 1 }
+        mirror.transform.scale = [1.2, 1.6, 0.05]
+        const ball = s.objects.find((o) => o.name === 'ball')
+        ball.primitive.params.radius = radius
+        ball.transform.position = [centre[0], 0.02, centre[2]]
+        ball.material_slots.main = { preset: 'paint@1', params: { color: '#b0201c' } }
+        const camera = s.objects.find((o) => o.kind === 'camera')
+        camera.transform.position = cam
+        const half = (-pitch * Math.PI) / 360
+        camera.transform.rotation = [Math.sin(half), 0, 0, Math.cos(half)]
+      })
+      // The ball and its mirror image, each a centre and a point on its rim, where they land.
+      const image = [centre[0], centre[1], 2 * front - centre[2]]
+      const points = [centre, [centre[0] + radius, centre[1], centre[2]], image, [image[0] + radius, image[1], image[2]]]
+      const shares = {}
+      for (const off of [true, false]) {
+        await page.evaluate((off) => { window.__sceneGPU.traceOff = off }, off)
+        const pic = await page.evaluate(([s, p]) => window.__picture(s, 'lit', 1024, p), [scene, points])
+        if (dir) await writeFile(`${dir}/ball-near-mirror-${gap}${off ? '-off' : ''}.png`, await encodePicture(page, pic))
+        // The image's disc, 80 % of it, less the ball's own disc a little larger: the share of it red.
+        const [[bx, by], [brx], [ix, iy], [irx]] = pic.at
+        const [ballR, imageR] = [Math.abs(brx - bx) * 1.1, Math.abs(irx - ix) * 0.8]
+        const rgba = Buffer.from(pic.rgba, 'base64')
+        let [all, red] = [0, 0]
+        for (let y = Math.floor(iy - imageR); y <= iy + imageR; y++)
+          for (let x = Math.floor(ix - imageR); x <= ix + imageR; x++) {
+            if (Math.hypot(x - ix, y - iy) > imageR || Math.hypot(x - bx, y - by) < ballR) continue
+            const i = (y * pic.width + x) * 4
+            all++
+            if (rgba[i] > rgba[i + 1] + 15 && rgba[i] > rgba[i + 2] + 15) red++
+            else rgba.set([255, 0, 255], i)
+          }
+        shares[off ? 'off' : 'on'] = red / all
+        // The judged pixels not red, magenta.
+        if (dir) await writeFile(`${dir}/ball-near-mirror-${gap}${off ? '-off' : ''}-judged.png`, await encodePicture(page, { ...pic, rgba: rgba.toString('base64') }))
+        assert.ok(all > 2000, `${gap} m: ${all} pixels of the image to judge`)
+      }
+      console.log(`  ${gap} m from the mirror: the image red over ${(shares.on * 100).toFixed(1)} % with the layer, ${(shares.off * 100).toFixed(1)} % without`)
+      assert.ok(shares.on >= 0.98, `${gap} m: the image red over ${(shares.on * 100).toFixed(1)} %`)
+      if (cut) assert.ok(shares.off < 0.9, `${gap} m: the measure sees the screen alone cut it (${(shares.off * 100).toFixed(1)} %)`)
+    }
+    await page.evaluate(() => { window.__sceneGPU.traceOff = false })
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await page.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE_GRAZING=<dir>: a glossy tiled floor seen from just above it, with the layer and without, for the
+// eye (S1 design A13): the normal buffer has the tiles' bump, and at a grazing view a bumped normal can send the
+// reflection below the floor's own face, where the retrace would find the floor itself.
+if (process.env.SCENE_E2E_TRACE_GRAZING) await check('trace diag: a glossy tiled floor at a grazing view, with the layer and without', async () => {
+  const dir = process.env.SCENE_E2E_TRACE_GRAZING
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    for (const [name, preset, height, pitch] of [['tile', 'tile@1', 0.25, 2], ['tile-low', 'tile@1', 0.08, 0.5], ['plank', 'wood_plank@1', 0.15, 1.5]]) {
+      const scene = shooterScene('mirror-board', (s) => {
+        realtimeGI(s)
+        const floor = s.objects.find((o) => o.name === 'floor')
+        floor.material_slots.main = { preset, params: { roughness: 0.08 } }
+        const camera = s.objects.find((o) => o.kind === 'camera')
+        camera.transform.position = [0.3, height, 3.4]
+        const half = (-pitch * Math.PI) / 360
+        camera.transform.rotation = [Math.sin(half), 0, 0, Math.cos(half)]
+      })
+      for (const off of [true, false]) {
+        await page.evaluate((off) => { window.__sceneGPU.traceOff = off }, off)
+        const pic = await page.evaluate((s) => window.__picture(s, 'lit', 1024, []), scene)
+        await writeFile(`${dir}/grazing-${name}${off ? '-off' : ''}.png`, await encodePicture(page, pic))
+      }
+    }
+    await page.evaluate(() => { window.__sceneGPU.traceOff = false })
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await page.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: the materials scene, a primary ray a pixel shaded at
+// its hit (render/trace/hit.ts) against the raster mesh by mesh, inside each
+// (render/trace/checks.ts hitCheck): the material's outputs and the light
+// without shadows within a level on average, shadow or not the same on 99 %
+// of the pixels the raster has wholly lit or wholly in shadow (AC-S1-2).
+// Again with the environment turned: S1-U1, a hit samples it as the raster.
+if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-2, hits shaded as the raster shades them, mesh by mesh', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'materials', realtimeGI)
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'materials')
+    for (const turn of [undefined, [0.5, 1.0, 0.3]]) {
+      const dump = process.env.SCENE_E2E_TRACE_DUMP
+      if (dump) await page.evaluate(() => { window.__traceCheckImages = null })
+      const report = await page.evaluate((turn) => window.__sceneGPU.traceHits(640, turn), turn)
+      const what = turn ? 'turned' : 'as it is'
+      if (dump) {
+        // Each picture as an 8-bit PNG: colours times the report's exposure in sRGB, distances and ids as they are over their range.
+        const pngs = await page.evaluate((exposure) => {
+          const { size, raster, hits } = window.__traceCheckImages
+          const out = {}
+          const encode = (x) => 255 * (x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055)
+          for (const [side, set] of [['raster', raster], ['hit', hits]])
+            for (const [name, a] of Object.entries(set)) {
+              const c = document.createElement('canvas')
+              c.width = size.width
+              c.height = size.height
+              const g = c.getContext('2d')
+              const img = g.createImageData(size.width, size.height)
+              const scale = name === 'distance' || name === 'id' ? 1 / 20 : name === 'albedo' || name === 'outputs' ? 1 : exposure
+              for (let i = 0; i < size.width * size.height; i++)
+                for (let k = 0; k < 3; k++) img.data[i * 4 + k] = Math.max(0, Math.min(255, encode(Math.max(0, a[i * 4 + k] * scale))))
+              for (let i = 0; i < size.width * size.height; i++) img.data[i * 4 + 3] = 255
+              g.putImageData(img, 0, 0)
+              out[`${side}-${name}`] = c.toDataURL('image/png')
+            }
+          return out
+        }, report.exposure)
+        await mkdir(dump, { recursive: true })
+        for (const [name, url] of Object.entries(pngs)) await writeFile(`${dump}/${turn ? 'turned-' : ''}${name}.png`, Buffer.from(url.split(',')[1], 'base64'))
+      }
+      console.log(`  materials ${what}: exposure ${report.exposure.toFixed(3)}, shadow ${report.shadow.agree} of ${report.shadow.compared}`)
+      for (const m of report.meshes) {
+        const sh = report.shadow.rows[m.row]
+        console.log(`    ${m.material.padEnd(16)} ${String(m.pixels).padStart(6)} px  albedo ${m.albedo.toFixed(2)}  outputs ${m.outputs.toFixed(2)}  lit ${m.lit.toFixed(2)}  shadow ${sh ? `${sh.agree}/${sh.compared} (raster lit ${sh.rasterLit}, rays lit ${sh.hitLit})` : '-'}`)
+      }
+      const judged = report.meshes.filter((m) => m.pixels >= 50)
+      assert.ok(judged.length >= 10, `${what}: ${judged.length} meshes large enough to judge`)
+      for (const m of judged) {
+        assert.ok(m.albedo <= 1 && m.outputs <= 1, `${what}: ${m.material}'s outputs ${m.albedo.toFixed(2)} / ${m.outputs.toFixed(2)} levels apart`)
+        assert.ok(m.lit <= 1, `${what}: ${m.material} lit ${m.lit.toFixed(2)} levels apart`)
+      }
+      assert.ok(report.shadow.compared > 1000 && report.shadow.agree >= 0.99 * report.shadow.compared, `${what}: shadows agree on ${report.shadow.agree} of ${report.shadow.compared}`)
+      assert.ok(report.surfaces.mismatched <= report.width * report.height * 1e-4, `${what}: ${report.surfaces.mismatched} pixels see another surface`)
+    }
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+    // D8: inside a box (one-sided, as a closed builtin is), the raster culls its walls and sees the scene and the
+    // sky beyond; a ray goes past a wall's back face to the same.
+    const inside = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const boxed = new SceneServer()
+    referenceScene(boxed, 'materials', (scene) => {
+      realtimeGI(scene)
+      scene.objects.push({ ...boxObject(objectID('enclosure'), '罩子', 0, 90), transform: { ...identity(), position: [0, -30, 0] }, primitive: { builtin: 'box@1', params: { width: 120, height: 80, depth: 120 } }, material_slots: { main: { preset: 'paint@1', params: {} } } })
+    })
+    const b = await open(boxed, { context: inside })
+    await shading(b.page, '最终渲染')
+    await traceReady(b.page, 'inside a box')
+    const report = await b.page.evaluate(() => window.__sceneGPU.traceHits(640))
+    console.log(`  materials inside a box: ${report.surfaces.drawn} of ${report.width * report.height} pixels drawn, ${report.surfaces.mismatched} see another surface`)
+    assert.ok(report.surfaces.drawn < report.width * report.height * 0.95, 'the sky seen past the walls')
+    assert.ok(report.surfaces.mismatched <= report.width * report.height * 1e-4, `inside a box: ${report.surfaces.mismatched} pixels see another surface`)
+    assert.deepEqual(b.errors, [], b.errors.join('\n'))
+    await inside.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: S1's checks on this machine's GPU. The layer is off,
+// and says why, in compatibility mode (the WebGL2 backend), on a device
+// short of what it needs (a compatibility-level one, or one the e2e calls
+// unsupported) and with the developer switch (S1 tasks 3.1).
+if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-6, the layer is off, and says why, where it cannot or should not be built', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const [hooks, reason] of [['forceWebGL', 'compatibility'], ['forceCompatibility', 'device'], ['traceUnsupported', 'device'], ['traceOff', 'disabled']]) {
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const server = new SceneServer()
+      referenceScene(server, 'mirror-board', realtimeGI)
+      const { page, errors } = await open(server, { context, query: `?gpu=${hooks}` })
+      await shading(page, '最终渲染')
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.traceStats?.state)) === 'off', `${hooks}: off`, 30_000)
+      assert.equal(await page.evaluate(() => window.__sceneGPU.traceStats.reason), reason, `${hooks}: why`)
+      assert.equal(await traceDepth(page), null, `${hooks}: nothing to trace`)
+      assert.deepEqual(errors, [], `${hooks}: ${errors.join('\n')}`)
+      await context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: S1's checks on this machine's GPU. AC-S1-5 (run whenever
+// three-mesh-bvh is upgraded): in each scene the layer is judged on, a
+// primary ray a pixel hits where the raster draws a traced surface, at the
+// same distance; in the mirror board again after a move, an addition, a
+// removal and two material changes.
+if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-5, primary rays through the layer hit what the raster draws, before and after edits', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const name of giBaselineNames) {
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const server = new SceneServer()
+      referenceScene(server, name, realtimeGI)
+      const { page, errors } = await open(server, { context })
+      await shading(page, '最终渲染')
+      await traceReady(page, name)
+      const first = await depthAfter(page, `${name}: as opened`, () => true)
+      console.log(`  ${name}: ${first.meshes} meshes, ${first.hits} pixels drawn, ${first.mismatched} apart, at most ${first.worst.toExponential(2)} m`)
+      // The control: a centimetre added to every ray is seen nearly everywhere.
+      const control = await traceDepth(page, 0.01)
+      assert.ok(control.mismatched > control.hits * 0.9, `${name}: the check sees a centimetre (${control.mismatched} of ${control.hits})`)
+      if (name === 'mirror-board') {
+        const edit = async (what, ops, want) => {
+          server.external(ops)
+          await page.evaluate(() => window.__invalidate())
+          const d = await depthAfter(page, `${name}: ${what}`, want)
+          console.log(`  ${name} ${what}: ${d.meshes} meshes, ${d.hits} pixels drawn, ${d.mismatched} apart, at most ${d.worst.toExponential(2)} m`)
+          return d
+        }
+        const red = 'sobj_redblock0000000000000'
+        const moved = await edit('moved', [{ op: 'update_objects', updates: [{ object_id: red, transform: { ...server.object(red).transform, position: [-0.3, 0.02, 1.4] } }] }], (d) => d.sum !== first.sum)
+        const box = objectID('tracebox')
+        const added = await edit('added', [{ op: 'add_objects', objects: [{ ...boxObject(box, '加的方块', 0.6, 20), transform: { ...identity(), position: [0.6, 0.5, 0.8] } }] }], (d) => d.meshes === moved.meshes + 1)
+        const removed = await edit('removed', [{ op: 'remove_objects', object_ids: ['sobj_ball00000000000000000'] }], (d) => d.meshes === added.meshes - 1)
+        await edit('restyled', [{ op: 'update_objects', updates: [{ object_id: 'sobj_greenblock00000000000', material_slots: { main: { preset: 'wood@1', params: {} } } }] }], (d) => d.meshes === removed.meshes)
+        // Glass is drawn as see-through: out of the layer and out of the raster's half alike.
+        await edit('made glass', [{ op: 'update_objects', updates: [{ object_id: 'sobj_column000000000000000', material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', transmission: 1, roughness: 0 } } } }] }], (d) => d.meshes === removed.meshes - 1)
+      }
+      assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+      await context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+/**
+ * The hidden fixture in Google Chrome started off screen and spoken to over the DevTools protocol, as the R1 check
+ * does: evaluate runs an expression in it, background puts a blank tab in front of it, errors collects what its
+ * console reports as errors and what it throws.
+ */
+async function hiddenTab(port) {
+  const chromePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  const profile = mkdtempSync(join(tmpdir(), 'scene-hidden-'))
+  const chrome = spawn(chromePath, [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--window-position=-2400,-2400', '--window-size=1200,800', `${base}/.scene-hidden-qa.html`], { stdio: 'ignore' })
+  const devtools = `http://127.0.0.1:${port}`
+  const close = async () => {
+    chrome.kill()
+    await sleep(500)
+    await rm(profile, { recursive: true, force: true })
+  }
+  try {
+    let target
+    for (let i = 0; i < 100 && !target; i++) {
+      await sleep(200)
+      target = await fetch(`${devtools}/json`).then((r) => r.json()).then((list) => list.find((t) => t.type === 'page' && t.url.includes('.scene-hidden-qa.html'))).catch(() => null)
+    }
+    assert.ok(target, 'the fixture tab')
+    const ws = new WebSocket(target.webSocketDebuggerUrl)
+    await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
+    let id = 0
+    const pending = new Map()
+    const errors = []
+    ws.onmessage = (m) => {
+      const msg = JSON.parse(m.data)
+      if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+      if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') errors.push(msg.params.args.map((a) => a.value ?? a.description ?? '').join(' '))
+      if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text)
+    }
+    ws.send(JSON.stringify({ id: ++id, method: 'Runtime.enable' }))
+    const evaluate = (expression, timeoutMs = 300_000) => new Promise((resolve, reject) => {
+      const n = ++id
+      const timer = setTimeout(() => { pending.delete(n); reject(new Error(`timed out after ${timeoutMs} ms: ${expression.slice(0, 60)}`)) }, timeoutMs)
+      pending.set(n, (msg) => {
+        clearTimeout(timer)
+        if (msg.error) reject(new Error(`CDP: ${msg.error.message}`))
+        else if (msg.result?.exceptionDetails) reject(new Error(msg.result.exceptionDetails.exception?.description ?? 'evaluate failed'))
+        else resolve(msg.result?.result?.value)
+      })
+      ws.send(JSON.stringify({ id: n, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+    })
+    await waitFor(async () => (await evaluate('!!window.__ready')) === true, 'the fixture loaded', 30_000)
+    const background = async () => {
+      await fetch(`${devtools}/json/new?about:blank`, { method: 'PUT' })
+      await waitFor(async () => (await evaluate('document.visibilityState')) === 'hidden', 'the tab went into the background', 10_000)
+    }
+    return { evaluate, background, close, errors }
+  } catch (e) {
+    await close()
+    throw e
+  }
+}
+
+// SCENE_E2E_TRACE=1 (needs Google Chrome, as SCENE_E2E_HIDDEN does): AC-S1-4.
+// mirror-board in real-time GI with two more cameras, exported twice in a row
+// in a hidden tab as the default export takes them: clay and line art, then
+// lit, which waits for the layer. Then twice with the layer off, for the
+// pipeline's own repeatability (R2 AC-R2-5).
+if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-4, two exports in a hidden tab with the layer are the same pixel for pixel', async () => {
+  const tab = await hiddenTab(9335)
+  try {
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', realtimeGI)
+    const scene = server.scene
+    const shot = scene.objects.find((o) => o.kind === 'camera')
+    for (const [i, dx] of [[1, -1], [2, 1]]) scene.objects.push({ ...structuredClone(shot), id: `sobj_cam${String(i).padStart(18, '0')}`, name: `cam${i}`, order: 100 + i, transform: { ...shot.transform, position: [shot.transform.position[0] + dx, shot.transform.position[1], shot.transform.position[2]] } })
+    const doc = { scene, models: {}, revision: '1' }
+    const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
+    await tab.background()
+    const runs = {}
+    for (const off of [false, true]) {
+      await tab.evaluate(`window.__sceneGPU.traceOff = ${off}`)
+      for (const n of [1, 2]) {
+        const keep = `${off ? 'off' : 'on'}${n}`
+        const started = Date.now()
+        runs[keep] = await tab.evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)}, ${JSON.stringify(keep)})`, 900_000)
+        console.log(`  ${keep}: ${runs[keep].length} images in ${Date.now() - started} ms`)
+      }
+    }
+    assert.equal(await tab.evaluate('document.visibilityState'), 'hidden', 'still in the background')
+    const lit = (r) => r.filter((i) => i.pass === 'lit')
+    const differ = async (a, b) => {
+      const diffs = await tab.evaluate(`window.__differ(${JSON.stringify(a)}, ${JSON.stringify(b)})`)
+      const apart = diffs.map((d, i) => ({ ...runs[a][i], ...d })).filter((d) => d.max > 0)
+      console.log(`  ${a} / ${b}: ${apart.length} of ${diffs.length} images apart${apart.map((d) => `; ${d.pass} ${d.camera.slice(-4)} at most ${d.max}, ${(d.over * 100).toFixed(4)}% by more than 8`).join('')}`)
+      return diffs
+    }
+    const [on, off] = [await differ('on1', 'on2'), await differ('off1', 'off2')]
+    // Clay and line art are the workbench's, the layer or not (R2 tasks 7.4).
+    for (const r of ['on2', 'off1', 'off2']) assert.deepEqual(runs[r].filter((i) => i.pass !== 'lit'), runs.on1.filter((i) => i.pass !== 'lit'), `${r}: clay and line art as the first time`)
+    // The mirror shows the blocks behind the camera only with the layer: it was in the pictures.
+    assert.ok(lit(runs.on1).every((i, k) => i.hash !== lit(runs.off1)[k].hash), 'lit with the layer is not lit without it')
+    off.forEach((d, i) => assert.ok(d.max <= 1 || d.over <= 0.0001, `without the layer, image ${i}: largest difference ${d.max}`))
+    assert.deepEqual(runs.on2, runs.on1, `with the layer, twice the same pixel for pixel (largest difference ${Math.max(...on.map((d) => d.max))})`)
+    assert.deepEqual(tab.errors, [], tab.errors.join('\n'))
+  } finally {
+    await tab.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: builds held 30 s, past the 15 s an export waits for the
+// layer: the editor's lit export fails with the reason and places and
+// uploads nothing (S1 tasks 6.1).
+if (process.env.SCENE_E2E_TRACE) await check('trace: 6.1, an export the layer is not ready for in time says so and places nothing', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', realtimeGI)
+    const { page, errors } = await open(server, { context, query: '?export=1&gpu=traceDelayMs:30000' })
+    // The rendered view, so the export takes lit too (exportShots.ts defaultPasses).
+    await shading(page, '最终渲染')
+    await page.getByRole('button', { name: '导出' }).first().click()
+    const dialog = page.getByRole('dialog', { name: '导出分镜' })
+    await dialog.waitFor()
+    const started = Date.now()
+    await dialog.getByRole('button', { name: '导出' }).click()
+    await page.getByText('屏幕外的反射还在准备，请稍后重试').waitFor({ timeout: 120_000 })
+    console.log(`  failed after ${Date.now() - started} ms`)
+    assert.equal(server.exports.length, 0, 'nothing placed')
+    assert.equal(server.uploads.size, 0, 'nothing uploaded')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: the render tab's note beside the backend follows the
+// viewport's layer (S1 design「降级与提示」, tasks 7.1, AC-S1-6). Ready in
+// full: no note, and the renderer's description says what is outside the
+// picture shows in the reflections. Where it is not, each of the five notes.
+// Every time an edit and a lit export go through, save while the layer is
+// preparing, where the export waits for it and fails (6.1).
+if (process.env.SCENE_E2E_TRACE) await check('trace: 7.1, the render tab says what the layer does; edits and exports go on', async () => {
+  const notes = ['兼容模式：未绘制屏幕外的反射', '当前设备不支持屏幕外的反射', '正在准备屏幕外的反射', '场景较大：屏幕外的反射使用简化几何', '场景过大：未绘制屏幕外的反射']
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const [hooks, note] of [['full', null], ['forceWebGL', notes[0]], ['forceCompatibility', notes[1]], ['traceUnsupported', notes[1]], ['traceDelayMs:120000', notes[2]], ['proxy', notes[3]], ['traceBudget:4096', notes[4]]]) {
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const server = new SceneServer()
+      referenceScene(server, 'mirror-board', realtimeGI)
+      const { page, errors } = await open(server, { context, query: hooks === 'full' || hooks === 'proxy' ? '?export=1' : `?export=1&gpu=${hooks}` })
+      await shading(page, '最终渲染')
+      await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
+      const panel = page.getByRole('tabpanel', { name: '渲染' })
+      if (hooks === 'full' || hooks === 'proxy') await traceReady(page, hooks)
+      if (hooks === 'full') await panel.getByText('画面外的物体也会出现在反射里', { exact: false }).waitFor({ timeout: 10_000 })
+      if (hooks === 'proxy') {
+        // As 3.5: the budget pressed to the original's size takes the layer to the proxies.
+        await page.evaluate(() => { window.__sceneGPU.traceBudget = window.__sceneGPU.traceStats.original.bytes })
+        await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+      }
+      if (note) await panel.getByText(note).waitFor({ timeout: 60_000 })
+      for (const other of notes.filter((n) => n !== note)) assert.equal(await panel.getByText(other).count(), 0, `${hooks}: not 「${other}」`)
+      await addBox(page, server)
+      if (note !== notes[2]) {
+        await page.getByRole('button', { name: '导出' }).first().click()
+        const dialog = page.getByRole('dialog', { name: '导出分镜' })
+        await dialog.waitFor()
+        await dialog.getByRole('button', { name: '导出' }).click()
+        await waitFor(() => server.exports.length === 1, `${hooks}: export submitted`, 180_000)
+        assert.ok(server.exports[0].payload.shots[0].images.some((i) => i.pass === 'lit'), `${hooks}: lit exported`)
+      }
+      console.log(`  ${hooks}: ${note ?? 'no note'}`)
+      assert.deepEqual(errors, [], `${hooks}: ${errors.join('\n')}`)
+      await context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+/**
+ * In every page of the context: each stats the viewport's layer writes, with when (base.ts sync), in
+ * window.__traceLog, and the long tasks in window.__longTasks.
+ */
+const traceLogging = (context) => context.addInitScript(() => {
+  window.__traceLog = []
+  window.__longTasks = []
+  new PerformanceObserver((list) => window.__longTasks.push(...list.getEntries().map((e) => ({ at: e.startTime, ms: e.duration })))).observe({ type: 'longtask', buffered: true })
+  // gpu.ts puts its hooks on the page as it loads: their traceStats from then on through a setter.
+  let hooks
+  Object.defineProperty(window, '__sceneGPU', {
+    configurable: true,
+    get: () => hooks,
+    set(h) {
+      hooks = h
+      let stats = null
+      Object.defineProperty(h, 'traceStats', { configurable: true, get: () => stats, set: (v) => { stats = v; window.__traceLog.push({ at: performance.now(), ...v }) } })
+    },
+  })
+})
+
+/** The editor's view of the hall from its camera, in a display (the rendered view unless said), with selected selected (editor space is Z up). */
+const hallView = (selected, display = 'rendered') => ({ camera: { position: [0, -9, 1.6], target: [0, 0, 0.6], ortho: false, zoom: 1 }, selection: { selected, active: selected[0] ?? null }, tool: 'box', toolbar: true, sidebar: true, history: false, display })
+
+/** The mirror in the hall camera's 2K lit picture (2048 × 1365), with some wall about it. */
+const hallMirror = { x: 1000, y: 120, width: 680, height: 400 }
+
+/** The layer's log from the page: entries since `from`, the long tasks too. */
+const traceLog = (page, from = 0) => page.evaluate((from) => ({ log: window.__traceLog.slice(from), longTasks: window.__longTasks, now: performance.now() }), from)
+
+/** Waits till every model is in, where nothing says so but the drawing: the viewport's triangles a frame still for 3 s. */
+async function trianglesStill(page, what) {
+  let last = -1
+  let since = Date.now()
+  await waitFor(async () => {
+    const t = (await page.evaluate(() => window.__sceneGPU.lastFrame))?.triangles ?? -1
+    if (t !== last) [last, since] = [t, Date.now()]
+    return Date.now() - since > 3000
+  }, `${what}: every model in`, 300_000)
+}
+
+/** Waits till the layer is ready with meshes meshes and nothing pending. */
+async function hallReady(page, meshes, what, timeout = 300_000) {
+  let last = null
+  await waitFor(async () => {
+    last = await page.evaluate(() => window.__sceneGPU.traceStats)
+    return last?.state === 'ready' && last.meshes === meshes && last.pending === 0 && last.layer === last.target
+  }, `${what}: ready with ${meshes} meshes`, timeout).catch((e) => {
+    e.message += ` ${JSON.stringify(last)}`
+    throw e
+  })
+}
+
+/** S0's hall (scene-stress.mjs hallScene) on the mock server in the real-time GI, its floor in place of the ground. */
+function hallSeed(server, hall) {
+  stressSeed(server, hall)
+  server.scene.objects = server.scene.objects.filter((o) => o.id !== 'sobj_ground')
+  server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+}
+
+// SCENE_E2E_TRACE=1: S0's hall in the editor (S1 tasks 8.1): 20 million
+// triangles in 67 models under 2000 instances, a mirror turned to the knot.
+// It opens from its camera in the rendered view, and its layer gets ready
+// in the real-time GI with every mesh in it. Primary rays against the raster
+// at 640 pixels across: the knots' tubes, a few centimetres thick, are under
+// a pixel across the hall, where a ray and the raster's sample can part, so
+// the share apart is kept for the record and only held to 0.1%.
+if (process.env.SCENE_E2E_TRACE) await check('trace: 8.1, S0’s hall opens in the editor and its layer gets ready', async () => {
+  const hall = await hallScene()
+  const meshes = hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+    const server = new SceneServer()
+    hallSeed(server, hall)
+    const started = Date.now()
+    const { page, errors } = await open(server, { context })
+    await hallReady(page, meshes, 'the hall')
+    const readyMs = Date.now() - started
+    const stats = await page.evaluate(() => window.__sceneGPU.traceStats)
+    const d = await page.evaluate(() => window.__sceneGPU.traceDepth(640))
+    console.log(`  the hall: ${meshes} meshes ready ${readyMs} ms from opening, tier ${stats.tier}, ${(stats.bytes / 2 ** 20).toFixed(0)} MiB, ${stats.built} segments built; ${d.mismatched} of ${d.hits} pixels apart (${((d.mismatched / (d.width * d.height)) * 100).toFixed(3)}%)`)
+    await viewportStill(page, 'the hall', 300_000)
+    await shot(page, 'trace-hall')
+    assert.equal(d.meshes, meshes, 'every mesh traced')
+    assert.deepEqual([stats.tier, stats.layer], ['full', 'original'], 'tier 1: the reflections trace the original (AC-S1-9)')
+    assert.ok(d.mismatched <= d.width * d.height * 1e-3, `${d.mismatched} pixels apart`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE_DIAG=lit,unshadowed,albedo,… with SCENE_E2E_SHOTS: S0's
+// hall from its camera, the reflections' hits shaded each way asked
+// (gpuTestHooks.traceShade, the export's device too): a picture of the
+// viewport and the 2K lit export each, the mirror cut out of the export
+// (hallMirror). Where a defect in the mirror comes from.
+if (process.env.SCENE_E2E_TRACE_DIAG) await check('trace diag: the hall’s mirror, its hits shaded each way asked', async () => {
+  const hall = await hallScene()
+  const meshes = hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const mode of process.env.SCENE_E2E_TRACE_DIAG.split(',')) {
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+      const server = new SceneServer()
+      hallSeed(server, hall)
+      const { page, errors } = await open(server, { context, query: `?export=1&gpu=traceShade:${mode}` })
+      await hallReady(page, meshes, mode)
+      await viewportStill(page, mode, 300_000)
+      await shot(page, `trace-diag-${mode}`)
+      await page.getByRole('button', { name: '导出' }).first().click()
+      const dialog = page.getByRole('dialog', { name: '导出分镜' })
+      await dialog.waitFor()
+      await dialog.getByRole('button', { name: '导出' }).click()
+      await waitFor(() => server.exports.length === 1, `${mode}: exported`, 600_000)
+      const lit = server.uploadBytes.get(server.exports[0].payload.shots[0].images.find((i) => i.pass === 'lit').upload_id)
+      const side = await sideBySide(page, lit, lit, hallMirror)
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/trace-diag-${mode}-mirror.png`, side.png)
+      assert.deepEqual(errors, [], errors.join('\n'))
+      await context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE_PERF=1 (or a directory for trace-hall.json), this
+// machine's GPU: AC-S1-8 in S0's hall, and S1-U3.
+//  1. Opened in the rendered view, without the layer and then with it, each
+//     in a browser context of its own, the layer built as the models come:
+//     when the editor takes a click; the long tasks; the layer's longest
+//     sync till it is ready; the switch's long tasks after it (S1-U2).
+//  2. The layer from the whole scene: a fresh context opened in clay till
+//     every model is in, then the rendered view, ready from scratch; then
+//     reloaded and the same, ready from the cache in at most 3 s and in half
+//     the time.
+//  3. A surface grabbed and moved for a second and a half: each frame
+//     uploads at most 1 MB and syncs in at most 10 ms; the longest frame at
+//     most 1.5 times the median of frames orbiting with nothing moved.
+//  4. A model of 300 000 triangles the hall has not got, added and removed:
+//     each sync at most 50 ms; at most 64 bytes uploaded a new triangle.
+//  5. Exported twice from the editor, the layer waited for: the pictures
+//     the same, with the layer and without; the JS
+//     heap with the viewport alone, at its peak while an export draws beside
+//     it, and once the export's layer let its arrays go (S1-U3, design A5).
+if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: AC-S1-8, S0’s hall opened, opened again, a drag, an addition and a removal, two exports', async () => {
+  const dir = process.env.SCENE_E2E_TRACE_PERF === '1' ? null : process.env.SCENE_E2E_TRACE_PERF
+  const hall = await hallScene()
+  const meshes = hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length
+  const grabbed = hall.objects.find((o) => o.name === 'h0100x')
+  const extra = await capModel()
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const record = { machine: machineInfo(), meshes }
+  const longest = (tasks) => Math.round(Math.max(0, ...tasks.map((t) => t.ms)))
+  /** The hall in a fresh browser context, in a display, the grabbed surface selected. */
+  const openIn = async (display, query) => {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    await traceLogging(context)
+    await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([grabbed.id], display)])
+    const server = new SceneServer()
+    hallSeed(server, hall)
+    return { context, server, ...(await open(server, { context, query })) }
+  }
+  /** A page's numbers from the log: when every mesh was in, when ready, the longest sync and tasks before, the switch's tasks. */
+  const readiness = async (page) => {
+    const { log, longTasks } = await traceLog(page)
+    const full = log.find((e) => e.meshes === meshes)
+    const ready = log.find((e) => e.at >= full.at && e.state === 'ready' && e.meshes === meshes && e.pending === 0 && e.layer === e.target)
+    const upTo = log.filter((e) => e.at <= ready.at)
+    const before = longTasks.filter((t) => t.at < ready.at)
+    return {
+      fullAt: Math.round(full.at), readyAt: Math.round(ready.at), readyMs: Math.round(ready.at - full.at),
+      // Every segment back, built or from the cache: what is left to ready is the fill.
+      arrivedMs: Math.round(log.find((e) => e.built + e.cached >= ready.built + ready.cached).at - full.at),
+      longestSync: Number(Math.max(...upTo.map((e) => e.syncMs)).toFixed(1)),
+      longTasks: before.filter((t) => t.ms > 100).length, longestTask: longest(before),
+      switchTasks: longTasks.filter((t) => t.at >= ready.at && t.at < ready.at + 3000).map((t) => Math.round(t.ms)),
+      built: ready.built, cached: ready.cached, tier: ready.tier, bytes: ready.bytes,
+      // The layer's buffers laid out again on the way (each a copy of what they held), and its longest syncs.
+      layouts: new Set(upTo.map((e) => e.bytes)).size,
+      syncs: upTo.sort((a, b) => b.syncMs - a.syncMs).slice(0, 4).map((e) => ({ at: Math.round(e.at), syncMs: Number(e.syncMs.toFixed(1)), commitMs: Number(e.commitMs.toFixed(1)) })),
+    }
+  }
+  try {
+    // 1. Opened in the rendered view, without the layer and with it.
+    for (const which of ['off', 'on']) {
+      const o = await openIn('rendered', which === 'off' ? '?gpu=traceOff' : '')
+      const item = o.page.getByRole('treeitem').first()
+      await item.click()
+      await waitFor(async () => (await item.getAttribute('aria-selected')) === 'true', `${which}: a click taken`)
+      const operable = Math.round(await o.page.evaluate(() => performance.now()))
+      if (which === 'off') {
+        await trianglesStill(o.page, 'off')
+        const { longTasks, now } = await traceLog(o.page)
+        record.off = { operable, loadedMs: Math.round(now - 3000), longTasks: longTasks.filter((t) => t.ms > 100).length, longestTask: longest(longTasks) }
+        console.log(`  opened without the layer: a click taken at ${operable} ms, every model in by ${record.off.loadedMs} ms; ${record.off.longTasks} tasks over 100 ms, the longest ${record.off.longestTask} ms`)
+      } else {
+        await hallReady(o.page, meshes, 'opened')
+        record.open = { operable, ...(await readiness(o.page)) }
+        const r = record.open
+        console.log(`  opened with the layer: a click taken at ${operable} ms; every mesh in at ${r.fullAt} ms, ready ${r.readyMs} ms later; ${r.layouts} layouts, longest sync ${r.longestSync} ms; ${r.longTasks} tasks over 100 ms, the longest ${r.longestTask} ms; the switch ${r.switchTasks.join(', ') || 'none'} ms`)
+      }
+      assert.deepEqual(o.errors, [], o.errors.join('\n'))
+      await o.context.close()
+    }
+
+    // 2. The layer from the whole scene, from scratch and then from the cache (the workers write it after they answer).
+    const { context, server, page, errors } = await openIn('solid', '?export=1')
+    const fromClay = async (what) => {
+      await trianglesStill(page, what)
+      await shading(page, '最终渲染')
+      await hallReady(page, meshes, what)
+      const r = await readiness(page)
+      console.log(`  ${what}: every segment back ${r.arrivedMs} ms after the rendered view, ready ${r.readyMs} ms after (tier ${r.tier}, ${(r.bytes / 2 ** 20).toFixed(0)} MiB, ${r.built} built, ${r.cached} from the cache); ${r.layouts} layouts, longest syncs ${JSON.stringify(r.syncs)}; the switch ${r.switchTasks.join(', ') || 'none'} ms`)
+      return r
+    }
+    record.cold = await fromClay('cold')
+    // Where an error came, if one did: the page's errors so far after each step.
+    record.errorsAfter = { cold: errors.length }
+    await sleep(3000)
+    await page.reload()
+    await viewportReady(page)
+    record.warm = await fromClay('warm')
+    record.errorsAfter.warm = errors.length
+    await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 120_000)
+    await viewportStill(page, 'warm', 300_000)
+
+    // 3. The selected surface grabbed and moved, against frames orbiting with nothing moved.
+    const still = gaps(await orbitFrames(page, 2000)).sort((a, b) => a - b)
+    const stillMedian = still[still.length >> 1]
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const mark = (await traceLog(page)).log.length
+    await page.keyboard.press('KeyG')
+    await waitFor(async () => /移动/.test(await page.locator('.cc-scene-hint').textContent()), 'grab running')
+    const framing = page.evaluate(() => new Promise((resolve) => {
+      const times = []
+      const start = performance.now()
+      const tick = (t) => {
+        times.push(t)
+        if (t - start < 1500) requestAnimationFrame(tick)
+        else resolve(times)
+      }
+      requestAnimationFrame(tick)
+    }))
+    for (let i = 1; i <= 45; i++) await page.mouse.move(x + i * 4, y + i * 2)
+    const dragGaps = gaps(await framing)
+    await page.keyboard.press('Escape')
+    const dragLog = (await traceLog(page, mark)).log
+    record.drag = {
+      frames: dragGaps.length, stillMedian: Number(stillMedian.toFixed(1)), longest: Number(Math.max(...dragGaps).toFixed(1)),
+      maxUpload: Math.max(...dragLog.map((e) => e.uploaded)), longestSync: Number(Math.max(...dragLog.map((e) => e.syncMs)).toFixed(1)),
+    }
+    record.errorsAfter.drag = errors.length
+    console.log(`  drag: ${record.drag.frames} frames, the longest ${record.drag.longest} ms against ${record.drag.stillMedian} ms still; at most ${(record.drag.maxUpload / 1024).toFixed(0)} KiB uploaded and ${record.drag.longestSync} ms syncing a frame`)
+
+    // 4. A model the hall has not got, added and removed.
+    const rev = server.seedModel({ glb: extra.glb, manifest: extra.manifest })
+    const id = objectID('traceextra')
+    const change = async (what, ops, want) => {
+      const from = (await traceLog(page)).log.length
+      server.external(ops)
+      await page.evaluate(() => window.__invalidate())
+      await hallReady(page, want, what)
+      const { log } = await traceLog(page, from)
+      return { uploaded: log.reduce((n, e) => n + e.uploaded, 0), longestSync: Number(Math.max(...log.map((e) => e.syncMs)).toFixed(1)), bytes: [log[0].bytes, log.at(-1).bytes] }
+    }
+    record.added = await change('added', [{ op: 'add_objects', objects: [{ id, kind: 'model_instance', name: 'extra', parent_id: null, order: 9000, transform: { ...identity(), position: [0, 0, 6] }, visible: true, locked: false, model: { content_revision_id: rev }, material_slots: {} }] }], meshes + 2)
+    record.added.perTriangle = Number((record.added.uploaded / extra.manifest.triangles).toFixed(1))
+    record.errorsAfter.added = errors.length
+    record.removed = await change('removed', [{ op: 'remove_objects', object_ids: [id] }], meshes)
+    record.errorsAfter.removed = errors.length
+    console.log(`  added ${extra.manifest.triangles} triangles: ${(record.added.uploaded / 2 ** 20).toFixed(1)} MiB uploaded, ${record.added.perTriangle} B a triangle, longest sync ${record.added.longestSync} ms; removed: ${(record.removed.uploaded / 1024).toFixed(0)} KiB, longest sync ${record.removed.longestSync} ms`)
+
+    // 5. Two exports beside the viewport, the JS heap read as they draw: its objects and the typed arrays' stores
+    // (backingStorageSize, outside usedSize), where the layers' copies are.
+    const cdp = await context.newCDPSession(page)
+    const heap = async () => {
+      const h = await cdp.send('Runtime.getHeapUsage')
+      return h.usedSize + (h.backingStorageSize ?? 0)
+    }
+    // Garbage collected first, as the reading once an export's layer let its arrays go: the two compare.
+    await cdp.send('HeapProfiler.collectGarbage')
+    record.heap = { viewport: await heap(), peak: 0, drawing: 0 }
+    // Then twice more without the layer, the control: each export makes its own device, the switch read as it does.
+    const lit = []
+    for (let n = 1; n <= 4; n++) {
+      if (n === 3) await page.evaluate(() => { window.__sceneGPU.traceOff = true })
+      let sampling = n <= 2
+      const dropped = await page.evaluate(() => window.__sceneGPU.traceDropped)
+      const sampled = (async () => {
+        while (sampling) {
+          record.heap.peak = Math.max(record.heap.peak, await heap())
+          // Once the export's layer let its arrays go (design A5): what stays while its frames draw, garbage collected.
+          if (record.heap.drawing === 0 && (await page.evaluate(() => window.__sceneGPU.traceDropped)) > dropped) {
+            await cdp.send('HeapProfiler.collectGarbage')
+            record.heap.drawing = await heap()
+          }
+          await sleep(250)
+        }
+      })()
+      const started = Date.now()
+      await page.getByRole('button', { name: '导出' }).first().click()
+      const dialog = page.getByRole('dialog', { name: '导出分镜' })
+      await dialog.waitFor()
+      await dialog.getByRole('button', { name: '导出' }).click()
+      await waitFor(() => server.exports.length === n, `export ${n} submitted`, 600_000).catch(async (e) => {
+        sampling = false
+        e.message += ` — the dialog: ${(await dialog.textContent().catch(() => '')).slice(-400)}; errors: ${errors.join('\n').slice(0, 1500)}`
+        throw e
+      })
+      sampling = false
+      await sampled
+      const image = server.exports[n - 1].payload.shots[0].images.find((i) => i.pass === 'lit')
+      lit.push(server.uploadBytes.get(image.upload_id))
+      if (dir) await writeFile(`${dir}/hall-export-${n}.png`, lit.at(-1))
+      console.log(`  export ${n}${n > 2 ? ' without the layer' : ''}: ${Date.now() - started} ms`)
+      await dialog.waitFor({ state: 'hidden' }).catch(() => {})
+    }
+    record.heap = { viewport: Math.round(record.heap.viewport / 2 ** 20), peak: Math.round(record.heap.peak / 2 ** 20), drawing: Math.round(record.heap.drawing / 2 ** 20) }
+    const apart = async (a, b) => ({ identical: a.equals(b), ...(await imageApart(page, a, b)) })
+    record.exports = await apart(lit[0], lit[1])
+    record.exportsWithout = await apart(lit[2], lit[3])
+    const said = (e) => (e.identical ? 'the same bytes' : `largest difference ${e.max}, ${(e.over * 100).toFixed(4)}% of pixels off by more than 8`)
+    console.log(`  two exports' lit pictures: ${said(record.exports)}; without the layer ${said(record.exportsWithout)}`)
+    record.errorsAfter.exports = errors.length
+    console.log(`  errors after each step: ${JSON.stringify(record.errorsAfter)}${errors.length ? `; the first: ${errors[0].slice(0, 200)}` : ''}`)
+    console.log(`  JS heap and array stores: ${record.heap.viewport} MiB with the viewport alone, ${record.heap.peak} MiB at the peak of an export beside it, ${record.heap.drawing} MiB once its layer let its arrays go; the layer ${(record.cold.bytes / 2 ** 20).toFixed(0)} MiB on each device`)
+    await context.close()
+    if (dir) await writeFile(`${dir}/trace-hall.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+
+    assert.ok(record.open.operable <= record.off.operable * 1.2 + 500, `a click taken at ${record.open.operable} ms with the layer, ${record.off.operable} ms without`)
+    for (const r of [record.open, record.cold, record.warm]) assert.ok(r.longestSync <= 100, `the layer's longest sync before ready ${r.longestSync} ms`)
+    assert.ok(record.warm.readyMs <= 3000 && record.warm.readyMs <= record.cold.readyMs / 2, `ready again in ${record.warm.readyMs} ms, the first time ${record.cold.readyMs} ms`)
+    assert.ok(record.drag.maxUpload <= 2 ** 20 && record.drag.longestSync <= 10, `drag: ${record.drag.maxUpload} B, ${record.drag.longestSync} ms a frame`)
+    assert.ok(record.drag.longest <= 1.5 * record.drag.stillMedian, `drag: the longest frame ${record.drag.longest} ms, still ${record.drag.stillMedian} ms`)
+    assert.ok(record.added.longestSync <= 50 && record.removed.longestSync <= 50, `add ${record.added.longestSync} ms, remove ${record.removed.longestSync} ms`)
+    assert.ok(record.added.perTriangle <= 64, `${record.added.perTriangle} B a new triangle`)
+    // AC-S1-8: the same pixels, with the layer and without (the hall's mirror differed till design A11).
+    assert.ok(record.exports.identical, `two exports: ${JSON.stringify(record.exports)}`)
+    assert.ok(record.exportsWithout.identical, `two exports without the layer: ${JSON.stringify(record.exportsWithout)}`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE_PERF=1, this machine's GPU: S0's hall exported twice from
+// the editor: the export's layer laid out the same both times (each
+// buffer's digest as it turns ready, gpuTestHooks.traceDigests), and the
+// same lit picture (AC-S1-8's last item on its own). At 2K: the hall's frame
+// is its geometry's more than its pixels', and at 1K a lit picture runs past
+// the 30 s an image is given at least.
+// SCENE_E2E_TRACE_SCENES=mirror-board takes that reference scene instead.
+if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: S0’s hall exported twice from the editor, its layer laid out alike', async () => {
+  const name = process.env.SCENE_E2E_TRACE_SCENES ?? 'hall'
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    let page
+    let errors
+    if (name === 'hall') {
+      const hall = await hallScene()
+      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+      hallSeed(server, hall)
+      ;({ page, errors } = await open(server, { context, query: '?export=1' }))
+      await hallReady(page, hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length, 'the hall')
+    } else {
+      referenceScene(server, name, realtimeGI)
+      ;({ page, errors } = await open(server, { context, query: '?export=1' }))
+      await shading(page, '最终渲染')
+      await traceReady(page, name)
+    }
+    await page.evaluate(() => { window.__sceneGPU.traceDigests = [] })
+    const lit = []
+    for (let n = 1; n <= 2; n++) {
+      await page.getByRole('button', { name: '导出' }).first().click()
+      const dialog = page.getByRole('dialog', { name: '导出分镜' })
+      await dialog.waitFor()
+      await dialog.getByRole('button', { name: '导出' }).click()
+      await waitFor(() => server.exports.length === n, `export ${n} submitted`, 300_000).catch(async (e) => {
+        if (process.env.SCENE_E2E_SHOTS) await page.screenshot({ path: `${process.env.SCENE_E2E_SHOTS}/trace-hall-export-${n}.png` })
+        e.message += ` — the page: ${(await page.locator('.cc-scene-editor').textContent()).slice(-300)}; errors: ${errors.join('\n').slice(0, 1500)}`
+        throw e
+      })
+      lit.push(server.uploadBytes.get(server.exports[n - 1].payload.shots[0].images.find((i) => i.pass === 'lit').upload_id))
+      await dialog.waitFor({ state: 'hidden' }).catch(() => {})
+    }
+    const digests = await page.evaluate(() => window.__sceneGPU.traceDigests)
+    const apart = { identical: lit[0].equals(lit[1]), ...(await imageApart(page, lit[0], lit[1])) }
+    console.log(`  the layers: ${JSON.stringify(digests)}`)
+    console.log(`  the lit pictures: ${apart.identical ? 'the same bytes' : `largest difference ${apart.max}, ${(apart.over * 100).toFixed(4)}% of pixels off by more than 8`}`)
+    assert.equal(digests.length, 2, 'two exports, two layers')
+    assert.deepEqual(digests[1], digests[0], 'laid out alike')
+    assert.ok(apart.identical, 'the same lit picture')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/**
+ * Two pictures of one size side by side in a region of them: a, b and their difference four times over (PNG); and
+ * how far apart they are there, as imageApart says, with the mean channel difference.
+ */
+async function sideBySide(page, a, b, r) {
+  const { apart, png } = await page.evaluate(async ([a, b, r]) => {
+    const bitmaps = await Promise.all([a, b].map(async (src) => createImageBitmap(await (await fetch(src)).blob())))
+    const [p, q] = bitmaps.map((bm) => {
+      const g = new OffscreenCanvas(r.width, r.height).getContext('2d')
+      g.drawImage(bm, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height)
+      return g.getImageData(0, 0, r.width, r.height).data
+    })
+    const out = new OffscreenCanvas(r.width * 3, r.height)
+    const g = out.getContext('2d')
+    g.drawImage(bitmaps[0], r.x, r.y, r.width, r.height, 0, 0, r.width, r.height)
+    g.drawImage(bitmaps[1], r.x, r.y, r.width, r.height, r.width, 0, r.width, r.height)
+    const diff = g.createImageData(r.width, r.height)
+    let max = 0
+    let over = 0
+    let sum = 0
+    for (let k = 0; k < p.length; k += 4) {
+      let d = 0
+      for (let c = 0; c < 3; c++) {
+        const e = Math.abs(p[k + c] - q[k + c])
+        diff.data[k + c] = Math.min(255, 4 * e)
+        d = Math.max(d, e)
+        sum += e
+      }
+      diff.data[k + 3] = 255
+      if (d > max) max = d
+      if (d > 8) over++
+    }
+    g.putImageData(diff, r.width * 2, 0)
+    const bytes = new Uint8Array(await (await out.convertToBlob({ type: 'image/png' })).arrayBuffer())
+    let s = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    const pixels = p.length / 4
+    return { apart: { max, over: over / pixels, mean: sum / (3 * pixels) }, png: btoa(s) }
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, r])
+  return { apart, png: Buffer.from(png, 'base64') }
+}
+
+// SCENE_E2E_TRACE_PERF=1 (or a directory for trace-proxy.json and the side
+// by side), this machine's GPU: the hall's mirror through the proxies
+// (S1 tasks 8.3, AC-S1-9). Exported from the editor twice through the
+// original (tier 1; the two differ already about the mirror, issue
+// scene-trace-export-repeat), then with the budget pressed under the
+// original's bytes and over the proxies', the viewport gone to tier 2
+// first, once through the proxies. The export's own layer says which it
+// traced (gpuTestHooks.traceDigests). For the owner to judge (Epic
+// 「精度分档」: only where the original does not fit).
+if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: AC-S1-9, the hall’s mirror through the original and through the proxies', async () => {
+  const dir = process.env.SCENE_E2E_TRACE_PERF === '1' ? null : process.env.SCENE_E2E_TRACE_PERF
+  const hall = await hallScene()
+  const meshes = hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const stats = (page) => page.evaluate(() => window.__sceneGPU.traceStats)
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+    const server = new SceneServer()
+    hallSeed(server, hall)
+    const { page, errors } = await open(server, { context, query: '?export=1' })
+    await hallReady(page, meshes, 'the hall')
+    const full = await stats(page)
+    assert.deepEqual([full.tier, full.layer], ['full', 'original'], 'tier 1 traces the original')
+    await page.evaluate(() => { window.__sceneGPU.traceDigests = [] })
+    const lit = []
+    const exportLit = async (what) => {
+      const n = server.exports.length + 1
+      const started = Date.now()
+      await page.getByRole('button', { name: '导出' }).first().click()
+      const dialog = page.getByRole('dialog', { name: '导出分镜' })
+      await dialog.waitFor()
+      await dialog.getByRole('button', { name: '导出' }).click()
+      await waitFor(() => server.exports.length === n, `${what}: export ${n} submitted`, 600_000)
+      lit.push(server.uploadBytes.get(server.exports[n - 1].payload.shots[0].images.find((i) => i.pass === 'lit').upload_id))
+      await dialog.waitFor({ state: 'hidden' }).catch(() => {})
+      console.log(`  ${what}: ${Date.now() - started} ms`)
+    }
+    await exportLit('through the original')
+    await exportLit('through the original again')
+    // Under the original, over the proxies: the viewport to tier 2 first, its proxies built and cached for the export's.
+    await page.evaluate((bytes) => { window.__sceneGPU.traceBudget = bytes }, full.original.bytes - 1)
+    await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+    let last = null
+    await waitFor(async () => (last = await stats(page))?.tier === 'proxy' && last.layer === 'proxy' && last.pending === 0, 'the viewport at tier 2', 600_000).catch((e) => {
+      e.message += ` ${JSON.stringify(last)}`
+      throw e
+    })
+    const proxy = last.proxy
+    await exportLit('through the proxies')
+    const digests = await page.evaluate(() => window.__sceneGPU.traceDigests)
+    assert.deepEqual(digests.map((d) => d.layer), ['original', 'original', 'proxy'], 'each export traced as asked')
+    const apart = async (a, b) => ({ identical: a.equals(b), ...(await imageApart(page, a, b)) })
+    const twice = await sideBySide(page, lit[0], lit[1], hallMirror)
+    const side = await sideBySide(page, lit[0], lit[2], hallMirror)
+    const record = {
+      machine: machineInfo(),
+      bytes: { original: full.original.bytes, proxy: proxy.bytes },
+      whole: { originalTwice: await apart(lit[0], lit[1]), proxyAgainstOriginal: await apart(lit[0], lit[2]) },
+      mirror: { region: hallMirror, originalTwice: twice.apart, proxyAgainstOriginal: side.apart },
+    }
+    const said = (e) => (e.identical ? 'the same bytes' : `largest difference ${e.max}, ${(e.over * 100).toFixed(4)}% of pixels off by more than 8`)
+    console.log(`  original ${(full.original.bytes / 2 ** 20).toFixed(0)} MiB, proxies ${(proxy.bytes / 2 ** 20).toFixed(0)} MiB; the original twice: ${said(record.whole.originalTwice)}, in the mirror ${said(record.mirror.originalTwice)}; the proxies against the original: ${said(record.whole.proxyAgainstOriginal)}, in the mirror ${said(record.mirror.proxyAgainstOriginal)}`)
+    if (dir) {
+      await writeFile(`${dir}/trace-proxy.json`, `${JSON.stringify(record, null, 2)}\n`)
+      await writeFile(`${dir}/hall-proxy-mirror.png`, side.png)
+      await writeFile(`${dir}/hall-original-twice-mirror.png`, twice.png)
+      for (const [i, name] of ['original', 'original-again', 'proxy'].entries()) await writeFile(`${dir}/hall-proxy-${name}.png`, lit[i])
+    }
+    assert.ok(proxy.bytes < full.original.bytes, 'the proxies smaller')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** The viewport's frame drawn alone and waited for, n times: the median, in ms (gpu.ts redrawViewport). */
+async function frameMedian(page, n = 30) {
+  const times = []
+  for (let i = 0; i < n; i++) times.push(await page.evaluate(() => window.__sceneGPU.redrawViewport(1)))
+  return times.sort((a, b) => a - b)[n >> 1]
+}
+
+// SCENE_E2E_TRACE_PERF=1 (or a directory for trace-frames.json), this
+// machine's GPU: what the retrace adds to a viewport frame at 1536 × 1024
+// (AC-S1-7, S1-U4). Each scene the layer is judged on, then S0's hall, in a
+// page with the layer and a page without it in one browser: frameMedian
+// three times on each, taken in turn, the median of each three. As many
+// draws a frame either way. SCENE_E2E_TRACE_SCENES=hall,cornell takes just
+// those.
+if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: AC-S1-7, what the retrace adds to a viewport frame', async () => {
+  const dir = process.env.SCENE_E2E_TRACE_PERF === '1' ? null : process.env.SCENE_E2E_TRACE_PERF
+  const hall = await hallScene()
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  try {
+    // The window that gives the viewport 1536 × 1024 pixels: the panels around it keep their size.
+    const probe = await open(new SceneServer(), { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+    const css = await probe.page.evaluate(() => { const c = document.querySelector('.cc-scene-editor canvas'); return [c.clientWidth, c.clientHeight] })
+    const size = { width: 1536 + 1280 - css[0], height: 1024 + 820 - css[1] }
+    await probe.context.close()
+    const scenes = process.env.SCENE_E2E_TRACE_SCENES?.split(',') ?? [...giBaselineNames, 'hall']
+    for (const name of scenes) {
+      const pages = {}
+      for (const which of ['on', 'off']) {
+        const context = await gpu.newContext({ viewport: size })
+        const server = new SceneServer()
+        if (name === 'hall') {
+          hallSeed(server, hall)
+          await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+        } else referenceScene(server, name, realtimeGI)
+        pages[which] = { context, ...(await open(server, { context, query: which === 'off' ? '?gpu=traceOff' : '' })) }
+        await shading(pages[which].page, '最终渲染')
+      }
+      const { on, off } = pages
+      if (name === 'hall') await hallReady(on.page, hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length, 'the hall')
+      else await traceReady(on.page, name)
+      for (const p of [on, off]) {
+        await waitFor(async () => (await p.page.evaluate(() => window.__sceneGPU.compiling)) === 0, `${name}: compiled`, 120_000)
+        await viewportStill(p.page, name, 300_000)
+      }
+      // The hall's page without the layer has every model in too.
+      if (name === 'hall') await trianglesStill(off.page, 'the hall without the layer')
+      const drawn = (p) => p.page.evaluate(() => window.__sceneGPU.lastFrame)
+      const pixels = await on.page.evaluate(() => { const c = document.querySelector('.cc-scene-editor canvas'); return [c.width, c.height] })
+      const runs = { on: [], off: [] }
+      for (let k = 0; k < 3; k++) for (const which of ['on', 'off']) runs[which].push(await frameMedian(pages[which].page))
+      const [msOn, msOff] = [runs.on, runs.off].map((r) => r.sort((a, b) => a - b)[1])
+      const [a, b] = [await drawn(on), await drawn(off)]
+      const row = { name, pixels, on: Number(msOn.toFixed(2)), off: Number(msOff.toFixed(2)), added: Number((msOn - msOff).toFixed(2)), runs, draws: [a.draws, b.draws] }
+      rows.push(row)
+      console.log(`  ${name}: ${pixels.join(' × ')}, ${row.on} ms a frame with the layer, ${row.off} without: ${row.added} ms more; ${a.draws} / ${b.draws} draws`)
+      assert.equal(a.draws, b.draws, `${name}: as many draws`)
+      for (const p of [on, off]) {
+        assert.deepEqual(p.errors, [], `${name}: ${p.errors.join('\n')}`)
+        await p.context.close()
+      }
+    }
+    if (dir) await writeFile(`${dir}/trace-frames.json`, `${JSON.stringify({ machine: machineInfo(), rows }, null, 2)}\n`)
+    // The hall's 8 ms: 6 ms at first, 7.5 ms measured, the owner took it (2026-10-25, design S1-U4).
+    for (const r of rows) assert.ok(r.added <= (r.name === 'hall' ? 8 : 2), `${r.name}: ${r.added} ms more a frame`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE_PERF=1 (or a directory for trace-export.json), this
+// machine's GPU: what the layer adds to an export, for engines.ts's time
+// limits (S1 tasks 6.2). Each scene the layer is judged on: the lit look
+// opened first (its shaders compiled, the layer built), within lookBudgetMs;
+// render_view, within viewBudgetMs; then lit at 2K from its camera,
+// exported twice with the layer and twice without, the second of each timed,
+// with the layer within the reference device's own estimate.
+if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: 6.2, what the layer adds to a lit export, per pixel and frame drawn; within the time limits', async () => {
+  const dir = process.env.SCENE_E2E_TRACE_PERF === '1' ? null : process.env.SCENE_E2E_TRACE_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    await page.goto(`${base}/.scene-hidden-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const { frames, lookBudgetMs, viewBudgetMs, estimate } = await page.evaluate(async () => {
+      const e = await import('/src/creative-scene/render/engines.ts')
+      const frames = e.drawnFrames('realtime_gi', 'export')
+      return { frames, lookBudgetMs: e.lookBudgetMs, viewBudgetMs: e.viewBudgetMs, estimate: e.estimateMs('realtime_gi', 2048, 1365, frames, 'image/png', true) }
+    })
+    const opened = (doc) => page.evaluate(async (doc) => {
+      window.__sceneGPU.traceOff = false
+      const { openShooter } = await import('/src/creative-scene/host/render.ts')
+      const started = performance.now()
+      const shooter = await openShooter(doc.scene, {}, 'lit')
+      const world = shooter.world
+      shooter.close()
+      return { ms: performance.now() - started, world }
+    }, doc)
+    const view = (doc) => page.evaluate(async (doc) => {
+      const { renderView } = await import('/src/creative-scene/host/render.ts')
+      const started = performance.now()
+      const shot = await renderView('doc', { camera_object_id: doc.scene.objects.find((o) => o.kind === 'camera').id, mode: 'lit' }, async () => doc)
+      if (!shot.ok) throw new Error(shot.message)
+      return performance.now() - started
+    }, doc)
+    const timed = (doc, plan, off) => page.evaluate(async ([doc, plan, off]) => {
+      window.__sceneGPU.traceOff = off
+      const started = performance.now()
+      await window.__export(doc, plan, 'timed')
+      const ms = performance.now() - started
+      const { width, height } = await createImageBitmap(window.__kept.timed[0])
+      return { ms, pixels: width * height }
+    }, [doc, plan, off])
+    const rows = []
+    for (const name of giBaselineNames) {
+      const server = new SceneServer()
+      referenceScene(server, name, realtimeGI)
+      server.scene.render.resolution = '2k'
+      const doc = { scene: server.scene, models: {}, revision: '1' }
+      const plan = { cameraObjectIDs: [server.scene.objects.find((o) => o.kind === 'camera').id], passes: ['lit'] }
+      const first = await opened(doc)
+      assert.ok(first.world, `${name}: the layer drawn`)
+      const viewMs = await view(doc)
+      const [, on] = [await timed(doc, plan, false), await timed(doc, plan, false)]
+      const [, off] = [await timed(doc, plan, true), await timed(doc, plan, true)]
+      const ns = ((on.ms - off.ms) * 1e6) / (on.pixels * frames)
+      rows.push({ name, openMs: Math.round(first.ms), viewMs: Math.round(viewMs), pixels: on.pixels, frames, onMs: Math.round(on.ms), offMs: Math.round(off.ms), addedNs: Number(ns.toFixed(2)) })
+      console.log(`  ${name}: lit opened in ${Math.round(first.ms)} ms, render_view ${Math.round(viewMs)} ms; ${on.pixels} pixels × ${frames} frames, ${Math.round(on.ms)} ms with the layer, ${Math.round(off.ms)} ms without: ${ns.toFixed(2)} ns more a pixel and frame`)
+      assert.ok(first.ms <= lookBudgetMs, `${name}: lit opened in ${Math.round(first.ms)} ms, over ${lookBudgetMs}`)
+      assert.ok(viewMs <= viewBudgetMs, `${name}: render_view ${Math.round(viewMs)} ms, over ${viewBudgetMs}`)
+      assert.ok(on.pixels <= 2048 * 1365 && on.ms <= estimate, `${name}: ${Math.round(on.ms)} ms with the layer, over the estimate ${Math.round(estimate)}`)
+    }
+    if (dir) await writeFile(`${dir}/trace-export.json`, `${JSON.stringify({ machine: machineInfo(), rows }, null, 2)}\n`)
   } finally {
     await gpu.close()
   }

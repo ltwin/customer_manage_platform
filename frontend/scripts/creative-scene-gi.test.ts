@@ -31,6 +31,15 @@ test('the SSGI is three’s SSGINode but for its fork: blocks', () => {
   assert.equal(restored, upstream, 'three changed SSGINode: compare and port the fork')
 })
 
+test('the reflections’ retrace is three’s SSRNode but for its fork: blocks (S1 design「反射补追」)', () => {
+  const upstream = read('../node_modules/three/examples/jsm/tsl/display/SSRNode.js')
+  const fork = read('../src/creative-scene/render/nodes/SSRTraceNode.js')
+  for (const line of fork.split('\n').filter((l) => /^\t*\/\/ fork: (was|end)/.test(l))) assert.match(line, /^\t*\/\/ fork: (was|end)$/)
+  const restored = unfork(fork)
+  assert.ok(!restored.includes('fork:'), 'every change is undone here')
+  assert.equal(restored, upstream, 'three changed SSRNode: compare and port the fork')
+})
+
 test('unfork puts back what a block replaced, an empty replacement and several lines alike', () => {
   const fork = '// header\n\na\n\t// fork: why\n\tb\n\t// fork: was\n//\tc\n//\n//\td\n\t// fork: end\ne\n\t// fork: gone\n\n\t// fork: was\n//\tf\n\t// fork: end\ng\n'
   assert.equal(unfork(fork), 'a\n\tc\n\n\td\ne\n\tf\ng\n')
@@ -260,13 +269,26 @@ test('time limits follow what a picture costs: pixels, frames, encoding; eight t
   // The design's example: an 8K 3:2 real-time GI image at K = 64, about 87 s; its limit about 11.6 minutes.
   const k = framesFor('realtime_gi', 'export')
   assert.equal(k, 64)
-  const eightK = estimateMs('realtime_gi', 8192, 5461, k, 'image/png')
+  const eightK = estimateMs('realtime_gi', 8192, 5461, k, 'image/png', false)
   assert.ok(eightK > 80_000 && eightK < 100_000, `${eightK}`)
-  assert.equal(shotBudgetMs('realtime_gi', 8192, 5461, k, 'image/png'), 8 * eightK)
+  assert.equal(shotBudgetMs('realtime_gi', 8192, 5461, k, 'image/png', false), 8 * eightK)
   // A 2K workbench image keeps R1's 30 seconds.
-  assert.equal(shotBudgetMs('workbench', 2048, 1365, 1, 'image/png'), 30_000)
-  assert.equal(viewBudgetMs, 60_000, 'render_view keeps its minute')
+  assert.equal(shotBudgetMs('workbench', 2048, 1365, 1, 'image/png', false), 30_000)
   assert.equal(renderTimeoutMs, viewBudgetMs)
   assert.equal(exportTimeoutMs, jobRenderCapMs)
   assert.equal(jobRenderCapMs, 25 * 60_000, 'within the job’s 30 minutes')
+})
+
+test('a picture drawing the world-space layer gets its share of time; render_view as if it drew it, and waited the most for it (S1 tasks 6.2)', async () => {
+  const { drawnFrames, estimateMs, shotBudgetMs, traceWaitMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+  const frames = drawnFrames('realtime_gi', 'export')
+  // 10 ns a pixel and frame: about twice the most the reference scenes' 2K lit exports took (3.4–4.7 ns).
+  const share = (w: number, h: number) => estimateMs('realtime_gi', w, h, frames, 'image/png', true) - estimateMs('realtime_gi', w, h, frames, 'image/png', false)
+  assert.ok(Math.abs(share(2048, 1365) - (2048 * 1365 * frames * 10) / 1e6) < 1e-6, `${share(2048, 1365)}`)
+  // Above the floor the limit grows by eight times the share.
+  const grown = shotBudgetMs('realtime_gi', 8192, 5461, frames, 'image/png', true) - shotBudgetMs('realtime_gi', 8192, 5461, frames, 'image/png', false)
+  assert.ok(Math.abs(grown - 8 * share(8192, 5461)) < 1e-6, `${grown}`)
+  // render_view: still the minute's floor, and the 15 s the lit look waits for the layer.
+  assert.equal(traceWaitMs, 15_000)
+  assert.equal(viewBudgetMs, 60_000 + traceWaitMs)
 })

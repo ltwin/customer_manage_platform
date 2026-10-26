@@ -18,6 +18,9 @@ import * as tsl from 'three/tsl'
 //  - fbm octaves finer than about two pixels fade out (fbm), and the
 //    height uses the same faded values, so bumps flatten with distance;
 //  - a joint narrower than a pixel blends towards its average share.
+// The width of a pixel is an input (width), not fwidth: the raster passes
+// fwidth and draws as it did, a traced hit point, which has no derivatives,
+// passes its ray cone's (render/trace/hit.ts; scene-world-space-gi I7).
 //
 // Ported line for line from the GLSL the presets were published with (R1):
 // a published preset never changes, a different look is a new @2.
@@ -27,7 +30,8 @@ import * as tsl from 'three/tsl'
 export type TSLNode = any
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, clamp, cross, dFdx, dFdy, dot, float, floor, fract, fwidth, length, max, min, mix, mod, normalize, pow, select, sin, smoothstep, sqrt, vec2, vec3 } = tsl as unknown as Record<string, Op>
+const { abs, clamp, cross, dFdx, dFdy, dot, float, floor, fract, length, max, min, mix, mod, normalize, pow, select, sin, smoothstep, sqrt, vec2, vec3 } = tsl as unknown as Record<string, Op>
+type Width = PatternInput['width']
 const Fn = tsl.Fn as unknown as (fn: (args: TSLNode[]) => TSLNode) => { setLayout(layout: object): Op }
 
 /** What a preset gives. */
@@ -37,6 +41,8 @@ export type PatternOut = { albedo: TSLNode; rough: TSLNode; metal: TSLNode; heig
 export type PatternInput = {
   /** Object-space position in metres. */
   pos: TSLNode
+  /** What fwidth gives for a quantity of the preset: |d/dx| + |d/dy| over a pixel (the raster passes fwidth). */
+  width: (x: TSLNode) => TSLNode
   /** Object-space normal, for the projection weights. */
   normal: TSLNode
   /** Metres one pixel covers at pos. */
@@ -116,15 +122,15 @@ const triWeights = (n: TSLNode): TSLNode => {
 }
 
 /** 0 below edge, 1 above, over the width of a pixel. */
-const aaStep = (edge: TSLNode, x: TSLNode): TSLNode => {
-  const w = max(fwidth(x), 1e-6)
+const aaStep = (edge: TSLNode, x: TSLNode, width: Width): TSLNode => {
+  const w = max(width(x), 1e-6)
   return smoothstep(edge.sub(w), edge.add(w), x)
 }
 
 /** A joint of width jw metres at distance d from the cell edge: 1 in the joint; narrower than a pixel, its share of the cell. */
-const joint = (d: TSLNode, jw: TSLNode, share: TSLNode): TSLNode => {
-  const j = float(1).sub(aaStep(jw.mul(0.5), d))
-  return mix(j, share, smoothstep(0.5, 1.5, fwidth(d).div(jw)))
+const joint = (d: TSLNode, jw: TSLNode, share: TSLNode, width: Width): TSLNode => {
+  const j = float(1).sub(aaStep(jw.mul(0.5), d, width))
+  return mix(j, share, smoothstep(0.5, 1.5, width(d).div(jw)))
 }
 
 /**
@@ -156,10 +162,10 @@ const mix3 = (a: PatternOut, b: PatternOut, c: PatternOut, w: TSLNode): PatternO
 
 /** A flat pattern f(uv, fp) projected along the three axes. */
 const planar =
-  (fn: (uv: TSLNode, fp: TSLNode, pm: PatternInput['pm']) => PatternOut) =>
-  ({ pos, normal, footprint, pm }: PatternInput): PatternOut => {
+  (fn: (uv: TSLNode, fp: TSLNode, pm: PatternInput['pm'], width: Width) => PatternOut) =>
+  ({ pos, normal, footprint, pm, width }: PatternInput): PatternOut => {
     const w = triWeights(normal).toVar()
-    return mix3(fn(pos.zy, footprint, pm), fn(pos.xz, footprint, pm), fn(pos.xy, footprint, pm), w)
+    return mix3(fn(pos.zy, footprint, pm, width), fn(pos.xz, footprint, pm, width), fn(pos.xy, footprint, pm, width), w)
   }
 
 const one = float(1)
@@ -184,7 +190,7 @@ export const patternFns: Record<string, (input: PatternInput) => PatternOut> = {
     const albedo = pm.color.mul(n.mul(0.3).add(0.85)).mul(one.sub(stain.mul(0.45))).mul(one.sub(pores.mul(0.3)))
     return out(albedo, pm.roughness, pm.metalness, fine.mul(0.0015).sub(pores.mul(0.0015)))
   },
-  'stone_brick@1': planar((uv, fp, pm) => {
+  'stone_brick@1': planar((uv, fp, pm, width) => {
     const h = pm.brick_size
     const w = h.mul(2)
     const jw = clamp(h.mul(0.06), 0.004, 0.02).toVar()
@@ -194,61 +200,61 @@ export const patternFns: Record<string, (input: PatternInput) => PatternOut> = {
     const fx = fract(cx).toVar()
     const fy = fract(cy).toVar()
     const d = min(min(fx, one.sub(fx)).mul(w), min(fy, one.sub(fy)).mul(h)).toVar()
-    const j = joint(d, jw, jw.div(h).add(jw.div(w))).toVar()
+    const j = joint(d, jw, jw.div(h).add(jw.div(w)), width).toVar()
     const tint = hash12(id).toVar()
     const n = fbm(vec3(uv, tint.mul(13)), 6, fp, 4).toVar()
     const brick = pm.color.mul(tint.mul(0.3).add(0.82)).mul(n.mul(0.2).add(0.9))
     const bevel = smoothstep(0, 0.015, d.sub(jw.mul(0.5)))
     return out(mix(brick, pm.mortar_color, j), mix(pm.roughness, pm.roughness.add(0.1), j), pm.metalness, one.sub(bevel).mul(-0.01).add(n.mul(0.002)))
   }),
-  'stone@1': ({ pos, footprint, pm }) => {
+  'stone@1': ({ pos, footprint, pm, width }) => {
     const s = pm.scale
     const q = pos.div(s).toVar()
     const fp = footprint.div(s)
     const n = fbm(q, 1, fp, 6).toVar()
     const v = voronoi(q.mul(2).add(n.sub(0.5).mul(0.5))).toVar()
     const gap = v.y.sub(v.x).toVar()
-    const cw = max(fwidth(gap), 1e-4).toVar()
+    const cw = max(width(gap), 1e-4).toVar()
     const crack = one.sub(smoothstep(0.02, cw.add(0.02), gap)).mul(one.sub(smoothstep(0.5, 1, cw.div(0.05)))).toVar()
     const albedo = pm.color.mul(n.mul(0.6).add(0.7)).mul(one.sub(crack.mul(0.5)))
     return out(albedo, pm.roughness, pm.metalness, s.mul(n.mul(0.03).sub(crack.mul(0.01))))
   },
-  'marble@1': ({ pos, footprint, pm }) => {
+  'marble@1': ({ pos, footprint, pm, width }) => {
     const s = pm.scale
     const q = pos.div(s).toVar()
     const fp = footprint.div(s)
     const turb = fbm(q, 1.5, fp, 6).toVar()
     const t = q.x.mul(1.3).add(q.y.mul(0.4)).add(turb.mul(4)).toVar()
     const raw = pow(one.sub(abs(sin(t.mul(3.14159265)))), 6)
-    const vein = mix(raw, 0.15, smoothstep(0.3, 0.8, fwidth(t))).toVar()
+    const vein = mix(raw, 0.15, smoothstep(0.3, 0.8, width(t))).toVar()
     const albedo = mix(pm.color.mul(turb.mul(0.1).add(0.95)), pm.vein_color, vein.mul(0.85))
     return out(albedo, pm.roughness.add(vein.mul(0.05)), pm.metalness, vein.mul(-0.0005))
   },
-  'tile@1': planar((uv, _fp, pm) => {
+  'tile@1': planar((uv, _fp, pm, width) => {
     const s = pm.tile_size
     const jw = float(0.004)
     const c = uv.div(s).toVar()
     const id = floor(c)
     const f = fract(c).toVar()
     const d = min(min(f.x, one.sub(f.x)), min(f.y, one.sub(f.y))).mul(s).toVar()
-    const j = joint(d, jw, jw.mul(2).div(s)).toVar()
+    const j = joint(d, jw, jw.mul(2).div(s), width).toVar()
     const tint = hash12(id)
     const bevel = smoothstep(0, 0.004, d.sub(jw.mul(0.5)))
     return out(mix(pm.color.mul(tint.mul(0.08).add(0.96)), pm.grout_color, j), mix(pm.roughness, 0.85, j), pm.metalness, one.sub(bevel).mul(-0.003))
   }),
-  'wood@1': ({ pos, footprint, pm }) => {
+  'wood@1': ({ pos, footprint, pm, width }) => {
     const s = pm.scale
     const q = pos.div(s).toVar()
     const fp = footprint.div(s).toVar()
     const warp = fbm(q.mul(vec3(1, 0.15, 1)), 2, fp, 4)
     const r = length(q.xz.add(0.3)).mul(8).add(warp.mul(3)).toVar()
     const raw = smoothstep(0, 0.25, fract(r)).mul(one.sub(smoothstep(0.6, 1, fract(r))))
-    const ring = mix(raw, 0.55, smoothstep(0.3, 0.8, fwidth(r))).toVar()
+    const ring = mix(raw, 0.55, smoothstep(0.3, 0.8, width(r))).toVar()
     const grain = fbm(q.mul(vec3(8, 0.5, 8)), 4, fp.mul(8), 4).toVar()
     const albedo = pm.color.mul(mix(0.72, 1.12, ring)).mul(grain.mul(0.16).add(0.92))
     return out(albedo, pm.roughness, pm.metalness, ring.mul(0.0004).add(grain.mul(0.0003)))
   },
-  'wood_plank@1': planar((uv, fp, pm) => {
+  'wood_plank@1': planar((uv, fp, pm, width) => {
     const wv = pm.plank_width
     const len = wv.mul(8).toVar()
     const row = floor(uv.y.div(wv)).toVar()
@@ -257,7 +263,7 @@ export const patternFns: Record<string, (input: PatternInput) => PatternOut> = {
     const fx = fract(x).toVar()
     const fy = fract(uv.y.div(wv)).toVar()
     const d = min(min(fx, one.sub(fx)).mul(len), min(fy, one.sub(fy)).mul(wv)).toVar()
-    const gap = joint(d, float(0.003), float(0.003).div(wv).add(float(0.003).div(len))).toVar()
+    const gap = joint(d, float(0.003), float(0.003).div(wv).add(float(0.003).div(len)), width).toVar()
     const tint = hash12(id.add(1.3)).toVar()
     const grain = fbm(vec3(uv.x.mul(0.6), fy.mul(wv).mul(25), tint.mul(9)), 4, fp.mul(25), 5).toVar()
     const plank = pm.color.mul(tint.mul(0.3).add(0.85)).mul(grain.mul(0.3).add(0.85))
@@ -272,13 +278,13 @@ export const patternFns: Record<string, (input: PatternInput) => PatternOut> = {
     const rough = mix(pm.roughness.add(n.sub(0.5).mul(0.1)), 0.92, mask)
     return out(albedo, rough, mix(pm.metalness, 0, mask), mask.mul(0.0008).mul(n).add(fbm(pos, 40, fp, 3).mul(0.0002)))
   },
-  'fabric@1': planar((uv, fp, pm) => {
+  'fabric@1': planar((uv, fp, pm, width) => {
     const s = pm.scale
     const c = uv.div(s).toVar()
     const f = fract(c).toVar()
     const over = mod(floor(c.x).add(floor(c.y)), 2)
     const raw = select(over.greaterThan(0.5), sin(f.x.mul(3.14159265)), sin(f.y.mul(3.14159265)))
-    const fw = fwidth(c).toVar()
+    const fw = width(c).toVar()
     const fade = one.sub(smoothstep(0.25, 0.5, max(fw.x, fw.y))).toVar()
     const h = mix(0.6, raw, fade).toVar()
     const n = fbm(vec3(uv, 0), 8, fp, 4)

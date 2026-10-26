@@ -3,6 +3,7 @@ import type { components } from '../../api/schema'
 import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
 import type { SceneDocument } from '../api.ts'
 import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
+import { TraceNotReady } from '../render/trace/base.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { cameraFraming, type Framing } from './framing.ts'
 import { drawnFrames, effectiveEngine, engineOf, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
@@ -73,12 +74,13 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const clayPasses = plan.passes.filter((p) => p !== 'lit')
   const lit = plan.passes.includes('lit')
   // Each image's limit follows what it costs (R2 design「输出分辨率、编码与时限」): its pixels, the frames its
-  // renderer averages, its encoding; the whole export gets the lit look's switch and every image's limit.
-  const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass) => {
+  // renderer averages, its encoding, whether it draws the world-space layer; the whole export gets the lit look's
+  // switch and every image's limit, as if the layer were drawn.
+  const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass, world: boolean) => {
     const engine = effectiveEngine(engineOf(doc.scene.render), pass, true)
-    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export'), imageTypeOf(pass, resolution).type)
+    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export'), imageTypeOf(pass, resolution).type, world && pass === 'lit')
   }
-  const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass), 0), 0)
+  const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass, true), 0), 0)
   const began = now()
   const shooter = await deps.open(doc, clayPasses.length ? 'clay' : 'lit')
   // A device that cannot draw the resolution fails at once rather than drawing smaller (R2 design R-5).
@@ -91,7 +93,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   /** Draws one image; the message when it took too long. */
   const draw = async (shot: { id: string; framing: Framing }, pass: ExportPass): Promise<string | null> => {
     onProgress?.({ stage: 'render', done: drawn.size, total })
-    const budget = budgetOf(shot, pass)
+    const budget = budgetOf(shot, pass, shooter.world)
     const started = now()
     const slow = `一张导出图渲染超过 ${Math.round(budget / 1000)} 秒`
     let blob: Blob
@@ -251,6 +253,8 @@ export async function runManualExport(deps: ManualExportDeps, job: ManualExport,
   } catch (err) {
     // The device came back or will (render/gpu.ts): nothing was handed on, a retry draws them all.
     if (err instanceof DeviceLostError) return { ok: false, message: '渲染设备暂时不可用，请重试' }
+    // The world-space layer is still being built (D7): it goes on, and a retry usually finds it ready.
+    if (err instanceof TraceNotReady) return { ok: false, message: err.message }
     return { ok: false, message: `导出图渲染失败：${err instanceof Error ? err.message : String(err)}` }
   }
   if (!rendered.ok) return { ok: false, message: rendered.message }

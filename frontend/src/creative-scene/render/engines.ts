@@ -76,9 +76,15 @@ export const drawnFrames = (engine: Engine, use: Use): number => (engine === 'wo
 const frameNs: Record<Engine, number> = { workbench: 15, realtime_gi: 30 }
 const encodeNs: Record<'image/png' | 'image/jpeg', number> = { 'image/png': 40, 'image/jpeg': 15 }
 
-/** How long a picture should take on the reference device, in ms. */
-export function estimateMs(engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg'): number {
-  return (width * height * (frames * frameNs[engine] + encodeNs[type])) / 1e6
+/**
+ * What the world-space layer adds a pixel and frame when a picture draws it (S1 tasks 6.2): 3.4–4.7 ns in the
+ * reference scenes' 2K lit exports on the reference device, about doubled.
+ */
+const worldNs = 10
+
+/** How long a picture should take on the reference device, in ms; world: it draws the world-space layer. */
+export function estimateMs(engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg', world: boolean): number {
+  return (width * height * (frames * (frameNs[engine] + (world ? worldNs : 0)) + encodeNs[type])) / 1e6
 }
 
 /** A slow device gets eight times the reference's time, and never less than these. */
@@ -87,11 +93,17 @@ const minShotMs = 30_000
 const minViewMs = 60_000
 
 /** One export image's time limit, drawn and encoded. */
-export const shotBudgetMs = (engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg') =>
-  Math.max(minShotMs, slack * estimateMs(engine, width, height, frames, type))
+export const shotBudgetMs = (engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg', world: boolean) =>
+  Math.max(minShotMs, slack * estimateMs(engine, width, height, frames, type, world))
 
-/** render_view's time limit: a JPEG of long side 1024, square at most, with the real-time GI's frames. */
-export const viewBudgetMs = Math.max(minViewMs, slack * estimateMs('realtime_gi', 1024, 1024, drawnFrames('realtime_gi', 'view'), 'image/jpeg'))
+/** How long the lit look waits for the world-space layer (S1 design「接入、就绪与切换」, D7), within lookBudgetMs. */
+export const traceWaitMs = 15_000
+
+/**
+ * render_view's time limit: a JPEG of long side 1024, square at most, with the real-time GI's frames. Set before
+ * the device is known, so as if it drew the world-space layer, and waited the most for it (S1 design「时限」).
+ */
+export const viewBudgetMs = Math.max(minViewMs, slack * estimateMs('realtime_gi', 1024, 1024, drawnFrames('realtime_gi', 'view'), 'image/jpeg', true)) + traceWaitMs
 
 /** Mounting the lit look and compiling its materials, within an export. */
 export const lookBudgetMs = 60_000

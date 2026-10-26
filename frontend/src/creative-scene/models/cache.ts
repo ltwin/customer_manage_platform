@@ -7,7 +7,7 @@ import { parseGLB } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
-import { mergeParts } from './merge.ts'
+import { mergeParts, noMerge } from './merge.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -196,6 +196,9 @@ export class ModelCache {
     if (loading && !this.loads.has(revision)) this.loads.set(revision, loading)
     const parts = this.ready.get(from)
     if (parts && !this.ready.has(revision)) this.ready.set(revision, parts)
+    // Saved: cached from now on under its revision.
+    if (parts) traceKeys(parts, revision)
+    else void loading?.then((p) => traceKeys(p, revision), () => undefined)
   }
 
   /** Follows a session's receipts; returns the disconnect. */
@@ -221,7 +224,9 @@ export class ModelCache {
       if (!local && parsePlaceholder(revision)) throw new Error('本机模型已不在，请重新生成')
       const glb = local ? local.glb : await this.download(revision)
       inspect(glb)
-      return partsOf(await parseGLB(glb))
+      const parts = partsOf(await parseGLB(glb))
+      if (!parsePlaceholder(revision)) traceKeys(parts, revision)
+      return parts
     })()
     promise.then(
       (parts) => {
@@ -265,6 +270,18 @@ export class ModelCache {
     this.known.setState({}, true)
     disposeParts(parts)
   }
+}
+
+/**
+ * Names each merged geometry for the world-space layer's cache
+ * (render/trace): model:<revision>#<its place after the merge>. A local
+ * bake not saved yet has no name and is built anew each session; nor does
+ * the e2e's unmerged drawing, whose geometries are other ones under the
+ * same places.
+ */
+function traceKeys(parts: ModelParts, revision: string) {
+  if (noMerge()) return
+  parts.meshes.forEach((m, i) => (m.geometry.userData.traceKey = `model:${revision}#${i}`))
 }
 
 /** Frees each geometry once, as its load settles: its range views first, which share its buffers. */

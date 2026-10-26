@@ -110,5 +110,9 @@ export function primitiveGeometry(
   const spec: BuiltinSpec | undefined = builtinSpec(builtin)
   const make = build[builtin]
   if (!spec || !make) return null
-  return make((key) => paramNumber(params, spec, key))
+  const geometry = make((key) => paramNumber(params, spec, key))
+  // What the world-space layer caches it under (render/trace): the same builtin and parameters, the same geometry.
+  const resolved = Object.fromEntries(Object.keys(spec.params).sort().map((k) => [k, paramNumber(params, spec, k)]))
+  geometry.userData.traceKey = `builtin:${builtin}:${JSON.stringify(resolved)}`
+  return geometry
 }

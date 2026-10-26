@@ -1004,6 +1004,7 @@ export default function SceneEditor({
                   <RenderPanel
                     render={shown.render}
                     backend={u.backend}
+                    trace={u.trace}
                     readOnly={readOnly}
                     display={display}
                     physical={shown.environment.sky.kind === 'physical'}

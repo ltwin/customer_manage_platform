@@ -65,6 +65,7 @@ import { aspectOf, cameraViewFov } from './cameraOptics.ts'
 import { cameraExposure, cameraFraming } from './host/framing.ts'
 import { sceneLowSun, sceneLux } from './world/exposure.ts'
 import { ASIDE_LAYER, OVERLAY_LAYER, SceneRenderer, overlayColor, type Frame } from './render/sceneRenderer.ts'
+import type { TraceStatus } from './render/trace/base.ts'
 import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
@@ -1091,12 +1092,22 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   useEffect(() => {
     const r = new SceneRenderer(gpuOf(gl), three, camera, { aside: () => [grid.current], top: () => [gizmo.current] }, invalidate)
     renderer.current = r
+    // The world-space layer's state for the render panel: off and why at once, the rest as the lit look syncs it.
+    const base = r.trace()
+    ui.setState({ trace: base.state.state === 'off' ? base.state : null })
+    // Only when what the panel shows changes (RenderPanel traceNote: the state, why it is off, the tier): not the
+    // counts a large scene's preparing moves through, each of which would draw the whole editor again.
+    const shown = (t: TraceStatus | null) => t && `${t.state}/${t.state === 'off' ? t.reason : t.state === 'ready' ? t.tier : ''}`
+    const unsubscribe = base.subscribe((trace) => {
+      if (shown(trace) !== shown(ui.getState().trace)) ui.setState({ trace })
+    })
     invalidate()
     return () => {
+      unsubscribe()
       if (renderer.current === r) renderer.current = null
       r.dispose()
     }
-  }, [gl, three, camera, grid, invalidate])
+  }, [gl, three, camera, grid, invalidate, ui])
   const framing = useMemo(() => (id && preview ? cameraFraming(scene, id) : null), [scene, id, preview])
   const lens = framing && !('error' in framing) && framing.depthOfField && framing.optics ? { optics: framing.optics, aspect: framing.width / framing.height } : null
   // Turning the blur on or off, or a lens change, draws a frame of its own.
@@ -1155,6 +1166,19 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
         }
         await gpu.settle()
         return performance.now() - started
+      }
+      gpuTestHooks.traceDepth = async (width, bias) => {
+        const layer = engine === 'realtime_gi' ? r.trace().handle()?.layer : undefined
+        if (!layer) return null
+        const { depthCheck } = await import('./render/trace/checks.ts')
+        return depthCheck(gpu.renderer, state.scene, state.camera as PerspectiveCamera, layer, width, bias)
+      }
+      gpuTestHooks.traceHits = async (width, turn) => {
+        const base = engine === 'realtime_gi' ? r.trace() : null
+        const handle = base?.handle()
+        if (!base || !handle) return null
+        const { hitCheck } = await import('./render/trace/checks.ts')
+        return hitCheck(gpu.renderer, state.scene, state.camera as PerspectiveCamera, handle, base.slots, width, turn)
       }
     }
     if (d.count < convergeFrames(engine)) {
