@@ -1,0 +1,44 @@
+{
+  "manifest": {
+    "parts": [],
+    "slots": [
+      {
+        "id": "steel",
+        "hint": "metal"
+      },
+      {
+        "id": "wall",
+        "hint": "paint"
+      },
+      {
+        "id": "yellow",
+        "hint": "paint"
+      }
+    ],
+    "bounds": {
+      "max": [
+        5.949999976158143,
+        11,
+        1.9500000119209289
+      ],
+      "min": [
+        -5.0599999986588955,
+        -0.02499997615814209,
+        -3.7950000029802324
+      ]
+    },
+    "anchors": [],
+    "triangles": 7232
+  },
+  "generator": {
+    "code": "export const mount='floor'; export default function build({THREE,lib}){const g=new THREE.Group(); const m=lib.material('steel','metal'),w=lib.material('wall','paint'),y=lib.material('yellow','paint');function b(x,h,z,a,c,d,mat=m){let o=new THREE.Mesh(new THREE.BoxGeometry(a,c,d),mat);o.position.set(x,h,z);g.add(o);return o;}function line(a,c,r=.07){let A=new THREE.Vector3(...a),B=new THREE.Vector3(...c),o=new THREE.Mesh(new THREE.CylinderGeometry(r,r,A.distanceTo(B),16),m);o.position.copy(A.clone().add(B).multiplyScalar(.5));o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.sub(A).normalize());g.add(o);}for(let s of [-1,1])for(let i=0;i<5;i++){let x=s*(3.4+i*.23);line([x,0,-2.9],[x,11,-2.9],i%2?.06:.095);for(let j=0;j<12;j++)b(x,j*.9+.3,-2.9,.2,.07,.24); }for(let s of [-1,1])for(let j=0;j<7;j++){b(s*3.85,j*1.5+.5,-2.8,1.65,.12,.28,w);b(s*4.65,j*1.5+.75,-2.8,.16,.6,.28,w);}for(let x=-5;x<=5;x+=1.6){b(x,5.5,-3.72,.12,11,.15,w);for(let j=0;j<5;j++){b(x+.7,j*2.2+1,-3.7,1.3,2.05,.09,w);b(x+.7,j*2.2+1.4,-3.63,1.3,.5,.05,y);}}b(0,6,-3.4,3.4,3.8,.3);for(let r of [1.38,1.57]){let o=new THREE.Mesh(new THREE.TorusGeometry(r,.09,12,64),r>1.5?y:m);o.position.set(0,6,-3.13);g.add(o);}let disk=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,.08,64),w);disk.rotation.x=Math.PI/2;disk.position.set(0,6,-3.2);g.add(disk);for(let i=0;i<12;i++){let a=i*Math.PI/6;b(Math.cos(a)*1.65,6+Math.sin(a)*1.65,-3.1,.08,.08,.08,w);}const pts=[[-2.5,9.1,-.6],[-2.5,9.8,-.6],[-1.8,10.5,-.6],[1.8,10.5,-.6],[2.5,9.8,-.6],[2.5,9.1,-.6]];for(let i=0;i<5;i++){let A=new THREE.Vector3(...pts[i]),B=new THREE.Vector3(...pts[i+1]);let o=b(...A.clone().add(B).multiplyScalar(.5).toArray(),.25,A.distanceTo(B),.32);o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.sub(A).normalize());}b(0,9.15,-.6,5,.2,.3);for(let i=0;i<14;i++){let x=(i%5-2)*1.6,z=-2+Math.floor(i/5)*1.7,h=.4+(i*7%9)*.18;b(x,h/2,z,1.2,h,1);b(x,h+.04,z,1.3,.08,1.1);}return g;}",
+    "mount": "floor",
+    "params": {},
+    "language": "three-module",
+    "code_sha256": "sha256-88cb84ea6b87a58c11dec77fee0070ccd7b13450d219786107fd3cc6997896e3",
+    "lib_version": 1,
+    "params_schema": {},
+    "contract_version": 1
+  },
+  "name_hint": "工业舱细节"
+}

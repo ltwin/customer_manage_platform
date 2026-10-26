@@ -1,0 +1,812 @@
+{
+  "environment": {
+    "fog": null,
+    "sky": {
+      "kind": "color",
+      "color": "#343c57"
+    },
+    "ambient": {
+      "color": "#b6c1e6",
+      "intensity": 0.65
+    }
+  },
+  "render": {
+    "mode": "lit",
+    "engine": "realtime_gi",
+    "resolution": "2k",
+    "exposure_ev": 0.5,
+    "exposure_mode": "ambient",
+    "exposure_ev100": 15,
+    "exposure_compensation": 0
+  },
+  "objects": [
+    {
+      "id": "sobj_uPh3clTnpYygRkkrYAh4f",
+      "kind": "primitive",
+      "name": "地面",
+      "order": 0,
+      "locked": true,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "size": 40
+        },
+        "builtin": "ground@1"
+      },
+      "transform": {
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000001",
+      "kind": "primitive",
+      "name": "后墙主体",
+      "order": 1,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          6,
+          5.5,
+          0.15
+        ],
+        "position": [
+          0,
+          0.102831,
+          -4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000002",
+      "kind": "primitive",
+      "name": "左侧墙",
+      "order": 2,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          0.15,
+          5,
+          5
+        ],
+        "position": [
+          -5.7,
+          0.102831,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000003",
+      "kind": "primitive",
+      "name": "右侧墙",
+      "order": 3,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          0.15,
+          5,
+          5
+        ],
+        "position": [
+          5.7,
+          0.102831,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000004",
+      "kind": "primitive",
+      "name": "顶部横梁",
+      "order": 4,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          6.2,
+          0.35,
+          0.45
+        ],
+        "position": [
+          0,
+          8.702831,
+          -0.6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#272f40",
+            "roughness": 0.48
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000005",
+      "kind": "primitive",
+      "name": "中层横梁",
+      "order": 5,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          6.1,
+          0.12,
+          0.25
+        ],
+        "position": [
+          0,
+          3.802831,
+          -1.7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#3e4758",
+            "roughness": 0.55
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000006",
+      "kind": "primitive",
+      "name": "工业地台",
+      "order": 6,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          5.4,
+          0.5,
+          5.2
+        ],
+        "position": [
+          0,
+          -0.897169,
+          1.3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#333947",
+            "roughness": 0.65
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000007",
+      "kind": "primitive",
+      "name": "中央高台",
+      "order": 7,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          1.4,
+          0.35,
+          1.3
+        ],
+        "position": [
+          0,
+          0.102831,
+          1.2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#3b4150",
+            "roughness": 0.6
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000010",
+      "kind": "primitive",
+      "name": "左主立柱",
+      "order": 10,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          0.35,
+          5,
+          0.35
+        ],
+        "position": [
+          -4.7,
+          0.102831,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#535c70",
+            "metalness": 0.4,
+            "roughness": 0.55
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000011",
+      "kind": "primitive",
+      "name": "右主立柱",
+      "order": 11,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          0.35,
+          5,
+          0.35
+        ],
+        "position": [
+          4.7,
+          0.102831,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#535c70",
+            "metalness": 0.4,
+            "roughness": 0.55
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000012",
+      "kind": "primitive",
+      "name": "左后墙面板",
+      "order": 12,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          1.4,
+          1.4,
+          0.08
+        ],
+        "position": [
+          -2,
+          2.102831,
+          -3.82
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000013",
+      "kind": "primitive",
+      "name": "右后墙面板",
+      "order": 13,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          1.4,
+          1.4,
+          0.08
+        ],
+        "position": [
+          2,
+          2.102831,
+          -3.82
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000014",
+      "kind": "primitive",
+      "name": "前景左台阶",
+      "order": 14,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          1.3,
+          0.3,
+          0.8
+        ],
+        "position": [
+          -3.2,
+          0.102831,
+          2.7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#474b59",
+            "roughness": 0.65
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000015",
+      "kind": "primitive",
+      "name": "前景右台阶",
+      "order": 15,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "primitive": {
+        "params": {
+          "depth": 2,
+          "width": 2,
+          "height": 2
+        },
+        "builtin": "box@1"
+      },
+      "transform": {
+        "scale": [
+          1.5,
+          0.45,
+          0.8
+        ],
+        "position": [
+          3.2,
+          0.102831,
+          2.7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "main": {
+          "params": {
+            "color": "#474b59",
+            "roughness": 0.65
+          },
+          "preset": "metal@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_97zaN6l3vMrIOmbQ5Rcmd",
+      "kind": "model_instance",
+      "name": "管线、环形舱门与桁架",
+      "model": {
+        "content_revision_id": "ccrv_c2519456-93ab-4c85-a223-6dae24d86204"
+      },
+      "order": 16,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "transform": {
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "position": [
+          0,
+          0.102831,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "wall": {
+          "params": {
+            "color": "#a2a8bb",
+            "metalness": 0.25,
+            "roughness": 0.6
+          },
+          "preset": "paint@1"
+        },
+        "steel": {
+          "params": {
+            "color": "#555d6d",
+            "metalness": 0.65,
+            "roughness": 0.42
+          },
+          "preset": "metal@1"
+        },
+        "yellow": {
+          "params": {
+            "color": "#afa34b",
+            "metalness": 0.2,
+            "roughness": 0.6
+          },
+          "preset": "paint@1"
+        }
+      }
+    },
+    {
+      "id": "sobj_000000000000000000022",
+      "kind": "camera",
+      "name": "参考构图｜低机位",
+      "order": 22,
+      "camera": {
+        "far": 1000,
+        "iso": 100,
+        "near": 0.1,
+        "focus": 10,
+        "label": "",
+        "aspect": "2:3",
+        "f_stop": 2.8,
+        "focal_mm": 30,
+        "sensor_mm": [
+          36,
+          24
+        ],
+        "shutter_s": 0.00025,
+        "exposure_mode": "ambient",
+        "depth_of_field": false,
+        "focus_object_id": "",
+        "exposure_compensation": 0
+      },
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "transform": {
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "position": [
+          0,
+          2.702831,
+          10.5
+        ],
+        "rotation": [
+          0.1059069793555586,
+          -0.007408998541633002,
+          -0.06936298629772424,
+          0.9919262042088882
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000020",
+      "kind": "light",
+      "name": "左上冷白主光",
+      "light": {
+        "type": "directional",
+        "color": "#c2d4ff",
+        "intensity": 2.5,
+        "cast_shadow": true
+      },
+      "order": 20,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "transform": {
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "position": [
+          -4,
+          10.102831,
+          4
+        ],
+        "rotation": [
+          -0.3382060955911995,
+          -0.240440435142186,
+          -0.08981551139088792,
+          0.905393951806166
+        ]
+      }
+    },
+    {
+      "id": "sobj_000000000000000000021",
+      "kind": "light",
+      "name": "右下橙色反光",
+      "light": {
+        "type": "point",
+        "color": "#ff702e",
+        "decay": 2,
+        "distance": 15,
+        "intensity": 38,
+        "cast_shadow": true
+      },
+      "order": 21,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "transform": {
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "position": [
+          3,
+          2.002831,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sobj_u1UCnmG9ScerMUKDcH0qW",
+      "kind": "model_instance",
+      "name": "高墙延伸与前景斜撑",
+      "model": {
+        "content_revision_id": "ccrv_0407c464-caff-45fd-9880-c54b6e9a409c"
+      },
+      "order": 23,
+      "locked": false,
+      "visible": true,
+      "parent_id": null,
+      "transform": {
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "position": [
+          0,
+          0.102831,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "material_slots": {
+        "dark": {
+          "params": {
+            "color": "#343b4c",
+            "metalness": 0.5,
+            "roughness": 0.55
+          },
+          "preset": "metal@1"
+        },
+        "wall": {
+          "params": {
+            "color": "#a2a8bb",
+            "metalness": 0.25,
+            "roughness": 0.6
+          },
+          "preset": "paint@1"
+        },
+        "yellow": {
+          "params": {
+            "color": "#afa34b",
+            "metalness": 0.2,
+            "roughness": 0.6
+          },
+          "preset": "paint@1"
+        }
+      }
+    }
+  ]
+}

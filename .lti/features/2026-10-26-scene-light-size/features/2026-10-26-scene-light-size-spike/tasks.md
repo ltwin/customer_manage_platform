@@ -2,8 +2,13 @@
 
 ## 1. 参考场景与基线
 
-- [ ] 1.1 参考场景：在 `frontend/scripts/fixtures/scene-reference/` 下新增 `frame-two-lights.json` 和 `occluder-wall.json`，内容按 design「参考场景」：`frame-two-lights` 复制文档 `cwdoc_98de9f98-…`，只读开发库，两个模型实例作为代码模型放进固定数据，走不通时改存 GLB。在 `creative-scene.e2e.mjs` 里新增 `lightReferenceNames`，并入「每个参考场景都能打开」的检查和 `SCENE_E2E_BASELINE` 用例。完成判据：定向运行这项检查通过（AC-S0-1）；`frame-two-lights` 的 `lit` 导出与原场景在编辑器里的画面一致。
-- [ ] 1.2 基线：在参考设备上运行 `SCENE_E2E_BASELINE`，把两个新场景在 `workbench` 和 `realtime_gi` 下的 `lit` 导出存到 `discovery/research/baseline/`，`baseline.md` 记录设备和版本（AC-S0-2）。
+- [x] 1.1 参考场景：在 `frontend/scripts/fixtures/scene-reference/` 下新增 `frame-two-lights.json` 和 `occluder-wall.json`，内容按 design「参考场景」：`frame-two-lights` 复制文档 `cwdoc_98de9f98-…`，只读开发库，两个模型实例作为代码模型放进固定数据，走不通时改存 GLB。在 `creative-scene.e2e.mjs` 里新增 `lightReferenceNames`，并入「每个参考场景都能打开」的检查和 `SCENE_E2E_BASELINE` 用例。完成判据：定向运行这项检查通过（AC-S0-1）；`frame-two-lights` 的 `lit` 导出与原场景在编辑器里的画面一致。
+  - 结果：11 个参考场景都通过（207 s）；`frame-two-lights` 的导出与 owner 的截图同一画面，带同样的硬边明暗带。
+  - 实施时调整（design「挂载点」）：
+    - 模型放在场景同名目录下，由 `referenceScene` 按原修订 ID 载入，`seedModel` 新增可选的 `rev`；
+    - `occluder-wall` 的灯改从左上后方 (−5.5, 3.6, 4) 斜照，三块板放在不同的位置。布局由脚本校验：板、影子和高光点在画面里互不遮挡，也都不越出墙面。脚本快照见 `discovery/research/occluder-wall-layout.py`。
+    - 只读开发库和 OSS 时，连接串取自本机 `.env`。
+- [x] 1.2 基线：在参考设备上运行基线用例，把两个新场景在 `workbench` 和 `realtime_gi` 下的 `lit` 导出存到 `discovery/research/baseline/`，`baseline.md` 记录设备和版本（AC-S0-2）。实施时调整：改用单独的 `SCENE_E2E_LIGHT_BASELINE`，不重跑旧场景。结果：4 张导出共 12 MB，见 `baseline.md`；第一次运行有一次 `realtime_gi` 导出偶发卡住，重跑两次都正常，已记录。
 
 ## 2. 穿刺页面与参考解
 

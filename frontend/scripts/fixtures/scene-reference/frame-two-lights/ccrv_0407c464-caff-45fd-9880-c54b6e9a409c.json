@@ -1,0 +1,44 @@
+{
+  "manifest": {
+    "parts": [],
+    "slots": [
+      {
+        "id": "dark",
+        "hint": "metal"
+      },
+      {
+        "id": "wall",
+        "hint": "paint"
+      },
+      {
+        "id": "yellow",
+        "hint": "paint"
+      }
+    ],
+    "bounds": {
+      "max": [
+        5.3500000000000005,
+        15,
+        3.1400000005960464
+      ],
+      "min": [
+        -5.814999997615814,
+        0,
+        -3.900000001490116
+      ]
+    },
+    "anchors": [],
+    "triangles": 372
+  },
+  "generator": {
+    "code": "export const mount='floor'; export default function build({THREE,lib}){const g=new THREE.Group();let m=lib.material('wall','paint'),d=lib.material('dark','metal'),y=lib.material('yellow','paint');function box(x,h,z,w,a,b,mat){let o=new THREE.Mesh(new THREE.BoxGeometry(w,a,b),mat);o.position.set(x,h,z);g.add(o);return o;}for(let x=-5;x<6;x+=1.6){box(x,13,-3.8,1.5,4,.2,m);box(x,12,-3.65,1.5,.7,.08,y);box(x-.75,13,-3.5,.13,4,.32,m);}for(let s of [-1,1]){let A=new THREE.Vector3(s*5,.15,3),B=new THREE.Vector3(s*3,2.6,3);let o=box(...A.clone().add(B).multiplyScalar(.5).toArray(),.25,A.distanceTo(B),.28,d);o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.sub(A).normalize());for(let i=0;i<4;i++){box(s*(2+i*.72),.5+i*.38,-.8, .38,1+i*.76,.5,d);}}return g;}",
+    "mount": "floor",
+    "params": {},
+    "language": "three-module",
+    "code_sha256": "sha256-9d6a8ba1fdc7165858809840d5faada3b7debede00af2b830daa474282969c90",
+    "lib_version": 1,
+    "params_schema": {},
+    "contract_version": 1
+  },
+  "name_hint": "高墙延伸与前景斜撑"
+}
