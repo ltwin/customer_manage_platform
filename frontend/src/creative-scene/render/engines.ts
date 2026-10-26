@@ -82,9 +82,28 @@ const encodeNs: Record<'image/png' | 'image/jpeg', number> = { 'image/png': 40, 
  */
 const worldNs = 10
 
-/** How long a picture should take on the reference device, in ms; world: it draws the world-space layer. */
+/** The frames a picture warms its probes for before it draws (S2 design「导出预热与时限」). */
+export const PROBE_WARMUP = 64
+
+/**
+ * A picture's probes once warm (S2 design「导出预热与时限」, S2-U9): updated
+ * every frame it draws as well, or frozen as the warm-up left them. Updated
+ * till the owner has the comparison: the side whose picture does not lose.
+ */
+export const PICTURE_AFTER_WARMUP: 'update' | 'freeze' = 'update'
+
+/**
+ * A probe level's update a frame on the reference device, whatever the picture's size (S2 tasks 5.4): 4.3–6.3 ms
+ * in the reference scenes' warm-ups, about doubled as worldNs is. Counted at the most levels there are
+ * (cascade.ts LEVELS_MAX): the limit is set before the scene's are known.
+ */
+const probeMsPerLevel = 10
+const probeLevels = 5
+
+/** How long a picture should take on the reference device, in ms; world: it draws the world-space layer, and its probes. */
 export function estimateMs(engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg', world: boolean): number {
-  return (width * height * (frames * (frameNs[engine] + (world ? worldNs : 0)) + encodeNs[type])) / 1e6
+  const probes = world ? probeMsPerLevel * probeLevels * (PROBE_WARMUP + (PICTURE_AFTER_WARMUP === 'update' ? frames : 0)) : 0
+  return (width * height * (frames * (frameNs[engine] + (world ? worldNs : 0)) + encodeNs[type])) / 1e6 + probes
 }
 
 /** A slow device gets eight times the reference's time, and never less than these. */

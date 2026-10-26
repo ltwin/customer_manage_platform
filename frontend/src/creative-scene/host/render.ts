@@ -3,10 +3,9 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { drawnFrames, effectiveEngine, engineOf, traceWaitMs, type Use } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { applyExposure, preExposure, sceneLowSun, sceneLux } from '../world/exposure.ts'
-import { PROBE_WARMUP } from '../render/probes/cascade.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, gpuTestHooks, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
@@ -208,7 +207,16 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         }
         try {
           // The probes from a cold start before the first frame (S2 design「导出预热与时限」).
-          if (picture) picture.warm(camera, frame, PROBE_WARMUP)
+          if (picture) {
+            const started = performance.now()
+            picture.warm(camera, frame, PROBE_WARMUP)
+            const warmed = picture.probeStats
+            if (warmed) {
+              await g.settle()
+              gpuTestHooks.lastWarm = { ms: performance.now() - started, levels: warmed.levels }
+              if (gpuTestHooks.probeDigest) gpuTestHooks.lastWarm.digests = [await digestProbes(picture)]
+            } else gpuTestHooks.lastWarm = null
+          }
           for (let i = 1; i < frames; i++) {
             g.advanceFrame()
             picture!.render(camera, frame)
@@ -232,6 +240,11 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
             options.type,
             options.type === 'image/jpeg' ? (options.quality ?? jpegQuality) : undefined,
           )
+          if (picture?.probeStats?.drawn) {
+            gpuTestHooks.picturesWithProbes++
+            if (gpuTestHooks.lastWarm) gpuTestHooks.lastWarm.after = picture.probeStats
+            if (gpuTestHooks.lastWarm?.digests) gpuTestHooks.lastWarm.digests.push(await digestProbes(picture))
+          }
           // The e2e's per-pixel reference (S2 AC-S2-2) on the probes this picture drew with, at its exposure.
           const asked = gpuTestHooks.probeRegions
           const world = asked && !asked.result ? picture?.world : null
@@ -259,4 +272,19 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     close()
     throw err
   }
+}
+
+/** e2e only (gpuTestHooks.probeDigest): an FNV-1a hash of each of a picture's probe buffers as read back. */
+async function digestProbes(picture: SceneRenderer): Promise<string> {
+  const v = picture.heldProbes
+  if (!v) return ''
+  const read = await v.inspect()
+  return [read.irradiance, read.offsets, read.cells, read.ages]
+    .map((a) => {
+      const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
+      let h = 0x811c9dc5
+      for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193) >>> 0
+      return h.toString(16)
+    })
+    .join('/')
 }

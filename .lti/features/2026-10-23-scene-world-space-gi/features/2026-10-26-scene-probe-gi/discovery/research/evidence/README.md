@@ -106,3 +106,14 @@ SCENE_E2E_ONLY="probes: AC-S2-1 and AC-S2-2" SCENE_E2E_PROBES=<目录> \
 - 大厅的两项只记录（owner 2026-10-26）。一次连跑参考场景、视频和大厅时，大厅「转动太阳」那一步页面发生了一次导航（`Execution context was destroyed`），单独重跑没有复现，原因未查。
 
 **重新生成**：`SCENE_E2E_ONLY="probes: AC-S2-3" SCENE_E2E_PROBE_EDITS=<dir> node scripts/creative-scene.e2e.mjs`，约 3 分钟；加 `SCENE_E2E_PROBE_FOLLOW_VIDEO=1` 录两段视频，加 `SCENE_E2E_PROBE_EDITS_HALL=1` 另记大厅（约 22 分钟），`=only` 只跑大厅。对照视频由两段 webm 剪成：`ffmpeg -ss 6 -i <α=0>.webm -ss 6 -i <α=0.5>.webm -filter_complex "[0:v]crop=900:640:330:100,scale=640:-2[a];[1:v]crop=900:640:330:100,scale=640:-2[b];[a][b]hstack" -c:v libx264 -pix_fmt yuv420p -crf 23 follow-compare.mp4`。
+
+## 任务 5.4：导出
+
+- `after/freeze-compare.jpg`：三个参考场景的 2K 材质光照导出，每行依次为预热后继续更新探针（现行）、冻结、两者之差 × 16；从上到下是 cornell、thin-wall、physical-noon。两张图最多差 2–9 级，超过 8 级的像素为 0.000%，与同一做法连续导出两次的差（下一条）相当。
+- `after/probes-5.4.json`：两种做法的耗时、预热耗时与级数。测的那一轮机器负载高（load 4.8–7.2），耗时比前一轮慢约 60%，只作参考，正式耗时留给 5.5。三轮的预热都是 0.82–1.23 s，三级。
+- **连续导出两次不逐像素相同**：cornell 在这一层打开时，连续导出每次都差几级，最多 6–9 级（隐藏标签页里 16 级），超过 8 级的像素为 0.0000%，差异散在整张图上。二分的结果：
+  - 两次导出的探针缓冲在预热之后和最后一帧之后逐字节相同（`gpuTestHooks.probeDigest`），探针的计算是确定的；
+  - 探针不画（`probesOff`）、屏幕命中改回原始输出，仍然不同；关掉这一层，逐像素相同；
+  - S1 的代码（a81f639c，在 S1 的 worktree 上另开 Vite）同样不同，最多 6–8 级。所以不是 S2 引入的，与 issue `scene-trace-export-repeat` 同类。mirror-board 两次相同。
+
+**重新生成**：`SCENE_E2E_ONLY="probes: 5.4" SCENE_E2E_PROBE_EXPORT=<dir> node scripts/creative-scene.e2e.mjs`，约 2 分钟，导出图写在 `<dir>` 下；`SCENE_E2E_PROBE_EXPORT_SCENES=` 跳过三个场景，`SCENE_E2E_PROBE_EXPORT_REPEAT=<n>` 连续导出 cornell n 次并逐次比较，附探针缓冲的摘要，加 `SCENE_E2E_PROBE_EXPORT_UNDRAWN=1` 不画探针、`SCENE_E2E_PROBE_EXPORT_TRACE_OFF=1` 关掉这一层。对照图：`ffmpeg -i export-<场景>-update.png -i export-<场景>-freeze.png -filter_complex "[0:v]scale=640:-2,split[a][a2];[1:v]scale=640:-2,split[b][b2];[a2][b2]blend=all_mode=difference,lutrgb=r=val*16:g=val*16:b=val*16[d];[a][b][d]hstack=3" row-<场景>.png`，三行再 `vstack`。

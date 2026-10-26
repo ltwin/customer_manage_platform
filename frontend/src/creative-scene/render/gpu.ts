@@ -318,6 +318,16 @@ export const gpuTestHooks = {
   probeAO: null as number | null,
   /** What the probes trace (render/trace/base.ts handle): the proxies, as always; 'original' at tier 1 traces the original instead, for S2's AC-S2-8. */
   probeLayer: 'proxy' as 'proxy' | 'original',
+  /** S2-U9's comparison: a picture's probes after its warm-up updated or frozen, in place of cascade.ts PICTURE_AFTER_WARMUP; null, as shipped. */
+  probeAfterWarm: null as 'update' | 'freeze' | null,
+  /** The last picture's warm-up (host/render.ts shoot): its ms, the GPU's work waited for, and the levels it warmed; null without the probes. */
+  lastWarm: null as { ms: number; levels: number; after?: unknown; digests?: string[] } | null,
+  /** The probes kept and stepped but not drawn: the layer's reflections alone (e2e only: AC-S2-4's which half). */
+  probesOff: false,
+  /** Set, and a picture digests its probes' buffers after the warm-up and after its last frame into lastWarm.digests (e2e only: AC-S2-4's which half). */
+  probeDigest: false,
+  /** Lit pictures drawn with the probes, over the page's life (host/render.ts shoot): an export drew them. */
+  picturesWithProbes: 0,
   /** S2-U5's comparison: the viewport's probes keep this much history in the A0 updates after an edit (render/probes/kernels.ts); null, none, as shipped. */
   probeFollow: null as number | null,
   /** The viewport asks for no frame of its own while set: the e2e draws them one at a time (redrawViewport), reading between (AC-S2-3). */

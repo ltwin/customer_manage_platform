@@ -337,12 +337,14 @@ test('time limits follow what a picture costs: pixels, frames, encoding; eight t
   assert.equal(jobRenderCapMs, 25 * 60_000, 'within the job’s 30 minutes')
 })
 
-test('a picture drawing the world-space layer gets its share of time; render_view as if it drew it, and waited the most for it (S1 tasks 6.2)', async () => {
-  const { drawnFrames, estimateMs, shotBudgetMs, traceWaitMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+test('a picture drawing the world-space layer gets its share of time, its probes too; render_view as if it drew it, and waited the most for it (S1 tasks 6.2, S2 tasks 5.4)', async () => {
+  const { drawnFrames, estimateMs, PICTURE_AFTER_WARMUP, PROBE_WARMUP, shotBudgetMs, traceWaitMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
   const frames = drawnFrames('realtime_gi', 'export')
-  // 10 ns a pixel and frame: about twice the most the reference scenes' 2K lit exports took (3.4–4.7 ns).
+  // 10 ns a pixel and frame: about twice the most the reference scenes' 2K lit exports took (3.4–4.7 ns). The probes:
+  // 10 ms a level and frame at five levels, the warm-up's and, updated after it, every frame drawn's.
+  const probes = 10 * 5 * (PROBE_WARMUP + (PICTURE_AFTER_WARMUP === 'update' ? frames : 0))
   const share = (w: number, h: number) => estimateMs('realtime_gi', w, h, frames, 'image/png', true) - estimateMs('realtime_gi', w, h, frames, 'image/png', false)
-  assert.ok(Math.abs(share(2048, 1365) - (2048 * 1365 * frames * 10) / 1e6) < 1e-6, `${share(2048, 1365)}`)
+  assert.ok(Math.abs(share(2048, 1365) - (2048 * 1365 * frames * 10) / 1e6 - probes) < 1e-6, `${share(2048, 1365)}`)
   // Above the floor the limit grows by eight times the share.
   const grown = shotBudgetMs('realtime_gi', 8192, 5461, frames, 'image/png', true) - shotBudgetMs('realtime_gi', 8192, 5461, frames, 'image/png', false)
   assert.ok(Math.abs(grown - 8 * share(8192, 5461)) < 1e-6, `${grown}`)

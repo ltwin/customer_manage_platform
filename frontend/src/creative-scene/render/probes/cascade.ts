@@ -158,8 +158,8 @@ export const PICTURE: Hysteresis = { A0: 32, alphaMax: 1 }
  */
 export const AMBIENT_FILL = 1
 
-/** The frames a picture warms its probes for before it draws (S2 design「导出预热与时限」). */
-export const PROBE_WARMUP = 64
+/** A picture's warm-up and what its probes do after (engines.ts, where its time limit counts them). */
+export { PICTURE_AFTER_WARMUP, PROBE_WARMUP } from '../engines.ts'
 
 /** The history's weight at an edit age; a slot with no data yet (data age 0) takes none whatever its edit age. */
 export const alphaOf = (editAge: number, h: Hysteresis) => (editAge < h.A0 ? 0 : Math.min(h.alphaMax, 1 - 1 / (editAge - h.A0 + 2)))

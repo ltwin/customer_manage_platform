@@ -187,8 +187,8 @@ export class ProbeVolume {
   }
 
   /** For the e2e (gpu.ts probeStats): the levels allocated and drawn, each one's updates since it was cleared and period, warm. */
-  get stats(): { serial: number; allocated: number; levels: number; updates: number[]; periods: number[]; warm: boolean } {
-    return { serial: this.serial, allocated: this.allocated, levels: this.levels, updates: this.updates.slice(0, this.allocated), periods: this.periods.slice(0, this.allocated), warm: this.warm }
+  get stats(): { serial: number; allocated: number; levels: number; updates: number[]; periods: number[]; warm: boolean; edits: number; relocations: number } {
+    return { serial: this.serial, allocated: this.allocated, levels: this.levels, updates: this.updates.slice(0, this.allocated), periods: this.periods.slice(0, this.allocated), warm: this.warm, edits: this.edits, relocations: this.relocations }
   }
 
   /** The kernels, built once, and again if the scene gained an environment since (hit.ts takes it as it builds). */

@@ -13,7 +13,7 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
-import { AMBIENT_FILL, viewportSettleFrames } from './probes/cascade.ts'
+import { AMBIENT_FILL, PICTURE_AFTER_WARMUP, viewportSettleFrames } from './probes/cascade.ts'
 import { ProbeVolume } from './probes/volume.ts'
 import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
 import { hitShading } from './trace/hit.ts'
@@ -481,6 +481,8 @@ export class SceneRenderer {
   private probes: ProbeVolume | null = null
   /** The viewport's probes for more levels, warming in the background while these draw (S2 design「级数」). */
   private growing: ProbeVolume | null = null
+  /** A picture's probes warmed (warm): frozen from then on, if pictures freeze them (cascade.ts PICTURE_AFTER_WARMUP). */
+  private warmed = false
   /** Frames this renderer has stepped its probes for: their rays' turn and random numbers come from it alone (P3). */
   private frames = 0
 
@@ -711,6 +713,11 @@ export class SceneRenderer {
     return viewportSettleFrames(engine, drawn !== null, drawn?.levels ?? 0, drawn?.periods ?? [])
   }
 
+  /** The probes this renderer holds, drawn or not (e2e: a picture's after its warm-up, host/render.ts). */
+  get heldProbes(): ProbeVolume | null {
+    return this.probes
+  }
+
   /** The probes and the layer the last render() drew with (e2e, checks.ts probeCheck); null without the probes. */
   get world(): { volume: ProbeVolume; handle: TraceHandle } | null {
     const handle = this.trace().handle()
@@ -792,6 +799,7 @@ export class SceneRenderer {
         this.trace().sync()
         probes.step(this.frames++, camera)
       }
+      this.warmed = true
     } finally {
       preExposure.value = 1
     }
@@ -819,7 +827,7 @@ export class SceneRenderer {
     }
     // The probes once warm: the viewport warms them in the background first, drawing as before (S2 design「就绪的那一刻」).
     const probes = look.trace ? this.probesFor(look.trace, camera) : this.dropProbes()
-    if (probes?.warm) look.world = probes
+    if (probes?.warm && !gpuTestHooks.probesOff) look.world = probes
     const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()
@@ -862,7 +870,7 @@ export class SceneRenderer {
     if (gi) {
       if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
       this.trace().sync()
-      if (probes) {
+      if (probes && !(this.warmed && (gpuTestHooks.probeAfterWarm ?? PICTURE_AFTER_WARMUP) === 'freeze')) {
         // A cold start's levels every frame till they are warm, the viewport asking for frames meanwhile.
         const warming = !probes.warm
         const frame = this.frames++

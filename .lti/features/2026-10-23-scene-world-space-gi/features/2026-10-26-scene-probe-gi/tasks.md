@@ -136,7 +136,7 @@
   - 剩下一处小瑕疵：镜中斜看的地面上有一行零星的亮点，是屏幕命中带里几个改走世界追踪的像素，后者算进了斜看的菲涅耳高光
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
 
-  进行中（2026-10-26），数值在 `evidence/after/probes-5.3.json`，视频在 `evidence/after/follow-compare.mp4`。等 owner 定两件事：关灯的读法、S2-U5 用哪种跟随：
+  进行中（2026-10-26），数值在 `evidence/after/probes-5.3.json`，视频在 `evidence/after/follow-compare.mp4`。owner 看过视频说「效果还OK」，S2-U5 按现行的 α = 0；关灯那一项的读法 owner 没有表态，用例仍按字面判定，留到验收时定：
   - 视口改用 `SceneRenderer.settleFrames`（有探针时为 `viewportSettleFrames`，否则仍是 12）。后台预热期间持续请求帧，5.2a 已经做了；
   - 新增 e2e `probes: AC-S2-3`（`SCENE_E2E_PROBE_EDITS=<dir>`），测法与 S0 相同，见 evidence README。结果：
 
@@ -154,6 +154,13 @@
   - 测试钩子：`probeFollow`（跟随期 α，只给 S2-U5 的对照用，内核里多一个 uniform，缺省为 0）、`probeView`、`probeMean`、`viewportHold`、`invalidateViewport`、`viewportSettle`；e2e 的 `viewportStill` 改为等视口停在自己的帧数上；
   - 排查中顺带确认：拖动把立方体推出房间时，包围盒变大，探针体会按 5.2a 的规则扩级，期间一直画着旧的探针，不是编辑清了数据
 - [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
+
+  进行中（2026-10-26），图在 `evidence/after/freeze-compare.jpg`，数值在 `evidence/after/probes-5.4.json`：
+  - `warm` 与 `shoot` 里的调用在 4.x 已接好；这次加了「继续更新 / 冻结」的常数开关（`engines.ts` `PICTURE_AFTER_WARMUP`，缺省继续更新）和测试钩子 `probeAfterWarm`；
+  - 时限：`estimateMs` 在 `world` 时加上探针那一项，每级每帧 10 ms（预热实测 4.3–6.3 ms，与 `worldNs` 一样约取两倍），按 5 级、预热 64 帧加继续更新时的每一帧计。`shotBudgetMs`、`exportShots.ts` 随之变化；`viewBudgetMs` 仍在 60 s 的下限上。局部调整：`drawnFrames` 不变，预热的帧不画，只计入耗时；`PROBE_WARMUP` 移到 `engines.ts`（`cascade.ts` 转出），避免与 `cascade.ts` 循环引用；
+  - S2-U9：两种做法的画面差最多 2–9 级，超过 8 级的像素为 0.000%，肉眼看不出；冻结省下 0.6–1.6 s（机器负载高，只作参考，正式耗时在 5.5）。缺省仍是继续更新，等 owner 定；
+  - **AC-S2-4 不过**：`trace: AC-S1-4` 加了 cornell 的三台摄像机后，两次导出每张都差几级。二分查明探针是确定的，S1 的代码上 cornell 同样不一致，是 S1 遗留的 `scene-trace-export-repeat`，已补进该 issue。mirror-board 的 9 张逐像素相同，导出都画了探针（`gpuTestHooks.picturesWithProbes`）。要 owner 定 AC-S2-4 怎么判；
+  - 新增 e2e `probes: 5.4`（`SCENE_E2E_PROBE_EXPORT=<dir>`）；测试钩子 `lastWarm`、`picturesWithProbes`、`probeDigest`、`probesOff`
 - [ ] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图
 
 ## 6. 提示与指纹

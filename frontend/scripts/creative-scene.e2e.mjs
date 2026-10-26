@@ -7129,12 +7129,15 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-4, two exports in a h
     const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
     await tab.background()
     const runs = {}
+    let probed = 0
     for (const off of [false, true]) {
       await tab.evaluate(`window.__sceneGPU.traceOff = ${off}`)
       for (const n of [1, 2]) {
         const keep = `${off ? 'off' : 'on'}${n}`
         const started = Date.now()
+        const was = await tab.evaluate('window.__sceneGPU.picturesWithProbes')
         runs[keep] = await tab.evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)}, ${JSON.stringify(keep)})`, 900_000)
+        if (!off) probed += (await tab.evaluate('window.__sceneGPU.picturesWithProbes')) - was
         console.log(`  ${keep}: ${runs[keep].length} images in ${Date.now() - started} ms`)
       }
     }
@@ -7153,6 +7156,21 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-4, two exports in a h
     assert.ok(lit(runs.on1).every((i, k) => i.hash !== lit(runs.off1)[k].hash), 'lit with the layer is not lit without it')
     off.forEach((d, i) => assert.ok(d.max <= 1 || d.over <= 0.0001, `without the layer, image ${i}: largest difference ${d.max}`))
     assert.deepEqual(runs.on2, runs.on1, `with the layer, twice the same pixel for pixel (largest difference ${Math.max(...on.map((d) => d.max))})`)
+    // AC-S2-4: the probes in those lit pictures, and cornell's three cameras likewise, lit alone.
+    assert.equal(probed, lit(runs.on1).length * 2, `every lit picture with the layer drew the probes: ${probed}`)
+    const cornell = new SceneServer()
+    referenceScene(cornell, 'cornell', realtimeGI)
+    const cshot = cornell.scene.objects.find((o) => o.kind === 'camera')
+    for (const [i, dx] of [[1, -0.8], [2, 0.8]]) cornell.scene.objects.push({ ...structuredClone(cshot), id: `sobj_cam${String(i).padStart(18, '0')}`, name: `cam${i}`, order: 100 + i, transform: { ...cshot.transform, position: [cshot.transform.position[0] + dx, cshot.transform.position[1], cshot.transform.position[2]] } })
+    const cdoc = { scene: cornell.scene, models: {}, revision: '1' }
+    const cplan = { cameraObjectIDs: cornell.scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['lit'] }
+    await tab.evaluate('window.__sceneGPU.traceOff = false')
+    const before = await tab.evaluate('window.__sceneGPU.picturesWithProbes')
+    for (const n of [1, 2]) runs[`cornell${n}`] = await tab.evaluate(`window.__export(${JSON.stringify(cdoc)}, ${JSON.stringify(cplan)}, "cornell${n}")`, 900_000)
+    const cdiff = await differ('cornell1', 'cornell2')
+    assert.equal(await tab.evaluate('window.__sceneGPU.picturesWithProbes') - before, 6, 'cornell: every picture drew the probes')
+    assert.deepEqual(runs.cornell2, runs.cornell1, `cornell, twice the same pixel for pixel (largest difference ${Math.max(...cdiff.map((d) => d.max))})`)
+    assert.equal(await tab.evaluate('document.visibilityState'), 'hidden', 'still in the background')
     assert.deepEqual(tab.errors, [], tab.errors.join('\n'))
   } finally {
     await tab.close()
@@ -9872,6 +9890,105 @@ if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the 
     record.left_wall_sweep = { ...sweep, ratios: sweep.views.map((s) => s.mean / mean), perPoint, perPointRange: [Math.min(...pointRatios), Math.max(...pointRatios)] }
     console.log(`  AC-S2-1: the left wall at 100° over 45° ${record.lit_wall_in_view.ratio.toFixed(3)}; swept, each view over their mean ${record.left_wall_sweep.ratios.map((r) => r.toFixed(3)).join(', ')}; each point over its own mean ${record.left_wall_sweep.perPointRange.map((r) => r.toFixed(3)).join('–')}`)
     if (dir) await writeFile(`${dir}/probes.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBE_EXPORT (=<dir>: export.json and the pictures there): S2-U9 and the time limit's probes (S2 task
+// 5.4). Each reference scene's 2K lit export with the probes updated every frame after the warm-up (as shipped) and
+// frozen as it left them (gpu.ts probeAfterWarm): the times, the warm-up's (gpu.ts lastWarm), and how far the two
+// pictures are apart. Each first exported once more, its shaders compiled. Within the estimate engines.ts gives.
+if (process.env.SCENE_E2E_PROBE_EXPORT) await check('probes: 5.4, a picture’s probes updated or frozen after the warm-up: times and pictures, within the estimate', async () => {
+  const dir = process.env.SCENE_E2E_PROBE_EXPORT === '1' ? null : process.env.SCENE_E2E_PROBE_EXPORT
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await page.goto(`${base}/.scene-hidden-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const { frames, estimate } = await page.evaluate(async () => {
+      const e = await import('/src/creative-scene/render/engines.ts')
+      const frames = e.drawnFrames('realtime_gi', 'export')
+      return { frames, estimate: e.estimateMs('realtime_gi', 2048, 1365, frames, 'image/png', true) }
+    })
+    const timed = (doc, plan, keep, after) => page.evaluate(async ([doc, plan, keep, after, off]) => {
+      window.__sceneGPU.probeAfterWarm = after
+      window.__sceneGPU.traceOff = off
+      const drawn = window.__sceneGPU.picturesWithProbes
+      const started = performance.now()
+      await window.__export(doc, plan, keep)
+      return { ms: performance.now() - started, warm: window.__sceneGPU.lastWarm, withProbes: window.__sceneGPU.picturesWithProbes - drawn }
+    }, [doc, plan, keep, after, process.env.SCENE_E2E_PROBE_EXPORT_TRACE_OFF === '1'])
+    const rows = []
+    // Every scene measured before the estimate is judged.
+    const over = []
+    // SCENE_E2E_PROBE_EXPORT_SCENES=<a,b>: those scenes alone; none with an empty list.
+    for (const name of (process.env.SCENE_E2E_PROBE_EXPORT_SCENES ?? 'cornell,thin-wall,physical-noon').split(',').filter(Boolean)) {
+      const server = new SceneServer()
+      referenceScene(server, name, realtimeGI)
+      server.scene.render.resolution = '2k'
+      const doc = { scene: server.scene, models: {}, revision: '1' }
+      const plan = { cameraObjectIDs: [server.scene.objects.find((o) => o.kind === 'camera').id], passes: ['lit'] }
+      await timed(doc, plan, `${name}-first`, 'update')
+      const update = await timed(doc, plan, `${name}-update`, 'update')
+      const freeze = await timed(doc, plan, `${name}-freeze`, 'freeze')
+      const [d] = await page.evaluate(([a, b]) => window.__differ(a, b), [`${name}-update`, `${name}-freeze`])
+      const perFrame = (update.ms - freeze.ms) / (frames - 1)
+      const row = { name, frames, updateMs: Math.round(update.ms), freezeMs: Math.round(freeze.ms), warm: update.warm, probeMsPerFrame: Number(perFrame.toFixed(2)), apart: d, estimateMs: Math.round(estimate) }
+      rows.push(row)
+      console.log(`  ${name}: updated ${row.updateMs} ms, frozen ${row.freezeMs} ms (${perFrame.toFixed(1)} ms a frame drawn); the warm-up ${Math.round(update.warm.ms)} ms over ${update.warm.levels} levels; apart at most ${d.max}, ${(d.over * 100).toFixed(3)} % by more than 8; the estimate ${row.estimateMs} ms`)
+      assert.equal(update.withProbes, 1, `${name}: the picture drew the probes`)
+      if (update.ms > estimate) over.push(`${name}: ${row.updateMs} ms, over the estimate ${row.estimateMs}`)
+      if (dir) {
+        for (const k of ['update', 'freeze']) {
+          const b64 = await page.evaluate(async (key) => {
+            const bytes = new Uint8Array(await window.__kept[key][0].arrayBuffer())
+            let s = ''
+            for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+            return btoa(s)
+          }, `${name}-${k}`)
+          await writeFile(`${dir}/export-${name}-${k}.png`, Buffer.from(b64, 'base64'))
+        }
+      }
+    }
+    if (dir) await writeFile(`${dir}/export.json`, `${JSON.stringify({ machine: machineInfo(), rows }, null, 2)}\n`)
+    // SCENE_E2E_PROBE_EXPORT_REPEAT=n: cornell's camera exported n times, each against the one before (AC-S2-4).
+    if (process.env.SCENE_E2E_PROBE_EXPORT_REPEAT) await page.evaluate(([off]) => { window.__sceneGPU.probeDigest = true; window.__sceneGPU.probesOff = off }, [process.env.SCENE_E2E_PROBE_EXPORT_UNDRAWN === '1'])
+    for (let n = 0; n < Number(process.env.SCENE_E2E_PROBE_EXPORT_REPEAT ?? 0); n++) {
+      const server = new SceneServer()
+      referenceScene(server, 'cornell', realtimeGI)
+      const doc = { scene: server.scene, models: {}, revision: '1' }
+      const plan = { cameraObjectIDs: [server.scene.objects.find((o) => o.kind === 'camera').id], passes: ['lit'] }
+      const r = await timed(doc, plan, `repeat${n}`, 'update')
+      const [d] = n === 0 ? [{ max: 0, over: 0 }] : await page.evaluate(async ([a, b]) => {
+        const pixels = async (blob) => {
+          const bitmap = await createImageBitmap(blob)
+          const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+          const g = c.getContext('2d')
+          g.drawImage(bitmap, 0, 0)
+          return { data: g.getImageData(0, 0, c.width, c.height).data, width: c.width, height: c.height }
+        }
+        const [p, q] = await Promise.all([pixels(window.__kept[a][0]), pixels(window.__kept[b][0])])
+        let max = 0
+        let count = 0
+        const box = [Infinity, Infinity, -1, -1]
+        for (let k = 0; k < p.data.length; k += 4) {
+          const v = Math.max(Math.abs(p.data[k] - q.data[k]), Math.abs(p.data[k + 1] - q.data[k + 1]), Math.abs(p.data[k + 2] - q.data[k + 2]))
+          if (v === 0) continue
+          max = Math.max(max, v)
+          count++
+          const x = (k / 4) % p.width
+          const y = Math.floor(k / 4 / p.width)
+          box[0] = Math.min(box[0], x / p.width); box[1] = Math.min(box[1], y / p.height); box[2] = Math.max(box[2], x / p.width); box[3] = Math.max(box[3], y / p.height)
+        }
+        return [{ max, count, box: box.map((v) => Number(v.toFixed(3))) }]
+      }, [`repeat${n - 1}`, `repeat${n}`])
+      console.log(`  repeat ${n}: apart from the one before at most ${d.max}, ${d.count ?? 0} pixels within ${JSON.stringify(d.box ?? null)} of the picture; the probes' digests after the warm-up and the last frame ${JSON.stringify(r.warm?.digests)}`)
+    }
+    assert.deepEqual(over, [], over.join('\n'))
     assert.deepEqual(errors, [], errors.join('\n'))
   } finally {
     await gpu.close()
