@@ -13,6 +13,7 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
+import { ProbeVolume } from './probes/volume.ts'
 import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
 import { hitShading } from './trace/hit.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
@@ -337,12 +338,13 @@ export function mainLight(scene: Object3D): Shadowing | null {
 
 /**
  * How a frame is drawn, which decides the pipeline: the real-time GI or the
- * workbench; the real-time GI's world-space layer, once ready (S1).
+ * workbench; the real-time GI's world-space layer, once ready (S1); its
+ * probes, once warm (S2).
  */
-type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null }
+type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null; world: ProbeVolume | null }
 
-const keyOf = ({ wireframe, blur, gi, quality, accumulate, trace }: Look) =>
-  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+const keyOf = ({ wireframe, blur, gi, quality, accumulate, trace, world }: Look) =>
+  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}${world ? `+probes-${world.serial}` : ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
 
 const accumulateSize = /*@__PURE__*/ new Vector2()
 let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
@@ -471,6 +473,13 @@ export class SceneRenderer {
   private compiles = 0
   private disposed = false
   private stats: FrameStats = { draws: 0, triangles: 0, cpuMs: 0 }
+  /**
+   * The probes (S2 design「持有者」): the viewport's kept across its pipelines
+   * while the proxies they trace are the same layer; a picture's its own.
+   */
+  private probes: ProbeVolume | null = null
+  /** Frames this renderer has stepped its probes for: their rays' turn and random numbers come from it alone (P3). */
+  private frames = 0
 
   /** `camera` is the one camera every frame is drawn from; the passes keep it. */
   private readonly camera: Camera
@@ -593,6 +602,7 @@ export class SceneRenderer {
           mainLight: () => mainLight(scene),
           redraw: this.redraw,
           trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene),
+          world: look.trace && look.world ? { probes: look.world.nodes, ambient: look.trace.tables.ambient, fill: 1 } : null,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
@@ -683,6 +693,11 @@ export class SceneRenderer {
     }
   }
 
+  /** The probes as the last render() left them, and whether it drew with them (e2e, gpu.ts probeStats); null without. */
+  get probeStats(): (ProbeVolume['stats'] & { drawn: boolean }) | null {
+    return this.probes && { ...this.probes.stats, drawn: this.built?.key.includes(`+probes-${this.probes.serial}`) === true }
+  }
+
   /** What the last render() drew (e2e performance checks, P2's statistics overlay). */
   get lastFrame(): FrameStats {
     return this.stats
@@ -697,6 +712,47 @@ export class SceneRenderer {
     const base = traceBase(this.gpu, this.scene, { incremental: this.viewport })
     base.redraw = this.redraw
     return base
+  }
+
+  /** The probes for the layer the base serves: these, or new ones for another layer or a scene grown past their levels (a cold start). */
+  private probesFor(handle: TraceHandle): ProbeVolume {
+    const p = this.probes
+    if (p && p.layer === handle.probes && !p.outgrown) return p
+    p?.dispose()
+    const gpu = this.gpu
+    this.probes = new ProbeVolume(gpu.renderer, handle, this.scene, this.trace(), this.viewport ? 'viewport' : 'picture', (a) => gpu.release(a))
+    return this.probes
+  }
+
+  private dropProbes(): null {
+    this.probes?.dispose()
+    this.probes = null
+    return null
+  }
+
+  /**
+   * A picture's warm-up (S2 design「导出预热与时限」): its probes from a cold
+   * start, n frames before the first is drawn, each after the frame's own
+   * steps (the frame advanced, the exposure, the base in step), no raster.
+   * Nothing without the layer.
+   */
+  warm(camera: Camera, frame: Frame, n: number) {
+    const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
+    if (frame.engine !== 'realtime_gi' || frame.wireframe === true || !perspective) return
+    const handle = this.trace().handle()
+    if (!handle) return
+    const probes = this.probesFor(handle)
+    applyExposure(this.scene, frame.preExposure ?? 1)
+    try {
+      if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
+      for (let i = 0; i < n; i++) {
+        this.gpu.advanceFrame()
+        this.trace().sync()
+        probes.step(this.frames++, camera)
+      }
+    } finally {
+      preExposure.value = 1
+    }
   }
 
   /** Draws a frame into the renderer's canvas. */
@@ -717,7 +773,11 @@ export class SceneRenderer {
       accumulate: gi && frame.accumulate === true,
       // As last frame's sync left it: becoming ready asks for the frame that draws with it (base.ts).
       trace: gi ? this.trace().handle() : null,
+      world: null,
     }
+    // The probes once warm: the viewport warms them in the background first, drawing as before (S2 design「就绪的那一刻」).
+    const probes = look.trace ? this.probesFor(look.trace) : this.dropProbes()
+    if (probes?.warm) look.world = probes
     const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()
@@ -760,6 +820,12 @@ export class SceneRenderer {
     if (gi) {
       if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
       this.trace().sync()
+      if (probes) {
+        // A cold start's levels every frame till they are warm, the viewport asking for frames meanwhile.
+        const warming = !probes.warm
+        probes.step(this.frames++, camera, warming)
+        if (warming) this.redraw?.()
+      }
     }
     prepareAerial(this.scene, renderer, camera, !wireframe)
     prepareVolumes(this.scene, camera, !wireframe)
@@ -772,6 +838,8 @@ export class SceneRenderer {
         // SSR from the next frame on (S1 design A13).
         if (built.gi?.traced && this.gpu.pipelineFailed(built.gi.traced)) this.trace().fail(true)
       }
+      // The probes' kernels refused on this device: likewise, the layer off for good (S2 design「能力与显存」).
+      if (probes && this.gpu.computeFailed()) this.trace().fail(true)
     } finally {
       renderer.toneMappingExposure = exposure
       preExposure.value = 1
@@ -782,6 +850,7 @@ export class SceneRenderer {
 
   dispose() {
     this.disposed = true
+    this.dropProbes()
     if (this.kept) disposeStandIn(this.kept.standIn)
     this.kept = null
     this.built?.dispose()

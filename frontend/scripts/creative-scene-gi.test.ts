@@ -187,6 +187,9 @@ class V {
   oneMinus() {
     return new V(...this.v.map((a) => 1 - a))
   }
+  max(o: V | number) {
+    return this.zip(o, (a, b) => Math.max(a, b))
+  }
 }
 
 const near = (a: V, b: number[]) => a.v.every((x, i) => Math.abs(x - b[i]) < 1e-9) || assert.fail(`${a.v} ≠ ${b}`)
@@ -210,6 +213,37 @@ test('the composite: AO on the indirect light only, reflections in place of the 
   // Not taken apart (glass, the background): the picture as it is, whatever the effects say.
   const zero = new V(0, 0, 0, 0)
   near(composite({ ...neutral, ambient: zero, envSpec: zero, base: zero, ao: new V(0.2), contact: new V(0), reflection: new V(0.5, 0.5, 0.5), cover: new V(1), split: new V(0) }), [0.9, 0.7, 0.5])
+})
+
+test('the composite with the world-space layer: the probes in place of the environment’s irradiance, the ambient light kept apart, no SSGI light (S2 design「合成」)', () => {
+  const output = new V(0.9, 0.7, 0.5, 1)
+  // c = 0.5: half the light on the surface is its diffuse layer's.
+  const ambient = new V(0.2, 0.2, 0.2, 0.5)
+  const envSpec = new V(0.1, 0.1, 0.1, 1)
+  const base = new V(0.8, 0.4, 0.2, 0.25)
+  const kd = [0.6, 0.3, 0.15]
+  const L = 0.4
+  const aLight = kd.map((k) => (k * 0.5 * L) / Math.PI)
+  const world = (probe: V, fill = 1) => ({ probe, ambientLight: new V(L, L, L), fill: new V(fill) })
+  const neutral = { output, base, ambient, envSpec, gi: new V(1, 1, 1), ao: new V(1), contact: new V(1), reflection: new V(0, 0, 0), cover: new V(0), split: new V(1) }
+  // The direct light, and the environment's reflection (cover 0) with it.
+  const direct = [0.6, 0.4, 0.2]
+  const spec = (ao: number) => 0.1 * ao
+  // Nothing covered: the materials' own indirect light, AO on it, as without the layer; the SSGI's light not added.
+  near(composite({ ...neutral, world: world(new V(5, 5, 5, 0)) }), direct.map((d) => d + spec(1) + 0.2))
+  near(composite({ ...neutral, ao: new V(0.5), world: world(new V(5, 5, 5, 0)) }), direct.map((d) => d + spec(0.5) + 0.1))
+  // Covered: kd · c · E / π from the probes, without AO; the ambient lights' share with it, AO on that.
+  const E = 2
+  const probe = kd.map((k) => (k * 0.5 * E) / Math.PI)
+  near(composite({ ...neutral, world: world(new V(E, E, E, 1)) }), direct.map((d, i) => d + spec(1) + probe[i] + aLight[i]))
+  near(composite({ ...neutral, ao: new V(0.5), world: world(new V(E, E, E, 1)) }), direct.map((d, i) => d + spec(0.5) + probe[i] + aLight[i] * 0.5))
+  // Half covered: the two mixed.
+  const env = aLight.map((a) => 0.2 - a)
+  near(composite({ ...neutral, world: world(new V(E, E, E, 0.5)) }), direct.map((d, i) => d + spec(1) + 0.5 * env[i] + 0.5 * probe[i] + aLight[i]))
+  // The fill scales the ambient lights' share alone.
+  near(composite({ ...neutral, world: world(new V(E, E, E, 1), 2) }), direct.map((d, i) => d + spec(1) + probe[i] + 2 * aLight[i]))
+  // The environment's share is never below 0, though the ambient lights outweigh what the material took.
+  near(composite({ ...neutral, ambient: new V(0.005, 0.005, 0.005, 0.5), world: world(new V(0, 0, 0, 0)) }), [0.9, 0.7, 0.5].map((o, i) => o - 0.005 - 0.1 + spec(1) + aLight[i]))
 })
 
 test('the lighting pass’s context is one node per renderer context, so pictures share their render objects', async () => {

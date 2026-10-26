@@ -279,6 +279,8 @@ export const gpuTestHooks = {
   marches: 0,
   /** What the viewport's last frame drew (SceneRenderer.lastFrame; Viewport.tsx LookView, e2e only). */
   lastFrame: null as FrameStats | null,
+  /** The viewport's probes after its last frame, and whether it drew with them (SceneRenderer.probeStats; e2e only). */
+  probeStats: null as unknown,
   /** The viewport's last frame drawn n times and waited for once, its milliseconds (Viewport.tsx LookView; e2e only). */
   redrawViewport: null as ((n: number) => Promise<number>) | null,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */

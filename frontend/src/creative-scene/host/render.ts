@@ -6,6 +6,7 @@ import { modelCache, type SceneModel } from '../models/cache.ts'
 import { drawnFrames, effectiveEngine, engineOf, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { sceneLowSun, sceneLux } from '../world/exposure.ts'
+import { PROBE_WARMUP } from '../render/probes/cascade.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
 import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
@@ -206,6 +207,8 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           accumulate: frames > 1,
         }
         try {
+          // The probes from a cold start before the first frame (S2 design「导出预热与时限」).
+          if (picture) picture.warm(camera, frame, PROBE_WARMUP)
           for (let i = 1; i < frames; i++) {
             g.advanceFrame()
             picture!.render(camera, frame)

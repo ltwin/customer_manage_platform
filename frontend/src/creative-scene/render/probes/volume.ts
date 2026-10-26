@@ -53,6 +53,8 @@ export function frameRotation(frame: number, out = new Matrix3()): Matrix3 {
   return out.setFromMatrix4(new Matrix4().makeRotationFromQuaternion(q))
 }
 
+let volumes = 0
+
 const corner = new Vector3()
 const eye = new Vector3()
 const look = new Vector3()
@@ -60,6 +62,8 @@ const look = new Vector3()
 export class ProbeVolume {
   /** The layer the probes trace: the volume's identity (a new one is a cold start). */
   readonly layer: TraceLayer
+  /** Which volume this is, over the page's life: a pipeline drawing another is built again (sceneRenderer.ts keyOf). */
+  readonly serial = ++volumes
   readonly mode: Mode
   readonly allocated: number
   readonly nodes: ProbeNodes
@@ -155,6 +159,11 @@ export class ProbeVolume {
   /** Whether every level drawn has had A0 + 14 updates since it was cleared: the viewport takes the probes up then (S2 design「就绪的那一刻」). */
   get warm(): boolean {
     return this.updates.slice(0, this.levels).every((u) => u >= this.hysteresis.A0 + SETTLE_UPDATES)
+  }
+
+  /** For the e2e (gpu.ts probeStats): the levels allocated and drawn, each one's updates since it was cleared, warm. */
+  get stats(): { serial: number; allocated: number; levels: number; updates: number[]; warm: boolean } {
+    return { serial: this.serial, allocated: this.allocated, levels: this.levels, updates: this.updates.slice(0, this.allocated), warm: this.warm }
   }
 
   /** The kernels, built once, and again if the scene gained an environment since (hit.ts takes it as it builds). */

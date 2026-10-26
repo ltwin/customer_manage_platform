@@ -58,7 +58,20 @@
   - 逐级回退的覆盖度按 1 − Π(1 − cᵢ) 合成，不是 design 写的 max：它与「逐级 mix」严格对应，合成按覆盖度混合时不会重复计入；
   - 场景变大、要多分配一级时，探针体整个重建（冷启动），不把已有级的数据拷过去（design「分配」写的是拷过去）。这种情况很少见，S2 先这样做；
   - TSL 的 `If` 回调不能返回语句节点（`textureStore`、`addAssign`），否则会被当成分支的值去生成，报「Invalid generated code」。一律写成块体
-- [ ] 4.3 `probes/lookup.ts` 与合成：`probeIrradiance` 逐级回退；`realtimeGI.ts` 的屏幕采样 pass，`composite` 的 `world` 分支，`world` 时不建 SSGI 漫反射降噪链、`GI_INTENSITY` 取 0；`RealtimeGIOptions` 收 `TraceHandle` 和 `ProbeVolume`。`sceneRenderer.ts` 的 `build` 交出两者，`render` 由视口的 `SceneRenderer` 持有探针体（按代理层身份做键，管线重建时保留）并 `step`，底座就绪后在后台预热到数据年龄 ≥ A0 + 14 再切换。先在 `creative-scene-gi.test.ts` 写 `world` 分支的纯数值单测（`coverage` 为 0 时等于 `A_env · ao + A_lt · ao`）。完成判据：单测通过；`backlit-room` 能看到摄像机背后墙的反弹光
+- [x] 4.3 `probes/lookup.ts` 与合成：`probeIrradiance` 逐级回退；`realtimeGI.ts` 的屏幕采样 pass，`composite` 的 `world` 分支，`world` 时不建 SSGI 漫反射降噪链、`GI_INTENSITY` 取 0；`RealtimeGIOptions` 收 `TraceHandle` 和 `ProbeVolume`。`sceneRenderer.ts` 的 `build` 交出两者，`render` 由视口的 `SceneRenderer` 持有探针体（按代理层身份做键，管线重建时保留）并 `step`，底座就绪后在后台预热到数据年龄 ≥ A0 + 14 再切换。先在 `creative-scene-gi.test.ts` 写 `world` 分支的纯数值单测（`coverage` 为 0 时等于 `A_env · ao + A_lt · ao`）。完成判据：单测通过；`backlit-room` 能看到摄像机背后墙的反弹光
+
+  结果：`creative-scene-gi.test.ts` 15 个通过，其中 `world` 分支的单测：覆盖度为 0 时等于 `A_env · ao + A_lt · ao`，为 1 时环境那份换成探针的 `kd · c · E / π`（不乘 AO），环境光灯那份保留并乘 AO；半覆盖、`fill` 和环境份额不小于 0 也各有断言。导出能看到探针的光（`gi-baseline` 的同一机位，接入前 → 接入后的画面均值）：
+  - `backlit-room`：148.5 → 153.7，左墙亮度比 1.001；
+  - `cornell`：89.5 → 161.9。偏亮多少要在 5.2 对照参考图判断。
+  S1 的用例照过：AC-S1-1/2/5/6、6.1、7.1 通过，WebGL2 画面与接入前逐像素相同（P1）。另有两处要后续处理：
+  - AC-S1-4 三次里有一次失败（一张图最大差 3 级），可能与 `scene-trace-export-repeat` 同源，放到 5.4 查；
+  - 导出变慢：`backlit-room` 5.2 → 9.0 s，`cornell` 5.3 → 6.6 s，5.4、5.5 核对时限。
+  S1 的 `trace: 5.2` 改了一处断言：层就绪后视口每帧少画一次（53 → 52）。这是设计内的变化：探针接入后不再建 SSGI 漫反射的重投影和降噪（两次绘制），多了探针的屏幕采样 pass（一次）。断言改为「探针已接入，且绘制次数正好少 1」，两轮都通过。
+
+  实现上的局部调整，记理由：
+  - `ProbeVolume` 带一个页面内递增的 `serial`，管线键用它：换了探针体，管线就重建；
+  - 先加了 5.1 的 `gpuTestHooks.probeStats`（级数、各级更新次数、是否已预热、本帧是否画了探针），5.2 的断言要用；
+  - `host/render.ts` 在第一帧前调用 `warm`，原属 5.4，导出要看到探针就得先接上；时限的计入留在 5.4
 - [ ] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
 
 ## 5. 验收与标定

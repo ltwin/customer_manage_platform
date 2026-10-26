@@ -1,5 +1,5 @@
-import { DirectionalLight as RayLight, HalfFloatType, SRGBColorSpace, UnsignedByteType, Vector3, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
-import { convertToTexture, float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, perspectiveDepthToViewZ, roughness, sample, smoothstep, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
+import { DirectionalLight as RayLight, HalfFloatType, Matrix4, SRGBColorSpace, UnsignedByteType, Vector3, type Camera, type Color, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
+import { convertToTexture, Fn, float, getViewPosition, max, mix, mrt, normalize, normalView, output as outputNode, packNormalToRGB, pass, perspectiveDepthToViewZ, roughness, sample, screenUV, select, smoothstep, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
 import { PassNode, type Node, type TextureNode, type UniformNode } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js'
@@ -12,6 +12,7 @@ import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './
 import { ssgi } from './nodes/SSGINode.js'
 import { ssrTrace } from './nodes/SSRTraceNode.js'
 import type { HitShading } from './trace/hit.ts'
+import { probeIrradiance, type ProbeNodes } from './probes/lookup.ts'
 import { aerialBehind } from '../world/atmosphere/aerial.ts'
 import { applyVolumes } from './volumes/composite.ts'
 import { VolumeNode } from './volumes/march.ts'
@@ -95,6 +96,13 @@ export type RealtimeGIOptions = {
    * SSR as before (S1 L1).
    */
   trace: HitShading | null
+  /**
+   * The probes, once warm (S2 design「合成」): the composite takes their
+   * irradiance in place of the environment's where they cover; ambient is the
+   * scene's ambient lights as the base's tables last added them up (exposed,
+   * L_amb). None, the screen-space indirect light as before (P1).
+   */
+  world: { probes: ProbeNodes; ambient: Color; fill: number } | null
 }
 
 export type RealtimeGI = {
@@ -114,19 +122,60 @@ export type RealtimeGI = {
 /**
  * The composite (design「合成」), on linear HDR values. Written with the
  * inputs' own methods only, so the unit test runs it on plain numbers.
+ *
+ * With the world-space layer (world; S2 design「合成」) the probes' light
+ * takes the place of the environment map's irradiance in the material's
+ * indirect diffuse light, as far as they cover the point: c (ambient's
+ * alpha, giSplit.ts diffuseShare) takes the scene's ambient lights' share
+ * (A_light, L_amb through the material) out of the rest (A_env); the probes
+ * give kd · c · E / π without the screen's AO, which they need not have
+ * (their visibility is their own); the ambient lights keep theirs with the AO
+ * and the fill. The SSGI's light is not added: the probes carry the bounces.
  */
-export function composite(i: { output: N; base: N; ambient: N; envSpec: N; gi: N; ao: N; contact: N; reflection: N; cover: N; split: N }): N {
+export function composite(i: { output: N; base: N; ambient: N; envSpec: N; gi: N; ao: N; contact: N; reflection: N; cover: N; split: N; world?: { probe: N; ambientLight: N; fill: N } }): N {
   // Diffuse colour times (1 − metalness): what the indirect diffuse light is coloured by.
   const kd = i.base.rgb.mul(i.base.a.oneMinus())
   // Direct light and emission: the whole picture without its indirect light.
   const direct = i.output.rgb.sub(i.ambient.rgb).sub(i.envSpec.rgb)
-  return direct
+  const lit = direct
     // Contact shadows darken the direct light, where a material was taken apart: mix(1, contact, split).
     .mul(i.contact.sub(1).mul(i.split).add(1))
-    .add(i.ambient.rgb.mul(i.ao))
     .add(i.envSpec.rgb.mul(i.ao).mul(i.cover.oneMinus()))
     .add(i.reflection.mul(i.split))
-    .add(kd.mul(i.gi))
+  if (!i.world) return lit.add(i.ambient.rgb.mul(i.ao)).add(kd.mul(i.gi))
+  const { probe, ambientLight, fill } = i.world
+  const share = kd.mul(i.ambient.a).mul(1 / Math.PI)
+  const aLight = share.mul(ambientLight)
+  const aEnv = i.ambient.rgb.sub(aLight).max(0)
+  const covered = probe.a
+  const fromProbes = share.mul(probe.rgb)
+  // mix(A_env · ao, D_probe, coverage) + A_light · fill · ao
+  const diffuse = aEnv.mul(i.ao).mul(covered.oneMinus()).add(fromProbes.mul(covered)).add(aLight.mul(fill).mul(i.ao))
+  return lit.add(diffuse)
+}
+
+/**
+ * The probes' light on screen (S2 design「屏幕采样 pass」): a pass of its own,
+ * each pixel's point and normal from the prepass, its irradiance from the
+ * probes, exposed, and their coverage: vec4(E, coverage). Its own texture: the
+ * composite's pass is near WebGPU's 16 textures a stage, and it can be drawn
+ * at half the resolution if the budget asks for it. The camera's matrices are
+ * uniforms of its own: the pass draws a quad with a camera of its own.
+ */
+function probeLight(world: NonNullable<RealtimeGIOptions['world']>, depth: N, normal: N, camera: Camera, own: <T extends { dispose(): void }>(n: T) => T) {
+  const projectionInverse = uniform(new Matrix4()).onRenderUpdate(() => camera.projectionMatrixInverse)
+  const cameraWorld = uniform(new Matrix4()).onRenderUpdate(() => camera.matrixWorld)
+  const eye = uniform(new Vector3()).onRenderUpdate(() => new Vector3().setFromMatrixPosition(camera.matrixWorld))
+  const light = Fn(() => {
+    const d = depth.r.toVar()
+    const P = cameraWorld.mul(vec4(getViewPosition(screenUV, d, projectionInverse), 1)).xyz.toVar()
+    const n = normalize(cameraWorld.mul(vec4(normal.sample(screenUV).xyz, 0)).xyz).toVar()
+    const { pre, coverage } = probeIrradiance(world.probes, P, n, normalize((eye as N).sub(P)))
+    return select(d.lessThan(1), vec4(pre.div(max(coverage, 1e-6)), coverage), vec4(0))
+  })()
+  const probe: N = own(convertToTexture(light))
+  const ambientLight = uniform(new Vector3()).onRenderUpdate(() => new Vector3(world.ambient.r, world.ambient.g, world.ambient.b))
+  return { probe, ambientLight, fill: uniform(world.fill) }
 }
 
 export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOptions): RealtimeGI {
@@ -161,8 +210,10 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   lit.getTexture('base').colorSpace = SRGBColorSpace
 
   const final = options.quality === 'final'
+  const world = options.world
   const gi = own(ssgi(output, depth, normal, persp))
-  gi.giIntensity.value = GI_INTENSITY
+  // With the probes the SSGI gives the AO alone: its light is not composited (Epic I6, S2 design D10).
+  gi.giIntensity.value = world ? 0 : GI_INTENSITY
   gi.sliceCount.value = ssgiQuality[options.quality].slices
   gi.stepCount.value = ssgiQuality[options.quality].steps
   const giAO: N = gi.getTextureNode()
@@ -175,8 +226,10 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   }
   // Flicker suppression weighs bright samples down: steadier while moving, darker highlights in a picture.
   const flicker = final ? 0 : 1
-  let indirect: N
-  if (final) {
+  let indirect: N = vec3(0)
+  if (world) {
+    // The SSGI's light goes nowhere: no denoising chain for it.
+  } else if (final) {
     indirect = filtered(vec4(giAO.rgb, 1)).rgb
   } else {
     const reprojected: N = own(temporalReproject(giAO, depth, normalPacked, vel, camera, { mode: 'diffuse', accumulate: false }))
@@ -257,7 +310,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // Where the prepass saw a surface (not the background), and the lighting pass took a material apart there
   // (its c, above 0: giSplit.ts diffuseShare).
   const opaque = depth.r.lessThan(1).select(1, 0)
-  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.greaterThan(0).select(opaque, 0) })
+  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.greaterThan(0).select(opaque, 0), world: world ? probeLight(world, depth, normal, camera, own) : undefined })
   // The fog as three's rangeFogFactor has it, by the view depth of the opaque surface: glass takes the fog of
   // what is behind it. The background has none, as in three, where the sky box is too near for the fog.
   // Then the aerial perspective (W4, world/atmosphere/aerial.ts), likewise by the opaque surface.

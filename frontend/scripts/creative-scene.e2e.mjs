@@ -6625,7 +6625,10 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as 
     console.log(`  taken up by itself: ${(changed * 100).toFixed(1)} % of the middle changed, ${drawsBefore} draws a frame before, ${drawsAfter} after`)
     // The mirror is small from the editor's view: a few per cent of the middle, where nothing else changes.
     assert.ok(changed > 0.005, `the viewport drew the layer once it was ready: ${(changed * 100).toFixed(1)} %`)
-    assert.equal(drawsAfter, drawsBefore, 'as many draws a frame')
+    // The probes too, warmed in the background (S2): the SSGI's light goes unused, its reprojection and denoiser
+    // (two draws) go and the probes' screen pass (one) comes (realtimeGI.ts).
+    assert.equal(await v.page.evaluate(() => window.__sceneGPU.probeStats?.drawn), true, 'the probes drawn too')
+    assert.equal(drawsAfter, drawsBefore - 1, 'as many draws a frame, less the denoiser for the probes')
     assert.deepEqual(v.errors, [], v.errors.join('\n'))
     await v.context.close()
     }
