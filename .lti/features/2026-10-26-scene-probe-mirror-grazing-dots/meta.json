@@ -1,0 +1,17 @@
+{
+  "uid": "055d539a-2da6-45f0-8de6-3cff2b65334f",
+  "revision": 1,
+  "id": "scene-probe-mirror-grazing-dots",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-26T14:16:30.377Z",
+  "updatedAt": "2026-10-26T14:16:30.423Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
