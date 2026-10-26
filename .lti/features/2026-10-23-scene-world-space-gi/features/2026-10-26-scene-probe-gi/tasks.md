@@ -33,7 +33,11 @@
 
 ## 4. 探针体
 
-- [ ] 4.1 `probes/cascade.ts`、`probes/octahedral.ts`：级数、原点对齐、欧氏取模（含负坐标）、环形重置的判定、轮转表、α(编辑年龄)、成熟度、`viewportSettleFrames`；八面体编解码。先在新增的 `creative-scene-probes.test.ts` 写单测。完成判据：单测覆盖 design「级联的放置与轮转」「更新」里的每一张表
+- [x] 4.1 `probes/cascade.ts`、`probes/octahedral.ts`：级数、原点对齐、欧氏取模（含负坐标）、环形重置的判定、轮转表、α(编辑年龄)、成熟度、`viewportSettleFrames`；八面体编解码。先在新增的 `creative-scene-probes.test.ts` 写单测。完成判据：单测覆盖 design「级联的放置与轮转」「更新」里的每一张表
+
+  结果：`creative-scene-probes.test.ts` 12 项通过。两处局部调整：
+  - 轮转的错开由「按级号偏移」改为逐级贪心选偏移（`offsetsFor`）。按级号偏移在大厅的周期（4, 4, 8, 8, 16）下，有的帧更新两级、有的帧一级都不更新；贪心之后每帧最多比其他帧多一级；
+  - 八面体图块的边框由「每个内部纹素写哪几个边框纹素」（`bordersOf`）给出，单测核对每个边框纹素只有一个来源，且折回之后与来源是同一方向。TSL 版本的编解码在任务 4.2 的 GPU 对照里核对
 - [ ] 4.2 `probes/volume.ts`、`probes/kernels.ts`：`ProbeVolume` 按 `n_alloc` 分配；`step(frame)`，先派发所有级的光线、再派发所有级的更新（P2）；原点锁定、世界格核对；s_env 换算内核；`hit.ts` 的 `radiance`（含单面材质的背面、没命中取 PMREM 粗糙度 0.5）。`checks.ts` 加 GPU 侧的对照：槽号与世界格（含负坐标）、八面体编码，与 JS 结果比较。`gpu.ts` 的 `make` 包住 `createComputePipeline`，`pipelineFailed` 也看 compute 管线。完成判据：GPU 对照与 JS 一致；compute 管线失败时走 S1 的失败处理
 - [ ] 4.3 `probes/lookup.ts` 与合成：`probeIrradiance` 逐级回退；`realtimeGI.ts` 的屏幕采样 pass，`composite` 的 `world` 分支，`world` 时不建 SSGI 漫反射降噪链、`GI_INTENSITY` 取 0；`RealtimeGIOptions` 收 `TraceHandle` 和 `ProbeVolume`。`sceneRenderer.ts` 的 `build` 交出两者，`render` 由视口的 `SceneRenderer` 持有探针体（按代理层身份做键，管线重建时保留）并 `step`，底座就绪后在后台预热到数据年龄 ≥ A0 + 14 再切换。先在 `creative-scene-gi.test.ts` 写 `world` 分支的纯数值单测（`coverage` 为 0 时等于 `A_env · ao + A_lt · ao`）。完成判据：单测通过；`backlit-room` 能看到摄像机背后墙的反弹光
 - [ ] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
