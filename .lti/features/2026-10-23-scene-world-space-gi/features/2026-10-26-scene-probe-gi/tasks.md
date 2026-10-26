@@ -23,7 +23,9 @@
 - [x] 2.1 `giSplit.ts` 的 `ambient.a` 改写 c（`computeMultiscattering` 算出的 c_E × 材质 AO，亮度加权，下限 1e-3）；`realtimeGI.ts` 的 `split` 改为 `ambient.a > 0`。先在 `creative-scene-shading.test.ts` 加 giSplit 写 c 的核对。完成判据：单测通过；AC-S2-5 的四种情况与 1.1 的存档逐像素相同
 
   结果见 `evidence/ac-s2-5.md`：`traceOff`、`traceUnsupported`、WebGL2 三套逐像素相同；`forceCompatibility` 有一张图（`room`）与存档差 1–3 级，在同一份代码两次运行之间的噪声以内（S1 的口径）。单测放在 `creative-scene-gi.test.ts`，giSplit 原有的单测在那里，不在挂载点表写的 `creative-scene-shading.test.ts`；sheen 的能量补偿要用 three 未导出的 `IBLSheenBRDF`，复制了一份，单测守住它与上游的常数相同
-- [ ] 2.2 光照 MRT 的 `base` 改为 sRGB 编码。完成判据：AC-S2-5 的四种情况与 1.1 的存档在 R2 的一级以内
+- [x] 2.2 光照 MRT 的 `base` 改为 sRGB 编码。完成判据：AC-S2-5 的四种情况与 1.1 的存档在 R2 的一级以内
+
+  结果见 `evidence/ac-s2-5.md` 第二步：35 张图都在一级以内，差超过 8 级的像素最多 0.0031%（`mirror-board` 反射锯齿边缘上的 80 个像素，对照图 `after/base-srgb-mirror-board.png`）；整图亮度不变
 
 ## 3. 底座的两份精度
 

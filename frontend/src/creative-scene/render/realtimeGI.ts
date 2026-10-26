@@ -1,4 +1,4 @@
-import { DirectionalLight as RayLight, HalfFloatType, UnsignedByteType, Vector3, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
+import { DirectionalLight as RayLight, HalfFloatType, SRGBColorSpace, UnsignedByteType, Vector3, type Camera, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
 import { convertToTexture, float, mix, mrt, normalView, output as outputNode, packNormalToRGB, pass, perspectiveDepthToViewZ, roughness, sample, smoothstep, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
 import { PassNode, type Node, type TextureNode, type UniformNode } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -154,7 +154,11 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const base: N = lit.getTextureNode('base')
   const ambient: N = lit.getTextureNode('ambient')
   const envSpec: N = lit.getTextureNode('envSpec')
+  // 8 bits a channel, sRGB-encoded: a dark albedo keeps its precision where it carries the probes' light (S2
+  // design「合成」, D17), at no more bytes a pixel. The GPU encodes on write and decodes on sampling; the alpha
+  // (metalness) stays linear.
   lit.getTexture('base').type = UnsignedByteType
+  lit.getTexture('base').colorSpace = SRGBColorSpace
 
   const final = options.quality === 'final'
   const gi = own(ssgi(output, depth, normal, persp))
