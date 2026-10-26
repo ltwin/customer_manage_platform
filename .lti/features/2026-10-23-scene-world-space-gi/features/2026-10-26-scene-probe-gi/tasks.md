@@ -168,7 +168,9 @@
 - [x] 6.1 提示文字：`base.ts` 的 `TraceNotReady`、`RenderPanel.tsx` 的提示和渲染器说明改为「屏幕外的光照与反射」。完成判据：AC-S2-5 的提示文字用例通过
 
   结果（2026-10-26）：按 design「提示文字」的对照表改；视口的探针在后台预热时，渲染选项卡同样显示「正在准备」（`sceneStore` 的 `ui.probesWarming`，由 `LookView` 每帧按 `probeStats.drawn` 写，变化时才写）。`trace: 7.1`、`trace: 6.1` 通过；7.1 改为等探针接上之后再核对「没有提示」
-- [ ] 6.2 指纹（AC-S2-10）：`fingerprint.go` 加 `world_trace`，实时 GI 的 `lit` 取 1；先在 `fingerprint_test.go` 写单测：实时 GI 的 `lit` 与 S2 前不同，工作台的 `lit`、`clay`、`line` 不变。完成判据：`make check-go PKG=./internal/creativescene/...` 通过；e2e 读画布看到「场景已更新」
+- [x] 6.2 指纹（AC-S2-10）：`fingerprint.go` 加 `world_trace`，实时 GI 的 `lit` 取 1；先在 `fingerprint_test.go` 写单测：实时 GI 的 `lit` 与 S2 前不同，工作台的 `lit`、`clay`、`line` 不变。完成判据：`make check-go PKG=./internal/creativescene/...` 通过；e2e 读画布看到「场景已更新」
+
+  结果（2026-10-26）：单测先红后绿：`TestWorldTraceStalesTheRealtimeGIsLitOnce` 钉住 S2 前实时 GI 的三个指纹，只有 `lit` 变；`TestEngineFingerprintsOnlyLit` 照过，工作台不变。`make check-go PKG=./internal/creativescene/...` 通过（lint 0 问题）。局部调整：完成判据的「e2e 读画布」改用 Go 单测 `TestFreshnessStalesOnlyTheRealtimeGIsLitAfterS2`，直接走 `Freshness.Check`，也就是画布读取时判「场景已更新」的那一步。前端 e2e 的画布接口是模拟的，测不到后端的判定
 
 ## 7. 收尾
 
