@@ -33,7 +33,7 @@
   结论写进 `soft-shadow-candidates.md`，附 `frame-two-lights` 和 `occluder-wall` 上与参考解的并排图集（AC-S0-5）。
   - 进展：聚光、点光和平行光的 PCSS 已在 `occluder-wall` 和 `frame-two-lights` 上与参考解对照，含半影宽度、叠放遮挡、两种渲染器的成片和耗时；`smtrace` 只做了聚光。
   - 实施时调整：
-    - `vsm-pcss`、`msm-pcss`、`mip-pcss` 暂不做，理由见 `soft-shadow-candidates.md`「取舍」，待 owner 看图确认；
+    - `vsm-pcss`、`msm-pcss`、`mip-pcss` 不做，理由见 `soft-shadow-candidates.md`「取舍」；owner 2026-10-26 确认：默认 PCSS，`smtrace` 不进产品，多层遮挡的误差可以接受；
     - 颗粒用「单帧对多帧平均」的误差差值和 `workbench` 单帧成片来体现，没有另算局部方差；
     - 新增 `?layout=stack`（多层遮挡）、`?sunSize=`、`?maxSlope=` 和 `SPIKE_WARM`，`?cold=` 停用。
 - [ ] 3.2 第 3 组，读取原始深度（U7）：在 WebGL2 和 WebGPU 上，验证同一张设了 `compareFunction` 的阴影深度图能否在一个着色器里同时做比较采样和原始读取。不行时，验证阴影 pass 额外输出线性深度的备选方案。结论写进 `depth-read-backends.md`。
