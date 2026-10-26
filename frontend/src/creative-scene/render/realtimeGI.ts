@@ -250,9 +250,10 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // where the rays left the screen (R2 tasks 7.3, the studio set's back wall with the sun behind it).
   const contact: N = mix(float(1), shadow.r, normal.dot(toLight).mul(4).clamp(0, 1).mul(contactOn))
 
-  // Where the prepass saw a surface (not the background), and the lighting pass took a material apart there.
+  // Where the prepass saw a surface (not the background), and the lighting pass took a material apart there
+  // (its c, above 0: giSplit.ts diffuseShare).
   const opaque = depth.r.lessThan(1).select(1, 0)
-  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.mul(opaque) })
+  const shaded = composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection, cover, split: ambient.a.greaterThan(0).select(opaque, 0) })
   // The fog as three's rangeFogFactor has it, by the view depth of the opaque surface: glass takes the fog of
   // what is behind it. The background has none, as in three, where the sky box is too near for the fog.
   // Then the aerial perspective (W4, world/atmosphere/aerial.ts), likewise by the opaque surface.

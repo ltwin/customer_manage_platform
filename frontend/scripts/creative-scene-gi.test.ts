@@ -59,6 +59,20 @@ test('three’s lighting model adds its indirect light where giSplit reads it', 
   assert.match(read('../node_modules/three/src/nodes/core/MRTNode.js'), /return this\.blendModes\[ name \] \|\| _noBlending;/)
 })
 
+test('c is what three’s indirectDiffuse multiplies the Lambert term by: the multiple scattering, the sheen and the AO (S2 design「合成」)', () => {
+  const model = read('../node_modules/three/src/nodes/functions/PhysicalLightingModel.js')
+  // The arguments diffuseShare calls computeMultiscattering with, and what indirectDiffuse makes of it.
+  assert.match(model, /\tindirectDiffuse\( builder \) \{[^]*?this\.computeMultiscattering\( singleScattering, multiScattering, specularF90, specularColor, this\.iridescenceF0Dielectric \);\n\n\t\tconst diffuse = irradiance\.mul\( BRDF_Lambert\( \{ diffuseColor: diffuseContribution \} \) \)\.mul\( singleScattering\.add\( multiScattering \)\.oneMinus\(\) \)\.toVar\(\);/)
+  assert.match(model, /const sheenAlbedo = IBLSheenBRDF\( \{ normal: normalView, viewDir: positionViewDirection, roughness: sheenRoughness \} \);[^]*?const sheenEnergyComp = sheen\.r\.max\( sheen\.g \)\.max\( sheen\.b \)\.mul\( sheenAlbedo \)\.oneMinus\(\);\n\n\t\t\tdiffuse\.mulAssign\( sheenEnergyComp \);/)
+  assert.match(model, /\tambientOcclusion\( builder \) \{[^]*?reflectedLight\.indirectDiffuse\.mulAssign\( ambientOcclusion \);/)
+  // giSplit's copy of IBLSheenBRDF, which three does not export: the same constants in the same places.
+  const constants = (text: string) => text.match(/-?\s*\d+\.\d+/g)?.map((n) => Number(n.replace(/\s/g, '')))
+  const theirs = model.slice(model.indexOf('const IBLSheenBRDF'), model.indexOf('} );', model.indexOf('const IBLSheenBRDF')))
+  const giSplit = read('../src/creative-scene/render/giSplit.ts')
+  const ours = giSplit.slice(giSplit.indexOf('const sheenAlbedo'), giSplit.indexOf('\n})', giSplit.indexOf('const sheenAlbedo')))
+  assert.deepEqual(constants(ours), constants(theirs))
+})
+
 const renderer = new WebGPURenderer({ canvas: { style: {} } as never })
 // Never initialised (no GPU here): the lighting asks about features, which a device would answer.
 Object.assign(renderer, { hasFeature: () => false })
@@ -119,6 +133,16 @@ test('without the mark a material compiles to what it did before giSplit; with i
     assert.doesNotMatch(split, new RegExp(`\\b${name} = vec4<f32>\\( 0\\.0, 0\\.0, 0\\.0, 0\\.0 \\)`), name)
     assert.match(split, new RegExp(`output\\.m\\d = ${name};`), name)
   }
+  // The indirect diffuse light's alpha is c, at least 1e-3, no longer 1 (S2 design「合成」).
+  // The WGSL names every step: follow GIAmbient back to its alpha.
+  const assigned = (name: string) => split.match(new RegExp(`\\b${name} = (.*);`))?.[1] ?? ''
+  const ambient = assigned(assigned('GIAmbient'))
+  const alpha = ambient.match(/^vec4<f32>\( indirectDiffuse, (\w+) \)$/)?.[1]
+  assert.ok(alpha, ambient)
+  assert.match(assigned(alpha), /^max\( \w+, 0\.001 \)$/)
+  // Sheen adds its energy compensation, which a material without sheen leaves out.
+  const sheen = inLightingPass(() => fragment(new MeshPhysicalNodeMaterial({ sheen: 1, sheenRoughness: 0.5 })))
+  assert.ok(sheen.includes('1.9362') && !split.includes('1.9362'), 'the sheen’s albedo in c, only with sheen')
 })
 
 test('a transparent or transmissive material is not taken apart: its outputs are zero, alpha 0', () => {

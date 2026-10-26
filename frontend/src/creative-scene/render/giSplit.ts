@@ -1,5 +1,5 @@
 import { Color, type Fog, type Scene } from 'three'
-import { context, diffuseColor, metalness, property, uniform, vec4 } from 'three/tsl'
+import { context, diffuseColor, float, Fn, luminance, metalness, normalView, positionViewDirection, property, sheen, sheenRoughness, specularColor, specularF90, uniform, vec3, vec4 } from 'three/tsl'
 import { PassNode, PhysicalLightingModel, type NodeBuilder } from 'three/webgpu'
 
 // The real-time GI's lighting pass takes the materials' indirect light apart
@@ -22,11 +22,15 @@ import { PassNode, PhysicalLightingModel, type NodeBuilder } from 'three/webgpu'
 //  - Transparent and transmissive materials are not taken apart, as three's
 //    builtinAOContext leaves them: they write nothing (alpha 0), and with the
 //    material's blending the outputs keep what is behind them.
+//  - The indirect diffuse light's alpha is c, the share of the light falling
+//    on the surface that its diffuse layer reflects (S2 design「合成」): the
+//    world-space layer's composite puts the probes' light through it, and
+//    takes the scene's ambient light out of the material's by it.
 
 /** The context mark: set on the lighting pass's contextNode. */
 const mark = 'giSplit'
 
-/** The indirect diffuse light, alpha 1 where a material was taken apart. */
+/** The indirect diffuse light; alpha c (diffuseShare), above 0 where a material was taken apart. */
 export const giAmbient = property('vec4', 'GIAmbient', vec4(0))
 /** The indirect specular light (the environment's reflection). */
 export const giEnvSpec = property('vec4', 'GIEnvSpec', vec4(0))
@@ -81,9 +85,51 @@ export class GILightingPass extends PassNode {
   }
 }
 
+type Node = ReturnType<typeof vec4>
+
 type Builder = NodeBuilder & {
-  context: Record<string, unknown> & { reflectedLight: { indirectDiffuse: ReturnType<typeof vec4>; indirectSpecular: ReturnType<typeof vec4> } }
+  context: Record<string, unknown> & { reflectedLight: { indirectDiffuse: Node; indirectSpecular: Node }; ambientOcclusion: Node }
   material: { transparent: boolean; transmission?: number }
+}
+
+/** The PhysicalLightingModel's members diffuseShare reads, untyped in @types/three. */
+type Model = {
+  computeMultiscattering(singleScatter: Node, multiScatter: Node, specularF90: Node, f0: Node, iridescenceF0?: Node | null): void
+  iridescenceF0Dielectric: Node | null
+  sheen: boolean
+}
+
+/**
+ * three r186's IBLSheenBRDF (nodes/functions/PhysicalLightingModel.js), which
+ * it does not export: the sheen's albedo indirectDiffuse compensates the
+ * diffuse layer for. A unit test keeps it the same as three's.
+ */
+const sheenAlbedo = Fn(([normal, viewDir, roughness]: Node[]) => {
+  const dotNV = normal.dot(viewDir).saturate()
+  const r2 = roughness.mul(roughness)
+  const rInv = roughness.add(0.1).reciprocal()
+  const a = float(-1.9362).add(roughness.mul(1.0678)).add(r2.mul(0.4573)).sub(rInv.mul(0.8469))
+  const b = float(-0.6014).add(roughness.mul(0.5538)).sub(r2.mul(0.467)).sub(rInv.mul(0.1255))
+  return a.mul(dotNV).add(b).exp().saturate()
+})
+
+/**
+ * c: what indirectDiffuse multiplies the Lambert term by, as one number. The
+ * share the specular lobe leaves the diffuse layer (three's own
+ * computeMultiscattering, with indirectDiffuse's arguments), the sheen's
+ * energy compensation where the material has sheen, and the material's AO,
+ * which ambientOcclusion() multiplies the diffuse light by. specular_color
+ * tints the share channel by channel; alpha holds its luminance. Never below
+ * 1e-3: a smooth dielectric at grazing angles leaves the diffuse layer about
+ * a tenth, and the composite tells a material taken apart by alpha above 0.
+ */
+function diffuseShare(model: Model, ambientOcclusion: Node): Node {
+  const single = vec3().toVar()
+  const multi = vec3().toVar()
+  model.computeMultiscattering(single, multi, specularF90, specularColor, model.iridescenceF0Dielectric)
+  let share = luminance(single.add(multi).oneMinus())
+  if (model.sheen === true) share = share.mul(sheen.r.max(sheen.g).max(sheen.b).mul(sheenAlbedo(normalView, positionViewDirection, sheenRoughness)).oneMinus())
+  return share.mul(ambientOcclusion).max(1e-3)
 }
 
 /** Wraps PhysicalLightingModel.indirect once; nothing changes until a pass carries the mark. */
@@ -91,12 +137,12 @@ export function installGISplit(model: { prototype: { indirect(builder: NodeBuild
   const proto = model.prototype as { indirect(builder: NodeBuilder): void; giSplit?: true }
   if (proto.giSplit) return
   const indirect = proto.indirect
-  proto.indirect = function (this: unknown, builder: NodeBuilder) {
+  proto.indirect = function (this: Model, builder: NodeBuilder) {
     indirect.call(this, builder)
     const { context: ctx, material } = builder as Builder
     if (ctx[mark] !== true || material.transparent || (material.transmission ?? 0) > 0) return
     // What indirect() leaves, AO included: the whole of the material's indirect light.
-    giAmbient.assign(vec4(ctx.reflectedLight.indirectDiffuse, 1))
+    giAmbient.assign(vec4(ctx.reflectedLight.indirectDiffuse, diffuseShare(this, ctx.ambientOcclusion)))
     giEnvSpec.assign(vec4(ctx.reflectedLight.indirectSpecular, 1))
     giBase.assign(vec4(diffuseColor.rgb, metalness))
   }
