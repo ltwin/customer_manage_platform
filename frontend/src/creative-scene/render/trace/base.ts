@@ -53,7 +53,7 @@ export type TraceHandle = { readonly reflect: TraceLayer; readonly probes: Trace
 /** An export's wait for the base ran out (D7): the picture fails, the build goes on. */
 export class TraceNotReady extends Error {
   constructor() {
-    super('屏幕外的反射还在准备，请稍后重试')
+    super('屏幕外的光照与反射还在准备，请稍后重试')
     this.name = 'TraceNotReady'
   }
 }
@@ -323,7 +323,7 @@ export class TraceBase {
         p.building.delete(segment)
         if (!(e instanceof GeometryFailed)) return this.fail()
         // The rest go on: the next sync leaves this geometry out (the viewport's asked for).
-        console.warn(`屏幕外的反射：几何 ${t.key} 构建失败，不参与反射：${e.message}`)
+        console.warn(`屏幕外的光照与反射：几何 ${t.key} 构建失败，不参与光照与反射：${e.message}`)
         this.broken.add(t.key)
         this.redraw?.()
       },

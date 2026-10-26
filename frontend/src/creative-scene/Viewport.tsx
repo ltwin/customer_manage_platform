@@ -1153,6 +1153,9 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       quality: 'interactive',
     }
     r.render(state.camera, frame)
+    // The layer ready, its probes warming in the background: the render panel still says it prepares.
+    const warming = engine === 'realtime_gi' && r.probeStats !== null && !r.probeStats.drawn
+    if (warming !== ui.getState().probesWarming) ui.setState({ probesWarming: warming })
     d.count++
     gpuTestHooks.viewportFrames = d.count
     // The e2e's frame times (W5 performance): this frame drawn n times in a row, then waited for once.

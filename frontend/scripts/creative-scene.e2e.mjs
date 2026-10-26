@@ -7194,7 +7194,7 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 6.1, an export the layer is
     await dialog.waitFor()
     const started = Date.now()
     await dialog.getByRole('button', { name: '导出' }).click()
-    await page.getByText('屏幕外的反射还在准备，请稍后重试').waitFor({ timeout: 120_000 })
+    await page.getByText('屏幕外的光照与反射还在准备，请稍后重试').waitFor({ timeout: 120_000 })
     console.log(`  failed after ${Date.now() - started} ms`)
     assert.equal(server.exports.length, 0, 'nothing placed')
     assert.equal(server.uploads.size, 0, 'nothing uploaded')
@@ -7212,7 +7212,8 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 6.1, an export the layer is
 // Every time an edit and a lit export go through, save while the layer is
 // preparing, where the export waits for it and fails (6.1).
 if (process.env.SCENE_E2E_TRACE) await check('trace: 7.1, the render tab says what the layer does; edits and exports go on', async () => {
-  const notes = ['兼容模式：未绘制屏幕外的反射', '当前设备不支持屏幕外的反射', '正在准备屏幕外的反射', '场景较大：屏幕外的反射使用简化几何', '场景过大：未绘制屏幕外的反射']
+  // S2's words (S2 design「提示文字」): the light as well as the reflections, but the proxies the reflections' alone.
+  const notes = ['兼容模式：未绘制屏幕外的光照与反射', '当前设备不支持屏幕外的光照与反射', '正在准备屏幕外的光照与反射', '场景较大：屏幕外的反射使用简化几何', '场景过大：未绘制屏幕外的光照与反射']
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     for (const [hooks, note] of [['full', null], ['forceWebGL', notes[0]], ['forceCompatibility', notes[1]], ['traceUnsupported', notes[1]], ['traceDelayMs:120000', notes[2]], ['proxy', notes[3]], ['traceBudget:4096', notes[4]]]) {
@@ -7223,8 +7224,13 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 7.1, the render tab says wh
       await shading(page, '最终渲染')
       await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
       const panel = page.getByRole('tabpanel', { name: '渲染' })
-      if (hooks === 'full' || hooks === 'proxy') await traceReady(page, hooks)
-      if (hooks === 'full') await panel.getByText('画面外的物体也会出现在反射里', { exact: false }).waitFor({ timeout: 10_000 })
+      if (hooks === 'full' || hooks === 'proxy') {
+        await traceReady(page, hooks)
+        // Ready, the probes warm in the background, the note saying it prepares meanwhile; then none.
+        await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, `${hooks}: the probes taken up`, 60_000)
+        await panel.getByText(notes[2]).waitFor({ state: 'detached', timeout: 10_000 })
+      }
+      if (hooks === 'full') await panel.getByText('画面外的物体也会出现在反射里，也会把光反弹进画面', { exact: false }).waitFor({ timeout: 10_000 })
       if (hooks === 'proxy') {
         // As 3.5: the budget pressed to the original's size takes the layer to the proxies.
         await page.evaluate(() => { window.__sceneGPU.traceBudget = window.__sceneGPU.traceStats.original.bytes })

@@ -76,6 +76,8 @@ export type EditorUI = {
    * (the render panel's notes, S1 design「降级与提示」).
    */
   trace: TraceStatus | null
+  /** The layer ready, the viewport's probes still warming in the background (S2 design「就绪的那一刻」): the panel says it prepares. */
+  probesWarming: boolean
   popup: Popup | null
   sheet: boolean
   history: boolean
@@ -121,6 +123,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     sceneTab: 'environment',
     backend: null,
     trace: null,
+    probesWarming: false,
     popup: null,
     sheet: false,
     history: saved?.history ?? false,
