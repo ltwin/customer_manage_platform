@@ -23,7 +23,7 @@
 
 ## 3. 软阴影
 
-- [ ] 3.1 第 2 组，候选做法：`pcf-radius`、`pcss`、`smtrace`、`vsm-pcss`、`msm-pcss`、`mip-pcss`，以及导出时的 `jitter` 对照。每种都按 design「测量与判定」测量：
+- [x] 3.1 第 2 组，候选做法：`pcf-radius`、`pcss`、`smtrace`、`vsm-pcss`、`msm-pcss`、`mip-pcss`，以及导出时的 `jitter` 对照。每种都按 design「测量与判定」测量：
   - 误差和半影宽度，在 `occluder-wall` 的三块板上分别测，覆盖多层遮挡和大半影；
   - `workbench` 和 `realtime_gi` 下的颗粒，核的旋转随帧序号变化；
   - 级联边界和立方体面接缝处是否连续；
@@ -36,6 +36,7 @@
     - `vsm-pcss`、`msm-pcss`、`mip-pcss` 不做，理由见 `soft-shadow-candidates.md`「取舍」；owner 2026-10-26 确认：默认 PCSS，`smtrace` 不进产品，多层遮挡的误差可以接受；
     - 颗粒用「单帧对多帧平均」的误差差值和 `workbench` 单帧成片来体现，没有另算局部方差；
     - 新增 `?layout=stack`（多层遮挡）、`?sunSize=`、`?maxSlope=` 和 `SPIKE_WARM`，`?cold=` 停用。
+    - 导出时的 `jitter` 对照（逐帧抖动光源位置再累积）没有做：PCSS 在单层遮挡下已与参考解吻合，`workbench` 的颗粒改由 U2 的时域累积解决（`thresholds.md`）。
 - [x] 3.2 第 3 组，读取原始深度（U7）：在 WebGL2 和 WebGPU 上，验证同一张设了 `compareFunction` 的阴影深度图能否在一个着色器里同时做比较采样和原始读取。不行时，验证阴影 pass 额外输出线性深度的备选方案。结论写进 `depth-read-backends.md`。
   - 结果：比较采样加原始读取在 WebGPU 上有条件可行，在 WebGL2 上不可行；「去掉比较、最近点过滤、全部手动比较」在两个后端都可行，画质与前者相同，建议统一采用。WebGPU 和 WebGL2 各需绕开一个 three r186 的缺陷。线性深度备选不需要了。
 - [x] 3.3 第 4 组，接法：
