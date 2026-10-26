@@ -13,6 +13,7 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
+import { AMBIENT_FILL } from './probes/cascade.ts'
 import { ProbeVolume } from './probes/volume.ts'
 import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
 import { hitShading } from './trace/hit.ts'
@@ -601,8 +602,9 @@ export class SceneRenderer {
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
           redraw: this.redraw,
-          trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene),
-          world: look.trace && look.world ? { probes: look.world.nodes, ambient: look.trace.tables.ambient, fill: 1 } : null,
+          // The reflections' hits lit by the probes as the screen is (S2 design「命中点的间接光」).
+          trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene, look.world && { probes: look.world.nodes, fill: AMBIENT_FILL }),
+          world: look.trace && look.world ? { probes: look.world.nodes, ambient: look.trace.tables.ambient, fill: AMBIENT_FILL } : null,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes

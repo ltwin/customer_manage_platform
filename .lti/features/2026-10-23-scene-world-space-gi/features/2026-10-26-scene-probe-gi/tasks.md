@@ -72,10 +72,18 @@
   - `ProbeVolume` 带一个页面内递增的 `serial`，管线键用它：换了探针体，管线就重建；
   - 先加了 5.1 的 `gpuTestHooks.probeStats`（级数、各级更新次数、是否已预热、本帧是否画了探针），5.2 的断言要用；
   - `host/render.ts` 在第一帧前调用 `warm`，原属 5.4，导出要看到探针就得先接上；时限的计入留在 5.4
-- [ ] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
+- [x] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
 
 ## 5. 验收与标定
 
+
+  结果：S1 的 `trace: AC-S1-1/2/4/5/6` 和 `trace: 5.2` 照过，`probes:` 的 3 个用例照过：
+  - `hitShading` 多一个可选的 `world`（探针节点和 `r_fill`）。视口和导出的反射在探针接入后才传，`hitCheck` 和探针自己的光线不传，仍按环境贴图算；
+  - S2-U2 已决，结论写进 design：追踪层的片元着色器不接探针时绑 8 张采样纹理，接入后 11 张，在 16 张以内，不用合并状态纹理。`trace: 5.2` 留了「不超过 16 张」的断言；
+  - `r_fill` 统一成 `cascade.ts` 的 `AMBIENT_FILL = 1`，合成、命中点、探针光线三处引用同一个值。
+
+  顺带修了 4.2 的一个缺陷：`environmentIrradiance` 返回的是 PMREM 最粗一级，即 E/π，少乘了 π（three 的 `EnvironmentNode` 会乘），探针光线却把它当 E 用。结果是探针覆盖不到的命中点，二次反弹的环境光偏暗 π 倍。现在返回 E。命中点着色沿用 three 的 E/π 约定，探针那份除以 π 后再混合。
+  另记一项给 5.5：视口接入层时的长任务变长了，第 4 到 6 个从 250–330 ms 增到 470–675 ms（反射着色器多了探针查找）
 - [ ] 5.1 e2e 用例 `SCENE_E2E_PROBES` 与 `gpuTestHooks`（`probeLayer`、`probeStats`、`probeRegions`、`probeFreeze`）；逐像素参考搬进 `checks.ts`（每像素 256 条路径、3 次命中、最后一次才读探针）。完成判据：AC-S2-1 的比值和扫视、AC-S2-2 的区域辐照度（含 `thin-wall` 的两个新机位）能跑出数值
 - [ ] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
 - [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数

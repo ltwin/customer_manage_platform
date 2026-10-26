@@ -122,6 +122,13 @@ export const VIEWPORT: Hysteresis = { A0: 12, alphaMax: 0.93 }
 /** A picture's warm-up: two runs of 32 then a plain mean (S0「restart32」). */
 export const PICTURE: Hysteresis = { A0: 32, alphaMax: 1 }
 
+/**
+ * r_fill (S2 design「合成」): the scene's ambient lights as the layer draws
+ * them, a ratio on L_amb in the composite, at the hits and on the probes' rays
+ * alike; 1 till AC-S2-2's comparison says otherwise (S2-U6, the owner's).
+ */
+export const AMBIENT_FILL = 1
+
 /** The frames a picture warms its probes for before it draws (S2 design「导出预热与时限」). */
 export const PROBE_WARMUP = 64
 

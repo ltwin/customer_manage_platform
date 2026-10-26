@@ -6629,6 +6629,13 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as 
     // (two draws) go and the probes' screen pass (one) comes (realtimeGI.ts).
     assert.equal(await v.page.evaluate(() => window.__sceneGPU.probeStats?.drawn), true, 'the probes drawn too')
     assert.equal(drawsAfter, drawsBefore - 1, 'as many draws a frame, less the denoiser for the probes')
+    // S2-U2: the reflections' fragment shaders (those tracing the layer) with the probes' three textures, against
+    // WebGPU's 16 sampled textures a stage.
+    const sampled = (await v.page.evaluate(() => window.__wgsl))
+      .filter((code) => code.includes('@fragment') && /_first\(/.test(code))
+      .map((code) => (code.match(/var\s+\w+\s*:\s*texture_(?!storage)\w+/g) ?? []).length)
+    console.log(`  the reflections' fragment shaders bind ${sampled.join(', ')} sampled textures`)
+    assert.ok(sampled.length > 0 && Math.max(...sampled) <= 16, `at most 16 sampled textures: ${sampled.join(', ')}`)
     assert.deepEqual(v.errors, [], v.errors.join('\n'))
     await v.context.close()
     }

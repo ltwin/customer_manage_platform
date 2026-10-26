@@ -6,7 +6,7 @@ import { preExposure, type PhysicalExposure } from '../../world/exposure.ts'
 import type { TraceHandle } from '../trace/base.ts'
 import { hitShading, type HitShading } from '../trace/hit.ts'
 import type { TraceLayer } from '../trace/layer.ts'
-import { activeLevels, DEPTH_TEXELS, IRRADIANCE_TEXELS, isDue, LEVELS_MAX, LEVELS_MIN, levelsFor, originCell, periodsFor, PICTURE, PROBES, RAYS, SETTLE_UPDATES, VIEWPORT, type Hysteresis } from './cascade.ts'
+import { AMBIENT_FILL, activeLevels, DEPTH_TEXELS, IRRADIANCE_TEXELS, isDue, LEVELS_MAX, LEVELS_MIN, levelsFor, originCell, periodsFor, PICTURE, PROBES, RAYS, SETTLE_UPDATES, VIEWPORT, type Hysteresis } from './cascade.ts'
 import { rayKernel, rescaleKernel, updateKernel, type ProbeData } from './kernels.ts'
 import { DEPTH_TILE, IRRADIANCE_TILE, TILES, type ProbeNodes } from './lookup.ts'
 
@@ -146,7 +146,7 @@ export class ProbeVolume {
         editedMax: uniform(new Vector3(-Infinity, -Infinity, -Infinity)),
         toStored: uniform(1),
         rescale: uniform(1),
-        fill: uniform(1),
+        fill: uniform(AMBIENT_FILL),
       },
     }
   }

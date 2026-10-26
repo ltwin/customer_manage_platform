@@ -4,6 +4,7 @@ import { materialEntry } from '../../materials/catalog.ts'
 import { patternFns, type PatternInput, type PatternOut, type TSLNode } from '../../materials/patterns.ts'
 import { preExposure } from '../../world/exposure.ts'
 import { gpuTestHooks } from '../gpu.ts'
+import { probeIrradiance, type ProbeNodes } from '../probes/lookup.ts'
 import type { TraceLayer } from './layer.ts'
 import { ROW as NORMAL_ROW, STEPS } from './normals.ts'
 import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, presets, type TraceTables } from './tables.ts'
@@ -133,8 +134,13 @@ function atHit(fn: (i: PatternInput) => PatternOut, base: Omit<PatternInput, 'wi
   })
 }
 
-/** Shading at the hits of rays through one layer: the reflections' (handle.reflect) or the probes' (handle.probes). */
-export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene): HitShading {
+/**
+ * Shading at the hits of rays through one layer: the reflections' (handle.reflect) or the probes' (handle.probes).
+ * world, the probes once the screen draws with them (S2 design「命中点的间接光」): shade's diffuse light from the
+ * environment's irradiance becomes the probes' where they cover the hit, the ambient lights' times fill. Without
+ * (the probes' own rays, checks.ts's hitCheck), the environment's.
+ */
+export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene, world: { probes: ProbeNodes; fill: number } | null = null): HitShading {
   const table = tables.node
   const { transforms, attributes } = layer.stores
   const colors = layer.colorsNode
@@ -259,17 +265,22 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene)
     // The ambient lights: irradiance through the indirect diffuse term.
     const [ssD, msD] = multiscatter(specularColor)
     const keptDiffuse = float(1).sub(ssD.add(msD))
-    light.addAssign(header(1).xyz.mul(BRDF_Lambert({ diffuseColor: diffuseContribution } as never)).mul(keptDiffuse))
+    light.addAssign(header(1).xyz.mul(world ? world.fill : 1).mul(BRDF_Lambert({ diffuseColor: diffuseContribution } as never)).mul(keptDiffuse))
     // The environment (EnvironmentNode): radiance along the reflection bent towards the normal as roughness grows,
-    // irradiance at its roughest level; turned as the scene's materials turn it (tables.ts environmentLookup).
+    // irradiance at its roughest level (over π, as three's diffuse and multiscatter terms take it); turned as the
+    // scene's materials turn it (tables.ts environmentLookup).
+    const irradiance = (environment ? environmentAt(n, float(1)) : vec3(0)).toVar()
     if (environment) {
       const [ssM, msM] = multiscatter(s.albedo)
       const r = normalize(mix(reflect(v.negate(), n), n, pow(roughness, 4)))
       const radiance = environmentAt(r, roughness)
-      const irradiance = environmentAt(n, float(1)).toVar()
       light.addAssign(radiance.mul(mix(ssD, ssM, s.metal)).add(mix(msD, msM, s.metal).mul(irradiance)))
-      light.addAssign(diffuseContribution.mul(keptDiffuse).mul(irradiance))
     }
+    // The diffuse layer's: the probes' where they cover the hit (their E over π), the environment's for the rest (as the composite's).
+    if (world) {
+      const probes = probeIrradiance(world.probes, P, n, v)
+      light.addAssign(diffuseContribution.mul(keptDiffuse).mul(irradiance.mul(float(1).sub(probes.coverage)).add(probes.pre.div(Math.PI))))
+    } else if (environment) light.addAssign(diffuseContribution.mul(keptDiffuse).mul(irradiance))
     return light.add(s.emission)
   }
 
@@ -454,7 +465,8 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene)
   return {
     shade,
     radiance,
-    environmentIrradiance: (n) => environmentAt(n, float(1)),
+    // π: the roughest level is the cosine-weighted mean radiance, as EnvironmentNode's irradiance multiplies it.
+    environmentIrradiance: (n) => environmentAt(n, float(1)).mul(Math.PI),
     update() {
       const env = scene.environment
       if (!environment || !env || env === shown) return
