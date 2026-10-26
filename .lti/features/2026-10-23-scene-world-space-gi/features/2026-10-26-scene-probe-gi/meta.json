@@ -1,6 +1,6 @@
 {
   "uid": "10a75e36-fde5-4cc7-84e4-8894d7979371",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-probe-gi",
   "kind": "feature",
   "assurance": "governed",
@@ -25,9 +25,9 @@
       "data:场景文档"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-26T08:22:45.718Z",
-  "updatedAt": "2026-10-26T10:16:54.540Z",
+  "updatedAt": "2026-10-26T10:18:30.330Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -48,8 +48,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "411fcc805f9206f223d2e6b85822b4ce757af913",
+    "at": "2026-10-26T10:18:29.947Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "cb9855e6edbced57a67bfe82472b41d02ddebfaa4925a1dc13f5ce578740ffe0"
+    },
+    "preExisting": [
+      ".lti/snapshots/cb9855e6edbced57a67bfe82472b41d02ddebfaa4925a1dc13f5ce578740ffe0.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
