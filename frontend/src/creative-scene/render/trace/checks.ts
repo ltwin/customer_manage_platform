@@ -1,6 +1,6 @@
-import { Color, DoubleSide, FloatType, Vector3, type AmbientLight, type Light, type Material, type Object3D, type PerspectiveCamera, type Scene } from 'three'
+import { Color, DoubleSide, FloatType, HalfFloatType, LinearFilter, Vector3, type AmbientLight, type Light, type Material, type Object3D, type PerspectiveCamera, type Scene } from 'three'
 import * as tsl from 'three/tsl'
-import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, RendererUtils, type MeshPhysicalNodeMaterial, type WebGPURenderer } from 'three/webgpu'
+import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, RendererUtils, StorageTexture, type MeshPhysicalNodeMaterial, type WebGPURenderer } from 'three/webgpu'
 import { materialEntry } from '../../materials/catalog.ts'
 import { slotOf, unknownGrey } from '../../materials/instances.ts'
 import { patternFns, type TSLNode } from '../../materials/patterns.ts'
@@ -23,11 +23,13 @@ import { traceFirst } from './wgsl.ts'
 //    outputs, the light without shadows (the raster without bump), and
 //    shadow or not where the raster is wholly one or the other.
 // Both draw the traced meshes alone, and the lights.
+//  - atlasCheck (S2 design S2-U1): what the probe kernels need of three in
+//    compute, an RGBA16F storage texture written, then loaded and sampled.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { Fn, float, fwidth, getViewPosition, length, luminance, max, normalize, select, uniform, varying, vec2, vec3, vec4 } = T
-const { modelScale, normalLocal, positionLocal, positionView, screenUV } = tsl as unknown as Record<string, TSLNode>
+const { Fn, If, float, fwidth, getViewPosition, instancedArray, ivec2, length, luminance, max, normalize, select, texture, textureLoad, textureStore, uniform, uvec2, varying, vec2, vec3, vec4 } = T
+const { instanceIndex, modelScale, normalLocal, positionLocal, positionView, screenUV } = tsl as unknown as Record<string, TSLNode>
 
 /** A layer no pass of the editor's draws: the traced meshes and the lights alone, for the raster's half. */
 const CHECK_LAYER = 28
@@ -406,5 +408,89 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
       rt.dispose()
       pass.dispose()
     }
+  }
+}
+
+export type AtlasCheck = {
+  /** Texels read back exactly as written (textureLoad), of all of them. */
+  stored: number
+  texels: number
+  /** Bilinear samples at an explicit level within tolerance of the filtered fp16 values, of all of them. */
+  sampled: number
+  samples: number
+  /** The largest error of a sample channel against its tolerance (within it at 1 or less). */
+  worst: number
+}
+
+/**
+ * S2 design S2-U1: what the probe kernels need of three r186 in compute.
+ * One pass writes an RGBA16F storage texture (textureStore), the next loads
+ * every texel back and samples it bilinearly at an explicit level
+ * (textureSampleLevel), each into a buffer read back here. The values are
+ * exact in fp16, so a load returns them as they are and a sample their
+ * bilinear blend.
+ */
+export async function atlasCheck(renderer: WebGPURenderer): Promise<AtlasCheck> {
+  const N = 8
+  const S = 16
+  const atlas = new StorageTexture(N, N)
+  atlas.type = HalfFloatType
+  atlas.minFilter = atlas.magFilter = LinearFilter
+  const valueAt = (x: number, y: number) => [x * 10.5, y * 100.5, 30000, -(x + y) * 0.25]
+  const loaded = instancedArray(N * N, 'vec4')
+  const sampled = instancedArray(S, 'vec4')
+  const write = Fn(() => {
+    const x = instanceIndex.mod(N)
+    const y = instanceIndex.div(N)
+    textureStore(atlas, uvec2(x, y), vec4(float(x).mul(10.5), float(y).mul(100.5), 30000, float(x.add(y)).mul(-0.25))).toWriteOnly()
+  })().compute(N * N)
+  // Sample i sits 0.2 of a texel right of texel 2(i mod 4) and 0.8 below texel 2⌊i / 4⌋.
+  const at = (i: number) => [(2 * (i % 4) + 0.2 + 0.5) / N, (2 * Math.floor(i / 4) + 0.8 + 0.5) / N]
+  const read = Fn(() => {
+    loaded.element(instanceIndex).assign(textureLoad(atlas, ivec2(instanceIndex.mod(N), instanceIndex.div(N))))
+    If(instanceIndex.lessThan(S), () => {
+      const u = float(instanceIndex.mod(4)).mul(2).add(0.7).div(N)
+      const v = float(instanceIndex.div(4)).mul(2).add(1.3).div(N)
+      sampled.element(instanceIndex).assign(texture(atlas, vec2(u, v)).level(0))
+    })
+  })().compute(N * N)
+  try {
+    await renderer.computeAsync(write)
+    await renderer.computeAsync(read)
+    const texels = new Float32Array(await renderer.getArrayBufferAsync(loaded.value))
+    const samples = new Float32Array(await renderer.getArrayBufferAsync(sampled.value))
+    let stored = 0
+    for (let t = 0; t < N * N; t++) {
+      const want = valueAt(t % N, Math.floor(t / N))
+      if (want.every((w, c) => texels[4 * t + c] === w)) stored++
+    }
+    let good = 0
+    let worst = 0
+    for (let i = 0; i < S; i++) {
+      const [u, v] = at(i)
+      const tx = u * N - 0.5
+      const ty = v * N - 0.5
+      const x0 = Math.floor(tx)
+      const y0 = Math.floor(ty)
+      const fx = tx - x0
+      const fy = ty - y0
+      const lerp = (a: number, b: number, f: number) => a + (b - a) * f
+      const corners = [valueAt(x0, y0), valueAt(x0 + 1, y0), valueAt(x0, y0 + 1), valueAt(x0 + 1, y0 + 1)]
+      let e = 0
+      for (let c = 0; c < 4; c++) {
+        const want = lerp(lerp(corners[0][c], corners[1][c], fx), lerp(corners[2][c], corners[3][c], fx), fy)
+        // Filtering weights carry 8 bits of fraction on some GPUs (a 1/256 step of the corners' spread), and the result is fp16-rounded.
+        const spread = Math.max(...corners.map((k) => k[c])) - Math.min(...corners.map((k) => k[c]))
+        const slack = spread / 256 + Math.abs(want) / 1024 + 1e-6
+        e = Math.max(e, Math.abs(samples[4 * i + c] - want) / slack)
+      }
+      worst = Math.max(worst, e)
+      if (e <= 1) good++
+    }
+    return { stored, texels: N * N, sampled: good, samples: S, worst }
+  } finally {
+    atlas.dispose()
+    write.dispose()
+    read.dispose()
   }
 }

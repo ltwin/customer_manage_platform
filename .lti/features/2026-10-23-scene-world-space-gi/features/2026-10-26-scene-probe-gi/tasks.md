@@ -14,7 +14,9 @@
   - `traceDelayMs` 下导出会等底座、等不到就失败，所以「就绪前」改在视口里核对；
   - 扫视里靠近亮墙的点在亮墙进入画面时变亮 16%；
   - 这一轮机器比 S1 合入时慢 10%–20%，帧时间只作参考
-- [ ] 1.2 S2-U1 的最小 compute 用例：在 three r186 的 compute 里显式 LOD 采样（`textureSampleLevel`）和向 RGBA16F 存储纹理写入（`textureStore`）各写一个，读回核对。不行的部分在 `trace/computePatches.ts` 里补（连同 `TextureNode.grad()`、PMREM 的环境旋转）；仍不行时按 design 的退路改用 `textureLoad` 加手工双线性。完成判据：用例读回正确，结论写进 design 的 S2-U1
+- [x] 1.2 S2-U1 的最小 compute 用例：在 three r186 的 compute 里显式 LOD 采样（`textureSampleLevel`）和向 RGBA16F 存储纹理写入（`textureStore`）各写一个，读回核对。不行的部分在 `trace/computePatches.ts` 里补（连同 `TextureNode.grad()`、PMREM 的环境旋转）；仍不行时按 design 的退路改用 `textureLoad` 加手工双线性。完成判据：用例读回正确，结论写进 design 的 S2-U1
+
+  结果：`SCENE_E2E_PROBES` 的 `probes: S2-U1` 用例通过，两项都不需要补丁。`computePatches.ts` 的 `grad()` 和环境旋转两处补丁要在 compute 里采 PMREM 才用得上，改到任务 4.2 随光线内核一起加、一起验证
 
 ## 2. 不构建时的两处改动（AC-S2-5，各自单独提交）
 

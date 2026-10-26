@@ -9541,6 +9541,39 @@ async function limitModelTimes() {
   }
 }
 
+// --- S2 scene-probe-gi ---------------------------------------------------------
+
+// SCENE_E2E_PROBES=<dir>: S2's checks on this machine's GPU. S2-U1 first: a compute pass writes an RGBA16F
+// storage texture, the next loads it back and samples it at an explicit level (render/trace/checks.ts atlasCheck).
+if (process.env.SCENE_E2E_PROBES) await check('probes: S2-U1, compute writes an RGBA16F storage texture, then loads and samples it at an explicit level', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const out = await page.evaluate(async () => {
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { atlasCheck } = await import('/src/creative-scene/render/trace/checks.ts')
+      const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+      try {
+        return { backend: gpu.backend, ...(await atlasCheck(gpu.renderer)) }
+      } finally {
+        gpu.dispose()
+      }
+    })
+    console.log(`  ${JSON.stringify(out)}`)
+    assert.deepEqual(errors, [])
+    assert.equal(out.backend, 'webgpu')
+    assert.equal(out.stored, out.texels, 'every texel loads back as written')
+    assert.equal(out.sampled, out.samples, `every sample bilinear within tolerance (worst ${out.worst})`)
+  } finally {
+    await gpu.close()
+  }
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
