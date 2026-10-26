@@ -256,7 +256,7 @@ function spotTrace(light: SpotLight, r: number) {
  * The receiver's plane, from the screen derivatives of its place relative to the light, gives its distance along
  * every sampled direction: a wide kernel compares against the plane, not the receiver's own distance.
  */
-function pointPCSS() {
+function pointPCSS(rect = false) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
@@ -286,7 +286,19 @@ function pointPCSS() {
     const absDir = abs(bd3D)
     const tangent = normalize(cross(bd3D, select(absDir.x.greaterThan(absDir.z), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar()
     const bitangent = cross(bd3D, tangent).toVar()
+    // A rectangle's kernel (rect, the area lights): its axes as the receiver sees them, across the way to it, half
+    // its width and height long, stretched by 2/√3 so a disc's samples spread like the rectangle's (the same second
+    // moment). A disc's otherwise: radius r either way.
+    const rectAxes = () => {
+      const flat = (a: TSLNode) => a.sub(bd3D.mul(dot(bd3D, a)))
+      const half = held(shadow, 'lightHalf', 'vec2').mul(2 / Math.sqrt(3))
+      return { x: flat(held(shadow, 'lightAxisX', 'vec3')).mul(half.x).toVar(), y: flat(held(shadow, 'lightAxisY', 'vec3')).mul(half.y).toVar(), most: max(half.x, half.y) }
+    }
+    const axes = rect ? rectAxes() : null
     const along = (o: TSLNode) => normalize(bd3D.add(tangent.mul(o.x)).add(bitangent.mul(o.y)))
+    // A unit-disc sample v at scale k (radians a metre of light): the disc's r k, or the rectangle's axes times k.
+    const toward = (v: TSLNode, k: TSLNode) => (axes ? normalize(bd3D.add(axes.x.mul(v.x.mul(k))).add(axes.y.mul(v.y.mul(k)))) : along(v.mul(radius.mul(k))))
+    const reach = axes ? axes.most : radius
     /** The radial distance the map holds along unit direction d. */
     const stored = (d: TSLNode) => {
       const a = abs(d)
@@ -297,21 +309,22 @@ function pointPCSS() {
     const receiverAt = (d: TSLNode) => clamp(planeDistance.div(min(dot(n, d), -1e-4)), dR.mul(0.5), dR.mul(2))
     const eps = dR.mul(texel).mul(num('cubeEps', 1.5)).add(0.005).toVar()
     const phi = turn().toVar()
-    const searchU = min(radius.mul(dR.sub(near)).div(dR.mul(near)), texel.mul(maxTexels)).toVar()
+    // Scales (radians a metre of light), the widest reach held to maxTexels.
+    const searchK = min(dR.sub(near).div(dR.mul(near)), texel.mul(maxTexels).div(reach)).toVar()
     const blockers = float(0).toVar()
     const distanceSum = float(0).toVar()
     for (let i = -1; i < searchN; i++) {
-      const d = i < 0 ? bd3D : along(vogelDiskSample(i, searchN, phi).mul(searchU))
+      const d = i < 0 ? bd3D : toward(vogelDiskSample(i, searchN, phi), searchK)
       const at = stored(d).toVar()
       const blocks = select(at.lessThan(receiverAt(d).sub(eps)), float(1), float(0))
       blockers.addAssign(blocks)
       distanceSum.addAssign(blocks.mul(at))
     }
     const dB = distanceSum.div(max(blockers, 1)).toVar()
-    const penumbra = clamp(radius.mul(dR.sub(dB)).div(dB.mul(dR)), texel.mul(0.5), texel.mul(maxTexels)).toVar()
+    const penumbraK = clamp(dR.sub(dB).div(dB.mul(dR)), texel.mul(0.5).div(reach), texel.mul(maxTexels).div(reach)).toVar()
     const lit = float(0).toVar()
     for (let i = 0; i < filterN; i++) {
-      const d = along(vogelDiskSample(i, filterN, phi).mul(penumbra))
+      const d = toward(vogelDiskSample(i, filterN, phi), penumbraK)
       lit.addAssign(select(stored(d).lessThan(receiverAt(d).sub(eps)), float(0), float(1)))
     }
     return select(blockers.lessThan(0.5), float(1), lit.div(filterN))
@@ -331,8 +344,16 @@ if (carried) {
     copy.call(this, source)
     if (source.filterNode) this.filterNode = source.filterNode
     if (source.lightSize !== undefined) this.lightSize = source.lightSize
+    for (const k of ['lightAxisX', 'lightAxisY', 'lightHalf'] as const) if (k in source) (this as unknown as Record<string, unknown>)[k] = (source as unknown as Record<string, { clone(): unknown }>)[k].clone()
     return this
   } as typeof copy
+}
+
+/** PCSS on any shadow, of a light size big (metres): the area light's shadows (area.ts) take it so. */
+export function pcssFor(shadow: LightShadow, kind: 'cube' | 'cube-rect' | 'spot', size: number) {
+  const s = shadow as Filtered & { lightSize?: number }
+  s.lightSize = size
+  s.filterNode = kind === 'spot' ? mapPCSS(spotGeometry) : pointPCSS(kind === 'cube-rect')
 }
 
 /** What each method does to a light that casts: returns a line for the report. */

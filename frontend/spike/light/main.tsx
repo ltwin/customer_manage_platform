@@ -37,6 +37,7 @@ import { compare, refLights, type Comparison } from './reference.ts'
 import { methods, softShadows, type Method } from './soft.ts'
 import { sphereLights } from './sphere.ts'
 import { contactShadows } from './contact.ts'
+import { areaShadows } from './area.ts'
 
 extend(THREE as unknown as Parameters<typeof extend>[0])
 
@@ -68,15 +69,17 @@ const occluderLights: Record<string, string> = { spot: '聚光', point: '点光'
  * area-studio: occluder-wall's room with its lights off and a softbox in their place, an area light the document
  * cannot hold until S2 (design「局部设计与偏差」1). Square 1 m, 100 cd/m² (?nits=), from the left, facing the wall: lit like the other lights, about 3 lux on the wall.
  */
-function addSoftbox(root: THREE.Object3D) {
+function addSoftbox(root: THREE.Object3D): THREE.RectAreaLight {
   RectAreaLightNode.setLTC(RectAreaLightTexturesLib.init())
-  const box = new THREE.RectAreaLight(0xffffff, Number(query.get('nits') ?? 100), 1, 1)
+  // ?areaW= ?areaH= metres (1 × 1).
+  const box = new THREE.RectAreaLight(0xffffff, Number(query.get('nits') ?? 100), Number(query.get('areaW') ?? 1), Number(query.get('areaH') ?? 1))
   box.name = 'softbox'
   // View space (Z up): the document's (−2.5, 1.8, 2.5) in Y up, aimed at the wall's middle.
   box.position.set(-2.5, -2.5, 1.8)
   box.lookAt(0, 2.95, 1.8)
   root.add(box)
   box.updateMatrixWorld()
+  return box
 }
 
 /** The reference scene as the e2e's server gives it (creative-scene.e2e.mjs referenceScene), and its models. */
@@ -144,9 +147,10 @@ async function boot() {
   const g = gpuOf(state.gl)
   const three = state.scene
 
-  if (sceneName === 'area-studio') addSoftbox(three)
+  const softbox = sceneName === 'area-studio' ? addSoftbox(three) : null
   // Before anything builds: three keeps the first shadow node a light makes.
   const lights = softShadows(three, method, size)
+  if (softbox) lights.push(areaShadows(g.renderer, softbox))
   const contact = contactShadows()
   if (contact) lights.push(contact)
   // Sphere lights (highlights and falloff, sphere.ts) unless ?sphere=0: the product's point lights.
@@ -237,8 +241,8 @@ async function boot() {
     const panels = drawPanels(c, query.get('flip') === '1')
     document.body.append(panels)
     canvas.style.display = 'none'
-    const widths = sceneName === 'occluder-wall' ? penumbrae(c, error) : null
-    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'occluder-wall' ? regionErrors(c, error) : null, highlight: sceneName === 'occluder-wall' ? highlight(c) : null, terminator: query.get('layout') === 'near' ? terminator(c) : null } }
+    const widths = sceneName === 'occluder-wall' || sceneName === 'area-studio' ? penumbrae(c, error) : null
+    spike.report = { ...spike.report, view: 'compare', tier: handle.tier, compare: { size: cmpSize, refFrames, rasterFrames, referenceMs: Math.round(c.referenceMs), rasterMs: Math.round(c.rasterMs), averaged: error.averaged, first: error.first, convergence: convergence(c), penumbrae: widths, regions: sceneName === 'frame-two-lights' ? null : regionErrors(c, error), highlight: sceneName === 'occluder-wall' ? highlight(c) : null, terminator: query.get('layout') === 'near' ? terminator(c) : null } }
     show([head, `reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms; |Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`, ...(widths ? penumbraLines(widths) : [])])
     spike.data = c
   }

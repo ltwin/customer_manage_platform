@@ -9,8 +9,8 @@ import type { Comparison } from './reference.ts'
 
 /**
  * The wall's front face, and the boards' shadow centres on it (doc x, height): from the light's centre for the
- * point and spot lights (occluder-wall-layout.py), along the sun's way for the sun (the lights' place toward the
- * wall's middle at (0, 1.8, −2.95)).
+ * point and spot lights (occluder-wall-layout.py) and area-studio's softbox (at (−2.5, 1.8, 2.5)), along the sun's
+ * way for the sun (the lights' place toward the wall's middle at (0, 1.8, −2.95)).
  */
 const WALL_Z = -2.95
 const centres = {
@@ -19,6 +19,12 @@ const centres = {
     { name: '0.5 m', at: [-1.075, 2.52] },
     { name: '3 m', at: [3.496, 2.54] },
   ],
+  area: [
+    { name: '0.05 m', at: [-2.803, 0.991] },
+    { name: '0.5 m', at: [-1.286, 2.683] },
+    // Above the wall's top (4 m): nothing to measure.
+    { name: '3 m', at: [2.191, 4.48] },
+  ],
   sun: [
     { name: '0.05 m', at: [-2.76, 0.987] },
     { name: '0.5 m', at: [-0.989, 2.465] },
@@ -26,7 +32,7 @@ const centres = {
   ],
 } as const
 const query = new URLSearchParams(location.search)
-const boards = centres[query.get('light') === 'sun' ? 'sun' : 'near']
+const boards = centres[query.get('scene') === 'area-studio' ? 'area' : query.get('light') === 'sun' ? 'sun' : 'near']
 
 const BIN = 0.005
 const BAND = 0.03
