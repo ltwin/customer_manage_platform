@@ -1,0 +1,55 @@
+{
+  "uid": "10a75e36-fde5-4cc7-84e4-8894d7979371",
+  "revision": 3,
+  "id": "scene-probe-gi",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-world-space-gi",
+  "designBinding": {
+    "version": 5,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "patterns:场景着色写法",
+      "data:场景文档"
+    ],
+    "delivers": [
+      "architecture:场景模块",
+      "patterns:场景着色写法",
+      "data:场景文档"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-26T08:22:45.718Z",
+  "updatedAt": "2026-10-26T10:16:54.540Z",
+  "risk": {
+    "factors": [
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-26T10:16:54.384Z",
+      "contentHash": "9d6f271c93b2a684"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-26T10:16:54.384Z",
+      "contentHash": "e4899cc60189f67f"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

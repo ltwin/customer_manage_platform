@@ -34,6 +34,18 @@
     - `render/trace/` 里一个调用它求交的包装模块：在 three r186 上，库的求交不能从 TSL 直接调用，包装模块只构造参数、声明局部结果、按值返回，不写任何着色逻辑（修订 v3）。上游提供可从 TSL 调用的版本后删除。
   - 程序化材质预设是 TSL `Fn`：输入只有对象空间位置（米）、对象空间法线、参数 uniform、像素尺度和宽度函数，输出 `{albedo, roughness, metalness, height, emission}`；不读取渲染器状态、屏幕坐标、帧序号或时间。函数体里不直接调用屏幕导数（`fwidth`、`dFdx`、`dFdy`）：抗锯齿需要的宽度经输入的宽度函数取得，光栅路径传 `fwidth`（生成的着色与改动前相同，已发布预设的外观不变），光线命中点（屏幕外，没有屏幕导数）传由光线锥合成光线微分、再取有限差分得到的宽度，像素尺度同样按光线锥估计（`scene-world-space-gi`）。材质函数的输入在 TSL 的 `Switch` 之前存成变量：各分支共享的表达式，TSL 会在第一次构建它的分支里存成变量，其他分支读到未赋值的值。凹凸由 `height` 在预设函数之外求得，命中点不做凹凸。
   - 已发布的预设外观不变，改外观发布新版本（沿用材质目录的规则）。
+  - 按像素分叉的控制流里，不放依赖隐式导数的纹理采样。
+    - **范围**：
+      - 分叉指条件随像素变化的 `If`、`Loop` 里的提前退出，以及条件不是常量的 `select`：three 把这种 `select` 编成 if/else；
+      - 依赖隐式导数的采样，指 `texture()` 不带 `.level()` 或 `.grad()` 的采样，以及深度比较采样。
+    - **原因**：
+      - WGSL 规定这类采样只在一致的控制流里有定义，而 three 生成 WGSL 时关掉了 `derivative_uniformity` 诊断，所以编译不报错；
+      - 没进分支的相邻像素，坐标为零或未定义，导数随之为 NaN；
+      - 结果是整块纯白或纯黑。
+    - **写法**：在分叉之外无条件采样，再用算术（`mix`、`step`）选择；或者显式指定 LOD。
+    - **验证**：这类错误 SwiftShader 不复现，要在本机 GPU 上验证。
+
+    出处：`scene-world-space-gi` 修订 v5；来源是 2026-10-26 体积雾的纯白（`f3c4807f`）。
   - 需要随帧变化的量（TRAA 抖动、时域噪声）只取渲染器创建入口提供的帧序号；不读墙钟时间，也不依赖渲染器自己的 rAF 计数。每张导出图从帧序号 0 开始；跨帧累积的状态（实时 GI 世界空间追踪层的探针和反射历史）在这时一并清空。
   - 预计算表（LUT，例如物理大气的透射率、多次散射、天空视图和空气透视）用全屏片元 pass 写入 `RenderTarget`，3D 表写入 `RenderTarget3D` 的各层或拼成 2D 图集；不用 compute 写存储纹理。理由是 WebGL2 后端的 compute 由 transform feedback 模拟，只能写存储缓冲。
   - 默认两个后端都支持。只支持 WebGPU 的功能须经所属 Epic 修订确认，并按统一规则降级和认领（`scene-world-environment` design「只支持 WebGPU 的统一规则」）。已确认只支持 WebGPU 的：实时 GI 的世界空间追踪层（`scene-world-space-gi`，降级与认领方式见该 Epic design「能力与容量」）。
@@ -46,8 +58,12 @@
   - three r186 在 compute 阶段的限制（`TextureNode.grad()`、PMREM 的环境旋转）由 `render/trace/` 里一个限定范围的补丁模块处理：只改 compute 阶段原本会报错的分支，光栅着色器不受影响；文件头注明上游版本、改动的方法和对应的上游 issue，升级 three 时先检查能否删除（`scene-world-space-gi` 修订 v3）。按论文或外部示例自写的着色代码（Hillaire 物理大气）在文件头注明参照的论文和示例版本。
 - **为什么**：`WebGPURenderer` 只接受节点材质。只有一份着色源码，WebGPU 和 WebGL2 两个后端以及将来的 compute 路径追踪器才能共用同一份定义，不会出现两套实现的外观漂移；预设写成不依赖渲染器的纯函数，才能在 compute 着色器里复用。
 - **不适用于**：不做 3D 渲染的 2D canvas（例如画布页的生成遮罩用 2D context）；沙箱里的几何代码只生成几何、不渲染。
-- **检查**：`make check-frontend` 中的静态检查（`scene-webgpu-renderer` R1 交付）：`frontend/src` 里出现 `WebGLRenderer`、`WebGLRenderTarget`、`ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`、`ShaderLib`、`ShaderChunk`、GLSL 模板字符串、`three/examples/jsm/postprocessing/*`、`three/addons/objects/Sky.js`、非 WebGPU 版的 `lines/*`，或白名单以外的 drei 组件时失败。`frontend/src/creative-scene/world/` 和 `render/` 里出现 `Date.now()` 或无参的 `new Date()` 时也失败（`scene-world-environment` W2 交付；节流用的 `performance.now()` 不影响画面，不在此列）。`frontend/src` 里出现 `wgslFn` 或 `wgslTagFn` 时同样失败，`render/trace/` 的包装模块除外（`scene-world-space-gi` S1 交付）。
-- **例子**：`frontend/src/creative-scene/materials/patterns.ts` 的预设函数和 `render/` 下的渲染器创建入口（R1 改写后）；`render/trace/` 的光追底座（`scene-world-space-gi` S1 交付后）。
+- **检查**：`make check-frontend` 中的静态检查（`scene-webgpu-renderer` R1 交付）：`frontend/src` 里出现 `WebGLRenderer`、`WebGLRenderTarget`、`ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`、`ShaderLib`、`ShaderChunk`、GLSL 模板字符串、`three/examples/jsm/postprocessing/*`、`three/addons/objects/Sky.js`、非 WebGPU 版的 `lines/*`，或白名单以外的 drei 组件时失败。`frontend/src/creative-scene/world/` 和 `render/` 里出现 `Date.now()` 或无参的 `new Date()` 时也失败（`scene-world-environment` W2 交付；节流用的 `performance.now()` 不影响画面，不在此列）。`frontend/src` 里出现 `wgslFn` 或 `wgslTagFn` 时同样失败，`render/trace/` 的包装模块除外（`scene-world-space-gi` S1 交付）。「分叉里不放隐式导数的采样」写不成静态检查，由在本机 GPU 上运行的定向 e2e 把关。
+- **例子**：
+  - `frontend/src/creative-scene/materials/patterns.ts` 的预设函数；
+  - `render/` 下的渲染器创建入口（R1 改写后）；
+  - `render/trace/` 的光追底座（`scene-world-space-gi` S1 交付后）；
+  - 分叉里的采样：`render/volumes/lights.ts` 的点光阴影查找，每步无条件采样，再乘以范围掩码；`render/probes/lookup.ts` 的探针采样，显式指定 LOD（S2 交付后）。
 
 ## data: MODIFY 场景文档
 
