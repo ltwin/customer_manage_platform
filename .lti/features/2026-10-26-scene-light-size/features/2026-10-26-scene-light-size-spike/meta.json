@@ -1,6 +1,6 @@
 {
   "uid": "9f1feb22-1c9c-4ca5-a2c3-712325a45e8d",
-  "revision": 2,
+  "revision": 3,
   "id": "scene-light-size-spike",
   "kind": "feature",
   "assurance": "governed",
@@ -21,9 +21,9 @@
     ],
     "delivers": []
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-26T13:18:29.364Z",
-  "updatedAt": "2026-10-26T14:07:45.032Z",
+  "updatedAt": "2026-10-26T14:08:22.813Z",
   "risk": {
     "factors": []
   },
@@ -41,8 +41,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "26e49bbc1f1c2950dad8d768d65c942bd9c3d38d",
+    "at": "2026-10-26T14:08:22.274Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "49b14071875f3277356e81193ed0f7816667c43ebd0f648c60c58a8575f0bb36"
+    },
+    "preExisting": [
+      ".lti/snapshots/49b14071875f3277356e81193ed0f7816667c43ebd0f648c60c58a8575f0bb36.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
