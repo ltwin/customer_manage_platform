@@ -152,3 +152,21 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - 0 与非 0 切换的停顿：workbench 4.0–4.8 s，realtime_gi 7.0–8.4 s。原因是灯要重建，所有材质都重新编译。
 - [ ] 7.2 owner 看图（AC-S1-11）：用 owner 反馈的场景出改前改后的对比图，`workbench` 和 `realtime_gi` 各一组。阴影图的台阶看得出来时，加出 2048 的对比并复测 7.1。完成判据：owner 给出结论。
   - 进展：用 frame-two-lights（owner 2026-10-26 反馈的「两盏灯隔着框架照墙」）出改前改后的对比图，`workbench` 和 `realtime_gi` 各一张。改前是分支起点的基线 `baseline-before`；改后按缺省尺寸导出（点光 0.1 m、平行光 0.545°），用 `SCENE_E2E_LIGHT_SIZES=keep`。等 owner 结论。
+
+## 审计修复（2026-10-27，verify 前）
+
+外部代码审计逐项核对的结论与处理：
+
+- 中 1 workbench 视口每次重绘换噪声：成立。采样核只在有多帧平均的地方（realtime_gi 的 TRAA、workbench 出图累积）按帧旋转，由 `shadowTurning` uniform 控制，`sceneRenderer.render` 每帧设置；workbench 视口用固定旋转，噪声静止。
+- 中 2 接收面依赖屏幕导数：成立。2D 图改为用几何法线 `normalWorldGeometry` 经阴影矩阵解析出接收面（按 three `setupShadowCoord` 的 x/w、1−y/w、z/w 求雅可比）；立方体图用几何法线并翻向光源。不再用 `dFdx/dFdy`，轮廓与级联、点光分支里导数未定义的问题一并消除。
+- 低 3 IGN 帧偏移未取模：成立，改为 `frameId % 64`。
+- 低 4 级联之间半影上限不一致：成立。太阳级联的上限按最粗一级的 texel 计（`capTexel`，`fitCascades` 每帧写入各级），交界两侧截断一致；聚光、点光仍按自身贴图。
+- 低 5 direct.ts 拆层：
+  - sheen 能量补偿：成立。高光那一遍打开 sheen 标志，让 three 的补偿作用到高光上；那一遍的 sheen 光另存后丢弃（sheen 由漫反射那遍计入）。
+  - anisotropy：成立。高光那遍按加宽后的粗糙度重算 `alphaT`（three r186 的公式），之后还原。
+  - 依赖 roughness 的 `direction`、`energy` 在加宽前 `.toVar()`。
+- 低 6 缺省尺寸回退不统一：部分成立。`lightSize()` 移到 `state/apply.ts`，`softShadowsIn` 和半径圈改用它；属性面板先铺 `lightDefaults`，原本就显示缺省值，不用改。
+- 低 7：删除 `scripts/light-check/dbg.tmp.mjs`。基线 PNG 是 AC-S1-2 的逐像素比对输入，需要无损，保留；已在分支历史里，移出也不减小仓库。`model.go` 读旧快照时 `completeLight` 出错导致整个场景不可读：只记录，不改（写入时已校验）。
+- 设计：`render/lightModel/nodes.ts` 顶部写明已核对的 three 版本（r186）和升级时要重看的文件。
+- 复测（`SCENE_E2E_ONLY='light size:'`，含 `SCENE_E2E_TRACE`）：AC-S1-1/3/4/5/6/8/10 全部通过。AC-S1-1 第一轮聚光 3 m 板剖面超阈（max 0.122、0.171）：测量页自己平均 16 帧，不走 `SceneRenderer.render`，旋转开关停在 0。测量页改为打开旋转后，3 m 板剖面均值 ≤ 0.010、最大 ≤ 0.091（与改前一致），点光、太阳降到 0.029、0.020。单测（gi、trace、volumes）49 项通过，tsc、oxlint 通过。AC-S1-2 只涉及尺寸为 0 的灯（不经过滤器和拆层），未重跑。
+- AC-S1-11 的改后图用改完的代码重新导出。

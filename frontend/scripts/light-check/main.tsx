@@ -28,6 +28,7 @@ import { cameraFraming } from '../../src/creative-scene/host/framing.ts'
 import type { SceneModel } from '../../src/creative-scene/models/cache.ts'
 import { traceWaitMs } from '../../src/creative-scene/render/engines.ts'
 import { createRenderer, gpuOf, gpuTestHooks } from '../../src/creative-scene/render/gpu.ts'
+import { shadowTurning } from '../../src/creative-scene/render/lightModel/shadowFilter.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
 import { applyExposure } from '../../src/creative-scene/world/exposure.ts'
 import { nightSkyDefaults, physicalSkyDefaults } from '../../src/creative-scene/world/physicalSky.ts'
@@ -210,6 +211,8 @@ async function boot() {
   const cmpSize = { width, height: Math.max(16, Math.round(width / camera.aspect / 16) * 16) }
   const refFrames = Number(query.get('refFrames') ?? 8192)
   const rasterFrames = Number(query.get('rasterFrames') ?? 64)
+  // The raster frames are averaged here, as the workbench's accumulation does: the soft shadows' kernels turn.
+  shadowTurning.value = 1
   const c = await compare(g.renderer, three, camera, handle.reflect, refLights(three), cmpSize, refFrames, rasterFrames)
   const error = shadowError(c)
   document.body.append(drawPanels(c, false))

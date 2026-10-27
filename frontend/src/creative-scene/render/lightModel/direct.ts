@@ -10,8 +10,9 @@ import { horizonDirection, hybridLobe, type Sized } from './formulas.ts'
 // PhysicalLightingModel.direct, wrapped once like giSplit.ts wraps indirect,
 // draws a light without it as before. With it, three parts:
 //  - the base layer's specular: three's direct once more, toward the hybrid
-//    lobe's direction at its roughness and energy, the clearcoat and sheen off,
-//    its diffuse let go;
+//    lobe's direction at its roughness (an anisotropic one's alphaT widened
+//    alike) and energy, the clearcoat off, its diffuse and its sheen let go
+//    (the sheen still takes its energy from the specular, as in three's);
 //  - the clearcoat: its own hybrid lobe (its roughness, its normal) added to
 //    clearcoatSpecularDirect by BRDF_GGX as three's direct does (r186). The
 //    clearcoat lit by the base's lobe stayed a point light's dot where the
@@ -25,11 +26,11 @@ import { horizonDirection, hybridLobe, type Sized } from './formulas.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { BRDF_GGX, float, vec3 } = tsl as unknown as Record<string, Op>
-const { clearcoatNormalView, clearcoatRoughness, normalView, positionViewDirection, roughness } = tsl as unknown as Record<string, TSLNode>
+const { alphaT, anisotropy, clearcoatNormalView, clearcoatRoughness, normalView, positionViewDirection, roughness } = tsl as unknown as Record<string, TSLNode>
 
 type Reflected = { directDiffuse: TSLNode; directSpecular: TSLNode }
 type DirectInput = { lightDirection: TSLNode; lightColor: TSLNode; reflectedLight: Reflected; sized?: Sized }
-type Model = { clearcoat: boolean; sheen: boolean; clearcoatSpecularDirect: TSLNode }
+type Model = { clearcoat: boolean; sheen: boolean; anisotropy: boolean; clearcoatSpecularDirect: TSLNode; sheenSpecularDirect: TSLNode }
 type Direct = (this: Model, input: DirectInput, builder: NodeBuilder) => void
 
 /** three's clearcoat Fresnel (PhysicalLightingModel.js, r186): a dielectric's 0.04, to 1 at grazing. */
@@ -63,13 +64,27 @@ export function installDirect(): void {
     const clearcoat = this.clearcoat
     // The base layer's specular.
     const base = hybridLobe(sized, roughness, normalView, positionViewDirection)
+    // Declared before roughness is widened: they read it.
+    const direction = base.direction.toVar()
+    const energy = base.energy.toVar()
     const kept = roughness.toVar()
+    const keptT = this.anisotropy ? alphaT.toVar() : null
     roughness.assign(base.roughness)
+    // three's alphaT as the material sets it up (MeshPhysicalNodeMaterial, r186), from the widened roughness.
+    if (keptT) alphaT.assign(anisotropy.pow2().mix(roughness.pow2(), 1))
     const specular = aside()
-    withLayers(this, { clearcoat: false, sheen: false }, () =>
-      direct.call(this, { ...input, lightDirection: base.direction, lightColor: input.lightColor.mul(base.energy), reflectedLight: specular }, builder),
-    )
+    // The sheen's own light goes aside: the diffuse's pass adds it.
+    const sheenLight = this.sheenSpecularDirect
+    this.sheenSpecularDirect = vec3(0).toVar()
+    try {
+      withLayers(this, { clearcoat: false, sheen: this.sheen }, () =>
+        direct.call(this, { ...input, lightDirection: direction, lightColor: input.lightColor.mul(energy), reflectedLight: specular }, builder),
+      )
+    } finally {
+      this.sheenSpecularDirect = sheenLight
+    }
     roughness.assign(kept)
+    if (keptT) alphaT.assign(keptT)
     input.reflectedLight.directSpecular.addAssign(specular.directSpecular)
     // The clearcoat's own lobe.
     if (clearcoat) {

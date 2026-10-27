@@ -9,7 +9,7 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, sharpRange, verticalFov } from '../cameraOptics.ts'
 import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
-import { cameraDefaults, lightDefaults, volumeDefaults } from '../state/apply.ts'
+import { cameraDefaults, lightDefaults, lightSize, volumeDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
@@ -220,7 +220,7 @@ function LightIcon({ light, edge }: { light: SceneObject['light']; edge: string 
           <meshBasicMaterial color={color} />
         </mesh>
       )}
-      {light && light.type !== 'directional' && (light.radius_m ?? 0) > 0 && <RadiusRing radius={light.radius_m!} color={color} />}
+      {light && light.type !== 'directional' && lightSize(light) > 0 && <RadiusRing radius={lightSize(light)} color={color} />}
     </group>
   )
 }

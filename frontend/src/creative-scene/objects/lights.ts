@@ -1,6 +1,6 @@
 import { Object3D, type Light as ThreeLight } from 'three'
 import type { SceneObject } from '../api.ts'
-import { lightDefaults } from '../state/apply.ts'
+import { lightDefaults, lightSize } from '../state/apply.ts'
 import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from '../render/lightModel/lights.ts'
 import { attachSoftShadow } from '../render/lightModel/shadowFilter.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
@@ -28,11 +28,6 @@ const shadowMapSize = 1024
 
 /** stop undoes the light's shadow node: a directional light's cascades once it casts, a spot's or point's from the start. */
 export type BuiltLight = { light: SizedLight; target: Object3D | null; stop: (() => void) | null }
-
-/** A document light's size: the radius of a point or spot light, the angular diameter of a directional one. */
-export function lightSize(l: Light): number {
-  return l.type === 'directional' ? (l.angular_diameter_deg ?? lightDefaults.angular_diameter_deg) : (l.radius_m ?? lightDefaults.radius_m)
-}
 
 /** What a light is built for: its type and whether it has a size; a change in either builds it anew. */
 export const lightKey = (l: Light): string => `${l.type}${lightSize(l) > 0 ? '+size' : ''}`

@@ -16,6 +16,11 @@ import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from
 // size, a sphere's light falls off with the effective distance max(d, r) in
 // place of d (Epic design I2), and every sized light hands the lighting model
 // its shape besides its direction (sized, render/lightModel/direct.ts).
+//
+// Checked against three r186. This file, direct.ts (PhysicalLightingModel's
+// direct), shadowFilter.ts (rawDepth, ShadowNode's coordinates) and
+// sunShadow.ts (ownNames) lean on its internals: on an upgrade, read them
+// again against the new source and run the AC-S1-10 e2e.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const { clamp, length, reference, sin } = tsl as unknown as Record<string, Op>

@@ -114,6 +114,10 @@ export const lightDefaults: Required<Omit<Light, 'type'>> = {
   radius_m: 0.1,
   angular_diameter_deg: 0.545,
 }
+/** A document light's size: the radius of a point or spot light, the angular diameter of a directional one; left out, the default the server stores. */
+export function lightSize(l: Light): number {
+  return l.type === 'directional' ? (l.angular_diameter_deg ?? lightDefaults.angular_diameter_deg) : (l.radius_m ?? lightDefaults.radius_m)
+}
 /** The camera fields the server stores for those left out. */
 export const cameraDefaults: Required<Camera> = {
   focal_mm: 35,

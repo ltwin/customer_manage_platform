@@ -6,9 +6,10 @@ import { SceneSphereLight, SceneSunLight, type SizedLight, type SizedShadow } fr
 // Soft shadows of sized lights: PCSS (Epic design「软阴影的接入」, U1; S0
 // soft-shadow-candidates.md). A blocker search over the shadow map, the
 // penumbra from similar triangles, then a filter that wide: 16 search and 32
-// filter samples on Vogel discs, turned per pixel and frame, the penumbra at
-// most MAX_TEXELS. A wide kernel compares against the receiver's plane
-// (receiver plane depth bias), its lean held to MAX_SLOPE.
+// filter samples on Vogel discs, turned per pixel (and per frame where frames
+// are averaged), the penumbra at most MAX_TEXELS. A wide kernel compares
+// against the receiver's plane (receiver plane depth bias), its lean held to
+// MAX_SLOPE.
 //
 // The filter reads everything from the shadow it filters (shadow.camera's
 // near, far, fov and bounds, the light's place, shadow.lightSize), by dotted
@@ -28,14 +29,14 @@ import { SceneSphereLight, SceneSunLight, type SizedLight, type SizedShadow } fr
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { Fn, Loop, abs, clamp, cross, cubeTexture, dFdx, dFdy, dot, expression, float, interleavedGradientNoise, length, max, min, normalize, perspectiveDepthToViewZ, reference, select, texture, vec2, vec3, vogelDiskSample } = T
-const { frameId, positionWorld, renderGroup, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
+const { Fn, Loop, abs, clamp, cross, cubeTexture, dot, expression, float, interleavedGradientNoise, length, max, min, normalize, perspectiveDepthToViewZ, reference, select, texture, uint, uniform, vec2, vec3, vec4, vogelDiskSample } = T
+const { frameId, normalWorldGeometry, positionWorld, renderGroup, screenCoordinate, shadowPositionWorld } = tsl as unknown as Record<string, TSLNode>
 
 /** Blocker search samples. */
 const SEARCH = 16
 /** Filter samples. */
 const FILTER = 32
-/** The widest penumbra, texels (U5): wider is cut, the edge narrower but continuous. */
+/** The widest penumbra, texels (U5): wider is cut, the edge narrower but continuous. A sun's counts its coarsest cascade's texels (capTexel). */
 const MAX_TEXELS = 48
 /** How far a receiver's plane may lean, in units of a map's depth per uv for a surface at 45° (about 87°). */
 const MAX_SLOPE = 20
@@ -64,22 +65,50 @@ function rawDepth(depthTexture: TSLNode) {
   Object.assign(map, { compareFunction: null, minFilter: NearestFilter, magFilter: NearestFilter })
 }
 
-/** The kernel's turn this pixel and frame: IGN shifted every frame (Jimenez 2014's 5.588238 step), which TRAA and the workbench's accumulation average. */
-const turn = () => interleavedGradientNoise(screenCoordinate.xy.add(float(frameId).mul(5.588238))).mul(Math.PI * 2)
+/**
+ * 1 where frames are averaged (the real-time GI's TRAA, the workbench's
+ * accumulation; sceneRenderer.ts sets it each render): the kernel turns every
+ * frame. 0 in the workbench's viewport, which averages none: a still noise,
+ * not one that changes with every redraw.
+ */
+export const shadowTurning = /*@__PURE__*/ uniform(0)
+
+/** The kernel's turn this pixel and frame: IGN shifted every frame by Jimenez 2014's 5.588238 step, the frame taken mod 64 as there (fp32 keeps the noise's digits). */
+const turn = () => interleavedGradientNoise(screenCoordinate.xy.add(float(frameId.mod(uint(64))).mul(shadowTurning).mul(5.588238))).mul(Math.PI * 2)
+
+/** Two unit ways along the surface whose geometric normal is n. */
+function alongSurface(n: TSLNode): [TSLNode, TSLNode] {
+  const t = normalize(cross(n, select(abs(n.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar()
+  return [t, cross(n, t)]
+}
 
 /**
  * The depth gradient across the receiver's plane in shadow-map uv (receiver
  * plane depth bias, Isidoro 2006): how much the receiver's own depth changes
  * over an offset, so a wide kernel compares against the plane, not its centre.
- * Flat in screen space, or a silhouette's huge gradient: no plane, and a bound
- * on how far it may lean, most in the map's depth a uv.
+ * The plane is the surface's geometric normal taken through the shadow's
+ * matrix as three takes the receiver (ShadowNode.setupShadowCoord: x/w,
+ * 1 − y/w, z/w), not screen derivatives: those span two surfaces at a
+ * silhouette, and the cascades' and a point light's per-pixel branches leave
+ * them undefined. Edge-on to the light: a bound on how far it may lean, most
+ * in the map's depth a uv.
  */
-function receiverPlane(coord: TSLNode, most: TSLNode): TSLNode {
-  const dx = dFdx(coord).toVar()
-  const dy = dFdy(coord).toVar()
+function receiverPlane(shadow: TSLNode, most: TSLNode): TSLNode {
+  const matrix = held(shadow, 'matrix', 'mat4')
+  const clip = matrix.mul(vec4(shadowPositionWorld, 1)).toVar()
+  const at = clip.xyz.div(clip.w).toVar()
+  /** The coordinate's change a metre along world way t. */
+  const change = (t: TSLNode) => {
+    const d = matrix.mul(vec4(t, 0))
+    const c = d.xyz.sub(at.mul(d.w)).div(clip.w)
+    return vec3(c.x, c.y.negate(), c.z)
+  }
+  const [t1, t2] = alongSurface(normalWorldGeometry)
+  const dx = change(t1).toVar()
+  const dy = change(t2).toVar()
   const det = dx.x.mul(dy.y).sub(dx.y.mul(dy.x)).toVar()
   const g = vec2(dy.y.mul(dx.z).sub(dx.y.mul(dy.z)), dx.x.mul(dy.z).sub(dy.x.mul(dx.z)))
-  return select(abs(det).greaterThan(1e-12), clamp(g.div(det), vec2(most.negate()), vec2(most)), vec2(0))
+  return clamp(g.div(select(abs(det).greaterThan(1e-20), det, 1e-20)), vec2(most.negate()), vec2(most))
 }
 
 /**
@@ -113,6 +142,8 @@ const repeat = (count: number, body: (i: TSLNode) => void) => (Loop as unknown a
 type MapGeometry = {
   linear: (d: TSLNode) => TSLNode
   slope: (zR: TSLNode) => TSLNode
+  /** The widest penumbra and search, uv. */
+  cap: TSLNode
   search: (zR: TSLNode) => TSLNode
   penumbra: (zR: TSLNode, zB: TSLNode) => TSLNode
 }
@@ -127,6 +158,7 @@ function spotGeometry(shadow: TSLNode): MapGeometry {
     linear: (d) => perspectiveDepthToViewZ(d, near, far).negate(),
     // d(depth)/dz = near far / ((far − near) z²).
     slope: (zR) => tanHalf.mul(2).mul(near).mul(far).div(far.sub(near).mul(zR)),
+    cap: float(MAX_TEXELS).div(held(shadow, 'mapSize', 'vec2').x),
     search: (zR) => radius.mul(zR.sub(near)).div(zR.mul(near).mul(tanHalf).mul(2)),
     penumbra: (zR, zB) => radius.mul(zR.sub(zB)).div(zB.mul(zR).mul(tanHalf).mul(2)),
   }
@@ -138,6 +170,8 @@ function spotGeometry(shadow: TSLNode): MapGeometry {
  * zR − zB above a receiver spread its edge (zR − zB) tan(θ/2) either way. Each
  * cascade's camera moves every frame (fitCascades); its shadow is a copy of
  * the light's, the filter with it, its lightSize kept up by fitCascades.
+ * Its cap counts the coarsest cascade's texels (capTexel, metres), so a wide
+ * penumbra is cut alike on both sides of a cascade's edge.
  */
 function sunGeometry(shadow: TSLNode): MapGeometry {
   const near = held(shadow, 'camera.near')
@@ -147,6 +181,7 @@ function sunGeometry(shadow: TSLNode): MapGeometry {
   return {
     linear: (d) => near.add(d.mul(far.sub(near))),
     slope: () => width.div(far.sub(near)),
+    cap: max(held(shadow, 'capTexel').div(width), float(1).div(held(shadow, 'mapSize', 'vec2').x)).mul(MAX_TEXELS),
     search: (zR) => zR.sub(near).mul(tanHalf).div(width),
     penumbra: (zR, zB) => zR.sub(zB).mul(tanHalf).div(width),
   }
@@ -156,16 +191,16 @@ function sunGeometry(shadow: TSLNode): MapGeometry {
 function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
   return perShadow(({ depthTexture, shadowCoord, shadow }) => {
     rawDepth(depthTexture)
-    const { linear, slope, search, penumbra } = geometry(shadow)
+    const { linear, slope, cap, search, penumbra } = geometry(shadow)
     const mapSize = held(shadow, 'mapSize', 'vec2')
     const texel = float(1).div(mapSize.x)
     const uv = shadowCoord.xy.toVar()
     const z = shadowCoord.z.toVar()
     const zR = linear(z).toVar()
-    const plane = receiverPlane(shadowCoord, slope(zR).mul(MAX_SLOPE)).toVar()
+    const plane = receiverPlane(shadow, slope(zR).mul(MAX_SLOPE)).toVar()
     const phi = turn().toVar()
     const eps = texel.mul(EPS_TEXELS).mul(abs(plane.x).add(abs(plane.y))).add(EPS_FLOOR).toVar()
-    const searchUV = min(search(zR), texel.mul(MAX_TEXELS)).toVar()
+    const searchUV = min(search(zR), cap).toVar()
     const depthAt = (at: TSLNode) => texture(depthTexture, at).x
     const blockers = float(0).toVar()
     const depthSum = float(0).toVar()
@@ -179,7 +214,7 @@ function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
     searchAt(vec2(0))
     repeat(SEARCH, (i) => searchAt(vogelDiskSample(i, SEARCH, phi).mul(searchUV)))
     const zB = depthSum.div(max(blockers, 1)).toVar()
-    const penumbraUV = clamp(penumbra(zR, zB), texel, texel.mul(MAX_TEXELS)).toVar()
+    const penumbraUV = clamp(penumbra(zR, zB), texel, max(cap, texel)).toVar()
     const lit = float(0).toVar()
     repeat(FILTER, (i) => {
       const o = vogelDiskSample(i, FILTER, phi).mul(penumbraUV)
@@ -195,9 +230,9 @@ function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
  * Directions stand for positions: an offset o in the plane across the way to
  * the receiver is a direction bd3D + o, o in metres at a metre from the light.
  * Depths are radial distances (a face's depth over the direction's largest
- * component), so samples on different faces agree. The receiver's plane, from
- * the screen derivatives of its place relative to the light, gives its
- * distance along every sampled direction.
+ * component), so samples on different faces agree. The receiver's plane, its
+ * geometric normal turned toward the light, gives its distance along every
+ * sampled direction.
  */
 function cubePCSS() {
   return perShadow(({ depthTexture, bd3D, shadow }, builder) => {
@@ -220,8 +255,7 @@ function cubePCSS() {
     const texel = float(2).div(mapSize.x)
     const shadowPosition = positionWorld.sub(lightAt).toVar()
     const dR = length(shadowPosition).toVar()
-    const across = cross(dFdx(shadowPosition), dFdy(shadowPosition))
-    const n = select(length(across).greaterThan(1e-12), normalize(across), bd3D.negate()).toVar()
+    const n = normalWorldGeometry.mul(select(dot(normalWorldGeometry, shadowPosition).greaterThan(0), float(-1), float(1))).toVar()
     const planeDistance = dot(n, shadowPosition).toVar()
     const axis = abs(bd3D)
     const tangent = normalize(cross(bd3D, select(axis.x.greaterThan(axis.z), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar()

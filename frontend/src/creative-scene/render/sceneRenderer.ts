@@ -13,6 +13,7 @@ import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
+import { shadowTurning } from './lightModel/shadowFilter.ts'
 import { AMBIENT_FILL, viewportSettleFrames } from './probes/cascade.ts'
 import { ProbeVolume } from './probes/volume.ts'
 import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
@@ -885,6 +886,8 @@ export class SceneRenderer {
     }
     prepareAerial(this.scene, renderer, camera, !wireframe)
     prepareVolumes(this.scene, camera, !wireframe)
+    // Soft shadows' kernels turn frame by frame only where frames are averaged.
+    shadowTurning.value = look.gi || look.accumulate ? 1 : 0
     try {
       this.stats = measure(renderer.info.render, () => built.pipeline.render(), started)
       if (look.trace) {

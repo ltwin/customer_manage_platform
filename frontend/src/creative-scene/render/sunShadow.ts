@@ -162,6 +162,7 @@ export function fitCascades(camera: Camera, sun: DirectionalLight, lights: reado
   const { near, far } = camera as PerspectiveCamera | OrthographicCamera
   const from = Math.max(near, splitFrom)
   const depth = (i: number) => (i === 0 ? near : i === n ? far : Math.min(from * (far / from) ** (i / n), far))
+  let coarsest = 0
 
   for (let i = 0; i < n; i++) {
     const d0 = depth(i)
@@ -225,7 +226,9 @@ export function fitCascades(camera: Camera, sun: DirectionalLight, lights: reado
     cam.updateProjectionMatrix()
     ;(shadow as DirectionalLightShadow & Partial<SizedShadow>).lightSize = lightSize
     shadow.normalBias = lightSize > 0 ? 0 : texel * normalBiasTexels
+    coarsest = Math.max(coarsest, texel)
   }
+  for (const l of lights) (l.shadow as DirectionalLightShadow & Partial<SizedShadow>).capTexel = coarsest
 }
 
 function rootOf(o: Object3D): Object3D {

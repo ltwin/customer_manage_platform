@@ -15,7 +15,7 @@ import { DirectionalLight, PointLight, SpotLight, type Light, type LightShadow }
 // copy() its size; constructors take no arguments, as clone() calls them.
 
 /** A shadow that knows its light's size, which its filter reads (render/lightModel/shadowFilter.ts). */
-export type SizedShadow = LightShadow & { filterNode?: unknown; lightSize: number }
+export type SizedShadow = LightShadow & { filterNode?: unknown; lightSize: number; capTexel: number }
 
 type ShadowClass = new () => LightShadow
 
@@ -23,6 +23,8 @@ type ShadowClass = new () => LightShadow
 function sized(Base: ShadowClass) {
   return class extends Base {
     lightSize = 0
+    /** A sun cascade's: its coarsest cascade's texel, metres, which its penumbra's cap counts (render/sunShadow.ts fitCascades). */
+    capTexel = 0
     declare filterNode?: unknown
 
     copy(source: LightShadow): this {
@@ -30,6 +32,7 @@ function sized(Base: ShadowClass) {
       const s = source as SizedShadow
       if (s.filterNode) this.filterNode = s.filterNode
       this.lightSize = s.lightSize
+      this.capTexel = s.capTexel
       return this
     }
   }

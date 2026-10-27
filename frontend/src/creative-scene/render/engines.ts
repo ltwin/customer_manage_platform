@@ -1,4 +1,5 @@
 import type { Scene, SceneRender } from '../api.ts'
+import { lightSize } from '../state/apply.ts'
 
 // The renderers' constants and pure functions (R2 design「模块职责与协作」):
 // nothing here touches the GPU, so the unit tests take it as it is.
@@ -73,8 +74,7 @@ export function softShadowsIn(scene: Scene): boolean {
   if (sky === 'procedural' || sky === 'physical') return true
   return scene.objects.some((o) => {
     const l = o.light
-    if (!l || !o.visible || !l.cast_shadow) return false
-    return (l.type === 'directional' ? (l.angular_diameter_deg ?? 0) : (l.radius_m ?? 0)) > 0
+    return !!l && o.visible && l.cast_shadow && lightSize(l) > 0
   })
 }
 
