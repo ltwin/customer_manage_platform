@@ -135,4 +135,16 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
   - 冷启动开关移进 `gpuTestHooks`；
   - 在参考设备上测：视口帧时、第一次构建、导出时长（1200 × 800、4K、8K、加投影体积），以及 0 与非 0 切换的停顿。
   - 完成判据：结果写进 verify，满足 Epic AC-8 的三项。超出时先查哪一项占大头，再交 owner。
+  - 进展（未定案，待 owner）：
+    - 测法：
+      - 性能页 `scripts/light-check/perf.html`：AC-S1-7 的 4 盏灯场景；冷编译用 `gpuTestHooks.cold`（S0 的撒盐做法移进产品钩子，只给 vec4 输出撒盐）；相机是竖构图，800 × 1200。
+      - 导出用 e2e `SCENE_E2E_LIGHT_PERF`，走真实导出流程，同样冷编译。
+      - 「4 盏灯的固定数据」没有另存文件，在测量页和 e2e 里对 `frame-two-lights` 现改：加一盏聚光，天空换成程序化天空。这样不用复制模型。
+    - 视口每帧（阈值 ≤ 8 ms）：workbench 3.1 → 7.3 ms（+4.2）；realtime_gi 29.2 → 33.5 ms（+4.3）。达标。
+    - 首次构建，即编译加首帧（阈值 ≤ 1 s）：workbench 3.7 → 6.0 s（+2.4 s）；realtime_gi 7.4 → 10.9 s（+3.5 s）。**超标**。逐盏分开测，增量大致逐盏相加：聚光 +0.6 s，点光 +0.5 s，文档平行光 +0.9 s，天空太阳 +0.9 s（各 4 级级联）。每盏灯的 PCSS 代码都编进每个材质，级联每级一份。
+    - 导出时长（阈值 ≤ +50%）：
+      - workbench 1K +66%、4K +64%、8K +67%，**超标**；1K 加投影体积 +49%。
+      - realtime_gi 1K +9%。
+      - workbench 超出的部分来自两项：一是上面的编译；二是 16 帧累积，8K 时每帧都重画全部画面。
+    - 0 与非 0 切换的停顿：workbench 4.0–4.8 s，realtime_gi 7.0–8.4 s。原因是灯要重建，所有材质都重新编译。
 - [ ] 7.2 owner 看图（AC-S1-11）：用 owner 反馈的场景出改前改后的对比图，`workbench` 和 `realtime_gi` 各一组。阴影图的台阶看得出来时，加出 2048 的对比并复测 7.1。完成判据：owner 给出结论。

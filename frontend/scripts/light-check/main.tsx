@@ -25,7 +25,7 @@ import * as THREE from 'three'
 import type { Scene } from '../../src/creative-scene/api.ts'
 import { ShotScene } from '../../src/creative-scene/host/ShotScene.tsx'
 import { cameraFraming } from '../../src/creative-scene/host/framing.ts'
-import { modelCache, type SceneModel } from '../../src/creative-scene/models/cache.ts'
+import type { SceneModel } from '../../src/creative-scene/models/cache.ts'
 import { traceWaitMs } from '../../src/creative-scene/render/engines.ts'
 import { createRenderer, gpuOf, gpuTestHooks } from '../../src/creative-scene/render/gpu.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
@@ -33,6 +33,7 @@ import { applyExposure } from '../../src/creative-scene/world/exposure.ts'
 import { nightSkyDefaults, physicalSkyDefaults } from '../../src/creative-scene/world/physicalSky.ts'
 import { boardCentres, drawPanels, highlight, penumbrae, regionErrors, shadowError, terminator, type Boards } from './measure.ts'
 import { compare, lum, refLights } from './reference.ts'
+import { fixtures, loadModels, readFixture } from './fixture.ts'
 
 extend(THREE as unknown as Parameters<typeof extend>[0])
 
@@ -51,7 +52,6 @@ const check: Check = { done: false, error: null, report: {} }
 const info = document.getElementById('info')!
 const show = (lines: string[]) => (info.textContent = lines.join('\n'))
 
-const fixtures = '/scripts/fixtures/scene-reference'
 const occluderLights: Record<string, string> = { spot: '聚光', point: '点光', sun: '平行光' }
 
 type Params = Record<string, unknown>
@@ -59,12 +59,8 @@ const paramsOf = (o: Scene['objects'][number]) => (o.material_slots as Record<st
 
 /** The reference scene as the e2e's server gives it (creative-scene.e2e.mjs referenceScene), edited by the query, and its models. */
 async function load(): Promise<{ scene: Scene; models: Record<string, SceneModel> }> {
-  const scene = (await (await fetch(`${fixtures}/${sceneName}.json`)).json()) as Scene
-  scene.render.exposure_ev100 ??= 15
-  scene.render.exposure_mode ??= 'ambient'
-  scene.render.exposure_compensation ??= 0
+  const scene = await readFixture(sceneName)
   scene.render.engine = 'workbench'
-  for (const o of scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
   for (const o of scene.objects) {
     if (!o.light) continue
     if (sceneName === 'occluder-wall') o.visible = !skyKind && o.name === occluderLights[lightName]
@@ -103,15 +99,7 @@ async function load(): Promise<{ scene: Scene; models: Record<string, SceneModel
       named('平行光')!.transform.rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), shine).toArray() as [number, number, number, number]
     }
   }
-  const models: Record<string, SceneModel> = {}
-  for (const rev of new Set(scene.objects.flatMap((o) => (o.model ? [o.model.content_revision_id] : [])))) {
-    const meta = (await (await fetch(`${fixtures}/${sceneName}/${rev}.json`)).json()) as Omit<SceneModel, 'content_id' | 'usable'>
-    const summary = { content_id: `ccnt_${rev}`, usable: true, ...meta } as SceneModel
-    models[rev] = summary
-    modelCache.register(rev, { glb: await (await fetch(`${fixtures}/${sceneName}/${rev}.glb`)).arrayBuffer(), summary })
-  }
-  await Promise.all(Object.keys(models).map((r) => modelCache.load(r)))
-  return { scene, models }
+  return { scene, models: await loadModels(sceneName, scene) }
 }
 
 /** The raster's unshadowed light that is not finite, and its brightest: a light near a surface must stay finite (AC-3). */
@@ -232,7 +220,7 @@ async function boot() {
     scene: sceneName,
     light: occluder ? (skyKind ? `${skyKind} sky` : lightName) : null,
     size,
-    backend: g.renderer.backend.isWebGLBackend ? 'webgl' : 'webgpu',
+    backend: (g.renderer.backend as { isWebGLBackend?: boolean }).isWebGLBackend ? 'webgl' : 'webgpu',
     size_px: cmpSize,
     refFrames,
     rasterFrames,

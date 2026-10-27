@@ -1,0 +1,10 @@
+import { chromium } from 'playwright'
+const gpu = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+const page = await gpu.newPage()
+page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && console.log(m.type(), m.text().slice(0, 1500)))
+page.on('pageerror', (e) => console.log('pageerror', String(e.stack ?? e).slice(0, 1500)))
+await page.addInitScript(() => { window.__captureStack = true })
+await page.goto(`http://localhost:5196/scripts/light-check/perf.html?${process.argv[2]}`)
+await page.waitForFunction(() => window.__lightCheck?.done || window.__lightCheck?.error, null, { timeout: 200000 })
+console.log(JSON.stringify(await page.evaluate(() => window.__lightCheck), null, 1).slice(0, 1500))
+await gpu.close()

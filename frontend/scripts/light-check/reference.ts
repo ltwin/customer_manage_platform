@@ -445,7 +445,7 @@ export async function compare(renderer: WebGPURenderer, scene: Scene, camera: Pe
   } finally {
     for (const rt of [...Object.values(targets), ...Object.values(sums), ...Object.values(raster), atN]) rt.dispose()
     copyMaterial.dispose()
-    for (const p of Object.values(passes)) p.material.dispose()
+    for (const p of Object.values(passes)) (p.material as Material).dispose()
     meanMaterial.dispose()
   }
 }

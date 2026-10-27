@@ -4166,6 +4166,56 @@ await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the
   assert.deepEqual(off, [], 'sized lights missing their shading or shadows')
 })
 
+/**
+ * scene-light-radius AC-S1-7's scene: frame-two-lights (a parallel and a point light) with a spot over its middle and
+ * the procedural sky, four lights that cast, at their default sizes or all of size 0 (the sky's sun by the
+ * skySunDeg hook); scripts/light-check/perf.tsx draws the same for the viewport's numbers.
+ */
+function fourLights(sized, { engine, resolution, volume = false }) {
+  return (scene) => {
+    scene.render.engine = engine
+    scene.render.resolution = resolution
+    scene.environment.sky = { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }
+    scene.objects.push({ id: gid('perfspot'), kind: 'light', name: '顶部聚光', parent_id: null, order: 99, transform: { position: [0, 6, 2], rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'spot', color: '#ffffff', intensity: 120, cast_shadow: true, distance: 0, decay: 2, angle: 0.7, penumbra: 0.3 } })
+    if (volume) scene.objects.push({ id: gid('perffog'), kind: 'volume', name: '雾', parent_id: null, order: 98, transform: { ...identity(), position: [0, 1.5, 0], scale: [6, 3, 6] }, visible: true, locked: false, volume: { scatter_density: 0.1, cast_shadow: true } })
+    for (const o of scene.objects) {
+      if (o.light?.type === 'directional') o.light.angular_diameter_deg = sized ? 0.545 : 0
+      else if (o.light) o.light.radius_m = sized ? 0.1 : 0
+    }
+  }
+}
+
+// SCENE_E2E_LIGHT_PERF=<dir> (scene-light-radius AC-S1-7, tasks 7.1): the lit export of AC-S1-7's scene, sized and
+// all of size 0, its shaders compiled cold (gpuTestHooks.cold), on this machine's GPU: 1K in both engines; the
+// workbench also at 4K, 8K and with a casting volume. Epic AC-8: at most 50% longer. light-perf.json in <dir>.
+if (process.env.SCENE_E2E_LIGHT_PERF) await check('light size: AC-S1-7, the lit export with sized lights no more than half as long again', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  try {
+    const cases = [
+      { engine: 'workbench', resolution: '1k' },
+      { engine: 'realtime_gi', resolution: '1k' },
+      { engine: 'workbench', resolution: '4k' },
+      { engine: 'workbench', resolution: '8k' },
+      { engine: 'workbench', resolution: '1k', volume: true },
+    ]
+    for (const c of cases) {
+      const time = async (sized) => (await exportReference(gpu, 'frame-two-lights', { litOnly: true, hooks: sized ? 'cold' : 'cold,skySunDeg:0', edit: fourLights(sized, c) })).exportMs
+      const before = await time(false)
+      const after = await time(true)
+      const row = { ...c, sizeless_ms: before, sized_ms: after, more: Number((after / before - 1).toFixed(3)) }
+      rows.push(row)
+      console.log(`AC-S1-7 export ${c.engine} ${c.resolution}${c.volume ? ' with a volume' : ''}: ${before} → ${after} ms (${(row.more * 100).toFixed(0)}%)`)
+    }
+    await writeFile(`${dir}/light-perf.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  const over = rows.filter((r) => r.more > 0.5)
+  assert.deepEqual(over, [], 'exports more than half as long again')
+})
+
 // scene-light-radius tasks 4.2 (AC-S1-10): the workbench's lit export of a scene with soft shadows averages 16
 // frames, their kernels turning by frame, and is the same twice pixel for pixel: the turn goes by the frame and the
 // pixel only, and every export starts at frame 0.
