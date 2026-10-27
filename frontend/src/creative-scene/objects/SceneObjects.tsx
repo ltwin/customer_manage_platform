@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { EdgeLines } from './EdgeLines.tsx'
 import { Outline } from './Outline.tsx'
-import { BufferGeometry, Float32BufferAttribute, MeshStandardMaterial } from 'three'
+import { BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, MeshStandardMaterial, Vector3 } from 'three'
 import type { Placeholder } from '../agentActivity.ts'
 import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
@@ -219,8 +220,46 @@ function LightIcon({ light, edge }: { light: SceneObject['light']; edge: string 
           <meshBasicMaterial color={color} />
         </mesh>
       )}
+      {light && light.type !== 'directional' && (light.radius_m ?? 0) > 0 && <RadiusRing radius={light.radius_m!} color={color} />}
     </group>
   )
+}
+
+/** A unit circle in its xy plane, 64 segments, its last point its first: WebGPU draws no LineLoop. */
+const unitCircle = /*@__PURE__*/ (() => {
+  const points: number[] = []
+  for (let i = 0; i <= 64; i++) points.push(Math.cos((i / 64) * Math.PI * 2), Math.sin((i / 64) * Math.PI * 2), 0)
+  const g = new BufferGeometry()
+  g.setAttribute('position', new Float32BufferAttribute(points, 3))
+  return g
+})()
+const ringAt = /*@__PURE__*/ new Vector3()
+const ringScale = /*@__PURE__*/ new Vector3()
+
+/**
+ * A point or spot light's radius, as Blender draws it: a circle facing the camera, its radius the light's in the
+ * world whatever its object's or groups' scales (the light does not scale with them, Epic U8). Its world matrix is
+ * written every frame, from the light's world position, the camera's turn and the radius; drawn over the icon's
+ * sphere, which a radius under 0.15 m sits inside, and never picked.
+ */
+function RadiusRing({ radius, color }: { radius: number; color: string }) {
+  const ring = useMemo(() => {
+    const line = new Line(unitCircle, new LineBasicMaterial({ depthTest: false }))
+    line.layers.set(ASIDE_LAYER)
+    line.matrixAutoUpdate = false
+    line.matrixWorldAutoUpdate = false
+    line.renderOrder = 10
+    line.raycast = () => {}
+    return line
+  }, [])
+  useEffect(() => () => ring.material.dispose(), [ring])
+  ring.material.color.set(color)
+  useFrame(({ camera }) => {
+    if (!ring.parent) return
+    ring.parent.getWorldPosition(ringAt)
+    ring.matrixWorld.compose(ringAt, camera.quaternion, ringScale.setScalar(radius))
+  })
+  return <primitive object={ring} />
 }
 
 /**

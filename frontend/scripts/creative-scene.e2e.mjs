@@ -3057,6 +3057,83 @@ const night = { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ff
 const lightAt = (server, id) => server.object(id).light
 const focusEditor = (page) => page.locator('.cc-scene-editor').focus()
 
+/** The bounding box's width in pixels of where two screenshots differ by more than min, or 0. */
+async function differingWidth(page, a, b, min = 40) {
+  return page.evaluate(async ([a, b, min]) => {
+    const pixels = async (src) => {
+      const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+      const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+      const g = c.getContext('2d')
+      g.drawImage(bitmap, 0, 0)
+      return { w: c.width, p: g.getImageData(0, 0, c.width, c.height).data }
+    }
+    const [{ w, p }, { p: q }] = await Promise.all([pixels(a), pixels(b)])
+    let lo = Infinity
+    let hi = -Infinity
+    for (let k = 0; k < p.length; k += 4) {
+      if (Math.abs(p[k] - q[k]) + Math.abs(p[k + 1] - q[k + 1]) + Math.abs(p[k + 2] - q[k + 2]) <= min) continue
+      const x = (k / 4) % w
+      lo = Math.min(lo, x)
+      hi = Math.max(hi, x)
+    }
+    return hi >= lo ? hi - lo + 1 : 0
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
+}
+
+// scene-light-radius AC-S1-8: the properties edit a point light's radius and a parallel light's angular diameter
+// (0.545, on no step's grid, taken as typed), each undone; the point light's icon draws its radius as a circle the
+// same size on screen whether its object is scaled by 1 or by 3 (the light does not scale with it, Epic U8).
+await check('light size: the radius and the angular diameter in the properties, undo; the icon\'s circle ignores scale (AC-S1-8)', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  const lamp = { id: gid('sizedlamp'), kind: 'light', name: '台灯', parent_id: null, order: 5, transform: { ...identity(), position: [0, 1, 0] }, visible: true, locked: false, light: { type: 'point', color: '#ffffff', intensity: 30, cast_shadow: true, distance: 0, decay: 2, radius_m: 0.1 } }
+  const sun = { id: gid('sizedsun'), kind: 'light', name: '主光', parent_id: null, order: 6, transform: { ...identity(), position: [3, 4, 3] }, visible: true, locked: false, light: { type: 'directional', color: '#ffffff', intensity: 2, cast_shadow: true, angular_diameter_deg: 0.545 } }
+  seed(server, [lamp, sun])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.getByRole('treeitem', { name: /台灯/ }).click()
+  const radius = page.getByLabel('半径（m，0 为硬影子）')
+  assert.equal(await radius.inputValue(), '0.1')
+  // The circle: where the picture with a 1 m radius differs from the one without, as wide at scale 1 and 3.
+  const circleWidth = async (scale) => {
+    server.external([{ op: 'update_objects', updates: [{ object_id: lamp.id, transform: { ...lamp.transform, scale: [scale, scale, scale] }, light: { radius_m: 0 } }] }])
+    await page.evaluate(() => window.__invalidate())
+    const without = await settledShot(page, box)
+    server.external([{ op: 'update_objects', updates: [{ object_id: lamp.id, light: { radius_m: 1 } }] }])
+    await page.evaluate(() => window.__invalidate())
+    return differingWidth(page, await settledShot(page, box), without)
+  }
+  const [one, three] = [await circleWidth(1), await circleWidth(3)]
+  console.log(`AC-S1-8 the radius circle: ${one} px wide at scale 1, ${three} px at scale 3`)
+  assert.ok(one > 20 && Math.abs(one - three) <= 2, `the circle as wide at either scale: ${one} and ${three} px`)
+  server.external([{ op: 'update_objects', updates: [{ object_id: lamp.id, transform: lamp.transform, light: { radius_m: 0.1 } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await radius.inputValue()) === '0.1', 'the field follows the server')
+  await saved(page)
+  await radius.fill('0.4')
+  await radius.press('Enter')
+  await waitFor(() => lightAt(server, lamp.id).radius_m === 0.4, 'the radius saved')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, lamp.id).radius_m === 0.1, 'undo the radius')
+  await saved(page)
+  await page.getByRole('treeitem', { name: /主光/ }).click()
+  const angular = page.getByLabel('角径（°，0 为硬影子）')
+  assert.equal(await angular.inputValue(), '0.545')
+  assert.equal(await angular.evaluate((e) => e.validity.valid), true, '0.545 is a valid value')
+  await angular.fill('2.5')
+  await angular.press('Enter')
+  await waitFor(() => lightAt(server, sun.id).angular_diameter_deg === 2.5, 'the angular diameter saved')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, sun.id).angular_diameter_deg === 0.545, 'undo the angular diameter')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/12 and narrows the light; shadows show; spot → point keeps the rest; Cmd+Z', async () => {
   const server = new SceneServer()
   server.scene.environment = structuredClone(night)
@@ -3098,7 +3175,7 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
 
   await page.getByLabel('灯光类型').selectOption('point')
   await waitFor(() => lightAt(server, spot.id).type === 'point', 'to a point light')
-  assert.deepEqual(lightAt(server, spot.id), { type: 'point', color: '#ffffff', intensity: spot.light.intensity, cast_shadow: true, distance: 0, decay: 2 })
+  assert.deepEqual(lightAt(server, spot.id), { type: 'point', color: '#ffffff', intensity: spot.light.intensity, cast_shadow: true, distance: 0, decay: 2, radius_m: 0.1 })
   assert.equal(await page.getByLabel('光锥角（°）').count(), 0, 'the cone fields go')
   await saved(page)
   await focusEditor(page)

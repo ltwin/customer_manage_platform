@@ -44,6 +44,12 @@ export function LightFields({ object, readOnly, display, onLight }: {
         <span>投射阴影</span>
         <input type="checkbox" checked={l.cast_shadow} onChange={(e) => onLight({ cast_shadow: e.target.checked }, `${e.target.checked ? '打开' : '关闭'}「${name}」阴影`)} />
       </label>
+      {l.type === 'directional' ? (
+        // No step: the default 0.545 lies on no step's grid, and a number input would call it a step mismatch.
+        <NumberField label="角径（°，0 为硬影子）" value={l.angular_diameter_deg ?? 0} min={0} max={30} onCommit={(v) => set({ angular_diameter_deg: v }, '角径', `${object.id}:light.angular_diameter_deg`)} />
+      ) : (
+        <NumberField label="半径（m，0 为硬影子）" value={l.radius_m ?? 0} step={0.01} min={0} max={10} onCommit={(v) => set({ radius_m: v }, '半径', `${object.id}:light.radius_m`)} />
+      )}
       {l.type !== 'directional' && (
         <>
           <NumberField label="距离（m，0 不截断）" value={l.distance} step={0.5} min={0} onCommit={(v) => set({ distance: v }, '距离', `${object.id}:light.distance`)} />
