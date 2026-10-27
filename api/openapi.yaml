@@ -15505,7 +15505,8 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。
+        字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。
+        光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。
         写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。
         平行光和聚光沿物件局部 −Z 照射。
       required:
@@ -15546,7 +15547,17 @@ components:
           type: number
           minimum: 0
           maximum: 1
-          description: spot。缺省 0。
+          description: spot。光锥边缘的羽化，不控制阴影软硬；缺省 0。
+        radius_m:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: point、spot。发光球的半径（米），即 Blender Point / Spot 的 Radius，不随物件缩放；缺省 0.1，0 为硬阴影的理想点光源。照度按有效距离 max(d, radius_m) 衰减。
+        angular_diameter_deg:
+          type: number
+          minimum: 0
+          maximum: 30
+          description: directional。光源的角直径（度），即 Blender Sun 的 Angle；缺省 0.545（与 sky.sun_size_deg 的缺省值相同），0 为硬阴影的理想平行光。
     CreativeSceneLightPatch:
       type: object
       additionalProperties: false
@@ -15582,6 +15593,14 @@ components:
           type: number
           minimum: 0
           maximum: 1
+        radius_m:
+          type: number
+          minimum: 0
+          maximum: 10
+        angular_diameter_deg:
+          type: number
+          minimum: 0
+          maximum: 30
     CreativeSceneCamera:
       type: object
       additionalProperties: false

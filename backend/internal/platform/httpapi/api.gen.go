@@ -7212,10 +7212,13 @@ type CreativeSceneJobSummary struct {
 // CreativeSceneJobSummaryState defines model for CreativeSceneJobSummary.State.
 type CreativeSceneJobSummaryState string
 
-// CreativeSceneLight 字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。
+// CreativeSceneLight 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。
 type CreativeSceneLight struct {
 	// Angle spot。光锥中心到边缘的半角（弧度），不超过 π/2；缺省 π/3。
 	Angle *float32 `json:"angle,omitempty"`
+
+	// AngularDiameterDeg directional。光源的角直径（度），即 Blender Sun 的 Angle；缺省 0.545（与 sky.sun_size_deg 的缺省值相同），0 为硬阴影的理想平行光。
+	AngularDiameterDeg *float32 `json:"angular_diameter_deg,omitempty"`
 
 	// CastShadow 缺省 false。
 	CastShadow *bool               `json:"cast_shadow,omitempty"`
@@ -7230,9 +7233,12 @@ type CreativeSceneLight struct {
 	// Intensity three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值。缺省 1。
 	Intensity *float32 `json:"intensity,omitempty"`
 
-	// Penumbra spot。缺省 0。
-	Penumbra *float32               `json:"penumbra,omitempty"`
-	Type     CreativeSceneLightType `json:"type"`
+	// Penumbra spot。光锥边缘的羽化，不控制阴影软硬；缺省 0。
+	Penumbra *float32 `json:"penumbra,omitempty"`
+
+	// RadiusM point、spot。发光球的半径（米），即 Blender Point / Spot 的 Radius，不随物件缩放；缺省 0.1，0 为硬阴影的理想点光源。照度按有效距离 max(d, radius_m) 衰减。
+	RadiusM *float32               `json:"radius_m,omitempty"`
+	Type    CreativeSceneLightType `json:"type"`
 }
 
 // CreativeSceneLightType defines model for CreativeSceneLight.Type.
@@ -7299,7 +7305,7 @@ type CreativeSceneObject struct {
 	Id     string                  `json:"id"`
 	Kind   CreativeSceneObjectKind `json:"kind"`
 
-	// Light 字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。
+	// Light 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。
 	Light  *CreativeSceneLight `json:"light,omitempty"`
 	Locked bool                `json:"locked"`
 

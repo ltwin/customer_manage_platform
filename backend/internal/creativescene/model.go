@@ -268,18 +268,25 @@ type Light struct {
 	Decay      *float64 `json:"decay,omitempty"`
 	Angle      *float64 `json:"angle,omitempty"`
 	Penumbra   *float64 `json:"penumbra,omitempty"`
+	// RadiusM and AngularDiameterDeg are the light's size (data: 光源尺寸):
+	// a point or spot light is a sphere of RadiusM metres, a directional
+	// light a disc AngularDiameterDeg degrees across; 0 is no size.
+	RadiusM            *float64 `json:"radius_m,omitempty"`
+	AngularDiameterDeg *float64 `json:"angular_diameter_deg,omitempty"`
 }
 
 // lightPatch is a light in update_objects, where type may be left out too.
 type lightPatch struct {
-	Type       *string  `json:"type,omitempty"`
-	Color      *string  `json:"color,omitempty"`
-	Intensity  *float64 `json:"intensity,omitempty"`
-	CastShadow *bool    `json:"cast_shadow,omitempty"`
-	Distance   *float64 `json:"distance,omitempty"`
-	Decay      *float64 `json:"decay,omitempty"`
-	Angle      *float64 `json:"angle,omitempty"`
-	Penumbra   *float64 `json:"penumbra,omitempty"`
+	Type               *string  `json:"type,omitempty"`
+	Color              *string  `json:"color,omitempty"`
+	Intensity          *float64 `json:"intensity,omitempty"`
+	CastShadow         *bool    `json:"cast_shadow,omitempty"`
+	Distance           *float64 `json:"distance,omitempty"`
+	Decay              *float64 `json:"decay,omitempty"`
+	Angle              *float64 `json:"angle,omitempty"`
+	Penumbra           *float64 `json:"penumbra,omitempty"`
+	RadiusM            *float64 `json:"radius_m,omitempty"`
+	AngularDiameterDeg *float64 `json:"angular_diameter_deg,omitempty"`
 }
 
 // Camera fields may all be left out on input; the stored snapshot holds every
@@ -373,6 +380,12 @@ func decodeScene(p creativecontent.Payload) (Scene, error) {
 		if c := s.Objects[i].Camera; c != nil {
 			// Stored before the mode existed, a camera was exposed by hand (W2).
 			completeCamera(c, ExposureManual)
+		}
+		if l := s.Objects[i].Light; l != nil {
+			// Stored before the sizes existed (data: 光源尺寸).
+			if err := completeLight(l); err != nil {
+				return Scene{}, fmt.Errorf("%w: %w", ErrUnreadable, err)
+			}
 		}
 	}
 	return s, nil
@@ -822,12 +835,20 @@ func validateSlots(slots map[string]MaterialSlot) error {
 // lightFields lists, in contract order, the fields each light type has
 // besides type (L1, L2).
 var lightFields = map[string][]string{
-	"directional": {"color", "intensity", "cast_shadow"},
-	"point":       {"color", "intensity", "cast_shadow", "distance", "decay"},
-	"spot":        {"color", "intensity", "cast_shadow", "distance", "decay", "angle", "penumbra"},
+	"directional": {"color", "intensity", "cast_shadow", "angular_diameter_deg"},
+	"point":       {"color", "intensity", "cast_shadow", "distance", "decay", "radius_m"},
+	"spot":        {"color", "intensity", "cast_shadow", "distance", "decay", "angle", "penumbra", "radius_m"},
 }
 
 var lightNames = map[string]string{"directional": "平行光", "point": "点光", "spot": "聚光"}
+
+const (
+	// defaultLightRadiusM is a point or spot light's radius left out (data: 光源尺寸).
+	defaultLightRadiusM = 0.1
+	// defaultSunDiameterDeg is a directional light's angular diameter left
+	// out: the sun's, as sky.sun_size_deg defaults to (Epic design「天空的太阳和月亮」).
+	defaultSunDiameterDeg = 0.545
+)
 
 type lightField struct {
 	name  string
@@ -845,6 +866,8 @@ func (l *Light) fields() []lightField {
 		{"decay", l.Decay != nil, func() { l.Decay = nil }},
 		{"angle", l.Angle != nil, func() { l.Angle = nil }},
 		{"penumbra", l.Penumbra != nil, func() { l.Penumbra = nil }},
+		{"radius_m", l.RadiusM != nil, func() { l.RadiusM = nil }},
+		{"angular_diameter_deg", l.AngularDiameterDeg != nil, func() { l.AngularDiameterDeg = nil }},
 	}
 }
 
@@ -881,6 +904,12 @@ func completeLight(l *Light) error {
 		fill(&l.Angle, math.Pi/3)
 		fill(&l.Penumbra, 0.0)
 	}
+	if slices.Contains(has, "radius_m") {
+		fill(&l.RadiusM, defaultLightRadiusM)
+	}
+	if slices.Contains(has, "angular_diameter_deg") {
+		fill(&l.AngularDiameterDeg, defaultSunDiameterDeg)
+	}
 	return nil
 }
 
@@ -888,7 +917,8 @@ func completeLight(l *Light) error {
 // fit the resulting type; the current fields the type lacks are dropped and
 // the ones it gains take their defaults.
 func mergeLight(cur Light, p lightPatch) (Light, error) {
-	next := Light{Type: cur.Type, Color: p.Color, Intensity: p.Intensity, CastShadow: p.CastShadow, Distance: p.Distance, Decay: p.Decay, Angle: p.Angle, Penumbra: p.Penumbra}
+	next := Light{Type: cur.Type, Color: p.Color, Intensity: p.Intensity, CastShadow: p.CastShadow, Distance: p.Distance, Decay: p.Decay, Angle: p.Angle, Penumbra: p.Penumbra,
+		RadiusM: p.RadiusM, AngularDiameterDeg: p.AngularDiameterDeg}
 	if p.Type != nil {
 		next.Type = *p.Type
 	}
@@ -902,6 +932,8 @@ func mergeLight(cur Light, p lightPatch) (Light, error) {
 	keep(&next.Decay, cur.Decay)
 	keep(&next.Angle, cur.Angle)
 	keep(&next.Penumbra, cur.Penumbra)
+	keep(&next.RadiusM, cur.RadiusM)
+	keep(&next.AngularDiameterDeg, cur.AngularDiameterDeg)
 	has := lightFields[next.Type]
 	for _, f := range next.fields() {
 		if !slices.Contains(has, f.name) {
@@ -934,6 +966,18 @@ func completeCamera(c *Camera, mode string) {
 		*c.ExposureMode = ExposureAmbient
 	}
 	fill(&c.ExposureCompensation, 0.0)
+}
+
+// lightComplete reports whether a stored light already holds every field of
+// its type, so a snapshot needs no completion before it is shown.
+func lightComplete(l Light) bool {
+	has := lightFields[l.Type]
+	for _, f := range l.fields() {
+		if !f.set && slices.Contains(has, f.name) {
+			return false
+		}
+	}
+	return true
 }
 
 // cameraComplete reports whether c already holds every field, so a stored
@@ -1056,6 +1100,12 @@ func validateLight(l Light) error {
 	}
 	if l.Penumbra != nil && !in(*l.Penumbra, 0, 1) {
 		return errors.New("penumbra 须在 0…1 之间")
+	}
+	if l.RadiusM != nil && !in(*l.RadiusM, 0, 10) {
+		return errors.New("radius_m 是光源半径，须在 0…10 米之间（0 表示理想点光源）")
+	}
+	if l.AngularDiameterDeg != nil && !in(*l.AngularDiameterDeg, 0, 30) {
+		return errors.New("angular_diameter_deg 是光源角直径，须在 0…30 度之间（0 表示理想平行光）")
 	}
 	return nil
 }

@@ -24,8 +24,8 @@ func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument
 	return json.Marshal(map[string]any{"scene": scene, "models": models})
 }
 
-// completedScene is the stored snapshot as is, unless a camera, the render
-// or a physical sky predates one of its fields: then the snapshot is
+// completedScene is the stored snapshot as is, unless a camera, a light, the
+// render or a physical sky predates one of its fields: then the snapshot is
 // decoded, which completes it, so the response always carries every field.
 // A physical sky's night (W3) and aerial perspective (W4) are each checked
 // as a whole: completeSky fills them in one go.
@@ -41,6 +41,7 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 		} `json:"environment"`
 		Objects []struct {
 			Camera *Camera `json:"camera"`
+			Light  *Light  `json:"light"`
 		} `json:"objects"`
 	}
 	if err := json.Unmarshal(p.Scene, &stored); err != nil {
@@ -50,7 +51,7 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 	complete := stored.Render.complete() && (sky.Kind != SkyPhysical ||
 		sky.Night != nil && nightComplete(*sky.Night) && sky.AerialPerspective != nil && aerialComplete(*sky.AerialPerspective))
 	for _, o := range stored.Objects {
-		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera))
+		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera)) && (o.Light == nil || lightComplete(*o.Light))
 	}
 	if complete {
 		return p.Scene, nil

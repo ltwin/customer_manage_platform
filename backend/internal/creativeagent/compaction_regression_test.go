@@ -215,8 +215,9 @@ func TestCompactionSummaryFallsBackWhenCurrentToolsOutgrowWindow(t *testing.T) {
 	f := newCompactionFixture(t, testSummary)
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request) and the materials, lighting and lit look
-	// (about 3 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 13000 })
+	// (about 3 KB) were added; the light sizes (scene-light-radius) made
+	// edit_scene's longer again.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 13500 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	summary := testSummary

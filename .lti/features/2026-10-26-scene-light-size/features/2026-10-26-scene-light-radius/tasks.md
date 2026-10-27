@@ -4,13 +4,16 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 1. 数据与服务端
 
-- [ ] 1.1 灯光字段：`model.go` 的 `Light`、`lightPatch`、`lightFields`、`fields`、`completeLight`、`mergeLight`、`validateLight` 加 `radius_m`、`angular_diameter_deg`；`decodeScene` 对每盏灯补齐；`view.go` 的 `completedScene` 在灯光缺字段时返回补齐后的场景。先写测试：新增 `light_size_test.go`，包括旧快照读取补齐，仿 `TestOldCameraIsCompletedOnRead`；另外更新 `scene_test.go` 的字段列表、缺省值、换类型和错类型 400。完成判据：`make check-go PKG=./internal/creativescene/...` 通过。
-- [ ] 1.2 指纹与对外说明：
+- [x] 1.1 灯光字段：`model.go` 的 `Light`、`lightPatch`、`lightFields`、`fields`、`completeLight`、`mergeLight`、`validateLight` 加 `radius_m`、`angular_diameter_deg`；`decodeScene` 对每盏灯补齐；`view.go` 的 `completedScene` 在灯光缺字段时返回补齐后的场景。先写测试：新增 `light_size_test.go`，包括旧快照读取补齐，仿 `TestOldCameraIsCompletedOnRead`；另外更新 `scene_test.go` 的字段列表、缺省值、换类型和错类型 400。完成判据：`make check-go PKG=./internal/creativescene/...` 通过。
+  - 结果：通过。新增 `TestOldLightIsCompletedOnRead`、`TestLightSizeRanges`，`model_test.go` 补了缺字段、越界和错类型三种。物理天空 `sun_size_deg` 的缺省值改用同一个常量 `defaultSunDiameterDeg`，全项目的太阳视直径只有一个数。
+- [x] 1.2 指纹与对外说明：
   - `fingerprint.go` 加 `lightModelVersion = "lights-v2"` 和 `light_model` 字段（omitempty），只在 `lit`、并且有灯光对象或天空为程序化、物理时填写；
   - `openapi.yaml` 的两个灯光 schema 加字段，`make generate` 后提交两份生成物；
   - `scene_tools.go` 的灯光字段说明补上两个字段。
   - 先写测试：`fingerprint_internal_test.go` 新增 specs.md 场景「加入光源尺寸后提示一次」的 A、B、C 三种场景，以及 `clay`、`line` 不变；更新固定的指纹；`TestEditSceneDescribesThreejsFields` 断言新字段。
   - 完成判据：两个包的 `check-go` 通过，`make generate-check` 干净。
+  - 结果：通过。`TestLightModelStalesLitOnce` 覆盖 A（有灯）、B（程序化天空、无灯）、C（纯色天空、无灯）；`pinned` 的 lit 指纹按设计变化，旧值留作 `beforeLightSize`。
+  - 计划外改动：`compaction_regression_test.go` 的窗口从 13000 调到 13500。这条测试给工具定义留固定空间，`edit_scene` 的说明变长后，原始历史放不下；先例是 W3 夜空那次从 9000 调到 10000。
 
 ## 2. 光源模型
 

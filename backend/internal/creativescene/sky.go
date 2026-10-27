@@ -70,7 +70,7 @@ func completeSky(s *Sky) error {
 	fill(&s.DustDensity, 1.0)
 	fill(&s.OzoneDensity, 1.0)
 	fill(&s.SunDisc, true)
-	fill(&s.SunSizeDeg, 0.545)
+	fill(&s.SunSizeDeg, defaultSunDiameterDeg)
 	fill(&s.SunStrength, 1.0)
 	fill(&s.SunTemperatureK, 6500.0)
 	if s.Night == nil {
