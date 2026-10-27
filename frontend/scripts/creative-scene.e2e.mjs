@@ -3843,6 +3843,94 @@ if (process.env.SCENE_E2E_LIGHT_SIZE0) await check('light size 0: the light refe
   }
 })
 
+// --- scene-light-radius: lights with a size, against the reference ------------
+
+/**
+ * The light size measurement page (scripts/light-check) with query, on gpu: the raster's direct light against the
+ * reference traced on the lights' surfaces (scene-light-size S0's way). Its report, and the comparison's panels.
+ */
+async function lightCheck(gpu, query) {
+  const page = await gpu.newPage({ viewport: { width: 2000, height: 1400 } })
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  try {
+    await page.goto(`${base}/scripts/light-check/index.html?${query}`)
+    await page.waitForFunction(() => window.__lightCheck?.done || window.__lightCheck?.error, null, { timeout: 300_000 })
+    const { error, report } = await page.evaluate(() => window.__lightCheck)
+    assert.equal(error, null, `${query}: ${error}`)
+    assert.deepEqual(errors, [], `${query}: ${errors.join('\n')}`)
+    return { report, panels: await page.locator('#panels').screenshot() }
+  } finally {
+    await page.close()
+  }
+}
+
+/** Where a measurement run keeps its panels (SCENE_E2E_LIGHT_OUT=<dir>), for the owner to see. */
+async function keepPanels(name, png) {
+  if (process.env.SCENE_E2E_LIGHT_OUT) await writeFile(`${process.env.SCENE_E2E_LIGHT_OUT}/${name}.png`, png)
+}
+
+const within = (ratio, tolerance) => Math.abs(ratio - 1) <= tolerance
+
+// AC-S1-3 (Epic AC-3): a sphere light lights the wall far off as I/d² does, wraps past the terminator as the
+// reference does, and stays finite with a surface inside it.
+await check('light size: sphere lights light by I/d² far off, wrap past the terminator and stay finite near a surface (AC-S1-3)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const light of ['spot', 'point']) {
+      // The wall is 7 m and more from the light: d ≥ 10 r at r = 0.1 m.
+      const { report } = await lightCheck(gpu, `light=${light}&size=0.1&refFrames=4096&rasterFrames=1`)
+      console.log(`AC-S1-3 ${light} 0.1 m: the wall's light ${report.highlight.wall.toFixed(4)} of the reference's`)
+      assert.ok(within(report.highlight.wall, 0.02), `${light}: the wall's light ${report.highlight.wall} of the reference's`)
+    }
+    for (const size of [0.3, 0.5, 1]) {
+      const { report, panels } = await lightCheck(gpu, `light=point&layout=near&size=${size}&refFrames=4096&rasterFrames=1`)
+      await keepPanels(`terminator-point-${size}`, panels)
+      const { reference, raster } = report.terminator
+      console.log(`AC-S1-3 terminator at r ${size} m: reference ${reference}°, raster ${raster}°`)
+      assert.ok(Math.abs(raster - reference) <= 2, `r ${size} m: the terminator at ${raster}°, the reference's at ${reference}°`)
+    }
+    const { report } = await lightCheck(gpu, 'light=point&layout=close&size=0.1&refFrames=4096&rasterFrames=1')
+    console.log(`AC-S1-3 a point light 5 cm off the wall: brightest ${report.raster.brightest.toFixed(1)}, the reference's ${report.reference.brightest.toFixed(1)}`)
+    assert.equal(report.raster.notFinite, 0, 'the light near the wall leaves no pixel infinite or NaN')
+    assert.ok(report.raster.brightest <= report.reference.brightest * 1.25, `the brightest ${report.raster.brightest}, the reference's ${report.reference.brightest}`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// AC-S1-4 (Epic AC-4): highlights grow and dim with the light's size as the reference's do, on the gloss panel at two
+// roughnesses, under a clearcoat, and from the sun turned so its glint is on the panel. Energy is held both ways: the
+// panel's light, as S0 measured it, and the highlight alone once the panel's diffuse (its dimmest 5%) is taken off, as
+// the AC words it; area is the pixels over half that highlight's peak (S0 integration.md「高光模型」).
+await check('light size: highlights grow with the light as the reference has them (AC-S1-4)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const cases = [
+    ...[0.15, 0.4].flatMap((gloss) => [0.1, 0.3, 1].map((size) => ({ name: `spot-${size}-gloss-${gloss}`, query: `light=spot&size=${size}&gloss=${gloss}` }))),
+    ...[0.1, 0.3].map((size) => ({ name: `spot-${size}-clearcoat`, query: `light=spot&size=${size}&coat=1` })),
+    // Measured, not held to the thresholds: a 1 m light's mirror image in a near-mirror coat (0.05) fills the panel,
+    // so the highlight over its dimmest 5% and its area mean little; its peak is low. Left to the owner (tasks 2.2).
+    { name: 'spot-1-clearcoat', query: 'light=spot&size=1&coat=1', measured: true },
+    ...[0.545, 2, 5].map((size) => ({ name: `sun-${size}`, query: `light=sun&size=${size}&layout=glint` })),
+  ]
+  const failed = []
+  try {
+    for (const c of cases) {
+      const { report, panels } = await lightCheck(gpu, `${c.query}&refFrames=4096&rasterFrames=1`)
+      await keepPanels(`highlight-${c.name}`, panels)
+      const h = report.highlight
+      const peak = h.peak.raster / h.peak.reference
+      console.log(`AC-S1-4 ${c.name}: energy ${h.energy.ratio.toFixed(3)} (highlight ${h.lobe.ratio.toFixed(3)}), area ${h.area.ratio.toFixed(3)}, peak ${peak.toFixed(3)}`)
+      const off = !within(h.energy.ratio, 0.1) || !within(h.lobe.ratio, 0.1) || !within(h.area.ratio, 0.2) || !within(peak, 0.25)
+      if (!c.measured && off) failed.push(c.name)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(failed, [], `highlights off the reference: ${failed.join(', ')}`)
+})
+
 // --- scene-world-space-gi S0: the real-time GI before its world-space layer -----
 
 /** The scenes the world-space layer is judged on: S0's own, and the earlier ones it should keep. */
