@@ -11,7 +11,8 @@
 //   ?frames=<n>                                    frames drawn before the picture is kept (the export's by default)
 //   ?side=<px>                                     the picture's long side (1200 by default)
 //   ?backend=webgl                                 draws through the WebGL2 backend
-//   ?cold=1                                        a constant new every load in the spike's shaders
+//   ?cold=1                                        a number new every load in every material's shader (coldSalt)
+//   ?dump=1                                        the largest fragment shader's code in the report
 //   ?view=compare                                  the reference against the raster's direct light (reference.ts):
 //     &refFrames= &rasterFrames= &width= &shape=ellipse &flip=1
 //
@@ -20,7 +21,8 @@ import { createElement } from 'react'
 import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
-import { MeshLambertNodeMaterial, MeshPhysicalNodeMaterial, RectAreaLightNode } from 'three/webgpu'
+import { MeshLambertNodeMaterial, MeshPhysicalNodeMaterial, NodeMaterial, RectAreaLightNode } from 'three/webgpu'
+import * as TSL from 'three/tsl'
 import type { Scene } from '../../src/creative-scene/api.ts'
 import { ShotScene } from '../../src/creative-scene/host/ShotScene.tsx'
 import { cameraFraming } from '../../src/creative-scene/host/framing.ts'
@@ -50,10 +52,19 @@ const side = Number(query.get('side') ?? '1200')
 if (query.get('backend') === 'webgl') gpuTestHooks.forceWebGL = true
 
 /**
- * Unused: a measure of cold compiles needs no salt, since every measure launch is a fresh browser profile; the warm
- * case loads twice in one browser (measure/shot.mjs SPIKE_WARM). Kept in the report as 0.
+ * ?cold=1: every material's output times 1 + salt·2⁻²³ (salt 1…1000, at most 1.0001), a number new every load. A fresh browser profile is not
+ * cold: something below it (the Metal compiler's own cache, it seems) keeps compiled shaders across launches, and a
+ * shader seen once before builds in a fifth of the time. The salt changes every material's code, so each load
+ * compiles them anew; the renderer's own passes (GI, post) stay as cached as they were.
  */
-export const coldSalt = 0
+export const coldSalt = query.get('cold') === '1' ? Math.floor(Math.random() * 1000) + 1 : 0
+if (coldSalt) {
+  const { float, vec4 } = TSL as unknown as Record<string, (...a: unknown[]) => { mul(v: unknown): unknown; rgb: unknown; a: unknown }>
+  const setupOutput = NodeMaterial.prototype.setupOutput
+  NodeMaterial.prototype.setupOutput = function (this: NodeMaterial, builder: unknown, output: { rgb: { mul(v: unknown): unknown }; a: unknown }) {
+    return setupOutput.call(this, builder as never, vec4(output.rgb.mul(float(1 + coldSalt * 2 ** -23)), output.a) as never)
+  } as typeof setupOutput
+}
 
 type Spike = { done: boolean; error: string | null; report: Record<string, unknown>; data?: Comparison }
 const spike: Spike = { done: false, error: null, report: {} }
@@ -191,7 +202,12 @@ async function boot() {
     if (i === 0) firstMs = performance.now() - drawStarted
   }
   const drawMs = performance.now() - drawStarted
-  spike.report = { scene: sceneName, light: sceneName === 'occluder-wall' ? lightName : null, method, size, engine, frames, width: framing.width, height: framing.height, lights, compileMs: Math.round(compileMs), firstMs: Math.round(firstMs), drawMs: Math.round(drawMs), coldSalt }
+  // The materials' code, all of it: what a cold load compiles (?cold=1), the same however warm the GPU's caches.
+  const programs = (g.renderer as unknown as { _pipelines: { programs: Record<'vertex' | 'fragment', Map<string, unknown>> } })._pipelines.programs
+  const codes = [...programs.fragment.keys(), ...programs.vertex.keys()]
+  const shaderKB = Math.round(codes.reduce((n, c) => n + c.length, 0) / 1024)
+  const largestKB = Math.round(Math.max(...codes.map((c) => c.length)) / 1024)
+  spike.report = { scene: sceneName, light: sceneName === 'occluder-wall' ? lightName : null, method, size, engine, frames, width: framing.width, height: framing.height, lights, compileMs: Math.round(compileMs), firstMs: Math.round(firstMs), drawMs: Math.round(drawMs), shaderKB, largestKB, shaders: codes.length, coldSalt, ...(query.get('dump') === '1' ? { code: [...programs.fragment.keys()].sort((a, b) => b.length - a.length)[0] } : {}) }
   const head = `${sceneName}${sceneName === 'occluder-wall' ? ` (${lightName})` : ''} · ${method} · size ${size} · ${engine} · ${frames} frames`
   show([head, `compile ${Math.round(compileMs)} ms, first frame ${Math.round(firstMs)} ms, all ${Math.round(drawMs)} ms`])
 

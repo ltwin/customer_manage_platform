@@ -73,12 +73,12 @@
     - 第 6 组：主光有尺寸时，关掉屏幕空间接触阴影。它在有尺寸的灯下只会叠出硬暗带和颗粒虚线，抖动追踪方向也几乎没有改善。
     - 第 7 组：漫反射用 Snyder 的精确照度，交界线与参考解相差不超过 1°，整条曲线几乎重合；代表点包裹过头 7–10°。sheen 随漫反射走；参考解没有 sheen，误差没有量。
 - [x] 4.3 第 8 组，Blender Cycles 对照的做法（后续验收项）：写 `blender-cycles.md`，包括 `occluder-wall` 的搭建步骤、Cycles 渲染设置、要读的相对量和读法，以及参考解给出的预期值；同时写明 U8 的核对步骤。本机不渲染（owner 2026-10-26）。
-- [ ] 4.4 第 9 组，缺省值的观感：在 `frame-two-lights` 上看半径 0.1 m 的效果，在 `area-studio` 上看 10000 cd/m² 的面光源效果。图交 owner 看，结论写进 `defaults-look.md`。
-  - 进展：图已出（`defaults/`），结论草稿写进 `defaults-look.md`；待 owner 看图，定平行光的缺省角径（建议 0.545°）。
+- [x] 4.4 第 9 组，缺省值的观感：在 `frame-two-lights` 上看半径 0.1 m 的效果，在 `area-studio` 上看 10000 cd/m² 的面光源效果。图交 owner 看，结论写进 `defaults-look.md`。
+  - 结果：owner 2026-10-26 按建议定平行光缺省角径 0.545°；面光源缺省值保留。导出耗时随后优化：采样循环改用 TSL 的 `Loop`，冷启动导出 `workbench` +30%、`realtime_gi` +14%（原来是 +190% 和 +89%），画面逐像素不变。
 
 ## 5. 结论与收尾
 
-- [ ] 5.1 第 10 组，阈值：提出 AC-1、AC-3（包裹）、AC-4、AC-5、AC-8 的阈值，附依据，写进 `thresholds.md`。U1–U8 每项给出建议（AC-S0-4）。对比图集和阈值交 owner 选定。
-  - 进展：草案已写进 `thresholds.md`，待 owner 选定。实施时调整：AC-4 建议改为「与参考解比」，原文的「与点光源比」在大光源下不成立。
+- [x] 5.1 第 10 组，阈值：提出 AC-1、AC-3（包裹）、AC-4、AC-5、AC-8 的阈值，附依据，写进 `thresholds.md`。U1–U8 每项给出建议（AC-S0-4）。对比图集和阈值交 owner 选定。
+  - 结果：owner 2026-10-26 按建议选定 `thresholds.md` 的阈值和 U1–U8，包括 AC-4 改为「与参考解比」（原文的「与点光源比」在大光源下不成立）；聚光和点光的条纹放进 S1 一起修，AC-2 的基线改为修复后的画面。
 - [ ] 5.2 原型收尾：用 `git mv` 把 `frontend/spike-light.html` 和 `frontend/spike/light/` 移进 `discovery/research/prototype/`。完成判据：`git diff develop --stat -- frontend/src frontend/package.json frontend/package-lock.json` 为空，`frontend/spike*` 不存在，前端静态检查通过（AC-S0-6）。
 - [ ] 5.3 Epic 修订：在主检出的 `develop` 上，把 owner 的选择和阈值写回 Epic 的 design 和 proposal，呈给 owner。批准后执行 `lti epic revise`（AC-S0-7）。

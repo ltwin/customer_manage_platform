@@ -6,7 +6,8 @@
 //   pcss         Fernando 2005: a blocker search, the penumbra by similar triangles, a PCF that wide; spot lights
 //                (2D maps) for now. Kernels turn with the frame (IGN offset by frameId: TRAA averages them), and a
 //                receiver plane depth bias from the screen derivatives keeps a wide kernel off the receiver itself
-//                (Epic design「技术选型」阴影偏置). ?search= ?samples= samples, ?maxTexels= the widest penumbra.
+//                (Epic design「技术选型」阴影偏置). ?search= ?samples= samples, ?maxTexels= the widest penumbra;
+//                ?unroll=1 writes the sample loops out a sample at a time, as the spike first did.
 //                Point lights (cube maps) compare by hand on raw samples: WGSL has no textureLoad for a depth cube,
 //                and three gives the map one sampler a shader (depth-read-backends.md). ?cubeEps= texels of bias.
 //   smtrace      shadow map tracing (EEVEE's way): rays to points on the light, each marched through the depth map
@@ -20,7 +21,7 @@ export type Method = 'pcf' | 'pcf-radius' | 'pcss' | 'smtrace'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { Fn, abs, clamp, cross, cubeTexture, dFdx, dFdy, dot, expression, float, interleavedGradientNoise, ivec2, length, max, min, normalize, perspectiveDepthToViewZ, reference, select, texture, textureLoad, uniform, vec2, vec3, vogelDiskSample } = T
+const { Fn, Loop, abs, clamp, cross, cubeTexture, dFdx, dFdy, dot, expression, float, interleavedGradientNoise, ivec2, length, max, min, normalize, perspectiveDepthToViewZ, reference, select, texture, textureLoad, uniform, vec2, vec3, vogelDiskSample } = T
 const { frameId, positionWorld, renderGroup, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
 
 type Shadowing = DirectionalLight | PointLight | SpotLight
@@ -77,6 +78,33 @@ type MapGeometry = {
   penumbra: (zR: TSLNode, zB: TSLNode) => TSLNode
 }
 
+/**
+ * The sample loops: a TSL Loop, one copy of its body in the shader whatever the count (?unroll=1: a copy a sample,
+ * as the spike first wrote them). Unrolled, a material lit by the sun's 4 cascades and a point light carried some
+ * 250 samples' code, and its shader built 3.4 times as long (soft-shadow-candidates.md「反应舱」).
+ */
+const unroll = query.get('unroll') === '1'
+
+/**
+ * A filter that builds its own Fn for each shadow it filters. three hoists the result of a Fn with a Loop in it to the
+ * top of the shader when that Fn is called inside an If (VarNode.build, hasLoop), and marks the Fn, not the call: the
+ * sun's 4 cascades share one filter (LightShadow.copy), the first marked it, and the other 3 were hoisted above the
+ * If that sets their shadowPositionWorld: computed from nothing, lit everywhere. ShadowNode calls a filter once a
+ * shadow (its _node), so each call makes the Fn with the loops anew. The outer one stays a Fn: PointShadowNode
+ * passes its filter through a Fn's inputs, which turns a plain function into a node.
+ */
+const perShadow = (body: (inputs: Record<string, TSLNode>, builder: Builder) => TSLNode) =>
+  Fn((inputs: Record<string, TSLNode>) => {
+    // The inputs as a plain object again: the outer Fn's own does not pass on through a call.
+    const own: Record<string, TSLNode> = {}
+    for (const k of ['depthTexture', 'shadowCoord', 'bd3D', 'dp', 'shadow']) if (inputs[k] !== undefined) own[k] = inputs[k]
+    return Fn(body)(own)
+  })
+function repeat(count: number, body: (i: TSLNode | number) => void) {
+  if (unroll) for (let i = 0; i < count; i++) body(i)
+  else (Loop as unknown as (n: number, f: (a: { i: TSLNode }) => void) => void)(count, ({ i }) => body(i))
+}
+
 /** A number the shadow holds (dotted paths reach its camera), read as each render starts. */
 const held = (shadow: TSLNode, path: string, type = 'float') => reference(path, type, shadow).setGroup(renderGroup)
 
@@ -122,7 +150,7 @@ function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
-  return Fn(({ depthTexture, shadowCoord, shadow }: Record<string, TSLNode>, builder: Builder) => {
+  return perShadow(({ depthTexture, shadowCoord, shadow }, builder) => {
     const { linear, slope, search, penumbra } = geometry(shadow)
     const mapSize = reference('mapSize', 'vec2', shadow).setGroup(renderGroup)
     const texel = float(1).div(mapSize.x)
@@ -144,21 +172,22 @@ function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
     // The first use of the map in the shader decides its sampler: a compare first, so the filter's compares build.
     const centre = (raw ? float(1) : texture(depthTexture, uv).compare(z.sub(eps))).toVar()
     // The texel under the receiver searched too: a blocker the sparse disk misses still darkens the umbra.
-    for (let i = -1; i < searchN; i++) {
-      const o = i < 0 ? vec2(0) : vogelDiskSample(i, searchN, phi).mul(searchUV)
+    const searchAt = (o: TSLNode) => {
       const d = depthAt(uv.add(o))
       const blocks = select(d.lessThan(z.add(dot(plane, o)).sub(eps)), float(1), float(0))
       blockers.addAssign(blocks)
       depthSum.addAssign(blocks.mul(linear(d)))
     }
+    searchAt(vec2(0))
+    repeat(searchN, (i) => searchAt(vogelDiskSample(i, searchN, phi).mul(searchUV)))
     const zB = depthSum.div(max(blockers, 1)).toVar()
     const penumbraUV = clamp(penumbra(zR, zB), texel, texel.mul(maxTexels)).toVar()
     const lit = float(0).toVar()
-    for (let i = 0; i < filterN; i++) {
+    repeat(filterN, (i) => {
       const o = vogelDiskSample(i, filterN, phi).mul(penumbraUV)
       const against = z.add(dot(plane, o)).sub(eps)
       lit.addAssign(raw ? select(texture(depthTexture, uv.add(o)).x.lessThan(against), float(0), float(1)) : texture(depthTexture, uv.add(o)).compare(against))
-    }
+    })
     // No blocker found: lit. The compares above run either way (no compare inside a per-pixel branch).
     if (query.get('softDebug') === 'phi') return phi.div(Math.PI * 2).add(centre.mul(0))
     if (query.get('softDebug') === 'load') {
@@ -260,7 +289,7 @@ function pointPCSS(rect = false) {
   const searchN = num('search', 16)
   const filterN = num('samples', 32)
   const maxTexels = num('maxTexels', 48)
-  return Fn(({ depthTexture, bd3D, shadow }: Record<string, TSLNode>, builder: Builder) => {
+  return perShadow(({ depthTexture, bd3D, shadow }, builder) => {
     const near = held(shadow, 'camera.near')
     const far = held(shadow, 'camera.far')
     const radius = held(shadow, 'lightSize')
@@ -313,20 +342,21 @@ function pointPCSS(rect = false) {
     const searchK = min(dR.sub(near).div(dR.mul(near)), texel.mul(maxTexels).div(reach)).toVar()
     const blockers = float(0).toVar()
     const distanceSum = float(0).toVar()
-    for (let i = -1; i < searchN; i++) {
-      const d = i < 0 ? bd3D : toward(vogelDiskSample(i, searchN, phi), searchK)
+    const searchAlong = (d: TSLNode) => {
       const at = stored(d).toVar()
       const blocks = select(at.lessThan(receiverAt(d).sub(eps)), float(1), float(0))
       blockers.addAssign(blocks)
       distanceSum.addAssign(blocks.mul(at))
     }
+    searchAlong(bd3D)
+    repeat(searchN, (i) => searchAlong(toward(vogelDiskSample(i, searchN, phi), searchK)))
     const dB = distanceSum.div(max(blockers, 1)).toVar()
     const penumbraK = clamp(dR.sub(dB).div(dB.mul(dR)), texel.mul(0.5).div(reach), texel.mul(maxTexels).div(reach)).toVar()
     const lit = float(0).toVar()
-    for (let i = 0; i < filterN; i++) {
-      const d = toward(vogelDiskSample(i, filterN, phi), penumbraK)
+    repeat(filterN, (i) => {
+      const d = toward(vogelDiskSample(i, filterN, phi), penumbraK).toVar()
       lit.addAssign(select(stored(d).lessThan(receiverAt(d).sub(eps)), float(0), float(1)))
-    }
+    })
     return select(blockers.lessThan(0.5), float(1), lit.div(filterN))
   })
 }
