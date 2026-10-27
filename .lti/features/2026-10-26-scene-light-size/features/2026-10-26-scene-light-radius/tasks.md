@@ -150,8 +150,9 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
       - realtime_gi 1K +9%。
       - workbench 超出的部分来自两项：一是上面的编译；二是 16 帧累积，8K 时每帧都重画全部画面。
     - 0 与非 0 切换的停顿：workbench 4.0–4.8 s，realtime_gi 7.0–8.4 s。原因是灯要重建，所有材质都重新编译。
-- [ ] 7.2 owner 看图（AC-S1-11）：用 owner 反馈的场景出改前改后的对比图，`workbench` 和 `realtime_gi` 各一组。阴影图的台阶看得出来时，加出 2048 的对比并复测 7.1。完成判据：owner 给出结论。
-  - 进展：用 frame-two-lights（owner 2026-10-26 反馈的「两盏灯隔着框架照墙」）出改前改后的对比图，`workbench` 和 `realtime_gi` 各一张。改前是分支起点的基线 `baseline-before`；改后按缺省尺寸导出（点光 0.1 m、平行光 0.545°），用 `SCENE_E2E_LIGHT_SIZES=keep`。等 owner 结论。
+- [x] 7.2 owner 看图（AC-S1-11）：用 owner 反馈的场景出改前改后的对比图，`workbench` 和 `realtime_gi` 各一组。阴影图的台阶看得出来时，加出 2048 的对比并复测 7.1。完成判据：owner 给出结论。
+  - 进展：用 frame-two-lights（owner 2026-10-26 反馈的「两盏灯隔着框架照墙」）出改前改后的对比图，`workbench` 和 `realtime_gi` 各一张。改前是分支起点的基线 `baseline-before`；改后按缺省尺寸导出（点光 0.1 m、平行光 0.545°），用 `SCENE_E2E_LIGHT_SIZES=keep`。
+  - 结论：owner 2026-10-27 看过审计修复后的对比图，「虽然还是有点闪烁，但程度已经降低了很多，可以接受」，要求本 feature 收尾。不再试 2048 的阴影图。
 
 ## 审计修复（2026-10-27，verify 前）
 
