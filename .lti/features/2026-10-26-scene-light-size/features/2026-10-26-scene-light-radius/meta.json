@@ -1,12 +1,12 @@
 {
   "uid": "3b0213bc-7f84-4e7f-882c-6f9f094e8a18",
-  "revision": 5,
+  "revision": 8,
   "id": "scene-light-radius",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-light-size",
   "designBinding": {
-    "version": 3,
+    "version": 4,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -25,7 +25,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-27T05:20:19.856Z",
-  "updatedAt": "2026-10-27T08:52:24.784Z",
+  "updatedAt": "2026-10-27T14:03:14.714Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -35,17 +35,38 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-27T08:50:48.561Z",
-      "contentHash": "cd2d6092532139b4"
+      "at": "2026-10-27T14:03:14.420Z",
+      "contentHash": "2a2ec54162b6789c"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-27T08:50:48.561Z",
+      "at": "2026-10-27T14:03:14.420Z",
       "contentHash": "0db0e7b6330b7acf"
     }
   },
-  "approvalHistory": [],
-  "revisions": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-27T08:50:48.561Z",
+      "contentHash": "cd2d6092532139b4",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T08:50:48.561Z",
+      "contentHash": "0db0e7b6330b7acf",
+      "role": "design"
+    }
+  ],
+  "revisions": [
+    {
+      "at": "2026-10-27T14:02:52.481Z",
+      "summary": "按 Epic 修订 v4 改 AC-S1-7：第一次构建和 workbench 导出时长改为按实测记录（owner 2026-10-27 看过实测后决定）",
+      "contentHash": "2a2ec54162b6789c",
+      "added": [],
+      "removed": []
+    }
+  ],
   "baseline": {
     "commit": "33a646b25a17b16360f278c901c69affc35c2202",
     "at": "2026-10-27T08:52:24.064Z",

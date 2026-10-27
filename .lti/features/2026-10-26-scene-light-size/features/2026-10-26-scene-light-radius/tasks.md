@@ -131,12 +131,13 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 7. 验收材料
 
-- [ ] 7.1 性能（AC-S1-7）：
+- [x] 7.1 性能（AC-S1-7）：
   - 新增 4 盏灯的固定数据：`frame-two-lights` 加一盏聚光，天空为程序化天空；
   - 冷启动开关移进 `gpuTestHooks`；
   - 在参考设备上测：视口帧时、第一次构建、导出时长（1200 × 800、4K、8K、加投影体积），以及 0 与非 0 切换的停顿。
   - 完成判据：结果写进 verify，满足 Epic AC-8 的三项。超出时先查哪一项占大头，再交 owner。
-  - 进展（未定案，待 owner）：
+  - 结论：owner 2026-10-27 决定接受现状、修订阈值（Epic 修订 v4，AC-S1-7 随之更新并重新批准）。画质优先，不采用降低代价的做法。
+  - 实测：
     - 测法：
       - 性能页 `scripts/light-check/perf.html`：AC-S1-7 的 4 盏灯场景；冷编译用 `gpuTestHooks.cold`（S0 的撒盐做法移进产品钩子，只给 vec4 输出撒盐）；相机是竖构图，800 × 1200。
       - 导出用 e2e `SCENE_E2E_LIGHT_PERF`，走真实导出流程，同样冷编译。
