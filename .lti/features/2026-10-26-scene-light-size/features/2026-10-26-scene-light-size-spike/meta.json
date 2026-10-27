@@ -1,6 +1,6 @@
 {
   "uid": "9f1feb22-1c9c-4ca5-a2c3-712325a45e8d",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-light-size-spike",
   "kind": "feature",
   "assurance": "governed",
@@ -23,7 +23,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-26T13:18:29.364Z",
-  "updatedAt": "2026-10-27T04:36:08.730Z",
+  "updatedAt": "2026-10-27T04:41:52.341Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-27T04:41:52.253Z",
+    "summary": "S0 合回 develop（caf457f3），自动合并无冲突。合入树只改了 e2e 脚本、参考场景固定数据和 S0 文档，不涉及产品代码；在主检出合并树上重跑「reference scenes: each opens」通过（216 s），e2e 脚本 node --check 通过。",
+    "method": "manual",
+    "limitations": "没有跑 make check-merge：分支不改产品代码，合入的影响面只有 e2e 脚本，已用对应用例覆盖；develop 自带的 scene-probe-gi 已在它自己的集成里验证。",
+    "sourceCommit": "668dfb0ff662721f16a4f65a34f2e0428e22cb95",
+    "targetCommit": "caf457f31faa9bf0b4e8a0846a86d4ed5d25593d",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "889c36014def4730eaf18aafb9fbfb067af6385a9b573c7d7c8596ad28e9467c"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": []
   },
