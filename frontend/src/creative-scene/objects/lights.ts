@@ -2,6 +2,7 @@ import { Object3D, type Light as ThreeLight } from 'three'
 import type { SceneObject } from '../api.ts'
 import { lightDefaults } from '../state/apply.ts'
 import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from '../render/lightModel/lights.ts'
+import { attachSoftShadow } from '../render/lightModel/shadowFilter.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
 import { volumeShadowNode } from '../render/volumes/shadow.ts'
 
@@ -72,6 +73,8 @@ export function applyLight(built: BuiltLight, l: Light) {
     light.castShadow = shadows
     if (shadows) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
   }
+  // A sized light's soft shadow, before the cascades below clone its shadow (render/lightModel/shadowFilter.ts).
+  if (shadows) attachSoftShadow(light)
   // Once, and kept: three's light node holds on to the first shadow node it builds.
   if (shadows && light instanceof SceneSunLight && !built.stop) built.stop = cascadeSunShadow(light)
 }

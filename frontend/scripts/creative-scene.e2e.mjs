@@ -3785,7 +3785,9 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
 
 // SCENE_E2E_LIGHT_BASELINE=<dir>: scene-light-size S0's reference scenes, the
 // lit export under each renderer before lights had sizes, and light-baseline.json
-// with the machine, the versions and the export times.
+// with the machine, the versions and the export times; every light of size 0, as
+// AC-S1-2 compares (sizeless). SCENE_E2E_LIGHT_HOOKS sets
+// gpuTestHooks for it (stripeFixed: scene-light-radius's other stripe fix, for the owner).
 if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light reference scenes before lights had sizes', async () => {
   const dir = process.env.SCENE_E2E_LIGHT_BASELINE
   const gpu = await chromium.launch({ headless: true, args: metal })
@@ -3793,7 +3795,7 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
     for (const name of lightReferenceNames) {
       for (const engine of ['workbench', 'realtime_gi']) {
-        const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine } })
+        const out = await exportReference(gpu, name, { litOnly: true, hooks: process.env.SCENE_E2E_LIGHT_HOOKS, edit: (s) => { s.render.engine = engine; sizeless(s) } })
         record.renderer ??= out.renderer
         const images = []
         for (const img of out.images) {
@@ -3929,6 +3931,160 @@ await check('light size: highlights grow with the light as the reference has the
     await gpu.close()
   }
   assert.deepEqual(failed, [], `highlights off the reference: ${failed.join(', ')}`)
+})
+
+/** The width bins the measurement page profiles by (scripts/light-check/measure.ts BIN): a width is known to one. */
+const PROFILE_BIN = 0.005
+
+/**
+ * One soft shadow's boards against the reference, as S0 measured them (soft-shadow-candidates.md): the 0.05 m board's
+ * shadow is mostly hidden behind the board, so it is logged only; an edge the reference has a 10%–90% width for is
+ * held to 20% when the reference's is 5 cm or wider and to texels (and a bin) when narrower; the 3 m board's profiles
+ * to a mean of 0.02 and a largest of 0.12 (the 0.5 m board's edges are a pixel or two wide, where the 1 cm pixels and
+ * the map's texels make the largest difference mean nothing). What is off, as lines.
+ */
+function penumbraOff(name, report, narrowTexels) {
+  const off = []
+  const widths = {}
+  for (const [board, w] of Object.entries(report.penumbrae)) {
+    const texel = report.texels?.[board] ?? null
+    const sides = []
+    for (const side of ['left', 'right', 'lower', 'upper']) {
+      const ref = w.reference[side].width
+      const got = w.averaged[side].width
+      sides.push(`${side} ${ref == null ? '–' : (ref * 100).toFixed(1)}→${got == null ? '–' : (got * 100).toFixed(1)}`)
+      if (board === '0.05 m' || ref == null) continue
+      if (got == null) off.push(`${name} ${board} ${side}: no width, the reference's ${ref}`)
+      else if (ref >= 0.05 ? Math.abs(got - ref) > 0.2 * ref : Math.abs(got - ref) > narrowTexels * texel + PROFILE_BIN) off.push(`${name} ${board} ${side}: ${got} m, the reference's ${ref} m (a texel ${texel?.toFixed(4)} m)`)
+    }
+    const p = w.profile.averaged
+    widths[board] = ['left', 'right', 'lower', 'upper'].map((k) => w.averaged[k].width).filter((v) => v != null)
+    console.log(`${name} ${board}: ${sides.join(' · ')} cm; profile ${p.mean.toFixed(3)} · ${p.max.toFixed(3)}; texel ${texel == null ? '–' : (texel * 1000).toFixed(1)} mm`)
+    if (board === '3 m' && (p.mean > 0.02 || p.max > 0.12)) off.push(`${name} ${board}: profile ${p.mean.toFixed(3)} · ${p.max.toFixed(3)}`)
+  }
+  // Wider the further the board from the wall.
+  const mean = (a) => (a?.length ? a.reduce((x, y) => x + y, 0) / a.length : null)
+  if (mean(widths['0.5 m']) != null && mean(widths['3 m']) != null && !(mean(widths['3 m']) > mean(widths['0.5 m']))) off.push(`${name}: the 3 m board's penumbra no wider than the 0.5 m board's`)
+  return off
+}
+
+// AC-S1-1 (Epic AC-1): penumbrae widen with the distance from blocker to wall as the reference's do, for a spot, a
+// point and a parallel light with sizes; the raster averaged over 16 frames, as the workbench's export accumulates.
+await check('light size: soft shadows widen with distance as the reference has them (AC-S1-1)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    for (const [light, sizes] of [['spot', [0.1, 0.3]], ['point', [0.1, 0.3]], ['sun', [2, 5]]]) {
+      for (const size of sizes) {
+        const { report, panels } = await lightCheck(gpu, `light=${light}&size=${size}&refFrames=2048&rasterFrames=16`)
+        await keepPanels(`penumbra-${light}-${size}`, panels)
+        off.push(...penumbraOff(`AC-S1-1 ${light} ${size}`, report, 2))
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [], 'penumbrae off the reference')
+})
+
+// AC-S1-5 (Epic AC-6): the skies' sun throws its shadow, in the nearest cascade, as wide as its disc does, a texel
+// apart at most: the procedural sky's 0.545°, the physical sky's sun_size_deg at 0.545° and at 5°, softer at 5°. And
+// AC-S1-10: the physical sky drawn at 0.545° and then set to 5° gives 5°'s penumbrae, the shader kept.
+await check('light size: the skies’ sun softens its shadows by its size (AC-S1-5)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  const wide = {}
+  try {
+    for (const [name, query] of [['procedural', 'sky=procedural'], ['physical 0.545', 'sky=physical&size=0.545'], ['physical 5', 'sky=physical&size=5'], ['physical 0.545 then 5', 'sky=physical&size=0.545&resize=5']]) {
+      const { report, panels } = await lightCheck(gpu, `${query}&refFrames=2048&rasterFrames=16`)
+      await keepPanels(`sky-${name.replaceAll(' ', '-')}`, panels)
+      off.push(...penumbraOff(`AC-S1-5 ${name}`, report, 1))
+      const w = report.penumbrae['3 m'].averaged
+      wide[name] = ['left', 'right', 'lower', 'upper'].map((k) => w[k].width ?? 0).reduce((a, b) => a + b, 0) / 4
+    }
+  } finally {
+    await gpu.close()
+  }
+  console.log(`AC-S1-5 the 3 m board's penumbra: ${Object.entries(wide).map(([k, v]) => `${k} ${(v * 100).toFixed(1)} cm`).join(', ')}`)
+  assert.ok(wide['physical 5'] > 2 * wide['physical 0.545'], 'the physical sky at 5° softer than at 0.545°')
+  assert.ok(Math.abs(wide['physical 0.545 then 5'] - wide['physical 5']) <= 0.01, 'set to 5° after drawing: as wide as loaded at 5°')
+  assert.deepEqual(off, [], 'the sky sun\'s penumbrae off the reference')
+})
+
+/** A picture's mean luma in an n × n grid of tiles, row by row. */
+async function tileLuma(page, png, n) {
+  return page.evaluate(async ([src, n]) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const g = c.getContext('2d')
+    g.drawImage(bitmap, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    const sum = new Float64Array(n * n)
+    const count = new Uint32Array(n * n)
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        const k = (y * c.width + x) * 4
+        const t = Math.min(n - 1, Math.floor((y * n) / c.height)) * n + Math.min(n - 1, Math.floor((x * n) / c.width))
+        sum[t] += 0.2126 * p[k] + 0.7152 * p[k + 1] + 0.0722 * p[k + 2]
+        count[t]++
+      }
+    }
+    return Array.from(sum, (s, t) => s / count[t])
+  }, [`data:image/png;base64,${png.toString('base64')}`, n])
+}
+
+/**
+ * Tiles where a sized picture's shading is missing or its shadow gone, against the same picture without sizes: a
+ * lit tile (luma over 12) gone below 60% of itself, or a shadowed one lit past 160% and 12 more. Soft shadows move a
+ * tile's luma a little; a light whose shader did not build takes its light away, a filter hoisted out of its branch
+ * its shadow (U7, the Loop's hoisting).
+ */
+function tilesOff(sized, sizeless) {
+  const off = []
+  sizeless.forEach((was, t) => {
+    const now = sized[t]
+    if ((was > 12 && now < 0.6 * was) || now > 1.6 * was + 12) off.push(`tile ${t}: ${was.toFixed(0)} → ${now.toFixed(0)}`)
+  })
+  return off
+}
+
+// AC-S1-10: lights with sizes shade where they should on WebGPU and through the WebGL2 backend (U7's two three
+// defects: a map read compared or linear, a cube read with no level); the sun's cascades 1–3 keep their shadows with
+// the filter in each (the Loop hoisted out of its branch). Each lit export against the same scene without sizes,
+// tile by tile: occluder-wall with its spot, point and parallel light all on, and noon, whose shadows reach far.
+await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the sun in every cascade (AC-S1-10)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const allOn = (sized) => (scene) => {
+      for (const o of scene.objects) if (o.light) o.visible = true
+      if (sized) for (const o of scene.objects) {
+        if (o.light?.type === 'directional') o.light.angular_diameter_deg = 2
+        else if (o.light) o.light.radius_m = 0.3
+      } else sizeless(scene)
+    }
+    for (const forceWebGL of [false, true]) {
+      const backend = forceWebGL ? 'webgl2' : 'webgpu'
+      for (const [name, sized, plain] of [
+        ['occluder-wall', { edit: allOn(true) }, { edit: allOn(false) }],
+        ['noon', {}, { hooks: 'skySunDeg:0' }],
+      ]) {
+        const a = await exportReference(gpu, name, { litOnly: true, forceWebGL, ...sized })
+        const b = await exportReference(gpu, name, { litOnly: true, forceWebGL, ...plain })
+        if (forceWebGL) assert.ok(a.backends.some((x) => x === 'scene renderer (offscreen): webgl2'), `${name}: ${a.backends}`)
+        for (const img of a.images) {
+          await keepPanels(`backends-${img.file.replace('.png', '')}-${backend}`, img.png)
+          const tiles = tilesOff(await tileLuma(page, img.png, 16), await tileLuma(page, b.images.find((i) => i.file === img.file).png, 16))
+          console.log(`AC-S1-10 ${backend} ${img.file}: ${tiles.length} tiles off`)
+          off.push(...tiles.map((t) => `${backend} ${img.file} ${t}`))
+        }
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [], 'sized lights missing their shading or shadows')
 })
 
 // --- scene-world-space-gi S0: the real-time GI before its world-space layer -----

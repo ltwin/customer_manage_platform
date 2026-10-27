@@ -35,6 +35,9 @@ const centres = {
 /** Which shadow centres a light's boards throw: the sun's are along its way, the others' from the lights' place. */
 export type Boards = keyof typeof centres
 
+/** The boards' shadow centres in three's world (z up): where a narrow penumbra's texel is taken (AC-1). */
+export const boardCentres = (boards: Boards) => centres[boards].map((b) => ({ name: b.name, at: [b.at[0], -WALL_Z, b.at[1]] as const }))
+
 const BIN = 0.005
 const BAND = 0.03
 const REACH = 1.2

@@ -293,6 +293,10 @@ export const gpuTestHooks = {
    * buffers may hold: pressed down, a scene goes to tier 2, then too large (render/trace/capacity.ts).
    */
   traceBudget: null as number | null,
+  /** The skies' sun and moon this many degrees across in place of theirs: 0 draws them without size, the comparison for the cascades' soft shadows (scene-light-radius AC-S1-10). */
+  skySunDeg: null as number | null,
+  /** A size-0 spot or point light lifts its receivers a fixed 0.05 m, not 1.5 texels: the comparison images for the owner (render/volumes/shadow.ts). */
+  stripeFixed: false,
   /** No world-space layer, as the developer switch (localStorage scene.trace = off) gives. */
   traceOff: false,
   /** Takes the device for one the layer does not support: no such device to test on. */

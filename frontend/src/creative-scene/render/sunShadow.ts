@@ -5,6 +5,7 @@ import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { towardSun, volumesCast } from './volumes/shadow.ts'
 import { CASCADES } from './volumes/state.ts'
 import { piecesOf } from './pieces.ts'
+import type { SizedShadow } from './lightModel/lights.ts'
 
 // The sun's shadow in cascades. One map over every caster spent its texels
 // on whatever stood far off: a big box 200 m away made the shadows by the
@@ -19,7 +20,7 @@ import { piecesOf } from './pieces.ts'
 
 /** Where the log split of the view starts (metres): 0.5–5, 5–50, 50–500 m and on, under the viewport's 5000 m far. */
 const splitFrom = 0.5
-/** Receivers look up their shadow this many texels out along their normal: no self-shadowing stripes. */
+/** Receivers look up their shadow this many texels out along their normal: no self-shadowing stripes. A sized sun's PCSS compares against the receiver's plane instead, at 0 (render/lightModel/shadowFilter.ts). */
 const normalBiasTexels = 1.5
 /** Room kept toward the light past the highest caster and behind the slice (metres). */
 const margin = 1
@@ -45,7 +46,7 @@ class SunCascades extends CSMShadowNode {
 
   // The cascades' shadow times what the casting volumes let through toward the light (render/volumes/shadow.ts).
   override setup(builder: NodeBuilder) {
-    const shadow = ownNames(`csm${this.id}`, () => super.setup(builder))
+    const shadow = ownNames(`csm${castingIndex(builder, this.light as DirectionalLight)}`, () => super.setup(builder))
     return volumesCast(builder) ? towardSun(shadow, this.toward) : shadow
   }
 
@@ -58,6 +59,18 @@ class SunCascades extends CSMShadowNode {
 }
 
 type Named = { setName(name: string): unknown }
+type Lit = { lightsNode: { getLights(): readonly (Object3D & { isDirectionalLight?: boolean; castShadow: boolean })[] } }
+
+/**
+ * The light's place among the build's casting directional lights, which
+ * three orders by id (LightsNode sortLights): names by place, not by the
+ * node's id, are the same for a stand-in's copies (sceneRenderer.ts), which
+ * then share the viewport's shader, and still differ between two suns.
+ */
+function castingIndex(builder: NodeBuilder, light: DirectionalLight): number {
+  const casting = (builder as unknown as Lit).lightsNode.getLights().filter((l) => l.isDirectionalLight && l.castShadow)
+  return Math.max(casting.indexOf(light), 0)
+}
 
 /**
  * three's CSMShadowNode names its uniforms 'cascades' and 'shadowFar' alike
@@ -121,6 +134,8 @@ export function fitCascades(camera: Camera, sun: DirectionalLight, lights: reado
   // The light's frame as three's lookAt turns the shadow camera: a texel here is a texel there. +z toward the light.
   fromLight.lookAt(origin, direction, lights[0].shadow!.camera.up)
   toLight.copy(fromLight).invert()
+  // The light's size, kept up on each cascade's copy of its shadow: it changes without a rebuild (render/lightModel/shadowFilter.ts sunGeometry).
+  const lightSize = (sun.shadow as DirectionalLightShadow & Partial<SizedShadow>).lightSize ?? 0
 
   // A merged model geometry's pieces are its casters, each with its own box,
   // as its parts were: one box over the slot would size the maps to the
@@ -208,7 +223,8 @@ export function fitCascades(camera: Camera, sun: DirectionalLight, lights: reado
     cam.near = 0
     cam.far = lift - slice.min.z + margin
     cam.updateProjectionMatrix()
-    shadow.normalBias = texel * normalBiasTexels
+    ;(shadow as DirectionalLightShadow & Partial<SizedShadow>).lightSize = lightSize
+    shadow.normalBias = lightSize > 0 ? 0 : texel * normalBiasTexels
   }
 }
 
