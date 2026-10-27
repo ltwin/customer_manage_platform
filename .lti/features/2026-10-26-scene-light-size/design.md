@@ -36,7 +36,7 @@
 | 程序化天空的太阳 | 同上 | 常数 0.545° | — |
 | 物理天空的太阳 | 同上 | `sky.sun_size_deg`，与画出的太阳盘一致 | Nishita 天空的 Sun Size |
 | 物理天空的月亮 | 同上 | 常数 0.52° | — |
-| `area` | 矩形或椭圆，单面发光 | `width × |scale.x|`、`height × |scale.y|`、`shape`：随物件缩放，与 Blender 一致 | Area 的 Size、Size Y、Shape |
+| `area` | 矩形或椭圆，单面发光 | `width`、`height` 乘物件的世界缩放（含父级），`shape`：与网格物体和 Blender 一致 | Area 的 Size、Size Y、Shape |
 
 - **不变量**：
   - **I1 强度与尺寸无关**：
