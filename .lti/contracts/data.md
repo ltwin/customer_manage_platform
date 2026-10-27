@@ -714,3 +714,68 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
  "volume": {"shape": "box", "scatter_color": "#e8e4dc", "scatter_density": 0.3, "anisotropy": 0.6,
             "absorption_color": "#cccccc", "absorption_density": 0, "edge_falloff": 0.2, "cast_shadow": false}}
 ```
+
+## 光源尺寸
+
+### 用途与存储角色
+- **用途**：扩展 `data: 场景文档` 的 `objects[].light`，照 Blender 的光源模型给点光、聚光和平行光加上尺寸：
+  - 点光和聚光是有半径的球；
+  - 平行光是有角径的圆盘。
+  尺寸决定阴影半影的宽度和高光的大小，不改变光源强度。
+- **存储**：与场景文档相同。字段位于灯光对象的内容单元 `object:<id>:content` 内。
+- **角色**：权威主数据。半影、代表点和滤波半径都是渲染端的派生量，不落库。
+- **所有权**：
+  - 由 `creativescene` 经 `add_objects`、`update_objects` 写入，写入方是灯光属性面板和助手；
+  - 读取方是渲染端和渲染指纹。
+
+### 结构与身份
+新字段与现有灯光字段平级，`update_objects` 里按键合并，可省略，存储时补齐缺省值。
+
+| 路径 | 适用 `type` | 类型 / 约束 | 缺省 | 说明 |
+|---|---|---|---|---|
+| `light.radius_m` | `point`、`spot` | number 0…10（米） | 0.1 | 发光球的半径，即 Blender Point / Spot 的 Radius。0 表示理想点光源，阴影是硬的，与加入本字段前一致 |
+| `light.angular_diameter_deg` | `directional` | number 0…30（度） | 0.545 | 光源的角直径，即 Blender Sun 的 Angle。缺省值与 `sky.sun_size_deg` 的缺省值相同。0 表示理想平行光 |
+
+- 写了该类型没有的字段返回 400 并指出字段，与现有规则相同。
+- **强度与衰减**：
+  - `intensity` 的含义不变，点光和聚光仍为发光强度（cd）。
+  - 距离衰减把有效距离 `max(d, radius_m)` 代入现有公式，`decay` 和 0.01 的钳位照旧，`distance` 截断仍按真实距离 d。
+  - 缺省 `decay = 2`、`distance = 0` 时，法线朝光源、球面完全在受光面地平线以上的照度为 `intensity / max(d², radius_m², 0.01)`。在光源以外按平方反比衰减，进入光源以内照度不再增大；`radius_m = 0` 时与现状相同。
+  - `decay ≠ 2` 或 `distance > 0` 照样代入，但不是物理上精确的解。
+- **缩放**：点光和聚光的半径不受物件缩放影响，与 Blender 一致：Blender 的点光和聚光不随物件缩放改变发光半径，只在光源面板里调半径和光锥角（owner 2026-10-27 核对，design U8）。
+- **聚光**：`penumbra` 只管光锥边缘，不控制阴影软硬，与 Blender 的 Blend 一样。
+- **换类型**：保留新类型也有的字段，去掉其余，缺少的补缺省值。强度的换算见 `data: 面光源`「换类型」；点光、聚光和平行光之间的强度数值原样保留。
+- **天空的太阳和月亮**：它们不是灯光对象，没有这两个字段，渲染端这样取角径：
+  - 物理天空的太阳取 `sky.sun_size_deg`，与画出的太阳盘一致；
+  - 月亮取 0.52°；
+  - 程序化天空的太阳取 0.545°。
+
+### 访问模式与保证
+- **写**：按现有灯光字段的规则校验和合并，取值范围由应用保证，非有限值返回 400。
+- **读**：旧快照里的灯光没有这两个字段，服务端解码时补缺省值，读取场景的响应里也带齐。这与修订 v8 的景深字段、`data: 摄像机曝光` 的做法相同。
+- **渲染指纹**：
+  - 两个新字段随灯光对象计入 `lit` 指纹，改尺寸会让 `lit` 导出过时。
+  - 光源模型版本号：`lit` 的场景里有灯光对象，或天空为 `procedural` 或 `physical`（太阳会投影）时，`lit` 指纹计入版本号。本条交付时为 `lights-v2`。所以这些场景已有的 `lit` 导出各提示一次「场景已更新」；HDRI 或纯色天空、又没有灯光对象的场景不提示。
+  - 版本号是服务端指纹的常量，反映的是渲染端的灯光语义。之后哪个改动改变了已有文档的灯光画面，就由它在同一次提交里加一。
+  - `clay` 和 `line` 不读取灯光，不计入。
+- 不进导出图来源的快照，`data: 导出图来源` 不变。
+
+### 生命周期与演进
+- 不迁移，读取时补齐。补齐后已有场景的灯会带上缺省尺寸，阴影变软；需要硬阴影的，把尺寸写成 0。
+- 回滚到不认识这两个字段的后端时，读取失败，只做前向修复，同 `render.engine` 的先例。
+- 上限是暂定值，S0 后可能经 Epic 修订调整。放宽属于兼容扩展；收紧时，已存的超限值在读取时按新上限截断。
+- 强度改用 Blender 的 W 不在本条范围内。
+
+### 表达与样例自查
+```json
+{"op": "add_objects", "objects": [
+  {"id": "sobj_V1StGXR8_Z5jdHi6B-myT", "kind": "light", "name": "主灯", "parent_id": null, "order": 3,
+   "transform": {"position": [-2, 3, 1], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]}, "visible": true, "locked": false,
+   "light": {"type": "spot", "intensity": 400, "cast_shadow": true, "radius_m": 0.25}}]}
+```
+存储后为 `{"type":"spot","color":"#ffffff","intensity":400,"cast_shadow":true,"distance":0,"decay":2,"angle":1.0471975511965976,"penumbra":0,"radius_m":0.25}`。
+
+```json
+{"op": "update_objects", "updates": [{"object_id": "sobj_V1StGXR8_Z5jdHi6B-myT", "light": {"type": "directional"}}]}
+```
+存储后为 `{"type":"directional","color":"#ffffff","intensity":400,"cast_shadow":true,"angular_diameter_deg":0.545}`。同一次如果写了 `"radius_m": 0.3`，返回 400，`field` 指向 `light.radius_m`。
