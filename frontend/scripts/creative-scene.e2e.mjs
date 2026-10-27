@@ -3678,6 +3678,11 @@ function referenceScene(server, name, edit) {
   server.scene.render.exposure_mode ??= 'ambient'
   server.scene.render.exposure_compensation ??= 0
   for (const o of server.scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
+  // Lights stored before they had a size read back at the defaults (data: 光源尺寸).
+  for (const o of server.scene.objects) {
+    if (o.light?.type === 'directional') o.light.angular_diameter_deg ??= 0.545
+    else if (o.light) o.light.radius_m ??= 0.1
+  }
   edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
   for (const o of server.scene.objects) {
@@ -3801,6 +3806,38 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
       }
     }
     await writeFile(`${dir}/light-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** A scene's lights all of size 0: points and parallel light, as before lights had sizes (scene-light-radius AC-S1-2). */
+function sizeless(scene) {
+  for (const o of scene.objects) {
+    if (o.light?.type === 'directional') o.light.angular_diameter_deg = 0
+    else if (o.light) o.light.radius_m = 0
+  }
+}
+
+// SCENE_E2E_LIGHT_SIZE0=<dir>: scene-light-radius AC-S1-2. The light reference
+// scenes with every light of size 0 export, under each renderer, what <dir>
+// holds as SCENE_E2E_LIGHT_BASELINE wrote it, a channel at most 1 apart.
+if (process.env.SCENE_E2E_LIGHT_SIZE0) await check('light size 0: the light reference scenes export as their baseline', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_SIZE0
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const name of lightReferenceNames) {
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine; sizeless(s) } })
+        for (const img of out.images) {
+          const file = img.file.replace(/\.png$/, `-${engine}.png`)
+          const apart = await imageApart(page, img.png, readFileSync(`${dir}/${file}`))
+          console.log(`light size 0 ${file}: largest channel difference ${apart.max}, ${(apart.over * 100).toFixed(3)}% over 8`)
+          assert.ok(apart.max <= 1, `${file}: a channel ${apart.max} apart from the baseline`)
+        }
+      }
+    }
   } finally {
     await gpu.close()
   }

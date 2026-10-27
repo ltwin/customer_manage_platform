@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber'
 import { AmbientLight, type Camera, type Object3D } from 'three'
 import type { SceneObject } from '../api.ts'
 import { gpuOf, type SceneGPU } from '../render/gpu.ts'
-import { applyLight, buildLight, disposeLight } from './lights.ts'
+import { applyLight, buildLight, disposeLight, lightKey } from './lights.ts'
 
 type Light = NonNullable<SceneObject['light']>
 
@@ -78,7 +78,10 @@ function useWarm(light: Object3D, warmed: boolean, shadows: boolean) {
  */
 export function SceneLight({ light, warm: warmed }: { light: Light; warm: boolean }) {
   const invalidate = useThree((s) => s.invalidate)
-  const built = useMemo(() => buildLight(light.type), [light.type])
+  // A new type, or a size moving off 0 or back, builds a new light (objects/lights.ts lightKey).
+  const key = lightKey(light)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- built for its key alone; applyLight writes the rest
+  const built = useMemo(() => buildLight(light.type), [key])
   useLayoutEffect(() => {
     applyLight(built, light)
     invalidate()

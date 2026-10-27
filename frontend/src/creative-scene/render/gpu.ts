@@ -8,6 +8,7 @@ import type { FrameStats } from './sceneRenderer.ts'
 import { capabilityOf, type Capability, type StorageLimits } from './trace/capacity.ts'
 import type { DepthCheck, HitReport } from './trace/checks.ts'
 import type { ShadeMode } from './trace/hit.ts'
+import { installLightModel } from './lightModel/nodes.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -390,6 +391,8 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     : undefined
   const renderer = new WebGPURenderer({ canvas, alpha, antialias: false, requiredLimits, forceWebGL: gpuTestHooks.forceWebGL || !found })
   await renderer.init()
+  // The document's lights and the skies' sun and moon have a size (render/lightModel/).
+  installLightModel(renderer)
   const internals = renderer as unknown as Internals
   internals._animation?.stop()
   // drei's GizmoViewport reads the WebGL renderer's capabilities.

@@ -98,9 +98,9 @@ type Volume = NonNullable<SceneObject['volume']>
 // The light table of data: 场景文档 — the fields each type has besides type,
 // and the three.js defaults the server stores for those left out.
 const lightFields: Record<Light['type'], readonly LightField[]> = {
-  directional: ['color', 'intensity', 'cast_shadow'],
-  point: ['color', 'intensity', 'cast_shadow', 'distance', 'decay'],
-  spot: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'angle', 'penumbra'],
+  directional: ['color', 'intensity', 'cast_shadow', 'angular_diameter_deg'],
+  point: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'radius_m'],
+  spot: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'angle', 'penumbra', 'radius_m'],
 }
 export const lightDefaults: Required<Omit<Light, 'type'>> = {
   color: '#ffffff',
@@ -110,6 +110,9 @@ export const lightDefaults: Required<Omit<Light, 'type'>> = {
   decay: 2,
   angle: Math.PI / 3,
   penumbra: 0,
+  // data: 光源尺寸: a point or spot light's radius, a directional light's angular diameter (the sun's).
+  radius_m: 0.1,
+  angular_diameter_deg: 0.545,
 }
 /** The camera fields the server stores for those left out. */
 export const cameraDefaults: Required<Camera> = {
