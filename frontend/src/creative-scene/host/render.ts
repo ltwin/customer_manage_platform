@@ -3,11 +3,11 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { drawnFrames, effectiveEngine, engineOf, traceWaitMs, type Use } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
-import { sceneLowSun, sceneLux } from '../world/exposure.ts'
+import { applyExposure, preExposure, sceneLowSun, sceneLux } from '../world/exposure.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
-import { createRenderer, DeviceLostError, gpuOf, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
+import { createRenderer, DeviceLostError, gpuOf, gpuTestHooks, ShotTimeout, type SceneGPU } from '../render/gpu.ts'
 import { LineRenderer } from '../render/lineArt.ts'
 import { TraceNotReady, traceBase } from '../render/trace/base.ts'
 import { backgroundTicker } from './ticker.ts'
@@ -206,6 +206,18 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           accumulate: frames > 1,
         }
         try {
+          // The probes from a cold start before the first frame (S2 design「导出预热与时限」).
+          const started = performance.now()
+          picture?.warm(camera, frame, PROBE_WARMUP)
+          // The e2e's: the warm-up's time, its work waited for, and what the probes hold after it.
+          if (sceneTest && picture) {
+            const warmed = picture.probeStats
+            if (warmed) {
+              await g.settle()
+              gpuTestHooks.lastWarm = { ms: performance.now() - started, levels: warmed.levels }
+              if (gpuTestHooks.probeDigest) gpuTestHooks.lastWarm.digests = [await digestProbes(picture)]
+            } else gpuTestHooks.lastWarm = null
+          }
           for (let i = 1; i < frames; i++) {
             g.advanceFrame()
             picture!.render(camera, frame)
@@ -214,7 +226,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
             if (options.deadline !== undefined && performance.now() > options.deadline) throw new ShotTimeout()
           }
           // The last frame is drawn and encoded in one go (SceneGPU.capture).
-          return g.capture(
+          const shot = await g.capture(
             () => {
               g.advanceFrame()
               if (picture) {
@@ -229,6 +241,24 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
             options.type,
             options.type === 'image/jpeg' ? (options.quality ?? jpegQuality) : undefined,
           )
+          if (sceneTest && picture?.probeStats?.drawn) {
+            gpuTestHooks.picturesWithProbes++
+            if (gpuTestHooks.lastWarm) gpuTestHooks.lastWarm.after = picture.probeStats
+            if (gpuTestHooks.lastWarm?.digests) gpuTestHooks.lastWarm.digests.push(await digestProbes(picture))
+          }
+          // The e2e's per-pixel reference (S2 AC-S2-2) on the probes this picture drew with, at its exposure.
+          const asked = gpuTestHooks.probeRegions
+          const world = asked && !asked.result ? picture?.world : null
+          if (asked && world) {
+            const { probeCheck } = await import('../render/trace/checks.ts')
+            applyExposure(three, frame.preExposure ?? 1)
+            try {
+              asked.result = await probeCheck(g.renderer, three, camera, world.handle, world.volume, asked)
+            } finally {
+              preExposure.value = 1
+            }
+          }
+          return shot
         } finally {
           picture?.dispose()
         }
@@ -243,4 +273,22 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     close()
     throw err
   }
+}
+
+/** The e2e fixture page sets __sceneTest before the editor loads (render/gpu.ts): what shoot keeps for it alone. */
+const sceneTest = (globalThis as { __sceneTest?: boolean }).__sceneTest === true
+
+/** e2e only (gpuTestHooks.probeDigest): an FNV-1a hash of each of a picture's probe buffers as read back. */
+async function digestProbes(picture: SceneRenderer): Promise<string> {
+  const v = picture.heldProbes
+  if (!v) return ''
+  const read = await v.inspect()
+  return [read.irradiance, read.offsets, read.cells, read.ages]
+    .map((a) => {
+      const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
+      let h = 0x811c9dc5
+      for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193) >>> 0
+      return h.toString(16)
+    })
+    .join('/')
 }

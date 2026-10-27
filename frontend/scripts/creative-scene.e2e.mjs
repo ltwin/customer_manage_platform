@@ -3692,16 +3692,16 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * A reference scene exported in all three passes from the rendered view,
  * then the saved orthographic view in clay, on gpu (a Chromium on this
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend,
- * litOnly exports the lit pass alone.
+ * litOnly exports the lit pass alone, hooks are gpuTestHooks for the page's query (?gpu=…).
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false, hooks } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
   referenceScene(server, name, edit)
   const backends = []
   context.on('console', (m) => m.text().startsWith('scene renderer') && backends.push(m.text()))
-  const { page, errors } = await open(server, { context, query: '?export=1' })
+  const { page, errors } = await open(server, { context, query: hooks ? `?export=1&gpu=${hooks}` : '?export=1' })
   if (forceWebGL) await page.evaluate(() => { window.__sceneGPU.forceWebGL = true })
   if (forceCompatibility) await page.evaluate(() => { window.__sceneGPU.forceCompatibility = true })
   const renderer = await page.evaluate(() => {
@@ -3808,21 +3808,50 @@ async function pointAcrossViews(page, name, point, yaws) {
   const facing = new Quaternion(...shot.transform.rotation)
   const out = []
   for (const yaw of yaws) {
-    const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (yaw * Math.PI) / 180).multiply(facing)
-    shot.transform.rotation = [q.x, q.y, q.z, q.w]
-    const v = new Vector3(...point).sub(new Vector3(...shot.transform.position)).applyQuaternion(q.clone().invert())
-    // Full frame at 3:2: the long side spans the sensor's 36 mm (cameraOptics.ts verticalFov).
-    const across = 18 / shot.camera.focal_mm
-    const u = 0.5 + (0.5 * v.x) / (-v.z * across)
-    const w = 0.5 - (0.5 * v.y) / ((-v.z * across * 2) / 3)
-    assert.ok(v.z < 0 && u > 0.05 && u < 0.95 && w > 0.05 && w < 0.95, `${name}: the point in view at ${yaw}°: ${u}, ${w}`)
-    const box = [u - 0.015, w - 0.0225, u + 0.015, w + 0.0225]
+    const box = turnedBox(shot, facing, yaw, point)
+    assert.ok(box, `${name}: the point in view at ${yaw}°`)
     const { means } = await page.evaluate(([s, b]) => window.__regions(s, 'lit', 1024, [b]), [scene, box])
-    const [r, g, b] = means[0]
-    out.push({ yaw_deg: yaw, box: box.map((c) => Number(c.toFixed(4))), luma: 0.2126 * r + 0.7152 * g + 0.0722 * b })
+    out.push({ yaw_deg: yaw, box: box.map((c) => Number(c.toFixed(4))), luma: luma(means[0]) })
   }
   return out
 }
+
+/**
+ * Points of a scene seen as pointAcrossViews does, one picture per yaw: the brightness about each point in
+ * view at that yaw (null where it is out of the frame) and their mean. S2's AC-S2-1 sweeps the left wall of
+ * backlit-room with it, from 30° to 120°.
+ */
+async function pointsAcrossViews(page, name, points, yaws) {
+  const scene = shooterScene(name, realtimeGI)
+  const shot = scene.objects.find((o) => o.kind === 'camera')
+  const facing = new Quaternion(...shot.transform.rotation)
+  const out = []
+  for (const yaw of yaws) {
+    const boxes = points.map((p) => turnedBox(shot, facing, yaw, p))
+    const shown = boxes.filter(Boolean)
+    const { means } = await page.evaluate(([s, b]) => window.__regions(s, 'lit', 1024, b), [scene, shown])
+    const lumas = means.map(luma)
+    let i = 0
+    out.push({ yaw_deg: yaw, lumas: boxes.map((b) => (b ? lumas[i++] : null)), mean: lumas.reduce((a, l) => a + l, 0) / lumas.length })
+  }
+  return { points, views: out }
+}
+
+/** The small box about a point (document space) in the picture of shot turned in place by yaw degrees from facing; null out of the frame. Sets the shot's rotation. */
+function turnedBox(shot, facing, yaw, point) {
+  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (yaw * Math.PI) / 180).multiply(facing)
+  shot.transform.rotation = [q.x, q.y, q.z, q.w]
+  const v = new Vector3(...point).sub(new Vector3(...shot.transform.position)).applyQuaternion(q.clone().invert())
+  // Full frame at 3:2: the long side spans the sensor's 36 mm (cameraOptics.ts verticalFov).
+  const across = 18 / shot.camera.focal_mm
+  const u = 0.5 + (0.5 * v.x) / (-v.z * across)
+  const w = 0.5 - (0.5 * v.y) / ((-v.z * across * 2) / 3)
+  if (!(v.z < 0 && u > 0.05 && u < 0.95 && w > 0.05 && w < 0.95)) return null
+  return [u - 0.015, w - 0.0225, u + 0.015, w + 0.0225]
+}
+
+/** Rec. 709 luma of a region's mean [r, g, b]. */
+const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 /** Frame times while the viewport turns, in a scene's rendered view in real-time GI. */
 async function giFrameTimes(gpu, name) {
@@ -6242,6 +6271,40 @@ window.__regions = async (scene, kind, side, boxes) => {
     shooter.close();
   }
 };
+// S2's AC-S2-2: one lit picture at side, and the indirect irradiance its probes give each region against a
+// per-pixel reference (gpuTestHooks.probeRegions, render/trace/checks.ts probeCheck), the two as grey pictures
+// at one exposure (twice the reference's mean white; nothing hit dark purple).
+window.__probeRegions = async (scene, side, request) => {
+  const b64 = (bytes) => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  };
+  window.__sceneGPU.probeRegions = { ...request };
+  const shooter = await openShooter(scene, {}, 'lit');
+  try {
+    const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
+    const blob = await shooter.shoot(framing, { kind: 'lit', type: 'image/png' });
+    const result = window.__sceneGPU.probeRegions.result;
+    if (!result) return { error: 'the picture drew no probes' };
+    const { drawn, reference, ...numbers } = result;
+    const known = reference.filter((v) => v !== null);
+    const white = (2 * known.reduce((a, v) => a + v, 0)) / Math.max(known.length, 1);
+    const srgb = (v) => 255 * Math.min(1, Math.max(0, v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055));
+    const grey = async (values) => {
+      const canvas = new OffscreenCanvas(numbers.width, numbers.height);
+      const c2d = canvas.getContext('2d');
+      const img = c2d.createImageData(numbers.width, numbers.height);
+      values.forEach((v, i) => img.data.set(v === null ? [40, 0, 40, 255] : [srgb(v / white), srgb(v / white), srgb(v / white), 255], 4 * i));
+      c2d.putImageData(img, 0, 0);
+      return b64(new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()));
+    };
+    return { ...numbers, white, png: b64(new Uint8Array(await blob.arrayBuffer())), drawnPng: await grey(drawn), referencePng: await grey(reference), raw: request.raw ? { drawn, reference } : undefined };
+  } finally {
+    window.__sceneGPU.probeRegions = null;
+    shooter.close();
+  }
+};
 // One picture as a PNG, base64, through the backend asked for (forceWebGL: the WebGL2 one).
 window.__png = async (scene, kind, side, use, forceWebGL) => {
   window.__sceneGPU.forceWebGL = forceWebGL;
@@ -6311,13 +6374,16 @@ window.__ready = true;
 // as it is), the brightness of the regions in gi-regions.json, the viewport's frame times, and the room lit
 // from behind: a wall out of the sun, with the sunlit wall off screen and on (pointAcrossViews). SCENE_E2E_GI_SCENES=<a,b> draws these reference scenes instead.
 // SCENE_E2E_GI_COMPAT=1 adds a third export, WebGPU taken for a compatibility device (forceCompatibility): S1's
-// AC-S1-6 holds that one as it is too.
+// AC-S1-6 holds that one as it is too. SCENE_E2E_GI_OFF=1 adds two more, a device the e2e calls unsupported
+// (traceUnsupported) and the developer switch (traceOff), and sweeps the room's left wall from 30° to 120°: S2's
+// AC-S2-5 and AC-S2-1 hold these against the archive taken before S2.
 if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference scenes in real-time GI before the world-space layer, on this machine’s GPU', async () => {
   const dir = process.env.SCENE_E2E_GI_BASELINE
   const only = process.env.SCENE_E2E_GI_SCENES?.split(',')
   /** [file label, the backend the renderer reports, exportReference's options]. */
   const backends = [['webgpu', 'webgpu', {}], ['webgl2', 'webgl2', { forceWebGL: true }]]
   if (process.env.SCENE_E2E_GI_COMPAT) backends.push(['webgpu-compat', 'webgpu', { forceCompatibility: true }])
+  if (process.env.SCENE_E2E_GI_OFF) backends.push(['webgpu-unsupported', 'webgpu', { hooks: 'traceUnsupported' }], ['webgpu-off', 'webgpu', { hooks: 'traceOff' }])
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
@@ -6345,6 +6411,10 @@ if (process.env.SCENE_E2E_GI_BASELINE) await check('gi-baseline: the reference s
       // The room's left wall, out of the sun, with the sunlit wall behind the camera off screen (45°) and partly on (100°).
       const views = await pointAcrossViews(page, 'backlit-room', [-2.49, 1.2, 1.4], [45, 100])
       record.lit_wall_in_view = { scene: 'backlit-room', point: [-2.49, 1.2, 1.4], views, ratio: views[1].luma / views[0].luma }
+      if (process.env.SCENE_E2E_GI_OFF) {
+        const wall = [-2.4, -1.2, 0, 1.2, 2.4].flatMap((z) => [0.9, 1.8].map((y) => [-2.49, y, z]))
+        record.left_wall_sweep = await pointsAcrossViews(page, 'backlit-room', wall, [30, 45, 60, 75, 90, 105, 120])
+      }
     }
     await context.close()
     await writeFile(`${dir}/gi-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
@@ -6518,11 +6588,14 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 3.5, the budget pressed dow
 })
 
 /** Waits till the viewport has stopped drawing: its convergence count at the real-time GI's 12 and still there a moment later. */
+// Stopped at its own count: the real-time GI's 12, or with the probes drawn theirs (SceneRenderer.settleFrames, S2 design「收敛与重绘」).
 async function viewportStill(page, what, timeout = 60_000) {
+  const at = () => page.evaluate(() => ({ frames: window.__sceneGPU.viewportFrames, settle: window.__sceneGPU.viewportSettle }))
   await waitFor(async () => {
-    const a = await page.evaluate(() => window.__sceneGPU.viewportFrames)
+    const a = await at()
     await sleep(400)
-    return a === 12 && (await page.evaluate(() => window.__sceneGPU.viewportFrames)) === 12
+    const b = await at()
+    return a.frames === a.settle && b.frames === a.frames && b.settle === a.settle
   }, `${what}: the viewport stopped`, timeout)
 }
 
@@ -6589,10 +6662,117 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as 
     console.log(`  taken up by itself: ${(changed * 100).toFixed(1)} % of the middle changed, ${drawsBefore} draws a frame before, ${drawsAfter} after`)
     // The mirror is small from the editor's view: a few per cent of the middle, where nothing else changes.
     assert.ok(changed > 0.005, `the viewport drew the layer once it was ready: ${(changed * 100).toFixed(1)} %`)
-    assert.equal(drawsAfter, drawsBefore, 'as many draws a frame')
+    // The probes too, warmed in the background (S2): the SSGI's light goes unused, its reprojection and denoiser
+    // (two draws) go and the probes' screen pass (one) comes; with the layer, what the reflections' screen-space hits
+    // show is a pass of its own (one, S2 tasks 5.2b; realtimeGI.ts).
+    assert.equal(await v.page.evaluate(() => window.__sceneGPU.probeStats?.drawn), true, 'the probes drawn too')
+    assert.equal(drawsAfter, drawsBefore, 'as many draws a frame: less the denoiser, the probes and what the hits show more')
+    // S2-U2: the reflections' fragment shaders (those tracing the layer) with the probes' three textures, against
+    // WebGPU's 16 sampled textures a stage.
+    const sampled = (await v.page.evaluate(() => window.__wgsl))
+      .filter((code) => code.includes('@fragment') && /_first\(/.test(code))
+      .map((code) => (code.match(/var\s+\w+\s*:\s*texture_(?!storage)\w+/g) ?? []).length)
+    console.log(`  the reflections' fragment shaders bind ${sampled.join(', ')} sampled textures`)
+    assert.ok(sampled.length > 0 && Math.max(...sampled) <= 16, `at most 16 sampled textures: ${sampled.join(', ')}`)
     assert.deepEqual(v.errors, [], v.errors.join('\n'))
     await v.context.close()
     }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// The viewport pulled back past the scene (S2 task 5.2a): its probes take more
+// levels, as the camera's distance needs (volume.ts levelsAt), warmed in the
+// background while the ones it has keep drawing: no frame without probes.
+if (process.env.SCENE_E2E_TRACE) await check('probes: the viewport pulled back past cornell takes more levels, drawing with probes all along', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'cornell', realtimeGI)
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'cornell', 60_000)
+    const stats = () => page.evaluate(() => window.__sceneGPU.probeStats)
+    await waitFor(async () => (await stats())?.drawn === true, 'the probes taken up', 60_000)
+    const first = await stats()
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const seen = []
+    for (let i = 0; i < 80; i++) {
+      await page.mouse.wheel(0, 120)
+      await sleep(50)
+      const s = await stats()
+      seen.push(s)
+      if (s.serial !== first.serial && s.allocated > first.allocated && s.drawn) break
+    }
+    const last = seen.at(-1)
+    console.log(`  levels allocated ${first.allocated} → ${last.allocated} (volume ${first.serial} → ${last.serial}), drawn ${last.levels}; ${seen.length} wheels`)
+    assert.ok(last.allocated > first.allocated && last.serial !== first.serial, `more levels pulled back: ${JSON.stringify(last)}`)
+    assert.deepEqual(seen.filter((s) => !s.drawn).length, 0, 'drawn with probes at every look, the old ones till the new are warm')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// The viewport's probes kept (code review of S2, 2026-10-26): a level coming on
+// within those allocated, the camera pulled back inside the scene's diagonal,
+// fades in by its maturity, the probes drawn all along and the volume the
+// same (volume.ts warm, once warm for good); the clay view and back keeps
+// the volume, drawn again at once (sceneRenderer.ts: another display mode
+// lets the probes go no more).
+if (process.env.SCENE_E2E_TRACE) await check('probes: a level coming on, and the clay view and back, keep the viewport’s probes drawn', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    // A box 8 m off the room stretches the scene's diagonal past what three levels cover (11.6 m to 10.5 m): four
+    // allocated, three on from inside the room near a corner.
+    referenceScene(server, 'thin-wall', (scene) => {
+      realtimeGI(scene)
+      scene.objects.push(boxObject('sobj_farbox00000000000000', 'farbox', 8, 50))
+    })
+    await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, { camera: { position: [1.6, -1.6, 1.4], target: [0, 0, 1.2], ortho: false, zoom: 1 }, selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false, display: 'rendered' }])
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'thin-wall', 60_000)
+    const stats = () => page.evaluate(() => window.__sceneGPU.probeStats)
+    await waitFor(async () => (await stats())?.drawn === true, 'the probes taken up', 60_000)
+    const first = await stats()
+    console.log(`  inside: ${first.levels} of ${first.allocated} levels on`)
+    assert.ok(first.levels < first.allocated, `fewer levels on than allocated, to come on: ${JSON.stringify(first)}`)
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    const seen = []
+    for (let i = 0; i < 60; i++) {
+      await page.mouse.wheel(0, 120)
+      await sleep(60)
+      const s = await stats()
+      seen.push(s)
+      if (s.levels > first.levels) break
+    }
+    for (let i = 0; i < 20; i++) {
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+      seen.push(await stats())
+    }
+    const last = seen.at(-1)
+    console.log(`  pulled back: ${first.levels} → ${last.levels} levels on, volume ${first.serial} → ${last.serial}; ${seen.filter((s) => !s.drawn).length} looks without the probes`)
+    assert.ok(last.levels > first.levels, `a level came on: ${JSON.stringify(last)}`)
+    assert.equal(last.serial, first.serial, 'the same volume')
+    assert.equal(seen.filter((s) => !s.drawn).length, 0, 'drawn with the probes at every look')
+    // The clay view and back.
+    await shading(page, '白模')
+    await sleep(500)
+    await shading(page, '最终渲染')
+    await waitFor(async () => (await stats())?.drawn === true, 'drawn again', 10_000)
+    const back = await stats()
+    assert.equal(back.serial, first.serial, `the clay view and back keep the volume: ${JSON.stringify(back)}`)
+    assert.ok(back.updates.slice(0, back.levels).every((u, l) => u >= last.updates[l]), `no level cleared: ${JSON.stringify(back.updates)} after ${JSON.stringify(last.updates)}`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
   } finally {
     await gpu.close()
   }
@@ -7009,12 +7189,15 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-4, two exports in a h
     const plan = { cameraObjectIDs: scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['clay', 'line', 'lit'] }
     await tab.background()
     const runs = {}
+    let probed = 0
     for (const off of [false, true]) {
       await tab.evaluate(`window.__sceneGPU.traceOff = ${off}`)
       for (const n of [1, 2]) {
         const keep = `${off ? 'off' : 'on'}${n}`
         const started = Date.now()
+        const was = await tab.evaluate('window.__sceneGPU.picturesWithProbes')
         runs[keep] = await tab.evaluate(`window.__export(${JSON.stringify(doc)}, ${JSON.stringify(plan)}, ${JSON.stringify(keep)})`, 900_000)
+        if (!off) probed += (await tab.evaluate('window.__sceneGPU.picturesWithProbes')) - was
         console.log(`  ${keep}: ${runs[keep].length} images in ${Date.now() - started} ms`)
       }
     }
@@ -7033,6 +7216,21 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-4, two exports in a h
     assert.ok(lit(runs.on1).every((i, k) => i.hash !== lit(runs.off1)[k].hash), 'lit with the layer is not lit without it')
     off.forEach((d, i) => assert.ok(d.max <= 1 || d.over <= 0.0001, `without the layer, image ${i}: largest difference ${d.max}`))
     assert.deepEqual(runs.on2, runs.on1, `with the layer, twice the same pixel for pixel (largest difference ${Math.max(...on.map((d) => d.max))})`)
+    // AC-S2-4: the probes in those lit pictures, and cornell's three cameras likewise, lit alone.
+    assert.equal(probed, lit(runs.on1).length * 2, `every lit picture with the layer drew the probes: ${probed}`)
+    const cornell = new SceneServer()
+    referenceScene(cornell, 'cornell', realtimeGI)
+    const cshot = cornell.scene.objects.find((o) => o.kind === 'camera')
+    for (const [i, dx] of [[1, -0.8], [2, 0.8]]) cornell.scene.objects.push({ ...structuredClone(cshot), id: `sobj_cam${String(i).padStart(18, '0')}`, name: `cam${i}`, order: 100 + i, transform: { ...cshot.transform, position: [cshot.transform.position[0] + dx, cshot.transform.position[1], cshot.transform.position[2]] } })
+    const cdoc = { scene: cornell.scene, models: {}, revision: '1' }
+    const cplan = { cameraObjectIDs: cornell.scene.objects.filter((o) => o.kind === 'camera').map((o) => o.id), passes: ['lit'] }
+    await tab.evaluate('window.__sceneGPU.traceOff = false')
+    const before = await tab.evaluate('window.__sceneGPU.picturesWithProbes')
+    for (const n of [1, 2]) runs[`cornell${n}`] = await tab.evaluate(`window.__export(${JSON.stringify(cdoc)}, ${JSON.stringify(cplan)}, "cornell${n}")`, 900_000)
+    const cdiff = await differ('cornell1', 'cornell2')
+    assert.equal(await tab.evaluate('window.__sceneGPU.picturesWithProbes') - before, 6, 'cornell: every picture drew the probes')
+    assert.deepEqual(runs.cornell2, runs.cornell1, `cornell, twice the same pixel for pixel (largest difference ${Math.max(...cdiff.map((d) => d.max))})`)
+    assert.equal(await tab.evaluate('document.visibilityState'), 'hidden', 'still in the background')
     assert.deepEqual(tab.errors, [], tab.errors.join('\n'))
   } finally {
     await tab.close()
@@ -7056,7 +7254,7 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 6.1, an export the layer is
     await dialog.waitFor()
     const started = Date.now()
     await dialog.getByRole('button', { name: '导出' }).click()
-    await page.getByText('屏幕外的反射还在准备，请稍后重试').waitFor({ timeout: 120_000 })
+    await page.getByText('屏幕外的光照与反射还在准备，请稍后重试').waitFor({ timeout: 120_000 })
     console.log(`  failed after ${Date.now() - started} ms`)
     assert.equal(server.exports.length, 0, 'nothing placed')
     assert.equal(server.uploads.size, 0, 'nothing uploaded')
@@ -7074,7 +7272,8 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 6.1, an export the layer is
 // Every time an edit and a lit export go through, save while the layer is
 // preparing, where the export waits for it and fails (6.1).
 if (process.env.SCENE_E2E_TRACE) await check('trace: 7.1, the render tab says what the layer does; edits and exports go on', async () => {
-  const notes = ['兼容模式：未绘制屏幕外的反射', '当前设备不支持屏幕外的反射', '正在准备屏幕外的反射', '场景较大：屏幕外的反射使用简化几何', '场景过大：未绘制屏幕外的反射']
+  // S2's words (S2 design「提示文字」): the light as well as the reflections, but the proxies the reflections' alone.
+  const notes = ['兼容模式：未绘制屏幕外的光照与反射', '当前设备不支持屏幕外的光照与反射', '正在准备屏幕外的光照与反射', '场景较大：屏幕外的反射使用简化几何', '场景过大：未绘制屏幕外的光照与反射']
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     for (const [hooks, note] of [['full', null], ['forceWebGL', notes[0]], ['forceCompatibility', notes[1]], ['traceUnsupported', notes[1]], ['traceDelayMs:120000', notes[2]], ['proxy', notes[3]], ['traceBudget:4096', notes[4]]]) {
@@ -7085,8 +7284,13 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 7.1, the render tab says wh
       await shading(page, '最终渲染')
       await page.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
       const panel = page.getByRole('tabpanel', { name: '渲染' })
-      if (hooks === 'full' || hooks === 'proxy') await traceReady(page, hooks)
-      if (hooks === 'full') await panel.getByText('画面外的物体也会出现在反射里', { exact: false }).waitFor({ timeout: 10_000 })
+      if (hooks === 'full' || hooks === 'proxy') {
+        await traceReady(page, hooks)
+        // Ready, the probes warm in the background, the note saying it prepares meanwhile; then none.
+        await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, `${hooks}: the probes taken up`, 60_000)
+        await panel.getByText(notes[2]).waitFor({ state: 'detached', timeout: 10_000 })
+      }
+      if (hooks === 'full') await panel.getByText('画面外的物体也会出现在反射里，也会把光反弹进画面', { exact: false }).waitFor({ timeout: 10_000 })
       if (hooks === 'proxy') {
         // As 3.5: the budget pressed to the original's size takes the layer to the proxies.
         await page.evaluate(() => { window.__sceneGPU.traceBudget = window.__sceneGPU.traceStats.original.bytes })
@@ -8744,8 +8948,11 @@ await check('renderer in effect: real-time GI converges in the rendered view and
   }
   await engine('realtime_gi')
   await waitFor(() => server.scene.render.engine === 'realtime_gi', 'renderer written')
-  // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames), then stops.
-  const giFrames = 12
+  // The rendered view with the real-time GI draws on by itself, to its frame count (engines.ts convergeFrames; with
+  // the probes drawn, theirs: SceneRenderer.settleFrames), then stops.
+  await waitFor(async () => (await frames()) > 0 && (await frames()) === (await page.evaluate(() => window.__sceneGPU.viewportSettle)), 'rendered, real-time GI', 60_000)
+  const giFrames = await frames()
+  assert.ok(giFrames >= 12, `at least the GI's 12 frames: ${giFrames}`)
   await settledFrames(giFrames, 'rendered, real-time GI')
   // By more than 24 levels: the GI's bounce on a post and a wall is gentle. More than 48 once held only because the sky
   // was drawn with the helpers, and the grid laid over it took its colour (2.3% of pixels past 24, 0.8% past 48).
@@ -9505,10 +9712,699 @@ async function limitModelTimes() {
   }
 }
 
+// --- S2 scene-probe-gi ---------------------------------------------------------
+
+// A page of the probes' own: a small scene built in three on its own device, a base made for it as an export's,
+// and a picture's probe volume stepped (render/probes/volume.ts), its data read back.
+const probesFixture = new URL('../.scene-probes-qa.html', import.meta.url)
+await writeFile(
+  probesFixture,
+  `<html><body><script>window.__sceneTest = true</script><script type="module">
+import * as THREE from 'three';
+import { createRenderer } from '/src/creative-scene/render/gpu.ts';
+import { TraceBase } from '/src/creative-scene/render/trace/base.ts';
+import { ProbeVolume } from '/src/creative-scene/render/probes/volume.ts';
+import { makeMaterial } from '/src/creative-scene/materials/instances.ts';
+import { PROBES, spacingOf } from '/src/creative-scene/render/probes/cascade.ts';
+// A floor, a wall the sun lights from +x, a solid block; no environment (a miss is black). Z up, as the editor's
+// world is (space.ts): the probes' boxes reach ahead horizontally.
+window.__probeSmoke = async (frames) => {
+  const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' });
+  const scene = new THREE.Scene();
+  const paint = (c) => makeMaterial({ kind: 'pattern', id: 'paint@1', params: { color: c, roughness: 0.5, metalness: 0 } }, false);
+  const add = (id, size, at, color) => {
+    const g = new THREE.Group();
+    g.userData = { objectID: id };
+    const geometry = new THREE.BoxGeometry(...size);
+    geometry.userData.traceKey = 'qa:' + id;
+    const m = new THREE.Mesh(geometry, paint(color));
+    m.position.set(...at);
+    g.add(m);
+    scene.add(g);
+  };
+  add('floor', [8, 8, 0.1], [0, 0, -0.05], '#ffffff');
+  add('wall', [0.1, 8, 3], [-2, 0, 1.5], '#ffffff');
+  add('block', [1, 1, 1], [1, -1, 0.5], '#ff0000');
+  const sun = new THREE.DirectionalLight(0xffffff, 3);
+  sun.position.set(5, -1, 4);
+  sun.castShadow = true;
+  scene.add(sun, sun.target);
+  scene.updateMatrixWorld();
+  const base = new TraceBase(gpu, scene, { incremental: false });
+  if (!(await base.ready(30000))) return { error: 'not ready', state: base.state };
+  const camera = new THREE.PerspectiveCamera(50, 1.5, 0.1, 100);
+  camera.up.set(0, 0, 1);
+  camera.position.set(0, -3, 1.4);
+  camera.lookAt(0, 0, 1);
+  camera.updateMatrixWorld();
+  const volume = new ProbeVolume(gpu.renderer, base.handle(), scene, base, camera, 'picture', (a) => gpu.release(a));
+  const started = performance.now();
+  for (let f = 0; f < frames; f++) {
+    base.sync();
+    volume.step(f, camera);
+  }
+  await gpu.settle();
+  const ms = performance.now() - started;
+  const d = await volume.inspect();
+  const s = spacingOf(0);
+  const at = (p) => [0, 1, 2].map((k) => (d.cells[4 * p + k] + 0.5) * s);
+  const lum = (p) => {
+    let sum = 0;
+    for (let t = 0; t < 64; t++) sum += 0.2126 * d.irradiance[4 * (p * 64 + t)] + 0.7152 * d.irradiance[4 * (p * 64 + t) + 1] + 0.0722 * d.irradiance[4 * (p * 64 + t) + 2];
+    return sum / 64;
+  };
+  const level0 = Array.from({ length: PROBES }, (_, p) => p);
+  const finite = d.irradiance.every(Number.isFinite) && d.offsets.every(Number.isFinite);
+  // The block's whole inside (0.5–1.5, −1.5–−0.5, 0–1): 4 × 4 × 4 probe centres.
+  const inBlock = level0.filter((p) => { const [x, y, z] = at(p); return Math.abs(x - 1) < 0.5 && Math.abs(y + 1) < 0.5 && z > 0 && z < 1; });
+  const byWall = level0.filter((p) => { const [x, y, z] = at(p); return x > -1.9 && x < -1.4 && z > 1 && z < 2 && Math.abs(y) < 1; });
+  const open = level0.filter((p) => { const [x, y, z] = at(p); return x > -1 && x < 0 && z > 1 && z < 2 && Math.abs(y) < 1; });
+  const mean = (list, f) => list.reduce((n, p) => n + f(p), 0) / Math.max(list.length, 1);
+  const out = {
+    ms, allocated: volume.allocated, levels: volume.levels, finite, origins: d.origins.slice(0, volume.levels),
+    ages: [Math.min(...level0.map((p) => d.ages[4 * p])), Math.max(...level0.map((p) => d.ages[4 * p]))],
+    off: level0.filter((p) => d.offsets[4 * p + 3] < 0.5).length,
+    block: { probes: inBlock.length, off: inBlock.filter((p) => d.offsets[4 * p + 3] < 0.5).length },
+    wall: { probes: byWall.length, luma: mean(byWall, lum) },
+    open: { probes: open.length, luma: mean(open, lum) },
+    computeFailed: gpu.computeFailed(),
+  };
+  volume.dispose();
+  base.dispose();
+  gpu.dispose();
+  return out;
+};
+window.__ready = true;
+</script></body></html>`,
+)
+
+// SCENE_E2E_PROBES: the probes' functions on the GPU against JS (S2 design「验证与交付」): each slot's world cell and
+// back, negative cells included; the octahedral map.
+if (process.env.SCENE_E2E_PROBES) await check('probes: the grid and the octahedral map compute on the GPU as in JS, negative cells included', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const out = await page.evaluate(async () => {
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { probeGridCheck } = await import('/src/creative-scene/render/trace/checks.ts')
+      const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+      try {
+        return await probeGridCheck(gpu.renderer)
+      } finally {
+        gpu.dispose()
+      }
+    })
+    console.log(`  ${JSON.stringify(out)}`)
+    assert.equal(out.cells, out.tried, 'every slot’s world cell')
+    assert.equal(out.slots, out.tried, 'every cell’s slot')
+    assert.equal(out.encoded, out.directions, 'every direction encoded')
+    assert.equal(out.decoded, out.directions, 'and decoded back')
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBES: a picture's volume on a small scene (S2 tasks 4.2): the kernels build and run on this device,
+// what they gather is finite, lit where the sun's wall bounces, the probes inside a block switch off once their
+// relocation window closes, every probe updated every frame.
+if (process.env.SCENE_E2E_PROBES) await check('probes: a picture’s volume gathers on this device: finite, lit by the bounce, off inside a block', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${base}/.scene-probes-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const out = await page.evaluate((frames) => window.__probeSmoke(frames), 64)
+    console.log(`  ${JSON.stringify(out)}`)
+    assert.deepEqual(errors, [], errors.join('\n').slice(0, 3000))
+    assert.ok(!out.error, out.error)
+    assert.equal(out.computeFailed, false)
+    assert.ok(out.finite, 'no NaN or infinity')
+    assert.deepEqual(out.ages, [64, 64], 'every probe of level 0 updated each of 64 frames')
+    assert.ok(out.block.probes === 64 && out.block.off === out.block.probes, `inside the block: ${out.block.off} of ${out.block.probes} off`)
+    assert.equal(out.off, out.block.probes, 'none off outside it')
+    assert.ok(out.wall.luma > 0 && out.open.luma > 0, 'light gathered')
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBES=<dir>: S2's checks on this machine's GPU. S2-U1 first: a compute pass writes an RGBA16F
+// storage texture, the next loads it back and samples it at an explicit level (render/trace/checks.ts atlasCheck).
+if (process.env.SCENE_E2E_PROBES) await check('probes: S2-U1, compute writes an RGBA16F storage texture, then loads and samples it at an explicit level', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const out = await page.evaluate(async () => {
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { atlasCheck } = await import('/src/creative-scene/render/trace/checks.ts')
+      const gpu = await createRenderer({ canvas: document.createElement('canvas'), output: 'direct', role: 'offscreen' })
+      try {
+        return { backend: gpu.backend, ...(await atlasCheck(gpu.renderer)) }
+      } finally {
+        gpu.dispose()
+      }
+    })
+    console.log(`  ${JSON.stringify(out)}`)
+    assert.deepEqual(errors, [])
+    assert.equal(out.backend, 'webgpu')
+    assert.equal(out.stored, out.texels, 'every texel loads back as written')
+    assert.equal(out.sampled, out.samples, `every sample bilinear within tolerance (worst ${out.worst})`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+/**
+ * The views AC-S2-2 compares with the per-pixel reference (S2 design「验证与交付」): the three scenes from their
+ * cameras, and thin-wall twice more from farther, its walls in level 1 alone (from a corner across the room,
+ * 5.5 m: past level 0's 3 m ahead) and in level 2 alone (from outside, 5.5 m off the window at 85 mm, the room
+ * 6–9.5 m away: past level 1's 6 m, two cells inside level 2's 12 m; the room is wholly in level 1's box from
+ * anywhere inside it). gi-regions.json names each view's regions.
+ */
+const probeViews = [
+  { view: 'cornell', scene: 'cornell' },
+  { view: 'thin-wall', scene: 'thin-wall' },
+  { view: 'thin-wall@level1', scene: 'thin-wall', camera: { position: [1.9, 1.5, 1.9], rotation: [0, 0.382683, 0, 0.92388] } },
+  { view: 'thin-wall@level2', scene: 'thin-wall', camera: { position: [-7.5, 1.6, 0], rotation: [0, -0.707107, 0, 0.707107], focal_mm: 85 } },
+  { view: 'physical-noon', scene: 'physical-noon' },
+  // Pulled back past the scene (S2 task 5.2a): the levels follow the camera, and the coarsest fades out softly.
+  { view: 'cornell@mid', scene: 'cornell', camera: { position: [0, 1.5, 10], rotation: [0, 0, 0, 1], focal_mm: 50 } },
+  { view: 'cornell@far', scene: 'cornell', camera: { position: [0, 1.5, 18], rotation: [0, 0, 0, 1], focal_mm: 85 } },
+  { view: 'thin-wall@far', scene: 'thin-wall', camera: { position: [-16, 1.6, 0], rotation: [0, -0.707107, 0, 0.707107], focal_mm: 85 } },
+  { view: 'physical-noon@far', scene: 'physical-noon', camera: { position: [0, 3, 20], rotation: [-0.049742, 0, 0, 0.998762] } },
+]
+
+// SCENE_E2E_PROBES (=<dir>: the pictures and probes.json there): the numbers S2's AC-S2-1 and AC-S2-2 are
+// judged by (S2 tasks 5.1, judged in 5.2). AC-S2-2: each view's lit picture, its regions' indirect irradiance
+// from the probes against the per-pixel reference (256 paths a pixel, 3 hits, the probes read at the last), and
+// the two irradiances as pictures. AC-S2-1: backlit-room's left wall, out of the sun, at 45° and 100° and swept
+// from 30° to 120° (pointAcrossViews, pointsAcrossViews), as gi-baseline took it before S2. SCENE_E2E_PROBE_VIEWS=<a,b>
+// takes those views alone and skips AC-S2-1; SCENE_E2E_PROBE_RAW=1 writes the two irradiances as numbers too.
+if (process.env.SCENE_E2E_PROBES) await check('probes: AC-S2-1 and AC-S2-2, the numbers: the left wall across views, each region against a per-pixel reference', async () => {
+  const dir = process.env.SCENE_E2E_PROBES === '1' ? null : process.env.SCENE_E2E_PROBES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const record = { machine: machineInfo(), chromium: gpu.version(), views: {} }
+    for (const v of probeViews.filter((p) => !process.env.SCENE_E2E_PROBE_VIEWS || process.env.SCENE_E2E_PROBE_VIEWS.split(',').includes(p.view))) {
+      const scene = shooterScene(v.scene, (s) => {
+        realtimeGI(s)
+        const shot = s.objects.find((o) => o.kind === 'camera')
+        if (v.camera) Object.assign(shot.transform, { position: v.camera.position, rotation: v.camera.rotation })
+        if (v.camera?.focal_mm) shot.camera.focal_mm = v.camera.focal_mm
+      })
+      const out = await page.evaluate(([s, r]) => window.__probeRegions(s, 1024, r), [scene, { regions: giRegions[v.view] ?? {}, width: Number(process.env.SCENE_E2E_PROBE_WIDTH ?? 384), passes: 32, bounces: Number(process.env.SCENE_E2E_PROBE_BOUNCES ?? 3), raw: Boolean(process.env.SCENE_E2E_PROBE_RAW) }])
+      assert.ok(!out.error, `${v.view}: ${out.error}`)
+      const { png, drawnPng, referencePng, raw, ...numbers } = out
+      record.views[v.view] = numbers
+      const regions = Object.entries(numbers.regions).map(([n, r]) => `${n} ${r.error >= 0 ? '+' : ''}${(r.error * 100).toFixed(0)} % (cover ${r.coverage.toFixed(2)})`)
+      console.log(`  ${v.view}: ${numbers.pathsPerPixel} paths a pixel in ${numbers.ms} ms, levels ${JSON.stringify(numbers.levels)}; mean difference ${(numbers.meanDifference * 100).toFixed(1)} %; ${regions.join(', ') || 'no regions yet'}`)
+      if (dir) for (const [kind, data] of [['lit', png], ['probes', drawnPng], ['reference', referencePng]]) await writeFile(`${dir}/${v.view}-${kind}.png`, Buffer.from(data, 'base64'))
+      if (dir && raw) await writeFile(`${dir}/${v.view}-irradiance.json`, JSON.stringify({ width: numbers.width, height: numbers.height, ...raw }))
+      for (const [n, r] of Object.entries(numbers.regions)) assert.ok(r.pixels > 0 && Number.isFinite(r.error), `${v.view} ${n}: ${JSON.stringify(r)}`)
+      assert.ok(Number.isFinite(numbers.meanDifference), `${v.view}: the mean difference ${numbers.meanDifference}`)
+    }
+    if (process.env.SCENE_E2E_PROBE_VIEWS) return
+    const views = await pointAcrossViews(page, 'backlit-room', [-2.49, 1.2, 1.4], [45, 100])
+    record.lit_wall_in_view = { scene: 'backlit-room', point: [-2.49, 1.2, 1.4], views, ratio: views[1].luma / views[0].luma }
+    const wall = [-2.4, -1.2, 0, 1.2, 2.4].flatMap((z) => [0.9, 1.8].map((y) => [-2.49, y, z]))
+    const sweep = await pointsAcrossViews(page, 'backlit-room', wall, [30, 45, 60, 75, 90, 105, 120])
+    const mean = sweep.views.reduce((a, s) => a + s.mean, 0) / sweep.views.length
+    // Two readings (evidence/README.md): each view's mean over all views'; and each point at each yaw it is in view
+    // at over its own mean there, which leaves out which part of the wall a view shows.
+    const perPoint = wall.map((_, k) => {
+      const seen = sweep.views.map((s) => s.lumas[k]).filter((l) => l !== null)
+      const own = seen.reduce((a, l) => a + l, 0) / seen.length
+      return sweep.views.map((s) => (s.lumas[k] === null ? null : s.lumas[k] / own))
+    })
+    const pointRatios = perPoint.flat().filter((r) => r !== null)
+    record.left_wall_sweep = { ...sweep, ratios: sweep.views.map((s) => s.mean / mean), perPoint, perPointRange: [Math.min(...pointRatios), Math.max(...pointRatios)] }
+    console.log(`  AC-S2-1: the left wall at 100° over 45° ${record.lit_wall_in_view.ratio.toFixed(3)}; swept, each view over their mean ${record.left_wall_sweep.ratios.map((r) => r.toFixed(3)).join(', ')}; each point over its own mean ${record.left_wall_sweep.perPointRange.map((r) => r.toFixed(3)).join('–')}`)
+    if (dir) await writeFile(`${dir}/probes.json`, `${JSON.stringify(record, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBE_EXPORT (=<dir>: export.json and the pictures there): S2-U9 and the time limit's probes (S2 task
+// 5.4). Each reference scene's 2K lit export with the probes updated every frame after the warm-up (as shipped) and
+// frozen as it left them (gpu.ts probeAfterWarm): the times, the warm-up's (gpu.ts lastWarm), and how far the two
+// pictures are apart. Each first exported once more, its shaders compiled. Within the estimate engines.ts gives.
+if (process.env.SCENE_E2E_PROBE_EXPORT) await check('probes: 5.4, a picture’s probes updated or frozen after the warm-up: times and pictures, within the estimate', async () => {
+  const dir = process.env.SCENE_E2E_PROBE_EXPORT === '1' ? null : process.env.SCENE_E2E_PROBE_EXPORT
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await page.goto(`${base}/.scene-hidden-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    const { frames, estimate } = await page.evaluate(async () => {
+      const e = await import('/src/creative-scene/render/engines.ts')
+      const frames = e.drawnFrames('realtime_gi', 'export')
+      return { frames, estimate: e.estimateMs('realtime_gi', 2048, 1365, frames, 'image/png', true) }
+    })
+    const timed = (doc, plan, keep, after) => page.evaluate(async ([doc, plan, keep, after, off]) => {
+      window.__sceneGPU.probeAfterWarm = after
+      window.__sceneGPU.traceOff = off
+      const drawn = window.__sceneGPU.picturesWithProbes
+      const started = performance.now()
+      await window.__export(doc, plan, keep)
+      return { ms: performance.now() - started, warm: window.__sceneGPU.lastWarm, withProbes: window.__sceneGPU.picturesWithProbes - drawn }
+    }, [doc, plan, keep, after, process.env.SCENE_E2E_PROBE_EXPORT_TRACE_OFF === '1'])
+    const rows = []
+    // Every scene measured before the estimate is judged.
+    const over = []
+    // SCENE_E2E_PROBE_EXPORT_SCENES=<a,b>: those scenes alone; none with an empty list.
+    for (const name of (process.env.SCENE_E2E_PROBE_EXPORT_SCENES ?? 'cornell,thin-wall,physical-noon').split(',').filter(Boolean)) {
+      const server = new SceneServer()
+      referenceScene(server, name, realtimeGI)
+      server.scene.render.resolution = '2k'
+      const doc = { scene: server.scene, models: {}, revision: '1' }
+      const plan = { cameraObjectIDs: [server.scene.objects.find((o) => o.kind === 'camera').id], passes: ['lit'] }
+      await timed(doc, plan, `${name}-first`, 'update')
+      const update = await timed(doc, plan, `${name}-update`, 'update')
+      const freeze = await timed(doc, plan, `${name}-freeze`, 'freeze')
+      const [d] = await page.evaluate(([a, b]) => window.__differ(a, b), [`${name}-update`, `${name}-freeze`])
+      const perFrame = (update.ms - freeze.ms) / (frames - 1)
+      const row = { name, frames, updateMs: Math.round(update.ms), freezeMs: Math.round(freeze.ms), warm: update.warm, probeMsPerFrame: Number(perFrame.toFixed(2)), apart: d, estimateMs: Math.round(estimate) }
+      rows.push(row)
+      console.log(`  ${name}: updated ${row.updateMs} ms, frozen ${row.freezeMs} ms (${perFrame.toFixed(1)} ms a frame drawn); the warm-up ${Math.round(update.warm.ms)} ms over ${update.warm.levels} levels; apart at most ${d.max}, ${(d.over * 100).toFixed(3)} % by more than 8; the estimate ${row.estimateMs} ms`)
+      assert.equal(update.withProbes, 1, `${name}: the picture drew the probes`)
+      if (update.ms > estimate) over.push(`${name}: ${row.updateMs} ms, over the estimate ${row.estimateMs}`)
+      if (dir) {
+        for (const k of ['update', 'freeze']) {
+          const b64 = await page.evaluate(async (key) => {
+            const bytes = new Uint8Array(await window.__kept[key][0].arrayBuffer())
+            let s = ''
+            for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+            return btoa(s)
+          }, `${name}-${k}`)
+          await writeFile(`${dir}/export-${name}-${k}.png`, Buffer.from(b64, 'base64'))
+        }
+      }
+    }
+    if (dir) await writeFile(`${dir}/export.json`, `${JSON.stringify({ machine: machineInfo(), rows }, null, 2)}\n`)
+    // SCENE_E2E_PROBE_EXPORT_REPEAT=n: cornell's camera exported n times, each against the one before (AC-S2-4).
+    if (process.env.SCENE_E2E_PROBE_EXPORT_REPEAT) await page.evaluate(([off]) => { window.__sceneGPU.probeDigest = true; window.__sceneGPU.probesOff = off }, [process.env.SCENE_E2E_PROBE_EXPORT_UNDRAWN === '1'])
+    for (let n = 0; n < Number(process.env.SCENE_E2E_PROBE_EXPORT_REPEAT ?? 0); n++) {
+      const server = new SceneServer()
+      referenceScene(server, 'cornell', realtimeGI)
+      const doc = { scene: server.scene, models: {}, revision: '1' }
+      const plan = { cameraObjectIDs: [server.scene.objects.find((o) => o.kind === 'camera').id], passes: ['lit'] }
+      const r = await timed(doc, plan, `repeat${n}`, 'update')
+      const [d] = n === 0 ? [{ max: 0, over: 0 }] : await page.evaluate(async ([a, b]) => {
+        const pixels = async (blob) => {
+          const bitmap = await createImageBitmap(blob)
+          const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+          const g = c.getContext('2d')
+          g.drawImage(bitmap, 0, 0)
+          return { data: g.getImageData(0, 0, c.width, c.height).data, width: c.width, height: c.height }
+        }
+        const [p, q] = await Promise.all([pixels(window.__kept[a][0]), pixels(window.__kept[b][0])])
+        let max = 0
+        let count = 0
+        const box = [Infinity, Infinity, -1, -1]
+        for (let k = 0; k < p.data.length; k += 4) {
+          const v = Math.max(Math.abs(p.data[k] - q.data[k]), Math.abs(p.data[k + 1] - q.data[k + 1]), Math.abs(p.data[k + 2] - q.data[k + 2]))
+          if (v === 0) continue
+          max = Math.max(max, v)
+          count++
+          const x = (k / 4) % p.width
+          const y = Math.floor(k / 4 / p.width)
+          box[0] = Math.min(box[0], x / p.width); box[1] = Math.min(box[1], y / p.height); box[2] = Math.max(box[2], x / p.width); box[3] = Math.max(box[3], y / p.height)
+        }
+        return [{ max, count, box: box.map((v) => Number(v.toFixed(3))) }]
+      }, [`repeat${n - 1}`, `repeat${n}`])
+      console.log(`  repeat ${n}: apart from the one before at most ${d.max}, ${d.count ?? 0} pixels within ${JSON.stringify(d.box ?? null)} of the picture; the probes' digests after the warm-up and the last frame ${JSON.stringify(r.warm?.digests)}`)
+    }
+    assert.deepEqual(over, [], over.join('\n'))
+    assert.deepEqual(errors, [], errors.join('\n'))
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBE_EDITS (=<dir>: edits.json there): AC-S2-3 in the viewport (S2 task 5.3). cornell's cube grabbed
+// and dragged along x, cornell's spot turned off, physical-noon's sun lowered (its clock from 12:00 to 15:30). Measured as S0 measured
+// it (trace-spike research probes.md「闪烁」): through the scene's camera, the viewport's picture as the probes light
+// it (gpu.ts probeView), gi-regions.json's regions' means, read as the viewport draws on by itself, by the frames since the edit (each level's least
+// edit age times its period, the slowest's: gpu.ts probeMean). Every region within 10 % of where it settles by 24
+// frames; while dragging, the volume drawn kept and no probe's data age back under A0, so their coverage stays;
+// still, the viewport stops at its own count (SceneRenderer settleFrames), within 64, and over eight frames more a
+// pixel moves by under 1 % of the mean a frame. SCENE_E2E_PROBE_FOLLOW_VIDEO=1 records the drag twice more into
+// <dir>, A0 = 12 with α = 0 (as shipped) and with α = 0.5 (gpu.ts probeFollow), for S2-U5. SCENE_E2E_PROBE_EDITS_HALL=1
+// records S0's hall too, judged by nothing but errors (owner 2026-10-26): an instance moved, the sun turned; its
+// picture's 3 × 3 regions from the hall's view, 480 frames stepped.
+if (process.env.SCENE_E2E_PROBE_EDITS) await check('probes: AC-S2-3, an edit caught up within 24 frames, coverage kept while dragging; still, the viewport settles within 64 and stops', async () => {
+  const dir = process.env.SCENE_E2E_PROBE_EDITS === '1' ? null : process.env.SCENE_E2E_PROBE_EDITS
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const A0 = 12
+  const record = { machine: machineInfo(), edits: {} }
+  const viewport = async (scene, { video, follow } = {}) => {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 }, ...(video ? { recordVideo: { dir: video, size: { width: 1280, height: 820 } } } : {}) })
+    if (follow !== undefined) await context.addInitScript((f) => { window.__sceneGPUHooks = { ...window.__sceneGPUHooks, probeFollow: f } }, follow)
+    const server = new SceneServer()
+    referenceScene(server, scene, realtimeGI)
+    const opened = await open(server, { context })
+    await shading(opened.page, '最终渲染')
+    await traceReady(opened.page, scene, 60_000)
+    await waitFor(async () => (await opened.page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, `${scene}: the probes taken up`, 60_000)
+    // Through the scene's camera, its regions where its picture's frame is in the viewport's.
+    await opened.page.getByRole('treeitem', { name: 'shot' }).click()
+    await opened.page.keyboard.press('Digit0')
+    const frame = opened.page.locator('.cc-scene-camframe')
+    await frame.waitFor()
+    const fb = await frame.boundingBox()
+    const { box } = await viewportCenter(opened.page)
+    const rects = Object.values(giRegions[scene]).map(([x0, y0, x1, y1]) => [
+      (fb.x - box.x + x0 * fb.width) / box.width, (fb.y - box.y + y0 * fb.height) / box.height,
+      (fb.x - box.x + x1 * fb.width) / box.width, (fb.y - box.y + y1 * fb.height) / box.height,
+    ])
+    await viewportStill(opened.page, `${scene} through its camera`)
+    return { context, server, rects, ...opened }
+  }
+  let rects = []
+  // A reading's regions' means over the pixels hit, null where none is.
+  const regionsOf = (v) => rects.map(([x0, y0, x1, y1]) => {
+    let sum = 0
+    let n = 0
+    for (let y = Math.floor(y0 * v.height); y < Math.ceil(y1 * v.height); y++) {
+      for (let x = Math.floor(x0 * v.width); x < Math.ceil(x1 * v.width); x++) {
+        const l = v.lumas[y * v.width + x]
+        if (l >= 0) {
+          sum += l
+          n++
+        }
+      }
+    }
+    return n > 0 ? sum / n : null
+  })
+  const read = (page) => page.evaluate(async () => {
+    const [view, mean] = [await window.__sceneGPU.probeView(384), await window.__sceneGPU.probeMean()]
+    return view && mean && view.serial === mean.serial ? { ...view, ages: mean.ages } : null
+  })
+  // Read back while editing, the viewport drawing as the edit asks; then a frame at a time, each read, 64 of them.
+  const follow = async (page, edit, steps = 64) => {
+    const before = await read(page)
+    const stats = await page.evaluate(() => window.__sceneGPU.probeStats)
+    await page.evaluate(() => { window.__sceneGPU.viewportHold = true })
+    let editing = true
+    // Settled either way, so a reading that throws does not leave the edit's rejection unhandled.
+    const edited = edit().finally(() => (editing = false))
+    edited.catch(() => {})
+    const samples = []
+    // Volumes other than the one drawn before the edit: a cold start, its coverage from 0 (S2 design B2).
+    const volumes = new Set()
+    // Before the edit lands every level's least edit age is past the warm-up's; after, it counts from 0 again.
+    const landed = (m) => m.ages.every((a, l) => a.edit < before.ages[l].edit)
+    const sample = (m, during) => {
+      if (m.serial !== before.serial) volumes.add(m.serial)
+      else if (landed(m)) samples.push({ during, frames: Math.max(...m.ages.map((a, l) => a.edit * stats.periods[l])), regions: regionsOf(m), data: Math.min(...m.ages.map((a) => a.data)) })
+    }
+    while (editing) {
+      const m = await read(page)
+      if (m) sample(m, editing)
+    }
+    await edited
+    // Landed: an external edit comes through the server's next answer; a frame drawn each wait, for what takes more
+    // than one (a physical sky's light is made again a frame after its change: objects/Lighting.tsx).
+    const started = Date.now()
+    while (!landed(await read(page))) {
+      if (Date.now() - started > 30_000) throw new Error('the edit never reached the probes')
+      await sleep(50)
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+    }
+    for (let i = 0; i < steps && volumes.size === 0; i++) {
+      sample(await read(page), false)
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+    }
+    assert.deepEqual([...volumes], [], `the probes drawn before the edit kept through it: volume ${before.serial} (${JSON.stringify(stats)}), then ${[...volumes].join(', ')}`)
+    await page.evaluate(() => {
+      window.__sceneGPU.viewportHold = false
+      window.__sceneGPU.invalidateViewport()
+    })
+    await viewportStill(page, 'after the edit', 300_000)
+    const stopped = await page.evaluate(() => ({ count: window.__sceneGPU.viewportFrames, settle: window.__sceneGPU.viewportSettle }))
+    // Eight frames more: where it settles is their mean; the flicker each pixel's change a frame over the mean.
+    const more = [await read(page)]
+    for (let i = 0; i < 8; i++) {
+      await page.evaluate(() => window.__sceneGPU.redrawViewport(1))
+      more.push(await read(page))
+    }
+    const target = regionsOf(more[0]).map((_, k) => {
+      const at = more.map((m) => regionsOf(m)[k])
+      return at[0] === null ? null : at.reduce((a, v) => a + v, 0) / at.length
+    })
+    const flicker = more.slice(1).map((m, i) => {
+      let d = 0
+      let sum = 0
+      let n = 0
+      for (let p = 0; p < m.lumas.length; p++) {
+        if (m.lumas[p] < 0 || more[i].lumas[p] < 0) continue
+        d += Math.abs(m.lumas[p] - more[i].lumas[p])
+        sum += m.lumas[p]
+        n++
+      }
+      return d / Math.max(sum, 1e-12)
+    })
+    const was = regionsOf(before)
+    // Two readings: off the settled value over it (the AC's words), and over the change too where that is larger
+    // (what is left of the change: a light turned off settles near 0, where the first is ill-conditioned).
+    const off = (s, change = false) => Math.max(...s.regions.map((v, k) => (v === null || target[k] === null ? 0 : Math.abs(v - target[k]) / Math.max(target[k], change && was[k] !== null ? Math.abs(was[k] - target[k]) : 0, 1e-6))))
+    // Caught up: the frames after the edit from which every later reading is within 10 %.
+    const after = samples.filter((s) => !s.during)
+    const by = (change) => {
+      const late = after.findIndex((_, i) => after.slice(i).every((s) => off(s, change) <= 0.1))
+      return late < 0 ? null : after[late].frames
+    }
+    return {
+      before: was, settled: target, periods: stats.periods,
+      caughtUp: by(false), caughtUpOfChange: by(true), samples: samples.map((s) => ({ during: s.during, frames: s.frames, data: s.data, off: Number(off(s).toFixed(4)), offOfChange: Number(off(s, true).toFixed(4)) })),
+      leastData: Math.min(...samples.map((s) => s.data)), stoppedAt: stopped.count, settleFrames: stopped.settle, flicker: flicker.map((f) => Number(f.toFixed(5))),
+    }
+  }
+  const grab = async (page, steps = 30) => {
+    await page.getByRole('treeitem', { name: 'cube' }).click()
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('KeyG')
+    await waitFor(async () => /移动/.test(await page.locator('.cc-scene-hint').textContent()), 'grab running')
+    // Along x, within the room: past its walls the scene's bounds, and so its levels, would grow (volume.ts outgrown),
+    // a volume of its own warming in the background (S2 task 5.2a), not what this follows.
+    await page.keyboard.press('KeyX')
+    // Over and back for a longer drag (the videos), 45 pixels at most.
+    for (let i = 1; i <= steps; i++) {
+      await page.mouse.move(x + 1.5 * (30 - Math.abs(30 - (i % 60))), y)
+      await sleep(30)
+    }
+    await page.keyboard.press('Enter')
+  }
+  const failed = []
+  try {
+    // SCENE_E2E_PROBE_EDITS_HALL=only: the hall alone.
+    for (const [name, scene, edit] of process.env.SCENE_E2E_PROBE_EDITS_HALL === 'only' ? [] : [
+      // The camera view's picture is where the cube is: grabbed in it, along x.
+      ['cube dragged', 'cornell', async (v) => {
+        await grab(v.page)
+        await waitFor(() => v.server.object('sobj_cube00000000000000000').transform.position[0] !== -0.9, 'the drag saved')
+      }],
+      ['spot off', 'cornell', async (v) => {
+        const spot = v.server.object('sobj_spot00000000000000000')
+        v.server.external([{ op: 'update_objects', updates: [{ object_id: spot.id, light: { ...spot.light, intensity: 0 } }] }])
+        await v.page.evaluate(() => window.__invalidate())
+      }],
+      // Its sun from the place and the time: lowered by the clock, 12:00 to 15:30.
+      ['sun lowered', 'physical-noon', async (v) => {
+        const env = v.server.scene.environment
+        v.server.external([{ op: 'set_environment', environment: { ...env, sky: { ...env.sky, local_time: '15:30' } } }])
+        await v.page.evaluate(() => window.__invalidate())
+      }],
+    ]) {
+      const v = await viewport(scene)
+      rects = v.rects
+      const levels = (await v.page.evaluate(() => window.__sceneGPU.probeStats)).levels
+      const r = await follow(v.page, () => edit(v))
+      const moved = Math.max(...r.before.map((b, k) => (b === null || r.settled[k] === null ? 0 : Math.abs(b - r.settled[k]) / Math.max(r.settled[k], 1e-6))))
+      record.edits[name] = { scene, levels, moved, ...r }
+      console.log(`  ${name} (${scene}, ${levels} levels, periods ${r.periods.join('/')}): regions ${r.before.map((b) => b?.toFixed(3)).join('/')} → ${r.settled.map((b) => b?.toFixed(3)).join('/')}; within 10 % by ${r.caughtUp} frames, of the change by ${r.caughtUpOfChange} (${r.samples.filter((s) => !s.during).length} readings after, ${r.samples.filter((s) => s.during).length} during); least data age ${r.leastData}; stopped at ${r.stoppedAt} of ${r.settleFrames}; flicker ${r.flicker.map((f) => (f * 100).toFixed(2)).join(', ')} %`)
+      // Every edit measured before any is judged.
+      if (!(r.caughtUp !== null && r.caughtUp <= 24)) failed.push(`${name}: within 10 % by 24 frames: ${r.caughtUp}`)
+      if (!(r.leastData >= A0)) failed.push(`${name}: no probe's data cleared by the edit, the coverage kept: least data age ${r.leastData}`)
+      if (!(r.stoppedAt === r.settleFrames && r.settleFrames <= 64)) failed.push(`${name}: stopped at its count, within 64: ${r.stoppedAt} of ${r.settleFrames}`)
+      if (!(Math.max(...r.flicker) < 0.01)) failed.push(`${name}: under 1 % a frame once settled: ${r.flicker.join(', ')}`)
+      assert.deepEqual(v.errors, [], v.errors.join('\n'))
+      await v.context.close()
+    }
+    if (dir && process.env.SCENE_E2E_PROBE_FOLLOW_VIDEO) {
+      for (const [name, f] of [['follow-alpha-0', 0], ['follow-alpha-0.5', 0.5]]) {
+        const video = `${dir}/${name}`
+        await mkdir(video, { recursive: true })
+        const v = await viewport('cornell', { video, follow: f })
+        await grab(v.page, 150)
+        await viewportStill(v.page, `${name}: after the drag`)
+        await v.context.close()
+        console.log(`  ${name}: ${await v.page.video().path()}`)
+      }
+    }
+    if (process.env.SCENE_E2E_PROBE_EDITS_HALL) {
+      const hall = await hallScene()
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, hallView([])])
+      const server = new SceneServer()
+      hallSeed(server, hall)
+      const { page, errors } = await open(server, { context })
+      await hallReady(page, hall.objects.filter((o) => o.kind === 'model_instance' || o.kind === 'primitive').length, 'the hall')
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, 'the hall: the probes taken up', 300_000)
+      await viewportStill(page, 'the hall', 300_000)
+      rects = [0, 1, 2].flatMap((y) => [0, 1, 2].map((x) => [x / 3, y / 3, (x + 1) / 3, (y + 1) / 3]))
+      const moved = hall.objects.find((o) => o.kind === 'model_instance')
+      for (const [name, ops] of [
+        ['hall: an instance moved', [{ op: 'update_objects', updates: [{ object_id: moved.id, transform: { ...moved.transform, position: [moved.transform.position[0] + 0.5, ...moved.transform.position.slice(1)] } }] }]],
+        ['hall: the sun turned', [{ op: 'set_environment', environment: { ...server.scene.environment, sky: { ...server.scene.environment.sky, sun_azimuth_deg: 225 } } }]],
+      ]) {
+        const levels = (await page.evaluate(() => window.__sceneGPU.probeStats)).levels
+        const r = await follow(page, async () => {
+          server.external(ops)
+          await page.evaluate(() => window.__invalidate())
+        }, 480)
+        record.edits[name] = { scene: 'hall', levels, ...r }
+        console.log(`  ${name} (${levels} levels, periods ${r.periods.join('/')}): within 10 % by ${r.caughtUp} frames, of the change by ${r.caughtUpOfChange}; stopped at ${r.stoppedAt} of ${r.settleFrames}; flicker ${r.flicker.map((f) => (f * 100).toFixed(2)).join(', ')} %`)
+      }
+      assert.deepEqual(errors, [], errors.join('\n'))
+      await context.close()
+    }
+    assert.deepEqual(failed, [], failed.join('\n'))
+  } finally {
+    if (dir) await writeFile(`${dir}/edits.json`, `${JSON.stringify(record, null, 2)}\n`)
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBE_MIRROR=<dir>: a mirror in thin-wall's room and a red ball by its right wall (the owner's report,
+// 2026-10-26: the ball's bounce on the wall brighter in the mirror than out of it, blue in the mirror where nothing
+// blue is). A white metal at roughness 0 gives back what it sees: each point of the wall where the picture shows it
+// and where the mirror shows it should be alike. The pictures, and those points' two colours.
+if (process.env.SCENE_E2E_PROBE_MIRROR) await check('probes diag: a wall seen in a mirror and out of it', async () => {
+  const dir = process.env.SCENE_E2E_PROBE_MIRROR
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    // The mirror's face, z = face, x across [mx0, mx1], y up to top; the ball by the right wall (x = 2).
+    const [face, mx0, mx1, top] = [-1.875, -0.4, 1.6, 1.62]
+    const ball = { centre: new Vector3(1.4, 0.42, -0.6), radius: 0.4 }
+    const scene = shooterScene('thin-wall', (s) => {
+      realtimeGI(s)
+      const like = s.objects.find((o) => o.name === 'cabinet')
+      s.objects = s.objects.filter((o) => o.name !== 'cabinet')
+      s.objects.push(
+        { ...structuredClone(like), id: 'sobj_mirror000000000000000', name: 'mirror', transform: { position: [(mx0 + mx1) / 2, 0.02, face - 0.025], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, primitive: { builtin: 'box@1', params: { width: mx1 - mx0, height: top - 0.02, depth: 0.05 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0 } } } },
+        { ...structuredClone(like), id: 'sobj_redball00000000000000', name: 'ball', transform: { position: [ball.centre.x, 0.02, ball.centre.z], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, primitive: { builtin: 'sphere@1', params: { radius: ball.radius, segments: 64 } }, material_slots: { main: { preset: 'paint@1', params: { color: '#b0201c' } } } },
+      )
+      const shot = s.objects.find((o) => o.kind === 'camera')
+      const cam = new PerspectiveCamera()
+      cam.position.set(-1.3, 1.4, 1.6)
+      cam.lookAt(1.0, 0.7, -1.2)
+      shot.transform.position = cam.position.toArray()
+      shot.transform.rotation = cam.quaternion.toArray()
+      shot.camera.focal_mm = 20
+    })
+    const eye = new Vector3(...scene.objects.find((o) => o.kind === 'camera').transform.position)
+    /** Whether the segment a → b passes clear of the ball. */
+    const clear = (a, b) => {
+      const d = b.clone().sub(a)
+      const t = Math.min(1, Math.max(0, ball.centre.clone().sub(a).dot(d) / d.lengthSq()))
+      return a.clone().addScaledVector(d, t).distanceTo(ball.centre) > ball.radius + 0.03
+    }
+    // The right wall's points and their images behind the mirror, kept where the camera sees both.
+    const wall = []
+    for (const y of [0.2, 0.4, 0.6, 0.8, 1.1]) for (const z of [-0.1, -0.4, -0.7, -1.0, -1.3]) {
+      const w = new Vector3(1.995, y, z)
+      const image = new Vector3(w.x, w.y, 2 * face - w.z)
+      const t = (face - eye.z) / (image.z - eye.z)
+      const on = eye.clone().lerp(image, t)
+      if (on.x < mx0 + 0.05 || on.x > mx1 - 0.05 || on.y < 0.08 || on.y > top - 0.05) continue
+      if (!clear(eye, w) || !clear(eye, on) || !clear(on, w)) continue
+      wall.push([w, image])
+    }
+    // SCENE_E2E_PROBE_MIRROR_SHADE=<mode>: the hits shaded so too (render/trace/hit.ts ShadeMode), what a defect comes from.
+    for (const mode of (process.env.SCENE_E2E_PROBE_MIRROR_SHADE ?? '').split(',').filter(Boolean)) {
+      await page.evaluate((m) => { window.__sceneGPU.traceShade = m }, mode)
+      await writeFile(`${dir}/mirror-${mode}.png`, await encodePicture(page, await page.evaluate((s) => window.__picture(s, 'lit', 1024), scene)))
+      await page.evaluate(() => { window.__sceneGPU.traceShade = null })
+    }
+    const pic = await page.evaluate(([s, p]) => window.__picture(s, 'lit', 1024, p), [scene, wall.flatMap(([w, i]) => [w.toArray(), i.toArray()])])
+    await writeFile(`${dir}/mirror.png`, await encodePicture(page, pic))
+    const rgba = Buffer.from(pic.rgba, 'base64')
+    const mean = ([x, y]) => {
+      const sum = [0, 0, 0]
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) for (let c = 0; c < 3; c++) sum[c] += rgba[((Math.round(y) + dy) * pic.width + Math.round(x) + dx) * 4 + c]
+      return sum.map((v) => Math.round(v / 25))
+    }
+    const rows = wall.map(([w], k) => ({ point: w.toArray(), direct: mean(pic.at[2 * k]), mirrored: mean(pic.at[2 * k + 1]), at: pic.at.slice(2 * k, 2 * k + 2).map((p) => p.map(Math.round)) }))
+    for (const r of rows) console.log(`  wall ${r.point.map((v) => v.toFixed(2)).join(',')}: direct ${r.direct.join(',')} mirrored ${r.mirrored.join(',')}  at ${JSON.stringify(r.at)}`)
+    await writeFile(`${dir}/mirror.json`, `${JSON.stringify(rows, null, 2)}\n`)
+    assert.ok(rows.length > 3, `${rows.length} wall points seen both ways`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_PROBES=<dir> with SCENE_E2E_PROBE_AO=<metres>: S2-U7's pictures for the owner, each scene's lit export
+// as shipped and with the probes' light times the SSGI's AO at that radius (gpuTestHooks.probeAO): whether
+// contact shadows smaller than a probe cell want it (S2 design; shipped without unless the owner says).
+if (process.env.SCENE_E2E_PROBES && process.env.SCENE_E2E_PROBE_AO) await check('probes: S2-U7, the lit exports with and without a short-radius AO on the probes’ light', async () => {
+  const dir = process.env.SCENE_E2E_PROBES
+  const radius = Number(process.env.SCENE_E2E_PROBE_AO)
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+    for (const name of ['backlit-room', 'cornell', 'thin-wall', 'physical-noon']) {
+      const scene = shooterScene(name, realtimeGI)
+      const shots = {}
+      for (const ao of [null, radius]) {
+        const png = await page.evaluate(async ([s, a]) => {
+          window.__sceneGPU.probeAO = a
+          try {
+            return await window.__png(s, 'lit', 1536, 'export', false)
+          } finally {
+            window.__sceneGPU.probeAO = null
+          }
+        }, [scene, ao])
+        shots[ao ?? 'off'] = Buffer.from(png, 'base64')
+        await writeFile(`${dir}/${name}-ao-${ao ?? 'off'}.png`, shots[ao ?? 'off'])
+      }
+      console.log(`  ${name}: ${(await lumaStats(page, shots.off)).mean.toFixed(1)} without, ${(await lumaStats(page, shots[radius])).mean.toFixed(1)} with the AO at ${radius} m`)
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
 await browser.close()
 await rm(fixture, { force: true })
 await rm(canvasFixture, { force: true })
 await rm(hiddenFixture, { force: true })
 await rm(giFixture, { force: true })
+await rm(probesFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)

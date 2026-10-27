@@ -1,12 +1,12 @@
 {
   "uid": "10a75e36-fde5-4cc7-84e4-8894d7979371",
-  "revision": 3,
+  "revision": 9,
   "id": "scene-probe-gi",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-world-space-gi",
   "designBinding": {
-    "version": 5,
+    "version": 6,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -25,9 +25,9 @@
       "data:场景文档"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-26T08:22:45.718Z",
-  "updatedAt": "2026-10-26T10:16:54.540Z",
+  "updatedAt": "2026-10-27T03:44:52.066Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -37,19 +37,451 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-26T10:16:54.384Z",
+      "at": "2026-10-27T03:40:16.027Z",
       "contentHash": "9d6f271c93b2a684"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-26T10:16:54.384Z",
-      "contentHash": "e4899cc60189f67f"
+      "at": "2026-10-27T03:40:16.027Z",
+      "contentHash": "d558565d4c18b90d"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-26T10:16:54.384Z",
+      "contentHash": "9d6f271c93b2a684",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-26T10:16:54.384Z",
+      "contentHash": "e4899cc60189f67f",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "411fcc805f9206f223d2e6b85822b4ce757af913",
+    "at": "2026-10-26T10:18:29.947Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "cb9855e6edbced57a67bfe82472b41d02ddebfaa4925a1dc13f5ce578740ffe0"
+    },
+    "preExisting": [
+      ".lti/snapshots/cb9855e6edbced57a67bfe82472b41d02ddebfaa4925a1dc13f5ce578740ffe0.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-27T03:44:26.423Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 checks；按定向 e2e、Go/前端单测与 make check-frontend 验证。未达标：AC-S2-3 关聚光灯 42–49 帧（门槛 24）、拖动 22–26 帧压线（issue scene-probe-light-off-settle）；AC-S2-4 cornell 两次导出差几级（S1 遗留 scene-trace-export-repeat）；AC-S2-2 cornell 立方体 +21%（issue scene-probe-thin-wall-bias）。AC-S2-6/7/8 与 S2-U4/U8 随 5.5 延后，AC-S2-9 延期",
+        "coverage": [
+          {
+            "criterionId": "AC-8f67a67a8157",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-a4b6257b1292",
+            "status": "verified",
+            "evidence": "backlit-room S2 前后并排导出图交 owner（evidence/after），owner 2026-10-26 看图接受"
+          },
+          {
+            "criterionId": "AC-eac2a2ccd696",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-815959afd599",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：左墙固定点两视角比值在 1 ± 0.05 以内"
+          },
+          {
+            "criterionId": "AC-de7810243fb5",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：扫视逐点 0.977–1.032"
+          },
+          {
+            "criterionId": "AC-b2fa73ce534a",
+            "status": "unverified",
+            "evidence": "见下属三条；cornell 立方体朝红墙一面 +21% 超出 ±15%，owner 2026-10-26 按已知偏差接受（issue scene-probe-thin-wall-bias）"
+          },
+          {
+            "criterionId": "AC-44f504b4434f",
+            "status": "verified",
+            "evidence": "cornell、thin-wall、physical-noon 导出图交 owner 看图"
+          },
+          {
+            "criterionId": "AC-c54520e48dd6",
+            "status": "unverified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：除 cornell 立方体 +21% 外均在 ±15% 以内；+21% 由 owner 接受为已知偏差，issue scene-probe-thin-wall-bias"
+          },
+          {
+            "criterionId": "AC-59d162703bae",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：@level1 +9/+2/+9/+2，@level2 +13/−1"
+          },
+          {
+            "criterionId": "AC-66301bea3fcd",
+            "status": "unverified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-1d55b2bbff2e",
+            "status": "unverified",
+            "evidence": "e2e probes: AC-S2-3（evidence/after/probes-5.3.json）：太阳 4 帧达标；拖动 22–26 帧压线；关聚光灯按字面 42–49 帧不过。owner 2026-10-26 定判不过、先搁置，issue scene-probe-light-off-settle"
+          },
+          {
+            "criterionId": "AC-5cb21ae879ad",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-3：三项编辑都在 52/52 帧停止重绘，停下后逐帧变化 0.38% 以内"
+          },
+          {
+            "criterionId": "AC-c8cf944442d6",
+            "status": "unverified",
+            "evidence": "e2e probes: 5.4 / trace: AC-S1-4：mirror-board 9 张逐像素相同、探针缓冲两次逐字节相同；cornell 两次差几级，是 S1 遗留 scene-trace-export-repeat，owner 2026-10-26 定先记录"
+          },
+          {
+            "criterionId": "AC-f3027dae7d47",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-19c224f9d879",
+            "status": "verified",
+            "evidence": "e2e trace: 7.1 / trace: 6.1 及 S1 的兼容模式用例（任务 6.1）"
+          },
+          {
+            "criterionId": "AC-4459bb88d5f5",
+            "status": "verified",
+            "evidence": "e2e trace: 7.1 提示文字用例（任务 6.1）"
+          },
+          {
+            "criterionId": "AC-5961f0d9e621",
+            "status": "deferred",
+            "evidence": "5.5 性能延后（owner 2026-10-26）"
+          },
+          {
+            "criterionId": "AC-ba62bd93aec7",
+            "status": "deferred",
+            "evidence": "5.5 延后：机器空闲时测视口增量"
+          },
+          {
+            "criterionId": "AC-4c84e4ab8238",
+            "status": "deferred",
+            "evidence": "5.5 延后：导出时限复测；estimateMs 已计入探针项"
+          },
+          {
+            "criterionId": "AC-029481bababc",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-3fcedf2d4765",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-941c4c7bf6e5",
+            "status": "deferred",
+            "evidence": "5.5 延后；5.2a/5.2b 记有接入长任务 946–1134 ms 待复测"
+          },
+          {
+            "criterionId": "AC-5488d317ffd6",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-eb4e22028004",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-f4faa6fc7a08",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-050134601cbf",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-ae2db818d4b2",
+            "status": "deferred",
+            "evidence": "5.5 延后：代理与原始几何对照"
+          },
+          {
+            "criterionId": "AC-77d8f4e490e9",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-3fd5b579f3bb",
+            "status": "deferred",
+            "evidence": "owner 2026-10-26 延期，之后创作中对照重绘"
+          },
+          {
+            "criterionId": "AC-3b8db4e8aee0",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-ea9aa19ab500",
+            "status": "verified",
+            "evidence": "Go 单测 TestWorldTraceStalesTheRealtimeGIsLitOnce、TestFreshnessStalesOnlyTheRealtimeGIsLitAfterS2；make check-go PKG=./internal/creativescene/... 通过"
+          },
+          {
+            "criterionId": "AC-c69fe33718e6",
+            "status": "verified",
+            "evidence": "Go 单测 TestEngineFingerprintsOnlyLit"
+          },
+          {
+            "criterionId": "AC-0ec54395ed87",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-ef0cbe7aab3e",
+            "status": "verified",
+            "evidence": "make check-frontend 通过（2026-10-27，单测 885/885）"
+          },
+          {
+            "criterionId": "AC-82d4364095b7",
+            "status": "verified",
+            "evidence": "7.1 逐条核对三条目标契约（含修订 v6）与实现一致"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "issues",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "技术核对：AC-S2-1、AC-S2-2（除 cornell 立方体）、AC-S2-3 停止重绘、AC-S2-5、AC-S2-10、AC-S2-11 满足；三项已知未达标均有 owner 决定与 issue；性能与 AC-S2-9 延后。设计清单外改动：fingerprint_internal_test.go（测试拆分）、gi-regions.json（测量区域）、SceneEditor/sceneStore（ui.probesWarming 提示）、三个 develop 单测修正随合并带入；未改动：exportShots.ts（时限经 engines.ts 生效）、fingerprint_test.go（改在 internal 测试）、creative-scene-shading.test.ts、octahedral.ts/cascade.ts 的列项为模块名",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "acfa8e15f55dd9a85cd5579e3072fa6e4ba9f6a24bbee58ba2ee8da915c3725c"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T03:44:43.417Z",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "三项已知未达标由 owner 逐项决定接受：AC-S2-3 关聚光灯与拖动压线（issue scene-probe-light-off-settle，后续再修）；AC-S2-4 cornell（S1 遗留 scene-trace-export-repeat，先记录）；AC-S2-2 cornell 立方体 +21%（issue scene-probe-thin-wall-bias）。性能（AC-S2-6/7/8、S2-U4/U8）当天机器负载 6–27 测不准，未验证；AC-S2-9 延期",
+        "followUp": "机器空闲时由 owner/助手跑 S2 任务 5.5：SCENE_E2E_TRACE_PERF 带与不带这一层（冷热缓存分开）、AC-S1-8、代理与原始几何对照、导出 r_max 0.5/1.0、接入长任务 946–1134 ms、probeMsPerLevel 标定与 S2-U9 冻结省时；超阈值按 S2 design「性能」顺序处理并先交 owner 看图。AC-S2-9：owner 在之后的创作中对照 S2 前后的重绘",
+        "coverage": [
+          {
+            "criterionId": "AC-8f67a67a8157",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-a4b6257b1292",
+            "status": "verified",
+            "evidence": "backlit-room S2 前后并排导出图交 owner（evidence/after），owner 2026-10-26 看图接受"
+          },
+          {
+            "criterionId": "AC-eac2a2ccd696",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-815959afd599",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：左墙固定点两视角比值在 1 ± 0.05 以内"
+          },
+          {
+            "criterionId": "AC-de7810243fb5",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：扫视逐点 0.977–1.032"
+          },
+          {
+            "criterionId": "AC-b2fa73ce534a",
+            "status": "unverified",
+            "evidence": "见下属三条；cornell 立方体朝红墙一面 +21% 超出 ±15%，owner 2026-10-26 按已知偏差接受（issue scene-probe-thin-wall-bias）"
+          },
+          {
+            "criterionId": "AC-44f504b4434f",
+            "status": "verified",
+            "evidence": "cornell、thin-wall、physical-noon 导出图交 owner 看图"
+          },
+          {
+            "criterionId": "AC-c54520e48dd6",
+            "status": "unverified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：除 cornell 立方体 +21% 外均在 ±15% 以内；+21% 由 owner 接受为已知偏差，issue scene-probe-thin-wall-bias"
+          },
+          {
+            "criterionId": "AC-59d162703bae",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-1 and AC-S2-2（evidence/after/probes-7.0.json；7.1 复跑数值相同）：@level1 +9/+2/+9/+2，@level2 +13/−1"
+          },
+          {
+            "criterionId": "AC-66301bea3fcd",
+            "status": "unverified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-1d55b2bbff2e",
+            "status": "unverified",
+            "evidence": "e2e probes: AC-S2-3（evidence/after/probes-5.3.json）：太阳 4 帧达标；拖动 22–26 帧压线；关聚光灯按字面 42–49 帧不过。owner 2026-10-26 定判不过、先搁置，issue scene-probe-light-off-settle"
+          },
+          {
+            "criterionId": "AC-5cb21ae879ad",
+            "status": "verified",
+            "evidence": "e2e probes: AC-S2-3：三项编辑都在 52/52 帧停止重绘，停下后逐帧变化 0.38% 以内"
+          },
+          {
+            "criterionId": "AC-c8cf944442d6",
+            "status": "unverified",
+            "evidence": "e2e probes: 5.4 / trace: AC-S1-4：mirror-board 9 张逐像素相同、探针缓冲两次逐字节相同；cornell 两次差几级，是 S1 遗留 scene-trace-export-repeat，owner 2026-10-26 定先记录"
+          },
+          {
+            "criterionId": "AC-f3027dae7d47",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-19c224f9d879",
+            "status": "verified",
+            "evidence": "e2e trace: 7.1 / trace: 6.1 及 S1 的兼容模式用例（任务 6.1）"
+          },
+          {
+            "criterionId": "AC-4459bb88d5f5",
+            "status": "verified",
+            "evidence": "e2e trace: 7.1 提示文字用例（任务 6.1）"
+          },
+          {
+            "criterionId": "AC-5961f0d9e621",
+            "status": "deferred",
+            "evidence": "5.5 性能延后（owner 2026-10-26）"
+          },
+          {
+            "criterionId": "AC-ba62bd93aec7",
+            "status": "deferred",
+            "evidence": "5.5 延后：机器空闲时测视口增量"
+          },
+          {
+            "criterionId": "AC-4c84e4ab8238",
+            "status": "deferred",
+            "evidence": "5.5 延后：导出时限复测；estimateMs 已计入探针项"
+          },
+          {
+            "criterionId": "AC-029481bababc",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-3fcedf2d4765",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-941c4c7bf6e5",
+            "status": "deferred",
+            "evidence": "5.5 延后；5.2a/5.2b 记有接入长任务 946–1134 ms 待复测"
+          },
+          {
+            "criterionId": "AC-5488d317ffd6",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-eb4e22028004",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-f4faa6fc7a08",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-050134601cbf",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-ae2db818d4b2",
+            "status": "deferred",
+            "evidence": "5.5 延后：代理与原始几何对照"
+          },
+          {
+            "criterionId": "AC-77d8f4e490e9",
+            "status": "deferred",
+            "evidence": "5.5 延后"
+          },
+          {
+            "criterionId": "AC-3fd5b579f3bb",
+            "status": "deferred",
+            "evidence": "owner 2026-10-26 延期，之后创作中对照重绘"
+          },
+          {
+            "criterionId": "AC-3b8db4e8aee0",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-ea9aa19ab500",
+            "status": "verified",
+            "evidence": "Go 单测 TestWorldTraceStalesTheRealtimeGIsLitOnce、TestFreshnessStalesOnlyTheRealtimeGIsLitAfterS2；make check-go PKG=./internal/creativescene/... 通过"
+          },
+          {
+            "criterionId": "AC-c69fe33718e6",
+            "status": "verified",
+            "evidence": "Go 单测 TestEngineFingerprintsOnlyLit"
+          },
+          {
+            "criterionId": "AC-0ec54395ed87",
+            "status": "verified",
+            "evidence": "见下属两条"
+          },
+          {
+            "criterionId": "AC-ef0cbe7aab3e",
+            "status": "verified",
+            "evidence": "make check-frontend 通过（2026-10-27，单测 885/885）"
+          },
+          {
+            "criterionId": "AC-82d4364095b7",
+            "status": "verified",
+            "evidence": "7.1 逐条核对三条目标契约（含修订 v6）与实现一致"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-27「没问题，你快速收尾吧」：接受 S2 按现状收尾；S2-U5 α=0、S2-U9 继续更新、Epic 修订 v6 已定",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "acfa8e15f55dd9a85cd5579e3072fa6e4ba9f6a24bbee58ba2ee8da915c3725c"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-27T03:44:51.831Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

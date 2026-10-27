@@ -1,0 +1,17 @@
+{
+  "uid": "8182a3b4-263c-4c08-bcdf-b00f9683e4f8",
+  "revision": 1,
+  "id": "scene-probe-thin-wall-bias",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-26T14:16:35.827Z",
+  "updatedAt": "2026-10-26T14:16:35.871Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

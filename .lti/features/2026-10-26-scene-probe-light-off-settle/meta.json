@@ -1,0 +1,17 @@
+{
+  "uid": "d1278cdc-ce21-4057-8a30-a6b9ece2202e",
+  "revision": 1,
+  "id": "scene-probe-light-off-settle",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-27T03:20:05.987Z",
+  "updatedAt": "2026-10-27T03:20:06.029Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

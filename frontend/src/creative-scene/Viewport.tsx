@@ -57,7 +57,7 @@ import type { Ghost } from './modelEdits.ts'
 import type { Placeholder } from './agentActivity.ts'
 import { GhostModel, SceneObjects } from './objects/SceneObjects.tsx'
 import { Lighting } from './objects/Lighting.tsx'
-import { convergeFrames, effectiveEngine, engineOf } from './render/engines.ts'
+import { effectiveEngine, engineOf } from './render/engines.ts'
 import { frameExposure } from './render/litLook.ts'
 import { docToView, positionToDoc, positionToView, transformToDoc } from './space.ts'
 import type { CameraView } from './viewState.ts'
@@ -1114,6 +1114,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
   const lensKey = lens ? JSON.stringify(lens) : ''
   // Convergence (R2 design「收敛」): once the view stops changing the real-time GI draws on by itself,
   // up to its frame count, and stops; any frame it did not ask for, a camera move or an edit starts the count again.
+  // With the probes drawn, the count is theirs: their slowest level caught up and settled (S2 design「收敛与重绘」).
   const drawn = useRef({ count: 0, view: '', asked: false, changed: true })
   useEffect(() => {
     drawn.current.changed = true
@@ -1152,11 +1153,31 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       quality: 'interactive',
     }
     r.render(state.camera, frame)
+    // The layer ready, its probes warming in the background: the render panel still says it prepares.
+    const warming = engine === 'realtime_gi' && r.probeStats !== null && !r.probeStats.drawn
+    if (warming !== ui.getState().probesWarming) ui.setState({ probesWarming: warming })
     d.count++
     gpuTestHooks.viewportFrames = d.count
     // The e2e's frame times (W5 performance): this frame drawn n times in a row, then waited for once.
     if (sceneTest) {
       gpuTestHooks.lastFrame = r.lastFrame
+      gpuTestHooks.probeStats = r.probeStats
+      gpuTestHooks.viewportSettle = r.settleFrames(engine)
+      gpuTestHooks.invalidateViewport = state.invalidate
+      gpuTestHooks.probeMean = async () => (await r.world?.volume.means()) ?? null
+      gpuTestHooks.probeView = async (width = 192) => {
+        const w = r.world
+        if (!w) return null
+        const key = `${w.volume.serial}|${width}|${state.camera.matrixWorld.elements.join()}|${state.size.width}x${state.size.height}`
+        if (probeViewOf?.key !== key) {
+          probeViewOf?.view.dispose()
+          const { probeView } = await import('./render/trace/checks.ts')
+          probeViewOf = { key, view: probeView(gpu.renderer, state.scene, state.camera as PerspectiveCamera, w.handle, w.volume, width) }
+        }
+        const { view } = probeViewOf
+        const pixels = await view.read()
+        return { width: view.width, height: view.height, serial: w.volume.serial, lumas: Array.from({ length: view.width * view.height }, (_, i) => pixels[4 * i]) }
+      }
       const gpu = gpuOf(state.gl)
       gpuTestHooks.redrawViewport = async (n) => {
         const started = performance.now()
@@ -1168,7 +1189,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
         return performance.now() - started
       }
       gpuTestHooks.traceDepth = async (width, bias) => {
-        const layer = engine === 'realtime_gi' ? r.trace().handle()?.layer : undefined
+        const layer = engine === 'realtime_gi' ? r.trace().handle()?.reflect : undefined
         if (!layer) return null
         const { depthCheck } = await import('./render/trace/checks.ts')
         return depthCheck(gpu.renderer, state.scene, state.camera as PerspectiveCamera, layer, width, bias)
@@ -1181,7 +1202,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
         return hitCheck(gpu.renderer, state.scene, state.camera as PerspectiveCamera, handle, base.slots, width, turn)
       }
     }
-    if (d.count < convergeFrames(engine)) {
+    if (d.count < r.settleFrames(engine) && !gpuTestHooks.viewportHold) {
       d.asked = true
       state.invalidate()
     }
@@ -1191,6 +1212,9 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
 
 /** The e2e fixture page sets __sceneTest before the editor loads (render/gpu.ts). */
 const sceneTest = (globalThis as { __sceneTest?: boolean }).__sceneTest === true
+
+/** gpuTestHooks.probeView's pass, made again for another volume, width or view (e2e only). */
+let probeViewOf: { key: string; view: import('./render/trace/checks.ts').ProbeView } | null = null
 
 /**
  * The camera view's frame: the picture the camera takes, the rest dimmed,

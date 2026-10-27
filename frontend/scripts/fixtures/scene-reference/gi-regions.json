@@ -20,5 +20,21 @@
     "floor_by_red_wall": [0.11, 0.94, 0.22, 0.99],
     "cube_face_to_red_wall": [0.243, 0.7, 0.257, 0.88],
     "ball": [0.61, 0.7, 0.77, 0.9]
+  },
+  "thin-wall@level1": {
+    "window_wall_below": [0.12, 0.66, 0.4, 0.78],
+    "corner": [0.47, 0.3, 0.53, 0.72],
+    "floor_in_shade": [0.62, 0.82, 0.9, 0.95],
+    "ceiling": [0.35, 0.0, 0.65, 0.1]
+  },
+  "thin-wall@level2": {
+    "inside_through_window": [0.33, 0.25, 0.65, 0.75],
+    "outside_wall": [0.05, 0.3, 0.2, 0.7]
+  },
+  "physical-noon": {
+    "wall": [0.33, 0.08, 0.6, 0.25],
+    "white_box_front": [0.12, 0.4, 0.25, 0.6],
+    "crate_front": [0.68, 0.45, 0.82, 0.62],
+    "ground_in_front": [0.3, 0.82, 0.7, 0.95]
   }
 }

@@ -2,43 +2,211 @@
 
 ## 1. 准备
 
-- [ ] 1.1 改动前的基线：
+- [x] 1.1 改动前的基线：
   - 在兼容模式、`forceCompatibility`、`traceUnsupported`、`traceDelayMs`（就绪前）下导出参考场景集的实时 GI `lit`，作为 AC-S2-5 的「S2 之前」存档；
   - 导出 `backlit-room` 在 45° 和 100° 的图，以及 30° 到 120° 每 15° 一格的扫视，作为 AC-S2-1 的并排对照；
   - 跑一次 S1 的 `SCENE_E2E_TRACE_PERF`，作为 AC-S2-6「不带这一层」的一侧。
 
   只保存到 S2 的 `discovery/research/evidence/`，超过 30 MB 的部分留在本机并记下重新生成的命令
-- [ ] 1.2 S2-U1 的最小 compute 用例：在 three r186 的 compute 里显式 LOD 采样（`textureSampleLevel`）和向 RGBA16F 存储纹理写入（`textureStore`）各写一个，读回核对。不行的部分在 `trace/computePatches.ts` 里补（连同 `TextureNode.grad()`、PMREM 的环境旋转）；仍不行时按 design 的退路改用 `textureLoad` 加手工双线性。完成判据：用例读回正确，结论写进 design 的 S2-U1
+
+  结果见 `evidence/README.md` 的 `before/`：
+  - 五套导出，`traceOff` 等四套与 S1 的存档亮度相同；
+  - `traceDelayMs` 下导出会等底座、等不到就失败，所以「就绪前」改在视口里核对；
+  - 扫视里靠近亮墙的点在亮墙进入画面时变亮 16%；
+  - 这一轮机器比 S1 合入时慢 10%–20%，帧时间只作参考
+- [x] 1.2 S2-U1 的最小 compute 用例：在 three r186 的 compute 里显式 LOD 采样（`textureSampleLevel`）和向 RGBA16F 存储纹理写入（`textureStore`）各写一个，读回核对。不行的部分在 `trace/computePatches.ts` 里补（连同 `TextureNode.grad()`、PMREM 的环境旋转）；仍不行时按 design 的退路改用 `textureLoad` 加手工双线性。完成判据：用例读回正确，结论写进 design 的 S2-U1
+
+  结果：`SCENE_E2E_PROBES` 的 `probes: S2-U1` 用例通过，两项都不需要补丁。`computePatches.ts` 的 `grad()` 和环境旋转两处补丁要在 compute 里采 PMREM 才用得上，改到任务 4.2 随光线内核一起加、一起验证
 
 ## 2. 不构建时的两处改动（AC-S2-5，各自单独提交）
 
-- [ ] 2.1 `giSplit.ts` 的 `ambient.a` 改写 c（`computeMultiscattering` 算出的 c_E × 材质 AO，亮度加权，下限 1e-3）；`realtimeGI.ts` 的 `split` 改为 `ambient.a > 0`。先在 `creative-scene-shading.test.ts` 加 giSplit 写 c 的核对。完成判据：单测通过；AC-S2-5 的四种情况与 1.1 的存档逐像素相同
-- [ ] 2.2 光照 MRT 的 `base` 改为 sRGB 编码。完成判据：AC-S2-5 的四种情况与 1.1 的存档在 R2 的一级以内
+- [x] 2.1 `giSplit.ts` 的 `ambient.a` 改写 c（`computeMultiscattering` 算出的 c_E × 材质 AO，亮度加权，下限 1e-3）；`realtimeGI.ts` 的 `split` 改为 `ambient.a > 0`。先在 `creative-scene-shading.test.ts` 加 giSplit 写 c 的核对。完成判据：单测通过；AC-S2-5 的四种情况与 1.1 的存档逐像素相同
+
+  结果见 `evidence/ac-s2-5.md`：`traceOff`、`traceUnsupported`、WebGL2 三套逐像素相同；`forceCompatibility` 有一张图（`room`）与存档差 1–3 级，在同一份代码两次运行之间的噪声以内（S1 的口径）。单测放在 `creative-scene-gi.test.ts`，giSplit 原有的单测在那里，不在挂载点表写的 `creative-scene-shading.test.ts`；sheen 的能量补偿要用 three 未导出的 `IBLSheenBRDF`，复制了一份，单测守住它与上游的常数相同
+- [x] 2.2 光照 MRT 的 `base` 改为 sRGB 编码。完成判据：AC-S2-5 的四种情况与 1.1 的存档在 R2 的一级以内
+
+  结果见 `evidence/ac-s2-5.md` 第二步：35 张图都在一级以内，差超过 8 级的像素最多 0.0031%（`mirror-board` 反射锯齿边缘上的 80 个像素，对照图 `after/base-srgb-mirror-board.png`）；整图亮度不变
 
 ## 3. 底座的两份精度
 
-- [ ] 3.1 `base.ts`、`capacity.ts`：两份精度同时服务，代理始终构建；`geometryVersion` 与 `lightingVersion`；场景包围盒（不含 `ground@*`）和改动的实例包围盒；`TraceHandle` 改为 `{reflect, probes, tables, tier, key}`；两份一起估算与判档。`tables.ts` 交出 `L_amb`，灯光与环境的变化计入 `lightingVersion`。先在 `creative-scene-trace.test.ts` 写单测：编排（一次就绪、换档、几何失败）、版本号、包围盒。完成判据：单测通过；S1 的 `SCENE_E2E_TRACE` 用例照过
+- [x] 3.1 `base.ts`、`capacity.ts`：两份精度同时服务，代理始终构建；`geometryVersion` 与 `lightingVersion`；场景包围盒（不含 `ground@*`）和改动的实例包围盒；`TraceHandle` 改为 `{reflect, probes, tables, tier, key}`；两份一起估算与判档。`tables.ts` 交出 `L_amb`，灯光与环境的变化计入 `lightingVersion`。先在 `creative-scene-trace.test.ts` 写单测：编排（一次就绪、换档、几何失败）、版本号、包围盒。完成判据：单测通过；S1 的 `SCENE_E2E_TRACE` 用例照过
+
+  结果：`creative-scene-trace.test.ts` 26 项通过（新增判档的三行、两份精度的编排、版本号与包围盒）；`SCENE_E2E_TRACE` 的 12 个 `trace:` 用例全部通过。实现上的取舍：
+  - 第 1 档的判定改为原始与代理合计 × 1.25 不超过预算，且两份都在设备上限以内；
+  - 灯光是否变化按「已曝光值 ÷ k」比较，留 1e-5 的相对容差（经过 float32 和除法）。场景的环境光不参与预曝光，但 k 只在物理天空下不为 1，那时没有环境光；
+  - 失败重试时重新判定要不要建原始几何；
+  - `traceStats` 多了 `probes`、`geometryVersion`、`lightingVersion`，`target` 改为反射正在建的那一份
 
 ## 4. 探针体
 
-- [ ] 4.1 `probes/cascade.ts`、`probes/octahedral.ts`：级数、原点对齐、欧氏取模（含负坐标）、环形重置的判定、轮转表、α(编辑年龄)、成熟度、`viewportSettleFrames`；八面体编解码。先在新增的 `creative-scene-probes.test.ts` 写单测。完成判据：单测覆盖 design「级联的放置与轮转」「更新」里的每一张表
-- [ ] 4.2 `probes/volume.ts`、`probes/kernels.ts`：`ProbeVolume` 按 `n_alloc` 分配；`step(frame)`，先派发所有级的光线、再派发所有级的更新（P2）；原点锁定、世界格核对；s_env 换算内核；`hit.ts` 的 `radiance`（含单面材质的背面、没命中取 PMREM 粗糙度 0.5）。`checks.ts` 加 GPU 侧的对照：槽号与世界格（含负坐标）、八面体编码，与 JS 结果比较。`gpu.ts` 的 `make` 包住 `createComputePipeline`，`pipelineFailed` 也看 compute 管线。完成判据：GPU 对照与 JS 一致；compute 管线失败时走 S1 的失败处理
-- [ ] 4.3 `probes/lookup.ts` 与合成：`probeIrradiance` 逐级回退；`realtimeGI.ts` 的屏幕采样 pass，`composite` 的 `world` 分支，`world` 时不建 SSGI 漫反射降噪链、`GI_INTENSITY` 取 0；`RealtimeGIOptions` 收 `TraceHandle` 和 `ProbeVolume`。`sceneRenderer.ts` 的 `build` 交出两者，`render` 由视口的 `SceneRenderer` 持有探针体（按代理层身份做键，管线重建时保留）并 `step`，底座就绪后在后台预热到数据年龄 ≥ A0 + 14 再切换。先在 `creative-scene-gi.test.ts` 写 `world` 分支的纯数值单测（`coverage` 为 0 时等于 `A_env · ao + A_lt · ao`）。完成判据：单测通过；`backlit-room` 能看到摄像机背后墙的反弹光
-- [ ] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
+- [x] 4.1 `probes/cascade.ts`、`probes/octahedral.ts`：级数、原点对齐、欧氏取模（含负坐标）、环形重置的判定、轮转表、α(编辑年龄)、成熟度、`viewportSettleFrames`；八面体编解码。先在新增的 `creative-scene-probes.test.ts` 写单测。完成判据：单测覆盖 design「级联的放置与轮转」「更新」里的每一张表
+
+  结果：`creative-scene-probes.test.ts` 12 项通过。两处局部调整：
+  - 轮转的错开由「按级号偏移」改为逐级贪心选偏移（`offsetsFor`）。按级号偏移在大厅的周期（4, 4, 8, 8, 16）下，有的帧更新两级、有的帧一级都不更新；贪心之后每帧最多比其他帧多一级；
+  - 八面体图块的边框由「每个内部纹素写哪几个边框纹素」（`bordersOf`）给出，单测核对每个边框纹素只有一个来源，且折回之后与来源是同一方向。TSL 版本的编解码在任务 4.2 的 GPU 对照里核对
+- [x] 4.2 `probes/volume.ts`、`probes/kernels.ts`：`ProbeVolume` 按 `n_alloc` 分配；`step(frame)`，先派发所有级的光线、再派发所有级的更新（P2）；原点锁定、世界格核对；s_env 换算内核；`hit.ts` 的 `radiance`（含单面材质的背面、没命中取 PMREM 粗糙度 0.5）。`checks.ts` 加 GPU 侧的对照：槽号与世界格（含负坐标）、八面体编码，与 JS 结果比较。`gpu.ts` 的 `make` 包住 `createComputePipeline`，`pipelineFailed` 也看 compute 管线。完成判据：GPU 对照与 JS 一致；compute 管线失败时走 S1 的失败处理
+
+  结果：`SCENE_E2E_PROBES` 的两个新用例通过，S1 的 `trace: AC-S1-*` 5 个用例照过：
+  - GPU 对照：72 组带负坐标的世界格和槽号、128 个方向的八面体编解码，与 JS 逐值一致；
+  - 冒烟测试：小场景上的导出探针体跑 64 帧。值全部有限；第 0 级每个探针都更新了 64 次；方块内部 64 个探针全部停用，方块外没有停用的；墙边比空旷处亮；两次运行逐位相同。
+  - `gpu.ts` 的 `computeFailed()` 已就位，由任务 4.3 的 SceneRenderer 接到底座的 `fail(true)`。
+
+  实现上的局部调整，记理由：
+  - 光线缓冲每个探针体一份，按级分区，不是每级一个缓冲。每帧先把所有到期级的光线一次派发完，再一次派发所有更新，P2 照样成立，绑定更少；
+  - 各级的原点和到期级用单独的 uniform，不用 `uniformArray`：后者每次 render 只上传一次，导出预热在两次 render 之间要派发多帧；
+  - 光线内核从状态纹理读偏移和世界格，不读状态缓冲：这样只绑 7 个存储缓冲，在 WebGPU 默认的 8 个以内；
+  - 逐级回退的覆盖度按 1 − Π(1 − cᵢ) 合成，不是 design 写的 max：它与「逐级 mix」严格对应，合成按覆盖度混合时不会重复计入；
+  - 场景变大、要多分配一级时，探针体整个重建（冷启动），不把已有级的数据拷过去（design「分配」写的是拷过去）。这种情况很少见，S2 先这样做；
+  - TSL 的 `If` 回调不能返回语句节点（`textureStore`、`addAssign`），否则会被当成分支的值去生成，报「Invalid generated code」。一律写成块体
+- [x] 4.3 `probes/lookup.ts` 与合成：`probeIrradiance` 逐级回退；`realtimeGI.ts` 的屏幕采样 pass，`composite` 的 `world` 分支，`world` 时不建 SSGI 漫反射降噪链、`GI_INTENSITY` 取 0；`RealtimeGIOptions` 收 `TraceHandle` 和 `ProbeVolume`。`sceneRenderer.ts` 的 `build` 交出两者，`render` 由视口的 `SceneRenderer` 持有探针体（按代理层身份做键，管线重建时保留）并 `step`，底座就绪后在后台预热到数据年龄 ≥ A0 + 14 再切换。先在 `creative-scene-gi.test.ts` 写 `world` 分支的纯数值单测（`coverage` 为 0 时等于 `A_env · ao + A_lt · ao`）。完成判据：单测通过；`backlit-room` 能看到摄像机背后墙的反弹光
+
+  结果：`creative-scene-gi.test.ts` 15 个通过，其中 `world` 分支的单测：覆盖度为 0 时等于 `A_env · ao + A_lt · ao`，为 1 时环境那份换成探针的 `kd · c · E / π`（不乘 AO），环境光灯那份保留并乘 AO；半覆盖、`fill` 和环境份额不小于 0 也各有断言。导出能看到探针的光（`gi-baseline` 的同一机位，接入前 → 接入后的画面均值）：
+  - `backlit-room`：148.5 → 153.7，左墙亮度比 1.001；
+  - `cornell`：89.5 → 161.9。偏亮多少要在 5.2 对照参考图判断。
+  S1 的用例照过：AC-S1-1/2/5/6、6.1、7.1 通过，WebGL2 画面与接入前逐像素相同（P1）。另有两处要后续处理：
+  - AC-S1-4 三次里有一次失败（一张图最大差 3 级），可能与 `scene-trace-export-repeat` 同源，放到 5.4 查；
+  - 导出变慢：`backlit-room` 5.2 → 9.0 s，`cornell` 5.3 → 6.6 s，5.4、5.5 核对时限。
+  S1 的 `trace: 5.2` 改了一处断言：层就绪后视口每帧少画一次（53 → 52）。这是设计内的变化：探针接入后不再建 SSGI 漫反射的重投影和降噪（两次绘制），多了探针的屏幕采样 pass（一次）。断言改为「探针已接入，且绘制次数正好少 1」，两轮都通过。
+
+  实现上的局部调整，记理由：
+  - `ProbeVolume` 带一个页面内递增的 `serial`，管线键用它：换了探针体，管线就重建；
+  - 先加了 5.1 的 `gpuTestHooks.probeStats`（级数、各级更新次数、是否已预热、本帧是否画了探针），5.2 的断言要用；
+  - `host/render.ts` 在第一帧前调用 `warm`，原属 5.4，导出要看到探针就得先接上；时限的计入留在 5.4
+- [x] 4.4 命中点的间接光：`hit.ts` 的 `shade` 读探针，乘 `r_fill`；`hitCheck` 可关掉读探针。数一遍反射片元的实际纹理绑定（S2-U2），超出 16 张时把状态并进辐照度图集的 alpha。完成判据：S1 的反射用例照过；S2-U2 的结论写进 design
 
 ## 5. 验收与标定
 
-- [ ] 5.1 e2e 用例 `SCENE_E2E_PROBES` 与 `gpuTestHooks`（`probeLayer`、`probeStats`、`probeRegions`、`probeFreeze`）；逐像素参考搬进 `checks.ts`（每像素 256 条路径、3 次命中、最后一次才读探针）。完成判据：AC-S2-1 的比值和扫视、AC-S2-2 的区域辐照度（含 `thin-wall` 的两个新机位）能跑出数值
-- [ ] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
-- [ ] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
-- [ ] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
-- [ ] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图
+
+  结果：S1 的 `trace: AC-S1-1/2/4/5/6` 和 `trace: 5.2` 照过，`probes:` 的 3 个用例照过：
+  - `hitShading` 多一个可选的 `world`（探针节点和 `r_fill`）。视口和导出的反射在探针接入后才传，`hitCheck` 和探针自己的光线不传，仍按环境贴图算；
+  - S2-U2 已决，结论写进 design：追踪层的片元着色器不接探针时绑 8 张采样纹理，接入后 11 张，在 16 张以内，不用合并状态纹理。`trace: 5.2` 留了「不超过 16 张」的断言；
+  - `r_fill` 统一成 `cascade.ts` 的 `AMBIENT_FILL = 1`，合成、命中点、探针光线三处引用同一个值。
+
+  顺带修了 4.2 的一个缺陷：`environmentIrradiance` 返回的是 PMREM 最粗一级，即 E/π，少乘了 π（three 的 `EnvironmentNode` 会乘），探针光线却把它当 E 用。结果是探针覆盖不到的命中点，二次反弹的环境光偏暗 π 倍。现在返回 E。命中点着色沿用 three 的 E/π 约定，探针那份除以 π 后再混合。
+  另记一项给 5.5：视口接入层时的长任务变长了，第 4 到 6 个从 250–330 ms 增到 470–675 ms（反射着色器多了探针查找）
+- [x] 5.1 e2e 用例 `SCENE_E2E_PROBES` 与 `gpuTestHooks`（`probeLayer`、`probeStats`、`probeRegions`、`probeFreeze`）；逐像素参考搬进 `checks.ts`（每像素 256 条路径、3 次命中、最后一次才读探针）。完成判据：AC-S2-1 的比值和扫视、AC-S2-2 的区域辐照度（含 `thin-wall` 的两个新机位）能跑出数值
+
+  结果：`probes:` 的 4 个用例通过，数值在 `evidence/after/probes-5.1.json`，判定留给 5.2：
+  - AC-S2-2，区域误差（合成用的间接光对逐像素参考）：
+    - `cornell`：红墙旁地面 +13%，立方体朝红墙的面 +19%，金属球 −3%；
+    - `thin-wall`：窗下墙面 +9%，墙角 +8%，阴影里的地面 +12%，天花板 +20%；
+    - `@level1`：+7% 到 +13%；
+    - `@level2`：隔窗的室内 +18%，墙外 −2%；
+    - `physical-noon`：−3% 到 +6%；
+    - 整图平均差 5.5%–13.1%。
+    `@level1` 的探针图里，天花板接缝和窗下沿有成串的亮斑；
+  - AC-S2-1：固定点 100° 对 45° 为 1.001。扫视按「各角度可见点的均值」是 0.896–1.064，按「每个点在各角度之间」是 0.977–1.029；
+  - 钩子：`probeStats`（4.3 已加），`probeRegions`（导出最后一帧之后用这张图的探针体跑 `checks.ts` 的 `probeCheck`，`host/render.ts` 的 `shoot` 调用）。`probeFreeze` 属于 S2-U9 的开关，随 5.4 加；
+  - `thin-wall` 的两个远机位定义在用例的 `probeViews` 里。`@level1` 从房间一角看对角，相距 5.5 m，超出第 0 级前方的 3 m。`@level2` 在屋外隔窗看，用 85 mm 镜头，室内离摄像机 6–9.5 m。在屋里怎么站，房间都整个落在第 1 级的盒子里，所以第 2 级只能从屋外测。
+
+  修了 4.1/4.2 的一个缺陷：编辑器的视图世界 Z 朝上（`space.ts`），`originCell` 却按 Y 朝上取「水平分量」。后果有两个：
+  - 沿视图 y 轴看的摄像机，盒子不往前推，第 2 级只覆盖到前方 8 m。`physical-noon` 9 m 外的墙因此覆盖度为 0，误差 −28%；
+  - 俯仰时盒子会上下偏移。
+  改为按 Z 朝上之后：`physical-noon` 的整图平均差从 17.6% 降到 5.5%，`cornell` 从 16.2% 降到 13.0%，`thin-wall` 天花板从 +26% 降到 +20%。单测和冒烟夹具都改成了 Z 朝上。
+
+  实现上的局部调整，记理由：
+  - 参考的路径追原始几何（`handle.reflect`），不追代理，以免代理的误差混进「探针自身的误差」；
+  - 参考和像素的表面点都从主光线命中得到，不读光栅的深度和法线：一个 pass 里就能拿到命中点、法线和 `kd · c`；
+  - `hit.ts` 的 `radiance` 拆出 `bounce`，给出继续路径需要的命中点和反照率。探针光线的结果不变
+- [x] 5.2 漏光与亮度（AC-S2-1、AC-S2-2、S2-U3、S2-U6、S2-U7）：调重定位和 Chebyshev 参数，记下 `cornell`、`thin-wall`、`physical-noon` 对照参考的结果；`r_fill`、短半径 AO 的对照图交 owner。完成判据：结果与图写进 evidence；没达标或要改 `r_fill` 的地方先交 owner，不自行放宽
+
+  结果（2026-10-26），详见 `evidence/ac-s2-2.md`。owner 当天定了三件事：`cornell` 立方体那一处按已知偏差接受；AC-S2-1 用逐点读法判定；S2-U7 不加短 AO。漏光图和 AC-S2-1 的前后对照留到验收时由 owner 看图：
+  - 采样点偏移从 0.3 × 间距调到 0.5 × 间距；
+  - 按 AC 的口径，只剩 `cornell` 立方体朝红墙的面 +21% 超出 ±15%。试过偏移的大小与方向、重定位、Chebyshev 指数，都改不了它；
+  - 3 次命中的参考低估了薄墙场景的误差：追 6 次时 `thin-wall` 是 +7% 到 +19%，`@level2` 室内是 +31%；
+  - AC-S2-1：逐点读法 0.977–1.032，均值读法 0.898–1.063；
+  - S2-U6：`r_fill` 维持 1；S2-U7：对照图已出，缺省不加；
+  - 测试钩子 `gpuTestHooks.probeAO`，只给 S2-U7 的对照用
+- [x] 5.2a 拉远后的割裂（owner 2026-10-26 看图后提出，选定方案 A + B1）：级数按摄像机到场景最远角的距离分配，视口在后台预热级数更多的探针体，热好再切；最粗一级的淡出宽度按盒面到场景的余量取。完成判据：拉远的视角不再只剩天光，原参考视角的 AC 数值不变，对照图交 owner
+
+  结果（2026-10-26），图在 `evidence/after/far-compare.jpg`，数值在 `evidence/after/probes-5.2a.json`：
+  - 拉远的四个视角（`cornell@mid` 13 m、`cornell@far` 19 m、`thin-wall@far`、`physical-noon@far` 22 m）与逐像素参考相比：`cornell@mid` 后墙 −99% → −23%，`cornell@far` 后墙 −100% → −19%，`thin-wall@far` 隔窗的室内 +91% → +7%，`physical-noon@far` 的墙 −32% → +5%；
+  - 原参考视角 AC-S2-2 各区域与 5.2 相同，AC-S2-1 逐点 0.977–1.032 不变；
+  - 级数门槛从「前方覆盖 12 m」改为「完全覆盖 10.5 m」，对角线在 10.5–12 m 之间的场景从三级变为四级（`probes:` 冒烟场景就是一例）；
+  - 新增 e2e `probes: the viewport pulled back past cornell…`：滚轮拉远后从 4 级扩到 5 级，期间每帧都画着探针；`trace: 5.2`、冒烟用例照过；
+  - `trace: 5.2` 接入时的长任务这次是 486–872 ms（5.2 时 470–675 ms），留给 5.5 一起看
+- [x] 5.2b 镜中光照与画面不一致（owner 2026-10-26 报告：镜子里墙上的球反光比画面里亮，镜中有不合逻辑的蓝色）：屏幕命中取合成后的画面，命中点的高光读探针，探针光线把金属当漫反射（design D20）。完成判据：同一面墙直接看与镜中一致，S1 镜面用例与 AC-S2-2 数值不退，对照图交 owner
+
+  结果（2026-10-26），图在 `evidence/after/mirror-compare.jpg`：
+  - 新增诊断 e2e `probes diag: a wall seen in a mirror and out of it`（`SCENE_E2E_PROBE_MIRROR=<dir>`）：thin-wall 加镜子和红球，右墙 11 个点直接看与镜中比较。改前斜看的四个点镜中 211–216、直接看 141–158（蓝白色）；改后各点相差 4% 以内；
+  - 根因有二：屏幕命中取的是光照 pass 的原始输出（不受遮挡的天光与环境高光），世界追踪命中的高光也是天空；
+  - 只改高光时 `trace: a ball close to the mirror` 0.3 m 降到 73%（球背面朝镜子，探针把镜子当黑色），探针光线改后三种间距都是 100%；
+  - AC-S2-2：cornell +15 / +21 / −5，thin-wall +6 / +2 / +5 / +1，physical-noon −0 / −2 / +2 / +4（5.2 时 +14 / +21 / −6、同、−0 / −2 / +3 / +6）；`trace: AC-S1-1` 照过；
+  - `trace: 5.2` 每帧 draw 数改为与接入前相同（多出 `seen` 一趟）；接入时的长任务 946–1134 ms（5.2a 时 486–872 ms），留给 5.5；
+  - 剩下一处小瑕疵：镜中斜看的地面上有一行零星的亮点，是屏幕命中带里几个改走世界追踪的像素，后者算进了斜看的菲涅耳高光
+- [x] 5.3 编辑与收敛（AC-S2-3、S2-U5）：拖动物件、关一盏灯、改太阳高度之后的帧数；拖动期间 `coverage` 不归零；`Viewport.tsx` 的 `LookView` 改用 `viewportSettleFrames`，后台预热期间持续请求帧。录 A0 = 12、α = 0 与 α = 0.5 的拖动对照视频交 owner。完成判据：参考场景回到 10% 以内的帧数达标，压力场景记下帧数
+
+  结果（2026-10-26），数值在 `evidence/after/probes-5.3.json`，视频在 `evidence/after/follow-compare.mp4`。owner 看过视频说「效果还OK」，S2-U5 按现行的 α = 0。
+
+  **完成判据没有全部达到**：
+  - 关灯那一项按字面判不过。owner 2026-10-26 定「判不过，但是先搁置记录 issue，后续再修」，记为 issue `scene-probe-light-off-settle`，验收时按未解决的已知问题列出；
+  - 拖动立方体 22–26 帧，压在 24 帧的线上，同样记进这个 issue。
+
+  测法与结果：
+  - 视口改用 `SceneRenderer.settleFrames`（有探针时为 `viewportSettleFrames`，否则仍是 12）。后台预热期间持续请求帧，5.2a 已经做了；
+  - 新增 e2e `probes: AC-S2-3`（`SCENE_E2E_PROBE_EDITS=<dir>`），测法与 S0 相同，见 evidence README。结果：
+
+    | 编辑 | 回到收敛值 10% 以内 | 按变化量算 | 停止重绘 | 停下后闪烁 |
+    |---|---|---|---|---|
+    | cornell 拖动立方体（X 轴约 0.45 m） | 22–26 帧（两次） | 同左 | 52 / 52 帧 | 0.22%–0.38% |
+    | cornell 关聚光灯 | **42–46 帧** | 4 帧 | 52 / 52 帧 | 0.08%–0.19% |
+    | physical-noon 太阳调低（12:00 → 15:30） | 4 帧 | 4 帧 | 52 / 52 帧 | 0.02%–0.19% |
+    | 大厅：移动一个实例 0.5 m（只记录） | 72 帧 | 72 帧 | 416 / 416 帧 | 0.13% 以内 |
+    | 大厅：太阳方位 135° → 225°（只记录） | 48 帧 | 48 帧 | 416 / 416 帧 | 0.13% 以内 |
+
+  - 关灯后收敛值只剩环境光（原来的 0.6%），残留的多次反弹相对这个很小的值衰减得慢；按「剩下的变化量占变化量的比例」读是 4 帧。用例现在按字面读法判定，这一项不过；
+  - 拖动期间探针体没有换、最小数据年龄不低于 28，`coverage` 不归零；
+  - 拖动的 22–26 帧受跟随期噪声左右，最差的是立方体朝红墙那个窄区域；
+  - 测试钩子：`probeFollow`（跟随期 α，只给 S2-U5 的对照用，内核里多一个 uniform，缺省为 0）、`probeView`、`probeMean`、`viewportHold`、`invalidateViewport`、`viewportSettle`；e2e 的 `viewportStill` 改为等视口停在自己的帧数上；
+  - 排查中顺带确认：拖动把立方体推出房间时，包围盒变大，探针体会按 5.2a 的规则扩级，期间一直画着旧的探针，不是编辑清了数据
+- [x] 5.4 导出（AC-S2-4、S2-U9）：`SceneRenderer.warm`（M = 64，写明前置步骤）；`host/render.ts` 的 `shoot` 在第一帧前 `warm`；继续更新与冻结做成开关，缺省继续更新；`engines.ts` 的 `drawnFrames`、`estimateMs`、`shotBudgetMs`、`viewBudgetMs` 加 `world`，`PROBE_WARMUP = 64`；`exportShots.ts` 的时限计入探针。完成判据：隐藏标签页里参考场景两次导出逐像素相同；两种做法的耗时和对照图交 owner
+
+  结果（2026-10-26），图在 `evidence/after/freeze-compare.jpg`，数值在 `evidence/after/probes-5.4.json`：
+  - `warm` 与 `shoot` 里的调用在 4.x 已接好；这次加了「继续更新 / 冻结」的常数开关（`engines.ts` `PICTURE_AFTER_WARMUP`，缺省继续更新）和测试钩子 `probeAfterWarm`；
+  - 时限：`estimateMs` 在 `world` 时加上探针那一项，每级每帧 10 ms（预热实测 4.3–6.3 ms，与 `worldNs` 一样约取两倍），按 5 级、预热 64 帧加继续更新时的每一帧计。`shotBudgetMs`、`exportShots.ts` 随之变化；`viewBudgetMs` 仍在 60 s 的下限上。局部调整：`drawnFrames` 不变，预热的帧不画，只计入耗时；`PROBE_WARMUP` 移到 `engines.ts`（`cascade.ts` 转出），避免与 `cascade.ts` 循环引用；
+  - S2-U9：两种做法的画面差最多 2–9 级，超过 8 级的像素为 0.000%，肉眼看不出；冻结省下 0.6–1.6 s（机器负载高，只作参考，正式耗时在 5.5）。owner 2026-10-27 同意按建议保留继续更新（画质优先，省下的时间不大），`PICTURE_AFTER_WARMUP` 不变；若 5.5 测出导出时限紧张再议；
+  - **AC-S2-4 不过**：`trace: AC-S1-4` 加了 cornell 的三台摄像机后，两次导出每张都差几级。二分查明探针是确定的，S1 的代码上 cornell 同样不一致，是 S1 遗留的 `scene-trace-export-repeat`，已补进该 issue。mirror-board 的 9 张逐像素相同，导出都画了探针（`gpuTestHooks.picturesWithProbes`）。owner 2026-10-26 定「先记录」：cornell 这一项记在 `scene-trace-export-repeat` 下，验收时按未解决的已知问题列出；
+  - 新增 e2e `probes: 5.4`（`SCENE_E2E_PROBE_EXPORT=<dir>`）；测试钩子 `lastWarm`、`picturesWithProbes`、`probeDigest`、`probesOff`
+- [x] 5.5 性能与复杂场景（AC-S2-6、AC-S2-7、AC-S2-8、S2-U4、S2-U8）：S1 的 `SCENE_E2E_TRACE_PERF` 带与不带这一层、冷热着色器缓存分开；AC-S1-8 用例照跑；`probeLayer = 'original'` 与代理的差异统计和并排图；导出 `r_max` 0.5 与 1.0 的对照。完成判据：数值写进 evidence；超出时按 design「性能」的顺序，每动用一项先交 owner 看图
+
+  **延后为后续验证项**（owner 2026-10-26：「性能测试先不做了，你可以先记录为后续验证项」）。当天机器负载在 6–27 之间，测得的耗时不可用。验收时按 `--method deferred` 记录，承接内容：AC-S2-6 视口增量（参考场景 6 ms、压力场景 12 ms）、AC-S2-7 导出耗时与时限、AC-S2-8 代理与原始几何的差异、S2-U4 轮转分档、S2-U8；连同 5.2a、5.2b 记下的接入长任务（946–1134 ms）、5.4 的 `probeMsPerLevel` 标定和 S2-U9 冻结省下的时间，在机器空闲时一起测
 
 ## 6. 提示与指纹
 
-- [ ] 6.1 提示文字：`base.ts` 的 `TraceNotReady`、`RenderPanel.tsx` 的提示和渲染器说明改为「屏幕外的光照与反射」。完成判据：AC-S2-5 的提示文字用例通过
-- [ ] 6.2 指纹（AC-S2-10）：`fingerprint.go` 加 `world_trace`，实时 GI 的 `lit` 取 1；先在 `fingerprint_test.go` 写单测：实时 GI 的 `lit` 与 S2 前不同，工作台的 `lit`、`clay`、`line` 不变。完成判据：`make check-go PKG=./internal/creativescene/...` 通过；e2e 读画布看到「场景已更新」
+- [x] 6.1 提示文字：`base.ts` 的 `TraceNotReady`、`RenderPanel.tsx` 的提示和渲染器说明改为「屏幕外的光照与反射」。完成判据：AC-S2-5 的提示文字用例通过
+
+  结果（2026-10-26）：按 design「提示文字」的对照表改；视口的探针在后台预热时，渲染选项卡同样显示「正在准备」（`sceneStore` 的 `ui.probesWarming`，由 `LookView` 每帧按 `probeStats.drawn` 写，变化时才写）。`trace: 7.1`、`trace: 6.1` 通过；7.1 改为等探针接上之后再核对「没有提示」
+- [x] 6.2 指纹（AC-S2-10）：`fingerprint.go` 加 `world_trace`，实时 GI 的 `lit` 取 1；先在 `fingerprint_test.go` 写单测：实时 GI 的 `lit` 与 S2 前不同，工作台的 `lit`、`clay`、`line` 不变。完成判据：`make check-go PKG=./internal/creativescene/...` 通过；e2e 读画布看到「场景已更新」
+
+  结果（2026-10-26）：单测先红后绿：`TestWorldTraceStalesTheRealtimeGIsLitOnce` 钉住 S2 前实时 GI 的三个指纹，只有 `lit` 变；`TestEngineFingerprintsOnlyLit` 照过，工作台不变。`make check-go PKG=./internal/creativescene/...` 通过（lint 0 问题）。局部调整：完成判据的「e2e 读画布」改用 Go 单测 `TestFreshnessStalesOnlyTheRealtimeGIsLitAfterS2`，直接走 `Freshness.Check`，也就是画布读取时判「场景已更新」的那一步。前端 e2e 的画布接口是模拟的，测不到后端的判定
 
 ## 7. 收尾
 
-- [ ] 7.1 门禁与契约（AC-S2-11）：`make check-frontend` 通过；逐条核对 `architecture: 场景模块`、`patterns: 场景着色写法`、`data: 场景文档` 与实现一致，不一致的先提 Epic 修订
+- [x] 7.0 代码审计的结论逐条核对（owner 2026-10-26 转来的审计，要求「先逐项检查」）。属实的都改了，核对结果：
+  - **1. 视口多启用一级时退回屏幕空间管线**：属实。`warm` 要求所画的每一级都满 A0 + 14 次，新启用的级是 0 次，于是 `look.world` 变为空、管线重建、全部级每帧更新。改为一旦热了就保持（`volume.ts` `warm`），新级按成熟度淡入（P5）。新增 e2e `probes: a level coming on, and the clay view and back`：thin-wall 外加一个箱子，分配 4 级、屋内启用 3 级，拉远到 4 级。改前有 5 帧没画探针（红），改后每帧都画、探针体不换；
+  - **2. 换显示方式或正交视图时丢掉探针**：属实，与 design「探针体的持有者」不符。改为 `gi` 为假时只不更新，保留探针体；只有底座换了代理层或没有底座时才释放（`sceneRenderer.ts`）。同一个 e2e 覆盖：切到白模再切回，仍是原来的探针体，没有一级被清空；
+  - **3. 只改光照也清空深度矩的历史**：属实。另记几何编辑的计数和年龄（`kernels.ts` 新增每探针一个 `vec2` 缓冲，更新内核的存储缓冲由 6 个增至 7 个，仍在 8 个的上限以内），深度矩的 α 按几何编辑年龄，辐照度的 α 照旧按任意编辑；
+  - **4. 逐级回退每级都采样**：属实。改为从细到粗累加，同一个和；剩下未覆盖的份额小于 1/1024 时不再采更粗的级（`lookup.ts` `UNCOVERED`）。三处调用（探针光线、屏幕采样、反射命中）都走这个函数。
+    - **改的时候查出一个原有缺陷**：只改顺序，`thin-wall@level2` 就从 +13% 变成 +34%。在同一个着色器里同时算新旧两种顺序，覆盖度最多差 0.25；
+    - 原因是传进来的 `V`（例如 `dir.negate()`）、`n` 没有先存成变量。TSL 只在第一个构建它的 `If` 分支里给它赋值，其他级的分支读到的是没赋过的值，与 patterns「`Switch` 之前先存成变量」是同一个坑；
+    - 旧顺序从最粗的级开始，最粗的级几乎总能装下这个点，所以碰巧大多是对的；启用的级少于分配的级时，旧顺序同样会错，5.2a 之后视口里常见；
+    - 改为在函数入口把 P、n、V 存成变量。改后两种顺序逐像素相同（最大差 0.056%，来自 1/1024 的提前结束）；
+    - 重测 AC-S2-1、AC-S2-2（`evidence/after/probes-7.0.json`），与 5.2b 相同：cornell +15 / +21 / −5，thin-wall +6 / +2 / +5 / +1，`@level1` +9 / +2 / +9 / +2，`@level2` +13 / −1，physical-noon 0 / −2 / +2 / +4，扫视逐点 0.977–1.032。导出里最粗的级总能装下这一点，所以旧顺序碰巧没受影响；受影响的是视口里启用的级少于分配的级的时候；
+    - patterns 那一条的范围从 `Switch` 扩到按像素分叉的 `If`、`Loop` 和非常量的 `select`。owner 2026-10-26 同意（「你觉得需要修那就修」），已在 develop 做成 Epic 修订 v6（`6fdc2403`），S2 重新绑定 v6 并交付；
+  - **5. 重定位的编辑范围被下一次编辑覆盖**：属实。改为保留并集，直到每个启用的级在计数变化后都更新过一次才清空（`volume.ts` `reopened`、`seenBy`）；
+  - **`seen` 改变了 S1 的管线**：属实，是 5.2b 有意为之：屏幕命中取画面上显示的东西。底座就绪、探针没在画时（预热期间），画面是 SSGI 的合成，`seen` 取的就是它。代价是多一趟全屏 pass，已记入 5.5。对 AC-S2-4 的二分没有影响：屏幕命中改回原始输出后仍不一致，S1 的代码上也不一致（5.4）；
+  - **`fadeSpans` 的 capped 用 `levels === LEVELS_MAX`**：属实，没有改。分配的级数按场景对角线和最远角距离中较大的一个取，场景总在最粗一级的完全覆盖范围里，capped 只在 5 级都启用时才有作用；
+  - **测试钩子渗进生产路径**：部分属实，已改：`shoot` 写 `lastWarm`、`picturesWithProbes` 以及为计时多等的一次 GPU 只在测试页（`__sceneTest`）里发生。没有收进 `probeDebug`：项目的测试钩子一直平铺在 `gpuTestHooks` 上（S1 的 `traceStats`、`traceDigests` 等），保持一致。`probeMean` 与 `probeView` 的注释位置已改正；
+  - **小问题**：每帧 `new Vector3` 改为复用；`tables.relit()` 原来每帧把全部材质行一起复制再删掉，改为只复制表头和灯光行；`isDue` 的轮转偏移按周期缓存；`frameRotation` 改用 `Math.imul`（340 万帧以内结果与原来逐位相同）；`PROBE_WARMUP`、`PICTURE_AFTER_WARMUP` 只从 `engines.ts` 导入；
+  - **回归**（全部改完后）：`probes: AC-S2-1 and AC-S2-2`、`probes: a level coming on…`（新增）、`probes: the viewport pulled back…`、`trace: 5.2`、`trace: AC-S1-1`、`trace: a ball close to the mirror`、`trace: AC-S1-2`、`probes diag: a wall seen in a mirror`（各点相差 4% 以内，与 5.2b 相同）通过；`probes: AC-S2-3` 只有关灯那一项按字面判不过（49 帧，按变化量 5 帧），与 5.3 相同；拖动 22 帧，停下后闪烁 0.38% 以内。单测 54 项通过，类型检查和 lint 通过；
+  - **图形学旁注**：采样点偏移 0.5 × 间距是 5.2 按数值选的（0.3 → 0.5 时 thin-wall 天花板 +20% → +1%，`evidence/ac-s2-2.md`），短半径 AO 是 owner 定的不加；两条都补进 issue `scene-probe-thin-wall-bias` 的修复方向
+
+- [x] 7.1 门禁与契约（AC-S2-11）：`make check-frontend` 通过；逐条核对 `architecture: 场景模块`、`patterns: 场景着色写法`、`data: 场景文档` 与实现一致，不一致的先提 Epic 修订
+
+  进行中（2026-10-26，5.x 未完，先做了一遍）：
+  - `make check-frontend`：lint、构建通过；单测 885 项里 3 项失败，在 S1 的代码（a81f639c）上同样失败，与 S2 无关，留给 owner 定：`creative-scene-agent` 的「a render that cannot be taken says why」（截图时限文字仍写 60 秒，S1 起实际是 75 秒）、`creative-scene-lighting` 的「light fields go onto three.js lights」（一个字段断言为 null，实际是函数）、`v1-hardening` 的「mobile shell keeps Customers and Calendar direct」（底部导航的写法与现在的 `AppShell` 不符）；
+  - 三条目标契约逐条核对，与实现一致：探针追代理、锐利反射追原始几何；每张导出图帧序号从 0 起、探针随之重建（两次导出探针缓冲逐字节相同）；重新标定的常数（收敛帧数、时限、`GI_INTENSITY`）只在这一层构建时生效；`lookup.ts` 的采样显式指定 LOD；`world_trace` 计入实时 GI 的 `lit` 指纹、前缀不升级。`make check-go PKG=./internal/creativescene/...` 通过
+  - **收尾复核**（2026-10-27，合入 develop 并重新绑定 Epic 修订 v6 之后）：
+    - `make check-frontend` 通过，单测 885 项全过：develop 上原有的 3 项失败已在 develop 修好（`25c1d27b`）；
+    - 按 v6 新加的「分叉之前先存成变量」核对探针代码：`lookup.ts` 符合；`kernels.ts` 重定位里的 `inside` 先在 `If` 里构建、又在分支外的 `select` 里读，凡是取到它的时候那个分支都已执行，结果没有错，改为先存成变量；
+    - 改后 `probes: AC-S2-1 and AC-S2-2`（cornell、thin-wall、`@level2`）的数值和每级开着的探针数与 7.0 相同

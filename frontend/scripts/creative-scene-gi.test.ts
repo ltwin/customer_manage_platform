@@ -59,6 +59,20 @@ test('three’s lighting model adds its indirect light where giSplit reads it', 
   assert.match(read('../node_modules/three/src/nodes/core/MRTNode.js'), /return this\.blendModes\[ name \] \|\| _noBlending;/)
 })
 
+test('c is what three’s indirectDiffuse multiplies the Lambert term by: the multiple scattering, the sheen and the AO (S2 design「合成」)', () => {
+  const model = read('../node_modules/three/src/nodes/functions/PhysicalLightingModel.js')
+  // The arguments diffuseShare calls computeMultiscattering with, and what indirectDiffuse makes of it.
+  assert.match(model, /\tindirectDiffuse\( builder \) \{[^]*?this\.computeMultiscattering\( singleScattering, multiScattering, specularF90, specularColor, this\.iridescenceF0Dielectric \);\n\n\t\tconst diffuse = irradiance\.mul\( BRDF_Lambert\( \{ diffuseColor: diffuseContribution \} \) \)\.mul\( singleScattering\.add\( multiScattering \)\.oneMinus\(\) \)\.toVar\(\);/)
+  assert.match(model, /const sheenAlbedo = IBLSheenBRDF\( \{ normal: normalView, viewDir: positionViewDirection, roughness: sheenRoughness \} \);[^]*?const sheenEnergyComp = sheen\.r\.max\( sheen\.g \)\.max\( sheen\.b \)\.mul\( sheenAlbedo \)\.oneMinus\(\);\n\n\t\t\tdiffuse\.mulAssign\( sheenEnergyComp \);/)
+  assert.match(model, /\tambientOcclusion\( builder \) \{[^]*?reflectedLight\.indirectDiffuse\.mulAssign\( ambientOcclusion \);/)
+  // giSplit's copy of IBLSheenBRDF, which three does not export: the same constants in the same places.
+  const constants = (text: string) => text.match(/-?\s*\d+\.\d+/g)?.map((n) => Number(n.replace(/\s/g, '')))
+  const theirs = model.slice(model.indexOf('const IBLSheenBRDF'), model.indexOf('} );', model.indexOf('const IBLSheenBRDF')))
+  const giSplit = read('../src/creative-scene/render/giSplit.ts')
+  const ours = giSplit.slice(giSplit.indexOf('const sheenAlbedo'), giSplit.indexOf('\n})', giSplit.indexOf('const sheenAlbedo')))
+  assert.deepEqual(constants(ours), constants(theirs))
+})
+
 const renderer = new WebGPURenderer({ canvas: { style: {} } as never })
 // Never initialised (no GPU here): the lighting asks about features, which a device would answer.
 Object.assign(renderer, { hasFeature: () => false })
@@ -119,6 +133,16 @@ test('without the mark a material compiles to what it did before giSplit; with i
     assert.doesNotMatch(split, new RegExp(`\\b${name} = vec4<f32>\\( 0\\.0, 0\\.0, 0\\.0, 0\\.0 \\)`), name)
     assert.match(split, new RegExp(`output\\.m\\d = ${name};`), name)
   }
+  // The indirect diffuse light's alpha is c, at least 1e-3, no longer 1 (S2 design「合成」).
+  // The WGSL names every step: follow GIAmbient back to its alpha.
+  const assigned = (name: string) => split.match(new RegExp(`\\b${name} = (.*);`))?.[1] ?? ''
+  const ambient = assigned(assigned('GIAmbient'))
+  const alpha = ambient.match(/^vec4<f32>\( indirectDiffuse, (\w+) \)$/)?.[1]
+  assert.ok(alpha, ambient)
+  assert.match(assigned(alpha), /^max\( \w+, 0\.001 \)$/)
+  // Sheen adds its energy compensation, which a material without sheen leaves out.
+  const sheen = inLightingPass(() => fragment(new MeshPhysicalNodeMaterial({ sheen: 1, sheenRoughness: 0.5 })))
+  assert.ok(sheen.includes('1.9362') && !split.includes('1.9362'), 'the sheen’s albedo in c, only with sheen')
 })
 
 test('a transparent or transmissive material is not taken apart: its outputs are zero, alpha 0', () => {
@@ -163,6 +187,9 @@ class V {
   oneMinus() {
     return new V(...this.v.map((a) => 1 - a))
   }
+  max(o: V | number) {
+    return this.zip(o, (a, b) => Math.max(a, b))
+  }
 }
 
 const near = (a: V, b: number[]) => a.v.every((x, i) => Math.abs(x - b[i]) < 1e-9) || assert.fail(`${a.v} ≠ ${b}`)
@@ -186,6 +213,37 @@ test('the composite: AO on the indirect light only, reflections in place of the 
   // Not taken apart (glass, the background): the picture as it is, whatever the effects say.
   const zero = new V(0, 0, 0, 0)
   near(composite({ ...neutral, ambient: zero, envSpec: zero, base: zero, ao: new V(0.2), contact: new V(0), reflection: new V(0.5, 0.5, 0.5), cover: new V(1), split: new V(0) }), [0.9, 0.7, 0.5])
+})
+
+test('the composite with the world-space layer: the probes in place of the environment’s irradiance, the ambient light kept apart, no SSGI light (S2 design「合成」)', () => {
+  const output = new V(0.9, 0.7, 0.5, 1)
+  // c = 0.5: half the light on the surface is its diffuse layer's.
+  const ambient = new V(0.2, 0.2, 0.2, 0.5)
+  const envSpec = new V(0.1, 0.1, 0.1, 1)
+  const base = new V(0.8, 0.4, 0.2, 0.25)
+  const kd = [0.6, 0.3, 0.15]
+  const L = 0.4
+  const aLight = kd.map((k) => (k * 0.5 * L) / Math.PI)
+  const world = (probe: V, fill = 1) => ({ probe, ambientLight: new V(L, L, L), fill: new V(fill) })
+  const neutral = { output, base, ambient, envSpec, gi: new V(1, 1, 1), ao: new V(1), contact: new V(1), reflection: new V(0, 0, 0), cover: new V(0), split: new V(1) }
+  // The direct light, and the environment's reflection (cover 0) with it.
+  const direct = [0.6, 0.4, 0.2]
+  const spec = (ao: number) => 0.1 * ao
+  // Nothing covered: the materials' own indirect light, AO on it, as without the layer; the SSGI's light not added.
+  near(composite({ ...neutral, world: world(new V(5, 5, 5, 0)) }), direct.map((d) => d + spec(1) + 0.2))
+  near(composite({ ...neutral, ao: new V(0.5), world: world(new V(5, 5, 5, 0)) }), direct.map((d) => d + spec(0.5) + 0.1))
+  // Covered: kd · c · E / π from the probes, without AO; the ambient lights' share with it, AO on that.
+  const E = 2
+  const probe = kd.map((k) => (k * 0.5 * E) / Math.PI)
+  near(composite({ ...neutral, world: world(new V(E, E, E, 1)) }), direct.map((d, i) => d + spec(1) + probe[i] + aLight[i]))
+  near(composite({ ...neutral, ao: new V(0.5), world: world(new V(E, E, E, 1)) }), direct.map((d, i) => d + spec(0.5) + probe[i] + aLight[i] * 0.5))
+  // Half covered: the two mixed.
+  const env = aLight.map((a) => 0.2 - a)
+  near(composite({ ...neutral, world: world(new V(E, E, E, 0.5)) }), direct.map((d, i) => d + spec(1) + 0.5 * env[i] + 0.5 * probe[i] + aLight[i]))
+  // The fill scales the ambient lights' share alone.
+  near(composite({ ...neutral, world: world(new V(E, E, E, 1), 2) }), direct.map((d, i) => d + spec(1) + probe[i] + 2 * aLight[i]))
+  // The environment's share is never below 0, though the ambient lights outweigh what the material took.
+  near(composite({ ...neutral, ambient: new V(0.005, 0.005, 0.005, 0.5), world: world(new V(0, 0, 0, 0)) }), [0.9, 0.7, 0.5].map((o, i) => o - 0.005 - 0.1 + spec(1) + aLight[i]))
 })
 
 test('the lighting pass’s context is one node per renderer context, so pictures share their render objects', async () => {
@@ -279,12 +337,14 @@ test('time limits follow what a picture costs: pixels, frames, encoding; eight t
   assert.equal(jobRenderCapMs, 25 * 60_000, 'within the job’s 30 minutes')
 })
 
-test('a picture drawing the world-space layer gets its share of time; render_view as if it drew it, and waited the most for it (S1 tasks 6.2)', async () => {
-  const { drawnFrames, estimateMs, shotBudgetMs, traceWaitMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+test('a picture drawing the world-space layer gets its share of time, its probes too; render_view as if it drew it, and waited the most for it (S1 tasks 6.2, S2 tasks 5.4)', async () => {
+  const { drawnFrames, estimateMs, PICTURE_AFTER_WARMUP, PROBE_WARMUP, shotBudgetMs, traceWaitMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
   const frames = drawnFrames('realtime_gi', 'export')
-  // 10 ns a pixel and frame: about twice the most the reference scenes' 2K lit exports took (3.4–4.7 ns).
+  // 10 ns a pixel and frame: about twice the most the reference scenes' 2K lit exports took (3.4–4.7 ns). The probes:
+  // 10 ms a level and frame at five levels, the warm-up's and, updated after it, every frame drawn's.
+  const probes = 10 * 5 * (PROBE_WARMUP + (PICTURE_AFTER_WARMUP === 'update' ? frames : 0))
   const share = (w: number, h: number) => estimateMs('realtime_gi', w, h, frames, 'image/png', true) - estimateMs('realtime_gi', w, h, frames, 'image/png', false)
-  assert.ok(Math.abs(share(2048, 1365) - (2048 * 1365 * frames * 10) / 1e6) < 1e-6, `${share(2048, 1365)}`)
+  assert.ok(Math.abs(share(2048, 1365) - (2048 * 1365 * frames * 10) / 1e6 - probes) < 1e-6, `${share(2048, 1365)}`)
   // Above the floor the limit grows by eight times the share.
   const grown = shotBudgetMs('realtime_gi', 8192, 5461, frames, 'image/png', true) - shotBudgetMs('realtime_gi', 8192, 5461, frames, 'image/png', false)
   assert.ok(Math.abs(grown - 8 * share(8192, 5461)) < 1e-6, `${grown}`)

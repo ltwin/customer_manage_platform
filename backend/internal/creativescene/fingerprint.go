@@ -24,6 +24,9 @@ const (
 
 	fingerprintVersion = "v1"
 	viewTransformAgX   = "agx"
+	// worldTraceVersion is how the real-time GI's lit images draw what is
+	// off the picture: 1 since S2's probes (scene-probe-gi).
+	worldTraceVersion = 1
 )
 
 // Passes in node column order.
@@ -106,6 +109,12 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 		if s.Render.Engine != EngineWorkbench {
 			render.Engine = s.Render.Engine
 		}
+		// The real-time GI's lit images take light from what is off the
+		// picture since S2 (scene-probe-gi, AC-S2-10): its exports from
+		// before read as stale once.
+		if s.Render.Engine == EngineRealtimeGI {
+			render.WorldTrace = worldTraceVersion
+		}
 	}
 	// Clay and lit images have been tone mapped with AgX since W1
 	// (scene-display-look); the key makes their older exports stale once
@@ -139,6 +148,7 @@ type fingerprintRender struct {
 	Mode       string  `json:"mode"`
 	ExposureEV float64 `json:"exposure_ev,omitempty"`
 	Engine     string  `json:"engine,omitempty"`
+	WorldTrace int     `json:"world_trace,omitempty"`
 }
 
 // Freshness is the canvas's ExportFreshness: it compares each export image's

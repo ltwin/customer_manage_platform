@@ -13,6 +13,8 @@
 > - 复现：`SCENE_E2E_ONLY="trace perf: S0’s hall exported twice" SCENE_E2E_TRACE_PERF=<目录>`，约 2.5 分钟一轮，要多跑几轮。下一步：机器空闲时新旧代码交替各测 8 轮左右；再找运行时里会随导出变化的输入（例如帧中途的 `compileAsync` 会按真实时间推进 `nodeFrame`）。
 > - **owner 决定（2026-10-26）**：这项偶发的 1–3 级差异按已知问题接受，S1 不因此阻塞，以后再排查；排查时按上一条的下一步做。
 
+> **补充（2026-10-26，S2 任务 5.4，`feat/scene-probe-gi`）**：参考场景 `cornell` 也会出现。S1 的代码（a81f639c）在普通无头页面里连续导出 cornell 的材质光照，每次都差最多 6–8 级，超过 8 级的像素为 0.0000%，差异散在整张图上，不只在光滑物体上；隐藏标签页里最多 16 级。关掉这一层逐像素相同；mirror-board 两次相同。S2 里探针缓冲两次逐字节相同，不画探针也照样不同，所以与探针无关。复现：S2 分支 `SCENE_E2E_ONLY="probes: 5.4" SCENE_E2E_PROBE_EXPORT=1 SCENE_E2E_PROBE_EXPORT_SCENES= SCENE_E2E_PROBE_EXPORT_REPEAT=4 SCENE_E2E_PROBE_EXPORT_UNDRAWN=1`。这让 S2 的 AC-S2-4（参考场景两次导出逐像素相同）在 cornell 上过不了。**owner 决定（2026-10-26）**：「先记录」，S2 验收时把 cornell 这一项按未解决的已知问题列出，以后与上面的偶发差异一起排查。
+
 > 状态：先记录（owner 2026-10-25「一时半会儿难以解决的问题可以先记issue，然后往后续推进」）。症状每次都能复现，根因未查明，下面的根因是待验证的假设。来源是 `scene-offscreen-reflections`（S1）的未决事项 S1-U5，代码在 `feat/scene-offscreen-reflections`，合入 develop 之前按该分支复现。
 
 ## Symptom

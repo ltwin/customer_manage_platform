@@ -1,0 +1,365 @@
+import { Box3, FloatType, HalfFloatType, LinearFilter, Matrix3, Matrix4, NearestFilter, Quaternion, Vector3, Vector4, type Camera, type Scene } from 'three'
+import * as tsl from 'three/tsl'
+import { StorageTexture, type ComputeNode, type WebGPURenderer } from 'three/webgpu'
+import type { TSLNode } from '../../materials/patterns.ts'
+import { gpuTestHooks } from '../gpu.ts'
+import { preExposure, type PhysicalExposure } from '../../world/exposure.ts'
+import type { TraceHandle } from '../trace/base.ts'
+import { hitShading, type HitShading } from '../trace/hit.ts'
+import type { TraceLayer } from '../trace/layer.ts'
+import { AMBIENT_FILL, activeLevels, fadeSpans, DEPTH_TEXELS, IRRADIANCE_TEXELS, isDue, LEVELS_MAX, LEVELS_MIN, levelsFor, originCell, periodsFor, PICTURE, PROBES, RAYS, SETTLE_UPDATES, VIEWPORT, type Hysteresis } from './cascade.ts'
+import { rayKernel, rescaleKernel, updateKernel, type ProbeData } from './kernels.ts'
+import { DEPTH_TILE, IRRADIANCE_TILE, TILES, type ProbeNodes } from './lookup.ts'
+
+// A camera-centred cascade of irradiance probes (S2 design「探针体」「模块
+// 职责与协作」): its buffers and atlases, allocated for the levels the scene
+// takes, and step, the one entry a frame goes through, the viewport's and a
+// picture's warm-up alike. The viewport's volume is its SceneRenderer's,
+// kept across pipelines while the proxies it traces are the same layer; a
+// picture's is made for it and freed with it (Epic I3).
+
+type Op = (...args: TSLNode[]) => TSLNode
+const T = tsl as unknown as Record<string, Op>
+const { instancedArray, texture, uniform } = T
+
+/** What the probes are told by the base (render/trace/base.ts TraceBase): what changed, where the scene is, how large its top level is. */
+export type ProbeSource = {
+  readonly bounds: Box3
+  readonly geometryVersion: number
+  readonly lightingVersion: number
+  takeEdits(): Box3
+  /** The material rows: a root of the top level each (the viewport's rotation, cascade.ts periodsFor). */
+  readonly slots: readonly unknown[]
+}
+
+/** The viewport's volume rotates its levels and follows edits; a picture's updates every level every frame. */
+export type Mode = 'viewport' | 'picture'
+
+/** Frames the geometry stands still before the probes near it may relocate again (S2 design「编辑的分类」). */
+const SETTLED = 4
+
+/** Each frame's turn of the probes' rays: a uniform rotation from the frame number alone (Shoemake 1992; P3). */
+export function frameRotation(frame: number, out = new Matrix3()): Matrix3 {
+  // mulberry32: three numbers in [0, 1) from the frame.
+  let a = Math.imul(frame, 0x9e3779b9) >>> 0
+  const next = () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const [u1, u2, u3] = [next(), next(), next()]
+  const q = new Quaternion(Math.sqrt(1 - u1) * Math.sin(2 * Math.PI * u2), Math.sqrt(1 - u1) * Math.cos(2 * Math.PI * u2), Math.sqrt(u1) * Math.sin(2 * Math.PI * u3), Math.sqrt(u1) * Math.cos(2 * Math.PI * u3))
+  return out.setFromMatrix4(new Matrix4().makeRotationFromQuaternion(q))
+}
+
+let volumes = 0
+
+const corner = new Vector3()
+const eye = new Vector3()
+const look = new Vector3()
+
+/** The distance from eye to the farthest corner of bounds; 0 for none. */
+function farthestOf(bounds: Box3, eye: Vector3): number {
+  let d = 0
+  if (!bounds.isEmpty()) for (let c = 0; c < 8; c++) d = Math.max(d, eye.distanceTo(corner.set(c & 1 ? bounds.max.x : bounds.min.x, c & 2 ? bounds.max.y : bounds.min.y, c & 4 ? bounds.max.z : bounds.min.z)))
+  return d
+}
+
+/** The levels a scene's bounds take for a camera at eye: as many as its diagonal needs, or the camera's distance to their farthest corner when that is more (S2 design「级数」). */
+function levelsAt(bounds: Box3, eye: Vector3): number {
+  return levelsFor(Math.max(bounds.isEmpty() ? 0 : bounds.getSize(corner).length(), farthestOf(bounds, eye)))
+}
+
+export class ProbeVolume {
+  /** The layer the probes trace: the volume's identity (a new one is a cold start). */
+  readonly layer: TraceLayer
+  /** Which volume this is, over the page's life: a pipeline drawing another is built again (sceneRenderer.ts keyOf). */
+  readonly serial = ++volumes
+  readonly mode: Mode
+  readonly allocated: number
+  readonly nodes: ProbeNodes
+  /** Levels drawn (cascade.ts activeLevels). */
+  levels = LEVELS_MIN
+  private readonly hysteresis: Hysteresis
+  private readonly data: ProbeData
+  private readonly buffers: TSLNode[]
+  private readonly handle: TraceHandle
+  private readonly scene: Scene
+  private readonly source: ProbeSource
+  private readonly renderer: WebGPURenderer
+  private readonly release: (attribute: object) => void
+  private kernels: { rays: ComputeNode; update: ComputeNode; rescale: ComputeNode; shading: HitShading; environment: boolean } | null = null
+  /** Updates each level has had since it was cleared: the viewport's warm-up reads it (warm). */
+  private readonly updates = new Array<number>(LEVELS_MAX).fill(0)
+  /** The levels the scene and the camera took at the last step (levelsAt): more than allocated is outgrown. */
+  private wanted: number
+  private seen: { geometry: number; lighting: number } | null = null
+  private edits = 0
+  private geometryEdits = 0
+  private relocations = 0
+  private still = 0
+  private readonly pending = new Box3()
+  /** Where the relocation window is open again, and the levels drawn that have not updated since it was. */
+  private readonly reopened = new Box3()
+  private unseen = new Set<number>()
+  private sEnv: number | null = null
+  private disposed = false
+  private warmed = false
+
+  constructor(renderer: WebGPURenderer, handle: TraceHandle, scene: Scene, source: ProbeSource, camera: Camera, mode: Mode, release: (attribute: object) => void) {
+    this.renderer = renderer
+    this.handle = handle
+    this.layer = handle.probes
+    this.scene = scene
+    this.source = source
+    this.mode = mode
+    this.release = release
+    this.hysteresis = mode === 'picture' ? PICTURE : VIEWPORT
+    // As many levels as the scene and the camera now need; a camera pulled back past them later outgrows these (S2 design「级数」).
+    this.allocated = this.wanted = levelsAt(source.bounds, camera.getWorldPosition(eye))
+    const n = this.allocated
+    const atlas = (width: number, height: number, type: typeof HalfFloatType | typeof FloatType, filter: typeof LinearFilter | typeof NearestFilter) => {
+      const t = new StorageTexture(width, height)
+      t.type = type
+      t.minFilter = t.magFilter = filter
+      t.generateMipmaps = false
+      return t
+    }
+    const atlases = {
+      irradiance: atlas(TILES * IRRADIANCE_TILE, TILES * IRRADIANCE_TILE * n, HalfFloatType, LinearFilter),
+      depth: atlas(TILES * DEPTH_TILE, TILES * DEPTH_TILE * n, HalfFloatType, LinearFilter),
+      state: atlas(TILES * 2, TILES * n, FloatType, NearestFilter),
+    }
+    const store = (count: number, type: string) => instancedArray(count, type)
+    const probes = n * PROBES
+    this.buffers = [store(probes * RAYS, 'vec4'), store(probes * IRRADIANCE_TEXELS ** 2, 'vec4'), store(probes * DEPTH_TEXELS ** 2, 'vec2'), store(probes, 'vec4'), store(probes, 'vec4'), store(probes, 'vec4'), store(probes, 'vec2')]
+    const [rays, irradiance, depth, offsets, cells, ages, geometry] = this.buffers
+    this.nodes = {
+      allocated: n,
+      irradiance: texture(atlases.irradiance),
+      depth: texture(atlases.depth),
+      state: texture(atlases.state),
+      origins: Array.from({ length: LEVELS_MAX }, () => uniform(new Vector4())),
+      levels: uniform(LEVELS_MIN, 'uint'),
+      fadeLo: uniform(new Vector3(1, 1, 1)),
+      fadeHi: uniform(new Vector3(1, 1, 1)),
+      fadeIn: uniform(this.hysteresis.A0),
+      toExposed: uniform(1),
+    }
+    this.data = {
+      nodes: this.nodes,
+      rays,
+      irradiance,
+      depth,
+      offsets,
+      cells,
+      ages,
+      geometry,
+      atlases,
+      u: {
+        due: Array.from({ length: LEVELS_MAX }, () => uniform(0, 'uint')),
+        rotation: uniform(new Matrix3()),
+        frame: uniform(0, 'uint'),
+        A0: uniform(this.hysteresis.A0),
+        alphaMax: uniform(this.hysteresis.alphaMax),
+        geometryCount: uniform(0),
+        follow: uniform(0),
+        editCount: uniform(0),
+        relocationCount: uniform(0),
+        editedMin: uniform(new Vector3(Infinity, Infinity, Infinity)),
+        editedMax: uniform(new Vector3(-Infinity, -Infinity, -Infinity)),
+        toStored: uniform(1),
+        rescale: uniform(1),
+        fill: uniform(AMBIENT_FILL),
+      },
+    }
+  }
+
+  /** Whether the scene, or the camera's distance from it, has grown past the levels allocated: the owner makes a new volume (a cold start). */
+  get outgrown(): boolean {
+    const b = this.source.bounds
+    return Math.max(this.wanted, levelsFor(b.isEmpty() ? 0 : b.getSize(corner).length())) > this.allocated
+  }
+
+  /**
+   * Whether every level drawn has had A0 + 14 updates since it was cleared: the viewport takes the probes up then
+   * (S2 design「就绪的那一刻」). Once warm, warm for good: a level that comes on later fades in by its maturity
+   * (P5, lookup.ts), the pipeline drawing them the while.
+   */
+  get warm(): boolean {
+    this.warmed ||= this.updates.slice(0, this.levels).every((u) => u >= this.hysteresis.A0 + SETTLE_UPDATES)
+    return this.warmed
+  }
+
+  /** Frames between a level's updates: the viewport rotates its levels (cascade.ts periodsFor), a picture updates every one every frame. */
+  get periods(): readonly number[] {
+    return this.mode === 'picture' ? [1, 1, 1, 1, 1] : periodsFor(this.source.slots.length)
+  }
+
+  /** For the e2e (gpu.ts probeStats): the levels allocated and drawn, each one's updates since it was cleared and period, warm. */
+  get stats(): { serial: number; allocated: number; levels: number; updates: number[]; periods: number[]; warm: boolean; edits: number; relocations: number } {
+    return { serial: this.serial, allocated: this.allocated, levels: this.levels, updates: this.updates.slice(0, this.allocated), periods: this.periods.slice(0, this.allocated), warm: this.warm, edits: this.edits, relocations: this.relocations }
+  }
+
+  /** The kernels, built once, and again if the scene gained an environment since (hit.ts takes it as it builds). */
+  private built() {
+    const environment = this.scene.environment !== null
+    if (this.kernels && (this.kernels.environment || !environment)) return this.kernels
+    this.disposeKernels()
+    const shading = hitShading(this.handle.probes, this.handle.tables, this.scene)
+    const count = this.allocated * PROBES * RAYS
+    this.kernels = { rays: rayKernel(this.data, shading, count), update: updateKernel(this.data, count), rescale: rescaleKernel(this.data, count), shading, environment }
+    return this.kernels
+  }
+
+  /**
+   * One frame of the probes (S2 design「ProbeVolume.step」), after the
+   * frame's applyExposure, base.sync and the hit's update: the levels drawn,
+   * the boxes of those due placed and locked, what changed counted, the sky's
+   * scale followed, then the rays of every level due and their updates.
+   * warming: every level drawn updated every frame (a cold start's warm-up).
+   */
+  step(frame: number, camera: Camera, warming = false) {
+    const k = this.built()
+    k.shading.update()
+    camera.getWorldPosition(eye)
+    camera.getWorldDirection(look)
+    this.wanted = levelsAt(this.source.bounds, eye)
+    this.levels = activeLevels(this.allocated, farthestOf(this.source.bounds, eye), this.levels)
+    this.nodes.levels.value = this.levels
+    const periods = warming ? [1, 1, 1, 1, 1] : this.periods
+    const due = Array.from({ length: this.levels }, (_, l) => l).filter((l) => isDue(l, frame, periods))
+    for (const l of due) (this.nodes.origins[l].value as Vector4).set(...originCell(l, [eye.x, eye.y, eye.z], [look.x, look.y, look.z]), 0)
+    // The coarsest level's fade at each face, for its box as last locked.
+    const top = this.levels - 1
+    const o = this.nodes.origins[top].value as Vector4
+    const b = this.source.bounds
+    const spans = fadeSpans(top, [o.x, o.y, o.z], b.isEmpty() ? null : { min: b.min.toArray(), max: b.max.toArray() }, [eye.x, eye.y, eye.z], this.levels === LEVELS_MAX)
+    ;(this.nodes.fadeLo.value as Vector3).fromArray(spans.lo)
+    ;(this.nodes.fadeHi.value as Vector3).fromArray(spans.hi)
+    this.follow()
+    const u = this.data.u
+    const physical = this.scene.userData.physical as PhysicalExposure | undefined
+    const sEnv = physical?.skyLightScale ?? 1
+    if (this.sEnv !== null && sEnv !== this.sEnv) {
+      u.rescale.value = sEnv / this.sEnv
+      this.renderer.compute(k.rescale, this.allocated * PROBES * RAYS)
+    }
+    this.sEnv = sEnv
+    u.toStored.value = sEnv / preExposure.value
+    this.nodes.toExposed.value = preExposure.value / sEnv
+    frameRotation(frame, u.rotation.value as Matrix3)
+    u.frame.value = frame >>> 0
+    u.follow.value = this.mode === 'viewport' ? (gpuTestHooks.probeFollow ?? 0) : 0
+    due.forEach((l, i) => (u.due[i].value = l))
+    if (due.length === 0) return
+    const threads = due.length * PROBES * RAYS
+    this.renderer.compute(k.rays, threads)
+    this.renderer.compute(k.update, threads)
+    for (const l of due) this.updates[l]++
+    this.seenBy(due)
+  }
+
+  /** What changed since the last step (S2 design「编辑的分类」): an edit count the probes reset their edit age by; the relocation count, once geometry has stood still, for where it changed. */
+  private follow() {
+    const s = this.source
+    const now = { geometry: s.geometryVersion, lighting: s.lightingVersion }
+    const was = this.seen
+    this.seen = now
+    if (!was) {
+      // A cold start: every probe relocates and gathers anyway.
+      s.takeEdits()
+      return
+    }
+    const u = this.data.u
+    if (now.geometry !== was.geometry || now.lighting !== was.lighting) u.editCount.value = ++this.edits
+    if (now.geometry !== was.geometry) {
+      u.geometryCount.value = ++this.geometryEdits
+      this.pending.union(s.takeEdits())
+      this.still = 0
+      return
+    }
+    if (this.pending.isEmpty() || ++this.still < SETTLED) return
+    // Added to where the last edits reopened it, till every level drawn has updated since: a coarse level's turn
+    // may come after another edit has settled.
+    this.reopened.union(this.pending)
+    ;(u.editedMin.value as Vector3).copy(this.reopened.min)
+    ;(u.editedMax.value as Vector3).copy(this.reopened.max)
+    u.relocationCount.value = ++this.relocations
+    this.unseen = new Set(Array.from({ length: this.levels }, (_, l) => l))
+    this.pending.makeEmpty()
+  }
+
+  /** The levels just updated have seen the relocation count; once every level drawn has, where it reopened is let go. */
+  private seenBy(due: readonly number[]) {
+    for (const l of due) this.unseen.delete(l)
+    if (this.unseen.size > 0 || this.reopened.isEmpty()) return
+    this.reopened.makeEmpty()
+    ;(this.data.u.editedMin.value as Vector3).copy(this.reopened.min)
+    ;(this.data.u.editedMax.value as Vector3).copy(this.reopened.max)
+  }
+
+  /**
+   * For the e2e and checks.ts: each probe's irradiance history (64 texels of
+   * rgb, as stored), offset and on (offsets), world cell and ages, read back.
+   */
+  async inspect(): Promise<{ irradiance: Float32Array; offsets: Float32Array; cells: Float32Array; ages: Float32Array; origins: number[][] }> {
+    const read = async (b: TSLNode) => new Float32Array(await this.renderer.getArrayBufferAsync((b as { value: never }).value))
+    const [, irradiance, , offsets, cells, ages] = this.buffers
+    return {
+      irradiance: await read(irradiance),
+      offsets: await read(offsets),
+      cells: await read(cells),
+      ages: await read(ages),
+      origins: this.nodes.origins.map((o) => (o.value as Vector4).toArray().slice(0, 3)),
+    }
+  }
+
+  /**
+   * For the e2e (AC-S2-3): each level drawn's mean irradiance as stored (rgb)
+   * over its probes on and gathered, and the least data and edit age among
+   * them; null when the volume was let go as it was read.
+   */
+  async means(): Promise<{ serial: number; levels: number[][]; ages: { data: number; edit: number }[] } | null> {
+    const read = await this.inspect().catch((e: unknown) => {
+      if (this.disposed) return null
+      throw e
+    })
+    if (!read) return null
+    const { irradiance, offsets, ages } = read
+    const texels = IRRADIANCE_TEXELS ** 2
+    const levels: number[][] = []
+    const least: { data: number; edit: number }[] = []
+    for (let l = 0; l < this.levels; l++) {
+      const sum = [0, 0, 0]
+      let n = 0
+      let data = Infinity
+      let edit = Infinity
+      for (let p = l * PROBES; p < (l + 1) * PROBES; p++) {
+        if (offsets[p * 4 + 3] <= 0 || ages[p * 4] <= 0) continue
+        for (let t = 0; t < texels; t++) for (let c = 0; c < 3; c++) sum[c] += irradiance[(p * texels + t) * 4 + c]
+        n += texels
+        data = Math.min(data, ages[p * 4])
+        edit = Math.min(edit, ages[p * 4 + 1])
+      }
+      levels.push(sum.map((v) => v / Math.max(n, 1)))
+      least.push({ data, edit })
+    }
+    return { serial: this.serial, levels, ages: least }
+  }
+
+  private disposeKernels() {
+    if (!this.kernels) return
+    for (const c of [this.kernels.rays, this.kernels.update, this.kernels.rescale]) c.dispose()
+    this.kernels = null
+  }
+
+  dispose() {
+    this.disposed = true
+    this.disposeKernels()
+    for (const b of this.buffers) this.release((b as { value: object }).value)
+    for (const t of Object.values(this.data.atlases)) t.dispose()
+  }
+}

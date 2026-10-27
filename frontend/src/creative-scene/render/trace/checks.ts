@@ -1,6 +1,6 @@
-import { Color, DoubleSide, FloatType, Vector3, type AmbientLight, type Light, type Material, type Object3D, type PerspectiveCamera, type Scene } from 'three'
+import { Color, DoubleSide, FloatType, HalfFloatType, LinearFilter, Vector3, type AmbientLight, type Light, type Material, type Object3D, type PerspectiveCamera, type Scene } from 'three'
 import * as tsl from 'three/tsl'
-import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, RendererUtils, type MeshPhysicalNodeMaterial, type WebGPURenderer } from 'three/webgpu'
+import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, RendererUtils, StorageTexture, type MeshPhysicalNodeMaterial, type WebGPURenderer } from 'three/webgpu'
 import { materialEntry } from '../../materials/catalog.ts'
 import { slotOf, unknownGrey } from '../../materials/instances.ts'
 import { patternFns, type TSLNode } from '../../materials/patterns.ts'
@@ -9,8 +9,12 @@ import { preExposure } from '../../world/exposure.ts'
 import { gpuOf } from '../gpu.ts'
 import type { TraceHandle } from './base.ts'
 import { collectLights, collectMeshes, type Slot, type Traced } from './collect.ts'
-import { hitShading, type ShadeMode } from './hit.ts'
+import { hitShading, pcg, unit, type ShadeMode } from './hit.ts'
 import type { TraceLayer } from './layer.ts'
+import { AMBIENT_FILL, cellOf, PROBES, slotOf as probeSlot } from '../probes/cascade.ts'
+import { cellNode, probeIrradiance, slotNode } from '../probes/lookup.ts'
+import type { ProbeVolume } from '../probes/volume.ts'
+import { decodeOct, encodeOct, octDecode, octEncode } from '../probes/octahedral.ts'
 import { traceFirst } from './wgsl.ts'
 
 // The e2e's checks of the layer against the raster, on the viewport's own
@@ -23,11 +27,17 @@ import { traceFirst } from './wgsl.ts'
 //    outputs, the light without shadows (the raster without bump), and
 //    shadow or not where the raster is wholly one or the other.
 // Both draw the traced meshes alone, and the lights.
+//  - atlasCheck (S2 design S2-U1): what the probe kernels need of three in
+//    compute, an RGBA16F storage texture written, then loaded and sampled.
+//  - probeGridCheck (S2 design「验证与交付」): the probes' TSL grid and
+//    octahedral functions against their JS twins, negative cells included.
+//  - probeCheck (AC-S2-2): the indirect irradiance a picture's probes give
+//    each pixel against a per-pixel reference, region by region.
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { Fn, float, fwidth, getViewPosition, length, luminance, max, normalize, select, uniform, varying, vec2, vec3, vec4 } = T
-const { modelScale, normalLocal, positionLocal, positionView, screenUV } = tsl as unknown as Record<string, TSLNode>
+const { Fn, If, float, fwidth, getViewPosition, instancedArray, ivec2, length, luminance, max, normalize, select, texture, textureLoad, textureStore, uniform, uvec2, varying, vec2, vec3, vec4 } = T
+const { instanceIndex, modelScale, normalLocal, positionLocal, positionView, screenUV } = tsl as unknown as Record<string, TSLNode>
 
 /** A layer no pass of the editor's draws: the traced meshes and the lights alone, for the raster's half. */
 const CHECK_LAYER = 28
@@ -260,7 +270,7 @@ export async function hitCheck(renderer: WebGPURenderer, scene: Scene, camera: P
 async function check(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, slots: readonly Slot[], width: number): Promise<HitReport> {
   const size = sizeOf(camera, width)
   const traced = collectMeshes(scene, slotOf)
-  const shading = hitShading(handle, scene)
+  const shading = hitShading(handle.reflect, handle.tables, scene)
   shading.update()
   const modes: ShadeMode[] = ['id', 'albedo', 'outputs', 'unshadowed', 'direct', 'directUnshadowed']
   const hits = new Map(
@@ -407,4 +417,419 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
       pass.dispose()
     }
   }
+}
+
+export type AtlasCheck = {
+  /** Texels read back exactly as written (textureLoad), of all of them. */
+  stored: number
+  texels: number
+  /** Bilinear samples at an explicit level within tolerance of the filtered fp16 values, of all of them. */
+  sampled: number
+  samples: number
+  /** The largest error of a sample channel against its tolerance (within it at 1 or less). */
+  worst: number
+}
+
+/**
+ * S2 design S2-U1: what the probe kernels need of three r186 in compute.
+ * One pass writes an RGBA16F storage texture (textureStore), the next loads
+ * every texel back and samples it bilinearly at an explicit level
+ * (textureSampleLevel), each into a buffer read back here. The values are
+ * exact in fp16, so a load returns them as they are and a sample their
+ * bilinear blend.
+ */
+export async function atlasCheck(renderer: WebGPURenderer): Promise<AtlasCheck> {
+  const N = 8
+  const S = 16
+  const atlas = new StorageTexture(N, N)
+  atlas.type = HalfFloatType
+  atlas.minFilter = atlas.magFilter = LinearFilter
+  const valueAt = (x: number, y: number) => [x * 10.5, y * 100.5, 30000, -(x + y) * 0.25]
+  const loaded = instancedArray(N * N, 'vec4')
+  const sampled = instancedArray(S, 'vec4')
+  const write = Fn(() => {
+    const x = instanceIndex.mod(N)
+    const y = instanceIndex.div(N)
+    textureStore(atlas, uvec2(x, y), vec4(float(x).mul(10.5), float(y).mul(100.5), 30000, float(x.add(y)).mul(-0.25))).toWriteOnly()
+  })().compute(N * N)
+  // Sample i sits 0.2 of a texel right of texel 2(i mod 4) and 0.8 below texel 2⌊i / 4⌋.
+  const at = (i: number) => [(2 * (i % 4) + 0.2 + 0.5) / N, (2 * Math.floor(i / 4) + 0.8 + 0.5) / N]
+  const read = Fn(() => {
+    loaded.element(instanceIndex).assign(textureLoad(atlas, ivec2(instanceIndex.mod(N), instanceIndex.div(N))))
+    If(instanceIndex.lessThan(S), () => {
+      const u = float(instanceIndex.mod(4)).mul(2).add(0.7).div(N)
+      const v = float(instanceIndex.div(4)).mul(2).add(1.3).div(N)
+      sampled.element(instanceIndex).assign(texture(atlas, vec2(u, v)).level(0))
+    })
+  })().compute(N * N)
+  try {
+    await renderer.computeAsync(write)
+    await renderer.computeAsync(read)
+    const texels = new Float32Array(await renderer.getArrayBufferAsync(loaded.value))
+    const samples = new Float32Array(await renderer.getArrayBufferAsync(sampled.value))
+    let stored = 0
+    for (let t = 0; t < N * N; t++) {
+      const want = valueAt(t % N, Math.floor(t / N))
+      if (want.every((w, c) => texels[4 * t + c] === w)) stored++
+    }
+    let good = 0
+    let worst = 0
+    for (let i = 0; i < S; i++) {
+      const [u, v] = at(i)
+      const tx = u * N - 0.5
+      const ty = v * N - 0.5
+      const x0 = Math.floor(tx)
+      const y0 = Math.floor(ty)
+      const fx = tx - x0
+      const fy = ty - y0
+      const lerp = (a: number, b: number, f: number) => a + (b - a) * f
+      const corners = [valueAt(x0, y0), valueAt(x0 + 1, y0), valueAt(x0, y0 + 1), valueAt(x0 + 1, y0 + 1)]
+      let e = 0
+      for (let c = 0; c < 4; c++) {
+        const want = lerp(lerp(corners[0][c], corners[1][c], fx), lerp(corners[2][c], corners[3][c], fx), fy)
+        // Filtering weights carry 8 bits of fraction on some GPUs (a 1/256 step of the corners' spread), and the result is fp16-rounded.
+        const spread = Math.max(...corners.map((k) => k[c])) - Math.min(...corners.map((k) => k[c]))
+        const slack = spread / 256 + Math.abs(want) / 1024 + 1e-6
+        e = Math.max(e, Math.abs(samples[4 * i + c] - want) / slack)
+      }
+      worst = Math.max(worst, e)
+      if (e <= 1) good++
+    }
+    return { stored, texels: N * N, sampled: good, samples: S, worst }
+  } finally {
+    atlas.dispose()
+    write.dispose()
+    read.dispose()
+  }
+}
+
+export type GridCheck = {
+  /** Slots whose world cell (cellOf) the GPU gives as the JS does, of all tried; the same for the slot of a cell (slotOf). */
+  cells: number
+  slots: number
+  tried: number
+  /** Directions the GPU encodes within 1e-5 of the JS, and decodes back within 1e-5, of all tried. */
+  encoded: number
+  decoded: number
+  directions: number
+  /** The first few that differ, for the report. */
+  samples: unknown[]
+}
+
+/**
+ * The probes' grid and octahedral functions in TSL against their JS twins
+ * (cascade.ts, octahedral.ts), on this device: for boxes with negative and
+ * positive origins, each slot's world cell and that cell's slot back; for
+ * directions over the sphere (the axes and the folds among them), the
+ * octahedral point and the direction it decodes to.
+ */
+export async function probeGridCheck(renderer: WebGPURenderer): Promise<GridCheck> {
+  const origins: [number, number, number][] = [[0, 0, 0], [-8, -3, -4], [-23, 5, -17], [-1, -1, -1], [-16, -32, 48], [7, -100, 3]]
+  const slots = [0, 1, 15, 16, 17, 255, 256, 257, 1234, 2047, 3000, 4095]
+  const pairs = origins.flatMap((o) => slots.map((slot) => [...o, slot]))
+  const directions: [number, number, number][] = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [1, 1, 0], [-1, 0, -1], [0.3, -0.2, -0.9], [-0.7, 0.7, 0]]
+  for (let k = 0; k < 118; k++) {
+    const y = 1 - (2 * (k + 0.5)) / 118
+    const r = Math.sqrt(1 - y * y)
+    const a = k * Math.PI * (3 - Math.sqrt(5))
+    directions.push([r * Math.cos(a), r * Math.sin(a), y])
+  }
+  const unitDirs = directions.map((d) => {
+    const l = Math.hypot(...d)
+    return d.map((x) => x / l) as [number, number, number]
+  })
+  const T2 = tsl as unknown as Record<string, Op>
+  const { instanceIndex } = tsl as unknown as Record<string, TSLNode>
+  const input = T2.instancedArray(new Float32Array(pairs.flat()), 'vec4')
+  const cellsOut = T2.instancedArray(pairs.length, 'vec4')
+  const dirIn = T2.instancedArray(new Float32Array(unitDirs.flatMap((d) => [...d, 0])), 'vec4')
+  const octOut = T2.instancedArray(unitDirs.length, 'vec4')
+  const grid = Fn(() => {
+    const at = input.element(instanceIndex)
+    const cell = cellNode(T2.uint(at.w), at.xyz).toVar()
+    cellsOut.element(instanceIndex).assign(vec4(cell, float(slotNode(cell))))
+  })().compute(pairs.length)
+  const oct = Fn(() => {
+    const e = octEncode(dirIn.element(instanceIndex).xyz).toVar()
+    const back = octDecode(e)
+    octOut.element(instanceIndex).assign(vec4(e, back.xy))
+  })().compute(unitDirs.length)
+  // The decoded direction's z, separately: four floats a result.
+  const octZ = T2.instancedArray(unitDirs.length, 'float')
+  const z = Fn(() => {
+    octZ.element(instanceIndex).assign(octDecode(octEncode(dirIn.element(instanceIndex).xyz)).z)
+  })().compute(unitDirs.length)
+  try {
+    await renderer.computeAsync([grid, oct, z])
+    const c = new Float32Array(await renderer.getArrayBufferAsync(cellsOut.value))
+    const o = new Float32Array(await renderer.getArrayBufferAsync(octOut.value))
+    const oz = new Float32Array(await renderer.getArrayBufferAsync(octZ.value))
+    const samples: unknown[] = []
+    let cells = 0
+    let slotsBack = 0
+    pairs.forEach(([x, y, zz, slot], i) => {
+      const want = cellOf(slot, [x, y, zz])
+      const got = [c[4 * i], c[4 * i + 1], c[4 * i + 2]]
+      if (want.every((w, k) => w === got[k])) cells++
+      else if (samples.length < 8) samples.push({ origin: [x, y, zz], slot, want, got })
+      if (c[4 * i + 3] === probeSlot(want) && probeSlot(want) === slot) slotsBack++
+      else if (samples.length < 8) samples.push({ cell: want, slot, gpu: c[4 * i + 3] })
+    })
+    let encoded = 0
+    let decoded = 0
+    unitDirs.forEach((d, i) => {
+      const e = encodeOct(d)
+      const back = decodeOct(e)
+      if (Math.abs(o[4 * i] - e[0]) <= 1e-5 && Math.abs(o[4 * i + 1] - e[1]) <= 1e-5) encoded++
+      else if (samples.length < 8) samples.push({ dir: d, want: e, got: [o[4 * i], o[4 * i + 1]] })
+      const got = [o[4 * i + 2], o[4 * i + 3], oz[i]]
+      if (got.every((g, k) => Math.abs(g - back[k]) <= 1e-5 && Math.abs(g - d[k]) <= 1e-5)) decoded++
+      else if (samples.length < 8) samples.push({ dir: d, decoded: got })
+    })
+    return { cells, slots: slotsBack, tried: pairs.length, encoded, decoded, directions: unitDirs.length, samples }
+  } finally {
+    grid.dispose()
+    oct.dispose()
+    z.dispose()
+  }
+}
+
+
+// --- probeCheck --------------------------------------------------------------------------------------------------
+
+/** Paths a reference pass traces from each pixel, and the hits each path goes to (S0 probes.md「参考」). */
+const PATHS = 8
+const BOUNCES = 3
+
+export type ProbeRegion = {
+  /** Pixels in the region the layer hits. */
+  pixels: number
+  /** The indirect irradiance as the composite takes it: the probes' as far as they cover, the environment's for the rest (luminance, exposed). */
+  drawn: number
+  /** The probes' alone, where they cover; and how far they cover, on average. */
+  probes: number
+  coverage: number
+  /** The environment's (A_env's irradiance). */
+  environment: number
+  /** The reference's. */
+  reference: number
+  /** drawn over reference, less 1. */
+  error: number
+}
+
+export type ProbeCheck = {
+  width: number
+  height: number
+  pathsPerPixel: number
+  ms: number
+  probes: ProbeVolume['stats']
+  /** Each level allocated: its box's lowest cell, the probes on, and their mean data age. */
+  levels: { origin: number[]; on: number; dataAge: number }[]
+  regions: Record<string, ProbeRegion>
+  /** Over every pixel hit: the mean difference |drawn − reference| over the mean reference. */
+  meanDifference: number
+  /** Per pixel, row 0 at the top: the drawn and the reference irradiance's luminance, null where nothing is hit. */
+  drawn: (number | null)[]
+  reference: (number | null)[]
+}
+
+/**
+ * The indirect irradiance at each pixel's surface, from a picture's probes
+ * as the composite draws it and from a reference: the pixel's own cosine-
+ * weighted paths, BOUNCES hits each shaded as the probes' rays shade theirs,
+ * through the layer's original geometry; the last hit alone reads the
+ * probes, so their leaks reach the reference only through two albedos (S0
+ * probes.md: the first version read them at the first hit and hid half the
+ * error). Neither counts the pixel's own ambient lights (A_lt, apart in the
+ * composite). Exposed as the picture is: run with its preExposure set.
+ * regions are fractions of the picture (x0, y0, x1, y1, from the top left).
+ */
+/** The probes' irradiance at each pixel of a small picture, read again each frame (probeView). */
+export type ProbeView = { width: number; height: number; read(): Promise<Float32Array>; dispose(): void }
+
+/**
+ * The irradiance a camera's picture takes from the probes as the composite
+ * does (AC-S2-3, S2 task 5.3): at each pixel's first hit, their light, the
+ * environment's where they do not cover it; its luminance in r, −1 where
+ * nothing is hit, the coverage in g. Made once for a camera and a volume,
+ * then read as often as the viewport draws.
+ */
+export function probeView(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, width = 192): ProbeView {
+  const size = sizeOf(camera, width)
+  const { uint } = tsl as unknown as Record<string, Op>
+  const shading = hitShading(handle.reflect, handle.tables, scene)
+  const fill = float(AMBIENT_FILL)
+  const pass = rayPass(camera, size, (eye, dir) => {
+    const first = shading.bounce(eye, dir, uint(0), () => vec3(0), fill)
+    const out = vec4(-1, 0, 0, 0).toVar()
+    If(first.front.greaterThan(0.5), () => {
+      const { pre, coverage } = probeIrradiance(volume.nodes, first.P, first.n, dir.negate())
+      out.assign(vec4(luminance(pre.add(shading.environmentIrradiance(first.n).mul(float(1).sub(coverage)))), coverage, 0, 0))
+    })
+    return out
+  })
+  const target = floatTarget(size, false)
+  return {
+    ...size,
+    async read() {
+      shading.update()
+      const state = RendererUtils.resetRendererState(renderer, undefined as never)
+      try {
+        renderer.setRenderTarget(target)
+        pass.quad.render(renderer)
+      } finally {
+        RendererUtils.restoreRendererState(renderer, state)
+      }
+      return readBack(renderer, target, size)
+    },
+    dispose() {
+      pass.dispose()
+      target.dispose()
+    },
+  }
+}
+
+export async function probeCheck(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera, handle: TraceHandle, volume: ProbeVolume, { regions, width = 384, passes = 32, bounces = BOUNCES }: { regions: Record<string, readonly number[]>; width?: number; passes?: number; bounces?: number }): Promise<ProbeCheck> {
+  const started = performance.now()
+  const size = sizeOf(camera, width)
+  const { Loop, abs: absN, cos, cross, sin, sqrt, uint, uvec2: uv2 } = tsl as unknown as Record<string, Op>
+  const shading = hitShading(handle.reflect, handle.tables, scene)
+  shading.update()
+  const fill = float(AMBIENT_FILL)
+  const none = () => vec3(0)
+  /** The irradiance at a point from the probes as the composite takes it, toward V: (rgb, coverage). */
+  const fromProbes = (P: TSLNode, n: TSLNode, V: TSLNode) => {
+    const { pre, coverage } = probeIrradiance(volume.nodes, P, n, V)
+    return { E: pre.add(shading.environmentIrradiance(n).mul(float(1).sub(coverage))), pre, coverage }
+  }
+  const pixelKey = () => {
+    const xy = uv2(screenUV.mul(vec2(size.width, size.height)))
+    return xy.x.add(xy.y.mul(uint(size.width)))
+  }
+  /** A cosine-weighted direction about n from a hash (Duff et al. 2017's basis). */
+  const cosineAbout = (n: TSLNode, h: TSLNode) => {
+    const u1 = unit(pcg(h.bitXor(uint(0x68e31da4)))).toVar()
+    const u2 = unit(pcg(h.bitXor(uint(0xb5297a4d)))).toVar()
+    const sz = select(n.z.lessThan(0), float(-1), float(1))
+    const a = float(-1).div(sz.add(n.z))
+    const t = vec3(float(1).add(sz.mul(n.x).mul(n.x).mul(a)), sz.mul(n.x).mul(n.y).mul(a), sz.mul(n.x).negate())
+    const b = cross(n, t)
+    const r = sqrt(u1)
+    const phi = u2.mul(2 * Math.PI)
+    return normalize(t.mul(r.mul(cos(phi))).add(b.mul(r.mul(sin(phi)))).add(n.mul(sqrt(absN(float(1).sub(u1))))))
+  }
+  const lum = (v: TSLNode) => luminance(v)
+  // (drawn, environment, coverage, the probes' pre-multiplied), the luminances; coverage −1 where nothing is hit.
+  const surface = rayPass(camera, size, (eye, dir) => {
+    const first = shading.bounce(eye, dir, uint(0), none, fill)
+    const out = vec4(0, 0, -1, 0).toVar()
+    If(first.front.greaterThan(0.5), () => {
+      const p = fromProbes(first.P, first.n, dir.negate())
+      out.assign(vec4(lum(p.E), lum(shading.environmentIrradiance(first.n)), p.coverage, lum(p.pre)))
+    })
+    return out
+  })
+  const seed = uniform(0, 'uint')
+  const reference = rayPass(camera, size, (eye, dir) => {
+    const first = shading.bounce(eye, dir, uint(0), none, fill)
+    const sum = vec3(0).toVar()
+    If(first.front.greaterThan(0.5), () => {
+      const key = pcg(pixelKey().bitXor(pcg(seed.add(uint(0x9e3779b9))))).toVar()
+      // Loops, not unrolled: each hit's shading inlines every preset and the probes.
+      Loop(PATHS, ({ i }: { i: TSLNode }) => {
+        const path = pcg(key.add(uint(i).mul(uint(0x85ebca6b)))).toVar()
+        const o = first.lifted.toVar()
+        const d = cosineAbout(first.n, path).toVar()
+        const through = vec3(1).toVar()
+        const alive = float(1).toVar()
+        Loop(bounces, ({ i: b }: { i: TSLNode }) => {
+          If(alive.greaterThan(0.5), () => {
+            const h = pcg(path.add(uint(b).add(1).mul(uint(0xc2b2ae35)))).toVar()
+            const last = select(uint(b).equal(uint(bounces - 1)), float(1), float(0)).toVar()
+            const r = shading.bounce(o, d, h, (P, n) => fromProbes(P, n, d.negate()).E.mul(last), fill)
+            sum.addAssign(through.mul(r.L))
+            // On from a front face that is not the last, toward a new cosine-weighted direction.
+            alive.assign(r.front.mul(float(1).sub(last)))
+            through.mulAssign(r.albedo)
+            o.assign(r.lifted)
+            d.assign(cosineAbout(r.n, pcg(h)))
+          })
+        })
+      })
+    })
+    return vec4(sum, select(first.front.greaterThan(0.5), float(PATHS), float(0)))
+  })
+  const targets = [floatTarget(size, false), floatTarget(size, false)]
+  const state = RendererUtils.resetRendererState(renderer, undefined as never)
+  const n = size.width * size.height
+  const sums = new Float64Array(n * 4)
+  let pixels: Float32Array
+  try {
+    renderer.setRenderTarget(targets[0])
+    surface.quad.render(renderer)
+    pixels = await readBack(renderer, targets[0], size)
+    for (let k = 0; k < passes; k++) {
+      seed.value = k
+      renderer.setRenderTarget(targets[1])
+      reference.quad.render(renderer)
+      const got = await readBack(renderer, targets[1], size)
+      for (let i = 0; i < n * 4; i++) sums[i] += got[i]
+    }
+  } finally {
+    RendererUtils.restoreRendererState(renderer, state)
+    for (const d of [...targets, surface, reference]) d.dispose()
+  }
+  const held = await volume.inspect()
+  const levels = Array.from({ length: volume.allocated }, (_, l) => {
+    let on = 0
+    let age = 0
+    for (let p = l * PROBES; p < (l + 1) * PROBES; p++) {
+      if (held.offsets[4 * p + 3] > 0.5) on++
+      age += held.ages[4 * p]
+    }
+    return { origin: held.origins[l], on, dataAge: age / PROBES }
+  })
+  const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+  const drawn: (number | null)[] = new Array(n).fill(null)
+  const ref: (number | null)[] = new Array(n).fill(null)
+  let difference = 0
+  let total = 0
+  for (let i = 0; i < n; i++) {
+    if (pixels[4 * i + 2] < 0 || sums[4 * i + 3] <= 0) continue
+    drawn[i] = pixels[4 * i]
+    ref[i] = (Math.PI * lumOf(sums[4 * i], sums[4 * i + 1], sums[4 * i + 2])) / sums[4 * i + 3]
+    difference += Math.abs(drawn[i]! - ref[i]!)
+    total += ref[i]!
+  }
+  const out: Record<string, ProbeRegion> = {}
+  for (const [name, [x0, y0, x1, y1]] of Object.entries(regions)) {
+    const acc = { pixels: 0, drawn: 0, probes: 0, covered: 0, coverage: 0, environment: 0, reference: 0 }
+    for (let y = Math.floor(y0 * size.height); y < Math.floor(y1 * size.height); y++) {
+      for (let x = Math.floor(x0 * size.width); x < Math.floor(x1 * size.width); x++) {
+        const i = y * size.width + x
+        if (drawn[i] === null) continue
+        const c = pixels[4 * i + 2]
+        acc.pixels++
+        acc.drawn += drawn[i]!
+        acc.environment += pixels[4 * i + 1]
+        acc.coverage += c
+        acc.reference += ref[i]!
+        if (c > 0) {
+          acc.probes += pixels[4 * i + 3] / c
+          acc.covered++
+        }
+      }
+    }
+    const m = Math.max(acc.pixels, 1)
+    out[name] = {
+      pixels: acc.pixels,
+      drawn: acc.drawn / m,
+      probes: acc.probes / Math.max(acc.covered, 1),
+      coverage: acc.coverage / m,
+      environment: acc.environment / m,
+      reference: acc.reference / m,
+      error: acc.drawn / Math.max(acc.reference, 1e-12) - 1,
+    }
+  }
+  return { ...size, pathsPerPixel: passes * PATHS, ms: Math.round(performance.now() - started), probes: volume.stats, levels, regions: out, meanDifference: difference / Math.max(total, 1e-12), drawn, reference: ref }
 }

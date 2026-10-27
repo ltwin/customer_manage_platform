@@ -119,16 +119,21 @@ const (
 // sceneOf is pinnedScene with its sky, render settings and camera fields as JSON.
 func sceneOf(t *testing.T, sky, render, camera string) Scene {
 	t.Helper()
+	s, err := decodeScene(payloadOf(sky, render, camera))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// payloadOf is sceneOf's scene as stored.
+func payloadOf(sky, render, camera string) creativecontent.Payload {
 	raw := `{"environment":{"sky":` + sky + `,"ambient":{"color":"#ffffff","intensity":0.4},"fog":null},
 		"render":` + render + `,"objects":[{"id":"sobj_000000000000000000001","kind":"camera","name":"","parent_id":null,"order":0,
 		"transform":{"position":[0,1,5],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"camera":` + camera + `},
 		{"id":"sobj_000000000000000000002","kind":"light","name":"","parent_id":null,"order":1,
 		"transform":{"position":[0,3,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"visible":true,"locked":false,"light":{"type":"point","intensity":50}}]}`
-	s, err := decodeScene(creativecontent.Payload{Scene: json.RawMessage(raw)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return creativecontent.Payload{Scene: json.RawMessage(raw)}
 }
 
 const pinnedCamera = "sobj_000000000000000000001"
@@ -225,6 +230,48 @@ func TestEngineFingerprintsOnlyLit(t *testing.T) {
 		}
 		if other, _ := Fingerprint(pinnedScene(t, `{"mode":"lit","engine":"realtime_gi","resolution":"4k"}`), pinnedCamera, pass); other != got {
 			t.Fatalf("realtime_gi at 4k, %s: %s, want %s", pass, other, got)
+		}
+	}
+}
+
+// S2 (scene-probe-gi, AC-S2-10): the real-time GI's lit images take light
+// from what is off the picture now, without a version bump: its lit exports
+// from before read as stale once. Clay and line art are the workbench's and
+// stay; so does the workbench's lit (TestEngineFingerprintsOnlyLit).
+func TestWorldTraceStalesTheRealtimeGIsLitOnce(t *testing.T) {
+	beforeS2 := map[string]string{
+		PassClay: pinned[PassClay],
+		PassLine: pinned[PassLine],
+		PassLit:  "v1:9ce7dfd991c9c28787fb4d510bf06d6860b1614f790a9f803f2db5908ba4f5fa",
+	}
+	gi := pinnedScene(t, `{"mode":"lit","engine":"realtime_gi"}`)
+	for _, pass := range Passes {
+		got, _ := Fingerprint(gi, pinnedCamera, pass)
+		if (got == beforeS2[pass]) != (pass != PassLit) {
+			t.Fatalf("realtime_gi, %s: %s against the one before S2 %s", pass, got, beforeS2[pass])
+		}
+	}
+}
+
+// AC-S2-10 as a canvas reads it: exports taken before S2 of a real-time GI
+// scene, and of a workbench one, against the scenes as they are. Only the
+// real-time GI's lit reads as stale.
+func TestFreshnessStalesOnlyTheRealtimeGIsLitAfterS2(t *testing.T) {
+	beforeS2 := map[string]string{PassClay: pinned[PassClay], PassLine: pinned[PassLine], PassLit: "v1:9ce7dfd991c9c28787fb4d510bf06d6860b1614f790a9f803f2db5908ba4f5fa"}
+	current := map[string]creativecontent.Revision{
+		"cwdoc_gi":    {Payload: payloadOf(proceduralSky, `{"mode":"lit","engine":"realtime_gi"}`, `{}`)},
+		"cwdoc_bench": {Payload: payloadOf(proceduralSky, `{"mode":"lit"}`, `{}`)},
+	}
+	var sources []creativecanvas.ExportSource
+	for _, pass := range Passes {
+		sources = append(sources,
+			creativecanvas.ExportSource{NodeID: "gi_" + pass, DocumentID: "cwdoc_gi", CameraObjectID: pinnedCamera, Pass: pass, Fingerprint: beforeS2[pass]},
+			creativecanvas.ExportSource{NodeID: "bench_" + pass, DocumentID: "cwdoc_bench", CameraObjectID: pinnedCamera, Pass: pass, Fingerprint: pinned[pass]})
+	}
+	states := Freshness{}.Check(sources, current)
+	for node, state := range states {
+		if want := map[bool]string{true: creativecanvas.BasedOnStale, false: creativecanvas.BasedOnCurrent}[node == "gi_"+PassLit]; state != want {
+			t.Fatalf("%s: %s, want %s (all %v)", node, state, want, states)
 		}
 	}
 }

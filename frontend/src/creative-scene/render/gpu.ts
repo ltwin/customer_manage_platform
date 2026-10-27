@@ -184,6 +184,12 @@ export type SceneGPU = {
    * design A13). Known a GPU round trip after the pipeline is built.
    */
   pipelineFailed(material: object): boolean
+  /**
+   * Whether a compute pipeline of the probes' (a compute node named probe_…,
+   * render/probes/kernels.ts) failed, as pipelineFailed tells for a
+   * material (S2 design「能力与显存」: the layer then fails for good).
+   */
+  computeFailed(): boolean
   /** Called with each uncaptured device error's message; returns the unsubscribe. */
   onError(listener: (message: string) => void): () => void
   dispose(): void
@@ -215,6 +221,7 @@ type Internals = {
 /** The backend's side of a render pipeline (WebGPUPipelineUtils): error is set once the device has refused it. */
 type PipelineBackend = {
   createRenderPipeline(renderObject: { material: { userData: Record<string, unknown> }; pipeline: object }, promises: unknown): void
+  createComputePipeline(pipeline: { computeProgram: { name?: string } }, bindings: unknown, promises?: unknown): void
   get(object: object): { error?: boolean }
 }
 
@@ -272,6 +279,8 @@ export const gpuTestHooks = {
   marches: 0,
   /** What the viewport's last frame drew (SceneRenderer.lastFrame; Viewport.tsx LookView, e2e only). */
   lastFrame: null as FrameStats | null,
+  /** The viewport's probes after its last frame, and whether it drew with them (SceneRenderer.probeStats; e2e only). */
+  probeStats: null as unknown,
   /** The viewport's last frame drawn n times and waited for once, its milliseconds (Viewport.tsx LookView; e2e only). */
   redrawViewport: null as ((n: number) => Promise<number>) | null,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
@@ -299,6 +308,38 @@ export const gpuTestHooks = {
   traceShade: null as ShadeMode | null,
   /** The viewport's layer against its raster, a primary ray a pixel (render/trace/checks.ts; Viewport.tsx LookView, e2e only); null till it is ready. */
   traceDepth: null as ((width?: number, bias?: number) => Promise<DepthCheck | null>) | null,
+  /**
+   * Set before an export: its first lit picture drawn with the probes reads, after its last frame, the regions'
+   * (fractions of the picture: x0, y0, x1, y1) irradiance from the probes and from a per-pixel reference
+   * (render/trace/checks.ts probeCheck; host/render.ts shoot) into result.
+   */
+  probeRegions: null as { regions: Record<string, readonly number[]>; width?: number; passes?: number; bounces?: number; result?: unknown } | null,
+  /** S2-U7's comparison: the probes' light times the SSGI's AO at this radius in metres (render/realtimeGI.ts), set before a picture's pipeline is built; null, as shipped. */
+  probeAO: null as number | null,
+  /** What the probes trace (render/trace/base.ts handle): the proxies, as always; 'original' at tier 1 traces the original instead, for S2's AC-S2-8. */
+  probeLayer: 'proxy' as 'proxy' | 'original',
+  /** S2-U9's comparison: a picture's probes after its warm-up updated or frozen, in place of engines.ts PICTURE_AFTER_WARMUP; null, as shipped. */
+  probeAfterWarm: null as 'update' | 'freeze' | null,
+  /** The last picture's warm-up (host/render.ts shoot): its ms, the GPU's work waited for, and the levels it warmed; null without the probes. */
+  lastWarm: null as { ms: number; levels: number; after?: unknown; digests?: string[] } | null,
+  /** The probes kept and stepped but not drawn: the layer's reflections alone (e2e only: AC-S2-4's which half). */
+  probesOff: false,
+  /** Set, and a picture digests its probes' buffers after the warm-up and after its last frame into lastWarm.digests (e2e only: AC-S2-4's which half). */
+  probeDigest: false,
+  /** Lit pictures drawn with the probes, over the page's life (host/render.ts shoot): an export drew them. */
+  picturesWithProbes: 0,
+  /** S2-U5's comparison: the viewport's probes keep this much history in the A0 updates after an edit (render/probes/kernels.ts); null, none, as shipped. */
+  probeFollow: null as number | null,
+  /** The viewport asks for no frame of its own while set: the e2e draws them one at a time (redrawViewport), reading between (AC-S2-3). */
+  viewportHold: false,
+  /** Asks the viewport for a frame (R3F's invalidate; Viewport.tsx LookView, e2e only). */
+  invalidateViewport: null as (() => void) | null,
+  /** The frames the viewport draws on its own once still (SceneRenderer.settleFrames; Viewport.tsx LookView, e2e only). */
+  viewportSettle: 0,
+  /** The viewport's picture as the probes light it, width pixels across: each pixel's irradiance luminance, −1 where nothing is hit (render/trace/checks.ts probeView; Viewport.tsx LookView, e2e only); null without. */
+  probeView: null as ((width?: number) => Promise<{ width: number; height: number; serial: number; lumas: number[] } | null>) | null,
+  /** The viewport's probes read back: each level drawn's mean irradiance as stored over the probes on and gathered (Viewport.tsx LookView, e2e only); null without. */
+  probeMean: null as (() => Promise<{ serial: number; levels: number[][]; ages: { data: number; edit: number }[] } | null>) | null,
   /** The same rays shaded at their hits against the raster, mesh by mesh (AC-S1-2; as traceDepth). */
   traceHits: null as ((width?: number, turn?: [number, number, number]) => Promise<HitReport | null>) | null,
 }
@@ -402,12 +443,20 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
 
   // The pipeline last built for each watched material, to tell whether it failed (pipelineFailed).
   const watched = new WeakMap<object, object>()
+  // The probes' compute pipelines, by kernel name: the last built of each.
+  const computes = new Map<string, object>()
   const pipelines = renderer.backend as unknown as PipelineBackend
   if (backend === 'webgpu') {
     const create = pipelines.createRenderPipeline.bind(pipelines)
     pipelines.createRenderPipeline = (renderObject, promises) => {
       create(renderObject, promises)
       if (renderObject.material.userData.watchPipeline === true) watched.set(renderObject.material, renderObject.pipeline)
+    }
+    const createCompute = pipelines.createComputePipeline.bind(pipelines)
+    pipelines.createComputePipeline = (pipeline, bindings, promises) => {
+      createCompute(pipeline, bindings, promises)
+      const name = pipeline.computeProgram.name ?? ''
+      if (name.startsWith('probe_')) computes.set(name, pipeline)
     }
   }
   const errorListeners = new Set<(message: string) => void>()
@@ -466,6 +515,10 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     pipelineFailed(material) {
       const p = watched.get(material)
       return p !== undefined && pipelines.get(p).error === true
+    },
+    computeFailed() {
+      for (const p of computes.values()) if (pipelines.get(p).error === true) return true
+      return false
     },
     onError(listener) {
       errorListeners.add(listener)
