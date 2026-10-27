@@ -1,6 +1,6 @@
 import { Box3, Matrix4, Vector3, type Camera, type DirectionalLight, type DirectionalLightShadow, type Mesh, type Object3D, type OrthographicCamera, type PerspectiveCamera, type Vector2 } from 'three'
 import { renderGroup, uniform } from 'three/tsl'
-import { ReferenceNode, UniformNode, type NodeBuilder, type NodeFrame } from 'three/webgpu'
+import { ReferenceNode, UniformNode, type NodeBuilder, type NodeFrame, type RenderTarget } from 'three/webgpu'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { towardSun, volumesCast } from './volumes/shadow.ts'
 import { CASCADES } from './volumes/state.ts'
@@ -33,6 +33,8 @@ export type CascadeLight = Object3D & { target: Object3D; shadow?: DirectionalLi
 class SunCascades extends CSMShadowNode {
   /** Each cascade's slice as a share of near..far, which the shader picks the map by. */
   declare _cascades: Vector2[]
+  /** Each cascade's shadow node, with its own map. */
+  declare _shadowNodes: { shadowMap: RenderTarget | null; dispose(): void }[]
   /** Toward the light, a unit vector, as each render starts: the volumes' shadow (W5) goes that way. */
   private readonly toward
 
@@ -95,6 +97,14 @@ export function cascadeSunShadow(light: DirectionalLight): () => void {
   shadow.shadowNode = node
   return () => {
     if (shadow.shadowNode === node) delete shadow.shadowNode
+    // CSMShadowNode.dispose (three r186) leaves its cascades' shadow nodes, and with them their maps, on the
+    // device. A stand-in's cascades (sceneRenderer.ts) were never drawn into: three set up freeing their depth
+    // with the materials that bound it, not with the target, so it goes on its own.
+    for (const cascade of node._shadowNodes) {
+      const map = cascade.shadowMap
+      cascade.dispose()
+      map?.depthTexture?.dispose()
+    }
     node.dispose()
   }
 }

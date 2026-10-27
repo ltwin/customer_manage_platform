@@ -1,12 +1,12 @@
 {
   "uid": "8a117f55-e43d-4600-8cbf-536f1b1334b5",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-view-render-target-leak",
   "kind": "issue",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-27T16:25:38.606Z",
-  "updatedAt": "2026-10-27T17:10:37.426Z",
+  "updatedAt": "2026-10-27T17:11:23.686Z",
   "risk": {
     "factors": []
   },
@@ -24,8 +24,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "f181cab4eeea1a51c45b79ac2d093a0f70091570",
+    "at": "2026-10-27T17:11:23.255Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "ffc569a6492bd35ef5696640d31e6d3446999b5ee4c1c58a483fa5b18154adcd"
+    },
+    "preExisting": [
+      ".lti/snapshots/ffc569a6492bd35ef5696640d31e6d3446999b5ee4c1c58a483fa5b18154adcd.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
