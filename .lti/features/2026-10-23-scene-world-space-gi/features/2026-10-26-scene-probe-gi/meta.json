@@ -1,6 +1,6 @@
 {
   "uid": "10a75e36-fde5-4cc7-84e4-8894d7979371",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-probe-gi",
   "kind": "feature",
   "assurance": "governed",
@@ -27,7 +27,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-26T08:22:45.718Z",
-  "updatedAt": "2026-10-27T03:44:52.066Z",
+  "updatedAt": "2026-10-27T03:46:14.551Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-27T03:46:14.486Z",
+    "summary": "S2 以 squash 提交 52db88de 合回 develop；实施分支原 HEAD b8a00eca，已 reset --keep 到 squash 提交，本地标签 archive/scene-probe-gi 保留原历史",
+    "method": "manual",
+    "limitations": "squash 合并：合入树与分支 b8a00eca 逐字节相同（git diff --quiet），分支上的验证原样适用，合并点未另跑 check-merge",
+    "sourceCommit": "52db88de600bfec85a189b611ea69853f610c955",
+    "targetCommit": "52db88de600bfec85a189b611ea69853f610c955",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "62e678b170f02c14c191dc46201bbd8913039862b6d23aae138aae6431eb3591"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
