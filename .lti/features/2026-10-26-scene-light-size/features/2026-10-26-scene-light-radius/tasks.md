@@ -17,12 +17,18 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 2. 光源模型
 
-- [ ] 2.1 灯光子类与注册：
+- [x] 2.1 灯光子类与注册：
   - 新增 `render/lightModel/lights.ts`：三个灯光子类、三个阴影子类（无参构造，覆写 `copy()`）、`sizeOf`；
   - 新增 `nodes.ts`，`installLightModel` 在 `gpu.ts` 建渲染器后调用；
   - `objects/lights.ts` 改用子类，写 `size`；`SceneLights.tsx` 的重建键加「尺寸 > 0」。
   - 本任务里节点只做「尺寸为 0 时原样返回父类，非 0 时乘有效距离」，不改高光和漫反射。
   - 完成判据：尺寸全为 0 的 `occluder-wall`、`frame-two-lights` 与 S0 的基线逐像素一致（这时还没修条纹）；`make check-frontend` 通过。
+  - 结果：新增 e2e「light size 0」（`SCENE_E2E_LIGHT_SIZE0=<基线目录>`）。与分支起点 5d2308ff 拍的基线相比，`workbench` 两张差 0 级，`realtime_gi` 两张最大差 1 级。类型检查、oxlint 和灯光相关的前端单测通过。
+  - 实施时调整：
+    - 基线改用分支起点重拍，存于 `discovery/research/baseline-before/`，也是 AC-S1-11 的「改前」图。S0 的基线早于 `scene-probe-gi` 合入，`realtime_gi` 相差 88 级，那是屏幕外间接光的变化，不是本分支的；
+    - `state/apply.ts` 的字段表这一步就加上了两个尺寸字段：`lightDefaults` 的类型来自生成的 schema，不加编译不过。`lightDefaults` 仍是一张表，两个尺寸字段各只属于一种类型，按类型拆表留到 S2 面光源的强度缺省不同时再做；
+    - e2e 的 `referenceScene` 像服务端读取那样给旧灯补缺省尺寸。
+  - 顺带发现：新 worktree 第一次跑 e2e 时，Vite 中途优化依赖并重载页面，正在进行的导出会丢，表现为「export submitted」超时；重跑即可。
 - [ ] 2.2 直接光：
   - 新增 `formulas.ts`：有效距离、`hybrid`、Snyder，`sinHalf` 钳在 [10⁻³, 0.9999]；
   - 新增 `direct.ts`：基础层、clearcoat 和漫反射分三份（design「灯光与阴影子类」）。

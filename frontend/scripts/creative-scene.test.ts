@@ -108,24 +108,31 @@ test('projection mirrors the server: defaults, param merge, subtree removal, rep
 test('light and camera updates merge by key as the server does, a type change keeping the shared fields', () => {
   const light = (n: number, l: SceneObject['light']) => obj(n, 'light', null, n, { light: l })
   let s = state([
-    light(1, { type: 'point', color: '#ff963d', intensity: 45, cast_shadow: false, distance: 7, decay: 2 }),
-    light(2, { type: 'spot', color: '#ffeedd', intensity: 30, cast_shadow: false, distance: 5, decay: 1.5, angle: 0.4, penumbra: 0.3 }),
-    light(3, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }),
+    light(1, { type: 'point', color: '#ff963d', intensity: 45, cast_shadow: false, distance: 7, decay: 2, radius_m: 0.1 }),
+    light(2, { type: 'spot', color: '#ffeedd', intensity: 30, cast_shadow: false, distance: 5, decay: 1.5, angle: 0.4, penumbra: 0.3, radius_m: 0.25 }),
+    light(3, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, radius_m: 0.1 }),
     obj(4, 'camera', null, 4, { camera: { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 1000, label: 'A' } }),
   ])
   const update = (n: number, u: Omit<ObjectUpdate, 'object_id'>) =>
     (s = applyOps(s, [{ op: 'update_objects', updates: [{ ...u, object_id: id(n) }] }]))
   const at = (n: number) => s.scene.objects.find((o) => o.id === id(n))!
   update(1, { light: { intensity: 80 } })
-  assert.deepEqual(at(1).light, { type: 'point', color: '#ff963d', intensity: 80, cast_shadow: false, distance: 7, decay: 2 })
+  assert.deepEqual(at(1).light, { type: 'point', color: '#ff963d', intensity: 80, cast_shadow: false, distance: 7, decay: 2, radius_m: 0.1 })
   update(2, { light: { type: 'point' } })
-  assert.deepEqual(at(2).light, { type: 'point', color: '#ffeedd', intensity: 30, cast_shadow: false, distance: 5, decay: 1.5 })
+  assert.deepEqual(at(2).light, { type: 'point', color: '#ffeedd', intensity: 30, cast_shadow: false, distance: 5, decay: 1.5, radius_m: 0.25 })
   update(1, { light: { type: 'spot' } })
-  assert.deepEqual(at(1).light, { type: 'spot', color: '#ff963d', intensity: 80, cast_shadow: false, distance: 7, decay: 2, angle: Math.PI / 3, penumbra: 0 })
+  assert.deepEqual(at(1).light, { type: 'spot', color: '#ff963d', intensity: 80, cast_shadow: false, distance: 7, decay: 2, angle: Math.PI / 3, penumbra: 0, radius_m: 0.1 })
   update(3, { light: { angle: 0.5 } })
-  assert.deepEqual(at(3).light, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2 }, 'the server refuses an angle on a point light')
+  assert.deepEqual(at(3).light, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, radius_m: 0.1 }, 'the server refuses an angle on a point light')
   update(3, { light: { type: 'spot', angle: 0.5 } })
-  assert.deepEqual(at(3).light, { type: 'spot', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, angle: 0.5, penumbra: 0 })
+  assert.deepEqual(at(3).light, { type: 'spot', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, angle: 0.5, penumbra: 0, radius_m: 0.1 })
+  // data: 光源尺寸「换类型」: the radius goes, the angular diameter comes at its default; a size on the wrong type is refused.
+  update(3, { light: { type: 'directional' } })
+  assert.deepEqual(at(3).light, { type: 'directional', color: '#336699', intensity: 20, cast_shadow: false, angular_diameter_deg: 0.545 })
+  update(3, { light: { radius_m: 0.3 } })
+  assert.deepEqual(at(3).light, { type: 'directional', color: '#336699', intensity: 20, cast_shadow: false, angular_diameter_deg: 0.545 }, 'the server refuses a radius on a directional light')
+  update(3, { light: { type: 'point', radius_m: 0 } })
+  assert.deepEqual(at(3).light, { type: 'point', color: '#336699', intensity: 20, cast_shadow: false, distance: 0, decay: 2, radius_m: 0 })
   update(4, { camera: { far: 200 } })
   assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A', depth_of_field: false, f_stop: 2.8, focus: 10, focus_object_id: '', iso: 100, shutter_s: 1 / 4000, exposure_mode: 'ambient', exposure_compensation: 0 })
   update(4, { camera: { depth_of_field: true, focus_object_id: id(1) } })
