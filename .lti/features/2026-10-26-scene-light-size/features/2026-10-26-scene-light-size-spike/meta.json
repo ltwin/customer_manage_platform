@@ -1,6 +1,6 @@
 {
   "uid": "9f1feb22-1c9c-4ca5-a2c3-712325a45e8d",
-  "revision": 6,
+  "revision": 8,
   "id": "scene-light-size-spike",
   "kind": "feature",
   "assurance": "governed",
@@ -21,9 +21,9 @@
     ],
     "delivers": []
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-26T13:18:29.364Z",
-  "updatedAt": "2026-10-27T04:11:36.316Z",
+  "updatedAt": "2026-10-27T04:36:08.730Z",
   "risk": {
     "factors": []
   },
@@ -189,9 +189,35 @@
         "version": 2,
         "digest": "f195ea085a13e562533ed179f731e5a86602e50ac79de3f8810e0ca0df93f4aa"
       }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T04:35:54.956Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "沿用技术验收：项目未配置 lti checks，只重跑了 AC-S0-1 的 e2e 和 oxlint、tsc -b；Blender 对照由 owner 另行执行。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-27 接受 S0：AC-S0-3 以 8192 对 16384 帧收敛代替字面的 1024 对 2048（参考解更准，目的达到）；其余各项按技术验收满足。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f195ea085a13e562533ed179f731e5a86602e50ac79de3f8810e0ca0df93f4aa"
+      }
     }
   ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-27T04:36:08.510Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "archived"
 }
