@@ -8,6 +8,7 @@ import type { FrameStats } from './sceneRenderer.ts'
 import { capabilityOf, type Capability, type StorageLimits } from './trace/capacity.ts'
 import type { DepthCheck, HitReport } from './trace/checks.ts'
 import type { ShadeMode } from './trace/hit.ts'
+import { installLightModel } from './lightModel/nodes.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -292,6 +293,17 @@ export const gpuTestHooks = {
    * buffers may hold: pressed down, a scene goes to tier 2, then too large (render/trace/capacity.ts).
    */
   traceBudget: null as number | null,
+  /** The skies' sun and moon this many degrees across in place of theirs: 0 draws them without size, the comparison for the cascades' soft shadows (scene-light-radius AC-S1-10). */
+  skySunDeg: null as number | null,
+  /** A size-0 spot or point light lifts its receivers a fixed 0.05 m, not 1.5 texels: the comparison images for the owner (render/volumes/shadow.ts). */
+  stripeFixed: false,
+  /**
+   * Set before the first renderer: every material's output times 1 + salt·2⁻²³ (salt 1…1000, the picture a level
+   * off at most), a number new every load, so its shaders compile anew. A fresh browser profile is not cold: the
+   * Metal compiler keeps compiled shaders across launches (scene-light-size S0 soft-shadow-candidates.md「冷启动的
+   * 量法」). The renderer's own passes stay as cached as they were. scene-light-radius AC-S1-7 measures by it.
+   */
+  cold: false,
   /** No world-space layer, as the developer switch (localStorage scene.trace = off) gives. */
   traceOff: false,
   /** Takes the device for one the layer does not support: no such device to test on. */
@@ -370,6 +382,21 @@ export function gpuOf(renderer: object): SceneGPU {
   return g
 }
 
+/** gpuTestHooks.cold: every material's output salted, once a page. */
+function saltMaterials() {
+  const proto = NodeMaterial.prototype as unknown as { setupOutput: (builder: NodeBuilder, output: TSLNode) => unknown; salted?: true }
+  if (proto.salted) return
+  const salt = Math.floor(Math.random() * 1000) + 1
+  const setupOutput = proto.setupOutput
+  const { float, vec4 } = tsl as unknown as Record<string, (...a: unknown[]) => TSLNode>
+  proto.setupOutput = function (builder, output) {
+    // A colour only: a pass whose output is not a plain vec4 (the volumes' march) keeps its own.
+    const plain = (output as unknown as { getNodeType(b: NodeBuilder): string }).getNodeType(builder) === 'vec4'
+    return setupOutput.call(this, builder, plain ? vec4(output.rgb.mul(float(1 + salt * 2 ** -23)), output.a) : output)
+  }
+  proto.salted = true
+}
+
 export async function createRenderer(options: GPUOptions): Promise<SceneGPU> {
   const g = await make(options)
   byRenderer.set(g.renderer, g)
@@ -390,6 +417,9 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     : undefined
   const renderer = new WebGPURenderer({ canvas, alpha, antialias: false, requiredLimits, forceWebGL: gpuTestHooks.forceWebGL || !found })
   await renderer.init()
+  // The document's lights and the skies' sun and moon have a size (render/lightModel/).
+  installLightModel(renderer)
+  if (gpuTestHooks.cold) saltMaterials()
   const internals = renderer as unknown as Internals
   internals._animation?.stop()
   // drei's GizmoViewport reads the WebGL renderer's capabilities.

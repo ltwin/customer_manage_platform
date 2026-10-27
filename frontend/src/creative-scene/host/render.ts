@@ -3,7 +3,7 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, traceWaitMs, type Use } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, softShadowsIn, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { applyExposure, preExposure, sceneLowSun, sceneLux } from '../world/exposure.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
@@ -194,7 +194,11 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         // Every picture gets a pipeline of its own: nodes that keep state between frames start afresh.
         const picture = options.kind === 'line' ? null : new SceneRenderer(g, three, camera)
         const engine = options.kind === 'line' ? 'workbench' : effectiveEngine(engineOf(scene.render), options.kind, true)
-        const frames = drawnFrames(engine, options.use ?? 'export')
+        const soft = options.kind === 'lit' && softShadowsIn(scene)
+        const frames = drawnFrames(engine, options.use ?? 'export', soft)
+        // The workbench's frames see one camera: after the first, the shadow maps are what they were, only the
+        // kernels turn (scene-light-radius design「workbench 的出图累积」). Drawn again once the picture is done.
+        const freezes = engine === 'workbench' && frames > 1
         const frame = {
           width,
           height,
@@ -205,6 +209,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           quality: 'final' as const,
           accumulate: frames > 1,
         }
+        let thaw: (() => void) | null = null
         try {
           // The probes from a cold start before the first frame (S2 design「导出预热与时限」).
           const started = performance.now()
@@ -221,6 +226,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           for (let i = 1; i < frames; i++) {
             g.advanceFrame()
             picture!.render(camera, frame)
+            if (freezes && !thaw) thaw = freezeShadows(three)
             await g.settle()
             if (g.isLost()) throw new DeviceLostError()
             if (options.deadline !== undefined && performance.now() > options.deadline) throw new ShotTimeout()
@@ -260,6 +266,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
           }
           return shot
         } finally {
+          thaw?.()
           picture?.dispose()
         }
       },
@@ -272,6 +279,26 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
   } catch (err) {
     close()
     throw err
+  }
+}
+
+type Shadowed = THREE.Light & { shadow?: THREE.LightShadow & { shadowNode?: { lights?: { shadow?: THREE.LightShadow }[] } } }
+
+/** Every casting light's shadow maps, a sun's cascades with them, kept as drawn; returns the undo. */
+function freezeShadows(three: THREE.Object3D): () => void {
+  const held: THREE.LightShadow[] = []
+  three.traverse((o) => {
+    const l = o as Shadowed
+    if (!l.isLight || !l.castShadow || !l.shadow) return
+    for (const s of [l.shadow, ...(l.shadow.shadowNode?.lights ?? []).map((c) => c.shadow)]) {
+      if (s?.autoUpdate) {
+        s.autoUpdate = false
+        held.push(s)
+      }
+    }
+  })
+  return () => {
+    for (const s of held) s.autoUpdate = true
   }
 }
 

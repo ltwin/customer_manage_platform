@@ -788,9 +788,13 @@ func TestABadShapeNamesTheField(t *testing.T) {
 	}{
 		// Names from before v7 are rejected, not read as aliases.
 		"old light field": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "range_m": 7}),
-			"objects[0].light 没有字段 range_m，可用字段：type、color、intensity、cast_shadow、distance、decay、angle、penumbra"},
+			"objects[0].light 没有字段 range_m，可用字段：type、color、intensity、cast_shadow、distance、decay、angle、penumbra、radius_m、angular_diameter_deg"},
 		"field of another light type": {light(map[string]any{"type": "point", "angle": 0.5}),
-			"物件 " + objectID(1) + "：点光没有字段 angle，可用字段：type、color、intensity、cast_shadow、distance、decay"},
+			"物件 " + objectID(1) + "：点光没有字段 angle，可用字段：type、color、intensity、cast_shadow、distance、decay、radius_m"},
+		"size of another light type": {light(map[string]any{"type": "point", "angular_diameter_deg": 1}),
+			"物件 " + objectID(1) + "：点光没有字段 angular_diameter_deg，可用字段：type、color、intensity、cast_shadow、distance、decay、radius_m"},
+		"radius on a directional light": {light(map[string]any{"type": "directional", "radius_m": 0.3}),
+			"物件 " + objectID(1) + "：平行光没有字段 radius_m，可用字段：type、color、intensity、cast_shadow、angular_diameter_deg"},
 		"old camera field": {camera(map[string]any{"focal_mm": 50, "near_m": 0.1}),
 			"objects[0].camera 没有字段 near_m，可用字段：focal_mm、sensor_mm、aspect、near、far、label"},
 		"null light field": {light(map[string]any{"type": "point", "distance": nil}), "字段 objects[0].light.distance 不能为 null"},
@@ -857,9 +861,9 @@ func TestLightAndCameraDefaults(t *testing.T) {
 		withContent(d, "light", 3, map[string]any{"type": "directional"}),
 		withContent(c, "camera", 4, map[string]any{}))
 	for id, want := range map[string]map[string]any{
-		p: {"type": "point", "color": "#ff963d", "intensity": 45.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0},
-		s: {"type": "spot", "color": "#ffffff", "intensity": 1.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "angle": math.Pi / 3, "penumbra": 0.0},
-		d: {"type": "directional", "color": "#ffffff", "intensity": 1.0, "cast_shadow": false},
+		p: {"type": "point", "color": "#ff963d", "intensity": 45.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0, "radius_m": 0.1},
+		s: {"type": "spot", "color": "#ffffff", "intensity": 1.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "angle": math.Pi / 3, "penumbra": 0.0, "radius_m": 0.1},
+		d: {"type": "directional", "color": "#ffffff", "intensity": 1.0, "cast_shadow": false, "angular_diameter_deg": 0.545},
 	} {
 		if got := storedContent(t, f.a, doc, id, "light"); !reflect.DeepEqual(got, want) {
 			t.Errorf("light %s = %v, want %v", id, got, want)
@@ -896,13 +900,20 @@ func TestLightAndCameraUpdatesMergeByKey(t *testing.T) {
 		patch, light map[string]any
 	}{
 		{"intensity only", p, map[string]any{"intensity": 80},
-			map[string]any{"type": "point", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0}},
+			map[string]any{"type": "point", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0, "radius_m": 0.1}},
+		{"radius only", p, map[string]any{"radius_m": 0.4},
+			map[string]any{"type": "point", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0, "radius_m": 0.4}},
 		{"spot to point", s, map[string]any{"type": "point"},
-			map[string]any{"type": "point", "color": "#ffeedd", "intensity": 30.0, "cast_shadow": false, "distance": 5.0, "decay": 1.5}},
+			map[string]any{"type": "point", "color": "#ffeedd", "intensity": 30.0, "cast_shadow": false, "distance": 5.0, "decay": 1.5, "radius_m": 0.1}},
 		{"point to spot", p, map[string]any{"type": "spot"},
-			map[string]any{"type": "spot", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0, "angle": math.Pi / 3, "penumbra": 0.0}},
+			map[string]any{"type": "spot", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 7.0, "decay": 2.0, "angle": math.Pi / 3, "penumbra": 0.0, "radius_m": 0.4}},
 		{"point to spot with angle", q, map[string]any{"type": "spot", "angle": 0.5},
-			map[string]any{"type": "spot", "color": "#336699", "intensity": 20.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "angle": 0.5, "penumbra": 0.0}},
+			map[string]any{"type": "spot", "color": "#336699", "intensity": 20.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "angle": 0.5, "penumbra": 0.0, "radius_m": 0.1}},
+		// data: 光源尺寸「换类型」: the radius goes, the angular diameter comes at its default.
+		{"spot to directional", p, map[string]any{"type": "directional"},
+			map[string]any{"type": "directional", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "angular_diameter_deg": 0.545}},
+		{"directional to point with radius", p, map[string]any{"type": "point", "radius_m": 0},
+			map[string]any{"type": "point", "color": "#ff963d", "intensity": 80.0, "cast_shadow": false, "distance": 0.0, "decay": 2.0, "radius_m": 0.0}},
 	} {
 		if err := update(step.id, "light", step.patch); err != nil {
 			t.Fatalf("%s: %v", step.name, err)

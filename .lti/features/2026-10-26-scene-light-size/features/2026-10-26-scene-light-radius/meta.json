@@ -1,12 +1,12 @@
 {
   "uid": "3b0213bc-7f84-4e7f-882c-6f9f094e8a18",
-  "revision": 4,
+  "revision": 11,
   "id": "scene-light-radius",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-light-size",
   "designBinding": {
-    "version": 3,
+    "version": 4,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -23,9 +23,9 @@
       "data:光源尺寸"
     ]
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-27T05:20:19.856Z",
-  "updatedAt": "2026-10-27T08:50:48.740Z",
+  "updatedAt": "2026-10-27T15:44:28.842Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -35,19 +35,494 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-27T08:50:48.561Z",
-      "contentHash": "cd2d6092532139b4"
+      "at": "2026-10-27T14:03:14.420Z",
+      "contentHash": "2a2ec54162b6789c"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-27T08:50:48.561Z",
+      "at": "2026-10-27T14:03:14.420Z",
       "contentHash": "0db0e7b6330b7acf"
     }
   },
-  "approvalHistory": [],
-  "revisions": [],
-  "verify": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-27T08:50:48.561Z",
+      "contentHash": "cd2d6092532139b4",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T08:50:48.561Z",
+      "contentHash": "0db0e7b6330b7acf",
+      "role": "design"
+    }
+  ],
+  "revisions": [
+    {
+      "at": "2026-10-27T14:02:52.481Z",
+      "summary": "按 Epic 修订 v4 改 AC-S1-7：第一次构建和 workbench 导出时长改为按实测记录（owner 2026-10-27 看过实测后决定）",
+      "contentHash": "2a2ec54162b6789c",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "33a646b25a17b16360f278c901c69affc35c2202",
+    "at": "2026-10-27T08:52:24.064Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a7c65b1e0e898cf78097332d5f6759a8a8026cb9a6a6f6c7b18a8fb56b91aad8"
+    },
+    "preExisting": [
+      ".lti/snapshots/a7c65b1e0e898cf78097332d5f6759a8a8026cb9a6a6f6c7b18a8fb56b91aad8.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-27T15:44:08.140Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置自动 checks，证据为本轮手动执行的定向测试；AC-S1-2 在审计修复前（f8e7d99f）验证，修复不经过尺寸为 0 的路径，未重跑；轮廓 1 像素亮暗边未做专门近景截图，e2e 按块比较；e2e『warms its lights in one compile』资源泄漏在 develop 5d2308ff 已存在，不在本范围。",
+        "coverage": [
+          {
+            "criterionId": "AC-911f4961e52f",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-1 通过，3 m 板剖面均值 ≤0.010、最大 ≤0.091"
+          },
+          {
+            "criterionId": "AC-c9bc9c625cd9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_LIGHT_SIZE0 与 baseline-after 逐像素相同（f8e7d99f）；审计修复只改有尺寸灯的滤波和拆层，尺寸为 0 不经过，未重跑"
+          },
+          {
+            "criterionId": "AC-093201c63e76",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-3 通过"
+          },
+          {
+            "criterionId": "AC-c43448924f78",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：墙面 1.0007"
+          },
+          {
+            "criterionId": "AC-e9fbc6006672",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：近处有限"
+          },
+          {
+            "criterionId": "AC-d091d97837c9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：交界线 1° 内"
+          },
+          {
+            "criterionId": "AC-0389f0a57ef1",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-4 通过"
+          },
+          {
+            "criterionId": "AC-8432d06e979c",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）"
+          },
+          {
+            "criterionId": "AC-76cd04c09bbe",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：0.15/0.4 两档在阈值内"
+          },
+          {
+            "criterionId": "AC-f281fa273d38",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：clearcoat 0.1/0.3 m 在阈值内；1 m 只测量（高光 0.42、面积 6.6、峰值 0.69），owner 2026-10-27 同意收尾"
+          },
+          {
+            "criterionId": "AC-7a6fa86e6cdc",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：0.4 达标，未触发调参"
+          },
+          {
+            "criterionId": "AC-69faaf667d74",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-5 通过"
+          },
+          {
+            "criterionId": "AC-63ed5c1c7bb1",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：0.545° 3.4 cm"
+          },
+          {
+            "criterionId": "AC-2a6636be26dd",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：5° 26.9 cm"
+          },
+          {
+            "criterionId": "AC-a1ab5e6335b0",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-6 通过，lit ≤0.23 级"
+          },
+          {
+            "criterionId": "AC-106a7536db44",
+            "status": "verified",
+            "evidence": "perf.html + SCENE_E2E_LIGHT_PERF，结果见 tasks.md 7.1"
+          },
+          {
+            "criterionId": "AC-e45eda3d2851",
+            "status": "verified",
+            "evidence": "tasks.md 7.1 测法"
+          },
+          {
+            "criterionId": "AC-b0c5067272ac",
+            "status": "verified",
+            "evidence": "tasks.md 7.1 测法"
+          },
+          {
+            "criterionId": "AC-0b2e5ba5facd",
+            "status": "verified",
+            "evidence": "tasks.md 7.1：每帧 workbench +4.2 ms、realtime_gi +4.3 ms；realtime_gi 导出 +9%；首次构建 +2.4/+3.5 s、workbench 导出 +64–67% 按 Epic v4 记录"
+          },
+          {
+            "criterionId": "AC-2e806829f2d9",
+            "status": "verified",
+            "evidence": "tasks.md 7.1：4K +64%、8K +67%、加投影体积 +49%"
+          },
+          {
+            "criterionId": "AC-b7240e83c5ed",
+            "status": "verified",
+            "evidence": "tasks.md 7.1：workbench 4.0–4.8 s，realtime_gi 7.0–8.4 s"
+          },
+          {
+            "criterionId": "AC-8a3bcbdb2f49",
+            "status": "deferred",
+            "evidence": "属于 S2，本子项不覆盖"
+          },
+          {
+            "criterionId": "AC-f3f49146dd17",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-8 通过"
+          },
+          {
+            "criterionId": "AC-9e4dce0610b9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：面板编辑与撤销"
+          },
+          {
+            "criterionId": "AC-a332ca82b432",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：半径圈 95 px，缩放 1 与 3 相同"
+          },
+          {
+            "criterionId": "AC-3f1eb941c36c",
+            "status": "verified",
+            "evidence": "go test ./internal/creativeagent/（scene_tools_test.go）通过"
+          },
+          {
+            "criterionId": "AC-856eff900b17",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/（light_size_test.go TestLightSizeRanges 等）通过"
+          },
+          {
+            "criterionId": "AC-982fe8777b65",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/ 通过；前端合并规则同步（613c3965）"
+          },
+          {
+            "criterionId": "AC-4d748dd47f40",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/ 通过"
+          },
+          {
+            "criterionId": "AC-04860bcc7dc7",
+            "status": "verified",
+            "evidence": "TestOldLightIsCompletedOnRead"
+          },
+          {
+            "criterionId": "AC-09ee81747df6",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go（lights-v2）"
+          },
+          {
+            "criterionId": "AC-e92a2cb01c86",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go"
+          },
+          {
+            "criterionId": "AC-0a75ce50b1ec",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-10 各项通过"
+          },
+          {
+            "criterionId": "AC-878ccf006ee9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：两种后端 0 块偏差"
+          },
+          {
+            "criterionId": "AC-2ab27c0812c5",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：级联逐块比较通过"
+          },
+          {
+            "criterionId": "AC-3b4967f10cbf",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：两次导出逐像素相同"
+          },
+          {
+            "criterionId": "AC-fe6d639bcd7c",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-5 内 0.545°→5° 改尺寸与直接 5° 相同"
+          },
+          {
+            "criterionId": "AC-c9e15b7f77a5",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：投影体积锥形保持"
+          },
+          {
+            "criterionId": "AC-2de4d4fbf4e5",
+            "status": "verified",
+            "evidence": "owner 2026-10-27 看过审计修复后的对比图：「还是有点闪烁，但程度降低了很多，可以接受」；不试 2048"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "spec：AC-S1-1~11 逐条映射（coverage），审计修复后 light size e2e 全过、后端 creativescene/creativeagent 测试通过、gi/trace/volumes 单测 49 项通过、tsc/oxlint 通过；AC-S1-7 按 Epic v4 记录实测。design：unplanned 为测试与测量页（scripts/*.test.ts、light-check/*）、exportShots.ts（导出时限按累积帧数）、sky.go（太阳缺省角径改用共享常量）、compaction_regression_test.go（edit_scene 说明变长，窗口 13000→13500）、model_test.go；untouched 的 PhysicalLightingModel.direct、formulas.ts 是符号/短名，实际落在 render/lightModel/direct.ts、formulas.ts；fixtures/scene-reference 未改，4 灯性能场景在测量页和 e2e 里由 frame-two-lights 现改。contracts：data 光源尺寸 ADD 与实现一致。living-specs：光源尺寸与软阴影 ADD、导出图提示 MODIFY 与行为一致。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "15196459fef2d6a99d6dfc084a57feed3bf586f804537d0722c8c7adfb466947"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T15:44:25.684Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "同 technical 记录：无自动 checks，证据为手动定向测试；AC-S1-2 未在审计修复后重跑；轮廓细边无近景截图；warms-its-lights 资源泄漏为 develop 既有问题，未处理。",
+        "coverage": [
+          {
+            "criterionId": "AC-911f4961e52f",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-1 通过，3 m 板剖面均值 ≤0.010、最大 ≤0.091"
+          },
+          {
+            "criterionId": "AC-c9bc9c625cd9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_LIGHT_SIZE0 与 baseline-after 逐像素相同（f8e7d99f）；审计修复只改有尺寸灯的滤波和拆层，尺寸为 0 不经过，未重跑"
+          },
+          {
+            "criterionId": "AC-093201c63e76",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-3 通过"
+          },
+          {
+            "criterionId": "AC-c43448924f78",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：墙面 1.0007"
+          },
+          {
+            "criterionId": "AC-e9fbc6006672",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：近处有限"
+          },
+          {
+            "criterionId": "AC-d091d97837c9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：交界线 1° 内"
+          },
+          {
+            "criterionId": "AC-0389f0a57ef1",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-4 通过"
+          },
+          {
+            "criterionId": "AC-8432d06e979c",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）"
+          },
+          {
+            "criterionId": "AC-76cd04c09bbe",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：0.15/0.4 两档在阈值内"
+          },
+          {
+            "criterionId": "AC-f281fa273d38",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：clearcoat 0.1/0.3 m 在阈值内；1 m 只测量（高光 0.42、面积 6.6、峰值 0.69），owner 2026-10-27 同意收尾"
+          },
+          {
+            "criterionId": "AC-7a6fa86e6cdc",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：0.4 达标，未触发调参"
+          },
+          {
+            "criterionId": "AC-69faaf667d74",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-5 通过"
+          },
+          {
+            "criterionId": "AC-63ed5c1c7bb1",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：0.545° 3.4 cm"
+          },
+          {
+            "criterionId": "AC-2a6636be26dd",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：5° 26.9 cm"
+          },
+          {
+            "criterionId": "AC-a1ab5e6335b0",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-6 通过，lit ≤0.23 级"
+          },
+          {
+            "criterionId": "AC-106a7536db44",
+            "status": "verified",
+            "evidence": "perf.html + SCENE_E2E_LIGHT_PERF，结果见 tasks.md 7.1"
+          },
+          {
+            "criterionId": "AC-e45eda3d2851",
+            "status": "verified",
+            "evidence": "tasks.md 7.1 测法"
+          },
+          {
+            "criterionId": "AC-b0c5067272ac",
+            "status": "verified",
+            "evidence": "tasks.md 7.1 测法"
+          },
+          {
+            "criterionId": "AC-0b2e5ba5facd",
+            "status": "verified",
+            "evidence": "tasks.md 7.1：每帧 workbench +4.2 ms、realtime_gi +4.3 ms；realtime_gi 导出 +9%；首次构建 +2.4/+3.5 s、workbench 导出 +64–67% 按 Epic v4 记录"
+          },
+          {
+            "criterionId": "AC-2e806829f2d9",
+            "status": "verified",
+            "evidence": "tasks.md 7.1：4K +64%、8K +67%、加投影体积 +49%"
+          },
+          {
+            "criterionId": "AC-b7240e83c5ed",
+            "status": "verified",
+            "evidence": "tasks.md 7.1：workbench 4.0–4.8 s，realtime_gi 7.0–8.4 s"
+          },
+          {
+            "criterionId": "AC-8a3bcbdb2f49",
+            "status": "deferred",
+            "evidence": "属于 S2，本子项不覆盖"
+          },
+          {
+            "criterionId": "AC-f3f49146dd17",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-8 通过"
+          },
+          {
+            "criterionId": "AC-9e4dce0610b9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：面板编辑与撤销"
+          },
+          {
+            "criterionId": "AC-a332ca82b432",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：半径圈 95 px，缩放 1 与 3 相同"
+          },
+          {
+            "criterionId": "AC-3f1eb941c36c",
+            "status": "verified",
+            "evidence": "go test ./internal/creativeagent/（scene_tools_test.go）通过"
+          },
+          {
+            "criterionId": "AC-856eff900b17",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/（light_size_test.go TestLightSizeRanges 等）通过"
+          },
+          {
+            "criterionId": "AC-982fe8777b65",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/ 通过；前端合并规则同步（613c3965）"
+          },
+          {
+            "criterionId": "AC-4d748dd47f40",
+            "status": "verified",
+            "evidence": "go test ./internal/creativescene/ 通过"
+          },
+          {
+            "criterionId": "AC-04860bcc7dc7",
+            "status": "verified",
+            "evidence": "TestOldLightIsCompletedOnRead"
+          },
+          {
+            "criterionId": "AC-09ee81747df6",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go（lights-v2）"
+          },
+          {
+            "criterionId": "AC-e92a2cb01c86",
+            "status": "verified",
+            "evidence": "fingerprint_internal_test.go"
+          },
+          {
+            "criterionId": "AC-0a75ce50b1ec",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-10 各项通过"
+          },
+          {
+            "criterionId": "AC-878ccf006ee9",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：两种后端 0 块偏差"
+          },
+          {
+            "criterionId": "AC-2ab27c0812c5",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：级联逐块比较通过"
+          },
+          {
+            "criterionId": "AC-3b4967f10cbf",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：两次导出逐像素相同"
+          },
+          {
+            "criterionId": "AC-fe6d639bcd7c",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：AC-S1-5 内 0.545°→5° 改尺寸与直接 5° 相同"
+          },
+          {
+            "criterionId": "AC-c9e15b7f77a5",
+            "status": "verified",
+            "evidence": "e2e SCENE_E2E_ONLY=\"light size:\" SCENE_E2E_TRACE=1（2026-10-27，审计修复后，端口 5196）：投影体积锥形保持"
+          },
+          {
+            "criterionId": "AC-2de4d4fbf4e5",
+            "status": "verified",
+            "evidence": "owner 2026-10-27 看过审计修复后的对比图：「还是有点闪烁，但程度降低了很多，可以接受」；不试 2048"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-27：审计修复后的 AC-S1-11 对比图「还是有点闪烁，但程度降低了很多，可以接受」，要求本 feature 收尾；不试 2048 阴影图。AC-S1-7 按 Epic v4 接受实测（2026-10-27 已定）。1 m clearcoat 只测量的结果随收尾一并接受。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "15196459fef2d6a99d6dfc084a57feed3bf586f804537d0722c8c7adfb466947"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-27T15:44:28.612Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

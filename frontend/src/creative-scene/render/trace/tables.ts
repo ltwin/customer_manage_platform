@@ -7,6 +7,7 @@ import { patternFns, type TSLNode } from '../../materials/patterns.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { preExposure } from '../../world/exposure.ts'
 import type { Lighting } from './collect.ts'
+import { sizeOf } from '../lightModel/lights.ts'
 
 // What a hit point is shaded with, in one storage buffer of vec4s (S1
 // design「内部类型」, D6: one buffer, so the fragment binds six): a header,
@@ -23,11 +24,14 @@ import type { Lighting } from './collect.ts'
 //   light    4 vec4: (type, casts shadows, distance, decay),
 //            (position, or the direction towards it; spot: cos of its cone),
 //            (colour × intensity; spot: cos where its penumbra starts),
-//            (spot: the direction it shines, 0)
+//            (spot: the direction it shines, 0),
+//            (its size: a point's or spot's radius in metres, a directional
+//            light's sin(θ/2) for its angular diameter θ; 0, 0, 0)
+//            (scene-light-radius; S2's area lights fill the same five)
 
 export const HEADER = 8
 export const MATERIAL_ROW = 8
-export const LIGHT_ROW = 4
+export const LIGHT_ROW = 5
 
 /** A row's first vec4: kind 0 the unknown material's grey, 1 principled, 2 + i the preset presets[i]. */
 export const UNKNOWN = 0
@@ -212,14 +216,16 @@ export class TraceTables {
       d.target.getWorldPosition(b)
       a.sub(b).normalize()
       f.set([LIGHT.directional, l.castShadow ? 1 : 0, 0, 0, a.x, a.y, a.z, 0, color.r, color.g, color.b, 0], at)
+      f[at + 16] = Math.sin((sizeOf(l) * Math.PI) / 360)
     } else if ((l as SpotLight).isSpotLight) {
       const s = l as SpotLight
       s.target.getWorldPosition(b)
       b.sub(a).normalize()
-      f.set([LIGHT.spot, l.castShadow ? 1 : 0, s.distance, s.decay, a.x, a.y, a.z, Math.cos(s.angle), color.r, color.g, color.b, Math.cos(s.angle * (1 - s.penumbra)), b.x, b.y, b.z, 0], at)
+      f.set([LIGHT.spot, l.castShadow ? 1 : 0, s.distance, s.decay, a.x, a.y, a.z, Math.cos(s.angle), color.r, color.g, color.b, Math.cos(s.angle * (1 - s.penumbra)), b.x, b.y, b.z, 0, sizeOf(l)], at)
     } else {
       const p = l as PointLight
       f.set([LIGHT.point, l.castShadow ? 1 : 0, p.distance, p.decay, a.x, a.y, a.z, 0, color.r, color.g, color.b, 0], at)
+      f[at + 16] = sizeOf(l)
     }
   }
 

@@ -80,7 +80,8 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
 				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance|volume, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, material_slots?, primitive{builtin,params}|light|camera|volume|model{content_revision_id}}]}；" +
-				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1）；" +
+				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1，只管光锥边缘羽化）；" +
+				"光源尺寸同 Blender：point 和 spot 有 radius_m（发光球半径，0…10 米，默认 0.1，不随物件缩放），directional 有 angular_diameter_deg（角直径，0…30 度，默认 0.545）；尺寸越大、遮挡物离受光面越远，影子边缘越软，高光越大越柔，强度不变；写 0 是硬影子；" +
 				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
 				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
 				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）, iso:25…102400, shutter_s:1/8000…30（快门，秒）, exposure_mode:ambient|manual（物理天空下的曝光模式：ambient 环境测光，按场景的环境光测光、不看画面；写入时省略为 ambient）, exposure_compensation:-5…5（环境测光的补偿，档，正值变亮）；iso 和 shutter_s 只在物理天空下手动曝光时生效}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"、100、1/4000、ambient、0）；" +

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useThree } from '@react-three/fiber'
-import { Color, DirectionalLight, Scene, Vector3, type Mesh } from 'three'
+import { Color, Scene, Vector3, type Mesh } from 'three'
 import { uniform } from 'three/tsl'
 import { PMREMGenerator, type RenderTarget, type WebGPURenderer } from 'three/webgpu'
 import type { SceneEnvironment } from '../api.ts'
@@ -10,6 +10,8 @@ import { gpuOf, gpuTestHooks } from '../render/gpu.ts'
 import { disposeSky, litSky, physicalSkyMesh, roomEnvironment, setSky, skyEnvironment, sunDirection } from '../render/sky.ts'
 import { STUDIO_AMBIENT, STUDIO_BACKGROUND, STUDIO_FILL, STUDIO_KEY_INTENSITY } from '../render/studio.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
+import { SceneSunLight } from '../render/lightModel/lights.ts'
+import { attachSoftShadow } from '../render/lightModel/shadowFilter.ts'
 import { positionToView } from '../space.ts'
 import { SKY_LAYER } from '../render/sceneRenderer.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
@@ -178,20 +180,34 @@ function LitLighting({ environment, engine }: { environment: SceneEnvironment; e
   )
 }
 
-/** The lit sun: dimming and warming as it sets; shadows in cascades. */
+/** The procedural sky's sun as seen from the ground, degrees across: its shadows soften by it (scene-light-radius). */
+const PROCEDURAL_SUN_DEG = 0.545
+/** The moon's, for a night sky that does not give it. */
+const MOON_DEG = 0.52
+
+/** A sky's sun light, sized, its soft shadow put on before the cascades clone its shadow. */
+function skySun(sizeDeg: number): SceneSunLight {
+  const sun = new SceneSunLight()
+  sun.size = gpuTestHooks.skySunDeg ?? sizeDeg
+  sun.castShadow = true
+  sun.shadow.mapSize.set(2048, 2048)
+  attachSoftShadow(sun)
+  return sun
+}
+
+/** The lit sun: dimming and warming as it sets; shadows in cascades, soft by its size. */
 function Sun({ environment }: { environment: SceneEnvironment }) {
-  const ref = useRef<DirectionalLight>(null)
-  useLayoutEffect(() => (ref.current ? cascadeSunShadow(ref.current) : undefined), [])
+  const sun = useMemo(() => skySun(PROCEDURAL_SUN_DEG), [])
+  useLayoutEffect(() => cascadeSunShadow(sun), [sun])
+  useEffect(() => () => sun.dispose(), [sun])
   const position = sunDirection(environment).multiplyScalar(60)
   const light = sunLight(environment.sky.sun_elevation_deg ?? 35, environment.sky.turbidity ?? 3)
   return (
-    <directionalLight
-      ref={ref}
+    <primitive
+      object={sun}
       position={positionToView([position.x, position.y, position.z])}
       intensity={light.intensity}
       color={light.color}
-      castShadow
-      shadow-mapSize={[2048, 2048]}
       userData={{ sun: true }}
     />
   )
@@ -232,12 +248,11 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     const lutScale = uniform(1)
     const background = drawnAsSky(physicalSkyMesh(luts, lutScale, 'background'))
     const source = physicalSkyMesh(luts, lutScale, 'source')
-    const sun = new DirectionalLight()
-    sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    const sun = skySun(latest.current.sun_size_deg)
     sun.userData = { sun: true, baseIntensity: 0 }
-    // Two lights day and night (design「投影」): the shadowing one takes the sun or the moon, the other the other, so nightfall compiles nothing.
-    const aside = new DirectionalLight()
+    // Two lights day and night (design「投影」): the shadowing one takes the sun or the moon, the other the other, so nightfall
+    // compiles nothing. Each takes its body's size, the shadow softening by it; only the shadowing one filters.
+    const aside = new SceneSunLight()
     aside.userData = { baseIntensity: 0 }
     const physical: PhysicalExposure = { skyLightScale: 1, fogColor: null, lux: 0, lowSun: 0 }
     const aerial: SceneAerial = { luts, enabled: false, distanceScale: 1, envScale: 1 }
@@ -345,8 +360,8 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
     }
     // Lux on a surface facing each body, its colour what the atmosphere let through; the shadow goes with the one that leads.
     const bodies = [
-      { toward, ...lightOf(light.sun) },
-      { toward: moon?.direction ?? down, ...lightOf(light.moon) },
+      { toward, size: s.sun_size_deg, ...lightOf(light.sun) },
+      { toward: moon?.direction ?? down, size: moon?.diameterDeg ?? MOON_DEG, ...lightOf(light.moon) },
     ]
     const [lead, other] = sunLeads(where.elevationDeg, moon) ? bodies : [bodies[1], bodies[0]]
     for (const [l, b] of [
@@ -354,6 +369,8 @@ function PhysicalLighting({ sky, fog }: { sky: PhysicalSky; fog: SceneEnvironmen
       [parts.aside, other],
     ] as const) {
       l.userData.baseIntensity = b.intensity
+      l.size = gpuTestHooks.skySunDeg ?? b.size
+      if (l.castShadow) attachSoftShadow(l)
       l.color.setRGB(...b.color)
       l.position.fromArray(positionToView([b.toward.x * 60, b.toward.y * 60, b.toward.z * 60]))
     }

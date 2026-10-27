@@ -1,4 +1,5 @@
-import type { SceneRender } from '../api.ts'
+import type { Scene, SceneRender } from '../api.ts'
+import { lightSize } from '../state/apply.ts'
 
 // The renderers' constants and pure functions (R2 design「模块职责与协作」):
 // nothing here touches the GPU, so the unit tests take it as it is.
@@ -58,19 +59,41 @@ export const engineOf = (render: SceneRender): Engine => render.engine
 export type Use = 'export' | 'view'
 
 /**
- * The frames a picture is averaged over (R2 design「累积与出图」): one for
- * the workbench; for the real-time GI, K for an export and K_view for
- * render_view, the same for every scene. The noise keeps falling as 1/√K
- * past 256 frames, so the owner set them by the time they take (tasks 5.1,
- * 2026-10-21): a 2K lit picture in about 3.6 s on the reference device.
+ * The workbench's lit picture with a sized light casting: its soft shadows' kernels turn frame by frame, averaged
+ * over this many, an export and render_view alike (scene-light-radius design「workbench 的出图累积」, U2).
  */
-export function framesFor(engine: Engine, use: Use): number {
-  if (engine === 'workbench') return 1
+export const WORKBENCH_FRAMES = 16
+
+/**
+ * Whether a scene's lit picture has soft shadows to average: a visible light that casts with a size, or a sky with
+ * a sun (procedural or physical, whose sun always has one). Read off the document, so an export's time limit
+ * (host/exportShots.ts) and its shooter (host/render.ts) agree.
+ */
+export function softShadowsIn(scene: Scene): boolean {
+  const sky = scene.environment.sky.kind
+  if (sky === 'procedural' || sky === 'physical') return true
+  return scene.objects.some((o) => {
+    const l = o.light
+    return !!l && o.visible && l.cast_shadow && lightSize(l) > 0
+  })
+}
+
+/**
+ * The frames a picture is averaged over (R2 design「累积与出图」): for the
+ * workbench one, or WORKBENCH_FRAMES for a lit picture with soft shadows;
+ * for the real-time GI, K for an export and K_view for render_view, the
+ * same for every scene. The noise keeps falling as 1/√K past 256 frames, so
+ * the owner set them by the time they take (tasks 5.1, 2026-10-21): a 2K
+ * lit picture in about 3.6 s on the reference device.
+ */
+export function framesFor(engine: Engine, use: Use, softShadows = false): number {
+  if (engine === 'workbench') return softShadows ? WORKBENCH_FRAMES : 1
   return use === 'export' ? 64 : 16
 }
 
-/** The frames a picture draws: the real-time GI's settle first (convergeFrames), then the ones averaged. */
-export const drawnFrames = (engine: Engine, use: Use): number => (engine === 'workbench' ? 1 : convergeFrames(engine) + framesFor(engine, use))
+/** The frames a picture draws: the real-time GI's settle first (convergeFrames), then the ones averaged; the workbench has no settle. */
+export const drawnFrames = (engine: Engine, use: Use, softShadows = false): number =>
+  engine === 'workbench' ? framesFor(engine, use, softShadows) : convergeFrames(engine) + framesFor(engine, use)
 
 /** The reference device's time per pixel and frame, and per pixel encoded, rounded up (R0, design「输出分辨率、编码与时限」). */
 const frameNs: Record<Engine, number> = { workbench: 15, realtime_gi: 30 }

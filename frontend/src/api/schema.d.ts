@@ -7441,7 +7441,7 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** @description 字段与 three.js 灯光类同名同义：directional 只有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。 */
+        /** @description 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。 */
         CreativeSceneLight: {
             /** @enum {string} */
             type: "directional" | "point" | "spot";
@@ -7456,8 +7456,12 @@ export interface components {
             decay?: number;
             /** @description spot。光锥中心到边缘的半角（弧度），不超过 π/2；缺省 π/3。 */
             angle?: number;
-            /** @description spot。缺省 0。 */
+            /** @description spot。光锥边缘的羽化，不控制阴影软硬；缺省 0。 */
             penumbra?: number;
+            /** @description point、spot。发光球的半径（米），即 Blender Point / Spot 的 Radius，不随物件缩放；缺省 0.1，0 为硬阴影的理想点光源。照度按有效距离 max(d, radius_m) 衰减。 */
+            radius_m?: number;
+            /** @description directional。光源的角直径（度），即 Blender Sun 的 Angle；缺省 0.545（与 sky.sun_size_deg 的缺省值相同），0 为硬阴影的理想平行光。 */
+            angular_diameter_deg?: number;
         };
         /** @description update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。 */
         CreativeSceneLightPatch: {
@@ -7470,6 +7474,8 @@ export interface components {
             decay?: number;
             angle?: number;
             penumbra?: number;
+            radius_m?: number;
+            angular_diameter_deg?: number;
         };
         /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。 */
         CreativeSceneCamera: {

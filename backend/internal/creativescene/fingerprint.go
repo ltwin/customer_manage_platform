@@ -27,6 +27,11 @@ const (
 	// worldTraceVersion is how the real-time GI's lit images draw what is
 	// off the picture: 1 since S2's probes (scene-probe-gi).
 	worldTraceVersion = 1
+	// lightModelVersion is how lights are drawn (data: 光源尺寸「渲染指纹」):
+	// lights-v2 since they have a size (scene-light-radius). It counts in a
+	// lit image of a scene with a light or whose sky's sun casts. A change
+	// that redraws existing documents' lights bumps it in the same commit.
+	lightModelVersion = "lights-v2"
 )
 
 // Passes in node column order.
@@ -115,6 +120,9 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 		if s.Render.Engine == EngineRealtimeGI {
 			render.WorldTrace = worldTraceVersion
 		}
+		if lightsDrawn(s) {
+			render.LightModel = lightModelVersion
+		}
 	}
 	// Clay and lit images have been tone mapped with AgX since W1
 	// (scene-display-look); the key makes their older exports stale once
@@ -149,6 +157,17 @@ type fingerprintRender struct {
 	ExposureEV float64 `json:"exposure_ev,omitempty"`
 	Engine     string  `json:"engine,omitempty"`
 	WorldTrace int     `json:"world_trace,omitempty"`
+	LightModel string  `json:"light_model,omitempty"`
+}
+
+// lightsDrawn reports whether a lit image of s draws a light: a light object,
+// or the sun of a procedural or physical sky. Under an HDRI or a plain colour
+// without lights the light model draws nothing.
+func lightsDrawn(s Scene) bool {
+	if k := s.Environment.Sky.Kind; k == "procedural" || k == SkyPhysical {
+		return true
+	}
+	return slices.ContainsFunc(s.Objects, func(o Object) bool { return o.Kind == KindLight })
 }
 
 // Freshness is the canvas's ExportFreshness: it compares each export image's

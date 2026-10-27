@@ -43,9 +43,9 @@ test('the lights for the volumes: a casting sun first, then by the light at the 
   const { selectLights, MAX_LIGHTS } = await import('../src/creative-scene/render/volumes/state.ts')
   const at = (x: number) => new Vector3(x, 0, 0)
   const bounds = [new Sphere(new Vector3(0, 0, 0), 1)]
-  const sun = { kind: 'directional' as const, cast: true, sun: true, intensity: 1, position: at(50), decay: 0 }
-  const near = { kind: 'point' as const, cast: false, sun: false, intensity: 10, position: at(2), decay: 2 }
-  const far = { kind: 'spot' as const, cast: true, sun: false, intensity: 10, position: at(11), decay: 2 }
+  const sun = { kind: 'directional' as const, cast: true, sized: true, sun: true, intensity: 1, position: at(50), decay: 0, radius: 0 }
+  const near = { kind: 'point' as const, cast: false, sized: false, sun: false, intensity: 10, position: at(2), decay: 2, radius: 0.1 }
+  const far = { kind: 'spot' as const, cast: true, sized: true, sun: false, intensity: 10, position: at(11), decay: 2, radius: 0.1 }
   // The sun leads although the point light near the volume brings more; the far spot (10 / 10²) comes last.
   assert.deepEqual(selectLights([far, near, sun], bounds), [2, 1, 0])
   // Three casting directional lights take 12 maps: a fourth casting light finds no room, a non-casting one does
@@ -53,22 +53,28 @@ test('the lights for the volumes: a casting sun first, then by the light at the 
   const dir = { ...sun, sun: false, intensity: 5 }
   assert.deepEqual(selectLights([sun, dir, dir, far, near], bounds), [0, 4, 1, 2])
   assert.equal(selectLights(Array.from({ length: 9 }, () => near), bounds).length, MAX_LIGHTS)
+  // At the effective distance (scene-light-radius): a light whose sphere reaches the volume brings I / r², not I / 0.01.
+  const touching = { ...near, position: at(1), radius: 0.5, intensity: 1 }
+  const beside = { ...near, position: at(1.5), radius: 0, intensity: 3 }
+  assert.deepEqual(selectLights([touching, beside], bounds), [1, 0])
 })
 
 test('the march rebuilds on its structure only, and the cast list holds the casting volumes in order', async () => {
   const { castList, signatureOf } = await import('../src/creative-scene/render/volumes/state.ts')
-  assert.equal(signatureOf([{ kind: 'directional', cast: true }, { kind: 'spot', cast: false }], true), 'directional+,spot|env')
-  assert.notEqual(signatureOf([{ kind: 'spot', cast: true }], false), signatureOf([{ kind: 'spot', cast: false }], false))
+  assert.equal(signatureOf([{ kind: 'directional', cast: true, sized: true }, { kind: 'spot', cast: false, sized: false }], true), 'directional+s,spot|env')
+  assert.notEqual(signatureOf([{ kind: 'spot', cast: true, sized: false }], false), signatureOf([{ kind: 'spot', cast: false, sized: false }], false))
+  // A map read raw or compared builds its own march (scene-light-radius design「体积」).
+  assert.notEqual(signatureOf([{ kind: 'spot', cast: true, sized: true }], false), signatureOf([{ kind: 'spot', cast: true, sized: false }], false))
   assert.deepEqual(castList([{ cast_shadow: false }, { cast_shadow: true }, { cast_shadow: true }]), [1, 2])
 })
 
 test('the slots go by kind, casting first, then in the scene\'s order: lights swapping places at the volumes build no march', async () => {
   const { signatureOf, slotOrder } = await import('../src/creative-scene/render/volumes/state.ts')
   const lights = [
-    { kind: 'point' as const, cast: true },
-    { kind: 'spot' as const, cast: false },
-    { kind: 'spot' as const, cast: true },
-    { kind: 'directional' as const, cast: false },
+    { kind: 'point' as const, cast: true, sized: false },
+    { kind: 'spot' as const, cast: false, sized: false },
+    { kind: 'spot' as const, cast: true, sized: false },
+    { kind: 'directional' as const, cast: false, sized: false },
   ]
   assert.deepEqual(slotOrder(lights, [0, 1, 2, 3]), [3, 2, 1, 0])
   // Whichever brings more light to the volumes, the slots are the same.

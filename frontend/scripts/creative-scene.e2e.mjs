@@ -3057,6 +3057,83 @@ const night = { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ff
 const lightAt = (server, id) => server.object(id).light
 const focusEditor = (page) => page.locator('.cc-scene-editor').focus()
 
+/** The bounding box's width in pixels of where two screenshots differ by more than min, or 0. */
+async function differingWidth(page, a, b, min = 40) {
+  return page.evaluate(async ([a, b, min]) => {
+    const pixels = async (src) => {
+      const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+      const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+      const g = c.getContext('2d')
+      g.drawImage(bitmap, 0, 0)
+      return { w: c.width, p: g.getImageData(0, 0, c.width, c.height).data }
+    }
+    const [{ w, p }, { p: q }] = await Promise.all([pixels(a), pixels(b)])
+    let lo = Infinity
+    let hi = -Infinity
+    for (let k = 0; k < p.length; k += 4) {
+      if (Math.abs(p[k] - q[k]) + Math.abs(p[k + 1] - q[k + 1]) + Math.abs(p[k + 2] - q[k + 2]) <= min) continue
+      const x = (k / 4) % w
+      lo = Math.min(lo, x)
+      hi = Math.max(hi, x)
+    }
+    return hi >= lo ? hi - lo + 1 : 0
+  }, [`data:image/png;base64,${a.toString('base64')}`, `data:image/png;base64,${b.toString('base64')}`, min])
+}
+
+// scene-light-radius AC-S1-8: the properties edit a point light's radius and a parallel light's angular diameter
+// (0.545, on no step's grid, taken as typed), each undone; the point light's icon draws its radius as a circle the
+// same size on screen whether its object is scaled by 1 or by 3 (the light does not scale with it, Epic U8).
+await check('light size: the radius and the angular diameter in the properties, undo; the icon\'s circle ignores scale (AC-S1-8)', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  const lamp = { id: gid('sizedlamp'), kind: 'light', name: '台灯', parent_id: null, order: 5, transform: { ...identity(), position: [0, 1, 0] }, visible: true, locked: false, light: { type: 'point', color: '#ffffff', intensity: 30, cast_shadow: true, distance: 0, decay: 2, radius_m: 0.1 } }
+  const sun = { id: gid('sizedsun'), kind: 'light', name: '主光', parent_id: null, order: 6, transform: { ...identity(), position: [3, 4, 3] }, visible: true, locked: false, light: { type: 'directional', color: '#ffffff', intensity: 2, cast_shadow: true, angular_diameter_deg: 0.545 } }
+  seed(server, [lamp, sun])
+  const { context, page, errors } = await open(server)
+  const { box } = await viewportCenter(page)
+  await page.getByRole('treeitem', { name: /台灯/ }).click()
+  const radius = page.getByLabel('半径（m，0 为硬影子）')
+  assert.equal(await radius.inputValue(), '0.1')
+  // The circle: where the picture with a 1 m radius differs from the one without, as wide at scale 1 and 3.
+  const circleWidth = async (scale) => {
+    server.external([{ op: 'update_objects', updates: [{ object_id: lamp.id, transform: { ...lamp.transform, scale: [scale, scale, scale] }, light: { radius_m: 0 } }] }])
+    await page.evaluate(() => window.__invalidate())
+    const without = await settledShot(page, box)
+    server.external([{ op: 'update_objects', updates: [{ object_id: lamp.id, light: { radius_m: 1 } }] }])
+    await page.evaluate(() => window.__invalidate())
+    return differingWidth(page, await settledShot(page, box), without)
+  }
+  const [one, three] = [await circleWidth(1), await circleWidth(3)]
+  console.log(`AC-S1-8 the radius circle: ${one} px wide at scale 1, ${three} px at scale 3`)
+  assert.ok(one > 20 && Math.abs(one - three) <= 2, `the circle as wide at either scale: ${one} and ${three} px`)
+  server.external([{ op: 'update_objects', updates: [{ object_id: lamp.id, transform: lamp.transform, light: { radius_m: 0.1 } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => (await radius.inputValue()) === '0.1', 'the field follows the server')
+  await saved(page)
+  await radius.fill('0.4')
+  await radius.press('Enter')
+  await waitFor(() => lightAt(server, lamp.id).radius_m === 0.4, 'the radius saved')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, lamp.id).radius_m === 0.1, 'undo the radius')
+  await saved(page)
+  await page.getByRole('treeitem', { name: /主光/ }).click()
+  const angular = page.getByLabel('角径（°，0 为硬影子）')
+  assert.equal(await angular.inputValue(), '0.545')
+  assert.equal(await angular.evaluate((e) => e.validity.valid), true, '0.545 is a valid value')
+  await angular.fill('2.5')
+  await angular.press('Enter')
+  await waitFor(() => lightAt(server, sun.id).angular_diameter_deg === 2.5, 'the angular diameter saved')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, sun.id).angular_diameter_deg === 0.545, 'undo the angular diameter')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/12 and narrows the light; shadows show; spot → point keeps the rest; Cmd+Z', async () => {
   const server = new SceneServer()
   server.scene.environment = structuredClone(night)
@@ -3098,7 +3175,7 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
 
   await page.getByLabel('灯光类型').selectOption('point')
   await waitFor(() => lightAt(server, spot.id).type === 'point', 'to a point light')
-  assert.deepEqual(lightAt(server, spot.id), { type: 'point', color: '#ffffff', intensity: spot.light.intensity, cast_shadow: true, distance: 0, decay: 2 })
+  assert.deepEqual(lightAt(server, spot.id), { type: 'point', color: '#ffffff', intensity: spot.light.intensity, cast_shadow: true, distance: 0, decay: 2, radius_m: 0.1 })
   assert.equal(await page.getByLabel('光锥角（°）').count(), 0, 'the cone fields go')
   await saved(page)
   await focusEditor(page)
@@ -3678,6 +3755,11 @@ function referenceScene(server, name, edit) {
   server.scene.render.exposure_mode ??= 'ambient'
   server.scene.render.exposure_compensation ??= 0
   for (const o of server.scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
+  // Lights stored before they had a size read back at the defaults (data: 光源尺寸).
+  for (const o of server.scene.objects) {
+    if (o.light?.type === 'directional') o.light.angular_diameter_deg ??= 0.545
+    else if (o.light) o.light.radius_m ??= 0.1
+  }
   edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
   for (const o of server.scene.objects) {
@@ -3780,7 +3862,10 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
 
 // SCENE_E2E_LIGHT_BASELINE=<dir>: scene-light-size S0's reference scenes, the
 // lit export under each renderer before lights had sizes, and light-baseline.json
-// with the machine, the versions and the export times.
+// with the machine, the versions and the export times; every light of size 0, as
+// AC-S1-2 compares (sizeless), or as stored with SCENE_E2E_LIGHT_SIZES=keep (the
+// defaults: AC-S1-11's after, for the owner). SCENE_E2E_LIGHT_HOOKS sets
+// gpuTestHooks for it (stripeFixed: scene-light-radius's other stripe fix, for the owner).
 if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light reference scenes before lights had sizes', async () => {
   const dir = process.env.SCENE_E2E_LIGHT_BASELINE
   const gpu = await chromium.launch({ headless: true, args: metal })
@@ -3788,7 +3873,7 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
     for (const name of lightReferenceNames) {
       for (const engine of ['workbench', 'realtime_gi']) {
-        const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine } })
+        const out = await exportReference(gpu, name, { litOnly: true, hooks: process.env.SCENE_E2E_LIGHT_HOOKS, edit: (s) => { s.render.engine = engine; if (process.env.SCENE_E2E_LIGHT_SIZES !== 'keep') sizeless(s) } })
         record.renderer ??= out.renderer
         const images = []
         for (const img of out.images) {
@@ -3801,6 +3886,353 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
       }
     }
     await writeFile(`${dir}/light-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** A scene's lights all of size 0: points and parallel light, as before lights had sizes (scene-light-radius AC-S1-2). */
+function sizeless(scene) {
+  for (const o of scene.objects) {
+    if (o.light?.type === 'directional') o.light.angular_diameter_deg = 0
+    else if (o.light) o.light.radius_m = 0
+  }
+}
+
+// SCENE_E2E_LIGHT_SIZE0=<dir>: scene-light-radius AC-S1-2. The light reference
+// scenes with every light of size 0 export, under each renderer, what <dir>
+// holds as SCENE_E2E_LIGHT_BASELINE wrote it, a channel at most 1 apart.
+if (process.env.SCENE_E2E_LIGHT_SIZE0) await check('light size 0: the light reference scenes export as their baseline', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_SIZE0
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    for (const name of lightReferenceNames) {
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine; sizeless(s) } })
+        for (const img of out.images) {
+          const file = img.file.replace(/\.png$/, `-${engine}.png`)
+          const apart = await imageApart(page, img.png, readFileSync(`${dir}/${file}`))
+          console.log(`light size 0 ${file}: largest channel difference ${apart.max}, ${(apart.over * 100).toFixed(3)}% over 8`)
+          assert.ok(apart.max <= 1, `${file}: a channel ${apart.max} apart from the baseline`)
+        }
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// --- scene-light-radius: lights with a size, against the reference ------------
+
+/**
+ * The light size measurement page (scripts/light-check) with query, on gpu: the raster's direct light against the
+ * reference traced on the lights' surfaces (scene-light-size S0's way). Its report, and the comparison's panels.
+ */
+async function lightCheck(gpu, query) {
+  const page = await gpu.newPage({ viewport: { width: 2000, height: 1400 } })
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  try {
+    await page.goto(`${base}/scripts/light-check/index.html?${query}`)
+    await page.waitForFunction(() => window.__lightCheck?.done || window.__lightCheck?.error, null, { timeout: 300_000 })
+    const { error, report } = await page.evaluate(() => window.__lightCheck)
+    assert.equal(error, null, `${query}: ${error}`)
+    assert.deepEqual(errors, [], `${query}: ${errors.join('\n')}`)
+    return { report, panels: await page.locator('#panels').screenshot() }
+  } finally {
+    await page.close()
+  }
+}
+
+/** Where a measurement run keeps its panels (SCENE_E2E_LIGHT_OUT=<dir>), for the owner to see. */
+async function keepPanels(name, png) {
+  if (process.env.SCENE_E2E_LIGHT_OUT) await writeFile(`${process.env.SCENE_E2E_LIGHT_OUT}/${name}.png`, png)
+}
+
+const within = (ratio, tolerance) => Math.abs(ratio - 1) <= tolerance
+
+// AC-S1-3 (Epic AC-3): a sphere light lights the wall far off as I/d² does, wraps past the terminator as the
+// reference does, and stays finite with a surface inside it.
+await check('light size: sphere lights light by I/d² far off, wrap past the terminator and stay finite near a surface (AC-S1-3)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const light of ['spot', 'point']) {
+      // The wall is 7 m and more from the light: d ≥ 10 r at r = 0.1 m.
+      const { report } = await lightCheck(gpu, `light=${light}&size=0.1&refFrames=4096&rasterFrames=1`)
+      console.log(`AC-S1-3 ${light} 0.1 m: the wall's light ${report.highlight.wall.toFixed(4)} of the reference's`)
+      assert.ok(within(report.highlight.wall, 0.02), `${light}: the wall's light ${report.highlight.wall} of the reference's`)
+    }
+    for (const size of [0.3, 0.5, 1]) {
+      const { report, panels } = await lightCheck(gpu, `light=point&layout=near&size=${size}&refFrames=4096&rasterFrames=1`)
+      await keepPanels(`terminator-point-${size}`, panels)
+      const { reference, raster } = report.terminator
+      console.log(`AC-S1-3 terminator at r ${size} m: reference ${reference}°, raster ${raster}°`)
+      assert.ok(Math.abs(raster - reference) <= 2, `r ${size} m: the terminator at ${raster}°, the reference's at ${reference}°`)
+    }
+    const { report } = await lightCheck(gpu, 'light=point&layout=close&size=0.1&refFrames=4096&rasterFrames=1')
+    console.log(`AC-S1-3 a point light 5 cm off the wall: brightest ${report.raster.brightest.toFixed(1)}, the reference's ${report.reference.brightest.toFixed(1)}`)
+    assert.equal(report.raster.notFinite, 0, 'the light near the wall leaves no pixel infinite or NaN')
+    assert.ok(report.raster.brightest <= report.reference.brightest * 1.25, `the brightest ${report.raster.brightest}, the reference's ${report.reference.brightest}`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// AC-S1-4 (Epic AC-4): highlights grow and dim with the light's size as the reference's do, on the gloss panel at two
+// roughnesses, under a clearcoat, and from the sun turned so its glint is on the panel. Energy is held both ways: the
+// panel's light, as S0 measured it, and the highlight alone once the panel's diffuse (its dimmest 5%) is taken off, as
+// the AC words it; area is the pixels over half that highlight's peak (S0 integration.md「高光模型」).
+await check('light size: highlights grow with the light as the reference has them (AC-S1-4)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const cases = [
+    ...[0.15, 0.4].flatMap((gloss) => [0.1, 0.3, 1].map((size) => ({ name: `spot-${size}-gloss-${gloss}`, query: `light=spot&size=${size}&gloss=${gloss}` }))),
+    ...[0.1, 0.3].map((size) => ({ name: `spot-${size}-clearcoat`, query: `light=spot&size=${size}&coat=1` })),
+    // Measured, not held to the thresholds: a 1 m light's mirror image in a near-mirror coat (0.05) fills the panel,
+    // so the highlight over its dimmest 5% and its area mean little; its peak is low. Left to the owner (tasks 2.2).
+    { name: 'spot-1-clearcoat', query: 'light=spot&size=1&coat=1', measured: true },
+    ...[0.545, 2, 5].map((size) => ({ name: `sun-${size}`, query: `light=sun&size=${size}&layout=glint` })),
+  ]
+  const failed = []
+  try {
+    for (const c of cases) {
+      const { report, panels } = await lightCheck(gpu, `${c.query}&refFrames=4096&rasterFrames=1`)
+      await keepPanels(`highlight-${c.name}`, panels)
+      const h = report.highlight
+      const peak = h.peak.raster / h.peak.reference
+      console.log(`AC-S1-4 ${c.name}: energy ${h.energy.ratio.toFixed(3)} (highlight ${h.lobe.ratio.toFixed(3)}), area ${h.area.ratio.toFixed(3)}, peak ${peak.toFixed(3)}`)
+      const off = !within(h.energy.ratio, 0.1) || !within(h.lobe.ratio, 0.1) || !within(h.area.ratio, 0.2) || !within(peak, 0.25)
+      if (!c.measured && off) failed.push(c.name)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(failed, [], `highlights off the reference: ${failed.join(', ')}`)
+})
+
+/** The width bins the measurement page profiles by (scripts/light-check/measure.ts BIN): a width is known to one. */
+const PROFILE_BIN = 0.005
+
+/**
+ * One soft shadow's boards against the reference, as S0 measured them (soft-shadow-candidates.md): the 0.05 m board's
+ * shadow is mostly hidden behind the board, so it is logged only; an edge the reference has a 10%–90% width for is
+ * held to 20% when the reference's is 5 cm or wider and to texels when narrower, give or take two bins (a width is
+ * the bins between its 10% and its 90% crossing, each crossing known to a bin, so two widths of one edge may stand two
+ * bins apart with nothing between them; scene-light-radius tasks 3.3); the 3 m board's profiles
+ * to a mean of 0.02 and a largest of 0.12 (the 0.5 m board's edges are a pixel or two wide, where the 1 cm pixels and
+ * the map's texels make the largest difference mean nothing). What is off, as lines.
+ */
+function penumbraOff(name, report, narrowTexels) {
+  const off = []
+  const widths = {}
+  for (const [board, w] of Object.entries(report.penumbrae)) {
+    const texel = report.texels?.[board] ?? null
+    const sides = []
+    for (const side of ['left', 'right', 'lower', 'upper']) {
+      const ref = w.reference[side].width
+      const got = w.averaged[side].width
+      sides.push(`${side} ${ref == null ? '–' : (ref * 100).toFixed(1)}→${got == null ? '–' : (got * 100).toFixed(1)}`)
+      if (board === '0.05 m' || ref == null) continue
+      if (got == null) off.push(`${name} ${board} ${side}: no width, the reference's ${ref}`)
+      else if (ref >= 0.05 ? Math.abs(got - ref) > 0.2 * ref : Math.abs(got - ref) > narrowTexels * texel + 2 * PROFILE_BIN) off.push(`${name} ${board} ${side}: ${got} m, the reference's ${ref} m (a texel ${texel?.toFixed(4)} m)`)
+    }
+    const p = w.profile.averaged
+    widths[board] = ['left', 'right', 'lower', 'upper'].map((k) => w.averaged[k].width).filter((v) => v != null)
+    console.log(`${name} ${board}: ${sides.join(' · ')} cm; profile ${p.mean.toFixed(3)} · ${p.max.toFixed(3)}; texel ${texel == null ? '–' : (texel * 1000).toFixed(1)} mm`)
+    if (board === '3 m' && (p.mean > 0.02 || p.max > 0.12)) off.push(`${name} ${board}: profile ${p.mean.toFixed(3)} · ${p.max.toFixed(3)}`)
+  }
+  // Wider the further the board from the wall.
+  const mean = (a) => (a?.length ? a.reduce((x, y) => x + y, 0) / a.length : null)
+  if (mean(widths['0.5 m']) != null && mean(widths['3 m']) != null && !(mean(widths['3 m']) > mean(widths['0.5 m']))) off.push(`${name}: the 3 m board's penumbra no wider than the 0.5 m board's`)
+  return off
+}
+
+// AC-S1-1 (Epic AC-1): penumbrae widen with the distance from blocker to wall as the reference's do, for a spot, a
+// point and a parallel light with sizes; the raster averaged over 16 frames, as the workbench's export accumulates.
+await check('light size: soft shadows widen with distance as the reference has them (AC-S1-1)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    for (const [light, sizes] of [['spot', [0.1, 0.3]], ['point', [0.1, 0.3]], ['sun', [2, 5]]]) {
+      for (const size of sizes) {
+        const { report, panels } = await lightCheck(gpu, `light=${light}&size=${size}&refFrames=2048&rasterFrames=16`)
+        await keepPanels(`penumbra-${light}-${size}`, panels)
+        off.push(...penumbraOff(`AC-S1-1 ${light} ${size}`, report, 2))
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [], 'penumbrae off the reference')
+})
+
+// AC-S1-5 (Epic AC-6): the skies' sun throws its shadow, in the nearest cascade, as wide as its disc does, a texel
+// apart at most: the procedural sky's 0.545°, the physical sky's sun_size_deg at 0.545° and at 5°, softer at 5°. And
+// AC-S1-10: the physical sky drawn at 0.545° and then set to 5° gives 5°'s penumbrae, the shader kept.
+await check('light size: the skies’ sun softens its shadows by its size (AC-S1-5)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  const wide = {}
+  try {
+    for (const [name, query] of [['procedural', 'sky=procedural'], ['physical 0.545', 'sky=physical&size=0.545'], ['physical 5', 'sky=physical&size=5'], ['physical 0.545 then 5', 'sky=physical&size=0.545&resize=5']]) {
+      const { report, panels } = await lightCheck(gpu, `${query}&refFrames=2048&rasterFrames=16`)
+      await keepPanels(`sky-${name.replaceAll(' ', '-')}`, panels)
+      off.push(...penumbraOff(`AC-S1-5 ${name}`, report, 1))
+      const w = report.penumbrae['3 m'].averaged
+      wide[name] = ['left', 'right', 'lower', 'upper'].map((k) => w[k].width ?? 0).reduce((a, b) => a + b, 0) / 4
+    }
+  } finally {
+    await gpu.close()
+  }
+  console.log(`AC-S1-5 the 3 m board's penumbra: ${Object.entries(wide).map(([k, v]) => `${k} ${(v * 100).toFixed(1)} cm`).join(', ')}`)
+  assert.ok(wide['physical 5'] > 2 * wide['physical 0.545'], 'the physical sky at 5° softer than at 0.545°')
+  assert.ok(Math.abs(wide['physical 0.545 then 5'] - wide['physical 5']) <= 0.01, 'set to 5° after drawing: as wide as loaded at 5°')
+  assert.deepEqual(off, [], 'the sky sun\'s penumbrae off the reference')
+})
+
+/** A picture's mean luma in an n × n grid of tiles, row by row. */
+async function tileLuma(page, png, n) {
+  return page.evaluate(async ([src, n]) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const g = c.getContext('2d')
+    g.drawImage(bitmap, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    const sum = new Float64Array(n * n)
+    const count = new Uint32Array(n * n)
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        const k = (y * c.width + x) * 4
+        const t = Math.min(n - 1, Math.floor((y * n) / c.height)) * n + Math.min(n - 1, Math.floor((x * n) / c.width))
+        sum[t] += 0.2126 * p[k] + 0.7152 * p[k + 1] + 0.0722 * p[k + 2]
+        count[t]++
+      }
+    }
+    return Array.from(sum, (s, t) => s / count[t])
+  }, [`data:image/png;base64,${png.toString('base64')}`, n])
+}
+
+/**
+ * Tiles where a sized picture's shading is missing or its shadow gone, against the same picture without sizes: a
+ * lit tile (luma over 12) gone below 60% of itself, or a shadowed one lit past 160% and 12 more. Soft shadows move a
+ * tile's luma a little; a light whose shader did not build takes its light away, a filter hoisted out of its branch
+ * its shadow (U7, the Loop's hoisting).
+ */
+function tilesOff(sized, sizeless) {
+  const off = []
+  sizeless.forEach((was, t) => {
+    const now = sized[t]
+    if ((was > 12 && now < 0.6 * was) || now > 1.6 * was + 12) off.push(`tile ${t}: ${was.toFixed(0)} → ${now.toFixed(0)}`)
+  })
+  return off
+}
+
+// AC-S1-10: lights with sizes shade where they should on WebGPU and through the WebGL2 backend (U7's two three
+// defects: a map read compared or linear, a cube read with no level); the sun's cascades 1–3 keep their shadows with
+// the filter in each (the Loop hoisted out of its branch). Each lit export against the same scene without sizes,
+// tile by tile: occluder-wall with its spot, point and parallel light all on, and noon, whose shadows reach far.
+await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the sun in every cascade (AC-S1-10)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const off = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const allOn = (sized) => (scene) => {
+      for (const o of scene.objects) if (o.light) o.visible = true
+      if (sized) for (const o of scene.objects) {
+        if (o.light?.type === 'directional') o.light.angular_diameter_deg = 2
+        else if (o.light) o.light.radius_m = 0.3
+      } else sizeless(scene)
+    }
+    for (const forceWebGL of [false, true]) {
+      const backend = forceWebGL ? 'webgl2' : 'webgpu'
+      for (const [name, sized, plain] of [
+        ['occluder-wall', { edit: allOn(true) }, { edit: allOn(false) }],
+        ['noon', {}, { hooks: 'skySunDeg:0' }],
+      ]) {
+        const a = await exportReference(gpu, name, { litOnly: true, forceWebGL, ...sized })
+        const b = await exportReference(gpu, name, { litOnly: true, forceWebGL, ...plain })
+        if (forceWebGL) assert.ok(a.backends.some((x) => x === 'scene renderer (offscreen): webgl2'), `${name}: ${a.backends}`)
+        for (const img of a.images) {
+          await keepPanels(`backends-${img.file.replace('.png', '')}-${backend}`, img.png)
+          const tiles = tilesOff(await tileLuma(page, img.png, 16), await tileLuma(page, b.images.find((i) => i.file === img.file).png, 16))
+          console.log(`AC-S1-10 ${backend} ${img.file}: ${tiles.length} tiles off`)
+          off.push(...tiles.map((t) => `${backend} ${img.file} ${t}`))
+        }
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(off, [], 'sized lights missing their shading or shadows')
+})
+
+/**
+ * scene-light-radius AC-S1-7's scene: frame-two-lights (a parallel and a point light) with a spot over its middle and
+ * the procedural sky, four lights that cast, at their default sizes or all of size 0 (the sky's sun by the
+ * skySunDeg hook); scripts/light-check/perf.tsx draws the same for the viewport's numbers.
+ */
+function fourLights(sized, { engine, resolution, volume = false }) {
+  return (scene) => {
+    scene.render.engine = engine
+    scene.render.resolution = resolution
+    scene.environment.sky = { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }
+    scene.objects.push({ id: gid('perfspot'), kind: 'light', name: '顶部聚光', parent_id: null, order: 99, transform: { position: [0, 6, 2], rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'spot', color: '#ffffff', intensity: 120, cast_shadow: true, distance: 0, decay: 2, angle: 0.7, penumbra: 0.3 } })
+    if (volume) scene.objects.push({ id: gid('perffog'), kind: 'volume', name: '雾', parent_id: null, order: 98, transform: { ...identity(), position: [0, 1.5, 0], scale: [6, 3, 6] }, visible: true, locked: false, volume: { scatter_density: 0.1, cast_shadow: true } })
+    for (const o of scene.objects) {
+      if (o.light?.type === 'directional') o.light.angular_diameter_deg = sized ? 0.545 : 0
+      else if (o.light) o.light.radius_m = sized ? 0.1 : 0
+    }
+  }
+}
+
+// SCENE_E2E_LIGHT_PERF=<dir> (scene-light-radius AC-S1-7, tasks 7.1): the lit export of AC-S1-7's scene, sized and
+// all of size 0, its shaders compiled cold (gpuTestHooks.cold), on this machine's GPU: 1K in both engines; the
+// workbench also at 4K, 8K and with a casting volume. Epic AC-8: at most 50% longer. light-perf.json in <dir>.
+if (process.env.SCENE_E2E_LIGHT_PERF) await check('light size: AC-S1-7, the lit export with sized lights no more than half as long again', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  try {
+    const cases = [
+      { engine: 'workbench', resolution: '1k' },
+      { engine: 'realtime_gi', resolution: '1k' },
+      { engine: 'workbench', resolution: '4k' },
+      { engine: 'workbench', resolution: '8k' },
+      { engine: 'workbench', resolution: '1k', volume: true },
+    ]
+    for (const c of cases) {
+      const time = async (sized) => (await exportReference(gpu, 'frame-two-lights', { litOnly: true, hooks: sized ? 'cold' : 'cold,skySunDeg:0', edit: fourLights(sized, c) })).exportMs
+      const before = await time(false)
+      const after = await time(true)
+      const row = { ...c, sizeless_ms: before, sized_ms: after, more: Number((after / before - 1).toFixed(3)) }
+      rows.push(row)
+      console.log(`AC-S1-7 export ${c.engine} ${c.resolution}${c.volume ? ' with a volume' : ''}: ${before} → ${after} ms (${(row.more * 100).toFixed(0)}%)`)
+    }
+    await writeFile(`${dir}/light-perf.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  const over = rows.filter((r) => r.more > 0.5)
+  assert.deepEqual(over, [], 'exports more than half as long again')
+})
+
+// scene-light-radius tasks 4.2 (AC-S1-10): the workbench's lit export of a scene with soft shadows averages 16
+// frames, their kernels turning by frame, and is the same twice pixel for pixel: the turn goes by the frame and the
+// pixel only, and every export starts at frame 0.
+await check('light size: the workbench\'s lit export with soft shadows is the same twice (AC-S1-10)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const edit = (scene) => {
+      for (const o of scene.objects) if (o.light) o.visible = true
+    }
+    const [a, b] = [await exportReference(gpu, 'occluder-wall', { litOnly: true, edit }), await exportReference(gpu, 'occluder-wall', { litOnly: true, edit })]
+    for (const img of a.images) {
+      const apart = await imageApart(page, img.png, b.images.find((i) => i.file === img.file).png)
+      console.log(`AC-S1-10 workbench twice ${img.file}: largest channel difference ${apart.max}`)
+      assert.equal(apart.max, 0, `${img.file}: the two exports differ`)
+    }
   } finally {
     await gpu.close()
   }
@@ -7008,6 +7440,40 @@ if (process.env.SCENE_E2E_TRACE_GRAZING) await check('trace diag: a glossy tiled
   }
 })
 
+// scene-light-radius AC-S1-6 (Epic AC-7), SCENE_E2E_TRACE=1: the materials scene under its sun (0.545°) and with a
+// point light and a spot of radius 0.3 m besides, a primary ray a pixel shaded at its hit against the raster mesh by
+// mesh, as GI-S1 AC-S1-2 holds them: the light without shadows within a level, shadow or not the same on 99 % of the
+// pixels the raster has wholly lit or wholly in shadow (the rays to random points of the lights).
+if (process.env.SCENE_E2E_TRACE) await check('light size: AC-S1-6, hits lit by sized lights as the raster lights them', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+    referenceScene(server, 'materials', (scene) => {
+      realtimeGI(scene)
+      scene.objects.push(
+        { id: gid('sizedpoint'), kind: 'light', name: '点光', parent_id: null, order: 91, transform: { ...identity(), position: [-1.6, 2.2, 0] }, visible: true, locked: false, light: { type: 'point', color: '#ffd2a0', intensity: 60, cast_shadow: true, distance: 0, decay: 2, radius_m: 0.3 } },
+        { id: gid('sizedspot'), kind: 'light', name: '聚光', parent_id: null, order: 92, transform: { position: [1.6, 3, 0], rotation: down, scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'spot', color: '#e0ecff', intensity: 120, cast_shadow: true, distance: 0, decay: 2, angle: 0.8, penumbra: 0.3, radius_m: 0.3 } },
+      )
+    })
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'materials')
+    const report = await page.evaluate(() => window.__sceneGPU.traceHits(640))
+    console.log(`  AC-S1-6 materials with sized lights: exposure ${report.exposure.toFixed(3)}, shadow ${report.shadow.agree} of ${report.shadow.compared}`)
+    for (const m of report.meshes) console.log(`    ${m.material.padEnd(16)} ${String(m.pixels).padStart(6)} px  lit ${m.lit.toFixed(2)}`)
+    const judged = report.meshes.filter((m) => m.pixels >= 50)
+    assert.ok(judged.length >= 10, `${judged.length} meshes large enough to judge`)
+    for (const m of judged) assert.ok(m.lit <= 1, `${m.material} lit ${m.lit.toFixed(2)} levels apart`)
+    assert.ok(report.shadow.compared > 1000 && report.shadow.agree >= 0.99 * report.shadow.compared, `shadows agree on ${report.shadow.agree} of ${report.shadow.compared}`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // SCENE_E2E_TRACE=1: the materials scene, a primary ray a pixel shaded at
 // its hit (render/trace/hit.ts) against the raster mesh by mesh, inside each
 // (render/trace/checks.ts hitCheck): the material's outputs and the light
@@ -8229,6 +8695,49 @@ await check('W5 spot: the spot lights a cone of the volume, none outside it', as
     assert.deepEqual(errors, [])
   } finally {
     await gpu?.close()
+  }
+})
+
+// scene-light-radius tasks 4.1 (AC-S1-10): the volumes under a casting spot whose size goes from 0 to 0.3 m and
+// back, beside a volume that casts: the spot's cone in the fog shows each time, about as bright, on WebGPU and
+// through the WebGL2 backend (a sized spot's map is read raw and compared by hand, its march built anew).
+await check('light size: a volume lit by a spot going sized and back keeps its cone, both backends (AC-S1-10)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const points = [[0, 2.0, -1.0]]
+    const fog = () => volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, anisotropy: 0.3, cast_shadow: true })
+    const sized = (r, ...objects) => {
+      const scene = fixtureScene('cornell', ...objects)
+      for (const o of scene.objects) if (o.light?.type === 'spot') o.light.radius_m = r
+      return scene
+    }
+    const off = []
+    for (const webgl of [false, true]) {
+      const picture = (scene) =>
+        page.evaluate(async ([sc, p, gl]) => {
+          window.__sceneGPU.forceWebGL = gl
+          try {
+            return await window.__picture(sc, 'lit', 768, p)
+          } finally {
+            window.__sceneGPU.forceWebGL = false
+          }
+        }, [scene, points, webgl])
+      const backend = webgl ? 'webgl2' : 'webgpu'
+      const cone = []
+      for (const r of [0, 0.3, 0, 0.3]) {
+        const empty = await picture(sized(r))
+        const fogged = await picture(sized(r, fog()))
+        cone.push(lumaAt(fogged, fogged.at[0]) - lumaAt(empty, empty.at[0]))
+        if (r > 0) await savePicture(page, `light-size-volume-${backend}`, fogged)
+      }
+      console.log(`AC-S1-10 volume ${backend}: the cone's luma at 0, 0.3, 0, 0.3 m: ${cone.map((v) => v.toFixed(1)).join(', ')}`)
+      if (!(cone.every((v) => v > 10) && cone[1] > 0.6 * cone[0] && cone[1] < 1.6 * cone[0] && Math.abs(cone[2] - cone[0]) <= 1 && Math.abs(cone[3] - cone[1]) <= 1)) off.push(`${backend}: ${cone.join(', ')}`)
+    }
+    assert.deepEqual(errors, [])
+    assert.deepEqual(off, [], 'the cone missing, or not the same each time')
+  } finally {
+    await gpu.close()
   }
 })
 

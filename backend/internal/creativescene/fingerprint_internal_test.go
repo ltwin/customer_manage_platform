@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -141,6 +142,8 @@ const pinnedCamera = "sobj_000000000000000000001"
 // The fingerprints of pinnedScene at exposure 0 on the workbench. beforeW1
 // were taken before W1 (scene-display-look) gave clay the fixed studio light
 // and clay and lit AgX; pinned are the ones since. Line art did not change.
+// pinned's lit is the one since S1 (scene-light-radius) gave lights a size:
+// beforeLightSize has the one before.
 var (
 	beforeW1 = map[string]string{
 		PassClay: "v1:97cf4a21ba8b318b9d4f7127a87cde66902afca4c4ff687c0658dbe14eb5e92e",
@@ -150,9 +153,47 @@ var (
 	pinned = map[string]string{
 		PassClay: "v1:ec5e772a3a1246db4f4e3c3be75f06963297881456d8ab0d70f0b275415d0d9b",
 		PassLine: beforeW1[PassLine],
-		PassLit:  "v1:ae03e71833a7ac86908f92c525e29e0c1682df2b502e7b11d8992ad47e504208",
+		PassLit:  "v1:017c21a8353edf239350cc4d6c7a1794c773ccdd08d45282d19a295e9a59ad4c",
 	}
 )
+
+// beforeLightSize are pinnedScene's fingerprints before S1 (scene-light-radius)
+// gave lights a size; the lit one is pinned's before then.
+var beforeLightSize = map[string]string{
+	PassClay: pinned[PassClay],
+	PassLine: pinned[PassLine],
+	PassLit:  "v1:ae03e71833a7ac86908f92c525e29e0c1682df2b502e7b11d8992ad47e504208",
+}
+
+// data: 光源尺寸「渲染指纹」, AC-S1-9: a lit image of a scene with a light,
+// or whose sky's sun casts, reads as stale once lights have a size; one under
+// an HDRI or a plain colour without lights, and clay and line art, do not.
+func TestLightModelStalesLitOnce(t *testing.T) {
+	withoutLights := func(sky string) Scene {
+		s := sceneOf(t, sky, `{"mode":"lit"}`, `{}`)
+		s.Objects = slices.DeleteFunc(s.Objects, func(o Object) bool { return o.Kind == KindLight })
+		return s
+	}
+	for _, tc := range []struct {
+		name   string
+		scene  Scene
+		before map[string]string
+		stale  bool
+	}{
+		{"a light", pinnedScene(t, `{"mode":"lit"}`), beforeLightSize, true},
+		{"a procedural sky", withoutLights(proceduralSky), map[string]string{PassClay: pinned[PassClay], PassLine: pinned[PassLine],
+			PassLit: "v1:657b14ff454c0a182f5b1df460bf80bbeed507e1f9f1850796e36e6436e70303"}, true},
+		{"a plain colour", withoutLights(`{"kind":"color","color":"#808080"}`), map[string]string{PassClay: pinned[PassClay], PassLine: pinned[PassLine],
+			PassLit: "v1:425d5dbe7e9817274f1970f85d613d55d7b9fdaa3b5a0719b8d5c3f15d3d954e"}, false},
+	} {
+		for _, pass := range Passes {
+			got, _ := Fingerprint(tc.scene, pinnedCamera, pass)
+			if want := tc.stale && pass == PassLit; (got != tc.before[pass]) != want {
+				t.Errorf("%s, %s: %s against the one before S1 %s, want stale %v", tc.name, pass, got, tc.before[pass], want)
+			}
+		}
+	}
+}
 
 // W1 changed how clay and lit images look without a version bump: their
 // exports from before read as stale once, line art stays current.

@@ -1,6 +1,8 @@
-import { DirectionalLight, Object3D, PointLight, SpotLight, type Light as ThreeLight } from 'three'
+import { Object3D, type Light as ThreeLight } from 'three'
 import type { SceneObject } from '../api.ts'
-import { lightDefaults } from '../state/apply.ts'
+import { lightDefaults, lightSize } from '../state/apply.ts'
+import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from '../render/lightModel/lights.ts'
+import { attachSoftShadow } from '../render/lightModel/shadowFilter.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
 import { volumeShadowNode } from '../render/volumes/shadow.ts'
 
@@ -13,6 +15,11 @@ import { volumeShadowNode } from '../render/volumes/shadow.ts'
 // (world/exposure.ts applyExposure), 1 under any sky but the physical one.
 // A spot's and a point's shadow nodes take the volumes' shadows (W5,
 // render/volumes/shadow.ts); a directional light's cascades do too.
+// Lights have a size (data: 光源尺寸): a point or spot light's radius_m, a
+// directional light's angular_diameter_deg, as the light's size
+// (render/lightModel/lights.ts). A light is built for its type and whether
+// it has a size (lightKey): three keeps the light node and shadow node a
+// light first builds, and a size moving off 0 or back takes other ones.
 
 type Light = NonNullable<SceneObject['light']>
 
@@ -20,21 +27,24 @@ type Light = NonNullable<SceneObject['light']>
 const shadowMapSize = 1024
 
 /** stop undoes the light's shadow node: a directional light's cascades once it casts, a spot's or point's from the start. */
-export type BuiltLight = { light: DirectionalLight | PointLight | SpotLight; target: Object3D | null; stop: (() => void) | null }
+export type BuiltLight = { light: SizedLight; target: Object3D | null; stop: (() => void) | null }
+
+/** What a light is built for: its type and whether it has a size; a change in either builds it anew. */
+export const lightKey = (l: Light): string => `${l.type}${lightSize(l) > 0 ? '+size' : ''}`
 
 export function buildLight(type: Light['type']): BuiltLight {
   // Before the light first builds: three keeps the shadow node it builds first.
   if (type === 'point') {
-    const light = new PointLight()
+    const light = new SceneSphereLight()
     return { light, target: null, stop: volumeShadowNode(light) }
   }
   const target = new Object3D()
   target.position.set(0, 0, -1)
-  const light = type === 'spot' ? new SpotLight() : new DirectionalLight()
+  const light = type === 'spot' ? new SceneSpotLight() : new SceneSunLight()
   light.target = target
   // three puts a directional light at (0, 1, 0); here it sits at the object's origin.
   light.position.set(0, 0, 0)
-  return { light, target, stop: light instanceof SpotLight ? volumeShadowNode(light) : null }
+  return { light, target, stop: light instanceof SceneSpotLight ? volumeShadowNode(light) : null }
 }
 
 /** Writes the document's fields onto a light built for the same type. */
@@ -44,11 +54,12 @@ export function applyLight(built: BuiltLight, l: Light) {
   light.color.set(v.color)
   light.userData.baseIntensity = v.intensity
   light.intensity = v.intensity
-  if (light instanceof PointLight || light instanceof SpotLight) {
+  light.size = lightSize(l)
+  if (light instanceof SceneSphereLight || light instanceof SceneSpotLight) {
     light.distance = v.distance
     light.decay = v.decay
   }
-  if (light instanceof SpotLight) {
+  if (light instanceof SceneSpotLight) {
     light.angle = v.angle
     light.penumbra = v.penumbra
   }
@@ -57,8 +68,10 @@ export function applyLight(built: BuiltLight, l: Light) {
     light.castShadow = shadows
     if (shadows) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
   }
+  // A sized light's soft shadow, before the cascades below clone its shadow (render/lightModel/shadowFilter.ts).
+  if (shadows) attachSoftShadow(light)
   // Once, and kept: three's light node holds on to the first shadow node it builds.
-  if (shadows && light instanceof DirectionalLight && !built.stop) built.stop = cascadeSunShadow(light)
+  if (shadows && light instanceof SceneSunLight && !built.stop) built.stop = cascadeSunShadow(light)
 }
 
 export function disposeLight(built: BuiltLight) {
