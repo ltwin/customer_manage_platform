@@ -547,7 +547,7 @@ test('a render that cannot be taken says why: the request’s problem, or the pa
   await tick()
   stuck.ticker.expire()
   await running
-  assert.deepEqual(stuck.completes[0].payload.error, { code: 'host_error', message: '截图超过 60 秒没有完成' })
+  assert.deepEqual(stuck.completes[0].payload.error, { code: 'host_error', message: `截图超过 ${renderTimeoutMs / 1000} 秒没有完成` })
 
   const lost = new FakePage()
   lost.shot = new Promise<Shot>(() => {})

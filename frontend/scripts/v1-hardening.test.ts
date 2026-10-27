@@ -195,7 +195,7 @@ test('mobile shell keeps Customers and Calendar direct with safe-area and touch-
 
   assert.match(shellSource, /label: '客户', to: '\/customers'/)
   assert.match(shellSource, /label: '档期', to: '\/calendar'/)
-  assert.match(shellSource, /<nav className="bottom-nav" aria-label="主导航">/)
+  assert.match(shellSource, /<nav\s+className="bottom-nav"\s+aria-label="主导航"/)
   assert.match(baseCssSource, /\.bottom-nav\s*\{[\s\S]*env\(safe-area-inset-bottom\)/)
   assert.match(baseCssSource, /\.bottom-nav a\s*\{[\s\S]*min-height:\s*48px;/)
   assert.match(

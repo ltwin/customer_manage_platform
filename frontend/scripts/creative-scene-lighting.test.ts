@@ -29,8 +29,9 @@ test('light fields go onto three.js lights as they are, with three.js defaults f
   applyLight(sun, { type: 'directional', intensity: 3, cast_shadow: true })
   assert.ok(sun.light instanceof DirectionalLight)
   assert.ok(sun.stop, 'a shadow-casting directional light fits its shadow like the sun')
+  const cascades = sun.stop
   applyLight(sun, { type: 'directional', intensity: 3, cast_shadow: false })
-  assert.equal(sun.stop, null)
+  assert.equal(sun.stop, cascades, 'the cascades stay once built: three keeps the first shadow node it builds')
 })
 
 test('directional and spot lights shine along the object\'s local −Z and turn with it', () => {
