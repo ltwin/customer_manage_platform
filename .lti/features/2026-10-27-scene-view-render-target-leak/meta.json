@@ -1,13 +1,27 @@
 {
   "uid": "8a117f55-e43d-4600-8cbf-536f1b1334b5",
-  "revision": 1,
+  "revision": 3,
   "id": "scene-view-render-target-leak",
   "kind": "issue",
   "assurance": "governed",
-  "state": "draft",
+  "state": "approved",
   "createdAt": "2026-10-27T16:25:38.606Z",
-  "updatedAt": "2026-10-27T16:25:38.649Z",
-  "approvals": {},
+  "updatedAt": "2026-10-27T17:10:37.426Z",
+  "risk": {
+    "factors": []
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-27T17:10:36.950Z",
+      "contentHash": "03d6f589ca87101e"
+    },
+    "designSkipped": {
+      "by": "samson",
+      "at": "2026-10-27T17:10:37.376Z",
+      "reason": "单点修复，diagnosis 已写明修法"
+    }
+  },
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
