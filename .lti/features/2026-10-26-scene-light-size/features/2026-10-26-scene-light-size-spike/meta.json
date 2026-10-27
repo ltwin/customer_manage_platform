@@ -1,12 +1,12 @@
 {
   "uid": "9f1feb22-1c9c-4ca5-a2c3-712325a45e8d",
-  "revision": 3,
+  "revision": 5,
   "id": "scene-light-size-spike",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-light-size",
   "designBinding": {
-    "version": 1,
+    "version": 2,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -23,23 +23,36 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-26T13:18:29.364Z",
-  "updatedAt": "2026-10-26T14:08:22.813Z",
+  "updatedAt": "2026-10-27T04:04:58.549Z",
   "risk": {
     "factors": []
   },
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-26T14:07:44.864Z",
+      "at": "2026-10-27T04:04:58.196Z",
       "contentHash": "3426232683124701"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-26T14:07:44.864Z",
-      "contentHash": "631f43beb7fd5eb2"
+      "at": "2026-10-27T04:04:58.196Z",
+      "contentHash": "7d6d8959457ce9e6"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-26T14:07:44.864Z",
+      "contentHash": "3426232683124701",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-26T14:07:44.864Z",
+      "contentHash": "631f43beb7fd5eb2",
+      "role": "design"
+    }
+  ],
   "revisions": [],
   "baseline": {
     "commit": "26e49bbc1f1c2950dad8d768d65c942bd9c3d38d",

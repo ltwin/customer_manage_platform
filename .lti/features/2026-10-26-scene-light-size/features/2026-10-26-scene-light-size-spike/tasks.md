@@ -82,4 +82,5 @@
   - 结果：owner 2026-10-26 按建议选定 `thresholds.md` 的阈值和 U1–U8，包括 AC-4 改为「与参考解比」（原文的「与点光源比」在大光源下不成立）；聚光和点光的条纹放进 S1 一起修，AC-2 的基线改为修复后的画面。
 - [x] 5.2 原型收尾：用 `git mv` 把 `frontend/spike-light.html` 和 `frontend/spike/light/` 移进 `discovery/research/prototype/`。完成判据：`git diff develop --stat -- frontend/src frontend/package.json frontend/package-lock.json` 为空，`frontend/spike*` 不存在，前端静态检查通过（AC-S0-6）。
   - 结果：已移入 `discovery/research/prototype/`，附重新运行的说明（`README.md`）。`develop` 在本分支拉出后又合入了 `scene-probe-gi`，所以判据按分支自身的改动核对（`git diff develop...HEAD`）：上述三处为空；`frontend/` 下只剩任务 1.1–1.2 的基线场景和 e2e。`frontend/spike*` 不存在；`oxlint` 无错误，`tsc -b` 通过。
-- [ ] 5.3 Epic 修订：在主检出的 `develop` 上，把 owner 的选择和阈值写回 Epic 的 design 和 proposal，呈给 owner。批准后执行 `lti epic revise`（AC-S0-7）。
+- [x] 5.3 Epic 修订：在主检出的 `develop` 上，把 owner 的选择和阈值写回 Epic 的 design 和 proposal，呈给 owner。批准后执行 `lti epic revise`（AC-S0-7）。
+  - 结果：owner 2026-10-27 批准，Epic 修订 v2，develop 提交 9ec03eb3。proposal 回填 AC-1、AC-3、AC-4、AC-5、AC-8 的阈值并改写 AC-2；design 写入 U1–U7 的结论，U8 仍未决；roadmap 的 S1 加上条纹修复、`workbench` 时域累积和关掉接触阴影；contracts 不变。v2 的四个文件原样带进本分支，S0 重新绑定到 v2；本子项的 proposal 和 design 内容没有变化，按原内容重新记录批准。
