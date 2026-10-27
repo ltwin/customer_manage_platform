@@ -15,10 +15,7 @@ func lensOf(scene Scene, cam Object) creativecanvas.SceneExportLens {
 	c := cam.Camera
 	l := creativecanvas.SceneExportLens{FocalMM: *c.FocalMM, DepthOfField: *c.DepthOfField, FStop: *c.FStop, FocusM: *c.Focus}
 	if id := *c.FocusObjectID; id != "" {
-		s := &lookAtScene{objects: make(map[string]Object, len(scene.Objects)), world: map[string]mat4{}}
-		for _, o := range scene.Objects {
-			s.objects[o.ID] = o
-		}
+		s := sceneWorld(scene.Objects)
 		target, found := s.objects[id]
 		view, okView := s.worldMatrix(cam.ID)
 		at, okAt := s.worldMatrix(id)

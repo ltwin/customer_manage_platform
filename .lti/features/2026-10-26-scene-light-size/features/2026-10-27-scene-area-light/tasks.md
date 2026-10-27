@@ -13,8 +13,13 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 2. 数据与服务端
 
-- [ ] 2.1 面光源字段：`model.go` 的 `Light`、`lightPatch`、`lightFields`、`lightNames`、`completeLight`、`validateLight` 加 `shape`、`width`、`height`，强度缺省与范围按类型。先写测试（`area_light_test.go`、`scene_test.go`）：补齐、范围、形状枚举、面光源写 `radius_m` 和点光写 `width` 返回 400 并指出字段。完成判据：`make check-go PKG=./internal/creativescene/...` 通过。
-- [ ] 2.2 换类型换算（I6）：从 `lookat.go` 抽出只按 `s.Objects` 计算世界矩阵的函数，`lookAtScene.worldMatrix` 改用它；`mergeLight(cur, p, before, after)` 按世界半轴叉积算面积，换算后截断，显式强度优先；`updateObjectsOp.apply` 在写 `o.Transform` 之前算 `before`。先写测试：点光 400 cd ↔ 面光源 6400 cd/m²、截断、显式强度优先、父级带缩放、同一次改缩放和类型。完成判据：同上，`lookat` 原有测试不变。
+- [x] 2.1 面光源字段：`model.go` 的 `Light`、`lightPatch`、`lightFields`、`lightNames`、`completeLight`、`validateLight` 加 `shape`、`width`、`height`，强度缺省与范围按类型。先写测试（`area_light_test.go`、`scene_test.go`）：补齐、范围、形状枚举、面光源写 `radius_m` 和点光写 `width` 返回 400 并指出字段。完成判据：`make check-go PKG=./internal/creativescene/...` 通过。
+  - 结果：通过。新增 `area_light_test.go` 的 `TestAreaLightDefaults`、`TestAreaLightRanges`；`scene_test.go` 的「unknown light type」改用 `hemisphere`（`area` 已是合法类型），未知字段的提示里多了 `shape、width、height`。强度越界的提示改为带类型名和该类型的上限（「面光源须有 … 0…100000 的强度」）。
+- [x] 2.2 换类型换算（I6）：从 `lookat.go` 抽出只按 `s.Objects` 计算世界矩阵的函数，`lookAtScene.worldMatrix` 改用它；`mergeLight(cur, p, before, after)` 按世界半轴叉积算面积，换算后截断，显式强度优先；`updateObjectsOp.apply` 在写 `o.Transform` 之前算 `before`。先写测试：点光 400 cd ↔ 面光源 6400 cd/m²、截断、显式强度优先、父级带缩放、同一次改缩放和类型。完成判据：同上，`lookat` 原有测试不变。
+  - 结果：通过。`TestAreaLightTypeChangeKeepsLuminousIntensity` 覆盖 13 种情况（含父级 2×3 缩放、父级拉伸加子级旋转 45° 的平行四边形、同一次改缩放和类型的两个方向、两种截断、显式强度、与平行光互换）。
+  - 实施时调整：
+    - 没有另抽世界矩阵函数，而是加 `sceneWorld(objects)` 构造只含现有物件的 `lookAtScene`，复用它的 `worldMatrix`；原来 `lookat.go`、`reparent.go`、`lens.go` 三处各自手写的构造也改用它。面积系数 `worldAreaScale` 取世界矩阵前两列叉积的长度；
+    - `updateObjectsOp.apply` 改为先写完本次所有更新、最后合并灯光：「更新后的缩放」要包括同一批里父级的变换，「更新前」取本次 op 开始时的快照（只在有面光源换类型时复制）。
 - [ ] 2.3 对外说明：`openapi.yaml` 的两个灯光 schema 加 `area` 和三个字段、强度上限按类型，`make generate` 后提交两份生成物；`scene_tools.go` 的灯光字段与打光指引补面光源，`scene_tools_test.go` 断言新字段。完成判据：两个包的 `check-go` 通过，`make generate-check` 干净，`TestLightModelStalesLitOnce` 不变。
 
 ## 3. 光栅着色与阴影

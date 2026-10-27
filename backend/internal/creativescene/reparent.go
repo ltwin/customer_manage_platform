@@ -84,10 +84,7 @@ func resolveReparent(ops []json.RawMessage, cur Scene) ([]json.RawMessage, error
 	if !found {
 		return ops, nil
 	}
-	s := &lookAtScene{objects: make(map[string]Object, len(cur.Objects)), added: map[string]lookAtItem{}, world: map[string]mat4{}}
-	for _, o := range cur.Objects {
-		s.objects[o.ID] = o
-	}
+	s := sceneWorld(cur.Objects)
 	out := make([]json.RawMessage, len(ops))
 	for i, h := range heads {
 		if h.Op != "reparent_objects" {
