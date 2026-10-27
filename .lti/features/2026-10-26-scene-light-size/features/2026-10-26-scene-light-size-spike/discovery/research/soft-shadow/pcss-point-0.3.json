@@ -1,0 +1,266 @@
+{
+  "scene": "occluder-wall",
+  "light": "point",
+  "method": "pcss",
+  "size": 0.3,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 4dbfb6e7: PCSS r 0.3 m, 16 + 32 samples, at most 48 texels",
+    "PointLight a52d9996: PCSS (cube, raw compares) r 0.3 m, 16 + 32 samples, at most 48 texels",
+    "DirectionalLight 103c3668: product PCF (pcss: spot and point lights so far)"
+  ],
+  "compileMs": 120,
+  "firstMs": 160,
+  "drawMs": 160,
+  "coldSalt": 0,
+  "view": "compare",
+  "tier": "full",
+  "compare": {
+    "size": {
+      "width": 960,
+      "height": 640
+    },
+    "refFrames": 8192,
+    "rasterFrames": 64,
+    "referenceMs": 4752,
+    "rasterMs": 303,
+    "averaged": {
+      "mean": 0.0010905451968386457,
+      "p95": 7.748603820800781e-7,
+      "max": 1,
+      "pixels": 448293
+    },
+    "first": {
+      "mean": 0.001465604813273075,
+      "p95": 0,
+      "max": 1,
+      "pixels": 448293
+    },
+    "convergence": null,
+    "penumbrae": {
+      "0.05 m": {
+        "reference": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "first": {
+          "left": {
+            "width": null,
+            "lo": 1
+          },
+          "right": {
+            "width": null,
+            "lo": 1
+          },
+          "lower": {
+            "width": null,
+            "lo": 1
+          },
+          "upper": {
+            "width": null,
+            "lo": 1
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0015455993233927535,
+            "max": 0.20035810271898902
+          },
+          "first": {
+            "mean": 0.0015087550462766996,
+            "max": 0.19270828366279602
+          }
+        }
+      },
+      "0.5 m": {
+        "reference": {
+          "left": {
+            "width": 0,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.03999999999999998,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.03,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.03,
+            "lo": 0
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": 0,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.04999999999999999,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.035,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.03,
+            "lo": 0
+          }
+        },
+        "first": {
+          "left": {
+            "width": 0,
+            "lo": 0
+          },
+          "right": {
+            "width": 0.03999999999999998,
+            "lo": 0
+          },
+          "lower": {
+            "width": 0.035,
+            "lo": 0
+          },
+          "upper": {
+            "width": 0.03,
+            "lo": 0
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.003940797834343895,
+            "max": 0.21449234584967297
+          },
+          "first": {
+            "mean": 0.0042849741495440945,
+            "max": 0.27381860713164013
+          }
+        }
+      },
+      "3 m": {
+        "reference": {
+          "left": {
+            "width": 0.49,
+            "lo": 0.002640568418428302
+          },
+          "right": {
+            "width": null,
+            "lo": 0.00004519643916864879
+          },
+          "lower": {
+            "width": 0.32,
+            "lo": 0.005640915650777363
+          },
+          "upper": {
+            "width": 0.32,
+            "lo": 0.00561660846748661
+          }
+        },
+        "averaged": {
+          "left": {
+            "width": 0.47,
+            "lo": 0.00283203125
+          },
+          "right": {
+            "width": null,
+            "lo": 0.011035157181322575
+          },
+          "lower": {
+            "width": 0.32,
+            "lo": 0.009928385921133062
+          },
+          "upper": {
+            "width": 0.31,
+            "lo": 0.00935872329864651
+          }
+        },
+        "first": {
+          "left": {
+            "width": 0.48,
+            "lo": 0
+          },
+          "right": {
+            "width": null,
+            "lo": 0.00625
+          },
+          "lower": {
+            "width": 0.31,
+            "lo": 0.005208333333333333
+          },
+          "upper": {
+            "width": 0.3,
+            "lo": 0.005208333333333333
+          }
+        },
+        "profile": {
+          "averaged": {
+            "mean": 0.0047072777921946,
+            "max": 0.022599071264266968
+          },
+          "first": {
+            "mean": 0.00618883001613804,
+            "max": 0.04766119519869483
+          }
+        }
+      }
+    },
+    "regions": {
+      "wall": {
+        "averaged": {
+          "mean": 0.001472032713052255,
+          "p99": 0.01656132936477661
+        },
+        "first": {
+          "mean": 0.0020827840339347416,
+          "p99": 0.0369025319814682
+        }
+      },
+      "ground": {
+        "averaged": {
+          "mean": 0.0005748012758710671,
+          "p99": 7.748603820800781e-7
+        },
+        "first": {
+          "mean": 0.0006110056808304938,
+          "p99": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "scene": "frame-two-lights",
+  "light": null,
+  "method": "pcss",
+  "size": 0.1,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 800,
+  "height": 1200,
+  "lights": [
+    "DirectionalLight cdb3d9e7: PCSS (cascades) θ 3°, 16 + 32 samples, at most 48 texels",
+    "PointLight c9be3eb7: PCSS (cube, raw compares) r 0.1 m, 16 + 32 samples, at most 48 texels",
+    "contact shadows off",
+    "sphere lights r 0.1 m: falloff from max(d, r), highlights widened, then moved toward the representative point (hybrid), diffuse by snyder"
+  ],
+  "compileMs": 1634,
+  "firstMs": 1935,
+  "drawMs": 1935,
+  "coldSalt": 0
+}

@@ -1,0 +1,458 @@
+{
+  "environment": {
+    "sky": {
+      "kind": "color",
+      "color": "#0b0c0e"
+    },
+    "ambient": {
+      "color": "#ffffff",
+      "intensity": 0.05
+    },
+    "fog": null
+  },
+  "render": {
+    "mode": "lit",
+    "exposure_ev": 0,
+    "engine": "workbench",
+    "resolution": "2k"
+  },
+  "objects": [
+    {
+      "id": "sobj_ground",
+      "kind": "primitive",
+      "name": "地面",
+      "parent_id": null,
+      "order": 0,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": true,
+      "primitive": {
+        "builtin": "ground@1",
+        "params": {
+          "size": 40
+        }
+      }
+    },
+    {
+      "id": "sobj_wall00000000000000000",
+      "kind": "primitive",
+      "name": "墙",
+      "parent_id": null,
+      "order": 1,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 8,
+          "height": 4,
+          "depth": 0.1
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#bdbdb8",
+            "roughness": 0.6,
+            "metalness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "sobj_board0050000000000000",
+      "kind": "primitive",
+      "name": "遮挡板 0.05 m",
+      "parent_id": null,
+      "order": 2,
+      "transform": {
+        "position": [
+          -2.8,
+          0.8,
+          -2.89
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.4,
+          "height": 0.4,
+          "depth": 0.02
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#bdbdb8",
+            "roughness": 0.6,
+            "metalness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "sobj_board0500000000000000",
+      "kind": "primitive",
+      "name": "遮挡板 0.5 m",
+      "parent_id": null,
+      "order": 3,
+      "transform": {
+        "position": [
+          -1.4,
+          2.4,
+          -2.44
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.4,
+          "height": 0.4,
+          "depth": 0.02
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#bdbdb8",
+            "roughness": 0.6,
+            "metalness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "sobj_board3000000000000000",
+      "kind": "primitive",
+      "name": "遮挡板 3 m",
+      "parent_id": null,
+      "order": 4,
+      "transform": {
+        "position": [
+          -0.4,
+          2.8,
+          0.06
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 0.4,
+          "height": 0.4,
+          "depth": 0.02
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#bdbdb8",
+            "roughness": 0.6,
+            "metalness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "sobj_gloss0000000000000000",
+      "kind": "primitive",
+      "name": "高光板",
+      "parent_id": null,
+      "order": 5,
+      "transform": {
+        "position": [
+          -3.2382,
+          2.3598,
+          -2.94
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "primitive": {
+        "builtin": "box@1",
+        "params": {
+          "width": 1.0,
+          "height": 1.0,
+          "depth": 0.02
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#bdbdb8",
+            "roughness": 0.15,
+            "metalness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "sobj_ball00000000000000000",
+      "kind": "primitive",
+      "name": "球",
+      "parent_id": null,
+      "order": 6,
+      "transform": {
+        "position": [
+          2.6,
+          0,
+          -1.4
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "primitive": {
+        "builtin": "sphere@1",
+        "params": {
+          "radius": 0.25,
+          "segments": 64
+        }
+      },
+      "material_slots": {
+        "main": {
+          "preset": "principled@1",
+          "params": {
+            "color": "#bdbdb8",
+            "roughness": 0.6,
+            "metalness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "sobj_spot00000000000000000",
+      "kind": "light",
+      "name": "聚光",
+      "parent_id": null,
+      "order": 7,
+      "transform": {
+        "position": [
+          -5.5,
+          3.6,
+          4.0
+        ],
+        "rotation": [
+          -0.105828,
+          -0.323364,
+          -0.0,
+          0.940338
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "light": {
+        "type": "spot",
+        "color": "#ffffff",
+        "intensity": 250,
+        "cast_shadow": true,
+        "distance": 0,
+        "decay": 2,
+        "angle": 0.9,
+        "penumbra": 0
+      }
+    },
+    {
+      "id": "sobj_point0000000000000000",
+      "kind": "light",
+      "name": "点光",
+      "parent_id": null,
+      "order": 8,
+      "transform": {
+        "position": [
+          -5.5,
+          3.6,
+          4.0
+        ],
+        "rotation": [
+          -0.105828,
+          -0.323364,
+          -0.0,
+          0.940338
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "locked": false,
+      "light": {
+        "type": "point",
+        "color": "#ffffff",
+        "intensity": 250,
+        "cast_shadow": true,
+        "distance": 0,
+        "decay": 2
+      }
+    },
+    {
+      "id": "sobj_sun000000000000000000",
+      "kind": "light",
+      "name": "平行光",
+      "parent_id": null,
+      "order": 9,
+      "transform": {
+        "position": [
+          -5.5,
+          3.6,
+          4.0
+        ],
+        "rotation": [
+          -0.105828,
+          -0.323364,
+          -0.0,
+          0.940338
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "locked": false,
+      "light": {
+        "type": "directional",
+        "color": "#ffffff",
+        "intensity": 3,
+        "cast_shadow": true
+      }
+    },
+    {
+      "id": "sobj_shot00000000000000000",
+      "kind": "camera",
+      "name": "shot",
+      "parent_id": null,
+      "order": 10,
+      "transform": {
+        "position": [
+          0.0,
+          1.8,
+          7.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "locked": false,
+      "camera": {
+        "focal_mm": 35
+      }
+    }
+  ]
+}

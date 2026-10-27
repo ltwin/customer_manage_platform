@@ -1,0 +1,19 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcf",
+  "size": 0.3,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 5a48c64d: product PCF",
+    "PointLight 385e8a43: product PCF",
+    "DirectionalLight 52aaf56b: product PCF"
+  ],
+  "compileMs": 40,
+  "firstMs": 482,
+  "drawMs": 3167,
+  "coldSalt": 0
+}

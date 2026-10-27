@@ -142,8 +142,11 @@
 
 | 位置 | 动作 | 说明 |
 |---|---|---|
-| `frontend/scripts/creative-scene.e2e.mjs:lightReferenceNames` | 新增 | `frame-two-lights`、`occluder-wall`；「每个参考场景都能打开」的检查和 `SCENE_E2E_BASELINE` 用例也遍历它 |
-| `frontend/scripts/fixtures/scene-reference/` | 新增 | `frame-two-lights.json`、`occluder-wall.json` |
+| `frontend/scripts/creative-scene.e2e.mjs:lightReferenceNames` | 新增 | `frame-two-lights`、`occluder-wall`；「每个参考场景都能打开」的检查也遍历它 |
+| `frontend/scripts/creative-scene.e2e.mjs:referenceScene` | 修改 | 实施时调整：场景旁边有同名目录时，按 `<修订>.json`（manifest、生成器）和 `<修订>.glb` 用原修订 ID 载入模型；没有目录的场景不受影响 |
+| `frontend/scripts/creative-scene.e2e.mjs:SceneServer.seedModel` | 修改 | 实施时调整：新增可选的 `rev`，缺省行为不变 |
+| `frontend/scripts/creative-scene.e2e.mjs` | 修改 | 实施时调整：新增按需用例 `SCENE_E2E_LIGHT_BASELINE`，不并入 `SCENE_E2E_BASELINE`，免得每次都重跑 6 个旧场景的三种导出 |
+| `frontend/scripts/fixtures/scene-reference/` | 新增 | `frame-two-lights.json`、`occluder-wall.json`，以及 `frame-two-lights/` 下两个模型的 `<修订>.json` 和 `<修订>.glb`（611 KB 和 54 KB，从开发库和 OSS 只读导出） |
 | `frontend/spike-light.html` | 临时新增 | 穿刺页面入口，S0 结束时移进 discovery |
 | `frontend/spike/light/` | 临时新增 | 原型、参考解和测量脚本，S0 结束时移进 discovery |
 

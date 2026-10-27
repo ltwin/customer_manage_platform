@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { execSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -223,9 +223,8 @@ class SceneServer {
     this.assets.set(key, asset)
     return [201, asset]
   }
-  /** A committed model revision, as if made earlier; returns its revision ID. */
-  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content, mount = 'floor' } = {}) {
-    const rev = `ccrv_seed${++this.modelSeq}`
+  /** A committed model revision, as if made earlier; returns its revision ID (rev, when given). */
+  seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content, mount = 'floor', rev = `ccrv_seed${++this.modelSeq}` } = {}) {
     const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount }
     this.models.set(rev, { content_id: content ?? `ccnt_seed${this.modelSeq}`, glb, generator, manifest, name_hint: '柱' })
     return rev
@@ -3646,15 +3645,33 @@ const referenceNames = ['noon', 'dusk', 'room', 'materials', 'dof', 'cornell']
  */
 const traceReferenceNames = ['backlit-room', 'thin-wall', 'mirror-board']
 
+/**
+ * scene-light-size S0's reference scenes: the owner's reactor bay with its hard
+ * light bands (2026-10-26), and boards at three distances from a wall. Apart
+ * from referenceNames, like traceReferenceNames.
+ */
+const lightReferenceNames = ['frame-two-lights', 'occluder-wall']
+
 /** The editor's saved view (viewState.ts), orthographic from front right above, in view space (Z up). */
 const obliqueOrtho = {
   camera: { position: [7, -9, 7], target: [0, 0, 0.5], ortho: true, zoom: 80 },
   selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: true, history: false,
 }
 
-/** A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1; edit changes it first. */
+/**
+ * A reference scene (scripts/fixtures/scene-reference) in place of the server's scene, at revision 1; edit changes it first.
+ * Its models, if any, are in the folder of the same name: <revision>.json (manifest, generator, name hint) and <revision>.glb.
+ */
 function referenceScene(server, name, edit) {
   server.scene = JSON.parse(readFileSync(new URL(`fixtures/scene-reference/${name}.json`, import.meta.url), 'utf8'))
+  const models = new URL(`fixtures/scene-reference/${name}/`, import.meta.url)
+  if (existsSync(models)) {
+    for (const file of readdirSync(models).filter((f) => f.endsWith('.json'))) {
+      const rev = file.slice(0, -'.json'.length)
+      const { manifest, generator } = JSON.parse(readFileSync(new URL(file, models), 'utf8'))
+      server.seedModel({ rev, manifest, glb: readFileSync(new URL(`${rev}.glb`, models)), code: generator.code, params: generator.params, schema: generator.params_schema, mount: generator.mount })
+    }
+  }
   // The exposure the server reads documents from before W2 and W3 with (backend model.go): the default camera at 15 and
   // ambient metering, a stored camera by hand (Epic revision v5).
   server.scene.render.exposure_ev100 ??= 15
@@ -3671,7 +3688,7 @@ function referenceScene(server, name, edit) {
 }
 
 await check('reference scenes: each opens and draws in clay and rendered without errors', async () => {
-  for (const name of [...referenceNames, ...traceReferenceNames]) {
+  for (const name of [...referenceNames, ...traceReferenceNames, ...lightReferenceNames]) {
     const server = new SceneServer()
     referenceScene(server, name)
     const { context, page, errors } = await open(server)
@@ -3756,6 +3773,34 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
       console.log(`baseline ${name}: ${images.length} images in ${out.exportMs} ms`)
     }
     await writeFile(`${dir}/baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_LIGHT_BASELINE=<dir>: scene-light-size S0's reference scenes, the
+// lit export under each renderer before lights had sizes, and light-baseline.json
+// with the machine, the versions and the export times.
+if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light reference scenes before lights had sizes', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_BASELINE
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
+    for (const name of lightReferenceNames) {
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine } })
+        record.renderer ??= out.renderer
+        const images = []
+        for (const img of out.images) {
+          const file = img.file.replace(/\.png$/, `-${engine}.png`)
+          await writeFile(`${dir}/${file}`, img.png)
+          images.push({ file, ...pngSize(img.png), bytes: img.png.length })
+        }
+        record.scenes[`${name}-${engine}`] = { export_ms: out.exportMs, images }
+        console.log(`light baseline ${name} ${engine}: ${images.length} images in ${out.exportMs} ms`)
+      }
+    }
+    await writeFile(`${dir}/light-baseline.json`, `${JSON.stringify(record, null, 2)}\n`)
   } finally {
     await gpu.close()
   }

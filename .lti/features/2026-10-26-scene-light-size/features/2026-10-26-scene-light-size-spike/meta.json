@@ -1,12 +1,12 @@
 {
   "uid": "9f1feb22-1c9c-4ca5-a2c3-712325a45e8d",
-  "revision": 2,
+  "revision": 8,
   "id": "scene-light-size-spike",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-light-size",
   "designBinding": {
-    "version": 1,
+    "version": 2,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -21,28 +21,203 @@
     ],
     "delivers": []
   },
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-26T13:18:29.364Z",
-  "updatedAt": "2026-10-26T14:07:45.032Z",
+  "updatedAt": "2026-10-27T04:36:08.730Z",
   "risk": {
     "factors": []
   },
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-26T14:07:44.864Z",
+      "at": "2026-10-27T04:04:58.196Z",
       "contentHash": "3426232683124701"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-26T14:07:44.864Z",
-      "contentHash": "631f43beb7fd5eb2"
+      "at": "2026-10-27T04:04:58.196Z",
+      "contentHash": "7d6d8959457ce9e6"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-26T14:07:44.864Z",
+      "contentHash": "3426232683124701",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-26T14:07:44.864Z",
+      "contentHash": "631f43beb7fd5eb2",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "26e49bbc1f1c2950dad8d768d65c942bd9c3d38d",
+    "at": "2026-10-26T14:08:22.274Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "49b14071875f3277356e81193ed0f7816667c43ebd0f648c60c58a8575f0bb36"
+    },
+    "preExisting": [
+      ".lti/snapshots/49b14071875f3277356e81193ed0f7816667c43ebd0f648c60c58a8575f0bb36.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-27T04:11:36.144Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks；按「只跑定向测试」只重跑了 AC-S0-1 的 e2e 和前端 oxlint、tsc -b，没有跑 make check-frontend 全量。AC-S0-3 的帧数按实施调整（8192 对 16384）验证，字面的 1024 对 2048 未满足，交 owner 判断。Blender 对照由 owner 另行执行。",
+        "coverage": [
+          {
+            "criterionId": "AC-23566475ce10",
+            "status": "verified",
+            "evidence": "e2e「reference scenes: each opens and draws in clay and rendered without errors」2026-10-27 在 5194 端口重跑通过（211 s）；两种渲染器的导出见任务 1.2 的基线用例"
+          },
+          {
+            "criterionId": "AC-b7094be5cd42",
+            "status": "verified",
+            "evidence": "discovery/research/baseline/：4 张 lit 导出加 light-baseline.json；baseline.md 写明 Mac16,8 M4 Pro、darwin 26.5、Chromium 145"
+          },
+          {
+            "criterionId": "AC-8d063e821b05",
+            "status": "verified",
+            "evidence": "reference.md；子条款见下"
+          },
+          {
+            "criterionId": "AC-4b37d32b7a8c",
+            "status": "verified",
+            "evidence": "reference.md：球、圆盘、矩形、椭圆（另含聚光）都生成了参考解"
+          },
+          {
+            "criterionId": "AC-104fa3280717",
+            "status": "unverified",
+            "evidence": "按字面不满足：1024 对 2048 帧最大差 3 级。实施时改用 8192 帧，8192 对 16384 帧五种光源都 ≤ 1 级（tasks 2.2、reference.md），收敛目的达到，交 owner 判断"
+          },
+          {
+            "criterionId": "AC-bb4dd58d0e7e",
+            "status": "verified",
+            "evidence": "reference.md：半径 0.1 m、约 90 倍半径处与 I/d² 相差 0.03%–0.15%"
+          },
+          {
+            "criterionId": "AC-78dd0f8df828",
+            "status": "verified",
+            "evidence": "blender-cycles.md：搭建、Cycles 设置、四项预期值和 U8 的核对方法；由 owner 在另一台机器上执行"
+          },
+          {
+            "criterionId": "AC-cef8ea53b396",
+            "status": "verified",
+            "evidence": "子条款见下"
+          },
+          {
+            "criterionId": "AC-12ff2270aa8d",
+            "status": "verified",
+            "evidence": "tasks 2.2–5.1 对应 10 组，各有 research 文件：reference、soft-shadow-candidates、depth-read-backends、integration、area-shadow、contact-shadow、sphere-horizon-sheen、blender-cycles、defaults-look、thresholds"
+          },
+          {
+            "criterionId": "AC-052a583b9baf",
+            "status": "verified",
+            "evidence": "thresholds.md「U1–U8」，每项有建议和依据；已回填 Epic v2"
+          },
+          {
+            "criterionId": "AC-6fde1ec613c8",
+            "status": "verified",
+            "evidence": "thresholds.md「阈值」；owner 2026-10-26 选定，Epic v2 proposal 已回填"
+          },
+          {
+            "criterionId": "AC-b915b8385ffc",
+            "status": "verified",
+            "evidence": "soft-shadow-candidates.md：「反应舱」用 ?cold=1 测冷启动的构建编译与首帧；「耗时」有同一浏览器二次载入的热缓存数字；该节旧的「新配置即冷缓存」已更正（da663c34）"
+          },
+          {
+            "criterionId": "AC-ff8285d152c8",
+            "status": "verified",
+            "evidence": "候选范围经 owner 2026-10-26 确认缩小：vsm/msm/mip-pcss 与 jitter 对照不做，smtrace 只做聚光（tasks 3.1）"
+          },
+          {
+            "criterionId": "AC-e0e89a190f4f",
+            "status": "verified",
+            "evidence": "soft-shadow/：pcf、pcss 在 occluder-wall（聚光、点光、平行光）和 frame-two-lights 上与参考解的并排图，smtrace 聚光"
+          },
+          {
+            "criterionId": "AC-7f3ef7141be5",
+            "status": "verified",
+            "evidence": "soft-shadow/shots/：两种渲染器的成片"
+          },
+          {
+            "criterionId": "AC-42ecc057e07a",
+            "status": "verified",
+            "evidence": "每张对比图附 .json 误差统计；soft-shadow-candidates.md「耗时」「反应舱」"
+          },
+          {
+            "criterionId": "AC-315b64c760b7",
+            "status": "verified",
+            "evidence": "子条款见下"
+          },
+          {
+            "criterionId": "AC-639650927ae2",
+            "status": "verified",
+            "evidence": "git diff develop...HEAD 的 frontend 改动只有 scripts/creative-scene.e2e.mjs 与 fixtures/scene-reference/；原型已移进 discovery/research/prototype（0ed33583）"
+          },
+          {
+            "criterionId": "AC-1d822cf19ef2",
+            "status": "verified",
+            "evidence": "git diff develop...HEAD -- frontend/src frontend/package.json frontend/package-lock.json 为空；oxlint 无错误，tsc -b 通过"
+          },
+          {
+            "criterionId": "AC-7141ac7527a7",
+            "status": "verified",
+            "evidence": "owner 2026-10-27 批准，lti epic revise v2，develop 9ec03eb3；本分支已绑定 v2"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "S0 文档、基线、参考解、对比图与阈值齐全；产品代码无改动；Epic v2 已回填。design 的 untouched 是原型移走和挂载点表的解析项，unplanned 为空；无契约与行为规格 delta。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f195ea085a13e562533ed179f731e5a86602e50ac79de3f8810e0ca0df93f4aa"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T04:35:54.956Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "沿用技术验收：项目未配置 lti checks，只重跑了 AC-S0-1 的 e2e 和 oxlint、tsc -b；Blender 对照由 owner 另行执行。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-27 接受 S0：AC-S0-3 以 8192 对 16384 帧收敛代替字面的 1024 对 2048（参考解更准，目的达到）；其余各项按技术验收满足。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f195ea085a13e562533ed179f731e5a86602e50ac79de3f8810e0ca0df93f4aa"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-27T04:36:08.510Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

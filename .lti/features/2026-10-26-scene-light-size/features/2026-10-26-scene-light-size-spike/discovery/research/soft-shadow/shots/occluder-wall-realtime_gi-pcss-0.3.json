@@ -1,0 +1,19 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "pcss",
+  "size": 0.3,
+  "engine": "realtime_gi",
+  "frames": 76,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 7bedf8f5: PCSS r 0.3 m, 16 + 32 samples, at most 48 texels",
+    "PointLight c76bbf88: product PCF (pcss: spot lights only so far)",
+    "DirectionalLight e2ac2224: product PCF (pcss: spot lights only so far)"
+  ],
+  "compileMs": 70,
+  "firstMs": 1450,
+  "drawMs": 3003,
+  "coldSalt": 0
+}

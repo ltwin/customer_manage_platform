@@ -1,0 +1,19 @@
+{
+  "scene": "occluder-wall",
+  "light": "spot",
+  "method": "smtrace",
+  "size": 0.3,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight a8cb411b: shadow map tracing r 0.3 m, 8 rays × 16 steps, at most 48 texels",
+    "PointLight f10ec7de: product PCF (smtrace: spot lights only so far)",
+    "DirectionalLight 313f853f: product PCF (smtrace: spot lights only so far)"
+  ],
+  "compileMs": 215,
+  "firstMs": 235,
+  "drawMs": 235,
+  "coldSalt": 0
+}

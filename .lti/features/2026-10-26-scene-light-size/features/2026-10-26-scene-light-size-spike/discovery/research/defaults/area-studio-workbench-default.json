@@ -1,0 +1,21 @@
+{
+  "scene": "area-studio",
+  "light": null,
+  "method": "pcss",
+  "size": 0,
+  "engine": "workbench",
+  "frames": 1,
+  "width": 1200,
+  "height": 800,
+  "lights": [
+    "SpotLight 3ac384cc: product PCF (size 0)",
+    "PointLight 254c8e54: product PCF (size 0)",
+    "DirectionalLight 24997957: product PCF (size 0)",
+    "area light 0.25×0.25 m shadowed by a cube map 1024, PCSS with the rectangle's kernel",
+    "sphere lights r 0 m: falloff from max(d, r), highlights widened, then moved toward the representative point (hybrid), diffuse by snyder"
+  ],
+  "compileMs": 108,
+  "firstMs": 144,
+  "drawMs": 144,
+  "coldSalt": 0
+}
