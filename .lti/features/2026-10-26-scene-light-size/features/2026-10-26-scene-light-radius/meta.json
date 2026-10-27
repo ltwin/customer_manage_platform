@@ -1,6 +1,6 @@
 {
   "uid": "3b0213bc-7f84-4e7f-882c-6f9f094e8a18",
-  "revision": 11,
+  "revision": 12,
   "id": "scene-light-radius",
   "kind": "feature",
   "assurance": "governed",
@@ -25,7 +25,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-27T05:20:19.856Z",
-  "updatedAt": "2026-10-27T15:44:28.842Z",
+  "updatedAt": "2026-10-27T15:49:53.183Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-27T15:49:53.122Z",
+    "summary": "feature/scene-light-radius 以 --no-ff 合入 develop（1fd9299f），合入树与分支相同；make check-merge 通过",
+    "method": "manual",
+    "limitations": "项目未配置 integrate checks；以 make check-merge 结果和合入树与分支一致作为依据",
+    "sourceCommit": "c3aabbcc90e92e97f66c27e6349300fa9be79219",
+    "targetCommit": "1fd9299ff37e42e6602b321e61227a324ef396e0",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "58b91ad865e9a07a90d46858d14abe9f0fc75e06ee9683b9a6164a2daf7710a4"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
