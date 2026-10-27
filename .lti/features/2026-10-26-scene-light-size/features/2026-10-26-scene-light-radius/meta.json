@@ -1,6 +1,6 @@
 {
   "uid": "3b0213bc-7f84-4e7f-882c-6f9f094e8a18",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-light-radius",
   "kind": "feature",
   "assurance": "governed",
@@ -23,9 +23,9 @@
       "data:光源尺寸"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-27T05:20:19.856Z",
-  "updatedAt": "2026-10-27T08:50:48.740Z",
+  "updatedAt": "2026-10-27T08:52:24.784Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -46,8 +46,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "33a646b25a17b16360f278c901c69affc35c2202",
+    "at": "2026-10-27T08:52:24.064Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a7c65b1e0e898cf78097332d5f6759a8a8026cb9a6a6f6c7b18a8fb56b91aad8"
+    },
+    "preExisting": [
+      ".lti/snapshots/a7c65b1e0e898cf78097332d5f6759a8a8026cb9a6a6f6c7b18a8fb56b91aad8.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
