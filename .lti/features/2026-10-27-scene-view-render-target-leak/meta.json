@@ -1,12 +1,12 @@
 {
   "uid": "8a117f55-e43d-4600-8cbf-536f1b1334b5",
-  "revision": 3,
+  "revision": 7,
   "id": "scene-view-render-target-leak",
   "kind": "issue",
   "assurance": "governed",
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-27T16:25:38.606Z",
-  "updatedAt": "2026-10-27T17:10:37.426Z",
+  "updatedAt": "2026-10-27T17:36:35.801Z",
   "risk": {
     "factors": []
   },
@@ -24,8 +24,112 @@
   },
   "approvalHistory": [],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "f181cab4eeea1a51c45b79ac2d093a0f70091570",
+    "at": "2026-10-27T17:11:23.255Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "ffc569a6492bd35ef5696640d31e6d3446999b5ee4c1c58a483fa5b18154adcd"
+    },
+    "preExisting": [
+      ".lti/snapshots/ffc569a6492bd35ef5696640d31e6d3446999b5ee4c1c58a483fa5b18154adcd.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-27T17:17:43.918Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置自动 checks；按定向验证约定只跑相关 e2e（2 条）与 tsc/oxlint，未跑全量前端测试；design 跳过（owner 批准），唯一改动文件 sunShadow.ts 即 diagnosis/proposal 指定的修复点",
+        "coverage": [
+          {
+            "criterionId": "AC-9904f2d4bc21",
+            "status": "verified",
+            "evidence": "e2e「lights: the rendered view warms its lights in one compile…」在 worktree Vite 5198 上 ok（66.7 s）；修复前同一检查 RT 15→23、纹理 53→85（diagnosis Evidence 红）"
+          },
+          {
+            "criterionId": "AC-0c7ce4fdba9c",
+            "status": "verified",
+            "evidence": "同一检查的「the three lights compile together」与 errors 为空断言均通过"
+          },
+          {
+            "criterionId": "AC-3a2a1dc8ffb1",
+            "status": "verified",
+            "evidence": "e2e「AC-5: … the sun at 5° lengthens rendered shadows …」ok（17.2 s），白模与最终渲染来回切换后太阳阴影照常"
+          },
+          {
+            "criterionId": "AC-4b88176b68f3",
+            "status": "verified",
+            "evidence": "临时脚本（已删除）：最终渲染下外部加一盏投影平行光再删除，renderTargets 10→11→10；纹理多出的 5 张是替身预编译保留到下次编译的深度纹理（设计如此，多轮不累积由 AC-9904f2d4bc21 证明）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "根因修复：cascadeSunShadow 的 undo 逐级释放 CSM 阴影节点及深度纹理；泄漏 e2e 红转绿，AC-5 太阳阴影 e2e 通过，删除太阳灯后 render target 回落；无契约与规格变化",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "d6f6ee82cc3c9e40da0ed60e6910f84f06a334fded0bb3f432fe4b02513cc0cd"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-27T17:36:33.850Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "沿用技术验收：定向 e2e 2 条与 tsc/oxlint，未跑全量前端测试",
+        "coverage": [
+          {
+            "criterionId": "AC-9904f2d4bc21",
+            "status": "verified",
+            "evidence": "e2e「lights: the rendered view warms its lights in one compile…」在 worktree Vite 5198 上 ok（66.7 s）；修复前同一检查 RT 15→23、纹理 53→85（diagnosis Evidence 红）"
+          },
+          {
+            "criterionId": "AC-0c7ce4fdba9c",
+            "status": "verified",
+            "evidence": "同一检查的「the three lights compile together」与 errors 为空断言均通过"
+          },
+          {
+            "criterionId": "AC-3a2a1dc8ffb1",
+            "status": "verified",
+            "evidence": "e2e「AC-5: … the sun at 5° lengthens rendered shadows …」ok（17.2 s），白模与最终渲染来回切换后太阳阴影照常"
+          },
+          {
+            "criterionId": "AC-4b88176b68f3",
+            "status": "verified",
+            "evidence": "临时脚本（已删除）：最终渲染下外部加一盏投影平行光再删除，renderTargets 10→11→10；纹理多出的 5 张是替身预编译保留到下次编译的深度纹理（设计如此，多轮不累积由 AC-9904f2d4bc21 证明）"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 接受：泄漏 e2e 红转绿，太阳阴影照常，删除太阳灯后 render target 回落",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "d6f6ee82cc3c9e40da0ed60e6910f84f06a334fded0bb3f432fe4b02513cc0cd"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-27T17:36:35.594Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }
