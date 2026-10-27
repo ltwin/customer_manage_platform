@@ -1,0 +1,53 @@
+{
+  "uid": "3b0213bc-7f84-4e7f-882c-6f9f094e8a18",
+  "revision": 4,
+  "id": "scene-light-radius",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-light-size",
+  "designBinding": {
+    "version": 3,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "data:光源尺寸",
+      "data:面光源"
+    ],
+    "delivers": [
+      "data:光源尺寸"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-27T05:20:19.856Z",
+  "updatedAt": "2026-10-27T08:50:48.740Z",
+  "risk": {
+    "factors": [
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-27T08:50:48.561Z",
+      "contentHash": "cd2d6092532139b4"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-27T08:50:48.561Z",
+      "contentHash": "0db0e7b6330b7acf"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
