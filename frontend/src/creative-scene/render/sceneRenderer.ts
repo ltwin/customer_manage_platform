@@ -660,6 +660,8 @@ export class SceneRenderer {
           disposables.push(dof)
           picture = dof.output
         }
+        // The soft shadows' turning kernels averaged, frame one on (scene-light-radius design「workbench 的出图累积」).
+        if (look.accumulate) picture = own(new AccumulateNode(picture, 0)) as unknown as Node<'vec4'>
       }
     }
     // The night look before the tone mapping (Epic revision v5): at 0 the picture is as it was. Wireframe's lines keep their colours.
@@ -820,7 +822,8 @@ export class SceneRenderer {
       blur: dof !== null,
       gi,
       quality: frame.quality ?? 'interactive',
-      accumulate: gi && frame.accumulate === true,
+      // The real-time GI's frames, or the workbench's soft shadows' (host/render.ts).
+      accumulate: !wireframe && frame.accumulate === true,
       // As last frame's sync left it: becoming ready asks for the frame that draws with it (base.ts).
       trace: gi ? this.trace().handle() : null,
       world: null,

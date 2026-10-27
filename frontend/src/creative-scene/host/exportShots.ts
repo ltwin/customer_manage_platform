@@ -6,7 +6,7 @@ import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
 import { TraceNotReady } from '../render/trace/base.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { cameraFraming, type Framing } from './framing.ts'
-import { drawnFrames, effectiveEngine, engineOf, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs, softShadowsIn } from '../render/engines.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
 
 // Export (design「导出渲染」「导出接口」): every camera of the plan drawn
@@ -78,7 +78,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   // switch and every image's limit, as if the layer were drawn.
   const budgetOf = ({ framing }: { framing: Framing }, pass: ExportPass, world: boolean) => {
     const engine = effectiveEngine(engineOf(doc.scene.render), pass, true)
-    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export'), imageTypeOf(pass, resolution).type, world && pass === 'lit')
+    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export', pass === 'lit' && softShadowsIn(doc.scene)), imageTypeOf(pass, resolution).type, world && pass === 'lit')
   }
   const totalMs = lookBudgetMs + framings.reduce((sum, f) => sum + plan.passes.reduce((s, pass) => s + budgetOf(f, pass, true), 0), 0)
   const began = now()

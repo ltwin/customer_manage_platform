@@ -1,6 +1,7 @@
 import { Color, Matrix4, Sphere, Vector2, Vector3, Vector4, type AmbientLight, type Camera, type DirectionalLight, type HemisphereLight, type Light, type Object3D, type OrthographicCamera, type PerspectiveCamera, type PointLight, type Scene, type SpotLight, type Texture } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../materials/patterns.ts'
+import { sizeOf } from '../lightModel/lights.ts'
 import { chordFactor, coefficients, type Coefficients, type Volume } from './medium.ts'
 
 // What every volume pass reads (scene-volumes design「登记与出图」「选灯与编译」):
@@ -72,8 +73,11 @@ export const V: VolumeUniforms = {
 }
 
 export type SlotKind = 'directional' | 'spot' | 'point'
-/** A light that lights the volumes: its kind, whether its shadow map is sampled, and how many maps that takes. */
-export type Slot = { kind: SlotKind; cast: boolean; light: DirectionalLight | SpotLight | PointLight }
+/**
+ * A light that lights the volumes: its kind, whether its shadow map is sampled, and whether the light has a size,
+ * its map then read raw (render/lightModel/shadowFilter.ts rawDepth) and compared here (lights.ts).
+ */
+export type Slot = { kind: SlotKind; cast: boolean; sized: boolean; light: DirectionalLight | SpotLight | PointLight }
 
 /** What a slot's uniforms hold; the march reads them (lights.ts). */
 export type SlotUniforms = {
@@ -85,8 +89,8 @@ export type SlotUniforms = {
   direction: Uniform<Vector3>
   /** A spot's cos(angle) and cos(angle · (1 − penumbra)). */
   cone: Uniform<Vector2>
-  /** distance (0: none) and decay. */
-  falloff: Uniform<Vector2>
+  /** distance (0: none), decay, and a spot's or point's radius (the effective distance, scene-light-radius). */
+  falloff: Uniform<Vector3>
   /** A point's shadow camera near and far; the view's near and far a directional light's cascades split (far no further than maxFar, as CSMShadowNode). */
   range: Uniform<Vector2>
   /** The shadow matrices (one, or a cascade's each) and biases. */
@@ -101,7 +105,7 @@ export const slotUniforms: SlotUniforms[] = Array.from({ length: MAX_LIGHTS }, (
   position: uniform(new Vector3()) as Uniform<Vector3>,
   direction: uniform(new Vector3()) as Uniform<Vector3>,
   cone: uniform(new Vector2()) as Uniform<Vector2>,
-  falloff: uniform(new Vector2()) as Uniform<Vector2>,
+  falloff: uniform(new Vector3()) as Uniform<Vector3>,
   range: uniform(new Vector2()) as Uniform<Vector2>,
   matrices: Array.from({ length: CASCADES }, () => uniform(new Matrix4()) as Uniform<Matrix4>),
   biases: Array.from({ length: CASCADES }, () => uniform(0) as Uniform<number>),
@@ -128,8 +132,11 @@ function castsNow(light: Lit): boolean {
   return !!light.shadow.map?.depthTexture
 }
 
+/** Whether a light's shadow is filtered for its size, its maps read raw (render/lightModel/shadowFilter.ts). */
+const filtered = (light: Lit) => !!(light.shadow as { filterNode?: unknown }).filterNode
+
 /** A light as the selection sees it. */
-export type Candidate = { kind: SlotKind; cast: boolean; sun: boolean; intensity: number; position: Vector3; decay: number }
+export type Candidate = { kind: SlotKind; cast: boolean; sized: boolean; sun: boolean; intensity: number; position: Vector3; decay: number; radius: number }
 
 /**
  * Which lights light the volumes, at most MAX_LIGHTS and MAX_MAPS shadow
@@ -143,7 +150,8 @@ export function selectLights(candidates: readonly Candidate[], bounds: readonly 
     if (c.kind === 'directional') return c.intensity
     let nearest = Infinity
     for (const b of bounds) nearest = Math.min(nearest, Math.max(c.position.distanceTo(b.center) - b.radius, 0))
-    return c.intensity / Math.max(Math.pow(nearest, c.decay), 0.01)
+    // At the effective distance, as the march lights them (lights.ts).
+    return c.intensity / Math.max(Math.pow(Math.max(nearest, c.radius), c.decay), 0.01)
   }
   const order = candidates.map((c, i) => ({ i, first: c.sun && c.cast ? 1 : 0, e: estimate(c) }))
   order.sort((a, b) => b.first - a.first || b.e - a.e || a.i - b.i)
@@ -160,7 +168,7 @@ export function selectLights(candidates: readonly Candidate[], bounds: readonly 
   return out
 }
 
-const structure = (c: Pick<Candidate, 'kind' | 'cast'>) => ['directional', 'spot', 'point'].indexOf(c.kind) * 2 + (c.cast ? 0 : 1)
+const structure = (c: Pick<Candidate, 'kind' | 'cast' | 'sized'>) => ['directional', 'spot', 'point'].indexOf(c.kind) * 4 + (c.cast ? 0 : 2) + (c.sized ? 1 : 0)
 
 /**
  * The slots the chosen lights go in: by kind, casting first, then in the
@@ -168,12 +176,13 @@ const structure = (c: Pick<Candidate, 'kind' | 'cast'>) => ['directional', 'spot
  * changes only with the kinds and how many: a light dragged past another
  * swaps no slots, so builds no march.
  */
-export function slotOrder(candidates: readonly Pick<Candidate, 'kind' | 'cast'>[], chosen: readonly number[]): number[] {
+export function slotOrder(candidates: readonly Pick<Candidate, 'kind' | 'cast' | 'sized'>[], chosen: readonly number[]): number[] {
   return [...chosen].sort((a, b) => structure(candidates[a]) - structure(candidates[b]) || a - b)
 }
 
-/** The march's structure: each slot's kind and whether it casts, and whether there is an environment. */
-export const signatureOf = (slots: readonly Pick<Slot, 'kind' | 'cast'>[], environment: boolean) => `${slots.map((s) => `${s.kind}${s.cast ? '+' : ''}`).join(',')}|${environment ? 'env' : ''}`
+/** The march's structure: each slot's kind, whether it casts and whether its map is read raw (+s), and whether there is an environment. */
+export const signatureOf = (slots: readonly Pick<Slot, 'kind' | 'cast' | 'sized'>[], environment: boolean) =>
+  `${slots.map((s) => `${s.kind}${s.cast ? '+' : ''}${s.cast && s.sized ? 's' : ''}`).join(',')}|${environment ? 'env' : ''}`
 
 /** What the march is built for, as prepareVolumes left it. */
 export const lighting = { slots: [] as Slot[], environment: null as Texture | null, signature: '' }
@@ -252,9 +261,10 @@ export function prepareVolumes(scene: Scene, camera: Camera, drawn: boolean) {
   })
   const candidates = lights.map((light, i): Candidate => {
     const kind: SlotKind = (light as DirectionalLight).isDirectionalLight ? 'directional' : (light as SpotLight).isSpotLight ? 'spot' : 'point'
-    return { kind, cast: castsNow(light), sun: light.userData.sun === true, intensity: light.intensity, position: light.getWorldPosition((positions[i] ??= new Vector3())), decay: kind === 'directional' ? 0 : (light as PointLight).decay }
+    const cast = castsNow(light)
+    return { kind, cast, sized: cast && filtered(light), sun: light.userData.sun === true, intensity: light.intensity, position: light.getWorldPosition((positions[i] ??= new Vector3())), decay: kind === 'directional' ? 0 : (light as PointLight).decay, radius: kind === 'directional' ? 0 : sizeOf(light) }
   })
-  const slots = slotOrder(candidates, selectLights(candidates, bounds)).map((i): Slot => ({ kind: candidates[i].kind, cast: candidates[i].cast, light: lights[i] }))
+  const slots = slotOrder(candidates, selectLights(candidates, bounds)).map((i): Slot => ({ kind: candidates[i].kind, cast: candidates[i].cast, sized: candidates[i].sized, light: lights[i] }))
   const { near, far } = camera as PerspectiveCamera | OrthographicCamera
   slots.forEach((slot, k) => writeSlot(slotUniforms[k], slot, near, far))
   lighting.slots = slots
@@ -268,7 +278,7 @@ function writeSlot(u: SlotUniforms, { kind, cast, light }: Slot, near: number, f
   light.getWorldPosition(u.position.value)
   if (kind === 'point') {
     const p = light as PointLight
-    u.falloff.value.set(p.distance, p.decay)
+    u.falloff.value.set(p.distance, p.decay, sizeOf(p))
     if (cast) u.biases[0].value = p.shadow.bias
     return
   }
@@ -282,7 +292,7 @@ function writeSlot(u: SlotUniforms, { kind, cast, light }: Slot, near: number, f
   const s = light as SpotLight
   u.direction.value.subVectors(targetAt, u.position.value).normalize()
   u.cone.value.set(Math.cos(s.angle), Math.cos(s.angle * (1 - s.penumbra)))
-  u.falloff.value.set(s.distance, s.decay)
+  u.falloff.value.set(s.distance, s.decay, sizeOf(s))
   if (cast) u.biases[0].value = s.shadow.bias
 }
 

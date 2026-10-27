@@ -4087,6 +4087,27 @@ await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the
   assert.deepEqual(off, [], 'sized lights missing their shading or shadows')
 })
 
+// scene-light-radius tasks 4.2 (AC-S1-10): the workbench's lit export of a scene with soft shadows averages 16
+// frames, their kernels turning by frame, and is the same twice pixel for pixel: the turn goes by the frame and the
+// pixel only, and every export starts at frame 0.
+await check('light size: the workbench\'s lit export with soft shadows is the same twice (AC-S1-10)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const edit = (scene) => {
+      for (const o of scene.objects) if (o.light) o.visible = true
+    }
+    const [a, b] = [await exportReference(gpu, 'occluder-wall', { litOnly: true, edit }), await exportReference(gpu, 'occluder-wall', { litOnly: true, edit })]
+    for (const img of a.images) {
+      const apart = await imageApart(page, img.png, b.images.find((i) => i.file === img.file).png)
+      console.log(`AC-S1-10 workbench twice ${img.file}: largest channel difference ${apart.max}`)
+      assert.equal(apart.max, 0, `${img.file}: the two exports differ`)
+    }
+  } finally {
+    await gpu.close()
+  }
+})
+
 // --- scene-world-space-gi S0: the real-time GI before its world-space layer -----
 
 /** The scenes the world-space layer is judged on: S0's own, and the earlier ones it should keep. */
@@ -8510,6 +8531,49 @@ await check('W5 spot: the spot lights a cone of the volume, none outside it', as
     assert.deepEqual(errors, [])
   } finally {
     await gpu?.close()
+  }
+})
+
+// scene-light-radius tasks 4.1 (AC-S1-10): the volumes under a casting spot whose size goes from 0 to 0.3 m and
+// back, beside a volume that casts: the spot's cone in the fog shows each time, about as bright, on WebGPU and
+// through the WebGL2 backend (a sized spot's map is read raw and compared by hand, its march built anew).
+await check('light size: a volume lit by a spot going sized and back keeps its cone, both backends (AC-S1-10)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const points = [[0, 2.0, -1.0]]
+    const fog = () => volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], { scatter_density: 0.15, anisotropy: 0.3, cast_shadow: true })
+    const sized = (r, ...objects) => {
+      const scene = fixtureScene('cornell', ...objects)
+      for (const o of scene.objects) if (o.light?.type === 'spot') o.light.radius_m = r
+      return scene
+    }
+    const off = []
+    for (const webgl of [false, true]) {
+      const picture = (scene) =>
+        page.evaluate(async ([sc, p, gl]) => {
+          window.__sceneGPU.forceWebGL = gl
+          try {
+            return await window.__picture(sc, 'lit', 768, p)
+          } finally {
+            window.__sceneGPU.forceWebGL = false
+          }
+        }, [scene, points, webgl])
+      const backend = webgl ? 'webgl2' : 'webgpu'
+      const cone = []
+      for (const r of [0, 0.3, 0, 0.3]) {
+        const empty = await picture(sized(r))
+        const fogged = await picture(sized(r, fog()))
+        cone.push(lumaAt(fogged, fogged.at[0]) - lumaAt(empty, empty.at[0]))
+        if (r > 0) await savePicture(page, `light-size-volume-${backend}`, fogged)
+      }
+      console.log(`AC-S1-10 volume ${backend}: the cone's luma at 0, 0.3, 0, 0.3 m: ${cone.map((v) => v.toFixed(1)).join(', ')}`)
+      if (!(cone.every((v) => v > 10) && cone[1] > 0.6 * cone[0] && cone[1] < 1.6 * cone[0] && Math.abs(cone[2] - cone[0]) <= 1 && Math.abs(cone[3] - cone[1]) <= 1)) off.push(`${backend}: ${cone.join(', ')}`)
+    }
+    assert.deepEqual(errors, [])
+    assert.deepEqual(off, [], 'the cone missing, or not the same each time')
+  } finally {
+    await gpu.close()
   }
 })
 

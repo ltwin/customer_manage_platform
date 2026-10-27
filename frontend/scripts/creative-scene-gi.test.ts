@@ -316,7 +316,7 @@ test('the renderer in effect: the scene’s for the rendered view and lit in per
 })
 
 test('time limits follow what a picture costs: pixels, frames, encoding; eight times the reference, with floors', async () => {
-  const { convergeFrames, drawnFrames, estimateMs, framesFor, jobRenderCapMs, shotBudgetMs, viewBudgetMs } = await import('../src/creative-scene/render/engines.ts')
+  const { convergeFrames, drawnFrames, estimateMs, framesFor, jobRenderCapMs, shotBudgetMs, softShadowsIn, viewBudgetMs, WORKBENCH_FRAMES } = await import('../src/creative-scene/render/engines.ts')
   const { exportTimeoutMs, renderTimeoutMs } = await import('../src/creative-scene/host/executor.ts')
   assert.equal(framesFor('workbench', 'export'), 1)
   assert.equal(framesFor('workbench', 'view'), 1)
@@ -324,6 +324,18 @@ test('time limits follow what a picture costs: pixels, frames, encoding; eight t
   // The real-time GI settles for the viewport's frames before it averages; the workbench draws one.
   assert.equal(drawnFrames('workbench', 'export'), 1)
   assert.equal(drawnFrames('realtime_gi', 'export'), convergeFrames('realtime_gi') + framesFor('realtime_gi', 'export'))
+  // A lit workbench picture with soft shadows averages their turning kernels (scene-light-radius design「workbench 的出图累积」).
+  assert.equal(drawnFrames('workbench', 'export', true), WORKBENCH_FRAMES)
+  assert.equal(drawnFrames('workbench', 'view', true), WORKBENCH_FRAMES)
+  assert.equal(drawnFrames('realtime_gi', 'export', true), drawnFrames('realtime_gi', 'export'))
+  const lit = (sky: string, light?: object) =>
+    softShadowsIn({ environment: { sky: { kind: sky } }, objects: light ? [{ visible: true, light }] : [] } as unknown as Parameters<typeof softShadowsIn>[0])
+  assert.equal(lit('procedural'), true, 'a sky with a sun')
+  assert.equal(lit('color'), false, 'no light, no sun')
+  assert.equal(lit('color', { type: 'spot', cast_shadow: true, radius_m: 0.1 }), true)
+  assert.equal(lit('color', { type: 'spot', cast_shadow: true, radius_m: 0 }), false, 'a light of size 0')
+  assert.equal(lit('color', { type: 'point', cast_shadow: false, radius_m: 0.1 }), false, 'a light that casts no shadow')
+  assert.equal(lit('color', { type: 'directional', cast_shadow: true, angular_diameter_deg: 0.545 }), true)
   // The design's example: an 8K 3:2 real-time GI image at K = 64, about 87 s; its limit about 11.6 minutes.
   const k = framesFor('realtime_gi', 'export')
   assert.equal(k, 64)

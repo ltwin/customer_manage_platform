@@ -8,6 +8,7 @@ import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { temporalReproject } from 'three/addons/tsl/display/TemporalReprojectNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { GI_INTENSITY, ssgiQuality, type Quality } from './engines.ts'
+import { sizeOf } from './lightModel/lights.ts'
 import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
 import { ssrTrace } from './nodes/SSRTraceNode.js'
@@ -269,13 +270,15 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const shadow: N = own(sss(depth, camera, ray))
   const before = shadow.updateBefore.bind(shadow)
   shadow.updateBefore = (frame: unknown) => {
+    // A sized main light's shadow is soft already: the screen's trace would lay a hard dark band on it (U4).
     const main = options.mainLight()
-    contactOn.value = main ? 1 : 0
+    const traced = main && sizeOf(main) === 0 ? main : null
+    contactOn.value = traced ? 1 : 0
     // Nothing traced: the composite weighs the last trace by zero.
-    if (!main) return undefined
-    main.updateWorldMatrix(true, false)
-    main.target.updateWorldMatrix(true, false)
-    at.setFromMatrixPosition(main.matrixWorld).sub(to.setFromMatrixPosition(main.target.matrixWorld)).normalize()
+    if (!traced) return undefined
+    traced.updateWorldMatrix(true, false)
+    traced.target.updateWorldMatrix(true, false)
+    at.setFromMatrixPosition(traced.matrixWorld).sub(to.setFromMatrixPosition(traced.target.matrixWorld)).normalize()
     ray.matrixWorld.makeTranslation(at)
     toLight.value.copy(at).transformDirection(camera.matrixWorldInverse)
     return before(frame)
