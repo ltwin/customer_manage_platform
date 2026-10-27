@@ -3863,7 +3863,8 @@ if (process.env.SCENE_E2E_BASELINE) await check('baseline: the reference scenes 
 // SCENE_E2E_LIGHT_BASELINE=<dir>: scene-light-size S0's reference scenes, the
 // lit export under each renderer before lights had sizes, and light-baseline.json
 // with the machine, the versions and the export times; every light of size 0, as
-// AC-S1-2 compares (sizeless). SCENE_E2E_LIGHT_HOOKS sets
+// AC-S1-2 compares (sizeless), or as stored with SCENE_E2E_LIGHT_SIZES=keep (the
+// defaults: AC-S1-11's after, for the owner). SCENE_E2E_LIGHT_HOOKS sets
 // gpuTestHooks for it (stripeFixed: scene-light-radius's other stripe fix, for the owner).
 if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light reference scenes before lights had sizes', async () => {
   const dir = process.env.SCENE_E2E_LIGHT_BASELINE
@@ -3872,7 +3873,7 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
     const record = { machine: machineInfo(), chromium: gpu.version(), viewport: '1600 × 1000, 2× pixels', scenes: {} }
     for (const name of lightReferenceNames) {
       for (const engine of ['workbench', 'realtime_gi']) {
-        const out = await exportReference(gpu, name, { litOnly: true, hooks: process.env.SCENE_E2E_LIGHT_HOOKS, edit: (s) => { s.render.engine = engine; sizeless(s) } })
+        const out = await exportReference(gpu, name, { litOnly: true, hooks: process.env.SCENE_E2E_LIGHT_HOOKS, edit: (s) => { s.render.engine = engine; if (process.env.SCENE_E2E_LIGHT_SIZES !== 'keep') sizeless(s) } })
         record.renderer ??= out.renderer
         const images = []
         for (const img of out.images) {

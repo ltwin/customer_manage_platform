@@ -57,7 +57,7 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
   - 完成判据：这些 e2e 通过。
   - 进展（0c345686）：`applyLight` 在建级联之前调用 `attachSoftShadow`。测量页冒烟：聚光 0.3 m 时 0.5 m 板半影 3–4 cm，与参考解相同。WebGL 下测量页跑不了（世界空间层只有 WebGPU 有），WebGL 的检查放进 AC-S1-10 的导出对照。
   - 量法沿用 S0：0.05 m 板的影子几乎被板自己挡住，只记录不判；0.5 m 板按宽度判（≤ 2 texel 加一格 5 mm 分箱）；剖面均值、最大差按 3 m 板判。测量页另报每块板处的 texel。
-- [ ] 3.2 级联与 standIn：
+- [x] 3.2 级联与 standIn：
   - `mapPCSS(sunGeometry)`；
   - `fitCascades` 每帧同步每级的 `lightSize`，带尺寸时 `normalBias = 0`；
   - `ownNames` 后缀按投影平行光的序号；
@@ -105,7 +105,8 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
   - AC-S1-10：两种后端下 occluder-wall、noon 的 16×16 分块都没有缺失；体积的光锥、两次导出逐像素相同也通过。
   - AC-S1-4：阈值内的结果同 2.2。只记录、不判定的 1 m clearcoat：高光 0.42，面积 6.6，峰值 0.69，仍交 owner。
 - 场景单测 357 项通过。修了 trace 灯光表的旧用例：原来按每盏灯 4 行写死偏移，改按 `LIGHT_ROW` 取，并补上尺寸那一行的断言。lint、build 通过。
-- 3.2 剩 standIn 的冷编译复测，并入 7.1 一起测；3.4 等 owner 选定偏置做法。
+- 3.2 的 standIn 复测用现有 e2e「lights: the rendered view warms its lights in one compile」：新灯带缺省尺寸、聚光带 PCSS 时，三盏灯仍一次编译完。该 e2e 末尾的资源断言失败（每轮多 4 个 render target、16 张纹理），但分支起点 5d2308ff 上同样失败，是 develop 原有的问题，不在本 Change 范围，另交 owner。
+- 3.4 已按 owner 选定的 1.5 texel 完成（见上）。
 
 ## 5. 命中点
 
@@ -150,3 +151,4 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
       - workbench 超出的部分来自两项：一是上面的编译；二是 16 帧累积，8K 时每帧都重画全部画面。
     - 0 与非 0 切换的停顿：workbench 4.0–4.8 s，realtime_gi 7.0–8.4 s。原因是灯要重建，所有材质都重新编译。
 - [ ] 7.2 owner 看图（AC-S1-11）：用 owner 反馈的场景出改前改后的对比图，`workbench` 和 `realtime_gi` 各一组。阴影图的台阶看得出来时，加出 2048 的对比并复测 7.1。完成判据：owner 给出结论。
+  - 进展：用 frame-two-lights（owner 2026-10-26 反馈的「两盏灯隔着框架照墙」）出改前改后的对比图，`workbench` 和 `realtime_gi` 各一张。改前是分支起点的基线 `baseline-before`；改后按缺省尺寸导出（点光 0.1 m、平行光 0.545°），用 `SCENE_E2E_LIGHT_SIZES=keep`。等 owner 结论。
