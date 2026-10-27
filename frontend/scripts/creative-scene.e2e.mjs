@@ -4016,7 +4016,9 @@ const PROFILE_BIN = 0.005
 /**
  * One soft shadow's boards against the reference, as S0 measured them (soft-shadow-candidates.md): the 0.05 m board's
  * shadow is mostly hidden behind the board, so it is logged only; an edge the reference has a 10%–90% width for is
- * held to 20% when the reference's is 5 cm or wider and to texels (and a bin) when narrower; the 3 m board's profiles
+ * held to 20% when the reference's is 5 cm or wider and to texels when narrower, give or take two bins (a width is
+ * the bins between its 10% and its 90% crossing, each crossing known to a bin, so two widths of one edge may stand two
+ * bins apart with nothing between them; scene-light-radius tasks 3.3); the 3 m board's profiles
  * to a mean of 0.02 and a largest of 0.12 (the 0.5 m board's edges are a pixel or two wide, where the 1 cm pixels and
  * the map's texels make the largest difference mean nothing). What is off, as lines.
  */
@@ -4032,7 +4034,7 @@ function penumbraOff(name, report, narrowTexels) {
       sides.push(`${side} ${ref == null ? '–' : (ref * 100).toFixed(1)}→${got == null ? '–' : (got * 100).toFixed(1)}`)
       if (board === '0.05 m' || ref == null) continue
       if (got == null) off.push(`${name} ${board} ${side}: no width, the reference's ${ref}`)
-      else if (ref >= 0.05 ? Math.abs(got - ref) > 0.2 * ref : Math.abs(got - ref) > narrowTexels * texel + PROFILE_BIN) off.push(`${name} ${board} ${side}: ${got} m, the reference's ${ref} m (a texel ${texel?.toFixed(4)} m)`)
+      else if (ref >= 0.05 ? Math.abs(got - ref) > 0.2 * ref : Math.abs(got - ref) > narrowTexels * texel + 2 * PROFILE_BIN) off.push(`${name} ${board} ${side}: ${got} m, the reference's ${ref} m (a texel ${texel?.toFixed(4)} m)`)
     }
     const p = w.profile.averaged
     widths[board] = ['left', 'right', 'lower', 'upper'].map((k) => w.averaged[k].width).filter((v) => v != null)

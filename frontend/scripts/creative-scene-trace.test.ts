@@ -509,7 +509,8 @@ test('a builtin is cached under its id and its parameters filled in and sorted; 
 })
 
 import { Color, SpotLight } from 'three'
-import { HEADER, LIGHT, MATERIAL_ROW, PRINCIPLED, UNKNOWN, presets, TraceTables } from '../src/creative-scene/render/trace/tables.ts'
+import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, PRINCIPLED, UNKNOWN, presets, TraceTables } from '../src/creative-scene/render/trace/tables.ts'
+import { SceneSphereLight, SceneSunLight } from '../src/creative-scene/render/lightModel/lights.ts'
 
 test('one table: a header, a material row a traced mesh, a light row a light (design「内部类型」, D6)', () => {
   const tables = new TraceTables()
@@ -535,9 +536,11 @@ test('one table: a header, a material row a traced mesh, a light row a light (de
   tables.setMaterial(40, { kind: 'unknown' }, false)
   assert.deepEqual(row(0, 0), [PRINCIPLED, 1, 1, 0], 'kept when grown')
   const scene = new Scene()
-  const sun = Object.assign(new DirectionalLight('#ffffff', 2), { castShadow: true })
+  // Sized as the document's lights are (scene-light-radius): the sun 0.545° across, the point light 0.2 m.
+  const sun = Object.assign(new SceneSunLight(), { castShadow: true, intensity: 2, size: 0.545 })
   sun.position.set(0, 10, 0)
-  const point = new PointLight('#ff0000', 3, 5, 2)
+  const point = Object.assign(new SceneSphereLight(), { intensity: 3, distance: 5, decay: 2, size: 0.2 })
+  point.color.set('#ff0000')
   point.position.set(1, 2, 3)
   const spot = new SpotLight('#ffffff', 4, 10, Math.PI / 4, 0.5, 2)
   spot.position.set(0, 5, 0)
@@ -551,12 +554,17 @@ test('one table: a header, a material row a traced mesh, a light row a light (de
   near(vec4(first), [LIGHT.directional, 1, 0, 0], 'a sun that casts')
   near(vec4(first + 1), [0, 1, 0, 0], 'towards it')
   near(vec4(first + 2), [2, 2, 2, 0], 'colour × intensity')
-  near(vec4(first + 4), [LIGHT.point, 0, 5, 2], 'a point light: its distance and decay')
-  near(vec4(first + 5), [1, 2, 3, 0], 'where it is')
-  near(vec4(first + 8), [LIGHT.spot, 0, 10, 2], 'a spot')
-  near(vec4(first + 9), [0, 5, 0, Math.cos(Math.PI / 4)], 'where it is, its cone')
-  assert.ok(Math.abs(vec4(first + 10)[3] - Math.cos((Math.PI / 4) * 0.5)) < 1e-6, 'where its penumbra starts')
-  near(vec4(first + 11), [0, -1, 0, 0], 'the way it shines')
+  near(vec4(first + 4), [Math.sin((0.545 * Math.PI) / 360), 0, 0, 0], 'the sun\'s size: sin(θ/2)')
+  const p = first + LIGHT_ROW
+  near(vec4(p), [LIGHT.point, 0, 5, 2], 'a point light: its distance and decay')
+  near(vec4(p + 1), [1, 2, 3, 0], 'where it is')
+  near(vec4(p + 4), [0.2, 0, 0, 0], 'its radius')
+  const q = first + 2 * LIGHT_ROW
+  near(vec4(q), [LIGHT.spot, 0, 10, 2], 'a spot')
+  near(vec4(q + 1), [0, 5, 0, Math.cos(Math.PI / 4)], 'where it is, its cone')
+  assert.ok(Math.abs(vec4(q + 2)[3] - Math.cos((Math.PI / 4) * 0.5)) < 1e-6, 'where its penumbra starts')
+  near(vec4(q + 3), [0, -1, 0, 0], 'the way it shines')
+  near(vec4(q + 4), [0, 0, 0, 0], 'three\'s own spot: no size')
 })
 
 import { TraceBase, type TraceStatus } from '../src/creative-scene/render/trace/base.ts'
