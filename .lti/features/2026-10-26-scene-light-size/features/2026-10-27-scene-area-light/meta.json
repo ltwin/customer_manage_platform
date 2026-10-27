@@ -1,6 +1,6 @@
 {
   "uid": "847866d9-bbe9-452c-84a7-c84bac399f2c",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-area-light",
   "kind": "feature",
   "assurance": "governed",
@@ -23,9 +23,9 @@
       "data:面光源"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-27T17:41:32.974Z",
-  "updatedAt": "2026-10-27T18:38:32.986Z",
+  "updatedAt": "2026-10-27T18:40:25.911Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -59,8 +59,19 @@
     }
   ],
   "revisions": [],
+  "baseline": {
+    "commit": "38b4a4e0d9714a0aec55da4565ef7b6b8e4347e7",
+    "at": "2026-10-27T18:40:25.156Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "0205b6966ec678c3c6191201e941dbb7922e3b7af95c2894705cd7680b4cc1ee"
+    },
+    "preExisting": [
+      ".lti/snapshots/0205b6966ec678c3c6191201e941dbb7922e3b7af95c2894705cd7680b4cc1ee.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
