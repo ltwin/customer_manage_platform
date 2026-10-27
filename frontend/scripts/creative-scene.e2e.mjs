@@ -7310,6 +7310,40 @@ if (process.env.SCENE_E2E_TRACE_GRAZING) await check('trace diag: a glossy tiled
   }
 })
 
+// scene-light-radius AC-S1-6 (Epic AC-7), SCENE_E2E_TRACE=1: the materials scene under its sun (0.545°) and with a
+// point light and a spot of radius 0.3 m besides, a primary ray a pixel shaded at its hit against the raster mesh by
+// mesh, as GI-S1 AC-S1-2 holds them: the light without shadows within a level, shadow or not the same on 99 % of the
+// pixels the raster has wholly lit or wholly in shadow (the rays to random points of the lights).
+if (process.env.SCENE_E2E_TRACE) await check('light size: AC-S1-6, hits lit by sized lights as the raster lights them', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+    referenceScene(server, 'materials', (scene) => {
+      realtimeGI(scene)
+      scene.objects.push(
+        { id: gid('sizedpoint'), kind: 'light', name: '点光', parent_id: null, order: 91, transform: { ...identity(), position: [-1.6, 2.2, 0] }, visible: true, locked: false, light: { type: 'point', color: '#ffd2a0', intensity: 60, cast_shadow: true, distance: 0, decay: 2, radius_m: 0.3 } },
+        { id: gid('sizedspot'), kind: 'light', name: '聚光', parent_id: null, order: 92, transform: { position: [1.6, 3, 0], rotation: down, scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'spot', color: '#e0ecff', intensity: 120, cast_shadow: true, distance: 0, decay: 2, angle: 0.8, penumbra: 0.3, radius_m: 0.3 } },
+      )
+    })
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'materials')
+    const report = await page.evaluate(() => window.__sceneGPU.traceHits(640))
+    console.log(`  AC-S1-6 materials with sized lights: exposure ${report.exposure.toFixed(3)}, shadow ${report.shadow.agree} of ${report.shadow.compared}`)
+    for (const m of report.meshes) console.log(`    ${m.material.padEnd(16)} ${String(m.pixels).padStart(6)} px  lit ${m.lit.toFixed(2)}`)
+    const judged = report.meshes.filter((m) => m.pixels >= 50)
+    assert.ok(judged.length >= 10, `${judged.length} meshes large enough to judge`)
+    for (const m of judged) assert.ok(m.lit <= 1, `${m.material} lit ${m.lit.toFixed(2)} levels apart`)
+    assert.ok(report.shadow.compared > 1000 && report.shadow.agree >= 0.99 * report.shadow.compared, `shadows agree on ${report.shadow.agree} of ${report.shadow.compared}`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // SCENE_E2E_TRACE=1: the materials scene, a primary ray a pixel shaded at
 // its hit (render/trace/hit.ts) against the raster mesh by mesh, inside each
 // (render/trace/checks.ts hitCheck): the material's outputs and the light

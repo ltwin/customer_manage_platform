@@ -11,7 +11,7 @@ import type { TSLNode } from '../../materials/patterns.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
-const { clamp, cross, dot, float, length, max, min, normalize, select, sqrt, vec3 } = T
+const { clamp, cos, cross, dot, float, length, max, min, normalize, select, sin, sqrt, vec3 } = T
 
 /** How a surface sees a sized light: the way to its centre (d long, 1 for a directional light) and s, the sine of its angular radius. */
 export type Sized = { lightVector: TSLNode; sinHalf: TSLNode }
@@ -74,6 +74,29 @@ export function hybridLobe({ lightVector, sinHalf }: Sized, roughness: TSLNode, 
   const centreToRay = dot(lightVector, R).mul(R).sub(lightVector)
   const toward = normalize(lightVector.add(centreToRay.mul(clamp(moved.mul(d).div(max(length(centreToRay), 1e-6)), 0, 1))))
   return { roughness: sqrt(a1), direction: toward, energy: a1.div(max(a2, 1e-4)).pow(2) }
+}
+
+/**
+ * A way toward a random point of a sized light, as a shadow ray goes (Epic
+ * design「光栅与命中点一致」): uniform over the cone of half-angle asin(s)
+ * about the unit way to its centre, u1 and u2 uniform in [0, 1). The world-space
+ * layer's shadow rays go this way, a frame's one, its temporal accumulation
+ * the average.
+ */
+export function coneSample(axis: TSLNode, sinHalf: TSLNode, u1: TSLNode, u2: TSLNode): TSLNode {
+  const cosMax = sqrt(float(1).sub(sinHalf.mul(sinHalf)))
+  const cosT = float(1).sub(u1.mul(float(1).sub(cosMax)))
+  const sinT = sqrt(max(float(1).sub(cosT.mul(cosT)), 0))
+  const phi = u2.mul(Math.PI * 2)
+  const tangent = normalize(cross(axis, select(T.abs(axis.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0))))
+  const bitangent = cross(axis, tangent)
+  return normalize(axis.mul(cosT).add(tangent.mul(sinT.mul(cos(phi)))).add(bitangent.mul(sinT.mul(sin(phi)))))
+}
+
+/** How far along unit way dir from a point the sphere at toCentre (from that point) of radius r begins: where a shadow ray stops short of it. */
+export function sphereEntry(toCentre: TSLNode, r: TSLNode, dir: TSLNode): TSLNode {
+  const b = dot(dir, toCentre)
+  return b.sub(sqrt(max(r.mul(r).sub(dot(toCentre, toCentre).sub(b.mul(b))), 0)))
 }
 
 /**

@@ -9,6 +9,7 @@ import type { TraceLayer } from './layer.ts'
 import { ROW as NORMAL_ROW, STEPS } from './normals.ts'
 import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, presets, type TraceTables } from './tables.ts'
 import { traceFirst, traceWithin, type Hit } from './wgsl.ts'
+import { coneSample, effectiveFalloff, horizonDirection, hybridLobe, sinHalfOf, sphereEntry } from '../lightModel/formulas.ts'
 
 // A ray's first hit through the world-space layer, shaded as the raster
 // shades that surface (S1 design「命中点着色」, Epic I2): the same preset
@@ -37,6 +38,7 @@ import { traceFirst, traceWithin, type Hit } from './wgsl.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
+const { frameId, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
 const { BRDF_GGX, BRDF_Lambert, DFGLUT, F_Schlick, If, Loop, Switch, abs, clamp, cross, dot, float, floor, getDistanceAttenuation, isolate, length, luminance, mat3, mat4, max, min, mix, normalize, pmremTexture, pow, reflect, select, smoothstep, sRGBTransferEOTF, uint, vec3, vec4 } = T
 
 /** A material at a hit, as the lighting takes it: emission already exposed. */
@@ -207,9 +209,69 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
   }
 
   /**
+   * A light of the table at P as a hit takes it (scene-light-radius design「灯光表与命中点」): the unit way to its
+   * centre, its colour there (falloff at the effective distance, a spot's cone), how far a shadow ray toward the
+   * centre goes (0: all the way), and its size: s, the sine of its angular radius (0 without a size), and the way
+   * to its centre d long (a directional light's at d = 1), as render/lightModel/formulas.ts takes them.
+   */
+  function tableLight(at: TSLNode, P: TSLNode) {
+    const kind = table.element(at).toVar()
+    const where = table.element(at.add(uint(1))).toVar()
+    const shine = table.element(at.add(uint(2))).toVar()
+    const size = table.element(at.add(uint(4))).x.toVar()
+    const l = vec3(0).toVar()
+    const toCentre = vec3(0).toVar()
+    const color = vec3(0).toVar()
+    const reach = float(0).toVar()
+    const sinHalf = float(0).toVar()
+    If(kind.x.lessThan(LIGHT.point - 0.5), () => {
+      l.assign(where.xyz)
+      toCentre.assign(where.xyz)
+      color.assign(shine.xyz)
+      // Held off 0 and 1 as the raster's sun is (lightModel/nodes.ts).
+      sinHalf.assign(select(size.greaterThan(0), clamp(size, 1e-3, 0.9999), float(0)))
+    }).Else(() => {
+      const toLight = where.xyz.sub(P).toVar()
+      const d = length(toLight).toVar()
+      l.assign(toLight.div(d))
+      toCentre.assign(toLight)
+      // At the effective distance max(d, r): a factor 1 at r = 0 (formulas.ts effectiveFalloff).
+      const attenuation = getDistanceAttenuation({ lightDistance: d, cutoffDistance: kind.z, decayExponent: kind.w } as never).mul(effectiveFalloff(d, size, kind.w)).toVar()
+      If(kind.x.greaterThan(LIGHT.spot - 0.5), () => {
+        const aim = table.element(at.add(uint(3))).xyz
+        attenuation.mulAssign(smoothstep(where.w, shine.w, dot(l.negate(), aim)))
+      })
+      color.assign(shine.xyz.mul(attenuation))
+      reach.assign(d.sub(1e-3))
+      sinHalf.assign(select(size.greaterThan(0), sinHalfOf(size, d), float(0)))
+    })
+    const sized = size.greaterThan(0).toVar()
+    // The diffuse's way: Snyder's bent toward the part above the horizon (formulas.ts horizonDirection); a light without a size, its centre's.
+    const diffuseWay = (n: TSLNode) => select(sized, horizonDirection({ lightVector: toCentre, sinHalf }, n), l)
+    /**
+     * A shadow ray's way and reach toward a random point of the light, u1 and u2 uniform: within its cone, stopping
+     * 1 mm short of a sphere's surface, not its centre, so a bulb model round the light does not shadow it. Without
+     * a size, the centre as before.
+     */
+    const shadowRay = (u1: TSLNode, u2: TSLNode) => {
+      const way = select(sized, coneSample(l, sinHalf, u1, u2), l).toVar()
+      const sphere = sized.and(kind.x.greaterThan(LIGHT.point - 0.5))
+      return { way, reach: select(sphere, max(sphereEntry(toCentre, size, way).sub(1e-3), 1e-4), reach) }
+    }
+    return { kind, l, color, sized, sinHalf, toCentre, diffuseWay, shadowRay }
+  }
+
+  /** Two uniform numbers for light i's shadow ray, from a seed. */
+  const pair = (seed: TSLNode, i: TSLNode) => {
+    const h = pcg(seed.add(i.mul(uint(0x85ebca6b))).add(uint(0x27d4eb2f))).toVar()
+    return [unit(h), unit(pcg(h))] as const
+  }
+
+  /**
    * Lit at P (world), normal n towards the viewer, v towards the viewer:
    * PhysicalLightingModel's direct and indirect terms. Shadow rays leave from
-   * lifted, P off its face.
+   * lifted, P off its face; toward a sized light, one a pixel and frame to a
+   * random point of it, which the real-time GI's temporal accumulation averages.
    */
   function lightAt(P: TSLNode, n: TSLNode, v: TSLNode, s: Surface, shadows: boolean, indirect: boolean, lifted: TSLNode): TSLNode {
     const specularColor = vec3(0.04)
@@ -230,44 +292,33 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
       return [FssEss.toVar(), Fms.mul(Ems).toVar()]
     }
     const light = vec3(0).toVar()
+    // A pixel's and frame's seed for the shadow rays toward sized lights.
+    const seed = uint(screenCoordinate.x).add(uint(screenCoordinate.y).mul(uint(65536))).add(uint(frameId).mul(uint(0x9e3779b9))).toVar()
     // The direct lights.
     const first = header(0).y.toUint().toVar()
     Loop({ start: uint(0), end: header(0).x.toUint(), type: 'uint', condition: '<' }, ({ i }: { i: TSLNode }) => {
       const at = first.add(i.mul(uint(LIGHT_ROW))).toVar()
-      const kind = table.element(at).toVar()
-      const where = table.element(at.add(uint(1))).toVar()
-      const shine = table.element(at.add(uint(2))).toVar()
-      const l = vec3(0).toVar()
-      const color = vec3(0).toVar()
-      // How far a shadow ray goes: 0 is all the way (a directional light).
-      const reach = float(0).toVar()
-      If(kind.x.lessThan(LIGHT.point - 0.5), () => {
-        l.assign(where.xyz)
-        color.assign(shine.xyz)
-      }).Else(() => {
-        const toLight = where.xyz.sub(P).toVar()
-        const d = length(toLight).toVar()
-        l.assign(toLight.div(d))
-        const attenuation = getDistanceAttenuation({ lightDistance: d, cutoffDistance: kind.z, decayExponent: kind.w } as never).toVar()
-        If(kind.x.greaterThan(LIGHT.spot - 0.5), () => {
-          const aim = table.element(at.add(uint(3))).xyz
-          attenuation.mulAssign(smoothstep(where.w, shine.w, dot(l.negate(), aim)))
-        })
-        color.assign(shine.xyz.mul(attenuation))
-        reach.assign(d.sub(1e-3))
-      })
-      const dotNL = clamp(dot(n, l), 0, 1).toVar()
+      const { kind, l, color, sized, sinHalf, toCentre, diffuseWay, shadowRay } = tableLight(at, P)
+      const wl = diffuseWay(n).toVar()
+      const dotNL = clamp(dot(n, wl), 0, 1).toVar()
       If(dotNL.greaterThan(0), () => {
-        const irradiance = color.mul(dotNL).toVar()
+        const visible = float(1).toVar()
         if (shadows)
           If(kind.y.greaterThan(0.5), () => {
-            const blocked = traceWithin(layer, lifted, l, reach).toVar() as Hit
-            If(blocked.get('didHit'), () => irradiance.assign(vec3(0)))
+            const [u1, u2] = pair(seed, i)
+            const ray = shadowRay(u1, u2)
+            const blocked = traceWithin(layer, lifted, ray.way, ray.reach).toVar() as Hit
+            If(blocked.get('didHit'), () => visible.assign(0))
           })
-        const h = normalize(l.add(v))
+        const irradiance = color.mul(dotNL).mul(visible).toVar()
+        const h = normalize(wl.add(v))
         const F = F_Schlick({ f0: specularColor, f90: specularF90, dotVH: clamp(dot(v, h), 0, 1) } as never)
         light.addAssign(irradiance.mul(BRDF_Lambert({ diffuseColor: diffuseContribution } as never)).mul(float(1).sub(F)))
-        light.addAssign(irradiance.mul(BRDF_GGX({ lightDirection: l, f0: specularColorBlended, f90: 1, roughness, normalView: n, viewDirection: v } as never)).mul(msComp))
+        // The specular toward the hybrid lobe of a sized light (formulas.ts hybridLobe), as the raster's (lightModel/direct.ts).
+        const lobe = hybridLobe({ lightVector: toCentre, sinHalf }, roughness, n, v)
+        const way = select(sized, lobe.direction, l).toVar()
+        const specularIrradiance = select(sized, color.mul(clamp(dot(n, way), 0, 1)).mul(lobe.energy).mul(visible), irradiance)
+        light.addAssign(specularIrradiance.mul(BRDF_GGX({ lightDirection: way, f0: specularColorBlended, f90: 1, roughness: select(sized, lobe.roughness, roughness), normalView: n, viewDirection: v } as never)).mul(msComp))
       })
     })
     if (!indirect) return light.add(s.emission)
@@ -405,28 +456,9 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     const first = header(0).y.toUint().toVar()
     Loop({ start: uint(0), end: header(0).x.toUint(), type: 'uint', condition: '<' }, ({ i }: { i: TSLNode }) => {
       const at = first.add(i.mul(uint(LIGHT_ROW))).toVar()
-      const kind = table.element(at).toVar()
-      const where = table.element(at.add(uint(1))).toVar()
-      const shine = table.element(at.add(uint(2))).toVar()
-      const l = vec3(0).toVar()
-      const color = vec3(0).toVar()
-      const far = float(0).toVar()
-      If(kind.x.lessThan(LIGHT.point - 0.5), () => {
-        l.assign(where.xyz)
-        color.assign(shine.xyz)
-      }).Else(() => {
-        const toLight = where.xyz.sub(P).toVar()
-        const d = length(toLight).toVar()
-        l.assign(toLight.div(d))
-        const attenuation = getDistanceAttenuation({ lightDistance: d, cutoffDistance: kind.z, decayExponent: kind.w } as never).toVar()
-        If(kind.x.greaterThan(LIGHT.spot - 0.5), () => {
-          const aim = table.element(at.add(uint(3))).xyz
-          attenuation.mulAssign(smoothstep(where.w, shine.w, dot(l.negate(), aim)))
-        })
-        color.assign(shine.xyz.mul(attenuation))
-        far.assign(d.sub(1e-3))
-      })
-      const irradiance = color.mul(clamp(dot(n, l), 0, 1)).toVar()
+      const { kind, color, diffuseWay, shadowRay } = tableLight(at, P)
+      // Weighed by its irradiance toward the bent way, as lightAt lights by it: past the terminator a sized light still lights.
+      const irradiance = color.mul(clamp(dot(n, diffuseWay(n)), 0, 1)).toVar()
       If(kind.y.lessThan(0.5), () => {
         e.addAssign(irradiance)
       }).Else(() => {
@@ -435,9 +467,11 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
           total.addAssign(w)
           // This light takes the place of the one drawn so far with chance w / total.
           If(unit(pcg(seed.add(i.mul(uint(0x9e3779b9))))).mul(total).lessThan(w), () => {
+            const [u1, u2] = pair(seed, i)
+            const ray = shadowRay(u1, u2)
             picked.assign(irradiance)
-            towards.assign(l)
-            reach.assign(far)
+            towards.assign(ray.way)
+            reach.assign(ray.reach)
           })
         })
       })
