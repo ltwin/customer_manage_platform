@@ -71,12 +71,13 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
   - 先写 e2e：AC-S1-5，两种天空下柱子的半影；`sun_size_deg` 从 0.545° 调到 5° 时变宽。
   - 完成判据：这些 e2e 通过。
   - 进展（0c345686）：程序化天空的太阳改为 `<primitive>` 挂 `SceneSunLight`。物理天空的太阳取 `sun_size_deg`，月亮取它的角径（缺省 0.52）。`gpuTestHooks.skySunDeg` 可以把两者设为 0，作对照。测量页加 `?sky=procedural|physical` 和 `?resize=`。冒烟：物理天空 5° 时 3 m 板半影 24.5–30 cm，与参考解相同；先按 0.545° 画、再改成 5°，结果与直接按 5° 加载相同，没有重建。
-- [ ] 3.4 尺寸为 0 时的条纹：
+- [x] 3.4 尺寸为 0 时的条纹：
   - 在 `VolumeShadowNode` 和 `VolumePointShadowNode` 里覆写 `setupShadowPosition`，加 1.5 texel 的法线偏置，没有 `filterNode` 时才加；
   - 同时出固定 0.05 m 的对照图。
   - 两种做法在 `occluder-wall`、`frame-two-lights` 上的图交 owner 看。owner 选定后，用 `SCENE_E2E_LIGHT_BASELINE` 重做基线并提交。
   - 完成判据：AC-S1-2 的 e2e 在两种渲染器下与新基线相差 ≤ 1/255。
   - 进展（0c345686）：两种做法都已实现，0.05 m 那种由 `gpuTestHooks.stripeFixed` 打开。对照图已导出（`SCENE_E2E_LIGHT_BASELINE`，尺寸全为 0），两种做法都去掉了条纹，**等 owner 选定**后再提交基线。
+  - owner 2026-10-27 选定 1.5 texel（缺省做法）。基线用当前代码重新导出到 `discovery/research/baseline-after/`。AC-S1-2（`SCENE_E2E_LIGHT_SIZE0`）两种渲染器的 4 张图与它逐像素相同。与 owner 看过的那组相比，frame-two-lights 的 realtime_gi 有 14 个像素超过 2 级（共 280 万），是零星噪点；其余 3 张为 0–1 级。
 
 ## 4. 体积、累积与接触阴影
 

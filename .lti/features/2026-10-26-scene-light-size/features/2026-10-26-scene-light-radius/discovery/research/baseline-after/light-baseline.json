@@ -1,0 +1,56 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "viewport": "1600 × 1000, 2× pixels",
+  "scenes": {
+    "frame-two-lights-workbench": {
+      "export_ms": 657,
+      "images": [
+        {
+          "file": "frame-two-lights-参考构图｜低机位-lit-workbench.png",
+          "width": 1365,
+          "height": 2048,
+          "bytes": 2664976
+        }
+      ]
+    },
+    "frame-two-lights-realtime_gi": {
+      "export_ms": 11800,
+      "images": [
+        {
+          "file": "frame-two-lights-参考构图｜低机位-lit-realtime_gi.png",
+          "width": 1365,
+          "height": 2048,
+          "bytes": 2796640
+        }
+      ]
+    },
+    "occluder-wall-workbench": {
+      "export_ms": 213,
+      "images": [
+        {
+          "file": "occluder-wall-shot-lit-workbench.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 670919
+        }
+      ]
+    },
+    "occluder-wall-realtime_gi": {
+      "export_ms": 13647,
+      "images": [
+        {
+          "file": "occluder-wall-shot-lit-realtime_gi.png",
+          "width": 2048,
+          "height": 1365,
+          "bytes": 694161
+        }
+      ]
+    }
+  },
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)"
+}
