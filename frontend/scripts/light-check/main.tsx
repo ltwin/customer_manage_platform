@@ -3,7 +3,10 @@
 // scene (scripts/fixtures/scene-reference) as the document has it, sizes written into its lights, and holds the
 // raster's direct light against the reference (reference.ts), as creative-scene.e2e.mjs asks.
 //
-//   ?scene=occluder-wall | frame-two-lights      the reference scene
+//   ?scene=occluder-wall | frame-two-lights | area-studio   the reference scene
+//   ?shape=rectangle | ellipse &areaW= &areaH= &nits=      area-studio's area light (1 × 1 m rectangle, 100 cd/m²)
+//   ?layout=far                                  area-studio: the area light 0.5 m square on the wall's normal 5 m off (AC-S2-2)
+//   ?layout=close                                area-studio: the area light 1 m square 5 cm off the wall (AC-S2-2)
 //   ?light=spot | point | sun                    occluder-wall's one light on (spot by default)
 //   ?size=<m or °>                               the lights' radius_m, or a directional light's angular_diameter_deg
 //   ?gloss=<roughness>                           the gloss panel's roughness (0.15 as the scene has it)
@@ -28,11 +31,12 @@ import { cameraFraming } from '../../src/creative-scene/host/framing.ts'
 import type { SceneModel } from '../../src/creative-scene/models/cache.ts'
 import { traceWaitMs } from '../../src/creative-scene/render/engines.ts'
 import { createRenderer, gpuOf, gpuTestHooks } from '../../src/creative-scene/render/gpu.ts'
+import { SceneAreaLight } from '../../src/creative-scene/render/lightModel/lights.ts'
 import { shadowTurning } from '../../src/creative-scene/render/lightModel/shadowFilter.ts'
 import { traceBase } from '../../src/creative-scene/render/trace/base.ts'
 import { applyExposure } from '../../src/creative-scene/world/exposure.ts'
 import { nightSkyDefaults, physicalSkyDefaults } from '../../src/creative-scene/world/physicalSky.ts'
-import { boardCentres, drawPanels, highlight, penumbrae, regionErrors, shadowError, terminator, type Boards } from './measure.ts'
+import { axisIrradiance, boardCentres, drawPanels, highlight, nearIrradiance, penumbrae, regionErrors, shadowError, terminator, type Boards } from './measure.ts'
 import { compare, lum, refLights } from './reference.ts'
 import { fixtures, loadModels, readFixture } from './fixture.ts'
 
@@ -65,6 +69,16 @@ async function load(): Promise<{ scene: Scene; models: Record<string, SceneModel
   for (const o of scene.objects) {
     if (!o.light) continue
     if (sceneName === 'occluder-wall') o.visible = !skyKind && o.name === occluderLights[lightName]
+    if (o.light.type === 'area') {
+      Object.assign(o.light, { shape: query.get('shape') ?? o.light.shape, width: Number(query.get('areaW') ?? o.light.width), height: Number(query.get('areaH') ?? o.light.height), intensity: Number(query.get('nits') ?? o.light.intensity) })
+      // On the wall's normal: 10 edges off for a 0.5 m light, and one closer than its edge (the wall's face at z −2.95).
+      if (query.get('layout') === 'far') {
+        Object.assign(o.transform, { position: [-2, 1.8, 2.05], rotation: [0, 0, 0, 1] })
+        if (!query.has('areaW')) Object.assign(o.light, { width: 0.5, height: 0.5 })
+      }
+      if (query.get('layout') === 'close') Object.assign(o.transform, { position: [1.5, 1.8, -2.9], rotation: [0, 0, 0, 1] })
+      continue
+    }
     const directional = o.light.type === 'directional'
     if (directional) o.light.angular_diameter_deg = size ?? o.light.angular_diameter_deg ?? 0.545
     else o.light.radius_m = size ?? o.light.radius_m ?? 0.1
@@ -138,7 +152,7 @@ function texelsAt(three: THREE.Scene, boards: Boards): Record<string, number> | 
     const d = p.distanceTo(at)
     const size = l.shadow.mapSize.x
     if ((l as THREE.SpotLight).isSpotLight) out[b.name] = (2 * d * Math.tan(((l.shadow.camera as THREE.PerspectiveCamera).fov * Math.PI) / 360)) / size
-    else if ((l as THREE.PointLight).isPointLight) out[b.name] = (2 * d) / size
+    else if ((l as THREE.PointLight).isPointLight || l instanceof SceneAreaLight) out[b.name] = (2 * d) / size
     else {
       const holding = cascades.map((c) => {
         const q = p.clone().applyMatrix4(c.shadow.camera.matrixWorldInverse)
@@ -217,11 +231,17 @@ async function boot() {
   const error = shadowError(c)
   document.body.append(drawPanels(c, false))
   canvas.style.display = 'none'
-  const occluder = sceneName === 'occluder-wall'
+  const studio = sceneName === 'area-studio'
+  const occluder = sceneName === 'occluder-wall' || studio
   const sunBoards = lightName === 'sun' || skyKind != null
+  const boards: Boards = studio ? 'area' : sunBoards ? 'sun' : 'near'
+  let area: SceneAreaLight | null = null
+  three.traverse((o) => {
+    if (o instanceof SceneAreaLight) area = o
+  })
   check.report = {
     scene: sceneName,
-    light: occluder ? (skyKind ? `${skyKind} sky` : lightName) : null,
+    light: studio ? 'area' : occluder ? (skyKind ? `${skyKind} sky` : lightName) : null,
     size,
     backend: (g.renderer.backend as { isWebGLBackend?: boolean }).isWebGLBackend ? 'webgl' : 'webgpu',
     size_px: cmpSize,
@@ -230,12 +250,14 @@ async function boot() {
     referenceMs: Math.round(c.referenceMs),
     averaged: error.averaged,
     first: error.first,
-    penumbrae: occluder && query.get('layout') == null ? penumbrae(c, error, sunBoards ? 'sun' : 'near') : null,
-    texels: occluder && query.get('layout') == null ? texelsAt(three, sunBoards ? 'sun' : 'near') : null,
+    penumbrae: occluder && query.get('layout') == null ? penumbrae(c, error, boards) : null,
+    texels: occluder && query.get('layout') == null ? texelsAt(three, boards) : null,
+    axis: area && query.get('layout') === 'far' ? axisIrradiance(c, area, camera.position) : null,
+    near: area && query.get('layout') === 'close' ? nearIrradiance(c, area) : null,
     regions: occluder ? regionErrors(c, error) : null,
     highlight: occluder ? highlight(c) : null,
     terminator: query.get('layout') === 'near' ? terminator(c) : null,
-    lights: refLights(three).map((l) => ({ kind: l.kind, radius: 'radius' in l ? l.radius : undefined, angle: 'angle' in l ? l.angle : undefined })),
+    lights: refLights(three).map((l) => ({ kind: l.kind, radius: 'radius' in l ? l.radius : undefined, angle: 'angle' in l ? l.angle : undefined, width: 'width' in l ? l.width : undefined, height: 'height' in l ? l.height : undefined })),
     raster: finite(c.raster.unshadowed),
     reference: finite(c.reference.unshadowed),
   }

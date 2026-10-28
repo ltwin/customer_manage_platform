@@ -6,6 +6,8 @@
 // and upper edges): wall pixels in a band either side of the line, binned by distance along it, each bin the mean
 // shadow factor. From the centre outward, the edge's 10%–90% width is between the bins where the factor first
 // reaches lo + 0.1·(1 − lo) and lo + 0.9·(1 − lo), lo being the profile's lowest near the centre.
+import { Color, Vector3 } from 'three'
+import type { SceneAreaLight } from '../../src/creative-scene/render/lightModel/lights.ts'
 import { lum, type Comparison } from './reference.ts'
 
 /**
@@ -340,4 +342,62 @@ export function drawPanels(c: Comparison, flip: boolean): HTMLCanvasElement {
   put(toImage(flipRows(c.raster.first, 4), w, h, k), 0, h + 24, `光栅单帧（workbench）  均值 ${e.first.mean.toFixed(3)} · p95 ${e.first.p95.toFixed(3)}`)
   put(errorImage(flipRows(e.ref, 1), flipRows(e.averagedShadow, 1), w, h), w, h + 24, '|Δ阴影|，多帧平均（红 = 0.5 以上）')
   return canvas
+}
+
+/** The wall's colour, linear (area-studio, occluder-wall): its R − B is diffuse alone, a dielectric's specular being white. */
+const WALL = new Color('#bdbdb8')
+
+/**
+ * The irradiance at wall pixel i from its diffuse light, the raster's and the reference's: (R − B) π / ((ρR − ρB)(1 − F)),
+ * F the dielectric's Fresnel (0.04) toward toLight from the eye, as three's direct and the reference take it (N2).
+ */
+function wallIrradiance(c: Comparison, i: number, toLight: Vector3, eye: Vector3) {
+  const at = new Vector3(c.position[i * 4], c.position[i * 4 + 1], c.position[i * 4 + 2])
+  const v = eye.clone().sub(at).normalize()
+  const h = v.clone().add(toLight).normalize()
+  const F = 0.04 + 0.96 * (1 - Math.min(1, Math.max(0, v.dot(h)))) ** 5
+  const of = (a: Float32Array) => ((a[i * 4] - a[i * 4 + 2]) * Math.PI) / ((WALL.r - WALL.b) * (1 - F))
+  return { raster: of(c.raster.unshadowed), reference: of(c.reference.unshadowed) }
+}
+
+const wallPixel = (c: Comparison, i: number) => c.position[i * 4 + 3] > 0.5 && Math.abs(docOf(c.position, i)[2] - WALL_Z) < 0.004
+
+/**
+ * AC-S2-2 far off: on the area light's normal where it meets the wall, the irradiance the raster and the reference
+ * give, against L · A / d² (the light's luminance, its area, the distance).
+ */
+export function axisIrradiance(c: Comparison, light: SceneAreaLight, eye: Vector3) {
+  const centre = light.getWorldPosition(new Vector3())
+  const emits = new Vector3().crossVectors(light.halfX, light.halfY).normalize().negate()
+  // The wall's face in three's world (z up) is y = −WALL_Z.
+  const hit = centre.clone().addScaledVector(emits, (-WALL_Z - centre.y) / emits.y)
+  let best = -1
+  let nearest = Infinity
+  for (let i = 0; i < c.size.width * c.size.height; i++) {
+    if (!wallPixel(c, i)) continue
+    const d = (c.position[i * 4] - hit.x) ** 2 + (c.position[i * 4 + 1] - hit.y) ** 2 + (c.position[i * 4 + 2] - hit.z) ** 2
+    if (d < nearest) [nearest, best] = [d, i]
+  }
+  const d = hit.distanceTo(centre)
+  const analytic = (light.intensity * light.area()) / (d * d)
+  const e = wallIrradiance(c, best, emits.clone().negate(), eye)
+  return { distance: d, edge: 2 * Math.max(light.halfX.length(), light.halfY.length()), offBy: Math.sqrt(nearest), analytic, raster: e.raster / analytic, reference: e.reference / analytic }
+}
+
+/** AC-S2-2 close: the most irradiance any wall pixel takes from the area light, over π L, the most a face of luminance L gives. */
+export function nearIrradiance(c: Comparison, light: SceneAreaLight) {
+  const centre = light.getWorldPosition(new Vector3())
+  const most = { raster: 0, reference: 0 }
+  let notFinite = 0
+  for (let i = 0; i < c.size.width * c.size.height; i++) {
+    if (!wallPixel(c, i)) continue
+    const at = new Vector3(c.position[i * 4], c.position[i * 4 + 1], c.position[i * 4 + 2])
+    // The eye far off along the wall's normal: F at its least, so the irradiance read is at its least too.
+    const e = wallIrradiance(c, i, centre.clone().sub(at).normalize(), at.clone().add(new Vector3(0, -100, 0)))
+    if (!Number.isFinite(e.raster)) notFinite++
+    else most.raster = Math.max(most.raster, e.raster)
+    most.reference = Math.max(most.reference, e.reference)
+  }
+  const top = Math.PI * light.intensity
+  return { raster: most.raster / top, reference: most.reference / top, notFinite }
 }

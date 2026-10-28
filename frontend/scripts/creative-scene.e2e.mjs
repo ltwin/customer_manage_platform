@@ -3981,6 +3981,40 @@ await check('light size: sphere lights light by I/d² far off, wrap past the ter
   }
 })
 
+// scene-area-light AC-S2-1's energy (Epic AC-5): area-studio's area light, unshadowed, lights the wall and the gloss
+// panel within 5% of the reference, rectangle and ellipse, square, long and large. AC-S2-2 (Epic AC-3): on its normal
+// ten edges off, the wall's irradiance is L · A / d² within 2%; a light closer than its edge gives at most π · L and
+// nothing infinite (measure.ts axisIrradiance, nearIrradiance).
+await check('area light: energy as the reference has it, L · A / d² far off and at most π · L close (AC-S2-1, AC-S2-2)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const failed = []
+  try {
+    for (const [name, query] of [
+      ['rectangle 1×1', ''],
+      ['ellipse 1×1', '&shape=ellipse'],
+      ['rectangle 2×0.5', '&areaW=2&areaH=0.5'],
+      ['ellipse 2×0.5', '&shape=ellipse&areaW=2&areaH=0.5'],
+      ['rectangle 2×2', '&areaW=2&areaH=2'],
+    ]) {
+      const { report } = await lightCheck(gpu, `scene=area-studio${query}&refFrames=2048&rasterFrames=1`)
+      const { wall, energy } = report.highlight
+      console.log(`AC-S2-1 ${name}: the wall's light ${wall.toFixed(4)}, the gloss panel's ${energy.ratio.toFixed(4)} of the reference's`)
+      if (!within(wall, 0.05) || !within(energy.ratio, 0.05)) failed.push(`${name}: wall ${wall}, panel ${energy.ratio}`)
+    }
+    for (const shape of ['rectangle', 'ellipse']) {
+      const far = (await lightCheck(gpu, `scene=area-studio&layout=far&shape=${shape}&refFrames=4096&rasterFrames=1`)).report.axis
+      console.log(`AC-S2-2 ${shape} ${far.distance} m off, ${far.edge} m across: the irradiance ${far.raster.toFixed(4)} of L · A / d², the reference's ${far.reference.toFixed(4)}`)
+      if (!within(far.raster, 0.02)) failed.push(`${shape} far off: ${far.raster} of L · A / d²`)
+      const { near, raster } = (await lightCheck(gpu, `scene=area-studio&layout=close&shape=${shape}&refFrames=1024&rasterFrames=1`)).report
+      console.log(`AC-S2-2 ${shape} 5 cm off the wall: the most irradiance ${near.raster.toFixed(4)} of π · L, the reference's ${near.reference.toFixed(4)}`)
+      if (near.raster > 1.01 || near.notFinite > 0 || raster.notFinite > 0) failed.push(`${shape} close: ${near.raster} of π · L, ${near.notFinite + raster.notFinite} not finite`)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(failed, [], 'the area light off the reference')
+})
+
 // AC-S1-4 (Epic AC-4): highlights grow and dim with the light's size as the reference's do, on the gloss panel at two
 // roughnesses, under a clearcoat, and from the sun turned so its glint is on the panel. Energy is held both ways: the
 // panel's light, as S0 measured it, and the highlight alone once the panel's diffuse (its dimmest 5%) is taken off, as
@@ -4171,13 +4205,17 @@ await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the
 // scene-area-light AC-S2-6: area-studio's softbox lights the wall it faces on WebGPU and through the WebGL2 backend,
 // and nothing from its back: turned round, the tiles it lit are as dark as with it hidden. Its lit export against the
 // same scene with the light hidden, tile by tile.
-await check('area light: lights what it faces and nothing behind it, on WebGPU and WebGL2 (AC-S2-6)', async () => {
+await check('area light: lights what it faces and nothing behind it, rectangle and ellipse, on WebGPU and WebGL2 (AC-S2-6)', async () => {
   const gpu = await chromium.launch({ headless: true, args: metal })
   const problems = []
   try {
     const page = await (await gpu.newContext()).newPage()
     const softbox = (scene) => scene.objects.find((o) => o.light?.type === 'area')
     const hidden = (scene) => { softbox(scene).visible = false }
+    const shaped = (shape, then) => (scene) => {
+      softbox(scene).light.shape = shape
+      then?.(scene)
+    }
     // Half a turn about Y, after the softbox's own: its −Z away from the wall.
     const turned = (scene) => {
       const t = softbox(scene).transform
@@ -4185,18 +4223,22 @@ await check('area light: lights what it faces and nothing behind it, on WebGPU a
     }
     for (const forceWebGL of [false, true]) {
       const backend = forceWebGL ? 'webgl2' : 'webgpu'
-      const shots = {}
-      for (const [k, edit] of [['on', undefined], ['off', hidden], ['back', turned]]) {
+      const tiles = async (k, edit) => {
         const r = await exportReference(gpu, 'area-studio', { litOnly: true, forceWebGL, edit })
         if (forceWebGL) assert.ok(r.backends.some((x) => x === 'scene renderer (offscreen): webgl2'), `${k}: ${r.backends}`)
         await keepPanels(`area-${k}-${backend}`, r.images[0].png)
-        shots[k] = await tileLuma(page, r.images[0].png, 16)
+        return tileLuma(page, r.images[0].png, 16)
       }
-      const lit = shots.on.map((v, t) => t).filter((t) => shots.on[t] > shots.off[t] + 12)
-      const behind = lit.filter((t) => shots.back[t] - shots.off[t] > 0.1 * (shots.on[t] - shots.off[t]) + 2)
-      console.log(`AC-S2-6 ${backend}: ${lit.length} tiles lit; turned round, ${behind.length} of them still lit`)
-      if (lit.length < 40) problems.push(`${backend}: only ${lit.length} tiles lit by the softbox`)
-      problems.push(...behind.map((t) => `${backend} tile ${t}: lit ${shots.on[t].toFixed(0)}, hidden ${shots.off[t].toFixed(0)}, turned round ${shots.back[t].toFixed(0)}`))
+      const off = await tiles('off', hidden)
+      for (const shape of ['rectangle', 'ellipse']) {
+        const on = await tiles(shape, shaped(shape))
+        const back = await tiles(`${shape}-back`, shaped(shape, turned))
+        const lit = on.map((v, t) => t).filter((t) => on[t] > off[t] + 12)
+        const behind = lit.filter((t) => back[t] - off[t] > 0.1 * (on[t] - off[t]) + 2)
+        console.log(`AC-S2-6 ${backend} ${shape}: ${lit.length} tiles lit; turned round, ${behind.length} of them still lit`)
+        if (lit.length < 40) problems.push(`${backend} ${shape}: only ${lit.length} tiles lit by the softbox`)
+        problems.push(...behind.map((t) => `${backend} ${shape} tile ${t}: lit ${on[t].toFixed(0)}, hidden ${off[t].toFixed(0)}, turned round ${back[t].toFixed(0)}`))
+      }
     }
   } finally {
     await gpu.close()

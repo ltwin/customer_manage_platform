@@ -3,7 +3,7 @@ import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTextu
 import * as tsl from 'three/tsl'
 import { DirectionalLightNode, PointLightNode, RectAreaLightNode, SpotLightNode, type NodeBuilder, type NodeFrame, type WebGPURenderer } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { installDirect } from './direct.ts'
+import { installAreaDirect, installDirect } from './direct.ts'
 import { effectiveFalloff, sinHalfOf, type Sized } from './formulas.ts'
 import { SceneAreaLight, SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from './lights.ts'
 
@@ -125,4 +125,5 @@ export function installLightModel(renderer: WebGPURenderer) {
   // three's area light tables, once for every renderer.
   RectAreaLightNode.setLTC(RectAreaLightTexturesLib.init())
   installDirect()
+  installAreaDirect()
 }

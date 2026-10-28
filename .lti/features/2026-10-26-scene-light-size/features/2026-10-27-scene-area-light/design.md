@@ -110,13 +110,10 @@ directRectArea(input):
   先另存（aside）：
     if !input.ellipse: three 原样（漫反射、高光、clearcoat）
     else:             同一套代码，LTC_Evaluate(p0..p3) 换成 ltcEllipse(N, V, P, mInv, centre, halfW, halfH)
-  FF、avgDir = 单位矩阵下的向量形状因子（矩形或椭圆）
-  补上 three 的 direct 有、directRectArea 没有的几项（N2）：
-    F = F_Schlick(specularColor, specularF90, dot(V, normalize(avgDir + V)))
-    directDiffuse  += aside.diffuse × (1 − F) [× sheenEnergyComp(avgDir)，有 sheen 时]
-    directSpecular += aside.specular × multiScatteringCompensation
-  sheen（两种形状都补）：
-    sheenSpecularDirect += π × lightColor × FF × BRDF_Sheen(avgDir)
+  directSpecular += aside.specular × multiScatteringCompensation   （aside 的漫反射丢弃）
+  F⃗ = 单位矩阵下视空间的向量形状因子（矩形或椭圆）；E = π × L × clip(F⃗, N)；avgDir = normalize(F⃗)（低于地平线时抬到 10⁻³）
+  漫反射与 sheen：再调用一次 three 的 direct(lightDirection = avgDir, lightColor = lightColor × E / dot(N, avgDir))，
+    它照点光的写法给漫反射乘 1 − F 和 sheen 的能量系数，并加上 sheen（N2，任务 3.3）
 ```
 
 - **椭圆分支**本质上是把 three 的 `directRectArea` 函数体复制一份，只换形状因子。`direct.ts` 和 `ltc.ts` 都加进 `render/lightModel/nodes.ts` 的 three 升级核对清单。

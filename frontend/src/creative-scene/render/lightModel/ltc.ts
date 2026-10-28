@@ -32,6 +32,12 @@ export const clippedSphereFormFactor = (f: TSLNode): TSLNode => {
   return max(l.mul(l).add(f.z).div(l.add(1)), 0)
 }
 
+/** clippedSphereFormFactor of f in any frame, the normal n: |f| and f · n are all it reads. */
+export const clippedFormFactor = (f: TSLNode, n: TSLNode): TSLNode => {
+  const l = length(f)
+  return max(l.mul(l).add(dot(f, n)).div(l.add(1)), 0)
+}
+
 /** three's LTC_EdgeVectorFormFactor: an edge v1 → v2 of unit vectors' share of the vector form factor. */
 const edgeVectorFormFactor = (v1: TSLNode, v2: TSLNode): TSLNode => {
   const x = dot(v1, v2)
@@ -44,7 +50,10 @@ const edgeVectorFormFactor = (v1: TSLNode, v2: TSLNode): TSLNode => {
   return cross(v1, v2).mul(thetaSinTheta)
 }
 
-/** A rectangle's vector form factor from P (three's corners p0…p3, its winding), in the corners' frame, unclipped; 0 from its back. */
+/**
+ * A rectangle's vector form factor from P (three's corners p0…p3, its winding), in the corners' frame, unclipped; 0
+ * from its back. three's winding sums to −F here: its LTC frame (T2 negated) is a mirror, which turns it round.
+ */
 export const rectVectorFormFactor = (P: TSLNode, p0: TSLNode, p1: TSLNode, p2: TSLNode, p3: TSLNode): TSLNode => {
   const lit = dot(cross(p1.sub(p0), p3.sub(p0)), P.sub(p0)).greaterThanEqual(0)
   const c0 = normalize(p0.sub(P)).toVar()
@@ -52,7 +61,7 @@ export const rectVectorFormFactor = (P: TSLNode, p0: TSLNode, p1: TSLNode, p2: T
   const c2 = normalize(p2.sub(P)).toVar()
   const c3 = normalize(p3.sub(P)).toVar()
   const f = edgeVectorFormFactor(c0, c1).add(edgeVectorFormFactor(c1, c2)).add(edgeVectorFormFactor(c2, c3)).add(edgeVectorFormFactor(c3, c0))
-  return select(lit, f, vec3(0))
+  return select(lit, f.negate(), vec3(0))
 }
 
 /**
