@@ -15507,8 +15507,10 @@ components:
       description: >-
         字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。
         光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。
-        写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。
-        平行光和聚光沿物件局部 −Z 照射。
+        area 是面光源（three.js RectAreaLight、Blender Area）：color、intensity、cast_shadow、shape、width、height，沿物件局部 −Z 单面发光；
+        发光面随物件的世界缩放（含父级）变化，实际宽、高为 width、height 乘以局部 X、Y 轴在世界空间里的缩放倍数。
+        写入时只有 type 必填，省略的字段取 three.js 默认值（area 的强度缺省 10000，见 intensity）；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。
+        平行光、聚光和面光源沿物件局部 −Z 照射。
       required:
       - type
       properties:
@@ -15518,13 +15520,16 @@ components:
           - directional
           - point
           - spot
+          - area
         color:
           $ref: '#/components/schemas/CreativeSceneColor'
         intensity:
           type: number
           minimum: 0
-          maximum: 1000
-          description: three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值。缺省 1。
+          maximum: 100000
+          description: >-
+            three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值，上限 1000，缺省 1；
+            面光源为发光面的亮度（cd/m²），上限 100000，缺省 10000，法线方向的等效发光强度为亮度 × 实际发光面积。
         cast_shadow:
           type: boolean
           description: 缺省 false。
@@ -15558,10 +15563,30 @@ components:
           minimum: 0
           maximum: 30
           description: directional。光源的角直径（度），即 Blender Sun 的 Angle；缺省 0.545（与 sky.sun_size_deg 的缺省值相同），0 为硬阴影的理想平行光。
+        shape:
+          type: string
+          enum:
+          - rectangle
+          - ellipse
+          description: area。发光面的形状，Blender 的 Square、Disk 是宽高相等的 rectangle、ellipse；缺省 rectangle。
+        width:
+          type: number
+          minimum: 0.01
+          maximum: 20
+          description: area。发光面沿局部 X 轴的尺寸（米），椭圆为 X 向直径，同 three.js RectAreaLight.width；缺省 0.25。
+        height:
+          type: number
+          minimum: 0.01
+          maximum: 20
+          description: area。发光面沿局部 Y 轴的尺寸（米），同 three.js RectAreaLight.height；缺省 0.25。
     CreativeSceneLightPatch:
       type: object
       additionalProperties: false
-      description: update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。
+      description: >-
+        update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。
+        与面光源互换类型、且没有写 intensity 时，按等效发光强度换算：点光或聚光 → 面光源为原强度 ÷ 新的实际发光面积，
+        面光源 → 点光或聚光为原亮度 × 原实际发光面积；原面积按更新前的世界缩放，新面积按更新后的；再截断到新类型的上限。
+        与平行光之间数值原样保留并截断。写了 intensity 时以写入的值为准。
       properties:
         type:
           type: string
@@ -15569,12 +15594,13 @@ components:
           - directional
           - point
           - spot
+          - area
         color:
           $ref: '#/components/schemas/CreativeSceneColor'
         intensity:
           type: number
           minimum: 0
-          maximum: 1000
+          maximum: 100000
         cast_shadow:
           type: boolean
         distance:
@@ -15601,6 +15627,19 @@ components:
           type: number
           minimum: 0
           maximum: 30
+        shape:
+          type: string
+          enum:
+          - rectangle
+          - ellipse
+        width:
+          type: number
+          minimum: 0.01
+          maximum: 20
+        height:
+          type: number
+          minimum: 0.01
+          maximum: 20
     CreativeSceneCamera:
       type: object
       additionalProperties: false

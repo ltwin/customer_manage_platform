@@ -20,7 +20,11 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
   - 实施时调整：
     - 没有另抽世界矩阵函数，而是加 `sceneWorld(objects)` 构造只含现有物件的 `lookAtScene`，复用它的 `worldMatrix`；原来 `lookat.go`、`reparent.go`、`lens.go` 三处各自手写的构造也改用它。面积系数 `worldAreaScale` 取世界矩阵前两列叉积的长度；
     - `updateObjectsOp.apply` 改为先写完本次所有更新、最后合并灯光：「更新后的缩放」要包括同一批里父级的变换，「更新前」取本次 op 开始时的快照（只在有面光源换类型时复制）。
-- [ ] 2.3 对外说明：`openapi.yaml` 的两个灯光 schema 加 `area` 和三个字段、强度上限按类型，`make generate` 后提交两份生成物；`scene_tools.go` 的灯光字段与打光指引补面光源，`scene_tools_test.go` 断言新字段。完成判据：两个包的 `check-go` 通过，`make generate-check` 干净，`TestLightModelStalesLitOnce` 不变。
+- [x] 2.3 对外说明：`openapi.yaml` 的两个灯光 schema 加 `area` 和三个字段、强度上限按类型，`make generate` 后提交两份生成物；`scene_tools.go` 的灯光字段与打光指引补面光源，`scene_tools_test.go` 断言新字段。完成判据：两个包的 `check-go` 通过，`make generate-check` 干净，`TestLightModelStalesLitOnce` 不变。
+  - 结果：通过。`scene_tools_test.go` 断言新增的面光源字段、亮度单位、换算和「柔光箱用面光源」指引，`creativeagent` 的 lint 为 0，`make generate-check` 干净，`TestLightModelStalesLitOnce` 不变。
+  - 计划外改动：
+    - `compaction_regression_test.go` 的 `TestCompactionRejectsSummaryBeyondWindow` 窗口从 10000 调到 10500：`edit_scene` 的说明变长后，工具定义放不下。先例是 S1 和 W3 夜空；
+    - 生成的 schema 给灯光类型加了 `area`，前端几张按类型的表不补就编译不过，这一步先补了：`state/apply.ts` 的 `lightFields` 和 `lightDefaults`（形状、宽、高）、`editing.ts` 的 `lightLabels`、`litLook.ts` 的 `NEW_LIGHT_INTENSITY`（10000）。按类型的强度缺省和本地换算留在任务 5.1。
 
 ## 3. 光栅着色与阴影
 

@@ -101,6 +101,7 @@ const lightFields: Record<Light['type'], readonly LightField[]> = {
   directional: ['color', 'intensity', 'cast_shadow', 'angular_diameter_deg'],
   point: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'radius_m'],
   spot: ['color', 'intensity', 'cast_shadow', 'distance', 'decay', 'angle', 'penumbra', 'radius_m'],
+  area: ['color', 'intensity', 'cast_shadow', 'shape', 'width', 'height'],
 }
 export const lightDefaults: Required<Omit<Light, 'type'>> = {
   color: '#ffffff',
@@ -113,6 +114,10 @@ export const lightDefaults: Required<Omit<Light, 'type'>> = {
   // data: 光源尺寸: a point or spot light's radius, a directional light's angular diameter (the sun's).
   radius_m: 0.1,
   angular_diameter_deg: 0.545,
+  // data: 面光源: a 0.25 m square.
+  shape: 'rectangle',
+  width: 0.25,
+  height: 0.25,
 }
 /** A document light's size: the radius of a point or spot light, the angular diameter of a directional one; left out, the default the server stores. */
 export function lightSize(l: Light): number {
