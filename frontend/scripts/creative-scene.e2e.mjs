@@ -3287,6 +3287,58 @@ await check('lights: the rendered view warms its lights in one compile; adding, 
   await context.close()
 })
 
+// scene-area-light AC-S2-6: an area light added, made to cast and taken out again (undone) leaves the viewport's
+// device as it was: its cube map and its filter's pipelines go with it (lesson three-info-memory-leak-trace).
+await check('area light: adding one, making it cast and undoing both leave nothing behind (AC-S2-6)', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('post', 6, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { x, y, box } = await viewportCenter(page)
+  const compiled = () => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+  await shading(page, '最终渲染')
+  await compiled()
+  const memory = () =>
+    page.evaluate(() => {
+      const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').at(-1).info.memory
+      return { textures, renderTargets, uniformBuffers, programs }
+    })
+  const round = async (n) => {
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '面光源', exact: true }).click()
+    await waitFor(() => server.commands.length === 4 * n - 3, 'add an area light')
+    await compiled()
+    await saved(page)
+    await page.getByLabel('投射阴影').check()
+    await waitFor(() => server.commands.length === 4 * n - 2, 'make it cast')
+    await compiled()
+    await settledShot(page, box)
+    await saved(page)
+    await focusEditor(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.commands.length === 4 * n - 1, 'undo the shadow')
+    await saved(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.commands.length === 4 * n && !server.scene.objects.some((o) => o.light), 'undo the light')
+    await saved(page)
+    await shading(page, '白模')
+    // Past the second after which an unused material is freed (materials/instances.ts).
+    await sleep(1500)
+    await shading(page, '最终渲染')
+    await compiled()
+    await settledShot(page, box)
+  }
+  await round(1)
+  const settled = await memory()
+  await round(2)
+  await round(3)
+  const now = await memory()
+  console.log(`AC-S2-6 an area light added and undone three times: ${JSON.stringify(settled)} → ${JSON.stringify(now)}`)
+  assert.deepEqual(now, settled, 'the same resources after two more rounds')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('AC-5: with nothing selected the environment shows; the sun at 5° lengthens rendered shadows and turns the sky to dusk, clay stays; Cmd+Z', async () => {
   const server = new SceneServer()
   const post = gid('post')
@@ -3841,7 +3893,7 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend,
  * litOnly exports the lit pass alone, hooks are gpuTestHooks for the page's query (?gpu=…).
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false, hooks } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false, hooks, tolerate } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
@@ -3877,7 +3929,8 @@ async function exportReference(gpu, name, { forceWebGL = false, forceCompatibili
   await page.mouse.move(x, y)
   await sleep(600)
   const ortho = { file: `${name}-ortho-clay.png`, pass: 'clay', png: await settledShot(page, box) }
-  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  const counted = tolerate ? errors.filter((e) => !tolerate.test(e)) : errors
+  assert.deepEqual(counted, [], `${name}: ${counted.join('\n')}`)
   await context.close()
   return { renderer, exportMs, images, ortho, backends }
 }
@@ -4368,6 +4421,35 @@ if (process.env.SCENE_E2E_LIGHT_PERF) await check('light size: AC-S1-7, the lit 
   }
   const over = rows.filter((r) => r.more > 0.5)
   assert.deepEqual(over, [], 'exports more than half as long again')
+})
+
+// SCENE_E2E_LIGHT_PERF=<dir> (scene-area-light AC-S2-4): AC-S1-7's scene with its parallel light a casting 1 × 1 m
+// area light (the others at their default sizes) against the same scene of size 0 (S1's), cold: the real-time GI's
+// export at most half as long again; the workbench's as measured. area-perf.json in <dir>. The cold hook's real-time
+// GI build logs a TSL error on develop already (38b4a4e0, before this change; both sides alike): let through here.
+if (process.env.SCENE_E2E_LIGHT_PERF) await check('area light: AC-S2-4, the lit export with an area light in place of the parallel one', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  try {
+    for (const c of [{ engine: 'realtime_gi', resolution: '1k' }, { engine: 'workbench', resolution: '1k' }]) {
+      const area = (scene) => {
+        fourLights(true, c)(scene)
+        for (const o of scene.objects) if (o.light?.type === 'directional') o.light = { type: 'area', color: o.light.color, intensity: 50, cast_shadow: true, shape: 'rectangle', width: 1, height: 1 }
+      }
+      const tolerate = /reading 'addToStack'/
+      const before = (await exportReference(gpu, 'frame-two-lights', { litOnly: true, hooks: 'cold,skySunDeg:0', edit: fourLights(false, c), tolerate })).exportMs
+      const after = (await exportReference(gpu, 'frame-two-lights', { litOnly: true, hooks: 'cold', edit: area, tolerate })).exportMs
+      const row = { ...c, sizeless_ms: before, area_ms: after, more: Number((after / before - 1).toFixed(3)) }
+      rows.push(row)
+      console.log(`AC-S2-4 export ${c.engine} ${c.resolution}: ${before} → ${after} ms (${(row.more * 100).toFixed(0)}%)`)
+    }
+    await writeFile(`${dir}/area-perf.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  const over = rows.filter((r) => r.engine === 'realtime_gi' && r.more > 0.5)
+  assert.deepEqual(over, [], 'the real-time GI export more than half as long again')
 })
 
 // scene-light-radius tasks 4.2 (AC-S1-10): the workbench's lit export of a scene with soft shadows averages 16

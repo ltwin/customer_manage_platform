@@ -97,6 +97,14 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 6. 验收
 
-- [ ] 6.1 性能（AC-S2-4）：`SCENE_E2E_LIGHT_PERF` 加面光源场景，冷启动，与 S1 尺寸为 0 的对照场景比，视口每帧增量与 `realtime_gi` 导出增量写进本条结果；超出阈值交 owner。
+- [x] 6.1 性能（AC-S2-4）：`SCENE_E2E_LIGHT_PERF` 加面光源场景，冷启动，与 S1 尺寸为 0 的对照场景比，视口每帧增量与 `realtime_gi` 导出增量写进本条结果；超出阈值交 owner。
+  - 测法：
+    - 视口：性能页 `scripts/light-check/perf.html` 加 `?area=1`，把 AC-S1-7 场景的平行光换成投影的 1×1 m 面光源（其余三盏按缺省尺寸），对照 `?size=0`（S1 的全部尺寸为 0）；冷编译（`cold=1`），1200 × 800。性能页走 `ShotScene`，灯按导出建，所以页面里把面光源的滤波改回视口档（16 + 32 次、48 texel）再编译；
+    - 导出：新增 e2e「area light: AC-S2-4」（`SCENE_E2E_LIGHT_PERF`），真实导出流程，冷编译，结果写 `area-perf.json`。
+  - 结果：
+    - 视口 `workbench`：3.06 / 3.11 ms → 8.16 / 8.26 ms，**+5.1 ms**，达标（≤ 8 ms）。
+    - 视口 `realtime_gi`：今天这台机器上波动很大，同一配置多次测量相差 ±3–6 ms，零尺寸对照本身在 28.1–40.7 ms 之间（当时另一个会话的 Vite 也在运行）。中位数：对照 30.4 ms，面光源配置 36.9 ms（**+6.5 ms**），S1 的配置（平行光仍在、缺省尺寸）36.6 ms。也就是面光源与它替换掉的平行光代价相当；单次最差 +15 ms。**交 owner 判断**是否在空闲时复测。
+    - 导出（冷编译，1K）：`realtime_gi` 30.9 → 32.9 s（**+6%**），达标（≤ 50%）；`workbench` 6.7 → 10.6 s（+57%，按 AC 只记录；S1 的 4 盏有尺寸灯是 +66%）。
+  - 发现（与本分支无关）：性能页和导出在 `realtime_gi` 下打开冷编译钩子（`gpuTestHooks.cold`）时，three 报「Cannot read properties of undefined (reading 'addToStack')」。分支起点 develop 38b4a4e0 同样报错（临时检出起点的 `src` 复现过），S1 测量时还没有；不开冷编译不报。AC-S2-4 的导出检查只放过这一条报错，对照和面光源两边一样。建议另开 issue 跟进。
 - [ ] 6.2 防回退（AC-S2-6）：重跑 AC-S1-2 尺寸为 0 基线与 AC-S1-10 的 e2e；加面光源再删除后视口 `renderTargets` 回到原数；`light-check`、e2e 的 `sizeless()` 不给面光源写 `radius_m`。完成判据：全部通过。
 - [ ] 6.3 owner 看图（AC-S2-7）：`area-studio` 的矩形、椭圆面光源，`workbench` 和 `realtime_gi` 各一组，交 owner。
