@@ -86,7 +86,7 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
   - 实施时调整：
     - 按类型的缺省值做成 `lightDefaultsOf(type)`（面光源强度 10000，其余同 `lightDefaults`），`lightDefaults` 仍是各字段共用的表；`objects/lights.ts` 的 `applyLight` 改用它；
     - 换算拆成 `emittingArea`、`worldAreaScale`（用 `state/world.ts` 的 `worldOf`）、`convertedIntensity`，属性面板（5.2）同样调用；`applyOp` 的 `update_objects` 与服务端一样，先写完本次的变换、最后合并要换算的灯光；
-    - `state/intents.ts` 改写排队中的 `add_objects` 时仍按缩放 1 换算：那是还没到服务端的新物件，同一批里给它换类型的情况很少，服务端收到时会按真实缩放重算。
+    - `state/intents.ts` 把更新并进排队中的 `add_objects` 时，`updateObject` 按缩放 1 换算。编辑器切换类型时总是显式写入换算好的强度（5.2），走不到这里的换算；只有不写强度的换类型才会差一个父级缩放倍数，目前没有这样的写入方。
 - [ ] 5.2 界面：`editing.ts` 的 `lightLabels`、`newLight`，`SceneEditor.tsx` 新建菜单，`LightFields.tsx` 的形状、宽高、亮度与等效 cd、切换类型写强度，`SceneObjects.tsx:LightIcon` 的轮廓和朝向短线、`RadiusRing` 排除面光源。先写 e2e：菜单新建、面板改字段与撤销、切换类型、缩放物件时轮廓与发光面的投影范围一致。完成判据：e2e 通过，`make check-frontend` 通过。
 
 ## 6. 验收
