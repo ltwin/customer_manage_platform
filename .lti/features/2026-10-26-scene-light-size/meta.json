@@ -1,10 +1,10 @@
 {
   "uid": "74b906a8-f00c-47c4-b570-6cac1bcc137d",
-  "revision": 10,
+  "revision": 11,
   "id": "scene-light-size",
   "createdAt": "2026-10-26T12:05:12.205Z",
-  "updatedAt": "2026-10-28T07:42:20.719Z",
-  "state": "active",
+  "updatedAt": "2026-10-28T07:48:48.601Z",
+  "state": "accepted",
   "designBaselines": [
     {
       "version": 1,
@@ -432,7 +432,46 @@
       }
     }
   ],
+  "finalAcceptance": {
+    "by": "samson",
+    "at": "2026-10-28T07:48:48.374Z",
+    "summary": "owner 2026-10-28 接受 Epic：S0 穿刺、S1 光源尺寸（半径、角径与软阴影）、S2 面光源全部交付并合入 develop；组合验证见 027b9342。冷编译钩子报错由 scene-gi-cold-hook-error 另行跟踪。",
+    "docHash": "cffd7fab85016d8341a66531a29178c7d28364df637f876090b7dfd02d01d67a",
+    "integrationEvidence": "S0–S2 全部归档并合入 develop（S0 caf457f3、S1 1fd9299f、S2 f019d4c4），目标契约 data:光源尺寸（S1）、data:面光源（S2）均已交付。Epic AC 映射：AC-1 半影（S1 AC-S1-1；S2 改 cubePCSS 后复跑通过）；AC-2 尺寸为 0（S1 AC-S1-2 基线，S2 复跑差 0–1 级）；AC-3 平方反比（S1 AC-S1-3、S2 AC-S2-2）；AC-4 高光（S1 AC-S1-4）；AC-5 面光源（S2 AC-S2-1）；AC-6 太阳与月亮（S1 AC-S1-5）；AC-7 命中点（S1 AC-S1-6、S2 AC-S2-3）；AC-8 性能（S1 AC-S1-7 按 Epic v4 记录实测、S2 AC-S2-4，realtime_gi 视口不复测为 owner 决定）；AC-9 编辑器与助手（S1 AC-S1-8、S2 AC-S2-5）；AC-10 存量（S1 AC-S1-10/指纹版本）；AC-11 owner 看图（S1 已认可，S2 AC-S2-7 已认可）。合入后 make check-merge 通过（前端单测 890 项、后端全部）。",
+    "verification": {
+      "at": "2026-10-28T07:42:20.511Z",
+      "summary": "S0–S2 全部归档并合入 develop（S0 caf457f3、S1 1fd9299f、S2 f019d4c4），目标契约 data:光源尺寸（S1）、data:面光源（S2）均已交付。Epic AC 映射：AC-1 半影（S1 AC-S1-1；S2 改 cubePCSS 后复跑通过）；AC-2 尺寸为 0（S1 AC-S1-2 基线，S2 复跑差 0–1 级）；AC-3 平方反比（S1 AC-S1-3、S2 AC-S2-2）；AC-4 高光（S1 AC-S1-4）；AC-5 面光源（S2 AC-S2-1）；AC-6 太阳与月亮（S1 AC-S1-5）；AC-7 命中点（S1 AC-S1-6、S2 AC-S2-3）；AC-8 性能（S1 AC-S1-7 按 Epic v4 记录实测、S2 AC-S2-4，realtime_gi 视口不复测为 owner 决定）；AC-9 编辑器与助手（S1 AC-S1-8、S2 AC-S2-5）；AC-10 存量（S1 AC-S1-10/指纹版本）；AC-11 owner 看图（S1 已认可，S2 AC-S2-7 已认可）。合入后 make check-merge 通过（前端单测 890 项、后端全部）。",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 epic checks；依据各子项 owner 验收记录、e2e 逐项结果（按子项分别跑，合并后未整体重跑 GPU e2e）与合并门禁 make check-merge。已知未决：实时 GI 冷编译钩子报错另由 issue scene-gi-cold-hook-error 跟踪，不影响正式页面。"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "bf7142bc5a8623a704a307d21b417d69f19a1f32a3a2dd97c5e6342253b573b4"
+      }
+    },
+    "children": [
+      {
+        "uid": "9f1feb22-1c9c-4ca5-a2c3-712325a45e8d",
+        "changeId": "scene-light-size-spike",
+        "outcome": "archived"
+      },
+      {
+        "uid": "3b0213bc-7f84-4e7f-882c-6f9f094e8a18",
+        "changeId": "scene-light-radius",
+        "outcome": "archived"
+      },
+      {
+        "uid": "847866d9-bbe9-452c-84a7-c84bac399f2c",
+        "changeId": "scene-area-light",
+        "outcome": "archived"
+      }
+    ]
+  },
   "resolutions": [],
   "type": "epic",
-  "stage": "verify"
+  "stage": "archived"
 }
