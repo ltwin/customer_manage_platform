@@ -1,0 +1,17 @@
+{
+  "uid": "a997b6fb-9e4a-4d2c-8da6-a2fe6699418e",
+  "revision": 1,
+  "id": "scene-gi-cold-hook-error",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-28T07:12:48.643Z",
+  "updatedAt": "2026-10-28T07:12:48.684Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
