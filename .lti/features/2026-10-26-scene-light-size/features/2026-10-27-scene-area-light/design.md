@@ -124,7 +124,7 @@ directRectArea(input):
   1. 中心和两条半轴向量变换到 LTC 空间：C、V1、V2 各乘 `mInv`（相对着色点 P，并转到 three 的 LTC 坐标系，与 `LTC_Evaluate` 相同，包括它取负的 T2 轴）；
   2. 背面判断：`dot(cross(V1, V2), C) < 0` 时为 0（单面）；
   3. 求变换后椭圆的主轴：由 `d11 = V1·V1`、`d22 = V2·V2`、`d12 = V1·V2` 求两个特征值和主轴方向，得到椭圆在其平面内的标准形；
-  4. 由椭圆和着色点构成的椭圆锥，写出它的 3×3 矩阵，解三次方程（Blinn 的稳健解法）求特征值，得到等效球冠的两个半轴参数 L1、L2 和平均方向 `avgDir`，形状因子 `FF = L1·L2 / √((1+L1²)(1+L2²))`；
+  4. 由椭圆和着色点构成的椭圆锥，写出它的 3×3 矩阵，解三次方程求特征值（用 Viète 的三角解法，不用 ltc_disk 的 Blinn 解法：后者在正对的圆盘这种重根上退化，见任务 3.2），得到等效球冠的两个半轴参数 L1、L2 和平均方向 `avgDir`，形状因子 `FF = L1·L2 / √((1+L1²)(1+L2²))`；
   5. 向量形状因子 `FF × avgDir` 做地平线裁剪，与矩形的最后一步相同。three/tsl 没有导出 `LTC_ClippedSphereFormFactor`（`LTC.js:175` 只导出了 `LTC_Evaluate`、`LTC_Evaluate_Volume`、`LTC_Uv`），在 `ltc.ts` 里抄一份。
   - 漫反射用单位矩阵的 `mInv`，高光和 clearcoat 用各自 LTC 表查出的 `mInv`，Fresnel 用同一张 `ltc_2`。
   - **单测**（`scripts/creative-scene-gi.test.ts` 同类的 node 测试，纯数学部分在 JS 里有一份对照实现）：

@@ -36,7 +36,10 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - 文档层加 `lightHasSize`（面光源恒真），`lightKey`、`softShadowsIn` 用它；`lightSize` 对面光源返回 0；
     - e2e 的 `referenceScene` 和 `sizeless()` 只给点光、聚光写 `radius_m`（原来是 6.2 的一项）；「light size 0」只比 S1 的两个场景。
   - 待 3.4：这一步面光源还没有 PCSS，是硬阴影；墙面右侧有立方体阴影图的自阴影条纹，S1 修条纹的抬升在 PCSS 里，3.4 接上后复查。
-- [ ] 3.2 椭圆 LTC：新增 `ltc.ts`（椭圆形状因子、`LTC_ClippedSphereFormFactor` 副本、照度 π·L·FF）。先写 `creative-scene-ltc.test.ts`：正对与 πL·R²/(R²+d²) 对照，不对称视角与数值积分对照。完成判据：单测通过。
+- [x] 3.2 椭圆 LTC：新增 `ltc.ts`（椭圆形状因子、`LTC_ClippedSphereFormFactor` 副本、照度 π·L·FF）。先写 `creative-scene-ltc.test.ts`：正对与 πL·R²/(R²+d²) 对照，不对称视角与数值积分对照。完成判据：单测通过。
+  - 结果：`creative-scene-ltc.test.ts` 4 项通过：三次方程的根；正对的圆盘 4 组 R、d 与 R²/(R²+d²) 相差 < 10⁻⁶；3 个偏离法线、半轴不垂直的椭圆与数值积分（400 × 800 中点）相差 < 0.2%；LTC 的倾斜矩阵下，椭圆与 three 的多边形 LTC（照抄它取负 T2 的坐标系，精确棱积分）算的 256 边形相差 < 0.2%，背面为 0。
+  - 实施时调整：三次方程不用 ltc_disk 的 Blinn 解法，改用 Viète 的三角解法。Blinn 的算法 D 给出的不一定是最小根（ltc_disk 事后排序），而正对的圆盘是重根，它在那里得到 0/0（单测先红了这两处）。Viète 对三个实根直接给出有序结果，acos 的参数钳在 [−1, 1]，重根时就是两个相等的根。
+  - TSL 版本与 CPU 版本逐行对应；TSL 的正确性由 3.3 的参考解对照验证。
 - [ ] 3.3 直接光：`direct.ts` 的 `installAreaDirect` 包住 `directRectArea`，椭圆分支、clearcoat、sheen。完成判据：light-check 在 `area-studio` 上 AC-S2-1 的能量（≤ 5%）和 AC-S2-2（远处 ≤ 2%，近处 ≤ π·L）达标；不达标先查实现，再交 owner。
 - [ ] 3.4 软阴影：`shadowFilter.ts` 的 `cubePCSS({ kernel, search, filter, maxTexels })` 加矩形、椭圆核与搜索核，上限按实际核轴换算，采样档按 `final` 选；`attachSoftShadow` 按类型选核；`sceneRenderer.ts` 的 standIn 与 `volumes/shadow.ts` 按立方体处理面光源。完成判据：AC-S2-1 的全图阴影误差 ≤ 0.005、板剖面 1×1 m ≤ 0.02、2×0.5 m 和 2×2 m ≤ 0.05；`workbench` 导出连续两次逐像素相同。
 
