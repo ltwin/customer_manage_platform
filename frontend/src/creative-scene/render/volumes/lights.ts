@@ -98,11 +98,13 @@ function cubeBilinear(map: Swappable, n: TSLNode, depth: TSLNode): TSLNode {
   return bilinear(t, (i) => step(depth, map.sample(n.add(e1.mul(i.x.sub(t.x).mul(2).div(size))).add(e2.mul(i.y.sub(t.y).mul(2).div(size)))).x))
 }
 
+/** A point light, or an area light as one at its centre lighting its front alone, cosine-weighted (state.ts Slot). */
 function point(slot: Slot, u: SlotUniforms, maps: Swappable[], p: TSLNode): LightAt {
   const v = p.sub(u.position)
   const d = length(v)
   const toward = v.negate().div(max(d, 1e-4))
-  const falloff = distanceFalloff(u, d)
+  let falloff = distanceFalloff(u, d)
+  if (slot.kind === 'area') falloff = falloff.mul(max(dot(toward.negate(), u.direction), 0))
   let visible: TSLNode = float(1)
   if (slot.cast) {
     // As PointShadowNode: the cube face's depth is the largest axis of the way from the light.
@@ -158,7 +160,7 @@ class SkyLightNode extends PMREMNode {
  * then, is the sky light's PMREM, likewise swapped.
  */
 export function volumeLights(slots: readonly Slot[], environment: Texture | null) {
-  const maps = slots.map((slot) => (slot.cast ? slotMaps(slot).map((map) => (slot.kind === 'point' ? cubeTexture(map as CubeTexture) : texture(map)) as Swappable) : []))
+  const maps = slots.map((slot) => (slot.cast ? slotMaps(slot).map((map) => (slot.kind === 'point' || slot.kind === 'area' ? cubeTexture(map as CubeTexture) : texture(map)) as Swappable) : []))
   const skies: Swappable[] = environment ? [new SkyLightNode(environment) as unknown as Swappable] : []
   // Per pixel, not per step: the environment's, and the ambient and hemisphere lights.
   const sky = (): TSLNode => (skies.length ? vec3(skies[0]).mul(environmentIntensity).add(ambientRadiance) : ambientRadiance)

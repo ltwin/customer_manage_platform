@@ -73,7 +73,11 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - 高光的两种形状都算，再按形状 `select`：把 `ltcEllipse` 或 three 的 `LTC_Evaluate` 放进按形状分的 `If` 里（哪怕只有一边调用），three r186 生成着色器时报「Invalid generated code, expected a float」，连没有面光源的场景也报（着色器里有这条分支）。逐段排查定位到这层 `If`，直接在 `If(E > 0)` 里调用没有问题。代价是命中点上每盏面光源多算一次高光；
     - LTC 表抽成 `ltc.ts` 的 `ltcTables()`，光栅和命中点共用一份（`RectAreaLightTexturesLib.init()` 每次调用都新建纹理），命中点用半精度那张，所有设备都可过滤；
     - `directAt` 的蓄水池逻辑抽成循环内的 `consider()`，点光等原有分支的代码不变，只是包进了 `Else`。
-- [ ] 4.2 体积：`volumes/state.ts` 收集面光源、`structure` 加 `area`、估计里用 2 和等效发光强度；`volumes/lights.ts` 单面余弦光、钳 `max(d², A/π)`、立方体阴影。先写 e2e：投影的面光源照着投影体积，体积着色不缺失、不全黑。完成判据：e2e 通过。
+- [x] 4.2 体积：`volumes/state.ts` 收集面光源、`structure` 加 `area`、估计里用 2 和等效发光强度；`volumes/lights.ts` 单面余弦光、钳 `max(d², A/π)`、立方体阴影。先写 e2e：投影的面光源照着投影体积，体积着色不缺失、不全黑。完成判据：e2e 通过。
+  - 结果：新增 e2e「area light: a casting area light lights a casting volume」：`cornell` 的聚光换成天花板上朝下、投影的 0.5 m 面光源（轴向等效发光强度与原聚光相同），照着下方投影的雾。WebGPU、WebGL2 下雾为面光源散射出的光都是 7.9 级，转半圈后 0.0 级（只照正面）。`creative-scene-volumes.test.ts` 的选灯用例加面光源（等效发光强度 L·A、衰减 2、钳在 √(A/π)），8 项通过；S1 的「a volume lit by a spot going sized」和 W5 的「point shadow」仍通过。
+  - 实施时调整：
+    - 测法：面光源的波瓣很宽，雾后面的墙也被照亮，「有雾减无雾」里雾散射的光和它挡住的墙光几乎抵消（第一次测得 −0.3）。改为用同消光系数、只吸收不散射的雾作对照，两者挡住的墙光相同，相减只剩散射光；再减去灯隐藏时的同一差值（环境光的散射，6.1 级），得到面光源本身的贡献；
+    - 体积里面光源与点光共用 `point()`，`kind === 'area'` 时乘单面余弦；槽位的辐射度直接写成 L·A，衰减的钳位借用有效距离 √(A/π)（`effectiveFalloff`），即 `max(d², A/π)`；阴影的 `range` 与点光一样取阴影相机的 near、far。
 
 ## 5. 编辑器
 

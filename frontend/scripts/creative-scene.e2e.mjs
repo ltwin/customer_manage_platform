@@ -8881,6 +8881,59 @@ await check('light size: a volume lit by a spot going sized and back keeps its c
   }
 })
 
+// scene-area-light AC-S2-6: a casting area light in place of the cornell box's spot (0.5 m square at the ceiling,
+// facing down, of the spot's luminous intensity along its axis) lights the casting fog below it, on both backends,
+// and nothing of it turned round (it lights its front alone). Its wide lobe lights the walls behind the fog too, so
+// the fog's own light is told from what it hides by a fog that only absorbs, of the same extinction: the scattering
+// fog less it is the light scattered toward the camera; less again the same with the light hidden (the ambient
+// light's), it is the area light's.
+await check('area light: a casting area light lights a casting volume in front of it, not behind, both backends (AC-S2-6)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const points = [[0, 2.0, -1.0]]
+    const fog = (scatters) =>
+      volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], scatters ? { scatter_color: '#ffffff', scatter_density: 0.15, anisotropy: 0.3, cast_shadow: true } : { scatter_density: 0, absorption_color: '#000000', absorption_density: 0.15, cast_shadow: true })
+    const area = (how, ...objects) => {
+      const scene = fixtureScene('cornell', ...objects)
+      for (const o of scene.objects) {
+        if (o.light?.type !== 'spot') continue
+        o.light = { type: 'area', color: o.light.color, intensity: o.light.intensity / 0.25, cast_shadow: true, shape: 'rectangle', width: 0.5, height: 0.5 }
+        if (how === 'turned') o.transform.rotation = new Quaternion().fromArray(o.transform.rotation).multiply(new Quaternion(0, 1, 0, 0)).toArray()
+        if (how === 'hidden') o.visible = false
+      }
+      return scene
+    }
+    const off = []
+    for (const webgl of [false, true]) {
+      const picture = (scene) =>
+        page.evaluate(async ([sc, p, gl]) => {
+          window.__sceneGPU.forceWebGL = gl
+          try {
+            return await window.__picture(sc, 'lit', 768, p)
+          } finally {
+            window.__sceneGPU.forceWebGL = false
+          }
+        }, [scene, points, webgl])
+      const backend = webgl ? 'webgl2' : 'webgpu'
+      const scattered = {}
+      for (const how of ['facing', 'turned', 'hidden']) {
+        const absorbing = await picture(area(how, fog(false)))
+        const scattering = await picture(area(how, fog(true)))
+        scattered[how] = lumaAt(scattering, scattering.at[0]) - lumaAt(absorbing, absorbing.at[0])
+        if (how === 'facing') await savePicture(page, `area-volume-${backend}`, scattering)
+      }
+      const [facing, turned] = [scattered.facing - scattered.hidden, scattered.turned - scattered.hidden]
+      console.log(`AC-S2-6 volume ${backend}: the area light's light scattered by the fog below it ${facing.toFixed(1)}, turned round ${turned.toFixed(1)} (the ambient's ${scattered.hidden.toFixed(1)})`)
+      if (!(facing > 5 && turned < 0.2 * facing)) off.push(`${backend}: facing ${facing}, turned round ${turned}`)
+    }
+    assert.deepEqual(errors, [])
+    assert.deepEqual(off, [], 'the fog unlit by the area light, or lit from its back')
+  } finally {
+    await gpu.close()
+  }
+})
+
 /**
  * Which pixels of a picture the camera's rays could see the box volume v through, grown by `grow` pixels: the
  * rest must be the picture without it, pixel for pixel (AC-W5-3).
