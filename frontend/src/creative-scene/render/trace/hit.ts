@@ -10,6 +10,7 @@ import { ROW as NORMAL_ROW, STEPS } from './normals.ts'
 import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, presets, type TraceTables } from './tables.ts'
 import { traceFirst, traceWithin, type Hit } from './wgsl.ts'
 import { coneSample, effectiveFalloff, horizonDirection, hybridLobe, sinHalfOf, sphereEntry } from '../lightModel/formulas.ts'
+import { clippedFormFactor, ellipseViewFormFactor, ltcEllipse, ltcTables, rectVectorFormFactor } from '../lightModel/ltc.ts'
 
 // A ray's first hit through the world-space layer, shaded as the raster
 // shades that surface (S1 design「命中点着色」, Epic I2): the same preset
@@ -39,7 +40,7 @@ import { coneSample, effectiveFalloff, horizonDirection, hybridLobe, sinHalfOf, 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
 const { frameId, screenCoordinate } = tsl as unknown as Record<string, TSLNode>
-const { BRDF_GGX, BRDF_Lambert, DFGLUT, F_Schlick, If, Loop, Switch, abs, clamp, cross, dot, float, floor, getDistanceAttenuation, isolate, length, luminance, mat3, mat4, max, min, mix, normalize, pmremTexture, pow, reflect, select, smoothstep, sRGBTransferEOTF, uint, vec3, vec4 } = T
+const { BRDF_GGX, BRDF_Lambert, DFGLUT, F_Schlick, If, LTC_Evaluate, LTC_Uv, Loop, Switch, abs, clamp, cos, cross, dot, float, floor, getDistanceAttenuation, isolate, length, luminance, mat3, mat4, max, min, mix, normalize, pmremTexture, pow, reflect, select, sin, smoothstep, sqrt, sRGBTransferEOTF, texture, uint, vec2, vec3, vec4 } = T
 
 /** A material at a hit, as the lighting takes it: emission already exposed. */
 export type Surface = { albedo: TSLNode; rough: TSLNode; metal: TSLNode; emission: TSLNode }
@@ -153,6 +154,8 @@ function atHit(fn: (i: PatternInput) => PatternOut, base: Omit<PatternInput, 'wi
  */
 export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene, world: { probes: ProbeNodes; fill: number } | null = null): HitShading {
   const table = tables.node
+  // three's LTC tables for the area lights' specular, the half-float ones: filterable on every device.
+  const ltc = ltcTables()
   const { transforms, attributes } = layer.stores
   const colors = layer.colorsNode
   const header = (k: number) => table.element(uint(k))
@@ -261,6 +264,35 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     return { kind, l, color, sized, sinHalf, toCentre, diffuseWay, shadowRay }
   }
 
+  /**
+   * An area light of the table at P (scene-area-light design「命中点」), as the raster's (lightModel/direct.ts): its
+   * vector form factor from P with the identity LTC (|F| over its face, F / |F| its average way, lightModel/ltc.ts),
+   * its colour × luminance, its face's centre and half axes, three's corners of it, and a shadow ray from a point
+   * toward a uniform point of its face.
+   */
+  function areaLight(at: TSLNode, P: TSLNode) {
+    const kind = table.element(at).toVar()
+    const centre = table.element(at.add(uint(1))).xyz.toVar()
+    const color = table.element(at.add(uint(2))).xyz.toVar()
+    const halfX = table.element(at.add(uint(3))).xyz.toVar()
+    const halfY = table.element(at.add(uint(4))).xyz.toVar()
+    const ellipse = kind.z.greaterThan(0.5).toVar()
+    // Variables here, before the branches: an expression first built inside one is declared there, out of reach of the next.
+    const corners = [centre.add(halfX).sub(halfY).toVar(), centre.sub(halfX).sub(halfY).toVar(), centre.sub(halfX).add(halfY).toVar(), centre.add(halfX).add(halfY).toVar()] as const
+    const F = vec3(0).toVar()
+    If(ellipse, () => F.assign(ellipseViewFormFactor(P, centre, halfX, halfY))).Else(() => F.assign(rectVectorFormFactor(P, ...corners)))
+    const shadowRay = (u1: TSLNode, u2: TSLNode, from: TSLNode) => {
+      // A uniform point of the face: the square [−1, 1]², the disc by √u.
+      const r = sqrt(u1)
+      const phi = u2.mul(Math.PI * 2)
+      const s = select(ellipse, vec2(r.mul(cos(phi)), r.mul(sin(phi))), vec2(u1.mul(2).sub(1), u2.mul(2).sub(1)))
+      const toward = centre.add(halfX.mul(s.x)).add(halfY.mul(s.y)).sub(from).toVar()
+      const d = length(toward).toVar()
+      return { way: toward.div(d), reach: max(d.sub(1e-3), 1e-4) }
+    }
+    return { kind, centre, color, halfX, halfY, ellipse, corners, F, shadowRay }
+  }
+
   /** Two uniform numbers for light i's shadow ray, from a seed. */
   const pair = (seed: TSLNode, i: TSLNode) => {
     const h = pcg(seed.add(i.mul(uint(0x85ebca6b))).add(uint(0x27d4eb2f))).toVar()
@@ -298,27 +330,58 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     const first = header(0).y.toUint().toVar()
     Loop({ start: uint(0), end: header(0).x.toUint(), type: 'uint', condition: '<' }, ({ i }: { i: TSLNode }) => {
       const at = first.add(i.mul(uint(LIGHT_ROW))).toVar()
-      const { kind, l, color, sized, sinHalf, toCentre, diffuseWay, shadowRay } = tableLight(at, P)
-      const wl = diffuseWay(n).toVar()
-      const dotNL = clamp(dot(n, wl), 0, 1).toVar()
-      If(dotNL.greaterThan(0), () => {
-        const visible = float(1).toVar()
-        if (shadows)
-          If(kind.y.greaterThan(0.5), () => {
-            const [u1, u2] = pair(seed, i)
-            const ray = shadowRay(u1, u2)
-            const blocked = traceWithin(layer, lifted, ray.way, ray.reach).toVar() as Hit
-            If(blocked.get('didHit'), () => visible.assign(0))
-          })
-        const irradiance = color.mul(dotNL).mul(visible).toVar()
-        const h = normalize(wl.add(v))
-        const F = F_Schlick({ f0: specularColor, f90: specularF90, dotVH: clamp(dot(v, h), 0, 1) } as never)
-        light.addAssign(irradiance.mul(BRDF_Lambert({ diffuseColor: diffuseContribution } as never)).mul(float(1).sub(F)))
-        // The specular toward the hybrid lobe of a sized light (formulas.ts hybridLobe), as the raster's (lightModel/direct.ts).
-        const lobe = hybridLobe({ lightVector: toCentre, sinHalf }, roughness, n, v)
-        const way = select(sized, lobe.direction, l).toVar()
-        const specularIrradiance = select(sized, color.mul(clamp(dot(n, way), 0, 1)).mul(lobe.energy).mul(visible), irradiance)
-        light.addAssign(specularIrradiance.mul(BRDF_GGX({ lightDirection: way, f0: specularColorBlended, f90: 1, roughness: select(sized, lobe.roughness, roughness), normalView: n, viewDirection: v } as never)).mul(msComp))
+      If(table.element(at).x.greaterThan(LIGHT.spot + 0.5), () => {
+        // An area light: its irradiance π · L · F; the diffuse toward its average way, the specular its LTC's.
+        const a = areaLight(at, P)
+        const E = clippedFormFactor(a.F, n).mul(Math.PI).toVar()
+        If(E.greaterThan(0), () => {
+          const visible = float(1).toVar()
+          if (shadows)
+            If(a.kind.y.greaterThan(0.5), () => {
+              const [u1, u2] = pair(seed, i)
+              const ray = a.shadowRay(u1, u2, lifted)
+              const blocked = traceWithin(layer, lifted, ray.way, ray.reach).toVar() as Hit
+              If(blocked.get('didHit'), () => visible.assign(0))
+            })
+          const along = normalize(a.F).toVar()
+          const wl = normalize(along.add(n.mul(max(float(1e-3).sub(dot(along, n)), 0))))
+          const h = normalize(wl.add(v))
+          const F = F_Schlick({ f0: specularColor, f90: specularF90, dotVH: clamp(dot(v, h), 0, 1) } as never)
+          light.addAssign(a.color.mul(E).mul(visible).mul(BRDF_Lambert({ diffuseColor: diffuseContribution } as never)).mul(float(1).sub(F)))
+          const uv = LTC_Uv({ N: n, V: v, roughness } as never)
+          const t1 = texture(ltc.LTC_HALF_1, uv).level(0).toVar()
+          const t2 = texture(ltc.LTC_HALF_2, uv).level(0).toVar()
+          const mInv = mat3(vec3(t1.x, 0, t1.y), vec3(0, 1, 0), vec3(t1.z, 0, t1.w)).toVar()
+          // Both shapes, one selected: three r186 leaves a float empty when either is built in a branch of its own here.
+          const [p0, p1, p2, p3] = a.corners
+          const form = select(a.ellipse, ltcEllipse({ N: n, V: v, P, mInv, centre: a.centre, halfX: a.halfX, halfY: a.halfY }).x, LTC_Evaluate({ N: n, V: v, P, mInv, p0, p1, p2, p3 } as never).x)
+          // LTC Fresnel Approximation by Stephen Hill, as three's directRectArea.
+          const fresnel = specularColorBlended.mul(t2.x).add(specularF90.sub(specularColorBlended).mul(t2.y))
+          light.addAssign(a.color.mul(fresnel).mul(form).mul(visible).mul(msComp))
+        })
+      }).Else(() => {
+        const { kind, l, color, sized, sinHalf, toCentre, diffuseWay, shadowRay } = tableLight(at, P)
+        const wl = diffuseWay(n).toVar()
+        const dotNL = clamp(dot(n, wl), 0, 1).toVar()
+        If(dotNL.greaterThan(0), () => {
+          const visible = float(1).toVar()
+          if (shadows)
+            If(kind.y.greaterThan(0.5), () => {
+              const [u1, u2] = pair(seed, i)
+              const ray = shadowRay(u1, u2)
+              const blocked = traceWithin(layer, lifted, ray.way, ray.reach).toVar() as Hit
+              If(blocked.get('didHit'), () => visible.assign(0))
+            })
+          const irradiance = color.mul(dotNL).mul(visible).toVar()
+          const h = normalize(wl.add(v))
+          const F = F_Schlick({ f0: specularColor, f90: specularF90, dotVH: clamp(dot(v, h), 0, 1) } as never)
+          light.addAssign(irradiance.mul(BRDF_Lambert({ diffuseColor: diffuseContribution } as never)).mul(float(1).sub(F)))
+          // The specular toward the hybrid lobe of a sized light (formulas.ts hybridLobe), as the raster's (lightModel/direct.ts).
+          const lobe = hybridLobe({ lightVector: toCentre, sinHalf }, roughness, n, v)
+          const way = select(sized, lobe.direction, l).toVar()
+          const specularIrradiance = select(sized, color.mul(clamp(dot(n, way), 0, 1)).mul(lobe.energy).mul(visible), irradiance)
+          light.addAssign(specularIrradiance.mul(BRDF_GGX({ lightDirection: way, f0: specularColorBlended, f90: 1, roughness: select(sized, lobe.roughness, roughness), normalView: n, viewDirection: v } as never)).mul(msComp))
+        })
       })
     })
     if (!indirect) return light.add(s.emission)
@@ -456,24 +519,33 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     const first = header(0).y.toUint().toVar()
     Loop({ start: uint(0), end: header(0).x.toUint(), type: 'uint', condition: '<' }, ({ i }: { i: TSLNode }) => {
       const at = first.add(i.mul(uint(LIGHT_ROW))).toVar()
-      const { kind, color, diffuseWay, shadowRay } = tableLight(at, P)
-      // Weighed by its irradiance toward the bent way, as lightAt lights by it: past the terminator a sized light still lights.
-      const irradiance = color.mul(clamp(dot(n, diffuseWay(n)), 0, 1)).toVar()
-      If(kind.y.lessThan(0.5), () => {
-        e.addAssign(irradiance)
-      }).Else(() => {
-        const w = luminance(irradiance).toVar()
-        If(w.greaterThan(0), () => {
-          total.addAssign(w)
-          // This light takes the place of the one drawn so far with chance w / total.
-          If(unit(pcg(seed.add(i.mul(uint(0x9e3779b9))))).mul(total).lessThan(w), () => {
-            const [u1, u2] = pair(seed, i)
-            const ray = shadowRay(u1, u2)
-            picked.assign(irradiance)
-            towards.assign(ray.way)
-            reach.assign(ray.reach)
+      /** A light of irradiance at P: added, or if it casts, weighed into the draw, its shadow ray made once drawn. */
+      const consider = (kind: TSLNode, irradiance: TSLNode, shadowRay: (u1: TSLNode, u2: TSLNode) => { way: TSLNode; reach: TSLNode }) => {
+        If(kind.y.lessThan(0.5), () => {
+          e.addAssign(irradiance)
+        }).Else(() => {
+          const w = luminance(irradiance).toVar()
+          If(w.greaterThan(0), () => {
+            total.addAssign(w)
+            // This light takes the place of the one drawn so far with chance w / total.
+            If(unit(pcg(seed.add(i.mul(uint(0x9e3779b9))))).mul(total).lessThan(w), () => {
+              const [u1, u2] = pair(seed, i)
+              const ray = shadowRay(u1, u2)
+              picked.assign(irradiance)
+              towards.assign(ray.way)
+              reach.assign(ray.reach)
+            })
           })
         })
+      }
+      If(table.element(at).x.greaterThan(LIGHT.spot + 0.5), () => {
+        // An area light: its irradiance π · L · F, the weight and what is picked alike (I4).
+        const a = areaLight(at, P)
+        consider(a.kind, a.color.mul(clippedFormFactor(a.F, n).mul(Math.PI)).toVar(), (u1, u2) => a.shadowRay(u1, u2, lifted))
+      }).Else(() => {
+        const { kind, color, diffuseWay, shadowRay } = tableLight(at, P)
+        // Weighed by its irradiance toward the bent way, as lightAt lights by it: past the terminator a sized light still lights.
+        consider(kind, color.mul(clamp(dot(n, diffuseWay(n)), 0, 1)).toVar(), shadowRay)
       })
     })
     If(total.greaterThan(0), () => {

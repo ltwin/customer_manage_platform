@@ -1,4 +1,5 @@
 import { Matrix3, Vector3 } from 'three'
+import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../materials/patterns.ts'
 
@@ -24,6 +25,14 @@ import type { TSLNode } from '../../materials/patterns.ts'
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
+
+type Tables = ReturnType<typeof RectAreaLightTexturesLib.init>
+let tables: Tables | null = null
+/** three's LTC tables, made once (each RectAreaLightTexturesLib.init makes new textures): the raster's (nodes.ts) and the hit points'. */
+export function ltcTables(): Tables {
+  tables ??= RectAreaLightTexturesLib.init()
+  return tables
+}
 const { Fn, abs, acos, clamp, cos, cross, dot, float, inverseSqrt, length, mat3, max, min, normalize, select, sqrt, vec3 } = T
 
 /** three's LTC_ClippedSphereFormFactor: a vector form factor f's horizon-clipped form factor, z the normal. */

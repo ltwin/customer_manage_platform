@@ -1,10 +1,10 @@
 import { Matrix4 } from 'three'
-import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import * as tsl from 'three/tsl'
 import { DirectionalLightNode, PointLightNode, RectAreaLightNode, SpotLightNode, type NodeBuilder, type NodeFrame, type WebGPURenderer } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
 import { installAreaDirect, installDirect } from './direct.ts'
 import { effectiveFalloff, sinHalfOf, type Sized } from './formulas.ts'
+import { ltcTables } from './ltc.ts'
 import { SceneAreaLight, SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from './lights.ts'
 
 // The light nodes of the lights with a size (Epic design「直接光的入口」).
@@ -123,7 +123,7 @@ export function installLightModel(renderer: WebGPURenderer) {
   library.addLight(SunDiscLightNode, SceneSunLight)
   library.addLight(AreaLightNode, SceneAreaLight)
   // three's area light tables, once for every renderer.
-  RectAreaLightNode.setLTC(RectAreaLightTexturesLib.init())
+  RectAreaLightNode.setLTC(ltcTables())
   installDirect()
   installAreaDirect()
 }

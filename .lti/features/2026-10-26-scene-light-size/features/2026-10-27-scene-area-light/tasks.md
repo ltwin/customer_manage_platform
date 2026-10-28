@@ -67,7 +67,12 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 4. 命中点与体积
 
-- [ ] 4.1 命中点：`collect.ts` 收集面光源，`tables.ts` 加 `LIGHT.area` 和面光源行，`hit.ts` 的 `lightAt`、`directAt` 加单独分支（照度 π·L·FF 同作权重与 picked，阴影光线在发光面上均匀取点），`tableLight` 不处理面光源。先写 `creative-scene-trace.test.ts` 的面光源行用例。完成判据：单测通过，`SCENE_E2E_TRACE` 下 AC-S2-3 在 AC-S1-2 同类阈值内。
+- [x] 4.1 命中点：`collect.ts` 收集面光源，`tables.ts` 加 `LIGHT.area` 和面光源行，`hit.ts` 的 `lightAt`、`directAt` 加单独分支（照度 π·L·FF 同作权重与 picked，阴影光线在发光面上均匀取点），`tableLight` 不处理面光源。先写 `creative-scene-trace.test.ts` 的面光源行用例。完成判据：单测通过，`SCENE_E2E_TRACE` 下 AC-S2-3 在 AC-S1-2 同类阈值内。
+  - 结果：`creative-scene-trace.test.ts` 的灯光表用例加一盏自身沿 X 放大 2 倍的椭圆面光源，核对 kind 3、投影、形状、中心、颜色 × 亮度和两条世界半轴；收集用例加面光源（先红后绿，26 项通过）。新增 e2e「area light: AC-S2-3」（`SCENE_E2E_TRACE`）：`materials` 场景放一盏投影的 1×0.5 m 矩形和一盏 0.8 m 椭圆面光源，逐网格与光栅相差最多 0.23 级（阈值 1 级），阴影 234815 / 234815 像素一致；S1 的 AC-S1-6、AC-S1-2 仍通过。
+  - 实施时调整：
+    - 高光的两种形状都算，再按形状 `select`：把 `ltcEllipse` 或 three 的 `LTC_Evaluate` 放进按形状分的 `If` 里（哪怕只有一边调用），three r186 生成着色器时报「Invalid generated code, expected a float」，连没有面光源的场景也报（着色器里有这条分支）。逐段排查定位到这层 `If`，直接在 `If(E > 0)` 里调用没有问题。代价是命中点上每盏面光源多算一次高光；
+    - LTC 表抽成 `ltc.ts` 的 `ltcTables()`，光栅和命中点共用一份（`RectAreaLightTexturesLib.init()` 每次调用都新建纹理），命中点用半精度那张，所有设备都可过滤；
+    - `directAt` 的蓄水池逻辑抽成循环内的 `consider()`，点光等原有分支的代码不变，只是包进了 `Else`。
 - [ ] 4.2 体积：`volumes/state.ts` 收集面光源、`structure` 加 `area`、估计里用 2 和等效发光强度；`volumes/lights.ts` 单面余弦光、钳 `max(d², A/π)`、立方体阴影。先写 e2e：投影的面光源照着投影体积，体积着色不缺失、不全黑。完成判据：e2e 通过。
 
 ## 5. 编辑器

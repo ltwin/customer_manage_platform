@@ -1,6 +1,7 @@
 import { Color, DoubleSide, type BufferGeometry, type Light, type Material, type Mesh, type Object3D } from 'three'
 import { isSeeThrough } from '../../materials/instances.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
+import { SceneAreaLight } from '../lightModel/lights.ts'
 
 // What the world-space layer traces, read off the mounted three scene each
 // frame (S1 design「收集与比对」, L4): the meshes the opaque prepass draws,
@@ -133,7 +134,7 @@ export function collectLights(scene: Object3D): Lighting {
     const l = o as Light & { isAmbientLight?: boolean; isDirectionalLight?: boolean; isPointLight?: boolean; isSpotLight?: boolean }
     if (l.isLight && l.intensity > 0 && !o.userData.volumesCast) {
       if (l.isAmbientLight) ambient.add(l.color.clone().multiplyScalar(l.intensity))
-      else if (l.isDirectionalLight || l.isPointLight || l.isSpotLight) lights.push(l)
+      else if (l.isDirectionalLight || l.isPointLight || l.isSpotLight || l instanceof SceneAreaLight) lights.push(l)
     }
     for (const c of o.children) visit(c)
   }
