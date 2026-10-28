@@ -3187,6 +3187,54 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   await context.close()
 })
 
+// scene-area-light AC-S2-5 and AC-S2-1's outline: Shift+A adds an area light, 0.25 m square at 10000 cd/m²; the
+// panel turns it to an ellipse and widens it, its equivalent luminous intensity beside; Cmd+Z; scaled 2× along X, the
+// viewport's outline and the light's face are 0.25 × 0.125 m (half each way) alike; turned to a point light, the panel
+// writes the luminous intensity it had, L × A at its world scale, as the server converts.
+await check('area light: Shift+A adds one; shape, width, undo; scaled, its outline is its face; to a point light at its luminous intensity (AC-S2-5)', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await shading(page, '最终渲染')
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '面光源', exact: true }).click()
+  await waitFor(() => server.commands.length === 1, 'add an area light')
+  const area = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([area.kind, area.name, area.light.type, area.light.intensity], ['light', '面光源 1', 'area', 10000])
+  await saved(page)
+  await page.getByLabel('面光源形状').selectOption('ellipse')
+  await waitFor(() => lightAt(server, area.id).shape === 'ellipse', 'an ellipse')
+  const width = page.getByLabel('宽（m）')
+  await width.fill('1')
+  await width.press('Enter')
+  await waitFor(() => lightAt(server, area.id).width === 1, 'a metre wide')
+  // 10000 cd/m² over π/4 × 1 × 0.25 m².
+  await waitFor(async () => (await page.getByLabel('等效发光强度').textContent()) === '≈ 1963 cd', 'its luminous intensity beside')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, area.id).width === 0.25, 'undo the width')
+  await saved(page)
+  server.external([{ op: 'update_objects', updates: [{ object_id: area.id, transform: { ...area.transform, scale: [2, 1, 1] } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => {
+    const { lights, outlines } = await page.evaluate(() => window.__sceneGPU.areaFaces())
+    const near = (a, b) => a.length === 1 && b.length === 1 && a[0].every((v, i) => Math.abs(v - b[0][i]) < 1e-6)
+    return near(lights, [[0.25, 0.125]]) && near(outlines, [[0.25, 0.125]])
+  }, 'the outline and the face 0.5 × 0.25 m alike')
+  await page.getByLabel('灯光类型').selectOption('point')
+  await waitFor(() => lightAt(server, area.id).type === 'point', 'to a point light')
+  // 10000 cd/m² over the ellipse π/4 × 0.5 × 0.25 m² as the world has it.
+  const want = 10000 * (Math.PI / 4) * 0.25 * 0.25 * 2
+  assert.ok(Math.abs(lightAt(server, area.id).intensity - want) < 1e-6, `${lightAt(server, area.id).intensity} cd, want ${want}`)
+  assert.equal(await page.getByLabel('面光源形状').count(), 0, 'the area fields go')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('lights: the rendered view warms its lights in one compile; adding, undoing and switching away and back leave nothing behind', async () => {
   const server = new SceneServer()
   const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]

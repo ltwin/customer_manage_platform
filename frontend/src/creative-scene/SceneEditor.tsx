@@ -808,7 +808,7 @@ export default function SceneEditor({
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
         { label: '从资产库添加…', shortcut: k('toggle-assets'), run: showAssets },
         { section: '灯光' },
-        ...(['directional', 'point', 'spot'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
+        ...(['directional', 'point', 'spot', 'area'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
         { label: '摄像机', run: addCamera },
         { label: '空物体', run: addEmpty },
@@ -1051,6 +1051,7 @@ export default function SceneEditor({
                     <LightFields
                       key={`light:${shownActive.id}`}
                       object={{ ...shownActive, light: shownActive.light }}
+                      objects={shown.objects}
                       readOnly={readOnly}
                       display={display}
                       onLight={(light, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, light }] }], text, merge ? { merge } : undefined)}

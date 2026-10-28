@@ -70,6 +70,7 @@ import { InfiniteGrid } from './objects/InfiniteGrid.tsx'
 import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from './render/gpu.ts'
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
+import { SceneAreaLight } from './render/lightModel/lights.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -1164,6 +1165,18 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       gpuTestHooks.probeStats = r.probeStats
       gpuTestHooks.viewportSettle = r.settleFrames(engine)
       gpuTestHooks.invalidateViewport = state.invalidate
+      gpuTestHooks.areaFaces = () => {
+        const faces = { lights: [] as number[][], outlines: [] as number[][] }
+        state.scene.updateMatrixWorld()
+        state.scene.traverse((o) => {
+          if (o instanceof SceneAreaLight) faces.lights.push([o.halfX.length(), o.halfY.length()])
+          if (o.name === 'area-outline') {
+            const e = o.matrixWorld.elements
+            faces.outlines.push([Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6])])
+          }
+        })
+        return faces
+      }
       gpuTestHooks.probeMean = async () => (await r.world?.volume.means()) ?? null
       gpuTestHooks.probeView = async (width = 192) => {
         const w = r.world

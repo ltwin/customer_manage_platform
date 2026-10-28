@@ -87,7 +87,13 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - 按类型的缺省值做成 `lightDefaultsOf(type)`（面光源强度 10000，其余同 `lightDefaults`），`lightDefaults` 仍是各字段共用的表；`objects/lights.ts` 的 `applyLight` 改用它；
     - 换算拆成 `emittingArea`、`worldAreaScale`（用 `state/world.ts` 的 `worldOf`）、`convertedIntensity`，属性面板（5.2）同样调用；`applyOp` 的 `update_objects` 与服务端一样，先写完本次的变换、最后合并要换算的灯光；
     - `state/intents.ts` 把更新并进排队中的 `add_objects` 时，`updateObject` 按缩放 1 换算。编辑器切换类型时总是显式写入换算好的强度（5.2），走不到这里的换算；只有不写强度的换类型才会差一个父级缩放倍数，目前没有这样的写入方。
-- [ ] 5.2 界面：`editing.ts` 的 `lightLabels`、`newLight`，`SceneEditor.tsx` 新建菜单，`LightFields.tsx` 的形状、宽高、亮度与等效 cd、切换类型写强度，`SceneObjects.tsx:LightIcon` 的轮廓和朝向短线、`RadiusRing` 排除面光源。先写 e2e：菜单新建、面板改字段与撤销、切换类型、缩放物件时轮廓与发光面的投影范围一致。完成判据：e2e 通过，`make check-frontend` 通过。
+- [x] 5.2 界面：`editing.ts` 的 `lightLabels`、`newLight`，`SceneEditor.tsx` 新建菜单，`LightFields.tsx` 的形状、宽高、亮度与等效 cd、切换类型写强度，`SceneObjects.tsx:LightIcon` 的轮廓和朝向短线、`RadiusRing` 排除面光源。先写 e2e：菜单新建、面板改字段与撤销、切换类型、缩放物件时轮廓与发光面的投影范围一致。完成判据：e2e 通过，`make check-frontend` 通过。
+  - 结果：新增 e2e「area light: Shift+A adds one …」：新建菜单加出「面光源 1」（0.25 m、10000 cd/m²）；面板改椭圆、宽 1 m，旁边显示「≈ 1963 cd」，Cmd+Z 撤回宽度；物件沿 X 放大 2 倍后，视口轮廓与发光面的世界半宽、半高都是 0.25 × 0.125 m；换成点光时面板写入 π/4 × 0.25 × 0.25 × 2 × 10000 cd，面光源字段消失。原有 AC-4（聚光面板）和 AC-S1-8（半径、角径）仍通过；AC-4 第一次跑失败过一次、未留下断言信息，随后连续两次通过，按偶发处理。`creative-scene*` 单测 362 项、`tsc -b`、oxlint 通过。
+  - 实施时调整：
+    - 面板按类型显示字段：半径只给点光、聚光，距离、衰减同样；面光源有形状、宽、高，强度改叫「亮度（cd/m²）」，上限 100000；
+    - `LightFields` 多接收场景物件 `objects`，用来按世界缩放算等效发光强度，以及换类型时调用 `mergeLight` 得到与服务端相同的强度并显式写入；
+    - `editing.ts` 不用改：`newLight` 已按视角朝向、用 `NEW_LIGHT_INTENSITY.area`（3.1 已加）；
+    - 为了在 e2e 里核对轮廓与发光面，`gpuTestHooks` 加 `areaFaces`（只在 e2e 页面挂上），返回视口里每盏面光源和每个轮廓的世界半宽、半高。
 
 ## 6. 验收
 
