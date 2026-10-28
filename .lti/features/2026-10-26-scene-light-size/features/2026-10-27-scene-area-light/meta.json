@@ -1,6 +1,6 @@
 {
   "uid": "847866d9-bbe9-452c-84a7-c84bac399f2c",
-  "revision": 9,
+  "revision": 10,
   "id": "scene-area-light",
   "kind": "feature",
   "assurance": "governed",
@@ -25,7 +25,21 @@
   },
   "state": "archived",
   "createdAt": "2026-10-27T17:41:32.974Z",
-  "updatedAt": "2026-10-28T07:35:47.716Z",
+  "updatedAt": "2026-10-28T07:41:37.820Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-28T07:41:37.728Z",
+    "summary": "feat/scene-area-light 以 --no-ff 合入 develop（f019d4c4）；make check-merge 通过：前端构建、lint、generate-check、前端单测 890 项、后端 go test 全部通过，ops 未变跳过。",
+    "method": "manual",
+    "limitations": "项目未配置 integrate checks；以主检出 merge --no-commit 后 make check-merge 的结果为依据（develop 在分支起点后只多了文档提交，合入树与分支的代码相同）",
+    "sourceCommit": "954127fe80b26234c657af048e4c8a68e553a510",
+    "targetCommit": "f019d4c4fe8b26a6b68f00990ab80ce3e042bc11",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "bc03804583e4de1e4d061edcb3d506f0f809cea44a6d7be5c309b562ee8937e9"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
