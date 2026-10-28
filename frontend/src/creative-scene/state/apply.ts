@@ -7,7 +7,7 @@ import type {
   SceneRender,
 } from '../api.ts'
 import { builtinSpec, defaultParams } from '../builtins/catalog.ts'
-import { sameTransform } from './world.ts'
+import { sameTransform, worldOf } from './world.ts'
 import { completeSky } from '../world/physicalSky.ts'
 
 // The client's copy of the server's operation semantics, used only to show
@@ -119,6 +119,44 @@ export const lightDefaults: Required<Omit<Light, 'type'>> = {
   width: 0.25,
   height: 0.25,
 }
+/** The defaults the server stores for a light of type: an area light's intensity a luminance, 10000 cd/m² (data: 面光源). */
+export const lightDefaultsOf = (type: Light['type']): Required<Omit<Light, 'type'>> => (type === 'area' ? { ...lightDefaults, intensity: 10000 } : lightDefaults)
+
+/** The top of a light type's intensity: an area light's luminance, cd/m², the others' 1000. */
+export const maxLightIntensity = (type: Light['type']) => (type === 'area' ? 100000 : 1000)
+
+/** An area light's emitting area, m², its object's world transform scaling its face by areaScale (worldAreaScale). */
+export function emittingArea(l: Light, areaScale: number): number {
+  const a = (l.width ?? lightDefaults.width) * (l.height ?? lightDefaults.height) * areaScale
+  return (l.shape ?? lightDefaults.shape) === 'ellipse' ? (a * Math.PI) / 4 : a
+}
+
+/**
+ * How much object id's world transform, its parents' included, scales an area in its local XY plane: |X × Y| of
+ * its world matrix's first two columns, a parallelogram's too (data: 面光源「等效发光强度」; the server's
+ * worldAreaScale).
+ */
+export function worldAreaScale(objects: readonly SceneObject[], id: string): number {
+  const e = worldOf(objects)(id).elements
+  const [ax, ay, az, bx, by, bz] = [e[0], e[1], e[2], e[4], e[5], e[6]]
+  return Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+}
+
+/**
+ * A type change's intensity when the update writes none (data: 面光源「换类型」, Epic I6): to and from an area
+ * light the equivalent luminous intensity kept, the old area at before and the new at after (worldAreaScale before
+ * and after the update); then held to the new type's top. As the server's mergeLight, and the properties write it.
+ */
+export function convertedIntensity(cur: Light, next: Light, before: number, after: number): number {
+  let v = next.intensity ?? lightDefaultsOf(next.type).intensity
+  if (cur.type === 'area' && (next.type === 'point' || next.type === 'spot')) v *= emittingArea(cur, before)
+  else if (next.type === 'area' && (cur.type === 'point' || cur.type === 'spot')) {
+    const a = emittingArea(next, after)
+    if (a > 0) v /= a
+  }
+  return Math.min(v, maxLightIntensity(next.type))
+}
+
 /**
  * A document light's size: the radius of a point or spot light, the angular
  * diameter of a directional one; left out, the default the server stores. An
@@ -169,16 +207,23 @@ export const mergeVolume = (cur: Volume, patch: Volume): Required<Volume> => ({ 
  * type keeps the fields it shares and fills the ones it gains. Null where the
  * server refuses, an update with a field the resulting type lacks.
  */
-export function mergeLight(cur: Light, patch: NonNullable<ObjectUpdate['light']>): Light | null {
+export function mergeLight(cur: Light, patch: NonNullable<ObjectUpdate['light']>, before = 1, after = 1): Light | null {
   const type = patch.type ?? cur.type
   const has: readonly string[] = lightFields[type]
   if (Object.keys(patch).some((k) => k !== 'type' && !has.includes(k))) return null
+  const defaults = lightDefaultsOf(type)
   const next: Record<string, unknown> = { type }
-  for (const k of lightFields[type]) next[k] = patch[k] ?? cur[k] ?? lightDefaults[k]
+  for (const k of lightFields[type]) next[k] = patch[k] ?? cur[k] ?? defaults[k]
+  if (type !== cur.type && patch.intensity === undefined) next.intensity = convertedIntensity(cur, next as Light, before, after)
   return next as Light
 }
 
-export function updateObject(o: SceneObject, u: ObjectUpdate): SceneObject {
+/** Whether a light update changes the type to or from an area light without writing intensity: the merge needs the world scales. */
+const convertsArea = (cur: Light, patch: NonNullable<ObjectUpdate['light']>) =>
+  patch.type !== undefined && patch.type !== cur.type && patch.intensity === undefined && (cur.type === 'area' || patch.type === 'area')
+
+/** u on o; a light turned to or from an area light at areaScale before and after (mergeLight). */
+export function updateObject(o: SceneObject, u: ObjectUpdate, areaScale: { before: number; after: number } = { before: 1, after: 1 }): SceneObject {
   const next: SceneObject = { ...o }
   if (u.name !== undefined) next.name = u.name
   if (u.transform !== undefined) next.transform = u.transform
@@ -190,7 +235,7 @@ export function updateObject(o: SceneObject, u: ObjectUpdate): SceneObject {
       params: { ...o.primitive.params, ...u.primitive.params },
     }
   if (u.material_slots !== undefined) next.material_slots = u.material_slots
-  if (u.light && o.light) next.light = mergeLight(o.light, u.light) ?? o.light
+  if (u.light && o.light) next.light = mergeLight(o.light, u.light, areaScale.before, areaScale.after) ?? o.light
   if (u.camera && o.camera) next.camera = { ...cameraDefaults, ...o.camera, ...u.camera }
   if (u.volume && o.volume) next.volume = mergeVolume(o.volume, u.volume)
   return next
@@ -218,13 +263,23 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
     }
     case 'update_objects': {
       const updates = new Map(op.updates.map((u) => [u.object_id, u]))
+      // As the server's: a light turned to or from an area light at the world scale before every transform here is
+      // written and after, so such lights merge last.
+      const converting = scene.objects.filter((o) => o.light && updates.get(o.id)?.light && convertsArea(o.light, updates.get(o.id)!.light!))
+      const moved = scene.objects.map((o) => {
+        const u = updates.get(o.id)
+        if (!u) return o
+        return converting.includes(o) ? updateObject(o, { ...u, light: undefined }) : updateObject(o, u)
+      })
       return {
         ...state,
         scene: {
           ...scene,
-          objects: scene.objects.map((o) => {
-            const u = updates.get(o.id)
-            return u ? updateObject(o, u) : o
+          objects: moved.map((o, i) => {
+            const was = scene.objects[i]
+            if (!converting.includes(was)) return o
+            const scale = { before: worldAreaScale(scene.objects, o.id), after: worldAreaScale(moved, o.id) }
+            return { ...o, light: mergeLight(was.light!, updates.get(o.id)!.light!, scale.before, scale.after) ?? was.light }
           }),
         },
       }

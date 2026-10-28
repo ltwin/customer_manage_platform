@@ -81,7 +81,12 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 5. 编辑器
 
-- [ ] 5.1 本地状态：`state/apply.ts` 的 `lightFields`、按类型的 `lightDefaults`、`lightSize` 不收面光源、`mergeLight` 换算。先写 `creative-scene.test.ts` 用例，与 2.2 的服务端用例取相同输入和结果。完成判据：单测通过。
+- [x] 5.1 本地状态：`state/apply.ts` 的 `lightFields`、按类型的 `lightDefaults`、`lightSize` 不收面光源、`mergeLight` 换算。先写 `creative-scene.test.ts` 用例，与 2.2 的服务端用例取相同输入和结果。完成判据：单测通过。
+  - 结果：`creative-scene.test.ts` 新增用例，取服务端 `TestAreaLightTypeChangeKeepsLuminousIntensity` 的 13 种输入，结果逐一相同（先红后绿）；全文件 52 项通过。
+  - 实施时调整：
+    - 按类型的缺省值做成 `lightDefaultsOf(type)`（面光源强度 10000，其余同 `lightDefaults`），`lightDefaults` 仍是各字段共用的表；`objects/lights.ts` 的 `applyLight` 改用它；
+    - 换算拆成 `emittingArea`、`worldAreaScale`（用 `state/world.ts` 的 `worldOf`）、`convertedIntensity`，属性面板（5.2）同样调用；`applyOp` 的 `update_objects` 与服务端一样，先写完本次的变换、最后合并要换算的灯光；
+    - `state/intents.ts` 改写排队中的 `add_objects` 时仍按缩放 1 换算：那是还没到服务端的新物件，同一批里给它换类型的情况很少，服务端收到时会按真实缩放重算。
 - [ ] 5.2 界面：`editing.ts` 的 `lightLabels`、`newLight`，`SceneEditor.tsx` 新建菜单，`LightFields.tsx` 的形状、宽高、亮度与等效 cd、切换类型写强度，`SceneObjects.tsx:LightIcon` 的轮廓和朝向短线、`RadiusRing` 排除面光源。先写 e2e：菜单新建、面板改字段与撤销、切换类型、缩放物件时轮廓与发光面的投影范围一致。完成判据：e2e 通过，`make check-frontend` 通过。
 
 ## 6. 验收

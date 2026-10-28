@@ -1,6 +1,6 @@
 import { Object3D, type Light as ThreeLight } from 'three'
 import type { SceneObject } from '../api.ts'
-import { lightDefaults, lightHasSize, lightSize } from '../state/apply.ts'
+import { lightDefaults, lightDefaultsOf, lightHasSize, lightSize } from '../state/apply.ts'
 import { SceneAreaLight, SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from '../render/lightModel/lights.ts'
 import { attachSoftShadow } from '../render/lightModel/shadowFilter.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
@@ -57,7 +57,7 @@ export function buildLight(type: Light['type']): BuiltLight {
 /** Writes the document's fields onto a light built for the same type; final, an export's (an area light's shadow samples). */
 export function applyLight(built: BuiltLight, l: Light, final = false) {
   const { light } = built
-  const v = { ...lightDefaults, ...l }
+  const v = { ...lightDefaultsOf(l.type), ...l }
   light.color.set(v.color)
   light.userData.baseIntensity = v.intensity
   light.intensity = v.intensity
