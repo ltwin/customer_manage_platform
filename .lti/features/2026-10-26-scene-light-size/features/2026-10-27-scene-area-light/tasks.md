@@ -115,4 +115,5 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - AC-4（加聚光、换点光、撤销）通过，其间偶发一次失败，重跑通过，与本分支改动无关；
     - 「lights: … leave nothing behind」通过；新增 e2e「area light: adding one, making it cast and undoing both leave nothing behind (AC-S2-6)」（随 6.1 提交）：最终渲染下新建面光源、开投影、两次撤销、切白模再切回，第 1 轮后与第 3 轮后视口的 `textures`、`renderTargets`、`uniformBuffers`、`programs` 相同，通过；
     - `sizeless()` / `referenceScene` 不给面光源写 `radius_m` 已在 3.1 落地；S1 的指纹测试未改（2.3）。
-- [ ] 6.3 owner 看图（AC-S2-7）：`area-studio` 的矩形、椭圆面光源，`workbench` 和 `realtime_gi` 各一组，交 owner。
+- [x] 6.3 owner 看图（AC-S2-7）：`area-studio` 的矩形、椭圆面光源，`workbench` 和 `realtime_gi` 各一组，交 owner。
+  - 结果：新增 e2e「area light: AC-S2-7 …」（`SCENE_E2E_AREA_SAMPLES=<dir>`），导出 `area-studio` 矩形、椭圆 × `workbench`、`realtime_gi` 四张光照图。方块投在墙上的影子是柔边，球的影子贴地处实、离开后变虚；`realtime_gi` 有间接光补光，影子更浅；椭圆亮度相同、面积为矩形的 π/4，整体暗约 7%。owner 2026-10-28 看图认可。
