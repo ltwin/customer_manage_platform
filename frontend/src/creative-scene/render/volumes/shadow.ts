@@ -1,4 +1,4 @@
-import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type PointLight, type SpotLight } from 'three'
+import { Vector3, type DirectionalLight, type Light, type LightShadow, type Object3D, type PointLight, type RectAreaLight, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import { PointShadowNode, ShadowNode, type NodeBuilder } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
@@ -138,10 +138,11 @@ export class VolumePointShadowNode extends PointShadowNode {
 
 type Shadowed = { shadow: LightShadow & { shadowNode?: unknown } }
 
-/** Gives a spot or point light its shadow node with the volumes'; returns the undo. */
-export function volumeShadowNode(light: SpotLight | PointLight): () => void {
+/** Gives a spot, point or area light its shadow node with the volumes' (an area light's a point light's cube); returns the undo. */
+export function volumeShadowNode(light: SpotLight | PointLight | RectAreaLight): () => void {
   const shadow = (light as unknown as Shadowed).shadow
-  const node = (light as PointLight).isPointLight ? new VolumePointShadowNode(light as PointLight) : new VolumeShadowNode(light as SpotLight)
+  const cube = (light as PointLight).isPointLight || (light as RectAreaLight).isRectAreaLight
+  const node = cube ? new VolumePointShadowNode(light as unknown as PointLight) : new VolumeShadowNode(light as SpotLight)
   shadow.shadowNode = node
   return () => {
     if (shadow.shadowNode === node) delete shadow.shadowNode
@@ -154,6 +155,6 @@ export function shadowLike(light: Light, copy: Light, sun: (l: DirectionalLight)
   const node = (light as unknown as Shadowed).shadow?.shadowNode
   if (!node) return null
   if ((copy as DirectionalLight).isDirectionalLight) return sun(copy as DirectionalLight)
-  if (node instanceof VolumeShadowNode || node instanceof VolumePointShadowNode) return volumeShadowNode(copy as SpotLight | PointLight)
+  if (node instanceof VolumeShadowNode || node instanceof VolumePointShadowNode) return volumeShadowNode(copy as SpotLight | PointLight | RectAreaLight)
   return null
 }

@@ -50,7 +50,20 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - `rectVectorFormFactor` 在视空间里按 three 的角点顺序求和得到的是 −F：three 的 LTC 坐标系取负了 T2，是一个镜像，把方向翻了过来。第一次跑矩形漫反射几乎全黑（墙面 0.079），取负后正常；椭圆的算法自己把 V3 朝向中心，不受影响；
     - 加 `clippedFormFactor(f, n)`：裁剪只用 |f| 和 f·n，在视空间里直接算；
     - light-check 加 `area-studio` 的 `shape`、`areaW`、`areaH`、`nits` 参数和 `layout=far`、`layout=close`，参考解改为从灯上读形状和世界半轴；`measure.ts` 加 `axisIrradiance`、`nearIrradiance`，用墙色 R − B 分离出漫反射再换算照度（同 N2 的测法）。
-- [ ] 3.4 软阴影：`shadowFilter.ts` 的 `cubePCSS({ kernel, search, filter, maxTexels })` 加矩形、椭圆核与搜索核，上限按实际核轴换算，采样档按 `final` 选；`attachSoftShadow` 按类型选核；`sceneRenderer.ts` 的 standIn 与 `volumes/shadow.ts` 按立方体处理面光源。完成判据：AC-S2-1 的全图阴影误差 ≤ 0.005、板剖面 1×1 m ≤ 0.02、2×0.5 m 和 2×2 m ≤ 0.05；`workbench` 导出连续两次逐像素相同。
+- [x] 3.4 软阴影：`shadowFilter.ts` 的 `cubePCSS({ kernel, search, filter, maxTexels })` 加矩形、椭圆核与搜索核，上限按实际核轴换算，采样档按 `final` 选；`attachSoftShadow` 按类型选核；`sceneRenderer.ts` 的 standIn 与 `volumes/shadow.ts` 按立方体处理面光源。完成判据：AC-S2-1 的全图阴影误差 ≤ 0.005、板剖面 1×1 m ≤ 0.02、2×0.5 m 和 2×2 m ≤ 0.05；`workbench` 导出连续两次逐像素相同。
+  - 结果（新增 e2e「area light: soft shadows as the reference has them」，参考解 4096 帧，光栅出图档 64 帧平均）：
+
+    | 面光源 | 全图阴影误差（≤ 0.005） | 板剖面均值 0.05 / 0.5 / 3 m |
+    |---|---|---|
+    | 矩形 1×1 m | 0.0018 | 0.0022 / 0.0023 / 0.0108（≤ 0.02） |
+    | 椭圆 1×1 m | 0.0015 | 0.0022 / 0.0016 / 0.0100（≤ 0.02） |
+    | 矩形 2×0.5 m | 0.0018 | 0.0012 / 0.0017 / 0.0058（≤ 0.05） |
+    | 矩形 2×2 m | 0.0037 | 0.0018 / 0.0053 / 0.0095（≤ 0.05） |
+
+    - 0.5 m 板的半影宽度与参考解相差不超过一个 5 mm 的格；2×0.5 m 时左右 0.17–0.18 m、上下 0.04 m，矩形核给出了两个方向不同的半影。3.1 时墙面右侧的自阴影条纹消失。
+    - `workbench` 连续两次导出：`occluder-wall` 和 `area-studio` 都逐像素相同（AC-S1-10 的检查加上 `area-studio`）。
+    - 两个后端：AC-S2-6 两种形状仍是 204–205 格亮、转半圈 0 格；S1 的 AC-S1-10（点光的圆盘核走同一段代码）0 格异常；「reference scenes: each opens」在视口档下通过。
+  - 实施时调整：圆盘核的 `toward` 仍按 S1 的写法在采样时乘半径（面光源的核轴事先乘好），点光的着色器表达式与 S1 相同；`volumeShadowNode` 对面光源用立方体的 `VolumePointShadowNode`，`buildLight('area')` 就挂上（体积在 4.2 读它）；light-check 的标题对 `area-studio` 写 `(area)`。
 
 ## 4. 命中点与体积
 

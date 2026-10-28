@@ -1,7 +1,7 @@
 import { NearestFilter, type LightShadow } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { SceneSphereLight, SceneSunLight, type SizedLight, type SizedShadow } from './lights.ts'
+import { SceneAreaLight, SceneSphereLight, SceneSunLight, type SizedLight, type SizedShadow } from './lights.ts'
 
 // Soft shadows of sized lights: PCSS (Epic design「软阴影的接入」, U1; S0
 // soft-shadow-candidates.md). A blocker search over the shadow map, the
@@ -26,6 +26,14 @@ import { SceneSphereLight, SceneSunLight, type SizedLight, type SizedShadow } fr
 // without compare is then incomplete: every read 0). A light of size 0 gets no
 // filter: its map keeps three's compare and PCF, its shader the one before
 // sizes (AC-S1-2).
+//
+// An area light (data: 面光源) casts a point light's cube map from its centre
+// (Epic design U3), its kernel the face's own (scene-area-light design「软阴
+// 影」): its two world axes, across the way to the receiver, at half its width
+// and height. A rectangle's filter takes them 2/√3 longer, so a disc's samples
+// spread as a uniform rectangle's do (the same second moment), its search √2,
+// the ellipse round its corners; an ellipse's is a stretched disc as it is.
+// Its export draws with more samples and a wider cap than its viewport (U5).
 
 type Op = (...args: TSLNode[]) => TSLNode
 const T = tsl as unknown as Record<string, Op>
@@ -38,6 +46,8 @@ const SEARCH = 16
 const FILTER = 32
 /** The widest penumbra, texels (U5): wider is cut, the edge narrower but continuous. A sun's counts its coarsest cascade's texels (capTexel). */
 const MAX_TEXELS = 48
+/** An area light's export: search and filter samples, and its cap in texels (U5, as S0 measured the thresholds with). */
+const FINAL = { search: 32, filter: 64, maxTexels: 128 }
 /** How far a receiver's plane may lean, in units of a map's depth per uv for a surface at 45° (about 87°). */
 const MAX_SLOPE = 20
 /** The 2D maps' compare margin: texels of the plane's gradient, and a floor in the map's depth. */
@@ -225,8 +235,19 @@ function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
   })
 }
 
+/** A cube PCSS's kernel: a sphere light's disc, or an area light's face. */
+type Kernel = 'disc' | 'rect' | 'ellipse'
+type CubeOptions = { kernel?: Kernel; search?: number; filter?: number; maxTexels?: number }
+
+/** An area light's kernel against a disc's: its filter's, and its search's (the module's head). */
+const STRETCH: Record<Exclude<Kernel, 'disc'>, { filter: number; search: number }> = {
+  rect: { filter: 2 / Math.sqrt(3), search: Math.SQRT2 },
+  ellipse: { filter: 1, search: 1 },
+}
+
 /**
- * PCSS on a point light's cube map, the light lightSize metres in radius.
+ * PCSS on a point light's cube map, the light lightSize metres in radius, or
+ * an area light's from its centre, its face's axes for the kernel's.
  * Directions stand for positions: an offset o in the plane across the way to
  * the receiver is a direction bd3D + o, o in metres at a metre from the light.
  * Depths are radial distances (a face's depth over the direction's largest
@@ -234,12 +255,11 @@ function mapPCSS(geometry: (shadow: TSLNode) => MapGeometry) {
  * geometric normal turned toward the light, gives its distance along every
  * sampled direction.
  */
-function cubePCSS() {
+function cubePCSS({ kernel = 'disc', search = SEARCH, filter = FILTER, maxTexels = MAX_TEXELS }: CubeOptions = {}) {
   return perShadow(({ depthTexture, bd3D, shadow }, builder) => {
     rawDepth(depthTexture)
     const near = held(shadow, 'camera.near')
     const far = held(shadow, 'camera.far')
-    const radius = held(shadow, 'lightSize')
     // PointShadowNode hands its filter the receiver only as a direction: its place less the light's, whole. The
     // shadow's camera stands where the light is (PointLightShadow.updateMatrices).
     const lightAt = held(shadow, 'camera.position', 'vec3')
@@ -257,11 +277,33 @@ function cubePCSS() {
     const dR = length(shadowPosition).toVar()
     const n = normalWorldGeometry.mul(select(dot(normalWorldGeometry, shadowPosition).greaterThan(0), float(-1), float(1))).toVar()
     const planeDistance = dot(n, shadowPosition).toVar()
-    const axis = abs(bd3D)
-    const tangent = normalize(cross(bd3D, select(axis.x.greaterThan(axis.z), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar()
-    const bitangent = cross(bd3D, tangent).toVar()
-    /** A unit-disc sample v at scale k (radians a metre of light): radius r k across the way to the receiver. */
-    const toward = (v: TSLNode, k: TSLNode) => normalize(bd3D.add(tangent.mul(v.x.mul(radius).mul(k))).add(bitangent.mul(v.y.mul(radius).mul(k))))
+    /**
+     * The kernel's two axes across the way to the receiver, each times scale metres of light, at stretch c, and its
+     * longest, which the caps count: a disc's unit ways times its radius; an area light's world axes across bd3D at
+     * half its width and height.
+     */
+    let axes: (c: number) => [TSLNode, TSLNode]
+    let longest: (c: number) => TSLNode
+    let scale: TSLNode = float(1)
+    if (kernel === 'disc') {
+      const radius = held(shadow, 'lightSize')
+      const axis = abs(bd3D)
+      const tangent = normalize(cross(bd3D, select(axis.x.greaterThan(axis.z), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar()
+      const bitangent = cross(bd3D, tangent).toVar()
+      axes = () => [tangent, bitangent]
+      longest = () => radius
+      scale = radius
+    } else {
+      const half = held(shadow, 'half', 'vec2')
+      const across = (a: TSLNode) => a.sub(bd3D.mul(dot(a, bd3D)))
+      const x = across(held(shadow, 'axisX', 'vec3')).mul(half.x).toVar()
+      const y = across(held(shadow, 'axisY', 'vec3')).mul(half.y).toVar()
+      axes = (c) => [x.mul(c), y.mul(c)]
+      longest = (c) => max(half.x, half.y).mul(c)
+    }
+    const stretch = kernel === 'disc' ? { filter: 1, search: 1 } : STRETCH[kernel]
+    /** A unit-disc sample v at scale k (radians a metre of light) on the kernel's axes. */
+    const toward = (v: TSLNode, k: TSLNode, [a, b]: [TSLNode, TSLNode]) => normalize(bd3D.add(a.mul(v.x.mul(scale).mul(k))).add(b.mul(v.y.mul(scale).mul(k))))
     /** The radial distance the map holds along unit direction d. */
     const stored = (d: TSLNode) => {
       const a = abs(d)
@@ -271,7 +313,8 @@ function cubePCSS() {
     const receiverAt = (d: TSLNode) => clamp(planeDistance.div(min(dot(n, d), -1e-4)), dR.mul(0.5), dR.mul(2))
     const eps = dR.mul(texel).mul(CUBE_EPS_TEXELS).add(CUBE_EPS_FLOOR).toVar()
     const phi = turn().toVar()
-    const searchK = min(dR.sub(near).div(dR.mul(near)), texel.mul(MAX_TEXELS).div(radius)).toVar()
+    const searchAxes = axes(stretch.search)
+    const searchK = min(dR.sub(near).div(dR.mul(near)), texel.mul(maxTexels).div(longest(stretch.search))).toVar()
     const blockers = float(0).toVar()
     const distanceSum = float(0).toVar()
     const searchAlong = (d: TSLNode) => {
@@ -281,15 +324,17 @@ function cubePCSS() {
       distanceSum.addAssign(blocks.mul(at))
     }
     searchAlong(bd3D)
-    repeat(SEARCH, (i) => searchAlong(toward(vogelDiskSample(i, SEARCH, phi), searchK)))
+    repeat(search, (i) => searchAlong(toward(vogelDiskSample(i, search, phi), searchK, searchAxes)))
     const dB = distanceSum.div(max(blockers, 1)).toVar()
-    const penumbraK = clamp(dR.sub(dB).div(dB.mul(dR)), texel.mul(0.5).div(radius), texel.mul(MAX_TEXELS).div(radius)).toVar()
+    const filterAxes = axes(stretch.filter)
+    const reach = longest(stretch.filter)
+    const penumbraK = clamp(dR.sub(dB).div(dB.mul(dR)), texel.mul(0.5).div(reach), texel.mul(maxTexels).div(reach)).toVar()
     const lit = float(0).toVar()
-    repeat(FILTER, (i) => {
-      const d = toward(vogelDiskSample(i, FILTER, phi), penumbraK).toVar()
+    repeat(filter, (i) => {
+      const d = toward(vogelDiskSample(i, filter, phi), penumbraK, filterAxes).toVar()
       lit.addAssign(select(stored(d).lessThan(receiverAt(d).sub(eps)), float(0), float(1)))
     })
-    return select(blockers.lessThan(0.5), float(1), lit.div(FILTER))
+    return select(blockers.lessThan(0.5), float(1), lit.div(filter))
   })
 }
 
@@ -298,10 +343,16 @@ function cubePCSS() {
  * (three keeps the shadow node a light first builds): the filter for its kind
  * and its size on its shadow. A light of size 0 is left as three draws it. A
  * directional light's goes on before cascadeSunShadow: CSMShadowNode clones
- * light.shadow, filter and all, as it first builds.
+ * light.shadow, filter and all, as it first builds. An area light always has
+ * a size: its kernel is its shape's, with an export's samples where final
+ * (the viewport and an export build their lights apart, objects/SceneLights.tsx).
  */
-export function attachSoftShadow(light: SizedLight) {
+export function attachSoftShadow(light: SizedLight | SceneAreaLight, final = false) {
   const shadow = light.shadow as LightShadow & SizedShadow
+  if (light instanceof SceneAreaLight) {
+    shadow.filterNode ??= cubePCSS({ kernel: light.shape === 'ellipse' ? 'ellipse' : 'rect', ...(final ? FINAL : {}) })
+    return
+  }
   shadow.lightSize = light.size
   if (!(light.size > 0) || shadow.filterNode) return
   shadow.filterNode = light instanceof SceneSphereLight ? cubePCSS() : mapPCSS(light instanceof SceneSunLight ? sunGeometry : spotGeometry)

@@ -261,7 +261,7 @@ async function boot() {
     raster: finite(c.raster.unshadowed),
     reference: finite(c.reference.unshadowed),
   }
-  show([`${sceneName}${occluder ? ` (${lightName})` : ''} · size ${size ?? 'as stored'} · reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms`, `|Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`])
+  show([`${sceneName}${studio ? ' (area)' : occluder ? ` (${lightName})` : ''} · size ${size ?? 'as stored'} · reference ${refFrames} frames in ${Math.round(c.referenceMs)} ms`, `|Δ shadow| averaged ${error.averaged.mean.toFixed(4)} (p95 ${error.averaged.p95.toFixed(3)}), first ${error.first.mean.toFixed(4)}`])
   check.done = true
 }
 

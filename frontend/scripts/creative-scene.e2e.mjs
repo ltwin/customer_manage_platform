@@ -4015,6 +4015,32 @@ await check('area light: energy as the reference has it, L · A / d² far off an
   assert.deepEqual(failed, [], 'the area light off the reference')
 })
 
+// scene-area-light AC-S2-1's shadows (Epic AC-5): area-studio's casting area light against the reference, its export's
+// samples averaged over the workbench's frames: over the picture at most 0.005 off, each board's profile at most 0.02
+// for a 1 m light and 0.05 for a long or a 2 m one (S0 thresholds.md).
+await check('area light: soft shadows as the reference has them, rectangle and ellipse (AC-S2-1)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const failed = []
+  try {
+    for (const [name, query, board] of [
+      ['rectangle 1×1', '', 0.02],
+      ['ellipse 1×1', '&shape=ellipse', 0.02],
+      ['rectangle 2×0.5', '&areaW=2&areaH=0.5', 0.05],
+      ['rectangle 2×2', '&areaW=2&areaH=2', 0.05],
+    ]) {
+      const { report, panels } = await lightCheck(gpu, `scene=area-studio${query}&refFrames=4096&rasterFrames=64`)
+      await keepPanels(`area-shadow-${name.replace(/[ ×]/g, '-')}`, panels)
+      const boards = Object.entries(report.penumbrae).map(([b, p]) => [b, p.profile.averaged.mean])
+      console.log(`AC-S2-1 ${name}: |Δ shadow| ${report.averaged.mean.toFixed(4)}; boards ${boards.map(([b, m]) => `${b} ${m.toFixed(4)}`).join(', ')}`)
+      if (report.averaged.mean > 0.005) failed.push(`${name}: |Δ shadow| ${report.averaged.mean}`)
+      failed.push(...boards.filter(([, m]) => m > board).map(([b, m]) => `${name} board ${b}: ${m}`))
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(failed, [], 'the area light\'s shadows off the reference')
+})
+
 // AC-S1-4 (Epic AC-4): highlights grow and dim with the light's size as the reference's do, on the gloss panel at two
 // roughnesses, under a clearcoat, and from the sun turned so its glint is on the panel. Energy is held both ways: the
 // panel's light, as S0 measured it, and the highlight alone once the panel's diffuse (its dimmest 5%) is taken off, as
@@ -4306,11 +4332,14 @@ await check('light size: the workbench\'s lit export with soft shadows is the sa
     const edit = (scene) => {
       for (const o of scene.objects) if (o.light) o.visible = true
     }
-    const [a, b] = [await exportReference(gpu, 'occluder-wall', { litOnly: true, edit }), await exportReference(gpu, 'occluder-wall', { litOnly: true, edit })]
-    for (const img of a.images) {
-      const apart = await imageApart(page, img.png, b.images.find((i) => i.file === img.file).png)
-      console.log(`AC-S1-10 workbench twice ${img.file}: largest channel difference ${apart.max}`)
-      assert.equal(apart.max, 0, `${img.file}: the two exports differ`)
+    // And area-studio's casting area light, an export's samples (scene-area-light AC-S2-6).
+    for (const name of ['occluder-wall', 'area-studio']) {
+      const [a, b] = [await exportReference(gpu, name, { litOnly: true, edit }), await exportReference(gpu, name, { litOnly: true, edit })]
+      for (const img of a.images) {
+        const apart = await imageApart(page, img.png, b.images.find((i) => i.file === img.file).png)
+        console.log(`AC-S1-10 workbench twice ${img.file}: largest channel difference ${apart.max}`)
+        assert.equal(apart.max, 0, `${img.file}: the two exports differ`)
+      }
     }
   } finally {
     await gpu.close()

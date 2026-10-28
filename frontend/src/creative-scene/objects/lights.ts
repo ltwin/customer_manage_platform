@@ -36,7 +36,11 @@ export const lightKey = (l: Light): string => (l.type === 'area' ? `area+${l.sha
 
 export function buildLight(type: Light['type']): BuiltLight {
   // Before the light first builds: three keeps the shadow node it builds first.
-  if (type === 'area') return { light: new SceneAreaLight(), target: null, stop: null }
+  if (type === 'area') {
+    // Its shadow a point light's cube from its centre, the volumes' too.
+    const light = new SceneAreaLight()
+    return { light, target: null, stop: volumeShadowNode(light) }
+  }
   if (type === 'point') {
     const light = new SceneSphereLight()
     return { light, target: null, stop: volumeShadowNode(light) }
@@ -50,8 +54,8 @@ export function buildLight(type: Light['type']): BuiltLight {
   return { light, target, stop: light instanceof SceneSpotLight ? volumeShadowNode(light) : null }
 }
 
-/** Writes the document's fields onto a light built for the same type. */
-export function applyLight(built: BuiltLight, l: Light) {
+/** Writes the document's fields onto a light built for the same type; final, an export's (an area light's shadow samples). */
+export function applyLight(built: BuiltLight, l: Light, final = false) {
   const { light } = built
   const v = { ...lightDefaults, ...l }
   light.color.set(v.color)
@@ -76,7 +80,7 @@ export function applyLight(built: BuiltLight, l: Light) {
     if (shadows) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
   }
   // A sized light's soft shadow, before the cascades below clone its shadow (render/lightModel/shadowFilter.ts).
-  if (shadows && !(light instanceof SceneAreaLight)) attachSoftShadow(light)
+  if (shadows) attachSoftShadow(light, final)
   // Once, and kept: three's light node holds on to the first shadow node it builds.
   if (shadows && light instanceof SceneSunLight && !built.stop) built.stop = cascadeSunShadow(light)
 }
