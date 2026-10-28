@@ -3727,7 +3727,7 @@ const traceReferenceNames = ['backlit-room', 'thin-wall', 'mirror-board']
  * light bands (2026-10-26), and boards at three distances from a wall. Apart
  * from referenceNames, like traceReferenceNames.
  */
-const lightReferenceNames = ['frame-two-lights', 'occluder-wall']
+const lightReferenceNames = ['frame-two-lights', 'occluder-wall', 'area-studio']
 
 /** The editor's saved view (viewState.ts), orthographic from front right above, in view space (Z up). */
 const obliqueOrtho = {
@@ -3755,10 +3755,10 @@ function referenceScene(server, name, edit) {
   server.scene.render.exposure_mode ??= 'ambient'
   server.scene.render.exposure_compensation ??= 0
   for (const o of server.scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
-  // Lights stored before they had a size read back at the defaults (data: 光源尺寸).
+  // Lights stored before they had a size read back at the defaults (data: 光源尺寸); an area light has its own (data: 面光源).
   for (const o of server.scene.objects) {
     if (o.light?.type === 'directional') o.light.angular_diameter_deg ??= 0.545
-    else if (o.light) o.light.radius_m ??= 0.1
+    else if (o.light?.type === 'point' || o.light?.type === 'spot') o.light.radius_m ??= 0.1
   }
   edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
@@ -3895,7 +3895,7 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
 function sizeless(scene) {
   for (const o of scene.objects) {
     if (o.light?.type === 'directional') o.light.angular_diameter_deg = 0
-    else if (o.light) o.light.radius_m = 0
+    else if (o.light?.type === 'point' || o.light?.type === 'spot') o.light.radius_m = 0
   }
 }
 
@@ -3907,7 +3907,8 @@ if (process.env.SCENE_E2E_LIGHT_SIZE0) await check('light size 0: the light refe
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const page = await (await gpu.newContext()).newPage()
-    for (const name of lightReferenceNames) {
+    // S1's scenes; area-studio's area light has no size 0 (data: 面光源).
+    for (const name of lightReferenceNames.filter((n) => n !== 'area-studio')) {
       for (const engine of ['workbench', 'realtime_gi']) {
         const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine; sizeless(s) } })
         for (const img of out.images) {
@@ -4165,6 +4166,42 @@ await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the
     await gpu.close()
   }
   assert.deepEqual(off, [], 'sized lights missing their shading or shadows')
+})
+
+// scene-area-light AC-S2-6: area-studio's softbox lights the wall it faces on WebGPU and through the WebGL2 backend,
+// and nothing from its back: turned round, the tiles it lit are as dark as with it hidden. Its lit export against the
+// same scene with the light hidden, tile by tile.
+await check('area light: lights what it faces and nothing behind it, on WebGPU and WebGL2 (AC-S2-6)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const problems = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const softbox = (scene) => scene.objects.find((o) => o.light?.type === 'area')
+    const hidden = (scene) => { softbox(scene).visible = false }
+    // Half a turn about Y, after the softbox's own: its −Z away from the wall.
+    const turned = (scene) => {
+      const t = softbox(scene).transform
+      t.rotation = new Quaternion().fromArray(t.rotation).multiply(new Quaternion(0, 1, 0, 0)).toArray()
+    }
+    for (const forceWebGL of [false, true]) {
+      const backend = forceWebGL ? 'webgl2' : 'webgpu'
+      const shots = {}
+      for (const [k, edit] of [['on', undefined], ['off', hidden], ['back', turned]]) {
+        const r = await exportReference(gpu, 'area-studio', { litOnly: true, forceWebGL, edit })
+        if (forceWebGL) assert.ok(r.backends.some((x) => x === 'scene renderer (offscreen): webgl2'), `${k}: ${r.backends}`)
+        await keepPanels(`area-${k}-${backend}`, r.images[0].png)
+        shots[k] = await tileLuma(page, r.images[0].png, 16)
+      }
+      const lit = shots.on.map((v, t) => t).filter((t) => shots.on[t] > shots.off[t] + 12)
+      const behind = lit.filter((t) => shots.back[t] - shots.off[t] > 0.1 * (shots.on[t] - shots.off[t]) + 2)
+      console.log(`AC-S2-6 ${backend}: ${lit.length} tiles lit; turned round, ${behind.length} of them still lit`)
+      if (lit.length < 40) problems.push(`${backend}: only ${lit.length} tiles lit by the softbox`)
+      problems.push(...behind.map((t) => `${backend} tile ${t}: lit ${shots.on[t].toFixed(0)}, hidden ${shots.off[t].toFixed(0)}, turned round ${shots.back[t].toFixed(0)}`))
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(problems, [], 'the area light shades where it should not, or not where it should')
 })
 
 /**

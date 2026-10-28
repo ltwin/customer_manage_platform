@@ -28,7 +28,14 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
 
 ## 3. 光栅着色与阴影
 
-- [ ] 3.1 灯光子类与矩形面光源：`lights.ts` 加 `SceneAreaLight`（`updateMatrixWorld` 算世界半轴）、`SizedAreaShadow`（near 0.05，`copy()` 带轴）、`hasSize`；`nodes.ts` 注册 `AreaLightNode`、初始化 LTC 表、升级核对清单；`objects/lights.ts` 的 `buildLight('area')`、`applyLight`、`lightKey`；`SceneLights.tsx` 传 `final`；`litLook.ts` 加 `area: 10000`；`engines.ts:softShadowsIn` 认面光源。提交参考场景 `area-studio`。先写 e2e：WebGPU 和 WebGL2 下面光源所在之处着色不缺失、不全黑，背面不受光。完成判据：e2e 通过，S1 的 AC-S1-2 尺寸为 0 基线不变，`make check-frontend` 通过。
+- [x] 3.1 灯光子类与矩形面光源：`lights.ts` 加 `SceneAreaLight`（`updateMatrixWorld` 算世界半轴）、`SizedAreaShadow`（near 0.05，`copy()` 带轴）、`hasSize`；`nodes.ts` 注册 `AreaLightNode`、初始化 LTC 表、升级核对清单；`objects/lights.ts` 的 `buildLight('area')`、`applyLight`、`lightKey`；`SceneLights.tsx` 传 `final`；`litLook.ts` 加 `area: 10000`；`engines.ts:softShadowsIn` 认面光源。提交参考场景 `area-studio`。先写 e2e：WebGPU 和 WebGL2 下面光源所在之处着色不缺失、不全黑，背面不受光。完成判据：e2e 通过，S1 的 AC-S1-2 尺寸为 0 基线不变，`make check-frontend` 通过。
+  - 结果：新增 e2e「area light: lights what it faces and nothing behind it」：`area-studio` 的 1×1 m 面光源对照隐藏它的同一场景，WebGPU 和 WebGL2 各有 204 / 256 格被照亮；灯转半圈后这些格都回到隐藏时的亮度（0 格仍亮）。「reference scenes: each opens」含 `area-studio` 通过；AC-S1-2 尺寸为 0 对 S1 的 `baseline-after`：`workbench` 差 0 级，`realtime_gi` 最大差 1 级。类型检查和 oxlint 无新增问题。
+  - 实施时调整：
+    - `AreaLightNode.update` 先调父类（它更新颜色），再用灯上的世界半轴覆盖父类按 `extractRotation` 算出的 `halfWidth`、`halfHeight`，效果同 design；
+    - `SceneAreaLight` 同时覆写 `updateWorldMatrix`，`getWorldPosition` 这类只走它的调用也会更新半轴；加了 `area()`（平行四边形面积），面板和体积共用；
+    - 文档层加 `lightHasSize`（面光源恒真），`lightKey`、`softShadowsIn` 用它；`lightSize` 对面光源返回 0；
+    - e2e 的 `referenceScene` 和 `sizeless()` 只给点光、聚光写 `radius_m`（原来是 6.2 的一项）；「light size 0」只比 S1 的两个场景。
+  - 待 3.4：这一步面光源还没有 PCSS，是硬阴影；墙面右侧有立方体阴影图的自阴影条纹，S1 修条纹的抬升在 PCSS 里，3.4 接上后复查。
 - [ ] 3.2 椭圆 LTC：新增 `ltc.ts`（椭圆形状因子、`LTC_ClippedSphereFormFactor` 副本、照度 π·L·FF）。先写 `creative-scene-ltc.test.ts`：正对与 πL·R²/(R²+d²) 对照，不对称视角与数值积分对照。完成判据：单测通过。
 - [ ] 3.3 直接光：`direct.ts` 的 `installAreaDirect` 包住 `directRectArea`，椭圆分支、clearcoat、sheen。完成判据：light-check 在 `area-studio` 上 AC-S2-1 的能量（≤ 5%）和 AC-S2-2（远处 ≤ 2%，近处 ≤ π·L）达标；不达标先查实现，再交 owner。
 - [ ] 3.4 软阴影：`shadowFilter.ts` 的 `cubePCSS({ kernel, search, filter, maxTexels })` 加矩形、椭圆核与搜索核，上限按实际核轴换算，采样档按 `final` 选；`attachSoftShadow` 按类型选核；`sceneRenderer.ts` 的 standIn 与 `volumes/shadow.ts` 按立方体处理面光源。完成判据：AC-S2-1 的全图阴影误差 ≤ 0.005、板剖面 1×1 m ≤ 0.02、2×0.5 m 和 2×2 m ≤ 0.05；`workbench` 导出连续两次逐像素相同。

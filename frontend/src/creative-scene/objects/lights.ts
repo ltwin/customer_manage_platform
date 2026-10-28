@@ -1,7 +1,7 @@
 import { Object3D, type Light as ThreeLight } from 'three'
 import type { SceneObject } from '../api.ts'
-import { lightDefaults, lightSize } from '../state/apply.ts'
-import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from '../render/lightModel/lights.ts'
+import { lightDefaults, lightHasSize, lightSize } from '../state/apply.ts'
+import { SceneAreaLight, SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from '../render/lightModel/lights.ts'
 import { attachSoftShadow } from '../render/lightModel/shadowFilter.ts'
 import { cascadeSunShadow } from '../render/sunShadow.ts'
 import { volumeShadowNode } from '../render/volumes/shadow.ts'
@@ -20,6 +20,8 @@ import { volumeShadowNode } from '../render/volumes/shadow.ts'
 // (render/lightModel/lights.ts). A light is built for its type and whether
 // it has a size (lightKey): three keeps the light node and shadow node a
 // light first builds, and a size moving off 0 or back takes other ones.
+// An area light (data: 面光源) always has one, its width and height; it is
+// built for its shape, which its light node fixes (render/lightModel/nodes.ts).
 
 type Light = NonNullable<SceneObject['light']>
 
@@ -27,13 +29,14 @@ type Light = NonNullable<SceneObject['light']>
 const shadowMapSize = 1024
 
 /** stop undoes the light's shadow node: a directional light's cascades once it casts, a spot's or point's from the start. */
-export type BuiltLight = { light: SizedLight; target: Object3D | null; stop: (() => void) | null }
+export type BuiltLight = { light: SizedLight | SceneAreaLight; target: Object3D | null; stop: (() => void) | null }
 
-/** What a light is built for: its type and whether it has a size; a change in either builds it anew. */
-export const lightKey = (l: Light): string => `${l.type}${lightSize(l) > 0 ? '+size' : ''}`
+/** What a light is built for: its type and whether it has a size, an area light's shape; a change in any builds it anew. */
+export const lightKey = (l: Light): string => (l.type === 'area' ? `area+${l.shape ?? lightDefaults.shape}` : `${l.type}${lightHasSize(l) ? '+size' : ''}`)
 
 export function buildLight(type: Light['type']): BuiltLight {
   // Before the light first builds: three keeps the shadow node it builds first.
+  if (type === 'area') return { light: new SceneAreaLight(), target: null, stop: null }
   if (type === 'point') {
     const light = new SceneSphereLight()
     return { light, target: null, stop: volumeShadowNode(light) }
@@ -54,7 +57,11 @@ export function applyLight(built: BuiltLight, l: Light) {
   light.color.set(v.color)
   light.userData.baseIntensity = v.intensity
   light.intensity = v.intensity
-  light.size = lightSize(l)
+  if (light instanceof SceneAreaLight) {
+    light.shape = v.shape
+    light.width = v.width
+    light.height = v.height
+  } else light.size = lightSize(l)
   if (light instanceof SceneSphereLight || light instanceof SceneSpotLight) {
     light.distance = v.distance
     light.decay = v.decay
@@ -69,7 +76,7 @@ export function applyLight(built: BuiltLight, l: Light) {
     if (shadows) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
   }
   // A sized light's soft shadow, before the cascades below clone its shadow (render/lightModel/shadowFilter.ts).
-  if (shadows) attachSoftShadow(light)
+  if (shadows && !(light instanceof SceneAreaLight)) attachSoftShadow(light)
   // Once, and kept: three's light node holds on to the first shadow node it builds.
   if (shadows && light instanceof SceneSunLight && !built.stop) built.stop = cascadeSunShadow(light)
 }

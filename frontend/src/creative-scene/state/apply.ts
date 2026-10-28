@@ -119,10 +119,18 @@ export const lightDefaults: Required<Omit<Light, 'type'>> = {
   width: 0.25,
   height: 0.25,
 }
-/** A document light's size: the radius of a point or spot light, the angular diameter of a directional one; left out, the default the server stores. */
+/**
+ * A document light's size: the radius of a point or spot light, the angular
+ * diameter of a directional one; left out, the default the server stores. An
+ * area light's size is its width and height, not this: 0 (lightHasSize).
+ */
 export function lightSize(l: Light): number {
+  if (l.type === 'area') return 0
   return l.type === 'directional' ? (l.angular_diameter_deg ?? lightDefaults.angular_diameter_deg) : (l.radius_m ?? lightDefaults.radius_m)
 }
+
+/** Whether a document light has a size: an area light always (data: 面光源), any other at lightSize above 0. */
+export const lightHasSize = (l: Light): boolean => l.type === 'area' || lightSize(l) > 0
 /** The camera fields the server stores for those left out. */
 export const cameraDefaults: Required<Camera> = {
   focal_mm: 35,
