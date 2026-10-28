@@ -3187,6 +3187,54 @@ await check('AC-4: Shift+A adds a spot above the pointer; a 30° cone stores π/
   await context.close()
 })
 
+// scene-area-light AC-S2-5 and AC-S2-1's outline: Shift+A adds an area light, 0.25 m square at 10000 cd/m²; the
+// panel turns it to an ellipse and widens it, its equivalent luminous intensity beside; Cmd+Z; scaled 2× along X, the
+// viewport's outline and the light's face are 0.25 × 0.125 m (half each way) alike; turned to a point light, the panel
+// writes the luminous intensity it had, L × A at its world scale, as the server converts.
+await check('area light: Shift+A adds one; shape, width, undo; scaled, its outline is its face; to a point light at its luminous intensity (AC-S2-5)', async () => {
+  const server = new SceneServer()
+  server.scene.environment = structuredClone(night)
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await shading(page, '最终渲染')
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '面光源', exact: true }).click()
+  await waitFor(() => server.commands.length === 1, 'add an area light')
+  const area = server.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual([area.kind, area.name, area.light.type, area.light.intensity], ['light', '面光源 1', 'area', 10000])
+  await saved(page)
+  await page.getByLabel('面光源形状').selectOption('ellipse')
+  await waitFor(() => lightAt(server, area.id).shape === 'ellipse', 'an ellipse')
+  const width = page.getByLabel('宽（m）')
+  await width.fill('1')
+  await width.press('Enter')
+  await waitFor(() => lightAt(server, area.id).width === 1, 'a metre wide')
+  // 10000 cd/m² over π/4 × 1 × 0.25 m².
+  await waitFor(async () => (await page.getByLabel('等效发光强度').textContent()) === '≈ 1963 cd', 'its luminous intensity beside')
+  await saved(page)
+  await focusEditor(page)
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => lightAt(server, area.id).width === 0.25, 'undo the width')
+  await saved(page)
+  server.external([{ op: 'update_objects', updates: [{ object_id: area.id, transform: { ...area.transform, scale: [2, 1, 1] } }] }])
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(async () => {
+    const { lights, outlines } = await page.evaluate(() => window.__sceneGPU.areaFaces())
+    const near = (a, b) => a.length === 1 && b.length === 1 && a[0].every((v, i) => Math.abs(v - b[0][i]) < 1e-6)
+    return near(lights, [[0.25, 0.125]]) && near(outlines, [[0.25, 0.125]])
+  }, 'the outline and the face 0.5 × 0.25 m alike')
+  await page.getByLabel('灯光类型').selectOption('point')
+  await waitFor(() => lightAt(server, area.id).type === 'point', 'to a point light')
+  // 10000 cd/m² over the ellipse π/4 × 0.5 × 0.25 m² as the world has it.
+  const want = 10000 * (Math.PI / 4) * 0.25 * 0.25 * 2
+  assert.ok(Math.abs(lightAt(server, area.id).intensity - want) < 1e-6, `${lightAt(server, area.id).intensity} cd, want ${want}`)
+  assert.equal(await page.getByLabel('面光源形状').count(), 0, 'the area fields go')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('lights: the rendered view warms its lights in one compile; adding, undoing and switching away and back leave nothing behind', async () => {
   const server = new SceneServer()
   const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
@@ -3235,6 +3283,58 @@ await check('lights: the rendered view warms its lights in one compile; adding, 
   await round(2)
   await round(3)
   assert.deepEqual(await memory(), settled, 'the same resources after two more rounds')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// scene-area-light AC-S2-6: an area light added, made to cast and taken out again (undone) leaves the viewport's
+// device as it was: its cube map and its filter's pipelines go with it (lesson three-info-memory-leak-trace).
+await check('area light: adding one, making it cast and undoing both leave nothing behind (AC-S2-6)', async () => {
+  const server = new SceneServer()
+  seed(server, [boxOf('post', 6, { position: [0, 0, 0] }, { width: 0.4, height: 1.5, depth: 0.4 })])
+  const { context, page, errors } = await open(server)
+  const { x, y, box } = await viewportCenter(page)
+  const compiled = () => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0, 'compiled', 60_000)
+  await shading(page, '最终渲染')
+  await compiled()
+  const memory = () =>
+    page.evaluate(() => {
+      const { textures, renderTargets, uniformBuffers, programs } = [...window.__sceneGPU.live].filter((h) => h.role === 'viewport').at(-1).info.memory
+      return { textures, renderTargets, uniformBuffers, programs }
+    })
+  const round = async (n) => {
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    await page.getByRole('menuitem', { name: '面光源', exact: true }).click()
+    await waitFor(() => server.commands.length === 4 * n - 3, 'add an area light')
+    await compiled()
+    await saved(page)
+    await page.getByLabel('投射阴影').check()
+    await waitFor(() => server.commands.length === 4 * n - 2, 'make it cast')
+    await compiled()
+    await settledShot(page, box)
+    await saved(page)
+    await focusEditor(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.commands.length === 4 * n - 1, 'undo the shadow')
+    await saved(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.commands.length === 4 * n && !server.scene.objects.some((o) => o.light), 'undo the light')
+    await saved(page)
+    await shading(page, '白模')
+    // Past the second after which an unused material is freed (materials/instances.ts).
+    await sleep(1500)
+    await shading(page, '最终渲染')
+    await compiled()
+    await settledShot(page, box)
+  }
+  await round(1)
+  const settled = await memory()
+  await round(2)
+  await round(3)
+  const now = await memory()
+  console.log(`AC-S2-6 an area light added and undone three times: ${JSON.stringify(settled)} → ${JSON.stringify(now)}`)
+  assert.deepEqual(now, settled, 'the same resources after two more rounds')
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -3727,7 +3827,7 @@ const traceReferenceNames = ['backlit-room', 'thin-wall', 'mirror-board']
  * light bands (2026-10-26), and boards at three distances from a wall. Apart
  * from referenceNames, like traceReferenceNames.
  */
-const lightReferenceNames = ['frame-two-lights', 'occluder-wall']
+const lightReferenceNames = ['frame-two-lights', 'occluder-wall', 'area-studio']
 
 /** The editor's saved view (viewState.ts), orthographic from front right above, in view space (Z up). */
 const obliqueOrtho = {
@@ -3755,10 +3855,10 @@ function referenceScene(server, name, edit) {
   server.scene.render.exposure_mode ??= 'ambient'
   server.scene.render.exposure_compensation ??= 0
   for (const o of server.scene.objects) if (o.camera) Object.assign(o.camera, { exposure_mode: 'manual', exposure_compensation: 0, ...o.camera })
-  // Lights stored before they had a size read back at the defaults (data: 光源尺寸).
+  // Lights stored before they had a size read back at the defaults (data: 光源尺寸); an area light has its own (data: 面光源).
   for (const o of server.scene.objects) {
     if (o.light?.type === 'directional') o.light.angular_diameter_deg ??= 0.545
-    else if (o.light) o.light.radius_m ??= 0.1
+    else if (o.light?.type === 'point' || o.light?.type === 'spot') o.light.radius_m ??= 0.1
   }
   edit?.(server.scene)
   server.unitRevs = { meta: '1', environment: '1', render: '1', objects: '1' }
@@ -3793,7 +3893,7 @@ const metal = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
  * machine's GPU); forceWebGL draws the export through the WebGL2 backend,
  * litOnly exports the lit pass alone, hooks are gpuTestHooks for the page's query (?gpu=…).
  */
-async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false, hooks } = {}) {
+async function exportReference(gpu, name, { forceWebGL = false, forceCompatibility = false, edit, litOnly = false, hooks, tolerate } = {}) {
   const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
   await context.addInitScript(([key, view]) => localStorage.setItem(key, JSON.stringify(view)), [`creative-scene-view:qa-account:${DOC}`, obliqueOrtho])
   const server = new SceneServer()
@@ -3829,7 +3929,8 @@ async function exportReference(gpu, name, { forceWebGL = false, forceCompatibili
   await page.mouse.move(x, y)
   await sleep(600)
   const ortho = { file: `${name}-ortho-clay.png`, pass: 'clay', png: await settledShot(page, box) }
-  assert.deepEqual(errors, [], `${name}: ${errors.join('\n')}`)
+  const counted = tolerate ? errors.filter((e) => !tolerate.test(e)) : errors
+  assert.deepEqual(counted, [], `${name}: ${counted.join('\n')}`)
   await context.close()
   return { renderer, exportMs, images, ortho, backends }
 }
@@ -3895,7 +3996,7 @@ if (process.env.SCENE_E2E_LIGHT_BASELINE) await check('light baseline: the light
 function sizeless(scene) {
   for (const o of scene.objects) {
     if (o.light?.type === 'directional') o.light.angular_diameter_deg = 0
-    else if (o.light) o.light.radius_m = 0
+    else if (o.light?.type === 'point' || o.light?.type === 'spot') o.light.radius_m = 0
   }
 }
 
@@ -3907,7 +4008,8 @@ if (process.env.SCENE_E2E_LIGHT_SIZE0) await check('light size 0: the light refe
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {
     const page = await (await gpu.newContext()).newPage()
-    for (const name of lightReferenceNames) {
+    // S1's scenes; area-studio's area light has no size 0 (data: 面光源).
+    for (const name of lightReferenceNames.filter((n) => n !== 'area-studio')) {
       for (const engine of ['workbench', 'realtime_gi']) {
         const out = await exportReference(gpu, name, { litOnly: true, edit: (s) => { s.render.engine = engine; sizeless(s) } })
         for (const img of out.images) {
@@ -3978,6 +4080,66 @@ await check('light size: sphere lights light by I/d² far off, wrap past the ter
   } finally {
     await gpu.close()
   }
+})
+
+// scene-area-light AC-S2-1's energy (Epic AC-5): area-studio's area light, unshadowed, lights the wall and the gloss
+// panel within 5% of the reference, rectangle and ellipse, square, long and large. AC-S2-2 (Epic AC-3): on its normal
+// ten edges off, the wall's irradiance is L · A / d² within 2%; a light closer than its edge gives at most π · L and
+// nothing infinite (measure.ts axisIrradiance, nearIrradiance).
+await check('area light: energy as the reference has it, L · A / d² far off and at most π · L close (AC-S2-1, AC-S2-2)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const failed = []
+  try {
+    for (const [name, query] of [
+      ['rectangle 1×1', ''],
+      ['ellipse 1×1', '&shape=ellipse'],
+      ['rectangle 2×0.5', '&areaW=2&areaH=0.5'],
+      ['ellipse 2×0.5', '&shape=ellipse&areaW=2&areaH=0.5'],
+      ['rectangle 2×2', '&areaW=2&areaH=2'],
+    ]) {
+      const { report } = await lightCheck(gpu, `scene=area-studio${query}&refFrames=2048&rasterFrames=1`)
+      const { wall, energy } = report.highlight
+      console.log(`AC-S2-1 ${name}: the wall's light ${wall.toFixed(4)}, the gloss panel's ${energy.ratio.toFixed(4)} of the reference's`)
+      if (!within(wall, 0.05) || !within(energy.ratio, 0.05)) failed.push(`${name}: wall ${wall}, panel ${energy.ratio}`)
+    }
+    for (const shape of ['rectangle', 'ellipse']) {
+      const far = (await lightCheck(gpu, `scene=area-studio&layout=far&shape=${shape}&refFrames=4096&rasterFrames=1`)).report.axis
+      console.log(`AC-S2-2 ${shape} ${far.distance} m off, ${far.edge} m across: the irradiance ${far.raster.toFixed(4)} of L · A / d², the reference's ${far.reference.toFixed(4)}`)
+      if (!within(far.raster, 0.02)) failed.push(`${shape} far off: ${far.raster} of L · A / d²`)
+      const { near, raster } = (await lightCheck(gpu, `scene=area-studio&layout=close&shape=${shape}&refFrames=1024&rasterFrames=1`)).report
+      console.log(`AC-S2-2 ${shape} 5 cm off the wall: the most irradiance ${near.raster.toFixed(4)} of π · L, the reference's ${near.reference.toFixed(4)}`)
+      if (near.raster > 1.01 || near.notFinite > 0 || raster.notFinite > 0) failed.push(`${shape} close: ${near.raster} of π · L, ${near.notFinite + raster.notFinite} not finite`)
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(failed, [], 'the area light off the reference')
+})
+
+// scene-area-light AC-S2-1's shadows (Epic AC-5): area-studio's casting area light against the reference, its export's
+// samples averaged over the workbench's frames: over the picture at most 0.005 off, each board's profile at most 0.02
+// for a 1 m light and 0.05 for a long or a 2 m one (S0 thresholds.md).
+await check('area light: soft shadows as the reference has them, rectangle and ellipse (AC-S2-1)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const failed = []
+  try {
+    for (const [name, query, board] of [
+      ['rectangle 1×1', '', 0.02],
+      ['ellipse 1×1', '&shape=ellipse', 0.02],
+      ['rectangle 2×0.5', '&areaW=2&areaH=0.5', 0.05],
+      ['rectangle 2×2', '&areaW=2&areaH=2', 0.05],
+    ]) {
+      const { report, panels } = await lightCheck(gpu, `scene=area-studio${query}&refFrames=4096&rasterFrames=64`)
+      await keepPanels(`area-shadow-${name.replace(/[ ×]/g, '-')}`, panels)
+      const boards = Object.entries(report.penumbrae).map(([b, p]) => [b, p.profile.averaged.mean])
+      console.log(`AC-S2-1 ${name}: |Δ shadow| ${report.averaged.mean.toFixed(4)}; boards ${boards.map(([b, m]) => `${b} ${m.toFixed(4)}`).join(', ')}`)
+      if (report.averaged.mean > 0.005) failed.push(`${name}: |Δ shadow| ${report.averaged.mean}`)
+      failed.push(...boards.filter(([, m]) => m > board).map(([b, m]) => `${name} board ${b}: ${m}`))
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(failed, [], 'the area light\'s shadows off the reference')
 })
 
 // AC-S1-4 (Epic AC-4): highlights grow and dim with the light's size as the reference's do, on the gloss panel at two
@@ -4167,6 +4329,70 @@ await check('light size: sized lights shade and shadow on WebGPU and WebGL2, the
   assert.deepEqual(off, [], 'sized lights missing their shading or shadows')
 })
 
+// scene-area-light AC-S2-6: area-studio's softbox lights the wall it faces on WebGPU and through the WebGL2 backend,
+// and nothing from its back: turned round, the tiles it lit are as dark as with it hidden. Its lit export against the
+// same scene with the light hidden, tile by tile.
+await check('area light: lights what it faces and nothing behind it, rectangle and ellipse, on WebGPU and WebGL2 (AC-S2-6)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const problems = []
+  try {
+    const page = await (await gpu.newContext()).newPage()
+    const softbox = (scene) => scene.objects.find((o) => o.light?.type === 'area')
+    const hidden = (scene) => { softbox(scene).visible = false }
+    const shaped = (shape, then) => (scene) => {
+      softbox(scene).light.shape = shape
+      then?.(scene)
+    }
+    // Half a turn about Y, after the softbox's own: its −Z away from the wall.
+    const turned = (scene) => {
+      const t = softbox(scene).transform
+      t.rotation = new Quaternion().fromArray(t.rotation).multiply(new Quaternion(0, 1, 0, 0)).toArray()
+    }
+    for (const forceWebGL of [false, true]) {
+      const backend = forceWebGL ? 'webgl2' : 'webgpu'
+      const tiles = async (k, edit) => {
+        const r = await exportReference(gpu, 'area-studio', { litOnly: true, forceWebGL, edit })
+        if (forceWebGL) assert.ok(r.backends.some((x) => x === 'scene renderer (offscreen): webgl2'), `${k}: ${r.backends}`)
+        await keepPanels(`area-${k}-${backend}`, r.images[0].png)
+        return tileLuma(page, r.images[0].png, 16)
+      }
+      const off = await tiles('off', hidden)
+      for (const shape of ['rectangle', 'ellipse']) {
+        const on = await tiles(shape, shaped(shape))
+        const back = await tiles(`${shape}-back`, shaped(shape, turned))
+        const lit = on.map((v, t) => t).filter((t) => on[t] > off[t] + 12)
+        const behind = lit.filter((t) => back[t] - off[t] > 0.1 * (on[t] - off[t]) + 2)
+        console.log(`AC-S2-6 ${backend} ${shape}: ${lit.length} tiles lit; turned round, ${behind.length} of them still lit`)
+        if (lit.length < 40) problems.push(`${backend} ${shape}: only ${lit.length} tiles lit by the softbox`)
+        problems.push(...behind.map((t) => `${backend} ${shape} tile ${t}: lit ${on[t].toFixed(0)}, hidden ${off[t].toFixed(0)}, turned round ${back[t].toFixed(0)}`))
+      }
+    }
+  } finally {
+    await gpu.close()
+  }
+  assert.deepEqual(problems, [], 'the area light shades where it should not, or not where it should')
+})
+
+// SCENE_E2E_AREA_SAMPLES=<dir> (scene-area-light AC-S2-7): area-studio's casting area light, a 1 m rectangle and a
+// 1 m ellipse, exported in the workbench and the real-time GI, for the owner to judge.
+if (process.env.SCENE_E2E_AREA_SAMPLES) await check('area light: AC-S2-7, area-studio\'s rectangle and ellipse in both engines, for the owner', async () => {
+  const dir = process.env.SCENE_E2E_AREA_SAMPLES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const shape of ['rectangle', 'ellipse'])
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const edit = (scene) => {
+          scene.render.engine = engine
+          for (const o of scene.objects) if (o.light?.type === 'area') o.light.shape = shape
+        }
+        const { images } = await exportReference(gpu, 'area-studio', { litOnly: true, edit })
+        for (const img of images) await writeFile(`${dir}/area-studio-${shape}-${engine}.png`, img.png)
+      }
+  } finally {
+    await gpu.close()
+  }
+})
+
 /**
  * scene-light-radius AC-S1-7's scene: frame-two-lights (a parallel and a point light) with a spot over its middle and
  * the procedural sky, four lights that cast, at their default sizes or all of size 0 (the sky's sun by the
@@ -4217,6 +4443,35 @@ if (process.env.SCENE_E2E_LIGHT_PERF) await check('light size: AC-S1-7, the lit 
   assert.deepEqual(over, [], 'exports more than half as long again')
 })
 
+// SCENE_E2E_LIGHT_PERF=<dir> (scene-area-light AC-S2-4): AC-S1-7's scene with its parallel light a casting 1 × 1 m
+// area light (the others at their default sizes) against the same scene of size 0 (S1's), cold: the real-time GI's
+// export at most half as long again; the workbench's as measured. area-perf.json in <dir>. The cold hook's real-time
+// GI build logs a TSL error on develop already (38b4a4e0, before this change; both sides alike): let through here.
+if (process.env.SCENE_E2E_LIGHT_PERF) await check('area light: AC-S2-4, the lit export with an area light in place of the parallel one', async () => {
+  const dir = process.env.SCENE_E2E_LIGHT_PERF
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const rows = []
+  try {
+    for (const c of [{ engine: 'realtime_gi', resolution: '1k' }, { engine: 'workbench', resolution: '1k' }]) {
+      const area = (scene) => {
+        fourLights(true, c)(scene)
+        for (const o of scene.objects) if (o.light?.type === 'directional') o.light = { type: 'area', color: o.light.color, intensity: 50, cast_shadow: true, shape: 'rectangle', width: 1, height: 1 }
+      }
+      const tolerate = /reading 'addToStack'/
+      const before = (await exportReference(gpu, 'frame-two-lights', { litOnly: true, hooks: 'cold,skySunDeg:0', edit: fourLights(false, c), tolerate })).exportMs
+      const after = (await exportReference(gpu, 'frame-two-lights', { litOnly: true, hooks: 'cold', edit: area, tolerate })).exportMs
+      const row = { ...c, sizeless_ms: before, area_ms: after, more: Number((after / before - 1).toFixed(3)) }
+      rows.push(row)
+      console.log(`AC-S2-4 export ${c.engine} ${c.resolution}: ${before} → ${after} ms (${(row.more * 100).toFixed(0)}%)`)
+    }
+    await writeFile(`${dir}/area-perf.json`, `${JSON.stringify({ machine: machineInfo(), chromium: gpu.version(), rows }, null, 2)}\n`)
+  } finally {
+    await gpu.close()
+  }
+  const over = rows.filter((r) => r.engine === 'realtime_gi' && r.more > 0.5)
+  assert.deepEqual(over, [], 'the real-time GI export more than half as long again')
+})
+
 // scene-light-radius tasks 4.2 (AC-S1-10): the workbench's lit export of a scene with soft shadows averages 16
 // frames, their kernels turning by frame, and is the same twice pixel for pixel: the turn goes by the frame and the
 // pixel only, and every export starts at frame 0.
@@ -4227,11 +4482,14 @@ await check('light size: the workbench\'s lit export with soft shadows is the sa
     const edit = (scene) => {
       for (const o of scene.objects) if (o.light) o.visible = true
     }
-    const [a, b] = [await exportReference(gpu, 'occluder-wall', { litOnly: true, edit }), await exportReference(gpu, 'occluder-wall', { litOnly: true, edit })]
-    for (const img of a.images) {
-      const apart = await imageApart(page, img.png, b.images.find((i) => i.file === img.file).png)
-      console.log(`AC-S1-10 workbench twice ${img.file}: largest channel difference ${apart.max}`)
-      assert.equal(apart.max, 0, `${img.file}: the two exports differ`)
+    // And area-studio's casting area light, an export's samples (scene-area-light AC-S2-6).
+    for (const name of ['occluder-wall', 'area-studio']) {
+      const [a, b] = [await exportReference(gpu, name, { litOnly: true, edit }), await exportReference(gpu, name, { litOnly: true, edit })]
+      for (const img of a.images) {
+        const apart = await imageApart(page, img.png, b.images.find((i) => i.file === img.file).png)
+        console.log(`AC-S1-10 workbench twice ${img.file}: largest channel difference ${apart.max}`)
+        assert.equal(apart.max, 0, `${img.file}: the two exports differ`)
+      }
     }
   } finally {
     await gpu.close()
@@ -7474,6 +7732,38 @@ if (process.env.SCENE_E2E_TRACE) await check('light size: AC-S1-6, hits lit by s
   }
 })
 
+// scene-area-light AC-S2-3 (Epic AC-7): as AC-S1-6, with area lights in place of the sized ones, a rectangle and an
+// ellipse that cast: hits shaded with the raster's LTC, their shadow rays toward a uniform point of the face.
+if (process.env.SCENE_E2E_TRACE) await check('area light: AC-S2-3, hits lit by area lights as the raster lights them', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
+    referenceScene(server, 'materials', (scene) => {
+      realtimeGI(scene)
+      scene.objects.push(
+        { id: gid('arearect'), kind: 'light', name: '面光源', parent_id: null, order: 91, transform: { position: [-1.6, 2.2, 0], rotation: down, scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'area', color: '#ffd2a0', intensity: 120, cast_shadow: true, shape: 'rectangle', width: 1, height: 0.5 } },
+        { id: gid('areadisc'), kind: 'light', name: '圆形面光源', parent_id: null, order: 92, transform: { position: [1.6, 3, 0], rotation: down, scale: [1, 1, 1] }, visible: true, locked: false, light: { type: 'area', color: '#e0ecff', intensity: 240, cast_shadow: true, shape: 'ellipse', width: 0.8, height: 0.8 } },
+      )
+    })
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'materials')
+    const report = await page.evaluate(() => window.__sceneGPU.traceHits(640))
+    console.log(`  AC-S2-3 materials with area lights: exposure ${report.exposure.toFixed(3)}, shadow ${report.shadow.agree} of ${report.shadow.compared}`)
+    for (const m of report.meshes) console.log(`    ${m.material.padEnd(16)} ${String(m.pixels).padStart(6)} px  lit ${m.lit.toFixed(2)}`)
+    const judged = report.meshes.filter((m) => m.pixels >= 50)
+    assert.ok(judged.length >= 10, `${judged.length} meshes large enough to judge`)
+    for (const m of judged) assert.ok(m.lit <= 1, `${m.material} lit ${m.lit.toFixed(2)} levels apart`)
+    assert.ok(report.shadow.compared > 1000 && report.shadow.agree >= 0.99 * report.shadow.compared, `shadows agree on ${report.shadow.agree} of ${report.shadow.compared}`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // SCENE_E2E_TRACE=1: the materials scene, a primary ray a pixel shaded at
 // its hit (render/trace/hit.ts) against the raster mesh by mesh, inside each
 // (render/trace/checks.ts hitCheck): the material's outputs and the light
@@ -8736,6 +9026,59 @@ await check('light size: a volume lit by a spot going sized and back keeps its c
     }
     assert.deepEqual(errors, [])
     assert.deepEqual(off, [], 'the cone missing, or not the same each time')
+  } finally {
+    await gpu.close()
+  }
+})
+
+// scene-area-light AC-S2-6: a casting area light in place of the cornell box's spot (0.5 m square at the ceiling,
+// facing down, of the spot's luminous intensity along its axis) lights the casting fog below it, on both backends,
+// and nothing of it turned round (it lights its front alone). Its wide lobe lights the walls behind the fog too, so
+// the fog's own light is told from what it hides by a fog that only absorbs, of the same extinction: the scattering
+// fog less it is the light scattered toward the camera; less again the same with the light hidden (the ambient
+// light's), it is the area light's.
+await check('area light: a casting area light lights a casting volume in front of it, not behind, both backends (AC-S2-6)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const points = [[0, 2.0, -1.0]]
+    const fog = (scatters) =>
+      volumeObject('fog', [0, 1.5, -1.5], [4, 3, 3], scatters ? { scatter_color: '#ffffff', scatter_density: 0.15, anisotropy: 0.3, cast_shadow: true } : { scatter_density: 0, absorption_color: '#000000', absorption_density: 0.15, cast_shadow: true })
+    const area = (how, ...objects) => {
+      const scene = fixtureScene('cornell', ...objects)
+      for (const o of scene.objects) {
+        if (o.light?.type !== 'spot') continue
+        o.light = { type: 'area', color: o.light.color, intensity: o.light.intensity / 0.25, cast_shadow: true, shape: 'rectangle', width: 0.5, height: 0.5 }
+        if (how === 'turned') o.transform.rotation = new Quaternion().fromArray(o.transform.rotation).multiply(new Quaternion(0, 1, 0, 0)).toArray()
+        if (how === 'hidden') o.visible = false
+      }
+      return scene
+    }
+    const off = []
+    for (const webgl of [false, true]) {
+      const picture = (scene) =>
+        page.evaluate(async ([sc, p, gl]) => {
+          window.__sceneGPU.forceWebGL = gl
+          try {
+            return await window.__picture(sc, 'lit', 768, p)
+          } finally {
+            window.__sceneGPU.forceWebGL = false
+          }
+        }, [scene, points, webgl])
+      const backend = webgl ? 'webgl2' : 'webgpu'
+      const scattered = {}
+      for (const how of ['facing', 'turned', 'hidden']) {
+        const absorbing = await picture(area(how, fog(false)))
+        const scattering = await picture(area(how, fog(true)))
+        scattered[how] = lumaAt(scattering, scattering.at[0]) - lumaAt(absorbing, absorbing.at[0])
+        if (how === 'facing') await savePicture(page, `area-volume-${backend}`, scattering)
+      }
+      const [facing, turned] = [scattered.facing - scattered.hidden, scattered.turned - scattered.hidden]
+      console.log(`AC-S2-6 volume ${backend}: the area light's light scattered by the fog below it ${facing.toFixed(1)}, turned round ${turned.toFixed(1)} (the ambient's ${scattered.hidden.toFixed(1)})`)
+      if (!(facing > 5 && turned < 0.2 * facing)) off.push(`${backend}: facing ${facing}, turned round ${turned}`)
+    }
+    assert.deepEqual(errors, [])
+    assert.deepEqual(off, [], 'the fog unlit by the area light, or lit from its back')
   } finally {
     await gpu.close()
   }

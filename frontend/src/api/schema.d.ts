@@ -7441,12 +7441,12 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** @description 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 写入时只有 type 必填，省略的字段取 three.js 默认值；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光和聚光沿物件局部 −Z 照射。 */
+        /** @description 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 area 是面光源（three.js RectAreaLight、Blender Area）：color、intensity、cast_shadow、shape、width、height，沿物件局部 −Z 单面发光； 发光面随物件的世界缩放（含父级）变化，实际宽、高为 width、height 乘以局部 X、Y 轴在世界空间里的缩放倍数。 写入时只有 type 必填，省略的字段取 three.js 默认值（area 的强度缺省 10000，见 intensity）；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光、聚光和面光源沿物件局部 −Z 照射。 */
         CreativeSceneLight: {
             /** @enum {string} */
-            type: "directional" | "point" | "spot";
+            type: "directional" | "point" | "spot" | "area";
             color?: components["schemas"]["CreativeSceneColor"];
-            /** @description three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值。缺省 1。 */
+            /** @description three.js 物理光照的强度：点光和聚光为坎德拉，平行光为 three.js 强度值，上限 1000，缺省 1； 面光源为发光面的亮度（cd/m²），上限 100000，缺省 10000，法线方向的等效发光强度为亮度 × 实际发光面积。 */
             intensity?: number;
             /** @description 缺省 false。 */
             cast_shadow?: boolean;
@@ -7462,11 +7462,20 @@ export interface components {
             radius_m?: number;
             /** @description directional。光源的角直径（度），即 Blender Sun 的 Angle；缺省 0.545（与 sky.sun_size_deg 的缺省值相同），0 为硬阴影的理想平行光。 */
             angular_diameter_deg?: number;
+            /**
+             * @description area。发光面的形状，Blender 的 Square、Disk 是宽高相等的 rectangle、ellipse；缺省 rectangle。
+             * @enum {string}
+             */
+            shape?: "rectangle" | "ellipse";
+            /** @description area。发光面沿局部 X 轴的尺寸（米），椭圆为 X 向直径，同 three.js RectAreaLight.width；缺省 0.25。 */
+            width?: number;
+            /** @description area。发光面沿局部 Y 轴的尺寸（米），同 three.js RectAreaLight.height；缺省 0.25。 */
+            height?: number;
         };
-        /** @description update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。 */
+        /** @description update_objects 里的灯光：只改写到的字段，type 也可省略。type 改变时保留新类型也有的字段，去掉其余字段，缺少的补默认值；写了结果类型没有的字段返回 400。 与面光源互换类型、且没有写 intensity 时，按等效发光强度换算：点光或聚光 → 面光源为原强度 ÷ 新的实际发光面积， 面光源 → 点光或聚光为原亮度 × 原实际发光面积；原面积按更新前的世界缩放，新面积按更新后的；再截断到新类型的上限。 与平行光之间数值原样保留并截断。写了 intensity 时以写入的值为准。 */
         CreativeSceneLightPatch: {
             /** @enum {string} */
-            type?: "directional" | "point" | "spot";
+            type?: "directional" | "point" | "spot" | "area";
             color?: components["schemas"]["CreativeSceneColor"];
             intensity?: number;
             cast_shadow?: boolean;
@@ -7476,6 +7485,10 @@ export interface components {
             penumbra?: number;
             radius_m?: number;
             angular_diameter_deg?: number;
+            /** @enum {string} */
+            shape?: "rectangle" | "ellipse";
+            width?: number;
+            height?: number;
         };
         /** @description 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。 */
         CreativeSceneCamera: {

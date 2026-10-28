@@ -57,6 +57,10 @@ test('the lights for the volumes: a casting sun first, then by the light at the 
   const touching = { ...near, position: at(1), radius: 0.5, intensity: 1 }
   const beside = { ...near, position: at(1.5), radius: 0, intensity: 3 }
   assert.deepEqual(selectLights([touching, beside], bounds), [1, 0])
+  // An area light (scene-area-light): its face's luminous intensity L · A, decay 2, held at √(A / π); 1 m² of
+  // 400 cd/m² at 3 m off the volume brings 400 / 9, more than the point light's 10 / 1.
+  const area = { kind: 'area' as const, cast: true, sized: true, sun: false, intensity: 400, position: at(4), decay: 2, radius: Math.sqrt(1 / Math.PI) }
+  assert.deepEqual(selectLights([near, area], bounds), [1, 0])
 })
 
 test('the march rebuilds on its structure only, and the cast list holds the casting volumes in order', async () => {

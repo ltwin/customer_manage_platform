@@ -173,9 +173,10 @@ test('the lights a hit point sees: visible, giving light, not the volumes’ sta
   hidden.visible = false
   const standIn = new AmbientLight(0xffffff, 0.001)
   standIn.userData.volumesCast = true
-  scene.add(sun, off, hidden, standIn, new AmbientLight(0xff0000, 0.5), new AmbientLight(0x0000ff, 0.25))
+  const area = new SceneAreaLight()
+  scene.add(sun, off, hidden, standIn, area, new AmbientLight(0xff0000, 0.5), new AmbientLight(0x0000ff, 0.25))
   const { lights, ambient } = collectLights(scene)
-  assert.deepEqual(lights, [sun])
+  assert.deepEqual(lights, [sun, area])
   assert.deepEqual([ambient.r, ambient.g, ambient.b], [0.5, 0, 0.25])
 })
 
@@ -510,7 +511,7 @@ test('a builtin is cached under its id and its parameters filled in and sorted; 
 
 import { Color, SpotLight } from 'three'
 import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, PRINCIPLED, UNKNOWN, presets, TraceTables } from '../src/creative-scene/render/trace/tables.ts'
-import { SceneSphereLight, SceneSunLight } from '../src/creative-scene/render/lightModel/lights.ts'
+import { SceneAreaLight, SceneSphereLight, SceneSunLight } from '../src/creative-scene/render/lightModel/lights.ts'
 
 test('one table: a header, a material row a traced mesh, a light row a light (design「内部类型」, D6)', () => {
   const tables = new TraceTables()
@@ -544,11 +545,16 @@ test('one table: a header, a material row a traced mesh, a light row a light (de
   point.position.set(1, 2, 3)
   const spot = new SpotLight('#ffffff', 4, 10, Math.PI / 4, 0.5, 2)
   spot.position.set(0, 5, 0)
-  scene.add(sun, sun.target, point, spot, spot.target)
+  // An ellipse 0.5 × 0.25 m (data: 面光源), stretched 2× along its X: its face's half axes as the world has them.
+  const area = Object.assign(new SceneAreaLight(), { castShadow: true, intensity: 100, width: 0.5, height: 0.25, shape: 'ellipse' as const })
+  area.color.set('#00ff00')
+  area.position.set(-1, 3, 2)
+  area.scale.set(2, 1, 1)
+  scene.add(sun, sun.target, point, spot, spot.target, area)
   scene.updateMatrixWorld()
-  tables.setLights({ lights: [sun, point, spot], ambient: new Color(0.1, 0.2, 0.3) }, scene)
+  tables.setLights({ lights: [sun, point, spot, area], ambient: new Color(0.1, 0.2, 0.3) }, scene)
   const [lights, first, materials] = vec4(0)
-  assert.equal(lights, 3)
+  assert.equal(lights, 4)
   assert.equal(first, HEADER + materials * MATERIAL_ROW, 'the lights after the materials’ room')
   near(vec4(1), [0.1, 0.2, 0.3, 0], 'ambient')
   near(vec4(first), [LIGHT.directional, 1, 0, 0], 'a sun that casts')
@@ -565,6 +571,12 @@ test('one table: a header, a material row a traced mesh, a light row a light (de
   assert.ok(Math.abs(vec4(q + 2)[3] - Math.cos((Math.PI / 4) * 0.5)) < 1e-6, 'where its penumbra starts')
   near(vec4(q + 3), [0, -1, 0, 0], 'the way it shines')
   near(vec4(q + 4), [0, 0, 0, 0], 'three\'s own spot: no size')
+  const r = first + 3 * LIGHT_ROW
+  near(vec4(r), [LIGHT.area, 1, 1, 0], 'an area light that casts, an ellipse')
+  near(vec4(r + 1), [-1, 3, 2, 0], 'its centre')
+  near(vec4(r + 2), [0, 100, 0, 0], 'colour × luminance')
+  near(vec4(r + 3), [0.5, 0, 0, 0], 'half its width, scaled')
+  near(vec4(r + 4), [0, 0.125, 0, 0], 'half its height')
 })
 
 import { TraceBase, type TraceStatus } from '../src/creative-scene/render/trace/base.ts'

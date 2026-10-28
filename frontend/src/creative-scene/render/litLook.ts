@@ -113,4 +113,4 @@ export function frameExposure(scene: Pick<Scene, 'environment' | 'render'>, lit:
  * stage spot, a fill directional light (candela for point and spot).
  * Calibrated with the constants above.
  */
-export const NEW_LIGHT_INTENSITY = { directional: 1, point: 40, spot: 150 } as const
+export const NEW_LIGHT_INTENSITY = { directional: 1, point: 40, spot: 150, area: 10000 } as const

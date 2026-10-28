@@ -107,11 +107,13 @@ Shift+A「面光源」 editing.ts newLight('area')
 
 ```
 directRectArea(input):
-  if !input.ellipse: three 原样（漫反射、高光、clearcoat）
-  else:             同一套代码，LTC_Evaluate(p0..p3) 换成 ltcEllipse(N, V, P, mInv, centre, halfW, halfH)
-  sheen（两种形状都补）：
-    FF、avgDir = 单位矩阵下的向量形状因子（矩形或椭圆）
-    sheenSpecularDirect += π × lightColor × FF × BRDF_Sheen(avgDir)
+  先另存（aside）：
+    if !input.ellipse: three 原样（漫反射、高光、clearcoat）
+    else:             同一套代码，LTC_Evaluate(p0..p3) 换成 ltcEllipse(N, V, P, mInv, centre, halfW, halfH)
+  directSpecular += aside.specular × multiScatteringCompensation   （aside 的漫反射丢弃）
+  F⃗ = 单位矩阵下视空间的向量形状因子（矩形或椭圆）；E = π × L × clip(F⃗, N)；avgDir = normalize(F⃗)（低于地平线时抬到 10⁻³）
+  漫反射与 sheen：再调用一次 three 的 direct(lightDirection = avgDir, lightColor = lightColor × E / dot(N, avgDir))，
+    它照点光的写法给漫反射乘 1 − F 和 sheen 的能量系数，并加上 sheen（N2，任务 3.3）
 ```
 
 - **椭圆分支**本质上是把 three 的 `directRectArea` 函数体复制一份，只换形状因子。`direct.ts` 和 `ltc.ts` 都加进 `render/lightModel/nodes.ts` 的 three 升级核对清单。
@@ -119,7 +121,7 @@ directRectArea(input):
   1. 中心和两条半轴向量变换到 LTC 空间：C、V1、V2 各乘 `mInv`（相对着色点 P，并转到 three 的 LTC 坐标系，与 `LTC_Evaluate` 相同，包括它取负的 T2 轴）；
   2. 背面判断：`dot(cross(V1, V2), C) < 0` 时为 0（单面）；
   3. 求变换后椭圆的主轴：由 `d11 = V1·V1`、`d22 = V2·V2`、`d12 = V1·V2` 求两个特征值和主轴方向，得到椭圆在其平面内的标准形；
-  4. 由椭圆和着色点构成的椭圆锥，写出它的 3×3 矩阵，解三次方程（Blinn 的稳健解法）求特征值，得到等效球冠的两个半轴参数 L1、L2 和平均方向 `avgDir`，形状因子 `FF = L1·L2 / √((1+L1²)(1+L2²))`；
+  4. 由椭圆和着色点构成的椭圆锥，写出它的 3×3 矩阵，解三次方程求特征值（用 Viète 的三角解法，不用 ltc_disk 的 Blinn 解法：后者在正对的圆盘这种重根上退化，见任务 3.2），得到等效球冠的两个半轴参数 L1、L2 和平均方向 `avgDir`，形状因子 `FF = L1·L2 / √((1+L1²)(1+L2²))`；
   5. 向量形状因子 `FF × avgDir` 做地平线裁剪，与矩形的最后一步相同。three/tsl 没有导出 `LTC_ClippedSphereFormFactor`（`LTC.js:175` 只导出了 `LTC_Evaluate`、`LTC_Evaluate_Volume`、`LTC_Uv`），在 `ltc.ts` 里抄一份。
   - 漫反射用单位矩阵的 `mInv`，高光和 clearcoat 用各自 LTC 表查出的 `mInv`，Fresnel 用同一张 `ltc_2`。
   - **单测**（`scripts/creative-scene-gi.test.ts` 同类的 node 测试，纯数学部分在 JS 里有一份对照实现）：
@@ -129,7 +131,12 @@ directRectArea(input):
   - three 的面光源漫反射写的是 `L × albedo × FF`，没有 Lambert 的 1/π，所以照度是 `E = π·L·FF`。sheen 照 three 点光的写法（照度 × `BRDF_Sheen`），要乘 π，否则暗约 3.14 倍。
   - 方向用单位矩阵下向量形状因子的平均方向，不用中心方向。大光源贴近表面时，中心方向可能已经在地平线下面。
   - 不做定量验收，与 S1 的 sheen 处理一致。
-- **能量的 4% 偏差**：S0 测得矩形整体比参考解亮约 4%，不随尺寸变化，墙面漫反射也一样。单位矩阵的 LTC 漫反射对多边形基本是精确的，只有 θ/sinθ 的有理拟合，一个不随尺寸变化的固定 4% 更像是参考解或光栅某一边的归一化不对。它会让 AC-S2-2（2%）过不了，也会让光栅和体积（按 L·A 解析计算）对不上。实施时第一件事查清原因并修掉（未决事项 N2），不按「LTC 拟合误差」放过。
+- **能量的 4% 偏差（N2，已查清）**：不是归一化问题，是 three r186 的 `directRectArea` 比它自己的 `direct` 少了几项：
+  - 漫反射没有乘 `1 − F`（`PhysicalLightingModel.js:673` 对点光有，`:714` 对面光源没有）。F0 = 0.04 时正好约 4%，与尺寸无关；
+  - 高光没有乘 `multiScatteringCompensation`，有 sheen 时漫反射也没有乘 sheen 的能量系数。
+  - 参考解（`light-check/reference.ts`）和命中点（`hit.ts:316`）都按 `direct` 的写法乘了 `1 − F`。
+  - 三方对照（任务 1.1）：光栅与解析解的漫反射一致，参考解是解析解的 0.959 倍；墙面上光栅 / 参考解 1×1 m 为 1.040，2×2 m 为 1.043。临时补上 `1 − F` 后为 1.0016 和 1.0044。
+  - 做法：上面伪代码里的「补上」一段。F 的方向用向量形状因子的平均方向，远处退化为点光的写法，AC-S2-2 的 2% 保持不变。
 
 ### 软阴影：矩形核与采样档
 
@@ -170,7 +177,7 @@ directRectArea(input):
   - 第 222 行从第 4 个 vec4 的 `.x` 读尺寸，面光源这里是半高向量的 x 分量，`sized`、`sinHalf` 会是随机值。
 - **`lightAt` 和 `directAt` 里单独分支**：
   - 先判断 `kind.x > spot + 0.5`，面光源走自己的分支，其余灯照旧调用 `tableLight`；
-  - 漫反射：照度 `E = π·L·FF`，FF 用单位矩阵的 LTC（矩形用 three 的 `LTC_Evaluate`，椭圆用 `ltc.ts`），与光栅同一份公式（I4）；
+  - 漫反射：照度 `E = π·L·FF`，FF 用单位矩阵的 LTC（矩形用 three 的 `LTC_Evaluate`，椭圆用 `ltc.ts`），与光栅同一份公式（I4）；与点光的写法（`hit.ts:316`）和光栅一样乘 `1 − F`，F 的方向取平均方向 `avgDir`；
   - 高光：同光栅，用 LTC 表查 `mInv`，LTC 表与光栅共用；
   - `directAt` 的蓄水池：同一个照度 E 既当权重，又当 `picked`。估计量 `picked × total / luminance(picked)` 因此无偏，也不需要另一套近似公式；
   - 阴影光线：在发光面上均匀取点（矩形按两条半轴均匀，椭圆按面积均匀的同心圆映射），`reach` 停在取样点前 1 mm；随机数沿用现有的 PCG，种子取帧序号和像素。
@@ -278,7 +285,7 @@ directRectArea(input):
 | 验收 | 怎么验 |
 |---|---|
 | AC-S2-1 | light-check 在 `area-studio` 上对参考解：1×1 m 矩形、1×1 m 椭圆、2×0.5 m 和 2×2 m 矩形，各测能量、全图阴影误差和板剖面；另一个 e2e 缩放物件，比较轮廓与发光面的投影范围 |
-| AC-S2-2 | 先解决 N2。light-check 读法线方向上 10 倍边长处的照度，与 `L·A/d²` 比；近处读几处，照度不超过 π·L |
+| AC-S2-2 | light-check 读法线方向上 10 倍边长处的照度，与 `L·A/d²` 比；近处读几处，照度不超过 π·L |
 | AC-S2-3 | 照 AC-S1-6 的做法，`SCENE_E2E_TRACE` 下逐网格对照 |
 | AC-S2-4 | `SCENE_E2E_LIGHT_PERF` 加面光源的场景，冷启动，与 S1 的尺寸为 0 对照场景比；结果写进 verify |
 | AC-S2-5 | 后端单测（补齐、范围、400 字段、换算与截断、显式强度优先、父级带缩放、同一次改缩放和类型）；前端单测（本地 `mergeLight` 与服务端结果相同）；e2e：菜单新建、面板改字段与撤销、切换类型 |
@@ -293,6 +300,6 @@ directRectArea(input):
 
 | # | 问题 | 影响 | 解决方式 | 最晚 |
 |---|---|---|---|---|
-| N2 | S0 测得矩形面光源整体比参考解亮约 4%，原因不明 | AC-S2-1、AC-S2-2 能否达标；光栅与体积是否一致 | 实施的第一个任务：正对的矩形和圆盘在法线上取几处，光栅、参考解（`scripts/light-check/reference.ts`）和解析解三方对照，定位是哪一边的归一化不对，修掉那一边。参考解有误时，复查 S1 用到的同一段代码 | 测 AC-S2-1、AC-S2-2 之前 |
+| N2（已解决，任务 1.1） | S0 测得矩形面光源整体比参考解亮约 4% | AC-S2-1、AC-S2-2 | 光栅一边的问题：three 的 `directRectArea` 漫反射少乘 `1 − F`，见「直接光」。参考解不改，S1 不受影响 | — |
 
 N1（缩放取哪一层）由 owner 2026-10-27 定为世界缩放，经 Epic 修订 v5 写进契约；服务端同样按世界缩放换算。

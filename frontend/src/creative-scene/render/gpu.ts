@@ -354,6 +354,8 @@ export const gpuTestHooks = {
   probeMean: null as (() => Promise<{ serial: number; levels: number[][]; ages: { data: number; edit: number }[] } | null>) | null,
   /** The same rays shaded at their hits against the raster, mesh by mesh (AC-S1-2; as traceDepth). */
   traceHits: null as ((width?: number, turn?: [number, number, number]) => Promise<HitReport | null>) | null,
+  /** The viewport's area lights' faces and their icons' outlines, each as its world half width and height, metres (scene-area-light AC-S2-1; Viewport.tsx LookView, e2e only). */
+  areaFaces: null as (() => { lights: number[][]; outlines: number[][] }) | null,
 }
 // The e2e fixture page sets __sceneTest before the editor loads, and __sceneGPUHooks for switches the viewport's device is made with (?gpu=…).
 const fixture = globalThis as { __sceneTest?: boolean; __sceneGPUHooks?: Partial<typeof gpuTestHooks> }

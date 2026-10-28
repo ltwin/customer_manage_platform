@@ -270,6 +270,29 @@ type lookAtScene struct {
 	world   map[string]mat4
 }
 
+// sceneWorld is a lookAtScene of objects alone, the batch adding none yet.
+func sceneWorld(objects []Object) *lookAtScene {
+	s := &lookAtScene{objects: make(map[string]Object, len(objects)), added: map[string]lookAtItem{}, world: map[string]mat4{}}
+	for _, o := range objects {
+		s.objects[o.ID] = o
+	}
+	return s
+}
+
+// worldAreaScale is how much object id's world transform, its parents'
+// included, scales an area in its local XY plane: |X × Y| of the world
+// matrix's first two columns, a parallelogram's under a parent's non-uniform
+// scale and a child's rotation too (data: 面光源「等效发光强度」). An object
+// whose chain cannot be followed counts as unscaled.
+func worldAreaScale(objects []Object, id string) float64 {
+	m, ok := sceneWorld(objects).worldMatrix(id)
+	if !ok {
+		return 1
+	}
+	x, y := vec3{m[0], m[1], m[2]}, vec3{m[4], m[5], m[6]}
+	return math.Sqrt(x.cross(y).lengthSq())
+}
+
 func (s *lookAtScene) parentOf(id string) *string {
 	if a, ok := s.added[id]; ok {
 		return a.ParentID
@@ -374,10 +397,7 @@ func resolveLookAt(ops []json.RawMessage, cur Scene) ([]json.RawMessage, error) 
 		return ops, nil
 	}
 
-	s := &lookAtScene{objects: make(map[string]Object, len(cur.Objects)), added: map[string]lookAtItem{}, world: map[string]mat4{}}
-	for _, o := range cur.Objects {
-		s.objects[o.ID] = o
-	}
+	s := sceneWorld(cur.Objects)
 	// moved lists what the batch moves besides look_at items themselves:
 	// reparented objects and updated transforms.
 	reparented, moved := map[string]bool{}, map[string]bool{}

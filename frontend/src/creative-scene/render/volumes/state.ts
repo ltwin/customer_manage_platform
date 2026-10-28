@@ -1,7 +1,7 @@
 import { Color, Matrix4, Sphere, Vector2, Vector3, Vector4, type AmbientLight, type Camera, type DirectionalLight, type HemisphereLight, type Light, type Object3D, type OrthographicCamera, type PerspectiveCamera, type PointLight, type Scene, type SpotLight, type Texture } from 'three'
 import * as tsl from 'three/tsl'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { sizeOf } from '../lightModel/lights.ts'
+import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 import { chordFactor, coefficients, type Coefficients, type Volume } from './medium.ts'
 
 // What every volume pass reads (scene-volumes design「登记与出图」「选灯与编译」):
@@ -72,26 +72,28 @@ export const V: VolumeUniforms = {
   castCount: shared(uniform(0, 'int') as Uniform<number>),
 }
 
-export type SlotKind = 'directional' | 'spot' | 'point'
+export type SlotKind = 'directional' | 'spot' | 'point' | 'area'
 /**
  * A light that lights the volumes: its kind, whether its shadow map is sampled, and whether the light has a size,
- * its map then read raw (render/lightModel/shadowFilter.ts rawDepth) and compared here (lights.ts).
+ * its map then read raw (render/lightModel/shadowFilter.ts rawDepth) and compared here (lights.ts). An area light
+ * (data: 面光源) lights them as a light at its centre shining one way, cosine-weighted, of its face's luminous
+ * intensity L · A, its falloff held at max(d², A / π); its shadow a point light's cube.
  */
-export type Slot = { kind: SlotKind; cast: boolean; sized: boolean; light: DirectionalLight | SpotLight | PointLight }
+export type Slot = { kind: SlotKind; cast: boolean; sized: boolean; light: Lit }
 
 /** What a slot's uniforms hold; the march reads them (lights.ts). */
 export type SlotUniforms = {
   /** color × intensity, pre-exposed. */
   radiance: Uniform<Color>
-  /** A spot's or point's world position. */
+  /** A spot's, point's or area light's world position (its centre). */
   position: Uniform<Vector3>
-  /** Toward a directional light; along a spot's axis. */
+  /** Toward a directional light; along a spot's axis, the way an area light faces. */
   direction: Uniform<Vector3>
   /** A spot's cos(angle) and cos(angle · (1 − penumbra)). */
   cone: Uniform<Vector2>
-  /** distance (0: none), decay, and a spot's or point's radius (the effective distance, scene-light-radius). */
+  /** distance (0: none), decay, and a spot's or point's radius (the effective distance, scene-light-radius); an area light's √(A / π). */
   falloff: Uniform<Vector3>
-  /** A point's shadow camera near and far; the view's near and far a directional light's cascades split (far no further than maxFar, as CSMShadowNode). */
+  /** A point's or area light's shadow camera near and far; the view's near and far a directional light's cascades split (far no further than maxFar, as CSMShadowNode). */
   range: Uniform<Vector2>
   /** The shadow matrices (one, or a cascade's each) and biases. */
   matrices: Uniform<Matrix4>[]
@@ -117,7 +119,7 @@ export const ambientRadiance = uniform(new Color()) as Uniform<Color>
 export const environmentIntensity = uniform(1) as Uniform<number>
 
 type Cascaded = { lights: { shadow?: { map?: { depthTexture?: Texture | null } | null; matrix: Matrix4; bias: number } }[]; _cascades: Vector2[]; maxFar: number }
-type Lit = DirectionalLight | SpotLight | PointLight
+type Lit = DirectionalLight | SpotLight | PointLight | SceneAreaLight
 
 const cascadesOf = (light: DirectionalLight) => (light.shadow as { shadowNode?: Partial<Cascaded> }).shadowNode as Cascaded | undefined
 const mapsOf = (kind: SlotKind) => (kind === 'directional' ? CASCADES : 1)
@@ -168,7 +170,7 @@ export function selectLights(candidates: readonly Candidate[], bounds: readonly 
   return out
 }
 
-const structure = (c: Pick<Candidate, 'kind' | 'cast' | 'sized'>) => ['directional', 'spot', 'point'].indexOf(c.kind) * 4 + (c.cast ? 0 : 2) + (c.sized ? 1 : 0)
+const structure = (c: Pick<Candidate, 'kind' | 'cast' | 'sized'>) => ['directional', 'spot', 'point', 'area'].indexOf(c.kind) * 4 + (c.cast ? 0 : 2) + (c.sized ? 1 : 0)
 
 /**
  * The slots the chosen lights go in: by kind, casting first, then in the
@@ -257,12 +259,15 @@ export function prepareVolumes(scene: Scene, camera: Camera, drawn: boolean) {
     else if ((l as HemisphereLight).isHemisphereLight) {
       const h = l as HemisphereLight
       ambientRadiance.value.add(tint.copy(h.color).add(h.groundColor).multiplyScalar(h.intensity / (2 * Math.PI)))
-    } else if ((l as DirectionalLight).isDirectionalLight || (l as SpotLight).isSpotLight || (l as PointLight).isPointLight) lights.push(l as Lit)
+    } else if ((l as DirectionalLight).isDirectionalLight || (l as SpotLight).isSpotLight || (l as PointLight).isPointLight || l instanceof SceneAreaLight) lights.push(l as Lit)
   })
   const candidates = lights.map((light, i): Candidate => {
-    const kind: SlotKind = (light as DirectionalLight).isDirectionalLight ? 'directional' : (light as SpotLight).isSpotLight ? 'spot' : 'point'
+    const kind: SlotKind = light instanceof SceneAreaLight ? 'area' : (light as DirectionalLight).isDirectionalLight ? 'directional' : (light as SpotLight).isSpotLight ? 'spot' : 'point'
     const cast = castsNow(light)
-    return { kind, cast, sized: cast && filtered(light), sun: light.userData.sun === true, intensity: light.intensity, position: light.getWorldPosition((positions[i] ??= new Vector3())), decay: kind === 'directional' ? 0 : (light as PointLight).decay, radius: kind === 'directional' ? 0 : sizeOf(light) }
+    const position = light.getWorldPosition((positions[i] ??= new Vector3()))
+    // An area light as the light at its centre of its face's luminous intensity, falling off as 1 / max(d², A / π).
+    if (light instanceof SceneAreaLight) return { kind, cast, sized: cast && filtered(light), sun: false, intensity: light.intensity * light.area(), position, decay: 2, radius: Math.sqrt(light.area() / Math.PI) }
+    return { kind, cast, sized: cast && filtered(light), sun: light.userData.sun === true, intensity: light.intensity, position, decay: kind === 'directional' ? 0 : (light as PointLight).decay, radius: kind === 'directional' ? 0 : sizeOf(light) }
   })
   const slots = slotOrder(candidates, selectLights(candidates, bounds)).map((i): Slot => ({ kind: candidates[i].kind, cast: candidates[i].cast, sized: candidates[i].sized, light: lights[i] }))
   const { near, far } = camera as PerspectiveCamera | OrthographicCamera
@@ -276,6 +281,15 @@ export function prepareVolumes(scene: Scene, camera: Camera, drawn: boolean) {
 function writeSlot(u: SlotUniforms, { kind, cast, light }: Slot, near: number, far: number) {
   u.radiance.value.copy(light.color).multiplyScalar(light.intensity)
   light.getWorldPosition(u.position.value)
+  if (light instanceof SceneAreaLight) {
+    const area = light.area()
+    u.radiance.value.multiplyScalar(area)
+    // It shines down its −Z: against halfX × halfY.
+    u.direction.value.crossVectors(light.halfX, light.halfY).normalize().negate()
+    u.falloff.value.set(0, 2, Math.sqrt(area / Math.PI))
+    if (cast) u.biases[0].value = light.shadow.bias
+    return
+  }
   if (kind === 'point') {
     const p = light as PointLight
     u.falloff.value.set(p.distance, p.decay, sizeOf(p))
@@ -321,8 +335,11 @@ export function bindVolumeTextures(maps: readonly (readonly Swappable[])[], skie
     const map = light.shadow.map?.depthTexture
     if (map && maps[k][0]) maps[k][0].value = map
     u.matrices[0].value.copy(light.shadow.matrix)
-    // three sets a point's shadow far to its distance as it draws the map, this frame's.
-    if (kind === 'point') u.range.value.set(light.shadow.camera.near, light.shadow.camera.far)
+    // three sets a point's shadow far to its distance as it draws the map, this frame's; an area light's is a point's.
+    if (kind === 'point' || kind === 'area') {
+      const camera = light.shadow.camera as PerspectiveCamera
+      u.range.value.set(camera.near, camera.far)
+    }
   })
   if (lighting.environment) for (const s of skies) s.value = lighting.environment
 }

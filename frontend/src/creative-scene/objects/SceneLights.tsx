@@ -83,9 +83,10 @@ export function SceneLight({ light, warm: warmed }: { light: Light; warm: boolea
   // eslint-disable-next-line react-hooks/exhaustive-deps -- built for its key alone; applyLight writes the rest
   const built = useMemo(() => buildLight(light.type), [key])
   useLayoutEffect(() => {
-    applyLight(built, light)
+    // An export's lights (warm false) draw an area light's shadow with an export's samples.
+    applyLight(built, light, !warmed)
     invalidate()
-  }, [built, light, invalidate])
+  }, [built, light, warmed, invalidate])
   useWarm(built.light, warmed, light.cast_shadow ?? false)
   useEffect(() => () => disposeLight(built), [built])
   return (

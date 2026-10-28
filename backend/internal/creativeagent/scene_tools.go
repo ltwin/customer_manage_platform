@@ -80,9 +80,10 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
 				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance|volume, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, material_slots?, primitive{builtin,params}|light|camera|volume|model{content_revision_id}}]}；" +
-				"light 字段同 three.js：{type:directional|point|spot, color:\"#rrggbb\", intensity:0…1000, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1，只管光锥边缘羽化）；" +
+				"light 字段同 three.js：{type:directional|point|spot|area, color:\"#rrggbb\", intensity:0…1000（area 0…100000）, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1，只管光锥边缘羽化）；" +
 				"光源尺寸同 Blender：point 和 spot 有 radius_m（发光球半径，0…10 米，默认 0.1，不随物件缩放），directional 有 angular_diameter_deg（角直径，0…30 度，默认 0.545）；尺寸越大、遮挡物离受光面越远，影子边缘越软，高光越大越柔，强度不变；写 0 是硬影子；" +
-				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光和聚光沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
+				"area 是面光源（同 Blender Area、three.js RectAreaLight，做柔光箱、灯板、窗户）：shape:rectangle|ellipse（默认 rectangle）、width、height（0.01…20 米，默认 0.25，随物件的世界缩放变化，含父级），沿局部 −Z 单面发光，背面不亮；intensity 是发光面亮度 cd/m²（默认 10000），法线方向的等效发光强度 = 亮度 × 面积；面光源越大影子越软、高光越大；与点光、聚光互换类型且不写 intensity 时按等效发光强度换算；" +
+				"只有 type 必填，其余取 three.js 默认值，写了该类型没有的字段会被拒绝。intensity 同 three.js 物理光照：点光和聚光为坎德拉，平行光为 three.js 强度。平行光、聚光和面光源沿物件局部 −Z 照射（不用 target），摄像机朝局部 −Z；" +
 				"camera{focal_mm:8…800, sensor_mm:[宽,高]（全画幅 [36,24]、APS-C [23.5,15.6]、M43 [17.3,13]、中画幅 [43.8,32.9]）, aspect:\"3:2\", near, far, label, " +
 				"depth_of_field:bool, f_stop:0.5…64（光圈值）, focus（对焦距离，米）, focus_object_id（按这个物件对焦：基础体、模型实例或分组，写 \"\" 取消）, iso:25…102400, shutter_s:1/8000…30（快门，秒）, exposure_mode:ambient|manual（物理天空下的曝光模式：ambient 环境测光，按场景的环境光测光、不看画面；写入时省略为 ambient）, exposure_compensation:-5…5（环境测光的补偿，档，正值变亮）；iso 和 shutter_s 只在物理天空下手动曝光时生效}，均可省略（默认 35、[36,24]、3:2、0.1、1000、空、false、2.8、10、\"\"、100、1/4000、ambient、0）；" +
 				"视场角按画面长边对应传感器长边：同一焦距下 2:3 竖幅和 3:2 横幅拍到的范围一样大，只是方向不同；depth_of_field 打开后白模导出按光圈和对焦虚化（线稿不虚化）。" +
@@ -120,7 +121,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
-				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；投射阴影的灯光不超过 4 盏，太多会卡。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
+				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；柔光箱用面光源，如 0.6×0.9 m、500–2000 cd/m²（等效约 270–1100 cd），影子和高光比同强度的点光柔和；投射阴影的灯光不超过 4 盏，太多会卡。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
 				"成批的相同小件（栅栏、砖、书本）写成一个代码模型（lib.array/radial），比逐个加基础体流畅得多；重复出现的东西放同一模型的多个实例。" +
 				"建议曝光：物理天空下摄像机和临时视点默认环境测光：按场景的环境光测光（不看画面，不随取景变），入夜后平滑变暗，只比正午暗 2–4 档（满月之夜约 2.5 档，新月之夜约 3.5 档，天空深蓝、看得见银河），入夜不必改曝光；" +
 				"要更亮或更暗写 exposure_compensation；测光看的是场景原点的天光，室内或浓荫下的取景偏暗，补偿 +1～+2。" +

@@ -273,6 +273,12 @@ type Light struct {
 	// light a disc AngularDiameterDeg degrees across; 0 is no size.
 	RadiusM            *float64 `json:"radius_m,omitempty"`
 	AngularDiameterDeg *float64 `json:"angular_diameter_deg,omitempty"`
+	// Shape, Width and Height are an area light's emitting face (data: 面光源):
+	// a rectangle or an ellipse Width × Height metres in the object's local
+	// XY plane, scaled with its world transform, lit toward its local −Z.
+	Shape  *string  `json:"shape,omitempty"`
+	Width  *float64 `json:"width,omitempty"`
+	Height *float64 `json:"height,omitempty"`
 }
 
 // lightPatch is a light in update_objects, where type may be left out too.
@@ -287,6 +293,9 @@ type lightPatch struct {
 	Penumbra           *float64 `json:"penumbra,omitempty"`
 	RadiusM            *float64 `json:"radius_m,omitempty"`
 	AngularDiameterDeg *float64 `json:"angular_diameter_deg,omitempty"`
+	Shape              *string  `json:"shape,omitempty"`
+	Width              *float64 `json:"width,omitempty"`
+	Height             *float64 `json:"height,omitempty"`
 }
 
 // Camera fields may all be left out on input; the stored snapshot holds every
@@ -838,9 +847,26 @@ var lightFields = map[string][]string{
 	"directional": {"color", "intensity", "cast_shadow", "angular_diameter_deg"},
 	"point":       {"color", "intensity", "cast_shadow", "distance", "decay", "radius_m"},
 	"spot":        {"color", "intensity", "cast_shadow", "distance", "decay", "angle", "penumbra", "radius_m"},
+	"area":        {"color", "intensity", "cast_shadow", "shape", "width", "height"},
 }
 
-var lightNames = map[string]string{"directional": "平行光", "point": "点光", "spot": "聚光"}
+var lightNames = map[string]string{"directional": "平行光", "point": "点光", "spot": "聚光", "area": "面光源"}
+
+// Area light shapes (data: 面光源).
+const (
+	shapeRectangle = "rectangle"
+	shapeEllipse   = "ellipse"
+)
+
+// maxLightIntensity is the top of a light type's intensity: an area light's
+// is a luminance in cd/m², the others' a luminous intensity in cd or, for a
+// directional light, an illuminance in lux.
+func maxLightIntensity(lightType string) float64 {
+	if lightType == "area" {
+		return 100000
+	}
+	return 1000
+}
 
 const (
 	// defaultLightRadiusM is a point or spot light's radius left out (data: 光源尺寸).
@@ -848,6 +874,11 @@ const (
 	// defaultSunDiameterDeg is a directional light's angular diameter left
 	// out: the sun's, as sky.sun_size_deg defaults to (Epic design「天空的太阳和月亮」).
 	defaultSunDiameterDeg = 0.545
+	// defaultAreaLuminance and defaultAreaSizeM are an area light's
+	// intensity and width and height left out: an LED panel's order of
+	// luminance, about 625 cd along the normal at 0.25 m square (data: 面光源).
+	defaultAreaLuminance = 10000.0
+	defaultAreaSizeM     = 0.25
 )
 
 type lightField struct {
@@ -868,6 +899,9 @@ func (l *Light) fields() []lightField {
 		{"penumbra", l.Penumbra != nil, func() { l.Penumbra = nil }},
 		{"radius_m", l.RadiusM != nil, func() { l.RadiusM = nil }},
 		{"angular_diameter_deg", l.AngularDiameterDeg != nil, func() { l.AngularDiameterDeg = nil }},
+		{"shape", l.Shape != nil, func() { l.Shape = nil }},
+		{"width", l.Width != nil, func() { l.Width = nil }},
+		{"height", l.Height != nil, func() { l.Height = nil }},
 	}
 }
 
@@ -876,7 +910,7 @@ func (l *Light) fields() []lightField {
 func checkLightFields(l *Light) error {
 	has, ok := lightFields[l.Type]
 	if !ok {
-		return fmt.Errorf("未知灯光类型 %q，可用：directional、point、spot", l.Type)
+		return fmt.Errorf("未知灯光类型 %q，可用：directional、point、spot、area", l.Type)
 	}
 	for _, f := range l.fields() {
 		if f.set && !slices.Contains(has, f.name) {
@@ -894,7 +928,11 @@ func completeLight(l *Light) error {
 	}
 	has := lightFields[l.Type]
 	fill(&l.Color, "#ffffff")
-	fill(&l.Intensity, 1.0)
+	if l.Type == "area" {
+		fill(&l.Intensity, defaultAreaLuminance)
+	} else {
+		fill(&l.Intensity, 1.0)
+	}
 	fill(&l.CastShadow, false)
 	if slices.Contains(has, "distance") {
 		fill(&l.Distance, 0.0)
@@ -910,15 +948,35 @@ func completeLight(l *Light) error {
 	if slices.Contains(has, "angular_diameter_deg") {
 		fill(&l.AngularDiameterDeg, defaultSunDiameterDeg)
 	}
+	if slices.Contains(has, "shape") {
+		fill(&l.Shape, shapeRectangle)
+		fill(&l.Width, defaultAreaSizeM)
+		fill(&l.Height, defaultAreaSizeM)
+	}
 	return nil
+}
+
+// emittingArea is a completed area light's emitting area in m², its object's
+// world transform scaling its local XY plane by areaScale (worldAreaScale).
+func emittingArea(l Light, areaScale float64) float64 {
+	a := *l.Width * *l.Height * areaScale
+	if *l.Shape == shapeEllipse {
+		a *= math.Pi / 4
+	}
+	return a
 }
 
 // mergeLight is L4: p changes only what it carries. The update itself must
 // fit the resulting type; the current fields the type lacks are dropped and
-// the ones it gains take their defaults.
-func mergeLight(cur Light, p lightPatch) (Light, error) {
+// the ones it gains take their defaults. A type change that leaves out
+// intensity keeps the light's equivalent luminous intensity to and from an
+// area light (data: 面光源「换类型」, Epic I6): before and after are the
+// object's worldAreaScale before and after the update, the old area taken
+// at before and the new at after. Any type change caps it at the new type's
+// top.
+func mergeLight(cur Light, p lightPatch, before, after float64) (Light, error) {
 	next := Light{Type: cur.Type, Color: p.Color, Intensity: p.Intensity, CastShadow: p.CastShadow, Distance: p.Distance, Decay: p.Decay, Angle: p.Angle, Penumbra: p.Penumbra,
-		RadiusM: p.RadiusM, AngularDiameterDeg: p.AngularDiameterDeg}
+		RadiusM: p.RadiusM, AngularDiameterDeg: p.AngularDiameterDeg, Shape: p.Shape, Width: p.Width, Height: p.Height}
 	if p.Type != nil {
 		next.Type = *p.Type
 	}
@@ -934,13 +992,40 @@ func mergeLight(cur Light, p lightPatch) (Light, error) {
 	keep(&next.Penumbra, cur.Penumbra)
 	keep(&next.RadiusM, cur.RadiusM)
 	keep(&next.AngularDiameterDeg, cur.AngularDiameterDeg)
+	keep(&next.Shape, cur.Shape)
+	keep(&next.Width, cur.Width)
+	keep(&next.Height, cur.Height)
 	has := lightFields[next.Type]
 	for _, f := range next.fields() {
 		if !slices.Contains(has, f.name) {
 			f.clear()
 		}
 	}
-	return next, completeLight(&next)
+	if err := completeLight(&next); err != nil {
+		return Light{}, err
+	}
+	if next.Type != cur.Type && p.Intensity == nil {
+		v := *next.Intensity
+		switch {
+		case cur.Type == "area" && (next.Type == "point" || next.Type == "spot"):
+			v *= emittingArea(cur, before)
+		case next.Type == "area" && (cur.Type == "point" || cur.Type == "spot"):
+			// A width or height out of range is refused by validateLight.
+			if a := emittingArea(next, after); a > 0 {
+				v /= a
+			}
+		}
+		v = math.Min(v, maxLightIntensity(next.Type))
+		next.Intensity = &v
+	}
+	return next, nil
+}
+
+// convertsArea reports whether p changes cur's type to or from an area light
+// without writing intensity, the change mergeLight needs the object's area
+// scale for.
+func convertsArea(cur Light, p lightPatch) bool {
+	return p.Type != nil && *p.Type != cur.Type && p.Intensity == nil && (cur.Type == "area" || *p.Type == "area")
 }
 
 // completeCamera fills every field c leaves out (L3); a missing exposure
@@ -1086,8 +1171,8 @@ func validateLight(l Light) error {
 			return fmt.Errorf("%s缺少字段 %s", lightNames[l.Type], f.name)
 		}
 	}
-	if !colorPattern.MatchString(*l.Color) || !in(*l.Intensity, 0, 1000) {
-		return errors.New("灯光须有 #rrggbb 颜色和 0…1000 的强度")
+	if top := maxLightIntensity(l.Type); !colorPattern.MatchString(*l.Color) || !in(*l.Intensity, 0, top) {
+		return fmt.Errorf("%s须有 #rrggbb 颜色和 0…%g 的强度", lightNames[l.Type], top)
 	}
 	if l.Distance != nil && (!finite(*l.Distance) || *l.Distance < 0) {
 		return errors.New("distance 须 ≥ 0 米（0 表示不截断）")
@@ -1106,6 +1191,15 @@ func validateLight(l Light) error {
 	}
 	if l.AngularDiameterDeg != nil && !in(*l.AngularDiameterDeg, 0, 30) {
 		return errors.New("angular_diameter_deg 是光源角直径，须在 0…30 度之间（0 表示理想平行光）")
+	}
+	if l.Shape != nil && *l.Shape != shapeRectangle && *l.Shape != shapeEllipse {
+		return fmt.Errorf("shape 须为 %s 或 %s", shapeRectangle, shapeEllipse)
+	}
+	if l.Width != nil && !in(*l.Width, 0.01, 20) {
+		return errors.New("width 是发光面的宽，须在 0.01…20 米之间")
+	}
+	if l.Height != nil && !in(*l.Height, 0.01, 20) {
+		return errors.New("height 是发光面的高，须在 0.01…20 米之间")
 	}
 	return nil
 }

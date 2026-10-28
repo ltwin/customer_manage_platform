@@ -232,7 +232,7 @@ export function localPose(objects: readonly SceneObject[], parent: string | null
 }
 
 type LightType = NonNullable<SceneObject['light']>['type']
-export const lightLabels: Record<LightType, string> = { directional: '平行光', point: '点光', spot: '聚光' }
+export const lightLabels: Record<LightType, string> = { directional: '平行光', point: '点光', spot: '聚光', area: '面光源' }
 
 /** The properties show a spot's full cone in degrees; the document keeps three.js's half angle in radians. */
 export const coneDegrees = (angle: number) => (angle * 360) / Math.PI

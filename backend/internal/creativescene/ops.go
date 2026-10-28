@@ -2,6 +2,7 @@ package creativescene
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
@@ -315,6 +316,18 @@ func (op *updateObjectsOp) touched(_ Scene, byID map[string]int) ([]string, erro
 
 func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	byID := indexObjects(s.Objects)
+	// A light turned to or from an area light keeps its equivalent luminous
+	// intensity: the old area at the world scale before this update, the new
+	// at the scale after (mergeLight), so lights merge once every transform
+	// here is written.
+	var before []Object
+	var lights []objectUpdate
+	for _, u := range op.Updates {
+		if o := s.Objects[byID[u.ObjectID]]; u.Light != nil && o.Light != nil && convertsArea(*o.Light, *u.Light) {
+			before = slices.Clone(s.Objects)
+			break
+		}
+	}
 	for _, u := range op.Updates {
 		o := &s.Objects[byID[u.ObjectID]]
 		if u.Name != nil {
@@ -350,11 +363,7 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 			if o.Light == nil {
 				return invalid("物件 %s 不是灯光", o.ID)
 			}
-			l, err := mergeLight(*o.Light, *u.Light)
-			if err != nil {
-				return invalid("物件 %s：%v", o.ID, err)
-			}
-			o.Light = &l
+			lights = append(lights, u)
 		}
 		if u.Camera != nil {
 			if o.Camera == nil {
@@ -375,6 +384,18 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 		}
 		canonicalNumbers(o)
 		c.change(u.units()...)
+	}
+	for _, u := range lights {
+		o := &s.Objects[byID[u.ObjectID]]
+		b, a := 1.0, 1.0
+		if convertsArea(*o.Light, *u.Light) {
+			b, a = worldAreaScale(before, o.ID), worldAreaScale(s.Objects, o.ID)
+		}
+		l, err := mergeLight(*o.Light, *u.Light, b, a)
+		if err != nil {
+			return invalid("物件 %s：%v", o.ID, err)
+		}
+		o.Light = &l
 	}
 	return nil
 }

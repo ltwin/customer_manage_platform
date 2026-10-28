@@ -723,7 +723,7 @@ func TestInvalidCommandsLeaveNoRevision(t *testing.T) {
 		"angle on point":                update(map[string]any{"object_id": l, "light": map[string]any{"angle": 0.5}}, content(l)),
 		"decay out of range":            update(map[string]any{"object_id": l, "light": map[string]any{"decay": 11}}, content(l)),
 		"negative distance":             add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "point", "distance": -1})),
-		"unknown light type":            add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "area"})),
+		"unknown light type":            add(with(object(n, "light", nil, 5), "light", map[string]any{"type": "hemisphere"})),
 		"light without type":            add(with(object(n, "light", nil, 5), "light", map[string]any{"intensity": 5})),
 		"old light name":                update(map[string]any{"object_id": l, "light": map[string]any{"range_m": 7}}, content(l)),
 		"camera on light":               update(map[string]any{"object_id": l, "camera": map[string]any{"far": 50}}, content(l)),
@@ -788,7 +788,7 @@ func TestABadShapeNamesTheField(t *testing.T) {
 	}{
 		// Names from before v7 are rejected, not read as aliases.
 		"old light field": {light(map[string]any{"type": "point", "color": "#ffaa55", "intensity": 35, "range_m": 7}),
-			"objects[0].light 没有字段 range_m，可用字段：type、color、intensity、cast_shadow、distance、decay、angle、penumbra、radius_m、angular_diameter_deg"},
+			"objects[0].light 没有字段 range_m，可用字段：type、color、intensity、cast_shadow、distance、decay、angle、penumbra、radius_m、angular_diameter_deg、shape、width、height"},
 		"field of another light type": {light(map[string]any{"type": "point", "angle": 0.5}),
 			"物件 " + objectID(1) + "：点光没有字段 angle，可用字段：type、color、intensity、cast_shadow、distance、decay、radius_m"},
 		"size of another light type": {light(map[string]any{"type": "point", "angular_diameter_deg": 1}),

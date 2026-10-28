@@ -12,7 +12,7 @@
 // Each light's contribution is f(ω) · L · cos θs · (cos θl / d² · area, or the cone's solid angle), the visibility
 // one shadow ray. f is three's: Lambert and GGX, under a clearcoat GGX as PhysicalLightingModel lays one over them. The shadowed and unshadowed sums go to their own targets; their ratio is the shadow the raster's is
 // held against.
-import { Color, DoubleSide, FloatType, NearestFilter, Vector3, AdditiveBlending, type AmbientLight, type DirectionalLight, type Light, type Material, type Object3D, type PerspectiveCamera, type PointLight, type RectAreaLight, type Scene, type SpotLight } from 'three'
+import { Color, DoubleSide, FloatType, NearestFilter, Vector3, AdditiveBlending, type AmbientLight, type DirectionalLight, type Light, type Material, type Object3D, type PerspectiveCamera, type PointLight, type Scene, type SpotLight } from 'three'
 import * as tsl from 'three/tsl'
 import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, RendererUtils, type WebGPURenderer } from 'three/webgpu'
 import { materialEntry } from '../../src/creative-scene/materials/catalog.ts'
@@ -20,7 +20,7 @@ import { slotOf, unknownGrey } from '../../src/creative-scene/materials/instance
 import { patternFns, type TSLNode } from '../../src/creative-scene/materials/patterns.ts'
 import type { SlotMaterial } from '../../src/creative-scene/materials/resolve.ts'
 import { gpuOf } from '../../src/creative-scene/render/gpu.ts'
-import { sizeOf } from '../../src/creative-scene/render/lightModel/lights.ts'
+import { SceneAreaLight, sizeOf } from '../../src/creative-scene/render/lightModel/lights.ts'
 import type { TraceLayer } from '../../src/creative-scene/render/trace/layer.ts'
 import { collectMeshes, type Traced } from '../../src/creative-scene/render/trace/collect.ts'
 import { traceWithin } from '../../src/creative-scene/render/trace/wgsl.ts'
@@ -40,8 +40,8 @@ export type RefLight =
   | { kind: 'disc'; toward: Vector3; irradiance: Color; angle: number }
   | { kind: 'rectangle' | 'ellipse'; position: Vector3; x: Vector3; y: Vector3; emits: Vector3; width: number; height: number; luminance: Color }
 
-/** The lights the raster draws (their intensities as this frame has them, the exposure on them), at their sizes (sizeOf). */
-export function refLights(scene: Scene, shape: 'rectangle' | 'ellipse' = 'rectangle'): RefLight[] {
+/** The lights the raster draws (their intensities as this frame has them, the exposure on them), at their sizes (sizeOf; an area light's face as its world transform scales it). */
+export function refLights(scene: Scene): RefLight[] {
   const out: RefLight[] = []
   scene.updateMatrixWorld()
   scene.traverseVisible((o) => {
@@ -60,13 +60,11 @@ export function refLights(scene: Scene, shape: 'rectangle' | 'ellipse' = 'rectan
       const d = l as DirectionalLight
       const toward = at.clone().sub(d.target.getWorldPosition(new Vector3())).normalize()
       out.push({ kind: 'disc', toward, irradiance: color, angle: (sizeOf(l) * Math.PI) / 180 })
-    } else if ((l as RectAreaLight).isRectAreaLight) {
-      const r = l as RectAreaLight
-      const e = r.matrixWorld.elements
-      const x = new Vector3(e[0], e[1], e[2]).normalize()
-      const y = new Vector3(e[4], e[5], e[6]).normalize()
-      const emits = new Vector3(e[8], e[9], e[10]).normalize().negate()
-      out.push({ kind: shape, position: at, x, y, emits, width: r.width, height: r.height, luminance: color })
+    } else if (l instanceof SceneAreaLight) {
+      const x = l.halfX.clone().normalize()
+      const y = l.halfY.clone().normalize()
+      const emits = new Vector3().crossVectors(x, y).normalize().negate()
+      out.push({ kind: l.shape, position: at, x, y, emits, width: 2 * l.halfX.length(), height: 2 * l.halfY.length(), luminance: color })
     }
   })
   return out

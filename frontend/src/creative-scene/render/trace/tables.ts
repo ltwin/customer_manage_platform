@@ -7,7 +7,7 @@ import { patternFns, type TSLNode } from '../../materials/patterns.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { preExposure } from '../../world/exposure.ts'
 import type { Lighting } from './collect.ts'
-import { sizeOf } from '../lightModel/lights.ts'
+import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 
 // What a hit point is shaded with, in one storage buffer of vec4s (S1
 // design「内部类型」, D6: one buffer, so the fragment binds six): a header,
@@ -27,7 +27,11 @@ import { sizeOf } from '../lightModel/lights.ts'
 //            (spot: the direction it shines, 0),
 //            (its size: a point's or spot's radius in metres, a directional
 //            light's sin(θ/2) for its angular diameter θ; 0, 0, 0)
-//            (scene-light-radius; S2's area lights fill the same five)
+//            (scene-light-radius)
+// an area light (data: 面光源; scene-area-light design「命中点」):
+//   (kind 3, casts, shape: 0 rectangle 1 ellipse, 0) (centre, 0)
+//   (colour × luminance, 0) (half its width, a world vector, 0)
+//   (half its height, a world vector, 0); it lights toward −(width × height)
 
 export const HEADER = 8
 export const MATERIAL_ROW = 8
@@ -39,7 +43,7 @@ export const PRINCIPLED = 1
 /** The presets, in the order the hit's Switch takes them (hit.ts). */
 export const presets: readonly string[] = Object.keys(patternFns)
 
-export const LIGHT = { directional: 0, point: 1, spot: 2 } as const
+export const LIGHT = { directional: 0, point: 1, spot: 2, area: 3 } as const
 
 /** The principled parameters a hit reads (Epic「命中点着色」: no clearcoat, sheen, … at a hit point); the unknown grey uses them too. */
 const principledParams = ['color', 'roughness', 'metalness', 'emissive', 'emissive_intensity']
@@ -211,7 +215,10 @@ export class TraceTables {
     f.fill(0, at, at + LIGHT_ROW * 4)
     color.copy(l.color).multiplyScalar(l.intensity)
     l.getWorldPosition(a)
-    if ((l as DirectionalLight).isDirectionalLight) {
+    if (l instanceof SceneAreaLight) {
+      f.set([LIGHT.area, l.castShadow ? 1 : 0, l.shape === 'ellipse' ? 1 : 0, 0, a.x, a.y, a.z, 0, color.r, color.g, color.b, 0], at)
+      f.set([l.halfX.x, l.halfX.y, l.halfX.z, 0, l.halfY.x, l.halfY.y, l.halfY.z, 0], at + 12)
+    } else if ((l as DirectionalLight).isDirectionalLight) {
       const d = l as DirectionalLight
       d.target.getWorldPosition(b)
       a.sub(b).normalize()

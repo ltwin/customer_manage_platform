@@ -5,6 +5,8 @@
 //   ?size=0                     every size 0, the sky's sun too (gpuTestHooks.skySunDeg)
 //   ?sized=spot,point,parallel,sun   only these sized, the rest 0: which costs what
 //   ?volume=1                   a casting volume in the middle (the volumes' march with the lights)
+//   ?area=1                     scene-area-light AC-S2-4: the parallel light a casting 1 × 1 m area light in its
+//                               place, its shadow filtered as the viewport's lights are (16 + 32 samples, 48 texels)
 //   ?accumulate=1               the frames averaged, as an export draws them (render/sceneRenderer.ts AccumulateNode)
 //   ?engine=realtime_gi         the viewport's engine (workbench by default)
 //   ?cold=1                     every material compiles anew (gpuTestHooks.cold)
@@ -24,6 +26,8 @@ import { createRenderer, gpuOf, gpuTestHooks } from '../../src/creative-scene/re
 import { frameExposure } from '../../src/creative-scene/render/litLook.ts'
 import { SceneRenderer } from '../../src/creative-scene/render/sceneRenderer.ts'
 import { sceneLowSun, sceneLux } from '../../src/creative-scene/world/exposure.ts'
+import { SceneAreaLight } from '../../src/creative-scene/render/lightModel/lights.ts'
+import { attachSoftShadow } from '../../src/creative-scene/render/lightModel/shadowFilter.ts'
 import { loadModels, readFixture } from './fixture.ts'
 
 extend(THREE as unknown as Parameters<typeof extend>[0])
@@ -85,7 +89,11 @@ async function load() {
       locked: false,
       volume: { scatter_density: 0.1, cast_shadow: true },
     } as Scene['objects'][number])
-  return { scene: sizeLights(scene, sized), models: await loadModels(SCENE, scene) }
+  const out = sizeLights(scene, sized)
+  // The area light where the parallel light was, facing as it did, of about its light on the subject (3 lux at ~4 m).
+  if (query.get('area') === '1')
+    out.objects = out.objects.map((o) => (o.light?.type === 'directional' ? { ...o, name: '面光源', light: { type: 'area', color: o.light.color, intensity: 50, cast_shadow: true, shape: 'rectangle', width: 1, height: 1 } } : o))
+  return { scene: out, models: await loadModels(SCENE, scene) }
 }
 
 async function boot() {
@@ -117,6 +125,12 @@ async function boot() {
   const state = store!.getState()
   const g = gpuOf(state.gl)
   const three = state.scene
+  // A shot builds its lights as an export's (objects/SceneLights.tsx); the viewport's area light filters fewer samples.
+  three.traverse((o) => {
+    if (!(o instanceof SceneAreaLight) || !o.castShadow) return
+    delete (o.shadow as { filterNode?: unknown }).filterNode
+    attachSoftShadow(o, false)
+  })
   camera.fov = framing.fov
   camera.aspect = framing.width / framing.height
   camera.near = framing.near

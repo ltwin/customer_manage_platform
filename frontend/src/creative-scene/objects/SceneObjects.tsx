@@ -221,7 +221,43 @@ function LightIcon({ light, edge }: { light: SceneObject['light']; edge: string 
         </mesh>
       )}
       {light && light.type !== 'directional' && lightSize(light) > 0 && <RadiusRing radius={lightSize(light)} color={color} />}
+      {light?.type === 'area' && <AreaOutline light={light} color={color} />}
     </group>
+  )
+}
+
+/** A unit square's outline in its xy plane, corners at ±1, its last point its first. */
+const unitSquare = /*@__PURE__*/ (() => {
+  const g = new BufferGeometry()
+  g.setAttribute('position', new Float32BufferAttribute([1, 1, 0, -1, 1, 0, -1, -1, 0, 1, -1, 0, 1, 1, 0], 3))
+  return g
+})()
+
+/**
+ * An area light's face, as Blender draws it (data: 面光源): its outline, width × height in the object's XY plane,
+ * and a tick along −Z, the way it shines. Drawn in the object's group, its outline scales with the object and its
+ * parents as the light's face does (render/lightModel/lights.ts SceneAreaLight); never picked.
+ */
+function AreaOutline({ light, color }: { light: NonNullable<SceneObject['light']>; color: string }) {
+  const ellipse = (light.shape ?? lightDefaults.shape) === 'ellipse'
+  const outline = useMemo(() => {
+    const line = new Line(ellipse ? unitCircle : unitSquare, new LineBasicMaterial())
+    line.layers.set(ASIDE_LAYER)
+    line.raycast = () => {}
+    line.name = 'area-outline'
+    return line
+  }, [ellipse])
+  useEffect(() => () => outline.material.dispose(), [outline])
+  outline.material.color.set(color)
+  outline.scale.set((light.width ?? lightDefaults.width) / 2, (light.height ?? lightDefaults.height) / 2, 1)
+  return (
+    <>
+      <primitive object={outline} />
+      <mesh layers={ASIDE_LAYER} position={[0, 0, -0.2]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.01, 0.01, 0.4, 6]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+    </>
   )
 }
 

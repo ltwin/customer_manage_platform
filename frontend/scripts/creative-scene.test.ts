@@ -9,6 +9,7 @@ import {
 } from '../src/creative-scene/builtins/geometry.ts'
 import {
   applyOps,
+  lightDefaultsOf,
   applyPatch,
   type SceneState,
 } from '../src/creative-scene/state/apply.ts'
@@ -138,6 +139,41 @@ test('light and camera updates merge by key as the server does, a type change ke
   update(4, { camera: { depth_of_field: true, focus_object_id: id(1) } })
   update(4, { camera: { focus_object_id: '' } })
   assert.deepEqual(at(4).camera, { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: 'A', depth_of_field: true, f_stop: 2.8, focus: 10, focus_object_id: '', iso: 100, shutter_s: 1 / 4000, exposure_mode: 'ambient', exposure_compensation: 0 }, 'an empty string clears the focus object')
+})
+
+// data: 面光源「换类型」 locally, the server's cases (backend area_light_test.go TestAreaLightTypeChangeKeepsLuminousIntensity)
+// with the same inputs and results: the equivalent luminous intensity kept at the world scale before and after.
+test('a type change to or from an area light keeps its luminous intensity at the world scale, as the server does', () => {
+  const scaled = (sx: number, sy: number) => ({ ...identity, scale: [sx, sy, 1] })
+  const parent = obj(1, 'group', null, 1, { transform: scaled(2, 3) })
+  const slanted = obj(2, 'group', null, 2, { transform: scaled(2, 1) })
+  const flat = obj(3, 'group', null, 3)
+  const cases: [string, number, SceneObject['light'], NonNullable<ObjectUpdate['light']>, SceneObject['transform'] | null, string, number][] = [
+    ['point to area', 3, { type: 'point', intensity: 400 }, { type: 'area' }, null, 'area', 6400],
+    ['area back to spot', 3, { type: 'area', intensity: 6400 }, { type: 'spot' }, null, 'spot', 400],
+    ['to an area of the size written', 3, { type: 'point', intensity: 400 }, { type: 'area', width: 0.5, height: 0.5 }, null, 'area', 1600],
+    ['ellipse to point', 3, { type: 'area', shape: 'ellipse', width: 1, height: 1, intensity: 100 }, { type: 'point' }, null, 'point', 25 * Math.PI],
+    ['under a scaled parent', 1, { type: 'point', intensity: 400 }, { type: 'area' }, null, 'area', 400 / (0.0625 * 6)],
+    ['a parallelogram', 2, { type: 'point', intensity: 400 }, { type: 'area' }, null, 'area', 400 / (0.0625 * 2)],
+    ['scale and type at once, from area', 3, { type: 'area', intensity: 6400 }, { type: 'point' }, scaled(2, 2), 'point', 400],
+    ['scale and type at once, to area', 3, { type: 'point', intensity: 400 }, { type: 'area' }, scaled(2, 2), 'area', 1600],
+    ['capped to area', 3, { type: 'point', intensity: 1000 }, { type: 'area', width: 0.01, height: 0.01 }, null, 'area', 100000],
+    ['capped from area', 3, { type: 'area', width: 2, height: 2, intensity: 100000 }, { type: 'point' }, null, 'point', 1000],
+    ['intensity written wins', 3, { type: 'point', intensity: 400 }, { type: 'area', intensity: 500 }, null, 'area', 500],
+    ['directional to area keeps the number', 3, { type: 'directional', intensity: 3 }, { type: 'area' }, null, 'area', 3],
+    ['area to directional capped', 3, { type: 'area', intensity: 5000 }, { type: 'directional' }, null, 'directional', 1000],
+  ]
+  for (const [name, under, l, change, transform, type, want] of cases) {
+    const lamp = obj(10, 'light', id(under), 10, { light: l })
+    // Under the slanted group the light is turned 45° about Z.
+    if (under === 2) lamp.transform = { ...identity, rotation: [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)] }
+    let s = applyOps(state([parent, slanted, flat]), [{ op: 'add_objects', objects: [lamp] }])
+    s = applyOps(s, [{ op: 'update_objects', updates: [{ object_id: id(10), light: change, ...(transform ? { transform } : {}) }] }])
+    const got = s.scene.objects.find((o) => o.id === id(10))!.light!
+    assert.ok(got.type === type && Math.abs(got.intensity! - want) <= 1e-9 * want, `${name}: ${JSON.stringify(got)}, want ${type} at ${want}`)
+  }
+  // The defaults the server stores for an area light (data: 面光源), and the others' intensity.
+  assert.deepEqual([lightDefaultsOf('area').intensity, lightDefaultsOf('area').shape, lightDefaultsOf('area').width, lightDefaultsOf('point').intensity], [10000, 'rectangle', 0.25, 1])
 })
 
 test('an undo patch puts objects back under a returning group and replaces only listed fields', () => {

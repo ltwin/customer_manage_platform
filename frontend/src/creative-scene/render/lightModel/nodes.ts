@@ -1,9 +1,11 @@
+import { Matrix4 } from 'three'
 import * as tsl from 'three/tsl'
-import { DirectionalLightNode, PointLightNode, SpotLightNode, type NodeBuilder, type WebGPURenderer } from 'three/webgpu'
+import { DirectionalLightNode, PointLightNode, RectAreaLightNode, SpotLightNode, type NodeBuilder, type NodeFrame, type WebGPURenderer } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { installDirect } from './direct.ts'
+import { installAreaDirect, installDirect } from './direct.ts'
 import { effectiveFalloff, sinHalfOf, type Sized } from './formulas.ts'
-import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from './lights.ts'
+import { ltcTables } from './ltc.ts'
+import { SceneAreaLight, SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from './lights.ts'
 
 // The light nodes of the lights with a size (Epic design「直接光的入口」).
 // three maps a light to its node by the light's exact class (NodeLibrary),
@@ -17,13 +19,19 @@ import { SceneSphereLight, SceneSpotLight, SceneSunLight, type SizedLight } from
 // place of d (Epic design I2), and every sized light hands the lighting model
 // its shape besides its direction (sized, render/lightModel/direct.ts).
 //
-// Checked against three r186. This file, direct.ts (PhysicalLightingModel's
-// direct), shadowFilter.ts (rawDepth, ShadowNode's coordinates) and
-// sunShadow.ts (ownNames) lean on its internals: on an upgrade, read them
-// again against the new source and run the AC-S1-10 e2e.
+// An area light (data: 面光源) is three's RectAreaLight drawn with its face
+// as its world transform scales it, its parents' included (AreaLightNode),
+// casting a cube's shadow, its ellipse drawn by direct.ts.
+//
+// Checked against three r186. This file (RectAreaLightNode's update and
+// setupDirectRectArea), direct.ts (PhysicalLightingModel's direct and
+// directRectArea), ltc.ts (LTC.js's LTC_ClippedSphereFormFactor),
+// shadowFilter.ts (rawDepth, ShadowNode's coordinates) and sunShadow.ts
+// (ownNames) lean on its internals: on an upgrade, read them again against
+// the new source and run the AC-S1-10 and area light e2e.
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { clamp, length, reference, sin } = tsl as unknown as Record<string, Op>
+const { clamp, length, pointShadow, reference, sin } = tsl as unknown as Record<string, Op>
 const { renderGroup } = tsl as unknown as Record<string, TSLNode>
 
 type Direct = { lightColor: TSLNode; lightDirection: TSLNode; sized?: Sized }
@@ -70,6 +78,39 @@ class SunDiscLightNode extends DirectionalLightNode {
   }
 }
 
+const viewRotation = new Matrix4()
+
+/**
+ * An area light: its face's half axes as the light keeps them in world space
+ * (SceneAreaLight), scale and all, in place of three's, which takes the
+ * rotation alone; a cube's shadow, as a point light's (the volumes' when they
+ * set one, AnalyticLightNode prefers the shadow's own node); and whether it
+ * is an ellipse, fixed as it builds (objects/lights.ts lightKey).
+ */
+class AreaLightNode extends RectAreaLightNode {
+  declare light: SceneAreaLight
+  declare halfWidth: TSLNode & { value: SceneAreaLight['halfX'] }
+  declare halfHeight: TSLNode & { value: SceneAreaLight['halfY'] }
+
+  update(frame: NodeFrame) {
+    const out = super.update(frame)
+    if (!frame.camera) return out
+    viewRotation.extractRotation(frame.camera.matrixWorldInverse)
+    this.halfWidth.value.copy(this.light.halfX).applyMatrix4(viewRotation)
+    this.halfHeight.value.copy(this.light.halfY).applyMatrix4(viewRotation)
+    return out
+  }
+
+  setupShadowNode() {
+    return pointShadow(this.light as unknown as TSLNode)
+  }
+
+  setupDirectRectArea(builder: NodeBuilder) {
+    const base = super.setupDirectRectArea(builder)
+    return base && { ...base, ellipse: this.light.shape === 'ellipse' }
+  }
+}
+
 const installed = new WeakSet<WebGPURenderer>()
 
 /** Maps the sized lights to their nodes for renderer; once a renderer (render/gpu.ts). */
@@ -80,5 +121,9 @@ export function installLightModel(renderer: WebGPURenderer) {
   library.addLight(SphereLightNode, SceneSphereLight)
   library.addLight(SizedSpotLightNode, SceneSpotLight)
   library.addLight(SunDiscLightNode, SceneSunLight)
+  library.addLight(AreaLightNode, SceneAreaLight)
+  // three's area light tables, once for every renderer.
+  RectAreaLightNode.setLTC(ltcTables())
   installDirect()
+  installAreaDirect()
 }
