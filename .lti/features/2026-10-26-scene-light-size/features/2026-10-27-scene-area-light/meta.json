@@ -1,6 +1,6 @@
 {
   "uid": "847866d9-bbe9-452c-84a7-c84bac399f2c",
-  "revision": 6,
+  "revision": 9,
   "id": "scene-area-light",
   "kind": "feature",
   "assurance": "governed",
@@ -23,9 +23,9 @@
       "data:面光源"
     ]
   },
-  "state": "in-progress",
+  "state": "archived",
   "createdAt": "2026-10-27T17:41:32.974Z",
-  "updatedAt": "2026-10-27T18:40:25.911Z",
+  "updatedAt": "2026-10-28T07:35:47.716Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -70,8 +70,181 @@
       ".lti/snapshots/0205b6966ec678c3c6191201e941dbb7922e3b7af95c2894705cd7680b4cc1ee.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-28T07:35:22.311Z",
+      "assessment": {
+        "method": "checks",
+        "coverage": [
+          {
+            "criterionId": "AC-78cf4febef1d",
+            "status": "verified",
+            "evidence": "AC-S2-1 由下面五条分项证据覆盖（tasks 3.1/3.3/3.4/5.2）"
+          },
+          {
+            "criterionId": "AC-d67342190724",
+            "status": "verified",
+            "evidence": "e2e「area light: energy as the reference has it」「soft shadows as the reference has them」在 area-studio 上分别测矩形、椭圆，沿局部 −Z（tasks 3.3/3.4）"
+          },
+          {
+            "criterionId": "AC-62859587ea99",
+            "status": "verified",
+            "evidence": "e2e「area light: lights what it faces and nothing behind it」WebGPU/WebGL2 矩形 204、椭圆 203 格亮，转半圈 0 格（tasks 3.1/3.3）"
+          },
+          {
+            "criterionId": "AC-266954d2573a",
+            "status": "verified",
+            "evidence": "能量光栅/参考解：墙面 1.0020–1.0052，高光板 1.0002–1.0016（≤5%，tasks 3.3）"
+          },
+          {
+            "criterionId": "AC-2b74ac176e44",
+            "status": "verified",
+            "evidence": "全图阴影误差 0.0015–0.0037（≤0.005，tasks 3.4）"
+          },
+          {
+            "criterionId": "AC-8399a651e698",
+            "status": "verified",
+            "evidence": "板剖面 1×1 m ≤0.0108（≤0.02）；2×0.5 m ≤0.0058、2×2 m ≤0.0095（≤0.05，tasks 3.4）"
+          },
+          {
+            "criterionId": "AC-80f1023f703b",
+            "status": "verified",
+            "evidence": "e2e「area light: Shift+A adds one …」沿 X 放大 2 倍后轮廓与发光面世界半宽半高同为 0.25×0.125 m（gpuTestHooks.areaFaces，tasks 5.2）"
+          },
+          {
+            "criterionId": "AC-7c1efb32da30",
+            "status": "verified",
+            "evidence": "10 倍边长处照度为 L·A/d² 的 0.9965/0.9973（≤2%）；离墙 5 cm 最大 π·L 的 0.992/0.990，无非有限值（tasks 3.3）"
+          },
+          {
+            "criterionId": "AC-c196b2ccfd93",
+            "status": "verified",
+            "evidence": "e2e「area light: AC-S2-3」(SCENE_E2E_TRACE)：逐网格最多差 0.23 级（阈值 1 级），阴影 234815/234815 像素一致（tasks 4.1）"
+          },
+          {
+            "criterionId": "AC-ec3a0a456899",
+            "status": "verified",
+            "evidence": "AC-S2-4 由下面三条覆盖，结果与 owner 决定见 tasks 6.1"
+          },
+          {
+            "criterionId": "AC-373c2788fb89",
+            "status": "verified",
+            "evidence": "性能页 perf.html?area=1 与 e2e「area light: AC-S2-4」(SCENE_E2E_LIGHT_PERF) 按此场景，1200×800（tasks 6.1）"
+          },
+          {
+            "criterionId": "AC-701b58c7c43d",
+            "status": "verified",
+            "evidence": "对照为 ?size=0（S1 全部尺寸为 0）（tasks 6.1）"
+          },
+          {
+            "criterionId": "AC-d12eb5894d9e",
+            "status": "verified",
+            "evidence": "冷编译：workbench 视口 +5.1 ms；realtime_gi 视口中位 +6.5 ms（波动大，单次最差 +15 ms，owner 2026-10-28 决定不复测）；realtime_gi 导出 +6%；workbench 导出 +57%、首次构建按实测记录（tasks 6.1）"
+          },
+          {
+            "criterionId": "AC-51c4176ce45c",
+            "status": "verified",
+            "evidence": "AC-S2-5 由下面四条覆盖"
+          },
+          {
+            "criterionId": "AC-34c4220f4f0b",
+            "status": "verified",
+            "evidence": "e2e「area light: Shift+A adds one …」：新建、改椭圆和宽、显示 ≈1963 cd、Cmd+Z 撤回（tasks 5.2）"
+          },
+          {
+            "criterionId": "AC-1767ab1da8bd",
+            "status": "verified",
+            "evidence": "scene_tools_test.go 断言工具说明的面光源字段、亮度单位、换算与柔光箱指引；TestAreaLightDefaults 覆盖服务端写入。未跑真实助手对话（tasks 2.1/2.3）"
+          },
+          {
+            "criterionId": "AC-34f36d77ae1c",
+            "status": "verified",
+            "evidence": "TestAreaLightRanges：面光源写 radius_m/distance、点光写 width、平行光写 shape 均 400 并指出字段（tasks 2.1）"
+          },
+          {
+            "criterionId": "AC-8f048e947a1a",
+            "status": "verified",
+            "evidence": "TestAreaLightTypeChangeKeepsLuminousIntensity 13 种情况；creative-scene.test.ts 同输入同结果；e2e 面板换点光写入同值（tasks 2.2/5.1/5.2）"
+          },
+          {
+            "criterionId": "AC-7ef8dc578c06",
+            "status": "verified",
+            "evidence": "AC-S2-6 由下面四条覆盖，另有资源回收 e2e（tasks 6.2）"
+          },
+          {
+            "criterionId": "AC-1d8180ff6922",
+            "status": "verified",
+            "evidence": "e2e「area light: lights what it faces and nothing behind it」WebGPU、WebGL2 各一（tasks 3.1/3.4）"
+          },
+          {
+            "criterionId": "AC-0f1901721010",
+            "status": "verified",
+            "evidence": "e2e「area light: a casting area light lights a casting volume」两个后端散射 7.9 级、转半圈 0.0 级（tasks 4.2）"
+          },
+          {
+            "criterionId": "AC-3b4967f10cbf",
+            "status": "verified",
+            "evidence": "e2e「the workbench's lit export with soft shadows is the same twice」含 area-studio，逐像素相同（tasks 3.4/6.2）"
+          },
+          {
+            "criterionId": "AC-fc946bd6120e",
+            "status": "verified",
+            "evidence": "light size 0 基线差 0–1 级；AC-S1-10 两条、AC-S1-1/2/6/8 通过；TestLightModelStalesLitOnce 未改（tasks 2.3/6.2）"
+          },
+          {
+            "criterionId": "AC-f4a02493d9e5",
+            "status": "verified",
+            "evidence": "e2e「area light: AC-S2-7」导出四张图，owner 2026-10-28 看图认可（tasks 6.3）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "spec：AC-S2-1~7 逐条映射（coverage），证据见 tasks 各条结果。design：unplanned 为 compaction_regression_test.go（edit_scene 说明变长，窗口 10000→10500）、lens.go/reparent.go（改用 sceneWorld，2.2 调整）、creative-scene-volumes.test.ts（体积选灯用例）、Viewport.tsx/gpu.ts（e2e 用 gpuTestHooks.areaFaces，5.2 调整），area_light_test.go 与 area-studio.json 是设计里写法不同的同一文件；untouched 的 LIGHT.area 是符号（在 trace/tables.ts）、light_size_test.go 未改（面光源用例放进新文件 area_light_test.go）。design.md 批准后改过：写入 N2 结论（three directRectArea 缺漫反射 1−F）、直接光伪代码按实现改写、椭圆三次方程改 Viète，属实施中解决未决事项与记录调整。tests：creative-scene ltc/trace/volumes/主文件单测 90 项通过；go test creativescene 整包、creativeagent SceneTool|Compaction 通过；e2e 逐个单独跑通过（见 tasks 3.x–6.x）；全量门禁留给合并时 make check-merge。contracts：data ADD 面光源与实现一致（字段、缺省、范围、换类型换算与截断、体积钳位、指纹不加版本号、OpenAPI 枚举）。living-specs：creative/scene ADD 面光源 6 个场景与行为一致。performance：AC-S2-4 实测与条件见 tasks 6.1，realtime_gi 视口不复测为 owner 决定。blast-radius：grep 调用方—Go sceneWorld（lens/lookat×2/reparent）、mergeLight/worldAreaScale（ops.go）由 creativescene 整包回归；TS mergeLight/updateObject/lightDefaultsOf（apply/intents/LightFields/objects/lights）由 creative-scene.test.ts 与 AC-4、AC-S1-8、面光源编辑器 e2e 回归；cubePCSS/attachSoftShadow（objects/lights、Lighting.tsx 太阳与天空灯）由 AC-S1-1、AC-S1-10 回归；installAreaDirect 只影响 RectAreaLight，项目里只有面光源用；hit.ts lightAt/directAt 由 AC-S1-2、AC-S1-6、AC-S2-3 回归；volumeShadowNode 由 S1 体积聚光与 W5 point shadow 回归。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "8d1b67518bf0194fc3e2446fc0be737901936c9ce91a343f50d4381252903a65"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-28T07:35:34.534Z",
+      "assessment": {
+        "method": "checks"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-10-28：AC-S2-7 四张图（area-studio 矩形、椭圆 × workbench、realtime_gi）「看了没问题」，要求收尾。AC-S2-4 的 realtime_gi 视口帧时不复测；冷编译钩子 addToStack 报错另开 issue scene-gi-cold-hook-error 跟踪（develop dc4a6a05）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "8d1b67518bf0194fc3e2446fc0be737901936c9ce91a343f50d4381252903a65"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-28T07:35:47.525Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "archived"
 }
