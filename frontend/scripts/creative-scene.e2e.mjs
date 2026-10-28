@@ -4373,6 +4373,26 @@ await check('area light: lights what it faces and nothing behind it, rectangle a
   assert.deepEqual(problems, [], 'the area light shades where it should not, or not where it should')
 })
 
+// SCENE_E2E_AREA_SAMPLES=<dir> (scene-area-light AC-S2-7): area-studio's casting area light, a 1 m rectangle and a
+// 1 m ellipse, exported in the workbench and the real-time GI, for the owner to judge.
+if (process.env.SCENE_E2E_AREA_SAMPLES) await check('area light: AC-S2-7, area-studio\'s rectangle and ellipse in both engines, for the owner', async () => {
+  const dir = process.env.SCENE_E2E_AREA_SAMPLES
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const shape of ['rectangle', 'ellipse'])
+      for (const engine of ['workbench', 'realtime_gi']) {
+        const edit = (scene) => {
+          scene.render.engine = engine
+          for (const o of scene.objects) if (o.light?.type === 'area') o.light.shape = shape
+        }
+        const { images } = await exportReference(gpu, 'area-studio', { litOnly: true, edit })
+        for (const img of images) await writeFile(`${dir}/area-studio-${shape}-${engine}.png`, img.png)
+      }
+  } finally {
+    await gpu.close()
+  }
+})
+
 /**
  * scene-light-radius AC-S1-7's scene: frame-two-lights (a parallel and a point light) with a spot over its middle and
  * the procedural sky, four lights that cast, at their default sizes or all of size 0 (the sky's sun by the
