@@ -106,5 +106,12 @@ e2e 都在 `frontend/scripts/creative-scene.e2e.mjs`，用 `SCENE_E2E_ONLY` 过�
     - 视口 `realtime_gi`：今天这台机器上波动很大，同一配置多次测量相差 ±3–6 ms，零尺寸对照本身在 28.1–40.7 ms 之间（当时另一个会话的 Vite 也在运行）。中位数：对照 30.4 ms，面光源配置 36.9 ms（**+6.5 ms**），S1 的配置（平行光仍在、缺省尺寸）36.6 ms。也就是面光源与它替换掉的平行光代价相当；单次最差 +15 ms。**交 owner 判断**是否在空闲时复测。
     - 导出（冷编译，1K）：`realtime_gi` 30.9 → 32.9 s（**+6%**），达标（≤ 50%）；`workbench` 6.7 → 10.6 s（+57%，按 AC 只记录；S1 的 4 盏有尺寸灯是 +66%）。
   - 发现（与本分支无关）：性能页和导出在 `realtime_gi` 下打开冷编译钩子（`gpuTestHooks.cold`）时，three 报「Cannot read properties of undefined (reading 'addToStack')」。分支起点 develop 38b4a4e0 同样报错（临时检出起点的 `src` 复现过），S1 测量时还没有；不开冷编译不报。AC-S2-4 的导出检查只放过这一条报错，对照和面光源两边一样。建议另开 issue 跟进。
-- [ ] 6.2 防回退（AC-S2-6）：重跑 AC-S1-2 尺寸为 0 基线与 AC-S1-10 的 e2e；加面光源再删除后视口 `renderTargets` 回到原数；`light-check`、e2e 的 `sizeless()` 不给面光源写 `radius_m`。完成判据：全部通过。
+- [x] 6.2 防回退（AC-S2-6）：重跑 AC-S1-2 尺寸为 0 基线与 AC-S1-10 的 e2e；加面光源再删除后视口 `renderTargets` 回到原数；`light-check`、e2e 的 `sizeless()` 不给面光源写 `radius_m`。完成判据：全部通过。
+  - 结果（e2e 逐个单独跑）：
+    - 「light size 0」S1 两个场景按基线导出：差 0–1 级，通过；
+    - AC-S1-10 两条（WebGPU / WebGL2 着色与阴影、`workbench` 导出两次一致）通过；AC-S1-2、AC-S1-6 命中点着色通过；AC-S1-8 属性面板通过；
+    - AC-S1-1 半影随距离变宽通过：`cubePCSS` 为面光源改成按核长轴取上限后，S1 的圆盘分支保持原表达式，各距离半影宽度与参考解相差 ≤ 2 cm（个别边 1 texel 级）；
+    - AC-4（加聚光、换点光、撤销）通过，其间偶发一次失败，重跑通过，与本分支改动无关；
+    - 「lights: … leave nothing behind」通过；新增 e2e「area light: adding one, making it cast and undoing both leave nothing behind (AC-S2-6)」（随 6.1 提交）：最终渲染下新建面光源、开投影、两次撤销、切白模再切回，第 1 轮后与第 3 轮后视口的 `textures`、`renderTargets`、`uniformBuffers`、`programs` 相同，通过；
+    - `sizeless()` / `referenceScene` 不给面光源写 `radius_m` 已在 3.1 落地；S1 的指纹测试未改（2.3）。
 - [ ] 6.3 owner 看图（AC-S2-7）：`area-studio` 的矩形、椭圆面光源，`workbench` 和 `realtime_gi` 各一组，交 owner。
