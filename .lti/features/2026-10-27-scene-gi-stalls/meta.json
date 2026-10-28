@@ -1,0 +1,17 @@
+{
+  "uid": "905bbe55-e9fe-4bff-a51f-b8ecf153e2de",
+  "revision": 1,
+  "id": "scene-gi-stalls",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-28T04:09:37.350Z",
+  "updatedAt": "2026-10-28T04:09:37.412Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
