@@ -1,0 +1,31 @@
+{
+  "uid": "ca7b371c-9744-404a-bf17-ae0cc81e913d",
+  "revision": 2,
+  "id": "agent-run-context-limit-dead-end",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-10-26T06:36:45.351Z",
+  "updatedAt": "2026-10-28T03:07:33.294Z",
+  "risk": {
+    "factors": []
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-28T03:07:33.073Z",
+      "contentHash": "f1ce70655bf43e04"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-28T03:07:33.073Z",
+      "contentHash": "2fb19aa3375ce086"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
