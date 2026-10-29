@@ -1,6 +1,6 @@
 {
   "uid": "ef07da1d-1eed-4bb0-847f-73189d39e87e",
-  "revision": 3,
+  "revision": 4,
   "id": "scene-face-materials",
   "kind": "feature",
   "assurance": "governed",
@@ -48,9 +48,9 @@
       "api:完成场景客户端任务"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-28T13:54:10.701Z",
-  "updatedAt": "2026-10-29T03:12:52.254Z",
+  "updatedAt": "2026-10-29T03:14:18.460Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -71,8 +71,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "9242ad0b5035a4805067a292233ceb8bd796472b",
+    "at": "2026-10-29T03:14:17.891Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "246c2e77698a087484f8ec970f540c00223f0f46b5c423547ff1b30f4abdc6b3"
+    },
+    "preExisting": [
+      ".lti/snapshots/246c2e77698a087484f8ec970f540c00223f0f46b5c423547ff1b30f4abdc6b3.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
