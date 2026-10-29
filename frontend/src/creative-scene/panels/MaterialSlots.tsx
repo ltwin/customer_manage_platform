@@ -3,7 +3,7 @@ import { MathUtils } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import type { ParamSpec } from '../builtins/catalog.ts'
 import { materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
-import { assignmentOf, readClipboard, resolvedSlot, setSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
+import { assignmentOf, readClipboard, setSlot, shownSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
 import { modelCache, type MeshConstants, type SceneModel } from '../models/cache.ts'
 import { applyBuiltinFaces } from '../models/faces.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
@@ -80,7 +80,8 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
   const [notice, setNotice] = useState('')
   /** A shared model's slot waiting for 「只改这个 / 所有实例」. */
   const [asking, setAsking] = useState<string | null>(null)
-  if (!slots.length) return null
+  // In face edit a model without slots still needs 「+ 新槽位」 for its first.
+  if (!slots.length && !faces) return null
   const name = object.name || '物件'
   const slotNames = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((s) => s.slot)
   const constantsOf = (o: SceneObject, slot: string): MeshConstants | null => {
@@ -94,7 +95,11 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
     const rev = o.model?.content_revision_id
     return (rev && modelCache.peek(rev)?.meshes.find((m) => m.slot === slot && m.origin)?.origin) || null
   }
-  const hintOf = (o: SceneObject, slot: string) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).find((s) => s.slot === slot)?.hint ?? null
+  /** A slot of o as it draws, shown and edited alike (slotEdits.ts shownSlot). */
+  const drawn = (o: SceneObject, slot: string) => {
+    const s = slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).find((x) => x.slot === slot) ?? { slot, hint: null, faces: false }
+    return shownSlot(o, s, s.faces ? originOf(o, slot) : null, constantsOf(o, slot))
+  }
   const edit = (slot: string, label: string, next: (o: SceneObject, current: MaterialSlot | null) => MaterialSlot | null, merge?: string) => {
     const updates = setSlot(objects, selected, object.id, slot, slotNames, next)
     if (updates.length) onUpdates(updates, label, merge)
@@ -145,7 +150,7 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
       {slots.map(({ slot, hint, faces }) => {
         const assigned = object.material_slots?.[slot]
         const origin = faces && !assigned ? originOf(object, slot) : null
-        const resolved = origin && origin.slot !== null ? resolvedSlot(object, origin.slot, origin.hint, constantsOf(object, origin.slot)) : resolvedSlot(object, slot, hint, constantsOf(object, slot))
+        const resolved = drawn(object, slot)
         const current = resolved.material.kind === 'pattern' ? resolved.material.id : resolved.material.kind === 'principled' ? principledID : (assigned?.preset ?? '')
         const entry = materialEntry(current)
         const params = resolved.material.kind === 'unknown' ? {} : resolved.material.params
@@ -219,7 +224,7 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
                         slot,
                         `调整「${name}」材质`,
                         (o, cur) => {
-                          const base = cur ?? assignmentOf(resolvedSlot(o, slot, hintOf(o, slot), constantsOf(o, slot)))
+                          const base = cur ?? assignmentOf(drawn(o, slot))
                           // Each object keeps its own material; one without this parameter stays as it is.
                           if (!base || !materialEntry(base.preset)?.params[k]) return cur
                           return { ...base, params: { ...(base.params ?? {}), [k]: v } }

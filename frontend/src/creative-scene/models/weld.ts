@@ -19,8 +19,7 @@ export function weld(count: number, key: (i: number, out: Float64Array) => void)
   let size = 0
   for (let i = 0; i < count; i++) {
     key(i, k)
-    // Only the hash wraps the numbers to 32 bits; equality reads them whole.
-    let h = (Math.imul(k[0] | 0, 73856093) ^ Math.imul(k[1] | 0, 19349663) ^ Math.imul(k[2] | 0, 83492791)) & mask
+    let h = hash(k[0], k[1], k[2]) & mask
     for (;;) {
       const n = table[h]
       if (n < 0) {
@@ -40,4 +39,26 @@ export function weld(count: number, key: (i: number, out: Float64Array) => void)
     }
   }
   return { ids, firsts: firsts.subarray(0, size), size }
+}
+
+/**
+ * The three numbers mixed into 32 bits, every input bit reaching the low
+ * ones the table uses. Float32 bit patterns of round coordinates end in
+ * zeros: multiplied and masked as they were, a 256 × 256 grid collided
+ * into a few slots and took seconds. Only the hash wraps the numbers to 32
+ * bits; equality reads them whole.
+ */
+function hash(x: number, y: number, z: number): number {
+  let h = fmix(x | 0)
+  h = fmix(h ^ (y | 0))
+  return fmix(h ^ (z | 0))
+}
+
+/** MurmurHash3's finalizer. */
+function fmix(h: number): number {
+  h ^= h >>> 16
+  h = Math.imul(h, 0x85ebca6b)
+  h ^= h >>> 13
+  h = Math.imul(h, 0xc2b2ae35)
+  return h ^ (h >>> 16)
 }

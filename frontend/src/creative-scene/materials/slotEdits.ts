@@ -34,6 +34,17 @@ export function resolvedSlot(o: SceneObject, slot: string, hint: string | null, 
 }
 
 /**
+ * A slot of o as it draws (resolve.ts resolvePart): one a face assignment
+ * brought, with no material of its own, as the slot its faces came from
+ * (origin). What the material panel shows, and the base a parameter edit
+ * starts from, so the edit keeps the material the faces show.
+ */
+export function shownSlot(o: SceneObject, slot: { slot: string; hint: string | null; faces: boolean }, origin: { slot: string | null; hint: string | null } | null, constants: MeshConstants | null): ResolvedSlot {
+  if (!slot.faces || !origin || o.material_slots?.[slot.slot]) return resolvedSlot(o, slot.slot, slot.hint, constants)
+  return resolveSlot(origin.slot, o.material_slots, origin.hint, o.kind === 'primitive' ? null : constants)
+}
+
+/**
  * The slot as an assignment: what is assigned, or what the slot resolves to
  * made explicit, so editing one parameter of a hinted or model material
  * keeps the rest of it.

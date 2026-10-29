@@ -56,20 +56,7 @@ const t1 = (digest: Uint8Array) => 't1-' + Array.from(digest.subarray(0, 8), (b)
 /** What the fingerprint hashes: `[vertices, triangles, connection numbers]`, uint32 little-endian. */
 function topologyInput(geometry: BufferGeometry): Uint8Array<ArrayBuffer> {
   const position = geometry.attributes.position
-  let corners: ArrayLike<number>
-  if (geometry.index) corners = geometry.index.array
-  else {
-    const bits = new Uint32Array(new Float32Array(3).buffer)
-    const floats = new Float32Array(bits.buffer)
-    corners = weld(position.count, (i, out) => {
-      floats[0] = position.getX(i)
-      floats[1] = position.getY(i)
-      floats[2] = position.getZ(i)
-      out[0] = bits[0]
-      out[1] = bits[1]
-      out[2] = bits[2]
-    }).ids
-  }
+  const corners: ArrayLike<number> = geometry.index ? geometry.index.array : weldExact(geometry).ids
   const words = new Uint32Array(2 + corners.length)
   words[0] = position.count
   words[1] = triangleCount(geometry)
@@ -82,6 +69,21 @@ function topologyInput(geometry: BufferGeometry): Uint8Array<ArrayBuffer> {
 }
 
 const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
+
+/** Vertices numbered where their float32 bits are equal, in order of first use. */
+function weldExact(geometry: BufferGeometry) {
+  const position = geometry.attributes.position
+  const bits = new Uint32Array(new Float32Array(3).buffer)
+  const floats = new Float32Array(bits.buffer)
+  return weld(position.count, (i, out) => {
+    floats[0] = position.getX(i)
+    floats[1] = position.getY(i)
+    floats[2] = position.getZ(i)
+    out[0] = bits[0]
+    out[1] = bits[1]
+    out[2] = bits[2]
+  })
+}
 
 /** Fingerprints of the meshes `pick` names, as loaded, now. */
 export function fingerprintsNow(identities: ReadonlyMap<Mesh, MeshIdentity>, pick: (identity: MeshIdentity) => boolean = () => true): Map<Mesh, string> {
@@ -268,14 +270,48 @@ function countBySlot(entries: readonly FaceMesh[]): SlotCount[] {
   return [...totals].map(([slot, triangles]) => ({ slot, triangles }))
 }
 
-/** A mesh of a new GLB as carryFaces reads it; slot is the GLB's own, topology '' where no entry could land. */
-export type CarryTarget = { identity: MeshIdentity; topology: string; slot?: string | null }
+/**
+ * A mesh of a new GLB as carryFaces reads it; slot is the GLB's own,
+ * topology '' where no entry could land. unordered: it is in separate
+ * pieces, so its triangles' order cannot be proven (orderUnprovable).
+ */
+export type CarryTarget = { identity: MeshIdentity; topology: string; slot?: string | null; unordered?: boolean }
+
+/**
+ * Whether the mesh's triangles can be put in another order under the same
+ * fingerprint: when it is in pieces that touch nowhere (welded where
+ * positions are exactly equal). Identical pieces swapped index the same, and
+ * without an index separate triangles swapped number the same. One piece is
+ * taken as proven: reordered, its connections number differently.
+ */
+export function orderUnprovable(geometry: BufferGeometry): boolean {
+  const index = geometry.index
+  const welded = weldExact(geometry)
+  const parent = new Int32Array(welded.size).map((_, i) => i)
+  const root = (v: number): number => {
+    while (parent[v] !== v) v = parent[v] = parent[parent[v]]
+    return v
+  }
+  const corner = (c: number) => welded.ids[index ? index.getX(c) : c]
+  const corners = index ? index.count : geometry.attributes.position.count
+  for (let c = 0; c + 2 < corners; c += 3) {
+    const a = root(corner(c))
+    parent[root(corner(c + 1))] = a
+    parent[root(corner(c + 2))] = a
+  }
+  // Positions no triangle uses are not pieces.
+  const roots = new Set<number>()
+  for (let c = 0; c < corners; c++) roots.add(root(corner(c)))
+  return roots.size > 1
+}
 
 /**
  * The assignment carried to a regenerated GLB (data: 模型内容「重新生成时」):
  * an entry stays when its identity is still there with the same fingerprint.
  * When a sibling of the same name, primitive and fingerprint is there too,
  * which is which cannot be proven; it stays only if the code is unchanged.
+ * So too within a mesh in separate pieces, whose order cannot be proven
+ * (orderUnprovable).
  * What is carried must still save: hints only for the slots kept, and an
  * entry that would take the slots past 32 with the new GLB's is dropped.
  */
@@ -296,7 +332,7 @@ export function carryFaces(old: Faces | null | undefined, next: readonly CarryTa
     const match = byKey.get(keyOf(entry))
     const twins = (lookalikes.get(alike(entry.path, entry.primitive, entry.topology)) ?? 0) > 1
     const adding = Object.keys(entry.assign).filter((s) => !slots.has(s))
-    if (match && match.topology === entry.topology && !(twins && codeChanged) && slots.size + adding.length <= faceLimits.slots) {
+    if (match && match.topology === entry.topology && !((twins || match.unordered) && codeChanged) && slots.size + adding.length <= faceLimits.slots) {
       kept.push(entry)
       for (const s of adding) slots.add(s)
     } else dropped.push(entry)
@@ -322,6 +358,7 @@ export function carryTargets(identities: ReadonlyMap<Mesh, MeshIdentity>, topolo
     identity,
     topology: topologies.get(mesh) ?? '',
     slot: slotOfMaterial((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as Material),
+    unordered: topologies.has(mesh) && orderUnprovable(mesh.geometry),
   }))
 }
 

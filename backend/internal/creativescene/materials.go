@@ -163,6 +163,7 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		ObjectID      string                      `json:"object_id"`
 		Kind          string                      `json:"kind"`
 		Model         *ModelRef                   `json:"model"`
+		Primitive     map[string]json.RawMessage  `json:"primitive"`
 		MaterialSlots map[string]*json.RawMessage `json:"material_slots"`
 	}
 	type decoded struct {
@@ -191,10 +192,12 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		return ops, nil
 	}
 
-	// What each object is and has, as the batch goes.
+	// What each object is and has, as the batch goes; faces is a builtin's
+	// face assignment, whose slots take materials too (有效槽位).
 	type state struct {
 		kind  string
 		model string
+		faces *Faces
 		slots map[string]MaterialSlot
 	}
 	objects := make(map[string]*state, len(cur.Objects))
@@ -203,7 +206,21 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		if o.Model != nil {
 			st.model = o.Model.ContentRevisionID
 		}
+		if o.Primitive != nil {
+			st.faces = o.Primitive.Faces
+		}
 		objects[o.ID] = st
+	}
+	// A builtin's faces written in the batch; unreadable ones are the scene command's to report.
+	writtenFaces := func(st *state, it item) {
+		raw, ok := it.Primitive["faces"]
+		if !ok {
+			return
+		}
+		var f *Faces
+		if json.Unmarshal(raw, &f) == nil {
+			st.faces = f
+		}
 	}
 	var revisions []string
 	for _, h := range heads {
@@ -227,17 +244,13 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 	slotNames := func(st *state) ([]string, bool) {
 		switch st.kind {
 		case KindPrimitive:
-			return []string{"main"}, true
+			return effectiveSlotIDs(builtinSlots, st.faces), true
 		case KindModelInstance:
 			m, ok := models[st.model]
 			if !ok || !m.usable {
 				return nil, false // nothing to check against
 			}
-			names := make([]string, len(m.payload.Manifest.Slots))
-			for i, sl := range m.payload.Manifest.Slots {
-				names[i] = sl.ID
-			}
-			return names, true
+			return effectiveSlotIDs(slotIDs(m.payload.Manifest), m.payload.Faces), true
 		}
 		return []string{}, true
 	}
@@ -293,6 +306,7 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 				if it.Model != nil {
 					st.model = it.Model.ContentRevisionID
 				}
+				writtenFaces(st, it)
 				objects[it.ID] = st
 				for name, v := range it.MaterialSlots {
 					var slot MaterialSlot
@@ -307,6 +321,9 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 				continue
 			}
 			st, ok := objects[it.ObjectID]
+			if ok {
+				writtenFaces(st, it)
+			}
 			if !ok || it.MaterialSlots == nil {
 				continue // the scene command reports a missing object
 			}

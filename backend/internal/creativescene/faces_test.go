@@ -2,7 +2,9 @@ package creativescene_test
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -416,5 +418,46 @@ func TestSavingAModelKeepsItsFaceSlots(t *testing.T) {
 	}
 	if _, ok := payload.Materials["brick"]; !ok || len(payload.Materials) != 1 {
 		t.Fatalf("materials of effective slots only: %+v", payload.Materials)
+	}
+}
+
+// The assistant gives a slot a face assignment brought a material as it
+// would the model's own (data: 模型内容「有效槽位」): read and write go by
+// the same slots, faces written in the same batch included.
+func TestTheAssistantPaintsFaceSlots(t *testing.T) {
+	f := setup(t)
+	creativescene.SetJobWaiterForTest(t, &fakeWaiter{})
+	doc := createScene(t, f.a)
+	model, arch, box := objectID(1), objectID(2), objectID(3)
+	mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect("objects"), Operations: []any{
+		commit(t, "pillar", stagePair(t, f, f.a), pillarGenerator(2), basicManifest(t), map[string]any{"faces": brickFaces()}),
+		op{"op": "add_objects", "objects": []any{instance(model, 1, map[string]any{"ref": "pillar"}), primitiveWith(arch, "arch@1", 2, builtinFaces()), primitiveWith(box, "box@1", 3, nil)}},
+	}})
+	paint := map[string]any{"preset": "paint@1", "params": map[string]any{}}
+	edit := func(ops ...any) error {
+		t.Helper()
+		_, err := agentEdit(t, f.a, creativescene.EditInput{DocumentID: doc, RunID: "ccrn_agent", BasedOn: int64(readScene(t, f.a, doc).Revision), Operations: raws(t, ops...)})
+		return err
+	}
+	slots := func(id string, primitive map[string]any, s map[string]any) op {
+		u := map[string]any{"object_id": id, "material_slots": s}
+		if primitive != nil {
+			u["primitive"] = primitive
+		}
+		return op{"op": "update_objects", "updates": []any{u}}
+	}
+	if err := edit(slots(model, nil, map[string]any{"brick": paint}), slots(arch, nil, map[string]any{"brick": paint})); err != nil {
+		t.Fatalf("face slots of a model and a builtin take materials: %v", err)
+	}
+	if err := edit(slots(box, map[string]any{"faces": builtinFaces()}, map[string]any{"brick": paint})); err != nil {
+		t.Fatalf("faces written in the same update bring their slot: %v", err)
+	}
+	if err := edit(slots(arch, nil, map[string]any{"door": paint})); !errors.Is(err, creativeops.ErrValidation) || !strings.Contains(err.Error(), "可用：main、brick") {
+		t.Fatalf("a slot no assignment has is refused, naming the effective ones: %v", err)
+	}
+	for _, id := range []string{model, arch, box} {
+		if got := readScene(t, f.a, doc).object(t, id).MaterialSlots["brick"]; got.Preset != "paint@1" {
+			t.Errorf("%s brick = %+v", id, got)
+		}
 	}
 }

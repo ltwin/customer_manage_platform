@@ -10,6 +10,7 @@ import {
   fingerprints,
   fingerprintsNow,
   landingIn,
+  orderUnprovable,
   carryOver,
   carryTargets,
   codeDiffers,
@@ -259,9 +260,68 @@ test('regenerating keeps what can be told apart and drops the rest', async () =>
   assert.deepEqual(carried.faces?.meshes.map((m) => m.path), [[['part:cap', 0]]])
   assert.deepEqual(carried.dropped, [{ slot: 'more', triangles: 1 }])
 
+  // A mesh whose triangles' order its connections cannot prove keeps its
+  // entry only while the code is the same, as twins do.
+  const unordered = next.map((m) => ({ ...m, unordered: true }))
+  assert.deepEqual(
+    carryFaces(old, unordered, false).faces?.meshes.map((m) => m.path),
+    [[['part:cap', 0]], [['row', 0], ['', 0]]],
+  )
+  assert.equal(carryFaces(old, unordered, true).faces, null)
+
   // Nothing survives: no faces at all, not an empty list.
   assert.equal(carryFaces(old, [], false).faces, null)
   assert.deepEqual(carryFaces(null, next, true), { faces: null, kept: [], dropped: [] })
+})
+
+test('swapped separate triangles or identical pieces fingerprint the same, so a mesh in pieces is unordered', async () => {
+  const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js')
+  const soup = (...xs: number[]) => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(xs.flatMap((x) => [x, 0, 0, x + 1, 0, 0, x, 1, 0]), 3))
+    return g
+  }
+  assert.equal(topologyOf(soup(0, 5)), topologyOf(soup(5, 0)), 'what the fingerprint cannot tell')
+  const boxes = (...xs: number[]) => mergeGeometries(xs.map((x) => new THREE.BoxGeometry().translate(x, 0, 0)))
+  assert.equal(topologyOf(boxes(0, 3)), topologyOf(boxes(3, 0)))
+  assert.equal(orderUnprovable(soup(0, 5)), true, 'two separate triangles')
+  assert.equal(orderUnprovable(boxes(0, 3)), true, 'two separate boxes')
+  // One piece, welded by position: a box's sides share corners though not indices.
+  assert.equal(orderUnprovable(new THREE.BoxGeometry()), false)
+  assert.equal(orderUnprovable(new THREE.BoxGeometry().toNonIndexed()), false, 'without an index too')
+  assert.equal(orderUnprovable(new THREE.SphereGeometry(1, 16, 8)), false)
+  assert.equal(orderUnprovable(soup(0, 1)), false, 'triangles meeting at a corner are one piece')
+
+  // Carried through a new GLB: code changed, the swapped triangle's faces are dropped, not moved.
+  const faces: Faces = { meshes: [{ path: [['m', 0]], primitive: 0, topology: topologyOf(soup(0, 5)), assign: { face_1: [[0, 1]] } }] }
+  const mesh = new THREE.Mesh(soup(5, 0))
+  const identities = new Map([[mesh, id(['m', 0])]])
+  const targets = carryTargets(identities, fingerprintsNow(identities, landingIn(faces)))
+  assert.equal(carryFaces(faces, targets, true).faces, null)
+  assert.deepEqual(carryFaces(faces, targets, true).dropped, [{ slot: 'face_1', triangles: 1 }])
+  assert.ok(carryFaces(faces, targets, false).faces, 'the same code: kept, as twins are')
+})
+
+test('welding a regular grid stays fast', () => {
+  // Float32 bit patterns of round coordinates end in zeros; a weak hash took seconds here.
+  const grid = new THREE.PlaneGeometry(256, 256, 256, 256).toNonIndexed()
+  const t0 = performance.now()
+  topologyOf(grid)
+  faceTopology(grid)
+  assert.ok(performance.now() - t0 < 1000, `${(performance.now() - t0).toFixed(0)} ms for 131k triangles`)
+})
+
+test('a face slot without its own material shows and edits as the slot its faces came from', async () => {
+  const { assignmentOf, shownSlot } = await import('../src/creative-scene/materials/slotEdits.ts')
+  const brick = { preset: 'stone_brick@1', params: { color: '#a03020', brick_size: 0.3 } }
+  const o = { id: 'o', kind: 'primitive', material_slots: { main: brick } } as never
+  const face = { slot: 'face_1', hint: null, faces: true }
+  const shown = shownSlot(o, face, { slot: 'main', hint: null }, null)
+  assert.deepEqual(assignmentOf(shown), { preset: 'stone_brick@1', params: { ...assignmentOf(shown)!.params, color: '#a03020', brick_size: 0.3 } }, 'its origin\'s brick, the base an edit starts from')
+  // With a material of its own, or not a face slot, it is itself.
+  const own = { ...(o as object), material_slots: { main: brick, face_1: { preset: 'paint@1', params: {} } } } as never
+  assert.equal(assignmentOf(shownSlot(own, face, { slot: 'main', hint: null }, null))?.preset, 'paint@1')
+  assert.equal(assignmentOf(shownSlot(o, { slot: 'main', hint: null, faces: false }, null, null))?.preset, 'stone_brick@1')
 })
 
 test('ranges encode triangle sets and assignments move triangles between slots', () => {
