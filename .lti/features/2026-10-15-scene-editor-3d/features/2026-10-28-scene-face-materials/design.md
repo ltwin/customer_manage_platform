@@ -133,6 +133,9 @@ sequenceDiagram
 - **面片容差**（0.05°；max(1e-5 m, 1e-6 × 包围盒对角线)）是初始值，验收样例点选不对时再调，不进契约。
 - **框选只选可见面**：与 Blender 实体模式一致；X 光（穿透框选）留作后续。
 - **残余风险**：同级同名同拓扑的网格只改参数时仍保留，owner 2026-10-28 接受，见 proposal Risk Notes。
+- **冲突后重试不带面分配**（实施 3.4）：任务结果里存的冲突产物 `BakeArtifacts` 不含 `faces`（结果格式属于 `data: 场景客户端任务`，本次不改）；而且冲突说明替换目标在烘焙期间被改过，当时带过来的分配不可信。重试写入的模型因此没有分配，`write_model` 结果报全部作废，创作者可在历史里找回。
+- **`edit_scene` 不限制 `derive_model` 与 `primitive.faces`**（实施 3.4，按「Agent 能力优先」）：助手可以清空或复制面分配，例如「把这根柱子的面分配去掉」。C5b2 拆出的是按语义条件选面的客户端任务，不是禁止助手动面分配。3.2 一度把 `derive_model` 列为不开放，3.4 撤销。
+- **有效槽位放在 `creativecontent`**：`creativecontent.EffectiveSlots` 同时服务 `write_model` 回报、`read_scene` 视图和资产库的模型要点，三处说法一致；`creativescene` 在下层之上调用它。`edit_scene` 的 `faces_cleared` 由写入前后快照比较得出，不改场景命令的回执。
 
 ## 接口与数据契约
 

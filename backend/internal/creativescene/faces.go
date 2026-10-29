@@ -2,6 +2,7 @@ package creativescene
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -9,7 +10,9 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 // Faces is a face assignment (data: 模型内容「面级材质分配」): some of a
@@ -201,19 +204,154 @@ var builtinSlots = []string{"main"}
 // nextPrimitiveFaces is a builtin's assignment after an update: written
 // faces replace it (null clears it); otherwise it holds unless the update
 // changed a parameter of the builtin's topology declaration, which clears it
-// (data: 场景内置基础体「topology」). cleared reports that last case.
-func nextPrimitiveFaces(b builtinSpec, old *Primitive, params map[string]any, written json.RawMessage) (*Faces, bool, error) {
+// (data: 场景内置基础体「topology」).
+func nextPrimitiveFaces(b builtinSpec, old *Primitive, params map[string]any, written json.RawMessage) (*Faces, error) {
 	if len(written) > 0 {
 		var f *Faces
 		dec := json.NewDecoder(bytes.NewReader(written))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&f); err != nil {
-			return nil, false, errors.New("faces 格式不合法")
+			return nil, errors.New("faces 格式不合法")
 		}
-		return f, false, checkFaces(f, builtinSlots, true)
+		return f, checkFaces(f, builtinSlots, true)
 	}
 	if old.Faces != nil && b.topologyChanged(old.Params, params) {
-		return nil, true, nil
+		return nil, nil
 	}
-	return old.Faces, false, nil
+	return old.Faces, nil
+}
+
+// rawFaces is an assignment as JSON, null when there is none.
+func rawFaces(f *Faces) json.RawMessage {
+	raw, err := json.Marshal(f)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+// SlotTriangles is how many triangles of a face assignment a slot had.
+type SlotTriangles struct {
+	Slot      string `json:"slot"`
+	Triangles int    `json:"triangles"`
+}
+
+// FacesChange is what a rebake did to the replaced model's face assignment:
+// the entries carried over and those dropped, by slot.
+type FacesChange struct {
+	Kept    []SlotTriangles `json:"kept"`
+	Dropped []SlotTriangles `json:"dropped"`
+}
+
+func countFaceSlots(meshes []FaceMesh) []SlotTriangles {
+	counts := map[string]int{}
+	for _, m := range meshes {
+		for slot, ranges := range m.Assign {
+			for _, r := range ranges {
+				counts[slot] += r[1] - r[0]
+			}
+		}
+	}
+	out := make([]SlotTriangles, 0, len(counts))
+	for slot, n := range counts {
+		out = append(out, SlotTriangles{Slot: slot, Triangles: n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
+	return out
+}
+
+// BakeFacesInTx compares the face assignment of the model a bake replaced
+// with the one it wrote, for write_model's answer. The job result keeps its
+// shape: the replaced model is read from the revision before the write. Nil
+// when the bake added an object or the replaced model had no assignment.
+func BakeFacesInTx(ctx context.Context, tx store.TxAccountScope, documentID string, bake BakeResult) (*FacesChange, error) {
+	if bake.Revision < 2 || len(bake.ObjectIDs) == 0 {
+		return nil, nil
+	}
+	prev, err := creativedocument.ReadAtInTx(ctx, tx, documentID, TypeKey, int64(bake.Revision)-1)
+	if err != nil {
+		return nil, err
+	}
+	scene, err := decodeScene(prev.Content.Payload)
+	if err != nil {
+		return nil, err
+	}
+	i, ok := indexObjects(scene.Objects)[bake.ObjectIDs[0]]
+	if !ok || scene.Objects[i].Model == nil {
+		return nil, nil
+	}
+	old := scene.Objects[i].Model.ContentRevisionID
+	models, err := placedModelsInTx(ctx, tx, []string{old, bake.ContentRevisionID})
+	if err != nil {
+		return nil, err
+	}
+	before := models[old].payload.Faces
+	if before == nil {
+		return nil, nil
+	}
+	var kept []FaceMesh
+	if after := models[bake.ContentRevisionID].payload.Faces; after != nil {
+		kept = after.Meshes
+	}
+	carried := map[string]bool{}
+	for _, m := range kept {
+		key, _ := json.Marshal([]any{m.Path, m.Primitive})
+		carried[string(key)] = true
+	}
+	var dropped []FaceMesh
+	for _, m := range before.Meshes {
+		if key, _ := json.Marshal([]any{m.Path, m.Primitive}); !carried[string(key)] {
+			dropped = append(dropped, m)
+		}
+	}
+	return &FacesChange{Kept: countFaceSlots(kept), Dropped: countFaceSlots(dropped)}, nil
+}
+
+// clearedFaces lists the builtins an edit left without the face assignment
+// they had before, when the edit did not write their faces itself: a change of
+// a topology parameter cleared them.
+func clearedFaces(ctx context.Context, tx store.TxAccountScope, documentID string, before Scene, ops []json.RawMessage) ([]string, error) {
+	written := map[string]bool{}
+	for _, raw := range ops {
+		var op struct {
+			Op      string `json:"op"`
+			Updates []struct {
+				ObjectID  string                     `json:"object_id"`
+				Primitive map[string]json.RawMessage `json:"primitive"`
+			} `json:"updates"`
+		}
+		if json.Unmarshal(raw, &op) != nil || op.Op != "update_objects" {
+			continue
+		}
+		for _, u := range op.Updates {
+			if _, ok := u.Primitive["faces"]; ok {
+				written[u.ObjectID] = true
+			}
+		}
+	}
+	had := map[string]bool{}
+	for _, o := range before.Objects {
+		if o.Primitive != nil && o.Primitive.Faces != nil && !written[o.ID] {
+			had[o.ID] = true
+		}
+	}
+	if len(had) == 0 {
+		return nil, nil
+	}
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, documentID, TypeKey)
+	if err != nil {
+		return nil, err
+	}
+	after, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, o := range after.Objects {
+		if had[o.ID] && o.Primitive != nil && o.Primitive.Faces == nil {
+			out = append(out, o.ID)
+		}
+	}
+	sort.Strings(out)
+	return out[:min(len(out), maxListedEntries)], nil
 }

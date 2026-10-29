@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 )
 
 func TestModelFactsOfCompleteAndStagedForms(t *testing.T) {
@@ -63,5 +64,29 @@ func TestModelFactsOfCompleteAndStagedForms(t *testing.T) {
 	}
 	if _, ok := creativecontent.ModelFactsOf(creativecontent.Payload{}); ok {
 		t.Fatal("empty payload read as a model")
+	}
+}
+
+// data: 模型内容「有效槽位」: the GLB's slots, then those a face assignment
+// brings, with the triangles assigned to each (scene-face-materials 3.4).
+func TestEffectiveSlots(t *testing.T) {
+	glb := []creativeglb.Slot{{ID: "stone", Hint: "stone"}, {ID: "trim"}}
+	faces := json.RawMessage(`{"meshes":[{"assign":{"stone":[[0,2]],"face_2":[[2,3]]}},{"assign":{"face_1":[[0,4],[6,8]]}}],"hints":{"face_1":"brick"}}`)
+	got, err := json.Marshal(creativecontent.EffectiveSlots(glb, faces))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"id":"stone","hint":"stone","source":"model","face_triangles":2},{"id":"trim","source":"model"},{"id":"face_1","hint":"brick","source":"faces","face_triangles":6},{"id":"face_2","source":"faces","face_triangles":1}]`
+	if string(got) != want {
+		t.Errorf("effective slots\n got %s\nwant %s", got, want)
+	}
+	for _, none := range []json.RawMessage{nil, json.RawMessage(`null`)} {
+		if got := creativecontent.EffectiveSlots(glb, none); len(got) != 2 || got[1] != (creativecontent.Slot{ID: "trim", Source: "model"}) {
+			t.Errorf("without faces: %+v", got)
+		}
+	}
+	facts, ok := creativecontent.ModelFactsOf(creativecontent.Payload{Model: json.RawMessage(`{"format":"glb","manifest":{"bounds":{"min":[0,0,0],"max":[1,1,1]},"triangles":12,"slots":[{"id":"stone"}],"parts":[],"anchors":[]},"faces":` + string(faces) + `,"generator":{"mount":"floor","params_schema":{},"params":{}}}`)})
+	if !ok || len(facts.Slots) != 3 || facts.Brief().Slots[2].ID != "face_2" {
+		t.Errorf("model facts carry the effective slots: %+v", facts.Slots)
 	}
 }

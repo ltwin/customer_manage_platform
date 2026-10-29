@@ -5,10 +5,14 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 // Face assignments on models (scene-face-materials 3.2): commit_model carries
@@ -291,5 +295,126 @@ func TestBuiltinFacesRejections(t *testing.T) {
 			}})
 			wantErr(t, err, creativeops.ErrValidation)
 		})
+	}
+}
+
+// What the assistant is told (scene-face-materials 3.4): effective slots in
+// read_scene, builtins an edit cleared, and what a rebake kept.
+
+func slotsOf(t *testing.T, slots []creativecontent.Slot) string {
+	t.Helper()
+	raw, err := json.Marshal(slots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func TestTheAssistantSeesFaceAssignments(t *testing.T) {
+	f := setup(t)
+	creativescene.SetJobWaiterForTest(t, &fakeWaiter{})
+	doc := createScene(t, f.a)
+	model, arch := objectID(1), objectID(2)
+	mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect("objects"), Operations: []any{
+		commit(t, "pillar", stagePair(t, f, f.a), pillarGenerator(2), basicManifest(t), map[string]any{"faces": brickFaces()}),
+		op{"op": "add_objects", "objects": []any{instance(model, 1, map[string]any{"ref": "pillar"}), primitiveWith(arch, "arch@1", 2, builtinFaces())}},
+	}})
+
+	read, err := agentRead(t, f.a, creativescene.ReadInput{DocumentID: doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := map[string]creativescene.ObjectView{}
+	for _, o := range read.Objects {
+		views[o.ID] = o
+	}
+	glb := basicManifest(t).Slots
+	wantModel := `[{"id":"` + glb[0].ID + `","hint":"` + glb[0].Hint + `","source":"model"},{"id":"brick","hint":"brick","source":"faces","face_triangles":2}]`
+	if got := slotsOf(t, views[model].Model.Slots); len(glb) != 1 || got != wantModel {
+		t.Errorf("model slots %s, want %s", got, wantModel)
+	}
+	if got := slotsOf(t, views[arch].Slots); got != `[{"id":"main","source":"model"},{"id":"brick","source":"faces","face_triangles":2}]` {
+		t.Errorf("builtin slots %s", got)
+	}
+
+	// edit_scene says which builtins a topology change cleared; a written null
+	// is the assistant's own doing and is not reported.
+	edit := func(patch map[string]any) creativescene.EditResult {
+		t.Helper()
+		out, err := agentEdit(t, f.a, creativescene.EditInput{DocumentID: doc, RunID: "ccrn_agent", BasedOn: int64(readScene(t, f.a, doc).Revision),
+			Operations: raws(t, op{"op": "update_objects", "updates": []any{map[string]any{"object_id": arch, "primitive": patch}}})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(creativescene.EditResult)
+	}
+	if got := edit(map[string]any{"params": map[string]any{"depth": 1.0}}); len(got.FacesCleared) != 0 {
+		t.Errorf("depth keeps the faces: %+v", got)
+	}
+	if got := edit(map[string]any{"params": map[string]any{"opening_width": 0.4}}); len(got.FacesCleared) != 1 || got.FacesCleared[0] != arch {
+		t.Errorf("opening_width clears the faces: %+v", got)
+	}
+	edit(map[string]any{"faces": builtinFaces()})
+	if got := edit(map[string]any{"faces": nil}); len(got.FacesCleared) != 0 {
+		t.Errorf("a written null is not reported: %+v", got)
+	}
+
+	// A rebake that carried nothing over: the brick faces are reported dropped.
+	rebake := func(faces any) *creativescene.FacesChange {
+		t.Helper()
+		job, _, err := bakeJobInTx(t, f.a, creativescene.BakeInput{DocumentID: doc, RunID: "ccrn_agent", ToolCallID: uuid.NewString(), BasedOn: int64(readScene(t, f.a, doc).Revision),
+			Code: pillarCode, Params: map[string]any{"height": 3}, Replace: &creativescene.ReplaceTarget{ObjectID: model}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed := claimOne(t, f.a)
+		out := bakeOutput(stagePair(t, f, f.a), basicManifest(t))
+		if faces != nil {
+			out["faces"] = faces
+		}
+		resp, err := completeJob(t, f.a, uuid.NewString(), map[string]any{"job_id": job.ID, "claim_token": claimed.ClaimToken, "outcome": "succeeded", "bake": out})
+		if err != nil || resp.Result.Bake == nil {
+			t.Fatalf("bake %+v %v", resp, err)
+		}
+		var change *creativescene.FacesChange
+		if err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			var err error
+			change, err = creativescene.BakeFacesInTx(t.Context(), tx, doc, *resp.Result.Bake)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return change
+	}
+	if got := rebake(brickFaces()); got == nil || len(got.Kept) != 1 || got.Kept[0] != (creativescene.SlotTriangles{Slot: "brick", Triangles: 2}) || len(got.Dropped) != 0 {
+		t.Errorf("carried over: %+v", got)
+	}
+	if got := rebake(nil); got == nil || len(got.Kept) != 0 || len(got.Dropped) != 1 || got.Dropped[0].Triangles != 2 {
+		t.Errorf("dropped: %+v", got)
+	}
+	if got := rebake(nil); got != nil {
+		t.Errorf("nothing to report once the model has no faces: %+v", got)
+	}
+}
+
+func TestSavingAModelKeepsItsFaceSlots(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	id := objectID(1)
+	mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect("objects"), Operations: []any{
+		commit(t, "pillar", stagePair(t, f, f.a), pillarGenerator(2), basicManifest(t), map[string]any{"faces": brickFaces()}),
+		op{"op": "add_objects", "objects": []any{slotted(instance(id, 1, map[string]any{"ref": "pillar"}), map[string]any{"brick": material("stone_brick@1"), "gone": material("wood@1")})}},
+	}})
+	_, saved, err := saveModel(t, f.a, command(t, creativescene.SaveModelInput{DocumentID: doc, ObjectID: id, ExpectedObjectRev: contentRev(t, readScene(t, f.a, doc), id),
+		ThumbnailUploadID: stage(t, f, f.a, "image"), Target: creativelibrary.ImportTarget{Title: "砖柱"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, payload := readRevision(t, f.a, saved.ContentRevisionID)
+	if payload.Faces == nil {
+		t.Fatal("the library copy carries the face assignment")
+	}
+	if _, ok := payload.Materials["brick"]; !ok || len(payload.Materials) != 1 {
+		t.Fatalf("materials of effective slots only: %+v", payload.Materials)
 	}
 }

@@ -209,9 +209,6 @@ type changeSet struct {
 	// focus lists the cameras whose focus_object_id the batch wrote; Apply
 	// checks their targets against the scene after the whole batch.
 	focus map[string]bool
-	// facesCleared lists builtins whose face assignment a topology parameter
-	// change cleared, for the assistant's result.
-	facesCleared []string
 }
 
 func newChangeSet() *changeSet {
@@ -367,12 +364,9 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 			if err != nil {
 				return invalid("物件 %s：%v", o.ID, err)
 			}
-			faces, cleared, err := nextPrimitiveFaces(b, o.Primitive, params, u.Primitive.Faces)
+			faces, err := nextPrimitiveFaces(b, o.Primitive, params, u.Primitive.Faces)
 			if err != nil {
 				return invalid("物件 %s：%v", o.ID, err)
-			}
-			if cleared {
-				c.facesCleared = append(c.facesCleared, o.ID)
 			}
 			o.Primitive = &Primitive{Builtin: b.Builtin, Params: params, Faces: faces}
 		}

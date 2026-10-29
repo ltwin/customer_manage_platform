@@ -7180,6 +7180,8 @@ type CreativeSceneJobClaimRequest struct {
 // CreativeSceneJobCompletePayload defines model for CreativeSceneJobCompletePayload.
 type CreativeSceneJobCompletePayload struct {
 	Bake *struct {
+		// Faces 替换目标原修订的面级材质分配，由渲染端按身份与拓扑指纹带到新 GLB 上（data: 模型内容「重新生成时」）；没有时省略。 原样写入 commit_model.faces。任务结果的格式不变。
+		Faces       *CreativeModelFaces    `json:"faces,omitempty"`
 		GlbUploadId string                 `json:"glb_upload_id"`
 		Manifest    map[string]interface{} `json:"manifest"`
 
