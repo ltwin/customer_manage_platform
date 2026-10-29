@@ -486,3 +486,60 @@ test('carryOver reads the new GLB: same mesh kept, changed mesh dropped, twins o
   assert.equal(codeDiffers({ code_sha256: 'a', lib_version: 1 }, { code_sha256: 'a', lib_version: 2 }), true)
   assert.equal(codeDiffers(null, { code_sha256: 'a', lib_version: 1 }), true)
 })
+
+// scene-face-materials 5.1: entering face edit and picking patches.
+test('face edit enters only an unlocked, visible model instance or builtin', async () => {
+  const { faceEditBlock, faceSource } = await import('../src/creative-scene/faceEdit/state.ts')
+  const base = { id: 'sobj_1', name: '物件', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, material_slots: {} }
+  const box = { ...base, kind: 'primitive', primitive: { builtin: 'box@1', params: { width: 1 } } } as never
+  const model = { ...base, kind: 'model_instance', model: { content_revision_id: 'ccrv_a' } } as never
+  assert.equal(faceEditBlock(box, true), null)
+  assert.equal(faceEditBlock(model, true), null)
+  assert.equal(faceEditBlock(undefined, true), '先选中一个模型实例或基础体，再按 Tab 进入面编辑')
+  assert.equal(faceEditBlock({ ...base, kind: 'light', light: { type: 'point' } } as never, true), '面编辑只用于模型实例和基础体')
+  assert.equal(faceEditBlock({ ...(box as object), locked: true } as never, true), '物件已锁定，解锁后才能面编辑')
+  assert.equal(faceEditBlock({ ...(box as object), visible: false } as never, true), '物件已隐藏，显示后才能面编辑')
+  assert.equal(faceEditBlock(model, false), '模型不可用，不能面编辑')
+  assert.equal(faceSource(model), 'ccrv_a')
+  assert.notEqual(faceSource(box), faceSource({ ...(box as object), primitive: { builtin: 'box@1', params: { width: 2 } } } as never), 'new parameters, new triangles')
+})
+
+test('a click picks a patch; Shift adds it or takes it out; a click on nothing clears', async () => {
+  const { clickPatch, selectedCount } = await import('../src/creative-scene/faceEdit/state.ts')
+  let sel = clickPatch({}, 'a', [3, 2], false)
+  assert.deepEqual(sel, { a: [2, 3] })
+  sel = clickPatch(sel, 'a', [0, 1], true)
+  assert.deepEqual(sel, { a: [0, 1, 2, 3] })
+  sel = clickPatch(sel, 'b', [5], true)
+  assert.equal(selectedCount(sel), 5)
+  sel = clickPatch(sel, 'a', [2, 3], true)
+  assert.deepEqual(sel, { a: [0, 1], b: [5] }, 'a patch all selected comes out')
+  assert.deepEqual(clickPatch(sel, 'b', [5], true), { a: [0, 1] }, 'an emptied mesh is dropped')
+  assert.deepEqual(clickPatch(sel, 'a', [2, 3, 4], true).a, [0, 1, 2, 3, 4], 'a patch partly selected is added whole')
+  assert.equal(clickPatch(sel, null, [], true), sel)
+  assert.deepEqual(clickPatch(sel, null, [], false), {})
+  assert.deepEqual(clickPatch(sel, 'b', [7, 8], false), { b: [7, 8] }, 'a plain click replaces')
+})
+
+test('on a box a click picks one side, two triangles, numbered as the assignment numbers them', async () => {
+  const { builtinEditMesh, patchEdges, pickTriangle } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const geometry = primitiveGeometry('box@1', defaultParams('box@1'))!
+  const mesh = builtinEditMesh(geometry)
+  assert.equal(mesh.key, '[[["",0]],0]')
+  assert.equal(mesh.topology, topologyOf(geometry))
+  // The object stands 10 m along x; the ray comes in along -x towards its middle.
+  geometry.computeBoundingBox()
+  const middle = geometry.boundingBox!.getCenter(new THREE.Vector3())
+  const world = new THREE.Matrix4().makeTranslation(10, 0, 0)
+  const raycaster = new THREE.Raycaster(new THREE.Vector3(20, middle.y, middle.z), new THREE.Vector3(-1, 0, 0))
+  const hit = pickTriangle(raycaster, mesh, world)
+  assert.ok(hit, 'the ray meets the box')
+  const shape = mesh.shape()
+  assert.ok(shape.normals[3 * hit.triangle] > 0.99, 'the triangle faces the ray')
+  const patch = shape.patches[shape.patchOf[hit.triangle]]
+  assert.equal(patch.length, 2)
+  assert.ok(patch.every((t) => shape.normals[3 * t] > 0.99))
+  assert.equal(pickTriangle(new THREE.Raycaster(new THREE.Vector3(20, 50, 0), new THREE.Vector3(-1, 0, 0)), mesh, world), null)
+  // Lines where sides meet: the box's 12 edges, not the diagonals across its sides.
+  assert.equal(patchEdges(geometry, shape).length, 12 * 6)
+})

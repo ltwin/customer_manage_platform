@@ -1,5 +1,6 @@
 import { createStore } from 'zustand/vanilla'
 import type { Scene } from '../api.ts'
+import type { FaceEdit } from '../faceEdit/state.ts'
 import type { Context } from '../input/keymap.ts'
 import type { SceneModel } from '../models/cache.ts'
 import type { Device, DevicePreference } from '../input/navigation.ts'
@@ -110,6 +111,8 @@ export type EditorUI = {
   display: DisplayMode | null
   /** Where Shift+Z goes back to from wireframe. */
   wireBack: DisplayMode
+  /** Tab's face edit on the active object (faceEdit/state.ts); not saved with the view. */
+  faceEdit: FaceEdit | null
 }
 
 export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
@@ -145,6 +148,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     dofPreview: false,
     display: saved?.display ?? null,
     wireBack: saved?.wireBack ?? 'solid',
+    faceEdit: null,
   }))
 }
 
@@ -178,5 +182,6 @@ export function contextOf(ui: EditorUI): Context {
   if (ui.popup || ui.exporting) return 'menu'
   if (ui.boxing) return 'boxselect'
   if (ui.preview) return 'preview'
+  if (ui.faceEdit) return 'faceedit'
   return 'idle'
 }

@@ -1061,6 +1061,55 @@ await check('C6 copy semantics: a placed model changes only in this scene; editi
   await context.close()
 })
 
+// scene-face-materials 5.1: Tab enters face edit on the active object; a click picks a flat patch.
+await check('face edit: Tab on a box, a click selects one side (two triangles), Shift+click takes it out, G says why not, Tab leaves', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  // Framed, the box fills the middle of the view.
+  await page.keyboard.press('Period')
+  await sleep(800)
+  const { x, y } = await viewportCenter(page)
+  const onBox = { x: x + 30, y }
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  await page.keyboard.press('Tab')
+  await waitFor(async () => /^面编辑：方块/.test((await page.locator('.cc-scene-mode').textContent()) ?? ''), 'the status bar shows face edit')
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  const commands = server.commands.length
+
+  await page.mouse.click(onBox.x, onBox.y)
+  await waitFor(async () => /已选 2 个三角形/.test(await hint()), 'one side of the box, two triangles')
+  await shot(page, 'face-edit-side')
+  // From the top-front-right the lines show where the sides meet.
+  await page.keyboard.press('KeyN')
+  await page.mouse.move(x + 200, y)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(x + 120, y + 60, { steps: 5 })
+  await page.mouse.up({ button: 'middle' })
+  await sleep(300)
+  await shot(page, 'face-edit-angled')
+  await page.keyboard.press('KeyN')
+  await page.keyboard.press('Period')
+  await sleep(800)
+  await page.keyboard.down('Shift')
+  await page.mouse.click(onBox.x, onBox.y)
+  await page.keyboard.up('Shift')
+  await waitFor(async () => !/已选/.test(await hint()), 'Shift+click on a selected side takes it out')
+  await page.mouse.click(onBox.x, onBox.y)
+  await waitFor(async () => /已选 2 个三角形/.test(await hint()), 'selected again')
+  await page.mouse.click(x, y - 330)
+  await waitFor(async () => !/已选/.test(await hint()), 'a click on nothing clears')
+  assert.equal(await page.getByRole('treeitem', { name: /方块/ }).getAttribute('aria-selected'), 'true', 'the object stays selected')
+
+  await page.keyboard.press('KeyG')
+  await waitFor(async () => /不移动、旋转、缩放/.test(await hint()), 'G says faces are not moved')
+  assert.equal(server.commands.length, commands, 'face edit selection sends nothing')
+  await page.keyboard.press('Tab')
+  await waitFor(async () => (await page.locator('.cc-scene-mode').count()) === 0, 'Tab leaves face edit')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('keyboard flow: Shift+A, G Z 2 Enter, R cancelled, A G confirmed', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)

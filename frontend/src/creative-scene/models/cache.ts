@@ -8,7 +8,7 @@ import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
 import { mergeParts, noMerge } from './merge.ts'
-import { applyFaces, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces } from './faces.ts'
+import { applyFaces, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces, type OwnedMesh } from './faces.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -139,6 +139,7 @@ export class ModelCache {
   private readonly loads = new Map<string, Promise<ModelParts>>()
   private readonly ready = new Map<string, ModelParts>()
   private readonly generators = new Map<string, Promise<ModelGenerator>>()
+  private owning: { revision: string; meshes: Promise<OwnedMesh[]> } | null = null
 
   constructor(download: Download = downloadGLB, readGenerator: ReadGenerator = (r) => readModelGenerator(r)) {
     this.download = download
@@ -242,6 +243,28 @@ export class ModelCache {
     )
     this.loads.set(revision, promise)
     return promise
+  }
+
+  /**
+   * Every mesh of a revision with its identity and fingerprint, in arrays of
+   * its own, for face edit: parsed apart from the drawn parts, which loading
+   * split and merged. One revision is kept, the one being edited.
+   */
+  owned(revision: string): Promise<OwnedMesh[]> {
+    if (this.owning?.revision === revision) return this.owning.meshes
+    const meshes = (async () => {
+      const local = this.local.getState()[revision]
+      if (!local && parsePlaceholder(revision)) throw new Error('本机模型已不在，请重新生成')
+      const glb = local ? local.glb : await this.download(revision)
+      inspect(glb)
+      const { scene, identities } = await parseModelGLB(glb)
+      return ownedMeshes(scene, identities)
+    })()
+    meshes.catch(() => {
+      if (this.owning?.meshes === meshes) this.owning = null
+    })
+    this.owning = { revision, meshes }
+    return meshes
   }
 
   /**

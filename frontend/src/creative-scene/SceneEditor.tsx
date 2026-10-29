@@ -20,6 +20,8 @@ import { boxSelect, click, emptySelection, listClick, prune, selectAll, topmost 
 import { ContextMenu, type MenuItem } from './panels/ContextMenu.tsx'
 import { ConflictPrompt } from './panels/ConflictPrompt.tsx'
 import { FirstRunHint } from './panels/FirstRunHint.tsx'
+import { clickPatch, faceEditBlock, faceSource, selectedCount } from './faceEdit/state.ts'
+import { useFaceMeshes } from './faceEdit/useFaceMeshes.ts'
 import { ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
 import type { SlotCount } from './models/faces.ts'
@@ -239,6 +241,10 @@ export default function SceneEditor({
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
   const selected = u.selection.selected
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
+  const faceObject = u.faceEdit ? byID.get(u.faceEdit.objectID) : undefined
+  const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelCache)
+  /** A model instance whose model can be drawn; anything else has no model to fail. */
+  const usableModel = (o: SceneObject | undefined) => !o?.model?.content_revision_id || models[o.model.content_revision_id]?.usable !== false
   const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
   const shownModel = shownActive?.model?.content_revision_id
   // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
@@ -313,6 +319,31 @@ export default function SceneEditor({
   useEffect(() => undo.onNotice((notice) => ui.setState({ notice })), [undo, ui])
 
   const notify = (notice: string) => ui.setState({ notice })
+  // Face edit lasts while its object can be edited and stays active; new
+  // triangles (another revision, other builtin parameters) clear the selection.
+  useEffect(() => {
+    const fe = u.faceEdit
+    if (!fe) return
+    const o = byID.get(fe.objectID)
+    const reason = readOnly ? '' : faceEditBlock(o, usableModel(o))
+    if (reason !== null || u.selection.active !== fe.objectID || faceMeshes?.state === 'failed') {
+      const why = faceMeshes?.state === 'failed' ? faceMeshes.message : reason
+      ui.setState({ faceEdit: null, ...(why ? { notice: `已退出面编辑：${why}` } : {}) })
+      return
+    }
+    const source = o && faceSource(o)
+    if (source && source !== fe.source) {
+      ui.setState({ faceEdit: { ...fe, source, selected: {} }, ...(selectedCount(fe.selected) ? { notice: '物件内容变了，面选区已清空' } : {}) })
+    }
+  })
+  const facePick = (hit: { key: string; triangle: number } | null, shift: boolean) => {
+    const fe = ui.getState().faceEdit
+    if (!fe || faceMeshes?.state !== 'ready') return
+    const mesh = hit ? faceMeshes.meshes.find((m) => m.key === hit.key) : undefined
+    const shape = mesh?.shape()
+    const patch = hit && shape ? (shape.patches[shape.patchOf[hit.triangle]] ?? []) : []
+    ui.setState({ faceEdit: { ...fe, selected: clickPatch(fe.selected, mesh ? mesh.key : null, patch, shift) } })
+  }
   /** Editing what the assistant works on goes ahead, with the soft notice. */
   const warnAgent = (ids: readonly string[]) => {
     if (ids.some((id) => highlighted.has(id))) notify(agentNotice)
@@ -759,6 +790,16 @@ export default function SceneEditor({
         return
       case 'save':
         return notify('场景会自动保存，不需要手动保存')
+      case 'face-edit': {
+        if (u.faceEdit) return ui.setState({ faceEdit: null })
+        if (!editing) return
+        const reason = faceEditBlock(active ?? undefined, usableModel(active ?? undefined))
+        const source = active && faceSource(active)
+        if (reason || !active || !source) return notify(reason ?? '不能面编辑')
+        return ui.setState({ faceEdit: { objectID: active.id, source, selected: {} }, popup: null })
+      }
+      case 'face-transform':
+        return notify('面编辑只给面分配材质，不移动、旋转、缩放；要改形状，请改模型代码或参数')
       case 'shortcuts':
         return ui.setState({ sheet: !u.sheet })
       case 'escape': {
@@ -767,6 +808,8 @@ export default function SceneEditor({
         const target = escapeTarget({ modal: false, menu: !!u.popup || u.sheet, preview: !!u.preview, selection: selected.length > 0 })
         if (target === 'close-menu') ui.setState({ popup: null, sheet: false })
         else if (target === 'exit-preview') ui.setState({ preview: null })
+        // In face edit Esc clears the faces, not the object: Tab leaves.
+        else if (u.faceEdit) ui.setState({ faceEdit: { ...u.faceEdit, selected: {} } })
         else if (target === 'deselect') ui.setState({ selection: emptySelection })
         return
       }
@@ -778,6 +821,8 @@ export default function SceneEditor({
     e.stopPropagation()
     if (typing(e.nativeEvent)) return
     const native = e.nativeEvent
+    // Tab on a panel's control still moves focus; over the viewport it is face edit.
+    if (native.code === 'Tab' && native.target !== root.current) return
     if (modifierKeys.has(native.code)) handle.current?.modifiers(native)
     const context = contextOf(ui.getState())
     if (context === 'modal' && handle.current?.modalNumeric(native)) {
@@ -890,8 +935,13 @@ export default function SceneEditor({
     if (u.modal) return `${u.modal}  ·  X/Y/Z 锁轴 · ${m} 吸附 · Shift 精细 · 输入数字 · 左键确认 · 右键取消`
     if (u.pickFocus) return '点选要对焦的物件（基础体、模型实例或空物体） · Esc 取消'
     if (u.preview) return `正在预览第 ${u.preview.revision} 版 · 只读`
+    if (u.faceEdit) {
+      if (faceMeshes?.state !== 'ready') return '正在准备面编辑…'
+      const count = selectedCount(u.faceEdit.selected)
+      return `${count ? `已选 ${count} 个三角形 · ` : ''}单击选面片 · Shift+单击加选 / 取消 · Esc 清空选区 · Tab 退出`
+    }
     if (s.trashed) return '场景在回收站，请先恢复后再编辑'
-    if (selected.length) return 'G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除'
+    if (selected.length) return `G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除${active && !faceEditBlock(active, true) ? ' · Tab 面编辑' : ''}`
     return '左键选择 · 拖动框选 · 中键环绕（Alt+左键） · Shift+A 添加'
   })()
   const deviceText = `导航：${u.device === 'auto' ? `${u.guessed === 'trackpad' ? '触控板' : '鼠标'}（自动）` : u.device === 'trackpad' ? '触控板' : '鼠标'}`
@@ -1136,8 +1186,10 @@ export default function SceneEditor({
                 onDragging={(dragging) => session.setDragging(dragging)}
                 libraryDrag={drag}
                 onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, placed)}
+                faceMeshes={faceMeshes?.state === 'ready' ? faceMeshes.meshes : null}
+                onFacePick={facePick}
               />
-              <StatusBar hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
+              <StatusBar mode={u.faceEdit ? `面编辑：${faceObject?.name || '物件'}` : ''} hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />
             </div>
             {u.code && !u.history && (

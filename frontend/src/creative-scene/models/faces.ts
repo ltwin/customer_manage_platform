@@ -114,7 +114,7 @@ export function ownedMeshes(root: Object3D, identities: ReadonlyMap<Mesh, MeshId
 }
 
 /** A new geometry of the given triangles only, its vertices compacted into arrays of its own. */
-function extract(geometry: BufferGeometry, triangles: readonly number[]): BufferGeometry {
+export function extract(geometry: BufferGeometry, triangles: readonly number[]): BufferGeometry {
   const out = new BufferGeometry()
   const index = geometry.index
   const names = Object.keys(geometry.attributes)

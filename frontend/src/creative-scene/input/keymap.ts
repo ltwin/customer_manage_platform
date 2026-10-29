@@ -2,7 +2,7 @@
 // is the only source for the dispatcher, the status bar, menu shortcut labels
 // and the shortcut sheet, so what is shown always matches what happens.
 
-export type Context = 'idle' | 'modal' | 'boxselect' | 'menu' | 'preview'
+export type Context = 'idle' | 'modal' | 'boxselect' | 'menu' | 'preview' | 'faceedit'
 
 export type Action =
   | 'add-menu'
@@ -56,8 +56,10 @@ export type Action =
   | 'plane-z'
   | 'confirm'
   | 'cancel'
+  | 'face-edit'
+  | 'face-transform'
 
-export type Group = '导航' | '选择' | '变换' | '编辑' | '视图' | '通用'
+export type Group = '导航' | '选择' | '变换' | '编辑' | '面编辑' | '视图' | '通用'
 
 /** Modifiers must match exactly; an omitted one must not be held. */
 export type Mods = { mod?: boolean; shift?: boolean; alt?: boolean }
@@ -75,7 +77,10 @@ export type Binding = {
 export type Gesture = { keys: string; label: string; group: Group }
 
 const idle: Context[] = ['idle']
-const viewing: Context[] = ['idle', 'preview']
+// Face edit looks around, undoes and opens panels as object mode does.
+const viewing: Context[] = ['idle', 'preview', 'faceedit']
+const editing: Context[] = ['idle', 'faceedit']
+const faceEdit: Context[] = ['faceedit']
 const modal: Context[] = ['modal']
 
 export const bindings: readonly Binding[] = [
@@ -117,11 +122,14 @@ export const bindings: readonly Binding[] = [
   { codes: ['Backquote'], contexts: viewing, action: 'view-menu', label: '视图菜单', group: '视图' },
   { codes: ['KeyZ'], contexts: viewing, action: 'display-menu', label: '显示模式', group: '视图' },
   { codes: ['KeyZ'], mods: { shift: true }, contexts: viewing, action: 'toggle-wireframe', label: '切换线框', group: '视图' },
-  { codes: ['KeyZ'], mods: { mod: true }, contexts: idle, action: 'undo', label: '撤销', group: '通用' },
-  { codes: ['KeyZ'], mods: { mod: true, shift: true }, contexts: idle, action: 'redo', label: '重做', group: '通用' },
-  { codes: ['KeyS'], mods: { mod: true }, contexts: ['idle', 'modal', 'boxselect', 'menu', 'preview'], action: 'save', label: '保存（自动）', group: '通用' },
+  { codes: ['KeyZ'], mods: { mod: true }, contexts: editing, action: 'undo', label: '撤销', group: '通用' },
+  { codes: ['KeyZ'], mods: { mod: true, shift: true }, contexts: editing, action: 'redo', label: '重做', group: '通用' },
+  { codes: ['KeyS'], mods: { mod: true }, contexts: ['idle', 'modal', 'boxselect', 'menu', 'preview', 'faceedit'], action: 'save', label: '保存（自动）', group: '通用' },
   { codes: ['Slash'], mods: { shift: true }, contexts: viewing, action: 'shortcuts', label: '快捷键速查', group: '通用' },
-  { codes: ['Escape'], contexts: ['idle', 'boxselect', 'menu', 'preview'], action: 'escape', label: '取消 / 退出', group: '通用' },
+  { codes: ['Escape'], contexts: ['idle', 'boxselect', 'menu', 'preview', 'faceedit'], action: 'escape', label: '取消 / 退出', group: '通用' },
+  { codes: ['Tab'], contexts: editing, action: 'face-edit', label: '进入 / 退出面编辑（活动的模型实例或基础体）', group: '面编辑' },
+  // Faces are given materials here, never moved: shape is the model code's (AI 原生，不做网格编辑).
+  { codes: ['KeyG', 'KeyR', 'KeyS'], contexts: faceEdit, action: 'face-transform', label: 'G / R / S 不移动面：形状由模型代码决定', group: '面编辑' },
   { codes: ['KeyX'], contexts: modal, action: 'axis-x', label: '锁定 X 轴', group: '变换' },
   { codes: ['KeyY'], contexts: modal, action: 'axis-y', label: '锁定 Y 轴', group: '变换' },
   { codes: ['KeyZ'], contexts: modal, action: 'axis-z', label: '锁定 Z 轴', group: '变换' },
@@ -149,6 +157,8 @@ export const gestures: readonly Gesture[] = [
   { keys: '变换中按 Shift', label: '精细调整', group: '变换' },
   { keys: '变换中输入数字', label: '精确数值，Tab 换轴', group: '变换' },
   { keys: '右键', label: '菜单；变换中为取消', group: '编辑' },
+  { keys: '左键单击', label: '选中一块平面（面片）', group: '面编辑' },
+  { keys: 'Shift + 单击', label: '加选 / 取消面片', group: '面编辑' },
 ]
 
 export type KeyLike = {

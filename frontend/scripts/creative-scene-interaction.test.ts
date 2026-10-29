@@ -57,6 +57,19 @@ test('contexts decide what a key means', () => {
   assert.equal(action(key('KeyS', { metaKey: true }), 'modal'), 'save', 'Cmd+S is caught everywhere')
 })
 
+// scene-face-materials 5.1: face edit is a context of its own.
+test('face edit: Tab in and out, G / R / S say why they do nothing, viewing keys still work', () => {
+  assert.equal(action(key('Tab')), 'face-edit')
+  assert.equal(action(key('Tab'), 'faceedit'), 'face-edit')
+  assert.equal(action(key('Tab'), 'preview'), null, 'a preview is read-only')
+  for (const code of ['KeyG', 'KeyR', 'KeyS']) assert.equal(action(key(code), 'faceedit'), 'face-transform')
+  assert.equal(action(key('KeyX'), 'faceedit'), null, 'objects are not deleted from face edit')
+  assert.equal(action(key('Digit7'), 'faceedit'), 'view-top')
+  assert.equal(action(key('KeyZ', { metaKey: true }), 'faceedit'), 'undo')
+  assert.equal(action(key('Escape'), 'faceedit'), 'escape')
+  assert.equal(action(key('KeyS', { metaKey: true }), 'faceedit'), 'save')
+})
+
 test('no two bindings share a key in the same context, and every one is labelled', () => {
   const seen = new Set<string>()
   for (const b of bindings) {

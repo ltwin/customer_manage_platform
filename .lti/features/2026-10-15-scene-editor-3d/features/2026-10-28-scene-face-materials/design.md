@@ -140,6 +140,8 @@ sequenceDiagram
 - **新槽位还没配材质时沿用原槽位**（实施 4.1，AC-3）：拆出的片记下来源槽位（`ModelMeshPart.origin`），`materials/resolve.ts:resolvePart` 在新槽位没有分配材质时按来源槽位解析；材质面板对这类槽位显示「沿用原槽位」。来源计入合并分组键，没有面分配时为 null，分组与追踪缓存的编号不变。追踪缓存键不加分配哈希：分配随修订不可变，修订号已能区分。
 - **助手烘焙读不到替换前的模型时不报成功**（实施 4.3）：渲染端在烘焙的同时读确认快照，找到替换目标实例当前的模型摘要；读取失败就丢弃产物、报 `host_error`，助手重试。如果当作「没有分配」照常完成，分配会被静默作废。快照里的目标若已不是任务冻结时的版本，完成时本来就会冲突，不需要另行核对。
 - **预览等带入完成再显示**（实施 4.3）：编辑器烘焙出新 GLB 后，带入（解析 GLB、给候选网格算指纹）与缩略图、上传并行；预览等它完成再换上，避免已指定的面先闪回原槽位。新建模型和没有分配的模型不解析，不增加开销。
+- **面编辑的几何空间**（实施 5.1）：物件节点下的内容还套着一层文档到视图的旋转（`SceneObjects.tsx:ObjectNode`），拾取和叠加层都按 `meshWorld` = 节点世界矩阵 × 这层旋转放置。模型的网格由 `ModelCache.owned` 重新解析 GLB 得到（只留正在编辑的一个修订），与渲染用的拆分、合并结果分开。
+- **Tab 只在焦点位于编辑器时进出面编辑**（实施 5.1）：焦点在面板控件上时 Tab 仍按浏览器习惯移动焦点；点视口会把焦点交回编辑器。面编辑中 Esc 清空面选区，不退出；物件被锁定、隐藏、删除，活动物件换了，或进入只读、历史预览时自动退出，并在状态栏说明原因。
 - **有效槽位放在 `creativecontent`**：`creativecontent.EffectiveSlots` 同时服务 `write_model` 回报、`read_scene` 视图和资产库的模型要点，三处说法一致；`creativescene` 在下层之上调用它。`edit_scene` 的 `faces_cleared` 由写入前后快照比较得出，不改场景命令的回执。
 
 ## 接口与数据契约
@@ -160,7 +162,8 @@ sequenceDiagram
 | `frontend/src/creative-scene/preview/cache.ts:PreviewModels.load` | 修改 | 接收 `faces` |
 | `frontend/src/creative-scene/preview/ModelPreview.tsx` | 修改 | `faces` 属性，随资产的模型载荷传入 |
 | `frontend/src/creative-scene/objects/SceneObjects.tsx:PrimitiveMesh` | 修改 | 基础体按分配拆槽位渲染 |
-| `frontend/src/creative-scene/faceEdit/` | 新增 | 面编辑状态、拾取、框选、高亮、面片边线 |
+| `frontend/src/creative-scene/faceEdit/` | 新增 | 面编辑状态、拾取、框选、高亮、面片边线（5.1：`state.ts`、`meshes.ts`、`useFaceMeshes.ts`、`FaceOverlay.tsx`） |
+| `frontend/src/creative-scene/models/cache.ts`（`owned`）、`Viewport.tsx`、`SceneEditor.tsx`、`state/sceneStore.ts` | 修改 | 面编辑读取模型网格；视口拾取三角形、画叠加层；进出与退出条件；`faceedit` 按键上下文（实施 5.1） |
 | `frontend/src/creative-scene/input/keymap.ts` | 修改 | Tab 与面编辑键位，速查表条目 |
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | 面编辑时的拾取与框选分流 |
 | `frontend/src/creative-scene/panels/MaterialSlots.tsx` | 修改 | 面编辑的槽位操作，有效槽位与失效提示 |
