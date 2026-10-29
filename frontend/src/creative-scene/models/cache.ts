@@ -8,7 +8,7 @@ import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
 import { mergeParts, noMerge } from './merge.ts'
-import { applyFaces, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces, type OwnedMesh } from './faces.ts'
+import { applyFaces, fingerprints, fingerprintsNow, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces, type OwnedMesh } from './faces.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -91,10 +91,12 @@ function constantsOf(m: StandardLike): MeshConstants {
  * one the loaded geometries take their transforms in place, as before face
  * assignments; with one each mesh is copied first (models/faces.ts
  * ownedMeshes), so pieces never share arrays a transform could hit twice.
+ * topologies: the fingerprints of the meshes the assignment names, when
+ * taken already (load takes them by the browser's own SHA-256).
  */
-export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdentity>, faces?: Faces | null): ModelParts {
+export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdentity>, faces?: Faces | null, topologies?: ReadonlyMap<Mesh, string>): ModelParts {
   if (faces && identities) {
-    const { pieces, stale } = applyFaces(ownedMeshes(root, identities, namedIn(faces)), faces)
+    const { pieces, stale } = applyFaces(ownedMeshes(root, identities, topologies ?? fingerprintsNow(identities, namedIn(faces))), faces)
     const meshes = pieces.map((p): ModelMeshPart => {
       const material = p.mesh.material as StandardLike
       const own = typeof material.userData.hint === 'string' ? material.userData.hint : null
@@ -226,7 +228,7 @@ export class ModelCache {
       const glb = local ? local.glb : await this.download(revision)
       inspect(glb)
       const { scene, identities } = await parseModelGLB(glb)
-      const parts = partsOf(scene, identities, faces)
+      const parts = partsOf(scene, identities, faces, faces ? await fingerprints(identities, namedIn(faces)) : undefined)
       if (!parsePlaceholder(revision)) traceKeys(parts, revision)
       return parts
     })()
@@ -257,7 +259,7 @@ export class ModelCache {
       const bytes = await glb
       inspect(bytes)
       const { scene, identities } = await parseModelGLB(bytes)
-      return ownedMeshes(scene, identities)
+      return ownedMeshes(scene, identities, await fingerprints(identities))
     })()
     meshes.catch(() => {
       if (this.owning?.meshes === meshes) this.owning = null

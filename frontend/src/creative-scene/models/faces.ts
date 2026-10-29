@@ -2,6 +2,7 @@ import { BufferAttribute, BufferGeometry, Mesh, type Material, type Object3D } f
 import type { components } from '../../api/schema'
 import { parseModelGLB, type MeshIdentity } from '../sandbox/gltf.ts'
 import { sha256 } from './sha256.ts'
+import { weld } from './weld.ts'
 
 // Face assignments (data: 模型内容「面级材质分配」): some of a mesh's
 // triangles drawn with another slot. The GLB is never rewritten; loading
@@ -36,31 +37,62 @@ const triangleCount = (g: BufferGeometry) => (g.index ?? g.attributes.position).
  * first use. Coordinates do not count, so resizing usually keeps it.
  */
 export function topologyOf(geometry: BufferGeometry): string {
+  return t1(sha256(topologyInput(geometry)))
+}
+
+/**
+ * topologyOf by the browser's own SHA-256 where there is one (a secure
+ * page): the same fingerprint, many times faster, but a promise, so only
+ * where the caller waits anyway (loading a model, face edit, a bake).
+ */
+export async function topologyOfAsync(geometry: BufferGeometry): Promise<string> {
+  const subtle = globalThis.crypto?.subtle as SubtleCrypto | undefined
+  if (!subtle) return topologyOf(geometry)
+  return t1(new Uint8Array(await subtle.digest('SHA-256', topologyInput(geometry))))
+}
+
+const t1 = (digest: Uint8Array) => 't1-' + Array.from(digest.subarray(0, 8), (b) => b.toString(16).padStart(2, '0')).join('')
+
+/** What the fingerprint hashes: `[vertices, triangles, connection numbers]`, uint32 little-endian. */
+function topologyInput(geometry: BufferGeometry): Uint8Array<ArrayBuffer> {
   const position = geometry.attributes.position
   let corners: ArrayLike<number>
   if (geometry.index) corners = geometry.index.array
   else {
     const bits = new Uint32Array(new Float32Array(3).buffer)
     const floats = new Float32Array(bits.buffer)
-    const welded = new Map<string, number>()
-    const ids = new Uint32Array(position.count)
-    for (let i = 0; i < position.count; i++) {
+    corners = weld(position.count, (i, out) => {
       floats[0] = position.getX(i)
       floats[1] = position.getY(i)
       floats[2] = position.getZ(i)
-      const key = `${bits[0]},${bits[1]},${bits[2]}`
-      let n = welded.get(key)
-      if (n === undefined) welded.set(key, (n = welded.size))
-      ids[i] = n
-    }
-    corners = ids
+      out[0] = bits[0]
+      out[1] = bits[1]
+      out[2] = bits[2]
+    }).ids
   }
-  const view = new DataView(new ArrayBuffer(4 * (2 + corners.length)))
-  view.setUint32(0, position.count, true)
-  view.setUint32(4, triangleCount(geometry), true)
-  for (let i = 0; i < corners.length; i++) view.setUint32(8 + 4 * i, corners[i], true)
-  const digest = sha256(new Uint8Array(view.buffer))
-  return 't1-' + Array.from(digest.subarray(0, 8), (b) => b.toString(16).padStart(2, '0')).join('')
+  const words = new Uint32Array(2 + corners.length)
+  words[0] = position.count
+  words[1] = triangleCount(geometry)
+  words.set(corners, 2)
+  if (!littleEndian) {
+    const view = new DataView(words.buffer)
+    for (let i = 0; i < words.length; i++) view.setUint32(4 * i, words[i], true)
+  }
+  return new Uint8Array(words.buffer)
+}
+
+const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
+
+/** Fingerprints of the meshes `pick` names, as loaded, now. */
+export function fingerprintsNow(identities: ReadonlyMap<Mesh, MeshIdentity>, pick: (identity: MeshIdentity) => boolean = () => true): Map<Mesh, string> {
+  return new Map([...identities].filter(([, identity]) => pick(identity)).map(([mesh]) => [mesh, topologyOf(mesh.geometry)]))
+}
+
+/** fingerprintsNow by topologyOfAsync. */
+export async function fingerprints(identities: ReadonlyMap<Mesh, MeshIdentity>, pick: (identity: MeshIdentity) => boolean = () => true): Promise<Map<Mesh, string>> {
+  const picked = [...identities].filter(([, identity]) => pick(identity)).map(([mesh]) => mesh)
+  const topologies = await Promise.all(picked.map((mesh) => topologyOfAsync(mesh.geometry)))
+  return new Map(picked.map((mesh, i) => [mesh, topologies[i]]))
 }
 
 /**
@@ -95,11 +127,12 @@ export function flipWinding(geometry: BufferGeometry) {
 /**
  * The model's meshes in traversal order, each copied and given its transform
  * once (flipped back if mirrored). The loaded geometries are never written,
- * so they can be read again. Only the meshes `fingerprint` picks are
- * fingerprinted, as loaded: hashing is most of the cost (a 300k-triangle
- * mesh takes some 40 ms) and an assignment usually names few meshes.
+ * so they can be read again. topologies holds the fingerprints taken as
+ * loaded, of the meshes that need one: hashing is most of the cost (a
+ * 300k-triangle mesh takes some 45 ms here, a few in the browser's own) and
+ * an assignment usually names few meshes.
  */
-export function ownedMeshes(root: Object3D, identities: ReadonlyMap<Mesh, MeshIdentity>, fingerprint: (identity: MeshIdentity) => boolean = () => true): OwnedMesh[] {
+export function ownedMeshes(root: Object3D, identities: ReadonlyMap<Mesh, MeshIdentity>, topologies: ReadonlyMap<Mesh, string> = fingerprintsNow(identities)): OwnedMesh[] {
   root.updateMatrixWorld(true)
   const found: Mesh[] = []
   root.traverse((o) => {
@@ -108,7 +141,7 @@ export function ownedMeshes(root: Object3D, identities: ReadonlyMap<Mesh, MeshId
   return found.map((o): OwnedMesh => {
     const identity = identities.get(o)
     if (!identity) throw new Error('网格缺少身份')
-    const topology = fingerprint(identity) ? topologyOf(o.geometry) : ''
+    const topology = topologies.get(o) ?? ''
     const geometry = (o.geometry as BufferGeometry).clone()
     geometry.applyMatrix4(o.matrixWorld)
     if (o.matrixWorld.determinant() < 0) flipWinding(geometry)
@@ -123,15 +156,15 @@ export function extract(geometry: BufferGeometry, triangles: readonly number[]):
   const index = geometry.index
   const names = Object.keys(geometry.attributes)
   if (index) {
-    const remap = new Map<number, number>()
+    const remap = new Int32Array(geometry.attributes.position.count).fill(-1)
     const order: number[] = []
     const indices = new Uint32Array(triangles.length * 3)
     triangles.forEach((t, i) => {
       for (let k = 0; k < 3; k++) {
         const v = index.getX(t * 3 + k)
-        let n = remap.get(v)
-        if (n === undefined) {
-          remap.set(v, (n = order.length))
+        let n = remap[v]
+        if (n < 0) {
+          remap[v] = n = order.length
           order.push(v)
         }
         indices[i * 3 + k] = n
@@ -147,16 +180,23 @@ export function extract(geometry: BufferGeometry, triangles: readonly number[]):
 }
 
 /**
- * Through the attributes, not their arrays: an interleaved source's array is
- * the whole buffer, and a normalized one reads 0–1 and is scaled back on write.
+ * The stored values, normalized or not, copied as they are; an interleaved
+ * source through the attribute instead, its array being the whole buffer.
  */
 function gather(source: BufferAttribute, vertices: readonly number[]): BufferAttribute {
   const n = source.itemSize
   const Array_ = source.array.constructor as new (length: number) => typeof source.array
   const out = new BufferAttribute(new Array_(vertices.length * n), n, source.normalized)
-  vertices.forEach((v, i) => {
-    for (let k = 0; k < n; k++) out.setComponent(i, k, source.getComponent(v, k))
-  })
+  const from = source.array
+  const to = out.array
+  if ((source as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute)
+    vertices.forEach((v, i) => {
+      for (let k = 0; k < n; k++) out.setComponent(i, k, source.getComponent(v, k))
+    })
+  else
+    vertices.forEach((v, i) => {
+      for (let k = 0; k < n; k++) to[i * n + k] = from[v * n + k]
+    })
   return out
 }
 
@@ -269,16 +309,18 @@ export function carryFaces(old: Faces | null | undefined, next: readonly CarryTa
 
 export type Carried = { faces: Faces | null; kept: SlotCount[]; dropped: SlotCount[] }
 
-/**
- * A new GLB's meshes as carryFaces reads them, fingerprinted only where an
- * old entry could land: the same parent path, node name and primitive.
- */
-export function carryTargets(identities: ReadonlyMap<Mesh, MeshIdentity>, old: Faces | null | undefined): CarryTarget[] {
+/** The meshes of a new GLB an old entry could land on: the same parent path, node name and primitive. */
+export function landingIn(old: Faces | null | undefined): (identity: MeshIdentity) => boolean {
   const near = (path: MeshIdentity['path'] | FaceMesh['path'], primitive: number) => JSON.stringify([path.slice(0, -1), path[path.length - 1]?.[0], primitive])
   const landing = new Set((old?.meshes ?? []).map((m) => near(m.path, m.primitive)))
+  return (identity) => landing.has(near(identity.path, identity.primitive))
+}
+
+/** A new GLB's meshes as carryFaces reads them, with the fingerprints taken (of those landingIn names). */
+export function carryTargets(identities: ReadonlyMap<Mesh, MeshIdentity>, topologies: ReadonlyMap<Mesh, string>): CarryTarget[] {
   return [...identities].map(([mesh, identity]) => ({
     identity,
-    topology: landing.has(near(identity.path, identity.primitive)) ? topologyOf(mesh.geometry) : '',
+    topology: topologies.get(mesh) ?? '',
     slot: slotOfMaterial((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as Material),
   }))
 }
@@ -297,7 +339,7 @@ export async function carryOver(glb: ArrayBuffer, old: Faces | null | undefined,
   if (!old?.meshes.length) return { faces: null, kept: [], dropped: [] }
   try {
     const { identities } = await parseModelGLB(glb)
-    return carryFaces(old, carryTargets(identities, old), changed)
+    return carryFaces(old, carryTargets(identities, await fingerprints(identities, landingIn(old))), changed)
   } catch {
     return { faces: null, kept: [], dropped: countBySlot(old.meshes) }
   }

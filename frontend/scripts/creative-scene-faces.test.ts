@@ -7,6 +7,9 @@ import {
   applyFaces,
   carryFaces,
   extract,
+  fingerprints,
+  fingerprintsNow,
+  landingIn,
   carryOver,
   carryTargets,
   codeDiffers,
@@ -15,6 +18,7 @@ import {
   rangesOf,
   splitBySlot,
   topologyOf,
+  topologyOfAsync,
   trianglesOf,
   withAssigned,
   type Faces,
@@ -66,6 +70,19 @@ test('the fingerprint follows how triangles connect, not where they are', async 
   p.set(first, 9)
   assert.equal(reordered.attributes.position.count, flat.attributes.position.count)
   assert.notEqual(await topologyOf(reordered), await topologyOf(flat))
+})
+
+test('the browser’s SHA-256 gives the same fingerprints, indexed or welded', async () => {
+  for (const g of [strip(), strip().toNonIndexed(), new THREE.SphereGeometry(1, 40, 20).toNonIndexed()]) assert.equal(await topologyOfAsync(g), topologyOf(g))
+  const a = new THREE.Mesh(strip())
+  const b = new THREE.Mesh(new THREE.BoxGeometry())
+  const identities = new Map([
+    [a, id(['a', 0])],
+    [b, id(['b', 0])],
+  ])
+  const picked = (identity: MeshIdentity) => identity.path[0][0] === 'b'
+  assert.deepEqual(await fingerprints(identities, picked), fingerprintsNow(identities, picked))
+  assert.deepEqual([...(await fingerprints(identities, picked)).keys()], [b])
 })
 
 test('a transform is baked into each mesh once and the loaded geometry is left alone', async () => {
@@ -516,7 +533,7 @@ test('carryOver reads the new GLB: same mesh kept, changed mesh dropped, twins o
   assert.deepEqual(await carryOver(new ArrayBuffer(8), null, true), { faces: null, kept: [], dropped: [] }, 'nothing to carry, nothing parsed')
   assert.deepEqual(await carryOver(new ArrayBuffer(8), faces, false), { faces: null, kept: [], dropped: [{ slot: 'face_1', triangles: 12 }, { slot: 'face_2', triangles: 1 }] }, 'an unreadable GLB keeps nothing')
 
-  const targets = carryTargets(identities, { meshes: [faces.meshes[0]] })
+  const targets = carryTargets(identities, fingerprintsNow(identities, landingIn({ meshes: [faces.meshes[0]] })))
   assert.deepEqual(targets.filter((t) => t.topology).map((t) => t.identity.path), [leaf], 'only meshes an entry could land on are fingerprinted')
 
   assert.equal(codeDiffers({ code_sha256: 'a', lib_version: 1 }, { code_sha256: 'a', lib_version: 1 }), false)

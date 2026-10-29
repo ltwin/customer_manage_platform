@@ -1,9 +1,11 @@
 import { Box3, type BufferGeometry } from 'three'
+import { weld } from './weld.ts'
 
 // How a mesh's triangles sit together, for picking faces (scene-face-materials
 // design「平面面片」): flat patches, the pieces triangles join into, and each
 // triangle's neighbours across shared edges. Corners are welded where their
-// positions round to the same 1e-5 m, so split vertices still join.
+// positions round to the same 1e-5 m, so split vertices still join. All in
+// typed arrays: a 300k-triangle mesh is built once on entering face edit.
 
 /** Normals within this of the patch's first triangle are flat with it. */
 const flatAngle = (0.05 * Math.PI) / 180
@@ -21,36 +23,48 @@ export type FaceTopology = {
   components: number
   componentOf: Int32Array
   /** Triangles sharing an edge with this one. */
-  neighbours(t: number): readonly number[]
+  neighbours(t: number): Int32Array
+  /**
+   * Each edge between welded vertices, in compressed rows: its triangles are
+   * edgeTriangles[edgeStart[e] … edgeStart[e + 1]), and edgeCorner[e] is the
+   * first corner of one of them on it (the other end is the next corner).
+   */
+  edgeStart: Int32Array
+  edgeTriangles: Int32Array
+  edgeCorner: Int32Array
 }
+
+/** The corner after c in its triangle. */
+export const nextCorner = (c: number) => (c % 3 === 2 ? c - 2 : c + 1)
 
 export function faceTopology(geometry: BufferGeometry): FaceTopology {
   const position = geometry.attributes.position
   const index = geometry.index
   const cornerCount = index ? index.count : position.count
   const triangleCount = cornerCount / 3
-  const vertexOf = (c: number) => (index ? index.getX(c) : c)
 
-  const welded = new Map<string, number>()
-  const weldedPosition: number[] = []
+  // Each vertex welded once, the corners through it: numbers and arrays, no strings.
+  const vertices = weld(position.count, (v, out) => {
+    out[0] = Math.round(position.getX(v) / weldStep)
+    out[1] = Math.round(position.getY(v) / weldStep)
+    out[2] = Math.round(position.getZ(v) / weldStep)
+  })
+  const welded = vertices.size
+  const weldedPosition = new Float64Array(3 * welded)
+  vertices.firsts.forEach((v, w) => {
+    weldedPosition[3 * w] = position.getX(v)
+    weldedPosition[3 * w + 1] = position.getY(v)
+    weldedPosition[3 * w + 2] = position.getZ(v)
+  })
   const corners = new Uint32Array(cornerCount)
-  for (let c = 0; c < cornerCount; c++) {
-    const v = vertexOf(c)
-    const x = position.getX(v)
-    const y = position.getY(v)
-    const z = position.getZ(v)
-    const key = `${Math.round(x / weldStep)},${Math.round(y / weldStep)},${Math.round(z / weldStep)}`
-    let id = welded.get(key)
-    if (id === undefined) {
-      welded.set(key, (id = welded.size))
-      weldedPosition.push(x, y, z)
-    }
-    corners[c] = id
-  }
 
+  const vertexOf = (c: number) => (index ? index.getX(c) : c)
+  for (let c = 0; c < cornerCount; c++) corners[c] = vertices.ids[vertexOf(c)]
   const normals = new Float32Array(triangleCount * 3)
   for (let t = 0; t < triangleCount; t++) {
-    const [a, b, c] = [vertexOf(3 * t), vertexOf(3 * t + 1), vertexOf(3 * t + 2)]
+    const a = vertexOf(3 * t)
+    const b = vertexOf(3 * t + 1)
+    const c = vertexOf(3 * t + 2)
     const ux = position.getX(b) - position.getX(a)
     const uy = position.getY(b) - position.getY(a)
     const uz = position.getZ(b) - position.getZ(a)
@@ -61,24 +75,60 @@ export function faceTopology(geometry: BufferGeometry): FaceTopology {
     const ny = uz * vx - ux * vz
     const nz = ux * vy - uy * vx
     const length = Math.hypot(nx, ny, nz)
-    if (length > 0) normals.set([nx / length, ny / length, nz / length], 3 * t)
+    if (length > 0) {
+      normals[3 * t] = nx / length
+      normals[3 * t + 1] = ny / length
+      normals[3 * t + 2] = nz / length
+    }
   }
 
-  // Neighbours in compressed rows: triangles grouped by the undirected edges they share.
-  const byEdge = new Map<string, number[]>()
-  for (let t = 0; t < triangleCount; t++)
+  // Edges: each corner to the next, by its two welded vertices in either order.
+  const edges = weld(cornerCount, (c, out) => {
+    const p = corners[c]
+    const q = corners[nextCorner(c)]
+    // A degenerate edge (both ends one vertex) gets a key no real edge has.
+    out[0] = p === q ? -1 : Math.min(p, q)
+    out[1] = p === q ? c : Math.max(p, q)
+    out[2] = 0
+  })
+  const edgeOf = edges.ids
+  const edgeCount = edges.size
+  const real = new Uint8Array(edgeCount)
+  for (let c = 0; c < cornerCount; c++) if (corners[c] !== corners[nextCorner(c)]) real[edgeOf[c]] = 1
+  const edgeStart = new Int32Array(edgeCount + 1)
+  for (let c = 0; c < cornerCount; c++) if (real[edgeOf[c]]) edgeStart[edgeOf[c] + 1]++
+  for (let e = 0; e < edgeCount; e++) edgeStart[e + 1] += edgeStart[e]
+  const edgeTriangles = new Int32Array(edgeStart[edgeCount])
+  const fill = edgeStart.slice(0, edgeCount)
+  for (let c = 0; c < cornerCount; c++) if (real[edgeOf[c]]) edgeTriangles[fill[edgeOf[c]]++] = (c / 3) | 0
+  const edgeCorner = new Int32Array(edgeCount).fill(-1)
+  for (let c = 0; c < cornerCount; c++) if (real[edgeOf[c]] && edgeCorner[edgeOf[c]] < 0) edgeCorner[edgeOf[c]] = c
+
+  // Neighbours in compressed rows: the other triangles on each of a triangle's edges, once each.
+  const neighbourStart = new Int32Array(triangleCount + 1)
+  for (let c = 0; c < cornerCount; c++) {
+    const e = edgeOf[c]
+    if (real[e]) neighbourStart[((c / 3) | 0) + 1] += edgeStart[e + 1] - edgeStart[e] - 1
+  }
+  for (let t = 0; t < triangleCount; t++) neighbourStart[t + 1] += neighbourStart[t]
+  const neighbourList = new Int32Array(neighbourStart[triangleCount])
+  const neighbourEnd = new Int32Array(triangleCount)
+  for (let t = 0; t < triangleCount; t++) {
+    let n = neighbourStart[t]
     for (let k = 0; k < 3; k++) {
-      const p = corners[3 * t + k]
-      const q = corners[3 * t + ((k + 1) % 3)]
-      if (p === q) continue
-      const key = p < q ? `${p},${q}` : `${q},${p}`
-      const list = byEdge.get(key)
-      if (list) list.push(t)
-      else byEdge.set(key, [t])
+      const e = edgeOf[3 * t + k]
+      if (!real[e]) continue
+      for (let i = edgeStart[e]; i < edgeStart[e + 1]; i++) {
+        const u = edgeTriangles[i]
+        if (u === t) continue
+        let known = false
+        for (let j = neighbourStart[t]; j < n && !known; j++) known = neighbourList[j] === u
+        if (!known) neighbourList[n++] = u
+      }
     }
-  const lists: number[][] = Array.from({ length: triangleCount }, () => [])
-  for (const sharing of byEdge.values())
-    for (const t of sharing) for (const u of sharing) if (u !== t && !lists[t].includes(u)) lists[t].push(u)
+    neighbourEnd[t] = n
+  }
+  const neighbours = (t: number) => neighbourList.subarray(neighbourStart[t], neighbourEnd[t])
 
   const box = new Box3().setFromArray(weldedPosition)
   const flatDistance = Math.max(1e-5, 1e-6 * (box.isEmpty() ? 0 : box.min.distanceTo(box.max)))
@@ -90,7 +140,9 @@ export function faceTopology(geometry: BufferGeometry): FaceTopology {
     const patch = [seed]
     patchOf[seed] = id
     patches.push(patch)
-    const [sx, sy, sz] = normals.subarray(3 * seed, 3 * seed + 3)
+    const sx = normals[3 * seed]
+    const sy = normals[3 * seed + 1]
+    const sz = normals[3 * seed + 2]
     if (sx === 0 && sy === 0 && sz === 0) continue
     const s = corners[3 * seed]
     const offset = sx * weldedPosition[3 * s] + sy * weldedPosition[3 * s + 1] + sz * weldedPosition[3 * s + 2]
@@ -104,7 +156,7 @@ export function faceTopology(geometry: BufferGeometry): FaceTopology {
       return true
     }
     for (let i = 0; i < patch.length; i++)
-      for (const u of lists[patch[i]])
+      for (const u of neighbours(patch[i]))
         if (patchOf[u] < 0 && flat(u)) {
           patchOf[u] = id
           patch.push(u)
@@ -112,19 +164,22 @@ export function faceTopology(geometry: BufferGeometry): FaceTopology {
   }
 
   const componentOf = new Int32Array(triangleCount).fill(-1)
+  const queue = new Int32Array(triangleCount)
   let components = 0
   for (let seed = 0; seed < triangleCount; seed++) {
     if (componentOf[seed] >= 0) continue
-    const queue = [seed]
+    let head = 0
+    let tail = 0
+    queue[tail++] = seed
     componentOf[seed] = components
-    for (let i = 0; i < queue.length; i++)
-      for (const u of lists[queue[i]])
+    while (head < tail)
+      for (const u of neighbours(queue[head++]))
         if (componentOf[u] < 0) {
           componentOf[u] = components
-          queue.push(u)
+          queue[tail++] = u
         }
     components++
   }
 
-  return { triangleCount, corners, normals, patches, patchOf, components, componentOf, neighbours: (t) => lists[t] }
+  return { triangleCount, corners, normals, patches, patchOf, components, componentOf, neighbours, edgeStart, edgeTriangles, edgeCorner }
 }
