@@ -9,7 +9,7 @@ import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
-import { clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, newVolume, objectsLabel, rowOffsets, transformOp, visibilityOp, volumeLabels } from './editing.ts'
+import { clearingFaces, clearOp, duplicate, groundBuiltin, lightLabels, localPose, newCamera, newEmpty, newLight, newModelInstance, newPrimitive, newVolume, objectsLabel, rowOffsets, transformOp, visibilityOp, volumeLabels } from './editing.ts'
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
@@ -22,6 +22,7 @@ import { ConflictPrompt } from './panels/ConflictPrompt.tsx'
 import { FirstRunHint } from './panels/FirstRunHint.tsx'
 import { ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
+import type { SlotCount } from './models/faces.ts'
 import { CodePanel } from './panels/CodePanel.tsx'
 import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
@@ -552,6 +553,11 @@ export default function SceneEditor({
   /** Opens the code panel in the history panel's place. */
   const openCode = (target: { kind: 'new'; position: [number, number, number] } | { kind: 'object'; id: string }) =>
     ui.setState({ code: { ...target, opened: Date.now() }, history: false, preview: null })
+  /** Regenerating gave up some face assignments (data: 模型内容「重新生成时」); undo brings them back. */
+  const noticeDropped = (dropped: readonly SlotCount[]) => {
+    const triangles = dropped.reduce((n, d) => n + d.triangles, 0)
+    if (triangles) notify(`网格变了，${triangles} 个三角形的面分配已失效，撤销可以找回`)
+  }
   const generate = async (code: string) => {
     const target = ui.getState().code
     if (!target) return
@@ -581,7 +587,8 @@ export default function SceneEditor({
       applyToAll: false,
       label: `修改「${o?.name || '代码模型'}」代码`,
     })
-    if (!out.ok && !out.superseded && out.stage !== 'compile') notify(out.message)
+    if (out.ok) noticeDropped(out.dropped)
+    else if (!out.superseded && out.stage !== 'compile') notify(out.message)
   }
   /** A parameter change rebakes the model; false when it did not take. */
   const retune = async (object: SceneObject, params: Record<string, unknown>, applyToAll: boolean): Promise<boolean> => {
@@ -596,6 +603,7 @@ export default function SceneEditor({
       return false
     }
     const out = await modelEdits.update({ objectID: object.id, code: generator.code, params, libVersion: generator.lib_version, applyToAll, label: `调整「${object.name || '代码模型'}」参数` })
+    if (out.ok) noticeDropped(out.dropped)
     if (out.ok || out.superseded) return true
     notify(out.stage === 'compile' ? `参数没有生效：${out.message}` : out.message)
     return false
@@ -1026,7 +1034,10 @@ export default function SceneEditor({
                   readOnly={readOnly}
                   model={shownModel ? models[shownModel] : undefined}
                   modelFailed={!!shownModel && !!failedModels[shownModel]}
-                  onUpdate={(update: ObjectUpdate, text, merge) => edit([{ op: 'update_objects', updates: [update] }], text, merge ? { merge } : undefined)}
+                  onUpdate={(update: ObjectUpdate, text, merge) => {
+                    const cleared = clearingFaces(update, byID.get(update.object_id))
+                    if (edit([{ op: 'update_objects', updates: [cleared ?? update] }], text, merge ? { merge } : undefined) && cleared) notify('参数改变了面的划分，这个基础体的面分配已清空，撤销可以找回')
+                  }}
                   objects={shown.objects}
                   physical={shown.environment.sky.kind === 'physical'}
                   focusDistance={shownActive?.kind === 'camera' ? focusOf(shown, shownActive.id) : undefined}

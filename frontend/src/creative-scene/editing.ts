@@ -1,6 +1,6 @@
 import { Matrix4, Quaternion, Vector3 } from 'three'
-import type { Scene, SceneObject, SceneTransform } from './api.ts'
-import { builtinSpec } from './builtins/catalog.ts'
+import type { ObjectUpdate, Scene, SceneObject, SceneTransform } from './api.ts'
+import { builtinSpec, topologyChanged } from './builtins/catalog.ts'
 import { newObjectID } from './ids.ts'
 import { NEW_LIGHT_INTENSITY } from './render/litLook.ts'
 import { sameValue, subtree, type WireOp } from './state/apply.ts'
@@ -10,6 +10,20 @@ import { physicalSkyDefaults } from './world/physicalSky.ts'
 // The edits behind menu items and shortcuts, each one intent's operations.
 
 const identity: SceneTransform = { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }
+
+/**
+ * A builtin's parameter change that alters its triangles (builtins.json
+ * topology) clears its face assignment: the update with `faces: null`
+ * written out, or null when nothing is cleared. The server clears the same
+ * on its own; writing it says so in the edit.
+ */
+export function clearingFaces(update: ObjectUpdate, object: SceneObject | undefined): ObjectUpdate | null {
+  const primitive = object?.primitive
+  const spec = primitive && builtinSpec(primitive.builtin)
+  if (!spec || !primitive.faces || !update.primitive?.params || update.primitive.faces !== undefined) return null
+  if (!topologyChanged(spec, primitive.params ?? {}, { ...primitive.params, ...update.primitive.params })) return null
+  return { ...update, primitive: { ...update.primitive, faces: null } }
+}
 
 /** The next free sibling order under a parent (null for the root). */
 export function nextOrder(objects: readonly SceneObject[], parent: string | null): number {

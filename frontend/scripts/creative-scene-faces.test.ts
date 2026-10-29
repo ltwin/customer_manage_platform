@@ -6,6 +6,9 @@ import {
   applyBuiltinFaces,
   applyFaces,
   carryFaces,
+  carryOver,
+  carryTargets,
+  codeDiffers,
   effectiveSlots,
   ownedMeshes,
   rangesOf,
@@ -440,4 +443,46 @@ test('a builtin splits by its assignment while it fits', () => {
   )
   assert.deepEqual(applyBuiltinFaces(primitiveGeometry('sphere@1', {})!, faces), { pieces: null, stale: true })
   assert.deepEqual(applyBuiltinFaces(box, null), { pieces: null, stale: false })
+})
+
+// scene-face-materials 4.3: regenerating carries the assignment to the new GLB.
+test('carryOver reads the new GLB: same mesh kept, changed mesh dropped, twins only while the code is the same', async () => {
+  const { readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const { parseModelGLB } = await import('../src/creative-scene/sandbox/gltf.ts')
+  const b = readFileSync(path.resolve(import.meta.dirname, '../../backend/internal/creativeglb/testdata/identity-samples.glb'))
+  const glb = () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
+  const { identities } = await parseModelGLB(glb())
+  const fingerprint = (p: [string, number][]) => topologyOf([...identities].find(([, i]) => JSON.stringify(i.path) === JSON.stringify(p) && i.primitive === 0)![0].geometry)
+  const leaf: [string, number][] = [['', 0], ['row', 0], ['leaf', 0]]
+  const twin: [string, number][] = [['', 0], ['twin', 1]]
+  const faces: Faces = {
+    meshes: [
+      // Resized: the same triangles.
+      { path: leaf, primitive: 0, topology: fingerprint(leaf), assign: { face_1: [[0, 10]] } },
+      // More segments: the old fingerprint no longer matches.
+      { path: [['', 0], ['part:two', 0]], primitive: 0, topology: 't1-0000000000000000', assign: { face_1: [[0, 2]] } },
+      // A sibling of the same name and triangles: which is which is unknown once the code changes.
+      { path: twin, primitive: 0, topology: fingerprint(twin), assign: { face_2: [[0, 1]] } },
+    ],
+    hints: { face_1: 'brick' },
+  }
+  const params = await carryOver(glb(), faces, false)
+  assert.deepEqual(params.faces?.meshes.map((m) => m.path), [leaf, twin])
+  assert.deepEqual(params.faces?.hints, { face_1: 'brick' })
+  assert.deepEqual(params.dropped, [{ slot: 'face_1', triangles: 2 }])
+  const code = await carryOver(glb(), faces, true)
+  assert.deepEqual(code.faces?.meshes.map((m) => m.path), [leaf])
+  assert.deepEqual(code.dropped, [{ slot: 'face_1', triangles: 2 }, { slot: 'face_2', triangles: 1 }])
+
+  assert.deepEqual(await carryOver(new ArrayBuffer(8), null, true), { faces: null, kept: [], dropped: [] }, 'nothing to carry, nothing parsed')
+  assert.deepEqual(await carryOver(new ArrayBuffer(8), faces, false), { faces: null, kept: [], dropped: [{ slot: 'face_1', triangles: 12 }, { slot: 'face_2', triangles: 1 }] }, 'an unreadable GLB keeps nothing')
+
+  const targets = carryTargets(identities, { meshes: [faces.meshes[0]] })
+  assert.deepEqual(targets.filter((t) => t.topology).map((t) => t.identity.path), [leaf], 'only meshes an entry could land on are fingerprinted')
+
+  assert.equal(codeDiffers({ code_sha256: 'a', lib_version: 1 }, { code_sha256: 'a', lib_version: 1 }), false)
+  assert.equal(codeDiffers({ code_sha256: 'a', lib_version: 1 }, { code_sha256: 'b', lib_version: 1 }), true)
+  assert.equal(codeDiffers({ code_sha256: 'a', lib_version: 1 }, { code_sha256: 'a', lib_version: 2 }), true)
+  assert.equal(codeDiffers(null, { code_sha256: 'a', lib_version: 1 }), true)
 })

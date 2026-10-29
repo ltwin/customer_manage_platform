@@ -1,6 +1,8 @@
 import { ApiError } from '../../api/transport.ts'
 import type { Upload } from '../../creative-canvas/editor/media.ts'
 import { jobRenderCapMs, viewBudgetMs } from '../render/engines.ts'
+import { carryOver, codeDiffers, type Carried } from '../models/faces.ts'
+import type { SceneModel } from '../models/cache.ts'
 import { DeviceLostError } from '../render/gpu.ts'
 import { TraceNotReady } from '../render/trace/base.ts'
 import type { CompileInput } from '../sandbox/host.ts'
@@ -27,6 +29,8 @@ export type ExecutorDeps = BakeDeps & {
   /** Releases a ready staged upload that will never be committed. */
   discard(upload: Upload): Promise<void>
   render(documentID: string, request: RenderRequest): Promise<Shot>
+  /** The model an instance shows in the scene's confirmed snapshot, or null. */
+  replaced(documentID: string, objectID: string): Promise<SceneModel | null>
   /** Draws an export's images from the scene's confirmed snapshot. */
   exportImages(documentID: string, plan: ExportPlan): Promise<RenderedShots>
   /** The device was lost while drawing (render/gpu.ts): the page stops claiming until it has one again. */
@@ -98,6 +102,11 @@ export class SceneExecutor {
   private async bakeModel(job: SceneJob, hold: Hold): Promise<JobOutcome> {
     const input = bakeInput(job.request)
     if (!input) return this.fail(job, 'host_error', '任务内容不完整')
+    // The replaced revision's face assignment is carried to the new GLB
+    // (data: 模型内容「重新生成时」); read while the bake runs.
+    const objectID = replacedObject(job.request)
+    const replacing = objectID ? this.deps.replaced(job.document_id, objectID) : Promise.resolve(null)
+    replacing.catch(() => {}) // still awaited below unless the bake fails
     const out = await bake(this.deps, input, hold.signal, { live: () => !hold.lost() })
     if (!out.ok) {
       this.discard(out.uploads)
@@ -106,7 +115,15 @@ export class SceneExecutor {
       return this.fail(job, code, message)
     }
     const { baked } = out
-    return this.deliver(job, hold, '模型文件', out.uploads, ([model, thumbnail]) => ({ bake: bakeResult({ ...baked, model, thumbnail }) }), () =>
+    let carried: Carried
+    try {
+      const prior = await replacing
+      carried = await carryOver(baked.glb, prior?.faces, codeDiffers(prior?.generator, { code_sha256: baked.codeSHA256, lib_version: baked.module.lib_version }))
+    } catch (err) {
+      this.discard(out.uploads)
+      return hold.lost() ? { state: 'lost' } : this.fail(job, 'host_error', `读不到替换前的模型：${reason(err)}`)
+    }
+    return this.deliver(job, hold, '模型文件', out.uploads, ([model, thumbnail]) => ({ bake: bakeResult({ ...baked, model, thumbnail }, carried) }), () =>
       uploadBake(this.deps, baked.glb, baked.png, hold.signal),
     )
   }
@@ -287,13 +304,20 @@ function bakeInput(request: Record<string, unknown>): CompileInput | null {
   return { code, params: params ?? {}, libVersion }
 }
 
-function bakeResult(baked: Baked): NonNullable<CompletePayload['bake']> {
+/** The instance whose model a bake replaces; none when it adds an object. */
+function replacedObject(request: Record<string, unknown>): string | null {
+  const { target } = request
+  return isRecord(target) && typeof target.object_id === 'string' ? target.object_id : null
+}
+
+function bakeResult(baked: Baked, carried: Carried): NonNullable<CompletePayload['bake']> {
   const { mount, params_schema, params } = baked.module
   return {
     glb_upload_id: baked.model.id,
     thumbnail_upload_id: baked.thumbnail.id,
     manifest: baked.manifest,
     module: { mount, params_schema, params },
+    ...(carried.faces ? { faces: carried.faces } : {}),
   }
 }
 

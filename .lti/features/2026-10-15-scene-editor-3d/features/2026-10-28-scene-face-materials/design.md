@@ -40,7 +40,7 @@
 - `input/keymap.ts`：Tab 进出；面编辑模式内的 L、Ctrl + L、Ctrl + I、Ctrl + 小键盘 + / −；G / R / S 在面编辑时不响应。
 - `panels/MaterialSlots.tsx`：面编辑时显示有效槽位和「指定 / 选择 / 取消选择 / +」。
 - `modelEdits.ts`：烘焙完成后调用 `carryFaces`，`codeChanged` 由新旧 `code_sha256` 与 `lib_version` 判断，把 `faces` 写进 `commit_model`，提示作废的部分；新增只改分配的提交路径（`derive_model` + `set_instance_model`，分叉沿用 `forkPlan`）；基础体改参数时按 `topology` 声明决定是否写 `primitive.faces: null`。
-- `host/bake.ts`：烘焙结果带 `faces`（旧分配取自替换目标的模型摘要，`codeChanged` 比较任务代码与摘要的 `code_sha256`）。
+- `host/executor.ts`：助手烘焙任务的结果带 `faces`（旧分配取自替换目标的模型摘要，`codeChanged` 比较任务代码与摘要的 `code_sha256`）。
 
 后端（`backend/internal`）：
 
@@ -138,6 +138,8 @@ sequenceDiagram
 - **指纹用同步的 SHA-256**（实施 4.1）：离屏截图只渲染一帧，基础体和已缓存的模型必须第一帧就拆好，`crypto.subtle` 是异步的。`models/sha256.ts` 按 FIPS 180-4 实现，测试与 `node:crypto` 逐字节比对；契约的 `t1` 算法不变。只给分配里点名的网格算指纹（`namedIn`）。
 - **加载开销与 Worker**（实施 4.1，待 owner 确认）：实测（Node，M 系列 Mac）带分配时 `partsOf` 的增量：100 个 3 千三角形的网格、1 个有分配，约 10 ms；一个 30 万三角形的网格、一半有分配，约 72 ms（哈希约 40 ms，拆分约 25 ms），超过本文原定的 50 ms。没有分配的模型走原路径，不变（18–19 ms）。这笔开销只在带分配的模型修订第一次加载时发生，之后走缓存；先留在主线程，实际使用中出现卡顿再把指纹和拆分移到 Worker（模型加载本来就是异步的，基础体几何很小，不受影响）。
 - **新槽位还没配材质时沿用原槽位**（实施 4.1，AC-3）：拆出的片记下来源槽位（`ModelMeshPart.origin`），`materials/resolve.ts:resolvePart` 在新槽位没有分配材质时按来源槽位解析；材质面板对这类槽位显示「沿用原槽位」。来源计入合并分组键，没有面分配时为 null，分组与追踪缓存的编号不变。追踪缓存键不加分配哈希：分配随修订不可变，修订号已能区分。
+- **助手烘焙读不到替换前的模型时不报成功**（实施 4.3）：渲染端在烘焙的同时读确认快照，找到替换目标实例当前的模型摘要；读取失败就丢弃产物、报 `host_error`，助手重试。如果当作「没有分配」照常完成，分配会被静默作废。快照里的目标若已不是任务冻结时的版本，完成时本来就会冲突，不需要另行核对。
+- **预览等带入完成再显示**（实施 4.3）：编辑器烘焙出新 GLB 后，带入（解析 GLB、给候选网格算指纹）与缩略图、上传并行；预览等它完成再换上，避免已指定的面先闪回原槽位。新建模型和没有分配的模型不解析，不增加开销。
 - **有效槽位放在 `creativecontent`**：`creativecontent.EffectiveSlots` 同时服务 `write_model` 回报、`read_scene` 视图和资产库的模型要点，三处说法一致；`creativescene` 在下层之上调用它。`edit_scene` 的 `faces_cleared` 由写入前后快照比较得出，不改场景命令的回执。
 
 ## 接口与数据契约
@@ -164,7 +166,8 @@ sequenceDiagram
 | `frontend/src/creative-scene/panels/MaterialSlots.tsx` | 修改 | 面编辑的槽位操作，有效槽位与失效提示 |
 | `frontend/src/creative-scene/panels/StatusBar.tsx` | 修改 | 面编辑状态与按键提示 |
 | `frontend/src/creative-scene/modelEdits.ts` | 修改 | 烘焙后带过来；只改分配的提交路径；基础体按声明清空 |
-| `frontend/src/creative-scene/host/bake.ts` | 修改 | 烘焙结果带 `faces` |
+| `frontend/src/creative-scene/host/executor.ts`、`host/pageExecutor.ts` | 修改 | 助手的烘焙任务读替换前的模型，结果带 `faces`（实施 4.3：带入放在任务执行器，`bake.ts` 只管编译、缩略图和上传，不改） |
+| `frontend/src/creative-scene/editing.ts`、`SceneEditor.tsx` | 修改 | `clearingFaces`：基础体改了声明里的参数时在同一项写 `faces: null` 并提示；重新生成后提示作废的三角形数（实施 4.3） |
 | `backend/internal/creativescene/faces.go` | 新增 | 外形校验、有效槽位 |
 | `backend/internal/creativescene/models.go:ModelPayload` | 修改 | 加 `Faces` |
 | `backend/internal/creativescene/ops_model.go` | 修改 | `commitModelOp.faces`、新增 `deriveModelOp` |

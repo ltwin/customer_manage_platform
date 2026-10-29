@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Mesh, type Material, type Object3D } from 'three'
 import type { components } from '../../api/schema'
-import type { MeshIdentity } from '../sandbox/gltf.ts'
+import { parseModelGLB, type MeshIdentity } from '../sandbox/gltf.ts'
 import { sha256 } from './sha256.ts'
 
 // Face assignments (data: 模型内容「面级材质分配」): some of a mesh's
@@ -225,7 +225,7 @@ function countBySlot(entries: readonly FaceMesh[]): SlotCount[] {
  * When a sibling of the same name, primitive and fingerprint is there too,
  * which is which cannot be proven; it stays only if the code is unchanged.
  */
-export function carryFaces(old: Faces | null | undefined, next: readonly { identity: MeshIdentity; topology: string }[], codeChanged: boolean): { faces: Faces | null; kept: SlotCount[]; dropped: SlotCount[] } {
+export function carryFaces(old: Faces | null | undefined, next: readonly { identity: MeshIdentity; topology: string }[], codeChanged: boolean): Carried {
   if (!old) return { faces: null, kept: [], dropped: [] }
   const kept: FaceMesh[] = []
   const dropped: FaceMesh[] = []
@@ -245,6 +245,42 @@ export function carryFaces(old: Faces | null | undefined, next: readonly { ident
   }
   const faces = kept.length ? { ...old, meshes: kept } : null
   return { faces, kept: countBySlot(kept), dropped: countBySlot(dropped) }
+}
+
+export type Carried = { faces: Faces | null; kept: SlotCount[]; dropped: SlotCount[] }
+
+/**
+ * A new GLB's meshes as carryFaces reads them, fingerprinted only where an
+ * old entry could land: the same parent path, node name and primitive.
+ */
+export function carryTargets(identities: ReadonlyMap<Mesh, MeshIdentity>, old: Faces | null | undefined): { identity: MeshIdentity; topology: string }[] {
+  const near = (a: MeshIdentity, m: FaceMesh) =>
+    a.primitive === m.primitive &&
+    a.path.length === m.path.length &&
+    JSON.stringify(a.path.slice(0, -1)) === JSON.stringify(m.path.slice(0, -1)) &&
+    a.path[a.path.length - 1]?.[0] === m.path[m.path.length - 1]?.[0]
+  const entries = old?.meshes ?? []
+  return [...identities].map(([mesh, identity]) => ({ identity, topology: entries.some((m) => near(identity, m)) ? topologyOf(mesh.geometry) : '' }))
+}
+
+/** What changing the generated code means for carrying: a new hash or library version. */
+export function codeDiffers(old: { code_sha256: string; lib_version: number } | null | undefined, next: { code_sha256: string; lib_version: number }): boolean {
+  return !old || old.code_sha256 !== next.code_sha256 || old.lib_version !== next.lib_version
+}
+
+/**
+ * carryFaces on a regenerated GLB. Without an old assignment nothing is
+ * parsed; a GLB that does not parse (the sandbox already checked it) keeps
+ * nothing.
+ */
+export async function carryOver(glb: ArrayBuffer, old: Faces | null | undefined, changed: boolean): Promise<Carried> {
+  if (!old?.meshes.length) return { faces: null, kept: [], dropped: [] }
+  try {
+    const { identities } = await parseModelGLB(glb)
+    return carryFaces(old, carryTargets(identities, old), changed)
+  } catch {
+    return { faces: null, kept: [], dropped: countBySlot(old.meshes) }
+  }
 }
 
 /** Triangle numbers as ascending `[start, end)` ranges, neighbours merged. */

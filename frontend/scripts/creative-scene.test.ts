@@ -1198,6 +1198,57 @@ test('previews change only what the viewport draws', async () => {
   assert.equal(scene.objects[0].model?.content_revision_id, 'ccrv_a', 'the scene itself is untouched')
 })
 
+// scene-face-materials 4.3: regenerating carries the assignment; a builtin's topology change clears it.
+test('a rebake carries the face assignment it can still place and reports the rest', async () => {
+  const { parseModelGLB } = await import('../src/creative-scene/sandbox/gltf.ts')
+  const { topologyOf } = await import('../src/creative-scene/models/faces.ts')
+  const { identities } = await parseModelGLB(templateBytes())
+  const [mesh, identity] = [...identities][0]
+  const kept = { path: identity.path, primitive: identity.primitive, topology: topologyOf(mesh.geometry), assign: { face_1: [[0, 1]] as [number, number][] } }
+  const gone = { path: [['', 0], ['missing', 0]] as [string, number][], primitive: 0, topology: 't1-0000000000000000', assign: { face_2: [[0, 3]] as [number, number][] } }
+  for (const [code, sha, sent, dropped] of [
+    // Same code (its hash is sha256-<length>), new parameters: what still fits stays.
+    ['code v2', 'sha256-7', { meshes: [kept], hints: {} }, [{ slot: 'face_2', triangles: 3 }]],
+    // Nothing fits: no faces are written, all are reported.
+    ['code v2', 'sha256-7', null, [{ slot: 'face_2', triangles: 3 }]],
+  ] as const) {
+    const doc = sceneDoc([pillarAt(1)])
+    const faces = sent ? { meshes: [kept, gone], hints: {} } : { meshes: [gone], hints: {} }
+    doc.models = { ccrv_a: { content_id: 'ccnt_a', usable: true, manifest: templateManifest, generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: sha, params_schema: {}, params: {}, mount: 'floor' }, name_hint: '柱', faces } }
+    const transport = new FakeTransport(doc)
+    const session = new SceneSession('cwdoc_1', transport, new FakeClock())
+    await session.start()
+    const cache = new ModelCache(() => Promise.reject(new Error('no download')))
+    const out = await new ModelEdits(new FakeBakery().deps(session, cache)).update({ objectID: id(1), code, params: { height: 5 }, libVersion: 1, applyToAll: false, label: '调整' })
+    assert.ok(out.ok, JSON.stringify(out))
+    assert.deepEqual(out.dropped, dropped)
+    const commitOp = transport.last().payload.operations[0] as Record<string, unknown>
+    assert.deepEqual(commitOp.faces, sent ?? undefined)
+    assert.deepEqual(cache.local.getState()[`local:${out.intent.id}:model`].summary.faces, sent, 'the placeholder draws what was written')
+  }
+  // A new model carries nothing.
+  const { transport, session } = await startedWithModels([])
+  const created = await new ModelEdits(new FakeBakery().deps(session)).create({ code: 'pillar', position: [0, 0, 0] })
+  assert.ok(created.ok && !created.dropped.length)
+  assert.ok(!('faces' in (transport.last().payload.operations[0] as Record<string, unknown>)))
+})
+
+test('the editor clears a builtin’s faces on the same changes the server does', async () => {
+  const { clearingFaces } = await import('../src/creative-scene/editing.ts')
+  const faces = { meshes: [{ path: [['', 0]] as [string, number][], primitive: 0, topology: 't1-0000000000000000', assign: { face_1: [[0, 2]] as [number, number][] } }], hints: {} }
+  const arch = obj(1, 'primitive', null, 1, { primitive: { builtin: 'arch@1', params: {}, faces } })
+  const cylinder = obj(2, 'primitive', null, 2, { primitive: { builtin: 'cylinder@1', params: { radius_top: 0.5 }, faces } })
+  const update = (o: SceneObject, primitive: ObjectUpdate['primitive']) => clearingFaces({ object_id: o.id, primitive }, o)?.primitive?.faces
+  // The cases of 3.3 (faces_test.go): depth keeps, the opening clears; radius_top clears only at 0.
+  assert.equal(update(arch, { params: { depth: 0.5 } }), undefined)
+  assert.equal(update(arch, { params: { opening_width: 0.4 } }), null)
+  assert.equal(update(cylinder, { params: { radius_top: 0.3 } }), undefined)
+  assert.equal(update(cylinder, { params: { radius_top: 0 } }), null)
+  assert.equal(update(arch, { params: { opening_width: 0.4 }, faces }), undefined, 'faces written are the edit’s own')
+  assert.equal(update({ ...arch, primitive: { builtin: 'arch@1', params: {} } }, { params: { opening_width: 0.4 } }), undefined, 'nothing to clear')
+  assert.equal(clearingFaces({ object_id: id(1), visible: false }, arch), null)
+})
+
 // --- grouping: sync and undo -------------------------------------------------
 
 import { groupSelection, parentToActive, type GroupingResult, type Regroup } from '../src/creative-scene/grouping.ts'
