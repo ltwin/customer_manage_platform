@@ -251,7 +251,7 @@ class SceneServer {
         continue
       }
       const { code: _code, ...generator } = m.generator
-      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null }
+      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null, faces: m.faces ?? null }
     }
     return out
   }
@@ -270,7 +270,17 @@ class SceneServer {
       }
       assert.ok(!op.base_content_id || [...this.models.values()].some((m) => m.content_id === op.base_content_id), `base content ${op.base_content_id} is real`)
     }
+    const derives = ops.filter((op) => op.op === 'derive_model')
+    for (const op of derives) assert.ok(this.models.has(op.from_revision_id), `derived from a real revision: ${op.from_revision_id}`)
     const models = {}
+    // derive_model: the source's GLB and generator under a new revision, with the faces sent.
+    for (const op of derives) {
+      const { source: _source, materials: _materials, thumbnail: _thumbnail, ...from } = this.models.get(op.from_revision_id)
+      const rev = `ccrv_m${++this.modelSeq}`
+      const content_id = op.base_content_id && !this.isCopy(op.base_content_id) ? op.base_content_id : `ccnt_m${this.modelSeq}`
+      this.models.set(rev, { ...from, content_id, faces: op.faces })
+      models[op.ref] = { content_id, content_revision_id: rev }
+    }
     for (const op of commits) {
       for (const id of [op.glb_upload_id, op.thumbnail_upload_id]) this.uploads.get(id).consumed = true
       const rev = `ccrv_m${++this.modelSeq}`
@@ -1161,8 +1171,96 @@ await check('face edit: a box drag selects only the sides in sight; A, Ctrl+I, L
   await page.getByRole('navigation', { name: '场景菜单' }).getByRole('button', { name: '选择' }).click()
   await page.getByRole('menuitem', { name: /反选/ }).click()
   await waitFor(async () => (await count()) === 10, 'the 选择 menu inverts as Ctrl+I does')
-
   assert.equal(server.commands.length, commands, 'selecting faces sends nothing')
+
+  // A builtin keeps its faces on the object: one update_objects.
+  await page.getByRole('button', { name: '+ 新槽位' }).click()
+  await page.getByLabel('槽位 face_1').getByRole('button', { name: '指定' }).click()
+  await waitFor(() => server.commands.length === commands + 1, 'the assignment is sent')
+  const [op] = server.commands.at(-1).payload.operations
+  assert.equal(op.op, 'update_objects')
+  const faces = op.updates[0].primitive.faces
+  assert.deepEqual(faces.meshes[0].path, [['', 0]])
+  assert.equal(Object.values(faces.meshes[0].assign.face_1).reduce((n, [s, e]) => n + e - s, 0), 10)
+  assert.equal(await count(), 10, 'the selection stays')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// scene-face-materials 5.3 (Epic AC-3): faces to a new slot, then a material for it.
+await check('face edit: + 新槽位 and 指定 is one revision, its material another; two undos go back in turn; the other instance stays; reopened the same', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const a = `sobj_${'pillar_a'.padEnd(21, '0')}`
+  const b = `sobj_${'pillar_b'.padEnd(21, '0')}`
+  server.seedInstance(a, rev, 0, '柱 A')
+  server.seedInstance(b, rev, 3, '柱 B')
+  let { context, page, errors } = await open(server)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  await page.getByRole('treeitem', { name: /柱 A/ }).click()
+  await page.keyboard.press('Period')
+  await sleep(800)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.click(x, y)
+  await page.keyboard.press('Tab')
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  await page.mouse.click(x, y)
+  await waitFor(async () => /已选 \d+ 个三角形/.test(await hint()), 'a patch of the pillar')
+  const picked = /已选 (\d+) 个三角形/.exec(await hint())[1]
+
+  await page.getByRole('button', { name: '+ 新槽位' }).click()
+  const slot = page.getByLabel('槽位 face_1')
+  await slot.getByRole('button', { name: '指定' }).click()
+  // Shared with 柱 B: asked first.
+  await page.getByRole('group', { name: '共用模型' }).getByRole('button', { name: '只改这个' }).click()
+  await waitFor(() => server.commands.length === 1, 'one command for the assignment')
+  const [derive, set] = server.commands[0].payload.operations
+  assert.equal(derive.op, 'derive_model')
+  assert.equal(derive.from_revision_id, rev)
+  assert.equal(derive.base_content_id, undefined, 'this one only: a model of its own')
+  assert.deepEqual(Object.keys(derive.faces.meshes[0].assign), ['face_1'])
+  assert.deepEqual(set, { op: 'set_instance_model', object_id: a, model: { ref: derive.ref }, scope: 'this' })
+  const assigned = server.object(a).model.content_revision_id
+  assert.notEqual(assigned, rev)
+  assert.equal(server.object(b).model.content_revision_id, rev, '柱 B keeps its model')
+  await saved(page)
+  assert.match(await hint(), new RegExp(`已选 ${picked} 个三角形`), 'the selection stays for the next slot')
+  await waitFor(async () => (await page.getByLabel('槽位 face_1').getByText('新槽位，指定后保存').count()) === 0, 'face_1 is a slot of the model now')
+  await shot(page, 'face-edit-assigned')
+
+  const material = page.getByLabel('face_1 的材质')
+  const preset = await material.locator('option').nth(3).getAttribute('value')
+  await material.selectOption(preset)
+  await waitFor(() => server.commands.length === 2, 'a second command for the material')
+  assert.equal(server.object(a).material_slots.face_1.preset, preset)
+  await saved(page)
+
+  await page.locator('.cc-scene-editor canvas').click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'undo the material')
+  assert.equal(server.object(a).material_slots.face_1, undefined)
+  assert.equal(server.object(a).model.content_revision_id, assigned)
+  await saved(page)
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => server.commands.length === 4, 'undo the assignment')
+  assert.equal(server.object(a).model.content_revision_id, rev, 'back on the shared model')
+  await saved(page)
+  await page.keyboard.press(`${mod}+Shift+KeyZ`)
+  await page.keyboard.press(`${mod}+Shift+KeyZ`)
+  await waitFor(() => server.commands.length === 6, 'both redone')
+  assert.equal(server.object(a).model.content_revision_id, assigned)
+  assert.equal(server.object(a).material_slots.face_1.preset, preset)
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Reopened: the slot is there with its material, 柱 B as it was.
+  ;({ context, page, errors } = await open(server))
+  await page.getByRole('treeitem', { name: /柱 A/ }).click()
+  assert.equal(await page.getByLabel('face_1 的材质').inputValue(), preset)
+  await page.getByRole('treeitem', { name: /柱 B/ }).click()
+  assert.equal(await page.getByLabel('槽位 face_1').count(), 0)
   assert.deepEqual(errors, [])
   await context.close()
 })

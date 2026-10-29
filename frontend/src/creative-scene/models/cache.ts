@@ -139,7 +139,7 @@ export class ModelCache {
   private readonly loads = new Map<string, Promise<ModelParts>>()
   private readonly ready = new Map<string, ModelParts>()
   private readonly generators = new Map<string, Promise<ModelGenerator>>()
-  private owning: { revision: string; meshes: Promise<OwnedMesh[]> } | null = null
+  private owning: { revision: string; glb: Promise<ArrayBuffer>; meshes: Promise<OwnedMesh[]> } | null = null
 
   constructor(download: Download = downloadGLB, readGenerator: ReadGenerator = (r) => readModelGenerator(r)) {
     this.download = download
@@ -252,19 +252,31 @@ export class ModelCache {
    */
   owned(revision: string): Promise<OwnedMesh[]> {
     if (this.owning?.revision === revision) return this.owning.meshes
+    const glb = this.bytes(revision)
     const meshes = (async () => {
-      const local = this.local.getState()[revision]
-      if (!local && parsePlaceholder(revision)) throw new Error('本机模型已不在，请重新生成')
-      const glb = local ? local.glb : await this.download(revision)
-      inspect(glb)
-      const { scene, identities } = await parseModelGLB(glb)
+      const bytes = await glb
+      inspect(bytes)
+      const { scene, identities } = await parseModelGLB(bytes)
       return ownedMeshes(scene, identities)
     })()
     meshes.catch(() => {
       if (this.owning?.meshes === meshes) this.owning = null
     })
-    this.owning = { revision, meshes }
+    this.owning = { revision, glb, meshes }
     return meshes
+  }
+
+  /**
+   * A revision's GLB: a local bake's, the one face edit read, or downloaded.
+   * A face assignment derives a revision over the same bytes, drawn from
+   * them until the server's copy is read.
+   */
+  bytes(revision: string): Promise<ArrayBuffer> {
+    const local = this.local.getState()[revision]
+    if (local) return Promise.resolve(local.glb)
+    if (this.owning?.revision === revision) return this.owning.glb
+    if (parsePlaceholder(revision)) return Promise.reject(new Error('本机模型已不在，请重新生成'))
+    return this.download(revision)
   }
 
   /**

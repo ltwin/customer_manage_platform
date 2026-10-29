@@ -13,6 +13,20 @@ import { ParamField } from './Properties.tsx'
 const sourceLabel = { assigned: '', hint: '按提示', model: '模型自带', default: '默认', unknown: '未知材质' } as const
 const originLabel = '沿用原槽位'
 
+/** What face edit adds to the section (design「面编辑与指定」); absent outside it. */
+export type FaceSlots = {
+  /** Triangles selected now. */
+  selected: number
+  /** Slots 「+」 made, not saved until faces are assigned to them. */
+  added: readonly string[]
+  /** Other instances of the same model: assigning asks whether they change too. */
+  shared: number
+  assign(slot: string, applyToAll: boolean): void
+  select(slot: string): void
+  deselect(slot: string): void
+  add(): void
+}
+
 /** anisotropy_rotation is stored in radians and shown in degrees, like a spot light's angle. */
 const inDegrees = (k: string) => k === 'anisotropy_rotation'
 const degreeSpec = (spec: ParamSpec): ParamSpec => ({ ...spec, min: -180, max: 180, step: 1, unit: '°', default: 0 })
@@ -23,7 +37,7 @@ const degreeSpec = (spec: ParamSpec): ParamSpec => ({ ...spec, min: -180, max: 1
  * With several objects selected, an edit goes to every one with a slot of
  * the same name.
  */
-export function MaterialSlots({ object, model, objects, selected, models, readOnly, display, storage, onUpdates }: {
+export function MaterialSlots({ object, model, objects, selected, models, readOnly, display, storage, onUpdates, faces }: {
   object: SceneObject
   model: SceneModel | undefined
   objects: readonly SceneObject[]
@@ -33,6 +47,7 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
   display: DisplayMode
   storage: Storage | undefined
   onUpdates: (updates: ObjectUpdate[], label: string, merge?: string) => void
+  faces?: FaceSlots
 }) {
   const slots = slotsOf(object, model)
   const builtinKey = object.kind === 'primitive' ? JSON.stringify([object.primitive?.builtin, object.primitive?.params, object.primitive?.faces]) : ''
@@ -49,6 +64,8 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
   }, [builtinKey, object.model?.content_revision_id])
   const [open, setOpen] = useState<string | null>(slots.length === 1 ? slots[0].slot : null)
   const [notice, setNotice] = useState('')
+  /** A shared model's slot waiting for 「只改这个 / 所有实例」. */
+  const [asking, setAsking] = useState<string | null>(null)
   if (!slots.length) return null
   const name = object.name || '物件'
   const slotNames = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((s) => s.slot)
@@ -68,6 +85,43 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
     const updates = setSlot(objects, selected, object.id, slot, slotNames, next)
     if (updates.length) onUpdates(updates, label, merge)
   }
+  const assign = (slot: string) => {
+    if (!faces) return
+    if (faces.shared > 0) return setAsking(slot)
+    faces.assign(slot, false)
+  }
+  /** 指定 / 选择 / 取消选择 on a slot, and the shared model's question. */
+  const faceTools = (slot: string, saved: boolean) =>
+    faces && (
+      <>
+        <div className="cc-scene-slot-tools" aria-label={`${slot} 的面`}>
+          <button type="button" className="btn" disabled={!faces.selected} title="把选中的面指定到这个槽位" onClick={() => assign(slot)}>
+            指定
+          </button>
+          {saved && (
+            <>
+              <button type="button" className="btn" title="选中这个槽位的面" onClick={() => faces.select(slot)}>
+                选择
+              </button>
+              <button type="button" className="btn" title="从选区里去掉这个槽位的面" onClick={() => faces.deselect(slot)}>
+                取消选择
+              </button>
+            </>
+          )}
+        </div>
+        {asking === slot && (
+          <div className="cc-scene-shared" role="group" aria-label="共用模型">
+            <span>与 {faces.shared} 个实例共用</span>
+            <button type="button" className="btn" onClick={() => (setAsking(null), faces.assign(slot, false))}>
+              只改这个
+            </button>
+            <button type="button" className="btn" onClick={() => (setAsking(null), faces.assign(slot, true))}>
+              所有实例
+            </button>
+          </div>
+        )}
+      </>
+    )
   return (
     <fieldset className="cc-scene-materials" disabled={readOnly} aria-label="材质">
       <legend>材质</legend>
@@ -91,6 +145,7 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
               </button>
               {origin ? <span className="cc-scene-slot-source is-origin">{originLabel}</span> : sourceLabel[resolved.source] && <span className={`cc-scene-slot-source is-${resolved.source}`}>{sourceLabel[resolved.source]}</span>}
             </div>
+            {faceTools(slot, true)}
             <label className="cc-scene-field">
               <span>材质</span>
               <select
@@ -165,6 +220,20 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
           </div>
         )
       })}
+      {faces?.added.map((slot) => (
+        <div key={slot} className="cc-scene-slot" aria-label={`槽位 ${slot}`}>
+          <div className="cc-scene-slot-head">
+            <span className="cc-scene-slot-name">{slot}</span>
+            <span className="cc-scene-slot-source">新槽位，指定后保存</span>
+          </div>
+          {faceTools(slot, false)}
+        </div>
+      ))}
+      {faces && (
+        <button type="button" className="btn" title="新建一个槽位，再把选中的面指定过去" onClick={faces.add}>
+          + 新槽位
+        </button>
+      )}
     </fieldset>
   )
 }

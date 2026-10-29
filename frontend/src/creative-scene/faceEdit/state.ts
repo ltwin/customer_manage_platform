@@ -1,4 +1,5 @@
 import type { SceneObject } from '../api.ts'
+import type { SceneModel } from '../models/cache.ts'
 import type { FaceTopology } from '../models/faceTopology.ts'
 import type { MeshIdentity } from '../sandbox/gltf.ts'
 
@@ -15,24 +16,36 @@ export type FaceEdit = {
   /** What the triangles were numbered on (faceSource); when it changes the selection no longer means anything. */
   source: string
   selected: FaceSelection
+  /** Slots 「+」 made, shown until faces are assigned to them; never saved on their own. */
+  added: readonly string[]
 }
 
 export const meshKey = (identity: MeshIdentity): string => JSON.stringify([identity.path, identity.primitive])
 
-/** The object's triangles as they are now: a model revision, or a builtin and its parameters. */
-export function faceSource(o: SceneObject): string | null {
-  if (o.kind === 'model_instance') return o.model?.content_revision_id ?? null
+/**
+ * The object's triangles as they are now: a builtin and its parameters, or
+ * a model's code, parameters and mesh. Not the revision: assigning faces
+ * derives a new one over the same GLB, and the selection still holds there.
+ */
+export function faceSource(o: SceneObject, model: SceneModel | undefined): string | null {
+  if (o.kind === 'model_instance') {
+    const revision = o.model?.content_revision_id
+    if (!revision) return null
+    const g = model?.generator
+    const m = model?.manifest
+    return m ? JSON.stringify([g?.code_sha256 ?? null, g?.lib_version ?? null, g?.params ?? null, m.triangles, m.bounds]) : revision
+  }
   if (o.kind === 'primitive' && o.primitive) return JSON.stringify([o.primitive.builtin, o.primitive.params ?? {}])
   return null
 }
 
 /** Why Tab does not enter face edit on this object, or null when it does. */
-export function faceEditBlock(o: SceneObject | undefined, usable: boolean): string | null {
+export function faceEditBlock(o: SceneObject | undefined, usable: boolean, model?: SceneModel): string | null {
   if (!o) return '先选中一个模型实例或基础体，再按 Tab 进入面编辑'
   if (o.kind !== 'model_instance' && o.kind !== 'primitive') return '面编辑只用于模型实例和基础体'
   if (o.locked) return '物件已锁定，解锁后才能面编辑'
   if (!o.visible) return '物件已隐藏，显示后才能面编辑'
-  if (!faceSource(o) || !usable) return '模型不可用，不能面编辑'
+  if (!faceSource(o, model) || !usable) return '模型不可用，不能面编辑'
   return null
 }
 

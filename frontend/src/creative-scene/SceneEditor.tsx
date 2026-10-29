@@ -20,6 +20,7 @@ import { boxSelect, click, emptySelection, invertSelection, listClick, prune, se
 import { ContextMenu, type MenuItem } from './panels/ContextMenu.tsx'
 import { ConflictPrompt } from './panels/ConflictPrompt.tsx'
 import { FirstRunHint } from './panels/FirstRunHint.tsx'
+import { assignFaces, assignOps, derivedRef, newSlotName, slotFaces } from './faceEdit/assign.ts'
 import type { EditMesh } from './faceEdit/meshes.ts'
 import {
   boxFaces,
@@ -36,7 +37,8 @@ import {
   type FaceSelection,
 } from './faceEdit/state.ts'
 import { useFaceMeshes } from './faceEdit/useFaceMeshes.ts'
-import { ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
+import { newIntentID } from './ids.ts'
+import { forkPlan, ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
 import type { SlotCount } from './models/faces.ts'
 import { CodePanel } from './panels/CodePanel.tsx'
@@ -62,7 +64,7 @@ import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
 import { renderMaterialThumbnail } from './library/thumbnail.ts'
 import { openScene } from './session.ts'
-import { cameraDefaults, type WireOp } from './state/apply.ts'
+import { cameraDefaults, localContent, localRevision, type WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, tabAfterSelection, toggleWireframe, type MenuKind, type PropertiesTab } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
@@ -256,9 +258,11 @@ export default function SceneEditor({
   const selected = u.selection.selected
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
   const faceObject = u.faceEdit ? byID.get(u.faceEdit.objectID) : undefined
-  const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelCache)
+  /** A model instance's summary, from what the editor knows of the scene's models. */
+  const modelOf = (o: SceneObject | undefined) => (o?.model?.content_revision_id ? models[o.model.content_revision_id] : undefined)
+  const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelOf(faceObject), modelCache)
   /** A model instance whose model can be drawn; anything else has no model to fail. */
-  const usableModel = (o: SceneObject | undefined) => !o?.model?.content_revision_id || models[o.model.content_revision_id]?.usable !== false
+  const usableModel = (o: SceneObject | undefined) => modelOf(o)?.usable !== false
   const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
   const shownModel = shownActive?.model?.content_revision_id
   // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
@@ -339,13 +343,13 @@ export default function SceneEditor({
     const fe = u.faceEdit
     if (!fe) return
     const o = byID.get(fe.objectID)
-    const reason = readOnly ? '' : faceEditBlock(o, usableModel(o))
+    const reason = readOnly ? '' : faceEditBlock(o, usableModel(o), modelOf(o))
     if (reason !== null || u.selection.active !== fe.objectID || faceMeshes?.state === 'failed') {
       const why = faceMeshes?.state === 'failed' ? faceMeshes.message : reason
       ui.setState({ faceEdit: null, ...(why ? { notice: `已退出面编辑：${why}` } : {}) })
       return
     }
-    const source = o && faceSource(o)
+    const source = o && faceSource(o, modelOf(o))
     if (source && source !== fe.source) {
       ui.setState({ faceEdit: { ...fe, source, selected: {} }, ...(selectedCount(fe.selected) ? { notice: '物件内容变了，面选区已清空' } : {}) })
     }
@@ -363,6 +367,71 @@ export default function SceneEditor({
       const patch = hit && shape ? (shape.patches[shape.patchOf[hit.triangle]] ?? []) : []
       return clickPatch(sel, mesh ? mesh.key : null, patch, shift)
     })
+  /** The object's assignment as it is now, and the slots its GLB has. */
+  const facesOf = (o: SceneObject) =>
+    o.kind === 'primitive' ? { faces: o.primitive?.faces, glbSlots: ['main'] } : { faces: modelOf(o)?.faces, glbSlots: (modelOf(o)?.manifest?.slots ?? []).map((x) => x.id) }
+  /** 「选择」 / 「取消选择」 on a slot: its triangles added to the selection or taken out. */
+  const selectSlot = (slot: string, add: boolean) =>
+    selectFaces((sel, meshes) => {
+      const fe = ui.getState().faceEdit
+      const o = fe && byID.get(fe.objectID)
+      if (!o) return sel
+      const theirs = slotFaces(facesOf(o).faces, meshes, slot)
+      const all = meshes.map((m) => {
+        const out = new Set(theirs[m.key] ?? [])
+        return [m.key, add ? [...(sel[m.key] ?? []), ...out] : (sel[m.key] ?? []).filter((t) => !out.has(t))] as const
+      })
+      return Object.fromEntries(all.filter(([, t]) => t.length).map(([k, t]) => [k, [...new Set(t)].sort((a, b) => a - b)]))
+    })
+  /**
+   * 「指定」: the selected faces to a slot, one revision. A model derives a
+   * revision over the same GLB, drawn from the bytes face edit read until
+   * the receipt names it; the selection stays for the next slot.
+   */
+  const assignSlot = async (slot: string, applyToAll: boolean) => {
+    const fe = ui.getState().faceEdit
+    const o = fe && byID.get(fe.objectID)
+    if (!fe || !o || readOnly || faceMeshes?.state !== 'ready') return
+    if (!selectedCount(fe.selected)) return notify('先选中要指定的面')
+    const { faces, glbSlots } = facesOf(o)
+    const next = assignFaces(faces, faceMeshes.meshes, fe.selected, slot, { builtin: o.kind === 'primitive', glbSlots })
+    if ('error' in next) return notify(next.error)
+    const label = `给「${o.name || '物件'}」指定面到 ${slot}`
+    const done = () => {
+      const now = ui.getState().faceEdit
+      if (now) ui.setState({ faceEdit: { ...now, added: now.added.filter((x) => x !== slot) } })
+    }
+    if (o.kind === 'primitive') {
+      if (edit(assignOps(o, next.faces, { scope: 'this', objectIDs: [o.id] }), label)) done()
+      return
+    }
+    const from = o.model?.content_revision_id
+    const model = modelOf(o)
+    if (!from || !model) return
+    const fork = forkPlan(objects, o.id, model.content_id || undefined, applyToAll)
+    let glb: ArrayBuffer
+    try {
+      glb = await modelCache.bytes(from)
+    } catch {
+      return notify('模型读取失败，面分配没有保存')
+    }
+    if (session.state.view?.scene.objects.find((x) => x.id === o.id)?.model?.content_revision_id !== from) return notify('物件的模型刚被换掉，面分配没有保存')
+    const id = newIntentID()
+    const placeholder = localRevision(id, derivedRef)
+    modelCache.register(placeholder, { glb, summary: { ...model, content_id: fork.baseContentID ?? localContent(id, derivedRef), faces: next.faces } })
+    if (!edit(assignOps(o, next.faces, fork), label, { id })) {
+      modelCache.unregister(placeholder)
+      return notify('场景现在不能编辑，面分配没有保存')
+    }
+    done()
+  }
+  const addSlot = () => {
+    const fe = ui.getState().faceEdit
+    const o = fe && byID.get(fe.objectID)
+    if (!fe || !o) return
+    const taken = [...slotsOf(o, modelOf(o)).map((x) => x.slot), ...fe.added]
+    ui.setState({ faceEdit: { ...fe, added: [...fe.added, newSlotName(taken)] } })
+  }
   const pickLinked = () => {
     const hit = handle.current?.faceUnderPointer()
     if (!hit) return notify('把指针放在物件上再按 L，选中它相连的部分')
@@ -833,10 +902,10 @@ export default function SceneEditor({
       case 'face-edit': {
         if (u.faceEdit) return ui.setState({ faceEdit: null })
         if (!editing) return
-        const reason = faceEditBlock(active ?? undefined, usableModel(active ?? undefined))
-        const source = active && faceSource(active)
+        const reason = faceEditBlock(active ?? undefined, usableModel(active ?? undefined), modelOf(active ?? undefined))
+        const source = active && faceSource(active, modelOf(active))
         if (reason || !active || !source) return notify(reason ?? '不能面编辑')
-        return ui.setState({ faceEdit: { objectID: active.id, source, selected: {} }, popup: null })
+        return ui.setState({ faceEdit: { objectID: active.id, source, selected: {}, added: [] }, popup: null })
       }
       case 'face-transform':
         return notify('面编辑只给面分配材质，不移动、旋转、缩放；要改形状，请改模型代码或参数')
@@ -1165,6 +1234,19 @@ export default function SceneEditor({
                       display={display}
                       storage={storage()}
                       onUpdates={(updates, text, merge) => edit([{ op: 'update_objects', updates }], text, merge ? { merge } : undefined)}
+                      faces={
+                        u.faceEdit?.objectID === shownActive.id && faceMeshes?.state === 'ready' && !u.preview
+                          ? {
+                              selected: selectedCount(u.faceEdit.selected),
+                              added: u.faceEdit.added,
+                              shared: shownActive.kind === 'model_instance' ? sharingInstances(objects, shownActive.id).length : 0,
+                              assign: (slot, all) => void assignSlot(slot, all),
+                              select: (slot) => selectSlot(slot, true),
+                              deselect: (slot) => selectSlot(slot, false),
+                              add: addSlot,
+                            }
+                          : undefined
+                      }
                     />
                   )}
                   {shownActive?.light && (

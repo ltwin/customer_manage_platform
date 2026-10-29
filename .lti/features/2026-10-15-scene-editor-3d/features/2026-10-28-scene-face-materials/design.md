@@ -147,6 +147,10 @@ sequenceDiagram
   - 回归用例「face edit on the GPU」在真 GPU 上跑，两个渲染器都覆盖。SwiftShader 走的是 WebGL2 后端，报不出这类错误。
 - **框选按三角形判断，选中整个面片**（实施 5.2）：原定按面片重心，但面片的重心可能落在它的洞里（带窗洞的墙），从相机看过去是空的。现在框里有一个三角形的重心可见，就选中它所在的面片；一个面片命中后，其余三角形不再求交。遮挡只算物件自身的网格，与单击一致。耗时：30 万三角形的球体全屏框选约 0.6 s（Node，M 系列 Mac），只在松开鼠标时算一次；与加载开销一起留到收尾评估。
 - **选择命令的单位**（实施 5.2）：L 加选指针下相连的部分（跨共用边连通，见 `faceTopology`；内置圆柱的顶底面和侧面共边，是一个部分），Ctrl + L 把选区所在的部分整个选上；Ctrl + 小键盘 + / − 按面片扩展、缩减（扩展加上与选区共边的面片，缩减去掉碰到未选三角形的面片），与单击按面片一致。Ctrl + I 在物件模式也生效（反选可选的物件）；菜单栏新增「选择」菜单，物件模式下是全选、取消全选、反选，面编辑时再加选择相连、扩展、缩减。没有小键盘的笔记本用菜单。
+- **指定后选区不清空：面编辑按「网格」而不是修订判断内容变没变**（实施 5.3）：给模型指定面会派生新修订（先是本地占位，回执后是正式 ID），按修订判断的话选区每次指定都会被清空。`faceSource` 对模型改为代码摘要、库版本、参数、三角形数和包围盒；派生修订与来源完全相同，别人用同样的代码和参数重新生成也相同（三角形编号一样，选区仍然成立）。没有生成信息的导入模型只看三角形数和包围盒。面编辑的网格按这个键缓存，换修订不重新解析。
+- **派生修订在回执前用来源的 GLB 显示**（实施 5.3）：`ModelCache.bytes` 依次取本地烘焙、面编辑已读的字节、下载；占位修订登记来源的字节和带新分配的摘要，回执后按 `alias` 换成正式 ID，与烘焙路径相同。读字节期间物件的模型被换掉时不提交并提示。
+- **共用模型在每次指定时问**（实施 5.3）：材质面板在「指定」下方显示「与 N 个实例共用：只改这个 / 所有实例」，不记住上次的选择；与模型参数的「应用到全部」勾选框不同，因为指定是一次性的动作。
+- **「+」的新槽位放在面编辑状态里**（实施 5.3，`FaceEdit.added`）：指定后从列表里去掉（此时它已是有效槽位），退出面编辑就丢掉；还没指定的新槽位只能「指定」，没有材质下拉。
 - **Tab 只在焦点位于编辑器时进出面编辑**（实施 5.1）：焦点在面板控件上时 Tab 仍按浏览器习惯移动焦点；点视口会把焦点交回编辑器。面编辑中 Esc 清空面选区，不退出；物件被锁定、隐藏、删除，活动物件换了，或进入只读、历史预览时自动退出，并在状态栏说明原因。
 - **有效槽位放在 `creativecontent`**：`creativecontent.EffectiveSlots` 同时服务 `write_model` 回报、`read_scene` 视图和资产库的模型要点，三处说法一致；`creativescene` 在下层之上调用它。`edit_scene` 的 `faces_cleared` 由写入前后快照比较得出，不改场景命令的回执。
 
@@ -171,6 +175,7 @@ sequenceDiagram
 | `frontend/src/creative-scene/faceEdit/` | 新增 | 面编辑状态、拾取、框选、高亮、面片边线（5.1：`state.ts`、`meshes.ts`、`useFaceMeshes.ts`、`FaceOverlay.tsx`） |
 | `frontend/src/creative-scene/models/cache.ts`（`owned`）、`Viewport.tsx`、`SceneEditor.tsx`、`state/sceneStore.ts` | 修改 | 面编辑读取模型网格；视口拾取三角形、画叠加层；进出与退出条件；`faceedit` 按键上下文（实施 5.1） |
 | `frontend/src/creative-scene/input/keymap.ts` | 修改 | Tab 与面编辑键位，速查表条目 |
+| `frontend/src/creative-scene/faceEdit/assign.ts`、`models/cache.ts`（`bytes`）、`SceneEditor.tsx`（`assignSlot`）、`scene.css` | 新增 / 修改 | 指定、按槽位选择、新槽位命名与上限；派生修订的本地显示；材质栏在模型参数之前时也是单列（实施 5.3） |
 | `frontend/src/creative-scene/panels/MenuBar.tsx`、`state/sceneStore.ts`（`MenuKind`）、`input/selection.ts`（`invertSelection`） | 修改 | 「选择」菜单与物件模式的反选（实施 5.2） |
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | 面编辑时的拾取与框选分流 |
 | `frontend/src/creative-scene/panels/MaterialSlots.tsx` | 修改 | 面编辑的槽位操作，有效槽位与失效提示 |

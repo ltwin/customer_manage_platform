@@ -500,8 +500,8 @@ test('face edit enters only an unlocked, visible model instance or builtin', asy
   assert.equal(faceEditBlock({ ...(box as object), locked: true } as never, true), '物件已锁定，解锁后才能面编辑')
   assert.equal(faceEditBlock({ ...(box as object), visible: false } as never, true), '物件已隐藏，显示后才能面编辑')
   assert.equal(faceEditBlock(model, false), '模型不可用，不能面编辑')
-  assert.equal(faceSource(model), 'ccrv_a')
-  assert.notEqual(faceSource(box), faceSource({ ...(box as object), primitive: { builtin: 'box@1', params: { width: 2 } } } as never), 'new parameters, new triangles')
+  assert.equal(faceSource(model, undefined), 'ccrv_a')
+  assert.notEqual(faceSource(box, undefined), faceSource({ ...(box as object), primitive: { builtin: 'box@1', params: { width: 2 } } } as never, undefined), 'new parameters, new triangles')
 })
 
 test('a click picks a patch; Shift adds it or takes it out; a click on nothing clears', async () => {
@@ -670,4 +670,78 @@ test('a box drag catches only the faces the camera sees, perspective or orthogra
   assert.ok(archFront.every((t) => archSel.includes(t)))
   assert.ok(archSel.every((t) => shape.normals[3 * t + 2] > -0.01), 'nothing turned away')
   assert.ok(archSel.some((t) => Math.abs(shape.normals[3 * t]) > 0.99), 'the inner side of a jamb')
+})
+
+// scene-face-materials 5.3: assigning the selected faces to a slot.
+test('a revision derived for a face assignment keeps face edit on the same triangles', async () => {
+  const { faceSource } = await import('../src/creative-scene/faceEdit/state.ts')
+  const base = { id: 'sobj_1', name: '柱', kind: 'model_instance', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, material_slots: {} }
+  const summary = {
+    content_id: 'ccnt_a', usable: true, name_hint: '柱', faces: null,
+    manifest: { bounds: { min: [0, 0, 0], max: [1, 2, 1] }, triangles: 128, slots: [{ id: 'stone' }], parts: [], anchors: [] },
+    generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: 'abc', params_schema: {}, params: { segments: 32 }, mount: 'floor' },
+  } as never as import('../src/creative-scene/models/cache.ts').SceneModel
+  const at = (revision: string) => ({ ...base, model: { content_revision_id: revision } }) as never
+  const derived = { ...summary, faces: { meshes: [] } } as never as typeof summary
+  assert.equal(faceSource(at('ccrv_a'), summary), faceSource(at('local:i1:faces'), derived))
+  const rebaked = { ...summary, generator: { ...summary.generator!, params: { segments: 12 } } }
+  assert.notEqual(faceSource(at('ccrv_a'), summary), faceSource(at('ccrv_b'), rebaked), 'other parameters, other triangles')
+})
+
+test('assigning moves the selection to a slot, back to the mesh\'s own slot out of the assignment', async () => {
+  const { assignFaces, newSlotName, slotFaces } = await import('../src/creative-scene/faceEdit/assign.ts')
+  const { builtinEditMesh } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const box = builtinEditMesh(primitiveGeometry('box@1', defaultParams('box@1'))!)
+  const ctx = { builtin: true, glbSlots: ['main'] }
+  const one = assignFaces(null, [box], { [box.key]: [0, 1] }, 'face_1', ctx)
+  assert.ok('faces' in one)
+  assert.deepEqual(one.faces, { meshes: [{ path: [['', 0]], primitive: 0, topology: box.topology, assign: { face_1: [[0, 2]] } }] })
+  // Two more triangles next to them: the ranges merge.
+  const two = assignFaces(one.faces, [box], { [box.key]: [2, 3] }, 'face_1', ctx)
+  assert.ok('faces' in two)
+  assert.deepEqual(two.faces!.meshes[0].assign, { face_1: [[0, 4]] })
+  assert.deepEqual(slotFaces(two.faces, [box], 'face_1'), { [box.key]: [0, 1, 2, 3] })
+  assert.deepEqual(slotFaces(two.faces, [box], 'main'), { [box.key]: [4, 5, 6, 7, 8, 9, 10, 11] }, 'the own slot has what is not assigned')
+  const back = assignFaces(two.faces, [box], { [box.key]: [0, 1, 2, 3] }, 'main', ctx)
+  assert.deepEqual(back, { faces: null }, 'all back in main: nothing left to store')
+  // An entry that no longer fits its mesh is replaced, not added to.
+  const stale = { meshes: [{ path: [['', 0]], primitive: 0, topology: 't1-0000000000000000', assign: { face_9: [[5, 9]] } }], hints: { face_9: '旧', face_1: '门' } }
+  const fresh = assignFaces(stale as never, [box], { [box.key]: [0] }, 'face_1', ctx)
+  assert.ok('faces' in fresh)
+  assert.deepEqual(fresh.faces, { meshes: [{ path: [['', 0]], primitive: 0, topology: box.topology, assign: { face_1: [[0, 1]] } }], hints: { face_1: '门' } }, 'hints of slots gone are dropped')
+  assert.equal(newSlotName(['main', 'face_1', 'face_3']), 'face_2')
+})
+
+test('past the limits nothing is assigned: ranges, the size, 32 slots', async () => {
+  const { assignFaces, tooFragmented } = await import('../src/creative-scene/faceEdit/assign.ts')
+  const { builtinEditMesh } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const sphere = builtinEditMesh(new THREE.SphereGeometry(1, 64, 32))
+  const every = (step: number) => ({ [sphere.key]: Array.from({ length: Math.floor(sphere.shape().triangleCount / step) }, (_, i) => i * step) })
+  assert.deepEqual(assignFaces(null, [sphere], every(2), 'face_1', { builtin: true, glbSlots: ['main'] }), { error: tooFragmented }, 'a builtin holds 256 ranges')
+  assert.ok('faces' in assignFaces(null, [sphere], every(2), 'face_1', { builtin: false, glbSlots: ['main'] }), 'a model 8192')
+  const many = Array.from({ length: 31 }, (_, i) => `s${i}`)
+  assert.ok('faces' in assignFaces(null, [sphere], { [sphere.key]: [0] }, 'face_1', { builtin: false, glbSlots: many }))
+  assert.deepEqual(assignFaces(null, [sphere], { [sphere.key]: [0] }, 'face_1', { builtin: false, glbSlots: [...many, 'main'] }), { error: '槽位太多：一个物件最多 32 个' })
+})
+
+test('one assignment is one batch: update_objects for a builtin, derive_model and set_instance_model for a model', async () => {
+  const { assignOps } = await import('../src/creative-scene/faceEdit/assign.ts')
+  const { forkPlan } = await import('../src/creative-scene/modelEdits.ts')
+  const faces = { meshes: [{ path: [['', 0]], primitive: 0, topology: 't1-0000000000000000', assign: { face_1: [[0, 2]] } }] } as never
+  const base = { name: '', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, material_slots: {} }
+  const box = { ...base, id: 'sobj_box', kind: 'primitive', primitive: { builtin: 'box@1', params: {} } } as never
+  assert.deepEqual(assignOps(box, faces, { scope: 'this', objectIDs: ['sobj_box'] }), [{ op: 'update_objects', updates: [{ object_id: 'sobj_box', primitive: { faces } }] }])
+  const a = { ...base, id: 'sobj_a', kind: 'model_instance', model: { content_revision_id: 'ccrv_1' } } as never
+  const b = { ...base, id: 'sobj_b', kind: 'model_instance', model: { content_revision_id: 'ccrv_1' } } as never
+  // Alone: a new revision of the same content.
+  assert.deepEqual(assignOps(a, faces, forkPlan([a], 'sobj_a', 'ccnt_1', false)), [
+    { op: 'derive_model', ref: 'faces', from_revision_id: 'ccrv_1', faces, base_content_id: 'ccnt_1' },
+    { op: 'set_instance_model', object_id: 'sobj_a', model: { ref: 'faces' }, scope: 'this' },
+  ])
+  // Shared, this one only: a model of its own; the other instance is not named.
+  const only = assignOps(a, faces, forkPlan([a, b], 'sobj_a', 'ccnt_1', false))
+  assert.deepEqual(only[0], { op: 'derive_model', ref: 'faces', from_revision_id: 'ccrv_1', faces })
+  assert.deepEqual(only[1], { op: 'set_instance_model', object_id: 'sobj_a', model: { ref: 'faces' }, scope: 'this' })
+  // Shared, all of them.
+  assert.deepEqual(assignOps(a, faces, forkPlan([a, b], 'sobj_a', 'ccnt_1', true))[1], { op: 'set_instance_model', object_id: 'sobj_a', model: { ref: 'faces' }, scope: 'all_instances', object_ids: ['sobj_a', 'sobj_b'] })
 })
