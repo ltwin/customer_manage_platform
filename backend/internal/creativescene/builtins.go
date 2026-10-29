@@ -30,10 +30,31 @@ type paramSpec struct {
 }
 
 type builtinSpec struct {
-	Builtin string               `json:"builtin"`
-	Label   string               `json:"label"`
-	Mount   string               `json:"mount"`
-	Params  map[string]paramSpec `json:"params"`
+	Builtin  string               `json:"builtin"`
+	Label    string               `json:"label"`
+	Mount    string               `json:"mount"`
+	Topology *[]topologyRule      `json:"topology"`
+	Params   map[string]paramSpec `json:"params"`
+}
+
+// topologyRule names a parameter that can change how the builtin's triangles
+// connect (data: 场景内置基础体「topology」). With ZeroSplit only crossing
+// between 0 and non-zero does. Written as the name, or {"param", "zero_split"}.
+type topologyRule struct {
+	Param     string `json:"param"`
+	ZeroSplit bool   `json:"zero_split"`
+}
+
+func (r *topologyRule) UnmarshalJSON(raw []byte) error {
+	var name string
+	if err := json.Unmarshal(raw, &name); err == nil {
+		*r = topologyRule{Param: name}
+		return nil
+	}
+	type plain topologyRule
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	return dec.Decode((*plain)(r))
 }
 
 var (
@@ -59,6 +80,15 @@ func loadBuiltins(raw []byte) map[string]builtinSpec {
 		}
 		if _, dup := out[b.Builtin]; dup {
 			panic(fmt.Sprintf("creativescene: builtin %q listed twice", b.Builtin))
+		}
+		if b.Topology == nil {
+			panic(fmt.Sprintf("creativescene: builtin %q declares no topology", b.Builtin))
+		}
+		for _, r := range *b.Topology {
+			p, ok := b.Params[r.Param]
+			if !ok || r.ZeroSplit && p.Type != "number" && p.Type != "integer" {
+				panic(fmt.Sprintf("creativescene: %s topology names %q", b.Builtin, r.Param))
+			}
 		}
 		for name, p := range b.Params {
 			numeric := p.Type == "number" || p.Type == "integer"
@@ -153,6 +183,30 @@ func lookupBuiltin(id string) (builtinSpec, error) {
 // mergeParams lays patch over base, checking every patched key against the
 // catalog. Base is the defaults when adding and the current values when
 // updating, so the result is always complete.
+// topologyChanged reports whether going from old to next parameters may change
+// how the builtin's triangles connect, so a face assignment on it no longer
+// holds. Both are complete, canonical parameter sets.
+func (b builtinSpec) topologyChanged(old, next map[string]any) bool {
+	for _, r := range *b.Topology {
+		before, after := old[r.Param], next[r.Param]
+		x, xok := number(before)
+		y, yok := number(after)
+		switch {
+		case xok && yok && r.ZeroSplit:
+			if (x == 0) != (y == 0) {
+				return true
+			}
+		case xok && yok:
+			if x != y {
+				return true
+			}
+		case before != after:
+			return true
+		}
+	}
+	return false
+}
+
 func (b builtinSpec) mergeParams(base, patch map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(b.Params))
 	for k, v := range base {

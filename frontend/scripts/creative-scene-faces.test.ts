@@ -15,6 +15,8 @@ import {
   type OwnedMesh,
 } from '../src/creative-scene/models/faces.ts'
 import type { MeshIdentity } from '../src/creative-scene/sandbox/gltf.ts'
+import { builtins, builtinSpec, defaultParams, topologyChanged } from '../src/creative-scene/builtins/catalog.ts'
+import { primitiveGeometry } from '../src/creative-scene/builtins/geometry.ts'
 
 // scene-face-materials 2.1: face assignments (data: 模型内容「面级材质分配」).
 
@@ -233,3 +235,53 @@ test('effective slots are the GLB’s then the assignment’s, each once', () =>
   ])
   assert.deepEqual(effectiveSlots([{ id: 'stone', hint: '' }], null), [{ id: 'stone', hint: '', source: 'model', triangles: 0 }])
 })
+
+// scene-face-materials 2.2: a builtin's topology declaration may be
+// conservative but must not miss a parameter. Every parameter it leaves out
+// keeps the fingerprint at its bounds, default and a few fixed random values.
+test('every builtin parameter outside its topology declaration keeps the fingerprint', async () => {
+  let seed = 7
+  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+  for (const spec of builtins) {
+    const declared = new Map(spec.topology.map((r) => (typeof r === 'string' ? [r, false] : [r.param, r.zero_split])))
+    const base = await topologyOf(primitiveGeometry(spec.builtin, {})!)
+    for (const [name, p] of Object.entries(spec.params)) {
+      if (declared.get(name) === false || p.min === undefined || p.max === undefined) continue
+      // A zero_split parameter only changes topology crossing 0: try values on the default's side.
+      const zeroSplit = declared.get(name) === true
+      const low = zeroSplit && p.min === 0 ? Math.min(0.001, p.max) : p.min
+      const values = [low, p.default as number, p.max, ...Array.from({ length: 5 }, () => low + random() * (p.max! - low))].map((v) => (p.type === 'integer' ? Math.round(v) : v))
+      for (const v of values) {
+        const fingerprint = await topologyOf(primitiveGeometry(spec.builtin, { [name]: v })!)
+        assert.equal(fingerprint, base, `${spec.builtin}.${name} = ${v} changes the topology: declare it`)
+      }
+    }
+  }
+})
+
+test('the editor decides builtin topology changes as the server does', () => {
+  // The same table as builtins_topology_internal_test.go.
+  const cases: [string, Record<string, number>, boolean][] = [
+    ['box@1', { width: 5, height: 2 }, false],
+    ['ground@1', { size: 100 }, false],
+    ['arch@1', { depth: 1 }, false],
+    ['arch@1', { opening_width: 0.4 }, true],
+    ['arch@1', { width: 3 }, true],
+    ['cylinder@1', { height: 4, radius_bottom: 2 }, false],
+    ['cylinder@1', { radius_top: 0.3 }, false],
+    ['cylinder@1', { radius_top: 0 }, true],
+    ['cylinder@1', { radial_segments: 12 }, true],
+    ['sphere@1', { radius: 3 }, false],
+    ['sphere@1', { segments: 16 }, true],
+    ['stairs@1', { step_height: 0.3, width: 3 }, false],
+    ['stairs@1', { step_count: 4 }, true],
+  ]
+  for (const [id, patch, changed] of cases) {
+    const spec = builtinSpec(id)!
+    const old = defaultParams(id)
+    assert.equal(topologyChanged(spec, old, { ...old, ...patch }), changed, `${id} ${JSON.stringify(patch)}`)
+  }
+  // Parameters left out read as their defaults.
+  assert.equal(topologyChanged(builtinSpec('cylinder@1')!, {}, { radial_segments: 32 }), false)
+})
+
