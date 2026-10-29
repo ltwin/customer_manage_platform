@@ -202,6 +202,14 @@ sequenceDiagram
 | `docs/dev/creative-scene-agent.md` | 修改 | 有效槽位与工具结果说明 |
 | `frontend/src/creative-canvas/viewer/MediaViewer.tsx` | 修改 | 资产查看浮窗渲染 `ModelPreview`，传入 `modelFaces(item.content)`（实施 4.1） |
 | `frontend/src/creative-canvas/viewer/modelInfo.ts` | 修改 | `modelFaces`；信息行的「材质槽」在 GLB 槽位之后列出面分配新建的槽位（实施 4.2） |
+| `frontend/src/creative-scene/models/sha256.ts`、`models/weld.ts` | 新增 | 同步 SHA-256，供首帧就要的指纹（实施 4.1）；数值键的焊接表，供指纹与面片拓扑（收尾性能评估） |
+| `frontend/src/creative-scene/materials/resolve.ts:resolvePart`、`models/merge.ts`、`objects/ModelMesh.tsx`、`library/thumbnail.ts`、`materials/slotEdits.ts:slotsOf` | 修改 | 新槽位未配材质时沿用原槽位（`origin`，参与合并键）；模型、资产缩略图、材质栏按有效槽位（实施 4.1） |
+| `frontend/src/creative-scene/host/render.ts` | 修改 | 助手截图与导出加载模型时传入 `faces`（实施 4.1，AC-4） |
+| `frontend/src/creative-scene/builtins/catalog.ts`、`state/apply.ts` | 修改 | 编辑器读 `topology` 声明，本地套用 `update_objects` 时按声明保留或清空，与服务端一致（实施 2.2、3.3） |
+| `frontend/src/creative-scene/state/intents.ts` | 修改 | `derive_model` 的占位修订在回执后换成正式 ID（实施 3.2） |
+| `frontend/src/creative-scene/panels/ShortcutSheet.tsx` | 修改 | 速查表新增「面编辑」分组（实施 5.1） |
+| `frontend/src/creative-scene/objects/EdgeLines.tsx`、`objects/Outline.tsx` | 修改 | 可直接传 `geometry`，基础体拆片后描边挂在整体几何上（代码审计后补） |
+| 生成物：`api.gen.go`、`schema.d.ts`、`tool_schemas.gen.go`、`builtins.gen.json` | 重新生成 | 由 `api/openapi.yaml`、助手工具定义、`builtins.json` 生成 |
 
 ## 验证与交付
 
