@@ -1110,7 +1110,11 @@ editor.addEventListener('paste', (e) => {
 editor.addEventListener('keydown', (e) => {
   const rich = e.target.closest('.rich[data-rich]')
   if (rich && e.key === '@') { e.preventDefault(); openRefPicker(rich, null) }
-  if (e.key === 'Escape' && !document.querySelector('.menu,.popover,.pk-back,.lb-back,.modal-back')) closeEditor()
+})
+// Esc 挂在 document 上：双击卡片打开后焦点还在 body，挂在编辑视图上收不到
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || editor.hidden || editor.classList.contains('closing')) return
+  if (!document.querySelector('.menu,.popover,.pk-back,.lb-back,.modal-back')) closeEditor()
 })
 let savedRange = null
 function openRefPicker(rich, anchor) {
