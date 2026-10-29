@@ -682,8 +682,8 @@ export default function SceneEditor({
     ui.setState({ code: { ...target, opened: Date.now() }, history: false, preview: null })
   /** Regenerating gave up some face assignments (data: 模型内容「重新生成时」); undo brings them back. */
   const noticeDropped = (dropped: readonly SlotCount[]) => {
-    const triangles = dropped.reduce((n, d) => n + d.triangles, 0)
-    if (triangles) notify(`网格变了，${triangles} 个三角形的面分配已失效，撤销可以找回`)
+    const lost = dropped.filter((d) => d.triangles > 0)
+    if (lost.length) notify(`网格变了，${lost.map((d) => `${d.slot} 的 ${d.triangles} 个三角形`).join('、')}的面分配已失效，撤销可以找回`)
   }
   const generate = async (code: string) => {
     const target = ui.getState().code
