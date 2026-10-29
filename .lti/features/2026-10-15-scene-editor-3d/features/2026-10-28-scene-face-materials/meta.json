@@ -1,12 +1,12 @@
 {
   "uid": "ef07da1d-1eed-4bb0-847f-73189d39e87e",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-face-materials",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 13,
+    "version": 14,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -50,26 +50,28 @@
   },
   "state": "in-progress",
   "createdAt": "2026-10-28T13:54:10.701Z",
-  "updatedAt": "2026-10-29T03:14:18.460Z",
+  "updatedAt": "2026-10-29T12:33:48.056Z",
   "risk": {
     "factors": [
       "broad-impact",
       "perf-sensitive"
     ]
   },
-  "approvals": {
-    "proposal": {
+  "approvals": {},
+  "approvalHistory": [
+    {
       "by": "samson",
       "at": "2026-10-29T03:12:52.018Z",
-      "contentHash": "11206a383e561cac"
+      "contentHash": "11206a383e561cac",
+      "role": "proposal"
     },
-    "design": {
+    {
       "by": "samson",
       "at": "2026-10-29T03:12:52.018Z",
-      "contentHash": "5ca9d3ecf681c64a"
+      "contentHash": "5ca9d3ecf681c64a",
+      "role": "design"
     }
-  },
-  "approvalHistory": [],
+  ],
   "revisions": [],
   "baseline": {
     "commit": "9242ad0b5035a4805067a292233ceb8bd796472b",
