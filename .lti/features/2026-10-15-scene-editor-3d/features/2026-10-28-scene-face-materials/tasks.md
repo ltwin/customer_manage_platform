@@ -1,0 +1,34 @@
+# Tasks
+
+## 1. 验证假设：网格身份
+
+- [ ] 1.1 `sandbox/gltf.ts:parseGLB` 额外返回每个 `Mesh` 的身份（`parser.associations` + GLB JSON 原文节点名、同级同名序号、primitive 下标）。先写测试：沙箱烘焙多 primitive 网格、多层节点、同名兄弟节点、被多个节点引用的网格、镜像部件五类样例，断言身份与 GLB JSON 一一对应，且每个身份的三角形数与 Go 端（`creativeglb` 测试辅助函数按同一路径规则逐 primitive 计数）相同。不成立时停下回报 owner（Epic 未决 9）；`make check-frontend` 通过
+
+## 2. 前端：面分配核心
+
+- [ ] 2.1 `models/faces.ts`：`topologyOf`、`ownedMeshes`、`splitBySlot`（压缩顶点、各片独立属性）、`carryFaces`（Epic `data: 模型内容` 决策表）、区间编码、`effectiveSlots`。先写单测：有索引与无索引指纹、无索引三角形重排后指纹改变、只改坐标不变；变换只烘一次且原几何逐字节不变（0.5 → 10.5，不是 20.5）；拆分各片不共享属性；套用的全部分走、指纹不符、身份不存在；决策表每一行，含「同名同拓扑交换顺序 + 改代码 → 作废」「只改参数 → 保留」；`make check-frontend` 通过
+- [ ] 2.2 基础体 `topology`：`builtins.json` 每项加声明（`arch@1` 为 `width`、`height`、`opening_width`、`opening_height`；`cylinder@1` 的 `radius_top` 用 `zero_split`），`builtins.go` 解析并提供 `topologyChanged(old, new)`，`make generate` 同步前端副本。测试：Go 端 `topologyChanged` 对每项声明；前端对每个基础体、声明以外的每个参数，在最小值、默认值、最大值和 5 个随机值上指纹与默认参数相同；`make check-go PKG=./internal/creativescene/...`、`make check-frontend`、`make generate-check` 通过
+- [ ] 2.3 `models/faceTopology.ts`：平面面片（相对起点平面的夹角与距离容差）、连通部分、邻接。先写单测：方块 6 个面片、地面 1 个、512 段圆柱侧面 512 个、相邻夹角 0.01° 的 200 段带状网格每片法线偏差不超过 0.05°，以及拱门、楼梯的面片数；`make check-frontend` 通过
+
+## 3. 后端：契约与助手读取
+
+- [ ] 3.1 `creativescene/faces.go` 外形校验与有效槽位，`models.go:ModelPayload` 加 `Faces`；OpenAPI 的 `CreativeModelPayload`、`CreativeModelPreviewPayload`、`CreativeSceneModel` 加 `faces`，`make generate`。先写测试：design「服务端外形校验」每条规则各一个反例，以及合法样例往返；`make check-go PKG=./internal/creativescene/...`、`make generate-check` 通过
+- [ ] 3.2 `ops_model.go`：`commit_model` 接受 `faces`，新增 `deriveModelOp`；OpenAPI 场景操作加 `derive_model`，`make generate`。先写测试：`derive_model` 复用来源的 GLB 与缩略图 blob、不带库副本的 `materials` 与 `source_revision_id`、来源是库副本时新建内容、跨账号或暂存形态返回 `creative_model_unavailable`、同批 `set_instance_model` 引用 `ref` 只产生一条修订、单批合计超过 16 个时拒绝；`make check-go PKG=./internal/creativescene/... ./internal/platform/httpapi/...` 通过
+- [ ] 3.3 基础体 `primitive.faces`：`model.go` 校验（至多一项、固定路径、区间 ≤ 256），`ops.go` 的 `add_objects` / `update_objects` 整体替换与 `null` 清空，改了声明里的参数而没写 `faces` 时清空；OpenAPI 基础体对象加 `faces`，`make generate`。先写测试：拱门改 `depth` 保留、改 `opening_width` 清空，圆柱 `radius_top` 0.5 → 0.3 保留、→ 0 清空，同项显式写 `faces` 时以写入为准；`make check-go PKG=./internal/creativescene/...` 通过
+- [ ] 3.4 烘焙与助手：`jobs_complete.go` 把 `bake.faces` 写进 `commit_model.faces`（OpenAPI 完成请求的 `bake` 加 `faces`）；`write_model` 结果比较替换前后两个模型修订的分配，说明保留与作废；`edit_scene` 结果说明被清空的基础体分配；`agent.go` 的物件与模型视图、`library.go:assignedSlots`、`model_facts.go` 改按有效槽位；`instructions/base.md` 与 `docs/dev/creative-scene-agent.md` 补用法。先写测试：上述每条输出，工具快照或指纹测试按新说明更新；`make check-go PKG=./internal/creativescene/... ./internal/creativeagent/... ./internal/creativecontent/...` 通过
+
+## 4. 前端：加载时套用与重新生成
+
+- [ ] 4.1 `models/cache.ts`：`partsOf` 改为 design「加载时套用」的顺序，`ModelCache.load(revision, faces)` 由场景读取的模型摘要传入，追踪缓存键加分配哈希，指纹不符时属性栏提示「部分面分配已失效」；`SceneObjects.tsx:PrimitiveMesh` 按分配拆槽位渲染、描边用整体几何。单测：同一修订有无分配的部件槽位、追踪缓存键不同；在 30 万三角形样例上测量改动前、无分配、有分配三种耗时并记进 design（有分配增量 ≤ 50 ms；无分配比改动前慢超过 10% 时保留就地变换的旧路径）；`make check-frontend` 通过
+- [ ] 4.2 资产预览：`preview/cache.ts:PreviewModels.load` 与 `preview/ModelPreview.tsx` 接收 `faces`，定位并改资产查看浮窗的调用方从资产的模型载荷传入，补进 design 挂载点。e2e（一次一个用例，ONLY 过滤、换端口）：不打开场景，直接在资产库打开有面分配的模型资产，「材质」模式显示面分配
+- [ ] 4.3 重新生成：`modelEdits.ts` 烘焙后 `carryFaces`（`codeChanged` 比较 `code_sha256` 与 `lib_version`），写进 `commit_model.faces` 并提示作废的部分；基础体改参数按 `topology` 声明在同一项写 `primitive.faces: null` 并提示；`host/bake.ts` 的烘焙结果带 `faces`。单测：模型改尺寸保留、改分段作废并提示、改代码时同名同拓扑网格作废；基础体编辑器与服务端对同一修改的结果一致（与 3.3 的用例对照）；`make check-frontend` 通过
+
+## 5. 面编辑模式
+
+- [ ] 5.1 `faceEdit/` 状态与进出：Tab 进出（活动物件为未锁定的模型实例或基础体，其他类型和锁定物件不进入并在状态栏说明）、其他物件不可选、`StatusBar.tsx` 显示「面编辑」与按键、G / R / S 不响应并说明；单击与 Shift + 单击选面片（射线命中三角形 → 面片），选中高亮与面片边线；`keymap.ts` 与速查表条目。单测：进出条件、点选的选区变化；e2e：方块上单击选中一整面（两个三角形）
+- [ ] 5.2 其余选择：左键拖动框选可见面（`three-mesh-bvh` 遮挡判断）、Shift 加选与 Ctrl 减选、A / Alt + A、Ctrl + I、L / Ctrl + L、Ctrl + 小键盘 + / − 与「选择」菜单里的同名命令；物件内容被别人改了时清空选区并提示。单测：每种操作在方块、圆柱、拱门上的选区；e2e：框选只选到可见面
+- [ ] 5.3 指定：`MaterialSlots.tsx` 在面编辑时列出有效槽位，提供「指定 / 选择 / 取消选择 / +」，新槽位 `face_<n>` 只存在于界面上，指定后才写入；模型走 `derive_model` + `set_instance_model`（`forkPlan` 决定是否分叉，共用时问「只改这个 / 所有实例」），基础体走 `update_objects`；超出上限时不提交并提示。e2e（AC-3）：指定一条修订、配材质一条修订、两次 Cmd+Z 依次撤销、重开一致；共用模型选「只改这个」时其他实例不变
+
+## 6. 组合验证与交付
+
+- [ ] 6.1 e2e（一次一个用例）：AC-4（材质预览视口、`render_view` 的 `lit`、`lit` 导出、资产材质缩略图的槽位颜色一致）、AC-5（拱门改深度保留、改门洞清空；模型改分段时只作废变化的网格）、AC-8（存入资产库再放入另一场景，划分一致、改动互不影响）；写 `specs.md` 的 `creative/scene`、`creative/library` 增量；`make check-merge` 在主检出 `git merge --no-commit` 后通过
