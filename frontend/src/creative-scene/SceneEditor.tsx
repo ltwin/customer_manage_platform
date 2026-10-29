@@ -343,7 +343,7 @@ export default function SceneEditor({
     const fe = u.faceEdit
     if (!fe) return
     const o = byID.get(fe.objectID)
-    const reason = readOnly ? '' : faceEditBlock(o, usableModel(o), modelOf(o))
+    const reason = u.preview ? '正在预览历史版本' : s.trashed ? '场景在回收站' : s.missing ? '场景已不存在' : readOnly ? '场景只读' : faceEditBlock(o, usableModel(o), modelOf(o))
     if (reason !== null || u.selection.active !== fe.objectID || faceMeshes?.state === 'failed') {
       const why = faceMeshes?.state === 'failed' ? faceMeshes.message : reason
       ui.setState({ faceEdit: null, ...(why ? { notice: `已退出面编辑：${why}` } : {}) })

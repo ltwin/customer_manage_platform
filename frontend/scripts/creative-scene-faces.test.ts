@@ -6,6 +6,7 @@ import {
   applyBuiltinFaces,
   applyFaces,
   carryFaces,
+  extract,
   carryOver,
   carryTargets,
   codeDiffers,
@@ -139,6 +140,25 @@ test('pieces hold only the vertices they use, in arrays of their own', () => {
   )
 })
 
+test('pieces keep normalized and interleaved attributes as they were', () => {
+  const g = strip()
+  g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(Array.from({ length: 6 }, (_, v) => [200, 100, v, 255]).flat()), 4, true))
+  const piece = extract(g, [2])
+  assert.equal(piece.attributes.color.normalized, true)
+  assert.deepEqual(Array.from(piece.attributes.color.array), [200, 100, 1, 255, 200, 100, 2, 255, 200, 100, 5, 255])
+
+  // Position and normal in one buffer, as GLTFLoader reads a bufferView with a byteStride.
+  const flat = strip().toNonIndexed()
+  const p = flat.attributes.position.array
+  const buffer = new THREE.InterleavedBuffer(new Float32Array(Array.from({ length: 12 }, (_, v) => [p[3 * v], p[3 * v + 1], p[3 * v + 2], v, 0, 1]).flat()), 6)
+  const interleaved = new THREE.BufferGeometry()
+  interleaved.setAttribute('position', new THREE.InterleavedBufferAttribute(buffer, 3, 0))
+  interleaved.setAttribute('normal', new THREE.InterleavedBufferAttribute(buffer, 3, 3))
+  const second = extract(interleaved.clone(), [1])
+  assert.deepEqual(Array.from(second.attributes.position.array), Array.from(p.slice(9, 18)))
+  assert.deepEqual(Array.from(second.attributes.normal.array), [3, 0, 1, 4, 0, 1, 5, 0, 1])
+})
+
 function owned(identity: MeshIdentity, topology: string, geometry = strip()): OwnedMesh {
   return { identity, topology, geometry, material: slot('stone') }
 }
@@ -210,6 +230,18 @@ test('regenerating keeps what can be told apart and drops the rest', async () =>
   )
   assert.deepEqual(code.dropped, [{ slot: 'trim', triangles: 6 }])
 
+  // Hints only for the slots kept: the server takes no other.
+  const twoSlots: Faces = { meshes: [entry([['part:cap', 0]]), { ...entry([['part:base', 0]]), assign: { brick: [[0, 1]] } }], hints: { trim: 'stone', brick: 'brick' } }
+  assert.deepEqual(carryFaces(twoSlots, next, false).faces, { meshes: [twoSlots.meshes[0]], hints: { trim: 'stone' } })
+  assert.equal('hints' in carryFaces({ ...twoSlots, hints: { brick: 'brick' } }, next, false).faces!, false)
+
+  // With the new GLB's own slots no more than 32: an entry bringing one past it is dropped.
+  const own = Array.from({ length: 31 }, (_, i) => ({ identity: id([`own${i}`, 0]), topology: '', slot: `s${i}` }))
+  const crowded: Faces = { meshes: [entry([['part:cap', 0]]), { ...entry([['row', 0], ['', 0]]), assign: { more: [[0, 1]] } }] }
+  const carried = carryFaces(crowded, [...next, ...own], false)
+  assert.deepEqual(carried.faces?.meshes.map((m) => m.path), [[['part:cap', 0]]])
+  assert.deepEqual(carried.dropped, [{ slot: 'more', triangles: 1 }])
+
   // Nothing survives: no faces at all, not an empty list.
   assert.equal(carryFaces(old, [], false).faces, null)
   assert.deepEqual(carryFaces(null, next, true), { faces: null, kept: [], dropped: [] })
@@ -248,6 +280,12 @@ test('effective slots are the GLB’s then the assignment’s, each once', () =>
     { id: 'face_1', hint: '', source: 'faces', triangles: 3 },
   ])
   assert.deepEqual(effectiveSlots([{ id: 'stone', hint: '' }], null), [{ id: 'stone', hint: '', source: 'model', triangles: 0 }])
+  // By name, as the server lists them: no order of first use survives a save.
+  const late: Faces = { meshes: [{ ...faces.meshes[1], assign: { zinc: [[0, 1]] } }, faces.meshes[0]] }
+  assert.deepEqual(
+    effectiveSlots([], late).map((s) => s.id),
+    ['brick', 'stone', 'zinc'],
+  )
 })
 
 // scene-face-materials 2.2: a builtin's topology declaration may be
@@ -502,6 +540,8 @@ test('face edit enters only an unlocked, visible model instance or builtin', asy
   assert.equal(faceEditBlock(model, false), '模型不可用，不能面编辑')
   assert.equal(faceSource(model, undefined), 'ccrv_a')
   assert.notEqual(faceSource(box, undefined), faceSource({ ...(box as object), primitive: { builtin: 'box@1', params: { width: 2 } } } as never, undefined), 'new parameters, new triangles')
+  const params = (p: Record<string, number>) => ({ ...(box as object), primitive: { builtin: 'arch@1', params: p } }) as never
+  assert.equal(faceSource(params({ width: 2, height: 3, depth: 0.3 }), undefined), faceSource(params({ depth: 0.3, height: 3, width: 2 }), undefined), 'the server sorts the keys, a local edit does not')
 })
 
 test('a click picks a patch; Shift adds it or takes it out; a click on nothing clears', async () => {

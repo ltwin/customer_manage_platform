@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MathUtils } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import type { ParamSpec } from '../builtins/catalog.ts'
@@ -51,6 +51,21 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
 }) {
   const slots = slotsOf(object, model)
   const builtinKey = object.kind === 'primitive' ? JSON.stringify([object.primitive?.builtin, object.primitive?.params, object.primitive?.faces]) : ''
+  const revision = object.model?.content_revision_id
+  // A model whose parts come in after the panel: stale is read again then.
+  const [partsIn, setPartsIn] = useState<string | null>(null)
+  useEffect(() => {
+    if (!revision || model?.usable === false || modelCache.peek(revision) !== undefined) return
+    let live = true
+    modelCache.load(revision, model?.faces).then(
+      () => live && setPartsIn(revision),
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a revision's faces never change
+  }, [revision, model?.usable])
   const stale = useMemo(() => {
     if (object.kind === 'primitive') {
       const geometry = object.primitive?.faces ? primitiveGeometry(object.primitive.builtin, object.primitive.params) : null
@@ -58,10 +73,9 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
       geometry?.dispose()
       return out
     }
-    const rev = object.model?.content_revision_id
-    return !!(rev && (modelCache.peek(rev)?.stale ?? 0) > 0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- builtinKey stands for the builtin's geometry and faces
-  }, [builtinKey, object.model?.content_revision_id])
+    return !!(revision && (modelCache.peek(revision)?.stale ?? 0) > 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- builtinKey stands for the builtin's geometry and faces, partsIn for the model's parts
+  }, [builtinKey, revision, partsIn])
   const [open, setOpen] = useState<string | null>(slots.length === 1 ? slots[0].slot : null)
   const [notice, setNotice] = useState('')
   /** A shared model's slot waiting for 「只改这个 / 所有实例」. */

@@ -1,6 +1,6 @@
 import type { SceneObject } from '../api.ts'
 import type { Fork } from '../modelEdits.ts'
-import { trianglesOf, withAssigned, type Assign, type Faces, type FaceMesh } from '../models/faces.ts'
+import { faceLimits, trianglesOf, withAssigned, type Assign, type Faces, type FaceMesh } from '../models/faces.ts'
 import type { WireOp } from '../state/apply.ts'
 import { meshKey, type FaceSelection } from './state.ts'
 
@@ -10,9 +10,6 @@ import { meshKey, type FaceSelection } from './state.ts'
 
 /** What assigning reads of a mesh: where it is, its fingerprint now, its own slot in the GLB. */
 export type AssignMesh = { key: string; topology: string; slot: string | null; shape(): { triangleCount: number } }
-
-/** data: 模型内容「面级材质分配」 and 场景文档「primitive.faces」. */
-export const faceLimits = { ranges: 8192, builtinRanges: 256, bytes: 128 * 1024, slots: 32 } as const
 
 export const tooFragmented = '面分配太碎，请在模型代码里划分槽位'
 

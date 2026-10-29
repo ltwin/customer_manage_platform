@@ -74,7 +74,7 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
   }
 }
 
-/** 面分配新建、GLB 里没有的槽位，与场景的有效槽位一致（models/faces.ts effectiveSlots；这里不引 three）。 */
+/** 面分配新建、GLB 里没有的槽位，按名字排序，与场景的有效槽位一致（models/faces.ts effectiveSlots；这里不引 three）。 */
 function faceSlots(content: Content, manifest: Manifest): Manifest['slots'] {
   const faces = modelFaces(content)
   const glb = new Set(manifest.slots.map((s) => s.id))
@@ -87,6 +87,7 @@ function faceSlots(content: Content, manifest: Manifest): Manifest['slots'] {
   )
   return [...used]
     .filter((id) => !glb.has(id))
+    .sort()
     .map((id) => {
       const hint = faces?.hints?.[id]
       return hint ? { id, hint } : { id }

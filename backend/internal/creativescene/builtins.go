@@ -180,9 +180,6 @@ func lookupBuiltin(id string) (builtinSpec, error) {
 	return b, nil
 }
 
-// mergeParams lays patch over base, checking every patched key against the
-// catalog. Base is the defaults when adding and the current values when
-// updating, so the result is always complete.
 // topologyChanged reports whether going from old to next parameters may change
 // how the builtin's triangles connect, so a face assignment on it no longer
 // holds. Both are complete, canonical parameter sets.
@@ -207,6 +204,9 @@ func (b builtinSpec) topologyChanged(old, next map[string]any) bool {
 	return false
 }
 
+// mergeParams lays patch over base, checking every patched key against the
+// catalog. Base is the defaults when adding and the current values when
+// updating, so the result is always complete.
 func (b builtinSpec) mergeParams(base, patch map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(b.Params))
 	for k, v := range base {

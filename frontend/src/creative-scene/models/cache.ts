@@ -302,6 +302,8 @@ export class ModelCache {
     const parts = [...this.loads.values()]
     this.loads.clear()
     this.ready.clear()
+    // Face edit's copy: the GLB, the meshes and their BVHs.
+    this.owning = null
     this.local.setState({}, true)
     this.known.setState({}, true)
     disposeParts(parts)

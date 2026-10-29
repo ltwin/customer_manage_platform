@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef, type RefObject } from 'react'
-import { Matrix4, Mesh, MeshBasicMaterial, Vector3, type Camera, type Group, type OrthographicCamera } from 'three'
+import { DoubleSide, Matrix4, Mesh, MeshBasicMaterial, Vector3, type Camera, type Group, type OrthographicCamera } from 'three'
 import { Line2NodeMaterial } from 'three/webgpu'
 import { LineSegments2 } from 'three/addons/lines/webgpu/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
@@ -98,8 +98,9 @@ function MeshOverlay({ mesh, triangles, tints, lines }: { mesh: EditMesh; triang
   useEffect(() => {
     const g = tints.current
     if (!g || !triangles?.length) return
-    // Its depth written: the real-time GI's aside pass has no other.
-    const material = new MeshBasicMaterial({ color: selectedColor, transparent: true, opacity: 0.6 })
+    // Its depth written: the real-time GI's aside pass has no other. Both
+    // sides, as picking and the object are: an inner wall picked shows.
+    const material = new MeshBasicMaterial({ color: selectedColor, transparent: true, opacity: 0.6, side: DoubleSide })
     const tint = new Mesh(extract(mesh.geometry, triangles), material)
     tint.raycast = noRaycast
     tint.layers.set(ASIDE_LAYER)

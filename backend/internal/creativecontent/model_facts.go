@@ -37,16 +37,14 @@ type faceAssignment struct {
 	Hints map[string]string `json:"hints"`
 }
 
-// EffectiveSlots lists the slots an object shows: the GLB's, then those the
-// face assignment (raw, null when there is none) brings, sorted, each once.
-func EffectiveSlots(glb []creativeglb.Slot, faces json.RawMessage) []Slot {
-	var f faceAssignment
-	if len(faces) > 0 {
-		_ = json.Unmarshal(faces, &f)
-	}
+// EffectiveSlots lists the slots an object shows: the GLB's, then those a
+// face assignment brings (assigns holds each mesh's), sorted by ID, each once.
+// The one rule for every caller, the editor's included (models/faces.ts).
+func EffectiveSlots(glb []creativeglb.Slot, assigns []map[string][][]int, hints map[string]string) []Slot {
 	counts := map[string]int{}
-	for _, m := range f.Meshes {
-		for slot, ranges := range m.Assign {
+	for _, assign := range assigns {
+		for slot, ranges := range assign {
+			counts[slot] += 0
 			for _, r := range ranges {
 				if len(r) == 2 {
 					counts[slot] += r[1] - r[0]
@@ -65,16 +63,30 @@ func EffectiveSlots(glb []creativeglb.Slot, faces json.RawMessage) []Slot {
 	}
 	slices.Sort(extra)
 	for _, slot := range extra {
-		out = append(out, Slot{ID: slot, Hint: f.Hints[slot], Source: "faces", FaceTriangles: counts[slot]})
+		out = append(out, Slot{ID: slot, Hint: hints[slot], Source: "faces", FaceTriangles: counts[slot]})
 	}
 	return out
+}
+
+// effectiveSlotsOf is EffectiveSlots on a stored assignment (null when there
+// is none).
+func effectiveSlotsOf(glb []creativeglb.Slot, faces json.RawMessage) []Slot {
+	var f faceAssignment
+	if len(faces) > 0 {
+		_ = json.Unmarshal(faces, &f)
+	}
+	assigns := make([]map[string][][]int, len(f.Meshes))
+	for i, m := range f.Meshes {
+		assigns[i] = m.Assign
+	}
+	return EffectiveSlots(glb, assigns, f.Hints)
 }
 
 // ManifestFactsOf reads a manifest: its size in metres (rounded to
 // millimetres), triangles, material slots (with those the face assignment
 // brings), parts and anchors.
 func ManifestFactsOf(m creativeglb.Manifest, faces json.RawMessage) ManifestFacts {
-	f := ManifestFacts{Triangles: m.Triangles, Slots: EffectiveSlots(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors}
+	f := ManifestFacts{Triangles: m.Triangles, Slots: effectiveSlotsOf(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors}
 	for i := range f.SizeM {
 		f.SizeM[i] = math.Round((m.Bounds.Max[i]-m.Bounds.Min[i])*1000) / 1000
 	}

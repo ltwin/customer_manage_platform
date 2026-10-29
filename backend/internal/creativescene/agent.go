@@ -454,7 +454,7 @@ func objectView(o Object, models map[string]placedModel) ObjectView {
 	if o.Primitive != nil {
 		v.Builtin, v.Params = o.Primitive.Builtin, o.Primitive.Params
 		if o.Primitive.Faces != nil {
-			v.Slots = creativecontent.EffectiveSlots([]creativeglb.Slot{{ID: "main"}}, rawFaces(o.Primitive.Faces))
+			v.Slots = o.Primitive.Faces.effectiveSlots([]creativeglb.Slot{{ID: "main"}})
 		}
 	}
 	if o.Model != nil {
@@ -463,7 +463,7 @@ func objectView(o Object, models map[string]placedModel) ObjectView {
 			bounds := m.payload.Manifest.Bounds
 			mv.Usable, mv.NameHint, mv.BoundsM = true, m.payload.NameHint, &bounds
 			mv.Params, mv.ParamsSchema = m.payload.Generator.Params, m.payload.Generator.ParamsSchema
-			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, creativecontent.EffectiveSlots(m.payload.Manifest.Slots, rawFaces(m.payload.Faces))
+			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, m.payload.Faces.effectiveSlots(m.payload.Manifest.Slots)
 		}
 		v.Model = mv
 	}

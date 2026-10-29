@@ -185,15 +185,15 @@ function PrimitiveMesh({ builtin, params, faces, edge, wire, slots }: { builtin:
   if (!geometry) return null
   if (wire) return <WireMesh geometry={geometry} edge={edge} />
   const flat = builtin === 'ground@1' || builtin === 'plane@1'
-  // Split by its face assignment in the material looks, piece by piece as a model's slots are.
+  // Split by its face assignment in the material looks, piece by piece as a
+  // model's slots are; outlined whole, so the assignment draws no edges.
   if (slots && pieces)
     return (
       <group>
         {pieces.map((p, i) => (
-          <SlotMesh key={i} geometry={p.geometry} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat}>
-            {edge && (flat ? <EdgeLines threshold={20} lineWidth={2} color={edge} /> : <Outline color={edge} />)}
-          </SlotMesh>
+          <SlotMesh key={i} geometry={p.geometry} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat} />
         ))}
+        {edge && (flat ? <EdgeLines geometry={geometry} threshold={20} lineWidth={2} color={edge} /> : <Outline geometry={geometry} color={edge} />)}
       </group>
     )
   if (slots)

@@ -18,11 +18,15 @@ export type OwnedMesh = { identity: MeshIdentity; topology: string; geometry: Bu
 /** A slot and how many triangles an assignment gave it or took away. */
 export type SlotCount = { slot: string; triangles: number }
 
+/** data: 模型内容「面级材质分配」 and 场景文档「primitive.faces」. */
+export const faceLimits = { ranges: 8192, builtinRanges: 256, bytes: 128 * 1024, slots: 32 } as const
+
 export function slotOfMaterial(material: Material): string | null {
   return /^slot:(.+)$/.exec(material.name)?.[1] ?? null
 }
 
-const sameIdentity = (a: MeshIdentity, m: FaceMesh) => a.primitive === m.primitive && JSON.stringify(a.path) === JSON.stringify(m.path)
+/** A mesh's identity as one string, so entries are looked up rather than compared one by one. */
+const keyOf = (m: { path: MeshIdentity['path'] | FaceMesh['path']; primitive: number }) => JSON.stringify([m.path, m.primitive])
 
 const triangleCount = (g: BufferGeometry) => (g.index ?? g.attributes.position).count / 3
 
@@ -142,14 +146,18 @@ export function extract(geometry: BufferGeometry, triangles: readonly number[]):
   return out
 }
 
+/**
+ * Through the attributes, not their arrays: an interleaved source's array is
+ * the whole buffer, and a normalized one reads 0–1 and is scaled back on write.
+ */
 function gather(source: BufferAttribute, vertices: readonly number[]): BufferAttribute {
   const n = source.itemSize
   const Array_ = source.array.constructor as new (length: number) => typeof source.array
-  const array = new Array_(vertices.length * n)
+  const out = new BufferAttribute(new Array_(vertices.length * n), n, source.normalized)
   vertices.forEach((v, i) => {
-    for (let k = 0; k < n; k++) array[i * n + k] = source.getComponent(v, k)
+    for (let k = 0; k < n; k++) out.setComponent(i, k, source.getComponent(v, k))
   })
-  return new BufferAttribute(array, n, source.normalized)
+  return out
 }
 
 /**
@@ -183,8 +191,8 @@ function fits(assign: Assign, count: number): boolean {
 
 /** Whether a mesh has an entry in the assignment, the meshes applyFaces needs fingerprinted. */
 export function namedIn(faces: Faces | null | undefined): (identity: MeshIdentity) => boolean {
-  const entries = faces?.meshes ?? []
-  return (identity) => entries.some((m) => sameIdentity(identity, m))
+  const keys = new Set((faces?.meshes ?? []).map(keyOf))
+  return (identity) => keys.has(keyOf(identity))
 }
 
 /**
@@ -194,11 +202,12 @@ export function namedIn(faces: Faces | null | undefined): (identity: MeshIdentit
  */
 export function applyFaces(meshes: readonly OwnedMesh[], faces: Faces | null | undefined): { pieces: { mesh: OwnedMesh; slot: string | null; assigned: boolean; geometry: BufferGeometry }[]; stale: MeshIdentity[] } {
   const entries = faces?.meshes ?? []
+  const byKey = new Map(entries.map((m) => [keyOf(m), m]))
   const used = new Set<FaceMesh>()
   const stale: MeshIdentity[] = []
   const pieces = meshes.flatMap((mesh) => {
     const base = slotOfMaterial(mesh.material)
-    const entry = entries.find((m) => sameIdentity(mesh.identity, m))
+    const entry = byKey.get(keyOf(mesh.identity))
     if (entry) used.add(entry)
     const assign = entry?.assign as Assign | undefined
     if (!entry || !assign) return [{ mesh, slot: base, assigned: false, geometry: mesh.geometry }]
@@ -219,31 +228,42 @@ function countBySlot(entries: readonly FaceMesh[]): SlotCount[] {
   return [...totals].map(([slot, triangles]) => ({ slot, triangles }))
 }
 
+/** A mesh of a new GLB as carryFaces reads it; slot is the GLB's own, topology '' where no entry could land. */
+export type CarryTarget = { identity: MeshIdentity; topology: string; slot?: string | null }
+
 /**
  * The assignment carried to a regenerated GLB (data: 模型内容「重新生成时」):
  * an entry stays when its identity is still there with the same fingerprint.
  * When a sibling of the same name, primitive and fingerprint is there too,
  * which is which cannot be proven; it stays only if the code is unchanged.
+ * What is carried must still save: hints only for the slots kept, and an
+ * entry that would take the slots past 32 with the new GLB's is dropped.
  */
-export function carryFaces(old: Faces | null | undefined, next: readonly { identity: MeshIdentity; topology: string }[], codeChanged: boolean): Carried {
+export function carryFaces(old: Faces | null | undefined, next: readonly CarryTarget[], codeChanged: boolean): Carried {
   if (!old) return { faces: null, kept: [], dropped: [] }
+  const byKey = new Map(next.map((m) => [keyOf(m.identity), m]))
+  // Same parent path, node name, primitive and fingerprint: how many could pass for one another.
+  const alike = (path: MeshIdentity['path'] | FaceMesh['path'], primitive: number, topology: string) => JSON.stringify([path.slice(0, -1), path[path.length - 1]?.[0], primitive, topology])
+  const lookalikes = new Map<string, number>()
+  for (const m of next) {
+    const k = alike(m.identity.path, m.identity.primitive, m.topology)
+    lookalikes.set(k, (lookalikes.get(k) ?? 0) + 1)
+  }
+  const slots = new Set(next.flatMap((m) => (m.slot ? [m.slot] : [])))
   const kept: FaceMesh[] = []
   const dropped: FaceMesh[] = []
   for (const entry of old.meshes) {
-    const match = next.find((m) => sameIdentity(m.identity, entry))
-    const parent = JSON.stringify(entry.path.slice(0, -1))
-    const name = entry.path[entry.path.length - 1]?.[0]
-    const lookalikes = next.filter(
-      (m) =>
-        m.topology === entry.topology &&
-        m.identity.primitive === entry.primitive &&
-        JSON.stringify(m.identity.path.slice(0, -1)) === parent &&
-        m.identity.path[m.identity.path.length - 1]?.[0] === name,
-    )
-    if (match && match.topology === entry.topology && !(lookalikes.length > 1 && codeChanged)) kept.push(entry)
-    else dropped.push(entry)
+    const match = byKey.get(keyOf(entry))
+    const twins = (lookalikes.get(alike(entry.path, entry.primitive, entry.topology)) ?? 0) > 1
+    const adding = Object.keys(entry.assign).filter((s) => !slots.has(s))
+    if (match && match.topology === entry.topology && !(twins && codeChanged) && slots.size + adding.length <= faceLimits.slots) {
+      kept.push(entry)
+      for (const s of adding) slots.add(s)
+    } else dropped.push(entry)
   }
-  const faces = kept.length ? { ...old, meshes: kept } : null
+  const used = new Set(kept.flatMap((m) => Object.keys(m.assign)))
+  const hints = Object.fromEntries(Object.entries(old.hints ?? {}).filter(([s]) => used.has(s)))
+  const faces = kept.length ? { meshes: kept, ...(Object.keys(hints).length ? { hints } : {}) } : null
   return { faces, kept: countBySlot(kept), dropped: countBySlot(dropped) }
 }
 
@@ -253,14 +273,14 @@ export type Carried = { faces: Faces | null; kept: SlotCount[]; dropped: SlotCou
  * A new GLB's meshes as carryFaces reads them, fingerprinted only where an
  * old entry could land: the same parent path, node name and primitive.
  */
-export function carryTargets(identities: ReadonlyMap<Mesh, MeshIdentity>, old: Faces | null | undefined): { identity: MeshIdentity; topology: string }[] {
-  const near = (a: MeshIdentity, m: FaceMesh) =>
-    a.primitive === m.primitive &&
-    a.path.length === m.path.length &&
-    JSON.stringify(a.path.slice(0, -1)) === JSON.stringify(m.path.slice(0, -1)) &&
-    a.path[a.path.length - 1]?.[0] === m.path[m.path.length - 1]?.[0]
-  const entries = old?.meshes ?? []
-  return [...identities].map(([mesh, identity]) => ({ identity, topology: entries.some((m) => near(identity, m)) ? topologyOf(mesh.geometry) : '' }))
+export function carryTargets(identities: ReadonlyMap<Mesh, MeshIdentity>, old: Faces | null | undefined): CarryTarget[] {
+  const near = (path: MeshIdentity['path'] | FaceMesh['path'], primitive: number) => JSON.stringify([path.slice(0, -1), path[path.length - 1]?.[0], primitive])
+  const landing = new Set((old?.meshes ?? []).map((m) => near(m.path, m.primitive)))
+  return [...identities].map(([mesh, identity]) => ({
+    identity,
+    topology: landing.has(near(identity.path, identity.primitive)) ? topologyOf(mesh.geometry) : '',
+    slot: slotOfMaterial((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as Material),
+  }))
 }
 
 /** What changing the generated code means for carrying: a new hash or library version. */
@@ -316,12 +336,14 @@ export function withAssigned(assign: Assign, triangles: Iterable<number>, slot: 
 
 /**
  * The slots an object shows (data: 模型内容「有效槽位」): the GLB's, then
- * those the assignment brings, each with the triangles assigned to it.
+ * those the assignment brings by name, as the server lists them (it stores
+ * each mesh's slots sorted, so no order of first use survives a save), each
+ * with the triangles assigned to it.
  */
 export function effectiveSlots(glb: readonly { id: string; hint: string }[], faces: Faces | null | undefined): { id: string; hint: string; source: 'model' | 'faces'; triangles: number }[] {
   const counts = new Map(countBySlot(faces?.meshes ?? []).map((c) => [c.slot, c.triangles]))
   const out: { id: string; hint: string; source: 'model' | 'faces'; triangles: number }[] = glb.map((s) => ({ id: s.id, hint: s.hint, source: 'model', triangles: counts.get(s.id) ?? 0 }))
-  for (const [slot, triangles] of counts) if (!glb.some((s) => s.id === slot)) out.push({ id: slot, hint: faces?.hints?.[slot] ?? '', source: 'faces', triangles })
+  for (const [slot, triangles] of [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) if (!glb.some((s) => s.id === slot)) out.push({ id: slot, hint: faces?.hints?.[slot] ?? '', source: 'faces', triangles })
   return out
 }
 

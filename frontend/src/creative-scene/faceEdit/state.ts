@@ -22,6 +22,9 @@ export type FaceEdit = {
 
 export const meshKey = (identity: MeshIdentity): string => JSON.stringify([identity.path, identity.primitive])
 
+/** Parameters by key in order: the server sends them sorted, a local edit in the catalog's order. */
+const byKey = (params: Readonly<Record<string, unknown>> | null | undefined) => (params ? Object.entries(params).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : null)
+
 /**
  * The object's triangles as they are now: a builtin and its parameters, or
  * a model's code, parameters and mesh. Not the revision: assigning faces
@@ -33,9 +36,9 @@ export function faceSource(o: SceneObject, model: SceneModel | undefined): strin
     if (!revision) return null
     const g = model?.generator
     const m = model?.manifest
-    return m ? JSON.stringify([g?.code_sha256 ?? null, g?.lib_version ?? null, g?.params ?? null, m.triangles, m.bounds]) : revision
+    return m ? JSON.stringify([g?.code_sha256 ?? null, g?.lib_version ?? null, byKey(g?.params), m.triangles, m.bounds]) : revision
   }
-  if (o.kind === 'primitive' && o.primitive) return JSON.stringify([o.primitive.builtin, o.primitive.params ?? {}])
+  if (o.kind === 'primitive' && o.primitive) return JSON.stringify([o.primitive.builtin, byKey(o.primitive.params) ?? []])
   return null
 }
 

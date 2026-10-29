@@ -10,6 +10,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -179,23 +180,31 @@ func checkFaceAssign(assign map[string][][]int, used map[string]bool) (int, erro
 	return len(all), nil
 }
 
-// effectiveSlotIDs lists the slots an object shows: the GLB's, then those the
-// assignment brings, each once.
-func effectiveSlotIDs(slots []string, f *Faces) []string {
-	out := slices.Clone(slots)
+// effectiveSlots lists the slots an object with this assignment (nil when
+// there is none) shows, by creativecontent's rule.
+func (f *Faces) effectiveSlots(glb []creativeglb.Slot) []creativecontent.Slot {
 	if f == nil {
-		return out
+		return creativecontent.EffectiveSlots(glb, nil, nil)
 	}
-	var extra []string
-	for _, m := range f.Meshes {
-		for slot := range m.Assign {
-			if !slices.Contains(out, slot) && !slices.Contains(extra, slot) {
-				extra = append(extra, slot)
-			}
-		}
+	assigns := make([]map[string][][]int, len(f.Meshes))
+	for i, m := range f.Meshes {
+		assigns[i] = m.Assign
 	}
-	sort.Strings(extra)
-	return append(out, extra...)
+	return creativecontent.EffectiveSlots(glb, assigns, f.Hints)
+}
+
+// effectiveSlotIDs is effectiveSlots by ID alone.
+func effectiveSlotIDs(slots []string, f *Faces) []string {
+	glb := make([]creativeglb.Slot, len(slots))
+	for i, id := range slots {
+		glb[i] = creativeglb.Slot{ID: id}
+	}
+	eff := f.effectiveSlots(glb)
+	out := make([]string, len(eff))
+	for i, s := range eff {
+		out[i] = s.ID
+	}
+	return out
 }
 
 // builtinSlots is the one slot a builtin's own geometry has.
