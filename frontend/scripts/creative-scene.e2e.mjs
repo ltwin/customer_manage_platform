@@ -1106,6 +1106,7 @@ await check('face edit: Tab on a box, a click selects one side (two triangles), 
   assert.equal(server.commands.length, commands, 'face edit selection sends nothing')
   await page.keyboard.press('Tab')
   await waitFor(async () => (await page.locator('.cc-scene-mode').count()) === 0, 'Tab leaves face edit')
+
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -4103,6 +4104,55 @@ async function keepPanels(name, png) {
 }
 
 const within = (ratio, tolerance) => Math.abs(ratio - 1) <= tolerance
+
+// Face edit on WebGPU (SwiftShader's WebGL2 backend never says), lit, both engines (2026-10-29):
+//  - entered twice with no frame failing to submit: made in render and freed by StrictMode's second
+//    mount, the lines were drawn freed ("used in submit while destroyed" every frame of the workbench);
+//  - the tint seen: the real-time GI lays the aside layer over its picture by depth, and the tint,
+//    on the surface and writing none, never showed (faceEdit/FaceOverlay.tsx towardEye).
+await check('face edit on the GPU: in and out twice, a click tints a side you can see, no frame fails (workbench and real-time GI, lit)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const engine of ['workbench', 'realtime_gi']) {
+      const server = new SceneServer()
+      server.scene.render.engine = engine
+      server.seedInstance('sobj_pillar', server.seedModel())
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const { page, errors } = await open(server, { context })
+      const hint = () => page.locator('.cc-scene-hint').textContent()
+      await page.getByRole('treeitem', { name: /柱/ }).click()
+      await shading(page, '最终渲染')
+      await page.keyboard.press('Period')
+      await sleep(800)
+      const { x, y, box } = await viewportCenter(page)
+      const onPillar = { x: x + 30, y }
+      // A click in the viewport hands it the keys.
+      await page.mouse.click(onPillar.x, onPillar.y)
+      for (const round of [1, 2]) {
+        await page.keyboard.press('Tab')
+        await waitFor(async () => /单击选面片/.test(await hint()), `${engine}: face edit ready (${round})`)
+        const bare = round === 1 && (await settledShot(page, box))
+        await page.mouse.click(onPillar.x, onPillar.y)
+        await waitFor(async () => /已选 \d+ 个三角形/.test(await hint()), `${engine}: a side selected (${round})`)
+        if (bare) {
+          // One facet of the pillar's shaft: a thin strip of the view.
+          const tinted = await pixelDiff(page, bare, await settledShot(page, box))
+          assert.ok(tinted > 0.001, `${engine}: the selected side is tinted (${(tinted * 100).toFixed(2)}% differ)`)
+          await shot(page, `face-edit-gpu-${engine}`)
+        }
+        await page.mouse.click(onPillar.x, onPillar.y + 40)
+        await sleep(800)
+        await page.keyboard.press('Tab')
+        await waitFor(async () => (await page.locator('.cc-scene-mode').count()) === 0, `${engine}: Tab leaves (${round})`)
+      }
+      await sleep(500)
+      assert.deepEqual(errors, [], `${engine}: no GPU errors`)
+      await context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
 
 // AC-S1-3 (Epic AC-3): a sphere light lights the wall far off as I/d² does, wraps past the terminator as the
 // reference does, and stays finite with a surface inside it.
