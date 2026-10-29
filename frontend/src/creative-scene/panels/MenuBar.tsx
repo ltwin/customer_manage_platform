@@ -2,6 +2,7 @@ import type { MenuKind } from '../state/sceneStore.ts'
 
 const menus: { menu: MenuKind; label: string }[] = [
   { menu: 'add', label: '添加' },
+  { menu: 'select', label: '选择' },
   { menu: 'object', label: '物件' },
   { menu: 'view', label: '视图' },
 ]

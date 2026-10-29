@@ -70,6 +70,23 @@ test('face edit: Tab in and out, G / R / S say why they do nothing, viewing keys
   assert.equal(action(key('KeyS', { metaKey: true }), 'faceedit'), 'save')
 })
 
+// scene-face-materials 5.2: selecting faces by key.
+test('face edit: A, Alt+A, Ctrl+I, L, Ctrl+L and Ctrl+numpad + / − select faces', () => {
+  assert.equal(action(key('KeyA'), 'faceedit'), 'select-all')
+  assert.equal(action(key('KeyA', { altKey: true }), 'faceedit'), 'deselect-all')
+  assert.equal(action(key('KeyI', { metaKey: true }), 'faceedit'), 'select-invert')
+  assert.equal(action(key('KeyI', { metaKey: true })), 'select-invert', 'objects invert too')
+  assert.equal(action(key('KeyI', { ctrlKey: true }), 'faceedit', false), 'select-invert')
+  assert.equal(action(key('KeyL'), 'faceedit'), 'select-linked-pick')
+  assert.equal(action(key('KeyL', { metaKey: true }), 'faceedit'), 'select-linked')
+  assert.equal(action(key('NumpadAdd', { metaKey: true }), 'faceedit'), 'select-more')
+  assert.equal(action(key('NumpadSubtract', { metaKey: true }), 'faceedit'), 'select-less')
+  assert.equal(action(key('KeyL')), null, 'nothing to link in object mode')
+  assert.equal(action(key('KeyA'), 'preview'), null)
+  assert.equal(shortcutFor('select-more', true, 'faceedit'), '⌘小键盘 +')
+  assert.equal(shortcutFor('select-less', false, 'faceedit'), 'Ctrl + 小键盘 −')
+})
+
 test('no two bindings share a key in the same context, and every one is labelled', () => {
   const seen = new Set<string>()
   for (const b of bindings) {
@@ -138,6 +155,7 @@ import {
   boxSelect,
   click,
   emptySelection,
+  invertSelection,
   listClick,
   prune,
   selectAll,
@@ -169,6 +187,8 @@ test('box select replaces, adds or subtracts; select all skips locked and hidden
   assert.deepEqual(boxSelect({ selected: [sid(1), sid(2)], active: sid(2) }, [sid(2)], 'subtract'), { selected: [sid(1)], active: sid(1) })
   const objects = [so(0, { locked: true }), so(1), so(2, { visible: false }), so(3)]
   assert.deepEqual(selectAll(objects, emptySelection).selected, [sid(1), sid(3)])
+  assert.deepEqual(invertSelection(objects, { selected: [sid(1)], active: sid(1) }), { selected: [sid(3)], active: sid(3) }, 'Ctrl+I skips them too')
+  assert.deepEqual(invertSelection(objects, selectAll(objects, emptySelection)), emptySelection)
 })
 
 test('the object list toggles with mod and selects ranges with Shift', () => {

@@ -543,3 +543,131 @@ test('on a box a click picks one side, two triangles, numbered as the assignment
   // Lines where sides meet: the box's 12 edges, not the diagonals across its sides.
   assert.equal(patchEdges(geometry, shape).length, 12 * 6)
 })
+
+// scene-face-materials 5.2: the other ways to select faces.
+test('A, Ctrl+I, Ctrl+numpad + and − on a box, a cylinder and an arch, by whole patches', async () => {
+  const { builtinEditMesh } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const { growFaces, invertFaces, selectAllFaces, selectedCount, shrinkFaces } = await import('../src/creative-scene/faceEdit/state.ts')
+  const meshOf = (builtin: string) => builtinEditMesh(primitiveGeometry(builtin, defaultParams(builtin))!)
+  const patchWhole = (shape: ReturnType<typeof faceTopology>, triangles: readonly number[]) => {
+    const had = new Set(triangles)
+    return triangles.every((t) => shape.patches[shape.patchOf[t]].every((u) => had.has(u)))
+  }
+
+  const box = meshOf('box@1')
+  const boxShape = box.shape()
+  const top = boxShape.patches.find((p) => boxShape.normals[3 * p[0] + 1] > 0.99)!
+  assert.equal(selectedCount(selectAllFaces([box])), 12)
+  assert.equal(selectedCount(invertFaces({ [box.key]: top }, [box])), 10)
+  assert.deepEqual(invertFaces(selectAllFaces([box]), [box]), {}, 'nothing left')
+  const grown = growFaces({ [box.key]: top }, [box])
+  assert.equal(selectedCount(grown), 10, 'the top and the four sides around it, not the bottom')
+  assert.ok(grown[box.key].every((t) => boxShape.normals[3 * t + 1] > -0.99))
+  assert.deepEqual(shrinkFaces({ [box.key]: top }, [box]), {}, 'the top alone is all edge')
+  assert.deepEqual(shrinkFaces(selectAllFaces([box]), [box]), selectAllFaces([box]), 'a closed selection has no edge')
+  assert.deepEqual(shrinkFaces(grown, [box]), { [box.key]: top }, 'the sides touch the bottom; the top does not')
+
+  const cylinder = meshOf('cylinder@1')
+  const cylShape = cylinder.shape()
+  assert.equal(selectedCount(selectAllFaces([cylinder])), cylShape.triangleCount)
+  const strip = cylShape.patches.find((p) => p.length === 2)!
+  const around = growFaces({ [cylinder.key]: strip }, [cylinder])[cylinder.key]
+  // 32 segments: the strip, the strips either side, both caps of 32 triangles.
+  assert.equal(around.length, 2 + 4 + 32 + 32)
+  assert.ok(patchWhole(cylShape, around))
+  const side = cylShape.patches.filter((p) => p.length === 2).flat()
+  assert.deepEqual(shrinkFaces({ [cylinder.key]: side }, [cylinder]), {}, 'every strip touches a cap')
+  assert.equal(selectedCount(invertFaces({ [cylinder.key]: side }, [cylinder])), 64, 'the caps')
+
+  const arch = meshOf('arch@1')
+  const archShape = arch.shape()
+  const front = archShape.patches.find((p) => archShape.normals[3 * p[0] + 2] > 0.99)!
+  const archGrown = growFaces({ [arch.key]: front }, [arch])[arch.key]
+  assert.ok(archGrown.length > front.length && patchWhole(archShape, archGrown))
+  assert.ok(!archGrown.some((t) => archShape.normals[3 * t + 2] < -0.99), 'the back is not next to the front')
+  assert.deepEqual(shrinkFaces({ [arch.key]: archGrown }, [arch]), { [arch.key]: [...front].sort((a, b) => a - b) })
+  assert.equal(selectedCount(invertFaces({ [arch.key]: front }, [arch])), archShape.triangleCount - front.length)
+})
+
+test('L adds the piece under the pointer; Ctrl+L every piece something is selected on', async () => {
+  const { builtinEditMesh } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const { linkedPick, selectLinked, selectedCount } = await import('../src/creative-scene/faceEdit/state.ts')
+  const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js')
+  const two = builtinEditMesh(mergeGeometries([new THREE.BoxGeometry(), new THREE.BoxGeometry().translate(3, 0, 0)])!)
+  assert.equal(two.shape().components, 2)
+  assert.deepEqual(linkedPick({}, two, 0)[two.key], Array.from({ length: 12 }, (_, i) => i))
+  assert.equal(selectedCount(linkedPick({ [two.key]: [12] }, two, 0)), 13, 'added to what was selected')
+  assert.equal(selectedCount(selectLinked({ [two.key]: [12] }, [two])), 12)
+  assert.equal(selectedCount(selectLinked({ [two.key]: [0, 12] }, [two])), 24)
+  assert.deepEqual(selectLinked({}, [two]), {})
+  // A builtin cylinder is one piece: its caps share the side's edges.
+  const cylinder = builtinEditMesh(primitiveGeometry('cylinder@1', defaultParams('cylinder@1'))!)
+  assert.equal(selectedCount(linkedPick({}, cylinder, 0)), cylinder.shape().triangleCount)
+})
+
+test('a box drag replaces, adds (Shift) or takes out (Ctrl) whole patches', async () => {
+  const { builtinEditMesh } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const { boxFaces } = await import('../src/creative-scene/faceEdit/state.ts')
+  const box = builtinEditMesh(primitiveGeometry('box@1', defaultParams('box@1'))!)
+  const shape = box.shape()
+  const [a, b] = shape.patches
+  const caughtA = { [box.key]: [a[0]] }
+  assert.deepEqual(boxFaces({ [box.key]: b }, caughtA, [box], 'set'), { [box.key]: [...a].sort((x, y) => x - y) })
+  assert.deepEqual(boxFaces({ [box.key]: b }, caughtA, [box], 'add')[box.key], [...a, ...b].sort((x, y) => x - y))
+  assert.deepEqual(boxFaces({ [box.key]: [...a, ...b] }, caughtA, [box], 'subtract')[box.key], [...b].sort((x, y) => x - y))
+  assert.deepEqual(boxFaces({ [box.key]: b }, {}, [box], 'set'), {}, 'an empty box clears')
+  assert.deepEqual(boxFaces({ [box.key]: b }, {}, [box], 'add'), { [box.key]: [...b].sort((x, y) => x - y) })
+})
+
+test('a box drag catches only the faces the camera sees, perspective or orthographic', async () => {
+  const { boxTriangles, builtinEditMesh } = await import('../src/creative-scene/faceEdit/meshes.ts')
+  const { boxFaces } = await import('../src/creative-scene/faceEdit/state.ts')
+  const whole = { x0: -1, y0: -1, x1: 1, y1: 1 }
+  const world = new THREE.Matrix4().makeTranslation(10, 0, 0)
+  const centre = new THREE.Vector3(10, 0.5, 0)
+  const look = <C extends THREE.Camera>(camera: C, from: THREE.Vector3) => {
+    camera.position.copy(from)
+    camera.lookAt(centre)
+    camera.updateMatrixWorld()
+    return camera
+  }
+  const facing = (mesh: ReturnType<typeof builtinEditMesh>, triangles: readonly number[]) =>
+    new Set(triangles.map((t) => [0, 1, 2].map((i) => Math.round(mesh.shape().normals[3 * t + i])).join(',')))
+
+  // A box seen from front, right and above: those three sides, two triangles each.
+  const box = builtinEditMesh(primitiveGeometry('box@1', defaultParams('box@1'))!)
+  for (const camera of [
+    look(new THREE.PerspectiveCamera(50, 1, 0.05, 5000), centre.clone().add(new THREE.Vector3(2, 2, 3))),
+    look(new THREE.OrthographicCamera(-2, 2, 2, -2, 0.05, 5000), centre.clone().add(new THREE.Vector3(5, 5, 5))),
+  ]) {
+    const sel = boxFaces({}, boxTriangles([box], world, camera, whole), [box], 'set')
+    assert.equal(sel[box.key].length, 6, (camera as THREE.OrthographicCamera).isOrthographicCamera ? 'orthographic' : 'perspective')
+    assert.deepEqual(facing(box, sel[box.key]), new Set(['1,0,0', '0,1,0', '0,0,1']))
+  }
+  // Half the screen, right of the box's front corner: the right side only.
+  const front = look(new THREE.PerspectiveCamera(50, 1, 0.05, 5000), centre.clone().add(new THREE.Vector3(2, 0, 3)))
+  const corner = new THREE.Vector3(10.5, 0.5, 0.5).project(front)
+  const right = boxFaces({}, boxTriangles([box], world, front, { x0: corner.x + 0.01, y0: -1, x1: 1, y1: 1 }), [box], 'set')
+  assert.deepEqual(facing(box, right[box.key]), new Set(['1,0,0']))
+
+  // A cylinder from the front at half height: the strips turned to the camera, not the caps or the back.
+  const cylinder = builtinEditMesh(primitiveGeometry('cylinder@1', defaultParams('cylinder@1'))!)
+  const level = look(new THREE.PerspectiveCamera(50, 1, 0.05, 5000), centre.clone().add(new THREE.Vector3(0, 0, 5)))
+  const seen = boxTriangles([cylinder], world, level, whole)[cylinder.key]
+  const cyl = cylinder.shape()
+  const toward = (t: number) => cyl.normals[3 * t + 2]
+  assert.ok(seen.length >= 12 && seen.length <= 17, `about half the 32 strips, got ${seen.length}`)
+  assert.ok(seen.every((t) => toward(t) > 0 && Math.abs(cyl.normals[3 * t + 1]) < 0.5), 'turned to the camera, no cap')
+  const nearest = cyl.patches.filter((p) => p.length === 2).reduce((a, b) => (toward(a[0]) > toward(b[0]) ? a : b))
+  assert.ok(seen.includes(nearest[0]) || seen.includes(nearest[1]))
+
+  // An arch from the front: the front, and the jambs' inner sides; never the back.
+  const arch = builtinEditMesh(primitiveGeometry('arch@1', defaultParams('arch@1'))!)
+  const archCam = look(new THREE.PerspectiveCamera(50, 1, 0.05, 5000), new THREE.Vector3(10, 1.5, 6))
+  const archSel = boxFaces({}, boxTriangles([arch], world, archCam, whole), [arch], 'set')[arch.key]
+  const shape = arch.shape()
+  const archFront = shape.patches.find((p) => shape.normals[3 * p[0] + 2] > 0.99)!
+  assert.ok(archFront.every((t) => archSel.includes(t)))
+  assert.ok(archSel.every((t) => shape.normals[3 * t + 2] > -0.01), 'nothing turned away')
+  assert.ok(archSel.some((t) => Math.abs(shape.normals[3 * t]) > 0.99), 'the inner side of a jamb')
+})

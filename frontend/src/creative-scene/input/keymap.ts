@@ -25,6 +25,7 @@ export type Action =
   | 'clear-parent'
   | 'select-all'
   | 'deselect-all'
+  | 'select-invert'
   | 'toggle-tool'
   | 'toggle-toolbar'
   | 'toggle-sidebar'
@@ -58,6 +59,10 @@ export type Action =
   | 'cancel'
   | 'face-edit'
   | 'face-transform'
+  | 'select-linked-pick'
+  | 'select-linked'
+  | 'select-more'
+  | 'select-less'
 
 export type Group = '导航' | '选择' | '变换' | '编辑' | '面编辑' | '视图' | '通用'
 
@@ -102,8 +107,9 @@ export const bindings: readonly Binding[] = [
   { codes: ['KeyG'], mods: { mod: true, alt: true }, contexts: idle, action: 'ungroup', label: '取消编组', group: '编辑' },
   { codes: ['KeyP'], mods: { mod: true }, contexts: idle, action: 'parent', label: '设置父级（挂到活动物件下）', group: '编辑' },
   { codes: ['KeyP'], mods: { alt: true }, contexts: idle, action: 'clear-parent', label: '清除父级', group: '编辑' },
-  { codes: ['KeyA'], contexts: idle, action: 'select-all', label: '全选', group: '选择' },
-  { codes: ['KeyA'], mods: { alt: true }, contexts: idle, action: 'deselect-all', label: '取消全选', group: '选择' },
+  { codes: ['KeyA'], contexts: editing, action: 'select-all', label: '全选', group: '选择' },
+  { codes: ['KeyA'], mods: { alt: true }, contexts: editing, action: 'deselect-all', label: '取消全选', group: '选择' },
+  { codes: ['KeyI'], mods: { mod: true }, contexts: editing, action: 'select-invert', label: '反选', group: '选择' },
   { codes: ['KeyW'], contexts: idle, action: 'toggle-tool', label: '切换框选 / 调整', group: '选择' },
   { codes: ['KeyT'], contexts: viewing, action: 'toggle-toolbar', label: '工具栏', group: '视图' },
   { codes: ['KeyN'], contexts: viewing, action: 'toggle-sidebar', label: '侧栏', group: '视图' },
@@ -130,6 +136,10 @@ export const bindings: readonly Binding[] = [
   { codes: ['Tab'], contexts: editing, action: 'face-edit', label: '进入 / 退出面编辑（活动的模型实例或基础体）', group: '面编辑' },
   // Faces are given materials here, never moved: shape is the model code's (AI 原生，不做网格编辑).
   { codes: ['KeyG', 'KeyR', 'KeyS'], contexts: faceEdit, action: 'face-transform', label: 'G / R / S 不移动面：形状由模型代码决定', group: '面编辑' },
+  { codes: ['KeyL'], contexts: faceEdit, action: 'select-linked-pick', label: '加选指针下相连的部分', group: '面编辑' },
+  { codes: ['KeyL'], mods: { mod: true }, contexts: faceEdit, action: 'select-linked', label: '选择相连（选区所在的整个部分）', group: '面编辑' },
+  { codes: ['NumpadAdd'], mods: { mod: true }, contexts: faceEdit, action: 'select-more', label: '扩展选区（相邻面片）', group: '面编辑' },
+  { codes: ['NumpadSubtract'], mods: { mod: true }, contexts: faceEdit, action: 'select-less', label: '缩减选区（边缘面片）', group: '面编辑' },
   { codes: ['KeyX'], contexts: modal, action: 'axis-x', label: '锁定 X 轴', group: '变换' },
   { codes: ['KeyY'], contexts: modal, action: 'axis-y', label: '锁定 Y 轴', group: '变换' },
   { codes: ['KeyZ'], contexts: modal, action: 'axis-z', label: '锁定 Z 轴', group: '变换' },
@@ -159,6 +169,7 @@ export const gestures: readonly Gesture[] = [
   { keys: '右键', label: '菜单；变换中为取消', group: '编辑' },
   { keys: '左键单击', label: '选中一块平面（面片）', group: '面编辑' },
   { keys: 'Shift + 单击', label: '加选 / 取消面片', group: '面编辑' },
+  { keys: '左键拖动', label: '框选看得见的面片（Shift 加选，Ctrl 减选）', group: '面编辑' },
 ]
 
 export type KeyLike = {
@@ -260,6 +271,8 @@ const keyNames: Record<string, string> = {
   Escape: 'Esc',
   Space: '空格',
   NumpadEnter: 'Enter',
+  NumpadAdd: '小键盘 +',
+  NumpadSubtract: '小键盘 −',
 }
 
 function keyName(code: string, mac: boolean): string {

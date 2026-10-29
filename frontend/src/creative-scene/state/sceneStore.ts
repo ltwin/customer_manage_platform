@@ -19,7 +19,7 @@ export type Tool = 'box' | 'tweak' | 'move' | 'rotate' | 'scale'
 export type Guide = 'thirds' | 'golden' | 'diagonals' | 'center'
 export const guides: readonly Guide[] = ['thirds', 'golden', 'diagonals', 'center']
 
-export type MenuKind = 'add' | 'object' | 'view' | 'display'
+export type MenuKind = 'add' | 'select' | 'object' | 'view' | 'display'
 
 /**
  * Blender's viewport shading. Solid and rendered are the clay and lit looks

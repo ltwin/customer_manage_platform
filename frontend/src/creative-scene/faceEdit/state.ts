@@ -1,4 +1,5 @@
 import type { SceneObject } from '../api.ts'
+import type { FaceTopology } from '../models/faceTopology.ts'
 import type { MeshIdentity } from '../sandbox/gltf.ts'
 
 // Face edit (scene-face-materials design「面编辑与指定」): one object's
@@ -58,3 +59,96 @@ export function clickPatch(sel: FaceSelection, key: string | null, patch: readon
 }
 
 const sorted = (triangles: Iterable<number>) => [...new Set(triangles)].sort((a, b) => a - b)
+
+/** What the selection commands read of a mesh: its key and patches, pieces and neighbours. */
+export type SelectMesh = { key: string; shape(): FaceTopology }
+
+export type BoxMode = 'set' | 'add' | 'subtract'
+
+/** A: every triangle of the object. */
+export function selectAllFaces(meshes: readonly SelectMesh[]): FaceSelection {
+  return byMesh(meshes, (m) => m.shape().patches.flat())
+}
+
+/** Ctrl+I: what was not selected. */
+export function invertFaces(sel: FaceSelection, meshes: readonly SelectMesh[]): FaceSelection {
+  return byMesh(meshes, (m) => {
+    const had = new Set(sel[m.key] ?? [])
+    return range(m.shape().triangleCount).filter((t) => !had.has(t))
+  })
+}
+
+/** L: the piece under the pointer, added. Pieces join across shared edges (models/faceTopology.ts). */
+export function linkedPick(sel: FaceSelection, mesh: SelectMesh, triangle: number): FaceSelection {
+  const shape = mesh.shape()
+  const piece = shape.componentOf[triangle]
+  return withMesh(sel, mesh.key, [...(sel[mesh.key] ?? []), ...range(shape.triangleCount).filter((t) => shape.componentOf[t] === piece)])
+}
+
+/** Ctrl+L: the whole of every piece something is selected on. */
+export function selectLinked(sel: FaceSelection, meshes: readonly SelectMesh[]): FaceSelection {
+  return byMesh(meshes, (m) => {
+    const shape = m.shape()
+    const pieces = new Set((sel[m.key] ?? []).map((t) => shape.componentOf[t]))
+    return range(shape.triangleCount).filter((t) => pieces.has(shape.componentOf[t]))
+  })
+}
+
+/**
+ * Ctrl+numpad +: the patches next to the selection, across an edge, added.
+ * Patches, not triangles, as a click picks them.
+ */
+export function growFaces(sel: FaceSelection, meshes: readonly SelectMesh[]): FaceSelection {
+  return byMesh(meshes, (m) => {
+    const had = sel[m.key] ?? []
+    const shape = m.shape()
+    const patches = new Set<number>()
+    for (const t of had) for (const u of shape.neighbours(t)) patches.add(shape.patchOf[u])
+    return [...had, ...[...patches].flatMap((p) => shape.patches[p])]
+  })
+}
+
+/** Ctrl+numpad −: the patches on the selection's edge, next to something unselected, taken out. */
+export function shrinkFaces(sel: FaceSelection, meshes: readonly SelectMesh[]): FaceSelection {
+  return byMesh(meshes, (m) => {
+    const had = new Set(sel[m.key] ?? [])
+    const shape = m.shape()
+    const edge = new Set<number>()
+    for (const t of had) if (shape.neighbours(t).some((u) => !had.has(u))) edge.add(shape.patchOf[t])
+    return [...had].filter((t) => !edge.has(shape.patchOf[t]))
+  })
+}
+
+/**
+ * A box drag: the patches of the triangles it caught (faceEdit/meshes.ts
+ * boxTriangles), replacing the selection, added (Shift) or taken out (Ctrl).
+ */
+export function boxFaces(sel: FaceSelection, caught: Readonly<Record<string, readonly number[]>>, meshes: readonly SelectMesh[], mode: BoxMode): FaceSelection {
+  const patched = byMesh(meshes, (m) => {
+    const shape = m.shape()
+    return [...new Set((caught[m.key] ?? []).map((t) => shape.patchOf[t]))].flatMap((p) => shape.patches[p])
+  })
+  if (mode === 'set') return patched
+  return byMesh(meshes, (m) => {
+    const had = sel[m.key] ?? []
+    if (mode === 'add') return [...had, ...(patched[m.key] ?? [])]
+    const out = new Set(patched[m.key] ?? [])
+    return had.filter((t) => !out.has(t))
+  })
+}
+
+const range = (n: number) => Array.from({ length: n }, (_, i) => i)
+
+function byMesh(meshes: readonly SelectMesh[], triangles: (m: SelectMesh) => readonly number[]): FaceSelection {
+  const out: Record<string, readonly number[]> = {}
+  for (const m of meshes) {
+    const t = triangles(m)
+    if (t.length) out[m.key] = sorted(t)
+  }
+  return out
+}
+
+function withMesh(sel: FaceSelection, key: string, triangles: readonly number[]): FaceSelection {
+  const { [key]: _, ...rest } = sel
+  return triangles.length ? { ...rest, [key]: sorted(triangles) } : rest
+}

@@ -36,7 +36,7 @@
 - `library/thumbnail.ts:renderMaterialThumbnail`：输入是 `ModelParts`，来自编辑器的 `ModelCache`，套用后自然带分配，不用改，加测试覆盖。
 - `sandbox/thumbnail.ts:renderThumbnail`：模型修订的白模缩略图，统一换成白模材质，与槽位无关，不改；`derive_model` 复用它。
 - `objects/SceneObjects.tsx:PrimitiveMesh`：基础体几何生成后，有分配时按 `splitBySlot` 分成多个 `SlotMesh`，描边仍用整体几何。
-- `faceEdit/`（新）：面编辑状态（活动物件、按身份的三角形选区）、拾取（射线命中三角形 → 所在面片）、框选（面片重心投影在框内，且从相机看不被遮挡，用 `three-mesh-bvh` 求交）、高亮叠加层和面片边线。几何取自 `ownedMeshes`，不用渲染缓存里拆分、合并后的几何。
+- `faceEdit/`（新）：面编辑状态（活动物件、按身份的三角形选区）、拾取（射线命中三角形 → 所在面片）、框选（三角形重心投影在框内，且从相机看不被物件自身遮挡，用 `three-mesh-bvh` 求交；选中所在面片）、高亮叠加层和面片边线。几何取自 `ownedMeshes`，不用渲染缓存里拆分、合并后的几何。
 - `input/keymap.ts`：Tab 进出；面编辑模式内的 L、Ctrl + L、Ctrl + I、Ctrl + 小键盘 + / −；G / R / S 在面编辑时不响应。
 - `panels/MaterialSlots.tsx`：面编辑时显示有效槽位和「指定 / 选择 / 取消选择 / +」。
 - `modelEdits.ts`：烘焙完成后调用 `carryFaces`，`codeChanged` 由新旧 `code_sha256` 与 `lib_version` 判断，把 `faces` 写进 `commit_model`，提示作废的部分；新增只改分配的提交路径（`derive_model` + `set_instance_model`，分叉沿用 `forkPlan`）；基础体改参数时按 `topology` 声明决定是否写 `primitive.faces: null`。
@@ -145,6 +145,8 @@ sequenceDiagram
   - 边线和着色都在释放它们的 effect 里创建。原先在 render 里创建，StrictMode 第二次挂载前就被释放了，之后仍在绘制，工作台每帧提交失败，画面闪烁，着色也不显示。
   - 实时 GI 按深度把 aside 层叠到画面上（`realtimeGI.ts` aside），贴在表面上的着色在这个比较里总是输，边线随 TRAA 抖动忽隐忽现。现在两者都沿视线朝相机挪近，像素位置不变：着色挪近距离的 0.1%，边线挪近 0.2%；正交相机下平移 1 cm 和 2 cm。着色同时写入深度。
   - 回归用例「face edit on the GPU」在真 GPU 上跑，两个渲染器都覆盖。SwiftShader 走的是 WebGL2 后端，报不出这类错误。
+- **框选按三角形判断，选中整个面片**（实施 5.2）：原定按面片重心，但面片的重心可能落在它的洞里（带窗洞的墙），从相机看过去是空的。现在框里有一个三角形的重心可见，就选中它所在的面片；一个面片命中后，其余三角形不再求交。遮挡只算物件自身的网格，与单击一致。耗时：30 万三角形的球体全屏框选约 0.6 s（Node，M 系列 Mac），只在松开鼠标时算一次；与加载开销一起留到收尾评估。
+- **选择命令的单位**（实施 5.2）：L 加选指针下相连的部分（跨共用边连通，见 `faceTopology`；内置圆柱的顶底面和侧面共边，是一个部分），Ctrl + L 把选区所在的部分整个选上；Ctrl + 小键盘 + / − 按面片扩展、缩减（扩展加上与选区共边的面片，缩减去掉碰到未选三角形的面片），与单击按面片一致。Ctrl + I 在物件模式也生效（反选可选的物件）；菜单栏新增「选择」菜单，物件模式下是全选、取消全选、反选，面编辑时再加选择相连、扩展、缩减。没有小键盘的笔记本用菜单。
 - **Tab 只在焦点位于编辑器时进出面编辑**（实施 5.1）：焦点在面板控件上时 Tab 仍按浏览器习惯移动焦点；点视口会把焦点交回编辑器。面编辑中 Esc 清空面选区，不退出；物件被锁定、隐藏、删除，活动物件换了，或进入只读、历史预览时自动退出，并在状态栏说明原因。
 - **有效槽位放在 `creativecontent`**：`creativecontent.EffectiveSlots` 同时服务 `write_model` 回报、`read_scene` 视图和资产库的模型要点，三处说法一致；`creativescene` 在下层之上调用它。`edit_scene` 的 `faces_cleared` 由写入前后快照比较得出，不改场景命令的回执。
 
@@ -169,6 +171,7 @@ sequenceDiagram
 | `frontend/src/creative-scene/faceEdit/` | 新增 | 面编辑状态、拾取、框选、高亮、面片边线（5.1：`state.ts`、`meshes.ts`、`useFaceMeshes.ts`、`FaceOverlay.tsx`） |
 | `frontend/src/creative-scene/models/cache.ts`（`owned`）、`Viewport.tsx`、`SceneEditor.tsx`、`state/sceneStore.ts` | 修改 | 面编辑读取模型网格；视口拾取三角形、画叠加层；进出与退出条件；`faceedit` 按键上下文（实施 5.1） |
 | `frontend/src/creative-scene/input/keymap.ts` | 修改 | Tab 与面编辑键位，速查表条目 |
+| `frontend/src/creative-scene/panels/MenuBar.tsx`、`state/sceneStore.ts`（`MenuKind`）、`input/selection.ts`（`invertSelection`） | 修改 | 「选择」菜单与物件模式的反选（实施 5.2） |
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | 面编辑时的拾取与框选分流 |
 | `frontend/src/creative-scene/panels/MaterialSlots.tsx` | 修改 | 面编辑的槽位操作，有效槽位与失效提示 |
 | `frontend/src/creative-scene/panels/StatusBar.tsx` | 修改 | 面编辑状态与按键提示 |

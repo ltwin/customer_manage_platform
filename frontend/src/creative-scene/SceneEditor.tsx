@@ -16,11 +16,25 @@ import { loadModels, openShooter } from './host/render.ts'
 import { ExportDialog } from './panels/ExportDialog.tsx'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
 import { readPreference, viewDirections, writePreference, type DevicePreference } from './input/navigation.ts'
-import { boxSelect, click, emptySelection, listClick, prune, selectAll, topmost } from './input/selection.ts'
+import { boxSelect, click, emptySelection, invertSelection, listClick, prune, selectAll, topmost } from './input/selection.ts'
 import { ContextMenu, type MenuItem } from './panels/ContextMenu.tsx'
 import { ConflictPrompt } from './panels/ConflictPrompt.tsx'
 import { FirstRunHint } from './panels/FirstRunHint.tsx'
-import { clickPatch, faceEditBlock, faceSource, selectedCount } from './faceEdit/state.ts'
+import type { EditMesh } from './faceEdit/meshes.ts'
+import {
+  boxFaces,
+  clickPatch,
+  faceEditBlock,
+  faceSource,
+  growFaces,
+  invertFaces,
+  linkedPick,
+  selectAllFaces,
+  selectedCount,
+  selectLinked,
+  shrinkFaces,
+  type FaceSelection,
+} from './faceEdit/state.ts'
 import { useFaceMeshes } from './faceEdit/useFaceMeshes.ts'
 import { ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
@@ -336,13 +350,26 @@ export default function SceneEditor({
       ui.setState({ faceEdit: { ...fe, source, selected: {} }, ...(selectedCount(fe.selected) ? { notice: '物件内容变了，面选区已清空' } : {}) })
     }
   })
-  const facePick = (hit: { key: string; triangle: number } | null, shift: boolean) => {
+  /** A selection command in face edit, once the meshes are ready. */
+  const selectFaces = (next: (sel: FaceSelection, meshes: readonly EditMesh[]) => FaceSelection) => {
     const fe = ui.getState().faceEdit
     if (!fe || faceMeshes?.state !== 'ready') return
-    const mesh = hit ? faceMeshes.meshes.find((m) => m.key === hit.key) : undefined
-    const shape = mesh?.shape()
-    const patch = hit && shape ? (shape.patches[shape.patchOf[hit.triangle]] ?? []) : []
-    ui.setState({ faceEdit: { ...fe, selected: clickPatch(fe.selected, mesh ? mesh.key : null, patch, shift) } })
+    ui.setState({ faceEdit: { ...fe, selected: next(fe.selected, faceMeshes.meshes) } })
+  }
+  const facePick = (hit: { key: string; triangle: number } | null, shift: boolean) =>
+    selectFaces((sel, meshes) => {
+      const mesh = hit ? meshes.find((m) => m.key === hit.key) : undefined
+      const shape = mesh?.shape()
+      const patch = hit && shape ? (shape.patches[shape.patchOf[hit.triangle]] ?? []) : []
+      return clickPatch(sel, mesh ? mesh.key : null, patch, shift)
+    })
+  const pickLinked = () => {
+    const hit = handle.current?.faceUnderPointer()
+    if (!hit) return notify('把指针放在物件上再按 L，选中它相连的部分')
+    selectFaces((sel, meshes) => {
+      const mesh = meshes.find((m) => m.key === hit.key)
+      return mesh ? linkedPick(sel, mesh, hit.triangle) : sel
+    })
   }
   /** Editing what the assistant works on goes ahead, with the soft notice. */
   const warnAgent = (ids: readonly string[]) => {
@@ -744,9 +771,22 @@ export default function SceneEditor({
         return ui.setState({ popup: { kind: 'rename', x: p.x, y: p.y, id: active.id } })
       }
       case 'select-all':
+        if (u.faceEdit) return selectFaces((_, meshes) => selectAllFaces(meshes))
         return ui.setState({ selection: selectAll(objects, u.selection) })
       case 'deselect-all':
+        if (u.faceEdit) return selectFaces(() => ({}))
         return ui.setState({ selection: emptySelection })
+      case 'select-invert':
+        if (u.faceEdit) return selectFaces(invertFaces)
+        return ui.setState({ selection: invertSelection(objects, u.selection) })
+      case 'select-linked-pick':
+        return pickLinked()
+      case 'select-linked':
+        return selectFaces(selectLinked)
+      case 'select-more':
+        return selectFaces(growFaces)
+      case 'select-less':
+        return selectFaces(shrinkFaces)
       case 'toggle-tool':
         return ui.setState({ tool: u.tool === 'box' ? 'tweak' : 'box' })
       case 'toggle-toolbar':
@@ -869,6 +909,24 @@ export default function SceneEditor({
         ...(['box', 'sphere'] as const).map((shape) => ({ label: `体积（${volumeLabels[shape]}）`, run: () => addVolume(shape) })),
       ]
     }
+    if (menu === 'select') {
+      // In face edit the same commands work on faces (design「面编辑与指定」).
+      const fe = !!u.faceEdit
+      const f = (a: Action) => shortcutFor(a, mac, fe ? 'faceedit' : 'idle')
+      return [
+        { label: '全选', shortcut: f('select-all'), run: () => run('select-all') },
+        { label: '取消全选', shortcut: f('deselect-all'), run: () => run('deselect-all') },
+        { label: '反选', shortcut: f('select-invert'), run: () => run('select-invert') },
+        ...(fe
+          ? [
+              'separator' as const,
+              { label: '选择相连', shortcut: f('select-linked'), run: () => run('select-linked') },
+              { label: '扩展选区', shortcut: f('select-more'), run: () => run('select-more') },
+              { label: '缩减选区', shortcut: f('select-less'), run: () => run('select-less') },
+            ]
+          : []),
+      ]
+    }
     if (menu === 'object')
       return [
         { label: '复制', shortcut: k('duplicate'), disabled: none, run: () => run('duplicate') },
@@ -938,7 +996,7 @@ export default function SceneEditor({
     if (u.faceEdit) {
       if (faceMeshes?.state !== 'ready') return '正在准备面编辑…'
       const count = selectedCount(u.faceEdit.selected)
-      return `${count ? `已选 ${count} 个三角形 · ` : ''}单击选面片 · Shift+单击加选 / 取消 · Esc 清空选区 · Tab 退出`
+      return `${count ? `已选 ${count} 个三角形 · ` : ''}单击选面片 · 拖动框选 · Shift 加选 · L 选相连 · A 全选 · Esc 清空选区 · Tab 退出`
     }
     if (s.trashed) return '场景在回收站，请先恢复后再编辑'
     if (selected.length) return `G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除${active && !faceEditBlock(active, true) ? ' · Tab 面编辑' : ''}`
@@ -1188,6 +1246,7 @@ export default function SceneEditor({
                 onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, placed)}
                 faceMeshes={faceMeshes?.state === 'ready' ? faceMeshes.meshes : null}
                 onFacePick={facePick}
+                onFaceBox={(caught, mode) => selectFaces((sel, meshes) => boxFaces(sel, caught, meshes, mode))}
               />
               <StatusBar mode={u.faceEdit ? `面编辑：${faceObject?.name || '物件'}` : ''} hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />

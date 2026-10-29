@@ -1,4 +1,4 @@
-import { DoubleSide, Matrix4, Mesh, MeshBasicMaterial, type BufferGeometry, type Object3D, type Raycaster } from 'three'
+import { DoubleSide, Matrix4, Mesh, MeshBasicMaterial, Raycaster, Vector2, Vector3, type BufferGeometry, type Camera, type Object3D } from 'three'
 import { acceleratedRaycast, MeshBVH } from 'three-mesh-bvh'
 import { faceTopology, type FaceTopology } from '../models/faceTopology.ts'
 import { slotOfMaterial, topologyOf, type OwnedMesh } from '../models/faces.ts'
@@ -108,4 +108,57 @@ export function pickTriangle(raycaster: Raycaster, mesh: EditMesh, world: Mesh['
   } finally {
     bvhRay.firstHitOnly = first
   }
+}
+
+/** A box on screen, in normalised device coordinates (−1…1, y up). */
+export type ScreenBox = { x0: number; y0: number; x1: number; y1: number }
+
+const centroid = /*@__PURE__*/ new Vector3()
+const projected = /*@__PURE__*/ new Vector3()
+const at = /*@__PURE__*/ new Vector2()
+const boxRay = /*@__PURE__*/ new Raycaster()
+
+/**
+ * The triangles a box drag catches, by mesh: the centre of each inside the
+ * box and seen from the camera, nothing of the object's own nearer on the
+ * way (design「框选只选可见面」; other objects never hide faces, as a click
+ * passes them too). By triangle, not by patch: a patch's centre can fall in
+ * a hole of it, a window in a wall.
+ */
+export function boxTriangles(meshes: readonly EditMesh[], world: Matrix4, camera: Camera, box: ScreenBox): Record<string, number[]> {
+  const [left, right] = [Math.min(box.x0, box.x1), Math.max(box.x0, box.x1)]
+  const [bottom, top] = [Math.min(box.y0, box.y1), Math.max(box.y0, box.y1)]
+  camera.updateMatrixWorld()
+  const out: Record<string, number[]> = {}
+  for (const m of meshes) {
+    const position = m.geometry.attributes.position
+    const index = m.geometry.index
+    const vertexOf = (c: number) => (index ? index.getX(c) : c)
+    const shape = m.shape()
+    const seen = new Set<number>()
+    const caught: number[] = []
+    for (let t = 0; t < shape.triangleCount; t++) {
+      // A patch is caught once one of its triangles is: the rest need no ray.
+      if (seen.has(shape.patchOf[t])) continue
+      centroid.set(0, 0, 0)
+      for (let k = 0; k < 3; k++) {
+        const v = vertexOf(3 * t + k)
+        centroid.x += position.getX(v) / 3
+        centroid.y += position.getY(v) / 3
+        centroid.z += position.getZ(v) / 3
+      }
+      centroid.applyMatrix4(world)
+      projected.copy(centroid).project(camera)
+      if (projected.z < -1 || projected.z > 1 || projected.x < left || projected.x > right || projected.y < bottom || projected.y > top) continue
+      boxRay.setFromCamera(at.set(projected.x, projected.y), camera)
+      const far = boxRay.ray.origin.distanceTo(centroid)
+      // Some slack for the float maths of the ray and the BVH: 1 mm at 10 m.
+      const slack = 1e-4 * far + 1e-6
+      if (meshes.some((other) => (pickTriangle(boxRay, other, world)?.distance ?? Infinity) < far - slack)) continue
+      seen.add(shape.patchOf[t])
+      caught.push(t)
+    }
+    if (caught.length) out[m.key] = caught
+  }
+  return out
 }

@@ -72,7 +72,7 @@ import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 import { SceneAreaLight } from './render/lightModel/lights.ts'
 import { FaceOverlay } from './faceEdit/FaceOverlay.tsx'
-import { meshWorld, pickTriangle, type EditMesh } from './faceEdit/meshes.ts'
+import { boxTriangles, meshWorld, pickTriangle, type EditMesh } from './faceEdit/meshes.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -105,6 +105,8 @@ export type ViewportHandle = {
    * in document space; without a point, on the ground below the view's centre.
    */
   snapAt(at: { x: number; y: number } | undefined, model: { mount: Mount; bounds: Bounds }): Placed
+  /** In face edit, the triangle under the pointer (L picks its piece); null off the object or the viewport. */
+  faceUnderPointer(): { key: string; triangle: number } | null
 }
 
 /** A model dragged in from the asset drawer. */
@@ -141,6 +143,8 @@ export type ViewportProps = {
   faceMeshes?: readonly EditMesh[] | null
   /** A click in face edit: the triangle under it, or nothing. */
   onFacePick?(hit: { key: string; triangle: number } | null, shift: boolean): void
+  /** A box drag in face edit: the triangles it caught, by mesh (faceEdit/meshes.ts boxTriangles). */
+  onFaceBox?(caught: Record<string, number[]>, mode: 'set' | 'add' | 'subtract'): void
 }
 
 const noneSelected: ReadonlySet<string> = new Set()
@@ -649,6 +653,11 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         return positionToDoc([t.x, t.y, 0])
       },
       pointer: () => ({ x: pointer.current.x, y: pointer.current.y }),
+      faceUnderPointer: () => {
+        const r = rect()
+        const { x, y } = pointer.current
+        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom ? faceAt(x, y) : null
+      },
       setView: (dir) => {
         if (!controls) return
         leaveCameraView()
@@ -795,13 +804,17 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
     }
     const finishBox = (e: PointerEvent, d: NonNullable<typeof down>) => {
       const p = latest.current
-      if (p.ui.getState().faceEdit) {
+      const a = ndc(d.x, d.y)
+      const b = ndc(e.clientX, e.clientY)
+      const mode = d.shift ? 'add' : d.mod ? 'subtract' : 'set'
+      const edit = p.ui.getState().faceEdit
+      if (edit) {
+        const n = node(edit.objectID)
+        if (n && p.faceMeshes) p.onFaceBox?.(boxTriangles(p.faceMeshes, meshWorld(n), camera, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }), mode)
         p.ui.setState({ boxing: false })
         p.setBox(null)
         return
       }
-      const a = ndc(d.x, d.y)
-      const b = ndc(e.clientX, e.clientY)
       const selector = new SelectionBox(camera, scene)
       const byID = objectsByID()
       const ids = new Set<string>()
@@ -809,7 +822,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const id = objectOf(hit)
         if (id && canPick(byID.get(id))) ids.add(id)
       }
-      p.onBox([...ids], d.shift ? 'add' : d.mod ? 'subtract' : 'set')
+      p.onBox([...ids], mode)
       p.ui.setState({ boxing: false })
       p.setBox(null)
     }

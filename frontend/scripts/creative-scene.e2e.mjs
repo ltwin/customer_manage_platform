@@ -1111,6 +1111,62 @@ await check('face edit: Tab on a box, a click selects one side (two triangles), 
   await context.close()
 })
 
+// scene-face-materials 5.2: the other ways to select faces.
+await check('face edit: a box drag selects only the sides in sight; A, Ctrl+I, L and the 选择 menu', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  const { x, y } = await viewportCenter(page)
+  // Framed, then turned to look from the top-front-right: three sides face the camera.
+  await page.keyboard.press('Period')
+  await sleep(800)
+  await page.mouse.move(x + 200, y)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(x + 120, y + 60, { steps: 5 })
+  await page.mouse.up({ button: 'middle' })
+  await sleep(500)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  const count = async () => Number(/已选 (\d+) 个三角形/.exec((await hint()) ?? '')?.[1] ?? 0)
+  await page.keyboard.press('Tab')
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  const commands = server.commands.length
+
+  // The three sides behind are inside the box too, but hidden: not caught.
+  const drag = async (mods = []) => {
+    for (const m of mods) await page.keyboard.down(m)
+    await page.mouse.move(x - 260, y - 230)
+    await page.mouse.down()
+    await page.mouse.move(x + 260, y + 230, { steps: 8 })
+    await page.mouse.up()
+    for (const m of mods) await page.keyboard.up(m)
+  }
+  await drag()
+  await waitFor(async () => (await count()) === 6, 'three sides in sight, two triangles each')
+  await shot(page, 'face-edit-box-select')
+  await drag([mod])
+  await waitFor(async () => (await count()) === 0, 'Ctrl+drag takes them out')
+
+  await page.keyboard.press('KeyA')
+  await waitFor(async () => (await count()) === 12, 'A selects every triangle')
+  await page.keyboard.press(`${mod}+KeyI`)
+  await waitFor(async () => (await count()) === 0, 'Ctrl+I inverts to nothing')
+  await page.mouse.move(x + 30, y)
+  await page.keyboard.press('KeyL')
+  await waitFor(async () => (await count()) === 12, 'L picks the piece under the pointer: the whole box')
+  await page.keyboard.press('Alt+KeyA')
+  await waitFor(async () => (await count()) === 0, 'Alt+A clears')
+  await page.mouse.click(x + 30, y)
+  await waitFor(async () => (await count()) === 2, 'a click picks a side')
+  await page.getByRole('navigation', { name: '场景菜单' }).getByRole('button', { name: '选择' }).click()
+  await page.getByRole('menuitem', { name: /反选/ }).click()
+  await waitFor(async () => (await count()) === 10, 'the 选择 menu inverts as Ctrl+I does')
+
+  assert.equal(server.commands.length, commands, 'selecting faces sends nothing')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('keyboard flow: Shift+A, G Z 2 Enter, R cancelled, A G confirmed', async () => {
   const server = new SceneServer()
   const { context, page, errors } = await open(server)
