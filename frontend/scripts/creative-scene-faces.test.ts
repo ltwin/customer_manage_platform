@@ -17,6 +17,7 @@ import {
 import type { MeshIdentity } from '../src/creative-scene/sandbox/gltf.ts'
 import { builtins, builtinSpec, defaultParams, topologyChanged } from '../src/creative-scene/builtins/catalog.ts'
 import { primitiveGeometry } from '../src/creative-scene/builtins/geometry.ts'
+import { faceTopology } from '../src/creative-scene/models/faceTopology.ts'
 
 // scene-face-materials 2.1: face assignments (data: 模型内容「面级材质分配」).
 
@@ -283,5 +284,67 @@ test('the editor decides builtin topology changes as the server does', () => {
   }
   // Parameters left out read as their defaults.
   assert.equal(topologyChanged(builtinSpec('cylinder@1')!, {}, { radial_segments: 32 }), false)
+})
+
+// scene-face-materials 2.3: flat patches grow against their first triangle's
+// plane, never neighbour to neighbour, so a curve cannot creep into one patch.
+test('flat patches: one per flat face, curves stay apart', () => {
+  const box = faceTopology(new THREE.BoxGeometry(1, 1, 1))
+  assert.equal(box.patches.length, 6)
+  assert.ok(box.patches.every((p) => p.length === 2))
+  assert.equal(box.components, 1, 'welded by position, the six faces are one piece')
+
+  assert.equal(faceTopology(primitiveGeometry('ground@1', {})!).patches.length, 1)
+
+  // 512 sides about 0.7° apart: every side its own patch (two triangles), each cap one.
+  const cylinder = faceTopology(new THREE.CylinderGeometry(0.5, 0.5, 1, 512))
+  assert.equal(cylinder.patches.length, 514)
+  assert.equal(cylinder.patches.filter((p) => p.length === 2).length, 512)
+
+  // A strip bending 0.01° per segment over 200 segments: patches never drift past 0.05°.
+  const positions: number[] = []
+  const index: number[] = []
+  const step = THREE.MathUtils.degToRad(0.01)
+  for (let i = 0; i <= 200; i++) {
+    const a = i * step
+    const y = Math.sin(a) * 50
+    const z = 50 - Math.cos(a) * 50
+    positions.push(0, y, z, 1, y, z)
+    if (i < 200) index.push(2 * i, 2 * i + 1, 2 * i + 3, 2 * i, 2 * i + 3, 2 * i + 2)
+  }
+  const band = new THREE.BufferGeometry()
+  band.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  band.setIndex(index)
+  const strip = faceTopology(band)
+  assert.ok(strip.patches.length > 20, `${strip.patches.length} patches`)
+  const normal = (t: number) => new THREE.Vector3().fromArray(strip.normals, t * 3)
+  for (const patch of strip.patches) for (const t of patch) assert.ok(normal(t).angleTo(normal(patch[0])) <= THREE.MathUtils.degToRad(0.05) + 1e-9)
+
+  // Stairs are eight overlapping boxes: the bottoms meet edge to edge in one
+  // plane and join (8 × 2 triangles); every other face stays its own.
+  const stairs = faceTopology(primitiveGeometry('stairs@1', {})!)
+  assert.equal(stairs.patches.length, 8 * 6 - 7)
+  assert.equal(Math.max(...stairs.patches.map((p) => p.length)), 16)
+  // The arch: front and back one patch each, every side segment of the outline its own.
+  const arch = faceTopology(primitiveGeometry('arch@1', {})!)
+  const sizes = arch.patches.map((p) => p.length).sort((a, b) => b - a)
+  assert.equal(sizes[0] + sizes[1], arch.triangleCount - 2 * (arch.patches.length - 2))
+  assert.equal(sizes[0], sizes[1])
+  assert.ok(sizes.slice(2).every((n) => n === 2))
+})
+
+test('neighbours and pieces follow shared edges after welding', () => {
+  // Two boxes apart: two pieces; within one, every triangle has three neighbours.
+  const a = new THREE.BoxGeometry(1, 1, 1)
+  const b = new THREE.BoxGeometry(1, 1, 1).translate(3, 0, 0)
+  const both = new THREE.BufferGeometry()
+  both.setAttribute('position', new THREE.Float32BufferAttribute([...a.attributes.position.array, ...b.attributes.position.array], 3))
+  both.setIndex([...a.index!.array, ...Array.from(b.index!.array, (i) => i + 24)])
+  const topo = faceTopology(both)
+  assert.equal(topo.components, 2)
+  assert.notEqual(topo.componentOf[0], topo.componentOf[12])
+  for (let t = 0; t < topo.triangleCount; t++) assert.equal(topo.neighbours(t).length, 3)
+  // Corners welded across the split face vertices: a box has 8 corners.
+  assert.equal(new Set(Array.from(topo.corners.subarray(0, 36))).size, 8)
 })
 
