@@ -157,6 +157,9 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 	case "commit_model":
 		var op commitModelOp
 		return &op, decodeInput(raw, &op)
+	case "derive_model":
+		var op deriveModelOp
+		return &op, decodeInput(raw, &op)
 	case "set_instance_model":
 		var op setInstanceModelOp
 		if err := decodeInput(raw, &op); err != nil {
@@ -175,13 +178,14 @@ func decodeOps(raws []json.RawMessage) ([]sceneOp, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := op.(*commitModelOp); ok {
+		switch op.(type) {
+		case *commitModelOp, *deriveModelOp:
 			commits++
 		}
 		ops = append(ops, op)
 	}
 	if commits > maxCommitsPerBatch {
-		return nil, invalid("一次最多提交 %d 个 commit_model", maxCommitsPerBatch)
+		return nil, invalid("一次最多提交 %d 个 commit_model 与 derive_model", maxCommitsPerBatch)
 	}
 	return ops, nil
 }

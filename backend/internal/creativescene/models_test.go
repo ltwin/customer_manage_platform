@@ -121,6 +121,7 @@ type modelEntry struct {
 	Manifest  *creativeglb.Manifest    `json:"manifest"`
 	Generator *creativescene.Generator `json:"generator"`
 	NameHint  *string                  `json:"name_hint"`
+	Faces     *creativescene.Faces     `json:"faces"`
 }
 
 func readModels(t *testing.T, scope store.AccountScope, doc string) (sceneView, map[string]modelEntry) {

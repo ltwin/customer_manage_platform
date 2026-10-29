@@ -306,8 +306,9 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
         .filter((o) => !gone.has(o.id))
       return { ...state, scene: { ...scene, objects } }
     }
-    // A committed model changes no unit until an operation places it.
+    // A committed or derived model changes no unit until an operation places it.
     case 'commit_model':
+    case 'derive_model':
       return state
     case 'set_instance_model': {
       const targets = new Set(instanceTargets(op))

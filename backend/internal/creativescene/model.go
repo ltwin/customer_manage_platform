@@ -563,6 +563,11 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bo
 			}
 		}
 	case reflect.Struct:
+		// A value written as something other than an object, such as a face
+		// path step's [name, n], was checked by its own UnmarshalJSON.
+		if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] != '{' && reflect.PointerTo(t).Implements(jsonUnmarshaler) {
+			return nil
+		}
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err != nil {
 			return err

@@ -7543,7 +7543,7 @@ export interface components {
             exposure_compensation?: number;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
-        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
+        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneDeriveModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
         /** @description 涉及 objects；新对象的两个单元出现在 changed_units 中。 */
         CreativeSceneAddObjects: {
             /**
@@ -7620,7 +7620,7 @@ export interface components {
             op: "set_render";
             render: components["schemas"]["CreativeSceneRenderPatch"];
         };
-        /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
+        /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批 commit_model 与 derive_model 合计最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
         CreativeSceneCommitModel: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -7634,6 +7634,22 @@ export interface components {
             manifest: components["schemas"]["CreativeModelManifest"];
             name_hint?: string;
             /** @description 有则作为该模型内容的新修订，否则新建模型内容（分叉）。 */
+            base_content_id?: string;
+            faces?: components["schemas"]["CreativeModelFaces"];
+        };
+        /** @description 只改面级材质分配：以 from_revision_id 为来源写一个新的完整形态修订，generator、manifest、name_hint 取自来源， GLB 与缩略图复用来源的 blob，不上传、不编译；库副本的 materials 与 source_revision_id 不带过来。 不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。 */
+        CreativeSceneDeriveModel: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "derive_model";
+            ref: string;
+            /** @description 本账号完整形态的 model 修订，可以是库副本。 */
+            from_revision_id: string;
+            /** @description 新修订的完整分配；null 表示清空。 */
+            faces: components["schemas"]["CreativeModelFaces"] | null;
+            /** @description 规则同 commit_model：有则作为该模型内容的新修订，否则新建模型内容（分叉）；指向库副本的内容时总是新建。 */
             base_content_id?: string;
         };
         /** @description 只动内容单元 object:<id>:content。all_instances 时 object_ids 列出调用方看到的全部共用实例（含 object_id），每个都须在批前引用同一修订。 */
@@ -7882,7 +7898,7 @@ export interface components {
             annotated_units: string[];
             removed_units: string[];
             reset_required: boolean;
-            /** @description 场景的 commit_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。 */
+            /** @description 场景的 commit_model 与 derive_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。 */
             models?: {
                 [key: string]: {
                     content_id: string;

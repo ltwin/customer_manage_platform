@@ -810,9 +810,12 @@ type RevertedEntry struct {
 }
 
 // opsNotForTheAssistant are scene command operations edit_scene leaves out:
-// models come from write_model, and taking changes back is revert_run.
+// models come from write_model, face assignments from the photographer's face
+// edit mode (the assistant's own is scene-face-assign-agent), and taking
+// changes back is revert_run.
 var opsNotForTheAssistant = map[string]string{
 	"commit_model":  "模型用 write_model 写入",
+	"derive_model":  "面分配由创作者在面编辑模式里指定",
 	"restore":       "撤回改动用 revert_run",
 	"restore_units": "撤回改动用 revert_run",
 	"rename":        "不能改场景标题",

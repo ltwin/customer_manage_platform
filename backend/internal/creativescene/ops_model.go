@@ -25,7 +25,7 @@ type opEnv struct {
 	document string
 	revision int64 // the revision this batch produces
 
-	refs     map[string]creativecontent.Revision // commit_model ref → new revision
+	refs     map[string]creativecontent.Revision // commit_model / derive_model ref → new revision
 	order    []string                            // refs in batch order
 	held     map[string]bool                     // revisions the current snapshot references
 	verified map[string]bool                     // existing revisions checked this batch
@@ -72,6 +72,8 @@ func (env *opEnv) verifyExisting(ops []sceneOp) error {
 			}
 		case *setInstanceModelOp:
 			add(&o.Model)
+		case *deriveModelOp:
+			add(&ModelRef{ContentRevisionID: o.FromRevisionID})
 		}
 	}
 	if len(held) > 0 {
@@ -106,7 +108,7 @@ func (env *opEnv) resolve(m *ModelRef) error {
 	case m.Ref != "":
 		r, ok := env.refs[m.Ref]
 		if !ok {
-			return invalid("model 引用的 ref %q 没有在它之前的 commit_model 中定义", m.Ref)
+			return invalid("model 引用的 ref %q 没有在它之前的 commit_model 或 derive_model 中定义", m.Ref)
 		}
 		*m = ModelRef{ContentRevisionID: r.ID}
 		return nil
@@ -141,7 +143,7 @@ func (env *opEnv) finish(s Scene) (map[string]json.RawMessage, error) {
 	for _, ref := range env.order {
 		r := env.refs[ref]
 		if !inScene[r.ID] {
-			return nil, invalid("commit_model %s 写入的模型没有被场景中的物件引用", ref)
+			return nil, invalid("%s 写入的模型没有被场景中的物件引用", ref)
 		}
 		models[ref] = committed{ContentID: r.ContentID, ContentRevisionID: r.ID}
 	}
@@ -164,16 +166,14 @@ type commitModelOp struct {
 	Manifest          creativeglb.Manifest `json:"manifest"`
 	NameHint          string               `json:"name_hint,omitempty"`
 	BaseContentID     string               `json:"base_content_id,omitempty"`
+	Faces             *Faces               `json:"faces,omitempty"`
 }
 
 func (op *commitModelOp) touched(Scene, map[string]int) ([]string, error) { return nil, nil }
 
 func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
-	if !refPattern.MatchString(op.Ref) {
-		return invalid("ref %q 不合法", op.Ref)
-	}
-	if _, dup := env.refs[op.Ref]; dup {
-		return invalid("ref %s 在本批中重复", op.Ref)
+	if err := env.checkRef(op.Ref); err != nil {
+		return err
 	}
 	if utf8.RuneCountInString(op.NameHint) > maxNameHintRunes {
 		return invalid("name_hint 不能超过 %d 个字", maxNameHintRunes)
@@ -203,15 +203,78 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 	if !op.Manifest.Matches(staged.Manifest) {
 		return invalid("manifest 与上传的 GLB 不符")
 	}
-	payload, err := json.Marshal(ModelPayload{Format: "glb", Generator: &generator, Manifest: staged.Manifest, NameHint: op.NameHint})
+	if err := checkFaces(op.Faces, slotIDs(staged.Manifest), false); err != nil {
+		return err
+	}
+	payload := ModelPayload{Format: "glb", Generator: &generator, Manifest: staged.Manifest, NameHint: op.NameHint, Faces: op.Faces}
+	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: glbBlob.BlobID}, {Role: "thumbnail", BlobID: thumbBlob.BlobID}}
+	if err := env.writeModel(op.Ref, payload, glbStaged.DeclarationID, op.BaseContentID, objects); err != nil {
+		return err
+	}
+	if err := creativestaging.Consume(ctx, tx, glb, env.document, env.revision); err != nil {
+		return err
+	}
+	return creativestaging.Consume(ctx, tx, thumb, env.document, env.revision)
+}
+
+// deriveModelOp writes a revision that differs from an existing one only in its
+// face assignment (data: 模型内容「写入口」): the source's generator, manifest
+// and name hint, its GLB and thumbnail blobs reused, nothing uploaded or
+// compiled. A library copy's materials and source stay with the library.
+type deriveModelOp struct {
+	Op             string `json:"op"`
+	Ref            string `json:"ref"`
+	FromRevisionID string `json:"from_revision_id"`
+	Faces          *Faces `json:"faces"`
+	BaseContentID  string `json:"base_content_id,omitempty"`
+}
+
+func (op *deriveModelOp) touched(Scene, map[string]int) ([]string, error) { return nil, nil }
+
+func (op *deriveModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
+	if err := env.checkRef(op.Ref); err != nil {
+		return err
+	}
+	src, err := usableModel(env.ctx, env.tx, op.FromRevisionID)
 	if err != nil {
 		return err
 	}
-	base := op.BaseContentID
+	p, _ := completeModel(src)
+	if err := checkFaces(op.Faces, slotIDs(p.Manifest), false); err != nil {
+		return err
+	}
+	glbBlob, glbOK := mediaObject(src, "original")
+	thumbBlob, thumbOK := mediaObject(src, "thumbnail")
+	if !glbOK || !thumbOK {
+		return modelUnavailable(src.ID)
+	}
+	payload := ModelPayload{Format: "glb", Generator: p.Generator, Manifest: p.Manifest, NameHint: p.NameHint, Faces: op.Faces}
+	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: glbBlob.BlobID}, {Role: "thumbnail", BlobID: thumbBlob.BlobID}}
+	return env.writeModel(op.Ref, payload, src.DeclarationID, op.BaseContentID, objects)
+}
+
+func (env *opEnv) checkRef(ref string) error {
+	if !refPattern.MatchString(ref) {
+		return invalid("ref %q 不合法", ref)
+	}
+	if _, dup := env.refs[ref]; dup {
+		return invalid("ref %s 在本批中重复", ref)
+	}
+	return nil
+}
+
+// writeModel writes a complete model revision over the given blobs, as a new
+// revision of base or, without one, as new content, and records it under ref.
+func (env *opEnv) writeModel(ref string, payload ModelPayload, declaration, base string, objects []creativecontent.ObjectBinding) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	given := base
 	if base != "" {
 		// A library copy belongs to the library: an edit of an instance placed
 		// from it forks, whoever makes it.
-		copied, err := isLibraryCopy(ctx, tx, base)
+		copied, err := isLibraryCopy(env.ctx, env.tx, base)
 		if err != nil {
 			return err
 		}
@@ -219,24 +282,26 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 			base = ""
 		}
 	}
-	draft := creativecontent.Draft{Kind: modelKind, DeclarationID: glbStaged.DeclarationID, Payload: creativecontent.Payload{Model: payload}}
-	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: glbBlob.BlobID}, {Role: "thumbnail", BlobID: thumbBlob.BlobID}}
-	r, err := creativecontent.WriteModelAndRetain(ctx, tx, draft, base, objects, env.retain)
+	draft := creativecontent.Draft{Kind: modelKind, DeclarationID: declaration, Payload: creativecontent.Payload{Model: raw}}
+	r, err := creativecontent.WriteModelAndRetain(env.ctx, env.tx, draft, base, objects, env.retain)
 	if base != "" && (errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativeops.ErrValidation)) {
-		return invalid("base_content_id %s 不是本账号的模型", op.BaseContentID)
+		return invalid("base_content_id %s 不是本账号的模型", given)
 	}
 	if err != nil {
 		return err
 	}
-	if err := creativestaging.Consume(ctx, tx, glb, env.document, env.revision); err != nil {
-		return err
-	}
-	if err := creativestaging.Consume(ctx, tx, thumb, env.document, env.revision); err != nil {
-		return err
-	}
-	env.refs[op.Ref] = r
-	env.order = append(env.order, op.Ref)
+	env.refs[ref] = r
+	env.order = append(env.order, ref)
 	return nil
+}
+
+// slotIDs are the slots a model's GLB has.
+func slotIDs(m creativeglb.Manifest) []string {
+	out := make([]string, len(m.Slots))
+	for i, s := range m.Slots {
+		out[i] = s.ID
+	}
+	return out
 }
 
 // isLibraryCopy reports whether a content is a library copy, the only kind
@@ -267,8 +332,12 @@ func lockStaged(ctx context.Context, tx store.TxAccountScope, uploadID, kind str
 }
 
 func original(r creativecontent.Revision) (creativecontent.MediaObject, bool) {
+	return mediaObject(r, "original")
+}
+
+func mediaObject(r creativecontent.Revision, role string) (creativecontent.MediaObject, bool) {
 	for _, m := range r.Media {
-		if m.Role == "original" {
+		if m.Role == role {
 			return m, true
 		}
 	}

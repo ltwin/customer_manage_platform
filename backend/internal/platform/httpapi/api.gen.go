@@ -5735,7 +5735,7 @@ type CreativeDocumentCommandResult struct {
 	AnnotatedUnits []string `json:"annotated_units"`
 	ChangedUnits   []string `json:"changed_units"`
 
-	// Models 场景的 commit_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。
+	// Models 场景的 commit_model 与 derive_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。
 	Models *map[string]struct {
 		ContentId         string `json:"content_id"`
 		ContentRevisionId string `json:"content_revision_id"`

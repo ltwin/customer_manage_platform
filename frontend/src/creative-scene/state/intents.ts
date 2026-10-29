@@ -91,6 +91,7 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
     case 'restore_units':
       return op.units
     case 'commit_model':
+    case 'derive_model':
       return []
     case 'set_instance_model':
       return instanceTargets(op).map(contentUnit)
@@ -149,6 +150,8 @@ export function mapModelIDs(intent: Intent, f: (id: string) => string): Intent {
         return model(op)
       case 'commit_model':
         return op.base_content_id !== undefined ? { ...op, base_content_id: f(op.base_content_id) } : op
+      case 'derive_model':
+        return { ...op, from_revision_id: f(op.from_revision_id), ...(op.base_content_id !== undefined ? { base_content_id: f(op.base_content_id) } : {}) }
       default:
         return op
     }
