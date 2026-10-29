@@ -1208,7 +1208,8 @@ test('a rebake carries the face assignment it can still place and reports the re
   const gone = { path: [['', 0], ['missing', 0]] as [string, number][], primitive: 0, topology: 't1-0000000000000000', assign: { face_2: [[0, 3]] as [number, number][] } }
   for (const [code, sha, sent, dropped] of [
     // Same code (its hash is sha256-<length>), new parameters: what still fits stays.
-    ['code v2', 'sha256-7', { meshes: [kept], hints: {} }, [{ slot: 'face_2', triangles: 3 }]],
+    // Hints only for the slots kept: none here, so none are written.
+    ['code v2', 'sha256-7', { meshes: [kept] }, [{ slot: 'face_2', triangles: 3 }]],
     // Nothing fits: no faces are written, all are reported.
     ['code v2', 'sha256-7', null, [{ slot: 'face_2', triangles: 3 }]],
   ] as const) {
