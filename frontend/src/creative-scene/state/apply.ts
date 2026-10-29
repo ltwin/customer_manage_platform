@@ -6,7 +6,7 @@ import type {
   SceneOperation,
   SceneRender,
 } from '../api.ts'
-import { builtinSpec, defaultParams } from '../builtins/catalog.ts'
+import { builtinSpec, defaultParams, topologyChanged } from '../builtins/catalog.ts'
 import { sameTransform, worldOf } from './world.ts'
 import { completeSky } from '../world/physicalSky.ts'
 
@@ -229,11 +229,16 @@ export function updateObject(o: SceneObject, u: ObjectUpdate, areaScale: { befor
   if (u.transform !== undefined) next.transform = u.transform
   if (u.visible !== undefined) next.visible = u.visible
   if (u.locked !== undefined) next.locked = u.locked
-  if (u.primitive && o.primitive && builtinSpec(o.primitive.builtin))
-    next.primitive = {
-      ...o.primitive,
-      params: { ...o.primitive.params, ...u.primitive.params },
-    }
+  const spec = u.primitive && o.primitive ? builtinSpec(o.primitive.builtin) : undefined
+  if (u.primitive && o.primitive && spec) {
+    const params = { ...o.primitive.params, ...u.primitive.params }
+    // As the server does: faces written replace (null clears); otherwise a
+    // change of a topology parameter clears them (data: 场景内置基础体).
+    const kept = o.primitive.faces && !topologyChanged(spec, o.primitive.params ?? {}, params) ? o.primitive.faces : undefined
+    const faces = u.primitive.faces !== undefined ? u.primitive.faces : kept
+    const { faces: _, ...rest } = o.primitive
+    next.primitive = { ...rest, params, ...(faces ? { faces } : {}) }
+  }
   if (u.material_slots !== undefined) next.material_slots = u.material_slots
   if (u.light && o.light) next.light = mergeLight(o.light, u.light, areaScale.before, areaScale.after) ?? o.light
   if (u.camera && o.camera) next.camera = { ...cameraDefaults, ...o.camera, ...u.camera }
@@ -414,11 +419,15 @@ function changedPart(o: SceneObject, u: ObjectUpdate): ObjectUpdate | null {
       ;(out as Record<string, unknown>)[k] = u[k]
       any = true
     }
-  if (u.primitive) {
-    const now = o.primitive?.params ?? {}
-    const params = Object.fromEntries(Object.entries(u.primitive.params).filter(([k, v]) => !o.primitive || !sameValue(v, now[k])))
-    if (!o.primitive || Object.keys(params).length) {
-      out.primitive = { ...u.primitive, params }
+  if (u.primitive && !o.primitive) {
+    out.primitive = u.primitive
+    any = true
+  } else if (u.primitive && o.primitive) {
+    const now = o.primitive.params ?? {}
+    const params = Object.fromEntries(Object.entries(u.primitive.params ?? {}).filter(([k, v]) => !sameValue(v, now[k])))
+    const faces = u.primitive.faces !== undefined && !sameValue(u.primitive.faces, o.primitive.faces ?? null)
+    if (Object.keys(params).length || faces) {
+      out.primitive = { ...(Object.keys(params).length ? { params } : {}), ...(faces ? { faces: u.primitive.faces } : {}) }
       any = true
     }
   }

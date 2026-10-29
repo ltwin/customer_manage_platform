@@ -7414,6 +7414,9 @@ type CreativeScenePrimitive struct {
 	// Builtin 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。
 	Builtin string `json:"builtin"`
 
+	// Faces 基础体的面级材质分配（结构同模型的 faces）：只有一个网格，path 固定为 [["", 0]]、primitive 为 0，区间不超过 256 个。 改了基础体 topology 声明里的参数时清空。
+	Faces *CreativeModelFaces `json:"faces,omitempty"`
+
 	// Params 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。
 	Params *CreativeSceneParams `json:"params,omitempty"`
 }

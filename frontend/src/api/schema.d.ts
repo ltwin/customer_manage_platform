@@ -7449,6 +7449,8 @@ export interface components {
             /** @description 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。 */
             builtin: string;
             params?: components["schemas"]["CreativeSceneParams"];
+            /** @description 基础体的面级材质分配（结构同模型的 faces）：只有一个网格，path 固定为 [["", 0]]、primitive 为 0，区间不超过 256 个。 改了基础体 topology 声明里的参数时清空。 */
+            faces?: components["schemas"]["CreativeModelFaces"];
         };
         /** @description 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。 */
         CreativeSceneParams: {
@@ -7568,8 +7570,10 @@ export interface components {
             transform?: components["schemas"]["CreativeSceneTransform"];
             visible?: boolean;
             locked?: boolean;
+            /** @description params 按键合并；faces 整体替换，写 null 清空。改了 topology 声明里的参数而没写 faces 时，服务端清空这个基础体的面分配。至少写一项。 */
             primitive?: {
-                params: components["schemas"]["CreativeSceneParams"];
+                params?: components["schemas"]["CreativeSceneParams"];
+                faces?: components["schemas"]["CreativeModelFaces"] | null;
             };
             material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
             light?: components["schemas"]["CreativeSceneLightPatch"];

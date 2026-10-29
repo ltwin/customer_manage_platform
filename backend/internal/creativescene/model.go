@@ -248,6 +248,9 @@ type Transform struct {
 type Primitive struct {
 	Builtin string         `json:"builtin"`
 	Params  map[string]any `json:"params,omitempty"`
+	// Faces is the builtin's face assignment (data: 场景文档
+	// 「primitive.faces」): kept on the object, a builtin being never shared.
+	Faces *Faces `json:"faces,omitempty"`
 }
 
 type MaterialSlot struct {
@@ -585,7 +588,9 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bo
 				}
 				return invalid("缺少字段 %s", strings.TrimPrefix(path+"."+name, "."))
 			}
-			nullable := f.Type.Kind() == reflect.Pointer && opts != "omitempty"
+			// nullable:"true" lets a field be left out or written null, which
+			// then means something of its own (primitive.faces null clears).
+			nullable := f.Type.Kind() == reflect.Pointer && opts != "omitempty" || f.Tag.Get("nullable") == "true"
 			if err := requireFields(v, f.Type, path+"."+name, nullable); err != nil {
 				return err
 			}

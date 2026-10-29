@@ -348,3 +348,26 @@ test('neighbours and pieces follow shared edges after welding', () => {
   assert.equal(new Set(Array.from(topo.corners.subarray(0, 36))).size, 8)
 })
 
+
+// scene-face-materials 3.3: the editor's own copy of the server's rule, so
+// what it shows before the receipt is what the server stores.
+test('a builtin update keeps or clears faces as the server does', async () => {
+  const { updateObject } = await import('../src/creative-scene/state/apply.ts')
+  const faces: Faces = { meshes: [{ path: [['', 0]], primitive: 0, topology: 't1-9f86d081884c7d65', assign: { brick: [[0, 2]] } }] }
+  const arch = {
+    id: 'sobj_000000000000000000001',
+    kind: 'primitive',
+    name: '',
+    parent_id: null,
+    order: 0,
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    visible: true,
+    locked: false,
+    primitive: { builtin: 'arch@1', params: defaultParams('arch@1'), faces },
+  } as Parameters<typeof updateObject>[0]
+  const update = (primitive: NonNullable<Parameters<typeof updateObject>[1]['primitive']>) => updateObject(arch, { object_id: arch.id, primitive }).primitive?.faces
+  assert.deepEqual(update({ params: { depth: 1 } }), faces)
+  assert.equal(update({ params: { opening_width: 0.4 } }), undefined)
+  assert.deepEqual(update({ params: { opening_width: 0.4 }, faces }), faces)
+  assert.equal(update({ faces: null }), undefined)
+})

@@ -15538,6 +15538,12 @@ components:
           description: 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。
         params:
           $ref: '#/components/schemas/CreativeSceneParams'
+        faces:
+          description: >-
+            基础体的面级材质分配（结构同模型的 faces）：只有一个网格，path 固定为 [["", 0]]、primitive 为 0，区间不超过 256 个。
+            改了基础体 topology 声明里的参数时清空。
+          allOf:
+          - $ref: '#/components/schemas/CreativeModelFaces'
     CreativeSceneParams:
       type: object
       description: 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。
@@ -15856,11 +15862,15 @@ components:
         primitive:
           type: object
           additionalProperties: false
-          required:
-          - params
+          description: params 按键合并；faces 整体替换，写 null 清空。改了 topology 声明里的参数而没写 faces 时，服务端清空这个基础体的面分配。至少写一项。
+          minProperties: 1
           properties:
             params:
               $ref: '#/components/schemas/CreativeSceneParams'
+            faces:
+              nullable: true
+              allOf:
+              - $ref: '#/components/schemas/CreativeModelFaces'
         material_slots:
           $ref: '#/components/schemas/CreativeSceneMaterialSlots'
         light:

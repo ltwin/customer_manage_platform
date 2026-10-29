@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -180,6 +181,115 @@ func TestDeriveModelRejections(t *testing.T) {
 			if after := readScene(t, f.a, doc); after.Revision != v.Revision {
 				t.Fatalf("rejected command moved the scene to %d", after.Revision)
 			}
+		})
+	}
+}
+
+// Face assignments on builtins (scene-face-materials 3.3): kept on the
+// object, cleared when a parameter of the builtin's topology declaration
+// changes and faces are not written.
+
+func builtinFaces(ranges ...[]any) map[string]any {
+	list := []any{}
+	for _, r := range ranges {
+		list = append(list, r)
+	}
+	if len(list) == 0 {
+		list = []any{[]any{0, 2}}
+	}
+	return map[string]any{"meshes": []any{map[string]any{"path": []any{[]any{"", 0}}, "primitive": 0, "topology": "t1-9f86d081884c7d65", "assign": map[string]any{"brick": list}}}}
+}
+
+func primitiveWith(id, builtin string, order int, faces any) map[string]any {
+	o := object(id, "primitive", nil, order)
+	p := map[string]any{"builtin": builtin}
+	if faces != nil {
+		p["faces"] = faces
+	}
+	o["primitive"] = p
+	return o
+}
+
+func updatePrimitive(t *testing.T, f fixture, doc, id string, patch map[string]any) creativedocument.CommandResult {
+	t.Helper()
+	return mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect(content(id)), Operations: []any{
+		op{"op": "update_objects", "updates": []any{op{"object_id": id, "primitive": patch}}},
+	}})
+}
+
+func TestBuiltinFacesFollowTheTopologyDeclaration(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	arch, cyl := objectID(1), objectID(2)
+	addObjects(t, f.a, doc, primitiveWith(arch, "arch@1", 1, builtinFaces()), primitiveWith(cyl, "cylinder@1", 2, builtinFaces()))
+	has := func(id string) bool { return readScene(t, f.a, doc).object(t, id).Primitive.Faces != nil }
+	if !has(arch) || !has(cyl) {
+		t.Fatal("faces written with add_objects are stored")
+	}
+
+	cases := []struct {
+		id    string
+		patch map[string]any
+		keeps bool
+	}{
+		{arch, map[string]any{"params": map[string]any{"depth": 1.0}}, true},
+		{cyl, map[string]any{"params": map[string]any{"radius_top": 0.3, "height": 3.0}}, true},
+		{cyl, map[string]any{"params": map[string]any{"radius_top": 0.0}}, false},
+		{arch, map[string]any{"params": map[string]any{"opening_width": 0.4}}, false},
+	}
+	for _, c := range cases {
+		res := updatePrimitive(t, f, doc, c.id, c.patch)
+		if has(c.id) != c.keeps {
+			t.Fatalf("%s %v: faces kept = %v, want %v", c.id, c.patch, !c.keeps, c.keeps)
+		}
+		if len(res.ChangedUnits) != 1 || res.ChangedUnits[0] != content(c.id) {
+			t.Fatalf("changed units %v", res.ChangedUnits)
+		}
+	}
+
+	// Written faces win over the rule; null clears; faces alone need no params.
+	updatePrimitive(t, f, doc, arch, map[string]any{"params": map[string]any{"width": 4.0}, "faces": builtinFaces()})
+	if !has(arch) {
+		t.Fatal("faces written with a topology change are kept")
+	}
+	updatePrimitive(t, f, doc, arch, map[string]any{"faces": nil})
+	if has(arch) {
+		t.Fatal("faces null clears")
+	}
+	updatePrimitive(t, f, doc, arch, map[string]any{"faces": builtinFaces([]any{0, 1}, []any{4, 6})})
+	if got := readScene(t, f.a, doc).object(t, arch).Primitive.Faces; got == nil || len(got.Meshes[0].Assign["brick"]) != 2 {
+		t.Fatalf("faces alone: %+v", got)
+	}
+}
+
+func TestBuiltinFacesRejections(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	id := objectID(1)
+	addObjects(t, f.a, doc, primitiveWith(id, "box@1", 1, nil))
+	var tooMany [][]any
+	for i := range 257 {
+		tooMany = append(tooMany, []any{2 * i, 2*i + 1})
+	}
+	other := builtinFaces()
+	other["meshes"].([]any)[0].(map[string]any)["path"] = []any{[]any{"box", 0}}
+	unknown := builtinFaces()
+	unknown["extra"] = true
+	for name, faces := range map[string]any{
+		"another path":    other,
+		"too many ranges": builtinFaces(tooMany...),
+		"unknown field":   unknown,
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := readScene(t, f.a, doc)
+			_, err := send(t, f.a, batch{DocumentID: doc, Expected: v.expect(content(id)), Operations: []any{
+				op{"op": "update_objects", "updates": []any{op{"object_id": id, "primitive": map[string]any{"faces": faces}}}},
+			}})
+			wantErr(t, err, creativeops.ErrValidation)
+			_, err = send(t, f.a, batch{DocumentID: doc, Expected: v.expect("objects"), Operations: []any{
+				op{"op": "add_objects", "objects": []any{primitiveWith(objectID(2), "box@1", 2, faces)}},
+			}})
+			wantErr(t, err, creativeops.ErrValidation)
 		})
 	}
 }

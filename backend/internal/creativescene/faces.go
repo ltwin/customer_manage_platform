@@ -1,6 +1,7 @@
 package creativescene
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -192,4 +193,27 @@ func effectiveSlotIDs(slots []string, f *Faces) []string {
 	}
 	sort.Strings(extra)
 	return append(out, extra...)
+}
+
+// builtinSlots is the one slot a builtin's own geometry has.
+var builtinSlots = []string{"main"}
+
+// nextPrimitiveFaces is a builtin's assignment after an update: written
+// faces replace it (null clears it); otherwise it holds unless the update
+// changed a parameter of the builtin's topology declaration, which clears it
+// (data: 场景内置基础体「topology」). cleared reports that last case.
+func nextPrimitiveFaces(b builtinSpec, old *Primitive, params map[string]any, written json.RawMessage) (*Faces, bool, error) {
+	if len(written) > 0 {
+		var f *Faces
+		dec := json.NewDecoder(bytes.NewReader(written))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&f); err != nil {
+			return nil, false, errors.New("faces 格式不合法")
+		}
+		return f, false, checkFaces(f, builtinSlots, true)
+	}
+	if old.Faces != nil && b.topologyChanged(old.Params, params) {
+		return nil, true, nil
+	}
+	return old.Faces, false, nil
 }
