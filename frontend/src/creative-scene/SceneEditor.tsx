@@ -639,9 +639,10 @@ export default function SceneEditor({
   /** The card thumbnail of what a save keeps: the model with its materials, staged for the request. */
   const saveThumbnail = async (target: SaveTarget, signal: AbortSignal): Promise<string> => {
     const st = session.state
-    const manifest = modelSummaries(st.base?.models, modelCache.local.getState(), modelCache.known.getState())[target.contentRevisionID]?.manifest
+    const summary = modelSummaries(st.base?.models, modelCache.local.getState(), modelCache.known.getState())[target.contentRevisionID]
+    const manifest = summary?.manifest
     if (!manifest) throw new Error('模型不可用')
-    const parts = await modelCache.load(target.contentRevisionID)
+    const parts = await modelCache.load(target.contentRevisionID, summary.faces)
     signal.throwIfAborted()
     const png = await renderMaterialThumbnail(parts, manifest, target.materials)
     signal.throwIfAborted()

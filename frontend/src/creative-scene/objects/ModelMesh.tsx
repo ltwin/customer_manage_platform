@@ -6,7 +6,7 @@ import { modelCache, type ModelParts, type SceneModel } from '../models/cache.ts
 import { clay, unavailableGrey } from './look.ts'
 import { WireMesh } from './WireMesh.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
-import { resolveSlot } from '../materials/resolve.ts'
+import { resolvePart } from '../materials/resolve.ts'
 import { drawnGeometries } from '../materials/instances.ts'
 import { raycastPieces } from '../placement/raycast.ts'
 import { pieceViews } from '../render/pieces.ts'
@@ -46,13 +46,14 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
   useEffect(() => {
     if (!usable) return
     let live = true
-    modelCache.load(revision).then(
+    modelCache.load(revision, summary?.faces).then(
       (parts) => live && setLoaded({ revision, parts }),
       () => live && setLoaded({ revision, parts: null }),
     )
     return () => {
       live = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a revision's faces never change
   }, [revision, usable])
   const bounds = summary?.manifest?.bounds
   if (!usable || (loaded?.revision === revision && !loaded.parts)) return <BoundsBox bounds={bounds} edge={edge} unavailable />
@@ -71,7 +72,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
     return (
       <group>
         {loaded.parts.meshes.map((m, i) => {
-          const material = resolveSlot(m.slot, slots, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material
+          const material = resolvePart(m, slots, hints).material
           return drawnGeometries(m.geometry, material).map((g, j) => (
             <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow raycast={raycastPieces}>
               {edge && <Outline color={edge} />}

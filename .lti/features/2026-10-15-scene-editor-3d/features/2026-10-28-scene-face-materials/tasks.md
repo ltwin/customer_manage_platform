@@ -19,7 +19,7 @@
 
 ## 4. 前端：加载时套用与重新生成
 
-- [ ] 4.1 `models/cache.ts`：`partsOf` 改为 design「加载时套用」的顺序，`ModelCache.load(revision, faces)` 由场景读取的模型摘要传入，追踪缓存键加分配哈希，指纹不符时属性栏提示「部分面分配已失效」；`SceneObjects.tsx:PrimitiveMesh` 按分配拆槽位渲染、描边用整体几何。单测：同一修订有无分配的部件槽位、追踪缓存键不同；在 30 万三角形样例上测量改动前、无分配、有分配三种耗时并记进 design（有分配增量 ≤ 50 ms；无分配比改动前慢超过 10% 时保留就地变换的旧路径）；`make check-frontend` 通过
+- [x] 4.1 `models/cache.ts`：`partsOf` 改为 design「加载时套用」的顺序，`ModelCache.load(revision, faces)` 由场景读取的模型摘要传入，追踪缓存键加分配哈希，指纹不符时属性栏提示「部分面分配已失效」；`SceneObjects.tsx:PrimitiveMesh` 按分配拆槽位渲染、描边用整体几何。单测：同一修订有无分配的部件槽位、追踪缓存键不同；在 30 万三角形样例上测量改动前、无分配、有分配三种耗时并记进 design（有分配增量 ≤ 50 ms；无分配比改动前慢超过 10% 时保留就地变换的旧路径）；`make check-frontend` 通过。结果：`ModelCache.load(revision, faces)`，五处调用方从模型摘要传入；`partsOf` 有分配时走 `ownedMeshes` → `applyFaces` → `mergeParts`，没有时原路径不变；指纹改为同步 SHA-256（`models/sha256.ts`）且只算点名的网格；`ModelMeshPart.origin` 与 `resolvePart` 让未配材质的新槽位沿用原槽位（模型、预览、资产缩略图、基础体共用）；`slotsOf` 改为有效槽位，材质面板显示「沿用原槽位」和「部分面分配已失效」；资产查看浮窗的 `modelFaces` 与 `ModelPreview.faces` 一并完成（4.2 的接入部分）。性能：常见 +10 ms，最坏 +72 ms，超预算，记入 design 待 owner 确认
 - [ ] 4.2 资产预览：`preview/cache.ts:PreviewModels.load` 与 `preview/ModelPreview.tsx` 接收 `faces`，定位并改资产查看浮窗的调用方从资产的模型载荷传入，补进 design 挂载点。e2e（一次一个用例，ONLY 过滤、换端口）：不打开场景，直接在资产库打开有面分配的模型资产，「材质」模式显示面分配
 - [ ] 4.3 重新生成：`modelEdits.ts` 烘焙后 `carryFaces`（`codeChanged` 比较 `code_sha256` 与 `lib_version`），写进 `commit_model.faces` 并提示作废的部分；基础体改参数按 `topology` 声明在同一项写 `primitive.faces: null` 并提示；`host/bake.ts` 的烘焙结果带 `faces`。单测：模型改尺寸保留、改分段作废并提示、改代码时同名同拓扑网格作废；基础体编辑器与服务端对同一修改的结果一致（与 3.3 的用例对照）；`make check-frontend` 通过
 

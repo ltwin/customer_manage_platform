@@ -30,7 +30,8 @@ function layoutKey(g: BufferGeometry): string {
 /** A change in how parts group renumbers the merged geometries: bump render/trace/cache.ts BUILDER_VERSION with it, or the local cache serves trees of other geometries. */
 function groupKey(p: ModelMeshPart): string {
   const c = p.constants
-  return JSON.stringify([p.slot, p.hint, c.color, c.roughness, c.metalness, c.emissive, c.emissiveIntensity, c.vertexColors, layoutKey(p.geometry)])
+  // origin is null for every part of a model without face assignments, so its grouping is as before.
+  return JSON.stringify([p.slot, p.hint, p.origin ?? null, c.color, c.roughness, c.metalness, c.emissive, c.emissiveIntensity, c.vertexColors, layoutKey(p.geometry)])
 }
 
 type Merge = (geometries: BufferGeometry[]) => BufferGeometry | null

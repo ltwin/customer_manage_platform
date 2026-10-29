@@ -3,12 +3,12 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { readModelGenerator, type ModelGenerator } from '../api.ts'
 import { mediaTicket } from '../../creative-canvas/editor/media.ts'
-import { parseGLB } from '../sandbox/gltf.ts'
+import { parseModelGLB, type MeshIdentity } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
 import { mergeParts, noMerge } from './merge.ts'
-import { flipWinding } from './faces.ts'
+import { applyFaces, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces } from './faces.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -33,10 +33,21 @@ export type MeshConstants = {
  * materials run on across part seams. `slot` is the material's slot (its
  * name `slot:<id>`), null for a material the code made itself.
  */
-export type ModelMeshPart = { geometry: BufferGeometry; slot: string | null; hint: string | null; constants: MeshConstants }
+export type ModelMeshPart = {
+  geometry: BufferGeometry
+  slot: string | null
+  hint: string | null
+  constants: MeshConstants
+  /** For triangles a face assignment moved: the GLB slot they came from, drawn until their own slot has a material (materials/resolve.ts resolvePart). */
+  origin?: { slot: string | null; hint: string | null }
+}
 
-/** What a model draws: shared geometries in model space, parts that draw alike merged (models/merge.ts). */
-export type ModelParts = { meshes: ModelMeshPart[] }
+/**
+ * What a model draws: shared geometries in model space, parts that draw alike
+ * merged (models/merge.ts). stale counts face assignment entries that no
+ * longer fit their mesh and were not applied (models/faces.ts).
+ */
+export type ModelParts = { meshes: ModelMeshPart[]; stale?: number }
 
 /**
  * A model baked in this editor. It is drawn from these bytes under its
@@ -75,7 +86,24 @@ function constantsOf(m: StandardLike): MeshConstants {
   }
 }
 
-export function partsOf(root: Object3D): ModelParts {
+/**
+ * The model's parts, split by its face assignment when it has one. Without
+ * one the loaded geometries take their transforms in place, as before face
+ * assignments; with one each mesh is copied first (models/faces.ts
+ * ownedMeshes), so pieces never share arrays a transform could hit twice.
+ */
+export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdentity>, faces?: Faces | null): ModelParts {
+  if (faces && identities) {
+    const { pieces, stale } = applyFaces(ownedMeshes(root, identities, namedIn(faces)), faces)
+    const meshes = pieces.map((p): ModelMeshPart => {
+      const material = p.mesh.material as StandardLike
+      const own = typeof material.userData.hint === 'string' ? material.userData.hint : null
+      const part: ModelMeshPart = { geometry: p.geometry, slot: p.slot, hint: own, constants: constantsOf(material) }
+      if (!p.assigned) return part
+      return { ...part, hint: p.slot !== null ? (faces.hints?.[p.slot] ?? null) : null, origin: { slot: slotOfMaterial(material), hint: own } }
+    })
+    return { meshes: mergeParts(meshes), stale: stale.length }
+  }
   root.updateMatrixWorld(true)
   const found: Mesh[] = []
   root.traverse((o) => {
@@ -188,7 +216,7 @@ export class ModelCache {
    * fresh bake before GLTFLoader sees them; a failed load is not kept, so a
    * later attempt tries again.
    */
-  load(revision: string): Promise<ModelParts> {
+  load(revision: string, faces: Faces | null | undefined): Promise<ModelParts> {
     const hit = this.loads.get(revision)
     if (hit) return hit
     const promise = (async () => {
@@ -196,7 +224,8 @@ export class ModelCache {
       if (!local && parsePlaceholder(revision)) throw new Error('本机模型已不在，请重新生成')
       const glb = local ? local.glb : await this.download(revision)
       inspect(glb)
-      const parts = partsOf(await parseGLB(glb))
+      const { scene, identities } = await parseModelGLB(glb)
+      const parts = partsOf(scene, identities, faces)
       if (!parsePlaceholder(revision)) traceKeys(parts, revision)
       return parts
     })()

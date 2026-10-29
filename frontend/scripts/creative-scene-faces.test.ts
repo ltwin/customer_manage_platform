@@ -1,7 +1,9 @@
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import {
+  applyBuiltinFaces,
   applyFaces,
   carryFaces,
   effectiveSlots,
@@ -18,6 +20,7 @@ import type { MeshIdentity } from '../src/creative-scene/sandbox/gltf.ts'
 import { builtins, builtinSpec, defaultParams, topologyChanged } from '../src/creative-scene/builtins/catalog.ts'
 import { primitiveGeometry } from '../src/creative-scene/builtins/geometry.ts'
 import { faceTopology } from '../src/creative-scene/models/faceTopology.ts'
+import { sha256 } from '../src/creative-scene/models/sha256.ts'
 
 // scene-face-materials 2.1: face assignments (data: 模型内容「面级材质分配」).
 
@@ -32,6 +35,13 @@ function strip(): THREE.BufferGeometry {
   g.computeVertexNormals()
   return g
 }
+
+test('sha256 matches node:crypto, across block boundaries', () => {
+  for (const n of [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000, 1 << 20]) {
+    const data = new Uint8Array(n).map((_, i) => (i * 31 + n) & 255)
+    assert.equal(Buffer.from(sha256(data)).toString('hex'), createHash('sha256').update(data).digest('hex'), `length ${n}`)
+  }
+})
 
 test('the fingerprint follows how triangles connect, not where they are', async () => {
   const box = new THREE.BoxGeometry(1, 1, 1)
@@ -370,4 +380,64 @@ test('a builtin update keeps or clears faces as the server does', async () => {
   assert.equal(update({ params: { opening_width: 0.4 } }), undefined)
   assert.deepEqual(update({ params: { opening_width: 0.4 }, faces }), faces)
   assert.equal(update({ faces: null }), undefined)
+})
+
+// scene-face-materials 4.1: loading applies the assignment before parts merge.
+test('a model loads split by its assignment, merged by slot and origin', async () => {
+  const { readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const { partsOf } = await import('../src/creative-scene/models/cache.ts')
+  const { parseModelGLB } = await import('../src/creative-scene/sandbox/gltf.ts')
+  const b = readFileSync(path.resolve(import.meta.dirname, '../../backend/internal/creativeglb/testdata/identity-samples.glb'))
+  const load = () => parseModelGLB(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer)
+
+  const plain = await load()
+  const before = partsOf(plain.scene)
+  const parsed = await load()
+  const two = [...parsed.identities].find(([, id]) => JSON.stringify(id.path) === '[["",0],["part:two",0]]' && id.primitive === 0)![0]
+  const fingerprint = topologyOf(two.geometry)
+  const faces: Faces = {
+    meshes: [
+      { path: [['', 0], ['part:two', 0]], primitive: 0, topology: fingerprint, assign: { brick: [[0, 2]] } },
+      { path: [['', 0], ['part:mirror', 0]], primitive: 0, topology: 't1-0000000000000000', assign: { brick: [[0, 1]] } },
+    ],
+    hints: { brick: 'brick' },
+  }
+  const parts = partsOf(parsed.scene, parsed.identities, faces)
+  assert.equal(parts.stale, 1, 'the mirror entry no longer fits')
+  const brick = parts.meshes.filter((m) => m.slot === 'brick')
+  assert.equal(brick.length, 1)
+  assert.deepEqual(brick[0].origin, { slot: 'stone', hint: 'stone' })
+  assert.equal(brick[0].hint, 'brick')
+  assert.equal((brick[0].geometry.index ?? brick[0].geometry.attributes.position).count, 6)
+  // The rest of the model draws as before: one more part, the brick one.
+  assert.equal(parts.meshes.length, before.meshes.length + 1)
+  const triangles = (ms: typeof parts.meshes) => ms.reduce((n, m) => n + (m.geometry.index ?? m.geometry.attributes.position).count / 3, 0)
+  assert.equal(triangles(parts.meshes), triangles(before.meshes))
+})
+
+test('a moved part draws as its origin until its own slot has a material', async () => {
+  const { resolvePart } = await import('../src/creative-scene/materials/resolve.ts')
+  const marble = { preset: 'marble@1', params: {} }
+  const part = { slot: 'face_1', hint: null, constants: null, origin: { slot: 'stone', hint: 'stone' } }
+  const hints = new Map<string, string | undefined>()
+  assert.deepEqual(resolvePart(part, { stone: marble }, hints).material, resolvePart({ slot: 'stone', hint: 'stone', constants: null }, { stone: marble }, hints).material)
+  assert.equal(resolvePart(part, { stone: marble, face_1: { preset: 'wood@1', params: {} } }, hints).source, 'assigned')
+  assert.equal(resolvePart(part, { face_1: { preset: 'wood@1', params: {} } }, hints).slot, 'face_1')
+})
+
+test('a builtin splits by its assignment while it fits', () => {
+  const box = primitiveGeometry('box@1', {})!
+  const faces: Faces = { meshes: [{ path: [['', 0]], primitive: 0, topology: topologyOf(box), assign: { brick: [[0, 2]] } }] }
+  const { pieces, stale } = applyBuiltinFaces(box, faces)
+  assert.equal(stale, false)
+  assert.deepEqual(
+    pieces?.map((p) => [p.slot, p.assigned, (p.geometry.index ?? p.geometry.attributes.position).count / 3]),
+    [
+      ['main', false, 10],
+      ['brick', true, 2],
+    ],
+  )
+  assert.deepEqual(applyBuiltinFaces(primitiveGeometry('sphere@1', {})!, faces), { pieces: null, stale: true })
+  assert.deepEqual(applyBuiltinFaces(box, null), { pieces: null, stale: false })
 })

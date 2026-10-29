@@ -1,6 +1,7 @@
 import { BufferAttribute, BufferGeometry, Mesh, type Material, type Object3D } from 'three'
 import type { components } from '../../api/schema'
 import type { MeshIdentity } from '../sandbox/gltf.ts'
+import { sha256 } from './sha256.ts'
 
 // Face assignments (data: 模型内容「面级材质分配」): some of a mesh's
 // triangles drawn with another slot. The GLB is never rewritten; loading
@@ -11,7 +12,7 @@ export type Faces = components['schemas']['CreativeModelFaces']
 export type FaceMesh = components['schemas']['CreativeModelFaceMesh']
 export type Assign = Record<string, [number, number][]>
 
-/** A mesh of a loaded model, in model space and in arrays of its own. */
+/** A mesh of a loaded model, in model space and in arrays of its own; topology is '' for a mesh nobody asked about. */
 export type OwnedMesh = { identity: MeshIdentity; topology: string; geometry: BufferGeometry; material: Material }
 
 /** A slot and how many triangles an assignment gave it or took away. */
@@ -30,7 +31,7 @@ const triangleCount = (g: BufferGeometry) => (g.index ?? g.attributes.position).
  * the corners welded where their float32 bits are equal, numbered in order of
  * first use. Coordinates do not count, so resizing usually keeps it.
  */
-export async function topologyOf(geometry: BufferGeometry): Promise<string> {
+export function topologyOf(geometry: BufferGeometry): string {
   const position = geometry.attributes.position
   let corners: ArrayLike<number>
   if (geometry.index) corners = geometry.index.array
@@ -54,7 +55,7 @@ export async function topologyOf(geometry: BufferGeometry): Promise<string> {
   view.setUint32(0, position.count, true)
   view.setUint32(4, triangleCount(geometry), true)
   for (let i = 0; i < corners.length; i++) view.setUint32(8 + 4 * i, corners[i], true)
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', view.buffer))
+  const digest = sha256(new Uint8Array(view.buffer))
   return 't1-' + Array.from(digest.subarray(0, 8), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -88,28 +89,28 @@ export function flipWinding(geometry: BufferGeometry) {
 }
 
 /**
- * The model's meshes in traversal order, each fingerprinted as loaded, then
- * copied and given its transform once (flipped back if mirrored). The loaded
- * geometries are never written, so they can be read again.
+ * The model's meshes in traversal order, each copied and given its transform
+ * once (flipped back if mirrored). The loaded geometries are never written,
+ * so they can be read again. Only the meshes `fingerprint` picks are
+ * fingerprinted, as loaded: hashing is most of the cost (a 300k-triangle
+ * mesh takes some 40 ms) and an assignment usually names few meshes.
  */
-export async function ownedMeshes(root: Object3D, identities: ReadonlyMap<Mesh, MeshIdentity>): Promise<OwnedMesh[]> {
+export function ownedMeshes(root: Object3D, identities: ReadonlyMap<Mesh, MeshIdentity>, fingerprint: (identity: MeshIdentity) => boolean = () => true): OwnedMesh[] {
   root.updateMatrixWorld(true)
   const found: Mesh[] = []
   root.traverse((o) => {
     if (o instanceof Mesh) found.push(o)
   })
-  return Promise.all(
-    found.map(async (o): Promise<OwnedMesh> => {
-      const identity = identities.get(o)
-      if (!identity) throw new Error('网格缺少身份')
-      const topology = await topologyOf(o.geometry)
-      const geometry = (o.geometry as BufferGeometry).clone()
-      geometry.applyMatrix4(o.matrixWorld)
-      if (o.matrixWorld.determinant() < 0) flipWinding(geometry)
-      const material = (Array.isArray(o.material) ? o.material[0] : o.material) as Material
-      return { identity, topology, geometry, material }
-    }),
-  )
+  return found.map((o): OwnedMesh => {
+    const identity = identities.get(o)
+    if (!identity) throw new Error('网格缺少身份')
+    const topology = fingerprint(identity) ? topologyOf(o.geometry) : ''
+    const geometry = (o.geometry as BufferGeometry).clone()
+    geometry.applyMatrix4(o.matrixWorld)
+    if (o.matrixWorld.determinant() < 0) flipWinding(geometry)
+    const material = (Array.isArray(o.material) ? o.material[0] : o.material) as Material
+    return { identity, topology, geometry, material }
+  })
 }
 
 /** A new geometry of the given triangles only, its vertices compacted into arrays of its own. */
@@ -178,6 +179,12 @@ export function splitBySlot(geometry: BufferGeometry, assign: Assign, base: stri
 
 function fits(assign: Assign, count: number): boolean {
   return Object.values(assign).every((ranges) => ranges.every(([start, end]) => start >= 0 && start < end && end <= count))
+}
+
+/** Whether a mesh has an entry in the assignment, the meshes applyFaces needs fingerprinted. */
+export function namedIn(faces: Faces | null | undefined): (identity: MeshIdentity) => boolean {
+  const entries = faces?.meshes ?? []
+  return (identity) => entries.some((m) => sameIdentity(identity, m))
 }
 
 /**
@@ -280,4 +287,18 @@ export function effectiveSlots(glb: readonly { id: string; hint: string }[], fac
   const out: { id: string; hint: string; source: 'model' | 'faces'; triangles: number }[] = glb.map((s) => ({ id: s.id, hint: s.hint, source: 'model', triangles: counts.get(s.id) ?? 0 }))
   for (const [slot, triangles] of counts) if (!glb.some((s) => s.id === slot)) out.push({ id: slot, hint: faces?.hints?.[slot] ?? '', source: 'faces', triangles })
   return out
+}
+
+/**
+ * A builtin's geometry split by its assignment (data: 场景文档
+ * 「primitive.faces」): one mesh at [["", 0]], primitive 0, its slot main.
+ * pieces is null when there is nothing to apply; stale when the assignment no
+ * longer fits the geometry (a check behind the topology declaration).
+ */
+export function applyBuiltinFaces(geometry: BufferGeometry, faces: Faces | null | undefined): { pieces: { slot: string; assigned: boolean; geometry: BufferGeometry }[] | null; stale: boolean } {
+  const entry = faces?.meshes[0]
+  if (!entry) return { pieces: null, stale: false }
+  const assign = entry.assign as Assign
+  if (JSON.stringify(entry.path) !== '[["",0]]' || entry.primitive !== 0 || entry.topology !== topologyOf(geometry) || !fits(assign, triangleCount(geometry))) return { pieces: null, stale: true }
+  return { pieces: splitBySlot(geometry, assign, 'main').map((p) => ({ ...p, slot: p.slot ?? 'main' })), stale: false }
 }

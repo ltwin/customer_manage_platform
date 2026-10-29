@@ -190,7 +190,7 @@ export function Viewport(props: ViewportProps) {
   useEffect(() => {
     dragPointer.current = null
     setDragAt(null)
-    if (drag) void modelCache.load(drag.revision).catch(() => {})
+    if (drag) void modelCache.load(drag.revision, drag.summary.faces).catch(() => {})
   }, [drag])
   useEffect(() => () => {
     if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current)

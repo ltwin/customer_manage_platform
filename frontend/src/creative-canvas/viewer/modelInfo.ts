@@ -7,6 +7,7 @@ import type { Content } from '../editor/api.ts'
 type Manifest = components['schemas']['CreativeModelManifest']
 type Generator = components['schemas']['CreativeModelGenerator']
 type Materials = components['schemas']['CreativeSceneMaterialSlots']
+type Faces = components['schemas']['CreativeModelFaces']
 
 /** 几何模块按 `mount` 约定的原点，即模型的参考点。 */
 export const originLabel: Record<Generator['mount'], string> = {
@@ -39,6 +40,13 @@ export function modelMaterials(content: Content | undefined): Materials {
   return content?.kind === 'model' && 'model' in content.payload
     ? (content.payload.model.materials ?? {})
     : {}
+}
+
+/** 模型的面级材质分配（scene-face-materials）；没有时为 null。 */
+export function modelFaces(content: Content | undefined): Faces | null {
+  return content?.kind === 'model' && 'model' in content.payload
+    ? (content.payload.model.faces ?? null)
+    : null
 }
 
 /** 完整形态的模型才有信息；暂存形态和其他类型返回 null。 */

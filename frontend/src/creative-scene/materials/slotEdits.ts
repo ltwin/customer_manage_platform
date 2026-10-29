@@ -1,6 +1,7 @@
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import type { ParamValue } from '../builtins/catalog.ts'
 import type { MeshConstants, SceneModel } from '../models/cache.ts'
+import { effectiveSlots } from '../models/faces.ts'
 import { materialEntry, principledID } from './catalog.ts'
 import { resolveSlot, type ResolvedSlot } from './resolve.ts'
 
@@ -12,10 +13,18 @@ import { resolveSlot, type ResolvedSlot } from './resolve.ts'
 export type MaterialSlot = NonNullable<SceneObject['material_slots']>[string]
 type Slots = NonNullable<SceneObject['material_slots']>
 
-/** An object's slots: a primitive has main, a model the slots its manifest lists. */
-export function slotsOf(o: SceneObject, model: SceneModel | undefined): { slot: string; hint: string | null }[] {
-  if (o.kind === 'primitive') return [{ slot: 'main', hint: null }]
-  if (o.kind === 'model_instance') return (model?.manifest?.slots ?? []).map((s) => ({ slot: s.id, hint: s.hint ?? null }))
+/**
+ * An object's slots (data: 模型内容「有效槽位」): a primitive's main, a
+ * model's the manifest lists, then those its face assignment brings (faces).
+ */
+export function slotsOf(o: SceneObject, model: SceneModel | undefined): { slot: string; hint: string | null; faces: boolean }[] {
+  const of = (glb: { id: string; hint?: string }[], faces: Parameters<typeof effectiveSlots>[1]) =>
+    effectiveSlots(
+      glb.map((s) => ({ id: s.id, hint: s.hint ?? '' })),
+      faces,
+    ).map((s) => ({ slot: s.id, hint: s.hint || null, faces: s.source === 'faces' }))
+  if (o.kind === 'primitive') return of([{ id: 'main' }], o.primitive?.faces)
+  if (o.kind === 'model_instance') return of(model?.manifest?.slots ?? [], model?.faces)
   return []
 }
 

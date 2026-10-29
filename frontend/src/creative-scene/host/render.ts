@@ -83,7 +83,7 @@ export type Shooter = {
 /** Loads every model the scene shows; one that fails draws as its grey block. */
 export async function loadModels(scene: Scene, models: Readonly<Record<string, SceneModel>>): Promise<void> {
   const revisions = new Set(scene.objects.flatMap((o) => (o.model?.content_revision_id && models[o.model.content_revision_id]?.usable !== false ? [o.model.content_revision_id] : [])))
-  await Promise.allSettled([...revisions].map((r) => modelCache.load(r)))
+  await Promise.allSettled([...revisions].map((r) => modelCache.load(r, models[r]?.faces)))
 }
 
 export async function renderView(documentID: string, request: RenderRequest, read: (id: string) => Promise<SceneDocument> = readScene): Promise<Shot> {

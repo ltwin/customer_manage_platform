@@ -1,4 +1,5 @@
 import { ModelCache, type Download, type ModelParts } from '../models/cache.ts'
+import type { Faces } from '../models/faces.ts'
 
 // The asset viewer's models. Not the editor's cache, which is never emptied:
 // models opened one after another on the library page would pile up there.
@@ -17,12 +18,12 @@ export class PreviewModels {
     this.max = max
   }
 
-  load(revision: string): Promise<ModelParts> {
+  load(revision: string, faces: Faces | null): Promise<ModelParts> {
     const at = this.recent.indexOf(revision)
     if (at >= 0) this.recent.splice(at, 1)
     this.recent.push(revision)
     while (this.recent.length > this.max) this.cache.forget(this.recent.shift()!)
-    return this.cache.load(revision)
+    return this.cache.load(revision, faces)
   }
 }
 
