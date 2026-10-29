@@ -60,7 +60,7 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
     origin: originLabel[generator.mount],
     size: modelSize(manifest),
     triangles: manifest.triangles.toLocaleString('zh-CN'),
-    slots: manifest.slots.map((s) => {
+    slots: [...manifest.slots, ...faceSlots(content, manifest)].map((s) => {
       const preset = materials[s.id]?.preset
       return preset ? { ...s, material: materialEntry(preset)?.label ?? preset } : s
     }),
@@ -72,6 +72,25 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
       }))
       .sort((a, b) => a.key.localeCompare(b.key)),
   }
+}
+
+/** 面分配新建、GLB 里没有的槽位，与场景的有效槽位一致（models/faces.ts effectiveSlots；这里不引 three）。 */
+function faceSlots(content: Content, manifest: Manifest): Manifest['slots'] {
+  const faces = modelFaces(content)
+  const glb = new Set(manifest.slots.map((s) => s.id))
+  const used = new Set(
+    faces?.meshes.flatMap((m) =>
+      Object.entries(m.assign)
+        .filter(([, r]) => r.length)
+        .map(([id]) => id),
+    ),
+  )
+  return [...used]
+    .filter((id) => !glb.has(id))
+    .map((id) => {
+      const hint = faces?.hints?.[id]
+      return hint ? { id, hint } : { id }
+    })
 }
 
 export function modelSize(m: Manifest): string {

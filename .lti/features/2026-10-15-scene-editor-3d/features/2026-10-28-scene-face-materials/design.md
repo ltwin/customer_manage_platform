@@ -198,8 +198,8 @@ sequenceDiagram
 | `backend/internal/creativeagent/instructions/base.md` | 修改 | 面分配的用法、取舍与命名建议 |
 | `api/openapi.yaml` | 修改 | 见上节 |
 | `docs/dev/creative-scene-agent.md` | 修改 | 有效槽位与工具结果说明 |
-
-资产查看浮窗渲染 `ModelPreview` 的调用方（传入 `faces`）在第一项前端任务里定位后补进本表。
+| `frontend/src/creative-canvas/viewer/MediaViewer.tsx` | 修改 | 资产查看浮窗渲染 `ModelPreview`，传入 `modelFaces(item.content)`（实施 4.1） |
+| `frontend/src/creative-canvas/viewer/modelInfo.ts` | 修改 | `modelFaces`；信息行的「材质槽」在 GLB 槽位之后列出面分配新建的槽位（实施 4.2） |
 
 ## 验证与交付
 

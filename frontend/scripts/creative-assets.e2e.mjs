@@ -1550,8 +1550,8 @@ await check('tag-tree-manage', async () => {
 
 // C6 AC-6：模型卡片只显示缩略图，资产库页在打开模型前不加载 3D 引擎；查看浮窗按资产的材质显示、转着看、切换白模与材质，信息与清单一致，下载得到 .glb。
 const pillarManifest = { bounds: { min: [-0.375, 0, -0.375], max: [0.375, 3, 0.375] }, triangles: 152, slots: [{ id: 'stone', hint: 'stone' }, { id: 'trim', hint: 'stone' }], parts: ['base', 'capital', 'shaft'], anchors: [{ id: 'top', position: [0, 3, 0] }] }
-const modelAsset = () => {
-  const a = asset({ id: 'm-pillar', title: '哥特束柱', age: 0 })
+const modelAsset = (id = 'm-pillar', title = '哥特束柱') => {
+  const a = asset({ id, title, age: 0 })
   a.kind = 'model'
   a.palette = []
   a.content = {
@@ -1565,6 +1565,20 @@ const modelAsset = () => {
   }
   return a
 }
+// The share of pixels in red paint.
+const red = (png) => page.evaluate(async (src) => {
+  const i = new Image()
+  await new Promise((resolve) => { i.onload = resolve; i.src = src })
+  const c = document.createElement('canvas')
+  c.width = i.width
+  c.height = i.height
+  const g = c.getContext('2d')
+  g.drawImage(i, 0, 0)
+  const p = g.getImageData(0, 0, c.width, c.height).data
+  let n = 0
+  for (let k = 0; k < p.length; k += 4) if (p[k] > p[k + 1] + 60 && p[k] > p[k + 2] + 60) n++
+  return n / (p.length / 4)
+}, `data:image/png;base64,${png.toString('base64')}`)
 await check('C6-model-preview', async () => {
   await fresh({ assets: [modelAsset(), ...fixture()] })
   const engine = []
@@ -1591,20 +1605,7 @@ await check('C6-model-preview', async () => {
   assert.equal(await viewer().getByRole('button', { name: '放入项目…' }).count(), 0, 'a model has no project placement')
 
   const shot = () => stage.screenshot()
-  // The share of pixels in the asset's red paint: the stone slot in 「材质」, none in clay.
-  const red = (png) => page.evaluate(async (src) => {
-    const i = new Image()
-    await new Promise((resolve) => { i.onload = resolve; i.src = src })
-    const c = document.createElement('canvas')
-    c.width = i.width
-    c.height = i.height
-    const g = c.getContext('2d')
-    g.drawImage(i, 0, 0)
-    const p = g.getImageData(0, 0, c.width, c.height).data
-    let n = 0
-    for (let k = 0; k < p.length; k += 4) if (p[k] > p[k + 1] + 60 && p[k] > p[k + 2] + 60) n++
-    return n / (p.length / 4)
-  }, `data:image/png;base64,${png.toString('base64')}`)
+  // The stone slot is in red paint: some in 「材质」, none in clay.
   assert.equal(await viewer().getByRole('button', { name: '材质', exact: true }).getAttribute('aria-pressed'), 'true', 'it opens in the asset\'s materials, like its card')
   await viewer().getByText('放进场景后可以换材质', { exact: true }).waitFor()
   // The renderer is made asynchronously and may compile the material's shaders in parallel, drawing it once they are ready.
@@ -1634,6 +1635,36 @@ await check('C6-model-preview', async () => {
   await viewer().getByRole('button', { name: '下载', exact: true }).click()
   assert.equal((await download).suggestedFilename(), '哥特束柱.glb')
   assert.equal((await ticket).postDataJSON().role, 'original')
+})
+
+// C5b 4.2：不打开场景，资产库直接打开带面分配的模型资产，「材质」模式按分配显示，信息列出分配出来的槽位。
+await check('C5b-model-faces', async () => {
+  const pillar = modelAsset('m-faced', '分面束柱')
+  // The shaft's triangles go to face_1 in red; stone itself is grey, so red shows only through the assignment.
+  pillar.content.payload.model.materials = {
+    stone: { preset: 'paint@1', params: { color: '#808080', roughness: 0.6, metalness: 0 } },
+    face_1: { preset: 'paint@1', params: { color: '#c03030', roughness: 0.6, metalness: 0 } },
+  }
+  pillar.content.payload.model.faces = {
+    meshes: [{ path: [['', 0], ['part:shaft', 0]], primitive: 0, topology: 't1-a3d71383dd3c20c1', assign: { face_1: [[0, 128]] } }],
+    hints: { face_1: 'stone' },
+  }
+  await fresh({ assets: [pillar, ...fixture()] })
+  await open()
+  await tile('分面束柱').dblclick()
+  await viewerReady()
+  const stage = viewer().locator('.v-model canvas')
+  await stage.waitFor()
+  await until(async () => (await viewer().locator('.v-model-still').count()) === 0, 'model loaded', 10000)
+  assert.equal(await viewer().locator('dt', { hasText: /^材质槽$/ }).locator('xpath=following-sibling::dd[1]').innerText(), 'stone（stone）：漆面、trim（stone）、face_1（stone）：漆面')
+  assert.equal(await viewer().getByRole('button', { name: '材质', exact: true }).getAttribute('aria-pressed'), 'true')
+  await until(async () => (await red(await stage.screenshot())) > 0.01, 'the assigned faces show their paint', 10000).catch(() => {})
+  const faced = await stage.screenshot()
+  assert((await red(faced)) > 0.01, 'the shaft is drawn in face_1\'s paint')
+  await viewer().getByRole('button', { name: '白模', exact: true }).click()
+  await page.waitForTimeout(500)
+  assert((await red(await stage.screenshot())) < 0.001, 'clay has no paint')
+  writeFileSync(`${output}/model-preview-faces.png`, faced)
 })
 
 await context?.close()
