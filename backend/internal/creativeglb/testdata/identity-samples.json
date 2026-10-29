@@ -1,0 +1,148 @@
+[
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "part:two",
+        0
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 6
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "part:two",
+        0
+      ]
+    ],
+    "primitive": 1,
+    "triangles": 6
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "part:capital",
+        0
+      ],
+      [
+        "",
+        0
+      ],
+      [
+        "",
+        0
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 48
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "row",
+        0
+      ],
+      [
+        "",
+        0
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 12
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "row",
+        0
+      ],
+      [
+        "",
+        1
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 12
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "row",
+        0
+      ],
+      [
+        "leaf",
+        0
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 80
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "twin",
+        0
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 4
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "twin",
+        1
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 4
+  },
+  {
+    "path": [
+      [
+        "",
+        0
+      ],
+      [
+        "part:mirror",
+        0
+      ]
+    ],
+    "primitive": 0,
+    "triangles": 14
+  }
+]

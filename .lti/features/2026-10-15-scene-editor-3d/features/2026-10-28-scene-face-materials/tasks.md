@@ -2,7 +2,7 @@
 
 ## 1. 验证假设：网格身份
 
-- [ ] 1.1 `sandbox/gltf.ts:parseGLB` 额外返回每个 `Mesh` 的身份（`parser.associations` + GLB JSON 原文节点名、同级同名序号、primitive 下标）。先写测试：沙箱烘焙多 primitive 网格、多层节点、同名兄弟节点、被多个节点引用的网格、镜像部件五类样例，断言身份与 GLB JSON 一一对应，且每个身份的三角形数与 Go 端（`creativeglb` 测试辅助函数按同一路径规则逐 primitive 计数）相同。不成立时停下回报 owner（Epic 未决 9）；`make check-frontend` 通过
+- [x] 1.1 `sandbox/gltf.ts:parseGLB` 额外返回每个 `Mesh` 的身份（`parser.associations` + GLB JSON 原文节点名、同级同名序号、primitive 下标）。先写测试：沙箱烘焙多 primitive 网格、多层节点、同名兄弟节点、被多个节点引用的网格、镜像部件五类样例，断言身份与 GLB JSON 一一对应，且每个身份的三角形数与 Go 端（`creativeglb` 测试辅助函数按同一路径规则逐 primitive 计数）相同。不成立时停下回报 owner（Epic 未决 9）；`make check-frontend` 通过。结果：成立。新增 `parseModelGLB`（`parseGLB` 改为调用它，原调用方不变）；沙箱烘焙的 `creativeglb/testdata/identity-samples.glb` 含两个 primitive 的节点、三层嵌套、两个未命名的同拓扑方块、共用网格 5 的两个 `twin` 节点、以 `matrix` 导出的镜像部件；Go `TestIdentitySamples` 按路径规则逐 primitive 计数并写黄金文件 `identity-samples.json`（合计等于 manifest 三角形数），前端测试与之逐项相同，并用世界位置确认同拓扑的方块和 `twin` 没有对调
 
 ## 2. 前端：面分配核心
 
