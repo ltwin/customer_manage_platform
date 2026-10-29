@@ -78,6 +78,7 @@ type ModelPayload struct {
 	Generator        *Generator              `json:"generator,omitempty"`
 	Manifest         creativeglb.Manifest    `json:"manifest"`
 	NameHint         string                  `json:"name_hint,omitempty"`
+	Faces            *Faces                  `json:"faces,omitempty"`
 	Materials        map[string]MaterialSlot `json:"materials,omitzero"`
 	SourceRevisionID string                  `json:"source_revision_id,omitempty"`
 }
@@ -265,6 +266,7 @@ type modelView struct {
 	Manifest  *creativeglb.Manifest `json:"manifest"`
 	Generator *Generator            `json:"generator"`
 	NameHint  *string               `json:"name_hint"`
+	Faces     *Faces                `json:"faces"`
 }
 
 // readModels reads the listed revisions in the caller's snapshot with a fixed
@@ -285,7 +287,7 @@ func readModels(ctx context.Context, tx store.ReadTxAccountScope, ids []string) 
 			g := *p.Generator
 			g.Code = ""
 			manifest := p.Manifest
-			v.Usable, v.Manifest, v.Generator = true, &manifest, &g
+			v.Usable, v.Manifest, v.Generator, v.Faces = true, &manifest, &g, p.Faces
 			if p.NameHint != "" {
 				hint := p.NameHint
 				v.NameHint = &hint
