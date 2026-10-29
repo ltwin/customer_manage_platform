@@ -112,7 +112,7 @@ function dragModel(asset: LibraryAsset): DragModel | null {
   return {
     assetID: asset.id,
     revision: asset.content_revision_id,
-    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null },
+    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null },
     mount: model.generator.mount,
     bounds: model.manifest.bounds,
   }

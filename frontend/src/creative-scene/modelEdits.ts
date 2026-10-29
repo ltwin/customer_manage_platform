@@ -288,7 +288,7 @@ export class ModelEdits {
         mount: module.mount,
       }
       const { code: _, ...shown } = generator
-      const summary = (contentID: string): SceneModel => ({ content_id: contentID, usable: true, manifest, generator: shown, name_hint: nameHint })
+      const summary = (contentID: string): SceneModel => ({ content_id: contentID, usable: true, manifest, generator: shown, name_hint: nameHint, faces: null })
       return { generator, summary }
     }
 

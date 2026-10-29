@@ -6410,6 +6410,37 @@ type CreativeMediaTicketRequestPurpose string
 // CreativeMediaTicketRequestRole thumbnail 是模型的缩略图
 type CreativeMediaTicketRequestRole string
 
+// CreativeModelFaceMesh defines model for CreativeModelFaceMesh.
+type CreativeModelFaceMesh struct {
+	// Assign 槽位 ID（同 GLB 材质名 slot:<id> 的 id）到三角形区间 [start, end) 的列表；区间按这个 primitive 自己的三角形顺序，升序且互不重叠。
+	Assign map[string][][]int `json:"assign"`
+
+	// Path 网格身份：从场景根节点到网格所在节点的路径，每段为 [节点名（GLB JSON 原文，可为空串）, 同级同名节点中的序号]。
+	Path      [][]CreativeModelFaceMesh_Path_Item `json:"path"`
+	Primitive int                                 `json:"primitive"`
+
+	// Topology 写入时这个网格的拓扑指纹（只描述三角形的连接方式，不含坐标）。
+	Topology string `json:"topology"`
+}
+
+// CreativeModelFaceMeshPath0 defines model for .
+type CreativeModelFaceMeshPath0 = string
+
+// CreativeModelFaceMeshPath1 defines model for .
+type CreativeModelFaceMeshPath1 = int
+
+// CreativeModelFaceMesh_Path_Item defines model for CreativeModelFaceMesh.path.Item.
+type CreativeModelFaceMesh_Path_Item struct {
+	union json.RawMessage
+}
+
+// CreativeModelFaces 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。
+type CreativeModelFaces struct {
+	// Hints 面分配新建的槽位的语义提示，作用同材质的 extras.hint。
+	Hints  *map[string]string      `json:"hints,omitempty"`
+	Meshes []CreativeModelFaceMesh `json:"meshes"`
+}
+
 // CreativeModelGenerator 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。
 type CreativeModelGenerator struct {
 	CodeSha256      string                                `json:"code_sha256"`
@@ -6495,6 +6526,8 @@ type CreativeModelParamSpecType string
 // CreativeModelPayload model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。
 type CreativeModelPayload struct {
 	Model struct {
+		// Faces 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。
+		Faces  *CreativeModelFaces             `json:"faces,omitempty"`
 		Format CreativeModelPayloadModelFormat `json:"format"`
 
 		// Generator 提交模型时的完整生成信息（含代码）。params 缺省的键补默认值。
@@ -6518,6 +6551,8 @@ type CreativeModelPayloadModelFormat string
 // CreativeModelPreviewPayload 不含代码的完整形态模型载荷，只出现在响应里。
 type CreativeModelPreviewPayload struct {
 	Model struct {
+		// Faces 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。
+		Faces  *CreativeModelFaces                    `json:"faces,omitempty"`
 		Format CreativeModelPreviewPayloadModelFormat `json:"format"`
 
 		// Generator 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。
@@ -7289,7 +7324,10 @@ type CreativeSceneMaterialSlots map[string]CreativeSceneMaterialSlot
 // CreativeSceneModel GLB 与缩略图不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original / thumbnail）取地址。
 type CreativeSceneModel struct {
 	// ContentId 不可用且无法读取时为空字符串。
-	ContentId string                                    `json:"content_id"`
+	ContentId string `json:"content_id"`
+
+	// Faces 面级材质分配；没有时为 null。编辑器加载 GLB 后按它拆分槽位。
+	Faces     nullable.Nullable[CreativeModelFaces]     `json:"faces"`
 	Generator nullable.Nullable[CreativeModelGenerator] `json:"generator"`
 	Manifest  nullable.Nullable[CreativeModelManifest]  `json:"manifest"`
 	NameHint  nullable.Nullable[string]                 `json:"name_hint"`
@@ -11702,6 +11740,68 @@ func (t CreativeImageEditParameters) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreativeImageEditParameters) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeModelFaceMeshPath0 returns the union data inside the CreativeModelFaceMesh_Path_Item as a CreativeModelFaceMeshPath0
+func (t CreativeModelFaceMesh_Path_Item) AsCreativeModelFaceMeshPath0() (CreativeModelFaceMeshPath0, error) {
+	var body CreativeModelFaceMeshPath0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelFaceMeshPath0 overwrites any union data inside the CreativeModelFaceMesh_Path_Item as the provided CreativeModelFaceMeshPath0
+func (t *CreativeModelFaceMesh_Path_Item) FromCreativeModelFaceMeshPath0(v CreativeModelFaceMeshPath0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelFaceMeshPath0 performs a merge with any union data inside the CreativeModelFaceMesh_Path_Item, using the provided CreativeModelFaceMeshPath0
+func (t *CreativeModelFaceMesh_Path_Item) MergeCreativeModelFaceMeshPath0(v CreativeModelFaceMeshPath0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeModelFaceMeshPath1 returns the union data inside the CreativeModelFaceMesh_Path_Item as a CreativeModelFaceMeshPath1
+func (t CreativeModelFaceMesh_Path_Item) AsCreativeModelFaceMeshPath1() (CreativeModelFaceMeshPath1, error) {
+	var body CreativeModelFaceMeshPath1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelFaceMeshPath1 overwrites any union data inside the CreativeModelFaceMesh_Path_Item as the provided CreativeModelFaceMeshPath1
+func (t *CreativeModelFaceMesh_Path_Item) FromCreativeModelFaceMeshPath1(v CreativeModelFaceMeshPath1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelFaceMeshPath1 performs a merge with any union data inside the CreativeModelFaceMesh_Path_Item, using the provided CreativeModelFaceMeshPath1
+func (t *CreativeModelFaceMesh_Path_Item) MergeCreativeModelFaceMeshPath1(v CreativeModelFaceMeshPath1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeModelFaceMesh_Path_Item) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeModelFaceMesh_Path_Item) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

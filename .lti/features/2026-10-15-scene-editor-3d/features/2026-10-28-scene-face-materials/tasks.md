@@ -6,7 +6,7 @@
 
 ## 2. 前端：面分配核心
 
-- [ ] 2.1 `models/faces.ts`：`topologyOf`、`ownedMeshes`、`splitBySlot`（压缩顶点、各片独立属性）、`carryFaces`（Epic `data: 模型内容` 决策表）、区间编码、`effectiveSlots`。先写单测：有索引与无索引指纹、无索引三角形重排后指纹改变、只改坐标不变；变换只烘一次且原几何逐字节不变（0.5 → 10.5，不是 20.5）；拆分各片不共享属性；套用的全部分走、指纹不符、身份不存在；决策表每一行，含「同名同拓扑交换顺序 + 改代码 → 作废」「只改参数 → 保留」；`make check-frontend` 通过
+- [x] 2.1 `models/faces.ts`：`topologyOf`、`ownedMeshes`、`splitBySlot`（压缩顶点、各片独立属性）、`carryFaces`（Epic `data: 模型内容` 决策表）、区间编码、`effectiveSlots`。先写单测：有索引与无索引指纹、无索引三角形重排后指纹改变、只改坐标不变；变换只烘一次且原几何逐字节不变（0.5 → 10.5，不是 20.5）；拆分各片不共享属性；套用的全部分走、指纹不符、身份不存在；决策表每一行，含「同名同拓扑交换顺序 + 改代码 → 作废」「只改参数 → 保留」；`make check-frontend` 通过。结果：`scripts/creative-scene-faces.test.ts` 8 项通过；`flipWinding` 从 `cache.ts` 移到 `faces.ts`。按前端规范 API 类型须引用生成物，所以把 3.1 的 OpenAPI 结构提前：新增 `CreativeModelFaces` / `CreativeModelFaceMesh`，模型载荷两处和 `CreativeSceneModel`（必返、可为 null）加 `faces`，`make generate`；后端的 `modelView` 还没返回 `faces`，3.1 补上。本地烘焙的摘要暂写 `faces: null`，4.3 接上
 - [ ] 2.2 基础体 `topology`：`builtins.json` 每项加声明（`arch@1` 为 `width`、`height`、`opening_width`、`opening_height`；`cylinder@1` 的 `radius_top` 用 `zero_split`），`builtins.go` 解析并提供 `topologyChanged(old, new)`，`make generate` 同步前端副本。测试：Go 端 `topologyChanged` 对每项声明；前端对每个基础体、声明以外的每个参数，在最小值、默认值、最大值和 5 个随机值上指纹与默认参数相同；`make check-go PKG=./internal/creativescene/...`、`make check-frontend`、`make generate-check` 通过
 - [ ] 2.3 `models/faceTopology.ts`：平面面片（相对起点平面的夹角与距离容差）、连通部分、邻接。先写单测：方块 6 个面片、地面 1 个、512 段圆柱侧面 512 个、相邻夹角 0.01° 的 200 段带状网格每片法线偏差不超过 0.05°，以及拱门、楼梯的面片数；`make check-frontend` 通过
 

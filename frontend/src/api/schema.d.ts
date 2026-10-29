@@ -3252,6 +3252,7 @@ export interface components {
                 generator?: components["schemas"]["CreativeModelGeneratorInput"];
                 manifest: components["schemas"]["CreativeModelManifest"];
                 name_hint?: string;
+                faces?: components["schemas"]["CreativeModelFaces"];
                 materials?: components["schemas"]["CreativeSceneMaterialSlots"];
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
@@ -3267,9 +3268,29 @@ export interface components {
                 generator: components["schemas"]["CreativeModelGenerator"];
                 manifest: components["schemas"]["CreativeModelManifest"];
                 name_hint?: string;
+                faces?: components["schemas"]["CreativeModelFaces"];
                 materials?: components["schemas"]["CreativeSceneMaterialSlots"];
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
+            };
+        };
+        /** @description 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。 */
+        CreativeModelFaces: {
+            meshes: components["schemas"]["CreativeModelFaceMesh"][];
+            /** @description 面分配新建的槽位的语义提示，作用同材质的 extras.hint。 */
+            hints?: {
+                [key: string]: string;
+            };
+        };
+        CreativeModelFaceMesh: {
+            /** @description 网格身份：从场景根节点到网格所在节点的路径，每段为 [节点名（GLB JSON 原文，可为空串）, 同级同名节点中的序号]。 */
+            path: (string | number)[][];
+            primitive: number;
+            /** @description 写入时这个网格的拓扑指纹（只描述三角形的连接方式，不含坐标）。 */
+            topology: string;
+            /** @description 槽位 ID（同 GLB 材质名 slot:<id> 的 id）到三角形区间 [start, end) 的列表；区间按这个 primitive 自己的三角形顺序，升序且互不重叠。 */
+            assign: {
+                [key: string]: number[][];
             };
         };
         /** @description 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。 */
@@ -7235,6 +7256,8 @@ export interface components {
             manifest: components["schemas"]["CreativeModelManifest"] | null;
             generator: components["schemas"]["CreativeModelGenerator"] | null;
             name_hint: string | null;
+            /** @description 面级材质分配；没有时为 null。编辑器加载 GLB 后按它拆分槽位。 */
+            faces: components["schemas"]["CreativeModelFaces"] | null;
         };
         CreativeScene: {
             environment: components["schemas"]["CreativeSceneEnvironment"];

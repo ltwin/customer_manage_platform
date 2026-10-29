@@ -1,4 +1,4 @@
-import { Mesh, type BufferAttribute, type BufferGeometry, type Material, type Object3D } from 'three'
+import { Mesh, type BufferGeometry, type Material, type Object3D } from 'three'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { readModelGenerator, type ModelGenerator } from '../api.ts'
@@ -8,6 +8,7 @@ import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
 import { mergeParts, noMerge } from './merge.ts'
+import { flipWinding } from './faces.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -71,35 +72,6 @@ function constantsOf(m: StandardLike): MeshConstants {
     emissive: `#${m.emissive?.getHexString() ?? '000000'}`,
     emissiveIntensity: m.emissiveIntensity ?? 1,
     vertexColors: !!m.vertexColors,
-  }
-}
-
-/**
- * Swaps the second and third corner of every triangle. A mirrored part's
- * transform turned its faces inside out; three.js would flip them back while
- * the transform was the object's, but baked into the geometry it is not.
- */
-export function flipWinding(geometry: BufferGeometry) {
-  const index = geometry.index
-  if (index) {
-    for (let i = 0; i + 2 < index.count; i += 3) {
-      const b = index.getX(i + 1)
-      index.setX(i + 1, index.getX(i + 2))
-      index.setX(i + 2, b)
-    }
-    index.needsUpdate = true
-    return
-  }
-  for (const attribute of Object.values(geometry.attributes) as BufferAttribute[]) {
-    const n = attribute.itemSize
-    const a = attribute.array
-    for (let i = 0; i + 2 < attribute.count; i += 3)
-      for (let k = 0; k < n; k++) {
-        const x = a[(i + 1) * n + k]
-        a[(i + 1) * n + k] = a[(i + 2) * n + k]
-        a[(i + 2) * n + k] = x
-      }
-    attribute.needsUpdate = true
   }
 }
 

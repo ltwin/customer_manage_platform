@@ -7551,6 +7551,7 @@ components:
             generator: {$ref: '#/components/schemas/CreativeModelGeneratorInput'}
             manifest: {$ref: '#/components/schemas/CreativeModelManifest'}
             name_hint: {type: string, maxLength: 80}
+            faces: {$ref: '#/components/schemas/CreativeModelFaces'}
             materials: {$ref: '#/components/schemas/CreativeSceneMaterialSlots'}
             source_revision_id: {type: string, description: 库副本复制自哪个模型修订；有它就是库副本}
     CreativeContentRevisionPayload:
@@ -7576,8 +7577,62 @@ components:
             generator: {$ref: '#/components/schemas/CreativeModelGenerator'}
             manifest: {$ref: '#/components/schemas/CreativeModelManifest'}
             name_hint: {type: string, maxLength: 80}
+            faces: {$ref: '#/components/schemas/CreativeModelFaces'}
             materials: {$ref: '#/components/schemas/CreativeSceneMaterialSlots'}
             source_revision_id: {type: string, description: 库副本复制自哪个模型修订；有它就是库副本}
+    CreativeModelFaces:
+      type: object
+      additionalProperties: false
+      description: >-
+        面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用；
+        服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。
+      required: [meshes]
+      properties:
+        meshes:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/CreativeModelFaceMesh'}
+        hints:
+          type: object
+          description: 面分配新建的槽位的语义提示，作用同材质的 extras.hint。
+          additionalProperties: {type: string, maxLength: 40}
+    CreativeModelFaceMesh:
+      type: object
+      additionalProperties: false
+      required: [path, primitive, topology, assign]
+      properties:
+        path:
+          type: array
+          description: >-
+            网格身份：从场景根节点到网格所在节点的路径，每段为 [节点名（GLB JSON 原文，可为空串）, 同级同名节点中的序号]。
+          minItems: 1
+          maxItems: 64
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+              oneOf:
+              - {type: string, maxLength: 64}
+              - {type: integer, minimum: 0}
+        primitive: {type: integer, minimum: 0, maximum: 255}
+        topology:
+          type: string
+          pattern: '^t1-[0-9a-f]{16}$'
+          description: 写入时这个网格的拓扑指纹（只描述三角形的连接方式，不含坐标）。
+        assign:
+          type: object
+          description: 槽位 ID（同 GLB 材质名 slot:<id> 的 id）到三角形区间 [start, end) 的列表；区间按这个 primitive 自己的三角形顺序，升序且互不重叠。
+          minProperties: 1
+          additionalProperties:
+            type: array
+            minItems: 1
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: {type: integer, minimum: 0, maximum: 300000}
     CreativeModelManifest:
       type: object
       additionalProperties: false
@@ -14981,6 +15036,7 @@ components:
       - manifest
       - generator
       - name_hint
+      - faces
       properties:
         content_id:
           type: string
@@ -14999,6 +15055,11 @@ components:
         name_hint:
           type: string
           nullable: true
+        faces:
+          nullable: true
+          description: 面级材质分配；没有时为 null。编辑器加载 GLB 后按它拆分槽位。
+          allOf:
+          - $ref: '#/components/schemas/CreativeModelFaces'
     CreativeScene:
       type: object
       additionalProperties: false
