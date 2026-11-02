@@ -1,0 +1,17 @@
+{
+  "uid": "fe06846b-ff8b-43b8-a167-d36ee920cb27",
+  "revision": 1,
+  "id": "creative-document-history-cleanup",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-11-02T02:48:47.427Z",
+  "updatedAt": "2026-11-02T02:48:47.476Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

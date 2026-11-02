@@ -1,6 +1,6 @@
 {
   "uid": "aa2e24a0-a9b0-472a-950d-8e0d9136d896",
-  "revision": 6,
+  "revision": 7,
   "id": "scene-history-cleanup",
   "kind": "feature",
   "assurance": "governed",
@@ -38,14 +38,19 @@
     ],
     "delivers": []
   },
-  "state": "draft",
+  "state": "abandoned",
   "createdAt": "2026-10-17T10:04:34.466Z",
-  "updatedAt": "2026-10-19T06:27:30.469Z",
+  "updatedAt": "2026-11-02T02:48:47.119Z",
   "approvals": {},
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
   "checkRuns": [],
+  "abandoned": {
+    "by": "samson",
+    "at": "2026-11-02T02:48:46.990Z",
+    "reason": "owner 2026-11-01 决定移出 Epic scene-editor-3d 并暂缓：修订数据量小、产品未上线、删除不可逆；清理做成文档底座通用机制，由独立 change creative-document-history-cleanup 承接"
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }
