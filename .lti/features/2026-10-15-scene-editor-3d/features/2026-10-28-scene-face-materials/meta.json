@@ -1,6 +1,6 @@
 {
   "uid": "ef07da1d-1eed-4bb0-847f-73189d39e87e",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-face-materials",
   "kind": "feature",
   "assurance": "governed",
@@ -50,7 +50,21 @@
   },
   "state": "closed",
   "createdAt": "2026-10-28T13:54:10.701Z",
-  "updatedAt": "2026-11-02T02:17:05.711Z",
+  "updatedAt": "2026-11-02T02:25:43.185Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-11-02T02:25:43.114Z",
+    "summary": "feat/scene-face-materials 以 --no-ff 合入 develop（984c65a8），实施 HEAD 0f432b16 是集成 HEAD 的祖先；合入后 frontend/backend/api 与分支一致。分支在 develop 5ed16730 上试合并跑过 make check-merge（exit 0），此后只多了验收与归档的 .lti 文档提交，check-merge 不覆盖这些文件，故未重跑。",
+    "method": "manual",
+    "limitations": "项目未在 .lti/config.yaml 声明 checks，集成证据为 develop 5ed16730 上的试合并 make check-merge；合入时 develop 未前进，合入树代码与试合并时相同，没有在合入提交上再跑一遍。",
+    "sourceCommit": "0f432b16e9a3d6f74566057b2790580fe9e070bc",
+    "targetCommit": "984c65a87fa62c90d23684019eb733c1a93c8496",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "f11517139b7506dd07cf732aab1480fde5f60192cd389c9985cfe80a51bd2553"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
