@@ -292,7 +292,7 @@ wait_tasks(task_ids ≤ 8, timeout_s ≤ 45) ─► 任一终态或超时即返�
 
 - 新增：`external_agent_connections`、`oauth_clients`、`oauth_authorization_codes`、`oauth_refresh_tokens`（`data: 外部助手连接与 OAuth`）。
 - 扩展：
-  - `creative_document_revisions.actor_kind` 增加 `external_agent`，新增 `external_connection_id`（`data: MODIFY 通用文档`，C2）。
+  - `creative_document_revisions.actor_kind` 增加 `external_agent`，新增 `external_connection_id`（`data: MODIFY 通用文档`，C3：外部助手第一次写文档是在 C3 的场景工具里，与修订历史的署名一起交付）。
   - `creative_scene_jobs` 新增 `external_connection_id`，`run_id` 与它最多二选一（`data: MODIFY 场景客户端任务`，C3）。
   - `creative_agent_library_calls` 的 `run_id`、`conversation_id` 改为可空，新增 `external_connection_id`，CHECK 二者择一（C2，表不在项目契约中，在 C2 design 写迁移）。
   - `creative_node_executions.caller_kind` 增加 `external_agent`，`caller_agent_run_id` 旁新增 `caller_external_connection_id`（C2，同上）。

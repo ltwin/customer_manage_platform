@@ -1,0 +1,15 @@
+{
+  "uid": "e4a12cf9-44a7-4263-a0c5-5526faa51082",
+  "revision": 1,
+  "id": "cg-composite",
+  "createdAt": "2026-11-02T03:04:09.184Z",
+  "updatedAt": "2026-11-02T03:04:09.285Z",
+  "state": "proposed",
+  "designBaselines": [],
+  "children": [],
+  "policy": "serial",
+  "verifications": [],
+  "resolutions": [],
+  "type": "epic",
+  "stage": "define"
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "uid": "c0837f6d-b43d-42aa-b67a-1345d32364f6",
+  "id": "cosplay-pipeline",
+  "title": "Cosplay 拍摄全流程",
+  "createdAt": "2026-10-29T07:45:47.709Z",
+  "updatedAt": "2026-10-29T07:45:47.709Z",
+  "revision": 0,
+  "milestones": [],
+  "history": [
+    {
+      "at": "2026-10-29T07:45:47.709Z",
+      "action": "create"
+    }
+  ]
+}

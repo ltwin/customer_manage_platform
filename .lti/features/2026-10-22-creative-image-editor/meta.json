@@ -1,0 +1,16 @@
+{
+  "uid": "ecd775a0-4409-41a0-b1ac-5b558a54c3bc",
+  "revision": 1,
+  "id": "creative-image-editor",
+  "title": "创意空间引入类 Photoshop 图像编辑器：图层系统、选区（含智能选区）、画笔（含 abr 导入与画笔资产库）、调色、变形、常见修图滤镜；调研开源方案与第三方 AI API",
+  "createdAt": "2026-10-22T11:29:51.363Z",
+  "updatedAt": "2026-10-22T12:05:47.649Z",
+  "state": "proposed",
+  "designBaselines": [],
+  "children": [],
+  "policy": "serial",
+  "verifications": [],
+  "resolutions": [],
+  "type": "epic",
+  "stage": "define"
+}

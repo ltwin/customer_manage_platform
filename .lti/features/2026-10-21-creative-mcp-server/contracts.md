@@ -165,7 +165,7 @@
 - **回填**：迁移为每份存量文档补一行修订（`actor_kind='system'`，`changed_units='{*}'`，标题和快照取当前值），并把文档头与这一行的 `unit_revs` 设为 `{"meta": revision}`。`internal.document` 再补 `body`，与 `meta` 相同。
 - **彻底删除**：删除会话指针、引用行、修订行和文档行。快照内容修订（`text`、`plan`、`scene` 等非媒体类型）不在现有媒体 GC 的回收范围内（`backend/internal/creativemedia/gc.go` 的 `unheldMediaRevision` 只处理 `image` / `video` / `audio`），首版保留为无入口数据，**不承诺物理回收**。被快照引用的媒体在失去全部持有方后，照常由媒体 GC 回收。
 - **回滚**：存在 `system` 以外写入者的修订行，或存在 `trashed_at` 时拒绝回滚，前向修复。
-- **外部助手扩展**（epic `creative-mcp-server` C2）：迁移只放宽 `actor_kind` 的 CHECK、新增可空列和索引，存量行不变；回滚时存在 `external_agent` 修订行则拒绝回滚，前向修复。
+- **外部助手扩展**（epic `creative-mcp-server` C3）：迁移只放宽 `actor_kind` 的 CHECK、新增可空列和索引，存量行不变；回滚时存在 `external_agent` 修订行则拒绝回滚，前向修复。
 - **GC**：`LiveOwnerCondition` 增加修订表的 `content_revision_id` 和引用表两行，只扩大持有范围。
 
 
@@ -602,7 +602,7 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/revisi
 
 ### 交互规则
 - **副作用**：与内置同名工具相同；按工具已有的原子性规则，不因外部路径改变。
-- **重复调用**：见 `api: MCP 端点`；`generate_node` 依靠 `draft_revision` 拦截重复生成同一版提示词。
+- **重复调用**：见 `api: MCP 端点`。`generate_node` 在节点上还有进行中的生成、或提示词版本已变时拒绝；前一次完成后用同一 `draft_revision` 再调用，等于再生成一次并照常扣费（与摄影师再点一次「生成」相同），所以工具说明要求没有收到结果时先读画布、不要直接重发。
 - **异步**：句柄的生命周期就是领域对象的生命周期（生成执行、场景任务），不另存句柄表；连接断开后它的句柄查询返回 401（连接级）。
 
 ### 调用示例
