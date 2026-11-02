@@ -177,9 +177,10 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `objects[].order` | integer ≥ 0 | 是 | 同一父对象下的兄弟顺序，兄弟之间不重复 |
 | `objects[].transform` | `{position:[3], rotation:[4]（单位四元数 x,y,z,w）, scale:[3]（每项 0.001…1000）}` | 是 | 数值有限；位置每轴 ±100000 m |
 | `objects[].visible` / `locked` | boolean | 是 | `true` / `false` |
-| `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
+| `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}, faces?}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
+| `objects[].primitive.faces` | object，结构同 `data: 模型内容` 的 `model.faces` | 否 | 面级材质分配（C5b，修订 v13）。基础体不在物件间共用，分配直接记在物件内容上，改它只涉及 `object:<id>:content`，不产生模型修订。基础体只有一个网格，`meshes[]` 至多一项，`path` 固定为 `[["", 0]]`、`primitive` 为 0；区间 ≤ 256 个。保留还是作废只按 `data: 场景内置基础体` 的 `topology` 声明判断（编辑器与服务端同一规则），改了声明里的参数即清空，见 `api: 提交场景命令`；指纹只用于加载时兜底核对 |
 | `objects[].model` | `{content_revision_id}` | `kind=model_instance` 时 | 必须是本账号 `model` 类型、`ready` 且可展示的内容修订 |
-| `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean |
+| `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
 | `objects[].light` | 按 `type` 区分，字段与 three.js 灯光类同名同义，见下方「灯光」 | `kind=light` 时 | 只有 `type` 必填，其余缺省取 three.js 默认值，存储时补齐 |
 | `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near>0, far>near（米，同 three.js `PerspectiveCamera`）, label≤40, depth_of_field:bool, f_stop:0.5…64, focus>0（米，同 three.js `PerspectiveCamera.focus`）, focus_object_id:物件 ID 或 ""}` | `kind=camera` 时 | 各字段可省略，缺省 `{35,[36,24],"3:2",0.1,1000,"",false,2.8,10,""}`，存储时补齐；景深四个字段为修订 v8 新增，旧快照在读取时补齐。朝局部 −Z 看（three.js 摄像机约定）；视场角按画面长边对应传感器长边算出：`tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)`，`fov` 为 three.js 的垂直视场角（修订 v8），不写 three.js 的 `fov`。`focus_object_id` 非空时按该物件原点沿视线方向的深度对焦：写入时必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己；之后目标被删除不算违反契约，按 `focus` 对焦。写空字符串取消对焦物件（按键合并下 `null` 等于没写）。`depth_of_field = true` 时，白模导出按光圈和对焦虚化（design「渲染模式与导出」） |
 | 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
@@ -214,6 +215,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 修订 v8（C4 起草时）：摄像机视场角改为画面长边对应传感器长边（原为固定按 `sensor_mm[1]` 算垂直视场角，竖幅画面比同焦距的全画幅相机窄约 1.5 倍）。只改渲染端的换算，字段外形和存储不变，不迁移；默认传感器下 3:2 横幅的画面不变，助手已建的非 3:2 摄像机和 `render_view` 临时视点的取景随之改变。
 - 修订 v8（C4 起草时）：摄像机新增 `depth_of_field`、`f_stop`、`focus`、`focus_object_id`。不迁移：读取时补齐默认值（服务端解码时补齐，读取场景的响应里也带齐），之后的写入按完整字段存储。「空物体」是没有子物件的 `group`，不新增 `kind`。
 - 修订 v10（C5 起草时）：`render` 新增 `exposure_ev`。灯光按 three.js 的物理单位（坎德拉），室外有太阳和只有几盏灯的室内亮度差几个数量级，固定曝光无法同时照顾两者，所以由场景自己定曝光，与摄影里按场景定曝光一致；用「档」而不是倍数，与相机的曝光补偿、Blender 色彩管理的曝光相同。不迁移：读取时补 0，读取场景的响应里也带齐。
+- 修订 v13（C5b 起草时）：基础体的 `primitive` 新增可选的 `faces`。不迁移：没有这个字段就是没有面分配。回滚到不认识它的后端会读取失败，只做前向修复。
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 
 ## 场景内置基础体
@@ -226,17 +228,18 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 ### 结构与身份
 - 每项的身份是 `<name>@<version>`。版本一经发布，参数和几何语义就不再改变；需要改动时发布新版本（如 `box@2`），旧版本继续可读、可渲染。
 - 每项字段：`builtin`、`label`、`mount`（`floor` / `wall` / `ceiling` / `free`）、`params`。`params` 的格式同 `patterns: 几何模块契约` 的参数定义：`number` 必带 `default`、`min`、`max`，可带 `step`、`unit`；`integer` 同 `number`；还有 `boolean`、`enum`、`color`；每项可带 `label`。
+- `topology`（修订 v13，C5b）：会改变网格结构（三角形的数量或顺序）的参数。写法为参数名列表，数值参数可写成 `{"param": "<name>", "zero_split": true}`，表示只有在 0 与非 0 之间切换才改变结构。它是基础体面分配保留与否的唯一依据：编辑器和服务端都只按它判断（`api: 提交场景命令`），不各自比指纹。声明可以保守（列出的参数改了未必真改变结构），不能遗漏：前端测试对每个基础体，在列表以外的每个参数的最小值、默认值、最大值及若干随机值上，断言拓扑指纹（`data: 模型内容`）不变。
 - 首批清单（单位为米，Y 轴向上，正面朝 +Z）：
 
-| builtin | mount | 参数（默认值，范围） |
-|---|---|---|
-| `ground@1` | floor | `size`（40，1…1000） |
-| `box@1` | floor | `width`、`height`、`depth`（各 1，0.01…1000） |
-| `cylinder@1` | floor | `radius_top`（0.5，0…500）、`radius_bottom`（0.5，0.001…500）、`height`（1，0.01…1000）、`radial_segments`（integer 32，3…128） |
-| `sphere@1` | floor | `radius`（0.5，0.01…500）、`segments`（integer 32，8…128） |
-| `plane@1` | wall | `width`、`height`（各 2，0.01…1000） |
-| `stairs@1` | floor | `width`（1.2，0.1…100）、`step_count`（integer 8，1…100）、`step_height`（0.18，0.01…2）、`step_depth`（0.28，0.01…5） |
-| `arch@1` | floor | `width`（2，0.2…100）、`height`（3，0.2…100）、`depth`（0.5，0.05…20）、`opening_width`（1.2，0.1…100）、`opening_height`（2.2，0.1…100） |
+| builtin | mount | 参数（默认值，范围） | `topology`（修订 v13） |
+|---|---|---|---|
+| `ground@1` | floor | `size`（40，1…1000） | — |
+| `box@1` | floor | `width`、`height`、`depth`（各 1，0.01…1000） | — |
+| `cylinder@1` | floor | `radius_top`（0.5，0…500）、`radius_bottom`（0.5，0.001…500）、`height`（1，0.01…1000）、`radial_segments`（integer 32，3…128） | `radial_segments`；`radius_top` 在 0 与非 0 之间切换（为 0 时没有顶盖） |
+| `sphere@1` | floor | `radius`（0.5，0.01…500）、`segments`（integer 32，8…128） | `segments` |
+| `plane@1` | wall | `width`、`height`（各 2，0.01…1000） | — |
+| `stairs@1` | floor | `width`（1.2，0.1…100）、`step_count`（integer 8，1…100）、`step_height`（0.18，0.01…2）、`step_depth`（0.28，0.01…5） | `step_count` |
+| `arch@1` | floor | `width`（2，0.2…100）、`height`（3，0.2…100）、`depth`（0.5，0.05…20）、`opening_width`（1.2，0.1…100）、`opening_height`（2.2，0.1…100） | `width`、`height`、`opening_width`、`opening_height`（轮廓的三角剖分随这些尺寸变化；`depth` 只是挤出长度，不影响） |
 
 ### 访问模式与保证
 - **服务端校验**：`builtin` 必须在清单中；`params` 的键必须属于该项，类型和单项范围必须符合；缺省的键在写入时补成默认值，所以快照里的参数总是完整的。跨参数约束（如门洞开口不超过外框）不由服务端校验，由几何代码收缩处理。
@@ -245,6 +248,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 ### 生命周期与演进
 - 新增基础体或新版本只改这份 JSON 和前端几何代码，不需要迁移。
 - 删除或修改已发布版本属于破坏性变更，不允许。
+- 修订 v13：每项新增 `topology`。只改 JSON 与前端测试，不需要迁移；新增基础体或新版本时必须同时声明。
 
 ## 模型内容
 
@@ -257,8 +261,8 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - 上传走 `creative_uploads`，`declared_kind` 加 `model`，校验格式加 `model/gltf-binary`（`.glb`），上限 16 MiB，只允许暂存目标。
   - **两种形态**：
     - 暂存形态：worker 校验 GLB 通过后写入，载荷只有 `{format, manifest}`，manifest 由服务端从 GLB 算出；由暂存候选持有，只供 `commit_model` 消费，不能被场景引用，也不能被采用到资产或画布节点。候选被消费后（`adopted_target_kind = 'document'`）失去持有方，按 GC 回收。
-    - 完整形态：`commit_model` 写入，载荷为下表结构；GLB 与缩略图对象复用暂存修订的 blob，不复制字节。
-  - **写入口**：`model` 不能经通用写入口（`creativecontent.Validate` / `WriteAndRetain`）写入，资产、画布 `replace_content`、生成输出都写不进来。暂存形态只由 `WriteMediaAndRetain`（worker）写，完整形态只由 `WriteModelAndRetain`（`commit_model`）写。
+    - 完整形态：`commit_model` 写入，载荷为下表结构；GLB 与缩略图对象复用暂存修订的 blob，不复制字节。`derive_model`（修订 v13）也写完整形态：载荷来自来源修订，只换 `faces`，GLB 与缩略图复用来源修订的 blob。
+  - **写入口**：`model` 不能经通用写入口（`creativecontent.Validate` / `WriteAndRetain`）写入，资产、画布 `replace_content`、生成输出都写不进来。暂存形态只由 `WriteMediaAndRetain`（worker）写，完整形态只由 `WriteModelAndRetain`（`commit_model`、`derive_model`）写。
 - **角色**：权威主数据，内容修订不可变。
 - **所有权**：由 `creativescene` 的 `commit_model` 写入（消费暂存上传）；`creativelibrary` 存入资产库时只引用同一修订，不复制字节（复制语义由「不可变 + 编辑时分叉」实现，见 I4、I7）。
 
@@ -277,6 +281,46 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `model.generator.mount` | `floor`/`wall`/`ceiling`/`free` | 是 | — |
 | `model.manifest` | 见几何模块契约「产物」 | 是 | `triangles` ≤ 300000；`slots` ≤ 32；`parts` ≤ 200 |
 | `model.name_hint` | string ≤ 80 | 否 | 助手或摄影师起的名字 |
+| `model.faces` | object | 否 | 面级材质分配（C5b，修订 v13），见下方「面级材质分配」；缺省表示没有 |
+
+**面级材质分配**（修订 v13，owner 2026-10-28）：
+
+- **含义**：把模型的一部分三角形分到别的槽位。与 Blender 相同，「一个面属于哪个槽位」是网格数据，记在模型修订上；「槽位用什么材质」仍记在实例的 `material_slots`。GLB 不改写：渲染端加载 GLB 后按这份分配把三角形拆到对应槽位，所有带材质的渲染入口（编辑器的材质预览与最终渲染、`render_view` 的 `lit`、`lit` 导出、资产库的材质缩略图与查看浮窗）经同一套套用逻辑。白模、线稿和线框不区分槽位，不受影响；模型修订自己的白模缩略图因此可以复用。
+- **结构**：
+
+```json
+{"meshes": [{"path": [["part:capital", 0], ["", 2]], "primitive": 0, "topology": "t1-9f86d081884c7d65",
+             "assign": {"brick": [[0, 12], [40, 44]], "stone": [[12, 16]]}}],
+ "hints": {"brick": "brick"}}
+```
+
+| 路径 | 类型 | 约束 |
+|---|---|---|
+| `meshes[].path` | `[[name, n], …]`，1–64 段 | 网格身份：从场景根节点到网格所在节点的路径。每段为节点名（GLB JSON 原文，可以为空串，≤ 64 字符）和它在同级节点里同名者中的序号（从 0 开始，按 `children` / `scene.nodes` 的顺序）。只与树结构和名字有关，树的其他地方增删节点不影响它。同一 `path` + `primitive` 只出现一次 |
+| `meshes[].primitive` | integer 0…255 | 节点所引用网格里的 primitive 下标 |
+| `meshes[].topology` | string，`^t1-[0-9a-f]{16}$` | 写入时这个网格的拓扑指纹，见下 |
+| `meshes[].assign` | `{<slot_id>: [[start, end], …]}`，至少一项 | 三角形区间，左闭右开，按这个 primitive 自己的三角形顺序；每个槽位的区间升序，同一网格内所有区间互不重叠；`end > start`。没被分配的三角形留在 GLB 原来的槽位。`slot_id` 规则同 GLB 材质名 `slot:<id>`（`^[A-Za-z0-9_-]{1,64}$`），可以是 GLB 已有的槽位 |
+| `hints` | `{<slot_id>: string ≤ 40}` | 可选；面分配新建的槽位的语义提示，作用同材质的 `extras.hint` |
+
+- **拓扑指纹 `t1`**：描述三角形怎样连接，不含坐标，所以只改尺寸的重新生成通常保持不变。先得到每个三角形角点的「连接编号」：有索引的网格直接用索引；没有索引的网格按位置焊接，坐标完全相等（float32 逐位相等）的顶点取同一编号，编号按首次出现的顺序分配。再对 `[顶点数, 三角形数, 连接编号序列]`（uint32 小端）算 SHA-256，取前 16 位十六进制。在变换烘进几何、镜像翻转三角形之前计算。连接方式变化、一块连通网格里的三角形重排会改变指纹；坐标变化不会。互不相连的几块交换顺序时指纹可能不变：相同的部件对调后索引相同，没有索引时分开的三角形对调后编号相同（修订 v14），重新生成时按下表处理。
+- **有效槽位**：manifest 的 `slots` 加上 `faces` 里出现的槽位，后者的提示取 `hints`，没有则为空；合计 ≤ 32 个。场景物件的 `material_slots`、资产库的 `materials`、编辑器材质面板和助手看到的槽位都按有效槽位。某个槽位的三角形被全部分走后，它仍是有效槽位。
+- **上限**：区间合计 ≤ 8192，`meshes` ≤ 2000，`faces` 序列化后 ≤ 128 KiB。超出时拒绝，提示在模型代码里用 `lib.material` 划分槽位。
+- **校验分工**：服务端只校验外形和上限，不读 GLB。路径是否存在、区间是否落在网格内、指纹是否相符，由渲染端在加载时核对：不符的网格不套用分配，按 GLB 原来的槽位显示，编辑器在这个物件上提示。分配只影响本账号这个模型的外观，不涉及安全。
+- **重新生成时**（改参数、改代码、助手 `write_model`）：执行烘焙的渲染端按新 GLB 逐项判断，结果随 `commit_model` 的 `faces` 写入（owner 2026-10-28：按网格保留，不按位置迁移）：
+
+  | 新 GLB 里的情况 | 结果 |
+  |---|---|
+  | 没有这个 `path` + `primitive`，或指纹不同 | 作废 |
+  | 存在且指纹相同，同级没有同名、同 primitive 下标、同指纹的网格 | 保留 |
+  | 存在且指纹相同，但同级有同名、同指纹的网格（例如阵列出来的一排未命名柱子），代码与 `lib_version` 未变、只改了参数 | 保留：代码相同时生成顺序只由参数决定，参数改变节点顺序的写法罕见，owner 2026-10-28 接受这一残余风险 |
+  | 同上，但代码或 `lib_version` 变了 | 作废，提示「代码改动后无法确认对应关系」：交换两个相同网格的创建顺序这类改动无法从 GLB 里分辨 |
+  | 存在且指纹相同，但网格按位置焊接（坐标完全相等）后分成互不相连的几块，代码或 `lib_version` 变了 | 作废，同上提示：几块相同的部件对调后指纹不变，分配会落到另一块上（修订 v14）。只改了参数时保留，残余风险同上 |
+  | 按上面各行保留的分配，加上新 GLB 自己的槽位，有效槽位会超过 32 个 | 按条目顺序累计，使合计超过 32 的那条作废（修订 v14）；否则 `commit_model` 会因有效槽位超限被拒 |
+
+  带过来的 `hints` 只保留仍被用到的槽位（修订 v14）。残余风险：一块连通网格里，局部结构相同的两段顶点和索引整段对调，指纹不变，仍认不出（owner 2026-10-29 接受）。
+
+  作废的部分在编辑器里提示；助手从 `write_model` 的工具结果得知（工具层比较新旧修订的分配）。系统说明提示助手：要让面分配跨代码修改保留，给相关物件起 `part:<id>` 这类唯一的名字。
+- **写入口**：`commit_model` 的 `faces`（重新生成时带过来），`derive_model`（只改分配，复用 GLB），见 `api: 场景模型命令`。库副本照抄来源修订的 `faces`（`data: 模型资产`）。
 
 ### 访问模式与保证
 - **接受的 GLB 子集**（worker 的 verify 阶段用 Go 实现，编辑器宿主用同一算法预检；不执行代码，文件里的任何声明都不直接采信；不在子集内的一律拒绝）：
@@ -295,6 +339,8 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 ### 生命周期与演进
 - 持有方：场景修订引用表、资产、画布节点（后续若有）。三者均登记进 `creativereference.LiveOwnerCondition` 和守卫测试。没有持有方的修订按媒体 GC 规则回收。媒体 GC 的类型范围（`creativemedia/gc.go` 的 `unheldMediaRevision`）目前只含 image / video / audio，C2 必须把 `model` 加进去并登记守卫测试；上线时先升级 creative-worker，再开放模型写入。
 - 外部 GLB 导入（下一版）会加 `generator.language = "imported"`，且没有 `code`。本版读取端遇到未知 `language` 时只能显示，不能调参数。
+- 修订 v13（C5b）：新增可选的 `model.faces`，新增写入口 `derive_model`。不迁移，没有这个字段就是没有面分配。OpenAPI 的 `CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `faces`。回滚只做前向修复。
+- 修订 v14（C5b 验收）：「重新生成时」补两种作废情况和 `hints` 的保留规则，改正 `t1` 关于重排的说明。只改渲染端的带入规则，数据外形不变，不迁移。
 
 ## 场景客户端任务
 
@@ -374,15 +420,15 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **存储**：
   - `creative_assets.kind` 的 CHECK 加 `model`。资产库现有能力（分组、标签、评分、回收站、筛选）对 `model` 一视同仁；按画面的筛选（主色、画幅）只作用于图片，模型自然不命中。
   - **库副本**（修订 v12）：存入时新建一个模型内容，写一个完整形态的修订，资产引用它。它是场景里那个模型修订的复制品：
-    - 载荷：`format`、`generator`（含代码）、`manifest`、`name_hint` 与来源修订相同，另加两个字段：
+    - 载荷：`format`、`generator`（含代码）、`manifest`、`faces`（修订 v13）、`name_hint` 与来源修订相同，另加两个字段：
 
       | 路径 | 类型 | 必须 | 约束 |
       |---|---|---|---|
-      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params}}`），只保留 manifest 里存在的槽位，可以是空对象 |
+      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params}}`），只保留有效槽位（manifest 的槽位加面级分配的槽位，修订 v13），可以是空对象 |
       | `model.source_revision_id` | string | 库副本必有 | 复制自哪个模型修订。来源本身是库副本时取它的 `source_revision_id`，所以总指向场景里烘焙出的修订 |
 
       场景命令写出的修订没有这两个字段；有 `source_revision_id` 就是库副本。
-    - 对象：`original` 复用来源修订的 GLB blob，不复制字节；`thumbnail` 是存入时上传的 PNG，按所配材质渲染（未分配的槽位按 C5 的规则取提示或默认材质）。
+    - 对象：`original` 复用来源修订的 GLB blob，不复制字节；`thumbnail` 是存入时上传的 PNG，按所配材质和面级分配渲染（未分配的槽位按 C5 的规则取提示或默认材质）。
     - 写入口：只由「模型存入资产库」写入；`commit_model` 的操作结构里没有这两个字段，场景命令写不出库副本。约束由应用保证。
     - 修订 v12 之前直接引用场景修订的模型资产只存在于开发环境，照常可读，视为没有材质分配，不迁移。
 - **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
@@ -391,7 +437,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **读取**（修订 v11）：
   - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
   - 助手（修订 v11）：
-    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
     - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
     - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
     - 模型信息按 `media_metadata` 外发，与资产库元数据相同。

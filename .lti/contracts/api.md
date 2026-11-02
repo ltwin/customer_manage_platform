@@ -488,6 +488,7 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
 | `models.*.manifest` | object | 是 | 是 | 见几何模块契约「产物」；取服务端从 GLB 算出的值 |
 | `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, code_sha256, params_schema, params, mount}`，**不含代码** |
 | `models.*.name_hint` | string | 是 | 是 | 模型名称提示 |
+| `models.*.faces` | object | 是 | 是 | 面级材质分配（修订 v13），结构见 `data: 模型内容`；没有时为 null。编辑器加载 GLB 后按它拆分槽位 |
 
 - **GLB 与缩略图**：响应不含地址。编辑器按模型修订调用现有的 `POST /creative/media-access-tickets`（`content_revision_id`，`role` 为 `original` 取 GLB、`thumbnail` 取缩略图，`purpose` 为 `display`），按修订缓存，与画布图片的做法一致。
 - **代码**：通过 `GET /creative/content-revisions/{content_revision_id}` 单独读取（载荷的 `model.generator.code`），避免每次重读快照都传几十 KB 代码。
@@ -564,6 +565,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ### 兼容与变更
 - 在通用读取接口上新增 `scene` 分支，其他类型不受影响。
 - C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
+- 修订 v13（C5b）：模型摘要增加 `faces`，基础体的 `primitive.faces` 随快照返回。只增加字段，旧客户端忽略。
 
 ## 提交场景命令
 
@@ -587,7 +589,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 |---|---|---|
 | `rename` | `title`（1–200） | `meta` |
 | `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`/`volume`；`primitive.params` 缺省的键补成默认值；`light`、`camera`、`volume` 缺省的字段补成数据契约里的默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
-| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera`/`volume` 中任选，至少一项（省略即不改；`primitive.params`、`light`、`camera`、`volume` 按键合并，`light.type` 改变时去掉新类型没有的字段、缺少的补默认值；`material_slots` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
+| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`primitive.faces`/`material_slots`/`light`/`camera`/`volume` 中任选，至少一项（省略即不改；`primitive.params`、`light`、`camera`、`volume` 按键合并，`light.type` 改变时去掉新类型没有的字段、缺少的补默认值；`material_slots` 与 `primitive.faces` 整体替换，`primitive.faces` 写 `null` 清空（修订 v13）；字段必须与对象的 `kind` 相符）；同一物件只能出现一次。改了 `primitive.params` 中属于该基础体 `topology` 的参数（`data: 场景内置基础体`）而本项没有写 `primitive.faces` 时，服务端清空这个物件的面分配（修订 v13）：编辑器按同一份声明判断，改了声明里的参数就随同一项写 `primitive.faces: null` 并提示；助手的 `edit_scene` 在工具结果里说明哪些物件的面分配被清空 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
 | `remove_objects` | `object_ids`（1–2000；分组连同后代一起删除） | `objects`，以及每个被删对象的 `object:<id>` 和 `object:<id>:content` |
 | `reparent_objects` | `moves`（1–2000 项 `{object_id, parent_id（null 为根）, order, transform?}`）；可选 `create_groups`（1–2000 个新分组，外形同 `add_objects` 里 `kind=group` 的对象）和 `remove_groups`（1–2000 个分组 ID）。按顺序执行：先建 `create_groups`；再按 `moves` 改挂，`parent_id` 可以是本次新建的分组，带 `transform` 时同时替换该物件的局部变换（调用方据此保持世界位置，服务端照写）；最后删除 `remove_groups`，删除时它们必须没有子物件。同一物件在三处合计只能出现一次（修订 v10） | `objects`（一次）；带 `transform` 的移动另涉及 `object:<id>`；新建的分组的两个单元以 N+1 出现在 `changed_units` 中；删除的分组涉及 `object:<id>` 和 `object:<id>:content` |
 | `set_environment` | `environment`（整体替换） | `environment` |
@@ -605,7 +607,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots` 等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元 | 修正，不可原样重试 |
+| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元 | 修正，不可原样重试 |
 | 404 | `not_found` | 场景不存在或不属于当前账号 | 关闭编辑视图 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符。`details.conflicts` 为数组：`[{unit, expected_rev, current_rev}]` | 重读，按冲突界面处理后再提交 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
@@ -674,7 +676,9 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
+在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。
+
+修订 v13（C5b）：`add_objects`、`update_objects` 接受 `primitive.faces`（整体替换），改了基础体的拓扑参数而没写 `faces` 时清空分配。旧客户端不写这个字段；它们改拓扑参数时分配被清空，与新编辑器按同一份声明判断的结果相同。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
 
 `scene-world-environment` W5：`add_objects`、`update_objects` 放开 `kind = volume` 和它的内容字段 `volume`（见 `data: 体积物件`），`volume` 与 `light`、`camera` 一样按键合并，属于兼容扩展；旧客户端不会写出体积物件。物理天空、夜空、空气透视和摄像机曝光的新字段走已有的 `set_environment`（整体替换）、`update_objects` 的 `camera`（按键合并）和 `set_render`（按键合并，默认曝光值），本接口的外形不变，只是按数据契约校验新字段。
 
@@ -688,13 +692,14 @@ Content-Type: application/json
 ## 场景模型命令
 
 ### 用途与调用
-- **用途**：把烘焙好的模型提交为 `model` 内容，并在场景中新增实例或替换实例的模型。
+- **用途**：把烘焙好的模型提交为 `model` 内容，并在场景中新增实例或替换实例的模型；只改模型的面级材质分配时，不重新烘焙，复用原来的 GLB 出新修订（修订 v13）。
 - **消费者**：编辑器代码面板（C2）；客户端任务完成时由服务端内部调用（C3，经领域层）。
 - **调用**：同 `api: 提交场景命令` 的端点与外层，增加以下操作：
 
 | op | 字段 | 涉及单元 |
 |---|---|---|
-| `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容） | 无场景单元（不改快照） |
+| `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容）、`faces`（可选，修订 v13：重新生成时由渲染端带过来的面级材质分配，结构见 `data: 模型内容`） | 无场景单元（不改快照） |
+| `derive_model`（修订 v13） | `ref`（同 `commit_model`）、`from_revision_id`（本账号完整形态的 `model` 修订，可以是库副本）、`faces`（新修订的完整分配；`null` 表示清空）、`base_content_id`（可选，规则同 `commit_model`） | 无场景单元（不改快照）。新修订的 `generator`、`manifest`、`name_hint` 取自来源修订，GLB 与缩略图复用来源修订的 blob，不上传、不编译；库副本的 `materials`、`source_revision_id` 不带过来。C8 的参考点也计划经这个操作写入 |
 | `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
 | `set_instance_model` | `object_id`、`model`（`{content_revision_id}` 或 `{ref}`）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
 
@@ -703,15 +708,16 @@ Content-Type: application/json
   - 资产持有的旧修订不受影响，因为资产引用的是修订而不是内容的最新版。
   - 编辑器和助手在 `scope = "this"` 且共享时，应传入不带 `base_content_id` 的 `commit_model`，即新建内容（分叉）。
 - **持有方交接**：`commit_model` 在场景类型的 `Apply` 中新建模型内容，使用底座传入的 `Retain` 回调预登记引用（底座 `patterns: 文档类型端口`）。
-- **校验**：暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` 必须出现在引用它的操作之前。消费后两个暂存候选标为已被文档采用。
+- **校验**：暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` / `derive_model` 必须出现在引用它的操作之前，两者的 `ref` 在同一批内不重复。消费后两个暂存候选标为已被文档采用。
+- **面级材质分配**（修订 v13）：`faces` 按 `data: 模型内容` 校验外形、上限和有效槽位数，不读 GLB。`derive_model` 与 `commit_model` 一样按 I4 分叉：编辑器和助手在共享且 `scope = "this"` 时不传 `base_content_id`。`derive_model` 与 `set_instance_model` 放在同一批，摄影师的一次「指定」只产生一条场景修订，撤销沿用内容单元的规则。
 - **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。
 - **失败响应**（在基础接口之上增加）：
 
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
 | 409 | `creative_upload_unavailable` | 暂存上传不存在、属于其他账号、已过期、已消费或尚未就绪 | 重新上传 |
-| 400 | `validation_failed` | manifest 与 GLB 不符、哈希不符、参数越界、上传类型不符、`ref` 未定义 / 重复 / 未被本批引用、单批 `commit_model` 超过 16 个 | 修正 |
-| 400 | `creative_model_unavailable` | `content_revision_id` 不存在、不是完整形态的 `model` 或不可展示 | 重读后重新选择 |
+| 400 | `validation_failed` | manifest 与 GLB 不符、哈希不符、参数越界、上传类型不符、`ref` 未定义 / 重复 / 未被本批引用、单批 `commit_model` 与 `derive_model` 合计超过 16 个、`faces` 外形不对或超出上限（修订 v13） | 修正 |
+| 400 | `creative_model_unavailable` | `content_revision_id` 或 `derive_model` 的 `from_revision_id`（修订 v13）不存在、不是完整形态的 `model` 或不可展示 | 重读后重新选择 |
 
 不使用 404 和 `creative_state_conflict`：编辑器把命令返回的 404 当作文档不存在、把 `creative_state_conflict` 当作文档进了回收站。
 
@@ -745,7 +751,28 @@ Content-Type: application/json
  "annotated_units": [], "removed_units": [], "reset_required": false,
  "models": {"pillar": {"content_id": "ccnt_51c0", "content_revision_id": "ccrev_9e2a"}}}
 ```
-- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。
+- **只改面分配的示例**（修订 v13；摄影师把柱子的一部分面指定到新槽位 `brick`，柱子与其他实例共用模型，所以不传 `base_content_id`，分叉出新内容）：
+```json
+{
+  "operation_id": "3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a6b",
+  "client_created_at": "2026-10-28T09:12:00Z",
+  "payload": {
+    "expected": {"object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content": "6"},
+    "operations": [
+      {"op": "derive_model", "ref": "pillar_faces", "from_revision_id": "ccrev_9e2a",
+       "faces": {"meshes": [{"path": [["part:shaft", 0]], "primitive": 0, "topology": "t1-9f86d081884c7d65", "assign": {"brick": [[0, 32]]}}],
+                 "hints": {"brick": "brick"}}},
+      {"op": "set_instance_model", "object_id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "model": {"ref": "pillar_faces"}, "scope": "this"}
+    ]
+  }
+}
+```
+```json
+{"revision": "9", "changed_units": ["object:sobj_Z1x2C3v4B5n6M7a8S9d0f:content"],
+ "annotated_units": [], "removed_units": [], "reset_required": false,
+ "models": {"pillar_faces": {"content_id": "ccnt_7d31", "content_revision_id": "ccrev_a0c4"}}}
+```
+- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。
 
 ## 认领场景客户端任务
 
@@ -849,7 +876,7 @@ Content-Type: application/json
 | `claim_token` | string | 是 | — |
 | `outcome` | `"succeeded"` \| `"failed"` | 是 | — |
 | `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`、`host_error`（宿主侧失败：媒体校验失败、WebGL 上下文丢失、代码加载失败等）；`message` ≤ 4000 字符，会原样交给助手 |
-| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest, module}`。`module` 为 `{params_schema, params, mount}`：沙箱回传、宿主按服务端规则校验过的规范化模块信息。服务端用任务 `request` 里的代码计算 `code_sha256`、组装 `generator`，按 `api: 场景模型命令` 的规则校验，再组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id`；替换目标的预期版本取任务 `request.expected` |
+| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest, module, faces}`。`faces` 是渲染端从替换前的修订按 `data: 模型内容`「重新生成时」带过来的面级分配，没有时省略，原样写入 `commit_model.faces`（修订 v13）。任务结果的外形不变：保留和作废了多少，由工具层比较新旧两个模型修订的分配得出。`module` 为 `{params_schema, params, mount}`：沙箱回传、宿主按服务端规则校验过的规范化模块信息。服务端用任务 `request` 里的代码计算 `code_sha256`、组装 `generator`，按 `api: 场景模型命令` 的规则校验，再组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id`；替换目标的预期版本取任务 `request.expected` |
 | `render` | object | `kind=render_view` 且成功时 | `{image_upload_id, scene_revision}`：暂存图片（JPEG，长边 1024），以及渲染端实际渲染的场景修订（不得大于当前修订） |
 | `export` | object | `kind=export_shots` 且成功时 | `{scene_revision, shots}`：渲染端实际渲染的场景修订，以及图片清单。`shots` 的结构与 `api: 导出分镜` 相同，必须正好覆盖任务 `request` 的摄像机和导出方式。服务端在保存点内按 `api: 导出分镜` 的规则放置节点（位置、标题、`based_on`），放到任务 `request` 的画布和场景节点旁，节点按 `request.camera_object_ids` 的顺序排行，写入者记为助手的 `run_id` |
 
@@ -907,7 +934,7 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义。修订 v6：`bake` 增加 `module`；`render` 增加 `scene_revision`；错误码增加 `host_error`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）；完成时复查关联运行。修订 v8（C4 起草时）：`export` 由 `{export_operation_id}` 改为 `{scene_revision, shots}`，导出节点在完成事务里创建，不再经 `api: 导出分镜`。C3 只做了占位（服务端对 `export` 结果直接拒绝，没有调用方），不需要兼容。
+首次定义。修订 v6：`bake` 增加 `module`；`render` 增加 `scene_revision`；错误码增加 `host_error`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）；完成时复查关联运行。修订 v8（C4 起草时）：`export` 由 `{export_operation_id}` 改为 `{scene_revision, shots}`，导出节点在完成事务里创建，不再经 `api: 导出分镜`。C3 只做了占位（服务端对 `export` 结果直接拒绝，没有调用方），不需要兼容。修订 v13（C5b）：`bake` 增加可选的 `faces`；旧渲染端烘焙时不带 `faces`，等于全部作废，服务端照常写入。
 
 ## 列出场景客户端任务
 

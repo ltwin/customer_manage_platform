@@ -1,6 +1,6 @@
 {
   "uid": "ef07da1d-1eed-4bb0-847f-73189d39e87e",
-  "revision": 7,
+  "revision": 8,
   "id": "scene-face-materials",
   "kind": "feature",
   "assurance": "governed",
@@ -48,9 +48,9 @@
       "api:完成场景客户端任务"
     ]
   },
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-10-28T13:54:10.701Z",
-  "updatedAt": "2026-11-02T02:13:29.430Z",
+  "updatedAt": "2026-11-02T02:17:05.711Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -194,6 +194,10 @@
     }
   ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-02T02:17:05.440Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "closed"
 }
