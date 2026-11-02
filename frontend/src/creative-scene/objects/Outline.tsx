@@ -31,8 +31,8 @@ function hullMaterial(thickness: { value: number }): MeshBasicNodeMaterial {
 
 const noRaycast = () => {}
 
-/** Outlines the mesh it is a child of; thickness in device pixels, as drei's. */
-export function Outline({ color, thickness = 3 }: { color: string; thickness?: number }) {
+/** Outlines the mesh it is a child of, or `geometry` when given; thickness in device pixels, as drei's. */
+export function Outline({ color, thickness = 3, geometry: whole }: { color: string; thickness?: number; geometry?: BufferGeometry }) {
   const [shell] = useState(() => {
     const t = uniform(thickness)
     const mesh = new Mesh(undefined, hullMaterial(t))
@@ -44,8 +44,7 @@ export function Outline({ color, thickness = 3 }: { color: string; thickness?: n
   const from = useRef<BufferGeometry | null>(null)
   // The parent's geometry can change under the same shell (a new primitive size).
   useLayoutEffect(() => {
-    const parent = shell.parent as Mesh | null
-    const geometry = parent?.geometry ?? null
+    const geometry = whole ?? (shell.parent as Mesh | null)?.geometry ?? null
     if (geometry && geometry !== from.current) {
       const previous = from.current && shell.geometry
       shell.geometry = shellOf(geometry)

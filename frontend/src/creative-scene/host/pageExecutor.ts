@@ -29,6 +29,11 @@ export function createPageExecutor(api: JobApi, deviceLost: () => void): PageRun
     discard: (upload) =>
       upload.publication?.kind === 'candidate' ? discardCandidate(upload.publication.id, upload.publication.revision) : Promise.resolve(),
     render: (documentID, request) => renderView(documentID, request),
+    replaced: async (documentID, objectID) => {
+      const doc = await readScene(documentID)
+      const revision = doc.scene.objects.find((o) => o.id === objectID)?.model?.content_revision_id
+      return (revision && doc.models[revision]) || null
+    },
     exportImages: (documentID, plan) =>
       renderShots({ read: readScene, loadModels: (doc) => loadModels(doc.scene, doc.models), open: (doc, look) => openShooter(doc.scene, doc.models, look) }, documentID, plan),
     deviceLost,

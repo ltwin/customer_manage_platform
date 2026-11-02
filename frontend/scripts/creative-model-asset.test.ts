@@ -34,6 +34,22 @@ test('model info formats size, mount, triangles, slots and parameters', () => {
   ])
 })
 
+test('face slots join the model\'s own, after them, with their hints', () => {
+  const info = modelInfo(
+    content({
+      format: 'glb',
+      manifest: { bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 152, slots: [{ id: 'stone', hint: 'stone' }], parts: [], anchors: [] },
+      materials: { face_1: { preset: 'paint@1', params: {} } },
+      faces: {
+        meshes: [{ path: [['', 0]], primitive: 0, topology: 't1-0', assign: { stone: [[0, 4]], face_1: [[4, 8]], face_2: [] } }],
+        hints: { face_1: 'wood' },
+      },
+      generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: 'sha256-' + 'a'.repeat(64), mount: 'floor', params_schema: {}, params: {} },
+    }),
+  )
+  assert.deepEqual(info?.slots, [{ id: 'stone', hint: 'stone' }, { id: 'face_1', hint: 'wood', material: '漆面' }])
+})
+
 test('only a complete model has info', () => {
   assert.equal(modelInfo(content({ format: 'glb', manifest: { bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 1, slots: [], parts: [], anchors: [] } })), null)
   assert.equal(modelInfo(undefined), null)

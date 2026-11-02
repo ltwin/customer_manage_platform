@@ -9,6 +9,7 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, sharpRange, verticalFov } from '../cameraOptics.ts'
 import { cameraFraming } from '../host/framing.ts'
 import type { SceneModel } from '../models/cache.ts'
+import { applyBuiltinFaces, type Faces } from '../models/faces.ts'
 import { cameraDefaults, lightDefaults, lightSize, volumeDefaults } from '../state/apply.ts'
 import { docToView, transformToView } from '../space.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
@@ -17,7 +18,7 @@ import { ModelMesh } from './ModelMesh.tsx'
 import { SceneLight, VolumesCastLight } from './SceneLights.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
 import { Volume } from './Volume.tsx'
-import { resolveSlot } from '../materials/resolve.ts'
+import { resolvePart, resolveSlot } from '../materials/resolve.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import { disposeEdges } from './wireframe.ts'
 import { WireMesh } from './WireMesh.tsx'
@@ -112,7 +113,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
       {o.kind === 'group' && (helpers && !tree.childrenOf.get(o.id)?.length ? <EmptyMarker edge={edge} /> : edge && <GroupMarker />)}
       <group visible={o.visible} quaternion={docToView}>
         {o.kind === 'primitive' && o.primitive && (
-          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
+          <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} faces={o.primitive.faces ?? null} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {o.kind === 'model_instance' && o.model?.content_revision_id && (
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
@@ -155,7 +156,9 @@ function PlaceholderBlock({ placeholder }: { placeholder: Placeholder }) {
 
 type Slots = NonNullable<SceneObject['material_slots']>
 
-function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string; params?: Record<string, unknown>; edge: string | null; wire: boolean; slots: Slots | null }) {
+const noHints: ReadonlyMap<string, string | undefined> = new Map()
+
+function PrimitiveMesh({ builtin, params, faces, edge, wire, slots }: { builtin: string; params?: Record<string, unknown>; faces: Faces | null; edge: string | null; wire: boolean; slots: Slots | null }) {
   const key = JSON.stringify(params ?? {})
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key stands for params
   const geometry = useMemo(() => primitiveGeometry(builtin, params), [builtin, key])
@@ -167,9 +170,32 @@ function PrimitiveMesh({ builtin, params, edge, wire, slots }: { builtin: string
     },
     [geometry],
   )
+  const facesKey = JSON.stringify(faces)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- facesKey stands for faces
+  const pieces = useMemo(() => (geometry ? applyBuiltinFaces(geometry, faces).pieces : null), [geometry, facesKey])
+  useEffect(
+    () => () => {
+      for (const p of pieces ?? []) {
+        disposeEdges(p.geometry)
+        p.geometry.dispose()
+      }
+    },
+    [pieces],
+  )
   if (!geometry) return null
   if (wire) return <WireMesh geometry={geometry} edge={edge} />
   const flat = builtin === 'ground@1' || builtin === 'plane@1'
+  // Split by its face assignment in the material looks, piece by piece as a
+  // model's slots are; outlined whole, so the assignment draws no edges.
+  if (slots && pieces)
+    return (
+      <group>
+        {pieces.map((p, i) => (
+          <SlotMesh key={i} geometry={p.geometry} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat} />
+        ))}
+        {edge && (flat ? <EdgeLines geometry={geometry} threshold={20} lineWidth={2} color={edge} /> : <Outline geometry={geometry} color={edge} />)}
+      </group>
+    )
   if (slots)
     return (
       <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} doubleSided={flat} castShadow={!flat}>

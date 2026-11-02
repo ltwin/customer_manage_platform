@@ -3252,6 +3252,7 @@ export interface components {
                 generator?: components["schemas"]["CreativeModelGeneratorInput"];
                 manifest: components["schemas"]["CreativeModelManifest"];
                 name_hint?: string;
+                faces?: components["schemas"]["CreativeModelFaces"];
                 materials?: components["schemas"]["CreativeSceneMaterialSlots"];
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
@@ -3267,9 +3268,29 @@ export interface components {
                 generator: components["schemas"]["CreativeModelGenerator"];
                 manifest: components["schemas"]["CreativeModelManifest"];
                 name_hint?: string;
+                faces?: components["schemas"]["CreativeModelFaces"];
                 materials?: components["schemas"]["CreativeSceneMaterialSlots"];
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
+            };
+        };
+        /** @description 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。 */
+        CreativeModelFaces: {
+            meshes: components["schemas"]["CreativeModelFaceMesh"][];
+            /** @description 面分配新建的槽位的语义提示，作用同材质的 extras.hint。 */
+            hints?: {
+                [key: string]: string;
+            };
+        };
+        CreativeModelFaceMesh: {
+            /** @description 网格身份：从场景根节点到网格所在节点的路径，每段为 [节点名（GLB JSON 原文，可为空串）, 同级同名节点中的序号]。 */
+            path: (string | number)[][];
+            primitive: number;
+            /** @description 写入时这个网格的拓扑指纹（只描述三角形的连接方式，不含坐标）。 */
+            topology: string;
+            /** @description 槽位 ID（同 GLB 材质名 slot:<id> 的 id）到三角形区间 [start, end) 的列表；区间按这个 primitive 自己的三角形顺序，升序且互不重叠。 */
+            assign: {
+                [key: string]: number[][];
             };
         };
         /** @description 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。 */
@@ -7235,6 +7256,8 @@ export interface components {
             manifest: components["schemas"]["CreativeModelManifest"] | null;
             generator: components["schemas"]["CreativeModelGenerator"] | null;
             name_hint: string | null;
+            /** @description 面级材质分配；没有时为 null。编辑器加载 GLB 后按它拆分槽位。 */
+            faces: components["schemas"]["CreativeModelFaces"] | null;
         };
         CreativeScene: {
             environment: components["schemas"]["CreativeSceneEnvironment"];
@@ -7426,6 +7449,8 @@ export interface components {
             /** @description 内置基础体，清单见 frontend/src/creative-scene/builtins.gen.json。 */
             builtin: string;
             params?: components["schemas"]["CreativeSceneParams"];
+            /** @description 基础体的面级材质分配（结构同模型的 faces）：只有一个网格，path 固定为 [["", 0]]、primitive 为 0，区间不超过 256 个。 改了基础体 topology 声明里的参数时清空。 */
+            faces?: components["schemas"]["CreativeModelFaces"];
         };
         /** @description 参数名 → 数值、文字或布尔值。新增时缺省的键补成默认值，读取到的参数总是完整的。 */
         CreativeSceneParams: {
@@ -7520,7 +7545,7 @@ export interface components {
             exposure_compensation?: number;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
-        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
+        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneDeriveModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
         /** @description 涉及 objects；新对象的两个单元出现在 changed_units 中。 */
         CreativeSceneAddObjects: {
             /**
@@ -7545,8 +7570,10 @@ export interface components {
             transform?: components["schemas"]["CreativeSceneTransform"];
             visible?: boolean;
             locked?: boolean;
+            /** @description params 按键合并；faces 整体替换，写 null 清空。改了 topology 声明里的参数而没写 faces 时，服务端清空这个基础体的面分配。至少写一项。 */
             primitive?: {
-                params: components["schemas"]["CreativeSceneParams"];
+                params?: components["schemas"]["CreativeSceneParams"];
+                faces?: components["schemas"]["CreativeModelFaces"] | null;
             };
             material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
             light?: components["schemas"]["CreativeSceneLightPatch"];
@@ -7597,7 +7624,7 @@ export interface components {
             op: "set_render";
             render: components["schemas"]["CreativeSceneRenderPatch"];
         };
-        /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
+        /** @description 消费两个就绪的暂存上传（GLB 与 PNG 缩略图），写入完整形态的模型内容；不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。一批 commit_model 与 derive_model 合计最多 16 个。manifest 须与服务端从 GLB 算出的一致。 */
         CreativeSceneCommitModel: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -7611,6 +7638,22 @@ export interface components {
             manifest: components["schemas"]["CreativeModelManifest"];
             name_hint?: string;
             /** @description 有则作为该模型内容的新修订，否则新建模型内容（分叉）。 */
+            base_content_id?: string;
+            faces?: components["schemas"]["CreativeModelFaces"];
+        };
+        /** @description 只改面级材质分配：以 from_revision_id 为来源写一个新的完整形态修订，generator、manifest、name_hint 取自来源， GLB 与缩略图复用来源的 blob，不上传、不编译；库副本的 materials 与 source_revision_id 不带过来。 不改场景单元，本批之后的操作用 ref 引用它（每个 ref 都必须被引用）。 */
+        CreativeSceneDeriveModel: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "derive_model";
+            ref: string;
+            /** @description 本账号完整形态的 model 修订，可以是库副本。 */
+            from_revision_id: string;
+            /** @description 新修订的完整分配；null 表示清空。 */
+            faces: components["schemas"]["CreativeModelFaces"] | null;
+            /** @description 规则同 commit_model：有则作为该模型内容的新修订，否则新建模型内容（分叉）；指向库副本的内容时总是新建。 */
             base_content_id?: string;
         };
         /** @description 只动内容单元 object:<id>:content。all_instances 时 object_ids 列出调用方看到的全部共用实例（含 object_id），每个都须在批前引用同一修订。 */
@@ -7703,6 +7746,8 @@ export interface components {
                 module: {
                     [key: string]: unknown;
                 };
+                /** @description 替换目标原修订的面级材质分配，由渲染端按身份与拓扑指纹带到新 GLB 上（data: 模型内容「重新生成时」）；没有时省略。 原样写入 commit_model.faces。任务结果的格式不变。 */
+                faces?: components["schemas"]["CreativeModelFaces"];
             };
             render?: {
                 image_upload_id: string;
@@ -7859,7 +7904,7 @@ export interface components {
             annotated_units: string[];
             removed_units: string[];
             reset_required: boolean;
-            /** @description 场景的 commit_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。 */
+            /** @description 场景的 commit_model 与 derive_model 才有：ref → 新写入的模型内容与修订。随幂等回执重放。 */
             models?: {
                 [key: string]: {
                     content_id: string;

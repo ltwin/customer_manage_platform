@@ -71,6 +71,8 @@ import { createRenderer, gpuOf, gpuTestHooks, lossCounter, type SceneGPU } from 
 import { guides as allGuides, type Guide } from './state/sceneStore.ts'
 import { cameraDefaults } from './state/apply.ts'
 import { SceneAreaLight } from './render/lightModel/lights.ts'
+import { FaceOverlay } from './faceEdit/FaceOverlay.tsx'
+import { boxTriangles, meshWorld, pickTriangle, type EditMesh } from './faceEdit/meshes.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -103,6 +105,8 @@ export type ViewportHandle = {
    * in document space; without a point, on the ground below the view's centre.
    */
   snapAt(at: { x: number; y: number } | undefined, model: { mount: Mount; bounds: Bounds }): Placed
+  /** In face edit, the triangle under the pointer (L picks its piece); null off the object or the viewport. */
+  faceUnderPointer(): { key: string; triangle: number } | null
 }
 
 /** A model dragged in from the asset drawer. */
@@ -135,7 +139,15 @@ export type ViewportProps = {
   libraryDrag?: DragModel | null
   /** It was let go over the viewport, placed where its ghost stood. */
   onDropModel?(placed: Placed): void
+  /** Face edit's meshes once loaded (faceEdit/useFaceMeshes.ts). */
+  faceMeshes?: readonly EditMesh[] | null
+  /** A click in face edit: the triangle under it, or nothing. */
+  onFacePick?(hit: { key: string; triangle: number } | null, shift: boolean): void
+  /** A box drag in face edit: the triangles it caught, by mesh (faceEdit/meshes.ts boxTriangles). */
+  onFaceBox?(caught: Record<string, number[]>, mode: 'set' | 'add' | 'subtract'): void
 }
+
+const noneSelected: ReadonlySet<string> = new Set()
 
 const { ACTION } = CameraControlsImpl
 /** The free view's field of view; the camera view widens it to frame a camera. */
@@ -154,6 +166,7 @@ export function Viewport(props: ViewportProps) {
   const tool = useStore(props.ui, (s) => s.tool)
   const ortho = useStore(props.ui, (s) => s.ortho)
   const modal = useStore(props.ui, (s) => s.modal)
+  const faceEdit = useStore(props.ui, (s) => s.faceEdit)
   const selected = useMemo(() => new Set(selection.selected), [selection.selected])
   const wrap = useRef<HTMLDivElement>(null)
   const r = box && wrap.current ? wrap.current.getBoundingClientRect() : null
@@ -190,7 +203,7 @@ export function Viewport(props: ViewportProps) {
   useEffect(() => {
     dragPointer.current = null
     setDragAt(null)
-    if (drag) void modelCache.load(drag.revision).catch(() => {})
+    if (drag) void modelCache.load(drag.revision, drag.summary.faces).catch(() => {})
   }, [drag])
   useEffect(() => () => {
     if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current)
@@ -265,14 +278,16 @@ export function Viewport(props: ViewportProps) {
         >
           <Lighting environment={props.scene.environment} display={display} engine={effectiveEngine(engineOf(props.scene.render), display, !ortho)} />
           <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
-          <SceneObjects scene={props.scene} models={props.models} selected={selected} active={selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
+          {/* Face edit draws its own lines and tint instead of the object's outline. */}
+          <SceneObjects scene={props.scene} models={props.models} selected={faceEdit ? noneSelected : selected} active={faceEdit ? null : selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
           {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
           {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
           <OrthoSwitch ortho={ortho} />
           <CameraControls makeDefault />
           <ViewKeeper initial={props.camera} onChange={props.onCamera} />
           <CameraViewRig scene={props.scene} ui={props.ui} />
-          {!props.readOnly && !modal && ['move', 'rotate', 'scale'].includes(tool) && (
+          {faceEdit && props.faceMeshes && <FaceOverlay objectID={faceEdit.objectID} meshes={props.faceMeshes} selected={faceEdit.selected} />}
+          {!props.readOnly && !modal && !faceEdit && ['move', 'rotate', 'scale'].includes(tool) && (
             <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
           )}
           <AxisGizmo />
@@ -488,6 +503,21 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       return null
     }
     const node = (id: string) => scene.getObjectByName(id) ?? null
+    /** The face-edit triangle under a point: the nearest hit over the object's meshes, other objects not in the way. */
+    const faceAt = (x: number, y: number): { key: string; triangle: number } | null => {
+      const p = latest.current
+      const edit = p.ui.getState().faceEdit
+      const n = edit && node(edit.objectID)
+      if (!n || !p.faceMeshes) return null
+      const world = meshWorld(n)
+      raycaster.setFromCamera(ndc(x, y), camera)
+      let best: { key: string; triangle: number; distance: number } | null = null
+      for (const m of p.faceMeshes) {
+        const hit = pickTriangle(raycaster, m, world)
+        if (hit && (!best || hit.distance < best.distance)) best = { key: m.key, ...hit }
+      }
+      return best && { key: best.key, triangle: best.triangle }
+    }
     const targetsOf = (ids: readonly string[]): Target[] => {
       scene.updateMatrixWorld(true)
       return ids
@@ -623,6 +653,11 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         return positionToDoc([t.x, t.y, 0])
       },
       pointer: () => ({ x: pointer.current.x, y: pointer.current.y }),
+      faceUnderPointer: () => {
+        const r = rect()
+        const { x, y } = pointer.current
+        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom ? faceAt(x, y) : null
+      },
       setView: (dir) => {
         if (!controls) return
         leaveCameraView()
@@ -723,7 +758,9 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       if (e.button === 0 && !e.altKey) {
         if (gizmo.current?.axis) return
         if (p.readOnly) return
-        down = { x: e.clientX, y: e.clientY, button: 0, shift: e.shiftKey, mod: p.mac ? e.metaKey : e.ctrlKey, objectID: objectAt(e.clientX, e.clientY), dragging: false }
+        // Face edit picks triangles on release; objects are not picked or dragged.
+        const objectID = p.ui.getState().faceEdit ? null : objectAt(e.clientX, e.clientY)
+        down = { x: e.clientX, y: e.clientY, button: 0, shift: e.shiftKey, mod: p.mac ? e.metaKey : e.ctrlKey, objectID, dragging: false }
         el.setPointerCapture(e.pointerId)
       } else if (e.button === 2) {
         down = { x: e.clientX, y: e.clientY, button: 2, shift: e.shiftKey, mod: false, objectID: null, dragging: false }
@@ -769,6 +806,15 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       const p = latest.current
       const a = ndc(d.x, d.y)
       const b = ndc(e.clientX, e.clientY)
+      const mode = d.shift ? 'add' : d.mod ? 'subtract' : 'set'
+      const edit = p.ui.getState().faceEdit
+      if (edit) {
+        const n = node(edit.objectID)
+        if (n && p.faceMeshes) p.onFaceBox?.(boxTriangles(p.faceMeshes, meshWorld(n), camera, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }), mode)
+        p.ui.setState({ boxing: false })
+        p.setBox(null)
+        return
+      }
       const selector = new SelectionBox(camera, scene)
       const byID = objectsByID()
       const ids = new Set<string>()
@@ -776,7 +822,7 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const id = objectOf(hit)
         if (id && canPick(byID.get(id))) ids.add(id)
       }
-      p.onBox([...ids], d.shift ? 'add' : d.mod ? 'subtract' : 'set')
+      p.onBox([...ids], mode)
       p.ui.setState({ boxing: false })
       p.setBox(null)
     }
@@ -792,8 +838,9 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
       const p = latest.current
       if (d.button === 0) {
         if (p.ui.getState().boxing) finishBox(e, d)
+        else if (!d.dragging && p.ui.getState().faceEdit) p.onFacePick?.(faceAt(e.clientX, e.clientY), d.shift)
         else if (!d.dragging) p.onPick(d.objectID, d.shift)
-      } else if (d.button === 2 && !d.dragging) {
+      } else if (d.button === 2 && !d.dragging && !p.ui.getState().faceEdit) {
         p.onContextMenu(e.clientX, e.clientY, objectAt(e.clientX, e.clientY))
       }
     }

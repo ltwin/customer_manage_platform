@@ -25,7 +25,7 @@ import {
 import { createLib1 } from '../src/creative-scene/sandbox/lib.ts'
 import { ModelCache, modelSummaries, partsOf, type ModelMeshPart, type SceneModel } from '../src/creative-scene/models/cache.ts'
 import { mergeParts } from '../src/creative-scene/models/merge.ts'
-import { parseGLB } from '../src/creative-scene/sandbox/gltf.ts'
+import { parseGLB, parseModelGLB } from '../src/creative-scene/sandbox/gltf.ts'
 import { disposePieceViews, expandByPieces, perPiece, pieceViews, piecesOf } from '../src/creative-scene/render/pieces.ts'
 import { edgesOf, shellOf } from '../src/creative-scene/objects/wireframe.ts'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -73,6 +73,42 @@ function reasonOf(fn: () => unknown): string {
   }
   return 'accepted'
 }
+
+// Mesh identities (scene-face-materials 1.1): GLTFLoader's meshes map back to
+// the GLB's nodes and primitives exactly as the Go rule names them
+// (creativeglb/identity_test.go): two primitives of one node, nesting,
+// same-named siblings, a mesh two nodes draw, a mirrored part.
+test('mesh identities agree with the server on the sandbox export', async () => {
+  type Row = { path: [string, number][]; primitive: number; triangles: number }
+  const want = JSON.parse(readFileSync(path.join(testdata, 'identity-samples.json'), 'utf8')) as Row[]
+  const { scene, identities } = await parseModelGLB(fixture('identity-samples.glb'))
+  const got: Row[] = []
+  scene.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return
+    const id = identities.get(o)
+    assert.ok(id, `mesh ${o.name} has an identity`)
+    const g = o.geometry as THREE.BufferGeometry
+    got.push({ ...id, triangles: (g.index ?? g.attributes.position).count / 3 })
+  })
+  const key = (r: Row) => JSON.stringify(r)
+  assert.equal(got.length, want.length, 'one mesh per primitive the file draws')
+  assert.deepEqual(got.map(key).sort(), want.map(key).sort())
+  // Look-alikes counted the same must still not swap: each sits where its node does.
+  scene.updateMatrixWorld(true)
+  const at = (...path: [string, number][]) => {
+    const found: THREE.Vector3[] = []
+    scene.traverse((o) => {
+      const id = o instanceof THREE.Mesh ? identities.get(o) : undefined
+      if (id && JSON.stringify(id.path) === JSON.stringify(path)) found.push(o.getWorldPosition(new THREE.Vector3()))
+    })
+    assert.equal(found.length, 1, JSON.stringify(path))
+    return found[0]
+  }
+  assert.equal(at(['', 0], ['row', 0], ['', 0]).x, 0)
+  assert.equal(at(['', 0], ['row', 0], ['', 1]).x, 2)
+  assert.equal(at(['', 0], ['twin', 0]).z, 3)
+  assert.equal(at(['', 0], ['twin', 1]).z, 4)
+})
 
 test('inspect agrees with the server on every shared fixture', () => {
   assert.ok(cases.length >= 22)

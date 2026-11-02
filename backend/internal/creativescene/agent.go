@@ -401,21 +401,23 @@ type ObjectView struct {
 	Params        map[string]any          `json:"params,omitempty"`
 	Model         *ModelView              `json:"model,omitempty"`
 	MaterialSlots map[string]MaterialSlot `json:"material_slots,omitempty"`
-	Light         *Light                  `json:"light,omitempty"`
-	Camera        *Camera                 `json:"camera,omitempty"`
+	// Slots are a builtin's slots when a face assignment adds to its main.
+	Slots  []creativecontent.Slot `json:"slots,omitempty"`
+	Light  *Light                 `json:"light,omitempty"`
+	Camera *Camera                `json:"camera,omitempty"`
 }
 
 // ModelView is a placed model: its revision and what was baked, never its
 // code (read_scene's include_code asks for that).
 type ModelView struct {
-	ContentRevisionID string               `json:"content_revision_id"`
-	Usable            bool                 `json:"usable"`
-	NameHint          string               `json:"name_hint,omitempty"`
-	Params            map[string]any       `json:"params,omitempty"`
-	ParamsSchema      map[string]paramSpec `json:"params_schema,omitempty"`
-	BoundsM           *creativeglb.Bounds  `json:"bounds_m,omitempty"`
-	Triangles         int                  `json:"triangles,omitempty"`
-	Slots             []creativeglb.Slot   `json:"slots,omitempty"`
+	ContentRevisionID string                 `json:"content_revision_id"`
+	Usable            bool                   `json:"usable"`
+	NameHint          string                 `json:"name_hint,omitempty"`
+	Params            map[string]any         `json:"params,omitempty"`
+	ParamsSchema      map[string]paramSpec   `json:"params_schema,omitempty"`
+	BoundsM           *creativeglb.Bounds    `json:"bounds_m,omitempty"`
+	Triangles         int                    `json:"triangles,omitempty"`
+	Slots             []creativecontent.Slot `json:"slots,omitempty"`
 }
 
 // placedModel is a model revision as a write transaction reads it.
@@ -451,6 +453,9 @@ func objectView(o Object, models map[string]placedModel) ObjectView {
 	v.Transform, v.Visible, v.Locked = &t, &visible, &locked
 	if o.Primitive != nil {
 		v.Builtin, v.Params = o.Primitive.Builtin, o.Primitive.Params
+		if o.Primitive.Faces != nil {
+			v.Slots = o.Primitive.Faces.effectiveSlots([]creativeglb.Slot{{ID: "main"}})
+		}
 	}
 	if o.Model != nil {
 		mv := &ModelView{ContentRevisionID: o.Model.ContentRevisionID}
@@ -458,7 +463,7 @@ func objectView(o Object, models map[string]placedModel) ObjectView {
 			bounds := m.payload.Manifest.Bounds
 			mv.Usable, mv.NameHint, mv.BoundsM = true, m.payload.NameHint, &bounds
 			mv.Params, mv.ParamsSchema = m.payload.Generator.Params, m.payload.Generator.ParamsSchema
-			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, m.payload.Manifest.Slots
+			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, m.payload.Faces.effectiveSlots(m.payload.Manifest.Slots)
 		}
 		v.Model = mv
 	}
@@ -784,6 +789,9 @@ type EditResult struct {
 	ChangedCount    int         `json:"changed_count"`
 	Sun             *SunReport  `json:"sun,omitempty"`
 	Moon            *MoonReport `json:"moon,omitempty"`
+	// FacesCleared are builtins whose face assignment a change of a topology
+	// parameter cleared (data: 场景内置基础体「topology」).
+	FacesCleared []string `json:"faces_cleared,omitempty"`
 }
 
 // maxListedEntries bounds the lists an edit or revert result carries; counts
@@ -907,6 +915,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	}
 	changed := changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))
 	out := EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed)}
+	if out.FacesCleared, err = clearedFaces(ctx, tx, in.DocumentID, scene, in.Operations); err != nil {
+		return nil, err
+	}
 	if sky := writtenSky(in.Operations, kinds); sky != nil {
 		out.Sun, out.Moon = sunReport(*sky), moonReport(*sky)
 	}
@@ -1098,7 +1109,7 @@ func BakedModelInTx(ctx context.Context, tx store.TxAccountScope, revisionID str
 	if !m.usable {
 		return BakedModel{}, modelUnavailable(revisionID)
 	}
-	return creativecontent.ManifestFactsOf(m.payload.Manifest), nil
+	return creativecontent.ManifestFactsOf(m.payload.Manifest, rawFaces(m.payload.Faces)), nil
 }
 
 // BuiltinCatalog lists the builtin primitives for the assistant: each with

@@ -12,7 +12,7 @@
 - **面分配**（`Faces`）：`{meshes: [{path, primitive, topology, assign}], hints}`，结构和约束见 Epic `data: 模型内容`。它是值对象：模型的随模型修订不可变，基础体的随物件内容单元版本化。服务端只校验外形；身份和指纹由前端核对。
 - **网格身份**：节点路径（每段为 GLB JSON 原文的节点名，以及它在同级同名节点里的序号）加 primitive 下标。前端用 `GLTFLoader` 的 `parser.associations` 把每个加载出的 `Mesh` 对回 `{nodes}` 和 `{meshes, primitives}`，节点名从 GLB JSON 读原文（three 会删掉名字里的 `:`）。被多个节点引用的网格，每个引用各有一条路径。基础体只有一个网格，路径固定为 `[["", 0]]`。
 - **拓扑指纹 `t1`**：只描述三角形怎样连接。有索引时连接编号就是索引；没有索引时按 float32 坐标逐位相等焊接，编号按首次出现分配。对 `[顶点数, 三角形数, 连接编号序列]`（uint32 小端）算 SHA-256，取前 16 位十六进制。在变换烘进几何、`flipWinding` 之前计算。实测（three 0.186.1 的基础体生成器）：拱门在默认参数、`depth`、`width`、`opening_width`、`height` + `opening_height` 下顶点都是 648、没有索引。旧算法（顶点数 + 索引）的指纹在这些参数下全部相同，新算法只有 `depth` 不变；方块、楼梯改尺寸不变；圆柱 `radius_top` 从 0.5 改到 0 时改变。
-- **有效槽位**：GLB 槽位（基础体为 `main`）加分配里出现的槽位，先 GLB、后分配（按首次出现），合计不超过 32。
+- **有效槽位**：GLB 槽位（基础体为 `main`）加分配里出现的槽位，先 GLB、后分配（按槽位 ID 排序：服务端保存时每个网格的 `assign` 键按字母序写出，首次出现的顺序保存后就不在了），合计不超过 32。前后端同一条规则：前端 `models/faces.ts:effectiveSlots`，后端只有 `creativecontent.EffectiveSlots` 一处实现。
 - **平面面片**（只在编辑器里，不存储）：把网格的三角形分成互不相交的面片。按三角形顺序取第一个未归属的三角形作起点，沿共享边（焊接后的边）扩展，只接纳同时满足下面两条的三角形：
   - 法线与**起点**法线的夹角 ≤ 0.05°；
   - 三个顶点到起点平面的距离 ≤ max(1e-5 m, 1e-6 × 模型包围盒对角线)。
@@ -36,11 +36,11 @@
 - `library/thumbnail.ts:renderMaterialThumbnail`：输入是 `ModelParts`，来自编辑器的 `ModelCache`，套用后自然带分配，不用改，加测试覆盖。
 - `sandbox/thumbnail.ts:renderThumbnail`：模型修订的白模缩略图，统一换成白模材质，与槽位无关，不改；`derive_model` 复用它。
 - `objects/SceneObjects.tsx:PrimitiveMesh`：基础体几何生成后，有分配时按 `splitBySlot` 分成多个 `SlotMesh`，描边仍用整体几何。
-- `faceEdit/`（新）：面编辑状态（活动物件、按身份的三角形选区）、拾取（射线命中三角形 → 所在面片）、框选（面片重心投影在框内，且从相机看不被遮挡，用 `three-mesh-bvh` 求交）、高亮叠加层和面片边线。几何取自 `ownedMeshes`，不用渲染缓存里拆分、合并后的几何。
+- `faceEdit/`（新）：面编辑状态（活动物件、按身份的三角形选区）、拾取（射线命中三角形 → 所在面片）、框选（三角形重心投影在框内，且从相机看不被物件自身遮挡，用 `three-mesh-bvh` 求交；选中所在面片）、高亮叠加层和面片边线。几何取自 `ownedMeshes`，不用渲染缓存里拆分、合并后的几何。
 - `input/keymap.ts`：Tab 进出；面编辑模式内的 L、Ctrl + L、Ctrl + I、Ctrl + 小键盘 + / −；G / R / S 在面编辑时不响应。
 - `panels/MaterialSlots.tsx`：面编辑时显示有效槽位和「指定 / 选择 / 取消选择 / +」。
 - `modelEdits.ts`：烘焙完成后调用 `carryFaces`，`codeChanged` 由新旧 `code_sha256` 与 `lib_version` 判断，把 `faces` 写进 `commit_model`，提示作废的部分；新增只改分配的提交路径（`derive_model` + `set_instance_model`，分叉沿用 `forkPlan`）；基础体改参数时按 `topology` 声明决定是否写 `primitive.faces: null`。
-- `host/bake.ts`：烘焙结果带 `faces`（旧分配取自替换目标的模型摘要，`codeChanged` 比较任务代码与摘要的 `code_sha256`）。
+- `host/executor.ts`：助手烘焙任务的结果带 `faces`（旧分配取自替换目标的模型摘要，`codeChanged` 比较任务代码与摘要的 `code_sha256`）。
 
 后端（`backend/internal`）：
 
@@ -133,6 +133,32 @@ sequenceDiagram
 - **面片容差**（0.05°；max(1e-5 m, 1e-6 × 包围盒对角线)）是初始值，验收样例点选不对时再调，不进契约。
 - **框选只选可见面**：与 Blender 实体模式一致；X 光（穿透框选）留作后续。
 - **残余风险**：同级同名同拓扑的网格只改参数时仍保留，owner 2026-10-28 接受，见 proposal Risk Notes。
+- **冲突后重试不带面分配**（实施 3.4）：任务结果里存的冲突产物 `BakeArtifacts` 不含 `faces`（结果格式属于 `data: 场景客户端任务`，本次不改）；而且冲突说明替换目标在烘焙期间被改过，当时带过来的分配不可信。重试写入的模型因此没有分配，`write_model` 结果报全部作废，创作者可在历史里找回。
+- **`edit_scene` 不限制 `derive_model` 与 `primitive.faces`**（实施 3.4，按「Agent 能力优先」）：助手可以清空或复制面分配，例如「把这根柱子的面分配去掉」。C5b2 拆出的是按语义条件选面的客户端任务，不是禁止助手动面分配。3.2 一度把 `derive_model` 列为不开放，3.4 撤销。
+- **指纹用同步的 SHA-256**（实施 4.1）：离屏截图只渲染一帧，基础体和已缓存的模型必须第一帧就拆好，`crypto.subtle` 是异步的。`models/sha256.ts` 按 FIPS 180-4 实现，测试与 `node:crypto` 逐字节比对；契约的 `t1` 算法不变。只给分配里点名的网格算指纹（`namedIn`）。
+- **加载开销与 Worker**（实施 4.1；收尾性能评估 2026-10-29 重测）：带分配时 `partsOf` 的增量（Node，M 系列 Mac），30 万三角形的网格一半有分配：原 72 ms（哈希约 45 ms，拆分约 25 ms），超过本文原定的 50 ms。现在异步路径的指纹改用浏览器自带的 SHA-256（`topologyOfAsync`，算法与 `t1` 指纹不变，模型加载、面编辑解析、烘焙带入都本来就在等待），拆分的重映射改用 `Int32Array`，非交错属性直接拷贝原始值：同一样例 26 ms，在预算内。100 个 3 千三角形的网格、1 个有分配约 +12 ms。没有 `crypto.subtle` 的非安全页面退回同步实现（约 70 ms）。不用 Worker。没有分配的模型走原路径，不变。
+- **新槽位还没配材质时沿用原槽位**（实施 4.1，AC-3）：拆出的片记下来源槽位（`ModelMeshPart.origin`），`materials/resolve.ts:resolvePart` 在新槽位没有分配材质时按来源槽位解析；材质面板对这类槽位显示「沿用原槽位」。来源计入合并分组键，没有面分配时为 null，分组与追踪缓存的编号不变。追踪缓存键不加分配哈希：分配随修订不可变，修订号已能区分。
+- **助手烘焙读不到替换前的模型时不报成功**（实施 4.3）：渲染端在烘焙的同时读确认快照，找到替换目标实例当前的模型摘要；读取失败就丢弃产物、报 `host_error`，助手重试。如果当作「没有分配」照常完成，分配会被静默作废。快照里的目标若已不是任务冻结时的版本，完成时本来就会冲突，不需要另行核对。
+- **预览等带入完成再显示**（实施 4.3）：编辑器烘焙出新 GLB 后，带入（解析 GLB、给候选网格算指纹）与缩略图、上传并行；预览等它完成再换上，避免已指定的面先闪回原槽位。新建模型和没有分配的模型不解析，不增加开销。
+- **面编辑的几何空间**（实施 5.1）：物件节点下的内容还套着一层文档到视图的旋转（`SceneObjects.tsx:ObjectNode`），拾取和叠加层都按 `meshWorld` = 节点世界矩阵 × 这层旋转放置。模型的网格由 `ModelCache.owned` 重新解析 GLB 得到（只留正在编辑的一个修订），与渲染用的拆分、合并结果分开。
+- **面编辑叠加层的绘制**（5.1 之后 owner 试用发现，2026-10-29）：
+  - 边线和着色都在释放它们的 effect 里创建。原先在 render 里创建，StrictMode 第二次挂载前就被释放了，之后仍在绘制，工作台每帧提交失败，画面闪烁，着色也不显示。
+  - 实时 GI 按深度把 aside 层叠到画面上（`realtimeGI.ts` aside），贴在表面上的着色在这个比较里总是输，边线随 TRAA 抖动忽隐忽现。现在两者都沿视线朝相机挪近，像素位置不变：着色挪近距离的 0.1%，边线挪近 0.2%；正交相机下平移 1 cm 和 2 cm。着色同时写入深度。
+  - 回归用例「face edit on the GPU」在真 GPU 上跑，两个渲染器都覆盖。SwiftShader 走的是 WebGL2 后端，报不出这类错误。
+- **框选按三角形判断，选中整个面片**（实施 5.2）：原定按面片重心，但面片的重心可能落在它的洞里（带窗洞的墙），从相机看过去是空的。现在框里有一个三角形的重心可见，就选中它所在的面片；一个面片命中后，其余三角形不再求交。遮挡只算物件自身的网格，与单击一致。耗时（收尾性能评估 2026-10-29，Node，M 系列 Mac，30 万三角形的球体）：全屏框选从约 0.5 s 降到约 0.43 s（射线在网格自身坐标里直接查 BVH，只查到重心为止）；剩下的是约 23 万条射线、每条约 1.8 µs 的 BVH 求交，CPU 上难再降，只在松开鼠标时算一次。owner 2026-10-29 接受：进入面编辑的拓扑构建留在主线程，不用 Worker；框选约 0.43 s 作为已知边界，实际使用中卡顿再改为 GPU 选择缓冲（把三角形编号画进离屏缓冲、读回框内像素），另开一项。进入面编辑时同步构建的拓扑（`faceTopology`）从 459 ms 降到 119 ms，面片边线从 156 ms 降到 6 ms（焊接与边表改用数值键的开放寻址表，邻接改为 CSR，面片边线复用拓扑的边表）；新旧实现在 12 种几何上的面片、连通块、邻接、法线、面片边线和框选结果逐一比对一致。
+- **选择命令的单位**（实施 5.2）：L 加选指针下相连的部分（跨共用边连通，见 `faceTopology`；内置圆柱的顶底面和侧面共边，是一个部分），Ctrl + L 把选区所在的部分整个选上；Ctrl + 小键盘 + / − 按面片扩展、缩减（扩展加上与选区共边的面片，缩减去掉碰到未选三角形的面片），与单击按面片一致。Ctrl + I 在物件模式也生效（反选可选的物件）；菜单栏新增「选择」菜单，物件模式下是全选、取消全选、反选，面编辑时再加选择相连、扩展、缩减。没有小键盘的笔记本用菜单。
+- **指定后选区不清空：面编辑按「网格」而不是修订判断内容变没变**（实施 5.3）：给模型指定面会派生新修订（先是本地占位，回执后是正式 ID），按修订判断的话选区每次指定都会被清空。`faceSource` 对模型改为代码摘要、库版本、参数、三角形数和包围盒；派生修订与来源完全相同，别人用同样的代码和参数重新生成也相同（三角形编号一样，选区仍然成立）。没有生成信息的导入模型只看三角形数和包围盒。面编辑的网格按这个键缓存，换修订不重新解析。
+- **派生修订在回执前用来源的 GLB 显示**（实施 5.3）：`ModelCache.bytes` 依次取本地烘焙、面编辑已读的字节、下载；占位修订登记来源的字节和带新分配的摘要，回执后按 `alias` 换成正式 ID，与烘焙路径相同。读字节期间物件的模型被换掉时不提交并提示。
+- **共用模型在每次指定时问**（实施 5.3）：材质面板在「指定」下方显示「与 N 个实例共用：只改这个 / 所有实例」，不记住上次的选择；与模型参数的「应用到全部」勾选框不同，因为指定是一次性的动作。
+- **「+」的新槽位放在面编辑状态里**（实施 5.3，`FaceEdit.added`）：指定后从列表里去掉（此时它已是有效槽位），退出面编辑就丢掉；还没指定的新槽位只能「指定」，没有材质下拉。
+- **Tab 只在焦点位于编辑器时进出面编辑**（实施 5.1）：焦点在面板控件上时 Tab 仍按浏览器习惯移动焦点；点视口会把焦点交回编辑器。面编辑中 Esc 清空面选区，不退出；物件被锁定、隐藏、删除，活动物件换了，或进入只读、历史预览时自动退出，并在状态栏说明原因。
+- **有效槽位放在 `creativecontent`**：`creativecontent.EffectiveSlots` 同时服务 `write_model` 回报、`read_scene` 视图和资产库的模型要点，三处说法一致；`creativescene` 在下层之上调用它。`edit_scene` 的 `faces_cleared` 由写入前后快照比较得出，不改场景命令的回执。
+- **带过来的分配必须还能保存**（代码审计后补）：`carryFaces` 只保留仍被用到的槽位的 `hints`；新 GLB 自己的槽位加上已带过来的分配槽位，按条目顺序累计，会让合计超过 32 的条目整条作废，计入提示里的「已失效」。否则服务端的外形校验会拒绝整次 `commit_model` 或烘焙完成请求。
+- **分成互不相连的几块的网格，改代码后分配作废**（第二轮代码审计，Epic 修订 v14）：指纹只看连接方式，两块相同的部件（或没有索引时两个分开的三角形）交换顺序，指纹不变，分配会悄悄落到另一块上。`orderUnprovable` 按位置精确焊接后数连通块，多于一块的网格在代码或 `lib_version` 变了时作废，与同名同指纹的网格同一规则；只改参数时保留（同一残余风险）。按位置而不是按索引判断：方块的六个面不共用索引，但按位置是一块，不受影响。残余风险：一块连通网格里，局部结构相同的两段顶点与索引整段对调，仍然认不出。
+- **焊接表的散列做充分的位混合**（第二轮代码审计）：整数坐标的 float32 位模式低位全是 0，原来的乘法散列取低位后大量碰撞，256 × 256 的无索引平面算指纹约 2 s；改用 MurmurHash3 的 finalizer 后约 33 ms，单测用这块平面设 1 s 上限。
+- **助手写材质也按有效槽位**（第二轮代码审计）：`materials.go:resolveSlots` 原来只认 `main` 和 manifest 的槽位，读得到面分配的槽位却配不了材质；改为 `effectiveSlotIDs`，同一批里写入的 `primitive.faces` 也算。
+- **材质栏显示与修改用同一个解析**（第二轮代码审计）：`slotEdits.ts:shownSlot`，面分配的槽位没有自己的材质时按来源槽位解析，改参数时以它为基础；原来显示按来源、修改按自身，改粗糙度会把红砖换成灰色原理化材质。面编辑时没有槽位的模型也显示「+ 新槽位」。
+- **基础体拆片后描边挂在整体几何上**（代码审计后补）：`Outline` / `EdgeLines` 可直接传 `geometry`，`PrimitiveMesh` 在各片之外单独画一次。逐片描边时 `EdgesGeometry` 会把分配边界当成边，选中带分配的平板、地面会多出线。模型沿用逐片描边：按 GLB 槽位合并部件时就是这样，C5b 不改。
 
 ## 接口与数据契约
 
@@ -152,13 +178,17 @@ sequenceDiagram
 | `frontend/src/creative-scene/preview/cache.ts:PreviewModels.load` | 修改 | 接收 `faces` |
 | `frontend/src/creative-scene/preview/ModelPreview.tsx` | 修改 | `faces` 属性，随资产的模型载荷传入 |
 | `frontend/src/creative-scene/objects/SceneObjects.tsx:PrimitiveMesh` | 修改 | 基础体按分配拆槽位渲染 |
-| `frontend/src/creative-scene/faceEdit/` | 新增 | 面编辑状态、拾取、框选、高亮、面片边线 |
+| `frontend/src/creative-scene/faceEdit/` | 新增 | 面编辑状态、拾取、框选、高亮、面片边线（5.1：`state.ts`、`meshes.ts`、`useFaceMeshes.ts`、`FaceOverlay.tsx`） |
+| `frontend/src/creative-scene/models/cache.ts`（`owned`）、`Viewport.tsx`、`SceneEditor.tsx`、`state/sceneStore.ts` | 修改 | 面编辑读取模型网格；视口拾取三角形、画叠加层；进出与退出条件；`faceedit` 按键上下文（实施 5.1） |
 | `frontend/src/creative-scene/input/keymap.ts` | 修改 | Tab 与面编辑键位，速查表条目 |
+| `frontend/src/creative-scene/faceEdit/assign.ts`、`models/cache.ts`（`bytes`）、`SceneEditor.tsx`（`assignSlot`）、`scene.css` | 新增 / 修改 | 指定、按槽位选择、新槽位命名与上限；派生修订的本地显示；材质栏在模型参数之前时也是单列（实施 5.3） |
+| `frontend/src/creative-scene/panels/MenuBar.tsx`、`state/sceneStore.ts`（`MenuKind`）、`input/selection.ts`（`invertSelection`） | 修改 | 「选择」菜单与物件模式的反选（实施 5.2） |
 | `frontend/src/creative-scene/Viewport.tsx` | 修改 | 面编辑时的拾取与框选分流 |
 | `frontend/src/creative-scene/panels/MaterialSlots.tsx` | 修改 | 面编辑的槽位操作，有效槽位与失效提示 |
 | `frontend/src/creative-scene/panels/StatusBar.tsx` | 修改 | 面编辑状态与按键提示 |
 | `frontend/src/creative-scene/modelEdits.ts` | 修改 | 烘焙后带过来；只改分配的提交路径；基础体按声明清空 |
-| `frontend/src/creative-scene/host/bake.ts` | 修改 | 烘焙结果带 `faces` |
+| `frontend/src/creative-scene/host/executor.ts`、`host/pageExecutor.ts` | 修改 | 助手的烘焙任务读替换前的模型，结果带 `faces`（实施 4.3：带入放在任务执行器，`bake.ts` 只管编译、缩略图和上传，不改） |
+| `frontend/src/creative-scene/editing.ts`、`SceneEditor.tsx` | 修改 | `clearingFaces`：基础体改了声明里的参数时在同一项写 `faces: null` 并提示；重新生成后提示作废的三角形数（实施 4.3） |
 | `backend/internal/creativescene/faces.go` | 新增 | 外形校验、有效槽位 |
 | `backend/internal/creativescene/models.go:ModelPayload` | 修改 | 加 `Faces` |
 | `backend/internal/creativescene/ops_model.go` | 修改 | `commitModelOp.faces`、新增 `deriveModelOp` |
@@ -174,8 +204,16 @@ sequenceDiagram
 | `backend/internal/creativeagent/instructions/base.md` | 修改 | 面分配的用法、取舍与命名建议 |
 | `api/openapi.yaml` | 修改 | 见上节 |
 | `docs/dev/creative-scene-agent.md` | 修改 | 有效槽位与工具结果说明 |
-
-资产查看浮窗渲染 `ModelPreview` 的调用方（传入 `faces`）在第一项前端任务里定位后补进本表。
+| `frontend/src/creative-canvas/viewer/MediaViewer.tsx` | 修改 | 资产查看浮窗渲染 `ModelPreview`，传入 `modelFaces(item.content)`（实施 4.1） |
+| `frontend/src/creative-canvas/viewer/modelInfo.ts` | 修改 | `modelFaces`；信息行的「材质槽」在 GLB 槽位之后列出面分配新建的槽位（实施 4.2） |
+| `frontend/src/creative-scene/models/sha256.ts`、`models/weld.ts` | 新增 | 同步 SHA-256，供首帧就要的指纹（实施 4.1）；数值键的焊接表，供指纹与面片拓扑（收尾性能评估） |
+| `frontend/src/creative-scene/materials/resolve.ts:resolvePart`、`models/merge.ts`、`objects/ModelMesh.tsx`、`library/thumbnail.ts`、`materials/slotEdits.ts:slotsOf` | 修改 | 新槽位未配材质时沿用原槽位（`origin`，参与合并键）；模型、资产缩略图、材质栏按有效槽位（实施 4.1） |
+| `frontend/src/creative-scene/host/render.ts` | 修改 | 助手截图与导出加载模型时传入 `faces`（实施 4.1，AC-4） |
+| `frontend/src/creative-scene/builtins/catalog.ts`、`state/apply.ts` | 修改 | 编辑器读 `topology` 声明，本地套用 `update_objects` 时按声明保留或清空，与服务端一致（实施 2.2、3.3） |
+| `frontend/src/creative-scene/state/intents.ts` | 修改 | `derive_model` 的占位修订在回执后换成正式 ID（实施 3.2） |
+| `frontend/src/creative-scene/panels/ShortcutSheet.tsx` | 修改 | 速查表新增「面编辑」分组（实施 5.1） |
+| `frontend/src/creative-scene/objects/EdgeLines.tsx`、`objects/Outline.tsx` | 修改 | 可直接传 `geometry`，基础体拆片后描边挂在整体几何上（代码审计后补） |
+| 生成物：`api.gen.go`、`schema.d.ts`、`tool_schemas.gen.go`、`builtins.gen.json` | 重新生成 | 由 `api/openapi.yaml`、助手工具定义、`builtins.json` 生成 |
 
 ## 验证与交付
 
@@ -202,5 +240,5 @@ sequenceDiagram
 
 | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|
-| 网格身份映射（Epic 未决 9） | 全部 | 第一项任务验证 | 其余任务开始前 |
+| ~~网格身份映射（Epic 未决 9）~~ **已验证（任务 1.1，2026-10-28）**：`parser.associations` 能把五类结构的每个网格对回节点与 primitive，前端与 Go 规则逐项一致 | — | — | — |
 | 面片容差 | 点选手感 | 验收样例调整 | 验收 |

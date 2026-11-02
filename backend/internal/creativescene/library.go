@@ -6,7 +6,6 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
-	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -87,7 +86,7 @@ func SaveModelToLibrary(ctx context.Context, scope store.AccountScope, c creativ
 				return creativeops.Outcome{}, err
 			}
 			p, _ := completeModel(src)
-			source, materials := src.ID, assignedSlots(p.Manifest, obj.MaterialSlots)
+			source, materials := src.ID, assignedSlots(effectiveSlotIDs(slotIDs(p.Manifest), p.Faces), obj.MaterialSlots)
 			if p.SourceRevisionID != "" {
 				source = p.SourceRevisionID
 			}
@@ -127,13 +126,14 @@ func SaveModelToLibrary(ctx context.Context, scope store.AccountScope, c creativ
 		}}, c)
 }
 
-// assignedSlots are an instance's materials for the slots its model has. A
-// command checks slots by shape only, so a slot the model lost may linger.
-func assignedSlots(m creativeglb.Manifest, slots map[string]MaterialSlot) map[string]MaterialSlot {
+// assignedSlots are an instance's materials for the slots its model has, the
+// GLB's and those its face assignment brings. A command checks slots by shape
+// only, so a slot the model lost may linger.
+func assignedSlots(ids []string, slots map[string]MaterialSlot) map[string]MaterialSlot {
 	out := map[string]MaterialSlot{}
-	for _, s := range m.Slots {
-		if v, ok := slots[s.ID]; ok {
-			out[s.ID] = v
+	for _, id := range ids {
+		if v, ok := slots[id]; ok {
+			out[id] = v
 		}
 	}
 	return out

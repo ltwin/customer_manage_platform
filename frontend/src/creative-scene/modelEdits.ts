@@ -6,6 +6,7 @@ import { nextOrder } from './editing.ts'
 import { bake, type BakeDeps, type Compiled } from './host/bake.ts'
 import { newIntentID, newObjectID } from './ids.ts'
 import { modelSummaries, type ModelCache, type SceneModel } from './models/cache.ts'
+import { carryOver, codeDiffers, type Carried, type Faces, type SlotCount } from './models/faces.ts'
 import type { CompileInput } from './sandbox/host.ts'
 import type { CompileError } from './sandbox/protocol.ts'
 import { contentUnit, localContent, localRevision, type WireOp } from './state/apply.ts'
@@ -46,7 +47,8 @@ export type ModelEditsState = {
 }
 
 export type EditOutcome =
-  | { ok: true; intent: Intent }
+  /** dropped: the face assignments regenerating gave up (data: 模型内容「重新生成时」). */
+  | { ok: true; intent: Intent; dropped: SlotCount[] }
   | { ok: false; superseded: true }
   | { ok: false; superseded?: false; stage: EditStage; message: string; error?: CompileError }
 
@@ -104,6 +106,8 @@ type Plan = {
   ops(commit: WireOp, objects: readonly SceneObject[]): WireOp[]
   /** The fork decided at the start (updates), for the summary's content ID. */
   baseContent(models: Record<string, string>): string | undefined
+  /** The replaced revision's face assignment and generator, carried to the new GLB. */
+  carry: { faces: Faces | null; generator: SceneModel['generator'] } | null
   preview: { objectIDs: string[] } | { ghost: [number, number, number] }
 }
 
@@ -143,6 +147,7 @@ export class ModelEdits {
         },
       ],
       baseContent: () => undefined,
+      carry: null,
       preview: { ghost: input.position },
     })
   }
@@ -156,12 +161,13 @@ export class ModelEdits {
     const target = view?.scene.objects.find((o) => o.id === input.objectID)
     const source = target?.model?.content_revision_id
     if (!view || !target || !source) return Promise.resolve({ ok: false, stage: 'commit', message: '找不到要修改的模型' })
-    const content = this.summaries()[source]?.content_id || undefined
+    const replaced = this.summaries()[source]
+    const content = replaced?.content_id || undefined
     const fork = forkPlan(view.scene.objects, input.objectID, content, input.applyToAll)
     return this.run({
       key: input.objectID,
       label: input.label,
-      nameHint: this.summaries()[source]?.name_hint || target.name || '代码模型',
+      nameHint: replaced?.name_hint || target.name || '代码模型',
       units: fork.objectIDs.map(contentUnit),
       models: fork.baseContentID ? { source, content: fork.baseContentID } : { source },
       compile: { code: input.code, params: input.params, libVersion: input.libVersion },
@@ -181,6 +187,7 @@ export class ModelEdits {
       ],
       // The source content may have been a placeholder; the baseline kept it current.
       baseContent: (models) => models.content,
+      carry: replaced ? { faces: replaced.faces, generator: replaced.generator } : null,
       preview: { objectIDs: fork.objectIDs },
     })
   }
@@ -288,16 +295,24 @@ export class ModelEdits {
         mount: module.mount,
       }
       const { code: _, ...shown } = generator
-      const summary = (contentID: string): SceneModel => ({ content_id: contentID, usable: true, manifest, generator: shown, name_hint: nameHint })
+      const summary = (contentID: string, faces: Faces | null): SceneModel => ({ content_id: contentID, usable: true, manifest, generator: shown, name_hint: nameHint, faces })
       return { generator, summary }
     }
 
     this.setStatus(plan.key, { state: 'baking' })
+    // Carried while the thumbnail and uploads run; the preview waits for it,
+    // so assigned faces do not flash back to their old slots.
+    let carrying: Promise<Carried> = Promise.resolve({ faces: null, kept: [], dropped: [] })
     const out = await bake(this.deps, plan.compile, me.abort.signal, {
       live,
       compiled: (compiled) => {
-        cache.register(previewKey, { glb: compiled.glb, summary: described(compiled).summary('') })
-        this.showPreview(plan, previewKey)
+        const { carry } = plan
+        if (carry) carrying = carryOver(compiled.glb, carry.faces, codeDiffers(carry.generator, { code_sha256: compiled.codeSHA256, lib_version: compiled.module.lib_version }))
+        void carrying.then((carried) => {
+          if (!live()) return
+          cache.register(previewKey, { glb: compiled.glb, summary: described(compiled).summary('', carried.faces) })
+          this.showPreview(plan, previewKey)
+        })
       },
       uploading: () => this.setStatus(plan.key, { state: 'uploading' }),
     })
@@ -309,6 +324,8 @@ export class ModelEdits {
     }
     const { glb, manifest, model, thumbnail } = out.baked
     const { generator, summary } = described(out.baked)
+    const carried = await carrying
+    if (!live()) return superseded()
 
     const frozen = session.baselineOf(baseline.id)
     if (!frozen || frozen.broken) return failed('commit', '之前的修改没有保存，这次修改已放弃')
@@ -319,11 +336,11 @@ export class ModelEdits {
     const baseContent = plan.baseContent(frozen.models)
     const commit: WireOp = {
       op: 'commit_model', ref, glb_upload_id: model.id, thumbnail_upload_id: thumbnail.id, generator, manifest,
-      name_hint: nameHint, ...(baseContent ? { base_content_id: baseContent } : {}),
+      name_hint: nameHint, ...(baseContent ? { base_content_id: baseContent } : {}), ...(carried.faces ? { faces: carried.faces } : {}),
     }
     // Registered before the view can name it.
     const placeholder = localRevision(intentID, ref)
-    cache.register(placeholder, { glb, summary: summary(baseContent ?? localContent(intentID, ref)), generator })
+    cache.register(placeholder, { glb, summary: summary(baseContent ?? localContent(intentID, ref), carried.faces), generator })
     const intent = session.edit(plan.ops(commit, objects), plan.label, { baseline: baseline.id, id: intentID })
     if (!intent) {
       cache.unregister(placeholder)
@@ -331,6 +348,6 @@ export class ModelEdits {
     }
     me.uploads = []
     this.setStatus(plan.key, { state: 'queued', intent: intent.id })
-    return finish({ ok: true, intent })
+    return finish({ ok: true, intent, dropped: carried.dropped })
   }
 }

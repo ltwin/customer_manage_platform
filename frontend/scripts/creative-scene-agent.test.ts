@@ -7,6 +7,7 @@ import type { ExportPlan, RenderedShots } from '../src/creative-scene/host/expor
 import { leaseEveryMs, type CompletePayload, type Completion, type SceneJob } from '../src/creative-scene/host/jobs.ts'
 import type { Ticker } from '../src/creative-scene/host/ticker.ts'
 import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
+import type { SceneModel } from '../src/creative-scene/models/cache.ts'
 import type { CompileResult } from '../src/creative-scene/sandbox/host.ts'
 import type { Manifest } from '../src/creative-scene/sandbox/inspect.ts'
 import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders, revisionObjects, type ActivityDeps } from '../src/creative-scene/agentActivity.ts'
@@ -85,6 +86,9 @@ class FakePage {
     ],
   }
   deviceLosses = 0
+  /** The model the replaced instance shows, as the confirmed snapshot has it. */
+  replacedModel: SceneModel | Error | null = null
+  replacedReads: string[] = []
   /** Answers for complete, in order; past the end, a recorded success. */
   answers: (Completion | Error)[] = []
   private n = 0
@@ -108,6 +112,10 @@ class FakePage {
       render: (documentID, request) => {
         this.renders.push({ documentID, request })
         return this.shot instanceof Error ? Promise.reject(this.shot) : Promise.resolve(this.shot)
+      },
+      replaced: (documentID, objectID) => {
+        this.replacedReads.push(`${documentID}/${objectID}`)
+        return this.replacedModel instanceof Error ? Promise.reject(this.replacedModel) : Promise.resolve(this.replacedModel)
       },
       exportImages: (documentID, plan) => {
         this.exports.push({ documentID, plan })
@@ -147,6 +155,44 @@ test('a bake job compiles, uploads both files and reports them with the checked 
   })
   assert.deepEqual(page.discarded, [], 'a recorded result keeps its files')
   assert.equal(page.ticker.running, 0, 'the lease stops being renewed')
+})
+
+// scene-face-materials 4.3: a bake that replaces a model carries its face assignment.
+test('a replacing bake carries the face assignment of the model it replaces', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { parseModelGLB } = await import('../src/creative-scene/sandbox/gltf.ts')
+  const { topologyOf } = await import('../src/creative-scene/models/faces.ts')
+  const b = readFileSync(new URL('../../backend/internal/creativeglb/testdata/identity-samples.glb', import.meta.url))
+  const glb = () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
+  const [mesh, identity] = [...(await parseModelGLB(glb())).identities][0]
+  const entry = { path: identity.path, primitive: identity.primitive, topology: topologyOf(mesh.geometry), assign: { face_1: [[0, 1]] as [number, number][] } }
+  const prior = (faces: SceneModel['faces']) =>
+    ({ content_id: 'ccnt_a', usable: true, manifest, name_hint: '柱', faces, generator: { language: 'three-module', contract_version: 1, lib_version: 1, code_sha256: 'sha256-x', params_schema: {}, params: {}, mount: 'floor' } }) as unknown as SceneModel
+  const replacing = bakeJob({ code: 'export default…', params: { h: 2 }, lib_version: 1, target: { op: 'set_instance_model', object_id: 'sobj_1', scope: 'this' } })
+
+  const page = new FakePage()
+  page.compileResult = { ...page.compileResult, glb: glb() } as CompileResult
+  page.replacedModel = prior({ meshes: [entry], hints: { face_1: 'brick' } })
+  assert.equal((await new SceneExecutor(page.deps()).run(replacing)).state, 'completed')
+  assert.deepEqual(page.replacedReads, ['cwdoc_1/sobj_1'])
+  assert.deepEqual(page.completes[0].payload.bake?.faces, { meshes: [entry], hints: { face_1: 'brick' } })
+
+  // A model without an assignment, or a new object: no faces in the result.
+  for (const [model, job] of [[prior(null), replacing], [null, bakeJob()]] as const) {
+    const plain = new FakePage()
+    plain.replacedModel = model
+    await new SceneExecutor(plain.deps()).run(job)
+    assert.ok(plain.completes[0].payload.bake && !('faces' in plain.completes[0].payload.bake))
+    assert.deepEqual(plain.replacedReads, job === replacing ? ['cwdoc_1/sobj_1'] : [], 'a new object reads nothing')
+  }
+
+  // Not knowing what it replaces, the page does not report the bake: the assignment would be lost.
+  const blind = new FakePage()
+  blind.replacedModel = new Error('network down')
+  assert.equal((await new SceneExecutor(blind.deps()).run(replacing)).state, 'completed')
+  assert.equal(blind.completes[0].payload.outcome, 'failed')
+  assert.deepEqual(blind.completes[0].payload.error, { code: 'host_error', message: '读不到替换前的模型：network down' })
+  assert.deepEqual(blind.discarded, ['ccup_1', 'ccup_2'], 'its files are freed')
 })
 
 test('the lease is renewed every 10 seconds while the job runs', async () => {

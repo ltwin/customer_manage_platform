@@ -23,7 +23,60 @@ const root = path.resolve(import.meta.dirname, '..')
 const sandboxDir = path.join(root, 'public/scene-sandbox')
 const sandboxSrc = path.join(root, 'src/creative-scene/sandbox')
 const templateFixture = path.resolve(root, '../backend/internal/creativeglb/testdata/exported-template.glb')
+const identityFixture = path.resolve(root, '../backend/internal/creativeglb/testdata/identity-samples.glb')
 const browsers = (process.env.SCENE_SANDBOX_BROWSERS ?? 'chromium').split(',').map((s) => s.trim()).filter(Boolean)
+
+// One of each structure a mesh identity must survive: a mesh of two
+// primitives, nesting, same-named siblings (two unnamed boxes alike), one
+// mesh drawn by two nodes, and a mirrored part.
+const identitySamplesCode = `export const mount = 'free'
+export default function build({ THREE, lib }) {
+  const stone = lib.material('stone', 'stone')
+  const trim = lib.material('trim', 'stone')
+  const root = new THREE.Group()
+
+  const split = new THREE.BoxGeometry(1, 1, 1)
+  split.clearGroups()
+  split.addGroup(0, 18, 0)
+  split.addGroup(18, 18, 1)
+  const two = new THREE.Mesh(split, [stone, trim])
+  two.name = 'part:two'
+  root.add(two)
+
+  const outer = new THREE.Group()
+  outer.name = 'part:capital'
+  const inner = new THREE.Group()
+  inner.add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1, 12), stone))
+  outer.add(inner)
+  root.add(outer)
+
+  const row = new THREE.Group()
+  row.name = 'row'
+  for (const x of [0, 2]) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), stone)
+    box.position.x = x
+    row.add(box)
+  }
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), trim)
+  leaf.name = 'leaf'
+  row.add(leaf)
+  root.add(row)
+
+  const shared = new THREE.TetrahedronGeometry(0.3)
+  for (const z of [3, 4]) {
+    const t = new THREE.Mesh(shared, trim)
+    t.name = 'twin'
+    t.position.z = z
+    root.add(t)
+  }
+
+  const mirrored = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.6, 7), stone)
+  mirrored.name = 'part:mirror'
+  mirrored.scale.x = -1
+  root.add(mirrored)
+  return root
+}
+`
 
 // The host code as the editor runs it, bundled for a plain test page.
 async function hostScript() {
@@ -316,6 +369,14 @@ for (const name of browsers) {
       const bytes = Buffer.from(template.glb, 'base64')
       if (process.env.UPDATE_SCENE_FIXTURES === '1') writeFileSync(templateFixture, bytes)
       assert.ok(bytes.equals(readFileSync(templateFixture)), 'GLTFExporter output changed: rerun with UPDATE_SCENE_FIXTURES=1, then the Go and frontend fixture tests')
+
+      // Mesh identities (scene-face-materials 1.1): the shapes a face
+      // assignment must find again, exported the way the editor exports.
+      const identities = await compile(identitySamplesCode)
+      assert.ok(identities.ok, JSON.stringify(identities))
+      const identityBytes = Buffer.from(identities.glb, 'base64')
+      if (process.env.UPDATE_SCENE_FIXTURES === '1') writeFileSync(identityFixture, identityBytes)
+      assert.ok(identityBytes.equals(readFileSync(identityFixture)), 'GLTFExporter output changed: rerun with UPDATE_SCENE_FIXTURES=1, then the Go and frontend fixture tests')
 
       assertBlocked('network', await compile(probe(network)))
       assertBlocked('storage', await compile(probe(storage)))

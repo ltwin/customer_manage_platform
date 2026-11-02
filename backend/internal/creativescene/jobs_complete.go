@@ -48,6 +48,10 @@ type BakeOutput struct {
 	ThumbnailUploadID string          `json:"thumbnail_upload_id"`
 	Manifest          json.RawMessage `json:"manifest"`
 	Module            json.RawMessage `json:"module"`
+	// Faces is the replaced model's face assignment the host carried over to
+	// the new GLB (data: 模型内容「重新生成时」); a retry, whose target may
+	// have changed since, carries none.
+	Faces *Faces `json:"faces,omitempty"`
 }
 
 type RenderOutput struct {
@@ -255,6 +259,9 @@ func writeBake(ctx context.Context, tx store.TxAccountScope, documentID string, 
 	}
 	if req.NameHint != "" {
 		commit["name_hint"] = req.NameHint
+	}
+	if out.Faces != nil {
+		commit["faces"] = out.Faces
 	}
 	if req.Target.BaseContentID != "" {
 		commit["base_content_id"] = req.Target.BaseContentID

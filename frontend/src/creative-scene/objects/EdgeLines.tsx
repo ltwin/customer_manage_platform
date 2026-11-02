@@ -5,14 +5,15 @@ import { LineSegments2 } from 'three/addons/lines/webgpu/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 
-// The edges of the mesh it is a child of, where faces meet at more than
+// The edges of the mesh it is a child of, or of `geometry` when given (a
+// split mesh's whole, drawn beside its pieces), where faces meet at more than
 // threshold degrees: drei's Edges on three's WebGPU lines. Widths are device
 // pixels, as drei's came out (R1: a 2-pixel selection edge measured 1–2
 // device pixels on a 2× screen before the migration).
 
 const noRaycast = () => {}
 
-export function EdgeLines({ color, threshold = 15, lineWidth = 1 }: { color: string; threshold?: number; lineWidth?: number }) {
+export function EdgeLines({ color, threshold = 15, lineWidth = 1, geometry: whole }: { color: string; threshold?: number; lineWidth?: number; geometry?: BufferGeometry }) {
   const [line] = useState(() => {
     const l = new LineSegments2(new LineSegmentsGeometry(), new Line2NodeMaterial({ linewidth: 1 }))
     l.raycast = noRaycast
@@ -22,7 +23,7 @@ export function EdgeLines({ color, threshold = 15, lineWidth = 1 }: { color: str
   })
   const from = useRef<{ geometry: BufferGeometry; threshold: number } | null>(null)
   useLayoutEffect(() => {
-    const geometry = (line.parent as Mesh | null)?.geometry
+    const geometry = whole ?? (line.parent as Mesh | null)?.geometry
     if (!geometry || (from.current?.geometry === geometry && from.current.threshold === threshold)) return
     const edges = new EdgesGeometry(geometry, threshold)
     line.geometry.fromEdgesGeometry(edges)

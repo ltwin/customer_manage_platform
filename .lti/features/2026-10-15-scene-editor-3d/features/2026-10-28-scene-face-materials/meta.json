@@ -1,12 +1,12 @@
 {
   "uid": "ef07da1d-1eed-4bb0-847f-73189d39e87e",
-  "revision": 3,
+  "revision": 8,
   "id": "scene-face-materials",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 13,
+    "version": 14,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -48,9 +48,9 @@
       "api:完成场景客户端任务"
     ]
   },
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-10-28T13:54:10.701Z",
-  "updatedAt": "2026-10-29T03:12:52.254Z",
+  "updatedAt": "2026-11-02T02:17:05.711Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -60,19 +60,144 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-10-29T03:12:52.018Z",
+      "at": "2026-11-02T02:13:12.188Z",
       "contentHash": "11206a383e561cac"
     },
     "design": {
       "by": "samson",
-      "at": "2026-10-29T03:12:52.018Z",
-      "contentHash": "5ca9d3ecf681c64a"
+      "at": "2026-11-02T02:13:12.188Z",
+      "contentHash": "054c30c543ac36dd"
     }
   },
-  "approvalHistory": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-10-29T03:12:52.018Z",
+      "contentHash": "11206a383e561cac",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-29T03:12:52.018Z",
+      "contentHash": "5ca9d3ecf681c64a",
+      "role": "design"
+    }
+  ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "9242ad0b5035a4805067a292233ceb8bd796472b",
+    "at": "2026-10-29T03:14:17.891Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "246c2e77698a087484f8ec970f540c00223f0f46b5c423547ff1b30f4abdc6b3"
+    },
+    "preExisting": [
+      ".lti/snapshots/246c2e77698a087484f8ec970f540c00223f0f46b5c423547ff1b30f4abdc6b3.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "samson",
+      "at": "2026-11-02T02:13:29.240Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 声明 checks，测试证据为手动运行的定向单测、逐个运行的 e2e 用例与 make check-merge，未跑全量 e2e。「无槽位模型也显示 + 新槽位」只做了代码走查；AC-7「助手改圆柱分段数」是组合证据（分段判定、改高度保留分配、edit_scene 报清空各有测试），完整场景没有单条测试。实时 GI 首次进入/切换最终渲染约 0.9–1 s 的停顿是 develop 既有问题，修复在未合入的 perf/scene-gi-stalls（切换路径另有 WebGPU 报错待修），不在本次验收范围。",
+        "coverage": [
+          {
+            "criterionId": "AC-cc9ba94308a3",
+            "status": "verified",
+            "evidence": "e2e「face edit: Tab on a box…」；单测「face edit enters only an unlocked, visible model instance or builtin」（灯光、摄像机、分组、体积、锁定、隐藏不进入并说明）"
+          },
+          {
+            "criterionId": "AC-56342172a4b2",
+            "status": "verified",
+            "evidence": "e2e「face edit: Tab on a box…」「face edit: a box drag…」；单测：点选 9 种变化、方块/圆柱/拱门上的 A、Ctrl+I、扩缩选、L/Ctrl+L、框选三种模式与透视/正交可见面"
+          },
+          {
+            "criterionId": "AC-71b8e38fe0ad",
+            "status": "verified",
+            "evidence": "e2e「face edit: + 新槽位 and 指定…」（一条指定修订、一条材质修订、两次 Cmd+Z、重开一致、共用模型「只改这个」）"
+          },
+          {
+            "criterionId": "AC-94041c0ebaef",
+            "status": "verified",
+            "evidence": "e2e「AC-4 faces」（材质预览、最终渲染、lit 导出、render_view lit 与材质预览重合度 0.99/0.94/0.93，资产缩略图）；资产库 e2e「C5b-model-faces」（不开场景直接查看）"
+          },
+          {
+            "criterionId": "AC-b76a6a66d004",
+            "status": "verified",
+            "evidence": "见下列子项"
+          },
+          {
+            "criterionId": "AC-0d1567590c39",
+            "status": "verified",
+            "evidence": "e2e「AC-5 faces」（拱门改厚、模型改高度保留）；单测「every builtin parameter outside its topology declaration keeps the fingerprint」"
+          },
+          {
+            "criterionId": "AC-3e872d6dea0a",
+            "status": "verified",
+            "evidence": "e2e「AC-5 faces」（门洞宽清空并提示；柱身变方只作废柱身，提示 face_1 的 8 个三角形）；单测 carryOver 改分段作废"
+          },
+          {
+            "criterionId": "AC-1932eeb1fd50",
+            "status": "verified",
+            "evidence": "单测「regenerating keeps what can be told apart…」「carryOver reads the new GLB…twins only while the code is the same」"
+          },
+          {
+            "criterionId": "AC-583a5e9283f0",
+            "status": "verified",
+            "evidence": "单测「the fingerprint follows how triangles connect…」（无索引网格三角形重排，指纹变化即作废）"
+          },
+          {
+            "criterionId": "AC-d5319354e386",
+            "status": "verified",
+            "evidence": "单测「the editor decides builtin topology changes as the server does」「a builtin update keeps or clears faces as the server does」对照 Go TestBuiltinTopologyChanged、TestBuiltinFacesFollowTheTopologyDeclaration"
+          },
+          {
+            "criterionId": "AC-edd52323e009",
+            "status": "verified",
+            "evidence": "Go TestTheAssistantSeesFaceAssignments（read_scene 有效槽位含来源与三角形数；write_model 重烘焙的 Kept/Dropped）、TestEffectiveSlots"
+          },
+          {
+            "criterionId": "AC-beec1e9c9edd",
+            "status": "verified",
+            "evidence": "组合证据：Go TestBuiltinTopologyChanged（cylinder radial_segments 判为改结构）、TestBuiltinFacesFollowTheTopologyDeclaration（圆柱改 height 保留）、TestTheAssistantSeesFaceAssignments（edit_scene 结果 faces_cleared，在拱门上测）；同一条通用路径"
+          },
+          {
+            "criterionId": "AC-687fbed42ad8",
+            "status": "verified",
+            "evidence": "e2e「AC-8 faces」（存入带 faces 与材质、缩略图按分配、另一场景一致、重新指定派生新内容不影响资产与原场景）；Go TestSavingAModelKeepsItsFaceSlots、TestDeriveModelFromALibraryCopy"
+          },
+          {
+            "criterionId": "AC-2fabbb1f06d8",
+            "status": "verified",
+            "evidence": "Go TestFacesShapeErrors、TestBuiltinFacesRejections、TestDeriveModelRejections（其他账号修订 creative_model_unavailable）；前端单测「past the limits nothing is assigned」"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 接受 C5b 面级材质分配：14 项验收标准逐条有证据对照（单测、逐个运行的 e2e、代码走查）；批准后的局部方案变化（两轮代码审计的修正、有效槽位改为按 ID 排序、实施中记录的偏差、性能取舍：进面编辑的拓扑留在主线程，框选约 0.43 s 作为已知边界、挂载表补齐）已由 owner 于 2026-11-02 重新批准；Epic 设计绑定 v14。主检出试合并后 make check-merge 通过。owner 报告的最终渲染卡顿经 develop / 本分支 / perf/scene-gi-stalls 三方实测，为 develop 既有的实时 GI 着色器生成卡顿，本分支与 develop 持平，面分配只多 5 次小着色器构建，不属本变更。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "ad35294ff23f06fcf63fa65a26c4207273c345f2ccc9168c2f2743fbea82fbef"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-02T02:17:05.440Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

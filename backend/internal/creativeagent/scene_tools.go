@@ -415,7 +415,7 @@ func (h *runtimeHandler) writeModel(ctx context.Context, step, raw string) (any,
 			if err != nil || conflict != nil {
 				return conflict, err
 			}
-			return bakeSucceeded(ctx, tx, *bake)
+			return bakeSucceeded(ctx, tx, args.DocumentID, *bake)
 		})
 	}
 	return h.parkOnJob(ctx, func(ctx context.Context, tx store.TxAccountScope) (creativescene.Job, any, error) {
@@ -509,8 +509,12 @@ func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Cont
 }
 
 // bakeSucceeded is write_model's answer for a written model.
-func bakeSucceeded(ctx context.Context, tx store.TxAccountScope, bake creativescene.BakeResult) (any, error) {
+func bakeSucceeded(ctx context.Context, tx store.TxAccountScope, documentID string, bake creativescene.BakeResult) (any, error) {
 	model, err := creativescene.BakedModelInTx(ctx, tx, bake.ContentRevisionID)
+	if err != nil {
+		return nil, err
+	}
+	faces, err := creativescene.BakeFacesInTx(ctx, tx, documentID, bake)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +524,10 @@ func bakeSucceeded(ctx context.Context, tx store.TxAccountScope, bake creativesc
 		ObjectIDs         []string `json:"object_ids"`
 		WrittenRevision   int64    `json:"written_revision"`
 		creativescene.BakedModel
-	}{"succeeded", bake.ContentRevisionID, bake.ObjectIDs, int64(bake.Revision), model}, nil
+		// Faces says which of the replaced model's face assignment was kept
+		// and which dropped; dropped faces show their GLB slot again.
+		Faces *creativescene.FacesChange `json:"faces,omitempty"`
+	}{"succeeded", bake.ContentRevisionID, bake.ObjectIDs, int64(bake.Revision), model, faces}, nil
 }
 
 // renderSucceeded is render_view's answer: the screenshot, bound to the next
@@ -572,7 +579,7 @@ func sceneToolResult(ctx context.Context, tx store.TxAccountScope, job creatives
 	failed := false
 	switch {
 	case res.Bake != nil:
-		out, err = bakeSucceeded(ctx, tx, *res.Bake)
+		out, err = bakeSucceeded(ctx, tx, job.DocumentID, *res.Bake)
 	case res.Render != nil:
 		out, err = renderSucceeded(ctx, tx, job, *res.Render)
 	case res.Export != nil:

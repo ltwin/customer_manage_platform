@@ -1,13 +1,14 @@
-import { Mesh, type BufferAttribute, type BufferGeometry, type Material, type Object3D } from 'three'
+import { Mesh, type BufferGeometry, type Material, type Object3D } from 'three'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { readModelGenerator, type ModelGenerator } from '../api.ts'
 import { mediaTicket } from '../../creative-canvas/editor/media.ts'
-import { parseGLB } from '../sandbox/gltf.ts'
+import { parseModelGLB, type MeshIdentity } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
 import { mergeParts, noMerge } from './merge.ts'
+import { applyFaces, fingerprints, fingerprintsNow, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces, type OwnedMesh } from './faces.ts'
 import type { SceneSession } from '../state/sync.ts'
 
 // Model GLBs by content revision: one ticket, one download, one inspection
@@ -32,10 +33,21 @@ export type MeshConstants = {
  * materials run on across part seams. `slot` is the material's slot (its
  * name `slot:<id>`), null for a material the code made itself.
  */
-export type ModelMeshPart = { geometry: BufferGeometry; slot: string | null; hint: string | null; constants: MeshConstants }
+export type ModelMeshPart = {
+  geometry: BufferGeometry
+  slot: string | null
+  hint: string | null
+  constants: MeshConstants
+  /** For triangles a face assignment moved: the GLB slot they came from, drawn until their own slot has a material (materials/resolve.ts resolvePart). */
+  origin?: { slot: string | null; hint: string | null }
+}
 
-/** What a model draws: shared geometries in model space, parts that draw alike merged (models/merge.ts). */
-export type ModelParts = { meshes: ModelMeshPart[] }
+/**
+ * What a model draws: shared geometries in model space, parts that draw alike
+ * merged (models/merge.ts). stale counts face assignment entries that no
+ * longer fit their mesh and were not applied (models/faces.ts).
+ */
+export type ModelParts = { meshes: ModelMeshPart[]; stale?: number }
 
 /**
  * A model baked in this editor. It is drawn from these bytes under its
@@ -75,35 +87,25 @@ function constantsOf(m: StandardLike): MeshConstants {
 }
 
 /**
- * Swaps the second and third corner of every triangle. A mirrored part's
- * transform turned its faces inside out; three.js would flip them back while
- * the transform was the object's, but baked into the geometry it is not.
+ * The model's parts, split by its face assignment when it has one. Without
+ * one the loaded geometries take their transforms in place, as before face
+ * assignments; with one each mesh is copied first (models/faces.ts
+ * ownedMeshes), so pieces never share arrays a transform could hit twice.
+ * topologies: the fingerprints of the meshes the assignment names, when
+ * taken already (load takes them by the browser's own SHA-256).
  */
-export function flipWinding(geometry: BufferGeometry) {
-  const index = geometry.index
-  if (index) {
-    for (let i = 0; i + 2 < index.count; i += 3) {
-      const b = index.getX(i + 1)
-      index.setX(i + 1, index.getX(i + 2))
-      index.setX(i + 2, b)
-    }
-    index.needsUpdate = true
-    return
+export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdentity>, faces?: Faces | null, topologies?: ReadonlyMap<Mesh, string>): ModelParts {
+  if (faces && identities) {
+    const { pieces, stale } = applyFaces(ownedMeshes(root, identities, topologies ?? fingerprintsNow(identities, namedIn(faces))), faces)
+    const meshes = pieces.map((p): ModelMeshPart => {
+      const material = p.mesh.material as StandardLike
+      const own = typeof material.userData.hint === 'string' ? material.userData.hint : null
+      const part: ModelMeshPart = { geometry: p.geometry, slot: p.slot, hint: own, constants: constantsOf(material) }
+      if (!p.assigned) return part
+      return { ...part, hint: p.slot !== null ? (faces.hints?.[p.slot] ?? null) : null, origin: { slot: slotOfMaterial(material), hint: own } }
+    })
+    return { meshes: mergeParts(meshes), stale: stale.length }
   }
-  for (const attribute of Object.values(geometry.attributes) as BufferAttribute[]) {
-    const n = attribute.itemSize
-    const a = attribute.array
-    for (let i = 0; i + 2 < attribute.count; i += 3)
-      for (let k = 0; k < n; k++) {
-        const x = a[(i + 1) * n + k]
-        a[(i + 1) * n + k] = a[(i + 2) * n + k]
-        a[(i + 2) * n + k] = x
-      }
-    attribute.needsUpdate = true
-  }
-}
-
-export function partsOf(root: Object3D): ModelParts {
   root.updateMatrixWorld(true)
   const found: Mesh[] = []
   root.traverse((o) => {
@@ -139,6 +141,7 @@ export class ModelCache {
   private readonly loads = new Map<string, Promise<ModelParts>>()
   private readonly ready = new Map<string, ModelParts>()
   private readonly generators = new Map<string, Promise<ModelGenerator>>()
+  private owning: { revision: string; glb: Promise<ArrayBuffer>; meshes: Promise<OwnedMesh[]> } | null = null
 
   constructor(download: Download = downloadGLB, readGenerator: ReadGenerator = (r) => readModelGenerator(r)) {
     this.download = download
@@ -216,7 +219,7 @@ export class ModelCache {
    * fresh bake before GLTFLoader sees them; a failed load is not kept, so a
    * later attempt tries again.
    */
-  load(revision: string): Promise<ModelParts> {
+  load(revision: string, faces: Faces | null | undefined): Promise<ModelParts> {
     const hit = this.loads.get(revision)
     if (hit) return hit
     const promise = (async () => {
@@ -224,7 +227,8 @@ export class ModelCache {
       if (!local && parsePlaceholder(revision)) throw new Error('本机模型已不在，请重新生成')
       const glb = local ? local.glb : await this.download(revision)
       inspect(glb)
-      const parts = partsOf(await parseGLB(glb))
+      const { scene, identities } = await parseModelGLB(glb)
+      const parts = partsOf(scene, identities, faces, faces ? await fingerprints(identities, namedIn(faces)) : undefined)
       if (!parsePlaceholder(revision)) traceKeys(parts, revision)
       return parts
     })()
@@ -241,6 +245,40 @@ export class ModelCache {
     )
     this.loads.set(revision, promise)
     return promise
+  }
+
+  /**
+   * Every mesh of a revision with its identity and fingerprint, in arrays of
+   * its own, for face edit: parsed apart from the drawn parts, which loading
+   * split and merged. One revision is kept, the one being edited.
+   */
+  owned(revision: string): Promise<OwnedMesh[]> {
+    if (this.owning?.revision === revision) return this.owning.meshes
+    const glb = this.bytes(revision)
+    const meshes = (async () => {
+      const bytes = await glb
+      inspect(bytes)
+      const { scene, identities } = await parseModelGLB(bytes)
+      return ownedMeshes(scene, identities, await fingerprints(identities))
+    })()
+    meshes.catch(() => {
+      if (this.owning?.meshes === meshes) this.owning = null
+    })
+    this.owning = { revision, glb, meshes }
+    return meshes
+  }
+
+  /**
+   * A revision's GLB: a local bake's, the one face edit read, or downloaded.
+   * A face assignment derives a revision over the same bytes, drawn from
+   * them until the server's copy is read.
+   */
+  bytes(revision: string): Promise<ArrayBuffer> {
+    const local = this.local.getState()[revision]
+    if (local) return Promise.resolve(local.glb)
+    if (this.owning?.revision === revision) return this.owning.glb
+    if (parsePlaceholder(revision)) return Promise.reject(new Error('本机模型已不在，请重新生成'))
+    return this.download(revision)
   }
 
   /**
@@ -266,6 +304,8 @@ export class ModelCache {
     const parts = [...this.loads.values()]
     this.loads.clear()
     this.ready.clear()
+    // Face edit's copy: the GLB, the meshes and their BVHs.
+    this.owning = null
     this.local.setState({}, true)
     this.known.setState({}, true)
     disposeParts(parts)

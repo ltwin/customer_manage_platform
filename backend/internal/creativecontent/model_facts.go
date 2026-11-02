@@ -13,15 +13,80 @@ import (
 type ManifestFacts struct {
 	SizeM     [3]float64           `json:"size_m"`
 	Triangles int                  `json:"triangles"`
-	Slots     []creativeglb.Slot   `json:"slots"`
+	Slots     []Slot               `json:"slots"`
 	Parts     []string             `json:"parts"`
 	Anchors   []creativeglb.Anchor `json:"anchors"`
 }
 
+// Slot is a material slot as the assistant sees it (data: 模型内容「有效槽位」):
+// one of the GLB's (source model) or one a face assignment brings (source
+// faces), with how many triangles the assignment gives it.
+type Slot struct {
+	ID            string `json:"id"`
+	Hint          string `json:"hint,omitempty"`
+	Source        string `json:"source"`
+	FaceTriangles int    `json:"face_triangles,omitempty"`
+}
+
+// faceAssignment is the part of a face assignment that says which slots it
+// brings; creativescene owns and checks the whole.
+type faceAssignment struct {
+	Meshes []struct {
+		Assign map[string][][]int `json:"assign"`
+	} `json:"meshes"`
+	Hints map[string]string `json:"hints"`
+}
+
+// EffectiveSlots lists the slots an object shows: the GLB's, then those a
+// face assignment brings (assigns holds each mesh's), sorted by ID, each once.
+// The one rule for every caller, the editor's included (models/faces.ts).
+func EffectiveSlots(glb []creativeglb.Slot, assigns []map[string][][]int, hints map[string]string) []Slot {
+	counts := map[string]int{}
+	for _, assign := range assigns {
+		for slot, ranges := range assign {
+			counts[slot] += 0
+			for _, r := range ranges {
+				if len(r) == 2 {
+					counts[slot] += r[1] - r[0]
+				}
+			}
+		}
+	}
+	out := make([]Slot, 0, len(glb)+len(counts))
+	for _, s := range glb {
+		out = append(out, Slot{ID: s.ID, Hint: s.Hint, Source: "model", FaceTriangles: counts[s.ID]})
+		delete(counts, s.ID)
+	}
+	extra := make([]string, 0, len(counts))
+	for slot := range counts {
+		extra = append(extra, slot)
+	}
+	slices.Sort(extra)
+	for _, slot := range extra {
+		out = append(out, Slot{ID: slot, Hint: hints[slot], Source: "faces", FaceTriangles: counts[slot]})
+	}
+	return out
+}
+
+// effectiveSlotsOf is EffectiveSlots on a stored assignment (null when there
+// is none).
+func effectiveSlotsOf(glb []creativeglb.Slot, faces json.RawMessage) []Slot {
+	var f faceAssignment
+	if len(faces) > 0 {
+		_ = json.Unmarshal(faces, &f)
+	}
+	assigns := make([]map[string][][]int, len(f.Meshes))
+	for i, m := range f.Meshes {
+		assigns[i] = m.Assign
+	}
+	return EffectiveSlots(glb, assigns, f.Hints)
+}
+
 // ManifestFactsOf reads a manifest: its size in metres (rounded to
-// millimetres), triangles, material slots, parts and anchors.
-func ManifestFactsOf(m creativeglb.Manifest) ManifestFacts {
-	f := ManifestFacts{Triangles: m.Triangles, Slots: m.Slots, Parts: m.Parts, Anchors: m.Anchors}
+// millimetres), triangles, material slots (with those the face assignment
+// brings), parts and anchors.
+func ManifestFactsOf(m creativeglb.Manifest, faces json.RawMessage) ManifestFacts {
+	f := ManifestFacts{Triangles: m.Triangles, Slots: effectiveSlotsOf(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors}
 	for i := range f.SizeM {
 		f.SizeM[i] = math.Round((m.Bounds.Max[i]-m.Bounds.Min[i])*1000) / 1000
 	}
@@ -50,7 +115,7 @@ type ModelBrief struct {
 	SizeM     [3]float64                 `json:"size_m"`
 	Mount     string                     `json:"mount"`
 	Triangles int                        `json:"triangles"`
-	Slots     []creativeglb.Slot         `json:"slots"`
+	Slots     []Slot                     `json:"slots"`
 	Materials map[string]json.RawMessage `json:"materials"`
 	Params    []string                   `json:"params"`
 }
@@ -62,6 +127,7 @@ func ModelFactsOf(p Payload) (ModelFacts, bool) {
 		Format    string                     `json:"format"`
 		NameHint  string                     `json:"name_hint"`
 		Manifest  creativeglb.Manifest       `json:"manifest"`
+		Faces     json.RawMessage            `json:"faces"`
 		Materials map[string]json.RawMessage `json:"materials"`
 		Generator *struct {
 			Mount        string                     `json:"mount"`
@@ -75,7 +141,7 @@ func ModelFactsOf(p Payload) (ModelFacts, bool) {
 	if m.Materials == nil {
 		m.Materials = map[string]json.RawMessage{}
 	}
-	return ModelFacts{Name: m.NameHint, Mount: m.Generator.Mount, ManifestFacts: ManifestFactsOf(m.Manifest),
+	return ModelFacts{Name: m.NameHint, Mount: m.Generator.Mount, ManifestFacts: ManifestFactsOf(m.Manifest, m.Faces),
 		Materials: m.Materials, ParamsSchema: m.Generator.ParamsSchema, Params: m.Generator.Params}, true
 }
 

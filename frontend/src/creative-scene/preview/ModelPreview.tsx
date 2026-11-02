@@ -4,10 +4,11 @@ import { OrbitControls } from '@react-three/drei'
 import { AgXToneMapping, DoubleSide, MathUtils, MeshStandardMaterial, Vector3 } from 'three'
 import type { components } from '../../api/schema'
 import type { ModelParts } from '../models/cache.ts'
+import type { Faces } from '../models/faces.ts'
 import { clay } from '../objects/look.ts'
 import { RoomLighting, StudioLights, previewBackground } from '../objects/Lighting.tsx'
 import { SlotMesh } from '../objects/SlotMesh.tsx'
-import { resolveSlot } from '../materials/resolve.ts'
+import { resolvePart } from '../materials/resolve.ts'
 import { drawnGeometries } from '../materials/instances.ts'
 import { previewModels } from './cache.ts'
 import { createRenderer, gpuOf } from '../render/gpu.ts'
@@ -39,18 +40,19 @@ function framing(manifest: Manifest) {
   return { position: position.toArray(), target: center.toArray(), near: distance / 100, far: distance * 20 }
 }
 
-export default function ModelPreview({ revision, manifest, materials, title, thumbnail }: { revision: string; manifest: Manifest; materials: Materials; title: string; thumbnail: string | null }) {
+export default function ModelPreview({ revision, manifest, materials, faces, title, thumbnail }: { revision: string; manifest: Manifest; materials: Materials; faces: Faces | null; title: string; thumbnail: string | null }) {
   const [look, setLook] = useState<Look>('material')
   const [loaded, setLoaded] = useState<{ revision: string; parts: ModelParts | null } | null>(null)
   useEffect(() => {
     let live = true
-    previewModels.load(revision).then(
+    previewModels.load(revision, faces).then(
       (parts) => live && setLoaded({ revision, parts }),
       () => live && setLoaded({ revision, parts: null }),
     )
     return () => {
       live = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a revision's faces never change
   }, [revision])
   const parts = loaded?.revision === revision ? loaded.parts : undefined
   const view = useMemo(() => framing(manifest), [manifest])
@@ -108,7 +110,7 @@ function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manif
     <group>
       {parts.meshes.map((m, i) => {
         if (look === 'clay') return <mesh key={i} geometry={m.geometry} material={clayMaterial} />
-        const material = resolveSlot(m.slot, materials, (m.slot !== null ? hints.get(m.slot) : undefined) ?? m.hint, m.constants).material
+        const material = resolvePart(m, materials, hints).material
         // See-through: piece by piece, as the editor draws it (objects/ModelMesh.tsx).
         return drawnGeometries(m.geometry, material).map((g, j) => <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow={false} />)
       })}

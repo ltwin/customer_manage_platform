@@ -38,6 +38,12 @@ export function selectAll(objects: readonly SceneObject[], sel: Selection): Sele
   return { selected, active: sel.active && selected.includes(sel.active) ? sel.active : (selected[0] ?? null) }
 }
 
+/** Ctrl+I: the pickable objects that were not selected. */
+export function invertSelection(objects: readonly SceneObject[], sel: Selection): Selection {
+  const selected = objects.filter(pickable).map((o) => o.id).filter((id) => !sel.selected.includes(id))
+  return { selected, active: selected[0] ?? null }
+}
+
 /**
  * The object list: click selects, mod+click toggles, Shift+click selects the
  * range from the active object in list order.

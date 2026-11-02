@@ -53,3 +53,20 @@ export function resolveSlot(slot: string | null, assigned: Assigned, hint: strin
   }
   return { slot, source: 'default', material: primitiveDefault }
 }
+
+/**
+ * A model part's material in the material looks: its slot's, the hint taken
+ * from the manifest first. A part a face assignment moved draws as the slot
+ * it came from until its own slot has a material, so assigning faces alone
+ * changes nothing on screen (scene-face-materials AC-3).
+ */
+export function resolvePart(
+  part: { slot: string | null; hint: string | null; constants: MeshConstants | null; origin?: { slot: string | null; hint: string | null } },
+  assigned: Assigned,
+  hints: ReadonlyMap<string, string | undefined>,
+): ResolvedSlot {
+  const hintOf = (slot: string | null, own: string | null) => (slot !== null ? hints.get(slot) : undefined) ?? own
+  if (!part.origin || (part.slot !== null && assigned?.[part.slot])) return resolveSlot(part.slot, assigned, hintOf(part.slot, part.hint), part.constants)
+  return resolveSlot(part.origin.slot, assigned, hintOf(part.origin.slot, part.origin.hint), part.constants)
+}
+

@@ -173,13 +173,16 @@ class SceneServer {
   }
   /** A model asset in the library: a library copy of the seeded revision with these materials, without its code. Returns the copy's revision. */
   libraryAsset(rev, title, materials = {}) {
-    const m = this.models.get(rev)
-    const copy = this.libraryCopy(rev, materials)
-    const { content_id } = this.models.get(copy)
+    return this.listAsset(this.libraryCopy(rev, materials), title)
+  }
+  /** A library copy on the asset list, with the materials and faces it was saved with. Returns the copy's revision. */
+  listAsset(copy, title) {
+    const m = this.models.get(copy)
+    const { content_id, materials } = m
     const { code: _code, ...generator } = m.generator
     this.library.push({
       id: `ccas_${this.library.length + 1}`, title, description: '', kind: 'model', revision: '1', content_id, content_revision_id: copy,
-      content: { id: copy, content_id, kind: 'model', sequence: '1', truncated: false, payload: { model: { format: 'glb', manifest: m.manifest, generator, name_hint: m.name_hint, materials, source_revision_id: rev } },
+      content: { id: copy, content_id, kind: 'model', sequence: '1', truncated: false, payload: { model: { format: 'glb', manifest: m.manifest, generator, name_hint: m.name_hint, materials, faces: m.faces ?? null, source_revision_id: m.source } },
         media: [{ role: 'original', blob_id: 'glb', mime: 'model/gltf-binary', byte_size: m.glb.byteLength, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'png', mime: 'image/png', byte_size: 64, width: 256, height: 256, duration_ms: null }] },
       unavailable: false, is_favorite: false, rating: null, palette: [], created_at: '2026-10-20T00:00:00Z', deleted_at: null, purge_after: null, group_ids: [], tag_ids: [],
     })
@@ -207,7 +210,8 @@ class SceneServer {
     const object = this.object(p.object_id)
     const rev = object.model.content_revision_id
     const src = this.models.get(rev)
-    const slots = new Set(src.manifest.slots.map((x) => x.id))
+    // The effective slots: the GLB's and those its face assignment made (backend library.go assignedSlots).
+    const slots = new Set([...src.manifest.slots.map((x) => x.id), ...(src.faces?.meshes ?? []).flatMap((m) => Object.keys(m.assign))])
     const materials = Object.fromEntries(Object.entries(object.material_slots ?? {}).filter(([k]) => slots.has(k)))
     const key = `${src.source ?? rev} ${canonical(materials)}`
     const existing = this.assets.get(key)
@@ -251,7 +255,7 @@ class SceneServer {
         continue
       }
       const { code: _code, ...generator } = m.generator
-      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null }
+      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null, faces: m.faces ?? null }
     }
     return out
   }
@@ -270,12 +274,22 @@ class SceneServer {
       }
       assert.ok(!op.base_content_id || [...this.models.values()].some((m) => m.content_id === op.base_content_id), `base content ${op.base_content_id} is real`)
     }
+    const derives = ops.filter((op) => op.op === 'derive_model')
+    for (const op of derives) assert.ok(this.models.has(op.from_revision_id), `derived from a real revision: ${op.from_revision_id}`)
     const models = {}
+    // derive_model: the source's GLB and generator under a new revision, with the faces sent.
+    for (const op of derives) {
+      const { source: _source, materials: _materials, thumbnail: _thumbnail, ...from } = this.models.get(op.from_revision_id)
+      const rev = `ccrv_m${++this.modelSeq}`
+      const content_id = op.base_content_id && !this.isCopy(op.base_content_id) ? op.base_content_id : `ccnt_m${this.modelSeq}`
+      this.models.set(rev, { ...from, content_id, faces: op.faces })
+      models[op.ref] = { content_id, content_revision_id: rev }
+    }
     for (const op of commits) {
       for (const id of [op.glb_upload_id, op.thumbnail_upload_id]) this.uploads.get(id).consumed = true
       const rev = `ccrv_m${++this.modelSeq}`
       const content_id = op.base_content_id && !this.isCopy(op.base_content_id) ? op.base_content_id : `ccnt_m${this.modelSeq}`
-      this.models.set(rev, { content_id, glb: this.uploadBytes.get(op.glb_upload_id), generator: op.generator, manifest: op.manifest, name_hint: op.name_hint })
+      this.models.set(rev, { content_id, glb: this.uploadBytes.get(op.glb_upload_id), generator: op.generator, manifest: op.manifest, name_hint: op.name_hint, faces: op.faces ?? null })
       models[op.ref] = { content_id, content_revision_id: rev }
     }
     const real = (m) => {
@@ -1057,6 +1071,200 @@ await check('C6 copy semantics: a placed model changes only in this scene; editi
   assert.notEqual(two.content, copy)
   assert.notEqual(two.content, one.content)
   assert.equal([...server.models.values()].filter((m) => m.content_id === copy).length, 1)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// scene-face-materials 5.1: Tab enters face edit on the active object; a click picks a flat patch.
+await check('face edit: Tab on a box, a click selects one side (two triangles), Shift+click takes it out, G says why not, Tab leaves', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  // Framed, the box fills the middle of the view.
+  await page.keyboard.press('Period')
+  await sleep(800)
+  const { x, y } = await viewportCenter(page)
+  const onBox = { x: x + 30, y }
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  await page.keyboard.press('Tab')
+  await waitFor(async () => /^面编辑：方块/.test((await page.locator('.cc-scene-mode').textContent()) ?? ''), 'the status bar shows face edit')
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  const commands = server.commands.length
+
+  await page.mouse.click(onBox.x, onBox.y)
+  await waitFor(async () => /已选 2 个三角形/.test(await hint()), 'one side of the box, two triangles')
+  await shot(page, 'face-edit-side')
+  // From the top-front-right the lines show where the sides meet.
+  await page.keyboard.press('KeyN')
+  await page.mouse.move(x + 200, y)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(x + 120, y + 60, { steps: 5 })
+  await page.mouse.up({ button: 'middle' })
+  await sleep(300)
+  await shot(page, 'face-edit-angled')
+  await page.keyboard.press('KeyN')
+  await page.keyboard.press('Period')
+  await sleep(800)
+  await page.keyboard.down('Shift')
+  await page.mouse.click(onBox.x, onBox.y)
+  await page.keyboard.up('Shift')
+  await waitFor(async () => !/已选/.test(await hint()), 'Shift+click on a selected side takes it out')
+  await page.mouse.click(onBox.x, onBox.y)
+  await waitFor(async () => /已选 2 个三角形/.test(await hint()), 'selected again')
+  await page.mouse.click(x, y - 330)
+  await waitFor(async () => !/已选/.test(await hint()), 'a click on nothing clears')
+  assert.equal(await page.getByRole('treeitem', { name: /方块/ }).getAttribute('aria-selected'), 'true', 'the object stays selected')
+
+  await page.keyboard.press('KeyG')
+  await waitFor(async () => /不移动、旋转、缩放/.test(await hint()), 'G says faces are not moved')
+  assert.equal(server.commands.length, commands, 'face edit selection sends nothing')
+  await page.keyboard.press('Tab')
+  await waitFor(async () => (await page.locator('.cc-scene-mode').count()) === 0, 'Tab leaves face edit')
+
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// scene-face-materials 5.2: the other ways to select faces.
+await check('face edit: a box drag selects only the sides in sight; A, Ctrl+I, L and the 选择 menu', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  await addBox(page, server)
+  const { x, y } = await viewportCenter(page)
+  // Framed, then turned to look from the top-front-right: three sides face the camera.
+  await page.keyboard.press('Period')
+  await sleep(800)
+  await page.mouse.move(x + 200, y)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(x + 120, y + 60, { steps: 5 })
+  await page.mouse.up({ button: 'middle' })
+  await sleep(500)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  const count = async () => Number(/已选 (\d+) 个三角形/.exec((await hint()) ?? '')?.[1] ?? 0)
+  await page.keyboard.press('Tab')
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  const commands = server.commands.length
+
+  // The three sides behind are inside the box too, but hidden: not caught.
+  const drag = async (mods = []) => {
+    for (const m of mods) await page.keyboard.down(m)
+    await page.mouse.move(x - 260, y - 230)
+    await page.mouse.down()
+    await page.mouse.move(x + 260, y + 230, { steps: 8 })
+    await page.mouse.up()
+    for (const m of mods) await page.keyboard.up(m)
+  }
+  await drag()
+  await waitFor(async () => (await count()) === 6, 'three sides in sight, two triangles each')
+  await shot(page, 'face-edit-box-select')
+  await drag([mod])
+  await waitFor(async () => (await count()) === 0, 'Ctrl+drag takes them out')
+
+  await page.keyboard.press('KeyA')
+  await waitFor(async () => (await count()) === 12, 'A selects every triangle')
+  await page.keyboard.press(`${mod}+KeyI`)
+  await waitFor(async () => (await count()) === 0, 'Ctrl+I inverts to nothing')
+  await page.mouse.move(x + 30, y)
+  await page.keyboard.press('KeyL')
+  await waitFor(async () => (await count()) === 12, 'L picks the piece under the pointer: the whole box')
+  await page.keyboard.press('Alt+KeyA')
+  await waitFor(async () => (await count()) === 0, 'Alt+A clears')
+  await page.mouse.click(x + 30, y)
+  await waitFor(async () => (await count()) === 2, 'a click picks a side')
+  await page.getByRole('navigation', { name: '场景菜单' }).getByRole('button', { name: '选择' }).click()
+  await page.getByRole('menuitem', { name: /反选/ }).click()
+  await waitFor(async () => (await count()) === 10, 'the 选择 menu inverts as Ctrl+I does')
+  assert.equal(server.commands.length, commands, 'selecting faces sends nothing')
+
+  // A builtin keeps its faces on the object: one update_objects.
+  await page.getByRole('button', { name: '+ 新槽位' }).click()
+  await page.getByLabel('槽位 face_1').getByRole('button', { name: '指定' }).click()
+  await waitFor(() => server.commands.length === commands + 1, 'the assignment is sent')
+  const [op] = server.commands.at(-1).payload.operations
+  assert.equal(op.op, 'update_objects')
+  const faces = op.updates[0].primitive.faces
+  assert.deepEqual(faces.meshes[0].path, [['', 0]])
+  assert.equal(Object.values(faces.meshes[0].assign.face_1).reduce((n, [s, e]) => n + e - s, 0), 10)
+  assert.equal(await count(), 10, 'the selection stays')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// scene-face-materials 5.3 (Epic AC-3): faces to a new slot, then a material for it.
+await check('face edit: + 新槽位 and 指定 is one revision, its material another; two undos go back in turn; the other instance stays; reopened the same', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const a = `sobj_${'pillar_a'.padEnd(21, '0')}`
+  const b = `sobj_${'pillar_b'.padEnd(21, '0')}`
+  server.seedInstance(a, rev, 0, '柱 A')
+  server.seedInstance(b, rev, 3, '柱 B')
+  let { context, page, errors } = await open(server)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  await page.getByRole('treeitem', { name: /柱 A/ }).click()
+  await page.keyboard.press('Period')
+  await sleep(800)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.click(x, y)
+  await page.keyboard.press('Tab')
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  await page.mouse.click(x, y)
+  await waitFor(async () => /已选 \d+ 个三角形/.test(await hint()), 'a patch of the pillar')
+  const picked = /已选 (\d+) 个三角形/.exec(await hint())[1]
+
+  await page.getByRole('button', { name: '+ 新槽位' }).click()
+  const slot = page.getByLabel('槽位 face_1')
+  await slot.getByRole('button', { name: '指定' }).click()
+  // Shared with 柱 B: asked first.
+  await page.getByRole('group', { name: '共用模型' }).getByRole('button', { name: '只改这个' }).click()
+  await waitFor(() => server.commands.length === 1, 'one command for the assignment')
+  const [derive, set] = server.commands[0].payload.operations
+  assert.equal(derive.op, 'derive_model')
+  assert.equal(derive.from_revision_id, rev)
+  assert.equal(derive.base_content_id, undefined, 'this one only: a model of its own')
+  assert.deepEqual(Object.keys(derive.faces.meshes[0].assign), ['face_1'])
+  assert.deepEqual(set, { op: 'set_instance_model', object_id: a, model: { ref: derive.ref }, scope: 'this' })
+  const assigned = server.object(a).model.content_revision_id
+  assert.notEqual(assigned, rev)
+  assert.equal(server.object(b).model.content_revision_id, rev, '柱 B keeps its model')
+  await saved(page)
+  assert.match(await hint(), new RegExp(`已选 ${picked} 个三角形`), 'the selection stays for the next slot')
+  await waitFor(async () => (await page.getByLabel('槽位 face_1').getByText('新槽位，指定后保存').count()) === 0, 'face_1 is a slot of the model now')
+  await shot(page, 'face-edit-assigned')
+
+  const material = page.getByLabel('face_1 的材质')
+  const preset = await material.locator('option').nth(3).getAttribute('value')
+  await material.selectOption(preset)
+  await waitFor(() => server.commands.length === 2, 'a second command for the material')
+  assert.equal(server.object(a).material_slots.face_1.preset, preset)
+  await saved(page)
+
+  await page.locator('.cc-scene-editor canvas').click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'undo the material')
+  assert.equal(server.object(a).material_slots.face_1, undefined)
+  assert.equal(server.object(a).model.content_revision_id, assigned)
+  await saved(page)
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => server.commands.length === 4, 'undo the assignment')
+  assert.equal(server.object(a).model.content_revision_id, rev, 'back on the shared model')
+  await saved(page)
+  await page.keyboard.press(`${mod}+Shift+KeyZ`)
+  await page.keyboard.press(`${mod}+Shift+KeyZ`)
+  await waitFor(() => server.commands.length === 6, 'both redone')
+  assert.equal(server.object(a).model.content_revision_id, assigned)
+  assert.equal(server.object(a).material_slots.face_1.preset, preset)
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Reopened: the slot is there with its material, 柱 B as it was.
+  ;({ context, page, errors } = await open(server))
+  await page.getByRole('treeitem', { name: /柱 A/ }).click()
+  assert.equal(await page.getByLabel('face_1 的材质').inputValue(), preset)
+  await page.getByRole('treeitem', { name: /柱 B/ }).click()
+  assert.equal(await page.getByLabel('槽位 face_1').count(), 0)
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -3647,6 +3855,261 @@ await check('AC-6: in the rendered view the dialog ticks all three passes; 3 cam
   await context.close()
 })
 
+// --- scene-face-materials 6.1: face assignments end to end ------------------
+
+// scene-face-materials 6.1 (Epic AC-5): what a parameter change keeps. The fingerprints are the template GLB's and arch@1's at its defaults.
+const archDefaults = { width: 2, height: 3, depth: 0.5, opening_width: 1.2, opening_height: 2.2 }
+const templateMeshes = {
+  base: { path: [['', 0], ['part:base', 0]], primitive: 0, topology: 't1-e690ec2cb6f45eb6' },
+  shaft: { path: [['', 0], ['part:shaft', 0]], primitive: 0, topology: 't1-a3d71383dd3c20c1' },
+}
+
+await check('AC-5 faces: an arch keeps them on 厚 and loses them on 门洞宽; a model keeps them on 高度, and on 柱身 loses only the shaft’s, saying how many', async () => {
+  const server = new SceneServer()
+  const arch = objectID('arch')
+  server.external([{ op: 'add_objects', objects: [{ ...boxObject(arch, '拱门', -3, 1), primitive: { builtin: 'arch@1', params: archDefaults,
+    faces: { meshes: [{ path: [['', 0]], primitive: 0, topology: 't1-8e37bb2ca4ae4e34', assign: { face_1: [[0, 6]] } }] } } }] }])
+  const rev = server.seedModel()
+  server.models.get(rev).faces = { meshes: [
+    { ...templateMeshes.base, assign: { face_1: [[0, 4]] } },
+    { ...templateMeshes.shaft, assign: { face_1: [[0, 8]] } },
+  ] }
+  const pillar = objectID('pillar')
+  server.seedInstance(pillar, rev, 0, '柱')
+  const { context, page, errors } = await open(server)
+  const status = (text) => page.getByText(text).waitFor({ timeout: 20_000 })
+  const field = async (label, value) => {
+    const input = page.getByLabel(label, { exact: true })
+    await input.fill(value)
+    await input.press('Enter')
+  }
+
+  // The arch: 厚 is not in its topology rule, 门洞宽 is.
+  await page.getByRole('treeitem', { name: /拱门/ }).click()
+  await field('厚（m）', '0.8')
+  await waitFor(() => server.commands.length === 1, 'the depth change')
+  assert.equal(server.commands[0].payload.operations[0].updates[0].primitive.faces, undefined, '厚 leaves the faces alone')
+  assert.deepEqual(server.object(arch).primitive.faces.meshes[0].assign, { face_1: [[0, 6]] })
+  await saved(page)
+  await field('门洞宽（m）', '1.4')
+  await waitFor(() => server.commands.length === 2, 'the opening change')
+  assert.equal(server.commands[1].payload.operations[0].updates[0].primitive.faces, null, 'in the same update')
+  assert.equal(server.object(arch).primitive.faces ?? null, null)
+  await status('参数改变了面的划分，这个基础体的面分配已清空，撤销可以找回')
+  await saved(page)
+
+  // The model: 高度 moves the vertices only; a square shaft is another mesh, the base the same.
+  await page.getByRole('treeitem', { name: /^柱/ }).click()
+  await field('高度（m）', '4')
+  await waitFor(() => server.commands.length === 3, 'the height rebake', 30_000)
+  const tall = server.commands[2].payload.operations[0]
+  assert.equal(tall.op, 'commit_model')
+  assert.deepEqual(tall.faces.meshes.map((m) => m.path[1][0]), ['part:base', 'part:shaft'], '高度 keeps both')
+  await saved(page)
+  await page.getByRole('combobox', { name: /^柱身/ }).selectOption('square')
+  await waitFor(() => server.commands.length === 4, 'the shaft rebake', 30_000)
+  const square = server.commands[3].payload.operations[0]
+  assert.deepEqual(square.faces.meshes, [{ ...templateMeshes.base, assign: { face_1: [[0, 4]] } }], 'the base kept, the shaft dropped')
+  await status('网格变了，face_1 的 8 个三角形的面分配已失效，撤销可以找回')
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+/** The share of an image's pixels in red paint (PNG or JPEG), inside the fractions [x0, y0, x1, y1]. */
+async function redShare(page, bytes, rect = [0, 0, 1, 1]) {
+  return page.evaluate(async ([src, rect]) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const g = c.getContext('2d')
+    g.drawImage(bitmap, 0, 0)
+    const [x0, y0, x1, y1] = [rect[0] * c.width, rect[1] * c.height, rect[2] * c.width, rect[3] * c.height].map(Math.round)
+    const p = g.getImageData(x0, y0, x1 - x0, y1 - y0).data
+    let n = 0
+    for (let k = 0; k < p.length; k += 4) if (p[k] > p[k + 1] + 50 && p[k] > p[k + 2] + 50) n++
+    return n / (p.length / 4)
+  }, [`data:image/png;base64,${bytes.toString('base64')}`, rect])
+}
+
+const greyPaint = { preset: 'paint@1', params: { color: '#808080', roughness: 0.6, metalness: 0 } }
+const redPaint = { preset: 'paint@1', params: { color: '#c03030', roughness: 0.6, metalness: 0 } }
+
+/** Each block's share of pixels in red paint, cols × rows over the whole picture (PNG or JPEG). */
+async function redBlocks(page, bytes, cols, rows) {
+  return page.evaluate(async ([src, cols, rows]) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const g = c.getContext('2d')
+    g.drawImage(bitmap, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    const red = new Float64Array(cols * rows)
+    const n = new Float64Array(cols * rows)
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+      const b = Math.floor((y * rows) / c.height) * cols + Math.floor((x * cols) / c.width)
+      const i = (y * c.width + x) * 4
+      if (p[i] > p[i + 1] + 50 && p[i] > p[i + 2] + 50) red[b]++
+      n[b]++
+    }
+    return Array.from(red, (v, b) => v / n[b])
+  }, [`data:image/png;base64,${bytes.toString('base64')}`, cols, rows])
+}
+/** How far two pictures agree on where red is: blocks red in both over blocks red in either. */
+const redOverlap = (a, b, at = 0.3) => {
+  let both = 0
+  let either = 0
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] > at && b[i] > at) both++
+    if (a[i] > at || b[i] > at) either++
+  }
+  return either ? both / either : 0
+}
+
+await check('AC-4 faces: the same split in material preview, the rendered view, render_view lit, the lit export and the asset thumbnail', async () => {
+  const server = new SceneServer()
+  const box = objectID('fbox')
+  const cam = objectID('fcam')
+  // The box's +X and +Z sides, the pillar's shaft: face_1 in red; the rest grey or stone.
+  server.external([{ op: 'add_objects', objects: [
+    { ...boxObject(box, '分面方块', -1.2, 1), transform: { ...identity(), position: [-1.2, 0, 0], rotation: [0, 0.2588190451, 0, 0.9659258263] },
+      primitive: { builtin: 'box@1', faces: { meshes: [{ path: [['', 0]], primitive: 0, topology: 't1-e690ec2cb6f45eb6', assign: { face_1: [[0, 2], [8, 10]] } }] } },
+      material_slots: { main: greyPaint, face_1: redPaint } },
+    cameraObject(cam, '机位 F', 2, { focal_mm: 35 }, [0, 1.5, 6]),
+  ] }])
+  const rev = server.seedModel()
+  server.models.get(rev).faces = { meshes: [{ ...templateMeshes.shaft, assign: { face_1: [[0, 128]] } }] }
+  const pillar = objectID('fpillar')
+  server.seedInstance(pillar, rev, 1.2, '分面柱', { stone: greyPaint, face_1: redPaint })
+  const { context, page, errors } = await open(server, { query: '?host=1&export=1&library=1' })
+  const [cols, rows] = [30, 20]
+  const pictures = {}
+
+  // Through the camera in the viewport, both looks with materials.
+  await page.getByRole('treeitem', { name: /机位 F/ }).click()
+  await page.keyboard.press('Digit0')
+  const frame = page.locator('.cc-scene-camframe')
+  await frame.waitFor()
+  for (const look of ['材质预览', '最终渲染']) {
+    await shading(page, look)
+    await sleep(800)
+    pictures[look] = await settledShot(page, await frame.boundingBox())
+  }
+
+  // The lit export of that camera.
+  await page.getByRole('button', { name: '导出' }).first().click()
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  await dialog.waitFor()
+  for (const name of ['白模（clay）', '线稿']) if (await dialog.getByLabel(name).isChecked()) await dialog.getByLabel(name).uncheck()
+  await dialog.getByLabel('材质光照').check()
+  await dialog.getByRole('button', { name: '导出' }).click()
+  await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.waitFor({ state: 'detached' })
+  const lit = server.exports[0].payload.shots.find((x) => x.camera_object_id === cam).images.find((i) => i.pass === 'lit')
+  pictures.export = server.uploadBytes.get(lit.upload_id)
+
+  // render_view lit from the same camera, as the assistant asks for it.
+  await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+  server.claimable = [{ id: 'csj_faces', document_id: DOC, kind: 'render_view', request: { camera_object_id: cam, mode: 'lit' }, attempt: 0, claim_token: 'tok_faces', lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(() => server.completes.some((c) => c.id === 'csj_faces'), 'render_view done', 120_000)
+  const done = server.completes.find((c) => c.id === 'csj_faces').payload
+  assert.equal(done.outcome, 'succeeded')
+  pictures.render_view = server.uploadBytes.get(done.render.image_upload_id)
+
+  if (process.env.SCENE_E2E_SHOTS) for (const [name, bytes] of Object.entries(pictures)) await writeFile(`${process.env.SCENE_E2E_SHOTS}/faces-ac4-${name}.png`, bytes)
+  const want = await redBlocks(page, pictures['材质预览'], cols, rows)
+  assert.ok(want.filter((v) => v > 0.3).length >= 12, 'face_1 shows in material preview')
+  // The box's left side and the pillar's top and foot are not face_1.
+  for (const [name, bytes] of Object.entries(pictures)) {
+    const overlap = redOverlap(want, await redBlocks(page, bytes, cols, rows))
+    console.log(`  red where material preview has it, ${name}: ${overlap.toFixed(2)}`)
+    if (name !== '材质预览') assert.ok(overlap > 0.7, `${name} splits the slots as material preview does (${overlap.toFixed(2)})`)
+  }
+
+  // The asset thumbnail of the pillar.
+  await page.getByRole('treeitem', { name: /分面柱/ }).click()
+  await page.getByRole('button', { name: '存入资产库…' }).click()
+  const save = page.getByRole('dialog', { name: '存入个人资产库' })
+  await save.getByRole('button', { name: '存入', exact: true }).click()
+  await save.waitFor({ state: 'detached', timeout: 60_000 })
+  const thumbnail = server.uploadBytes.get(server.saves[0].payload.thumbnail_upload_id)
+  if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/faces-ac4-thumbnail.png`, thumbnail)
+  assert.ok((await redShare(page, thumbnail)) > 0.01, 'the thumbnail draws the shaft in face_1\'s paint')
+  assert.ok((await redShare(page, thumbnail, [0, 0, 1, 0.12])) < 0.002 && (await redShare(page, thumbnail, [0, 0.88, 1, 1])) < 0.002, 'and its capital and base not')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('AC-8 faces: saved to the library with its faces, the thumbnail split as the scene; put in another scene the same; assigning there leaves the asset and the first scene alone', async () => {
+  const server = new SceneServer()
+  const rev = server.seedModel()
+  const faces = { meshes: [{ ...templateMeshes.shaft, assign: { face_1: [[0, 128]] } }] }
+  server.models.get(rev).faces = faces
+  const materials = { stone: greyPaint, face_1: redPaint }
+  const pillar = objectID('pillar')
+  server.seedInstance(pillar, rev, 0, '柱', materials)
+  let { context, page, errors } = await open(server, { query: '?library=1' })
+  await page.getByRole('treeitem', { name: /柱/ }).click()
+  await page.getByRole('button', { name: '存入资产库…' }).click()
+  const dialog = page.getByRole('dialog', { name: '存入个人资产库' })
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await dialog.waitFor({ state: 'detached', timeout: 60_000 })
+  await page.locator('#notice').filter({ hasText: '已存入资产库' }).waitFor()
+  const copy = [...server.assets.values()][0].content_revision_id
+  assert.deepEqual(server.models.get(copy).faces, faces, 'the copy keeps the faces')
+  assert.deepEqual(server.models.get(copy).materials, materials, 'and face_1\'s material, a slot of the model')
+  const thumbnail = server.uploadBytes.get(server.saves[0].payload.thumbnail_upload_id)
+  if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/faces-asset-thumbnail.png`, thumbnail)
+  assert.ok((await redShare(page, thumbnail)) > 0.01, 'the thumbnail draws the shaft in face_1\'s paint')
+  assert.ok((await redShare(page, thumbnail, [0, 0, 1, 0.12])) < 0.002 && (await redShare(page, thumbnail, [0, 0.88, 1, 1])) < 0.002, 'and the capital and base in stone\'s')
+  assert.deepEqual(errors, [])
+  await context.close()
+
+  // Another scene: the asset from the list, its faces and materials with it.
+  const other = new SceneServer()
+  other.models.set(copy, { ...server.models.get(copy), faces: structuredClone(faces) })
+  other.listAsset(copy, '分面束柱')
+  ;({ context, page, errors } = await open(other, { query: '?library=1' }))
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '从资产库添加…' }).click()
+  const card = page.locator('.cc-scene-assets').getByRole('option', { name: '分面束柱', exact: true }).first()
+  await card.dblclick()
+  await waitFor(() => other.commands.length === 1, 'place command')
+  const placed = other.commands[0].payload.operations[0].objects[0]
+  assert.deepEqual(placed.model, { content_revision_id: copy })
+  assert.deepEqual(placed.material_slots, materials)
+  await saved(page)
+  // Placed, it is selected; the keys go back to the viewport.
+  await page.locator('.cc-scene-editor canvas').hover()
+  await page.keyboard.press('Period')
+  await shading(page, '材质预览')
+  await sleep(1500)
+  const { x, y, box } = await viewportCenter(page)
+  const view = await settledShot(page, box)
+  await shot(page, 'faces-other-scene')
+  assert.ok((await redShare(page, view)) > 0.01, 'the scene draws the shaft in face_1\'s paint')
+
+  // Face edit there: the shaft back to stone is a revision of new content, not the asset's.
+  await page.mouse.click(x, y)
+  await page.keyboard.press('Tab')
+  const hint = () => page.locator('.cc-scene-hint').textContent()
+  await waitFor(async () => /单击选面片/.test(await hint()), 'face edit ready')
+  await page.mouse.click(x, y)
+  await waitFor(async () => /已选 \d+ 个三角形/.test(await hint()), 'a patch of the shaft')
+  await page.getByLabel('槽位 stone').getByRole('button', { name: '指定' }).click()
+  await waitFor(() => other.commands.length === 2, 'the assignment')
+  const [derive] = other.commands[1].payload.operations
+  assert.equal(derive.op, 'derive_model')
+  assert.equal(derive.from_revision_id, copy)
+  const derived = other.object(placed.id).model.content_revision_id
+  assert.notEqual(other.models.get(derived).content_id, other.models.get(copy).content_id, 'a library copy is never continued')
+  assert.deepEqual(other.models.get(copy).faces, faces, 'the asset keeps its faces')
+  assert.deepEqual(server.models.get(rev).faces, faces, 'the first scene\'s model too')
+  assert.equal(server.object(pillar).model.content_revision_id, rev)
+  await saved(page)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 // --- W1 AC-W1-1: clay is the studio light, whatever the environment ------------
 
 await check('W1 clay: the sun, the sky, fog, ambient and a shadowing lamp change neither the clay view nor clay exports; every camera is lit from the front', async () => {
@@ -4054,6 +4517,55 @@ async function keepPanels(name, png) {
 }
 
 const within = (ratio, tolerance) => Math.abs(ratio - 1) <= tolerance
+
+// Face edit on WebGPU (SwiftShader's WebGL2 backend never says), lit, both engines (2026-10-29):
+//  - entered twice with no frame failing to submit: made in render and freed by StrictMode's second
+//    mount, the lines were drawn freed ("used in submit while destroyed" every frame of the workbench);
+//  - the tint seen: the real-time GI lays the aside layer over its picture by depth, and the tint,
+//    on the surface and writing none, never showed (faceEdit/FaceOverlay.tsx towardEye).
+await check('face edit on the GPU: in and out twice, a click tints a side you can see, no frame fails (workbench and real-time GI, lit)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    for (const engine of ['workbench', 'realtime_gi']) {
+      const server = new SceneServer()
+      server.scene.render.engine = engine
+      server.seedInstance('sobj_pillar', server.seedModel())
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const { page, errors } = await open(server, { context })
+      const hint = () => page.locator('.cc-scene-hint').textContent()
+      await page.getByRole('treeitem', { name: /柱/ }).click()
+      await shading(page, '最终渲染')
+      await page.keyboard.press('Period')
+      await sleep(800)
+      const { x, y, box } = await viewportCenter(page)
+      const onPillar = { x: x + 30, y }
+      // A click in the viewport hands it the keys.
+      await page.mouse.click(onPillar.x, onPillar.y)
+      for (const round of [1, 2]) {
+        await page.keyboard.press('Tab')
+        await waitFor(async () => /单击选面片/.test(await hint()), `${engine}: face edit ready (${round})`)
+        const bare = round === 1 && (await settledShot(page, box))
+        await page.mouse.click(onPillar.x, onPillar.y)
+        await waitFor(async () => /已选 \d+ 个三角形/.test(await hint()), `${engine}: a side selected (${round})`)
+        if (bare) {
+          // One facet of the pillar's shaft: a thin strip of the view.
+          const tinted = await pixelDiff(page, bare, await settledShot(page, box))
+          assert.ok(tinted > 0.001, `${engine}: the selected side is tinted (${(tinted * 100).toFixed(2)}% differ)`)
+          await shot(page, `face-edit-gpu-${engine}`)
+        }
+        await page.mouse.click(onPillar.x, onPillar.y + 40)
+        await sleep(800)
+        await page.keyboard.press('Tab')
+        await waitFor(async () => (await page.locator('.cc-scene-mode').count()) === 0, `${engine}: Tab leaves (${round})`)
+      }
+      await sleep(500)
+      assert.deepEqual(errors, [], `${engine}: no GPU errors`)
+      await context.close()
+    }
+  } finally {
+    await gpu.close()
+  }
+})
 
 // AC-S1-3 (Epic AC-3): a sphere light lights the wall far off as I/d² does, wraps past the terminator as the
 // reference does, and stays finite with a surface inside it.

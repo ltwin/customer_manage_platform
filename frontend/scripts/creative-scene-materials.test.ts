@@ -31,7 +31,8 @@ test('slot hints map to presets whole, ignoring case and spaces', () => {
 })
 
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three'
-import { flipWinding, partsOf, type MeshConstants } from '../src/creative-scene/models/cache.ts'
+import { partsOf, type MeshConstants } from '../src/creative-scene/models/cache.ts'
+import { flipWinding } from '../src/creative-scene/models/faces.ts'
 import { principledProps, seeThrough } from '../src/creative-scene/materials/principled.ts'
 import { resolveSlot } from '../src/creative-scene/materials/resolve.ts'
 

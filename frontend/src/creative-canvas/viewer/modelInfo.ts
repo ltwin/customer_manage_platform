@@ -7,6 +7,7 @@ import type { Content } from '../editor/api.ts'
 type Manifest = components['schemas']['CreativeModelManifest']
 type Generator = components['schemas']['CreativeModelGenerator']
 type Materials = components['schemas']['CreativeSceneMaterialSlots']
+type Faces = components['schemas']['CreativeModelFaces']
 
 /** 几何模块按 `mount` 约定的原点，即模型的参考点。 */
 export const originLabel: Record<Generator['mount'], string> = {
@@ -41,6 +42,13 @@ export function modelMaterials(content: Content | undefined): Materials {
     : {}
 }
 
+/** 模型的面级材质分配（scene-face-materials）；没有时为 null。 */
+export function modelFaces(content: Content | undefined): Faces | null {
+  return content?.kind === 'model' && 'model' in content.payload
+    ? (content.payload.model.faces ?? null)
+    : null
+}
+
 /** 完整形态的模型才有信息；暂存形态和其他类型返回 null。 */
 export function modelInfo(content: Content | undefined): ModelInfo | null {
   if (content?.kind !== 'model' || !('model' in content.payload)) return null
@@ -52,7 +60,7 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
     origin: originLabel[generator.mount],
     size: modelSize(manifest),
     triangles: manifest.triangles.toLocaleString('zh-CN'),
-    slots: manifest.slots.map((s) => {
+    slots: [...manifest.slots, ...faceSlots(content, manifest)].map((s) => {
       const preset = materials[s.id]?.preset
       return preset ? { ...s, material: materialEntry(preset)?.label ?? preset } : s
     }),
@@ -64,6 +72,26 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
       }))
       .sort((a, b) => a.key.localeCompare(b.key)),
   }
+}
+
+/** 面分配新建、GLB 里没有的槽位，按名字排序，与场景的有效槽位一致（models/faces.ts effectiveSlots；这里不引 three）。 */
+function faceSlots(content: Content, manifest: Manifest): Manifest['slots'] {
+  const faces = modelFaces(content)
+  const glb = new Set(manifest.slots.map((s) => s.id))
+  const used = new Set(
+    faces?.meshes.flatMap((m) =>
+      Object.entries(m.assign)
+        .filter(([, r]) => r.length)
+        .map(([id]) => id),
+    ),
+  )
+  return [...used]
+    .filter((id) => !glb.has(id))
+    .sort()
+    .map((id) => {
+      const hint = faces?.hints?.[id]
+      return hint ? { id, hint } : { id }
+    })
 }
 
 export function modelSize(m: Manifest): string {

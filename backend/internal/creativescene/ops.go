@@ -52,8 +52,11 @@ type objectUpdate struct {
 	Volume        *Volume                  `json:"volume,omitempty"`
 }
 
+// primitivePatch merges params by key and replaces faces whole; faces written
+// null clears the assignment, left out keeps it.
 type primitivePatch struct {
-	Params map[string]any `json:"params"`
+	Params map[string]any  `json:"params,omitempty"`
+	Faces  json.RawMessage `json:"faces,omitempty" nullable:"true"`
 }
 
 type removeObjectsOp struct {
@@ -157,6 +160,9 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 	case "commit_model":
 		var op commitModelOp
 		return &op, decodeInput(raw, &op)
+	case "derive_model":
+		var op deriveModelOp
+		return &op, decodeInput(raw, &op)
 	case "set_instance_model":
 		var op setInstanceModelOp
 		if err := decodeInput(raw, &op); err != nil {
@@ -175,13 +181,14 @@ func decodeOps(raws []json.RawMessage) ([]sceneOp, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := op.(*commitModelOp); ok {
+		switch op.(type) {
+		case *commitModelOp, *deriveModelOp:
 			commits++
 		}
 		ops = append(ops, op)
 	}
 	if commits > maxCommitsPerBatch {
-		return nil, invalid("一次最多提交 %d 个 commit_model", maxCommitsPerBatch)
+		return nil, invalid("一次最多提交 %d 个 commit_model 与 derive_model", maxCommitsPerBatch)
 	}
 	return ops, nil
 }
@@ -252,7 +259,10 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			if err != nil {
 				return invalid("物件 %s：%v", o.ID, err)
 			}
-			o.Primitive = &Primitive{Builtin: b.Builtin, Params: params}
+			if err := checkFaces(o.Primitive.Faces, builtinSlots, true); err != nil {
+				return invalid("物件 %s：%v", o.ID, err)
+			}
+			o.Primitive = &Primitive{Builtin: b.Builtin, Params: params, Faces: o.Primitive.Faces}
 		}
 		if o.Light != nil {
 			if err := completeLight(o.Light); err != nil {
@@ -354,7 +364,11 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 			if err != nil {
 				return invalid("物件 %s：%v", o.ID, err)
 			}
-			o.Primitive = &Primitive{Builtin: b.Builtin, Params: params}
+			faces, err := nextPrimitiveFaces(b, o.Primitive, params, u.Primitive.Faces)
+			if err != nil {
+				return invalid("物件 %s：%v", o.ID, err)
+			}
+			o.Primitive = &Primitive{Builtin: b.Builtin, Params: params, Faces: faces}
 		}
 		if u.MaterialSlots != nil {
 			o.MaterialSlots = *u.MaterialSlots
