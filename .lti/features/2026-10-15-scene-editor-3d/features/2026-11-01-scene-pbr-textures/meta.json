@@ -1,6 +1,6 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 6,
+  "revision": 7,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
@@ -51,9 +51,9 @@
       "architecture:场景模块"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-03T11:03:54.921Z",
+  "updatedAt": "2026-11-03T11:06:11.945Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -95,8 +95,19 @@
     }
   ],
   "revisions": [],
+  "baseline": {
+    "commit": "c41d52949eb2a96163487de022d2c3637e15a22c",
+    "at": "2026-11-03T11:06:10.881Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a5b5bdde6b7fa659a336e8ddccd54bf1eeacbdc3981dec4667d674de407284a6"
+    },
+    "preExisting": [
+      ".lti/snapshots/a5b5bdde6b7fa659a336e8ddccd54bf1eeacbdc3981dec4667d674de407284a6.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
