@@ -81,7 +81,7 @@ func creativeError(c *gin.Context, err error) {
 	case errors.Is(err, creativeops.ErrToolVersion):
 		abortError(c, 409, "creative_tool_version_conflict", "工具版本已变化，请重新读取能力目录")
 	case errors.Is(err, creativeops.ErrValidation):
-		abortError(c, 400, CodeValidationFailed, "请求字段不合法")
+		abortFieldError(c, 400, CodeValidationFailed, "请求字段不合法", err)
 	case errors.Is(err, creativeops.ErrConflict):
 		abortError(c, 409, "idempotency_conflict", "操作标识已用于另一请求")
 	case errors.Is(err, creativeops.ErrExpired):

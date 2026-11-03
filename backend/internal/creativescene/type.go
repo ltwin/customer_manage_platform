@@ -123,6 +123,9 @@ func (sceneType) Apply(ctx context.Context, tx store.TxAccountScope, cur creativ
 	if err := Validate(s); err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
+	if err := verifyImages(ctx, tx, opImageUses(ops), func(id string) bool { return env.held[id] }); err != nil {
+		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
+	}
 	snap, err := encodeScene(s)
 	changes := c.result()
 	changes.Response = response
@@ -141,7 +144,7 @@ func (sceneType) RestoreTouched(_ context.Context, _ store.TxAccountScope, old, 
 	return restoreTouched(o, c, units)
 }
 
-func (sceneType) RestoreUnits(_ context.Context, _ store.TxAccountScope, old, cur creativedocument.Current, _ creativedocument.Retain, units []string) (creativedocument.Snapshot, creativedocument.Changes, error) {
+func (sceneType) RestoreUnits(ctx context.Context, tx store.TxAccountScope, old, cur creativedocument.Current, _ creativedocument.Retain, units []string) (creativedocument.Snapshot, creativedocument.Changes, error) {
 	o, err := decodeScene(old.Content.Payload)
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
@@ -154,8 +157,30 @@ func (sceneType) RestoreUnits(_ context.Context, _ store.TxAccountScope, old, cu
 	if err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
+	changed := make(map[string]bool, len(changes.Changed))
+	for _, u := range changes.Changed {
+		changed[u] = true
+	}
+	// Both revisions' reference rows hold every image brought back.
+	if err := verifyImages(ctx, tx, sceneImageUses(next, changed), func(string) bool { return true }); err != nil {
+		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
+	}
 	snap, err := encodeScene(next)
 	return snap, changes, err
+}
+
+// AfterRestore checks the images of a whole restore as RestoreUnits does:
+// the old revision's reference rows hold them, but one may no longer be
+// displayable.
+func (sceneType) AfterRestore(ctx context.Context, tx store.TxAccountScope, _ creativedocument.Current, restored creativedocument.Snapshot, _ int64) (creativedocument.Snapshot, error) {
+	s, err := decodeScene(restored.Payload)
+	if err != nil {
+		return creativedocument.Snapshot{}, err
+	}
+	if err := verifyImages(ctx, tx, sceneImageUses(s, nil), func(string) bool { return true }); err != nil {
+		return creativedocument.Snapshot{}, err
+	}
+	return restored, nil
 }
 
 func (sceneType) View(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument.Current, units []string) (json.RawMessage, error) {

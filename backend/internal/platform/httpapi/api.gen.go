@@ -2207,6 +2207,30 @@ func (e CreativeSceneChangeTargetKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeSceneChannelTextureChannel.
+const (
+	A CreativeSceneChannelTextureChannel = "a"
+	B CreativeSceneChannelTextureChannel = "b"
+	G CreativeSceneChannelTextureChannel = "g"
+	R CreativeSceneChannelTextureChannel = "r"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneChannelTextureChannel enum.
+func (e CreativeSceneChannelTextureChannel) Valid() bool {
+	switch e {
+	case A:
+		return true
+	case B:
+		return true
+	case G:
+		return true
+	case R:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneDocumentTypeKey.
 const (
 	Scene CreativeSceneDocumentTypeKey = "scene"
@@ -2360,6 +2384,27 @@ func (e CreativeSceneLightType) Valid() bool {
 	case Point:
 		return true
 	case Spot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneMaterialSlotAlphaMode.
+const (
+	Blend  CreativeSceneMaterialSlotAlphaMode = "blend"
+	Clip   CreativeSceneMaterialSlotAlphaMode = "clip"
+	Opaque CreativeSceneMaterialSlotAlphaMode = "opaque"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneMaterialSlotAlphaMode enum.
+func (e CreativeSceneMaterialSlotAlphaMode) Valid() bool {
+	switch e {
+	case Blend:
+		return true
+	case Clip:
+		return true
+	case Opaque:
 		return true
 	default:
 		return false
@@ -2552,6 +2597,24 @@ func (e CreativeSceneSkySunMode) Valid() bool {
 	case CreativeSceneSkySunModeLocation:
 		return true
 	case CreativeSceneSkySunModeManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneTextureMappingKind.
+const (
+	Triplanar CreativeSceneTextureMappingKind = "triplanar"
+	Uv        CreativeSceneTextureMappingKind = "uv"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneTextureMappingKind enum.
+func (e CreativeSceneTextureMappingKind) Valid() bool {
+	switch e {
+	case Triplanar:
+		return true
+	case Uv:
 		return true
 	default:
 		return false
@@ -5945,6 +6008,12 @@ type CreativeEmptyTrashResult struct {
 	PurgedCount     int              `json:"purged_count"`
 }
 
+// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。
+type CreativeFieldDetails struct {
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	Field             string  `json:"field"`
+}
+
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
 type CreativeFoundationCapabilities struct {
 	Available     bool                                        `json:"available"`
@@ -6334,6 +6403,11 @@ type CreativeLibraryUsage struct {
 	// PendingReleaseBytes stored_bytes 中已标记回收、对象删除后释放的字节；永久删除的内容需等宽限期过后且不再被画布等使用才会计入
 	PendingReleaseBytes int64 `json:"pending_release_bytes"`
 	StoredBytes         int64 `json:"stored_bytes"`
+}
+
+// CreativeLimitDetails defines model for CreativeLimitDetails.
+type CreativeLimitDetails struct {
+	Limit int `json:"limit"`
 }
 
 // CreativeLinkPayload defines model for CreativeLinkPayload.
@@ -7041,6 +7115,16 @@ type CreativeSceneChangeTarget struct {
 // CreativeSceneChangeTargetKind defines model for CreativeSceneChangeTarget.Kind.
 type CreativeSceneChangeTargetKind string
 
+// CreativeSceneChannelTexture glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+type CreativeSceneChannelTexture struct {
+	// Channel 缺省 r，存储时补齐。
+	Channel           *CreativeSceneChannelTextureChannel `json:"channel,omitempty"`
+	ContentRevisionId string                              `json:"content_revision_id"`
+}
+
+// CreativeSceneChannelTextureChannel 缺省 r，存储时补齐。
+type CreativeSceneChannelTextureChannel string
+
 // CreativeSceneColor defines model for CreativeSceneColor.
 type CreativeSceneColor = string
 
@@ -7049,6 +7133,9 @@ type CreativeSceneDocument struct {
 	ContentRevisionId string    `json:"content_revision_id"`
 	CreatedAt         time.Time `json:"created_at"`
 	Id                string    `json:"id"`
+
+	// Images 以图片 content_revision_id 为键，覆盖快照引用的全部图片（目前只有 material_slots.*.maps.*）；没有贴图时为空对象。 像素不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original）取原图。
+	Images map[string]CreativeSceneImage `json:"images"`
 
 	// Models 以 content_revision_id 为键，覆盖快照引用的全部模型（按单元读取时覆盖所列内容单元引用的模型）；没有模型实例时为空对象。
 	Models map[string]CreativeSceneModel `json:"models"`
@@ -7144,6 +7231,20 @@ type CreativeSceneFog struct {
 	// Far 须大于 near。
 	Far  float32 `json:"far"`
 	Near float32 `json:"near"`
+}
+
+// CreativeSceneImage defines model for CreativeSceneImage.
+type CreativeSceneImage struct {
+	Height nullable.Nullable[int] `json:"height"`
+
+	// Mime image/jpeg、image/png 或 image/webp；PNG、WebP 可能带透明通道。
+	Mime nullable.Nullable[string] `json:"mime"`
+
+	// Usable false 时 width、height、mime 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理。
+	Usable bool `json:"usable"`
+
+	// Width 原图像素宽度，已按 EXIF 方向换算。
+	Width nullable.Nullable[int] `json:"width"`
 }
 
 // CreativeSceneJob defines model for CreativeSceneJob.
@@ -7314,11 +7415,25 @@ type CreativeSceneLightShape string
 // CreativeSceneLightType defines model for CreativeSceneLight.Type.
 type CreativeSceneLightType string
 
-// CreativeSceneMaterialSlot defines model for CreativeSceneMaterialSlot.
+// CreativeSceneMaterialSlot maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。
 type CreativeSceneMaterialSlot struct {
-	Params map[string]interface{} `json:"params"`
-	Preset string                 `json:"preset"`
+	// AlphaCutoff 只在 alpha_mode 为 clip 时允许，缺省 0.5。
+	AlphaCutoff *float32 `json:"alpha_cutoff,omitempty"`
+
+	// AlphaMode 对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉， 留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+	AlphaMode *CreativeSceneMaterialSlotAlphaMode `json:"alpha_mode,omitempty"`
+
+	// Mapping 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
+	Mapping *CreativeSceneTextureMapping `json:"mapping,omitempty"`
+
+	// Maps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+	Maps   *CreativeSceneTextureMaps `json:"maps,omitempty"`
+	Params map[string]interface{}    `json:"params"`
+	Preset string                    `json:"preset"`
 }
+
+// CreativeSceneMaterialSlotAlphaMode 对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉， 留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+type CreativeSceneMaterialSlotAlphaMode string
 
 // CreativeSceneMaterialSlots 缺省等同于空对象。
 type CreativeSceneMaterialSlots map[string]CreativeSceneMaterialSlot
@@ -7572,6 +7687,44 @@ type CreativeSceneSkyKind string
 
 // CreativeSceneSkySunMode location 按地点、日期和当地时刻推算太阳；manual 用 sun_elevation_deg、sun_azimuth_deg。两套字段都保存。缺省 location。
 type CreativeSceneSkySunMode string
+
+// CreativeSceneTexture defines model for CreativeSceneTexture.
+type CreativeSceneTexture struct {
+	ContentRevisionId string `json:"content_revision_id"`
+}
+
+// CreativeSceneTextureMapping 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
+type CreativeSceneTextureMapping struct {
+	// Kind triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+	Kind *CreativeSceneTextureMappingKind `json:"kind,omitempty"`
+
+	// NormalStrength 缺省 1；没有法线贴图时也允许保存。
+	NormalStrength *float32 `json:"normal_strength,omitempty"`
+
+	// Repeat 只在 uv 时允许，缺省 [1, 1]。
+	Repeat      *[]float32 `json:"repeat,omitempty"`
+	RotationDeg *float32   `json:"rotation_deg,omitempty"`
+
+	// SizeM 只在 triplanar 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比。
+	SizeM *float32 `json:"size_m,omitempty"`
+}
+
+// CreativeSceneTextureMappingKind triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+type CreativeSceneTextureMappingKind string
+
+// CreativeSceneTextureMaps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+type CreativeSceneTextureMaps struct {
+	// Ao glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+	Ao        *CreativeSceneChannelTexture `json:"ao,omitempty"`
+	BaseColor *CreativeSceneTexture        `json:"base_color,omitempty"`
+
+	// Metalness glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+	Metalness *CreativeSceneChannelTexture `json:"metalness,omitempty"`
+	Normal    *CreativeSceneTexture        `json:"normal,omitempty"`
+
+	// Roughness glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+	Roughness *CreativeSceneChannelTexture `json:"roughness,omitempty"`
+}
 
 // CreativeSceneTransform defines model for CreativeSceneTransform.
 type CreativeSceneTransform struct {
@@ -12009,6 +12162,58 @@ func (t *ErrorDetails) FromCreativeDocumentConflictDetails(v CreativeDocumentCon
 
 // MergeCreativeDocumentConflictDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeDocumentConflictDetails
 func (t *ErrorDetails) MergeCreativeDocumentConflictDetails(v CreativeDocumentConflictDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeFieldDetails returns the union data inside the ErrorDetails as a CreativeFieldDetails
+func (t ErrorDetails) AsCreativeFieldDetails() (CreativeFieldDetails, error) {
+	var body CreativeFieldDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeFieldDetails overwrites any union data inside the ErrorDetails as the provided CreativeFieldDetails
+func (t *ErrorDetails) FromCreativeFieldDetails(v CreativeFieldDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeFieldDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeFieldDetails
+func (t *ErrorDetails) MergeCreativeFieldDetails(v CreativeFieldDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeLimitDetails returns the union data inside the ErrorDetails as a CreativeLimitDetails
+func (t ErrorDetails) AsCreativeLimitDetails() (CreativeLimitDetails, error) {
+	var body CreativeLimitDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeLimitDetails overwrites any union data inside the ErrorDetails as the provided CreativeLimitDetails
+func (t *ErrorDetails) FromCreativeLimitDetails(v CreativeLimitDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeLimitDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeLimitDetails
+func (t *ErrorDetails) MergeCreativeLimitDetails(v CreativeLimitDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

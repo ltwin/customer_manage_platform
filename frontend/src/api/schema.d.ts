@@ -344,7 +344,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。 */
+        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。场景的材质贴图：本批新出现的图片不可用时返回 400 creative_image_unavailable，details.field 指出第一个不可用的字段、details.content_revision_id 给出图片；贴图字段违反契约返回 400 validation_failed，details.field 指出字段；引用的不同图片超过 64 张返回 413 creative_size_limit，details.limit 为 64。 */
         post: operations["commandCreativeDocument"];
         delete?: never;
         options?: never;
@@ -4699,7 +4699,15 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"];
+        /** @description 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 */
+        CreativeFieldDetails: {
+            field: string;
+            content_revision_id?: string;
+        };
+        CreativeLimitDetails: {
+            limit: number;
+        };
         /** @enum {string} */
         OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
         /** @enum {string} */
@@ -7246,6 +7254,19 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["CreativeSceneModel"];
             };
+            /** @description 以图片 content_revision_id 为键，覆盖快照引用的全部图片（目前只有 material_slots.*.maps.*）；没有贴图时为空对象。 像素不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original）取原图。 */
+            images: {
+                [key: string]: components["schemas"]["CreativeSceneImage"];
+            };
+        };
+        CreativeSceneImage: {
+            /** @description false 时 width、height、mime 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理。 */
+            usable: boolean;
+            /** @description 原图像素宽度，已按 EXIF 方向换算。 */
+            width: number | null;
+            height: number | null;
+            /** @description image/jpeg、image/png 或 image/webp；PNG、WebP 可能带透明通道。 */
+            mime: string | null;
         };
         /** @description GLB 与缩略图不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original / thumbnail）取地址。 */
         CreativeSceneModel: {
@@ -7460,11 +7481,56 @@ export interface components {
         CreativeSceneMaterialSlots: {
             [key: string]: components["schemas"]["CreativeSceneMaterialSlot"];
         };
+        /** @description maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。 */
         CreativeSceneMaterialSlot: {
             preset: string;
             params: {
                 [key: string]: unknown;
             };
+            maps?: components["schemas"]["CreativeSceneTextureMaps"];
+            mapping?: components["schemas"]["CreativeSceneTextureMapping"];
+            /**
+             * @description 对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉， 留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+             * @enum {string}
+             */
+            alpha_mode?: "opaque" | "clip" | "blend";
+            /** @description 只在 alpha_mode 为 clip 时允许，缺省 0.5。 */
+            alpha_cutoff?: number;
+        };
+        /** @description 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。 */
+        CreativeSceneTextureMaps: {
+            base_color?: components["schemas"]["CreativeSceneTexture"];
+            normal?: components["schemas"]["CreativeSceneTexture"];
+            roughness?: components["schemas"]["CreativeSceneChannelTexture"];
+            metalness?: components["schemas"]["CreativeSceneChannelTexture"];
+            ao?: components["schemas"]["CreativeSceneChannelTexture"];
+        };
+        CreativeSceneTexture: {
+            content_revision_id: string;
+        };
+        /** @description glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。 */
+        CreativeSceneChannelTexture: {
+            content_revision_id: string;
+            /**
+             * @description 缺省 r，存储时补齐。
+             * @enum {string}
+             */
+            channel?: "r" | "g" | "b" | "a";
+        };
+        /** @description 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。 */
+        CreativeSceneTextureMapping: {
+            /**
+             * @description triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+             * @enum {string}
+             */
+            kind?: "triplanar" | "uv";
+            /** @description 只在 triplanar 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比。 */
+            size_m?: number;
+            /** @description 只在 uv 时允许，缺省 [1, 1]。 */
+            repeat?: number[];
+            rotation_deg?: number;
+            /** @description 缺省 1；没有法线贴图时也允许保存。 */
+            normal_strength?: number;
         };
         /** @description 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 area 是面光源（three.js RectAreaLight、Blender Area）：color、intensity、cast_shadow、shape、width、height，沿物件局部 −Z 单面发光； 发光面随物件的世界缩放（含父级）变化，实际宽、高为 width、height 乘以局部 X、Y 轴在世界空间里的缩放倍数。 写入时只有 type 必填，省略的字段取 three.js 默认值（area 的强度缺省 10000，见 intensity）；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光、聚光和面光源沿物件局部 −Z 照射。 */
         CreativeSceneLight: {

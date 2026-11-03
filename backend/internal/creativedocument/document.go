@@ -57,6 +57,17 @@ func (e *ConflictError) Error() string {
 }
 func (e *ConflictError) Is(target error) bool { return target == ErrConflict }
 
+// LimitError is a size limit a type counts itself, with the limit for
+// details.limit; errors.Is matches ErrSizeLimit.
+type LimitError struct {
+	Limit   int
+	Message string
+}
+
+func (e *LimitError) Error() string         { return ErrSizeLimit.Error() + ": " + e.Message }
+func (e *LimitError) Is(target error) bool  { return target == ErrSizeLimit }
+func (e *LimitError) PublicMessage() string { return e.Message }
+
 // Document is the head row.
 type Document struct {
 	ID                string

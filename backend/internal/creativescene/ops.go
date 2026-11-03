@@ -2,10 +2,13 @@ package creativescene
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"slices"
 	"sort"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
 const (
@@ -112,11 +115,23 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
 		}
+		for j := range op.Objects {
+			if err := writeSlots(op.Objects[j].MaterialSlots, fmt.Sprintf("objects[%d].material_slots", j)); err != nil {
+				return nil, err
+			}
+		}
 		return &op, count(len(op.Objects), "objects ")
 	case "update_objects":
 		var op updateObjectsOp
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
+		}
+		for j, u := range op.Updates {
+			if u.MaterialSlots != nil {
+				if err := writeSlots(*u.MaterialSlots, fmt.Sprintf("updates[%d].material_slots", j)); err != nil {
+					return nil, err
+				}
+			}
 		}
 		return &op, count(len(op.Updates), "updates ")
 	case "remove_objects":
@@ -176,9 +191,14 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 func decodeOps(raws []json.RawMessage) ([]sceneOp, error) {
 	ops := make([]sceneOp, 0, len(raws))
 	commits := 0
-	for _, raw := range raws {
+	for i, raw := range raws {
 		op, err := decodeOp(raw)
 		if err != nil {
+			// Field errors of an operation name a path inside it.
+			var field *creativeops.FieldError
+			if errors.As(err, &field) {
+				field.Op = i
+			}
 			return nil, err
 		}
 		switch op.(type) {

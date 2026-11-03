@@ -167,8 +167,29 @@ func revisionOrNull(r *creativeops.Revision) nullable.Nullable[CreativeRevision]
 
 // creativeDocumentError maps document errors, including those a canvas
 // add_node meets when it creates or places a document.
+// abortFieldError answers with details.field when err names one, and
+// without details otherwise.
+func abortFieldError(c *gin.Context, status int, code, message string, err error) {
+	var field *creativeops.FieldError
+	if !errors.As(err, &field) {
+		abortError(c, status, code, message)
+		return
+	}
+	d := CreativeFieldDetails{Field: field.Field()}
+	if field.ContentRevisionID != "" {
+		d.ContentRevisionId = &field.ContentRevisionID
+	}
+	var details ErrorDetails
+	if e := details.FromCreativeFieldDetails(d); e != nil {
+		abortError(c, 500, CodeInternal, "内部错误")
+		return
+	}
+	abortErrorWithTypedDetails(c, status, code, message, details)
+}
+
 func creativeDocumentError(c *gin.Context, err error) bool {
 	var conflict *creativedocument.ConflictError
+	var limit *creativedocument.LimitError
 	switch {
 	case errors.As(err, &conflict):
 		details := CreativeDocumentConflictDetails{Conflicts: make([]CreativeDocumentConflict, 0, len(conflict.Conflicts))}
@@ -185,6 +206,13 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		abortError(c, 409, "creative_state_conflict", "文档在回收站，请先恢复")
 	case errors.Is(err, creativedocument.ErrNotTrashed):
 		abortError(c, 409, "creative_state_conflict", "只能彻底删除回收站中的文档")
+	case errors.As(err, &limit):
+		var details ErrorDetails
+		if e := details.FromCreativeLimitDetails(CreativeLimitDetails{Limit: limit.Limit}); e != nil {
+			abortError(c, 500, CodeInternal, "内部错误")
+			return true
+		}
+		abortErrorWithTypedDetails(c, 413, "creative_size_limit", limit.Message, details)
 	case errors.Is(err, creativedocument.ErrSizeLimit):
 		abortError(c, 413, "creative_size_limit", "文档超过大小上限")
 	case errors.Is(err, creativedocument.ErrRevisionNotFound):
@@ -203,6 +231,8 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		abortError(c, 409, "creative_upload_unavailable", "上传已失效或已被使用，请重新上传")
 	case errors.Is(err, creativescene.ErrModelUnavailable):
 		abortError(c, 400, "creative_model_unavailable", "引用的模型不可用，请重新读取场景")
+	case errors.Is(err, creativescene.ErrImageUnavailable):
+		abortFieldError(c, 400, "creative_image_unavailable", "引用的图片不可用", err)
 	default:
 		return false
 	}

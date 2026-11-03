@@ -10,18 +10,35 @@ import (
 )
 
 // view is the scene branch of a read: the stored snapshot, plus a summary of
-// every model revision it references (the revision's own reference rows),
-// read in the same snapshot with a fixed number of queries.
+// every model and image revision it references, read in the same snapshot
+// with a fixed number of queries.
 func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument.Current) (json.RawMessage, error) {
 	scene, err := completedScene(cur.Content.Payload)
 	if err != nil {
 		return nil, err
 	}
-	models, err := readModels(ctx, tx, cur.Refs)
+	// The reference rows hold both kinds; the snapshot says which is which.
+	var stored struct {
+		Objects []Object `json:"objects"`
+	}
+	if err := json.Unmarshal(scene, &stored); err != nil {
+		return nil, err
+	}
+	return referencedView(ctx, tx, scene, stored.Objects)
+}
+
+// referencedView is a read's scene with the models and images objects
+// reference.
+func referencedView(ctx context.Context, tx store.ReadTxAccountScope, scene any, objects []Object) (json.RawMessage, error) {
+	models, err := readModels(ctx, tx, modelRefs(objects))
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"scene": scene, "models": models})
+	images, err := readImages(ctx, tx, imageRefs(objects))
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]any{"scene": scene, "models": models, "images": images})
 }
 
 // completedScene is the stored snapshot as is, unless a camera, a light, the
@@ -80,8 +97,8 @@ func (r storedRender) complete() bool {
 
 // unitView narrows a read to the listed units. Each object appears once with
 // its id and kind plus the fields of every listed unit it has; units the
-// revision does not hold are skipped. models covers the model instances whose
-// content units are listed.
+// revision does not hold are skipped. models and images cover the objects
+// whose content units are listed.
 func unitView(ctx context.Context, tx store.ReadTxAccountScope, s Scene, units []string) (json.RawMessage, error) {
 	var listed []Object
 	out := map[string]any{}
@@ -136,11 +153,7 @@ func unitView(ctx context.Context, tx store.ReadTxAccountScope, s Scene, units [
 		}
 		out[unitObjects] = objects
 	}
-	models, err := readModels(ctx, tx, modelRefs(listed))
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(map[string]any{"scene": out, "models": models})
+	return referencedView(ctx, tx, out, listed)
 }
 
 // summary is what a canvas card shows: object counts, the ground included.

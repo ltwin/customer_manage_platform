@@ -48,6 +48,34 @@ func Explain(err error, format string, args ...any) error {
 	return &explained{err: err, message: fmt.Sprintf(format, args...)}
 }
 
+// FieldError is refused input that names where it went wrong
+// (details.field). Path is inside operation Op of the batch a document type
+// was handed, which the document layer turns into the request's position; an
+// Op below 0 makes Path the whole field. ContentRevisionID names the content
+// the field points at, when that content is what was refused.
+type FieldError struct {
+	Err               error
+	Op                int
+	Path              string
+	ContentRevisionID string
+	Message           string
+}
+
+func (e *FieldError) Error() string         { return e.Err.Error() + ": " + e.Message }
+func (e *FieldError) Unwrap() error         { return e.Err }
+func (e *FieldError) PublicMessage() string { return e.Message }
+
+// Field is the path details.field reports.
+func (e *FieldError) Field() string {
+	if e.Op < 0 {
+		return e.Path
+	}
+	if e.Path == "" {
+		return fmt.Sprintf("operations[%d]", e.Op)
+	}
+	return fmt.Sprintf("operations[%d].%s", e.Op, e.Path)
+}
+
 // Revision is an optimistic concurrency token, never a floating point JSON number.
 type Revision int64
 

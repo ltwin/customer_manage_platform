@@ -281,10 +281,12 @@ func planBatch(ctx context.Context, tx store.TxAccountScope, t Type, cur Current
 	w := write{title: cur.Title, snapshot: Snapshot{Payload: cur.Content.Payload, Refs: cur.Refs}}
 	var touched []string
 	var typeOps []json.RawMessage
+	var positions []int // typeOps[k] is ops[positions[k]]
 	renamed := false
 	for i, raw := range ops {
 		if kinds[i] != opRename {
 			typeOps = append(typeOps, raw)
+			positions = append(positions, i)
 			continue
 		}
 		var r renameOp
@@ -301,7 +303,7 @@ func planBatch(ctx context.Context, tx store.TxAccountScope, t Type, cur Current
 	if len(typeOps) > 0 {
 		units, err := t.Touched(ctx, tx, cur, actor, typeOps)
 		if err != nil {
-			return write{}, err
+			return write{}, requestPosition(err, positions)
 		}
 		for _, u := range units {
 			if u == MetaUnit || !unitName.MatchString(u) {
@@ -316,13 +318,23 @@ func planBatch(ctx context.Context, tx store.TxAccountScope, t Type, cur Current
 	if len(typeOps) > 0 {
 		w.snapshot, w.changes, err = t.Apply(ctx, tx, cur, actor, retain, typeOps)
 		if err != nil {
-			return write{}, err
+			return write{}, requestPosition(err, positions)
 		}
 	}
 	if renamed {
 		w.changes.Changed = append(w.changes.Changed, MetaUnit)
 	}
 	return w, checkChanges(cur.Document, touched, w.changes)
+}
+
+// requestPosition turns the operation a type's field error names into the
+// request's: the type was handed the batch without its rename operations.
+func requestPosition(err error, positions []int) error {
+	var field *creativeops.FieldError
+	if errors.As(err, &field) && field.Op >= 0 && field.Op < len(positions) {
+		field.Op = positions[field.Op]
+	}
+	return err
 }
 
 func planRestore(ctx context.Context, tx store.TxAccountScope, t Type, cur Current, expectedRevision int64, raw json.RawMessage, next int64) (write, error) {

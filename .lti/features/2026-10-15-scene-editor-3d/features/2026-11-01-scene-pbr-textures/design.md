@@ -408,7 +408,9 @@ lights（文档顺序） + sky.sun
 | `backend/internal/platform/store/*_migration_test.go`、`store_test.go` | 修改 | 迁移标签与回滚链 |
 | `backend/internal/creativescene/model.go:MaterialSlot`、`validateSlots`、`encodeScene` | 修改 | `maps`/`mapping` 外形与补齐；`Refs = modelRefs ∪ imageRefs`；`maxSceneImages` |
 | `backend/internal/creativescene/images.go` | 新增 | `imageRefs`、`verifyImages`（参照 `verifyExisting`）、`readImages`、`ErrImageUnavailable` |
-| `backend/internal/creativescene/type.go:Apply` | 修改 | 执行操作后调用 `verifyImages` |
+| `backend/internal/creativescene/textures.go` | 新增（实施时拆出） | 贴图字段的校验（`checkTextures`，给出槽位内的字段路径）与补齐（`completeTextures`）；`ops.go:decodeOp` 对 `add_objects`、`update_objects` 写入的槽位调用 |
+| `backend/internal/creativescene/type.go:Apply`、`RestoreUnits`、`AfterRestore` | 修改 | 执行操作后调用 `verifyImages`；`restore_units` 和整份恢复按同一规则校验带回的图片（契约「兼容与变更」），整份恢复借底座的 `RestoreHook` |
+| `backend/internal/platform/creativeops/types.go:FieldError`、`creativedocument/command.go:planBatch`、`document.go:LimitError` | 修改（实施时补） | `details.field` 与 `details.limit` 的载体。字段错误带操作下标，底座把它换算成请求里的位置（类型拿到的批次不含 `rename`）；场景的外形错误（`shapeError`、`requireFields`）一并带上字段 |
 | `backend/internal/creativescene/view.go` | 修改 | 读取场景时返回 `images` |
 | `backend/internal/creativescene/materials.go:checkMaterial`、`resolveSlots` | 修改 | 助手写入时校验 `maps` 与 `mapping` 的键 |
 | `backend/internal/creativescene/agent.go` | 修改 | `read_scene` 带贴图、映射、无 UV 提示和灯的 `shadow` 状态；`AgentEditInTx` 透传 |
@@ -419,6 +421,7 @@ lights（文档顺序） + sky.sun
 | `backend/internal/creativelibrary/list.go`、`discovery.go`、`service.go` | 修改 | 种类清单、简介、去重 |
 | `backend/internal/creativeagent/scene_tools.go`、`context.go`、`asset_tool_info.go` | 修改 | 工具说明；写贴图前确认可读；`readableRevisionInTx` 加「经持有方可读」分支；`read_asset` 支持材质 |
 | `backend/internal/platform/httpapi/creative_media.go` | 修改 | `from-scene-material` 路由 |
+| `backend/internal/platform/httpapi/creative_documents.go`、`creative_canvas.go` | 修改 | `creative_image_unavailable`、`validation_failed` 带 `details.field`，图片超限带 `details.limit` |
 | `api/openapi.yaml` | 修改 | 材质槽字段、`images`、材质载荷、新接口、种类枚举；`make generate` |
 | `frontend/src/creative-scene/materials/images.ts` | 新增 | 图片缓存、ORM 合成、`loadSceneImages` |
 | `frontend/src/creative-scene/materials/maps.ts` | 新增 | 三平面与 UV 映射、法线混合，光栅与命中点共用 |
