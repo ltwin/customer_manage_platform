@@ -190,6 +190,7 @@ func abortFieldError(c *gin.Context, status int, code, message string, err error
 func creativeDocumentError(c *gin.Context, err error) bool {
 	var conflict *creativedocument.ConflictError
 	var limit *creativedocument.LimitError
+	var empty *creativescene.SlotEmptyError
 	switch {
 	case errors.As(err, &conflict):
 		details := CreativeDocumentConflictDetails{Conflicts: make([]CreativeDocumentConflict, 0, len(conflict.Conflicts))}
@@ -233,6 +234,13 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		abortError(c, 400, "creative_model_unavailable", "引用的模型不可用，请重新读取场景")
 	case errors.Is(err, creativescene.ErrImageUnavailable):
 		abortFieldError(c, 400, "creative_image_unavailable", "引用的图片不可用", err)
+	case errors.As(err, &empty):
+		var details ErrorDetails
+		if e := details.FromCreativeMaterialSlotDetails(CreativeMaterialSlotDetails{ObjectId: empty.ObjectID, SlotId: empty.SlotID}); e != nil {
+			abortError(c, 500, CodeInternal, "内部错误")
+			return true
+		}
+		abortErrorWithTypedDetails(c, 400, "creative_material_slot_empty", empty.PublicMessage(), details)
 	default:
 		return false
 	}

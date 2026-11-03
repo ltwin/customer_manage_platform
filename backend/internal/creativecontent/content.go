@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -37,11 +38,18 @@ type Payload struct {
 	// worker or the complete form written by a scene command. Only its outer
 	// shape is checked here; its writers validate the structure.
 	Model json.RawMessage `json:"model,omitempty"`
+	// Material is one material slot's assignment saved into the library
+	// (data: 材质资产); creativescene validates it before the one write.
+	Material json.RawMessage `json:"material,omitempty"`
 }
 
 // maxScenePayload matches the document snapshot limit; a model payload (code up
 // to 64 KiB, escaped, plus its manifest) shares it.
 const maxScenePayload = 512 << 10
+
+// maxMaterialPayload bounds one slot: 32 short params, five textures and a
+// mapping fit in a few KiB.
+const maxMaterialPayload = 64 << 10
 
 // MediaObject is an authorized description of one stored rendition. It never
 // carries storage keys or versions; bytes are read through access tickets.
@@ -67,9 +75,9 @@ type ObjectBinding struct {
 func IsMediaKind(kind string) bool { return kind == "image" || kind == "video" || kind == "audio" }
 
 // hasObjects reports whether revisions of a kind are bound to verified blobs:
-// media, and models (GLB plus thumbnail). Models are not media to callers
-// outside this package.
-func hasObjects(kind string) bool { return IsMediaKind(kind) || kind == "model" }
+// media, models (GLB plus thumbnail) and materials (thumbnail). Models and
+// materials are not media to callers outside this package.
+func hasObjects(kind string) bool { return IsMediaKind(kind) || kind == "model" || kind == "material" }
 
 // RightsDeclarationInput exposes only the current display declaration fields.
 // Generation consent is intentionally absent from this namespace.
@@ -115,8 +123,9 @@ type Revision struct {
 // generation output): scene snapshots are written by the document layer
 // (WriteDocumentAndRetain) after checking the type's schema; models by the
 // media worker (WriteMediaAndRetain, staged form) and by scene commands
-// (WriteModelAndRetain, complete form).
-var restrictedKinds = map[string]bool{"scene": true, "model": true}
+// (WriteModelAndRetain, complete form); materials by saving a slot into the
+// library (WriteMaterialAndRetain).
+var restrictedKinds = map[string]bool{"scene": true, "model": true, "material": true}
 
 // Validate checks content submitted directly; restricted kinds are refused.
 func Validate(d Draft) error {
@@ -127,7 +136,7 @@ func Validate(d Draft) error {
 }
 
 func validate(d Draft) error {
-	if d.Kind != "scene" && len(d.Payload.Scene) != 0 || d.Kind != "model" && len(d.Payload.Model) != 0 {
+	if d.Kind != "scene" && len(d.Payload.Scene) != 0 || d.Kind != "model" && len(d.Payload.Model) != 0 || d.Kind != "material" && len(d.Payload.Material) != 0 {
 		return creativeops.ErrValidation
 	}
 	switch d.Kind {
@@ -158,6 +167,11 @@ func validate(d Draft) error {
 	case "model":
 		p := d.Payload
 		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || len(p.Model) > maxScenePayload || !isJSONObject(p.Model) {
+			return creativeops.ErrValidation
+		}
+	case "material":
+		p := d.Payload
+		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || len(p.Material) > maxMaterialPayload || !isJSONObject(p.Material) {
 			return creativeops.ErrValidation
 		}
 	default:
@@ -214,6 +228,29 @@ func WriteModelAndRetain(ctx context.Context, tx store.TxAccountScope, draft Dra
 		return Revision{}, creativeops.ErrValidation
 	}
 	return write(ctx, tx, draft, writeOptions{objects: objects, baseContentID: baseContentID}, retain, validate)
+}
+
+// WriteMaterialAndRetain writes a material saved into the library: always new
+// content with one revision, its thumbnail bound as the only object. The
+// caller (creativescene) has validated the slot and the images it uses.
+func WriteMaterialAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []ObjectBinding, retain func(Revision) error) (Revision, error) {
+	if draft.Kind != "material" || len(objects) == 0 {
+		return Revision{}, creativeops.ErrValidation
+	}
+	return write(ctx, tx, draft, writeOptions{objects: objects}, retain, validate)
+}
+
+// HoldTextures records that holder, a revision written in this transaction,
+// holds images as textures (creative_content_revision_refs): each lives while
+// the holder is not deleted. The rows derive from the holder's payload and
+// never change.
+func HoldTextures(ctx context.Context, tx store.TxAccountScope, holder string, images []string) error {
+	for _, id := range slices.Compact(slices.Sorted(slices.Values(images))) {
+		if err := tx.Insert(ctx, "creative_content_revision_refs", []string{"holder_revision_id", "content_revision_id", "role"}, holder, id, "texture"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type writeOptions struct {

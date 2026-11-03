@@ -421,7 +421,8 @@ lights（文档顺序） + sky.sun
 | `backend/internal/creativelibrary/list.go`、`discovery.go`、`service.go` | 修改 | 种类清单、简介、去重 |
 | `backend/internal/creativeagent/scene_tools.go`、`context.go`、`asset_tool_info.go` | 修改 | 工具说明；写贴图前确认可读；`readableRevisionInTx` 加「经持有方可读」分支；`read_asset` 支持材质 |
 | `backend/internal/platform/httpapi/creative_media.go` | 修改 | `from-scene-material` 路由 |
-| `backend/internal/platform/httpapi/creative_documents.go`、`creative_canvas.go` | 修改 | `creative_image_unavailable`、`validation_failed` 带 `details.field`，图片超限带 `details.limit` |
+| `backend/internal/creativecanvas/graph_commands.go` | 修改（实施时补） | 材质资产放进画布节点时的种类不符提示 |
+| `backend/internal/platform/httpapi/creative_documents.go`、`creative_canvas.go` | 修改 | `creative_image_unavailable`、`validation_failed` 带 `details.field`，图片超限带 `details.limit`；槽位为空返回 `creative_material_slot_empty` |
 | `api/openapi.yaml` | 修改 | 材质槽字段、`images`、材质载荷、新接口、种类枚举；`make generate` |
 | `frontend/src/creative-scene/materials/images.ts` | 新增 | 图片缓存、ORM 合成、`loadSceneImages` |
 | `frontend/src/creative-scene/materials/maps.ts` | 新增 | 三平面与 UV 映射、法线混合，光栅与命中点共用 |
@@ -438,7 +439,7 @@ lights（文档顺序） + sky.sun
 | `frontend/src/creative-scene/render/trace/maps.ts` | 新增 | `TraceMaps` 纹理数组 |
 | `frontend/src/creative-scene/render/trace/tables.ts`、`hit.ts`、`base.ts`、`layer.ts`、`pool.ts`、`build.worker.ts`、`cache.ts`、`checks.ts` | 修改 | 材质行 10 个 vec4；顶点附加缓冲（颜色加 UV）；命中点采样；就绪；e2e 对照 |
 | `frontend/src/creative-scene/render/gpu.ts` | 修改 | 申请 `maxTextureArrayLayers` |
-| `frontend/src/creative-canvas/assets/*`、`editor/assetPlacement.ts`、`editor/LibraryTiles.tsx`、`editor/MediaView.tsx`、`viewer/MediaViewer.tsx`、`viewer/AssetInfoPanel.tsx` | 修改 | 材质资产卡片、筛选、查看浮窗；不能放到画布上 |
+| `frontend/src/creative-canvas/assets/*`、`editor/assetPlacement.ts`、`editor/content.ts`、`editor/LibraryTiles.tsx`、`editor/MediaView.tsx`、`viewer/MediaViewer.tsx`、`viewer/AssetInfoPanel.tsx` | 修改 | 材质资产卡片、筛选、查看浮窗；不能放到画布上 |
 | `.lti/contracts/patterns.md` | 修改（归档时随 delta） | 命中点贴图法线 |
 
 ## 验证与交付

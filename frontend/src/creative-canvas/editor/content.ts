@@ -26,6 +26,7 @@ export function contentText(
   if ('body' in payload) return payload.body
   if ('url' in payload) return payload.url
   if ('model' in payload) return payload.model.name_hint ?? ''
+  if ('material' in payload) return ''
   return payload.caption ?? ''
 }
 export const isMediaContent = (kind: string) =>

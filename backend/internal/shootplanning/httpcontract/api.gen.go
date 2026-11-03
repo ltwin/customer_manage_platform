@@ -2688,6 +2688,12 @@ type CreativeLimitDetails struct {
 	Limit int `json:"limit"`
 }
 
+// CreativeMaterialSlotDetails defines model for CreativeMaterialSlotDetails.
+type CreativeMaterialSlotDetails struct {
+	ObjectId string `json:"object_id"`
+	SlotId   string `json:"slot_id"`
+}
+
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 type CreativeRevision = string
 
@@ -4434,6 +4440,32 @@ func (t *ErrorDetails) FromCreativeLimitDetails(v CreativeLimitDetails) error {
 
 // MergeCreativeLimitDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeLimitDetails
 func (t *ErrorDetails) MergeCreativeLimitDetails(v CreativeLimitDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMaterialSlotDetails returns the union data inside the ErrorDetails as a CreativeMaterialSlotDetails
+func (t ErrorDetails) AsCreativeMaterialSlotDetails() (CreativeMaterialSlotDetails, error) {
+	var body CreativeMaterialSlotDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialSlotDetails overwrites any union data inside the ErrorDetails as the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) FromCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialSlotDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) MergeCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

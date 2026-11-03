@@ -155,3 +155,40 @@ func (f ModelFacts) Brief() ModelBrief {
 	slices.Sort(params)
 	return ModelBrief{Name: f.Name, SizeM: f.SizeM, Mount: f.Mount, Triangles: f.Triangles, Slots: f.Slots, Materials: f.Materials, Params: params}
 }
+
+// MaterialBrief is what a search result says about a material asset (data:
+// 材质资产「助手可读」): its preset, which image each texture uses, how they
+// are mapped and how the slot is transparent. Images come as ids only.
+type MaterialBrief struct {
+	Preset    string            `json:"preset"`
+	Maps      map[string]string `json:"maps"`
+	Mapping   string            `json:"mapping,omitempty"`
+	AlphaMode string            `json:"alpha_mode,omitempty"`
+}
+
+// MaterialBriefOf decodes a material payload; anything else reports false.
+func MaterialBriefOf(p Payload) (MaterialBrief, bool) {
+	var m struct {
+		Slot *struct {
+			Preset string `json:"preset"`
+			Maps   map[string]struct {
+				ContentRevisionID string `json:"content_revision_id"`
+			} `json:"maps"`
+			Mapping *struct {
+				Kind string `json:"kind"`
+			} `json:"mapping"`
+			AlphaMode string `json:"alpha_mode"`
+		} `json:"slot"`
+	}
+	if len(p.Material) == 0 || json.Unmarshal(p.Material, &m) != nil || m.Slot == nil {
+		return MaterialBrief{}, false
+	}
+	b := MaterialBrief{Preset: m.Slot.Preset, Maps: map[string]string{}, AlphaMode: m.Slot.AlphaMode}
+	for kind, t := range m.Slot.Maps {
+		b.Maps[kind] = t.ContentRevisionID
+	}
+	if m.Slot.Mapping != nil {
+		b.Mapping = m.Slot.Mapping.Kind
+	}
+	return b, true
+}

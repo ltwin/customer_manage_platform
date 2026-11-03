@@ -1162,9 +1162,29 @@ export interface paths {
         put?: never;
         /**
          * 把场景里模型实例的模型和材质分配复制成库副本，存入个人库；同一来源修订、同样材质已在库中时只追加归类
-         * @description 只读场景，不产生场景修订；位置、旋转和缩放不随资产保存。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev， 不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）； 对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable； 场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict； 需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable。
+         * @description 只读场景，不产生场景修订；位置、旋转和缩放不随资产保存。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev， 不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）； 对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable； 场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict； 需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable；材质分配引用的图片已不可展示返回 400 creative_image_unavailable （details.field 如 materials.main.maps.normal）。
          */
         post: operations["createCreativeAssetFromSceneModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/assets/from-scene-material": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
+         * @description 只读场景，不产生场景修订。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev，不符时返回 409 creative_document_conflict； 对象不是基础体或模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；槽位在 material_slots 里没有值返回 400 creative_material_slot_empty（details 为 object_id、slot_id）；槽位引用的图片已不可展示返回 400 creative_image_unavailable （details.field 指出贴图，如 maps.normal，details.content_revision_id 给出图片）；场景、对象、分组或标签不存在返回 404； 场景在回收站返回 409 creative_state_conflict；需要新建材质而缩略图上传不可用时返回 409 creative_upload_unavailable。
+         */
+        post: operations["createCreativeAssetFromSceneMaterial"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3243,7 +3263,7 @@ export interface components {
         CreativeMediaPayload: {
             caption?: string;
         };
-        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"];
+        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeMaterialPayload"];
         /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。 */
         CreativeModelPayload: {
             model: {
@@ -3259,7 +3279,20 @@ export interface components {
             };
         };
         /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
-        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"];
+        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"] | components["schemas"]["CreativeMaterialPayload"];
+        /** @description material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进 update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。 */
+        CreativeMaterialPayload: {
+            material: {
+                slot: components["schemas"]["CreativeSceneMaterialSlot"];
+                /** @description 来源说明，只供展示，不构成引用；来源场景被删除后照常保留。 */
+                source: {
+                    document_id: string;
+                    object_id: string;
+                    slot_id: string;
+                    revision: components["schemas"]["CreativeRevision"];
+                };
+            };
+        };
         /** @description 不含代码的完整形态模型载荷，只出现在响应里。 */
         CreativeModelPreviewPayload: {
             model: {
@@ -3391,7 +3424,7 @@ export interface components {
             id: string;
             content_id: string;
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio" | "model";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
             sequence: components["schemas"]["CreativeRevision"];
             payload: components["schemas"]["CreativeContentRevisionPayload"];
             media?: components["schemas"]["CreativeMediaObject"][];
@@ -3407,7 +3440,7 @@ export interface components {
             }[];
             rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio" | "model";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
             revision: components["schemas"]["CreativeRevision"];
             content_id: string;
             content_revision_id: string;
@@ -3515,6 +3548,8 @@ export interface components {
                 audio: number;
                 /** Format: int64 */
                 model: number;
+                /** Format: int64 */
+                material: number;
             };
             tags: {
                 tag_id: string;
@@ -4699,7 +4734,7 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"];
         /** @description 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 */
         CreativeFieldDetails: {
             field: string;
@@ -4707,6 +4742,10 @@ export interface components {
         };
         CreativeLimitDetails: {
             limit: number;
+        };
+        CreativeMaterialSlotDetails: {
+            object_id: string;
+            slot_id: string;
         };
         /** @enum {string} */
         OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
@@ -8287,6 +8326,24 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAssetFromSceneModelPayload"];
         };
+        CreativeAssetFromSceneMaterialPayload: {
+            document_id: string;
+            /** @description kind 为 primitive 或 model_instance 的对象 */
+            object_id: string;
+            /** @description 物件的槽位，必须在 material_slots 里有值 */
+            slot_id: string;
+            expected_object_rev: components["schemas"]["CreativeRevision"];
+            /** @description 按槽位当前分配渲染的 256 × 256 材质球 PNG 的暂存上传（声明类型 image）。新建材质时消费；复用已有资产时不消费。 */
+            thumbnail_upload_id: string;
+            target: components["schemas"]["CreativeUploadAssetTarget"];
+        };
+        CreateCreativeAssetFromSceneMaterialRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetFromSceneMaterialPayload"];
+        };
         CreativeNodeExecution: {
             execution_id: string;
             node_id: string;
@@ -8465,7 +8522,7 @@ export interface operations {
                 view?: "all" | "recent" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
-                kind?: "text" | "link" | "image" | "video" | "audio" | "model";
+                kind?: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";
@@ -10921,6 +10978,50 @@ export interface operations {
                 };
             };
             /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromSceneMaterial: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromSceneMaterialRequest"];
+            };
+        };
+        responses: {
+            /** @description 同样分配的材质资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 已创建材质和资产 */
             201: {
                 headers: {
                     [name: string]: unknown;

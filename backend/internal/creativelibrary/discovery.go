@@ -116,9 +116,14 @@ func DiscoverAssets(ctx context.Context, sc store.AccountScope, query Search, bu
 			item := map[string]any{"asset_id": a.ID, "content_revision_id": a.ContentRevisionID, "revision": a.Revision, "title": a.Title, "description": a.Description, "kind": a.Kind, "rating": a.Rating, "is_favorite": a.Favorite, "trashed": a.DeletedAt != nil, "unavailable": a.Unavailable, "tags": tags, "groups": groups, "relations_complete": true, "tag_count": len(tags), "group_count": len(groups)}
 			// A model's only sized media is its 256 px thumbnail; its brief says
 			// how big the model is instead.
+			// A material's thumbnail is a material ball; its brief says what it is.
 			if a.Content != nil && a.Kind == "model" {
 				if f, ok := creativecontent.ModelFactsOf(a.Content.Payload); ok {
 					item["model"] = f.Brief()
+				}
+			} else if a.Content != nil && a.Kind == "material" {
+				if b, ok := creativecontent.MaterialBriefOf(a.Content.Payload); ok {
+					item["material"] = b
 				}
 			} else if a.Content != nil {
 				for _, m := range a.Content.Media {

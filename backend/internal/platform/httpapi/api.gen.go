@@ -1156,12 +1156,13 @@ func (e CreativeContentDraftKind) Valid() bool {
 
 // Defines values for CreativeContentRevisionKind.
 const (
-	CreativeContentRevisionKindAudio CreativeContentRevisionKind = "audio"
-	CreativeContentRevisionKindImage CreativeContentRevisionKind = "image"
-	CreativeContentRevisionKindLink  CreativeContentRevisionKind = "link"
-	CreativeContentRevisionKindModel CreativeContentRevisionKind = "model"
-	CreativeContentRevisionKindText  CreativeContentRevisionKind = "text"
-	CreativeContentRevisionKindVideo CreativeContentRevisionKind = "video"
+	CreativeContentRevisionKindAudio    CreativeContentRevisionKind = "audio"
+	CreativeContentRevisionKindImage    CreativeContentRevisionKind = "image"
+	CreativeContentRevisionKindLink     CreativeContentRevisionKind = "link"
+	CreativeContentRevisionKindMaterial CreativeContentRevisionKind = "material"
+	CreativeContentRevisionKindModel    CreativeContentRevisionKind = "model"
+	CreativeContentRevisionKindText     CreativeContentRevisionKind = "text"
+	CreativeContentRevisionKindVideo    CreativeContentRevisionKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeContentRevisionKind enum.
@@ -1172,6 +1173,8 @@ func (e CreativeContentRevisionKind) Valid() bool {
 	case CreativeContentRevisionKindImage:
 		return true
 	case CreativeContentRevisionKindLink:
+		return true
+	case CreativeContentRevisionKindMaterial:
 		return true
 	case CreativeContentRevisionKindModel:
 		return true
@@ -1564,12 +1567,13 @@ func (e CreativeInternalDocumentTypeKey) Valid() bool {
 
 // Defines values for CreativeLibraryAssetKind.
 const (
-	CreativeLibraryAssetKindAudio CreativeLibraryAssetKind = "audio"
-	CreativeLibraryAssetKindImage CreativeLibraryAssetKind = "image"
-	CreativeLibraryAssetKindLink  CreativeLibraryAssetKind = "link"
-	CreativeLibraryAssetKindModel CreativeLibraryAssetKind = "model"
-	CreativeLibraryAssetKindText  CreativeLibraryAssetKind = "text"
-	CreativeLibraryAssetKindVideo CreativeLibraryAssetKind = "video"
+	CreativeLibraryAssetKindAudio    CreativeLibraryAssetKind = "audio"
+	CreativeLibraryAssetKindImage    CreativeLibraryAssetKind = "image"
+	CreativeLibraryAssetKindLink     CreativeLibraryAssetKind = "link"
+	CreativeLibraryAssetKindMaterial CreativeLibraryAssetKind = "material"
+	CreativeLibraryAssetKindModel    CreativeLibraryAssetKind = "model"
+	CreativeLibraryAssetKindText     CreativeLibraryAssetKind = "text"
+	CreativeLibraryAssetKindVideo    CreativeLibraryAssetKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeLibraryAssetKind enum.
@@ -1580,6 +1584,8 @@ func (e CreativeLibraryAssetKind) Valid() bool {
 	case CreativeLibraryAssetKindImage:
 		return true
 	case CreativeLibraryAssetKindLink:
+		return true
+	case CreativeLibraryAssetKindMaterial:
 		return true
 	case CreativeLibraryAssetKindModel:
 		return true
@@ -4015,12 +4021,13 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
-	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
-	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
-	ListCreativeAssetsParamsKindModel ListCreativeAssetsParamsKind = "model"
-	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
-	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
+	ListCreativeAssetsParamsKindAudio    ListCreativeAssetsParamsKind = "audio"
+	ListCreativeAssetsParamsKindImage    ListCreativeAssetsParamsKind = "image"
+	ListCreativeAssetsParamsKindLink     ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindMaterial ListCreativeAssetsParamsKind = "material"
+	ListCreativeAssetsParamsKindModel    ListCreativeAssetsParamsKind = "model"
+	ListCreativeAssetsParamsKindText     ListCreativeAssetsParamsKind = "text"
+	ListCreativeAssetsParamsKindVideo    ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
@@ -4031,6 +4038,8 @@ func (e ListCreativeAssetsParamsKind) Valid() bool {
 	case ListCreativeAssetsParamsKindImage:
 		return true
 	case ListCreativeAssetsParamsKindLink:
+		return true
+	case ListCreativeAssetsParamsKindMaterial:
 		return true
 	case ListCreativeAssetsParamsKindModel:
 		return true
@@ -4452,6 +4461,13 @@ type CreateCreativeAssetFromNodeRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
 	OperationId     openapi_types.UUID           `json:"operation_id"`
 	Payload         CreativeAssetFromNodePayload `json:"payload"`
+}
+
+// CreateCreativeAssetFromSceneMaterialRequest defines model for CreateCreativeAssetFromSceneMaterialRequest.
+type CreateCreativeAssetFromSceneMaterialRequest struct {
+	ClientCreatedAt time.Time                             `json:"client_created_at"`
+	OperationId     openapi_types.UUID                    `json:"operation_id"`
+	Payload         CreativeAssetFromSceneMaterialPayload `json:"payload"`
 }
 
 // CreateCreativeAssetFromSceneModelRequest defines model for CreateCreativeAssetFromSceneModelRequest.
@@ -5417,12 +5433,13 @@ type CreativeAssetDigestMatches struct {
 // CreativeAssetFacets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
 type CreativeAssetFacets struct {
 	Kinds struct {
-		Audio int64 `json:"audio"`
-		Image int64 `json:"image"`
-		Link  int64 `json:"link"`
-		Model int64 `json:"model"`
-		Text  int64 `json:"text"`
-		Video int64 `json:"video"`
+		Audio    int64 `json:"audio"`
+		Image    int64 `json:"image"`
+		Link     int64 `json:"link"`
+		Material int64 `json:"material"`
+		Model    int64 `json:"model"`
+		Text     int64 `json:"text"`
+		Video    int64 `json:"video"`
 	} `json:"kinds"`
 	Tags []struct {
 		Count int64  `json:"count"`
@@ -5438,6 +5455,24 @@ type CreativeAssetFromNodePayload struct {
 	ExpectedDataRevision CreativeRevision          `json:"expected_data_revision"`
 	NodeId               string                    `json:"node_id"`
 	Target               CreativeUploadAssetTarget `json:"target"`
+}
+
+// CreativeAssetFromSceneMaterialPayload defines model for CreativeAssetFromSceneMaterialPayload.
+type CreativeAssetFromSceneMaterialPayload struct {
+	DocumentId string `json:"document_id"`
+
+	// ExpectedObjectRev 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedObjectRev CreativeRevision `json:"expected_object_rev"`
+
+	// ObjectId kind 为 primitive 或 model_instance 的对象
+	ObjectId string `json:"object_id"`
+
+	// SlotId 物件的槽位，必须在 material_slots 里有值
+	SlotId string                    `json:"slot_id"`
+	Target CreativeUploadAssetTarget `json:"target"`
+
+	// ThumbnailUploadId 按槽位当前分配渲染的 256 × 256 材质球 PNG 的暂存上传（声明类型 image）。新建材质时消费；复用已有资产时不消费。
+	ThumbnailUploadId string `json:"thumbnail_upload_id"`
 }
 
 // CreativeAssetFromSceneModelPayload defines model for CreativeAssetFromSceneModelPayload.
@@ -6415,6 +6450,30 @@ type CreativeLinkPayload struct {
 	Description *string `json:"description,omitempty"`
 	Title       *string `json:"title,omitempty"`
 	Url         string  `json:"url"`
+}
+
+// CreativeMaterialPayload material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进 update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。
+type CreativeMaterialPayload struct {
+	Material struct {
+		// Slot maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。
+		Slot CreativeSceneMaterialSlot `json:"slot"`
+
+		// Source 来源说明，只供展示，不构成引用；来源场景被删除后照常保留。
+		Source struct {
+			DocumentId string `json:"document_id"`
+			ObjectId   string `json:"object_id"`
+
+			// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+			Revision CreativeRevision `json:"revision"`
+			SlotId   string           `json:"slot_id"`
+		} `json:"source"`
+	} `json:"material"`
+}
+
+// CreativeMaterialSlotDetails defines model for CreativeMaterialSlotDetails.
+type CreativeMaterialSlotDetails struct {
+	ObjectId string `json:"object_id"`
+	SlotId   string `json:"slot_id"`
 }
 
 // CreativeMediaCapabilities defines model for CreativeMediaCapabilities.
@@ -9639,6 +9698,11 @@ type CreateCreativeAssetFromNodeParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CreateCreativeAssetFromSceneMaterialParams defines parameters for CreateCreativeAssetFromSceneMaterial.
+type CreateCreativeAssetFromSceneMaterialParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // CreateCreativeAssetFromSceneModelParams defines parameters for CreateCreativeAssetFromSceneModel.
 type CreateCreativeAssetFromSceneModelParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -10329,6 +10393,9 @@ type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
 // CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
 type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
+
+// CreateCreativeAssetFromSceneMaterialJSONRequestBody defines body for CreateCreativeAssetFromSceneMaterial for application/json ContentType.
+type CreateCreativeAssetFromSceneMaterialJSONRequestBody = CreateCreativeAssetFromSceneMaterialRequest
 
 // CreateCreativeAssetFromSceneModelJSONRequestBody defines body for CreateCreativeAssetFromSceneModel for application/json ContentType.
 type CreateCreativeAssetFromSceneModelJSONRequestBody = CreateCreativeAssetFromSceneModelRequest
@@ -11097,6 +11164,32 @@ func (t *CreativeContentPayload) MergeCreativeModelPayload(v CreativeModelPayloa
 	return err
 }
 
+// AsCreativeMaterialPayload returns the union data inside the CreativeContentPayload as a CreativeMaterialPayload
+func (t CreativeContentPayload) AsCreativeMaterialPayload() (CreativeMaterialPayload, error) {
+	var body CreativeMaterialPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialPayload overwrites any union data inside the CreativeContentPayload as the provided CreativeMaterialPayload
+func (t *CreativeContentPayload) FromCreativeMaterialPayload(v CreativeMaterialPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeMaterialPayload
+func (t *CreativeContentPayload) MergeCreativeMaterialPayload(v CreativeMaterialPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t CreativeContentPayload) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -11227,6 +11320,32 @@ func (t *CreativeContentRevisionPayload) FromCreativeModelPreviewPayload(v Creat
 
 // MergeCreativeModelPreviewPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeModelPreviewPayload
 func (t *CreativeContentRevisionPayload) MergeCreativeModelPreviewPayload(v CreativeModelPreviewPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMaterialPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeMaterialPayload
+func (t CreativeContentRevisionPayload) AsCreativeMaterialPayload() (CreativeMaterialPayload, error) {
+	var body CreativeMaterialPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeMaterialPayload
+func (t *CreativeContentRevisionPayload) FromCreativeMaterialPayload(v CreativeMaterialPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeMaterialPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeMaterialPayload(v CreativeMaterialPayload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -12224,6 +12343,32 @@ func (t *ErrorDetails) MergeCreativeLimitDetails(v CreativeLimitDetails) error {
 	return err
 }
 
+// AsCreativeMaterialSlotDetails returns the union data inside the ErrorDetails as a CreativeMaterialSlotDetails
+func (t ErrorDetails) AsCreativeMaterialSlotDetails() (CreativeMaterialSlotDetails, error) {
+	var body CreativeMaterialSlotDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialSlotDetails overwrites any union data inside the ErrorDetails as the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) FromCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialSlotDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) MergeCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -12667,6 +12812,9 @@ type ServerInterface interface {
 	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
+	// 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
+	// (POST /creative/assets/from-scene-material)
+	CreateCreativeAssetFromSceneMaterial(c *gin.Context, params CreateCreativeAssetFromSceneMaterialParams)
 	// 把场景里模型实例的模型和材质分配复制成库副本，存入个人库；同一来源修订、同样材质已在库中时只追加归类
 	// (POST /creative/assets/from-scene-model)
 	CreateCreativeAssetFromSceneModel(c *gin.Context, params CreateCreativeAssetFromSceneModelParams)
@@ -14681,6 +14829,51 @@ func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromNode(c *gin.Context) {
 	}
 
 	siw.Handler.CreateCreativeAssetFromNode(c, params)
+}
+
+// CreateCreativeAssetFromSceneMaterial operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromSceneMaterial(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAssetFromSceneMaterialParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAssetFromSceneMaterial(c, params)
 }
 
 // CreateCreativeAssetFromSceneModel operation middleware
@@ -19638,6 +19831,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
 	router.GET(options.BaseURL+"/creative/assets/digest-matches", wrapper.FindCreativeAssetDigestMatches)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
+	router.POST(options.BaseURL+"/creative/assets/from-scene-material", wrapper.CreateCreativeAssetFromSceneMaterial)
 	router.POST(options.BaseURL+"/creative/assets/from-scene-model", wrapper.CreateCreativeAssetFromSceneModel)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
 	router.POST(options.BaseURL+"/creative/assets/:id/import-replace", wrapper.ReplaceCreativeAssetByImport)

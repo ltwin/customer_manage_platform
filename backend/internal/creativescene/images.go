@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	imageKind = "image"
+	imageKind    = "image"
+	materialKind = "material"
 	// maxSceneImages counts distinct images across every slot of a scene
 	// (C5c1 task 1.1 keeps 64 within the per-device texture budget).
 	maxSceneImages = 64
@@ -31,28 +32,58 @@ type imageUse struct {
 	image string
 }
 
-// slotImages lists the images of slots in slot then kind order; path is
-// where the slots sit.
-func slotImages(slots map[string]MaterialSlot, op int, path string) []imageUse {
+// textureUses lists a slot's images in kind order, each at <path>.maps.<kind>
+// (maps.<kind> when path is empty).
+func textureUses(slot MaterialSlot, op int, path string) []imageUse {
 	var out []imageUse
-	for _, name := range slices.Sorted(maps.Keys(slots)) {
-		for _, e := range slots[name].Maps.entries() {
-			out = append(out, imageUse{op: op, path: fmt.Sprintf("%s.%s.maps.%s.content_revision_id", path, name, e.kind), image: e.tex.ContentRevisionID})
+	for _, e := range slot.Maps.entries() {
+		field := "maps." + e.kind
+		if path != "" {
+			field = path + "." + field
 		}
+		out = append(out, imageUse{op: op, path: field, image: e.tex.ContentRevisionID})
 	}
 	return out
+}
+
+// slotTextures lists the textures of slots in slot then kind order; path is
+// where the slots sit.
+func slotTextures(slots map[string]MaterialSlot, op int, path string) []imageUse {
+	var out []imageUse
+	for _, name := range slices.Sorted(maps.Keys(slots)) {
+		out = append(out, textureUses(slots[name], op, path+"."+name)...)
+	}
+	return out
+}
+
+// slotImages is slotTextures naming each texture's content_revision_id, the
+// field a scene command writes.
+func slotImages(slots map[string]MaterialSlot, op int, path string) []imageUse {
+	out := slotTextures(slots, op, path)
+	for i := range out {
+		out[i].path += ".content_revision_id"
+	}
+	return out
+}
+
+// usedImages are the distinct images of uses, sorted.
+func usedImages(uses []imageUse) []string {
+	out := make([]string, 0, len(uses))
+	for _, u := range uses {
+		out = append(out, u.image)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // imageRefs are the distinct images a scene's slots reference, sorted. With
 // the models they are the snapshot's references.
 func imageRefs(objects []Object) []string {
-	seen := map[string]bool{}
+	var uses []imageUse
 	for _, o := range objects {
-		for _, u := range slotImages(o.MaterialSlots, -1, "") {
-			seen[u.image] = true
-		}
+		uses = append(uses, slotImages(o.MaterialSlots, -1, "")...)
 	}
-	return slices.Sorted(maps.Keys(seen))
+	return usedImages(uses)
 }
 
 // opImageUses are the textures the operations of a batch write, in request

@@ -296,6 +296,36 @@ func FindModelAssetInTx(ctx context.Context, tx store.TxAccountScope, source str
 	return id, err == nil, err
 }
 
+// FindMaterialAssetInTx returns the content revision of the live material
+// asset whose slot is exactly this one (JSON equality, key order aside), if
+// there is one; where the slot came from is no part of it. Like
+// FindModelAssetInTx it reads the material assets first, under the caller's
+// library root lock.
+func FindMaterialAssetInTx(ctx context.Context, tx store.TxAccountScope, slot json.RawMessage) (string, bool, error) {
+	rows, err := tx.Query(ctx, "creative_assets", "content_revision_id", "kind='material' AND deleted_at IS NULL")
+	if err != nil {
+		return "", false, err
+	}
+	defer rows.Close()
+	var revisions []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", false, err
+		}
+		revisions = append(revisions, id)
+	}
+	if err := rows.Err(); err != nil || len(revisions) == 0 {
+		return "", false, err
+	}
+	var id string
+	err = tx.QueryRow(ctx, "creative_content_revisions", "id", "id=ANY($2) AND payload->'material'->'slot'=$3::jsonb", revisions, string(slot)).Scan(&id)
+	if errors.Is(err, store.ErrNoRows) {
+		return "", false, nil
+	}
+	return id, err == nil, err
+}
+
 // ResolveAssetsInTx locks the library and selected asset before canvas locks.
 // It fixes identity/revision only; the canvas checks content usage after taking
 // its project/canvas locks, preserving the library -> canvas -> content order.

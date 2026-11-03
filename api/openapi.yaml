@@ -107,6 +107,7 @@ paths:
           - video
           - audio
           - model
+          - material
       - name: q
         in: query
         required: false
@@ -2096,7 +2097,8 @@ paths:
         不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）；
         对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable；
         场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict；
-        需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable。
+        需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable；材质分配引用的图片已不可展示返回 400 creative_image_unavailable
+        （details.field 如 materials.main.maps.normal）。
       parameters:
       - in: header
         name: Idempotency-Key
@@ -2115,6 +2117,43 @@ paths:
               schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
         "200":
           description: 同一来源修订、同样材质分配的模型资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/assets/from-scene-material:
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeAssetFromSceneMaterial
+      summary: 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
+      description: >-
+        只读场景，不产生场景修订。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev，不符时返回 409 creative_document_conflict；
+        对象不是基础体或模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；槽位在 material_slots 里没有值返回 400
+        creative_material_slot_empty（details 为 object_id、slot_id）；槽位引用的图片已不可展示返回 400 creative_image_unavailable
+        （details.field 指出贴图，如 maps.normal，details.content_revision_id 给出图片）；场景、对象、分组或标签不存在返回 404；
+        场景在回收站返回 409 creative_state_conflict；需要新建材质而缩略图上传不可用时返回 409 creative_upload_unavailable。
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateCreativeAssetFromSceneMaterialRequest"}
+      responses:
+        "201":
+          description: 已创建材质和资产
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        "200":
+          description: 同样分配的材质资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值
           content:
             application/json:
               schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
@@ -7533,6 +7572,7 @@ components:
       - $ref: '#/components/schemas/CreativeLinkPayload'
       - $ref: '#/components/schemas/CreativeMediaPayload'
       - $ref: '#/components/schemas/CreativeModelPayload'
+      - $ref: '#/components/schemas/CreativeMaterialPayload'
     CreativeModelPayload:
       type: object
       additionalProperties: false
@@ -7562,6 +7602,31 @@ components:
       - $ref: '#/components/schemas/CreativeMediaPayload'
       - $ref: '#/components/schemas/CreativeModelPayload'
       - $ref: '#/components/schemas/CreativeModelPreviewPayload'
+      - $ref: '#/components/schemas/CreativeMaterialPayload'
+    CreativeMaterialPayload:
+      type: object
+      additionalProperties: false
+      description: >-
+        material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进
+        update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。
+      required: [material]
+      properties:
+        material:
+          type: object
+          additionalProperties: false
+          required: [slot, source]
+          properties:
+            slot: {$ref: '#/components/schemas/CreativeSceneMaterialSlot'}
+            source:
+              type: object
+              additionalProperties: false
+              description: 来源说明，只供展示，不构成引用；来源场景被删除后照常保留。
+              required: [document_id, object_id, slot_id, revision]
+              properties:
+                document_id: {type: string}
+                object_id: {type: string}
+                slot_id: {type: string}
+                revision: {$ref: '#/components/schemas/CreativeRevision'}
     CreativeModelPreviewPayload:
       type: object
       additionalProperties: false
@@ -7797,6 +7862,7 @@ components:
           - video
           - audio
           - model
+          - material
         sequence:
           $ref: '#/components/schemas/CreativeRevision'
         payload:
@@ -7860,6 +7926,7 @@ components:
           - video
           - audio
           - model
+          - material
         revision:
           $ref: '#/components/schemas/CreativeRevision'
         content_id:
@@ -8106,6 +8173,7 @@ components:
           - video
           - audio
           - model
+          - material
           properties:
             text:
               type: integer
@@ -8123,6 +8191,9 @@ components:
               type: integer
               format: int64
             model:
+              type: integer
+              format: int64
+            material:
               type: integer
               format: int64
         tags:
@@ -10043,6 +10114,7 @@ components:
         - $ref: "#/components/schemas/CreativeDocumentConflictDetails"
         - $ref: "#/components/schemas/CreativeFieldDetails"
         - $ref: "#/components/schemas/CreativeLimitDetails"
+        - $ref: "#/components/schemas/CreativeMaterialSlotDetails"
 
     CreativeFieldDetails:
       type: object
@@ -10061,6 +10133,14 @@ components:
       required: [limit]
       properties:
         limit: {type: integer}
+
+    CreativeMaterialSlotDetails:
+      type: object
+      additionalProperties: false
+      required: [object_id, slot_id]
+      properties:
+        object_id: {type: string}
+        slot_id: {type: string}
 
     OrderBusinessDraftUnavailableReason:
       type: string
@@ -17111,6 +17191,27 @@ components:
         operation_id: {type: string, format: uuid}
         client_created_at: {type: string, format: date-time}
         payload: {$ref: "#/components/schemas/CreativeAssetFromSceneModelPayload"}
+    CreativeAssetFromSceneMaterialPayload:
+      type: object
+      additionalProperties: false
+      required: [document_id, object_id, slot_id, expected_object_rev, thumbnail_upload_id, target]
+      properties:
+        document_id: {type: string}
+        object_id: {type: string, description: kind 为 primitive 或 model_instance 的对象}
+        slot_id: {type: string, description: 物件的槽位，必须在 material_slots 里有值}
+        expected_object_rev: {$ref: "#/components/schemas/CreativeRevision"}
+        thumbnail_upload_id:
+          type: string
+          description: 按槽位当前分配渲染的 256 × 256 材质球 PNG 的暂存上传（声明类型 image）。新建材质时消费；复用已有资产时不消费。
+        target: {$ref: "#/components/schemas/CreativeUploadAssetTarget"}
+    CreateCreativeAssetFromSceneMaterialRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: "#/components/schemas/CreativeAssetFromSceneMaterialPayload"}
     CreativeNodeExecution:
       type: object
       additionalProperties: false

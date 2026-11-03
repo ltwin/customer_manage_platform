@@ -36,6 +36,7 @@ func registerCreativeMedia(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/media-access-tickets", w.IssueCreativeMediaTicket)
 	r.POST("/creative/assets/from-canvas-node", w.CreateCreativeAssetFromNode)
 	r.POST("/creative/assets/from-scene-model", w.CreateCreativeAssetFromSceneModel)
+	r.POST("/creative/assets/from-scene-material", w.CreateCreativeAssetFromSceneMaterial)
 }
 
 // registerCreativeMediaBytes serves signed part writes and ticketed reads.
@@ -120,6 +121,9 @@ func (h *handlers) CreateCreativeAssetFromNode(c *gin.Context, _ CreateCreativeA
 }
 func (h *handlers) CreateCreativeAssetFromSceneModel(c *gin.Context, _ CreateCreativeAssetFromSceneModelParams) {
 	h.creativeWrite(c, "", "", creativescene.SaveModelToLibrary)
+}
+func (h *handlers) CreateCreativeAssetFromSceneMaterial(c *gin.Context, _ CreateCreativeAssetFromSceneMaterialParams) {
+	h.creativeWrite(c, "", "", creativescene.SaveMaterialToLibrary)
 }
 func (h *handlers) GetCreativeUpload(c *gin.Context, id string) {
 	svc, ok := h.mediaService(c)
