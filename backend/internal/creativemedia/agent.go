@@ -34,7 +34,7 @@ func (e *ImagePreviewLimitError) Error() string {
 func (e *ImagePreviewLimitError) Unwrap() error { return ErrSizeLimit }
 
 // AgentImage binds the display rendition of an immutable revision, or a model's
-// thumbnail. The caller checks egress consent; this port checks account
+// or a material's thumbnail. The caller checks egress consent; this port checks account
 // ownership and display rights.
 // Media larger than maxBytes is sent as a downscaled JPEG preview. The usual media reader pins the exact object version.
 func (s *Service) AgentImage(ctx context.Context, scope store.AccountScope, revisionID string, maxBytes int64) (*llmgateway.ImageInput, error) {
@@ -59,8 +59,9 @@ func (s *Service) AgentImage(ctx context.Context, scope store.AccountScope, revi
 					media = candidate
 				}
 			}
-		case "model":
-			// A model is seen through its PNG thumbnail, never its GLB.
+		case "model", "material":
+			// A model or a material is seen through its PNG thumbnail, never
+			// its GLB or its texture images.
 			for _, candidate := range rev.Media {
 				if candidate.Role == "thumbnail" {
 					media = candidate

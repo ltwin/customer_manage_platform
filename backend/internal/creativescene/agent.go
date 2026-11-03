@@ -403,8 +403,15 @@ type ObjectView struct {
 	MaterialSlots map[string]MaterialSlot `json:"material_slots,omitempty"`
 	// Slots are a builtin's slots when a face assignment adds to its main.
 	Slots  []creativecontent.Slot `json:"slots,omitempty"`
-	Light  *Light                 `json:"light,omitempty"`
+	Light  *LightView             `json:"light,omitempty"`
 	Camera *Camera                `json:"camera,omitempty"`
+}
+
+// LightView is a light with whether it casts shadows on surfaces: on, off,
+// or over_budget when cast_shadow is on but the shadow maps ran out.
+type LightView struct {
+	Light
+	Shadow string `json:"shadow"`
 }
 
 // ModelView is a placed model: its revision and what was baked, never its
@@ -447,8 +454,12 @@ func placedModelsInTx(ctx context.Context, tx store.TxAccountScope, ids []string
 	return out, nil
 }
 
-func objectView(o Object, models map[string]placedModel) ObjectView {
-	v := ObjectView{ID: o.ID, Name: o.Name, Kind: o.Kind, ParentID: o.ParentID, MaterialSlots: o.MaterialSlots, Light: o.Light, Camera: o.Camera}
+// objectView is an object in detail; shadows are the scene's shadowStates.
+func objectView(o Object, models map[string]placedModel, shadows map[string]string) ObjectView {
+	v := ObjectView{ID: o.ID, Name: o.Name, Kind: o.Kind, ParentID: o.ParentID, MaterialSlots: o.MaterialSlots, Camera: o.Camera}
+	if o.Light != nil {
+		v.Light = &LightView{Light: *o.Light, Shadow: shadows[o.ID]}
+	}
 	t, visible, locked := o.Transform, o.Visible, o.Locked
 	v.Transform, v.Visible, v.Locked = &t, &visible, &locked
 	if o.Primitive != nil {
@@ -526,8 +537,9 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 	if err != nil {
 		return SceneRead{}, err
 	}
+	shadows := shadowStates(scene)
 	for _, o := range listed {
-		out.Objects = append(out.Objects, objectView(o, models))
+		out.Objects = append(out.Objects, objectView(o, models, shadows))
 	}
 	code := map[string]string{}
 	for _, id := range in.IncludeCode {
@@ -732,6 +744,7 @@ func describeConflict(ctx context.Context, tx store.TxAccountScope, cur creative
 		return WriteConflict{}, err
 	}
 	out := WriteConflict{Status: "conflict", Conflicts: []ConflictEntry{}, Revision: cur.Revision}
+	shadows := shadowStates(now)
 	sort.Strings(units)
 	for _, u := range units {
 		e := ConflictEntry{ChangedBy: "本次运行"}
@@ -741,7 +754,7 @@ func describeConflict(ctx context.Context, tx store.TxAccountScope, cur creative
 		if id, content, ok := objectOfUnit(u); ok {
 			e.ObjectID, e.Part = id, partLabels[content]
 			if i, ok := nowIdx[id]; ok {
-				e.Name, e.Current = now.Objects[i].Name, objectView(now.Objects[i], models)
+				e.Name, e.Current = now.Objects[i].Name, objectView(now.Objects[i], models, shadows)
 			} else if i, ok := beforeIdx[id]; ok {
 				e.Name = before.Objects[i].Name
 			}
@@ -777,6 +790,9 @@ type EditInput struct {
 	BasedOn          int64
 	Operations       []json.RawMessage
 	ConversationRuns []string
+	// ReadableImage says whether the run may use an image as a texture; it is
+	// asked of images the scene does not reference yet.
+	ReadableImage func(ctx context.Context, tx store.TxAccountScope, id string) (bool, error)
 }
 
 // EditResult is a written edit. WrittenRevision only reports what was
@@ -892,6 +908,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	if in.Operations, err = resolveLookAt(in.Operations, scene); err != nil {
 		return nil, err
 	}
+	if err := readableImages(ctx, tx, in, cur.Refs); err != nil {
+		return nil, err
+	}
 	actor := creativedocument.Actor{Kind: "agent", RunID: &in.RunID}
 	touched, err := sceneType{}.Touched(ctx, tx, cur, actor, in.Operations)
 	if err != nil {
@@ -922,6 +941,47 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		out.Sun, out.Moon = sunReport(*sky), moonReport(*sky)
 	}
 	return out, nil
+}
+
+// readableImages refuses an edit that brings in an image the run may not
+// read. An image the scene already references needs no asking: copying a
+// texture from one slot to another uses nothing new.
+func readableImages(ctx context.Context, tx store.TxAccountScope, in EditInput, refs []string) error {
+	if in.ReadableImage == nil {
+		return nil
+	}
+	// Only the operations that write slots, at their places in the request;
+	// one that does not decode is the scene command's to report.
+	ops := make([]sceneOp, len(in.Operations))
+	for i, raw := range in.Operations {
+		var head struct {
+			Op string `json:"op"`
+		}
+		if json.Unmarshal(raw, &head) != nil || head.Op != "add_objects" && head.Op != "update_objects" {
+			continue
+		}
+		op, err := decodeOp(raw)
+		if err != nil {
+			return nil
+		}
+		ops[i] = op
+	}
+	asked := map[string]bool{}
+	for _, u := range opImageUses(ops) {
+		if asked[u.image] || slices.Contains(refs, u.image) {
+			continue
+		}
+		asked[u.image] = true
+		readable, err := in.ReadableImage(ctx, tx, u.image)
+		if err != nil {
+			return err
+		}
+		if !readable {
+			return &creativeops.FieldError{Err: ErrImageUnavailable, Op: u.op, Path: u.path, ContentRevisionID: u.image,
+				Message: fmt.Sprintf("图片 %s 这一轮读不到，不能用作贴图：它不在画布上、不在对话里，也不在已授权的资产库或你读到的材质、模型里（或已撤销授权）。请创作者把图片放到画布或发到对话里", u.image)}
+		}
+	}
+	return nil
 }
 
 // writtenSky is the sky, completed, that the last set_environment of a

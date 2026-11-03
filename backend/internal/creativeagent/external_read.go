@@ -340,6 +340,12 @@ func (e *ExternalTools) readAsset(ctx context.Context, p ExternalPrincipal, raw 
 		} else {
 			summary = append([]string{"模型的尺寸、材质和参数见结构化结果。"}, summary...)
 		}
+	case result["material"] != nil:
+		if len(out.Images) > 0 {
+			summary = append([]string{"材质的完整槽位（slot）和贴图尺寸见结构化结果，已附上缩略图。"}, summary...)
+		} else {
+			summary = append([]string{"材质的完整槽位（slot）和贴图尺寸见结构化结果。"}, summary...)
+		}
 	case len(out.Images) > 0:
 		summary = append([]string{"已附上图片。"}, summary...)
 	case result["text"] != nil:

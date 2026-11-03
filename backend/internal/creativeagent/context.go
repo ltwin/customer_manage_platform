@@ -43,25 +43,70 @@ func readableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID
 }
 
 func readableRevisionInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string, library bool) (bool, error) {
+	readable, revoked, err := directlyReadableInTx(ctx, tx, runID, consentID, id, library)
+	if err != nil || readable || revoked {
+		return readable, err
+	}
+	// An image only a material asset or a model's library copy still holds
+	// is readable through that holder when the holder is readable itself, its
+	// own revocation included. One level: a holder's holders do not count.
+	holders, err := textureHoldersInTx(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	for _, holder := range holders {
+		if readable, _, err = directlyReadableInTx(ctx, tx, runID, consentID, holder, library); readable || err != nil {
+			return readable, err
+		}
+	}
+	return false, nil
+}
+
+// directlyReadableInTx is the run's own access to a revision; revoked says a
+// revocation denied it, which no holder can grant back.
+func directlyReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string, library bool) (readable, revoked bool, err error) {
 	var canvasID, conversationID string
 	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id,conversation_id", "id=$2", runID).Scan(&canvasID, &conversationID); err != nil {
-		return false, err
+		return false, false, err
 	}
-	revoked, err := tx.Exists(ctx, "creative_egress_consent_contents", "content_revision_id=$2 AND consent_id IN (SELECT id FROM creative_egress_consents WHERE account_id=$1 AND conversation_id=$3 AND revoked_at IS NOT NULL)", id, conversationID)
+	revoked, err = tx.Exists(ctx, "creative_egress_consent_contents", "content_revision_id=$2 AND consent_id IN (SELECT id FROM creative_egress_consents WHERE account_id=$1 AND conversation_id=$3 AND revoked_at IS NOT NULL)", id, conversationID)
 	if err != nil || revoked {
-		return false, err
+		return false, revoked, err
 	}
 	if approved, err := approvedRevision(ctx, tx, consentID, id); approved || err != nil {
-		return approved, err
+		return approved, false, err
 	}
 	if present, err := tx.Exists(ctx, "creative_nodes", "canvas_id=$2 AND content_revision_id=$3", canvasID, id); present || err != nil {
-		return present, err
+		return present, false, err
 	}
 	present, err := tx.Exists(ctx, "creative_message_content_refs", "content_revision_id=$2 AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete' AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$4)) OR run_id=$4))", id, conversationID, runID)
 	if err != nil || present || !library {
-		return present, err
+		return present, false, err
 	}
-	return tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$3 AND scope->>'mode'='account_library' AND revoked_at IS NULL)", id, consentID)
+	readable, err = tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$3 AND scope->>'mode'='account_library' AND revoked_at IS NULL)", id, consentID)
+	return readable, false, err
+}
+
+// textureHoldersInTx are the revisions holding an image as a texture, in a
+// fixed order.
+func textureHoldersInTx(ctx context.Context, tx store.TxAccountScope, id string) ([]string, error) {
+	rows, err := tx.Query(ctx, "creative_content_revision_refs", "holder_revision_id", "content_revision_id=$2 AND role='texture'", id)
+	if err != nil {
+		return nil, err
+	}
+	var holders []string
+	for rows.Next() {
+		var holder string
+		if err = rows.Scan(&holder); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		holders = append(holders, holder)
+	}
+	err = rows.Err()
+	rows.Close()
+	slices.Sort(holders)
+	return holders, err
 }
 
 // resolveReference builds serializable framework input. Executable image
@@ -95,6 +140,12 @@ func referenceMessage(id string, ref reference) (*schema.Message, error) {
 			return nil, err
 		}
 		message.Content += "\n" + string(facts)
+	case ref.material != nil:
+		facts, err := json.Marshal(materialReference{Material: ref.material, ThumbnailOmitted: ref.thumbnailOmitted})
+		if err != nil {
+			return nil, err
+		}
+		message.Content += "\n" + string(facts)
 	case ref.body != nil:
 		message.Content += "\n" + quotedContentOpen + "\n" + *ref.body + "\n" + quotedContentClose
 	}
@@ -110,6 +161,7 @@ type reference struct {
 	body             *string
 	image            string
 	model            *creativecontent.ModelFacts
+	material         *creativecontent.MaterialFacts
 	thumbnailOmitted string
 }
 
@@ -119,7 +171,14 @@ type modelReference struct {
 	ThumbnailOmitted string                      `json:"thumbnail_omitted,omitempty"`
 }
 
-// withoutThumbnail keeps a model's facts when its thumbnail is not sent: the
+// materialReference is a material's facts as written into the conversation.
+type materialReference struct {
+	Material         *creativecontent.MaterialFacts `json:"material"`
+	ThumbnailOmitted string                         `json:"thumbnail_omitted,omitempty"`
+}
+
+// withoutThumbnail keeps a model's or a material's facts when its thumbnail
+// is not sent: the
 // image locator goes and thumbnail_omitted says why. A read_asset result is
 // the facts as JSON; a reference is its label, a newline, then the JSON. ok
 // is false for anything else, whose message carries the image alone.
@@ -131,7 +190,7 @@ func withoutThumbnail(content, reason string) (string, bool) {
 		label, body = "", content
 	}
 	var fields map[string]json.RawMessage
-	if json.Unmarshal([]byte(body), &fields) != nil || fields["model"] == nil {
+	if json.Unmarshal([]byte(body), &fields) != nil || fields["model"] == nil && fields["material"] == nil {
 		return content, false
 	}
 	why, err := json.Marshal(reason)
@@ -178,21 +237,46 @@ func (s *Service) readReference(ctx context.Context, tx store.TxAccountScope, id
 		if !ok {
 			return reference{}, ErrUnsupportedSegment
 		}
-		// Size and parameters are useful on their own, so a missing thumbnail
-		// is said, never refused.
-		ref := reference{model: &facts}
-		switch {
-		case !imageCapable || s.images == nil:
-			ref.thumbnailOmitted = "model_cannot_see_images"
-		case !consentHas(consent, "image_preview"):
-			ref.thumbnailOmitted = "image_preview_not_allowed"
-		default:
-			ref.image = id
+		var slots []json.RawMessage
+		for _, slot := range facts.Materials {
+			slots = append(slots, slot)
 		}
-		return ref, nil
+		if ids := creativecontent.TextureImageIDs(slots...); len(ids) > 0 {
+			if facts.Images, err = creativecontent.TextureImagesInTx(ctx, tx, ids); err != nil {
+				return reference{}, err
+			}
+		}
+		return s.withThumbnail(reference{model: &facts}, id, consent, imageCapable), nil
+	case "material":
+		if !consentHas(consent, "media_metadata") {
+			return reference{}, ErrEgressRequired
+		}
+		facts, ok := creativecontent.MaterialFactsOf(rev.Payload)
+		if !ok {
+			return reference{}, ErrUnsupportedSegment
+		}
+		if facts.Images, err = creativecontent.TextureImagesInTx(ctx, tx, creativecontent.TextureImageIDs(facts.Slot)); err != nil {
+			return reference{}, err
+		}
+		return s.withThumbnail(reference{material: &facts}, id, consent, imageCapable), nil
 	default:
 		return reference{}, ErrUnsupportedSegment
 	}
+}
+
+// withThumbnail attaches a model's or a material's thumbnail when the caller
+// may see it. The facts are useful on their own, so a missing thumbnail is
+// said, never refused.
+func (s *Service) withThumbnail(ref reference, id string, consent Consent, imageCapable bool) reference {
+	switch {
+	case !imageCapable || s.images == nil:
+		ref.thumbnailOmitted = "model_cannot_see_images"
+	case !consentHas(consent, "image_preview"):
+		ref.thumbnailOmitted = "image_preview_not_allowed"
+	default:
+		ref.image = id
+	}
+	return ref
 }
 
 func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Message, messages []llmgateway.Message) ([]llmgateway.Message, error) {
@@ -533,12 +617,17 @@ func (s *Service) readAssetResult(ctx context.Context, scope store.AccountScope,
 		if ref.image != "" {
 			result["image_revision_id"] = ref.image
 		}
-		// A model's facts come in one result, with its thumbnail.
+		// A model's or a material's facts come in one result, with its
+		// thumbnail.
+		if ref.thumbnailOmitted != "" {
+			result["thumbnail_omitted"] = ref.thumbnailOmitted
+		}
 		if ref.model != nil {
-			if ref.thumbnailOmitted != "" {
-				result["thumbnail_omitted"] = ref.thumbnailOmitted
-			}
 			return fitModelFacts(result, *ref.model, s.limits.ToolResultBytes)
+		}
+		if ref.material != nil {
+			result["material"] = ref.material
+			return nil
 		}
 		if ref.image != "" {
 			return nil
@@ -735,7 +824,7 @@ func contextToolInfo(name string) *schema.ToolInfo {
 	desc := ""
 	switch name {
 	case readAssetTool:
-		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽与资产带的材质、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因；超出单次结果上限时依次省略部件与挂点、参数定义，omitted 列出省略项。不返回生成代码。"
+		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽与资产带的材质、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因；超出单次结果上限时依次省略部件与挂点、参数定义，omitted 列出省略项。不返回生成代码。材质返回完整槽位 slot（原样写进 edit_scene 的 material_slots 即可使用）和贴图图片的宽高 images，并附缩略图；模型资产带的材质用到贴图时同样给 images。贴图只给图片 ID 和宽高，不附原图。"
 		params["content_revision_id"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "内容修订 ID"}
 		params["offset"] = integer("文字起始字节，初次读取填 0")
 		params["limit"] = integer("文字最多字节数，1 到 8192；图片也填写此参数")

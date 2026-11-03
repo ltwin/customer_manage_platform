@@ -412,14 +412,15 @@ lights（文档顺序） + sky.sun
 | `backend/internal/creativescene/type.go:Apply`、`RestoreUnits`、`AfterRestore` | 修改 | 执行操作后调用 `verifyImages`；`restore_units` 和整份恢复按同一规则校验带回的图片（契约「兼容与变更」），整份恢复借底座的 `RestoreHook` |
 | `backend/internal/platform/creativeops/types.go:FieldError`、`creativedocument/command.go:planBatch`、`document.go:LimitError` | 修改（实施时补） | `details.field` 与 `details.limit` 的载体。字段错误带操作下标，底座把它换算成请求里的位置（类型拿到的批次不含 `rename`）；场景的外形错误（`shapeError`、`requireFields`）一并带上字段 |
 | `backend/internal/creativescene/view.go` | 修改 | 读取场景时返回 `images` |
-| `backend/internal/creativescene/materials.go:checkMaterial`、`resolveSlots` | 修改 | 助手写入时校验 `maps` 与 `mapping` 的键 |
-| `backend/internal/creativescene/agent.go` | 修改 | `read_scene` 带贴图、映射、无 UV 提示和灯的 `shadow` 状态；`AgentEditInTx` 透传 |
+| `backend/internal/creativescene/materials.go:checkMaterial`、`resolveSlots` | 修改 | 助手写入时校验 `maps` 与 `mapping` 的键（合并更新的槽位严格解码，未知键不会在整体重写时被丢掉） |
+| `backend/internal/creativescene/agent.go` | 修改 | `read_scene` 带贴图、映射、无 UV 提示和灯的 `shadow` 状态；`AgentEditInTx` 写入前经 `EditInput.ReadableImage` 确认新出现的图片可读 |
+| `backend/internal/creativescene/shadows.go` | 新增（实施时拆出） | `shadowStates`：按「表面阴影上限」的顺序给每盏灯标 `on`/`off`/`over_budget`，与前端 `selectShadowCasters` 同一规则 |
 | `backend/internal/creativescene/library.go` | 修改 | `SaveMaterialToLibrary`；模型库副本写持有关系 |
-| `backend/internal/creativecontent/content.go`、`model_facts.go` | 修改 | `Payload.Material`、`validate`、`WriteMaterialAndRetain`、持有关系写入、材质简介 |
+| `backend/internal/creativecontent/content.go`、`model_facts.go` | 修改 | `Payload.Material`、`validate`、`WriteMaterialAndRetain`、持有关系写入、材质简介；助手读取用的 `MaterialFacts` 与贴图图片尺寸 `TextureImagesInTx` |
 | `backend/internal/creativereference/projection.go:LiveOwnerCondition`、`projection_roles_test.go` | 修改 | 新持有方及守卫登记 |
 | `backend/internal/creativemedia/gc.go`、`agent.go:AgentImage` | 修改 | `material` 可回收；助手看材质用缩略图 |
 | `backend/internal/creativelibrary/list.go`、`discovery.go`、`service.go` | 修改 | 种类清单、简介、去重 |
-| `backend/internal/creativeagent/scene_tools.go`、`context.go`、`asset_tool_info.go` | 修改 | 工具说明；写贴图前确认可读；`readableRevisionInTx` 加「经持有方可读」分支；`read_asset` 支持材质 |
+| `backend/internal/creativeagent/scene_tools.go`、`context.go`、`asset_tool_info.go`、`external_read.go` | 修改 | 工具说明；写贴图前确认可读；`readableRevisionInTx` 加「经持有方可读」分支；`read_asset` 支持材质 |
 | `backend/internal/platform/httpapi/creative_media.go` | 修改 | `from-scene-material` 路由 |
 | `backend/internal/creativecanvas/graph_commands.go` | 修改（实施时补） | 材质资产放进画布节点时的种类不符提示 |
 | `backend/internal/platform/httpapi/creative_documents.go`、`creative_canvas.go` | 修改 | `creative_image_unavailable`、`validation_failed` 带 `details.field`，图片超限带 `details.limit`；槽位为空返回 `creative_material_slot_empty` |
