@@ -1,12 +1,12 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 1,
+  "revision": 2,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 15,
+    "version": 16,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -41,7 +41,7 @@
   },
   "state": "draft",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-02T03:07:13.690Z",
+  "updatedAt": "2026-11-03T04:18:41.285Z",
   "approvals": {},
   "approvalHistory": [],
   "revisions": [],
