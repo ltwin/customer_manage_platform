@@ -1,12 +1,12 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 4,
+  "revision": 6,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 16,
+    "version": 17,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -20,12 +20,14 @@
       "architecture:场景模块",
       "patterns:几何模块契约",
       "patterns:客户端代码沙箱",
+      "patterns:场景着色写法",
       "data:场景文档",
       "data:场景内置基础体",
       "data:模型内容",
       "data:场景客户端任务",
       "data:导出图来源",
       "data:模型资产",
+      "data:材质资产",
       "api:读取场景",
       "api:提交场景命令",
       "api:场景模型命令",
@@ -35,13 +37,23 @@
       "api:列出场景客户端任务",
       "api:读取运行的场景改动",
       "api:导出分镜",
-      "api:模型存入资产库"
+      "api:模型存入资产库",
+      "api:材质存入资产库"
     ],
-    "delivers": []
+    "delivers": [
+      "data:场景文档",
+      "data:模型资产",
+      "data:材质资产",
+      "api:读取场景",
+      "api:提交场景命令",
+      "api:材质存入资产库",
+      "patterns:场景着色写法",
+      "architecture:场景模块"
+    ]
   },
   "state": "approved",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-03T09:13:38.422Z",
+  "updatedAt": "2026-11-03T11:03:54.921Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -53,13 +65,13 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-11-03T09:13:38.197Z",
-      "contentHash": "9a57a2a6c29f9b6f"
+      "at": "2026-11-03T11:03:54.699Z",
+      "contentHash": "10a17035a3f72d21"
     },
     "design": {
       "by": "samson",
-      "at": "2026-11-03T09:13:38.197Z",
-      "contentHash": "d2c73ca73ca412cb"
+      "at": "2026-11-03T11:03:54.699Z",
+      "contentHash": "214f026a77915e7f"
     }
   },
   "approvalHistory": [
@@ -68,6 +80,18 @@
       "at": "2026-11-03T04:22:03.259Z",
       "contentHash": "26a84c3e372b0cad",
       "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-03T09:13:38.197Z",
+      "contentHash": "9a57a2a6c29f9b6f",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-03T09:13:38.197Z",
+      "contentHash": "d2c73ca73ca412cb",
+      "role": "design"
     }
   ],
   "revisions": [],

@@ -1,0 +1,35 @@
+# Tasks
+
+## 1. 先行验证
+
+- [ ] 1.1 显存预算与阴影透明测试（design 未决 2、5）。在本机用临时脚本（不进产品代码）搭参考场景：64 张 2048 图片做光栅纹理，并开启世界空间层的三张数组（视口 512²、导出 1024²），让视口与离屏出图两个设备同时存在，测显存峰值和首次加载时间；同时在 WebGPU 和 WebGL2 两个后端上，验证 three r186 的阴影 pass 是否沿用材质的 `alphaTestNode`。完成判据：每个设备的纹理字节预算、图片上限 64、长边 2048 和数组每层尺寸的结论回写 design「显存预算」与未决事项；阴影 pass 的结论回写「光栅材质的构建」（不沿用时定下用 `castShadowNode` 还是 `maskShadowNode`）。结论与 design 假设差得多时停下回报 owner
+
+## 2. 后端：场景图片、持有关系与材质资产
+
+- [ ] 2.1 迁移 0081（编号以合并时为准）：`creative_contents`、`creative_assets` 的 kind CHECK 加 `material`；新建 `creative_content_revision_refs`（主键、反查索引、`role` CHECK、级联删除）；`creativereference.LiveOwnerCondition` 加持有关系条件，`projection_roles_test.go` 登记；`creativemedia/gc.go` 的可回收种类加 `material`。先写测试：迁移前进与回滚，有 material 行时拒绝回滚；GC 守卫测试；持有方未删除时图片不被回收，持有方被回收后下一轮回收图片。`make check-go PKG=./internal/platform/store/... ./internal/creativereference/... ./internal/creativemedia/...` 通过
+- [ ] 2.2 场景引用图片：`model.go:MaterialSlot` 加 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`，在 `validateSlots` 里校验并补齐缺省值；新增 `images.go`（`imageRefs`、`verifyImages`、`readImages`、`ErrImageUnavailable`）；`encodeScene` 把引用登记为 `modelRefs ∪ imageRefs`；`type.go:Apply` 执行操作后校验图片；超过 64 张返回 413；`view.go` 返回 `images`；httpapi 映射 `creative_image_unavailable`（带 `details.field`）；OpenAPI 加材质槽字段和 `images`，`make generate`。先写测试：Epic `data: 场景文档`「材质贴图」每条约束各一个反例（预设上写 `maps`、未知键、`channel` 写在基础色上、`size_m` 与 `uv` 同时出现、越界）；引用别的账号的图片、视频或模型返回 400 `creative_image_unavailable`；65 张返回 413；缺省值补齐后往返；已持有的图片批量复核；原节点和资产删除后 GC 不回收图片，场景彻底删除后回收。`make check-go PKG=./internal/creativescene/... ./internal/platform/httpapi/...`、`make generate-check` 通过
+- [ ] 2.3 材质资产：`creativecontent` 加 `Payload.Material`、`validate`、`WriteMaterialAndRetain`、持有关系写入、材质要点；`creativescene/library.go` 加 `SaveMaterialToLibrary`，模型库副本写持有关系；`creativelibrary` 的种类清单、要点和查重；httpapi 路由 `from-scene-material`；OpenAPI 加材质载荷、新接口和 `kind` 枚举，`make generate`。先写测试：Epic `api: 材质存入资产库` 的 201、复用 200、错误表每行；复用时不消费缩略图；资产彻底删除后材质修订、缩略图和不再被持有的图片按轮次回收；模型库副本带贴图时写了持有关系。`make check-go PKG=./internal/creativecontent/... ./internal/creativelibrary/... ./internal/creativescene/... ./internal/platform/httpapi/...`、`make generate-check` 通过
+- [ ] 2.4 助手：`context.go:readableRevisionInTx` 加「经持有方可读」分支（撤销优先，只查一层）；`edit_scene` 写入前确认新出现的图片可读；`read_scene` 返回贴图、映射、透明方式、没有 UV 的提示和灯光的 `shadow`；`search_assets kind:material`、`read_asset` 支持材质（贴图只给图片 ID 和宽高）；`AgentImage` 用材质缩略图；`scene_tools.go` 和 `asset_tool_info.go` 的工具说明写明五种贴图、映射方式和透明方式。先写测试：写入不可读的图片时工具结果写明原因；原图从画布和资产库删掉、只被材质资产持有时，助手读到材质后仍能用到槽位上；撤销这张图片或这个材质后写入被拒绝；`read_scene` 的输出；`search_assets` 能找到材质。工具快照或指纹测试按新说明更新。`make check-go PKG=./internal/creativeagent/... ./internal/creativescene/... ./internal/creativemedia/...` 通过
+
+## 3. 前端：图片缓存与光栅材质
+
+- [ ] 3.1 `renderPolicy(slot)` 取代 `seeThrough`：`principled.ts` 实现 design「材质渲染策略」的决策表；`SlotMesh.tsx`、`render/trace/collect.ts`、`render/sceneRenderer.ts` 改为读取它的结果；`instances.ts:keyOf` 加入整个槽位分配；`resolve.ts`、`catalog.ts` 的槽位类型引用生成的 `schema.d.ts`。先写单测：决策表逐行覆盖；`opaque` 的结果与原 `seeThrough` 逐项相同；只切 `alpha_mode` 时键改变。`make check-frontend` 通过
+- [ ] 3.2 `materials/images.ts`：源图和纹理两层缓存（`TextureKey` 分为 `color:`、`normal:`、`orm:`）、引用计数与延迟释放、ORM 合成（标准 ORM 直接复用源图）、占位图共享、最多同时解码 4 张、按 1.1 定下的字节预算准入并给出超出清单、`loadSceneImages`。先写单测：引用计数与释放；同一张图同时用作基础色和糙度时得到两个纹理，颜色空间各自正确，交换加载顺序结果相同；同一组源图、通道配置不同的两个 ORM 得到不同的键；超出预算时保持占位并列出未加载的图；失败时写明是哪张图片。`make check-frontend` 通过
+- [ ] 3.3 `materials/maps.ts` 与材质构建：先用测试场景对照 Blender 的 Box 投影（blend 0.2），确认三平面法线在 45° 斜面上没有明显接缝（design 未决 1，结论回写 design）；再实现三平面与 UV 映射、三平面法线的表面梯度混合、UV 模式按 `uv'` 自求切线框架、`clip`（`alphaTestNode`，阴影按 1.1 的结论）与 `blend`；`instances.ts:build` 在有贴图时构建节点；没有 UV 时按三平面显示。先写单测：UV 模式旋转 90° 后法线凹凸方向随贴图旋转；只换图片时结构键不变。e2e（一次一个用例、ONLY 过滤、换端口）：五种贴图在材质预览、最终渲染中生效；物件缩放后三平面贴图尺寸不变；树叶面片 `clip` 镂空、阴影也镂空，`blend` 的透明度随贴图变化；白模、线稿与改动前逐像素相同。`make check-frontend` 通过
+- [ ] 3.4 表面阴影上限：新增 `objects/shadowBudget.ts:selectShadowCasters`，`objects/lights.ts`、`Lighting.tsx` 按选取结果设置 `castShadow`；属性面板在灯光上显示「阴影超出上限」。先写单测：选取顺序与成本、拖动灯光不改变选中的集合。e2e：最坏场景（太阳、选满的投影灯、面光、玻璃、三张贴图）在本机 Metal 上材质片元 WGSL 的 `texture_*` 声明不超过 16，画面不黑；第 4 盏投影平行光落选、不黑屏。`make check-frontend` 通过
+- [ ] 3.5 等图片就绪：`host/render.ts:openShooter` 在挂载前调用 `loadSceneImages`，失败或超出预算时返回 `SCENE_IMAGES_FAILED` 并写明原因，空闲时释放离屏设备的纹理；`library/thumbnail.ts`、`preview/ModelPreview.tsx` 先等图片，预览等待期间显示静态缩略图；视口先用占位图画，图片到了再重绘。e2e：五种贴图在 `render_view` 和 `lit` 导出中生效；离屏出图时图片加载失败，这张图失败并写明原因。`make check-frontend` 通过
+
+## 4. 世界空间层（U6）
+
+- [ ] 4.1 几何带 UV：顶点颜色缓冲改为「顶点附加」缓冲（RGBA8 颜色加 u、v）；`GeometryData`、`Segment`、`pool.ts`、`layer.ts` 带上 UV；`build.worker.ts:simplify` 对带 UV 的几何改用 `simplifyWithAttributes`，UV 误差超过 1/512 时整组保留原几何；`cache.ts:BUILDER_VERSION` 加 1。先写单测：用非线性 UV 的平面，简化后 UV 误差不超上限，超限时保留原几何；不带 UV 的几何简化结果与改动前相同；存储缓冲数量不变（探针核 7/8）。`make check-frontend` 通过
+- [ ] 4.2 `render/trace/maps.ts:TraceMaps`：每个设备三张纹理数组，层号按 `TextureKey` 分配、引用计数、用空闲列表复用，容量按 1.25 倍增长；先重采样到中间渲染目标再按层、按 mip 拷贝；材质行改为 10 个 vec4；`gpu.ts` 申请 `maxTextureArrayLayers`，超出时退回常数参数并提示；贴图就绪后改写材质行并让 `lightingVersion` 加 1，`base.ready()` 包含图片层就绪；导出按键排序分配层号。先写单测：层号分配与复用、排序确定性、材质行写入。`make check-frontend` 通过
+- [ ] 4.3 命中点采样：`hit.ts` 用 `maps.ts` 的同一映射函数做 `.grad()` 采样（梯度来自光线锥微分）、按三角形求 UV 模式的 TBN、AO 只乘到间接项；`clip` 被裁掉时继续追，最多再追 4 次，次数用完时阴影光线按被遮挡处理、反射和探针光线按最后一次命中的面着色，调试统计记录次数用完的光线数；`checks.ts` 同步。e2e：反射命中点逐像素对照光栅；两次导出逐像素相同；六层镂空面片后面放一面实墙，反射、探针和阴影都不漏光；`blend` 且 `opacity = 1` 的物件不进世界空间层，`clip` 且 `opacity < 1` 的物件按不透明进入。出两组对照图给 owner 看（镜面地板反射贴图墙、探针照亮的彩色贴图房间）。`make check-frontend` 通过
+
+## 5. 编辑器与材质资产
+
+- [ ] 5.1 材质面板：`MaterialSlots.tsx`、`Properties.tsx`、`slotEdits.ts` 加五个贴图输入（从上传、资产库或画布选图，可以替换、清除）、通道选择、映射方式与尺寸、旋转、法线强度、透明方式与阈值；提示「模型没有 UV，按三平面显示」「没有透明贴图，裁切只看不透明度」「图片不可用」；写入走 `update_objects`，失败时按错误码提示。先写单测：槽位编辑生成的操作。e2e：给方块配一张基础色贴图并切到 UV 映射，一条修订，Cmd+Z 撤销。`make check-frontend` 通过
+- [ ] 5.2 材质资产：槽位菜单「存为材质资产」（渲染 256 px 材质球缩略图，暂存上传后调用新接口，冲突时提示重读）；`AssetPanel.tsx` 与槽位菜单可以把材质用到槽位；`creative-canvas` 的资产卡片、筛选、查看浮窗（3D 材质球预览）支持材质，不能放到画布上。e2e：存入、再存一次得到复用、拖到另一个场景的槽位，渲染与原槽位一致；之后修改原槽位不影响资产。`make check-frontend` 通过
+
+## 6. 组合验证与交付
+
+- [ ] 6.1 按 proposal 验收标准逐条核对，补齐没有被前面任务覆盖的 e2e（一次一个用例）；写 `specs.md` 的 `creative/scene`、`creative/library` 增量，`lti validate` 通过；`docs/dev/creative-scene-agent.md` 补贴图、材质资产和阴影上限的用法与已知边界；在主检出 `git merge --no-commit` 后 `make check-merge` 通过，然后 `merge --abort`
