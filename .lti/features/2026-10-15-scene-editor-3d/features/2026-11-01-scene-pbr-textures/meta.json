@@ -1,6 +1,6 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 2,
+  "revision": 3,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
@@ -39,10 +39,24 @@
     ],
     "delivers": []
   },
-  "state": "draft",
+  "state": "approved",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-03T04:18:41.285Z",
-  "approvals": {},
+  "updatedAt": "2026-11-03T04:22:03.374Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "data-migration",
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-03T04:22:03.259Z",
+      "contentHash": "26a84c3e372b0cad"
+    }
+  },
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
