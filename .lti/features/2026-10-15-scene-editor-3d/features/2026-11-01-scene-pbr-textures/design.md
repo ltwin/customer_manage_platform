@@ -303,7 +303,7 @@ lights（文档顺序） + sky.sun
 
 ## 接口与数据契约
 
-契约状态：**扩展**（兼容）。以下是共享定义，随 owner 批准本设计一起写进 Epic `contracts.md`（修订 v17），由 C5c1 交付。
+契约状态：**扩展**（兼容）。完整定义（字段表、错误、请求与响应示例）以 Epic `contracts.md` 修订 v17 为准，由 C5c1 交付；下面只列要点。写进 Epic 时做了三处对齐：图片超过 64 张改为 413 `creative_size_limit`（与物件、摄像机上限相同）；「材质存入资产库」的请求改用 `target`，错误码改用 `creative_document_conflict`、`creative_state_conflict`（与「模型存入资产库」相同）；读取场景的 `images` 不带名称（图片内容没有统一的名称字段，助手看到图片 ID 和尺寸）。另外补了 `patterns: 场景着色写法` 和 `architecture: 场景模块` 两条修改。
 
 ### `data: 场景文档`（MODIFY）
 
@@ -323,18 +323,18 @@ lights（文档顺序） + sky.sun
 | `alpha_mode` | `"opaque"`\|`"clip"`\|`"blend"` | 否 | 只在 `principled@1` 时允许；缺省 `opaque`，存储时补齐（有 `maps` 时）。不带基础色贴图也允许，此时透明度只来自 `opacity` |
 | `alpha_cutoff` | number 0…1 | 否 | 只在 `alpha_mode = clip` 时允许，缺省 0.5 |
 
-- 引用表 `creative_document_content_refs` 同时记录场景引用的图片修订。单个场景最多 64 张不同的图片，超出返回 400。
+- 引用表 `creative_document_content_refs` 同时记录场景引用的图片修订。单个场景最多 64 张不同的图片，超出返回 413 `creative_size_limit`。
 - 修改 `maps` 或 `mapping` 只涉及 `object:<id>:content` 单元，与其他材质字段相同。渲染指纹已经整体计入 `material_slots`，贴图一变，`lit` 导出图就会提示过时。
 - 按键合并：`update_objects` 里的 `material_slots` 按槽位整体替换，这与现有规则相同，`maps` 和 `mapping` 不单独合并。
 
 ### `api: 提交场景命令`（MODIFY）
 
 - 引用的图片不存在、不属于本账号、不是 `image`，或者不可展示：返回 400，错误形态与模型引用不可用相同，错误码为 `creative_image_unavailable`，`details` 里指出字段路径。
-- 超过 64 张图片：返回 400，`details.limit = 64`。
+- 超过 64 张图片：返回 413 `creative_size_limit`，`details.limit = 64`。
 
 ### `api: 读取场景`（MODIFY）
 
-响应新增 `images: {<content_revision_id>: {width, height, mime, usable}}`，与 `models` 并列，供编辑器选择缩放尺寸、显示缺图提示。只列当前修订引用的图片。
+响应新增必返的 `images: {<content_revision_id>: {usable, width, height, mime}}`，与 `models` 并列，供编辑器选择缩放尺寸、显示缺图提示。只列当前修订引用的图片。
 
 ### `data: 模型资产`（MODIFY）
 
@@ -365,17 +365,17 @@ lights（文档顺序） + sky.sun
 | `document_id` | string | 是 | 场景 |
 | `object_id` | string | 是 | 物件 |
 | `slot_id` | string | 是 | 物件的有效槽位 |
-| `expected_object_rev` | integer | 是 | 物件内容单元的预期版本；不符时返回 409 |
-| `title` | string ≤ 200 | 是 | 资产标题 |
+| `expected_object_rev` | CreativeRevision | 是 | 物件内容单元的预期版本 |
+| `target` | `CreativeUploadAssetTarget` | 是 | 标题（必填）、描述、分组、标签、收藏，同 `from-scene-model` |
 | `thumbnail_upload_id` | string | 是 | 暂存的 PNG 缩略图 |
 
 - 成功返回 201 和资产（与 `from-scene-model` 相同）；复用已有资产时返回 200。
 - 错误：
   - 槽位没有分配材质：400 `creative_material_slot_empty`；
-  - 场景在回收站：409 `archived_read_only`；
+  - 物件内容单元版本不符：409 `creative_document_conflict`；
+  - 场景在回收站：409 `creative_state_conflict`；
   - 暂存不可用：409 `creative_upload_unavailable`；
   - 图片已不可用：400 `creative_image_unavailable`。
-- 完整的请求和响应示例写进 Epic contracts.md 时补齐。
 
 ### `patterns: 场景着色写法`（MODIFY）
 
@@ -424,6 +424,7 @@ lights（文档顺序） + sky.sun
 
 - **后端**：`make check-go`，覆盖 `creativescene`、`creativecontent`、`creativelibrary`、`creativereference`、`creativemedia`、`creativeagent`、`platform/store`。
   - 校验：`maps` 用在预设上、非法键、`channel` 写在基础色上、`size_m` 越界、`uv` 模式带 `size_m`，都返回 400 并指出字段。
+  - 超过 64 张图片返回 413 `creative_size_limit`。
   - 归属：引用别的账号的图片、视频或模型，都返回 400 `creative_image_unavailable`（不用 404，编辑器会把 404 当作文档已不存在）。
   - GC：
     - 场景引用的图片，原节点和资产都删除后不被回收；场景彻底删除后被回收。

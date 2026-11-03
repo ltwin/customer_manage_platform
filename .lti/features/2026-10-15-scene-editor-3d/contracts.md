@@ -16,9 +16,11 @@
   - 模型提交（消费暂存上传，写 `model` 内容）。
   - 客户端任务生命周期、导出编排。
   - 场景助手工具的领域入口。
-- 不职责：执行几何代码、渲染、画布节点的布局规则（调用画布命令层完成）。
+  - 场景引用图片的校验与持有登记（修订 v17）：快照里出现的图片修订校验账号、种类和可展示性，登记进引用表；收集入口集中在一个函数里，后续物件类型（`cg-composite` 的人片卡片、原片背景）在这里加入口。
+  - 材质资产的存入（修订 v17）：写 `material` 修订、持有关系和资产，复制语义同模型资产。
+- 不职责：执行几何代码、渲染、画布节点的布局规则（调用画布命令层完成）、读取或处理图片像素（修订 v17）。
 - 依赖方向：`creativeagent` → `creativescene` → `creativecontent` / `creativestaging` / `creativecanvas`（命令层）/ 通用文档层 / `platform/store` / `platform/realtime`。`creativescene` 不 import gin（ADR-003），`gin.Context` 不下穿。客户端任务到达终态时，`creativescene` 经自己定义的端口通知 `creativeagent`（进程启动时注册实现），不反向 import。画布读取导出图节点时，`creativecanvas` 经自己定义的端口问 `creativescene` 这张图是否过时（进程启动时注册实现），`creativecanvas` 不 import `creativescene`。
-- 前端 `frontend/src/creative-scene/`：编辑器外壳（R3F）、场景状态（快照 + outbox + 撤销栈）、沙箱宿主、渲染端（客户端任务执行器）、材质库、导出器。编辑视图嵌入画布的同一个助手面板。渲染端不依赖编辑器外壳：画布页在认领到任务时按需加载它，摄影师不打开场景也能让助手搭建；没有任务的画布页不加载 3D 引擎。
+- 前端 `frontend/src/creative-scene/`：编辑器外壳（R3F）、场景状态（快照 + outbox + 撤销栈）、沙箱宿主、渲染端（客户端任务执行器）、材质库、页面级图片缓存（按媒体票据读原图、各 GPU 设备共用纹理对象、离屏出图前等图片就绪，修订 v17）、导出器。编辑视图嵌入画布的同一个助手面板。渲染端不依赖编辑器外壳：画布页在认领到任务时按需加载它，摄影师不打开场景也能让助手搭建；没有任务的画布页不加载 3D 引擎。
 - 渲染、烘焙、截图、导出只在浏览器完成；服务端不渲染。服务端经客户端任务派发工作，经暂存上传接收产物。
 
 ### 关键数据流
@@ -78,6 +80,66 @@ export default function build({ params, THREE, lib, rng }) {
 - **不适用于**：前端自带的可信代码（内置基础体、材质库）。
 - **备选**：将来某个目标浏览器的样例无法全部通过时，改用 QuickJS-wasm 执行，契约其余部分不变。
 
+## patterns: MODIFY 场景着色写法
+
+- **约定**：
+  - 适用范围：`frontend/src/creative-scene/`，以及所有渲染场景或模型的前端代码（模型缩略图、资产 3D 预览）。
+  - 渲染器只从渲染器创建入口获得（`WebGPURenderer`，WebGPU 不可用时自动改用它的 WebGL2 后端），其他代码不直接创建渲染器。
+  - 着色只用 TSL（`three/tsl`）：材质用节点材质（`*NodeMaterial`），或由渲染器自动映射的内置材质；后处理用 `RenderPipeline` 和节点。不使用 `ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`，也不写 GLSL / WGSL 源码字符串（包括 `glslFn`、`wgslFn`、`wgslTagFn`）。例外只有以下几处（`scene-world-space-gi`）：
+    - npm 依赖 `three-mesh-bvh/webgpu` 的 BVH 遍历是 WGSL（owner 2026-10-23）；
+    - `render/trace/` 里一个调用它求交的包装模块：在 three r186 上，库的求交不能从 TSL 直接调用，包装模块只构造参数、声明局部结果、按值返回，不写任何着色逻辑（修订 v3）。上游提供可从 TSL 调用的版本后删除。
+  - 程序化材质预设是 TSL `Fn`：输入只有对象空间位置（米）、对象空间法线、参数 uniform、像素尺度和宽度函数，输出 `{albedo, roughness, metalness, height, emission}`；不读取渲染器状态、屏幕坐标、帧序号或时间。函数体里不直接调用屏幕导数（`fwidth`、`dFdx`、`dFdy`）：抗锯齿需要的宽度经输入的宽度函数取得，光栅路径传 `fwidth`（生成的着色与改动前相同，已发布预设的外观不变），光线命中点（屏幕外，没有屏幕导数）传由光线锥合成光线微分、再取有限差分得到的宽度，像素尺度同样按光线锥估计（`scene-world-space-gi`）。材质函数的输入在 TSL 的 `Switch` 之前存成变量（见下文「分叉之前先存成变量」）。凹凸由 `height` 在预设函数之外求得；程序化预设的凹凸在命中点不做，材质贴图的法线在命中点照做（`scene-editor-3d` 修订 v17，见下一条）。
+  - 已发布的预设外观不变，改外观发布新版本（沿用材质目录的规则）。
+  - 材质贴图（`scene-editor-3d` 修订 v17，C5c1）：
+    - 映射（三平面投影、UV）、法线解码与混合、透明裁切只写一份（`materials/maps.ts`），光栅和光线命中点各自传入采样方式：光栅用隐式导数，命中点一律 `.grad()`，梯度来自光线锥微分。
+    - 三平面投影的三个轴无条件采样，再按权重混合，不按权重分叉（见下文「分叉里不放隐式导数的采样」）。
+    - UV 模式按变换后的贴图坐标（旋转、`repeat` 之后）求切线框架：光栅用屏幕导数，命中点用三角形三个顶点。不用 three 的 `normalMap` 和几何体的 `tangent` 属性，因为它们只认原始 `uv()`，贴图旋转后凹凸方向会错。
+    - 纹理绑定预算（每个着色阶段 16 张，WebGPU 默认值，three 为每张纹理另配一个 sampler）：每套材质最多 3 个贴图绑定（基础色、法线、ORM 打包），普通表面的阴影贴图最多 8 张（过渡做法，最终方案另立 change）。同一个 `Texture` 对象只占一个绑定，所有占位图共用同一个对象。
+  - 按像素分叉的控制流里，不放依赖隐式导数的纹理采样。
+    - **范围**：
+      - 分叉指条件随像素变化的 `If`、`Loop` 里的提前退出，以及条件不是常量的 `select`：three 把这种 `select` 编成 if/else；
+      - 依赖隐式导数的采样，指 `texture()` 不带 `.level()` 或 `.grad()` 的采样，以及深度比较采样。
+    - **原因**：
+      - WGSL 规定这类采样只在一致的控制流里有定义，而 three 生成 WGSL 时关掉了 `derivative_uniformity` 诊断，所以编译不报错；
+      - 没进分支的相邻像素，坐标为零或未定义，导数随之为 NaN；
+      - 结果是整块纯白或纯黑。
+    - **写法**：在分叉之外无条件采样，再用算术（`mix`、`step`）选择；或者显式指定 LOD。
+    - **验证**：这类错误 SwiftShader 不复现，要在本机 GPU 上验证。
+
+    出处：`scene-world-space-gi` 修订 v5；来源是 2026-10-26 体积雾的纯白（`f3c4807f`）。
+  - 分叉之前先存成变量：按像素分叉的控制流里共用的表达式，在分叉之前存成变量（`.toVar()`）。
+    - **范围**：
+      - 分叉与上一条相同：`Switch`、条件随像素变化的 `If`、`Loop` 里的提前退出，以及条件不是常量的 `select`；
+      - 共用指几个分支（包括循环展开出的几份分支）用到同一个节点，也包括作为参数传进函数的表达式，例如 `dir.negate()`。
+    - **原因**：
+      - TSL 在第一次构建某个表达式的分支里把它存成变量，只在那个分支里赋值；
+      - 其他分支读到的是没赋过值的变量，编译不报错；
+      - 结果是数值错了，而不是整块纯白或纯黑，所以更难发现。
+    - **写法**：在函数入口或分叉之前存成变量，函数收到的参数也一样。
+    - **验证**：写不成静态检查。调整分叉的结构（例如调换分支顺序、加提前退出）时，在同一个着色器里算出新旧两种写法，逐像素对照。
+
+    出处：`scene-world-space-gi` 修订 v6。来源是 S2 任务 7.0：探针逐级回退只调换了累加顺序，`thin-wall@level2` 就从 +13% 变成 +34%。原因是传进来的视线方向只在第一级的分支里赋了值。
+  - 需要随帧变化的量（TRAA 抖动、时域噪声）只取渲染器创建入口提供的帧序号；不读墙钟时间，也不依赖渲染器自己的 rAF 计数。每张导出图从帧序号 0 开始；跨帧累积的状态（实时 GI 世界空间追踪层的探针和反射历史）在这时一并清空。
+  - 预计算表（LUT，例如物理大气的透射率、多次散射、天空视图和空气透视）用全屏片元 pass 写入 `RenderTarget`，3D 表写入 `RenderTarget3D` 的各层或拼成 2D 图集；不用 compute 写存储纹理。理由是 WebGL2 后端的 compute 由 transform feedback 模拟，只能写存储缓冲。
+  - 默认两个后端都支持。只支持 WebGPU 的功能须经所属 Epic 修订确认，并按统一规则降级和认领（`scene-world-environment` design「只支持 WebGPU 的统一规则」）。已确认只支持 WebGPU 的：实时 GI 的世界空间追踪层（`scene-world-space-gi`，降级与认领方式见该 Epic design「能力与容量」）。
+  - 光追（实时 GI 的世界空间追踪层，以及将来的路径追踪）：场景的 BVH、材质表、求交和命中点着色只经光追底座（`render/trace/`）获得，每个渲染设备一份、跨导出图复用。命中点着色使用与光栅相同的材质参数和预设函数、灯光 uniform（含预曝光）和场景环境贴图，阴影朝灯光发阴影光线（屏幕外的命中点不在视锥拟合的阴影贴图覆盖范围内）；命中点的光照模型是与光栅等价的另一份实现（three 的光照模型只在材质构建时运行），由同一表面的光栅对照测试把关。只支持 WebGPU 的光追可以用 compute 写存储缓冲和存储纹理（上一条对 LUT 的限制只针对两个后端都要运行的预计算表）。为它重新标定的常数（SSGI 增益、环境光填充、收敛帧数、时限）只在这一层构建时生效，其余情况保持原值。为性能做的几何简化只用在画面上看不出差别的地方：漫反射探针的光线追误差受控的代理（按 ε 简化，由画质对照把关），锐利反射和将来的路径追踪追原始几何；规模超出设备容量时逐档降级并明确提示，不悄悄降低画质（`scene-world-space-gi` design I8）。导出和 `render_view` 等光追底座就绪后才开始计帧，结果不随构建快慢变化。
+  - 物理天空下光照按物理单位（亮度 cd/m²，平行光照度 lux，点光和聚光 cd），光源强度在送进 GPU 前乘以曝光系数（预曝光）；天空 LUT、空气透视和环境贴图等环境派生数据按「环境相对单位」存储（乘以只取决于环境的 s_env），每个观看者再乘以相对系数；天空、灯光和材质写入 HDR 缓冲前钳到 60 000。这样 RGBA16F 缓冲在正午不溢出，夜里也不下溢（`scene-world-environment` design「物理单位与曝光」）。着色代码里不写绝对亮度的常数；绝对量只出现在 `world/exposure` 和 `world/atmosphere` 的 CPU 端。
+  - 环境类效果（天空、太阳光、天空光照、空气透视、体积，以及将来的云和地表效果）取同一份天体方向、大气 LUT 和曝光，不各自近似。天体位置只由文档字段算出，不读当前时间。
+  - 第三方 3D 组件（drei 等）只用不含自定义着色器的。引入新组件前先确认它能在 `WebGPURenderer` 下运行，再加入静态检查的白名单。
+  - three 锁定精确版本；升级时重跑迁移等价对照（`scene-webgpu-renderer` AC-1 的参考场景集）。`three-mesh-bvh` 和 `meshoptimizer`（直接依赖）同样锁定精确版本；升级时重跑 `scene-world-space-gi` 的参考场景对照，并核对 `three-mesh-bvh/webgpu` 的不稳定接口（包括项目用到的非公开扩展点）。
+  - fork 进项目的 three 节点和着色代码（正交 GTAO、天空、SSGI，以及 `scene-world-space-gi` 起的 SSR）在文件头注明上游版本和改动的行；升级 three 时逐个与上游比对。`three-mesh-bvh` 的增量打包用子类扩展，不 fork（修订 v3），依赖的非公开接口在文件头列出。
+  - three r186 在 compute 阶段的限制（`TextureNode.grad()`、PMREM 的环境旋转）由 `render/trace/` 里一个限定范围的补丁模块处理：只改 compute 阶段原本会报错的分支，光栅着色器不受影响；文件头注明上游版本、改动的方法和对应的上游 issue，升级 three 时先检查能否删除（`scene-world-space-gi` 修订 v3）。按论文或外部示例自写的着色代码（Hillaire 物理大气）在文件头注明参照的论文和示例版本。
+- **为什么**：`WebGPURenderer` 只接受节点材质。只有一份着色源码，WebGPU 和 WebGL2 两个后端以及将来的 compute 路径追踪器才能共用同一份定义，不会出现两套实现的外观漂移；预设写成不依赖渲染器的纯函数，才能在 compute 着色器里复用。
+- **不适用于**：不做 3D 渲染的 2D canvas（例如画布页的生成遮罩用 2D context）；沙箱里的几何代码只生成几何、不渲染。
+- **检查**：`make check-frontend` 中的静态检查（`scene-webgpu-renderer` R1 交付）：`frontend/src` 里出现 `WebGLRenderer`、`WebGLRenderTarget`、`ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`、`ShaderLib`、`ShaderChunk`、GLSL 模板字符串、`three/examples/jsm/postprocessing/*`、`three/addons/objects/Sky.js`、非 WebGPU 版的 `lines/*`，或白名单以外的 drei 组件时失败。`frontend/src/creative-scene/world/` 和 `render/` 里出现 `Date.now()` 或无参的 `new Date()` 时也失败（`scene-world-environment` W2 交付；节流用的 `performance.now()` 不影响画面，不在此列）。`frontend/src` 里出现 `wgslFn` 或 `wgslTagFn` 时同样失败，`render/trace/` 的包装模块除外（`scene-world-space-gi` S1 交付）。「分叉里不放隐式导数的采样」和「分叉之前先存成变量」写不成静态检查，由在本机 GPU 上运行的定向 e2e 把关。
+- **例子**：
+  - `frontend/src/creative-scene/materials/patterns.ts` 的预设函数；
+  - `frontend/src/creative-scene/materials/maps.ts` 的贴图映射，光栅与 `render/trace/hit.ts` 共用（C5c1 交付后）；
+  - `render/` 下的渲染器创建入口（R1 改写后）；
+  - `render/trace/` 的光追底座（`scene-world-space-gi` S1 交付后）；
+  - 分叉里的采样：`render/volumes/lights.ts` 的点光阴影查找，每步无条件采样，再乘以范围掩码；`render/probes/lookup.ts` 的探针采样，显式指定 LOD（S2 交付后）。
+  - 分叉之前先存成变量：`render/probes/lookup.ts` 的 `probeIrradiance` 在入口把位置、法线和视线方向存成变量（S2 交付后）。
+
 ## data: MODIFY 场景文档
 
 ### 用途与存储角色
@@ -120,12 +182,32 @@ export default function build({ params, THREE, lib, rng }) {
 | `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}, faces?}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
 | `objects[].primitive.faces` | object，结构同 `data: 模型内容` 的 `model.faces` | 否 | 面级材质分配（C5b，修订 v13）。基础体不在物件间共用，分配直接记在物件内容上，改它只涉及 `object:<id>:content`，不产生模型修订。基础体只有一个网格，`meshes[]` 至多一项，`path` 固定为 `[["", 0]]`、`primitive` 为 0；区间 ≤ 256 个。保留还是作废只按 `data: 场景内置基础体` 的 `topology` 声明判断（编辑器与服务端同一规则），改了声明里的参数即清空，见 `api: 提交场景命令`；指纹只用于加载时兜底核对 |
 | `objects[].model` | `{content_revision_id}` | `kind=model_instance` 时 | 必须是本账号 `model` 类型、`ready` 且可展示的内容修订 |
-| `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
+| `objects[].material_slots` | `{<slot_id>:{preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}}` | 否 | 贴图与透明方式见下方「材质贴图」（修订 v17）。缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
 | `objects[].light` | 按 `type` 区分，字段与 three.js 灯光类同名同义，见下方「灯光」 | `kind=light` 时 | 只有 `type` 必填，其余缺省取 three.js 默认值，存储时补齐 |
 | `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near>0, far>near（米，同 three.js `PerspectiveCamera`）, label≤40, depth_of_field:bool, f_stop:0.5…64, focus>0（米，同 three.js `PerspectiveCamera.focus`）, focus_object_id:物件 ID 或 ""}` | `kind=camera` 时 | 各字段可省略，缺省 `{35,[36,24],"3:2",0.1,1000,"",false,2.8,10,""}`，存储时补齐；景深四个字段为修订 v8 新增，旧快照在读取时补齐。朝局部 −Z 看（three.js 摄像机约定）；视场角按画面长边对应传感器长边算出：`tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)`，`fov` 为 three.js 的垂直视场角（修订 v8），不写 three.js 的 `fov`。`focus_object_id` 非空时按该物件原点沿视线方向的深度对焦：写入时必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己；之后目标被删除不算违反契约，按 `focus` 对焦。写空字符串取消对焦物件（按键合并下 `null` 等于没写）。`depth_of_field = true` 时，白模导出按光圈和对焦虚化（design「渲染模式与导出」） |
 | 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
-- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
+- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型和图片 `content_revision_id`（图片自修订 v17）。
+- **材质贴图**（修订 v17，C5c1）：槽位值的可选字段，只在 `preset = principled@1` 时允许，写在其他预设上返回 400 并指出字段。
+
+| 字段 | 类型 | 必须 | 缺省 / 约束 |
+|---|---|---|---|
+| `maps` | object | 否 | 键为 `base_color`、`normal`、`roughness`、`metalness`、`ao`，至少一个；未知键返回 400 |
+| `maps.<kind>.content_revision_id` | string（`ccrv_…`） | 是 | 本账号 `image` 类型、`ready` 且可展示的内容修订，校验与模型引用相同；否则返回 400 `creative_image_unavailable` |
+| `maps.<kind>.channel` | `"r"` \| `"g"` \| `"b"` \| `"a"` | 否 | 只对 `roughness`、`metalness`、`ao` 有效，缺省 `r`，存储时补齐；写在 `base_color`、`normal` 上返回 400。glTF 的打包 ORM 图可以三项都指定同一张图，分别取 `r`、`g`、`b` |
+| `mapping` | object | 否 | 只在有 `maps` 时允许；有 `maps` 而没写时存储为 `{kind:"triplanar", size_m:1, rotation_deg:0, normal_strength:1}` |
+| `mapping.kind` | `"triplanar"` \| `"uv"` | 否 | 缺省 `triplanar`：按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）。`uv` 用模型的 `TEXCOORD_0`；模型没有 UV 时按三平面投影显示，编辑器和助手都会被提示 |
+| `mapping.size_m` | number 0.01…100 | 否 | 只在 `triplanar` 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比 |
+| `mapping.repeat` | `[u, v]`，各 0.01…1000 | 否 | 只在 `uv` 时允许，缺省 `[1, 1]` |
+| `mapping.rotation_deg` | number 0…360 | 否 | 缺省 0 |
+| `mapping.normal_strength` | number 0…4 | 否 | 缺省 1；没有法线贴图时也允许保存 |
+| `alpha_mode` | `"opaque"` \| `"clip"` \| `"blend"` | 否 | 对应 glTF 的 OPAQUE / MASK / BLEND。缺省 `opaque`；有 `maps` 时存储时补齐。不带基础色贴图也允许，此时透明度只来自 `opacity` |
+| `alpha_cutoff` | number 0…1 | 否 | 只在 `alpha_mode = clip` 时允许，缺省 0.5，存储时补齐 |
+
+  - 贴图与常数参数相乘，语义同 three.js 和 glTF：基础色 = `color` × 贴图（按 sRGB 读取）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光；法线贴图是切线空间，OpenGL 约定（+Y 朝上，同 glTF、Blender），乘 `normal_strength`。除基础色外按线性读取。
+  - 透明方式：`opaque` 忽略贴图的透明通道，`opacity`、`transmission` 的行为与修订 v17 之前完全相同；`clip` 把 `opacity × 贴图透明通道` 低于 `alpha_cutoff` 的部分挖掉，留下的部分完全不透明，挖掉的部分不投影，屏幕外反射和探针 GI 里同样挖空；`blend` 把贴图透明通道乘到 `opacity` 上，按半透明物件处理（与 `opacity < 1` 相同），即使整张贴图都不透明。
+  - 白模、线稿和线框不看材质（与 Blender 相同），贴图和透明方式都不体现；材质预览、最终渲染、`render_view` 和 `lit` 导出体现。
+  - 单个场景最多引用 64 张不同的图片（跨所有槽位去重计数），超出返回 413 `creative_size_limit`。这是初始值，C5c1 实测后调整。
 - **灯光**（字段与 three.js 同名同义，渲染时原样赋给对应的灯光类）：
 
 | `type` | three.js | 字段与缺省 |
@@ -140,15 +222,15 @@ export default function build({ params, THREE, lib, rng }) {
 - **命名原则**（修订 v7）：助手要写的字段与 three.js 同名同义；three.js 没有对应字段的，保留带单位的名字（`sun_elevation_deg`、`focal_mm`、`sensor_mm`）。不接受别名，写错名字返回 400 并指出字段。变换的 `rotation` 保持四元数：three.js 里它对应 `quaternion`（three.js 的 `rotation` 是欧拉角），但两者长度不同，写错会被拒绝而不会悄悄出错，C3 试用中助手也全部写对。
 
 ### 访问模式与保证
-- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
+- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）和图片修订摘要（宽高、MIME、是否可用，修订 v17）。图片像素由编辑器按修订另取媒体读取票据（`role = original`），不经场景接口。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
 - **写**：在文档行锁内（`SELECT … FOR UPDATE`）检查单元版本 → 应用 → 校验全部不变量 → 写新快照、修订行（`actor_kind`、`run_id`、`changed_units`、`restored_from`）和引用行 → 更新文档行的 `revision` 和 `content_revision_id`。整个过程在一个事务里，失败则不产生任何修订。
 - **不变量的保证方**：
-  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型可用、单元版本单调。
+  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型和图片可用、单元版本单调。图片的可用性只在它第一次出现在场景里时检查，已被当前修订引用的图片批量复核，与模型相同（修订 v17）。
   - 由数据库保证：修订号主键唯一、`account_id` 限定、内容类型 CHECK。
 - **历史**：按 `revision DESC` 分页列出修订；`changed_units` 直接读，不比对快照。
 
 ### 生命周期与演进
-- 进回收站与彻底删除沿用通用文档层。彻底删除时删除修订行和引用行，之后模型修订失去持有方，可被 GC 回收。
+- 进回收站与彻底删除沿用通用文档层。彻底删除时删除修订行和引用行，之后模型修订和图片修订失去持有方，可被 GC 回收。
 - 内容类型 CHECK 加 `scene`。回滚时如已有 `scene` 内容则拒绝，前向修复。
 - 快照 `schema_version` 升级时，读取端兼容旧版本，写入只写新版本；不做批量回填。
 - 例外：修订 v7 的改名（雾和摄像机的 `near_m`/`far_m` → `near`/`far`，灯光 `range_m` → `distance`、`angle_deg` → `angle` 并补 `decay`）发生在上线之前，生产库没有场景数据。由一次迁移改写已有的场景快照，`schema_version` 仍为 1，不保留旧字段的读取兼容。旧的 `angle_deg` 没有定义是整锥角还是半角，也从未渲染过，迁移按整锥角换算（`angle = angle_deg / 2`，换成弧度）；2026-10-18 开发库里没有灯光物件。
@@ -156,6 +238,7 @@ export default function build({ params, THREE, lib, rng }) {
 - 修订 v8（C4 起草时）：摄像机新增 `depth_of_field`、`f_stop`、`focus`、`focus_object_id`。不迁移：读取时补齐默认值（服务端解码时补齐，读取场景的响应里也带齐），之后的写入按完整字段存储。「空物体」是没有子物件的 `group`，不新增 `kind`。
 - 修订 v10（C5 起草时）：`render` 新增 `exposure_ev`。灯光按 three.js 的物理单位（坎德拉），室外有太阳和只有几盏灯的室内亮度差几个数量级，固定曝光无法同时照顾两者，所以由场景自己定曝光，与摄影里按场景定曝光一致；用「档」而不是倍数，与相机的曝光补偿、Blender 色彩管理的曝光相同。不迁移：读取时补 0，读取场景的响应里也带齐。
 - 修订 v13（C5b 起草时）：基础体的 `primitive` 新增可选的 `faces`。不迁移：没有这个字段就是没有面分配。回滚到不认识它的后端会读取失败，只做前向修复。
+- 修订 v17（C5c1 起草时）：材质槽新增可选的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`，引用表开始登记图片。不迁移：没有这些字段就是没有贴图、`opaque`，渲染与之前相同。改了 `maps` 的槽位会进入渲染指纹（指纹已整体计入 `material_slots`），已有的 `lit` 导出图照常提示过时；没改的场景指纹不变。回滚到不认识这些字段的后端会读取失败，只做前向修复。
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 
 ## data: MODIFY 场景内置基础体
@@ -364,7 +447,7 @@ export default function build({ params, THREE, lib, rng }) {
 
       | 路径 | 类型 | 必须 | 约束 |
       |---|---|---|---|
-      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params}}`），只保留有效槽位（manifest 的槽位加面级分配的槽位，修订 v13），可以是空对象 |
+      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}}`，贴图字段自修订 v17），只保留有效槽位（manifest 的槽位加面级分配的槽位，修订 v13），可以是空对象 |
       | `model.source_revision_id` | string | 库副本必有 | 复制自哪个模型修订。来源本身是库副本时取它的 `source_revision_id`，所以总指向场景里烘焙出的修订 |
 
       场景命令写出的修订没有这两个字段；有 `source_revision_id` 就是库副本。
@@ -373,11 +456,14 @@ export default function build({ params, THREE, lib, rng }) {
     - 修订 v12 之前直接引用场景修订的模型资产只存在于开发环境，照常可读，视为没有材质分配，不迁移。
 - **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
 - **持有**：资产是库副本修订的 GC 持有方，经现有的 `creativereference.LiveOwnerCondition`（按 `content_revision_id` 与 `kind` 匹配）。与来源修订共用的 GLB、存入时上传的缩略图随之保留；不新增引用列。
+  - 库副本 `model.materials` 里引用的图片（修订 v17）：写库副本修订的同一事务里，每张图片写一行 `creative_content_revision_refs`（`holder_revision_id` = 库副本修订，`role = texture`），结构与 GC 规则见 `data: 材质资产`。存入时这些图片按场景的图片规则复核（本账号、`image`、可展示），不可用时存入失败，返回 400 `creative_image_unavailable`。
+  - 场景命令写出的模型修订不带 `materials`，所以不写持有关系；场景里的贴图由场景修订的引用表持有。
 - **库副本只属于资产库**（修订 v12）：`commit_model` 的 `base_content_id` 指向库副本的内容时，服务端新建内容，不在库副本上追加修订，响应的 `models` 照常返回新内容的 ID。这样放进场景后的修改，不论来自编辑器还是助手、页面是否刷新过，总是分叉出场景自己的模型，库副本只有存入时的那一个修订。这条补充 `api: 场景模型命令` 的分叉规则（I4），由本条交付。
 - **读取**（修订 v11）：
   - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
   - 助手（修订 v11）：
     - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `materials` 里的贴图只给图片的 `content_revision_id`、宽高和名称，不附像素（修订 v17）；助手经这个库副本可以把这些图片写进场景槽位，规则见 `data: 材质资产`「助手可读」。
     - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
     - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
     - 模型信息按 `media_metadata` 外发，与资产库元数据相同。
@@ -385,6 +471,60 @@ export default function build({ params, THREE, lib, rng }) {
 - **放置**：模型资产只能放进场景（`add_objects` 的 `model.content_revision_id`），不能放到画布：没有 `core.model` 节点类型，画布的放入、填充和参考选择都不接受它。放入时实例的 `material_slots` 写资产的 `materials`：编辑器自动写，助手按 `edit_scene` 的说明写。之后在场景里换材质只改实例（修订 v12）。
 - **OpenAPI**（修订 v12）：`CreativeModelPayload` 与只用于响应的 `CreativeModelPreviewPayload` 的 `model` 加可选的 `materials`、`source_revision_id`。`CreativeModelPayload` 也被请求体引用，但模型不能经通用写入口写入，放宽不产生新的写法。
 - **生命周期**：回滚时如已有 `model` 资产则拒绝，前向修复。资产库不记录资产被哪个场景使用过（I7）。
+
+## data: ADD 材质资产
+
+### 用途与存储角色
+- **用途**（修订 v17，C5c1）：资产库可以存放 `material` 资产，即一个材质槽的完整分配（预设、参数、贴图、映射、透明方式），相当于 Blender 的材质资产。可以用到任意物件的任意槽位。
+- **存储**：PostgreSQL。
+  - `creative_contents.kind` 和 `creative_assets.kind` 的 CHECK 都加 `material`。资产库现有的分组、标签、评分、回收站和筛选对它一视同仁；按画面的筛选（主色、画幅）只作用于图片，材质自然不命中。
+  - 每份材质资产引用一个只属于资产库的 `material` 内容修订（I7）：存入时新建内容、写一个修订，之后不再追加修订。
+  - 新表 `creative_content_revision_refs`：记录「内容修订持有内容修订」，供材质资产和模型库副本持有其中的贴图。
+- **角色**：材质修订是权威主数据，资产行是它在资产库里的入口。持有关系表是从修订载荷派生的索引，与修订同一事务写入，之后不改；它不是事实源，载荷才是。
+- **所有权**：只有「材质存入资产库」写材质修订和持有关系；模型库副本的持有关系由「模型存入资产库」写入。场景、画布和通用内容写入口都写不出 `material` 修订。
+
+### 结构与身份
+- 内容修订 ID 沿用 `ccrv_…`，内容 ID 沿用 `ccnt_…`，资产 ID 沿用 `ccas_…`。
+- 载荷（`creative_content_revisions.payload`，`schema_version = 1`）：
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `material.slot` | object | 是 | 结构同场景对象 `material_slots` 的一个值：`{preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}`，校验与补齐规则见 `data: 场景文档`「材质贴图」 |
+| `material.source` | `{document_id, object_id, slot_id, revision}` | 是 | 来源说明，只供展示，不构成引用；来源场景被删除后照常保留 |
+
+- 对象：`thumbnail` 角色，256 × 256 的材质球 PNG，必须有。由编辑器渲染，与模型缩略图同一套暂存上传。
+- **持有关系表** `creative_content_revision_refs`：
+
+| 列 | 类型 | 约束 |
+|---|---|---|
+| `account_id` | 账号 ID | 非空；查询由 repository 基座限定（I8） |
+| `holder_revision_id` | `ccrv_…` | 非空；持有方修订（材质修订或模型库副本修订），外键到 `creative_content_revisions`，持有方被物理删除时级联删除 |
+| `content_revision_id` | `ccrv_…` | 非空；被持有的修订（目前只有图片），外键到 `creative_content_revisions` |
+| `role` | text | 非空；CHECK 为 `texture` |
+
+  - 主键 `(account_id, holder_revision_id, content_revision_id)`；索引 `(account_id, content_revision_id)` 供 GC 和可读性判断反查。
+  - 同一张图片在一个槽位里用作多种贴图时只写一行。
+
+### 访问模式与保证
+- **写**：「材质存入资产库」在一个事务里：校验槽位里的每张图片（本账号、`image`、`ready`、可展示）→ 写材质内容和修订 → 写持有关系行 → 建资产。任一步失败则全部不生效。
+- **查重**：`material.slot` 完全相同（JSON 规范化后相等）且不在回收站的材质资产已存在时复用，只追加归类，与模型资产相同。`source` 不参与比较。
+- **GC**：
+  - `creativereference.LiveOwnerCondition` 增加一条：存在持有关系行，且持有方修订的 `state` 不是 `deleted`。守卫测试 `projection_roles_test.go` 登记新列。
+  - 不递归：持有方修订本身由谁持有，交给它自己的判定。材质资产被彻底删除后，材质修订没有持有方，按现有规则回收（`material` 加入可回收种类），持有关系行随之删除；下一轮 GC 再回收不再被任何人持有的图片。
+- **助手可读**：
+  - 现有的可读判断（`readableRevisionInTx`）加最后一个分支：图片没有被撤销授权，且存在某个持有它的修订（`role = texture`）按同一函数可读。只查一层。撤销仍然优先：图片本身或持有方被撤销，都不可读。
+  - 这一条只放宽「经可读的材质资产或模型库副本使用其中的贴图」，不放宽单独读取像素。
+  - `search_assets kind:material` 对材质项附要点：标题、预设、贴图种类与图片 ID、映射方式、透明方式。`read_asset` 读材质时返回完整的 `slot`，缩略图作为图片附件（条件同模型资产）；贴图只给图片 ID 和宽高，不附原图像素。
+- **不变量的保证方**：载荷外形、图片可用性、持有关系与载荷一致，由应用保证；账号范围、主键唯一、种类 CHECK、`role` CHECK 由数据库保证。
+
+### 放置与使用
+- 材质资产只能用到场景物件的槽位上，不能放到画布：没有 `core.material` 节点类型，画布的放入、填充和参考选择都不接受它。
+- 用到槽位不新增接口：编辑器或助手把 `material.slot` 原样写进 `update_objects` 的 `material_slots`。之后与资产没有关联，修改槽位不影响资产（I7）。图片校验按场景规则进行；经材质资产可读的图片对助手同样可写。
+
+### 生命周期与演进
+- 迁移（接在当前最新迁移之后）：两处 kind CHECK 加 `material`，新建 `creative_content_revision_refs`。回滚时如已有 `material` 内容、资产或持有关系行则拒绝，前向修复。
+- 资产库不记录材质被哪个场景用过（I7）。
+- 以后加入的「内容引用内容」（例如合成卡片引用的人片）复用这张表，`role` 按需扩展 CHECK。
 
 ## api: MODIFY 读取场景
 
@@ -415,10 +555,15 @@ export default function build({ params, THREE, lib, rng }) {
 | `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, code_sha256, params_schema, params, mount}`，**不含代码** |
 | `models.*.name_hint` | string | 是 | 是 | 模型名称提示 |
 | `models.*.faces` | object | 是 | 是 | 面级材质分配（修订 v13），结构见 `data: 模型内容`；没有时为 null。编辑器加载 GLB 后按它拆分槽位 |
+| `images` | object | 是 | 否 | 修订 v17。以图片 `content_revision_id` 为键，覆盖当前快照引用的全部图片（目前只有 `material_slots.*.maps.*`）；没有贴图时为 `{}`。不列历史修订引用的图片 |
+| `images.*.usable` | boolean | 是 | 否 | false 表示图片当前不可展示。场景持有期间图片不会被 GC 回收，所以只在内容状态异常时出现；此时 `width`、`height`、`mime` 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理 |
+| `images.*.width`、`images.*.height` | integer | 是 | 是 | 原图像素尺寸（已按 EXIF 方向换算），编辑器据此决定缩放到多大再上传 GPU |
+| `images.*.mime` | string | 是 | 是 | `image/jpeg`、`image/png` 或 `image/webp`；PNG、WebP 可能带透明通道 |
 
 - **GLB 与缩略图**：响应不含地址。编辑器按模型修订调用现有的 `POST /creative/media-access-tickets`（`content_revision_id`，`role` 为 `original` 取 GLB、`thumbnail` 取缩略图，`purpose` 为 `display`），按修订缓存，与画布图片的做法一致。
 - **代码**：通过 `GET /creative/content-revisions/{content_revision_id}` 单独读取（载荷的 `model.generator.code`），避免每次重读快照都传几十 KB 代码。
-- **性能**：模型摘要在同一个读快照事务里批量读取，查询次数不随模型数增长。
+- **图片像素**（修订 v17）：响应不含地址。编辑器按图片修订调用 `POST /creative/media-access-tickets`（`role = original`、`purpose = display`）取原图：展示图是有损 JPEG，且会丢透明通道，不能用作贴图。
+- **性能**：模型摘要和图片摘要在同一个读快照事务里批量读取，查询次数不随模型数、图片数增长。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
@@ -458,7 +603,18 @@ Authorization: Bearer <token>
       {"id": "sobj_V1StGXR8_Z5jdHi6B-myT", "kind": "primitive", "name": "地面", "parent_id": null, "order": 0,
        "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": true,
-       "primitive": {"builtin": "ground@1", "params": {"size": 40}}, "material_slots": {}},
+       "primitive": {"builtin": "ground@1", "params": {"size": 40}},
+       "material_slots": {"main": {
+         "preset": "principled@1",
+         "params": {"color": "#ffffff", "roughness": 1, "metalness": 1, "opacity": 1, "transmission": 0},
+         "maps": {
+           "base_color": {"content_revision_id": "ccrv_1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"},
+           "normal": {"content_revision_id": "ccrv_2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e"},
+           "roughness": {"content_revision_id": "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f", "channel": "g"},
+           "metalness": {"content_revision_id": "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f", "channel": "b"},
+           "ao": {"content_revision_id": "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f", "channel": "r"}},
+         "mapping": {"kind": "triplanar", "size_m": 2, "rotation_deg": 0, "normal_strength": 1},
+         "alpha_mode": "opaque"}}},
       {"id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "kind": "model_instance", "name": "左侧柱 1", "parent_id": null, "order": 3,
        "transform": {"position": [-3, 0, -2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": false,
@@ -477,9 +633,15 @@ Authorization: Bearer <token>
                     "params": {"height": 6}, "mount": "floor"},
       "name_hint": "哥特束柱"
     }
+  },
+  "images": {
+    "ccrv_1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d": {"usable": true, "width": 2048, "height": 2048, "mime": "image/jpeg"},
+    "ccrv_2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e": {"usable": true, "width": 2048, "height": 2048, "mime": "image/png"},
+    "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f": {"usable": false, "width": null, "height": null, "mime": null}
   }
 }
 ```
+上例中 ORM 图（`ccrv_3c4d…`）已不可用：编辑器在地面槽位上显示「图片不可用」，糙度、金属度、AO 按常数参数渲染；离屏出图（`lit` 导出、`render_view`）遇到不可用的图片直接失败，不出缺贴图的图。
 失败示例：
 ```http
 GET /api/v1/creative/documents/cwdoc_not_mine
@@ -492,6 +654,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 - 在通用读取接口上新增 `scene` 分支，其他类型不受影响。
 - C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
 - 修订 v13（C5b）：模型摘要增加 `faces`，基础体的 `primitive.faces` 随快照返回。只增加字段，旧客户端忽略。
+- 修订 v17（C5c1）：响应增加必返的 `images`（没有贴图时为 `{}`），快照的材质槽可能带 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`。只增加字段；旧编辑器忽略它们，按常数参数渲染，但会在下次整体替换槽位时丢掉贴图，所以前后端同一版本上线。
 
 ## api: MODIFY 提交场景命令
 
@@ -533,12 +696,13 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元 | 修正，不可原样重试 |
+| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元；材质槽的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff` 违反数据契约（写在非 `principled@1` 的预设上、未知贴图键、`channel` 写在基础色或法线上、`size_m` 与 `uv` 同时出现、数值越界等，修订 v17），`details.field` 指出字段路径 | 修正，不可原样重试 |
+| 400 | `creative_image_unavailable` | 修订 v17。本批新出现的图片引用不存在、不属于当前账号、不是 `image`、不是 `ready` 或不可展示（不区分这几种，与 `creative_model_unavailable` 相同，不用 404：编辑器会把 404 当成场景本身不存在）。`details.field` 指出第一个不可用的字段路径，`details.content_revision_id` 给出图片 | 编辑器去掉这张贴图并提示；助手按工具结果换图 |
 | 404 | `not_found` | 场景不存在或不属于当前账号 | 关闭编辑视图 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符。`details.conflicts` 为数组：`[{unit, expected_rev, current_rev}]` | 重读，按冲突界面处理后再提交 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
 | 409 | `idempotency_conflict` | 同一 key 用于不同请求体 | 换新 key 前先查原回执 |
-| 413 | `creative_size_limit` | 请求体超限，或应用后快照 > 512 KiB / 对象 > 2000 / 摄像机 > 32 / 体积物件 > 8 | 缩小改动 |
+| 413 | `creative_size_limit` | 请求体超限，或应用后快照 > 512 KiB / 对象 > 2000 / 摄像机 > 32 / 体积物件 > 8 / 引用的不同图片 > 64（修订 v17，`details.limit = 64`） | 缩小改动 |
 
 ### 交互规则
 - **原子性**：全部成功或全部不生效。
@@ -595,6 +759,33 @@ Content-Type: application/json
 ```
 取消编组时，`moves` 把子物件挂回分组原来的父级并写回局部变换，`remove_groups` 删除这个分组。
 
+贴图示例（修订 v17：给石台的 `main` 槽位配树叶贴图，UV 映射，透明裁切；`material_slots` 整体替换，所以没改的槽位也要原样写回）：
+```json
+{"operation_id": "b7c8d9e0-f1a2-4b3c-8d4e-5f6a7b8c9d0e", "client_created_at": "2026-11-05T10:00:00Z",
+ "payload": {
+   "expected": {"object:sobj_Q9w8E7r6T5y4U3i2O1p0a:content": "5"},
+   "operations": [{"op": "update_objects", "updates": [{"object_id": "sobj_Q9w8E7r6T5y4U3i2O1p0a",
+     "material_slots": {"main": {
+       "preset": "principled@1",
+       "params": {"color": "#ffffff", "roughness": 0.8, "metalness": 0, "opacity": 1, "transmission": 0},
+       "maps": {"base_color": {"content_revision_id": "ccrv_4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80"},
+                "normal": {"content_revision_id": "ccrv_5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8091"}},
+       "mapping": {"kind": "uv", "repeat": [1, 1], "rotation_deg": 90},
+       "alpha_mode": "clip"}}}]}]}}
+```
+```json
+{"revision": "7", "changed_units": ["object:sobj_Q9w8E7r6T5y4U3i2O1p0a:content"],
+ "annotated_units": [], "removed_units": [], "reset_required": false}
+```
+存储时补齐缺省值：`mapping.normal_strength = 1`、`alpha_cutoff = 0.5`。石台是 `box@1`，内置基础体都带 UV；如果引用的是没有 UV 的模型，写入照常成功，渲染按三平面投影显示，编辑器和助手看到提示。
+
+图片不可用示例（引用了另一个账号的图片，或者一个视频）：
+```json
+{"error": {"code": "creative_image_unavailable", "message": "引用的图片不可用",
+  "details": {"field": "operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id",
+              "content_revision_id": "ccrv_4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80"}}}
+```
+
 冲突示例（助手已先改过这台摄像机）：
 ```json
 {"error": {"code": "creative_document_conflict", "message": "文档已被修改",
@@ -603,6 +794,8 @@ Content-Type: application/json
 
 ### 兼容与变更
 在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。
+
+修订 v17（C5c1）：`add_objects`、`update_objects` 的 `material_slots` 接受 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`；新增错误 `creative_image_unavailable` 和图片数上限。只增加可选字段，旧客户端不写它们；旧编辑器整体替换槽位时会丢掉贴图，所以前后端同一版本上线。`restore`、`restore_units` 恢复的旧修订如果引用了图片，同样按上面的规则校验；历史修订一直持有这些图片，它们不会被回收，所以通常仍然可用。
 
 修订 v13（C5b）：`add_objects`、`update_objects` 接受 `primitive.faces`（整体替换），改了基础体的拓扑参数而没写 `faces` 时清空分配。旧客户端不写这个字段；它们改拓扑参数时分配被清空，与新编辑器按同一份声明判断的结果相同。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
 
@@ -1071,3 +1264,86 @@ Content-Type: application/json
 
 ### 兼容与变更
 首次定义。**从资产库放入场景**不新增接口：编辑器用资产的 `content_revision_id` 调 `add_objects`（`kind=model_instance`），`material_slots` 写资产的 `materials`。之后编辑总是分叉（`data: 模型资产`「库副本只属于资产库」），资产不受影响。修订 v12 新增必填的 `thumbnail_upload_id`；接口尚未上线，不保留旧形态。`CreativeAssetCreateResult` 已于 C6 起草时（2026-10-20）核对，示例与之一致。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `model`，是兼容扩展。
+
+## api: ADD 材质存入资产库
+
+### 用途与调用
+- **用途**（修订 v17，C5c1）：把场景里某个物件某个槽位的材质分配复制成材质资产（复制语义，见 I7 与 `data: 材质资产`）。
+- **消费者**：编辑器材质槽菜单「存为材质资产」；后续的助手库整理工具。
+- **调用**：`POST /api/v1/creative/assets/from-scene-material`，`Idempotency-Key` 必填，外层为公共约定（`{operation_id, client_created_at, payload}`，`Idempotency-Key` 等于 `operation_id`）。成功响应复用 `CreativeAssetCreateResult`（`api/openapi.yaml`）。
+- **权限**：场景属于当前账号，账号有创意空间写入权限（同 `/creative/assets/from-scene-model`）。
+- **只读场景**：不改场景，不产生场景修订；只写材质修订、持有关系和资产库。
+
+### 请求
+`payload`：
+
+| 字段 | 类型 | 必传 | 说明 |
+|---|---|---|---|
+| `document_id` | string | 是 | 场景文档 ID |
+| `object_id` | string | 是 | `kind` 为 `primitive` 或 `model_instance` 的对象 |
+| `slot_id` | string | 是 | 物件的槽位 ID，必须在该物件的 `material_slots` 里有值 |
+| `expected_object_rev` | CreativeRevision | 是 | 该对象内容单元 `object:<id>:content` 的当前 `rev`；材质分配在这个单元里，防止存入摄影师没看到的材质 |
+| `thumbnail_upload_id` | string | 是 | 缩略图的暂存上传：声明类型 `image` 的 PNG，与 `commit_model` 的缩略图同一套暂存上传。编辑器用当前槽位分配渲染 256 × 256 的材质球。新建材质时消费；复用已有资产时不消费，按暂存规则过期回收 |
+| `target` | `CreativeUploadAssetTarget` | 是 | 沿用现有结构：`title` 必填（1–200），`description`（≤ 1000 码点）、`group_ids`、`tag_ids`、`new_tags`、`is_favorite` 可选 |
+
+### 成功响应
+- 201：已新建材质修订和资产，`reused = false`；`content_revision_id` 是材质修订。
+- 200：`slot` 完全相同的材质资产已存在且不在回收站，`reused = true`，只追加所选分组和标签；`title`、`description` 是已有资产的值，本次传入的标题、描述和收藏不生效。
+
+两者都随幂等回执重放，语义与 `/creative/assets/from-scene-model` 一致。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 对象不是基础体或模型实例；`target` 字段不合法；缩略图上传不是 PNG 图片 | 修正 |
+| 400 | `creative_material_slot_empty` | 该槽位在 `material_slots` 里没有值（渲染时用的是提示或默认材质，没有可存的分配） | 先给槽位指定材质 |
+| 400 | `creative_image_unavailable` | 槽位引用的某张图片已不可展示；`details.field` 指出贴图（例如 `maps.normal`），`details.content_revision_id` 给出图片 | 提示换图后再存 |
+| 404 | `not_found` | 场景不存在或不属于当前账号；对象不在场景当前快照里；`target` 引用的分组或标签不存在 | 重读 |
+| 409 | `creative_document_conflict` | `expected_object_rev` 与当前不符；`details.conflicts` 为 `[{unit: "object:<id>:content", expected_rev, current_rev}]` | 重读，确认看到的是要存的材质后重试 |
+| 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
+| 409 | `creative_upload_unavailable` | 需要新建材质时，缩略图上传不存在、属于其他账号、已过期、已消费或尚未就绪 | 重新渲染并上传缩略图后重试 |
+| 409 | `idempotency_conflict` 等 | 公共约定 | — |
+
+### 交互规则
+- **原子性**：校验、写材质修订、持有关系和资产在一个事务里，失败则都不生效，缩略图上传不被消费。
+- **幂等**：沿用公共约定。
+- 不适用：分页、异步。
+
+### 调用示例
+```http
+POST /api/v1/creative/assets/from-scene-material
+Authorization: Bearer <token>
+Idempotency-Key: 0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d
+Content-Type: application/json
+```
+```json
+{"operation_id": "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d", "client_created_at": "2026-11-05T10:20:00Z",
+ "payload": {"document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10", "object_id": "sobj_V1StGXR8_Z5jdHi6B-myT",
+             "slot_id": "main", "expected_object_rev": "6", "thumbnail_upload_id": "ccup_6f7a8b9c-0d1e-4f2a-9b3c-5d6e7f8091a2",
+             "target": {"title": "旧石板地面", "description": "三平面投影，2 米一块", "group_ids": ["ccag_2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f"]}}}
+```
+201：
+```json
+{"asset_id": "ccas_7a8b9c0d-1e2f-4a3b-8c4d-6e7f8091a2b3", "revision": "1",
+ "content_revision_id": "ccrv_8b9c0d1e-2f3a-4b4c-9d5e-7f8091a2b3c4", "library_revision": "215",
+ "tag_mapping": {}, "reused": false, "title": "旧石板地面", "description": "三平面投影，2 米一块"}
+```
+200（同一份分配已经存过）：
+```json
+{"asset_id": "ccas_7a8b9c0d-1e2f-4a3b-8c4d-6e7f8091a2b3", "revision": "2",
+ "content_revision_id": "ccrv_8b9c0d1e-2f3a-4b4c-9d5e-7f8091a2b3c4", "library_revision": "216",
+ "tag_mapping": {}, "reused": true, "title": "旧石板地面", "description": "三平面投影，2 米一块"}
+```
+400（槽位还没有分配材质）：
+```json
+{"error": {"code": "creative_material_slot_empty", "message": "这个槽位还没有指定材质",
+           "details": {"object_id": "sobj_V1StGXR8_Z5jdHi6B-myT", "slot_id": "trim"}}}
+```
+409（摄影师看到的是修订 6，之后助手改了这个物件的材质）：
+```json
+{"error": {"code": "creative_document_conflict", "message": "文档已被修改",
+           "details": {"conflicts": [{"unit": "object:sobj_V1StGXR8_Z5jdHi6B-myT:content", "expected_rev": "6", "current_rev": "8"}]}}}
+```
+
+### 兼容与变更
+首次定义。**把材质资产用到槽位**不新增接口：编辑器或助手把资产的 `material.slot` 写进 `update_objects` 的 `material_slots`（`api: 提交场景命令`）。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `material`，是兼容扩展。复用时的 `revision` 是资产行的修订号（追加归类后加 1），与模型资产相同。
