@@ -13,10 +13,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackExternalAgentOAuth is the head of the rollback chain: every older
+// rollbackExternalAgentOAuth undoes 0081 and then 0080; every older
 // migration's rollback helper undoes this one first.
 func rollbackExternalAgentOAuth(t *testing.T, url string) {
 	t.Helper()
+	rollbackCreativeMaterialTextures(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback external-agent-oauth", err)
 	}
@@ -94,6 +95,7 @@ VALUES('\x01','c','acct','cxcon_1','u','short','r',now())`},
 		t.Fatal("a second current refresh token accepted")
 	}
 
+	rollbackCreativeMaterialTextures(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "external agent connections exist") {
 		t.Fatal("lossy rollback allowed", err)
 	}

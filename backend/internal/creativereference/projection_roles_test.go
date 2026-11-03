@@ -29,6 +29,7 @@ var referenceColumns = map[string]columnRole{
 	// restoring an old version still finds its images (until the document is purged).
 	"creative_document_revisions.content_revision_id":      revisionHolder,
 	"creative_document_content_refs.content_revision_id":   revisionHolder,
+	"creative_content_revision_refs.content_revision_id":   revisionHolder,
 	"creative_execution_refs.content_revision_id":          revisionHolder,
 	"creative_message_content_refs.content_revision_id":    revisionHolder,
 	"creative_node_inputs.content_revision_id":             revisionHolder,
@@ -50,6 +51,8 @@ var referenceColumns = map[string]columnRole{
 	"creative_image_edit_renders.original_blob_id": blobHolder,
 	"creative_image_edit_renders.display_blob_id":  blobHolder,
 
+	// The holding side: the row goes with the holder revision.
+	"creative_content_revision_refs.holder_revision_id": notHolder,
 	// The revision's own binding and rights: they go with the revision.
 	"creative_content_objects.content_revision_id":         notHolder,
 	"creative_content_required_grants.content_revision_id": notHolder,

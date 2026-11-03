@@ -190,6 +190,45 @@ func TestGCKeepsWhatIsStillInUse(t *testing.T) {
 	}
 }
 
+// A texture lives as long as the material holding it: with the material asset
+// gone, one round reclaims the material and the next the image it held.
+func TestGCKeepsATextureUntilItsHolderIsReclaimed(t *testing.T) {
+	f := setup(t)
+	image := f.uploadAndPurge(t)
+	for _, q := range []string{
+		`INSERT INTO creative_contents(id,account_id,kind,created_by_kind) VALUES('ccnt_gc_mat','media-a','material','photographer')`,
+		`INSERT INTO creative_content_revisions(id,account_id,content_id,sequence,schema_version,payload,rights_declaration_id) VALUES('ccrv_gc_mat','media-a','ccnt_gc_mat',1,1,'{"material":{}}','rights')`,
+		`INSERT INTO creative_assets(id,account_id,kind,title,normalized_title,description,content_id,content_revision_id) VALUES('asset-gc-mat','media-a','material','砖墙','砖墙','','ccnt_gc_mat','ccrv_gc_mat')`,
+	} {
+		if _, err := f.db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	if _, err := f.db.Exec(`INSERT INTO creative_content_revision_refs(account_id,holder_revision_id,content_revision_id,role) VALUES('media-a','ccrv_gc_mat',$1,'texture')`, image.ContentRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r != (creativemedia.GCReport{}) {
+		t.Fatalf("a texture held by a material was collected: %+v", r)
+	}
+
+	if _, err := f.db.Exec(`DELETE FROM creative_assets WHERE id='asset-gc-mat'`); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("first round: %+v", r)
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id='ccrv_gc_mat'`) != "deleted" ||
+		f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "ready" {
+		t.Fatal("the first round should reclaim the material and keep its texture")
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("second round: %+v", r)
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "deleted" {
+		t.Fatal("a texture outlived its reclaimed holder")
+	}
+}
+
 // An import that stopped making progress is reset the way a new attempt would
 // reset it: its reservation comes back, its objects go to reclamation, and the
 // commit it was waiting for can no longer land.
