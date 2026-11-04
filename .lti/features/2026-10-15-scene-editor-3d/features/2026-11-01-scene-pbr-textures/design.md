@@ -157,7 +157,7 @@ creativedocument.persist ─▶ 新修订 + creative_document_content_refs
   - 法线贴图的斜率沿贴图的右和上取（OpenGL 约定），先按 −rotation 转回平面坐标，缩放不参与（法线贴图平铺得更密时角度不变）。三平面把三个面的高度梯度在物件空间（米）按权重混合，乘 `modelScale` 回到局部坐标，再经 `modelNormalMatrix` 和视图矩阵变换（不归一化），最后投影到表面。
   - 三平面的贴图高度按第一张贴图（基础色、法线、ORM 的顺序）的宽高比，图片到达时更新 uniform。
   - 映射与法线的数学写成与运算后端无关的函数（`Kit`）：光栅传 TSL 节点运算，单测传数值运算；命中点（4.3）传自己的采样函数。
-  - 材质预览（workbench）的 AO 预渲染用统一的覆盖材质，three 只给它复制数值 `alphaTest`，读不到槽位贴图，所以 `clip` 挖掉的部分在那里的 AO 里按实心计算。最终渲染、`lit` 导出（实时 GI 的预渲染用真实材质）和阴影（`maskShadowNode`）不受影响。owner 2026-11-03 定为已知边界。code review 2026-11-04 补充：这份预渲染的深度也供空气透视和体积使用，所以材质预览里镂空处的空气透视和体积同样按叶片的深度算；修法是让 `clip` 材质不走覆盖材质（`allowOverride = false`），会牵动阴影 pass，待 owner 决定。
+  - 材质预览（workbench）的 AO 预渲染用统一的覆盖材质，three 只给它复制数值 `alphaTest`，读不到槽位贴图，所以 `clip` 挖掉的部分在那里的 AO 里按实心计算。最终渲染、`lit` 导出（实时 GI 的预渲染用真实材质）和阴影（`maskShadowNode`）不受影响。owner 2026-11-03 定为已知边界。code review 2026-11-04 补充：这份预渲染的深度也供空气透视和体积使用，所以材质预览里镂空处的空气透视和体积同样按叶片的深度算；修法是让 `clip` 材质不走覆盖材质（`allowOverride = false`），会牵动阴影 pass；owner 2026-11-04 定为已知边界，暂不修。
   - three 的透明测试在透明度 ≤ 阈值时挖掉，`maskShadowNode` 写成 ≥ 阈值时保留，两者只在恰好等于阈值时不同。
   - 透明度用绑定到本材质的 `reference('opacity')`，不用 `materialOpacity`：阴影通道在覆盖用的阴影材质下构建遮罩，`materialOpacity` 在那里读到的是 1，`clip` 的常数不透明度就进不了阴影（e2e 发现）。
   - 薄方块配 Box 投影时，底面的 u 按 Cycles 镜像，上下两面的镂空互为镜像；阴影通道画双面，所以图案不对称时影子会被另一面补上。这是 Box 投影本身的性质（Blender 相同）；树叶卡片用模型里的单面片或 UV 映射。平面图元本来就不投影。

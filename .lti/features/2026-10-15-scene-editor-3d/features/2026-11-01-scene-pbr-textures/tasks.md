@@ -42,5 +42,5 @@ code review 修正（2026-11-04）：逐项核对外部 review，成立的都改
 - 显存：世界空间层的纹理数组计入 2 GiB 预算（扩容时新旧同时计），放不下的贴图计入 `mapsOver`，导出因此失败；原图下载 120 s 超时；解码中被释放的贴图关闭 `ImageBitmap`；光追端失败的图片在页面重新加载出来后重试；ORM 合成改用 WebGL2 按非预乘读取。
 - 编辑器：上传在选图框关闭时中止，并用最新回调写槽位；选图框的按键不外传（Cmd+Z 不再撤销场景）、Tab 在框内循环、关闭后焦点回到原按钮；「图片不可用」按修订精确匹配，悬停文字不再带修订 ID；保存请求体按各自的生成类型构造；不可用的材质资产不能拖；缩略图失败写明是哪种贴图。
 - 后端：材质去重的命中按 ID 排序，跳过已不可用的命中（全都不可用时另建）；图片原件查找由 `DisplayResult.ImageOriginal` 共用。
-- 未改，写进已知边界并待 owner 决定：材质预览的预渲染覆盖材质不读 `maskNode`，`clip` 镂空处的 AO、空气透视和体积按实心深度算；远处的 `clip` 光栅按 mip 平均的 alpha 判断，光追取最细一级。
+- 未改，owner 2026-11-04 定为已知边界：材质预览的预渲染覆盖材质不读 `maskNode`，`clip` 镂空处的 AO、空气透视和体积按实心深度算；远处的 `clip` 光栅按 mip 平均的 alpha 判断，光追取最细一级。
 - 验证：Go `creativescene`/`creativecontent`/`creativelibrary` 全包与 `creativeagent` 的贴图、材质、场景用例；前端 images/maps/trace/library/model-asset/materials 单测、`tsc -b`、lint；e2e 单跑 clip、导出等图、面板选图（新增选图框按键断言）、材质资产、五种贴图与资产库材质项，均通过。
