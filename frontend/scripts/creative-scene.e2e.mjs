@@ -8639,6 +8639,32 @@ if (process.env.SCENE_E2E_TRACE) await check('area light: AC-S2-3, hits lit by a
   }
 })
 
+/** SCENE_E2E_TRACE_DUMP: the hit check's pictures (set window.__traceCheckImages = null before it runs) as 8-bit PNGs in dir: colours times the report's exposure in sRGB, distances and ids as they are over their range. */
+async function dumpTraceCheck(page, report, dir, prefix) {
+  const pngs = await page.evaluate((exposure) => {
+    const { size, raster, hits } = window.__traceCheckImages
+    const out = {}
+    const encode = (x) => 255 * (x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055)
+    for (const [side, set] of [['raster', raster], ['hit', hits]])
+      for (const [name, a] of Object.entries(set)) {
+        const c = document.createElement('canvas')
+        c.width = size.width
+        c.height = size.height
+        const g = c.getContext('2d')
+        const img = g.createImageData(size.width, size.height)
+        const scale = name === 'distance' || name === 'id' ? 1 / 20 : name === 'albedo' || name === 'outputs' ? 1 : exposure
+        for (let i = 0; i < size.width * size.height; i++)
+          for (let k = 0; k < 3; k++) img.data[i * 4 + k] = Math.max(0, Math.min(255, encode(Math.max(0, a[i * 4 + k] * scale))))
+        for (let i = 0; i < size.width * size.height; i++) img.data[i * 4 + 3] = 255
+        g.putImageData(img, 0, 0)
+        out[`${side}-${name}`] = c.toDataURL('image/png')
+      }
+    return out
+  }, report.exposure)
+  await mkdir(dir, { recursive: true })
+  for (const [name, url] of Object.entries(pngs)) await writeFile(`${dir}/${prefix}${name}.png`, Buffer.from(url.split(',')[1], 'base64'))
+}
+
 // SCENE_E2E_TRACE=1: the materials scene, a primary ray a pixel shaded at
 // its hit (render/trace/hit.ts) against the raster mesh by mesh, inside each
 // (render/trace/checks.ts hitCheck): the material's outputs and the light
@@ -8659,31 +8685,7 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-2, hits shaded as the
       if (dump) await page.evaluate(() => { window.__traceCheckImages = null })
       const report = await page.evaluate((turn) => window.__sceneGPU.traceHits(640, turn), turn)
       const what = turn ? 'turned' : 'as it is'
-      if (dump) {
-        // Each picture as an 8-bit PNG: colours times the report's exposure in sRGB, distances and ids as they are over their range.
-        const pngs = await page.evaluate((exposure) => {
-          const { size, raster, hits } = window.__traceCheckImages
-          const out = {}
-          const encode = (x) => 255 * (x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055)
-          for (const [side, set] of [['raster', raster], ['hit', hits]])
-            for (const [name, a] of Object.entries(set)) {
-              const c = document.createElement('canvas')
-              c.width = size.width
-              c.height = size.height
-              const g = c.getContext('2d')
-              const img = g.createImageData(size.width, size.height)
-              const scale = name === 'distance' || name === 'id' ? 1 / 20 : name === 'albedo' || name === 'outputs' ? 1 : exposure
-              for (let i = 0; i < size.width * size.height; i++)
-                for (let k = 0; k < 3; k++) img.data[i * 4 + k] = Math.max(0, Math.min(255, encode(Math.max(0, a[i * 4 + k] * scale))))
-              for (let i = 0; i < size.width * size.height; i++) img.data[i * 4 + 3] = 255
-              g.putImageData(img, 0, 0)
-              out[`${side}-${name}`] = c.toDataURL('image/png')
-            }
-          return out
-        }, report.exposure)
-        await mkdir(dump, { recursive: true })
-        for (const [name, url] of Object.entries(pngs)) await writeFile(`${dump}/${turn ? 'turned-' : ''}${name}.png`, Buffer.from(url.split(',')[1], 'base64'))
-      }
+      if (dump) await dumpTraceCheck(page, report, dump, turn ? 'turned-' : '')
       console.log(`  materials ${what}: exposure ${report.exposure.toFixed(3)}, shadow ${report.shadow.agree} of ${report.shadow.compared}`)
       for (const m of report.meshes) {
         const sh = report.shadow.rows[m.row]
@@ -8717,6 +8719,247 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: AC-S1-2, hits shaded as the
     assert.ok(report.surfaces.mismatched <= report.width * report.height * 1e-4, `inside a box: ${report.surfaces.mismatched} pixels see another surface`)
     assert.deepEqual(b.errors, [], b.errors.join('\n'))
     await inside.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// --- C5c1: the world-space layer's textures ----------------------------------------------------------------------
+
+/** The materials scene with eight of its boxes textured, each another way (C5c1 tasks 4.3), lit by the real-time GI. */
+function texturedMaterials(server, edit) {
+  stock(server)
+  const box = (size_m, more = {}) => ({ kind: 'triplanar', size_m, rotation_deg: 0, normal_strength: 1, ...more })
+  const slots = {
+    ma: principledSlot({}, { maps: { base_color: map('ccr_checker') }, mapping: box(0.3) }),
+    mb: principledSlot({}, { maps: { base_color: map('ccr_checker') }, mapping: { kind: 'uv', repeat: [2, 2], rotation_deg: 0, normal_strength: 1 } }),
+    mc: principledSlot({ roughness: 0.4 }, { maps: { normal: map('ccr_ridges') }, mapping: box(0.4) }),
+    md: principledSlot({ roughness: 0.4 }, { maps: { normal: map('ccr_ridges') }, mapping: { kind: 'uv', repeat: [1, 1], rotation_deg: 30, normal_strength: 1 } }),
+    me: principledSlot({ metalness: 1, roughness: 1 }, { maps: { roughness: map('ccr_stripes'), metalness: map('ccr_stripes') }, mapping: box(0.4) }),
+    mf: principledSlot({}, { maps: { ao: map('ccr_stripes'), base_color: map('ccr_checker') }, mapping: box(0.6, { rotation_deg: 30 }) }),
+    mg: principledSlot({ color: '#e0c060' }, { maps: { base_color: map('ccr_holes') }, mapping: box(1.2), alpha_mode: 'clip' }),
+    mh: principledSlot({}, { maps: { base_color: map('ccr_veil') }, mapping: box(0.5), alpha_mode: 'clip', alpha_cutoff: 0.3 }),
+  }
+  referenceScene(server, 'materials', (scene) => {
+    realtimeGI(scene)
+    for (const o of scene.objects) if (slots[o.name]) o.material_slots = { main: slots[o.name] }
+    edit?.(scene)
+  })
+}
+
+/** The viewport's layer ready with every texture written into its arrays. */
+const mapsReady = (page, what) => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.traceStats?.maps?.pending)) === 0, `${what}: the textures written`, 60_000)
+
+if (process.env.SCENE_E2E_TRACE) await check('C5c1: hits sample the slots’ textures as the raster does, mesh by mesh: triplanar and UV, normal, ORM, clip', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    texturedMaterials(server)
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'textured')
+    await mapsReady(page, 'textured')
+    const dump = process.env.SCENE_E2E_TRACE_DUMP
+    if (dump) await page.evaluate(() => { window.__traceCheckImages = null })
+    const report = await page.evaluate(() => window.__sceneGPU.traceHits(640))
+    if (dump) await dumpTraceCheck(page, report, dump, 'textured-')
+    console.log(`  textured: exposure ${report.exposure.toFixed(3)}, shadow ${report.shadow.agree} of ${report.shadow.compared}, ${report.surfaces.mismatched} pixels see another surface`)
+    for (const m of report.meshes) console.log(`    ${String(m.row).padStart(3)} ${m.material.padEnd(16)} ${String(m.pixels).padStart(6)} px  albedo ${m.albedo.toFixed(2)}  outputs ${m.outputs.toFixed(2)}  lit ${m.lit.toFixed(2)}`)
+    const judged = report.meshes.filter((m) => m.pixels >= 50)
+    assert.equal(judged.filter((m) => m.material === 'principled+maps').length, 8, 'the eight textured boxes judged')
+    for (const m of judged) {
+      // A textured box: its 64-pixel test image is magnified onto a 512 layer and filtered down again, a little softer
+      // than the raster's mips of the image itself, at a texel or two a pixel. Its textures missed at the hits are tens of levels.
+      const [outputs, lit] = m.material === 'principled+maps' ? [4, 1.5] : [1, 1]
+      assert.ok(m.albedo <= outputs && m.outputs <= outputs, `row ${m.row} ${m.material}'s outputs ${m.albedo.toFixed(2)} / ${m.outputs.toFixed(2)} levels apart`)
+      assert.ok(m.lit <= lit, `row ${m.row} ${m.material} lit ${m.lit.toFixed(2)} levels apart`)
+    }
+    assert.ok(report.shadow.compared > 1000 && report.shadow.agree >= 0.99 * report.shadow.compared, `shadows agree on ${report.shadow.agree} of ${report.shadow.compared}`)
+    assert.ok(report.surfaces.mismatched <= report.width * report.height * 1e-3, `${report.surfaces.mismatched} pixels see another surface`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1 (SCENE_E2E_SHOTS=<dir> keeps the pictures for the
+// owner): lit exports through the world-space layer with textures, as the
+// assistant asks for them. mirror-board with a mirror floor before a textured
+// wall and the blocks behind the camera textured, seen in the mirror alone;
+// cornell's walls textured in colour, lit by the probes. Each exported twice:
+// the layer's buffers, the material rows' texture layers among them, the
+// same byte for byte (layers given out in the keys' order), the pictures
+// apart by no more than the probes' own noise between two exports, which
+// cornell untextured has on develop as well (AC-S1-4 fails there, on
+// c4407a6a: reported to the owner 2026-11-03). The blocks plain change the mirror: the
+// export's hits sampled their arrays.
+if (process.env.SCENE_E2E_TRACE) await check('C5c1: lit exports through the layer with textures, laid out alike twice; the mirror shows the textures behind the camera', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const shots = process.env.SCENE_E2E_SHOTS
+  try {
+    const box = (size_m) => ({ kind: 'triplanar', size_m, rotation_deg: 0, normal_strength: 1 })
+    const uv = (repeat) => ({ kind: 'uv', repeat: [repeat, repeat], rotation_deg: 0, normal_strength: 1 })
+    const scenes = {
+      mirror: { name: 'mirror-board', slots: {
+        floor: principledSlot({ color: '#e0e0e0', metalness: 1, roughness: 0.03 }),
+        texwall: principledSlot({ roughness: 0.6 }, { maps: { base_color: map('ccr_checker'), normal: map('ccr_ridges') }, mapping: box(0.5) }),
+        redblock: principledSlot({ roughness: 0.5 }, { maps: { base_color: map('ccr_checker') }, mapping: uv(2) }),
+        greenblock: principledSlot({ color: '#40b040', metalness: 1, roughness: 1 }, { maps: { roughness: map('ccr_stripes'), metalness: map('ccr_stripes') }, mapping: box(0.3) }),
+        yellowblock: principledSlot({ color: '#e0c040' }, { maps: { normal: map('ccr_ridges'), ao: map('ccr_stripes') }, mapping: box(0.3) }),
+        column: principledSlot({}, { maps: { base_color: map('ccr_checker') }, mapping: box(0.4) }),
+      } },
+      room: { name: 'cornell', slots: {
+        left: principledSlot({ roughness: 0.8 }, { maps: { base_color: map('ccr_checker') }, mapping: box(0.6) }),
+        right: principledSlot({ color: '#40c040', roughness: 0.7 }, { maps: { normal: map('ccr_ridges') }, mapping: box(0.5) }),
+        back: principledSlot({ roughness: 0.8 }, { maps: { base_color: map('ccr_checker') }, mapping: box(1) }),
+        cube: principledSlot({ roughness: 0.6 }, { maps: { base_color: map('ccr_checker') }, mapping: uv(1) }),
+        floora: principledSlot({ roughness: 0.8 }, { maps: { ao: map('ccr_stripes'), roughness: map('ccr_stripes') }, mapping: box(0.5) }),
+      } },
+    }
+    const behind = ['redblock', 'greenblock', 'yellowblock', 'column']
+    // One scene's lit pictures, each as the assistant's export_shots gives them: textured, the slots named in skip as the fixture has them.
+    const pictures = async (which, runs) => {
+      const { name, slots } = scenes[which]
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      const server = new SceneServer()
+      referenceScene(server, name, (scene) => {
+        realtimeGI(scene)
+        if (which === 'mirror') scene.objects.push(boxOf('texwall', 30, { position: [0, 0, -3.6] }, { width: 6, height: 2.6, depth: 0.1 }, principledSlot({})))
+      })
+      stock(server)
+      const { page, errors } = await open(server, { context, query: '?host=1' })
+      await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+      const cam = server.scene.objects.find((o) => o.kind === 'camera').id
+      const byName = (n) => server.scene.objects.find((o) => o.name === n)
+      const plain = Object.fromEntries(Object.keys(slots).map((n) => [n, structuredClone(byName(n).material_slots.main)]))
+      const out = []
+      const digests = []
+      for (const [i, skip] of runs.entries()) {
+        const ops = Object.entries(slots).map(([n, slot]) => ({ object_id: byName(n).id, material_slots: { main: skip.includes(n) ? plain[n] : slot } }))
+        server.external([{ op: 'update_objects', updates: ops }])
+        const id = `csj_${which}${i}`
+        server.claimable = [{ id, document_id: DOC, kind: 'export_shots', request: { camera_object_ids: [cam], passes: ['lit'], canvas_id: 'ccv_qa', scene_node_id: 'cwnode_qa' }, attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+        await page.evaluate(() => { window.__sceneGPU.traceDigests = [] })
+        await page.evaluate(() => window.__invalidate())
+        await waitFor(() => server.completes.some((c) => c.id === id), `${which} ${i}: exported`, 300_000)
+        digests.push(await page.evaluate(() => window.__sceneGPU.traceDigests))
+        const done = server.completes.find((c) => c.id === id).payload
+        assert.equal(done.outcome, 'succeeded', `${which} ${i}: ${JSON.stringify(done.error)}`)
+        const bytes = server.uploadBytes.get(done.export.shots[0].images[0].upload_id)
+        if (shots) await writeFile(`${shots}/c5c1-layer-${which}-${i}.png`, bytes)
+        out.push(bytes)
+      }
+      assert.deepEqual(errors, [], errors.join('\n'))
+      assert.ok(digests[0].length > 0, `${which}: the export's layer digested`)
+      assert.deepEqual(digests[1], digests[0], `${which}: the second export's layer is the first's, byte for byte`)
+      const twice = await imageApart(page, out[0], out[1])
+      console.log(`  ${name}: twice ${out[1].equals(out[0]) ? 'the same pixel for pixel' : `apart by at most ${twice.max}, ${(twice.over * 100).toFixed(4)}% by more than 8`}`)
+      assert.ok(twice.over <= 1e-4, `${which}: twice apart by more than the probes' noise (${(twice.over * 100).toFixed(4)}% by more than 8)`)
+      return { page, context, out }
+    }
+    const mirror = await pictures('mirror', [[], [], behind])
+    const apart = await pixelDiff(mirror.page, mirror.out[0], mirror.out[2], 24)
+    console.log(`  mirror-board: the blocks behind the camera plain change ${(apart * 100).toFixed(2)}% of the pixels`)
+    assert.ok(apart > 0.002, `the mirror shows the blocks' textures (${(apart * 100).toFixed(2)}% apart)`)
+    await mirror.context.close()
+    const room = await pictures('room', [[], [], Object.keys(scenes.room.slots)])
+    await room.context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: what renderPolicy puts in the world-space layer, a
+// box's slot changed in turn: blend at opacity 1 stays out, as glass does;
+// clip at opacity 0.5 goes in, cut but opaque.
+if (process.env.SCENE_E2E_TRACE) await check('C5c1: blend at opacity 1 stays out of the world-space layer; clip at opacity 0.5 goes in', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    stock(server)
+    realtimeGI(server.scene)
+    const box = gid('box')
+    seed(server, [
+      boxOf('box', 5, { position: [0, 0, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({})),
+      boxOf('other', 6, { position: [2, 0, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({})),
+    ])
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await traceReady(page, 'two boxes')
+    const meshes = () => page.evaluate(() => window.__sceneGPU.traceStats?.meshes)
+    const opaque = await meshes()
+    const veil = { maps: { base_color: map('ccr_veil') }, mapping: { kind: 'triplanar', size_m: 1, rotation_deg: 0, normal_strength: 1 } }
+    const turn = async (what, slot, want) => {
+      server.external(setSlot(box, slot))
+      await page.evaluate(() => window.__invalidate())
+      await waitFor(async () => (await meshes()) === want, `${what}: ${want} meshes traced`, 30_000)
+    }
+    await turn('blend at opacity 1', principledSlot({ opacity: 1 }, { ...veil, alpha_mode: 'blend' }), opaque - 1)
+    await turn('clip at opacity 0.5', principledSlot({ opacity: 0.5 }, { ...veil, alpha_mode: 'clip' }), opaque)
+    await turn('opaque glass', principledSlot({ transmission: 1 }), opaque - 1)
+    await turn('opaque again', principledSlot({}), opaque)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// SCENE_E2E_TRACE=1: thin-wall's window shut by a solid board outside, six
+// black clip cards with lined-up holes inside it: a ray through the holes
+// runs out of its goes past the cut faces (CUT_RETRIES) and takes the last
+// card it hit as solid, a shadow ray as blocked. The probes' light, and the
+// picture with the floor polished to show its reflections, are no brighter
+// than with the board alone; with the goes run out taken as no hit (gpu.ts
+// traceCutsLeak) the sky shows through.
+if (process.env.SCENE_E2E_TRACE) await check('C5c1: six clip cards before a solid board: reflections, probes and shadow rays do not leak past them', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const holes = principledSlot({ color: '#c8b070' }, { maps: { base_color: map('ccr_holes') }, mapping: { kind: 'triplanar', size_m: 1.2, rotation_deg: 0, normal_strength: 1 }, alpha_mode: 'clip' })
+    const look = async (cards, leak) => {
+      const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+      if (leak) await context.addInitScript(() => { window.__sceneGPUHooks = { ...window.__sceneGPUHooks, traceCutsLeak: true } })
+      const server = new SceneServer()
+      stock(server)
+      referenceScene(server, 'thin-wall', (scene) => {
+        realtimeGI(scene)
+        scene.objects.find((o) => o.name === 'floor').material_slots = { main: principledSlot({ color: '#c8c8c4', roughness: 0.05 }) }
+        scene.objects.push(boxOf('board', 40, { position: [-2.04, 0.7, 0] }, { width: 0.02, height: 1.8, depth: 1.8 }, principledSlot({ color: '#f0f0ec' })))
+        if (cards) for (let i = 0; i < 6; i++) scene.objects.push(boxOf(`card${i}`, 41 + i, { position: [-1.96 + i * 0.05, 1.0, 0] }, { width: 0.01, height: 1.2, depth: 1.2 }, holes))
+      })
+      const { page, errors } = await open(server, { context })
+      await shading(page, '最终渲染')
+      await traceReady(page, 'thin-wall', 60_000)
+      if (cards) await mapsReady(page, 'thin-wall')
+      await waitFor(async () => (await page.evaluate(() => window.__sceneGPU.probeStats))?.drawn === true, 'the probes taken up', 60_000)
+      await page.getByRole('treeitem', { name: 'shot' }).click()
+      await page.keyboard.press('Digit0')
+      await viewportStill(page, 'thin-wall through its camera')
+      // The debug count: rays through the camera that ran out of goes (with the leak hook those hit nothing, and are not counted).
+      const { exhausted } = await page.evaluate(() => window.__sceneGPU.traceHits(320))
+      const view = await page.evaluate(() => window.__sceneGPU.probeView(384))
+      const lumas = view.lumas.filter((l) => l >= 0)
+      const probes = lumas.reduce((a, b) => a + b, 0) / lumas.length
+      const { box } = await viewportCenter(page)
+      const png = await settledShot(page, box)
+      const picture = await meanOf(page, png)
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c1-cards-${cards ? (leak ? 'leak' : 'cards') : 'board'}.png`, png)
+      assert.deepEqual(errors, [], errors.join('\n'))
+      await context.close()
+      return { probes, picture, exhausted }
+    }
+    const board = await look(false, false)
+    const cards = await look(true, false)
+    const leak = await look(true, true)
+    for (const [name, r] of Object.entries({ board, cards, leak })) console.log(`  ${name}: probes ${r.probes.toFixed(4)}, picture ${r.picture.toFixed(2)}, ${r.exhausted} camera rays out of goes`)
+    assert.equal(board.exhausted, 0, 'no cards, no ray out of goes')
+    assert.ok(cards.exhausted > 100, `rays through the lined-up holes run out of goes: ${cards.exhausted}`)
+    // Black cards inside the shut window can only take light away.
+    assert.ok(cards.probes <= board.probes && cards.picture <= board.picture + 1, 'the cards let in no light past the board')
+    assert.ok(leak.probes >= cards.probes * 1.3 && leak.picture >= cards.picture + 5, 'with the goes run out taken as no hit, the sky shows through: the check sees a leak')
   } finally {
     await gpu.close()
   }

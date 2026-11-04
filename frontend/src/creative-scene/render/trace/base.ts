@@ -222,6 +222,7 @@ export class TraceBase {
     this.maps = new TraceMaps(() => gpu.renderer as WebGPURenderer, incremental ? LAYER_SIZE.viewport : LAYER_SIZE.export, layers)
     // An image in: the viewport syncs, and writes it, on its next frame.
     this.maps.onArrival = () => this.redraw?.()
+    this.tables.maps = this.maps
     this.unsubscribe = [
       // The layer's buffers are named for the device's messages (layer.ts, tables.ts: trace_<…>).
       gpu.onError((message) => {

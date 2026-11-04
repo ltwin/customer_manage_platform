@@ -318,6 +318,8 @@ export const gpuTestHooks = {
   traceDigests: null as Record<string, string>[] | null,
   /** Export layers that let their CPU arrays go after a frame (render/trace/base.ts drawn, design A5). */
   traceDropped: 0,
+  /** A ray that runs out of goes past clip's cut faces (render/trace/hit.ts CUT_RETRIES) taken as hitting nothing, set before the layer's shaders are built: the leak C5c1's design rules out, for the e2e to see that it catches one. */
+  traceCutsLeak: false,
   /** The reflections' hits shaded another way than lit (render/trace/hit.ts ShadeMode), set before their shader is built: what a defect comes from. */
   traceShade: null as ShadeMode | null,
   /** The viewport's layer against its raster, a primary ray a pixel (render/trace/checks.ts; Viewport.tsx LookView, e2e only); null till it is ready. */

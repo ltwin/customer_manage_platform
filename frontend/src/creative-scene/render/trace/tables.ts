@@ -7,7 +7,7 @@ import { patternFns, type TSLNode } from '../../materials/patterns.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { preExposure } from '../../world/exposure.ts'
 import type { Lighting } from './collect.ts'
-import { NO_MAPS, type RowMaps } from './maps.ts'
+import { NO_MAPS, type RowMaps, type TraceMaps } from './maps.ts'
 import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 
 // What a hit point is shaded with, in one storage buffer of vec4s (S1
@@ -107,6 +107,8 @@ export function environmentLookup(scene: Scene): number[] {
 export class TraceTables {
   /** The vec4 array the hit reads (hit.ts). */
   readonly node: TSLNode
+  /** The texture arrays the rows' layers are of (the base's; none in the unit tests): a hit samples them. */
+  maps: TraceMaps | null = null
   private attribute: StorageBufferAttribute
   /** Rows there is room for: the lights start after the materials' room. */
   private room = { materials: 0, lights: 0 }

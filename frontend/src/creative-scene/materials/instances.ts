@@ -1,4 +1,4 @@
-import { Color, DoubleSide, FrontSide, Vector2, type BufferGeometry } from 'three'
+import { Color, DoubleSide, FrontSide, Vector2, type BufferGeometry, type Material } from 'three'
 import {
   cameraViewMatrix,
   dFdx,
@@ -29,7 +29,7 @@ import { pieceViews } from '../render/pieces.ts'
 import { preExposure } from '../world/exposure.ts'
 import { materialEntry } from './catalog.ts'
 import { acquireTexture, releaseTexture, textureKeys } from './images.ts'
-import { bendNormal, mappingOf, shaderKit, triplanar, uvMapped, uvNormal, uvSurface, type MapKind, type MappingIn } from './maps.ts'
+import { bendNormal, mappingOf, shaderKit, triplanar, uvMapped, uvNormal, uvSurface, type Has, type MapKind, type MappingIn } from './maps.ts'
 import { bumpNormal, patternFns, type TSLNode } from './patterns.ts'
 import { principledProps, renderPolicy, type RenderPolicy } from './principled.ts'
 import type { SlotMaterial, Texturing } from './resolve.ts'
@@ -128,7 +128,13 @@ function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): Mes
  * frame. The textures are held until the material is disposed. Without maps,
  * only the alpha mode's test.
  */
-function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy: RenderPolicy) {
+/**
+ * A slot's textures as the raster samples them, acquired till material is
+ * disposed: the base colour with its alpha, the ORM, and the normal they
+ * bend to in view space (null without a normal map). The e2e's checks
+ * (render/trace/checks.ts) take the same.
+ */
+export function slotTextures(material: Material, t: Texturing): { color: TSLNode; orm: TSLNode; has: Has; normal: TSLNode | null } {
   const keys = textureKeys(t)
   const textures: Partial<Record<MapKind, ReturnType<typeof acquireTexture>>> = {}
   for (const [which, key] of Object.entries(keys) as [MapKind, string][]) textures[which] = acquireTexture(key)
@@ -141,23 +147,20 @@ function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy:
   if (mapping.kind === 'triplanar') scale.onRenderUpdate(() => new Vector2(1 / mapping.size, ((first?.userData.aspect as number | undefined) ?? 1) / mapping.size))
   const m: MappingIn<TSLNode> = { scale, cos: uniform(Math.cos(mapping.rotation)), sin: uniform(Math.sin(mapping.rotation)), strength: uniform(mapping.strength) }
   const sample = (which: MapKind, coord: TSLNode) => texture(textures[which]!, coord)
-  let color: TSLNode
-  let orm: TSLNode
   if (mapping.kind === 'triplanar') {
     const s = triplanar(shaderKit, patPos, patNormal, m, has, sample)
-    ;({ color, orm } = s)
-    if (s.bend) {
-      // The gradient is a covector: into local space by the scale, on to view space by the normal matrices, unnormalised.
-      const local = s.bend.mul(modelScale)
-      const world: TSLNode = (modelNormalMatrix as TSLNode).mul(local)
-      material.normalNode = bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz)
-    }
-  } else {
-    const b = uvMapped(shaderKit, uv(), m)
-    const s = uvSurface(shaderKit, b, m, has, sample)
-    ;({ color, orm } = s)
-    if (s.normal) material.normalNode = uvNormal(shaderKit, normalView, dFdx(positionView), dFdy(positionView), dFdx(b), dFdy(b), s.normal)
+    // The gradient is a covector: into local space by the scale, on to view space by the normal matrices, unnormalised.
+    const world: TSLNode | null = s.bend && (modelNormalMatrix as TSLNode).mul(s.bend.mul(modelScale))
+    return { color: s.color, orm: s.orm, has, normal: world && bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz) }
   }
+  const b = uvMapped(shaderKit, uv(), m)
+  const s = uvSurface(shaderKit, b, m, has, sample)
+  return { color: s.color, orm: s.orm, has, normal: s.normal && uvNormal(shaderKit, normalView, dFdx(positionView), dFdy(positionView), dFdx(b), dFdy(b), s.normal) }
+}
+
+function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy: RenderPolicy) {
+  const { color, orm, has, normal } = slotTextures(material, t)
+  if (normal) material.normalNode = normal
   if (has.color) material.colorNode = vec4(materialColor.mul(color.xyz), 1)
   if (has.orm) {
     material.roughnessNode = materialRoughness.mul(orm.y)

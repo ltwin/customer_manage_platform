@@ -2,7 +2,8 @@ import { Color, DoubleSide, FloatType, HalfFloatType, LinearFilter, Vector3, typ
 import * as tsl from 'three/tsl'
 import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, RendererUtils, StorageTexture, type MeshPhysicalNodeMaterial, type WebGPURenderer } from 'three/webgpu'
 import { materialEntry } from '../../materials/catalog.ts'
-import { slotOf, unknownGrey } from '../../materials/instances.ts'
+import { slotOf, slotTextures, unknownGrey } from '../../materials/instances.ts'
+import { renderPolicy } from '../../materials/principled.ts'
 import { patternFns, type TSLNode } from '../../materials/patterns.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { preExposure } from '../../world/exposure.ts'
@@ -96,12 +97,25 @@ function rayPass(camera: PerspectiveCamera, size: Size, body: (eye: TSLNode, dir
 
 const readBack = async (renderer: WebGPURenderer, rt: RenderTarget, s: Size) => (await renderer.readRenderTargetPixelsAsync(rt, 0, 0, s.width, s.height)) as Float32Array
 
-/** The distance the raster draws at: positionView's length; both sides unless said. */
-function distanceMaterial(side: Material['side'] = DoubleSide) {
+/** The distance the raster draws at: positionView's length; both sides unless said; where a clip slot (slot) cuts, nothing. */
+function distanceMaterial(side: Material['side'] = DoubleSide, slot?: SlotMaterial) {
   const m = new MeshBasicNodeMaterial({ side, fog: false })
   m.outputNode = vec4(length(positionView), 0, 0, 1)
   m.toneMapped = false
+  if (slot) clipAs(m, slot)
   return m
+}
+
+/** material cut where slot's clip cuts, as instances.ts applyTextures has the raster do; its textures (slotTextures). */
+function clipAs(material: MeshBasicNodeMaterial, slot: SlotMaterial) {
+  if (slot.kind !== 'principled' || !slot.texturing) return null
+  const t = slotTextures(material, slot.texturing)
+  const cutoff = renderPolicy(slot).alphaCutoff
+  if (cutoff !== null) {
+    material.opacityNode = float(Number(slot.params.opacity ?? 1)).mul(t.color.w)
+    material.alphaTestNode = float(cutoff)
+  }
+  return t
 }
 
 /** Hit or miss alike, and where both hit, no further apart than a millimetre (a tenth of one a metre further than 10 m). */
@@ -193,6 +207,10 @@ function outputsMaterial(m: SlotMaterial, what: 'albedo' | 'outputs', side: Mate
     const e = new Color(p.emissive as string).multiplyScalar(p.emissive_intensity as number)
     o = { albedo: vec3(c.r, c.g, c.b), rough: float(p.roughness as number), metal: float(p.metalness as number), emission: vec3(e.r, e.g, e.b) }
     material.vertexColors = what === 'albedo' && m.kind === 'principled' && !!m.vertexColors
+    // The slot's textures as the raster samples them (C5c1), clip cutting as it does.
+    const t = clipAs(material, m)
+    if (t?.has.color) o.albedo = o.albedo.mul(t.color.xyz)
+    if (t?.has.orm) o = { ...o, rough: o.rough.mul(t.orm.y), metal: o.metal.mul(t.orm.z) }
   }
   material.colorNode = what === 'albedo' ? vec4(o.albedo, 1) : vec4(o.rough, o.metal, luminance(o.emission.mul(preExposure)), 1)
   return material
@@ -214,17 +232,17 @@ function swapMaterials(traced: readonly Traced[], make: (m: Material) => Materia
   }
 }
 
-/** A material as the raster draws it, without its bump: what a hit is lit as (Epic「命中点着色」). */
-function withoutBump(m: Material): Material {
+/** A material as the raster draws it, a preset's without its bump: what a hit is lit as (Epic「命中点着色」; a normal map's bend it takes, C5c1). */
+function withoutBump(m: Material, slot: SlotMaterial | undefined): Material {
   const c = (m as MeshPhysicalNodeMaterial).clone()
-  c.normalNode = null
+  if (slot?.kind === 'pattern') c.normalNode = null
   return c
 }
 
 export type HitReport = {
   width: number
   height: number
-  /** Per mesh slot (a material row), the mean difference inside it in 8-bit levels, the raster against the hits. */
+  /** Per mesh slot (a material row; a principled one with textures named principled+maps), the mean difference inside it in 8-bit levels, the raster against the hits. */
   meshes: { row: number; material: string; pixels: number; albedo: number; outputs: number; lit: number }[]
   /** Pixels the raster has wholly lit or wholly in shadow by the lights, and how many of them the shadow rays agree on; by row too. */
   shadow: { compared: number; agree: number; rows: Record<number, { compared: number; agree: number; rasterLit: number; hitLit: number }> }
@@ -236,6 +254,8 @@ export type HitReport = {
    * pixels a surface is drawn in, and pixels where the two see different ones.
    */
   surfaces: { drawn: number; mismatched: number }
+  /** Rays that ran out of goes past clip's cut faces (hit.ts CUT_RETRIES), the last face they hit taken as solid: the debug count C5c1's design asks for. */
+  exhausted: number
 }
 
 const toSRGB = (x: number) => {
@@ -272,7 +292,7 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
   const traced = collectMeshes(scene, slotOf)
   const shading = hitShading(handle.reflect, handle.tables, scene)
   shading.update()
-  const modes: ShadeMode[] = ['id', 'albedo', 'outputs', 'unshadowed', 'direct', 'directUnshadowed']
+  const modes: ShadeMode[] = ['id', 'albedo', 'outputs', 'unshadowed', 'direct', 'directUnshadowed', 'exhausted']
   const hits = new Map(
     modes.map((mode) => [
       mode,
@@ -318,7 +338,7 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
     }
   }
   isolated(renderer, scene, camera, traced, () => {
-    const sided = swapMaterials(traced, (m) => distanceMaterial(m.side))
+    const sided = swapMaterials(traced, (m) => distanceMaterial(m.side, slotOf(m)))
     try {
       draw(raster.get('distance')!)
     } finally {
@@ -332,7 +352,7 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
         back()
       }
     }
-    const back = swapMaterials(traced, withoutBump)
+    const back = swapMaterials(traced, (m) => withoutBump(m, slotOf(m)))
     try {
       lit(raster.get('lit')!, { shadows: false, indirect: true })
       lit(raster.get('direct')!, { shadows: true, indirect: false })
@@ -356,7 +376,9 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
     // A pixel counts where the ray and the raster see the same surface; inside a mesh where its four neighbours do and are of the same row.
     const rowAt = new Int32Array(n).fill(-1)
     const surfaces = { drawn: 0, mismatched: 0 }
+    let exhausted = 0
     for (let i = 0; i < n; i++) {
+      if (h.exhausted[i * 4 + 3] >= 0 && h.exhausted[i * 4] > 0.5) exhausted++
       const rd = r.distance[i * 4 + 3] > 0.5 ? r.distance[i * 4] : null
       const td = h.id[i * 4 + 3] >= 0 ? h.id[i * 4 + 3] : null
       if (rd !== null) surfaces.drawn++
@@ -406,10 +428,10 @@ async function check(renderer: WebGPURenderer, scene: Scene, camera: Perspective
     }
     const name = (row: number) => {
       const m = slots[row]?.material
-      return !m ? '?' : m.kind === 'pattern' ? m.id : m.kind
+      return !m ? '?' : m.kind === 'pattern' ? m.id : m.kind === 'principled' && m.texturing ? 'principled+maps' : m.kind
     }
     const meshes = [...sums].map(([row, s]) => ({ row, material: name(row), pixels: s.pixels, albedo: s.albedo / s.pixels, outputs: s.outputs / s.pixels, lit: s.lit / s.pixels }))
-    return { ...size, meshes: meshes.sort((a, b) => a.row - b.row), shadow, exposure, surfaces }
+    return { ...size, meshes: meshes.sort((a, b) => a.row - b.row), shadow, exposure, surfaces, exhausted }
   } finally {
     for (const rt of raster.values()) rt.dispose()
     for (const { rt, pass } of hits.values()) {
