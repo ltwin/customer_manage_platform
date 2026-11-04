@@ -73,7 +73,7 @@ def main() -> int:
         "status": status,
         "target": {"project_name": args.project, "target_hash": args.target_hash},
         "catalog": {
-            "path": ".codestable/features/2026-07-22-v1-hardening/v1-hardening-ops-case-catalog.yaml",
+            "path": "docs/ops/v1-hardening/v1-hardening-ops-case-catalog.yaml",
             "sha256": hashlib.sha256(args.catalog.read_bytes()).hexdigest(),
             "required_case_ids": required,
         },

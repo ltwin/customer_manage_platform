@@ -28,4 +28,4 @@ curl -fsS -X POST "${API}/sendMessage" \
     --data-urlencode "text=${text}" >/dev/null
 
 echo "已向 chat_id=${chat_id} 发送测试消息：${text}"
-echo "请在真机确认收到并截图归档到 .codestable/features/2026-07-06-platform-skeleton/evidence/"
+echo "请在真机确认收到，截图贴进对应 issue 评论"

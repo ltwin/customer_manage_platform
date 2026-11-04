@@ -25,8 +25,8 @@ import yaml
 
 
 FEATURE = "2026-07-22-v1-hardening"
-CATALOG_REL = ".codestable/features/2026-07-22-v1-hardening/v1-hardening-ops-case-catalog.yaml"
-EVIDENCE_REL = ".codestable/features/2026-07-22-v1-hardening/evidence/ops"
+CATALOG_REL = "docs/ops/v1-hardening/v1-hardening-ops-case-catalog.yaml"
+EVIDENCE_REL = "var/evidence/v1-hardening/ops"
 FIVE_FILES = {"database.sql", "avatar-volume.tgz", "avatar-manifest.json", "metadata.json", "SHA256SUMS"}
 FENCED_PLANS = {"BKR", "BKE", "BKF", "BKP", "LCK", "LCO", "RSP", "RSR", "RSE", "RSF", "COR"}
 BACKUP_ORDER = [

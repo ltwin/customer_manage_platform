@@ -9,7 +9,6 @@ import json
 import re
 import stat
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -37,7 +36,7 @@ REQUIRED_CHECK_IDS = (
     "share_reminder_writers_enabled",
     "schema_v2_restore_pair_retained",
 )
-REQUIRED_CONFORMANCE_IDS = ("core", "media", "ingestion", "crm", "share", "reminders", "business", "goal-control")
+REQUIRED_CONFORMANCE_IDS = ("core", "media", "ingestion", "crm", "share", "reminders", "business")
 REQUIRED_E2E_IDS = (
     "authenticated-login", "plan-create", "brief-save", "shot-readiness-create-link",
     "ingestion-atomic-commit", "crm-business-draft", "proposal-issue-read-revoke", "run-mode-execution",
@@ -80,11 +79,6 @@ ARTIFACTS = {
     "planning_evidence_index_sha256": "planning_v1_evidence_index.json",
     "backup_rehearsal_sha256": "planning_restore_rehearsal.json",
 }
-CANONICAL_ROADMAP = Path(".codestable/roadmap/creative-shoot-planning")
-CANONICAL_STAGE_GATES = (
-    ("stage-1-evidence-go", "shoot-plan-crm-integration"),
-    ("stage-2-evidence-go", "plan-business-feedback"),
-)
 REHEARSAL_PACKAGE_DIRECTORY = "planning_restore_package"
 PLANNINGCTL_READINESS_ARTIFACT = "planning_v1_planningctl_readiness.json"
 
@@ -124,72 +118,16 @@ def _migration_head(repo: Path) -> str:
 
 
 def _canonical_stage_approvals(repo: Path) -> dict[str, dict[str, str]]:
-    try:
-        roadmap = (repo / CANONICAL_ROADMAP).resolve(strict=True)
-        gate = roadmap / "goal-tools/planning-evidence-dispatch-gate.py"
-        gate_info = gate.lstat()
-    except (OSError, RuntimeError) as error:
-        raise ContractError("release-canonical-stage-gate") from error
-    if gate.is_symlink() or not stat.S_ISREG(gate_info.st_mode):
-        raise ContractError("release-canonical-stage-gate")
-    bindings: dict[str, dict[str, str]] = {}
-    for decision, feature in CANONICAL_STAGE_GATES:
-        try:
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(gate),
-                    "--roadmap", str(roadmap),
-                    "--feature", feature,
-                    "--decision", decision,
-                    "--json",
-                ],
-                cwd=repo,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        except OSError as error:
-            raise ContractError("release-canonical-stage-gate") from error
-        try:
-            payload = json.loads(completed.stdout)
-        except json.JSONDecodeError as error:
-            raise ContractError("release-canonical-stage-gate-output") from error
-        if completed.returncode != 0 or not isinstance(payload, dict) or payload.get("status") != "passed":
-            raise ContractError(f"release-canonical-stage-approval-{decision}")
-        if (
-            set(payload) != {"status", "feature", "decision", "reason", "next", "evidence"}
-            or payload["feature"] != feature
-            or payload["decision"] != decision
-        ):
-            raise ContractError("release-canonical-stage-gate-output")
-        evidence = payload.get("evidence")
-        if not isinstance(evidence, dict) or set(evidence) != {"approval", "evidence_path", "sha256", "gate_version"}:
-            raise ContractError("release-canonical-stage-gate-output")
-        evidence_path = evidence["evidence_path"]
-        if not isinstance(evidence_path, str) or not Path(evidence_path).is_absolute():
-            raise ContractError("release-canonical-stage-gate-output")
-        try:
-            canonical_path = Path(evidence_path).resolve(strict=True)
-            evidence_root = (roadmap / "evidence").resolve(strict=True)
-            canonical_path.relative_to(evidence_root)
-        except (OSError, RuntimeError, ValueError) as error:
-            raise ContractError("release-canonical-stage-path") from error
-        if canonical_path.is_symlink() or not stat.S_ISREG(canonical_path.lstat().st_mode):
-            raise ContractError("release-canonical-stage-path")
-        if evidence["approval"] != str((roadmap / "approval-report.md").resolve(strict=True)):
-            raise ContractError("release-canonical-stage-gate-output")
-        if not isinstance(evidence["sha256"], str) or not HEX64.fullmatch(evidence["sha256"]):
-            raise ContractError("release-canonical-stage-gate-output")
-        if not isinstance(evidence["gate_version"], str) or not evidence["gate_version"]:
-            raise ContractError("release-canonical-stage-gate-output")
-        bindings[decision] = {
-            "evidence_path": str(canonical_path),
-            "sha256": evidence["sha256"],
-            "gate_version": evidence["gate_version"],
-        }
-    return bindings
+    """Fail closed: the canonical stage approval source has been retired.
+
+    Stage approvals (stage-1/stage-2 evidence go) used to live in the CodeStable
+    approval-report, archived at
+    `archive/codestable-final:.codestable/roadmap/creative-shoot-planning/` (GUAN-3).
+    Before planning v1 can be released, open an issue to rebuild the approval
+    source on top of Multica Owner approval. Until then every evidence is rejected
+    before any of it is read.
+    """
+    raise ContractError("release-stage-approval-source-retired")
 
 
 def _resolve_bound_stage_path(raw_path: Any, *, repo: Path, index_dir: Path, canonical_path: str) -> Path:
@@ -198,7 +136,7 @@ def _resolve_bound_stage_path(raw_path: Any, *, repo: Path, index_dir: Path, can
     supplied = Path(raw_path)
     if supplied.is_absolute() or ".." in supplied.parts:
         raise ContractError("release-evidence-stage-path")
-    lexical = repo / supplied if raw_path.startswith(".codestable/") else index_dir / supplied
+    lexical = index_dir / supplied
     try:
         resolved = lexical.resolve(strict=True)
     except (OSError, RuntimeError) as error:
@@ -228,18 +166,18 @@ def _validate_rehearsal_package(bundle_dir: Path, rehearsal: dict[str, Any]) -> 
         raise ContractError("release-rehearsal-package-images")
 
 
-def _validate_conformance(value: Any, revision: str, openapi_sha256: str, roadmap_sha256: str) -> bool:
+def _validate_conformance(value: Any, revision: str, openapi_sha256: str) -> bool:
     fields = {
-        "schema", "roadmap", "roadmap_sha256", "openapi_sha256", "build_revision",
+        "schema", "roadmap", "openapi_sha256", "build_revision",
         "config_fingerprint", "gate_dispositions", "rows", "overall_status", "implementation_dispatch",
     }
     report = _expect_keys(value, fields, "release-conformance-schema")
-    if report["schema"] != "planning-v1-dependency-conformance-v1" or report["roadmap"] != "creative-shoot-planning":
+    if report["schema"] != "planning-v1-dependency-conformance-v2" or report["roadmap"] != "creative-shoot-planning":
         raise ContractError("release-conformance-version")
     if report["build_revision"] != revision or report["openapi_sha256"] != openapi_sha256:
         raise ContractError("release-conformance-stale")
     expected_fingerprint = hashlib.sha256(canonical_json({"compose": "planning_media_data", "storage_layout": "planning-media-v1"})).hexdigest()
-    if report["roadmap_sha256"] != roadmap_sha256 or report["config_fingerprint"] != expected_fingerprint:
+    if report["config_fingerprint"] != expected_fingerprint:
         raise ContractError("release-conformance-digest")
     if report["gate_dispositions"] != {"stage-1-evidence-go": "pending", "stage-2-evidence-go": "pending"} or report["implementation_dispatch"] != "owner-authorized-deferred-evidence":
         raise ContractError("release-conformance-gates")
@@ -250,20 +188,18 @@ def _validate_conformance(value: Any, revision: str, openapi_sha256: str, roadma
     common_fields = {
         "id", "category", "requirement_ref", "owner_feature", "public_seam", "scenario_ids",
         "evidence_ids", "required_viewports", "required_failure_ids", "status", "reason",
-        "accepted_artifact_refs", "positive_probe", "negative_probe", "source_sha256",
+        "positive_probe", "negative_probe", "source_sha256",
     }
     for row in rows:
-        if not isinstance(row, dict) or set(row) not in (common_fields, common_fields | {"gate_disposition"}):
+        if not isinstance(row, dict) or set(row) != common_fields:
             raise ContractError("release-conformance-row")
         if not isinstance(row["id"], str) or row["id"] in identifiers:
             raise ContractError("release-conformance-row")
         identifiers.append(row["id"])
         if row.get("status") != "conformant":
             raise ContractError("release-conformance-not-conformant")
-        if not HEX64.fullmatch(str(row["source_sha256"])) or not row["accepted_artifact_refs"]:
+        if not HEX64.fullmatch(str(row["source_sha256"])):
             raise ContractError("release-conformance-row-evidence")
-        if row["id"] == "goal-control" and row.get("gate_disposition") != "pending_owner_evidence":
-            raise ContractError("release-conformance-gate-disposition")
     if tuple(identifiers) != REQUIRED_CONFORMANCE_IDS:
         raise ContractError("release-conformance-required-rows")
     if report["overall_status"] != "passed":
@@ -805,10 +741,7 @@ def _verify_readiness_with_bindings(
         artifacts[digest_key] = load_json(sibling)
 
     artifact_ready = all((
-        _validate_conformance(
-            artifacts["dependency_conformance_sha256"], revision, openapi_sha256,
-            sha256_file(repo_root / ".codestable/roadmap/creative-shoot-planning/creative-shoot-planning-roadmap.md"),
-        ),
+        _validate_conformance(artifacts["dependency_conformance_sha256"], revision, openapi_sha256),
         _validate_e2e(artifacts["e2e_result_sha256"]),
         _validate_failure_matrix(artifacts["failure_matrix_sha256"]),
         _validate_h1_h2(artifacts["h1_h2_result_sha256"]),

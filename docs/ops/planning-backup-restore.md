@@ -150,6 +150,14 @@ deploy、promotion 或 cutover。
 
 ## Release readiness
 
+> **入口已退役（GUAN-3）**：stage 审批源原来是 CodeStable 的 approval-report 与 dispatch gate，已随 CodeStable 目录
+> 归档到 tag（`archive/codestable-final:.codestable/roadmap/creative-shoot-planning/`）。在 Multica Owner 审批之上
+> 重建审批源之前，`verify-planning-v1-release-readiness.sh` 在读取任何证据之前就以
+> `release-stage-approval-source-retired` 拒绝，对任何证据都返回 9；当前没有放行路径。重建需另开 issue。
+>
+> 本节其余的 sibling 清单与结构规则是**审批源重建后的候选契约**，现由 `scripts/test-planning-hardening.sh`
+> 的 selftest 用夹具 binding 覆盖结构校验，不构成放行路径。
+
 readiness JSON 与下列 sibling artifact 必须位于同一私有 evidence 目录：
 
 ```text
@@ -177,9 +185,8 @@ verifier 会 strict validate 七个成员，重算覆盖全部文件名与 bytes
 app/postgres/restore-tool digest 与 `planning_restore_rehearsal.json` 逐项绑定。
 
 stage evidence 不允许从私有 evidence 目录任意指定 sibling。`planning_v1_evidence_index.json` 的 `json_path`
-必须是无 `..` 的 repository-relative path，并精确解析到 canonical `approval-report.md` 经
-`planning-evidence-dispatch-gate.py` 返回的 roadmap `evidence/` 文件；绝对路径、目录逃逸、index 内自述 approval、
-path/hash/gate-version 任一不一致都拒绝。当前 `stage-1-evidence-go` 或 `stage-2-evidence-go` 仍为 `pending` 时，
+必须是无 `..`、相对 evidence 目录的路径，并精确解析到 stage 审批源给出的 evidence 文件；绝对路径、目录逃逸、
+index 内自述 approval、path/hash/gate-version 任一不一致都拒绝。**审批源待重建，当前无可用来源**：在它重建之前，
 即使 synthetic bundle 内全部写成 passed，release verifier 也必须非零退出。
 
 `planning_v1_planningctl_readiness.json` 必须保存 release-only `planningctl archive-capability readiness` 的原生
@@ -189,11 +196,14 @@ live builds、wiring 与 control-plane provenance 绑定到其他 sibling。随�
 `planning_v1_archive_cas_readback.json.readiness_digest` 必须等于该 digest，证明 CAS/readback 使用的是同一 readiness
 frame；生成 readiness 不授权执行 `promote`，实际 promotion 仍需独立 owner 授权。
 
-verifier 重新计算所有 sibling SHA-256，并绑定当前 Git HEAD、roadmap bytes、`api/openapi.yaml`、migration head、
-完整 conformance/E2E/failure/H1-H2/17 场景 responsive coverage、canonical stage evidence approval、真实 rehearsal
-package、planningctl readiness digest、archive adjacent CAS/readback 和 rollback v2 restore-tool retention。
+verifier 重新计算所有 sibling SHA-256，并绑定当前 Git HEAD、`api/openapi.yaml`、migration head、
+完整 conformance（`planning-v1-dependency-conformance-v2`，只看代码锚点）/E2E/failure/H1-H2/17 场景 responsive
+coverage、真实 rehearsal package、planningctl readiness digest、archive adjacent CAS/readback 和 rollback v2
+restore-tool retention。
 `required_checks` 的每一项必须按固定 ID 顺序
 携带对应 sibling SHA-256；只写 `status: passed` 不构成证据：
+
+命令保留，但审批源重建前**必然返回 9**：
 
 ```bash
 ./scripts/verify-planning-v1-release-readiness.sh \

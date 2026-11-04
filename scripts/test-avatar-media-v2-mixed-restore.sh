@@ -3,13 +3,13 @@
 # 消费既有 validate_package / restore-compose；无臆造 schema_version 或 writer flag。
 #
 # 前置：Docker Desktop context desktop-linux + 可用 app 镜像（默认 crm:local）。
-# 证据：.codestable/features/2026-08-02-account-center-hardening/evidence/restore_fixture_log
+# 证据：var/evidence/account-center-hardening/restore_fixture_log（gitignore；可用 AVATAR_MEDIA_V2_MIXED_EVIDENCE 覆盖）
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-EVIDENCE_DIR="${AVATAR_MEDIA_V2_MIXED_EVIDENCE:-$repo_root/.codestable/features/2026-08-02-account-center-hardening/evidence}"
+EVIDENCE_DIR="${AVATAR_MEDIA_V2_MIXED_EVIDENCE:-$repo_root/var/evidence/account-center-hardening}"
 mkdir -p "$EVIDENCE_DIR"
 LOG="$EVIDENCE_DIR/restore_fixture_log"
 : >"$LOG"
