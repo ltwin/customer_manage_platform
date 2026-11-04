@@ -2,6 +2,8 @@ package creativescene
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -42,9 +44,62 @@ var publishedMaterials = map[string]string{
 	"wood_plank@1":  "pattern color=#9a6a42 metalness=0[0,1] plank_width=0.15[0.05,1] roughness=0.55[0,1]",
 }
 
+// texturedLook is what a textured entry looks like as a line: its size, the
+// files and channels of its maps, and its defaults.
+func texturedLook(m materialSpec) string {
+	parts := []string{fmt.Sprintf("%gm", m.SizeM)}
+	for _, kind := range builtinMapIDs {
+		if t, ok := m.Maps[kind]; ok {
+			parts = append(parts, kind+"="+t.File[:12]+t.Channel)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(m.Defaults)) {
+		parts = append(parts, fmt.Sprintf("%s=%v", name, m.Params[name].Default))
+	}
+	return strings.Join(parts, " ")
+}
+
+// publishedTextured locks every built-in textured material's look (size,
+// files with channels, defaults): a different look is a new @2.
+var publishedTextured = map[string]string{
+	"wood_floor@1":              "1.7m base_color=7c3ff1164c8d normal=eff2e4db46ba roughness=dc024a5c535cg metalness=dc024a5c535cb ao=dc024a5c535cr color=#ffffff metalness=1 roughness=1",
+	"laminate_floor_02@1":       "1.7m base_color=2a1e6519309b normal=49aa58c34c67 roughness=d646acf8dedeg metalness=d646acf8dedeb ao=d646acf8deder color=#ffffff metalness=1 roughness=1",
+	"oak_veneer_01@1":           "1.83m base_color=0718c2e1a209 normal=e74a9d3ddcd8 roughness=c1a3453f517fg metalness=c1a3453f517fb ao=c1a3453f517fr color=#ffffff metalness=1 roughness=1",
+	"weathered_brown_planks@1":  "1.8m base_color=070ebc4c56a6 normal=1c4882afd62d roughness=61fbdcbd05b7g metalness=61fbdcbd05b7b ao=61fbdcbd05b7r color=#ffffff metalness=1 roughness=1",
+	"rock_face_03@1":            "2.7m base_color=644ee79df7ff normal=a498cef4ba61 roughness=1921303981d1g metalness=1921303981d1b ao=1921303981d1r color=#ffffff metalness=1 roughness=1",
+	"marble_01@1":               "1.5m base_color=d40378617171 normal=d5e17ccb2913 roughness=28a022c868fag metalness=28a022c868fab ao=28a022c868far color=#ffffff metalness=1 roughness=1",
+	"red_brick@1":               "1.4m base_color=a1ae5ba7e630 normal=dd2ce5b5c42f roughness=2e732048bffdg metalness=2e732048bffdb ao=2e732048bffdr color=#ffffff metalness=1 roughness=1",
+	"brick_wall_001@1":          "3m base_color=aefa7f374328 normal=62cc36d391b2 roughness=0d6c6a14399cg metalness=0d6c6a14399cb ao=0d6c6a14399cr color=#ffffff metalness=1 roughness=1",
+	"medieval_blocks_03@1":      "2m base_color=63cc2220ed9e normal=16c8a4e48287 roughness=50b7486187a3g metalness=50b7486187a3b ao=50b7486187a3r color=#ffffff metalness=1 roughness=1",
+	"concrete_floor_worn_001@1": "3m base_color=e29b45cdcd6d normal=3b782137e34d roughness=f239a75b8b81g metalness=f239a75b8b81b ao=f239a75b8b81r color=#ffffff metalness=1 roughness=1",
+	"painted_plaster_wall@1":    "2m base_color=6fd812ed8dd5 normal=2d601a46ed5c roughness=8d6a2e391e87g metalness=8d6a2e391e87b ao=8d6a2e391e87r color=#ffffff metalness=1 roughness=1",
+	"beige_wall_001@1":          "3m base_color=222d4d2e7d5c normal=7f5cbecd6766 roughness=a86cfe132a80g metalness=a86cfe132a80b ao=a86cfe132a80r color=#ffffff metalness=1 roughness=1",
+	"metal_plate@1":             "0.5m base_color=864c9a653acd normal=146f8c00874a roughness=3b944444e128g metalness=3b944444e128b ao=3b944444e128r color=#ffffff metalness=1 roughness=1",
+	"rusty_metal_02@1":          "1m base_color=4c887dd400ed normal=a7aa9c3e4b68 roughness=500189e41e84g metalness=500189e41e84b ao=500189e41e84r color=#ffffff metalness=1 roughness=1",
+	"fabric_pattern_07@1":       "0.4m base_color=1f4941638b89 normal=84f15ee5f6b6 roughness=68b0e04fbee9g metalness=68b0e04fbee9b ao=68b0e04fbee9r color=#ffffff metalness=1 roughness=1",
+	"denim_fabric@1":            "0.1m base_color=164fdc3adbae normal=832028890fa5 roughness=23b5b0d54a67g metalness=23b5b0d54a67b ao=23b5b0d54a67r color=#ffffff metalness=1 roughness=1",
+	"forrest_ground_01@1":       "2m base_color=e4d557ff61a0 normal=aa23fa930c63 roughness=abc91717bc60g metalness=abc91717bc60b ao=abc91717bc60r color=#ffffff metalness=1 roughness=1",
+	"leafy_grass@1":             "2m base_color=8e1c6d21365d normal=df0cf0ce96e6 roughness=70d61c669fe9g metalness=70d61c669fe9b ao=70d61c669fe9r color=#ffffff metalness=1 roughness=1",
+	"sandy_gravel_02@1":         "2.53m base_color=db0d563089e4 normal=ad1e336887cb roughness=0279eea78d3fg metalness=0279eea78d3fb ao=0279eea78d3fr color=#ffffff metalness=1 roughness=1",
+	"floor_tiles_06@1":          "3m base_color=fe326c219d09 normal=930ee26e4018 roughness=f3dd52d2363bg metalness=f3dd52d2363bb ao=f3dd52d2363br color=#ffffff metalness=1 roughness=1",
+	"terrazzo_tiles@1":          "2m base_color=26cc390c19e4 normal=48f79a943f62 roughness=4480ba6a92d3g metalness=4480ba6a92d3b ao=4480ba6a92d3r color=#ffffff metalness=1 roughness=1",
+	"asphalt_02@1":              "3m base_color=28f5ba869055 normal=ffe49db71a0f roughness=ed70e88640e4g metalness=ed70e88640e4b ao=ed70e88640e4r color=#ffffff metalness=1 roughness=1",
+	"roof_slates_03@1":          "3m base_color=955eb467fc60 normal=f797ad9756e6 roughness=d3bae518a1ebg metalness=d3bae518a1ebb ao=d3bae518a1ebr color=#ffffff metalness=1 roughness=1",
+	"brown_leather@1":           "0.4m base_color=b0de2403a31e normal=3386277290af roughness=3c043ed2e459g metalness=3c043ed2e459b ao=3c043ed2e459r color=#ffffff metalness=1 roughness=1",
+}
+
 func TestMaterialCatalog(t *testing.T) {
-	if len(materials.list) != len(publishedMaterials) {
-		t.Fatalf("%d materials, %d published: a new one needs its table here", len(materials.list), len(publishedMaterials))
+	if len(materials.list) != len(publishedMaterials)+len(publishedTextured) {
+		t.Fatalf("%d materials, %d published: a new one needs its table here", len(materials.list), len(publishedMaterials)+len(publishedTextured))
+	}
+	for id, want := range publishedTextured {
+		m, ok := materials.byID[id]
+		if !ok {
+			t.Fatalf("published material %s is gone", id)
+		}
+		if got := texturedLook(m); got != want {
+			t.Fatalf("%s changed:\n got %s\nwant %s", id, got, want)
+		}
 	}
 	for id, want := range publishedMaterials {
 		m, ok := materials.byID[id]

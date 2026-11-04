@@ -32,19 +32,32 @@ var materialsJSON []byte
 const (
 	MaterialPrincipled = "principled"
 	MaterialPattern    = "pattern"
+	MaterialTextured   = "textured"
 )
 
+// materialSpec is a catalog entry. A textured one (builtin_textures.go) has
+// the fields after Params instead of its own parameters, and takes
+// principled's table with its defaults once loaded.
 type materialSpec struct {
-	ID     string               `json:"id"`
-	Kind   string               `json:"kind"`
-	Label  string               `json:"label"`
-	Params map[string]paramSpec `json:"params"`
+	ID       string                `json:"id"`
+	Kind     string                `json:"kind"`
+	Label    string                `json:"label"`
+	Params   map[string]paramSpec  `json:"params"`
+	Category string                `json:"category"`
+	SizeM    float64               `json:"size_m"`
+	Maps     map[string]builtinMap `json:"maps"`
+	Defaults map[string]any        `json:"defaults"`
+	Files    []BuiltinTextureFile  `json:"files"`
+	Source   *builtinSource        `json:"source"`
 }
 
 type materialCatalog struct {
-	list  []materialSpec
-	byID  map[string]materialSpec
-	hints map[string]string
+	list       []materialSpec
+	byID       map[string]materialSpec
+	hints      map[string]string
+	categories []materialCategory
+	// files are the textured entries' files, each once.
+	files []BuiltinTextureFile
 }
 
 var materials = loadMaterials(materialsJSON)
@@ -53,8 +66,9 @@ var materials = loadMaterials(materialsJSON)
 // bad entry is a build mistake rather than bad input.
 func loadMaterials(raw []byte) materialCatalog {
 	var file struct {
-		Materials []materialSpec    `json:"materials"`
-		Hints     map[string]string `json:"hints"`
+		Materials  []materialSpec     `json:"materials"`
+		Categories []materialCategory `json:"categories"`
+		Hints      map[string]string  `json:"hints"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -62,13 +76,25 @@ func loadMaterials(raw []byte) materialCatalog {
 	if err := dec.Decode(&file); err != nil {
 		panic(fmt.Sprintf("creativescene: materials.json: %v", err))
 	}
-	c := materialCatalog{list: file.Materials, byID: make(map[string]materialSpec, len(file.Materials)), hints: file.Hints}
+	c := materialCatalog{list: file.Materials, byID: make(map[string]materialSpec, len(file.Materials)), hints: file.Hints, categories: file.Categories}
+	for _, cat := range file.Categories {
+		if !slotKeyPattern.MatchString(cat.ID) || cat.Label == "" {
+			panic(fmt.Sprintf("creativescene: material category %q is malformed", cat.ID))
+		}
+	}
 	for i, m := range file.Materials {
-		if !versionedID.MatchString(m.ID) || m.Label == "" || len(m.Params) == 0 || len(m.Params) > maxSlotParams || !slices.Contains([]string{MaterialPrincipled, MaterialPattern}, m.Kind) {
+		if !versionedID.MatchString(m.ID) || m.Label == "" || !slices.Contains([]string{MaterialPrincipled, MaterialPattern, MaterialTextured}, m.Kind) {
 			panic(fmt.Sprintf("creativescene: material %q is malformed", m.ID))
 		}
 		if _, dup := c.byID[m.ID]; dup {
 			panic(fmt.Sprintf("creativescene: material %q listed twice", m.ID))
+		}
+		if m.Kind == MaterialTextured {
+			c.byID[m.ID] = m // given its parameters below, once principled is read
+			continue
+		}
+		if len(m.Params) == 0 || len(m.Params) > maxSlotParams || m.hasTexturedFields() {
+			panic(fmt.Sprintf("creativescene: material %q is malformed", m.ID))
 		}
 		for name, p := range m.Params {
 			if !slotKeyPattern.MatchString(name) || p.Label == "" || p.Type != "number" && p.Type != "color" || p.Type == "number" && (p.Min == nil || p.Max == nil || *p.Min > *p.Max) {
@@ -83,6 +109,25 @@ func loadMaterials(raw []byte) materialCatalog {
 		}
 		file.Materials[i] = m
 		c.byID[m.ID] = m
+	}
+	seen := map[string]bool{}
+	for i, m := range file.Materials {
+		if m.Kind != MaterialTextured {
+			continue
+		}
+		m, err := completeTextured(m, c.byID[principledPreset], c.categories)
+		if err != nil {
+			panic(fmt.Sprintf("creativescene: material %q: %v", m.ID, err))
+		}
+		file.Materials[i] = m
+		c.byID[m.ID] = m
+		for _, f := range m.Files {
+			if !seen[f.Name] {
+				seen[f.Name] = true
+				f.Material = m.ID
+				c.files = append(c.files, f)
+			}
+		}
 	}
 	for hint, id := range c.hints {
 		if m, ok := c.byID[id]; !ok || m.Kind != MaterialPattern || hint != strings.ToLower(strings.TrimSpace(hint)) {
@@ -141,17 +186,21 @@ func paramNames(m materialSpec) []string {
 
 // MaterialCatalog lists the materials for the assistant's tool description,
 // one per entry in catalog order: ID, label and parameter names, with the
-// range of a number that is not 0–1 (colours are #rrggbb).
+// range of a number that is not 0–1 (colours are #rrggbb). Textured ones are
+// left out: the assistant finds them with search_assets.
 func MaterialCatalog() string {
-	parts := make([]string, len(materials.list))
-	for i, m := range materials.list {
+	var parts []string
+	for _, m := range materials.list {
+		if m.Kind == MaterialTextured {
+			continue
+		}
 		names := paramNames(m)
 		for j, n := range names {
 			if p := m.Params[n]; p.Type == "number" && (*p.Min != 0 || *p.Max != 1) {
 				names[j] = fmt.Sprintf("%s %s–%s%s", n, strconv.FormatFloat(*p.Min, 'g', -1, 64), strconv.FormatFloat(*p.Max, 'g', -1, 64), p.Unit)
 			}
 		}
-		parts[i] = fmt.Sprintf("%s %s(%s)", m.ID, m.Label, strings.Join(names, ", "))
+		parts = append(parts, fmt.Sprintf("%s %s(%s)", m.ID, m.Label, strings.Join(names, ", ")))
 	}
 	return strings.Join(parts, "；")
 }

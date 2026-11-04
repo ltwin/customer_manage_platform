@@ -180,7 +180,523 @@
         "roughness": { "type": "number", "default": 0.5, "min": 0, "max": 1, "step": 0.01, "label": "糙度" },
         "metalness": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "金属度" }
       }
+    },
+    {
+      "id": "wood_floor@1",
+      "kind": "textured",
+      "label": "木地板",
+      "category": "wood",
+      "size_m": 1.7,
+      "maps": {
+        "base_color": { "file": "7c3ff1164c8dd0758ef2c048e9a266d28174120de01052ec40e6ca486177345c.jpg" },
+        "normal": { "file": "eff2e4db46bab930dc05997faf5085157eec4fd652cdfc6cd01fa11edd56ef10.jpg" },
+        "roughness": { "file": "dc024a5c535c2c513d91d9d0e541f9c4d249b9a4110f3819d60c29631bc98145.jpg", "channel": "g" },
+        "metalness": { "file": "dc024a5c535c2c513d91d9d0e541f9c4d249b9a4110f3819d60c29631bc98145.jpg", "channel": "b" },
+        "ao": { "file": "dc024a5c535c2c513d91d9d0e541f9c4d249b9a4110f3819d60c29631bc98145.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "7c3ff1164c8dd0758ef2c048e9a266d28174120de01052ec40e6ca486177345c.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wood_floor/wood_floor_diff_2k.jpg", "bytes": 2983667 },
+        { "name": "eff2e4db46bab930dc05997faf5085157eec4fd652cdfc6cd01fa11edd56ef10.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wood_floor/wood_floor_nor_gl_2k.jpg", "bytes": 1863576 },
+        { "name": "dc024a5c535c2c513d91d9d0e541f9c4d249b9a4110f3819d60c29631bc98145.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wood_floor/wood_floor_arm_2k.jpg", "bytes": 1928292 }
+      ],
+      "source": { "site": "polyhaven", "asset": "wood_floor", "author": "Dimitrios Savva", "license": "CC0" }
+    },
+    {
+      "id": "laminate_floor_02@1",
+      "kind": "textured",
+      "label": "复合地板",
+      "category": "wood",
+      "size_m": 1.7,
+      "maps": {
+        "base_color": { "file": "2a1e6519309b369f749f06aaf241ac67ea762c686b6a848c1a79331b18a30521.jpg" },
+        "normal": { "file": "49aa58c34c6770d209e63f9bdb4d16326f5dab24474cfeb18433e63fc54456de.jpg" },
+        "roughness": { "file": "d646acf8dede6ee1dc0c8a6bc3436f1742cfa65468bf8ad8985aea9edbb91ecb.jpg", "channel": "g" },
+        "metalness": { "file": "d646acf8dede6ee1dc0c8a6bc3436f1742cfa65468bf8ad8985aea9edbb91ecb.jpg", "channel": "b" },
+        "ao": { "file": "d646acf8dede6ee1dc0c8a6bc3436f1742cfa65468bf8ad8985aea9edbb91ecb.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "2a1e6519309b369f749f06aaf241ac67ea762c686b6a848c1a79331b18a30521.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/laminate_floor_02/laminate_floor_02_diff_2k.jpg", "bytes": 3225117 },
+        { "name": "49aa58c34c6770d209e63f9bdb4d16326f5dab24474cfeb18433e63fc54456de.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/laminate_floor_02/laminate_floor_02_nor_gl_2k.jpg", "bytes": 2420220 },
+        { "name": "d646acf8dede6ee1dc0c8a6bc3436f1742cfa65468bf8ad8985aea9edbb91ecb.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/laminate_floor_02/laminate_floor_02_arm_2k.jpg", "bytes": 2793448 }
+      ],
+      "source": { "site": "polyhaven", "asset": "laminate_floor_02", "author": "Dario Barresi, Charlotte Baglioni", "license": "CC0" }
+    },
+    {
+      "id": "oak_veneer_01@1",
+      "kind": "textured",
+      "label": "橡木饰面",
+      "category": "wood",
+      "size_m": 1.83,
+      "maps": {
+        "base_color": { "file": "0718c2e1a209afe6138ccb41d70e1a18cd825d1e73db33ad7cf80806fa9ce5a4.jpg" },
+        "normal": { "file": "e74a9d3ddcd86473a21815a28464f4dac4ceb8f86e7f170226dede8ed70d8eb9.jpg" },
+        "roughness": { "file": "c1a3453f517fe566ca01f431c72b0ab29120ffce33922f88f3b1100a720b17ce.jpg", "channel": "g" },
+        "metalness": { "file": "c1a3453f517fe566ca01f431c72b0ab29120ffce33922f88f3b1100a720b17ce.jpg", "channel": "b" },
+        "ao": { "file": "c1a3453f517fe566ca01f431c72b0ab29120ffce33922f88f3b1100a720b17ce.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "0718c2e1a209afe6138ccb41d70e1a18cd825d1e73db33ad7cf80806fa9ce5a4.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/oak_veneer_01/oak_veneer_01_diff_2k.jpg", "bytes": 2831117 },
+        { "name": "e74a9d3ddcd86473a21815a28464f4dac4ceb8f86e7f170226dede8ed70d8eb9.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/oak_veneer_01/oak_veneer_01_nor_gl_2k.jpg", "bytes": 2429019 },
+        { "name": "c1a3453f517fe566ca01f431c72b0ab29120ffce33922f88f3b1100a720b17ce.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/oak_veneer_01/oak_veneer_01_arm_2k.jpg", "bytes": 4469311 }
+      ],
+      "source": { "site": "polyhaven", "asset": "oak_veneer_01", "author": "Jenelle van Heerden", "license": "CC0" }
+    },
+    {
+      "id": "weathered_brown_planks@1",
+      "kind": "textured",
+      "label": "旧木板",
+      "category": "wood",
+      "size_m": 1.8,
+      "maps": {
+        "base_color": { "file": "070ebc4c56a6729ca73a791f7cd3bab7670eb03bfa9ac0218864a554228bcc30.jpg" },
+        "normal": { "file": "1c4882afd62de8da66b6e0730894e1a08db1e0cdd2370bd8bce77a6935d8812b.jpg" },
+        "roughness": { "file": "61fbdcbd05b7fd66f11f691833dbca6fe458038e97695cfd4b8a96c4e0425311.jpg", "channel": "g" },
+        "metalness": { "file": "61fbdcbd05b7fd66f11f691833dbca6fe458038e97695cfd4b8a96c4e0425311.jpg", "channel": "b" },
+        "ao": { "file": "61fbdcbd05b7fd66f11f691833dbca6fe458038e97695cfd4b8a96c4e0425311.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "070ebc4c56a6729ca73a791f7cd3bab7670eb03bfa9ac0218864a554228bcc30.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/weathered_brown_planks/weathered_brown_planks_diff_2k.jpg", "bytes": 911358 },
+        { "name": "1c4882afd62de8da66b6e0730894e1a08db1e0cdd2370bd8bce77a6935d8812b.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/weathered_brown_planks/weathered_brown_planks_nor_gl_2k.jpg", "bytes": 1029733 },
+        { "name": "61fbdcbd05b7fd66f11f691833dbca6fe458038e97695cfd4b8a96c4e0425311.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/weathered_brown_planks/weathered_brown_planks_arm_2k.jpg", "bytes": 824806 }
+      ],
+      "source": { "site": "polyhaven", "asset": "weathered_brown_planks", "author": "Dimitrios Savva, Rico Cilliers", "license": "CC0" }
+    },
+    {
+      "id": "rock_face_03@1",
+      "kind": "textured",
+      "label": "岩壁",
+      "category": "stone",
+      "size_m": 2.7,
+      "maps": {
+        "base_color": { "file": "644ee79df7ffbf5f6afc330b64dd3f33794bab8820915fe61ffe0c88ecfd7ece.jpg" },
+        "normal": { "file": "a498cef4ba6191f6959b6d03fb835263c77271948264a289af24497ab7111dec.jpg" },
+        "roughness": { "file": "1921303981d12bccf72dd29d8a8daf823f1d9bb60400b447c64757203c1e2dad.jpg", "channel": "g" },
+        "metalness": { "file": "1921303981d12bccf72dd29d8a8daf823f1d9bb60400b447c64757203c1e2dad.jpg", "channel": "b" },
+        "ao": { "file": "1921303981d12bccf72dd29d8a8daf823f1d9bb60400b447c64757203c1e2dad.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "644ee79df7ffbf5f6afc330b64dd3f33794bab8820915fe61ffe0c88ecfd7ece.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_diff_2k.jpg", "bytes": 3814362 },
+        { "name": "a498cef4ba6191f6959b6d03fb835263c77271948264a289af24497ab7111dec.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_nor_gl_2k.jpg", "bytes": 4473242 },
+        { "name": "1921303981d12bccf72dd29d8a8daf823f1d9bb60400b447c64757203c1e2dad.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_arm_2k.jpg", "bytes": 3215097 }
+      ],
+      "source": { "site": "polyhaven", "asset": "rock_face_03", "author": "Dario Barresi, Rico Cilliers", "license": "CC0" }
+    },
+    {
+      "id": "marble_01@1",
+      "kind": "textured",
+      "label": "大理石",
+      "category": "stone",
+      "size_m": 1.5,
+      "maps": {
+        "base_color": { "file": "d403786171716f86718bdd67eba923d4fb6125c0636bacef0e6a21dd5d623a48.jpg" },
+        "normal": { "file": "d5e17ccb2913adbf28fcb781fddf0aa711259ddea6c1c918442f9a3589aa4660.jpg" },
+        "roughness": { "file": "28a022c868faf8d893a23082c54494fdc3381db302b05bcbf7f310d353d7464a.jpg", "channel": "g" },
+        "metalness": { "file": "28a022c868faf8d893a23082c54494fdc3381db302b05bcbf7f310d353d7464a.jpg", "channel": "b" },
+        "ao": { "file": "28a022c868faf8d893a23082c54494fdc3381db302b05bcbf7f310d353d7464a.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "d403786171716f86718bdd67eba923d4fb6125c0636bacef0e6a21dd5d623a48.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/marble_01/marble_01_diff_2k.jpg", "bytes": 1269188 },
+        { "name": "d5e17ccb2913adbf28fcb781fddf0aa711259ddea6c1c918442f9a3589aa4660.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/marble_01/marble_01_nor_gl_2k.jpg", "bytes": 409581 },
+        { "name": "28a022c868faf8d893a23082c54494fdc3381db302b05bcbf7f310d353d7464a.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/marble_01/marble_01_arm_2k.jpg", "bytes": 214100 }
+      ],
+      "source": { "site": "polyhaven", "asset": "marble_01", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "red_brick@1",
+      "kind": "textured",
+      "label": "红砖",
+      "category": "brick",
+      "size_m": 1.4,
+      "maps": {
+        "base_color": { "file": "a1ae5ba7e63026971ceaf68ebbcf8982d9c2dadde1c99996c49b8ac1160af995.jpg" },
+        "normal": { "file": "dd2ce5b5c42f04f02fce555d53eae42503733a0a42e76ae9a18bfb9d0680da5b.jpg" },
+        "roughness": { "file": "2e732048bffd98207d6f35d37390a84c06ca9a16d086d0cea3fd7bc7cb80ec28.jpg", "channel": "g" },
+        "metalness": { "file": "2e732048bffd98207d6f35d37390a84c06ca9a16d086d0cea3fd7bc7cb80ec28.jpg", "channel": "b" },
+        "ao": { "file": "2e732048bffd98207d6f35d37390a84c06ca9a16d086d0cea3fd7bc7cb80ec28.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "a1ae5ba7e63026971ceaf68ebbcf8982d9c2dadde1c99996c49b8ac1160af995.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/red_brick/red_brick_diff_2k.jpg", "bytes": 3169072 },
+        { "name": "dd2ce5b5c42f04f02fce555d53eae42503733a0a42e76ae9a18bfb9d0680da5b.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/red_brick/red_brick_nor_gl_2k.jpg", "bytes": 4327452 },
+        { "name": "2e732048bffd98207d6f35d37390a84c06ca9a16d086d0cea3fd7bc7cb80ec28.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/red_brick/red_brick_arm_2k.jpg", "bytes": 2800082 }
+      ],
+      "source": { "site": "polyhaven", "asset": "red_brick", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "brick_wall_001@1",
+      "kind": "textured",
+      "label": "砖墙",
+      "category": "brick",
+      "size_m": 3,
+      "maps": {
+        "base_color": { "file": "aefa7f3743282de2c7df4e4282c868de204239ac3c94e818b1ef74f2a2d74f1a.jpg" },
+        "normal": { "file": "62cc36d391b2f73c3855fd745a5815686db59d73bf3ef9db2ad96ca27eb97e32.jpg" },
+        "roughness": { "file": "0d6c6a14399c34350e4152680d95ed636a9bbd36db8e5ae05f68272d3f9520e2.jpg", "channel": "g" },
+        "metalness": { "file": "0d6c6a14399c34350e4152680d95ed636a9bbd36db8e5ae05f68272d3f9520e2.jpg", "channel": "b" },
+        "ao": { "file": "0d6c6a14399c34350e4152680d95ed636a9bbd36db8e5ae05f68272d3f9520e2.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "aefa7f3743282de2c7df4e4282c868de204239ac3c94e818b1ef74f2a2d74f1a.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brick_wall_001/brick_wall_001_diffuse_2k.jpg", "bytes": 2043756 },
+        { "name": "62cc36d391b2f73c3855fd745a5815686db59d73bf3ef9db2ad96ca27eb97e32.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brick_wall_001/brick_wall_001_nor_gl_2k.jpg", "bytes": 1160617 },
+        { "name": "0d6c6a14399c34350e4152680d95ed636a9bbd36db8e5ae05f68272d3f9520e2.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brick_wall_001/brick_wall_001_arm_2k.jpg", "bytes": 436079 }
+      ],
+      "source": { "site": "polyhaven", "asset": "brick_wall_001", "author": "Rob Tuytel, Dimitrios Savva", "license": "CC0" }
+    },
+    {
+      "id": "medieval_blocks_03@1",
+      "kind": "textured",
+      "label": "中世纪石块",
+      "category": "brick",
+      "size_m": 2,
+      "maps": {
+        "base_color": { "file": "63cc2220ed9e72c8dda620474c10fc26657552c5309c77c114b5ac725edfb902.jpg" },
+        "normal": { "file": "16c8a4e4828752992725a57b2b69d32021f15dbc3548bced3f786a03e40cf5fe.jpg" },
+        "roughness": { "file": "50b7486187a39cf92bdd27f2723b45d048458dae8eca20723f447bbfe7057b8c.jpg", "channel": "g" },
+        "metalness": { "file": "50b7486187a39cf92bdd27f2723b45d048458dae8eca20723f447bbfe7057b8c.jpg", "channel": "b" },
+        "ao": { "file": "50b7486187a39cf92bdd27f2723b45d048458dae8eca20723f447bbfe7057b8c.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "63cc2220ed9e72c8dda620474c10fc26657552c5309c77c114b5ac725edfb902.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/medieval_blocks_03/medieval_blocks_03_diff_2k.jpg", "bytes": 3839924 },
+        { "name": "16c8a4e4828752992725a57b2b69d32021f15dbc3548bced3f786a03e40cf5fe.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/medieval_blocks_03/medieval_blocks_03_nor_gl_2k.jpg", "bytes": 5073770 },
+        { "name": "50b7486187a39cf92bdd27f2723b45d048458dae8eca20723f447bbfe7057b8c.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/medieval_blocks_03/medieval_blocks_03_arm_2k.jpg", "bytes": 2286192 }
+      ],
+      "source": { "site": "polyhaven", "asset": "medieval_blocks_03", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "concrete_floor_worn_001@1",
+      "kind": "textured",
+      "label": "旧混凝土地面",
+      "category": "concrete",
+      "size_m": 3,
+      "maps": {
+        "base_color": { "file": "e29b45cdcd6d02fae3c087c456196ffa750779a9b62e7071aa3831dc322a0cc4.jpg" },
+        "normal": { "file": "3b782137e34d63fd59b2e92b4e27b2ee4d082caf9dd23f00dc7ab4da5513daef.jpg" },
+        "roughness": { "file": "f239a75b8b816ceb85058933b6115e0fcd92e4709e9210e2b4f834f47d9fa7c6.jpg", "channel": "g" },
+        "metalness": { "file": "f239a75b8b816ceb85058933b6115e0fcd92e4709e9210e2b4f834f47d9fa7c6.jpg", "channel": "b" },
+        "ao": { "file": "f239a75b8b816ceb85058933b6115e0fcd92e4709e9210e2b4f834f47d9fa7c6.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "e29b45cdcd6d02fae3c087c456196ffa750779a9b62e7071aa3831dc322a0cc4.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_floor_worn_001/concrete_floor_worn_001_diff_2k.jpg", "bytes": 482906 },
+        { "name": "3b782137e34d63fd59b2e92b4e27b2ee4d082caf9dd23f00dc7ab4da5513daef.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_floor_worn_001/concrete_floor_worn_001_nor_gl_2k.jpg", "bytes": 870609 },
+        { "name": "f239a75b8b816ceb85058933b6115e0fcd92e4709e9210e2b4f834f47d9fa7c6.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_floor_worn_001/concrete_floor_worn_001_arm_2k.jpg", "bytes": 649883 }
+      ],
+      "source": { "site": "polyhaven", "asset": "concrete_floor_worn_001", "author": "Dimitrios Savva, Rico Cilliers", "license": "CC0" }
+    },
+    {
+      "id": "painted_plaster_wall@1",
+      "kind": "textured",
+      "label": "刷漆抹灰墙",
+      "category": "concrete",
+      "size_m": 2,
+      "maps": {
+        "base_color": { "file": "6fd812ed8dd5be1873c29aeef38ce9bf1fb30a22c6d4b3a12db725e98c26a1be.jpg" },
+        "normal": { "file": "2d601a46ed5ce2af866741c53cafa3cba472620c272e633b6484d4de16a80eb1.jpg" },
+        "roughness": { "file": "8d6a2e391e87130aabb1dc6fea23e6ebcc80aca6559a0aa82e57b75729055be5.jpg", "channel": "g" },
+        "metalness": { "file": "8d6a2e391e87130aabb1dc6fea23e6ebcc80aca6559a0aa82e57b75729055be5.jpg", "channel": "b" },
+        "ao": { "file": "8d6a2e391e87130aabb1dc6fea23e6ebcc80aca6559a0aa82e57b75729055be5.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "6fd812ed8dd5be1873c29aeef38ce9bf1fb30a22c6d4b3a12db725e98c26a1be.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/painted_plaster_wall/painted_plaster_wall_diff_2k.jpg", "bytes": 3132937 },
+        { "name": "2d601a46ed5ce2af866741c53cafa3cba472620c272e633b6484d4de16a80eb1.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/painted_plaster_wall/painted_plaster_wall_nor_gl_2k.jpg", "bytes": 4048392 },
+        { "name": "8d6a2e391e87130aabb1dc6fea23e6ebcc80aca6559a0aa82e57b75729055be5.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/painted_plaster_wall/painted_plaster_wall_arm_2k.jpg", "bytes": 2159906 }
+      ],
+      "source": { "site": "polyhaven", "asset": "painted_plaster_wall", "author": "Amal Kumar", "license": "CC0" }
+    },
+    {
+      "id": "beige_wall_001@1",
+      "kind": "textured",
+      "label": "米色墙面",
+      "category": "concrete",
+      "size_m": 3,
+      "maps": {
+        "base_color": { "file": "222d4d2e7d5c425c97e5a66790852388cec7706714d773f769fba6bfe08cea4e.jpg" },
+        "normal": { "file": "7f5cbecd6766f44034f3b78b4addb1559e12bdd5a77501bd418a736609e7cedc.jpg" },
+        "roughness": { "file": "a86cfe132a80195833f7d1e5e330960c9690860ab5b752eeb5623081e71c3431.jpg", "channel": "g" },
+        "metalness": { "file": "a86cfe132a80195833f7d1e5e330960c9690860ab5b752eeb5623081e71c3431.jpg", "channel": "b" },
+        "ao": { "file": "a86cfe132a80195833f7d1e5e330960c9690860ab5b752eeb5623081e71c3431.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "222d4d2e7d5c425c97e5a66790852388cec7706714d773f769fba6bfe08cea4e.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/beige_wall_001/beige_wall_001_diff_2k.jpg", "bytes": 235868 },
+        { "name": "7f5cbecd6766f44034f3b78b4addb1559e12bdd5a77501bd418a736609e7cedc.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/beige_wall_001/beige_wall_001_nor_gl_2k.jpg", "bytes": 815507 },
+        { "name": "a86cfe132a80195833f7d1e5e330960c9690860ab5b752eeb5623081e71c3431.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/beige_wall_001/beige_wall_001_arm_2k.jpg", "bytes": 437640 }
+      ],
+      "source": { "site": "polyhaven", "asset": "beige_wall_001", "author": "Dimitrios Savva, Rico Cilliers", "license": "CC0" }
+    },
+    {
+      "id": "metal_plate@1",
+      "kind": "textured",
+      "label": "金属板",
+      "category": "metal",
+      "size_m": 0.5,
+      "maps": {
+        "base_color": { "file": "864c9a653acd1f5034c9bbe7f955b18cc9687a81bbdfa805e7a2319939676910.jpg" },
+        "normal": { "file": "146f8c00874a584bcc4a184643e72f160da2a7568d469198e02b26c9ff93cf43.jpg" },
+        "roughness": { "file": "3b944444e12815f96c6850b385ba0e8f2f805338d8ad9e750907474b494f1ebe.jpg", "channel": "g" },
+        "metalness": { "file": "3b944444e12815f96c6850b385ba0e8f2f805338d8ad9e750907474b494f1ebe.jpg", "channel": "b" },
+        "ao": { "file": "3b944444e12815f96c6850b385ba0e8f2f805338d8ad9e750907474b494f1ebe.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "864c9a653acd1f5034c9bbe7f955b18cc9687a81bbdfa805e7a2319939676910.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/metal_plate/metal_plate_diff_2k.jpg", "bytes": 2670774 },
+        { "name": "146f8c00874a584bcc4a184643e72f160da2a7568d469198e02b26c9ff93cf43.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/metal_plate/metal_plate_nor_gl_2k.jpg", "bytes": 2516654 },
+        { "name": "3b944444e12815f96c6850b385ba0e8f2f805338d8ad9e750907474b494f1ebe.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/metal_plate/metal_plate_arm_2k.jpg", "bytes": 3926194 }
+      ],
+      "source": { "site": "polyhaven", "asset": "metal_plate", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "rusty_metal_02@1",
+      "kind": "textured",
+      "label": "锈蚀金属",
+      "category": "metal",
+      "size_m": 1,
+      "maps": {
+        "base_color": { "file": "4c887dd400ed8a5964377c65e20654262307d6888443eae85feb80cc6e72287a.jpg" },
+        "normal": { "file": "a7aa9c3e4b6859c723c8e9dc5b96d7ed6eed863271358a91641c727555da75ce.jpg" },
+        "roughness": { "file": "500189e41e84d017937608171370b18e862d2c6d808c2b98963b8e23642b1cd4.jpg", "channel": "g" },
+        "metalness": { "file": "500189e41e84d017937608171370b18e862d2c6d808c2b98963b8e23642b1cd4.jpg", "channel": "b" },
+        "ao": { "file": "500189e41e84d017937608171370b18e862d2c6d808c2b98963b8e23642b1cd4.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "4c887dd400ed8a5964377c65e20654262307d6888443eae85feb80cc6e72287a.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rusty_metal_02/rusty_metal_02_diff_2k.jpg", "bytes": 1952454 },
+        { "name": "a7aa9c3e4b6859c723c8e9dc5b96d7ed6eed863271358a91641c727555da75ce.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rusty_metal_02/rusty_metal_02_nor_gl_2k.jpg", "bytes": 1307478 },
+        { "name": "500189e41e84d017937608171370b18e862d2c6d808c2b98963b8e23642b1cd4.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rusty_metal_02/rusty_metal_02_arm_2k.jpg", "bytes": 705888 }
+      ],
+      "source": { "site": "polyhaven", "asset": "rusty_metal_02", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "fabric_pattern_07@1",
+      "kind": "textured",
+      "label": "花纹布",
+      "category": "fabric",
+      "size_m": 0.4,
+      "maps": {
+        "base_color": { "file": "1f4941638b890d4535b1078067be8a831ca302d1e696ed959b4e4512de893cba.jpg" },
+        "normal": { "file": "84f15ee5f6b63e7e224051a22426c751cc1fe15a794efd001ebfdb5f84828602.jpg" },
+        "roughness": { "file": "68b0e04fbee9a5e5e896f4e3826376149745afb67b1cf3f5a1144687f33c669f.jpg", "channel": "g" },
+        "metalness": { "file": "68b0e04fbee9a5e5e896f4e3826376149745afb67b1cf3f5a1144687f33c669f.jpg", "channel": "b" },
+        "ao": { "file": "68b0e04fbee9a5e5e896f4e3826376149745afb67b1cf3f5a1144687f33c669f.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "1f4941638b890d4535b1078067be8a831ca302d1e696ed959b4e4512de893cba.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_pattern_07/fabric_pattern_07_col_1_2k.jpg", "bytes": 2650991 },
+        { "name": "84f15ee5f6b63e7e224051a22426c751cc1fe15a794efd001ebfdb5f84828602.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_pattern_07/fabric_pattern_07_nor_gl_2k.jpg", "bytes": 2572375 },
+        { "name": "68b0e04fbee9a5e5e896f4e3826376149745afb67b1cf3f5a1144687f33c669f.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_pattern_07/fabric_pattern_07_arm_2k.jpg", "bytes": 822275 }
+      ],
+      "source": { "site": "polyhaven", "asset": "fabric_pattern_07", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "denim_fabric@1",
+      "kind": "textured",
+      "label": "牛仔布",
+      "category": "fabric",
+      "size_m": 0.1,
+      "maps": {
+        "base_color": { "file": "164fdc3adbae7eab65171b05fb43aac5e3945615cb905b37b48049b2630c56d2.jpg" },
+        "normal": { "file": "832028890fa552e6ee758d8c63f09fccf5de01d83032affac404ddd3fa214d20.jpg" },
+        "roughness": { "file": "23b5b0d54a673e3714974ff4afdaa995b8217cbece768fc9d9c20cdc594644ef.jpg", "channel": "g" },
+        "metalness": { "file": "23b5b0d54a673e3714974ff4afdaa995b8217cbece768fc9d9c20cdc594644ef.jpg", "channel": "b" },
+        "ao": { "file": "23b5b0d54a673e3714974ff4afdaa995b8217cbece768fc9d9c20cdc594644ef.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "164fdc3adbae7eab65171b05fb43aac5e3945615cb905b37b48049b2630c56d2.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/denim_fabric/denim_fabric_diff_2k.jpg", "bytes": 3980719 },
+        { "name": "832028890fa552e6ee758d8c63f09fccf5de01d83032affac404ddd3fa214d20.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/denim_fabric/denim_fabric_nor_gl_2k.jpg", "bytes": 2110796 },
+        { "name": "23b5b0d54a673e3714974ff4afdaa995b8217cbece768fc9d9c20cdc594644ef.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/denim_fabric/denim_fabric_arm_2k.jpg", "bytes": 1258863 }
+      ],
+      "source": { "site": "polyhaven", "asset": "denim_fabric", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "forrest_ground_01@1",
+      "kind": "textured",
+      "label": "林地",
+      "category": "ground",
+      "size_m": 2,
+      "maps": {
+        "base_color": { "file": "e4d557ff61a0b42712a58e8a2e91c6010738977d4e172b7af47abd7d406ae735.jpg" },
+        "normal": { "file": "aa23fa930c6303490f842f7c016c19d838263e8e4538d42508a9332e3fd76b69.jpg" },
+        "roughness": { "file": "abc91717bc60c831f2cd86ad06a5c575ac0e5bd11870b1e7b6dcefc122fc64db.jpg", "channel": "g" },
+        "metalness": { "file": "abc91717bc60c831f2cd86ad06a5c575ac0e5bd11870b1e7b6dcefc122fc64db.jpg", "channel": "b" },
+        "ao": { "file": "abc91717bc60c831f2cd86ad06a5c575ac0e5bd11870b1e7b6dcefc122fc64db.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "e4d557ff61a0b42712a58e8a2e91c6010738977d4e172b7af47abd7d406ae735.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forrest_ground_01/forrest_ground_01_diff_2k.jpg", "bytes": 3077552 },
+        { "name": "aa23fa930c6303490f842f7c016c19d838263e8e4538d42508a9332e3fd76b69.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forrest_ground_01/forrest_ground_01_nor_gl_2k.jpg", "bytes": 5551101 },
+        { "name": "abc91717bc60c831f2cd86ad06a5c575ac0e5bd11870b1e7b6dcefc122fc64db.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forrest_ground_01/forrest_ground_01_arm_2k.jpg", "bytes": 1160819 }
+      ],
+      "source": { "site": "polyhaven", "asset": "forrest_ground_01", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "leafy_grass@1",
+      "kind": "textured",
+      "label": "草地",
+      "category": "ground",
+      "size_m": 2,
+      "maps": {
+        "base_color": { "file": "8e1c6d21365d4b89bc5a35ab664da98a78dbc3ab9ba6100474881c8619a5b113.jpg" },
+        "normal": { "file": "df0cf0ce96e653f033e5b934d5b12995464bda027aa53bd12e329be889aa9f45.jpg" },
+        "roughness": { "file": "70d61c669fe9d186a84f5bb50e8a337083014d7e46534306a89d47d48fd5eb0e.jpg", "channel": "g" },
+        "metalness": { "file": "70d61c669fe9d186a84f5bb50e8a337083014d7e46534306a89d47d48fd5eb0e.jpg", "channel": "b" },
+        "ao": { "file": "70d61c669fe9d186a84f5bb50e8a337083014d7e46534306a89d47d48fd5eb0e.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "8e1c6d21365d4b89bc5a35ab664da98a78dbc3ab9ba6100474881c8619a5b113.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/leafy_grass/leafy_grass_diff_2k.jpg", "bytes": 4766204 },
+        { "name": "df0cf0ce96e653f033e5b934d5b12995464bda027aa53bd12e329be889aa9f45.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/leafy_grass/leafy_grass_nor_gl_2k.jpg", "bytes": 6047262 },
+        { "name": "70d61c669fe9d186a84f5bb50e8a337083014d7e46534306a89d47d48fd5eb0e.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/leafy_grass/leafy_grass_arm_2k.jpg", "bytes": 4116600 }
+      ],
+      "source": { "site": "polyhaven", "asset": "leafy_grass", "author": "Charlotte Baglioni", "license": "CC0" }
+    },
+    {
+      "id": "sandy_gravel_02@1",
+      "kind": "textured",
+      "label": "砂砾",
+      "category": "ground",
+      "size_m": 2.53,
+      "maps": {
+        "base_color": { "file": "db0d563089e4a4e2f6da0172297168718c9bd4413ff7912f0180bfda33b8c2b3.jpg" },
+        "normal": { "file": "ad1e336887cb37b7d3dd1ce4719ab393425fa715dffaffe01381d97d207d2248.jpg" },
+        "roughness": { "file": "0279eea78d3f9dc3edce3631a082d662d144fb2810ad0e8a36d20028f236c3c5.jpg", "channel": "g" },
+        "metalness": { "file": "0279eea78d3f9dc3edce3631a082d662d144fb2810ad0e8a36d20028f236c3c5.jpg", "channel": "b" },
+        "ao": { "file": "0279eea78d3f9dc3edce3631a082d662d144fb2810ad0e8a36d20028f236c3c5.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "db0d563089e4a4e2f6da0172297168718c9bd4413ff7912f0180bfda33b8c2b3.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_diff_2k.jpg", "bytes": 4097984 },
+        { "name": "ad1e336887cb37b7d3dd1ce4719ab393425fa715dffaffe01381d97d207d2248.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_nor_gl_2k.jpg", "bytes": 5311499 },
+        { "name": "0279eea78d3f9dc3edce3631a082d662d144fb2810ad0e8a36d20028f236c3c5.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_arm_2k.jpg", "bytes": 3510676 }
+      ],
+      "source": { "site": "polyhaven", "asset": "sandy_gravel_02", "author": "Dario Barresi", "license": "CC0" }
+    },
+    {
+      "id": "floor_tiles_06@1",
+      "kind": "textured",
+      "label": "地砖",
+      "category": "tiles",
+      "size_m": 3,
+      "maps": {
+        "base_color": { "file": "fe326c219d096e8f5d31c9be6da5a617f34c58b3042d0733f7d4450a38906b37.jpg" },
+        "normal": { "file": "930ee26e4018f0d44d8f011b364b141c7ccf02bd3e47b85e591cbbaeb9f47046.jpg" },
+        "roughness": { "file": "f3dd52d2363bbc52cfb7dae100a510b5f1f10c0505f9a76b7efb723e90e352cd.jpg", "channel": "g" },
+        "metalness": { "file": "f3dd52d2363bbc52cfb7dae100a510b5f1f10c0505f9a76b7efb723e90e352cd.jpg", "channel": "b" },
+        "ao": { "file": "f3dd52d2363bbc52cfb7dae100a510b5f1f10c0505f9a76b7efb723e90e352cd.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "fe326c219d096e8f5d31c9be6da5a617f34c58b3042d0733f7d4450a38906b37.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/floor_tiles_06/floor_tiles_06_diff_2k.jpg", "bytes": 1394898 },
+        { "name": "930ee26e4018f0d44d8f011b364b141c7ccf02bd3e47b85e591cbbaeb9f47046.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/floor_tiles_06/floor_tiles_06_nor_gl_2k.jpg", "bytes": 1010594 },
+        { "name": "f3dd52d2363bbc52cfb7dae100a510b5f1f10c0505f9a76b7efb723e90e352cd.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/floor_tiles_06/floor_tiles_06_arm_2k.jpg", "bytes": 267827 }
+      ],
+      "source": { "site": "polyhaven", "asset": "floor_tiles_06", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "terrazzo_tiles@1",
+      "kind": "textured",
+      "label": "水磨石",
+      "category": "tiles",
+      "size_m": 2,
+      "maps": {
+        "base_color": { "file": "26cc390c19e468de03fc9699198398590a7adc1ddd4972e6d6fb65d76403bb66.jpg" },
+        "normal": { "file": "48f79a943f626c90cfeac4528b765d9f7df862883890a9d05ddf00a2209e0fa4.jpg" },
+        "roughness": { "file": "4480ba6a92d33d475b730126bb9608cfaa93d9b4b668b57181102cf23c380f1e.jpg", "channel": "g" },
+        "metalness": { "file": "4480ba6a92d33d475b730126bb9608cfaa93d9b4b668b57181102cf23c380f1e.jpg", "channel": "b" },
+        "ao": { "file": "4480ba6a92d33d475b730126bb9608cfaa93d9b4b668b57181102cf23c380f1e.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "26cc390c19e468de03fc9699198398590a7adc1ddd4972e6d6fb65d76403bb66.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/terrazzo_tiles/terrazzo_tiles_diff_2k.jpg", "bytes": 4554044 },
+        { "name": "48f79a943f626c90cfeac4528b765d9f7df862883890a9d05ddf00a2209e0fa4.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/terrazzo_tiles/terrazzo_tiles_nor_gl_2k.jpg", "bytes": 509402 },
+        { "name": "4480ba6a92d33d475b730126bb9608cfaa93d9b4b668b57181102cf23c380f1e.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/terrazzo_tiles/terrazzo_tiles_arm_2k.jpg", "bytes": 2023471 }
+      ],
+      "source": { "site": "polyhaven", "asset": "terrazzo_tiles", "author": "Amal Kumar", "license": "CC0" }
+    },
+    {
+      "id": "asphalt_02@1",
+      "kind": "textured",
+      "label": "沥青路面",
+      "category": "roofing",
+      "size_m": 3,
+      "maps": {
+        "base_color": { "file": "28f5ba8690553f192c0e5e1a5ff40f34765b4b93f4cc7059b1a3e9c795b6c28c.jpg" },
+        "normal": { "file": "ffe49db71a0fd34c1e259625df66a302a237597d6ef655307987ec4e45bc6f21.jpg" },
+        "roughness": { "file": "ed70e88640e4ed51cf1c3e57cb20db26983599b20b867c2526439e3a2c849fea.jpg", "channel": "g" },
+        "metalness": { "file": "ed70e88640e4ed51cf1c3e57cb20db26983599b20b867c2526439e3a2c849fea.jpg", "channel": "b" },
+        "ao": { "file": "ed70e88640e4ed51cf1c3e57cb20db26983599b20b867c2526439e3a2c849fea.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "28f5ba8690553f192c0e5e1a5ff40f34765b4b93f4cc7059b1a3e9c795b6c28c.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_02/asphalt_02_diff_2k.jpg", "bytes": 3075676 },
+        { "name": "ffe49db71a0fd34c1e259625df66a302a237597d6ef655307987ec4e45bc6f21.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_02/asphalt_02_nor_gl_2k.jpg", "bytes": 4943950 },
+        { "name": "ed70e88640e4ed51cf1c3e57cb20db26983599b20b867c2526439e3a2c849fea.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_02/asphalt_02_arm_2k.jpg", "bytes": 1299186 }
+      ],
+      "source": { "site": "polyhaven", "asset": "asphalt_02", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "roof_slates_03@1",
+      "kind": "textured",
+      "label": "石板瓦",
+      "category": "roofing",
+      "size_m": 3,
+      "maps": {
+        "base_color": { "file": "955eb467fc609e4509c2354f0b88755ffa137dac352b651efed95026f4a6aa5c.jpg" },
+        "normal": { "file": "f797ad9756e6584736831cf07f79872440a6a4811c80f9bcedd3b20b05c7596d.jpg" },
+        "roughness": { "file": "d3bae518a1eb1473dc1d6636a5c9c9358e3869739de6d50453ddd9de18a98023.jpg", "channel": "g" },
+        "metalness": { "file": "d3bae518a1eb1473dc1d6636a5c9c9358e3869739de6d50453ddd9de18a98023.jpg", "channel": "b" },
+        "ao": { "file": "d3bae518a1eb1473dc1d6636a5c9c9358e3869739de6d50453ddd9de18a98023.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "955eb467fc609e4509c2354f0b88755ffa137dac352b651efed95026f4a6aa5c.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/roof_slates_03/roof_slates_03_diff_2k.jpg", "bytes": 2083015 },
+        { "name": "f797ad9756e6584736831cf07f79872440a6a4811c80f9bcedd3b20b05c7596d.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/roof_slates_03/roof_slates_03_nor_gl_2k.jpg", "bytes": 2741713 },
+        { "name": "d3bae518a1eb1473dc1d6636a5c9c9358e3869739de6d50453ddd9de18a98023.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/roof_slates_03/roof_slates_03_arm_2k.jpg", "bytes": 3128318 }
+      ],
+      "source": { "site": "polyhaven", "asset": "roof_slates_03", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "brown_leather@1",
+      "kind": "textured",
+      "label": "棕色皮革",
+      "category": "leather",
+      "size_m": 0.4,
+      "maps": {
+        "base_color": { "file": "b0de2403a31efa31e501b0028c0bd8e504d5bd6318f4a5ce90c550c3067f96d8.jpg" },
+        "normal": { "file": "3386277290af50b4d464dc9a9f195bbf8dd6f137b9ae0274552397d2f0135c98.jpg" },
+        "roughness": { "file": "3c043ed2e4595e735c1cd013dacbcdfbaf8b2e5975b868d1dc188ecfe463f66d.jpg", "channel": "g" },
+        "metalness": { "file": "3c043ed2e4595e735c1cd013dacbcdfbaf8b2e5975b868d1dc188ecfe463f66d.jpg", "channel": "b" },
+        "ao": { "file": "3c043ed2e4595e735c1cd013dacbcdfbaf8b2e5975b868d1dc188ecfe463f66d.jpg", "channel": "r" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 1 },
+      "files": [
+        { "name": "b0de2403a31efa31e501b0028c0bd8e504d5bd6318f4a5ce90c550c3067f96d8.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_leather/brown_leather_albedo_2k.jpg", "bytes": 2137518 },
+        { "name": "3386277290af50b4d464dc9a9f195bbf8dd6f137b9ae0274552397d2f0135c98.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_leather/brown_leather_nor_gl_2k.jpg", "bytes": 3030702 },
+        { "name": "3c043ed2e4595e735c1cd013dacbcdfbaf8b2e5975b868d1dc188ecfe463f66d.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_leather/brown_leather_arm_2k.jpg", "bytes": 1870765 }
+      ],
+      "source": { "site": "polyhaven", "asset": "brown_leather", "author": "Rob Tuytel", "license": "CC0" }
     }
+  ],
+  "categories": [
+    { "id": "wood", "label": "木材" },
+    { "id": "stone", "label": "石材" },
+    { "id": "brick", "label": "砖墙" },
+    { "id": "concrete", "label": "混凝土与抹灰" },
+    { "id": "metal", "label": "金属" },
+    { "id": "fabric", "label": "布料" },
+    { "id": "ground", "label": "地面" },
+    { "id": "tiles", "label": "瓷砖" },
+    { "id": "roofing", "label": "屋面与沥青" },
+    { "id": "leather", "label": "皮革" }
   ],
   "hints": {
     "paint": "paint@1",
