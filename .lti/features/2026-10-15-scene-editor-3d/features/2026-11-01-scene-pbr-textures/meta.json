@@ -1,6 +1,6 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 12,
+  "revision": 13,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
@@ -53,9 +53,9 @@
       "data:模型内容"
     ]
   },
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-04T10:20:17.474Z",
+  "updatedAt": "2026-11-04T10:20:44.966Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -160,6 +160,10 @@
     }
   ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-04T10:20:44.675Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "closed"
 }

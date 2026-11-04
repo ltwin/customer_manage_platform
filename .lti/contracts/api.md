@@ -489,10 +489,15 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
 | `models.*.generator` | object | 是 | 是 | `{language, contract_version, lib_version, code_sha256, params_schema, params, mount}`，**不含代码** |
 | `models.*.name_hint` | string | 是 | 是 | 模型名称提示 |
 | `models.*.faces` | object | 是 | 是 | 面级材质分配（修订 v13），结构见 `data: 模型内容`；没有时为 null。编辑器加载 GLB 后按它拆分槽位 |
+| `images` | object | 是 | 否 | 修订 v17。以图片 `content_revision_id` 为键，覆盖当前快照引用的全部图片（目前只有 `material_slots.*.maps.*`）；没有贴图时为 `{}`。不列历史修订引用的图片 |
+| `images.*.usable` | boolean | 是 | 否 | false 表示图片当前不可展示。场景持有期间图片不会被 GC 回收，所以只在内容状态异常时出现；此时 `width`、`height`、`mime` 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理 |
+| `images.*.width`、`images.*.height` | integer | 是 | 是 | 原图像素尺寸（已按 EXIF 方向换算），编辑器据此决定缩放到多大再上传 GPU |
+| `images.*.mime` | string | 是 | 是 | `image/jpeg`、`image/png` 或 `image/webp`；PNG、WebP 可能带透明通道 |
 
 - **GLB 与缩略图**：响应不含地址。编辑器按模型修订调用现有的 `POST /creative/media-access-tickets`（`content_revision_id`，`role` 为 `original` 取 GLB、`thumbnail` 取缩略图，`purpose` 为 `display`），按修订缓存，与画布图片的做法一致。
 - **代码**：通过 `GET /creative/content-revisions/{content_revision_id}` 单独读取（载荷的 `model.generator.code`），避免每次重读快照都传几十 KB 代码。
-- **性能**：模型摘要在同一个读快照事务里批量读取，查询次数不随模型数增长。
+- **图片像素**（修订 v17）：响应不含地址。编辑器按图片修订调用 `POST /creative/media-access-tickets`（`role = original`、`purpose = display`）取原图：展示图是有损 JPEG，且会丢透明通道，不能用作贴图。
+- **性能**：模型摘要和图片摘要在同一个读快照事务里批量读取，查询次数不随模型数、图片数增长。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
@@ -532,7 +537,18 @@ Authorization: Bearer <token>
       {"id": "sobj_V1StGXR8_Z5jdHi6B-myT", "kind": "primitive", "name": "地面", "parent_id": null, "order": 0,
        "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": true,
-       "primitive": {"builtin": "ground@1", "params": {"size": 40}}, "material_slots": {}},
+       "primitive": {"builtin": "ground@1", "params": {"size": 40}},
+       "material_slots": {"main": {
+         "preset": "principled@1",
+         "params": {"color": "#ffffff", "roughness": 1, "metalness": 1, "opacity": 1, "transmission": 0},
+         "maps": {
+           "base_color": {"content_revision_id": "ccrv_1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"},
+           "normal": {"content_revision_id": "ccrv_2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e"},
+           "roughness": {"content_revision_id": "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f", "channel": "g"},
+           "metalness": {"content_revision_id": "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f", "channel": "b"},
+           "ao": {"content_revision_id": "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f", "channel": "r"}},
+         "mapping": {"kind": "triplanar", "size_m": 2, "rotation_deg": 0, "normal_strength": 1},
+         "alpha_mode": "opaque"}}},
       {"id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "kind": "model_instance", "name": "左侧柱 1", "parent_id": null, "order": 3,
        "transform": {"position": [-3, 0, -2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
        "visible": true, "locked": false,
@@ -551,9 +567,15 @@ Authorization: Bearer <token>
                     "params": {"height": 6}, "mount": "floor"},
       "name_hint": "哥特束柱"
     }
+  },
+  "images": {
+    "ccrv_1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d": {"usable": true, "width": 2048, "height": 2048, "mime": "image/jpeg"},
+    "ccrv_2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e": {"usable": true, "width": 2048, "height": 2048, "mime": "image/png"},
+    "ccrv_3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f": {"usable": false, "width": null, "height": null, "mime": null}
   }
 }
 ```
+上例中 ORM 图（`ccrv_3c4d…`）已不可用：编辑器在地面槽位上显示「图片不可用」，糙度、金属度、AO 按常数参数渲染；离屏出图（`lit` 导出、`render_view`）遇到不可用的图片直接失败，不出缺贴图的图。
 失败示例：
 ```http
 GET /api/v1/creative/documents/cwdoc_not_mine
@@ -566,6 +588,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 - 在通用读取接口上新增 `scene` 分支，其他类型不受影响。
 - C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
 - 修订 v13（C5b）：模型摘要增加 `faces`，基础体的 `primitive.faces` 随快照返回。只增加字段，旧客户端忽略。
+- 修订 v17（C5c1）：响应增加必返的 `images`（没有贴图时为 `{}`），快照的材质槽可能带 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`。只增加字段；旧编辑器忽略它们，按常数参数渲染，但会在下次整体替换槽位时丢掉贴图，所以前后端同一版本上线。
 
 ## 提交场景命令
 
@@ -607,12 +630,13 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元 | 修正，不可原样重试 |
+| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元；材质槽的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff` 违反数据契约（写在非 `principled@1` 的预设上、未知贴图键、`channel` 写在基础色或法线上、`size_m` 与 `uv` 同时出现、数值越界等，修订 v17），`details.field` 指出字段路径 | 修正，不可原样重试 |
+| 400 | `creative_image_unavailable` | 修订 v17。本批新出现的图片引用不存在、不属于当前账号、不是 `image`、不是 `ready` 或不可展示（不区分这几种，与 `creative_model_unavailable` 相同，不用 404：编辑器会把 404 当成场景本身不存在）。`details.field` 指出第一个不可用的字段路径，`details.content_revision_id` 给出图片 | 编辑器去掉这张贴图并提示；助手按工具结果换图 |
 | 404 | `not_found` | 场景不存在或不属于当前账号 | 关闭编辑视图 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符。`details.conflicts` 为数组：`[{unit, expected_rev, current_rev}]` | 重读，按冲突界面处理后再提交 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
 | 409 | `idempotency_conflict` | 同一 key 用于不同请求体 | 换新 key 前先查原回执 |
-| 413 | `creative_size_limit` | 请求体超限，或应用后快照 > 512 KiB / 对象 > 2000 / 摄像机 > 32 / 体积物件 > 8 | 缩小改动 |
+| 413 | `creative_size_limit` | 请求体超限，或应用后快照 > 512 KiB / 对象 > 2000 / 摄像机 > 32 / 体积物件 > 8 / 引用的不同图片 > 64（修订 v17，`details.limit = 64`） | 缩小改动 |
 
 ### 交互规则
 - **原子性**：全部成功或全部不生效。
@@ -669,6 +693,33 @@ Content-Type: application/json
 ```
 取消编组时，`moves` 把子物件挂回分组原来的父级并写回局部变换，`remove_groups` 删除这个分组。
 
+贴图示例（修订 v17：给石台的 `main` 槽位配树叶贴图，UV 映射，透明裁切；`material_slots` 整体替换，所以没改的槽位也要原样写回）：
+```json
+{"operation_id": "b7c8d9e0-f1a2-4b3c-8d4e-5f6a7b8c9d0e", "client_created_at": "2026-11-05T10:00:00Z",
+ "payload": {
+   "expected": {"object:sobj_Q9w8E7r6T5y4U3i2O1p0a:content": "5"},
+   "operations": [{"op": "update_objects", "updates": [{"object_id": "sobj_Q9w8E7r6T5y4U3i2O1p0a",
+     "material_slots": {"main": {
+       "preset": "principled@1",
+       "params": {"color": "#ffffff", "roughness": 0.8, "metalness": 0, "opacity": 1, "transmission": 0},
+       "maps": {"base_color": {"content_revision_id": "ccrv_4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80"},
+                "normal": {"content_revision_id": "ccrv_5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8091"}},
+       "mapping": {"kind": "uv", "repeat": [1, 1], "rotation_deg": 90},
+       "alpha_mode": "clip"}}}]}]}}
+```
+```json
+{"revision": "7", "changed_units": ["object:sobj_Q9w8E7r6T5y4U3i2O1p0a:content"],
+ "annotated_units": [], "removed_units": [], "reset_required": false}
+```
+存储时补齐缺省值：`mapping.normal_strength = 1`、`alpha_cutoff = 0.5`。石台是 `box@1`，内置基础体都带 UV；如果引用的是没有 UV 的模型，写入照常成功，渲染按三平面投影显示，编辑器和助手看到提示。
+
+图片不可用示例（引用了另一个账号的图片，或者一个视频）：
+```json
+{"error": {"code": "creative_image_unavailable", "message": "引用的图片不可用",
+  "details": {"field": "operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id",
+              "content_revision_id": "ccrv_4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80"}}}
+```
+
 冲突示例（助手已先改过这台摄像机）：
 ```json
 {"error": {"code": "creative_document_conflict", "message": "文档已被修改",
@@ -677,6 +728,8 @@ Content-Type: application/json
 
 ### 兼容与变更
 在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。
+
+修订 v17（C5c1）：`add_objects`、`update_objects` 的 `material_slots` 接受 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`；新增错误 `creative_image_unavailable` 和图片数上限。只增加可选字段，旧客户端不写它们；旧编辑器整体替换槽位时会丢掉贴图，所以前后端同一版本上线。`restore`、`restore_units` 恢复的旧修订如果引用了图片，同样按上面的规则校验；历史修订一直持有这些图片，它们不会被回收，所以通常仍然可用。
 
 修订 v13（C5b）：`add_objects`、`update_objects` 接受 `primitive.faces`（整体替换），改了基础体的拓扑参数而没写 `faces` 时清空分配。旧客户端不写这个字段；它们改拓扑参数时分配被清空，与新编辑器按同一份声明判断的结果相同。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
 
@@ -1437,3 +1490,86 @@ Authorization: Bearer <token>
 
 ### 兼容与变更
 首次定义。内置工具的行为不变。
+
+## 材质存入资产库
+
+### 用途与调用
+- **用途**（修订 v17，C5c1）：把场景里某个物件某个槽位的材质分配复制成材质资产（复制语义，见 I7 与 `data: 材质资产`）。
+- **消费者**：编辑器材质槽菜单「存为材质资产」；后续的助手库整理工具。
+- **调用**：`POST /api/v1/creative/assets/from-scene-material`，`Idempotency-Key` 必填，外层为公共约定（`{operation_id, client_created_at, payload}`，`Idempotency-Key` 等于 `operation_id`）。成功响应复用 `CreativeAssetCreateResult`（`api/openapi.yaml`）。
+- **权限**：场景属于当前账号，账号有创意空间写入权限（同 `/creative/assets/from-scene-model`）。
+- **只读场景**：不改场景，不产生场景修订；只写材质修订、持有关系和资产库。
+
+### 请求
+`payload`：
+
+| 字段 | 类型 | 必传 | 说明 |
+|---|---|---|---|
+| `document_id` | string | 是 | 场景文档 ID |
+| `object_id` | string | 是 | `kind` 为 `primitive` 或 `model_instance` 的对象 |
+| `slot_id` | string | 是 | 物件的槽位 ID，必须在该物件的 `material_slots` 里有值 |
+| `expected_object_rev` | CreativeRevision | 是 | 该对象内容单元 `object:<id>:content` 的当前 `rev`；材质分配在这个单元里，防止存入摄影师没看到的材质 |
+| `thumbnail_upload_id` | string | 是 | 缩略图的暂存上传：声明类型 `image` 的 PNG，与 `commit_model` 的缩略图同一套暂存上传。编辑器用当前槽位分配渲染 256 × 256 的材质球。新建材质时消费；复用已有资产时不消费，按暂存规则过期回收 |
+| `target` | `CreativeUploadAssetTarget` | 是 | 沿用现有结构：`title` 必填（1–200），`description`（≤ 1000 码点）、`group_ids`、`tag_ids`、`new_tags`、`is_favorite` 可选 |
+
+### 成功响应
+- 201：已新建材质修订和资产，`reused = false`；`content_revision_id` 是材质修订。
+- 200：`slot` 完全相同的材质资产已存在且不在回收站，`reused = true`，只追加所选分组和标签；`title`、`description` 是已有资产的值，本次传入的标题、描述和收藏不生效。
+
+两者都随幂等回执重放，语义与 `/creative/assets/from-scene-model` 一致。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 对象不是基础体或模型实例；`target` 字段不合法；缩略图上传不是 PNG 图片 | 修正 |
+| 400 | `creative_material_slot_empty` | 该槽位在 `material_slots` 里没有值（渲染时用的是提示或默认材质，没有可存的分配） | 先给槽位指定材质 |
+| 400 | `creative_image_unavailable` | 槽位引用的某张图片已不可展示；`details.field` 指出贴图（例如 `maps.normal`），`details.content_revision_id` 给出图片 | 提示换图后再存 |
+| 404 | `not_found` | 场景不存在或不属于当前账号；对象不在场景当前快照里；`target` 引用的分组或标签不存在 | 重读 |
+| 409 | `creative_document_conflict` | `expected_object_rev` 与当前不符；`details.conflicts` 为 `[{unit: "object:<id>:content", expected_rev, current_rev}]` | 重读，确认看到的是要存的材质后重试 |
+| 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
+| 409 | `creative_upload_unavailable` | 需要新建材质时，缩略图上传不存在、属于其他账号、已过期、已消费或尚未就绪 | 重新渲染并上传缩略图后重试 |
+| 409 | `idempotency_conflict` 等 | 公共约定 | — |
+
+### 交互规则
+- **原子性**：校验、写材质修订、持有关系和资产在一个事务里，失败则都不生效，缩略图上传不被消费。
+- **幂等**：沿用公共约定。
+- 不适用：分页、异步。
+
+### 调用示例
+```http
+POST /api/v1/creative/assets/from-scene-material
+Authorization: Bearer <token>
+Idempotency-Key: 0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d
+Content-Type: application/json
+```
+```json
+{"operation_id": "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d", "client_created_at": "2026-11-05T10:20:00Z",
+ "payload": {"document_id": "cwdoc_7b1d6c1e-2f0a-4c55-9a0e-3c1f5e2a9b10", "object_id": "sobj_V1StGXR8_Z5jdHi6B-myT",
+             "slot_id": "main", "expected_object_rev": "6", "thumbnail_upload_id": "ccup_6f7a8b9c-0d1e-4f2a-9b3c-5d6e7f8091a2",
+             "target": {"title": "旧石板地面", "description": "三平面投影，2 米一块", "group_ids": ["ccag_2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f"]}}}
+```
+201：
+```json
+{"asset_id": "ccas_7a8b9c0d-1e2f-4a3b-8c4d-6e7f8091a2b3", "revision": "1",
+ "content_revision_id": "ccrv_8b9c0d1e-2f3a-4b4c-9d5e-7f8091a2b3c4", "library_revision": "215",
+ "tag_mapping": {}, "reused": false, "title": "旧石板地面", "description": "三平面投影，2 米一块"}
+```
+200（同一份分配已经存过）：
+```json
+{"asset_id": "ccas_7a8b9c0d-1e2f-4a3b-8c4d-6e7f8091a2b3", "revision": "2",
+ "content_revision_id": "ccrv_8b9c0d1e-2f3a-4b4c-9d5e-7f8091a2b3c4", "library_revision": "216",
+ "tag_mapping": {}, "reused": true, "title": "旧石板地面", "description": "三平面投影，2 米一块"}
+```
+400（槽位还没有分配材质）：
+```json
+{"error": {"code": "creative_material_slot_empty", "message": "这个槽位还没有指定材质",
+           "details": {"object_id": "sobj_V1StGXR8_Z5jdHi6B-myT", "slot_id": "trim"}}}
+```
+409（摄影师看到的是修订 6，之后助手改了这个物件的材质）：
+```json
+{"error": {"code": "creative_document_conflict", "message": "文档已被修改",
+           "details": {"conflicts": [{"unit": "object:sobj_V1StGXR8_Z5jdHi6B-myT:content", "expected_rev": "6", "current_rev": "8"}]}}}
+```
+
+### 兼容与变更
+首次定义。**把材质资产用到槽位**不新增接口：编辑器或助手把资产的 `material.slot` 写进 `update_objects` 的 `material_slots`（`api: 提交场景命令`）。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `material`，是兼容扩展。复用时的 `revision` 是资产行的修订号（追加归类后加 1），与模型资产相同。
