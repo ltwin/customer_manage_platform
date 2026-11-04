@@ -81,7 +81,7 @@ export const imagePlatform = {
   /**
    * An ORM from up to three layers, ambient occlusion, roughness and
    * metalness into red, green and blue, each scaled to width × height; a
-   * missing one is 1. Read as stored (readPixels): a 2D canvas would
+   * missing one is 1. Read as stored (pixelsOf): a 2D canvas would
    * premultiply, losing a layer's colour channels where its alpha is low,
    * as a metalness kept beside a smoothness in alpha is.
    */
@@ -106,73 +106,71 @@ export const imagePlatform = {
   },
 }
 
-let reader: { gl: WebGL2RenderingContext; program: WebGLProgram } | null | undefined
+let reader: WebGL2RenderingContext | null | undefined
 
 /**
- * A picture's pixels scaled to width × height, rows from the top, as stored:
- * drawn by WebGL2 with nothing premultiplied and read back. A page without
- * WebGL2 reads through a 2D canvas, which premultiplies.
+ * A picture's pixels scaled to width × height, rows from the top, as stored.
+ * Read back from a WebGL2 texture, which nothing is drawn with (no shader:
+ * drawing is WebGPU's, creative-scene-shading.test.ts), uploaded with
+ * nothing premultiplied; scaled here as linear filtering would. A page
+ * without WebGL2 reads through a 2D canvas, which premultiplies.
  */
 function pixelsOf(picture: ImageBitmap, width: number, height: number): Uint8Array | Uint8ClampedArray {
-  reader ??= newReader()
-  if (!reader) {
+  reader ??= typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('webgl2')
+  const own = reader ? readBack(reader, picture) : null
+  if (!own) {
     const ctx = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!
     ctx.drawImage(picture, 0, 0, width, height)
     return ctx.getImageData(0, 0, width, height).data
   }
-  const { gl, program } = reader
-  const source = gl.createTexture()
-  const target = gl.createTexture()
+  return picture.width === width && picture.height === height ? own : scaled(own, picture.width, picture.height, width, height)
+}
+
+/** The picture's own pixels, rows from the top: a texture's level 0 read through a framebuffer. */
+function readBack(gl: WebGL2RenderingContext, picture: ImageBitmap): Uint8Array | null {
+  const texture = gl.createTexture()
   const fb = gl.createFramebuffer()
   try {
-    gl.bindTexture(gl.TEXTURE_2D, source)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, picture)
-    // Layers are scaled up to the largest (sizeOf), never down: one level does.
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.bindTexture(gl.TEXTURE_2D, target)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height)
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0)
-    gl.viewport(0, 0, width, height)
-    gl.useProgram(program)
-    gl.uniform2f(gl.getUniformLocation(program, 'size'), width, height)
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, source)
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
-    // The image's top row went to the framebuffer's first, which readPixels gives first.
-    const pixels = new Uint8Array(width * height * 4)
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return null
+    // The image's top row is the texture's first, which readPixels gives first.
+    const pixels = new Uint8Array(picture.width * picture.height * 4)
+    gl.readPixels(0, 0, picture.width, picture.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
     return pixels
   } finally {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.deleteFramebuffer(fb)
-    gl.deleteTexture(source)
-    gl.deleteTexture(target)
+    gl.deleteTexture(texture)
   }
 }
 
-function newReader(): { gl: WebGL2RenderingContext; program: WebGLProgram } | null {
-  const gl = typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('webgl2', { premultipliedAlpha: false, antialias: false, depth: false })
-  if (!gl) return null
-  const shader = (type: GLenum, source: string) => {
-    const s = gl.createShader(type)!
-    gl.shaderSource(s, source)
-    gl.compileShader(s)
-    return s
+/** RGBA pixels w × h scaled to width × height, each sampled at its centre between the four nearest, edges clamped. */
+export function scaled(src: ArrayLike<number>, w: number, h: number, width: number, height: number): Uint8Array {
+  const out = new Uint8Array(width * height * 4)
+  const at = (n: number, size: number, to: number) => {
+    const t = Math.min(Math.max(((n + 0.5) * size) / to - 0.5, 0), size - 1)
+    const i = Math.floor(t)
+    return [i, Math.min(i + 1, size - 1), t - i] as const
   }
-  const program = gl.createProgram()
-  // One triangle over the target; each pixel samples the source at its centre.
-  gl.attachShader(program, shader(gl.VERTEX_SHADER, '#version 300 es\nvoid main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }'))
-  gl.attachShader(program, shader(gl.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; uniform sampler2D source; uniform vec2 size; out vec4 color; void main() { color = texture(source, gl_FragCoord.xy / size); }'))
-  gl.linkProgram(program)
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null
-  return { gl, program }
+  const xs = Array.from({ length: width }, (_, x) => at(x, w, width))
+  for (let y = 0; y < height; y++) {
+    const [y0, y1, fy] = at(y, h, height)
+    for (let x = 0; x < width; x++) {
+      const [x0, x1, fx] = xs[x]
+      for (let c = 0; c < 4; c++) {
+        const top = src[(y0 * w + x0) * 4 + c] * (1 - fx) + src[(y0 * w + x1) * 4 + c] * fx
+        const bottom = src[(y1 * w + x0) * 4 + c] * (1 - fx) + src[(y1 * w + x1) * 4 + c] * fx
+        out[(y * width + x) * 4 + c] = Math.round(top * (1 - fy) + bottom * fy)
+      }
+    }
+  }
+  return out
 }
 
 const part = (r: MapRef | undefined) => (r ? `${r.content_revision_id}.${r.channel ?? 'r'}` : '-')

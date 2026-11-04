@@ -14,6 +14,7 @@ import {
   ormKey,
   releaseTexture,
   resetImages,
+  scaled,
   sceneTextureKeys,
   textureBytes,
   textureKeys,
@@ -339,4 +340,13 @@ test('a traced image that failed is asked for again once the page has loaded it'
   assert.equal(maps.update(['color:ccr_bad']), true)
   assert.equal(maps.layerOf('color:ccr_bad'), 0, 'written once the page has it')
   hold.release()
+})
+
+test('an ORM layer smaller than the others is scaled up as linear filtering samples it: at pixel centres, edges held', () => {
+  // 2×1 → 4×1: the outer pixels hold the edge texels, the inner two lie a quarter and three quarters between.
+  const row = [0, 100, 200, 255, 200, 0, 40, 255]
+  const out = [...scaled(row, 2, 1, 4, 1)]
+  assert.deepEqual(out.filter((_, i) => i % 4 === 0), [0, 50, 150, 200])
+  assert.deepEqual(out.filter((_, i) => i % 4 === 1), [100, 75, 25, 0])
+  assert.deepEqual([...scaled(row, 2, 1, 2, 1)], row, 'the same size: as it was')
 })
