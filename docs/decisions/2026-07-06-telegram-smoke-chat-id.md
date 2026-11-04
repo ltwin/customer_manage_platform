@@ -16,5 +16,5 @@ platform-skeleton 只做一次性 TG bot `sendMessage` 冒烟，用 `getUpdates`
 ## 证据
 
 - 脚本落点：`scripts/telegram-smoke.sh`
-- 审查记录：`.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-review.md` R2-11
-- 冒烟证据：`.codestable/features/2026-07-06-platform-skeleton/evidence/a12-tg-smoke-received.png`
+- 审查记录：`archive/codestable-final:.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-review.md` R2-11
+- 冒烟证据：`archive/codestable-final:.codestable/features/2026-07-06-platform-skeleton/evidence/a12-tg-smoke-received.png`

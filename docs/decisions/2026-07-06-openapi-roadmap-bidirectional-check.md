@@ -19,7 +19,7 @@ platform-skeleton 把 roadmap §4 的 HTTP 契约固化为 `api/openapi.yaml`，
 
 ## 证据
 
-- 契约源：`.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` §4
+- 契约源：`archive/codestable-final:.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` §4
 - 机器契约：`api/openapi.yaml`
 - codegen 目标：`backend/internal/platform/httpapi/api.gen.go`、`frontend/src/api/schema.d.ts`
 - platform-skeleton 特例：`GET /api/v1/me` 是完成信号白名单，验收已提示后续收编进 roadmap §4

@@ -1,5 +1,5 @@
 ---
-id: 005
+id: 009
 title: 拍摄策划结构版本与 append-only 执行事实版本分离
 status: accepted
 date: 2026-08-06

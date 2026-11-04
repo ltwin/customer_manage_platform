@@ -20,7 +20,7 @@
 
 ## 证据
 
-- Design：`.codestable/features/2026-07-11-customer-avatar/customer-avatar-design.md` D4/D7、A8–A11/A24
+- Design：`archive/codestable-final:.codestable/features/2026-07-11-customer-avatar/customer-avatar-design.md` D4/D7、A8–A11/A24
 - 实现：`backend/internal/customer/avatar_application.go`、`avatar_store.go`、`avatarstore/local.go`、`avatar_maintenance.go`
 - 测试：application ABA/same-content repair、DB session loss 迟到 Delete、pre-current burn、HTTP 垂直切片
 - QA/验收：`customer-avatar-qa.md` round 2、`customer-avatar-acceptance.md` passed

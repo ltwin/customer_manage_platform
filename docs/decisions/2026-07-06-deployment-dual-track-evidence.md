@@ -23,5 +23,5 @@ go:embed / SPA fallback 的强证据优先用证据链，而不是只用截图�
 
 - 部署工件：`Dockerfile`、`docker-compose.yml`、`.env.example`
 - go:embed 落点：`backend/internal/platform/webui/`
-- 证据文件：`.codestable/features/2026-07-06-platform-skeleton/evidence/a14-binary-embed-evidence.md`
-- QA 记录：`.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-qa.md` QA-010 到 QA-013
+- 证据文件：`archive/codestable-final:.codestable/features/2026-07-06-platform-skeleton/evidence/a14-binary-embed-evidence.md`
+- QA 记录：`archive/codestable-final:.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-qa.md` QA-010 到 QA-013

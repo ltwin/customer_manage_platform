@@ -17,9 +17,9 @@ scope: future-product
 
 本文是未来产品的初版需求，所有分期均待独立立项与批准，不加入当前 M0–M4 的开发交付。已确认的是 owner 要求探索这个方向并为当前设计保留演进空间；关注语义、商业条款、公共分类运营等下文推荐值均未获实施批准。
 
-- 探索依据：[头脑风暴](../../docs/product/creative-asset-platform/brainstorm.md)，保留备选与未验证假设。
-- 后续创作形态：[画布、节点与 Skill 头脑风暴](../../docs/product/creative-canvas-system/brainstorm.md)，讨论画布作为主体，以及模板、场景、专业方法的未来分享；这些仍是新候选，不扩充本 PRD v0.1 的发布清单。
-- 当前执行候选：[创意空间完整迭代 Epic](../epics/creative-workspace-system.md)，只承接其「面向资产平台的演进约束」。
+- 探索依据：[头脑风暴](../creative-asset-platform/brainstorm.md)，保留备选与未验证假设。
+- 后续创作形态：[画布、节点与 Skill 头脑风暴](../creative-canvas-system/brainstorm.md)，讨论画布作为主体，以及模板、场景、专业方法的未来分享；这些仍是新候选，不扩充本 PRD v0.1 的发布清单。
+- 当前执行候选：创意空间完整迭代 Epic（`archive/codestable-final:.codestable/epics/creative-workspace-system.md`），只承接其「面向资产平台的演进约束」。
 - 长期平台产品定义以本文为准；未来各期 Epic 负责获批范围、子项和验收，执行状态不写回本 PRD。本文不取代现行私有创作契约，也不启用旧 intelligence 路线。
 
 ## 2. 角色与核心场景
@@ -79,7 +79,7 @@ scope: future-product
 
 ## 4. 可见性、获取与使用权限
 
-知识包的检索与 Agent 应用另见[多模态知识库头脑风暴](../../docs/product/creative-canvas-system/brainstorm.md)：方向为图文 RAG 与后续视频片段检索，保留成员来源、版本和定位，模型解释与设定事实分开。向量、OCR、转写和摘要属于派生处理，不因取得包就获得额外用途许可；视频与完整 RAG 的实现范围仍需独立设计，未加入本 PRD 的免费分享首期。
+知识包的检索与 Agent 应用另见[多模态知识库头脑风暴](../creative-canvas-system/brainstorm.md)：方向为图文 RAG 与后续视频片段检索，保留成员来源、版本和定位，模型解释与设定事实分开。向量、OCR、转写和摘要属于派生处理，不因取得包就获得额外用途许可；视频与完整 RAG 的实现范围仍需独立设计，未加入本 PRD 的免费分享首期。
 
 ### 4.1 三层判定
 

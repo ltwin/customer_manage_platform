@@ -20,10 +20,10 @@
 
 ## 证据
 
-- 设计拍板：`.codestable/features/2026-07-08-order-tracking/order-tracking-design.md` D3 / D11 / §2.5 明确“各域 repository 内查外域表 + AccountScope 受控聚合方法，不抽域间 Go 接口”。
+- 设计拍板：`archive/codestable-final:.codestable/features/2026-07-08-order-tracking/order-tracking-design.md` D3 / D11 / §2.5 明确“各域 repository 内查外域表 + AccountScope 受控聚合方法，不抽域间 Go 接口”。
 - 实现落点：
   - `backend/internal/customer/repository.go`：`orderStatsForCustomer` 用 `AccountScope.ScalarAggregate` 计算 customer 侧订单聚合。
   - `backend/internal/package/repository.go`：`countActiveOrderReferences` 用非 cancelled 口径给列表读数；`countOrderReferences` 保持 any-reference 口径给删除 in-use。
   - `backend/internal/platform/store/scope.go`：`ScalarAggregate` 只开放受控聚合能力。
   - `backend/internal/platform/store/scope_test.go`：覆盖 count / sum / max、空集、跨账号、非法 op 与非法列名。
-- 既有边界沉淀：`.codestable/compound/2026-07-06-accountscope-fail-loud.md` 已记录 AccountScope 必须 fail-loud；本条是它在跨域读模型里的具体落点。
+- 既有边界沉淀：`docs/decisions/2026-07-06-accountscope-fail-loud.md` 已记录 AccountScope 必须 fail-loud；本条是它在跨域读模型里的具体落点。

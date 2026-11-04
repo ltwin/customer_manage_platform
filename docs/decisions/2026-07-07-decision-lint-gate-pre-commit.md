@@ -43,7 +43,9 @@ tags: [lint, pre-commit, git-hooks, quality-gate, ci]
 
 ## 相关文档
 
-- `.codestable/compound/2026-07-06-decision-go-uber-style-guide.md`
-- `.codestable/compound/2026-07-07-decision-frontend-toolchain-first-standard.md`
-- `.codestable/attention.md` —— 编码规范入口（模型无关）
+- `docs/decisions/2026-07-06-decision-go-uber-style-guide.md`
+- `docs/decisions/2026-07-07-decision-frontend-toolchain-first-standard.md`
+- `archive/codestable-final:.codestable/attention.md` —— 编码规范入口（模型无关）
 - `CLAUDE.md` —— 硬规则与 Git 约定
+
+> 已被 GUAN-3 修订：pre-commit 按暂存路径分派 lint，见 docs/design/GUAN-3.md。

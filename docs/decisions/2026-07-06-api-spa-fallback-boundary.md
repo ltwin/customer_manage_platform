@@ -18,4 +18,4 @@ platform-skeleton QA 发现 Gin 默认行为会让部分 API 边缘路径绕开�
 - 修复落点：`backend/internal/platform/httpapi/router.go`
 - 回归测试：`backend/internal/platform/httpapi/router_test.go`
 - 验证命令：`go test -count=1 ./internal/platform/httpapi`
-- 验收记录：`.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-acceptance.md` 的 REV-007 缺口修复记录
+- 验收记录：`archive/codestable-final:.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-acceptance.md` 的 REV-007 缺口修复记录

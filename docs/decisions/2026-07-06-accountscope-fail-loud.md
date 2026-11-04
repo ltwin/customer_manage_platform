@@ -31,8 +31,8 @@ platform-skeleton 为 ADR-001 的账号维度数据隔离落了 `AccountScope`�
 
 - 代码落点：`backend/internal/platform/store/scope.go`
 - 测试落点：`backend/internal/platform/store/scope_test.go`、`scope_internal_test.go`
-- 审查记录：`.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-review.md` REV-006、R2-05
-- ADR 背景：`.codestable/requirements/adrs/001-account-scoped-data-model.md`
-- Supplemental owner confirmation：`.codestable/roadmap/creative-shoot-planning/approval-report.md#round-8-share-contract`，confirmation id `d83f1556-b56e-440b-b1bd-a45526c21f70`
-- Core design review：`.codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-design-review.md` round 6，`passed`
-- Share design review：`.codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-design-review.md` round 5，`passed`
+- 审查记录：`archive/codestable-final:.codestable/features/2026-07-06-platform-skeleton/platform-skeleton-review.md` REV-006、R2-05
+- ADR 背景：`docs/adr/001-account-scoped-data-model.md`
+- Supplemental owner confirmation：`archive/codestable-final:.codestable/roadmap/creative-shoot-planning/approval-report.md#round-8-share-contract`，confirmation id `d83f1556-b56e-440b-b1bd-a45526c21f70`
+- Core design review：`archive/codestable-final:.codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-design-review.md` round 6，`passed`
+- Share design review：`archive/codestable-final:.codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-design-review.md` round 5，`passed`

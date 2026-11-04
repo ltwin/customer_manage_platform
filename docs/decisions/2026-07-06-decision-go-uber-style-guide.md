@@ -41,6 +41,6 @@ tags: [go, style-guide, code-review, checklist, uber]
 ## 相关文档
 
 - `docs/go-style-checklist.md` —— 配套 review checklist
-- `.codestable/requirements/adrs/003-monolith-first-gin-openapi.md` —— Gin + 轻量 DDD 分层约束
+- `docs/adr/003-monolith-first-gin-openapi.md` —— Gin + 轻量 DDD 分层约束
 - `CLAUDE.md` —— 硬规则与文档索引
 - <https://github.com/xxjwxc/uber_go_guide_cn>（中文参考）/ <https://github.com/uber-go/guide>（英文原版）

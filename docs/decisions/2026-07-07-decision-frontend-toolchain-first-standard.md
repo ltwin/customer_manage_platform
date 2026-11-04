@@ -47,6 +47,6 @@ tags: [react, typescript, eslint, prettier, style-guide, code-review, checklist]
 ## 相关文档
 
 - `docs/frontend-style-checklist.md` —— 配套 review checklist
-- `.codestable/compound/2026-07-06-decision-go-uber-style-guide.md` —— 后端对称决策
-- `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` §5 条目 1 —— platform-skeleton（lint 基线归属）
+- `docs/decisions/2026-07-06-decision-go-uber-style-guide.md` —— 后端对称决策
+- `archive/codestable-final:.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` §5 条目 1 —— platform-skeleton（lint 基线归属）
 - `CLAUDE.md` —— 硬规则与文档索引

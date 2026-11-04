@@ -9,7 +9,7 @@ date: 2026-07-05
 
 ## Context
 
-项目定位在 2026-07-05 脑暴中敲定（见 `.codestable/brainstorms/photographer-private-crm/brainstorm.md`）：自用起步，但保留将来给同行摄影师使用的产品化可能。
+项目定位在 2026-07-05 脑暴中敲定（见 `archive/codestable-final:.codestable/brainstorms/photographer-private-crm/brainstorm.md`）：自用起步，但保留将来给同行摄影师使用的产品化可能。
 
 矛盾在于：首版只有 owner 一个人用，最省事的做法是纯单用户 schema；但如果将来产品化，"数据归属于哪个账号"这一维度是后补代价最高的一类改动——涉及全部业务表加列迁移、所有查询改写加过滤、权限层从无到有重构，且极易在遗漏处造成跨账号串数据。
 

@@ -7,7 +7,7 @@ last_reviewed: 2026-08-02
 implemented_by: []
 tags: [account, profile, avatar, security, settings, navigation]
 related_requirements: [self-service-account-system]
-authorized_by: .codestable/roadmap/account-center/approval-report.md#account-center-requirement
+authorized_by: archive/codestable-final:.codestable/roadmap/account-center/approval-report.md#account-center-requirement
 ---
 
 # 摄影师用户中心与账号资料
