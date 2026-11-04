@@ -1,6 +1,6 @@
 {
   "uid": "2232e9d1-51d9-4154-9aeb-1e7e6e18af1c",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-texture-library",
   "kind": "feature",
   "assurance": "governed",
@@ -49,9 +49,9 @@
       "api:提交场景命令"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-03T04:18:27.342Z",
-  "updatedAt": "2026-11-04T13:19:25.368Z",
+  "updatedAt": "2026-11-04T13:20:31.203Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -72,8 +72,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "6365ba575feae8643676c0962dec25c5e5d98be8",
+    "at": "2026-11-04T13:20:30.216Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a60de44c0eca1f6877ee76f0a4e90d0008f77845d016f553b7048701bf3e0c54"
+    },
+    "preExisting": [
+      ".lti/snapshots/a60de44c0eca1f6877ee76f0a4e90d0008f77845d016f553b7048701bf3e0c54.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
