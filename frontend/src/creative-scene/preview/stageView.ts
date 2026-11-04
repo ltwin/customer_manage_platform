@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { MathUtils, Vector3 } from 'three'
+import { Camera, MathUtils, Vector3 } from 'three'
 import type { components } from '../../api/schema'
 import { loadSlotImages, slotTextureKeys, type ImageHold } from '../materials/images.ts'
 
@@ -20,7 +20,12 @@ export function framing(manifest: Pick<Manifest, 'bounds'>) {
   // Looser than the thumbnail's 1.05: the stage has room for the buttons below.
   const distance = (radius / Math.sin(MathUtils.degToRad(fov / 2))) * 1.35
   const position = center.clone().add(new Vector3(0.9, 0.7, 1.4).normalize().multiplyScalar(distance))
-  return { position: position.toArray(), target: center.toArray(), near: distance / 100, far: distance * 20 }
+  // How the camera is turned there: the room's light is set as it falls from this view (stage.tsx FrameStep).
+  // A camera, not a plain object: lookAt turns a camera's -Z to the target.
+  const eye = new Camera()
+  eye.position.copy(position)
+  eye.lookAt(center)
+  return { position: position.toArray(), target: center.toArray(), near: distance / 100, far: distance * 20, turn: eye.quaternion.clone() }
 }
 
 /**

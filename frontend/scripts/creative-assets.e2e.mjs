@@ -1698,6 +1698,31 @@ await check('C5c1-material-asset', async () => {
   const ball = await stage.screenshot()
   assert((await red(ball)) > 0.01, 'the ball is in the asset\'s paint')
   writeFileSync(`${output}/material-preview.png`, ball)
+  // The light stays with the viewer: a ball of one paint looks the same from wherever it is turned.
+  const box = await stage.boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 200, box.y + box.height / 2 - 60, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForTimeout(500)
+  const turned = await stage.screenshot()
+  writeFileSync(`${output}/material-preview-turned.png`, turned)
+  const moved = await page.evaluate(async ([a, b]) => {
+    const load = (src) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const [x, y] = await Promise.all([load(a), load(b)])
+    const c = document.createElement('canvas')
+    c.width = x.width
+    c.height = x.height
+    const g = c.getContext('2d')
+    g.drawImage(x, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    g.drawImage(y, 0, 0)
+    const q = g.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let k = 0; k < p.length; k += 4) if (Math.abs(p[k] - q[k]) + Math.abs(p[k + 1] - q[k + 1]) + Math.abs(p[k + 2] - q[k + 2]) > 24) n++
+    return n / (p.length / 4)
+  }, [`data:image/png;base64,${ball.toString('base64')}`, `data:image/png;base64,${turned.toString('base64')}`])
+  assert(moved < 0.01, `the highlights stay where they were: ${(moved * 100).toFixed(2)}% of the stage changed`)
 })
 
 await context?.close()

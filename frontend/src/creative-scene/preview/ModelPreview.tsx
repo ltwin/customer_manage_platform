@@ -77,7 +77,7 @@ export default function ModelPreview({ revision, manifest, materials, faces, tit
         )}
         {drawn && <Meshes parts={parts} manifest={manifest} materials={materials} look={look} />}
         <Controls controls={controls} target={view.target} />
-        <FrameStep />
+        <FrameStep opening={view.turn} />
       </Canvas>
       {!drawn && thumbnail && <img className="v-model-still" src={thumbnail} alt={title} />}
       <div className="v-model-looks" role="group" aria-label="显示方式">

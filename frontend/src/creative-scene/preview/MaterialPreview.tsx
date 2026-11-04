@@ -41,7 +41,7 @@ export default function MaterialPreview({ slot, title, thumbnail }: { slot: Mate
         <RoomLighting />
         {drawn && drawnGeometries(ballGeometry(), material).map((g, i) => <SlotMesh key={i} geometry={g} material={material} slot="main" doubleSided={false} castShadow={false} />)}
         <Controls controls={controls} target={view.target} />
-        <FrameStep />
+        <FrameStep opening={view.turn} />
       </Canvas>
       {!drawn && thumbnail && <img className="v-model-still" src={thumbnail} alt={title} />}
       <p className="v-model-note">拖到场景里物件的槽位上使用</p>
