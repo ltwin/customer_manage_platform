@@ -57,6 +57,11 @@ export function assignmentOf(r: ResolvedSlot): MaterialSlot | null {
   const m = r.material
   if (m.kind === 'unknown') return null
   if (m.kind === 'pattern') return { preset: m.id, params: { ...m.params } }
+  if (m.preset) {
+    // A built-in textured material: its textures are the catalog's, not the slot's.
+    const { maps: _maps, ...rest } = structuredClone(m.texturing ?? {})
+    return { preset: m.preset, params: { ...m.params }, ...rest }
+  }
   return { preset: principledID, params: { ...m.params }, ...structuredClone(m.texturing ?? {}) }
 }
 
