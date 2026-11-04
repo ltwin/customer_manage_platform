@@ -1,12 +1,12 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 7,
+  "revision": 8,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 17,
+    "version": 18,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -48,12 +48,14 @@
       "api:提交场景命令",
       "api:材质存入资产库",
       "patterns:场景着色写法",
-      "architecture:场景模块"
+      "architecture:场景模块",
+      "patterns:几何模块契约",
+      "data:模型内容"
     ]
   },
   "state": "in-progress",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-03T11:06:11.945Z",
+  "updatedAt": "2026-11-04T03:07:41.714Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -62,18 +64,7 @@
       "broad-impact"
     ]
   },
-  "approvals": {
-    "proposal": {
-      "by": "samson",
-      "at": "2026-11-03T11:03:54.699Z",
-      "contentHash": "10a17035a3f72d21"
-    },
-    "design": {
-      "by": "samson",
-      "at": "2026-11-03T11:03:54.699Z",
-      "contentHash": "214f026a77915e7f"
-    }
-  },
+  "approvals": {},
   "approvalHistory": [
     {
       "by": "samson",
@@ -91,6 +82,18 @@
       "by": "samson",
       "at": "2026-11-03T09:13:38.197Z",
       "contentHash": "d2c73ca73ca412cb",
+      "role": "design"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-03T11:03:54.699Z",
+      "contentHash": "10a17035a3f72d21",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-03T11:03:54.699Z",
+      "contentHash": "214f026a77915e7f",
       "role": "design"
     }
   ],

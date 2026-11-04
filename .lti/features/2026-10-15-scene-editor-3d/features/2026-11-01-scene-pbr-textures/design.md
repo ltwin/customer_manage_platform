@@ -145,6 +145,7 @@ creativedocument.persist ─▶ 新修订 + creative_document_content_refs
   - 改为在 `maps.ts` 里按变换后的坐标 `uv' = rotate(uv) × repeat` 求切线框架：`T`、`B` 由 `dFdx/dFdy(positionView)` 和 `dFdx/dFdy(uv')` 求出（同 three 的无切线做法，只是换成 `uv'`），法线 = `normalize(TBN × (n.xy × strength, n.z))`。几何体自带的 `tangent` 属性不用，光栅与命中点因此是同一个约定。
   - 命中点用三角形三个顶点的 `uv'` 求同样的 `T`、`B`（见世界空间层）。
   - 几何体没有 `TEXCOORD_0` 时按三平面投影渲染。编辑器的材质面板和助手的 `read_scene` 都会提示「这个模型没有 UV，按三平面显示」。
+  - 助手的依据是 manifest 的 `uv`（Epic 修订 v18）：宿主 `sandbox/inspect.ts` 与服务端 `creativeglb` 按同一算法算出（每个遍历到的 primitive 都有 `TEXCOORD_0` 才为 true），提交时比对。`read_scene` 的模型视图带 `uv`（旧模型没有这个字段时省略），模型实例里选了 `uv` 映射、而模型 `uv = false` 的槽位列在 `uv_fallback_slots`；`write_model` 的回报同样带 `uv`。编辑器按加载出的几何体判断，不依赖这个字段，所以旧模型也能提示。
 - 透明方式（队列、深度写入等由「材质渲染策略」决定）：
   - `clip`：`opacityNode = opacity × a`，`alphaTestNode = alpha_cutoff`；留下的部分按不透明绘制。
   - `blend`：`opacityNode = opacity × a`，`transparent = true`，与现有半透明材质相同（不参与 AO）。
@@ -414,6 +415,8 @@ lights（文档顺序） + sky.sun
 | `backend/internal/creativescene/view.go` | 修改 | 读取场景时返回 `images` |
 | `backend/internal/creativescene/materials.go:checkMaterial`、`resolveSlots` | 修改 | 助手写入时校验 `maps` 与 `mapping` 的键（合并更新的槽位严格解码，未知键不会在整体重写时被丢掉） |
 | `backend/internal/creativescene/agent.go` | 修改 | `read_scene` 带贴图、映射、无 UV 提示和灯的 `shadow` 状态；`AgentEditInTx` 写入前经 `EditInput.ReadableImage` 确认新出现的图片可读 |
+| `backend/internal/creativeglb/glb.go:manifest`、`Matches` | 修改（修订 v18） | manifest 加 `uv`；比对时 `uv` 精确相等，暂存形态没有 `uv` 时不比对 |
+| `frontend/src/creative-scene/sandbox/inspect.ts:manifestOf`、`matches` | 修改（修订 v18） | 宿主按同一算法算 `uv` 并比对 |
 | `backend/internal/creativescene/shadows.go` | 新增（实施时拆出） | `shadowStates`：按「表面阴影上限」的顺序给每盏灯标 `on`/`off`/`over_budget`，与前端 `selectShadowCasters` 同一规则 |
 | `backend/internal/creativescene/library.go` | 修改 | `SaveMaterialToLibrary`；模型库副本写持有关系 |
 | `backend/internal/creativecontent/content.go`、`model_facts.go` | 修改 | `Payload.Material`、`validate`、`WriteMaterialAndRetain`、持有关系写入、材质简介；助手读取用的 `MaterialFacts` 与贴图图片尺寸 `TextureImagesInTx` |
