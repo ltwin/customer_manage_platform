@@ -12,9 +12,13 @@ import type { Segment } from './build.worker.ts'
  * parameters, the segment's layout, the normal encoding, or how
  * models/merge.ts groups a model's parts (the n in model:<revision>#n).
  * 2: a root a group only for a mesh drawn a material a group, and each
- * root's group with it (S1 design A13).
+ * root's group with it (S1 design A13). 3: the colours become the extras,
+ * with the UVs, and a proxy of a geometry with UVs keeps them (C5c1).
  */
-export const BUILDER_VERSION = 2
+export const BUILDER_VERSION = 3
+/** Words a vertex in Segment.extras (build.worker.ts): colour, u, v. */
+export const EXTRA_WORDS = 3
+
 /** The build's parameters, as the key records them: SAH, leaves of 10, depth 40 (the library's defaults). */
 export const BVH_PARAMS = 'sah-10-40'
 /**
@@ -64,7 +68,7 @@ export function evictions(entries: readonly Entry[], bytes: number, cap: number,
   return drop
 }
 
-export const segmentBytes = (s: Segment) => s.nodes.byteLength + s.index.byteLength + s.vertices.byteLength + (s.colors?.byteLength ?? 0)
+export const segmentBytes = (s: Segment) => s.nodes.byteLength + s.index.byteLength + s.vertices.byteLength + (s.extras?.byteLength ?? 0)
 
 /** What a write needs to know first, read while the build runs. */
 export type Room = { entries: Entry[]; free: number }

@@ -5,6 +5,7 @@ import { patternFns, type PatternInput, type PatternOut, type TSLNode } from '..
 import { preExposure } from '../../world/exposure.ts'
 import { gpuTestHooks } from '../gpu.ts'
 import { probeIrradiance, type ProbeNodes } from '../probes/lookup.ts'
+import { EXTRA_WORDS } from './cache.ts'
 import type { TraceLayer } from './layer.ts'
 import { ROW as NORMAL_ROW, STEPS } from './normals.ts'
 import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, presets, type TraceTables } from './tables.ts'
@@ -119,7 +120,7 @@ function decodeNormal(w: TSLNode): TSLNode {
   return normalize(vec3(x.add(select(x.greaterThanEqual(0), t.negate(), t)), y.add(select(y.greaterThanEqual(0), t.negate(), t)), z))
 }
 
-/** A vertex's colour, RGBA8 sRGB in a u32 (build.worker.ts), linear. */
+/** A vertex's colour, RGBA8 sRGB in a u32 (build.worker.ts Segment.extras), linear. */
 function vertexColor(c: TSLNode): TSLNode {
   const channel = (k: number) => float(c.shiftRight(uint(8 * k)).bitAnd(uint(255))).div(255)
   return sRGBTransferEOTF(vec3(channel(0), channel(1), channel(2)))
@@ -157,7 +158,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
   // three's LTC tables for the area lights' specular, the half-float ones: filterable on every device.
   const ltc = ltcTables()
   const { transforms, attributes } = layer.stores
-  const colors = layer.colorsNode
+  const extras = layer.extrasNode
   const header = (k: number) => table.element(uint(k))
   // The environment the scene lights with: made once there is one, its texture kept up to date (update).
   let shown: Texture | null = scene.environment
@@ -469,7 +470,8 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     }
     const s = surfaceAt(row, toPattern(P, 1), normalObject.div(scale), max(length(abs(dpx).add(abs(dpy))), 1e-6), dpx, dpy)
     If(row(0).z.greaterThan(0.5), () => {
-      const c = (k: TSLNode) => vertexColor(colors.element(k))
+      // The vertex number as u32 first: TSL types a struct's index as float, and would multiply in floats.
+      const c = (k: TSLNode) => vertexColor(extras.element(k.toUint().mul(uint(EXTRA_WORDS))))
       s.albedo.mulAssign(c(idx.x).mul(b.x).add(c(idx.y).mul(b.y)).add(c(idx.z).mul(b.z)))
     })
     return { P, n, s, lifted, mi }

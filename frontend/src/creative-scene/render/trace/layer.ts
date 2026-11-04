@@ -6,6 +6,7 @@ import * as bvhGPU from 'three-mesh-bvh/webgpu'
 import { ClusteredBVH } from 'three-mesh-bvh/src/webgpu/ClusteredBVH.js'
 import { appendBVHData, getMaxNodeDepth } from 'three-mesh-bvh/src/webgpu/utils/packBVHBufferUtils.js'
 import type { Segment } from './build.worker.ts'
+import { EXTRA_WORDS } from './cache.ts'
 import { SPARE, type LayerSize } from './capacity.ts'
 import type { TSLNode } from '../../materials/patterns.ts'
 
@@ -120,7 +121,8 @@ export type Placed = {
   /** Each root's group, the slot it is drawn with (build.worker.ts rootGroups). */
   groups: number[]
   depth: number
-  colored: boolean
+  /** Whether it has extras (Segment.extras). */
+  extra: boolean
 }
 
 /** An instance in the top level: where it is, which segment it draws, and the material row of each of its roots. */
@@ -156,18 +158,18 @@ export class TraceLayer extends BVHComputeData {
   private index: Attribute
   private vertices: Attribute
   private transforms: Attribute
-  private colors: Attribute
+  private extras: Attribute
   /** The buffers' bytes as allocated, kept apart from the arrays: an export's layer drops them (dropArrays). */
   private allocated = 0
-  /** The vertices the colour buffer has room for: none till a coloured segment lays the buffers out. */
-  private colorsFor = 0
+  /** The vertices the extras' buffer has room for: none till a segment with extras lays the buffers out. */
+  private extrasFor = 0
   /** The CPU holds only the top level's nodes and the transforms (dropArrays). */
   dropped = false
   private readonly struct: StructTypeNode
   /** The library's four buffers as storage nodes: the traversal reads them, and a hit its transform slot and vertices (hit.ts). */
   readonly stores: Record<'nodes' | 'transforms' | 'index' | 'attributes', StorageNode>
-  /** The vertex colours' buffer (D5): a placeholder until a coloured segment comes. */
-  readonly colorsNode: StorageNode
+  /** The vertices' extras (Segment.extras: colour, u, v), EXTRA_WORDS a vertex: a placeholder until a segment with extras comes. */
+  readonly extrasNode: StorageNode
   depth = { tlas: 0, blas: 0, traversal: 0 }
   /** The times the buffers were laid out again (the e2e's statistics, the unit tests). */
   layouts = 0
@@ -191,7 +193,7 @@ export class TraceLayer extends BVHComputeData {
     this.index = this.attribute(MIN_ELEMENTS, 1, 'index')
     this.vertices = this.attribute(MIN_ELEMENTS * this.struct.getLength(), this.struct.getLength(), 'vertices')
     this.transforms = this.attribute(MIN_ELEMENTS * this.transformWords, 1, 'transforms')
-    this.colors = this.attribute(MIN_ELEMENTS, 1, 'colors')
+    this.extras = this.attribute(MIN_ELEMENTS, 1, 'extras')
     // Held here: the library's storage is proxies, which take a node but not a change to one.
     this.stores = {
       nodes: store(this.nodes, bvhNodeStruct).toReadOnly().setName('bvh_nodes'),
@@ -202,13 +204,13 @@ export class TraceLayer extends BVHComputeData {
     // The names and types upstream's update() gives them: the traversal's proxies resolve to these.
     Object.assign(this.storage, this.stores)
     ;(this.structs as unknown as Record<string, unknown>).attributes = this.struct
-    this.colorsNode = store(this.colors, 'uint').toReadOnly().setName(`${name}_colors`)
+    this.extrasNode = store(this.extras, 'uint').toReadOnly().setName(`${name}_extras`)
     this.allocated = this.arrayBytes()
     this.writeEmptyTop()
   }
 
   private arrayBytes(): number {
-    return [this.nodes, this.index, this.vertices, this.transforms, this.colors].reduce((n, a) => n + (a.array as Uint32Array).byteLength, 0)
+    return [this.nodes, this.index, this.vertices, this.transforms, this.extras].reduce((n, a) => n + (a.array as Uint32Array).byteLength, 0)
   }
 
   private get transformWords(): number {
@@ -224,17 +226,17 @@ export class TraceLayer extends BVHComputeData {
 
   /** The buffers as they are on the CPU (the e2e's statistics, the unit tests' traversal). */
   get arrays() {
-    return { nodes: this.nodes.array as Uint32Array, index: this.index.array as Uint32Array, vertices: this.vertices.array as Uint32Array, transforms: this.transforms.array as Uint32Array, colors: this.colors.array as Uint32Array }
+    return { nodes: this.nodes.array as Uint32Array, index: this.index.array as Uint32Array, vertices: this.vertices.array as Uint32Array, transforms: this.transforms.array as Uint32Array, extras: this.extras.array as Uint32Array }
   }
 
   /** The bytes of each buffer at a capacity: what the device must bind. */
-  private bytesAt(c: Capacity, colored: boolean) {
+  private bytesAt(c: Capacity, extra: boolean) {
     return {
       nodes: (c.tlasNodes + c.nodes) * NODE_WORDS * 4,
       index: c.indices * 4,
       vertices: c.vertices * this.struct.getLength() * 4,
       transforms: c.transforms * this.transformWords * 4,
-      colors: colored ? c.vertices * 4 : 0,
+      extras: extra ? c.vertices * EXTRA_WORDS * 4 : 0,
     }
   }
 
@@ -248,16 +250,16 @@ export class TraceLayer extends BVHComputeData {
     let nodes = 0
     let indices = 0
     let vertices = 0
-    let colored = false
+    let extra = false
     for (const p of this.placed.values()) {
       nodes += p.nodes.count
       indices += p.index.count
       vertices += p.vertices.count
-      colored ||= p.colored
+      extra ||= p.extra
     }
     const leaves = this.standIns.reduce((n, s) => n + s.rows.length, 0)
-    const b = this.bytesAt({ tlasNodes: Math.max(1, 2 * leaves - 1), nodes, indices, vertices, transforms: leaves }, colored)
-    return { bytes: b.nodes + b.index + b.vertices + b.transforms + b.colors, largest: Math.max(b.nodes, b.index, b.vertices, b.transforms, b.colors), depth: this.depth.traversal }
+    const b = this.bytesAt({ tlasNodes: Math.max(1, 2 * leaves - 1), nodes, indices, vertices, transforms: leaves }, extra)
+    return { bytes: b.nodes + b.index + b.vertices + b.transforms + b.extras, largest: Math.max(b.nodes, b.index, b.vertices, b.transforms, b.extras), depth: this.depth.traversal }
   }
 
   /** Bytes queued for upload since the last take, written on the next draw. */
@@ -279,9 +281,9 @@ export class TraceLayer extends BVHComputeData {
    * lies (the geometries' trees moved along if the top level's region grows).
    * Throws CapacityError when a buffer would pass the device's limit.
    */
-  private relayout(next: Capacity, colored: boolean) {
+  private relayout(next: Capacity, extra: boolean) {
     if (this.dropped) throw new ArraysDropped()
-    for (const [buffer, bytes] of Object.entries(this.bytesAt(next, colored))) if (bytes > this.maxBinding) throw new CapacityError(buffer, bytes, this.maxBinding)
+    for (const [buffer, bytes] of Object.entries(this.bytesAt(next, extra))) if (bytes > this.maxBinding) throw new CapacityError(buffer, bytes, this.maxBinding)
     const shift = next.tlasNodes - this.capacity.tlasNodes
     const grow = (old: Attribute, elements: number, itemSize: number, copy: (from: Uint32Array, to: Uint32Array) => void) => {
       const a = this.attribute(elements, itemSize, old.name.slice(this.name.length + 1))
@@ -297,9 +299,9 @@ export class TraceLayer extends BVHComputeData {
     const words = this.struct.getLength()
     this.vertices = grow(this.vertices, next.vertices * words, words, (from, to) => to.set(from.subarray(0, Math.min(from.length, to.length))))
     this.transforms = grow(this.transforms, next.transforms * this.transformWords, 1, () => {})
-    if (colored) {
-      this.colors = grow(this.colors, next.vertices, 1, (from, to) => to.set(from.subarray(0, Math.min(from.length, to.length))))
-      this.colorsFor = next.vertices
+    if (extra) {
+      this.extras = grow(this.extras, next.vertices * EXTRA_WORDS, 1, (from, to) => to.set(from.subarray(0, Math.min(from.length, to.length))))
+      this.extrasFor = next.vertices
     }
     this.allocated = this.arrayBytes()
     this.layouts++
@@ -307,7 +309,7 @@ export class TraceLayer extends BVHComputeData {
     this.stores.index.value = this.index
     this.stores.attributes.value = this.vertices
     this.stores.transforms.value = this.transforms
-    this.colorsNode.value = this.colors
+    this.extrasNode.value = this.extras
     if (shift !== 0) for (const p of this.placed.values()) p.rootBases = p.rootBases.map((b) => b + shift)
     this.capacity = next
     this.space.nodes.capacity = next.nodes
@@ -319,9 +321,9 @@ export class TraceLayer extends BVHComputeData {
   }
 
   /** Room for count more of each, with SPARE to spare over what is in use. */
-  private reserve(more: { nodes: number; indices: number; vertices: number }, leaves: number, coloredSegment: boolean) {
+  private reserve(more: { nodes: number; indices: number; vertices: number }, leaves: number, extraSegment: boolean) {
     const c = this.capacity
-    const colored = coloredSegment || [...this.placed.values()].some((p) => p.colored)
+    const extra = extraSegment || [...this.placed.values()].some((p) => p.extra)
     const s = this.space
     const fits = (sp: Space, n: number) => sp.free.some((r) => r.count >= n) || sp.tail + n <= sp.capacity
     const room = (used: number, n: number, now: number) => Math.max(now, Math.ceil((used + n) * SPARE) + 64)
@@ -330,9 +332,9 @@ export class TraceLayer extends BVHComputeData {
     const needVertices = !fits(s.vertices, more.vertices)
     const tlas = Math.max(MIN_ELEMENTS, 2 * leaves - 1)
     const needTop = tlas > c.tlasNodes || leaves > c.transforms
-    const needColors = colored && this.colorsFor < c.vertices
-    if (!needNodes && !needIndex && !needVertices && !needTop && !needColors) return
-    // The first coloured segment lays out again too, for the colour buffer at the vertices' capacity (rare).
+    const needExtras = extra && this.extrasFor < c.vertices
+    if (!needNodes && !needIndex && !needVertices && !needTop && !needExtras) return
+    // The first segment with extras lays out again too, for their buffer at the vertices' capacity (rare).
     this.relayout(
       {
         tlasNodes: needTop ? room(0, tlas, c.tlasNodes) : c.tlasNodes,
@@ -341,7 +343,7 @@ export class TraceLayer extends BVHComputeData {
         indices: needIndex ? room(s.index.tail, more.indices, c.indices) : c.indices,
         vertices: needVertices ? room(s.vertices.tail, more.vertices, c.vertices) : c.vertices,
       },
-      colored,
+      extra,
     )
   }
 
@@ -354,14 +356,14 @@ export class TraceLayer extends BVHComputeData {
     let nodes = 0
     let indices = 0
     let vertices = 0
-    let colored = false
+    let extra = false
     for (const s of segments) {
       nodes += s.nodes.length / NODE_WORDS
       indices += s.index.length
       vertices += s.vertices.length / 4
-      colored ||= s.colors !== null
+      extra ||= s.extras !== null
     }
-    this.reserve({ nodes, indices, vertices }, leaves, colored)
+    this.reserve({ nodes, indices, vertices }, leaves, extra)
   }
 
   /**
@@ -373,7 +375,7 @@ export class TraceLayer extends BVHComputeData {
     if (this.placed.has(key)) return
     if (this.dropped) throw new ArraysDropped()
     const vertices = s.vertices.length / 4
-    this.reserve({ nodes: s.nodes.length / NODE_WORDS, indices: s.index.length, vertices }, leaves, s.colors !== null)
+    this.reserve({ nodes: s.nodes.length / NODE_WORDS, indices: s.index.length, vertices }, leaves, s.extras !== null)
     const nodeStart = this.space.nodes.take(s.nodes.length / NODE_WORDS)!
     const indexStart = this.space.index.take(s.index.length)!
     const vertexStart = this.space.vertices.take(vertices)!
@@ -387,7 +389,7 @@ export class TraceLayer extends BVHComputeData {
     for (let i = 0; i < s.index.length; i++) index[indexStart + i] = s.index[i] + vertexStart
     const words = this.struct.getLength()
     new Float32Array((this.vertices.array as Uint32Array).buffer).set(s.vertices, vertexStart * words)
-    if (s.colors) (this.colors.array as Uint32Array).set(s.colors, vertexStart)
+    if (s.extras) (this.extras.array as Uint32Array).set(s.extras, vertexStart * EXTRA_WORDS)
     const rootBases: number[] = []
     const bounds: ArrayBuffer[] = []
     let base = 0
@@ -396,11 +398,11 @@ export class TraceLayer extends BVHComputeData {
       bounds.push(s.nodes.slice(base * NODE_WORDS, (base + 1) * NODE_WORDS).buffer)
       base += n
     }
-    this.placed.set(key, { nodes: { start: nodeStart, count: s.nodes.length / NODE_WORDS }, index: { start: indexStart, count: s.index.length }, vertices: { start: vertexStart, count: vertices }, rootBases, bounds, groups: s.rootGroups, depth: s.depth, colored: s.colors !== null })
+    this.placed.set(key, { nodes: { start: nodeStart, count: s.nodes.length / NODE_WORDS }, index: { start: indexStart, count: s.index.length }, vertices: { start: vertexStart, count: vertices }, rootBases, bounds, groups: s.rootGroups, depth: s.depth, extra: s.extras !== null })
     this.queue(this.nodes, at * NODE_WORDS, s.nodes.length)
     this.queue(this.index, indexStart, s.index.length)
     this.queue(this.vertices, vertexStart * words, vertices * words)
-    if (s.colors) this.queue(this.colors, vertexStart, vertices)
+    if (s.extras) this.queue(this.extras, vertexStart * EXTRA_WORDS, vertices * EXTRA_WORDS)
   }
 
   /** A segment no instance draws: its ranges go back to be used again. */
@@ -433,8 +435,8 @@ export class TraceLayer extends BVHComputeData {
     const n16 = new Uint16Array(n32.buffer)
     const index = this.index.array as Uint32Array
     const vertices = this.vertices.array as Uint32Array
-    const colors = this.colors.array as Uint32Array
-    const colored = [...this.placed.values()].some((p) => p.colored)
+    const extras = this.extras.array as Uint32Array
+    const extra = [...this.placed.values()].some((p) => p.extra)
     // Each buffer packed in the order its ranges lie: a range only ever moves down.
     const pack = (range: 'nodes' | 'index' | 'vertices', move: (from: number, to: number, count: number) => void) => {
       const moved = new Map<Placed, number>()
@@ -452,7 +454,7 @@ export class TraceLayer extends BVHComputeData {
     const indices = pack('index', (from, to, count) => index.copyWithin(to, from, from + count))
     const verts = pack('vertices', (from, to, count) => {
       vertices.copyWithin(to * words, from * words, (from + count) * words)
-      if (colored) colors.copyWithin(to, from, from + count)
+      if (extra) extras.copyWithin(to * EXTRA_WORDS, from * EXTRA_WORDS, (from + count) * EXTRA_WORDS)
     })
     for (const p of this.placed.values()) {
       const dn = nodes.moved.get(p)!
@@ -473,7 +475,7 @@ export class TraceLayer extends BVHComputeData {
     this.queue(this.nodes, tlas * NODE_WORDS, nodes.end * NODE_WORDS)
     this.queue(this.index, 0, indices.end)
     this.queue(this.vertices, 0, verts.end * words)
-    if (colored) this.queue(this.colors, 0, verts.end)
+    if (extra) this.queue(this.extras, 0, verts.end * EXTRA_WORDS)
     this.top = null
     this.writeEmptyTop()
   }
@@ -588,11 +590,11 @@ export class TraceLayer extends BVHComputeData {
     this.nodes.array = (this.nodes.array as Uint32Array).slice(0, this.capacity.tlasNodes * NODE_WORDS)
     // MIN_ELEMENTS each, not none: a later picture's pipeline is built from them, and three takes a buffer of one
     // element or less for a single struct (WGSLNodeBuilder isCustomStruct reads the array's length).
-    for (const a of [this.index, this.vertices, this.colors]) a.array = new Uint32Array(MIN_ELEMENTS * a.itemSize)
+    for (const a of [this.index, this.vertices, this.extras]) a.array = new Uint32Array(MIN_ELEMENTS * a.itemSize)
   }
 
   /** Every buffer's GPU copy goes: once no frame still to be drawn binds the layer (base.ts retire). */
   dispose() {
-    for (const a of [this.nodes, this.index, this.vertices, this.transforms, this.colors]) this.letGo(a)
+    for (const a of [this.nodes, this.index, this.vertices, this.transforms, this.extras]) this.letGo(a)
   }
 }

@@ -1,8 +1,8 @@
-import { BufferAttribute, BufferGeometry } from 'three'
-import { MeshBVH, SAH } from 'three-mesh-bvh'
+import { BufferAttribute, BufferGeometry, Triangle, Vector3 } from 'three'
+import { MeshBVH, SAH, type ExtendedTriangle } from 'three-mesh-bvh'
 import { getMaxNodeDepth } from 'three-mesh-bvh/src/webgpu/utils/packBVHBufferUtils.js'
 import { MeshoptSimplifier } from 'meshoptimizer'
-import { openCache, type BuildKind } from './cache.ts'
+import { EXTRA_WORDS, openCache, type BuildKind } from './cache.ts'
 import { encodeNormals } from './normals.ts'
 
 // One geometry's one-off work, off the main thread (scene-world-space-gi
@@ -10,6 +10,8 @@ import { encodeNormals } from './normals.ts'
 // miss the original's BVH, or a proxy simplified within its error and its
 // BVH, packed as a segment the layer copies in as it is, its offsets counted
 // from 0 (D2). The segment goes back transferred; the cache keeps a copy.
+// A proxy of a geometry with UVs keeps them too: its textures sampled at a
+// hit land where the raster draws them (C5c1 design「世界空间层」).
 // A plain module worker: ParallelMeshBVHWorker needs SharedArrayBuffer,
 // which the app's pages do not have, so the pool works across geometries.
 
@@ -22,6 +24,8 @@ export type GeometryData = {
   /** Linear RGB(A) a vertex, colorSize each, or none. */
   colors: Float32Array | null
   colorSize: number
+  /** u and v a vertex (TEXCOORD_0), or none. */
+  uvs: Float32Array | null
   /** Three a triangle; none draws the vertices in order. */
   index: Uint32Array | null
   /**
@@ -64,8 +68,12 @@ export type Segment = {
   index: Uint32Array
   /** xyz the position, w the encoded normal (normals.ts). */
   vertices: Float32Array
-  /** RGBA8 a vertex, sRGB-encoded: only when the geometry has colours (D5). */
-  colors: Uint32Array | null
+  /**
+   * The layer's per-vertex extras, three words a vertex: its colour, RGBA8
+   * sRGB-encoded (D5; white without colours), then u and v as f32 bits (0
+   * without UVs). Only when the geometry has colours or UVs.
+   */
+  extras: Uint32Array | null
   /** The deepest root's depth. */
   depth: number
   triangles: number
@@ -85,9 +93,15 @@ const srgb = (c: number) => {
   return Math.round(Math.min(1, Math.max(0, v)) * 255)
 }
 
-function packColors(colors: Float32Array, size: number, vertices: number): Uint32Array {
-  const out = new Uint32Array(vertices)
-  for (let i = 0; i < vertices; i++) out[i] = srgb(colors[size * i]) | (srgb(colors[size * i + 1]) << 8) | (srgb(colors[size * i + 2]) << 16) | (255 << 24)
+function packExtras(g: GeometryData, vertices: number): Uint32Array | null {
+  const { colors, colorSize: size, uvs } = g
+  if (!colors && !uvs) return null
+  const out = new Uint32Array(vertices * EXTRA_WORDS)
+  const f = new Float32Array(out.buffer)
+  for (let i = 0; i < vertices; i++) {
+    out[EXTRA_WORDS * i] = colors ? srgb(colors[size * i]) | (srgb(colors[size * i + 1]) << 8) | (srgb(colors[size * i + 2]) << 16) | (255 << 24) : 0xffffffff
+    if (uvs) f.set(uvs.subarray(2 * i, 2 * i + 2), EXTRA_WORDS * i + 1)
+  }
   return out
 }
 
@@ -125,13 +139,88 @@ function byGroup(index: Uint32Array, groups: Groups, kept: number[]): { index: U
   return { index: out, groups: ranges, kept: keep }
 }
 
+/** How far a proxy's UVs may stray: a texel of the viewport's 512² layers (C5c1 design「世界空间层」). */
+export const UV_TOLERANCE = 1 / 512
+
+/**
+ * The UVs' weights against position in simplifyWithAttributes, tried in
+ * turn: a UV off by the tolerance counts as a position off by four times
+ * the bound, then sixteen. The first keeps most models' UVs (a sphere's);
+ * UVs stretched along a long surface (a torus knot's) need the second.
+ */
+const uvWeights = (epsilon: number) => [4, 16].map((k) => (k * epsilon) / UV_TOLERANCE)
+
+const flags: ('ErrorAbsolute' | 'LockBorder')[] = ['ErrorAbsolute', 'LockBorder']
+
+const point = new Vector3()
+const closest = new Vector3()
+const bary = new Vector3()
+const corner = [new Vector3(), new Vector3(), new Vector3()]
+
+/**
+ * Whether the triangles kept keep the UVs: at each vertex dropped, the UV
+ * the proxy's surface has there, interpolated on a triangle near it, within
+ * the tolerance. Near: within twice the bound, where the simplifier left the
+ * surface; the best of them, as a vertex on a UV seam lies on triangles of
+ * both sides. A vertex without a triangle near it fails.
+ */
+export function keepsUVs(g: GeometryData, source: Uint32Array, kept: Uint32Array, epsilon: number): boolean {
+  const uvs = g.uvs!
+  const reach = 2 * epsilon + 1e-7
+  const live = new Uint8Array(g.positions.length / 3)
+  for (const v of kept) live[v] = 1
+  const geometry = new BufferGeometry()
+  geometry.setAttribute('position', new BufferAttribute(g.positions, 3))
+  geometry.setIndex(new BufferAttribute(kept.slice(), 1))
+  const bvh = new MeshBVH(geometry, bvhOptions)
+  // MeshBVH reordered its copy of the index: the triangles' vertices as it holds them.
+  const index = geometry.index!.array as Uint32Array
+  for (const v of source) {
+    if (live[v]) continue
+    live[v] = 1
+    point.fromArray(g.positions, 3 * v)
+    let best = Infinity
+    bvh.shapecast({
+      intersectsBounds: (box) => box.distanceToPoint(point) <= reach,
+      intersectsTriangle: (tri: ExtendedTriangle, t: number) => {
+        tri.closestPointToPoint(point, closest)
+        if (closest.distanceTo(point) > reach) return false
+        for (let k = 0; k < 3; k++) corner[k].fromArray(g.positions, 3 * index[3 * t + k])
+        if (!Triangle.getBarycoord(closest, corner[0], corner[1], corner[2], bary)) return false
+        let u = -uvs[2 * v]
+        let w = -uvs[2 * v + 1]
+        for (let k = 0; k < 3; k++) {
+          const at = index[3 * t + k]
+          const b = bary.getComponent(k)
+          u += b * uvs[2 * at]
+          w += b * uvs[2 * at + 1]
+        }
+        best = Math.min(best, Math.max(Math.abs(u), Math.abs(w)))
+        return best <= UV_TOLERANCE
+      },
+    })
+    if (best > UV_TOLERANCE) return false
+  }
+  return true
+}
+
 /**
  * Each group simplified on its own (meshoptimizer, the error absolute, open
  * borders locked, so neighbouring slots do not crack apart; I8: what will not
  * simplify within the bound stays as it is), then only the vertices kept.
+ * A geometry with UVs simplifies with them as attributes, and a group whose
+ * UVs then stray past the tolerance stays as it is (keepsUVs).
  */
-function simplify(g: GeometryData, index: Uint32Array, groups: Groups, epsilon: number): { g: GeometryData; index: Uint32Array; groups: Groups } {
-  const parts = groups.map(({ start, count }) => MeshoptSimplifier.simplify(index.subarray(start, start + count), g.positions, 3, 0, epsilon, ['ErrorAbsolute', 'LockBorder'])[0])
+export function simplify(g: GeometryData, index: Uint32Array, groups: Groups, epsilon: number, weights = uvWeights(epsilon)): { g: GeometryData; index: Uint32Array; groups: Groups } {
+  const parts = groups.map(({ start, count }) => {
+    const source = index.subarray(start, start + count)
+    if (!g.uvs) return MeshoptSimplifier.simplify(source, g.positions, 3, 0, epsilon, flags)[0]
+    for (const w of weights) {
+      const kept = MeshoptSimplifier.simplifyWithAttributes(source, g.positions, 3, g.uvs, 2, [w, w], null, 0, epsilon, flags)[0]
+      if (kept.length === source.length || keepsUVs(g, source, kept, epsilon)) return kept
+    }
+    return source
+  })
   const kept = new Uint32Array(parts.reduce((n, p) => n + p.length, 0))
   const out: { start: number; count: number }[] = []
   let at = 0
@@ -145,14 +234,16 @@ function simplify(g: GeometryData, index: Uint32Array, groups: Groups, epsilon: 
   const positions = new Float32Array(unique * 3)
   const normals = g.normals ? new Float32Array(unique * 3) : null
   const colors = g.colors ? new Float32Array(unique * g.colorSize) : null
+  const uvs = g.uvs ? new Float32Array(unique * 2) : null
   for (let v = 0; v < remap.length; v++) {
     const to = remap[v]
     if (to === 0xffffffff) continue
     positions.set(g.positions.subarray(3 * v, 3 * v + 3), 3 * to)
     normals?.set(g.normals!.subarray(3 * v, 3 * v + 3), 3 * to)
     colors?.set(g.colors!.subarray(g.colorSize * v, g.colorSize * (v + 1)), g.colorSize * to)
+    uvs?.set(g.uvs!.subarray(2 * v, 2 * v + 2), 2 * to)
   }
-  return { g: { ...g, positions, normals, colors }, index: kept, groups: out }
+  return { g: { ...g, positions, normals, colors, uvs }, index: kept, groups: out }
 }
 
 /** The segment of a geometry: its BVH built (the index reordered as it goes) and packed. */
@@ -199,14 +290,14 @@ export function buildSegment(job: Pick<BuildJob, 'build' | 'epsilon'> & { geomet
     // MeshBVH reordered it in place, triangles in the tree's order.
     index,
     vertices: packed,
-    colors: g.colors ? packColors(g.colors, g.colorSize, vertices) : null,
+    extras: packExtras(g, vertices),
     depth: Math.max(...bvh._roots.map((r) => getMaxNodeDepth(r))),
     triangles: index.length / 3,
     source: triangles,
   }
 }
 
-const transfers = (s: Segment): Transferable[] => [s.nodes.buffer, s.index.buffer, s.vertices.buffer, ...(s.colors ? [s.colors.buffer] : [])] as Transferable[]
+const transfers = (s: Segment): Transferable[] => [s.nodes.buffer, s.index.buffer, s.vertices.buffer, ...(s.extras ? [s.extras.buffer] : [])] as Transferable[]
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

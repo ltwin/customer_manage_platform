@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { BUDGET, buildsOriginal, capabilityOf, EPSILON_PROBE, epsilonAt, levelFor, tierOf, type DeviceFacts, type LayerSize } from '../src/creative-scene/render/trace/capacity.ts'
+import { BUDGET, buildsOriginal, capabilityOf, EPSILON_PROBE, FRAGMENT_STORAGE_BUFFERS, epsilonAt, levelFor, tierOf, type DeviceFacts, type LayerSize } from '../src/creative-scene/render/trace/capacity.ts'
 import { decodeNormal, encodeNormal, encodeNormals, NONE } from '../src/creative-scene/render/trace/normals.ts'
 
 // scene-offscreen-reflections (S1): the world-space layer's pure parts.
@@ -180,10 +180,10 @@ test('the lights a hit point sees: visible, giving light, not the volumes’ sta
   assert.deepEqual([ambient.r, ambient.g, ambient.b], [0.5, 0, 0.25])
 })
 
-import { PlaneGeometry } from 'three'
+import { PlaneGeometry, TorusKnotGeometry } from 'three'
 import { MeshoptSimplifier } from 'meshoptimizer'
-import { buildSegment, type GeometryData, type Segment } from '../src/creative-scene/render/trace/build.worker.ts'
-import { BUILT_WITH, cacheKey, evictions } from '../src/creative-scene/render/trace/cache.ts'
+import { buildSegment, simplify, UV_TOLERANCE, type GeometryData, type Segment } from '../src/creative-scene/render/trace/build.worker.ts'
+import { BUILT_WITH, cacheKey, evictions, EXTRA_WORDS } from '../src/creative-scene/render/trace/cache.ts'
 import { readFileSync } from 'node:fs'
 
 /** A geometry's arrays as the pool hands them over. */
@@ -193,6 +193,7 @@ function dataOf(g: BufferGeometry): GeometryData {
     normals: g.attributes.normal ? Float32Array.from(g.attributes.normal.array) : null,
     colors: g.attributes.color ? Float32Array.from(g.attributes.color.array) : null,
     colorSize: g.attributes.color?.itemSize ?? 0,
+    uvs: g.attributes.uv ? Float32Array.from(g.attributes.uv.array) : null,
     index: g.index ? Uint32Array.from(g.index.array) : null,
     groups: g.groups.map(({ start, count }) => ({ start, count })),
   }
@@ -220,7 +221,11 @@ test('a segment is the geometry’s tree packed from 0: every triangle in one le
   for (const [first, count] of leavesOf(s)[0]) for (let t = first; t < first + count; t++) covered[t]++
   assert.ok(covered.every((c) => c === 1), 'each triangle in exactly one leaf')
   assert.ok(s.depth >= 2 && s.depth <= 40)
-  assert.equal(s.colors, null)
+  // The extras: white where there are no colours, then the plane's UVs.
+  const extra = (v: number) => [s.extras![EXTRA_WORDS * v], ...new Float32Array(s.extras!.buffer, (EXTRA_WORDS * v + 1) * 4, 2)]
+  const uv = plane.attributes.uv
+  assert.ok(Array.from({ length: 31 * 31 }, (_, v) => extra(v)).every(([c, u, w], v) => c === 0xffffffff && u === uv.getX(v) && w === uv.getY(v)))
+  assert.equal(buildSegment({ build: { kind: 'original' }, geometry: { ...dataOf(plane), uvs: null }, epsilon: 0 }).extras, null, 'none without colours or UVs')
   // w: the normal (0, 0, 1) of the plane, encoded.
   assert.ok(Array.from({ length: 31 * 31 }, (_, v) => s.vertices[4 * v + 3]).every((w) => w === encodeNormal(0, 0, 1)))
   // A geometry without an index draws its vertices in order.
@@ -240,10 +245,17 @@ test('a geometry of several slots is a root a slot; a proxy is simplified slot b
   const [a, b] = leavesOf(original)
   const span = (leaves: [number, number][]) => [Math.min(...leaves.map((l) => l[0])), Math.max(...leaves.map((l) => l[0] + l[1]))]
   assert.deepEqual([span(a), span(b)], [[0, 1600], [1600, 3200]], 'each root keeps to its own slot’s triangles')
-  const proxy = buildSegment({ build: { kind: 'proxy', level: 0 }, geometry: dataOf(plane), epsilon: 0.003 })
+  const proxy = buildSegment({ build: { kind: 'proxy', level: 0 }, geometry: { ...dataOf(plane), uvs: null }, epsilon: 0.003 })
   assert.equal(proxy.roots.length, 2)
   assert.ok(proxy.triangles < original.triangles / 4, `${proxy.triangles} of ${original.triangles}`)
   assert.ok(proxy.vertices.length < original.vertices.length, 'only the vertices kept')
+  // Without UVs, as meshoptimizer simplifies each slot on its own.
+  const positions = Float32Array.from(plane.attributes.position.array)
+  const alone = (start: number) => MeshoptSimplifier.simplify(Uint32Array.from(plane.index!.array).subarray(start, start + half), positions, 3, 0, 0.003, ['ErrorAbsolute', 'LockBorder'])[0].length / 3
+  assert.equal(proxy.triangles, alone(0) + alone(half), 'the same triangles as before UVs came along')
+  // A plane's UVs are linear in its position: they simplify away as well.
+  const withUVs = buildSegment({ build: { kind: 'proxy', level: 0 }, geometry: dataOf(plane), epsilon: 0.003 })
+  assert.ok(withUVs.triangles < original.triangles / 4, `with UVs: ${withUVs.triangles} of ${original.triangles}`)
   // A bump taller than the bound stays.
   const bumpy = new PlaneGeometry(1, 1, 40, 40)
   const p = bumpy.attributes.position
@@ -271,14 +283,75 @@ test('vertex colours go along as sRGB bytes, only for a geometry that has them (
   tri.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3))
   tri.setAttribute('color', new Float32BufferAttribute([1, 0, 0, 0, 0.25, 0, 0, 0, 1], 3))
   const s = buildSegment({ build: { kind: 'original' }, geometry: dataOf(tri), epsilon: 0 })
-  assert.deepEqual(Array.from(s.colors!).map((c) => [c & 255, (c >> 8) & 255, (c >> 16) & 255, c >>> 24]), [[255, 0, 0, 255], [0, 137, 0, 255], [0, 0, 255, 255]])
+  const colors = Array.from({ length: 3 }, (_, v) => s.extras![EXTRA_WORDS * v])
+  assert.deepEqual(colors.map((c) => [c & 255, (c >> 8) & 255, (c >> 16) & 255, c >>> 24]), [[255, 0, 0, 255], [0, 137, 0, 255], [0, 0, 255, 255]])
+  assert.deepEqual(Array.from(new Float32Array(s.extras!.buffer)).filter((_, i) => i % EXTRA_WORDS !== 0), [0, 0, 0, 0, 0, 0], 'no UVs: zeros')
   assert.ok(Array.from({ length: 3 }, (_, v) => s.vertices[4 * v + 3]).every((w) => w === NONE), 'no normals: the face’s stands in')
+})
+
+/**
+ * The farthest a flat proxy's UVs stray from the original's: at each of the
+ * original's vertices (z = 0), the UV of the proxy triangle over it.
+ */
+function uvStray(g: GeometryData, s: Segment): number {
+  const v = s.vertices
+  const uv = new Float32Array(s.extras!.buffer)
+  let worst = 0
+  for (let i = 0; i < g.positions.length / 3; i++) {
+    const [x, y] = [g.positions[3 * i], g.positions[3 * i + 1]]
+    let found = Infinity
+    for (let t = 0; t < s.triangles && found === Infinity; t++) {
+      const [a, b, c] = [s.index[3 * t], s.index[3 * t + 1], s.index[3 * t + 2]]
+      const [ax, ay, bx, by, cx, cy] = [v[4 * a], v[4 * a + 1], v[4 * b], v[4 * b + 1], v[4 * c], v[4 * c + 1]]
+      const d = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay)
+      if (Math.abs(d) < 1e-12) continue
+      const wb = ((x - ax) * (cy - ay) - (cx - ax) * (y - ay)) / d
+      const wc = ((bx - ax) * (y - ay) - (x - ax) * (by - ay)) / d
+      const wa = 1 - wb - wc
+      if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) continue
+      const at = (k: number) => wa * uv[EXTRA_WORDS * a + k] + wb * uv[EXTRA_WORDS * b + k] + wc * uv[EXTRA_WORDS * c + k]
+      found = Math.max(Math.abs(at(1) - g.uvs![2 * i]), Math.abs(at(2) - g.uvs![2 * i + 1]))
+    }
+    worst = Math.max(worst, found)
+  }
+  return worst
+}
+
+test('a proxy keeps its UVs within a texel of 512², or the slot stays as it is (C5c1 design「世界空间层」)', async () => {
+  await MeshoptSimplifier.ready
+  // A flat plane whose u is not linear in x: position alone would simplify it to two triangles.
+  const plane = new PlaneGeometry(1, 1, 40, 40)
+  const g = dataOf(plane)
+  for (let i = 0; i < g.uvs!.length / 2; i++) g.uvs![2 * i] = g.uvs![2 * i] ** 3
+  const original = buildSegment({ build: { kind: 'original' }, geometry: g, epsilon: 0 })
+  const proxy = buildSegment({ build: { kind: 'proxy', level: 0 }, geometry: g, epsilon: 0.003 })
+  assert.ok(proxy.triangles < original.triangles, `simplified: ${proxy.triangles} of ${original.triangles}`)
+  const stray = uvStray(g, proxy)
+  assert.ok(stray <= UV_TOLERANCE * 1.0001, `UVs within ${UV_TOLERANCE}: ${stray}`)
+  // UVs stretched along a long surface: the second weight keeps them.
+  const knot = dataOf(new TorusKnotGeometry(1, 0.3, 256, 32))
+  const knotProxy = buildSegment({ build: { kind: 'proxy', level: 0 }, geometry: knot, epsilon: 0.003 })
+  assert.ok(knotProxy.triangles < knot.index!.length / 3, `the knot simplified: ${knotProxy.triangles} of ${knot.index!.length / 3}`)
+  // Simplified without minding the UVs (weight 0), they stray: the slot stays as it is.
+  const index = Uint32Array.from(plane.index!.array)
+  const blind = MeshoptSimplifier.simplify(index, g.positions, 3, 0, 0.003, ['ErrorAbsolute', 'LockBorder'])[0]
+  assert.ok(blind.length < index.length / 10, 'position alone takes nearly everything away')
+  const kept = simplify(g, index, [{ start: 0, count: index.length }], 0.003, [0])
+  assert.equal(kept.index.length, index.length, 'every triangle kept')
+  assert.equal(kept.g.positions.length, g.positions.length, 'every vertex kept')
+})
+
+test('the layer binds as many storage buffers as before: the extras take the colours’ place (probe kernel 7 of 8)', () => {
+  const layer = new TraceLayer(2 * gib, 'count')
+  assert.deepEqual(Object.keys(layer.stores), ['nodes', 'transforms', 'index', 'attributes'])
+  assert.ok(layer.extrasNode, 'and the extras')
+  assert.equal(FRAGMENT_STORAGE_BUFFERS, 6)
 })
 
 test('cache keys and the least-recently-used ledger (design「构建、缓存与提交」)', () => {
   const libs = 'three@0.186.1,three-mesh-bvh@0.9.15,meshoptimizer@1.1.1'
-  assert.equal(cacheKey({ kind: 'original' }, 'model:rev_1#0'), `raw:model:rev_1#0:v2:sah-10-40:${libs}`)
-  assert.equal(cacheKey({ kind: 'proxy', level: 2 }, 'model:rev_1#0'), `proxy@2:model:rev_1#0:v2:sah-10-40:${libs}`)
+  assert.equal(cacheKey({ kind: 'original' }, 'model:rev_1#0'), `raw:model:rev_1#0:v3:sah-10-40:${libs}`)
+  assert.equal(cacheKey({ kind: 'proxy', level: 2 }, 'model:rev_1#0'), `proxy@2:model:rev_1#0:v3:sah-10-40:${libs}`)
   const entries = [{ key: 'old', bytes: 40, used: 1 }, { key: 'new', bytes: 30, used: 3 }, { key: 'mid', bytes: 20, used: 2 }]
   assert.deepEqual(evictions(entries, 10, 100, 1000), [], 'room enough')
   assert.deepEqual(evictions(entries, 20, 100, 1000), ['old'], 'over the ceiling: the least recently used first')
@@ -480,7 +553,7 @@ test('an export’s layer drops its arrays once drawn: the top level and transfo
   layer.dropArrays()
   assert.equal(layer.bytes, bytes, 'the bytes as allocated')
   // Two elements each: a pipeline built later still reads the vertices as an array of structs (three: more than one).
-  assert.deepEqual([layer.arrays.index.length, layer.arrays.vertices.length, layer.arrays.colors.length], [2, 8, 2], 'the geometry let go')
+  assert.deepEqual([layer.arrays.index.length, layer.arrays.vertices.length, layer.arrays.extras.length], [2, 8, 2], 'the geometry let go')
   const kept = layer.arrays.nodes
   assert.ok(kept.length >= 8 && kept.length <= nodes.length - box.nodes.length, `the nodes up to the trees: ${kept.length} of ${nodes.length}`)
   assert.deepEqual(kept, nodes.subarray(0, kept.length), 'the top level as it was')
