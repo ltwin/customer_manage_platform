@@ -152,6 +152,8 @@ class SceneServer {
     this.models = new Map()
     // Images material slots texture with, as PNG bytes by revision (C5c1).
     this.images = new Map()
+    // Milliseconds an image takes to arrive: later than a picture would be drawn without waiting for it.
+    this.imageDelayMs = 0
     this.discarded = []
     this.mediaMissing = new Set()
     this.modelSeq = 0
@@ -581,7 +583,10 @@ async function routeFiles(page, server) {
   await page.route('**/__media/**', async (r) => {
     const rev = r.request().url().split('/').at(-1)
     const image = server.images.get(rev)
-    if (image && !server.mediaMissing.has(rev)) return r.fulfill({ status: 200, contentType: 'image/png', body: image })
+    if (image && !server.mediaMissing.has(rev)) {
+      await sleep(server.imageDelayMs)
+      return r.fulfill({ status: 200, contentType: 'image/png', body: image })
+    }
     const m = server.models.get(rev)
     if (!m || server.mediaMissing.has(rev)) return r.fulfill({ status: 404, body: '' })
     return r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: m.glb })
@@ -3230,6 +3235,64 @@ await check('C5c1: clay and line art take no notice of textures: the same pixels
   }
   await plain.context.close()
   await textured.context.close()
+})
+
+await check('C5c1: render_view and the lit export wait for the five maps; an image that does not load fails the picture, saying which', async () => {
+  const server = new SceneServer()
+  stock(server)
+  server.imageDelayMs = 8000
+  const ball = gid('ball')
+  const cam = gid('cam')
+  seed(server, [
+    { id: ball, kind: 'primitive', name: '球', order: 5, transform: { ...identity(), position: [0, 1, 0] }, primitive: { builtin: 'sphere@1', params: { radius: 1 } }, material_slots: { main: principledSlot({}) } },
+    cameraObject(cam, '机位', 6, { focal_mm: 50 }, [0, 1, 5]),
+  ])
+  const { context, page, errors } = await open(server, { query: '?host=1' })
+  await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+  let n = 0
+  // One job of each kind, as the assistant asks: the picture's bytes, or the failure.
+  const run = async (kind) => {
+    const id = `csj_maps${n++}`
+    const request = kind === 'render_view' ? { camera_object_id: cam, mode: 'lit' } : { camera_object_ids: [cam], passes: ['lit'], canvas_id: 'ccv_qa', scene_node_id: 'cwnode_qa' }
+    server.claimable = [{ id, document_id: DOC, kind, request, attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+    await page.evaluate(() => window.__invalidate())
+    await waitFor(() => server.completes.some((c) => c.id === id), `${kind} done`, 180_000)
+    const done = server.completes.find((c) => c.id === id).payload
+    if (done.outcome === 'failed') return { error: done.error }
+    assert.equal(done.outcome, 'succeeded')
+    return { bytes: server.uploadBytes.get(kind === 'render_view' ? done.render.image_upload_id : done.export.shots[0].images[0].upload_id) }
+  }
+  const cases = [
+    ['base_color', {}, { base_color: map('ccr_checker') }],
+    ['normal', {}, { normal: map('ccr_ridges') }],
+    ['roughness', { metalness: 1, roughness: 1 }, { roughness: map('ccr_stripes') }],
+    ['metalness', { metalness: 1, roughness: 0.3 }, { metalness: map('ccr_stripes') }],
+    ['ao', {}, { ao: map('ccr_stripes') }],
+  ]
+  const mapping = { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 }
+  for (const kind of ['render_view', 'export_shots']) {
+    for (const [name, params, maps] of cases) {
+      server.external(setSlot(ball, principledSlot(params)))
+      const without = await run(kind)
+      server.external(setSlot(ball, principledSlot(params, { maps, mapping })))
+      const withMap = await run(kind)
+      const diff = await pixelDiff(page, without.bytes, withMap.bytes, 24)
+      console.log(`  ${kind} ${name}: ${(diff * 100).toFixed(2)}% of pixels change`)
+      assert.ok(diff > 0.01, `${kind}: ${name} changes the ball (${(diff * 100).toFixed(2)}% of pixels)`)
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c1-${kind}-${name}.${kind === 'render_view' ? 'jpg' : 'png'}`, withMap.bytes)
+    }
+  }
+  // An image the server does not have: no picture without it, and the reason names it.
+  server.external(setSlot(ball, principledSlot({}, { maps: { base_color: map('ccr_gone') }, mapping })))
+  const uploads = server.uploads.size
+  for (const kind of ['render_view', 'export_shots']) {
+    const { error } = await run(kind)
+    assert.equal(error?.code, 'host_error', `${kind} fails`)
+    assert.match(error.message, /场景贴图不可用：图片 ccr_gone 加载失败/, `${kind} says which image`)
+  }
+  assert.equal(server.uploads.size, uploads, 'nothing went up')
+  assert.deepEqual(errors.filter((e) => !/404/.test(e)), [])
+  await context.close()
 })
 
 await check('AC-2: polished metal mirrors the sky with one sun highlight, not two', async () => {

@@ -127,15 +127,22 @@ export function textureKeys(t: Texturing | undefined): { color?: TextureKey; nor
   }
 }
 
-/** Every texture the scene's material slots sample, sorted. */
-export function sceneTextureKeys(scene: Pick<Scene, 'objects'>): TextureKey[] {
+type Slots = NonNullable<Scene['objects'][number]['material_slots']>
+
+/** Every texture these material slots sample, sorted. */
+export function slotTextureKeys(slots: Iterable<Slots>): TextureKey[] {
   const keys = new Set<TextureKey>()
-  for (const o of scene.objects) {
-    for (const slot of Object.values(o.material_slots ?? {})) {
+  for (const s of slots) {
+    for (const slot of Object.values(s)) {
       if (slot.preset === principledID) for (const k of Object.values(textureKeys(slot))) keys.add(k)
     }
   }
   return [...keys].sort()
+}
+
+/** Every texture the scene's material slots sample, sorted. */
+export function sceneTextureKeys(scene: Pick<Scene, 'objects'>): TextureKey[] {
+  return slotTextureKeys(scene.objects.map((o) => o.material_slots ?? {}))
 }
 
 function parse(key: TextureKey): { kind: Kind; parts: (Part | null)[] } {
@@ -468,8 +475,16 @@ export type ImageHold = { release(): void }
  * (design「等图片就绪」). Rejects, holding nothing, when any image failed
  * or did not fit the budget, saying which.
  */
-export async function loadSceneImages(scene: Pick<Scene, 'objects'>): Promise<ImageHold> {
-  const keys = sceneTextureKeys(scene)
+export function loadSceneImages(scene: Pick<Scene, 'objects'>): Promise<ImageHold> {
+  return loadImages(sceneTextureKeys(scene))
+}
+
+/** loadSceneImages for the slots of a picture outside a scene: a card's or preview's model. */
+export function loadSlotImages(slots: Slots): Promise<ImageHold> {
+  return loadImages(slotTextureKeys([slots]))
+}
+
+async function loadImages(keys: readonly TextureKey[]): Promise<ImageHold> {
   const held = keys.map((key) => {
     acquireTexture(key)
     const e = entries.get(key)!

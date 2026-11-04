@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { SceneObject } from '../api.ts'
+import { loadSlotImages } from '../materials/images.ts'
 import { drawnGeometries, keyOf, materialFor } from '../materials/instances.ts'
 import { onGeometry, resolvePart } from '../materials/resolve.ts'
 import type { ModelParts } from '../models/cache.ts'
@@ -11,11 +12,22 @@ import type { Manifest } from '../sandbox/inspect.ts'
 // A model asset's card thumbnail: the model with the materials it is saved
 // with, in material preview's studio light plus one key light, framed like
 // the bake's clay thumbnail, 256 × 256 on a transparent background. Slots
-// without a material resolve as the viewport resolves them.
+// without a material resolve as the viewport resolves them. Drawn once the
+// slots' images are in (C5c1 design「等图片就绪」); one that does not load
+// fails the thumbnail, saying which.
 
 type Slots = NonNullable<SceneObject['material_slots']>
 
-export function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, materials: Slots): Promise<Blob> {
+export async function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, materials: Slots): Promise<Blob> {
+  const images = await loadSlotImages(materials)
+  try {
+    return await draw(parts, manifest, materials)
+  } finally {
+    images.release()
+  }
+}
+
+function draw(parts: ModelParts, manifest: Manifest, materials: Slots): Promise<Blob> {
   const scene = new THREE.Scene()
   const key = new THREE.DirectionalLight(0xffffff, 1.5)
   key.position.set(3, 5, 4)

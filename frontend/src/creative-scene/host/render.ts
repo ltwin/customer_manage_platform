@@ -15,6 +15,7 @@ import type { Shot } from './executor.ts'
 import { framingFor, type Framing, type RenderRequest } from './framing.ts'
 import { ShotScene } from './ShotScene.tsx'
 import { loadNightAssets } from '../world/nightSky/assets.ts'
+import { loadSceneImages, type ImageHold } from '../materials/images.ts'
 
 // Pictures of the confirmed scene drawn as the viewport draws it (the clay
 // look: the scene's sky and sun with AO; or the lit look: materials, lights,
@@ -117,6 +118,21 @@ export async function shoot(scene: Scene, models: Readonly<Record<string, SceneM
 /** Why a picture failed whose night sky's assets did not load: a deployment or network matter, said plainly. */
 export const NIGHT_ASSETS_FAILED = '夜空资源加载失败，请稍后重试'
 
+/** Why a lit picture failed whose slots' images did not load or did not fit the budget; the reason, naming the images, follows. */
+export const SCENE_IMAGES_FAILED = '场景贴图不可用'
+
+/**
+ * The scene's images, held for a lit picture (C5c1 design「等图片就绪」): only
+ * the lit look draws materials, so clay and line art never wait on them.
+ */
+async function holdImages(scene: Scene): Promise<ImageHold> {
+  try {
+    return await loadSceneImages(scene)
+  } catch (err) {
+    throw new Error(`${SCENE_IMAGES_FAILED}：${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 /** Mounts the scene on a hidden canvas in a look; every shot moves one camera. Throws TraceNotReady as setLook. */
 export async function openShooter(scene: Scene, models: Readonly<Record<string, SceneModel>>, look: Look = 'clay'): Promise<Shooter> {
   // The night sky's stars and moon map first (W3 design「资源与确定性」): a picture without them would not be the scene.
@@ -124,6 +140,8 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     console.warn('night sky: an asset did not load', err)
     throw new Error(NIGHT_ASSETS_FAILED)
   })
+  // The device's own copies of the textures go with it in close(); the hold keeps their pixels until then.
+  let images: ImageHold | null = look === 'lit' ? await holdImages(scene) : null
   const canvas = document.createElement('canvas')
   const camera = new THREE.PerspectiveCamera()
   camera.up.set(0, 0, 1)
@@ -135,6 +153,8 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     root.unmount()
     // Give the device back now rather than when the canvas is collected.
     gpu?.dispose()
+    images?.release()
+    images = null
   }
   try {
     await root.configure({
@@ -174,6 +194,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
       },
       async setLook(next) {
         if (next === mounted) return
+        if (next === 'lit') images ??= await holdImages(scene)
         await mount(next)
         mounted = next
         await g.compile(three, camera)

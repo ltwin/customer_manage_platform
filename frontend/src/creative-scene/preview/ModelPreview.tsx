@@ -10,6 +10,7 @@ import { RoomLighting, StudioLights, previewBackground } from '../objects/Lighti
 import { SlotMesh } from '../objects/SlotMesh.tsx'
 import { resolvePart } from '../materials/resolve.ts'
 import { drawnGeometries } from '../materials/instances.ts'
+import { loadSlotImages, slotTextureKeys, type ImageHold } from '../materials/images.ts'
 import { previewModels } from './cache.ts'
 import { createRenderer, gpuOf } from '../render/gpu.ts'
 import { aimStudio } from '../render/studio.ts'
@@ -17,8 +18,9 @@ import { aimStudio } from '../render/studio.ts'
 // The asset viewer's 3D stage, loaded only when a model is opened: drag to
 // turn, scroll to zoom, double-click to go back. 「材质」, where it opens like
 // the card thumbnail, is the materials the asset was saved with, a slot
-// without one resolving as in the editor, in the material preview's room;
-// 「白模」 is the editor's clay: its studio light, without AO.
+// without one resolving as in the editor, in the material preview's room,
+// drawn once their images are in (the static thumbnail meanwhile); 「白模」 is
+// the editor's clay: its studio light, without AO.
 
 type Manifest = components['schemas']['CreativeModelManifest']
 type Materials = components['schemas']['CreativeSceneMaterialSlots']
@@ -55,6 +57,8 @@ export default function ModelPreview({ revision, manifest, materials, faces, tit
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a revision's faces never change
   }, [revision])
   const parts = loaded?.revision === revision ? loaded.parts : undefined
+  const imagesIn = useSlotImages(materials, look === 'material')
+  const drawn = !!parts && imagesIn
   const view = useMemo(() => framing(manifest), [manifest])
   const controls = useRef<Orbit>(null)
   if (parts === null)
@@ -86,11 +90,11 @@ export default function ModelPreview({ revision, manifest, materials, faces, tit
         ) : (
           <RoomLighting />
         )}
-        {parts && <Meshes parts={parts} manifest={manifest} materials={materials} look={look} />}
+        {drawn && <Meshes parts={parts} manifest={manifest} materials={materials} look={look} />}
         <Controls controls={controls} target={view.target} />
         <FrameStep />
       </Canvas>
-      {!parts && thumbnail && <img className="v-model-still" src={thumbnail} alt={title} />}
+      {!drawn && thumbnail && <img className="v-model-still" src={thumbnail} alt={title} />}
       <div className="v-model-looks" role="group" aria-label="显示方式">
         <button type="button" aria-pressed={look === 'clay'} onClick={() => setLook('clay')}>
           白模
@@ -118,7 +122,38 @@ function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manif
   )
 }
 
-/** Orbit around the model's centre; the opening view is what a double-click returns to. */
+/**
+ * Whether the slots' images are in, held while on (C5c1 design「等图片就绪」).
+ * One that did not load draws as its placeholder: the preview still shows
+ * the rest, and the editor's material panel says which.
+ */
+function useSlotImages(materials: Materials, on: boolean): boolean {
+  const keys = useMemo(() => slotTextureKeys([materials]).join(' '), [materials])
+  const [ready, setReady] = useState<string | null>(null)
+  useEffect(() => {
+    if (!on || keys === '') return
+    let live = true
+    let hold: ImageHold | null = null
+    loadSlotImages(materials).then(
+      (h) => {
+        if (!live) return h.release()
+        hold = h
+        setReady(keys)
+      },
+      (err: unknown) => {
+        console.warn('model preview: an image did not load', err)
+        if (live) setReady(keys)
+      },
+    )
+    return () => {
+      live = false
+      hold?.release()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keys are what of the slots the images depend on
+  }, [keys, on])
+  return !on || keys === '' || ready === keys
+}
+
 /** Steps the renderer's frame before R3F draws one (render/gpu.ts owns the count); clay's key light turns with the view, as in the editor. */
 function FrameStep() {
   useFrame((state) => {
@@ -128,6 +163,7 @@ function FrameStep() {
   return null
 }
 
+/** Orbit around the model's centre; the opening view is what a double-click returns to. */
 function Controls({ controls, target }: { controls: RefObject<Orbit | null>; target: number[] }) {
   useEffect(() => {
     controls.current?.saveState()

@@ -242,6 +242,11 @@ ready(keys) ─▶ Promise；任一张失败 → reject，原因写明是哪张�
 - 离屏出图（`render_view`、`lit` 导出）：`openShooter` 在挂载前调用 `loadSceneImages(scene)`，与 `loadNightAssets` 并列。任一张失败，这张图就失败，并说明哪张图片不可用，不出缺贴图的图。失败码沿用夜空资源的做法，新增 `SCENE_IMAGES_FAILED`。
 - 材质缩略图（`library/thumbnail.ts`）和 3D 预览（`preview/ModelPreview.tsx`）同样先等图片。预览在等待期间继续显示静态缩略图。
 - 视口不等：先用占位图画，图片到了再重绘（`invalidate`）。
+- 实现细节（3.5）：
+  - 只有 `lit` 画材质，所以只在挂载 `lit` 时等图片（`openShooter` 首次挂载或 `setLook('lit')`）；白模和线稿不受贴图影响，也不会因贴图失败。
+  - 失败信息为 `场景贴图不可用：<各张图片的原因>`，作业里再加「截图失败：」或「导出图渲染失败：」前缀，失败码仍是 `host_error`。
+  - 持有（`ImageHold`）在 `close()` 里释放；离屏设备的纹理副本随 `gpu.dispose()` 一起释放。每次出图都开一台新的离屏设备，用完就关，所以「空闲时释放」就落在 `close()`。
+  - 缩略图和预览按槽位等图片（`images.ts:loadSlotImages`）。缩略图在有图片失败时整体失败，并说明原因。预览遇到图片失败仍然显示，失败的那张用占位图，由编辑器的材质面板说明是哪张。
 
 ### 世界空间层（解决 U6）
 
