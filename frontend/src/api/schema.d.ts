@@ -3342,6 +3342,8 @@ export interface components {
                 id: string;
                 position: number[];
             }[];
+            /** @description 每个三角网格都带 TEXCOORD_0 时为 true；贴图选 uv 映射而这里为 false 时，没有 UV 的网格按三平面投影显示。修订 v18 之前写入的模型没有这个字段，表示不知道。 */
+            uv?: boolean;
         };
         /** @description 几何模块的一个参数定义。number / integer 必须有 min 与 max；enum 必须有 options。 */
         CreativeModelParamSpec: {

@@ -7736,6 +7736,9 @@ components:
             properties:
               id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
               position: {type: array, minItems: 3, maxItems: 3, items: {type: number}}
+        uv:
+          type: boolean
+          description: 每个三角网格都带 TEXCOORD_0 时为 true；贴图选 uv 映射而这里为 false 时，没有 UV 的网格按三平面投影显示。修订 v18 之前写入的模型没有这个字段，表示不知道。
     CreativeModelParamSpec:
       type: object
       additionalProperties: false

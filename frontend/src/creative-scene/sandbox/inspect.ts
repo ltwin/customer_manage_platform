@@ -182,7 +182,7 @@ type Accessor = {
   max?: number[]
 }
 type Material = { slot: string; hint: string; isSlot: boolean }
-type Primitive = { position: number; indices: number; material: number }
+type Primitive = { position: number; indices: number; material: number; uv: boolean }
 type Node = { name: string; children: number[]; mesh: number; local: number[] }
 type Doc = {
   bin: DataView | null
@@ -449,6 +449,7 @@ function parsePrimitive(p: Obj, what: string, views: BufferView[], accessors: Ac
     count = a.count
     if (name === 'POSITION') position = idx
   }
+  const uv = has(attrs, 'TEXCOORD_0')
   if (position < 0) fail('accessor', `${what} has no POSITION`)
   const indices = indexOf(p, 'indices', what, accessors.length)
   if (indices >= 0) {
@@ -459,7 +460,7 @@ function parsePrimitive(p: Obj, what: string, views: BufferView[], accessors: Ac
     if (views[a.view].stride !== 0) fail('accessor', `${what} index bufferView has a stride`)
   }
   const material = indexOf(p, 'material', what, materials.length)
-  return { position, indices, material }
+  return { position, indices, material, uv }
 }
 
 function parseNodes(top: Obj, meshes: number, limits: Limits): Node[] {
@@ -667,6 +668,7 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
   const parts = new Set<string>()
   const anchorIDs = new Set<string>()
   const manifest: Manifest = { bounds, triangles: 0, slots: [], parts: [], anchors: [] }
+  let uv = true
   // Accessors may alias one bufferView, so without a budget a file within
   // every count limit could make the POSITION scan arbitrarily long. A file
   // whose POSITION accessors do not overlap never reads more vertices than
@@ -689,6 +691,7 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
         const lb = positionBounds(d, p.position, positions, budget)
         count += triangles(d, p, maxIndex)
         if (count > limits.maxTriangles) fail('limit', `more than ${limits.maxTriangles} triangles`)
+        uv &&= p.uv
         extend(bounds, lb, world)
         const m = p.material >= 0 ? d.materials[p.material] : null
         if (m?.isSlot && !slots.has(m.slot)) {
@@ -705,6 +708,7 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
   if (manifest.parts.length > limits.maxParts) fail('limit', `${manifest.parts.length} parts, limit ${limits.maxParts}`)
   if (manifest.anchors.length > limits.maxAnchors) fail('limit', `${manifest.anchors.length} anchors, limit ${limits.maxAnchors}`)
   manifest.triangles = count
+  manifest.uv = uv
   return normalize(manifest)
 }
 
@@ -757,8 +761,10 @@ function near(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
- * The contract comparison: after sorting by id, ids, hints and the triangle
- * count are exact; bounds and anchor positions agree within TOLERANCE.
+ * The contract comparison: after sorting by id, ids, hints, the triangle count
+ * and uv are exact; bounds and anchor positions agree within TOLERANCE. y is
+ * the server's: one computed before uv was added carries none, and uv then
+ * goes uncompared.
  */
 export function matches(x: Manifest, y: Manifest): boolean {
   const copy = (m: Manifest): Manifest =>
@@ -766,6 +772,7 @@ export function matches(x: Manifest, y: Manifest): boolean {
   const a = copy(x)
   const b = copy(y)
   return (
+    (b.uv === undefined || a.uv === b.uv) &&
     a.triangles === b.triangles &&
     near(a.bounds.min, b.bounds.min) &&
     near(a.bounds.max, b.bounds.max) &&

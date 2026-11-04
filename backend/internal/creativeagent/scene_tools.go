@@ -68,7 +68,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: readSceneTool,
 			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
 				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。" +
-				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；灯光带 shadow：on 投影、off 没开投影、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
+				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；模型 uv 为 false 表示有网格没有 UV，uv_fallback_slots 里选了 uv 映射的槽位因此按三平面显示；灯光带 shadow：on 投影、off 没开投影、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":  doc,
 				"object_ids":   strs("只读这些物件的完整信息，最多 200 个"),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -425,6 +426,11 @@ type ModelView struct {
 	BoundsM           *creativeglb.Bounds    `json:"bounds_m,omitempty"`
 	Triangles         int                    `json:"triangles,omitempty"`
 	Slots             []creativecontent.Slot `json:"slots,omitempty"`
+	// UV is whether every mesh has UVs, absent when the model predates it;
+	// UVFallbackSlots are the slots mapped by uv that show triplanar since
+	// it has none.
+	UV              *bool    `json:"uv,omitempty"`
+	UVFallbackSlots []string `json:"uv_fallback_slots,omitempty"`
 }
 
 // placedModel is a model revision as a write transaction reads it.
@@ -475,10 +481,25 @@ func objectView(o Object, models map[string]placedModel, shadows map[string]stri
 			mv.Usable, mv.NameHint, mv.BoundsM = true, m.payload.NameHint, &bounds
 			mv.Params, mv.ParamsSchema = m.payload.Generator.Params, m.payload.Generator.ParamsSchema
 			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, m.payload.Faces.effectiveSlots(m.payload.Manifest.Slots)
+			if mv.UV = m.payload.Manifest.UV; mv.UV != nil && !*mv.UV {
+				mv.UVFallbackSlots = uvMappedSlots(o.MaterialSlots)
+			}
 		}
 		v.Model = mv
 	}
 	return v
+}
+
+// uvMappedSlots are the slots whose textures are mapped by the model's UVs,
+// sorted.
+func uvMappedSlots(slots map[string]MaterialSlot) []string {
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(slots)) {
+		if m := slots[name].Mapping; slots[name].Maps != nil && m != nil && m.Kind == mappingUV {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // AgentReadInTx is read_scene: the scene in full, or in brief past 300

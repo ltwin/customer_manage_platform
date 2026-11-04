@@ -18,6 +18,9 @@ type ManifestFacts struct {
 	Slots     []Slot               `json:"slots"`
 	Parts     []string             `json:"parts"`
 	Anchors   []creativeglb.Anchor `json:"anchors"`
+	// UV is whether every mesh has UVs; absent for a model baked before
+	// manifests recorded it.
+	UV *bool `json:"uv,omitempty"`
 }
 
 // Slot is a material slot as the assistant sees it (data: 模型内容「有效槽位」):
@@ -86,9 +89,9 @@ func effectiveSlotsOf(glb []creativeglb.Slot, faces json.RawMessage) []Slot {
 
 // ManifestFactsOf reads a manifest: its size in metres (rounded to
 // millimetres), triangles, material slots (with those the face assignment
-// brings), parts and anchors.
+// brings), parts, anchors and whether it has UVs.
 func ManifestFactsOf(m creativeglb.Manifest, faces json.RawMessage) ManifestFacts {
-	f := ManifestFacts{Triangles: m.Triangles, Slots: effectiveSlotsOf(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors}
+	f := ManifestFacts{Triangles: m.Triangles, Slots: effectiveSlotsOf(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors, UV: m.UV}
 	for i := range f.SizeM {
 		f.SizeM[i] = math.Round((m.Bounds.Max[i]-m.Bounds.Min[i])*1000) / 1000
 	}

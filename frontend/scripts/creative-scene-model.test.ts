@@ -200,6 +200,7 @@ test('manifests match by the contract rules', () => {
     slots: [{ id: 'b' }, { id: 'a', hint: 'stone' }],
     parts: ['y', 'x'],
     anchors: [{ id: 'top', position: [0, 2, 0] }],
+    uv: true,
   }
   const variant = (f: (m: Manifest) => void): Manifest => {
     const m = structuredClone(base)
@@ -215,6 +216,10 @@ test('manifests match by the contract rules', () => {
   assert.ok(!matches(base, variant((m) => { m.triangles = 11 })))
   assert.ok(!matches(base, variant((m) => { m.slots[1].hint = 'wood' })))
   assert.ok(!matches(base, variant((m) => { m.parts = ['x'] })))
+  assert.ok(!matches(base, variant((m) => { m.uv = false })))
+  // The second is the server's: computed before uv existed it has none to compare.
+  assert.ok(matches(base, variant((m) => { delete m.uv })))
+  assert.ok(!matches(variant((m) => { delete m.uv }), base), 'a host manifest without uv does not match')
   assert.deepEqual(base.parts, ['y', 'x'], 'inputs are not reordered')
 })
 
