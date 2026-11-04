@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { SceneObject } from '../api.ts'
 import { drawnGeometries, keyOf, materialFor } from '../materials/instances.ts'
-import { resolvePart } from '../materials/resolve.ts'
+import { onGeometry, resolvePart } from '../materials/resolve.ts'
 import type { ModelParts } from '../models/cache.ts'
 import { roomEnvironment } from '../render/sky.ts'
 import { drawThumbnail, frame, onThumbnailGPU } from '../sandbox/thumbnail.ts'
@@ -25,7 +25,8 @@ export function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, m
     const resolved = resolvePart(m, materials, hints).material
     // The geometries belong to the model cache: drawn here, never disposed.
     // See-through: piece by piece, as the editor draws it (objects/ModelMesh.tsx).
-    for (const g of drawnGeometries(m.geometry, resolved)) scene.add(new THREE.Mesh(g, materialFor(keyOf(resolved, true), resolved, true)))
+    const drawn = onGeometry(resolved, 'uv' in m.geometry.attributes)
+    for (const g of drawnGeometries(m.geometry, drawn)) scene.add(new THREE.Mesh(g, materialFor(keyOf(drawn, true), drawn, true)))
   }
   const camera = new THREE.PerspectiveCamera(30, 1)
   frame(camera, manifest)

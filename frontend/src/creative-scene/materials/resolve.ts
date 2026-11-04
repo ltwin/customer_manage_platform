@@ -100,3 +100,12 @@ export function resolvePart(
   return resolveSlot(part.origin.slot, assigned, hintOf(part.origin.slot, part.origin.hint), part.constants)
 }
 
+/**
+ * The material a geometry draws a slot with: UV mapping on one without UVs
+ * falls back to box projection, a metre a tile (C5c1 design「光栅材质的构建」).
+ */
+export function onGeometry(m: SlotMaterial, hasUV: boolean): SlotMaterial {
+  const mapping = m.kind === 'principled' ? m.texturing?.mapping : undefined
+  if (hasUV || m.kind !== 'principled' || mapping?.kind !== 'uv') return m
+  return { ...m, texturing: { ...m.texturing, mapping: { kind: 'triplanar', size_m: 1, rotation_deg: mapping.rotation_deg ?? 0, normal_strength: mapping.normal_strength ?? 1 } } }
+}

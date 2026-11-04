@@ -1,12 +1,38 @@
-import { Color, DoubleSide, FrontSide, type BufferGeometry } from 'three'
-import { float, fwidth, length, materialEmissive, max, modelScale, normalLocal, normalView, positionLocal, positionView, uniform, varying } from 'three/tsl'
+import { Color, DoubleSide, FrontSide, Vector2, type BufferGeometry } from 'three'
+import {
+  cameraViewMatrix,
+  dFdx,
+  dFdy,
+  float,
+  fwidth,
+  length,
+  materialColor,
+  materialEmissive,
+  materialMetalness,
+  materialOpacity,
+  materialRoughness,
+  max,
+  modelNormalMatrix,
+  modelScale,
+  normalLocal,
+  normalView,
+  positionLocal,
+  positionView,
+  texture,
+  uniform,
+  uv,
+  varying,
+  vec4,
+} from 'three/tsl'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 import { pieceViews } from '../render/pieces.ts'
 import { preExposure } from '../world/exposure.ts'
 import { materialEntry } from './catalog.ts'
+import { acquireTexture, releaseTexture, textureKeys } from './images.ts'
+import { bendNormal, mappingOf, shaderKit, triplanar, uvMapped, uvNormal, uvSurface, type MapKind, type MappingIn } from './maps.ts'
 import { bumpNormal, patternFns, type TSLNode } from './patterns.ts'
-import { principledProps, renderPolicy } from './principled.ts'
-import type { SlotMaterial } from './resolve.ts'
+import { principledProps, renderPolicy, type RenderPolicy } from './principled.ts'
+import type { SlotMaterial, Texturing } from './resolve.ts'
 
 // Material instances shared by every mesh that asks for the same thing:
 // kind, preset, complete parameters and sidedness. A preset's node graph is
@@ -73,8 +99,10 @@ export function makeMaterial(m: SlotMaterial, doubleSided: boolean): MeshPhysica
 function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): MeshPhysicalNodeMaterial {
   if (m.kind === 'unknown') return new MeshPhysicalNodeMaterial({ color: unknownGrey, roughness: 0.9, metalness: 0, side })
   if (m.kind === 'principled') {
-    const material = new MeshPhysicalNodeMaterial({ ...principledProps(m.params, renderPolicy(m)), side, vertexColors: !!m.vertexColors })
+    const policy = renderPolicy(m)
+    const material = new MeshPhysicalNodeMaterial({ ...principledProps(m.params, policy), side, vertexColors: !!m.vertexColors })
     material.emissiveNode = exposedEmission
+    if (m.texturing) applyTextures(material, m.texturing, policy)
     return material
   }
   const p = m.params
@@ -91,6 +119,61 @@ function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): Mes
   material.emissiveNode = o.emission.mul(preExposure)
   material.name = m.id
   return material
+}
+
+/**
+ * A principled slot's textures and alpha mode as nodes (C5c1 design「光栅材质的
+ * 构建」): each map multiplies its constant, as three.js and glTF have it, AO
+ * darkens only the indirect light, and the normal bends by the mapping's own
+ * frame. The textures are held until the material is disposed. Without maps,
+ * only the alpha mode's test.
+ */
+function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy: RenderPolicy) {
+  const keys = textureKeys(t)
+  const textures: Partial<Record<MapKind, ReturnType<typeof acquireTexture>>> = {}
+  for (const [which, key] of Object.entries(keys) as [MapKind, string][]) textures[which] = acquireTexture(key)
+  material.addEventListener('dispose', () => Object.values(keys).forEach(releaseTexture))
+  const has = { color: !!keys.color, normal: !!keys.normal, orm: !!keys.orm }
+  const mapping = mappingOf(t)
+  // A tile is size_m wide, as tall as its image says (the first map's, once it is here).
+  const first = textures.color ?? textures.normal ?? textures.orm
+  const scale = uniform(new Vector2(...mapping.repeat))
+  if (mapping.kind === 'triplanar') scale.onRenderUpdate(() => new Vector2(1 / mapping.size, ((first?.userData.aspect as number | undefined) ?? 1) / mapping.size))
+  const m: MappingIn<TSLNode> = { scale, cos: uniform(Math.cos(mapping.rotation)), sin: uniform(Math.sin(mapping.rotation)), strength: uniform(mapping.strength) }
+  const sample = (which: MapKind, coord: TSLNode) => texture(textures[which]!, coord)
+  let color: TSLNode
+  let orm: TSLNode
+  if (mapping.kind === 'triplanar') {
+    const s = triplanar(shaderKit, patPos, patNormal, m, has, sample)
+    ;({ color, orm } = s)
+    if (s.bend) {
+      // The gradient is a covector: into local space by the scale, on to view space by the normal matrices, unnormalised.
+      const local = s.bend.mul(modelScale)
+      const world: TSLNode = (modelNormalMatrix as TSLNode).mul(local)
+      material.normalNode = bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz)
+    }
+  } else {
+    const b = uvMapped(shaderKit, uv(), m)
+    const s = uvSurface(shaderKit, b, m, has, sample)
+    ;({ color, orm } = s)
+    if (s.normal) material.normalNode = uvNormal(shaderKit, normalView, dFdx(positionView), dFdy(positionView), dFdx(b), dFdy(b), s.normal)
+  }
+  if (has.color) material.colorNode = vec4(materialColor.mul(color.xyz), 1)
+  if (has.orm) {
+    material.roughnessNode = materialRoughness.mul(orm.y)
+    material.metalnessNode = materialMetalness.mul(orm.z)
+    material.aoNode = orm.x
+  }
+  // opaque leaves the texture's alpha out; clip cuts below the cutoff, in the shadow maps too (task 1.1: three's shadow pass reads maskShadowNode, not alphaTestNode).
+  const alpha = materialOpacity.mul(color.w)
+  if (policy.alphaCutoff !== null) {
+    const cutoff = uniform(policy.alphaCutoff)
+    material.opacityNode = alpha
+    material.alphaTestNode = cutoff
+    material.maskShadowNode = alpha.greaterThanEqual(cutoff)
+  } else if (t.alpha_mode === 'blend') {
+    material.opacityNode = alpha
+  }
 }
 
 /** The shared instance for key, made from m the first time. */

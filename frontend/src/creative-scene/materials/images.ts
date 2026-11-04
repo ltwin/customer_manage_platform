@@ -366,6 +366,8 @@ function show(e: Entry, shown: NonNullable<Entry['shown']>) {
   }
   e.shown = shown
   e.texture.image = shown.picture
+  // Kept while the pixels are let go: box projection sizes a tile by it (instances.ts).
+  e.texture.userData.aspect = shown.picture.width / shown.picture.height
   setState(e, 'ready')
 }
 
