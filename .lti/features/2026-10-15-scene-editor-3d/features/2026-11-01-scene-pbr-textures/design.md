@@ -47,13 +47,14 @@
 
 | `alpha_mode` | 透明队列（`transparent`、分片绘制） | 深度写入 | AO 预渲染 | 世界空间层 | 透明测试 |
 |---|---|---|---|---|---|
-| `opaque` | `opacity < 1` 或 `transmission > 0`（现状） | 与左列相反 | 与左列相反 | 与左列相反 | 无 |
-| `clip` | 只看 `transmission > 0` | 是 | 参与 | 参与，命中点按裁切处理 | `opacity × a < alpha_cutoff` 挖掉 |
+| `opaque` | `opacity < 1` 或 `transmission > 0`（现状） | `opacity = 1`（现状：满不透明度的玻璃也写深度） | 与透明队列相反 | 与透明队列相反 | 无 |
+| `clip` | 只看 `transmission > 0` | 是 | 与透明队列相反 | 与透明队列相反，命中点按裁切处理 | `opacity × a < alpha_cutoff` 挖掉 |
 | `blend` | 总是 | 否 | 不参与 | 不参与 | 无 |
 
 - `clip` 不带基础色贴图时，`a = 1`，整个表面按 `opacity` 与阈值比较，要么全留、要么全挖。编辑器在面板上提示「没有透明贴图，裁切只看不透明度」。
 - `clip` 加 `transmission > 0`（带镂空的玻璃）按透明队列处理，和现在的玻璃一样不进世界空间层。
 - 缓存键 `keyOf` 包含整个槽位分配：`maps`、`mapping`、`alpha_mode`、`alpha_cutoff`。只切换透明方式也会得到新的材质实例。
+- 实现（任务 3.1）：`renderPolicy` 给出 `seeThrough`（透明队列，同时决定分片绘制、不投影、不进 AO 与实时 GI 的预渲染和世界空间层）、`blended`（材质的 `transparent`）、`depthWrite`、`alphaCutoff`。three 的透明列表按「`transparent` 或 `transmission > 0`」划分，与 `seeThrough` 逐行相同，有单测守住，所以两个预渲染的 `transparent = false` 不必另读策略。没写 `alpha_mode` 与写明 `opaque` 得到同一个键。
 
 ### 场景引用图片（通用）
 

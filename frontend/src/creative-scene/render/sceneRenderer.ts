@@ -629,6 +629,8 @@ export class SceneRenderer {
       if (!wireframe) {
         // Multisampled depth cannot be sampled by the AO: the prepass has none.
         const prepass = own(pass(scene, camera, { samples: 0 }))
+        // Leaves out what three lists as transparent: the slots renderPolicy calls see-through
+        // (materials/principled.ts), which sets the material's transparent from it.
         prepass.transparent = false
         // The surfaces' own normals, as GTAOPass drew them (MeshNormalMaterial over the scene): no
         // maps, and no lights, so a new light compiles only the picture's materials.

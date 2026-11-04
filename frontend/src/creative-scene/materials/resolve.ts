@@ -1,3 +1,4 @@
+import type { components } from '../../api/schema'
 import type { ParamValue } from '../builtins/catalog.ts'
 import type { MeshConstants } from '../models/cache.ts'
 import { completeParams, hintPreset, materialEntry, principledID } from './catalog.ts'
@@ -9,8 +10,16 @@ import { completeParams, hintPreset, materialEntry, principledID } from './catal
 //  4. nothing assigned, a model: the module's own material constants;
 //  5. nothing assigned, a primitive: the clay colour.
 
+type Slot = components['schemas']['CreativeSceneMaterialSlot']
+
+/** A principled slot's textures and how it uses alpha, as the scene stores them; absent on a plain slot. */
+export type Texturing = Pick<Slot, 'maps' | 'mapping' | 'alpha_mode' | 'alpha_cutoff'>
+
+/** The cutoff a clip slot uses when it names none; the store fills it in, hand-written slots may not. */
+export const defaultAlphaCutoff = 0.5
+
 export type SlotMaterial =
-  | { kind: 'principled'; params: Record<string, ParamValue>; vertexColors?: boolean }
+  | { kind: 'principled'; params: Record<string, ParamValue>; vertexColors?: boolean; texturing?: Texturing }
   | { kind: 'pattern'; id: string; params: Record<string, ParamValue> }
   | { kind: 'unknown' }
 
@@ -20,14 +29,35 @@ export type ResolvedSlot = {
   material: SlotMaterial
 }
 
-type Assigned = Readonly<Record<string, { preset: string; params?: Record<string, unknown> }>> | undefined
+type Assigned = Readonly<components['schemas']['CreativeSceneMaterialSlots']> | undefined
 
-/** A material from the catalog with its parameters complete and in range. */
-export function catalogMaterial(id: string, params?: Record<string, unknown>): SlotMaterial | null {
+/**
+ * A material from the catalog with its parameters complete and in range. A
+ * principled one keeps the slot's textures and alpha mode; presets take none.
+ */
+export function catalogMaterial(id: string, params?: Record<string, unknown>, slot?: Texturing): SlotMaterial | null {
   const entry = materialEntry(id)
   if (!entry) return null
   const complete = completeParams(entry, params)
-  return entry.kind === 'principled' ? { kind: 'principled', params: complete } : { kind: 'pattern', id, params: complete }
+  if (entry.kind !== 'principled') return { kind: 'pattern', id, params: complete }
+  const texturing = slot && texturingOf(slot)
+  return { kind: 'principled', params: complete, ...(texturing ? { texturing } : {}) }
+}
+
+/**
+ * What of a slot's textures and alpha the material draws with, defaults left
+ * out: a slot that spells out opaque shares an instance with one that does
+ * not. undefined for a plain slot.
+ */
+function texturingOf(s: Texturing): Texturing | undefined {
+  const out: Texturing = {}
+  if (s.maps && Object.keys(s.maps).length > 0) {
+    out.maps = s.maps
+    if (s.mapping) out.mapping = s.mapping
+  }
+  if (s.alpha_mode === 'clip' || s.alpha_mode === 'blend') out.alpha_mode = s.alpha_mode
+  if (s.alpha_mode === 'clip') out.alpha_cutoff = s.alpha_cutoff ?? defaultAlphaCutoff
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /** The clay colour: what an unassigned primitive shows in the material looks. */
@@ -36,7 +66,7 @@ export const primitiveDefault: SlotMaterial = catalogMaterial(principledID, { co
 export function resolveSlot(slot: string | null, assigned: Assigned, hint: string | null | undefined, constants: MeshConstants | null): ResolvedSlot {
   const a = slot !== null ? assigned?.[slot] : undefined
   if (a) {
-    const m = catalogMaterial(a.preset, a.params)
+    const m = catalogMaterial(a.preset, a.params, a)
     return m ? { slot, source: 'assigned', material: m } : { slot, source: 'unknown', material: { kind: 'unknown' } }
   }
   const preset = slot !== null ? hintPreset(hint) : undefined
