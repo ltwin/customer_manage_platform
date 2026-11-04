@@ -380,8 +380,8 @@ func newPillarFrom(t *testing.T, f fixture, doc, id string, order int, u uploads
 	}})
 }
 
-// Reading a scene reads all its models with the same number of queries
-// whether it references one model or many.
+// Reading a scene reads all its models and images with the same number of
+// queries whether it references one of each or many.
 func TestReadModelsQueriesDoNotGrowWithModels(t *testing.T) {
 	f := setup(t)
 	if _, err := f.db.Exec(`CREATE VIEW test_revision_scans AS SELECT 'scene-a'::text AS account_id, (coalesce(seq_scan,0)+coalesce(idx_scan,0))::bigint AS scans
@@ -389,9 +389,11 @@ func TestReadModelsQueriesDoNotGrowWithModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := createScene(t, f.a)
-	var refs []string
+	var objects []map[string]any
 	for i := range 6 {
-		refs = append(refs, newPillar(t, f, doc, objectID(i+1), i+1).ContentRevisionID)
+		objects = append(objects, map[string]any{"id": objectID(i + 1), "kind": "model_instance",
+			"model":          map[string]any{"content_revision_id": newPillar(t, f, doc, objectID(i+1), i+1).ContentRevisionID},
+			"material_slots": map[string]any{"main": principled(map[string]any{"maps": map[string]any{"base_color": texture(mediaRevision(t, f, f.a, "image"))}})}})
 	}
 	typ, _ := creativedocument.Lookup(creativescene.TypeKey)
 	scans := func(tx store.ReadTxAccountScope) (int64, error) {
@@ -407,7 +409,11 @@ func TestReadModelsQueriesDoNotGrowWithModels(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			cur := creativedocument.Current{Refs: refs[:n], Content: creativecontent.Revision{Payload: creativecontent.Payload{Scene: json.RawMessage(`{"objects":[]}`)}}}
+			scene, err := json.Marshal(map[string]any{"objects": objects[:n]})
+			if err != nil {
+				return err
+			}
+			cur := creativedocument.Current{Content: creativecontent.Revision{Payload: creativecontent.Payload{Scene: scene}}}
 			if raw, err = typ.View(t.Context(), tx, cur, nil); err != nil {
 				return err
 			}
@@ -420,12 +426,13 @@ func TestReadModelsQueriesDoNotGrowWithModels(t *testing.T) {
 		}
 		var v struct {
 			Models map[string]modelEntry `json:"models"`
+			Images map[string]any        `json:"images"`
 		}
-		if err := json.Unmarshal(raw, &v); err != nil || len(v.Models) != n {
-			t.Fatalf("view of %d models: %s %v", n, raw, err)
+		if err := json.Unmarshal(raw, &v); err != nil || len(v.Models) != n || len(v.Images) != n {
+			t.Fatalf("view of %d models and images: %s %v", n, raw, err)
 		}
 	}
 	if deltas[1] != deltas[6] {
-		t.Fatalf("revision scans grew with models: %v", deltas)
+		t.Fatalf("revision scans grew with models and images: %v", deltas)
 	}
 }

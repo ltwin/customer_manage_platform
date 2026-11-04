@@ -7,6 +7,7 @@ import { patternFns, type TSLNode } from '../../materials/patterns.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { preExposure } from '../../world/exposure.ts'
 import type { Lighting } from './collect.ts'
+import { NO_MAPS, type RowMaps, type TraceMaps } from './maps.ts'
 import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 
 // What a hit point is shaded with, in one storage buffer of vec4s (S1
@@ -19,8 +20,14 @@ import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 //            (environment intensity, 0, 0, 0), then three columns: the
 //            matrix a hit turns a world direction by before it samples the
 //            environment (environmentLookup)
-//   material 8 vec4: (kind, double-sided, vertex colours, 0), then a vec4 a
-//            parameter (a colour's rgb, a number's x), in rowParams' order
+//   material 10 vec4: (kind, double-sided, vertex colours, clip), then a
+//            vec4 a parameter (a colour's rgb, a number's x), in rowParams'
+//            order (seven at most); the 9th and 10th the slot's textures
+//            (maps.ts RowMaps): (the base colour's, normal's and ORM's
+//            layers, −1 for none; the mapping, 0 box projection 1 UV),
+//            (scale along u and w, rotation, normal strength). clip: the
+//            cutoff over the opacity the base colour's alpha is held to, 0
+//            for none (C5c1)
 //   light    4 vec4: (type, casts shadows, distance, decay),
 //            (position, or the direction towards it; spot: cos of its cone),
 //            (colour × intensity; spot: cos where its penumbra starts),
@@ -34,7 +41,9 @@ import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 //   (half its height, a world vector, 0); it lights toward −(width × height)
 
 export const HEADER = 8
-export const MATERIAL_ROW = 8
+export const MATERIAL_ROW = 10
+/** The row's vec4s of its textures (maps.ts RowMaps), after any preset's parameters. */
+export const MAPS_AT = 8
 export const LIGHT_ROW = 5
 
 /** A row's first vec4: kind 0 the unknown material's grey, 1 principled, 2 + i the preset presets[i]. */
@@ -98,6 +107,8 @@ export function environmentLookup(scene: Scene): number[] {
 export class TraceTables {
   /** The vec4 array the hit reads (hit.ts). */
   readonly node: TSLNode
+  /** The texture arrays the rows' layers are of (the base's; none in the unit tests): a hit samples them. */
+  maps: TraceMaps | null = null
   private attribute: StorageBufferAttribute
   /** Rows there is room for: the lights start after the materials' room. */
   private room = { materials: 0, lights: 0 }
@@ -150,15 +161,16 @@ export class TraceTables {
     a.needsUpdate = true
   }
 
-  /** Material row r: m as a hit shades it. */
-  setMaterial(r: number, slot: SlotMaterial, doubleSided: boolean) {
+  /** Material row r: m as a hit shades it, with its textures' layers as the arrays have them. */
+  setMaterial(r: number, slot: SlotMaterial, doubleSided: boolean, maps: RowMaps = NO_MAPS) {
     const m = asRow(slot)
     this.reserve(r + 1, this.room.lights)
     const f = this.f32
     const at = (HEADER + r * MATERIAL_ROW) * 4
     f.fill(0, at, at + MATERIAL_ROW * 4)
     const kind = m.kind === 'unknown' ? UNKNOWN : m.kind === 'principled' ? PRINCIPLED : 2 + presets.indexOf(m.id)
-    f.set([kind, doubleSided ? 1 : 0, m.kind === 'principled' && m.vertexColors ? 1 : 0, 0], at)
+    f.set([kind, doubleSided ? 1 : 0, m.kind === 'principled' && m.vertexColors ? 1 : 0, maps.clip], at)
+    f.set([...maps.layers, ...maps.transform], at + MAPS_AT * 4)
     const params = m.kind === 'unknown' ? unknownParams : m.params
     rowParams(m).forEach(({ key, color: isColor }, i) => {
       const o = at + (1 + i) * 4

@@ -1,5 +1,5 @@
 import { Color, DoubleSide, type BufferGeometry, type Light, type Material, type Mesh, type Object3D } from 'three'
-import { isSeeThrough } from '../../materials/instances.ts'
+import { renderPolicy } from '../../materials/principled.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { SceneAreaLight } from '../lightModel/lights.ts'
 
@@ -51,12 +51,13 @@ function drawnWhole(g: BufferGeometry): boolean {
 /**
  * What a mesh's roots are drawn with: a material a group, the one its
  * index picks; else the mesh's one material. null when any is not traced:
- * no slot material (clay, ghosts, placeholders, helpers) or a see-through one.
+ * no slot material (clay, ghosts, placeholders, helpers) or a see-through one
+ * (materials/principled.ts renderPolicy).
  */
 function slotsOf(mesh: Mesh, slotOf: SlotOf): Slot[] | null {
   const pick = (m: Material | undefined): Slot | null => {
     const s = m && slotOf(m)
-    return s && !isSeeThrough(s) ? { material: s, doubleSided: m.side === DoubleSide } : null
+    return s && !renderPolicy(s).seeThrough ? { material: s, doubleSided: m.side === DoubleSide } : null
   }
   if (!Array.isArray(mesh.material)) {
     const one = pick(mesh.material)

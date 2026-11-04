@@ -180,12 +180,32 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}, faces?}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
 | `objects[].primitive.faces` | object，结构同 `data: 模型内容` 的 `model.faces` | 否 | 面级材质分配（C5b，修订 v13）。基础体不在物件间共用，分配直接记在物件内容上，改它只涉及 `object:<id>:content`，不产生模型修订。基础体只有一个网格，`meshes[]` 至多一项，`path` 固定为 `[["", 0]]`、`primitive` 为 0；区间 ≤ 256 个。保留还是作废只按 `data: 场景内置基础体` 的 `topology` 声明判断（编辑器与服务端同一规则），改了声明里的参数即清空，见 `api: 提交场景命令`；指纹只用于加载时兜底核对 |
 | `objects[].model` | `{content_revision_id}` | `kind=model_instance` 时 | 必须是本账号 `model` 类型、`ready` 且可展示的内容修订 |
-| `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
+| `objects[].material_slots` | `{<slot_id>:{preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}}` | 否 | 贴图与透明方式见下方「材质贴图」（修订 v17）。缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
 | `objects[].light` | 按 `type` 区分，字段与 three.js 灯光类同名同义，见下方「灯光」 | `kind=light` 时 | 只有 `type` 必填，其余缺省取 three.js 默认值，存储时补齐 |
 | `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near>0, far>near（米，同 three.js `PerspectiveCamera`）, label≤40, depth_of_field:bool, f_stop:0.5…64, focus>0（米，同 three.js `PerspectiveCamera.focus`）, focus_object_id:物件 ID 或 ""}` | `kind=camera` 时 | 各字段可省略，缺省 `{35,[36,24],"3:2",0.1,1000,"",false,2.8,10,""}`，存储时补齐；景深四个字段为修订 v8 新增，旧快照在读取时补齐。朝局部 −Z 看（three.js 摄像机约定）；视场角按画面长边对应传感器长边算出：`tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)`，`fov` 为 three.js 的垂直视场角（修订 v8），不写 three.js 的 `fov`。`focus_object_id` 非空时按该物件原点沿视线方向的深度对焦：写入时必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己；之后目标被删除不算违反契约，按 `focus` 对焦。写空字符串取消对焦物件（按键合并下 `null` 等于没写）。`depth_of_field = true` 时，白模导出按光圈和对焦虚化（design「渲染模式与导出」） |
 | 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
-- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
+- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型和图片 `content_revision_id`（图片自修订 v17）。
+- **材质贴图**（修订 v17，C5c1）：槽位值的可选字段，只在 `preset = principled@1` 时允许，写在其他预设上返回 400 并指出字段。
+
+| 字段 | 类型 | 必须 | 缺省 / 约束 |
+|---|---|---|---|
+| `maps` | object | 否 | 键为 `base_color`、`normal`、`roughness`、`metalness`、`ao`，至少一个；未知键返回 400 |
+| `maps.<kind>.content_revision_id` | string（`ccrv_…`） | 是 | 本账号 `image` 类型、`ready` 且可展示的内容修订，校验与模型引用相同；否则返回 400 `creative_image_unavailable` |
+| `maps.<kind>.channel` | `"r"` \| `"g"` \| `"b"` \| `"a"` | 否 | 只对 `roughness`、`metalness`、`ao` 有效，缺省 `r`，存储时补齐；写在 `base_color`、`normal` 上返回 400。glTF 的打包 ORM 图可以三项都指定同一张图，分别取 `r`、`g`、`b` |
+| `mapping` | object | 否 | 只在有 `maps` 时允许；有 `maps` 而没写时存储为 `{kind:"triplanar", size_m:1, rotation_deg:0, normal_strength:1}` |
+| `mapping.kind` | `"triplanar"` \| `"uv"` | 否 | 缺省 `triplanar`：按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）。`uv` 用模型的 `TEXCOORD_0`；模型没有 UV 时按三平面投影显示，编辑器和助手都会被提示。助手按 manifest 的 `uv = false` 判断（修订 v18），旧模型没有这个字段时不提示；基础体都带 UV |
+| `mapping.size_m` | number 0.01…100 | 否 | 只在 `triplanar` 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比 |
+| `mapping.repeat` | `[u, v]`，各 0.01…1000 | 否 | 只在 `uv` 时允许，缺省 `[1, 1]` |
+| `mapping.rotation_deg` | number 0…360 | 否 | 缺省 0 |
+| `mapping.normal_strength` | number 0…4 | 否 | 缺省 1；没有法线贴图时也允许保存 |
+| `alpha_mode` | `"opaque"` \| `"clip"` \| `"blend"` | 否 | 对应 glTF 的 OPAQUE / MASK / BLEND。缺省 `opaque`；有 `maps` 时存储时补齐。不带基础色贴图也允许，此时透明度只来自 `opacity` |
+| `alpha_cutoff` | number 0…1 | 否 | 只在 `alpha_mode = clip` 时允许，缺省 0.5，存储时补齐 |
+
+  - 贴图与常数参数相乘，语义同 three.js 和 glTF：基础色 = `color` × 贴图（按 sRGB 读取）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光；法线贴图是切线空间，OpenGL 约定（+Y 朝上，同 glTF、Blender），乘 `normal_strength`。除基础色外按线性读取。
+  - 透明方式：`opaque` 忽略贴图的透明通道，`opacity`、`transmission` 的行为与修订 v17 之前完全相同；`clip` 把 `opacity × 贴图透明通道` 低于 `alpha_cutoff` 的部分挖掉，留下的部分完全不透明，挖掉的部分不投影，屏幕外反射和探针 GI 里同样挖空；`blend` 把贴图透明通道乘到 `opacity` 上，按半透明物件处理（与 `opacity < 1` 相同），即使整张贴图都不透明。
+  - 白模、线稿和线框不看材质（与 Blender 相同），贴图和透明方式都不体现；材质预览、最终渲染、`render_view` 和 `lit` 导出体现。
+  - 单个场景最多引用 64 张不同的图片（跨所有槽位去重计数），超出返回 413 `creative_size_limit`。这是初始值，C5c1 实测后调整。
 - **灯光**（字段与 three.js 同名同义，渲染时原样赋给对应的灯光类）：
 
 | `type` | three.js | 字段与缺省 |
@@ -200,15 +220,15 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **命名原则**（修订 v7）：助手要写的字段与 three.js 同名同义；three.js 没有对应字段的，保留带单位的名字（`sun_elevation_deg`、`focal_mm`、`sensor_mm`）。不接受别名，写错名字返回 400 并指出字段。变换的 `rotation` 保持四元数：three.js 里它对应 `quaternion`（three.js 的 `rotation` 是欧拉角），但两者长度不同，写错会被拒绝而不会悄悄出错，C3 试用中助手也全部写对。
 
 ### 访问模式与保证
-- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
+- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）和图片修订摘要（宽高、MIME、是否可用，修订 v17）。图片像素由编辑器按修订另取媒体读取票据（`role = original`），不经场景接口。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
 - **写**：在文档行锁内（`SELECT … FOR UPDATE`）检查单元版本 → 应用 → 校验全部不变量 → 写新快照、修订行（`actor_kind`、`run_id`、`changed_units`、`restored_from`）和引用行 → 更新文档行的 `revision` 和 `content_revision_id`。整个过程在一个事务里，失败则不产生任何修订。
 - **不变量的保证方**：
-  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型可用、单元版本单调。
+  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型和图片可用、单元版本单调。图片的可用性只在它第一次出现在场景里时检查，已被当前修订引用的图片批量复核，与模型相同（修订 v17）。
   - 由数据库保证：修订号主键唯一、`account_id` 限定、内容类型 CHECK。
 - **历史**：按 `revision DESC` 分页列出修订；`changed_units` 直接读，不比对快照。
 
 ### 生命周期与演进
-- 进回收站与彻底删除沿用通用文档层。彻底删除时删除修订行和引用行，之后模型修订失去持有方，可被 GC 回收。
+- 进回收站与彻底删除沿用通用文档层。彻底删除时删除修订行和引用行，之后模型修订和图片修订失去持有方，可被 GC 回收。
 - 内容类型 CHECK 加 `scene`。回滚时如已有 `scene` 内容则拒绝，前向修复。
 - 快照 `schema_version` 升级时，读取端兼容旧版本，写入只写新版本；不做批量回填。
 - 例外：修订 v7 的改名（雾和摄像机的 `near_m`/`far_m` → `near`/`far`，灯光 `range_m` → `distance`、`angle_deg` → `angle` 并补 `decay`）发生在上线之前，生产库没有场景数据。由一次迁移改写已有的场景快照，`schema_version` 仍为 1，不保留旧字段的读取兼容。旧的 `angle_deg` 没有定义是整锥角还是半角，也从未渲染过，迁移按整锥角换算（`angle = angle_deg / 2`，换成弧度）；2026-10-18 开发库里没有灯光物件。
@@ -216,6 +236,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 修订 v8（C4 起草时）：摄像机新增 `depth_of_field`、`f_stop`、`focus`、`focus_object_id`。不迁移：读取时补齐默认值（服务端解码时补齐，读取场景的响应里也带齐），之后的写入按完整字段存储。「空物体」是没有子物件的 `group`，不新增 `kind`。
 - 修订 v10（C5 起草时）：`render` 新增 `exposure_ev`。灯光按 three.js 的物理单位（坎德拉），室外有太阳和只有几盏灯的室内亮度差几个数量级，固定曝光无法同时照顾两者，所以由场景自己定曝光，与摄影里按场景定曝光一致；用「档」而不是倍数，与相机的曝光补偿、Blender 色彩管理的曝光相同。不迁移：读取时补 0，读取场景的响应里也带齐。
 - 修订 v13（C5b 起草时）：基础体的 `primitive` 新增可选的 `faces`。不迁移：没有这个字段就是没有面分配。回滚到不认识它的后端会读取失败，只做前向修复。
+- 修订 v17（C5c1 起草时）：材质槽新增可选的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`，引用表开始登记图片。不迁移：没有这些字段就是没有贴图、`opaque`，渲染与之前相同。改了 `maps` 的槽位会进入渲染指纹（指纹已整体计入 `material_slots`），已有的 `lit` 导出图照常提示过时；没改的场景指纹不变。回滚到不认识这些字段的后端会读取失败，只做前向修复。
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 
 ## 场景内置基础体
@@ -332,8 +353,8 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - 不允许 `images`、`textures`、`samplers`、`skins`、`animations`、`cameras`；`extensionsRequired` 为空，`extensionsUsed` 只允许 `KHR_materials_emissive_strength`。
   - 预算：节点 ≤ 10000，遍历到的 primitive 实例 ≤ 10000，三角形 ≤ 300000，字节 ≤ 16 MiB；读取的 POSITION 顶点总数（每个访问器计一次）≤ BIN 块字节数 / 12。访问器可以指向同一段数据，少了这一项，各项计数都在预算内的文件也能让校验读上数十亿个顶点；访问器互不重叠的文件不会超出。
   - 不合规时上传以 `failed` 结束，失败码沿用现有的 `media_unsupported`。
-- **manifest 的算法**：三角形数按场景树遍历累加；每个 primitive 的局部范围**从 POSITION 实际数值算出**，并与访问器声明的 `min` / `max` 逐分量核对（必须存在且相等，否则拒绝）；包围盒取局部范围的 8 个角点经节点世界矩阵变换后合并（与 three.js `Box3.setFromObject` 非精确模式一致）；世界矩阵、包围盒与挂点坐标必须是有限值，各节点数值有限但相乘溢出时拒绝；槽位取材质名 `slot:<id>` 与 `extras.hint`，部件取节点名 `part:<id>`，挂点取节点名 `anchor:<id>` 及其世界坐标，名称取 JSON 原文；槽位 ≤ 32、部件 ≤ 200、挂点 ≤ 200。
-- **提交时**：manifest 必须与暂存形态中服务端从 GLB 算出的一致，不一致则拒绝。比对规则：`slots`、`parts`、`anchors` 先按 `id` 排序；`id`、`hint`、`triangles` 精确相等；`bounds` 与挂点坐标容差 1e-4 m。名称取 GLB JSON 原文（three.js 加载后会删掉节点名里的 `:`）。写入完整形态时使用服务端的值。
+- **manifest 的算法**：三角形数按场景树遍历累加；每个 primitive 的局部范围**从 POSITION 实际数值算出**，并与访问器声明的 `min` / `max` 逐分量核对（必须存在且相等，否则拒绝）；包围盒取局部范围的 8 个角点经节点世界矩阵变换后合并（与 three.js `Box3.setFromObject` 非精确模式一致）；世界矩阵、包围盒与挂点坐标必须是有限值，各节点数值有限但相乘溢出时拒绝；槽位取材质名 `slot:<id>` 与 `extras.hint`，部件取节点名 `part:<id>`，挂点取节点名 `anchor:<id>` 及其世界坐标，名称取 JSON 原文；槽位 ≤ 32、部件 ≤ 200、挂点 ≤ 200；`uv` 为遍历到的每个 primitive 都有 `TEXCOORD_0` 时取 true，否则 false（修订 v18）。
+- **提交时**：manifest 必须与暂存形态中服务端从 GLB 算出的一致，不一致则拒绝。比对规则：`slots`、`parts`、`anchors` 先按 `id` 排序；`id`、`hint`、`triangles`、`uv` 精确相等（暂存形态在修订 v18 之前算出、没有 `uv` 时不比对 `uv`）；`bounds` 与挂点坐标容差 1e-4 m。名称取 GLB JSON 原文（three.js 加载后会删掉节点名里的 `:`）。写入完整形态时使用服务端的值。
 - **读取**：GLB 和缩略图走现有媒体读取票据（`IssueTicket` / `Open`），角色分别为 `original` 和 `thumbnail`（票据角色加 `thumbnail`）。
 
 ### 生命周期与演进
@@ -341,6 +362,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 外部 GLB 导入（下一版）会加 `generator.language = "imported"`，且没有 `code`。本版读取端遇到未知 `language` 时只能显示，不能调参数。
 - 修订 v13（C5b）：新增可选的 `model.faces`，新增写入口 `derive_model`。不迁移，没有这个字段就是没有面分配。OpenAPI 的 `CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `faces`。回滚只做前向修复。
 - 修订 v14（C5b 验收）：「重新生成时」补两种作废情况和 `hints` 的保留规则，改正 `t1` 关于重排的说明。只改渲染端的带入规则，数据外形不变，不迁移。
+- 修订 v18（C5c1）：manifest 加 `uv`。不回填：之前写入的模型修订没有这个字段，读取方按「不知道」处理（编辑器按加载出的几何体判断，助手不提示），重新生成或派生自新修订后带上；`derive_model` 和库副本沿用来源修订的 manifest。OpenAPI 的 manifest 加可选的 `uv`。回滚只做前向修复。
 
 ## 场景客户端任务
 
@@ -424,7 +446,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
       | 路径 | 类型 | 必须 | 约束 |
       |---|---|---|---|
-      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params}}`），只保留有效槽位（manifest 的槽位加面级分配的槽位，修订 v13），可以是空对象 |
+      | `model.materials` | object | 库副本必有 | 槽位到材质的分配，结构同场景对象的 `material_slots`（`{<slot_id>: {preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}}`，贴图字段自修订 v17），只保留有效槽位（manifest 的槽位加面级分配的槽位，修订 v13），可以是空对象 |
       | `model.source_revision_id` | string | 库副本必有 | 复制自哪个模型修订。来源本身是库副本时取它的 `source_revision_id`，所以总指向场景里烘焙出的修订 |
 
       场景命令写出的修订没有这两个字段；有 `source_revision_id` 就是库副本。
@@ -433,11 +455,14 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
     - 修订 v12 之前直接引用场景修订的模型资产只存在于开发环境，照常可读，视为没有材质分配，不迁移。
 - **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
 - **持有**：资产是库副本修订的 GC 持有方，经现有的 `creativereference.LiveOwnerCondition`（按 `content_revision_id` 与 `kind` 匹配）。与来源修订共用的 GLB、存入时上传的缩略图随之保留；不新增引用列。
+  - 库副本 `model.materials` 里引用的图片（修订 v17）：写库副本修订的同一事务里，每张图片写一行 `creative_content_revision_refs`（`holder_revision_id` = 库副本修订，`role = texture`），结构与 GC 规则见 `data: 材质资产`。存入时这些图片按场景的图片规则复核（本账号、`image`、可展示），不可用时存入失败，返回 400 `creative_image_unavailable`。
+  - 场景命令写出的模型修订不带 `materials`，所以不写持有关系；场景里的贴图由场景修订的引用表持有。
 - **库副本只属于资产库**（修订 v12）：`commit_model` 的 `base_content_id` 指向库副本的内容时，服务端新建内容，不在库副本上追加修订，响应的 `models` 照常返回新内容的 ID。这样放进场景后的修改，不论来自编辑器还是助手、页面是否刷新过，总是分叉出场景自己的模型，库副本只有存入时的那一个修订。这条补充 `api: 场景模型命令` 的分叉规则（I4），由本条交付。
 - **读取**（修订 v11）：
   - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
   - 助手（修订 v11）：
     - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `materials` 里的贴图只给图片的 `content_revision_id`、宽高和名称，不附像素（修订 v17）；助手经这个库副本可以把这些图片写进场景槽位，规则见 `data: 材质资产`「助手可读」。
     - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
     - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
     - 模型信息按 `media_metadata` 外发，与资产库元数据相同。
@@ -889,3 +914,57 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 存储后为 `{"type":"point","color":"#ffffff","intensity":1000,"cast_shadow":true,"distance":0,"decay":2,"radius_m":0.1}`：5089 cd 截断到上限 1000。
 
 `{"type": "area", "decay": 2}` 返回 400，`field` 指向 `light.decay`。
+
+## 材质资产
+
+### 用途与存储角色
+- **用途**（修订 v17，C5c1）：资产库可以存放 `material` 资产，即一个材质槽的完整分配（预设、参数、贴图、映射、透明方式），相当于 Blender 的材质资产。可以用到任意物件的任意槽位。
+- **存储**：PostgreSQL。
+  - `creative_contents.kind` 和 `creative_assets.kind` 的 CHECK 都加 `material`。资产库现有的分组、标签、评分、回收站和筛选对它一视同仁；按画面的筛选（主色、画幅）只作用于图片，材质自然不命中。
+  - 每份材质资产引用一个只属于资产库的 `material` 内容修订（I7）：存入时新建内容、写一个修订，之后不再追加修订。
+  - 新表 `creative_content_revision_refs`：记录「内容修订持有内容修订」，供材质资产和模型库副本持有其中的贴图。
+- **角色**：材质修订是权威主数据，资产行是它在资产库里的入口。持有关系表是从修订载荷派生的索引，与修订同一事务写入，之后不改；它不是事实源，载荷才是。
+- **所有权**：只有「材质存入资产库」写材质修订和持有关系；模型库副本的持有关系由「模型存入资产库」写入。场景、画布和通用内容写入口都写不出 `material` 修订。
+
+### 结构与身份
+- 内容修订 ID 沿用 `ccrv_…`，内容 ID 沿用 `ccnt_…`，资产 ID 沿用 `ccas_…`。
+- 载荷（`creative_content_revisions.payload`，`schema_version = 1`）：
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `material.slot` | object | 是 | 结构同场景对象 `material_slots` 的一个值：`{preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}`，校验与补齐规则见 `data: 场景文档`「材质贴图」 |
+| `material.source` | `{document_id, object_id, slot_id, revision}` | 是 | 来源说明，只供展示，不构成引用；来源场景被删除后照常保留 |
+
+- 对象：`thumbnail` 角色，256 × 256 的材质球 PNG，必须有。由编辑器渲染，与模型缩略图同一套暂存上传。
+- **持有关系表** `creative_content_revision_refs`：
+
+| 列 | 类型 | 约束 |
+|---|---|---|
+| `account_id` | 账号 ID | 非空；查询由 repository 基座限定（I8） |
+| `holder_revision_id` | `ccrv_…` | 非空；持有方修订（材质修订或模型库副本修订），外键到 `creative_content_revisions`，持有方被物理删除时级联删除 |
+| `content_revision_id` | `ccrv_…` | 非空；被持有的修订（目前只有图片），外键到 `creative_content_revisions` |
+| `role` | text | 非空；CHECK 为 `texture` |
+
+  - 主键 `(account_id, holder_revision_id, content_revision_id)`；索引 `(account_id, content_revision_id)` 供 GC 和可读性判断反查。
+  - 同一张图片在一个槽位里用作多种贴图时只写一行。
+
+### 访问模式与保证
+- **写**：「材质存入资产库」在一个事务里：校验槽位里的每张图片（本账号、`image`、`ready`、可展示）→ 写材质内容和修订 → 写持有关系行 → 建资产。任一步失败则全部不生效。
+- **查重**：`material.slot` 完全相同（JSON 规范化后相等）且不在回收站的材质资产已存在时复用，只追加归类，与模型资产相同。`source` 不参与比较。命中多个时按修订 ID 取第一个仍可展示的；命中的都已不可展示（权利撤销、内容已删）时新建一个，不报错（修订 v19）。
+- **GC**：
+  - `creativereference.LiveOwnerCondition` 增加一条：存在持有关系行，且持有方修订的 `state` 不是 `deleted`。守卫测试 `projection_roles_test.go` 登记新列。
+  - 不递归：持有方修订本身由谁持有，交给它自己的判定。材质资产被彻底删除后，材质修订没有持有方，按现有规则回收（`material` 加入可回收种类），持有关系行随之删除；下一轮 GC 再回收不再被任何人持有的图片。
+- **助手可读**：
+  - 只有「给槽位配贴图」用单独的判断（`textureReadableInTx`，只在 `edit_scene` 校验贴图时调用）：图片本身按现有的可读判断（`readableRevisionInTx`）可读；否则图片没有被撤销授权，且存在某个持有它的修订（`role = texture`）按现有判断可读。只查一层，所有持有方一条查询判断。撤销仍然优先：图片本身或持有方被撤销，都不可读。
+  - 现有的可读判断不变：`read_asset`、画布放置、会话引用不经持有方放宽。这一条只放宽「经可读的材质资产或模型库副本使用其中的贴图」，不放宽单独读取像素（修订 v19：v17 写成在 `readableRevisionInTx` 里加分支，会让 `read_asset` 经持有方读到原图，code review 2026-11-04 发现）。
+  - `search_assets kind:material` 对材质项附要点：标题、预设、贴图种类与图片 ID、映射方式、透明方式。`read_asset` 读材质时返回完整的 `slot`，缩略图作为图片附件（条件同模型资产）；贴图只给图片 ID 和宽高，不附原图像素。
+- **不变量的保证方**：载荷外形、图片可用性、持有关系与载荷一致，由应用保证；账号范围、主键唯一、种类 CHECK、`role` CHECK 由数据库保证。
+
+### 放置与使用
+- 材质资产只能用到场景物件的槽位上，不能放到画布：没有 `core.material` 节点类型，画布的放入、填充和参考选择都不接受它。
+- 用到槽位不新增接口：编辑器或助手把 `material.slot` 原样写进 `update_objects` 的 `material_slots`。之后与资产没有关联，修改槽位不影响资产（I7）。图片校验按场景规则进行；经材质资产可读的图片对助手同样可写。
+
+### 生命周期与演进
+- 迁移（接在当前最新迁移之后）：两处 kind CHECK 加 `material`，新建 `creative_content_revision_refs`。回滚时如已有 `material` 内容、资产或持有关系行则拒绝，前向修复。
+- 资产库不记录材质被哪个场景用过（I7）。
+- 以后加入的「内容引用内容」（例如合成卡片引用的人片）复用这张表，`role` 按需扩展 CHECK。

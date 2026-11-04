@@ -352,7 +352,7 @@ func failedWrite(err error, out BakeOutput) (JobResult, error) {
 		return JobResult{Failure: &JobFailure{Code: "conflict", Message: "烘焙期间这些单元被改过，没有写入",
 			Conflicts: conflicts, Bake: &BakeArtifacts{GLBUploadID: out.GLBUploadID, ThumbnailUploadID: out.ThumbnailUploadID, Module: out.Module, Manifest: out.Manifest}}}, nil
 	}
-	for _, refused := range []error{creativeops.ErrValidation, creativedocument.ErrSizeLimit, ErrModelUnavailable, creativedocument.ErrTrashed, creativedocument.ErrNotFound} {
+	for _, refused := range []error{creativeops.ErrValidation, creativedocument.ErrSizeLimit, ErrModelUnavailable, ErrImageUnavailable, creativedocument.ErrTrashed, creativedocument.ErrNotFound} {
 		if errors.Is(err, refused) {
 			return JobResult{Failure: &JobFailure{Code: "invalid_result", Message: reasonOf(err)}}, nil
 		}

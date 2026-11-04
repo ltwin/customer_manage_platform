@@ -69,7 +69,7 @@ export default function build({ params, THREE, lib, rng }) {
 - **材质**：只能使用 `MeshStandardMaterial`（或 `lib.material(slot, hint)` 生成的同类材质）的常量参数。材质名 `slot:<id>` 表示可分配材质预设的槽位，`userData.hint` 给语义提示（如 `stone`、`wood`）。不得使用 `ShaderMaterial` / `RawShaderMaterial`，也不得使用任何纹理（外部 URL、数据纹理、视频纹理）。程序化外观由编辑器材质库在渲染时提供。导出的 GLB 必须落在 `data: 模型内容` 的静态 GLB 子集内：没有形变、骨骼、动画、灯光和摄像机。
 - **命名约定**（进入 manifest）：对象名 `part:<id>` 表示可寻址部件，用于点选改某个部位；空对象 `anchor:<id>` 表示挂点。
 - **几何**：只接受三角网格（GLB 中 primitive 的 `mode` 为 4）；线和点会被拒绝。
-- **产物**：沙箱返回 GLB（经 `GLTFExporter` 二进制导出）和规范化的模块信息 `{contract_version, lib_version, mount, params_schema, params}`（`params` 为补齐默认值后实际使用的值）。manifest 不由沙箱提供，由宿主和服务端从 GLB 算出：`{bounds:{min:[x,y,z],max:[x,y,z]}, triangles, slots:[{id,hint}], parts:[id], anchors:[{id,position:[x,y,z]}]}`。GLB 是几何事实源，只有代码、参数或 `lib_version` 变化时才重新编译。
+- **产物**：沙箱返回 GLB（经 `GLTFExporter` 二进制导出）和规范化的模块信息 `{contract_version, lib_version, mount, params_schema, params}`（`params` 为补齐默认值后实际使用的值）。manifest 不由沙箱提供，由宿主和服务端从 GLB 算出：`{bounds:{min:[x,y,z],max:[x,y,z]}, triangles, slots:[{id,hint}], parts:[id], anchors:[{id,position:[x,y,z]}], uv}`。`uv`（修订 v18）为 true 表示每个三角网格都带 `TEXCOORD_0`，贴图的 `uv` 映射才能整体按模型 UV 显示。GLB 是几何事实源，只有代码、参数或 `lib_version` 变化时才重新编译。
 - **上限**（初始值，见 design 未决 #3）：代码 ≤ 64 KiB；编译 ≤ 5 秒；三角形 ≤ 300k；GLB ≤ 16 MiB。
 - **为什么**：只用 primitive 的 JSON 表达力不够；整个场景是一段代码则无法支持手动编辑、点选修改和撤销。以物件为粒度写代码，既有建模自由度，又让场景编排可编辑。先例见 research §3（Pascal authored objects）。
 - **不适用于**：内置基础体是前端打包的可信模块，遵守同一契约，但不经沙箱、不烘焙。外部 GLB 导入（下一版）不经过本契约。
@@ -98,8 +98,13 @@ export default function build({ params, THREE, lib, rng }) {
   - 着色只用 TSL（`three/tsl`）：材质用节点材质（`*NodeMaterial`），或由渲染器自动映射的内置材质；后处理用 `RenderPipeline` 和节点。不使用 `ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`，也不写 GLSL / WGSL 源码字符串（包括 `glslFn`、`wgslFn`、`wgslTagFn`）。例外只有以下几处（`scene-world-space-gi`）：
     - npm 依赖 `three-mesh-bvh/webgpu` 的 BVH 遍历是 WGSL（owner 2026-10-23）；
     - `render/trace/` 里一个调用它求交的包装模块：在 three r186 上，库的求交不能从 TSL 直接调用，包装模块只构造参数、声明局部结果、按值返回，不写任何着色逻辑（修订 v3）。上游提供可从 TSL 调用的版本后删除。
-  - 程序化材质预设是 TSL `Fn`：输入只有对象空间位置（米）、对象空间法线、参数 uniform、像素尺度和宽度函数，输出 `{albedo, roughness, metalness, height, emission}`；不读取渲染器状态、屏幕坐标、帧序号或时间。函数体里不直接调用屏幕导数（`fwidth`、`dFdx`、`dFdy`）：抗锯齿需要的宽度经输入的宽度函数取得，光栅路径传 `fwidth`（生成的着色与改动前相同，已发布预设的外观不变），光线命中点（屏幕外，没有屏幕导数）传由光线锥合成光线微分、再取有限差分得到的宽度，像素尺度同样按光线锥估计（`scene-world-space-gi`）。材质函数的输入在 TSL 的 `Switch` 之前存成变量（见下文「分叉之前先存成变量」）。凹凸由 `height` 在预设函数之外求得，命中点不做凹凸。
+  - 程序化材质预设是 TSL `Fn`：输入只有对象空间位置（米）、对象空间法线、参数 uniform、像素尺度和宽度函数，输出 `{albedo, roughness, metalness, height, emission}`；不读取渲染器状态、屏幕坐标、帧序号或时间。函数体里不直接调用屏幕导数（`fwidth`、`dFdx`、`dFdy`）：抗锯齿需要的宽度经输入的宽度函数取得，光栅路径传 `fwidth`（生成的着色与改动前相同，已发布预设的外观不变），光线命中点（屏幕外，没有屏幕导数）传由光线锥合成光线微分、再取有限差分得到的宽度，像素尺度同样按光线锥估计（`scene-world-space-gi`）。材质函数的输入在 TSL 的 `Switch` 之前存成变量（见下文「分叉之前先存成变量」）。凹凸由 `height` 在预设函数之外求得；程序化预设的凹凸在命中点不做，材质贴图的法线在命中点照做（`scene-editor-3d` 修订 v17，见下一条）。
   - 已发布的预设外观不变，改外观发布新版本（沿用材质目录的规则）。
+  - 材质贴图（`scene-editor-3d` 修订 v17，C5c1）：
+    - 映射（三平面投影、UV）、法线解码与混合、透明裁切只写一份（`materials/maps.ts`），光栅和光线命中点各自传入采样方式：光栅用隐式导数，命中点一律 `.grad()`，梯度来自光线锥微分。
+    - 三平面投影的三个轴无条件采样，再按权重混合，不按权重分叉（见下文「分叉里不放隐式导数的采样」）。
+    - UV 模式按变换后的贴图坐标（旋转、`repeat` 之后）求切线框架：光栅用屏幕导数，命中点用三角形三个顶点。不用 three 的 `normalMap` 和几何体的 `tangent` 属性，因为它们只认原始 `uv()`，贴图旋转后凹凸方向会错。
+    - 纹理绑定预算（每个着色阶段 16 张，WebGPU 默认值，three 为每张纹理另配一个 sampler）：每套材质最多 3 个贴图绑定（基础色、法线、ORM 打包），普通表面的阴影贴图最多 8 张（过渡做法，最终方案另立 change）。同一个 `Texture` 对象只占一个绑定，所有占位图共用同一个对象。
   - 按像素分叉的控制流里，不放依赖隐式导数的纹理采样。
     - **范围**：
       - 分叉指条件随像素变化的 `If`、`Loop` 里的提前退出，以及条件不是常量的 `select`：three 把这种 `select` 编成 if/else；
@@ -139,6 +144,7 @@ export default function build({ params, THREE, lib, rng }) {
 - **检查**：`make check-frontend` 中的静态检查（`scene-webgpu-renderer` R1 交付）：`frontend/src` 里出现 `WebGLRenderer`、`WebGLRenderTarget`、`ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile`、`ShaderLib`、`ShaderChunk`、GLSL 模板字符串、`three/examples/jsm/postprocessing/*`、`three/addons/objects/Sky.js`、非 WebGPU 版的 `lines/*`，或白名单以外的 drei 组件时失败。`frontend/src/creative-scene/world/` 和 `render/` 里出现 `Date.now()` 或无参的 `new Date()` 时也失败（`scene-world-environment` W2 交付；节流用的 `performance.now()` 不影响画面，不在此列）。`frontend/src` 里出现 `wgslFn` 或 `wgslTagFn` 时同样失败，`render/trace/` 的包装模块除外（`scene-world-space-gi` S1 交付）。「分叉里不放隐式导数的采样」和「分叉之前先存成变量」写不成静态检查，由在本机 GPU 上运行的定向 e2e 把关。
 - **例子**：
   - `frontend/src/creative-scene/materials/patterns.ts` 的预设函数；
+  - `frontend/src/creative-scene/materials/maps.ts` 的贴图映射，光栅与 `render/trace/hit.ts` 共用（C5c1 交付后）；
   - `render/` 下的渲染器创建入口（R1 改写后）；
   - `render/trace/` 的光追底座（`scene-world-space-gi` S1 交付后）；
   - 分叉里的采样：`render/volumes/lights.ts` 的点光阴影查找，每步无条件采样，再乘以范围掩码；`render/probes/lookup.ts` 的探针采样，显式指定 LOD（S2 交付后）。

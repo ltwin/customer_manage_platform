@@ -253,9 +253,42 @@ type Primitive struct {
 	Faces *Faces `json:"faces,omitempty"`
 }
 
+// MaterialSlot is one slot's material. Maps, Mapping, AlphaMode and
+// AlphaCutoff are principled@1's only (data: 场景文档「材质贴图」); a written
+// slot with maps holds every one of them that applies (completeTextures).
 type MaterialSlot struct {
-	Preset string         `json:"preset"`
-	Params map[string]any `json:"params"`
+	Preset      string          `json:"preset"`
+	Params      map[string]any  `json:"params"`
+	Maps        *TextureMaps    `json:"maps,omitempty"`
+	Mapping     *TextureMapping `json:"mapping,omitempty"`
+	AlphaMode   string          `json:"alpha_mode,omitempty"`
+	AlphaCutoff *float64        `json:"alpha_cutoff,omitempty"`
+}
+
+// TextureMaps are a slot's textures, each an image revision.
+type TextureMaps struct {
+	BaseColor *TextureMap `json:"base_color,omitempty"`
+	Normal    *TextureMap `json:"normal,omitempty"`
+	Roughness *TextureMap `json:"roughness,omitempty"`
+	Metalness *TextureMap `json:"metalness,omitempty"`
+	AO        *TextureMap `json:"ao,omitempty"`
+}
+
+// TextureMap is one texture; Channel is roughness's, metalness's and ao's
+// only, so a glTF ORM image serves all three.
+type TextureMap struct {
+	ContentRevisionID string `json:"content_revision_id"`
+	Channel           string `json:"channel,omitempty"`
+}
+
+// TextureMapping is how a slot's textures lie on the surface, shared by all
+// of them: SizeM is triplanar's, Repeat uv's.
+type TextureMapping struct {
+	Kind           string    `json:"kind,omitempty"`
+	SizeM          *float64  `json:"size_m,omitempty"`
+	Repeat         []float64 `json:"repeat,omitempty"`
+	RotationDeg    *float64  `json:"rotation_deg,omitempty"`
+	NormalStrength *float64  `json:"normal_strength,omitempty"`
 }
 
 // Light names and means its fields as the three.js light class of its type
@@ -366,6 +399,12 @@ func invalid(format string, args ...any) error {
 	return creativeops.Explain(creativeops.ErrValidation, format, args...)
 }
 
+// invalidAt is invalid naming the field, a path inside the operation that
+// decodeOps places in the batch; path may start with the dot of a field.
+func invalidAt(path, format string, args ...any) error {
+	return &creativeops.FieldError{Err: creativeops.ErrValidation, Path: strings.TrimPrefix(path, "."), Message: fmt.Sprintf(format, args...)}
+}
+
 // ErrUnreadable is a stored scene this server cannot read: most often one
 // written by a newer version, with a field this one does not know. It is
 // never the caller's mistake, so callers word it apart from a refused
@@ -429,7 +468,9 @@ func encodeScene(s Scene) (creativedocument.Snapshot, error) {
 	if err != nil {
 		return creativedocument.Snapshot{}, err
 	}
-	return creativedocument.Snapshot{Payload: creativecontent.Payload{Scene: raw}, Refs: modelRefs(s.Objects)}, nil
+	refs := slices.Concat(modelRefs(s.Objects), imageRefs(s.Objects))
+	slices.Sort(refs)
+	return creativedocument.Snapshot{Payload: creativecontent.Payload{Scene: raw}, Refs: refs}, nil
 }
 
 // decodeInput decodes client input strictly and then insists on every field
@@ -468,7 +509,7 @@ func shapeError(raw json.RawMessage, t reflect.Type, path string) error {
 		if path == "" {
 			return invalid("操作须是 JSON 对象")
 		}
-		return invalid("字段 %s 的类型不对", strings.TrimPrefix(path, "."))
+		return invalidAt(path, "字段 %s 的类型不对", strings.TrimPrefix(path, "."))
 	}
 	switch {
 	case t.Kind() == reflect.Interface, t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8:
@@ -518,7 +559,7 @@ func shapeError(raw json.RawMessage, t reflect.Type, path string) error {
 				if path != "" {
 					where = strings.TrimPrefix(path, ".") + " "
 				}
-				return invalid("%s没有字段 %s，可用字段：%s", where, k, strings.Join(names, "、"))
+				return invalidAt(path+"."+k, "%s没有字段 %s，可用字段：%s", where, k, strings.Join(names, "、"))
 			}
 			if err := shapeError(fields[k], ft, path+"."+k); err != nil {
 				return err
@@ -537,7 +578,7 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bo
 		if nullable {
 			return nil
 		}
-		return invalid("字段 %s 不能为 null", strings.TrimPrefix(path, "."))
+		return invalidAt(path, "字段 %s 不能为 null", strings.TrimPrefix(path, "."))
 	}
 	switch t.Kind() {
 	case reflect.Pointer:
@@ -586,7 +627,7 @@ func requireFields(raw json.RawMessage, t reflect.Type, path string, nullable bo
 				if opts == "omitempty" {
 					continue
 				}
-				return invalid("缺少字段 %s", strings.TrimPrefix(path+"."+name, "."))
+				return invalidAt(path+"."+name, "缺少字段 %s", strings.TrimPrefix(path+"."+name, "."))
 			}
 			// nullable:"true" lets a field be left out or written null, which
 			// then means something of its own (primitive.faces null clears).
@@ -686,6 +727,9 @@ func Validate(s Scene) error {
 	}
 	if n := len(modelRefs(s.Objects)); n > maxSceneModels {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "一个场景引用的模型不能超过 %d 个，现有 %d 个", maxSceneModels, n)
+	}
+	if n := len(imageRefs(s.Objects)); n > maxSceneImages {
+		return &creativedocument.LimitError{Limit: maxSceneImages, Message: fmt.Sprintf("一个场景引用的不同图片不能超过 %d 张，现有 %d 张", maxSceneImages, n)}
 	}
 	return validateTree(s.Objects, byID)
 }
@@ -830,6 +874,9 @@ func validateSlots(slots map[string]MaterialSlot) error {
 		}
 		if len(slot.Params) > maxSlotParams {
 			return fmt.Errorf("材质槽 %s 的参数不能超过 %d 个", id, maxSlotParams)
+		}
+		if field, err := checkTextures(slot); err != nil {
+			return fmt.Errorf("材质槽 %s 的 %s：%w", id, field, err)
 		}
 		for k, v := range slot.Params {
 			if !slotKeyPattern.MatchString(k) {

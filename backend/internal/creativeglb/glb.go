@@ -80,6 +80,9 @@ type Manifest struct {
 	Slots     []Slot   `json:"slots"`
 	Parts     []string `json:"parts"`
 	Anchors   []Anchor `json:"anchors"`
+	// UV says whether every mesh has TEXCOORD_0 (Epic 修订 v18); nil on a
+	// manifest computed before it was added.
+	UV *bool `json:"uv,omitempty"`
 }
 
 // Bounds is the world-space axis-aligned box of the whole model.
@@ -390,6 +393,7 @@ type material struct {
 
 type primitive struct {
 	position, indices, material int
+	uv                          bool
 }
 
 type node struct {
@@ -855,8 +859,11 @@ func (d *document) parsePrimitive(p object, what string) (primitive, error) {
 			return primitive{}, failf(ReasonAccessor, "%s attributes differ in count", what)
 		}
 		count = a.count
-		if name == "POSITION" {
+		switch name {
+		case "POSITION":
 			prim.position = idx
+		case "TEXCOORD_0":
+			prim.uv = true
 		}
 	}
 	if prim.position < 0 {
@@ -1072,6 +1079,7 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 	positions := map[int]localBounds{}
 	maxIndex := map[int]uint32{}
 	instances, triangles := 0, 0
+	uv := true
 	bounds := Bounds{Min: [3]float64{math.Inf(1), math.Inf(1), math.Inf(1)}, Max: [3]float64{math.Inf(-1), math.Inf(-1), math.Inf(-1)}}
 	slots := map[string]bool{}
 	manifest := Manifest{Slots: []Slot{}, Parts: []string{}, Anchors: []Anchor{}}
@@ -1118,6 +1126,7 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 					return Manifest{}, err
 				}
 				triangles += t
+				uv = uv && p.uv
 				if triangles > limits.MaxTriangles {
 					return Manifest{}, failf(ReasonLimit, "more than %d triangles", limits.MaxTriangles)
 				}
@@ -1149,6 +1158,7 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 	}
 	manifest.Bounds = bounds
 	manifest.Triangles = triangles
+	manifest.UV = &uv
 	manifest.Normalize()
 	return manifest, nil
 }
@@ -1300,12 +1310,16 @@ func (m *Manifest) Normalize() {
 const Tolerance = 1e-4
 
 // Matches compares two manifests by the contract rules: after sorting by id,
-// ids, hints and the triangle count are exact; bounds and anchor positions
-// agree within Tolerance.
+// ids, hints, the triangle count and uv are exact; bounds and anchor
+// positions agree within Tolerance. other is the server's: one computed
+// before uv was added carries none, and uv then goes uncompared.
 func (m Manifest) Matches(other Manifest) bool {
 	a, b := m.clone(), other.clone()
 	a.Normalize()
 	b.Normalize()
+	if b.UV != nil && (a.UV == nil || *a.UV != *b.UV) {
+		return false
+	}
 	if a.Triangles != b.Triangles || len(a.Slots) != len(b.Slots) || len(a.Parts) != len(b.Parts) || len(a.Anchors) != len(b.Anchors) {
 		return false
 	}

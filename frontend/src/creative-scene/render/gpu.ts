@@ -308,6 +308,8 @@ export const gpuTestHooks = {
   traceOff: false,
   /** Takes the device for one the layer does not support: no such device to test on. */
   traceUnsupported: false,
+  /** The layers the world-space layer's texture arrays may have, instead of the device's (render/trace/maps.ts): what does not fit. */
+  traceMapLayers: null as number | null,
   /** Holds each build's answer this long: preparing, and an export's wait running out. */
   traceDelayMs: 0,
   /** What the viewport's layer did last (render/trace/base.ts), e2e only. */
@@ -316,6 +318,8 @@ export const gpuTestHooks = {
   traceDigests: null as Record<string, string>[] | null,
   /** Export layers that let their CPU arrays go after a frame (render/trace/base.ts drawn, design A5). */
   traceDropped: 0,
+  /** A ray that runs out of goes past clip's cut faces (render/trace/hit.ts CUT_RETRIES) taken as hitting nothing, set before the layer's shaders are built: the leak C5c1's design rules out, for the e2e to see that it catches one. */
+  traceCutsLeak: false,
   /** The reflections' hits shaded another way than lit (render/trace/hit.ts ShadeMode), set before their shader is built: what a defect comes from. */
   traceShade: null as ShadeMode | null,
   /** The viewport's layer against its raster, a primary ray a pixel (render/trace/checks.ts; Viewport.tsx LookView, e2e only); null till it is ready. */
@@ -415,6 +419,8 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
         maxBufferSize: limits.maxBufferSize,
         maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
         maxStorageBuffersPerShaderStage: limits.maxStorageBuffersPerShaderStage,
+        // The world-space layer's texture arrays (render/trace/maps.ts).
+        maxTextureArrayLayers: limits.maxTextureArrayLayers,
       }
     : undefined
   const renderer = new WebGPURenderer({ canvas, alpha, antialias: false, requiredLimits, forceWebGL: gpuTestHooks.forceWebGL || !found })

@@ -54,8 +54,13 @@ export function buildLight(type: Light['type']): BuiltLight {
   return { light, target, stop: light instanceof SceneSpotLight ? volumeShadowNode(light) : null }
 }
 
-/** Writes the document's fields onto a light built for the same type; final, an export's (an area light's shadow samples). */
-export function applyLight(built: BuiltLight, l: Light, final = false) {
+/**
+ * Writes the document's fields onto a light built for the same type; final,
+ * an export's (an area light's shadow samples). casts: whether it casts
+ * shadows on surfaces, as the budget picked (objects/shadowBudget.ts); its
+ * cast_shadow by default.
+ */
+export function applyLight(built: BuiltLight, l: Light, final = false, casts?: boolean) {
   const { light } = built
   const v = { ...lightDefaultsOf(l.type), ...l }
   light.color.set(v.color)
@@ -74,7 +79,7 @@ export function applyLight(built: BuiltLight, l: Light, final = false) {
     light.angle = v.angle
     light.penumbra = v.penumbra
   }
-  const shadows = v.cast_shadow
+  const shadows = casts ?? v.cast_shadow
   if (light.castShadow !== shadows) {
     light.castShadow = shadows
     if (shadows) light.shadow.mapSize.set(shadowMapSize, shadowMapSize)

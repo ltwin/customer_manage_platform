@@ -1,11 +1,13 @@
 package creativecontent
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"slices"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 // ManifestFacts is what a model's manifest tells the assistant: write_model
@@ -16,6 +18,9 @@ type ManifestFacts struct {
 	Slots     []Slot               `json:"slots"`
 	Parts     []string             `json:"parts"`
 	Anchors   []creativeglb.Anchor `json:"anchors"`
+	// UV is whether every mesh has UVs; absent for a model baked before
+	// manifests recorded it.
+	UV *bool `json:"uv,omitempty"`
 }
 
 // Slot is a material slot as the assistant sees it (data: 模型内容「有效槽位」):
@@ -84,9 +89,9 @@ func effectiveSlotsOf(glb []creativeglb.Slot, faces json.RawMessage) []Slot {
 
 // ManifestFactsOf reads a manifest: its size in metres (rounded to
 // millimetres), triangles, material slots (with those the face assignment
-// brings), parts and anchors.
+// brings), parts, anchors and whether it has UVs.
 func ManifestFactsOf(m creativeglb.Manifest, faces json.RawMessage) ManifestFacts {
-	f := ManifestFacts{Triangles: m.Triangles, Slots: effectiveSlotsOf(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors}
+	f := ManifestFacts{Triangles: m.Triangles, Slots: effectiveSlotsOf(m.Slots, faces), Parts: m.Parts, Anchors: m.Anchors, UV: m.UV}
 	for i := range f.SizeM {
 		f.SizeM[i] = math.Round((m.Bounds.Max[i]-m.Bounds.Min[i])*1000) / 1000
 	}
@@ -100,7 +105,10 @@ type ModelFacts struct {
 	Name  string `json:"name,omitempty"`
 	Mount string `json:"mount"`
 	ManifestFacts
-	Materials    map[string]json.RawMessage `json:"materials"`
+	Materials map[string]json.RawMessage `json:"materials"`
+	// Images are the images the materials' textures use (read_asset fills
+	// them in): sizes only, never pixels.
+	Images       map[string]TextureImage    `json:"images,omitempty"`
 	ParamsSchema map[string]json.RawMessage `json:"params_schema"`
 	Params       map[string]any             `json:"params"`
 	// Omitted names the fields a result too large to carry whole left out.
@@ -154,4 +162,109 @@ func (f ModelFacts) Brief() ModelBrief {
 	}
 	slices.Sort(params)
 	return ModelBrief{Name: f.Name, SizeM: f.SizeM, Mount: f.Mount, Triangles: f.Triangles, Slots: f.Slots, Materials: f.Materials, Params: params}
+}
+
+// MaterialBrief is what a search result says about a material asset (data:
+// 材质资产「助手可读」): its preset, which image each texture uses, how they
+// are mapped and how the slot is transparent. Images come as ids only.
+type MaterialBrief struct {
+	Preset    string            `json:"preset"`
+	Maps      map[string]string `json:"maps"`
+	Mapping   string            `json:"mapping,omitempty"`
+	AlphaMode string            `json:"alpha_mode,omitempty"`
+}
+
+// MaterialBriefOf decodes a material payload; anything else reports false.
+func MaterialBriefOf(p Payload) (MaterialBrief, bool) {
+	var m struct {
+		Slot *struct {
+			Preset string `json:"preset"`
+			Maps   map[string]struct {
+				ContentRevisionID string `json:"content_revision_id"`
+			} `json:"maps"`
+			Mapping *struct {
+				Kind string `json:"kind"`
+			} `json:"mapping"`
+			AlphaMode string `json:"alpha_mode"`
+		} `json:"slot"`
+	}
+	if len(p.Material) == 0 || json.Unmarshal(p.Material, &m) != nil || m.Slot == nil {
+		return MaterialBrief{}, false
+	}
+	b := MaterialBrief{Preset: m.Slot.Preset, Maps: map[string]string{}, AlphaMode: m.Slot.AlphaMode}
+	for kind, t := range m.Slot.Maps {
+		b.Maps[kind] = t.ContentRevisionID
+	}
+	if m.Slot.Mapping != nil {
+		b.Mapping = m.Slot.Mapping.Kind
+	}
+	return b, true
+}
+
+// MaterialFacts is what read_asset gives of a material asset (data: 材质资产
+// 「助手可读」): the slot whole, as edit_scene takes it, and the size of each
+// image its textures use.
+type MaterialFacts struct {
+	Slot   json.RawMessage         `json:"slot"`
+	Images map[string]TextureImage `json:"images"`
+}
+
+// MaterialFactsOf decodes a material payload, Images left for the caller;
+// anything else reports false.
+func MaterialFactsOf(p Payload) (MaterialFacts, bool) {
+	var m struct {
+		Slot json.RawMessage `json:"slot"`
+	}
+	if len(p.Material) == 0 || json.Unmarshal(p.Material, &m) != nil || len(m.Slot) == 0 {
+		return MaterialFacts{}, false
+	}
+	return MaterialFacts{Slot: m.Slot, Images: map[string]TextureImage{}}, true
+}
+
+// TextureImage is an image a texture uses as the assistant reads it.
+type TextureImage struct {
+	Usable bool `json:"usable"`
+	Width  *int `json:"width,omitempty"`
+	Height *int `json:"height,omitempty"`
+}
+
+// TextureImageIDs are the distinct images the slots' textures use, sorted.
+func TextureImageIDs(slots ...json.RawMessage) []string {
+	var out []string
+	for _, raw := range slots {
+		var slot struct {
+			Maps map[string]struct {
+				ContentRevisionID string `json:"content_revision_id"`
+			} `json:"maps"`
+		}
+		if json.Unmarshal(raw, &slot) != nil {
+			continue
+		}
+		for _, t := range slot.Maps {
+			out = append(out, t.ContentRevisionID)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// TextureImagesInTx reads the original size of each image in one batch; one
+// that is gone or not an image is unusable.
+func TextureImagesInTx(ctx context.Context, tx store.TxAccountScope, ids []string) (map[string]TextureImage, error) {
+	out := make(map[string]TextureImage, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	batch, err := ReadDisplayBatchInTx(ctx, tx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		var img TextureImage
+		if m, ok := batch[id].ImageOriginal(); ok {
+			img = TextureImage{Usable: true, Width: m.Width, Height: m.Height}
+		}
+		out[id] = img
+	}
+	return out, nil
 }

@@ -39,6 +39,10 @@ func Live(ctx context.Context, tx Reader, revisionIDs []string) (map[string]bool
 // LiveOwnerCondition is the owner test as SQL, for callers that must select
 // revisions by it (media GC). It names creative_content_revisions by table, not
 // alias, and binds the account as $1, so it only fits a scoped query.
+//
+// A revision held by another revision (a material's or a library model copy's
+// textures) lives while the holder is not deleted. Whether the holder itself
+// lives is its own test: GC deletes it first and the texture a round later.
 const LiveOwnerCondition = `EXISTS (SELECT 1 FROM creative_assets a JOIN creative_contents c ON c.account_id=a.account_id AND c.id=a.content_id WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revisions.id AND a.content_id=creative_content_revisions.content_id AND a.kind=c.kind)
 OR EXISTS (SELECT 1 FROM creative_nodes n JOIN creative_contents c ON c.account_id=n.account_id AND c.id=n.content_id WHERE n.account_id=$1 AND n.content_revision_id=creative_content_revisions.id AND n.content_id=creative_content_revisions.content_id AND n.type_key='core.'||c.kind)
 OR EXISTS (SELECT 1 FROM creative_message_content_refs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
@@ -53,6 +57,7 @@ OR EXISTS (SELECT 1 FROM creative_execution_refs WHERE account_id=$1 AND content
 OR EXISTS (SELECT 1 FROM creative_documents WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
 OR EXISTS (SELECT 1 FROM creative_document_revisions WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
 OR EXISTS (SELECT 1 FROM creative_document_content_refs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
+OR EXISTS (SELECT 1 FROM creative_content_revision_refs r JOIN creative_content_revisions h ON h.account_id=r.account_id AND h.id=r.holder_revision_id WHERE r.account_id=$1 AND r.content_revision_id=creative_content_revisions.id AND h.state<>'deleted')
 OR EXISTS (SELECT 1 FROM creative_upload_candidates WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND state='pending' AND expires_at>clock_timestamp())
 OR EXISTS (SELECT 1 FROM creative_revision_holds WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND (expires_at IS NULL OR expires_at>clock_timestamp()))
 OR EXISTS (SELECT 1 FROM creative_run_inputs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND run_id IN (SELECT id FROM creative_agent_runs WHERE account_id=$1 AND finished_at IS NULL))

@@ -66,7 +66,7 @@ type searchCursor struct {
 	Revision creativeops.Revision `json:"library_revision,omitempty"`
 }
 
-var assetKinds = []string{"text", "link", "image", "video", "audio", "model"}
+var assetKinds = []string{"text", "link", "image", "video", "audio", "model", "material"}
 
 // AssetKinds lists the content kinds an asset can hold.
 func AssetKinds() []string { return slices.Clone(assetKinds) }

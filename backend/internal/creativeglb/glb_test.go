@@ -196,6 +196,7 @@ func basicWith(mutate func(doc map[string]any, b *builder)) func() []byte {
 
 func fixtureCases() []fixtureCase {
 	empty := func() []Slot { return []Slot{} }
+	yes, no := true, false
 	cases := []fixtureCase{
 		{
 			Name: "basic",
@@ -203,7 +204,7 @@ func fixtureCases() []fixtureCase {
 				b := basicBuilder()
 				return encodeGLB(b.doc(), b.bin)
 			},
-			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{-0.5, 0, -0.5}, Max: [3]float64{0.5, 1, 0.5}}, Triangles: 12, Slots: []Slot{{ID: "stone", Hint: "stone"}}, Parts: []string{"body"}, Anchors: []Anchor{}},
+			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{-0.5, 0, -0.5}, Max: [3]float64{0.5, 1, 0.5}}, Triangles: 12, Slots: []Slot{{ID: "stone", Hint: "stone"}}, Parts: []string{"body"}, Anchors: []Anchor{}, UV: &no},
 		},
 		{
 			Name: "hierarchy",
@@ -220,7 +221,7 @@ func fixtureCases() []fixtureCase {
 				b.roots = []int{0}
 				return encodeGLB(b.doc(), b.bin)
 			},
-			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{1, 0, -1}, Max: [3]float64{3, 2, 0.5}}, Triangles: 26, Slots: empty(), Parts: []string{}, Anchors: []Anchor{{ID: "top", Position: [3]float64{2, 2, 0}}}},
+			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{1, 0, -1}, Max: [3]float64{3, 2, 0.5}}, Triangles: 26, Slots: empty(), Parts: []string{}, Anchors: []Anchor{{ID: "top", Position: [3]float64{2, 2, 0}}}, UV: &no},
 		},
 		{
 			Name: "multi-material",
@@ -249,7 +250,7 @@ func fixtureCases() []fixtureCase {
 				doc["extensionsUsed"] = []string{emissiveStrength}
 				return encodeGLB(doc, b.bin)
 			},
-			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{-0.5, 0, -3.5}, Max: [3]float64{0.5, 1, 3.5}}, Triangles: 36, Slots: []Slot{{ID: "metal"}, {ID: "wood", Hint: "wood"}}, Parts: []string{}, Anchors: []Anchor{}},
+			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{-0.5, 0, -3.5}, Max: [3]float64{0.5, 1, 3.5}}, Triangles: 36, Slots: []Slot{{ID: "metal"}, {ID: "wood", Hint: "wood"}}, Parts: []string{}, Anchors: []Anchor{}, UV: &no},
 		},
 		{
 			Name: "parts-anchors",
@@ -288,7 +289,7 @@ func fixtureCases() []fixtureCase {
 			Manifest: &Manifest{
 				Bounds: Bounds{Min: [3]float64{-1.5, 0, -0.5}, Max: [3]float64{1.5, 1, 0.5}}, Triangles: 36,
 				Slots: []Slot{{ID: "frame"}}, Parts: []string{"door", "panel"},
-				Anchors: []Anchor{{ID: "handle", Position: [3]float64{0, 0.5, 0.5}}, {ID: "hinge", Position: [3]float64{0.5, 0.5, 0}}},
+				Anchors: []Anchor{{ID: "handle", Position: [3]float64{0, 0.5, 0.5}}, {ID: "hinge", Position: [3]float64{0.5, 0.5, 0}}}, UV: &yes,
 			},
 		},
 		{
@@ -301,8 +302,22 @@ func fixtureCases() []fixtureCase {
 			Manifest: &Manifest{
 				Bounds: Bounds{Min: [3]float64{-0.375, 0, -0.375}, Max: [3]float64{0.375, 3, 0.375}}, Triangles: 152,
 				Slots: []Slot{{ID: "stone", Hint: "stone"}, {ID: "trim", Hint: "stone"}}, Parts: []string{"base", "capital", "shaft"},
-				Anchors: []Anchor{{ID: "top", Position: [3]float64{0, 3, 0}}},
+				Anchors: []Anchor{{ID: "top", Position: [3]float64{0, 3, 0}}}, UV: &yes,
 			},
+		},
+		{
+			// uv is true only when every mesh has TEXCOORD_0: one box with
+			// UVs beside one without.
+			Name: "uv-partial",
+			build: func() []byte {
+				b := &builder{}
+				withUV := b.box(-1)
+				withUV["attributes"].(map[string]any)["TEXCOORD_0"] = b.accessor(map[string]any{"bufferView": b.view(floatBytes(make([]float32, 16)), 0), "componentType": compFloat, "count": 8, "type": "VEC2"})
+				b.nodes = []map[string]any{{"mesh": b.mesh(withUV)}, {"translation": []float64{2, 0, 0}, "mesh": b.mesh(b.box(-1))}}
+				b.roots = []int{0, 1}
+				return encodeGLB(b.doc(), b.bin)
+			},
+			Manifest: &Manifest{Bounds: Bounds{Min: [3]float64{-0.5, 0, -0.5}, Max: [3]float64{2.5, 1, 0.5}}, Triangles: 24, Slots: empty(), Parts: []string{}, Anchors: []Anchor{}, UV: &no},
 		},
 		{
 			Name: "bad-bounds-mismatch", Reason: ReasonBoundsMismatch,
@@ -663,10 +678,11 @@ func TestNoTriangles(t *testing.T) {
 }
 
 func TestMatches(t *testing.T) {
+	yes, no := true, false
 	base := Manifest{
 		Bounds: Bounds{Min: [3]float64{0, 0, 0}, Max: [3]float64{1, 2, 3}}, Triangles: 10,
 		Slots: []Slot{{ID: "b"}, {ID: "a", Hint: "stone"}}, Parts: []string{"y", "x"},
-		Anchors: []Anchor{{ID: "top", Position: [3]float64{0, 2, 0}}},
+		Anchors: []Anchor{{ID: "top", Position: [3]float64{0, 2, 0}}}, UV: &yes,
 	}
 	tests := []struct {
 		name   string
@@ -684,6 +700,10 @@ func TestMatches(t *testing.T) {
 		{"triangles differ", func(m *Manifest) { m.Triangles = 11 }, false},
 		{"hint differs", func(m *Manifest) { m.Slots[1].Hint = "wood" }, false},
 		{"part missing", func(m *Manifest) { m.Parts = []string{"x"} }, false},
+		{"uv differs", func(m *Manifest) { m.UV = &no }, false},
+		// other is the server's: a manifest computed before uv existed has
+		// none to compare, while a host leaving it out does not match.
+		{"server's without uv", func(m *Manifest) { m.UV = nil }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -693,5 +713,10 @@ func TestMatches(t *testing.T) {
 				t.Fatalf("Matches = %v, want %v", got, tt.want)
 			}
 		})
+	}
+	host := base.clone()
+	host.UV = nil
+	if host.Matches(base) {
+		t.Fatal("a host manifest without uv matched the server's with it")
 	}
 }

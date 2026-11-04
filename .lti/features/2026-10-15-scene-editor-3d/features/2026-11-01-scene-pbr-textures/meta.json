@@ -1,12 +1,12 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 6,
+  "revision": 13,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 17,
+    "version": 19,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -48,12 +48,14 @@
       "api:提交场景命令",
       "api:材质存入资产库",
       "patterns:场景着色写法",
-      "architecture:场景模块"
+      "architecture:场景模块",
+      "patterns:几何模块契约",
+      "data:模型内容"
     ]
   },
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-03T11:03:54.921Z",
+  "updatedAt": "2026-11-04T10:20:44.966Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -65,13 +67,13 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-11-03T11:03:54.699Z",
+      "at": "2026-11-04T10:19:54.537Z",
       "contentHash": "10a17035a3f72d21"
     },
     "design": {
       "by": "samson",
-      "at": "2026-11-03T11:03:54.699Z",
-      "contentHash": "214f026a77915e7f"
+      "at": "2026-11-04T10:19:54.537Z",
+      "contentHash": "a326a2840acbdabf"
     }
   },
   "approvalHistory": [
@@ -92,11 +94,76 @@
       "at": "2026-11-03T09:13:38.197Z",
       "contentHash": "d2c73ca73ca412cb",
       "role": "design"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-03T11:03:54.699Z",
+      "contentHash": "10a17035a3f72d21",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-03T11:03:54.699Z",
+      "contentHash": "214f026a77915e7f",
+      "role": "design"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-04T03:12:40.420Z",
+      "contentHash": "10a17035a3f72d21",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-04T03:12:40.420Z",
+      "contentHash": "ab9cd669a6bfc339",
+      "role": "design"
     }
   ],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "c41d52949eb2a96163487de022d2c3637e15a22c",
+    "at": "2026-11-03T11:06:10.881Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a5b5bdde6b7fa659a336e8ddccd54bf1eeacbdc3981dec4667d674de407284a6"
+    },
+    "preExisting": [
+      ".lti/snapshots/a5b5bdde6b7fa659a336e8ddccd54bf1eeacbdc3981dec4667d674de407284a6.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "samson",
+      "at": "2026-11-04T10:20:17.261Z",
+      "assessment": {
+        "method": "checks"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 2026-11-04 同意收尾。code review 逐项修正后：Blocking/Major 全部修复并有红→绿测试，Minor 除两条外修复；材质预览预渲染下 clip 镂空的 AO/空气透视/体积按实心深度、远处 clip 光栅与光追判断不同，owner 定为已知边界。Epic 修订 v19 已批准并重新绑定，交付补上几何模块契约与模型内容（manifest uv）。验证：主检出试合并后 make check-merge 通过（build、lint、generate-check、前端单测 973 项、Go 全包）；定向 e2e（clip、导出等图、面板选图、材质资产、五种贴图、资产库材质项）单跑通过。设计文件表只列文件名，unplanned/untouched 为路径格式差异，已人工核对",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "2d3303039b1462f4b121cfc75bc0a68460ad4000b05d536c7bcab6f0058f283c"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-04T10:20:44.675Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

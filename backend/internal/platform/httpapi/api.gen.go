@@ -1156,12 +1156,13 @@ func (e CreativeContentDraftKind) Valid() bool {
 
 // Defines values for CreativeContentRevisionKind.
 const (
-	CreativeContentRevisionKindAudio CreativeContentRevisionKind = "audio"
-	CreativeContentRevisionKindImage CreativeContentRevisionKind = "image"
-	CreativeContentRevisionKindLink  CreativeContentRevisionKind = "link"
-	CreativeContentRevisionKindModel CreativeContentRevisionKind = "model"
-	CreativeContentRevisionKindText  CreativeContentRevisionKind = "text"
-	CreativeContentRevisionKindVideo CreativeContentRevisionKind = "video"
+	CreativeContentRevisionKindAudio    CreativeContentRevisionKind = "audio"
+	CreativeContentRevisionKindImage    CreativeContentRevisionKind = "image"
+	CreativeContentRevisionKindLink     CreativeContentRevisionKind = "link"
+	CreativeContentRevisionKindMaterial CreativeContentRevisionKind = "material"
+	CreativeContentRevisionKindModel    CreativeContentRevisionKind = "model"
+	CreativeContentRevisionKindText     CreativeContentRevisionKind = "text"
+	CreativeContentRevisionKindVideo    CreativeContentRevisionKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeContentRevisionKind enum.
@@ -1172,6 +1173,8 @@ func (e CreativeContentRevisionKind) Valid() bool {
 	case CreativeContentRevisionKindImage:
 		return true
 	case CreativeContentRevisionKindLink:
+		return true
+	case CreativeContentRevisionKindMaterial:
 		return true
 	case CreativeContentRevisionKindModel:
 		return true
@@ -1564,12 +1567,13 @@ func (e CreativeInternalDocumentTypeKey) Valid() bool {
 
 // Defines values for CreativeLibraryAssetKind.
 const (
-	CreativeLibraryAssetKindAudio CreativeLibraryAssetKind = "audio"
-	CreativeLibraryAssetKindImage CreativeLibraryAssetKind = "image"
-	CreativeLibraryAssetKindLink  CreativeLibraryAssetKind = "link"
-	CreativeLibraryAssetKindModel CreativeLibraryAssetKind = "model"
-	CreativeLibraryAssetKindText  CreativeLibraryAssetKind = "text"
-	CreativeLibraryAssetKindVideo CreativeLibraryAssetKind = "video"
+	CreativeLibraryAssetKindAudio    CreativeLibraryAssetKind = "audio"
+	CreativeLibraryAssetKindImage    CreativeLibraryAssetKind = "image"
+	CreativeLibraryAssetKindLink     CreativeLibraryAssetKind = "link"
+	CreativeLibraryAssetKindMaterial CreativeLibraryAssetKind = "material"
+	CreativeLibraryAssetKindModel    CreativeLibraryAssetKind = "model"
+	CreativeLibraryAssetKindText     CreativeLibraryAssetKind = "text"
+	CreativeLibraryAssetKindVideo    CreativeLibraryAssetKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeLibraryAssetKind enum.
@@ -1580,6 +1584,8 @@ func (e CreativeLibraryAssetKind) Valid() bool {
 	case CreativeLibraryAssetKindImage:
 		return true
 	case CreativeLibraryAssetKindLink:
+		return true
+	case CreativeLibraryAssetKindMaterial:
 		return true
 	case CreativeLibraryAssetKindModel:
 		return true
@@ -2207,6 +2213,30 @@ func (e CreativeSceneChangeTargetKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeSceneChannelTextureChannel.
+const (
+	A CreativeSceneChannelTextureChannel = "a"
+	B CreativeSceneChannelTextureChannel = "b"
+	G CreativeSceneChannelTextureChannel = "g"
+	R CreativeSceneChannelTextureChannel = "r"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneChannelTextureChannel enum.
+func (e CreativeSceneChannelTextureChannel) Valid() bool {
+	switch e {
+	case A:
+		return true
+	case B:
+		return true
+	case G:
+		return true
+	case R:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneDocumentTypeKey.
 const (
 	Scene CreativeSceneDocumentTypeKey = "scene"
@@ -2360,6 +2390,27 @@ func (e CreativeSceneLightType) Valid() bool {
 	case Point:
 		return true
 	case Spot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneMaterialSlotAlphaMode.
+const (
+	Blend  CreativeSceneMaterialSlotAlphaMode = "blend"
+	Clip   CreativeSceneMaterialSlotAlphaMode = "clip"
+	Opaque CreativeSceneMaterialSlotAlphaMode = "opaque"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneMaterialSlotAlphaMode enum.
+func (e CreativeSceneMaterialSlotAlphaMode) Valid() bool {
+	switch e {
+	case Blend:
+		return true
+	case Clip:
+		return true
+	case Opaque:
 		return true
 	default:
 		return false
@@ -2552,6 +2603,24 @@ func (e CreativeSceneSkySunMode) Valid() bool {
 	case CreativeSceneSkySunModeLocation:
 		return true
 	case CreativeSceneSkySunModeManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSceneTextureMappingKind.
+const (
+	Triplanar CreativeSceneTextureMappingKind = "triplanar"
+	Uv        CreativeSceneTextureMappingKind = "uv"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneTextureMappingKind enum.
+func (e CreativeSceneTextureMappingKind) Valid() bool {
+	switch e {
+	case Triplanar:
+		return true
+	case Uv:
 		return true
 	default:
 		return false
@@ -3952,12 +4021,13 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
-	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
-	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
-	ListCreativeAssetsParamsKindModel ListCreativeAssetsParamsKind = "model"
-	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
-	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
+	ListCreativeAssetsParamsKindAudio    ListCreativeAssetsParamsKind = "audio"
+	ListCreativeAssetsParamsKindImage    ListCreativeAssetsParamsKind = "image"
+	ListCreativeAssetsParamsKindLink     ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindMaterial ListCreativeAssetsParamsKind = "material"
+	ListCreativeAssetsParamsKindModel    ListCreativeAssetsParamsKind = "model"
+	ListCreativeAssetsParamsKindText     ListCreativeAssetsParamsKind = "text"
+	ListCreativeAssetsParamsKindVideo    ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
@@ -3968,6 +4038,8 @@ func (e ListCreativeAssetsParamsKind) Valid() bool {
 	case ListCreativeAssetsParamsKindImage:
 		return true
 	case ListCreativeAssetsParamsKindLink:
+		return true
+	case ListCreativeAssetsParamsKindMaterial:
 		return true
 	case ListCreativeAssetsParamsKindModel:
 		return true
@@ -4389,6 +4461,13 @@ type CreateCreativeAssetFromNodeRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
 	OperationId     openapi_types.UUID           `json:"operation_id"`
 	Payload         CreativeAssetFromNodePayload `json:"payload"`
+}
+
+// CreateCreativeAssetFromSceneMaterialRequest defines model for CreateCreativeAssetFromSceneMaterialRequest.
+type CreateCreativeAssetFromSceneMaterialRequest struct {
+	ClientCreatedAt time.Time                             `json:"client_created_at"`
+	OperationId     openapi_types.UUID                    `json:"operation_id"`
+	Payload         CreativeAssetFromSceneMaterialPayload `json:"payload"`
 }
 
 // CreateCreativeAssetFromSceneModelRequest defines model for CreateCreativeAssetFromSceneModelRequest.
@@ -5354,12 +5433,13 @@ type CreativeAssetDigestMatches struct {
 // CreativeAssetFacets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
 type CreativeAssetFacets struct {
 	Kinds struct {
-		Audio int64 `json:"audio"`
-		Image int64 `json:"image"`
-		Link  int64 `json:"link"`
-		Model int64 `json:"model"`
-		Text  int64 `json:"text"`
-		Video int64 `json:"video"`
+		Audio    int64 `json:"audio"`
+		Image    int64 `json:"image"`
+		Link     int64 `json:"link"`
+		Material int64 `json:"material"`
+		Model    int64 `json:"model"`
+		Text     int64 `json:"text"`
+		Video    int64 `json:"video"`
 	} `json:"kinds"`
 	Tags []struct {
 		Count int64  `json:"count"`
@@ -5375,6 +5455,24 @@ type CreativeAssetFromNodePayload struct {
 	ExpectedDataRevision CreativeRevision          `json:"expected_data_revision"`
 	NodeId               string                    `json:"node_id"`
 	Target               CreativeUploadAssetTarget `json:"target"`
+}
+
+// CreativeAssetFromSceneMaterialPayload defines model for CreativeAssetFromSceneMaterialPayload.
+type CreativeAssetFromSceneMaterialPayload struct {
+	DocumentId string `json:"document_id"`
+
+	// ExpectedObjectRev 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedObjectRev CreativeRevision `json:"expected_object_rev"`
+
+	// ObjectId kind 为 primitive 或 model_instance 的对象
+	ObjectId string `json:"object_id"`
+
+	// SlotId 物件的槽位，必须在 material_slots 里有值
+	SlotId string                    `json:"slot_id"`
+	Target CreativeUploadAssetTarget `json:"target"`
+
+	// ThumbnailUploadId 按槽位当前分配渲染的 256 × 256 材质球 PNG 的暂存上传（声明类型 image）。新建材质时消费；复用已有资产时不消费。
+	ThumbnailUploadId string `json:"thumbnail_upload_id"`
 }
 
 // CreativeAssetFromSceneModelPayload defines model for CreativeAssetFromSceneModelPayload.
@@ -5945,6 +6043,12 @@ type CreativeEmptyTrashResult struct {
 	PurgedCount     int              `json:"purged_count"`
 }
 
+// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。
+type CreativeFieldDetails struct {
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	Field             string  `json:"field"`
+}
+
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
 type CreativeFoundationCapabilities struct {
 	Available     bool                                        `json:"available"`
@@ -6336,11 +6440,40 @@ type CreativeLibraryUsage struct {
 	StoredBytes         int64 `json:"stored_bytes"`
 }
 
+// CreativeLimitDetails defines model for CreativeLimitDetails.
+type CreativeLimitDetails struct {
+	Limit int `json:"limit"`
+}
+
 // CreativeLinkPayload defines model for CreativeLinkPayload.
 type CreativeLinkPayload struct {
 	Description *string `json:"description,omitempty"`
 	Title       *string `json:"title,omitempty"`
 	Url         string  `json:"url"`
+}
+
+// CreativeMaterialPayload material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进 update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。
+type CreativeMaterialPayload struct {
+	Material struct {
+		// Slot maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。
+		Slot CreativeSceneMaterialSlot `json:"slot"`
+
+		// Source 来源说明，只供展示，不构成引用；来源场景被删除后照常保留。
+		Source struct {
+			DocumentId string `json:"document_id"`
+			ObjectId   string `json:"object_id"`
+
+			// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+			Revision CreativeRevision `json:"revision"`
+			SlotId   string           `json:"slot_id"`
+		} `json:"source"`
+	} `json:"material"`
+}
+
+// CreativeMaterialSlotDetails defines model for CreativeMaterialSlotDetails.
+type CreativeMaterialSlotDetails struct {
+	ObjectId string `json:"object_id"`
+	SlotId   string `json:"slot_id"`
 }
 
 // CreativeMediaCapabilities defines model for CreativeMediaCapabilities.
@@ -6505,6 +6638,9 @@ type CreativeModelManifest struct {
 		Id   string  `json:"id"`
 	} `json:"slots"`
 	Triangles int `json:"triangles"`
+
+	// Uv 每个三角网格都带 TEXCOORD_0 时为 true；贴图选 uv 映射而这里为 false 时，没有 UV 的网格按三平面投影显示。修订 v18 之前写入的模型没有这个字段，表示不知道。
+	Uv *bool `json:"uv,omitempty"`
 }
 
 // CreativeModelParamSpec 几何模块的一个参数定义。number / integer 必须有 min 与 max；enum 必须有 options。
@@ -7041,6 +7177,16 @@ type CreativeSceneChangeTarget struct {
 // CreativeSceneChangeTargetKind defines model for CreativeSceneChangeTarget.Kind.
 type CreativeSceneChangeTargetKind string
 
+// CreativeSceneChannelTexture glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+type CreativeSceneChannelTexture struct {
+	// Channel 缺省 r，存储时补齐。
+	Channel           *CreativeSceneChannelTextureChannel `json:"channel,omitempty"`
+	ContentRevisionId string                              `json:"content_revision_id"`
+}
+
+// CreativeSceneChannelTextureChannel 缺省 r，存储时补齐。
+type CreativeSceneChannelTextureChannel string
+
 // CreativeSceneColor defines model for CreativeSceneColor.
 type CreativeSceneColor = string
 
@@ -7049,6 +7195,9 @@ type CreativeSceneDocument struct {
 	ContentRevisionId string    `json:"content_revision_id"`
 	CreatedAt         time.Time `json:"created_at"`
 	Id                string    `json:"id"`
+
+	// Images 以图片 content_revision_id 为键，覆盖快照引用的全部图片（目前只有 material_slots.*.maps.*）；没有贴图时为空对象。 像素不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original）取原图。
+	Images map[string]CreativeSceneImage `json:"images"`
 
 	// Models 以 content_revision_id 为键，覆盖快照引用的全部模型（按单元读取时覆盖所列内容单元引用的模型）；没有模型实例时为空对象。
 	Models map[string]CreativeSceneModel `json:"models"`
@@ -7144,6 +7293,20 @@ type CreativeSceneFog struct {
 	// Far 须大于 near。
 	Far  float32 `json:"far"`
 	Near float32 `json:"near"`
+}
+
+// CreativeSceneImage defines model for CreativeSceneImage.
+type CreativeSceneImage struct {
+	Height nullable.Nullable[int] `json:"height"`
+
+	// Mime image/jpeg、image/png 或 image/webp；PNG、WebP 可能带透明通道。
+	Mime nullable.Nullable[string] `json:"mime"`
+
+	// Usable false 时 width、height、mime 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理。
+	Usable bool `json:"usable"`
+
+	// Width 原图像素宽度，已按 EXIF 方向换算。
+	Width nullable.Nullable[int] `json:"width"`
 }
 
 // CreativeSceneJob defines model for CreativeSceneJob.
@@ -7314,11 +7477,25 @@ type CreativeSceneLightShape string
 // CreativeSceneLightType defines model for CreativeSceneLight.Type.
 type CreativeSceneLightType string
 
-// CreativeSceneMaterialSlot defines model for CreativeSceneMaterialSlot.
+// CreativeSceneMaterialSlot maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。
 type CreativeSceneMaterialSlot struct {
-	Params map[string]interface{} `json:"params"`
-	Preset string                 `json:"preset"`
+	// AlphaCutoff 只在 alpha_mode 为 clip 时允许，缺省 0.5。
+	AlphaCutoff *float32 `json:"alpha_cutoff,omitempty"`
+
+	// AlphaMode 对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉， 留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+	AlphaMode *CreativeSceneMaterialSlotAlphaMode `json:"alpha_mode,omitempty"`
+
+	// Mapping 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
+	Mapping *CreativeSceneTextureMapping `json:"mapping,omitempty"`
+
+	// Maps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+	Maps   *CreativeSceneTextureMaps `json:"maps,omitempty"`
+	Params map[string]interface{}    `json:"params"`
+	Preset string                    `json:"preset"`
 }
+
+// CreativeSceneMaterialSlotAlphaMode 对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉， 留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+type CreativeSceneMaterialSlotAlphaMode string
 
 // CreativeSceneMaterialSlots 缺省等同于空对象。
 type CreativeSceneMaterialSlots map[string]CreativeSceneMaterialSlot
@@ -7572,6 +7749,44 @@ type CreativeSceneSkyKind string
 
 // CreativeSceneSkySunMode location 按地点、日期和当地时刻推算太阳；manual 用 sun_elevation_deg、sun_azimuth_deg。两套字段都保存。缺省 location。
 type CreativeSceneSkySunMode string
+
+// CreativeSceneTexture defines model for CreativeSceneTexture.
+type CreativeSceneTexture struct {
+	ContentRevisionId string `json:"content_revision_id"`
+}
+
+// CreativeSceneTextureMapping 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
+type CreativeSceneTextureMapping struct {
+	// Kind triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+	Kind *CreativeSceneTextureMappingKind `json:"kind,omitempty"`
+
+	// NormalStrength 缺省 1；没有法线贴图时也允许保存。
+	NormalStrength *float32 `json:"normal_strength,omitempty"`
+
+	// Repeat 只在 uv 时允许，缺省 [1, 1]。
+	Repeat      *[]float32 `json:"repeat,omitempty"`
+	RotationDeg *float32   `json:"rotation_deg,omitempty"`
+
+	// SizeM 只在 triplanar 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比。
+	SizeM *float32 `json:"size_m,omitempty"`
+}
+
+// CreativeSceneTextureMappingKind triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+type CreativeSceneTextureMappingKind string
+
+// CreativeSceneTextureMaps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+type CreativeSceneTextureMaps struct {
+	// Ao glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+	Ao        *CreativeSceneChannelTexture `json:"ao,omitempty"`
+	BaseColor *CreativeSceneTexture        `json:"base_color,omitempty"`
+
+	// Metalness glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+	Metalness *CreativeSceneChannelTexture `json:"metalness,omitempty"`
+	Normal    *CreativeSceneTexture        `json:"normal,omitempty"`
+
+	// Roughness glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+	Roughness *CreativeSceneChannelTexture `json:"roughness,omitempty"`
+}
 
 // CreativeSceneTransform defines model for CreativeSceneTransform.
 type CreativeSceneTransform struct {
@@ -9486,6 +9701,11 @@ type CreateCreativeAssetFromNodeParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CreateCreativeAssetFromSceneMaterialParams defines parameters for CreateCreativeAssetFromSceneMaterial.
+type CreateCreativeAssetFromSceneMaterialParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // CreateCreativeAssetFromSceneModelParams defines parameters for CreateCreativeAssetFromSceneModel.
 type CreateCreativeAssetFromSceneModelParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -10176,6 +10396,9 @@ type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
 // CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
 type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
+
+// CreateCreativeAssetFromSceneMaterialJSONRequestBody defines body for CreateCreativeAssetFromSceneMaterial for application/json ContentType.
+type CreateCreativeAssetFromSceneMaterialJSONRequestBody = CreateCreativeAssetFromSceneMaterialRequest
 
 // CreateCreativeAssetFromSceneModelJSONRequestBody defines body for CreateCreativeAssetFromSceneModel for application/json ContentType.
 type CreateCreativeAssetFromSceneModelJSONRequestBody = CreateCreativeAssetFromSceneModelRequest
@@ -10944,6 +11167,32 @@ func (t *CreativeContentPayload) MergeCreativeModelPayload(v CreativeModelPayloa
 	return err
 }
 
+// AsCreativeMaterialPayload returns the union data inside the CreativeContentPayload as a CreativeMaterialPayload
+func (t CreativeContentPayload) AsCreativeMaterialPayload() (CreativeMaterialPayload, error) {
+	var body CreativeMaterialPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialPayload overwrites any union data inside the CreativeContentPayload as the provided CreativeMaterialPayload
+func (t *CreativeContentPayload) FromCreativeMaterialPayload(v CreativeMaterialPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeMaterialPayload
+func (t *CreativeContentPayload) MergeCreativeMaterialPayload(v CreativeMaterialPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t CreativeContentPayload) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -11074,6 +11323,32 @@ func (t *CreativeContentRevisionPayload) FromCreativeModelPreviewPayload(v Creat
 
 // MergeCreativeModelPreviewPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeModelPreviewPayload
 func (t *CreativeContentRevisionPayload) MergeCreativeModelPreviewPayload(v CreativeModelPreviewPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMaterialPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeMaterialPayload
+func (t CreativeContentRevisionPayload) AsCreativeMaterialPayload() (CreativeMaterialPayload, error) {
+	var body CreativeMaterialPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeMaterialPayload
+func (t *CreativeContentRevisionPayload) FromCreativeMaterialPayload(v CreativeMaterialPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeMaterialPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeMaterialPayload(v CreativeMaterialPayload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -12019,6 +12294,84 @@ func (t *ErrorDetails) MergeCreativeDocumentConflictDetails(v CreativeDocumentCo
 	return err
 }
 
+// AsCreativeFieldDetails returns the union data inside the ErrorDetails as a CreativeFieldDetails
+func (t ErrorDetails) AsCreativeFieldDetails() (CreativeFieldDetails, error) {
+	var body CreativeFieldDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeFieldDetails overwrites any union data inside the ErrorDetails as the provided CreativeFieldDetails
+func (t *ErrorDetails) FromCreativeFieldDetails(v CreativeFieldDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeFieldDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeFieldDetails
+func (t *ErrorDetails) MergeCreativeFieldDetails(v CreativeFieldDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeLimitDetails returns the union data inside the ErrorDetails as a CreativeLimitDetails
+func (t ErrorDetails) AsCreativeLimitDetails() (CreativeLimitDetails, error) {
+	var body CreativeLimitDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeLimitDetails overwrites any union data inside the ErrorDetails as the provided CreativeLimitDetails
+func (t *ErrorDetails) FromCreativeLimitDetails(v CreativeLimitDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeLimitDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeLimitDetails
+func (t *ErrorDetails) MergeCreativeLimitDetails(v CreativeLimitDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMaterialSlotDetails returns the union data inside the ErrorDetails as a CreativeMaterialSlotDetails
+func (t ErrorDetails) AsCreativeMaterialSlotDetails() (CreativeMaterialSlotDetails, error) {
+	var body CreativeMaterialSlotDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialSlotDetails overwrites any union data inside the ErrorDetails as the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) FromCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialSlotDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) MergeCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -12462,6 +12815,9 @@ type ServerInterface interface {
 	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
+	// 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
+	// (POST /creative/assets/from-scene-material)
+	CreateCreativeAssetFromSceneMaterial(c *gin.Context, params CreateCreativeAssetFromSceneMaterialParams)
 	// 把场景里模型实例的模型和材质分配复制成库副本，存入个人库；同一来源修订、同样材质已在库中时只追加归类
 	// (POST /creative/assets/from-scene-model)
 	CreateCreativeAssetFromSceneModel(c *gin.Context, params CreateCreativeAssetFromSceneModelParams)
@@ -14476,6 +14832,51 @@ func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromNode(c *gin.Context) {
 	}
 
 	siw.Handler.CreateCreativeAssetFromNode(c, params)
+}
+
+// CreateCreativeAssetFromSceneMaterial operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromSceneMaterial(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAssetFromSceneMaterialParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAssetFromSceneMaterial(c, params)
 }
 
 // CreateCreativeAssetFromSceneModel operation middleware
@@ -19433,6 +19834,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
 	router.GET(options.BaseURL+"/creative/assets/digest-matches", wrapper.FindCreativeAssetDigestMatches)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
+	router.POST(options.BaseURL+"/creative/assets/from-scene-material", wrapper.CreateCreativeAssetFromSceneMaterial)
 	router.POST(options.BaseURL+"/creative/assets/from-scene-model", wrapper.CreateCreativeAssetFromSceneModel)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
 	router.POST(options.BaseURL+"/creative/assets/:id/import-replace", wrapper.ReplaceCreativeAssetByImport)

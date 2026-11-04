@@ -13,7 +13,7 @@ import { StarRating } from '../editor/StarRating.tsx'
 import type { LibraryCatalog } from './useLibrary.ts'
 import { ActionButtons, type Actions } from './BatchBar.tsx'
 import { anchorPoint } from './popover.ts'
-import { modelInfo, modelRows } from '../viewer/modelInfo.ts'
+import { assetMaterial, materialRows, modelInfo, modelRows } from '../viewer/modelInfo.ts'
 const dateFormat = new Intl.DateTimeFormat('zh-CN', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -52,6 +52,7 @@ export default function AssetInspector({
   const original = single?.content?.media?.find((m) => m.role === 'original')
   const duration = single ? mediaDuration(single) : ''
   const model = single ? modelInfo(single.content) : null
+  const material = single ? assetMaterial(single.content) : null
   const mixed = new Set(assets.map((a) => a.rating)).size > 1
   const disabled =
     actions.blocked || assets.length > 100 || assets.some((a) => !!a.deleted_at)
@@ -224,8 +225,10 @@ export default function AssetInspector({
           <dl className="al-props">
             <dt>类型</dt>
             <dd>{kindLabel[single.kind]}</dd>
-            {model &&
-              modelRows(model).map(([label, value], i) => (
+            {[
+              ...(model ? modelRows(model) : []),
+              ...(material ? materialRows(material) : []),
+            ].map(([label, value], i) => (
                 <Fragment key={i}>
                   <dt>{label}</dt>
                   <dd>{value}</dd>

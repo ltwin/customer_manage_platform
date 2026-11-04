@@ -1,6 +1,7 @@
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { coneAngle, coneDegrees, lightLabels } from '../editing.ts'
 import { emittingArea, lightDefaultsOf, maxLightIntensity, mergeLight, worldAreaScale } from '../state/apply.ts'
+import type { ShadowState } from '../objects/shadowBudget.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { NumberField } from './Properties.tsx'
 
@@ -16,11 +17,13 @@ type LightPatch = NonNullable<ObjectUpdate['light']>
  * object's world transform (objects, the scene's). A type change writes the
  * intensity the server would convert to, so the two agree.
  */
-export function LightFields({ object, objects, readOnly, display, onLight }: {
+export function LightFields({ object, objects, readOnly, display, shadow, onLight }: {
   object: SceneObject & { light: Light }
   objects: readonly SceneObject[]
   readOnly: boolean
   display: DisplayMode
+  /** Whether it casts shadows on surfaces, as the budget picked (objects/shadowBudget.ts). */
+  shadow: ShadowState | undefined
   onLight: (patch: LightPatch, label: string, merge?: string) => void
 }) {
   const l = { ...lightDefaultsOf(object.light.type), ...object.light }
@@ -62,6 +65,11 @@ export function LightFields({ object, objects, readOnly, display, onLight }: {
         <span>投射阴影</span>
         <input type="checkbox" checked={l.cast_shadow} onChange={(e) => onLight({ cast_shadow: e.target.checked }, `${e.target.checked ? '打开' : '关闭'}「${name}」阴影`)} />
       </label>
+      {shadow === 'over_budget' && (
+        <small className="cc-scene-shadow-over" title="表面最多用 8 张阴影贴图：天空的太阳占 4 张，投影的灯按物件列表的顺序依次占用，平行光 4 张、其他灯 1 张，放不下的灯照常照明但不投影。把这盏灯在物件列表里往前移，或关掉前面某盏灯的阴影，就能让它投影。">
+          阴影超出上限
+        </small>
+      )}
       {l.type === 'directional' && (
         // No step: the default 0.545 lies on no step's grid, and a number input would call it a step mismatch.
         <NumberField label="角径（°，0 为硬影子）" value={l.angular_diameter_deg ?? 0} min={0} max={30} onCommit={(v) => set({ angular_diameter_deg: v }, '角径', `${object.id}:light.angular_diameter_deg`)} />

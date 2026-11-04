@@ -14,8 +14,11 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
@@ -187,6 +190,115 @@ func TestGCKeepsWhatIsStillInUse(t *testing.T) {
 	f.collect(t, creativemedia.GCDelete)
 	if f.scalar(t, `SELECT state FROM creative_blobs WHERE id=$1`, blob.id) != "ready" {
 		t.Fatal("a blob being read was marked for deletion")
+	}
+}
+
+// A texture lives as long as the material holding it: with the material asset
+// gone, one round reclaims the material and the next the image it held.
+func TestGCKeepsATextureUntilItsHolderIsReclaimed(t *testing.T) {
+	f := setup(t)
+	image := f.uploadAndPurge(t)
+	for _, q := range []string{
+		`INSERT INTO creative_contents(id,account_id,kind,created_by_kind) VALUES('ccnt_gc_mat','media-a','material','photographer')`,
+		`INSERT INTO creative_content_revisions(id,account_id,content_id,sequence,schema_version,payload,rights_declaration_id) VALUES('ccrv_gc_mat','media-a','ccnt_gc_mat',1,1,'{"material":{}}','rights')`,
+		`INSERT INTO creative_assets(id,account_id,kind,title,normalized_title,description,content_id,content_revision_id) VALUES('asset-gc-mat','media-a','material','砖墙','砖墙','','ccnt_gc_mat','ccrv_gc_mat')`,
+	} {
+		if _, err := f.db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	if _, err := f.db.Exec(`INSERT INTO creative_content_revision_refs(account_id,holder_revision_id,content_revision_id,role) VALUES('media-a','ccrv_gc_mat',$1,'texture')`, image.ContentRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r != (creativemedia.GCReport{}) {
+		t.Fatalf("a texture held by a material was collected: %+v", r)
+	}
+
+	if _, err := f.db.Exec(`DELETE FROM creative_assets WHERE id='asset-gc-mat'`); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("first round: %+v", r)
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id='ccrv_gc_mat'`) != "deleted" ||
+		f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "ready" {
+		t.Fatal("the first round should reclaim the material and keep its texture")
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("second round: %+v", r)
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "deleted" {
+		t.Fatal("a texture outlived its reclaimed holder")
+	}
+}
+
+// A material saved from a scene keeps its texture after the image's asset and
+// the scene are gone; purging the material reclaims it and its thumbnail, and
+// the next round the image.
+func TestGCReclaimsAPurgedMaterialThenItsTexture(t *testing.T) {
+	f := setup(t)
+	upload := f.uploadFile(t, f.a, "石板.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "石板"}})
+	image, err := creativelibrary.GetAsset(t.Context(), f.a, upload.Publication.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thumb := f.uploadFile(t, f.a, "材质球.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "staged"})
+
+	typ, _ := creativedocument.Lookup(creativescene.TypeKey)
+	var doc creativedocument.Document
+	if err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		doc, err = creativedocument.CreateInTx(t.Context(), tx, typ, "场景", nil, creativedocument.Photographer)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	box := "sobj_000000000000000000001"
+	_ = must[creativeops.Receipt](t)(creativedocument.CommandAs(t.Context(), f.a, creativedocument.Photographer, command(t, map[string]any{"document_id": doc.ID,
+		"expected": map[string]any{"objects": "1"}, "operations": []any{map[string]any{"op": "add_objects", "objects": []any{map[string]any{
+			"id": box, "kind": "primitive", "name": "", "parent_id": nil, "order": 1, "visible": true, "locked": false,
+			"transform": map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+			"primitive": map[string]any{"builtin": "box@1"},
+			"material_slots": map[string]any{"main": map[string]any{"preset": "principled@1", "params": map[string]any{},
+				"maps": map[string]any{"base_color": map[string]any{"content_revision_id": image.ContentRevisionID}}}}}}}}})))
+	material := must[creativelibrary.AssetResult](t)(creativescene.SaveMaterialToLibrary(t.Context(), f.a, command(t, creativescene.SaveMaterialInput{
+		DocumentID: doc.ID, ObjectID: box, SlotID: "main", ExpectedObjectRev: 2, ThumbnailUploadID: thumb.ID, Target: creativelibrary.ImportTarget{Title: "石板地面"}})))
+	purge := func(asset creativelibrary.AssetResult) {
+		t.Helper()
+		_ = must[creativelibrary.LibraryResult](t)(creativelibrary.Trash(t.Context(), f.a, command(t, creativelibrary.AssetVersion{ID: asset.ID, Revision: asset.Revision})))
+		if _, err := creativelibrary.Purge(t.Context(), f.a, command(t, creativelibrary.AssetVersion{ID: asset.ID, Revision: asset.Revision + 1})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	purge(creativelibrary.AssetResult{ID: image.ID, Revision: image.Revision})
+	for _, call := range []func(context.Context, store.AccountScope, creativeops.Command) (creativeops.Receipt, error){creativedocument.Trash, creativedocument.Purge} {
+		_ = must[creativeops.Receipt](t)(call(t.Context(), f.a, command(t, map[string]any{"document_id": doc.ID})))
+	}
+	// The staged thumbnail's own revision has nobody left; its blob is the
+	// material's thumbnail now.
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 || r.ReclaimableBlobs != 0 ||
+		f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, *thumb.ContentRevisionID) != "deleted" ||
+		f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "ready" {
+		t.Fatalf("a texture held by a material was collected: %+v", r)
+	}
+
+	purge(material)
+	thumbBlob := f.blobsOf(t, material.ContentRevisionID)[0]
+	// With the material gone the image has no holder left, so its blob is
+	// marked in the same round (a blob of an unheld revision is unheld); the
+	// revision itself goes the next round.
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 || r.ReclaimableBlobs != 2 {
+		t.Fatalf("first round: %+v", r)
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, material.ContentRevisionID) != "deleted" ||
+		f.scalar(t, `SELECT state FROM creative_blobs WHERE id=$1`, thumbBlob.id) != "deleting" ||
+		f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "ready" {
+		t.Fatal("the first round should reclaim the material and its thumbnail, not yet the texture")
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("second round: %+v", r)
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, image.ContentRevisionID) != "deleted" {
+		t.Fatal("a texture outlived the material holding it")
 	}
 }
 

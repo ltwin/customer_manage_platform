@@ -344,7 +344,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。 */
+        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。场景的材质贴图：本批新出现的图片不可用时返回 400 creative_image_unavailable，details.field 指出第一个不可用的字段、details.content_revision_id 给出图片；贴图字段违反契约返回 400 validation_failed，details.field 指出字段；引用的不同图片超过 64 张返回 413 creative_size_limit，details.limit 为 64。 */
         post: operations["commandCreativeDocument"];
         delete?: never;
         options?: never;
@@ -1162,9 +1162,29 @@ export interface paths {
         put?: never;
         /**
          * 把场景里模型实例的模型和材质分配复制成库副本，存入个人库；同一来源修订、同样材质已在库中时只追加归类
-         * @description 只读场景，不产生场景修订；位置、旋转和缩放不随资产保存。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev， 不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）； 对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable； 场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict； 需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable。
+         * @description 只读场景，不产生场景修订；位置、旋转和缩放不随资产保存。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev， 不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）； 对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable； 场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict； 需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable；材质分配引用的图片已不可展示返回 400 creative_image_unavailable （details.field 如 materials.main.maps.normal）。
          */
         post: operations["createCreativeAssetFromSceneModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/assets/from-scene-material": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
+         * @description 只读场景，不产生场景修订。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev，不符时返回 409 creative_document_conflict； 对象不是基础体或模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；槽位在 material_slots 里没有值返回 400 creative_material_slot_empty（details 为 object_id、slot_id）；槽位引用的图片已不可展示返回 400 creative_image_unavailable （details.field 指出贴图，如 maps.normal，details.content_revision_id 给出图片）；场景、对象、分组或标签不存在返回 404； 场景在回收站返回 409 creative_state_conflict；需要新建材质而缩略图上传不可用时返回 409 creative_upload_unavailable。
+         */
+        post: operations["createCreativeAssetFromSceneMaterial"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3243,7 +3263,7 @@ export interface components {
         CreativeMediaPayload: {
             caption?: string;
         };
-        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"];
+        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeMaterialPayload"];
         /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。 */
         CreativeModelPayload: {
             model: {
@@ -3259,7 +3279,20 @@ export interface components {
             };
         };
         /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
-        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"];
+        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"] | components["schemas"]["CreativeMaterialPayload"];
+        /** @description material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进 update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。 */
+        CreativeMaterialPayload: {
+            material: {
+                slot: components["schemas"]["CreativeSceneMaterialSlot"];
+                /** @description 来源说明，只供展示，不构成引用；来源场景被删除后照常保留。 */
+                source: {
+                    document_id: string;
+                    object_id: string;
+                    slot_id: string;
+                    revision: components["schemas"]["CreativeRevision"];
+                };
+            };
+        };
         /** @description 不含代码的完整形态模型载荷，只出现在响应里。 */
         CreativeModelPreviewPayload: {
             model: {
@@ -3309,6 +3342,8 @@ export interface components {
                 id: string;
                 position: number[];
             }[];
+            /** @description 每个三角网格都带 TEXCOORD_0 时为 true；贴图选 uv 映射而这里为 false 时，没有 UV 的网格按三平面投影显示。修订 v18 之前写入的模型没有这个字段，表示不知道。 */
+            uv?: boolean;
         };
         /** @description 几何模块的一个参数定义。number / integer 必须有 min 与 max；enum 必须有 options。 */
         CreativeModelParamSpec: {
@@ -3391,7 +3426,7 @@ export interface components {
             id: string;
             content_id: string;
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio" | "model";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
             sequence: components["schemas"]["CreativeRevision"];
             payload: components["schemas"]["CreativeContentRevisionPayload"];
             media?: components["schemas"]["CreativeMediaObject"][];
@@ -3407,7 +3442,7 @@ export interface components {
             }[];
             rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio" | "model";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
             revision: components["schemas"]["CreativeRevision"];
             content_id: string;
             content_revision_id: string;
@@ -3515,6 +3550,8 @@ export interface components {
                 audio: number;
                 /** Format: int64 */
                 model: number;
+                /** Format: int64 */
+                material: number;
             };
             tags: {
                 tag_id: string;
@@ -4699,7 +4736,19 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"];
+        /** @description 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 */
+        CreativeFieldDetails: {
+            field: string;
+            content_revision_id?: string;
+        };
+        CreativeLimitDetails: {
+            limit: number;
+        };
+        CreativeMaterialSlotDetails: {
+            object_id: string;
+            slot_id: string;
+        };
         /** @enum {string} */
         OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
         /** @enum {string} */
@@ -7246,6 +7295,19 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["CreativeSceneModel"];
             };
+            /** @description 以图片 content_revision_id 为键，覆盖快照引用的全部图片（目前只有 material_slots.*.maps.*）；没有贴图时为空对象。 像素不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original）取原图。 */
+            images: {
+                [key: string]: components["schemas"]["CreativeSceneImage"];
+            };
+        };
+        CreativeSceneImage: {
+            /** @description false 时 width、height、mime 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理。 */
+            usable: boolean;
+            /** @description 原图像素宽度，已按 EXIF 方向换算。 */
+            width: number | null;
+            height: number | null;
+            /** @description image/jpeg、image/png 或 image/webp；PNG、WebP 可能带透明通道。 */
+            mime: string | null;
         };
         /** @description GLB 与缩略图不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original / thumbnail）取地址。 */
         CreativeSceneModel: {
@@ -7460,11 +7522,56 @@ export interface components {
         CreativeSceneMaterialSlots: {
             [key: string]: components["schemas"]["CreativeSceneMaterialSlot"];
         };
+        /** @description maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。 */
         CreativeSceneMaterialSlot: {
             preset: string;
             params: {
                 [key: string]: unknown;
             };
+            maps?: components["schemas"]["CreativeSceneTextureMaps"];
+            mapping?: components["schemas"]["CreativeSceneTextureMapping"];
+            /**
+             * @description 对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉， 留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+             * @enum {string}
+             */
+            alpha_mode?: "opaque" | "clip" | "blend";
+            /** @description 只在 alpha_mode 为 clip 时允许，缺省 0.5。 */
+            alpha_cutoff?: number;
+        };
+        /** @description 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。 */
+        CreativeSceneTextureMaps: {
+            base_color?: components["schemas"]["CreativeSceneTexture"];
+            normal?: components["schemas"]["CreativeSceneTexture"];
+            roughness?: components["schemas"]["CreativeSceneChannelTexture"];
+            metalness?: components["schemas"]["CreativeSceneChannelTexture"];
+            ao?: components["schemas"]["CreativeSceneChannelTexture"];
+        };
+        CreativeSceneTexture: {
+            content_revision_id: string;
+        };
+        /** @description glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。 */
+        CreativeSceneChannelTexture: {
+            content_revision_id: string;
+            /**
+             * @description 缺省 r，存储时补齐。
+             * @enum {string}
+             */
+            channel?: "r" | "g" | "b" | "a";
+        };
+        /** @description 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。 */
+        CreativeSceneTextureMapping: {
+            /**
+             * @description triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+             * @enum {string}
+             */
+            kind?: "triplanar" | "uv";
+            /** @description 只在 triplanar 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比。 */
+            size_m?: number;
+            /** @description 只在 uv 时允许，缺省 [1, 1]。 */
+            repeat?: number[];
+            rotation_deg?: number;
+            /** @description 缺省 1；没有法线贴图时也允许保存。 */
+            normal_strength?: number;
         };
         /** @description 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 area 是面光源（three.js RectAreaLight、Blender Area）：color、intensity、cast_shadow、shape、width、height，沿物件局部 −Z 单面发光； 发光面随物件的世界缩放（含父级）变化，实际宽、高为 width、height 乘以局部 X、Y 轴在世界空间里的缩放倍数。 写入时只有 type 必填，省略的字段取 three.js 默认值（area 的强度缺省 10000，见 intensity）；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光、聚光和面光源沿物件局部 −Z 照射。 */
         CreativeSceneLight: {
@@ -8221,6 +8328,24 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAssetFromSceneModelPayload"];
         };
+        CreativeAssetFromSceneMaterialPayload: {
+            document_id: string;
+            /** @description kind 为 primitive 或 model_instance 的对象 */
+            object_id: string;
+            /** @description 物件的槽位，必须在 material_slots 里有值 */
+            slot_id: string;
+            expected_object_rev: components["schemas"]["CreativeRevision"];
+            /** @description 按槽位当前分配渲染的 256 × 256 材质球 PNG 的暂存上传（声明类型 image）。新建材质时消费；复用已有资产时不消费。 */
+            thumbnail_upload_id: string;
+            target: components["schemas"]["CreativeUploadAssetTarget"];
+        };
+        CreateCreativeAssetFromSceneMaterialRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetFromSceneMaterialPayload"];
+        };
         CreativeNodeExecution: {
             execution_id: string;
             node_id: string;
@@ -8399,7 +8524,7 @@ export interface operations {
                 view?: "all" | "recent" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
-                kind?: "text" | "link" | "image" | "video" | "audio" | "model";
+                kind?: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";
@@ -10855,6 +10980,50 @@ export interface operations {
                 };
             };
             /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromSceneMaterial: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromSceneMaterialRequest"];
+            };
+        };
+        responses: {
+            /** @description 同样分配的材质资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 已创建材质和资产 */
             201: {
                 headers: {
                     [name: string]: unknown;

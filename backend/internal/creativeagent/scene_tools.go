@@ -67,7 +67,8 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		return &schema.ToolInfo{
 			Name: readSceneTool,
 			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
-				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。",
+				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。" +
+				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；模型 uv 为 false 表示有网格没有 UV，uv_fallback_slots 里选了 uv 映射的槽位因此按三平面显示；灯光带 shadow：on 投影、off 不投影（没开投影或灯被隐藏）、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":  doc,
 				"object_ids":   strs("只读这些物件的完整信息，最多 200 个"),
@@ -120,8 +121,13 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"渲染器 render.engine 只作用于材质光照（lit 的导出与回看；白模和线稿总按工作台画）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
 				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
+				"贴图只用于原理化材质 principled@1，槽位另写 maps、mapping、alpha_mode、alpha_cutoff：maps 可写 base_color（与 color 相乘，按 sRGB）、normal（切线空间，OpenGL 约定 +Y 朝上，同 glTF、Blender）、roughness、metalness、ao（只压暗间接光）五种，每种 {content_revision_id:图片修订, channel?}；" +
+				"channel 为 r/g/b/a，只用于 roughness、metalness、ao，缺省 r，glTF 打包的 ORM 图三项写同一张图，分别取 r、g、b。图片须是这一轮读得到的：画布上、对话里、已授权的资产库里，或你读到的材质资产、模型资产带的贴图；场景里已经用着的图片可以直接复制到别的槽位。单个场景最多 64 张不同的图片。" +
+				"mapping 只在有 maps 时写：kind 缺省 triplanar（按物件空间的米铺开，物件缩放时不拉伸，size_m 0.01–100 是一块贴图的宽度，缺省 1）；uv 用模型自带的 UV（repeat [u,v] 各 0.01–1000，缺省 [1,1]），模型没有 UV 时按三平面显示；rotation_deg 0–360，normal_strength 0–4（缺省 1）。size_m 只配 triplanar，repeat 只配 uv。" +
+				"alpha_mode：opaque（缺省，忽略贴图的透明通道）、clip（opacity × 基础色贴图的透明通道低于 alpha_cutoff 0–1，缺省 0.5，的部分挖掉，适合树叶、铁丝网）、blend（按半透明处理，适合玻璃贴花）。" +
+				"资产库里的材质：search_assets 按 kind:material 查到，用 read_asset 读到完整 slot 后原样写进某个槽位。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
-				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；柔光箱用面光源，如 0.6×0.9 m、500–2000 cd/m²（等效约 270–1100 cd），影子和高光比同强度的点光柔和；投射阴影的灯光不超过 4 盏，太多会卡。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
+				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；柔光箱用面光源，如 0.6×0.9 m、500–2000 cd/m²（等效约 270–1100 cd），影子和高光比同强度的点光柔和；表面阴影共 8 张：程序天空和物理天空的太阳占 4 张，投影的平行光各占 4 张，点光、聚光、面光各占 1 张，按物件列表顺序放得下就投影；放不下的灯照常照亮但不投影，read_scene 里这盏灯的 shadow 为 over_budget（on 为投影、off 为不投影），隐藏的灯不占阴影，要它投影就关掉前面某盏灯的投影或调整物件顺序。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
 				"成批的相同小件（栅栏、砖、书本）写成一个代码模型（lib.array/radial），比逐个加基础体流畅得多；重复出现的东西放同一模型的多个实例。" +
 				"建议曝光：物理天空下摄像机和临时视点默认环境测光：按场景的环境光测光（不看画面，不随取景变），入夜后平滑变暗，只比正午暗 2–4 档（满月之夜约 2.5 档，新月之夜约 3.5 档，天空深蓝、看得见银河），入夜不必改曝光；" +
 				"要更亮或更暗写 exposure_compensation；测光看的是场景原点的天光，室内或浓荫下的取景偏暗，补偿 +1～+2。" +
@@ -378,7 +384,11 @@ func (h *runtimeHandler) editScene(ctx context.Context, step, raw string) (any, 
 			return nil, err
 		}
 		return creativescene.AgentEditInTx(ctx, tx, creativescene.EditInput{DocumentID: args.DocumentID, RunID: h.held.RunID,
-			BasedOn: int64(args.BasedOn), Operations: args.Operations, ConversationRuns: runs})
+			BasedOn: int64(args.BasedOn), Operations: args.Operations, ConversationRuns: runs,
+			// A texture is one the run may read, or one a readable material holds.
+			ReadableImage: func(ctx context.Context, tx store.TxAccountScope, id string) (bool, error) {
+				return textureReadableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+			}})
 	})
 }
 

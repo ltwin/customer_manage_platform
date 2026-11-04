@@ -1,4 +1,6 @@
 import { Box3, type Matrix4, type Mesh, type Scene } from 'three'
+import type { WebGPURenderer } from 'three/webgpu'
+import { textureKeys, type TextureKey } from '../../materials/images.ts'
 import { slotOf } from '../../materials/instances.ts'
 import { backgroundTicker } from '../../host/ticker.ts'
 import { gpuTestHooks, type SceneGPU } from '../gpu.ts'
@@ -6,6 +8,7 @@ import type { Segment } from './build.worker.ts'
 import { BUDGET, BYTES_PER_TRIANGLE, SPARE, buildsOriginal, epsilonAt, levelFor, tierOf } from './capacity.ts'
 import { collectLights, collectMeshes, type Slot, type Traced } from './collect.ts'
 import { ArraysDropped, CapacityError, TraceLayer, type Instance } from './layer.ts'
+import { LAYER_SIZE, rowMaps, TraceMaps } from './maps.ts'
 import { buildPool, GeometryFailed, type Builds } from './pool.ts'
 import { TraceTables } from './tables.ts'
 
@@ -29,6 +32,11 @@ import { TraceTables } from './tables.ts'
 // materials, lights and environment it is lit by; the probes take those
 // against the counts they last saw.
 //
+// The slots' textures are copied into the device's texture arrays as their
+// images come (maps.ts): a row samples them once its layers are written,
+// which counts as a change of the light (C5c1 design「就绪与确定性」); an
+// export's ready() waits for them.
+//
 // A geometry whose build fails is left out, the rest traced (S1 design
 // A13); the layer as a whole fails on what touches all of it: a worker that
 // did not load, a device error on its buffers, its shader not building.
@@ -36,7 +44,8 @@ import { TraceTables } from './tables.ts'
 export type TraceStatus =
   | { state: 'off'; reason: 'compatibility' | 'device' | 'disabled' }
   | { state: 'preparing'; done: number; total: number }
-  | { state: 'ready'; tier: 'full' | 'proxy'; pending: number }
+  /** mapsOver: textures past the device's array layers or the image budget, drawn with their slots' constants (maps.ts). */
+  | { state: 'ready'; tier: 'full' | 'proxy'; pending: number; mapsOver?: number }
   | { state: 'tooLarge' }
   | { state: 'failed' }
 
@@ -140,6 +149,8 @@ export class TraceBase {
   private status: TraceStatus
   private readonly listeners = new Set<(s: TraceStatus) => void>()
   readonly tables: TraceTables
+  /** The slots' textures, as the hits sample them. */
+  readonly maps: TraceMaps
   private readonly precisions: Partial<Record<Kind, Precision>> = {}
   /**
    * Layers dropped, their GPU buffers let go at the next sync: the frame
@@ -167,6 +178,8 @@ export class TraceBase {
   private traced: Traced[] = []
   /** What each material row holds: the traced meshes' slots, in turn. */
   private rows: Slot[] = []
+  /** Each row's textures as last written (maps.ts RowMaps, as JSON). */
+  private rowMaps: string[] = []
   /** Each traced mesh's first row. */
   private firstRow: number[] = []
   /** A failure was retried (on the next scene change); a second one before the layer is ready again stays till the device goes. */
@@ -204,13 +217,18 @@ export class TraceBase {
     this.builds = builds
     this.release = (attribute) => gpu.release(attribute)
     this.tables = new TraceTables(this.release)
+    const capability = gpu.trace
+    const layers = gpuTestHooks.traceMapLayers ?? (capability.supported ? capability.maxLayers : 0)
+    this.maps = new TraceMaps(() => gpu.renderer as WebGPURenderer, incremental ? LAYER_SIZE.viewport : LAYER_SIZE.export, layers)
+    // An image in: the viewport syncs, and writes it, on its next frame.
+    this.maps.onArrival = () => this.redraw?.()
+    this.tables.maps = this.maps
     this.unsubscribe = [
       // The layer's buffers are named for the device's messages (layer.ts, tables.ts: trace_<…>).
       gpu.onError((message) => {
         if (/\btrace_/.test(message)) this.fail()
       }),
     ]
-    const capability = gpu.trace
     // The e2e's pressed budget holds each buffer too: a scene goes to tier 2, then too large.
     this.maxBinding = capability.supported ? Math.min(capability.maxBinding, gpuTestHooks.traceBudget ?? Infinity) : 0
     if (!capability.supported) this.status = { state: 'off', reason: capability.reason }
@@ -364,7 +382,8 @@ export class TraceBase {
       this.tooLarge = false
       for (const p of Object.values(this.precisions)) p.blocked = false
     }
-    if (this.restyle(traced)) this.lightingVersion++
+    const mapsChanged = this.maps.update(texturesOf(traced))
+    if (this.restyle(traced, mapsChanged)) this.lightingVersion++
     const geometries = new Map(traced.map((t) => [t.key, t.triangles]))
     this.geometries = geometries
     const total = [...geometries.values()].reduce((n, x) => n + x, 0)
@@ -438,17 +457,27 @@ export class TraceBase {
     })()
   }
 
-  /** The material rows, the traced meshes' slots in turn: each written when it holds something else than it did. Whether any was. */
-  private restyle(traced: readonly Traced[]): boolean {
+  /**
+   * The material rows, the traced meshes' slots in turn: each written when
+   * it holds something else than it did, or its textures' layers changed
+   * (mapsChanged: some layer written or given back). Whether any was.
+   */
+  private restyle(traced: readonly Traced[], mapsChanged: boolean): boolean {
     let row = 0
     let written = false
+    const layerOf = (key: TextureKey) => this.maps.layerOf(key)
+    const aspectOf = (key: TextureKey) => this.maps.aspectOf(key)
     this.firstRow = traced.map((t) => {
       const first = row
       for (const s of t.slots) {
         const was = this.rows[row]
-        if (!was || was.material !== s.material || was.doubleSided !== s.doubleSided) {
+        const same = was && was.material === s.material && was.doubleSided === s.doubleSided
+        const maps = !same || mapsChanged ? rowMaps(s.material, layerOf, aspectOf) : null
+        const json = maps && JSON.stringify(maps)
+        if (!same || (json !== null && json !== this.rowMaps[row])) {
           this.rows[row] = s
-          this.tables.setMaterial(row, s.material, s.doubleSided)
+          this.rowMaps[row] = json!
+          this.tables.setMaterial(row, s.material, s.doubleSided, maps!)
           written = true
         }
         row++
@@ -456,6 +485,7 @@ export class TraceBase {
       return first
     })
     this.rows.length = row
+    this.rowMaps.length = row
     return written
   }
 
@@ -693,7 +723,8 @@ export class TraceBase {
     if (r && p) {
       // Ready again: a later failure is retried once more (a shader that did not build never is).
       if (!this.forGood) this.retried = false
-      return this.set({ state: 'ready', tier: r.kind === 'original' ? 'full' : 'proxy', pending: Math.max(r.missing(geometries), p.missing(geometries)) })
+      const over = this.maps.over.length
+      return this.set({ state: 'ready', tier: r.kind === 'original' ? 'full' : 'proxy', pending: Math.max(r.missing(geometries), p.missing(geometries)), ...(over > 0 ? { mapsOver: over } : {}) })
     }
     const missing = Math.max(0, ...Object.values(this.precisions).map((x) => x.missing(geometries)))
     this.set({ state: 'preparing', done: geometries.size - missing, total: geometries.size })
@@ -710,7 +741,8 @@ export class TraceBase {
     const deadline = performance.now() + timeoutMs
     for (;;) {
       this.sync()
-      if (this.status.state !== 'preparing') return true
+      // The textures' layers too (C5c1): an image comes between two syncs, written at the next.
+      if (this.status.state !== 'preparing' && (this.status.state !== 'ready' || this.maps.pending === 0)) return true
       if (performance.now() >= deadline) return false
       await backgroundTicker().wait(4)
     }
@@ -764,6 +796,7 @@ export class TraceBase {
       depth: s?.layer.depth.traversal ?? null,
       original: this.precisions.original?.layer.size ?? null,
       proxy: this.precisions.proxy?.layer.size ?? null,
+      maps: { pending: this.maps.pending, over: this.maps.over.length },
     }
   }
 
@@ -774,7 +807,15 @@ export class TraceBase {
     this.reap()
     for (const p of Object.values(this.precisions)) p.layer.dispose()
     this.tables.dispose()
+    this.maps.dispose()
   }
+}
+
+/** Every texture the traced slots sample, sorted: an export's layers follow the keys' order (maps.ts update). */
+function texturesOf(traced: readonly Traced[]): TextureKey[] {
+  const keys = new Set<TextureKey>()
+  for (const t of traced) for (const s of t.slots) if (s.material.kind === 'principled') for (const k of Object.values(textureKeys(s.material.texturing))) keys.add(k)
+  return [...keys].sort()
 }
 
 /** The device's base (D1): made with the first renderer that asks, gone with the device. A device draws one scene, the viewport's or an export's. */

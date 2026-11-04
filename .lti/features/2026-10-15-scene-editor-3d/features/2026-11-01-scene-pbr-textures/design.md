@@ -47,13 +47,14 @@
 
 | `alpha_mode` | 透明队列（`transparent`、分片绘制） | 深度写入 | AO 预渲染 | 世界空间层 | 透明测试 |
 |---|---|---|---|---|---|
-| `opaque` | `opacity < 1` 或 `transmission > 0`（现状） | 与左列相反 | 与左列相反 | 与左列相反 | 无 |
-| `clip` | 只看 `transmission > 0` | 是 | 参与 | 参与，命中点按裁切处理 | `opacity × a < alpha_cutoff` 挖掉 |
+| `opaque` | `opacity < 1` 或 `transmission > 0`（现状） | `opacity = 1`（现状：满不透明度的玻璃也写深度） | 与透明队列相反 | 与透明队列相反 | 无 |
+| `clip` | 只看 `transmission > 0` | 是 | 与透明队列相反 | 与透明队列相反，命中点按裁切处理 | `opacity × a < alpha_cutoff` 挖掉 |
 | `blend` | 总是 | 否 | 不参与 | 不参与 | 无 |
 
 - `clip` 不带基础色贴图时，`a = 1`，整个表面按 `opacity` 与阈值比较，要么全留、要么全挖。编辑器在面板上提示「没有透明贴图，裁切只看不透明度」。
 - `clip` 加 `transmission > 0`（带镂空的玻璃）按透明队列处理，和现在的玻璃一样不进世界空间层。
 - 缓存键 `keyOf` 包含整个槽位分配：`maps`、`mapping`、`alpha_mode`、`alpha_cutoff`。只切换透明方式也会得到新的材质实例。
+- 实现（任务 3.1）：`renderPolicy` 给出 `seeThrough`（透明队列，同时决定分片绘制、不投影、不进 AO 与实时 GI 的预渲染和世界空间层）、`blended`（材质的 `transparent`）、`depthWrite`、`alphaCutoff`。three 的透明列表按「`transparent` 或 `transmission > 0`」划分，与 `seeThrough` 逐行相同，有单测守住，所以两个预渲染的 `transparent = false` 不必另读策略。没写 `alpha_mode` 与写明 `opaque` 得到同一个键。
 
 ### 场景引用图片（通用）
 
@@ -81,7 +82,7 @@
 - 普通表面最多使用 8 张阴影贴图。成本按张计：投影平行光 4 张（级联），聚光、点光、面光各 1 张。
 - 选取顺序固定，与相机无关，所以拖动视角不会改变选取结果：
   1. 天空太阳（程序化或物理天空，投影时 4 张）。
-  2. 文档里打开了投影的灯，按物件列表的顺序，放得下就选，放不下就跳到下一盏。
+  2. 文档里打开了投影的灯，按物件列表的顺序，放得下就选，放不下就跳到下一盏。隐藏的灯（本身或所在的组隐藏）不参与渲染，不占阴影贴图，状态为 `off`（任务 3.4 补，前后端相同）。
 - 落选的灯照常照亮，只是不投影：编辑器在这盏灯上显示「阴影超出上限」，助手读场景时这盏灯标为 `shadow: "over_budget"`。
 - 这是过渡做法（owner 2026-11-02），最终方案另立 change。之所以不按调研里「按贡献排序」来选：贡献随视角变化，选中的灯一变，所有材质就要重新编译；而按物件列表顺序，摄影师可以自己调整，结果也可以预期。
 
@@ -99,11 +100,11 @@ creativedocument.persist ─▶ 新修订 + creative_document_content_refs
 ```
 
 - 助手写入前，`creativeagent` 先确认每个新的图片 ID 对本次运行可读，做法同 `save_library`。不可读时，工具结果写明原因。「新的」指当前修订还没有引用的图片；在同一场景里把一个槽位的贴图复制到另一个槽位不需要再确认。
-- **经持有方可读**：图片可能只被材质资产或模型库副本持有（原图已经从画布和资产库删掉），这时直接判断图片会不可读，助手就用不了这份材质。所以 `readableRevisionInTx` 加最后一个分支：
+- **经持有方可读**：图片可能只被材质资产或模型库副本持有（原图已经从画布和资产库删掉），这时直接判断图片会不可读，助手就用不了这份材质。所以写贴图用单独的判断 `textureReadableInTx`，只有 `edit_scene` 的图片校验调用它：
   1. 先查图片本身是否被撤销授权，撤销的直接拒绝（与现在相同，撤销优先）。
   2. 原有分支（直接授权、画布、消息、资产库）任一可读即可。
-  3. 新增：`creative_content_revision_refs` 里存在某个持有方修订持有这张图片（`role = texture`），而这个持有方修订按同一函数可读（它自己的撤销检查照常生效）。只查一层，不递归。
-- 这一条只放宽「经由已授权的材质或模型使用其贴图」，不放宽单独读取像素：`read_asset` 读材质时只返回贴图的图片 ID、尺寸和缩略图，与读模型时只给事实相同。
+  3. 新增：`creative_content_revision_refs` 里存在某个持有方修订持有这张图片（`role = texture`），而这个持有方修订按原有判断可读（它自己的撤销检查照常生效）。只查一层，不递归。
+- 这一条只放宽「经由已授权的材质或模型使用其贴图」，不放宽单独读取像素：通用的 `readableRevisionInTx` 不变，`read_asset`、`edit_canvas` 放置素材、消息引用的绑定与持久化都照旧判断，经持有方可读的图片在这些地方仍被拒绝（code review 2026-11-04 指出实现曾把分支加进通用函数，已改）。`read_asset` 读材质时只返回贴图的图片 ID、尺寸和缩略图，与读模型时只给事实相同。
 
 ### 渲染（前端）
 
@@ -145,10 +146,22 @@ creativedocument.persist ─▶ 新修订 + creative_document_content_refs
   - 改为在 `maps.ts` 里按变换后的坐标 `uv' = rotate(uv) × repeat` 求切线框架：`T`、`B` 由 `dFdx/dFdy(positionView)` 和 `dFdx/dFdy(uv')` 求出（同 three 的无切线做法，只是换成 `uv'`），法线 = `normalize(TBN × (n.xy × strength, n.z))`。几何体自带的 `tangent` 属性不用，光栅与命中点因此是同一个约定。
   - 命中点用三角形三个顶点的 `uv'` 求同样的 `T`、`B`（见世界空间层）。
   - 几何体没有 `TEXCOORD_0` 时按三平面投影渲染。编辑器的材质面板和助手的 `read_scene` 都会提示「这个模型没有 UV，按三平面显示」。
+  - 助手的依据是 manifest 的 `uv`（Epic 修订 v18）：宿主 `sandbox/inspect.ts` 与服务端 `creativeglb` 按同一算法算出（每个遍历到的 primitive 都有 `TEXCOORD_0` 才为 true），提交时比对。`read_scene` 的模型视图带 `uv`（旧模型没有这个字段时省略），模型实例里选了 `uv` 映射、而模型 `uv = false` 的槽位列在 `uv_fallback_slots`；`write_model` 的回报同样带 `uv`。编辑器按加载出的几何体判断，不依赖这个字段，所以旧模型也能提示。
 - 透明方式（队列、深度写入等由「材质渲染策略」决定）：
-  - `clip`：`opacityNode = opacity × a`，`alphaTestNode = alpha_cutoff`；留下的部分按不透明绘制。
+  - `clip`：`opacityNode = opacity × a`，`maskNode = opacity × a ≥ alpha_cutoff`（阈值为 0 时按 1e-6，完全透明处照样挖空）；留下的部分按不透明绘制。不用 `alphaTestNode`：three 的 alpha test 保留 a > 阈值，与阴影和光追的 ≥ 不一致（code review 2026-11-04）。
   - `blend`：`opacityNode = opacity × a`，`transparent = true`，与现有半透明材质相同（不参与 AO）。
-  - 阴影：投影的深度渲染也要按 `clip` 挖空。three r186 的阴影 pass 是否自动沿用材质的 alpha test，在第一项任务里验证；不沿用时，给材质设置 `castShadowNode` 或 `maskShadowNode`，采样同一张基础色贴图。
+  - 阴影：投影的深度渲染也要按 `clip` 挖空。`clip` 材质设置 `maskShadowNode = opacity × a ≥ alpha_cutoff`，与主 pass 用同一个透明度表达式。
+    - 任务 1.1 实测（WebGPU 和 WebGL2 结果相同）：three r186 的阴影 pass 换成替代材质，透明度只取 `colorNode.a`（或 `map.a`），只复制数值形式的 `alphaTest` 属性；`opacityNode` 和 `alphaTestNode` 都不读，所以只设这两个时影子不挖空（`Renderer.js:_getShadowNodes`）。`maskShadowNode` 与「`colorNode` 带透明通道 + 数值 `alphaTest`」两种写法都能正确挖空；采用前者，因为它不依赖 `colorNode` 透明通道的含义。
+- 实现细节（任务 3.3）：
+  - 坐标照 Blender：投影平面坐标为 (u, w)，w 朝上；Mapping 节点（点类型）先缩放再旋转；纹理按行从上往下存（`flipY = false`），采样坐标为 (u', 1 − w')。三平面的轴照 Cycles 的 Box 投影（`svm_image.h`）：X 取 (y, z)、Y 取 (x, z)、Z 取 (y, x)，并在会读反的面上把 u 镜像。物件的局部坐标是文档空间（glTF 的 Y 朝上，`space.ts`），投影前先换到 Blender 的轴向（Z 朝上），梯度算完再换回。所以墙面贴图正立，六个面都不镜像；design 原写的「按负向轴翻转符号」就是这个镜像，法线的切向分量随 u 一起翻转。
+  - 法线贴图的斜率沿贴图的右和上取（OpenGL 约定），先按 −rotation 转回平面坐标，缩放不参与（法线贴图平铺得更密时角度不变）。三平面把三个面的高度梯度在物件空间（米）按权重混合，乘 `modelScale` 回到局部坐标，再经 `modelNormalMatrix` 和视图矩阵变换（不归一化），最后投影到表面。
+  - 三平面的贴图高度按第一张贴图（基础色、法线、ORM 的顺序）的宽高比，图片到达时更新 uniform。
+  - 映射与法线的数学写成与运算后端无关的函数（`Kit`）：光栅传 TSL 节点运算，单测传数值运算；命中点（4.3）传自己的采样函数。
+  - 材质预览（workbench）的 AO 预渲染用统一的覆盖材质，three 只给它复制数值 `alphaTest`，读不到槽位贴图，所以 `clip` 挖掉的部分在那里的 AO 里按实心计算。最终渲染、`lit` 导出（实时 GI 的预渲染用真实材质）和阴影（`maskShadowNode`）不受影响。owner 2026-11-03 定为已知边界。code review 2026-11-04 补充：这份预渲染的深度也供空气透视和体积使用，所以材质预览里镂空处的空气透视和体积同样按叶片的深度算；修法是让 `clip` 材质不走覆盖材质（`allowOverride = false`），会牵动阴影 pass；owner 2026-11-04 定为已知边界，暂不修。
+  - three 的透明测试在透明度 ≤ 阈值时挖掉，`maskShadowNode` 写成 ≥ 阈值时保留，两者只在恰好等于阈值时不同。
+  - 透明度用绑定到本材质的 `reference('opacity')`，不用 `materialOpacity`：阴影通道在覆盖用的阴影材质下构建遮罩，`materialOpacity` 在那里读到的是 1，`clip` 的常数不透明度就进不了阴影（e2e 发现）。
+  - 薄方块配 Box 投影时，底面的 u 按 Cycles 镜像，上下两面的镂空互为镜像；阴影通道画双面，所以图案不对称时影子会被另一面补上。这是 Box 投影本身的性质（Blender 相同）；树叶卡片用模型里的单面片或 UV 映射。平面图元本来就不投影。
+  - 视口按需绘制：图片到达时 `images.ts:onImageShown` 通知，`SceneObjects` 调 `invalidate` 重画（「等图片就绪」里视口的部分提前在这里做了）。
 - 缓存键 `keyOf` 加入整个槽位分配：`maps`（各图片修订 ID 和通道）、`mapping`、`alpha_mode`、`alpha_cutoff`：
   - 只换图片：只重建 CPU 端的节点，GPU 程序复用（按 WGSL 文本缓存），不重新编译。
   - 增减某种贴图、切换映射方式：重新编译，与新增灯光相同，走预编译。
@@ -189,11 +202,35 @@ ready(keys) ─▶ Promise；任一张失败 → reject，原因写明是哪张�
 - 占位图：每种纹理共用一个 1×1 对象。基础色用白、法线用 (0.5, 0.5, 1)、ORM 用 (1, 1, 1)，所以图片到达之前，画面等于常数参数的效果。
 - 原图一律读 `original`：展示图是有损 JPEG，还会丢透明通道（调研 §5）。
 - 加载并发：同时最多解码 4 张，其余排队，避免一次打开几十张大图卡住主线程和网络。
+- 实现细节（任务 3.2）：
+  - 占位图共享的是 1×1 的**图像**，每个 `TextureKey` 的 Texture 对象从建立到释放不变。three 不会把更大的图像传进已经按 1×1 建好的 GPU 纹理，所以真图到达时，若已有设备上传过占位图，先 `texture.dispose()`：各设备销毁自己的那份并让绑定组失效，下一帧按新尺寸重建，材质节点不变。
+  - 关闭位图：某个设备上传真图后（`texture.onUpdate`），若没有 `loadSceneImages` 持有，就关闭位图、把 `texture.image` 换回占位图像，不改 `version`，已上传的设备保留各自的副本。之后来的设备有两条路：经 `loadSceneImages` 先重新解码再挂载；或者没等就上传了占位图，这时重新解码并 `dispose` 重建。
+  - 预算按页面统计：任何设备都可能画任何一张，所以页面上所有纹理合计不超过 2 GiB（理论字节）。准入按请求的先后顺序，与解码完成的先后无关；超出的纹理保持占位并列在 `imageStatus.over` 里，有纹理释放后按原顺序重新准入。世界空间层每个设备的数组也计入同一预算（`reserveBudget`）：首次分配和扩容前先申请，扩容时新旧两张数组在拷贝完成前同时计数；申请不到时，这一层放不下的贴图在世界空间层里退回常数参数，计入 `mapsOver`，导出因此失败（`SCENE_IMAGES_FAILED`）。（code review 2026-11-04：4.2 漏计，补上）
+  - 解码不做颜色管理（`colorSpaceConversion: 'none'`），也不预乘透明度，法线和 ORM 的数值保持原样；基础色因此忽略图片内嵌的 ICC 配置（与 Blender 相同）。ORM 合成经 2D canvas 读像素，canvas 会预乘透明度，被取用的颜色通道精度受该图透明度影响。
+  - 采样器开 8 倍各向异性过滤，斜看的地面贴图不糊。
+  - 失败的图片在下一次请求或 `loadSceneImages` 时重试；失败原因写明图片修订 ID，列在 `imageStatus.failed`。
 
 ### 显存预算
 
 - 估算：长边 2048 的 RGBA 带 mip 约 21 MiB。64 张源图光是光栅纹理就约 1.33 GiB；ORM 合成是额外的纹理，再加上世界空间层的纹理数组和渲染目标。three 按 renderer 分别上传，视口和离屏出图同时存在时还要翻倍。只限制张数不够。
-- 第一项任务先实测，再定数值：用参考场景（64 张 2048 图片、全部开启世界空间层）在本机测视口、离屏出图同时存在时的显存峰值，据此确定每个设备的纹理字节预算，回写本文件。
+- 任务 1.1 实测（2026-11-03，M4 Pro 24 GB，Chromium 无头 + Metal，`footprint` 读 GPU 进程和页面进程的占用；脚本不进仓库）：
+
+  | 步骤 | GPU 进程 | 页面进程 | 说明 |
+  |---|---|---|---|
+  | 两个渲染器初始化（视口 3200×2000、离屏 2048×1365） | 400 MB | 55 MB | 基线 |
+  | 解码 64 张（4096² JPEG 缩到 2048²，4 路并发） | +0 | +1180 MB | 共 3.2 s，单张约 60 ms；`ImageBitmap` 在页面进程 |
+  | 视口上传 64 张（带 mip） | +2260 MB | +400 MB | 理论值 1365 MB，实际约 1.65 倍 |
+  | 视口三张数组，各 22 层 512² | +190 MB | +130 MB | 理论值 88 MB；CPU 端是测试用的整块数据 |
+  | 离屏上传同样 64 张 | +1670 MB | ≈0 | |
+  | 离屏三张数组，各 22 层 1024² | +560 MB | +450 MB | 理论值 352 MB |
+  | 峰值 | **5.1 GB** | **2.2 GB** | 合计约 7.3 GB |
+  | 释放离屏渲染器 | −2080 MB | — | 空闲释放有效 |
+  | 关闭 `ImageBitmap` | −16 MB | −1030 MB | |
+
+  - 对照：不生成 mip 时上传 64 张是 +2010 MB（理论值 1024 MB，约 2 倍）；改用像素数据（`DataTexture`，`writeTexture`）带 mip 是 +1835 MB（约 1.35 倍），另需每张约 6 ms 读像素。驱动和 Dawn 的额外开销按 1.3–1.7 倍计。
+  - 结论：64 张 2048 在两个设备同时存在时，峰值约 7 GB，比本节开头的估算高。预算按「理论字节 × 1.5」折算实际占用。
+- **预算（owner 2026-11-03）**：每个渲染设备的贴图预算 2 GiB，按理论字节计（宽 × 高 × 4 × 4/3，含光栅纹理、ORM 合成和世界空间层的数组）。64 张 2048 之外，还为 ORM 合成和同一张图两用留出余量；两个设备同时存在时峰值约 6.5 GB，面向 16 GB 以上的机器。
+- 解码后的 `ImageBitmap` 在所有已挂载的设备上传完成后就关闭，源图层只保留压缩的原文件（Blob）；之后另一个设备（离屏出图）需要时再解码。实测 64 张重新解码约 3 s，换来页面进程少约 1 GB。
 - 超出预算时的处理，不悄悄降低画质（[[render-quality-over-performance]]）：
   - 光栅：按字节预算而不是张数做准入。超出的纹理保持占位图，编辑器显示「贴图过多，部分未加载」并列出是哪些；助手的 `read_scene` 同样告知。
   - 离屏出图：超出预算或分配失败时，这张图失败，失败码 `SCENE_IMAGES_FAILED`，说明原因，不出缺贴图的图。
@@ -205,6 +242,11 @@ ready(keys) ─▶ Promise；任一张失败 → reject，原因写明是哪张�
 - 离屏出图（`render_view`、`lit` 导出）：`openShooter` 在挂载前调用 `loadSceneImages(scene)`，与 `loadNightAssets` 并列。任一张失败，这张图就失败，并说明哪张图片不可用，不出缺贴图的图。失败码沿用夜空资源的做法，新增 `SCENE_IMAGES_FAILED`。
 - 材质缩略图（`library/thumbnail.ts`）和 3D 预览（`preview/ModelPreview.tsx`）同样先等图片。预览在等待期间继续显示静态缩略图。
 - 视口不等：先用占位图画，图片到了再重绘（`invalidate`）。
+- 实现细节（3.5）：
+  - 只有 `lit` 画材质，所以只在挂载 `lit` 时等图片（`openShooter` 首次挂载或 `setLook('lit')`）；白模和线稿不受贴图影响，也不会因贴图失败。
+  - 失败信息为 `场景贴图不可用：<各张图片的原因>`，作业里再加「截图失败：」或「导出图渲染失败：」前缀，失败码仍是 `host_error`。
+  - 持有（`ImageHold`）在 `close()` 里释放；离屏设备的纹理副本随 `gpu.dispose()` 一起释放。每次出图都开一台新的离屏设备，用完就关，所以「空闲时释放」就落在 `close()`。
+  - 缩略图和预览按槽位等图片（`images.ts:loadSlotImages`）。缩略图在有图片失败时整体失败，并说明原因。预览遇到图片失败仍然显示，失败的那张用占位图，由编辑器的材质面板说明是哪张。
 
 ### 世界空间层（解决 U6）
 
@@ -220,6 +262,7 @@ ready(keys) ─▶ Promise；任一张失败 → reject，原因写明是哪张�
   - 第 6 个：三个层号和映射方式，`−1` 表示没有这张贴图或还没就绪。
   - 第 7 个：两个方向的尺寸倒数、旋转、法线强度。
   - 第 8 个：UV 模式的 repeat。
+  - 实现细节（4.2）：位置与上面略有不同，按 0 起数：第 0 个的 w 放 `clip`（裁切阈值除以不透明度，0 表示不裁）；第 8 个放三个层号和映射方式；第 9 个放两个方向的缩放、旋转、法线强度（三平面为 `1/size` 和 `aspect/size`，UV 模式为 repeat，所以不另占一个 vec4）。放在第 8、9 个，是为了排在预设最多 7 个参数之后，与材质种类无关。`clip` 按「不透明度 × 透明度 ≥ 阈值」改写成「透明度 ≥ 阈值 / 不透明度」，命中点不用再读不透明度。
 - **几何**：UV 合并进现有的顶点颜色缓冲，改名为「顶点附加」缓冲：每个顶点 3 个 u32，分别是 RGBA8 颜色、u（f32）、v（f32）。这样存储缓冲的数量不增加，探针核仍是 7/8（调研 §4）。
   - `GeometryData`、`Segment`、代理简化（`simplify`）都要带上 UV。
   - **代理简化要保住 UV**：现在的 `simplify` 只约束位置误差，保留剩余顶点的 UV 并不能让插值结果不变（审查用相同参数实测：平面从 32 个三角形简化到 14 个，几何误差约 0.000137 m，中心点的 UV 却从 (0.8, 0.5) 变成 (0.5, 0.5)）。这会让探针采错颜色，也会移动 `clip` 的镂空位置。
@@ -227,6 +270,11 @@ ready(keys) ─▶ Promise；任一张失败 → reject，原因写明是哪张�
     - 简化后检查 UV 误差：超过上限（按 UV 空间 1/512，即视口每层 512² 时的一个纹素）就整组保留原几何，与现在「简化不到误差内就保持原样」的规则（I8）一致。
     - 三平面投影不依赖 UV，不受影响；不带 UV 的几何体保持现在的简化方式。
   - `cache.ts` 的 `BUILDER_VERSION` 加 1，让旧缓存失效。
+  - 实现细节（4.1）：
+    - 附加缓冲每个顶点 3 个字（`cache.ts:EXTRA_WORDS`，放在 `cache.ts` 而不是 worker 里，免得主线程打包 worker 和 meshoptimizer）。没有顶点色的写白色，没有 UV 的写 0；颜色和 UV 都没有的几何体不带附加数据。
+    - UV 权重：一个纹素的 UV 偏差先按 4 倍误差上限算，检查不过再按 16 倍试一次，仍超限就整组保留原几何。实测：球体第一次就过；环面结的 u 沿很长的表面拉伸，要第二次。
+    - UV 误差检查（`build.worker.ts:keepsUVs`）：对每个被删掉的顶点，在两倍误差上限内找简化后的三角形，取插值 UV 误差最小的那个。之所以取最小，是因为 UV 接缝上的顶点同时落在接缝两边的三角形上。附近找不到三角形也算超限。
+    - 着色器里读附加缓冲时，先把顶点号转成 `u32` 再乘 3：TSL 把结构体里的下标当成 float，否则会生成 `u32 * 3.0`，WGSL 编译不过。
 - **命中点**：
   - 在 `Switch` 之后、单独的 `If(行里有贴图)` 里采样，输入在分叉之前存成变量。
   - 一律用 `.grad()`：梯度来自已有的光线锥微分 `dpx/dpy`。三平面按投影平面取分量；UV 模式用三角形的 UV 雅可比矩阵换算。
@@ -238,12 +286,26 @@ ready(keys) ─▶ Promise；任一张失败 → reject，原因写明是哪张�
     - 反射光线和探针光线：把最后一次命中的面当作不透明，按它的材质着色。
     - 结果是密集叶丛偏暗、颜色偏向叶片，而不会漏光。调试统计里记录「次数用完」的光线数，供排查。
   - `blend` 材质沿用现有规则：透明材质不进世界空间层（`render/trace/collect.ts`）。
+  - 实现细节（4.3）：
+    - 梯度用「记录」得到：先在 `P + dpx`、`P + dpy` 各跑一遍映射函数，只记下每次采样的坐标，再用坐标差作 `.grad()` 的梯度。映射沿平面是仿射的，所以这是精确的。探针核在 compute 里同样用 `.grad()`（`computePatches.ts` 已放开）。
+    - TSL 的 `select` 在分支复杂时生成 if/else，几次采样共享的子表达式（投影平面坐标、`cos(rotation)` 等）会声明在第一次采样的分支里。所以每次采样的结果、映射参数都先存成变量。否则没有基础色贴图的槽位，其 ORM 会读到未赋值的零。
+    - `clip` 的判断在最细一级采样，保留 alpha ≥ 阈值，与光栅和阴影的判断方向相同（光栅用 `maskNode`；阈值为 0 时完全透明处照样挖空）。光栅按屏幕取 mip，远处的 alpha 是平均过的，光追仍取最细一级，所以远处稀疏的镂空两边会有差异；近处一致。光栅改取最细一级会闪烁，光追改按光线锥取 mip 会让反射里的镂空随距离变化，都不采用（code review 2026-11-04）；投影用的法线与着色相同（顶点插值法线，几何体没有法线时用面法线），正反两面选到相同的投影平面。
+    - 反射和检查用的主光线把单面材质的背面（D8）和裁切面放在同一个循环里跳过，共用 4 次；次数用完时如果停在背面，就当作没有命中（背面本来就不画）。探针光线和阴影光线只跳过裁切面。
+    - AO 乘到 `lightAt` 的环境与探针间接项，镜面间接项按 three 的 `computeSpecularOcclusion`；探针反弹为 `E = 直接 + (间接 + 环境补光) × ao`。
+    - 调试统计：`traceHits` 的报告带 `exhausted`（相机光线里次数用完的条数）；e2e 钩子 `traceCutsLeak` 把次数用完当作没有命中，用于反向验证漏光检查。探针光线不在 GPU 上计数，因为那要多一个存储缓冲（探针核已是 7/8）。
+    - 检查（`checks.ts`）：光栅一侧的材质输出、距离图都带贴图和 `clip`；`lit` 只去掉预设的凹凸，贴图法线保留，与命中点相同。
+    - 已知差异：
+      - e2e 的 64 px 测试贴图要先放大写进 512 层再取 mip，比光栅直接对源图取 mip 略糊。所以带贴图的网格阈值放宽到 4 级（`lit` 1.5 级）；如果命中点没采到贴图，差距是几十级。
+      - 反射命中点的光锥按 S1 的模型取「像素角 + 2 × 粗糙度²」，three 的粗糙度下限是 0.0525，所以 5 m 外光锥宽约 3 cm。镜子里很细的贴图（几厘米一格）会被平均掉。owner 2026-11-03 看过对照图，定为已知缺陷。
 - **就绪与确定性**：
   - 贴图上传完成之前，材质行的层号写 −1，按常数参数着色。上传完成后改写材质行，`lightingVersion` 加 1，探针重新采集。
   - `base.ready()` 要包含图片层就绪，导出等它就绪后才计帧。
   - 导出时按 `TextureKey` 字符串排序分配层号，所以两次导出逐像素相同。
+  - 实测（4.3）：两次导出的图层缓冲（含材质行里的层号）逐字节相同。画面方面，mirror-board 两次逐像素相同或最多差 1 级；cornell 最多差约 10 级，超过 8 级的像素占比 < 0.0001%。cornell 的差异来自探针本身：develop（c4407a6a）上不带贴图的 cornell 也一样，AC-S1-4 在那里同样不过，与贴图无关。owner 2026-11-03 定为已知缺陷（探针导出的不确定性，不在本次范围内修）。
 - **容量**：
   - `gpu.ts` 申请适配器支持的 `maxTextureArrayLayers`（默认 256）。
+  - 实现细节（4.2）：数组纹理至少 2 层（three 把 1 层的当成普通 2D 纹理，着色器类型会变）。数组用 `RenderTarget`（`depth` 为层数）做，第一次用 `initTexture` 带 mip 分配，然后关掉 `generateMipmaps`，否则 three 每次拷贝第 0 级都会重算整个数组的 mip。颜色先画到 sRGB 的中间目标（硬件编码，mip 按线性平均），再拷进同格式的数组。超出层数或显存预算的张数记在状态 `ready.mapsOver`，渲染面板显示「贴图过多：N 张贴图在屏幕外的光照与反射里按材质参数显示」。图片失败或超出图片预算的不算等待中，`ready()` 不等它们。
+
   - 超出时，多出的图片在世界空间层里退回常数参数，并明确提示（不悄悄降低画质，`scene-world-space-gi` I8）。
   - 光栅不受这个上限影响。
 - **约定修订**：`patterns: 场景着色写法` 里「命中点不做凹凸」改为「程序化预设的凹凸命中点不做；贴图的法线在命中点照做（每个三角形求 TBN，`.grad()` 采样）」。
@@ -258,6 +320,7 @@ lights（文档顺序） + sky.sun
 ```
 
 - 函数放在 `objects/shadowBudget.ts`，`objects/lights.ts` 和 `objects/Lighting.tsx` 按结果设置 `castShadow`。体积光的 `selectLights` 保持独立，各自的上限不变。
+  - 实现（任务 3.4）：`SceneObjects` 每次场景变化算一次选取结果，`SceneLight` 收到「是否投影」交给 `applyLight`；天空的太阳排在最前、总放得下，`Lighting.tsx` 不用改。本机 Metal 实测最坏场景（太阳、三盏聚光、一盏面光、玻璃、三张贴图）带贴图材质的片元阶段声明 15 张纹理（阴影 8、贴图 3、DFG、环境、LTC 2），关掉上限时为 17。
 - 只有选中的集合变化时才重新编译：增删灯、开关投影、改物件列表顺序。拖动灯光不改变集合，因此不会触发编译。
 - 预留的 8 张纹理：DFG 1、环境 1、玻璃 1、LTC 2、贴图 3。加上阴影 8 张，合计正好 16（调研 §1）。
 - 编辑器：属性面板中灯光的「投影」开关旁显示「阴影超出上限」，悬停说明规则。助手：`read_scene` 的灯光带 `shadow: "on" | "off" | "over_budget"`。
@@ -390,17 +453,24 @@ lights（文档顺序） + sky.sun
 | `backend/internal/platform/store/*_migration_test.go`、`store_test.go` | 修改 | 迁移标签与回滚链 |
 | `backend/internal/creativescene/model.go:MaterialSlot`、`validateSlots`、`encodeScene` | 修改 | `maps`/`mapping` 外形与补齐；`Refs = modelRefs ∪ imageRefs`；`maxSceneImages` |
 | `backend/internal/creativescene/images.go` | 新增 | `imageRefs`、`verifyImages`（参照 `verifyExisting`）、`readImages`、`ErrImageUnavailable` |
-| `backend/internal/creativescene/type.go:Apply` | 修改 | 执行操作后调用 `verifyImages` |
+| `backend/internal/creativescene/textures.go` | 新增（实施时拆出） | 贴图字段的校验（`checkTextures`，给出槽位内的字段路径）与补齐（`completeTextures`）；`ops.go:decodeOp` 对 `add_objects`、`update_objects` 写入的槽位调用 |
+| `backend/internal/creativescene/type.go:Apply`、`RestoreUnits`、`AfterRestore` | 修改 | 执行操作后调用 `verifyImages`；`restore_units` 和整份恢复按同一规则校验带回的图片（契约「兼容与变更」），整份恢复借底座的 `RestoreHook` |
+| `backend/internal/platform/creativeops/types.go:FieldError`、`creativedocument/command.go:planBatch`、`document.go:LimitError` | 修改（实施时补） | `details.field` 与 `details.limit` 的载体。字段错误带操作下标，底座把它换算成请求里的位置（类型拿到的批次不含 `rename`）；场景的外形错误（`shapeError`、`requireFields`）一并带上字段 |
 | `backend/internal/creativescene/view.go` | 修改 | 读取场景时返回 `images` |
-| `backend/internal/creativescene/materials.go:checkMaterial`、`resolveSlots` | 修改 | 助手写入时校验 `maps` 与 `mapping` 的键 |
-| `backend/internal/creativescene/agent.go` | 修改 | `read_scene` 带贴图、映射、无 UV 提示和灯的 `shadow` 状态；`AgentEditInTx` 透传 |
+| `backend/internal/creativescene/materials.go:checkMaterial`、`resolveSlots` | 修改 | 助手写入时校验 `maps` 与 `mapping` 的键（合并更新的槽位严格解码，未知键不会在整体重写时被丢掉） |
+| `backend/internal/creativescene/agent.go` | 修改 | `read_scene` 带贴图、映射、无 UV 提示和灯的 `shadow` 状态；`AgentEditInTx` 写入前经 `EditInput.ReadableImage` 确认新出现的图片可读 |
+| `backend/internal/creativeglb/glb.go:manifest`、`Matches` | 修改（修订 v18） | manifest 加 `uv`；比对时 `uv` 精确相等，暂存形态没有 `uv` 时不比对 |
+| `frontend/src/creative-scene/sandbox/inspect.ts:manifestOf`、`matches` | 修改（修订 v18） | 宿主按同一算法算 `uv` 并比对 |
+| `backend/internal/creativescene/shadows.go` | 新增（实施时拆出） | `shadowStates`：按「表面阴影上限」的顺序给每盏灯标 `on`/`off`/`over_budget`，与前端 `selectShadowCasters` 同一规则 |
 | `backend/internal/creativescene/library.go` | 修改 | `SaveMaterialToLibrary`；模型库副本写持有关系 |
-| `backend/internal/creativecontent/content.go`、`model_facts.go` | 修改 | `Payload.Material`、`validate`、`WriteMaterialAndRetain`、持有关系写入、材质简介 |
+| `backend/internal/creativecontent/content.go`、`model_facts.go` | 修改 | `Payload.Material`、`validate`、`WriteMaterialAndRetain`、持有关系写入、材质简介；助手读取用的 `MaterialFacts` 与贴图图片尺寸 `TextureImagesInTx` |
 | `backend/internal/creativereference/projection.go:LiveOwnerCondition`、`projection_roles_test.go` | 修改 | 新持有方及守卫登记 |
 | `backend/internal/creativemedia/gc.go`、`agent.go:AgentImage` | 修改 | `material` 可回收；助手看材质用缩略图 |
 | `backend/internal/creativelibrary/list.go`、`discovery.go`、`service.go` | 修改 | 种类清单、简介、去重 |
-| `backend/internal/creativeagent/scene_tools.go`、`context.go`、`asset_tool_info.go` | 修改 | 工具说明；写贴图前确认可读；`readableRevisionInTx` 加「经持有方可读」分支；`read_asset` 支持材质 |
+| `backend/internal/creativeagent/scene_tools.go`、`context.go`、`asset_tool_info.go`、`external_read.go` | 修改 | 工具说明；写贴图前确认可读；写贴图用 `textureReadableInTx`（经持有方可读），通用的 `readableRevisionInTx` 不变分支；`read_asset` 支持材质 |
 | `backend/internal/platform/httpapi/creative_media.go` | 修改 | `from-scene-material` 路由 |
+| `backend/internal/creativecanvas/graph_commands.go` | 修改（实施时补） | 材质资产放进画布节点时的种类不符提示 |
+| `backend/internal/platform/httpapi/creative_documents.go`、`creative_canvas.go` | 修改 | `creative_image_unavailable`、`validation_failed` 带 `details.field`，图片超限带 `details.limit`；槽位为空返回 `creative_material_slot_empty` |
 | `api/openapi.yaml` | 修改 | 材质槽字段、`images`、材质载荷、新接口、种类枚举；`make generate` |
 | `frontend/src/creative-scene/materials/images.ts` | 新增 | 图片缓存、ORM 合成、`loadSceneImages` |
 | `frontend/src/creative-scene/materials/maps.ts` | 新增 | 三平面与 UV 映射、法线混合，光栅与命中点共用 |
@@ -417,7 +487,7 @@ lights（文档顺序） + sky.sun
 | `frontend/src/creative-scene/render/trace/maps.ts` | 新增 | `TraceMaps` 纹理数组 |
 | `frontend/src/creative-scene/render/trace/tables.ts`、`hit.ts`、`base.ts`、`layer.ts`、`pool.ts`、`build.worker.ts`、`cache.ts`、`checks.ts` | 修改 | 材质行 10 个 vec4；顶点附加缓冲（颜色加 UV）；命中点采样；就绪；e2e 对照 |
 | `frontend/src/creative-scene/render/gpu.ts` | 修改 | 申请 `maxTextureArrayLayers` |
-| `frontend/src/creative-canvas/assets/*`、`editor/assetPlacement.ts`、`editor/LibraryTiles.tsx`、`editor/MediaView.tsx`、`viewer/MediaViewer.tsx`、`viewer/AssetInfoPanel.tsx` | 修改 | 材质资产卡片、筛选、查看浮窗；不能放到画布上 |
+| `frontend/src/creative-canvas/assets/*`、`editor/assetPlacement.ts`、`editor/content.ts`、`editor/LibraryTiles.tsx`、`editor/MediaView.tsx`、`viewer/MediaViewer.tsx`、`viewer/AssetInfoPanel.tsx` | 修改 | 材质资产卡片、筛选、查看浮窗；不能放到画布上 |
 | `.lti/contracts/patterns.md` | 修改（归档时随 delta） | 命中点贴图法线 |
 
 ## 验证与交付
@@ -463,8 +533,8 @@ lights（文档顺序） + sky.sun
 
 | # | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|---|
-| 1 | 三平面法线的表面梯度混合在斜面上的接缝 | 光栅与命中点的法线 | 任务开头用测试场景对照 Blender 的 Box 投影 | 法线任务开始前 |
-| 2 | 每个设备的纹理字节预算；图片上限 64、长边 2048、数组每层 512²/1024² 的显存与加载时间 | 视口、导出 | 第一项任务实测参考场景（视口与离屏同时存在）的峰值，定下字节预算并回写本文件 | 贴图加载任务开始前 |
+| 1 | 三平面法线的表面梯度混合在斜面上的接缝 | 光栅与命中点的法线 | 任务开头用测试场景对照 Blender 的 Box 投影。本机没有 Blender，owner 2026-11-03 决定先推进开发，之后自己对比；数值单测已确认 45° 斜面上法线连续、六个面的贴图不镜像且墙面正立 | owner 对比之后（不阻塞实施） |
+| ~~2~~ **已决** | 每个设备的纹理字节预算；图片上限 64、长边 2048、数组每层 512²/1024² 的显存与加载时间 | 视口、导出 | 任务 1.1 实测，owner 2026-11-03 定每设备 2 GiB（理论字节）；上限与尺寸维持原值，见「显存预算」 | 已决 |
 | 3 | 阴影的最终方案（阴影图集或虚拟阴影贴图） | 表面阴影 | 另立 change，owner 决定开工时机 | 不阻塞本次 |
 | 4 | 世界空间 GI Epic 的 U6 修订 | 那个 Epic 的设计记录 | 本设计批准后，起草那个 Epic 的修订，指向本设计 | C5c1 实施前 |
-| 5 | three r186 的阴影 pass 是否沿用材质的 alpha test | `clip` 的阴影 | 第一项任务在 WebGPU 和 WebGL2 两个后端上验证，不支持就用 `castShadowNode` 补 | 透明任务开始前 |
+| ~~5~~ **已决** | three r186 的阴影 pass 是否沿用材质的 alpha test | `clip` 的阴影 | 任务 1.1：不沿用 `alphaTestNode`；用 `maskShadowNode` 补，两个后端都已验证（见「光栅材质的构建」） | 已决 |

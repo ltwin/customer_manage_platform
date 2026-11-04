@@ -23,11 +23,14 @@ import { cachedMediaTicket } from '../editor/media.ts'
 import { contentText } from '../editor/content.ts'
 import { clampPan, zoomAt, wheelZoom, type Zoom } from './zoom.ts'
 import { ViewerImageCache } from './imageCache.ts'
-import { modelFaces, modelManifest, modelMaterials } from './modelInfo.ts'
+import { assetMaterial, modelFaces, modelManifest, modelMaterials } from './modelInfo.ts'
 
-// three.js 只随模型的查看浮窗加载，资产库页和画布页平时不请求。
+// three.js 只随模型、材质的查看浮窗加载，资产库页和画布页平时不请求。
 const ModelPreview = lazy(
   () => import('../../creative-scene/preview/ModelPreview.tsx'),
+)
+const MaterialPreview = lazy(
+  () => import('../../creative-scene/preview/MaterialPreview.tsx'),
 )
 import './viewer.css'
 
@@ -163,6 +166,11 @@ export default function MediaViewer({
                   key={`${item.id}:${item.content?.id ?? ''}`}
                   item={item}
                 />
+              ) : item.kind === 'material' ? (
+                <MaterialStage
+                  key={`${item.id}:${item.content?.id ?? ''}`}
+                  item={item}
+                />
               ) : (
                 <MediaStage
                   key={`${item.id}:${item.content?.id ?? ''}`}
@@ -251,6 +259,35 @@ function ModelStage({ item }: { item: ViewerItem }) {
         title={item.title}
         thumbnail={thumbnail.url}
       />
+    </Suspense>
+  )
+}
+
+function MaterialStage({ item }: { item: ViewerItem }) {
+  const thumbnail = useMediaURL(
+    item.content?.id,
+    item.content?.media,
+    'thumbnail',
+    true,
+  )
+  const slot = assetMaterial(item.content)
+  if (!slot)
+    return (
+      <div className="v-state" role="status">
+        无法预览
+      </div>
+    )
+  return (
+    <Suspense
+      fallback={
+        <div className="v-model">
+          {thumbnail.url && (
+            <img className="v-model-still" src={thumbnail.url} alt={item.title} />
+          )}
+        </div>
+      }
+    >
+      <MaterialPreview slot={slot} title={item.title} thumbnail={thumbnail.url} />
     </Suspense>
   )
 }

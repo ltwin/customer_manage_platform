@@ -20,7 +20,9 @@ function traceNote(trace: TraceStatus, warming: boolean): string | null {
     case 'preparing':
       return '正在准备屏幕外的光照与反射'
     case 'ready':
-      return warming ? '正在准备屏幕外的光照与反射' : trace.tier === 'proxy' ? '场景较大：屏幕外的反射使用简化几何' : null
+      if (warming) return '正在准备屏幕外的光照与反射'
+      if (trace.mapsOver) return `贴图过多：${trace.mapsOver} 张贴图在屏幕外的光照与反射里按材质参数显示`
+      return trace.tier === 'proxy' ? '场景较大：屏幕外的反射使用简化几何' : null
     case 'tooLarge':
       return '场景过大：未绘制屏幕外的光照与反射'
     case 'failed':

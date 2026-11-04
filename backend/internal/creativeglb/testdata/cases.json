@@ -25,7 +25,8 @@
       "parts": [
         "body"
       ],
-      "anchors": []
+      "anchors": [],
+      "uv": false
     }
   },
   {
@@ -56,7 +57,8 @@
             0
           ]
         }
-      ]
+      ],
+      "uv": false
     }
   },
   {
@@ -86,7 +88,8 @@
         }
       ],
       "parts": [],
-      "anchors": []
+      "anchors": [],
+      "uv": false
     }
   },
   {
@@ -132,7 +135,8 @@
             0
           ]
         }
-      ]
+      ],
+      "uv": true
     }
   },
   {
@@ -176,7 +180,31 @@
             0
           ]
         }
-      ]
+      ],
+      "uv": true
+    }
+  },
+  {
+    "name": "uv-partial",
+    "file": "uv-partial.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          -0.5,
+          0,
+          -0.5
+        ],
+        "max": [
+          2.5,
+          1,
+          0.5
+        ]
+      },
+      "triangles": 24,
+      "slots": [],
+      "parts": [],
+      "anchors": [],
+      "uv": false
     }
   },
   {

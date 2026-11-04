@@ -5,12 +5,15 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -97,11 +100,15 @@ func hintPreset(hint string) (string, bool) {
 }
 
 // checkMaterial is the catalog check for the assistant's slots: a known
-// material, and parameters it has, in range.
+// material, parameters it has, in range, and textures as the data contract
+// has them.
 func checkMaterial(slot MaterialSlot) error {
 	m, ok := materials.byID[slot.Preset]
 	if !ok {
 		return fmt.Errorf("未知材质 %q，可用：%s", slot.Preset, strings.Join(materialIDs(), "、"))
+	}
+	if _, err := checkTextures(slot); err != nil {
+		return err
 	}
 	for k, v := range slot.Params {
 		p, ok := m.Params[k]
@@ -147,6 +154,22 @@ func MaterialCatalog() string {
 		parts[i] = fmt.Sprintf("%s %s(%s)", m.ID, m.Label, strings.Join(names, ", "))
 	}
 	return strings.Join(parts, "；")
+}
+
+// decodeSlot reads a slot an update merges as the scene command reads it:
+// strictly. The merged slots go to the command whole, so a misspelt key in
+// maps or mapping would otherwise be dropped instead of refused.
+func decodeSlot(raw json.RawMessage, op int, path string) (MaterialSlot, error) {
+	var slot MaterialSlot
+	if err := creativeops.Decode(raw, &slot); err != nil {
+		var field *creativeops.FieldError
+		if err := shapeError(raw, reflect.TypeFor[MaterialSlot](), path); errors.As(err, &field) {
+			field.Op = op
+			return slot, err
+		}
+		return slot, &creativeops.FieldError{Err: creativeops.ErrValidation, Op: op, Path: path, Message: path + " 须为 {preset, params} 或 null"}
+	}
+	return slot, nil
 }
 
 // resolveSlots is the assistant's material slots (design「助手：材质、灯光与
@@ -340,9 +363,9 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 					delete(merged, name)
 					continue
 				}
-				var slot MaterialSlot
-				if err := json.Unmarshal(*v, &slot); err != nil {
-					return nil, invalid("物件 %s 的材质槽 %s 须为 {preset, params} 或 null", it.ObjectID, name)
+				slot, err := decodeSlot(*v, i, fmt.Sprintf("updates[%d].material_slots.%s", j, name))
+				if err != nil {
+					return nil, err
 				}
 				if err := check(it.ObjectID, st, name, slot); err != nil {
 					return nil, err

@@ -115,9 +115,9 @@ func TestCompactionSmallWindowCanContinue(t *testing.T) {
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W4's
-	// aerial perspective and the face assignment guidance (about 0.6 KB) were
-	// added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 23600 })
+	// aerial perspective, the face assignment guidance (about 0.6 KB) and the
+	// textures, mappings and shadow budget (about 2.6 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 26300 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for i := 0; i < 4; i++ {
@@ -140,9 +140,9 @@ func TestCompactionOriginalsLeaveRoomForRecentTurns(t *testing.T) {
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W4's
-	// aerial perspective and the face assignment guidance (about 0.6 KB) were
-	// added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 23600 })
+	// aerial perspective, the face assignment guidance (about 0.6 KB) and the
+	// textures, mappings and shadow budget (about 2.6 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 26300 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for _, text := range []string{strings.Repeat("x", 20000), strings.Repeat("y", 20000), "最近方案甲", "最近方案乙"} {
@@ -172,8 +172,9 @@ func TestCompactionOriginalsYieldToExpandedTools(t *testing.T) {
 	f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
 	// Widened by the materials, lighting and lit look's tool text (about 3 KB),
 	// then by W5's volume objects with the builtins' parameter ranges (together
-	// over what 19000 left).
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 20000 })
+	// over what 19000 left), then by the textures, mappings and shadow budget
+	// (about 2.6 KB).
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 22700 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	script := f.vendor.script
@@ -217,9 +218,10 @@ func TestCompactionSummaryFallsBackWhenCurrentToolsOutgrowWindow(t *testing.T) {
 	f := newCompactionFixture(t, testSummary)
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request) and the materials, lighting and lit look
-	// (about 3 KB) were added; the light sizes (scene-light-radius) made
-	// edit_scene's longer again.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 13500 })
+	// (about 3 KB) were added; the light sizes (scene-light-radius) and then
+	// the textures, mappings and shadow budget (about 2.6 KB) made edit_scene's
+	// longer again.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 16200 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	summary := testSummary
@@ -287,9 +289,10 @@ func TestCompactionReplacementAtSameCoverageUsesNewSummary(t *testing.T) {
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W5's
-	// volume objects (about 1 KB) and the face assignment guidance (about
-	// 0.6 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 15600 })
+	// volume objects (about 1 KB), the face assignment guidance (about
+	// 0.6 KB) and the textures, mappings and shadow budget (about 2.6 KB) were
+	// added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 18300 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = compactionScript(testSummary + "\nreplacement-small-summary")
@@ -503,8 +506,8 @@ func TestCompactionRejectsSummaryBeyondWindow(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			f := newCompactionFixture(t, testSummary+"\n"+strings.Repeat("摘要", 4000))
-			// Room for the tool definitions (W2's physical sky, then W3's night sky and automatic exposure, then the area light (scene-area-light) made edit_scene's longer), not for the summary.
-			useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 10500 })
+			// Room for the tool definitions (W2's physical sky, then W3's night sky and automatic exposure, then the area light (scene-area-light), then the textures, mappings and shadow budget (scene-pbr-textures) made edit_scene's longer), not for the summary.
+			useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 13200 })
 			f.queue()
 			f.service.limits.AutoCompactPercent = 0
 			f.threeTurns()

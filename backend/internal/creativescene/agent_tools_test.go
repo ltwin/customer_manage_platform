@@ -705,6 +705,14 @@ func TestAgentMaterialSlots(t *testing.T) {
 		"parameter out of range": {slots(b, map[string]any{"main": slot("stone_brick@1", map[string]any{"brick_size": 9.0})}), "brick_size"},
 		"unknown parameter":      {slots(b, map[string]any{"main": slot("paint@1", map[string]any{"shine": 1.0})}), "可用参数"},
 		"bad colour":             {slots(b, map[string]any{"main": slot("paint@1", map[string]any{"color": "red"})}), "color"},
+		// A merged update goes to the command whole: a misspelt texture key
+		// must be refused here, not dropped on the way.
+		"misspelt texture": {slots(b, map[string]any{"main": map[string]any{"preset": "principled@1", "params": map[string]any{},
+			"maps": map[string]any{"basecolor": map[string]any{"content_revision_id": "ccrv_x"}}}}), "没有字段 basecolor"},
+		"misspelt mapping": {slots(b, map[string]any{"main": map[string]any{"preset": "principled@1", "params": map[string]any{},
+			"maps": map[string]any{"base_color": map[string]any{"content_revision_id": "ccrv_x"}}, "mapping": map[string]any{"size": 2}}}), "没有字段 size"},
+		"texture on a procedural preset": {slots(b, map[string]any{"main": map[string]any{"preset": "paint@1", "params": map[string]any{},
+			"maps": map[string]any{"base_color": map[string]any{"content_revision_id": "ccrv_x"}}}}), "只用于原理化材质"},
 		"added with a bad slot": {op{"op": "add_objects", "objects": []any{func() map[string]any {
 			o := box(objectID(4), nil, 13)
 			o["material_slots"] = map[string]any{"top": slot("paint@1", nil)}

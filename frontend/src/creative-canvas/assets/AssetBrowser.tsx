@@ -912,7 +912,7 @@ function AssetCard({
   selection: string[]
 }) {
   const visual =
-    a.kind === 'image' || a.kind === 'video' || a.kind === 'model'
+    a.kind === 'image' || a.kind === 'video' || a.kind === 'model' || a.kind === 'material'
   return (
     <div
       className={`al-tile${selected ? ' is-on' : ''}`}

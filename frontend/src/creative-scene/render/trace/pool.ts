@@ -50,6 +50,7 @@ export function geometryData(g: BufferGeometry, grouped: boolean): GeometryData 
     normals: g.attributes.normal ? plain(g.attributes.normal, 3) : null,
     colors: color ? plain(color, color.itemSize) : null,
     colorSize: color?.itemSize ?? 0,
+    uvs: g.attributes.uv ? plain(g.attributes.uv, 2) : null,
     index: g.index ? new Uint32Array(g.index.array) : null,
     groups: grouped ? g.groups.map(({ start, count }) => ({ start, count })) : [],
   }
@@ -108,7 +109,7 @@ class BuildPool implements Builds {
   private send(worker: Worker, queued: Queued) {
     const g = geometryData(queued.source.geometry, queued.source.grouped)
     // The copies are the job's own: moved, not copied again.
-    const transfer = [g.positions.buffer, g.normals?.buffer, g.colors?.buffer, g.index?.buffer].filter((b) => b !== undefined) as Transferable[]
+    const transfer = [g.positions.buffer, g.normals?.buffer, g.colors?.buffer, g.uvs?.buffer, g.index?.buffer].filter((b) => b !== undefined) as Transferable[]
     worker.postMessage({ ...queued.job, geometry: g } satisfies BuildJob, transfer)
   }
 

@@ -33,6 +33,14 @@
 .cc-scene-assets-search { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); }
 .cc-scene-assets-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--fg); font: inherit; outline: none; }
 .cc-scene-assets-search:focus-within { border-color: var(--accent); }
+/* 模型 / 材质：搜索框右侧的分段按钮，与卡片大小同一种样式；不另占一行，列表留得高些。 */
+.cc-scene-assets-top { display: flex; gap: 4px; align-items: stretch; }
+.cc-scene-assets-top .cc-scene-assets-search { flex: 1; min-width: 0; }
+.cc-scene-assets-kinds { display: flex; flex: none; }
+.cc-scene-assets-kinds button { padding: 0 8px; border: 1px solid var(--border); background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.cc-scene-assets-kinds button:first-child { border-radius: 6px 0 0 6px; }
+.cc-scene-assets-kinds button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.cc-scene-assets-kinds button[aria-selected="true"] { color: var(--fg); background: #f28c2826; }
 .cc-scene-assets-row { display: flex; gap: 4px; align-items: center; }
 .cc-scene-assets-row select { flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
 .cc-scene-assets-size { display: flex; flex: none; }
@@ -204,6 +212,8 @@
 .cc-scene-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
 .cc-scene-materials { display: grid; gap: 6px; }
 .cc-scene-slot { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+/* 拖着材质资产经过时，松手会用到的槽位。 */
+.cc-scene-slot.is-drop { outline: 1px dashed var(--accent); outline-offset: 2px; background: #f28c2814; }
 .cc-scene-slot-head { display: flex; align-items: center; gap: 6px; }
 .cc-scene-slot-name { background: none; border: 0; color: var(--fg); padding: 0; cursor: pointer; font: inherit; font-weight: 600; text-align: left; flex: 1; }
 .cc-scene-slot-source { font-size: 11px; color: var(--muted); }
@@ -211,8 +221,27 @@
 .cc-scene-slot-tools { display: flex; flex-wrap: wrap; gap: 4px; }
 .cc-scene-slot-tools .btn { padding: 2px 8px; font-size: 12px; }
 .cc-scene-slot-params { display: grid; gap: 4px; }
+.cc-scene-textures { display: grid; gap: 6px; }
+.cc-scene-map { display: grid; grid-template-columns: 44px 32px minmax(0, 1fr); align-items: center; gap: 6px; }
+.cc-scene-map-label { font-size: 12px; color: var(--muted); }
+.cc-scene-map-thumb { width: 32px; height: 32px; border-radius: 4px; overflow: hidden; background: #ffffff0d; display: grid; place-items: center; font-size: 11px; color: var(--muted); }
+.cc-scene-map-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.cc-scene-map-tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.cc-scene-map-tools .btn { padding: 2px 8px; font-size: 12px; }
+.cc-scene-map-tools select { padding: 2px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
+.cc-scene-map-note { grid-column: 2 / -1; color: var(--danger, #b42318); font-size: 12px; cursor: help; }
+.cc-scene-textures small[role='status'] { font-size: 12px; color: var(--muted); }
+/* 选图对话框从属性栏里打开，铺满整个编辑器而不是属性栏。 */
+.cc-scene-dialog-backdrop.is-fixed { position: fixed; z-index: 50; }
+.cc-scene-image-picker { width: min(560px, calc(100% - 32px)); }
+.cc-scene-image-tabs { display: flex; gap: 4px; }
+.cc-scene-image-tabs button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
+.cc-scene-image-tabs button.is-active { border-color: var(--accent); background: #f28c2826; }
+.cc-scene-image-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cc-scene-image-grid .cc-scene-asset { background: none; color: var(--fg); font: inherit; text-align: left; }
 .cc-scene-props fieldset.cc-scene-light, .cc-scene-props fieldset.cc-scene-materials, .cc-scene-environment fieldset { grid-template-columns: minmax(0, 1fr); }
 .cc-scene-light small, .cc-scene-environment small { font-size: 12px; }
+.cc-scene-light .cc-scene-shadow-over { color: var(--danger, #b42318); cursor: help; }
 .cc-scene-slider { display: grid; gap: 2px; }
 .cc-scene-slider input[type='range'] { width: 100%; accent-color: var(--accent); }
 .cc-scene-city { position: relative; }

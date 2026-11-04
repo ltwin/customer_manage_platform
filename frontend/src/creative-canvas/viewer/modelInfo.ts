@@ -2,12 +2,13 @@ import type { components } from '../../api/schema'
 import { materialEntry } from '../../creative-scene/materials/catalog.ts'
 import type { Content } from '../editor/api.ts'
 
-// 模型资产的信息格式化：检查器、查看浮窗共用。不依赖 three（材质目录只是 JSON），资产库页照常不加载 3D 引擎。
+// 模型与材质资产的信息格式化：检查器、查看浮窗共用。不依赖 three（材质目录只是 JSON），资产库页照常不加载 3D 引擎。
 
 type Manifest = components['schemas']['CreativeModelManifest']
 type Generator = components['schemas']['CreativeModelGenerator']
 type Materials = components['schemas']['CreativeSceneMaterialSlots']
 type Faces = components['schemas']['CreativeModelFaces']
+type MaterialSlot = Materials[string]
 
 /** 几何模块按 `mount` 约定的原点，即模型的参考点。 */
 export const originLabel: Record<Generator['mount'], string> = {
@@ -120,5 +121,44 @@ export function modelRows(info: ModelInfo): [string, string][] {
         .join('、'),
     ])
   for (const p of info.params) rows.push([p.label, p.value])
+  return rows
+}
+
+/** 材质资产的槽位分配；其他种类返回 null。 */
+export function assetMaterial(content: Content | undefined): MaterialSlot | null {
+  return content?.kind === 'material' && 'material' in content.payload
+    ? content.payload.material.slot
+    : null
+}
+
+const mapLabel: Record<string, string> = {
+  base_color: '基础色',
+  normal: '法线',
+  roughness: '糙度',
+  metalness: '金属度',
+  ao: 'AO',
+}
+const alphaLabel: Record<string, string> = {
+  opaque: '不透明',
+  clip: '透明裁切',
+  blend: '半透明混合',
+}
+
+/** 检查器与查看浮窗的材质信息行：预设、贴图、映射方式、透明方式。 */
+export function materialRows(slot: MaterialSlot): [string, string][] {
+  const rows: [string, string][] = [
+    ['材质', materialEntry(slot.preset)?.label ?? slot.preset],
+  ]
+  const maps = Object.keys(slot.maps ?? {})
+  rows.push(['贴图', maps.length ? maps.map((k) => mapLabel[k] ?? k).join('、') : '无'])
+  const m = slot.mapping
+  if (m && maps.length)
+    rows.push([
+      '映射',
+      m.kind === 'uv'
+        ? `模型 UV · 重复 ${(m.repeat ?? [1, 1]).join(' × ')}`
+        : `三平面投影 · ${m.size_m ?? 1} 米一块`,
+    ])
+  rows.push(['透明', alphaLabel[slot.alpha_mode ?? 'opaque'] ?? '不透明'])
   return rows
 }

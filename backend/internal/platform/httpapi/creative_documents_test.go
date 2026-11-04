@@ -27,7 +27,10 @@ type docErr struct {
 	Error struct {
 		Code    string `json:"code"`
 		Details struct {
-			Conflicts []map[string]*string `json:"conflicts"`
+			Conflicts         []map[string]*string `json:"conflicts"`
+			Field             string               `json:"field"`
+			ContentRevisionID string               `json:"content_revision_id"`
+			Limit             int                  `json:"limit"`
 		} `json:"details"`
 	} `json:"error"`
 }
@@ -356,6 +359,7 @@ func TestCreativeSceneDocumentHTTP(t *testing.T) {
 			} `json:"objects"`
 		} `json:"scene"`
 		Models map[string]any `json:"models"`
+		Images map[string]any `json:"images"`
 	}
 	read := func(tok string) (sceneRead, *httptest.ResponseRecorder) {
 		t.Helper()
@@ -371,7 +375,7 @@ func TestCreativeSceneDocumentHTTP(t *testing.T) {
 
 	v, w := read(token)
 	want("read", w, 200, "")
-	if v.TypeKey != "scene" || v.Revision != "1" || len(v.Scene.Objects) != 1 || v.Scene.Objects[0].Primitive.Builtin != "ground@1" || v.Models == nil {
+	if v.TypeKey != "scene" || v.Revision != "1" || len(v.Scene.Objects) != 1 || v.Scene.Objects[0].Primitive.Builtin != "ground@1" || v.Models == nil || v.Images == nil {
 		t.Fatalf("read %s", w.Body.String())
 	}
 	_, w = read(other)
@@ -422,6 +426,42 @@ func TestCreativeSceneDocumentHTTP(t *testing.T) {
 	}
 	want("light field from before v7", post(token, base+"/commands", addLight(map[string]any{"type": "point", "range_m": 7})), 400, "validation_failed")
 	want("three.js point light", post(token, base+"/commands", addLight(map[string]any{"type": "point", "color": "#ff963d", "intensity": 45, "distance": 7, "decay": 2})), 200, "")
+
+	// Textures (修订 v17): each refusal says where, and the image or the limit.
+	slots := func(s map[string]any) map[string]any {
+		return map[string]any{"expected": map[string]any{"object:" + a + ":content": "2"}, "operations": []any{map[string]any{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "material_slots": s}}}}}
+	}
+	details := func(name string, w *httptest.ResponseRecorder, status int, code string) docErr {
+		t.Helper()
+		want(name, w, status, code)
+		var e docErr
+		if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	missingImage := "ccrv_" + uuid.NewString()
+	e = details("missing image", post(token, base+"/commands", slots(map[string]any{"main": map[string]any{"preset": "principled@1", "params": map[string]any{},
+		"maps": map[string]any{"base_color": map[string]any{"content_revision_id": missingImage}}}})), 400, "creative_image_unavailable")
+	if e.Error.Details.Field != "operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id" || e.Error.Details.ContentRevisionID != missingImage {
+		t.Fatalf("image details %+v", e.Error.Details)
+	}
+	e = details("maps on a procedural preset", post(token, base+"/commands", slots(map[string]any{"main": map[string]any{"preset": "paint@1", "params": map[string]any{},
+		"maps": map[string]any{"base_color": map[string]any{"content_revision_id": missingImage}}}})), 400, "validation_failed")
+	if e.Error.Details.Field != "operations[0].updates[0].material_slots.main.maps" || e.Error.Details.ContentRevisionID != "" {
+		t.Fatalf("validation details %+v", e.Error.Details)
+	}
+	many := map[string]any{}
+	for i := range 13 {
+		maps := map[string]any{}
+		for _, kind := range []string{"base_color", "normal", "roughness", "metalness", "ao"} {
+			maps[kind] = map[string]any{"content_revision_id": fmt.Sprintf("ccrv_many-%d-%s", i, kind)}
+		}
+		many[fmt.Sprintf("slot_%d", i)] = map[string]any{"preset": "principled@1", "params": map[string]any{}, "maps": maps}
+	}
+	if e = details("65 images", post(token, base+"/commands", slots(many)), 413, "creative_size_limit"); e.Error.Details.Limit != 64 {
+		t.Fatalf("limit details %+v", e.Error.Details)
+	}
 
 	want("trash", post(token, base+"/trash", map[string]any{}), 200, "")
 	v, w = read(token)

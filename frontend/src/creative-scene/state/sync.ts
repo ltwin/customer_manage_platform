@@ -1,5 +1,5 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import type { CommandReceipt, SceneDocument } from '../api.ts'
+import type { CommandReceipt, SceneDocument, SceneObject } from '../api.ts'
 import { newIntentID } from '../ids.ts'
 import { rebaseReparent, refitReparent } from '../grouping.ts'
 import {
@@ -133,6 +133,14 @@ export function namesUnknownModel(intent: Pick<Intent, 'ops'>, known: Readonly<R
     op.op === 'add_objects'
       ? op.objects.some((o) => unknown(o.model?.content_revision_id))
       : op.op === 'set_instance_model' && unknown(op.model.content_revision_id),
+  )
+}
+
+/** Whether an intent's slots name an image the snapshot does not describe: whether it is usable comes with the next read (the material panel's 「图片不可用」). */
+export function namesUnknownImage(intent: Pick<Intent, 'ops'>, known: Readonly<Record<string, unknown>> | undefined): boolean {
+  const names = (slots: SceneObject['material_slots']) => Object.values(slots ?? {}).some((s) => Object.values(s.maps ?? {}).some((m) => !known?.[m.content_revision_id]))
+  return intent.ops.some((op) =>
+    op.op === 'add_objects' ? op.objects.some((o) => names(o.material_slots)) : op.op === 'update_objects' && op.updates.some((u) => names(u.material_slots)),
   )
 }
 
@@ -446,7 +454,7 @@ export class SceneSession {
       this.set({ base: { ...base, revision: receipt.revision, unit_revs, title: after.title, scene: after.scene }, queue: rest })
       // New models' summaries come with the next read, and so do those of
       // models placed from elsewhere (the asset library, a copy).
-      if (receipt.reset_required || intent.projection || Object.keys(models).length || namesUnknownModel(own, base.models)) void this.read()
+      if (receipt.reset_required || intent.projection || Object.keys(models).length || namesUnknownModel(own, base.models) || namesUnknownImage(own, base.images)) void this.read()
     } else {
       this.set({ queue: rest })
       // Someone else's revision came in between, or the receipt has no

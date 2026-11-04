@@ -62,17 +62,20 @@ import type { SceneJobLauncher } from './host/launcher.ts'
 import { iframeFactory, SandboxHost } from './sandbox/host.ts'
 import { defaultModuleCode } from './sandbox/template.ts'
 import { renderThumbnail } from './sandbox/thumbnail.ts'
-import { renderMaterialThumbnail } from './library/thumbnail.ts'
+import { renderMaterialBall, renderMaterialThumbnail } from './library/thumbnail.ts'
+import { assetMaterial } from '../creative-canvas/viewer/modelInfo.ts'
+import { materialEntry } from './materials/catalog.ts'
 import { openScene } from './session.ts'
 import { cameraDefaults, localContent, localRevision, type WireOp } from './state/apply.ts'
 import { contextOf, createEditorStore, displayModes, displayOf, tabAfterSelection, toggleWireframe, type MenuKind, type PropertiesTab } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
-import { saveTarget, whenShown, type LibraryAsset, type SaveModelRequest, type SaveTarget } from './saveModel.ts'
+import { materialTarget, saveTarget, whenShown, type LibraryAsset, type MaterialTarget, type SaveRequest, type SaveTarget } from './saveModel.ts'
 import { readView, viewKey, ViewSaver } from './viewState.ts'
 import { probeRender } from './render/probe.ts'
 import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
+import { selectShadowCasters } from './objects/shadowBudget.ts'
 import { newCameraExposure } from './world/exposure.ts'
 import './scene.css'
 
@@ -158,7 +161,7 @@ export default function SceneEditor({
   canvasID?: string
   sceneNodeID?: string
   /** Opens the canvas page's 「存入资产库」 dialog; without it the entries are hidden. */
-  onSaveModel?: (request: SaveModelRequest) => void
+  onSaveModel?: (request: SaveRequest) => void
   /** Changes when the page wrote to the asset library; the asset panel reads it again. */
   libraryTick?: number
 }) {
@@ -667,6 +670,27 @@ export default function SceneEditor({
     setAssetFocus((n) => n + 1)
   }
   const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : null), [libraryDrag])
+  /** A material asset being dragged from the asset panel: its slot, copied to where it is let go. */
+  const draggedMaterial = useMemo(() => {
+    const m = libraryDrag?.kind === 'material' ? assetMaterial(libraryDrag.content) : null
+    return libraryDrag && m ? { title: libraryDrag.title, slot: m } : null
+  }, [libraryDrag])
+  /**
+   * A material let go over the viewport: onto the slot of the surface under
+   * it, or an object's only slot where the look does not split by slot.
+   */
+  const dropMaterial = (at: { x: number; y: number }) => {
+    const dragged = draggedMaterial
+    const hit = handle.current?.surfaceAt(at)
+    const o = hit && byID.get(hit.objectID)
+    if (!dragged || !hit || !o) return notify('把材质拖到物件上')
+    const slots = slotNamesOf(o)
+    const slot = hit.slot ?? (slots.length === 1 ? slots[0] : null)
+    if (!slot || !slots.includes(slot)) return notify('这个物件有多个材质槽，请拖到属性栏的槽位上')
+    const material_slots = { ...o.material_slots, [slot]: structuredClone(dragged.slot) }
+    if (edit([{ op: 'update_objects', updates: [{ object_id: o.id, material_slots }] }], `用材质「${dragged.title}」（「${o.name || '物件'}」${slot}）`)) select([o.id])
+    root.current?.focus({ preventScroll: true })
+  }
   /** Adds where the menu was opened: Shift+A or a right click over the ground. */
   const addPrimitive = (builtin: string, at?: { x: number; y: number }) => {
     const point = handle.current?.groundPoint(at) ?? [0, 0, 0]
@@ -783,6 +807,42 @@ export default function SceneEditor({
     signal.throwIfAborted()
     const upload = await uploadGenerated(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, { kind: 'staged' }, signal)
     return upload.id
+  }
+  /** What a slot can save as a material asset, as the editor shows it now. */
+  const materialCheck = (objectID: string, slotID: string) => {
+    const st = session.state
+    return materialTarget(
+      { objects: st.view?.scene.objects ?? [], base: st.base, unsaved: [...st.queue, ...st.conflicts.flatMap((g) => g.intents)] },
+      objectID,
+      slotID,
+      (preset) => materialEntry(preset)?.label ?? preset,
+    )
+  }
+  const materialBlocked = (objectID: string, slotID: string): string | null => {
+    if (u.preview) return '退出历史预览后再存'
+    if (s.trashed) return '场景在回收站，请先恢复'
+    const check = materialCheck(objectID, slotID)
+    return 'error' in check ? check.error : null
+  }
+  /** 存为材质资产: the canvas page's dialog, as for a model; the ball is drawn and staged when it saves. */
+  const saveMaterial = (objectID: string, slotID: string) => {
+    const target = materialCheck(objectID, slotID)
+    if (!onSaveModel || 'error' in target) return
+    onSaveModel({
+      kind: 'material',
+      documentID,
+      target,
+      thumbnail: async (t: MaterialTarget, signal: AbortSignal) => {
+        const png = await renderMaterialBall(t.slot)
+        signal.throwIfAborted()
+        const upload = await uploadGenerated(new File([png], 'thumbnail.png', { type: 'image/png' }), { kind: 'image', mime: 'image/png' }, { kind: 'staged' }, signal)
+        return upload.id
+      },
+      refresh: async (currentRev, signal) => {
+        session.invalidate()
+        return (await whenShown(session.store, objectID, currentRev, signal)) ? materialCheck(objectID, slotID) : { error: '已取消' }
+      },
+    })
   }
   /** After a save conflict: re-read, and check the object again once the editor shows the new version. */
   const refreshSave = async (objectID: string, currentRev: string, signal: AbortSignal): Promise<SaveTarget | { error: string }> => {
@@ -1162,7 +1222,7 @@ export default function SceneEditor({
                     recent={recentAssets}
                     readOnly={readOnly}
                     focus={assetFocus}
-                    placeable={(asset) => !!dragModel(asset)}
+                    placeable={(asset) => (asset.kind === 'material' ? !asset.unavailable && !!assetMaterial(asset.content) : !!dragModel(asset))}
                     onPlace={placeModels}
                     onDrag={setLibraryDrag}
                     onExit={() => root.current?.focus({ preventScroll: true })}
@@ -1230,6 +1290,8 @@ export default function SceneEditor({
                       objects={shown.objects}
                       selected={selected}
                       models={models}
+                      images={s.base?.images}
+                      canvasID={canvasID}
                       readOnly={readOnly}
                       display={display}
                       storage={storage()}
@@ -1247,6 +1309,10 @@ export default function SceneEditor({
                             }
                           : undefined
                       }
+                      library={{
+                        dragging: draggedMaterial,
+                        save: onSaveModel ? { blocked: (slot) => materialBlocked(shownActive.id, slot), run: (slot) => saveMaterial(shownActive.id, slot) } : undefined,
+                      }}
                     />
                   )}
                   {shownActive?.light && (
@@ -1256,6 +1322,7 @@ export default function SceneEditor({
                       objects={shown.objects}
                       readOnly={readOnly}
                       display={display}
+                      shadow={selectShadowCasters(shown).get(shownActive.id)}
                       onLight={(light, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, light }] }], text, merge ? { merge } : undefined)}
                     />
                   )}
@@ -1326,6 +1393,8 @@ export default function SceneEditor({
                 onDragging={(dragging) => session.setDragging(dragging)}
                 libraryDrag={drag}
                 onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, placed)}
+                materialDrag={!!draggedMaterial}
+                onDropMaterial={dropMaterial}
                 faceMeshes={faceMeshes?.state === 'ready' ? faceMeshes.meshes : null}
                 onFacePick={facePick}
                 onFaceBox={(caught, mode) => selectFaces((sel, meshes) => boxFaces(sel, caught, meshes, mode))}

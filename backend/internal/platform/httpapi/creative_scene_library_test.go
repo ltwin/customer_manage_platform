@@ -176,3 +176,105 @@ func TestCreativeSceneModelSaveToLibraryHTTP(t *testing.T) {
 	}
 	want("trashed scene", save(keep), 409, "creative_state_conflict")
 }
+
+func TestCreativeSceneMaterialSaveToLibraryHTTP(t *testing.T) {
+	ctx := context.Background()
+	router, st, tokens, url := newCustomerAPIRouterWithURL(t)
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`UPDATE accounts SET status='active' WHERE id='` + testAcctID + `'`); err != nil {
+		t.Fatal(err)
+	}
+	token := issueToken(t, tokens, testAcctID)
+	scope := st.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	typ, _ := creativedocument.Lookup(creativescene.TypeKey)
+	var doc creativedocument.Document
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		doc, err = creativedocument.CreateInTx(ctx, tx, typ, "石板路", nil, creativedocument.Photographer)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	post := func(path string, payload any) *httptest.ResponseRecorder {
+		t.Helper()
+		key := uuid.NewString()
+		raw, err := json.Marshal(map[string]any{"operation_id": key, "client_created_at": time.Now().UTC(), "payload": payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return shootPlanningRequest(t, router, "POST", path, token, key, string(raw))
+	}
+	want := func(name string, w *httptest.ResponseRecorder, status int, code string) docErr {
+		t.Helper()
+		if w.Code != status || code != "" && documentErrorCode(t, w) != code {
+			t.Fatalf("%s: %d %s, want %d %s", name, w.Code, w.Body.String(), status, code)
+		}
+		var e docErr
+		_ = json.Unmarshal(w.Body.Bytes(), &e)
+		return e
+	}
+	// A staged image is a usable image revision; its candidate holds it.
+	var image string
+	if err := db.QueryRow(`SELECT content_revision_id FROM creative_upload_candidates WHERE upload_id=$1`, stageForHTTP(t, db, scope, "image", creativeglb.Manifest{})).Scan(&image); err != nil {
+		t.Fatal(err)
+	}
+	box := "sobj_B00000000000000000001"
+	want("place", post("/api/v1/creative/documents/"+doc.ID+"/commands", map[string]any{"expected": map[string]any{"objects": "1"}, "operations": []any{
+		map[string]any{"op": "add_objects", "objects": []any{map[string]any{"id": box, "kind": "primitive", "name": "石板", "parent_id": nil, "order": 1,
+			"transform": map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+			"visible":   true, "locked": false, "primitive": map[string]any{"builtin": "box@1"},
+			"material_slots": map[string]any{"main": map[string]any{"preset": "principled@1", "params": map[string]any{},
+				"maps": map[string]any{"normal": map[string]any{"content_revision_id": image}}}}}}}}}), 200, "")
+	thumb := stageForHTTP(t, db, scope, "image", creativeglb.Manifest{})
+	save := func(change func(map[string]any)) *httptest.ResponseRecorder {
+		t.Helper()
+		p := map[string]any{"document_id": doc.ID, "object_id": box, "slot_id": "main", "expected_object_rev": "2", "thumbnail_upload_id": thumb, "target": map[string]any{"title": "旧石板"}}
+		change(p)
+		return post("/api/v1/creative/assets/from-scene-material", p)
+	}
+
+	e := want("empty slot", save(func(p map[string]any) { p["slot_id"] = "trim" }), 400, "creative_material_slot_empty")
+	if !strings.Contains(e.Error.Code, "slot_empty") {
+		t.Fatal(e)
+	}
+	if body := save(func(p map[string]any) { p["slot_id"] = "trim" }).Body.String(); !strings.Contains(body, `"object_id":"`+box+`"`) || !strings.Contains(body, `"slot_id":"trim"`) {
+		t.Fatalf("empty slot details %s", body)
+	}
+	want("stale rev", save(func(p map[string]any) { p["expected_object_rev"] = "9" }), 409, "creative_document_conflict")
+	want("missing slot id", save(func(p map[string]any) { delete(p, "slot_id") }), 400, "validation_failed")
+
+	created := save(func(map[string]any) {})
+	want("save", created, 201, "")
+	var asset struct {
+		ID string `json:"asset_id"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &asset); err != nil {
+		t.Fatal(err)
+	}
+	if again := save(func(map[string]any) {}); again.Code != 200 || !strings.Contains(again.Body.String(), `"reused":true`) {
+		t.Fatalf("reused %d %s", again.Code, again.Body.String())
+	}
+	got := shootPlanningRequest(t, router, "GET", "/api/v1/creative/assets/"+asset.ID, token, "", "")
+	want("read asset", got, 200, "")
+	if body := got.Body.String(); !strings.Contains(body, `"kind":"material"`) || !strings.Contains(body, `"preset":"principled@1"`) || !strings.Contains(body, `"document_id":"`+doc.ID+`"`) {
+		t.Fatalf("asset read %s", body)
+	}
+	list := shootPlanningRequest(t, router, "GET", "/api/v1/creative/assets?kind=material", token, "", "")
+	want("list materials", list, 200, "")
+	if !strings.Contains(list.Body.String(), asset.ID) {
+		t.Fatalf("asset list %s", list.Body.String())
+	}
+
+	// The texture stops being displayable: saving again names it.
+	if _, err := db.Exec(`UPDATE creative_usage_grants SET revoked_at=clock_timestamp() WHERE declaration_id=(SELECT rights_declaration_id FROM creative_content_revisions WHERE id=$1)`, image); err != nil {
+		t.Fatal(err)
+	}
+	e = want("image unavailable", save(func(map[string]any) {}), 400, "creative_image_unavailable")
+	if e.Error.Details.Field != "maps.normal" || e.Error.Details.ContentRevisionID != image {
+		t.Fatalf("image details %+v", e.Error.Details)
+	}
+}

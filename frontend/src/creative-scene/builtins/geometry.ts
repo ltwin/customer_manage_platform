@@ -103,6 +103,17 @@ const build: Record<string, Build> = {
 /** Every catalog entry must have a builder; a test keeps the two in step. */
 export const geometryBuilders: Readonly<Record<string, Build>> = build
 
+/**
+ * three's geometries put v = 1 at the top, OpenGL's way; textures here keep
+ * their rows from the top and read glTF's way, as a model's UVs do
+ * (materials/maps.ts): v turned over, so an image stands upright on them.
+ */
+export function uvFromTop(geometry: BufferGeometry): BufferGeometry {
+  const uv = geometry.attributes.uv
+  if (uv) for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i))
+  return geometry
+}
+
 export function primitiveGeometry(
   builtin: string,
   params: Record<string, unknown> | undefined,
@@ -110,7 +121,7 @@ export function primitiveGeometry(
   const spec: BuiltinSpec | undefined = builtinSpec(builtin)
   const make = build[builtin]
   if (!spec || !make) return null
-  const geometry = make((key) => paramNumber(params, spec, key))
+  const geometry = uvFromTop(make((key) => paramNumber(params, spec, key)))
   // What the world-space layer caches it under (render/trace): the same builtin and parameters, the same geometry.
   const resolved = Object.fromEntries(Object.keys(spec.params).sort().map((k) => [k, paramNumber(params, spec, k)]))
   geometry.userData.traceKey = `builtin:${builtin}:${JSON.stringify(resolved)}`

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { EdgeLines } from './EdgeLines.tsx'
 import { Outline } from './Outline.tsx'
 import { BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, MeshStandardMaterial, Vector3 } from 'three'
@@ -16,8 +16,10 @@ import type { DisplayMode } from '../state/sceneStore.ts'
 import { activeEdge, agentEdge, clay, selectedEdge } from './look.ts'
 import { ModelMesh } from './ModelMesh.tsx'
 import { SceneLight, VolumesCastLight } from './SceneLights.tsx'
+import { selectShadowCasters, type ShadowState } from './shadowBudget.ts'
 import { SlotMesh } from './SlotMesh.tsx'
 import { Volume } from './Volume.tsx'
+import { onImageShown } from '../materials/images.ts'
 import { resolvePart, resolveSlot } from '../materials/resolve.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import { disposeEdges } from './wireframe.ts'
@@ -56,6 +58,8 @@ type Tree = Required<Omit<Props, 'scene' | 'placeholders' | 'through' | 'display
   wire: boolean
   /** Light objects shine only in the lit look. */
   lit: boolean
+  /** Which lights cast shadows on surfaces (objects/shadowBudget.ts). */
+  shadows: ReadonlyMap<string, ShadowState>
   /** Material preview and rendered draw slots' materials; the rest is clay. */
   materials: boolean
   scene: Scene
@@ -88,7 +92,11 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     const ids = new Set(scene.objects.map((o) => o.id))
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered' }
+  const shadows = useMemo(() => selectShadowCasters(scene), [scene])
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered', shadows }
+  // A texture's image arrives after its material draws with the placeholder (materials/images.ts): draw again.
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => onImageShown(invalidate), [invalidate])
   // Hidden ones too: hiding a volume compiles nothing.
   const volumesCast = scene.objects.some((o) => o.kind === 'volume' && (o.volume?.cast_shadow ?? volumeDefaults.cast_shadow))
   return (
@@ -119,7 +127,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
           <ModelMesh revision={o.model.content_revision_id} summary={models[o.model.content_revision_id]} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {/* The viewport, the one place with helpers, warms new lights; a shot compiles before shooting. */}
-        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} />}
+        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} casts={tree.shadows.get(o.id) === 'on'} />}
         {helpers && o.kind === 'light' && <LightIcon light={o.light} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
         {/* Registered in every look and shot; the lit looks draw its medium (render/volumes/). */}
@@ -191,14 +199,14 @@ function PrimitiveMesh({ builtin, params, faces, edge, wire, slots }: { builtin:
     return (
       <group>
         {pieces.map((p, i) => (
-          <SlotMesh key={i} geometry={p.geometry} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat} />
+          <SlotMesh key={i} geometry={p.geometry} slot={p.slot} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat} />
         ))}
         {edge && (flat ? <EdgeLines geometry={geometry} threshold={20} lineWidth={2} color={edge} /> : <Outline geometry={geometry} color={edge} />)}
       </group>
     )
   if (slots)
     return (
-      <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} doubleSided={flat} castShadow={!flat}>
+      <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} slot="main" doubleSided={flat} castShadow={!flat}>
         {edge && (flat ? <EdgeLines threshold={20} lineWidth={2} color={edge} /> : <Outline color={edge} />)}
       </SlotMesh>
     )

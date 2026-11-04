@@ -107,6 +107,7 @@ paths:
           - video
           - audio
           - model
+          - material
       - name: q
         in: query
         required: false
@@ -807,7 +808,7 @@ paths:
       tags:
       - creative-foundation
       operationId: commandCreativeDocument
-      description: 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。
+      description: 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。场景的模型操作另有两个错误码：409 creative_upload_unavailable（暂存上传不存在、已过期或已被消费，重新上传）与 400 creative_model_unavailable（引用的模型修订不可用，重读后重新选择）；它们不用 404 与 creative_state_conflict，后两者表示文档不存在或在回收站。场景的材质贴图：本批新出现的图片不可用时返回 400 creative_image_unavailable，details.field 指出第一个不可用的字段、details.content_revision_id 给出图片；贴图字段违反契约返回 400 validation_failed，details.field 指出字段；引用的不同图片超过 64 张返回 413 creative_size_limit，details.limit 为 64。
       parameters:
       - in: path
         name: id
@@ -2096,7 +2097,8 @@ paths:
         不符时返回 409 creative_document_conflict（details.conflicts 同提交场景命令）；
         对象不是模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；模型修订不可用或不是完整形态返回 400 creative_model_unavailable；
         场景、对象、分组或标签不存在返回 404；场景在回收站返回 409 creative_state_conflict；
-        需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable。
+        需要新建库副本而缩略图上传不可用时返回 409 creative_upload_unavailable；材质分配引用的图片已不可展示返回 400 creative_image_unavailable
+        （details.field 如 materials.main.maps.normal）。
       parameters:
       - in: header
         name: Idempotency-Key
@@ -2115,6 +2117,43 @@ paths:
               schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
         "200":
           description: 同一来源修订、同样材质分配的模型资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/assets/from-scene-material:
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeAssetFromSceneMaterial
+      summary: 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
+      description: >-
+        只读场景，不产生场景修订。expected_object_rev 是对象内容单元 object:<id>:content 的当前 rev，不符时返回 409 creative_document_conflict；
+        对象不是基础体或模型实例、缩略图上传不是 PNG 图片返回 400 validation_failed；槽位在 material_slots 里没有值返回 400
+        creative_material_slot_empty（details 为 object_id、slot_id）；槽位引用的图片已不可展示返回 400 creative_image_unavailable
+        （details.field 指出贴图，如 maps.normal，details.content_revision_id 给出图片）；场景、对象、分组或标签不存在返回 404；
+        场景在回收站返回 409 creative_state_conflict；需要新建材质而缩略图上传不可用时返回 409 creative_upload_unavailable。
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateCreativeAssetFromSceneMaterialRequest"}
+      responses:
+        "201":
+          description: 已创建材质和资产
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        "200":
+          description: 同样分配的材质资产已在库中；已追加归类，reused 为 true，标题与描述是已有资产的值
           content:
             application/json:
               schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
@@ -7533,6 +7572,7 @@ components:
       - $ref: '#/components/schemas/CreativeLinkPayload'
       - $ref: '#/components/schemas/CreativeMediaPayload'
       - $ref: '#/components/schemas/CreativeModelPayload'
+      - $ref: '#/components/schemas/CreativeMaterialPayload'
     CreativeModelPayload:
       type: object
       additionalProperties: false
@@ -7562,6 +7602,31 @@ components:
       - $ref: '#/components/schemas/CreativeMediaPayload'
       - $ref: '#/components/schemas/CreativeModelPayload'
       - $ref: '#/components/schemas/CreativeModelPreviewPayload'
+      - $ref: '#/components/schemas/CreativeMaterialPayload'
+    CreativeMaterialPayload:
+      type: object
+      additionalProperties: false
+      description: >-
+        material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进
+        update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。
+      required: [material]
+      properties:
+        material:
+          type: object
+          additionalProperties: false
+          required: [slot, source]
+          properties:
+            slot: {$ref: '#/components/schemas/CreativeSceneMaterialSlot'}
+            source:
+              type: object
+              additionalProperties: false
+              description: 来源说明，只供展示，不构成引用；来源场景被删除后照常保留。
+              required: [document_id, object_id, slot_id, revision]
+              properties:
+                document_id: {type: string}
+                object_id: {type: string}
+                slot_id: {type: string}
+                revision: {$ref: '#/components/schemas/CreativeRevision'}
     CreativeModelPreviewPayload:
       type: object
       additionalProperties: false
@@ -7671,6 +7736,9 @@ components:
             properties:
               id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
               position: {type: array, minItems: 3, maxItems: 3, items: {type: number}}
+        uv:
+          type: boolean
+          description: 每个三角网格都带 TEXCOORD_0 时为 true；贴图选 uv 映射而这里为 false 时，没有 UV 的网格按三平面投影显示。修订 v18 之前写入的模型没有这个字段，表示不知道。
     CreativeModelParamSpec:
       type: object
       additionalProperties: false
@@ -7797,6 +7865,7 @@ components:
           - video
           - audio
           - model
+          - material
         sequence:
           $ref: '#/components/schemas/CreativeRevision'
         payload:
@@ -7860,6 +7929,7 @@ components:
           - video
           - audio
           - model
+          - material
         revision:
           $ref: '#/components/schemas/CreativeRevision'
         content_id:
@@ -8106,6 +8176,7 @@ components:
           - video
           - audio
           - model
+          - material
           properties:
             text:
               type: integer
@@ -8123,6 +8194,9 @@ components:
               type: integer
               format: int64
             model:
+              type: integer
+              format: int64
+            material:
               type: integer
               format: int64
         tags:
@@ -10041,6 +10115,35 @@ components:
         - $ref: "#/components/schemas/BusinessDraftUnavailableDetails"
         - $ref: "#/components/schemas/StaleBusinessDraftDetails"
         - $ref: "#/components/schemas/CreativeDocumentConflictDetails"
+        - $ref: "#/components/schemas/CreativeFieldDetails"
+        - $ref: "#/components/schemas/CreativeLimitDetails"
+        - $ref: "#/components/schemas/CreativeMaterialSlotDetails"
+
+    CreativeFieldDetails:
+      type: object
+      additionalProperties: false
+      required: [field]
+      description: >-
+        指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id；
+        恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。
+      properties:
+        field: {type: string}
+        content_revision_id: {type: string}
+
+    CreativeLimitDetails:
+      type: object
+      additionalProperties: false
+      required: [limit]
+      properties:
+        limit: {type: integer}
+
+    CreativeMaterialSlotDetails:
+      type: object
+      additionalProperties: false
+      required: [object_id, slot_id]
+      properties:
+        object_id: {type: string}
+        slot_id: {type: string}
 
     OrderBusinessDraftUnavailableReason:
       type: string
@@ -14994,6 +15097,7 @@ components:
       - updated_at
       - scene
       - models
+      - images
       properties:
         id:
           type: string
@@ -15026,6 +15130,32 @@ components:
           description: 以 content_revision_id 为键，覆盖快照引用的全部模型（按单元读取时覆盖所列内容单元引用的模型）；没有模型实例时为空对象。
           additionalProperties:
             $ref: '#/components/schemas/CreativeSceneModel'
+        images:
+          type: object
+          description: >-
+            以图片 content_revision_id 为键，覆盖快照引用的全部图片（目前只有 material_slots.*.maps.*）；没有贴图时为空对象。
+            像素不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original）取原图。
+          additionalProperties:
+            $ref: '#/components/schemas/CreativeSceneImage'
+    CreativeSceneImage:
+      type: object
+      additionalProperties: false
+      required: [usable, width, height, mime]
+      properties:
+        usable:
+          type: boolean
+          description: false 时 width、height、mime 为 null，编辑器在槽位上显示「图片不可用」，渲染按没有这张贴图处理。
+        width:
+          type: integer
+          nullable: true
+          description: 原图像素宽度，已按 EXIF 方向换算。
+        height:
+          type: integer
+          nullable: true
+        mime:
+          type: string
+          nullable: true
+          description: image/jpeg、image/png 或 image/webp；PNG、WebP 可能带透明通道。
     CreativeSceneModel:
       type: object
       additionalProperties: false
@@ -15557,6 +15687,10 @@ components:
     CreativeSceneMaterialSlot:
       type: object
       additionalProperties: false
+      description: >-
+        maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。
+        有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。
+        白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。
       required:
       - preset
       - params
@@ -15568,6 +15702,87 @@ components:
           type: object
           maxProperties: 32
           additionalProperties: true
+        maps:
+          $ref: '#/components/schemas/CreativeSceneTextureMaps'
+        mapping:
+          $ref: '#/components/schemas/CreativeSceneTextureMapping'
+        alpha_mode:
+          type: string
+          enum: [opaque, clip, blend]
+          description: >-
+            对应 glTF 的 OPAQUE / MASK / BLEND，缺省 opaque。opaque 忽略贴图的透明通道；clip 把 opacity × 透明通道低于 alpha_cutoff 的部分挖掉，
+            留下的部分完全不透明，挖掉的部分不投影；blend 把透明通道乘到 opacity 上，按半透明物件处理。不带基础色贴图时透明度只来自 opacity。
+        alpha_cutoff:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 只在 alpha_mode 为 clip 时允许，缺省 0.5。
+    CreativeSceneTextureMaps:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光；
+        法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订，
+        否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+      properties:
+        base_color: {$ref: '#/components/schemas/CreativeSceneTexture'}
+        normal: {$ref: '#/components/schemas/CreativeSceneTexture'}
+        roughness: {$ref: '#/components/schemas/CreativeSceneChannelTexture'}
+        metalness: {$ref: '#/components/schemas/CreativeSceneChannelTexture'}
+        ao: {$ref: '#/components/schemas/CreativeSceneChannelTexture'}
+    CreativeSceneTexture:
+      type: object
+      additionalProperties: false
+      required: [content_revision_id]
+      properties:
+        content_revision_id:
+          type: string
+          pattern: ^ccrv_[A-Za-z0-9_-]{1,64}$
+    CreativeSceneChannelTexture:
+      type: object
+      additionalProperties: false
+      required: [content_revision_id]
+      description: glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
+      properties:
+        content_revision_id:
+          type: string
+          pattern: ^ccrv_[A-Za-z0-9_-]{1,64}$
+        channel:
+          type: string
+          enum: [r, g, b, a]
+          description: 缺省 r，存储时补齐。
+    CreativeSceneTextureMapping:
+      type: object
+      additionalProperties: false
+      description: >-
+        一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
+      properties:
+        kind:
+          type: string
+          enum: [triplanar, uv]
+          description: >-
+            triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
+        size_m:
+          type: number
+          minimum: 0.01
+          maximum: 100
+          description: 只在 triplanar 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比。
+        repeat:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: {type: number, minimum: 0.01, maximum: 1000}
+          description: 只在 uv 时允许，缺省 [1, 1]。
+        rotation_deg:
+          type: number
+          minimum: 0
+          maximum: 360
+        normal_strength:
+          type: number
+          minimum: 0
+          maximum: 4
+          description: 缺省 1；没有法线贴图时也允许保存。
     CreativeSceneLight:
       type: object
       additionalProperties: false
@@ -16979,6 +17194,27 @@ components:
         operation_id: {type: string, format: uuid}
         client_created_at: {type: string, format: date-time}
         payload: {$ref: "#/components/schemas/CreativeAssetFromSceneModelPayload"}
+    CreativeAssetFromSceneMaterialPayload:
+      type: object
+      additionalProperties: false
+      required: [document_id, object_id, slot_id, expected_object_rev, thumbnail_upload_id, target]
+      properties:
+        document_id: {type: string}
+        object_id: {type: string, description: kind 为 primitive 或 model_instance 的对象}
+        slot_id: {type: string, description: 物件的槽位，必须在 material_slots 里有值}
+        expected_object_rev: {$ref: "#/components/schemas/CreativeRevision"}
+        thumbnail_upload_id:
+          type: string
+          description: 按槽位当前分配渲染的 256 × 256 材质球 PNG 的暂存上传（声明类型 image）。新建材质时消费；复用已有资产时不消费。
+        target: {$ref: "#/components/schemas/CreativeUploadAssetTarget"}
+    CreateCreativeAssetFromSceneMaterialRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: "#/components/schemas/CreativeAssetFromSceneMaterialPayload"}
     CreativeNodeExecution:
       type: object
       additionalProperties: false

@@ -6,10 +6,10 @@ import { audioBars, linkDomain, mediaDuration, tileRatio } from './libraryState.
 import './cards.css'
 
 const isVisual = (kind: string) =>
-  kind === 'image' || kind === 'video' || kind === 'model'
+  kind === 'image' || kind === 'video' || kind === 'model' || kind === 'material'
 
 /**
- * 卡片主体（V6-060）：图片和视频显示画面，视频带时长，模型显示缩略图并带「3D」角标；文字、链接、音频各有自己的样式，
+ * 卡片主体（V6-060）：图片和视频显示画面，视频带时长，模型显示缩略图并带「3D」角标，材质显示材质球并带「材质」角标；文字、链接、音频各有自己的样式，
  * 不用通用图标代替。画布抽屉和资产库页共用。链接只显示域名，不抓取网页。
  */
 export function TileFace({ asset: a }: { asset: api.Asset }) {
@@ -26,6 +26,7 @@ export function TileFace({ asset: a }: { asset: api.Asset }) {
           </span>
         )}
         {a.kind === 'model' && <span className="cl-video-badge">3D</span>}
+        {a.kind === 'material' && <span className="cl-video-badge">材质</span>}
       </>
     )
   }

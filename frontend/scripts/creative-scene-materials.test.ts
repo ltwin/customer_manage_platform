@@ -33,8 +33,8 @@ test('slot hints map to presets whole, ignoring case and spaces', () => {
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three'
 import { partsOf, type MeshConstants } from '../src/creative-scene/models/cache.ts'
 import { flipWinding } from '../src/creative-scene/models/faces.ts'
-import { principledProps, seeThrough } from '../src/creative-scene/materials/principled.ts'
-import { resolveSlot } from '../src/creative-scene/materials/resolve.ts'
+import { principledProps, renderPolicy } from '../src/creative-scene/materials/principled.ts'
+import { catalogMaterial, resolveSlot, type Texturing } from '../src/creative-scene/materials/resolve.ts'
 
 const constants: MeshConstants = { color: '#336699', roughness: 0.3, metalness: 0.8, emissive: '#000000', emissiveIntensity: 1, vertexColors: false }
 
@@ -57,14 +57,53 @@ test('a slot resolves by the five rules, first match wins', () => {
 test('principled parameters go onto MeshPhysicalMaterial as three.js names them', () => {
   const p = resolveSlot('main', { main: { preset: 'principled@1', params: { opacity: 0.4, anisotropy_rotation: 1.2, iridescence_thickness: 600, sheen_color: '#ff0000' } } }, null, null)
   assert.ok(p.material.kind === 'principled')
-  const props = principledProps(p.material.params)
+  const props = principledProps(p.material.params, renderPolicy(p.material))
   assert.equal(props.anisotropyRotation, 1.2, 'radians as stored')
   assert.deepEqual(props.iridescenceThicknessRange, [600, 600])
   assert.deepEqual([props.transparent, props.depthWrite], [true, false])
   assert.equal((props.sheenColor as { getHexString(): string }).getHexString(), 'ff0000')
-  assert.equal(seeThrough(p.material.params), true)
-  assert.equal(seeThrough({ ...p.material.params, opacity: 1, transmission: 0.5 }), true, 'glass is see-through')
-  assert.equal(seeThrough({ ...p.material.params, opacity: 1 }), false)
+})
+
+// The decision table of design「材质渲染策略」, row by row: [alpha mode, opacity, transmission] → policy.
+const policyRows: [Texturing['alpha_mode'], number, number, ReturnType<typeof renderPolicy>][] = [
+  [undefined, 1, 0, { seeThrough: false, blended: false, depthWrite: true, alphaCutoff: null }],
+  [undefined, 0.4, 0, { seeThrough: true, blended: true, depthWrite: false, alphaCutoff: null }],
+  [undefined, 1, 0.5, { seeThrough: true, blended: false, depthWrite: true, alphaCutoff: null }],
+  ['opaque', 0.4, 0.5, { seeThrough: true, blended: true, depthWrite: false, alphaCutoff: null }],
+  ['clip', 0.4, 0, { seeThrough: false, blended: false, depthWrite: true, alphaCutoff: 0.5 }],
+  ['clip', 1, 0.5, { seeThrough: true, blended: false, depthWrite: true, alphaCutoff: 0.5 }],
+  ['blend', 1, 0, { seeThrough: true, blended: true, depthWrite: false, alphaCutoff: null }],
+  ['blend', 0.4, 0.5, { seeThrough: true, blended: true, depthWrite: false, alphaCutoff: null }],
+]
+
+test('renderPolicy follows the decision table, and three lists as transparent exactly what it calls see-through', () => {
+  for (const [mode, opacity, transmission, want] of policyRows) {
+    const m = catalogMaterial('principled@1', { opacity, transmission }, mode ? { alpha_mode: mode } : undefined)!
+    const policy = renderPolicy(m)
+    assert.deepEqual(policy, want, `${mode} ${opacity} ${transmission}`)
+    // The prepasses leave out three's transparent list: material.transparent, or transmission (render/sceneRenderer.ts).
+    const props = principledProps(m.kind === 'principled' ? m.params : {}, policy)
+    assert.equal(props.transparent === true || (props.transmission ?? 0) > 0, policy.seeThrough, `${mode} ${opacity} ${transmission}: three's list`)
+  }
+  const fine = catalogMaterial('principled@1', { opacity: 0.4 }, { alpha_mode: 'clip', alpha_cutoff: 0.2 })!
+  assert.equal(renderPolicy(fine).alphaCutoff, 0.2)
+  for (const m of [catalogMaterial('marble@1')!, { kind: 'unknown' } as const]) assert.deepEqual(renderPolicy(m), policyRows[0][3], 'presets and unknown are solid')
+})
+
+test('opaque, written or not, decides as see-through did: opacity < 1 or transmission > 0', () => {
+  const seeThrough = (p: { opacity: number; transmission: number }) => p.opacity < 1 || p.transmission > 0
+  for (const opacity of [0, 0.4, 0.999, 1]) {
+    for (const transmission of [0, 0.001, 1]) {
+      for (const slot of [undefined, { alpha_mode: 'opaque' as const }]) {
+        const m = catalogMaterial('principled@1', { opacity, transmission }, slot)!
+        const policy = renderPolicy(m)
+        assert.equal(policy.seeThrough, seeThrough({ opacity, transmission }))
+        // principledProps set these from opacity alone before alpha modes.
+        assert.deepEqual([policy.blended, policy.depthWrite], [opacity < 1, opacity >= 1])
+        assert.ok(m.kind === 'principled' && m.texturing === undefined, 'opaque is the default, left out')
+      }
+    }
+  }
 })
 
 test('model parts are baked into model space; a mirrored part keeps its faces facing out', () => {
@@ -102,7 +141,6 @@ test('model parts are baked into model space; a mirrored part keeps its faces fa
 import { uniform, vec3, float, fwidth } from 'three/tsl'
 import { instanceCount, keyOf, makeMaterial, materialFor, release, retain } from '../src/creative-scene/materials/instances.ts'
 import { patternFns } from '../src/creative-scene/materials/patterns.ts'
-import { catalogMaterial } from '../src/creative-scene/materials/resolve.ts'
 
 test('every preset in the catalog has its TSL function, and it gives all five outputs', () => {
   const pattern = materialCatalog.materials.filter((m) => m.kind === 'pattern')
@@ -154,10 +192,31 @@ test('instances are shared by key; a preset has one program whatever its paramet
   for (const m of [ma, glass, makeMaterial({ kind: 'unknown' }, false)]) assert.equal(m.shadowSide, 2)
 })
 
-import type { SceneObject } from '../src/creative-scene/api.ts'
-import { copyMaterials, readClipboard, setSlot, toPrincipled, writeClipboard } from '../src/creative-scene/materials/slotEdits.ts'
+test('the key holds the whole slot: textures, mapping and alpha mode, whatever order they were written in', () => {
+  const brick = { content_revision_id: 'ccr_brick' }
+  const slot = { maps: { base_color: brick, roughness: { content_revision_id: 'ccr_orm', channel: 'g' as const } }, mapping: { kind: 'triplanar' as const, size_m: 1, rotation_deg: 0, normal_strength: 1 } }
+  const key = (s?: Texturing) => keyOf(catalogMaterial('principled@1', { roughness: 0.5 }, s)!, false)
+  const plain = key()
+  const textured = key(slot)
+  assert.notEqual(textured, plain)
+  assert.equal(key({ mapping: slot.mapping, maps: { roughness: { channel: 'g', content_revision_id: 'ccr_orm' }, base_color: brick } }), textured, 'key order does not matter')
+  assert.equal(key({ alpha_mode: 'opaque' }), plain, 'opaque written out is the default')
+  assert.equal(key({ maps: {} }), plain)
+  const clip = key({ ...slot, alpha_mode: 'clip' })
+  assert.deepEqual(new Set([textured, clip, key({ ...slot, alpha_mode: 'blend' })]).size, 3, 'switching the alpha mode alone changes the key')
+  assert.equal(key({ ...slot, alpha_mode: 'clip', alpha_cutoff: 0.5 }), clip, 'the default cutoff filled in')
+  assert.notEqual(key({ ...slot, alpha_mode: 'clip', alpha_cutoff: 0.3 }), clip)
+  assert.notEqual(key({ ...slot, maps: { ...slot.maps, base_color: { content_revision_id: 'ccr_moss' } } }), textured, 'another image')
+  assert.notEqual(key({ ...slot, maps: { ...slot.maps, roughness: { content_revision_id: 'ccr_orm', channel: 'b' } } }), textured, 'another channel')
+  assert.notEqual(key({ ...slot, mapping: { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: 1 } }), textured, 'another mapping')
+  // A preset takes no textures: whatever a slot holds, it keys as its parameters.
+  assert.equal(keyOf(catalogMaterial('marble@1', {}, slot)!, false), keyOf(catalogMaterial('marble@1')!, false))
+})
 
-const obj = (n: number, slots: Record<string, { preset: string; params: Record<string, unknown> }> = {}): SceneObject => ({
+import type { SceneObject } from '../src/creative-scene/api.ts'
+import { assignmentOf, copyMaterials, readClipboard, setSlot, toPrincipled, withAlpha, withChannel, withMap, withMapping, writeClipboard } from '../src/creative-scene/materials/slotEdits.ts'
+
+const obj = (n: number, slots: Record<string, { preset: string; params: Record<string, unknown> } & Record<string, unknown>> = {}): SceneObject => ({
   id: `sobj_${String(n).padStart(21, '0')}`, kind: 'model_instance', name: '', parent_id: null, order: n,
   transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, material_slots: slots as SceneObject['material_slots'],
 })
@@ -210,4 +269,57 @@ test('the material clipboard keeps a preset and its parameters in this browser',
   assert.deepEqual(readClipboard(storage), { preset: 'tile@1', params: { tile_size: 0.6 } })
   data.set('creative-scene:material-clipboard', '{broken')
   assert.equal(readClipboard(storage), null)
+})
+
+// C5c1 5.1: the material panel's texture fields, each an edit of the whole slot.
+const plain = { preset: 'principled@1', params: { color: '#808080', roughness: 0.4 } }
+const rev = (n: number) => `ccrv_img${n}`
+
+test('an image set on an input keeps the rest of the slot; replaced, its channel stays; the last one cleared takes the mapping along', () => {
+  const one = withMap(plain, 'base_color', rev(1))
+  assert.deepEqual(one, { ...plain, maps: { base_color: { content_revision_id: rev(1) } }, mapping: { kind: 'triplanar', size_m: 1, rotation_deg: 0, normal_strength: 1 } })
+  const two = withChannel(withMap(one, 'roughness', rev(2)), 'roughness', 'g')
+  assert.deepEqual(two.maps?.roughness, { content_revision_id: rev(2), channel: 'g' })
+  assert.deepEqual(withMap(two, 'roughness', rev(3)).maps?.roughness, { content_revision_id: rev(3), channel: 'g' }, 'replaced: the channel stays')
+  const clipped = withAlpha(two, 'clip')
+  const bare = withMap(withMap(clipped, 'roughness', null), 'base_color', null)
+  assert.deepEqual(bare, { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.5 }, 'no images: no maps, no mapping; the alpha mode stays')
+  assert.equal(withChannel(plain, 'ao', 'b'), plain, 'a channel without an image changes nothing')
+})
+
+test('switching the mapping keeps rotation and strength and drops what the other kind alone may have', () => {
+  const box = withMapping(withMap(plain, 'normal', rev(1)), { size_m: 0.5, rotation_deg: 30, normal_strength: 2 })
+  assert.deepEqual(box.mapping, { kind: 'triplanar', size_m: 0.5, rotation_deg: 30, normal_strength: 2 })
+  const uv = withMapping(box, { kind: 'uv' })
+  assert.deepEqual(uv.mapping, { kind: 'uv', repeat: [1, 1], rotation_deg: 30, normal_strength: 2 })
+  assert.deepEqual(withMapping(uv, { repeat: [2, 3] }).mapping, { kind: 'uv', repeat: [2, 3], rotation_deg: 30, normal_strength: 2 })
+  assert.deepEqual(withMapping(uv, { kind: 'triplanar' }).mapping, { kind: 'triplanar', size_m: 1, rotation_deg: 30, normal_strength: 2 })
+  assert.equal(withMapping(plain, { size_m: 2 }), plain, 'no images: no mapping to set')
+})
+
+test('alpha modes: clip with its cutoff, blend and opaque without one; opaque written as nothing', () => {
+  assert.deepEqual(withAlpha(plain, 'clip'), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.5 })
+  assert.deepEqual(withAlpha(plain, 'clip', 0.3), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.3 })
+  assert.deepEqual(withAlpha(withAlpha(plain, 'clip', 0.3), 'clip'), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.3 }, 'clip again keeps its cutoff')
+  assert.deepEqual(withAlpha(withAlpha(plain, 'clip'), 'blend'), { ...plain, alpha_mode: 'blend' })
+  assert.deepEqual(withAlpha(withAlpha(plain, 'blend'), 'opaque'), plain)
+})
+
+test('a texture edit is one update_objects per object, the whole slot map; a hinted slot made explicit keeps its textures', () => {
+  const textured = withAlpha(withMap(plain, 'base_color', rev(1)), 'clip')
+  const a = obj(11, { main: textured, trim: plain })
+  names[a.id] = ['main', 'trim']
+  const updates = setSlot([a], [a.id], a.id, 'main', slotNames, (_, cur) => withMap(cur!, 'normal', rev(2)))
+  assert.deepEqual(updates, [{ object_id: a.id, material_slots: { main: { ...textured, maps: { base_color: { content_revision_id: rev(1) }, normal: { content_revision_id: rev(2) } } }, trim: plain } }])
+  const { params: _params, ...explicit } = assignmentOf(resolveSlot('main', { main: textured }, null, null))!
+  const { params: _given, ...given } = textured
+  assert.deepEqual(explicit, given)
+})
+
+test('the clipboard carries a slot’s textures, mapping and alpha mode', () => {
+  const data = new Map<string, string>()
+  const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) } as unknown as Storage
+  const textured = withAlpha(withMapping(withMap(plain, 'base_color', rev(1)), { kind: 'uv' }), 'blend')
+  writeClipboard(storage, textured)
+  assert.deepEqual(readClipboard(storage), textured)
 })

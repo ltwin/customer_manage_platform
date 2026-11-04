@@ -2672,9 +2672,26 @@ type CreativeDocumentConflictDetails struct {
 	Conflicts []CreativeDocumentConflict `json:"conflicts"`
 }
 
+// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。
+type CreativeFieldDetails struct {
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	Field             string  `json:"field"`
+}
+
 // CreativeImageEditBusyDetails defines model for CreativeImageEditBusyDetails.
 type CreativeImageEditBusyDetails struct {
 	RenderId string `json:"render_id"`
+}
+
+// CreativeLimitDetails defines model for CreativeLimitDetails.
+type CreativeLimitDetails struct {
+	Limit int `json:"limit"`
+}
+
+// CreativeMaterialSlotDetails defines model for CreativeMaterialSlotDetails.
+type CreativeMaterialSlotDetails struct {
+	ObjectId string `json:"object_id"`
+	SlotId   string `json:"slot_id"`
 }
 
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
@@ -4371,6 +4388,84 @@ func (t *ErrorDetails) FromCreativeDocumentConflictDetails(v CreativeDocumentCon
 
 // MergeCreativeDocumentConflictDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeDocumentConflictDetails
 func (t *ErrorDetails) MergeCreativeDocumentConflictDetails(v CreativeDocumentConflictDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeFieldDetails returns the union data inside the ErrorDetails as a CreativeFieldDetails
+func (t ErrorDetails) AsCreativeFieldDetails() (CreativeFieldDetails, error) {
+	var body CreativeFieldDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeFieldDetails overwrites any union data inside the ErrorDetails as the provided CreativeFieldDetails
+func (t *ErrorDetails) FromCreativeFieldDetails(v CreativeFieldDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeFieldDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeFieldDetails
+func (t *ErrorDetails) MergeCreativeFieldDetails(v CreativeFieldDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeLimitDetails returns the union data inside the ErrorDetails as a CreativeLimitDetails
+func (t ErrorDetails) AsCreativeLimitDetails() (CreativeLimitDetails, error) {
+	var body CreativeLimitDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeLimitDetails overwrites any union data inside the ErrorDetails as the provided CreativeLimitDetails
+func (t *ErrorDetails) FromCreativeLimitDetails(v CreativeLimitDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeLimitDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeLimitDetails
+func (t *ErrorDetails) MergeCreativeLimitDetails(v CreativeLimitDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMaterialSlotDetails returns the union data inside the ErrorDetails as a CreativeMaterialSlotDetails
+func (t ErrorDetails) AsCreativeMaterialSlotDetails() (CreativeMaterialSlotDetails, error) {
+	var body CreativeMaterialSlotDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMaterialSlotDetails overwrites any union data inside the ErrorDetails as the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) FromCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMaterialSlotDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeMaterialSlotDetails
+func (t *ErrorDetails) MergeCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
