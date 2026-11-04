@@ -1231,6 +1231,8 @@ export default function SceneEditor({
                       objects={shown.objects}
                       selected={selected}
                       models={models}
+                      images={s.base?.images}
+                      canvasID={canvasID}
                       readOnly={readOnly}
                       display={display}
                       storage={storage()}

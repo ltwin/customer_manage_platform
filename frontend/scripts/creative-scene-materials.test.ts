@@ -214,9 +214,9 @@ test('the key holds the whole slot: textures, mapping and alpha mode, whatever o
 })
 
 import type { SceneObject } from '../src/creative-scene/api.ts'
-import { copyMaterials, readClipboard, setSlot, toPrincipled, writeClipboard } from '../src/creative-scene/materials/slotEdits.ts'
+import { assignmentOf, copyMaterials, readClipboard, setSlot, toPrincipled, withAlpha, withChannel, withMap, withMapping, writeClipboard } from '../src/creative-scene/materials/slotEdits.ts'
 
-const obj = (n: number, slots: Record<string, { preset: string; params: Record<string, unknown> }> = {}): SceneObject => ({
+const obj = (n: number, slots: Record<string, { preset: string; params: Record<string, unknown> } & Record<string, unknown>> = {}): SceneObject => ({
   id: `sobj_${String(n).padStart(21, '0')}`, kind: 'model_instance', name: '', parent_id: null, order: n,
   transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, material_slots: slots as SceneObject['material_slots'],
 })
@@ -269,4 +269,57 @@ test('the material clipboard keeps a preset and its parameters in this browser',
   assert.deepEqual(readClipboard(storage), { preset: 'tile@1', params: { tile_size: 0.6 } })
   data.set('creative-scene:material-clipboard', '{broken')
   assert.equal(readClipboard(storage), null)
+})
+
+// C5c1 5.1: the material panel's texture fields, each an edit of the whole slot.
+const plain = { preset: 'principled@1', params: { color: '#808080', roughness: 0.4 } }
+const rev = (n: number) => `ccrv_img${n}`
+
+test('an image set on an input keeps the rest of the slot; replaced, its channel stays; the last one cleared takes the mapping along', () => {
+  const one = withMap(plain, 'base_color', rev(1))
+  assert.deepEqual(one, { ...plain, maps: { base_color: { content_revision_id: rev(1) } }, mapping: { kind: 'triplanar', size_m: 1, rotation_deg: 0, normal_strength: 1 } })
+  const two = withChannel(withMap(one, 'roughness', rev(2)), 'roughness', 'g')
+  assert.deepEqual(two.maps?.roughness, { content_revision_id: rev(2), channel: 'g' })
+  assert.deepEqual(withMap(two, 'roughness', rev(3)).maps?.roughness, { content_revision_id: rev(3), channel: 'g' }, 'replaced: the channel stays')
+  const clipped = withAlpha(two, 'clip')
+  const bare = withMap(withMap(clipped, 'roughness', null), 'base_color', null)
+  assert.deepEqual(bare, { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.5 }, 'no images: no maps, no mapping; the alpha mode stays')
+  assert.equal(withChannel(plain, 'ao', 'b'), plain, 'a channel without an image changes nothing')
+})
+
+test('switching the mapping keeps rotation and strength and drops what the other kind alone may have', () => {
+  const box = withMapping(withMap(plain, 'normal', rev(1)), { size_m: 0.5, rotation_deg: 30, normal_strength: 2 })
+  assert.deepEqual(box.mapping, { kind: 'triplanar', size_m: 0.5, rotation_deg: 30, normal_strength: 2 })
+  const uv = withMapping(box, { kind: 'uv' })
+  assert.deepEqual(uv.mapping, { kind: 'uv', repeat: [1, 1], rotation_deg: 30, normal_strength: 2 })
+  assert.deepEqual(withMapping(uv, { repeat: [2, 3] }).mapping, { kind: 'uv', repeat: [2, 3], rotation_deg: 30, normal_strength: 2 })
+  assert.deepEqual(withMapping(uv, { kind: 'triplanar' }).mapping, { kind: 'triplanar', size_m: 1, rotation_deg: 30, normal_strength: 2 })
+  assert.equal(withMapping(plain, { size_m: 2 }), plain, 'no images: no mapping to set')
+})
+
+test('alpha modes: clip with its cutoff, blend and opaque without one; opaque written as nothing', () => {
+  assert.deepEqual(withAlpha(plain, 'clip'), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.5 })
+  assert.deepEqual(withAlpha(plain, 'clip', 0.3), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.3 })
+  assert.deepEqual(withAlpha(withAlpha(plain, 'clip', 0.3), 'clip'), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.3 }, 'clip again keeps its cutoff')
+  assert.deepEqual(withAlpha(withAlpha(plain, 'clip'), 'blend'), { ...plain, alpha_mode: 'blend' })
+  assert.deepEqual(withAlpha(withAlpha(plain, 'blend'), 'opaque'), plain)
+})
+
+test('a texture edit is one update_objects per object, the whole slot map; a hinted slot made explicit keeps its textures', () => {
+  const textured = withAlpha(withMap(plain, 'base_color', rev(1)), 'clip')
+  const a = obj(11, { main: textured, trim: plain })
+  names[a.id] = ['main', 'trim']
+  const updates = setSlot([a], [a.id], a.id, 'main', slotNames, (_, cur) => withMap(cur!, 'normal', rev(2)))
+  assert.deepEqual(updates, [{ object_id: a.id, material_slots: { main: { ...textured, maps: { base_color: { content_revision_id: rev(1) }, normal: { content_revision_id: rev(2) } } }, trim: plain } }])
+  const { params: _params, ...explicit } = assignmentOf(resolveSlot('main', { main: textured }, null, null))!
+  const { params: _given, ...given } = textured
+  assert.deepEqual(explicit, given)
+})
+
+test('the clipboard carries a slot’s textures, mapping and alpha mode', () => {
+  const data = new Map<string, string>()
+  const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) } as unknown as Storage
+  const textured = withAlpha(withMapping(withMap(plain, 'base_color', rev(1)), { kind: 'uv' }), 'blend')
+  writeClipboard(storage, textured)
+  assert.deepEqual(readClipboard(storage), textured)
 })

@@ -1,0 +1,171 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { components } from '../../api/schema'
+import * as api from '../../creative-canvas/editor/api.ts'
+import { MediaFigure } from '../../creative-canvas/editor/MediaView.tsx'
+import { fileTitle } from '../../creative-canvas/editor/fileImport.ts'
+import { uploadFile, type MediaCapabilities, type UploadProgress } from '../../creative-canvas/editor/media.ts'
+import { blank, type LibraryQuery } from '../../creative-canvas/assets/query.ts'
+import { useAssetList } from '../../creative-canvas/assets/useLibrary.ts'
+
+type CanvasSnapshot = components['schemas']['CreativeCanvasSnapshot']
+type CanvasNode = CanvasSnapshot['nodes'][number]
+type Source = 'library' | 'canvas' | 'upload'
+
+const sources: { id: Source; label: string }[] = [
+  { id: 'library', label: '资产库' },
+  { id: 'canvas', label: '画布' },
+  { id: 'upload', label: '上传' },
+]
+
+/**
+ * Picks one of the account's images for a texture input (C5c1 proposal
+ * 「材质贴图」): from the asset library, from the canvas the scene sits on,
+ * or a file uploaded into the library, so it can be used again. Gives the
+ * image's content revision; the slot edit is the caller's.
+ */
+export function ImagePicker({ title, canvasID, onPick, onClose }: { title: string; canvasID: string | undefined; onPick: (revision: string) => void; onClose: () => void }) {
+  const [source, setSource] = useState<Source>('library')
+  const dialog = useRef<HTMLDivElement>(null)
+  useEffect(() => dialog.current?.focus(), [])
+  return (
+    <div className="cc-scene-dialog-backdrop is-fixed" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div
+        ref={dialog}
+        className="cc-scene-dialog cc-scene-image-picker"
+        role="dialog"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape') return
+          e.stopPropagation()
+          onClose()
+        }}
+      >
+        <h3>{title}</h3>
+        <div className="cc-scene-image-tabs" role="tablist" aria-label="图片来源">
+          {sources.map((s) => (
+            <button key={s.id} type="button" role="tab" aria-selected={source === s.id} className={source === s.id ? 'is-active' : ''} onClick={() => setSource(s.id)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        {source === 'library' && <LibraryImages onPick={onPick} />}
+        {source === 'canvas' && <CanvasImages canvasID={canvasID} onPick={onPick} />}
+        {source === 'upload' && <UploadImage onPick={onPick} />}
+        <footer>
+          <button type="button" className="btn" onClick={onClose}>
+            取消
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function ImageGrid({ label, items, onPick }: { label: string; items: { key: string; revision: string; title: string; content: Parameters<typeof MediaFigure>[0]['content'] }[]; onPick: (revision: string) => void }) {
+  return (
+    <div className="cc-scene-assets-grid cc-scene-image-grid" role="listbox" aria-label={label}>
+      {items.map((i) => (
+        <button key={i.key} type="button" role="option" aria-selected={false} className="cc-scene-asset" aria-label={i.title} title={i.title} onClick={() => onPick(i.revision)}>
+          <MediaFigure content={i.content} kind="image" title={i.title} className="cc-scene-asset-thumb" />
+          <span className="cc-scene-asset-name">{i.title}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function LibraryImages({ onPick }: { onPick: (revision: string) => void }) {
+  const [text, setText] = useState('')
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => setQ(text.trim().slice(0, 200)), 250)
+    return () => window.clearTimeout(t)
+  }, [text])
+  const query = useMemo<LibraryQuery>(() => ({ ...blank(), kind: 'image', q }), [q])
+  const list = useAssetList(query, 0)
+  const items = (list.page?.items ?? []).filter((a) => a.kind === 'image' && !a.deleted_at && !a.unavailable)
+  return (
+    <>
+      <label className="cc-scene-field">
+        <span>搜索</span>
+        <input type="search" aria-label="搜索图片" placeholder="搜索图片" value={text} onChange={(e) => setText(e.target.value)} />
+      </label>
+      {list.error && !list.page ? (
+        <p role="alert">{list.error}</p>
+      ) : list.loading ? (
+        <p role="status">正在读取资产库…</p>
+      ) : !items.length ? (
+        <p>{q ? '没有符合条件的图片' : '资产库里还没有图片'}</p>
+      ) : (
+        <ImageGrid label="资产库的图片" items={items.map((a) => ({ key: a.id, revision: a.content_revision_id, title: a.title, content: a.content }))} onPick={onPick} />
+      )}
+      {list.more !== 'loading' && !!list.page?.next_cursor && (
+        <button type="button" className="btn" onClick={list.loadMore}>
+          加载更多
+        </button>
+      )}
+    </>
+  )
+}
+
+function CanvasImages({ canvasID, onPick }: { canvasID: string | undefined; onPick: (revision: string) => void }) {
+  const [nodes, setNodes] = useState<CanvasNode[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!canvasID) return
+    const controller = new AbortController()
+    api.read<CanvasSnapshot>(`/canvases/${encodeURIComponent(canvasID)}`, controller.signal).then(
+      (snapshot) => setNodes(snapshot.nodes.filter((n) => n.content?.kind === 'image')),
+      (e: unknown) => !controller.signal.aborted && setError(e instanceof Error ? e.message : '画布读取失败'),
+    )
+    return () => controller.abort()
+  }, [canvasID])
+  if (!canvasID) return <p>这个场景不在画布上打开，没有画布图片可选</p>
+  if (error) return <p role="alert">{error}</p>
+  if (!nodes) return <p role="status">正在读取画布…</p>
+  if (!nodes.length) return <p>画布上还没有图片</p>
+  return <ImageGrid label="画布上的图片" items={nodes.map((n) => ({ key: n.id, revision: n.content!.id, title: n.metadata.title || '图片', content: n.content }))} onPick={onPick} />
+}
+
+function UploadImage({ onPick }: { onPick: (revision: string) => void }) {
+  const [progress, setProgress] = useState<UploadProgress | null>(null)
+  const [error, setError] = useState('')
+  const busy = !!progress && progress.stage !== 'done' && progress.stage !== 'failed'
+  const upload = async (file: File) => {
+    setError('')
+    try {
+      const capabilities = await api.read<MediaCapabilities>('/media-capabilities')
+      // Into the asset library, so the image is there to use again.
+      const done = await uploadFile(file, { kind: 'asset', asset: { title: fileTitle(file.name) } }, capabilities, setProgress)
+      if (!done.content_revision_id) throw new Error('上传完成了，但还没有可用的图片，请到资产库查看')
+      onPick(done.content_revision_id)
+    } catch (e) {
+      setProgress(null)
+      setError(e instanceof Error ? e.message : '上传失败')
+    }
+  }
+  return (
+    <>
+      <label className="cc-scene-field">
+        <span>上传到资产库后用作贴图</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          aria-label="选择图片文件"
+          disabled={busy}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) void upload(file)
+          }}
+        />
+      </label>
+      {busy && (
+        <p role="status">
+          {progress.stage === 'uploading' ? `正在上传 ${Math.round((progress.sent / Math.max(progress.total, 1)) * 100)}%` : progress.stage === 'verifying' ? '正在校验…' : '正在准备…'}
+        </p>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </>
+  )
+}

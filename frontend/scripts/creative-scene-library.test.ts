@@ -102,6 +102,17 @@ test('a placed model the snapshot does not describe asks for a read', async () =
   assert.equal(namesUnknownModel({ ops: [{ op: 'add_objects', objects: [object(4, { kind: 'primitive', model: undefined })] }] } as unknown as Intent, known), false)
 })
 
+test('a slot naming an image the snapshot does not describe asks for a read (its 「图片不可用」)', async () => {
+  const { namesUnknownImage } = await import('../src/creative-scene/state/sync.ts')
+  const slots = (rev: string) => ({ main: { preset: 'principled@1', params: {}, maps: { base_color: { content_revision_id: rev } } } })
+  const known = { ccrv_img1: { usable: true, width: 64, height: 64, mime: 'image/png' } }
+  const update = (rev: string) => ({ ops: [{ op: 'update_objects', updates: [{ object_id: objectID(1), material_slots: slots(rev) }] }] }) as unknown as Intent
+  assert.equal(namesUnknownImage(update('ccrv_img2'), known), true, 'an image picked in the panel')
+  assert.equal(namesUnknownImage(update('ccrv_img1'), known), false, 'one the scene has')
+  assert.equal(namesUnknownImage({ ops: [{ op: 'add_objects', objects: [object(3, { material_slots: slots('ccrv_img3') })] }] } as unknown as Intent, known), true, 'a copy pasted with its textures')
+  assert.equal(namesUnknownImage({ ops: [{ op: 'update_objects', updates: [{ object_id: objectID(1), transform: {} }] }] } as unknown as Intent, known), false)
+})
+
 test('known summaries come last and never stand in for bytes', async () => {
   const { ModelCache, modelSummaries } = await import('../src/creative-scene/models/cache.ts')
   const downloads: string[] = []

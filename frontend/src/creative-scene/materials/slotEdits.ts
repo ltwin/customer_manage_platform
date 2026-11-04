@@ -3,7 +3,7 @@ import type { ParamValue } from '../builtins/catalog.ts'
 import type { MeshConstants, SceneModel } from '../models/cache.ts'
 import { effectiveSlots } from '../models/faces.ts'
 import { materialEntry, principledID } from './catalog.ts'
-import { resolveSlot, type ResolvedSlot } from './resolve.ts'
+import { defaultAlphaCutoff, resolveSlot, type ResolvedSlot } from './resolve.ts'
 
 // The edits behind the properties panel's material section and 复制材质
 // (design「属性栏与复制材质」). material_slots is replaced whole by
@@ -12,6 +12,10 @@ import { resolveSlot, type ResolvedSlot } from './resolve.ts'
 
 export type MaterialSlot = NonNullable<SceneObject['material_slots']>[string]
 type Slots = NonNullable<SceneObject['material_slots']>
+type Maps = NonNullable<MaterialSlot['maps']>
+type Mapping = NonNullable<MaterialSlot['mapping']>
+export type Channel = 'r' | 'g' | 'b' | 'a'
+export type AlphaMode = NonNullable<MaterialSlot['alpha_mode']>
 
 /**
  * An object's slots (data: 模型内容「有效槽位」): a primitive's main, a
@@ -52,7 +56,65 @@ export function shownSlot(o: SceneObject, slot: { slot: string; hint: string | n
 export function assignmentOf(r: ResolvedSlot): MaterialSlot | null {
   const m = r.material
   if (m.kind === 'unknown') return null
-  return { preset: m.kind === 'pattern' ? m.id : principledID, params: { ...m.params } }
+  if (m.kind === 'pattern') return { preset: m.id, params: { ...m.params } }
+  return { preset: principledID, params: { ...m.params }, ...structuredClone(m.texturing ?? {}) }
+}
+
+// The texture fields (C5c1 design「贴图属于材质槽」): a principled slot's five
+// image inputs, the one mapping they share, and how its alpha is used. Each
+// returns the slot whole, as data: 场景文档 has it: mapping only with maps,
+// the cutoff only with clip, opaque written as nothing.
+
+/** The five image inputs, in the panel's order. */
+export const mapInputs = ['base_color', 'normal', 'roughness', 'metalness', 'ao'] as const
+export type MapInput = (typeof mapInputs)[number]
+/** The inputs that read one channel of their image. */
+export type ChannelInput = 'roughness' | 'metalness' | 'ao'
+export const isChannelInput = (i: MapInput): i is ChannelInput => i === 'roughness' || i === 'metalness' || i === 'ao'
+
+const defaultMapping: Mapping = { kind: 'triplanar', size_m: 1, rotation_deg: 0, normal_strength: 1 }
+
+/** m with input's image set (rev), or cleared (null); a replaced image keeps its channel, the last one cleared takes the mapping along. */
+export function withMap(m: MaterialSlot, input: MapInput, rev: string | null): MaterialSlot {
+  const maps: Maps = { ...(m.maps ?? {}) }
+  if (rev === null) delete maps[input]
+  else maps[input] = { ...(maps[input] ?? {}), content_revision_id: rev }
+  const { maps: _maps, mapping, ...rest } = m
+  if (Object.keys(maps).length === 0) return rest
+  return { ...rest, maps, mapping: mapping ?? { ...defaultMapping } }
+}
+
+/** m with the channel input reads; nothing to change without its image. */
+export function withChannel(m: MaterialSlot, input: ChannelInput, channel: Channel): MaterialSlot {
+  const map = m.maps?.[input]
+  if (!map) return m
+  return { ...m, maps: { ...m.maps, [input]: { ...map, channel } } }
+}
+
+/**
+ * m's mapping changed: switching between box projection and UV keeps the
+ * rotation and strength, and takes the other kind's own field away (size_m
+ * goes with triplanar, repeat with uv), the new one at its default.
+ */
+export function withMapping(m: MaterialSlot, change: Partial<Mapping>): MaterialSlot {
+  if (!m.maps) return m
+  const was = m.mapping ?? defaultMapping
+  const kind = change.kind ?? was.kind ?? 'triplanar'
+  const shared = { rotation_deg: change.rotation_deg ?? was.rotation_deg ?? 0, normal_strength: change.normal_strength ?? was.normal_strength ?? 1 }
+  const sameKind = kind === (was.kind ?? 'triplanar')
+  const mapping: Mapping =
+    kind === 'uv'
+      ? { kind, repeat: change.repeat ?? (sameKind ? was.repeat : undefined) ?? [1, 1], ...shared }
+      : { kind, size_m: change.size_m ?? (sameKind ? was.size_m : undefined) ?? 1, ...shared }
+  return { ...m, mapping }
+}
+
+/** m with an alpha mode: clip keeps its cutoff or takes the default, the others have none; opaque is the field left out. */
+export function withAlpha(m: MaterialSlot, mode: AlphaMode, cutoff?: number): MaterialSlot {
+  const { alpha_mode: _mode, alpha_cutoff, ...rest } = m
+  if (mode === 'opaque') return rest
+  if (mode === 'blend') return { ...rest, alpha_mode: mode }
+  return { ...rest, alpha_mode: mode, alpha_cutoff: cutoff ?? alpha_cutoff ?? defaultAlphaCutoff }
 }
 
 /**
@@ -142,12 +204,12 @@ export function copyMaterials(
   return updates
 }
 
-/** Copied materials survive across scenes in this browser. */
+/** Copied materials, their textures with them, survive across scenes in this browser. */
 export const clipboardKey = 'creative-scene:material-clipboard'
 
 export function writeClipboard(storage: Storage | undefined, m: MaterialSlot) {
   try {
-    storage?.setItem(clipboardKey, JSON.stringify({ preset: m.preset, params: m.params ?? {} }))
+    storage?.setItem(clipboardKey, JSON.stringify({ ...m, params: m.params ?? {} }))
   } catch {
     // Storage full or blocked: nothing to paste later.
   }
@@ -157,9 +219,11 @@ export function readClipboard(storage: Storage | undefined): MaterialSlot | null
   try {
     const v = JSON.parse(storage?.getItem(clipboardKey) ?? 'null') as unknown
     if (!v || typeof v !== 'object') return null
-    const o = v as { preset?: unknown; params?: unknown }
+    const o = v as { preset?: unknown; params?: unknown } & Pick<MaterialSlot, 'maps' | 'mapping' | 'alpha_mode' | 'alpha_cutoff'>
     if (typeof o.preset !== 'string' || !o.params || typeof o.params !== 'object') return null
-    return { preset: o.preset, params: o.params as Record<string, ParamValue> }
+    // The texture fields as written; the server checks them as any write.
+    const { maps, mapping, alpha_mode, alpha_cutoff } = o
+    return { preset: o.preset, params: o.params as Record<string, ParamValue>, ...(maps ? { maps } : {}), ...(mapping ? { mapping } : {}), ...(alpha_mode ? { alpha_mode } : {}), ...(alpha_cutoff !== undefined ? { alpha_cutoff } : {}) }
   } catch {
     return null
   }

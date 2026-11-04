@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MathUtils } from 'three'
+import { useStore } from 'zustand'
+import type { components } from '../../api/schema'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import type { ParamSpec } from '../builtins/catalog.ts'
 import { materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
+import { imageStatus } from '../materials/images.ts'
 import { assignmentOf, readClipboard, setSlot, shownSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
 import { modelCache, type MeshConstants, type SceneModel } from '../models/cache.ts'
 import { applyBuiltinFaces } from '../models/faces.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { ParamField } from './Properties.tsx'
+import { TextureFields } from './TextureFields.tsx'
+
+type SceneImage = components['schemas']['CreativeSceneImage']
 
 const sourceLabel = { assigned: '', hint: '按提示', model: '模型自带', default: '默认', unknown: '未知材质' } as const
 const originLabel = '沿用原槽位'
@@ -37,12 +43,16 @@ const degreeSpec = (spec: ParamSpec): ParamSpec => ({ ...spec, min: -180, max: 1
  * With several objects selected, an edit goes to every one with a slot of
  * the same name.
  */
-export function MaterialSlots({ object, model, objects, selected, models, readOnly, display, storage, onUpdates, faces }: {
+export function MaterialSlots({ object, model, objects, selected, models, images, canvasID, readOnly, display, storage, onUpdates, faces }: {
   object: SceneObject
   model: SceneModel | undefined
   objects: readonly SceneObject[]
   selected: readonly string[]
   models: Readonly<Record<string, SceneModel>>
+  /** The scene's images as its last read described them: one not usable is flagged on its slot. */
+  images: Readonly<Record<string, SceneImage>> | undefined
+  /** The canvas the scene sits on: its images are offered for textures. */
+  canvasID: string | undefined
   readOnly: boolean
   display: DisplayMode
   storage: Storage | undefined
@@ -76,6 +86,7 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
     return !!(revision && (modelCache.peek(revision)?.stale ?? 0) > 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- builtinKey stands for the builtin's geometry and faces, partsIn for the model's parts
   }, [builtinKey, revision, partsIn])
+  const loading = useStore(imageStatus)
   const [open, setOpen] = useState<string | null>(slots.length === 1 ? slots[0].slot : null)
   const [notice, setNotice] = useState('')
   /** A shared model's slot waiting for 「只改这个 / 所有实例」. */
@@ -103,6 +114,20 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
   const edit = (slot: string, label: string, next: (o: SceneObject, current: MaterialSlot | null) => MaterialSlot | null, merge?: string) => {
     const updates = setSlot(objects, selected, object.id, slot, slotNames, next)
     if (updates.length) onUpdates(updates, label, merge)
+  }
+  /** Why an image cannot be drawn: the server says it is gone, or this page could not load it or had no room for it (images.ts). */
+  const unusable = (revision: string): string | null => {
+    if (images?.[revision]?.usable === false) return '图片不可用：已被删除或无权读取'
+    const failed = Object.values(loading.failed).find((why) => why.includes(revision))
+    if (failed) return failed
+    if (loading.over.some((key) => key.includes(revision))) return '贴图超出显存预算，暂按材质参数显示'
+    return null
+  }
+  /** Whether a slot's geometry has UVs: a primitive's always; a model's once its parts are in. */
+  const hasUV = (slot: string): boolean | null => {
+    if (object.kind === 'primitive') return true
+    const parts = revision ? modelCache.peek(revision)?.meshes.filter((p) => p.slot === slot) : undefined
+    return parts?.length ? parts.every((p) => 'uv' in p.geometry.attributes) : null
   }
   const assign = (slot: string) => {
     if (!faces) return
@@ -209,6 +234,28 @@ export function MaterialSlots({ object, model, objects, selected, models, readOn
                 </button>
               )}
             </div>
+            {expanded && entry?.kind === 'principled' && (
+              <TextureFields
+                slot={slot}
+                m={assignmentOf(resolved) ?? { preset: principledID, params: {} }}
+                hasUV={hasUV(slot)}
+                unusable={unusable}
+                canvasID={canvasID}
+                disabled={readOnly}
+                onEdit={(label, change, merge) =>
+                  edit(
+                    slot,
+                    `${label}（「${name}」）`,
+                    (o, cur) => {
+                      const base = cur ?? assignmentOf(drawn(o, slot))
+                      // A selected object with another material in this slot keeps it.
+                      return base && base.preset === principledID ? change(base) : cur
+                    },
+                    merge && `${object.id}:slot.${merge}`,
+                  )
+                }
+              />
+            )}
             {expanded && entry && (
               <div className="cc-scene-slot-params">
                 {Object.entries(entry.params).map(([k, spec]) => (

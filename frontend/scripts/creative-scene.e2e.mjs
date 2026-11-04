@@ -173,8 +173,19 @@ class SceneServer {
     this.expireThumbnail = false
     // The asset panel's list, the queries it sent, and the single assets it read.
     this.library = []
+    /** [content revision, title] of the images on the canvas a ?export=1 scene sits on. */
+    this.canvasImages = []
     this.assetQueries = []
     this.assetReads = []
+  }
+  /** An image asset on the library list (CreativeLibraryAsset), its content the image the server holds under rev. */
+  imageAsset(rev, title) {
+    const id = `ccas_img_${rev}`
+    return {
+      id, title, description: '', kind: 'image', revision: '1', content_id: `cc_${rev}`, content_revision_id: rev, unavailable: false, is_favorite: false,
+      created_at: '2026-10-16T09:00:00Z', deleted_at: null, purge_after: null, group_ids: [], tag_ids: [], rating: 0, palette: [],
+      content: { id: rev, content_id: `cc_${rev}`, kind: 'image', sequence: '1', payload: {}, truncated: false, media: [{ role: 'thumbnail', mime: 'image/png', width: 64, height: 64, byte_size: 1 }] },
+    }
   }
   /** A model asset in the library: a library copy of the seeded revision with these materials, without its code. Returns the copy's revision. */
   libraryAsset(rev, title, materials = {}) {
@@ -312,7 +323,7 @@ class SceneServer {
     return { ops: resolved, models }
   }
   uploadView(u) {
-    const { consumed: _consumed, ...view } = u
+    const { consumed: _consumed, asset_title: _title, ...view } = u
     return view
   }
   record(changed, removed, restoredFrom, actor = 'photographer', at = null) {
@@ -341,7 +352,19 @@ class SceneServer {
       updated_at: '2026-10-16T09:00:00Z',
       scene: served(this.scene),
       models: this.modelSummaries(this.scene),
+      images: this.imageSummaries(this.scene),
     }
+  }
+  /** The images the scene's slots name, as read_scene describes them (backend view.go): usable while the server has them. */
+  imageSummaries(scene) {
+    const out = {}
+    for (const o of scene.objects)
+      for (const slot of Object.values(o.material_slots ?? {}))
+        for (const m of Object.values(slot.maps ?? {})) {
+          const usable = this.images.has(m.content_revision_id) && !this.mediaMissing.has(m.content_revision_id)
+          out[m.content_revision_id] = usable ? { usable, width: 64, height: 64, mime: 'image/png' } : { usable, width: null, height: null, mime: null }
+        }
+    return out
   }
   object(id) {
     return this.scene.objects.find((o) => o.id === id)
@@ -538,6 +561,8 @@ async function route(page, server) {
         file_name: payload.file_name, part_size: payload.size, part_count: 1, uploaded_parts: [], target_kind: payload.target.kind,
         expires_at: '2100-01-01T00:00:00Z', error_code: '', publication: null, binding: null, content_revision_id: null, created_at: '2026-10-17T00:00:00Z',
       }
+      // An upload into the library is filed under the title it asks for.
+      if (payload.target.kind === 'asset') upload.asset_title = payload.target.asset.title
       server.uploads.set(id, upload)
       return json(201, server.uploadView(upload))
     }
@@ -548,8 +573,17 @@ async function route(page, server) {
         return json(200, { upload_id: u.id, parts: [{ part_number: 1, method: 'PUT', url: `${base}/__upload/${u.id}`, headers: {}, expires_at: '2100-01-01T00:00:00Z' }] })
       if (upload[2] === '/complete') {
         if (server.uploadHold) await server.uploadHold
-        Object.assign(u, { state: 'ready', publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
-        u.binding = { status: 'staged', target_kind: null, target_id: null, candidate_id: `ccuc_${u.id}`, expires_at: '2100-01-01T00:00:00Z' }
+        if (u.target_kind === 'asset') {
+          // Into the asset library: an image content of its own, its bytes served as media.
+          const rev = `ccrv_up_${u.id.slice('ccup_'.length)}`
+          server.images.set(rev, server.uploadBytes.get(u.id))
+          Object.assign(u, { state: 'ready', content_revision_id: rev, publication: { kind: 'asset', id: `ccas_up${u.id}`, revision: '1' } })
+          u.binding = { status: 'bound', target_kind: 'asset', target_id: `ccas_up${u.id}`, candidate_id: null, expires_at: '2100-01-01T00:00:00Z' }
+          server.library.push(server.imageAsset(rev, u.asset_title))
+        } else {
+          Object.assign(u, { state: 'ready', publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
+          u.binding = { status: 'staged', target_kind: null, target_id: null, candidate_id: `ccuc_${u.id}`, expires_at: '2100-01-01T00:00:00Z' }
+        }
       }
       return json(200, server.uploadView(u))
     }
@@ -558,6 +592,11 @@ async function route(page, server) {
       server.discarded.push(discard[1])
       return json(200, { id: discard[1], state: 'discarded' })
     }
+    // The canvas a ?export=1 scene sits on: its image nodes, for the texture picker.
+    if (path === '/canvases/ccv_qa' && request.method() === 'GET')
+      return json(200, { nodes: server.canvasImages.map(([rev, title], i) => ({ id: `cwnode_img${i}`, metadata: { title }, content: server.imageAsset(rev, title).content })) })
+    if (path === '/media-capabilities')
+      return json(200, { schema_version: 1, formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 50 * 2 ** 20, av_max_bytes: 2 ** 30, part_size: 8 * 2 ** 20, batch_limit: 20 })
     if (path === '/media-access-tickets' && request.method() === 'POST') {
       const { content_revision_id: rev } = request.postDataJSON()
       const image = server.images.get(rev)
@@ -3386,6 +3425,84 @@ const objectMenu = async (page, item) => {
   await page.locator('.cc-scene-menubar').getByRole('button', { name: '物件' }).click()
   await page.getByRole('menuitem', { name: item }).click()
 }
+
+await check('C5c1 panel: a base colour map from the library is one revision, UV mapping another, two Cmd+Z take them back; canvas and upload pick too; the hints show', async () => {
+  const server = new SceneServer()
+  stock(server)
+  server.library.push(server.imageAsset('ccr_checker', '棋盘格'), server.imageAsset('ccr_stripes', '条纹'))
+  server.canvasImages = [['ccr_ridges', '起伏']]
+  const cube = gid('方块')
+  seed(server, [boxOf('方块', 5, { position: [0, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({}))])
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  await page.getByRole('treeitem', { name: /方块/ }).click()
+  // The only slot opens by itself.
+  assert.equal(await page.getByLabel('槽位 main').locator('.cc-scene-slot-name').getAttribute('aria-expanded'), 'true')
+  const fields = page.getByLabel('main 的贴图')
+  const base = fields.getByLabel('基础色贴图')
+  const slot = () => server.object(cube).material_slots.main
+
+  await base.getByRole('button', { name: '选择' }).click()
+  const dialog = page.getByRole('dialog', { name: '选择基础色贴图' })
+  await dialog.getByRole('option', { name: '棋盘格' }).click()
+  await waitFor(() => server.commands.length === 1, 'the map')
+  await saved(page)
+  assert.equal(server.commands[0].payload.operations.length, 1)
+  assert.equal(server.commands[0].payload.operations[0].op, 'update_objects')
+  assert.deepEqual(slot().maps, { base_color: { content_revision_id: 'ccr_checker' } })
+  assert.deepEqual(slot().mapping, { kind: 'triplanar', size_m: 1, rotation_deg: 0, normal_strength: 1 }, 'the first map brings the default mapping')
+  assert.equal(await dialog.count(), 0, 'the picker closes')
+
+  await fields.getByLabel('映射方式').selectOption('uv')
+  await waitFor(() => server.commands.length === 2, 'UV')
+  await saved(page)
+  assert.deepEqual(slot().mapping, { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: 1 })
+  await fields.getByLabel('重复 U').waitFor()
+
+  // Out of the select, where Cmd+Z is the field's own.
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'undo UV')
+  await saved(page)
+  assert.equal(slot().mapping.kind, 'triplanar')
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 4, 'undo the map')
+  await saved(page)
+  assert.equal(slot().maps, undefined)
+  assert.equal(slot().mapping, undefined)
+  await base.getByRole('button', { name: '选择' }).waitFor()
+
+  // Clip without a base colour map: only the opacity cuts.
+  await fields.getByLabel('透明方式').selectOption('clip')
+  await waitFor(() => server.commands.length === 5, 'clip')
+  assert.equal(slot().alpha_mode, 'clip')
+  await fields.getByText('没有透明贴图，裁切只看不透明度').waitFor()
+
+  // From the canvas the scene sits on.
+  await base.getByRole('button', { name: '选择' }).click()
+  await dialog.getByRole('tab', { name: '画布' }).click()
+  await dialog.getByRole('option', { name: '起伏' }).click()
+  await waitFor(() => server.commands.length === 6, 'canvas image')
+  assert.equal(slot().maps.base_color.content_revision_id, 'ccr_ridges')
+  await fields.getByText('没有透明贴图，裁切只看不透明度').waitFor({ state: 'detached' })
+
+  // Uploaded: into the library, then on the slot.
+  await base.getByRole('button', { name: '替换' }).click()
+  await dialog.getByRole('tab', { name: '上传' }).click()
+  await dialog.getByLabel('选择图片文件').setInputFiles({ name: '砖墙.png', mimeType: 'image/png', buffer: textures.ccr_veil })
+  await waitFor(() => server.commands.length === 7, 'uploaded image')
+  const uploaded = slot().maps.base_color.content_revision_id
+  assert.match(uploaded, /^ccrv_up_/)
+  assert.equal(slot().mapping.kind, 'triplanar', 'replacing keeps the mapping')
+  assert.ok(server.library.some((a) => a.content_revision_id === uploaded && a.title === '砖墙'), 'the upload is in the library, titled as canvas imports are')
+  await saved(page)
+
+  // An image that went away.
+  server.mediaMissing.add(uploaded)
+  await page.evaluate(() => window.__invalidate())
+  await base.getByText('图片不可用').waitFor()
+  assert.deepEqual(errors, [])
+  await context.close()
+})
 
 await check('AC-3: 复制材质到选中物件 copies by slot name in one revision, one Cmd+Z; a one-slot box fills every slot', async () => {
   const server = new SceneServer()
