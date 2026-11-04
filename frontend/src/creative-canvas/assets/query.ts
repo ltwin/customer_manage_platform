@@ -18,6 +18,7 @@ export const KINDS = [
   { key: 'video', label: '视频' },
   { key: 'audio', label: '音频' },
   { key: 'model', label: '模型' },
+  { key: 'material', label: '材质' },
   { key: 'text', label: '文字' },
   { key: 'link', label: '链接' },
 ] as const

@@ -53,9 +53,9 @@ import {
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
 import SaveModelDialog from './SaveModelDialog.tsx'
-import type { SaveModelRequest } from '../../creative-scene/saveModel.ts'
+import type { SaveRequest } from '../../creative-scene/saveModel.ts'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveModelRequest) => void; libraryTick?: number }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveRequest) => void; libraryTick?: number }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -228,7 +228,7 @@ function Workspace({ account }: { account: string }) {
     revision?: string
   } | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
-  const [savingModel, setSavingModel] = useState<SaveModelRequest | null>(null)
+  const [savingModel, setSavingModel] = useState<SaveRequest | null>(null)
   // 场景里存入资产库后加一，编辑器的资产面板随之重读。
   const [sceneLibraryTick, setSceneLibraryTick] = useState(0)
   // 多选「存入资产库…」：一次选分组，逐个入库（PRD CV-81）。
@@ -1926,7 +1926,7 @@ function Workspace({ account }: { account: string }) {
       )}
       {savingModel && (
         <SaveModelDialog
-          key={savingModel.target.objectID}
+          key={savingModel.kind === 'material' ? `${savingModel.target.objectID}:${savingModel.target.slotID}` : savingModel.target.objectID}
           request={savingModel}
           groupField={<GroupField groups={catalog.groups} />}
           groupName={(id) =>

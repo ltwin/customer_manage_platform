@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { Content } from '../src/creative-canvas/editor/api.ts'
-import { modelInfo, modelRows } from '../src/creative-canvas/viewer/modelInfo.ts'
+import { assetMaterial, materialRows, modelInfo, modelRows } from '../src/creative-canvas/viewer/modelInfo.ts'
 
 const content = (model: unknown, kind = 'model') =>
   ({ id: 'ccrv_m', content_id: 'ccnt_m', kind, sequence: '1', truncated: false, payload: { model } }) as unknown as Content
@@ -56,11 +56,23 @@ test('only a complete model has info', () => {
   assert.equal(modelInfo({ kind: 'text', payload: { body: 'x' } } as unknown as Content), null)
 })
 
+test('a material asset gives its slot and rows: preset, maps, mapping, alpha', () => {
+  const slot = { preset: 'principled@1', params: {}, maps: { base_color: { content_revision_id: 'ccrv_a' }, normal: { content_revision_id: 'ccrv_b' } }, mapping: { kind: 'triplanar' as const, size_m: 2 }, alpha_mode: 'clip' as const }
+  const material = { kind: 'material', payload: { material: { slot, source: { document_id: 'cwdoc_1', object_id: 'sobj_1', slot_id: 'main', revision: '3' } } } } as unknown as Content
+  assert.equal(assetMaterial(material), slot)
+  assert.equal(assetMaterial(undefined), null)
+  assert.equal(assetMaterial({ kind: 'text', payload: { body: 'x' } } as unknown as Content), null)
+  assert.deepEqual(materialRows(slot), [['材质', '原理化 BSDF'], ['贴图', '基础色、法线'], ['映射', '三平面投影 · 2 米一块'], ['透明', '透明裁切']])
+  assert.deepEqual(materialRows({ preset: 'oak@1', params: {} }), [['材质', 'oak@1'], ['贴图', '无'], ['透明', '不透明']])
+  assert.deepEqual(materialRows({ ...slot, mapping: { kind: 'uv', repeat: [2, 3] } })[2], ['映射', '模型 UV · 重复 2 × 3'])
+})
+
 test('models never reach the canvas', async () => {
   const { isCanvasAsset } = await import('../src/creative-canvas/editor/assetPlacement.ts')
   const { validatePlacementAssets, PlacementError } = await import('../src/creative-canvas/assets/placement.ts')
   const asset = (kind: string) => ({ id: `ccas_${kind}`, kind, unavailable: false, deleted_at: null }) as never
   assert.equal(isCanvasAsset(asset('model')), false)
+  assert.equal(isCanvasAsset(asset('material')), false)
   assert.equal(isCanvasAsset(asset('image')), true)
   assert.throws(() => validatePlacementAssets([asset('image'), asset('model')]), (e: unknown) => e instanceof PlacementError && e.message === '模型只能放进 3D 场景')
   assert.doesNotThrow(() => validatePlacementAssets([asset('image'), asset('text')]))

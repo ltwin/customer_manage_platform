@@ -107,6 +107,12 @@ export type ViewportHandle = {
   snapAt(at: { x: number; y: number } | undefined, model: { mount: Mount; bounds: Bounds }): Placed
   /** In face edit, the triangle under the pointer (L picks its piece); null off the object or the viewport. */
   faceUnderPointer(): { key: string; triangle: number } | null
+  /**
+   * The visible primitive or model nearest under a screen point and the slot
+   * of the mesh hit there (null where the look does not split by slot, as
+   * clay); null off the viewport or over nothing.
+   */
+  surfaceAt(at: { x: number; y: number }): { objectID: string; slot: string | null } | null
 }
 
 /** A model dragged in from the asset drawer. */
@@ -139,6 +145,10 @@ export type ViewportProps = {
   libraryDrag?: DragModel | null
   /** It was let go over the viewport, placed where its ghost stood. */
   onDropModel?(placed: Placed): void
+  /** A material asset is being dragged in from the asset drawer: it goes on the slot it is let go over. */
+  materialDrag?: boolean
+  /** A dragged material was let go over a screen point. */
+  onDropMaterial?(at: { x: number; y: number }): void
   /** Face edit's meshes once loaded (faceEdit/useFaceMeshes.ts). */
   faceMeshes?: readonly EditMesh[] | null
   /** A click in face edit: the triangle under it, or nothing. */
@@ -214,7 +224,8 @@ export function Viewport(props: ViewportProps) {
     const model = latestDrag.current
     if (at && model) setDragAt(props.handle.current?.snapAt(at, model) ?? null)
   }
-  const accepts = (e: ReactDragEvent) => !!drag && e.dataTransfer.types.includes('application/creative-asset+json')
+  const material = !props.readOnly && !!props.materialDrag
+  const accepts = (e: ReactDragEvent) => (!!drag || material) && e.dataTransfer.types.includes('application/creative-asset+json')
   return (
     <div
       ref={wrap}
@@ -223,6 +234,7 @@ export function Viewport(props: ViewportProps) {
         if (!accepts(e)) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
+        if (!drag) return
         dragPointer.current = { x: e.clientX, y: e.clientY }
         dragFrame.current ??= requestAnimationFrame(follow)
       }}
@@ -232,7 +244,12 @@ export function Viewport(props: ViewportProps) {
         setDragAt(null)
       }}
       onDrop={(e) => {
-        if (!accepts(e) || !drag) return
+        if (!accepts(e)) return
+        if (!drag) {
+          e.preventDefault()
+          props.onDropMaterial?.({ x: e.clientX, y: e.clientY })
+          return
+        }
         e.preventDefault()
         dragPointer.current = null
         setDragAt(null)
@@ -672,6 +689,22 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         const next = !latest.current.ui.getState().ortho
         latest.current.ui.setState({ ortho: next })
         return next
+      },
+      surfaceAt: (at) => {
+        const r = rect()
+        if (at.x < r.left || at.x > r.right || at.y < r.top || at.y > r.bottom) return null
+        raycaster.setFromCamera(ndc(at.x, at.y), camera)
+        const byID = objectsByID()
+        accelerateModels(scene, (id) => byID.get(id)?.kind === 'model_instance')
+        for (const hit of raycaster.intersectObjects(scene.children, true)) {
+          if (ghostOf(hit.object)) continue
+          const id = objectOf(hit.object)
+          const o = id ? byID.get(id) : undefined
+          if (!o || !canPick(o) || (o.kind !== 'primitive' && o.kind !== 'model_instance')) continue
+          const slot: unknown = hit.object.userData.slot
+          return { objectID: o.id, slot: typeof slot === 'string' ? slot : null }
+        }
+        return null
       },
       snapAt: (at, model) => {
         const r = rect()

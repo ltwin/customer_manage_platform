@@ -199,14 +199,14 @@ function PrimitiveMesh({ builtin, params, faces, edge, wire, slots }: { builtin:
     return (
       <group>
         {pieces.map((p, i) => (
-          <SlotMesh key={i} geometry={p.geometry} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat} />
+          <SlotMesh key={i} geometry={p.geometry} slot={p.slot} material={resolvePart({ slot: p.slot, hint: p.assigned ? (faces?.hints?.[p.slot] ?? null) : null, constants: null, ...(p.assigned ? { origin: { slot: 'main', hint: null } } : {}) }, slots, noHints).material} doubleSided={flat} castShadow={!flat} />
         ))}
         {edge && (flat ? <EdgeLines geometry={geometry} threshold={20} lineWidth={2} color={edge} /> : <Outline geometry={geometry} color={edge} />)}
       </group>
     )
   if (slots)
     return (
-      <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} doubleSided={flat} castShadow={!flat}>
+      <SlotMesh geometry={geometry} material={resolveSlot('main', slots, null, null).material} slot="main" doubleSided={flat} castShadow={!flat}>
         {edge && (flat ? <EdgeLines threshold={20} lineWidth={2} color={edge} /> : <Outline color={edge} />)}
       </SlotMesh>
     )

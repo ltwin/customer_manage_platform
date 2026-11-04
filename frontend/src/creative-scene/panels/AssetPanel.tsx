@@ -6,11 +6,13 @@ import { groupOptions } from '../../creative-canvas/editor/libraryState.ts'
 import { blank, type LibraryQuery } from '../../creative-canvas/assets/query.ts'
 import { boxSelection, clickSelection, type Box, type Selection } from '../../creative-canvas/assets/selection.ts'
 import { useAssetList, useCatalog } from '../../creative-canvas/assets/useLibrary.ts'
-import { modelInfo } from '../../creative-canvas/viewer/modelInfo.ts'
+import { assetMaterial, materialRows, modelInfo } from '../../creative-canvas/viewer/modelInfo.ts'
 import type { LibraryAsset } from '../saveModel.ts'
 import { ContextMenu, type MenuItem } from './ContextMenu.tsx'
 
 type Size = 'small' | 'large'
+type Kind = 'model' | 'material'
+const kindName: Record<Kind, string> = { model: '模型', material: '材质' }
 const sizeKey = 'creative-scene-assets:size'
 const none: Selection = { ids: [], anchor: null }
 
@@ -29,15 +31,20 @@ function writeSize(size: Size) {
   }
 }
 
-/** How it stands, its size, and what can be changed after placing. */
+/** A model's: how it stands, its size, and what can be changed after placing; a material's: what it is made of. */
 function facts(a: LibraryAsset): string[] {
-  const info = modelInfo(a.unavailable ? undefined : a.content)
+  const content = a.unavailable ? undefined : a.content
+  const material = assetMaterial(content)
+  if (material) return materialRows(material).map(([label, value]) => `${label}：${value}`)
+  const info = modelInfo(content)
   return info ? [`参考点${info.origin} · ${info.size}`, `${info.params.length} 个可调参数 · ${info.slots.length} 个材质槽`] : []
 }
 
 /**
  * The editor's own asset panel: the account's model assets, to put into the
- * scene. Cards select as on the library page: a click, Cmd/Ctrl to add or
+ * scene, and its material assets, dragged onto a slot (C5c1). A material
+ * goes on the slot it is let go over, in the viewport or the properties; it
+ * is not placed, so a double click or Enter leaves it be. Cards select as on the library page: a click, Cmd/Ctrl to add or
  * remove, Shift for a range, a drag over the blank to box them; a click on the
  * blank clears. A double click or Enter puts that card's model under the
  * view's centre, 「放入场景」 puts all selected ones in a row there, a drag
@@ -64,15 +71,16 @@ export function AssetPanel({
   readOnly: boolean
   /** Changes when the search box should take the keys (Shift+A 从资产库添加…, the shortcut). */
   focus: number
-  /** Whether an asset can go into a scene: a usable model with its generator. */
+  /** Whether an asset can go into a scene: a usable model with its generator, or a material. */
   placeable: (asset: LibraryAsset) => boolean
   /** Puts these models into the scene, as one edit. */
   onPlace: (assets: LibraryAsset[]) => void
-  /** A drag towards the viewport begins (the asset) or ends (null). */
+  /** A drag towards the viewport or a slot begins (the asset) or ends (null). */
   onDrag: (asset: LibraryAsset | null) => void
   /** Escape in an empty search box: keys go back to the editor. */
   onExit: () => void
 }) {
+  const [kind, setKind] = useState<Kind>('model')
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
   const [group, setGroup] = useState('')
@@ -95,7 +103,7 @@ export function AssetPanel({
     if (focus) search.current?.focus()
   }, [focus])
 
-  const query = useMemo<LibraryQuery>(() => ({ ...blank(), kind: 'model', q, group, tags: tag ? [tag] : [] }), [q, group, tag])
+  const query = useMemo<LibraryQuery>(() => ({ ...blank(), kind, q, group, tags: tag ? [tag] : [] }), [kind, q, group, tag])
   const { catalog } = useCatalog(refresh)
   const list = useAssetList(query, refresh)
   const items = useMemo(() => (list.page?.items ?? []).filter((a) => !a.deleted_at), [list.page])
@@ -139,17 +147,18 @@ export function AssetPanel({
     return () => seen.disconnect()
   }, [loadMore])
 
-  const shownRecent = narrowed ? [] : recentAssets
+  // 最近使用 is the models put in here; materials have none.
+  const shownRecent = narrowed || kind !== 'model' ? [] : recentAssets
   // A model in 最近使用 and the list is one selection; the list's copy is newer.
   const byID = new Map([...shownRecent, ...items].map((a) => [a.id, a]))
   const selected = selection.ids.flatMap((id) => byID.get(id) ?? [])
   const canPlace = (a: LibraryAsset) => !readOnly && placeable(a)
   const place = (assets: LibraryAsset[]) => {
-    const ok = assets.filter(canPlace)
+    const ok = assets.filter((a) => a.kind === 'model' && canPlace(a))
     if (ok.length) onPlace(ok)
   }
   const openInLibrary = (a: LibraryAsset) =>
-    window.open(`/creative/library?${new URLSearchParams({ kind: 'model', q: a.title }).toString()}`, '_blank', 'noopener')
+    window.open(`/creative/library?${new URLSearchParams({ kind: a.kind, q: a.title }).toString()}`, '_blank', 'noopener')
 
   /** The cards under a dragged box, joined to what Cmd/Ctrl kept. */
   const boxAt = (e: PointerEvent<HTMLDivElement>) => {
@@ -183,7 +192,7 @@ export function AssetPanel({
         aria-selected={on}
         aria-label={a.title}
         tabIndex={0}
-        title={placeable(a) ? `${a.title} · 双击放入场景` : `${a.title} · 这个模型不可用`}
+        title={!placeable(a) ? `${a.title} · 这个${kindName[kind]}不可用` : a.kind === 'material' ? `${a.title} · 拖到物件或槽位上` : `${a.title} · 双击放入场景`}
         draggable={canPlace(a)}
         onClick={(e: MouseEvent<HTMLElement>) => {
           // Keys (Enter, Esc) go to this card, also when the click landed on the thumbnail's retry.
@@ -211,8 +220,8 @@ export function AssetPanel({
         }}
         onDragStart={(e: DragEvent) => {
           if (!canPlace(a)) return e.preventDefault()
-          // One model at a time: the viewport shows one ghost. It only checks the
-          // id; which model it is comes through onDrag, since the data cannot be
+          // One asset at a time: the viewport shows one ghost. It only checks the
+          // id; which asset it is comes through onDrag, since the data cannot be
           // read during dragover.
           e.dataTransfer.setData('application/creative-asset', a.id)
           e.dataTransfer.setData('application/creative-asset+json', JSON.stringify([a]))
@@ -221,7 +230,7 @@ export function AssetPanel({
         }}
         onDragEnd={() => onDrag(null)}
       >
-        <MediaFigure content={a.unavailable ? undefined : a.content} kind="model" title={a.title} className="cc-scene-asset-thumb" />
+        <MediaFigure content={a.unavailable ? undefined : a.content} kind={a.kind} title={a.title} className="cc-scene-asset-thumb" />
         <span className="cc-scene-asset-name">{a.title}</span>
       </div>
     )
@@ -230,6 +239,7 @@ export function AssetPanel({
   const menuItems = (assets: LibraryAsset[]): MenuItem[] => {
     const ok = assets.filter(canPlace)
     const first = assets[0]
+    if (kind === 'material') return assets.length === 1 && first ? [{ label: '在资产库中查看', run: () => openInLibrary(first) }] : []
     return [
       {
         label: assets.length > 1 ? `放入 ${ok.length} 个模型` : '放入场景',
@@ -248,23 +258,41 @@ export function AssetPanel({
   return (
     <div className="cc-scene-assets" aria-label="资产" hidden={hidden}>
       <div className="cc-scene-assets-filters">
-        <label className="cc-scene-assets-search">
-          <Search size={14} aria-hidden="true" />
-          <input
-            ref={search}
-            type="search"
-            placeholder="搜索模型"
-            aria-label="搜索模型"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== 'Escape') return
-              e.preventDefault()
-              if (text) setText('')
-              else onExit()
-            }}
-          />
-        </label>
+        <div className="cc-scene-assets-top">
+          <label className="cc-scene-assets-search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              ref={search}
+              type="search"
+              placeholder={`搜索${kindName[kind]}`}
+              aria-label={`搜索${kindName[kind]}`}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return
+                e.preventDefault()
+                if (text) setText('')
+                else onExit()
+              }}
+            />
+          </label>
+          <div className="cc-scene-assets-kinds" role="tablist" aria-label="资产种类">
+            {(['model', 'material'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={kind === k}
+                onClick={() => {
+                  setKind(k)
+                  setSelection(none)
+                }}
+              >
+                {kindName[k]}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="cc-scene-assets-row">
           <select aria-label="分组" value={group} onChange={(e) => setGroup(e.target.value)}>
             <option value="">全部分组</option>
@@ -342,7 +370,7 @@ export function AssetPanel({
             </div>
           </section>
         )}
-        <section aria-label="模型">
+        <section aria-label={kindName[kind]}>
           {shownRecent.length > 0 && <h3>全部模型</h3>}
           {list.error && !list.page ? (
             <p className="cc-scene-assets-note" role="alert">
@@ -354,10 +382,14 @@ export function AssetPanel({
             </p>
           ) : !items.length ? (
             <p className="cc-scene-assets-note">
-              {narrowed ? '没有符合条件的模型' : '资产库里还没有模型。选中场景里的代码模型，在属性栏点「存入资产库」'}
+              {narrowed
+                ? `没有符合条件的${kindName[kind]}`
+                : kind === 'model'
+                  ? '资产库里还没有模型。选中场景里的代码模型，在属性栏点「存入资产库」'
+                  : '资产库里还没有材质。在属性栏的材质槽上点「存为材质资产…」'}
             </p>
           ) : (
-            <div className="cc-scene-assets-grid" role="listbox" aria-label="模型" aria-multiselectable="true">
+            <div className="cc-scene-assets-grid" role="listbox" aria-label={kindName[kind]} aria-multiselectable="true">
               {items.map((a) => card(a, listOrder))}
             </div>
           )}
@@ -378,18 +410,23 @@ export function AssetPanel({
             {facts(single).map((line) => (
               <small key={line}>{line}</small>
             ))}
-            {!placeable(single) && <small>这个模型不可用</small>}
+            {!placeable(single) && <small>这个{kindName[kind]}不可用</small>}
+            {single.kind === 'material' ? (
+              <small>拖到视图里的物件或属性栏的材质槽上，复制一份用到那个槽位</small>
+            ) : null}
             <span className="cc-scene-assets-actions">
+              {single.kind === 'model' && (
               <button type="button" className="btn btn-primary" disabled={!canPlace(single)} onClick={() => place([single])}>
                 放入场景
               </button>
+              )}
               <button type="button" className="btn" onClick={() => openInLibrary(single)} title="在资产库中查看（新标签页）">
                 <ExternalLink size={14} />
                 在资产库中查看
               </button>
             </span>
           </>
-        ) : selected.length > 1 ? (
+        ) : selected.length > 1 && kind === 'model' ? (
           <>
             <strong>已选 {selected.length} 个模型</strong>
             <small>{usable.length < selected.length ? `其中 ${selected.length - usable.length} 个不能放入` : '放入时在视图中心下方排成一行'}</small>
@@ -403,7 +440,13 @@ export function AssetPanel({
             </span>
           </>
         ) : (
-          <small>{readOnly ? '当前不能编辑场景' : '双击放到视图中心，或拖到想放的位置；⌘/Ctrl、Shift 或在空白处拖动可多选'}</small>
+          <small>
+            {readOnly
+              ? '当前不能编辑场景'
+              : kind === 'material'
+                ? '把材质拖到视图里的物件或属性栏的材质槽上'
+                : '双击放到视图中心，或拖到想放的位置；⌘/Ctrl、Shift 或在空白处拖动可多选'}
+          </small>
         )}
       </footer>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.assets)} onClose={() => setMenu(null)} />}

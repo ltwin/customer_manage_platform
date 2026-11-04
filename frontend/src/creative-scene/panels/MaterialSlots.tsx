@@ -3,6 +3,7 @@ import { MathUtils } from 'three'
 import { useStore } from 'zustand'
 import type { components } from '../../api/schema'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
+import { assetMaterial } from '../../creative-canvas/viewer/modelInfo.ts'
 import type { ParamSpec } from '../builtins/catalog.ts'
 import { materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
 import { imageStatus } from '../materials/images.ts'
@@ -12,6 +13,7 @@ import { applyBuiltinFaces } from '../models/faces.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { ParamField } from './Properties.tsx'
+import { MaterialPicker } from './LibraryPicker.tsx'
 import { TextureFields } from './TextureFields.tsx'
 
 type SceneImage = components['schemas']['CreativeSceneImage']
@@ -33,6 +35,18 @@ export type FaceSlots = {
   add(): void
 }
 
+/** Material assets on the slots (C5c1 design「材质资产的存入与使用」). */
+export type SlotLibrary = {
+  /** The material asset being dragged from the asset panel: the slot it is let go on takes a copy. */
+  dragging: { title: string; slot: MaterialSlot } | null
+  /** 存为材质资产; absent where the page cannot write the library. */
+  save?: {
+    /** Why it cannot run on this slot now, or null. */
+    blocked(slot: string): string | null
+    run(slot: string): void
+  }
+}
+
 /** anisotropy_rotation is stored in radians and shown in degrees, like a spot light's angle. */
 const inDegrees = (k: string) => k === 'anisotropy_rotation'
 const degreeSpec = (spec: ParamSpec): ParamSpec => ({ ...spec, min: -180, max: 180, step: 1, unit: '°', default: 0 })
@@ -43,7 +57,7 @@ const degreeSpec = (spec: ParamSpec): ParamSpec => ({ ...spec, min: -180, max: 1
  * With several objects selected, an edit goes to every one with a slot of
  * the same name.
  */
-export function MaterialSlots({ object, model, objects, selected, models, images, canvasID, readOnly, display, storage, onUpdates, faces }: {
+export function MaterialSlots({ object, model, objects, selected, models, images, canvasID, readOnly, display, storage, onUpdates, faces, library }: {
   object: SceneObject
   model: SceneModel | undefined
   objects: readonly SceneObject[]
@@ -58,6 +72,7 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   storage: Storage | undefined
   onUpdates: (updates: ObjectUpdate[], label: string, merge?: string) => void
   faces?: FaceSlots
+  library?: SlotLibrary
 }) {
   const slots = slotsOf(object, model)
   const builtinKey = object.kind === 'primitive' ? JSON.stringify([object.primitive?.builtin, object.primitive?.params, object.primitive?.faces]) : ''
@@ -91,6 +106,10 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   const [notice, setNotice] = useState('')
   /** A shared model's slot waiting for 「只改这个 / 所有实例」. */
   const [asking, setAsking] = useState<string | null>(null)
+  /** The slot 「材质资产…」 is choosing for. */
+  const [choosing, setChoosing] = useState<string | null>(null)
+  /** The slot a dragged material is over. */
+  const [dropOn, setDropOn] = useState<string | null>(null)
   // In face edit a model without slots still needs 「+ 新槽位」 for its first.
   if (!slots.length && !faces) return null
   const name = object.name || '物件'
@@ -129,6 +148,9 @@ export function MaterialSlots({ object, model, objects, selected, models, images
     const parts = revision ? modelCache.peek(revision)?.meshes.filter((p) => p.slot === slot) : undefined
     return parts?.length ? parts.every((p) => 'uv' in p.geometry.attributes) : null
   }
+  /** A material asset's slot, copied onto this slot (and the selection's slots of the same name). */
+  const applyMaterial = (slot: string, title: string, m: MaterialSlot) => edit(slot, `用材质「${title}」（「${name}」${slot}）`, () => structuredClone(m))
+  const dropping = !readOnly && !!library?.dragging
   const assign = (slot: string) => {
     if (!faces) return
     if (faces.shared > 0) return setAsking(slot)
@@ -181,7 +203,27 @@ export function MaterialSlots({ object, model, objects, selected, models, images
         const params = resolved.material.kind === 'unknown' ? {} : resolved.material.params
         const expanded = open === slot
         return (
-          <div key={slot} className="cc-scene-slot" aria-label={`槽位 ${slot}`}>
+          <div
+            key={slot}
+            className={`cc-scene-slot${dropping && dropOn === slot ? ' is-drop' : ''}`}
+            aria-label={`槽位 ${slot}`}
+            onDragOver={(e) => {
+              if (!dropping || !e.dataTransfer.types.includes('application/creative-asset+json')) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDropOn(slot)
+            }}
+            onDragLeave={(e) => {
+              if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) setDropOn(null)
+            }}
+            onDrop={(e) => {
+              setDropOn(null)
+              const dragged = library?.dragging
+              if (!dropping || !dragged) return
+              e.preventDefault()
+              applyMaterial(slot, dragged.title, dragged.slot)
+            }}
+          >
             <div className="cc-scene-slot-head">
               <button type="button" className="cc-scene-slot-name" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : slot)}>
                 {slot}
@@ -222,6 +264,18 @@ export function MaterialSlots({ object, model, objects, selected, models, images
               }}>
                 粘贴材质
               </button>
+              {library && (
+                <>
+                  <button type="button" className="btn" title="从资产库选一个材质用到这个槽位" disabled={readOnly} onClick={() => setChoosing(slot)}>
+                    材质资产…
+                  </button>
+                  {library.save && (
+                    <button type="button" className="btn" title={library.save.blocked(slot) ?? '把这个槽位的材质存进资产库，可以用到别的场景'} disabled={!!library.save.blocked(slot)} onClick={() => library.save?.run(slot)}>
+                      存为材质资产…
+                    </button>
+                  )}
+                </>
+              )}
               {entry && entry.kind === 'pattern' && (
                 <button type="button" className="btn" onClick={() => {
                   const a = assignmentOf(resolved)
@@ -299,6 +353,18 @@ export function MaterialSlots({ object, model, objects, selected, models, images
         <button type="button" className="btn" title="新建一个槽位，再把选中的面指定过去" onClick={faces.add}>
           + 新槽位
         </button>
+      )}
+      {choosing && (
+        <MaterialPicker
+          title={`选择用到 ${choosing} 的材质`}
+          onClose={() => setChoosing(null)}
+          onPick={(asset) => {
+            const slot = choosing
+            setChoosing(null)
+            const m = assetMaterial(asset.content)
+            if (m) applyMaterial(slot, asset.title, m)
+          }}
+        />
       )}
     </fieldset>
   )

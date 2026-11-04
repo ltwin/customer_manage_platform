@@ -169,7 +169,7 @@ export function MediaFigure({
   const { url, error, retry } = useMediaURL(
     content?.id,
     content?.media,
-    kind === 'image' ? prefer : kind === 'model' ? 'thumbnail' : 'original',
+    kind === 'image' ? prefer : kind === 'model' || kind === 'material' ? 'thumbnail' : 'original',
     near,
   )
   const [failed, setFailed] = useState(false)
@@ -207,11 +207,11 @@ export function MediaFigure({
             <Film size={22} />
           ) : kind === 'audio' ? (
             <AudioLines size={22} />
-          ) : kind === 'model' ? (
+          ) : kind === 'model' || kind === 'material' ? (
             <Box size={22} />
           ) : null}
         </span>
-      ) : kind === 'image' || kind === 'model' ? (
+      ) : kind === 'image' || kind === 'model' || kind === 'material' ? (
         <img
           src={url}
           alt={title}

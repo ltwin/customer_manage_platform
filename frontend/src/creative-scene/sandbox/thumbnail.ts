@@ -51,7 +51,7 @@ export async function onThumbnailGPU<T>(draw: (gpu: SceneGPU) => Promise<T>): Pr
 }
 
 /** Three-quarter view from the front (+Z), the whole of the bounds in frame. */
-export function frame(camera: THREE.PerspectiveCamera, manifest: Manifest): void {
+export function frame(camera: THREE.PerspectiveCamera, manifest: Pick<Manifest, 'bounds'>): void {
   const min = new THREE.Vector3().fromArray(manifest.bounds.min)
   const max = new THREE.Vector3().fromArray(manifest.bounds.max)
   const center = min.clone().add(max).multiplyScalar(0.5)

@@ -243,6 +243,33 @@ class SceneServer {
     this.assets.set(key, asset)
     return [201, asset]
   }
+  /** POST /assets/from-scene-material: a copy of the slot's assignment, if the editor saw its current version (Epic api: 材质存入资产库). */
+  saveMaterial(body) {
+    const p = body.payload
+    this.saves.push(body)
+    const unit = content(p.object_id)
+    const current = this.unitRevs[unit] ?? null
+    if (current !== p.expected_object_rev)
+      return [409, { error: { code: 'creative_document_conflict', message: '文档已被修改', details: { conflicts: [{ unit, expected_rev: p.expected_object_rev, current_rev: current }] } } }]
+    const slot = this.object(p.object_id)?.material_slots?.[p.slot_id]
+    if (!slot) return [400, { error: { code: 'creative_material_slot_empty', message: '这个槽位还没有指定材质', details: { object_id: p.object_id, slot_id: p.slot_id } } }]
+    const result = (a, reused) => ({ asset_id: a.id, revision: reused ? '2' : '1', content_revision_id: a.content_revision_id, library_revision: '1', tag_mapping: {}, reused, title: a.title, description: '' })
+    const existing = this.library.find((a) => a.kind === 'material' && canonical(a.content.payload.material.slot) === canonical(slot))
+    if (existing) return [200, result(existing, true)]
+    const u = this.uploads.get(p.thumbnail_upload_id)
+    if (!u || u.state !== 'ready' || u.consumed || u.kind !== 'image') return [409, { error: { code: 'creative_upload_unavailable', message: '暂存上传已失效' } }]
+    u.consumed = true
+    // The ball thumbnail is served by revision, as an image's media is.
+    const rev = `ccrv_mat${this.library.length + 1}`
+    this.images.set(rev, this.uploadBytes.get(p.thumbnail_upload_id))
+    const asset = {
+      ...this.imageAsset(rev, p.target.title), kind: 'material',
+      content: { id: rev, content_id: `cc_${rev}`, kind: 'material', sequence: '1', truncated: false, media: [{ role: 'thumbnail', mime: 'image/png', width: 256, height: 256, byte_size: 1 }],
+        payload: { material: { slot: structuredClone(slot), source: { document_id: p.document_id, object_id: p.object_id, slot_id: p.slot_id, revision: current } } } },
+    }
+    this.library.push(asset)
+    return [201, result(asset, false)]
+  }
   /** A committed model revision, as if made earlier; returns its revision ID (rev, when given). */
   seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content, mount = 'floor', rev = `ccrv_seed${++this.modelSeq}` } = {}) {
     const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount }
@@ -521,6 +548,10 @@ async function route(page, server) {
     if (path === '/tags' || path === '/tag-categories') return json(200, { items: [], hierarchy_revision: '1' })
     if (path === '/library-usage') return json(200, { asset_count: server.library.length, stored_bytes: 0, limit_bytes: 1, pending_release_bytes: 0 })
     if (path === '/library-settings') return json(200, { retention_days: 30, revision: '1', hierarchy_revision: '1', library_revision: '1' })
+    if (path === '/assets/from-scene-material' && request.method() === 'POST') {
+      const [status, body] = server.saveMaterial(request.postDataJSON())
+      return json(status, body)
+    }
     if (path === '/assets/from-scene-model' && request.method() === 'POST') {
       const [status, body] = server.saveModel(request.postDataJSON())
       return json(status, body)
@@ -3501,6 +3532,91 @@ await check('C5c1 panel: a base colour map from the library is one revision, UV 
   await page.evaluate(() => window.__invalidate())
   await base.getByText('图片不可用').waitFor()
   assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C5c1 material asset: 存为材质资产 saves the slot with its ball, again reuses it; on another scene’s slot it draws the same; editing the original leaves the asset be', async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  const slot = principledSlot({ roughness: 0.6 }, { maps: { base_color: map('ccr_checker') }, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 } })
+  const box = (s) => boxOf('方块', 5, { position: [0, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, s)
+  const id = gid('方块')
+  /** The box framed in material preview, settled: the same in both scenes once their slots are. */
+  const look = async (page) => {
+    await page.getByRole('treeitem', { name: /方块/ }).click()
+    await page.locator('.cc-scene-editor').focus()
+    await page.keyboard.press('Period')
+    await shading(page, '材质预览')
+    const { box: clip } = await viewportCenter(page)
+    return settledShot(page, clip)
+  }
+
+  const one = new SceneServer()
+  stock(one)
+  seed(one, [box(slot)])
+  const a = await open(one, { context, query: '?library=1' })
+  const original = await look(a.page)
+  const save = a.page.getByLabel('槽位 main').getByRole('button', { name: '存为材质资产…' })
+  const dialog = a.page.getByRole('dialog', { name: '存入个人资产库' })
+  await save.click()
+  assert.equal(await dialog.getByRole('textbox', { name: '资产名称' }).inputValue(), '方块 · 原理化 BSDF')
+  await dialog.getByText('保存这个槽位的材质参数、贴图和映射', { exact: false }).waitFor()
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await dialog.waitFor({ state: 'detached' })
+  await a.page.locator('#notice').filter({ hasText: '已存入资产库' }).waitFor()
+  const { thumbnail_upload_id: thumb, ...sent } = one.saves[0].payload
+  assert.deepEqual(sent, { document_id: DOC, object_id: id, slot_id: 'main', expected_object_rev: '1', target: { title: '方块 · 原理化 BSDF', group_ids: [] } })
+  assert.deepEqual(pngSize(one.uploadBytes.get(thumb)), { width: 256, height: 256 }, 'the ball, 256 px')
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/material-ball.png`, one.uploadBytes.get(thumb))
+  const asset = one.library.find((x) => x.kind === 'material')
+  assert.deepEqual(asset.content.payload.material.slot, slot)
+  await save.click()
+  await dialog.getByRole('button', { name: '存入', exact: true }).click()
+  await a.page.locator('#notice').filter({ hasText: '这个材质已在资产库中' }).waitFor()
+  assert.equal(one.library.filter((x) => x.kind === 'material').length, 1, 'the same slot is the same asset')
+  assert.equal(one.uploads.get(one.saves[1].payload.thumbnail_upload_id).consumed, undefined, 'a reuse does not take the thumbnail')
+
+  // Another scene of the account: the same box with a plain slot.
+  const two = new SceneServer()
+  // The account's library and media, the ball thumbnails among them.
+  two.library = one.library
+  two.images = one.images
+  seed(two, [box(principledSlot({}))])
+  const b = await open(two, { context })
+  await look(b.page)
+  await b.page.getByRole('tab', { name: '资产' }).click()
+  const panel = b.page.locator('.cc-scene-assets')
+  await panel.getByRole('tab', { name: '材质' }).click()
+  const card = panel.getByRole('listbox', { name: '材质', exact: true }).getByRole('option', { name: '方块 · 原理化 BSDF' })
+  await card.click()
+  await panel.getByText('贴图：基础色').waitFor()
+  await card.locator('.cc-media.is-ready img').waitFor()
+  if (process.env.SCENE_E2E_EVIDENCE) await panel.screenshot({ path: `${process.env.SCENE_E2E_EVIDENCE}/material-panel.png` })
+  // Let go over the box in the viewport: its slot.
+  const { box: clip } = await viewportCenter(b.page)
+  await card.dragTo(b.page.locator('.cc-scene-editor canvas'), { targetPosition: { x: clip.width / 2, y: clip.height / 2 } })
+  await waitFor(() => two.commands.length === 1, 'dropped on the box')
+  await saved(b.page)
+  assert.deepEqual(two.object(id).material_slots.main, slot)
+  await b.page.locator('.cc-scene-editor').focus()
+  await b.page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => two.commands.length === 2, 'undo')
+  await saved(b.page)
+  assert.deepEqual(two.object(id).material_slots.main, principledSlot({}))
+  // Let go on the slot in the properties.
+  await card.dragTo(b.page.getByLabel('槽位 main'))
+  await waitFor(() => two.commands.length === 3, 'dropped on the slot')
+  await saved(b.page)
+  assert.deepEqual(two.object(id).material_slots.main, slot)
+  const copied = await settledShot(b.page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) for (const [name, png] of [['material-original', original], ['material-copied', copied]]) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/${name}.png`, png)
+  const off = await pixelDiff(b.page, original, copied)
+  assert.ok(off < 0.002, `draws as the original slot: ${(off * 100).toFixed(3)}% differ`)
+
+  // The original changes; the asset and the copy do not.
+  await change(a.page, one, setSlot(id, principledSlot({ roughness: 0.1 })))
+  assert.deepEqual(asset.content.payload.material.slot, slot)
+  assert.deepEqual(two.object(id).material_slots.main, slot)
+  assert.deepEqual([...a.errors, ...b.errors], [])
   await context.close()
 })
 

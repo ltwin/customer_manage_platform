@@ -11,7 +11,7 @@ import { StarRating } from '../editor/StarRating.tsx'
 import type { LibraryCatalog } from '../assets/useLibrary.ts'
 import type { useOrganization } from '../assets/useOrganization.tsx'
 import { anchorPoint } from '../assets/popover.ts'
-import { modelInfo, modelRows } from './modelInfo.ts'
+import { assetMaterial, materialRows, modelInfo, modelRows } from './modelInfo.ts'
 import { isCanvasAsset } from '../editor/assetPlacement.ts'
 
 export default function AssetInfoPanel({
@@ -35,7 +35,8 @@ export default function AssetInfoPanel({
   const original = asset.content?.media?.find((m) => m.role === 'original')
   const duration = mediaDuration(asset)
   const model = modelInfo(asset.content)
-  // 模型只能放进 3D 场景：不给「放入项目」「放入画布」。
+  const material = assetMaterial(asset.content)
+  // 模型和材质只能用在 3D 场景：不给「放入项目」「放入画布」。
   const canvasPlaceable = isCanvasAsset(asset)
   const disabled = blocked || !!asset.deleted_at
   return (
@@ -79,8 +80,10 @@ export default function AssetInfoPanel({
           onChange={onRate}
         />
         <dl className="v-rows">
-          {model &&
-            modelRows(model).map(([label, value], i) => (
+          {[
+            ...(model ? modelRows(model) : []),
+            ...(material ? materialRows(material) : []),
+          ].map(([label, value], i) => (
               <Fragment key={i}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>

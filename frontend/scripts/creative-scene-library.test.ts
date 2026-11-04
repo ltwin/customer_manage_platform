@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { SceneDocument, SceneObject } from '../src/creative-scene/api.ts'
 import type { SceneModel } from '../src/creative-scene/models/cache.ts'
 import type { Intent } from '../src/creative-scene/state/intents.ts'
-import { saveTarget, type SaveInput } from '../src/creative-scene/saveModel.ts'
+import { materialTarget, saveTarget, type SaveInput } from '../src/creative-scene/saveModel.ts'
 
 // C6: saving a scene's code model into the asset library, and placing one.
 
@@ -54,6 +54,19 @@ test('each reason it cannot be saved, in the design table order', () => {
   ]
   for (const [name, patch, error] of rows) assert.deepEqual(saveTarget(input(patch)), { error }, name)
   assert.ok(!('error' in saveTarget(input({ unsaved: [intent({ [`object:${objectID(1)}`]: '2' })] }))), 'a move of the same object does not block')
+})
+
+test('a slot with a material can be saved as a material asset; each reason it cannot', () => {
+  const slot = { preset: 'principled@1', params: { roughness: 0.4 }, maps: { base_color: { content_revision_id: 'ccrv_img' } }, mapping: { kind: 'triplanar' as const, size_m: 2 } }
+  const box = object(2, { kind: 'primitive', name: '方块', model: undefined, material_slots: { main: slot } })
+  const at = (patch: Partial<SaveInput> = {}, slotID = 'main') => materialTarget(input({ objects: [box], base: { unit_revs: { [`object:${objectID(2)}:content`]: '4' } } as unknown as SceneDocument, ...patch }), objectID(2), slotID, () => '原理化 BSDF')
+  const target = at()
+  assert.deepEqual(target, { objectID: objectID(2), slotID: 'main', unitRev: '4', slot, name: '方块 · 原理化 BSDF' })
+  assert.notEqual((target as { slot: unknown }).slot, slot, 'the dialog freezes a copy')
+  assert.deepEqual(at({}, 'trim'), { error: '先给这个槽位指定材质' }, 'a hinted or default slot has nothing to save')
+  assert.deepEqual(at({ objects: [] }), { error: '这个物件已不在场景里' })
+  assert.deepEqual(at({ unsaved: [intent({ [`object:${objectID(2)}:content`]: '4' })] }), { error: '正在保存，稍后再试' })
+  assert.ok(!('error' in at({ unsaved: [intent({ [`object:${objectID(2)}`]: '2' })] })), 'a move of the same object does not block')
 })
 
 test('after a conflict the dialog waits until the editor shows the new version', async () => {

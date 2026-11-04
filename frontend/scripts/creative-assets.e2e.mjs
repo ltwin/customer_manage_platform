@@ -149,7 +149,7 @@ function mockServer(assets) {
       const id = request.postDataJSON().content_revision_id.slice(2)
       const a = s.assets.find((x) => x.id === id)
       if (a?.kind === 'model' && request.postDataJSON().role === 'original') return json({ url: `${base}/__qa_media/${id}.glb`, expires_at: new Date(Date.now() + 3600000).toISOString() })
-      if (a?.kind === 'model') {
+      if (a?.kind === 'model' || a?.kind === 'material') {
         const thumb = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="104" y="20" width="48" height="216" fill="#d9d5cd"/></svg>'
         return json({ url: `data:image/svg+xml,${encodeURIComponent(thumb)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })
       }
@@ -177,7 +177,7 @@ function mockServer(assets) {
         const selected = (q.get('tag_ids') ?? '').split(',').filter(Boolean)
         const loose = scope(q, { tagFilter: false })
         facets = {
-          kinds: Object.fromEntries(['text', 'link', 'image', 'video', 'audio', 'model'].map((k) => [k, byKind.filter((a) => a.kind === k).length])),
+          kinds: Object.fromEntries(['text', 'link', 'image', 'video', 'audio', 'model', 'material'].map((k) => [k, byKind.filter((a) => a.kind === k).length])),
           tags: s.tags.map((t) => ({
             tag_id: t.id,
             count: loose.filter((a) => (q.get('tag_mode') === 'any' ? a.tag_ids.includes(t.id) : [...selected, t.id].every((x) => a.tag_ids.includes(x)))).length,
@@ -1665,6 +1665,39 @@ await check('C5b-model-faces', async () => {
   await page.waitForTimeout(500)
   assert((await red(await stage.screenshot())) < 0.001, 'clay has no paint')
   writeFileSync(`${output}/model-preview-faces.png`, faced)
+})
+
+// C5c1 5.2：材质资产在资产库里是一张带「材质」角标的卡片，按类型筛选得到；查看浮窗在材质球上显示它，不能放进项目或画布。
+await check('C5c1-material-asset', async () => {
+  const a = asset({ id: 'mt-paint', title: '红漆', age: 0 })
+  a.kind = 'material'
+  a.palette = []
+  a.content = {
+    ...a.content,
+    kind: 'material',
+    payload: { material: { slot: { preset: 'paint@1', params: { color: '#c03030', roughness: 0.6, metalness: 0 } }, source: { document_id: 'cwdoc_1', object_id: 'sobj_1', slot_id: 'main', revision: '3' } } },
+    media: [{ role: 'thumbnail', blob_id: 'b-png', mime: 'image/png', byte_size: 900, width: 256, height: 256, duration_ms: null }],
+  }
+  await fresh({ assets: [a, ...fixture()] })
+  await open()
+  await after(() => page.getByRole('group', { name: '类型' }).getByRole('button', { name: /^材质/ }).click())
+  assert.equal(lastRead().get('kind'), 'material')
+  assert.equal(await tiles().count(), 1)
+  assert.equal((await tile('红漆').locator('.cl-video-badge').innerText()).trim(), '材质')
+  await tile('红漆').locator('.cc-media img').waitFor()
+
+  await tile('红漆').dblclick()
+  await viewerReady()
+  const stage = viewer().locator('.v-model canvas')
+  await stage.waitFor()
+  await viewer().getByText('拖到场景里物件的槽位上使用', { exact: true }).waitFor()
+  for (const [label, value] of [['材质', '漆面'], ['贴图', '无'], ['透明', '不透明']])
+    assert.equal(await viewer().locator('dt', { hasText: new RegExp(`^${label}$`) }).locator('xpath=following-sibling::dd[1]').innerText(), value, label)
+  assert.equal(await viewer().getByRole('button', { name: '放入项目…' }).count(), 0, 'a material has no project placement')
+  await until(async () => (await red(await stage.screenshot())) > 0.01, 'the ball shows the paint', 10000).catch(() => {})
+  const ball = await stage.screenshot()
+  assert((await red(ball)) > 0.01, 'the ball is in the asset\'s paint')
+  writeFileSync(`${output}/material-preview.png`, ball)
 })
 
 await context?.close()

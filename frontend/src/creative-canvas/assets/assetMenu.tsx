@@ -53,7 +53,7 @@ export function assetMenuItems({
     }
   if (assets.some((a) => a.deleted_at)) return null
   const unavailable = assets.some((a) => a.unavailable)
-  // 模型只能放进 3D 场景：全是模型时没有「放入项目」，抽屉也不给「放入画布」。
+  // 模型和材质只能用在 3D 场景：全是这两种时没有「放入项目」，抽屉也不给「放入画布」。
   const placeable = assets.some(isCanvasAsset)
   const entries: { kind: Action; label: string; Icon: typeof Star }[] = [
     { kind: 'rate', label: '评分…', Icon: Star },

@@ -4,6 +4,8 @@ import type { SceneModel } from './models/cache.ts'
 import { parsePlaceholder } from './state/apply.ts'
 import type { Intent } from './state/intents.ts'
 
+type MaterialSlot = NonNullable<SceneObject['material_slots']>[string]
+
 // Saving a scene's code model into the asset library: which version, and
 // whether it can be saved now. The canvas page holds the dialog; it imports
 // only these types, never the editor (three.js stays out of its bundle).
@@ -24,6 +26,7 @@ export type SaveTarget = {
 }
 
 export type SaveModelRequest = {
+  kind?: 'model'
   documentID: string
   target: SaveTarget
   /** Renders the target with its materials and stages the PNG; resolves to the upload's ID. */
@@ -34,6 +37,30 @@ export type SaveModelRequest = {
    */
   refresh(currentRev: string, signal: AbortSignal): Promise<SaveTarget | { error: string }>
 }
+
+/** The slot a 「存为材质资产」 dialog froze when it opened. */
+export type MaterialTarget = {
+  objectID: string
+  slotID: string
+  /** The object's content unit as the editor showed it: the request's expected_object_rev. */
+  unitRev: string
+  /** The slot's assignment in that version: what the asset keeps and its ball shows. */
+  slot: MaterialSlot
+  /** The dialog's default title. */
+  name: string
+}
+
+/** 存为材质资产 (C5c1 design「材质资产的存入与使用」): the same dialog and conflict handling as a model's. */
+export type SaveMaterialRequest = {
+  kind: 'material'
+  documentID: string
+  target: MaterialTarget
+  /** Renders the slot on the material ball and stages the PNG; resolves to the upload's ID. */
+  thumbnail(target: MaterialTarget, signal: AbortSignal): Promise<string>
+  refresh(currentRev: string, signal: AbortSignal): Promise<MaterialTarget | { error: string }>
+}
+
+export type SaveRequest = SaveModelRequest | SaveMaterialRequest
 
 export type SaveInput = {
   selected: readonly string[]
@@ -63,6 +90,18 @@ export function saveTarget(input: SaveInput): SaveTarget | { error: string } {
   const unitRev = input.base?.unit_revs[unit]
   if (!unitRev || input.unsaved.some((i) => unit in i.expected)) return { error: '正在保存，稍后再试' }
   return { objectID: o.id, contentRevisionID: revision, unitRev, materials: { ...o.material_slots }, name: summary.name_hint || o.name || '代码模型' }
+}
+
+/** What a slot can save as a material asset, or the first reason it cannot. */
+export function materialTarget(input: Omit<SaveInput, 'selected' | 'models' | 'previews'>, objectID: string, slotID: string, label: (preset: string) => string): MaterialTarget | { error: string } {
+  const o = input.objects.find((x) => x.id === objectID)
+  if (!o) return { error: '这个物件已不在场景里' }
+  const slot = o.material_slots?.[slotID]
+  if (!slot) return { error: '先给这个槽位指定材质' }
+  const unit = contentUnit(o.id)
+  const unitRev = input.base?.unit_revs[unit]
+  if (!unitRev || input.unsaved.some((i) => unit in i.expected)) return { error: '正在保存，稍后再试' }
+  return { objectID: o.id, slotID, unitRev, slot: structuredClone(slot), name: `${o.name || '物件'} · ${label(slot.preset)}` }
 }
 
 type Watched = {

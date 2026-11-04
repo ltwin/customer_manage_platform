@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { components } from '../../api/schema'
 import * as api from '../../creative-canvas/editor/api.ts'
 import { MediaFigure } from '../../creative-canvas/editor/MediaView.tsx'
@@ -9,6 +9,7 @@ import { useAssetList } from '../../creative-canvas/assets/useLibrary.ts'
 
 type CanvasSnapshot = components['schemas']['CreativeCanvasSnapshot']
 type CanvasNode = CanvasSnapshot['nodes'][number]
+type LibraryAsset = components['schemas']['CreativeLibraryAsset']
 type Source = 'library' | 'canvas' | 'upload'
 
 const sources: { id: Source; label: string }[] = [
@@ -25,6 +26,33 @@ const sources: { id: Source; label: string }[] = [
  */
 export function ImagePicker({ title, canvasID, onPick, onClose }: { title: string; canvasID: string | undefined; onPick: (revision: string) => void; onClose: () => void }) {
   const [source, setSource] = useState<Source>('library')
+  return (
+    <PickerDialog title={title} onClose={onClose}>
+      <div className="cc-scene-image-tabs" role="tablist" aria-label="图片来源">
+        {sources.map((s) => (
+          <button key={s.id} type="button" role="tab" aria-selected={source === s.id} className={source === s.id ? 'is-active' : ''} onClick={() => setSource(s.id)}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {source === 'library' && <LibraryAssets kind="image" onPick={(a) => onPick(a.content_revision_id)} />}
+      {source === 'canvas' && <CanvasImages canvasID={canvasID} onPick={onPick} />}
+      {source === 'upload' && <UploadImage onPick={onPick} />}
+    </PickerDialog>
+  )
+}
+
+/** Picks one of the account's material assets for a slot (C5c1 design「材质资产的存入与使用」); the slot edit is the caller's. */
+export function MaterialPicker({ title, onPick, onClose }: { title: string; onPick: (asset: LibraryAsset) => void; onClose: () => void }) {
+  return (
+    <PickerDialog title={title} onClose={onClose}>
+      <LibraryAssets kind="material" onPick={onPick} />
+    </PickerDialog>
+  )
+}
+
+/** A dialog over the page: Escape or a click beside it closes it. */
+function PickerDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const dialog = useRef<HTMLDivElement>(null)
   useEffect(() => dialog.current?.focus(), [])
   return (
@@ -42,16 +70,7 @@ export function ImagePicker({ title, canvasID, onPick, onClose }: { title: strin
         }}
       >
         <h3>{title}</h3>
-        <div className="cc-scene-image-tabs" role="tablist" aria-label="图片来源">
-          {sources.map((s) => (
-            <button key={s.id} type="button" role="tab" aria-selected={source === s.id} className={source === s.id ? 'is-active' : ''} onClick={() => setSource(s.id)}>
-              {s.label}
-            </button>
-          ))}
-        </div>
-        {source === 'library' && <LibraryImages onPick={onPick} />}
-        {source === 'canvas' && <CanvasImages canvasID={canvasID} onPick={onPick} />}
-        {source === 'upload' && <UploadImage onPick={onPick} />}
+        {children}
         <footer>
           <button type="button" className="btn" onClick={onClose}>
             取消
@@ -62,12 +81,12 @@ export function ImagePicker({ title, canvasID, onPick, onClose }: { title: strin
   )
 }
 
-function ImageGrid({ label, items, onPick }: { label: string; items: { key: string; revision: string; title: string; content: Parameters<typeof MediaFigure>[0]['content'] }[]; onPick: (revision: string) => void }) {
+function ImageGrid<T>({ label, kind, items, onPick }: { label: string; kind: string; items: { key: string; value: T; title: string; content: Parameters<typeof MediaFigure>[0]['content'] }[]; onPick: (value: T) => void }) {
   return (
     <div className="cc-scene-assets-grid cc-scene-image-grid" role="listbox" aria-label={label}>
       {items.map((i) => (
-        <button key={i.key} type="button" role="option" aria-selected={false} className="cc-scene-asset" aria-label={i.title} title={i.title} onClick={() => onPick(i.revision)}>
-          <MediaFigure content={i.content} kind="image" title={i.title} className="cc-scene-asset-thumb" />
+        <button key={i.key} type="button" role="option" aria-selected={false} className="cc-scene-asset" aria-label={i.title} title={i.title} onClick={() => onPick(i.value)}>
+          <MediaFigure content={i.content} kind={kind} title={i.title} className="cc-scene-asset-thumb" />
           <span className="cc-scene-asset-name">{i.title}</span>
         </button>
       ))}
@@ -75,30 +94,32 @@ function ImageGrid({ label, items, onPick }: { label: string; items: { key: stri
   )
 }
 
-function LibraryImages({ onPick }: { onPick: (revision: string) => void }) {
+const noun = { image: '图片', material: '材质' } as const
+
+function LibraryAssets({ kind, onPick }: { kind: keyof typeof noun; onPick: (asset: LibraryAsset) => void }) {
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
   useEffect(() => {
     const t = window.setTimeout(() => setQ(text.trim().slice(0, 200)), 250)
     return () => window.clearTimeout(t)
   }, [text])
-  const query = useMemo<LibraryQuery>(() => ({ ...blank(), kind: 'image', q }), [q])
+  const query = useMemo<LibraryQuery>(() => ({ ...blank(), kind, q }), [kind, q])
   const list = useAssetList(query, 0)
-  const items = (list.page?.items ?? []).filter((a) => a.kind === 'image' && !a.deleted_at && !a.unavailable)
+  const items = (list.page?.items ?? []).filter((a) => a.kind === kind && !a.deleted_at && !a.unavailable)
   return (
     <>
       <label className="cc-scene-field">
         <span>搜索</span>
-        <input type="search" aria-label="搜索图片" placeholder="搜索图片" value={text} onChange={(e) => setText(e.target.value)} />
+        <input type="search" aria-label={`搜索${noun[kind]}`} placeholder={`搜索${noun[kind]}`} value={text} onChange={(e) => setText(e.target.value)} />
       </label>
       {list.error && !list.page ? (
         <p role="alert">{list.error}</p>
       ) : list.loading ? (
         <p role="status">正在读取资产库…</p>
       ) : !items.length ? (
-        <p>{q ? '没有符合条件的图片' : '资产库里还没有图片'}</p>
+        <p>{q ? `没有符合条件的${noun[kind]}` : `资产库里还没有${noun[kind]}`}</p>
       ) : (
-        <ImageGrid label="资产库的图片" items={items.map((a) => ({ key: a.id, revision: a.content_revision_id, title: a.title, content: a.content }))} onPick={onPick} />
+        <ImageGrid label={`资产库的${noun[kind]}`} kind={kind} items={items.map((a) => ({ key: a.id, value: a, title: a.title, content: a.content }))} onPick={onPick} />
       )}
       {list.more !== 'loading' && !!list.page?.next_cursor && (
         <button type="button" className="btn" onClick={list.loadMore}>
@@ -125,7 +146,7 @@ function CanvasImages({ canvasID, onPick }: { canvasID: string | undefined; onPi
   if (error) return <p role="alert">{error}</p>
   if (!nodes) return <p role="status">正在读取画布…</p>
   if (!nodes.length) return <p>画布上还没有图片</p>
-  return <ImageGrid label="画布上的图片" items={nodes.map((n) => ({ key: n.id, revision: n.content!.id, title: n.metadata.title || '图片', content: n.content }))} onPick={onPick} />
+  return <ImageGrid label="画布上的图片" kind="image" items={nodes.map((n) => ({ key: n.id, value: n.content!.id, title: n.metadata.title || '图片', content: n.content }))} onPick={onPick} />
 }
 
 function UploadImage({ onPick }: { onPick: (revision: string) => void }) {

@@ -74,7 +74,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
         {loaded.parts.meshes.map((m, i) => {
           const material = resolvePart(m, slots, hints).material
           return drawnGeometries(m.geometry, material).map((g, j) => (
-            <SlotMesh key={`${i}:${j}`} geometry={g} material={material} doubleSided castShadow raycast={raycastPieces}>
+            <SlotMesh key={`${i}:${j}`} geometry={g} material={material} slot={m.slot} doubleSided castShadow raycast={raycastPieces}>
               {edge && <Outline color={edge} />}
             </SlotMesh>
           ))
@@ -86,7 +86,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
     <group>
       {loaded.parts.meshes.map((m, i) =>
         (ghost ? pieceViews(m.geometry) : [m.geometry]).map((g, j) => (
-          <mesh key={`${i}:${j}`} geometry={g} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} raycast={ghost ? noRaycast : raycastPieces}>
+          <mesh key={`${i}:${j}`} geometry={g} material={ghost ? ghostMaterial : clayMaterial} castShadow={!ghost} receiveShadow={!ghost} userData={{ slot: m.slot }} raycast={ghost ? noRaycast : raycastPieces}>
             {edge && <Outline color={edge} />}
           </mesh>
         )),

@@ -9,13 +9,14 @@ import { useSlotMaterial } from '../materials/useSlotMaterial.ts'
  * ones (materials/principled.ts renderPolicy) cast no shadow; three draws them
  * with the transparent meshes, which the AO's prepass leaves out
  * (render/sceneRenderer.ts). raycast: how it is
- * picked, three's way unless given (a model's, piece by piece).
+ * picked, three's way unless given (a model's, piece by piece). slot: the
+ * slot it draws, so a material dropped on it knows where to go (Viewport.tsx).
  */
-export function SlotMesh({ geometry, material, doubleSided, castShadow, raycast, children }: { geometry: BufferGeometry; material: SlotMaterial; doubleSided: boolean; castShadow: boolean; raycast?: Mesh['raycast']; children?: ReactNode }) {
+export function SlotMesh({ geometry, material, slot, doubleSided, castShadow, raycast, children }: { geometry: BufferGeometry; material: SlotMaterial; slot: string | null; doubleSided: boolean; castShadow: boolean; raycast?: Mesh['raycast']; children?: ReactNode }) {
   const instance = useSlotMaterial(onGeometry(material, 'uv' in geometry.attributes), doubleSided)
   const see = renderPolicy(material).seeThrough
   return (
-    <mesh geometry={geometry} material={instance} castShadow={castShadow && !see} receiveShadow {...(raycast ? { raycast } : {})}>
+    <mesh geometry={geometry} material={instance} castShadow={castShadow && !see} receiveShadow userData={{ slot }} {...(raycast ? { raycast } : {})}>
       {children}
     </mesh>
   )

@@ -151,7 +151,7 @@ export function useOrganization({
       kind === 'rate' ||
       kind === 'project'
     ) {
-      // 模型只能放进 3D 场景，放入项目时略过。
+      // 模型和材质只能用在 3D 场景，放入项目时略过。
       const targets = kind === 'project' ? assets.filter(isCanvasAsset) : assets
       if (!targets.length) return
       setGroupDraft('')

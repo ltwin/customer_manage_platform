@@ -14,7 +14,7 @@ import {
   type MapInput,
   type MaterialSlot,
 } from '../materials/slotEdits.ts'
-import { ImagePicker } from './ImagePicker.tsx'
+import { ImagePicker } from './LibraryPicker.tsx'
 import { NumberField } from './Properties.tsx'
 
 const inputLabel: Record<MapInput, string> = { base_color: '基础色', normal: '法线', roughness: '糙度', metalness: '金属度', ao: 'AO' }
