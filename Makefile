@@ -1,6 +1,6 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops check-merge check-image-codec
+.PHONY: check build hooks lint lint-go lint-frontend test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops check-merge check-image-codec
 
 BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
 
@@ -33,8 +33,20 @@ frontend/node_modules: frontend/package-lock.json
 
 frontend-install: frontend/node_modules
 
-lint:
+# 启用 lint pre-commit（scripts/githooks/pre-commit，按暂存路径分派 lint-go / lint-frontend）。
+# core.hooksPath 写在仓库级 .git/config，所有 worktree 共用；相对路径按各自工作树解析。
+hooks:
+	git config core.hooksPath scripts/githooks
+	@echo "pre-commit 已启用：core.hooksPath=scripts/githooks"
+
+# 拆成两段供 pre-commit 分派；不加 -j 时按顺序串行，行为与拆分前一致。
+# lint-frontend 不依赖 frontend/node_modules，避免 hook 触发 npm ci。
+lint: lint-go lint-frontend
+
+lint-go:
 	cd backend && golangci-lint run ./...
+
+lint-frontend:
 	cd frontend && npm run lint
 
 # 全量测试 = 三段之和。分段是为了让分层门禁能只取其一（范式见 AGENTS.md），
@@ -64,6 +76,7 @@ test-ops:
 	bash ./scripts/test-planning-ops-backup-restore-safety.sh
 	bash ./scripts/test-planning-hardening.sh
 	./scripts/test-v1-ops-contract.sh
+	./scripts/test-githooks-pre-commit.sh
 
 # ---- 分层门禁 ----
 # 按影响面选门禁，不要习惯性跑 check。判定表见 AGENTS.md「验证范式」。
