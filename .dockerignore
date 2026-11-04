@@ -1,7 +1,6 @@
 # 构建上下文只需要 frontend / backend 源码，以及 deploy/ 下部署时读取的数据（Skill 种子包）
 .git
 .claude
-.codestable
 .env
 node_modules
 frontend/node_modules
@@ -10,3 +9,4 @@ backend/bin
 backend/internal/platform/webui/dist
 docs
 scripts
+/var/
