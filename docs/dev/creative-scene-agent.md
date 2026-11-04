@@ -97,6 +97,17 @@ queued ──认领──> claimed ──完成──> succeeded / failed
   - 投影：`render/volumes/shadow.ts` 的阴影节点（平行光在 `SunCascades.setup`，聚光、点光在 `lights.ts:buildLight` 装上）把打开 `cast_shadow` 的体积的透射率乘进阴影，投影列表是 uniform；`SceneRenderer.compile` 的替身灯装同类的阴影节点。
   - 月亮参考：`creativescene/moon.go` 移植 Meeus 的月亮位置与月相时刻，随太阳参考一起给助手（`moon`：月相、照亮比例、高度与方位、月出月落、前后最近的满月和新月），不存储、不进指纹；与前端 `astronomy-engine` 用同一组日期对照测试。
 
+- 材质贴图（C5c1，scene-pbr-textures）：
+  - 数据：原理化槽位的 `maps`（`base_color`、`normal`、`roughness`、`metalness`、`ao`，各是图片的 `content_revision_id`，后三种带 `channel`）、`mapping`（`triplanar` 的 `size_m` 或 `uv` 的 `repeat`，都有 `rotation_deg`、`normal_strength`）、`alpha_mode`（`opaque` / `clip` / `blend`）与 `alpha_cutoff`；服务端 `validateSlots` 补齐缺省，写入事务里校验图片（本账号、`image`、`ready`、可展示，`creativescene/images.go`），引用登记进 `creative_document_content_refs`，一个场景最多 64 张不同的图片（413）。`read_scene` 与 `GET /documents/{id}` 带 `images`（宽高、MIME、`usable`）。
+  - 图片缓存：`materials/images.ts` 分源图与纹理两层，纹理按 `TextureKey`（`color:`、`normal:`、`orm:`）共享、引用计数、延迟释放；同时最多解码 4 张；每个设备 2 GiB 字节预算，按请求顺序准入，超出的保持占位并列在 `imageStatus.over`（面板显示「贴图超出显存预算」）。像素取 `original` 角色的原图（展示图是有损 JPEG、没有透明通道）。
+  - 光栅：`materials/maps.ts` 构建三平面与 UV 映射的节点，三平面法线按表面梯度混合；`principled.ts:renderPolicy` 决定透视与混合方式（取代原来的 `seeThrough`）；`clip` 用 `alphaTestNode`，阴影用 `maskShadowNode`（three r186 的阴影 pass 不读 `alphaTestNode`）。白模和线稿不看材质。没有 UV 的模型选了 UV 映射时按三平面画（`resolve.ts:onGeometry`）。
+  - 世界空间层：`render/trace/maps.ts:TraceMaps` 每个设备三张纹理数组（视口每层 512²、导出 1024²），层号按 `TextureKey` 分配；`hit.ts` 在命中点用同一映射函数按光线锥的梯度采样，`clip` 被裁掉时继续追，最多再追 4 次。超出 `maxTextureArrayLayers` 时退回常数参数并提示。
+  - 等图片：视口先按材质参数画，图片到了再重绘；`host/render.ts:openShooter` 挂载 `lit` 前调用 `loadSceneImages`，失败时这张图失败，原因是「场景贴图不可用：…」并写明是哪张图片（`SCENE_IMAGES_FAILED`）；资产缩略图与资产库 3D 预览也先等图片。
+  - 表面阴影上限：`objects/shadowBudget.ts:selectShadowCasters` 按固定顺序（天空太阳，再按物件列表顺序选打开投影的灯）选出最多 8 张阴影贴图的灯，与后端 `creativescene/shadows.go` 规则相同；落选的灯照常照亮、不投影，属性面板显示「阴影超出上限」，`read_scene` 标 `shadow: "over_budget"`。
+  - 编辑器：`panels/TextureFields.tsx`（五个贴图输入、通道、映射、透明方式）与 `panels/LibraryPicker.tsx`（资产库、画布、上传三个来源；上传的文件进资产库）。槽位编辑在 `materials/slotEdits.ts`，复制材质连同贴图一起复制。
+  - 材质资产：`POST /creative/assets/from-scene-material` 把一个槽位复制成 `material` 资产，载荷 `material.slot` 完全相同时复用；缩略图是 256 px 材质球（`materials/ball.ts`、`library/thumbnail.ts:renderMaterialBall`）。存入弹框与模型共用 `creative-canvas/editor/SaveModelDialog.tsx`。用到槽位不经接口：资产面板切到「材质」，拖到视图里的物件（落到指针下那个面的槽位，`SlotMesh` 的 `userData.slot`、`Viewport` 的 `surfaceAt`）或属性栏的槽位，或在槽位上点「材质资产…」，前端把载荷复制进 `material_slots` 走 `update_objects`。资产库页的查看浮窗用 `preview/MaterialPreview.tsx`。
+  - 持有关系：材质资产和带贴图的模型库副本经 `creative_content_revision_refs`（`role = texture`）持有图片，持有方没删除时图片不被回收；助手经可读的持有方可以使用其中的图片（`readableRevisionInTx` 最后一个分支，只查一层，撤销优先）。
+
 ### 编辑视图
 
 `SceneEditor` 打开时和画布通知后（1 秒节流）读任务列表和最近修订（先读最近 20 条，之后只读 `since_revision` 之后的）：
@@ -158,7 +169,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 - 单测：`node --test --experimental-transform-types scripts/creative-scene-agent.test.ts`（执行器、取景、认领循环、关闭提醒、编辑视图的活动、面板的清单逻辑）。
 - 浏览器：先在 `frontend/` 起 `npx vite --port 5179 --strictPort`，再跑
   - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
-  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5 起含最终渲染的标定检查（`calibration`）；W2、W3、W4 的检查分别以 `W2 `、`W3 `、`W4 ` 开头（`SCENE_E2E_ONLY='W3 '`），`SCENE_E2E_W3_DAY=<目录>` 在本机 GPU 上逐像素核对白天与手动角度的画面不受夜空影响，`SCENE_E2E_W2_METAL=1` 让防漂移对照跑在本机 GPU 上，`SCENE_E2E_W2_PICTURES=<目录>` 导出物理天空参考场景的图，`SCENE_E2E_W2_SKIES=<基线目录>` 逐像素核对其他天空不变；
+  - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5c1 的检查以 `C5c1` 开头，世界空间层的几项要 `SCENE_E2E_TRACE=1`，`SCENE_E2E_EVIDENCE=<目录>` 存下材质球缩略图和对照截图；C5 起含最终渲染的标定检查（`calibration`）；W2、W3、W4 的检查分别以 `W2 `、`W3 `、`W4 ` 开头（`SCENE_E2E_ONLY='W3 '`），`SCENE_E2E_W3_DAY=<目录>` 在本机 GPU 上逐像素核对白天与手动角度的画面不受夜空影响，`SCENE_E2E_W2_METAL=1` 让防漂移对照跑在本机 GPU 上，`SCENE_E2E_W2_PICTURES=<目录>` 导出物理天空参考场景的图，`SCENE_E2E_W2_SKIES=<基线目录>` 逐像素核对其他天空不变；
   - 帧时间（AC-9，只在点名时跑，需要本机 GPU）：`SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs`，用 Metal 后端的无头 Chromium、1600 × 1000、2 倍像素比，打印四种显示模式的平均与 p95 帧时间和加灯、删灯的最长一帧。
 - 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
 - 实测（只在点名时跑，经 `TestCreativeEditorBrowser` 起真实 API、媒体流水线和 PostgreSQL；测试端点 `/__test/scene-job` 像工具那样建任务，替身运行记下结果交回的时间）：
@@ -171,5 +182,11 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 - 「本轮改动」不能单独恢复层级调整（`hierarchy_not_restorable`）：C5 起助手可以编组、改挂，被改挂的物件和它进出的分组都不能单独恢复，按前后快照判断；同一物件被运行写过两次、中间有别人改过时按保守处理，记为别人改过。运行写出的修订超过 500 个时接口返回 400，改用历史版本。
 - 五个工具的定义每次模型请求都会带上；C4 加长了 `edit_scene` 的说明（摄像机参数、景深与 `look_at`），C5 又加了材质目录、打光与曝光建议（约 2.8 KB）；W2 加物理天空的字段、预设、太阳参考与两段曝光建议，`edit_scene` 从 7.7 KB 到 11.0 KB（约 1,900 字），`read_scene`、`render_view` 各加约 0.1 KB。`compaction_regression_test.go` 里最小的测试窗口随之从 8000 调到 9000 token。W3 再加夜空字段、月亮参考与自动曝光的说明，最小测试窗口调到 10000 token。W4 加空气透视一句（压到最短），两个 22000 token 的压缩回归窗口调到 23000。W5 加体积物件的字段、上限、密度提示和一个样例（约 1 KB），14000 token 的压缩回归窗口调到 15000。C5b 在系统说明里加面分配一段（约 0.6 KB），两个 23000 与一个 15000 token 的压缩回归窗口各加 600。
 - 面级材质分配（C5b）：助手看到的槽位按有效槽位列出（`read_scene` 的模型 `slots` 与有面分配的基础体 `slots`，`source` 为 `model` 或 `faces`，`face_triangles` 是分到该槽位的三角形数，由 `creativecontent.EffectiveSlots` 计算，资产库的模型要点同源）。`write_model` 替换了有面分配的模型时，结果的 `faces` 说明保留与作废（`creativescene.BakeFacesInTx` 读写入前一个修订比较，任务结果格式不变）；渲染端烘焙时把带过来的分配放在完成请求的 `bake.faces`。冲突后用 `retry_job_id` 重试不带分配：目标在冲突期间被改过，旧的带入结果不可信，结果会报全部作废。`edit_scene` 改了基础体拓扑参数时，结果的 `faces_cleared` 列出被清空的基础体（比较写入前后的快照；写 `faces: null` 是助手自己清的，不列）。`edit_scene` 不限制 `derive_model` 与 `primitive.faces`，按语义选面的 `assign_faces` 属于 C5b2。
+- 材质贴图（C5c1）：
+  - 助手的工具说明为贴图、映射、透明方式和材质资产增长约 2.6 KB，compaction 回归测试的窗口按先例调宽。
+  - 镜面反射里几厘米一格的细贴图会被平均掉：世界空间层的光锥按像素角加 2·粗糙度²（three 的粗糙度下限 0.0525）展开，镜子里看到的是贴图的平均色。owner 2026-11-03 定为已知缺陷。
+  - 带探针的场景两次导出不逐像素相同（cornell 最多差约 10–19 级，超 8 级的像素 < 0.0001%），develop 上不带贴图时就如此，属探针管线已有的不确定性，不是贴图引入的；owner 2026-11-03 定为已知缺陷。新写的导出确定性检查按图层 digest 逐字节、画面「超 8 级 ≤ 0.01%」判。
+  - 材质资产不记录被哪些场景用过（复制语义）；用到槽位之后与资产没有关联。
+  - 三平面投影在球面等曲面上能看出三个方向混合的过渡带，与 Blender 的 Box 投影（blend 0.2）相当。
 - 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

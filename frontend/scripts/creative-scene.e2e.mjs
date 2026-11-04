@@ -3535,6 +3535,28 @@ await check('C5c1 panel: a base colour map from the library is one revision, UV 
   await context.close()
 })
 
+await check('C5c1 panel: a model without UVs set to UV mapping says it draws triplanar; a box does not', async () => {
+  const server = new SceneServer()
+  stock(server)
+  const cases = JSON.parse(readFileSync(new URL('cases.json', testdata), 'utf8'))
+  const plain = server.seedModel({ glb: readFileSync(new URL('basic.glb', testdata)), manifest: cases.find((c) => c.name === 'basic').manifest })
+  const uv = principledSlot({}, { maps: { base_color: map('ccr_checker') }, mapping: { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: 1 } })
+  server.seedInstance('sobj_P00000000000000000001', plain, 0, '无 UV 块', { stone: uv })
+  server.scene.objects.push(boxOf('方块', 9, { position: [3, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, uv))
+  server.unitRevs[placement(gid('方块'))] = '1'
+  server.unitRevs[content(gid('方块'))] = '1'
+  server.history[0] = server.record(['*'], [], null)
+  const { context, page, errors } = await open(server)
+  const hint = page.getByText('这个模型没有 UV，按三平面显示')
+  await page.getByRole('treeitem', { name: /无 UV 块/ }).click()
+  await hint.waitFor()
+  await page.getByRole('treeitem', { name: /方块/ }).click()
+  await page.getByLabel('main 的贴图').waitFor()
+  assert.equal(await hint.count(), 0, 'a builtin has UVs')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 await check('C5c1 material asset: 存为材质资产 saves the slot with its ball, again reuses it; on another scene’s slot it draws the same; editing the original leaves the asset be', async () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
   const slot = principledSlot({ roughness: 0.6 }, { maps: { base_color: map('ccr_checker') }, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 } })
