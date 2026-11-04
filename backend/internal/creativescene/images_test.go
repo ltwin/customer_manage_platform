@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,26 +105,29 @@ func TestTextureFieldsAreCheckedAndNamed(t *testing.T) {
 		slot  map[string]any
 		field string
 	}{
-		"maps on a procedural preset":  {map[string]any{"preset": "stone_brick@1", "params": map[string]any{}, "maps": base}, "maps"},
-		"alpha on a procedural preset": {map[string]any{"preset": "paint@1", "params": map[string]any{}, "alpha_mode": "clip"}, "alpha_mode"},
-		"unknown texture":              {principled(map[string]any{"maps": map[string]any{"albedo": texture(image)}}), "maps.albedo"},
-		"no texture":                   {principled(map[string]any{"maps": map[string]any{}}), "maps"},
-		"no image":                     {principled(map[string]any{"maps": map[string]any{"normal": map[string]any{}}}), "maps.normal.content_revision_id"},
-		"not a revision":               {principled(map[string]any{"maps": map[string]any{"normal": texture("ccnt_1")}}), "maps.normal.content_revision_id"},
-		"channel on base colour":       {principled(map[string]any{"maps": map[string]any{"base_color": map[string]any{"content_revision_id": image, "channel": "a"}}}), "maps.base_color.channel"},
-		"unknown channel":              {principled(map[string]any{"maps": map[string]any{"ao": map[string]any{"content_revision_id": image, "channel": "x"}}}), "maps.ao.channel"},
-		"mapping without maps":         {principled(map[string]any{"mapping": map[string]any{"kind": "uv"}}), "mapping"},
-		"unknown mapping":              {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "sphere"}}), "mapping.kind"},
-		"size with uv":                 {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "uv", "size_m": 2}}), "mapping.size_m"},
-		"repeat with triplanar":        {principled(map[string]any{"maps": base, "mapping": map[string]any{"repeat": []any{2, 2}}}), "mapping.repeat"},
-		"size out of range":            {principled(map[string]any{"maps": base, "mapping": map[string]any{"size_m": 101}}), "mapping.size_m"},
-		"repeat out of range":          {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "uv", "repeat": []any{0, 1}}}), "mapping.repeat"},
-		"rotation out of range":        {principled(map[string]any{"maps": base, "mapping": map[string]any{"rotation_deg": 361}}), "mapping.rotation_deg"},
-		"strength out of range":        {principled(map[string]any{"maps": base, "mapping": map[string]any{"normal_strength": 4.5}}), "mapping.normal_strength"},
-		"unknown alpha mode":           {principled(map[string]any{"alpha_mode": "mask"}), "alpha_mode"},
-		"cutoff without clip":          {principled(map[string]any{"alpha_mode": "blend", "alpha_cutoff": 0.3}), "alpha_cutoff"},
-		"cutoff out of range":          {principled(map[string]any{"alpha_mode": "clip", "alpha_cutoff": 1.5}), "alpha_cutoff"},
-		"unknown slot field":           {principled(map[string]any{"maps": base, "uv": true}), "uv"},
+		"maps on a procedural preset":   {map[string]any{"preset": "stone_brick@1", "params": map[string]any{}, "maps": base}, "maps"},
+		"alpha on a procedural preset":  {map[string]any{"preset": "paint@1", "params": map[string]any{}, "alpha_mode": "clip"}, "alpha_mode"},
+		"maps on a textured material":   {map[string]any{"preset": "wood_floor@1", "params": map[string]any{}, "maps": base}, "maps"},
+		"mapping on an unknown preset":  {map[string]any{"preset": "lava@1", "params": map[string]any{}, "mapping": map[string]any{"size_m": 2}}, "mapping"},
+		"textured mapping out of range": {map[string]any{"preset": "wood_floor@1", "params": map[string]any{}, "mapping": map[string]any{"size_m": 101}}, "mapping.size_m"},
+		"unknown texture":               {principled(map[string]any{"maps": map[string]any{"albedo": texture(image)}}), "maps.albedo"},
+		"no texture":                    {principled(map[string]any{"maps": map[string]any{}}), "maps"},
+		"no image":                      {principled(map[string]any{"maps": map[string]any{"normal": map[string]any{}}}), "maps.normal.content_revision_id"},
+		"not a revision":                {principled(map[string]any{"maps": map[string]any{"normal": texture("ccnt_1")}}), "maps.normal.content_revision_id"},
+		"channel on base colour":        {principled(map[string]any{"maps": map[string]any{"base_color": map[string]any{"content_revision_id": image, "channel": "a"}}}), "maps.base_color.channel"},
+		"unknown channel":               {principled(map[string]any{"maps": map[string]any{"ao": map[string]any{"content_revision_id": image, "channel": "x"}}}), "maps.ao.channel"},
+		"mapping without maps":          {principled(map[string]any{"mapping": map[string]any{"kind": "uv"}}), "mapping"},
+		"unknown mapping":               {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "sphere"}}), "mapping.kind"},
+		"size with uv":                  {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "uv", "size_m": 2}}), "mapping.size_m"},
+		"repeat with triplanar":         {principled(map[string]any{"maps": base, "mapping": map[string]any{"repeat": []any{2, 2}}}), "mapping.repeat"},
+		"size out of range":             {principled(map[string]any{"maps": base, "mapping": map[string]any{"size_m": 101}}), "mapping.size_m"},
+		"repeat out of range":           {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "uv", "repeat": []any{0, 1}}}), "mapping.repeat"},
+		"rotation out of range":         {principled(map[string]any{"maps": base, "mapping": map[string]any{"rotation_deg": 361}}), "mapping.rotation_deg"},
+		"strength out of range":         {principled(map[string]any{"maps": base, "mapping": map[string]any{"normal_strength": 4.5}}), "mapping.normal_strength"},
+		"unknown alpha mode":            {principled(map[string]any{"alpha_mode": "mask"}), "alpha_mode"},
+		"cutoff without clip":           {principled(map[string]any{"alpha_mode": "blend", "alpha_cutoff": 0.3}), "alpha_cutoff"},
+		"cutoff out of range":           {principled(map[string]any{"alpha_mode": "clip", "alpha_cutoff": 1.5}), "alpha_cutoff"},
+		"unknown slot field":            {principled(map[string]any{"maps": base, "uv": true}), "uv"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := x.slots(t, map[string]any{"main": tc.slot})
@@ -202,6 +206,53 @@ func TestTexturesAreCompletedAndRead(t *testing.T) {
 	}
 	if after := readScene(t, x.f.a, x.doc).object(t, x.box).MaterialSlots; !reflect.DeepEqual(before, after) {
 		t.Fatalf("round trip changed the slots:\n%v\n%v", before, after)
+	}
+}
+
+// A built-in textured material takes a mapping and an alpha mode but no
+// maps; what it leaves out is stored as its catalog entry says, and it
+// references no image.
+func TestTexturedMaterialIsCompleted(t *testing.T) {
+	x := newTexturedBox(t)
+	textured := func(extra map[string]any) map[string]any {
+		slot := map[string]any{"preset": "wood_floor@1", "params": map[string]any{"color": "#eeeeee"}}
+		maps.Copy(slot, extra)
+		return slot
+	}
+	if _, err := x.slots(t, map[string]any{
+		"main":  textured(nil),
+		"side":  textured(map[string]any{"mapping": map[string]any{"kind": "uv", "repeat": []any{2, 2}}, "alpha_mode": "clip"}),
+		"plain": map[string]any{"preset": "paint@1", "params": map[string]any{}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	v := readScene(t, x.f.a, x.doc)
+	want := map[string]any{
+		"main": map[string]any{"preset": "wood_floor@1", "params": map[string]any{"color": "#eeeeee"},
+			"mapping":    map[string]any{"kind": "triplanar", "size_m": 1.7, "rotation_deg": 0.0, "normal_strength": 1.0},
+			"alpha_mode": "opaque"},
+		"side": map[string]any{"preset": "wood_floor@1", "params": map[string]any{"color": "#eeeeee"},
+			"mapping":    map[string]any{"kind": "uv", "repeat": []any{2.0, 2.0}, "rotation_deg": 0.0, "normal_strength": 1.0},
+			"alpha_mode": "clip", "alpha_cutoff": 0.5},
+		"plain": map[string]any{"preset": "paint@1", "params": map[string]any{}},
+	}
+	got := map[string]any{}
+	b, _ := json.Marshal(v.object(t, x.box).MaterialSlots)
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stored slots\n%v\nwant\n%v", got, want)
+	}
+	raw, err := creativedocument.Read(t.Context(), x.f.a, x.doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read struct {
+		Images map[string]any `json:"images"`
+	}
+	if err := json.Unmarshal(raw, &read); err != nil || len(read.Images) != 0 {
+		t.Fatalf("images %v %v", read.Images, err)
 	}
 }
 

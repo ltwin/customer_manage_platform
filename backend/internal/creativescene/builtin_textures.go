@@ -125,6 +125,12 @@ func completeTextured(m materialSpec, principled materialSpec, categories []mate
 	return m, nil
 }
 
+// texturedMaterial is the catalog's textured entry with this ID, if any.
+func texturedMaterial(id string) (materialSpec, bool) {
+	m, ok := materials.byID[id]
+	return m, ok && m.Kind == MaterialTextured
+}
+
 // BuiltinTextureFiles lists every built-in texture file once, in catalog
 // order.
 func BuiltinTextureFiles() []BuiltinTextureFile {
