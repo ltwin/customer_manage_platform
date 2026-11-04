@@ -7921,6 +7921,115 @@ if (process.env.SCENE_E2E_WGSL) await check('wgsl: each material draws with the 
   assert.deepEqual(materials, before.materials)
 })
 
+// --- C5c1 the surface shadow budget ----------------------------------------------------------------------------
+
+/** Records every WGSL module the page makes, in window.__wgsl. */
+const recordWGSL = (context) =>
+  context.addInitScript(() => {
+    window.__wgsl = []
+    const create = GPUDevice.prototype.createShaderModule
+    GPUDevice.prototype.createShaderModule = function (descriptor) {
+      window.__wgsl.push(descriptor.code)
+      return create.call(this, descriptor)
+    }
+  })
+
+/** The most textures a fragment stage declares, across the modules the page made: WebGPU allows 16. */
+const mostFragmentTextures = (codes) => Math.max(0, ...codes.filter((c) => c.includes('@fragment')).map((c) => (c.match(/var\s+\w+\s*:\s*texture_/g) ?? []).length))
+
+/** The mean of a picture's RGB, 0–255. */
+const meanOf = (page, png) =>
+  page.evaluate(async (src) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const g = c.getContext('2d')
+    g.drawImage(bitmap, 0, 0)
+    const p = g.getImageData(0, 0, c.width, c.height).data
+    let sum = 0
+    for (let i = 0; i < p.length; i += 4) sum += p[i] + p[i + 1] + p[i + 2]
+    return sum / (p.length / 4) / 3
+  }, `data:image/png;base64,${png.toString('base64')}`)
+
+/** Waits till the lights' and materials' compiles are done (render/gpu.ts gpuTestHooks.compiling): a new light shows after its compile. */
+const compiled = (page) => waitFor(async () => (await page.evaluate(() => window.__sceneGPU.compiling)) === 0 && (await page.evaluate(() => window.__sceneGPU.compiles)) > 0, 'compiled', 60_000)
+
+const caster = (name, order, light, position) => ({ id: gid(name), kind: 'light', name, order, transform: { position, rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: [1, 1, 1] }, light: { cast_shadow: true, ...light } })
+
+await check('C5c1: shadow budget, the worst case: sun, a full set of casters, an area light, glass and three maps stay within 16 textures and draw', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    await recordWGSL(context)
+    const server = new SceneServer()
+    stock(server)
+    realtimeGI(server.scene)
+    seed(server, [
+      boxOf('tex', 5, { position: [-1.2, 0, 0] }, { width: 1.5, height: 1.5, depth: 1.5 }, principledSlot({ metalness: 0.5 }, { maps: { base_color: map('ccr_checker'), normal: map('ccr_ridges'), roughness: map('ccr_stripes'), metalness: map('ccr_stripes'), ao: map('ccr_stripes') }, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 } })),
+      { id: gid('glass'), kind: 'primitive', name: '玻璃', order: 6, transform: { ...identity(), position: [1.2, 0.8, 0] }, primitive: { builtin: 'sphere@1', params: { radius: 0.8 } }, material_slots: { main: principledSlot({ transmission: 1, roughness: 0 }) } },
+      // The sun's four and these four fill the eight: three spots and an area light; the directional and the point after them do not fit.
+      caster('s1', 7, { type: 'spot', intensity: 80, angle: 0.6 }, [-2, 4, 2]),
+      caster('s2', 8, { type: 'spot', intensity: 80, angle: 0.6 }, [0, 4, 2]),
+      caster('s3', 9, { type: 'spot', intensity: 80, angle: 0.6 }, [2, 4, 2]),
+      caster('area', 10, { type: 'area', intensity: 2000, shape: 'rectangle', width: 1, height: 1 }, [0, 3.5, -1]),
+      caster('dir', 11, { type: 'directional', intensity: 2 }, [0, 5, 0]),
+      caster('bulb', 12, { type: 'point', intensity: 40 }, [0, 2.5, 2.5]),
+    ])
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await compiled(page)
+    const { box } = await viewportCenter(page)
+    const png = await settledShot(page, box)
+    if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c1-worst.png`, png)
+    // The textured box's: eight shadow maps, its three textures, the DFG, the environment and LTC's two. Without the budget, 17 or more.
+    const most = mostFragmentTextures(await page.evaluate(() => window.__wgsl))
+    assert.equal(most, 15, `a fragment stage declares ${most} textures`)
+    const mean = await meanOf(page, png)
+    assert.ok(mean > 30, `not black (mean ${mean.toFixed(1)})`)
+    for (const [name, over] of [['s3', false], ['area', false], ['dir', true], ['bulb', true]]) {
+      await page.getByRole('treeitem', { name: new RegExp(name) }).click()
+      const notice = page.getByRole('group', { name: '灯光' }).getByText('阴影超出上限')
+      assert.equal(await notice.count(), over ? 1 : 0, `${name}: ${over ? '' : 'not '}over the budget`)
+    }
+    assert.deepEqual(errors, [], 'no pipeline failed')
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('C5c1: shadow budget, the fourth directional light casting is left out, not a black screen', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    await recordWGSL(context)
+    const server = new SceneServer()
+    realtimeGI(server.scene)
+    seed(server, [
+      boxOf('box', 5, { position: [0, 0, 0] }, { width: 1.5, height: 1.5, depth: 1.5 }, principledSlot({})),
+      // With the sky's sun, four directional lights casting: the first of these fits, the others do not.
+      caster('d1', 6, { type: 'directional', intensity: 1 }, [0, 5, 0]),
+      caster('d2', 7, { type: 'directional', intensity: 1 }, [1, 5, 0]),
+      caster('d3', 8, { type: 'directional', intensity: 1 }, [-1, 5, 0]),
+    ])
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    await compiled(page)
+    const { box } = await viewportCenter(page)
+    const png = await settledShot(page, box)
+    const mean = await meanOf(page, png)
+    assert.ok(mean > 30, `not black (mean ${mean.toFixed(1)})`)
+    assert.ok(mostFragmentTextures(await page.evaluate(() => window.__wgsl)) <= 16)
+    for (const [name, over] of [['d1', false], ['d2', true], ['d3', true]]) {
+      await page.getByRole('treeitem', { name: new RegExp(name) }).click()
+      assert.equal(await page.getByRole('group', { name: '灯光' }).getByText('阴影超出上限').count(), over ? 1 : 0, name)
+    }
+    assert.deepEqual(errors, [])
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // --- scene-offscreen-reflections S1: the world-space layer ----------------------------------------------------
 
 /** Waits for the viewport's layer to be ready (render/trace/base.ts traceStats). */

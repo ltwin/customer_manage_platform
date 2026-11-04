@@ -12,7 +12,7 @@ import (
 func TestShadowStatesFollowTheObjectList(t *testing.T) {
 	cast, off := true, false
 	light := func(id, typ string, shadows *bool) Object {
-		return Object{ID: id, Kind: KindLight, Light: &Light{Type: typ, CastShadow: shadows}}
+		return Object{ID: id, Kind: KindLight, Visible: true, Light: &Light{Type: typ, CastShadow: shadows}}
 	}
 	objects := []Object{
 		light("spot", "spot", &cast),
@@ -21,7 +21,7 @@ func TestShadowStatesFollowTheObjectList(t *testing.T) {
 		light("rim", "area", &cast),
 		light("bulb", "point", &cast),
 		light("plain", "point", nil),
-		{ID: "box", Kind: KindPrimitive},
+		{ID: "box", Kind: KindPrimitive, Visible: true},
 	}
 	for sky, want := range map[string]map[string]string{
 		"procedural": {"spot": ShadowOn, "key": ShadowOverBudget, "fill": ShadowOff, "rim": ShadowOn, "bulb": ShadowOn, "plain": ShadowOff},
@@ -36,5 +36,28 @@ func TestShadowStatesFollowTheObjectList(t *testing.T) {
 	many := []Object{light("a", "directional", &cast), light("b", "directional", &cast), light("c", "point", &cast)}
 	if got := shadowStates(Scene{Environment: Environment{Sky: Sky{Kind: "color"}}, Objects: many}); got["a"] != ShadowOn || got["b"] != ShadowOn || got["c"] != ShadowOverBudget {
 		t.Errorf("two directionals fill the maps: %v", got)
+	}
+}
+
+// A light that is not drawn, hidden or in a hidden group, casts nothing and
+// leaves its maps to the next.
+func TestHiddenLightsTakeNoShadowMaps(t *testing.T) {
+	cast := true
+	group := func(id string, visible bool) Object { return Object{ID: id, Kind: KindGroup, Visible: visible} }
+	light := func(id, typ string, visible bool, parent *string) Object {
+		return Object{ID: id, Kind: KindLight, Visible: visible, ParentID: parent, Light: &Light{Type: typ, CastShadow: &cast}}
+	}
+	shut, open := "shut", "open"
+	objects := []Object{
+		light("hidden", "directional", false, nil),
+		light("boxed", "directional", true, &shut),
+		group(shut, false),
+		group(open, true),
+		light("key", "directional", true, &open),
+	}
+	got := shadowStates(Scene{Environment: Environment{Sky: Sky{Kind: "procedural"}}, Objects: objects})
+	want := map[string]string{"hidden": ShadowOff, "boxed": ShadowOff, "key": ShadowOn}
+	if !maps.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }

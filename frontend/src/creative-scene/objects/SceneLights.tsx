@@ -76,7 +76,7 @@ function useWarm(light: Object3D, warmed: boolean, shadows: boolean) {
  * (SceneGPU.compile), with the other lights of its commit, then shows. A
  * shot compiles its whole scene before shooting and passes warm false.
  */
-export function SceneLight({ light, warm: warmed }: { light: Light; warm: boolean }) {
+export function SceneLight({ light, warm: warmed, casts }: { light: Light; warm: boolean; casts: boolean }) {
   const invalidate = useThree((s) => s.invalidate)
   // A new type, or a size moving off 0 or back, builds a new light (objects/lights.ts lightKey).
   const key = lightKey(light)
@@ -84,10 +84,10 @@ export function SceneLight({ light, warm: warmed }: { light: Light; warm: boolea
   const built = useMemo(() => buildLight(light.type), [key])
   useLayoutEffect(() => {
     // An export's lights (warm false) draw an area light's shadow with an export's samples.
-    applyLight(built, light, !warmed)
+    applyLight(built, light, !warmed, casts)
     invalidate()
-  }, [built, light, warmed, invalidate])
-  useWarm(built.light, warmed, light.cast_shadow ?? false)
+  }, [built, light, warmed, casts, invalidate])
+  useWarm(built.light, warmed, casts)
   useEffect(() => () => disposeLight(built), [built])
   return (
     <>

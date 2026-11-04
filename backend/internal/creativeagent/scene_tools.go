@@ -68,7 +68,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: readSceneTool,
 			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
 				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。" +
-				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；模型 uv 为 false 表示有网格没有 UV，uv_fallback_slots 里选了 uv 映射的槽位因此按三平面显示；灯光带 shadow：on 投影、off 没开投影、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
+				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；模型 uv 为 false 表示有网格没有 UV，uv_fallback_slots 里选了 uv 映射的槽位因此按三平面显示；灯光带 shadow：on 投影、off 不投影（没开投影或灯被隐藏）、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":  doc,
 				"object_ids":   strs("只读这些物件的完整信息，最多 200 个"),
@@ -127,7 +127,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"alpha_mode：opaque（缺省，忽略贴图的透明通道）、clip（opacity × 基础色贴图的透明通道低于 alpha_cutoff 0–1，缺省 0.5，的部分挖掉，适合树叶、铁丝网）、blend（按半透明处理，适合玻璃贴花）。" +
 				"资产库里的材质：search_assets 按 kind:material 查到，用 read_asset 读到完整 slot 后原样写进某个槽位。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
-				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；柔光箱用面光源，如 0.6×0.9 m、500–2000 cd/m²（等效约 270–1100 cd），影子和高光比同强度的点光柔和；表面阴影共 8 张：程序天空和物理天空的太阳占 4 张，投影的平行光各占 4 张，点光、聚光、面光各占 1 张，按物件列表顺序放得下就投影；放不下的灯照常照亮但不投影，read_scene 里这盏灯的 shadow 为 over_budget（on 为投影、off 为没开投影），要它投影就关掉前面某盏灯的投影或调整物件顺序。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
+				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；柔光箱用面光源，如 0.6×0.9 m、500–2000 cd/m²（等效约 270–1100 cd），影子和高光比同强度的点光柔和；表面阴影共 8 张：程序天空和物理天空的太阳占 4 张，投影的平行光各占 4 张，点光、聚光、面光各占 1 张，按物件列表顺序放得下就投影；放不下的灯照常照亮但不投影，read_scene 里这盏灯的 shadow 为 over_budget（on 为投影、off 为不投影），隐藏的灯不占阴影，要它投影就关掉前面某盏灯的投影或调整物件顺序。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
 				"成批的相同小件（栅栏、砖、书本）写成一个代码模型（lib.array/radial），比逐个加基础体流畅得多；重复出现的东西放同一模型的多个实例。" +
 				"建议曝光：物理天空下摄像机和临时视点默认环境测光：按场景的环境光测光（不看画面，不随取景变），入夜后平滑变暗，只比正午暗 2–4 档（满月之夜约 2.5 档，新月之夜约 3.5 档，天空深蓝、看得见银河），入夜不必改曝光；" +
 				"要更亮或更暗写 exposure_compensation；测光看的是场景原点的天光，室内或浓荫下的取景偏暗，补偿 +1～+2。" +

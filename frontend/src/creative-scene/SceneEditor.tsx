@@ -73,6 +73,7 @@ import { readView, viewKey, ViewSaver } from './viewState.ts'
 import { probeRender } from './render/probe.ts'
 import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
+import { selectShadowCasters } from './objects/shadowBudget.ts'
 import { newCameraExposure } from './world/exposure.ts'
 import './scene.css'
 
@@ -1256,6 +1257,7 @@ export default function SceneEditor({
                       objects={shown.objects}
                       readOnly={readOnly}
                       display={display}
+                      shadow={selectShadowCasters(shown).get(shownActive.id)}
                       onLight={(light, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, light }] }], text, merge ? { merge } : undefined)}
                     />
                   )}

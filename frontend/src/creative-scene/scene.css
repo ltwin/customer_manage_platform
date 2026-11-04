@@ -213,6 +213,7 @@
 .cc-scene-slot-params { display: grid; gap: 4px; }
 .cc-scene-props fieldset.cc-scene-light, .cc-scene-props fieldset.cc-scene-materials, .cc-scene-environment fieldset { grid-template-columns: minmax(0, 1fr); }
 .cc-scene-light small, .cc-scene-environment small { font-size: 12px; }
+.cc-scene-light .cc-scene-shadow-over { color: var(--danger, #b42318); cursor: help; }
 .cc-scene-slider { display: grid; gap: 2px; }
 .cc-scene-slider input[type='range'] { width: 100%; accent-color: var(--accent); }
 .cc-scene-city { position: relative; }
