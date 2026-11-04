@@ -8793,7 +8793,7 @@ if (process.env.SCENE_E2E_TRACE) await check('C5c1: hits sample the slots’ tex
 // same byte for byte (layers given out in the keys' order), the pictures
 // apart by no more than the probes' own noise between two exports, which
 // cornell untextured has on develop as well (AC-S1-4 fails there, on
-// c4407a6a: reported to the owner 2026-11-03). The blocks plain change the mirror: the
+// c4407a6a: a known defect, owner 2026-11-03). The blocks plain change the mirror: the
 // export's hits sampled their arrays.
 if (process.env.SCENE_E2E_TRACE) await check('C5c1: lit exports through the layer with textures, laid out alike twice; the mirror shows the textures behind the camera', async () => {
   const gpu = await chromium.launch({ headless: true, args: metal })
