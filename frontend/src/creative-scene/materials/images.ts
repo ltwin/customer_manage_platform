@@ -34,12 +34,15 @@ export const longSide = 2048
 /** Images being fetched and decoded at once; the rest wait their turn. */
 const decodeAtOnce = 4
 const releaseAfterMs = 1000
+/** How long an original may take to come: admission goes in the order asked for, so one that hangs would hold up the rest. */
+export const fetchTimeoutMs = 120_000
 
 /**
  * What the textures may take on a device, in theoretical bytes: width ×
  * height × 4 with mipmaps (owner 2026-11-03). Every texture on the page
- * counts, as any device may draw any of them. A texture that does not fit
- * keeps its placeholder until others are released.
+ * counts, as any device may draw any of them, and the traced arrays of every
+ * device (reserveBudget). A texture that does not fit keeps its placeholder
+ * until others are released.
  */
 export const imageBudget = { bytes: 2 * 1024 ** 3 }
 
@@ -78,21 +81,19 @@ export const imagePlatform = {
   /**
    * An ORM from up to three layers, ambient occlusion, roughness and
    * metalness into red, green and blue, each scaled to width × height; a
-   * missing one is 1. Read through a 2D canvas, which premultiplies: a
-   * layer's colour channels are only as exact as its alpha allows.
+   * missing one is 1. Read as stored (readPixels): a 2D canvas would
+   * premultiply, losing a layer's colour channels where its alpha is low,
+   * as a metalness kept beside a smoothness in alpha is.
    */
   async compose(layers: readonly (Layer | null)[], width: number, height: number): Promise<Picture> {
-    const ctx = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!
     const out = new ImageData(width, height)
     out.data.fill(255)
-    const read = new Map<Picture, Uint8ClampedArray>()
+    const read = new Map<Picture, Uint8Array | Uint8ClampedArray>()
     layers.forEach((layer, i) => {
       if (!layer) return
       let src = read.get(layer.picture)
       if (!src) {
-        ctx.clearRect(0, 0, width, height)
-        ctx.drawImage(layer.picture as ImageBitmap, 0, 0, width, height)
-        src = ctx.getImageData(0, 0, width, height).data
+        src = pixelsOf(layer.picture as ImageBitmap, width, height)
         read.set(layer.picture, src)
       }
       const c = 'rgba'.indexOf(layer.channel)
@@ -103,6 +104,75 @@ export const imagePlatform = {
   placeholder(rgba: readonly [number, number, number, number]): unknown {
     return new ImageData(new Uint8ClampedArray(rgba), 1, 1)
   },
+}
+
+let reader: { gl: WebGL2RenderingContext; program: WebGLProgram } | null | undefined
+
+/**
+ * A picture's pixels scaled to width × height, rows from the top, as stored:
+ * drawn by WebGL2 with nothing premultiplied and read back. A page without
+ * WebGL2 reads through a 2D canvas, which premultiplies.
+ */
+function pixelsOf(picture: ImageBitmap, width: number, height: number): Uint8Array | Uint8ClampedArray {
+  reader ??= newReader()
+  if (!reader) {
+    const ctx = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!
+    ctx.drawImage(picture, 0, 0, width, height)
+    return ctx.getImageData(0, 0, width, height).data
+  }
+  const { gl, program } = reader
+  const source = gl.createTexture()
+  const target = gl.createTexture()
+  const fb = gl.createFramebuffer()
+  try {
+    gl.bindTexture(gl.TEXTURE_2D, source)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, picture)
+    // Layers are scaled up to the largest (sizeOf), never down: one level does.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.bindTexture(gl.TEXTURE_2D, target)
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0)
+    gl.viewport(0, 0, width, height)
+    gl.useProgram(program)
+    gl.uniform2f(gl.getUniformLocation(program, 'size'), width, height)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, source)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    // The image's top row went to the framebuffer's first, which readPixels gives first.
+    const pixels = new Uint8Array(width * height * 4)
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+    return pixels
+  } finally {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.deleteFramebuffer(fb)
+    gl.deleteTexture(source)
+    gl.deleteTexture(target)
+  }
+}
+
+function newReader(): { gl: WebGL2RenderingContext; program: WebGLProgram } | null {
+  const gl = typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('webgl2', { premultipliedAlpha: false, antialias: false, depth: false })
+  if (!gl) return null
+  const shader = (type: GLenum, source: string) => {
+    const s = gl.createShader(type)!
+    gl.shaderSource(s, source)
+    gl.compileShader(s)
+    return s
+  }
+  const program = gl.createProgram()
+  // One triangle over the target; each pixel samples the source at its centre.
+  gl.attachShader(program, shader(gl.VERTEX_SHADER, '#version 300 es\nvoid main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }'))
+  gl.attachShader(program, shader(gl.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; uniform sampler2D source; uniform vec2 size; out vec4 color; void main() { color = texture(source, gl_FragCoord.xy / size); }'))
+  gl.linkProgram(program)
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null
+  return { gl, program }
 }
 
 const part = (r: MapRef | undefined) => (r ? `${r.content_revision_id}.${r.channel ?? 'r'}` : '-')
@@ -160,6 +230,11 @@ function parse(key: TextureKey): { kind: Kind; parts: (Part | null)[] } {
   }
 }
 
+/** The image revisions a texture is made of. */
+export function textureRevisions(key: TextureKey): string[] {
+  return [...new Set(parse(key).parts.flatMap((p) => (p ? [p.revision] : [])))]
+}
+
 /** One image's revisions used as they are: a base colour, a normal map, or a standard ORM (one image, r g b in order). */
 function direct(kind: Kind, parts: readonly (Part | null)[]): boolean {
   if (kind !== 'orm') return true
@@ -201,13 +276,20 @@ async function limited<T>(job: () => Promise<T>): Promise<T> {
 /** Why an image could not be used, naming it. */
 class ImageError extends Error {}
 
+/** p, or a failure saying why once ms have gone by first. */
+function within<T>(ms: number, p: Promise<T>, why: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(why)), ms)))
+  return Promise.race([p, late]).finally(() => clearTimeout(timer))
+}
+
 /** The revision's pixels, decoded if no texture has them now; give them back with giveBack. */
 function borrow(revision: string): Promise<Picture> {
   const s = sources.get(revision)!
   s.borrowers++
   if (!s.picture) {
     const p = limited(async () => {
-      s.blob ??= imagePlatform.fetch(revision)
+      s.blob ??= within(fetchTimeoutMs, imagePlatform.fetch(revision), '原图下载超时')
       return imagePlatform.decode(await s.blob)
     })
     s.picture = p
@@ -226,7 +308,10 @@ function giveBack(revision: string) {
   const s = sources.get(revision)
   if (!s) return
   s.borrowers--
-  if (s.borrowers > 0 || !s.picture) return
+  if (s.borrowers > 0) return
+  // No texture wants it any more: it went while its pixels were coming (free).
+  if (s.refs === 0) sources.delete(revision)
+  if (!s.picture) return
   const p = s.picture
   s.picture = null
   p.then((x) => x.close(), () => {})
@@ -423,11 +508,33 @@ function free(e: Entry) {
   e.texture.dispose()
   for (const r of e.revisions) {
     const s = sources.get(r)
-    if (s && --s.refs === 0) sources.delete(r)
+    // One still borrowed goes when given back, its pixels closed then.
+    if (s && --s.refs === 0 && s.borrowers === 0) sources.delete(r)
   }
   if (e.state === 'failed' || e.state === 'over') publish()
-  // Room for those that did not fit, in the order they were asked for.
-  if (e.bytes > 0) for (const o of entries.values()) if (o.state === 'over') load(o)
+  if (e.bytes > 0) readmit()
+}
+
+/** Room for those that did not fit, in the order they were asked for. */
+function readmit() {
+  for (const o of entries.values()) if (o.state === 'over') load(o)
+}
+
+/**
+ * Bytes the page's other textures take from the image budget: the traced
+ * arrays (render/trace/maps.ts), counted with the images as the design's
+ * 「显存预算」 says. false when they do not fit; nothing is taken then.
+ */
+export function reserveBudget(bytes: number): boolean {
+  if (used + bytes > imageBudget.bytes) return false
+  used += bytes
+  return true
+}
+
+/** Gives back what reserveBudget took: textures that did not fit try again. */
+export function releaseBudget(bytes: number) {
+  used -= bytes
+  if (bytes > 0) readmit()
 }
 
 /** The texture for key, the same object every time; it shows a placeholder until its image is here. Release it with releaseTexture. */

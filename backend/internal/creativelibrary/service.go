@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -296,34 +297,38 @@ func FindModelAssetInTx(ctx context.Context, tx store.TxAccountScope, source str
 	return id, err == nil, err
 }
 
-// FindMaterialAssetInTx returns the content revision of the live material
-// asset whose slot is exactly this one (JSON equality, key order aside), if
-// there is one; where the slot came from is no part of it. Like
-// FindModelAssetInTx it reads the material assets first, under the caller's
-// library root lock.
-func FindMaterialAssetInTx(ctx context.Context, tx store.TxAccountScope, slot json.RawMessage) (string, bool, error) {
-	rows, err := tx.Query(ctx, "creative_assets", "content_revision_id", "kind='material' AND deleted_at IS NULL")
+// FindMaterialAssetsInTx returns the content revisions of the live material
+// assets whose slot is exactly this one (JSON equality, key order aside),
+// sorted; where the slot came from is no part of it. Like FindModelAssetInTx
+// it reads the material assets first, under the caller's library root lock.
+// Several can match (a copy made while another could not be shown): the
+// caller takes the first it can still use.
+func FindMaterialAssetsInTx(ctx context.Context, tx store.TxAccountScope, slot json.RawMessage) ([]string, error) {
+	revisions, err := queryStrings(ctx, tx, "creative_assets", "content_revision_id", "kind='material' AND deleted_at IS NULL")
+	if err != nil || len(revisions) == 0 {
+		return nil, err
+	}
+	hits, err := queryStrings(ctx, tx, "creative_content_revisions", "id", "id=ANY($2) AND payload->'material'->'slot'=$3::jsonb", revisions, string(slot))
+	slices.Sort(hits)
+	return hits, err
+}
+
+// queryStrings reads one text column of the matching rows.
+func queryStrings(ctx context.Context, tx store.TxAccountScope, table, column, cond string, args ...any) ([]string, error) {
+	rows, err := tx.Query(ctx, table, column, cond, args...)
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
 	defer rows.Close()
-	var revisions []string
+	var out []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return "", false, err
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
 		}
-		revisions = append(revisions, id)
+		out = append(out, v)
 	}
-	if err := rows.Err(); err != nil || len(revisions) == 0 {
-		return "", false, err
-	}
-	var id string
-	err = tx.QueryRow(ctx, "creative_content_revisions", "id", "id=ANY($2) AND payload->'material'->'slot'=$3::jsonb", revisions, string(slot)).Scan(&id)
-	if errors.Is(err, store.ErrNoRows) {
-		return "", false, nil
-	}
-	return id, err == nil, err
+	return out, rows.Err()
 }
 
 // ResolveAssetsInTx locks the library and selected asset before canvas locks.

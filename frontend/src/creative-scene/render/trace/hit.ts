@@ -342,7 +342,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     return normalize(select(min(wA, min(wB, wC)).lessThan(0), faceObject, smooth))
   }
 
-  /** Whether a hit is on a clip slot's face where its base colour's alpha is below the cutoff (the raster's alphaTest), sampled at its finest level. */
+  /** Whether a hit is on a clip slot's face where its base colour's alpha is below the cutoff (the raster's mask), sampled at its finest level. */
   function cutAt(hit: Hit, P: TSLNode): TSLNode {
     const cut = float(0).toVar()
     if (!maps) return cut

@@ -6,7 +6,7 @@ import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { assetMaterial } from '../../creative-canvas/viewer/modelInfo.ts'
 import type { ParamSpec } from '../builtins/catalog.ts'
 import { materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
-import { imageStatus } from '../materials/images.ts'
+import { imageStatus, textureRevisions, type TextureKey } from '../materials/images.ts'
 import { assignmentOf, readClipboard, setSlot, shownSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
 import { modelCache, type MeshConstants, type SceneModel } from '../models/cache.ts'
 import { applyBuiltinFaces } from '../models/faces.ts'
@@ -137,9 +137,10 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   /** Why an image cannot be drawn: the server says it is gone, or this page could not load it or had no room for it (images.ts). */
   const unusable = (revision: string): string | null => {
     if (images?.[revision]?.usable === false) return '图片不可用：已被删除或无权读取'
-    const failed = Object.values(loading.failed).find((why) => why.includes(revision))
-    if (failed) return failed
-    if (loading.over.some((key) => key.includes(revision))) return '贴图超出显存预算，暂按材质参数显示'
+    // By the textures' own revisions. Their messages name revisions for an export's failure (host/render.ts), not for the panel.
+    const uses = (key: TextureKey) => textureRevisions(key).includes(revision)
+    if (Object.keys(loading.failed).some(uses)) return '图片加载失败，暂按材质参数显示'
+    if (loading.over.some(uses)) return '贴图超出显存预算，暂按材质参数显示'
     return null
   }
   /** Whether a slot's geometry has UVs: a primitive's always; a model's once its parts are in. */

@@ -8,8 +8,9 @@ import type { Texturing } from './resolve.ts'
 // test runs the same functions on numbers.
 //
 // Coordinates follow Blender: a projection's plane coordinates are (u, w)
-// with w up, and the Mapping node's point type rotates them after scaling;
-// textures keep their rows from the top (images.ts), so the texture
+// with w up. UV mapping is the Mapping node's point type, rotating after
+// scaling; box projection rotates the plane in metres first and scales after,
+// so a tile that is not square keeps its shape at any rotation; textures keep their rows from the top (images.ts), so the texture
 // coordinate is (u', 1 − w'). Box projection maps each axis as Cycles does
 // (svm_image.h), u mirrored on the faces where a texture would read
 // backwards. Normal maps are tangent space, OpenGL's way (+Y up, as glTF and
@@ -67,11 +68,19 @@ export function mappingOf(t: Texturing | undefined): Mapping {
 /** A mapping's numbers as the shader reads them: scale (texture units per plane unit, u and w), the rotation's cosine and sine, the normal strength. */
 export type MappingIn<N> = { scale: N; cos: N; sin: N; strength: N }
 
-/** Plane coordinates (u, w) → the rotated, scaled ones (u', w'): Blender's Mapping node, point type. */
-function mapped<N>(k: Kit<N>, b: N, m: MappingIn<N>): N {
-  const s = k.mul(b, m.scale)
-  return k.vec2(k.sub(k.mul(k.x(s), m.cos), k.mul(k.y(s), m.sin)), k.add(k.mul(k.x(s), m.sin), k.mul(k.y(s), m.cos)))
-}
+const rotated = <N>(k: Kit<N>, s: N, m: MappingIn<N>): N => k.vec2(k.sub(k.mul(k.x(s), m.cos), k.mul(k.y(s), m.sin)), k.add(k.mul(k.x(s), m.sin), k.mul(k.y(s), m.cos)))
+
+/** UV coordinates (u, w) → the scaled, rotated ones (u', w'): Blender's Mapping node, point type. */
+const mapped = <N>(k: Kit<N>, b: N, m: MappingIn<N>): N => rotated(k, k.mul(b, m.scale), m)
+
+/**
+ * Box projection's plane coordinates in metres → (u', w'): turned in metres,
+ * then scaled to texture units. The scale carries the image's aspect
+ * (instances.ts), so scaling after keeps a tile as wide and as tall as its
+ * image says whatever the rotation, and keeps (u', w')'s axes square on the
+ * surface, which unrotated takes for its slopes.
+ */
+const boxMapped = <N>(k: Kit<N>, b: N, m: MappingIn<N>): N => k.mul(rotated(k, b, m), m.scale)
 
 /** Where (u', w') samples a texture whose rows run from the top. */
 const texel = <N>(k: Kit<N>, b: N): N => k.vec2(k.x(b), k.sub(k.num(1), k.y(b)))
@@ -137,7 +146,7 @@ export function triplanar<N>(k: Kit<N>, docPos: N, docNormal: N, m: MappingIn<N>
   const blend = (which: MapKind, f: (rgba: N, plane: (typeof planes)[number]) => N, none: N): N => {
     let sum: N | null = null
     for (const p of planes) {
-      const v = k.mul(f(sample(which, texel(k, mapped(k, p.b, m)), k.x(m.scale)), p), p.weight)
+      const v = k.mul(f(sample(which, texel(k, boxMapped(k, p.b, m)), k.x(m.scale)), p), p.weight)
       sum = sum === null ? v : k.add(sum, v)
     }
     return sum ?? none

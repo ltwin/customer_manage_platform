@@ -3508,6 +3508,18 @@ await check('C5c1 panel: a base colour map from the library is one revision, UV 
   assert.equal(slot().alpha_mode, 'clip')
   await fields.getByText('没有透明贴图，裁切只看不透明度').waitFor()
 
+  // The picker keeps its keys: Cmd+Z in it is not the scene's undo, Tab goes round it, Escape gives focus back.
+  await base.getByRole('button', { name: '选择' }).click()
+  await dialog.getByRole('button', { name: '取消' }).focus()
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await page.waitForTimeout(500)
+  assert.equal(server.commands.length, 5, 'no undo from inside the picker')
+  await page.keyboard.press('Tab')
+  assert.ok(await dialog.evaluate((d) => d.contains(document.activeElement)), 'Tab stays in the picker')
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'detached' })
+  assert.equal(await base.getByRole('button', { name: '选择' }).evaluate((b) => b === document.activeElement), true, 'focus back on 选择')
+
   // From the canvas the scene sits on.
   await base.getByRole('button', { name: '选择' }).click()
   await dialog.getByRole('tab', { name: '画布' }).click()

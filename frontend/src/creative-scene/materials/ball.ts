@@ -1,4 +1,5 @@
 import { SphereGeometry } from 'three'
+import { uvFromTop } from '../builtins/geometry.ts'
 
 // The material ball a material asset is shown on (C5c1 design「材质资产的存入
 // 与使用」): its card thumbnail and the library viewer's 3D preview. A sphere
@@ -14,6 +15,6 @@ let shared: SphereGeometry | null = null
 
 /** The ball's geometry, made once and never disposed: every ball is the same. */
 export function ballGeometry(): SphereGeometry {
-  shared ??= new SphereGeometry(0.5, 96, 48)
+  shared ??= uvFromTop(new SphereGeometry(0.5, 96, 48)) as SphereGeometry
   return shared
 }

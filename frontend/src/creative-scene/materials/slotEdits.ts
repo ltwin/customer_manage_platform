@@ -68,6 +68,8 @@ export function assignmentOf(r: ResolvedSlot): MaterialSlot | null {
 /** The five image inputs, in the panel's order. */
 export const mapInputs = ['base_color', 'normal', 'roughness', 'metalness', 'ao'] as const
 export type MapInput = (typeof mapInputs)[number]
+/** The inputs as the panel names them, Blender's names. */
+export const mapInputLabel: Record<MapInput, string> = { base_color: '基础色', normal: '法线', roughness: '糙度', metalness: '金属度', ao: 'AO' }
 /** The inputs that read one channel of their image. */
 export type ChannelInput = 'roughness' | 'metalness' | 'ao'
 export const isChannelInput = (i: MapInput): i is ChannelInput => i === 'roughness' || i === 'metalness' || i === 'ao'

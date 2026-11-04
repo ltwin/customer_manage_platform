@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import type { SceneObject } from '../api.ts'
 import { ballBounds, ballGeometry } from '../materials/ball.ts'
-import { loadSlotImages } from '../materials/images.ts'
+import { imageStatus, loadSlotImages, textureRevisions, type ImageHold } from '../materials/images.ts'
+import { mapInputLabel, mapInputs } from '../materials/slotEdits.ts'
+import { ThumbnailError } from '../saveModel.ts'
 import { drawnGeometries, keyOf, materialFor } from '../materials/instances.ts'
 import { onGeometry, resolvePart, resolveSlot } from '../materials/resolve.ts'
 import type { ModelParts } from '../models/cache.ts'
@@ -16,13 +18,31 @@ import type { Manifest } from '../sandbox/inspect.ts'
 // material asset's is its slot on the material ball, lit the same. Slots
 // without a material resolve as the viewport resolves them. Drawn once the
 // slots' images are in (C5c1 design「等图片就绪」); one that does not load
-// fails the thumbnail, saying which.
+// fails the thumbnail, saying which slot's which texture (ThumbnailError).
 
 type Slots = NonNullable<SceneObject['material_slots']>
 type Slot = Slots[string]
 
+/**
+ * The slots' images held for drawing; failing, a ThumbnailError naming the
+ * textures whose image failed or did not fit the budget (named by the slot
+ * when there are several: a model's), not the revisions the cache's own
+ * errors name.
+ */
+function slotImages(slots: Slots): Promise<ImageHold> {
+  return loadSlotImages(slots).catch(() => {
+    const { failed, over } = imageStatus.getState()
+    const gone = new Set([...Object.keys(failed), ...over].flatMap(textureRevisions))
+    const many = Object.keys(slots).length > 1
+    const named = Object.entries(slots).flatMap(([id, slot]) =>
+      mapInputs.filter((i) => gone.has(slot.maps?.[i]?.content_revision_id ?? '')).map((i) => (many ? `${id} 的${mapInputLabel[i]}` : mapInputLabel[i])),
+    )
+    throw new ThumbnailError(`${named.length ? named.join('、') : '部分'}贴图的图片加载失败或超出显存预算`)
+  })
+}
+
 export async function renderMaterialThumbnail(parts: ModelParts, manifest: Manifest, materials: Slots): Promise<Blob> {
-  const images = await loadSlotImages(materials)
+  const images = await slotImages(materials)
   try {
     return await draw(parts, manifest, materials)
   } finally {
@@ -32,7 +52,7 @@ export async function renderMaterialThumbnail(parts: ModelParts, manifest: Manif
 
 /** A material asset's card thumbnail: the slot on the material ball, lit as a model's is. */
 export async function renderMaterialBall(slot: Slot): Promise<Blob> {
-  const images = await loadSlotImages({ main: slot })
+  const images = await slotImages({ main: slot })
   try {
     const scene = lit()
     const drawn = resolveSlot('main', { main: slot }, null, null).material

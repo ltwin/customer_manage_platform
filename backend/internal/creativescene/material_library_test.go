@@ -146,6 +146,14 @@ func TestSaveMaterialToLibrary(t *testing.T) {
 	if got := readScene(t, f.a, doc).object(t, third).MaterialSlots["floor"]; !reflect.DeepEqual(got, p.Slot) {
 		t.Fatalf("placed slot %+v", got)
 	}
+
+	// A same material that can no longer be shown is passed over: a new one, not a failure.
+	if _, err := f.db.Exec(`UPDATE creative_content_revisions SET state='deleting' WHERE id=$1`, created.ContentRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if status, out := save(id, stage(t, f, f.a, "image"), "重存"); status != 201 || out.Reused || out.ID == created.ID {
+		t.Fatalf("over an unusable copy %d %+v", status, out)
+	}
 }
 
 func TestSaveMaterialToLibraryRejections(t *testing.T) {

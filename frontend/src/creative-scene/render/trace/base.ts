@@ -44,7 +44,7 @@ import { TraceTables } from './tables.ts'
 export type TraceStatus =
   | { state: 'off'; reason: 'compatibility' | 'device' | 'disabled' }
   | { state: 'preparing'; done: number; total: number }
-  /** mapsOver: textures past the device's array layers, drawn with their slots' constants (maps.ts). */
+  /** mapsOver: textures past the device's array layers or the image budget, drawn with their slots' constants (maps.ts). */
   | { state: 'ready'; tier: 'full' | 'proxy'; pending: number; mapsOver?: number }
   | { state: 'tooLarge' }
   | { state: 'failed' }

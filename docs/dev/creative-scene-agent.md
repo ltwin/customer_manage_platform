@@ -100,13 +100,13 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 - 材质贴图（C5c1，scene-pbr-textures）：
   - 数据：原理化槽位的 `maps`（`base_color`、`normal`、`roughness`、`metalness`、`ao`，各是图片的 `content_revision_id`，后三种带 `channel`）、`mapping`（`triplanar` 的 `size_m` 或 `uv` 的 `repeat`，都有 `rotation_deg`、`normal_strength`）、`alpha_mode`（`opaque` / `clip` / `blend`）与 `alpha_cutoff`；服务端 `validateSlots` 补齐缺省，写入事务里校验图片（本账号、`image`、`ready`、可展示，`creativescene/images.go`），引用登记进 `creative_document_content_refs`，一个场景最多 64 张不同的图片（413）。`read_scene` 与 `GET /documents/{id}` 带 `images`（宽高、MIME、`usable`）。
   - 图片缓存：`materials/images.ts` 分源图与纹理两层，纹理按 `TextureKey`（`color:`、`normal:`、`orm:`）共享、引用计数、延迟释放；同时最多解码 4 张；每个设备 2 GiB 字节预算，按请求顺序准入，超出的保持占位并列在 `imageStatus.over`（面板显示「贴图超出显存预算」）。像素取 `original` 角色的原图（展示图是有损 JPEG、没有透明通道）。
-  - 光栅：`materials/maps.ts` 构建三平面与 UV 映射的节点，三平面法线按表面梯度混合；`principled.ts:renderPolicy` 决定透视与混合方式（取代原来的 `seeThrough`）；`clip` 用 `alphaTestNode`，阴影用 `maskShadowNode`（three r186 的阴影 pass 不读 `alphaTestNode`）。白模和线稿不看材质。没有 UV 的模型选了 UV 映射时按三平面画（`resolve.ts:onGeometry`）。
+  - 光栅：`materials/maps.ts` 构建三平面与 UV 映射的节点，三平面法线按表面梯度混合；`principled.ts:renderPolicy` 决定透视与混合方式（取代原来的 `seeThrough`）；`clip` 用 `maskNode`（保留 alpha ≥ 阈值，与阴影的 `maskShadowNode` 和光追同向；three 的 `alphaTestNode` 保留的是 > 阈值），阴影用 `maskShadowNode`（three r186 的阴影 pass 不读材质的 mask 和 alpha test）。白模和线稿不看材质。没有 UV 的模型选了 UV 映射时按三平面画（`resolve.ts:onGeometry`）。
   - 世界空间层：`render/trace/maps.ts:TraceMaps` 每个设备三张纹理数组（视口每层 512²、导出 1024²），层号按 `TextureKey` 分配；`hit.ts` 在命中点用同一映射函数按光线锥的梯度采样，`clip` 被裁掉时继续追，最多再追 4 次。超出 `maxTextureArrayLayers` 时退回常数参数并提示。
   - 等图片：视口先按材质参数画，图片到了再重绘；`host/render.ts:openShooter` 挂载 `lit` 前调用 `loadSceneImages`，失败时这张图失败，原因是「场景贴图不可用：…」并写明是哪张图片（`SCENE_IMAGES_FAILED`）；资产缩略图与资产库 3D 预览也先等图片。
   - 表面阴影上限：`objects/shadowBudget.ts:selectShadowCasters` 按固定顺序（天空太阳，再按物件列表顺序选打开投影的灯）选出最多 8 张阴影贴图的灯，与后端 `creativescene/shadows.go` 规则相同；落选的灯照常照亮、不投影，属性面板显示「阴影超出上限」，`read_scene` 标 `shadow: "over_budget"`。
   - 编辑器：`panels/TextureFields.tsx`（五个贴图输入、通道、映射、透明方式）与 `panels/LibraryPicker.tsx`（资产库、画布、上传三个来源；上传的文件进资产库）。槽位编辑在 `materials/slotEdits.ts`，复制材质连同贴图一起复制。
   - 材质资产：`POST /creative/assets/from-scene-material` 把一个槽位复制成 `material` 资产，载荷 `material.slot` 完全相同时复用；缩略图是 256 px 材质球（`materials/ball.ts`、`library/thumbnail.ts:renderMaterialBall`）。存入弹框与模型共用 `creative-canvas/editor/SaveModelDialog.tsx`。用到槽位不经接口：资产面板切到「材质」，拖到视图里的物件（落到指针下那个面的槽位，`SlotMesh` 的 `userData.slot`、`Viewport` 的 `surfaceAt`）或属性栏的槽位，或在槽位上点「材质资产…」，前端把载荷复制进 `material_slots` 走 `update_objects`。资产库页的查看浮窗用 `preview/MaterialPreview.tsx`。
-  - 持有关系：材质资产和带贴图的模型库副本经 `creative_content_revision_refs`（`role = texture`）持有图片，持有方没删除时图片不被回收；助手经可读的持有方可以使用其中的图片（`readableRevisionInTx` 最后一个分支，只查一层，撤销优先）。
+  - 持有关系：材质资产和带贴图的模型库副本经 `creative_content_revision_refs`（`role = texture`）持有图片，持有方没删除时图片不被回收；助手经可读的持有方可以把其中的图片写进场景槽位（`context.go:textureReadableInTx`，只有 `edit_scene` 用，只查一层，撤销优先）；读取像素、放到画布、消息引用仍按通用的 `readableRevisionInTx`，不经持有方放宽。
 
 ### 编辑视图
 
@@ -188,5 +188,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
   - 带探针的场景两次导出不逐像素相同（cornell 最多差约 10–19 级，超 8 级的像素 < 0.0001%），develop 上不带贴图时就如此，属探针管线已有的不确定性，不是贴图引入的；owner 2026-11-03 定为已知缺陷。新写的导出确定性检查按图层 digest 逐字节、画面「超 8 级 ≤ 0.01%」判。
   - 材质资产不记录被哪些场景用过（复制语义）；用到槽位之后与资产没有关联。
   - 三平面投影在球面等曲面上能看出三个方向混合的过渡带，与 Blender 的 Box 投影（blend 0.2）相当。
+  - 材质预览（workbench）的预渲染用统一的覆盖材质，three 不复制 `maskNode`，`clip` 挖空处按实心写深度：AO、空气透视和体积在镂空处按叶片的深度算。最终渲染、`lit` 导出和阴影不受影响。AO 部分 owner 2026-11-03 定为已知边界；空气透视与体积是 code review 2026-11-04 补的，待 owner 决定。
+  - 远处的 `clip` 镂空，光栅按屏幕 mip 平均后的 alpha 判断，世界空间层取最细一级，两边会有差异；近处一致。
 - 相机视图不跟随摄像机的滚转（视口保持 Z 朝上）；用 `look_at`、「添加摄像机」或 Ctrl+Alt+0 摆的机位没有滚转。
 - 编辑视图不区分任务排队与执行中（认领不发通知），两种状态显示一样。

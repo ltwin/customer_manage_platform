@@ -25,6 +25,9 @@ export type SaveTarget = {
   name: string
 }
 
+/** A card thumbnail that could not be drawn for a reason the photographer can act on; the message says which textures. */
+export class ThumbnailError extends Error {}
+
 export type SaveModelRequest = {
   kind?: 'model'
   documentID: string

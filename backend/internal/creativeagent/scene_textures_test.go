@@ -142,6 +142,14 @@ func TestTexturesUseImagesTheRunMayRead(t *testing.T) {
 	if out, err := paintBox(t, h, doc, "held", held); err != nil {
 		t.Fatalf("an image the material asset holds was refused: %s %v", out, err)
 	}
+	// The holder lends the image to slots, not its pixels: reading it or
+	// putting it on the canvas is still refused.
+	if out, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":100}`, held)); err == nil {
+		t.Fatalf("read_asset of an image only a material holds: %s", out)
+	}
+	if out, err := h.editCanvas(t.Context(), f.canvasID, "place-held", fmt.Sprintf(`{"actions":[{"type":"add_node","key":"a","node_type":"image","content_revision_id":%q}]}`, held)); err == nil {
+		t.Fatalf("an image only a material holds was put on the canvas: %v", out)
+	}
 
 	// Once the scene shows it, copying it to another slot asks nothing, even
 	// after the material holding it is gone.

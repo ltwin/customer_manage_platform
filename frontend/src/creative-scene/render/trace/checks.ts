@@ -112,8 +112,7 @@ function clipAs(material: MeshBasicNodeMaterial, slot: SlotMaterial) {
   const t = slotTextures(material, slot.texturing)
   const cutoff = renderPolicy(slot).alphaCutoff
   if (cutoff !== null) {
-    material.opacityNode = float(Number(slot.params.opacity ?? 1)).mul(t.color.w)
-    material.alphaTestNode = float(cutoff)
+    material.maskNode = float(Number(slot.params.opacity ?? 1)).mul(t.color.w).greaterThanEqual(Math.max(cutoff, 1e-6))
   }
   return t
 }

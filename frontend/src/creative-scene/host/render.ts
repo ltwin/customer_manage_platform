@@ -181,7 +181,12 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
     // The real-time GI's lit pictures draw the world-space layer: the device's base packed before the first (D7).
     const traced = (on: Look) => on === 'lit' && effectiveEngine(engineOf(scene.render), 'lit', true) === 'realtime_gi'
     const traceReady = async (on: Look) => {
-      if (traced(on) && !(await traceBase(g, three, { incremental: false }).ready(traceWaitMs))) throw new TraceNotReady()
+      if (!traced(on)) return
+      const base = traceBase(g, three, { incremental: false })
+      if (!(await base.ready(traceWaitMs))) throw new TraceNotReady()
+      // Textures past the arrays' layers or the budget: not a picture missing them (design「显存预算」).
+      const s = base.state
+      if (s.state === 'ready' && s.mapsOver) throw new Error(`${SCENE_IMAGES_FAILED}：${s.mapsOver} 张贴图超出纹理数组的层数或显存预算，屏幕外的光照与反射画不出它们`)
     }
     // Materials compile now, in parallel where the browser can, not inside the first shot.
     await g.compile(three, camera)

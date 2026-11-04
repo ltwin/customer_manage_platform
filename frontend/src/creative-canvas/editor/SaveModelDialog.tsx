@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { components } from '../../api/schema'
 import { ApiError } from '../../api/transport.ts'
-import type { SaveRequest } from '../../creative-scene/saveModel.ts'
+import { ThumbnailError, type SaveRequest } from '../../creative-scene/saveModel.ts'
 import * as api from './api.ts'
 import StudioDialog from './StudioDialog.tsx'
 
 type Result = components['schemas']['CreativeAssetCreateResult']
+type ModelPayload = components['schemas']['CreativeAssetFromSceneModelPayload']
+type MaterialPayload = components['schemas']['CreativeAssetFromSceneMaterialPayload']
+/** 两种请求共有的字段。 */
+type Common = Pick<ModelPayload & MaterialPayload, 'document_id' | 'object_id' | 'expected_object_rev' | 'thumbnail_upload_id' | 'target'>
 type Phase = 'ready' | 'rendering' | 'saving' | 'refreshing' | 'blocked'
 type Props = {
   request: SaveRequest
@@ -27,7 +31,7 @@ export default function SaveModelDialog({ request, ...rest }: Props) {
       request={request}
       noun="材质"
       endpoint="/assets/from-scene-material"
-      extra={(t) => ({ slot_id: t.slotID })}
+      payload={(t, common): MaterialPayload => ({ ...common, slot_id: t.slotID })}
       note="保存这个槽位的材质参数、贴图和映射；用到别的槽位时复制一份，之后互不影响。同样的材质已在库中时只追加归类。"
     />
   ) : (
@@ -36,7 +40,7 @@ export default function SaveModelDialog({ request, ...rest }: Props) {
       request={request}
       noun="模型"
       endpoint="/assets/from-scene-model"
-      extra={() => ({})}
+      payload={(_, common): ModelPayload => common}
       note="保存模型、参数和材质；位置、旋转和缩放不随资产保存。同一模型配同样的材质已在库中时只追加归类。"
     />
   )
@@ -52,7 +56,7 @@ function SaveDialog<T extends Target>({
   request,
   noun,
   endpoint,
-  extra,
+  payload: build,
   note,
   groupField,
   groupName,
@@ -67,8 +71,8 @@ function SaveDialog<T extends Target>({
   }
   noun: string
   endpoint: string
-  /** 请求里这一种独有的字段。 */
-  extra: (target: T) => Record<string, string>
+  /** 这一种的请求体：共有字段加上它独有的。 */
+  payload: (target: T, common: Common) => ModelPayload | MaterialPayload
   note: string
 }) {
   const [target, setTarget] = useState<T>(request.target)
@@ -103,23 +107,22 @@ function SaveDialog<T extends Target>({
       setPhase('rendering')
       try {
         thumbnailID = await request.thumbnail(target, signal)
-      } catch {
+      } catch (err) {
         if (signal.aborted) return
         setPhase('ready')
-        setMessage('缩略图生成失败，没有存入，可以重试')
+        setMessage(err instanceof ThumbnailError ? `缩略图生成失败：${err.message}，没有存入，可以重试` : '缩略图生成失败，没有存入，可以重试')
         return
       }
       if (signal.aborted) return
       thumbnail.current = { target, id: thumbnailID }
     }
-    const payload: components['schemas']['CreativeAssetFromSceneModelPayload'] = {
+    const payload = build(target, {
       document_id: request.documentID,
       object_id: target.objectID,
-      ...extra(target),
       expected_object_rev: target.unitRev,
       thumbnail_upload_id: thumbnailID,
       target: { title: name, group_ids: groupID ? [groupID] : [] },
-    }
+    })
     const key =
       attempt.current?.body === JSON.stringify(payload)
         ? attempt.current.key

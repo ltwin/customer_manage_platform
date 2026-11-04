@@ -4,6 +4,7 @@ import { mediaTicket } from '../../creative-canvas/editor/media.ts'
 import { defaultAlphaCutoff } from '../materials/resolve.ts'
 import {
   isChannelInput,
+  mapInputLabel,
   mapInputs,
   withAlpha,
   withChannel,
@@ -17,7 +18,6 @@ import {
 import { ImagePicker } from './LibraryPicker.tsx'
 import { NumberField } from './Properties.tsx'
 
-const inputLabel: Record<MapInput, string> = { base_color: '基础色', normal: '法线', roughness: '糙度', metalness: '金属度', ao: 'AO' }
 const channels: Channel[] = ['r', 'g', 'b', 'a']
 const alphaLabel: Record<AlphaMode, string> = { opaque: '不透明', clip: '透明裁切', blend: '半透明混合' }
 
@@ -70,7 +70,7 @@ export function TextureFields({
     <div className="cc-scene-textures" role="group" aria-label={`${slot} 的贴图`}>
       {mapInputs.map((input) => {
         const map = maps[input]
-        const label = inputLabel[input]
+        const label = mapInputLabel[input]
         const why = map ? unusable(map.content_revision_id) : null
         return (
           <div key={input} className="cc-scene-map" role="group" aria-label={`${label}贴图`}>
@@ -162,13 +162,13 @@ export function TextureFields({
       </div>
       {picking && (
         <ImagePicker
-          title={`选择${inputLabel[picking]}贴图`}
+          title={`选择${mapInputLabel[picking]}贴图`}
           canvasID={canvasID}
           onClose={() => setPicking(null)}
           onPick={(revision) => {
             const input = picking
             setPicking(null)
-            onEdit(`设置${inputLabel[input]}贴图`, (x) => withMap(x, input, revision))
+            onEdit(`设置${mapInputLabel[input]}贴图`, (x) => withMap(x, input, revision))
           }}
         />
       )}

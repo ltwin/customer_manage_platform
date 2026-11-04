@@ -1,10 +1,12 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { NoColorSpace, SRGBColorSpace, type Texture } from 'three'
+import type { WebGPURenderer } from 'three/webgpu'
 import type { Scene } from '../src/creative-scene/api.ts'
 import {
   acquireTexture,
   budgetUsed,
+  fetchTimeoutMs,
   imageBudget,
   imagePlatform,
   imageStatus,
@@ -18,6 +20,7 @@ import {
   type Layer,
   type Picture,
 } from '../src/creative-scene/materials/images.ts'
+import { TraceMaps } from '../src/creative-scene/render/trace/maps.ts'
 
 // materials/images.ts with the browser stood in for: fetching gives the
 // revision back as the file, decoding makes a picture named after it, and
@@ -29,6 +32,8 @@ const fake = (name: string, width: number, height: number): Fake => ({ name, wid
 let decodes: string[] = []
 let composed: (string | null)[][] = []
 let failing = new Set<string>()
+let hanging = new Set<string>()
+let made: Fake[] = []
 let sizes: Record<string, [number, number]> = {}
 let gates = new Map<string, Promise<void>>()
 let decodingNow = 0
@@ -36,6 +41,7 @@ let mostAtOnce = 0
 
 imagePlatform.fetch = async (revision) => {
   if (failing.has(revision)) throw new Error('HTTP 404')
+  if (hanging.has(revision)) return new Promise<never>(() => {})
   return new Blob([revision])
 }
 imagePlatform.decode = async (blob) => {
@@ -46,7 +52,9 @@ imagePlatform.decode = async (blob) => {
   await gates.get(revision)
   decodingNow--
   const [w, h] = sizes[revision] ?? [2, 2]
-  return fake(revision, w, h)
+  const picture = fake(revision, w, h)
+  made.push(picture)
+  return picture
 }
 imagePlatform.compose = async (layers: readonly (Layer | null)[], width, height) => {
   composed.push(layers.map((l) => l && `${(l.picture as Fake).name}.${l.channel}`))
@@ -59,6 +67,8 @@ function fresh(t: TestContext) {
   decodes = []
   composed = []
   failing = new Set()
+  hanging = new Set()
+  made = []
   sizes = {}
   gates = new Map()
   decodingNow = 0
@@ -248,4 +258,85 @@ test('a scene samples the principled slots\' maps, each texture once, sorted', (
   const scene = sceneOf({ base_color: img('ccr_b'), metalness: img('ccr_m', 'b') }, { base_color: img('ccr_a'), normal: img('ccr_n') }, { base_color: img('ccr_b') })
   ;(scene.objects[0].material_slots as Record<string, unknown>).brick = { preset: 'stone_brick@1', params: {}, maps: { base_color: img('ccr_x') } }
   assert.deepEqual(sceneTextureKeys(scene), ['color:ccr_a', 'color:ccr_b', 'normal:ccr_n', 'orm:-|-|ccr_m.b'])
+})
+
+test('the traced arrays count in the budget: a grown one old and new both till copied, a key whose array does not fit is over', async (t) => {
+  fresh(t)
+  const budget = imageBudget.bytes
+  t.after(() => (imageBudget.bytes = budget))
+  sizes = { ccr_a: [4, 4], ccr_b: [4, 4], ccr_c: [4, 4] }
+  const keys = ['color:ccr_a', 'color:ccr_b', 'color:ccr_c']
+  const images = 3 * textureBytes(4, 4)
+  // A layer 8² as the arrays have it; the third key grows the array from two layers to three.
+  const [two, three] = [2, 3].map((n) => n * textureBytes(8, 8))
+  const device = { initTexture() {}, getRenderTarget: () => null, setRenderTarget() {}, copyTextureToTexture() {}, render() {} } as unknown as WebGPURenderer
+  const traced = async () => {
+    const maps = new TraceMaps(() => device, 8, 256)
+    maps.update(keys)
+    await flush()
+    maps.update(keys)
+    return maps
+  }
+
+  imageBudget.bytes = images + two + three - 1
+  const short = await traced()
+  assert.deepEqual(short.over, ['color:ccr_c'], 'the three-layer array does not fit beside the two-layer one it is copied from')
+  assert.deepEqual(keys.map((k) => short.layerOf(k)), [0, 1, -1])
+  assert.equal(budgetUsed(), images + two)
+  short.dispose()
+  assert.equal(budgetUsed(), images, 'its array given back')
+
+  imageBudget.bytes = images + two + three
+  const enough = await traced()
+  assert.deepEqual(enough.over, [])
+  assert.deepEqual(keys.map((k) => enough.layerOf(k)), [0, 1, 2])
+  assert.equal(budgetUsed(), images + three, 'the two-layer array given back once copied')
+  enough.dispose()
+  assert.equal(budgetUsed(), images)
+})
+
+test('a texture freed while its image is decoding closes the pixels once they come', async (t) => {
+  fresh(t)
+  const open = gate('ccr_a')
+  acquireTexture('color:ccr_a')
+  await flush()
+  releaseTexture('color:ccr_a')
+  t.mock.timers.tick(1000)
+  open()
+  await flush()
+  assert.deepEqual(made.map((p) => [p.name, p.closed]), [['ccr_a', true]])
+  assert.equal(budgetUsed(), 0)
+})
+
+test('an original that does not come fails in time, not holding up those asked for after it', async (t) => {
+  fresh(t)
+  hanging.add('ccr_slow')
+  const slow = acquireTexture('color:ccr_slow')
+  const next = acquireTexture('color:ccr_next')
+  await flush()
+  assert.equal(shown(next), 'placeholder', 'admitted in the order asked for')
+  t.mock.timers.tick(fetchTimeoutMs)
+  await flush()
+  assert.equal(shown(next), 'ccr_next')
+  assert.equal(shown(slow), 'placeholder')
+  assert.match(imageStatus.getState().failed['color:ccr_slow'], /ccr_slow 加载失败（原图下载超时）/)
+})
+
+test('a traced image that failed is asked for again once the page has loaded it', async (t) => {
+  fresh(t)
+  failing.add('ccr_bad')
+  const device = { initTexture() {}, getRenderTarget: () => null, setRenderTarget() {}, copyTextureToTexture() {}, render() {} } as unknown as WebGPURenderer
+  const maps = new TraceMaps(() => device, 8, 256)
+  t.after(() => maps.dispose())
+  maps.update(['color:ccr_bad'])
+  await flush()
+  maps.update(['color:ccr_bad'])
+  assert.equal(maps.layerOf('color:ccr_bad'), -1)
+  assert.equal(maps.pending, 0, 'nothing to wait for')
+  failing.delete('ccr_bad')
+  const hold = await loadSceneImages(sceneOf({ base_color: img('ccr_bad') }))
+  await flush()
+  assert.equal(maps.update(['color:ccr_bad']), true)
+  assert.equal(maps.layerOf('color:ccr_bad'), 0, 'written once the page has it')
+  hold.release()
 })

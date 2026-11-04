@@ -351,8 +351,8 @@ test('the layer binds as many storage buffers as before: the extras take the col
 
 test('cache keys and the least-recently-used ledger (design「构建、缓存与提交」)', () => {
   const libs = 'three@0.186.1,three-mesh-bvh@0.9.15,meshoptimizer@1.1.1'
-  assert.equal(cacheKey({ kind: 'original' }, 'model:rev_1#0'), `raw:model:rev_1#0:v3:sah-10-40:${libs}`)
-  assert.equal(cacheKey({ kind: 'proxy', level: 2 }, 'model:rev_1#0'), `proxy@2:model:rev_1#0:v3:sah-10-40:${libs}`)
+  assert.equal(cacheKey({ kind: 'original' }, 'model:rev_1#0'), `raw:model:rev_1#0:v4:sah-10-40:${libs}`)
+  assert.equal(cacheKey({ kind: 'proxy', level: 2 }, 'model:rev_1#0'), `proxy@2:model:rev_1#0:v4:sah-10-40:${libs}`)
   const entries = [{ key: 'old', bytes: 40, used: 1 }, { key: 'new', bytes: 30, used: 3 }, { key: 'mid', bytes: 20, used: 2 }]
   assert.deepEqual(evictions(entries, 10, 100, 1000), [], 'room enough')
   assert.deepEqual(evictions(entries, 20, 100, 1000), ['old'], 'over the ceiling: the least recently used first')

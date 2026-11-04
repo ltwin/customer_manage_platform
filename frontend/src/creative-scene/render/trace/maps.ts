@@ -1,7 +1,7 @@
 import { Box2, Box3, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RepeatWrapping, RGBAFormat, RGFormat, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type ColorSpace, type Texture } from 'three'
 import { texture as textureNode, uv, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, QuadMesh, RenderTarget, type WebGPURenderer } from 'three/webgpu'
-import { acquireTexture, holdImages, releaseTexture, textureKeys, type ImageHold, type TextureKey } from '../../materials/images.ts'
+import { acquireTexture, holdImages, imageStatus, releaseBudget, releaseTexture, reserveBudget, textureBytes, textureKeys, type ImageHold, type TextureKey } from '../../materials/images.ts'
 import { mappingOf, type MapKind } from '../../materials/maps.ts'
 import type { TSLNode } from '../../materials/patterns.ts'
 import { renderPolicy } from '../../materials/principled.ts'
@@ -18,9 +18,13 @@ import type { SlotMaterial } from '../../materials/resolve.ts'
 // again. An array grows by 1.25 into a new one, the layers copied over, its
 // node taking the new texture: a shader built with it is not built again.
 //
+// The arrays count in the image budget (images.ts reserveBudget), a growing
+// one's old and new both till the layers are copied over.
+//
 // A layer is −1 in its material rows (tables.ts) till it is written: the
 // hit uses the slot's constant parameters meanwhile, and an image past the
-// device's layers keeps them for good (said in the render tab).
+// device's layers, or one whose array does not fit the budget, keeps them
+// for good (said in the render tab; an export fails, host/render.ts).
 
 /** A layer's side: the viewport's, and an export's (design「数据」). */
 export const LAYER_SIZE = { viewport: 512, export: 1024 } as const
@@ -124,11 +128,12 @@ type Want = {
   /** The image held till it is written: its pixels are on the texture. */
   hold: ImageHold | null
   written: boolean
-  /** The image failed, or did not fit the image budget: nothing to wait for. */
+  /** The image failed, or did not fit the image budget: nothing to wait for till the page has it again (retry). */
   failed: boolean
 }
 
 const kindOf = (key: TextureKey) => key.slice(0, key.indexOf(':')) as MapKind
+const allocated = (rt: RenderTarget) => rt.texture.userData.allocated === true
 
 export class TraceMaps {
   /** The arrays as the hit samples them (hit.ts): a node's value is swapped for a larger array. */
@@ -144,6 +149,7 @@ export class TraceMaps {
   private readonly resamplers: Partial<Record<MapKind, { material: MeshBasicNodeMaterial; source: TSLNode }>> = {}
   private readonly renderer: () => WebGPURenderer
   private disposed = false
+  private readonly unsubscribe: () => void
   /** Asks for a sync when an image comes in (TraceBase's redraw). */
   onArrival: (() => void) | null = null
 
@@ -159,6 +165,7 @@ export class TraceMaps {
     this.slots = Object.fromEntries(kinds.map((k) => [k, new LayerSlots(maxLayers)])) as Record<MapKind, LayerSlots>
     this.arrays = Object.fromEntries(kinds.map((k) => [k, this.array(k, MIN_LAYERS)])) as Record<MapKind, RenderTarget>
     this.nodes = Object.fromEntries(kinds.map((k) => [k, textureNode(this.arrays[k].texture)])) as Record<MapKind, TSLNode>
+    this.unsubscribe = imageStatus.subscribe((s) => this.retry(s))
   }
 
   private array(kind: MapKind, layers: number): RenderTarget {
@@ -194,7 +201,7 @@ export class TraceMaps {
     return n
   }
 
-  /** Keys past the device's layers: their slots keep the constant parameters. */
+  /** Keys past the device's layers or the budget: their slots keep the constant parameters. */
   get over(): TextureKey[] {
     return [...this.wants].filter(([, w]) => w.layer === null).map(([k]) => k)
   }
@@ -221,11 +228,17 @@ export class TraceMaps {
     for (const key of arrived) {
       const w = this.wants.get(key)
       if (!w || w.written || w.layer === null || !w.hold) continue
-      this.write(w)
-      w.written = true
+      const written = this.write(w)
       w.hold.release()
       w.hold = null
-      changed = true
+      if (written) {
+        w.written = true
+        changed = true
+      } else {
+        // Its array did not fit the budget: the layer goes back, the key is over.
+        this.slots[w.kind].give(key)
+        w.layer = null
+      }
     }
     return changed
   }
@@ -235,7 +248,11 @@ export class TraceMaps {
     const layer = this.slots[kind].take(key)
     const w: Want = { kind, layer, texture: acquireTexture(key), hold: null, written: false, failed: false }
     this.wants.set(key, w)
-    if (layer === null) return
+    if (layer !== null) this.hold(key, w)
+  }
+
+  /** Waits for key's image: once here, it is written at the next update. */
+  private hold(key: TextureKey, w: Want) {
     holdImages([key]).then(
       (hold) => {
         if (this.disposed || this.wants.get(key) !== w) return hold.release()
@@ -248,6 +265,19 @@ export class TraceMaps {
         w.failed = true
       },
     )
+  }
+
+  /**
+   * Images that failed here asked for again once the page no longer lists
+   * them as failed or over the budget (images.ts publishes on each change):
+   * tried again as the raster's texture is, never in a loop of its own.
+   */
+  private retry({ failed, over }: ReturnType<typeof imageStatus.getState>) {
+    for (const [key, w] of this.wants) {
+      if (!w.failed || key in failed || over.includes(key)) continue
+      w.failed = false
+      this.hold(key, w)
+    }
   }
 
   /**
@@ -270,10 +300,11 @@ export class TraceMaps {
     return r.material
   }
 
-  private write(w: Want) {
+  /** Writes w's image into its layer: false when its array has no room for it within the budget. */
+  private write(w: Want): boolean {
     const renderer = this.renderer()
     const kind = w.kind
-    this.fit(kind, renderer)
+    if (w.layer! >= this.fit(kind, renderer)) return false
     const { format, colorSpace } = formats[kind]
     const scratch = (this.scratch[kind] ??= new RenderTarget(this.size, this.size, { format, type: UnsignedByteType, colorSpace, generateMipmaps: true, minFilter: LinearMipmapLinearFilter, depthBuffer: false }))
     const material = this.resampler(kind, w.texture)
@@ -288,14 +319,28 @@ export class TraceMaps {
       const s = Math.max(1, this.size >> level)
       renderer.copyTextureToTexture(scratch.texture, array, new Box2(new Vector2(0, 0), new Vector2(s, s)), new Vector3(0, 0, w.layer!), level, level)
     }
+    return true
   }
 
-  /** The array of kind with room for its layers: a larger one made and the layers copied over. */
-  private fit(kind: MapKind, renderer: WebGPURenderer) {
+  /** An array's theoretical bytes (images.ts textureBytes): an RG texel is half an RGBA one. */
+  private bytes(kind: MapKind, layers: number): number {
+    return (textureBytes(this.size, this.size) * layers) / (formats[kind].format === RGFormat ? 2 : 1)
+  }
+
+  /**
+   * The array of kind with room for its layers: a larger one made and the
+   * layers copied over. How many layers it has, 0 when not even the first
+   * fits the budget; fewer than asked for when the larger one does not, to be
+   * tried again at the next write.
+   */
+  private fit(kind: MapKind, renderer: WebGPURenderer): number {
     const room = this.slots[kind].room
     const old = this.arrays[kind]
-    if (!(old.texture.userData.allocated as boolean | undefined)) this.allocate(old, renderer)
-    if (old.depth >= room) return
+    if (!allocated(old)) {
+      if (!reserveBudget(this.bytes(kind, old.depth))) return 0
+      this.allocate(old, renderer)
+    }
+    if (old.depth >= room || !reserveBudget(this.bytes(kind, room))) return old.depth
     const next = this.array(kind, room)
     this.allocate(next, renderer)
     for (let level = 0; level < this.levels; level++) {
@@ -305,6 +350,8 @@ export class TraceMaps {
     this.arrays[kind] = next
     this.nodes[kind].value = next.texture
     old.dispose()
+    releaseBudget(this.bytes(kind, old.depth))
+    return next.depth
   }
 
   /** The GPU texture made with its mip levels, which the array's copies fill: three would otherwise generate them over every layer at each copy. */
@@ -316,12 +363,16 @@ export class TraceMaps {
 
   dispose() {
     this.disposed = true
+    this.unsubscribe()
     for (const [key, w] of this.wants) {
       w.hold?.release()
       releaseTexture(key)
     }
     this.wants.clear()
-    for (const rt of Object.values(this.arrays)) rt.dispose()
+    for (const [kind, rt] of Object.entries(this.arrays) as [MapKind, RenderTarget][]) {
+      rt.dispose()
+      if (allocated(rt)) releaseBudget(this.bytes(kind, rt.depth))
+    }
     for (const rt of Object.values(this.scratch)) rt?.dispose()
     for (const r of Object.values(this.resamplers)) r?.material.dispose()
   }

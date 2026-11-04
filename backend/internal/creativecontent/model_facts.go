@@ -261,13 +261,8 @@ func TextureImagesInTx(ctx context.Context, tx store.TxAccountScope, ids []strin
 	}
 	for _, id := range ids {
 		var img TextureImage
-		if res := batch[id]; res.Err == nil && res.Revision.Kind == "image" {
-			for _, m := range res.Revision.Media {
-				if m.Role == "original" && m.Width != nil && m.Height != nil {
-					img = TextureImage{Usable: true, Width: m.Width, Height: m.Height}
-					break
-				}
-			}
+		if m, ok := batch[id].ImageOriginal(); ok {
+			img = TextureImage{Usable: true, Width: m.Width, Height: m.Height}
 		}
 		out[id] = img
 	}

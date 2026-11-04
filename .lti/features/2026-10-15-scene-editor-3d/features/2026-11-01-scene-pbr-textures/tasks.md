@@ -35,3 +35,12 @@
 ## 6. 组合验证与交付
 
 - [x] 6.1 按 proposal 验收标准逐条核对，补齐没有被前面任务覆盖的 e2e（一次一个用例）；写 `specs.md` 的 `creative/scene`、`creative/library` 增量，`lti validate` 通过；`docs/dev/creative-scene-agent.md` 补贴图、材质资产和阴影上限的用法与已知边界；在主检出 `git merge --no-commit` 后 `make check-merge` 通过，然后 `merge --abort`。结果：proposal 的验收标准逐条对到前面任务的测试与对照图；唯一没有覆盖的是编辑器的「这个模型没有 UV，按三平面显示」，补了一个 e2e（不带 UV 的 `basic.glb` 选 UV 映射出现提示，基础体不出现），通过。两项 owner 已定的已知缺陷（镜中细贴图被光锥平均掉、带探针场景两次导出不逐像素相同）写进开发说明的已知边界。`specs.md` 写了 `creative/scene` 的材质贴图、表面阴影上限、助手配贴图与 `creative/library` 的材质资产，`lti validate` 通过。`docs/dev/creative-scene-agent.md` 补了贴图、材质资产、阴影上限的做法、e2e 用法与已知边界。在主检出 `git merge --no-ff --no-commit` 后 `make check-merge`：build、lint、generate-check、前端单测 966 项与其余 Go 包通过；`internal/reminder` 的 `TestS6MonotonicBudgetThroughBeginCurrentCall/pause_above_remaining` 在全量并行下失败一次（时间预算 470 ms 内没耗尽，属时序抖动），本分支没有改这个包，单独重跑通过；之后 `merge --abort`
+
+code review 修正（2026-11-04）：逐项核对外部 review，成立的都改了，测试都做了红→绿对照。
+- 可读性：持有方分支从 `readableRevisionInTx` 移到只给 `edit_scene` 用的 `textureReadableInTx`，`read_asset` 与画布放置不再能借持有方读到原图；持有方判断改成一条集合查询（原来是每个持有方最多 6 条）。
+- 渲染：三平面投影改为先旋转后缩放，非方形图在旋转后不变形；背面的三平面凹凸乘 `faceDirection`；基础体与材质球的 UV 按 glTF 约定（v=0 在上）翻转，世界空间层缓存版本升到 4；`clip` 统一为保留 alpha ≥ 阈值（光栅用 `maskNode`，阈值 0 时按 1e-6）。
+- 显存：世界空间层的纹理数组计入 2 GiB 预算（扩容时新旧同时计），放不下的贴图计入 `mapsOver`，导出因此失败；原图下载 120 s 超时；解码中被释放的贴图关闭 `ImageBitmap`；光追端失败的图片在页面重新加载出来后重试；ORM 合成改用 WebGL2 按非预乘读取。
+- 编辑器：上传在选图框关闭时中止，并用最新回调写槽位；选图框的按键不外传（Cmd+Z 不再撤销场景）、Tab 在框内循环、关闭后焦点回到原按钮；「图片不可用」按修订精确匹配，悬停文字不再带修订 ID；保存请求体按各自的生成类型构造；不可用的材质资产不能拖；缩略图失败写明是哪种贴图。
+- 后端：材质去重的命中按 ID 排序，跳过已不可用的命中（全都不可用时另建）；图片原件查找由 `DisplayResult.ImageOriginal` 共用。
+- 未改，写进已知边界并待 owner 决定：材质预览的预渲染覆盖材质不读 `maskNode`，`clip` 镂空处的 AO、空气透视和体积按实心深度算；远处的 `clip` 光栅按 mip 平均的 alpha 判断，光追取最细一级。
+- 验证：Go `creativescene`/`creativecontent`/`creativelibrary` 全包与 `creativeagent` 的贴图、材质、场景用例；前端 images/maps/trace/library/model-asset/materials 单测、`tsc -b`、lint；e2e 单跑 clip、导出等图、面板选图（新增选图框按键断言）、材质资产、五种贴图与资产库材质项，均通过。

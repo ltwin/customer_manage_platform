@@ -202,14 +202,8 @@ func readImages(ctx context.Context, tx store.ReadTxAccountScope, ids []string) 
 	}
 	for _, id := range ids {
 		var v imageView
-		if res := batch[id]; res.Err == nil && res.Revision.Kind == imageKind {
-			for _, m := range res.Revision.Media {
-				if m.Role == "original" && m.Width != nil && m.Height != nil {
-					mime := m.Mime
-					v = imageView{Usable: true, Width: m.Width, Height: m.Height, MIME: &mime}
-					break
-				}
-			}
+		if m, ok := batch[id].ImageOriginal(); ok {
+			v = imageView{Usable: true, Width: m.Width, Height: m.Height, MIME: &m.Mime}
 		}
 		out[id] = v
 	}

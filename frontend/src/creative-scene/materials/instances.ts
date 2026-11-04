@@ -3,6 +3,7 @@ import {
   cameraViewMatrix,
   dFdx,
   dFdy,
+  faceDirection,
   float,
   fwidth,
   length,
@@ -150,8 +151,10 @@ export function slotTextures(material: Material, t: Texturing): { color: TSLNode
   if (mapping.kind === 'triplanar') {
     const s = triplanar(shaderKit, patPos, patNormal, m, has, sample)
     // The gradient is a covector: into local space by the scale, on to view space by the normal matrices, unnormalised.
+    // normalView is already turned to a back face's side, the gradient not: turned with it, the back of a double-sided
+    // surface gets the front's bent normal negated (as BumpMapNode does, and the traced hit: render/trace/hit.ts).
     const world: TSLNode | null = s.bend && (modelNormalMatrix as TSLNode).mul(s.bend.mul(modelScale))
-    return { color: s.color, orm: s.orm, has, normal: world && bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz) }
+    return { color: s.color, orm: s.orm, has, normal: world && bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz.mul(faceDirection)) }
   }
   const b = uvMapped(shaderKit, uv(), m)
   const s = uvSurface(shaderKit, b, m, has, sample)
@@ -167,14 +170,16 @@ function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy:
     material.metalnessNode = materialMetalness.mul(orm.z)
     material.aoNode = orm.x
   }
-  // opaque leaves the texture's alpha out; clip cuts below the cutoff, in the shadow maps too (task 1.1: three's shadow pass reads maskShadowNode, not alphaTestNode).
+  // opaque leaves the texture's alpha out; clip keeps alpha ≥ cutoff, in the shadow maps too (task 1.1: three's shadow pass reads maskShadowNode).
+  // A mask, not alphaTestNode, which keeps alpha > cutoff: the shadow and the traced hits (hit.ts) keep it at the cutoff as well.
   // The opacity is this material's own: the shadow pass builds the mask under its override material, whose materialOpacity is 1.
   const alpha = reference('opacity', 'float', material).mul(color.w)
   if (policy.alphaCutoff !== null) {
-    const cutoff = uniform(policy.alphaCutoff)
+    // A cutoff of 0 still cuts what is wholly clear, as the traced hits do (render/trace/maps.ts rowMaps).
+    const kept = alpha.greaterThanEqual(uniform(Math.max(policy.alphaCutoff, 1e-6)))
     material.opacityNode = alpha
-    material.alphaTestNode = cutoff
-    material.maskShadowNode = alpha.greaterThanEqual(cutoff)
+    material.maskNode = kept
+    material.maskShadowNode = kept
   } else if (t.alpha_mode === 'blend') {
     material.opacityNode = alpha
   }

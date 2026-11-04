@@ -295,17 +295,17 @@ func SaveMaterialToLibrary(ctx context.Context, scope store.AccountScope, c crea
 				return creativeops.Outcome{}, err
 			}
 			// Before the upload is taken, as for models.
-			hit, found, err := creativelibrary.FindMaterialAssetInTx(ctx, tx, key)
+			hits, err := creativelibrary.FindMaterialAssetsInTx(ctx, tx, key)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			reused, found, err := firstUsable(ctx, tx, hits)
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
 			var result creativelibrary.AssetResult
 			if found {
-				r, err := creativecontent.RequireUsable(ctx, tx, hit, "display")
-				if err != nil {
-					return creativeops.Outcome{}, err
-				}
-				if result, err = creativelibrary.SaveRevisionInTx(ctx, tx, r, in.Target); err != nil {
+				if result, err = creativelibrary.SaveRevisionInTx(ctx, tx, reused, in.Target); err != nil {
 					return creativeops.Outcome{}, err
 				}
 			} else {
@@ -316,6 +316,20 @@ func SaveMaterialToLibrary(ctx context.Context, scope store.AccountScope, c crea
 			}
 			return assetOutcome(result)
 		}}, c)
+}
+
+// firstUsable is the first of revisions that can still be shown. One that
+// cannot (its rights withdrawn, its content gone) is passed over: the slot
+// is saved as a new material instead of failing on an old copy.
+func firstUsable(ctx context.Context, tx store.TxAccountScope, revisions []string) (creativecontent.Revision, bool, error) {
+	for _, id := range revisions {
+		r, err := creativecontent.RequireUsable(ctx, tx, id, "display")
+		if errors.Is(err, creativecontent.ErrUsageDenied) || errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativecontent.ErrMissingRoot) {
+			continue
+		}
+		return r, err == nil, err
+	}
+	return creativecontent.Revision{}, false, nil
 }
 
 // writeMaterial writes the material over the uploaded thumbnail, holding its

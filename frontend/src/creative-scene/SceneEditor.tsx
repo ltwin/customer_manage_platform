@@ -1222,7 +1222,7 @@ export default function SceneEditor({
                     recent={recentAssets}
                     readOnly={readOnly}
                     focus={assetFocus}
-                    placeable={(asset) => (asset.kind === 'material' ? !!assetMaterial(asset.content) : !!dragModel(asset))}
+                    placeable={(asset) => (asset.kind === 'material' ? !asset.unavailable && !!assetMaterial(asset.content) : !!dragModel(asset))}
                     onPlace={placeModels}
                     onDrag={setLibraryDrag}
                     onExit={() => root.current?.focus({ preventScroll: true })}

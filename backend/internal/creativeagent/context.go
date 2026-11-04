@@ -43,24 +43,45 @@ func readableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID
 }
 
 func readableRevisionInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string, library bool) (bool, error) {
+	readable, _, err := directlyReadableInTx(ctx, tx, runID, consentID, id, library)
+	return readable, err
+}
+
+// textureReadableInTx is whether the run may put an image in a scene slot
+// (C5c1 data: 材质资产「助手可读」). Beyond what it may read, an image only a
+// material asset or a model's library copy still holds counts when the
+// holder is readable itself, its own revocation included. One level: a
+// holder's holders do not count. Only edit_scene asks this: the holder lends
+// its textures to slots, never their pixels, so read_asset, canvas placement
+// and the conversation's references keep asking readableRevisionInTx.
+func textureReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string) (bool, error) {
+	const library = true
 	readable, revoked, err := directlyReadableInTx(ctx, tx, runID, consentID, id, library)
 	if err != nil || readable || revoked {
 		return readable, err
 	}
-	// An image only a material asset or a model's library copy still holds
-	// is readable through that holder when the holder is readable itself, its
-	// own revocation included. One level: a holder's holders do not count.
-	holders, err := textureHoldersInTx(ctx, tx, id)
-	if err != nil {
+	var canvasID, conversationID string
+	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id,conversation_id", "id=$2", runID).Scan(&canvasID, &conversationID); err != nil {
 		return false, err
 	}
-	for _, holder := range holders {
-		if readable, _, err = directlyReadableInTx(ctx, tx, runID, consentID, holder, library); readable || err != nil {
-			return readable, err
-		}
-	}
-	return false, nil
+	// directlyReadableInTx's branches over every holder at once: an image
+	// can be held by many revisions, and edit_scene asks for up to 64 images.
+	return tx.Exists(ctx, "creative_content_revision_refs", heldReadable, id, conversationID, consentID, canvasID, runID)
 }
+
+// heldReadable is directlyReadableInTx for the holders of $2: not revoked in
+// conversation $3, then approved by consent $4, on canvas $5, referenced in
+// the conversation before run $6 or by it, or in the library under $4.
+const heldReadable = `content_revision_id=$2 AND role='texture'
+AND NOT EXISTS (SELECT 1 FROM creative_egress_consent_contents c WHERE c.account_id=$1 AND c.content_revision_id=creative_content_revision_refs.holder_revision_id
+	AND c.consent_id IN (SELECT id FROM creative_egress_consents WHERE account_id=$1 AND conversation_id=$3 AND revoked_at IS NOT NULL))
+AND (EXISTS (SELECT 1 FROM creative_egress_consent_contents c WHERE c.account_id=$1 AND c.consent_id=$4 AND c.content_revision_id=creative_content_revision_refs.holder_revision_id)
+	OR EXISTS (SELECT 1 FROM creative_nodes n WHERE n.account_id=$1 AND n.canvas_id=$5 AND n.content_revision_id=creative_content_revision_refs.holder_revision_id)
+	OR EXISTS (SELECT 1 FROM creative_message_content_refs m WHERE m.account_id=$1 AND m.content_revision_id=creative_content_revision_refs.holder_revision_id
+		AND m.message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete'
+			AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$6)) OR run_id=$6)))
+	OR (EXISTS (SELECT 1 FROM creative_assets a WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revision_refs.holder_revision_id AND a.deleted_at IS NULL)
+		AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$4 AND scope->>'mode'='account_library' AND revoked_at IS NULL)))`
 
 // directlyReadableInTx is the run's own access to a revision; revoked says a
 // revocation denied it, which no holder can grant back.
@@ -85,28 +106,6 @@ func directlyReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, c
 	}
 	readable, err = tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$3 AND scope->>'mode'='account_library' AND revoked_at IS NULL)", id, consentID)
 	return readable, false, err
-}
-
-// textureHoldersInTx are the revisions holding an image as a texture, in a
-// fixed order.
-func textureHoldersInTx(ctx context.Context, tx store.TxAccountScope, id string) ([]string, error) {
-	rows, err := tx.Query(ctx, "creative_content_revision_refs", "holder_revision_id", "content_revision_id=$2 AND role='texture'", id)
-	if err != nil {
-		return nil, err
-	}
-	var holders []string
-	for rows.Next() {
-		var holder string
-		if err = rows.Scan(&holder); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		holders = append(holders, holder)
-	}
-	err = rows.Err()
-	rows.Close()
-	slices.Sort(holders)
-	return holders, err
 }
 
 // resolveReference builds serializable framework input. Executable image

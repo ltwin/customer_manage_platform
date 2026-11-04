@@ -13,9 +13,10 @@ import type { Segment } from './build.worker.ts'
  * models/merge.ts groups a model's parts (the n in model:<revision>#n).
  * 2: a root a group only for a mesh drawn a material a group, and each
  * root's group with it (S1 design A13). 3: the colours become the extras,
- * with the UVs, and a proxy of a geometry with UVs keeps them (C5c1).
+ * with the UVs, and a proxy of a geometry with UVs keeps them (C5c1). 4: the
+ * builtins' UVs turned over to read glTF's way (builtins/geometry.ts uvFromTop).
  */
-export const BUILDER_VERSION = 3
+export const BUILDER_VERSION = 4
 /** Words a vertex in Segment.extras (build.worker.ts): colour, u, v. */
 export const EXTRA_WORDS = 3
 

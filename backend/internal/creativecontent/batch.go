@@ -19,6 +19,20 @@ type DisplayResult struct {
 	Err      error
 }
 
+// ImageOriginal is the original file of an image the batch could show, its
+// size known: what a texture is sized by. ok is false for anything else.
+func (r DisplayResult) ImageOriginal() (MediaObject, bool) {
+	if r.Err != nil || r.Revision.Kind != "image" {
+		return MediaObject{}, false
+	}
+	for _, m := range r.Revision.Media {
+		if m.Role == "original" && m.Width != nil && m.Height != nil {
+			return m, true
+		}
+	}
+	return MediaObject{}, false
+}
+
 // ReadDisplayBatch reads a bounded set in the caller's consistent snapshot.
 // SQL round trips depend on relation types, not the number of revisions.
 func ReadDisplayBatch(ctx context.Context, tx store.ReadTxAccountScope, ids []string) (map[string]DisplayResult, error) {

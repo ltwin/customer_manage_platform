@@ -117,6 +117,30 @@ test('box projection: on every face the texture reads the right way round, uprig
   }
 })
 
+test('box projection: an image that is not square keeps its shape and its bumps at any rotation', () => {
+  // A 2:1 image, a metre wide: a tile is 1 m by 0.5 m (instances.ts: scale 1/size, aspect/size).
+  const m = mappingIn({ scale: [1, 2], rotation: 0 })
+  for (const deg of [0, 45, 90, 30]) {
+    const turned = { ...m, cos: Math.cos(rad(deg)), sin: Math.sin(rad(deg)) }
+    for (const N of [[0, 1, 0], [1, 0, 0], [0, 0, -1]]) {
+      const axes = [0, 1, 2].filter((i) => N[i] === 0).map((i) => [0, 1, 2].map((j) => (j === i ? 1 : 0)))
+      const at = (p: number[]) => onFace(N, p, turned, texelOf(leanRight)).coord
+      // J: how the texture coordinate moves along the face's two axes; its inverse, where one unit of u and of v lie on the face.
+      const [a, b] = axes.map((x) => vec(num.sub(at(x), at([0, 0, 0]))))
+      const det = a[0] * b[1] - b[0] * a[1]
+      const along = (cu: number, cv: number) => vec(num.add(num.mul(axes[0], cu), num.mul(axes[1], cv)))
+      const uStep = along(b[1] / det, -a[1] / det)
+      const vStep = along(-b[0] / det, a[0] / det)
+      const face = `${deg}° on ${N}`
+      assert.ok(Math.abs(Math.hypot(...uStep) - 1) < 1e-6, `${face}: the image's width is a metre, not ${Math.hypot(...uStep)}`)
+      assert.ok(Math.abs(Math.hypot(...vStep) - 0.5) < 1e-6, `${face}: its height half a metre, not ${Math.hypot(...vStep)}`)
+      assert.ok(Math.abs(dot(uStep, vStep)) < 1e-6, `${face}: not sheared`)
+      const right = vec(num.normalize(uStep))
+      close(onFace(N, [0.3, 0.2, 0.1], turned, texelOf(leanRight)).bent, num.add(num.mul(right, 0.6), num.mul(N, 0.8)), `${face}: leans along the image's width`)
+    }
+  }
+})
+
 test('box projection: across a 45° slope the bent normal turns without a jump', () => {
   const m = mappingIn({ scale: [1, 1], rotation: 0 })
   let last: V | null = null
@@ -160,7 +184,7 @@ function shape(node: unknown, seen = new Map<object, number>()): string {
 }
 const nodesOf = (m: ReturnType<typeof makeMaterial>) => {
   const seen = new Map<object, number>()
-  return (['colorNode', 'normalNode', 'roughnessNode', 'metalnessNode', 'aoNode', 'opacityNode', 'alphaTestNode', 'maskShadowNode'] as const).map((k) => `${k}: ${shape(m[k], seen)}`).join('\n')
+  return (['colorNode', 'normalNode', 'roughnessNode', 'metalnessNode', 'aoNode', 'opacityNode', 'maskNode', 'maskShadowNode'] as const).map((k) => `${k}: ${shape(m[k], seen)}`).join('\n')
 }
 const textured = (t: Texturing, params: Record<string, unknown> = {}) => catalogMaterial('principled@1', params, t)!
 
@@ -189,27 +213,34 @@ test('another image only: a new instance, but the same graph, so the same progra
   for (const t of others) assert.notEqual(nodesOf(makeMaterial(textured(t), false)), nodesOf(a))
 })
 
-test('the alpha modes: opaque ignores the texture\'s alpha, clip cuts it in the picture and the shadow maps, blend multiplies it in', () => {
+test('the alpha modes: opaque ignores the texture\'s alpha, clip keeps alpha ≥ the cutoff in the picture and the shadow maps alike, blend multiplies it in', () => {
   resetImages()
   const opaque = makeMaterial(textured(brick), false)
   assert.ok(opaque.colorNode && opaque.normalNode && opaque.roughnessNode && opaque.metalnessNode && opaque.aoNode)
-  assert.deepEqual([opaque.opacityNode, opaque.alphaTestNode, opaque.maskShadowNode, opaque.transparent], [null, null, null, false])
+  assert.deepEqual([opaque.opacityNode, opaque.maskNode, opaque.maskShadowNode, opaque.transparent], [null, null, null, false])
   const clip = makeMaterial(textured({ ...brick, alpha_mode: 'clip', alpha_cutoff: 0.3 }), false)
-  assert.ok(clip.opacityNode && clip.alphaTestNode && clip.maskShadowNode)
-  assert.equal((clip.alphaTestNode as unknown as { value: number }).value, 0.3)
+  // A mask, not three's alpha test (which keeps alpha > cutoff): the shadow and the traced hits keep it at the cutoff too.
+  // three wraps a comparison in a VarNode.
+  type Compare = { node: { op: string; bNode: { value: number } } }
+  const kept = clip.maskNode as unknown as Compare
+  assert.ok(clip.opacityNode && kept && clip.alphaTestNode === null)
+  assert.equal(clip.maskShadowNode, clip.maskNode, 'the shadow maps cut as the picture does')
+  assert.deepEqual([kept.node.op, kept.node.bNode.value], ['>=', 0.3])
+  const zero = makeMaterial(textured({ ...brick, alpha_mode: 'clip', alpha_cutoff: 0 }), false)
+  assert.equal((zero.maskNode as unknown as Compare).node.bNode.value, 1e-6, 'a cutoff of 0 still cuts what is wholly clear, as the traced hits do')
   assert.deepEqual([clip.transparent, clip.depthWrite], [false, true])
   const blend = makeMaterial(textured({ ...brick, alpha_mode: 'blend' }), false)
   assert.ok(blend.opacityNode)
-  assert.deepEqual([blend.alphaTestNode, blend.maskShadowNode, blend.transparent, blend.depthWrite], [null, null, true, false])
+  assert.deepEqual([blend.maskNode, blend.maskShadowNode, blend.transparent, blend.depthWrite], [null, null, true, false])
   // A clip slot with no maps: opacity alone against the cutoff.
   const bare = makeMaterial(textured({ alpha_mode: 'clip' }, { opacity: 0.2 }), false)
-  assert.ok(bare.alphaTestNode && bare.maskShadowNode && !bare.colorNode)
+  assert.ok(bare.maskNode && bare.maskShadowNode && !bare.colorNode)
 })
 
 test('no maps and no alpha mode: built as before', () => {
   resetImages()
   const plain = makeMaterial(catalogMaterial('principled@1', { roughness: 0.4 })!, false)
-  for (const k of ['colorNode', 'normalNode', 'roughnessNode', 'metalnessNode', 'aoNode', 'opacityNode', 'alphaTestNode', 'maskShadowNode'] as const) assert.equal(plain[k], null, k)
+  for (const k of ['colorNode', 'normalNode', 'roughnessNode', 'metalnessNode', 'aoNode', 'opacityNode', 'maskNode', 'maskShadowNode'] as const) assert.equal(plain[k], null, k)
 })
 
 test('UV mapping on a geometry without UVs draws with box projection, a metre a tile', () => {
@@ -220,4 +251,24 @@ test('UV mapping on a geometry without UVs draws with box projection, a metre a 
   assert.deepEqual(fallback.texturing?.mapping, { kind: 'triplanar', size_m: 1, rotation_deg: 30, normal_strength: 0.5 })
   const box = textured(brick)
   assert.equal(onGeometry(box, false), box, 'box projection needs no UVs')
+})
+
+test('UVs read glTF\'s way on the builtins and the material ball: the image\'s top row at the top', async () => {
+  const { primitiveGeometry } = await import('../src/creative-scene/builtins/geometry.ts')
+  const { ballGeometry } = await import('../src/creative-scene/materials/ball.ts')
+  // texel (uvMapped then texel) samples at the mesh's v as it is: v = 0 is the image's top row (images.ts, flipY off).
+  const topV = (g: import('three').BufferGeometry) => {
+    const pos = g.attributes.position!
+    const uv = g.attributes.uv!
+    let best = 0
+    for (let i = 1; i < pos.count; i++) if (pos.getY(i) > pos.getY(best) + 1e-9) best = i
+    return uv.getY(best)
+  }
+  for (const builtin of ['plane@1', 'box@1', 'sphere@1', 'cylinder@1']) {
+    const g = primitiveGeometry(builtin, {})!
+    // The box's and cylinder's sides: their highest vertex on a wall, where the image stands upright.
+    assert.ok(topV(g) < 1e-6, `${builtin}: the top has v ${topV(g)}`)
+    g.dispose()
+  }
+  assert.ok(topV(ballGeometry()) < 1e-6, 'the ball\'s north pole is the image\'s top')
 })

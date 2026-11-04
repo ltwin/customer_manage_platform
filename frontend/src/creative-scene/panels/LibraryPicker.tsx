@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { components } from '../../api/schema'
 import * as api from '../../creative-canvas/editor/api.ts'
 import { MediaFigure } from '../../creative-canvas/editor/MediaView.tsx'
@@ -51,22 +51,40 @@ export function MaterialPicker({ title, onPick, onClose }: { title: string; onPi
   )
 }
 
-/** A dialog over the page: Escape or a click beside it closes it. */
+const focusable = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * A dialog over the page: Escape or a click beside it closes it. Its keys
+ * stay in it: Cmd+Z in it is not the scene's undo (the editor's keys are
+ * React's, SceneEditor onKeyDown, so a document-level trap would not see
+ * them), and Tab goes round its controls. Focus goes back where it was.
+ */
 function PickerDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const dialog = useRef<HTMLDivElement>(null)
-  useEffect(() => dialog.current?.focus(), [])
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialog.current?.focus()
+    return () => opener?.focus({ preventScroll: true })
+  }, [])
   return (
     <div className="cc-scene-dialog-backdrop is-fixed" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div
         ref={dialog}
         className="cc-scene-dialog cc-scene-image-picker"
         role="dialog"
+        aria-modal="true"
         aria-label={title}
         tabIndex={-1}
         onKeyDown={(e) => {
-          if (e.key !== 'Escape') return
           e.stopPropagation()
-          onClose()
+          if (e.key === 'Escape') return onClose()
+          if (e.key !== 'Tab' || !dialog.current) return
+          const controls = Array.from(dialog.current.querySelectorAll<HTMLElement>(focusable))
+          const at = controls.indexOf(document.activeElement as HTMLElement)
+          const wrap = e.shiftKey ? at <= 0 : at === controls.length - 1 || at < 0
+          if (!wrap || !controls.length) return
+          e.preventDefault()
+          controls[e.shiftKey ? controls.length - 1 : 0].focus()
         }}
       >
         <h3>{title}</h3>
@@ -149,19 +167,35 @@ function CanvasImages({ canvasID, onPick }: { canvasID: string | undefined; onPi
   return <ImageGrid label="画布上的图片" kind="image" items={nodes.map((n) => ({ key: n.id, value: n.content!.id, title: n.metadata.title || '图片', content: n.content }))} onPick={onPick} />
 }
 
+/**
+ * Uploads a file and picks it. Closing the picker, or the panel going with
+ * the selection, stops the upload: a picker no longer open picks nothing.
+ * The pick is the latest onPick's, which edits the slot as it is now.
+ */
 function UploadImage({ onPick }: { onPick: (revision: string) => void }) {
   const [progress, setProgress] = useState<UploadProgress | null>(null)
   const [error, setError] = useState('')
+  const pick = useRef(onPick)
+  useLayoutEffect(() => {
+    pick.current = onPick
+  })
+  const running = useRef<AbortController | null>(null)
+  useEffect(() => () => running.current?.abort(), [])
   const busy = !!progress && progress.stage !== 'done' && progress.stage !== 'failed'
   const upload = async (file: File) => {
     setError('')
+    running.current?.abort()
+    const controller = new AbortController()
+    running.current = controller
     try {
-      const capabilities = await api.read<MediaCapabilities>('/media-capabilities')
+      const capabilities = await api.read<MediaCapabilities>('/media-capabilities', controller.signal)
       // Into the asset library, so the image is there to use again.
-      const done = await uploadFile(file, { kind: 'asset', asset: { title: fileTitle(file.name) } }, capabilities, setProgress)
+      const done = await uploadFile(file, { kind: 'asset', asset: { title: fileTitle(file.name) } }, capabilities, setProgress, controller.signal)
+      if (controller.signal.aborted) return
       if (!done.content_revision_id) throw new Error('上传完成了，但还没有可用的图片，请到资产库查看')
-      onPick(done.content_revision_id)
+      pick.current(done.content_revision_id)
     } catch (e) {
+      if (controller.signal.aborted) return
       setProgress(null)
       setError(e instanceof Error ? e.message : '上传失败')
     }

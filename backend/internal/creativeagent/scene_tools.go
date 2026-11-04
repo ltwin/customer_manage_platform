@@ -385,9 +385,9 @@ func (h *runtimeHandler) editScene(ctx context.Context, step, raw string) (any, 
 		}
 		return creativescene.AgentEditInTx(ctx, tx, creativescene.EditInput{DocumentID: args.DocumentID, RunID: h.held.RunID,
 			BasedOn: int64(args.BasedOn), Operations: args.Operations, ConversationRuns: runs,
-			// A texture is read the way save_library reads a node's content.
+			// A texture is one the run may read, or one a readable material holds.
 			ReadableImage: func(ctx context.Context, tx store.TxAccountScope, id string) (bool, error) {
-				return readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+				return textureReadableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
 			}})
 	})
 }
