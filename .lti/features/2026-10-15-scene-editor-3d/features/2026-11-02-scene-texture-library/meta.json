@@ -1,12 +1,12 @@
 {
   "uid": "2232e9d1-51d9-4154-9aeb-1e7e6e18af1c",
-  "revision": 2,
+  "revision": 4,
   "id": "scene-texture-library",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-editor-3d",
   "designBinding": {
-    "version": 17,
+    "version": 20,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -28,6 +28,7 @@
       "data:导出图来源",
       "data:模型资产",
       "data:材质资产",
+      "data:内置贴图库",
       "api:读取场景",
       "api:提交场景命令",
       "api:场景模型命令",
@@ -38,14 +39,37 @@
       "api:读取运行的场景改动",
       "api:导出分镜",
       "api:模型存入资产库",
-      "api:材质存入资产库"
+      "api:材质存入资产库",
+      "api:读取内置贴图"
     ],
-    "delivers": []
+    "delivers": [
+      "data:内置贴图库",
+      "api:读取内置贴图",
+      "data:场景文档",
+      "api:提交场景命令"
+    ]
   },
-  "state": "draft",
+  "state": "approved",
   "createdAt": "2026-11-03T04:18:27.342Z",
-  "updatedAt": "2026-11-03T11:03:43.737Z",
-  "approvals": {},
+  "updatedAt": "2026-11-04T13:19:25.368Z",
+  "risk": {
+    "factors": [
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-04T13:19:25.111Z",
+      "contentHash": "33d1a3c3e9ffbdee"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-04T13:19:25.111Z",
+      "contentHash": "64aea17ddc17c7ce"
+    }
+  },
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
