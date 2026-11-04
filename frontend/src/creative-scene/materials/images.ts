@@ -1,12 +1,14 @@
 import { NoColorSpace, RepeatWrapping, SRGBColorSpace, Texture } from 'three'
 import { createStore } from 'zustand/vanilla'
 import { mediaTicket } from '../../creative-canvas/editor/media.ts'
+import { authorizedFetch } from '../../auth/session.ts'
 import type { Scene } from '../api.ts'
-import { principledID } from './catalog.ts'
-import type { Texturing } from './resolve.ts'
+import { texturedEntries } from './catalog.ts'
+import { catalogMaterial, type Texturing } from './resolve.ts'
 
 // The images a scene's material slots texture with (C5c1 design「图片缓存」),
-// in two layers. A source is an image revision: its original file, fetched
+// in two layers. A source is an image revision, or a built-in texture's file
+// (tex:<file>, C5c2 design「图片来源扩展为两种」): its original file, fetched
 // once and kept as it came, and its pixels while a texture needs them,
 // decoded once whatever they are used as. A texture is a TextureKey: what a
 // material samples, one three Texture for every device on the page, the same
@@ -21,7 +23,7 @@ import type { Texturing } from './resolve.ts'
 // through loadSceneImages, which decodes the images again first, or uploads
 // the placeholder, which has them decoded again and the texture rebuilt.
 
-/** `color:<revision>`, `normal:<revision>` or `orm:<ao>|<roughness>|<metalness>`, each part `<revision>.<channel>` or `-`. */
+/** `color:<source>`, `normal:<source>` or `orm:<ao>|<roughness>|<metalness>`, each part `<source>.<channel>` or `-`; a source is a revision or `tex:<file>`. */
 export type TextureKey = string
 
 type Kind = 'color' | 'normal' | 'orm'
@@ -58,6 +60,12 @@ const decodeOptions = { imageOrientation: 'from-image', premultiplyAlpha: 'none'
 /** How images are fetched, decoded and composed; tests stand in their own. */
 export const imagePlatform = {
   async fetch(revision: string): Promise<Blob> {
+    const file = builtinFile(revision)
+    if (file) {
+      const response = await authorizedFetch(builtinTextureURL(file))
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.blob()
+    }
     const ticket = await mediaTicket(revision, 'original', 'display')
     const response = await fetch(ticket.url, { credentials: 'same-origin' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -183,6 +191,23 @@ export function ormKey(ao: MapRef | undefined, roughness: MapRef | undefined, me
   return ao || roughness || metalness ? `orm:${part(ao)}|${part(roughness)}|${part(metalness)}` : null
 }
 
+/** Where a built-in texture's file is read (api: 读取内置贴图). */
+export const builtinTextureURL = (file: string) => `/api/v1/creative/scene-textures/${encodeURIComponent(file)}`
+
+/** The file a built-in source names; null for an image revision. */
+function builtinFile(source: string): string | null {
+  return source.startsWith('tex:') ? source.slice(4) : null
+}
+
+/** The built-in materials by the files they are made of, for what a failure says. */
+const materialsOfFile = new Map<string, string[]>()
+for (const m of texturedEntries) {
+  for (const t of Object.values(m.maps ?? {})) {
+    const names = materialsOfFile.get(t.file) ?? []
+    if (!names.includes(m.label)) materialsOfFile.set(t.file, [...names, m.label])
+  }
+}
+
 /** The textures a principled slot samples, by what it samples them for. */
 export function textureKeys(t: Texturing | undefined): { color?: TextureKey; normal?: TextureKey; orm?: TextureKey } {
   const maps = t?.maps
@@ -197,12 +222,13 @@ export function textureKeys(t: Texturing | undefined): { color?: TextureKey; nor
 
 type Slots = NonNullable<Scene['objects'][number]['material_slots']>
 
-/** Every texture these material slots sample, sorted. */
+/** Every texture these material slots sample, sorted: a principled slot's maps, and a built-in textured material's own. */
 export function slotTextureKeys(slots: Iterable<Slots>): TextureKey[] {
   const keys = new Set<TextureKey>()
   for (const s of slots) {
     for (const slot of Object.values(s)) {
-      if (slot.preset === principledID) for (const k of Object.values(textureKeys(slot))) keys.add(k)
+      const m = catalogMaterial(slot.preset, slot.params, slot)
+      if (m?.kind === 'principled') for (const k of Object.values(textureKeys(m.texturing))) keys.add(k)
     }
   }
   return [...keys].sort()
@@ -228,8 +254,8 @@ function parse(key: TextureKey): { kind: Kind; parts: (Part | null)[] } {
   }
 }
 
-/** The image revisions a texture is made of. */
-export function textureRevisions(key: TextureKey): string[] {
+/** The sources a texture is made of: image revisions, or built-in files as tex:<file>. */
+export function textureSources(key: TextureKey): string[] {
   return [...new Set(parse(key).parts.flatMap((p) => (p ? [p.revision] : [])))]
 }
 
@@ -298,6 +324,9 @@ function borrow(revision: string): Promise<Picture> {
     })
   }
   return s.picture.catch((err: unknown) => {
+    // A built-in texture that does not come is a deployment problem: the photographer is told which material, not the HTTP status.
+    const file = builtinFile(revision)
+    if (file) throw new ImageError(`内置贴图${(materialsOfFile.get(file) ?? []).map((n) => `「${n}」`).join('')}加载失败`)
     throw new ImageError(`图片 ${revision} 加载失败（${err instanceof Error ? err.message : String(err)}）`)
   })
 }

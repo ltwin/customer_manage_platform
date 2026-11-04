@@ -15,7 +15,7 @@
 ## 3. 前端：渲染
 
 - [x] 3.1 目录与展开：`catalog.ts` 加 `textured` 条目（参数表取原理化，按 `defaults` 覆盖缺省值），`resolve.ts:catalogMaterial` 把它展开成原理化加内置贴图；先写单测：参数逐层覆盖、映射缺失时取 `size_m`、`texturingOf` 对内置贴图的输出
-- [ ] 3.2 图片来源扩展：`images.ts` 的 `MapRef` 与纹理键部件改为 `source`，`imagePlatform.fetch` 遇到 `tex:` 走内置读取接口；`textureRevisions` 改为 `textureSources`，内置源不计入场景图片。先写单测：内置源与修订源混用、去重、失败（非 200 时报加载失败、不显示状态码）、预算；现有图片测试不变仍绿
+- [x] 3.2 图片来源扩展：`images.ts` 的 `MapRef` 与纹理键部件改为 `source`，`imagePlatform.fetch` 遇到 `tex:` 走内置读取接口；`textureRevisions` 改为 `textureSources`，内置源不计入场景图片。先写单测：内置源与修订源混用、去重、失败（非 200 时报加载失败、不显示状态码）、预算；现有图片测试不变仍绿。实现上与 design 的一处出入：内部贴图引用沿用 `content_revision_id` 字段，内置来源写作 `tex:<file>`（不另改名 `source`），纹理键格式与下游都不用改；`slotTextureKeys` 改为按解析后的材质收集，内置材质的贴图同样「等图片就绪」；ARM 文件即标准 ORM，直接复用不合成
 
 ## 4. 前端：资产库的「内置」来源
 
