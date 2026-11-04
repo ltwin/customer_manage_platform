@@ -9,7 +9,6 @@ import {
   materialColor,
   materialEmissive,
   materialMetalness,
-  materialOpacity,
   materialRoughness,
   max,
   modelNormalMatrix,
@@ -18,6 +17,7 @@ import {
   normalView,
   positionLocal,
   positionView,
+  reference,
   texture,
   uniform,
   uv,
@@ -165,7 +165,8 @@ function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy:
     material.aoNode = orm.x
   }
   // opaque leaves the texture's alpha out; clip cuts below the cutoff, in the shadow maps too (task 1.1: three's shadow pass reads maskShadowNode, not alphaTestNode).
-  const alpha = materialOpacity.mul(color.w)
+  // The opacity is this material's own: the shadow pass builds the mask under its override material, whose materialOpacity is 1.
+  const alpha = reference('opacity', 'float', material).mul(color.w)
   if (policy.alphaCutoff !== null) {
     const cutoff = uniform(policy.alphaCutoff)
     material.opacityNode = alpha

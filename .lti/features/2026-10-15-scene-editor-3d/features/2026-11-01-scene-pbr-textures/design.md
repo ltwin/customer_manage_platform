@@ -152,6 +152,16 @@ creativedocument.persist ─▶ 新修订 + creative_document_content_refs
   - `blend`：`opacityNode = opacity × a`，`transparent = true`，与现有半透明材质相同（不参与 AO）。
   - 阴影：投影的深度渲染也要按 `clip` 挖空。`clip` 材质设置 `maskShadowNode = opacity × a ≥ alpha_cutoff`，与主 pass 用同一个透明度表达式。
     - 任务 1.1 实测（WebGPU 和 WebGL2 结果相同）：three r186 的阴影 pass 换成替代材质，透明度只取 `colorNode.a`（或 `map.a`），只复制数值形式的 `alphaTest` 属性；`opacityNode` 和 `alphaTestNode` 都不读，所以只设这两个时影子不挖空（`Renderer.js:_getShadowNodes`）。`maskShadowNode` 与「`colorNode` 带透明通道 + 数值 `alphaTest`」两种写法都能正确挖空；采用前者，因为它不依赖 `colorNode` 透明通道的含义。
+- 实现细节（任务 3.3）：
+  - 坐标照 Blender：投影平面坐标为 (u, w)，w 朝上；Mapping 节点（点类型）先缩放再旋转；纹理按行从上往下存（`flipY = false`），采样坐标为 (u', 1 − w')。三平面的轴照 Cycles 的 Box 投影（`svm_image.h`）：X 取 (y, z)、Y 取 (x, z)、Z 取 (y, x)，并在会读反的面上把 u 镜像。物件的局部坐标是文档空间（glTF 的 Y 朝上，`space.ts`），投影前先换到 Blender 的轴向（Z 朝上），梯度算完再换回。所以墙面贴图正立，六个面都不镜像；design 原写的「按负向轴翻转符号」就是这个镜像，法线的切向分量随 u 一起翻转。
+  - 法线贴图的斜率沿贴图的右和上取（OpenGL 约定），先按 −rotation 转回平面坐标，缩放不参与（法线贴图平铺得更密时角度不变）。三平面把三个面的高度梯度在物件空间（米）按权重混合，乘 `modelScale` 回到局部坐标，再经 `modelNormalMatrix` 和视图矩阵变换（不归一化），最后投影到表面。
+  - 三平面的贴图高度按第一张贴图（基础色、法线、ORM 的顺序）的宽高比，图片到达时更新 uniform。
+  - 映射与法线的数学写成与运算后端无关的函数（`Kit`）：光栅传 TSL 节点运算，单测传数值运算；命中点（4.3）传自己的采样函数。
+  - 材质预览（workbench）的 AO 预渲染用统一的覆盖材质，three 只给它复制数值 `alphaTest`，读不到槽位贴图，所以 `clip` 挖掉的部分在那里的 AO 里按实心计算。最终渲染、`lit` 导出（实时 GI 的预渲染用真实材质）和阴影（`maskShadowNode`）不受影响。owner 2026-11-03 定为已知边界。
+  - three 的透明测试在透明度 ≤ 阈值时挖掉，`maskShadowNode` 写成 ≥ 阈值时保留，两者只在恰好等于阈值时不同。
+  - 透明度用绑定到本材质的 `reference('opacity')`，不用 `materialOpacity`：阴影通道在覆盖用的阴影材质下构建遮罩，`materialOpacity` 在那里读到的是 1，`clip` 的常数不透明度就进不了阴影（e2e 发现）。
+  - 薄方块配 Box 投影时，底面的 u 按 Cycles 镜像，上下两面的镂空互为镜像；阴影通道画双面，所以图案不对称时影子会被另一面补上。这是 Box 投影本身的性质（Blender 相同）；树叶卡片用模型里的单面片或 UV 映射。平面图元本来就不投影。
+  - 视口按需绘制：图片到达时 `images.ts:onImageShown` 通知，`SceneObjects` 调 `invalidate` 重画（「等图片就绪」里视口的部分提前在这里做了）。
 - 缓存键 `keyOf` 加入整个槽位分配：`maps`（各图片修订 ID 和通道）、`mapping`、`alpha_mode`、`alpha_cutoff`：
   - 只换图片：只重建 CPU 端的节点，GPU 程序复用（按 WGSL 文本缓存），不重新编译。
   - 增减某种贴图、切换映射方式：重新编译，与新增灯光相同，走预编译。
@@ -497,7 +507,7 @@ lights（文档顺序） + sky.sun
 
 | # | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|---|
-| 1 | 三平面法线的表面梯度混合在斜面上的接缝 | 光栅与命中点的法线 | 任务开头用测试场景对照 Blender 的 Box 投影 | 法线任务开始前 |
+| 1 | 三平面法线的表面梯度混合在斜面上的接缝 | 光栅与命中点的法线 | 任务开头用测试场景对照 Blender 的 Box 投影。本机没有 Blender，owner 2026-11-03 决定先推进开发，之后自己对比；数值单测已确认 45° 斜面上法线连续、六个面的贴图不镜像且墙面正立 | owner 对比之后（不阻塞实施） |
 | ~~2~~ **已决** | 每个设备的纹理字节预算；图片上限 64、长边 2048、数组每层 512²/1024² 的显存与加载时间 | 视口、导出 | 任务 1.1 实测，owner 2026-11-03 定每设备 2 GiB（理论字节）；上限与尺寸维持原值，见「显存预算」 | 已决 |
 | 3 | 阴影的最终方案（阴影图集或虚拟阴影贴图） | 表面阴影 | 另立 change，owner 决定开工时机 | 不阻塞本次 |
 | 4 | 世界空间 GI Epic 的 U6 修订 | 那个 Epic 的设计记录 | 本设计批准后，起草那个 Epic 的修订，指向本设计 | C5c1 实施前 |

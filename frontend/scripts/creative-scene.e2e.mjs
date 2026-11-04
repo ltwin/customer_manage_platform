@@ -6,6 +6,7 @@
 // browser context.
 import assert from 'node:assert/strict'
 import { execSync, spawn } from 'node:child_process'
+import { crc32, deflateSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
@@ -149,6 +150,8 @@ class SceneServer {
     this.uploads = new Map()
     this.uploadBytes = new Map()
     this.models = new Map()
+    // Images material slots texture with, as PNG bytes by revision (C5c1).
+    this.images = new Map()
     this.discarded = []
     this.mediaMissing = new Set()
     this.modelSeq = 0
@@ -555,6 +558,8 @@ async function route(page, server) {
     }
     if (path === '/media-access-tickets' && request.method() === 'POST') {
       const { content_revision_id: rev } = request.postDataJSON()
+      const image = server.images.get(rev)
+      if (image) return json(200, { url: `${base}/__media/${rev}`, expires_at: '2100-01-01T00:00:00Z', mime: 'image/png', byte_size: image.byteLength })
       const m = server.models.get(rev)
       if (!m) return json(404, { error: { code: 'not_found', message: '内容不存在' } })
       return json(200, { url: `${base}/__media/${rev}`, expires_at: '2100-01-01T00:00:00Z', mime: 'model/gltf-binary', byte_size: m.glb.byteLength })
@@ -575,6 +580,8 @@ async function routeFiles(page, server) {
   })
   await page.route('**/__media/**', async (r) => {
     const rev = r.request().url().split('/').at(-1)
+    const image = server.images.get(rev)
+    if (image && !server.mediaMissing.has(rev)) return r.fulfill({ status: 200, contentType: 'image/png', body: image })
     const m = server.models.get(rev)
     if (!m || server.mediaMissing.has(rev)) return r.fulfill({ status: 404, body: '' })
     return r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: m.glb })
@@ -3039,6 +3046,190 @@ await check('AC-2: a brick wall scaled 2× along X looks like one built twice as
   assert.ok(diff < 0.003, `the same bricks (${(diff * 100).toFixed(3)}% of pixels differ)`)
   await wide.context.close()
   await scaled.context.close()
+})
+
+// --- C5c1 textures --------------------------------------------------------------
+
+/** An RGBA PNG of w × h, each pixel f(x, y) → [r, g, b, a]. */
+function pngOf(w, h, f) {
+  const row = w * 4 + 1
+  const raw = Buffer.alloc(row * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(f(x, y), y * row + 1 + x * 4)
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(4)
+    head.writeUInt32BE(data.length)
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([head, body, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr.set([8, 6, 0, 0, 0], 8)
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+const textures = {
+  // Red and blue squares, 8 a side.
+  ccr_checker: pngOf(64, 64, (x, y) => ((x >> 3) + (y >> 3)) % 2 ? [220, 40, 40, 255] : [40, 60, 220, 255]),
+  // Ridges across x: a tangent-space normal leaning left and right, 4 a tile.
+  ccr_ridges: pngOf(64, 64, (x) => {
+    const nx = 0.8 * Math.sin((x / 64) * 8 * Math.PI)
+    return [Math.round(((nx + 1) / 2) * 255), 128, Math.round(((Math.sqrt(1 - nx * nx) + 1) / 2) * 255), 255]
+  }),
+  // Grey stripes, dark and light, for roughness, metalness and AO alike.
+  ccr_stripes: pngOf(64, 64, (x) => ((x >> 3) % 2 ? [40, 40, 40, 255] : [255, 255, 255, 255])),
+  // A leaf card's alpha, a black card with 16 holes: the columns mirror about the middle, as box projection
+  // mirrors a thin box's underside (Cycles), so the two faces' holes line up.
+  ccr_holes: pngOf(64, 64, (x, y) => [0, 0, 0, [1, 2, 5, 6].includes(x >> 3) && [1, 2, 5, 6].includes(y >> 3) ? 0 : 255]),
+  // A veil: transparent on the left half, opaque on the right.
+  ccr_veil: pngOf(64, 64, (x) => [255, 255, 255, x < 32 ? 40 : 255]),
+}
+const stock = (server) => {
+  for (const [rev, bytes] of Object.entries(textures)) server.images.set(rev, bytes)
+}
+const principledSlot = (params, rest = {}) => ({ preset: 'principled@1', params, ...rest })
+const map = (rev) => ({ content_revision_id: rev })
+const change = async (page, server, ops) => {
+  server.external(ops)
+  await page.evaluate(() => window.__invalidate())
+  await sleep(600)
+}
+const setSlot = (id, slot) => [{ op: 'update_objects', updates: [{ object_id: id, material_slots: { main: slot } }] }]
+
+await check('C5c1: the five maps draw in material preview and final render', async () => {
+  const server = new SceneServer()
+  stock(server)
+  const ball = gid('ball')
+  seed(server, [{ id: ball, kind: 'primitive', name: '球', order: 5, transform: { ...identity(), position: [0, 1, 0] }, primitive: { builtin: 'sphere@1', params: { radius: 1 } }, material_slots: { main: principledSlot({}) } }])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /球/ }).click()
+  await page.keyboard.press('Period')
+  await page.keyboard.press('Escape')
+  const { box } = await viewportCenter(page)
+  // Each map against the same slot without it; metalness is the parameter times the map, so it starts at 1.
+  const cases = [
+    ['base_color', {}, { base_color: map('ccr_checker') }],
+    ['normal', {}, { normal: map('ccr_ridges') }],
+    // On metal, where roughness shows most: mirror-smooth stripes against rough ones.
+    ['roughness', { metalness: 1, roughness: 1 }, { roughness: map('ccr_stripes') }],
+    ['metalness', { metalness: 1, roughness: 0.3 }, { metalness: map('ccr_stripes') }],
+    ['ao', {}, { ao: map('ccr_stripes') }],
+  ]
+  for (const look of ['材质预览', '最终渲染']) {
+    await shading(page, look)
+    for (const [name, params, maps] of cases) {
+      await change(page, server, setSlot(ball, principledSlot(params)))
+      const without = await settledShot(page, box)
+      await change(page, server, setSlot(ball, principledSlot(params, { maps, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 } })))
+      const withMap = await settledShot(page, box)
+      const diff = await pixelDiff(page, without, withMap, 24)
+      assert.ok(diff > 0.01, `${look}: ${name} changes the ball (${(diff * 100).toFixed(2)}% of pixels)`)
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c1-${look}-${name}.png`, withMap)
+    }
+  }
+  assert.deepEqual(errors, [], 'no shader failed to compile')
+  await context.close()
+})
+
+await check('C5c1: box projection keeps a texture its size when the object is scaled', async () => {
+  const look = async (params, scale) => {
+    const server = new SceneServer()
+    stock(server)
+    seed(server, [boxOf('wall', 5, { position: [0, 0, 0], scale }, params, principledSlot({}, { maps: { base_color: map('ccr_checker') }, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 } }))])
+    const { context, page, errors } = await open(server)
+    await page.keyboard.press('Digit1')
+    await shading(page, '材质预览')
+    const { box } = await viewportCenter(page)
+    const png = await settledShot(page, box)
+    assert.deepEqual(errors, [])
+    return { png, page, context }
+  }
+  const wide = await look({ width: 4, height: 1.5, depth: 0.3 }, [1, 1, 1])
+  const scaled = await look({ width: 2, height: 1.5, depth: 0.3 }, [2, 1, 1])
+  const diff = await pixelDiff(wide.page, wide.png, scaled.png)
+  assert.ok(diff < 0.003, `the same squares (${(diff * 100).toFixed(3)}% of pixels differ)`)
+  await wide.context.close()
+  await scaled.context.close()
+})
+
+/** The share of pixels in the middle of a picture brighter than level in every channel. */
+async function brightShare(page, png, level, inset = 0.3) {
+  return page.evaluate(async ([src, level, inset]) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const g = c.getContext('2d')
+    g.drawImage(bitmap, 0, 0)
+    const [x0, y0] = [Math.round(c.width * inset), Math.round(c.height * inset)]
+    const p = g.getImageData(x0, y0, c.width - 2 * x0, c.height - 2 * y0).data
+    let n = 0
+    for (let i = 0; i < p.length; i += 4) if (p[i] >= level && p[i + 1] >= level && p[i + 2] >= level) n++
+    return n / (p.length / 4)
+  }, [`data:image/png;base64,${png.toString('base64')}`, level, inset])
+}
+
+await check('C5c1: a leaf card cut by clip shows the ground through its holes, its shadow cut alike; blend fades with the texture', async () => {
+  const server = new SceneServer()
+  stock(server)
+  // The sun nearly overhead (its shadow 5 cm off the card); a black card 0.3 m above white ground, a camera 10 m above looking down at it.
+  server.scene.environment.sky = { kind: 'procedural', sun_elevation_deg: 80, sun_azimuth_deg: 0, turbidity: 3 }
+  const card = gid('card')
+  const cut = principledSlot({ color: '#000000' }, { maps: { base_color: map('ccr_holes') }, mapping: { kind: 'triplanar', size_m: 2, rotation_deg: 0, normal_strength: 1 }, alpha_mode: 'clip' })
+  seed(server, [
+    boxOf('card', 5, { position: [0, 0.3, 0] }, { width: 2, height: 0.002, depth: 2 }, cut),
+    { id: gid('ground2'), kind: 'primitive', name: '白地', order: 6, transform: identity(), primitive: { builtin: 'box@1', params: { width: 12, height: 0.01, depth: 12 } }, material_slots: { main: principledSlot({ color: '#ffffff', roughness: 1 }) } },
+    // Document space, Y up: a quarter turn about X looks down.
+    { id: gid('top'), kind: 'camera', name: '俯视', order: 7, transform: { position: [0, 10, 0], rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: [1, 1, 1] }, camera: { focal_mm: 135 } },
+  ])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /俯视/ }).click()
+  await page.keyboard.press('Digit0')
+  await page.locator('.cc-scene-camframe').waitFor()
+  await page.mouse.move(5, 5)
+  const frame = await page.locator('.cc-scene-camframe').boundingBox()
+  await shading(page, '最终渲染')
+  const holed = await settledShot(page, frame)
+  // Through the holes, sunlit ground, as bright as the ground beside the card: the shadow has the holes too. Opaque, the card is dark all over.
+  await change(page, server, setSlot(card, { ...cut, alpha_mode: 'opaque' }))
+  const solid = await settledShot(page, frame)
+  if (process.env.SCENE_E2E_SHOTS) for (const [name, png] of [['holed', holed], ['solid', solid]]) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c1-card-${name}.png`, png)
+  // Only sunlit white ground is this bright; the middle of the picture holds 4 of the 16 holes, in part.
+  const [lit, dark] = [await brightShare(page, holed, 200), await brightShare(page, solid, 200)]
+  assert.ok(lit > 0.05 && dark < 0.02, `sunlit ground through the holes: ${(lit * 100).toFixed(1)}% bright cut, ${(dark * 100).toFixed(1)}% opaque`)
+  // blend: the veil's left half lets the ground through, its right half does not.
+  const veil = principledSlot({ color: '#000000' }, { maps: { base_color: map('ccr_veil') }, mapping: { kind: 'triplanar', size_m: 2, rotation_deg: 0, normal_strength: 1 }, alpha_mode: 'blend' })
+  await change(page, server, setSlot(card, veil))
+  const veiled = await settledShot(page, frame)
+  await change(page, server, setSlot(card, { ...veil, maps: { base_color: map('ccr_checker') } }))
+  const even = await settledShot(page, frame)
+  const diff = await pixelDiff(page, veiled, even, 24)
+  assert.ok(diff > 0.05, `blend follows the texture's alpha (${(diff * 100).toFixed(1)}% of pixels differ)`)
+  if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c1-card-veiled.png`, veiled)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C5c1: clay and line art take no notice of textures: the same pixels as without them', async () => {
+  const shots = async (textured) => {
+    const { server } = exportScene(false)
+    stock(server)
+    const slot = textured ? principledSlot({}, { maps: { base_color: map('ccr_holes'), normal: map('ccr_ridges') }, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 0, normal_strength: 1 }, alpha_mode: 'clip' }) : principledSlot({})
+    server.external(setSlot(objectID('near'), slot))
+    const { context, page, errors } = await open(server, { query: '?export=1' })
+    const out = await runExport(page, server)
+    assert.deepEqual(errors, [])
+    return { out, page, context }
+  }
+  const plain = await shots(false)
+  const textured = await shots(true)
+  for (const [i, s] of plain.out.entries()) {
+    for (const [j, img] of s.images.entries()) {
+      const apart = await imageApart(plain.page, img.png, textured.out[i].images[j].png)
+      assert.equal(apart.max, 0, `${s.camera} ${img.pass}: identical (largest difference ${apart.max})`)
+    }
+  }
+  await plain.context.close()
+  await textured.context.close()
 })
 
 await check('AC-2: polished metal mirrors the sky with one sun highlight, not two', async () => {
@@ -11817,3 +12008,4 @@ await rm(giFixture, { force: true })
 await rm(probesFixture, { force: true })
 console.log(results.join('\n'))
 if (results.some((r) => r.startsWith('FAIL'))) process.exit(1)
+

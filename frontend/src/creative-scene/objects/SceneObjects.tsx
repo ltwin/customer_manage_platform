@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { EdgeLines } from './EdgeLines.tsx'
 import { Outline } from './Outline.tsx'
 import { BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, MeshStandardMaterial, Vector3 } from 'three'
@@ -18,6 +18,7 @@ import { ModelMesh } from './ModelMesh.tsx'
 import { SceneLight, VolumesCastLight } from './SceneLights.tsx'
 import { SlotMesh } from './SlotMesh.tsx'
 import { Volume } from './Volume.tsx'
+import { onImageShown } from '../materials/images.ts'
 import { resolvePart, resolveSlot } from '../materials/resolve.ts'
 import { ASIDE_LAYER } from '../render/sceneRenderer.ts'
 import { disposeEdges } from './wireframe.ts'
@@ -89,6 +90,9 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
     return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
   }, [placeholders, scene.objects])
   const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered' }
+  // A texture's image arrives after its material draws with the placeholder (materials/images.ts): draw again.
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => onImageShown(invalidate), [invalidate])
   // Hidden ones too: hiding a volume compiles nothing.
   const volumesCast = scene.objects.some((o) => o.kind === 'volume' && (o.volume?.cast_shadow ?? volumeDefaults.cast_shadow))
   return (

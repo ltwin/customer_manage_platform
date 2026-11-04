@@ -90,6 +90,7 @@ function onFace(N: number[], p: number[], m: MappingIn<V>, normalTexel: number[]
 }
 
 test('box projection: on every face the texture reads the right way round, upright on walls, and its bumps follow it', () => {
+  // Document axes, Y up (space.ts): the walls are the faces whose normal has no Y.
   const faces = [
     [1, 0, 0],
     [-1, 0, 0],
@@ -109,7 +110,7 @@ test('box projection: on every face the texture reads the right way round, uprig
       const up = vec(num.normalize(num.add(num.mul(axes[0], -vec(d[0])[1]), num.mul(axes[1], -vec(d[1])[1]))))
       const face = `${deg}° on ${N}`
       close(num.cross(right, up), N, `${face}: not mirrored`)
-      if (deg === 0 && N[2] === 0) close(up, [0, 0, 1], `${face}: upright`)
+      if (deg === 0 && N[1] === 0) close(up, [0, 1, 0], `${face}: upright`)
       close(onFace(N, [0.3, 0.2, 0.1], m, texelOf(leanRight)).bent, num.add(num.mul(right, 0.6), num.mul(N, 0.8)), `${face}: leans right`)
       close(onFace(N, [0.3, 0.2, 0.1], m, texelOf(leanUp)).bent, num.add(num.mul(up, 0.6), num.mul(N, 0.8)), `${face}: leans up`)
     }
@@ -121,8 +122,8 @@ test('box projection: across a 45° slope the bent normal turns without a jump',
   let last: V | null = null
   let worst = 0
   for (let deg = 0; deg <= 90; deg += 0.25) {
-    // From the +x face over the edge to the +z face.
-    const N = [Math.cos(rad(deg)), 0, Math.sin(rad(deg))]
+    // From a wall facing +x over the edge to the top, facing +y.
+    const N = [Math.cos(rad(deg)), Math.sin(rad(deg)), 0]
     const bent = onFace(N, [0.3, 0.2, 0.1], m, texelOf(leanUp)).bent
     if (last) worst = Math.max(worst, Math.acos(Math.min(1, dot(bent, last))))
     last = bent
@@ -132,10 +133,11 @@ test('box projection: across a 45° slope the bent normal turns without a jump',
 })
 
 test('a normal map\'s strength scales its bend; 0 leaves the surface flat', () => {
-  const N = [0, 0, 1]
+  // A floor: Blender's +z face, its texture's right along Blender's −y, the document's +z.
+  const N = [0, 1, 0]
   close(onFace(N, [0.3, 0.2, 0], mappingIn({ scale: [1, 1], rotation: 0, strength: 0 }), texelOf(leanRight)).bent, N, 'flat')
   const half = onFace(N, [0.3, 0.2, 0], mappingIn({ scale: [1, 1], rotation: 0, strength: 0.5 }), texelOf(leanRight)).bent
-  close(half, num.normalize([0, -0.3 / 0.8, 1]), 'half the slope')
+  close(half, num.normalize([0, 1, 0.3 / 0.8]), 'half the slope')
 })
 
 import { imagePlatform, resetImages } from '../src/creative-scene/materials/images.ts'

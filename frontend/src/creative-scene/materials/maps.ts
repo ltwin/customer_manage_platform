@@ -107,13 +107,20 @@ export type Surface<N> = { color: N; orm: N; bend: N | null }
 
 export type Has = { color: boolean; normal: boolean; orm: boolean }
 
+/** A document-space vector (glTF's, Y up: space.ts) in Blender's axes, Z up, and back. */
+const toBlender = <N>(k: Kit<N>, v: N): N => k.vec3(k.x(v), k.mul(k.z(v), k.num(-1)), k.y(v))
+const fromBlender = <N>(k: Kit<N>, v: N): N => k.vec3(k.x(v), k.z(v), k.mul(k.y(v), k.num(-1)))
+
 /**
  * Box projection at an object-space point in true metres (so a scaled object
- * does not stretch its textures) with its object-space normal. The bend is
- * the height's gradient along the surface in the same space, the three
- * planes' blended (surface gradient): perturbed with bendNormal.
+ * does not stretch its textures) with its object-space normal, both in
+ * document axes. The bend is the height's gradient along the surface in the
+ * same space, the three planes' blended (surface gradient): perturbed with
+ * bendNormal.
  */
-export function triplanar<N>(k: Kit<N>, pos: N, normal: N, m: MappingIn<N>, has: Has, sample: Sample<N>): Surface<N> {
+export function triplanar<N>(k: Kit<N>, docPos: N, docNormal: N, m: MappingIn<N>, has: Has, sample: Sample<N>): Surface<N> {
+  const pos = toBlender(k, docPos)
+  const normal = toBlender(k, docNormal)
   const w = triWeights(k, normal)
   const zero = k.num(0)
   const one = k.num(1)
@@ -147,7 +154,7 @@ export function triplanar<N>(k: Kit<N>, pos: N, normal: N, m: MappingIn<N>, has:
         zero,
       )
     : null
-  return { color, orm, bend }
+  return { color, orm, bend: bend && fromBlender(k, bend) }
 }
 
 /** N bent by a height gradient g given in N's space: g's part along the surface taken off it. */

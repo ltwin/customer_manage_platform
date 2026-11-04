@@ -357,6 +357,14 @@ function admit(e: Entry, gen: number, pictures: readonly Picture[]): boolean {
   return true
 }
 
+const shownListeners = new Set<() => void>()
+
+/** Calls back whenever a texture's image arrives: a view that draws on demand draws again. Returns the unsubscribe. */
+export function onImageShown(listener: () => void): () => void {
+  shownListeners.add(listener)
+  return () => void shownListeners.delete(listener)
+}
+
 function show(e: Entry, shown: NonNullable<Entry['shown']>) {
   // three cannot upload a larger image into the 1×1 it made: dispose, and every device makes it again.
   if (e.placeholderUploaded) {
@@ -369,6 +377,7 @@ function show(e: Entry, shown: NonNullable<Entry['shown']>) {
   // Kept while the pixels are let go: box projection sizes a tile by it (instances.ts).
   e.texture.userData.aspect = shown.picture.width / shown.picture.height
   setState(e, 'ready')
+  for (const l of shownListeners) l()
 }
 
 function letGo(e: Entry) {
