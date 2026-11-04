@@ -476,15 +476,16 @@ export type ImageHold = { release(): void }
  * or did not fit the budget, saying which.
  */
 export function loadSceneImages(scene: Pick<Scene, 'objects'>): Promise<ImageHold> {
-  return loadImages(sceneTextureKeys(scene))
+  return holdImages(sceneTextureKeys(scene))
 }
 
 /** loadSceneImages for the slots of a picture outside a scene: a card's or preview's model. */
 export function loadSlotImages(slots: Slots): Promise<ImageHold> {
-  return loadImages(slotTextureKeys([slots]))
+  return holdImages(slotTextureKeys([slots]))
 }
 
-async function loadImages(keys: readonly TextureKey[]): Promise<ImageHold> {
+/** loadSceneImages for these textures: the world-space layer's, which copies each into its own (render/trace/maps.ts). */
+export async function holdImages(keys: readonly TextureKey[]): Promise<ImageHold> {
   const held = keys.map((key) => {
     acquireTexture(key)
     const e = entries.get(key)!

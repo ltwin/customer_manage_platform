@@ -19,7 +19,8 @@ export const BUDGET = 2 ** 30
 /** Why there is no layer: the WebGL2 backend (compatibility mode), or a WebGPU device short of what it needs. */
 export type Unsupported = 'compatibility' | 'device'
 
-export type Capability = { supported: true; maxBinding: number } | { supported: false; reason: Unsupported }
+/** maxBinding: the most one of the layer's buffers may hold; maxLayers: the layers a texture array may have (render/trace/maps.ts). */
+export type Capability = { supported: true; maxBinding: number; maxLayers: number } | { supported: false; reason: Unsupported }
 
 /** The limits a device was given, as WebGPU names them; the fragment stage's own where the browser has it. */
 export type StorageLimits = {
@@ -27,6 +28,8 @@ export type StorageLimits = {
   maxBufferSize: number
   maxStorageBuffersPerShaderStage: number
   maxStorageBuffersInFragmentStage?: number
+  /** WebGPU's default where the device does not say. */
+  maxTextureArrayLayers?: number
 }
 
 export type DeviceFacts = {
@@ -44,7 +47,7 @@ export function capabilityOf(d: DeviceFacts): Capability {
   const l = d.limits
   if (d.compatibility || d.unsupported || !l) return { supported: false, reason: 'device' }
   if ((l.maxStorageBuffersInFragmentStage ?? l.maxStorageBuffersPerShaderStage) < FRAGMENT_STORAGE_BUFFERS) return { supported: false, reason: 'device' }
-  return { supported: true, maxBinding: Math.min(l.maxStorageBufferBindingSize, l.maxBufferSize) }
+  return { supported: true, maxBinding: Math.min(l.maxStorageBufferBindingSize, l.maxBufferSize), maxLayers: l.maxTextureArrayLayers ?? 256 }
 }
 
 /** Whether the original layer is worth building: not when its estimate is plainly past the budget. */

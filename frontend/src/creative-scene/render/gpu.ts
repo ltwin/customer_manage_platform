@@ -308,6 +308,8 @@ export const gpuTestHooks = {
   traceOff: false,
   /** Takes the device for one the layer does not support: no such device to test on. */
   traceUnsupported: false,
+  /** The layers the world-space layer's texture arrays may have, instead of the device's (render/trace/maps.ts): what does not fit. */
+  traceMapLayers: null as number | null,
   /** Holds each build's answer this long: preparing, and an export's wait running out. */
   traceDelayMs: 0,
   /** What the viewport's layer did last (render/trace/base.ts), e2e only. */
@@ -415,6 +417,8 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
         maxBufferSize: limits.maxBufferSize,
         maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
         maxStorageBuffersPerShaderStage: limits.maxStorageBuffersPerShaderStage,
+        // The world-space layer's texture arrays (render/trace/maps.ts).
+        maxTextureArrayLayers: limits.maxTextureArrayLayers,
       }
     : undefined
   const renderer = new WebGPURenderer({ canvas, alpha, antialias: false, requiredLimits, forceWebGL: gpuTestHooks.forceWebGL || !found })

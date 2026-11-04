@@ -10,14 +10,15 @@ const limits = { maxStorageBufferBindingSize: 2 * gib, maxBufferSize: 4 * gib, m
 
 test('the layer is built on a WebGPU device with the storage the reflections bind (design「能力与设备上限」)', () => {
   const on = (d: Partial<DeviceFacts>) => capabilityOf({ backend: 'webgpu', compatibility: false, limits, ...d })
-  assert.deepEqual(on({}), { supported: true, maxBinding: 2 * gib }, 'one buffer holds the lesser of the binding and buffer limits')
-  assert.deepEqual(on({ limits: { ...limits, maxBufferSize: gib } }), { supported: true, maxBinding: gib })
+  assert.deepEqual(on({}), { supported: true, maxBinding: 2 * gib, maxLayers: 256 }, 'one buffer holds the lesser of the binding and buffer limits; a texture array WebGPU’s default layers')
+  assert.deepEqual(on({ limits: { ...limits, maxBufferSize: gib } }), { supported: true, maxBinding: gib, maxLayers: 256 })
+  assert.equal((on({ limits: { ...limits, maxTextureArrayLayers: 2048 } }) as { maxLayers: number }).maxLayers, 2048, 'or the device’s')
   assert.deepEqual(on({ backend: 'webgl2', limits: null }), { supported: false, reason: 'compatibility' }, 'the WebGL2 backend is compatibility mode')
   assert.deepEqual(on({ compatibility: true }), { supported: false, reason: 'device' }, 'a compatibility-level WebGPU device (forceCompatibility)')
   assert.deepEqual(on({ unsupported: true }), { supported: false, reason: 'device' }, 'the e2e hook traceUnsupported')
   assert.deepEqual(on({ limits: null }), { supported: false, reason: 'device' })
   assert.deepEqual(on({ limits: { ...limits, maxStorageBuffersPerShaderStage: 5 } }), { supported: false, reason: 'device' }, 'six storage buffers in the fragment')
-  assert.deepEqual(on({ limits: { ...limits, maxStorageBuffersPerShaderStage: 6 } }), { supported: true, maxBinding: 2 * gib })
+  assert.deepEqual(on({ limits: { ...limits, maxStorageBuffersPerShaderStage: 6 } }), { supported: true, maxBinding: 2 * gib, maxLayers: 256 })
   assert.deepEqual(on({ limits: { ...limits, maxStorageBuffersInFragmentStage: 4 } }), { supported: false, reason: 'device' }, 'the fragment stage’s own limit, where the browser has one')
 })
 
@@ -583,8 +584,49 @@ test('a builtin is cached under its id and its parameters filled in and sorted; 
 })
 
 import { Color, SpotLight } from 'three'
-import { HEADER, LIGHT, LIGHT_ROW, MATERIAL_ROW, PRINCIPLED, UNKNOWN, presets, TraceTables } from '../src/creative-scene/render/trace/tables.ts'
+import { HEADER, LIGHT, LIGHT_ROW, MAPS_AT, MATERIAL_ROW, PRINCIPLED, UNKNOWN, presets, TraceTables } from '../src/creative-scene/render/trace/tables.ts'
+import { LayerSlots, rowMaps } from '../src/creative-scene/render/trace/maps.ts'
 import { SceneAreaLight, SceneSphereLight, SceneSunLight } from '../src/creative-scene/render/lightModel/lights.ts'
+
+test('texture array layers by key: shared, given back and used again lowest first, grown by 1.25, none past the device’s (C5c1 design「世界空间层」)', () => {
+  const slots = new LayerSlots(6)
+  assert.equal(slots.room, 2, 'two layers at least: three takes one for a plain texture')
+  assert.deepEqual(['color:a', 'color:b', 'color:c'].map((k) => slots.take(k)), [0, 1, 2])
+  assert.equal(slots.room, 3, 'grown to take the third')
+  assert.equal(slots.take('color:a'), 0, 'a key asked again shares its layer')
+  slots.give('color:a')
+  assert.equal(slots.layerOf('color:a'), 0, 'kept while another asker holds it')
+  slots.give('color:a')
+  slots.give('color:b')
+  assert.equal(slots.layerOf('color:a'), undefined)
+  assert.deepEqual([slots.take('color:d'), slots.take('color:e')], [0, 1], 'freed layers again, lowest first')
+  assert.deepEqual(['color:f', 'color:g', 'color:h', 'color:i'].map((k) => slots.take(k)), [3, 4, 5, null], 'none past six')
+  assert.equal(slots.room, 6, 'grown by 1.25 each time, never past the device’s')
+  // An export asks for its keys sorted: the same keys, the same layers, whichever image comes first.
+  const sorted = (keys: string[]) => {
+    const s = new LayerSlots(256)
+    return Object.fromEntries([...keys].sort().map((k) => [k, s.take(k)]))
+  }
+  assert.deepEqual(sorted(['orm:x.r|-|-', 'color:b', 'color:a']), sorted(['color:a', 'orm:x.r|-|-', 'color:b']))
+})
+
+test('a slot’s textures in its row: the layers once written, the mapping, and clip held against the opacity (C5c1)', () => {
+  const params = { color: '#ffffff', roughness: 1, metalness: 0, emissive: '#000000', emissive_intensity: 0 }
+  const layerOf = (key: string) => ({ 'color:c1': 4, 'normal:n1': -1 })[key] ?? -1
+  const aspectOf = (key: string) => (key === 'color:c1' ? 2 : 1)
+  assert.deepEqual(rowMaps({ kind: 'principled', params }, layerOf, aspectOf), { layers: [-1, -1, -1, 0], transform: [1, 1, 0, 1], clip: 0 }, 'a plain slot')
+  const maps = { base_color: { content_revision_id: 'c1' }, normal: { content_revision_id: 'n1' } }
+  const box = rowMaps({ kind: 'principled', params, texturing: { maps, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 90, normal_strength: 0.5 } } }, layerOf, aspectOf)
+  assert.deepEqual(box.layers, [4, -1, -1, 0], 'the colour written, the normal not yet: −1, no ORM')
+  assert.deepEqual(box.transform.map((v) => +v.toFixed(6)), [2, 4, +(Math.PI / 2).toFixed(6), 0.5], 'a tile 0.5 m wide, as tall as the image says (2:1)')
+  const uv = rowMaps({ kind: 'principled', params, texturing: { maps, mapping: { kind: 'uv', repeat: [3, 2] } } }, layerOf, aspectOf)
+  assert.deepEqual([uv.layers[3], uv.transform[0], uv.transform[1]], [1, 3, 2], 'UV: the repeat')
+  const clip = (opacity: number, cutoff?: number) => rowMaps({ kind: 'principled', params: { ...params, opacity }, texturing: { maps, alpha_mode: 'clip', ...(cutoff === undefined ? {} : { alpha_cutoff: cutoff }) } }, layerOf, aspectOf).clip
+  assert.equal(clip(1), 0.5, 'the default cutoff')
+  assert.equal(clip(0.8, 0.4), 0.5, 'opacity × alpha ≥ cutoff, as alpha ≥ cutoff / opacity')
+  assert.ok(clip(0) > 1, 'opacity 0 cuts everywhere')
+  assert.equal(rowMaps({ kind: 'principled', params, texturing: { maps, alpha_mode: 'blend' } }, layerOf, aspectOf).clip, 0, 'blend is not traced as cut')
+})
 
 test('one table: a header, a material row a traced mesh, a light row a light (design「内部类型」, D6)', () => {
   const tables = new TraceTables()
@@ -606,6 +648,12 @@ test('one table: a header, a material row a traced mesh, a light row a light (de
   assert.deepEqual(row(3, 0), [PRINCIPLED, 0, 0, 0])
   near(row(3, 1), [0, 1, 0, 0], 'its colour')
   near([row(3, 2)[0], row(3, 3)[0]], [0.25, 0], 'its roughness, metalness 0')
+  // A slot's textures (C5c1): the clip value in the first vec4, the layers and the mapping in the 9th and 10th.
+  tables.setMaterial(4, { kind: 'principled', params: { color: '#ffffff', roughness: 1, metalness: 0, emissive: '#000000', emissive_intensity: 0 } }, false, { layers: [3, -1, 7, 1], transform: [2, 3, 0.5, 0.8], clip: 0.625 })
+  assert.deepEqual(row(4, 0), [PRINCIPLED, 0, 0, 0.625])
+  assert.deepEqual(row(4, MAPS_AT), [3, -1, 7, 1])
+  near(row(4, MAPS_AT + 1), [2, 3, 0.5, 0.8], 'scale, rotation, strength')
+  assert.deepEqual(row(0, MAPS_AT), [-1, -1, -1, 0], 'none without textures')
   // Past its room: a larger buffer behind the same node, keeping the rows.
   tables.setMaterial(40, { kind: 'unknown' }, false)
   assert.deepEqual(row(0, 0), [PRINCIPLED, 1, 1, 0], 'kept when grown')
@@ -664,7 +712,7 @@ function deviceOf(maxBinding = 2 ** 31) {
   const released = new Set<object>()
   const listeners = new Set<(message: string) => void>()
   const gpu = {
-    trace: { supported: true, maxBinding },
+    trace: { supported: true, maxBinding, maxLayers: 256 },
     release: (a: object) => released.add(a),
     onError: (l: (message: string) => void) => (listeners.add(l), () => listeners.delete(l)),
   }
