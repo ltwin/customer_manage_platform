@@ -1,0 +1,499 @@
+import { NoColorSpace, RepeatWrapping, SRGBColorSpace, Texture } from 'three'
+import { createStore } from 'zustand/vanilla'
+import { mediaTicket } from '../../creative-canvas/editor/media.ts'
+import type { Scene } from '../api.ts'
+import { principledID } from './catalog.ts'
+import type { Texturing } from './resolve.ts'
+
+// The images a scene's material slots texture with (C5c1 design「图片缓存」),
+// in two layers. A source is an image revision: its original file, fetched
+// once and kept as it came, and its pixels while a texture needs them,
+// decoded once whatever they are used as. A texture is a TextureKey: what a
+// material samples, one three Texture for every device on the page, the same
+// object from the first ask to the last release, so no material rebuilds its
+// nodes when the image arrives.
+//
+// A texture shows a 1×1 placeholder until its image is here: white for a base
+// colour, a flat normal, and an ORM of ones, so a slot looks as its constant
+// parameters say. Pixels are let go once uploaded (design「显存预算」): the
+// texture goes back to the placeholder image, which the devices that have the
+// real one never upload again. A device that comes later either waits
+// through loadSceneImages, which decodes the images again first, or uploads
+// the placeholder, which has them decoded again and the texture rebuilt.
+
+/** `color:<revision>`, `normal:<revision>` or `orm:<ao>|<roughness>|<metalness>`, each part `<revision>.<channel>` or `-`. */
+export type TextureKey = string
+
+type Kind = 'color' | 'normal' | 'orm'
+type Channel = 'r' | 'g' | 'b' | 'a'
+type Part = { revision: string; channel: Channel }
+type MapRef = { content_revision_id: string; channel?: Channel }
+
+/** Longest side an image is decoded to. */
+export const longSide = 2048
+/** Images being fetched and decoded at once; the rest wait their turn. */
+const decodeAtOnce = 4
+const releaseAfterMs = 1000
+
+/**
+ * What the textures may take on a device, in theoretical bytes: width ×
+ * height × 4 with mipmaps (owner 2026-11-03). Every texture on the page
+ * counts, as any device may draw any of them. A texture that does not fit
+ * keeps its placeholder until others are released.
+ */
+export const imageBudget = { bytes: 2 * 1024 ** 3 }
+
+export const textureBytes = (width: number, height: number) => Math.ceil((width * height * 4 * 4) / 3)
+
+/** A decoded image: an ImageBitmap in the browser. */
+export type Picture = { readonly width: number; readonly height: number; close(): void }
+/** One channel of an ORM: which picture, and which of its channels. */
+export type Layer = { picture: Picture; channel: Channel }
+
+const decodeOptions = { imageOrientation: 'from-image', premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as const
+
+/** How images are fetched, decoded and composed; tests stand in their own. */
+export const imagePlatform = {
+  async fetch(revision: string): Promise<Blob> {
+    const ticket = await mediaTicket(revision, 'original', 'display')
+    const response = await fetch(ticket.url, { credentials: 'same-origin' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return response.blob()
+  },
+  /**
+   * The original's pixels as stored, at most longSide on the long side: no
+   * colour management, so normal and ORM data stay what they were written
+   * as, and alpha not premultiplied.
+   */
+  async decode(blob: Blob): Promise<Picture> {
+    const full = await createImageBitmap(blob, decodeOptions)
+    const scale = longSide / Math.max(full.width, full.height)
+    if (scale >= 1) return full
+    try {
+      return await createImageBitmap(full, { ...decodeOptions, resizeWidth: Math.max(1, Math.round(full.width * scale)), resizeHeight: Math.max(1, Math.round(full.height * scale)), resizeQuality: 'high' })
+    } finally {
+      full.close()
+    }
+  },
+  /**
+   * An ORM from up to three layers, ambient occlusion, roughness and
+   * metalness into red, green and blue, each scaled to width × height; a
+   * missing one is 1. Read through a 2D canvas, which premultiplies: a
+   * layer's colour channels are only as exact as its alpha allows.
+   */
+  async compose(layers: readonly (Layer | null)[], width: number, height: number): Promise<Picture> {
+    const ctx = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!
+    const out = new ImageData(width, height)
+    out.data.fill(255)
+    const read = new Map<Picture, Uint8ClampedArray>()
+    layers.forEach((layer, i) => {
+      if (!layer) return
+      let src = read.get(layer.picture)
+      if (!src) {
+        ctx.clearRect(0, 0, width, height)
+        ctx.drawImage(layer.picture as ImageBitmap, 0, 0, width, height)
+        src = ctx.getImageData(0, 0, width, height).data
+        read.set(layer.picture, src)
+      }
+      const c = 'rgba'.indexOf(layer.channel)
+      for (let p = 0; p < width * height; p++) out.data[p * 4 + i] = src[p * 4 + c]
+    })
+    return createImageBitmap(out, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+  },
+  placeholder(rgba: readonly [number, number, number, number]): unknown {
+    return new ImageData(new Uint8ClampedArray(rgba), 1, 1)
+  },
+}
+
+const part = (r: MapRef | undefined) => (r ? `${r.content_revision_id}.${r.channel ?? 'r'}` : '-')
+
+export const colorKey = (revision: string): TextureKey => `color:${revision}`
+export const normalKey = (revision: string): TextureKey => `normal:${revision}`
+
+/** The ORM of a slot's ambient occlusion, roughness and metalness maps; null when it has none of them. */
+export function ormKey(ao: MapRef | undefined, roughness: MapRef | undefined, metalness: MapRef | undefined): TextureKey | null {
+  return ao || roughness || metalness ? `orm:${part(ao)}|${part(roughness)}|${part(metalness)}` : null
+}
+
+/** The textures a principled slot samples, by what it samples them for. */
+export function textureKeys(t: Texturing | undefined): { color?: TextureKey; normal?: TextureKey; orm?: TextureKey } {
+  const maps = t?.maps
+  if (!maps) return {}
+  const orm = ormKey(maps.ao, maps.roughness, maps.metalness)
+  return {
+    ...(maps.base_color ? { color: colorKey(maps.base_color.content_revision_id) } : {}),
+    ...(maps.normal ? { normal: normalKey(maps.normal.content_revision_id) } : {}),
+    ...(orm ? { orm } : {}),
+  }
+}
+
+/** Every texture the scene's material slots sample, sorted. */
+export function sceneTextureKeys(scene: Pick<Scene, 'objects'>): TextureKey[] {
+  const keys = new Set<TextureKey>()
+  for (const o of scene.objects) {
+    for (const slot of Object.values(o.material_slots ?? {})) {
+      if (slot.preset === principledID) for (const k of Object.values(textureKeys(slot))) keys.add(k)
+    }
+  }
+  return [...keys].sort()
+}
+
+function parse(key: TextureKey): { kind: Kind; parts: (Part | null)[] } {
+  const at = key.indexOf(':')
+  const kind = key.slice(0, at) as Kind
+  const rest = key.slice(at + 1)
+  if (kind !== 'orm') return { kind, parts: [{ revision: rest, channel: 'r' }] }
+  return {
+    kind,
+    parts: rest.split('|').map((p) => {
+      if (p === '-') return null
+      const dot = p.lastIndexOf('.')
+      return { revision: p.slice(0, dot), channel: p.slice(dot + 1) as Channel }
+    }),
+  }
+}
+
+/** One image's revisions used as they are: a base colour, a normal map, or a standard ORM (one image, r g b in order). */
+function direct(kind: Kind, parts: readonly (Part | null)[]): boolean {
+  if (kind !== 'orm') return true
+  const [ao, rough, metal] = parts
+  return !!ao && !!rough && !!metal && ao.revision === rough.revision && rough.revision === metal.revision && ao.channel === 'r' && rough.channel === 'g' && metal.channel === 'b'
+}
+
+const placeholderPixels: Record<Kind, readonly [number, number, number, number]> = {
+  color: [255, 255, 255, 255],
+  normal: [128, 128, 255, 255],
+  orm: [255, 255, 255, 255],
+}
+const placeholders = new Map<Kind, unknown>()
+const placeholderOf = (kind: Kind) => {
+  if (!placeholders.has(kind)) placeholders.set(kind, imagePlatform.placeholder(placeholderPixels[kind]))
+  return placeholders.get(kind)
+}
+
+// ---- sources
+
+type Source = { refs: number; blob: Promise<Blob> | null; picture: Promise<Picture> | null; borrowers: number }
+const sources = new Map<string, Source>()
+
+let decoding = 0
+const waiting: (() => void)[] = []
+async function limited<T>(job: () => Promise<T>): Promise<T> {
+  // A finished job hands its turn to the next in line rather than freeing it.
+  if (decoding < decodeAtOnce) decoding++
+  else await new Promise<void>((go) => waiting.push(go))
+  try {
+    return await job()
+  } finally {
+    const next = waiting.shift()
+    if (next) next()
+    else decoding--
+  }
+}
+
+/** Why an image could not be used, naming it. */
+class ImageError extends Error {}
+
+/** The revision's pixels, decoded if no texture has them now; give them back with giveBack. */
+function borrow(revision: string): Promise<Picture> {
+  const s = sources.get(revision)!
+  s.borrowers++
+  if (!s.picture) {
+    const p = limited(async () => {
+      s.blob ??= imagePlatform.fetch(revision)
+      return imagePlatform.decode(await s.blob)
+    })
+    s.picture = p
+    // A failure is tried again the next time.
+    p.catch(() => {
+      if (s.picture === p) s.picture = null
+      s.blob = null
+    })
+  }
+  return s.picture.catch((err: unknown) => {
+    throw new ImageError(`图片 ${revision} 加载失败（${err instanceof Error ? err.message : String(err)}）`)
+  })
+}
+
+function giveBack(revision: string) {
+  const s = sources.get(revision)
+  if (!s) return
+  s.borrowers--
+  if (s.borrowers > 0 || !s.picture) return
+  const p = s.picture
+  s.picture = null
+  p.then((x) => x.close(), () => {})
+}
+
+// ---- textures
+
+type State = 'loading' | 'ready' | 'asleep' | 'failed' | 'over'
+
+type Entry = {
+  key: TextureKey
+  kind: Kind
+  parts: (Part | null)[]
+  revisions: string[]
+  texture: Texture
+  refs: number
+  holds: number
+  timer: ReturnType<typeof setTimeout> | null
+  state: State
+  error: string | null
+  /** Reserved in the budget; 0 until admitted. */
+  bytes: number
+  /** The image the texture shows: borrowed from its source, or a composite of its own. */
+  shown: { picture: Picture; borrowed: boolean } | null
+  /** A device uploaded the placeholder: the real image needs the texture rebuilt. */
+  placeholderUploaded: boolean
+  /** A device has the real image. */
+  realUploaded: boolean
+  /** Bumped by every load and by freeing: a load that finds it changed lets go of what it made. */
+  generation: number
+  waiters: { resolve: () => void; reject: (e: Error) => void }[]
+}
+
+const entries = new Map<TextureKey, Entry>()
+let used = 0
+/** Admission goes in the order textures were asked for, whatever order their images decode in. */
+let turn: Promise<unknown> = Promise.resolve()
+
+/** What the editor tells the photographer: textures whose image failed, and those over the budget, in the order asked. */
+export const imageStatus = createStore<{ failed: Readonly<Record<TextureKey, string>>; over: readonly TextureKey[] }>(() => ({ failed: {}, over: [] }))
+
+function publish() {
+  const failed: Record<TextureKey, string> = {}
+  const over: TextureKey[] = []
+  for (const e of entries.values()) {
+    if (e.state === 'failed') failed[e.key] = e.error!
+    else if (e.state === 'over') over.push(e.key)
+  }
+  imageStatus.setState({ failed, over })
+}
+
+function setState(e: Entry, state: State, error: string | null = null) {
+  const listed = (s: State) => s === 'failed' || s === 'over'
+  const changed = listed(e.state) || listed(state)
+  e.state = state
+  e.error = error
+  if (state === 'ready' || listed(state)) {
+    for (const w of e.waiters.splice(0)) {
+      if (state === 'ready') w.resolve()
+      else w.reject(new ImageError(state === 'over' ? `图片 ${e.revisions.join('、')} 超出贴图显存预算` : error!))
+    }
+  }
+  if (changed) publish()
+}
+
+function newEntry(key: TextureKey): Entry {
+  const { kind, parts } = parse(key)
+  const texture = new Texture(placeholderOf(kind) as HTMLImageElement)
+  texture.name = key
+  texture.wrapS = texture.wrapT = RepeatWrapping
+  // Rows from the top, as glTF's UVs and ImageBitmap have them.
+  texture.flipY = false
+  texture.colorSpace = kind === 'color' ? SRGBColorSpace : NoColorSpace
+  // Floors seen at a grazing angle stay sharp.
+  texture.anisotropy = 8
+  texture.needsUpdate = true
+  const revisions = [...new Set(parts.flatMap((p) => (p ? [p.revision] : [])))]
+  const e: Entry = { key, kind, parts, revisions, texture, refs: 0, holds: 0, timer: null, state: 'loading', error: null, bytes: 0, shown: null, placeholderUploaded: false, realUploaded: false, generation: 0, waiters: [] }
+  texture.onUpdate = () => uploaded(e)
+  for (const r of revisions) {
+    const s = sources.get(r) ?? { refs: 0, blob: null, picture: null, borrowers: 0 }
+    s.refs++
+    sources.set(r, s)
+  }
+  return e
+}
+
+function load(e: Entry) {
+  const gen = ++e.generation
+  setState(e, 'loading')
+  let lent = false
+  const giveAll = () => {
+    if (lent) return
+    lent = true
+    e.revisions.forEach(giveBack)
+  }
+  const decoded = Promise.all(e.revisions.map(borrow))
+  const admitted = (turn = turn.then(() => decoded.then((pictures) => admit(e, gen, pictures), () => false)))
+  void (async () => {
+    try {
+      const pictures = await decoded
+      const fits = await admitted
+      if (e.generation !== gen) return giveAll()
+      if (!fits) {
+        giveAll()
+        return setState(e, 'over')
+      }
+      if (direct(e.kind, e.parts)) return show(e, { picture: pictures[0], borrowed: true })
+      const { width, height } = sizeOf(pictures)
+      const of = new Map(e.revisions.map((r, i) => [r, pictures[i]]))
+      const picture = await imagePlatform.compose(e.parts.map((p) => p && { picture: of.get(p.revision)!, channel: p.channel }), width, height)
+      giveAll()
+      if (e.generation !== gen) return picture.close()
+      show(e, { picture, borrowed: false })
+    } catch (err) {
+      giveAll()
+      if (e.generation === gen) setState(e, 'failed', err instanceof ImageError ? err.message : `贴图 ${e.key} 加载失败（${String(err)}）`)
+    }
+  })()
+}
+
+/** An ORM is as large as its largest layer. */
+function sizeOf(pictures: readonly Picture[]) {
+  return { width: Math.max(...pictures.map((p) => p.width)), height: Math.max(...pictures.map((p) => p.height)) }
+}
+
+function admit(e: Entry, gen: number, pictures: readonly Picture[]): boolean {
+  if (e.generation !== gen) return false
+  if (e.bytes > 0) return true
+  const { width, height } = sizeOf(pictures)
+  const bytes = textureBytes(width, height)
+  if (used + bytes > imageBudget.bytes) return false
+  used += bytes
+  e.bytes = bytes
+  return true
+}
+
+function show(e: Entry, shown: NonNullable<Entry['shown']>) {
+  // three cannot upload a larger image into the 1×1 it made: dispose, and every device makes it again.
+  if (e.placeholderUploaded) {
+    e.texture.dispose()
+    e.placeholderUploaded = false
+    e.realUploaded = false
+  }
+  e.shown = shown
+  e.texture.image = shown.picture
+  setState(e, 'ready')
+}
+
+function letGo(e: Entry) {
+  const shown = e.shown
+  e.shown = null
+  if (!shown) return
+  if (shown.borrowed) e.revisions.forEach(giveBack)
+  else shown.picture.close()
+}
+
+function uploaded(e: Entry) {
+  if (e.texture.image === placeholderOf(e.kind)) {
+    e.placeholderUploaded = true
+    // A device that came after the pixels were let go.
+    if (e.state === 'asleep') load(e)
+    return
+  }
+  e.realUploaded = true
+  // After the frame: the device uploading now has its copy.
+  if (e.holds === 0) setTimeout(() => sleep(e), 0)
+}
+
+/** Lets the pixels go once every device that needs them has them; the texture keeps showing on those devices. */
+function sleep(e: Entry) {
+  if (e.state !== 'ready' || e.holds > 0 || !e.realUploaded || entries.get(e.key) !== e) return
+  e.texture.image = placeholderOf(e.kind) as HTMLImageElement
+  letGo(e)
+  setState(e, 'asleep')
+}
+
+function free(e: Entry) {
+  entries.delete(e.key)
+  e.generation++
+  used -= e.bytes
+  letGo(e)
+  e.texture.dispose()
+  for (const r of e.revisions) {
+    const s = sources.get(r)
+    if (s && --s.refs === 0) sources.delete(r)
+  }
+  if (e.state === 'failed' || e.state === 'over') publish()
+  // Room for those that did not fit, in the order they were asked for.
+  if (e.bytes > 0) for (const o of entries.values()) if (o.state === 'over') load(o)
+}
+
+/** The texture for key, the same object every time; it shows a placeholder until its image is here. Release it with releaseTexture. */
+export function acquireTexture(key: TextureKey): Texture {
+  let e = entries.get(key)
+  if (!e) {
+    e = newEntry(key)
+    entries.set(key, e)
+    load(e)
+  }
+  e.refs++
+  if (e.timer !== null) clearTimeout(e.timer)
+  e.timer = null
+  return e.texture
+}
+
+/** Freed a moment after the last user goes: switching back and forth does not load it again. */
+export function releaseTexture(key: TextureKey) {
+  const e = entries.get(key)
+  if (!e) return
+  e.refs = Math.max(0, e.refs - 1)
+  if (e.refs > 0) return
+  if (e.timer !== null) clearTimeout(e.timer)
+  e.timer = setTimeout(() => {
+    e.timer = null
+    if (e.refs === 0 && entries.get(key) === e) free(e)
+  }, releaseAfterMs)
+}
+
+function whenReady(e: Entry): Promise<void> {
+  if (e.state === 'ready') return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    e.waiters.push({ resolve, reject })
+    // Pixels let go are decoded again; a failure is tried again, and one over the budget looks for room again.
+    if (e.state !== 'loading') load(e)
+  })
+}
+
+/** The scene's textures held with their pixels until release: a device mounted meanwhile uploads them. */
+export type ImageHold = { release(): void }
+
+/**
+ * Resolves once every texture the scene's slots sample has its image, held
+ * until released; an offscreen picture waits for this before it mounts
+ * (design「等图片就绪」). Rejects, holding nothing, when any image failed
+ * or did not fit the budget, saying which.
+ */
+export async function loadSceneImages(scene: Pick<Scene, 'objects'>): Promise<ImageHold> {
+  const keys = sceneTextureKeys(scene)
+  const held = keys.map((key) => {
+    acquireTexture(key)
+    const e = entries.get(key)!
+    e.holds++
+    return e
+  })
+  let released = false
+  const hold: ImageHold = {
+    release() {
+      if (released) return
+      released = true
+      for (const e of held) {
+        e.holds--
+        sleep(e)
+        releaseTexture(e.key)
+      }
+    },
+  }
+  const results = await Promise.allSettled(held.map(whenReady))
+  const reasons = results.flatMap((r) => (r.status === 'rejected' ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : []))
+  if (reasons.length === 0) return hold
+  hold.release()
+  throw new Error([...new Set(reasons)].join('；'))
+}
+
+/** Forgets every texture and source: tests only. */
+export function resetImages() {
+  for (const e of entries.values()) if (e.timer !== null) clearTimeout(e.timer)
+  entries.clear()
+  sources.clear()
+  placeholders.clear()
+  used = 0
+  turn = Promise.resolve()
+  imageStatus.setState({ failed: {}, over: [] })
+}
+
+/** Bytes the textures hold in the budget: tests only. */
+export const budgetUsed = () => used
