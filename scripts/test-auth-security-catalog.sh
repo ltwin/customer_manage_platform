@@ -91,12 +91,6 @@ run_repository_script() {
 	"$repo_root/$1"
 }
 
-verify_browser_evidence() {
-	local evidence="$repo_root/.codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-implementation.md"
-	[[ -f "$evidence" ]] || return 1
-	grep -F -q 'Browser：1440×900验证desktop forgot／reset布局；375×812验证' "$evidence"
-}
-
 require_scenario() {
 	local scenario="$1"
 	shift
@@ -129,7 +123,6 @@ run_case timing-enumeration run_backend_go 2 \
 
 run_case api-contract run_generate_check
 run_case frontend-auth run_frontend
-run_case browser-evidence verify_browser_evidence
 
 run_case event-redaction run_backend_go 6 \
   '^(TestEventProtocolCoversSevenNamesWithOnlyAllowlistedFields|TestEventProtocolRejectsUnknownFailureAndRawSource|TestAuthStructuredEventsUseAllowlistAndRedactedReferences|TestResendAcceptsMailWithIdempotencyAndRedactedEvent|TestResendFailureEventUsesFixedAllowlist|TestSinkAcceptsWithoutLoggingRecipientOrActionURL)$' \
@@ -160,7 +153,7 @@ require_scenario 7 limiter-proxy origin-cookie
 require_scenario 8 limiter-proxy event-redaction
 require_scenario 9 limiter-proxy event-redaction
 require_scenario 10 timing-enumeration
-require_scenario 11 api-contract frontend-auth browser-evidence
+require_scenario 11 api-contract frontend-auth
 require_scenario 12 password-session frontend-auth origin-cookie
 require_scenario 13 event-redaction
 require_scenario 14 monitor

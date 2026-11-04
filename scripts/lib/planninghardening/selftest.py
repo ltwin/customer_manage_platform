@@ -410,6 +410,16 @@ def _expect_contract_error(action: Callable[[], object], message: str) -> None:
     raise AssertionError(message)
 
 
+def _expect_stage_approval_source_retired(evidence: Path, repo: Path) -> None:
+    try:
+        verify_readiness(evidence, repo)
+    except ContractError as error:
+        if str(error) != "release-stage-approval-source-retired":
+            raise AssertionError(f"retired stage approval source failed with {error}") from error
+        return
+    raise AssertionError("retired stage approval source allowed a release pass")
+
+
 def _expect_mutation_rejected(
     path: Path,
     original: dict[str, object],
@@ -428,6 +438,10 @@ def main() -> int:
     conformance = build_conformance(repo)
     if conformance["overall_status"] != "passed" or conformance["gate_dispositions"]["stage-2-evidence-go"] != "pending":
         raise AssertionError("conformance admission unexpectedly failed or gate was mutated")
+    if conformance["schema"] != "planning-v1-dependency-conformance-v2" or "roadmap_sha256" in conformance:
+        raise AssertionError("conformance still binds the retired CodeStable roadmap")
+    if tuple(row["id"] for row in conformance["rows"]) != REQUIRED_CONFORMANCE_IDS:
+        raise AssertionError("conformance rows drifted from release requirements")
 
     with tempfile.TemporaryDirectory(prefix="planning-hardening-test-") as raw:
         root = Path(raw)
@@ -493,10 +507,8 @@ def main() -> int:
         _write_artifacts(artifacts, repo)
         _write_check_artifacts(artifacts, repo)
         _write_readiness(readiness, repo)
-        _expect_contract_error(
-            lambda: verify_readiness(readiness, repo),
-            "canonical pending stage approvals allowed a release pass",
-        )
+        _expect_stage_approval_source_retired(root / "missing-evidence.json", repo)
+        _expect_stage_approval_source_retired(readiness, repo)
         fixture_bindings = _fixture_stage_bindings(artifacts)
 
         def verify_fixture(candidate: Path) -> dict[str, object]:

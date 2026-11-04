@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# lint pre-commit：按暂存路径分派后端 / 前端 lint（规则见 docs/design/GUAN-3.md）。
+# 由 `make hooks` 启用（core.hooksPath=scripts/githooks）。lint 不过不许提交；agent 禁止 --no-verify。
+set -euo pipefail
+
+need_go=0
+need_frontend=0
+# --no-renames：重命名拆成「删源 + 增目标」，两端都参与分派（backend/x.go → docs/x.txt 仍跑后端 lint）。
+while IFS= read -r -d '' path; do
+  case "$path" in
+    backend/*.go | backend/go.mod | backend/go.sum | .golangci*) need_go=1 ;;
+    frontend/*) need_frontend=1 ;;
+  esac
+done < <(git diff --cached --name-only --no-renames -z)
+
+if ((!need_go && !need_frontend)); then
+  echo "pre-commit: 只有文档/脚本/配置改动，跳过 lint"
+  exit 0
+fi
+
+if ((need_frontend)) && [[ ! -d frontend/node_modules ]]; then
+  echo "pre-commit: 暂存了 frontend/ 改动，但 frontend/node_modules 不存在；先执行 make frontend-install 再提交" >&2
+  exit 1
+fi
+
+reject() {
+  echo "pre-commit: $1 未通过。修复后重新提交；agent 禁止 --no-verify。" >&2
+  exit 1
+}
+
+if ((need_go)); then
+  if ! command -v golangci-lint >/dev/null 2>&1; then
+    echo "pre-commit: 暂存了 Go 改动，但找不到 golangci-lint；先安装 golangci-lint 2.x" >&2
+    exit 1
+  fi
+  make -s lint-go || reject "后端 lint（make lint-go）"
+fi
+
+if ((need_frontend)); then
+  make -s lint-frontend || reject "前端 lint（make lint-frontend）"
+fi

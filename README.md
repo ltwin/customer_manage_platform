@@ -1,8 +1,8 @@
 # 摄影师私域客户经营系统（CRM）
 
-Go + Gin + React + PostgreSQL 单体，阿里云 ECS 自部署。规格与流程见 `.codestable/`（规划权威源：`roadmap §4` 契约 + `api/openapi.yaml` 机器形式）。
+Go + Gin + React + PostgreSQL 单体，阿里云 ECS 自部署。需求、设计与进度在 Multica 项目「光合工坊」；长期知识见 `docs/`，API 契约以 `api/openapi.yaml` 为准，协作规则见 `CLAUDE.md`。
 
-当前已落地客户档案（含可选头像）、套系、订单、月历档期、提醒引擎与账号级提醒设置；能力现状见 `.codestable/requirements/VISION.md`，roadmap 执行状态见 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`。
+当前已落地客户档案（含可选头像）、套系、订单、月历档期、提醒引擎与账号级提醒设置；能力现状见 `docs/product/vision.md`。
 
 客户头像操作与开发接入见 `docs/user/customer-avatar.md`、`docs/dev/customer-avatar.md`；HTTP 参考清单见 `docs/api/manifest.yaml`，已同步的 Reminder 与 Settings 参考见 `docs/api/reminders.md`、`docs/api/settings.md`。
 

@@ -27,9 +27,9 @@ for arg in "$@"; do
   esac
 done
 
-EVIDENCE_DIR="${AVATAR_MEDIA_WIPE_EVIDENCE:-$repo_root/.codestable/features/2026-08-02-avatar-media-safety-net/evidence}"
+EVIDENCE_DIR="${AVATAR_MEDIA_WIPE_EVIDENCE:-$repo_root/var/evidence/avatar-media-safety-net}"
 if [[ "$WITH_PROFILE_MIGRATION" -eq 1 ]]; then
-  EVIDENCE_DIR="${AVATAR_MEDIA_WIPE_EVIDENCE:-$repo_root/.codestable/features/2026-08-02-account-profile-center/evidence}"
+  EVIDENCE_DIR="${AVATAR_MEDIA_WIPE_EVIDENCE:-$repo_root/var/evidence/account-profile-center}"
 fi
 mkdir -p "$EVIDENCE_DIR"
 LOG="$EVIDENCE_DIR/restore_fixture_log"
