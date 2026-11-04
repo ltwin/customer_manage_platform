@@ -1,6 +1,6 @@
 {
   "uid": "58e5fe7e-f448-4af8-b927-49193996520e",
-  "revision": 13,
+  "revision": 14,
   "id": "scene-pbr-textures",
   "kind": "feature",
   "assurance": "governed",
@@ -55,7 +55,21 @@
   },
   "state": "closed",
   "createdAt": "2026-11-02T03:07:13.439Z",
-  "updatedAt": "2026-11-04T10:20:44.966Z",
+  "updatedAt": "2026-11-04T10:21:35.593Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-11-04T10:21:35.518Z",
+    "summary": "feat/scene-pbr-textures 以 --no-ff 合入 develop（87e51bee），实施 HEAD 712f952c 是集成 HEAD 的祖先；合入后 .lti 之外的文件与分支一致。分支在 develop fe5477b1 上试合并跑过 make check-merge（exit 0：build、lint、generate-check、前端单测 973 项、Go 全部包），此后只多了验收与归档的 .lti 文档提交，check-merge 不覆盖这些文件，故未重跑。",
+    "method": "manual",
+    "limitations": "项目未在 .lti/config.yaml 声明 checks，集成证据为 develop fe5477b1 上的试合并 make check-merge；合入时 develop 未前进，合入树代码与试合并时相同，没有在合入提交上再跑一遍。",
+    "sourceCommit": "712f952c6929bfb762b4a318d7b6b99c476e4cb0",
+    "targetCommit": "87e51bee51f50499f0dd0619a3348fd826a5fb0b",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "c80f52efe980e51ab7bd1dcab7f85f95248deac37f2bc2fc30af080940ea4d26"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
