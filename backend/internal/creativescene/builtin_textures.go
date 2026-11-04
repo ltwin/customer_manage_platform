@@ -1,12 +1,20 @@
 package creativescene
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
+
+	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 )
 
 // Built-in textured materials (data: 内置贴图库): CC0 PBR textures the
@@ -135,4 +143,180 @@ func texturedMaterial(id string) (materialSpec, bool) {
 // order.
 func BuiltinTextureFiles() []BuiltinTextureFile {
 	return slices.Clone(materials.files)
+}
+
+var (
+	// ErrBuiltinTextureUnknown is a file name the catalog does not list.
+	ErrBuiltinTextureUnknown = errors.New("not a built-in texture")
+	// ErrBuiltinTextureMissing is a listed file the object store does not have: not imported.
+	ErrBuiltinTextureMissing = errors.New("built-in texture not imported")
+)
+
+const (
+	builtinTexturePrefix = "scene-textures/"
+	importWorkers        = 4
+)
+
+func builtinTextureKey(name string) string { return builtinTexturePrefix + name }
+
+// BuiltinTextures reads and imports the built-in texture files in the
+// object store.
+type BuiltinTextures struct {
+	store immutablefs.ObjectStore
+}
+
+func NewBuiltinTextures(store immutablefs.ObjectStore) *BuiltinTextures {
+	return &BuiltinTextures{store: store}
+}
+
+// ComposeBuiltinTextures opens the store the files live in, by the same
+// driver as the other object stores: the shared bucket, or its own local
+// root.
+func ComposeBuiltinTextures(cfg config.Config) (*BuiltinTextures, error) {
+	switch cfg.AvatarStorageDriver {
+	case config.StorageDriverOSS:
+		store, err := immutablefs.NewOSS(immutablefs.OSSConfig{Region: cfg.OSSRegion, Endpoint: cfg.OSSEndpoint, Bucket: cfg.OSSBucket, UseCName: cfg.OSSUseCName})
+		if err != nil {
+			return nil, err
+		}
+		return NewBuiltinTextures(store), nil
+	case config.StorageDriverLocal:
+		store, err := immutablefs.NewLocal(cfg.SceneTextureLocalRoot)
+		if err != nil {
+			return nil, err
+		}
+		return NewBuiltinTextures(store), nil
+	}
+	return nil, config.ErrAvatarStorageDriverInvalid
+}
+
+// Open reads a built-in texture file with its size: ErrBuiltinTextureUnknown
+// when the catalog does not list the name, ErrBuiltinTextureMissing when it
+// was not imported.
+func (b *BuiltinTextures) Open(ctx context.Context, name string) (io.ReadCloser, int64, error) {
+	return b.open(ctx, materials.files, name)
+}
+
+func (b *BuiltinTextures) open(ctx context.Context, files []BuiltinTextureFile, name string) (io.ReadCloser, int64, error) {
+	if !slices.ContainsFunc(files, func(f BuiltinTextureFile) bool { return f.Name == name }) {
+		return nil, 0, ErrBuiltinTextureUnknown
+	}
+	meta, err := b.store.Stat(ctx, builtinTextureKey(name))
+	if errors.Is(err, immutablefs.ErrNotFound) {
+		return nil, 0, ErrBuiltinTextureMissing
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	rc, err := b.store.Open(ctx, builtinTextureKey(name))
+	if errors.Is(err, immutablefs.ErrNotFound) {
+		return nil, 0, ErrBuiltinTextureMissing
+	}
+	return rc, meta.Size, err
+}
+
+// Missing lists the catalog's files the store does not have.
+func (b *BuiltinTextures) Missing(ctx context.Context) ([]BuiltinTextureFile, error) {
+	return b.missing(ctx, materials.files)
+}
+
+func (b *BuiltinTextures) missing(ctx context.Context, files []BuiltinTextureFile) ([]BuiltinTextureFile, error) {
+	var out []BuiltinTextureFile
+	for _, f := range files {
+		_, err := b.store.Stat(ctx, builtinTextureKey(f.Name))
+		switch {
+		case errors.Is(err, immutablefs.ErrNotFound):
+			out = append(out, f)
+		case err != nil:
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// FetchBuiltinTexture downloads a file from its source.
+type FetchBuiltinTexture func(context.Context, BuiltinTextureFile) ([]byte, error)
+
+// BuiltinImport is what an import did: files written, files already there,
+// and the ones that failed, with why.
+type BuiltinImport struct {
+	Imported int                    `json:"imported"`
+	Skipped  int                    `json:"skipped"`
+	Failed   []BuiltinImportFailure `json:"failed"`
+}
+
+type BuiltinImportFailure struct {
+	File     string `json:"file"`
+	Material string `json:"material"`
+	Reason   string `json:"reason"`
+}
+
+// Import writes every catalog file the store lacks, fetched and checked
+// against its size and sha256 first: a file that does not match is not
+// written. Files already there are not fetched, so running it again does
+// nothing more; one file failing leaves the rest to go on.
+func (b *BuiltinTextures) Import(ctx context.Context, fetch FetchBuiltinTexture) BuiltinImport {
+	return b.importFiles(ctx, materials.files, fetch)
+}
+
+func (b *BuiltinTextures) importFiles(ctx context.Context, files []BuiltinTextureFile, fetch FetchBuiltinTexture) BuiltinImport {
+	// Fetched a few at a time: the source sites are slow per connection.
+	outcomes := make([]string, len(files)) // "imported", "skipped" or why it failed
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range importWorkers {
+		wg.Go(func() {
+			for i := range next {
+				outcomes[i] = b.importFile(ctx, files[i], fetch)
+			}
+		})
+	}
+	for i := range files {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+
+	r := BuiltinImport{Failed: []BuiltinImportFailure{}}
+	for i, f := range files {
+		switch outcomes[i] {
+		case "imported":
+			r.Imported++
+		case "skipped":
+			r.Skipped++
+		default:
+			r.Failed = append(r.Failed, BuiltinImportFailure{File: f.Name, Material: f.Material, Reason: outcomes[i]})
+		}
+	}
+	return r
+}
+
+// importFile writes one file unless it is there: "imported", "skipped", or
+// why it failed.
+func (b *BuiltinTextures) importFile(ctx context.Context, f BuiltinTextureFile, fetch FetchBuiltinTexture) string {
+	key := builtinTextureKey(f.Name)
+	if _, err := b.store.Stat(ctx, key); err == nil {
+		return "skipped"
+	} else if !errors.Is(err, immutablefs.ErrNotFound) {
+		return err.Error()
+	}
+	body, err := fetch(ctx, f)
+	if err != nil {
+		return err.Error()
+	}
+	if int64(len(body)) != f.Bytes {
+		return fmt.Sprintf("大小不符：下载到 %d 字节，清单为 %d", len(body), f.Bytes)
+	}
+	sum := sha256.Sum256(body)
+	if hex.EncodeToString(sum[:])+".jpg" != f.Name {
+		return "sha256 与文件名不符"
+	}
+	_, created, err := b.store.PutImmutable(ctx, key, body, immutablefs.Metadata{MediaType: "image/jpeg", Size: f.Bytes, Checksum: "sha256-" + hex.EncodeToString(sum[:])})
+	switch {
+	case err != nil:
+		return err.Error()
+	case created:
+		return "imported"
+	}
+	return "skipped" // written meanwhile by another import
 }

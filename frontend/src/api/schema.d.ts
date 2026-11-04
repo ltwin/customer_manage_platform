@@ -1134,6 +1134,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/scene-textures/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 内置贴图材质的图片文件（内置贴图库）；支持 HEAD
+         * @description file 是材质目录里 textured 条目 files[].name 的值（内容的 sha256 加 .jpg）。不按账号区分内容， 需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256， Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。 file 格式不对或不在目录里返回 404 not_found；在目录里但对象存储里没有（未导入）或读取失败返回 503 creative_texture_unavailable。
+         */
+        get: operations["getCreativeSceneTexture"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/assets/from-canvas-node": {
         parameters: {
             query?: never;
@@ -4736,7 +4756,11 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"];
+        /** @description 读不到的内置贴图文件名（creative_texture_unavailable）。 */
+        CreativeSceneTextureDetails: {
+            file: string;
+        };
         /** @description 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 */
         CreativeFieldDetails: {
             field: string;
@@ -10899,6 +10923,46 @@ export interface operations {
                 content: {
                     "*/*": string;
                 };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeSceneTexture: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 贴图文件 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+            /** @description 与 If-None-Match 相同，未修改 */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description 请求失败 */
             default: {

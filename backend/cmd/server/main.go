@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -146,6 +148,27 @@ func classifyConfigStartupFailure(err error) error {
 	return newStartupFailure("config-load", key, errorClass, err)
 }
 
+// checkSceneTextures 启动后按材质目录检查内置贴图是否已导入。缺失是部署问题：
+// 记错误日志并列出条目，不阻止启动（编辑器按贴图加载失败处理），也不重试；
+// 导入用 creativectl textures import。
+func checkSceneTextures(ctx context.Context, textures *creativescene.BuiltinTextures, logger *slog.Logger) {
+	missing, err := textures.Missing(ctx)
+	if err != nil {
+		logger.Error("built-in texture check failed", slog.String("error", err.Error()))
+		return
+	}
+	if len(missing) == 0 {
+		logger.Info("built-in textures ready")
+		return
+	}
+	materials := map[string]bool{}
+	for _, f := range missing {
+		materials[f.Material] = true
+	}
+	logger.Error("built-in textures missing: run creativectl textures import",
+		slog.Int("files", len(missing)), slog.Any("materials", slices.Sorted(maps.Keys(materials))))
+}
+
 // syncPlatformSkills 把镜像里带的内置 Skill 包同步进平台目录：内容没变的跳过，
 // 变了的追加新版本并设为当前版本。失败只记日志不阻断启动——目录里已有的版本照常可用，
 // 下次启动用同一个 operation id 重放。
@@ -232,6 +255,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-media-init", "CREATIVE_MEDIA_LOCAL_ROOT", "object-storage", err)
 	}
+	sceneTextures, err := creativescene.ComposeBuiltinTextures(cfg)
+	if err != nil {
+		return newStartupFailure("scene-textures-init", "SCENE_TEXTURE_LOCAL_ROOT", "object-storage", err)
+	}
+	go checkSceneTextures(ctx, sceneTextures, logger)
 	imageEditEnabled, err := creativeimageedit.EnabledFromValues(os.Getenv("CREATIVE_IMAGE_EDIT"), os.Getenv("CREATIVE_MEDIA_GC_MODE"))
 	if err != nil {
 		return newStartupFailure("creative-image-edit-init", "CREATIVE_IMAGE_EDIT", "configuration", err)
@@ -485,6 +513,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		PlanningMedia:      planningMediaApp,
 		PlanningIngestion:  planningIngestionApp,
 		CreativeMedia:      creativeMedia,
+		SceneTextures:      sceneTextures,
 		CreativeImageEdit:  imageEdit,
 		CreativeAgent:      creativeAgent,
 		CreativeGeneration: creativeGeneration,

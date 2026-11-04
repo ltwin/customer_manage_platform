@@ -8,8 +8,8 @@
 
 - [x] 2.1 目录认识 `textured`：先写 `loadMaterials` 的坏样例单测（缺文件引用、文件名不是 sha256、`defaults` 键不在原理化参数表或越界、品类未知、缺缩略图），再改 `materials.go`；`checkMaterial` 对 `textured` 用 `principled@1` 的参数表；`MaterialCatalog()` 不逐条列出 `textured`，改为指向内置来源的一句说明；新增 `BuiltinTextureFiles()`（`BuiltinMaterials`、`BuiltinThumbnail` 和缩略图的加载校验随 2.5 做，缩略图要在 4.1 渲染出来之后才有）。目录加一张品类表 `categories`（ID 与中文名，展示顺序），前后端共用。完成判据：正式目录能加载，单测全绿；内置条目的外观（尺寸、文件、通道、缺省值）在单测里锁定
 - [x] 2.2 槽位校验放宽：先写 `checkTextures`、`completeTextures` 的决策表单测，以及命令接口的用例（`textured` 带 `maps` 返回 400 并指出字段；不带 `mapping` 时存储补齐 `size_m`；目录外的 ID 带 `mapping` 返回 400），再改 `textures.go`
-- [ ] 2.3 内置贴图存储与导入：`builtin_textures.go` 的 `Open`、`Missing`、`Import`（`immutablefs`，前缀 `scene-textures/`），配置项 `SCENE_TEXTURE_LOCAL_ROOT`；先写桩下载器的单测（成功、跳过、大小不符、哈希不符、下载失败、重复运行）。`creativectl textures import` 和 `textures check`，输出与退出码按 design。完成判据：本机运行 import 写入全部文件，再次运行全部跳过，check 退出码为 0
-- [ ] 2.4 读取接口：OpenAPI 加 `GET /creative/scene-textures/{file}` 和错误码 `creative_texture_unavailable`，运行 `make generate`；httpapi handler 与路由注册；先写 401、404、503、200 响应头、304 的测试。`server` 装配存储，启动后台检查并记错误日志
+- [x] 2.3 内置贴图存储与导入：`builtin_textures.go` 的 `Open`、`Missing`、`Import`（`immutablefs`，前缀 `scene-textures/`），配置项 `SCENE_TEXTURE_LOCAL_ROOT`；先写桩下载器的单测（成功、跳过、大小不符、哈希不符、下载失败、重复运行）。`creativectl textures import` 和 `textures check`，输出与退出码按 design。完成判据：本机运行 import 写入全部文件，再次运行全部跳过，check 退出码为 0。结果：本地驱动下首次导入 72 个、再跑全部跳过、check 就绪；顺序下载用了 19 分钟，改为四路并发（来源站单连接慢，偶尔断连，下载带三次重试）
+- [x] 2.4 读取接口：OpenAPI 加 `GET /creative/scene-textures/{file}` 和错误码 `creative_texture_unavailable`，运行 `make generate`；httpapi handler 与路由注册；先写 401、404、503、200 响应头、304 的测试。`server` 装配存储，启动后台检查并记错误日志。503 的 `details.file` 用新的错误详情类型 `CreativeSceneTextureDetails`
 - [ ] 2.5 助手的内置来源：先写单测（`search_assets source:builtin` 在没有 consent 时可用、按文字和品类过滤、`kind` 不是材质时为空；不写 `source` 时结果不变；`read_asset builtin_id` 返回 `slot`、缩略图附件，未知 ID 报错并列出可用 ID），再改 `library_tools.go`、`context.go`，并更新 `asset_tool_info.go`、`context.go`、`scene_tools.go` 的工具说明
 
 ## 3. 前端：渲染

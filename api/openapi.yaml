@@ -2056,6 +2056,39 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/scene-textures/{file}:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeSceneTexture
+      summary: 内置贴图材质的图片文件（内置贴图库）；支持 HEAD
+      description: >-
+        file 是材质目录里 textured 条目 files[].name 的值（内容的 sha256 加 .jpg）。不按账号区分内容，
+        需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256，
+        Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。
+        file 格式不对或不在目录里返回 404 not_found；在目录里但对象存储里没有（未导入）或读取失败返回
+        503 creative_texture_unavailable。
+      parameters:
+      - in: path
+        name: file
+        required: true
+        schema: {type: string, pattern: '^[0-9a-f]{64}\.jpg$'}
+      - in: header
+        name: If-None-Match
+        required: false
+        schema: {type: string}
+      responses:
+        "200":
+          description: 贴图文件
+          content:
+            image/jpeg:
+              schema: {type: string, format: binary}
+        "304":
+          description: 与 If-None-Match 相同，未修改
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /creative/assets/from-canvas-node:
     post:
       tags: [creative-foundation]
@@ -10118,6 +10151,15 @@ components:
         - $ref: "#/components/schemas/CreativeFieldDetails"
         - $ref: "#/components/schemas/CreativeLimitDetails"
         - $ref: "#/components/schemas/CreativeMaterialSlotDetails"
+        - $ref: "#/components/schemas/CreativeSceneTextureDetails"
+
+    CreativeSceneTextureDetails:
+      type: object
+      additionalProperties: false
+      required: [file]
+      description: 读不到的内置贴图文件名（creative_texture_unavailable）。
+      properties:
+        file: {type: string}
 
     CreativeFieldDetails:
       type: object
