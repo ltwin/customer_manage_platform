@@ -34,4 +34,4 @@
 
 ## 6. 组合验证与交付
 
-- [ ] 6.1 按 proposal 验收标准逐条核对，补齐没有被前面任务覆盖的 e2e（一次一个用例）；写 `specs.md` 的 `creative/scene`、`creative/library` 增量，`lti validate` 通过；`docs/dev/creative-scene-agent.md` 补贴图、材质资产和阴影上限的用法与已知边界；在主检出 `git merge --no-commit` 后 `make check-merge` 通过，然后 `merge --abort`
+- [x] 6.1 按 proposal 验收标准逐条核对，补齐没有被前面任务覆盖的 e2e（一次一个用例）；写 `specs.md` 的 `creative/scene`、`creative/library` 增量，`lti validate` 通过；`docs/dev/creative-scene-agent.md` 补贴图、材质资产和阴影上限的用法与已知边界；在主检出 `git merge --no-commit` 后 `make check-merge` 通过，然后 `merge --abort`。结果：proposal 的验收标准逐条对到前面任务的测试与对照图；唯一没有覆盖的是编辑器的「这个模型没有 UV，按三平面显示」，补了一个 e2e（不带 UV 的 `basic.glb` 选 UV 映射出现提示，基础体不出现），通过。两项 owner 已定的已知缺陷（镜中细贴图被光锥平均掉、带探针场景两次导出不逐像素相同）写进开发说明的已知边界。`specs.md` 写了 `creative/scene` 的材质贴图、表面阴影上限、助手配贴图与 `creative/library` 的材质资产，`lti validate` 通过。`docs/dev/creative-scene-agent.md` 补了贴图、材质资产、阴影上限的做法、e2e 用法与已知边界。在主检出 `git merge --no-ff --no-commit` 后 `make check-merge`：build、lint、generate-check、前端单测 966 项与其余 Go 包通过；`internal/reminder` 的 `TestS6MonotonicBudgetThroughBeginCurrentCall/pause_above_remaining` 在全量并行下失败一次（时间预算 470 ms 内没耗尽，属时序抖动），本分支没有改这个包，单独重跑通过；之后 `merge --abort`
