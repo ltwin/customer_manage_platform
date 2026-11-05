@@ -1,7 +1,7 @@
 import type { components } from '../../api/schema'
 import type { ParamValue } from '../builtins/catalog.ts'
 import type { MeshConstants } from '../models/cache.ts'
-import { completeParams, hintPreset, materialEntry, principledID } from './catalog.ts'
+import { builtinSource, completeParams, hintPreset, materialEntry, principledID, type MaterialEntry } from './catalog.ts'
 
 // Which material a mesh draws with (design「材质解析」), first match wins:
 //  1. the object's material_slots names a material in the catalog;
@@ -19,7 +19,8 @@ export type Texturing = Pick<Slot, 'maps' | 'mapping' | 'alpha_mode' | 'alpha_cu
 export const defaultAlphaCutoff = 0.5
 
 export type SlotMaterial =
-  | { kind: 'principled'; params: Record<string, ParamValue>; vertexColors?: boolean; texturing?: Texturing }
+  // preset: the built-in textured material it came from (C5c2), drawn as principled with its textures.
+  | { kind: 'principled'; params: Record<string, ParamValue>; vertexColors?: boolean; texturing?: Texturing; preset?: string }
   | { kind: 'pattern'; id: string; params: Record<string, ParamValue> }
   | { kind: 'unknown' }
 
@@ -33,12 +34,15 @@ type Assigned = Readonly<components['schemas']['CreativeSceneMaterialSlots']> | 
 
 /**
  * A material from the catalog with its parameters complete and in range. A
- * principled one keeps the slot's textures and alpha mode; presets take none.
+ * principled one keeps the slot's textures and alpha mode; a built-in
+ * textured one is principled with its own textures, the slot's mapping and
+ * alpha mode; presets take none.
  */
 export function catalogMaterial(id: string, params?: Record<string, unknown>, slot?: Texturing): SlotMaterial | null {
   const entry = materialEntry(id)
   if (!entry) return null
   const complete = completeParams(entry, params)
+  if (entry.kind === 'textured') return { kind: 'principled', params: complete, texturing: builtinTexturing(entry, slot), preset: id }
   if (entry.kind !== 'principled') return { kind: 'pattern', id, params: complete }
   const texturing = slot && texturingOf(slot)
   return { kind: 'principled', params: complete, ...(texturing ? { texturing } : {}) }
@@ -58,6 +62,18 @@ function texturingOf(s: Texturing): Texturing | undefined {
   if (s.alpha_mode === 'clip' || s.alpha_mode === 'blend') out.alpha_mode = s.alpha_mode
   if (s.alpha_mode === 'clip') out.alpha_cutoff = s.alpha_cutoff ?? defaultAlphaCutoff
   return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * A textured entry's textures as a slot's, each image named by its built-in
+ * source; the slot's mapping, or the entry's real size as the store would
+ * fill it in; the slot's alpha mode.
+ */
+function builtinTexturing(entry: MaterialEntry, s: Texturing | undefined): Texturing {
+  const maps: NonNullable<Texturing['maps']> = {}
+  for (const [kind, t] of Object.entries(entry.maps ?? {})) maps[kind as keyof typeof maps] = { content_revision_id: builtinSource(t.file), ...(t.channel ? { channel: t.channel } : {}) }
+  const mapping = s?.mapping ?? { kind: 'triplanar', size_m: entry.size_m ?? 1, rotation_deg: 0, normal_strength: 1 }
+  return { ...texturingOf({ ...s, maps: undefined }), maps, mapping }
 }
 
 /** The clay colour: what an unassigned primitive shows in the material looks. */

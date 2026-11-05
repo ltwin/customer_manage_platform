@@ -7755,6 +7755,11 @@ type CreativeSceneTexture struct {
 	ContentRevisionId string `json:"content_revision_id"`
 }
 
+// CreativeSceneTextureDetails 读不到的内置贴图文件名（creative_texture_unavailable）。
+type CreativeSceneTextureDetails struct {
+	File string `json:"file"`
+}
+
 // CreativeSceneTextureMapping 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
 type CreativeSceneTextureMapping struct {
 	// Kind triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
@@ -9930,6 +9935,11 @@ type RestoreCreativeProjectParams struct {
 // CompleteCreativeSceneJobParams defines parameters for CompleteCreativeSceneJob.
 type CompleteCreativeSceneJobParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// GetCreativeSceneTextureParams defines parameters for GetCreativeSceneTexture.
+type GetCreativeSceneTextureParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
 // CreateCreativeCategoryParams defines parameters for CreateCreativeCategory.
@@ -12372,6 +12382,32 @@ func (t *ErrorDetails) MergeCreativeMaterialSlotDetails(v CreativeMaterialSlotDe
 	return err
 }
 
+// AsCreativeSceneTextureDetails returns the union data inside the ErrorDetails as a CreativeSceneTextureDetails
+func (t ErrorDetails) AsCreativeSceneTextureDetails() (CreativeSceneTextureDetails, error) {
+	var body CreativeSceneTextureDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeSceneTextureDetails overwrites any union data inside the ErrorDetails as the provided CreativeSceneTextureDetails
+func (t *ErrorDetails) FromCreativeSceneTextureDetails(v CreativeSceneTextureDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeSceneTextureDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeSceneTextureDetails
+func (t *ErrorDetails) MergeCreativeSceneTextureDetails(v CreativeSceneTextureDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -12998,6 +13034,9 @@ type ServerInterface interface {
 	// 续租：把租约延长到现在加 30 秒，不超过 deadline
 	// (POST /creative/scene-jobs/{job_id}/lease)
 	LeaseCreativeSceneJob(c *gin.Context, jobId string)
+	// 内置贴图材质的图片文件（内置贴图库）；支持 HEAD
+	// (GET /creative/scene-textures/{file})
+	GetCreativeSceneTexture(c *gin.Context, file string, params GetCreativeSceneTextureParams)
 
 	// (GET /creative/tag-categories)
 	ListCreativeCategories(c *gin.Context)
@@ -17381,6 +17420,57 @@ func (siw *ServerInterfaceWrapper) LeaseCreativeSceneJob(c *gin.Context) {
 	siw.Handler.LeaseCreativeSceneJob(c, jobId)
 }
 
+// GetCreativeSceneTexture operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeSceneTexture(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "file" -------------
+	var file string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "file", c.Param("file"), &file, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter file: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeSceneTextureParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeSceneTexture(c, file, params)
+}
+
 // ListCreativeCategories operation middleware
 func (siw *ServerInterfaceWrapper) ListCreativeCategories(c *gin.Context) {
 
@@ -19895,6 +19985,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/scene-jobs/claim", wrapper.ClaimCreativeSceneJob)
 	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/complete", wrapper.CompleteCreativeSceneJob)
 	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/lease", wrapper.LeaseCreativeSceneJob)
+	router.GET(options.BaseURL+"/creative/scene-textures/:file", wrapper.GetCreativeSceneTexture)
 	router.GET(options.BaseURL+"/creative/tag-categories", wrapper.ListCreativeCategories)
 	router.POST(options.BaseURL+"/creative/tag-categories", wrapper.CreateCreativeCategory)
 	router.POST(options.BaseURL+"/creative/tag-categories/:id/delete", wrapper.DeleteCreativeCategory)

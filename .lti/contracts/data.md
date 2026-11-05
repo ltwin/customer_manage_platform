@@ -186,7 +186,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
 - **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型和图片 `content_revision_id`（图片自修订 v17）。
-- **材质贴图**（修订 v17，C5c1）：槽位值的可选字段，只在 `preset = principled@1` 时允许，写在其他预设上返回 400 并指出字段。
+- **材质贴图**（修订 v17，C5c1）：槽位值的可选字段，只在 `preset = principled@1` 时允许，写在其他预设上返回 400 并指出字段。修订 v20（C5c2）：内置贴图材质（材质目录里 `kind = textured` 的预设，见 `data: 内置贴图库`）也接受 `mapping`、`alpha_mode`、`alpha_cutoff`，但不接受 `maps`（贴图由目录给出），写了返回 400；`mapping` 省略时存储为 `{kind:"triplanar", size_m:<目录里的真实尺寸>, rotation_deg:0, normal_strength:1}`，`alpha_mode` 省略时补 `opaque`。`params` 的键与范围同 `principled@1`（助手工具层按目录校验，命令接口照旧只校验外形），与目录的贴图相乘，规则同下；没写的参数取目录条目的缺省值。目录里没有的预设 ID 照旧只校验格式，但带了这三个字段时返回 400（无从判断是不是内置贴图材质）。
 
 | 字段 | 类型 | 必须 | 缺省 / 约束 |
 |---|---|---|---|
@@ -237,6 +237,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 修订 v10（C5 起草时）：`render` 新增 `exposure_ev`。灯光按 three.js 的物理单位（坎德拉），室外有太阳和只有几盏灯的室内亮度差几个数量级，固定曝光无法同时照顾两者，所以由场景自己定曝光，与摄影里按场景定曝光一致；用「档」而不是倍数，与相机的曝光补偿、Blender 色彩管理的曝光相同。不迁移：读取时补 0，读取场景的响应里也带齐。
 - 修订 v13（C5b 起草时）：基础体的 `primitive` 新增可选的 `faces`。不迁移：没有这个字段就是没有面分配。回滚到不认识它的后端会读取失败，只做前向修复。
 - 修订 v17（C5c1 起草时）：材质槽新增可选的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`，引用表开始登记图片。不迁移：没有这些字段就是没有贴图、`opaque`，渲染与之前相同。改了 `maps` 的槽位会进入渲染指纹（指纹已整体计入 `material_slots`），已有的 `lit` 导出图照常提示过时；没改的场景指纹不变。回滚到不认识这些字段的后端会读取失败，只做前向修复。
+- 修订 v20（C5c2 起草时）：`kind = textured` 的预设可以带 `mapping`、`alpha_mode`、`alpha_cutoff`。只放宽校验，不迁移；旧编辑器不认识这些预设，按未知预设显示中性灰，所以前后端同一版本上线。内置贴图不进引用表，也不计入单场景 64 张图片的上限。
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 
 ## 场景内置基础体
@@ -968,3 +969,61 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 迁移（接在当前最新迁移之后）：两处 kind CHECK 加 `material`，新建 `creative_content_revision_refs`。回滚时如已有 `material` 内容、资产或持有关系行则拒绝，前向修复。
 - 资产库不记录材质被哪个场景用过（I7）。
 - 以后加入的「内容引用内容」（例如合成卡片引用的人片）复用这张表，`role` 按需扩展 CHECK。
+
+## 内置贴图库
+
+### 用途与存储角色
+- **用途**（修订 v20，C5c2）：平台内置的一批 CC0 PBR 贴图，作为材质目录里的内置贴图材质（`kind = textured`），编辑器和助手都能直接选用，不依赖账号里的图片。
+- **存储**：
+  - **清单**：材质目录 `backend/internal/creativescene/materials.json`，前端经 `make generate` 复制一份，随代码发布。
+  - **文件**：现有对象存储的独立前缀 `scene-textures/`，经 `immutablefs.ObjectStore` 写入和读取，与 `avatars/`、`planning/` 同一个驱动开关（`AVATAR_STORAGE_DRIVER`）。本地驱动的根目录是 `SCENE_TEXTURE_LOCAL_ROOT`，缺省为 `AVATAR_LOCAL_ROOT` 的同级目录 `scene-textures`；OSS 驱动用同一个 bucket。
+  - **缩略图**：编辑器离线渲染的 256 × 256 材质球 WebP，文件名为条目 ID（`@` 换成 `_`），提交在 `backend/internal/creativescene/builtin_thumbnails/`，后端嵌入二进制供助手读取，`make generate` 复制到前端打包；不进对象存储。每个条目必须有缩略图，目录加载时校验。
+- **角色**：清单是权威主数据；对象存储里的文件按清单导入，可以随时从来源站重建。没有数据库表：内置贴图不属于任何账号，ADR-001 的账号隔离不适用。读取接口要求登录（见 `api: 读取内置贴图`）。
+
+### 结构与身份
+- 目录条目（`materials[]` 的一项，`kind = textured`）：
+
+| 字段 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `id` | string | 是 | `^[a-z0-9_]+@[1-9][0-9]*$`，与其他预设同一命名空间；发布后条目的贴图和缺省值都不变，改外观发布新版本 |
+| `kind` | `"textured"` | 是 | — |
+| `label` | string | 是 | 界面名称，中文 |
+| `category` | string | 是 | `wood`、`stone`、`brick`、`concrete`、`metal`、`fabric`、`ground`、`tiles`、`roofing`、`leather` 之一，选材面板据此分组 |
+| `size_m` | number 0.01…100 | 是 | 一块贴图对应的真实宽度（米），取自来源站的标注；`mapping` 省略时的三平面尺寸 |
+| `maps` | object | 是 | 键和 `channel` 的语义同 `data: 场景文档`「材质贴图」，引用字段改为 `file`，取值为 `files` 里的文件名；至少有 `base_color` |
+| `defaults` | object | 否 | 覆盖 `principled@1` 参数的缺省值，键必须是它的参数；常用 `{color:"#ffffff", roughness:1, metalness:1}`，让贴图原样生效 |
+| `files` | `[{name, url, bytes}]` | 是 | `name` 为 `<sha256>.jpg`（小写十六进制，内容的 sha256）；`url` 是来源站的下载地址，只供导入命令使用；`bytes` 是文件大小，单个 ≤ 32 MiB |
+| `source` | `{site, asset, author, license}` | 是 | `site` 为 `polyhaven` 或 `ambientcg`，`license` 固定为 `CC0`；只作记录和致谢，不参与渲染 |
+
+- 对象键：`scene-textures/<sha256>.jpg`。内容寻址：同一份文件被多个条目引用时只存一份；文件名就是校验依据。
+- 示例：
+
+```json
+{"id": "wood_floor@1", "kind": "textured", "label": "木地板", "category": "wood", "size_m": 1.7,
+ "maps": {"base_color": {"file": "3f2a…c1.jpg"}, "normal": {"file": "9b07…4e.jpg"},
+          "roughness": {"file": "51d8…a0.jpg", "channel": "g"}, "metalness": {"file": "51d8…a0.jpg", "channel": "b"},
+          "ao": {"file": "51d8…a0.jpg", "channel": "r"}},
+ "defaults": {"color": "#ffffff", "roughness": 1, "metalness": 1},
+ "files": [{"name": "3f2a…c1.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wood_floor/wood_floor_diff_2k.jpg", "bytes": 3981230}, …],
+ "source": {"site": "polyhaven", "asset": "wood_floor", "author": "…", "license": "CC0"}}
+```
+
+### 访问模式与保证
+- **导入**：`creativectl textures import` 逐个检查清单里的文件，对象已存在就跳过；不存在时从 `url` 下载，核对大小和 sha256，一致才写入（`PutImmutable`），不一致则这个文件失败、不写入，其余照常。可以重复执行，结果相同；输出一行 JSON（导入、跳过、失败的文件数和失败原因），有失败时退出码非零。`creativectl textures check` 只检查不下载，供生产预检使用。
+- **读取**：经 `api: 读取内置贴图`，只读清单里列出的文件。
+- **启动检查**：服务启动后在后台按清单检查一遍对象是否存在，缺失时记错误日志（列出缺失的条目），不阻止启动。
+- **不变量的保证方**：文件内容与文件名一致，由导入命令校验 sha256 保证；条目外形、`maps` 引用的文件都在 `files` 里、`defaults` 的键和范围，由目录加载时校验（同现有 `loadMaterials`，不合法时启动失败）和单元测试保证。
+- **展现**（修订 v20）：资产库页面、场景编辑器的资产面板和材质槽的「从资产库选」在材质下提供「内置」来源，与「我的」切换浏览，不混排。内置项来自前端的目录副本，前端按名称、品类本地过滤，不分页；不能评分、打标签、分组、收藏、进回收站，没有资产 ID、修订和入库时间。用到槽位时写 `{preset: "<id>", params: {}}`，与选程序化预设相同。
+- **助手**（修订 v20）：
+  - `search_assets` 增加可选参数 `source`：`account`（缺省，现有行为不变）或 `builtin`。`builtin` 只查目录，按 `query` 匹配名称、品类和来源资产名，可用 `kind: "material"`（其他种类返回空）；忽略分组、标签、评分、画面和排序条件，按目录顺序一次返回全部匹配项，`has_more = false`。每项给 `builtin_id`（条目 ID）、名称、品类、真实尺寸 `size_m` 和可直接写进 `material_slots` 的 `slot`（`{preset}`），不给资产 ID 和修订。
+  - `read_asset` 增加可选参数 `builtin_id`，与现有的内容修订 ID 二选一：返回条目的要点、`slot` 和参数缺省值，缩略图作为图片附件（条件同材质资产）；不给贴图原文件。
+  - 内置来源不是账号数据，不检查资产库授权（consent），也不计入资产库的读取记录。未知的 `builtin_id` 返回工具错误并列出可用 ID。
+  - 外部助手的同名工具（`api: MCP 只读工具`，由活动 Epic `creative-mcp-server` 负责）按「与内置同名」随之获得这两个可选参数，入参只增不改。
+- **与账号内容无关**：不进 `creative_document_content_refs`、`creative_content_revision_refs`，不登记 GC 持有方，不受媒体 GC 管理，不计账号配额；读取场景的 `images` 不列它们，单场景 64 张图片的上限也不计入。
+
+### 生命周期与演进
+- 新增条目：在目录里追加，上线前跑一次导入。改外观（换图、改缺省值或尺寸）发布新版本，旧版本保留，已有场景不变。
+- 新增条目同时要提交它的缩略图（离线脚本生成）。
+- 不删除已发布的条目。来源站撤下文件不影响已导入的对象；重建环境时下载失败的条目按「没导入」处理，日志可查。
+- 对象存储里不再被任何条目引用的文件不自动清理，数量很少，需要时手工删除。
+- 回滚：旧后端不认识 `textured`，目录加载会失败；回滚须连同目录一起回滚，已写进场景的内置贴图材质在旧编辑器里显示为中性灰。只做前向修复。

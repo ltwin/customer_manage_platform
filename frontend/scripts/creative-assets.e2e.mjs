@@ -14,6 +14,8 @@ mkdirSync(output, { recursive: true })
 const webm = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.webm', import.meta.url)))
 const mp3 = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.mp3', import.meta.url)))
 const glb = readFileSync(fileURLToPath(new URL('../../backend/internal/creativeglb/testdata/exported-template.glb', import.meta.url)))
+// 内置贴图的读取接口：每个文件都回这张小图，查看浮窗的材质球照常画出来。
+const textureJPEG = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.jpg', import.meta.url)))
 // 模型预览用 WebGL：和场景编辑器的 e2e 一样走 SwiftShader。
 const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
 const errors = []
@@ -82,7 +84,7 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), digests: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
+  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], textures: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), digests: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
   const live = () => s.assets.filter((a) => !a.deleted_at)
   const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
@@ -129,6 +131,10 @@ function mockServer(assets) {
     const path = url.pathname
     // 页面已经放弃的请求（条件变了被中止）再回应会报错，忽略即可。
     const json = (value, status = 200) => route.fulfill({ status, json: value }).catch(() => {})
+    if (path.includes('/creative/scene-textures/')) {
+      s.textures.push(path.split('/').at(-1))
+      return route.fulfill({ status: 200, contentType: 'image/jpeg', body: textureJPEG }).catch(() => {})
+    }
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
     if (path.endsWith('/me')) return json({ id: 'qa-assets', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
     if (path.endsWith('/account/profile')) return json({ display_name: 'Samson', profile_revision: '1', avatar_revision: '0' })
@@ -1723,6 +1729,66 @@ await check('C5c1-material-asset', async () => {
     return n / (p.length / 4)
   }, [`data:image/png;base64,${ball.toString('base64')}`, `data:image/png;base64,${turned.toString('base64')}`])
   assert(moved < 0.01, `the highlights stay where they were: ${(moved * 100).toFixed(2)}% of the stage changed`)
+})
+
+// C5c2：资产库的「内置材质」只读、按品类分组、本地筛选；查看浮窗画材质球并列出来源。
+await check('C5c2-builtin', async () => {
+  await fresh({ layout: 'grid' })
+  await open()
+  const reads = server.reads.length
+  await row('内置材质').click()
+  assert.equal(params().get('source'), 'builtin')
+  await until(async () => (await row('内置材质').getAttribute('aria-current')) === 'page', 'the built-in row is current')
+  assert.equal(await row('全部').getAttribute('aria-current'), null, 'no account view is current')
+  const builtin = page.getByRole('region', { name: '内置材质' })
+  await builtin.waitFor()
+  assert.equal(await builtin.locator('.al-tile').count(), 24)
+  assert.equal(await page.getByRole('complementary', { name: '检查器' }).count(), 0, 'nothing to inspect or organize')
+  assert.equal(await builtin.locator('.al-tick').count(), 0, 'built-ins are not selectable')
+  assert.equal(server.reads.length, reads, 'the built-in grid asks the server nothing')
+  // 品类分组的顺序同目录；文字和品类在本地叠加筛选。
+  assert.deepEqual((await builtin.locator('.al-builtin-group h3').allInnerTexts()).slice(0, 3), ['木材', '石材', '砖墙'])
+  await builtin.getByRole('searchbox', { name: '搜索内置材质' }).fill('砖')
+  assert.equal(await builtin.locator('.al-tile').count(), 5)
+  await builtin.getByRole('group', { name: '品类' }).getByRole('button', { name: '砖墙' }).click()
+  assert.deepEqual(await builtin.locator('.al-tile').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['红砖', '砖墙', '中世纪石块'])
+  await builtin.getByRole('searchbox', { name: '搜索内置材质' }).fill('玻璃')
+  await builtin.getByText('没有符合条件的内置材质').waitFor()
+  await builtin.getByRole('searchbox', { name: '搜索内置材质' }).fill('')
+  const thumb = builtin.locator('.al-tile[data-builtin="red_brick@1"] img')
+  await until(() => thumb.evaluate((img) => img.complete && img.naturalWidth === 256), 'the thumbnail is the rendered ball')
+  await until(() => builtin.locator('.al-tile img').evaluateAll((imgs) => imgs.slice(0, 8).every((i) => i.complete && i.naturalWidth > 0)), 'the first thumbnails are in')
+  await page.screenshot({ path: `${output}/builtin-grid.png` })
+  await noHorizontalScroll('builtin')
+
+  await builtin.locator('.al-tile[data-builtin="red_brick@1"]').dblclick()
+  const v = page.getByRole('dialog', { name: '查看内置材质：红砖' })
+  await v.waitFor()
+  await v.locator('.v-model canvas').waitFor()
+  for (const [label, value] of [['品类', '砖墙'], ['来源', 'Poly Haven · red_brick'], ['作者', /\S/]]) {
+    const dd = await v.locator('dt', { hasText: new RegExp(`^${label}$`) }).locator('xpath=following-sibling::dd[1]').innerText()
+    if (value instanceof RegExp) assert.match(dd, value, label)
+    else assert.equal(dd, value, label)
+  }
+  assert.match(await v.locator('dt', { hasText: /^尺寸$/ }).locator('xpath=following-sibling::dd[1]').innerText(), /^[\d.]+ 米一块$/)
+  assert.equal(await v.locator('.al-rating').count(), 0, 'a built-in has no rating')
+  assert.equal(await v.getByRole('textbox', { name: '标题' }).count(), 0, 'nor an editable title')
+  await until(() => server.textures.length >= 3, 'the ball reads the built-in textures', 10000)
+  assert(server.textures.every((f) => /^[0-9a-f]{64}\.jpg$/.test(f)), server.textures.join('|'))
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: `${output}/builtin-viewer.png` })
+  await page.keyboard.press('ArrowRight')
+  await page.getByRole('dialog', { name: '查看内置材质：砖墙' }).waitFor()
+  await page.keyboard.press('Escape')
+  await until(async () => (await page.getByRole('dialog').count()) === 0, 'viewer closed')
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-builtin')), 'red_brick@1', 'focus returns to the card it opened from')
+
+  // 回到账号视图，网址里的 source 清掉；条件没变，列表不必重新读取。
+  await row('全部').click()
+  await board().waitFor()
+  await settled()
+  assert.equal(params().get('source'), null)
+  assert.equal(await row('全部').getAttribute('aria-current'), 'page')
 })
 
 await context?.close()

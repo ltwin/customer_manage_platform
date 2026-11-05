@@ -1,6 +1,9 @@
 import { useAssetImport } from './AssetImport.tsx'
 import TrashControls from './TrashControls.tsx'
 import AssetViewer from '../viewer/AssetViewer.tsx'
+import BuiltinViewer from '../viewer/BuiltinViewer.tsx'
+import BuiltinBrowser from './BuiltinBrowser.tsx'
+import type { BuiltinMaterial } from './builtin.ts'
 import { useOrganization } from './useOrganization.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -46,6 +49,12 @@ export default function AssetsPage() {
 function Assets({ account }: { account: string }) {
   const [params, setParams] = useSearchParams()
   const query = readQuery(params)
+  // 「内置材质」不是账号素材的视图，单独记在网址的 source 上；换视图或分组时自然清掉。
+  const builtin = params.get('source') === 'builtin'
+  const [builtinViewer, setBuiltinViewer] = useState<{
+    items: BuiltinMaterial[]
+    initialID: string
+  } | null>(null)
   const [refresh, setRefresh] = useState(0)
   const reload = () => setRefresh((n) => n + 1)
   const [prefs, setPrefs] = useState(readPrefs)
@@ -118,10 +127,19 @@ function Assets({ account }: { account: string }) {
     account,
     group: query.group,
     actions,
-    blocked: actions.blocked || !!viewer || !!popup || !!confirm || !!menu,
+    blocked:
+      actions.blocked ||
+      !!viewer ||
+      !!builtinViewer ||
+      !!popup ||
+      !!confirm ||
+      !!menu,
     onDone: reload,
     onStart: () => {
-      if (!query.group && query.view !== 'all' && query.view !== 'recent')
+      if (
+        builtin ||
+        (!query.group && query.view !== 'all' && query.view !== 'recent')
+      )
         go(enter(query, 'all'), true)
     },
   })
@@ -199,6 +217,7 @@ function Assets({ account }: { account: string }) {
         'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"]',
       ) ||
       importer.open ||
+      builtin ||
       viewer ||
       popup ||
       confirm ||
@@ -239,7 +258,7 @@ function Assets({ account }: { account: string }) {
     <>
       <main
         aria-busy={actions.busy}
-        className={`cs-main al-page${prefs.inspector ? '' : ' no-inspector'}`}
+        className={`cs-main al-page${prefs.inspector && !builtin ? '' : ' no-inspector'}`}
       >
         <LibraryTree
           importButton={importer.button()}
@@ -259,7 +278,21 @@ function Assets({ account }: { account: string }) {
           }
           {...tree}
           blocked={actions.blocked}
+          builtin={builtin}
+          onBuiltin={() => {
+            clear()
+            setPopup(null)
+            setParams({ source: 'builtin' })
+          }}
         />
+        {builtin ? (
+          <BuiltinBrowser
+            size={prefs.size}
+            onOpen={(items, initialID) =>
+              setBuiltinViewer({ items, initialID })
+            }
+          />
+        ) : (
         <AssetBrowser
           importButton={importer.button('al-phone-import')}
           onImportFiles={importer.files}
@@ -315,7 +348,8 @@ function Assets({ account }: { account: string }) {
             />
           }
         />
-        {prefs.inspector && (
+        )}
+        {prefs.inspector && !builtin && (
           <AssetInspector
             onColor={(color) => go({ ...query, color })}
             assets={selected}
@@ -339,6 +373,22 @@ function Assets({ account }: { account: string }) {
         />
       )}
 
+      {builtinViewer && (
+        <BuiltinViewer
+          {...builtinViewer}
+          onClose={() => {
+            const id = builtinViewer.initialID
+            setBuiltinViewer(null)
+            requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>(
+                  `[data-builtin="${CSS.escape(id)}"]`,
+                )
+                ?.focus({ preventScroll: true }),
+            )
+          }}
+        />
+      )}
       {viewer ? (
         <AssetViewer
           {...viewer}

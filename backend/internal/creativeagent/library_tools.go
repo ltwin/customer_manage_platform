@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -9,6 +10,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -36,6 +38,7 @@ func (h *runtimeHandler) requireLibrary(ctx context.Context, metadata bool) erro
 }
 
 type assetSearchArgs struct {
+	Source    string   `json:"source"`
 	AssetID   string   `json:"asset_id"`
 	Untagged  bool     `json:"untagged"`
 	Query     string   `json:"query"`
@@ -83,11 +86,32 @@ func (s *Service) searchAssets(ctx context.Context, scope store.AccountScope, ac
 	if a.Limit < 1 || a.Limit > 20 || len(a.TagIDs) > 50 {
 		return "", refuseTool("每页 1 到 20 项、最多 50 个标签")
 	}
+	switch a.Source {
+	case sourceBuiltin:
+		// The platform's catalog, not the account's data: no grant asked.
+		return builtinSearch(a)
+	case "", "account":
+	default:
+		return "", refuseTool("source 只能是 account 或 builtin")
+	}
 	if err := access.libraryAllowed(ctx, true); err != nil {
 		return "", err
 	}
 	rawPage, err := creativelibrary.DiscoverAssets(ctx, scope, creativelibrary.Search{AssetID: a.AssetID, Untagged: a.Untagged, Q: a.Query, Kind: a.Kind, GroupID: a.GroupID, Descendants: a.Subgroups, TagIDs: a.TagIDs, TagMode: a.TagMode, MinRating: a.MinRating, Unrated: a.Unrated, Color: a.Color, Shape: a.Shape, View: a.View, Sort: a.Sort, Limit: a.Limit, Cursor: a.Cursor}, s.limits.ToolResultBytes)
 	return string(rawPage), asRefusal(err)
+}
+
+const sourceBuiltin = "builtin"
+
+// builtinSearch lists the built-in textured materials matching the query,
+// all at once in catalog order: there are few, and nothing else narrows them.
+func builtinSearch(a assetSearchArgs) (string, error) {
+	items := []creativescene.BuiltinMaterial{}
+	if a.Kind == "" || a.Kind == "material" {
+		items = creativescene.BuiltinMaterials(a.Query)
+	}
+	out, err := json.Marshal(map[string]any{"items": items, "total_count": len(items), "has_more": false})
+	return string(out), err
 }
 
 func (s *Service) readLibrary(ctx context.Context, scope store.AccountScope, access readAccess, raw string) (string, error) {

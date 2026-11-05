@@ -6,10 +6,13 @@ import { fileTitle } from '../../creative-canvas/editor/fileImport.ts'
 import { uploadFile, type MediaCapabilities, type UploadProgress } from '../../creative-canvas/editor/media.ts'
 import { blank, type LibraryQuery } from '../../creative-canvas/assets/query.ts'
 import { useAssetList } from '../../creative-canvas/assets/useLibrary.ts'
+import { builtinSlot, filterBuiltin, type BuiltinMaterial } from '../../creative-canvas/assets/builtin.ts'
+import { assetMaterial } from '../../creative-canvas/viewer/modelInfo.ts'
 
 type CanvasSnapshot = components['schemas']['CreativeCanvasSnapshot']
 type CanvasNode = CanvasSnapshot['nodes'][number]
 type LibraryAsset = components['schemas']['CreativeLibraryAsset']
+type MaterialSlot = components['schemas']['CreativeSceneMaterialSlot']
 type Source = 'library' | 'canvas' | 'upload'
 
 const sources: { id: Source; label: string }[] = [
@@ -42,12 +45,69 @@ export function ImagePicker({ title, canvasID, onPick, onClose }: { title: strin
   )
 }
 
-/** Picks one of the account's material assets for a slot (C5c1 design「材质资产的存入与使用」); the slot edit is the caller's. */
-export function MaterialPicker({ title, onPick, onClose }: { title: string; onPick: (asset: LibraryAsset) => void; onClose: () => void }) {
+/**
+ * Picks a material for a slot: one of the account's material assets (C5c1
+ * design「材质资产的存入与使用」) or a built-in textured one (C5c2), as the
+ * slot it is written as; the slot edit is the caller's.
+ */
+export function MaterialPicker({ title, onPick, onClose }: { title: string; onPick: (picked: { title: string; slot: MaterialSlot }) => void; onClose: () => void }) {
+  const [source, setSource] = useState<'mine' | 'builtin'>('mine')
   return (
     <PickerDialog title={title} onClose={onClose}>
-      <LibraryAssets kind="material" onPick={onPick} />
+      <div className="cc-scene-image-tabs" role="tablist" aria-label="材质来源">
+        {(['mine', 'builtin'] as const).map((s) => (
+          <button key={s} type="button" role="tab" aria-selected={source === s} className={source === s ? 'is-active' : ''} onClick={() => setSource(s)}>
+            {s === 'mine' ? '我的' : '内置'}
+          </button>
+        ))}
+      </div>
+      {source === 'mine' ? (
+        <LibraryAssets
+          kind="material"
+          onPick={(a) => {
+            const slot = assetMaterial(a.content)
+            if (slot) onPick({ title: a.title, slot })
+          }}
+        />
+      ) : (
+        <BuiltinAssets onPick={(m) => onPick({ title: m.label, slot: builtinSlot(m.id) })} />
+      )}
     </PickerDialog>
+  )
+}
+
+/** The built-in textured materials (C5c2), filtered here by name and category. */
+function BuiltinAssets({ onPick }: { onPick: (m: BuiltinMaterial) => void }) {
+  const [text, setText] = useState('')
+  const items = filterBuiltin(text)
+  return (
+    <>
+      <label className="cc-scene-field">
+        <span>搜索</span>
+        <input type="search" aria-label="搜索内置材质" placeholder="搜索名称、品类" value={text} onChange={(e) => setText(e.target.value)} />
+      </label>
+      {!items.length ? (
+        <p>没有符合条件的内置材质</p>
+      ) : (
+        <div className="cc-scene-assets-grid cc-scene-image-grid" role="listbox" aria-label="内置材质">
+          {items.map((m) => (
+            <BuiltinCard key={m.id} material={m} onClick={() => onPick(m)} />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** A built-in material's card: its rendered ball and name. */
+export function BuiltinCard({ material: m, ...rest }: { material: BuiltinMaterial } & Omit<React.ComponentProps<'button'>, 'children'>) {
+  return (
+    <button type="button" role="option" aria-selected={false} className="cc-scene-asset" aria-label={m.label} title={`${m.label} · ${m.categoryLabel} · ${m.sizeM} 米一块`} data-builtin={m.id} {...rest}>
+      <span className="cc-scene-asset-thumb">
+        <img src={m.thumbnail} alt="" draggable={false} />
+      </span>
+      <span className="cc-scene-asset-name">{m.label}</span>
+    </button>
   )
 }
 

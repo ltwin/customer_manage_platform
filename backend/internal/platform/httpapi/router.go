@@ -17,6 +17,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
@@ -82,8 +83,10 @@ type RouterDeps struct {
 	PlanningIngestion         *ingestion.Application
 	CreativeImageEdit         *creativeimageedit.Service
 	CreativeMedia             *creativemedia.Service
-	CreativeGeneration        *creativegeneration.Product
-	CreativeAgent             *creativeagent.Service
+	// SceneTextures reads the built-in textures; nil answers 503.
+	SceneTextures      *creativescene.BuiltinTextures
+	CreativeGeneration *creativegeneration.Product
+	CreativeAgent      *creativeagent.Service
 	// OAuth is the external agents' authorization server. Nil (MCP_ENABLED
 	// off) mounts neither it nor /mcp.
 	OAuth *oauth.Service
@@ -137,6 +140,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		now:                 now,
 		anonymousShare:      deps.AnonymousShare,
 		creativeMedia:       deps.CreativeMedia,
+		sceneTextures:       deps.SceneTextures,
 		creativeImageEdit:   deps.CreativeImageEdit,
 		creativeGeneration:  deps.CreativeGeneration,
 		creativeAgent:       deps.CreativeAgent,

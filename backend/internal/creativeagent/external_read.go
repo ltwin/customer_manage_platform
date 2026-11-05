@@ -305,15 +305,11 @@ func (e *ExternalTools) readCanvas(ctx context.Context, p ExternalPrincipal, raw
 }
 
 func (e *ExternalTools) readAsset(ctx context.Context, p ExternalPrincipal, raw string) (ExternalResult, error) {
-	var args struct {
-		RevisionID string `json:"content_revision_id"`
-		Offset     int    `json:"offset"`
-		Limit      int    `json:"limit"`
-	}
+	var args readAssetArgs
 	if err := strictArguments(raw, &args); err != nil {
 		return ExternalResult{}, err
 	}
-	result, err := e.service.readAssetResult(ctx, p.Scope, externalReadAccess{}, args.RevisionID, args.Offset, args.Limit)
+	result, err := e.service.readAsset(ctx, p.Scope, externalReadAccess{}, args)
 	if err != nil {
 		return ExternalResult{}, err
 	}
@@ -362,10 +358,7 @@ func (e *ExternalTools) readAsset(ctx context.Context, p ExternalPrincipal, raw 
 
 // image reads the display rendition and bounds it for an external model.
 func (e *ExternalTools) image(ctx context.Context, scope store.AccountScope, id string) (ExternalImage, error) {
-	if e.service.images == nil {
-		return ExternalImage{}, ErrModelCapability
-	}
-	handle, err := e.service.images.AgentImage(ctx, scope, id, e.service.limits.ImagePreviewBytes)
+	handle, err := e.service.agentImage(ctx, scope, id, e.service.limits.ImagePreviewBytes)
 	if err != nil {
 		return ExternalImage{}, err
 	}
@@ -390,7 +383,11 @@ func (e *ExternalTools) searchAssets(ctx context.Context, p ExternalPrincipal, r
 	if err != nil {
 		return ExternalResult{}, err
 	}
-	return externalPageSummary(page, "素材", "下一步：要看图片或完整信息，用 read_asset(content_revision_id) 逐项读取。")
+	next := "下一步：要看图片或完整信息，用 read_asset(content_revision_id) 逐项读取。"
+	if stringArgument(raw, "source") == sourceBuiltin {
+		next = "下一步：slot 可直接写进场景的材质槽；要看缩略图和参数缺省值，用 read_asset(builtin_id)。"
+	}
+	return externalPageSummary(page, "素材", next)
 }
 
 func (e *ExternalTools) readLibrary(ctx context.Context, p ExternalPrincipal, raw string) (ExternalResult, error) {

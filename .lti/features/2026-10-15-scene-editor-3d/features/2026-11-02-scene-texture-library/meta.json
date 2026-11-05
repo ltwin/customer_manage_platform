@@ -1,6 +1,6 @@
 {
   "uid": "2232e9d1-51d9-4154-9aeb-1e7e6e18af1c",
-  "revision": 4,
+  "revision": 7,
   "id": "scene-texture-library",
   "kind": "feature",
   "assurance": "governed",
@@ -49,9 +49,9 @@
       "api:提交场景命令"
     ]
   },
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-03T04:18:27.342Z",
-  "updatedAt": "2026-11-04T13:19:25.368Z",
+  "updatedAt": "2026-11-05T09:33:14.712Z",
   "risk": {
     "factors": [
       "perf-sensitive",
@@ -72,8 +72,48 @@
   },
   "approvalHistory": [],
   "revisions": [],
-  "verify": [],
+  "baseline": {
+    "commit": "6365ba575feae8643676c0962dec25c5e5d98be8",
+    "at": "2026-11-04T13:20:30.216Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a60de44c0eca1f6877ee76f0a4e90d0008f77845d016f553b7048701bf3e0c54"
+    },
+    "preExisting": [
+      ".lti/snapshots/a60de44c0eca1f6877ee76f0a4e90d0008f77845d016f553b7048701bf3e0c54.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "samson",
+      "at": "2026-11-05T09:33:02.988Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "未在 lti 配置 checks，测试为各任务的定向单测与单个 e2e 用例；性能只有本机磁盘供图实测，无预设阈值，网络下载时长未测；影响面靠定向回归，未做调用图全量清单；设计中资产库网格与查看浮窗改为新建 BuiltinBrowser/BuiltinViewer，未改 AssetBrowser/AssetViewer/AssetInfoPanel"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 2026-11-05 在本机（共享 OSS 供图）实测拖拽内置材质与助手样例「给地面铺木地板、墙面换红砖」，结论没问题，同意收尾；24 套目视与 5 套场景实测见 design 未决 2，首批按 2K 原图交付不转码",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "4bbd077baa728e6c0113543a646b28f8a879d28e32a5c9a2d7d65a7a0411c640"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-05T09:33:14.445Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

@@ -320,6 +320,16 @@ body:has(.viewer-back) :is(.menu, .popover) {
 .v-title:focus {
   background: var(--s2);
 }
+/* 内置材质的名称不可编辑，只沿用标题的字号与位置。 */
+.v-title-text:hover {
+  background: none;
+}
+.v-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg-3);
+}
 .v-rows {
   display: grid;
   grid-template-columns: 64px 1fr;
