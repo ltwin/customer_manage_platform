@@ -1,6 +1,6 @@
 {
   "uid": "2232e9d1-51d9-4154-9aeb-1e7e6e18af1c",
-  "revision": 7,
+  "revision": 8,
   "id": "scene-texture-library",
   "kind": "feature",
   "assurance": "governed",
@@ -51,7 +51,21 @@
   },
   "state": "closed",
   "createdAt": "2026-11-03T04:18:27.342Z",
-  "updatedAt": "2026-11-05T09:33:14.712Z",
+  "updatedAt": "2026-11-05T09:33:44.967Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-11-05T09:33:44.884Z",
+    "summary": "feat/scene-texture-library 已 --no-ff 合入 develop；合入树与分支树一致（develop 无分支外提交），分支上的定向测试与 owner 实测原样适用",
+    "method": "manual",
+    "limitations": "未重跑 check-merge：合入树与分支相同；lti 未配置 checks，验证为分支上的定向单测、单个 e2e 用例与 owner 本机实测",
+    "sourceCommit": "32b9dfa379cdb415812a50232c67a28dd992ed2b",
+    "targetCommit": "4b2dbb221eaa0b7ed082e0023a8857531434f52a",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "9e4915d0ec52df3a3d906189485f76d5a1c043068b2e08e70385e4ca6c88ede3"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "perf-sensitive",
