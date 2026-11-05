@@ -239,7 +239,7 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         try {
           // The probes from a cold start before the first frame (S2 design「导出预热与时限」).
           const started = performance.now()
-          picture?.warm(camera, frame, PROBE_WARMUP)
+          await picture?.warm(camera, frame, PROBE_WARMUP)
           // The e2e's: the warm-up's time, its work waited for, and what the probes hold after it.
           if (sceneTest && picture) {
             const warmed = picture.probeStats
@@ -249,6 +249,8 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
               if (gpuTestHooks.probeDigest) gpuTestHooks.lastWarm.digests = [await digestProbes(picture)]
             } else gpuTestHooks.lastWarm = null
           }
+          // Its lit materials built in the background, not in its first frame (SceneRenderer.prepare).
+          await picture?.prepare(camera, frame)
           for (let i = 1; i < frames; i++) {
             g.advanceFrame()
             picture!.render(camera, frame)

@@ -76,24 +76,44 @@ const noise = Fn(([p]) => {
   )
 }).setLayout({ name: 'patNoise', type: 'float', inputs: [{ name: 'p', type: 'vec3' }] })
 
+/** fbm's shader functions, one an octave count (fbm). */
+const fbmFns = new Map<number, Op>()
+
 /**
  * fbm around 0.5 starting at freq cycles per metre. An octave whose
  * wavelength is under about two pixels (fp metres each) fades out.
- * Unrolled: octaves is a constant of the preset.
+ * Unrolled: octaves is a constant of the preset; a shader function an
+ * octave count, called where a preset asks (the reflections' hit shading
+ * spelled out 277 noise calls otherwise: scene-gi-stalls).
  */
 function fbm(p: TSLNode, freq: number | TSLNode, fp: TSLNode, octaves: number): TSLNode {
-  let sum: TSLNode = float(0)
-  let norm = 0
-  let amp = 0.5
-  let f: TSLNode = float(freq)
-  for (let i = 0; i < octaves; i++) {
-    const fade = float(1).sub(smoothstep(0.25, 0.5, f.mul(fp)))
-    sum = sum.add(fade.mul(amp).mul(noise(p.mul(f).add(i * 17.31)).sub(0.5)))
-    norm += amp
-    amp *= 0.5
-    f = f.mul(2)
+  let fn = fbmFns.get(octaves)
+  if (!fn) {
+    fn = Fn(([q, start, footprint]) => {
+      let sum: TSLNode = float(0)
+      let norm = 0
+      let amp = 0.5
+      let f: TSLNode = start
+      for (let i = 0; i < octaves; i++) {
+        const fade = float(1).sub(smoothstep(0.25, 0.5, f.mul(footprint)))
+        sum = sum.add(fade.mul(amp).mul(noise(q.mul(f).add(i * 17.31)).sub(0.5)))
+        norm += amp
+        amp *= 0.5
+        f = f.mul(2)
+      }
+      return sum.div(norm).add(0.5)
+    }).setLayout({
+      name: `patFbm${octaves}`,
+      type: 'float',
+      inputs: [
+        { name: 'p', type: 'vec3' },
+        { name: 'freq', type: 'float' },
+        { name: 'fp', type: 'float' },
+      ],
+    })
+    fbmFns.set(octaves, fn)
   }
-  return sum.div(norm).add(0.5)
+  return fn(p, float(freq), fp)
 }
 
 /** Distances to the nearest and second nearest cell point. Unrolled over the 27 neighbours. */

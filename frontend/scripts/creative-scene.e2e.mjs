@@ -35,6 +35,21 @@ import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import SceneEditor from '/src/creative-scene/SceneEditor.tsx';
+import {SceneRenderer} from '/src/creative-scene/render/sceneRenderer.ts';
+import SSRTraceNode from '/src/creative-scene/render/nodes/SSRTraceNode.js';
+if (new URLSearchParams(location.search).has('startup')) {
+  window.__startup = {tasks: [], builds: {}, last: null};
+  const render = SceneRenderer.prototype.render;
+  SceneRenderer.prototype.render = function(...args) { window.__startup.last = this; return render.apply(this, args) };
+  const build = SSRTraceNode.prototype._buildSSRMaterial;
+  SSRTraceNode.prototype._buildSSRMaterial = function(...args) {
+    const counts = window.__startup.builds;
+    counts[this.id] = (counts[this.id] || 0) + 1;
+    return build.apply(this, args);
+  };
+  new PerformanceObserver(list => window.__startup.tasks.push(...list.getEntries().map(e => ({at: e.startTime, ms: e.duration})))).observe({type: 'longtask'});
+}
+
 import SaveModelDialog from '/src/creative-canvas/editor/SaveModelDialog.tsx';
 import {useSceneHost} from '/src/creative-scene/host/launcher.ts';
 import {sceneContext} from '/src/creative-scene/context.ts';
@@ -12219,6 +12234,8 @@ window.__probeSmoke = async (frames) => {
   camera.lookAt(0, 0, 1);
   camera.updateMatrixWorld();
   const volume = new ProbeVolume(gpu.renderer, base.handle(), scene, base, camera, 'picture', (a) => gpu.release(a));
+  // The kernels build in the background; a step before then does nothing.
+  await volume.compiled();
   const started = performance.now();
   for (let f = 0; f < frames; f++) {
     base.sync();
@@ -12856,6 +12873,100 @@ if (process.env.SCENE_E2E_PROBES && process.env.SCENE_E2E_PROBE_AO) await check(
       }
       console.log(`  ${name}: ${(await lumaStats(page, shots.off)).mean.toFixed(1)} without, ${(await lumaStats(page, shots[radius])).mean.toFixed(1)} with the AO at ${radius} m`)
     }
+  } finally {
+    await gpu.close()
+  }
+})
+
+// Opt-in hardware performance regression: includes world-space reflections, probes and glass.
+if (process.env.SCENE_E2E_PERF) await check('real-time GI startup: repeated switches remain responsive and compile each SSR material once', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'frame-two-lights', scene => { scene.render.engine = 'realtime_gi' })
+    const { page, errors } = await open(server, { context, query: '?startup=1' })
+    await shading(page, '材质预览')
+    const settled = () => waitFor(async () => page.evaluate(() => {
+      const r = window.__startup.last
+      return r && !r.next && window.__sceneGPU.compiling === 0
+    }), 'pipeline ready', 120_000)
+    await settled()
+    const intervals = []
+    for (let i = 0; i < 3; i++) {
+      const start = await page.evaluate(() => performance.now())
+      await shading(page, '最终渲染')
+      await waitFor(async () => page.evaluate(() => window.__sceneGPU.probeStats?.drawn === true), 'probes drawn', 120_000)
+      await settled()
+      intervals.push([start, await page.evaluate(() => performance.now())])
+      await orbitFrames(page, 300)
+      const { box: area } = await viewportCenter(page)
+      const light = await lumaStats(page, await settledShot(page, area), { level: 250 })
+      console.log(`GI startup picture ${i}: mean ${light.mean.toFixed(1)}`)
+      await shot(page, `gi-startup-${i}`)
+      assert.ok(light.mean > 10, `the complete picture is visible: mean ${light.mean}, errors ${errors.join('; ')}`)
+      const previewStart = await page.evaluate(() => performance.now())
+      await shading(page, '材质预览')
+      await settled()
+      intervals.push([previewStart, await page.evaluate(() => performance.now())])
+    }
+    // Exclude the screenshot's image decoding and pixel readback from the UI responsiveness measurement.
+    const result = await page.evaluate(intervals => ({
+      tasks: window.__startup.tasks.filter(t => intervals.some(([a, b]) => t.at >= a && t.at < b)).map(t => t.ms),
+      builds: Object.values(window.__startup.builds),
+    }), intervals)
+    console.log('GI startup', JSON.stringify(result))
+    assert.ok(result.builds.length > 0, 'world-space reflections compiled')
+    assert.ok(result.builds.every(n => n === 1), 'each SSR material built only once across consumers')
+    assert.ok(Math.max(0, ...result.tasks) < 250, 'no main-thread task exceeds 250 ms on this hardware fixture')
+    assert.deepEqual(errors, [])
+    // Closing while a new pipeline is queued must cancel without publishing to a disposed renderer.
+    await shading(page, '最终渲染')
+    await page.getByRole('button', { name: '还原节点', exact: true }).click()
+    await sleep(500)
+    assert.deepEqual(errors, [])
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+// Three resolves a failed asynchronous compile; the viewport must still reach its existing SSR fallback.
+if (process.env.SCENE_E2E_PERF) await check('real-time GI startup: a refused pipeline exits waiting and draws the fallback', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'frame-two-lights', scene => { scene.render.engine = 'realtime_gi' })
+    const { page, errors } = await open(server, { context, query: '?startup=1' })
+    await shading(page, '材质预览')
+    await waitFor(async () => page.evaluate(() => window.__startup.last?.built && !window.__startup.last.next), 'preview ready', 60_000)
+    await page.evaluate(() => {
+      const backend = window.__startup.last.gpu.renderer.backend
+      const create = backend.createRenderPipeline.bind(backend)
+      backend.createRenderPipeline = (object, promises) => {
+        if (!window.__startup.rejected && object.material.userData.watchPipeline) {
+          window.__startup.rejected = true
+          const device = backend.device
+          const compile = device.createRenderPipelineAsync
+          device.createRenderPipelineAsync = () => Promise.reject(new Error('injected startup pipeline failure'))
+          try { return create(object, promises) } finally { device.createRenderPipelineAsync = compile }
+        }
+        return create(object, promises)
+      }
+    })
+    await shading(page, '最终渲染')
+    await waitFor(async () => page.evaluate(() => {
+      const r = window.__startup.last
+      return window.__startup.rejected && r.trace().state.state === 'failed' && r.built?.key === 'gi-interactive' && !r.next
+    }), 'screen-space fallback drawn', 60_000)
+    await orbitFrames(page, 300)
+    const { box: area } = await viewportCenter(page)
+    const light = await lumaStats(page, await settledShot(page, area), { level: 250 })
+    assert.ok(light.mean > 10, `fallback picture visible: ${light.mean}`)
+    assert.ok(errors.some(e => e.includes('injected startup pipeline failure')), 'the driver refusal was observed')
+    assert.deepEqual(errors.filter(e => !e.includes('injected startup pipeline failure')), [])
+    await context.close()
   } finally {
     await gpu.close()
   }

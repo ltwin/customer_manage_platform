@@ -2,7 +2,8 @@ import { Box3, FloatType, HalfFloatType, LinearFilter, Matrix3, Matrix4, Nearest
 import * as tsl from 'three/tsl'
 import { StorageTexture, type ComputeNode, type WebGPURenderer } from 'three/webgpu'
 import type { TSLNode } from '../../materials/patterns.ts'
-import { gpuTestHooks } from '../gpu.ts'
+import { gpuTestHooks, pageYields } from '../gpu.ts'
+import { BuildLifetime, buildLifetime } from '../buildLifetime.ts'
 import { preExposure, type PhysicalExposure } from '../../world/exposure.ts'
 import type { TraceHandle } from '../trace/base.ts'
 import { hitShading, type HitShading } from '../trace/hit.ts'
@@ -90,7 +91,9 @@ export class ProbeVolume {
   private readonly source: ProbeSource
   private readonly renderer: WebGPURenderer
   private readonly release: (attribute: object) => void
-  private kernels: { rays: ComputeNode; update: ComputeNode; rescale: ComputeNode; shading: HitShading; environment: boolean } | null = null
+  /** The kernels, and their build: steps wait for it (compiled). */
+  private kernels: { rays: ComputeNode; update: ComputeNode; rescale: ComputeNode; shading: HitShading; environment: boolean; compiled: Promise<void>; ready: boolean } | null = null
+  private readonly builds = new BuildLifetime()
   /** Updates each level has had since it was cleared: the viewport's warm-up reads it (warm). */
   private readonly updates = new Array<number>(LEVELS_MAX).fill(0)
   /** The levels the scene and the camera took at the last step (levelsAt): more than allocated is outgrown. */
@@ -138,6 +141,7 @@ export class ProbeVolume {
     const [rays, irradiance, depth, offsets, cells, ages, geometry] = this.buffers
     this.nodes = {
       allocated: n,
+      rows: uniform(n),
       irradiance: texture(atlases.irradiance),
       depth: texture(atlases.depth),
       state: texture(atlases.state),
@@ -210,8 +214,25 @@ export class ProbeVolume {
     this.disposeKernels()
     const shading = hitShading(this.handle.probes, this.handle.tables, this.scene)
     const count = this.allocated * PROBES * RAYS
-    this.kernels = { rays: rayKernel(this.data, shading, count), update: updateKernel(this.data, count), rescale: rescaleKernel(this.data, count), shading, environment }
-    return this.kernels
+    const rays = rayKernel(this.data, shading, count)
+    const update = updateKernel(this.data, count)
+    const rescale = rescaleKernel(this.data, count)
+    // Built in the background, yielding between its stages (scene-gi-stalls): the rays' kernel's shader, 0.2 MB, held the
+    // page some 0.3–0.6 s in the frame that first dispatched it. Failed, the next dispatch builds it again and fails as before.
+    const kernels = { rays, update, rescale, shading, environment, compiled: Promise.resolve(), ready: !pageYields }
+    if (pageYields)
+      kernels.compiled = buildLifetime(this.renderer).track(this.builds.track(this.renderer.compileComputeAsync([rays, update, rescale]).then(
+        () => void (kernels.ready = true),
+        () => void (kernels.ready = true),
+      )))
+    this.kernels = kernels
+    return kernels
+  }
+
+  /** Once the kernels are built: a step before then does nothing. */
+  compiled(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    return this.built().compiled
   }
 
   /**
@@ -220,9 +241,13 @@ export class ProbeVolume {
    * the boxes of those due placed and locked, what changed counted, the sky's
    * scale followed, then the rays of every level due and their updates.
    * warming: every level drawn updated every frame (a cold start's warm-up).
+   * Until the kernels are built (compiled), a step does nothing.
    */
   step(frame: number, camera: Camera, warming = false) {
+    if (this.disposed) return
     const k = this.built()
+    // Not yet built: nothing happens this frame, not even counting (a cold start's updates come after it).
+    if (!k.ready) return
     k.shading.update()
     camera.getWorldPosition(eye)
     camera.getWorldDirection(look)
@@ -351,15 +376,40 @@ export class ProbeVolume {
   }
 
   private disposeKernels() {
-    if (!this.kernels) return
-    for (const c of [this.kernels.rays, this.kernels.update, this.kernels.rescale]) c.dispose()
+    const kernels = this.kernels
+    if (!kernels) return
     this.kernels = null
+    // Disposing a kernel while compileComputeAsync is waiting removes three's disposal listener before it
+    // allocates the pipeline. Worse, deleteForCompute can build its unfinished shader synchronously.
+    const release = () => {
+      const internals = this.renderer as unknown as {
+        _bindings: { get(node: ComputeNode): { bindings?: unknown[] } }
+        _nodes: { get(node: ComputeNode): { nodeBuilderState?: { bindings: unknown[] } } }
+      }
+      for (const c of [kernels.rays, kernels.update, kernels.rescale]) {
+        // A rejected build may have installed a dispose listener without producing a nodeBuilderState. Give
+        // its cleanup the bindings it actually made (none in that case), never ask it to build during disposal.
+        const data = internals._bindings.get(c)
+        data.bindings ??= internals._nodes.get(c).nodeBuilderState?.bindings ?? []
+        c.dispose()
+      }
+    }
+    if (kernels.ready) release()
+    else {
+      const cleanup = kernels.compiled.then(release)
+      this.builds.track(cleanup)
+      buildLifetime(this.renderer).track(cleanup)
+    }
   }
 
   dispose() {
+    if (this.disposed) return
     this.disposed = true
     this.disposeKernels()
-    for (const b of this.buffers) this.release((b as { value: object }).value)
-    for (const t of Object.values(this.data.atlases)) t.dispose()
+    const released = this.builds.close(() => {
+      for (const b of this.buffers) this.release((b as { value: object }).value)
+      for (const t of Object.values(this.data.atlases)) t.dispose()
+    })
+    if (released) buildLifetime(this.renderer).track(released)
   }
 }
