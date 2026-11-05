@@ -25,5 +25,5 @@
 
 ## 5. 部署、说明与实测
 
-- [ ] 5.1 部署与说明：`scripts/production-preflight.sh` 调 `creativectl textures check`；`docker-compose.yml` 加本地驱动的 `scene-textures` 卷；新增 `docs/dev/scene-texture-library.md`（导入、检查、新增条目、缩略图重新生成、来源与许可）
+- [x] 5.1 部署与说明：`scripts/production-preflight.sh` 调 `creativectl textures check`；`docker-compose.yml` 加本地驱动的 `scene-textures` 卷；新增 `docs/dev/scene-texture-library.md`（导入、检查、新增条目、缩略图重新生成、来源与许可）。结果：卷按现有命名叫 `scene_texture_data`，挂到 `/var/lib/crm/scene-textures`（正好是 `AVATAR_LOCAL_ROOT` 的同级缺省目录，不用另设环境变量）；预检的卷集合加上它，`local` 驱动要求挂载。预检在 compose 模式用镜像里的 `creativectl textures check`（`run --rm --no-deps`），退出码 3 报 `run-creativectl-textures-import`，其他失败报 `fix-scene-texture-storage`；`binary` 模式只给提示、由运维自己跑。贴图可从来源站重建，不进备份脚本。`test-production-preflight.sh` 加缺文件、存储读不了、没挂卷三条，`test-v1-ops-common.sh` 的渲染夹具随卷集合更新，`make check-ops` 通过。另补 `.env.example` 的 `SCENE_TEXTURE_LOCAL_ROOT`、`object-storage.md` 的前缀说明和 CLAUDE.md 文档索引
 - [ ] 5.2 实测与目视：在本机导入后，记录首批总大小，以及一个用了 5 套材质的场景首次打开时的下载时长和显存占用；在材质预览和最终渲染下逐个检查 24 套（真实尺寸、法线方向、ARM 通道），截图给 owner。助手样例：「给地面铺木地板、墙面换红砖」，确认它经内置来源查到并写对。结论写回 design 的未决 2

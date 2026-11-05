@@ -44,6 +44,9 @@ services:
     volumes:
       - avatar_data:/var/lib/crm/avatars
       - planning_media_data:/var/lib/crm/planning-media
+      # 内置贴图库（local 驱动；AVATAR_LOCAL_ROOT 的同级 scene-textures）：creativectl textures import 写入，
+      # 可随时从来源站重建，不进备份。
+      - scene_texture_data:/var/lib/crm/scene-textures
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,3 +77,4 @@ volumes:
   pgdata:
   avatar_data:
   planning_media_data:
+  scene_texture_data:

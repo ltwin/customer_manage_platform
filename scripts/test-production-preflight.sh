@@ -99,7 +99,7 @@ run_preflight() {
   env -i PATH="$TEST_PATH" HOME="${HOME:-}" TMPDIR="${TMPDIR:-/tmp}" \
     DOCKER_HOST="$TEST_DOCKER_HOST" FAKE_ENDPOINT="$FAKE_ENDPOINT" \
     FAKE_VERSION="$FAKE_VERSION" FAKE_RENDER_FILE="$FAKE_RENDER_FILE" \
-    FAKE_READINESS_NOW="$FIXED_NOW" DOCKER_LOG="$DOCKER_LOG" \
+    FAKE_READINESS_NOW="$FIXED_NOW" DOCKER_LOG="$DOCKER_LOG" FAKE_TEXTURES_EXIT="${FAKE_TEXTURES_EXIT:-0}" \
     "$preflight" "$@" >"$work_dir/$name.out" 2>"$work_dir/$name.err"
   local observed_exit=$?
   set -e
@@ -190,7 +190,7 @@ write_render() {
   printf '"AUTH_TOKEN_SECRET":"%s",' "$auth_secret" >>"$destination"
   printf '%s' '"HTTP_ADDR":":8080","AVATAR_STORAGE_DRIVER":"local","AVATAR_LOCAL_ROOT":"/var/lib/crm/avatars","AVATAR_LOCAL_REQUIRE_MOUNT":"true","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"",' >>"$destination"
   printf '"DATABASE_URL":"%s"' "$database_url" >>"$destination"
-  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"pgdata":{}}}' >>"$destination"
+  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"},{"type":"volume","source":"scene_texture_data","target":"/var/lib/crm/scene-textures"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"scene_texture_data":{},"pgdata":{}}}' >>"$destination"
 }
 
 write_oss_render() {
@@ -200,7 +200,7 @@ write_oss_render() {
   printf '%s' '"AUTH_TOKEN_SECRET":"0123456789abcdef0123456789abcdef","HTTP_ADDR":":8080",' >>"$destination"
   printf '%s' '"AVATAR_STORAGE_DRIVER":"oss","OSS_REGION":"cn-hangzhou","OSS_ENDPOINT":"media.example.invalid","OSS_USE_CNAME":"true","OSS_BUCKET":"crm-production-objects","OSS_ACCESS_KEY_ID":"","OSS_ACCESS_KEY_SECRET":"","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"",' >>"$destination"
   printf '"DATABASE_URL":"%s"' "$database_url" >>"$destination"
-  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"pgdata":{}}}' >>"$destination"
+  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"},{"type":"volume","source":"scene_texture_data","target":"/var/lib/crm/scene-textures"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"scene_texture_data":{},"pgdata":{}}}' >>"$destination"
 }
 
 fake_bin="$work_dir/fake-bin"
@@ -212,6 +212,7 @@ printf '%s\n' 'if [[ "$1" != "--host" ]]; then exit 91; fi' >>"$fake_bin/docker"
 printf '%s\n' 'shift 2' >>"$fake_bin/docker"
 printf '%s\n' 'if [[ "$1" == "info" ]]; then printf "%s\n" "engine-fixture"; exit 0; fi' >>"$fake_bin/docker"
 printf '%s\n' 'if [[ "$1" == "compose" && "$2" == "version" ]]; then printf "%s\n" "$FAKE_VERSION"; exit 0; fi' >>"$fake_bin/docker"
+printf '%s\n' 'if [[ "$1" == "compose" && " $* " == *" /usr/local/bin/creativectl app textures check "* ]]; then exit "${FAKE_TEXTURES_EXIT:-0}"; fi' >>"$fake_bin/docker"
 printf '%s\n' 'if [[ "$1" == "compose" && " $* " == *" run "* ]]; then build=""; fingerprint=""; while [[ $# -gt 0 ]]; do case "$1" in --build-revision) build="$2"; shift 2;; --config-fingerprint) fingerprint="$2"; shift 2;; *) shift;; esac; done; printf '\''{"version":1,"generated_at":"%s","build_revision":"%s","schema_version":"13","config_fingerprint":"%s","environment":"production","status":"passed","evidence_path":"accountctl://auth/readiness","checks":{"database":"passed","limiter_schema":"passed","legacy_cutover":"passed"}}\n'\'' "$FAKE_READINESS_NOW" "$build" "$fingerprint"; exit 0; fi' >>"$fake_bin/docker"
 printf '%s\n' 'if [[ "$1" == "compose" ]]; then /bin/cat "$FAKE_RENDER_FILE"; exit 0; fi' >>"$fake_bin/docker"
 printf '%s\n' 'exit 92' >>"$fake_bin/docker"
@@ -529,6 +530,36 @@ if tail -n +2 "$DOCKER_LOG" | grep -v '^--host unix://' >/dev/null; then
 fi
 grep -q -- 'compose --env-file ' "$DOCKER_LOG"
 grep -q -- '--project-name crm-fixture config --format json' "$DOCKER_LOG"
+grep -q -- 'run --rm --no-deps --entrypoint /usr/local/bin/creativectl app textures check' "$DOCKER_LOG"
+grep -qx 'scene-textures/check=ready' "$work_dir/managed-valid.out"
+
+# 内置贴图库没导入完（creativectl 退出码 3）或存储读不了：预检停下，各给一种处理。
+FAKE_TEXTURES_EXIT=3
+run_preflight scene-textures-missing 4 \
+  --mode compose-managed-db --seed-state initialized --env-file "$managed_env" \
+  --compose-file "$repo_root/docker-compose.yml" --docker-context local-fixture --project-name crm-fixture
+grep -q 'stage=scene-textures key=SCENE_TEXTURES remediation=run-creativectl-textures-import' "$work_dir/scene-textures-missing.err"
+FAKE_TEXTURES_EXIT=1
+run_preflight scene-textures-unreadable 4 \
+  --mode compose-managed-db --seed-state initialized --env-file "$managed_env" \
+  --compose-file "$repo_root/docker-compose.yml" --docker-context local-fixture --project-name crm-fixture
+grep -q 'stage=scene-textures key=SCENE_TEXTURES remediation=fix-scene-texture-storage' "$work_dir/scene-textures-unreadable.err"
+FAKE_TEXTURES_EXIT=0
+
+# 本地驱动必须挂内置贴图卷。
+unmounted_render="$work_dir/unmounted-scene-textures-render.json"
+python3 - "$managed_render" "$unmounted_render" <<'PY'
+import json, sys
+model = json.load(open(sys.argv[1], encoding="utf-8"))
+model["services"]["app"]["volumes"] = [v for v in model["services"]["app"]["volumes"] if v["source"] != "scene_texture_data"]
+json.dump(model, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+FAKE_RENDER_FILE="$unmounted_render"
+run_preflight scene-textures-unmounted 4 \
+  --mode compose-managed-db --seed-state initialized --env-file "$managed_env" \
+  --compose-file "$repo_root/docker-compose.yml" --docker-context local-fixture --project-name crm-fixture
+grep -q 'key=SCENE_TEXTURE_LOCAL_ROOT remediation=use-fixed-compose-scene-texture-mount' "$work_dir/scene-textures-unmounted.err"
+FAKE_RENDER_FILE="$managed_render"
 
 managed_oss_env="$work_dir/managed-oss.env"
 managed_oss_render="$work_dir/managed-oss-render.json"

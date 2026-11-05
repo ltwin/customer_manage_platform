@@ -47,6 +47,7 @@ endpoint 建议：ECS 与 bucket 同地域时设置内网 endpoint（如 `oss-cn
 ## 对象布局与语义
 
 - 键即 canonical 相对路径（DB 只存这类 key）：头像为 `avatars/{accountID}/.../{checksum}/{objectID}`；新 planning 对象为 `planning/{accountID}/assets/{assetID}/g{generation}/{checksum}/{rendition}`。旧六段 planning key 继续只读兼容；新 key 内嵌 checksum，保证版本控制 bucket 的同 key 多版本只能是相同内容。
+- 内置贴图库（C5c2）：`scene-textures/<sha256>.jpg`，不属于任何账号，由 `creativectl textures import` 写入，见 [内置贴图库](scene-texture-library.md)。
 - 元数据：无 `metadata.json` sidecar；`MediaType/Checksum/Size(/Width/Height)` 写入对象用户元数据（`x-oss-meta-*`），`ModifiedAt` 取对象 LastModified。Stat 是一次 HEAD（不回读全文重算 sha256，完整性由 checksum-in-key 与 SDK CRC64 兜底）。
 - `PutImmutable`：先 HEAD 判存在（同 meta 幂等返回 created=false，异 meta 拒绝），再 `PutObject(ForbidOverwrite=true)`，成功后重新 HEAD 校验持久化元数据。注意：**bucket 开启版本控制后 ForbidOverwrite 不生效**，并发写同 key 时会留多版本；两类新 key 均内嵌 sha256，保证同 key 内容一致，最坏产生字节相同的 noncurrent 版本。
 - List：keyset 游标（cursor = 末项 key，`key > cursor` 递增），与 local 实现契约一致（见 conformance 套件）。
