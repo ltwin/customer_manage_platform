@@ -53,7 +53,7 @@ import { RenderPanel } from './panels/RenderPanel.tsx'
 import { LightFields } from './panels/LightFields.tsx'
 import { VolumeFields } from './panels/VolumeFields.tsx'
 import { MaterialSlots } from './panels/MaterialSlots.tsx'
-import { copyMaterials, slotsOf } from './materials/slotEdits.ts'
+import { copyMaterials, slotsOf, type MaterialSlot } from './materials/slotEdits.ts'
 import { Properties } from './panels/Properties.tsx'
 import { ShortcutSheet } from './panels/ShortcutSheet.tsx'
 import { StatusBar } from './panels/StatusBar.tsx'
@@ -203,6 +203,8 @@ export default function SceneEditor({
   const [confirmRestore, setConfirmRestore] = useState(false)
   // The asset panel: the model being dragged out of it, the models last placed, and asks to focus its search.
   const [libraryDrag, setLibraryDrag] = useState<LibraryAsset | null>(null)
+  /** A built-in textured material dragged from the asset panel (C5c2): the slot it writes. */
+  const [builtinDrag, setBuiltinDrag] = useState<{ title: string; slot: MaterialSlot } | null>(null)
   const [recentAssets, setRecentAssets] = useState(() => readRecent(storage(), currentAccount()))
   const [assetFocus, setAssetFocus] = useState(0)
   // The asset panel mounts on its first showing and then stays, hidden behind
@@ -670,11 +672,12 @@ export default function SceneEditor({
     setAssetFocus((n) => n + 1)
   }
   const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : null), [libraryDrag])
-  /** A material asset being dragged from the asset panel: its slot, copied to where it is let go. */
+  /** A material asset or a built-in material being dragged from the asset panel: its slot, copied to where it is let go. */
   const draggedMaterial = useMemo(() => {
+    if (builtinDrag) return builtinDrag
     const m = libraryDrag?.kind === 'material' ? assetMaterial(libraryDrag.content) : null
     return libraryDrag && m ? { title: libraryDrag.title, slot: m } : null
-  }, [libraryDrag])
+  }, [libraryDrag, builtinDrag])
   /**
    * A material let go over the viewport: onto the slot of the surface under
    * it, or an object's only slot where the look does not split by slot.
@@ -1225,6 +1228,7 @@ export default function SceneEditor({
                     placeable={(asset) => (asset.kind === 'material' ? !asset.unavailable && !!assetMaterial(asset.content) : !!dragModel(asset))}
                     onPlace={placeModels}
                     onDrag={setLibraryDrag}
+                    onDragBuiltin={setBuiltinDrag}
                     onExit={() => root.current?.focus({ preventScroll: true })}
                   />
                 )}

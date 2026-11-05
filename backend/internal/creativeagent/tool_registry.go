@@ -47,7 +47,7 @@ func agentToolDefinitions() []agentToolDefinition {
 		{entry: ToolEntry{Key: readSkillTool, Version: 2, DisplayName: "读取 Skill 资源", EffectClass: "read_only"}, bind: skill(readSkillTool), resources: fixed(resource{"skills", false})},
 		{entry: ToolEntry{Key: searchSkillsTool, Version: 1, DisplayName: "查找 Skill", EffectClass: "read_only"}, bind: skill(searchSkillsTool), resources: fixed(resource{"skills", true})},
 		{entry: ToolEntry{Key: readResultTool, Version: 1, DisplayName: "读取运行结果", EffectClass: "read_only"}, bind: read(readResultTool), resources: fixed(resource{keyCanvas, false}, resource{keyNodes, false}, resource{keyLibrary, false})},
-		{entry: ToolEntry{Key: searchAssetsTool, Version: 2, DisplayName: "查找资产库", EffectClass: "read_only"}, bind: library(searchAssetsTool), allowed: libraryAllowed, resources: fixed(resource{keyLibrary, false})},
+		{entry: ToolEntry{Key: searchAssetsTool, Version: 2, DisplayName: "查找资产库", EffectClass: "read_only"}, bind: library(searchAssetsTool), resources: fixed(resource{keyLibrary, false})},
 		{entry: ToolEntry{Key: readLibraryTool, Version: 2, DisplayName: "读取资产库结构", EffectClass: "read_only"}, bind: library(readLibraryTool), allowed: libraryAllowed, resources: fixed(resource{keyLibrary, false})},
 		{entry: ToolEntry{Key: organizeAssetsTool, Version: 1, DisplayName: "整理素材", EffectClass: "write", MaxImpact: 50}, bind: library(organizeAssetsTool), allowed: libraryAllowed, resources: fixed(resource{keyLibrary, true})},
 		{entry: ToolEntry{Key: manageLibraryTool, Version: 1, DisplayName: "管理资产库结构", EffectClass: "write", MaxImpact: 20}, bind: library(manageLibraryTool), allowed: libraryAllowed, resources: fixed(resource{keyLibrary, true})},

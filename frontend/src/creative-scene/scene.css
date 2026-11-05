@@ -42,6 +42,7 @@
 .cc-scene-assets-kinds button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
 .cc-scene-assets-kinds button[aria-selected="true"] { color: var(--fg); background: #f28c2826; }
 .cc-scene-assets-row { display: flex; gap: 4px; align-items: center; }
+.cc-scene-assets-fill { flex: 1; }
 .cc-scene-assets-row select { flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
 .cc-scene-assets-size { display: flex; flex: none; }
 .cc-scene-assets-size button { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
@@ -64,6 +65,13 @@
 /* 卡片太小放不下失败说明：只留图标，文字仍给读屏。 */
 .cc-scene-asset-thumb .cc-media-retry { min-width: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; }
 .cc-scene-asset-thumb .cc-media-retry span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cc-scene-asset-thumb > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* 内置贴图材质（C5c2）的槽位：材质球与名称放在材质下拉框上方。 */
+.cc-scene-builtin { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.cc-scene-builtin img { flex: none; width: 40px; height: 40px; border-radius: 6px; }
+.cc-scene-builtin span { display: grid; gap: 1px; min-width: 0; }
+.cc-scene-builtin strong { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-scene-builtin small { color: var(--muted); font-size: 11px; }
 .cc-scene-asset-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-scene-assets-note { margin: 12px 4px; color: var(--muted); line-height: 1.5; }
 .cc-scene-assets-end { min-height: 1px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }

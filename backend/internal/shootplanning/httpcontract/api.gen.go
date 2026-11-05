@@ -2697,6 +2697,11 @@ type CreativeMaterialSlotDetails struct {
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 type CreativeRevision = string
 
+// CreativeSceneTextureDetails 读不到的内置贴图文件名（creative_texture_unavailable）。
+type CreativeSceneTextureDetails struct {
+	File string `json:"file"`
+}
+
 // DefaultQuoteV1 defines model for DefaultQuoteV1.
 type DefaultQuoteV1 struct {
 	EvaluatedAt             time.Time                   `json:"evaluated_at"`
@@ -4466,6 +4471,32 @@ func (t *ErrorDetails) FromCreativeMaterialSlotDetails(v CreativeMaterialSlotDet
 
 // MergeCreativeMaterialSlotDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeMaterialSlotDetails
 func (t *ErrorDetails) MergeCreativeMaterialSlotDetails(v CreativeMaterialSlotDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeSceneTextureDetails returns the union data inside the ErrorDetails as a CreativeSceneTextureDetails
+func (t ErrorDetails) AsCreativeSceneTextureDetails() (CreativeSceneTextureDetails, error) {
+	var body CreativeSceneTextureDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeSceneTextureDetails overwrites any union data inside the ErrorDetails as the provided CreativeSceneTextureDetails
+func (t *ErrorDetails) FromCreativeSceneTextureDetails(v CreativeSceneTextureDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeSceneTextureDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeSceneTextureDetails
+func (t *ErrorDetails) MergeCreativeSceneTextureDetails(v CreativeSceneTextureDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

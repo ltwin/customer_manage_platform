@@ -3,10 +3,10 @@ import { MathUtils } from 'three'
 import { useStore } from 'zustand'
 import type { components } from '../../api/schema'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
-import { assetMaterial } from '../../creative-canvas/viewer/modelInfo.ts'
+import { builtinMaterial } from '../../creative-canvas/assets/builtin.ts'
 import type { ParamSpec } from '../builtins/catalog.ts'
-import { materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
-import { imageStatus, textureRevisions, type TextureKey } from '../materials/images.ts'
+import { builtinSource, materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
+import { imageStatus, textureSources, type TextureKey } from '../materials/images.ts'
 import { assignmentOf, readClipboard, setSlot, shownSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
 import { modelCache, type MeshConstants, type SceneModel } from '../models/cache.ts'
 import { applyBuiltinFaces } from '../models/faces.ts'
@@ -138,8 +138,16 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   const unusable = (revision: string): string | null => {
     if (images?.[revision]?.usable === false) return '图片不可用：已被删除或无权读取'
     // By the textures' own revisions. Their messages name revisions for an export's failure (host/render.ts), not for the panel.
-    const uses = (key: TextureKey) => textureRevisions(key).includes(revision)
+    const uses = (key: TextureKey) => textureSources(key).includes(revision)
     if (Object.keys(loading.failed).some(uses)) return '图片加载失败，暂按材质参数显示'
+    if (loading.over.some(uses)) return '贴图超出显存预算，暂按材质参数显示'
+    return null
+  }
+  /** Why a built-in material's textures (C5c2) do not draw: one did not load (say the library is not imported), or there was no room. */
+  const builtinUnusable = (id: string): string | null => {
+    const sources = Object.values(materialEntry(id)?.maps ?? {}).map((t) => builtinSource(t.file))
+    const uses = (key: TextureKey) => textureSources(key).some((s) => sources.includes(s))
+    if (Object.keys(loading.failed).some(uses)) return '内置贴图加载失败，暂按材质参数显示'
     if (loading.over.some(uses)) return '贴图超出显存预算，暂按材质参数显示'
     return null
   }
@@ -199,8 +207,11 @@ export function MaterialSlots({ object, model, objects, selected, models, images
         const assigned = object.material_slots?.[slot]
         const origin = faces && !assigned ? originOf(object, slot) : null
         const resolved = drawn(object, slot)
-        const current = resolved.material.kind === 'pattern' ? resolved.material.id : resolved.material.kind === 'principled' ? principledID : (assigned?.preset ?? '')
+        const current =
+          resolved.material.kind === 'pattern' ? resolved.material.id : resolved.material.kind === 'principled' ? (resolved.material.preset ?? principledID) : (assigned?.preset ?? '')
         const entry = materialEntry(current)
+        // A built-in textured material (C5c2): its name and ball over the list, its mapping and alpha below, no texture inputs.
+        const builtin = entry?.kind === 'textured' ? builtinMaterial(current) : undefined
         const params = resolved.material.kind === 'unknown' ? {} : resolved.material.params
         const expanded = open === slot
         return (
@@ -233,6 +244,18 @@ export function MaterialSlots({ object, model, objects, selected, models, images
               {origin ? <span className="cc-scene-slot-source is-origin">{originLabel}</span> : sourceLabel[resolved.source] && <span className={`cc-scene-slot-source is-${resolved.source}`}>{sourceLabel[resolved.source]}</span>}
             </div>
             {faceTools(slot, true)}
+            {builtin && (
+              <div className="cc-scene-builtin" aria-label={`${slot} 的内置材质`}>
+                <img src={builtin.thumbnail} alt="" />
+                <span>
+                  <strong>{builtin.label}</strong>
+                  <small>
+                    内置材质 · {builtin.categoryLabel} · {builtin.sizeM} 米一块
+                  </small>
+                </span>
+              </div>
+            )}
+            {builtin && builtinUnusable(current) && <small role="status">{builtinUnusable(current)}</small>}
             <label className="cc-scene-field">
               <span>材质</span>
               <select
@@ -241,7 +264,8 @@ export function MaterialSlots({ object, model, objects, selected, models, images
                 onChange={(e) => edit(slot, `设置「${name}」材质`, () => ({ preset: e.target.value, params: {} }))}
               >
                 {!entry && <option value="">未知材质（{assigned?.preset}）</option>}
-                {materialCatalog.materials.map((m) => (
+                {builtin && <option value={current}>内置材质</option>}
+                {materialCatalog.materials.filter((m) => m.kind !== 'textured').map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
                   </option>
@@ -289,10 +313,11 @@ export function MaterialSlots({ object, model, objects, selected, models, images
                 </button>
               )}
             </div>
-            {expanded && entry?.kind === 'principled' && (
+            {expanded && (entry?.kind === 'principled' || builtin) && (
               <TextureFields
                 slot={slot}
                 m={assignmentOf(resolved) ?? { preset: principledID, params: {} }}
+                builtin={!!builtin}
                 hasUV={hasUV(slot)}
                 unusable={unusable}
                 canvasID={canvasID}
@@ -304,7 +329,7 @@ export function MaterialSlots({ object, model, objects, selected, models, images
                     (o, cur) => {
                       const base = cur ?? assignmentOf(drawn(o, slot))
                       // A selected object with another material in this slot keeps it.
-                      return base && base.preset === principledID ? change(base) : cur
+                      return base && base.preset === current ? change(base) : cur
                     },
                     merge && `${object.id}:slot.${merge}`,
                   )
@@ -359,11 +384,10 @@ export function MaterialSlots({ object, model, objects, selected, models, images
         <MaterialPicker
           title={`选择用到 ${choosing} 的材质`}
           onClose={() => setChoosing(null)}
-          onPick={(asset) => {
+          onPick={(picked) => {
             const slot = choosing
             setChoosing(null)
-            const m = assetMaterial(asset.content)
-            if (m) applyMaterial(slot, asset.title, m)
+            applyMaterial(slot, picked.title, picked.slot)
           }}
         />
       )}

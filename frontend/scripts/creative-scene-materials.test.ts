@@ -1,14 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { completeParams, hintPreset, materialCatalog, materialEntry, principledID } from '../src/creative-scene/materials/catalog.ts'
+import { builtinSource, completeParams, hintPreset, materialCatalog, materialEntry, principledID, texturedEntries } from '../src/creative-scene/materials/catalog.ts'
 
 test('the frontend catalog is the backend one, copied by make generate', () => {
   const backend = readFileSync(new URL('../../backend/internal/creativescene/materials.json', import.meta.url), 'utf8')
   const frontend = readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')
   assert.equal(frontend, backend)
-  assert.equal(materialCatalog.materials.length, 15, 'principled and 14 presets')
+  assert.equal(materialCatalog.materials.length, 39, 'principled, 14 presets and 24 built-in textured materials')
   assert.equal(Object.keys(materialEntry(principledID)!.params).length, 20)
+})
+
+test('a built-in textured material has principled’s parameters with its own defaults', () => {
+  const wood = materialEntry('wood_floor@1')!
+  assert.equal(wood.kind, 'textured')
+  assert.deepEqual(Object.keys(wood.params).sort(), Object.keys(materialEntry(principledID)!.params).sort())
+  assert.equal(wood.params.color.default, '#ffffff')
+  assert.equal(wood.params.roughness.default, 1)
+  assert.equal(wood.params.ior.default, 1.5)
+  assert.equal(materialEntry(principledID)!.params.color.default, '#cccccc', 'principled keeps its own')
+  assert.equal(texturedEntries.length, 24)
+  for (const m of texturedEntries) assert.ok(materialCatalog.categories.some((c) => c.id === m.category), m.id)
 })
 
 test('slots read complete: defaults fill in, numbers clamp into range, bad colours fall back', () => {
@@ -52,6 +64,36 @@ test('a slot resolves by the five rules, first match wins', () => {
   assert.ok(painted.kind === 'principled' && painted.vertexColors, 'unslotted code materials keep vertex colours')
   const primitive = resolveSlot('main', undefined, undefined, null)
   assert.ok(primitive.source === 'default' && primitive.material.kind === 'principled' && primitive.material.params.color === '#d9d5cd')
+})
+
+test('a built-in textured material draws as principled with its textures, the slot’s mapping and alpha mode', () => {
+  const wood = materialEntry('wood_floor@1')!
+  const file = (k: 'base_color' | 'normal' | 'roughness') => builtinSource(wood.maps![k]!.file)
+  const plain = catalogMaterial('wood_floor@1', { color: '#eeeeee' })!
+  assert.equal(plain.kind, 'principled')
+  if (plain.kind !== 'principled') return
+  assert.equal(plain.preset, 'wood_floor@1')
+  assert.equal(plain.params.color, '#eeeeee')
+  assert.equal(plain.params.roughness, 1, 'the entry’s default')
+  assert.deepEqual(plain.texturing?.maps?.base_color, { content_revision_id: file('base_color') })
+  assert.deepEqual(plain.texturing?.maps?.roughness, { content_revision_id: file('roughness'), channel: 'g' })
+  assert.match(file('normal'), /^tex:[0-9a-f]{64}\.jpg$/)
+  assert.deepEqual(plain.texturing?.mapping, { kind: 'triplanar', size_m: 1.7, rotation_deg: 0, normal_strength: 1 }, 'its real size when the slot names none')
+  assert.equal(plain.texturing?.alpha_mode, undefined)
+
+  const slot: Texturing = { mapping: { kind: 'uv', repeat: [2, 2], rotation_deg: 0, normal_strength: 1 }, alpha_mode: 'clip' }
+  const written = catalogMaterial('wood_floor@1', {}, slot)!
+  assert.ok(written.kind === 'principled')
+  assert.deepEqual(written.texturing?.mapping, slot.mapping)
+  assert.equal(written.texturing?.alpha_mode, 'clip')
+  assert.equal(written.texturing?.alpha_cutoff, 0.5)
+
+  // Made explicit again it is the preset, not principled with the catalog's images.
+  const assigned = { preset: 'wood_floor@1', params: { color: '#eeeeee' }, mapping: slot.mapping }
+  const back = assignmentOf(resolveSlot('main', { main: assigned }, null, null))!
+  assert.equal(back.preset, 'wood_floor@1')
+  assert.equal('maps' in back, false)
+  assert.deepEqual(back.mapping, slot.mapping)
 })
 
 test('principled parameters go onto MeshPhysicalMaterial as three.js names them', () => {
@@ -295,6 +337,16 @@ test('switching the mapping keeps rotation and strength and drops what the other
   assert.deepEqual(withMapping(uv, { repeat: [2, 3] }).mapping, { kind: 'uv', repeat: [2, 3], rotation_deg: 30, normal_strength: 2 })
   assert.deepEqual(withMapping(uv, { kind: 'triplanar' }).mapping, { kind: 'triplanar', size_m: 1, rotation_deg: 30, normal_strength: 2 })
   assert.equal(withMapping(plain, { size_m: 2 }), plain, 'no images: no mapping to set')
+})
+
+test('a built-in textured slot takes a mapping without maps, its own size the default', () => {
+  const brick = materialEntry('red_brick@1')!
+  const bare = { preset: 'red_brick@1', params: {} }
+  assert.deepEqual(withMapping(bare, { rotation_deg: 90 }).mapping, { kind: 'triplanar', size_m: brick.size_m, rotation_deg: 90, normal_strength: 1 })
+  const uv = withMapping(bare, { kind: 'uv' })
+  assert.deepEqual(uv.mapping, { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: 1 })
+  assert.equal(withMapping(uv, { kind: 'triplanar' }).mapping?.size_m, brick.size_m, 'back to box projection: the material’s real size')
+  assert.equal(withMapping(bare, {}).maps, undefined, 'it never gains maps')
 })
 
 test('alpha modes: clip with its cutoff, blend and opaque without one; opaque written as nothing', () => {

@@ -774,7 +774,7 @@ services = model.get("services") or {}
 volumes = model.get("volumes") or {}
 if set(services) != {"app", "postgres"}:
     raise SystemExit(10)
-if set(volumes) != {"avatar_data", "planning_media_data", "pgdata"}:
+if set(volumes) != {"avatar_data", "planning_media_data", "scene_texture_data", "pgdata"}:
     raise SystemExit(20)
 if not services["app"].get("image") or not services["postgres"].get("image"):
     raise SystemExit(30)
@@ -862,6 +862,8 @@ case "$object_storage_driver" in
       fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-fixed-compose-avatar-mount"
     render_has_mount "app" "planning_media_data" "/var/lib/crm/planning-media" || \
       fail "$EXIT_CONFIG" "config-matrix" "PLANNING_MEDIA_LOCAL_ROOT" "use-fixed-compose-planning-media-mount"
+    render_has_mount "app" "scene_texture_data" "/var/lib/crm/scene-textures" || \
+      fail "$EXIT_CONFIG" "config-matrix" "SCENE_TEXTURE_LOCAL_ROOT" "use-fixed-compose-scene-texture-mount"
     ;;
   oss)
     render_env_value "app" "OSS_REGION"
@@ -941,5 +943,23 @@ else
   fi
   status "support-boundary" "backup-restore" "unsupported"
 fi
+
+# 内置贴图库（C5c2）：对象存储里要有材质目录列出的全部文件，缺了编辑器和渲染会按材质参数显示。
+# 只读检查，不下载；二进制部署由运维自己跑 creativectl textures check。
+check_scene_textures() {
+  if [[ "$MODE" == "binary" ]]; then
+    status "scene-textures" "check" "run-creativectl-textures-check-attention"
+    return
+  fi
+  local textures_exit=0
+  (umask 077; compose_pinned run --rm --no-deps \
+    --entrypoint /usr/local/bin/creativectl app textures check >/dev/null) 2>/dev/null || textures_exit=$?
+  case "$textures_exit" in
+    0) status "scene-textures" "check" "ready" ;;
+    3) fail "$EXIT_CONFIG" "scene-textures" "SCENE_TEXTURES" "run-creativectl-textures-import" ;;
+    *) fail "$EXIT_CONFIG" "scene-textures" "SCENE_TEXTURES" "fix-scene-texture-storage" ;;
+  esac
+}
+check_scene_textures
 
 complete_auth_readiness

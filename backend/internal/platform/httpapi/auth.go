@@ -18,6 +18,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
@@ -105,6 +106,7 @@ type handlers struct {
 	anonymousShare      anonymousShareRouteDeps
 	creativeImageEdit   *creativeimageedit.Service
 	creativeMedia       *creativemedia.Service
+	sceneTextures       *creativescene.BuiltinTextures
 	creativeGeneration  *creativegeneration.Product
 	creativeAgent       *creativeagent.Service
 	realtime            *realtime.Server

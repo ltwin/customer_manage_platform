@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import type { SceneObject } from '../api.ts'
 import { ballBounds, ballGeometry } from '../materials/ball.ts'
-import { imageStatus, loadSlotImages, textureRevisions, type ImageHold } from '../materials/images.ts'
+import { builtinSource, materialEntry } from '../materials/catalog.ts'
+import { imageStatus, loadSlotImages, textureSources, type ImageHold } from '../materials/images.ts'
 import { mapInputLabel, mapInputs } from '../materials/slotEdits.ts'
 import { ThumbnailError } from '../saveModel.ts'
 import { drawnGeometries, keyOf, materialFor } from '../materials/instances.ts'
@@ -32,11 +33,14 @@ type Slot = Slots[string]
 function slotImages(slots: Slots): Promise<ImageHold> {
   return loadSlotImages(slots).catch(() => {
     const { failed, over } = imageStatus.getState()
-    const gone = new Set([...Object.keys(failed), ...over].flatMap(textureRevisions))
+    const gone = new Set([...Object.keys(failed), ...over].flatMap(textureSources))
     const many = Object.keys(slots).length > 1
-    const named = Object.entries(slots).flatMap(([id, slot]) =>
-      mapInputs.filter((i) => gone.has(slot.maps?.[i]?.content_revision_id ?? '')).map((i) => (many ? `${id} 的${mapInputLabel[i]}` : mapInputLabel[i])),
-    )
+    const named = Object.entries(slots).flatMap(([id, slot]) => {
+      // A built-in textured material has no maps of its own: it is named whole.
+      const builtin = materialEntry(slot.preset)
+      if (builtin?.kind === 'textured') return Object.values(builtin.maps ?? {}).some((t) => gone.has(builtinSource(t.file))) ? [`内置材质「${builtin.label}」`] : []
+      return mapInputs.filter((i) => gone.has(slot.maps?.[i]?.content_revision_id ?? '')).map((i) => (many ? `${id} 的${mapInputLabel[i]}` : mapInputLabel[i]))
+    })
     throw new ThumbnailError(`${named.length ? named.join('、') : '部分'}贴图的图片加载失败或超出显存预算`)
   })
 }

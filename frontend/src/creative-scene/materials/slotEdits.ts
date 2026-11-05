@@ -57,6 +57,11 @@ export function assignmentOf(r: ResolvedSlot): MaterialSlot | null {
   const m = r.material
   if (m.kind === 'unknown') return null
   if (m.kind === 'pattern') return { preset: m.id, params: { ...m.params } }
+  if (m.preset) {
+    // A built-in textured material: its textures are the catalog's, not the slot's.
+    const { maps: _maps, ...rest } = structuredClone(m.texturing ?? {})
+    return { preset: m.preset, params: { ...m.params }, ...rest }
+  }
   return { preset: principledID, params: { ...m.params }, ...structuredClone(m.texturing ?? {}) }
 }
 
@@ -96,18 +101,22 @@ export function withChannel(m: MaterialSlot, input: ChannelInput, channel: Chann
 /**
  * m's mapping changed: switching between box projection and UV keeps the
  * rotation and strength, and takes the other kind's own field away (size_m
- * goes with triplanar, repeat with uv), the new one at its default.
+ * goes with triplanar, repeat with uv), the new one at its default. A
+ * built-in textured slot (C5c2) has its textures without maps, and its own
+ * real size as box projection's default.
  */
 export function withMapping(m: MaterialSlot, change: Partial<Mapping>): MaterialSlot {
-  if (!m.maps) return m
-  const was = m.mapping ?? defaultMapping
+  const builtin = materialEntry(m.preset)
+  const size = builtin?.kind === 'textured' ? (builtin.size_m ?? 1) : 1
+  if (!m.maps && builtin?.kind !== 'textured') return m
+  const was = m.mapping ?? { ...defaultMapping, size_m: size }
   const kind = change.kind ?? was.kind ?? 'triplanar'
   const shared = { rotation_deg: change.rotation_deg ?? was.rotation_deg ?? 0, normal_strength: change.normal_strength ?? was.normal_strength ?? 1 }
   const sameKind = kind === (was.kind ?? 'triplanar')
   const mapping: Mapping =
     kind === 'uv'
       ? { kind, repeat: change.repeat ?? (sameKind ? was.repeat : undefined) ?? [1, 1], ...shared }
-      : { kind, size_m: change.size_m ?? (sameKind ? was.size_m : undefined) ?? 1, ...shared }
+      : { kind, size_m: change.size_m ?? (sameKind ? was.size_m : undefined) ?? size, ...shared }
   return { ...m, mapping }
 }
 

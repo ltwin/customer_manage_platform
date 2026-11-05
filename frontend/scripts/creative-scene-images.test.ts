@@ -6,6 +6,7 @@ import type { Scene } from '../src/creative-scene/api.ts'
 import {
   acquireTexture,
   budgetUsed,
+  builtinTextureURL,
   fetchTimeoutMs,
   imageBudget,
   imagePlatform,
@@ -18,10 +19,12 @@ import {
   sceneTextureKeys,
   textureBytes,
   textureKeys,
+  textureSources,
   type Layer,
   type Picture,
 } from '../src/creative-scene/materials/images.ts'
 import { TraceMaps } from '../src/creative-scene/render/trace/maps.ts'
+import { materialEntry } from '../src/creative-scene/materials/catalog.ts'
 
 // materials/images.ts with the browser stood in for: fetching gives the
 // revision back as the file, decoding makes a picture named after it, and
@@ -259,6 +262,27 @@ test('a scene samples the principled slots\' maps, each texture once, sorted', (
   const scene = sceneOf({ base_color: img('ccr_b'), metalness: img('ccr_m', 'b') }, { base_color: img('ccr_a'), normal: img('ccr_n') }, { base_color: img('ccr_b') })
   ;(scene.objects[0].material_slots as Record<string, unknown>).brick = { preset: 'stone_brick@1', params: {}, maps: { base_color: img('ccr_x') } }
   assert.deepEqual(sceneTextureKeys(scene), ['color:ccr_a', 'color:ccr_b', 'normal:ccr_n', 'orm:-|-|ccr_m.b'])
+})
+
+test('a built-in textured material samples its own files, its ORM as it is; a failure names the material, not the status', async (t) => {
+  fresh(t)
+  const wood = materialEntry('wood_floor@1')!
+  const src = (k: 'base_color' | 'normal' | 'ao') => `tex:${wood.maps![k]!.file}`
+  const scene = { objects: [{ id: 'o', material_slots: { main: { preset: 'wood_floor@1', params: {} } } }] } as unknown as Pick<Scene, 'objects'>
+  const keys = sceneTextureKeys(scene)
+  assert.deepEqual(keys, [`color:${src('base_color')}`, `normal:${src('normal')}`, `orm:${src('ao')}.r|${src('ao')}.g|${src('ao')}.b`])
+  assert.deepEqual(textureSources(keys[2]), [src('ao')])
+
+  // The ARM file is a standard ORM: used as it comes, nothing composed.
+  const hold = await loadSceneImages(scene)
+  assert.deepEqual(composed, [])
+  hold.release()
+
+  t.mock.timers.tick(1000)
+  resetImages()
+  failing.add(src('base_color'))
+  await assert.rejects(loadSceneImages(scene), (err: Error) => err.message.includes('内置贴图「木地板」加载失败') && !err.message.includes('HTTP'))
+  assert.equal(builtinTextureURL(wood.maps!.base_color!.file), `/api/v1/creative/scene-textures/${wood.maps!.base_color!.file}`)
 })
 
 test('the traced arrays count in the budget: a grown one old and new both till copied, a key whose array does not fit is over', async (t) => {

@@ -334,11 +334,14 @@ func TestLibraryToolExposureAndPolicyUpgrade(t *testing.T) {
 			if _, _, err := h.configure(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if h.allowed(searchAssetsTool) != (mode == ScopeAccountLibrary) || h.allowed(readLibraryTool) != (mode == ScopeAccountLibrary) {
+			// search_assets stays for its built-in source (C5c2); the library
+			// itself is still closed without the grant.
+			if !h.allowed(searchAssetsTool) || h.allowed(readLibraryTool) != (mode == ScopeAccountLibrary) {
 				t.Fatal("tool visibility violates mode")
 			}
 			if mode == ScopeSelectedRevisions {
-				if _, err := h.searchAssets(t.Context(), `{"limit":1}`); !errors.Is(err, ErrEgressRequired) {
+				var refusal *toolRefusal
+				if _, err := h.searchAssets(t.Context(), `{"limit":1}`); !errors.As(err, &refusal) {
 					t.Fatalf("legacy direct invocation: %v", err)
 				}
 			}

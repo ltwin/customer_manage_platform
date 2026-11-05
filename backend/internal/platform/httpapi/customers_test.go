@@ -46,7 +46,7 @@ func newCustomerAPIRouter(t *testing.T) (http.Handler, *store.Store, *auth.Token
 // newCustomerAPIRouterWithURL 第四个返回值是本测试库的连接串，供需要对同一个库
 // 另开一条连接的测试使用（并发事务场景）。原先返回容器句柄，容器整包共享后
 // 容器上的默认库不再是本测试的库，拿容器取连接串会连错。
-func newCustomerAPIRouterWithURL(t *testing.T) (http.Handler, *store.Store, *auth.TokenIssuer, string) {
+func newCustomerAPIRouterWithURL(t *testing.T, with ...func(*httpapi.RouterDeps)) (http.Handler, *store.Store, *auth.TokenIssuer, string) {
 	t.Helper()
 	url := startCustomerPostgres(t)
 	s, err := store.Open(context.Background(), url)
@@ -96,7 +96,7 @@ func newCustomerAPIRouterWithURL(t *testing.T) (http.Handler, *store.Store, *aut
 	if err != nil {
 		t.Fatalf("new shoot planning business application: %v", err)
 	}
-	router := httpapi.NewRouter(httpapi.RouterDeps{
+	deps := httpapi.RouterDeps{
 		Logger:       slog.New(slog.DiscardHandler),
 		DB:           s,
 		ScopeFactory: s,
@@ -117,8 +117,11 @@ func newCustomerAPIRouterWithURL(t *testing.T) (http.Handler, *store.Store, *aut
 		TelegramBinding:       bindingSvc,
 		ShootPlanning:         shootPlanningApp,
 		ShootPlanningBusiness: shootPlanningBusiness,
-	})
-	return router, s, tokens, url
+	}
+	for _, f := range with {
+		f(&deps)
+	}
+	return httpapi.NewRouter(deps), s, tokens, url
 }
 
 func authenticatedRequest(t *testing.T, h http.Handler, method, path, token string, body []byte) *httptest.ResponseRecorder {

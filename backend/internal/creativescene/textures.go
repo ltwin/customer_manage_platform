@@ -49,13 +49,17 @@ func channelled(kind string) bool { return kind != "base_color" && kind != "norm
 // checkTextures validates a slot's texture fields and says which one is
 // wrong, as a path inside the slot.
 func checkTextures(slot MaterialSlot) (string, error) {
-	if slot.Preset != principledPreset {
+	_, textured := texturedMaterial(slot.Preset)
+	switch {
+	case textured && slot.Maps != nil:
+		return "maps", fmt.Errorf("%s 是内置贴图材质，自带贴图，不能写 maps；要用自己的图片，改用原理化材质 %s", slot.Preset, principledPreset)
+	case !textured && slot.Preset != principledPreset:
 		for _, f := range []struct {
 			name string
 			set  bool
 		}{{"maps", slot.Maps != nil}, {"mapping", slot.Mapping != nil}, {"alpha_mode", slot.AlphaMode != ""}, {"alpha_cutoff", slot.AlphaCutoff != nil}} {
 			if f.set {
-				return f.name, fmt.Errorf("%s 只用于原理化材质 %s，%s 不接贴图和透明方式", f.name, principledPreset, slot.Preset)
+				return f.name, fmt.Errorf("%s 只用于原理化材质 %s 和内置贴图材质，%s 不接贴图和透明方式", f.name, principledPreset, slot.Preset)
 			}
 		}
 		return "", nil
@@ -79,7 +83,7 @@ func checkTextures(slot MaterialSlot) (string, error) {
 		}
 	}
 	if m := slot.Mapping; m != nil {
-		if slot.Maps == nil {
+		if slot.Maps == nil && !textured {
 			return "mapping", fmt.Errorf("mapping 只在有 maps 时允许")
 		}
 		kind := m.Kind
@@ -131,12 +135,16 @@ func checkTextures(slot MaterialSlot) (string, error) {
 
 // completeTextures fills what a written slot leaves out. A slot without
 // maps keeps its alpha_mode as written, so a scene without textures stores
-// what it always did.
+// what it always did. A built-in textured material is completed as a slot
+// with maps, its triplanar size the entry's.
 func completeTextures(slot *MaterialSlot) {
 	if slot.AlphaMode == alphaClip && slot.AlphaCutoff == nil {
 		slot.AlphaCutoff = floatRef(defaultAlphaCutoff)
 	}
-	if slot.Maps == nil {
+	size := 1.0
+	if m, ok := texturedMaterial(slot.Preset); ok {
+		size = m.SizeM
+	} else if slot.Maps == nil {
 		return
 	}
 	for _, e := range slot.Maps.entries() {
@@ -153,7 +161,7 @@ func completeTextures(slot *MaterialSlot) {
 	}
 	switch {
 	case m.Kind == mappingTriplanar && m.SizeM == nil:
-		m.SizeM = floatRef(1)
+		m.SizeM = floatRef(size)
 	case m.Kind == mappingUV && m.Repeat == nil:
 		m.Repeat = []float64{1, 1}
 	}
