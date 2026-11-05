@@ -601,6 +601,31 @@ nav .al-row {
 .al-fav svg {
   fill: currentColor;
 }
+/* 内置材质（C5c2）：按品类分组的只读网格，缩略图是方形材质球。 */
+.al-thumb > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.al-builtin-note {
+  margin: 4px 0 16px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-builtin-group + .al-builtin-group {
+  margin-top: 20px;
+}
+.al-builtin-group > h3 {
+  margin: 0 0 8px;
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.al-cap > small {
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+}
 .al-cap {
   display: flex;
   align-items: center;

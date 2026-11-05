@@ -5,6 +5,7 @@ import {
   Heart,
   Images,
   Inbox,
+  Layers,
   Trash2,
   Plus,
   Pencil,
@@ -45,6 +46,8 @@ export default function LibraryTree({
   onTagCommand,
   blocked,
   importButton,
+  builtin = false,
+  onBuiltin,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
@@ -64,6 +67,9 @@ export default function LibraryTree({
   onTagCommand: (command: TagCommand, done: () => void) => void
   importButton?: React.ReactNode
   blocked: boolean
+  /** 正在看「内置材质」（C5c2）：这时视图和分组都不算当前。 */
+  builtin?: boolean
+  onBuiltin?: () => void
 }) {
   const [editor, setEditor] = useState<{
     group: api.Group | null
@@ -175,7 +181,9 @@ export default function LibraryTree({
                 type="button"
                 className="al-row"
                 aria-current={
-                  !query.group && query.view === v.key ? 'page' : undefined
+                  !builtin && !query.group && query.view === v.key
+                    ? 'page'
+                    : undefined
                 }
                 onClick={() => onView(v.key)}
               >
@@ -185,6 +193,20 @@ export default function LibraryTree({
             )
           })}
         </nav>
+        {onBuiltin && (
+          <section className="al-sec" aria-labelledby="alBuiltin">
+            <header id="alBuiltin">内置</header>
+            <button
+              type="button"
+              className="al-row"
+              aria-current={builtin ? 'page' : undefined}
+              onClick={onBuiltin}
+            >
+              <Layers size={15} />
+              <span className="al-name">内置材质</span>
+            </button>
+          </section>
+        )}
         <section className="al-sec" aria-labelledby="alGroups">
           <header id="alGroups">
             分组

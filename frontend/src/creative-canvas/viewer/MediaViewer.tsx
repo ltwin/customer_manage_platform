@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Content } from '../editor/api.ts'
+import type { components } from '../../api/schema'
 import { useFocusTrap } from '../../components/useFocusTrap'
 import { useMediaURL } from '../editor/MediaView.tsx'
 import { cachedMediaTicket } from '../editor/media.ts'
@@ -34,12 +35,16 @@ const MaterialPreview = lazy(
 )
 import './viewer.css'
 
+type MaterialSlot = components['schemas']['CreativeSceneMaterialSlot']
+
 export type ViewerItem = {
   id: string
   kind: string
   title: string
   content?: Content
   unavailable?: boolean
+  /** 内置贴图材质（C5c2）：没有内容修订，直接给槽位和打包进来的缩略图。 */
+  builtin?: { slot: MaterialSlot; thumbnail: string }
 }
 /** 通用查看外框；宿主负责列表、详情读取、信息面板与动作。 */
 export default function MediaViewer({
@@ -270,7 +275,8 @@ function MaterialStage({ item }: { item: ViewerItem }) {
     'thumbnail',
     true,
   )
-  const slot = assetMaterial(item.content)
+  const slot = item.builtin?.slot ?? assetMaterial(item.content)
+  const still = item.builtin?.thumbnail ?? thumbnail.url
   if (!slot)
     return (
       <div className="v-state" role="status">
@@ -281,13 +287,13 @@ function MaterialStage({ item }: { item: ViewerItem }) {
     <Suspense
       fallback={
         <div className="v-model">
-          {thumbnail.url && (
-            <img className="v-model-still" src={thumbnail.url} alt={item.title} />
+          {still && (
+            <img className="v-model-still" src={still} alt={item.title} />
           )}
         </div>
       }
     >
-      <MaterialPreview slot={slot} title={item.title} thumbnail={thumbnail.url} />
+      <MaterialPreview slot={slot} title={item.title} thumbnail={still} />
     </Suspense>
   )
 }

@@ -20,7 +20,7 @@
 ## 4. 前端：资产库的「内置」来源
 
 - [x] 4.1 缩略图：`frontend/scripts/render-texture-thumbnails.mjs` 用 `renderMaterialBall` 渲染每个条目，输出 256 × 256 WebP 到 `backend/internal/creativescene/builtin_thumbnails/`；`Makefile` 的 `generate` 复制到 `frontend/src/creative-canvas/assets/builtin/`，`generate-check` 检查两边一致。完成判据：24 张缩略图提交，`make generate-check` 通过。结果：脚本经 Playwright 拦截读取接口、从本地目录供图（不需要后端），24 张共 352 KB；渲染约 80 秒一张（Metal 无头），全量 33 分钟
-- [ ] 4.2 `assets/builtin.ts`（展示项与本地过滤），以及资产库页面的「内置材质」节点（`LibraryTree.tsx`、`AssetsPage.tsx`、`AssetBrowser.tsx`，整理操作不可用）和查看浮窗（`AssetViewer.tsx`、`AssetInfoPanel.tsx`）；先写 `builtin.ts` 的过滤单测
+- [x] 4.2 `assets/builtin.ts`（展示项与本地过滤），以及资产库页面的「内置材质」节点（`LibraryTree.tsx`、`AssetsPage.tsx`、`AssetBrowser.tsx`，整理操作不可用）和查看浮窗（`AssetViewer.tsx`、`AssetInfoPanel.tsx`）；先写 `builtin.ts` 的过滤单测。实现上与 design 的出入：内置网格另写 `BuiltinBrowser.tsx`（沿用资产卡片的类名，按品类分组，文字与品类本地叠加筛选），不改 `AssetBrowser.tsx`；查看浮窗另写宿主 `viewer/BuiltinViewer.tsx`，`MediaViewer` 的 `ViewerItem` 加 `builtin`（槽位与缩略图）给材质球预览，不改 `AssetViewer.tsx`、`AssetInfoPanel.tsx`——两者都绑着账号素材的读取、评分和整理。内置视图记在网址的 `source=builtin` 上，换视图或分组时清掉；缩略图用 `new URL(\`./builtin/${name}.webp\`, import.meta.url)`（Vite 展开成静态导入，node 单测里也能求值），不用 `import.meta.glob`。手机宽度没有资料库树，这一版不在手机的视图下拉里加内置入口。e2e `creative-assets.e2e.mjs` 加 `C5c2-builtin`（进入、分组、筛选、缩略图、查看浮窗读内置贴图、方向键切换、关闭后焦点回到卡片、回到账号视图），连同 `AC-01`、`C6-model-preview` 逐条通过
 - [ ] 4.3 场景编辑器：`AssetPanel.tsx` 材质页的「我的 / 内置」切换和拖放（带 `builtin_id`），`LibraryPicker.tsx:MaterialPicker` 的来源切换，`MaterialSlots.tsx` 落下内置材质、`textured` 槽位的属性栏（名称与缩略图、参数、映射与透明方式，复用 `TextureFields.tsx`）。e2e（mock 读取接口，用小图，端口 5189，一次一个）：拖到物件上、调尺寸、撤销；「从资产库选」；资产库页面筛选和查看；读取返回 503 时显示占位和提示、导出失败
 
 ## 5. 部署、说明与实测
