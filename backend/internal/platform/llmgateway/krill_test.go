@@ -66,7 +66,7 @@ func TestKrillResponsesUseChannelEndpointAndOmitRelayExtension(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		t.Run(map[bool]string{false: "json", true: "stream"}[stream], func(t *testing.T) {
 			fixture := newProtocolFixture(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/codex/v1/responses" || r.Header.Get("Authorization") != "Bearer secret-value" {
+				if r.URL.Path != "/backend-api/codex/responses" || r.Header.Get("Authorization") != "Bearer secret-value" {
 					t.Errorf("wrong endpoint or authentication")
 				}
 				body := strings.ReplaceAll(responsesToolBody, "vendor-model", "gpt-6.1-sol")
@@ -80,10 +80,10 @@ func TestKrillResponsesUseChannelEndpointAndOmitRelayExtension(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if model.BaseURL != "https://api.krill-code.net/codex/v1" {
+			if model.BaseURL != "https://api.kbsfdxc.net/backend-api/codex" {
 				t.Fatal(model.BaseURL)
 			}
-			model.BaseURL = fixture.server.URL + "/codex/v1"
+			model.BaseURL = fixture.server.URL + "/backend-api/codex"
 			chat := toolRequest()
 			chat.ModelKey = model.ModelKey
 			// Existing conversation history must not send AiCodeWith's sealed

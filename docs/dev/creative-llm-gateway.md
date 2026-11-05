@@ -169,8 +169,8 @@ AiCodeWith 的 Claude 渠道对智能体任务太慢（owner 2026-10-16），新
 
 依据登录后的 [Openai 官渠教程](https://www.krill-code.com/app/tutorial?channel=Openai+%E5%AE%98%E6%B8%A0&client=api-code)、同页 OpenCode 配置和[模型广场](https://www.krill-code.com/app/pricing)：
 
-- `vendor_key=krill-ai`，部署键为 `krill-ai/codex/<model_key>`，API Base URL 为 `https://api.krill-code.net/codex/v1`；使用 Bearer 鉴权，凭证环境变量为 `KRILL_AI_API_KEY`。
-- 接入现有 `gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-astra` 模型，同名发送；复用 Responses 适配器，POST `/codex/v1/responses`，medium 推理、`store:false`、加密推理回传。`reasoning_context` 是部署可选扩展，Krill 留空不发送，AiCodeWith 继续设置 `all_turns`。
+- `vendor_key=krill-ai`，部署键为 `krill-ai/codex/<model_key>`，API Base URL 为 `https://api.kbsfdxc.net/backend-api/codex`；使用 Bearer 鉴权，凭证环境变量为 `KRILL_AI_API_KEY`。
+- 接入现有 `gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-astra` 模型，同名发送；复用 Responses 适配器，POST `/backend-api/codex/responses`，medium 推理、`store:false`、加密推理回传。`reasoning_context` 是部署可选扩展，Krill 留空不发送，AiCodeWith 继续设置 `all_turns`。
 - 模型广场给出 1.05M 上下文、128K 输出，目录沿用保守的 1M/128K；教程 OpenCode 示例统一写 272K，不用该客户端示例覆盖模型广场的能力表。
 - 两个密钥都配置时，新请求优先 Krill；没有 Krill 密钥时继续使用 AiCodeWith。已冻结的 AiCodeWith 请求仍使用原部署。超时、429、5xx 按下述对话容灾策略重试和切换，每次单独记账。历史文本与工具结果保留，其他部署的加密推理不发给 Krill。
 - Krill 模型不设置平台共享并发/频率门禁；查询、取消能力暂不声明。

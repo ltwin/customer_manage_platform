@@ -31,7 +31,7 @@ func krillDeployments(credential func(string) (string, bool)) map[string]Deploym
 		deployments[m.modelKey] = Deployment{
 			Provider: ProviderOpenAIResponses, VendorKey: "krill-ai",
 			DeploymentKey: "krill-ai/codex/" + m.id,
-			BaseURL:       "https://api.krill-code.net/codex/v1", CredentialEnv: "KRILL_AI_API_KEY",
+			BaseURL:       "https://api.kbsfdxc.net/backend-api/codex", CredentialEnv: "KRILL_AI_API_KEY",
 			RequestModelID: m.id, AcceptedModelIDs: []string{m.id}, ReasoningEffort: "medium",
 			Capability: Capability{
 				ImageInput: true, ToolCalling: true, ToolChoice: true, JSONObject: true,
