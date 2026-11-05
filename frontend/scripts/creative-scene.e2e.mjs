@@ -155,6 +155,8 @@ class SceneServer {
     // Built-in texture files read (C5c2), and whether the library is imported: if not, each read is a 503.
     this.textureReads = []
     this.texturesImported = true
+    // A directory of the real files (<sha256>.jpg, or a local store's <sha256>.jpg/content): served instead of the checker.
+    this.builtinDir = null
     // Milliseconds an image takes to arrive: later than a picture would be drawn without waiting for it.
     this.imageDelayMs = 0
     this.discarded = []
@@ -634,6 +636,12 @@ async function route(page, server) {
     if (builtinFile) {
       server.textureReads.push(builtinFile[1])
       if (!server.texturesImported) return json(503, { error: { code: 'creative_texture_unavailable', message: '内置贴图还没有导入', details: { file: builtinFile[1] } } })
+      if (server.builtinDir) {
+        // Downloaded files, or a local store's root: as render-texture-thumbnails.mjs reads them.
+        const at = [join(server.builtinDir, builtinFile[1]), join(server.builtinDir, 'scene-textures', builtinFile[1], 'content')].find((p) => existsSync(p))
+        if (!at) return json(503, { error: { code: 'creative_texture_unavailable', message: '内置贴图还没有导入', details: { file: builtinFile[1] } } })
+        return r.fulfill({ status: 200, contentType: 'image/jpeg', body: readFileSync(at) })
+      }
       return r.fulfill({ status: 200, contentType: 'image/png', body: textures.ccr_checker })
     }
     if (path === '/media-capabilities')
@@ -3737,7 +3745,6 @@ await check('C5c2 built-in: 内置 in the asset panel; dropped on the box it wri
 await check('C5c2 built-in: not imported (503), the slot draws by its parameters and says so; render_view fails naming the material', async () => {
   const server = new SceneServer()
   server.texturesImported = false
-  const box = gid('方块')
   const cam = gid('cam')
   seed(server, [
     boxOf('方块', 5, { position: [0, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, { preset: 'red_brick@1', params: {} }),
@@ -3757,6 +3764,72 @@ await check('C5c2 built-in: not imported (503), the slot draws by its parameters
   assert.match(done.error.message, /内置贴图「红砖」加载失败/)
   assert.doesNotMatch(done.error.message, /503/, 'no status code')
   assert.deepEqual(errors.filter((e) => !/503/.test(e)), [])
+  await context.close()
+})
+
+// C5c2 task 5.2, evidence for the owner: the real built-in textures, each on a 2 m cube in
+// material preview and final render, and a five-material scene's first open. Only with
+// SCENE_E2E_BUILTIN_DIR (the files) and SCENE_E2E_SHOTS (where the pictures go).
+// The instance the editor loaded: after an edit Vite serves it as images.ts?t=…, and a bare import would be another module.
+const imagesModule = (page) => page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).find((n) => /\/materials\/images\.ts(\?|$)/.test(n)))
+const builtinIDs = () => JSON.parse(readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')).materials.filter((m) => m.kind === 'textured')
+await check('C5c2 evidence: every built-in on a 2 m cube in material preview and final render', async () => {
+  if (!process.env.SCENE_E2E_BUILTIN_DIR || !process.env.SCENE_E2E_SHOTS) return
+  const server = new SceneServer()
+  server.builtinDir = process.env.SCENE_E2E_BUILTIN_DIR
+  const entries = builtinIDs()
+  seed(server, entries.map((m, i) => boxOf(m.id.replace('@', '_'), 10 + i, { position: [(i % 6) * 4 - 10, 1, Math.floor(i / 6) * 4 - 6] }, { width: 2, height: 2, depth: 2 }, { preset: m.id, params: {} })))
+  const { context, page, errors } = await open(server, { context: await browser.newContext({ viewport: { width: 1280, height: 820 } }) })
+  for (const look of ['材质预览', '最终渲染']) {
+    await shading(page, look)
+    for (const m of entries) {
+      await page.getByRole('treeitem', { name: new RegExp(`^${m.id.replace('@', '_')}`) }).click()
+      await page.locator('.cc-scene-editor').focus()
+      await page.keyboard.press('Period')
+      const { box: clip } = await viewportCenter(page)
+      const png = await settledShot(page, clip)
+      await writeFile(`${process.env.SCENE_E2E_SHOTS}/c5c2-${look === '材质预览' ? 'preview' : 'rendered'}-${m.id.replace('@', '_')}.png`, png)
+    }
+  }
+  const failed = await page.evaluate(async (url) => Object.keys((await import(url)).imageStatus.getState().failed), await imagesModule(page))
+  assert.deepEqual(failed, [], 'every built-in texture loaded')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('C5c2 evidence: a scene of five built-ins opened for the first time: bytes, time to drawn, texture memory', async () => {
+  if (!process.env.SCENE_E2E_BUILTIN_DIR) return
+  const server = new SceneServer()
+  server.builtinDir = process.env.SCENE_E2E_BUILTIN_DIR
+  const five = ['wood_floor@1', 'red_brick@1', 'marble_01@1', 'leafy_grass@1', 'rusty_metal_02@1']
+  const sizes = Object.fromEntries(builtinIDs().flatMap((m) => m.files.map((f) => [f.name, f.bytes])))
+  seed(server, five.map((id, i) => boxOf(id.replace('@', '_'), 10 + i, { position: [i * 3 - 6, 1, 0] }, { width: 2, height: 2, depth: 2 }, { preset: id, params: {} })))
+  // From opening the page to the five drawn in material preview, where the textures are first read.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+  const started = Date.now()
+  const { page, errors } = await open(server, { context })
+  await shading(page, '材质预览')
+  const wanted = new Set(builtinIDs().filter((m) => five.includes(m.id)).flatMap((m) => m.files.map((f) => f.name)))
+  await waitFor(() => [...wanted].every((f) => server.textureReads.includes(f)), 'every file read', 60_000)
+  // Every texture in: the budget stops growing (one texture per map kind, nothing failed or over).
+  const url = await imagesModule(page)
+  const images = () => page.evaluate(async (u) => { const m = await import(u); return { used: m.budgetUsed(), ...m.imageStatus.getState() } }, url)
+  let last = -1
+  for (;;) {
+    const now = await images()
+    assert.deepEqual([Object.keys(now.failed), now.over], [[], []], 'every built-in texture loaded and fits')
+    if (now.used > 0 && now.used === last) break
+    last = now.used
+    await page.waitForTimeout(500)
+  }
+  const { box: clip } = await viewportCenter(page)
+  await settledShot(page, clip)
+  const drawn = Date.now() - started
+  const budget = last
+  const bytes = [...wanted].reduce((n, f) => n + sizes[f], 0)
+  console.log(`  five built-ins: ${wanted.size} files, ${(bytes / 2 ** 20).toFixed(1)} MiB downloaded, drawn ${(drawn / 1000).toFixed(1)} s after opening (files from local disk), texture budget ${(budget / 2 ** 20).toFixed(1)} MiB`)
+  assert.equal(new Set(server.textureReads).size, server.textureReads.length, 'each file read once')
+  assert.deepEqual(errors, [])
   await context.close()
 })
 
