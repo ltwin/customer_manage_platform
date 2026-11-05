@@ -1,6 +1,6 @@
 import { DirectionalLight as RayLight, HalfFloatType, Matrix4, SRGBColorSpace, UnsignedByteType, Vector3, type Camera, type Color, type DataTexture, type DirectionalLight, type Layers, type PerspectiveCamera, type Scene, type SpotLight } from 'three'
 import { convertToTexture, Fn, float, getViewPosition, max, mix, mrt, normalize, normalView, output as outputNode, packNormalToRGB, pass, perspectiveDepthToViewZ, roughness, sample, screenUV, select, smoothstep, uniform, unpackRGBToNormal, vec2, vec3, vec4, velocity } from 'three/tsl'
-import { PassNode, type Node, type TextureNode, type UniformNode } from 'three/webgpu'
+import { PassNode, TextureNode, type Node, type UniformNode } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js'
 import { ssr } from 'three/addons/tsl/display/SSRNode.js'
@@ -66,6 +66,30 @@ const prepassOutputs = mrt({ output: vec4(packNormalToRGB(normalView), roughness
 const lightingOutputs = mrt({ output: outputNode, base: giBase, ambient: giAmbient, envSpec: giEnvSpec })
 // Blended as the picture is: glass writes alpha 0 there, which keeps what is behind it.
 for (const name of ['base', 'ambient', 'envSpec']) lightingOutputs.setBlendMode(name, lightingOutputs.getBlendMode('output'))
+
+/**
+ * A display node set up once (scene-gi-stalls diagnosis, root cause 1). three's set their own materials up anew in
+ * every node graph that reads them, and a material set up anew builds its shader again at its next draw: the
+ * reflections, read by four nodes, built their 0.6 MB shader three times, some 0.7 s each. What a setup makes does
+ * not depend on the graph reading it: a later one gives what the first gave (later: what it gives instead), the
+ * materials as they are. A setter that changes what a material bakes in still rebuilds it itself.
+ */
+function setupOnce<T extends { setup(builder: unknown): N }>(node: T, later?: (builder: unknown) => N): T {
+  const first = node.setup.bind(node)
+  let made: { out: N } | null = null
+  node.setup = (builder: unknown) => {
+    if (made) return later ? later(builder) : made.out
+    made = { out: first(builder) }
+    return made.out
+  }
+  return node
+}
+
+/** convertToTexture, its render-to-texture node set up once: a later graph reading it sets its texture up alone. */
+const textureOf = (n: N): N => {
+  const t: N = convertToTexture(n)
+  return t.isRTTNode ? setupOnce(t, (builder) => TextureNode.prototype.setup.call(t, builder as never)) : t
+}
 
 export type RealtimeGIOptions = {
   /** The viewport's, or a picture to keep's: the SSGI's samples, its denoising and the flicker suppression. */
@@ -178,7 +202,7 @@ function probeLight(world: NonNullable<RealtimeGIOptions['world']>, depth: N, no
     const { pre, coverage } = probeIrradiance(world.probes, P, n, normalize((eye as N).sub(P)))
     return select(d.lessThan(1), vec4(pre.div(max(coverage, 1e-6)), coverage), vec4(0))
   })()
-  const probe: N = own(convertToTexture(light))
+  const probe: N = own(textureOf(light))
   const ambient = new Vector3()
   const ambientLight = uniform(new Vector3()).onRenderUpdate(() => ambient.set(world.ambient.r, world.ambient.g, world.ambient.b))
   return { probe, ambientLight, fill: uniform(world.fill) }
@@ -194,7 +218,8 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   prepass.transparent = false
   prepass.setLayers(options.layers)
   prepass.setMRT(prepassOutputs)
-  prepass.getTexture('output').type = UnsignedByteType
+  // Its output stays three's: PassNode.setup sets it to the renderer's output buffer type (half float) each time it
+  // is set up, and an 8-bit output asked for here held for the first draw alone, the materials built for it twice.
   prepass.getTexture('velocity').type = HalfFloatType
   const normalPacked: N = prepass.getTextureNode()
   const depth = prepass.getTextureNode('depth')
@@ -217,7 +242,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
 
   const final = options.quality === 'final'
   const world = options.world
-  const gi = own(ssgi(output, depth, normal, persp))
+  const gi = own(setupOnce(ssgi(output, depth, normal, persp)))
   // With the probes the SSGI gives the AO alone: its light is not composited (Epic I6, S2 design D10).
   gi.giIntensity.value = world ? 0 : GI_INTENSITY
   if (world?.ao) {
@@ -230,7 +255,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // Filtered in space with depth and normals, as the AO is; the fixed noise keeps a picture the same every time.
   // A node made into a texture here is freed with the rest; one the display nodes convert themselves would be left behind.
   const filtered = (n: N): N => {
-    const d: N = own(denoise(own(convertToTexture(n)), depth, normal, camera))
+    const d: N = own(denoise(own(textureOf(n)), depth, normal, camera))
     ;(d.noiseNode as { value: DataTexture }).value = own(options.noise())
     return d
   }
@@ -300,10 +325,10 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // environment's irradiance and its specular where the composite has the probes' light and the reflections: the
   // sky unoccluded, a room's wall in a mirror brighter than out of it, blue at a grazing view. Its own reflection
   // comes in as before, the hit's last frame's (SSRTraceNode's multi-bounce).
-  const seen: N = options.trace ? own(convertToTexture(composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection: vec3(0), cover: float(1), split, world: probes }))) : output
+  const seen: N = options.trace ? own(textureOf(composite({ output, base, ambient, envSpec, gi: indirect, ao, contact, reflection: vec3(0), cover: float(1), split, world: probes }))) : output
 
   const reflected = { stochastic: true, diffuseNode: base, metalnessNode: base.a, roughnessNode: normalPacked.a, camera }
-  const reflect: N = own(options.trace ? ssrTrace(seen, depth, normal, { ...reflected, trace: options.trace, rMax: retraceBelow[options.quality] }) : ssr(output, depth, normal, reflected))
+  const reflect: N = own(setupOnce(options.trace ? ssrTrace(seen, depth, normal, { ...reflected, trace: options.trace, rMax: retraceBelow[options.quality] }) : ssr(output, depth, normal, reflected)))
   const specReprojected: N = own(temporalReproject(reflect.getTextureNode(), depth, normalPacked, vel, camera, { mode: 'specular', accumulate: false }))
   const specDenoised: N = own(
     recurrentDenoise(specReprojected, camera, {
@@ -346,7 +371,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // The volumes after the lighting pass, which draws the shadow maps they read (same fixed noise: an export needs no settled frames).
   // With the helpers over it, over the picture so far as a texture of its own: in the one pass, its textures, the
   // volumes' and the helpers' were 17, over WebGPU's 16 a stage, and the viewport drew nothing. An export has no helpers.
-  const fogged: N = applyVolumes(options.aside ? own(convertToTexture(aerial)) : aerial, depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
+  const fogged: N = applyVolumes(options.aside ? own(textureOf(aerial)) : aerial, depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
   let picture: N = vec4(fogged, output.a)
   if (options.aside) {
     // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.
@@ -354,7 +379,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     const front: N = overDepth.r.lessThanEqual(depth.r).select(1, 0)
     picture = vec4(fogged.mul(over.a.mul(front).oneMinus()).add(over.rgb.mul(front)), output.a)
   }
-  const color: N = own(traa(own(convertToTexture(picture)), depth, vel, camera))
+  const color: N = own(traa(own(textureOf(picture)), depth, vel, camera))
   // TRAA's stand-in for the previous depth, drawn with on the first frame and then replaced: its dispose() leaves it.
   own(color._previousDepthNode.value as { dispose(): void })
 

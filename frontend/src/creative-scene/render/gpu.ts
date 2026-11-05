@@ -9,6 +9,7 @@ import { capabilityOf, type Capability, type StorageLimits } from './trace/capac
 import type { DepthCheck, HitReport } from './trace/checks.ts'
 import type { ShadeMode } from './trace/hit.ts'
 import { installLightModel } from './lightModel/nodes.ts'
+import { buildLifetime } from './buildLifetime.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
 // the asset preview, the offscreen shooter and the thumbnails all get theirs
@@ -157,6 +158,12 @@ export type SceneGPU = {
   settle(): Promise<void>
   /** The next frame, a fixed step after the last. */
   advanceFrame(): void
+  /**
+   * The canvas keeps what it shows till the next frame (advanceFrame): draws to it are left out meanwhile. A WebGPU
+   * canvas drawn in a frame starts that frame blank, so over a frame the viewport's picture was not drawn in
+   * (sceneRenderer.ts, shaders building) the axis widget drawn after it showed alone on black.
+   */
+  holdCanvas(): void
   /** Back to frame 0, every node due again: the start of a picture. */
   resetFrames(): void
   /**
@@ -248,6 +255,16 @@ export function reset(frame: FrameState): void {
 }
 
 /** Set by the e2e fixture page; nothing in the app touches them. */
+/**
+ * Whether the page can be let go and taken up again in a hidden tab: scheduler.yield. three's async builds yield
+ * with it, else wait for an animation frame, which a hidden tab never gives (an assistant's picture is often drawn
+ * in one). Without it, what is built ahead is built where it is first used, as before (scene-gi-stalls).
+ */
+export const pageYields = typeof (globalThis as { scheduler?: { yield?: unknown } }).scheduler?.yield === 'function'
+
+/** Lets the page run (scheduler.yield); without it, goes on at once. */
+export const yieldToPage = (): Promise<void> => (pageYields ? (globalThis as unknown as { scheduler: { yield(): Promise<void> } }).scheduler.yield() : Promise.resolve())
+
 export const gpuTestHooks = {
   /** Draws through the WebGL2 backend even with an adapter (the backend comparison). */
   forceWebGL: false,
@@ -479,6 +496,18 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     return f
   }
 
+  // holdCanvas: draws and clears with no target of their own (the canvas's) do nothing till the next frame.
+  let held = false
+  const toCanvas = () => held && renderer.getRenderTarget() === null
+  const render = renderer.render.bind(renderer)
+  renderer.render = (scene, camera) => {
+    if (!toCanvas()) render(scene, camera)
+  }
+  const clear = renderer.clear.bind(renderer)
+  renderer.clear = (color, depth, stencil) => {
+    if (!toCanvas()) clear(color, depth, stencil)
+  }
+
   // The pipeline last built for each watched material, to tell whether it failed (pipelineFailed).
   const watched = new WeakMap<object, object>()
   // The probes' compute pipelines, by kernel name: the last built of each.
@@ -505,28 +534,33 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
   }
 
   const compatibility = backendInfo.compatibilityMode === true || gpuTestHooks.forceCompatibility
+  const lifetime = buildLifetime(renderer)
   const gpu: SceneGPU = {
     renderer,
     backend,
     compatibility,
     maxTextureSize,
     trace: capabilityOf({ backend, compatibility, limits: backendInfo.device?.limits ?? null, unsupported: gpuTestHooks.traceUnsupported }),
-    isLost: device.isLost,
+    isLost: () => lifetime.closed || device.isLost(),
     lost: device.lost,
-    capture: (draw, type, quality) => device.capture(draw, () => canvasBlob(renderer.domElement, type, quality)),
+    capture: (draw, type, quality) => {
+      if (lifetime.closed) throw new DeviceLostError()
+      return device.capture(draw, () => canvasBlob(renderer.domElement, type, quality))
+    },
     compiler: null,
     async compile(scene, camera) {
+      if (lifetime.closed) return
       if (backend !== 'webgpu' && document.hidden) return
       gpuTestHooks.compiling++
       gpuTestHooks.compiles++
       try {
-        await (gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
+        await lifetime.track(gpu.compiler ? gpu.compiler() : renderer.compileAsync(scene, camera))
       } finally {
         gpuTestHooks.compiling--
       }
     },
     async settle() {
-      if (device.isLost() || device.disposed) return
+      if (lifetime.closed || device.isLost() || device.disposed) return
       const queue = (backendInfo.device as { queue?: { onSubmittedWorkDone(): Promise<void> } } | undefined)?.queue
       if (queue) return queue.onSubmittedWorkDone()
       if (!gl) return
@@ -540,15 +574,22 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
       }
     },
     advanceFrame() {
+      held = false
       const f = frame()
       advance(f)
       internals.info.frame = f.frameId
+    },
+    holdCanvas() {
+      held = true
     },
     resetFrames() {
       reset(frame())
       internals.info.frame = 0
     },
-    cache: device.cache,
+    cache: (key, create) => {
+      if (lifetime.closed) throw new DeviceLostError()
+      return device.cache(key, create)
+    },
     release: (attribute) => void internals._attributes?.delete(attribute),
     pipelineFailed(material) {
       const p = watched.get(material)
@@ -563,12 +604,14 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
       return () => errorListeners.delete(listener)
     },
     dispose() {
-      if (device.disposed) return
-      device.dispose()
       gpuTestHooks.live.delete(hook)
-      renderer.dispose()
-      // Give a WebGL context back now rather than when the canvas is collected: browsers cap live contexts.
-      gl?.getExtension('WEBGL_lose_context')?.loseContext()
+      // compute compilation cannot be cancelled in three r186. Its shaders may still reference the cached trace
+      // layer, so keep both the device and its cached resources until those builds (and their cleanup) finish.
+      lifetime.close(() => {
+        device.dispose()
+        void renderer.dispose()
+        gl?.getExtension('WEBGL_lose_context')?.loseContext()
+      })
     },
   }
   return gpu

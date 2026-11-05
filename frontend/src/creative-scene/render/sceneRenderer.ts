@@ -7,7 +7,8 @@ import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
 import { convergeFrames, PICTURE_AFTER_WARMUP, type Engine, type Quality } from './engines.ts'
-import { gpuTestHooks, type SceneGPU } from './gpu.ts'
+import { gpuTestHooks, pageYields, yieldToPage, type SceneGPU } from './gpu.ts'
+import { builds, drawBuilt, withVelocity } from './deferredBuild.ts'
 import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
@@ -16,6 +17,7 @@ import { cascadeSunShadow } from './sunShadow.ts'
 import { shadowTurning } from './lightModel/shadowFilter.ts'
 import { AMBIENT_FILL, viewportSettleFrames } from './probes/cascade.ts'
 import { ProbeVolume } from './probes/volume.ts'
+import { ProbeView } from './probes/lookup.ts'
 import { traceBase, type TraceBase, type TraceHandle } from './trace/base.ts'
 import { hitShading } from './trace/hit.ts'
 import { applyExposure, preExposure } from '../world/exposure.ts'
@@ -303,6 +305,78 @@ function asItsPass(renderer: SceneGPU['renderer']) {
   }
 }
 
+/**
+ * The call depths each pass has drawn its scene at. three r186 keeps a render context per target, MRT and depth of
+ * nested render calls, and a built material per render context (RenderObject.getMaterialCacheKey); a pass's scene
+ * is drawn inside the pipeline's quads, at more than one depth when nodes at different depths ask for it. Drawing a
+ * pass alone at its depths builds what its frames will draw with.
+ */
+const passDepths = new WeakMap<PassNode, Set<number>>()
+
+/** Keeps passDepths for a pass: its scene renders one call below the one that asks for it. */
+function trackDepth(renderer: SceneGPU['renderer'], node: PassNode) {
+  const internals = renderer as unknown as { _callDepth: number }
+  const before = node.updateBefore.bind(node)
+  node.updateBefore = (frame) => {
+    let depths = passDepths.get(node)
+    if (!depths) passDepths.set(node, (depths = new Set()))
+    depths.add(internals._callDepth + 1)
+    return before(frame)
+  }
+}
+
+/**
+ * Starts building what a pipeline's scene passes draw with, drawing nothing (drawBuilt dry): each pass alone at its
+ * depths. True once nothing is left to build. traa: the velocity as the pipeline's TRAA gives it from its first
+ * frame on; without, as a pipeline's first frame builds it, before TRAA has set up its callbacks (a picture's, all
+ * its frames: frame one builds its materials).
+ */
+function buildPasses(renderer: SceneGPU['renderer'], built: Built, traa: boolean): boolean {
+  const node = built.gi?.color as unknown as { _originalProjectionMatrix?: unknown } | undefined
+  return drawBuilt(renderer, () => withVelocity(traa ? node?._originalProjectionMatrix : null, () => built.scenePasses.forEach((n) => drawPassAlone(renderer, n))), true)
+}
+
+/** Draws a pass's scene alone, at each depth its frames draw it at (passDepths); none known, nothing. */
+function drawPassAlone(renderer: SceneGPU['renderer'], node: PassNode) {
+  const internals = renderer as unknown as { _callDepth: number }
+  const was = internals._callDepth
+  for (const depth of [...(passDepths.get(node) ?? [])]) {
+    internals._callDepth = depth - 1
+    try {
+      node.updateBefore({ renderer } as unknown as Parameters<PassNode['updateBefore']>[0])
+    } finally {
+      internals._callDepth = was
+    }
+  }
+}
+
+/**
+ * What the scene's passes build shaders for, hashed: the visible lights (three builds every lit material again for
+ * another set: LightsNode.customCacheKey, their ids, shadows, a spot's map) and the visible meshes' materials and
+ * their versions (a model loaded, a material swapped).
+ */
+function shadingOf(scene: Scene): number {
+  let h = 0
+  const add = (n: number) => (h = (Math.imul(h, 31) + n) | 0)
+  scene.traverseVisible((o) => {
+    const l = o as Light & { map?: { id: number } | null }
+    if (l.isLight) {
+      add(l.id)
+      add(l.castShadow ? 1 : 0)
+      add(l.map?.id ?? -1)
+      return
+    }
+    const mesh = o as Mesh
+    if (!mesh.isMesh) return
+    add(mesh.id)
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      add((m as unknown as { id: number }).id)
+      add(m.version)
+    }
+  })
+  return h
+}
+
 type Shadowing = DirectionalLight | SpotLight
 
 const lightAt = /*@__PURE__*/ new Vector3()
@@ -343,12 +417,30 @@ export function mainLight(scene: Object3D): Shadowing | null {
  * workbench; the real-time GI's world-space layer, once ready (S1); its
  * probes, once warm (S2).
  */
-type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null; world: ProbeVolume | null }
+type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null; world: ProbeView | null }
 
 const keyOf = ({ wireframe, blur, gi, quality, accumulate, trace, world }: Look) =>
-  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}${world ? `+probes-${world.serial}` : ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}${world ? '+probes' : ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+
+/** A picture's warm-up frames dispatched in one run, some 40 ms of the page's time (warm). */
+const WARM_CHUNK = 16
+
+/**
+ * Whether the viewport may keep drawing with a's pipeline while b's shaders build (SceneRenderer.render): what a
+ * draws with stays as it was, the same world-space layer if any and the probes through the same view. Into or
+ * within the real-time GI (the layer or the probes coming on, the solid view to the rendered one, the blur), not
+ * out of it or into or out of wireframe: those build as before.
+ */
+const keeps = (a: Look, b: Look) => b.gi && a.wireframe === b.wireframe && (!a.trace || a.trace.key === b.trace?.key) && (!a.world || b.world !== null)
+
+/** The pipeline's structure apart from what it draws with (keyOf without the layer's and probes' serials): its passes draw at the same depths. */
+const shapeOf = (look: Look) => `${look.gi}|${look.wireframe}|${look.quality}|${look.blur}|${look.accumulate}|${look.trace !== null}|${look.world !== null}`
+
+/** The depths a picture's scene passes draw at, each pass's in the pipeline's order, by its shape (SceneRenderer.prepare). */
+const pictureDepths = new Map<string, Set<number>[]>()
 
 const accumulateSize = /*@__PURE__*/ new Vector2()
+const canvasSize = /*@__PURE__*/ new Vector2()
 let accumulateState: ReturnType<typeof RendererUtils.resetRendererState> | undefined
 
 /**
@@ -437,6 +529,9 @@ class BackgroundlessPass extends PassNode {
 
 type Built = {
   key: string
+  look: Look
+  /** Every pass that draws the scene, the overlay's too: drawn alone while new lights' materials build (render). */
+  scenePasses: PassNode[]
   pipeline: RenderPipeline
   /** The scene passes with the layers each draws, to compile for (SceneRenderer.compile). */
   passes: { node: PassNode; layers: Layers }[]
@@ -461,6 +556,12 @@ export class SceneRenderer {
   /** The viewport's renderer, the one with overlays to draw; an export's has none. */
   private readonly viewport: boolean
   private built: Built | null = null
+  /** The viewport's next pipeline, drawn while its shaders build in the background and taken up once they are (render). */
+  private next: Built | null = null
+  /** Where a first pipeline draws while none is shown yet (aside). */
+  private scratch: RenderTarget | null = null
+  /** What the last frame drawn shaded (shadingOf). */
+  private shading: number | null = null
   private width = -1
   private height = -1
   private pixelRatio = -1
@@ -482,6 +583,9 @@ export class SceneRenderer {
   private probes: ProbeVolume | null = null
   /** The viewport's probes for more levels, warming in the background while these draw (S2 design「级数」). */
   private growing: ProbeVolume | null = null
+  /** What the pipelines read the probes through, and the volume bound to it the last frame drawn with them. */
+  private view: ProbeView | null = null
+  private viewing: ProbeVolume | null = null
   /** A picture's probes warmed (warm): frozen from then on, if pictures freeze them (engines.ts PICTURE_AFTER_WARMUP). */
   private warmed = false
   /** Frames this renderer has stepped its probes for: their rays' turn and random numbers come from it alone (P3). */
@@ -499,8 +603,10 @@ export class SceneRenderer {
     this.overlays = overlays
     this.viewport = overlays !== noOverlays
     this.redraw = redraw
-    // The viewport's pipeline is the one a new light is compiled for (objects/SceneLights.tsx).
-    if (this.viewport) gpu.compiler = () => this.compile()
+    // With staged builds, new lights become visible to the next frame's actual passes. render() holds the last
+    // picture until those shaders are ready. The older stand-in compile targets the previous look during a mode
+    // switch and races the staged builders over three's shared node state. Keep it only for the synchronous path.
+    if (this.viewport) gpu.compiler = () => pageYields ? Promise.resolve() : this.compile()
   }
 
   /**
@@ -608,8 +714,8 @@ export class SceneRenderer {
           mainLight: () => mainLight(scene),
           redraw: this.redraw,
           // The reflections' hits lit by the probes as the screen is (S2 design「命中点的间接光」).
-          trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene, look.world && { probes: look.world.nodes, fill: AMBIENT_FILL }),
-          world: look.trace && look.world ? { probes: look.world.nodes, ambient: look.trace.tables.ambient, fill: AMBIENT_FILL, ao: gpuTestHooks.probeAO } : null,
+          trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene, look.world && { probes: look.world, fill: AMBIENT_FILL }),
+          world: look.trace && look.world ? { probes: look.world, ambient: look.trace.tables.ambient, fill: AMBIENT_FILL, ao: gpuTestHooks.probeAO } : null,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
@@ -680,15 +786,21 @@ export class SceneRenderer {
     const pipeline = new RenderPipeline(gpu.renderer)
     pipeline.outputColorTransform = false
     pipeline.outputNode = vec4(output.rgb, 1)
+    let overlayPass: PassNode | null = null
     if (this.viewport) {
       const overlay = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }))
+      overlayPass = overlay
       overlay.setLayers(layers(OVERLAY_LAYER))
       // Premultiplied sRGB over the finished picture.
       const top = vec4Of(renderOutput(overlay, NoToneMapping, SRGBColorSpace))
       pipeline.outputNode = vec4(output.rgb.mul(top.a.oneMinus()).add(top.rgb), 1)
     }
+    const scenePasses = [...passes.map((p) => p.node), ...(overlayPass ? [overlayPass] : [])]
+    for (const node of scenePasses) trackDepth(gpu.renderer, node)
     return {
       key: keyOf(look),
+      look,
+      scenePasses,
       dof,
       pipeline,
       passes,
@@ -706,7 +818,7 @@ export class SceneRenderer {
 
   /** The probes as the last render() left them, and whether it drew with them (e2e, gpu.ts probeStats); null without. */
   get probeStats(): (ProbeVolume['stats'] & { drawn: boolean }) | null {
-    return this.probes && { ...this.probes.stats, drawn: this.built?.key.includes(`+probes-${this.probes.serial}`) === true }
+    return this.probes && { ...this.probes.stats, drawn: this.viewing === this.probes && this.built?.key.includes('+probes') === true }
   }
 
   /**
@@ -788,34 +900,40 @@ export class SceneRenderer {
    * A picture's warm-up (S2 design「导出预热与时限」): its probes from a cold
    * start, n frames before the first is drawn, each after the frame's own
    * steps (the frame advanced, the exposure, the base in step), no raster.
-   * Nothing without the layer.
+   * Nothing without the layer. The kernels built first, in the background;
+   * the frames dispatched WARM_CHUNK at a time, the page let go between
+   * (scene-gi-stalls): the GPU takes them in the same order.
    */
-  warm(camera: Camera, frame: Frame, n: number) {
+  async warm(camera: Camera, frame: Frame, n: number) {
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     if (frame.engine !== 'realtime_gi' || frame.wireframe === true || !perspective) return
     const handle = this.trace().handle()
     if (!handle) return
     const probes = this.probesFor(handle, camera)
-    applyExposure(this.scene, frame.preExposure ?? 1)
-    try {
-      if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
-      for (let i = 0; i < n; i++) {
-        this.gpu.advanceFrame()
-        this.trace().sync()
-        probes.step(this.frames++, camera)
+    await probes.compiled()
+    for (let i = 0; i < n; ) {
+      if (i > 0) await yieldToPage()
+      if (this.disposed) return
+      // Written and dispatched in one synchronous run, as a frame's (world/exposure.ts preExposure).
+      applyExposure(this.scene, frame.preExposure ?? 1)
+      try {
+        if (this.scene.matrixWorldAutoUpdate) this.scene.updateMatrixWorld()
+        for (const end = Math.min(n, i + WARM_CHUNK); i < end; i++) {
+          this.gpu.advanceFrame()
+          this.trace().sync()
+          probes.step(this.frames++, camera)
+        }
+      } finally {
+        preExposure.value = 1
       }
-      this.warmed = true
-    } finally {
-      preExposure.value = 1
     }
+    this.warmed = true
   }
 
   /** Draws a frame into the renderer's canvas. */
 
-  render(camera: Camera, frame: Frame) {
-    const started = performance.now()
-    if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
-    const renderer = this.gpu.renderer
+  /** How frame is drawn from camera, and the probes it draws with (render). */
+  private lookOf(camera: Camera, frame: Frame) {
     const wireframe = frame.wireframe === true
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     const dof = !wireframe && perspective ? frame.dof : null
@@ -834,7 +952,21 @@ export class SceneRenderer {
     // The probes once warm: the viewport warms them in the background first, drawing as before (S2 design「就绪的那一刻」).
     // Another display mode or an orthographic view keeps them, unstepped: only another layer, or none, lets them go.
     const probes = look.trace ? this.probesFor(look.trace, camera) : gi ? this.dropProbes() : null
-    if (probes?.warm && !gpuTestHooks.probesOff) look.world = probes
+    if (probes?.warm && !gpuTestHooks.probesOff) look.world = this.view ??= new ProbeView(probes.nodes)
+    return { look, probes, dof }
+  }
+
+  /**
+   * A picture's scene materials built in the background before its first frame (scene-gi-stalls): its scene passes
+   * gone through alone, drawing nothing (buildPasses), at the depths an earlier picture of the same kind drew them at
+   * (pictureDepths); three built them all in its first frame, some 0.5 s for a scene of models. The first picture
+   * of a kind draws as before.
+   */
+  async prepare(camera: Camera, frame: Frame) {
+    if (this.viewport || !pageYields) return
+    const { look } = this.lookOf(camera, frame)
+    const depths = pictureDepths.get(shapeOf(look))
+    if (!depths) return
     const key = keyOf(look)
     if (this.built?.key !== key) {
       this.built?.dispose()
@@ -842,6 +974,36 @@ export class SceneRenderer {
       this.width = -1
     }
     const built = this.built
+    if (built.scenePasses.length !== depths.length) return
+    built.scenePasses.forEach((n, i) => passDepths.set(n, new Set(depths[i])))
+    while (!this.disposed && !this.gpu.isLost() && !buildPasses(this.gpu.renderer, built, false)) await builds(this.gpu.renderer)
+  }
+
+  render(camera: Camera, frame: Frame) {
+    const started = performance.now()
+    if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
+    const renderer = this.gpu.renderer
+    const { look, probes, dof } = this.lookOf(camera, frame)
+    const { wireframe, gi } = look
+    const key = keyOf(look)
+    if (this.built?.key === key) {
+      this.dropNext()
+    } else if (this.viewport && pageYields && (!this.built || keeps(this.built.look, look))) {
+      // The pipeline shown so far keeps drawing, or none is yet, while the next one's shaders build in the
+      // background (scene-gi-stalls): the reflections' alone held the page 0.3 s as the layer or the probes came on,
+      // the scene's lit materials and the GI's nodes some 0.2 s twice as the rendered view opened.
+      if (this.next?.key !== key) {
+        this.dropNext()
+        this.next = this.build(look)
+      }
+    } else {
+      this.dropNext()
+      this.built?.dispose()
+      this.built = this.build(look)
+      this.width = -1
+    }
+    const built = this.built
+    const next = this.next
     const ratio = frame.pixelRatio ?? 1
     const aoRatio = Math.min(frame.aoPixelRatio ?? ratio, ratio)
     // R3F sets the renderer's pixel ratio on resizes of its own: it is checked as well as remembered.
@@ -850,19 +1012,32 @@ export class SceneRenderer {
       this.aoPixelRatio = aoRatio
       this.width = frame.width
       this.height = frame.height
-      renderer.setPixelRatio(ratio)
-      renderer.setSize(frame.width, frame.height, false)
-      if (built.ao) built.ao.resolutionScale = aoRatio / ratio
-      built.dof?.setSize(Math.round(frame.width * ratio), Math.round(frame.height * ratio))
+      // The canvas's size only when it changes: set at all, even to the same, it is blank till drawn again (WebGPU),
+      // and a new pipeline's or a new renderer's first frames may leave it as it is (holdCanvas below).
+      const size = renderer.getSize(canvasSize)
+      if (renderer.getPixelRatio() !== ratio || size.width !== frame.width || size.height !== frame.height) {
+        renderer.setPixelRatio(ratio)
+        renderer.setSize(frame.width, frame.height, false)
+      }
+      if (built?.ao) built.ao.resolutionScale = aoRatio / ratio
+      built?.dof?.setSize(Math.round(frame.width * ratio), Math.round(frame.height * ratio))
     }
-    if (dof && built.dof) {
-      const persp = camera as PerspectiveCamera
-      built.dof.setLens(dof, persp.near, persp.far, frame.pictureLongSide ?? Math.max(frame.width, frame.height) * ratio)
+    if (next) {
+      // Its own size every frame: the shown pipeline's is set above on a change alone.
+      if (next.ao) next.ao.resolutionScale = aoRatio / ratio
+      next.dof?.setSize(Math.round(frame.width * ratio), Math.round(frame.height * ratio))
     }
-    if (built.aoOn) built.aoOn.value = frame.ao === false ? 0 : 1
-    built.nightLook.value = frame.nightLook ?? 0
     const bg = this.scene.background
-    built.background.value.copy(bg instanceof Color ? bg : renderer.getClearColor(new Color()))
+    for (const b of [built, next]) {
+      if (!b) continue
+      if (dof && b.dof) {
+        const persp = camera as PerspectiveCamera
+        b.dof.setLens(dof, persp.near, persp.far, frame.pictureLongSide ?? Math.max(frame.width, frame.height) * ratio)
+      }
+      if (b.aoOn) b.aoOn.value = frame.ao === false ? 0 : 1
+      b.nightLook.value = frame.nightLook ?? 0
+      b.background.value.copy(bg instanceof Color ? bg : renderer.getClearColor(new Color()))
+    }
     // Clay's studio light comes from the view's upper left (render/studio.ts).
     aimStudio(this.scene, camera)
     for (const o of this.overlays.aside()) o?.traverse((c) => c.layers.set(ASIDE_LAYER))
@@ -886,18 +1061,70 @@ export class SceneRenderer {
         if (warming || this.growing) this.redraw?.()
       }
     }
+    // The volume drawn, as this frame's step left it (a frozen picture's as its warm-up did).
+    this.viewing = look.world && probes
+    if (look.world && probes) look.world.bind(probes.nodes)
     prepareAerial(this.scene, renderer, camera, !wireframe)
     prepareVolumes(this.scene, camera, !wireframe)
-    // Soft shadows' kernels turn frame by frame only where frames are averaged.
-    shadowTurning.value = look.gi || look.accumulate ? 1 : 0
+    // Soft shadows' kernels turn frame by frame only where frames are averaged: each pipeline's own.
+    const turning = (b: Built) => (shadowTurning.value = b.look.gi || b.look.accumulate ? 1 : 0)
     try {
-      this.stats = measure(renderer.info.render, () => built.pipeline.render(), started)
+      // Other lights or materials than the last frame drawn (a new light, the lights shown once compiled, a model
+      // loaded): their shaders build. The viewport keeps its last picture while they build in the background, the
+      // scene's passes gone through alone (buildPasses; scene-gi-stalls: 0.15–0.6 s at once on a frame); the
+      // pipelines' nodes keep their history. Keep the last picture until ready: a time limit must not turn an
+      // asynchronous build into a multi-second synchronous build on slower devices or complex scenes.
+      const shading = this.viewport && pageYields && built ? shadingOf(this.scene) : null
+      if (shading !== null && this.shading !== null && shading !== this.shading) {
+        const ready = buildPasses(renderer, built!, true) && (!next || buildPasses(renderer, next, true))
+        if (!ready) {
+          this.stats = { draws: 0, triangles: 0, cpuMs: performance.now() - started }
+          this.gpu.holdCanvas()
+          this.redraw?.()
+          return
+        }
+      }
+      if (shading !== null) this.shading = shading
+      // The next pipeline first, with what of it is built: the one shown draws over it. Once it draws whole, it is
+      // the one shown from now on. With none shown yet it draws aside, the canvas left as it was meanwhile.
+      let whole = false
+      this.stats = measure(
+        renderer.info.render,
+        () => {
+          if (next) {
+            turning(next)
+            if (built) whole = drawBuilt(renderer, () => next.pipeline.render())
+            else {
+              whole = drawBuilt(renderer, () => this.aside(() => next.pipeline.render()))
+              this.gpu.holdCanvas()
+            }
+          }
+          if (!whole && built) {
+            turning(built)
+            built.pipeline.render()
+          }
+        },
+        started,
+      )
+      // The depths a picture's scene passes drew at, for the next picture of its kind (prepare).
+      const shown = this.built
+      if (!this.viewport && shown) pictureDepths.set(shapeOf(shown.look), shown.scenePasses.map((n) => new Set(passDepths.get(n))))
+      if (next) {
+        if (whole) {
+          this.built = next
+          this.next = null
+          built?.dispose()
+          this.width = -1
+        }
+        // Drawn aside, whole: the canvas gets it on the next frame.
+        this.redraw?.()
+      }
       if (look.trace) {
         // Drawn: the layer's buffers are on the GPU whole.
         this.trace().drawn()
         // The reflections' pipeline refused on this device (known a GPU round trip after it was built): upstream's
         // SSR from the next frame on (S1 design A13).
-        if (built.gi?.traced && this.gpu.pipelineFailed(built.gi.traced)) this.trace().fail(true)
+        if (this.built?.gi?.traced && this.gpu.pipelineFailed(this.built.gi.traced)) this.trace().fail(true)
       }
       // The probes' kernels refused on this device: likewise, the layer off for good (S2 design「能力与显存」).
       if (probes && this.gpu.computeFailed()) this.trace().fail(true)
@@ -909,8 +1136,28 @@ export class SceneRenderer {
     }
   }
 
+  /** Draws into a target of its own, not the canvas: a first pipeline's frames while its shaders build (its output quad builds for the canvas after). */
+  private aside(draw: () => void) {
+    const renderer = this.gpu.renderer
+    const was = renderer.getRenderTarget()
+    this.scratch ??= new RenderTarget(1, 1)
+    renderer.setRenderTarget(this.scratch)
+    try {
+      draw()
+    } finally {
+      renderer.setRenderTarget(was)
+    }
+  }
+
+  private dropNext() {
+    this.next?.dispose()
+    this.next = null
+  }
+
   dispose() {
     this.disposed = true
+    this.dropNext()
+    this.scratch?.dispose()
     this.dropProbes()
     if (this.kept) disposeStandIn(this.kept.standIn)
     this.kept = null
