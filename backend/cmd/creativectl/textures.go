@@ -117,7 +117,10 @@ func fetchOnce(ctx context.Context, f creativescene.BuiltinTextureFile) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// The request is read-only; ReadAll below reports truncated response bodies.
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
