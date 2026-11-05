@@ -630,7 +630,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元；材质槽的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff` 违反数据契约（写在非 `principled@1` 的预设上、未知贴图键、`channel` 写在基础色或法线上、`size_m` 与 `uv` 同时出现、数值越界等，修订 v17），`details.field` 指出字段路径 | 修正，不可原样重试 |
+| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复、体积物件带了 `material_slots`、`primitive.faces` 外形不对或超出上限等）、引用的物件不存在、本次写到的 `focus_object_id` 不可对焦（不存在、是摄像机自己、灯光或摄像机）、`reparent_objects` 里同一物件出现多次、`create_groups` 不是分组、`remove_groups` 不是分组或删除时仍有子物件、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元；材质槽的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff` 违反数据契约（写在既不是 `principled@1` 也不是内置贴图材质的预设上、`maps` 写在内置贴图材质上（修订 v20）、未知贴图键、`channel` 写在基础色或法线上、`size_m` 与 `uv` 同时出现、数值越界等，修订 v17），`details.field` 指出字段路径 | 修正，不可原样重试 |
 | 400 | `creative_image_unavailable` | 修订 v17。本批新出现的图片引用不存在、不属于当前账号、不是 `image`、不是 `ready` 或不可展示（不区分这几种，与 `creative_model_unavailable` 相同，不用 404：编辑器会把 404 当成场景本身不存在）。`details.field` 指出第一个不可用的字段路径，`details.content_revision_id` 给出图片 | 编辑器去掉这张贴图并提示；助手按工具结果换图 |
 | 404 | `not_found` | 场景不存在或不属于当前账号 | 关闭编辑视图 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符。`details.conflicts` 为数组：`[{unit, expected_rev, current_rev}]` | 重读，按冲突界面处理后再提交 |
@@ -730,6 +730,8 @@ Content-Type: application/json
 在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。
 
 修订 v17（C5c1）：`add_objects`、`update_objects` 的 `material_slots` 接受 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`；新增错误 `creative_image_unavailable` 和图片数上限。只增加可选字段，旧客户端不写它们；旧编辑器整体替换槽位时会丢掉贴图，所以前后端同一版本上线。`restore`、`restore_units` 恢复的旧修订如果引用了图片，同样按上面的规则校验；历史修订一直持有这些图片，它们不会被回收，所以通常仍然可用。
+
+修订 v20（C5c2）：`add_objects`、`update_objects` 的 `material_slots` 可以写内置贴图材质（`kind = textured` 的预设），带 `mapping`、`alpha_mode`、`alpha_cutoff`，不带 `maps`。只放宽校验；内置贴图不做图片可用性校验，也不登记引用。
 
 修订 v13（C5b）：`add_objects`、`update_objects` 接受 `primitive.faces`（整体替换），改了基础体的拓扑参数而没写 `faces` 时清空分配。旧客户端不写这个字段；它们改拓扑参数时分配被清空，与新编辑器按同一份声明判断的结果相同。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
 
@@ -1573,3 +1575,51 @@ Content-Type: application/json
 
 ### 兼容与变更
 首次定义。**把材质资产用到槽位**不新增接口：编辑器或助手把资产的 `material.slot` 写进 `update_objects` 的 `material_slots`（`api: 提交场景命令`）。资产相关接口的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `material`，是兼容扩展。复用时的 `revision` 是资产行的修订号（追加归类后加 1），与模型资产相同。
+
+## 读取内置贴图
+
+### 用途与调用
+- **用途**（修订 v20，C5c2）：编辑器取内置贴图材质的图片字节，供材质构建、世界空间层和离屏出图使用。
+- **消费者**：编辑器的图片缓存（`materials/images.ts`），包括为助手执行 `render_view` 和导出的页面。
+- **调用**：`GET /api/v1/creative/scene-textures/{file}`，也支持 `HEAD`。`file` 是目录里某个 `textured` 条目 `files[].name` 的值（`<sha256>.jpg`）。
+- **权限**：Bearer 认证，账号有创意空间读取权限（同读取场景）。不按账号区分内容；不走媒体票据，因为内置贴图不是账号内容，没有可读性要判断。
+
+### 请求
+- 路径参数 `file`：必须匹配 `^[0-9a-f]{64}\.jpg$`，并且出现在当前目录里。
+- 可带 `If-None-Match`；不支持 `Range`。
+
+### 成功响应
+- 200：`Content-Type: image/jpeg`，`Content-Length`，`ETag: "<sha256>"`，`Cache-Control: private, max-age=31536000, immutable`，`X-Content-Type-Options: nosniff`。正文是文件原样字节。
+- 304：`If-None-Match` 与 ETag 相同。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 401 / 403 | 公共约定 | 未登录或没有创意空间读取权限 | 公共约定 |
+| 404 | `not_found` | `file` 格式不对，或不在当前目录里 | 不重试 |
+| 503 | `creative_texture_unavailable` | 文件在目录里，但对象存储里没有（未导入）或读取失败；服务端记错误日志 | 按「图片加载失败」处理：视口占位并提示，离屏出图失败；下次需要时再试 |
+
+### 交互规则
+- 只读，幂等。不适用：分页、异步、幂等键。
+- 编辑器按文件名去重：多个条目或多个槽位用到同一个文件时只取一次。
+
+### 调用示例
+```http
+GET /api/v1/creative/scene-textures/3f2a9c…c1.jpg
+Authorization: Bearer <token>
+```
+200 的响应头：
+```http
+Content-Type: image/jpeg
+Content-Length: 3981230
+ETag: "3f2a9c…c1"
+Cache-Control: private, max-age=31536000, immutable
+X-Content-Type-Options: nosniff
+```
+503（没有导入）：
+```json
+{"error": {"code": "creative_texture_unavailable", "message": "内置贴图暂时无法读取", "details": {"file": "3f2a9c…c1.jpg"}}}
+```
+
+### 兼容与变更
+首次定义，只新增路由和错误码 `creative_texture_unavailable`，OpenAPI 加这一条后运行 `make generate`。
