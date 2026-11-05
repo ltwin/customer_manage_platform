@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 )
@@ -168,7 +170,7 @@ func TestImportBuiltinTextures(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(rc)
-	rc.Close()
+	_ = rc.Close()
 	if string(body) != "good" || size != 4 {
 		t.Fatalf("read %q %d", body, size)
 	}
@@ -190,5 +192,86 @@ func TestImportBuiltinTextures(t *testing.T) {
 	}
 	if _, _, err := b.open(t.Context(), files, gone.Name); !errors.Is(err, ErrBuiltinTextureMissing) {
 		t.Fatalf("not imported: %v", err)
+	}
+}
+
+func TestBuiltinMaterials(t *testing.T) {
+	ids := func(q string) []string {
+		var out []string
+		for _, m := range BuiltinMaterials(q) {
+			out = append(out, m.ID)
+		}
+		return out
+	}
+	for q, want := range map[string]string{
+		// Category, source asset name and label, case aside, in catalog order.
+		"BRICK":      "red_brick@1 brick_wall_001@1 medieval_blocks_03@1",
+		"砖墙":         "red_brick@1 brick_wall_001@1 medieval_blocks_03@1",
+		"木地板":        "wood_floor@1",
+		"metal rust": "rusty_metal_02@1",
+		"玻璃":         "",
+	} {
+		if got := strings.Join(ids(q), " "); got != want {
+			t.Errorf("%q: %q, want %q", q, got, want)
+		}
+	}
+	if n := len(BuiltinMaterials("")); n != 24 {
+		t.Fatalf("%d with no query", n)
+	}
+	m := BuiltinMaterials("木地板")[0]
+	if m.Title != "木地板" || m.Category != "wood" || m.CategoryLabel != "木材" || m.SizeM != materials.byID["wood_floor@1"].SizeM || m.Slot.Preset != "wood_floor@1" || m.Slot.Params == nil || len(m.Slot.Params) != 0 {
+		t.Fatalf("%+v", m)
+	}
+}
+
+func TestBuiltinMaterialFacts(t *testing.T) {
+	f, ok := BuiltinMaterialByID("wood_floor@1")
+	if !ok || f.Slot.Preset != "wood_floor@1" || f.Source.License != "CC0" || f.Defaults["color"] != "#ffffff" || len(f.Defaults) != len(materials.byID[principledPreset].Params) {
+		t.Fatalf("%+v", f)
+	}
+	for _, id := range []string{"principled@1", "nope@1", ""} {
+		if _, ok := BuiltinMaterialByID(id); ok {
+			t.Errorf("%q is not a built-in material", id)
+		}
+	}
+	if ids := BuiltinMaterialIDs(); len(ids) != 24 || ids[0] != "wood_floor@1" {
+		t.Fatalf("%v", ids)
+	}
+}
+
+func TestBuiltinThumbnails(t *testing.T) {
+	// Every built-in material has its own WebP thumbnail.
+	seen := map[string]bool{}
+	for _, id := range BuiltinMaterialIDs() {
+		b, ok := BuiltinThumbnail(id)
+		if !ok || len(b) < 12 || string(b[:4]) != "RIFF" || string(b[8:12]) != "WEBP" {
+			t.Fatalf("%s: no WebP thumbnail", id)
+		}
+		sum := sha256.Sum256(b)
+		if seen[string(sum[:])] {
+			t.Fatalf("%s shares a thumbnail", id)
+		}
+		seen[string(sum[:])] = true
+	}
+	if _, ok := BuiltinThumbnail("principled@1"); ok {
+		t.Fatal("a preset has no built-in thumbnail")
+	}
+	thumbs := fstest.MapFS{"builtin_thumbnails/wood_floor_1.webp": {Data: []byte("x")}}
+	for name, fsys := range map[string]fstest.MapFS{
+		"missing": thumbs,
+		"stray":   {"builtin_thumbnails/wood_floor_1.webp": {Data: []byte("x")}, "builtin_thumbnails/gone_1.webp": {Data: []byte("x")}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), map[string]string{"missing": "no thumbnail", "stray": "no material"}[name]) {
+					t.Fatalf("panic %v", r)
+				}
+			}()
+			list := []materialSpec{{ID: "wood_floor@1", Kind: MaterialTextured}}
+			if name == "missing" {
+				list = append(list, materialSpec{ID: "red_brick@1", Kind: MaterialTextured})
+			}
+			loadThumbnails(fsys, list)
+		})
 	}
 }

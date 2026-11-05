@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"context"
+	"errors"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -36,7 +37,14 @@ func (a runReadAccess) consent(ctx context.Context, tx store.TxAccountScope) (Co
 func (a runReadAccess) imageCapable() bool { return a.h.held.Model.Capability.ImageInput }
 
 func (a runReadAccess) libraryAllowed(ctx context.Context, metadata bool) error {
-	return a.h.requireLibrary(ctx, metadata)
+	// search_assets is offered without the grant for its built-in source; an
+	// account search in a run that started without it is refused, not a
+	// run-ending egress request. A grant revoked mid-run still ends it.
+	err := a.h.requireLibrary(ctx, metadata)
+	if errors.Is(err, ErrEgressRequired) && !a.h.libraryEnabled {
+		return refuseTool("这个对话没有资产库授权，查不了账号里的素材；内置材质用 source: \"builtin\" 查")
+	}
+	return err
 }
 
 // externalReadAccess is an external agent connection's authorization: the

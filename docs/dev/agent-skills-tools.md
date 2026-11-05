@@ -91,6 +91,8 @@ W5（scene-volumes）同样：`edit_scene@1` 的说明加体积物件（约 1 KB
 
 P1（scene-batch-merge）同样：`write_model@1`、`edit_scene@1` 的说明各加一句成本模型（共约 0.3 KB），参数不变、版本号不变，发布前排空；没有迁移。
 
+C5c2（scene-texture-library）同样：`search_assets@2` 加可选参数 `source`（`builtin` 查内置贴图材质），`read_asset@1` 加可选参数 `builtin_id`，`content_revision_id` 改为与它二选一；`edit_scene@1` 说明加一句内置贴图材质（三项说明共增长约 3.2 KB）。版本号不变，发布前排空；没有迁移。`search_assets` 不再要求资产库授权才提供：没有授权的对话只能查 `source: builtin`，查账号素材得到工具拒绝（不是结束运行的出境请求）。外部助手的同名工具共用这两份参数表，随之获得新参数。
+
 1. 在入口进入维护窗口，阻断新增 Agent 运行与重试，保留读取和处理已有等待任务所需的入口。
 2. 旧 worker 继续完成运行。检查 queued/running/waiting_input/waiting_apply/waiting_client/reconciling 等非终态运行与待恢复任务；全部处理到终态才继续。不要自动取消、删除检查点或伪造终态。`waiting_client` 的运行在等页面执行场景任务（`creative_scene_jobs` 里 `queued` / `claimed` 的行）：保持一个创意空间页面开着让任务做完，或者等任务到 30 分钟期限后由清扫转为过期，运行随之恢复（助手得知页面没有打开）；迁移 `0075` 的回滚在还有 `waiting_client` 运行时会拒绝。
 3. 停止旧 worker，执行迁移并发布新服务，启动新 worker，再恢复新增运行入口。先迁移、后启动；多版本 worker 不混跑。

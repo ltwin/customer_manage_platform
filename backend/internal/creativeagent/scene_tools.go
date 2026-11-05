@@ -126,6 +126,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"mapping 只在有 maps 时写：kind 缺省 triplanar（按物件空间的米铺开，物件缩放时不拉伸，size_m 0.01–100 是一块贴图的宽度，缺省 1）；uv 用模型自带的 UV（repeat [u,v] 各 0.01–1000，缺省 [1,1]），模型没有 UV 时按三平面显示；rotation_deg 0–360，normal_strength 0–4（缺省 1）。size_m 只配 triplanar，repeat 只配 uv。" +
 				"alpha_mode：opaque（缺省，忽略贴图的透明通道）、clip（opacity × 基础色贴图的透明通道低于 alpha_cutoff 0–1，缺省 0.5，的部分挖掉，适合树叶、铁丝网）、blend（按半透明处理，适合玻璃贴花）。" +
 				"资产库里的材质：search_assets 按 kind:material 查到，用 read_asset 读到完整 slot 后原样写进某个槽位。" +
+				"内置贴图材质（木地板、红砖、大理石、草地等真实照片贴图）：search_assets 用 source:builtin 查，slot 原样写进槽位即可；参数同 principled@1，可另写 mapping（不写时按这种材质的真实尺寸铺开）和透明方式，不能写 maps。" +
 				"材质（数值未注明范围的为 0–1，颜色 #rrggbb）：" + creativescene.MaterialCatalog() + "。" +
 				"打光：室外由天空的太阳和天空光照亮；台灯、壁灯用点光 20–80 cd，舞台聚光 100–300 cd，平行光补光 0.3–1（程序天空的太阳约 2.2）；柔光箱用面光源，如 0.6×0.9 m、500–2000 cd/m²（等效约 270–1100 cd），影子和高光比同强度的点光柔和；表面阴影共 8 张：程序天空和物理天空的太阳占 4 张，投影的平行光各占 4 张，点光、聚光、面光各占 1 张，按物件列表顺序放得下就投影；放不下的灯照常照亮但不投影，read_scene 里这盏灯的 shadow 为 over_budget（on 为投影、off 为不投影），隐藏的灯不占阴影，要它投影就关掉前面某盏灯的投影或调整物件顺序。物理天空下灯光同样用坎德拉，白天几乎看不出，入夜后才显出来。" +
 				"成批的相同小件（栅栏、砖、书本）写成一个代码模型（lib.array/radial），比逐个加基础体流畅得多；重复出现的东西放同一模型的多个实例。" +

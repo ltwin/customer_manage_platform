@@ -3,11 +3,14 @@ package creativescene
 import (
 	"context"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -319,4 +322,117 @@ func (b *BuiltinTextures) importFile(ctx context.Context, f BuiltinTextureFile, 
 		return "imported"
 	}
 	return "skipped" // written meanwhile by another import
+}
+
+// builtinThumbnailFS holds each textured entry's 256 × 256 WebP material
+// ball, rendered offline (frontend/scripts/render-texture-thumbnails.mjs) and
+// named by its ID with @ as _.
+//
+//go:embed builtin_thumbnails/*.webp
+var builtinThumbnailFS embed.FS
+
+var builtinThumbnails = loadThumbnails(builtinThumbnailFS, materials.list)
+
+// loadThumbnails panics when a textured entry has no thumbnail or a
+// thumbnail no entry: both are build mistakes, like a bad catalog entry.
+func loadThumbnails(fsys fs.FS, list []materialSpec) map[string][]byte {
+	out := map[string][]byte{}
+	byName := map[string]string{}
+	for _, m := range list {
+		if m.Kind != MaterialTextured {
+			continue
+		}
+		name := strings.ReplaceAll(m.ID, "@", "_") + ".webp"
+		b, err := fs.ReadFile(fsys, "builtin_thumbnails/"+name)
+		if err != nil {
+			panic(fmt.Sprintf("creativescene: material %q has no thumbnail: %v", m.ID, err))
+		}
+		out[m.ID], byName[name] = b, m.ID
+	}
+	names, err := fs.Glob(fsys, "builtin_thumbnails/*.webp")
+	if err != nil {
+		panic(err)
+	}
+	for _, n := range names {
+		if _, ok := byName[path.Base(n)]; !ok {
+			panic(fmt.Sprintf("creativescene: thumbnail %s belongs to no material", n))
+		}
+	}
+	return out
+}
+
+// BuiltinMaterial is a textured entry as the assistant's search lists it:
+// Slot goes into material_slots as it is.
+type BuiltinMaterial struct {
+	ID            string       `json:"builtin_id"`
+	Title         string       `json:"title"`
+	Category      string       `json:"category"`
+	CategoryLabel string       `json:"category_label"`
+	SizeM         float64      `json:"size_m"`
+	Slot          MaterialSlot `json:"slot"`
+}
+
+// BuiltinMaterialFacts is a textured entry as read_asset gives it: what the
+// search lists, its parameters' defaults and where its textures come from.
+type BuiltinMaterialFacts struct {
+	BuiltinMaterial
+	Defaults map[string]any `json:"defaults"`
+	Source   builtinSource  `json:"source"`
+}
+
+func builtinMaterial(m materialSpec) BuiltinMaterial {
+	label := ""
+	if i := slices.IndexFunc(materials.categories, func(c materialCategory) bool { return c.ID == m.Category }); i >= 0 {
+		label = materials.categories[i].Label
+	}
+	return BuiltinMaterial{ID: m.ID, Title: m.Label, Category: m.Category, CategoryLabel: label, SizeM: m.SizeM, Slot: MaterialSlot{Preset: m.ID, Params: map[string]any{}}}
+}
+
+// BuiltinMaterials lists the textured entries matching query, in catalog
+// order: each of its words, case aside, is part of the label, the category
+// (ID or label) or the source asset's name. An empty query lists them all.
+func BuiltinMaterials(query string) []BuiltinMaterial {
+	words := strings.Fields(strings.ToLower(query))
+	out := []BuiltinMaterial{}
+	for _, m := range materials.list {
+		if m.Kind != MaterialTextured {
+			continue
+		}
+		b := builtinMaterial(m)
+		text := strings.ToLower(strings.Join([]string{b.Title, b.Category, b.CategoryLabel, m.Source.Asset}, "\n"))
+		if !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) }) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// BuiltinMaterialByID is the textured entry with this ID, if any.
+func BuiltinMaterialByID(id string) (BuiltinMaterialFacts, bool) {
+	m, ok := texturedMaterial(id)
+	if !ok {
+		return BuiltinMaterialFacts{}, false
+	}
+	defaults := make(map[string]any, len(m.Params))
+	for name, p := range m.Params {
+		defaults[name] = p.Default
+	}
+	return BuiltinMaterialFacts{BuiltinMaterial: builtinMaterial(m), Defaults: defaults, Source: *m.Source}, true
+}
+
+// BuiltinMaterialIDs lists the textured entries' IDs in catalog order.
+func BuiltinMaterialIDs() []string {
+	var ids []string
+	for _, m := range materials.list {
+		if m.Kind == MaterialTextured {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids
+}
+
+// BuiltinThumbnail is a textured entry's WebP thumbnail.
+func BuiltinThumbnail(id string) ([]byte, bool) {
+	b, ok := builtinThumbnails[id]
+	return b, ok
 }
