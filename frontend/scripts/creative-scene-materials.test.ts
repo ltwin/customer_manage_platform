@@ -339,6 +339,16 @@ test('switching the mapping keeps rotation and strength and drops what the other
   assert.equal(withMapping(plain, { size_m: 2 }), plain, 'no images: no mapping to set')
 })
 
+test('a built-in textured slot takes a mapping without maps, its own size the default', () => {
+  const brick = materialEntry('red_brick@1')!
+  const bare = { preset: 'red_brick@1', params: {} }
+  assert.deepEqual(withMapping(bare, { rotation_deg: 90 }).mapping, { kind: 'triplanar', size_m: brick.size_m, rotation_deg: 90, normal_strength: 1 })
+  const uv = withMapping(bare, { kind: 'uv' })
+  assert.deepEqual(uv.mapping, { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: 1 })
+  assert.equal(withMapping(uv, { kind: 'triplanar' }).mapping?.size_m, brick.size_m, 'back to box projection: the material’s real size')
+  assert.equal(withMapping(bare, {}).maps, undefined, 'it never gains maps')
+})
+
 test('alpha modes: clip with its cutoff, blend and opaque without one; opaque written as nothing', () => {
   assert.deepEqual(withAlpha(plain, 'clip'), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.5 })
   assert.deepEqual(withAlpha(plain, 'clip', 0.3), { ...plain, alpha_mode: 'clip', alpha_cutoff: 0.3 })

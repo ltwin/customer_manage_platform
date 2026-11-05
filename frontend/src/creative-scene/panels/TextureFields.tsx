@@ -53,9 +53,12 @@ export function TextureFields({
   canvasID,
   disabled,
   onEdit,
+  builtin = false,
 }: {
   slot: string
   m: MaterialSlot
+  /** A built-in textured material (C5c2): its textures are the catalog's, so only the mapping and alpha are offered. */
+  builtin?: boolean
   hasUV: boolean | null
   unusable: (revision: string) => string | null
   canvasID: string | undefined
@@ -68,7 +71,7 @@ export function TextureFields({
   const alpha = m.alpha_mode ?? 'opaque'
   return (
     <div className="cc-scene-textures" role="group" aria-label={`${slot} 的贴图`}>
-      {mapInputs.map((input) => {
+      {!builtin && mapInputs.map((input) => {
         const map = maps[input]
         const label = mapInputLabel[input]
         const why = map ? unusable(map.content_revision_id) : null
@@ -158,7 +161,7 @@ export function TextureFields({
         {alpha === 'clip' && (
           <NumberField label="裁切阈值" value={m.alpha_cutoff ?? defaultAlphaCutoff} step={0.05} min={0} max={1} disabled={disabled} onCommit={(v) => onEdit('调整裁切阈值', (x) => withAlpha(x, 'clip', v), `${slot}.alpha_cutoff`)} />
         )}
-        {alpha === 'clip' && !maps.base_color && <small role="status">没有透明贴图，裁切只看不透明度</small>}
+        {alpha === 'clip' && (builtin || !maps.base_color) && <small role="status">没有透明贴图，裁切只看不透明度</small>}
       </div>
       {picking && (
         <ImagePicker

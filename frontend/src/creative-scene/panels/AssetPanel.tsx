@@ -7,11 +7,13 @@ import { blank, type LibraryQuery } from '../../creative-canvas/assets/query.ts'
 import { boxSelection, clickSelection, type Box, type Selection } from '../../creative-canvas/assets/selection.ts'
 import { useAssetList, useCatalog } from '../../creative-canvas/assets/useLibrary.ts'
 import { assetMaterial, materialRows, modelInfo } from '../../creative-canvas/viewer/modelInfo.ts'
+import { builtinSlot, filterBuiltin, type BuiltinMaterial } from '../../creative-canvas/assets/builtin.ts'
 import type { LibraryAsset } from '../saveModel.ts'
 import { ContextMenu, type MenuItem } from './ContextMenu.tsx'
 
 type Size = 'small' | 'large'
 type Kind = 'model' | 'material'
+type MaterialSlot = NonNullable<Parameters<typeof materialRows>[0]>
 const kindName: Record<Kind, string> = { model: '模型', material: '材质' }
 const sizeKey = 'creative-scene-assets:size'
 const none: Selection = { ids: [], anchor: null }
@@ -60,6 +62,7 @@ export function AssetPanel({
   placeable,
   onPlace,
   onDrag,
+  onDragBuiltin,
   onExit,
 }: {
   /** Changes when the page wrote to the library (存入资产库); the lists are read again. */
@@ -77,10 +80,15 @@ export function AssetPanel({
   onPlace: (assets: LibraryAsset[]) => void
   /** A drag towards the viewport or a slot begins (the asset) or ends (null). */
   onDrag: (asset: LibraryAsset | null) => void
+  /** A built-in textured material (C5c2) is dragged towards the viewport or a slot (the slot it writes), or the drag ends (null). */
+  onDragBuiltin: (material: { title: string; slot: MaterialSlot } | null) => void
   /** Escape in an empty search box: keys go back to the editor. */
   onExit: () => void
 }) {
   const [kind, setKind] = useState<Kind>('model')
+  /** Which materials show: the account's (我的) or the built-in ones (内置), never mixed. */
+  const [source, setSource] = useState<'mine' | 'builtin'>('mine')
+  const [builtinPick, setBuiltinPick] = useState<BuiltinMaterial | null>(null)
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
   const [group, setGroup] = useState('')
@@ -251,6 +259,44 @@ export function AssetPanel({
     ]
   }
 
+  const builtinView = kind === 'material' && source === 'builtin'
+  const builtinItems = builtinView ? filterBuiltin(text) : []
+  const builtinCard = (m: BuiltinMaterial) => (
+    <div
+      key={m.id}
+      data-builtin={m.id}
+      className={`cc-scene-asset${builtinPick?.id === m.id ? ' is-selected' : ''}`}
+      role="option"
+      aria-selected={builtinPick?.id === m.id}
+      aria-label={m.label}
+      tabIndex={0}
+      title={`${m.label} · 拖到物件或槽位上`}
+      draggable={!readOnly}
+      onClick={(e) => {
+        e.currentTarget.focus()
+        setBuiltinPick(m)
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || !builtinPick) return
+        e.stopPropagation()
+        setBuiltinPick(null)
+      }}
+      onDragStart={(e: DragEvent) => {
+        if (readOnly) return e.preventDefault()
+        // Like a material asset's drag; the slot it writes comes through onDragBuiltin.
+        e.dataTransfer.setData('application/creative-asset+json', JSON.stringify([{ builtin_id: m.id }]))
+        e.dataTransfer.effectAllowed = 'copy'
+        onDragBuiltin({ title: m.label, slot: builtinSlot(m.id) })
+      }}
+      onDragEnd={() => onDragBuiltin(null)}
+    >
+      <span className="cc-scene-asset-thumb">
+        <img src={m.thumbnail} alt="" draggable={false} />
+      </span>
+      <span className="cc-scene-asset-name">{m.label}</span>
+    </div>
+  )
+
   const single = selected.length === 1 ? selected[0] : undefined
   const usable = selected.filter(canPlace)
   const recentOrder = shownRecent.map((a) => a.id)
@@ -294,6 +340,26 @@ export function AssetPanel({
           </div>
         </div>
         <div className="cc-scene-assets-row">
+          {kind === 'material' && (
+            <div className="cc-scene-assets-kinds" role="tablist" aria-label="材质来源">
+              {(['mine', 'builtin'] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="tab"
+                  aria-selected={source === s}
+                  onClick={() => {
+                    setSource(s)
+                    setSelection(none)
+                    setBuiltinPick(null)
+                  }}
+                >
+                  {s === 'mine' ? '我的' : '内置'}
+                </button>
+              ))}
+            </div>
+          )}
+          {builtinView ? <span className="cc-scene-assets-fill" /> : <>
           <select aria-label="分组" value={group} onChange={(e) => setGroup(e.target.value)}>
             <option value="">全部分组</option>
             {groupOptions(catalog?.groups ?? []).map((g) => (
@@ -310,6 +376,7 @@ export function AssetPanel({
               </option>
             ))}
           </select>
+          </>}
           <span className="cc-scene-assets-size" role="group" aria-label="卡片大小">
             {(['small', 'large'] as const).map((s) => (
               <button
@@ -362,6 +429,17 @@ export function AssetPanel({
             style={{ left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top }}
           />
         )}
+        {builtinView ? (
+          <section aria-label="内置材质">
+            {builtinItems.length ? (
+              <div className="cc-scene-assets-grid" role="listbox" aria-label="内置材质">
+                {builtinItems.map(builtinCard)}
+              </div>
+            ) : (
+              <p className="cc-scene-assets-note">没有符合条件的内置材质</p>
+            )}
+          </section>
+        ) : <>
         {shownRecent.length > 0 && (
           <section aria-label="最近使用">
             <h3>最近使用</h3>
@@ -402,9 +480,22 @@ export function AssetPanel({
             )}
           </div>
         </section>
+        </>}
       </div>
       <footer className="cc-scene-assets-detail">
-        {single ? (
+        {builtinView ? (
+          builtinPick ? (
+            <>
+              <strong>{builtinPick.label}</strong>
+              <small>
+                内置材质 · {builtinPick.categoryLabel} · {builtinPick.sizeM} 米一块
+              </small>
+              <small>拖到视图里的物件或属性栏的材质槽上使用</small>
+            </>
+          ) : (
+            <small>{readOnly ? '当前不能编辑场景' : '平台提供的真实照片贴图材质，拖到视图里的物件或属性栏的材质槽上'}</small>
+          )
+        ) : single ? (
           <>
             <strong>{single.title}</strong>
             {facts(single).map((line) => (
