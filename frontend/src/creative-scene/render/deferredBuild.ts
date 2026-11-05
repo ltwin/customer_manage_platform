@@ -95,14 +95,14 @@ function ownerOf(r: WebGPURenderer & Internals, object: RenderObject) {
 }
 
 /** What a draw had set: a build's every stage runs with it. */
-type DrawState = { target: RenderTarget | null; face: number; level: number; mrt: unknown; context: WebGPURenderer['contextNode']; lights: unknown[] | null; projection: unknown }
+type DrawState = { target: RenderTarget | null; face: number; level: number; mrt: unknown; context: WebGPURenderer['contextNode']; renderContext: unknown; lights: unknown[] | null; projection: unknown }
 
 /** The velocity TRAA gives the unjittered projection for the length of the pipeline's render (VelocityNode.setup reads it). */
 const motion = velocity as unknown as { projectionMatrix: unknown }
 
 function stateOf(r: WebGPURenderer & Internals, lightsNode: LightsNode | null): DrawState {
   // A copy: the render list's array is filled again by the next render.
-  return { target: r.getRenderTarget(), face: r.getActiveCubeFace(), level: r.getActiveMipmapLevel(), mrt: r.getMRT(), context: r.contextNode, lights: lightsNode ? [...lightsNode.getLights()] : null, projection: motion.projectionMatrix }
+  return { target: r.getRenderTarget(), face: r.getActiveCubeFace(), level: r.getActiveMipmapLevel(), mrt: r.getMRT(), context: r.contextNode, renderContext: r._currentRenderContext, lights: lightsNode ? [...lightsNode.getLights()] : null, projection: motion.projectionMatrix }
 }
 
 function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null, s: DrawState, fn: () => T): T {
@@ -111,6 +111,9 @@ function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null,
   r.setRenderTarget(s.target, s.face, s.level)
   r.setMRT(s.mrt as never)
   r.contextNode = s.context
+  // NodeBuilder caches binding groups by this context. Building between frames without it puts unrelated passes
+  // in the renderer-wide fallback cache; retiring one pipeline can then free buffers another pipeline still binds.
+  r._currentRenderContext = s.renderContext
   if (lightsNode && s.lights) lightsNode.setLights(s.lights)
   motion.projectionMatrix = s.projection
   try {
@@ -119,6 +122,7 @@ function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null,
     r.setRenderTarget(was.target, was.face, was.level)
     r.setMRT(was.mrt as never)
     r.contextNode = was.context
+    r._currentRenderContext = was.renderContext
     if (lightsNode && lights) lightsNode.setLights(lights)
     motion.projectionMatrix = was.projection
   }
@@ -180,7 +184,7 @@ async function buildInStages(r: WebGPURenderer & Internals, renderObject: Render
   })
   // Used by the draws that take it (NodeManager.getForRender counts them).
   if (valid() && !nodes.nodeBuilderCache.has(key)) {
-    const state = nodes._createNodeBuilderState(builder)
+    const state = within(r, lightsNode, s, () => nodes._createNodeBuilderState(builder))
     nodes.nodeBuilderCache.set(key, state)
     ownerOf(r, renderObject).unused.set(key, state)
   }

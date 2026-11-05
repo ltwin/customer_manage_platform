@@ -27,10 +27,12 @@ function renderer() {
   let mrt: unknown = null
   const beforeNodes: ViewportTextureNode[] = []
   const pipelineEvents: string[] = []
+  const buildContexts: unknown[] = []
   let pipelineReady = true
   let pipelineError = false
   const pipeline = {}
   const r = {
+    _currentRenderContext: { target },
     backend: { get: () => ({ error: pipelineError }) },
     contextNode: {},
     getRenderTarget: () => current,
@@ -51,10 +53,10 @@ function renderer() {
         return {
           context: {}, flowNodes: { vertex: [], fragment: [{ build: () => { stats.stages++ } }], compute: [] },
           prebuild() {}, setBuildStage() {}, setShaderStage() {}, flowNode() { stats.stages++ },
-          buildCode() {}, buildUpdateNodes() {},
+          buildCode() { buildContexts.push(r._currentRenderContext) }, buildUpdateNodes() {},
         }
       },
-      _createNodeBuilderState: () => ({ usedTimes: 0 }),
+      _createNodeBuilderState: () => { buildContexts.push(r._currentRenderContext); return { usedTimes: 0 } },
     },
     _geometries: { updateForRender() {} },
     _bindings: { getForRender() { pipelineEvents.push('bind') } },
@@ -70,8 +72,19 @@ function renderer() {
     _renderObjectDirect() { stats.draws++ },
   }
   const gpu = r as unknown as WebGPURenderer
-  return { gpu, material, target, object, cache, stats, beforeNodes, pipelineEvents, unready: (failed = false) => { pipelineReady = false; pipelineError = failed }, draw: () => drawBuilt(gpu, () => r._renderObjectDirect()) }
+  return { gpu, material, target, object, cache, stats, beforeNodes, pipelineEvents, buildContexts, internals: r, unready: (failed = false) => { pipelineReady = false; pipelineError = failed }, draw: () => drawBuilt(gpu, () => r._renderObjectDirect()) }
 }
+
+test('a deferred shader and its bindings use the original render context, then restore the active context', async () => {
+  const r = renderer()
+  const original = r.internals._currentRenderContext
+  r.draw()
+  const other = { target: new RenderTarget() }
+  r.internals._currentRenderContext = other
+  await builds(r.gpu)
+  assert.deepEqual(r.buildContexts, [original, original])
+  assert.equal(r.internals._currentRenderContext, other)
+})
 
 test('glass copies its current framebuffer before precompiled bindings allocate its texture', async () => {
   const r = renderer()
