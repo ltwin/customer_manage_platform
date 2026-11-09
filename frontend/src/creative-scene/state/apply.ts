@@ -1,14 +1,17 @@
 import type {
+  AnimationPatch,
   ObjectUpdate,
   Scene,
   SceneEnvironment,
   SceneObject,
   SceneOperation,
   SceneRender,
+  Timeline,
 } from '../api.ts'
 import { builtinSpec, defaultParams, topologyChanged } from '../builtins/catalog.ts'
 import { sameTransform, worldOf } from './world.ts'
 import { completeSky } from '../world/physicalSky.ts'
+import { channelOf, inContentUnit } from '../timeline/channels.ts'
 
 // The client's copy of the server's operation semantics, used only to show
 // edits before their receipt. Anything the server would reject is skipped
@@ -33,8 +36,11 @@ export type ProjectionPatch = {
   put: SceneObject[]
   fields: Record<string, Partial<SceneObject>>
   removed: string[]
+  /** For objects that stay, each listed unit's channels (unitChannels), replacing what that unit has. */
+  channels?: Record<string, { placement?: Animation; content?: Animation }>
   environment?: SceneEnvironment
   render?: SceneRender
+  timeline?: Timeline
 }
 
 export const placementUnit = (id: string) => `object:${id}`
@@ -78,7 +84,8 @@ export function subtree(objects: readonly SceneObject[], ids: Iterable<string>):
 }
 
 /** Fills missing primitive params and volume fields with their defaults, as the server does. */
-export function completeObject(o: SceneObject): SceneObject {
+export function completeObject(added: SceneObject): SceneObject {
+  const o = added.animation ? withAnimation(added, added.animation) : added
   if (o.volume) return { ...o, volume: { ...volumeDefaults, ...o.volume } }
   if (!o.primitive) return o
   return {
@@ -89,6 +96,60 @@ export function completeObject(o: SceneObject): SceneObject {
     },
   }
 }
+
+export type Animation = NonNullable<SceneObject['animation']>
+
+const normalized = (q: unknown) => {
+  if (!Array.isArray(q) || q.length !== 4) return q
+  const n = Math.hypot(...(q as number[]))
+  return n > 0 ? (q as number[]).map((x) => x / n) : q
+}
+
+/**
+ * o with these channels, completed as the server's completeAnimation does: a
+ * key without interp takes linear, a discrete one constant, and quaternions
+ * are stored normalised. Channels without keys are dropped, and an empty
+ * animation is not stored.
+ */
+function withAnimation(o: SceneObject, channels: Animation): SceneObject {
+  const animation: Animation = {}
+  for (const [path, ch] of Object.entries(channels)) {
+    if (!ch.keys.length) continue
+    const spec = channelOf(path, o.kind)
+    animation[path] = {
+      keys: ch.keys.map((k) => ({
+        ...k,
+        interp: k.interp ?? (spec?.sample === 'discrete' ? 'constant' : 'linear'),
+        ...(spec?.sample === 'quaternion' ? { value: normalized(k.value) } : {}),
+      })),
+    }
+  }
+  const { animation: _, ...rest } = o
+  return Object.keys(animation).length ? { ...rest, animation } : rest
+}
+
+/** As the server's animationPatch.apply: clear, then delete, then set, each key by its frame. */
+export function patchAnimation(o: SceneObject, patch: AnimationPatch): SceneObject {
+  const animation: Animation = { ...o.animation }
+  for (const path of patch.clear ?? []) delete animation[path]
+  for (const d of patch.delete ?? []) {
+    const ch = animation[d.path]
+    if (ch) animation[d.path] = { keys: ch.keys.filter((k) => k.frame !== d.frame) }
+  }
+  for (const { path, ...key } of patch.set ?? []) {
+    const keys = (animation[path]?.keys ?? []).filter((k) => k.frame !== key.frame)
+    animation[path] = { keys: [...keys, key].sort((a, b) => a.frame - b.frame) }
+  }
+  return withAnimation(o, animation)
+}
+
+/** o's channels in one unit: the placement unit's (transform, visible) or the content unit's (camera). */
+export const unitChannels = (o: SceneObject, content: boolean): Animation =>
+  Object.fromEntries(Object.entries(o.animation ?? {}).filter(([path]) => inContentUnit(path) === content))
+
+/** o with one unit's channels replaced, as restoring that unit does; the other unit's stay. */
+export const withUnitChannels = (o: SceneObject, content: boolean, channels: Animation): SceneObject =>
+  withAnimation(o, { ...unitChannels(o, !content), ...channels })
 
 type Light = NonNullable<SceneObject['light']>
 type LightField = Exclude<keyof Light, 'type'>
@@ -243,7 +304,7 @@ export function updateObject(o: SceneObject, u: ObjectUpdate, areaScale: { befor
   if (u.light && o.light) next.light = mergeLight(o.light, u.light, areaScale.before, areaScale.after) ?? o.light
   if (u.camera && o.camera) next.camera = { ...cameraDefaults, ...o.camera, ...u.camera }
   if (u.volume && o.volume) next.volume = mergeVolume(o.volume, u.volume)
-  return next
+  return u.animation ? patchAnimation(next, u.animation) : next
 }
 
 export function applyOp(state: SceneState, op: WireOp): SceneState {
@@ -388,7 +449,11 @@ export function applyPatch(state: SceneState, patch: ProjectionPatch): SceneStat
         return { ...whole, parent_id: o.parent_id, order: o.order }
       }
       const fields = patch.fields[o.id]
-      return fields ? { ...o, ...fields } : o
+      const channels = patch.channels?.[o.id]
+      let next = fields ? { ...o, ...fields } : o
+      if (channels?.placement) next = withUnitChannels(next, false, channels.placement)
+      if (channels?.content) next = withUnitChannels(next, true, channels.content)
+      return next
     })
   // Objects coming back keep their recorded parent when it is still a group;
   // the server settles order clashes.
@@ -404,6 +469,7 @@ export function applyPatch(state: SceneState, patch: ProjectionPatch): SceneStat
       objects,
       environment: patch.environment ?? state.scene.environment,
       render: patch.render ?? state.scene.render,
+      timeline: patch.timeline ?? state.scene.timeline,
     },
   }
 }
@@ -445,6 +511,11 @@ function changedPart(o: SceneObject, u: ObjectUpdate): ObjectUpdate | null {
       any = true
     }
   }
+  // An animation patch stays whole: its clear, delete and set read as one.
+  if (u.animation && !sameValue(patchAnimation(o, u.animation).animation, o.animation)) {
+    out.animation = u.animation
+    any = true
+  }
   return any ? out : null
 }
 
@@ -475,6 +546,8 @@ export function withoutNoops(ops: readonly WireOp[], state: SceneState): WireOp[
       if (sameValue(op.environment, probe.scene.environment)) kept = null
     } else if (op.op === 'set_render') {
       if (sameValue({ ...probe.scene.render, ...op.render }, probe.scene.render)) kept = null
+    } else if (op.op === 'set_timeline') {
+      if (sameValue(applyOp(probe, op).scene.timeline, probe.scene.timeline)) kept = null
     } else if (op.op === 'reparent_objects') {
       kept = reparentWithoutNoops(op, probe)
     }

@@ -5,6 +5,7 @@ import {
   placementKeys,
   type ProjectionPatch,
   type SceneState,
+  unitChannels,
 } from './apply.ts'
 import { applyIntent, changedUnits, removedUnits, type Intent } from './intents.ts'
 import { rebaseReparent, type ReparentOp } from '../grouping.ts'
@@ -46,6 +47,7 @@ function patchFor(from: SceneState, to: SceneState, units: string[]): Projection
   for (const u of units) {
     if (u === 'environment') patch.environment = to.scene.environment
     if (u === 'render') patch.render = to.scene.render
+    if (u === 'timeline') patch.timeline = to.scene.timeline
     const unit = objectOfUnit(u)
     if (!unit) continue
     const target = toByID.get(unit.id)
@@ -59,6 +61,8 @@ function patchFor(from: SceneState, to: SceneState, units: string[]): Projection
       const fields: Partial<SceneObject> = { ...patch.fields[unit.id] }
       for (const k of keys) (fields as Record<string, unknown>)[k] = target[k]
       patch.fields[unit.id] = fields
+      // As restore.go: an object unit is its fields plus the channels it holds.
+      patch.channels = { ...patch.channels, [unit.id]: { ...patch.channels?.[unit.id], [unit.content ? 'content' : 'placement']: unitChannels(target, unit.content) } }
     }
     seen.add(unit.id)
   }

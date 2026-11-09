@@ -113,6 +113,36 @@ export type EditorUI = {
   wireBack: DisplayMode
   /** Tab's face edit on the active object (faceEdit/state.ts); not saved with the view. */
   faceEdit: FaceEdit | null
+  /** The timeline's current frame: the viewport shows the scene evaluated there. */
+  frame: number
+  /** 已改未记录: values of keyed properties changed here without a key, by object and path; never saved. */
+  unkeyed: Record<string, Record<string, unknown>>
+  /** 自动关键帧: a change to a keyed property writes a key at the current frame. Kept per browser, off by default. */
+  autoKey: boolean
+  /**
+   * 首次插帧的基线 (Epic design): the value a property had before it was first
+   * changed here without a channel, by object and path, for the first key to
+   * keep in the other shots.
+   */
+  baseline: Record<string, Record<string, unknown>>
+}
+
+const autoKeyKey = 'scene.autoKey'
+
+export function readAutoKey(): boolean {
+  try {
+    return localStorage.getItem(autoKeyKey) === 'on'
+  } catch {
+    return false
+  }
+}
+
+export function writeAutoKey(on: boolean) {
+  try {
+    localStorage.setItem(autoKeyKey, on ? 'on' : 'off')
+  } catch {
+    // Only a preference of this browser.
+  }
 }
 
 export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
@@ -149,6 +179,10 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     display: saved?.display ?? null,
     wireBack: saved?.wireBack ?? 'solid',
     faceEdit: null,
+    frame: 0,
+    unkeyed: {},
+    autoKey: readAutoKey(),
+    baseline: {},
   }))
 }
 

@@ -32,11 +32,13 @@ export function channelPaths(kind: string): string[] {
     .map((c) => c.path);
 }
 
+/** Whether path's channel lives in the content unit rather than the placement one. */
+export const inContentUnit = (path: string) =>
+  byPath.get(path)?.unit === "content";
+
 /** The unit holding path's channel on object id. */
 export function channelUnit(id: string, path: string): string {
-  return byPath.get(path)?.unit === "content"
-    ? `object:${id}:content`
-    : `object:${id}`;
+  return inContentUnit(path) ? `object:${id}:content` : `object:${id}`;
 }
 
 /** o's base value of path; undefined when o has no such field. */

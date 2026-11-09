@@ -16,6 +16,7 @@ import {
   type SceneState,
   type WireOp,
 } from './apply.ts'
+import { inContentUnit } from '../timeline/channels.ts'
 
 /** A revision, "does not exist", or "whatever this local intent produces". */
 export type ExpectedRev = string | null | { after: string }
@@ -57,6 +58,12 @@ export type UnitRevs = Record<string, string>
 const hasAny = (u: ObjectUpdate, keys: readonly string[]) =>
   keys.some((k) => (u as Record<string, unknown>)[k] !== undefined)
 
+/** The paths an animation patch writes, each counted in the unit of the field it keys. */
+const animationPaths = (u: ObjectUpdate) => {
+  const a = u.animation
+  return a ? [...(a.clear ?? []), ...(a.delete ?? []).map((d) => d.path), ...(a.set ?? []).map((k) => k.path)] : []
+}
+
 /** The units one operation must name in expected, mirroring the server. */
 export function touchedUnits(op: WireOp, state: SceneState): string[] {
   switch (op.op) {
@@ -77,10 +84,13 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
         ...(op.remove_groups ?? []).flatMap((id) => [placementUnit(id), contentUnit(id)]),
       ]
     case 'update_objects':
-      return op.updates.flatMap((u) => [
-        ...(hasAny(u, placementKeys) ? [placementUnit(u.object_id)] : []),
-        ...(hasAny(u, contentKeys) ? [contentUnit(u.object_id)] : []),
-      ])
+      return op.updates.flatMap((u) => {
+        const paths = animationPaths(u)
+        return [
+          ...(hasAny(u, placementKeys) || paths.some((p) => !inContentUnit(p)) ? [placementUnit(u.object_id)] : []),
+          ...(hasAny(u, contentKeys) || paths.some(inContentUnit) ? [contentUnit(u.object_id)] : []),
+        ]
+      })
     case 'remove_objects': {
       const gone = subtree(state.scene.objects, op.object_ids)
       return [
@@ -227,12 +237,25 @@ export function expectedFor(
   return out
 }
 
+const onlySets = (u: ObjectUpdate) => !u.animation || (!u.animation.clear?.length && !u.animation.delete?.length)
+
+/**
+ * Whether b can fold into a. Animation patches fold only when both only set
+ * keys: the server runs clear, then delete, then set, so folding a set and a
+ * later clear would run the clear first.
+ */
+const foldable = (a: ObjectUpdate, b: ObjectUpdate) => onlySets(a) && onlySets(b)
+
 export function mergeUpdate(a: ObjectUpdate, b: ObjectUpdate): ObjectUpdate {
   const primitive =
     a.primitive && b.primitive
       ? { params: { ...a.primitive.params, ...b.primitive.params } }
       : (b.primitive ?? a.primitive)
-  return { ...a, ...b, ...(primitive ? { primitive } : {}) }
+  // Keys of both, b's where both write a path at the same frame.
+  const set = a.animation?.set && b.animation?.set
+    ? [...a.animation.set.filter((k) => !b.animation!.set!.some((l) => l.path === k.path && l.frame === k.frame)), ...b.animation.set]
+    : undefined
+  return { ...a, ...b, ...(primitive ? { primitive } : {}), ...(set ? { animation: { set } } : {}) }
 }
 
 const onlyUpdate = (i: Intent) =>
@@ -296,8 +319,9 @@ export function enqueue(
     const tailUpdate = tail && sameEdit && !tail.held && tail.state === 'pending' ? onlyUpdate(tail) : null
     if (tail && tailUpdate) {
       const tailIDs = new Set(tailUpdate.updates.map((u) => u.object_id))
-      if (tailIDs.size === ids.size && [...ids].every((id) => tailIDs.has(id))) {
-        const latest = new Map(update.updates.map((u) => [u.object_id, u]))
+      const latest = new Map(update.updates.map((u) => [u.object_id, u]))
+      const folds = tailUpdate.updates.every((u) => foldable(u, latest.get(u.object_id) ?? u))
+      if (folds && tailIDs.size === ids.size && [...ids].every((id) => tailIDs.has(id))) {
         const merged: Intent = {
           ...tail,
           label: next.label,
