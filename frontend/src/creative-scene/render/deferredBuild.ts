@@ -26,7 +26,7 @@ import { buildLifetime } from './buildLifetime.ts'
 // to be checked on every three upgrade, as sceneRenderer.ts asItsPass is.
 
 type LightsNode = { getLights(): unknown[]; setLights(lights: unknown[]): unknown }
-type RenderObject = { material: Material; object: Object3D; lightsNode: LightsNode | null; onDispose(): void }
+type RenderObject = { material: Material; object: Object3D; lightsNode: LightsNode | null; onDispose(): void; _bindings?: unknown[] }
 type BuilderState = { usedTimes: number }
 type NodeBuilder = {
   context: { position?: { isNode?: boolean } }
@@ -46,7 +46,7 @@ type Internals = {
   backend: { get(pipeline: object): { error?: boolean } }
   _objects: { get(...args: unknown[]): RenderObject }
   _geometries: { updateForRender(renderObject: RenderObject): void }
-  _bindings: { getForRender(renderObject: RenderObject): unknown }
+  _bindings: { getForRender(renderObject: RenderObject): unknown; has(renderObject: RenderObject): boolean; get(renderObject: RenderObject): { initialized?: boolean } }
   _pipelines: { getForRender(renderObject: RenderObject, promises: Promise<unknown>[]): object; isReady(renderObject: RenderObject): boolean }
   _nodes: {
     get(renderObject: RenderObject): { nodeBuilderState?: unknown }
@@ -72,7 +72,13 @@ function stateFor(renderer: object) {
 }
 const wrapped = new WeakSet<object>()
 
-/** A disposed render object never receives a late shader, even though material.dispose does not change version. */
+/**
+ * A disposed render object never receives a late shader, even though material.dispose does not change version. One
+ * left out of every draw has its bind groups uncounted (Bindings.getForRender counts them in on the first draw):
+ * three's deleteForRender would make them as it goes, building the shader for them, and count the shared ones out
+ * (the camera's render group), freeing their buffers under the objects still drawing with them (GPUQueue.writeBuffer
+ * on a destroyed buffer in the next draw). It goes with none.
+ */
 const owners = new WeakMap<RenderObject, { alive: boolean; unused: Map<string, BuilderState> }>()
 function ownerOf(r: WebGPURenderer & Internals, object: RenderObject) {
   let owner = owners.get(object)
@@ -87,6 +93,7 @@ function ownerOf(r: WebGPURenderer & Internals, object: RenderObject) {
       if (state.usedTimes === 0 && r._nodes.nodeBuilderCache.get(key) === state) r._nodes.nodeBuilderCache.delete(key)
     }
     held.unused.clear()
+    if (!r._bindings.has(object) || r._bindings.get(object).initialized !== true) object._bindings = []
     dispose.call(object)
   }
   return owner
@@ -191,6 +198,8 @@ let queue: Promise<unknown> = Promise.resolve()
 
 /** Whether a render object's shader is built; if not, its build is started. A build that fails is left to the draw, which fails as before. */
 function built(r: WebGPURenderer & Internals, renderObject: RenderObject): boolean {
+  // Every render object a deferred draw meets, built or not: one left out while another builds its shader is disposed alike.
+  const owner = ownerOf(r, renderObject)
   const { building, failed } = stateFor(r)
   const nodes = r._nodes
   if (nodes.get(renderObject).nodeBuilderState !== undefined) return true
@@ -200,7 +209,6 @@ function built(r: WebGPURenderer & Internals, renderObject: RenderObject): boole
   building.add(key)
   const s = stateOf(r, renderObject.lightsNode)
   const version = renderObject.material.version
-  const owner = ownerOf(r, renderObject)
   const lifetime = buildLifetime(r)
   let targetAlive = true
   const lostTarget = () => { targetAlive = false }
