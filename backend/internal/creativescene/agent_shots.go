@@ -47,7 +47,7 @@ var shotOps = []string{"add_shot", "update_shot", "remove_shot"}
 // into scene commands, against s before the batch. It returns the ids of
 // the shots added.
 func expandShots(ops []json.RawMessage, s Scene, shot string) ([]json.RawMessage, []string, error) {
-	structural, keyed := false, shot != ""
+	structural, keyed, cleared := false, shot != "", false
 	byID := indexObjects(s.Objects)
 	for i, raw := range ops {
 		var head struct {
@@ -76,8 +76,12 @@ func expandShots(ops []json.RawMessage, s Scene, shot string) ([]json.RawMessage
 			if json.Unmarshal(item, &fields) != nil {
 				continue
 			}
-			if _, ok := fields["animation"]; ok {
-				return nil, nil, invalid("第 %d 个操作：不要直接写 animation，指定 shot 写进分镜，或用 update_shot、remove_shot 改分镜", i+1)
+			// Clearing (S5) is the one animation write of the assistant's own.
+			if raw, ok := fields["animation"]; ok {
+				if head.Op != "update_objects" || !onlyClear(raw) {
+					return nil, nil, invalid("第 %d 个操作：animation 只能写 clear 清除动画；按分镜改属性用 shot，改分镜用 add_shot、update_shot、remove_shot", i+1)
+				}
+				cleared = true
 			}
 			if _, ok := fields["only_in_shot"]; ok {
 				keyed = true
@@ -85,6 +89,8 @@ func expandShots(ops []json.RawMessage, s Scene, shot string) ([]json.RawMessage
 		}
 	}
 	switch {
+	case cleared && (structural || shot != ""):
+		return nil, nil, invalid("清除动画改的是所有分镜共用的值，要单独提交：不带 shot，也不和 add_shot、update_shot、remove_shot 写在同一次修改里")
 	case structural && keyed:
 		return nil, nil, invalid("add_shot、update_shot、remove_shot 改分镜列表，要单独提交，不能和 shot 或 only_in_shot 写在同一次修改里")
 	case structural:
@@ -94,6 +100,16 @@ func expandShots(ops []json.RawMessage, s Scene, shot string) ([]json.RawMessage
 		return out, nil, err
 	}
 	return ops, nil, refuseKeyedBaseWrites(ops, s)
+}
+
+// onlyClear reports whether an animation write only clears channels.
+func onlyClear(raw json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
+	}
+	_, ok := fields["clear"]
+	return ok && len(fields) == 1
 }
 
 // shotWork is the shot list and the channels as the shot operations of one
@@ -540,7 +556,8 @@ func keyAtShot(item map[string]json.RawMessage, u objectUpdate, o, shown Object,
 
 // refuseKeyedBaseWrites is the rule for writes without a shot: changing the
 // base value of a property with a channel would be overridden at every key,
-// so the tool refuses it and says what to do.
+// so the tool refuses it and says what to do. A channel cleared in the same
+// item goes, and its base value is what every shot shows.
 func refuseKeyedBaseWrites(ops []json.RawMessage, s Scene) error {
 	byID := indexObjects(s.Objects)
 	var keyed []string
@@ -568,7 +585,7 @@ func refuseKeyedBaseWrites(ops []json.RawMessage, s Scene) error {
 			o, written := s.Objects[i], writtenChannels(u)
 			for _, path := range slices.Sorted(maps.Keys(written)) {
 				spec := channelOf(path, o.Kind)
-				if _, has := o.Animation[path]; !has || spec == nil {
+				if _, has := o.Animation[path]; !has || spec == nil || u.Animation != nil && slices.Contains(u.Animation.Clear, path) {
 					continue
 				}
 				if base, err := baseValue(o, spec); err == nil && !jsonEqual(base, written[path]) {

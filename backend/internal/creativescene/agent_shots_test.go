@@ -181,7 +181,8 @@ func TestAssistantBuildsShots(t *testing.T) {
 	}{
 		"shots with a shot":          {two, []any{addShot("x", cam)}, "单独提交"},
 		"only_in_shot alone":         {"", []any{op{"op": "add_objects", "objects": []any{func() map[string]any { o := box(objectID(9), nil, 9); o["only_in_shot"] = true; return o }()}}}, "要和 shot 一起用"},
-		"raw animation":              {"", []any{op{"op": "update_objects", "updates": []any{map[string]any{"object_id": wall, "animation": map[string]any{"clear": []any{"visible"}}}}}}, "不要直接写 animation"},
+		"raw keys":                   {"", []any{op{"op": "update_objects", "updates": []any{map[string]any{"object_id": wall, "animation": map[string]any{"set": []any{map[string]any{"path": "visible", "frame": 0, "value": false}}}}}}}, "只能写 clear"},
+		"clearing at a shot":         {two, []any{clearPosition(subject, 0)}, "单独提交"},
 		"set_timeline":               {"", []any{op{"op": "set_timeline", "timeline": map[string]any{"fps": 30}}}, "add_shot"},
 		"missing shot":               {"smk_000000000000000000009", []any{moveOp(subject, 1)}, "不存在"},
 		"taken frame":                {"", []any{op{"op": "add_shot", "name": "x", "frame": 0, "camera_object_id": cam}}, "已经是分镜"},
@@ -191,6 +192,24 @@ func TestAssistantBuildsShots(t *testing.T) {
 			t.Errorf("%s: %v, want it to say %q", name, err, c.want)
 		}
 	}
+
+	// S5: cleared with its base value written, the subject stands where shot
+	// 2 had it in every shot, and can be reparented now.
+	a.mustEdit("", clearPosition(subject, -2))
+	for _, s := range a.read("").Timeline.Shots {
+		if z := a.object(s.ID, subject).Transform.Position[2]; z != -2 {
+			t.Errorf("cleared subject at %s: z %v, want -2", s.ID, z)
+		}
+	}
+	if got := a.object("", subject).Animated; len(got) != 0 {
+		t.Errorf("subject still animated %v", got)
+	}
+	a.mustEdit("", op{"op": "reparent_objects", "create_groups": []any{group(objectID(8), nil, 8)}, "moves": []any{map[string]any{"object_id": subject, "parent_id": objectID(8)}}})
+}
+
+// clearPosition clears id's position channel and puts it at z everywhere.
+func clearPosition(id string, z float64) op {
+	return op{"op": "update_objects", "updates": []any{map[string]any{"object_id": id, "transform": at(0, 0, z), "animation": map[string]any{"clear": []any{"transform.position"}}}}}
 }
 
 // The baseline check covers what the expansion touches: a shot added on an
