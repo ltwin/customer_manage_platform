@@ -89,10 +89,12 @@ export class LayerSlots {
   }
 }
 
-/** What a material row holds of a slot's textures (tables.ts): 8 floats, two vec4s, and the clip value of its first. */
+/** What a material row holds of a slot's textures (tables.ts): three vec4s, and the clip value of its first. */
 export type RowMaps = {
   /** The base colour's, normal's and ORM's layers (−1: none, or not written), then the mapping: 0 box projection, 1 UV. */
   layers: [number, number, number, number]
+  /** The emission map's layer in the colours (−1: none, or not written; scene-glb-import). */
+  emissive: number
   /** Texture units per plane unit along u and w (box projection: 1/size and aspect/size; UV: the repeat), the rotation in radians, the normal's strength. */
   transform: [number, number, number, number]
   /** clip's cutoff over the opacity, which a hit holds the base colour's alpha to (above 1: cut everywhere); 0 when nothing is cut. */
@@ -100,7 +102,7 @@ export type RowMaps = {
 }
 
 /** A row's textures where it has none: all −1, nothing cut. */
-export const NO_MAPS: RowMaps = { layers: [-1, -1, -1, 0], transform: [1, 1, 0, 1], clip: 0 }
+export const NO_MAPS: RowMaps = { layers: [-1, -1, -1, 0], emissive: -1, transform: [1, 1, 0, 1], clip: 0 }
 
 /**
  * A slot's textures as its row holds them: each key's layer once written
@@ -117,10 +119,11 @@ export function rowMaps(m: SlotMaterial, layerOf: (key: TextureKey) => number, a
   const clip = policy.alphaCutoff === null ? 0 : opacity > 0 ? Math.max(policy.alphaCutoff / opacity, 1e-6) : 2
   const at = (key: TextureKey | undefined) => (key === undefined ? -1 : layerOf(key))
   const mapping = mappingOf(t)
-  const first = keys.color ?? keys.normal ?? keys.orm
+  const first = keys.color ?? keys.normal ?? keys.orm ?? keys.emissive
   const scale = mapping.kind === 'triplanar' ? [1 / mapping.size, (first ? aspectOf(first) : 1) / mapping.size] : mapping.repeat
   return {
     layers: [at(keys.color), at(keys.normal), at(keys.orm), mapping.kind === 'uv' ? 1 : 0],
+    emissive: at(keys.emissive),
     transform: [scale[0], scale[1], mapping.rotation, mapping.strength],
     clip,
   }

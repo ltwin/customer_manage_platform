@@ -20,14 +20,17 @@ import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 //            (environment intensity, 0, 0, 0), then three columns: the
 //            matrix a hit turns a world direction by before it samples the
 //            environment (environmentLookup)
-//   material 10 vec4: (kind, double-sided, vertex colours, clip), then a
+//   material 11 vec4: (kind, double-sided, vertex colours, clip), then a
 //            vec4 a parameter (a colour's rgb, a number's x), in rowParams'
-//            order (seven at most); the 9th and 10th the slot's textures
+//            order (seven at most); the 9th to 11th the slot's textures
 //            (maps.ts RowMaps): (the base colour's, normal's and ORM's
 //            layers, −1 for none; the mapping, 0 box projection 1 UV),
-//            (scale along u and w, rotation, normal strength). clip: the
-//            cutoff over the opacity the base colour's alpha is held to, 0
-//            for none (C5c1)
+//            (scale along u and w, rotation, normal strength), (the
+//            emission map's layer in the colours, −1 for none; 0, 0, 0).
+//            clip: the cutoff over the opacity the base colour's alpha is
+//            held to, 0 for none (C5c1). vertex colours: the model's own
+//            colours on a slot without a material, or principled's
+//            vertex_color (scene-glb-import)
 //   light    4 vec4: (type, casts shadows, distance, decay),
 //            (position, or the direction towards it; spot: cos of its cone),
 //            (colour × intensity; spot: cos where its penumbra starts),
@@ -41,7 +44,7 @@ import { SceneAreaLight, sizeOf } from '../lightModel/lights.ts'
 //   (half its height, a world vector, 0); it lights toward −(width × height)
 
 export const HEADER = 8
-export const MATERIAL_ROW = 10
+export const MATERIAL_ROW = 11
 /** The row's vec4s of its textures (maps.ts RowMaps), after any preset's parameters. */
 export const MAPS_AT = 8
 export const LIGHT_ROW = 5
@@ -169,8 +172,8 @@ export class TraceTables {
     const at = (HEADER + r * MATERIAL_ROW) * 4
     f.fill(0, at, at + MATERIAL_ROW * 4)
     const kind = m.kind === 'unknown' ? UNKNOWN : m.kind === 'principled' ? PRINCIPLED : 2 + presets.indexOf(m.id)
-    f.set([kind, doubleSided ? 1 : 0, m.kind === 'principled' && m.vertexColors ? 1 : 0, maps.clip], at)
-    f.set([...maps.layers, ...maps.transform], at + MAPS_AT * 4)
+    f.set([kind, doubleSided ? 1 : 0, m.kind === 'principled' && (m.vertexColors || m.params.vertex_color === true) ? 1 : 0, maps.clip], at)
+    f.set([...maps.layers, ...maps.transform, maps.emissive], at + MAPS_AT * 4)
     const params = m.kind === 'unknown' ? unknownParams : m.params
     rowParams(m).forEach(({ key, color: isColor }, i) => {
       const o = at + (1 + i) * 4

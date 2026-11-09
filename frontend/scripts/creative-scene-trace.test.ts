@@ -614,13 +614,16 @@ test('a slot’s textures in its row: the layers once written, the mapping, and 
   const params = { color: '#ffffff', roughness: 1, metalness: 0, emissive: '#000000', emissive_intensity: 0 }
   const layerOf = (key: string) => ({ 'color:c1': 4, 'normal:n1': -1 })[key] ?? -1
   const aspectOf = (key: string) => (key === 'color:c1' ? 2 : 1)
-  assert.deepEqual(rowMaps({ kind: 'principled', params }, layerOf, aspectOf), { layers: [-1, -1, -1, 0], transform: [1, 1, 0, 1], clip: 0 }, 'a plain slot')
+  assert.deepEqual(rowMaps({ kind: 'principled', params }, layerOf, aspectOf), { layers: [-1, -1, -1, 0], emissive: -1, transform: [1, 1, 0, 1], clip: 0 }, 'a plain slot')
   const maps = { base_color: { content_revision_id: 'c1' }, normal: { content_revision_id: 'n1' } }
   const box = rowMaps({ kind: 'principled', params, texturing: { maps, mapping: { kind: 'triplanar', size_m: 0.5, rotation_deg: 90, normal_strength: 0.5 } } }, layerOf, aspectOf)
   assert.deepEqual(box.layers, [4, -1, -1, 0], 'the colour written, the normal not yet: −1, no ORM')
   assert.deepEqual(box.transform.map((v) => +v.toFixed(6)), [2, 4, +(Math.PI / 2).toFixed(6), 0.5], 'a tile 0.5 m wide, as tall as the image says (2:1)')
   const uv = rowMaps({ kind: 'principled', params, texturing: { maps, mapping: { kind: 'uv', repeat: [3, 2] } } }, layerOf, aspectOf)
   assert.deepEqual([uv.layers[3], uv.transform[0], uv.transform[1]], [1, 3, 2], 'UV: the repeat')
+  // scene-glb-import: an emission map is a layer of the colours, the base colour's own when both name one image.
+  const glow = rowMaps({ kind: 'principled', params, texturing: { maps: { emissive: { content_revision_id: 'c1' } }, mapping: { kind: 'uv' } } }, layerOf, aspectOf)
+  assert.deepEqual([glow.layers, glow.emissive], [[-1, -1, -1, 1], 4])
   const clip = (opacity: number, cutoff?: number) => rowMaps({ kind: 'principled', params: { ...params, opacity }, texturing: { maps, alpha_mode: 'clip', ...(cutoff === undefined ? {} : { alpha_cutoff: cutoff }) } }, layerOf, aspectOf).clip
   assert.equal(clip(1), 0.5, 'the default cutoff')
   assert.equal(clip(0.8, 0.4), 0.5, 'opacity × alpha ≥ cutoff, as alpha ≥ cutoff / opacity')
@@ -648,12 +651,17 @@ test('one table: a header, a material row a traced mesh, a light row a light (de
   assert.deepEqual(row(3, 0), [PRINCIPLED, 0, 0, 0])
   near(row(3, 1), [0, 1, 0, 0], 'its colour')
   near([row(3, 2)[0], row(3, 3)[0]], [0.25, 0], 'its roughness, metalness 0')
-  // A slot's textures (C5c1): the clip value in the first vec4, the layers and the mapping in the 9th and 10th.
-  tables.setMaterial(4, { kind: 'principled', params: { color: '#ffffff', roughness: 1, metalness: 0, emissive: '#000000', emissive_intensity: 0 } }, false, { layers: [3, -1, 7, 1], transform: [2, 3, 0.5, 0.8], clip: 0.625 })
+  // A slot's textures (C5c1): the clip value in the first vec4, the layers and the mapping in the 9th and 10th, the emission map's layer in the 11th.
+  tables.setMaterial(4, { kind: 'principled', params: { color: '#ffffff', roughness: 1, metalness: 0, emissive: '#000000', emissive_intensity: 0 } }, false, { layers: [3, -1, 7, 1], emissive: 5, transform: [2, 3, 0.5, 0.8], clip: 0.625 })
   assert.deepEqual(row(4, 0), [PRINCIPLED, 0, 0, 0.625])
   assert.deepEqual(row(4, MAPS_AT), [3, -1, 7, 1])
   near(row(4, MAPS_AT + 1), [2, 3, 0.5, 0.8], 'scale, rotation, strength')
+  assert.deepEqual(row(4, MAPS_AT + 2), [5, 0, 0, 0], 'the emission map’s layer in the 11th')
   assert.deepEqual(row(0, MAPS_AT), [-1, -1, -1, 0], 'none without textures')
+  assert.deepEqual(row(0, MAPS_AT + 2), [-1, 0, 0, 0])
+  // principled's vertex_color sets the vertex colours as a model's own colours do (scene-glb-import).
+  tables.setMaterial(5, { kind: 'principled', params: { color: '#ffffff', roughness: 1, metalness: 0, emissive: '#000000', emissive_intensity: 0, vertex_color: true } }, false)
+  assert.deepEqual(row(5, 0), [PRINCIPLED, 0, 1, 0])
   // Past its room: a larger buffer behind the same node, keeping the rows.
   tables.setMaterial(40, { kind: 'unknown' }, false)
   assert.deepEqual(row(0, 0), [PRINCIPLED, 1, 1, 0], 'kept when grown')

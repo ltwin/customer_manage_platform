@@ -15,7 +15,7 @@
 
 - [x] 3.1 生成器收窄：新增 `models/generator.ts:isImported`；`panels/ModelParams.tsx`、`modelEdits.ts`、`SceneEditor.tsx`、`host/executor.ts`、`creative-canvas/viewer/modelInfo.ts` 按 `language` 收窄，导入的模型显示来源信息块（原文件名、授权说明、来源页面），不显示参数和代码。完成判据：`tsc -b` 与 `oxlint` 无报错，单测覆盖信息块的数据来源
 - [x] 3.2 自发光贴图与顶点色（光栅）：`materials/maps.ts:MapKind`、`materials/images.ts`、`materials/instances.ts`、`materials/principled.ts:principledProps`、`materials/slotEdits.ts:mapInputs`、`panels/TextureFields.tsx`。先写单测：没配新字段的槽位，材质缓存键与修改前相同；配了以后自发光节点和 `vertexColors` 生效。e2e：现有材质贴图用例照常通过（AC-13），在基础体上配自发光贴图并撤销（AC-7）
-- [ ] 3.3 自发光贴图与顶点色（追踪层）：`render/trace/maps.ts`、`render/trace/hit.ts`、`render/trace/tables.ts`。先写单测：行参数带 `vertex_color`，纹理数组按四类建；e2e：实时 GI 下镜中能看到自发光贴图（单条用例）
+- [x] 3.3 自发光贴图与顶点色（追踪层）：`render/trace/maps.ts`、`render/trace/hit.ts`、`render/trace/tables.ts`。先写单测：行参数带 `vertex_color`，纹理数组按四类建；e2e：实时 GI 下镜中能看到自发光贴图（单条用例）
 
 ## 4. 前端：导入流程
 
