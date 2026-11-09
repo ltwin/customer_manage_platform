@@ -32,14 +32,17 @@ export type ShotImage = { camera: string; marker?: string; pass: ExportPass; blo
 export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string; hostError?: true }
 export type Progress = { stage: 'render' | 'upload' | 'place'; done: number; total: number }
 
-/** How many images an export makes, and why it cannot go ahead: none, or more than 48. */
+/** How many images an export makes, and why it cannot go ahead: none, more than 32 shots or cameras, or more than 48 images. */
 export function exportCount(cameras: number, passCount: number, byShot = false): { count: number; problem: string | null } {
   const count = cameras * passCount
   if (count === 0) return { count, problem: cameras === 0 ? (byShot ? '至少选一个分镜' : '至少选一台摄像机') : '至少选一种导出方式' }
+  if (cameras > maxRows) return { count, problem: `一次最多导出 ${maxRows} ${byShot ? '个分镜' : '台摄像机'}，请少选一些` }
   if (count > maxImages) return { count, problem: `一次最多导出 ${maxImages} 张，请少选一些` }
   return { count, problem: null }
 }
 
+// The server's limits on an export (contracts: shots 1–32, images 48).
+const maxRows = 32
 const maxImages = 48
 
 /** The passes the export dialog starts with: the lit look too when the view shows materials. */
