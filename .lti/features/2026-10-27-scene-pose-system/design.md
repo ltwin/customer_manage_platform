@@ -104,10 +104,10 @@ stateDiagram-v2
 |---|---|---|
 | `backend/internal/creativescene` | 时间线与通道的 schema 校验；`set_timeline` 操作和 `add_objects`、`update_objects` 的 `animation` 字段；按帧求值（供渲染指纹、助手读取、导出放置使用）；分镜导出的放置；助手工具的分镜语义 | 不渲染；不做蒙皮计算（指纹只看骨骼通道的值，不看形变后的顶点） |
 | `backend/internal/creativescene` 的求值器 | `patterns: 关键帧求值` 的 Go 实现，无 I/O 的纯函数，与 TS 实现共用测试向量 | — |
-| `backend/internal/creativecontent`、`creativemedia` | 子项 2：模型内容的导入形态；子项 3：蒙皮子集的 GLB 校验 | 不执行任何资产代码 |
-| `creativelibrary` | 子项 2：导入模型进资产库；子项 5：姿态资产 | — |
+| `backend/internal/creativecontent`、`creativemedia` | 子项 2：模型内容 `generator` 的两种形态（`three-module`、`imported`）；子项 3：蒙皮子集的 GLB 校验 | 不执行任何资产代码；不解析原文件（只校验换算后的 GLB 和图片） |
+| `creativelibrary` | 子项 2：导入模型进资产库（接口与「模型存入资产库」同在 `creativescene`，复用暂存上传、图片复核和持有关系，`creativelibrary` 只建资产）；子项 5：姿态资产 | — |
 | 平台内置资产目录 | 子项 3、5：内置素体和内置姿态的清单与文件，仿 `data: 内置贴图库`：清单随代码发布，文件放在对象存储的独立前缀下，不属于任何账号 | 不进账号配额和媒体 GC |
-| 前端 `frontend/src/creative-scene/` | 时间线面板；求值器的 TS 实现；编辑语义（关键帧状态、自动关键帧）；按分镜导出；子项 2 的导入流程（解析 GLB、拆图片、换算材质）；子项 3 的蒙皮渲染与静态化；子项 4 的姿态模式；子项 5 的姿态架 | — |
+| 前端 `frontend/src/creative-scene/` | 时间线面板；求值器的 TS 实现；编辑语义（关键帧状态、自动关键帧）；按分镜导出；子项 2 的导入流程（解析 GLB、解压几何、拆图片、换算材质，见「导入的材质换算」）与自发光贴图、顶点色的渲染（视口、材质预览、最终渲染、实时 GI 追踪层）；子项 3 的蒙皮渲染与静态化；子项 4 的姿态模式；子项 5 的姿态架 | — |
 
 ### 关键链路
 
@@ -145,6 +145,8 @@ sequenceDiagram
 
 - 图片拆出来存成账号的图片内容，复用现有的图片校验、媒体票据和 `creative_content_revision_refs` 持有关系（模型库副本已经这样持有贴图）。GLB 本身仍然不带 `images` / `textures`，服务端的 GLB 校验只需加上蒙皮子集。
 - 浏览器的解析结果不可信，服务端对 GLB 和每张图片分别复核；与几何模块的沙箱产物同一原则。
+- 子项 2 的提交是 `api: 导入模型到资产库`（`POST /creative/assets/from-glb`）：一个事务里写模型修订、图片持有关系和资产，再消费全部暂存上传。导入只进资产库；放进场景沿用从资产库放入的方式。子项 3 再给这条链路加骨骼映射。
+- 原文件不保存：存储的是换算后的 GLB 和拆出的图片。重新导入同一文件会得到另一份资产（导入不查重）。
 
 **蒙皮渲染（子项 3、4）：**
 
@@ -169,6 +171,8 @@ sequenceDiagram
 | 标准人形骨骼 | 参照 VRM 1.0 humanoid 的骨骼名与层级，**不引入** `@pixiv/three-vrm` | 只要命名和静止姿势约定，不需要 VRM 运行时（表情、弹簧骨、视线）；本 Epic 只收 `.glb` |
 | IK | 自写四肢两段式解析 IK，带极向量 | 结果确定、没有迭代抖动，满足四肢的需求；three 自带的 `CCDIKSolver` 是迭代求解，结果与初始姿态有关。脊柱等多段 IK 是后续 |
 | 骨骼映射识别 | 有 VRM 扩展时读它的「标准骨骼 → 节点下标」映射；否则按命名表（Mixamo 的 `mixamorig:` 前缀等）识别；都不行时手动指定。结果一律存成节点下标 | glTF 节点名可缺省、不唯一，不能当身份；VRM 的映射本来就按节点下标。Rigify 等命名可以之后追加命名表 |
+| 导入时的 GLB 解析与重写（子项 2） | three 的 `GLTFLoader` 解析原文件，换算后用 `GLTFExporter` 写回 GLB，再用现有的 `sandbox/inspect.ts` 预检静态子集 | 与代码模型的烘焙同一条「three 对象 → GLB → 暂存上传 → worker 复核」链路，服务端和渲染端都不变；`GLTFLoader` 已经处理 glTF 的各种写法（稀疏访问器、量化、矩阵与 TRS），比按字节改写 GLB 省事。代价是节点名按 three 的规则清洗（去掉 `:` 等），对导入的模型无影响 |
+| 压缩几何（子项 2，owner 2026-11-09） | 支持 Draco、meshopt 和 `KHR_mesh_quantization`：导入时用 three 自带的 `DRACOLoader`（解码器文件随前端发布、只在导入时加载）和 `meshoptimizer` 包的解码器解压，按未压缩存储 | 网页素材和 Blender 勾选压缩的导出很常见；存储形态仍是未压缩的静态子集，渲染、GI 和校验都不变。KTX2 / Basis 贴图不支持：要先转成图片，拒绝并提示在 Blender 里换成 PNG 或 JPEG 再导出 |
 | 平台内置资产 | 仿 `data: 内置贴图库`：清单随代码发布，文件放在对象存储的独立前缀下，用 `creativectl` 导入和检查 | 已有先例；内置资产不属于账号，ADR-001 的账号隔离不适用，读取仍要求登录 |
 
 ## 关键机制
@@ -205,6 +209,39 @@ sequenceDiagram
 - `reparent_objects` 带 `transform` 时只改基础值，关键帧保持在局部空间里不变，与 Blender 相同。改挂有位置、旋转或缩放通道的物件后，各分镜里的画面可能跳变，编辑器会提示。
 - 删除物件时，它的通道随物件一起删除。`restore_units` 恢复物件单元时，通道随所在单元一起恢复。
 
+### 导入的材质换算（子项 2）
+
+浏览器把原文件换算成存储形态，结果按项提示摄影师（导入对话框里列出被忽略或换算过的项），服务端只校验换算结果。owner 2026-11-09 定：自发光贴图和顶点色补成正式能力，其余换算或忽略；压缩几何解压后存；带骨骼的文件本子项拒绝。
+
+| 原文件里 | 处理 |
+|---|---|
+| 每个 glTF 材质 | 一个槽位。`slot_id` 由材质名生成：不合 `^[A-Za-z0-9_-]{1,64}$` 的字符换成 `_`，空名为 `material_<n>`，重名加 `_2`、`_3`；没有材质的 primitive 归入槽位 `default`。超过 32 个槽位时拒绝，提示在 Blender 里合并材质 |
+| `baseColorFactor` | RGB 换成 sRGB 的 `color`；A 写 `opacity` |
+| `metallicFactor`、`roughnessFactor` | `metalness`、`roughness` |
+| `baseColorTexture` | `maps.base_color` |
+| `metallicRoughnessTexture` | `maps.roughness`（`g`）、`maps.metalness`（`b`），同一张图 |
+| `occlusionTexture` | `maps.ao`（`r`）；与 `metallicRoughnessTexture` 是同一张图时只上传一次。`strength` 不是 1 时忽略强度并提示 |
+| `normalTexture` | `maps.normal`，`scale` 写 `mapping.normal_strength`（限制在 0–4） |
+| `emissiveFactor`、`emissiveTexture`、`KHR_materials_emissive_strength` | `emissive`、`maps.emissive`、`emissive_intensity`（限制在 0–100） |
+| `alphaMode`、`alphaCutoff` | `alpha_mode`（OPAQUE / MASK / BLEND → `opaque` / `clip` / `blend`）、`alpha_cutoff` |
+| `COLOR_0` | 用这个材质的 primitive 里有任何一个带 `COLOR_0` 时，`vertex_color = true` |
+| `doubleSided` | 忽略：模型总是双面绘制 |
+| `KHR_materials_transmission`、`ior`、`volume`（厚度）、`clearcoat`、`sheen`、`specular`、`iridescence`、`anisotropy` 的常数 | 写同名参数（`thickness` 等），超出范围的限制到范围内。这些扩展的贴图忽略并提示 |
+| `KHR_materials_unlit` | 按普通材质显示（光照会影响它），提示 |
+| `KHR_texture_transform` | 同一材质的贴图变换相同时，烘进存储 GLB 的 `TEXCOORD_0`（几何按需复制，不影响共用这份几何的其他材质），`mapping` 写 `uv`、`repeat [1,1]`；变换不同时按基础色贴图的变换烘焙，其余提示 |
+| 引用 `texCoord: 1` 的贴图 | 忽略这张贴图并提示 |
+| 有贴图的材质 | `mapping.kind = uv`；几何没有 `TEXCOORD_0` 时照常保存，按现有规则显示为三平面并提示 |
+| 图片 | PNG、JPEG、WebP 原样上传；超过图片上传上限（25 MiB 或 8192²）时在浏览器里缩到上限内重新编码。同一张图被多处引用只上传一次。KTX2 / Basis 拒绝（见「技术选型」）。不同图片超过 64 张时拒绝 |
+| Draco、meshopt、`KHR_mesh_quantization` | 解压后存 |
+| `skins`、`JOINTS_*`、`WEIGHTS_*` | 拒绝，提示蒙皮角色在后续版本支持（子项 3） |
+| 形态键（`targets`） | 丢掉，按基础形状存，提示 |
+| `animations`、`cameras`、`KHR_lights_punctual` | 丢掉，提示 |
+| 多个 `scene` | 取 `scene` 指定的那个，没有指定时取第一个 |
+| 原点 | 缺省保留原文件的原点（同 Blender 导入）；导入对话框可以勾选「原点移到底面中心」 |
+| 超出静态子集的预算（三角形 30 万、节点、换算后 16 MiB 等） | 拒绝，说明超出哪一项 |
+
+缩略图在浏览器里按换算后的材质渲染，与「存入资产库」的缩略图相同。
+
 ### 姿态的存储与换算（子项 3–5 共用，细节在子项里写）
 
 - **骨骼的身份是「不可变模型修订 + 节点下标」，名称只用于显示和辅助识别。** glTF 的节点名可以缺省，也不保证唯一，不能拿来寻址。
@@ -232,12 +269,16 @@ sequenceDiagram
   - `api: MODIFY 导出分镜`：镜头改为可以按分镜标记列出。
   - 读取场景不改接口：快照里多出 `timeline` 和 `objects[].animation`，按数据契约返回。
 - `data: 场景客户端任务` 的修改目前由 `creative-mcp-server` 的子项 `mcp-write-generate` 负责。本 Epic 不改那一节，`render_view` 和 `export_shots` 按分镜的请求字段在 `data: 场景时间线` 里定义（见 roadmap「跨 Epic 的依赖与协调」）。
-- 子项 2–6 的接口在各自起草前由 Epic 修订补全：导入接口、内置模型引用、姿态资产的存入与读取、助手工具的姿态说明。
+- 子项 2（修订 v3）：`api: ADD 导入模型到资产库`，见 `contracts.md`。读取模型的接口不变，响应里的 `generator` 按 `language` 分两种结构，模型多出可选的 `import`。
+- 子项 3–6 的接口在各自起草前由 Epic 修订补全：内置模型引用、姿态资产的存入与读取、助手工具的姿态说明。
 
 ## 数据与存储设计
 
 - **子项 1**：`data: 场景时间线`。不新增表，时间线和通道都在场景快照里；新增单元 `timeline`；通道归物件现有的两个单元。不迁移：没有这两个字段就是没有标记、没有通道。
-- **子项 2**：导入的模型是 `model` 内容，`generator.language = "imported"`，没有 `code`（data 契约已经预留）。GLB 去掉图片后存储；贴图是账号的图片内容，由模型资产的 `model.materials` 经 `creative_content_revision_refs` 持有。导入来源（原文件名、导入时间）和授权说明记在模型内容上，字段在子项 2 定。
+- **子项 2**（修订 v3）：`data: MODIFY 模型内容`、`data: MODIFY 模型资产`、`data: MODIFY 场景文档`。
+  - 导入的模型是 `model` 内容，`generator = {language: "imported", mount}`，没有代码和参数；来源与授权说明记在 `model.import`（原文件名、授权说明、来源页面），导入时间取修订的 `created_at`。
+  - 换算后的 GLB 仍在静态子集内；贴图是账号的图片内容，由导入的模型的 `materials` 经 `creative_content_revision_refs` 持有，与库副本相同。导入的模型只属于资产库，放进场景后的修改总是分叉。
+  - 材质槽补 `maps.emissive`，`principled@1` 补参数 `vertex_color`。不迁移。
 - **子项 3**：
   - 模型内容放宽到「静态子集 + 蒙皮子集」。蒙皮子集允许 `skins`、`JOINTS_0`、`WEIGHTS_0`；子项 3 定骨骼数、每顶点影响数（glTF 每组 4 个）和权重归一化的容差。
   - manifest 增加骨架摘要：骨骼列表、到标准骨骼的映射、静止姿势。
@@ -261,13 +302,14 @@ sequenceDiagram
 |---|---|---|---|
 | 自动关键帧开关的默认值（Blender 默认关闭） | 子项 1 的交互 | 子项 1 试用后由 owner 定 | 子项 1 验收 |
 | 骨骼通道是否需要压缩；真实场景的快照大小 | 子项 4 | 子项 1 统计，子项 4 决定 | 子项 4 起草 |
-| 现有贴图字段覆盖不到的 glTF 用法：自发光贴图、`TEXCOORD_1`、单张贴图的 `KHR_texture_transform`、顶点色 | 子项 2 的范围；`data: 场景文档` 的材质贴图字段 | 子项 2 起草时逐项定为补字段、换算或忽略 | 子项 2 起草 |
+| ~~现有贴图字段覆盖不到的 glTF 用法：自发光贴图、`TEXCOORD_1`、单张贴图的 `KHR_texture_transform`、顶点色~~ | 子项 2 的范围；`data: 场景文档` 的材质贴图字段 | **已决定（owner 2026-11-09，修订 v3）**：自发光贴图、顶点色补字段；贴图变换烘进 UV；第二套 UV 的贴图忽略并提示。见「导入的材质换算」 | — |
 | 单场景 64 张图片的上限对「带贴图角色 + 布景」是否够用 | 子项 2 | 用实际角色资产统计 | 子项 2 验收 |
 | 标准骨骼是否带手指；骨骼数和影响数预算 | 子项 3、4、5 | 子项 3 定版 | 子项 3 起草 |
 | 跨角色换算：标准坐标系、旋转组合规则、辅助骨与可选骨骼的处理、不支持的骨架边界 | 子项 3 的骨架数据、子项 5 的姿态资产 | 子项 3 起草前做穿刺（见「姿态的存储与换算」），结论写进子项 3 的 `discovery/research/` | 子项 3 冻结骨架数据之前 |
 | 拖动时追踪层的更新方式：refit 跟随还是暂时剔除 | 子项 3、4 | 子项 3 穿刺，验收场景见「蒙皮渲染」 | 子项 3 设计 |
 | 半合成的原片背景按什么单位挂：一张原片对应一台独立的摄像机，还是按分镜选原片 | `cg-composite` CG-24、本 Epic 子项 1 的分镜与摄像机关系 | owner 决定 | `cg-composite` K2 起草 |
 | 内置模型的引用方式（推荐直接引用 ID） | 子项 3 的数据契约 | 子项 3 起草时定 | 子项 3 起草 |
-| 导入资产的来源和授权记录 | 子项 2 | 子项 2 定字段 | 子项 2 起草 |
+| ~~导入资产的来源和授权记录~~ | 子项 2 | **已决定（修订 v3）**：`model.import` 记原文件名、授权说明（用 `asset.copyright` 预填）、来源页面；服务端不核实 | — |
+| 导入后的画面与 Blender 是否一致 | 子项 2 的换算规则 | 用几个真实素材（带 ORM、法线、自发光、透明、顶点色）在材质预览和最终渲染里与 Blender 对照，由 owner 判断 | 子项 2 验收 |
 | 助手判断不出性别时「先问」的交互：用 `cg-composite` 的助手选项卡（CG-27），还是直接在对话里问 | 子项 6 | 看 CG-27 是否已交付 | 子项 6 起草 |
 | 与 `mcp-write-generate` 修改客户端任务的先后 | 子项 1 的实现 | 按串行顺序合入，后开工的一方在先合入的代码上修改 | 子项 1 开工 |
