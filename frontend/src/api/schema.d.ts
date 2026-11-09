@@ -1191,6 +1191,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/from-glb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把浏览器换算好的外部静态 GLB 及其拆出的图片导入成模型资产，存入个人库；不查重
+         * @description GLB、缩略图和图片都先经 POST /creative/uploads 以暂存目标上传并就绪。一个事务里写模型内容（generator 为 {language: imported, mount}， 来源记在 model.import，materials 为导入的材质）、图片持有关系和资产，再消费全部上传；任一步失败整体回滚，上传保持未消费。 mount、import 不合法，materials 的键不是 GLB 的槽位或值不合 material_slots 规则，texture_upload_ids 重复或有修订没被 materials 用到， 缩略图不是 PNG，返回 400 validation_failed（details 指出字段）；materials 引用的图片不可展示返回 400 creative_image_unavailable； 分组或标签不存在返回 404；某个上传不可用返回 409 creative_upload_unavailable（details.upload_id 指出哪一个）； materials 引用的不同图片或 texture_upload_ids 超过 64 张返回 413 creative_size_limit。
+         */
+        post: operations["createCreativeAssetFromGLB"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/assets/from-scene-material": {
         parameters: {
             query?: never;
@@ -4776,7 +4796,7 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"] | components["schemas"]["CreativeUploadDetails"];
         /** @description 有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。 首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。 */
         CreativeShotKeysDetails: {
             missing: components["schemas"]["CreativeShotKeyGap"][];
@@ -4798,6 +4818,10 @@ export interface components {
         };
         CreativeLimitDetails: {
             limit: number;
+        };
+        /** @description creative_upload_unavailable 指出不可用的那个暂存上传。 */
+        CreativeUploadDetails: {
+            upload_id: string;
         };
         CreativeMaterialSlotDetails: {
             object_id: string;
@@ -11170,6 +11194,41 @@ export interface operations {
                 };
             };
             /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromGLB: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromGLBRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建导入的模型和资产；reused 总是 false */
             201: {
                 headers: {
                     [name: string]: unknown;

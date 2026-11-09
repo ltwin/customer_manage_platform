@@ -48,6 +48,18 @@ var (
 	mounts            = []string{"floor", "wall", "ceiling", "free"}
 )
 
+// UploadUnavailableError names the staged upload that is unavailable
+// (details.upload_id); errors.Is matches ErrUploadUnavailable.
+type UploadUnavailableError struct{ UploadID string }
+
+func (e *UploadUnavailableError) Error() string {
+	return fmt.Sprintf("%v: %s", ErrUploadUnavailable, e.UploadID)
+}
+func (e *UploadUnavailableError) Is(target error) bool { return target == ErrUploadUnavailable }
+func (e *UploadUnavailableError) PublicMessage() string {
+	return fmt.Sprintf("上传 %s 不可用，请重新生成", e.UploadID)
+}
+
 // ModelRef points a model instance at an immutable model revision. In a
 // stored snapshot only ContentRevisionID is set; Ref names a commit_model of
 // the same batch and is resolved before the snapshot is validated.

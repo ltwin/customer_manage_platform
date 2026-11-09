@@ -1076,6 +1076,30 @@ func (e CreativeAgentToolEffectClass) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAssetFromGLBPayloadMount.
+const (
+	CreativeAssetFromGLBPayloadMountCeiling CreativeAssetFromGLBPayloadMount = "ceiling"
+	CreativeAssetFromGLBPayloadMountFloor   CreativeAssetFromGLBPayloadMount = "floor"
+	CreativeAssetFromGLBPayloadMountFree    CreativeAssetFromGLBPayloadMount = "free"
+	CreativeAssetFromGLBPayloadMountWall    CreativeAssetFromGLBPayloadMount = "wall"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAssetFromGLBPayloadMount enum.
+func (e CreativeAssetFromGLBPayloadMount) Valid() bool {
+	switch e {
+	case CreativeAssetFromGLBPayloadMountCeiling:
+		return true
+	case CreativeAssetFromGLBPayloadMountFloor:
+		return true
+	case CreativeAssetFromGLBPayloadMountFree:
+		return true
+	case CreativeAssetFromGLBPayloadMountWall:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeBatchPayloadType.
 const (
 	Batch CreativeBatchPayloadType = "batch"
@@ -1894,22 +1918,22 @@ func (e CreativeModelImportedGeneratorLanguage) Valid() bool {
 
 // Defines values for CreativeModelImportedGeneratorMount.
 const (
-	Ceiling CreativeModelImportedGeneratorMount = "ceiling"
-	Floor   CreativeModelImportedGeneratorMount = "floor"
-	Free    CreativeModelImportedGeneratorMount = "free"
-	Wall    CreativeModelImportedGeneratorMount = "wall"
+	CreativeModelImportedGeneratorMountCeiling CreativeModelImportedGeneratorMount = "ceiling"
+	CreativeModelImportedGeneratorMountFloor   CreativeModelImportedGeneratorMount = "floor"
+	CreativeModelImportedGeneratorMountFree    CreativeModelImportedGeneratorMount = "free"
+	CreativeModelImportedGeneratorMountWall    CreativeModelImportedGeneratorMount = "wall"
 )
 
 // Valid indicates whether the value is a known member of the CreativeModelImportedGeneratorMount enum.
 func (e CreativeModelImportedGeneratorMount) Valid() bool {
 	switch e {
-	case Ceiling:
+	case CreativeModelImportedGeneratorMountCeiling:
 		return true
-	case Floor:
+	case CreativeModelImportedGeneratorMountFloor:
 		return true
-	case Free:
+	case CreativeModelImportedGeneratorMountFree:
 		return true
-	case Wall:
+	case CreativeModelImportedGeneratorMountWall:
 		return true
 	default:
 		return false
@@ -4513,6 +4537,13 @@ type CreateCreativeAgentRunRequest struct {
 	Payload CreativeAgentRunPayload `json:"payload"`
 }
 
+// CreateCreativeAssetFromGLBRequest defines model for CreateCreativeAssetFromGLBRequest.
+type CreateCreativeAssetFromGLBRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeAssetFromGLBPayload `json:"payload"`
+}
+
 // CreateCreativeAssetFromNodeRequest defines model for CreateCreativeAssetFromNodeRequest.
 type CreateCreativeAssetFromNodeRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
@@ -5503,6 +5534,29 @@ type CreativeAssetFacets struct {
 		TagId string `json:"tag_id"`
 	} `json:"tags"`
 }
+
+// CreativeAssetFromGLBPayload defines model for CreativeAssetFromGLBPayload.
+type CreativeAssetFromGLBPayload struct {
+	// GlbUploadId 换算后 GLB 的暂存上传（声明类型 model，ready）；服务端用暂存修订里自己算出的 manifest。
+	GlbUploadId string `json:"glb_upload_id"`
+
+	// Import 导入的模型的来源与授权说明；服务端不核实，只保存和显示。导入时间取内容修订的 created_at。
+	Import CreativeModelImport `json:"import"`
+
+	// Materials 缺省等同于空对象。
+	Materials CreativeSceneMaterialSlots        `json:"materials"`
+	Mount     *CreativeAssetFromGLBPayloadMount `json:"mount,omitempty"`
+	Target    CreativeUploadAssetTarget         `json:"target"`
+
+	// TextureUploadIds 拆出的图片的暂存上传（声明类型 image）；每一项的内容修订都必须被 materials 引用，导入成功时全部消费。
+	TextureUploadIds []string `json:"texture_upload_ids"`
+
+	// ThumbnailUploadId 按 materials 渲染的 256 × 256 PNG 缩略图的暂存上传（声明类型 image）。
+	ThumbnailUploadId string `json:"thumbnail_upload_id"`
+}
+
+// CreativeAssetFromGLBPayloadMount defines model for CreativeAssetFromGLBPayload.Mount.
+type CreativeAssetFromGLBPayloadMount string
 
 // CreativeAssetFromNodePayload defines model for CreativeAssetFromNodePayload.
 type CreativeAssetFromNodePayload struct {
@@ -8197,6 +8251,11 @@ type CreativeUploadCreatePayload struct {
 // CreativeUploadCreatePayloadKind model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
 type CreativeUploadCreatePayloadKind string
 
+// CreativeUploadDetails creative_upload_unavailable 指出不可用的那个暂存上传。
+type CreativeUploadDetails struct {
+	UploadId string `json:"upload_id"`
+}
+
 // CreativeUploadNodeTarget defines model for CreativeUploadNodeTarget.
 type CreativeUploadNodeTarget struct {
 	CanvasId string `json:"canvas_id"`
@@ -9872,6 +9931,11 @@ type CreateCreativeAssetFromNodeParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CreateCreativeAssetFromGLBParams defines parameters for CreateCreativeAssetFromGLB.
+type CreateCreativeAssetFromGLBParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // CreateCreativeAssetFromSceneMaterialParams defines parameters for CreateCreativeAssetFromSceneMaterial.
 type CreateCreativeAssetFromSceneMaterialParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -10572,6 +10636,9 @@ type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
 // CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
 type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
+
+// CreateCreativeAssetFromGLBJSONRequestBody defines body for CreateCreativeAssetFromGLB for application/json ContentType.
+type CreateCreativeAssetFromGLBJSONRequestBody = CreateCreativeAssetFromGLBRequest
 
 // CreateCreativeAssetFromSceneMaterialJSONRequestBody defines body for CreateCreativeAssetFromSceneMaterial for application/json ContentType.
 type CreateCreativeAssetFromSceneMaterialJSONRequestBody = CreateCreativeAssetFromSceneMaterialRequest
@@ -12724,6 +12791,32 @@ func (t *ErrorDetails) MergeCreativeShotKeysDetails(v CreativeShotKeysDetails) e
 	return err
 }
 
+// AsCreativeUploadDetails returns the union data inside the ErrorDetails as a CreativeUploadDetails
+func (t ErrorDetails) AsCreativeUploadDetails() (CreativeUploadDetails, error) {
+	var body CreativeUploadDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeUploadDetails overwrites any union data inside the ErrorDetails as the provided CreativeUploadDetails
+func (t *ErrorDetails) FromCreativeUploadDetails(v CreativeUploadDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeUploadDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeUploadDetails
+func (t *ErrorDetails) MergeCreativeUploadDetails(v CreativeUploadDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -13167,6 +13260,9 @@ type ServerInterface interface {
 	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
+	// 把浏览器换算好的外部静态 GLB 及其拆出的图片导入成模型资产，存入个人库；不查重
+	// (POST /creative/assets/from-glb)
+	CreateCreativeAssetFromGLB(c *gin.Context, params CreateCreativeAssetFromGLBParams)
 	// 把场景里物件一个槽位的材质分配复制成材质资产，存入个人库；同样的分配已在库中时只追加归类
 	// (POST /creative/assets/from-scene-material)
 	CreateCreativeAssetFromSceneMaterial(c *gin.Context, params CreateCreativeAssetFromSceneMaterialParams)
@@ -15187,6 +15283,51 @@ func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromNode(c *gin.Context) {
 	}
 
 	siw.Handler.CreateCreativeAssetFromNode(c, params)
+}
+
+// CreateCreativeAssetFromGLB operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromGLB(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAssetFromGLBParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAssetFromGLB(c, params)
 }
 
 // CreateCreativeAssetFromSceneMaterial operation middleware
@@ -20240,6 +20381,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
 	router.GET(options.BaseURL+"/creative/assets/digest-matches", wrapper.FindCreativeAssetDigestMatches)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
+	router.POST(options.BaseURL+"/creative/assets/from-glb", wrapper.CreateCreativeAssetFromGLB)
 	router.POST(options.BaseURL+"/creative/assets/from-scene-material", wrapper.CreateCreativeAssetFromSceneMaterial)
 	router.POST(options.BaseURL+"/creative/assets/from-scene-model", wrapper.CreateCreativeAssetFromSceneModel)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)

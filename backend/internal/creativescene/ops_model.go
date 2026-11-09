@@ -316,7 +316,7 @@ func isLibraryCopy(ctx context.Context, tx store.TxAccountScope, contentID strin
 func lockStaged(ctx context.Context, tx store.TxAccountScope, uploadID, kind string) (creativestaging.Staged, creativecontent.Revision, error) {
 	s, err := creativestaging.Lock(ctx, tx, uploadID)
 	if errors.Is(err, creativestaging.ErrUnavailable) {
-		return s, creativecontent.Revision{}, creativeops.Explain(ErrUploadUnavailable, "上传 %s 不可用，请重新生成", uploadID)
+		return s, creativecontent.Revision{}, &UploadUnavailableError{UploadID: uploadID}
 	}
 	if err != nil {
 		return s, creativecontent.Revision{}, err
@@ -326,7 +326,7 @@ func lockStaged(ctx context.Context, tx store.TxAccountScope, uploadID, kind str
 	}
 	r, err := creativecontent.RequireUsable(ctx, tx, s.ContentRevisionID, "display")
 	if errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativecontent.ErrUsageDenied) || errors.Is(err, creativecontent.ErrMissingRoot) {
-		return s, creativecontent.Revision{}, creativeops.Explain(ErrUploadUnavailable, "上传 %s 不可用，请重新生成", uploadID)
+		return s, creativecontent.Revision{}, &UploadUnavailableError{UploadID: uploadID}
 	}
 	return s, r, err
 }

@@ -2158,6 +2158,39 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/assets/from-glb:
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeAssetFromGLB
+      summary: 把浏览器换算好的外部静态 GLB 及其拆出的图片导入成模型资产，存入个人库；不查重
+      description: >-
+        GLB、缩略图和图片都先经 POST /creative/uploads 以暂存目标上传并就绪。一个事务里写模型内容（generator 为 {language: imported, mount}，
+        来源记在 model.import，materials 为导入的材质）、图片持有关系和资产，再消费全部上传；任一步失败整体回滚，上传保持未消费。
+        mount、import 不合法，materials 的键不是 GLB 的槽位或值不合 material_slots 规则，texture_upload_ids 重复或有修订没被 materials 用到，
+        缩略图不是 PNG，返回 400 validation_failed（details 指出字段）；materials 引用的图片不可展示返回 400 creative_image_unavailable；
+        分组或标签不存在返回 404；某个上传不可用返回 409 creative_upload_unavailable（details.upload_id 指出哪一个）；
+        materials 引用的不同图片或 texture_upload_ids 超过 64 张返回 413 creative_size_limit。
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateCreativeAssetFromGLBRequest"}
+      responses:
+        "201":
+          description: 已创建导入的模型和资产；reused 总是 false
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /creative/assets/from-scene-material:
     post:
       tags: [creative-foundation]
@@ -10188,6 +10221,7 @@ components:
         - $ref: "#/components/schemas/CreativeMaterialSlotDetails"
         - $ref: "#/components/schemas/CreativeSceneTextureDetails"
         - $ref: "#/components/schemas/CreativeShotKeysDetails"
+        - $ref: "#/components/schemas/CreativeUploadDetails"
 
     CreativeShotKeysDetails:
       type: object
@@ -10237,6 +10271,14 @@ components:
       required: [limit]
       properties:
         limit: {type: integer}
+
+    CreativeUploadDetails:
+      type: object
+      additionalProperties: false
+      required: [upload_id]
+      description: creative_upload_unavailable 指出不可用的那个暂存上传。
+      properties:
+        upload_id: {type: string}
 
     CreativeMaterialSlotDetails:
       type: object
