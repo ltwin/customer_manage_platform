@@ -205,27 +205,47 @@ SELECT 'cwnode_'||gen_random_uuid(),'canvas-a',$1,'core.image',g*10,g*5 FROM gen
 	if len(c.Nodes) != 60 || !c.More || c.Nodes[0].Kind != "empty" {
 		t.Fatalf("large nodes=%d more=%v kind=%s", len(c.Nodes), c.More, c.Nodes[0].Kind)
 	}
-	_ = empty
 
-	// The cover read stops at the sample: the plan reads at most 61 index rows
-	// however large the canvas is (V6-063 AC-03).
-	var plan string
-	if err := db.QueryRow(`EXPLAIN (ANALYZE, FORMAT JSON) SELECT id FROM creative_nodes WHERE account_id='canvas-a' AND canvas_id=$1 ORDER BY id LIMIT 61`, large.CanvasID).Scan(&plan); err != nil {
+	// The cover read stops at the sample: however large the canvas, no scan
+	// reads more than 61 rows per canvas (V6-063 AC-03). The statement is the
+	// one QueryTopPerKey sends; ANALYZE gives the planner the skewed stats
+	// under which a semi-join would rather scan the whole account.
+	if _, err := db.Exec(`ANALYZE creative_nodes`); err != nil {
 		t.Fatal(err)
 	}
-	var parsed []struct {
-		Plan struct {
-			Plans []struct {
-				NodeType   string  `json:"Node Type"`
-				ActualRows float64 `json:"Actual Rows"`
-			} `json:"Plans"`
-		} `json:"Plan"`
+	var plan string
+	if err := db.QueryRow(`EXPLAIN (ANALYZE, FORMAT JSON) SELECT t.* FROM unnest($2::text[]) WITH ORDINALITY AS k(key, pos) CROSS JOIN LATERAL (SELECT canvas_id,id,type_key,x,y,width,height,content_revision_id,parent_id FROM creative_nodes WHERE account_id = $1 AND canvas_id = k.key ORDER BY id ASC LIMIT $3) t ORDER BY k.pos`,
+		"canvas-a", []string{large.CanvasID, small.CanvasID, empty.CanvasID}, 61).Scan(&plan); err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(plan), &parsed); err != nil || len(parsed) != 1 || len(parsed[0].Plan.Plans) != 1 {
+	type planNode struct {
+		Relation   string     `json:"Relation Name"`
+		ActualRows float64    `json:"Actual Rows"`
+		Loops      float64    `json:"Actual Loops"`
+		Plans      []planNode `json:"Plans"`
+	}
+	var parsed []struct {
+		Plan planNode `json:"Plan"`
+	}
+	if err := json.Unmarshal([]byte(plan), &parsed); err != nil || len(parsed) != 1 {
 		t.Fatalf("plan %s %v", plan, err)
 	}
-	if scan := parsed[0].Plan.Plans[0]; scan.ActualRows > 61 {
-		t.Fatalf("cover read grows with the canvas: %+v", scan)
+	scans := 0
+	var walk func(planNode)
+	walk = func(n planNode) {
+		if n.Relation == "creative_nodes" {
+			scans++
+			if n.ActualRows > 61 {
+				t.Fatalf("cover read grows with the canvas: %s", plan)
+			}
+		}
+		for _, c := range n.Plans {
+			walk(c)
+		}
+	}
+	walk(parsed[0].Plan)
+	if scans != 1 {
+		t.Fatalf("cover read is not one scan per canvas: %s", plan)
 	}
 }
 

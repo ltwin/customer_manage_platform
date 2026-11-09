@@ -256,6 +256,10 @@ func (sc ReadTxAccountScope) QueryPage(ctx context.Context, table, columns, cond
 	return sc.scope.QueryPage(ctx, table, columns, cond, order, limit, offset, args...)
 }
 
+func (sc ReadTxAccountScope) QueryTopPerKey(ctx context.Context, table, columns, keyColumn string, keys []string, order []OrderBy, perKey int) (pgx.Rows, error) {
+	return sc.scope.QueryTopPerKey(ctx, table, columns, keyColumn, keys, order, perKey)
+}
+
 func (sc ReadTxAccountScope) Count(ctx context.Context, table, cond string, args ...any) (int64, error) {
 	return sc.scope.Count(ctx, table, cond, args...)
 }
