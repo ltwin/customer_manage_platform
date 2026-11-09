@@ -1,0 +1,17 @@
+[
+  { "path": "transform.position", "unit": "placement", "camera_only": false, "sample": "vector" },
+  { "path": "transform.rotation", "unit": "placement", "camera_only": false, "sample": "quaternion" },
+  { "path": "transform.scale", "unit": "placement", "camera_only": false, "sample": "vector" },
+  { "path": "visible", "unit": "placement", "camera_only": false, "sample": "discrete" },
+  { "path": "camera.focal_mm", "unit": "content", "camera_only": true, "sample": "number" },
+  { "path": "camera.f_stop", "unit": "content", "camera_only": true, "sample": "number" },
+  { "path": "camera.focus", "unit": "content", "camera_only": true, "sample": "number" },
+  { "path": "camera.exposure_compensation", "unit": "content", "camera_only": true, "sample": "number" },
+  { "path": "camera.iso", "unit": "content", "camera_only": true, "sample": "number" },
+  { "path": "camera.shutter_s", "unit": "content", "camera_only": true, "sample": "number" },
+  { "path": "camera.sensor_mm", "unit": "content", "camera_only": true, "sample": "discrete" },
+  { "path": "camera.aspect", "unit": "content", "camera_only": true, "sample": "discrete" },
+  { "path": "camera.depth_of_field", "unit": "content", "camera_only": true, "sample": "discrete" },
+  { "path": "camera.focus_object_id", "unit": "content", "camera_only": true, "sample": "discrete" },
+  { "path": "camera.exposure_mode", "unit": "content", "camera_only": true, "sample": "discrete" }
+]

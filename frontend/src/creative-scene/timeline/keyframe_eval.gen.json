@@ -1,0 +1,540 @@
+{
+ "note": "patterns: 关键帧求值 的共用测试向量；由 Python 参考实现生成，Go 与 TS 求值器都必须逐项通过（数值容差 1e-9）。value 为 null 表示通道不给值，保留基础值。改规则时先改这里。",
+ "tolerance": 1e-09,
+ "cases": [
+  {
+   "name": "单个关键帧在所有帧取它的值",
+   "kind": "number",
+   "keys": [
+    {
+     "frame": 10,
+     "value": 3.5,
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 0,
+     "value": 3.5
+    },
+    {
+     "frame": 10,
+     "value": 3.5
+    },
+    {
+     "frame": 50,
+     "value": 3.5
+    }
+   ]
+  },
+  {
+   "name": "首前与尾后取端点值",
+   "kind": "number",
+   "keys": [
+    {
+     "frame": 10,
+     "value": 1,
+     "interp": "linear"
+    },
+    {
+     "frame": 20,
+     "value": 3,
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 0,
+     "value": 1
+    },
+    {
+     "frame": 9,
+     "value": 1
+    },
+    {
+     "frame": 10,
+     "value": 1
+    },
+    {
+     "frame": 20,
+     "value": 3
+    },
+    {
+     "frame": 21,
+     "value": 3
+    },
+    {
+     "frame": 100,
+     "value": 3
+    }
+   ]
+  },
+  {
+   "name": "线性插值",
+   "kind": "number",
+   "keys": [
+    {
+     "frame": 0,
+     "value": 0,
+     "interp": "linear"
+    },
+    {
+     "frame": 10,
+     "value": 10,
+     "interp": "linear"
+    },
+    {
+     "frame": 30,
+     "value": -10,
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 0,
+     "value": 0
+    },
+    {
+     "frame": 3,
+     "value": 3.0
+    },
+    {
+     "frame": 10,
+     "value": 10
+    },
+    {
+     "frame": 15,
+     "value": 5.0
+    },
+    {
+     "frame": 25,
+     "value": -5.0
+    },
+    {
+     "frame": 30,
+     "value": -10
+    }
+   ]
+  },
+  {
+   "name": "阶跃保持左值",
+   "kind": "number",
+   "keys": [
+    {
+     "frame": 0,
+     "value": 1,
+     "interp": "constant"
+    },
+    {
+     "frame": 10,
+     "value": 5,
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 0,
+     "value": 1
+    },
+    {
+     "frame": 5,
+     "value": 1
+    },
+    {
+     "frame": 9,
+     "value": 1
+    },
+    {
+     "frame": 10,
+     "value": 5
+    }
+   ]
+  },
+  {
+   "name": "混合插值按左关键帧",
+   "kind": "number",
+   "keys": [
+    {
+     "frame": 0,
+     "value": 0,
+     "interp": "linear"
+    },
+    {
+     "frame": 10,
+     "value": 10,
+     "interp": "constant"
+    },
+    {
+     "frame": 20,
+     "value": 0,
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 5,
+     "value": 5.0
+    },
+    {
+     "frame": 10,
+     "value": 10
+    },
+    {
+     "frame": 15,
+     "value": 10
+    },
+    {
+     "frame": 20,
+     "value": 0
+    }
+   ]
+  },
+  {
+   "name": "向量逐分量插值",
+   "kind": "vector",
+   "keys": [
+    {
+     "frame": 0,
+     "value": [
+      0,
+      0,
+      0
+     ],
+     "interp": "linear"
+    },
+    {
+     "frame": 4,
+     "value": [
+      4,
+      -8,
+      2
+     ],
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 1,
+     "value": [
+      1.0,
+      -2.0,
+      0.5
+     ]
+    },
+    {
+     "frame": 2,
+     "value": [
+      2.0,
+      -4.0,
+      1.0
+     ]
+    },
+    {
+     "frame": 3,
+     "value": [
+      3.0,
+      -6.0,
+      1.5
+     ]
+    }
+   ]
+  },
+  {
+   "name": "四元数球面插值",
+   "kind": "quaternion",
+   "keys": [
+    {
+     "frame": 0,
+     "value": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "interp": "linear"
+    },
+    {
+     "frame": 10,
+     "value": [
+      0,
+      0.7071067811865476,
+      0,
+      0.7071067811865476
+     ],
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 0,
+     "value": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "frame": 2,
+     "value": [
+      0.0,
+      0.1564344650402309,
+      0.0,
+      0.9876883405951378
+     ]
+    },
+    {
+     "frame": 5,
+     "value": [
+      0.0,
+      0.38268343236508984,
+      0.0,
+      0.9238795325112868
+     ]
+    },
+    {
+     "frame": 8,
+     "value": [
+      0.0,
+      0.5877852522924731,
+      0.0,
+      0.8090169943749473
+     ]
+    },
+    {
+     "frame": 10,
+     "value": [
+      0,
+      0.7071067811865476,
+      0,
+      0.7071067811865476
+     ]
+    }
+   ]
+  },
+  {
+   "name": "四元数走最短路径",
+   "kind": "quaternion",
+   "keys": [
+    {
+     "frame": 0,
+     "value": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "interp": "linear"
+    },
+    {
+     "frame": 10,
+     "value": [
+      0,
+      -0.7071067811865476,
+      0,
+      -0.7071067811865476
+     ],
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 5,
+     "value": [
+      0.0,
+      0.38268343236508984,
+      0.0,
+      0.9238795325112868
+     ]
+    }
+   ]
+  },
+  {
+   "name": "四元数几乎相同时退化为线性",
+   "kind": "quaternion",
+   "keys": [
+    {
+     "frame": 0,
+     "value": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "interp": "linear"
+    },
+    {
+     "frame": 10,
+     "value": [
+      0,
+      1e-09,
+      0,
+      1
+     ],
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 5,
+     "value": [
+      0.0,
+      5e-10,
+      0.0,
+      1.0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "四元数接近 180 度",
+   "kind": "quaternion",
+   "keys": [
+    {
+     "frame": 0,
+     "value": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "interp": "linear"
+    },
+    {
+     "frame": 10,
+     "value": [
+      0,
+      1,
+      0,
+      0.0001
+     ],
+     "interp": "linear"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 5,
+     "value": [
+      0.0,
+      0.707071426731416,
+      0.0,
+      0.7071421338740891
+     ]
+    }
+   ]
+  },
+  {
+   "name": "离散布尔只取左值",
+   "kind": "discrete",
+   "keys": [
+    {
+     "frame": 0,
+     "value": true,
+     "interp": "constant"
+    },
+    {
+     "frame": 10,
+     "value": false,
+     "interp": "constant"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 0,
+     "value": true
+    },
+    {
+     "frame": 9,
+     "value": true
+    },
+    {
+     "frame": 10,
+     "value": false
+    },
+    {
+     "frame": 11,
+     "value": false
+    }
+   ]
+  },
+  {
+   "name": "离散字符串只取左值",
+   "kind": "discrete",
+   "keys": [
+    {
+     "frame": 0,
+     "value": "3:2",
+     "interp": "constant"
+    },
+    {
+     "frame": 5,
+     "value": "16:9",
+     "interp": "constant"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 4,
+     "value": "3:2"
+    },
+    {
+     "frame": 5,
+     "value": "16:9"
+    }
+   ]
+  },
+  {
+   "name": "离散数组只取左值",
+   "kind": "discrete",
+   "keys": [
+    {
+     "frame": 0,
+     "value": [
+      36,
+      24
+     ],
+     "interp": "constant"
+    },
+    {
+     "frame": 5,
+     "value": [
+      23.5,
+      15.6
+     ],
+     "interp": "constant"
+    }
+   ],
+   "expect": [
+    {
+     "frame": 4,
+     "value": [
+      36,
+      24
+     ]
+    },
+    {
+     "frame": 5,
+     "value": [
+      23.5,
+      15.6
+     ]
+    }
+   ]
+  },
+  {
+   "name": "空通道不给值",
+   "kind": "number",
+   "keys": [],
+   "expect": [
+    {
+     "frame": 0,
+     "value": null
+    },
+    {
+     "frame": 10,
+     "value": null
+    }
+   ]
+  }
+ ]
+}

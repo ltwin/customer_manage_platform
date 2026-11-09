@@ -408,6 +408,27 @@ func TestCreativeSceneDocumentHTTP(t *testing.T) {
 		"operations": []any{map[string]any{"op": "update_objects", "updates": []any{map[string]any{"object_id": missing, "visible": false}}}}}), 400, "validation_failed")
 	want("command on another account's", post(other, base+"/commands", move("3")), 404, "not_found")
 
+	// P8: a keyed property must have a key at every shot's frame; the gaps come
+	// back as details.missing.
+	shots := map[string]any{"op": "set_timeline", "timeline": map[string]any{"markers": []any{
+		map[string]any{"id": "smk_000000000000000000001", "name": "", "frame": 0, "camera_object_id": ""},
+		map[string]any{"id": "smk_000000000000000000002", "name": "", "frame": 10, "camera_object_id": ""}}}}
+	keyed := map[string]any{"op": "update_objects", "updates": []any{map[string]any{"object_id": a, "animation": map[string]any{
+		"set": []any{map[string]any{"path": "transform.position", "frame": 10, "value": []float64{2, 0, -3}}}}}}}
+	w = post(token, base+"/commands", map[string]any{"expected": map[string]any{"timeline": "1", "object:" + a: "3"}, "operations": []any{shots, keyed}})
+	want("key missing at a shot", w, 400, "validation_failed")
+	var gaps struct {
+		Error struct {
+			Details struct {
+				Missing []map[string]any `json:"missing"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &gaps); err != nil || len(gaps.Error.Details.Missing) != 1 ||
+		gaps.Error.Details.Missing[0]["marker_id"] != "smk_000000000000000000001" || gaps.Error.Details.Missing[0]["frame"] != 0.0 {
+		t.Fatalf("missing details %s", w.Body.String())
+	}
+
 	cameras := make([]any, 33)
 	for i := range cameras {
 		c := boxObject(fmt.Sprintf("sobj_C%020d", i), 10+i)

@@ -16,6 +16,10 @@ import { docToView, positionToView, type Quat, type Vec3 } from '../space.ts'
 
 export type Preset = 'overview' | 'top' | 'front' | 'side'
 export type RenderRequest = {
+  /** A shot: drawn at its frame through its camera. */
+  marker_id?: string
+  /** The frame a camera, viewpoint or preset is drawn at; 0 when left out. */
+  frame?: number
   camera_object_id?: string
   viewpoint?: { position: number[]; target: number[]; focal_mm: number }
   preset?: Preset

@@ -414,7 +414,7 @@ func completeRender(ctx context.Context, tx store.TxAccountScope, job Job, out R
 
 // completeExport places the exported images as the run, in a savepoint (E4):
 // the nodes exist only if the job succeeds. The shots must be exactly the
-// cameras and passes the job asked for; rows follow the job's camera order.
+// shots or cameras and passes the job asked for; rows follow the job's order.
 // An export that cannot be placed fails the job and the run goes on; a
 // staged image that is gone rolls the completion back for the host to
 // upload again.
@@ -423,17 +423,22 @@ func completeExport(ctx context.Context, tx store.TxAccountScope, job Job, out E
 	if err := json.Unmarshal(job.Request, &req); err != nil {
 		return JobResult{}, err
 	}
-	byCamera := make(map[string]ExportShot, len(out.Shots))
-	for _, s := range out.Shots {
-		byCamera[s.CameraObjectID] = s
-	}
+	rows, key := req.CameraObjectIDs, func(s ExportShot) string { return s.CameraObjectID }
 	mismatch := invalid("export.shots 须正好是任务请求的摄像机 %v 和导出方式 %v", req.CameraObjectIDs, req.Passes)
-	if len(out.Shots) != len(req.CameraObjectIDs) {
+	if len(req.MarkerIDs) > 0 {
+		rows, key = req.MarkerIDs, func(s ExportShot) string { return s.MarkerID }
+		mismatch = invalid("export.shots 须正好是任务请求的分镜 %v 和导出方式 %v", req.MarkerIDs, req.Passes)
+	}
+	byRow := make(map[string]ExportShot, len(out.Shots))
+	for _, s := range out.Shots {
+		byRow[key(s)] = s
+	}
+	if len(out.Shots) != len(rows) {
 		return JobResult{}, mismatch
 	}
-	shots := make([]ExportShot, 0, len(req.CameraObjectIDs))
-	for _, id := range req.CameraObjectIDs {
-		s, ok := byCamera[id]
+	shots := make([]ExportShot, 0, len(rows))
+	for _, id := range rows {
+		s, ok := byRow[id]
 		if !ok || len(s.Images) != len(req.Passes) {
 			return JobResult{}, mismatch
 		}

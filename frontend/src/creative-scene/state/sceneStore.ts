@@ -38,6 +38,8 @@ export type Popup =
   | { kind: 'menu'; menu: MenuKind; x: number; y: number }
   | { kind: 'delete'; x: number; y: number; ids: string[] }
   | { kind: 'rename'; x: number; y: number; id: string }
+  /** A property's key menu (Properties right-click): 插入关键帧, 清除动画. */
+  | { kind: 'key'; x: number; y: number; id: string; path: string }
 
 /**
  * What the code panel edits: a model about to be created at a point on the
@@ -113,6 +115,39 @@ export type EditorUI = {
   wireBack: DisplayMode
   /** Tab's face edit on the active object (faceEdit/state.ts); not saved with the view. */
   faceEdit: FaceEdit | null
+  /** The timeline's current frame: the viewport shows the scene evaluated there. */
+  frame: number
+  /** 已改未记录: values of keyed properties changed here without a key, by object and path; never saved. */
+  unkeyed: Record<string, Record<string, unknown>>
+  /** 自动关键帧: a change to a keyed property writes a key at the current frame. Kept per browser, off by default. */
+  autoKey: boolean
+  /**
+   * 首次插帧的基线 (Epic design): the value a property had before it was first
+   * changed here without a channel, by object and path, for the first key to
+   * keep in the other shots.
+   */
+  baseline: Record<string, Record<string, unknown>>
+}
+
+const autoKeyKey = 'scene.autoKey'
+
+/** Another frame or shot: changes waiting there for a key, and the baselines, are dropped (design「编辑分流」). */
+export const atFrame = (frame: number): Pick<EditorUI, 'frame' | 'unkeyed' | 'baseline'> => ({ frame, unkeyed: {}, baseline: {} })
+
+export function readAutoKey(): boolean {
+  try {
+    return localStorage.getItem(autoKeyKey) === 'on'
+  } catch {
+    return false
+  }
+}
+
+export function writeAutoKey(on: boolean) {
+  try {
+    localStorage.setItem(autoKeyKey, on ? 'on' : 'off')
+  } catch {
+    // Only a preference of this browser.
+  }
 }
 
 export function createEditorStore(device: DevicePreference, saved: SavedView | null = null) {
@@ -149,6 +184,10 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     display: saved?.display ?? null,
     wireBack: saved?.wireBack ?? 'solid',
     faceEdit: null,
+    frame: 0,
+    unkeyed: {},
+    autoKey: readAutoKey(),
+    baseline: {},
   }))
 }
 

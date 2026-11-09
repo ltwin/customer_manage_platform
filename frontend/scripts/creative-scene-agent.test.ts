@@ -514,6 +514,20 @@ function exportJob(request: Record<string, unknown> = { camera_object_ids: ['cam
   return { id: 'csj_1', document_id: 'cwdoc_1', kind: 'export_shots', request, attempt: 0, claim_token: 'tok_1', lease_until: '', deadline: '' }
 }
 
+test('an export job by shot draws the shots and completes with them per shot (scene-timeline-shots)', async () => {
+  const page = new FakePage()
+  const blob = new Blob(['png'], { type: 'image/png' })
+  page.exported = { ok: true, revision: '9', images: [{ camera: 'camA', marker: 'smk_1', pass: 'clay', blob }, { camera: 'camB', marker: 'smk_2', pass: 'clay', blob }] }
+  const out = await new SceneExecutor(page.deps()).run(exportJob({ marker_ids: ['smk_1', 'smk_2'], passes: ['clay'], canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }))
+  assert.equal(out.state, 'completed')
+  assert.deepEqual(page.exports, [{ documentID: 'cwdoc_1', plan: { cameraObjectIDs: [], markerIDs: ['smk_1', 'smk_2'], passes: ['clay'] } }])
+  assert.deepEqual(page.uploads.map((u) => u.name), ['smk_1-clay.png', 'smk_2-clay.png'])
+  assert.deepEqual(page.completes[0].payload.export?.shots, [
+    { marker_id: 'smk_1', images: [{ pass: 'clay', upload_id: 'ccup_1' }] },
+    { marker_id: 'smk_2', images: [{ pass: 'clay', upload_id: 'ccup_2' }] },
+  ])
+})
+
 test('an export job draws the plan, uploads every image and completes with them per camera', async () => {
   const page = new FakePage()
   const out = await new SceneExecutor(page.deps()).run(exportJob())

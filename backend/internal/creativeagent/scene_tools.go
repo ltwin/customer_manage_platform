@@ -67,10 +67,12 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		return &schema.ToolInfo{
 			Name: readSceneTool,
 			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
-				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。" +
+				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。" +
+				"有分镜时带 timeline（分镜列表：id、name、frame、绑定的摄像机）；物件的 animated 列出按分镜记了关键帧的属性，不带 shot 读到的是它们的默认状态，带 shot 读那个分镜里的样子（at_shot）；shot_key_gaps 是某个分镜帧上缺关键帧的属性，下次写它们时一并补上。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。" +
 				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；模型 uv 为 false 表示有网格没有 UV，uv_fallback_slots 里选了 uv 映射的槽位因此按三平面显示；灯光带 shadow：on 投影、off 不投影（没开投影或灯被隐藏）、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":  doc,
+				"shot":         str("分镜 ID：按这个分镜的样子读物件"),
 				"object_ids":   strs("只读这些物件的完整信息，最多 200 个"),
 				"include_code": strs("附上这些模型修订（model.content_revision_id）的代码，最多 3 个"),
 			}),
@@ -136,12 +138,18 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"参考值：晴天 15、阴天 12–13、日落 9–12、蓝调时刻 5–8、城市夜景 3–5、月光 −3、银河 −7；render.exposure_ev100 只管临时视点和预设取景的手动曝光，不影响摄像机。" +
 				"其他天空用 exposure_ev：太阳高于 30° 为 0，15°–30° 为 +1，5°–15° 为 +2，日落前后 +2～+3；只有灯光的室内 0～+1。配好材质、打好光后用 render_view 的 mode:lit 回看，过暗或过曝调曝光。" +
 				"撤回改动：单独一项 {op:\"revert_run\", run_id:\"previous\"(本会话上次改过本场景的运行)|运行 ID, object_ids?}，不需要基线，之后被别人改过的跳过并列出。" +
+				"分镜：同一个布景里的多个镜头，每个分镜是时间线上的一帧，从绑定的摄像机拍；物件的 transform、visible 和摄像机的 focal_mm、sensor_mm、aspect、depth_of_field、f_stop、focus、focus_object_id、iso、shutter_s、exposure_mode、exposure_compensation 可以每个分镜不同。" +
+				"add_shot{id?（smk_+21 位，省略自动生成，结果 added_shots 返回）, name, frame?（省略为最后一个分镜之后 10 帧）, camera_object_id, copy_from?}：不带 copy_from 时新分镜取默认状态，带 copy_from 时与那个分镜完全相同；" +
+				"update_shot{id, name?, frame?, camera_object_id?}（改帧号时画面跟着走）；remove_shot{id}；这三项要单独提交，不能和 shot 参数同用，可以几项一起。" +
+				"带 shot（分镜 ID）提交时，update_objects 写到的上述属性只改这个分镜，其他分镜不变（look_at 和改挂按这个分镜里的位置算）；add_objects 的条目写 only_in_shot:true 时物件只在这个分镜出现（人片、道具）。" +
+				"不带 shot 时改的是所有分镜共用的布景；写到 read_scene 里 animated 列出的属性会被拒绝，要所有分镜一致先用 update_objects 的 animation:{clear:[路径]} 清除动画。" +
 				"摆好摄像机后先用 render_view 按摄像机回看确认构图，再用 export_shots 导出。新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
 				"based_on_revision": base,
+				"shot":              str("分镜 ID：把 update_objects 写到的可按分镜变化的属性只写进这个分镜"),
 				"operations": {Type: schema.Array, Required: true, Desc: "1 到 50 项", ElemInfo: &schema.ParameterInfo{Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
-					"op": {Type: schema.String, Required: true, Enum: []string{"add_objects", "update_objects", "remove_objects", "reparent_objects", "set_environment", "set_render", "set_instance_model", "revert_run"}},
+					"op": {Type: schema.String, Required: true, Enum: []string{"add_objects", "update_objects", "remove_objects", "reparent_objects", "set_environment", "set_render", "set_instance_model", "add_shot", "update_shot", "remove_shot", "revert_run"}},
 				}}},
 			}),
 		}, nil
@@ -180,24 +188,27 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	case exportShotsTool:
 		return &schema.ToolInfo{
 			Name: exportShotsTool,
-			Desc: "把场景里的摄像机导出成图，放到当前画布上这个场景节点的右侧：每台摄像机一行，clay（白模：固定的工作室光，不受环境和灯光影响，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
+			Desc: "把场景的分镜导出成图，放到当前画布上这个场景节点的右侧：有分镜时每个分镜一行（按分镜的帧和它绑定的摄像机出图，标题用分镜名），没有分镜时每台摄像机一行；clay（白模：固定的工作室光，不受环境和灯光影响，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
 				"图在创作者的页面渲染，材质光照按场景的渲染器，白模和线稿按工作台；长边按 render.resolution（缺省 2k 即 2048）；4K、8K 的白模和材质光照是 JPEG，线稿是 PNG。调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
-				"camera_object_ids": strs("要导出的摄像机，省略为全部摄像机（按物件顺序），最多 32 台"),
+				"shots":             strs("要导出的分镜 ID，省略时有分镜导出全部分镜（按帧序），没有分镜导出全部摄像机；最多 32 个；未绑定摄像机的分镜会被列出并拒绝"),
+				"camera_object_ids": strs("没有分镜的场景按摄像机导出：省略为全部摄像机（按物件顺序），最多 32 台；不能和 shots 同用"),
 				"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line；配了材质和灯光时加 lit", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line", "lit"}}},
 			}),
 		}, nil
 	default:
 		return &schema.ToolInfo{
 			Name: renderViewTool,
-			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光）出图，检查材质和打光；物理天空下摄像机按自己的曝光（环境测光，或 iso、shutter_s、f_stop 手动），临时视点和预设取景按 render 的曝光设置（默认环境测光），所以它们的亮度可能和摄像机拍出来的不同，手动曝光的摄像机尤其如此：判断最终画面的明暗要按那台摄像机回看；结果的 exposure 写着这张截图怎么曝光（by:camera|default_camera，mode，环境测光的 compensation 或手动的 ev100）。三选一：场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）。" +
+			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光）出图，检查材质和打光；物理天空下摄像机按自己的曝光（环境测光，或 iso、shutter_s、f_stop 手动），临时视点和预设取景按 render 的曝光设置（默认环境测光），所以它们的亮度可能和摄像机拍出来的不同，手动曝光的摄像机尤其如此：判断最终画面的明暗要按那台摄像机回看；结果的 exposure 写着这张截图怎么曝光（by:camera|default_camera，mode，环境测光的 compensation 或手动的 ev100）。四选一：分镜（shot，这个分镜的样子，从它绑定的摄像机拍）、场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）；后三种可带 frame 看某一帧（缺省 0）。" +
 				"截图与编辑器视口的白模或最终渲染、对应的导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
 				"截图 mode:lit 按场景的渲染器（render.engine）画，素模按工作台；长边 1024；实时 GI 要多帧累积，比工作台慢。截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,
+				"shot":             str("分镜 ID"),
 				"camera_object_id": str("摄像机物件 ID"),
-				"depth_of_field":   {Type: schema.Boolean, Desc: "按这台摄像机的光圈和对焦虚化；只能与 camera_object_id 一起用"},
+				"frame":            {Type: schema.Integer, Desc: "camera_object_id、viewpoint、preset 看第几帧，缺省 0；shot 自带帧"},
+				"depth_of_field":   {Type: schema.Boolean, Desc: "按这台摄像机的光圈和对焦虚化；只能与 shot 或 camera_object_id 一起用"},
 				"viewpoint": {Type: schema.Object, Desc: "临时视点，画幅 4:3", SubParams: map[string]*schema.ParameterInfo{
 					"position": numbers, "target": numbers,
 					"focal_mm": {Type: schema.Number, Required: true, Desc: "8 到 800"},
@@ -290,6 +301,7 @@ func sceneConsentInTx(ctx context.Context, tx store.TxAccountScope, consentID st
 func (h *runtimeHandler) readScene(ctx context.Context, raw string) (any, error) {
 	var args struct {
 		DocumentID  string   `json:"document_id"`
+		Shot        string   `json:"shot"`
 		ObjectIDs   []string `json:"object_ids"`
 		IncludeCode []string `json:"include_code"`
 	}
@@ -305,7 +317,7 @@ func (h *runtimeHandler) readScene(ctx context.Context, raw string) (any, error)
 		if err != nil {
 			return err
 		}
-		out, err = creativescene.AgentReadInTx(ctx, tx, creativescene.ReadInput{DocumentID: args.DocumentID, ObjectIDs: args.ObjectIDs,
+		out, err = creativescene.AgentReadInTx(ctx, tx, creativescene.ReadInput{DocumentID: args.DocumentID, Shot: args.Shot, ObjectIDs: args.ObjectIDs,
 			IncludeCode: args.IncludeCode, ConversationRuns: runs, MaxBytes: h.service.limits.ToolResultBytes - 1024})
 		return err
 	})
@@ -371,6 +383,7 @@ func (h *runtimeHandler) editScene(ctx context.Context, step, raw string) (any, 
 	var args struct {
 		DocumentID string            `json:"document_id"`
 		BasedOn    revisionArg       `json:"based_on_revision"`
+		Shot       string            `json:"shot"`
 		Operations []json.RawMessage `json:"operations"`
 	}
 	if err := strictArguments(raw, &args); err != nil {
@@ -384,7 +397,7 @@ func (h *runtimeHandler) editScene(ctx context.Context, step, raw string) (any, 
 		if err != nil {
 			return nil, err
 		}
-		return creativescene.AgentEditInTx(ctx, tx, creativescene.EditInput{DocumentID: args.DocumentID, RunID: h.held.RunID,
+		return creativescene.AgentEditInTx(ctx, tx, creativescene.EditInput{DocumentID: args.DocumentID, RunID: h.held.RunID, Shot: args.Shot,
 			BasedOn: int64(args.BasedOn), Operations: args.Operations, ConversationRuns: runs,
 			// A texture is one the run may read, or one a readable material holds.
 			ReadableImage: func(ctx context.Context, tx store.TxAccountScope, id string) (bool, error) {
@@ -443,9 +456,11 @@ func (h *runtimeHandler) writeModel(ctx context.Context, step, raw string) (any,
 func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any, error) {
 	var args struct {
 		DocumentID     string                   `json:"document_id"`
+		Shot           string                   `json:"shot"`
 		CameraObjectID string                   `json:"camera_object_id"`
 		Viewpoint      *creativescene.Viewpoint `json:"viewpoint"`
 		Preset         string                   `json:"preset"`
+		Frame          int                      `json:"frame"`
 		DepthOfField   bool                     `json:"depth_of_field"`
 		Mode           string                   `json:"mode"`
 	}
@@ -454,16 +469,18 @@ func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any,
 	}
 	return h.parkOnJob(ctx, func(ctx context.Context, tx store.TxAccountScope) (creativescene.Job, any, error) {
 		job, err := creativescene.CreateRenderJobInTx(ctx, tx, creativescene.RenderInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step,
-			CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset, Mode: args.Mode, DepthOfField: args.DepthOfField})
+			MarkerID: args.Shot, CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset, Frame: args.Frame, Mode: args.Mode, DepthOfField: args.DepthOfField})
 		return job, nil, err
 	}, raw)
 }
 
-// exportShots places the scene's camera images on the run's canvas, beside
-// the scene node; the nodes are made when the page completes the job.
+// exportShots places the scene's shot (or camera) images on the run's
+// canvas, beside the scene node; the nodes are made when the page completes
+// the job.
 func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any, error) {
 	var args struct {
 		DocumentID      string   `json:"document_id"`
+		Shots           []string `json:"shots"`
 		CameraObjectIDs []string `json:"camera_object_ids"`
 		Passes          []string `json:"passes"`
 	}
@@ -475,7 +492,7 @@ func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any
 		if err := tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", h.held.ConversationID).Scan(&canvasID); err != nil {
 			return creativescene.Job{}, nil, err
 		}
-		in := creativescene.ExportJobInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step, CameraObjectIDs: args.CameraObjectIDs, Passes: args.Passes}
+		in := creativescene.ExportJobInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step, MarkerIDs: args.Shots, CameraObjectIDs: args.CameraObjectIDs, Passes: args.Passes}
 		if canvasID != nil {
 			in.CanvasID = *canvasID
 		}
@@ -569,6 +586,7 @@ func renderSucceeded(ctx context.Context, tx store.TxAccountScope, job creatives
 // (the model looks with render_view).
 func exportSucceeded(export creativescene.ExportResult) any {
 	type node struct {
+		Shot           *string                        `json:"shot,omitempty"`
 		CameraObjectID string                         `json:"camera_object_id"`
 		Pass           string                         `json:"pass"`
 		NodeID         string                         `json:"node_id"`
@@ -576,7 +594,7 @@ func exportSucceeded(export creativescene.ExportResult) any {
 	}
 	nodes := make([]node, 0, len(export.Nodes))
 	for _, n := range export.Nodes {
-		nodes = append(nodes, node{n.CameraObjectID, n.Pass, n.NodeID, n.Lens})
+		nodes = append(nodes, node{n.MarkerID, n.CameraObjectID, n.Pass, n.NodeID, n.Lens})
 	}
 	return map[string]any{"status": "succeeded", "scene_revision": int64(export.SceneRevision), "change_id": export.ChangeID, "nodes": nodes}
 }

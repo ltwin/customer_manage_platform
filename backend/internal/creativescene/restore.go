@@ -1,6 +1,7 @@
 package creativescene
 
 import (
+	"maps"
 	"slices"
 	"sort"
 
@@ -9,9 +10,9 @@ import (
 
 // restoreRequest is restore_units' unit list grouped by what it names.
 type restoreRequest struct {
-	environment, render bool
-	objects             map[string]*listedUnits
-	ids                 []string // sorted, for deterministic errors and output
+	environment, render, timeline bool
+	objects                       map[string]*listedUnits
+	ids                           []string // sorted, for deterministic errors and output
 }
 
 type listedUnits struct{ placement, content bool }
@@ -27,6 +28,9 @@ func parseRestoreUnits(units []string) (restoreRequest, error) {
 			continue
 		case unitRender:
 			r.render = true
+			continue
+		case unitTimeline:
+			r.timeline = true
 			continue
 		}
 		id, content, ok := objectOfUnit(u)
@@ -62,6 +66,9 @@ func restoreTouched(old, cur Scene, units []string) ([]string, error) {
 	}
 	if r.render {
 		out = append(out, unitRender)
+	}
+	if r.timeline {
+		out = append(out, unitTimeline)
 	}
 	oldIdx, curIdx := indexObjects(old.Objects), indexObjects(cur.Objects)
 	existence := false
@@ -106,6 +113,10 @@ func restoreUnits(old, cur Scene, units []string) (Scene, creativedocument.Chang
 		next.Render = old.Render
 		c.change(unitRender)
 	}
+	if r.timeline {
+		next.Timeline = old.Timeline
+		c.change(unitTimeline)
+	}
 	oldIdx, curIdx := indexObjects(old.Objects), indexObjects(cur.Objects)
 	added, deleted := map[string]bool{}, map[string]bool{}
 	for _, id := range r.ids {
@@ -117,10 +128,12 @@ func restoreUnits(old, cur Scene, units []string) (Scene, creativedocument.Chang
 			o, src := &next.Objects[ci], old.Objects[oi]
 			if l.placement {
 				o.Name, o.Transform, o.Visible, o.Locked = src.Name, src.Transform, src.Visible, src.Locked
+				restoreChannels(o, src, false)
 				c.change(placementUnit(id))
 			}
 			if l.content {
 				o.Primitive, o.Model, o.MaterialSlots, o.Light, o.Camera = src.Primitive, src.Model, src.MaterialSlots, src.Light, src.Camera
+				restoreChannels(o, src, true)
 				c.change(contentUnit(id))
 			}
 		case inOld:
@@ -139,6 +152,17 @@ func restoreUnits(old, cur Scene, units []string) (Scene, creativedocument.Chang
 		return Scene{}, creativedocument.Changes{}, err
 	}
 	return next, c.result(), nil
+}
+
+// restoreChannels puts back the channels of o that live in one of its units
+// (content or placement) as src has them, leaving the other unit's alone.
+func restoreChannels(o *Object, src Object, content bool) {
+	anim := unitChannels(*o, !content)
+	maps.Copy(anim, unitChannels(src, content))
+	o.Animation = anim
+	if len(anim) == 0 {
+		o.Animation = nil
+	}
 }
 
 // resolveTree builds the final object set F (cur minus deleted, plus added

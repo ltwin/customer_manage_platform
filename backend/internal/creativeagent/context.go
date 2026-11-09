@@ -433,12 +433,15 @@ type canvasNodeContext struct {
 // recorded; state is current, stale (the scene changed what the image shows)
 // or unavailable.
 type exportSourceContext struct {
-	SceneDocumentID string                          `json:"scene_document_id"`
-	SceneRevision   creativeops.Revision            `json:"scene_revision"`
-	CameraObjectID  string                          `json:"camera_object_id"`
-	Pass            string                          `json:"pass"`
-	Lens            *creativecanvas.SceneExportLens `json:"lens"`
-	State           string                          `json:"state"`
+	SceneDocumentID string               `json:"scene_document_id"`
+	SceneRevision   creativeops.Revision `json:"scene_revision"`
+	// MarkerID is null for an export by camera, whose frame is 0.
+	MarkerID       *string                         `json:"marker_id"`
+	Frame          int                             `json:"frame"`
+	CameraObjectID string                          `json:"camera_object_id"`
+	Pass           string                          `json:"pass"`
+	Lens           *creativecanvas.SceneExportLens `json:"lens"`
+	State          string                          `json:"state"`
 }
 
 type canvasContext struct {
@@ -496,7 +499,11 @@ func canvasView(c creativecanvas.Canvas, offset, limit int) canvasContext {
 			node.Versions = n.Versions.Count
 		}
 		if b, ok := creativecanvas.SceneExportOf(n); ok {
-			node.ExportSource = &exportSourceContext{SceneDocumentID: b.SceneDocumentID, SceneRevision: b.SceneRevision, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Lens: b.Lens, State: n.BasedOnState}
+			var marker *string
+			if b.MarkerID != "" {
+				marker = &b.MarkerID
+			}
+			node.ExportSource = &exportSourceContext{SceneDocumentID: b.SceneDocumentID, SceneRevision: b.SceneRevision, MarkerID: marker, Frame: b.Frame, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Lens: b.Lens, State: n.BasedOnState}
 		}
 		out.Nodes = append(out.Nodes, node)
 	}
@@ -849,7 +856,7 @@ func contextToolInfo(name string) *schema.ToolInfo {
 		params["offset"] = integer("文字起始字节，初次读取填 0")
 		params["limit"] = integer("文字最多字节数，1 到 8192；图片也填写此参数")
 	case readCanvasTool:
-		desc = "按页读取本会话画布：每个节点的类型、标题、位置尺寸、内容修订 ID、文字节点正文开头、生成设置（提示词、模型、参数、draft_revision）、版本数和生成状态，以及相关连线（source 是 target 的参考）。场景导出的图另带 export_source：来自哪台摄像机、哪种导出方式、导出时的镜头 lens，以及与场景是否还一致（state）。图片和完整正文用 read_asset 读取。"
+		desc = "按页读取本会话画布：每个节点的类型、标题、位置尺寸、内容修订 ID、文字节点正文开头、生成设置（提示词、模型、参数、draft_revision）、版本数和生成状态，以及相关连线（source 是 target 的参考）。场景导出的图另带 export_source：来自哪个分镜（marker_id、frame；按摄像机导出时 marker_id 为 null）、哪台摄像机、哪种导出方式、导出时的镜头 lens，以及与场景是否还一致（state）。图片和完整正文用 read_asset 读取。"
 		params["offset"] = integer("分页起点，首次填 0")
 		params["limit"] = integer("节点数量，1 到 50")
 	case readHistoryTool:

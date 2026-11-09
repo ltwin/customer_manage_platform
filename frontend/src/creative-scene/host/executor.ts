@@ -291,9 +291,12 @@ async function uploadOne(deps: Pick<BakeDeps, 'upload'>, file: File, signal: Abo
 }
 
 function exportPlan(request: Record<string, unknown>): ExportPlan | null {
-  const { camera_object_ids: cameras, passes } = request
+  const { camera_object_ids: cameras, marker_ids: markers, passes } = request
   const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')
-  if (!strings(cameras) || !strings(passes)) return null
+  if (!strings(passes)) return null
+  // By shot or by camera, never both (data: 场景时间线「客户端任务的分镜字段」).
+  if (strings(markers)) return { cameraObjectIDs: [], markerIDs: markers, passes: passes as ExportPass[] }
+  if (!strings(cameras)) return null
   return { cameraObjectIDs: cameras, passes: passes as ExportPass[] }
 }
 

@@ -5,7 +5,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { currentAccount } from '../creative-canvas/editor/api.ts'
 import { discardCandidate, uploadGenerated, type Upload } from '../creative-canvas/editor/media.ts'
 import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders } from './agentActivity.ts'
-import { exportScene, readScene, type ObjectUpdate, type Scene, type SceneObject } from './api.ts'
+import { exportScene, readScene, type Marker, type ObjectUpdate, type Scene, type SceneObject } from './api.ts'
 import { builtins } from './builtins/catalog.ts'
 import { clearSceneContext, setSceneContext } from './context.ts'
 import { clearParent, dropRows, groupSelection, parentToActive, ungroupSelection, type DropPlace } from './grouping.ts'
@@ -13,7 +13,7 @@ import { clearingFaces, clearOp, duplicate, groundBuiltin, lightLabels, localPos
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
-import { ExportDialog } from './panels/ExportDialog.tsx'
+import { ExportDialog, type UnkeyedChoice } from './panels/ExportDialog.tsx'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
 import { readPreference, viewDirections, writePreference, type DevicePreference } from './input/navigation.ts'
 import { boxSelect, click, emptySelection, invertSelection, listClick, prune, selectAll, topmost } from './input/selection.ts'
@@ -37,7 +37,7 @@ import {
   type FaceSelection,
 } from './faceEdit/state.ts'
 import { useFaceMeshes } from './faceEdit/useFaceMeshes.ts'
-import { newIntentID } from './ids.ts'
+import { newIntentID, newMarkerID } from './ids.ts'
 import { forkPlan, ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
 import type { SlotCount } from './models/faces.ts'
@@ -67,7 +67,7 @@ import { assetMaterial } from '../creative-canvas/viewer/modelInfo.ts'
 import { materialEntry } from './materials/catalog.ts'
 import { openScene } from './session.ts'
 import { cameraDefaults, localContent, localRevision, type WireOp } from './state/apply.ts'
-import { contextOf, createEditorStore, displayModes, displayOf, tabAfterSelection, toggleWireframe, type MenuKind, type PropertiesTab } from './state/sceneStore.ts'
+import { atFrame, contextOf, createEditorStore, writeAutoKey, displayModes, displayOf, tabAfterSelection, toggleWireframe, type MenuKind, type PropertiesTab } from './state/sceneStore.ts'
 import { UndoStack } from './state/undo.ts'
 import type { LocalTransform, Mode } from './transform/modal.ts'
 import { materialTarget, saveTarget, whenShown, type LibraryAsset, type MaterialTarget, type SaveRequest, type SaveTarget } from './saveModel.ts'
@@ -77,6 +77,10 @@ import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
 import { selectShadowCasters } from './objects/shadowBudget.ts'
 import { newCameraExposure } from './world/exposure.ts'
+import { evaluateAt, withUnkeyedScene } from './timeline/evaluate.ts'
+import { channelLabel } from './timeline/channels.ts'
+import { addShot, clearChannel, deleteKeysAt, duplicateShot, forgetUnits, insertKeys, keyStateOf, moveShot, nextShotFrame, onlyInShot, pruneEdits, removeShot, routeEdit, shotTitle } from './timeline/keys.ts'
+import { TimelinePanel } from './timeline/TimelinePanel.tsx'
 import './scene.css'
 
 /** The properties area's tabs, in Blender's order. */
@@ -248,7 +252,33 @@ export default function SceneEditor({
   const placeholders = useMemo(() => jobPlaceholders(agent.jobs), [agent.jobs])
 
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
-  const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
+  // The scene at the timeline's frame (design「求值放在哪里」): evaluated once per snapshot and frame, the unkeyed values
+  // over it. Document structure and channels are read from s.view; what an edit computes from the picture, from shown.
+  const stored: Scene | undefined = u.preview?.scene ?? s.view?.scene
+  const evaluated = useMemo(() => stored && evaluateAt(stored, u.frame), [stored, u.frame])
+  const shown = useMemo(() => evaluated && (u.preview ? evaluated : withUnkeyedScene(evaluated, u.unkeyed)), [evaluated, u.preview, u.unkeyed])
+  const shownObjects = useMemo(() => shown?.objects ?? [], [shown])
+  // Unkeyed values and baselines the scene has no use for any more go: a channel gone or added, an undo back to the baseline.
+  useEffect(() => {
+    const view = s.view?.scene
+    if (!view) return
+    const t = ui.getState()
+    const next = pruneEdits(view, t.unkeyed, t.baseline)
+    if (next.unkeyed !== t.unkeyed || next.baseline !== t.baseline) ui.setState(next)
+  }, [s.view, ui])
+  // Another tab or the assistant wrote the unit: its value before is no longer the base's.
+  useEffect(() => {
+    const stop = session.observe({
+      moved: (units) => {
+        const { baseline } = ui.getState()
+        const next = forgetUnits(baseline, units)
+        if (next !== baseline) ui.setState({ baseline: next })
+      },
+    })
+    return () => {
+      stop()
+    }
+  }, [session, ui])
   const localModels = useStore(modelCache.local)
   const knownModels = useStore(modelCache.known)
   const failedModels = useStore(modelCache.failed)
@@ -268,7 +298,7 @@ export default function SceneEditor({
   const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelOf(faceObject), modelCache)
   /** A model instance whose model can be drawn; anything else has no model to fail. */
   const usableModel = (o: SceneObject | undefined) => modelOf(o)?.usable !== false
-  const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
+  const shownActive = (active && shownObjects.find((o) => o.id === active.id)) ?? null
   const shownModel = shownActive?.model?.content_revision_id
   // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
   const hasObject = !!shownActive || selected.length > 0
@@ -449,9 +479,19 @@ export default function SceneEditor({
   const warnAgent = (ids: readonly string[]) => {
     if (ids.some((id) => highlighted.has(id))) notify(agentNotice)
   }
+  /**
+   * Every edit goes through the timeline first (design「编辑分流」): a keyed
+   * property takes a key or waits unkeyed, a first change of one without a
+   * channel keeps its value before for I. Nothing may be left to send.
+   */
   const edit = (ops: WireOp[], label: string, options?: Parameters<typeof session.edit>[2]) => {
-    const out = session.edit(ops, label, options)
-    if (out) warnAgent(editedObjects(ops))
+    const view = session.state.view?.scene
+    const t = ui.getState()
+    const routed = view ? routeEdit(view, ops, t) : { ops, unkeyed: t.unkeyed, baseline: t.baseline }
+    if (routed.unkeyed !== t.unkeyed || routed.baseline !== t.baseline) ui.setState({ unkeyed: routed.unkeyed, baseline: routed.baseline })
+    if (!routed.ops.length) return null
+    const out = session.edit(routed.ops, label, options)
+    if (out) warnAgent(editedObjects(routed.ops))
     return out
   }
   const select = (ids: string[]) => ui.setState({ selection: { selected: ids, active: ids.at(-1) ?? null } })
@@ -459,20 +499,28 @@ export default function SceneEditor({
   const movable = () => topmost(selected, objects).filter((id) => !byID.get(id)?.locked)
   const label = (verb: string, ids: string[]) => objectsLabel(verb, ids.length, byID.get(ids[0])?.name)
 
+  /** Keys stay in the parent's space (Epic「层级与通道」): under another parent a keyed transform shows elsewhere in other shots. */
+  const warnKeyedReparent = (op: WireOp) => {
+    if (op.op !== 'reparent_objects') return
+    const keyed = op.moves.some((m) => Object.keys(byID.get(m.object_id)?.animation ?? {}).some((p) => p.startsWith('transform.')))
+    if (keyed) notify('改挂的物件按分镜记了位置、旋转或缩放，各分镜的位置可能跳变')
+  }
   /** Ctrl+G, Ctrl+Alt+G, Ctrl+P and Alt+P: one edit each, keeping world positions. */
   const regroup = (action: 'group' | 'ungroup' | 'parent' | 'clear-parent') => {
     const sel = { selected, active: active?.id ?? null }
+    // World positions as this frame shows them; only base transforms are written.
     const r =
       action === 'group'
-        ? groupSelection(objects, sel)
+        ? groupSelection(shownObjects, sel)
         : action === 'ungroup'
-          ? ungroupSelection(objects, sel)
+          ? ungroupSelection(shownObjects, sel)
           : action === 'parent'
-            ? parentToActive(objects, sel)
-            : clearParent(objects, sel)
+            ? parentToActive(shownObjects, sel)
+            : clearParent(shownObjects, sel)
     if (!r) return
     if ('error' in r) return notify(r.error)
     if (!edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)) return
+    warnKeyedReparent(r.op)
     if (action === 'group' && r.op.op === 'reparent_objects') {
       const g = r.op.create_groups?.[0]
       if (g) select([g.id])
@@ -488,10 +536,10 @@ export default function SceneEditor({
     edit([{ op: 'update_objects', updates }], label('复制材质到', updates.map((x) => x.object_id)))
   }
   const drop = (moving: string[], target: string, place: DropPlace) => {
-    const r = dropRows(objects, moving, target, place)
+    const r = dropRows(shownObjects, moving, target, place)
     if (!r) return
     if ('error' in r) return notify(r.error)
-    edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)
+    if (edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)) warnKeyedReparent(r.op)
   }
 
   const transform = (mode: Mode) => {
@@ -574,10 +622,99 @@ export default function SceneEditor({
     if (active.locked) return notify('锁定的物件不能变换，先在属性栏解锁')
     const pose = handle.current?.viewPose()
     if (!pose) return
-    const transform = localPose(objects, active.parent_id ?? null, pose, active.transform.scale)
+    // The parent and the scale as this frame shows them; the routing makes it a key or a base value.
+    const transform = localPose(shownObjects, active.parent_id ?? null, pose, shownActive?.transform.scale ?? active.transform.scale)
     if (edit([{ op: 'update_objects', updates: [{ object_id: active.id, transform }] }], `「${active.name || '摄像机'}」对齐当前视角`))
       ui.setState({ cameraView: active.id, lastCamera: active.id })
   }
+  // --- the timeline (design「前端」) ----------------------------------------
+  /** Shot and key commands already say what to key: they skip the edit routing. */
+  const writeKeys = (ops: WireOp[], label: string) => {
+    if (readOnly || !ops.length) return null
+    const out = session.edit(ops, label)
+    if (out) warnAgent(editedObjects(ops))
+    return out
+  }
+  const storedScene = () => session.state.view?.scene
+  /** Another frame drops what waited for a key there. */
+  const goToFrame = (frame: number) => {
+    if (frame !== ui.getState().frame) ui.setState(atFrame(frame))
+  }
+  /** A shot's frame, looking through its camera. */
+  const goToShot = (m: Marker) => {
+    const cam = m.camera_object_id && byID.get(m.camera_object_id)?.kind === 'camera' ? m.camera_object_id : null
+    ui.setState({ ...(m.frame !== ui.getState().frame ? atFrame(m.frame) : {}), ...(cam ? { cameraView: cam, lastCamera: cam } : {}) })
+  }
+  /** The camera a new shot looks through: the one looked through, else the active one, else the last used, else the first. */
+  const shotCamera = () => {
+    const cameras = objects.filter((o) => o.kind === 'camera')
+    const pick = [u.cameraView, active?.kind === 'camera' ? active.id : null, u.lastCamera].find((id) => id && cameras.some((c) => c.id === id))
+    return pick ?? cameras[0]?.id ?? ''
+  }
+  const newShot = () => {
+    const sc = storedScene()
+    if (!sc) return
+    const m: Marker = { id: newMarkerID(), name: '', frame: nextShotFrame(sc.timeline.markers), camera_object_id: shotCamera() }
+    if (writeKeys(addShot(sc, m), '新建分镜')) goToShot(m)
+  }
+  const copyShot = (id: string) => {
+    const sc = storedScene()
+    const from = sc?.timeline.markers.find((m) => m.id === id)
+    if (!sc || !from) return
+    const m: Marker = { ...from, id: newMarkerID(), name: from.name ? `${from.name} 副本` : '', frame: nextShotFrame(sc.timeline.markers) }
+    if (writeKeys(duplicateShot(sc, id, m), `复制「${shotTitle(sc.timeline.markers, id)}」`)) goToShot(m)
+  }
+  const deleteShot = (id: string) => {
+    const sc = storedScene()
+    if (sc) writeKeys(removeShot(sc, id), `删除「${shotTitle(sc.timeline.markers, id)}」`)
+  }
+  const moveShotTo = (id: string, frame: number) => {
+    const sc = storedScene()
+    const from = sc?.timeline.markers.find((m) => m.id === id)
+    if (!sc || !from) return
+    if (writeKeys(moveShot(sc, id, frame), `挪动「${shotTitle(sc.timeline.markers, id)}」`) && ui.getState().frame === from.frame) goToFrame(frame)
+  }
+  const changeShot = (id: string, change: Partial<Marker>, label: string) => {
+    const sc = storedScene()
+    if (sc) writeKeys([{ op: 'set_timeline', timeline: { markers: sc.timeline.markers.map((m) => (m.id === id ? { ...m, ...change } : m)) } }], label)
+  }
+  /** I, or 插入关键帧 on one property: what the frame shows becomes a key there. */
+  const insertKeysOn = (ids: string[], paths?: string[]) => {
+    const sc = storedScene()
+    if (!sc) return
+    if (!ids.length) return notify('先选中物件')
+    const t = ui.getState()
+    const r = insertKeys(sc, ids, t, paths)
+    ui.setState({ unkeyed: r.unkeyed, baseline: r.baseline })
+    if (writeKeys(r.ops, label('插入关键帧', ids)) && r.adopted) notify('其他分镜也采用了这个值')
+  }
+  /** Alt+I: off the shots, the selected objects' keys at the frame go. */
+  const deleteKeysHere = () => {
+    const sc = storedScene()
+    if (!sc) return
+    const ops = deleteKeysAt(sc, selected, ui.getState().frame)
+    if (!ops) return notify('分镜帧上的关键帧不能单独删除：在属性栏右键选「清除动画」')
+    if (!ops.length) return notify('选中的物件在当前帧没有关键帧')
+    writeKeys(ops, label('删除关键帧', selected))
+  }
+  /** 清除动画: the property keeps what it shows now, in every shot. */
+  const clearAnimation = (id: string, path: string) => {
+    const sc = storedScene()
+    const t = ui.getState()
+    if (sc) writeKeys(clearChannel(sc, id, path, t.frame, t.unkeyed[id]?.[path]), `清除「${byID.get(id)?.name || '物件'}」的动画`)
+  }
+  /** 只在当前分镜显示 (S6) for the selected objects. */
+  const onlyInCurrentShot = () => {
+    const sc = storedScene()
+    const shot = sc?.timeline.markers.find((m) => m.frame === ui.getState().frame)
+    if (!sc || !shot) return notify('先跳到一个分镜')
+    const ops = selected.flatMap((id) => onlyInShot(sc, id, shot.id))
+    const updates = ops.flatMap((op) => (op.op === 'update_objects' ? op.updates : []))
+    if (updates.length) writeKeys([{ op: 'update_objects', updates }], label('只在当前分镜显示', selected))
+  }
+  const currentShot = s.view?.scene.timeline.markers.find((m) => m.frame === u.frame)
+  const activeKeys = useMemo(() => [...new Set(Object.values(active?.animation ?? {}).flatMap((ch) => ch.keys.map((k) => k.frame)))].sort((a, b) => a - b), [active])
+
   /** A click while picking sets the camera's focus object instead of selecting. */
   const pickFocus = (id: string | null) => {
     const cameraID = ui.getState().pickFocus
@@ -596,8 +733,11 @@ export default function SceneEditor({
     return true
   }
   /** The photographer's export: saved edits first, then the server's snapshot (E1). */
-  const startExport = async (plan: ExportPlan) => {
+  const startExport = async (plan: ExportPlan, unkeyed?: UnkeyedChoice) => {
     if (!canvasID || !sceneNodeID) return
+    // The export draws the saved scene (AC-8b): what waits for a key is keyed first, as I does, or dropped.
+    if (unkeyed === 'discard') ui.setState({ unkeyed: {} })
+    if (unkeyed === 'key') insertKeysOn(Object.keys(ui.getState().unkeyed))
     setExportRun({ busy: true, progress: null })
     if (!(await whenSaved(session, savedWaitMs))) {
       setExportRun({ busy: false, progress: null })
@@ -879,7 +1019,7 @@ export default function SceneEditor({
       case 'hide':
       case 'hide-unselected':
       case 'reveal': {
-        const op = editing ? visibilityOp(objects, selected, action) : null
+        const op = editing ? visibilityOp(shownObjects, selected, action) : null
         if (op) edit([op], action === 'hide' ? label('隐藏', selected) : action === 'reveal' ? '全部显示' : '隐藏未选物件')
         return
       }
@@ -887,7 +1027,7 @@ export default function SceneEditor({
       case 'clear-rotation':
       case 'clear-scale': {
         const what = action === 'clear-location' ? 'location' : action === 'clear-rotation' ? 'rotation' : 'scale'
-        const op = editing ? clearOp(objects, movable(), what) : null
+        const op = editing ? clearOp(shownObjects, movable(), what) : null
         if (op?.op === 'update_objects')
           edit([op], label(what === 'location' ? '清除位置' : what === 'rotation' ? '清除旋转' : '清除缩放', op.updates.map((u) => u.object_id)))
         return
@@ -962,6 +1102,10 @@ export default function SceneEditor({
         return
       case 'save':
         return notify('场景会自动保存，不需要手动保存')
+      case 'insert-keyframe':
+        return editing && insertKeysOn(selected)
+      case 'delete-keyframe':
+        return editing && deleteKeysHere()
       case 'face-edit': {
         if (u.faceEdit) return ui.setState({ faceEdit: null })
         if (!editing) return
@@ -1078,6 +1222,9 @@ export default function SceneEditor({
         { label: '取消编组', shortcut: k('ungroup'), disabled: !selected.some((id) => byID.get(id)?.kind === 'group'), run: () => run('ungroup') },
         { label: '设置父级', shortcut: k('parent'), disabled: active?.kind !== 'group' || selected.length < 2, run: () => run('parent') },
         { label: '清除父级', shortcut: k('clear-parent'), disabled: !selected.some((id) => byID.get(id)?.parent_id), run: () => run('clear-parent') },
+        'separator',
+        { label: '插入关键帧', shortcut: k('insert-keyframe'), disabled: none, run: () => run('insert-keyframe') },
+        { label: '只在当前分镜显示', disabled: none || !currentShot, hint: currentShot ? undefined : '先在时间线上跳到一个分镜', run: onlyInCurrentShot },
         'separator',
         { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
         ...(onSaveModel ? [{ label: '存入资产库…', disabled: !!saveBlocked, hint: saveBlocked ?? undefined, run: saveModel }] : []),
@@ -1284,6 +1431,11 @@ export default function SceneEditor({
                   focusDistance={shownActive?.kind === 'camera' ? focusOf(shown, shownActive.id) : undefined}
                   picking={!!u.pickFocus && u.pickFocus === shownActive?.id}
                   onPickFocus={() => shownActive && ui.setState({ pickFocus: u.pickFocus ? null : shownActive.id })}
+                  keys={
+                    active && !u.preview
+                      ? { state: (path) => keyStateOf(active, path, u.frame, u.unkeyed), menu: (path, x, y) => !readOnly && ui.setState({ popup: { kind: 'key', x, y, id: active.id, path } }) }
+                      : undefined
+                  }
                   save={onSaveModel ? { blocked: saveBlocked, run: saveModel } : undefined}
                 >
                   {shownActive && (shownActive.kind === 'primitive' || shownActive.kind === 'model_instance') && (
@@ -1403,6 +1555,31 @@ export default function SceneEditor({
                 onFacePick={facePick}
                 onFaceBox={(caught, mode) => selectFaces((sel, meshes) => boxFaces(sel, caught, meshes, mode))}
               />
+              {!u.preview && s.view && (
+                <TimelinePanel
+                  timeline={s.view.scene.timeline}
+                  cameras={objects.filter((o) => o.kind === 'camera')}
+                  keys={activeKeys}
+                  frame={u.frame}
+                  autoKey={u.autoKey}
+                  readOnly={readOnly}
+                  onFrame={goToFrame}
+                  onShot={goToShot}
+                  onAdd={newShot}
+                  onDuplicate={copyShot}
+                  onRemove={deleteShot}
+                  onMove={moveShotTo}
+                  onRename={(id, name) => changeShot(id, { name }, '重命名分镜')}
+                  onBind={(id, camera) => {
+                    changeShot(id, { camera_object_id: camera }, '分镜换摄像机')
+                    if (camera && currentShot?.id === id) ui.setState({ cameraView: camera, lastCamera: camera })
+                  }}
+                  onAutoKey={(on) => {
+                    writeAutoKey(on)
+                    ui.setState({ autoKey: on })
+                  }}
+                />
+              )}
               <StatusBar mode={u.faceEdit ? `面编辑：${faceObject?.name || '物件'}` : ''} hint={hint} status={s.status} notice={u.notice} device={deviceText} activity={activity} />
               <FirstRunHint onShortcuts={() => ui.setState({ sheet: true })} />
             </div>
@@ -1446,6 +1623,20 @@ export default function SceneEditor({
           }}
         />
       )}
+      {u.popup?.kind === 'key' && (
+        <ContextMenu
+          x={u.popup.x}
+          y={u.popup.y}
+          items={(() => {
+            const p = u.popup
+            return [
+              { label: '插入关键帧', shortcut: shortcutFor('insert-keyframe', mac), run: () => insertKeysOn([p.id], [p.path]) },
+              { label: '清除动画', disabled: !byID.get(p.id)?.animation?.[p.path], run: () => clearAnimation(p.id, p.path) },
+            ]
+          })()}
+          onClose={() => ui.setState({ popup: null })}
+        />
+      )}
       {u.popup?.kind === 'delete' && (
         <ContextMenu
           x={u.popup.x}
@@ -1474,11 +1665,13 @@ export default function SceneEditor({
       {u.exporting && (
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
+          shots={(s.view?.scene.timeline.markers ?? []).map((m, _i, all) => ({ id: m.id, title: shotTitle(all, m.id), bound: byID.get(m.camera_object_id)?.kind === 'camera' }))}
+          unkeyed={Object.entries(u.unkeyed).flatMap(([id, paths]) => Object.keys(paths).map((p) => `「${byID.get(id)?.name || '物件'}」的${channelLabel(p)}`))}
           display={display}
           resolution={shown?.render.resolution ?? '2k'}
           busy={exportRun.busy}
           progress={exportRun.progress}
-          onExport={(plan) => void startExport(plan)}
+          onExport={(plan, unkeyed) => void startExport(plan, unkeyed)}
           onClose={() => ui.setState({ exporting: false })}
         />
       )}

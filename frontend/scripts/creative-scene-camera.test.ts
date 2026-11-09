@@ -363,6 +363,9 @@ test('the export dialog allows 1 to 48 images; it ticks the lit look when the vi
   assert.equal(exportCount(2, 0).problem, '至少选一种导出方式')
   assert.equal(exportCount(24, 2).problem, null)
   assert.equal(exportCount(17, 3).problem, '一次最多导出 48 张，请少选一些')
+  assert.equal(exportCount(33, 1, true).problem, '一次最多导出 32 个分镜，请少选一些')
+  assert.equal(exportCount(33, 1).problem, '一次最多导出 32 台摄像机，请少选一些')
+  assert.equal(exportCount(32, 1, true).problem, null)
 })
 
 test('a manual export frees its uploads when it is refused or never answered', async () => {

@@ -2702,6 +2702,19 @@ type CreativeSceneTextureDetails struct {
 	File string `json:"file"`
 }
 
+// CreativeShotKeyGap defines model for CreativeShotKeyGap.
+type CreativeShotKeyGap struct {
+	Frame    int    `json:"frame"`
+	MarkerId string `json:"marker_id"`
+	ObjectId string `json:"object_id"`
+	Path     string `json:"path"`
+}
+
+// CreativeShotKeysDetails 有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。 首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。
+type CreativeShotKeysDetails struct {
+	Missing []CreativeShotKeyGap `json:"missing"`
+}
+
 // DefaultQuoteV1 defines model for DefaultQuoteV1.
 type DefaultQuoteV1 struct {
 	EvaluatedAt             time.Time                   `json:"evaluated_at"`
@@ -4497,6 +4510,32 @@ func (t *ErrorDetails) FromCreativeSceneTextureDetails(v CreativeSceneTextureDet
 
 // MergeCreativeSceneTextureDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeSceneTextureDetails
 func (t *ErrorDetails) MergeCreativeSceneTextureDetails(v CreativeSceneTextureDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeShotKeysDetails returns the union data inside the ErrorDetails as a CreativeShotKeysDetails
+func (t ErrorDetails) AsCreativeShotKeysDetails() (CreativeShotKeysDetails, error) {
+	var body CreativeShotKeysDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeShotKeysDetails overwrites any union data inside the ErrorDetails as the provided CreativeShotKeysDetails
+func (t *ErrorDetails) FromCreativeShotKeysDetails(v CreativeShotKeysDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeShotKeysDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeShotKeysDetails
+func (t *ErrorDetails) MergeCreativeShotKeysDetails(v CreativeShotKeysDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

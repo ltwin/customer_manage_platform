@@ -535,3 +535,53 @@ func TestVolumesFingerprintOnlyLit(t *testing.T) {
 		t.Fatalf("a denser volume: %v", got)
 	}
 }
+
+// A8 (scene-pose-system): a scene without shots or channels evaluated at
+// frame 0 fingerprints byte for byte as before, so every existing export
+// image keeps its state; the pins above are still the evaluated scene's.
+func TestEvaluationKeepsOldFingerprints(t *testing.T) {
+	big, bigCamera := bigScene(t)
+	bigDecoded, err := decodeScene(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		scene  Scene
+		camera string
+	}{
+		{"pinned lit", pinnedScene(t, `{"mode":"lit"}`), pinnedCamera},
+		{"pinned clay", pinnedScene(t, `{"mode":"clay"}`), pinnedCamera},
+		{"physical sky", sceneOf(t, physicalSky, `{"mode":"lit","engine":"realtime_gi"}`, `{"depth_of_field":true}`), pinnedCamera},
+		{"object limit", bigDecoded, bigCamera},
+	} {
+		evaluated := EvaluateAt(tc.scene, 0)
+		for _, pass := range Passes {
+			before, _ := Fingerprint(tc.scene, tc.camera, pass)
+			after, ok := Fingerprint(evaluated, tc.camera, pass)
+			if !ok || after != before {
+				t.Errorf("%s, %s: %s after evaluation, %s before", tc.name, pass, after, before)
+			}
+		}
+	}
+	if got := fingerprints(EvaluateAt(pinnedScene(t, `{"mode":"lit"}`), 0)); !maps.Equal(got, pinned) {
+		t.Errorf("evaluated pins %v, want %v", got, pinned)
+	}
+
+	// An image fingerprinted the old way, straight from the snapshot, reads current.
+	s := pinnedScene(t, `{"mode":"lit"}`)
+	snap, err := encodeScene(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sources []creativecanvas.ExportSource
+	for _, pass := range Passes {
+		fp, _ := Fingerprint(s, pinnedCamera, pass)
+		sources = append(sources, creativecanvas.ExportSource{NodeID: "cwnode_" + pass, DocumentID: "cwdoc_a8", CameraObjectID: pinnedCamera, Pass: pass, Fingerprint: fp})
+	}
+	for node, state := range (Freshness{}).Check(sources, map[string]creativecontent.Revision{"cwdoc_a8": {Payload: snap.Payload}}) {
+		if state != creativecanvas.BasedOnCurrent {
+			t.Errorf("%s reads %s", node, state)
+		}
+	}
+}

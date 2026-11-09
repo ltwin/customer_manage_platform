@@ -10157,6 +10157,30 @@ components:
         - $ref: "#/components/schemas/CreativeLimitDetails"
         - $ref: "#/components/schemas/CreativeMaterialSlotDetails"
         - $ref: "#/components/schemas/CreativeSceneTextureDetails"
+        - $ref: "#/components/schemas/CreativeShotKeysDetails"
+
+    CreativeShotKeysDetails:
+      type: object
+      additionalProperties: false
+      required: [missing]
+      description: >-
+        有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。
+        首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。
+      properties:
+        missing:
+          type: array
+          maxItems: 50
+          items: {$ref: "#/components/schemas/CreativeShotKeyGap"}
+
+    CreativeShotKeyGap:
+      type: object
+      additionalProperties: false
+      required: [object_id, path, marker_id, frame]
+      properties:
+        object_id: {type: string}
+        path: {type: string}
+        marker_id: {type: string}
+        frame: {type: integer}
 
     CreativeSceneTextureDetails:
       type: object
@@ -15243,17 +15267,107 @@ components:
       required:
       - environment
       - render
+      - timeline
       - objects
       properties:
         environment:
           $ref: '#/components/schemas/CreativeSceneEnvironment'
         render:
           $ref: '#/components/schemas/CreativeSceneRender'
+        timeline:
+          $ref: '#/components/schemas/CreativeSceneTimeline'
         objects:
           type: array
           maxItems: 2000
           items:
             $ref: '#/components/schemas/CreativeSceneObject'
+    CreativeSceneTimeline:
+      type: object
+      additionalProperties: false
+      description: >-
+        分镜标记（data: 场景时间线），单元 timeline。读取没有这个字段的旧快照时补 {fps: 24, markers: []}。
+      required: [fps, markers]
+      properties:
+        fps: {type: integer, minimum: 1, maximum: 120, description: 只用于时间线面板的刻度显示，不影响静态分镜的渲染}
+        markers:
+          type: array
+          maxItems: 200
+          description: 按 frame 升序存储（写入时服务端排序），帧号不重复。
+          items: {$ref: '#/components/schemas/CreativeSceneMarker'}
+    CreativeSceneMarker:
+      type: object
+      additionalProperties: false
+      required: [id, name, frame, camera_object_id]
+      properties:
+        id: {type: string, pattern: '^smk_[A-Za-z0-9_-]{21}$', description: 客户端生成，场景内唯一，删除后不复用}
+        name: {type: string, maxLength: 80, description: 可为空串；界面上为空时显示「分镜 N」（按帧序编号）}
+        frame: {type: integer, minimum: 0, maximum: 100000}
+        camera_object_id:
+          type: string
+          description: 物件 ID 或空串。写入时非空就必须指向 kind = camera 的物件；之后摄像机被删除时，这个分镜视为未绑定摄像机，不能导出或回看。
+    CreativeSceneAnimation:
+      type: object
+      description: >-
+        关键帧通道，键为通道路径，白名单见 data: 场景时间线（backend/internal/creativescene/channels.json）。
+        摆放类路径（transform.*、visible）属于 object:<id>，摄像机路径属于 object:<id>:content。
+        有通道的属性按 patterns: 关键帧求值 取值，基础值保留为默认状态。没有通道时不存储这个字段。
+      additionalProperties: {$ref: '#/components/schemas/CreativeSceneChannel'}
+    CreativeSceneChannel:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: 帧号严格递增。
+          items: {$ref: '#/components/schemas/CreativeSceneKey'}
+    CreativeSceneKey:
+      type: object
+      additionalProperties: false
+      required: [frame, value]
+      description: 读取时总带 interp；写入时可省略（连续属性缺省 linear，离散属性只允许并缺省 constant）。
+      properties:
+        frame: {type: integer, minimum: 0, maximum: 100000}
+        value:
+          description: 类型和范围同对应的基础值字段（数值、数组、布尔或字符串）；四元数存储时归一化。
+        interp: {type: string, enum: [linear, constant]}
+    CreativeSceneAnimationPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        关键帧的增量写法，按 clear → delete → set 应用，通道删空后不再存储。每条路径按所在单元计入并发
+        （摆放类 object:<id>，摄像机 object:<id>:content）。整批应用后，本批写到的通道在每个分镜帧上都须有关键帧，
+        否则 400（details.missing）。
+      properties:
+        clear:
+          type: array
+          description: 删掉整条通道。
+          items: {type: string}
+        delete:
+          type: array
+          description: 删掉这一帧的关键帧，帧上没有关键帧时忽略。
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, frame]
+            properties:
+              path: {type: string}
+              frame: {type: integer, minimum: 0, maximum: 100000}
+        set:
+          type: array
+          description: 按帧覆盖或插入；同一路径同一帧只能写一次。
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, frame, value]
+            properties:
+              path: {type: string}
+              frame: {type: integer, minimum: 0, maximum: 100000}
+              value: {description: 类型和范围同对应的基础值字段}
+              interp: {type: string, enum: [linear, constant]}
     CreativeSceneEnvironment:
       type: object
       additionalProperties: false
@@ -15571,7 +15685,7 @@ components:
     CreativeSceneObject:
       type: object
       additionalProperties: false
-      description: 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+      description: 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。animation 的通道归入它所键的属性所在的单元。
       required:
       - id
       - kind
@@ -15623,6 +15737,8 @@ components:
           $ref: '#/components/schemas/CreativeSceneCamera'
         volume:
           $ref: '#/components/schemas/CreativeSceneVolume'
+        animation:
+          $ref: '#/components/schemas/CreativeSceneAnimation'
     CreativeSceneVolume:
       type: object
       additionalProperties: false
@@ -16056,6 +16172,7 @@ components:
       - $ref: '#/components/schemas/CreativeSceneCommitModel'
       - $ref: '#/components/schemas/CreativeSceneDeriveModel'
       - $ref: '#/components/schemas/CreativeSceneSetInstanceModel'
+      - $ref: '#/components/schemas/CreativeSceneSetTimeline'
       discriminator:
         propertyName: op
         mapping:
@@ -16068,6 +16185,27 @@ components:
           commit_model: '#/components/schemas/CreativeSceneCommitModel'
           derive_model: '#/components/schemas/CreativeSceneDeriveModel'
           set_instance_model: '#/components/schemas/CreativeSceneSetInstanceModel'
+          set_timeline: '#/components/schemas/CreativeSceneSetTimeline'
+    CreativeSceneSetTimeline:
+      type: object
+      additionalProperties: false
+      description: 涉及 timeline。按键合并：fps 可省略；markers 写了就整体替换分镜列表，写入时绑定的摄像机须存在且 kind = camera。已有文档首次写 timeline 时 expected 为 null。
+      required: [op, timeline]
+      properties:
+        op:
+          type: string
+          enum:
+          - set_timeline
+        timeline:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            fps: {type: integer, minimum: 1, maximum: 120}
+            markers:
+              type: array
+              maxItems: 200
+              items: {$ref: '#/components/schemas/CreativeSceneMarker'}
     CreativeSceneAddObjects:
       type: object
       additionalProperties: false
@@ -16141,6 +16279,8 @@ components:
           $ref: '#/components/schemas/CreativeSceneCamera'
         volume:
           $ref: '#/components/schemas/CreativeSceneVolume'
+        animation:
+          $ref: '#/components/schemas/CreativeSceneAnimationPatch'
     CreativeSceneRemoveObjects:
       type: object
       additionalProperties: false
@@ -16506,12 +16646,15 @@ components:
       type: array
       minItems: 1
       maxItems: 32
-      description: 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+      description: >-
+        每个分镜（marker_id）或每台摄像机（camera_object_id）一项，二选一且整批一致，不重复；全部镜头合计不超过 48 张。
+        按分镜导出时按这个分镜的帧求值、用它绑定的摄像机出图；按摄像机导出时按第 0 帧求值，只用于没有分镜的场景。
       items:
         type: object
         additionalProperties: false
-        required: [camera_object_id, images]
+        required: [images]
         properties:
+          marker_id: {type: string}
           camera_object_id: {type: string}
           images:
             type: array
@@ -16554,9 +16697,10 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [camera_object_id, pass, node_id, content_revision_id, lens]
+            required: [marker_id, camera_object_id, pass, node_id, content_revision_id, lens]
             properties:
-              camera_object_id: {type: string}
+              marker_id: {type: string, nullable: true, description: 按摄像机导出时为 null}
+              camera_object_id: {type: string, description: 渲染所用的摄像机}
               pass: {$ref: '#/components/schemas/CreativeScenePass'}
               node_id: {type: string}
               content_revision_id: {type: string}

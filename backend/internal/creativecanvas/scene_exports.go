@@ -49,9 +49,14 @@ type SceneExportImage struct {
 type SceneExportBasedOn struct {
 	SceneDocumentID string               `json:"scene_document_id"`
 	SceneRevision   creativeops.Revision `json:"scene_revision"`
-	CameraObjectID  string               `json:"camera_object_id"`
-	Pass            string               `json:"pass"`
-	Fingerprint     string               `json:"fingerprint"`
+	// MarkerID and Frame are the shot exported and its frame then (data:
+	// 导出图来源). An export by camera, like every node placed before shots
+	// existed, has neither: no shot, frame 0.
+	MarkerID       string `json:"marker_id,omitempty"`
+	Frame          int    `json:"frame,omitempty"`
+	CameraObjectID string `json:"camera_object_id"`
+	Pass           string `json:"pass"`
+	Fingerprint    string `json:"fingerprint"`
 	// ContentRevisionID is the exported image; placement sets it. Once the
 	// node's content is something else, the based_on no longer applies.
 	ContentRevisionID string `json:"content_revision_id"`
@@ -212,8 +217,10 @@ func sameParent(a, b *string) bool {
 // ExportSource is the based_on of one export image node whose current content
 // is still the exported image.
 type ExportSource struct {
-	NodeID         string
-	DocumentID     string
+	NodeID     string
+	DocumentID string
+	// MarkerID is the shot exported, empty for an export by camera.
+	MarkerID       string
 	CameraObjectID string
 	Pass           string
 	Fingerprint    string
@@ -260,7 +267,7 @@ func exportSource(n Node) (ExportSource, bool) {
 	if !ok {
 		return ExportSource{}, false
 	}
-	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint}, true
+	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, MarkerID: b.MarkerID, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint}, true
 }
 
 // fillBasedOn sets BasedOnState on export image nodes. documents already

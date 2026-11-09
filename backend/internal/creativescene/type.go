@@ -65,8 +65,8 @@ func (sceneType) Units(p creativecontent.Payload) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, 3+2*len(s.Objects))
-	out = append(out, unitEnvironment, unitRender, unitObjects)
+	out := make([]string, 0, 4+2*len(s.Objects))
+	out = append(out, unitEnvironment, unitRender, unitObjects, unitTimeline)
 	for _, o := range s.Objects {
 		out = append(out, placementUnit(o.ID), contentUnit(o.ID))
 	}
@@ -120,7 +120,15 @@ func (sceneType) Apply(ctx context.Context, tx store.TxAccountScope, cur creativ
 	if err := checkFocusTargets(&s, c.focus); err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
+	if c.markers {
+		if err := checkMarkerCameras(&s); err != nil {
+			return creativedocument.Snapshot{}, creativedocument.Changes{}, err
+		}
+	}
 	if err := Validate(s); err != nil {
+		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
+	}
+	if err := checkShotKeys(s, c.keyed); err != nil {
 		return creativedocument.Snapshot{}, creativedocument.Changes{}, err
 	}
 	if err := verifyImages(ctx, tx, opImageUses(ops), func(id string) bool { return env.held[id] }); err != nil {

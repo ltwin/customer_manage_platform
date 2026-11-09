@@ -3,6 +3,7 @@ package creativescene
 import (
 	"context"
 	"encoding/json"
+	"maps"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
@@ -42,8 +43,9 @@ func referencedView(ctx context.Context, tx store.ReadTxAccountScope, scene any,
 }
 
 // completedScene is the stored snapshot as is, unless a camera, a light, the
-// render or a physical sky predates one of its fields: then the snapshot is
-// decoded, which completes it, so the response always carries every field.
+// render, a physical sky or the timeline predates one of its fields: then
+// the snapshot is decoded, which completes it, so the response always
+// carries every field.
 // A physical sky's night (W3) and aerial perspective (W4) are each checked
 // as a whole: completeSky fills them in one go.
 func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
@@ -56,7 +58,8 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 				AerialPerspective *json.RawMessage `json:"aerial_perspective"`
 			} `json:"sky"`
 		} `json:"environment"`
-		Objects []struct {
+		Timeline *json.RawMessage `json:"timeline"`
+		Objects  []struct {
 			Camera *Camera `json:"camera"`
 			Light  *Light  `json:"light"`
 		} `json:"objects"`
@@ -65,7 +68,7 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 		return nil, err
 	}
 	sky := stored.Environment.Sky
-	complete := stored.Render.complete() && (sky.Kind != SkyPhysical ||
+	complete := stored.Timeline != nil && stored.Render.complete() && (sky.Kind != SkyPhysical ||
 		sky.Night != nil && nightComplete(*sky.Night) && sky.AerialPerspective != nil && aerialComplete(*sky.AerialPerspective))
 	for _, o := range stored.Objects {
 		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera)) && (o.Light == nil || lightComplete(*o.Light))
@@ -124,6 +127,9 @@ func unitView(ctx context.Context, tx store.ReadTxAccountScope, s Scene, units [
 		case unitObjects:
 			hierarchy = true
 			continue
+		case unitTimeline:
+			out[unitTimeline] = s.Timeline
+			continue
 		}
 		id, content, ok := objectOfUnit(u)
 		i, exists := byID[id]
@@ -137,6 +143,13 @@ func unitView(ctx context.Context, tx store.ReadTxAccountScope, s Scene, units [
 		} else {
 			add(id, map[string]any{"name": o.Name, "transform": o.Transform, "visible": o.Visible, "locked": o.Locked})
 		}
+		// animation holds the channels of the listed units, both when both are.
+		anim, _ := fields[id]["animation"].(map[string]Channel)
+		if anim == nil {
+			anim = map[string]Channel{}
+		}
+		maps.Copy(anim, unitChannels(o, content))
+		fields[id]["animation"] = anim
 	}
 	if hierarchy {
 		for _, o := range s.Objects {

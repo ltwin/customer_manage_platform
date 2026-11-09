@@ -251,6 +251,11 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
   - S2–S4 和 S6 需要按当前快照展开出关键帧。服务端命令接口保持「调用方写全、服务端检查」，与编辑器同一模型。
   - 给助手的语法糖可以省掉大量重复的关键帧，降低出错率，与 C4 给助手 `look_at` 是同样的考虑。
 - **新分镜的缺省帧间隔为 10**：给以后的动画留出中间帧，不影响静态分镜。
+- **助手工具层的几条边界（实施时补充，任务 2.2）**：
+  - `add_shot`、`update_shot`、`remove_shot` 要单独提交（可以几项一起），不能和 `shot`、`only_in_shot` 同用：分镜列表与「首次创建通道」在同一批里互相依赖，分开提交规则最简单，P8 检查兜底。
+  - 助手不能直接写 `set_timeline` 和 `animation`，只能经上面的语法糖；清除动画（`animation.clear`）例外，提示里给出写法。
+  - 带 `shot` 写入时，值与这个分镜现在的样子相同、又没有通道的属性不建通道（例如 `look_at` 只改了旋转，位置和缩放不会被打上关键帧）。
+  - 改挂一个自身有变换通道的物件时拒绝：关键帧是父级空间里的值，换父级后各分镜的位置会跳变；先清除它的变换动画再改挂。编辑器侧见任务 4.1 的提示。
 - **导出按出图场景键分组**：同一瞬间的多个机位只加载一次场景、建一次加速结构，导出时间与现在按摄像机导出相同。分组键与渲染指纹分开定义（见「导出：每个分镜一套场景」）。
 - **待验证**：读画布时求值和计算指纹的开销。用 Go 基准测试测一个 2000 物件、200 分镜、20000 关键帧的场景，单次求值应小于 5 ms。超出就按场景修订缓存求值结果。
 
@@ -272,14 +277,18 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 | `backend/internal/creativescene/model.go:Scene`、`model.go:Object` | 修改 | 新增 `Timeline`、`Animation` 及类型；解码时补齐 `timeline` 缺省值、`interp` |
 | `backend/internal/creativescene/model.go:Validate` | 修改 | 调用 `validateTimeline`、`validateAnimation` |
 | `backend/internal/creativescene/channels.go` | 新增 | 通道白名单、单元归属、值校验、`checkShotKeys` |
+| `backend/internal/creativescene/channels.json` | 新增 | 通道白名单的唯一来源（go:embed），`make generate` 复制为前端 `timeline/channels.gen.json`（实施时由「Go 表输出」改为与 `builtins.json` 同一模式） |
 | `backend/internal/creativescene/evaluate.go` | 新增 | `EvaluateAt` |
 | `backend/internal/creativescene/testdata/keyframe_eval.json` | 新增 | 两端共用的测试向量 |
 | `backend/internal/creativescene/ops.go:decodeOp`、`ops.go:objectUpdate`、`ops.go:updateObjectsOp.apply`、`ops.go:addObjectsOp.apply`、`ops.go:changeSet` | 修改 | 新增 `setTimelineOp`；`objectUpdate.Animation`（`clear`、`delete`、`set`）；按路径计算单元；`changeSet` 记录本批写到的通道和分镜列表是否改动 |
 | `backend/internal/creativescene/type.go:sceneType.Apply`、`type.go:sceneType.Units` | 修改 | 应用后调用 `checkShotKeys`；`Units` 列出 `timeline` |
 | `backend/internal/creativescene/restore.go` | 修改 | `timeline` 单元；物件单元按路径恢复通道 |
+| `backend/internal/creativescene/view.go:completedScene`、`view.go:unitView` | 修改 | 旧快照读取时补 `timeline`；按单元读取带出 `timeline` 单元和各单元的通道（实施时补充：编辑器靠它同步他人的关键帧改动） |
 | `backend/internal/creativescene/fingerprint.go:Freshness` | 修改 | 按 `marker_id` / 第 0 帧求值后计算指纹 |
 | `backend/internal/creativescene/exports.go:ExportShot`、`exports.go:validateShots`、`exports.go:placeExportsInTx` | 修改 | `MarkerID`；先求值再取摄像机、`lensOf`、指纹；标题用分镜名 |
 | `backend/internal/creativecanvas`（`SceneExportBasedOn`、`based_on` 的读写） | 修改 | 新增 `MarkerID`、`Frame`；`export_source` 带出 |
+| `backend/internal/creativeagent/context.go:exportSourceContext` | 修改 | `read_canvas` 的 `export_source` 带 `marker_id`、`frame`（实施时补充：`export_source` 在这里组装） |
+| `backend/internal/platform/httpapi/creative_documents.go:creativeDocumentError` | 修改 | P8 拒绝映射为 400 `validation_failed`，`details.missing`（实施时补充） |
 | `backend/internal/creativescene/jobs.go:RenderRequest`、`jobs.go:ExportRequest` 及建任务的校验 | 修改 | `MarkerID`、`Frame`、`MarkerIDs`；缺省分镜与未绑定摄像机的检查 |
 | `backend/internal/creativescene/jobs_complete.go` | 修改 | 导出结果的节点带 `marker_id` |
 | `backend/internal/creativescene/agent.go:ReadInput`、`agent.go:SceneRead`、`agent.go:ObjectView`、`agent.go:AgentReadInTx`、`agent.go:EditInput`、`agent.go:AgentEditInTx` | 修改 | `shot` 读写；`timeline`、`animated`、`shot_key_gaps`；有通道却不带分镜时报错 |
@@ -306,7 +315,7 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 
 ## 验证与交付
 
-- **求值一致（AC-17）**：Go `evaluate_test.go` 和 TS `evaluate.test.ts` 跑同一份 `keyframe_eval.json`。用例覆盖：首前外推、尾后外推、线性、四元数最短路径、近似相同四元数退化、阶跃、离散属性、空通道。
+- **求值一致（AC-17）**：Go `evaluate_test.go` 和 TS `frontend/scripts/creative-scene-timeline.test.ts`（按仓库惯例放在 scripts 下，由 `make test-frontend` 运行）跑同一份 `keyframe_eval.json`。用例覆盖：首前外推、尾后外推、线性、四元数最短路径、近似相同四元数退化、阶跃、离散属性、空通道。
 - **P8 与 S1–S6（AC-2～AC-6、AC-16）**：
   - Go 测试覆盖命令拒绝、恢复不受限，以及助手展开后满足 P8。
   - TS 单测覆盖 `keys.ts` 生成的操作应用后满足 P8（复用 TS 求值器和一份 TS 版检查）。
@@ -323,7 +332,7 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 - **按当前画面计算的入口**：TS 单测覆盖父级有动画时的 `cameraToView`、编组保持世界位置；Go 测试覆盖带 `shot` 的 `look_at`。
 - **出图场景键**：TS 单测覆盖：同一瞬间不同机位同键；只动灯光或体积物件时不同键；摄像机下挂物件时，摄像机移动则不同键。
 - **撤销与并发（AC-9）**：Go 测试 `restore_units` 按单元恢复通道；TS 单测 `undo.ts` 的补丁；沿用现有的并发测试模式，覆盖「改关键帧和改基础值冲突」。
-- **助手（AC-13～AC-15）**：Go 工具测试覆盖 `shot` 读写、报错、`add_shot` 展开、`render_view` / `export_shots` 的分镜参数。AC-13 另由 owner 用真实模型试一次。
+- **助手（AC-13～AC-15）**：Go 工具测试覆盖 `shot` 读写、报错、`add_shot` 展开、`render_view` / `export_shots` 的分镜参数。AC-13 另由 owner 用真实模型试一次（2026-11-09 owner 试用编辑语义后决定收尾，真实模型样例未跑，只有 Go 工具测试 `TestAssistantBuildsShots` 的覆盖）。
 - **端到端**：
   - 按项目约定一次只跑一个用例，用 `ONLY` 过滤并换端口（[[targeted-verification-only]]）。
   - 新增一个用例：建 3 个分镜 → 分镜 2 移动并插帧 → 按分镜导出 → 改分镜 2 → 只有分镜 2 过时。
@@ -335,6 +344,6 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 
 | 问题 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|
-| `mcp-write-generate` 是否已开工、改到 `render_view` / `export_shots` 的哪些代码 | 本次 jobs 相关任务的合入顺序 | apply 前查它的状态；它先合入时，本次在它的代码上修改 | 本次 apply 前 |
-| 自动关键帧开关的默认值 | 交互 | owner 试用后决定（现为关闭） | 本次验收 |
-| 读画布时求值的开销是否需要按修订缓存 | 性能 | Go 基准测试（见「局部设计与偏差」） | 指纹任务完成时 |
+| ~~`mcp-write-generate` 是否已开工、改到 `render_view` / `export_shots` 的哪些代码~~ | 本次 jobs 相关任务的合入顺序 | **已确认（2026-11-08，任务 2.1 前）**：它仍是 draft，未开工；本次先合入，它之后在本次的代码上修改 | — |
+| ~~自动关键帧开关的默认值~~ | 交互 | **已决定（owner 试用后，2026-11-09）**：默认关闭。开启时停在分镜上改布景也只改当前分镜，容易误改且不易察觉；关闭时平常的改动都改布景，要按分镜区分的再按 I，与 Blender 的缺省一致 | — |
+| ~~读画布时求值的开销是否需要按修订缓存~~ | 性能 | **已解决（任务 1.4，2026-11-08）**：`BenchmarkEvaluateAtLimits`（2000 物件、200 分镜、20000 关键帧，在两个分镜之间求值，每条通道都插值）单次约 0.23 ms、约 0.5 MB 分配，远低于 5 ms。`Freshness.Check` 已按（场景，帧）复用求值结果，不再加按修订的缓存 | — |

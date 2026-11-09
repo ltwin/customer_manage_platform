@@ -266,3 +266,29 @@
 .cc-scene-camera-exposure { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; margin: 4px 0 0; }
 .cc-scene-camera-exposure small { grid-column: 1 / -1; }
 .cc-scene-camera-exposure output { color: var(--fg); padding: 4px 0; }
+
+/* 时间线：视口与状态栏之间。分镜是静态画面，没有播放；标记可点（跳到分镜并进入它的摄像机视角）、可拖（挪动分镜）。 */
+.cc-scene-timeline { flex: none; border-top: 1px solid var(--border); font-size: 12px; user-select: none; }
+.cc-scene-timeline-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; flex-wrap: wrap; }
+.cc-scene-timeline-bar .btn { padding: 2px 8px; font-size: 12px; }
+.cc-scene-timeline-bar select, .cc-scene-timeline-name { padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+.cc-scene-timeline-name { width: 120px; }
+.cc-scene-timeline-frame { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cc-scene-timeline-auto { display: flex; align-items: center; gap: 4px; }
+.cc-scene-timeline-track { position: relative; height: 44px; margin: 0 40px 4px; border-top: 1px solid var(--border); cursor: ew-resize; outline: none; }
+.cc-scene-timeline-track:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.cc-scene-timeline-tick { position: absolute; top: 0; height: 8px; border-left: 1px solid var(--border); padding-left: 2px; color: var(--muted); font-size: 10px; line-height: 12px; transform: translateX(-0.5px); pointer-events: none; }
+.cc-scene-timeline-key { position: absolute; top: 34px; width: 7px; height: 7px; margin-left: -3.5px; background: #d6b43c; transform: rotate(45deg); pointer-events: none; }
+.cc-scene-timeline-shot { position: absolute; top: 14px; transform: translateX(-50%); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface, #1f1f1d); color: var(--fg); font: inherit; font-size: 11px; cursor: pointer; touch-action: none; }
+.cc-scene-timeline-shot[aria-pressed='true'] { border-color: var(--accent); background: #f28c2826; }
+.cc-scene-timeline-shot[aria-invalid='true'] { border-color: var(--danger, #b42318); }
+.cc-scene-timeline-head { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--accent); pointer-events: none; }
+
+/* 属性栏的关键帧配色（同 Blender）：黄 = 本帧是关键帧，绿 = 有通道、本帧不是关键帧，橙 = 已改未记录。 */
+.cc-scene-keyed { display: contents; }
+.cc-scene-keyed[data-key='key'] :is(input:not([type='checkbox'], [type='radio'], [type='range']), select) { background: #d6b43c40; border-color: #d6b43c; }
+.cc-scene-keyed[data-key='animated'] :is(input:not([type='checkbox'], [type='radio'], [type='range']), select) { background: #5b9a4a33; border-color: #5b9a4a; }
+.cc-scene-keyed[data-key='changed'] :is(input:not([type='checkbox'], [type='radio'], [type='range']), select) { background: #f28c2840; border-color: #f28c28; }
+.cc-scene-keyed[data-key='key'] :is(input[type='checkbox'], input[type='range']) { accent-color: #d6b43c; }
+.cc-scene-keyed[data-key='animated'] :is(input[type='checkbox'], input[type='range']) { accent-color: #5b9a4a; }
+.cc-scene-keyed[data-key='changed'] :is(input[type='checkbox'], input[type='range']) { accent-color: #f28c28; }

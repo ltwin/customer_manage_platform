@@ -51,7 +51,40 @@ var (
 type Scene struct {
 	Environment Environment `json:"environment"`
 	Render      Render      `json:"render"`
-	Objects     []Object    `json:"objects"`
+	// Timeline holds the shots (data: 场景时间线). Decoding fills it in, so a
+	// decoded scene always has one; EvaluateAt leaves it out.
+	Timeline *Timeline `json:"timeline,omitempty"`
+	Objects  []Object  `json:"objects"`
+}
+
+// Timeline is the scene's shot markers, sorted by frame. fps only spaces the
+// timeline panel's ruler until playback exists.
+type Timeline struct {
+	FPS     int      `json:"fps"`
+	Markers []Marker `json:"markers"`
+}
+
+// Marker is a shot: a frame the scene is evaluated at and the camera it is
+// shot through. A camera deleted since leaves the marker unbound.
+type Marker struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Frame          int    `json:"frame"`
+	CameraObjectID string `json:"camera_object_id"`
+}
+
+// Channel is one keyed property's keyframes, by strictly increasing frame.
+type Channel struct {
+	Keys []Key `json:"keys"`
+}
+
+// Key is a keyframe. Value has the type of the property it keys (channels.go);
+// Interp says how the value goes on to the next key. Input may leave Interp
+// out; the stored snapshot always holds it (completeAnimation).
+type Key struct {
+	Frame  int             `json:"frame"`
+	Value  json.RawMessage `json:"value"`
+	Interp string          `json:"interp,omitempty"`
 }
 
 type Environment struct {
@@ -235,6 +268,9 @@ type Object struct {
 	Light         *Light                  `json:"light,omitempty"`
 	Camera        *Camera                 `json:"camera,omitempty"`
 	Volume        *Volume                 `json:"volume,omitempty"`
+	// Animation is the object's keyframe channels by path (channels.go); a
+	// keyed property's value at a frame comes from its channel, not the field.
+	Animation map[string]Channel `json:"animation,omitempty"`
 }
 
 type Transform struct {
@@ -426,8 +462,10 @@ func decodeScene(p creativecontent.Payload) (Scene, error) {
 	if err := completeSky(&s.Environment.Sky); err != nil {
 		return Scene{}, fmt.Errorf("%w: %w", ErrUnreadable, err)
 	}
+	completeTimeline(&s)
 	for i := range s.Objects {
 		canonicalNumbers(&s.Objects[i])
+		completeAnimation(&s.Objects[i])
 		if c := s.Objects[i].Camera; c != nil {
 			// Stored before the mode existed, a camera was exposed by hand (W2).
 			completeCamera(c, ExposureManual)
@@ -665,8 +703,9 @@ func newObjectID() string {
 	return "sobj_" + string(b)
 }
 
-// Validate checks the invariants S1–S8 on a whole snapshot. The 512 KiB
-// payload limit is enforced by the document layer.
+// Validate checks the invariants S1–S8 and the timeline's (data: 场景时间线)
+// on a whole snapshot. The 512 KiB payload limit is enforced by the document
+// layer.
 func Validate(s Scene) error {
 	if len(s.Objects) > maxObjects {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "物件不能超过 %d 个", maxObjects)
@@ -698,8 +737,11 @@ func Validate(s Scene) error {
 	if !in(s.Render.ExposureCompensation, -maxExposureCompensation, maxExposureCompensation) {
 		return invalid("默认摄像机的曝光补偿 exposure_compensation 须在 −%d…%d 档之间", maxExposureCompensation, maxExposureCompensation)
 	}
+	if err := validateTimeline(s.Timeline); err != nil {
+		return err
+	}
 	byID := make(map[string]*Object, len(s.Objects))
-	cameras, volumes := 0, 0
+	cameras, volumes, keys := 0, 0, 0
 	for i := range s.Objects {
 		o := &s.Objects[i]
 		if !objectIDPattern.MatchString(o.ID) {
@@ -712,6 +754,11 @@ func Validate(s Scene) error {
 		if err := validateObject(o); err != nil {
 			return invalid("物件 %s：%v", o.ID, err)
 		}
+		n, err := validateAnimation(o)
+		if err != nil {
+			return err
+		}
+		keys += n
 		switch o.Kind {
 		case KindCamera:
 			cameras++
@@ -724,6 +771,9 @@ func Validate(s Scene) error {
 	}
 	if volumes > maxVolumes {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "体积物件不能超过 %d 个", maxVolumes)
+	}
+	if keys > maxSceneKeys {
+		return &creativedocument.LimitError{Limit: maxSceneKeys, Message: fmt.Sprintf("一个场景的关键帧不能超过 %d 个，现有 %d 个", maxSceneKeys, keys)}
 	}
 	if n := len(modelRefs(s.Objects)); n > maxSceneModels {
 		return creativeops.Explain(creativedocument.ErrSizeLimit, "一个场景引用的模型不能超过 %d 个，现有 %d 个", maxSceneModels, n)
@@ -1309,8 +1359,9 @@ func validateCamera(c Camera) error {
 var focusTargetKinds = []string{KindPrimitive, KindModelInstance, KindGroup}
 
 // checkFocusTargets validates the focus_object_id that an operation wrote,
-// against the scene after the operation. Only written references are
-// checked: one left dangling by a later removal stays valid (E7).
+// the base field's and its channel's keys alike, against the scene after the
+// operation. Only written references are checked: one left dangling by a
+// later removal stays valid (E7).
 func checkFocusTargets(s *Scene, written map[string]bool) error {
 	if len(written) == 0 {
 		return nil
@@ -1321,25 +1372,41 @@ func checkFocusTargets(s *Scene, written map[string]bool) error {
 	}
 	for _, id := range slices.Sorted(maps.Keys(written)) {
 		o, ok := byID[id]
-		if !ok || o.Camera == nil || o.Camera.FocusObjectID == nil || *o.Camera.FocusObjectID == "" {
+		if !ok || o.Camera == nil {
 			continue
 		}
-		target := *o.Camera.FocusObjectID
-		if !objectIDPattern.MatchString(target) {
-			return objectIDProblem(target)
-		}
-		if target == id {
-			return invalid("摄像机 %s 不能对焦到自己", id)
-		}
-		t, ok := byID[target]
-		if !ok {
-			return invalid("摄像机 %s 的对焦物件 %s 不存在", id, target)
-		}
-		if !slices.Contains(focusTargetKinds, t.Kind) {
-			return invalid("摄像机 %s 的对焦物件 %s 是 %s，只能对焦到基础体、模型实例或分组（空物体）", id, target, t.Kind)
+		for _, target := range focusTargets(o) {
+			if !objectIDPattern.MatchString(target) {
+				return objectIDProblem(target)
+			}
+			if target == id {
+				return invalid("摄像机 %s 不能对焦到自己", id)
+			}
+			t, ok := byID[target]
+			if !ok {
+				return invalid("摄像机 %s 的对焦物件 %s 不存在", id, target)
+			}
+			if !slices.Contains(focusTargetKinds, t.Kind) {
+				return invalid("摄像机 %s 的对焦物件 %s 是 %s，只能对焦到基础体、模型实例或分组（空物体）", id, target, t.Kind)
+			}
 		}
 	}
 	return nil
+}
+
+// focusTargets are the objects camera object o focuses on at some frame.
+func focusTargets(o *Object) []string {
+	var targets []string
+	if t := o.Camera.FocusObjectID; t != nil && *t != "" {
+		targets = append(targets, *t)
+	}
+	for _, k := range o.Animation["camera.focus_object_id"].Keys {
+		var t string
+		if json.Unmarshal(k.Value, &t) == nil && t != "" && !slices.Contains(targets, t) {
+			targets = append(targets, t)
+		}
+	}
+	return targets
 }
 
 // validateTree is S2 and S3: parents are groups, no cycles, and siblings

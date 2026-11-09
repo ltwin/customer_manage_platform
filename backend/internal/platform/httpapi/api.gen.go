@@ -2354,6 +2354,24 @@ func (e CreativeSceneJobSummaryState) Valid() bool {
 	}
 }
 
+// Defines values for CreativeSceneKeyInterp.
+const (
+	Constant CreativeSceneKeyInterp = "constant"
+	Linear   CreativeSceneKeyInterp = "linear"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSceneKeyInterp enum.
+func (e CreativeSceneKeyInterp) Valid() bool {
+	switch e {
+	case Constant:
+		return true
+	case Linear:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeSceneLightShape.
 const (
 	Ellipse   CreativeSceneLightShape = "ellipse"
@@ -7090,6 +7108,9 @@ type CreativeScene struct {
 	Environment CreativeSceneEnvironment `json:"environment"`
 	Objects     []CreativeSceneObject    `json:"objects"`
 	Render      CreativeSceneRender      `json:"render"`
+
+	// Timeline 分镜标记（data: 场景时间线），单元 timeline。读取没有这个字段的旧快照时补 {fps: 24, markers: []}。
+	Timeline CreativeSceneTimeline `json:"timeline"`
 }
 
 // CreativeSceneAerialPerspective 物理天空的空气透视（只在 kind = physical 时允许，其他天空写它返回 400）：摄像机与表面之间的大气让远处景物变蓝变淡， 颜色来自同一套大气模型；天空背景不受影响。地点和手动两种太阳模式下都生效。读取时补齐缺省值，只写一部分时逐项补齐。
@@ -7106,6 +7127,9 @@ type CreativeSceneAmbient struct {
 	Color     CreativeSceneColor `json:"color"`
 	Intensity float32            `json:"intensity"`
 }
+
+// CreativeSceneAnimation 关键帧通道，键为通道路径，白名单见 data: 场景时间线（backend/internal/creativescene/channels.json）。 摆放类路径（transform.*、visible）属于 object:<id>，摄像机路径属于 object:<id>:content。 有通道的属性按 patterns: 关键帧求值 取值，基础值保留为默认状态。没有通道时不存储这个字段。
+type CreativeSceneAnimation map[string]CreativeSceneChannel
 
 // CreativeSceneCamera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 type CreativeSceneCamera struct {
@@ -7177,6 +7201,12 @@ type CreativeSceneChangeTarget struct {
 // CreativeSceneChangeTargetKind defines model for CreativeSceneChangeTarget.Kind.
 type CreativeSceneChangeTargetKind string
 
+// CreativeSceneChannel defines model for CreativeSceneChannel.
+type CreativeSceneChannel struct {
+	// Keys 帧号严格递增。
+	Keys []CreativeSceneKey `json:"keys"`
+}
+
 // CreativeSceneChannelTexture glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
 type CreativeSceneChannelTexture struct {
 	// Channel 缺省 r，存储时补齐。
@@ -7247,7 +7277,7 @@ type CreativeSceneExportPayload struct {
 	// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	SceneRevision CreativeRevision `json:"scene_revision"`
 
-	// Shots 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+	// Shots 每个分镜（marker_id）或每台摄像机（camera_object_id）一项，二选一且整批一致，不重复；全部镜头合计不超过 48 张。 按分镜导出时按这个分镜的帧求值、用它绑定的摄像机出图；按摄像机导出时按第 0 帧求值，只用于没有分镜的场景。
 	Shots CreativeSceneExportShots `json:"shots"`
 }
 
@@ -7262,28 +7292,33 @@ type CreativeSceneExportRequest struct {
 type CreativeSceneExportResult struct {
 	ChangeId string `json:"change_id"`
 	Nodes    []struct {
+		// CameraObjectId 渲染所用的摄像机
 		CameraObjectId    string `json:"camera_object_id"`
 		ContentRevisionId string `json:"content_revision_id"`
 
 		// Lens 导出时这台摄像机的镜头快照，与节点 based_on.lens 相同；只说明这张图怎么拍的，不参与过时判断。
-		Lens   CreativeSceneExportLens `json:"lens"`
-		NodeId string                  `json:"node_id"`
-		Pass   CreativeScenePass       `json:"pass"`
+		Lens CreativeSceneExportLens `json:"lens"`
+
+		// MarkerId 按摄像机导出时为 null
+		MarkerId nullable.Nullable[string] `json:"marker_id"`
+		NodeId   string                    `json:"node_id"`
+		Pass     CreativeScenePass         `json:"pass"`
 	} `json:"nodes"`
 
 	// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	SceneRevision CreativeRevision `json:"scene_revision"`
 }
 
-// CreativeSceneExportShots 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+// CreativeSceneExportShots 每个分镜（marker_id）或每台摄像机（camera_object_id）一项，二选一且整批一致，不重复；全部镜头合计不超过 48 张。 按分镜导出时按这个分镜的帧求值、用它绑定的摄像机出图；按摄像机导出时按第 0 帧求值，只用于没有分镜的场景。
 type CreativeSceneExportShots = []struct {
-	CameraObjectId string `json:"camera_object_id"`
+	CameraObjectId *string `json:"camera_object_id,omitempty"`
 
 	// Images 同一镜头内 pass 不重复。
 	Images []struct {
 		Pass     CreativeScenePass `json:"pass"`
 		UploadId string            `json:"upload_id"`
 	} `json:"images"`
+	MarkerId *string `json:"marker_id,omitempty"`
 }
 
 // CreativeSceneFog three.js Fog，从 near 到 far 线性变浓，单位米。
@@ -7363,7 +7398,7 @@ type CreativeSceneJobCompletePayload struct {
 		// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 		SceneRevision CreativeRevision `json:"scene_revision"`
 
-		// Shots 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。
+		// Shots 每个分镜（marker_id）或每台摄像机（camera_object_id）一项，二选一且整批一致，不重复；全部镜头合计不超过 48 张。 按分镜导出时按这个分镜的帧求值、用它绑定的摄像机出图；按摄像机导出时按第 0 帧求值，只用于没有分镜的场景。
 		Shots CreativeSceneExportShots `json:"shots"`
 	} `json:"export,omitempty"`
 	Outcome CreativeSceneJobCompletePayloadOutcome `json:"outcome"`
@@ -7433,6 +7468,18 @@ type CreativeSceneJobSummary struct {
 // CreativeSceneJobSummaryState defines model for CreativeSceneJobSummary.State.
 type CreativeSceneJobSummaryState string
 
+// CreativeSceneKey 读取时总带 interp；写入时可省略（连续属性缺省 linear，离散属性只允许并缺省 constant）。
+type CreativeSceneKey struct {
+	Frame  int                     `json:"frame"`
+	Interp *CreativeSceneKeyInterp `json:"interp,omitempty"`
+
+	// Value 类型和范围同对应的基础值字段（数值、数组、布尔或字符串）；四元数存储时归一化。
+	Value interface{} `json:"value"`
+}
+
+// CreativeSceneKeyInterp defines model for CreativeSceneKey.Interp.
+type CreativeSceneKeyInterp string
+
 // CreativeSceneLight 字段与 three.js 灯光类同名同义：directional 有 color、intensity、cast_shadow；point 另有 distance、decay；spot 再加 angle、penumbra。 光源尺寸照 Blender：point、spot 有 radius_m（发光球的半径），directional 有 angular_diameter_deg（角直径）；尺寸决定阴影的柔和度和高光的大小，不改变强度，0 表示理想点光源或平行光。 area 是面光源（three.js RectAreaLight、Blender Area）：color、intensity、cast_shadow、shape、width、height，沿物件局部 −Z 单面发光； 发光面随物件的世界缩放（含父级）变化，实际宽、高为 width、height 乘以局部 X、Y 轴在世界空间里的缩放倍数。 写入时只有 type 必填，省略的字段取 three.js 默认值（area 的强度缺省 10000，见 intensity）；写了该类型没有的字段返回 400 并指出字段。响应里的灯光总是带齐该类型的全部字段。 平行光、聚光和面光源沿物件局部 −Z 照射。
 type CreativeSceneLight struct {
 	// Angle spot。光锥中心到边缘的半角（弧度），不超过 π/2；缺省 π/3。
@@ -7476,6 +7523,19 @@ type CreativeSceneLightShape string
 
 // CreativeSceneLightType defines model for CreativeSceneLight.Type.
 type CreativeSceneLightType string
+
+// CreativeSceneMarker defines model for CreativeSceneMarker.
+type CreativeSceneMarker struct {
+	// CameraObjectId 物件 ID 或空串。写入时非空就必须指向 kind = camera 的物件；之后摄像机被删除时，这个分镜视为未绑定摄像机，不能导出或回看。
+	CameraObjectId string `json:"camera_object_id"`
+	Frame          int    `json:"frame"`
+
+	// Id 客户端生成，场景内唯一，删除后不复用
+	Id string `json:"id"`
+
+	// Name 可为空串；界面上为空时显示「分镜 N」（按帧序编号）
+	Name string `json:"name"`
+}
 
 // CreativeSceneMaterialSlot maps、mapping、alpha_mode、alpha_cutoff 只用于 principled@1，写在其他预设上返回 400 validation_failed 并在 details.field 指出字段。 有 maps 时存储时补齐 mapping、alpha_mode 和各通道；alpha_mode 为 clip 时补齐 alpha_cutoff。 白模、线稿和线框不看材质；材质预览、最终渲染、render_view 和 lit 导出体现贴图与透明方式。
 type CreativeSceneMaterialSlot struct {
@@ -7548,8 +7608,11 @@ type CreativeSceneNight struct {
 	StarsTemperatureK *float32 `json:"stars_temperature_k,omitempty"`
 }
 
-// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。
+// CreativeSceneObject 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。animation 的通道归入它所键的属性所在的单元。
 type CreativeSceneObject struct {
+	// Animation 关键帧通道，键为通道路径，白名单见 data: 场景时间线（backend/internal/creativescene/channels.json）。 摆放类路径（transform.*、visible）属于 object:<id>，摄像机路径属于 object:<id>:content。 有通道的属性按 patterns: 关键帧求值 取值，基础值保留为默认状态。没有通道时不存储这个字段。
+	Animation *CreativeSceneAnimation `json:"animation,omitempty"`
+
 	// Camera 写入时各字段可省略，缺省为 focal_mm 35、sensor_mm [36, 24]、aspect "3:2"、near 0.1、far 1000、label 空、 depth_of_field false、f_stop 2.8、focus 10、focus_object_id 空、iso 100、shutter_s 0.00025、exposure_mode ambient、exposure_compensation 0； 响应里总是带齐（旧快照在读取时补齐，没有 exposure_mode 的旧摄像机补 manual）。 near、far 同 three.js PerspectiveCamera（米），朝物件局部 −Z 看。视场角按画面长边对应传感器长边： tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)，fov 为 three.js 的垂直视场角。 update_objects 里只改写到的字段。
 	Camera *CreativeSceneCamera    `json:"camera,omitempty"`
 	Id     string                  `json:"id"`
@@ -7793,6 +7856,15 @@ type CreativeSceneTextureMaps struct {
 	Roughness *CreativeSceneChannelTexture `json:"roughness,omitempty"`
 }
 
+// CreativeSceneTimeline 分镜标记（data: 场景时间线），单元 timeline。读取没有这个字段的旧快照时补 {fps: 24, markers: []}。
+type CreativeSceneTimeline struct {
+	// Fps 只用于时间线面板的刻度显示，不影响静态分镜的渲染
+	Fps int `json:"fps"`
+
+	// Markers 按 frame 升序存储（写入时服务端排序），帧号不重复。
+	Markers []CreativeSceneMarker `json:"markers"`
+}
+
 // CreativeSceneTransform defines model for CreativeSceneTransform.
 type CreativeSceneTransform struct {
 	// Position 米，每轴 ±100000。
@@ -7832,6 +7904,19 @@ type CreativeSceneVolumeShape string
 
 // CreativeSequence 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
 type CreativeSequence = string
+
+// CreativeShotKeyGap defines model for CreativeShotKeyGap.
+type CreativeShotKeyGap struct {
+	Frame    int    `json:"frame"`
+	MarkerId string `json:"marker_id"`
+	ObjectId string `json:"object_id"`
+	Path     string `json:"path"`
+}
+
+// CreativeShotKeysDetails 有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。 首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。
+type CreativeShotKeysDetails struct {
+	Missing []CreativeShotKeyGap `json:"missing"`
+}
 
 // CreativeStructureDeletePayload defines model for CreativeStructureDeletePayload.
 type CreativeStructureDeletePayload struct {
@@ -12398,6 +12483,32 @@ func (t *ErrorDetails) FromCreativeSceneTextureDetails(v CreativeSceneTextureDet
 
 // MergeCreativeSceneTextureDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeSceneTextureDetails
 func (t *ErrorDetails) MergeCreativeSceneTextureDetails(v CreativeSceneTextureDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeShotKeysDetails returns the union data inside the ErrorDetails as a CreativeShotKeysDetails
+func (t ErrorDetails) AsCreativeShotKeysDetails() (CreativeShotKeysDetails, error) {
+	var body CreativeShotKeysDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeShotKeysDetails overwrites any union data inside the ErrorDetails as the provided CreativeShotKeysDetails
+func (t *ErrorDetails) FromCreativeShotKeysDetails(v CreativeShotKeysDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeShotKeysDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeShotKeysDetails
+func (t *ErrorDetails) MergeCreativeShotKeysDetails(v CreativeShotKeysDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

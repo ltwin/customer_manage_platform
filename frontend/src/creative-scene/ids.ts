@@ -12,3 +12,6 @@ export function newObjectID(): string {
 export function newIntentID(): string {
   return crypto.randomUUID()
 }
+
+/** A shot marker's ID: smk_ and the same 21 characters, never reused once deleted. */
+export const newMarkerID = (): string => `smk_${newObjectID().slice('sobj_'.length)}`

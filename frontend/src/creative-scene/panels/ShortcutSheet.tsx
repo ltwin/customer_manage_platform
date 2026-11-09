@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { bindings, gestures, keysLabel, type Group } from '../input/keymap.ts'
 
-const order: Group[] = ['导航', '选择', '变换', '编辑', '面编辑', '视图', '通用']
+const order: Group[] = ['导航', '选择', '变换', '编辑', '面编辑', '时间线', '视图', '通用']
 
 /** Everything here is read from the keymap, so it matches what keys do. */
 export function ShortcutSheet({ mac, onClose }: { mac: boolean; onClose: () => void }) {

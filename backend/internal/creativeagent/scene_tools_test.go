@@ -100,12 +100,16 @@ func (f *fixture) hostCompletes(failure ...string) creativescene.CompleteRespons
 				f.t.Fatal(err)
 			}
 			var shots []any
-			for _, cam := range req.CameraObjectIDs {
+			rows, key := req.CameraObjectIDs, "camera_object_id"
+			if len(req.MarkerIDs) > 0 {
+				rows, key = req.MarkerIDs, "marker_id"
+			}
+			for _, row := range rows {
 				var images []any
 				for _, pass := range req.Passes {
 					images = append(images, map[string]any{"pass": pass, "upload_id": f.stageUpload("image")})
 				}
-				shots = append(shots, map[string]any{"camera_object_id": cam, "images": images})
+				shots = append(shots, map[string]any{key: row, "images": images})
 			}
 			in["export"] = map[string]any{"scene_revision": strconv.FormatInt(revision, 10), "shots": shots}
 			break

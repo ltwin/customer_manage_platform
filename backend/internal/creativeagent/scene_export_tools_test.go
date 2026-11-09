@@ -296,3 +296,101 @@ func TestRenderViewReportsTheExposure(t *testing.T) {
 		t.Fatalf("the overview: %v", got)
 	}
 }
+
+// AC-13, AC-15: the assistant builds three shots, changes shot 2 alone, looks
+// at it and exports by shot; the nodes and their sources name the shots.
+func TestTheAssistantShootsByShot(t *testing.T) {
+	f, c, consent, doc := visualScene(t, true)
+	f.placeOnCanvas(doc)
+	cam, subject := "sobj_CAM000000000000000001", "sobj_SUB000000000000000001"
+	shots := []string{"smk_SHOT00000000000000001", "smk_SHOT00000000000000002", "smk_SHOT00000000000000003"}
+	edit := func(id, shot string, ops ...any) func(llmgateway.ProviderRequest) llmgateway.Result {
+		return func(r llmgateway.ProviderRequest) llmgateway.Result {
+			args := map[string]any{"document_id": doc, "based_on_revision": 1, "operations": ops}
+			if shot != "" {
+				args["shot"] = shot
+			}
+			return scriptedResult(r, sceneCall(id, editSceneTool, args))
+		}
+	}
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		edit("a", "", map[string]any{"op": "add_objects", "objects": []any{
+			map[string]any{"id": cam, "kind": "camera", "name": "机位", "parent_id": nil, "order": 1, "visible": true, "locked": false,
+				"transform": map[string]any{"position": []float64{0, 1.5, 5}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}}, "camera": map[string]any{}},
+			map[string]any{"id": subject, "kind": "primitive", "name": "人物", "parent_id": nil, "order": 2, "visible": true, "locked": false,
+				"transform": map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}}, "primitive": map[string]any{"builtin": "box@1"}},
+		}}),
+		edit("b", "",
+			map[string]any{"op": "add_shot", "id": shots[0], "name": "回头", "camera_object_id": cam},
+			map[string]any{"op": "add_shot", "id": shots[1], "name": "前进", "camera_object_id": cam},
+			map[string]any{"op": "add_shot", "id": shots[2], "name": "拔剑", "camera_object_id": cam}),
+		edit("c", shots[1], map[string]any{"op": "update_objects", "updates": []any{
+			map[string]any{"object_id": subject, "transform": map[string]any{"position": []float64{0, 0, 2}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}}},
+			map[string]any{"object_id": cam, "camera": map[string]any{"focal_mm": 85}},
+		}}),
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("d", renderViewTool, map[string]any{"document_id": doc, "shot": shots[1]}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("e", exportShotsTool, map[string]any{"document_id": doc, "passes": []string{"clay"}}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, llmgateway.ToolCall{ID: "f", Name: readCanvasTool, Arguments: json.RawMessage(`{"offset":0,"limit":50}`)})
+		},
+	}}
+	f.vendor.script = s.answer
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
+	t.Cleanup(func() { creativecanvas.SetExportFreshness(nil) })
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "建 3 个分镜，第 2 镜人物往前走两步、换 85 mm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunWaitingClient {
+		t.Fatalf("after render_view: %s %s", got.State, got.ErrorCode)
+	}
+	if added := lastTool(s.request(3)); !reflect.DeepEqual(added["added_shots"], []any{shots[0], shots[1], shots[2]}) {
+		t.Fatalf("add_shot result %v", added)
+	}
+	if keyed := lastTool(s.request(4)); keyed["written_revision"] == nil {
+		t.Fatalf("edit at shot 2 %v", keyed)
+	}
+	var raw []byte
+	if err := f.db.QueryRow(`SELECT request FROM creative_scene_jobs WHERE run_id=$1 AND kind='render_view'`, run.ID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var render creativescene.RenderRequest
+	if err := json.Unmarshal(raw, &render); err != nil || render.MarkerID != shots[1] {
+		t.Fatalf("render request %s", raw)
+	}
+	if resp := f.hostCompletes(); resp.State != creativescene.JobSucceeded {
+		t.Fatalf("render %+v", resp)
+	}
+	if got := f.resume(run.ID); got.State != RunWaitingClient {
+		t.Fatalf("after export_shots: %s %s", got.State, got.ErrorCode)
+	}
+	if resp := f.hostCompletes(); resp.State != creativescene.JobSucceeded {
+		t.Fatalf("export %+v", resp)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("finished %s %s", got.State, got.ErrorCode)
+	}
+	exported := lastTool(s.request(6))
+	nodes, _ := exported["nodes"].([]any)
+	if len(nodes) != 3 {
+		t.Fatalf("export_shots result %v", exported)
+	}
+	for i, n := range nodes {
+		if n.(map[string]any)["shot"] != shots[i] {
+			t.Fatalf("node %d %v, want shot %s", i, n, shots[i])
+		}
+	}
+	frames := map[any]any{}
+	for _, n := range lastTool(s.request(7))["nodes"].([]any) {
+		if src, ok := n.(map[string]any)["export_source"].(map[string]any); ok {
+			frames[src["marker_id"]] = src["frame"]
+		}
+	}
+	if want := map[any]any{shots[0]: 0.0, shots[1]: 10.0, shots[2]: 20.0}; !reflect.DeepEqual(frames, want) {
+		t.Fatalf("export sources by shot %v, want %v", frames, want)
+	}
+}
