@@ -1,5 +1,4 @@
 import type { Material, Object3D, RenderTarget } from 'three'
-import { velocity } from 'three/tsl'
 import { defaultBuildStages, FunctionNode, shaderStages, ViewportTextureNode, type Node, type WebGPURenderer } from 'three/webgpu'
 import { pageYields, yieldToPage } from './gpu.ts'
 import { buildLifetime } from './buildLifetime.ts'
@@ -18,10 +17,9 @@ import { buildLifetime } from './buildLifetime.ts'
 // buildAsync reads the renderer's target, MRT and context as each stage runs
 // (NodeBuilder.getOutputType, MRTNode.setup), a task or more after the draw
 // that asked for it, the scene's lights as the last render of that scene
-// left them (LightsNode._lights: the overlay pass's camera sees none), and
-// the velocity's projection as TRAA leaves it outside the pipeline's render
-// (none: the velocity took the jitter, and TRAA blurred); each stage here
-// runs with those the draw had. The
+// left them (LightsNode._lights: the overlay pass's camera sees none); each
+// stage here runs with those the draw had. The velocity's projection is one
+// matrix whatever builds it (realtimeGI.ts). The
 // result goes where three's own build puts it (NodeManager.nodeBuilderCache,
 // by the render object's cache key), and the next draw takes it from there.
 // three r186's internals (Renderer._renderObjectDirect, _objects, _nodes):
@@ -95,14 +93,11 @@ function ownerOf(r: WebGPURenderer & Internals, object: RenderObject) {
 }
 
 /** What a draw had set: a build's every stage runs with it. */
-type DrawState = { target: RenderTarget | null; face: number; level: number; mrt: unknown; context: WebGPURenderer['contextNode']; renderContext: unknown; lights: unknown[] | null; projection: unknown }
-
-/** The velocity TRAA gives the unjittered projection for the length of the pipeline's render (VelocityNode.setup reads it). */
-const motion = velocity as unknown as { projectionMatrix: unknown }
+type DrawState = { target: RenderTarget | null; face: number; level: number; mrt: unknown; context: WebGPURenderer['contextNode']; renderContext: unknown; lights: unknown[] | null }
 
 function stateOf(r: WebGPURenderer & Internals, lightsNode: LightsNode | null): DrawState {
   // A copy: the render list's array is filled again by the next render.
-  return { target: r.getRenderTarget(), face: r.getActiveCubeFace(), level: r.getActiveMipmapLevel(), mrt: r.getMRT(), context: r.contextNode, renderContext: r._currentRenderContext, lights: lightsNode ? [...lightsNode.getLights()] : null, projection: motion.projectionMatrix }
+  return { target: r.getRenderTarget(), face: r.getActiveCubeFace(), level: r.getActiveMipmapLevel(), mrt: r.getMRT(), context: r.contextNode, renderContext: r._currentRenderContext, lights: lightsNode ? [...lightsNode.getLights()] : null }
 }
 
 function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null, s: DrawState, fn: () => T): T {
@@ -115,7 +110,6 @@ function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null,
   // in the renderer-wide fallback cache; retiring one pipeline can then free buffers another pipeline still binds.
   r._currentRenderContext = s.renderContext
   if (lightsNode && s.lights) lightsNode.setLights(s.lights)
-  motion.projectionMatrix = s.projection
   try {
     return fn()
   } finally {
@@ -124,7 +118,6 @@ function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null,
     r.contextNode = was.context
     r._currentRenderContext = was.renderContext
     if (lightsNode && lights) lightsNode.setLights(lights)
-    motion.projectionMatrix = was.projection
   }
 }
 
@@ -285,20 +278,6 @@ function install(r: WebGPURenderer & Internals) {
       if (deferring.dry) return
     }
     direct.apply(this, args)
-  }
-}
-
-/**
- * Runs fn with projection as the velocity's (TRAANode._originalProjectionMatrix while the pipeline renders, none
- * before TRAA has set up: three r186): what a pass drawn alone builds for the velocity is then what those frames build.
- */
-export function withVelocity<T>(projection: unknown, fn: () => T): T {
-  const was = motion.projectionMatrix
-  motion.projectionMatrix = projection ?? null
-  try {
-    return fn()
-  } finally {
-    motion.projectionMatrix = was
   }
 }
 

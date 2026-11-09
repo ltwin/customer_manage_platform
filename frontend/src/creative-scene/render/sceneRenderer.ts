@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, AgXToneMapping, Color, DataTexture, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
+import { ACESFilmicToneMapping, AgXToneMapping, Color, DataTexture, DataUtils, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
 import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
 import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
@@ -8,7 +8,7 @@ import type { DepthOfField } from '../cameraOptics.ts'
 import { depthOfField, type Dof } from './dof.ts'
 import { convergeFrames, PICTURE_AFTER_WARMUP, type Engine, type Quality } from './engines.ts'
 import { gpuTestHooks, pageYields, yieldToPage, type SceneGPU } from './gpu.ts'
-import { builds, drawBuilt, withVelocity } from './deferredBuild.ts'
+import { builds, drawBuilt } from './deferredBuild.ts'
 import { ao } from './nodes/GTAONode.js'
 import { GILightingPass, splitContext } from './giSplit.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
@@ -327,13 +327,10 @@ function trackDepth(renderer: SceneGPU['renderer'], node: PassNode) {
 
 /**
  * Starts building what a pipeline's scene passes draw with, drawing nothing (drawBuilt dry): each pass alone at its
- * depths. True once nothing is left to build. traa: the velocity as the pipeline's TRAA gives it from its first
- * frame on; without, as a pipeline's first frame builds it, before TRAA has set up its callbacks (a picture's, all
- * its frames: frame one builds its materials).
+ * depths. True once nothing is left to build.
  */
-function buildPasses(renderer: SceneGPU['renderer'], built: Built, traa: boolean): boolean {
-  const node = built.gi?.color as unknown as { _originalProjectionMatrix?: unknown } | undefined
-  return drawBuilt(renderer, () => withVelocity(traa ? node?._originalProjectionMatrix : null, () => built.scenePasses.forEach((n) => drawPassAlone(renderer, n))), true)
+function buildPasses(renderer: SceneGPU['renderer'], built: Built): boolean {
+  return drawBuilt(renderer, () => built.scenePasses.forEach((n) => drawPassAlone(renderer, n)), true)
 }
 
 /** Draws a pass's scene alone, at each depth its frames draw it at (passDepths); none known, nothing. */
@@ -847,6 +844,21 @@ export class SceneRenderer {
   }
 
   /**
+   * The real-time GI's motion vector at (u, v) of its prepass, in its pixels a frame, as the last frame drew it
+   * (e2e only: a still view moves nowhere, gi-jitter diagnosis 2026-11-09). None without the GI.
+   */
+  async velocityAt(u: number, v: number): Promise<[number, number] | null> {
+    const prepass = this.built?.gi?.prepass
+    if (!prepass) return null
+    const target = prepass.renderTarget
+    const index = target.textures.indexOf(prepass.getTexture('velocity'))
+    const x = Math.floor(u * target.width)
+    const y = Math.floor(v * target.height)
+    const half = (await this.gpu.renderer.readRenderTargetPixelsAsync(target, x, y, 1, 1, index)) as Uint16Array
+    return [(DataUtils.fromHalfFloat(half[0]) * target.width) / 2, (DataUtils.fromHalfFloat(half[1]) * target.height) / 2]
+  }
+
+  /**
    * The device's world-space layer (render/trace/base.ts): the viewport's
    * commits builds as they come and asks for frames while it does; an
    * export's packs once, in order.
@@ -976,7 +988,7 @@ export class SceneRenderer {
     const built = this.built
     if (built.scenePasses.length !== depths.length) return
     built.scenePasses.forEach((n, i) => passDepths.set(n, new Set(depths[i])))
-    while (!this.disposed && !this.gpu.isLost() && !buildPasses(this.gpu.renderer, built, false)) await builds(this.gpu.renderer)
+    while (!this.disposed && !this.gpu.isLost() && !buildPasses(this.gpu.renderer, built)) await builds(this.gpu.renderer)
   }
 
   render(camera: Camera, frame: Frame) {
@@ -1076,7 +1088,7 @@ export class SceneRenderer {
       // asynchronous build into a multi-second synchronous build on slower devices or complex scenes.
       const shading = this.viewport && pageYields && built ? shadingOf(this.scene) : null
       if (shading !== null && this.shading !== null && shading !== this.shading) {
-        const ready = buildPasses(renderer, built!, true) && (!next || buildPasses(renderer, next, true))
+        const ready = buildPasses(renderer, built!) && (!next || buildPasses(renderer, next))
         if (!ready) {
           this.stats = { draws: 0, triangles: 0, cpuMs: performance.now() - started }
           this.gpu.holdCanvas()

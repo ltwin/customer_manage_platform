@@ -8779,6 +8779,44 @@ if (process.env.SCENE_E2E_TRACE) await check('trace: 5.2, the viewport draws as 
   }
 })
 
+// A still viewport moves nowhere after the GI's pipelines have changed (gi-jitter
+// diagnosis, 2026-11-09): the prepass's shaders outlive the pipeline that built
+// them, and each TRAA handed the velocity a projection of its own: the layer's
+// pipeline, its shaders' cache keys the GI's alone, read the first pipeline's
+// TRAA, no longer updated. With the view's aspect changed after, every still
+// surface was on the move (some 90 px a frame here), and TRAA and the
+// denoisers kept no history. The probes build their own and hide it.
+if (process.env.SCENE_E2E_TRACE) await check('gi-jitter: a still viewport has no motion after the layer comes on and a resize', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    referenceScene(server, 'cornell', realtimeGI)
+    const { page, errors } = await open(server, { context })
+    // The probes kept out of the drawing: the layer's pipeline is the last, drawing with the shaders the GI's alone built.
+    await page.evaluate(() => (window.__sceneGPU.probesOff = true))
+    await shading(page, '最终渲染')
+    await traceReady(page, 'cornell', 60_000)
+    await viewportStill(page, 'cornell with the layer')
+    await page.setViewportSize({ width: 960, height: 820 })
+    await viewportStill(page, 'cornell narrower')
+    // Frames drawn with nothing moving, then the last one's motion all over the view.
+    await page.evaluate(() => window.__sceneGPU.redrawViewport(4))
+    const samples = await page.evaluate(async () => {
+      const out = []
+      for (let i = 0; i < 10; i++) for (let j = 0; j < 10; j++) out.push(await window.__sceneGPU.velocityAt(0.05 + 0.1 * i, 0.05 + 0.1 * j))
+      return out
+    })
+    const most = Math.max(...samples.map(([x, y]) => Math.hypot(x, y)))
+    console.log(`  the most a still pixel moved: ${most.toFixed(3)} px a frame`)
+    assert.ok(most < 0.5, `still, the view moves nowhere: ${JSON.stringify(samples)}`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // The viewport pulled back past the scene (S2 task 5.2a): its probes take more
 // levels, as the camera's distance needs (volume.ts levelsAt), warmed in the
 // background while the ones it has keep drawing: no frame without probes.

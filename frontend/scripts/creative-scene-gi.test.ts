@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { AmbientLight, BoxGeometry, DirectionalLight, Mesh, PerspectiveCamera, RenderTarget, Scene } from 'three'
-import { mrt, output } from 'three/tsl'
-import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PhysicalLightingModel, WebGPURenderer, type NodeMaterial } from 'three/webgpu'
+import { mrt, output, velocity } from 'three/tsl'
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PhysicalLightingModel, WebGPURenderer, type NodeFrame, type NodeMaterial } from 'three/webgpu'
 import { giAmbient, giBase, giEnvSpec, installGISplit, splitContext } from '../src/creative-scene/render/giSplit.ts'
 import { composite } from '../src/creative-scene/render/realtimeGI.ts'
 
@@ -296,6 +296,34 @@ test('TRAA keeps its first previous depth where realtimeGI frees it', () => {
   assert.match(read('../node_modules/three/examples/jsm/tsl/display/TRAANode.js'), /new TRAANode\( convertToTexture\( beautyNode \)/)
   // Render state is per MRT node: one node for every pipeline.
   assert.match(read('../node_modules/three/src/renderers/common/RenderContexts.js'), /const mrtState = \( mrt !== null \) \? mrt\.id : 'default';/)
+})
+
+test('the velocity binds one projection whatever TRAA hands it, filled each draw with TRAA’s or else the camera’s (gi-jitter 2026-11-09)', () => {
+  // setup binds the matrix it finds as a uniform of that object; TRAA hands its own and takes it back each frame.
+  const node = read('../node_modules/three/src/nodes/accessors/VelocityNode.js')
+  assert.match(node, /const projectionMatrix = \( this\.projectionMatrix === null \) \? cameraProjectionMatrix : uniform\( this\.projectionMatrix \);/)
+  const traa = read('../node_modules/three/examples/jsm/tsl/display/TRAANode.js')
+  assert.match(traa, /this\._velocityNode\.setProjectionMatrix\( this\._originalProjectionMatrix \);/)
+  assert.match(traa, /this\._velocityNode\.setProjectionMatrix\( null \);/)
+
+  const bound = velocity.projectionMatrix
+  assert.ok(bound, 'a matrix to bind from the first build on')
+  const object = new Mesh()
+  const camera = new PerspectiveCamera(56.7, 1253 / 778, 0.05, 1e4)
+  const pipelines = [new PerspectiveCamera(45, 2.114, 0.05, 1e4), camera].map((c) => c.projectionMatrix.clone())
+  let frameId = 0
+  for (const unjittered of pipelines) {
+    velocity.setProjectionMatrix(unjittered)
+    assert.equal(velocity.projectionMatrix, bound, 'the same matrix for every pipeline’s TRAA')
+    velocity.update({ frameId: ++frameId, camera, object } as unknown as NodeFrame)
+    assert.deepEqual(bound.elements, unjittered.elements, 'this pipeline’s projection, not the first’s')
+  }
+  velocity.setProjectionMatrix(null)
+  camera.fov = 30
+  camera.updateProjectionMatrix()
+  velocity.update({ frameId: ++frameId, camera, object } as unknown as NodeFrame)
+  assert.equal(velocity.projectionMatrix, bound)
+  assert.deepEqual(bound.elements, camera.projectionMatrix.elements, 'no TRAA: the camera’s')
 })
 
 // --- the renderer in effect ---------------------------------------------------------
