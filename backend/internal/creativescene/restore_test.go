@@ -257,3 +257,20 @@ func TestRestoringSettingsOfAnEmptySceneKeepsObjectsAnArray(t *testing.T) {
 		t.Fatalf("objects %s, render %q", got.Scene.Objects, got.Scene.Render.Mode)
 	}
 }
+
+// Undoing a volume change puts the volume back with the rest of the content.
+func TestUndoVolumeChange(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	v := objectID(1)
+	added := addObjects(t, f.a, doc, withContent(v, "volume", 1, map[string]any{"scatter_density": 0.3})).Revision
+	want := storedContent(t, f.a, doc, v, "volume")
+	s := readScene(t, f.a, doc)
+	mustSend(t, f.a, batch{DocumentID: doc, Expected: s.expect(content(v)), Operations: []any{
+		op{"op": "update_objects", "updates": []any{map[string]any{"object_id": v, "volume": map[string]any{"scatter_density": 2}}}}}})
+
+	mustRestore(t, f.a, doc, added, []string{content(v)})
+	if got := storedContent(t, f.a, doc, v, "volume"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("restored volume %v, want %v", got, want)
+	}
+}
