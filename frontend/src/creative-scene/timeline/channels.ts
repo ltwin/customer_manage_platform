@@ -78,3 +78,24 @@ export function withBaseValue(
   }
   return o;
 }
+
+const labels: Record<string, string> = {
+  "transform.position": "位置",
+  "transform.rotation": "旋转",
+  "transform.scale": "缩放",
+  visible: "显示",
+  "camera.focal_mm": "焦距",
+  "camera.f_stop": "光圈",
+  "camera.focus": "对焦距离",
+  "camera.exposure_compensation": "曝光补偿",
+  "camera.iso": "ISO",
+  "camera.shutter_s": "快门",
+  "camera.sensor_mm": "传感器",
+  "camera.aspect": "画幅",
+  "camera.depth_of_field": "景深",
+  "camera.focus_object_id": "对焦物件",
+  "camera.exposure_mode": "曝光模式",
+};
+
+/** How the editor names a channel's property, for example 「焦距」. */
+export const channelLabel = (path: string) => labels[path] ?? path;

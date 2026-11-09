@@ -25,7 +25,7 @@
 
 ## 5. 前端：导出与渲染端
 
-- [ ] 5.1 按分镜导出：`panels/ExportDialog.tsx` 有分镜时按分镜列出，导出前处理未记录的改动（三个选项）；`host/exportShots.ts` 按分镜求值，按出图场景键分组；`host/render.ts:openShooter` 与 `host/ShotScene.tsx` 增加 `setScene`（场景变了就重建加速结构、GI 失效后重新收敛；只换摄像机时清零累积）；`render.ts:renderView` 支持 `marker_id` / `frame`；`host/executor.ts:exportPlan` 支持 `marker_ids`。先写单测：出图场景键（同一瞬间不同机位同键；只动灯光或体积物件时不同键；摄像机下挂物件时，摄像机移动则不同键）。e2e：建 3 个分镜 → 分镜 2 移动并插帧 → 按分镜导出（AC-10）→ 改分镜 2，只有分镜 2 过时（AC-11）→ 有未记录改动时导出（AC-8b）；另跑旧场景导出不变（AC-12）
+- [x] 5.1 按分镜导出：`panels/ExportDialog.tsx` 有分镜时按分镜列出，导出前处理未记录的改动（三个选项）；`host/exportShots.ts` 按分镜求值，按出图场景键分组；`host/render.ts:openShooter` 与 `host/ShotScene.tsx` 增加 `setScene`（场景变了就重建加速结构、GI 失效后重新收敛；只换摄像机时清零累积）；`render.ts:renderView` 支持 `marker_id` / `frame`；`host/executor.ts:exportPlan` 支持 `marker_ids`。先写单测：出图场景键（同一瞬间不同机位同键；只动灯光或体积物件时不同键；摄像机下挂物件时，摄像机移动则不同键）。e2e：建 3 个分镜 → 分镜 2 移动并插帧 → 按分镜导出（AC-10）→ 改分镜 2，只有分镜 2 过时（AC-11）→ 有未记录改动时导出（AC-8b）；另跑旧场景导出不变（AC-12）
 
 ## 6. 收尾
 

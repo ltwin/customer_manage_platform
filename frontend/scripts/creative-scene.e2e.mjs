@@ -604,7 +604,9 @@ async function route(page, server) {
     if (path === `/documents/${DOC}/scene-exports` && request.method() === 'POST') {
       const body = request.postDataJSON()
       server.exports.push(body)
-      const nodes = body.payload.shots.flatMap((s) => s.images.map((img, i) => ({ camera_object_id: s.camera_object_id, pass: img.pass, node_id: `cwnode_${s.camera_object_id}_${i}`, content_revision_id: `ccrv_${img.upload_id}` })))
+      // A shot's images are its camera's, at its frame (backend exports.go resolveShot).
+      const cameraOf = (s) => s.camera_object_id ?? server.scene.timeline?.markers.find((m) => m.id === s.marker_id)?.camera_object_id
+      const nodes = body.payload.shots.flatMap((s) => s.images.map((img, i) => ({ camera_object_id: cameraOf(s), marker_id: s.marker_id ?? null, pass: img.pass, node_id: `cwnode_${s.marker_id ?? s.camera_object_id}_${i}`, content_revision_id: `ccrv_${img.upload_id}` })))
       return json(200, { change_id: 'cwch_qa', scene_revision: body.payload.scene_revision, nodes })
     }
     if (path === '/scene-jobs/claim' && request.method() === 'POST') {
@@ -13212,6 +13214,54 @@ await check('timeline AC-9: undoing a removed shot, a new shot and a key goes ba
   assert.ok(server.object(wall).animation)
   await command(page, server, () => page.keyboard.press(`${mod}+KeyZ`), 'undo the key')
   assert.equal(server.object(wall).animation, undefined)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-10 and AC-8b: an export by shot draws each shot at its frame; changes waiting for a key are keyed or dropped first', async () => {
+  const server = new SceneServer()
+  timelineScene(server, [markerOf(1, 0, camA, '回头'), markerOf(2, 10), markerOf(3, 20, camB)])
+  const { context, page, errors } = await open(server, { query: '?export=1' })
+  await goTo(page, '分镜 2')
+  await page.getByRole('treeitem', { name: /主体/ }).click()
+  await command(page, server, () => moveX(page, 2), 'move in shot 2')
+  await command(page, server, () => page.keyboard.press('KeyI'), 'key it')
+  const dialog = page.getByRole('dialog', { name: '导出分镜' })
+  const exportOnce = async (passes, answer) => {
+    const before = server.exports.length
+    await page.getByRole('button', { name: '导出' }).first().click()
+    await dialog.waitFor()
+    if (passes) await dialog.getByLabel('线稿').uncheck()
+    await dialog.getByRole('button', { name: '导出' }).click()
+    if (answer) {
+      const ask = dialog.getByRole('alertdialog')
+      assert.match(await ask.textContent(), /「主体」的位置/)
+      await ask.getByRole('button', { name: answer }).click()
+    }
+    await waitFor(() => server.exports.length === before + 1, 'export submitted', 180_000)
+    await dialog.waitFor({ state: 'detached' })
+    return server.exports.at(-1).payload.shots.map((s) => ({ marker: s.marker_id, camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
+  }
+  // AC-10: every shot, in frame order, each with its own picture.
+  const all = await exportOnce(false)
+  assert.deepEqual(all.map((s) => [s.marker, s.camera, s.images.map((i) => i.pass)]), [[markerOf(1, 0).id, undefined, ['clay', 'line']], [markerOf(2, 0).id, undefined, ['clay', 'line']], [markerOf(3, 0).id, undefined, ['clay', 'line']]])
+  assert.ok((await pixelDiff(page, all[0].images[0].png, all[1].images[0].png)) > 0.002, 'shot 2 shows the subject moved')
+  await page.locator('.cc-scene-hint').filter({ hasText: '已导出 6 张图到画布' }).waitFor()
+
+  // AC-8b: a change waiting for a key is keyed before the export draws. The closed dialog took the focus with it.
+  await page.locator('.cc-scene-editor').focus()
+  await moveX(page, 4)
+  const keyed = await exportOnce(true, '插入关键帧后导出')
+  assert.equal(shownAt(server, subject, 10).transform.position[0], 6, 'the key went in first: 4 more from 2')
+  assert.ok((await pixelDiff(page, all[1].images[0].png, keyed[1].images[0].png)) > 0.002, 'the export shows it')
+  // Or dropped: the export is the saved shot.
+  const sent = server.commands.length
+  await page.locator('.cc-scene-editor').focus()
+  await moveX(page, 7)
+  const dropped = await exportOnce(true, '放弃这些改动后导出')
+  assert.equal(server.commands.length, sent, 'nothing was saved')
+  assert.ok((await pixelDiff(page, keyed[1].images[0].png, dropped[1].images[0].png)) < 0.001, 'the same picture as the saved shot')
+  assert.equal(await page.locator('.cc-scene-keyed[data-path="transform.position"]').first().getAttribute('data-key'), 'key')
   assert.deepEqual(errors, [])
   await context.close()
 })

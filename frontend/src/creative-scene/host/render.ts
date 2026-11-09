@@ -16,6 +16,7 @@ import { framingFor, type Framing, type RenderRequest } from './framing.ts'
 import { ShotScene } from './ShotScene.tsx'
 import { loadNightAssets } from '../world/nightSky/assets.ts'
 import { loadSceneImages, type ImageHold } from '../materials/images.ts'
+import { evaluateAt } from '../timeline/evaluate.ts'
 
 // Pictures of the confirmed scene drawn as the viewport draws it (the clay
 // look: the scene's sky and sun with AO; or the lit look: materials, lights,
@@ -78,6 +79,13 @@ export type Shooter = {
    * layer too, and throws TraceNotReady when it is not ready in time.
    */
   setLook(look: Look): Promise<void>
+  /**
+   * Mounts another scene in the look mounted, a shot at another moment
+   * (scene-timeline-shots「导出：每个分镜一套场景」): objects update by ID, the
+   * world-space layer packs again what changed and the next picture waits
+   * for it as the first did; each picture's probes start afresh anyway.
+   */
+  setScene(scene: Scene): Promise<void>
   close(): void
 }
 
@@ -89,12 +97,17 @@ export async function loadModels(scene: Scene, models: Readonly<Record<string, S
 
 export async function renderView(documentID: string, request: RenderRequest, read: (id: string) => Promise<SceneDocument> = readScene): Promise<Shot> {
   const doc = await read(documentID)
-  const framing = framingFor(doc.scene, doc.models, request)
+  // A shot at its frame through its camera; anything else at the frame asked, 0 when none (data: 场景时间线「客户端任务的分镜字段」).
+  const shot = request.marker_id ? doc.scene.timeline?.markers.find((m) => m.id === request.marker_id) : undefined
+  if (request.marker_id && !shot) return { ok: false, message: `分镜 ${request.marker_id} 已不存在` }
+  if (shot && !shot.camera_object_id) return { ok: false, message: '这个分镜没有绑定摄像机' }
+  const scene = evaluateAt(doc.scene, shot?.frame ?? request.frame ?? 0)
+  const framing = framingFor(scene, doc.models, shot ? { ...request, camera_object_id: shot.camera_object_id } : request)
   if ('error' in framing) return { ok: false, message: framing.error }
-  await loadModels(doc.scene, doc.models)
+  await loadModels(scene, doc.models)
   // The viewport's look; depth_of_field only adds the blur.
   const look: Look = request.mode === 'lit' ? 'lit' : 'clay'
-  const shooter = await openShooter(doc.scene, doc.models, look)
+  const shooter = await openShooter(scene, doc.models, look)
   try {
     const image = await shooter.shoot(framing, { kind: look, type: 'image/jpeg', depthOfField: request.depth_of_field === true, use: 'view' })
     await shooter.confirm()
@@ -134,7 +147,8 @@ async function holdImages(scene: Scene): Promise<ImageHold> {
 }
 
 /** Mounts the scene on a hidden canvas in a look; every shot moves one camera. Throws TraceNotReady as setLook. */
-export async function openShooter(scene: Scene, models: Readonly<Record<string, SceneModel>>, look: Look = 'clay'): Promise<Shooter> {
+export async function openShooter(first: Scene, models: Readonly<Record<string, SceneModel>>, look: Look = 'clay'): Promise<Shooter> {
+  let scene = first
   // The night sky's stars and moon map first (W3 design「资源与确定性」): a picture without them would not be the scene.
   await loadNightAssets(scene).catch((err: unknown) => {
     console.warn('night sky: an asset did not load', err)
@@ -204,6 +218,23 @@ export async function openShooter(scene: Scene, models: Readonly<Record<string, 
         mounted = next
         await g.compile(three, camera)
         await traceReady(next)
+      },
+      async setScene(next) {
+        if (next === scene) return
+        await loadNightAssets(next).catch((err: unknown) => {
+          console.warn('night sky: an asset did not load', err)
+          throw new Error(NIGHT_ASSETS_FAILED)
+        })
+        // The images the next scene's slots show held before the ones held go.
+        if (mounted === 'lit') {
+          const held = await holdImages(next)
+          images?.release()
+          images = held
+        }
+        scene = next
+        await mount(mounted)
+        await g.compile(three, camera)
+        await traceReady(mounted)
       },
       async shoot(framing, options) {
         if (options.kind !== 'line' && options.kind !== mounted) throw new Error(`拍${options.kind}图前须先切换渲染方式`)

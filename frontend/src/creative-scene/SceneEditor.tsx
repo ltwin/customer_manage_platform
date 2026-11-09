@@ -13,7 +13,7 @@ import { clearingFaces, clearOp, duplicate, groundBuiltin, lightLabels, localPos
 import { runManualExport, type ExportPlan, type Progress } from './host/exportShots.ts'
 import { cameraFraming } from './host/framing.ts'
 import { loadModels, openShooter } from './host/render.ts'
-import { ExportDialog } from './panels/ExportDialog.tsx'
+import { ExportDialog, type UnkeyedChoice } from './panels/ExportDialog.tsx'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
 import { readPreference, viewDirections, writePreference, type DevicePreference } from './input/navigation.ts'
 import { boxSelect, click, emptySelection, invertSelection, listClick, prune, selectAll, topmost } from './input/selection.ts'
@@ -78,6 +78,7 @@ import type { Placed } from './placement/snap.ts'
 import { selectShadowCasters } from './objects/shadowBudget.ts'
 import { newCameraExposure } from './world/exposure.ts'
 import { evaluateAt, withUnkeyedScene } from './timeline/evaluate.ts'
+import { channelLabel } from './timeline/channels.ts'
 import { addShot, clearChannel, deleteKeysAt, duplicateShot, forgetUnits, insertKeys, keyStateOf, moveShot, nextShotFrame, onlyInShot, pruneEdits, removeShot, routeEdit, shotTitle } from './timeline/keys.ts'
 import { TimelinePanel } from './timeline/TimelinePanel.tsx'
 import './scene.css'
@@ -732,8 +733,11 @@ export default function SceneEditor({
     return true
   }
   /** The photographer's export: saved edits first, then the server's snapshot (E1). */
-  const startExport = async (plan: ExportPlan) => {
+  const startExport = async (plan: ExportPlan, unkeyed?: UnkeyedChoice) => {
     if (!canvasID || !sceneNodeID) return
+    // The export draws the saved scene (AC-8b): what waits for a key is keyed first, as I does, or dropped.
+    if (unkeyed === 'discard') ui.setState({ unkeyed: {} })
+    if (unkeyed === 'key') insertKeysOn(Object.keys(ui.getState().unkeyed))
     setExportRun({ busy: true, progress: null })
     if (!(await whenSaved(session, savedWaitMs))) {
       setExportRun({ busy: false, progress: null })
@@ -1661,11 +1665,13 @@ export default function SceneEditor({
       {u.exporting && (
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
+          shots={(s.view?.scene.timeline.markers ?? []).map((m, _i, all) => ({ id: m.id, title: shotTitle(all, m.id), bound: byID.get(m.camera_object_id)?.kind === 'camera' }))}
+          unkeyed={Object.entries(u.unkeyed).flatMap(([id, paths]) => Object.keys(paths).map((p) => `「${byID.get(id)?.name || '物件'}」的${channelLabel(p)}`))}
           display={display}
           resolution={shown?.render.resolution ?? '2k'}
           busy={exportRun.busy}
           progress={exportRun.progress}
-          onExport={(plan) => void startExport(plan)}
+          onExport={(plan, unkeyed) => void startExport(plan, unkeyed)}
           onClose={() => ui.setState({ exporting: false })}
         />
       )}
