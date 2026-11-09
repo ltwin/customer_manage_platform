@@ -1257,6 +1257,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
         })
         return faces
       }
+      gpuTestHooks.velocityAt = (u, v) => r.velocityAt(u, v)
       gpuTestHooks.probeMean = async () => (await r.world?.volume.means()) ?? null
       gpuTestHooks.probeView = async (width = 192) => {
         const w = r.world
