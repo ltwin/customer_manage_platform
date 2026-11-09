@@ -176,13 +176,21 @@ type Freshness struct{}
 
 var _ creativecanvas.ExportFreshness = Freshness{}
 
-// Check decodes each source scene once and fingerprints each (scene,
-// camera, pass) once: every re-export adds nodes that share them. A
-// fingerprint of another version can only come from a future projection;
-// until one exists it reads as stale.
+// Check decodes each source scene once, evaluates it once per frame and
+// fingerprints each (scene, shot, pass) once: every re-export adds nodes
+// that share them. A shot's image is checked at the shot's current frame
+// through its current camera, so moving the shot keeps it current and
+// binding another camera makes it stale (data: 导出图来源); an image by
+// camera is checked at frame 0. A fingerprint of another version can only
+// come from a future projection; until one exists it reads as stale.
 func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string]creativecontent.Revision) map[string]string {
-	type shot struct{ doc, camera, pass string }
+	type shot struct{ doc, marker, camera, pass string }
+	type moment struct {
+		doc   string
+		frame int
+	}
 	scenes := map[string]*Scene{}
+	evaluated := map[moment]Scene{}
 	prints := map[shot]string{}
 	out := make(map[string]string, len(sources))
 	for _, src := range sources {
@@ -190,7 +198,7 @@ func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string
 		if !strings.HasPrefix(src.Fingerprint, fingerprintVersion+":") {
 			continue
 		}
-		key := shot{src.DocumentID, src.CameraObjectID, src.Pass}
+		key := shot{src.DocumentID, src.MarkerID, src.CameraObjectID, src.Pass}
 		fp, ok := prints[key]
 		if !ok {
 			s, decoded := scenes[src.DocumentID]
@@ -200,8 +208,14 @@ func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string
 				}
 				scenes[src.DocumentID] = s
 			}
-			if s != nil {
-				fp, _ = Fingerprint(*s, src.CameraObjectID, src.Pass)
+			if camera, frame, ok := shotNow(s, src); ok {
+				m := moment{src.DocumentID, frame}
+				e, done := evaluated[m]
+				if !done {
+					e = EvaluateAt(*s, frame)
+					evaluated[m] = e
+				}
+				fp, _ = Fingerprint(e, camera, src.Pass)
 			}
 			prints[key] = fp
 		}
@@ -210,4 +224,21 @@ func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string
 		}
 	}
 	return out
+}
+
+// shotNow is the camera and frame src's image would be drawn from in s now;
+// ok is false when s is unreadable or src's shot is gone or unbound.
+func shotNow(s *Scene, src creativecanvas.ExportSource) (camera string, frame int, ok bool) {
+	if s == nil {
+		return "", 0, false
+	}
+	if src.MarkerID == "" {
+		return src.CameraObjectID, 0, true
+	}
+	i := slices.IndexFunc(s.Timeline.Markers, func(m Marker) bool { return m.ID == src.MarkerID })
+	if i < 0 || s.Timeline.Markers[i].CameraObjectID == "" {
+		return "", 0, false
+	}
+	m := s.Timeline.Markers[i]
+	return m.CameraObjectID, m.Frame, true
 }

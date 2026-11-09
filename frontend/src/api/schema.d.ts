@@ -4756,7 +4756,17 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"];
+        /** @description 有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。 首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。 */
+        CreativeShotKeysDetails: {
+            missing: components["schemas"]["CreativeShotKeyGap"][];
+        };
+        CreativeShotKeyGap: {
+            object_id: string;
+            path: string;
+            marker_id: string;
+            frame: number;
+        };
         /** @description 读不到的内置贴图文件名（creative_texture_unavailable）。 */
         CreativeSceneTextureDetails: {
             file: string;
@@ -7348,7 +7358,59 @@ export interface components {
         CreativeScene: {
             environment: components["schemas"]["CreativeSceneEnvironment"];
             render: components["schemas"]["CreativeSceneRender"];
+            timeline: components["schemas"]["CreativeSceneTimeline"];
             objects: components["schemas"]["CreativeSceneObject"][];
+        };
+        /** @description 分镜标记（data: 场景时间线），单元 timeline。读取没有这个字段的旧快照时补 {fps: 24, markers: []}。 */
+        CreativeSceneTimeline: {
+            /** @description 只用于时间线面板的刻度显示，不影响静态分镜的渲染 */
+            fps: number;
+            /** @description 按 frame 升序存储（写入时服务端排序），帧号不重复。 */
+            markers: components["schemas"]["CreativeSceneMarker"][];
+        };
+        CreativeSceneMarker: {
+            /** @description 客户端生成，场景内唯一，删除后不复用 */
+            id: string;
+            /** @description 可为空串；界面上为空时显示「分镜 N」（按帧序编号） */
+            name: string;
+            frame: number;
+            /** @description 物件 ID 或空串。写入时非空就必须指向 kind = camera 的物件；之后摄像机被删除时，这个分镜视为未绑定摄像机，不能导出或回看。 */
+            camera_object_id: string;
+        };
+        /** @description 关键帧通道，键为通道路径，白名单见 data: 场景时间线（backend/internal/creativescene/channels.json）。 摆放类路径（transform.*、visible）属于 object:<id>，摄像机路径属于 object:<id>:content。 有通道的属性按 patterns: 关键帧求值 取值，基础值保留为默认状态。没有通道时不存储这个字段。 */
+        CreativeSceneAnimation: {
+            [key: string]: components["schemas"]["CreativeSceneChannel"];
+        };
+        CreativeSceneChannel: {
+            /** @description 帧号严格递增。 */
+            keys: components["schemas"]["CreativeSceneKey"][];
+        };
+        /** @description 读取时总带 interp；写入时可省略（连续属性缺省 linear，离散属性只允许并缺省 constant）。 */
+        CreativeSceneKey: {
+            frame: number;
+            /** @description 类型和范围同对应的基础值字段（数值、数组、布尔或字符串）；四元数存储时归一化。 */
+            value: unknown;
+            /** @enum {string} */
+            interp?: "linear" | "constant";
+        };
+        /** @description 关键帧的增量写法，按 clear → delete → set 应用，通道删空后不再存储。每条路径按所在单元计入并发 （摆放类 object:<id>，摄像机 object:<id>:content）。整批应用后，本批写到的通道在每个分镜帧上都须有关键帧， 否则 400（details.missing）。 */
+        CreativeSceneAnimationPatch: {
+            /** @description 删掉整条通道。 */
+            clear?: string[];
+            /** @description 删掉这一帧的关键帧，帧上没有关键帧时忽略。 */
+            delete?: {
+                path: string;
+                frame: number;
+            }[];
+            /** @description 按帧覆盖或插入；同一路径同一帧只能写一次。 */
+            set?: {
+                path: string;
+                frame: number;
+                /** @description 类型和范围同对应的基础值字段 */
+                value: unknown;
+                /** @enum {string} */
+                interp?: "linear" | "constant";
+            }[];
         };
         CreativeSceneEnvironment: {
             sky: components["schemas"]["CreativeSceneSky"];
@@ -7481,7 +7543,7 @@ export interface components {
             exposure_mode?: "ambient" | "manual";
             exposure_compensation?: number;
         };
-        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。 */
+        /** @description 摆放单元 object:<id> 管 name、transform、visible、locked；内容单元 object:<id>:content 管 primitive、model、material_slots、light、camera、volume；parent_id 与 order 归 objects 单元。按 kind 必须有、也只能有对应的内容字段。animation 的通道归入它所键的属性所在的单元。 */
         CreativeSceneObject: {
             id: string;
             /** @enum {string} */
@@ -7500,6 +7562,7 @@ export interface components {
             light?: components["schemas"]["CreativeSceneLight"];
             camera?: components["schemas"]["CreativeSceneCamera"];
             volume?: components["schemas"]["CreativeSceneVolume"];
+            animation?: components["schemas"]["CreativeSceneAnimation"];
         };
         /** @description 体积物件的介质：单位立方体（边长 1 m）或单位球（直径 1 m），由 transform 缩放，散射与吸收同 Blender 的 Volume Scatter、Volume Absorption。 写入时各字段可省略，缺省为 shape box、scatter_color #cccccc、scatter_density 0.1、anisotropy 0、absorption_color #cccccc、 absorption_density 0、edge_falloff 0.1、cast_shadow false；响应里总是带齐全部字段。update_objects 里按键合并，只改写到的字段。 每个场景最多 8 个体积物件。 */
         CreativeSceneVolume: {
@@ -7676,7 +7739,19 @@ export interface components {
             exposure_compensation?: number;
         };
         /** @description 场景类型的操作，放在 CreativeDocumentCommandPayload.operations 里提交；通用的 rename、restore、restore_units 见 CreativeDocumentOperation。批量操作的条目上限与物件上限一致（2000）。 */
-        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneDeriveModel"] | components["schemas"]["CreativeSceneSetInstanceModel"];
+        CreativeSceneOperation: components["schemas"]["CreativeSceneAddObjects"] | components["schemas"]["CreativeSceneUpdateObjects"] | components["schemas"]["CreativeSceneRemoveObjects"] | components["schemas"]["CreativeSceneReparentObjects"] | components["schemas"]["CreativeSceneSetEnvironment"] | components["schemas"]["CreativeSceneSetRender"] | components["schemas"]["CreativeSceneCommitModel"] | components["schemas"]["CreativeSceneDeriveModel"] | components["schemas"]["CreativeSceneSetInstanceModel"] | components["schemas"]["CreativeSceneSetTimeline"];
+        /** @description 涉及 timeline。按键合并：fps 可省略；markers 写了就整体替换分镜列表，写入时绑定的摄像机须存在且 kind = camera。已有文档首次写 timeline 时 expected 为 null。 */
+        CreativeSceneSetTimeline: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "set_timeline";
+            timeline: {
+                fps?: number;
+                markers?: components["schemas"]["CreativeSceneMarker"][];
+            };
+        };
         /** @description 涉及 objects；新对象的两个单元出现在 changed_units 中。 */
         CreativeSceneAddObjects: {
             /**
@@ -7710,6 +7785,7 @@ export interface components {
             light?: components["schemas"]["CreativeSceneLightPatch"];
             camera?: components["schemas"]["CreativeSceneCamera"];
             volume?: components["schemas"]["CreativeSceneVolume"];
+            animation?: components["schemas"]["CreativeSceneAnimationPatch"];
         };
         /** @description 分组连同后代一起删除；涉及 objects 以及每个被删对象的两个单元。 */
         CreativeSceneRemoveObjects: {
@@ -7908,9 +7984,10 @@ export interface components {
         };
         /** @enum {string} */
         CreativeScenePass: "clay" | "line" | "lit";
-        /** @description 每台摄像机一项，摄像机不重复；全部镜头合计不超过 48 张。 */
+        /** @description 每个分镜（marker_id）或每台摄像机（camera_object_id）一项，二选一且整批一致，不重复；全部镜头合计不超过 48 张。 按分镜导出时按这个分镜的帧求值、用它绑定的摄像机出图；按摄像机导出时按第 0 帧求值，只用于没有分镜的场景。 */
         CreativeSceneExportShots: {
-            camera_object_id: string;
+            marker_id?: string;
+            camera_object_id?: string;
             /** @description 同一镜头内 pass 不重复。 */
             images: {
                 pass: components["schemas"]["CreativeScenePass"];
@@ -7934,6 +8011,9 @@ export interface components {
             change_id: string;
             scene_revision: components["schemas"]["CreativeRevision"];
             nodes: {
+                /** @description 按摄像机导出时为 null */
+                marker_id: string | null;
+                /** @description 渲染所用的摄像机 */
                 camera_object_id: string;
                 pass: components["schemas"]["CreativeScenePass"];
                 node_id: string;

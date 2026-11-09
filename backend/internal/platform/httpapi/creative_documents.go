@@ -191,7 +191,15 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 	var conflict *creativedocument.ConflictError
 	var limit *creativedocument.LimitError
 	var empty *creativescene.SlotEmptyError
+	var gaps *creativescene.ShotKeysError
 	switch {
+	case errors.As(err, &gaps):
+		var details ErrorDetails
+		if e := details.FromCreativeShotKeysDetails(shotKeysDetails(gaps.Missing)); e != nil {
+			abortError(c, 500, CodeInternal, "内部错误")
+			return true
+		}
+		abortErrorWithTypedDetails(c, 400, CodeValidationFailed, gaps.PublicMessage(), details)
 	case errors.As(err, &conflict):
 		details := CreativeDocumentConflictDetails{Conflicts: make([]CreativeDocumentConflict, 0, len(conflict.Conflicts))}
 		for _, x := range conflict.Conflicts {
@@ -245,4 +253,12 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		return false
 	}
 	return true
+}
+
+func shotKeysDetails(gaps []creativescene.ShotKeyGap) CreativeShotKeysDetails {
+	d := CreativeShotKeysDetails{Missing: make([]CreativeShotKeyGap, 0, len(gaps))}
+	for _, g := range gaps {
+		d.Missing = append(d.Missing, CreativeShotKeyGap{ObjectId: g.ObjectID, Path: g.Path, MarkerId: g.MarkerID, Frame: g.Frame})
+	}
+	return d
 }

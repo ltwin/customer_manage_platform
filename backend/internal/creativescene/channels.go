@@ -414,16 +414,23 @@ func shotKeyGaps(s Scene, scope shotScope, limit int) []ShotKeyGap {
 	return gaps
 }
 
-// markerLabel is how the editor names a shot: 「name」, or 分镜 N by frame
-// order when the name is empty.
-func markerLabel(t Timeline, id string) string {
-	for i, m := range t.Markers {
-		if m.ID == id {
-			if m.Name != "" {
-				return "分镜「" + m.Name + "」"
-			}
-			return fmt.Sprintf("分镜 %d", i+1)
-		}
+// markerTitle is how the editor names marker i: its name, or 分镜 N by
+// frame order when the name is empty.
+func markerTitle(t Timeline, i int) string {
+	if name := t.Markers[i].Name; name != "" {
+		return name
 	}
-	return "分镜 " + id
+	return fmt.Sprintf("分镜 %d", i+1)
+}
+
+// markerLabel is markerTitle in a sentence.
+func markerLabel(t Timeline, id string) string {
+	i := slices.IndexFunc(t.Markers, func(m Marker) bool { return m.ID == id })
+	switch {
+	case i < 0:
+		return "分镜 " + id
+	case t.Markers[i].Name != "":
+		return "分镜「" + t.Markers[i].Name + "」"
+	}
+	return markerTitle(t, i)
 }

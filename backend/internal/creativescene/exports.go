@@ -33,8 +33,11 @@ type ExportImage struct {
 	UploadID string `json:"upload_id"`
 }
 
+// ExportShot is one row: a shot (MarkerID), drawn at its frame through its
+// camera, or for a scene without shots a camera (CameraObjectID) at frame 0.
 type ExportShot struct {
-	CameraObjectID string        `json:"camera_object_id"`
+	MarkerID       string        `json:"marker_id,omitempty"`
+	CameraObjectID string        `json:"camera_object_id,omitempty"`
 	Images         []ExportImage `json:"images"`
 }
 
@@ -48,6 +51,8 @@ type ExportInput struct {
 }
 
 type ExportNode struct {
+	// MarkerID is null for an export by camera.
+	MarkerID          *string                        `json:"marker_id"`
 	CameraObjectID    string                         `json:"camera_object_id"`
 	Pass              string                         `json:"pass"`
 	NodeID            string                         `json:"node_id"`
@@ -62,26 +67,35 @@ type ExportResult struct {
 	Nodes         []ExportNode         `json:"nodes"`
 }
 
-// validateShots checks the shape: 1–32 cameras without repeats, 1–3 images
-// each without a repeated pass, at most 48 images in all.
+// validateShots checks the shape: 1–32 shots, all by marker or all by
+// camera, without repeats, 1–3 images each without a repeated pass, at most
+// 48 images in all.
 func validateShots(shots []ExportShot) error {
 	if len(shots) == 0 || len(shots) > maxExportShots {
-		return invalid("shots 须为 1 到 %d 台摄像机", maxExportShots)
+		return invalid("shots 须为 1 到 %d 个分镜或摄像机", maxExportShots)
 	}
-	cameras := map[string]bool{}
+	byMarker := shots[0].MarkerID != ""
+	seen := map[string]bool{}
 	total := 0
 	for _, s := range shots {
-		if s.CameraObjectID == "" || cameras[s.CameraObjectID] {
-			return invalid("摄像机 %q 缺失或重复", s.CameraObjectID)
+		if (s.MarkerID != "") == (s.CameraObjectID != "") {
+			return invalid("每个镜头须写 marker_id 或 camera_object_id 之一")
 		}
-		cameras[s.CameraObjectID] = true
+		if (s.MarkerID != "") != byMarker {
+			return invalid("一次导出的镜头须全部按分镜（marker_id）或全部按摄像机（camera_object_id）")
+		}
+		id := s.MarkerID + s.CameraObjectID
+		if seen[id] {
+			return invalid("镜头 %s 重复", id)
+		}
+		seen[id] = true
 		if len(s.Images) == 0 || len(s.Images) > maxShotImages {
-			return invalid("摄像机 %s 须有 1 到 %d 张图", s.CameraObjectID, maxShotImages)
+			return invalid("镜头 %s 须有 1 到 %d 张图", id, maxShotImages)
 		}
 		passes := map[string]bool{}
 		for _, img := range s.Images {
 			if !slices.Contains(Passes, img.Pass) || passes[img.Pass] || img.UploadID == "" {
-				return invalid("摄像机 %s 的导出方式 %q 不合法、重复或缺少上传", s.CameraObjectID, img.Pass)
+				return invalid("镜头 %s 的导出方式 %q 不合法、重复或缺少上传", id, img.Pass)
 			}
 			passes[img.Pass] = true
 		}
@@ -148,7 +162,16 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 	if err != nil {
 		return ExportResult{}, err
 	}
-	byID := indexObjects(scene.Objects)
+	// Shots on one frame share an evaluation.
+	evaluated := map[int]Scene{}
+	at := func(frame int) Scene {
+		e, ok := evaluated[frame]
+		if !ok {
+			e = EvaluateAt(scene, frame)
+			evaluated[frame] = e
+		}
+		return e
+	}
 
 	// Columns follow the passes this export uses, in clay, line, lit order.
 	used := map[string]bool{}
@@ -164,27 +187,40 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 		}
 	}
 	rows := make([]creativecanvas.SceneExportRow, 0, len(in.Shots))
+	cameras := make([]string, 0, len(in.Shots))
 	for _, s := range in.Shots {
-		i, ok := byID[s.CameraObjectID]
-		if !ok || scene.Objects[i].Kind != KindCamera {
+		shot, err := resolveShot(scene, s, in.SceneRevision)
+		if err != nil {
+			return ExportResult{}, err
+		}
+		shown := at(shot.frame)
+		i, ok := indexObjects(shown.Objects)[shot.camera]
+		if !ok || shown.Objects[i].Kind != KindCamera {
+			if s.MarkerID != "" {
+				return ExportResult{}, invalid("分镜 %s 绑定的摄像机 %s 在修订 %d 中不存在", s.MarkerID, shot.camera, in.SceneRevision)
+			}
 			return ExportResult{}, invalid("摄像机 %s 在修订 %d 中不存在", s.CameraObjectID, in.SceneRevision)
 		}
-		cam := scene.Objects[i]
-		name := *cam.Camera.Label
+		cam := shown.Objects[i]
+		name := shot.title
+		if name == "" {
+			name = *cam.Camera.Label
+		}
 		if name == "" {
 			name = cam.Name
 		}
 		if name == "" {
 			name = "摄像机"
 		}
-		lens := lensOf(scene, cam)
+		cameras = append(cameras, shot.camera)
+		lens := lensOf(shown, cam)
 		images := slices.Clone(s.Images)
 		slices.SortFunc(images, func(a, b ExportImage) int {
 			return slices.Index(Passes, a.Pass) - slices.Index(Passes, b.Pass)
 		})
 		row := creativecanvas.SceneExportRow{Aspect: cameraAspect(*cam.Camera)}
 		for _, img := range images {
-			fp, _ := Fingerprint(scene, s.CameraObjectID, img.Pass)
+			fp, _ := Fingerprint(shown, shot.camera, img.Pass)
 			row.Images = append(row.Images, creativecanvas.SceneExportImage{
 				UploadID: img.UploadID,
 				Title:    name + " · " + passTitles[img.Pass],
@@ -192,7 +228,9 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 				BasedOn: creativecanvas.SceneExportBasedOn{
 					SceneDocumentID: in.DocumentID,
 					SceneRevision:   in.SceneRevision,
-					CameraObjectID:  s.CameraObjectID,
+					MarkerID:        s.MarkerID,
+					Frame:           shot.frame,
+					CameraObjectID:  shot.camera,
 					Pass:            img.Pass,
 					Fingerprint:     fp,
 					Lens:            &lens,
@@ -214,12 +252,40 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 	}
 	out := ExportResult{ChangeID: placed.ChangeID, SceneRevision: in.SceneRevision, Nodes: []ExportNode{}}
 	for i, row := range rows {
+		var marker *string
+		if in.Shots[i].MarkerID != "" {
+			marker = &in.Shots[i].MarkerID
+		}
 		for j, img := range row.Images {
 			p := placed.Rows[i][j]
-			out.Nodes = append(out.Nodes, ExportNode{CameraObjectID: in.Shots[i].CameraObjectID, Pass: img.BasedOn.Pass, NodeID: p.NodeID, ContentRevisionID: p.ContentRevisionID, Lens: *img.BasedOn.Lens})
+			out.Nodes = append(out.Nodes, ExportNode{MarkerID: marker, CameraObjectID: cameras[i], Pass: img.BasedOn.Pass, NodeID: p.NodeID, ContentRevisionID: p.ContentRevisionID, Lens: *img.BasedOn.Lens})
 		}
 	}
 	return out, nil
+}
+
+// exportShot is what one row of an export draws: the frame, the camera and,
+// for a shot, its title.
+type exportShot struct {
+	frame  int
+	camera string
+	title  string
+}
+
+// resolveShot finds s in scene: a shot by its marker, a camera at frame 0.
+func resolveShot(scene Scene, s ExportShot, revision creativeops.Revision) (exportShot, error) {
+	if s.MarkerID == "" {
+		return exportShot{camera: s.CameraObjectID}, nil
+	}
+	i := slices.IndexFunc(scene.Timeline.Markers, func(m Marker) bool { return m.ID == s.MarkerID })
+	if i < 0 {
+		return exportShot{}, invalid("分镜 %s 在修订 %d 中不存在", s.MarkerID, revision)
+	}
+	m := scene.Timeline.Markers[i]
+	if m.CameraObjectID == "" {
+		return exportShot{}, invalid("分镜 %s 在修订 %d 中未绑定摄像机", s.MarkerID, revision)
+	}
+	return exportShot{frame: m.Frame, camera: m.CameraObjectID, title: markerTitle(*scene.Timeline, i)}, nil
 }
 
 // cameraAspect is the camera's frame width over height.

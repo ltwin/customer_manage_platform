@@ -66,6 +66,8 @@ export function touchedUnits(op: WireOp, state: SceneState): string[] {
       return ['environment']
     case 'set_render':
       return ['render']
+    case 'set_timeline':
+      return ['timeline']
     case 'add_objects':
       return ['objects']
     case 'reparent_objects':

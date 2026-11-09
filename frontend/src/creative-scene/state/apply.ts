@@ -259,6 +259,20 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
     // Merged by key, as the server does: writing the mode keeps the exposure.
     case 'set_render':
       return { ...state, scene: { ...scene, render: { ...scene.render, ...op.render } } }
+    // Merged by key; markers are stored by frame, as the server sorts them.
+    case 'set_timeline': {
+      const { fps, markers } = op.timeline
+      return {
+        ...state,
+        scene: {
+          ...scene,
+          timeline: {
+            fps: fps ?? scene.timeline.fps,
+            markers: markers ? [...markers].sort((a, b) => a.frame - b.frame) : scene.timeline.markers,
+          },
+        },
+      }
+    }
     case 'add_objects': {
       const present = new Set(scene.objects.map((o) => o.id))
       const added = op.objects

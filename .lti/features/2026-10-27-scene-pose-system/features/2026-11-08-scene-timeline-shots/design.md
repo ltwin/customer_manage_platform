@@ -282,6 +282,8 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 | `backend/internal/creativescene/fingerprint.go:Freshness` | 修改 | 按 `marker_id` / 第 0 帧求值后计算指纹 |
 | `backend/internal/creativescene/exports.go:ExportShot`、`exports.go:validateShots`、`exports.go:placeExportsInTx` | 修改 | `MarkerID`；先求值再取摄像机、`lensOf`、指纹；标题用分镜名 |
 | `backend/internal/creativecanvas`（`SceneExportBasedOn`、`based_on` 的读写） | 修改 | 新增 `MarkerID`、`Frame`；`export_source` 带出 |
+| `backend/internal/creativeagent/context.go:exportSourceContext` | 修改 | `read_canvas` 的 `export_source` 带 `marker_id`、`frame`（实施时补充：`export_source` 在这里组装） |
+| `backend/internal/platform/httpapi/creative_documents.go:creativeDocumentError` | 修改 | P8 拒绝映射为 400 `validation_failed`，`details.missing`（实施时补充） |
 | `backend/internal/creativescene/jobs.go:RenderRequest`、`jobs.go:ExportRequest` 及建任务的校验 | 修改 | `MarkerID`、`Frame`、`MarkerIDs`；缺省分镜与未绑定摄像机的检查 |
 | `backend/internal/creativescene/jobs_complete.go` | 修改 | 导出结果的节点带 `marker_id` |
 | `backend/internal/creativescene/agent.go:ReadInput`、`agent.go:SceneRead`、`agent.go:ObjectView`、`agent.go:AgentReadInTx`、`agent.go:EditInput`、`agent.go:AgentEditInTx` | 修改 | `shot` 读写；`timeline`、`animated`、`shot_key_gaps`；有通道却不带分镜时报错 |
@@ -339,4 +341,4 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 |---|---|---|---|
 | `mcp-write-generate` 是否已开工、改到 `render_view` / `export_shots` 的哪些代码 | 本次 jobs 相关任务的合入顺序 | apply 前查它的状态；它先合入时，本次在它的代码上修改 | 本次 apply 前 |
 | 自动关键帧开关的默认值 | 交互 | owner 试用后决定（现为关闭） | 本次验收 |
-| 读画布时求值的开销是否需要按修订缓存 | 性能 | Go 基准测试（见「局部设计与偏差」） | 指纹任务完成时 |
+| ~~读画布时求值的开销是否需要按修订缓存~~ | 性能 | **已解决（任务 1.4，2026-11-08）**：`BenchmarkEvaluateAtLimits`（2000 物件、200 分镜、20000 关键帧，在两个分镜之间求值，每条通道都插值）单次约 0.23 ms、约 0.5 MB 分配，远低于 5 ms。`Freshness.Check` 已按（场景，帧）复用求值结果，不再加按修订的缓存 | — |

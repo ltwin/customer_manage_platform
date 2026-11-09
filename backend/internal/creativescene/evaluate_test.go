@@ -2,6 +2,7 @@ package creativescene
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -137,5 +138,42 @@ func TestEvaluateAt(t *testing.T) {
 	got, _ := json.Marshal(EvaluateAt(plain, 3).Objects)
 	if string(got) != string(want) {
 		t.Errorf("objects without channels changed:\n%s\n%s", want, got)
+	}
+}
+
+// timelineAtLimits is a scene at the object limit with 200 shots and 20000
+// keys, as the timeline's limits allow.
+func timelineAtLimits(b *testing.B) Scene {
+	b.Helper()
+	s := Scene{Timeline: &Timeline{FPS: defaultFPS}}
+	for i := range maxMarkers {
+		s.Timeline.Markers = append(s.Timeline.Markers, Marker{ID: fmt.Sprintf("smk_%021d", i), Frame: i * 10})
+	}
+	keyed := maxSceneKeys / maxMarkers / 2 // objects keyed on position and rotation at every shot
+	for i := range maxObjects {
+		o := Object{
+			ID: fmt.Sprintf("sobj_%021d", i), Kind: KindPrimitive, Order: i, Visible: true,
+			Transform: Transform{Position: []float64{float64(i), 0, 0}, Rotation: []float64{0, 0, 0, 1}, Scale: []float64{1, 1, 1}},
+		}
+		if i < keyed {
+			pos, rot := make([]Key, 0, maxMarkers), make([]Key, 0, maxMarkers)
+			for _, m := range s.Timeline.Markers {
+				pos = append(pos, Key{Frame: m.Frame, Value: json.RawMessage(fmt.Sprintf("[%d,0,%d]", i, m.Frame)), Interp: interpLinear})
+				rot = append(rot, Key{Frame: m.Frame, Value: json.RawMessage(`[0,0.7071067811865476,0,0.7071067811865476]`), Interp: interpLinear})
+			}
+			o.Animation = map[string]Channel{"transform.position": {Keys: pos}, "transform.rotation": {Keys: rot}}
+		}
+		s.Objects = append(s.Objects, o)
+	}
+	return s
+}
+
+// Evaluating a scene at the timeline's limits, between two shots so every
+// channel interpolates; design 未决事项 records the result (budget 5 ms).
+func BenchmarkEvaluateAtLimits(b *testing.B) {
+	s := timelineAtLimits(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		EvaluateAt(s, 995)
 	}
 }
