@@ -1,0 +1,60 @@
+{
+  "uid": "e1eb0660-2356-492d-ab1b-e03a0fe032dc",
+  "revision": 4,
+  "id": "scene-glb-import",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-pose-system",
+  "designBinding": {
+    "version": 4,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "data:场景文档",
+      "data:模型内容",
+      "data:模型资产",
+      "api:导入模型到资产库"
+    ],
+    "delivers": [
+      "data:场景文档",
+      "data:模型内容",
+      "data:模型资产",
+      "api:导入模型到资产库"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-11-09T11:50:51.501Z",
+  "updatedAt": "2026-11-09T12:04:18.799Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "contract-break",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-09T12:04:18.509Z",
+      "contentHash": "dff53a8053dc9cb6"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-09T12:04:18.509Z",
+      "contentHash": "d3af65e76f013107"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

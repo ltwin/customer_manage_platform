@@ -172,7 +172,7 @@ sequenceDiagram
 | IK | 自写四肢两段式解析 IK，带极向量 | 结果确定、没有迭代抖动，满足四肢的需求；three 自带的 `CCDIKSolver` 是迭代求解，结果与初始姿态有关。脊柱等多段 IK 是后续 |
 | 骨骼映射识别 | 有 VRM 扩展时读它的「标准骨骼 → 节点下标」映射；否则按命名表（Mixamo 的 `mixamorig:` 前缀等）识别；都不行时手动指定。结果一律存成节点下标 | glTF 节点名可缺省、不唯一，不能当身份；VRM 的映射本来就按节点下标。Rigify 等命名可以之后追加命名表 |
 | 导入时的 GLB 解析与重写（子项 2） | three 的 `GLTFLoader` 解析原文件，换算后用 `GLTFExporter` 写回 GLB，再用现有的 `sandbox/inspect.ts` 预检静态子集 | 与代码模型的烘焙同一条「three 对象 → GLB → 暂存上传 → worker 复核」链路，服务端和渲染端都不变；`GLTFLoader` 已经处理 glTF 的各种写法（稀疏访问器、量化、矩阵与 TRS），比按字节改写 GLB 省事。代价是节点名按 three 的规则清洗（去掉 `:` 等），对导入的模型无影响 |
-| 压缩几何（子项 2，owner 2026-11-09） | 支持 Draco、meshopt 和 `KHR_mesh_quantization`：导入时用 three 自带的 `DRACOLoader`（解码器文件随前端发布、只在导入时加载）和 `meshoptimizer` 包的解码器解压，按未压缩存储 | 网页素材和 Blender 勾选压缩的导出很常见；存储形态仍是未压缩的静态子集，渲染、GI 和校验都不变。KTX2 / Basis 贴图不支持：要先转成图片，拒绝并提示在 Blender 里换成 PNG 或 JPEG 再导出 |
+| 压缩几何（子项 2，owner 2026-11-09） | 支持 Draco、meshopt 和 `KHR_mesh_quantization`：导入时用 three 自带的 `DRACOLoader`（解码器文件随前端发布、只在导入时加载）和 `meshoptimizer` 包的解码器解压；解析后**显式反量化**（见「导入的材质换算」），按未压缩存储。`GLTFExporter` 会原样写出整数访问器并重新声明 `KHR_mesh_quantization`（修订 v4 前的方案评审实测），所以不能依赖导出自动转换 | 网页素材和 Blender 勾选压缩的导出很常见；存储形态仍是未压缩的静态子集，渲染、GI 和校验都不变。KTX2 / Basis 贴图不支持：要先转成图片，拒绝并提示在 Blender 里换成 PNG 或 JPEG 再导出 |
 | 平台内置资产 | 仿 `data: 内置贴图库`：清单随代码发布，文件放在对象存储的独立前缀下，用 `creativectl` 导入和检查 | 已有先例；内置资产不属于账号，ADR-001 的账号隔离不适用，读取仍要求登录 |
 
 ## 关键机制
@@ -211,7 +211,7 @@ sequenceDiagram
 
 ### 导入的材质换算（子项 2）
 
-浏览器把原文件换算成存储形态，结果按项提示摄影师（导入对话框里列出被忽略或换算过的项），服务端只校验换算结果。owner 2026-11-09 定：自发光贴图和顶点色补成正式能力，其余换算或忽略；压缩几何解压后存；带骨骼的文件本子项拒绝。
+浏览器把原文件换算成存储形态，结果按项提示摄影师（导入对话框里列出被忽略或换算过的项），服务端只校验换算结果。owner 2026-11-09 定：自发光贴图和顶点色补成正式能力，其余换算或忽略；压缩几何解压后存；带骨骼的文件本子项拒绝。修订 v4（子项 2 方案评审）补：只收内嵌资源、显式反量化、采样器寻址方式的降级提示、超限图片按用途和透明度选编码。
 
 | 原文件里 | 处理 |
 |---|---|
@@ -230,9 +230,11 @@ sequenceDiagram
 | `KHR_materials_unlit` | 按普通材质显示（光照会影响它），提示 |
 | `KHR_texture_transform` | 同一材质的贴图变换相同时，烘进存储 GLB 的 `TEXCOORD_0`（几何按需复制，不影响共用这份几何的其他材质），`mapping` 写 `uv`、`repeat [1,1]`；变换不同时按基础色贴图的变换烘焙，其余提示 |
 | 引用 `texCoord: 1` 的贴图 | 忽略这张贴图并提示 |
+| 采样器的寻址方式（`wrapS` / `wrapT`） | 渲染端固定按重复（`REPEAT`）采样。`REPEAT` 原样；`MIRRORED_REPEAT`、`CLAMP_TO_EDGE` 时，检查用这个材质的 primitive 在烘焙贴图变换之后的 UV：全部落在 [0, 1] 内时两者结果相同，不提示（只剩边缘一个像素的过滤差异，忽略）；有越界时按重复显示并逐项提示「这张贴图原本是镜像 / 钳制寻址，导入后按重复显示」（修订 v4）。`magFilter` / `minFilter` 忽略，渲染端用统一的过滤 |
 | 有贴图的材质 | `mapping.kind = uv`；几何没有 `TEXCOORD_0` 时照常保存，按现有规则显示为三平面并提示 |
-| 图片 | PNG、JPEG、WebP 原样上传；超过图片上传上限（25 MiB 或 8192²）时在浏览器里缩到上限内重新编码。同一张图被多处引用只上传一次。KTX2 / Basis 拒绝（见「技术选型」）。不同图片超过 64 张时拒绝 |
-| Draco、meshopt、`KHR_mesh_quantization` | 解压后存 |
+| 图片 | PNG、JPEG、WebP 原样上传。超过图片上传上限（25 MiB 或 8192²）时在浏览器里缩到上限内重新编码，编码按用途和透明度选（修订 v4）：用作法线、ORM、糙度、金属度、AO 的，或有任何不透明度小于 1 的像素的，编码为 PNG（无损，保留透明通道）；其余（不透明的基础色、自发光）编码为 JPEG（质量 0.92）。重新编码后仍超限时边长减半再试。同一张图被多处引用只上传一次，按最保守的用途编码。KTX2 / Basis 拒绝（见「技术选型」）。不同图片超过 64 张时拒绝 |
+| 资源位置 | 只接受内嵌资源：图片取 `bufferView` 或 `data:` URL，缓冲只能是 GLB 的 BIN 块或 `data:` URL。任何外部 URI（相对路径、`http(s)` 等）在交给加载器之前拒绝，提示在 Blender 里重新导出为内嵌资源的 GLB（修订 v4） |
+| Draco、meshopt、`KHR_mesh_quantization` | 解压后**反量化**：`POSITION`、`NORMAL`、`TANGENT`、`TEXCOORD_0/1` 不是 `FLOAT` 的，按访问器的 `normalized` 规则（glTF「Animation & Mesh Quantization」的换算公式）转成 `FLOAT`；交错属性先拆开；`COLOR_0` 一并转成 `FLOAT`。节点变换原样保留（量化常把缩放、平移放在节点上）。结果不再声明 `KHR_mesh_quantization`（修订 v4） |
 | `skins`、`JOINTS_*`、`WEIGHTS_*` | 拒绝，提示蒙皮角色在后续版本支持（子项 3） |
 | 形态键（`targets`） | 丢掉，按基础形状存，提示 |
 | `animations`、`cameras`、`KHR_lights_punctual` | 丢掉，提示 |
