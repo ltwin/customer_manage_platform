@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -114,14 +115,18 @@ type BakeTarget struct {
 	BaseContentID string `json:"base_content_id,omitempty"`
 }
 
-// RenderRequest is a render_view job's request: one of camera, viewpoint or preset.
+// RenderRequest is a render_view job's request: one of a shot, a camera, a
+// viewpoint or a preset (data: 场景时间线「客户端任务的分镜字段」). A shot is
+// drawn at its frame through its camera; the others at Frame.
 type RenderRequest struct {
+	MarkerID       string     `json:"marker_id,omitempty"`
 	CameraObjectID string     `json:"camera_object_id,omitempty"`
 	Viewpoint      *Viewpoint `json:"viewpoint,omitempty"`
 	Preset         string     `json:"preset,omitempty"`
+	Frame          int        `json:"frame,omitempty"`
 	Mode           string     `json:"mode"`
 	// DepthOfField renders the camera's aperture and focus the way the clay
-	// export does; only with CameraObjectID.
+	// export does; only with a shot or a camera.
 	DepthOfField bool `json:"depth_of_field,omitempty"`
 }
 
@@ -848,15 +853,17 @@ func replaceTarget(ctx context.Context, tx store.TxAccountScope, scene Scene, id
 	return target, units, nil
 }
 
-// RenderInput is render_view's request: one of a camera in the scene, a
-// viewpoint or a preset framing.
+// RenderInput is render_view's request: one of a shot, a camera in the
+// scene, a viewpoint or a preset framing, the last three at Frame.
 type RenderInput struct {
 	DocumentID     string
 	RunID          string
 	ToolCallID     string
+	MarkerID       string
 	CameraObjectID string
 	Viewpoint      *Viewpoint
 	Preset         string
+	Frame          int
 	// Mode is clay (the default when empty) or lit.
 	Mode         string
 	DepthOfField bool
@@ -871,13 +878,19 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 		return Job{}, err
 	}
 	given := 0
-	for _, set := range []bool{r.CameraObjectID != "", r.Viewpoint != nil, r.Preset != ""} {
+	for _, set := range []bool{r.MarkerID != "", r.CameraObjectID != "", r.Viewpoint != nil, r.Preset != ""} {
 		if set {
 			given++
 		}
 	}
 	if given != 1 {
-		return Job{}, invalid("camera_object_id、viewpoint、preset 须给出其中一个")
+		return Job{}, invalid("shot（marker_id）、camera_object_id、viewpoint、preset 须给出其中一个")
+	}
+	if r.Frame < 0 || r.Frame > maxFrame {
+		return Job{}, invalid("frame 须在 0…%d 之间", maxFrame)
+	}
+	if r.MarkerID != "" && r.Frame != 0 {
+		return Job{}, invalid("按分镜回看时帧由分镜决定，不要再写 frame")
 	}
 	mode := r.Mode
 	if mode == "" {
@@ -886,8 +899,8 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 	if mode != PassClay && mode != PassLit {
 		return Job{}, invalid("mode 只能是 clay 或 lit")
 	}
-	if r.DepthOfField && r.CameraObjectID == "" {
-		return Job{}, invalid("depth_of_field 只能与 camera_object_id 一起用：临时视点和预设视角没有光圈和对焦")
+	if r.DepthOfField && r.CameraObjectID == "" && r.MarkerID == "" {
+		return Job{}, invalid("depth_of_field 只能与分镜或 camera_object_id 一起用：临时视点和预设视角没有光圈和对焦")
 	}
 	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, r.DocumentID, TypeKey)
 	if err != nil {
@@ -897,17 +910,26 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 		return Job{}, creativedocument.ErrTrashed
 	}
 	switch {
-	case r.CameraObjectID != "":
+	case r.MarkerID != "" || r.CameraObjectID != "":
 		scene, err := decodeScene(cur.Content.Payload)
 		if err != nil {
 			return Job{}, err
 		}
-		i, ok := indexObjects(scene.Objects)[r.CameraObjectID]
-		if !ok || scene.Objects[i].Kind != KindCamera {
-			return Job{}, invalid("物件 %s 不是场景里的摄像机", r.CameraObjectID)
+		camera, frame := r.CameraObjectID, r.Frame
+		if r.MarkerID != "" {
+			m, err := boundMarker(scene, r.MarkerID)
+			if err != nil {
+				return Job{}, err
+			}
+			camera, frame = m.CameraObjectID, m.Frame
 		}
-		if c := scene.Objects[i].Camera; r.DepthOfField && (c == nil || c.DepthOfField == nil || !*c.DepthOfField) {
-			return Job{}, invalid("摄像机 %s 没有打开景深：先用 edit_scene 把 depth_of_field 设为 true，再按景深回看", r.CameraObjectID)
+		shown := EvaluateAt(scene, frame)
+		i, ok := indexObjects(shown.Objects)[camera]
+		if !ok || shown.Objects[i].Kind != KindCamera {
+			return Job{}, invalid("物件 %s 不是场景里的摄像机", camera)
+		}
+		if c := shown.Objects[i].Camera; r.DepthOfField && (c == nil || c.DepthOfField == nil || !*c.DepthOfField) {
+			return Job{}, invalid("摄像机 %s 在第 %d 帧没有打开景深：先用 edit_scene 把 depth_of_field 设为 true，再按景深回看", camera, frame)
 		}
 	case r.Viewpoint != nil:
 		v := r.Viewpoint
@@ -925,26 +947,31 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 	case !slices.Contains(renderPresets, r.Preset):
 		return Job{}, invalid("preset 须为 overview、top、front 或 side")
 	}
-	req := RenderRequest{CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Mode: mode, DepthOfField: r.DepthOfField}
+	req := RenderRequest{MarkerID: r.MarkerID, CameraObjectID: r.CameraObjectID, Viewpoint: r.Viewpoint, Preset: r.Preset, Frame: r.Frame, Mode: mode, DepthOfField: r.DepthOfField}
 	return CreateJob(ctx, tx, NewJob{DocumentID: r.DocumentID, Kind: KindRenderView, Request: req, RunID: r.RunID, ToolCallID: r.ToolCallID})
 }
 
-// ExportRequest is an export_shots job's request: the cameras and passes to
-// render, and where the images go (design「export_shots 任务」).
+// ExportRequest is an export_shots job's request: the shots, or for a scene
+// without shots the cameras, and passes to render, and where the images go
+// (design「export_shots 任务」). Exactly one of MarkerIDs and CameraObjectIDs
+// is set.
 type ExportRequest struct {
-	CameraObjectIDs []string `json:"camera_object_ids"`
+	MarkerIDs       []string `json:"marker_ids,omitempty"`
+	CameraObjectIDs []string `json:"camera_object_ids,omitempty"`
 	Passes          []string `json:"passes"`
 	CanvasID        string   `json:"canvas_id"`
 	SceneNodeID     string   `json:"scene_node_id"`
 }
 
-// ExportJobInput is export_shots: cameras left out mean every camera in
-// object order, passes left out mean clay and line.
+// ExportJobInput is export_shots: shots and cameras both left out mean
+// every shot in frame order, or every camera in object order for a scene
+// without shots; passes left out mean clay and line.
 type ExportJobInput struct {
 	DocumentID      string
 	RunID           string
 	ToolCallID      string
 	CanvasID        string
+	MarkerIDs       []string
 	CameraObjectIDs []string
 	Passes          []string
 }
@@ -975,16 +1002,27 @@ func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in Export
 	if err != nil {
 		return Job{}, err
 	}
-	cameras := in.CameraObjectIDs
-	if len(cameras) == 0 {
-		for _, o := range scene.Objects {
-			if o.Kind == KindCamera {
-				cameras = append(cameras, o.ID)
+	if len(in.MarkerIDs) > 0 && len(in.CameraObjectIDs) > 0 {
+		return Job{}, invalid("shots（marker_ids）与 camera_object_ids 只能给一个")
+	}
+	markers, cameras := in.MarkerIDs, in.CameraObjectIDs
+	if len(markers) == 0 && len(cameras) == 0 {
+		for _, m := range scene.Timeline.Markers {
+			markers = append(markers, m.ID)
+		}
+		if len(markers) == 0 {
+			for _, o := range scene.Objects {
+				if o.Kind == KindCamera {
+					cameras = append(cameras, o.ID)
+				}
 			}
 		}
-		if len(cameras) == 0 {
+		if len(markers) == 0 && len(cameras) == 0 {
 			return Job{}, invalid("场景里还没有摄像机：先用 edit_scene 添加摄像机再导出")
 		}
+	}
+	if err := checkExportMarkers(scene, markers); err != nil {
+		return Job{}, err
 	}
 	idx := indexObjects(scene.Objects)
 	seen := map[string]bool{}
@@ -998,6 +1036,7 @@ func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in Export
 		}
 		seen[id] = true
 	}
+	rows := len(markers) + len(cameras)
 	passes := in.Passes
 	if len(passes) == 0 {
 		passes = defaultExportPasses
@@ -1011,8 +1050,8 @@ func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in Export
 	}
 	// Columns go in the canonical pass order whatever order was asked.
 	passes = slices.DeleteFunc(slices.Clone(Passes), func(p string) bool { return !used[p] })
-	if n := len(cameras) * len(passes); len(cameras) > maxExportShots || n > maxExportImages {
-		return Job{}, creativeops.Explain(creativedocument.ErrSizeLimit, "一次最多导出 %d 张图（%d 台摄像机），现在是 %d 张", maxExportImages, maxExportShots, n)
+	if n := rows * len(passes); rows > maxExportShots || n > maxExportImages {
+		return Job{}, creativeops.Explain(creativedocument.ErrSizeLimit, "一次最多导出 %d 张图（%d 个分镜或摄像机），现在是 %d 张", maxExportImages, maxExportShots, n)
 	}
 	node, err := creativecanvas.DocumentNodeInTx(ctx, tx, in.CanvasID, in.DocumentID)
 	if errors.Is(err, creativecanvas.ErrNotFound) {
@@ -1021,6 +1060,45 @@ func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in Export
 	if err != nil {
 		return Job{}, err
 	}
-	req := ExportRequest{CameraObjectIDs: cameras, Passes: passes, CanvasID: in.CanvasID, SceneNodeID: node}
+	req := ExportRequest{MarkerIDs: markers, CameraObjectIDs: cameras, Passes: passes, CanvasID: in.CanvasID, SceneNodeID: node}
 	return CreateJob(ctx, tx, NewJob{DocumentID: in.DocumentID, Kind: KindExportShots, Request: req, RunID: in.RunID, ToolCallID: in.ToolCallID})
+}
+
+// boundMarker is shot id of s with the camera it is bound to in s.
+func boundMarker(s Scene, id string) (Marker, error) {
+	i := slices.IndexFunc(s.Timeline.Markers, func(m Marker) bool { return m.ID == id })
+	if i < 0 {
+		return Marker{}, invalid("分镜 %s 不存在", id)
+	}
+	m := s.Timeline.Markers[i]
+	if m.CameraObjectID == "" {
+		return Marker{}, invalid("%s未绑定摄像机：先用 edit_scene 的 update_shot 给它绑定摄像机", markerLabel(*s.Timeline, id))
+	}
+	if j, ok := indexObjects(s.Objects)[m.CameraObjectID]; !ok || s.Objects[j].Kind != KindCamera {
+		return Marker{}, invalid("%s绑定的摄像机 %s 已删除：先用 edit_scene 的 update_shot 换绑摄像机", markerLabel(*s.Timeline, id), m.CameraObjectID)
+	}
+	return m, nil
+}
+
+// checkExportMarkers refuses repeated or unknown shots and lists every shot
+// that has no camera to export through.
+func checkExportMarkers(s Scene, ids []string) error {
+	seen := map[string]bool{}
+	var unbound []string
+	for _, id := range ids {
+		if seen[id] {
+			return invalid("分镜 %s 重复", id)
+		}
+		seen[id] = true
+		if _, err := boundMarker(s, id); err != nil {
+			if !slices.ContainsFunc(s.Timeline.Markers, func(m Marker) bool { return m.ID == id }) {
+				return err
+			}
+			unbound = append(unbound, markerLabel(*s.Timeline, id)+"（"+id+"）")
+		}
+	}
+	if len(unbound) > 0 {
+		return invalid("这些分镜没有可用的摄像机，不能导出：%s。先用 edit_scene 的 update_shot 绑定摄像机", strings.Join(unbound, "、"))
+	}
+	return nil
 }
