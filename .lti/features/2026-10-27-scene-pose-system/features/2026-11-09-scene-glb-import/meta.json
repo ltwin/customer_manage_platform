@@ -1,6 +1,6 @@
 {
   "uid": "e1eb0660-2356-492d-ab1b-e03a0fe032dc",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-glb-import",
   "kind": "feature",
   "assurance": "governed",
@@ -29,9 +29,9 @@
       "api:导入模型到资产库"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-09T11:50:51.501Z",
-  "updatedAt": "2026-11-09T12:04:18.799Z",
+  "updatedAt": "2026-11-09T12:05:21.946Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -53,8 +53,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "60faf9808985ede8ce45c95ac047a32f1da67891",
+    "at": "2026-11-09T12:05:21.553Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5eccf6709c44d5b1b0374664936d9824c60a0af337c265a9344e8da17155087a"
+    },
+    "preExisting": [
+      ".lti/snapshots/5eccf6709c44d5b1b0374664936d9824c60a0af337c265a9344e8da17155087a.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
