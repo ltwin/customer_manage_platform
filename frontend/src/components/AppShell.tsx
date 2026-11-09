@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, fetchMe } from '../api/client'
 import { AccountCenterProvider } from '../account/AccountCenterContext.tsx'
 import { preloadLinkTarget } from '../creative-canvas/pages.ts'
@@ -36,6 +36,11 @@ export default function AppShell() {
     message: '正在加载账号时区',
   })
   const [timezoneReloadTick, setTimezoneReloadTick] = useState(0)
+  // useNavigate 在路径变化时返回新函数；放进 ref，免得每次切页都重读 /me。
+  const latestNavigate = useRef(navigate)
+  useEffect(() => {
+    latestNavigate.current = navigate
+  })
 
   useEffect(() => {
     let active = true
@@ -51,7 +56,7 @@ export default function AppShell() {
         if (!active) return
         if (error instanceof ApiError && error.status === 401) {
           setTimezoneState({ kind: 'unauthorized' })
-          navigate('/login', { replace: true })
+          latestNavigate.current('/login', { replace: true })
           return
         }
         setTimezoneState((current) =>
@@ -65,7 +70,7 @@ export default function AppShell() {
     return () => {
       active = false
     }
-  }, [navigate, timezoneReloadTick])
+  }, [timezoneReloadTick])
 
   const timezonePresentation = pageReadPresentation(timezoneState)
   const timezone = readyPageData(timezoneState)

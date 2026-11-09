@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import type * as api from '../editor/api.ts'
-import { coverMedia, type ProjectState } from './projectList.ts'
+import { useNearViewport } from '../editor/MediaView.tsx'
+import {
+  cachedCoverMedia,
+  coverMedia,
+  type ProjectState,
+} from './projectList.ts'
 import './cover.css'
 
 // 项目封面是默认画布的缩影：抽样节点按边界框等比缩进卡片，保留 8% 边距。
@@ -53,6 +58,11 @@ export default function ProjectCover({
   project: api.Project
   state: ProjectState
 }) {
+  // 卡片接近视口时才申请封面图片的票据，项目页下方的卡片不和首屏抢请求；
+  // 票据已在缓存里的直接显示，切回页面时不等观察器回调。
+  const { ref, near } = useNearViewport<HTMLDivElement>()
+  const shown = (revision: string | undefined) =>
+    revision && (near || cachedCoverMedia(revision)) ? revision : undefined
   const placed = layoutCover(project.cover.nodes)
   const byID = new Map(placed.map((n) => [n.id, n]))
   // 分组垫在最下面；每个封面最多取 6 张图，其余媒体节点画成色块。
@@ -67,7 +77,7 @@ export default function ProjectCover({
       .map((n) => n.id),
   )
   return (
-    <div className="pc-cover">
+    <div className="pc-cover" ref={ref}>
       {placed.length ? (
         <>
           <svg
@@ -96,7 +106,9 @@ export default function ProjectCover({
             <CoverCell
               key={n.id}
               node={n}
-              revision={media.has(n.id) ? n.content_revision_id : undefined}
+              revision={
+                media.has(n.id) ? shown(n.content_revision_id) : undefined
+              }
             />
           ))}
           {project.cover.more && <span className="pc-more">部分节点</span>}
@@ -149,12 +161,21 @@ function CoverCell({
   )
 }
 
+type Media = { revision: string; url: string; video: boolean }
+
+function cachedMedia(revision: string): Media | undefined {
+  const ticket = cachedCoverMedia(revision)
+  return (
+    ticket && {
+      revision,
+      url: ticket.url,
+      video: ticket.mime.startsWith('video/'),
+    }
+  )
+}
+
 export function CoverMedia({ revision }: { revision: string }) {
-  const [media, setMedia] = useState<{
-    revision: string
-    url: string
-    video: boolean
-  }>()
+  const [media, setMedia] = useState(() => cachedMedia(revision))
   useEffect(() => {
     let active = true
     coverMedia(revision)

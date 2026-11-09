@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../editor/api.ts'
-import { mediaTicket, type MediaTicket } from '../editor/media.ts'
+import {
+  cachedMediaTicket,
+  mediaTicket,
+  type MediaTicket,
+} from '../editor/media.ts'
 import { errorMessage } from '../editor/queue.ts'
+import { readCache } from '../editor/readCache.ts'
 
 export const emptyProjectPage: api.ProjectPage = {
   items: [],
@@ -14,10 +19,20 @@ export const recentLimit = 5
 
 export const recentPath = `/projects?limit=${recentLimit}`
 
+// 项目列表按请求路径记住上次结果，页面重挂载时先显示它。
+const projectPages = readCache<api.ProjectPage>()
+
+export function cachedRecentProjects(): api.Project[] {
+  return projectPages.get(recentPath)?.items ?? []
+}
+
 export function readRecentProjects(
   signal?: AbortSignal,
 ): Promise<api.ProjectPage> {
-  return api.read<api.ProjectPage>(recentPath, signal)
+  return api.read<api.ProjectPage>(recentPath, signal).then((page) => {
+    projectPages.set(recentPath, page)
+    return page
+  })
 }
 
 // 有项目在运行时每 20 秒重读一次；只有等你确认的项目不轮询，它要等摄影师自己处理。
@@ -49,10 +64,10 @@ function useRefresh(live: boolean, reload: () => void) {
   }, [live])
 }
 
-// 读一页项目：挂载时读，切回标签页时重读，有运行中的项目时轮询。
+// 读一页项目：挂载时读（先显示上次的结果），切回标签页时重读，有运行中的项目时轮询。
 // 重读失败时保留已有的一页，只在一次都没读到时报错。
 export function useProjectPage(path: string) {
-  const [page, setPage] = useState<api.ProjectPage>()
+  const [page, setPage] = useState(() => projectPages.get(path))
   const [error, setError] = useState('')
   const [tick, setTick] = useState(0)
   const reload = () => setTick((value) => value + 1)
@@ -62,6 +77,7 @@ export function useProjectPage(path: string) {
     api
       .read<api.ProjectPage>(path, controller.signal)
       .then((result) => {
+        projectPages.set(path, result)
         setPage(result)
         setError('')
       })
@@ -114,7 +130,10 @@ export function useProjectList(
   sort: ProjectSort,
 ) {
   const key = projectListPath(archived, q, sort, pageSize)
-  const [loaded, setLoaded] = useState<Loaded>()
+  const [loaded, setLoaded] = useState<Loaded | undefined>(() => {
+    const value = projectPages.get(key)
+    return value && { key, value }
+  })
   const [error, setError] = useState('')
   const [moreLoading, setMoreLoading] = useState(false)
   const generation = useRef(0)
@@ -136,6 +155,7 @@ export function useProjectList(
         .read<api.ProjectPage>(projectListPath(archived, q, sort, limit))
         .then((value) => {
           if (id !== generation.current) return
+          projectPages.set(key, value)
           setLoaded({ key, value })
           setError('')
         })
@@ -264,6 +284,14 @@ export function canvasPath(project: api.Project): string {
 export function coverMedia(revision: string): Promise<MediaTicket> {
   return mediaTicket(revision, 'display', 'display').catch(() =>
     mediaTicket(revision, 'original', 'display'),
+  )
+}
+
+// 已取得的封面票据可同步读出，重挂载时图片直接出现，不先闪一下空白。
+export function cachedCoverMedia(revision: string): MediaTicket | undefined {
+  return (
+    cachedMediaTicket(revision, 'display') ??
+    cachedMediaTicket(revision, 'original')
   )
 }
 
