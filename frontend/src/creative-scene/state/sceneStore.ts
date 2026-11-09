@@ -129,6 +129,9 @@ export type EditorUI = {
 
 const autoKeyKey = 'scene.autoKey'
 
+/** Another frame or shot: changes waiting there for a key, and the baselines, are dropped (design「编辑分流」). */
+export const atFrame = (frame: number): Pick<EditorUI, 'frame' | 'unkeyed' | 'baseline'> => ({ frame, unkeyed: {}, baseline: {} })
+
 export function readAutoKey(): boolean {
   try {
     return localStorage.getItem(autoKeyKey) === 'on'

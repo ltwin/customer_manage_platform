@@ -10,10 +10,18 @@ import type {
 import {
   baseValue,
   channelOf,
+  channelPaths,
+  inContentUnit,
   withBaseValue,
   type ChannelSpec,
 } from "./channels.ts";
-import { sampleKeys } from "./evaluate.ts";
+import {
+  evaluateObject,
+  sampleKeys,
+  withUnkeyed,
+  type PathValues,
+} from "./evaluate.ts";
+import { objectOfUnit, type WireOp } from "../state/apply.ts";
 
 // The editor's side of Epic design S1–S6: each shot or channel edit as the
 // one batch that keeps every channel keyed at every shot (P8); the server
@@ -243,4 +251,294 @@ export function onlyInShot(
       },
     },
   ]);
+}
+
+// --- the editor's edits (design「编辑分流」) ------------------------------
+
+/** What an edit or I needs from the editor besides the scene (sceneStore). */
+export type TimelineEdit = {
+  frame: number;
+  autoKey: boolean;
+  unkeyed: PathValues;
+  baseline: PathValues;
+};
+
+const transformPaths = [
+  "transform.position",
+  "transform.rotation",
+  "transform.scale",
+];
+
+/** Equal as stored values, numbers within float noise: a gizmo hands back what it did not move recomputed. */
+function same(a: unknown, b: unknown): boolean {
+  if (typeof a === "number" && typeof b === "number")
+    return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((x, i) => same(x, b[i]));
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+const withValue = (
+  values: PathValues,
+  id: string,
+  path: string,
+  value: unknown,
+): PathValues => ({
+  ...values,
+  [id]: { ...values[id], [path]: value },
+});
+
+function without(
+  values: PathValues,
+  id: string,
+  paths: readonly string[],
+): PathValues {
+  const left = Object.fromEntries(
+    Object.entries(values[id] ?? {}).filter(([p]) => !paths.includes(p)),
+  );
+  if (Object.keys(left).length === Object.keys(values[id] ?? {}).length)
+    return values;
+  const { [id]: _, ...rest } = values;
+  return Object.keys(left).length ? { ...rest, [id]: left } : rest;
+}
+
+/** The keyable values u writes that differ from what shown shows. */
+function written(shown: SceneObject, u: ObjectUpdate): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  for (const path of channelPaths(shown.kind)) {
+    const [head, field] = path.split(".");
+    const value =
+      head === "transform"
+        ? u.transform?.[field as keyof NonNullable<ObjectUpdate["transform"]>]
+        : head === "visible"
+          ? u.visible
+          : u.camera?.[field as keyof NonNullable<ObjectUpdate["camera"]>];
+    if (value !== undefined && !same(value, baseValue(shown, path)))
+      out.set(path, value);
+  }
+  return out;
+}
+
+/** u writing value as path's base value instead of what it wrote; a field left as it is goes. */
+function withBase(
+  u: ObjectUpdate,
+  o: SceneObject,
+  path: string,
+  value: unknown,
+): ObjectUpdate {
+  const [head, field] = path.split(".");
+  if (head === "visible") {
+    const { visible: _, ...rest } = u;
+    return same(value, o.visible)
+      ? rest
+      : { ...rest, visible: value as boolean };
+  }
+  if (head === "transform") {
+    const transform = { ...(u.transform ?? o.transform), [field]: value };
+    const { transform: _, ...rest } = u;
+    return same(transform, o.transform) ? rest : { ...rest, transform };
+  }
+  const camera: Record<string, unknown> = { ...u.camera };
+  delete camera[field];
+  const { camera: _, ...rest } = u;
+  const keep = same(value, baseValue(o, path))
+    ? camera
+    : { ...camera, [field]: value };
+  return Object.keys(keep).length ? { ...rest, camera: keep } : rest;
+}
+
+/**
+ * Routes the editor's ops by what the timeline says of each property they
+ * write, against the stored scene. A property with a channel takes a key at
+ * the frame with 自动关键帧 on, else the value waits unkeyed (no command). One
+ * without a channel takes its first key (S1) with 自动关键帧 on and shots in
+ * the scene; otherwise its base value changes in every shot, and the value
+ * before is kept as the baseline for I. Everything else passes as it is.
+ */
+export function routeEdit(
+  scene: Scene,
+  ops: readonly WireOp[],
+  t: TimelineEdit,
+): { ops: WireOp[]; unkeyed: PathValues; baseline: PathValues } {
+  const byID = new Map(scene.objects.map((o) => [o.id, o]));
+  const markers = scene.timeline.markers;
+  let { unkeyed, baseline } = t;
+  const out: WireOp[] = [];
+  for (const op of ops) {
+    if (op.op !== "update_objects") {
+      out.push(op);
+      continue;
+    }
+    const items: ObjectUpdate[] = [];
+    for (const u of op.updates) {
+      const o = byID.get(u.object_id);
+      if (!o) {
+        items.push(u);
+        continue;
+      }
+      const shown = withUnkeyed(evaluateObject(o, t.frame), unkeyed[o.id]);
+      // The transform is written whole: the parts with channels stay as stored.
+      let next = u;
+      if (u.transform)
+        for (const path of transformPaths)
+          if (o.animation?.[path])
+            next = withBase(next, o, path, baseValue(o, path));
+      const set: NonNullable<AnimationPatch["set"]> = [];
+      for (const [path, value] of written(shown, u)) {
+        const keyed = !!o.animation?.[path];
+        if (!keyed && !(t.autoKey && markers.length)) {
+          if (markers.length && baseline[o.id]?.[path] === undefined)
+            baseline = withValue(baseline, o.id, path, baseValue(o, path));
+          continue;
+        }
+        if (!t.autoKey) {
+          next = withBase(next, o, path, baseValue(o, path));
+          unkeyed = withValue(unkeyed, o.id, path, value);
+          continue;
+        }
+        if (keyed) {
+          next = withBase(next, o, path, baseValue(o, path));
+          unkeyed = without(unkeyed, o.id, [path]);
+        } else {
+          // S1; the base value goes back to the baseline, if any.
+          const before = baseline[o.id]?.[path] ?? baseValue(o, path);
+          next = withBase(next, o, path, before);
+          baseline = without(baseline, o.id, [path]);
+          for (const m of markers)
+            if (m.frame !== t.frame)
+              set.push({ path, frame: m.frame, value: before });
+        }
+        set.push({ path, frame: t.frame, value });
+      }
+      if (set.length)
+        next = {
+          ...next,
+          animation: {
+            ...next.animation,
+            set: [...(next.animation?.set ?? []), ...set],
+          },
+        };
+      if (Object.keys(next).length > 1) items.push(next);
+    }
+    if (items.length) out.push({ ...op, updates: items });
+  }
+  return { ops: out, unkeyed, baseline };
+}
+
+/**
+ * I at the frame on these objects: the paths given, else those changed here
+ * (unkeyed or with a baseline), else the transform as Blender keys it. A
+ * property with a channel takes its shown value at the frame; one without
+ * its first key (firstKey), the other shots taking the baseline. adopted
+ * says some other shot took the current value for want of a baseline
+ * (「其他分镜也采用了这个值」).
+ */
+export function insertKeys(
+  scene: Scene,
+  ids: readonly string[],
+  t: Omit<TimelineEdit, "autoKey">,
+  paths?: readonly string[],
+): {
+  ops: WireOp[];
+  unkeyed: PathValues;
+  baseline: PathValues;
+  adopted: boolean;
+} {
+  let { unkeyed, baseline } = t;
+  let adopted = false;
+  const updates: ObjectUpdate[] = [];
+  const others = scene.timeline.markers.some((m) => m.frame !== t.frame);
+  for (const id of ids) {
+    const o = scene.objects.find((x) => x.id === id);
+    if (!o) continue;
+    const changed = [
+      ...new Set([
+        ...Object.keys(unkeyed[id] ?? {}),
+        ...Object.keys(baseline[id] ?? {}),
+      ]),
+    ];
+    const keyed = (paths ?? (changed.length ? changed : transformPaths)).filter(
+      (p) => channelOf(p, o.kind),
+    );
+    const shown = withUnkeyed(evaluateObject(o, t.frame), unkeyed[id]);
+    const writes = keyed.map((path) => {
+      const before = baseline[id]?.[path];
+      if (!o.animation?.[path] && before === undefined && others)
+        adopted = true;
+      return {
+        path,
+        value: baseValue(shown, path),
+        before: before ?? baseValue(o, path),
+      };
+    });
+    for (const op of firstKey(scene, id, t.frame, writes))
+      if (op.op === "update_objects") updates.push(...op.updates);
+    unkeyed = without(unkeyed, id, keyed);
+    baseline = without(baseline, id, keyed);
+  }
+  return {
+    ops: updates.length ? [{ op: "update_objects", updates }] : [],
+    unkeyed,
+    baseline,
+    adopted,
+  };
+}
+
+/**
+ * The editor's values after the scene changed: unkeyed ones of objects or
+ * channels gone go, and so does a baseline once the property has a channel
+ * or its base value is back to it (an undo). The same objects when nothing
+ * goes.
+ */
+export function pruneEdits(
+  scene: Scene,
+  unkeyed: PathValues,
+  baseline: PathValues,
+): { unkeyed: PathValues; baseline: PathValues } {
+  const byID = new Map(scene.objects.map((o) => [o.id, o]));
+  const prune = (
+    values: PathValues,
+    gone: (o: SceneObject, path: string, value: unknown) => boolean,
+  ) => {
+    let out = values;
+    for (const [id, paths] of Object.entries(values)) {
+      const o = byID.get(id);
+      const drop = Object.entries(paths)
+        .filter(([path, value]) => !o || gone(o, path, value))
+        .map(([path]) => path);
+      if (drop.length) out = without(out, id, drop);
+    }
+    return out;
+  };
+  return {
+    unkeyed: prune(unkeyed, (o, path) => !o.animation?.[path]),
+    baseline: prune(
+      baseline,
+      (o, path, value) =>
+        !!o.animation?.[path] || same(baseValue(o, path), value),
+    ),
+  };
+}
+
+/**
+ * The baselines kept in these units dropped: another tab or the assistant
+ * wrote them, so the value before is no longer what the base held. The same
+ * object when none were kept.
+ */
+export function forgetUnits(
+  values: PathValues,
+  units: readonly string[],
+): PathValues {
+  let out = values;
+  for (const u of units) {
+    const unit = objectOfUnit(u);
+    const paths = unit && out[unit.id];
+    if (paths)
+      out = without(
+        out,
+        unit.id,
+        Object.keys(paths).filter((p) => inContentUnit(p) === unit.content),
+      );
+  }
+  return out;
 }

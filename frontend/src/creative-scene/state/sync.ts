@@ -90,10 +90,15 @@ export type SessionState = {
   status: SaveStatus
 }
 
-/** Hooks the undo stack uses to learn what this session wrote and saw. */
+/** Hooks the undo stack and the editor use to learn what this session wrote and saw. */
 export type SessionObserver = {
   confirmed?(intent: Intent, receipt: CommandReceipt, before: SceneState): void
   read?(doc: SceneDocument): void
+  /**
+   * Units a read found at another revision than the base had: someone
+   * else's edits, or this session's whose receipt did not follow the base.
+   */
+  moved?(units: string[]): void
   sending?(intent: Intent): void
   /** A new edit entered the queue (folded or not). */
   queued?(intent: Intent): void
@@ -397,6 +402,8 @@ export class SceneSession {
     const next = newer ? doc : { ...base, trashed_at: doc.trashed_at, updated_at: doc.updated_at }
     this.set({ base: next, trashed: !!doc.trashed_at, readError: '' })
     if (newer) for (const o of this.observers) o.read?.(doc)
+    const moved = newer && base ? Object.keys(doc.unit_revs).filter((u) => doc.unit_revs[u] !== base.unit_revs[u]) : []
+    if (moved.length) for (const o of this.observers) o.moved?.(moved)
     this.pump()
   }
 

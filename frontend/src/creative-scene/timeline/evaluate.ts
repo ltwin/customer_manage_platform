@@ -90,3 +90,31 @@ export function evaluateAt(scene: Scene, frame: number): Scene {
     objects: scene.objects.map((o) => evaluateObject(o, frame)),
   };
 }
+
+/** 已改未记录 values (sceneStore unkeyed), by object and path. */
+export type PathValues = Record<string, Record<string, unknown>>;
+
+/** o as the editor shows it: values changed here without a key over the evaluated ones. */
+export function withUnkeyed(
+  o: SceneObject,
+  values: Record<string, unknown> | undefined,
+): SceneObject {
+  if (!values) return o;
+  let out = o;
+  for (const [path, value] of Object.entries(values))
+    out = withBaseValue(out, path, value);
+  return out;
+}
+
+/** The scene with the unkeyed values over it; the same scene when there are none. */
+export function withUnkeyedScene(scene: Scene, unkeyed: PathValues): Scene {
+  if (!Object.keys(unkeyed).length) return scene;
+  return {
+    ...scene,
+    objects: scene.objects.map((o) => withUnkeyed(o, unkeyed[o.id])),
+  };
+}
+
+/** The scene at frame as the editor shows it, the unkeyed values over it. */
+export const shownAt = (scene: Scene, frame: number, unkeyed: PathValues) =>
+  withUnkeyedScene(evaluateAt(scene, frame), unkeyed);

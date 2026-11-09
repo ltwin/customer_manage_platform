@@ -77,6 +77,8 @@ import { Viewport, type DragModel, type ViewportHandle } from './Viewport.tsx'
 import type { Placed } from './placement/snap.ts'
 import { selectShadowCasters } from './objects/shadowBudget.ts'
 import { newCameraExposure } from './world/exposure.ts'
+import { evaluateAt, withUnkeyedScene } from './timeline/evaluate.ts'
+import { forgetUnits, pruneEdits, routeEdit } from './timeline/keys.ts'
 import './scene.css'
 
 /** The properties area's tabs, in Blender's order. */
@@ -248,7 +250,33 @@ export default function SceneEditor({
   const placeholders = useMemo(() => jobPlaceholders(agent.jobs), [agent.jobs])
 
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
-  const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
+  // The scene at the timeline's frame (design「求值放在哪里」): evaluated once per snapshot and frame, the unkeyed values
+  // over it. Document structure and channels are read from s.view; what an edit computes from the picture, from shown.
+  const stored: Scene | undefined = u.preview?.scene ?? s.view?.scene
+  const evaluated = useMemo(() => stored && evaluateAt(stored, u.frame), [stored, u.frame])
+  const shown = useMemo(() => evaluated && (u.preview ? evaluated : withUnkeyedScene(evaluated, u.unkeyed)), [evaluated, u.preview, u.unkeyed])
+  const shownObjects = useMemo(() => shown?.objects ?? [], [shown])
+  // Unkeyed values and baselines the scene has no use for any more go: a channel gone or added, an undo back to the baseline.
+  useEffect(() => {
+    const view = s.view?.scene
+    if (!view) return
+    const t = ui.getState()
+    const next = pruneEdits(view, t.unkeyed, t.baseline)
+    if (next.unkeyed !== t.unkeyed || next.baseline !== t.baseline) ui.setState(next)
+  }, [s.view, ui])
+  // Another tab or the assistant wrote the unit: its value before is no longer the base's.
+  useEffect(() => {
+    const stop = session.observe({
+      moved: (units) => {
+        const { baseline } = ui.getState()
+        const next = forgetUnits(baseline, units)
+        if (next !== baseline) ui.setState({ baseline: next })
+      },
+    })
+    return () => {
+      stop()
+    }
+  }, [session, ui])
   const localModels = useStore(modelCache.local)
   const knownModels = useStore(modelCache.known)
   const failedModels = useStore(modelCache.failed)
@@ -268,7 +296,7 @@ export default function SceneEditor({
   const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelOf(faceObject), modelCache)
   /** A model instance whose model can be drawn; anything else has no model to fail. */
   const usableModel = (o: SceneObject | undefined) => modelOf(o)?.usable !== false
-  const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
+  const shownActive = (active && shownObjects.find((o) => o.id === active.id)) ?? null
   const shownModel = shownActive?.model?.content_revision_id
   // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
   const hasObject = !!shownActive || selected.length > 0
@@ -449,9 +477,19 @@ export default function SceneEditor({
   const warnAgent = (ids: readonly string[]) => {
     if (ids.some((id) => highlighted.has(id))) notify(agentNotice)
   }
+  /**
+   * Every edit goes through the timeline first (design「编辑分流」): a keyed
+   * property takes a key or waits unkeyed, a first change of one without a
+   * channel keeps its value before for I. Nothing may be left to send.
+   */
   const edit = (ops: WireOp[], label: string, options?: Parameters<typeof session.edit>[2]) => {
-    const out = session.edit(ops, label, options)
-    if (out) warnAgent(editedObjects(ops))
+    const view = session.state.view?.scene
+    const t = ui.getState()
+    const routed = view ? routeEdit(view, ops, t) : { ops, unkeyed: t.unkeyed, baseline: t.baseline }
+    if (routed.unkeyed !== t.unkeyed || routed.baseline !== t.baseline) ui.setState({ unkeyed: routed.unkeyed, baseline: routed.baseline })
+    if (!routed.ops.length) return null
+    const out = session.edit(routed.ops, label, options)
+    if (out) warnAgent(editedObjects(routed.ops))
     return out
   }
   const select = (ids: string[]) => ui.setState({ selection: { selected: ids, active: ids.at(-1) ?? null } })
@@ -459,20 +497,28 @@ export default function SceneEditor({
   const movable = () => topmost(selected, objects).filter((id) => !byID.get(id)?.locked)
   const label = (verb: string, ids: string[]) => objectsLabel(verb, ids.length, byID.get(ids[0])?.name)
 
+  /** Keys stay in the parent's space (Epic「层级与通道」): under another parent a keyed transform shows elsewhere in other shots. */
+  const warnKeyedReparent = (op: WireOp) => {
+    if (op.op !== 'reparent_objects') return
+    const keyed = op.moves.some((m) => Object.keys(byID.get(m.object_id)?.animation ?? {}).some((p) => p.startsWith('transform.')))
+    if (keyed) notify('改挂的物件按分镜记了位置、旋转或缩放，各分镜的位置可能跳变')
+  }
   /** Ctrl+G, Ctrl+Alt+G, Ctrl+P and Alt+P: one edit each, keeping world positions. */
   const regroup = (action: 'group' | 'ungroup' | 'parent' | 'clear-parent') => {
     const sel = { selected, active: active?.id ?? null }
+    // World positions as this frame shows them; only base transforms are written.
     const r =
       action === 'group'
-        ? groupSelection(objects, sel)
+        ? groupSelection(shownObjects, sel)
         : action === 'ungroup'
-          ? ungroupSelection(objects, sel)
+          ? ungroupSelection(shownObjects, sel)
           : action === 'parent'
-            ? parentToActive(objects, sel)
-            : clearParent(objects, sel)
+            ? parentToActive(shownObjects, sel)
+            : clearParent(shownObjects, sel)
     if (!r) return
     if ('error' in r) return notify(r.error)
     if (!edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)) return
+    warnKeyedReparent(r.op)
     if (action === 'group' && r.op.op === 'reparent_objects') {
       const g = r.op.create_groups?.[0]
       if (g) select([g.id])
@@ -488,10 +534,10 @@ export default function SceneEditor({
     edit([{ op: 'update_objects', updates }], label('复制材质到', updates.map((x) => x.object_id)))
   }
   const drop = (moving: string[], target: string, place: DropPlace) => {
-    const r = dropRows(objects, moving, target, place)
+    const r = dropRows(shownObjects, moving, target, place)
     if (!r) return
     if ('error' in r) return notify(r.error)
-    edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)
+    if (edit([r.op], r.label, r.inverse ? { inverse: r.inverse } : undefined)) warnKeyedReparent(r.op)
   }
 
   const transform = (mode: Mode) => {
@@ -574,7 +620,8 @@ export default function SceneEditor({
     if (active.locked) return notify('锁定的物件不能变换，先在属性栏解锁')
     const pose = handle.current?.viewPose()
     if (!pose) return
-    const transform = localPose(objects, active.parent_id ?? null, pose, active.transform.scale)
+    // The parent and the scale as this frame shows them; the routing makes it a key or a base value.
+    const transform = localPose(shownObjects, active.parent_id ?? null, pose, shownActive?.transform.scale ?? active.transform.scale)
     if (edit([{ op: 'update_objects', updates: [{ object_id: active.id, transform }] }], `「${active.name || '摄像机'}」对齐当前视角`))
       ui.setState({ cameraView: active.id, lastCamera: active.id })
   }
@@ -879,7 +926,7 @@ export default function SceneEditor({
       case 'hide':
       case 'hide-unselected':
       case 'reveal': {
-        const op = editing ? visibilityOp(objects, selected, action) : null
+        const op = editing ? visibilityOp(shownObjects, selected, action) : null
         if (op) edit([op], action === 'hide' ? label('隐藏', selected) : action === 'reveal' ? '全部显示' : '隐藏未选物件')
         return
       }
@@ -887,7 +934,7 @@ export default function SceneEditor({
       case 'clear-rotation':
       case 'clear-scale': {
         const what = action === 'clear-location' ? 'location' : action === 'clear-rotation' ? 'rotation' : 'scale'
-        const op = editing ? clearOp(objects, movable(), what) : null
+        const op = editing ? clearOp(shownObjects, movable(), what) : null
         if (op?.op === 'update_objects')
           edit([op], label(what === 'location' ? '清除位置' : what === 'rotation' ? '清除旋转' : '清除缩放', op.updates.map((u) => u.object_id)))
         return
