@@ -38,6 +38,8 @@ export type Popup =
   | { kind: 'menu'; menu: MenuKind; x: number; y: number }
   | { kind: 'delete'; x: number; y: number; ids: string[] }
   | { kind: 'rename'; x: number; y: number; id: string }
+  /** A property's key menu (Properties right-click): 插入关键帧, 清除动画. */
+  | { kind: 'key'; x: number; y: number; id: string; path: string }
 
 /**
  * What the code panel edits: a model about to be created at a point on the

@@ -21,7 +21,7 @@
 ## 4. 前端：编辑器
 
 - [x] 4.1 求值与编辑分流：`SceneEditor.tsx` 在 `shown` 之后插入 `evaluateAt` 并叠加 `unkeyed`（按 `(view, frame)` 记忆化）；`edit()` 前加编辑分流，并管理基线的记录、使用和失效（`state/sync.ts` 收到他人修订时清空对应物件的基线）；`cameraToView`、`addCamera`（`editing.ts:localPose`、`editing.ts:newCamera`）和 `grouping.ts` 的三处 `worldOf` 改用求值后的物件，改挂有变换通道的物件时提示。先写单测：基线的五种失效、没有基线时按 I、父级有动画时的 `cameraToView`、编组保持当前画面的世界位置
-- [ ] 4.2 时间线面板与交互：`timeline/TimelinePanel.tsx`（帧标尺、分镜标记的新建、复制、拖动和删除，当前帧指针，选中物件的关键帧点，自动关键帧开关）放在 Viewport 与 StatusBar 之间；点分镜时跳帧并进入它的摄像机视图；`input/keymap.ts` 加 I 和 Alt+I（在分镜帧上提示改用清除动画）；`panels/Properties.tsx` 显示求值后的值、关键帧点的三种配色、右键菜单（插入关键帧、清除动画）；物件菜单加「只在当前分镜显示」。e2e（一次一条，用 `ONLY` 过滤，换端口）：AC-1、AC-2、AC-2b、AC-3、AC-5、AC-6、AC-7、AC-9
+- [x] 4.2 时间线面板与交互：`timeline/TimelinePanel.tsx`（帧标尺、分镜标记的新建、复制、拖动和删除，当前帧指针，选中物件的关键帧点，自动关键帧开关）放在 Viewport 与 StatusBar 之间；点分镜时跳帧并进入它的摄像机视图；`input/keymap.ts` 加 I 和 Alt+I（在分镜帧上提示改用清除动画）；`panels/Properties.tsx` 显示求值后的值、关键帧点的三种配色、右键菜单（插入关键帧、清除动画）；物件菜单加「只在当前分镜显示」。e2e（一次一条，用 `ONLY` 过滤，换端口）：AC-1、AC-2、AC-2b、AC-3、AC-5、AC-6、AC-7、AC-9
 
 ## 5. 前端：导出与渲染端
 

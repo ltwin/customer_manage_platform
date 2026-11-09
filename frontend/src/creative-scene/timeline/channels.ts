@@ -1,5 +1,6 @@
 import list from "./channels.gen.json" with { type: "json" };
 import type { SceneObject } from "../api.ts";
+import { cameraDefaults } from "../state/cameraDefaults.ts";
 
 // The keyframe channels (data: 场景时间线), generated from
 // backend/internal/creativescene/channels.json; the server validates against
@@ -50,7 +51,12 @@ export function baseValue(o: SceneObject, path: string): unknown {
     case "visible":
       return o.visible;
     case "camera":
-      return o.camera?.[field as keyof NonNullable<SceneObject["camera"]>];
+      // A camera stores its fields complete; one just added here may not yet.
+      return o.camera
+        ? { ...cameraDefaults, ...o.camera }[
+            field as keyof typeof cameraDefaults
+          ]
+        : undefined;
   }
   return undefined;
 }

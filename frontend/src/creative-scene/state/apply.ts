@@ -12,6 +12,9 @@ import { builtinSpec, defaultParams, topologyChanged } from '../builtins/catalog
 import { sameTransform, worldOf } from './world.ts'
 import { completeSky } from '../world/physicalSky.ts'
 import { channelOf, inContentUnit } from '../timeline/channels.ts'
+import { cameraDefaults } from './cameraDefaults.ts'
+
+export { cameraDefaults }
 
 // The client's copy of the server's operation semantics, used only to show
 // edits before their receipt. Anything the server would reject is skipped
@@ -153,7 +156,6 @@ export const withUnitChannels = (o: SceneObject, content: boolean, channels: Ani
 
 type Light = NonNullable<SceneObject['light']>
 type LightField = Exclude<keyof Light, 'type'>
-type Camera = NonNullable<SceneObject['camera']>
 type Volume = NonNullable<SceneObject['volume']>
 
 // The light table of data: 场景文档 — the fields each type has besides type,
@@ -230,23 +232,6 @@ export function lightSize(l: Light): number {
 
 /** Whether a document light has a size: an area light always (data: 面光源), any other at lightSize above 0. */
 export const lightHasSize = (l: Light): boolean => l.type === 'area' || lightSize(l) > 0
-/** The camera fields the server stores for those left out. */
-export const cameraDefaults: Required<Camera> = {
-  focal_mm: 35,
-  sensor_mm: [36, 24],
-  aspect: '3:2',
-  near: 0.1,
-  far: 1000,
-  label: '',
-  depth_of_field: false,
-  f_stop: 2.8,
-  focus: 10,
-  focus_object_id: '',
-  iso: 100,
-  shutter_s: 1 / 4000,
-  exposure_mode: 'ambient',
-  exposure_compensation: 0,
-}
 
 /** The volume fields the server stores for those left out (data: 体积物件). */
 export const volumeDefaults: Required<Volume> = {

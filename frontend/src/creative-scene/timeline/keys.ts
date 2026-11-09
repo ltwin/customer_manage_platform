@@ -28,6 +28,13 @@ import { objectOfUnit, type WireOp } from "../state/apply.ts";
 // only checks. The assistant's tool layer writes the same keys
 // (backend/internal/creativescene/agent_shots.go).
 
+/** A shot's title: its name, or 「分镜 N」 by frame order, as the server's markerTitle. */
+export function shotTitle(markers: readonly Marker[], id: string): string {
+  const i = markers.findIndex((m) => m.id === id);
+  if (i < 0) return "";
+  return markers[i].name || `分镜 ${i + 1}`;
+}
+
 /** How far after the last shot a new one goes, leaving frames between for animation later. */
 export const shotFrameStep = 10;
 
@@ -209,18 +216,27 @@ export function removeShot(scene: Scene, id: string): SceneOperation[] {
   ];
 }
 
-/** S5: no channel for path any more, its base value what frame shows, so nothing jumps there. */
+/**
+ * S5: no channel for path any more, its base value what frame shows, so
+ * nothing jumps there; value, when given, is what the editor shows instead
+ * (a change not keyed yet).
+ */
 export function clearChannel(
   scene: Scene,
   objectID: string,
   path: string,
   frame: number,
+  value?: unknown,
 ): SceneOperation[] {
   const o = scene.objects.find((x) => x.id === objectID);
   const ch = o?.animation?.[path];
   const spec = o && channelOf(path, o.kind);
   if (!o || !ch || !spec) return [];
-  const shown = withBaseValue(o, path, sampleKeys(spec.sample, ch.keys, frame));
+  const shown = withBaseValue(
+    o,
+    path,
+    value !== undefined ? value : sampleKeys(spec.sample, ch.keys, frame),
+  );
   return updates([
     { object_id: o.id, ...baseFields(o, shown), animation: { clear: [path] } },
   ]);
@@ -541,4 +557,42 @@ export function forgetUnits(
       );
   }
   return out;
+}
+
+/** How the properties show path on o at frame (Blender's colours): keyed here, keyed elsewhere, or changed without a key. */
+export type KeyState = "key" | "animated" | "changed";
+
+export function keyStateOf(
+  o: SceneObject,
+  path: string,
+  frame: number,
+  unkeyed: PathValues,
+): KeyState | undefined {
+  if (unkeyed[o.id]?.[path] !== undefined) return "changed";
+  const ch = o.animation?.[path];
+  if (!ch) return undefined;
+  return ch.keys.some((k) => k.frame === frame) ? "key" : "animated";
+}
+
+/**
+ * Alt+I off the shots: each channel's key at frame goes; a channel left
+ * without keys goes with it. A shot's keys stay (P8): null says so, for
+ * 「清除动画」 instead.
+ */
+export function deleteKeysAt(
+  scene: Scene,
+  ids: readonly string[],
+  frame: number,
+): SceneOperation[] | null {
+  if (scene.timeline.markers.some((m) => m.frame === frame)) return null;
+  const items: ObjectUpdate[] = [];
+  for (const id of ids) {
+    const o = scene.objects.find((x) => x.id === id);
+    const del = Object.entries(o?.animation ?? {})
+      .filter(([, ch]) => ch.keys.some((k) => k.frame === frame))
+      .map(([path]) => ({ path, frame }));
+    if (o && del.length)
+      items.push({ object_id: o.id, animation: { delete: del } });
+  }
+  return updates(items);
 }

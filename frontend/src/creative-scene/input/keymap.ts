@@ -63,8 +63,10 @@ export type Action =
   | 'select-linked'
   | 'select-more'
   | 'select-less'
+  | 'insert-keyframe'
+  | 'delete-keyframe'
 
-export type Group = '导航' | '选择' | '变换' | '编辑' | '面编辑' | '视图' | '通用'
+export type Group = '导航' | '选择' | '变换' | '编辑' | '面编辑' | '时间线' | '视图' | '通用'
 
 /** Modifiers must match exactly; an omitted one must not be held. */
 export type Mods = { mod?: boolean; shift?: boolean; alt?: boolean }
@@ -140,6 +142,9 @@ export const bindings: readonly Binding[] = [
   { codes: ['KeyL'], mods: { mod: true }, contexts: faceEdit, action: 'select-linked', label: '选择相连（选区所在的整个部分）', group: '面编辑' },
   { codes: ['NumpadAdd'], mods: { mod: true }, contexts: faceEdit, action: 'select-more', label: '扩展选区（相邻面片）', group: '面编辑' },
   { codes: ['NumpadSubtract'], mods: { mod: true }, contexts: faceEdit, action: 'select-less', label: '缩减选区（边缘面片）', group: '面编辑' },
+  // Blender's I and Alt+I; a shot's keys only go with 「清除动画」 (P8).
+  { codes: ['KeyI'], contexts: idle, action: 'insert-keyframe', label: '插入关键帧（选中物件在当前帧）', group: '时间线' },
+  { codes: ['KeyI'], mods: { alt: true }, contexts: idle, action: 'delete-keyframe', label: '删除当前帧的关键帧（分镜帧上用「清除动画」）', group: '时间线' },
   { codes: ['KeyX'], contexts: modal, action: 'axis-x', label: '锁定 X 轴', group: '变换' },
   { codes: ['KeyY'], contexts: modal, action: 'axis-y', label: '锁定 Y 轴', group: '变换' },
   { codes: ['KeyZ'], contexts: modal, action: 'axis-z', label: '锁定 Z 轴', group: '变换' },

@@ -14,7 +14,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { Box3, Euler, Matrix4, PerspectiveCamera, Quaternion, Ray, Vector3 } from 'three'
-import { applyOps } from '../src/creative-scene/state/apply.ts'
+import { applyOps, unitChannels, withUnitChannels } from '../src/creative-scene/state/apply.ts'
+import { evaluateAt } from '../src/creative-scene/timeline/evaluate.ts'
 import { completeSky } from '../src/creative-scene/world/physicalSky.ts'
 import { documentAzimuth, sunVector } from '../src/creative-scene/world/astro.ts'
 import { positionToDoc, positionToView } from '../src/creative-scene/space.ts'
@@ -121,12 +122,26 @@ const content = (id) => `object:${id}:content`
 /** JSON with object keys sorted, for comparing material assignments. */
 const canonical = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x))
 
-/** A scene as the server reads it out: a physical sky completed with the fields it left out (backend sky.go completeSky), the night sky among them. */
+/**
+ * A scene as the server reads it out: a physical sky completed with the fields it left out (backend sky.go completeSky), the night sky among
+ * them, and the timeline of a scene without one (backend completeTimeline).
+ */
 const served = (scene) => {
   const out = structuredClone(scene)
   out.environment.sky = completeSky(out.environment.sky)
+  out.timeline ??= { fps: 24, markers: [] }
   return out
 }
+
+/** P8 (backend checkShotKeys): every channel keyed at every shot; the gaps as details.missing lists them. */
+const shotKeyGaps = (scene) =>
+  (scene.timeline?.markers ?? []).flatMap((m) =>
+    scene.objects.flatMap((o) =>
+      Object.entries(o.animation ?? {})
+        .filter(([, ch]) => !ch.keys.some((k) => k.frame === m.frame))
+        .map(([path]) => ({ object_id: o.id, path, marker_id: m.id, frame: m.frame })),
+    ),
+  )
 
 /** One scene document with revisions, conflict checks and trash. */
 class SceneServer {
@@ -448,7 +463,9 @@ class SceneServer {
       this.scene = after.scene
       changed = [...ops[0].units]
     } else {
-      const after = applyOps(before, committed.ops)
+      const after = applyOps({ ...before, scene: { ...before.scene, timeline: before.scene.timeline ?? { fps: 24, markers: [] } } }, committed.ops)
+      const missing = shotKeyGaps(after.scene)
+      if (missing.length) return [400, { error: { code: 'validation_failed', message: '分镜帧上缺关键帧', details: { missing } } }]
       this.title = after.title
       this.scene = after.scene
       changed = changedUnits({ ops: committed.ops }, before)
@@ -473,22 +490,29 @@ class SceneServer {
     assert.ok(source, `restore from unknown revision ${op.from_revision}`)
     let objects = structuredClone(this.scene.objects)
     let { environment, render } = this.scene
+    let timeline = this.scene.timeline ?? { fps: 24, markers: [] }
     let title = this.title
     for (const unit of op.units) {
       if (unit === 'meta') title = source.title
       else if (unit === 'environment') environment = source.scene.environment
       else if (unit === 'render') render = source.scene.render
+      else if (unit === 'timeline') timeline = source.scene.timeline
       else if (unit.startsWith('object:')) {
         const id = unit.split(':')[1]
         const was = source.scene.objects.find((o) => o.id === id)
         const now = objects.find((o) => o.id === id)
         if (!was) objects = objects.filter((o) => o.id !== id)
         else if (!now) objects.push(structuredClone(was))
-        else if (unit.endsWith(':content')) Object.assign(now, { primitive: was.primitive, model: was.model, material_slots: was.material_slots, light: was.light, camera: was.camera, volume: was.volume })
-        else Object.assign(now, { name: was.name, transform: was.transform, visible: was.visible, locked: was.locked })
+        else {
+          // An object unit is its fields and the channels it holds (backend restore.go).
+          const inContent = unit.endsWith(':content')
+          if (inContent) Object.assign(now, { primitive: was.primitive, model: was.model, material_slots: was.material_slots, light: was.light, camera: was.camera, volume: was.volume })
+          else Object.assign(now, { name: was.name, transform: was.transform, visible: was.visible, locked: was.locked })
+          objects = objects.map((o) => (o.id === id ? withUnitChannels(o, inContent, unitChannels(was, inContent)) : o))
+        }
       }
     }
-    return { title, scene: { ...this.scene, environment, render, objects } }
+    return { title, scene: { ...this.scene, environment, render, timeline, objects } }
   }
   restoreWhole(body, expected, revision) {
     if (expected !== String(this.revision))
@@ -12970,6 +12994,226 @@ if (process.env.SCENE_E2E_PERF) await check('real-time GI startup: a refused pip
   } finally {
     await gpu.close()
   }
+})
+
+// --- the timeline (scene-timeline-shots): SCENE_E2E_ONLY='timeline AC-2' runs one --------------------------------------------
+
+const camA = gid('cama')
+const camB = gid('camb')
+const subject = gid('subj')
+const wall = gid('wall')
+const card = gid('card')
+const markerOf = (n, frame, camera = camA, name = '') => ({ id: `smk_${String(n).padStart(21, '0')}`, name, frame, camera_object_id: camera })
+const boxAt = (id, name, order, position, extra = {}) => ({ id, kind: 'primitive', name, order, transform: { ...identity(), position }, primitive: { builtin: 'box@1', params: { width: 1, height: 1, depth: 1 } }, ...extra })
+/** Keys of path at these frames, as the server stores them. */
+const keyed = (path, pairs) => ({ [path]: { keys: pairs.map(([frame, value]) => ({ frame, value, interp: typeof value === 'boolean' ? 'constant' : 'linear' })) } })
+
+/** Two cameras, the subject and a wall; markers, when given, with the subject's animation. */
+function timelineScene(server, markers = [], animation = undefined) {
+  seed(server, [
+    cameraObject(camA, '机位 A', 1, {}, [0, 1.6, 8]),
+    cameraObject(camB, '机位 B', 2, {}, [6, 1.6, 6]),
+    boxAt(subject, '主体', 3, [0, 0.5, 0], animation ? { animation } : {}),
+    boxAt(wall, '墙', 4, [0, 0.5, -4]),
+  ])
+  server.scene.timeline = { fps: 24, markers }
+  server.unitRevs.timeline = '1'
+  server.history[0] = server.record(['*'], [], null)
+}
+const track = (page) => page.locator('.cc-scene-timeline-track')
+const shotButton = (page, name) => track(page).getByRole('button', { name, exact: true })
+/** The object as the server's scene shows it at frame. */
+const shownAt = (server, id, frame) => evaluateAt(served(server.scene), frame).objects.find((o) => o.id === id)
+const xAt = (server, id, frame) => shownAt(server, id, frame).transform.position[0]
+async function command(page, server, act, what) {
+  const before = server.commands.length
+  await act()
+  await waitFor(() => server.commands.length === before + 1, what)
+  await saved(page)
+  assert.equal(server.commands.at(-1).receipt?.revision !== undefined, true, `${what} was accepted`)
+}
+async function goTo(page, name) {
+  await shotButton(page, name).click()
+  await waitFor(async () => (await shotButton(page, name).getAttribute('aria-pressed')) === 'true', `at ${name}`)
+}
+/** G X n Enter on the selection, the pointer over the viewport. */
+async function moveX(page, n) {
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  for (const key of ['KeyG', 'KeyX', `Digit${n}`, 'Enter']) await page.keyboard.press(key)
+}
+
+await check('timeline AC-1: three shots in frame order; a click goes to the shot through its camera; reopened the same', async () => {
+  const server = new SceneServer()
+  timelineScene(server)
+  const { context, page, errors } = await open(server)
+  for (let i = 0; i < 3; i++) await command(page, server, () => page.getByRole('button', { name: '新建分镜' }).click(), `new shot ${i + 1}`)
+  assert.deepEqual(server.scene.timeline.markers.map((m) => [m.frame, m.camera_object_id]), [[0, camA], [10, camA], [20, camA]])
+  assert.deepEqual(await track(page).getByRole('button').allTextContents(), ['分镜 1', '分镜 2', '分镜 3'])
+  await goTo(page, '分镜 2')
+  await command(page, server, () => page.getByLabel('分镜摄像机').selectOption({ label: '机位 B' }), 'bind shot 2 to camera B')
+  const frame = page.locator('.cc-scene-camframe')
+  await goTo(page, '分镜 1')
+  await waitFor(async () => /机位 A/.test((await frame.textContent().catch(() => '')) ?? ''), 'through camera A')
+  assert.match(await page.locator('.cc-scene-timeline-frame').textContent(), /第 0 帧/)
+  await goTo(page, '分镜 2')
+  await waitFor(async () => /机位 B/.test((await frame.textContent().catch(() => '')) ?? ''), 'through camera B')
+  assert.match(await page.locator('.cc-scene-timeline-frame').textContent(), /第 10 帧/)
+  await shot(page, 'timeline-shots')
+  await page.reload()
+  await viewportReady(page)
+  await shotButton(page, '分镜 3').waitFor()
+  assert.deepEqual(await track(page).getByRole('button').allTextContents(), ['分镜 1', '分镜 2', '分镜 3'])
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-2: moved in shot 2 then I, or moved with 自动关键帧 on, changes shot 2 only', async () => {
+  for (const auto of [false, true]) {
+    const server = new SceneServer()
+    timelineScene(server, [markerOf(1, 0), markerOf(2, 10), markerOf(3, 20)])
+    const { context, page, errors } = await open(server)
+    if (auto) await page.getByLabel('自动关键帧').check()
+    await goTo(page, '分镜 2')
+    await page.getByRole('treeitem', { name: /主体/ }).click()
+    await command(page, server, () => moveX(page, 2), 'move')
+    if (!auto) {
+      assert.deepEqual([0, 10, 20].map((f) => xAt(server, subject, f)), [2, 2, 2], 'without a key the base value moves in every shot')
+      await command(page, server, () => page.keyboard.press('KeyI'), 'I')
+    }
+    assert.deepEqual([0, 10, 20].map((f) => xAt(server, subject, f)), [0, 2, 0], `auto ${auto}: only shot 2 moved`)
+    assert.equal(server.object(subject).transform.position[0], 0, 'the default state is where it was')
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+})
+
+await check('timeline AC-2b: I between two shots is accepted and leaves both shots as they were', async () => {
+  const server = new SceneServer()
+  timelineScene(server, [markerOf(1, 0), markerOf(2, 10)])
+  const { context, page, errors } = await open(server)
+  const box = await track(page).boundingBox()
+  await page.mouse.click(box.x + 1, box.y + box.height - 4)
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
+  assert.match(await page.locator('.cc-scene-timeline-frame').textContent(), /第 5 帧/)
+  await page.getByRole('treeitem', { name: /主体/ }).click()
+  await command(page, server, () => page.keyboard.press('KeyI'), 'I at frame 5')
+  assert.deepEqual(server.object(subject).animation['transform.position'].keys.map((k) => k.frame), [0, 5, 10])
+  assert.deepEqual([0, 10].map((f) => xAt(server, subject, f)), [0, 0])
+  assert.match(await page.locator('.cc-scene-status').textContent(), /其他分镜也采用了这个值/)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-3: a copy of shot 2 is shot 2 and changes on its own; a new shot takes the default state without another shot\'s card', async () => {
+  const server = new SceneServer()
+  const position = keyed('transform.position', [[0, [0, 0.5, 0]], [10, [0, 0.5, -2]], [20, [0, 0.5, 0]]])
+  timelineScene(server, [markerOf(1, 0), markerOf(2, 10), markerOf(3, 20)], position)
+  seed(server, [boxAt(card, '人片', 5, [1, 0.5, 0], { visible: false, animation: keyed('visible', [[0, false], [10, false], [20, true]]) })])
+  const { context, page, errors } = await open(server)
+  await goTo(page, '分镜 2')
+  await command(page, server, () => page.getByRole('button', { name: '复制分镜' }).click(), 'duplicate shot 2')
+  assert.deepEqual(shownAt(server, subject, 30).transform.position, [0, 0.5, -2])
+  await waitFor(async () => (await shotButton(page, '分镜 4').getAttribute('aria-pressed')) === 'true', 'at the copy')
+  await page.getByRole('treeitem', { name: /主体/ }).click()
+  await moveX(page, 3)
+  await command(page, server, () => page.keyboard.press('KeyI'), 'key the copy')
+  assert.deepEqual(shownAt(server, subject, 30).transform.position, [3, 0.5, -2])
+  assert.deepEqual(shownAt(server, subject, 10).transform.position, [0, 0.5, -2], 'shot 2 stays')
+  await command(page, server, () => page.getByRole('button', { name: '新建分镜' }).click(), 'new shot')
+  assert.deepEqual(shownAt(server, subject, 40).transform.position, [0, 0.5, 0], 'the default state')
+  assert.equal(shownAt(server, card, 40).visible, false, 'shot 3\'s card stays out')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-5: 只在当前分镜显示 keeps an object in shot 3 through new, removed and copied shots', async () => {
+  const server = new SceneServer()
+  timelineScene(server, [markerOf(1, 0), markerOf(2, 10), markerOf(3, 20)])
+  const { context, page, errors } = await open(server)
+  await goTo(page, '分镜 3')
+  await page.getByRole('treeitem', { name: /墙/ }).click()
+  await page.locator('.cc-scene-menubar').getByRole('button', { name: '物件' }).click()
+  await command(page, server, () => page.getByRole('menuitem', { name: '只在当前分镜显示' }).click(), 'only in shot 3')
+  assert.deepEqual([0, 10, 20].map((f) => shownAt(server, wall, f).visible), [false, false, true])
+  await command(page, server, () => page.getByRole('button', { name: '新建分镜' }).click(), 'new shot')
+  assert.equal(shownAt(server, wall, 30).visible, false)
+  await goTo(page, '分镜 1')
+  await command(page, server, () => page.getByRole('button', { name: '删除分镜' }).click(), 'remove shot 1')
+  assert.equal(shownAt(server, wall, 20).visible, true, 'still in shot 3')
+  await goTo(page, '分镜 2')
+  assert.equal(await shotButton(page, '分镜 2').getAttribute('title'), '第 20 帧', 'the old shot 3 is now 分镜 2')
+  await command(page, server, () => page.getByRole('button', { name: '复制分镜' }).click(), 'copy it')
+  assert.equal(shownAt(server, wall, 40).visible, true, 'the copy takes it along')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-6: 85 mm keyed in shot 1 leaves shot 2 at its focal length', async () => {
+  const server = new SceneServer()
+  timelineScene(server, [markerOf(1, 0), markerOf(2, 10)])
+  const { context, page, errors } = await open(server)
+  await goTo(page, '分镜 1')
+  await page.getByRole('treeitem', { name: /机位 A/ }).click()
+  const focal = page.getByLabel('焦距（mm）')
+  await command(page, server, async () => {
+    await focal.fill('85')
+    await focal.press('Enter')
+  }, 'focal 85')
+  await command(page, server, () => page.keyboard.press('KeyI'), 'I')
+  assert.deepEqual([0, 10].map((f) => shownAt(server, camA, f).camera.focal_mm), [85, 35], JSON.stringify(server.commands.slice(-2).map((c) => c.payload.operations)))
+  await goTo(page, '分镜 2')
+  await waitFor(async () => /35 mm/.test((await page.locator('.cc-scene-camframe').textContent().catch(() => '')) ?? ''), 'shot 2 at 35 mm')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-7: a move of a keyed object waits unkeyed in orange and goes with the shot; a set piece moves in every shot', async () => {
+  const server = new SceneServer()
+  timelineScene(server, [markerOf(1, 0), markerOf(2, 10)], keyed('transform.position', [[0, [0, 0.5, 0]], [10, [0, 0.5, 0]]]))
+  const { context, page, errors } = await open(server)
+  await goTo(page, '分镜 1')
+  await page.getByRole('treeitem', { name: /主体/ }).click()
+  const field = page.locator('.cc-scene-keyed[data-path="transform.position"]').first()
+  assert.equal(await field.getAttribute('data-key'), 'key')
+  const sent = server.commands.length
+  await moveX(page, 2)
+  await waitFor(async () => (await field.getAttribute('data-key')) === 'changed', 'shown as changed without a key')
+  assert.equal(server.commands.length, sent, 'nothing is saved')
+  await goTo(page, '分镜 2')
+  await goTo(page, '分镜 1')
+  assert.equal(await field.getAttribute('data-key'), 'key', 'the move is dropped')
+  assert.equal(await page.locator('.cc-scene-props fieldset').first().getByLabel('X').inputValue(), '0')
+  await page.getByRole('treeitem', { name: /墙/ }).click()
+  await command(page, server, () => moveX(page, 3), 'move the wall')
+  assert.deepEqual([0, 10].map((f) => xAt(server, wall, f)), [3, 3])
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('timeline AC-9: undoing a removed shot, a new shot and a key goes back each time', async () => {
+  const server = new SceneServer()
+  timelineScene(server, [markerOf(1, 0), markerOf(2, 10)], keyed('transform.position', [[0, [0, 0.5, 0]], [10, [0, 0.5, -2]]]))
+  const { context, page, errors } = await open(server)
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await goTo(page, '分镜 2')
+  await command(page, server, () => page.getByRole('button', { name: '删除分镜' }).click(), 'remove shot 2')
+  assert.deepEqual(server.object(subject).animation['transform.position'].keys.map((k) => k.frame), [0])
+  await command(page, server, () => page.keyboard.press(`${mod}+KeyZ`), 'undo the removal')
+  assert.deepEqual(server.scene.timeline.markers.map((m) => m.frame), [0, 10])
+  assert.deepEqual(shownAt(server, subject, 10).transform.position, [0, 0.5, -2], 'its keys are back')
+  await command(page, server, () => page.getByRole('button', { name: '新建分镜' }).click(), 'new shot')
+  await command(page, server, () => page.keyboard.press(`${mod}+KeyZ`), 'undo the new shot')
+  assert.equal(server.scene.timeline.markers.length, 2)
+  assert.deepEqual(server.object(subject).animation['transform.position'].keys.map((k) => k.frame), [0, 10])
+  await goTo(page, '分镜 1')
+  await page.getByRole('treeitem', { name: /墙/ }).click()
+  await command(page, server, () => page.keyboard.press('KeyI'), 'key the wall')
+  assert.ok(server.object(wall).animation)
+  await command(page, server, () => page.keyboard.press(`${mod}+KeyZ`), 'undo the key')
+  assert.equal(server.object(wall).animation, undefined)
+  assert.deepEqual(errors, [])
+  await context.close()
 })
 
 await browser.close()

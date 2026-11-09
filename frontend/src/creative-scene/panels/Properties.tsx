@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Euler, MathUtils, Quaternion } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { builtinSpec, type ParamSpec } from '../builtins/catalog.ts'
 import { aspectOf, equivalentFocal, fStopShortcuts, fStopThirds, presetOf, sensorPresets, sharpRange } from '../cameraOptics.ts'
 import { cameraDefaults } from '../state/apply.ts'
 import type { SceneModel } from '../models/cache.ts'
+import type { KeyState } from '../timeline/keys.ts'
 import { transformToDoc, transformToView } from '../space.ts'
 import { ev100, isoThirds, shutterLabel, shutterThirds } from '../world/exposure.ts'
 
@@ -155,12 +156,39 @@ export function ParamField({ name, spec, value, disabled, onCommit }: { name: st
   )
 }
 
+/** The timeline's say on the active object's fields: Blender's key colours and the key menu (design「前端」). */
+export type FieldKeys = {
+  state: (path: string) => KeyState | undefined
+  menu: (path: string, x: number, y: number) => void
+}
+
+const KeysContext = createContext<FieldKeys | null>(null)
+
+/** A field that can be keyed: coloured by its key state, the key menu on right-click. */
+function Keyed({ path, children }: { path: string; children: ReactNode }) {
+  const keys = useContext(KeysContext)
+  if (!keys) return children
+  return (
+    <div
+      className="cc-scene-keyed"
+      data-key={keys.state(path)}
+      data-path={path}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        keys.menu(path, e.clientX, e.clientY)
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
 /** The active object's fields; each change is one update. */
 /**
  * Field commits carry a merge key, so typing in one field is one undo step
  * even when its commits wait to be sent together.
  */
-export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, objects = [], physical = false, focusDistance, picking = false, onPickFocus, save, children }: {
+export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate, objects = [], physical = false, focusDistance, picking = false, onPickFocus, save, keys, children }: {
   object: SceneObject | null
   count: number
   readOnly: boolean
@@ -180,6 +208,8 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
   onUpdate: (u: ObjectUpdate, label: string, merge?: string) => void
   /** 「存入资产库」 for a model instance, with why it cannot be saved now; absent without a library. */
   save?: { blocked: string | null; run: () => void }
+  /** With a timeline: the fields' key colours and menu. */
+  keys?: FieldKeys
   /** Type-specific controls below the common ones, such as a model's parameters. */
   children?: ReactNode
 }) {
@@ -202,11 +232,13 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
   }
   const spec = object.primitive ? builtinSpec(object.primitive.builtin) : undefined
   return (
+    <KeysContext.Provider value={keys ?? null}>
     <div key={object.id} className="cc-scene-props" aria-label="属性">
       <TextField value={object.name} disabled={readOnly} onCommit={(name) => onUpdate({ object_id: object.id, name }, '重命名', `${object.id}:name`)} />
       {count > 1 && <small>共选中 {count} 个物件，这里显示活动物件</small>}
       {(['position', 'rotation', 'scale'] as const).map((part) => (
-        <fieldset key={part} disabled={locked}>
+        <Keyed key={part} path={`transform.${part}`}>
+        <fieldset disabled={locked}>
           <legend>{part === 'position' ? '位置（m）' : part === 'rotation' ? '旋转（°）' : '缩放'}</legend>
           {['X', 'Y', 'Z'].map((axis, i) => (
             <NumberField
@@ -221,12 +253,15 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
             />
           ))}
         </fieldset>
+        </Keyed>
       ))}
       <div className="cc-scene-flags">
+        <Keyed path="visible">
         <label>
           <input type="checkbox" checked={object.visible} disabled={readOnly} onChange={(e) => onUpdate({ object_id: object.id, visible: e.target.checked }, e.target.checked ? '显示' : '隐藏')} />
           显示
         </label>
+        </Keyed>
         <label>
           <input type="checkbox" checked={object.locked} disabled={readOnly} onChange={(e) => onUpdate({ object_id: object.id, locked: e.target.checked }, e.target.checked ? '锁定' : '解锁')} />
           锁定
@@ -276,6 +311,7 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
         />
       )}
     </div>
+    </KeysContext.Provider>
   )
 }
 
@@ -316,8 +352,11 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
         <span>标签</span>
         <input defaultValue={c.label} key={c.label} maxLength={40} onBlur={(e) => e.target.value !== c.label && onCamera({ label: e.target.value }, `调整「${name}」标签`)} />
       </label>
-      <NumberField label="焦距（mm）" value={c.focal_mm} step={1} min={8} max={800} onCommit={(v) => onCamera({ focal_mm: v }, `调整「${name}」焦距`, 'focal')} />
+      <Keyed path="camera.focal_mm">
+        <NumberField label="焦距（mm）" value={c.focal_mm} step={1} min={8} max={800} onCommit={(v) => onCamera({ focal_mm: v }, `调整「${name}」焦距`, 'focal')} />
+      </Keyed>
       <small>等效全画幅 {Math.round(equivalentFocal(c.focal_mm, c.sensor_mm) * 10) / 10} mm</small>
+      <Keyed path="camera.aspect">
       <label className="cc-scene-field">
         <span>画幅</span>
         <select aria-label="画幅" value={c.aspect} onChange={(e) => onCamera({ aspect: e.target.value }, `调整「${name}」画幅`)}>
@@ -329,14 +368,20 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
           ))}
         </select>
       </label>
+      </Keyed>
+      <Keyed path="transform.position">
       <NumberField label="高度（m）" value={object.transform.position[1]} step={0.1} min={-100000} max={100000} disabled={readOnly || object.locked} onCommit={onHeight} />
+      </Keyed>
 
+      <Keyed path="camera.depth_of_field">
       <label className="cc-scene-field">
         <span>景深</span>
         <input type="checkbox" checked={c.depth_of_field} onChange={(e) => onCamera({ depth_of_field: e.target.checked }, `${e.target.checked ? '打开' : '关闭'}「${name}」景深`)} />
       </label>
+      </Keyed>
       {c.depth_of_field && (
         <>
+          <Keyed path="camera.f_stop">
           <label className="cc-scene-field">
             <span>光圈 f/{c.f_stop}</span>
             <input
@@ -356,6 +401,7 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
               </button>
             ))}
           </div>
+          </Keyed>
           <div className="cc-scene-field" role="radiogroup" aria-label="对焦方式">
             <span>对焦</span>
             <label>
@@ -368,6 +414,7 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
             </label>
           </div>
           {byObject ? (
+            <Keyed path="camera.focus_object_id">
             <div className="cc-scene-field">
               <select value={c.focus_object_id} aria-label="对焦物件" onChange={(e) => onCamera({ focus_object_id: e.target.value }, `「${name}」对焦到物件`)}>
                 {!target && <option value={c.focus_object_id}>（已删除）</option>}
@@ -381,8 +428,11 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
                 {picking ? '点选中…' : '拾取'}
               </button>
             </div>
+            </Keyed>
           ) : (
-            <NumberField label="对焦距离（m）" value={c.focus} step={0.1} min={0.01} onCommit={(v) => onCamera({ focus: v }, `调整「${name}」对焦距离`, 'focus')} />
+            <Keyed path="camera.focus">
+              <NumberField label="对焦距离（m）" value={c.focus} step={0.1} min={0.01} onCommit={(v) => onCamera({ focus: v }, `调整「${name}」对焦距离`, 'focus')} />
+            </Keyed>
           )}
           {byObject && !target && <small role="status">对焦物件已删除，按 {metres(c.focus)} 对焦</small>}
           <small>
@@ -396,6 +446,7 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
       </button>
       {more && (
         <>
+          <Keyed path="camera.sensor_mm">
           <label className="cc-scene-field">
             <span>传感器</span>
             <select
@@ -416,6 +467,7 @@ function CameraFields({ object, objects, readOnly, physical, focusDistance, pick
           </label>
           <NumberField label="传感器宽（mm）" value={c.sensor_mm[0]} step={0.1} min={1} max={100} onCommit={(v) => onCamera({ sensor_mm: [v, c.sensor_mm[1]] }, `调整「${name}」传感器`, 'sensor')} />
           <NumberField label="传感器高（mm）" value={c.sensor_mm[1]} step={0.1} min={1} max={100} onCommit={(v) => onCamera({ sensor_mm: [c.sensor_mm[0], v] }, `调整「${name}」传感器`, 'sensor')} />
+          </Keyed>
           <NumberField label="near（m）" value={c.near} step={0.01} min={0.001} onCommit={(v) => onCamera({ near: v }, `调整「${name}」近裁剪`, 'near')} />
           <NumberField label="far（m）" value={c.far} step={10} min={0.01} onCommit={(v) => onCamera({ far: v }, `调整「${name}」远裁剪`, 'far')} />
         </>
@@ -445,6 +497,7 @@ function CameraExposure({ camera, name, physical, onCamera }: {
   return (
     <fieldset className="cc-scene-camera-exposure" disabled={!physical} aria-label="曝光">
       <legend>曝光</legend>
+      <Keyed path="camera.exposure_mode">
       <div className="cc-scene-segmented" role="group" aria-label="曝光模式">
         <button type="button" aria-pressed={!manual} onClick={() => manual && onCamera({ exposure_mode: 'ambient' }, `「${name}」改为环境测光`)}>
           环境测光
@@ -453,14 +506,18 @@ function CameraExposure({ camera, name, physical, onCamera }: {
           手动
         </button>
       </div>
+      </Keyed>
       {!manual && (
         <>
+          <Keyed path="camera.exposure_compensation">
           <NumberField label="曝光补偿（档）" value={camera.exposure_compensation} min={-5} max={5} step={1 / 3} onCommit={(v) => onCamera({ exposure_compensation: v }, `调整「${name}」曝光补偿`, 'exposure_compensation')} />
+          </Keyed>
           <small>按场景的环境光测光，不看画面；入夜后只比正午暗 2–4 档；光圈只决定景深</small>
         </>
       )}
       {manual && (
         <>
+          <Keyed path="camera.iso">
           <label className="cc-scene-field">
             <span>ISO</span>
             <select aria-label="ISO" value={camera.iso} onChange={(e) => onCamera({ iso: Number(e.target.value) }, `调整「${name}」ISO`)}>
@@ -471,6 +528,8 @@ function CameraExposure({ camera, name, physical, onCamera }: {
               ))}
             </select>
           </label>
+          </Keyed>
+          <Keyed path="camera.shutter_s">
           <label className="cc-scene-field">
             <span>快门</span>
             <select aria-label="快门" value={camera.shutter_s} onChange={(e) => onCamera({ shutter_s: Number(e.target.value) }, `调整「${name}」快门`)}>
@@ -481,8 +540,10 @@ function CameraExposure({ camera, name, physical, onCamera }: {
               ))}
             </select>
           </label>
+          </Keyed>
         </>
       )}
+      <Keyed path="camera.f_stop">
       <label className="cc-scene-field">
         <span>光圈</span>
         <select aria-label="光圈" value={camera.f_stop} onChange={(e) => onCamera({ f_stop: Number(e.target.value) }, `调整「${name}」光圈`)}>
@@ -493,6 +554,7 @@ function CameraExposure({ camera, name, physical, onCamera }: {
           ))}
         </select>
       </label>
+      </Keyed>
       {manual && (
         <span className="cc-scene-field">
           <span>EV100</span>
