@@ -208,8 +208,12 @@ for (const m of texturedEntries) {
   }
 }
 
-/** The textures a principled slot samples, by what it samples them for. */
-export function textureKeys(t: Texturing | undefined): { color?: TextureKey; normal?: TextureKey; orm?: TextureKey } {
+/**
+ * The textures a principled slot samples, by what it samples them for. The
+ * emission map is read as the base colour is, sRGB from the top row, so it
+ * shares that texture when both name one image, as a glTF's often do.
+ */
+export function textureKeys(t: Texturing | undefined): { color?: TextureKey; normal?: TextureKey; orm?: TextureKey; emissive?: TextureKey } {
   const maps = t?.maps
   if (!maps) return {}
   const orm = ormKey(maps.ao, maps.roughness, maps.metalness)
@@ -217,6 +221,7 @@ export function textureKeys(t: Texturing | undefined): { color?: TextureKey; nor
     ...(maps.base_color ? { color: colorKey(maps.base_color.content_revision_id) } : {}),
     ...(maps.normal ? { normal: normalKey(maps.normal.content_revision_id) } : {}),
     ...(orm ? { orm } : {}),
+    ...(maps.emissive ? { emissive: colorKey(maps.emissive.content_revision_id) } : {}),
   }
 }
 

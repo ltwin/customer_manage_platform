@@ -8,6 +8,7 @@ import { gpuTestHooks } from '../gpu.ts'
 import { probeIrradiance, type ProbeNodes } from '../probes/lookup.ts'
 import { EXTRA_WORDS } from './cache.ts'
 import type { TraceLayer } from './layer.ts'
+import { arrayOf } from './maps.ts'
 import { ROW as NORMAL_ROW, STEPS } from './normals.ts'
 import { HEADER, LIGHT, LIGHT_ROW, MAPS_AT, MATERIAL_ROW, presets, type TraceTables } from './tables.ts'
 import { traceFirst, traceWithin, type Hit } from './wgsl.ts'
@@ -68,7 +69,7 @@ function normalTexel(t: TSLNode): TSLNode {
 }
 
 /** A missing texture's texel: white, flat, an ORM of ones, as the raster's placeholders (images.ts). */
-const none: Record<MapKind, () => TSLNode> = { color: () => vec4(1, 1, 1, 1), normal: () => vec4(0.5, 0.5, 1, 1), orm: () => vec4(1, 1, 1, 1) }
+const none: Record<MapKind, () => TSLNode> = { color: () => vec4(1, 1, 1, 1), normal: () => vec4(0.5, 0.5, 1, 1), orm: () => vec4(1, 1, 1, 1), emissive: () => vec4(1, 1, 1, 1) }
 
 /** three's specular occlusion from an ambient occlusion (computeSpecularOcclusion, Lagarde). */
 const specularOcclusion = (dotNV: TSLNode, ao: TSLNode, roughness: TSLNode) => clamp(pow(dotNV.add(ao), exp2(roughness.mul(-16).sub(1))).sub(1).add(ao), 0, 1)
@@ -249,7 +250,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
 
   /** One of the arrays at a texture coordinate, with its gradients along the two differentials; a layer of −1 (none, not written) as none. */
   function fetch(which: MapKind, layer: TSLNode, coord: TSLNode, gx: TSLNode, gy: TSLNode): TSLNode {
-    const node = maps!.nodes[which]
+    const node = maps!.nodes[arrayOf(which)]
     const at = uint(max(layer, 0))
     // By gradient in compute too (computePatches.ts). A variable here, outside select's branch: the coordinate's parts other samples share are
     // otherwise declared in the first sample's branch, and read unassigned where it is not taken.
@@ -272,12 +273,12 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     const has = { color: true, normal: g.only === undefined, orm: g.only === undefined }
     const layerOf = (w: MapKind) => (w === 'color' ? layers.x : w === 'normal' ? layers.y : layers.z)
     const record = (run: (sample: Sample<TSLNode>) => unknown) => {
-      const out: Record<MapKind, TSLNode[]> = { color: [], normal: [], orm: [] }
+      const out: Record<MapKind, TSLNode[]> = { color: [], normal: [], orm: [], emissive: [] }
       run((which, coord) => (out[which].push(coord), vec4(0)))
       return out
     }
     const withGradients = (X: Record<MapKind, TSLNode[]>, Y: Record<MapKind, TSLNode[]>): Sample<TSLNode> => {
-      const n: Record<MapKind, number> = { color: 0, normal: 0, orm: 0 }
+      const n: Record<MapKind, number> = { color: 0, normal: 0, orm: 0, emissive: 0 }
       return (which, coord) => {
         const k = n[which]++
         return fetch(which, layerOf(which), coord, X[which][k].sub(coord), Y[which][k].sub(coord))

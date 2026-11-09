@@ -3231,7 +3231,7 @@ const change = async (page, server, ops) => {
 }
 const setSlot = (id, slot) => [{ op: 'update_objects', updates: [{ object_id: id, material_slots: { main: slot } }] }]
 
-await check('C5c1: the five maps draw in material preview and final render', async () => {
+await check('C5c1: the six maps draw in material preview and final render', async () => {
   const server = new SceneServer()
   stock(server)
   const ball = gid('ball')
@@ -3249,6 +3249,8 @@ await check('C5c1: the five maps draw in material preview and final render', asy
     ['roughness', { metalness: 1, roughness: 1 }, { roughness: map('ccr_stripes') }],
     ['metalness', { metalness: 1, roughness: 0.3 }, { metalness: map('ccr_stripes') }],
     ['ao', {}, { ao: map('ccr_stripes') }],
+    // scene-glb-import: the emission map times a white glow, red and blue squares against a white one.
+    ['emissive', { emissive: '#ffffff', emissive_intensity: 1 }, { emissive: map('ccr_checker') }],
   ]
   for (const look of ['材质预览', '最终渲染']) {
     await shading(page, look)
@@ -3602,6 +3604,32 @@ await check('C5c1 panel: a base colour map from the library is one revision, UV 
   server.mediaMissing.add(uploaded)
   await page.evaluate(() => window.__invalidate())
   await base.getByText('图片不可用').waitFor()
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('glb-import AC-7: an emission map picked on a box is one revision, one Cmd+Z takes it back', async () => {
+  const server = new SceneServer()
+  stock(server)
+  server.library.push(server.imageAsset('ccr_checker', '棋盘格'))
+  const cube = gid('方块')
+  seed(server, [boxOf('方块', 5, { position: [0, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({ emissive: '#ffffff' }))])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /方块/ }).click()
+  const glow = page.getByLabel('main 的贴图').getByLabel('自发光贴图')
+  const slot = () => server.object(cube).material_slots.main
+  await glow.getByRole('button', { name: '选择' }).click()
+  await page.getByRole('dialog', { name: '选择自发光贴图' }).getByRole('option', { name: '棋盘格' }).click()
+  await waitFor(() => server.commands.length === 1, 'the map')
+  await saved(page)
+  assert.deepEqual(slot().maps, { emissive: { content_revision_id: 'ccr_checker' } })
+  assert.equal(await glow.getByLabel('自发光通道').count(), 0, 'an emission map reads RGB: no channel')
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo the map')
+  await saved(page)
+  assert.equal(slot().maps, undefined)
+  assert.equal(slot().params.emissive, '#ffffff', 'the constant glow stays')
   assert.deepEqual(errors, [])
   await context.close()
 })

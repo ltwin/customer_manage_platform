@@ -183,6 +183,7 @@ test('model parts are baked into model space; a mirrored part keeps its faces fa
 import { uniform, vec3, float, fwidth } from 'three/tsl'
 import { instanceCount, keyOf, makeMaterial, materialFor, release, retain } from '../src/creative-scene/materials/instances.ts'
 import { patternFns } from '../src/creative-scene/materials/patterns.ts'
+import { imagePlatform, textureKeys } from '../src/creative-scene/materials/images.ts'
 
 test('every preset in the catalog has its TSL function, and it gives all five outputs', () => {
   const pattern = materialCatalog.materials.filter((m) => m.kind === 'pattern')
@@ -374,4 +375,27 @@ test('the clipboard carries a slot’s textures, mapping and alpha mode', () => 
   const textured = withAlpha(withMapping(withMap(plain, 'base_color', rev(1)), { kind: 'uv' }), 'blend')
   writeClipboard(storage, textured)
   assert.deepEqual(readClipboard(storage), textured)
+})
+
+// scene-glb-import: the emission map and vertex_color. A slot that has
+// neither keys and draws as it did before them (AC-13).
+test('an emission map and vertex_color draw only where they are set', () => {
+  const plain = catalogMaterial('principled@1', { roughness: 0.5 })!
+  const key = keyOf(plain, false)
+  assert.ok(plain.kind === 'principled' && plain.params.vertex_color === false, 'completed with its default')
+  assert.ok(!key.includes('vertex_color') && key.includes('"vertexColors":false'), 'the key is the one before the parameter')
+  assert.equal(keyOf(catalogMaterial('principled@1', { roughness: 0.5, vertex_color: false })!, false), key)
+  const painted = catalogMaterial('principled@1', { roughness: 0.5, vertex_color: true })!
+  assert.ok(painted.kind === 'principled' && painted.params.vertex_color === true, 'kept as written')
+  assert.notEqual(keyOf(painted, false), key)
+  assert.equal(makeMaterial(painted, false).vertexColors, true)
+  assert.equal(makeMaterial(plain, false).vertexColors, false)
+
+  // The emission map shares the base colour's texture when both name one image, and multiplies the constant emission.
+  const glow = { content_revision_id: 'ccrv_glow' }
+  assert.deepEqual(textureKeys({ maps: { base_color: glow, emissive: glow } }), { color: 'color:ccrv_glow', emissive: 'color:ccrv_glow' })
+  imagePlatform.placeholder = (rgba) => ({ width: 1, height: 1, rgba }) // no ImageData here, and nothing to fetch: the placeholders stay
+  const lit = catalogMaterial('principled@1', { emissive: '#ffffff' }, { maps: { emissive: glow }, mapping: { kind: 'uv' } })!
+  assert.notEqual(makeMaterial(lit, false).emissiveNode, makeMaterial(plain, false).emissiveNode)
+  assert.notEqual(keyOf(lit, false), keyOf(catalogMaterial('principled@1', { emissive: '#ffffff' })!, false))
 })

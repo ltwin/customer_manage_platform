@@ -39,7 +39,7 @@ function Thumb({ revision, label }: { revision: string; label: string }) {
 }
 
 /**
- * A principled slot's textures (C5c1 proposal「编辑器」): five image inputs,
+ * A principled slot's textures (C5c1 proposal「编辑器」): six image inputs,
  * the mapping they share, and how the base colour's alpha is used. m is the
  * slot as it draws, made explicit; each edit gives the whole slot back.
  * hasUV: whether the slot's geometry has UVs (null while unknown).

@@ -56,13 +56,19 @@ function canonical(v: unknown): unknown {
   return Object.fromEntries(Object.keys(o).sort().map((k) => [k, canonical(o[k])]))
 }
 
-/** The whole slot assignment: parameters, and a principled slot's textures, mapping and alpha mode. */
+/**
+ * The whole slot assignment: parameters, and a principled slot's textures,
+ * mapping and alpha mode. vertex_color goes in as vertexColors, so a slot
+ * that leaves it off keys as it did before the parameter (scene-glb-import
+ * AC-13).
+ */
 export function keyOf(m: SlotMaterial, doubleSided: boolean): string {
   if (m.kind === 'unknown') return JSON.stringify({ kind: 'unknown', doubleSided })
   const id = m.kind === 'pattern' ? m.id : 'principled'
-  const vertexColors = m.kind === 'principled' && !!m.vertexColors
+  const { vertex_color, ...params } = m.params
+  const vertexColors = m.kind === 'principled' && (!!m.vertexColors || vertex_color === true)
   const texturing = m.kind === 'principled' && m.texturing ? { texturing: canonical(m.texturing) } : {}
-  return JSON.stringify({ kind: m.kind, id, params: canonical(m.params), doubleSided, vertexColors, ...texturing })
+  return JSON.stringify({ kind: m.kind, id, params: canonical(params), doubleSided, vertexColors, ...texturing })
 }
 
 /** The geometries a slot of material m is drawn as: piece by piece if see-through, sorted as its parts were (render/pieces.ts). */
@@ -101,7 +107,8 @@ function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): Mes
   if (m.kind === 'unknown') return new MeshPhysicalNodeMaterial({ color: unknownGrey, roughness: 0.9, metalness: 0, side })
   if (m.kind === 'principled') {
     const policy = renderPolicy(m)
-    const material = new MeshPhysicalNodeMaterial({ ...principledProps(m.params, policy), side, vertexColors: !!m.vertexColors })
+    const props = principledProps(m.params, policy)
+    const material = new MeshPhysicalNodeMaterial({ ...props, side, vertexColors: !!m.vertexColors || !!props.vertexColors })
     material.emissiveNode = exposedEmission
     if (m.texturing) applyTextures(material, m.texturing, policy)
     return material
@@ -131,19 +138,19 @@ function build(m: SlotMaterial, side: typeof DoubleSide | typeof FrontSide): Mes
  */
 /**
  * A slot's textures as the raster samples them, acquired till material is
- * disposed: the base colour with its alpha, the ORM, and the normal they
- * bend to in view space (null without a normal map). The e2e's checks
- * (render/trace/checks.ts) take the same.
+ * disposed: the base colour with its alpha, the ORM, the emission (null
+ * without its map), and the normal they bend to in view space (null without
+ * a normal map). The e2e's checks (render/trace/checks.ts) take the same.
  */
-export function slotTextures(material: Material, t: Texturing): { color: TSLNode; orm: TSLNode; has: Has; normal: TSLNode | null } {
+export function slotTextures(material: Material, t: Texturing): { color: TSLNode; orm: TSLNode; emissive: TSLNode | null; has: Has; normal: TSLNode | null } {
   const keys = textureKeys(t)
   const textures: Partial<Record<MapKind, ReturnType<typeof acquireTexture>>> = {}
   for (const [which, key] of Object.entries(keys) as [MapKind, string][]) textures[which] = acquireTexture(key)
   material.addEventListener('dispose', () => Object.values(keys).forEach(releaseTexture))
-  const has = { color: !!keys.color, normal: !!keys.normal, orm: !!keys.orm }
+  const has: Has = { color: !!keys.color, normal: !!keys.normal, orm: !!keys.orm, ...(keys.emissive ? { emissive: true } : {}) }
   const mapping = mappingOf(t)
   // A tile is size_m wide, as tall as its image says (the first map's, once it is here).
-  const first = textures.color ?? textures.normal ?? textures.orm
+  const first = textures.color ?? textures.normal ?? textures.orm ?? textures.emissive
   const scale = uniform(new Vector2(...mapping.repeat))
   if (mapping.kind === 'triplanar') scale.onRenderUpdate(() => new Vector2(1 / mapping.size, ((first?.userData.aspect as number | undefined) ?? 1) / mapping.size))
   const m: MappingIn<TSLNode> = { scale, cos: uniform(Math.cos(mapping.rotation)), sin: uniform(Math.sin(mapping.rotation)), strength: uniform(mapping.strength) }
@@ -154,16 +161,18 @@ export function slotTextures(material: Material, t: Texturing): { color: TSLNode
     // normalView is already turned to a back face's side, the gradient not: turned with it, the back of a double-sided
     // surface gets the front's bent normal negated (as BumpMapNode does, and the traced hit: render/trace/hit.ts).
     const world: TSLNode | null = s.bend && (modelNormalMatrix as TSLNode).mul(s.bend.mul(modelScale))
-    return { color: s.color, orm: s.orm, has, normal: world && bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz.mul(faceDirection)) }
+    return { color: s.color, orm: s.orm, emissive: s.emissive, has, normal: world && bendNormal(shaderKit, normalView, cameraViewMatrix.mul(vec4(world, 0)).xyz.mul(faceDirection)) }
   }
   const b = uvMapped(shaderKit, uv(), m)
   const s = uvSurface(shaderKit, b, m, has, sample)
-  return { color: s.color, orm: s.orm, has, normal: s.normal && uvNormal(shaderKit, normalView, dFdx(positionView), dFdy(positionView), dFdx(b), dFdy(b), s.normal) }
+  return { color: s.color, orm: s.orm, emissive: s.emissive, has, normal: s.normal && uvNormal(shaderKit, normalView, dFdx(positionView), dFdy(positionView), dFdx(b), dFdy(b), s.normal) }
 }
 
 function applyTextures(material: MeshPhysicalNodeMaterial, t: Texturing, policy: RenderPolicy) {
-  const { color, orm, has, normal } = slotTextures(material, t)
+  const { color, orm, emissive, has, normal } = slotTextures(material, t)
   if (normal) material.normalNode = normal
+  // The emission map multiplies the constant emission, intensity and exposure as before.
+  if (emissive) material.emissiveNode = exposedEmission.mul(emissive)
   if (has.color) material.colorNode = vec4(materialColor.mul(color.xyz), 1)
   if (has.orm) {
     material.roughnessNode = materialRoughness.mul(orm.y)
