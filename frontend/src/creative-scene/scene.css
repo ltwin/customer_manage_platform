@@ -177,6 +177,9 @@
 .cc-scene-code-error { margin: 0; max-height: 96px; overflow: auto; color: var(--danger, #b42318); font-size: 12.5px; white-space: pre-wrap; }
 .cc-scene-code-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12.5px; }
 .cc-scene-model-params { display: flex; flex-direction: column; gap: 6px; }
+.cc-scene-import-source { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin: 0; font-size: 12.5px; }
+.cc-scene-import-source dt { color: var(--muted); }
+.cc-scene-import-source dd { margin: 0; overflow-wrap: anywhere; }
 .cc-scene-shared { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .cc-scene-number-param input[type='range'] { width: 100%; margin: 2px 0 0; }
 .cc-scene-activity { color: var(--muted); }

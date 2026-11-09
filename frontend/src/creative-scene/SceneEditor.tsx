@@ -41,10 +41,11 @@ import { newIntentID, newMarkerID } from './ids.ts'
 import { forkPlan, ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
 import type { SlotCount } from './models/faces.ts'
-import { codeGenerator } from './models/generator.ts'
+import { codeGenerator, isImported } from './models/generator.ts'
 import { CodePanel } from './panels/CodePanel.tsx'
 import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
+import { ImportedModelInfo } from './panels/ImportedModelInfo.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
 import { AssetPanel } from './panels/AssetPanel.tsx'
@@ -1232,7 +1233,7 @@ export default function SceneEditor({
         { label: '插入关键帧', shortcut: k('insert-keyframe'), disabled: none, run: () => run('insert-keyframe') },
         { label: '只在当前分镜显示', disabled: none || !currentShot, hint: currentShot ? undefined : '先在时间线上跳到一个分镜', run: onlyInCurrentShot },
         'separator',
-        { label: '编辑代码', disabled: active?.kind !== 'model_instance', run: () => active && openCode({ kind: 'object', id: active.id }) },
+        { label: '编辑代码', disabled: active?.kind !== 'model_instance' || isImported(modelOf(active ?? undefined)?.generator), hint: isImported(modelOf(active ?? undefined)?.generator) ? '导入的模型没有代码' : undefined, run: () => active && openCode({ kind: 'object', id: active.id }) },
         ...(onSaveModel ? [{ label: '存入资产库…', disabled: !!saveBlocked, hint: saveBlocked ?? undefined, run: saveModel }] : []),
       ]
     if (menu === 'display')
@@ -1497,7 +1498,8 @@ export default function SceneEditor({
                       onVolume={(volume, text, merge) => edit([{ op: 'update_objects', updates: [{ object_id: shownActive.id, volume }] }], text, merge ? { merge } : undefined)}
                     />
                   )}
-                  {shownActive?.kind === 'model_instance' && shownModel && (
+                  {shownActive?.kind === 'model_instance' && shownModel && isImported(models[shownModel]?.generator) && <ImportedModelInfo source={models[shownModel]?.import} />}
+                  {shownActive?.kind === 'model_instance' && shownModel && !isImported(models[shownModel]?.generator) && (
                     <ModelParams
                       key={shownActive.id}
                       generator={codeGenerator(models[shownModel]?.generator)}
