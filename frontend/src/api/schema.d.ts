@@ -11363,6 +11363,8 @@ export interface operations {
                 headers: {
                     /** @description Max-Age=0 且 Expires 为过去时间 */
                     "Set-Cookie"?: string;
+                    /** @description 清空本站浏览器 HTTP 缓存；展示图片可私有缓存到票据到期，共用电脑上的下一个人不能继承 */
+                    "Clear-Site-Data"?: "\"cache\"";
                     [name: string]: unknown;
                 };
                 content?: never;

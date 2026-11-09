@@ -29,14 +29,33 @@ func (sc AccountScope) CreativeCapabilities(ctx context.Context) (CreativeCapabi
 	if err != nil {
 		return CreativeCapabilities{}, err
 	}
+	return capabilitiesFor(status), nil
+}
+
+func capabilitiesFor(status string) CreativeCapabilities {
 	active := status == "active"
-	return CreativeCapabilities{Read: active, ManualWrite: active, MediaWrite: active, AgentStart: active, NodeGenerate: active, GenerationApply: active}, nil
+	return CreativeCapabilities{Read: active, ManualWrite: active, MediaWrite: active, AgentStart: active, NodeGenerate: active, GenerationApply: active}
 }
 
 func (sc TxAccountScope) RequireCreativeCapability(ctx context.Context, capability string) error {
 	if err := sc.LockCreativeWrite(ctx); err != nil {
 		return err
 	}
+	return sc.requireCapability(ctx, capability)
+}
+
+// RequireCreativeMediaRead admits a media read under the shared barrier, so
+// concurrent reads of one account no longer queue behind each other.
+func (sc TxAccountScope) RequireCreativeMediaRead(ctx context.Context) error {
+	if err := sc.LockCreativeRead(ctx); err != nil {
+		return err
+	}
+	return sc.requireCapability(ctx, "creative_read")
+}
+
+// requireCapability derives capabilities from the status row it locks, so the
+// check costs one round trip.
+func (sc TxAccountScope) requireCapability(ctx context.Context, capability string) error {
 	var status string
 	if err := sc.scope.execRunner().QueryRow(ctx, "SELECT status FROM accounts WHERE id = $1 FOR SHARE", sc.AccountID()).Scan(&status); err != nil {
 		return err
@@ -44,10 +63,7 @@ func (sc TxAccountScope) RequireCreativeCapability(ctx context.Context, capabili
 	if status != "active" {
 		return ErrCreativeAccessDenied
 	}
-	c, err := sc.scope.CreativeCapabilities(ctx)
-	if err != nil {
-		return err
-	}
+	c := capabilitiesFor(status)
 	enabled := false
 	switch capability {
 	case "creative_read":

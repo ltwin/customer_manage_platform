@@ -1,6 +1,7 @@
 import type { components } from '../../api/schema'
 import { request } from '../../api/transport.ts'
 import { authorizedFetch, getAuthSnapshot } from '../../auth/session.ts'
+import { invalidateReads } from './readCache.ts'
 
 export type Canvas = components['schemas']['CreativeCanvasSnapshot']
 export type CanvasNode = components['schemas']['CreativeCanvasNode']
@@ -51,6 +52,7 @@ export function send<T = unknown>(
       getAuthSnapshot().sessionEpoch !== before.sessionEpoch
     )
       throw new Error('登录会话已变化；原操作仍需确认')
+    invalidateReads()
     return value
   })
 }

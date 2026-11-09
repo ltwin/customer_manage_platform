@@ -14,6 +14,8 @@ import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx
 import { fallbackAvatarLabel } from '../../account/accountAvatarMedia.ts'
 import type * as api from '../editor/api.ts'
 import {
+  cachedCoverMedia,
+  cachedRecentProjects,
   canvasPath,
   coverMedia,
   firstImage,
@@ -63,9 +65,10 @@ function useMedia(query: string): boolean {
   )
 }
 
-// 不在首页时侧栏自己读最近项目；切回标签页、refresh 变化时重读，读失败就保留上一份。
+// 不在首页时侧栏自己读最近项目（先显示上次的结果）；切回标签页、refresh 变化时重读，
+// 读失败就保留上一份。
 function useOwnRecent(enabled: boolean, refresh: number): api.Project[] {
-  const [items, setItems] = useState<api.Project[]>([])
+  const [items, setItems] = useState(cachedRecentProjects)
   useEffect(() => {
     if (!enabled) return
     let controller = new AbortController()
@@ -239,7 +242,10 @@ function RecentThumb({
   revision: string | undefined
   state: ProjectState
 }) {
-  const [image, setImage] = useState<{ revision: string; url: string }>()
+  const [image, setImage] = useState(() => {
+    const ticket = revision ? cachedCoverMedia(revision) : undefined
+    return revision && ticket ? { revision, url: ticket.url } : undefined
+  })
   useEffect(() => {
     if (!revision) return
     let active = true

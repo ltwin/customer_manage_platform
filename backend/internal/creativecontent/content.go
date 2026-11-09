@@ -480,6 +480,13 @@ func ReadInSnapshot(ctx context.Context, tx store.ReadTxAccountScope, id, purpos
 func RequireUsable(ctx context.Context, tx store.TxAccountScope, id, purpose string) (Revision, error) {
 	return requireUsable(ctx, tx, tx.QueryRowForUpdate, id, purpose)
 }
+
+// RequireUsableShared is RequireUsable with FOR SHARE row locks, for readers
+// that only need the revision to stay unchanged until they commit (media GET).
+// Concurrent readers of one revision then no longer queue behind each other.
+func RequireUsableShared(ctx context.Context, tx store.TxAccountScope, id, purpose string) (Revision, error) {
+	return requireUsable(ctx, tx, tx.QueryRowForShare, id, purpose)
+}
 func requireUsable(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id, purpose string) (Revision, error) {
 	switch purpose {
 	case "display":

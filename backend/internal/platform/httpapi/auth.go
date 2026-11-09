@@ -244,6 +244,9 @@ func (h *handlers) Logout(c *gin.Context) {
 		return
 	}
 	h.clearRefreshCookie(c)
+	// Displayed images stay in the private HTTP cache until their ticket
+	// expires; on a shared computer the next person must not inherit them.
+	c.Header("Clear-Site-Data", `"cache"`)
 	c.Status(http.StatusNoContent)
 }
 

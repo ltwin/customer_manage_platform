@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../editor/api.ts'
-import { mediaTicket, type MediaTicket } from '../editor/media.ts'
+import {
+  cachedMediaTicket,
+  mediaTicket,
+  type MediaTicket,
+} from '../editor/media.ts'
 import { errorMessage } from '../editor/queue.ts'
+import { readCache, readStamp } from '../editor/readCache.ts'
 
 export const emptyProjectPage: api.ProjectPage = {
   items: [],
@@ -14,10 +19,21 @@ export const recentLimit = 5
 
 export const recentPath = `/projects?limit=${recentLimit}`
 
+// 项目列表按请求路径记住上次结果，页面重挂载时先显示它。
+const projectPages = readCache<api.ProjectPage>()
+
+export function cachedRecentProjects(): api.Project[] {
+  return projectPages.get(recentPath)?.items ?? []
+}
+
 export function readRecentProjects(
   signal?: AbortSignal,
 ): Promise<api.ProjectPage> {
-  return api.read<api.ProjectPage>(recentPath, signal)
+  const stamp = readStamp()
+  return api.read<api.ProjectPage>(recentPath, signal).then((page) => {
+    projectPages.set(recentPath, page, stamp)
+    return page
+  })
 }
 
 // 有项目在运行时每 20 秒重读一次；只有等你确认的项目不轮询，它要等摄影师自己处理。
@@ -49,19 +65,21 @@ function useRefresh(live: boolean, reload: () => void) {
   }, [live])
 }
 
-// 读一页项目：挂载时读，切回标签页时重读，有运行中的项目时轮询。
+// 读一页项目：挂载时读（先显示上次的结果），切回标签页时重读，有运行中的项目时轮询。
 // 重读失败时保留已有的一页，只在一次都没读到时报错。
 export function useProjectPage(path: string) {
-  const [page, setPage] = useState<api.ProjectPage>()
+  const [page, setPage] = useState(() => projectPages.get(path))
   const [error, setError] = useState('')
   const [tick, setTick] = useState(0)
   const reload = () => setTick((value) => value + 1)
 
   useEffect(() => {
     const controller = new AbortController()
+    const stamp = readStamp()
     api
       .read<api.ProjectPage>(path, controller.signal)
       .then((result) => {
+        projectPages.set(path, result, stamp)
         setPage(result)
         setError('')
       })
@@ -104,17 +122,23 @@ export function projectListPath(
   return `/projects?${params}`
 }
 
-type Loaded = { key: string; value: api.ProjectPage }
+// fresh 为假时 value 是缓存里上次的结果：它的游标属于上一次读取，
+// 接在本轮重读的首屏后面会漏掉中间的项目。
+type Loaded = { key: string; value: api.ProjectPage; fresh: boolean }
 
 // 项目页的分页列表。查询变化时从第一页读起；重读（切回标签页、轮询、写操作之后）
 // 按已加载的数量一次读回，最多 100 个，不丢已经翻过的页。
+// 挂载时先显示缓存的列表，本轮首屏读到之前不翻页（ready 为假）。
 export function useProjectList(
   archived: boolean,
   q: string,
   sort: ProjectSort,
 ) {
   const key = projectListPath(archived, q, sort, pageSize)
-  const [loaded, setLoaded] = useState<Loaded>()
+  const [loaded, setLoaded] = useState<Loaded | undefined>(() => {
+    const value = projectPages.get(key)
+    return value && { key, value, fresh: false }
+  })
   const [error, setError] = useState('')
   const [moreLoading, setMoreLoading] = useState(false)
   const generation = useRef(0)
@@ -123,6 +147,7 @@ export function useProjectList(
     latest.current = loaded
   })
   const page = loaded?.key === key ? loaded.value : undefined
+  const ready = loaded?.key === key && loaded.fresh
 
   const read = useCallback(
     (reset: boolean) => {
@@ -132,11 +157,13 @@ export function useProjectList(
           ? latest.current.value.items.length
           : 0
       const limit = Math.min(100, Math.max(pageSize, count))
+      const stamp = readStamp()
       api
         .read<api.ProjectPage>(projectListPath(archived, q, sort, limit))
         .then((value) => {
           if (id !== generation.current) return
-          setLoaded({ key, value })
+          projectPages.set(key, value, stamp)
+          setLoaded({ key, value, fresh: true })
           setError('')
         })
         .catch((e: unknown) => {
@@ -158,7 +185,7 @@ export function useProjectList(
   useRefresh(!!page && hasRunning(page), reload)
 
   async function more() {
-    if (!page?.next_cursor || moreLoading) return
+    if (!page?.next_cursor || !ready || moreLoading) return
     const id = generation.current
     setMoreLoading(true)
     try {
@@ -169,7 +196,7 @@ export function useProjectList(
       setLoaded((previous) =>
         previous?.key === key
           ? {
-              key,
+              ...previous,
               value: {
                 ...value,
                 items: [
@@ -194,14 +221,14 @@ export function useProjectList(
     setLoaded((previous) =>
       previous?.key === key
         ? {
-            key,
+            ...previous,
             value: { ...previous.value, items: change(previous.value.items) },
           }
         : previous,
     )
   }
 
-  return { page, error, moreLoading, more, reload, patch }
+  return { page, ready, error, moreLoading, more, reload, patch }
 }
 
 // 卡片上的最近编辑时间。
@@ -260,8 +287,19 @@ export function canvasPath(project: api.Project): string {
   return `/creative/canvases/${encodeURIComponent(project.default_canvas_id)}`
 }
 
-// 封面取图：先要 display 版本，没有再退回 original。和画布卡片共用票据缓存。
+// 已取得的封面票据可同步读出，重挂载时图片直接出现，不先闪一下空白。
+export function cachedCoverMedia(revision: string): MediaTicket | undefined {
+  return (
+    cachedMediaTicket(revision, 'display') ??
+    cachedMediaTicket(revision, 'original')
+  )
+}
+
+// 封面取图：先要 display 版本，没有再退回 original。和画布卡片共用票据缓存；
+// 已有票据直接用，没有 display 的图不在每次重挂载时再白问一次。
 export function coverMedia(revision: string): Promise<MediaTicket> {
+  const ready = cachedCoverMedia(revision)
+  if (ready) return Promise.resolve(ready)
   return mediaTicket(revision, 'display', 'display').catch(() =>
     mediaTicket(revision, 'original', 'display'),
   )

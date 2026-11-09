@@ -123,6 +123,16 @@ func (sc AccountScope) QueryRow(ctx context.Context, table, columns, cond string
 // 供「先锁父行、再查数改写」的同事务不变量守护使用（如客户末位身份守护），
 // 只应在 WithinTx 内调用，锁随事务结束释放。
 func (sc AccountScope) QueryRowForUpdate(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.queryRowLocked(ctx, "FOR UPDATE", table, columns, cond, args...)
+}
+
+// QueryRowForShare 同 QueryRowForUpdate，但加 FOR SHARE 行锁：并发读者互不阻塞，
+// 仍与改写该行的事务互斥。
+func (sc AccountScope) QueryRowForShare(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.queryRowLocked(ctx, "FOR SHARE", table, columns, cond, args...)
+}
+
+func (sc AccountScope) queryRowLocked(ctx context.Context, lock, table, columns, cond string, args ...any) pgx.Row {
 	if sc.accountID == "" {
 		return errRow{err: ErrEmptyAccountScope}
 	}
@@ -133,7 +143,7 @@ func (sc AccountScope) QueryRowForUpdate(ctx context.Context, table, columns, co
 	if cond != "" {
 		sql += " AND (" + cond + ")"
 	}
-	sql += " FOR UPDATE"
+	sql += " " + lock
 	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
 }
 
@@ -148,13 +158,60 @@ func (sc AccountScope) QueryPage(ctx context.Context, table, columns, cond strin
 	if err := validateIdents(table, strings.Split(columns, ",")...); err != nil {
 		return nil, err
 	}
+	orderBy, err := orderClause(table, order)
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 || offset < 0 {
+		return nil, fmt.Errorf("scoped query page %s: 非法 limit=%d offset=%d", table, limit, offset)
+	}
+	sql := fmt.Sprintf(`SELECT %s FROM %s WHERE account_id = $1`, columns, table)
+	if cond != "" {
+		sql += " AND (" + cond + ")"
+	}
+	limitPos := len(args) + 2
+	sql += fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", orderBy, limitPos, limitPos+1)
+	rows, err := sc.execRunner().Query(ctx, sql, append(append([]any{sc.accountID}, args...), limit, offset)...)
+	if err != nil {
+		return nil, fmt.Errorf("scoped query page %s: %w", table, err)
+	}
+	return rows, nil
+}
+
+// QueryTopPerKey 一次往返读出每个 key 的前 perKey 行：每个 key 走自己的有序、
+// 限量扫描（unnest + LATERAL），代价以 len(keys)*perKey 为界，与单个 key 下有
+// 多少行无关。结果按 keys 的顺序分组，组内按 order 排序。
+func (sc AccountScope) QueryTopPerKey(ctx context.Context, table, columns, keyColumn string, keys []string, order []OrderBy, perKey int) (pgx.Rows, error) {
+	if sc.accountID == "" {
+		return nil, ErrEmptyAccountScope
+	}
+	if err := validateIdents(table, append(strings.Split(columns, ","), keyColumn)...); err != nil {
+		return nil, err
+	}
+	orderBy, err := orderClause(table, order)
+	if err != nil {
+		return nil, err
+	}
+	if perKey < 1 {
+		return nil, fmt.Errorf("scoped top per key %s: 非法 perKey=%d", table, perKey)
+	}
+	sql := fmt.Sprintf(`SELECT t.* FROM unnest($2::text[]) WITH ORDINALITY AS k(key, pos) CROSS JOIN LATERAL (SELECT %s FROM %s WHERE account_id = $1 AND %s = k.key ORDER BY %s LIMIT $3) t ORDER BY k.pos`, columns, table, keyColumn, orderBy)
+	rows, err := sc.execRunner().Query(ctx, sql, sc.accountID, keys, perKey)
+	if err != nil {
+		return nil, fmt.Errorf("scoped top per key %s: %w", table, err)
+	}
+	return rows, nil
+}
+
+// orderClause 拼出 ORDER BY 子句；列名必须是标识符，且排序不能为空。
+func orderClause(table string, order []OrderBy) (string, error) {
 	if len(order) == 0 {
-		return nil, fmt.Errorf("scoped query page %s: 缺 order by（分页必须有稳定排序）", table)
+		return "", fmt.Errorf("scoped query page %s: 缺 order by（分页必须有稳定排序）", table)
 	}
 	orderCols := make([]string, 0, len(order))
 	for _, o := range order {
 		if !identPattern.MatchString(o.Column) {
-			return nil, fmt.Errorf("scoped query page %s: 非法排序列 %q", table, o.Column)
+			return "", fmt.Errorf("scoped query page %s: 非法排序列 %q", table, o.Column)
 		}
 		dir := "ASC"
 		if o.Desc {
@@ -165,20 +222,7 @@ func (sc AccountScope) QueryPage(ctx context.Context, table, columns, cond strin
 		}
 		orderCols = append(orderCols, o.Column+" "+dir)
 	}
-	if limit < 1 || offset < 0 {
-		return nil, fmt.Errorf("scoped query page %s: 非法 limit=%d offset=%d", table, limit, offset)
-	}
-	sql := fmt.Sprintf(`SELECT %s FROM %s WHERE account_id = $1`, columns, table)
-	if cond != "" {
-		sql += " AND (" + cond + ")"
-	}
-	limitPos := len(args) + 2
-	sql += fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", strings.Join(orderCols, ", "), limitPos, limitPos+1)
-	rows, err := sc.execRunner().Query(ctx, sql, append(append([]any{sc.accountID}, args...), limit, offset)...)
-	if err != nil {
-		return nil, fmt.Errorf("scoped query page %s: %w", table, err)
-	}
-	return rows, nil
+	return strings.Join(orderCols, ", "), nil
 }
 
 // OrderBy 是 QueryPage 的排序项；Column 必须是编译期常量列名。

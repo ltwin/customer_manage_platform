@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -408,6 +410,132 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	}
 	if _, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: asset.ContentRevisionID, Role: "original", Purpose: "display"}); !errors.Is(err, creativecontent.ErrUsageDenied) {
 		t.Fatal("revoked grant still issues tickets", err)
+	}
+}
+
+// A displayed image may stay in the browser until its ticket expires; the
+// original behind a display rendition and downloads never do. Tickets issued
+// in one window share a URL, so a reload finds the cached copy.
+func TestDisplayImagesAreCachedUntilTheTicketExpires(t *testing.T) {
+	f := setup(t)
+	wide := image.NewRGBA(image.Rect(0, 0, 2000, 20))
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, wide); err != nil {
+		t.Fatal(err)
+	}
+	revision := func(name string, body []byte) string {
+		view := f.uploadFile(t, f.a, name, "image/png", "image", body, creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: name}})
+		asset, err := creativelibrary.GetAsset(t.Context(), f.a, view.Publication.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return asset.ContentRevisionID
+	}
+	small, large := revision("small.png", sample(t, "sample.png")), revision("wide.png", raw.Bytes())
+	scopeFor := func(string) store.AccountScope { return f.a }
+	open := func(rev, role, purpose string) (creativemedia.Ticket, *creativemedia.Stream) {
+		ticket, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: rev, Role: role, Purpose: purpose})
+		if err != nil {
+			t.Fatal(role, purpose, err)
+		}
+		stream, err := f.svc.Open(t.Context(), scopeFor, ticket.URL[strings.Index(ticket.URL, "ticket=")+7:], rev, role, nil)
+		if err != nil {
+			t.Fatal(role, purpose, err)
+		}
+		_ = stream.Body.Close()
+		return ticket, stream
+	}
+
+	ticket, stream := open(small, "original", "display")
+	// Two issues straddling a window boundary may differ; within one they cannot.
+	if again, _ := open(small, "original", "display"); again.ExpiresAt.Equal(ticket.ExpiresAt) && again.URL != ticket.URL {
+		t.Fatal("tickets in one window must share a URL")
+	}
+	if life := time.Until(ticket.ExpiresAt); life < f.cfg.TicketTTL-time.Second || life > f.cfg.TicketTTL*3/2 {
+		t.Fatal("ticket life", life)
+	}
+	now := time.Now()
+	if !stream.CacheUntil.Equal(ticket.ExpiresAt) || !strings.HasPrefix(stream.CacheControl(now), "private, max-age=") || !strings.HasSuffix(stream.CacheControl(now), ", immutable") {
+		t.Fatal("small original is what the canvas shows", stream.CacheUntil, stream.CacheControl(now))
+	}
+	if got := stream.CacheControl(ticket.ExpiresAt); got != "private, no-store" {
+		t.Fatal("cache outlives the ticket", got)
+	}
+	if _, display := open(large, "display", "display"); display.CacheUntil.IsZero() {
+		t.Fatal("display rendition must be cacheable")
+	}
+	for _, c := range []struct{ rev, role, purpose string }{{large, "original", "display"}, {small, "original", "download"}} {
+		if _, s := open(c.rev, c.role, c.purpose); s.CacheControl(now) != "private, no-store" {
+			t.Fatal(c, "must never be stored", s.CacheControl(now))
+		}
+	}
+}
+
+// Media reads hold the account barrier shared: concurrent reads pass each
+// other, while a writer or GC step holding it exclusively still blocks Open.
+func TestMediaReadsShareTheAccountBarrier(t *testing.T) {
+	f := setup(t)
+	view := f.uploadFile(t, f.a, "窗边.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "窗边"}})
+	asset, err := creativelibrary.GetAsset(t.Context(), f.a, view.Publication.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := asset.ContentRevisionID
+	scopeFor := func(string) store.AccountScope { return f.a }
+	read := func(timeout time.Duration) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		ticket, err := f.svc.IssueTicket(ctx, f.a, creativemedia.TicketInput{ContentRevisionID: revision, Role: "original", Purpose: "display"})
+		if err != nil {
+			t.Fatal("ticket must not wait on the barrier", err)
+		}
+		token := ticket.URL[strings.Index(ticket.URL, "ticket=")+7:]
+		stream, err := f.svc.Open(ctx, scopeFor, token, revision, "original", nil)
+		if err == nil {
+			_ = stream.Body.Close()
+		}
+		return err
+	}
+	const barrier = `hashtextextended('creative-write:media-a', 0)`
+
+	// An in-flight read holds what Open holds: the barrier shared, rows FOR SHARE.
+	reader, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`SELECT pg_advisory_xact_lock_shared(` + barrier + `)`,
+		`SELECT 1 FROM creative_content_revisions WHERE id=$1 FOR SHARE`,
+		`SELECT 1 FROM creative_contents WHERE id=(SELECT content_id FROM creative_content_revisions WHERE id=$1) FOR SHARE`,
+		`SELECT 1 FROM creative_blobs WHERE id IN (SELECT blob_id FROM creative_content_objects WHERE content_revision_id=$1) FOR SHARE`,
+	} {
+		args := []any{revision}
+		if !strings.Contains(q, "$1") {
+			args = nil
+		}
+		if _, err := reader.Exec(q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := read(5 * time.Second); err != nil {
+		t.Fatal("concurrent read queued behind another read", err)
+	}
+	_ = reader.Rollback()
+
+	// A writer holding the barrier: the ticket is still issued, the read waits.
+	writer, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Exec(`SELECT pg_advisory_xact_lock(` + barrier + `)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := read(300 * time.Millisecond); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("read must wait for the exclusive barrier", err)
+	}
+	_ = writer.Rollback()
+	if err := read(5 * time.Second); err != nil {
+		t.Fatal("read after writer", err)
 	}
 }
 

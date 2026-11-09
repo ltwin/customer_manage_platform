@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx'
 import * as api from '../editor/api.ts'
+import { readCache, readStamp } from '../editor/readCache.ts'
 import '../editor/workspace.css'
 import { useCreativeShell } from './creativeShell.ts'
 import HomeComposer, { type ComposerControls } from './HomeComposer.tsx'
@@ -117,23 +118,29 @@ function Home({ account }: { account: string }) {
   )
 }
 
+const recentAssetsPath = '/assets?sort=recent&kind=image&limit=12'
+const recentAssets = readCache<api.Asset[]>(1)
+
 // 资产库最近添加的图片：等高一行、保持原比例；资产库为空时整行不出现。
+// 重挂载时先显示上次读到的一行，再在后台重读。
 function RecentAssets({
   onAdd,
 }: {
   onAdd: (revisionID: string, title: string) => void
 }) {
-  const [items, setItems] = useState<api.Asset[]>([])
+  const [items, setItems] = useState(
+    () => recentAssets.get(recentAssetsPath) ?? [],
+  )
   useEffect(() => {
     const abort = new AbortController()
+    const stamp = readStamp()
     void api
-      .read<api.AssetPage>(
-        '/assets?sort=recent&kind=image&limit=12',
-        abort.signal,
-      )
+      .read<api.AssetPage>(recentAssetsPath, abort.signal)
       .then((page) => {
-        if (!abort.signal.aborted)
-          setItems(page.items.filter((item) => !item.unavailable))
+        if (abort.signal.aborted) return
+        const usable = page.items.filter((item) => !item.unavailable)
+        recentAssets.set(recentAssetsPath, usable, stamp)
+        setItems(usable)
       })
       .catch(() => undefined)
     return () => abort.abort()

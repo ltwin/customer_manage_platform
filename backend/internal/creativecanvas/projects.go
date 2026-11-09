@@ -317,39 +317,41 @@ func attachCovers(ctx context.Context, tx store.ReadTxAccountScope, items []Proj
 		p := &items[i]
 		canvases = append(canvases, p.DefaultCanvasID)
 		cover[p.DefaultCanvasID] = &p.Cover
-		// Ordered by the (account_id, canvas_id, id) index: client-made random
-		// ids make this a stable sample whose cost does not grow with the canvas.
-		rows, err := tx.QueryPage(ctx, "creative_nodes", "id,type_key,x,y,width,height,content_revision_id,parent_id", "canvas_id=$2", []store.OrderBy{{Column: "id"}}, coverNodes+1, 0, p.DefaultCanvasID)
-		if err != nil {
+	}
+	// One query for the page, each canvas sampled through the
+	// (account_id, canvas_id, id) index: client-made random ids make this a
+	// stable sample whose cost does not grow with the canvas.
+	rows, err := tx.QueryTopPerKey(ctx, "creative_nodes", "canvas_id,id,type_key,x,y,width,height,content_revision_id,parent_id", "canvas_id", canvases, []store.OrderBy{{Column: "id"}}, coverNodes+1)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var n CoverNode
+		var canvas, typeKey string
+		var revision, parent *string
+		if err := rows.Scan(&canvas, &n.ID, &typeKey, &n.X, &n.Y, &n.Width, &n.Height, &revision, &parent); err != nil {
+			rows.Close()
 			return err
 		}
-		for rows.Next() {
-			var n CoverNode
-			var typeKey string
-			var revision, parent *string
-			if err := rows.Scan(&n.ID, &typeKey, &n.X, &n.Y, &n.Width, &n.Height, &revision, &parent); err != nil {
-				rows.Close()
-				return err
-			}
-			if len(p.Cover.Nodes) == coverNodes {
-				p.Cover.More = true
-				continue
-			}
-			n.Kind = strings.TrimPrefix(typeKey, "core.")
-			switch {
-			case revision == nil && n.Kind != "group":
-				n.Kind = "empty"
-			case n.Kind == "image" || n.Kind == "video":
-				n.ContentRevisionID = *revision
-			}
-			p.Cover.Nodes = append(p.Cover.Nodes, n)
-			sampled = append(sampled, n.ID)
-			frames[n.ID] = coverFrame{x: n.X, y: n.Y, parent: parent}
+		c := cover[canvas]
+		if len(c.Nodes) == coverNodes {
+			c.More = true
+			continue
 		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
+		n.Kind = strings.TrimPrefix(typeKey, "core.")
+		switch {
+		case revision == nil && n.Kind != "group":
+			n.Kind = "empty"
+		case n.Kind == "image" || n.Kind == "video":
+			n.ContentRevisionID = *revision
 		}
+		c.Nodes = append(c.Nodes, n)
+		sampled = append(sampled, n.ID)
+		frames[n.ID] = coverFrame{x: n.X, y: n.Y, parent: parent}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	if len(sampled) == 0 {
 		return nil
@@ -363,7 +365,7 @@ func attachCovers(ctx context.Context, tx store.ReadTxAccountScope, items []Proj
 			n.X, n.Y = worldPoint(frames, n.ID)
 		}
 	}
-	rows, err := tx.Query(ctx, "creative_edges", "canvas_id,source_node_id,target_node_id", "canvas_id=ANY($2::text[]) AND source_node_id=ANY($3::text[]) AND target_node_id=ANY($3::text[])", canvases, sampled)
+	rows, err = tx.Query(ctx, "creative_edges", "canvas_id,source_node_id,target_node_id", "canvas_id=ANY($2::text[]) AND source_node_id=ANY($3::text[]) AND target_node_id=ANY($3::text[])", canvases, sampled)
 	if err != nil {
 		return err
 	}

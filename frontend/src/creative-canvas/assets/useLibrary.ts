@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { components } from '../../api/schema'
 import * as api from '../editor/api.ts'
 import { errorMessage } from '../editor/queue.ts'
+import { readCache, readStamp } from '../editor/readCache.ts'
 import { listPath, type LibraryQuery } from './query.ts'
 
 export type Usage = components['schemas']['CreativeLibraryUsage']
@@ -18,16 +19,23 @@ export type LibraryCatalog = {
 
 const PAGE = 60
 
+// 页面重挂载时先显示上次的目录和首屏，后台照常重读。
+const catalogs = readCache<LibraryCatalog>(1)
+const firstPages = readCache<api.AssetPage>()
+
 /**
  * 资料库树要的目录：分组（带计数）、标签、标签分类和用量。
- * refresh 变化时重读；读失败保留上一份，只报错。
+ * 挂载时先用上次读到的目录；refresh 变化时重读；读失败保留上一份，只报错。
  */
 export function useCatalog(refresh: number) {
-  const [catalog, setCatalog] = useState<LibraryCatalog | null>(null)
+  const [catalog, setCatalog] = useState(
+    () => catalogs.get('catalog') ?? null,
+  )
   const [error, setError] = useState('')
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
+    const stamp = readStamp()
     Promise.all([
       api.read<api.GroupPage>('/asset-groups', signal),
       api.read<api.TagPage>('/tags', signal),
@@ -37,8 +45,7 @@ export function useCatalog(refresh: number) {
     ])
       .then(([groups, tags, categories, usage]) => {
         if (signal.aborted) return
-        setError('')
-        setCatalog({
+        const next = {
           hierarchy: groups.hierarchy_revision,
           tagHierarchy: tags.hierarchy_revision,
           groups: groups.items,
@@ -46,7 +53,10 @@ export function useCatalog(refresh: number) {
           tags: tags.items,
           categories: categories.items,
           usage,
-        })
+        }
+        catalogs.set('catalog', next, stamp)
+        setError('')
+        setCatalog(next)
       })
       .catch((e: unknown) => {
         if (!signal.aborted) setError(errorMessage(e))
@@ -71,17 +81,21 @@ type ListState = {
 /**
  * 当前条件的素材列表。首屏带计数（同一快照），滚动到底部附近再按游标取下一页。
  * 条件变化时用请求序号丢弃过期的响应；refresh 变化时原地重读，不先清空。
+ * 挂载时先显示上次的首屏；loadedRefresh 仍是 -1，本轮首屏读到之前不按旧游标翻页。
  */
 export function useAssetList(query: LibraryQuery, refresh: number) {
   const key = listPath(query, PAGE)
-  const [state, setState] = useState<ListState>({
-    key,
-    loadedRefresh: -1,
-    page: null,
-    facets: null,
-    error: '',
-    more: 'idle',
-    stale: false,
+  const [state, setState] = useState<ListState>(() => {
+    const cached = firstPages.get(key)
+    return {
+      key,
+      loadedRefresh: -1,
+      page: cached ?? null,
+      facets: cached?.facets ?? null,
+      error: '',
+      more: 'idle',
+      stale: false,
+    }
   })
   const seq = useRef(0)
   const current = state.key === key ? state : null
@@ -89,6 +103,7 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
   useEffect(() => {
     const controller = new AbortController()
     const mine = ++seq.current
+    const stamp = readStamp()
     setState((s) =>
       s.key === key
         ? { ...s, error: '' }
@@ -107,6 +122,7 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
       .read<api.AssetPage>(key, controller.signal)
       .then((page) => {
         if (mine !== seq.current) return
+        firstPages.set(key, page, stamp)
         setState({
           key,
           loadedRefresh: refresh,

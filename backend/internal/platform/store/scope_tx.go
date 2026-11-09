@@ -182,6 +182,10 @@ func (sc TxAccountScope) QueryRowForUpdate(ctx context.Context, table, columns, 
 	return sc.scope.QueryRowForUpdate(ctx, table, columns, cond, args...)
 }
 
+func (sc TxAccountScope) QueryRowForShare(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.scope.QueryRowForShare(ctx, table, columns, cond, args...)
+}
+
 func (sc TxAccountScope) QueryPage(ctx context.Context, table, columns, cond string, order []OrderBy, limit, offset int, args ...any) (pgx.Rows, error) {
 	return sc.scope.QueryPage(ctx, table, columns, cond, order, limit, offset, args...)
 }
@@ -250,6 +254,10 @@ func (sc ReadTxAccountScope) QueryRow(ctx context.Context, table, columns, cond 
 
 func (sc ReadTxAccountScope) QueryPage(ctx context.Context, table, columns, cond string, order []OrderBy, limit, offset int, args ...any) (pgx.Rows, error) {
 	return sc.scope.QueryPage(ctx, table, columns, cond, order, limit, offset, args...)
+}
+
+func (sc ReadTxAccountScope) QueryTopPerKey(ctx context.Context, table, columns, keyColumn string, keys []string, order []OrderBy, perKey int) (pgx.Rows, error) {
+	return sc.scope.QueryTopPerKey(ctx, table, columns, keyColumn, keys, order, perKey)
 }
 
 func (sc ReadTxAccountScope) Count(ctx context.Context, table, cond string, args ...any) (int64, error) {

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
@@ -297,7 +298,7 @@ func (h *handlers) GetCreativeMedia(c *gin.Context, revisionID string, role GetC
 	defer func() { _ = stream.Body.Close() }()
 	c.Header("Content-Type", stream.Mime)
 	c.Header("ETag", strconv.Quote(stream.ETag))
-	c.Header("Cache-Control", "private, no-store")
+	c.Header("Cache-Control", stream.CacheControl(time.Now()))
 	c.Header("Accept-Ranges", "bytes")
 	c.Header("X-Content-Type-Options", "nosniff")
 	if stream.Download {
