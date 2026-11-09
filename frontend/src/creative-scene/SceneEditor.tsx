@@ -41,6 +41,7 @@ import { newIntentID, newMarkerID } from './ids.ts'
 import { forkPlan, ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
 import type { SlotCount } from './models/faces.ts'
+import { codeGenerator } from './models/generator.ts'
 import { CodePanel } from './panels/CodePanel.tsx'
 import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
@@ -1499,7 +1500,7 @@ export default function SceneEditor({
                   {shownActive?.kind === 'model_instance' && shownModel && (
                     <ModelParams
                       key={shownActive.id}
-                      generator={models[shownModel]?.generator ?? null}
+                      generator={codeGenerator(models[shownModel]?.generator)}
                       sharedWith={u.preview ? 0 : sharingInstances(objects, shownActive.id).length}
                       readOnly={readOnly}
                       onCommit={(params, all) => retune(shownActive, params, all)}

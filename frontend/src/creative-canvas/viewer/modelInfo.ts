@@ -1,5 +1,6 @@
 import type { components } from '../../api/schema'
 import { materialEntry } from '../../creative-scene/materials/catalog.ts'
+import { codeGenerator } from '../../creative-scene/models/generator.ts'
 import type { Content } from '../editor/api.ts'
 
 // 模型与材质资产的信息格式化：检查器、查看浮窗共用。不依赖 three（材质目录只是 JSON），资产库页照常不加载 3D 引擎。
@@ -65,11 +66,11 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
       const preset = materials[s.id]?.preset
       return preset ? { ...s, material: materialEntry(preset)?.label ?? preset } : s
     }),
-    params: Object.entries(generator.params_schema)
+    params: Object.entries(codeGenerator(generator)?.params_schema ?? {})
       .map(([key, spec]) => ({
         key,
         label: spec.label || key,
-        value: paramValue(generator.params[key] ?? spec.default, spec.unit),
+        value: paramValue(codeGenerator(generator)?.params[key] ?? spec.default, spec.unit),
       }))
       .sort((a, b) => a.key.localeCompare(b.key)),
   }

@@ -2,7 +2,7 @@
 
 ## 1. 后端：契约、数据与材质字段
 
-- [ ] 1.1 OpenAPI 与生成器形态：`api/openapi.yaml` 的 `CreativeModelGenerator` 拆成按 `language` 区分的 `oneOf`，新增 `CreativeModelImport`，`CreativeModelPayload` / `CreativeModelPreviewPayload` 加 `import`，`CreativeSceneTextureMaps` 加 `emissive`，新路径 `/creative/assets/from-glb` 与 `CreativeAssetFromGLBPayload`，运行 `make generate`。`models.go`：`Generator.MarshalJSON`、`Imported()`，`ModelPayload.Import`。先写测试：无参数代码模型经 `commit_model`、场景读取、`derive_model`、存入资产库后仍有 `params_schema: {}`、`params: {}`；导入形态只输出 `language`、`mount` 并能往返。完成判据：`go build ./...` 通过，前端 `tsc -b` 的报错只剩读生成器的调用点（留给 3.1）
+- [x] 1.1 OpenAPI 与生成器形态：`api/openapi.yaml` 的 `CreativeModelGenerator` 拆成按 `language` 区分的 `oneOf`，新增 `CreativeModelImport`，`CreativeModelPayload` / `CreativeModelPreviewPayload` 加 `import`，`CreativeSceneTextureMaps` 加 `emissive`，新路径 `/creative/assets/from-glb` 与 `CreativeAssetFromGLBPayload`，运行 `make generate`。`models.go`：`Generator.MarshalJSON`、`Imported()`，`ModelPayload.Import`。先写测试：无参数代码模型经 `commit_model`、场景读取、`derive_model`、存入资产库后仍有 `params_schema: {}`、`params: {}`；导入形态只输出 `language`、`mount` 并能往返。完成判据：`go build ./...` 与前端 `tsc -b` 通过（读生成器的调用点先用 `models/generator.ts:codeGenerator` 做类型收窄，界面留给 3.1；接口路径随 2.1 的 handler 一起加）
 - [ ] 1.2 自发光贴图与顶点色字段：`model.go:TextureMaps` 加 `Emissive`，`validateSlots` 接受它并拒绝 `channel`；`images.go:textureUses` 计入它；`materials.json` 的 `principled@1` 加 `vertex_color`（`make generate`）。先写测试：允许、`channel` 被拒、计入 64 张上限、`vertex_color` 原样保存
 
 ## 2. 后端：导入接口与读取方

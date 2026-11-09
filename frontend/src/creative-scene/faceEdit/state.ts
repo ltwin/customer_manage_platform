@@ -1,6 +1,7 @@
 import type { SceneObject } from '../api.ts'
 import type { SceneModel } from '../models/cache.ts'
 import type { FaceTopology } from '../models/faceTopology.ts'
+import { codeGenerator } from '../models/generator.ts'
 import type { MeshIdentity } from '../sandbox/gltf.ts'
 
 // Face edit (scene-face-materials design「面编辑与指定」): one object's
@@ -34,7 +35,7 @@ export function faceSource(o: SceneObject, model: SceneModel | undefined): strin
   if (o.kind === 'model_instance') {
     const revision = o.model?.content_revision_id
     if (!revision) return null
-    const g = model?.generator
+    const g = codeGenerator(model?.generator)
     const m = model?.manifest
     return m ? JSON.stringify([g?.code_sha256 ?? null, g?.lib_version ?? null, byKey(g?.params), m.triangles, m.bounds]) : revision
   }

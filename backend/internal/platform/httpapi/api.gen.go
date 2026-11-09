@@ -1739,69 +1739,69 @@ func (e CreativeMediaTicketRequestRole) Valid() bool {
 	}
 }
 
-// Defines values for CreativeModelGeneratorContractVersion.
+// Defines values for CreativeModelCodeGeneratorContractVersion.
 const (
-	CreativeModelGeneratorContractVersionN1 CreativeModelGeneratorContractVersion = 1
+	CreativeModelCodeGeneratorContractVersionN1 CreativeModelCodeGeneratorContractVersion = 1
 )
 
-// Valid indicates whether the value is a known member of the CreativeModelGeneratorContractVersion enum.
-func (e CreativeModelGeneratorContractVersion) Valid() bool {
+// Valid indicates whether the value is a known member of the CreativeModelCodeGeneratorContractVersion enum.
+func (e CreativeModelCodeGeneratorContractVersion) Valid() bool {
 	switch e {
-	case CreativeModelGeneratorContractVersionN1:
+	case CreativeModelCodeGeneratorContractVersionN1:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for CreativeModelGeneratorLanguage.
+// Defines values for CreativeModelCodeGeneratorLanguage.
 const (
-	CreativeModelGeneratorLanguageThreeModule CreativeModelGeneratorLanguage = "three-module"
+	CreativeModelCodeGeneratorLanguageThreeModule CreativeModelCodeGeneratorLanguage = "three-module"
 )
 
-// Valid indicates whether the value is a known member of the CreativeModelGeneratorLanguage enum.
-func (e CreativeModelGeneratorLanguage) Valid() bool {
+// Valid indicates whether the value is a known member of the CreativeModelCodeGeneratorLanguage enum.
+func (e CreativeModelCodeGeneratorLanguage) Valid() bool {
 	switch e {
-	case CreativeModelGeneratorLanguageThreeModule:
+	case CreativeModelCodeGeneratorLanguageThreeModule:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for CreativeModelGeneratorLibVersion.
+// Defines values for CreativeModelCodeGeneratorLibVersion.
 const (
-	CreativeModelGeneratorLibVersionN1 CreativeModelGeneratorLibVersion = 1
+	CreativeModelCodeGeneratorLibVersionN1 CreativeModelCodeGeneratorLibVersion = 1
 )
 
-// Valid indicates whether the value is a known member of the CreativeModelGeneratorLibVersion enum.
-func (e CreativeModelGeneratorLibVersion) Valid() bool {
+// Valid indicates whether the value is a known member of the CreativeModelCodeGeneratorLibVersion enum.
+func (e CreativeModelCodeGeneratorLibVersion) Valid() bool {
 	switch e {
-	case CreativeModelGeneratorLibVersionN1:
+	case CreativeModelCodeGeneratorLibVersionN1:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for CreativeModelGeneratorMount.
+// Defines values for CreativeModelCodeGeneratorMount.
 const (
-	CreativeModelGeneratorMountCeiling CreativeModelGeneratorMount = "ceiling"
-	CreativeModelGeneratorMountFloor   CreativeModelGeneratorMount = "floor"
-	CreativeModelGeneratorMountFree    CreativeModelGeneratorMount = "free"
-	CreativeModelGeneratorMountWall    CreativeModelGeneratorMount = "wall"
+	CreativeModelCodeGeneratorMountCeiling CreativeModelCodeGeneratorMount = "ceiling"
+	CreativeModelCodeGeneratorMountFloor   CreativeModelCodeGeneratorMount = "floor"
+	CreativeModelCodeGeneratorMountFree    CreativeModelCodeGeneratorMount = "free"
+	CreativeModelCodeGeneratorMountWall    CreativeModelCodeGeneratorMount = "wall"
 )
 
-// Valid indicates whether the value is a known member of the CreativeModelGeneratorMount enum.
-func (e CreativeModelGeneratorMount) Valid() bool {
+// Valid indicates whether the value is a known member of the CreativeModelCodeGeneratorMount enum.
+func (e CreativeModelCodeGeneratorMount) Valid() bool {
 	switch e {
-	case CreativeModelGeneratorMountCeiling:
+	case CreativeModelCodeGeneratorMountCeiling:
 		return true
-	case CreativeModelGeneratorMountFloor:
+	case CreativeModelCodeGeneratorMountFloor:
 		return true
-	case CreativeModelGeneratorMountFree:
+	case CreativeModelCodeGeneratorMountFree:
 		return true
-	case CreativeModelGeneratorMountWall:
+	case CreativeModelCodeGeneratorMountWall:
 		return true
 	default:
 		return false
@@ -1871,6 +1871,45 @@ func (e CreativeModelGeneratorInputMount) Valid() bool {
 	case CreativeModelGeneratorInputMountFree:
 		return true
 	case CreativeModelGeneratorInputMountWall:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelImportedGeneratorLanguage.
+const (
+	Imported CreativeModelImportedGeneratorLanguage = "imported"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelImportedGeneratorLanguage enum.
+func (e CreativeModelImportedGeneratorLanguage) Valid() bool {
+	switch e {
+	case Imported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelImportedGeneratorMount.
+const (
+	Ceiling CreativeModelImportedGeneratorMount = "ceiling"
+	Floor   CreativeModelImportedGeneratorMount = "floor"
+	Free    CreativeModelImportedGeneratorMount = "free"
+	Wall    CreativeModelImportedGeneratorMount = "wall"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelImportedGeneratorMount enum.
+func (e CreativeModelImportedGeneratorMount) Valid() bool {
+	switch e {
+	case Ceiling:
+		return true
+	case Floor:
+		return true
+	case Free:
+		return true
+	case Wall:
 		return true
 	default:
 		return false
@@ -6561,6 +6600,29 @@ type CreativeMediaTicketRequestPurpose string
 // CreativeMediaTicketRequestRole thumbnail 是模型的缩略图
 type CreativeMediaTicketRequestRole string
 
+// CreativeModelCodeGenerator 代码模型的生成信息，不含代码。
+type CreativeModelCodeGenerator struct {
+	CodeSha256      string                                    `json:"code_sha256"`
+	ContractVersion CreativeModelCodeGeneratorContractVersion `json:"contract_version"`
+	Language        CreativeModelCodeGeneratorLanguage        `json:"language"`
+	LibVersion      CreativeModelCodeGeneratorLibVersion      `json:"lib_version"`
+	Mount           CreativeModelCodeGeneratorMount           `json:"mount"`
+	Params          map[string]interface{}                    `json:"params"`
+	ParamsSchema    map[string]CreativeModelParamSpec         `json:"params_schema"`
+}
+
+// CreativeModelCodeGeneratorContractVersion defines model for CreativeModelCodeGenerator.ContractVersion.
+type CreativeModelCodeGeneratorContractVersion int
+
+// CreativeModelCodeGeneratorLanguage defines model for CreativeModelCodeGenerator.Language.
+type CreativeModelCodeGeneratorLanguage string
+
+// CreativeModelCodeGeneratorLibVersion defines model for CreativeModelCodeGenerator.LibVersion.
+type CreativeModelCodeGeneratorLibVersion int
+
+// CreativeModelCodeGeneratorMount defines model for CreativeModelCodeGenerator.Mount.
+type CreativeModelCodeGeneratorMount string
+
 // CreativeModelFaceMesh defines model for CreativeModelFaceMesh.
 type CreativeModelFaceMesh struct {
 	// Assign 槽位 ID（同 GLB 材质名 slot:<id> 的 id）到三角形区间 [start, end) 的列表；区间按这个 primitive 自己的三角形顺序，升序且互不重叠。
@@ -6592,28 +6654,10 @@ type CreativeModelFaces struct {
 	Meshes []CreativeModelFaceMesh `json:"meshes"`
 }
 
-// CreativeModelGenerator 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。
+// CreativeModelGenerator 模型的生成信息，按 language 区分：three-module 是代码模型（读取场景时不含代码，代码经 GET /creative/content-revisions/{id} 读取）； imported 是外部导入的 GLB，没有代码和参数（data: 模型内容「导入的模型」）。
 type CreativeModelGenerator struct {
-	CodeSha256      string                                `json:"code_sha256"`
-	ContractVersion CreativeModelGeneratorContractVersion `json:"contract_version"`
-	Language        CreativeModelGeneratorLanguage        `json:"language"`
-	LibVersion      CreativeModelGeneratorLibVersion      `json:"lib_version"`
-	Mount           CreativeModelGeneratorMount           `json:"mount"`
-	Params          map[string]interface{}                `json:"params"`
-	ParamsSchema    map[string]CreativeModelParamSpec     `json:"params_schema"`
+	union json.RawMessage
 }
-
-// CreativeModelGeneratorContractVersion defines model for CreativeModelGenerator.ContractVersion.
-type CreativeModelGeneratorContractVersion int
-
-// CreativeModelGeneratorLanguage defines model for CreativeModelGenerator.Language.
-type CreativeModelGeneratorLanguage string
-
-// CreativeModelGeneratorLibVersion defines model for CreativeModelGenerator.LibVersion.
-type CreativeModelGeneratorLibVersion int
-
-// CreativeModelGeneratorMount defines model for CreativeModelGenerator.Mount.
-type CreativeModelGeneratorMount string
 
 // CreativeModelGeneratorInput 提交模型时的完整生成信息（含代码）。params 缺省的键补默认值。
 type CreativeModelGeneratorInput struct {
@@ -6639,6 +6683,30 @@ type CreativeModelGeneratorInputLibVersion int
 
 // CreativeModelGeneratorInputMount defines model for CreativeModelGeneratorInput.Mount.
 type CreativeModelGeneratorInputMount string
+
+// CreativeModelImport 导入的模型的来源与授权说明；服务端不核实，只保存和显示。导入时间取内容修订的 created_at。
+type CreativeModelImport struct {
+	// Attribution 来源与授权说明，摄影师填写；导入时用 glTF 的 asset.copyright 预填
+	Attribution *string `json:"attribution,omitempty"`
+
+	// FileName 原文件名（含扩展名，不含路径），按 Unicode 码点计
+	FileName string `json:"file_name"`
+
+	// SourceUrl 素材的来源页面，只允许 http、https
+	SourceUrl *string `json:"source_url,omitempty"`
+}
+
+// CreativeModelImportedGenerator 外部导入的模型：没有代码和参数，只由导入接口写入。
+type CreativeModelImportedGenerator struct {
+	Language CreativeModelImportedGeneratorLanguage `json:"language"`
+	Mount    CreativeModelImportedGeneratorMount    `json:"mount"`
+}
+
+// CreativeModelImportedGeneratorLanguage defines model for CreativeModelImportedGenerator.Language.
+type CreativeModelImportedGeneratorLanguage string
+
+// CreativeModelImportedGeneratorMount defines model for CreativeModelImportedGenerator.Mount.
+type CreativeModelImportedGeneratorMount string
 
 // CreativeModelManifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
 type CreativeModelManifest struct {
@@ -6677,15 +6745,16 @@ type CreativeModelParamSpec struct {
 // CreativeModelParamSpecType defines model for CreativeModelParamSpec.Type.
 type CreativeModelParamSpecType string
 
-// CreativeModelPayload model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。
+// CreativeModelPayload model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（代码模型含代码）与 name_hint。 导入的模型（generator.language = imported）另有 import 与 materials，只由「导入模型到资产库」写入。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。
 type CreativeModelPayload struct {
 	Model struct {
 		// Faces 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。
-		Faces  *CreativeModelFaces             `json:"faces,omitempty"`
-		Format CreativeModelPayloadModelFormat `json:"format"`
+		Faces     *CreativeModelFaces                   `json:"faces,omitempty"`
+		Format    CreativeModelPayloadModelFormat       `json:"format"`
+		Generator *CreativeModelPayload_Model_Generator `json:"generator,omitempty"`
 
-		// Generator 提交模型时的完整生成信息（含代码）。params 缺省的键补默认值。
-		Generator *CreativeModelGeneratorInput `json:"generator,omitempty"`
+		// Import 导入的模型的来源与授权说明；服务端不核实，只保存和显示。导入时间取内容修订的 created_at。
+		Import *CreativeModelImport `json:"import,omitempty"`
 
 		// Manifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
 		Manifest CreativeModelManifest `json:"manifest"`
@@ -6702,6 +6771,11 @@ type CreativeModelPayload struct {
 // CreativeModelPayloadModelFormat defines model for CreativeModelPayload.Model.Format.
 type CreativeModelPayloadModelFormat string
 
+// CreativeModelPayload_Model_Generator defines model for CreativeModelPayload.Model.Generator.
+type CreativeModelPayload_Model_Generator struct {
+	union json.RawMessage
+}
+
 // CreativeModelPreviewPayload 不含代码的完整形态模型载荷，只出现在响应里。
 type CreativeModelPreviewPayload struct {
 	Model struct {
@@ -6709,8 +6783,11 @@ type CreativeModelPreviewPayload struct {
 		Faces  *CreativeModelFaces                    `json:"faces,omitempty"`
 		Format CreativeModelPreviewPayloadModelFormat `json:"format"`
 
-		// Generator 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。
+		// Generator 模型的生成信息，按 language 区分：three-module 是代码模型（读取场景时不含代码，代码经 GET /creative/content-revisions/{id} 读取）； imported 是外部导入的 GLB，没有代码和参数（data: 模型内容「导入的模型」）。
 		Generator CreativeModelGenerator `json:"generator"`
+
+		// Import 导入的模型的来源与授权说明；服务端不核实，只保存和显示。导入时间取内容修订的 created_at。
+		Import *CreativeModelImport `json:"import,omitempty"`
 
 		// Manifest 由服务端（以及编辑器宿主）从 GLB 的顶点数据算出；数组按 id 排序。
 		Manifest CreativeModelManifest `json:"manifest"`
@@ -7548,7 +7625,7 @@ type CreativeSceneMaterialSlot struct {
 	// Mapping 一个槽位的贴图共用一套映射，只在有 maps 时允许。缺省 {kind: triplanar, size_m: 1, rotation_deg: 0, normal_strength: 1}，存储时补齐。
 	Mapping *CreativeSceneTextureMapping `json:"mapping,omitempty"`
 
-	// Maps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+	// Maps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength；自发光 = emissive × 贴图（sRGB）× emissive_intensity。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
 	Maps   *CreativeSceneTextureMaps `json:"maps,omitempty"`
 	Params map[string]interface{}    `json:"params"`
 	Preset string                    `json:"preset"`
@@ -7568,8 +7645,11 @@ type CreativeSceneModel struct {
 	// Faces 面级材质分配；没有时为 null。编辑器加载 GLB 后按它拆分槽位。
 	Faces     nullable.Nullable[CreativeModelFaces]     `json:"faces"`
 	Generator nullable.Nullable[CreativeModelGenerator] `json:"generator"`
-	Manifest  nullable.Nullable[CreativeModelManifest]  `json:"manifest"`
-	NameHint  nullable.Nullable[string]                 `json:"name_hint"`
+
+	// Import 导入的模型的来源与授权说明；代码模型没有这个字段。
+	Import   *CreativeModelImport                     `json:"import,omitempty"`
+	Manifest nullable.Nullable[CreativeModelManifest] `json:"manifest"`
+	NameHint nullable.Nullable[string]                `json:"name_hint"`
 
 	// Usable false 时 manifest、generator、name_hint 为 null，编辑器显示「模型不可用」占位。
 	Usable bool `json:"usable"`
@@ -7842,11 +7922,12 @@ type CreativeSceneTextureMapping struct {
 // CreativeSceneTextureMappingKind triplanar 按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）；uv 用模型的 TEXCOORD_0，模型没有 UV 时按三平面投影显示。
 type CreativeSceneTextureMappingKind string
 
-// CreativeSceneTextureMaps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
+// CreativeSceneTextureMaps 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength；自发光 = emissive × 贴图（sRGB）× emissive_intensity。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。
 type CreativeSceneTextureMaps struct {
 	// Ao glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
 	Ao        *CreativeSceneChannelTexture `json:"ao,omitempty"`
 	BaseColor *CreativeSceneTexture        `json:"base_color,omitempty"`
+	Emissive  *CreativeSceneTexture        `json:"emissive,omitempty"`
 
 	// Metalness glTF 的打包 ORM 图可以给糙度、金属度、AO 指定同一张图，再分别取 r、g、b。
 	Metalness *CreativeSceneChannelTexture `json:"metalness,omitempty"`
@@ -12177,6 +12258,130 @@ func (t CreativeModelFaceMesh_Path_Item) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreativeModelFaceMesh_Path_Item) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeModelCodeGenerator returns the union data inside the CreativeModelGenerator as a CreativeModelCodeGenerator
+func (t CreativeModelGenerator) AsCreativeModelCodeGenerator() (CreativeModelCodeGenerator, error) {
+	var body CreativeModelCodeGenerator
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelCodeGenerator overwrites any union data inside the CreativeModelGenerator as the provided CreativeModelCodeGenerator
+func (t *CreativeModelGenerator) FromCreativeModelCodeGenerator(v CreativeModelCodeGenerator) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelCodeGenerator performs a merge with any union data inside the CreativeModelGenerator, using the provided CreativeModelCodeGenerator
+func (t *CreativeModelGenerator) MergeCreativeModelCodeGenerator(v CreativeModelCodeGenerator) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeModelImportedGenerator returns the union data inside the CreativeModelGenerator as a CreativeModelImportedGenerator
+func (t CreativeModelGenerator) AsCreativeModelImportedGenerator() (CreativeModelImportedGenerator, error) {
+	var body CreativeModelImportedGenerator
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelImportedGenerator overwrites any union data inside the CreativeModelGenerator as the provided CreativeModelImportedGenerator
+func (t *CreativeModelGenerator) FromCreativeModelImportedGenerator(v CreativeModelImportedGenerator) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelImportedGenerator performs a merge with any union data inside the CreativeModelGenerator, using the provided CreativeModelImportedGenerator
+func (t *CreativeModelGenerator) MergeCreativeModelImportedGenerator(v CreativeModelImportedGenerator) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeModelGenerator) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeModelGenerator) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeModelGeneratorInput returns the union data inside the CreativeModelPayload_Model_Generator as a CreativeModelGeneratorInput
+func (t CreativeModelPayload_Model_Generator) AsCreativeModelGeneratorInput() (CreativeModelGeneratorInput, error) {
+	var body CreativeModelGeneratorInput
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelGeneratorInput overwrites any union data inside the CreativeModelPayload_Model_Generator as the provided CreativeModelGeneratorInput
+func (t *CreativeModelPayload_Model_Generator) FromCreativeModelGeneratorInput(v CreativeModelGeneratorInput) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelGeneratorInput performs a merge with any union data inside the CreativeModelPayload_Model_Generator, using the provided CreativeModelGeneratorInput
+func (t *CreativeModelPayload_Model_Generator) MergeCreativeModelGeneratorInput(v CreativeModelGeneratorInput) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeModelImportedGenerator returns the union data inside the CreativeModelPayload_Model_Generator as a CreativeModelImportedGenerator
+func (t CreativeModelPayload_Model_Generator) AsCreativeModelImportedGenerator() (CreativeModelImportedGenerator, error) {
+	var body CreativeModelImportedGenerator
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeModelImportedGenerator overwrites any union data inside the CreativeModelPayload_Model_Generator as the provided CreativeModelImportedGenerator
+func (t *CreativeModelPayload_Model_Generator) FromCreativeModelImportedGenerator(v CreativeModelImportedGenerator) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeModelImportedGenerator performs a merge with any union data inside the CreativeModelPayload_Model_Generator, using the provided CreativeModelImportedGenerator
+func (t *CreativeModelPayload_Model_Generator) MergeCreativeModelImportedGenerator(v CreativeModelImportedGenerator) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeModelPayload_Model_Generator) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeModelPayload_Model_Generator) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
