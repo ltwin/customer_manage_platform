@@ -1,6 +1,6 @@
 {
   "uid": "300fb17e-27ec-4c08-897c-533e63ec8b28",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-timeline-shots",
   "kind": "feature",
   "assurance": "governed",
@@ -37,9 +37,9 @@
       "architecture:场景模块"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-09T02:07:39.064Z",
-  "updatedAt": "2026-11-09T02:41:05.555Z",
+  "updatedAt": "2026-11-09T02:42:53.305Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -61,8 +61,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "32829fa529691f0b99567d65507ffe8b8bb16218",
+    "at": "2026-11-09T02:42:52.773Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b8e5be09a5dcafbbd9e6f4202770c0ddde9767c1ef87c1da6e3c283db82dec97"
+    },
+    "preExisting": [
+      ".lti/snapshots/b8e5be09a5dcafbbd9e6f4202770c0ddde9767c1ef87c1da6e3c283db82dec97.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
