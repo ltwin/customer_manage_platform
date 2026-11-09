@@ -425,17 +425,27 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 ## 导出图来源
 
-- **用途**：记录画布图片节点由哪个场景、哪个修订、哪台摄像机、哪种导出方式生成，用于提示过时。
-- **存储**：`creative_nodes.config` 内的 `based_on` 对象，只对导出产生的 `core.image` 节点写入：`{scene_document_id, scene_revision: CreativeRevision, camera_object_id, pass:"clay"|"line"|"lit", content_revision_id, fingerprint, lens}`。`content_revision_id` 是导出时放进节点的那份图片内容修订；`fingerprint` 是 `scene_revision` 的快照对这台摄像机、这种导出方式的渲染指纹（带版本前缀，如 `v1:`），客户端只当不透明字符串。
-- **镜头快照 `lens`**（修订 v9）：导出时这台摄像机的镜头，`{focal_mm, depth_of_field, f_stop, focus_m, focus_object_name}`。`focus_m` 是实际对焦距离（米）：有对焦物件时按物件原点沿视线的深度算出，否则为 `focus`，并夹在 `near`、`far` 之间；`focus_object_name` 是对焦物件的名称，按距离对焦或对焦物件已删除时为空字符串。景深关闭时也照样记录。`lens` 只说明这张图是怎么拍的，不参与过时判断（指纹已计入这些参数）；没有 `lens` 的节点按未知处理。
+- **用途**：记录画布图片节点由哪个场景、哪个修订、哪个分镜（或哪台摄像机）、哪种导出方式生成，用于提示过时。
+- **存储**：`creative_nodes.config` 内的 `based_on` 对象，只对导出产生的 `core.image` 节点写入：`{scene_document_id, scene_revision: CreativeRevision, marker_id, frame, camera_object_id, pass:"clay"|"line"|"lit", content_revision_id, fingerprint, lens}`。
+  - `marker_id`、`frame`（`scene-pose-system` 子项 1）：按分镜导出时为分镜 ID 和导出时它的帧号；按摄像机导出时 `marker_id` 为 null、`frame` 为 0。旧节点没有这两个字段，按 null 和 0 读取。
+  - `camera_object_id` 是渲染所用的摄像机（按分镜导出时取导出时分镜绑定的摄像机）。
+  - `content_revision_id` 是导出时放进节点的那份图片内容修订。
+  - `fingerprint` 是 `scene_revision` 的快照按 `frame` 求值后，对这台摄像机、这种导出方式的渲染指纹（带版本前缀，如 `v1:`），客户端只当不透明字符串。
+- **镜头快照 `lens`**（修订 v9）：导出时这台摄像机在这一帧求值后的镜头，`{focal_mm, depth_of_field, f_stop, focus_m, focus_object_name}`。`focus_m` 是实际对焦距离（米）：有对焦物件时按物件原点沿视线的深度算出，否则为 `focus`，并夹在 `near`、`far` 之间；`focus_object_name` 是对焦物件的名称，按距离对焦或对焦物件已删除时为空字符串。景深关闭时也照样记录。`lens` 只说明这张图是怎么拍的，不参与过时判断（指纹已计入这些参数）；没有 `lens` 的节点按未知处理。
 - **角色**：派生信息，只用于提示，不参与权限和内容。
 - **写入**：只由导出的放置流程经画布命令层写入，入口是「导出分镜」接口和 `export_shots` 的完成事务；画布命令的 `add_node` 不接受 `config`，客户端无法写入。写入后不再修改：节点当前内容不是 `content_revision_id`（换了图、切了版本）时，来源信息不生效，所以改图的操作不需要逐一清除它。复制节点时随 `config` 一起复制，内容相同，判断照样成立。
 - **读取**：画布节点快照新增可选只读字段 `based_on_state`，只出现在 `based_on` 生效的节点上（不生效时不返回）：
   - `unavailable`：来源场景不存在、在回收站或快照不可展示，不显示过时；
   - `current`：场景之后没有与这张图相关的修改；
   - `stale`：有，前端显示「场景已更新」。
-- **助手读取**（修订 v9）：`read_canvas` 返回的节点里，`based_on` 生效的导出图带 `export_source: {scene_document_id, scene_revision, camera_object_id, pass, lens, state}`，`state` 即 `based_on_state`。画布的 HTTP 节点快照不变，仍只返回 `based_on_state`。
-- **过时判断**：读取时计算，不落库。对场景当前快照算同一台摄像机、同一种导出方式的渲染指纹，与 `fingerprint` 比较，不同即 `stale`；这台摄像机已不在当前快照里也算 `stale`。指纹计入哪些内容见 design「渲染模式与导出」，按导出方式区分。改动后又改回原样不算过时。指纹版本与当前不同时算 `stale`，不读旧快照重算（修订 v9，读画布不增加查询；指纹版本只在渲染规则变化时升级，届时旧图本来就该重新导出）。
+- **助手读取**（修订 v9）：`read_canvas` 返回的节点里，`based_on` 生效的导出图带 `export_source: {scene_document_id, scene_revision, marker_id, frame, camera_object_id, pass, lens, state}`，`state` 即 `based_on_state`。画布的 HTTP 节点快照不变，仍只返回 `based_on_state`。
+- **过时判断**：读取时计算，不落库。对场景当前快照按同样的方式求值、算同一种导出方式的渲染指纹，与 `fingerprint` 比较，不同即 `stale`：
+  - 按分镜导出的节点：在当前快照里按 `marker_id` 找到分镜，按它**当前的**帧号求值，用它**当前绑定的**摄像机算指纹。分镜已删除、未绑定摄像机或摄像机已删除，都算 `stale`。
+    - 分镜挪到别的帧（关键帧随它一起挪），求值结果相同时不算过时。
+    - **分镜换绑另一台摄像机算 `stale`**，即使两台摄像机的参数和位置完全相同：指纹计入摄像机 ID，这一点与本条修改之前相同，旧图的指纹因此不变。
+  - 按摄像机导出的节点（含旧节点）：按第 0 帧求值，用 `camera_object_id` 算指纹；这台摄像机已不在当前快照里算 `stale`。
+  - 指纹只计入求值结果，不计入 `timeline` 和通道本身。所以只改别的分镜的关键帧，这一张不会过时；没有通道和分镜的场景，指纹与本条修改之前完全相同，**指纹版本不升级**。
+  - 指纹计入哪些内容见 `scene-editor-3d` design「渲染模式与导出」，按导出方式区分。改动后又改回原样不算过时。指纹版本与当前不同时算 `stale`，不读旧快照重算（修订 v9，读画布不增加查询；指纹版本只在渲染规则变化时升级，届时旧图本来就该重新导出）。
 
 ## 模型资产
 
@@ -1027,3 +1037,109 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 不删除已发布的条目。来源站撤下文件不影响已导入的对象；重建环境时下载失败的条目按「没导入」处理，日志可查。
 - 对象存储里不再被任何条目引用的文件不自动清理，数量很少，需要时手工删除。
 - 回滚：旧后端不认识 `textured`，目录加载会失败；回滚须连同目录一起回滚，已写进场景的内置贴图材质在旧编辑器里显示为中性灰。只做前向修复。
+
+## 场景时间线
+
+### 用途与存储角色
+- **用途**：扩展 `data: 场景文档`，记录分镜标记和物件属性的关键帧通道。一个场景因此可以有多个分镜，每个分镜的物件位置、可见性和摄像机参数可以不同，没有通道的属性所有分镜共用。
+- **存储**：与场景文档相同，位于快照载荷（`schema_version = 1`）内：`scene.timeline` 在新单元 `timeline` 内；`objects[].animation` 按属性归入物件现有的两个单元（见下「单元」）。不新增表或列。
+- **角色**：权威主数据。按帧求值的结果是派生量，不落库（`patterns: 关键帧求值`）。
+- **所有权**：只有 `creativescene` 经场景命令写入（`api: ADD 场景时间线命令`），写入者是摄影师（编辑器）或助手（`edit_scene`）。读取方是编辑器、渲染端、渲染指纹和助手工具。
+
+### 结构与身份
+
+`scene.timeline`：
+
+| 路径 | 类型 / 约束 | 必须 | 缺省 / 说明 |
+|---|---|---|---|
+| `scene.timeline` | object | 否 | 读取没有这个字段的快照时补 `{fps: 24, markers: []}` |
+| `timeline.fps` | integer 1…120 | 是 | 24。本 Epic 只用于时间线面板的刻度显示，不影响静态分镜的渲染；以后的动画播放按它换算时间 |
+| `timeline.markers[]` | array，≤ 200 | 是 | 按 `frame` 升序存储（服务端写入时排序） |
+| `markers[].id` | string，`smk_<21 位 nanoid>` | 是 | 客户端生成，场景内唯一，删除后不复用（同物件 ID 的规则） |
+| `markers[].name` | string ≤ 80 字符 | 是 | 可为空串；界面上为空时显示「分镜 N」（按帧序编号） |
+| `markers[].frame` | integer 0…100000 | 是 | **场景内不重复** |
+| `markers[].camera_object_id` | string，物件 ID 或 `""` | 是 | 写入时非空就必须指向修改后场景里 `kind = camera` 的物件；之后摄像机被删除不算违反契约，这个分镜视为「未绑定摄像机」，不能导出或回看，编辑器和助手工具都会提示 |
+
+`objects[].animation`：
+
+| 路径 | 类型 / 约束 | 必须 | 缺省 / 说明 |
+|---|---|---|---|
+| `objects[].animation` | object，键为通道路径 | 否 | 缺省 `{}`；没有通道时存储时去掉这个字段 |
+| `animation.<path>.keys[]` | array，1…1000 项 | 是 | 帧号严格递增；没有关键帧的通道不存储 |
+| `keys[].frame` | integer 0…100000 | 是 | — |
+| `keys[].value` | 按路径的类型 | 是 | 约束与对应的基础值字段相同；四元数写入时长度与 1 的差 ≤ 1e-3，存储时归一化 |
+| `keys[].interp` | `"linear"` \| `"constant"` | 否 | 连续属性缺省 `linear`，离散属性只允许并缺省 `constant`；存储时补齐 |
+
+可动画的路径（白名单；以后的骨骼通道、灯光和环境属性经 Epic 修订加入）：
+
+| 路径 | 物件 | 值 | 类别 | 所在单元 |
+|---|---|---|---|---|
+| `transform.position` | 全部 | `[x, y, z]`，同 `transform.position` | 连续 | `object:<id>` |
+| `transform.rotation` | 全部 | `[x, y, z, w]` 单位四元数 | 连续（球面插值） | `object:<id>` |
+| `transform.scale` | 全部 | `[x, y, z]`，同 `transform.scale` | 连续 | `object:<id>` |
+| `visible` | 全部 | boolean | 离散 | `object:<id>` |
+| `camera.focal_mm` | `camera` | 同 `objects[].camera` | 连续 | `object:<id>:content` |
+| `camera.f_stop`、`camera.focus` | `camera` | 同上 | 连续 | `object:<id>:content` |
+| `camera.exposure_compensation`、`camera.iso`、`camera.shutter_s` | `camera` | 同 `data: 摄像机曝光` | 连续 | `object:<id>:content` |
+| `camera.sensor_mm`、`camera.aspect`、`camera.depth_of_field`、`camera.focus_object_id`、`camera.exposure_mode` | `camera` | 同上 | 离散 | `object:<id>:content` |
+
+- 路径不在白名单里，或者与物件的 `kind` 不符（例如方块写 `camera.focal_mm`），返回 400 并指出路径。
+- `camera.focus_object_id` 的关键帧值按基础值的规则校验：写入时非空就必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己。
+- `near`、`far`、`label` 和物件的名称、锁定、父级、顺序、模型、材质槽都不能打关键帧（Epic design 不变量 P4）。
+
+### 分镜帧必有关键帧
+- **规则**（Epic design 不变量 P8）：一个属性只要有通道，它在每个分镜的帧上都必须有关键帧。分镜的画面因此只由关键帧决定，不受外推和插值影响；分镜之外的帧可以另有关键帧。
+- **检查时机**：服务端在每批命令应用后检查，不满足时整批拒绝（400）。检查范围如下：
+  - 本批写到的通道（`add_objects` 带的 `animation`，`update_objects` 的 `animation`）。
+  - 本批改了 `timeline.markers` 时，检查全部通道。
+  - `restore` 和 `restore_units` 不检查：恢复部分单元后可能出现缺口。
+- **缺口的处理**：求值仍按 `patterns: 关键帧求值` 进行，结果有定义。读取方要提示缺口：编辑器在时间线上标出缺口，助手的 `read_scene` 在结果里列出「通道 × 分镜」的缺口。之后对这条通道或分镜列表的写入，要连同补齐缺口一起提交。
+- **由调用方在同一批里写全的操作**（Epic design「编辑语义」S1–S6），服务端不隐式补帧：
+  - 首次创建通道（在任意一帧）：其他每个分镜的帧写修改前的值，基础值保持修改前的值。
+  - 新建分镜：每条通道在新帧写基础值。复制分镜：每条通道在新帧写被复制分镜的求值结果。
+  - 改分镜帧号：每条通道的关键帧随分镜挪到新帧。
+  - 删除分镜：删掉每条通道在这一帧的关键帧。
+  - 添加只属于当前分镜的物件：基础值 `visible = false`，`visible` 通道在当前分镜为 `true`，其他分镜为 `false`。
+
+### 单元
+- 新增单元 `timeline`，存 `scene.timeline` 的全部内容。
+- 通道不新增单元，归入它的属性原来所在的单元：
+  - 摆放类路径（`transform.*`、`visible`）在 `object:<id>`。
+  - 摄像机路径在 `object:<id>:content`。
+  - 改通道与改同一属性的基础值按同一单元做并发控制。
+  - 这样每个物件仍然只占两个单元，单元总数（上限 4096）只多一个 `timeline`。
+
+### 客户端任务的分镜字段
+`data: 场景客户端任务` 的现有请求外形不变，增加以下可选字段。本节定义它们，那一节的修改由 `creative-mcp-server` 的子项负责，两边不互相改写正文：
+
+- `render_view`：
+  - 新增第四种选择方式 `{marker_id}`：按这个分镜的帧求值，用它绑定的摄像机渲染，画幅取这台摄像机在这一帧的 `aspect`。
+  - 分镜不存在或未绑定摄像机时，工具直接返回错误、不建任务。
+  - `depth_of_field = true` 可以与 `marker_id` 一起用，条件是这台摄像机在这一帧求值后 `depth_of_field` 为 `true`。
+  - 其他三种方式（`camera_object_id`、`viewpoint`、`preset`）增加可选的 `frame`（integer 0…100000，缺省 0），按这一帧求值。
+- `export_shots`：
+  - 新增 `marker_ids`（数组，不重复，与 `camera_object_ids` 二选一）。
+  - 工具没指定时：场景有分镜就取全部分镜（按帧序），没有分镜就照旧取全部摄像机。
+  - 有分镜未绑定摄像机时，工具直接返回错误、不建任务，并列出这些分镜。
+  - 结果的 `nodes[]` 增加 `marker_id`（按摄像机导出时为 null）。
+
+### 访问模式与保证
+- **写**：按 `api: ADD 场景时间线命令` 的规则在文档行锁内校验并应用，与其他场景命令同一事务。由应用保证：
+  - 标记 ID 唯一、帧号不重复、摄像机引用合法。
+  - 通道路径在白名单内并与 `kind` 相符。
+  - 关键帧帧号严格递增，值合法。
+  - 分镜帧必有关键帧（检查范围见上）。
+  - 全场景关键帧总数 ≤ 20000（初始值，子项 1 实测后调整），快照仍 ≤ 512 KiB。
+- **读**：读取场景时随快照原样返回；服务端解码时补齐 `timeline` 的缺省值和 `interp`。
+- **求值**：按 `patterns: 关键帧求值`。渲染指纹、导出放置和助手读取在服务端求值；编辑器和渲染端在浏览器里求值。
+- **删除**：删除物件时，它的通道随物件一起删除；被删的摄像机仍可能被分镜引用（见上）。
+- **恢复**：`restore` 和 `restore_units` 按单元恢复：`timeline` 单元恢复分镜标记；物件单元恢复时，这个单元里的通道一起恢复。
+
+### 生命周期与演进
+- 不迁移：没有 `timeline` 和 `animation` 就是没有分镜、没有通道，求值结果就是现在的快照，画面和渲染指纹都不变。
+- 前后端同一版本上线：旧编辑器不认识这两个字段，`update_objects` 整体替换不会丢失它们（字段不在旧编辑器写的键里），但旧编辑器会按基础值显示有通道的物件，与新编辑器不一致。回滚到不认识它们的后端会读取失败，只做前向修复（同修订 v17）。
+- 后续：
+  - `interp = "bezier"`（动画播放和曲线编辑时加）。
+  - 骨骼通道 `pose.*`（本 Epic 子项 4）。
+  - 灯光、天空、雾的通道。
+  - 密集动画拆出快照存储。

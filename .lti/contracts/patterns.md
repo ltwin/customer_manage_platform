@@ -171,3 +171,19 @@ export default function build({ params, THREE, lib, rng }) {
   - 辅助显示（灯光图标、摄像机视锥、网格、gizmo）：它们不在 0 号图层的主体里，数量少，不参与批次；
   - 占位块（模型加载中或不可用时画的包围盒）：它不是模型几何。
 - **例子**：`frontend/src/creative-scene/models/cache.ts` 的 `partsOf`（P1 交付后）。
+
+## 关键帧求值
+
+- 约定：
+  - 场景按帧求值只有一套规则，Go（`backend/internal/creativescene` 的求值器）与 TS（`frontend/src/creative-scene` 的求值器）各实现一份，两端跑同一份测试向量：`backend/internal/creativescene/testdata/keyframe_eval.json`，由 `make generate` 复制到前端，`make generate-check` 比对漂移。改规则时先改测试向量。
+  - 帧号是非负整数。通道的关键帧按帧号严格递增。
+  - 帧在第一个关键帧之前时取第一个关键帧的值，在最后一个关键帧之后时取最后一个的值。
+  - 帧落在两个关键帧之间时，按左边关键帧的 `interp` 计算：
+    - `constant` 取左值。
+    - `linear`：数值和数组逐分量线性插值，t = (帧 − 左帧) / (右帧 − 左帧)；四元数在点积为负时先把右值取反（走最短路径），再做球面线性插值，结果归一化。两个四元数夹角小于 1e-6 弧度时退化为线性插值后归一化。
+  - 离散属性（布尔、枚举、字符串和 `aspect`、`sensor_mm`、`focus_object_id`）只允许 `constant`。
+  - 求值不改写快照：有通道的属性以求值结果为准，基础值保留但不参与这一帧。
+  - 求值结果的使用方：渲染、导出、渲染指纹、助手读取。不要在别处另写插值。
+- 为什么：服务端按求值结果算渲染指纹，编辑器按求值结果出图，两边差一点就会误报过时或导出与视口不一致。规则很小，与 manifest 算法一样在两端各实现一份，比在服务端引入 JS 运行时简单。
+- 不适用于：贝塞尔插值和曲线编辑（后续加 `interp = "bezier"` 时扩展本条）；蒙皮后的顶点不由求值器计算，求值器只给出骨骼通道的值。
+- 例子：子项 1 交付后补充求值器所在的文件和符号。

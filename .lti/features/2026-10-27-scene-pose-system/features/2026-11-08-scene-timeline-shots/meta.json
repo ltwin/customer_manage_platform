@@ -1,6 +1,6 @@
 {
   "uid": "300fb17e-27ec-4c08-897c-533e63ec8b28",
-  "revision": 5,
+  "revision": 8,
   "id": "scene-timeline-shots",
   "kind": "feature",
   "assurance": "governed",
@@ -37,9 +37,9 @@
       "architecture:场景模块"
     ]
   },
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-09T02:07:39.064Z",
-  "updatedAt": "2026-11-09T02:42:53.305Z",
+  "updatedAt": "2026-11-09T10:48:52.936Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -72,8 +72,317 @@
       ".lti/snapshots/b8e5be09a5dcafbbd9e6f4202770c0ddde9767c1ef87c1da6e3c283db82dec97.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-11-09T10:48:28.112Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 配 checks，改为手动定向验证：Go creativescene/creativeagent/creativecanvas/platform/httpapi 包测试全绿，BenchmarkEvaluateAtLimits 0.17 ms/op（阈值 5 ms）；前端 32 个 creative-scene 单测文件 426 项通过，tsc、oxlint、make generate-check 无问题；timeline e2e（AC-1/2/2b/3/5/6/7/9、AC-10+8b）与旧有的撤销、添加摄像机、重开、按摄像机导出 e2e 在审查修复前逐条通过，修复只动 exportCount 与助手展开，未重跑 e2e。未覆盖：AC-13 真实模型样例未跑（owner 决定收尾），AC-4 拖动交互、AC-8 编辑器清除动画只有 owner 试用无自动化；并发只有冲突单测（TestKeysShareTheirUnitsConcurrency、TestShotExpansionIsCheckedAgainstTheBaseline），无 stress；前端求值性能未单独测量。已知范围外问题：restore.go 恢复内容不含 Volume；导出对话框关闭后焦点丢失。",
+        "coverage": [
+          {
+            "criterionId": "AC-c0378489e488",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-1」(frontend/scripts/creative-scene.e2e.mjs，SCENE_E2E_ONLY 单条、端口 5199 通过)"
+          },
+          {
+            "criterionId": "AC-4acc689c11e0",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-2」；TS 单测 creative-scene-timeline-editing「AC-2: moved then I…」"
+          },
+          {
+            "criterionId": "AC-4504f17efc7e",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-2b」；TS 单测 creative-scene-timeline-keys「S1」"
+          },
+          {
+            "criterionId": "AC-adb35380429d",
+            "status": "verified",
+            "evidence": "子项见下两条"
+          },
+          {
+            "criterionId": "AC-ca19a82c4c31",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-3」；TS 单测「S2a and S2b」；Go TestAssistantBuildsShots"
+          },
+          {
+            "criterionId": "AC-d5cd70abfaf7",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-3」；TS 单测「S2a and S2b」「S6」；Go TestAssistantBuildsShots"
+          },
+          {
+            "criterionId": "AC-f8885adbef8d",
+            "status": "verified",
+            "evidence": "TS 单测 creative-scene-timeline-keys「S3 and S4」；Go TestAssistantBuildsShots（update_shot/remove_shot）；拖动交互由 owner 2026-11-09 试用，无自动化 e2e"
+          },
+          {
+            "criterionId": "AC-43ab330040ad",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-5」；TS 单测「S6」"
+          },
+          {
+            "criterionId": "AC-c064025ce70c",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-6」"
+          },
+          {
+            "criterionId": "AC-bd25c8c284d8",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-7」；TS 单测「a keyed property waits unkeyed…」「a baseline goes when…」"
+          },
+          {
+            "criterionId": "AC-617523fd7d73",
+            "status": "verified",
+            "evidence": "TS 单测 creative-scene-timeline-keys「S5: clearing a channel keeps what the frame shows」；Go TestAssistantBuildsShots（助手 animation.clear，8b6d4793）；编辑器右键清除动画由 owner 试用"
+          },
+          {
+            "criterionId": "AC-f0aee8073e03",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-10 and AC-8b」"
+          },
+          {
+            "criterionId": "AC-c12acd1a8f95",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-9」；TS 单测「undoing a removed shot brings its keys back」「each unit's channels come back on their own」；Go TestRestoreTimelineUnits"
+          },
+          {
+            "criterionId": "AC-b17bbd0a444a",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-10 and AC-8b」；TS 单测 creative-scene-timeline-export；Go TestExportByShot、TestCompleteExportByShot"
+          },
+          {
+            "criterionId": "AC-2a519de192cd",
+            "status": "verified",
+            "evidence": "子项见下四条"
+          },
+          {
+            "criterionId": "AC-1bc5cdb64ee7",
+            "status": "verified",
+            "evidence": "Go TestExportByShot、TestFreshnessFingerprintsEachShotOnce（e2e 内存服务端不算指纹）"
+          },
+          {
+            "criterionId": "AC-3ee695aebb2c",
+            "status": "verified",
+            "evidence": "Go TestExportByShot"
+          },
+          {
+            "criterionId": "AC-053d59de7f82",
+            "status": "verified",
+            "evidence": "Go TestExportByShot"
+          },
+          {
+            "criterionId": "AC-668dffd1e2be",
+            "status": "verified",
+            "evidence": "Go TestExportByShot"
+          },
+          {
+            "criterionId": "AC-60dc2cfd0ea1",
+            "status": "verified",
+            "evidence": "Go TestEvaluationKeepsOldFingerprints、TestOldCameraFingerprintsLikeACompletedOne、TestFirstTimelineWriteOnAnOldScene；按摄像机导出 e2e 通过"
+          },
+          {
+            "criterionId": "AC-63673b57c360",
+            "status": "deferred",
+            "evidence": "Go TestAssistantBuildsShots、TestTheAssistantShootsByShot、TestRenderViewByShot 用脚本化操作覆盖；真实模型样例未跑（owner 2026-11-09 决定收尾）"
+          },
+          {
+            "criterionId": "AC-c9fa565bd6a7",
+            "status": "verified",
+            "evidence": "Go TestAssistantBuildsShots（AC-14 段与拒绝表）"
+          },
+          {
+            "criterionId": "AC-d3624960abef",
+            "status": "verified",
+            "evidence": "Go TestTheAssistantShootsByShot、TestExportShotsByShot；TS 单测「an export job by shot…」"
+          },
+          {
+            "criterionId": "AC-6dce26fa104b",
+            "status": "verified",
+            "evidence": "Go TestShotKeysAreRequired、TestRestoreTimelineUnits；e2e 内存服务端同样检查 P8"
+          },
+          {
+            "criterionId": "AC-16914c435f7f",
+            "status": "verified",
+            "evidence": "Go TestKeyframeVectors；TS creative-scene-timeline「the evaluator passes the shared vectors」；make generate-check 无漂移；指纹见 AC-11、AC-12"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "17 条验收标准中 16 条有自动化证据，AC-13 只有脚本化工具测试；设计偏差（清除/显隐按当前帧计算、addCamera 未改、sync.ts 加 moved、cameraDefaults 拆模块、lookat/reparent/editing/grouping 在调用处传求值后的场景而不改函数本身、setScene 落在 render.ts 而非 ShotScene.tsx）已说明；契约 8 条 delta、spec 4 条 delta 均 applicable；审查两条问题已修（8b6d4793、c5e5e063）",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "aa692ee0c01b061dfb8b961c695f1837a2f196d53bfd190a3bb7c4d75798cf5f"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-09T10:48:40.731Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "owner 2026-11-09 试用编辑语义后认可，决定收尾：AC-13 真实模型样例未跑，只有脚本化工具测试；审查修复后未重跑 e2e；AC-4 拖动与编辑器清除动画只靠试用；并发无 stress、前端求值性能未单独测量",
+        "coverage": [
+          {
+            "criterionId": "AC-c0378489e488",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-1」(frontend/scripts/creative-scene.e2e.mjs，SCENE_E2E_ONLY 单条、端口 5199 通过)"
+          },
+          {
+            "criterionId": "AC-4acc689c11e0",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-2」；TS 单测 creative-scene-timeline-editing「AC-2: moved then I…」"
+          },
+          {
+            "criterionId": "AC-4504f17efc7e",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-2b」；TS 单测 creative-scene-timeline-keys「S1」"
+          },
+          {
+            "criterionId": "AC-adb35380429d",
+            "status": "verified",
+            "evidence": "子项见下两条"
+          },
+          {
+            "criterionId": "AC-ca19a82c4c31",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-3」；TS 单测「S2a and S2b」；Go TestAssistantBuildsShots"
+          },
+          {
+            "criterionId": "AC-d5cd70abfaf7",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-3」；TS 单测「S2a and S2b」「S6」；Go TestAssistantBuildsShots"
+          },
+          {
+            "criterionId": "AC-f8885adbef8d",
+            "status": "verified",
+            "evidence": "TS 单测 creative-scene-timeline-keys「S3 and S4」；Go TestAssistantBuildsShots（update_shot/remove_shot）；拖动交互由 owner 2026-11-09 试用，无自动化 e2e"
+          },
+          {
+            "criterionId": "AC-43ab330040ad",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-5」；TS 单测「S6」"
+          },
+          {
+            "criterionId": "AC-c064025ce70c",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-6」"
+          },
+          {
+            "criterionId": "AC-bd25c8c284d8",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-7」；TS 单测「a keyed property waits unkeyed…」「a baseline goes when…」"
+          },
+          {
+            "criterionId": "AC-617523fd7d73",
+            "status": "verified",
+            "evidence": "TS 单测 creative-scene-timeline-keys「S5: clearing a channel keeps what the frame shows」；Go TestAssistantBuildsShots（助手 animation.clear，8b6d4793）；编辑器右键清除动画由 owner 试用"
+          },
+          {
+            "criterionId": "AC-f0aee8073e03",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-10 and AC-8b」"
+          },
+          {
+            "criterionId": "AC-c12acd1a8f95",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-9」；TS 单测「undoing a removed shot brings its keys back」「each unit's channels come back on their own」；Go TestRestoreTimelineUnits"
+          },
+          {
+            "criterionId": "AC-b17bbd0a444a",
+            "status": "verified",
+            "evidence": "e2e「timeline AC-10 and AC-8b」；TS 单测 creative-scene-timeline-export；Go TestExportByShot、TestCompleteExportByShot"
+          },
+          {
+            "criterionId": "AC-2a519de192cd",
+            "status": "verified",
+            "evidence": "子项见下四条"
+          },
+          {
+            "criterionId": "AC-1bc5cdb64ee7",
+            "status": "verified",
+            "evidence": "Go TestExportByShot、TestFreshnessFingerprintsEachShotOnce（e2e 内存服务端不算指纹）"
+          },
+          {
+            "criterionId": "AC-3ee695aebb2c",
+            "status": "verified",
+            "evidence": "Go TestExportByShot"
+          },
+          {
+            "criterionId": "AC-053d59de7f82",
+            "status": "verified",
+            "evidence": "Go TestExportByShot"
+          },
+          {
+            "criterionId": "AC-668dffd1e2be",
+            "status": "verified",
+            "evidence": "Go TestExportByShot"
+          },
+          {
+            "criterionId": "AC-60dc2cfd0ea1",
+            "status": "verified",
+            "evidence": "Go TestEvaluationKeepsOldFingerprints、TestOldCameraFingerprintsLikeACompletedOne、TestFirstTimelineWriteOnAnOldScene；按摄像机导出 e2e 通过"
+          },
+          {
+            "criterionId": "AC-63673b57c360",
+            "status": "deferred",
+            "evidence": "Go TestAssistantBuildsShots、TestTheAssistantShootsByShot、TestRenderViewByShot 用脚本化操作覆盖；真实模型样例未跑（owner 2026-11-09 决定收尾）"
+          },
+          {
+            "criterionId": "AC-c9fa565bd6a7",
+            "status": "verified",
+            "evidence": "Go TestAssistantBuildsShots（AC-14 段与拒绝表）"
+          },
+          {
+            "criterionId": "AC-d3624960abef",
+            "status": "verified",
+            "evidence": "Go TestTheAssistantShootsByShot、TestExportShotsByShot；TS 单测「an export job by shot…」"
+          },
+          {
+            "criterionId": "AC-6dce26fa104b",
+            "status": "verified",
+            "evidence": "Go TestShotKeysAreRequired、TestRestoreTimelineUnits；e2e 内存服务端同样检查 P8"
+          },
+          {
+            "criterionId": "AC-16914c435f7f",
+            "status": "verified",
+            "evidence": "Go TestKeyframeVectors；TS creative-scene-timeline「the evaluator passes the shared vectors」；make generate-check 无漂移；指纹见 AC-11、AC-12"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 试用后认可编辑手感，自动关键帧默认关闭；代码审查两条问题（助手 animation.clear、导出 32 个分镜上限）已修；同意收尾",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "aa692ee0c01b061dfb8b961c695f1837a2f196d53bfd190a3bb7c4d75798cf5f"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-09T10:48:52.649Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "closed"
 }

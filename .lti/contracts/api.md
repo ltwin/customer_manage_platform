@@ -1101,19 +1101,24 @@ Content-Type: application/json
 | `canvas_id` | string | 是 | 场景节点所在画布 |
 | `scene_node_id` | string | 是 | 场景节点；新节点放在它的右侧，与它同一父级 |
 | `scene_revision` | CreativeRevision | 是 | 出图时的场景修订；必须等于或早于当前修订，并且仍存在 |
-| `shots` | array，1–32 | 是 | 每台摄像机一项，摄像机不重复；节点按这个顺序逐行排列 |
-| `shots[].camera_object_id` | string | 是 | 在 `scene_revision` 里存在且 `kind=camera` |
+| `shots` | array，1–32 | 是 | 每个分镜（或每台摄像机）一项；节点按这个顺序逐行排列 |
+| `shots[].marker_id` | string | 与 `camera_object_id` 二选一 | 在 `scene_revision` 的 `timeline.markers` 里存在，且绑定的摄像机在该修订里存在、`kind=camera`。分镜不重复。渲染端按这个分镜的帧求值、用它的摄像机出图 |
+| `shots[].camera_object_id` | string | 与 `marker_id` 二选一 | 在 `scene_revision` 里存在且 `kind=camera`；按第 0 帧求值。摄像机不重复。只用于没有分镜的场景和旧客户端 |
 | `shots[].images` | array，1–3 | 是 | `{pass:"clay"\|"line"\|"lit", upload_id}`，同一镜头内 `pass` 不重复；暂存图片就绪、未消费、类型为图片。全部镜头合计 ≤ 48 张 |
 
+一次请求里的 `shots` 只能全部用 `marker_id`，或全部用 `camera_object_id`。
+
 ### 成功响应
-200：`{change_id, scene_revision, nodes:[{camera_object_id, pass, node_id, content_revision_id, lens}]}`。节点经画布命令层在一次修改里创建，可以在画布上一次撤销。`lens` 与节点 `based_on.lens` 相同（修订 v9）。
-- 位置：从场景节点右侧 80 起，每台摄像机一行、每种方式一列（按 `clay`、`line`、`lit` 的顺序），节点宽 300、高按摄像机画幅；整块与同一父级下的已有节点相交时，下移到相交节点下方。
-- 标题：摄像机 `label` 非空时用它，否则用物件名，接「 · clay」「 · 线稿」或「 · 材质光照」。
+200：`{change_id, scene_revision, nodes:[{marker_id, camera_object_id, pass, node_id, content_revision_id, lens}]}`。
+- `marker_id` 在按摄像机导出时为 null；`camera_object_id` 总是返回，是渲染所用的摄像机。
+- 节点经画布命令层在一次修改里创建，可以在画布上一次撤销。`lens` 与节点 `based_on.lens` 相同，按这个分镜那一帧求值后的摄像机计算。
+- 位置：从场景节点右侧 80 起，每个镜头一行、每种方式一列（按 `clay`、`line`、`lit` 的顺序），节点宽 300、高按这一帧摄像机的画幅；整块与同一父级下的已有节点相交时，下移到相交节点下方。
+- 标题：按分镜导出时，分镜名非空就用分镜名，否则用「分镜 N」（N 是它在帧序里的序号）；按摄像机导出时，摄像机 `label` 非空就用它，否则用物件名。后面接「 · clay」「 · 线稿」或「 · 材质光照」。
 
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法、`pass` 或摄像机重复、摄像机不存在于该修订、`scene_revision` 晚于当前修订或不存在 | 修正 |
+| 400 | `validation_failed` | 外形非法；`pass` 重复；分镜或摄像机重复；同一请求混用 `marker_id` 和 `camera_object_id`；分镜不存在于该修订、未绑定摄像机或绑定的摄像机不存在；摄像机不存在于该修订；`scene_revision` 晚于当前修订或不存在 | 修正 |
 | 404 | `not_found` | 场景、画布或场景节点不存在，不属于当前账号，或场景节点不指向这个场景 | 停止 |
 | 409 | `archived_read_only` | 画布已归档（沿用画布现有错误码） | 恢复画布后重新导出 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 丢弃暂存图片 |
@@ -1127,22 +1132,26 @@ Content-Type: application/json
 
 ### 调用示例
 ```json
-{"operation_id": "4d5e6f70-8192-4a3b-9c4d-5e6f708192a3", "client_created_at": "2026-10-25T14:00:00Z",
- "payload": {"canvas_id": "ccv_12ab", "scene_node_id": "cnode_34cd", "scene_revision": "18",
-   "shots": [{"camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ",
+{"operation_id": "4d5e6f70-8192-4a3b-9c4d-5e6f708192a3", "client_created_at": "2026-11-10T14:00:00Z",
+ "payload": {"canvas_id": "ccv_12ab", "scene_node_id": "cnode_34cd", "scene_revision": "42",
+   "shots": [{"marker_id": "smk_L1m2N3o4P5q6R7s8T9u0V",
               "images": [{"pass": "clay", "upload_id": "cupl_dd44"}, {"pass": "line", "upload_id": "cupl_ee55"}]}]}}
 ```
 ```json
-{"change_id": "cchg_56ef", "scene_revision": "18", "nodes": [
-  {"camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "pass": "clay", "node_id": "cnode_78a1", "content_revision_id": "ccrev_a1b2"},
-  {"camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "pass": "line", "node_id": "cnode_78a2", "content_revision_id": "ccrev_a1b3"}]}
+{"change_id": "cchg_56ef", "scene_revision": "42", "nodes": [
+  {"marker_id": "smk_L1m2N3o4P5q6R7s8T9u0V", "camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "pass": "clay", "node_id": "cnode_78a1", "content_revision_id": "ccrev_a1b2",
+   "lens": {"focal_mm": 50, "depth_of_field": false, "f_stop": 2.8, "focus_m": 10, "focus_object_name": ""}},
+  {"marker_id": "smk_L1m2N3o4P5q6R7s8T9u0V", "camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ", "pass": "line", "node_id": "cnode_78a2", "content_revision_id": "ccrev_a1b3",
+   "lens": {"focal_mm": 50, "depth_of_field": false, "f_stop": 2.8, "focus_m": 10, "focus_object_name": ""}}]}
 ```
 ```json
-{"error": {"code": "validation_failed", "message": "摄像机 sobj_x 在修订 18 中不存在"}}
+{"error": {"code": "validation_failed", "message": "分镜 smk_L1m2N3o4P5q6R7s8T9u0V 在修订 42 中未绑定摄像机"}}
 ```
 
 ### 兼容与变更
 首次定义。图片节点 `config` 新增 `based_on`，节点快照新增可选的 `based_on_state`，都属于兼容扩展；旧读取端忽略这些字段。修订 v8（C4 起草时）：错误码对齐画布与暂存的现有实现（归档为 `archived_read_only`，暂存不可用为 `creative_upload_unavailable`）；合计 48 张上限（画布一次修改最多牵动 100 个对象，每张图占节点和版本两个）；响应增加 `scene_revision`；只服务手动导出，去掉 `job_id`，助手导出改随完成任务提交；`based_on` 增加 `content_revision_id` 和 `fingerprint`；写明位置、标题和重试规则。修订 v9（C4 验收中）：`based_on` 和响应的节点增加镜头快照 `lens`，兼容扩展。
+
+`scene-pose-system` 子项 1：`shots[]` 增加 `marker_id`，与 `camera_object_id` 二选一；响应节点增加 `marker_id`。旧客户端只发 `camera_object_id`，行为不变（没有通道的场景按第 0 帧求值就是现在的快照）。前端同一版本上线。
 
 ## 模型存入资产库
 
@@ -1623,3 +1632,77 @@ X-Content-Type-Options: nosniff
 
 ### 兼容与变更
 首次定义，只新增路由和错误码 `creative_texture_unavailable`，OpenAPI 加这一条后运行 `make generate`。
+
+## 场景时间线命令
+
+### 用途与调用
+- **用途**：编辑分镜标记和物件的关键帧通道。
+- **消费者**：前端场景编辑器（outbox）；助手工具 `edit_scene` 经同一领域命令，不经 HTTP。
+- **调用**：与 `api: 提交场景命令` 同一端点和外层（`POST /api/v1/creative/documents/{id}/commands`，`Idempotency-Key` 必填）。本条目新增一个操作 `set_timeline`，并给 `add_objects`、`update_objects` 增加 `animation` 字段。外壳规则不变：整批原子、按单元乐观并发、每个单元在一批里最多出现一次。
+- **权限**：同 `api: 提交场景命令`。
+
+### 请求
+
+新增操作：
+
+| op | 字段 | 涉及单元 |
+|---|---|---|
+| `set_timeline` | `timeline`：按键合并。`fps` 可省略；`markers` 可省略，写了就整体替换整个分镜列表（元素外形见 `data: ADD 场景时间线`） | `timeline` |
+
+现有操作的新字段：
+
+| op | 新字段 | 规则 | 涉及单元 |
+|---|---|---|---|
+| `add_objects` | `objects[].animation` | 完整的通道对象，外形与校验见数据契约。用于复制带动画的物件、撤销删除 | 同 `add_objects` |
+| `update_objects` | `updates[].animation` | `{clear?: [path], delete?: [{path, frame}], set?: [{path, frame, value, interp?}]}`，至少一项。按 `clear` → `delete` → `set` 的顺序应用：`clear` 删掉整条通道；`delete` 删掉这一帧的关键帧，帧上没有关键帧时忽略；`set` 按帧覆盖或插入。通道删空后不再存储。同一项里可以同时改基础值，例如删掉最后一个关键帧时，把基础值写成删除时这一帧的求值结果 | 每条路径按数据契约的「所在单元」：摆放类路径涉及 `object:<id>`，摄像机路径涉及 `object:<id>:content`；与同一项里的基础值改动合并计算 |
+
+- 首次创建通道、新建分镜、复制分镜、改分镜帧号、删除分镜、添加只属于当前分镜的物件，都由编辑器和助手的工具层在同一批里写全（`data: ADD 场景时间线`「分镜帧必有关键帧」），例如 `set_timeline` 加上 `update_objects` 的 `animation`。服务端不隐式补帧，只检查结果。
+- 一批里 `set_timeline` 最多一个（`timeline` 单元只能出现一次）。
+
+### 成功响应
+与 `api: 提交场景命令` 相同：回执 `revision`、`changed_units`、`annotated_units`、`removed_units`、`reset_required`。不增加字段。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 有通道的属性在某个分镜帧上缺少关键帧（`details.missing` 列出 `[{object_id, path, marker_id, frame}]`，最多 50 项）；标记 ID 重复或格式不对、帧号重复或越界、`camera_object_id` 不指向摄像机；通道路径不在白名单或与物件 `kind` 不符；关键帧帧号不递增、值越界、四元数长度偏差过大、离散属性写了 `linear`；`focus_object_id` 的关键帧值不可对焦；`expected` 缺少新字段涉及的单元。`details.field` 指出字段路径，例如 `operations[0].updates[2].animation.set[1].value` | 修正，不可原样重试 |
+| 404 | `not_found` | 同 `api: 提交场景命令` | 同左 |
+| 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符，`details.conflicts` 同现有规则 | 重读后重新应用 |
+| 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
+| 413 | `creative_size_limit` | 分镜超过 200 个、单个通道超过 1000 个关键帧、全场景关键帧超过 20000 个，或应用后快照 > 512 KiB；`details.limit` 给出触发的上限 | 减少分镜或关键帧 |
+
+### 交互规则
+- **原子性、幂等、并发**：同 `api: 提交场景命令`。
+- 不适用：分页、异步、限流（沿用全局请求体上限）。
+
+### 调用示例
+
+场景已有分镜「回头」（第 0 帧）。新建分镜「拔剑」（第 10 帧），并在这一镜把主体往前挪：主体的位置原来没有通道，所以按首次创建通道的规则，第 0 帧写修改前的位置（即基础值 `[0, 0, -1.2]`），第 10 帧写新位置：
+
+```json
+{"operation_id": "9b1c2d3e-4f50-4a61-8b72-c3d4e5f60718", "client_created_at": "2026-11-10T09:00:00Z",
+ "payload": {
+   "expected": {"timeline": "3", "object:sobj_Body7xQ2mN9pL4tR6vW8yZ": "5"},
+   "operations": [
+     {"op": "set_timeline", "timeline": {"markers": [
+       {"id": "smk_A1b2C3d4E5f6G7h8I9j0K", "name": "回头", "frame": 0, "camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ"},
+       {"id": "smk_L1m2N3o4P5q6R7s8T9u0V", "name": "拔剑", "frame": 10, "camera_object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ"}]}},
+     {"op": "update_objects", "updates": [
+       {"object_id": "sobj_Body7xQ2mN9pL4tR6vW8yZ",
+        "animation": {"set": [{"path": "transform.position", "frame": 0, "value": [0, 0, -1.2]},
+                              {"path": "transform.position", "frame": 10, "value": [0.4, 0, -1.2]}]}}]}]}}
+```
+
+```json
+{"revision": "42", "changed_units": ["timeline", "object:sobj_Body7xQ2mN9pL4tR6vW8yZ"], "annotated_units": [], "removed_units": [], "reset_required": false}
+```
+
+```json
+{"error": {"code": "validation_failed", "message": "transform.position 在分镜「回头」（第 0 帧）上缺少关键帧",
+  "details": {"missing": [{"object_id": "sobj_Body7xQ2mN9pL4tR6vW8yZ", "path": "transform.position", "marker_id": "smk_A1b2C3d4E5f6G7h8I9j0K", "frame": 0}]}}}
+```
+
+### 兼容与变更
+- 只增加操作和可选字段，旧客户端不会发送它们。
+- `update_objects` 的 `animation` 是增量写法，不整体替换。旧编辑器改基础值时不会碰到已有的通道。
+- 回滚到不认识这些操作的后端会返回 400，前端同一版本上线。
