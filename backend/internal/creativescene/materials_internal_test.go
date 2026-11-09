@@ -9,13 +9,14 @@ import (
 )
 
 // paramTable is one material's parameters as a line: what a published preset
-// may never change.
+// may never change. A parameter added later defaults to the old look
+// (principled's vertex_color, scene-pose-system child 2).
 func paramTable(m materialSpec) string {
 	names := paramNames(m)
 	parts := make([]string, len(names))
 	for i, n := range names {
 		p := m.Params[n]
-		if p.Type == "color" {
+		if p.Type == "color" || p.Type == "boolean" {
 			parts[i] = fmt.Sprintf("%s=%v", n, p.Default)
 		} else {
 			parts[i] = fmt.Sprintf("%s=%v[%g,%g]", n, p.Default, *p.Min, *p.Max)
@@ -36,7 +37,7 @@ var publishedMaterials = map[string]string{
 	"metal@1":       "pattern color=#8c8f93 metalness=1[0,1] roughness=0.45[0,1] rust=0.3[0,1]",
 	"paint@1":       "pattern color=#c9c4bb metalness=0[0,1] roughness=0.6[0,1]",
 	"plaster@1":     "pattern color=#d8d0c2 metalness=0[0,1] mottle=0.4[0,1] roughness=0.9[0,1]",
-	"principled@1":  "principled anisotropy=0[0,1] anisotropy_rotation=0[-3.141593,3.141593] clearcoat=0[0,1] clearcoat_roughness=0[0,1] color=#cccccc emissive=#000000 emissive_intensity=1[0,100] ior=1.5[1,2.333] iridescence=0[0,1] iridescence_thickness=400[0,1200] metalness=0[0,1] opacity=1[0,1] roughness=0.5[0,1] sheen=0[0,1] sheen_color=#ffffff sheen_roughness=1[0,1] specular_color=#ffffff specular_intensity=1[0,1] thickness=0[0,10] transmission=0[0,1]",
+	"principled@1":  "principled anisotropy=0[0,1] anisotropy_rotation=0[-3.141593,3.141593] clearcoat=0[0,1] clearcoat_roughness=0[0,1] color=#cccccc emissive=#000000 emissive_intensity=1[0,100] ior=1.5[1,2.333] iridescence=0[0,1] iridescence_thickness=400[0,1200] metalness=0[0,1] opacity=1[0,1] roughness=0.5[0,1] sheen=0[0,1] sheen_color=#ffffff sheen_roughness=1[0,1] specular_color=#ffffff specular_intensity=1[0,1] thickness=0[0,10] transmission=0[0,1] vertex_color=false",
 	"stone@1":       "pattern color=#7d776d metalness=0[0,1] roughness=0.9[0,1] scale=1[0.05,10]",
 	"stone_brick@1": "pattern brick_size=0.3[0.05,2] color=#8f8676 metalness=0[0,1] mortar_color=#bdb5a6 roughness=0.85[0,1]",
 	"tile@1":        "pattern color=#e6e2da grout_color=#a9a49b metalness=0[0,1] roughness=0.35[0,1] tile_size=0.3[0.05,2]",
@@ -110,7 +111,8 @@ func TestMaterialCatalog(t *testing.T) {
 			t.Fatalf("%s changed:\n got %s\nwant %s", id, got, want)
 		}
 	}
-	// Every preset has a tint, roughness and metalness; principled has the 20 three.js fields.
+	// Every preset has a tint, roughness and metalness; principled has the 20
+	// three.js fields and vertex_color.
 	for _, m := range materials.list {
 		for _, k := range []string{"color", "roughness", "metalness"} {
 			if _, ok := m.Params[k]; !ok {
@@ -118,7 +120,7 @@ func TestMaterialCatalog(t *testing.T) {
 			}
 		}
 	}
-	if n := len(materials.byID["principled@1"].Params); n != 20 {
+	if n := len(materials.byID["principled@1"].Params); n != 21 {
 		t.Fatalf("principled has %d params", n)
 	}
 	for hint, want := range map[string]string{"stone": "stone@1", " Wood ": "wood@1", "BRICK": "stone_brick@1"} {

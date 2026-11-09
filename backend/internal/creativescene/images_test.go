@@ -115,6 +115,7 @@ func TestTextureFieldsAreCheckedAndNamed(t *testing.T) {
 		"no image":                      {principled(map[string]any{"maps": map[string]any{"normal": map[string]any{}}}), "maps.normal.content_revision_id"},
 		"not a revision":                {principled(map[string]any{"maps": map[string]any{"normal": texture("ccnt_1")}}), "maps.normal.content_revision_id"},
 		"channel on base colour":        {principled(map[string]any{"maps": map[string]any{"base_color": map[string]any{"content_revision_id": image, "channel": "a"}}}), "maps.base_color.channel"},
+		"channel on emissive":           {principled(map[string]any{"maps": map[string]any{"emissive": map[string]any{"content_revision_id": image, "channel": "r"}}}), "maps.emissive.channel"},
 		"unknown channel":               {principled(map[string]any{"maps": map[string]any{"ao": map[string]any{"content_revision_id": image, "channel": "x"}}}), "maps.ao.channel"},
 		"mapping without maps":          {principled(map[string]any{"mapping": map[string]any{"kind": "uv"}}), "mapping"},
 		"unknown mapping":               {principled(map[string]any{"maps": base, "mapping": map[string]any{"kind": "sphere"}}), "mapping.kind"},
@@ -144,7 +145,9 @@ func TestTextureFieldsAreCheckedAndNamed(t *testing.T) {
 }
 
 // A slot with maps is stored with every default filled in; one without
-// stores what it always did. The read lists each image.
+// stores what it always did. An emissive texture reads RGB, so it takes no
+// channel, and vertex_color is a parameter the command keeps as written. The
+// read lists each image.
 func TestTexturesAreCompletedAndRead(t *testing.T) {
 	x := newTexturedBox(t)
 	leaf, orm := mediaRevision(t, x.f, x.f.a, "image"), mediaRevision(t, x.f, x.f.a, "image")
@@ -153,7 +156,8 @@ func TestTexturesAreCompletedAndRead(t *testing.T) {
 			"maps":       map[string]any{"base_color": texture(leaf), "roughness": texture(orm), "metalness": map[string]any{"content_revision_id": orm, "channel": "b"}},
 			"mapping":    map[string]any{"kind": "uv", "rotation_deg": 90},
 			"alpha_mode": "clip"}),
-		"side":  principled(map[string]any{"maps": map[string]any{"normal": texture(leaf)}}),
+		"side": map[string]any{"preset": "principled@1", "params": map[string]any{"vertex_color": true},
+			"maps": map[string]any{"normal": texture(leaf), "emissive": texture(orm)}},
 		"glass": principled(map[string]any{"alpha_mode": "blend"}),
 	}); err != nil {
 		t.Fatal(err)
@@ -186,7 +190,7 @@ func TestTexturesAreCompletedAndRead(t *testing.T) {
 				"metalness": map[string]any{"content_revision_id": orm, "channel": "b"}},
 			"mapping":    map[string]any{"kind": "uv", "repeat": []any{1.0, 1.0}, "rotation_deg": 90.0, "normal_strength": 1.0},
 			"alpha_mode": "clip", "alpha_cutoff": 0.5},
-		"side": map[string]any{"preset": "principled@1", "params": map[string]any{}, "maps": map[string]any{"normal": texture(leaf)},
+		"side": map[string]any{"preset": "principled@1", "params": map[string]any{"vertex_color": true}, "maps": map[string]any{"normal": texture(leaf), "emissive": texture(orm)},
 			"mapping":    map[string]any{"kind": "triplanar", "size_m": 1.0, "rotation_deg": 0.0, "normal_strength": 1.0},
 			"alpha_mode": "opaque"},
 		"glass": map[string]any{"preset": "principled@1", "params": map[string]any{}, "alpha_mode": "blend"},
@@ -283,16 +287,18 @@ func TestUnavailableImagesAreRefused(t *testing.T) {
 	wantField(t, err, creativescene.ErrImageUnavailable, "operations[0].updates[0].material_slots.a.maps.normal.content_revision_id")
 }
 
-// A scene references at most 64 distinct images, however they are spread.
+// A scene references at most 64 distinct images, however they are spread,
+// emissive textures among them.
 func TestSceneImageLimit(t *testing.T) {
 	f := setup(t)
 	doc := createScene(t, f.a)
 	boxes := func(images int) []any {
 		var out []any
-		for i := 0; i*5 < images; i++ {
+		kinds := []string{"base_color", "normal", "roughness", "metalness", "ao", "emissive"}
+		for i := 0; i*len(kinds) < images; i++ {
 			maps := map[string]any{}
-			for j, kind := range []string{"base_color", "normal", "roughness", "metalness", "ao"} {
-				if n := i*5 + j; n < images {
+			for j, kind := range kinds {
+				if n := i*len(kinds) + j; n < images {
 					maps[kind] = texture(fmt.Sprintf("ccrv_limit-%02d", n))
 				}
 			}

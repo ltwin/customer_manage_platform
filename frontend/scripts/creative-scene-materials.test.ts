@@ -8,7 +8,7 @@ test('the frontend catalog is the backend one, copied by make generate', () => {
   const frontend = readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')
   assert.equal(frontend, backend)
   assert.equal(materialCatalog.materials.length, 39, 'principled, 14 presets and 24 built-in textured materials')
-  assert.equal(Object.keys(materialEntry(principledID)!.params).length, 20)
+  assert.equal(Object.keys(materialEntry(principledID)!.params).length, 21, 'the 20 three.js fields and vertex_color')
 })
 
 test('a built-in textured material has principled’s parameters with its own defaults', () => {
