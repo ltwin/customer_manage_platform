@@ -493,7 +493,7 @@ function Projects({ account }: { account: string }) {
               <button
                 className="btn"
                 type="button"
-                disabled={list.moreLoading}
+                disabled={list.moreLoading || !list.ready}
                 onClick={() => void list.more()}
               >
                 {list.moreLoading ? '正在加载项目…' : '加载更多项目'}

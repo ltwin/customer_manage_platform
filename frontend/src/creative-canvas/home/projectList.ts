@@ -122,10 +122,13 @@ export function projectListPath(
   return `/projects?${params}`
 }
 
-type Loaded = { key: string; value: api.ProjectPage }
+// fresh 为假时 value 是缓存里上次的结果：它的游标属于上一次读取，
+// 接在本轮重读的首屏后面会漏掉中间的项目。
+type Loaded = { key: string; value: api.ProjectPage; fresh: boolean }
 
 // 项目页的分页列表。查询变化时从第一页读起；重读（切回标签页、轮询、写操作之后）
 // 按已加载的数量一次读回，最多 100 个，不丢已经翻过的页。
+// 挂载时先显示缓存的列表，本轮首屏读到之前不翻页（ready 为假）。
 export function useProjectList(
   archived: boolean,
   q: string,
@@ -134,7 +137,7 @@ export function useProjectList(
   const key = projectListPath(archived, q, sort, pageSize)
   const [loaded, setLoaded] = useState<Loaded | undefined>(() => {
     const value = projectPages.get(key)
-    return value && { key, value }
+    return value && { key, value, fresh: false }
   })
   const [error, setError] = useState('')
   const [moreLoading, setMoreLoading] = useState(false)
@@ -144,6 +147,7 @@ export function useProjectList(
     latest.current = loaded
   })
   const page = loaded?.key === key ? loaded.value : undefined
+  const ready = loaded?.key === key && loaded.fresh
 
   const read = useCallback(
     (reset: boolean) => {
@@ -159,7 +163,7 @@ export function useProjectList(
         .then((value) => {
           if (id !== generation.current) return
           projectPages.set(key, value, stamp)
-          setLoaded({ key, value })
+          setLoaded({ key, value, fresh: true })
           setError('')
         })
         .catch((e: unknown) => {
@@ -181,7 +185,7 @@ export function useProjectList(
   useRefresh(!!page && hasRunning(page), reload)
 
   async function more() {
-    if (!page?.next_cursor || moreLoading) return
+    if (!page?.next_cursor || !ready || moreLoading) return
     const id = generation.current
     setMoreLoading(true)
     try {
@@ -192,7 +196,7 @@ export function useProjectList(
       setLoaded((previous) =>
         previous?.key === key
           ? {
-              key,
+              ...previous,
               value: {
                 ...value,
                 items: [
@@ -217,14 +221,14 @@ export function useProjectList(
     setLoaded((previous) =>
       previous?.key === key
         ? {
-            key,
+            ...previous,
             value: { ...previous.value, items: change(previous.value.items) },
           }
         : previous,
     )
   }
 
-  return { page, error, moreLoading, more, reload, patch }
+  return { page, ready, error, moreLoading, more, reload, patch }
 }
 
 // 卡片上的最近编辑时间。
