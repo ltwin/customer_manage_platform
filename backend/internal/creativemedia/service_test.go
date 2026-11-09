@@ -651,6 +651,23 @@ func TestChangedNodeTargetBecomesCandidateAdoptOrDiscardOnce(t *testing.T) {
 	}
 }
 
+// A staged candidate has no node or asset to bind; adoption is rejected, not
+// dereferenced.
+func TestStagedCandidateCannotBeAdopted(t *testing.T) {
+	f := setup(t)
+	up := f.uploadFile(t, f.a, "暂存.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "staged"})
+	var candidateID string
+	var revision int64
+	if err := f.db.QueryRow(`SELECT id,revision FROM creative_upload_candidates WHERE upload_id=$1`, up.ID).Scan(&candidateID, &revision); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []*creativemedia.Target{nil, {Kind: "staged"}} {
+		if _, err := f.svc.AdoptCandidate(t.Context(), f.a, command(t, creativemedia.CandidateInput{CandidateID: candidateID, CandidateRevision: creativeops.Revision(revision), Target: target})); !errors.Is(err, creativeops.ErrValidation) {
+			t.Fatalf("adopt staged candidate with target %+v: %v", target, err)
+		}
+	}
+}
+
 func TestStaleEpochCannotWriteAndReplayIsIdempotent(t *testing.T) {
 	f := setup(t)
 	png := sample(t, "sample.png")

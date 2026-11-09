@@ -107,6 +107,10 @@ func (s *Service) AdoptCandidate(ctx context.Context, scope store.AccountScope, 
 		} else if err := json.Unmarshal(candidate.Target, &target); err != nil {
 			return creativeops.Outcome{}, err
 		}
+		// 暂存目标没有可绑定的节点或资产，只能由放入节点或场景命令消费。
+		if target.Kind == "staged" {
+			return creativeops.Outcome{}, creativeops.ErrValidation
+		}
 		if err := validateTargetInTx(ctx, tx, target, candidate.Kind); err != nil {
 			if errors.Is(err, creativecanvas.ErrTargetChanged) {
 				return creativeops.Outcome{}, creativecanvas.ErrVersionConflict
