@@ -445,8 +445,8 @@ func TestUnappliedResultsAreCollected(t *testing.T) {
 	if report.ReclaimableBlobs != 2 || report.UnheldRevisions != 0 {
 		t.Fatalf("GC %+v, want both unapplied results and no revision", report)
 	}
-	if got := f.scalar(t, `SELECT count(*) FROM creative_blobs WHERE account_id='edit-a' AND state='deleting' AND quota_booked_at IS NULL AND delete_after<clock_timestamp()+interval '16 minutes'`); got != "2" {
-		t.Fatalf("unapplied results marked with the 15 minute grace: %s", got)
+	if got := f.scalar(t, `SELECT count(*) FROM creative_blobs WHERE account_id='edit-a' AND state='deleting' AND quota_booked_at IS NULL AND delete_after<clock_timestamp()+interval '21 minutes'`); got != "2" {
+		t.Fatalf("unapplied results marked with the 20 minute grace: %s", got)
 	}
 	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, source) != "ready" {
 		t.Fatal("the source left with the candidate")
