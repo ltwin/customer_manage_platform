@@ -124,6 +124,7 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 - 节点、资产、版本共享同一份不可变修订和 blob；放进画布在行为上等同复制，存储上不复制。额度按 blob 计一次，与被多少处使用无关。
 - 只回收「没有任何持有方」的修订和 blob。持有方没有登记完整，不能开启物理删除。
 - 标记事务先取账号写屏障 `LockCreativeWrite`，与该账号全部创意写入串行（`RequireCreativeCapability` 内部也取这把锁）；新增引用仍须经 `RequireUsable` / `requireReadyBlob` 锁行并要求 ready，被标记后的修订和 blob 不能再被引用。
+- **2026-11-08 修订（读取性能）**：媒体 GET 以共享模式取同一把屏障（`RequireCreativeMediaRead` → `LockCreativeRead`），修订与 blob 行用 `FOR SHARE`（`RequireUsableShared`）后建立 read pin：同账号的读取彼此并发，与写入和 GC 仍互斥。签发票据不加锁，在只读快照里核验用途；票据不持有任何东西，每次 GET 仍在屏障下重新核验。持有共享屏障的事务不得再取排他屏障。
 - 额度只在对象删除确认后释放一次，以 `quota_released_at` 为唯一释放标记；结果未知保持 deleting，不提前退额度，也不回到 ready。
 
 ### 6.2 持有方登记

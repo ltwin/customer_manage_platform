@@ -411,6 +411,74 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	}
 }
 
+// Media reads hold the account barrier shared: concurrent reads pass each
+// other, while a writer or GC step holding it exclusively still blocks Open.
+func TestMediaReadsShareTheAccountBarrier(t *testing.T) {
+	f := setup(t)
+	view := f.uploadFile(t, f.a, "窗边.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "窗边"}})
+	asset, err := creativelibrary.GetAsset(t.Context(), f.a, view.Publication.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := asset.ContentRevisionID
+	scopeFor := func(string) store.AccountScope { return f.a }
+	read := func(timeout time.Duration) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		ticket, err := f.svc.IssueTicket(ctx, f.a, creativemedia.TicketInput{ContentRevisionID: revision, Role: "original", Purpose: "display"})
+		if err != nil {
+			t.Fatal("ticket must not wait on the barrier", err)
+		}
+		token := ticket.URL[strings.Index(ticket.URL, "ticket=")+7:]
+		stream, err := f.svc.Open(ctx, scopeFor, token, revision, "original", nil)
+		if err == nil {
+			_ = stream.Body.Close()
+		}
+		return err
+	}
+	const barrier = `hashtextextended('creative-write:media-a', 0)`
+
+	// An in-flight read holds what Open holds: the barrier shared, rows FOR SHARE.
+	reader, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`SELECT pg_advisory_xact_lock_shared(` + barrier + `)`,
+		`SELECT 1 FROM creative_content_revisions WHERE id=$1 FOR SHARE`,
+		`SELECT 1 FROM creative_contents WHERE id=(SELECT content_id FROM creative_content_revisions WHERE id=$1) FOR SHARE`,
+		`SELECT 1 FROM creative_blobs WHERE id IN (SELECT blob_id FROM creative_content_objects WHERE content_revision_id=$1) FOR SHARE`,
+	} {
+		args := []any{revision}
+		if !strings.Contains(q, "$1") {
+			args = nil
+		}
+		if _, err := reader.Exec(q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := read(5 * time.Second); err != nil {
+		t.Fatal("concurrent read queued behind another read", err)
+	}
+	_ = reader.Rollback()
+
+	// A writer holding the barrier: the ticket is still issued, the read waits.
+	writer, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Exec(`SELECT pg_advisory_xact_lock(` + barrier + `)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := read(300 * time.Millisecond); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("read must wait for the exclusive barrier", err)
+	}
+	_ = writer.Rollback()
+	if err := read(5 * time.Second); err != nil {
+		t.Fatal("read after writer", err)
+	}
+}
+
 func TestEveryEnabledFormatVerifiesAndFakeMimeFails(t *testing.T) {
 	f := setup(t)
 	for _, c := range []struct{ name, mime, kind string }{{"sample.jpg", "image/jpeg", "image"}, {"sample.png", "image/png", "image"}, {"sample.webp", "image/webp", "image"}, {"sample.mp4", "video/mp4", "video"}, {"sample.webm", "video/webm", "video"}, {"sample.mp3", "audio/mpeg", "audio"}, {"sample.wav", "audio/wav", "audio"}} {

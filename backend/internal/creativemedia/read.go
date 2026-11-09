@@ -101,16 +101,18 @@ func (s *Service) WriteLocalPart(ctx context.Context, token string, body io.Read
 }
 
 // IssueTicket authorizes browser media tags for one revision/role/purpose.
+// It checks usage in a read-only snapshot without any lock: a ticket holds
+// nothing, and Open re-checks usage under the barrier before every read.
 func (s *Service) IssueTicket(ctx context.Context, scope store.AccountScope, in TicketInput) (Ticket, error) {
 	if in.ContentRevisionID == "" || in.Role != "original" && in.Role != "display" && in.Role != "thumbnail" || in.Purpose != "display" && in.Purpose != "download" || len(in.FileName) > 255 {
 		return Ticket{}, creativeops.ErrValidation
 	}
 	var media creativecontent.MediaObject
-	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
-		r, err := creativecontent.RequireUsable(ctx, tx, in.ContentRevisionID, "display")
+		r, err := creativecontent.ReadInSnapshot(ctx, tx, in.ContentRevisionID, "display")
 		if err != nil {
 			return err
 		}
@@ -148,7 +150,10 @@ type Stream struct {
 }
 
 // Open validates the ticket, re-checks usage inside a transaction, records a
-// read pin and opens the exact blob version. The account comes from the ticket
+// read pin and opens the exact blob version. The transaction holds the account
+// barrier shared and its rows FOR SHARE: reads run concurrently, while GC and
+// writers, which take the barrier exclusively, cannot interleave with the
+// check and the pin. The account comes from the ticket
 // (it was issued to an authenticated session), never from the request. The
 // range is chosen after the size is known so authorization happens once and
 // the storage object is opened once.
@@ -162,10 +167,10 @@ func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.
 	var key, version string
 	pin := "ccpn_" + uuid.NewString()
 	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+		if err := tx.RequireCreativeMediaRead(ctx); err != nil {
 			return err
 		}
-		r, err := creativecontent.RequireUsable(ctx, tx, revisionID, "display")
+		r, err := creativecontent.RequireUsableShared(ctx, tx, revisionID, "display")
 		if err != nil {
 			return err
 		}
@@ -180,7 +185,7 @@ func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.
 		}
 		var state string
 		var objectVersion *string
-		if err := tx.QueryRowForUpdate(ctx, "creative_blobs", "state,object_key,object_version", "id=$2", media.BlobID).Scan(&state, &key, &objectVersion); err != nil {
+		if err := tx.QueryRowForShare(ctx, "creative_blobs", "state,object_key,object_version", "id=$2", media.BlobID).Scan(&state, &key, &objectVersion); err != nil {
 			return err
 		}
 		if state != "ready" || objectVersion == nil {

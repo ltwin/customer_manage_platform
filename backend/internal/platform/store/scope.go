@@ -123,6 +123,16 @@ func (sc AccountScope) QueryRow(ctx context.Context, table, columns, cond string
 // 供「先锁父行、再查数改写」的同事务不变量守护使用（如客户末位身份守护），
 // 只应在 WithinTx 内调用，锁随事务结束释放。
 func (sc AccountScope) QueryRowForUpdate(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.queryRowLocked(ctx, "FOR UPDATE", table, columns, cond, args...)
+}
+
+// QueryRowForShare 同 QueryRowForUpdate，但加 FOR SHARE 行锁：并发读者互不阻塞，
+// 仍与改写该行的事务互斥。
+func (sc AccountScope) QueryRowForShare(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.queryRowLocked(ctx, "FOR SHARE", table, columns, cond, args...)
+}
+
+func (sc AccountScope) queryRowLocked(ctx context.Context, lock, table, columns, cond string, args ...any) pgx.Row {
 	if sc.accountID == "" {
 		return errRow{err: ErrEmptyAccountScope}
 	}
@@ -133,7 +143,7 @@ func (sc AccountScope) QueryRowForUpdate(ctx context.Context, table, columns, co
 	if cond != "" {
 		sql += " AND (" + cond + ")"
 	}
-	sql += " FOR UPDATE"
+	sql += " " + lock
 	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
 }
 

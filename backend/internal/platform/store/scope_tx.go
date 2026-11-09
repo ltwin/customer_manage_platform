@@ -182,6 +182,10 @@ func (sc TxAccountScope) QueryRowForUpdate(ctx context.Context, table, columns, 
 	return sc.scope.QueryRowForUpdate(ctx, table, columns, cond, args...)
 }
 
+func (sc TxAccountScope) QueryRowForShare(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.scope.QueryRowForShare(ctx, table, columns, cond, args...)
+}
+
 func (sc TxAccountScope) QueryPage(ctx context.Context, table, columns, cond string, order []OrderBy, limit, offset int, args ...any) (pgx.Rows, error) {
 	return sc.scope.QueryPage(ctx, table, columns, cond, order, limit, offset, args...)
 }
