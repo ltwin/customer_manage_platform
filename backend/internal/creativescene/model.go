@@ -51,7 +51,39 @@ var (
 type Scene struct {
 	Environment Environment `json:"environment"`
 	Render      Render      `json:"render"`
-	Objects     []Object    `json:"objects"`
+	// Timeline holds the shots (data: 场景时间线). Decoding fills it in, so a
+	// decoded scene always has one; EvaluateAt leaves it out.
+	Timeline *Timeline `json:"timeline,omitempty"`
+	Objects  []Object  `json:"objects"`
+}
+
+// Timeline is the scene's shot markers, sorted by frame. fps only spaces the
+// timeline panel's ruler until playback exists.
+type Timeline struct {
+	FPS     int      `json:"fps"`
+	Markers []Marker `json:"markers"`
+}
+
+// Marker is a shot: a frame the scene is evaluated at and the camera it is
+// shot through. A camera deleted since leaves the marker unbound.
+type Marker struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Frame          int    `json:"frame"`
+	CameraObjectID string `json:"camera_object_id"`
+}
+
+// Channel is one keyed property's keyframes, by strictly increasing frame.
+type Channel struct {
+	Keys []Key `json:"keys"`
+}
+
+// Key is a keyframe. Value has the type of the property it keys (channels.go);
+// Interp says how the value goes on to the next key.
+type Key struct {
+	Frame  int             `json:"frame"`
+	Value  json.RawMessage `json:"value"`
+	Interp string          `json:"interp"`
 }
 
 type Environment struct {
@@ -235,6 +267,9 @@ type Object struct {
 	Light         *Light                  `json:"light,omitempty"`
 	Camera        *Camera                 `json:"camera,omitempty"`
 	Volume        *Volume                 `json:"volume,omitempty"`
+	// Animation is the object's keyframe channels by path (channels.go); a
+	// keyed property's value at a frame comes from its channel, not the field.
+	Animation map[string]Channel `json:"animation,omitempty"`
 }
 
 type Transform struct {
