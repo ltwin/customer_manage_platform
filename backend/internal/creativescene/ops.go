@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 
@@ -15,6 +16,7 @@ const (
 	unitEnvironment = "environment"
 	unitRender      = "render"
 	unitObjects     = "objects"
+	unitTimeline    = "timeline"
 
 	// maxBatchItems matches the object limit, so one confirmed edit of any
 	// selection is always one operation and one revision.
@@ -53,6 +55,107 @@ type objectUpdate struct {
 	Light         *lightPatch              `json:"light,omitempty"`
 	Camera        *Camera                  `json:"camera,omitempty"`
 	Volume        *Volume                  `json:"volume,omitempty"`
+	Animation     *animationPatch          `json:"animation,omitempty"`
+}
+
+// animationPatch edits an object's channels incrementally (api: 场景时间线命令),
+// applied clear, then delete, then set. A channel left without keys goes.
+type animationPatch struct {
+	Clear  []string   `json:"clear,omitempty"`
+	Delete []keyFrame `json:"delete,omitempty"`
+	Set    []keyWrite `json:"set,omitempty"`
+}
+
+type keyFrame struct {
+	Path  string `json:"path"`
+	Frame int    `json:"frame"`
+}
+
+// keyWrite adds the key at frame, or replaces the one there.
+type keyWrite struct {
+	Path   string          `json:"path"`
+	Frame  int             `json:"frame"`
+	Value  json.RawMessage `json:"value"`
+	Interp string          `json:"interp,omitempty"`
+}
+
+// paths are the channels p writes, in its order.
+func (p animationPatch) paths() []string {
+	out := slices.Clone(p.Clear)
+	for _, d := range p.Delete {
+		out = append(out, d.Path)
+	}
+	for _, w := range p.Set {
+		out = append(out, w.Path)
+	}
+	return out
+}
+
+// check refuses a path outside the whitelist, naming where it was written;
+// whether it suits the object is Validate's.
+func (p animationPatch) check(at string) error {
+	if len(p.Clear) == 0 && len(p.Delete) == 0 && len(p.Set) == 0 {
+		return invalidAt(at, "animation 至少写一项：clear、delete 或 set")
+	}
+	for i, path := range p.Clear {
+		if channelByPath[path] == nil {
+			return invalidAt(fmt.Sprintf("%s.clear[%d]", at, i), "%s 不能打关键帧", path)
+		}
+	}
+	for i, d := range p.Delete {
+		if channelByPath[d.Path] == nil {
+			return invalidAt(fmt.Sprintf("%s.delete[%d].path", at, i), "%s 不能打关键帧", d.Path)
+		}
+	}
+	written := make(map[keyFrame]bool, len(p.Set))
+	for i, w := range p.Set {
+		if channelByPath[w.Path] == nil {
+			return invalidAt(fmt.Sprintf("%s.set[%d].path", at, i), "%s 不能打关键帧", w.Path)
+		}
+		if written[keyFrame{w.Path, w.Frame}] {
+			return invalidAt(fmt.Sprintf("%s.set[%d]", at, i), "%s 第 %d 帧写了两次", w.Path, w.Frame)
+		}
+		written[keyFrame{w.Path, w.Frame}] = true
+	}
+	return nil
+}
+
+// apply edits o's channels; interp left out and quaternions are completed
+// as when stored.
+func (p animationPatch) apply(o *Object) {
+	anim := make(map[string]Channel, len(o.Animation))
+	for path, ch := range o.Animation {
+		anim[path] = Channel{Keys: slices.Clone(ch.Keys)}
+	}
+	for _, path := range p.Clear {
+		delete(anim, path)
+	}
+	at := func(keys []Key, frame int) (int, bool) {
+		return slices.BinarySearchFunc(keys, frame, func(k Key, f int) int { return k.Frame - f })
+	}
+	for _, d := range p.Delete {
+		keys := anim[d.Path].Keys
+		if i, found := at(keys, d.Frame); found {
+			anim[d.Path] = Channel{Keys: slices.Delete(keys, i, i+1)}
+		}
+	}
+	for _, w := range p.Set {
+		keys := anim[w.Path].Keys
+		k := Key{Frame: w.Frame, Value: w.Value, Interp: w.Interp}
+		if i, found := at(keys, w.Frame); found {
+			keys[i] = k
+		} else {
+			keys = slices.Insert(keys, i, k)
+		}
+		anim[w.Path] = Channel{Keys: keys}
+	}
+	for path, ch := range anim {
+		if len(ch.Keys) == 0 {
+			delete(anim, path)
+		}
+	}
+	o.Animation = anim
+	completeAnimation(o)
 }
 
 // primitivePatch merges params by key and replaces faces whole; faces written
@@ -96,6 +199,18 @@ type setRenderOp struct {
 	Render renderPatch `json:"render"`
 }
 
+// setTimelineOp merges by key; markers, when written, replace the whole
+// list and are stored by frame.
+type setTimelineOp struct {
+	Op       string        `json:"op"`
+	Timeline timelinePatch `json:"timeline"`
+}
+
+type timelinePatch struct {
+	FPS     *int      `json:"fps,omitempty"`
+	Markers *[]Marker `json:"markers,omitempty"`
+}
+
 func decodeOp(raw json.RawMessage) (sceneOp, error) {
 	var head struct {
 		Op string `json:"op"`
@@ -119,6 +234,11 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 			if err := writeSlots(op.Objects[j].MaterialSlots, fmt.Sprintf("objects[%d].material_slots", j)); err != nil {
 				return nil, err
 			}
+			for path := range op.Objects[j].Animation {
+				if channelByPath[path] == nil {
+					return nil, invalidAt(fmt.Sprintf("objects[%d].animation", j), "%s 不能打关键帧", path)
+				}
+			}
 		}
 		return &op, count(len(op.Objects), "objects ")
 	case "update_objects":
@@ -129,6 +249,11 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		for j, u := range op.Updates {
 			if u.MaterialSlots != nil {
 				if err := writeSlots(*u.MaterialSlots, fmt.Sprintf("updates[%d].material_slots", j)); err != nil {
+					return nil, err
+				}
+			}
+			if u.Animation != nil {
+				if err := u.Animation.check(fmt.Sprintf("updates[%d].animation", j)); err != nil {
 					return nil, err
 				}
 			}
@@ -170,6 +295,15 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		r := op.Render
 		if r.Mode == nil && r.ExposureEV == nil && r.Engine == nil && r.Resolution == nil && r.ExposureEV100 == nil && r.ExposureMode == nil && r.ExposureCompensation == nil {
 			return nil, invalid("render 至少写一项：mode、exposure_ev、engine、resolution、exposure_ev100、exposure_mode 或 exposure_compensation")
+		}
+		return &op, nil
+	case "set_timeline":
+		var op setTimelineOp
+		if err := decodeInput(raw, &op); err != nil {
+			return nil, err
+		}
+		if op.Timeline.FPS == nil && op.Timeline.Markers == nil {
+			return nil, invalid("timeline 至少写一项：fps 或 markers")
 		}
 		return &op, nil
 	case "commit_model":
@@ -229,6 +363,10 @@ type changeSet struct {
 	// focus lists the cameras whose focus_object_id the batch wrote; Apply
 	// checks their targets against the scene after the whole batch.
 	focus map[string]bool
+	// markers is whether the batch wrote the shot list, keyed the channels
+	// it wrote; Apply checks P8 over them (checkShotKeys).
+	markers bool
+	keyed   shotScope
 }
 
 func newChangeSet() *changeSet {
@@ -238,6 +376,17 @@ func newChangeSet() *changeSet {
 func (c *changeSet) change(units ...string) {
 	for _, u := range units {
 		c.changed[u] = true
+	}
+}
+
+// animated records the channels of o the batch wrote.
+func (c *changeSet) animated(objectID string, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	c.keyed.add(objectID, paths...)
+	if slices.Contains(paths, "camera.focus_object_id") {
+		c.focus[objectID] = true
 	}
 }
 
@@ -299,18 +448,32 @@ func (op *addObjectsOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 			completeVolume(o.Volume)
 		}
 		canonicalNumbers(&o)
+		completeAnimation(&o)
+		c.animated(o.ID, slices.Collect(maps.Keys(o.Animation)))
 		s.Objects = append(s.Objects, o)
 		c.change(unitObjects, placementUnit(o.ID), contentUnit(o.ID))
 	}
 	return nil
 }
 
+// placement and content say which units u writes; a channel is in the unit
+// of the base field it keys.
 func (u objectUpdate) placement() bool {
-	return u.Name != nil || u.Transform != nil || u.Visible != nil || u.Locked != nil
+	return u.Name != nil || u.Transform != nil || u.Visible != nil || u.Locked != nil || u.keys(false)
 }
 
 func (u objectUpdate) content() bool {
-	return u.Primitive != nil || u.MaterialSlots != nil || u.Light != nil || u.Camera != nil || u.Volume != nil
+	return u.Primitive != nil || u.MaterialSlots != nil || u.Light != nil || u.Camera != nil || u.Volume != nil || u.keys(true)
+}
+
+func (u objectUpdate) keys(content bool) bool {
+	if u.Animation == nil {
+		return false
+	}
+	return slices.ContainsFunc(u.Animation.paths(), func(p string) bool {
+		spec := channelByPath[p]
+		return spec != nil && spec.content == content
+	})
 }
 
 func (u objectUpdate) units() []string {
@@ -415,6 +578,10 @@ func (op *updateObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 			}
 			v := mergeVolume(*o.Volume, *u.Volume)
 			o.Volume = &v
+		}
+		if u.Animation != nil {
+			u.Animation.apply(o)
+			c.animated(o.ID, u.Animation.paths())
 		}
 		canonicalNumbers(o)
 		c.change(u.units()...)
@@ -567,6 +734,8 @@ func (op *reparentObjectsOp) touched(s Scene, byID map[string]int) ([]string, er
 func (op *reparentObjectsOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	for _, g := range op.CreateGroups {
 		canonicalNumbers(&g)
+		completeAnimation(&g)
+		c.animated(g.ID, slices.Collect(maps.Keys(g.Animation)))
 		s.Objects = append(s.Objects, g)
 		c.change(placementUnit(g.ID), contentUnit(g.ID))
 	}
@@ -648,5 +817,25 @@ func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 		s.Render.ExposureCompensation = *p.ExposureCompensation
 	}
 	c.change(unitRender)
+	return nil
+}
+
+func (op *setTimelineOp) touched(Scene, map[string]int) ([]string, error) {
+	return []string{unitTimeline}, nil
+}
+
+func (op *setTimelineOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
+	t := *s.Timeline
+	if op.Timeline.FPS != nil {
+		t.FPS = *op.Timeline.FPS
+	}
+	if op.Timeline.Markers != nil {
+		t.Markers = slices.Clone(*op.Timeline.Markers)
+		slices.SortStableFunc(t.Markers, func(a, b Marker) int { return a.Frame - b.Frame })
+		c.markers = true
+		c.keyed.all = true
+	}
+	s.Timeline = &t
+	c.change(unitTimeline)
 	return nil
 }

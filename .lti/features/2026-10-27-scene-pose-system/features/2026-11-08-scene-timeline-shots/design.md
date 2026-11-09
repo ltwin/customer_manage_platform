@@ -272,11 +272,13 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 | `backend/internal/creativescene/model.go:Scene`、`model.go:Object` | 修改 | 新增 `Timeline`、`Animation` 及类型；解码时补齐 `timeline` 缺省值、`interp` |
 | `backend/internal/creativescene/model.go:Validate` | 修改 | 调用 `validateTimeline`、`validateAnimation` |
 | `backend/internal/creativescene/channels.go` | 新增 | 通道白名单、单元归属、值校验、`checkShotKeys` |
+| `backend/internal/creativescene/channels.json` | 新增 | 通道白名单的唯一来源（go:embed），`make generate` 复制为前端 `timeline/channels.gen.json`（实施时由「Go 表输出」改为与 `builtins.json` 同一模式） |
 | `backend/internal/creativescene/evaluate.go` | 新增 | `EvaluateAt` |
 | `backend/internal/creativescene/testdata/keyframe_eval.json` | 新增 | 两端共用的测试向量 |
 | `backend/internal/creativescene/ops.go:decodeOp`、`ops.go:objectUpdate`、`ops.go:updateObjectsOp.apply`、`ops.go:addObjectsOp.apply`、`ops.go:changeSet` | 修改 | 新增 `setTimelineOp`；`objectUpdate.Animation`（`clear`、`delete`、`set`）；按路径计算单元；`changeSet` 记录本批写到的通道和分镜列表是否改动 |
 | `backend/internal/creativescene/type.go:sceneType.Apply`、`type.go:sceneType.Units` | 修改 | 应用后调用 `checkShotKeys`；`Units` 列出 `timeline` |
 | `backend/internal/creativescene/restore.go` | 修改 | `timeline` 单元；物件单元按路径恢复通道 |
+| `backend/internal/creativescene/view.go:completedScene`、`view.go:unitView` | 修改 | 旧快照读取时补 `timeline`；按单元读取带出 `timeline` 单元和各单元的通道（实施时补充：编辑器靠它同步他人的关键帧改动） |
 | `backend/internal/creativescene/fingerprint.go:Freshness` | 修改 | 按 `marker_id` / 第 0 帧求值后计算指纹 |
 | `backend/internal/creativescene/exports.go:ExportShot`、`exports.go:validateShots`、`exports.go:placeExportsInTx` | 修改 | `MarkerID`；先求值再取摄像机、`lensOf`、指纹；标题用分镜名 |
 | `backend/internal/creativecanvas`（`SceneExportBasedOn`、`based_on` 的读写） | 修改 | 新增 `MarkerID`、`Frame`；`export_source` 带出 |

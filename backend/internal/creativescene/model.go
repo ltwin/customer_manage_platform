@@ -79,11 +79,12 @@ type Channel struct {
 }
 
 // Key is a keyframe. Value has the type of the property it keys (channels.go);
-// Interp says how the value goes on to the next key.
+// Interp says how the value goes on to the next key. Input may leave Interp
+// out; the stored snapshot always holds it (completeAnimation).
 type Key struct {
 	Frame  int             `json:"frame"`
 	Value  json.RawMessage `json:"value"`
-	Interp string          `json:"interp"`
+	Interp string          `json:"interp,omitempty"`
 }
 
 type Environment struct {

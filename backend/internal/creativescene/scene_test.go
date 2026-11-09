@@ -310,7 +310,7 @@ func TestNewSceneFromCanvas(t *testing.T) {
 	if ground.Primitive == nil || ground.Primitive.Builtin != "ground@1" || ground.Primitive.Params["size"] != 40.0 || !ground.Locked || !ground.Visible || ground.ParentID != nil {
 		t.Fatalf("ground %+v", ground)
 	}
-	if want := []string{"environment", "meta", "objects", "render", placement(ground.ID), content(ground.ID)}; !reflect.DeepEqual(sorted(keys(v.UnitRevs)), sorted(want)) {
+	if want := []string{"environment", "meta", "objects", "render", "timeline", placement(ground.ID), content(ground.ID)}; !reflect.DeepEqual(sorted(keys(v.UnitRevs)), sorted(want)) {
 		t.Fatalf("units %v", v.UnitRevs)
 	}
 	if sky := v.Scene.Environment.Sky; sky.Kind != "procedural" || *sky.SunElevationDeg != 35 || v.Scene.Render.Mode != "clay" || v.Scene.Environment.Fog != nil {

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
 // Keyframe channels and shot markers (data: 场景时间线). An object's animation
@@ -122,6 +123,17 @@ func channelOf(path, kind string) *channelSpec {
 		return nil
 	}
 	return c
+}
+
+// unitChannels are o's channels in its content unit, or its placement unit.
+func unitChannels(o Object, content bool) map[string]Channel {
+	out := make(map[string]Channel, len(o.Animation))
+	for path, ch := range o.Animation {
+		if spec := channelByPath[path]; spec != nil && spec.content == content {
+			out[path] = ch
+		}
+	}
+	return out
 }
 
 // completeTimeline gives a scene stored before timelines existed the empty
@@ -303,4 +315,115 @@ func checkKey(o *Object, spec *channelSpec, k Key) error {
 		return validateCamera(*c.Camera)
 	}
 	return validateTransform(c.Transform)
+}
+
+// shotScope is what checkShotKeys looks at: the channels a batch wrote, by
+// object and path, or every channel once the markers changed.
+type shotScope struct {
+	all      bool
+	channels map[string]map[string]bool
+}
+
+func (sc *shotScope) add(objectID string, paths ...string) {
+	if sc.channels == nil {
+		sc.channels = map[string]map[string]bool{}
+	}
+	if sc.channels[objectID] == nil {
+		sc.channels[objectID] = map[string]bool{}
+	}
+	for _, p := range paths {
+		sc.channels[objectID][p] = true
+	}
+}
+
+func (sc shotScope) has(objectID, path string) bool {
+	return sc.all || sc.channels[objectID][path]
+}
+
+// maxGapsReported caps details.missing.
+const maxGapsReported = 50
+
+// ShotKeyGap is a keyed property with no key at a shot's frame (P8).
+type ShotKeyGap struct {
+	ObjectID string `json:"object_id"`
+	Path     string `json:"path"`
+	MarkerID string `json:"marker_id"`
+	Frame    int    `json:"frame"`
+}
+
+// ShotKeysError refuses a batch that leaves a keyed property without a key
+// at some shot's frame; Missing is details.missing. It matches
+// creativeops.ErrValidation.
+type ShotKeysError struct {
+	Missing []ShotKeyGap
+	message string
+}
+
+func (e *ShotKeysError) Error() string         { return creativeops.ErrValidation.Error() + ": " + e.message }
+func (e *ShotKeysError) Unwrap() error         { return creativeops.ErrValidation }
+func (e *ShotKeysError) PublicMessage() string { return e.message }
+
+// checkShotKeys is P8 (data: 场景时间线「分镜帧必有关键帧」) over scope.
+// Restores do not run it: bringing back some units may leave gaps.
+func checkShotKeys(s Scene, scope shotScope) error {
+	if !scope.all && len(scope.channels) == 0 {
+		return nil
+	}
+	gaps := shotKeyGaps(s, scope, maxGapsReported)
+	if len(gaps) == 0 {
+		return nil
+	}
+	g := gaps[0]
+	msg := fmt.Sprintf("物件 %s 的 %s 在%s（第 %d 帧）上缺少关键帧", g.ObjectID, g.Path, markerLabel(*s.Timeline, g.MarkerID), g.Frame)
+	if len(gaps) > 1 {
+		msg += fmt.Sprintf("，共 %d 处", len(gaps))
+		if len(gaps) == maxGapsReported {
+			msg += "以上"
+		}
+	}
+	return &ShotKeysError{Missing: gaps, message: msg + "。有通道的属性在每个分镜的帧上都须有关键帧"}
+}
+
+// shotKeyGaps lists, up to limit, the shots whose frame a channel in scope
+// has no key at, in object, path and frame order.
+func shotKeyGaps(s Scene, scope shotScope, limit int) []ShotKeyGap {
+	if s.Timeline == nil || len(s.Timeline.Markers) == 0 {
+		return nil
+	}
+	var gaps []ShotKeyGap
+	for _, o := range s.Objects {
+		if !scope.all && scope.channels[o.ID] == nil {
+			continue
+		}
+		for _, path := range slices.Sorted(maps.Keys(o.Animation)) {
+			if !scope.has(o.ID, path) {
+				continue
+			}
+			keys := o.Animation[path].Keys
+			for _, m := range s.Timeline.Markers {
+				if _, found := slices.BinarySearchFunc(keys, m.Frame, func(k Key, f int) int { return k.Frame - f }); found {
+					continue
+				}
+				gaps = append(gaps, ShotKeyGap{ObjectID: o.ID, Path: path, MarkerID: m.ID, Frame: m.Frame})
+				if len(gaps) == limit {
+					return gaps
+				}
+			}
+		}
+	}
+	return gaps
+}
+
+// markerLabel is how the editor names a shot: 「name」, or 分镜 N by frame
+// order when the name is empty.
+func markerLabel(t Timeline, id string) string {
+	for i, m := range t.Markers {
+		if m.ID == id {
+			if m.Name != "" {
+				return "分镜「" + m.Name + "」"
+			}
+			return fmt.Sprintf("分镜 %d", i+1)
+		}
+	}
+	return "分镜 " + id
 }
