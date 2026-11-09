@@ -252,3 +252,47 @@ func TestImportModelToLibraryRejections(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// AC-10: an imported model belongs to the library like a library copy. A face
+// assignment on an instance placed from it is new content, still imported and
+// with its import, and the asset keeps its revision; that new content is the
+// scene's, so the next assignment continues it.
+func TestDeriveModelFromAnImport(t *testing.T) {
+	f := setup(t)
+	u := stageImport(t, f)
+	_, asset, err := importModel(t, f.a, command(t, u.input(t, f)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported, source := readRevision(t, f.a, asset.ContentRevisionID)
+	doc := createScene(t, f.a)
+	id := objectID(1)
+	addObjects(t, f.a, doc, instance(id, 1, map[string]any{"content_revision_id": imported.ID}))
+	assign := func(ref, from, base string) committed {
+		t.Helper()
+		res := mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect(content(id)), Operations: []any{
+			derive(ref, from, brickFaces(), map[string]any{"base_content_id": base}),
+			op{"op": "set_instance_model", "object_id": id, "model": map[string]any{"ref": ref}},
+		}})
+		return receiptModels(t, res)[ref]
+	}
+	mine := assign("mine", imported.ID, imported.ContentID)
+	if mine.ContentID == imported.ContentID {
+		t.Fatal("an import is never continued")
+	}
+	_, p := readRevision(t, f.a, mine.ContentRevisionID)
+	if !p.Generator.Imported() || p.Generator.Mount != "wall" || !reflect.DeepEqual(p.Import, source.Import) || p.Materials != nil || p.Faces == nil {
+		t.Fatalf("derived %+v import %+v materials %v", p.Generator, p.Import, p.Materials)
+	}
+	var held string
+	var revisions int
+	if err := f.db.QueryRow(`SELECT content_revision_id, (SELECT count(*) FROM creative_content_revisions WHERE content_id=$2) FROM creative_assets WHERE id=$1`, asset.ID, imported.ContentID).Scan(&held, &revisions); err != nil {
+		t.Fatal(err)
+	}
+	if held != imported.ID || revisions != 1 {
+		t.Fatalf("the asset holds %s, the import has %d revisions", held, revisions)
+	}
+	if again := assign("again", mine.ContentRevisionID, mine.ContentID); again.ContentID != mine.ContentID {
+		t.Fatalf("the scene's derived import forked into %s", again.ContentID)
+	}
+}
