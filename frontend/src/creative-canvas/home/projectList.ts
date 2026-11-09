@@ -6,7 +6,7 @@ import {
   type MediaTicket,
 } from '../editor/media.ts'
 import { errorMessage } from '../editor/queue.ts'
-import { readCache } from '../editor/readCache.ts'
+import { readCache, readStamp } from '../editor/readCache.ts'
 
 export const emptyProjectPage: api.ProjectPage = {
   items: [],
@@ -29,8 +29,9 @@ export function cachedRecentProjects(): api.Project[] {
 export function readRecentProjects(
   signal?: AbortSignal,
 ): Promise<api.ProjectPage> {
+  const stamp = readStamp()
   return api.read<api.ProjectPage>(recentPath, signal).then((page) => {
-    projectPages.set(recentPath, page)
+    projectPages.set(recentPath, page, stamp)
     return page
   })
 }
@@ -74,10 +75,11 @@ export function useProjectPage(path: string) {
 
   useEffect(() => {
     const controller = new AbortController()
+    const stamp = readStamp()
     api
       .read<api.ProjectPage>(path, controller.signal)
       .then((result) => {
-        projectPages.set(path, result)
+        projectPages.set(path, result, stamp)
         setPage(result)
         setError('')
       })
@@ -151,11 +153,12 @@ export function useProjectList(
           ? latest.current.value.items.length
           : 0
       const limit = Math.min(100, Math.max(pageSize, count))
+      const stamp = readStamp()
       api
         .read<api.ProjectPage>(projectListPath(archived, q, sort, limit))
         .then((value) => {
           if (id !== generation.current) return
-          projectPages.set(key, value)
+          projectPages.set(key, value, stamp)
           setLoaded({ key, value })
           setError('')
         })

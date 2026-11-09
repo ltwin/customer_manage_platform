@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx'
 import * as api from '../editor/api.ts'
-import { readCache } from '../editor/readCache.ts'
+import { readCache, readStamp } from '../editor/readCache.ts'
 import '../editor/workspace.css'
 import { useCreativeShell } from './creativeShell.ts'
 import HomeComposer, { type ComposerControls } from './HomeComposer.tsx'
@@ -133,12 +133,13 @@ function RecentAssets({
   )
   useEffect(() => {
     const abort = new AbortController()
+    const stamp = readStamp()
     void api
       .read<api.AssetPage>(recentAssetsPath, abort.signal)
       .then((page) => {
         if (abort.signal.aborted) return
         const usable = page.items.filter((item) => !item.unavailable)
-        recentAssets.set(recentAssetsPath, usable)
+        recentAssets.set(recentAssetsPath, usable, stamp)
         setItems(usable)
       })
       .catch(() => undefined)

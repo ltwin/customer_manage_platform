@@ -2,6 +2,7 @@ import type { components } from '../api/schema'
 import { request } from '../api/transport.ts'
 import { getAuthSnapshot } from '../auth/session.ts'
 import { currentAccount, read } from '../creative-canvas/editor/api.ts'
+import { invalidateReads } from '../creative-canvas/editor/readCache.ts'
 
 export type SceneDocument = components['schemas']['CreativeSceneDocument']
 export type Scene = components['schemas']['CreativeScene']
@@ -67,6 +68,7 @@ export function commandScene(
       getAuthSnapshot().sessionEpoch !== before.sessionEpoch
     )
       throw new Error('登录会话已变化；修改是否保存需要重新确认')
+    invalidateReads()
     return value
   })
 }
@@ -134,9 +136,12 @@ export function exportScene(
   payload: components['schemas']['CreativeSceneExportPayload'],
 ): Promise<components['schemas']['CreativeSceneExportResult']> {
   if (currentAccount() !== account) return Promise.reject(new Error('账号已变化，请重新登录原账号'))
-  return request(`/creative${documentPath(id)}/scene-exports`, {
+  return request<components['schemas']['CreativeSceneExportResult']>(`/creative${documentPath(id)}/scene-exports`, {
     method: 'POST',
     headers: { 'Idempotency-Key': operationID },
     body: JSON.stringify({ operation_id: operationID, client_created_at: createdAt, payload }),
+  }).then((result) => {
+    invalidateReads()
+    return result
   })
 }

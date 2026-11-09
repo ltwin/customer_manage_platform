@@ -1,6 +1,7 @@
 import type { components } from '../../api/schema'
 import { request } from '../../api/transport.ts'
 import { currentAccount } from '../../creative-canvas/editor/api.ts'
+import { invalidateReads } from '../../creative-canvas/editor/readCache.ts'
 
 // The scene job endpoints as one page's renderer uses them. Calls are bound
 // to the account that started the page: after a login change they fail
@@ -54,6 +55,9 @@ export function jobApi(account: string, editorSessionID: string): JobApi {
         jobPath(jobID, 'complete'),
         { operation_id: operationID, client_created_at: createdAt, payload },
         { 'Idempotency-Key': operationID },
-      ),
+      ).then((done) => {
+        invalidateReads()
+        return done
+      }),
   }
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { components } from '../../api/schema'
 import * as api from '../editor/api.ts'
 import { errorMessage } from '../editor/queue.ts'
-import { readCache } from '../editor/readCache.ts'
+import { readCache, readStamp } from '../editor/readCache.ts'
 import { listPath, type LibraryQuery } from './query.ts'
 
 export type Usage = components['schemas']['CreativeLibraryUsage']
@@ -35,6 +35,7 @@ export function useCatalog(refresh: number) {
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
+    const stamp = readStamp()
     Promise.all([
       api.read<api.GroupPage>('/asset-groups', signal),
       api.read<api.TagPage>('/tags', signal),
@@ -53,7 +54,7 @@ export function useCatalog(refresh: number) {
           categories: categories.items,
           usage,
         }
-        catalogs.set('catalog', next)
+        catalogs.set('catalog', next, stamp)
         setError('')
         setCatalog(next)
       })
@@ -102,6 +103,7 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
   useEffect(() => {
     const controller = new AbortController()
     const mine = ++seq.current
+    const stamp = readStamp()
     setState((s) =>
       s.key === key
         ? { ...s, error: '' }
@@ -120,7 +122,7 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
       .read<api.AssetPage>(key, controller.signal)
       .then((page) => {
         if (mine !== seq.current) return
-        firstPages.set(key, page)
+        firstPages.set(key, page, stamp)
         setState({
           key,
           loadedRefresh: refresh,

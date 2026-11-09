@@ -2,6 +2,7 @@ import type { components } from '../../api/schema'
 import { request } from '../../api/transport.ts'
 import { getAuthSnapshot } from '../../auth/session.ts'
 import { read } from './api.ts'
+import { invalidateReads } from './readCache.ts'
 
 export type MediaCapabilities =
   components['schemas']['CreativeMediaCapabilities']
@@ -247,6 +248,7 @@ async function uploadAs(
     })
     throw new Error(message)
   }
+  invalidateReads()
   onProgress({ stage: 'done', sent: file.size, total: file.size, upload })
   return upload
 }
@@ -267,6 +269,7 @@ export async function cancelUpload(upload: Upload): Promise<void> {
       }),
     },
   )
+  invalidateReads()
 }
 
 // 撤销后迟到的上传会落成待绑定候选；导入已撤销，直接放弃它。
@@ -284,6 +287,7 @@ export async function discardCandidate(id: string, revision: string) {
       }),
     },
   )
+  invalidateReads()
 }
 
 // 取消没赶上（会话已在校验或已发布）时，等它结束再看结果。
