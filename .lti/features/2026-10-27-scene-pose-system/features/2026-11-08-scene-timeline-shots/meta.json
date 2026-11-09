@@ -1,6 +1,6 @@
 {
   "uid": "300fb17e-27ec-4c08-897c-533e63ec8b28",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-timeline-shots",
   "kind": "feature",
   "assurance": "governed",
@@ -39,7 +39,21 @@
   },
   "state": "closed",
   "createdAt": "2026-11-09T02:07:39.064Z",
-  "updatedAt": "2026-11-09T10:48:52.936Z",
+  "updatedAt": "2026-11-09T10:50:28.796Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-11-09T10:50:28.716Z",
+    "summary": "feat/scene-timeline-shots 以 --no-ff 合入 develop（df161f62），无冲突；openapi.yaml、schema.d.ts、creative-scene/api.ts 两边都改过，自动合并",
+    "method": "manual",
+    "limitations": "owner 已试用，按约定不跑全量 check-merge；只补测组合部分：make generate-check 无漂移，go build ./...、go vet、tsc -b 通过，creativecanvas 包测试与前端 creative-scene-agent、creative-read-cache、timeline 单测 67 项通过；未重跑 e2e 与其余包",
+    "sourceCommit": "499ab82b1026d2e038ebf1f288ea01edbdd44b85",
+    "targetCommit": "df161f62ee3c78e44099c60c0517384fd92a8ae4",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "8d899fe6d6b0280f828183b483fbf0de497000f21d7e1d7eb39b1d16653326b3"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "concurrency",
