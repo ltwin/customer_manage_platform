@@ -14,7 +14,7 @@
 
 ## 3. 前端：求值与状态
 
-- [ ] 3.1 TS 求值器：`timeline/evaluate.ts`、`timeline/channels.ts`（读取 `channels.gen.json`），`evaluate.test.ts` 跑 `keyframe_eval.gen.json`；`api.ts` 导出 `Timeline`、`Marker`、`Channel`。完成判据：与 Go 同一份向量全部通过
+- [x] 3.1 TS 求值器：`timeline/evaluate.ts`、`timeline/channels.ts`（读取 `channels.gen.json`），`evaluate.test.ts` 跑 `keyframe_eval.gen.json`；`api.ts` 导出 `Timeline`、`Marker`、`Channel`。完成判据：与 Go 同一份向量全部通过
 - [ ] 3.2 状态层：`state/apply.ts` 的 `applyOp` 支持 `set_timeline`、`animation`，`updateKeys`、`placementKeys`、`contentKeys` 按路径归属；`state/intents.ts` 的 `touchedUnits` 按路径归单元，`mergeUpdate` 只合并两边都只有 `set` 的 `animation`；`state/undo.ts` 的 `patchFor` 支持 `timeline` 单元和按单元的通道；`state/sceneStore.ts` 加 `frame`、`unkeyed`、`autoKey`、`baseline`。先写单测：「先 set 后 clear」不合并且保存后通道被清除、撤销删除分镜后关键帧回来、两个单元的通道各自恢复
 - [ ] 3.3 关键帧规则：`timeline/keys.ts` 的 `firstKey`（任意帧，带基线或无基线）、`addShot`（S2a）、`duplicateShot`（S2b）、`moveShot`、`removeShot`、`clearChannel`、`onlyInShot`。先写单测：生成的操作经 `applyOp` 应用后满足 P8（TS 版检查）、新建分镜取基础值、复制分镜取被复制分镜、只属于某个分镜的物件不进新建分镜
 

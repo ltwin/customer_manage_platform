@@ -315,7 +315,7 @@ onEdit(objectId, field, value):              // value 已按当前画面算好
 
 ## 验证与交付
 
-- **求值一致（AC-17）**：Go `evaluate_test.go` 和 TS `evaluate.test.ts` 跑同一份 `keyframe_eval.json`。用例覆盖：首前外推、尾后外推、线性、四元数最短路径、近似相同四元数退化、阶跃、离散属性、空通道。
+- **求值一致（AC-17）**：Go `evaluate_test.go` 和 TS `frontend/scripts/creative-scene-timeline.test.ts`（按仓库惯例放在 scripts 下，由 `make test-frontend` 运行）跑同一份 `keyframe_eval.json`。用例覆盖：首前外推、尾后外推、线性、四元数最短路径、近似相同四元数退化、阶跃、离散属性、空通道。
 - **P8 与 S1–S6（AC-2～AC-6、AC-16）**：
   - Go 测试覆盖命令拒绝、恢复不受限，以及助手展开后满足 P8。
   - TS 单测覆盖 `keys.ts` 生成的操作应用后满足 P8（复用 TS 求值器和一份 TS 版检查）。
