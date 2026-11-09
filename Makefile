@@ -117,6 +117,7 @@ generate: frontend/node_modules
 	mkdir -p frontend/src/creative-scene && cp backend/internal/creativescene/builtins.json frontend/src/creative-scene/builtins.gen.json
 	cp backend/internal/creativescene/materials.json frontend/src/creative-scene/materials.gen.json
 	mkdir -p frontend/src/creative-scene/timeline && cp backend/internal/creativescene/testdata/keyframe_eval.json frontend/src/creative-scene/timeline/keyframe_eval.gen.json
+	cp backend/internal/creativescene/channels.json frontend/src/creative-scene/timeline/channels.gen.json
 	rm -rf frontend/src/creative-canvas/assets/builtin && cp -R backend/internal/creativescene/builtin_thumbnails frontend/src/creative-canvas/assets/builtin
 
 # 漂移检查：比较生成前后内容，允许 feature 在提交前验证已同步的生成物（CMD-002 / A11）
@@ -130,6 +131,7 @@ generate-check: frontend/node_modules
 	cp frontend/src/creative-scene/builtins.gen.json "$$tmp_dir/builtins.gen.json"; \
 	cp frontend/src/creative-scene/materials.gen.json "$$tmp_dir/materials.gen.json"; \
 	cp frontend/src/creative-scene/timeline/keyframe_eval.gen.json "$$tmp_dir/keyframe_eval.gen.json"; \
+	cp frontend/src/creative-scene/timeline/channels.gen.json "$$tmp_dir/channels.gen.json"; \
 	cp -R frontend/src/creative-canvas/assets/builtin "$$tmp_dir/builtin"; \
 	$(MAKE) generate || exit $$?; \
 	cmp -s "$$tmp_dir/api.gen.go" backend/internal/platform/httpapi/api.gen.go \
@@ -146,6 +148,8 @@ generate-check: frontend/node_modules
 		|| { echo "场景材质目录存在漂移，运行 make generate" >&2; exit 1; }; \
 	cmp -s "$$tmp_dir/keyframe_eval.gen.json" frontend/src/creative-scene/timeline/keyframe_eval.gen.json \
 		|| { echo "关键帧求值测试向量存在漂移，运行 make generate" >&2; exit 1; }; \
+	cmp -s "$$tmp_dir/channels.gen.json" frontend/src/creative-scene/timeline/channels.gen.json \
+		|| { echo "关键帧通道白名单存在漂移，运行 make generate" >&2; exit 1; }; \
 	diff -r "$$tmp_dir/builtin" frontend/src/creative-canvas/assets/builtin >/dev/null \
 		|| { echo "内置材质缩略图存在漂移，运行 make generate" >&2; exit 1; }
 
