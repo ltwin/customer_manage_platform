@@ -10,7 +10,7 @@
 ## 2. 后端：助手
 
 - [x] 2.1 客户端任务：`jobs.go` 的 `RenderRequest` 加 `MarkerID`、`Frame`，`ExportRequest` 加 `MarkerIDs`；建任务时的缺省规则（有分镜取全部分镜，没有就取全部摄像机）、未绑定摄像机直接报错、`marker_id` 与 `depth_of_field` 的条件；`jobs_complete.go` 的导出节点带 `marker_id`。先写测试覆盖以上分支
-- [ ] 2.2 读写工具：`agent.go` 的 `read_scene` 支持 `shot`，返回 `timeline`、`animated`、`shot_key_gaps`；`edit_scene` 支持 `shot`，不带分镜改有通道的属性时报错；新增 `agent_shots.go`，负责 `add_shot`（S2a / S2b）、`update_shot`（S3）、`remove_shot`（S4）、`only_in_shot`（S6）的展开和 `keyedUpdates`（S1），展开放在冲突基线计算之前；`lookat.go`、`reparent.go` 带 `shot` 时按求值后的场景计算；`creativeagent/scene_tools.go` 更新参数和说明。先写测试：每种展开后满足 P8、报错信息、带 `shot` 的 `look_at`、冲突覆盖展开后的单元、`render_view` / `export_shots` 的 `shot` 参数
+- [x] 2.2 读写工具：`agent.go` 的 `read_scene` 支持 `shot`，返回 `timeline`、`animated`、`shot_key_gaps`；`edit_scene` 支持 `shot`，不带分镜改有通道的属性时报错；新增 `agent_shots.go`，负责 `add_shot`（S2a / S2b）、`update_shot`（S3）、`remove_shot`（S4）、`only_in_shot`（S6）的展开和 `keyedUpdates`（S1），展开放在冲突基线计算之前；`lookat.go`、`reparent.go` 带 `shot` 时按求值后的场景计算；`creativeagent/scene_tools.go` 更新参数和说明。先写测试：每种展开后满足 P8、报错信息、带 `shot` 的 `look_at`、冲突覆盖展开后的单元、`render_view` / `export_shots` 的 `shot` 参数
 
 ## 3. 前端：求值与状态
 

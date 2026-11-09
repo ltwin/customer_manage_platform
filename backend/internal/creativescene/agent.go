@@ -357,7 +357,9 @@ const (
 // ReadInput is read_scene's arguments with the conversation's runs, whose
 // writes are the conversation's own, and the bytes the result may take.
 type ReadInput struct {
-	DocumentID       string
+	DocumentID string
+	// Shot reads the objects as that shot shows them.
+	Shot             string
 	ObjectIDs        []string
 	IncludeCode      []string
 	ConversationRuns []string
@@ -385,6 +387,28 @@ type SceneRead struct {
 	CodeOmitted           []string          `json:"code_omitted,omitempty"`
 	ChangesSinceLastWrite *ChangeSummary    `json:"changes_since_last_write"`
 	Note                  string            `json:"note,omitempty"`
+	// Timeline lists the shots, AtShot is the shot the objects are read at,
+	// and ShotKeyGaps are keyed properties missing a key at some shot (P8),
+	// which the next write to them or to the shots must fill.
+	Timeline    *TimelineView `json:"timeline,omitempty"`
+	AtShot      string        `json:"at_shot,omitempty"`
+	ShotKeyGaps []ShotKeyGap  `json:"shot_key_gaps,omitempty"`
+}
+
+// TimelineView is the shots as the assistant reads them, in frame order.
+type TimelineView struct {
+	Shots []ShotView `json:"shots"`
+	Note  string     `json:"note"`
+}
+
+// ShotView is one shot; CameraName is empty when it has no camera to shoot
+// through.
+type ShotView struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Frame          int    `json:"frame"`
+	CameraObjectID string `json:"camera_object_id"`
+	CameraName     string `json:"camera_name"`
 }
 
 // ObjectView is one object as the assistant reads it. A brief listing carries
@@ -406,6 +430,8 @@ type ObjectView struct {
 	Slots  []creativecontent.Slot `json:"slots,omitempty"`
 	Light  *LightView             `json:"light,omitempty"`
 	Camera *Camera                `json:"camera,omitempty"`
+	// Animated are the properties keyed by shot (data: 场景时间线).
+	Animated []string `json:"animated,omitempty"`
 }
 
 // LightView is a light with whether it casts shadows on surfaces: on, off,
@@ -502,6 +528,42 @@ func uvMappedSlots(slots map[string]MaterialSlot) []string {
 	return out
 }
 
+// sceneAtShot is s as shot shows it, or s itself without a shot.
+func sceneAtShot(s Scene, shot string) (Scene, error) {
+	if shot == "" {
+		return s, nil
+	}
+	i := slices.IndexFunc(s.Timeline.Markers, func(m Marker) bool { return m.ID == shot })
+	if i < 0 {
+		return Scene{}, invalid("分镜 %s 不存在：read_scene 的 timeline 里列着现有的分镜", shot)
+	}
+	return EvaluateAt(s, s.Timeline.Markers[i].Frame), nil
+}
+
+// timelineView is s's shots, nil when it has none.
+func timelineView(s Scene) *TimelineView {
+	if len(s.Timeline.Markers) == 0 {
+		return nil
+	}
+	idx := indexObjects(s.Objects)
+	v := &TimelineView{Shots: make([]ShotView, 0, len(s.Timeline.Markers)),
+		Note: "每个分镜是时间线上的一帧，从它绑定的摄像机拍。animated 里的属性按分镜记了关键帧：不带 shot 读到的是默认状态（新建分镜取它），带 shot 读那个分镜的样子；写这些属性要带 shot。"}
+	for i, m := range s.Timeline.Markers {
+		sv := ShotView{ID: m.ID, Name: markerTitle(*s.Timeline, i), Frame: m.Frame, CameraObjectID: m.CameraObjectID}
+		if j, ok := idx[m.CameraObjectID]; ok && s.Objects[j].Kind == KindCamera {
+			sv.CameraName = s.Objects[j].Name
+			if label := *s.Objects[j].Camera.Label; label != "" {
+				sv.CameraName = label
+			}
+			if sv.CameraName == "" {
+				sv.CameraName = "摄像机"
+			}
+		}
+		v.Shots = append(v.Shots, sv)
+	}
+	return v
+}
+
 // AgentReadInTx is read_scene: the scene in full, or in brief past 300
 // objects unless object_ids narrows it; the code of up to three placed models;
 // and what others changed since the conversation last wrote it. A result past
@@ -521,12 +583,17 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 	if cur.Document.TrashedAt != nil {
 		return SceneRead{}, creativedocument.ErrTrashed
 	}
-	scene, err := decodeScene(cur.Content.Payload)
+	stored, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return SceneRead{}, err
+	}
+	scene, err := sceneAtShot(stored, in.Shot)
 	if err != nil {
 		return SceneRead{}, err
 	}
 	out := SceneRead{DocumentID: in.DocumentID, Title: cur.Title, Revision: cur.Revision,
-		Environment: scene.Environment, Render: scene.Render, Sun: sunReport(scene.Environment.Sky), Moon: moonReport(scene.Environment.Sky), ObjectCount: len(scene.Objects), Objects: []ObjectView{}}
+		Environment: scene.Environment, Render: scene.Render, Sun: sunReport(scene.Environment.Sky), Moon: moonReport(scene.Environment.Sky), ObjectCount: len(scene.Objects), Objects: []ObjectView{},
+		Timeline: timelineView(stored), AtShot: in.Shot, ShotKeyGaps: shotKeyGaps(stored, shotScope{all: true}, maxGapsReported)}
 	listed := scene.Objects
 	if len(in.ObjectIDs) > 0 {
 		idx := indexObjects(scene.Objects)
@@ -559,8 +626,11 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 		return SceneRead{}, err
 	}
 	shadows := shadowStates(scene)
+	storedIdx := indexObjects(stored.Objects)
 	for _, o := range listed {
-		out.Objects = append(out.Objects, objectView(o, models, shadows))
+		v := objectView(o, models, shadows)
+		v.Animated = slices.Sorted(maps.Keys(stored.Objects[storedIdx[o.ID]].Animation))
+		out.Objects = append(out.Objects, v)
 	}
 	code := map[string]string{}
 	for _, id := range in.IncludeCode {
@@ -806,8 +876,10 @@ func describeConflict(ctx context.Context, tx store.TxAccountScope, cur creative
 // EditInput is edit_scene's arguments with the run writing and the
 // conversation's runs (revert_run's "previous").
 type EditInput struct {
-	DocumentID       string
-	RunID            string
+	DocumentID string
+	RunID      string
+	// Shot writes the batch's keyable fields into that shot (agent_shots.go).
+	Shot             string
 	BasedOn          int64
 	Operations       []json.RawMessage
 	ConversationRuns []string
@@ -829,6 +901,8 @@ type EditResult struct {
 	// FacesCleared are builtins whose face assignment a change of a topology
 	// parameter cleared (data: 场景内置基础体「topology」).
 	FacesCleared []string `json:"faces_cleared,omitempty"`
+	// AddedShots are the ids of the shots add_shot made, in order.
+	AddedShots []string `json:"added_shots,omitempty"`
 }
 
 // maxListedEntries bounds the lists an edit or revert result carries; counts
@@ -861,6 +935,7 @@ var opsNotForTheAssistant = map[string]string{
 	"restore":       "撤回改动用 revert_run",
 	"restore_units": "撤回改动用 revert_run",
 	"rename":        "不能改场景标题",
+	"set_timeline":  "分镜用 add_shot、update_shot、remove_shot",
 }
 
 // opsOnTheObjectList all change the objects unit, which a revision changes
@@ -923,10 +998,21 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	if in.Operations, err = resolveSlots(ctx, tx, in.Operations, scene); err != nil {
 		return nil, err
 	}
-	if in.Operations, err = resolveReparent(in.Operations, scene); err != nil {
+	// World positions are the shot's: an object keyed elsewhere is where the
+	// shot shows it.
+	shown, err := sceneAtShot(scene, in.Shot)
+	if err != nil {
 		return nil, err
 	}
-	if in.Operations, err = resolveLookAt(in.Operations, scene); err != nil {
+	if in.Operations, err = resolveReparent(in.Operations, shown); err != nil {
+		return nil, err
+	}
+	if in.Operations, err = resolveLookAt(in.Operations, shown); err != nil {
+		return nil, err
+	}
+	// Before the baseline check, so it covers every unit the keys touch.
+	var added []string
+	if in.Operations, added, err = expandShots(in.Operations, scene, in.Shot); err != nil {
 		return nil, err
 	}
 	if err := readableImages(ctx, tx, in, cur.Refs); err != nil {
@@ -954,7 +1040,7 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		return nil, err
 	}
 	changed := changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))
-	out := EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed)}
+	out := EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed), AddedShots: added}
 	if out.FacesCleared, err = clearedFaces(ctx, tx, in.DocumentID, scene, in.Operations); err != nil {
 		return nil, err
 	}
