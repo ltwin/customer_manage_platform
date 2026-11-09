@@ -37,9 +37,9 @@ const (
 	gcBatch    = 100
 	gcInterval = 10 * time.Minute
 	// 已计额度的 blob 曾绑定内容，宽限兜底误删并覆盖票据与读 pin；从未计额度的
-	// 只需覆盖 10 分钟票据与 120 秒读 pin。
+	// 只需覆盖票据（10 分钟有效期向上取整到 5 分钟边界，最长 15 分钟）与 120 秒读 pin。
 	gcBookedGrace   = 24 * time.Hour
-	gcUnbookedGrace = 15 * time.Minute
+	gcUnbookedGrace = 20 * time.Minute
 	// 生成恢复每次续 24 小时；超过两倍仍无进展的导入不再等待。
 	gcStaleImport = 48 * time.Hour
 )

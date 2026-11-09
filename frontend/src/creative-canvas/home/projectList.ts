@@ -283,18 +283,21 @@ export function canvasPath(project: api.Project): string {
   return `/creative/canvases/${encodeURIComponent(project.default_canvas_id)}`
 }
 
-// 封面取图：先要 display 版本，没有再退回 original。和画布卡片共用票据缓存。
-export function coverMedia(revision: string): Promise<MediaTicket> {
-  return mediaTicket(revision, 'display', 'display').catch(() =>
-    mediaTicket(revision, 'original', 'display'),
-  )
-}
-
 // 已取得的封面票据可同步读出，重挂载时图片直接出现，不先闪一下空白。
 export function cachedCoverMedia(revision: string): MediaTicket | undefined {
   return (
     cachedMediaTicket(revision, 'display') ??
     cachedMediaTicket(revision, 'original')
+  )
+}
+
+// 封面取图：先要 display 版本，没有再退回 original。和画布卡片共用票据缓存；
+// 已有票据直接用，没有 display 的图不在每次重挂载时再白问一次。
+export function coverMedia(revision: string): Promise<MediaTicket> {
+  const ready = cachedCoverMedia(revision)
+  if (ready) return Promise.resolve(ready)
+  return mediaTicket(revision, 'display', 'display').catch(() =>
+    mediaTicket(revision, 'original', 'display'),
   )
 }
 

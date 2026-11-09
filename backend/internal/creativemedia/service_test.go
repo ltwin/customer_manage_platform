@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -408,6 +410,64 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	}
 	if _, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: asset.ContentRevisionID, Role: "original", Purpose: "display"}); !errors.Is(err, creativecontent.ErrUsageDenied) {
 		t.Fatal("revoked grant still issues tickets", err)
+	}
+}
+
+// A displayed image may stay in the browser until its ticket expires; the
+// original behind a display rendition and downloads never do. Tickets issued
+// in one window share a URL, so a reload finds the cached copy.
+func TestDisplayImagesAreCachedUntilTheTicketExpires(t *testing.T) {
+	f := setup(t)
+	wide := image.NewRGBA(image.Rect(0, 0, 2000, 20))
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, wide); err != nil {
+		t.Fatal(err)
+	}
+	revision := func(name string, body []byte) string {
+		view := f.uploadFile(t, f.a, name, "image/png", "image", body, creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: name}})
+		asset, err := creativelibrary.GetAsset(t.Context(), f.a, view.Publication.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return asset.ContentRevisionID
+	}
+	small, large := revision("small.png", sample(t, "sample.png")), revision("wide.png", raw.Bytes())
+	scopeFor := func(string) store.AccountScope { return f.a }
+	open := func(rev, role, purpose string) (creativemedia.Ticket, *creativemedia.Stream) {
+		ticket, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: rev, Role: role, Purpose: purpose})
+		if err != nil {
+			t.Fatal(role, purpose, err)
+		}
+		stream, err := f.svc.Open(t.Context(), scopeFor, ticket.URL[strings.Index(ticket.URL, "ticket=")+7:], rev, role, nil)
+		if err != nil {
+			t.Fatal(role, purpose, err)
+		}
+		_ = stream.Body.Close()
+		return ticket, stream
+	}
+
+	ticket, stream := open(small, "original", "display")
+	// Two issues straddling a window boundary may differ; within one they cannot.
+	if again, _ := open(small, "original", "display"); again.ExpiresAt.Equal(ticket.ExpiresAt) && again.URL != ticket.URL {
+		t.Fatal("tickets in one window must share a URL")
+	}
+	if life := time.Until(ticket.ExpiresAt); life < f.cfg.TicketTTL-time.Second || life > f.cfg.TicketTTL*3/2 {
+		t.Fatal("ticket life", life)
+	}
+	now := time.Now()
+	if !stream.CacheUntil.Equal(ticket.ExpiresAt) || !strings.HasPrefix(stream.CacheControl(now), "private, max-age=") || !strings.HasSuffix(stream.CacheControl(now), ", immutable") {
+		t.Fatal("small original is what the canvas shows", stream.CacheUntil, stream.CacheControl(now))
+	}
+	if got := stream.CacheControl(ticket.ExpiresAt); got != "private, no-store" {
+		t.Fatal("cache outlives the ticket", got)
+	}
+	if _, display := open(large, "display", "display"); display.CacheUntil.IsZero() {
+		t.Fatal("display rendition must be cacheable")
+	}
+	for _, c := range []struct{ rev, role, purpose string }{{large, "original", "display"}, {small, "original", "download"}} {
+		if _, s := open(c.rev, c.role, c.purpose); s.CacheControl(now) != "private, no-store" {
+			t.Fatal(c, "must never be stored", s.CacheControl(now))
+		}
 	}
 }
 

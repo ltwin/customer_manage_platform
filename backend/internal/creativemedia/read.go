@@ -130,10 +130,26 @@ func (s *Service) IssueTicket(ctx context.Context, scope store.AccountScope, in 
 	if err != nil {
 		return Ticket{}, err
 	}
-	expires := time.Now().Add(s.cfg.TicketTTL)
+	expires := ticketExpiry(time.Now(), s.cfg.TicketTTL)
 	token := s.tickets.sign(ticketClaims{Account: scope.AccountID(), Revision: in.ContentRevisionID, Role: in.Role, Purpose: in.Purpose, FileName: in.FileName, ExpiresAt: expires.Unix()})
 	return Ticket{URL: s.tickets.base + "/" + url.PathEscape(in.ContentRevisionID) + "/" + in.Role + "?ticket=" + url.QueryEscape(token), ExpiresAt: expires, Mime: media.Mime, ByteSize: media.ByteSize}, nil
 }
+
+// ticketExpiry rounds the expiry up to a boundary of half the TTL, so a ticket
+// lives between ttl and 1.5*ttl. Every request for the same media within one
+// window signs identical claims: the URL, and the browser's cached copy of it,
+// survive page reloads instead of changing with each issue.
+func ticketExpiry(now time.Time, ttl time.Duration) time.Time {
+	window := ttl / 2
+	if window < time.Second {
+		return now.Add(ttl)
+	}
+	return now.Add(ttl).Truncate(window).Add(window)
+}
+
+// browserCacheMaxBytes bounds what a browser may keep: display renditions and
+// thumbnails fit, so the private cache never fills with originals.
+const browserCacheMaxBytes = 4 << 20
 
 // Stream is an authorized, version-fixed reader plus the headers a handler
 // needs. Close releases the storage reader; the read pin expires on its own.
@@ -147,6 +163,42 @@ type Stream struct {
 	Download    bool
 	PinID       string
 	Unavailable bool
+	// CacheUntil is the ticket's expiry when the browser may keep the bytes;
+	// zero means never store them.
+	CacheUntil time.Time
+}
+
+// CacheControl lets the browser keep a displayed image until its ticket
+// expires. The ticket is part of the URL and a revision's bytes never change,
+// so a cached copy is immutable and never outlives its authorization: a
+// revoked grant stops showing once the ticket lapses. Originals that have a
+// display rendition, downloads, video and large files are never stored.
+func (s *Stream) CacheControl(now time.Time) string {
+	if s.CacheUntil.IsZero() {
+		return "private, no-store"
+	}
+	age := int64(s.CacheUntil.Sub(now) / time.Second)
+	if age <= 0 {
+		return "private, no-store"
+	}
+	return "private, max-age=" + strconv.FormatInt(age, 10) + ", immutable"
+}
+
+// browserCacheable reports whether the role is what the canvas shows: a display
+// rendition or thumbnail, or an original small enough to have none.
+func browserCacheable(purpose string, media creativecontent.MediaObject, all []creativecontent.MediaObject) bool {
+	if purpose != "display" || !strings.HasPrefix(media.Mime, "image/") || media.ByteSize > browserCacheMaxBytes {
+		return false
+	}
+	if media.Role != "original" {
+		return true
+	}
+	for _, m := range all {
+		if m.Role == "display" {
+			return false
+		}
+	}
+	return true
 }
 
 // Open validates the ticket, re-checks usage inside a transaction, records a
@@ -165,6 +217,7 @@ func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.
 	scope := scopeFor(c.Account)
 	var media creativecontent.MediaObject
 	var key, version string
+	var cacheable bool
 	pin := "ccpn_" + uuid.NewString()
 	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := tx.RequireCreativeMediaRead(ctx); err != nil {
@@ -183,6 +236,7 @@ func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.
 		if !found {
 			return creativecontent.ErrNotFound
 		}
+		cacheable = browserCacheable(c.Purpose, media, r.Media)
 		var state string
 		var objectVersion *string
 		if err := tx.QueryRowForShare(ctx, "creative_blobs", "state,object_key,object_version", "id=$2", media.BlobID).Scan(&state, &key, &objectVersion); err != nil {
@@ -230,7 +284,11 @@ func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.
 	if name == "" {
 		name = revisionID
 	}
-	return &Stream{Body: body, Mime: media.Mime, Size: media.ByteSize, ETag: media.BlobID + ":" + version, Range: rng, FileName: name, Download: c.Purpose == "download", PinID: pin}, nil
+	stream := &Stream{Body: body, Mime: media.Mime, Size: media.ByteSize, ETag: media.BlobID + ":" + version, Range: rng, FileName: name, Download: c.Purpose == "download", PinID: pin}
+	if cacheable {
+		stream.CacheUntil = time.Unix(c.ExpiresAt, 0)
+	}
+	return stream, nil
 }
 
 // RenewPin extends an active read; failures let the pin lapse naturally.

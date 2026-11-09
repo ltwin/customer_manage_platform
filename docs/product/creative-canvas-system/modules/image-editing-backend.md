@@ -107,7 +107,7 @@ Agent 写入与现有 `edit_canvas` / `generate_node` 对齐：工具只在存�
 - queued/running/ready → discarded 或 expired：取消、被替代、超时，旧工作不能复活候选。
 - ready → applied：同步采用和版本登记同事务，applied 不回退。撤销改变图历史，不把候选重新置 ready。
 
-render 不需要 epoch 或 lease。同一候选被重复投递时，每次 attempt 各自写新的 blob；只有第一个在条件更新（`state='running' AND original_blob_id IS NULL`）中成功的 attempt 被记录，其余 blob 没有持有方，由媒体 GC 按 15 分钟宽限回收。认领后最终 ready 事务失败或进程异常退出时，重投递在账号写屏障下把旧认领的 verifying blob 转为 deleting，并清空认领后使用新 blob 身份重试；迟到的旧写入必须同时满足 blob 状态与候选 blob 身份才能提交，不能覆盖新尝试。候选已 ready 或终结时 job 直接返回，包括此前 ready 提交成功但响应未知的情况。旧 job 的瞬时错误只返回队列，不得覆盖已完成的状态；最终失败须与候选当前状态复核。
+render 不需要 epoch 或 lease。同一候选被重复投递时，每次 attempt 各自写新的 blob；只有第一个在条件更新（`state='running' AND original_blob_id IS NULL`）中成功的 attempt 被记录，其余 blob 没有持有方，由媒体 GC 按 20 分钟宽限回收。认领后最终 ready 事务失败或进程异常退出时，重投递在账号写屏障下把旧认领的 verifying blob 转为 deleting，并清空认领后使用新 blob 身份重试；迟到的旧写入必须同时满足 blob 状态与候选 blob 身份才能提交，不能覆盖新尝试。候选已 ready 或终结时 job 直接返回，包括此前 ready 提交成功但响应未知的情况。旧 job 的瞬时错误只返回队列，不得覆盖已完成的状态；最终失败须与候选当前状态复核。
 
 持有关系：queued / running / ready 且未过期的候选持有其源修订（保证编码期间源不被回收）和预览 blob，登记进媒体 GC 的持有方清单。applied 后预览 blob 已绑定到新修订，由版本持有；discarded / expired / not_reduced / failed 不再持有任何东西，不需要专门的清理程序。origin_kind 使用现有 TEXT 的 `edit` 值；复用现有 Provenance JSON / generation_provenance 列，以 schema_version + action 区分编辑说明。接受 API 名称暂时别扭，不新增 edit_provenance 列，不为改名迁移历史数据；API、历史 UI 按 origin_kind 解释。
 
@@ -158,7 +158,7 @@ CLI 通过 `exec.CommandContext` 的独立参数调用，不经过 shell，不�
 
 候选重复 job 可以浪费少量本地计算和临时 blob，但不能产生重复版本或重复额度；正常运行仅一个 image_edit 槽。瞬时故障退避重试，至多现有队列允许的 5 次，受候选总期限约束。永久错误、无收益、重复 OOM 不重试。
 
-**回收**：本功能不写专门的清理程序。被取消、丢弃、过期、失败的候选不再持有预览 blob，由[媒体 GC](media.md#6-gc恢复和上线约束)按「从未绑定」类别 15 分钟宽限回收；写到一半的 verifying blob 按 GC 的 lease 规则回收。预览 blob 从未计额度，回收也不涉及额度账。所有异步 worker 都没有画布自动采用权限；采用请求响应未知只能查原回执。
+**回收**：本功能不写专门的清理程序。被取消、丢弃、过期、失败的候选不再持有预览 blob，由[媒体 GC](media.md#6-gc恢复和上线约束)按「从未绑定」类别 20 分钟宽限回收（2026-11-09 随票据有效期取整由 15 分钟调整）；写到一半的 verifying blob 按 GC 的 lease 规则回收。预览 blob 从未计额度，回收也不涉及额度账。所有异步 worker 都没有画布自动采用权限；采用请求响应未知只能查原回执。
 
 ## 10. 队列、并发与资源
 
@@ -174,7 +174,7 @@ Linux 下在受控子进程 exec vips 之前设置其 `oom_score_adj=1000`，不
 
 容器预算按 worker 基线（包含并行 Agent / 生成任务）+ 一次 vips 峰值 + 一次 Go 校验峰值 + 临时页缓存与安全余量实测。vips 退出后 Go verifier 仍可能 OOM，此时已经没有 vips 可先杀。若目标环境容量无法覆盖，降低 image_edit 的像素上限并由 capabilities 如实显示；不要承诺 60 MP 在任何部署都能编辑。独立 worker 部署只在实测资源争用要求时另评。
 
-额度：候选结果在采用前不计额度，只有采用的那一份（original + display）在 apply 事务内计入；源图不重复计费。正常情况下每个候选都会被采用，未采用的只来自取消、失败、超时与冲突，由 GC 15 分钟宽限后回收；另加每账号创建频率上限（建议 10 分钟 60 次），防止脚本反复提交。每槽临时目录至少 1 GiB 仅为起始预算，须实测并清理。
+额度：候选结果在采用前不计额度，只有采用的那一份（original + display）在 apply 事务内计入；源图不重复计费。正常情况下每个候选都会被采用，未采用的只来自取消、失败、超时与冲突，由 GC 20 分钟宽限后回收；另加每账号创建频率上限（建议 10 分钟 60 次），防止脚本反复提交。每槽临时目录至少 1 GiB 仅为起始预算，须实测并清理。
 
 ## 11. 迁移、发布与实施切片
 

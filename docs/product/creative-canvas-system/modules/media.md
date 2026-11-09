@@ -93,6 +93,12 @@ Create 和 Complete 各自使用客户端 operation_id，成功后保存各自�
 
 `GET/HEAD /media/{revision_id}/{role}` 以受控票据或现有认证访问。实现单段 Range：合法范围返回 206 与 Content-Range，超界返回 416，多段首期返回 416；普通 GET 返回 200。提供 Content-Type、Content-Length、ETag、私有缓存策略及安全下载名；所有响应前先授权，不能通过缓存绕过撤销。If-Range/HEAD 和取消行为通过实际浏览器验证。
 
+**2026-11-09 修订（owner 拍板：展示图片允许浏览器缓存）**：
+- 票据到期时间向上取整到 TTL/2 的边界（默认 10 分钟 TTL → 有效 10–15 分钟）。同一窗口内对同一媒体签出的票据完全相同，URL 不变，刷新页面也能命中浏览器缓存。
+- 用途为 display、`image/*`、不超过 4 MB，且是画布实际展示的那一份（display / thumbnail 角色，或没有 display 规格的原图）时，响应为 `Cache-Control: private, max-age=<票据剩余秒数>, immutable`；其余（有 display 规格的原图、download、视频音频、大文件）保持 `private, no-store`。
+- 撤销语义随之放宽：已缓存的展示图在票据到期前（最长约 15 分钟）仍可从浏览器缓存显示；票据在 URL 里，缓存副本不会比授权更久，到期后的每次 GET 仍先授权。这与签名 URL 的业界常见语义一致。
+- 缓存只用浏览器 HTTP 缓存（容量与淘汰由浏览器管理），不另建 Cache Storage / IndexedDB，不额外占用站点存储配额。
+
 read pin 建议 120 秒有效、活跃读取每 30 秒续期；续期失败或授权失效时在 lease 到期前中断流，不能让活跃读取在无保留状态下无限持续。票据只用短期、日志脱敏，不包含长期 access token。读取票据与 pin 的精确存储由本模块拥有，实施时补齐身份/过期索引，不在正文或前端永久保存。
 
 ## 5. 对象存储端口
@@ -158,7 +164,7 @@ GC 是 creative-worker 进程内的周期循环（与上传过期扫描同一写
 | blob 类别 | 宽限 | 理由 |
 |---|---|---|
 | 已计额度（曾绑定内容） | 24 小时 | 误删兜底，并覆盖票据与 read pin |
-| 从未绑定、未计额度（图片编辑预览） | 15 分钟 | 不可能被内容引用，只需覆盖 10 分钟读票据与 120 秒 read pin |
+| 从未绑定、未计额度（图片编辑预览） | 20 分钟 | 不可能被内容引用，只需覆盖读票据（10 分钟向上取整，最长 15 分钟）与 120 秒 read pin |
 
 对象删除方式：`versionedfs.Adapter` 现有 `DeleteExact(key, version)` 会永久删除指定版本。OSS 侧新增「删除当前对象」方法，只留 delete marker，固定版本转为 noncurrent，由 bucket 生命周期规则在 N 天后清除（[部署契约](../../../dev/object-storage.md)建议 30 天）；这段时间内可凭库中保留的 key 与 version 恢复。Local 驱动没有版本兜底，沿用 `DeleteExact`，仅用于开发与自部署。
 
