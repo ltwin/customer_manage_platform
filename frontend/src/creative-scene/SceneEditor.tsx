@@ -732,6 +732,11 @@ export default function SceneEditor({
     edit([{ op: 'update_objects', updates: [{ object_id: cameraID, camera: { focus_object_id: target.id } }] }], `「${byID.get(cameraID)?.name || '摄像机'}」对焦到「${target.name || '物件'}」`)
     return true
   }
+  /** The dialog takes the focus with it when it goes: the keys stay with the editor. */
+  const closeExport = () => {
+    ui.setState({ exporting: false })
+    root.current?.focus()
+  }
   /** The photographer's export: saved edits first, then the server's snapshot (E1). */
   const startExport = async (plan: ExportPlan, unkeyed?: UnkeyedChoice) => {
     if (!canvasID || !sceneNodeID) return
@@ -760,7 +765,7 @@ export default function SceneEditor({
     )
     setExportRun({ busy: false, progress: null })
     if (out.ok) {
-      ui.setState({ exporting: false })
+      closeExport()
       notify(`已导出 ${out.result.nodes.length} 张图到画布`)
     } else notify(out.message)
   }
@@ -1120,7 +1125,7 @@ export default function SceneEditor({
         return ui.setState({ sheet: !u.sheet })
       case 'escape': {
         if (u.pickFocus) return ui.setState({ pickFocus: null })
-        if (u.exporting) return exportRun.busy || ui.setState({ exporting: false })
+        if (u.exporting) return exportRun.busy || closeExport()
         const target = escapeTarget({ modal: false, menu: !!u.popup || u.sheet, preview: !!u.preview, selection: selected.length > 0 })
         if (target === 'close-menu') ui.setState({ popup: null, sheet: false })
         else if (target === 'exit-preview') ui.setState({ preview: null })
@@ -1634,7 +1639,10 @@ export default function SceneEditor({
               { label: '清除动画', disabled: !byID.get(p.id)?.animation?.[p.path], run: () => clearAnimation(p.id, p.path) },
             ]
           })()}
-          onClose={() => ui.setState({ popup: null })}
+          onClose={() => {
+            ui.setState({ popup: null })
+            root.current?.focus()
+          }}
         />
       )}
       {u.popup?.kind === 'delete' && (
@@ -1672,7 +1680,7 @@ export default function SceneEditor({
           busy={exportRun.busy}
           progress={exportRun.progress}
           onExport={(plan, unkeyed) => void startExport(plan, unkeyed)}
-          onClose={() => ui.setState({ exporting: false })}
+          onClose={closeExport}
         />
       )}
       {u.confirmClose && (

@@ -13248,15 +13248,14 @@ await check('timeline AC-10 and AC-8b: an export by shot draws each shot at its 
   assert.ok((await pixelDiff(page, all[0].images[0].png, all[1].images[0].png)) > 0.002, 'shot 2 shows the subject moved')
   await page.locator('.cc-scene-hint').filter({ hasText: '已导出 6 张图到画布' }).waitFor()
 
-  // AC-8b: a change waiting for a key is keyed before the export draws. The closed dialog took the focus with it.
-  await page.locator('.cc-scene-editor').focus()
+  // AC-8b: a change waiting for a key is keyed before the export draws. The closed dialog gives the keys back.
+  assert.ok(await page.locator('.cc-scene-editor').evaluate((el) => el === document.activeElement), 'the editor has the focus again')
   await moveX(page, 4)
   const keyed = await exportOnce(true, '插入关键帧后导出')
   assert.equal(shownAt(server, subject, 10).transform.position[0], 6, 'the key went in first: 4 more from 2')
   assert.ok((await pixelDiff(page, all[1].images[0].png, keyed[1].images[0].png)) > 0.002, 'the export shows it')
   // Or dropped: the export is the saved shot.
   const sent = server.commands.length
-  await page.locator('.cc-scene-editor').focus()
   await moveX(page, 7)
   const dropped = await exportOnce(true, '放弃这些改动后导出')
   assert.equal(server.commands.length, sent, 'nothing was saved')
