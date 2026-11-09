@@ -1,0 +1,68 @@
+{
+  "uid": "300fb17e-27ec-4c08-897c-533e63ec8b28",
+  "revision": 4,
+  "id": "scene-timeline-shots",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-pose-system",
+  "designBinding": {
+    "version": 2,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "glossary:分镜",
+      "glossary:关键帧通道",
+      "patterns:关键帧求值",
+      "data:场景时间线",
+      "api:场景时间线命令",
+      "api:导出分镜",
+      "data:导出图来源",
+      "architecture:场景模块"
+    ],
+    "delivers": [
+      "glossary:分镜",
+      "glossary:关键帧通道",
+      "patterns:关键帧求值",
+      "data:场景时间线",
+      "api:场景时间线命令",
+      "api:导出分镜",
+      "data:导出图来源",
+      "architecture:场景模块"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-11-09T02:07:39.064Z",
+  "updatedAt": "2026-11-09T02:41:05.555Z",
+  "risk": {
+    "factors": [
+      "concurrency",
+      "broad-impact",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-09T02:41:05.316Z",
+      "contentHash": "53b6d2a6c12d601d"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-09T02:41:05.316Z",
+      "contentHash": "07dde6a252277c04"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
