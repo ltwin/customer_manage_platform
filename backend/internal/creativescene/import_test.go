@@ -296,3 +296,47 @@ func TestDeriveModelFromAnImport(t *testing.T) {
 		t.Fatalf("the scene's derived import forked into %s", again.ContentID)
 	}
 }
+
+// AC-11: the assistant reads an imported model as one, without code or
+// parameters, and cannot bake it with new parameters; it can still replace it.
+func TestAssistantReadsAnImport(t *testing.T) {
+	f := setup(t)
+	creativescene.SetJobWaiterForTest(t, &fakeWaiter{})
+	_, asset, err := importModel(t, f.a, command(t, stageImport(t, f).input(t, f)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := createScene(t, f.a)
+	id := objectID(1)
+	addObjects(t, f.a, doc, instance(id, 1, map[string]any{"content_revision_id": asset.ContentRevisionID}))
+	for _, budget := range []int{0, 64 << 10} {
+		got, err := agentRead(t, f.a, creativescene.ReadInput{DocumentID: doc, IncludeCode: []string{asset.ContentRevisionID}, MaxBytes: budget})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := got.Code[asset.ContentRevisionID]; ok || len(got.CodeOmitted) != 0 {
+			t.Fatalf("budget %d: code %v omitted %v", budget, got.Code, got.CodeOmitted)
+		}
+		var m *creativescene.ModelView
+		for _, o := range got.Objects {
+			if o.ID == id {
+				m = o.Model
+			}
+		}
+		if m == nil || !m.Usable || !m.Imported || m.Params != nil || m.ParamsSchema != nil || m.BoundsM == nil {
+			t.Fatalf("budget %d: model %+v", budget, m)
+		}
+	}
+
+	based := int64(readScene(t, f.a, doc).Revision)
+	_, _, err = bakeJobInTx(t, f.a, creativescene.BakeInput{DocumentID: doc, RunID: "ccrn_agent", ToolCallID: "step-1", BasedOn: based,
+		BaseContentRevisionID: asset.ContentRevisionID, Params: map[string]any{}, Replace: &creativescene.ReplaceTarget{ObjectID: id}})
+	var public interface{ PublicMessage() string }
+	if !errors.Is(err, creativeops.ErrValidation) || !errors.As(err, &public) || !strings.Contains(public.PublicMessage(), "导入的模型") {
+		t.Fatalf("bake from an import: %v", err)
+	}
+	if _, _, err := bakeJobInTx(t, f.a, creativescene.BakeInput{DocumentID: doc, RunID: "ccrn_agent", ToolCallID: "step-2", BasedOn: based,
+		Code: pillarCode, Params: map[string]any{"height": 3}, Replace: &creativescene.ReplaceTarget{ObjectID: id}}); err != nil {
+		t.Fatalf("replacing an import: %v", err)
+	}
+}

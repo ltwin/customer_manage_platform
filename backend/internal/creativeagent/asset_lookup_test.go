@@ -963,4 +963,18 @@ func TestToolsSayHowToFindAndPlaceModels(t *testing.T) {
 	if !strings.Contains(edit.Desc, "kind:model") || !strings.Contains(edit.Desc, "materials 原样写进 material_slots") || !strings.Contains(edit.Desc, "可放多个实例") {
 		t.Fatal("edit_scene does not say how to place a library model")
 	}
+	// Imported models, emissive textures and vertex colours (scene-glb-import).
+	if !strings.Contains(edit.Desc, "imported 为 true") || !strings.Contains(edit.Desc, "emissive（自发光") || !strings.Contains(edit.Desc, "vertex_color 为 true") {
+		t.Fatal("edit_scene does not say what an imported model, an emissive texture or vertex_color is")
+	}
+	for _, name := range []string{readSceneTool, writeModelTool} {
+		info, err := (&sceneTool{name: name}).Info(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(info)
+		if err != nil || !strings.Contains(string(raw), "导入的模型") {
+			t.Fatalf("%s does not say an imported model has no code: %v", name, err)
+		}
+	}
 }

@@ -58,6 +58,23 @@ func TestModelFactsOfCompleteAndStagedForms(t *testing.T) {
 		t.Fatalf("baked brief %s %v", brief, err)
 	}
 
+	// An imported model has no parameters, and says where it came from.
+	imported := creativecontent.Payload{Model: json.RawMessage(`{"format":"glb","manifest":{"triangles":12},"generator":{"language":"imported","mount":"wall"},
+ "import":{"file_name":"lantern.glb","source_url":"https://example.com/lantern"},"materials":{}}`)}
+	lantern, ok := creativecontent.ModelFactsOf(imported)
+	if !ok || !lantern.Imported || lantern.Mount != "wall" || string(lantern.Import) != `{"file_name":"lantern.glb","source_url":"https://example.com/lantern"}` {
+		t.Fatalf("imported model %+v", lantern)
+	}
+	if raw, err := json.Marshal(lantern); err != nil || !strings.Contains(string(raw), `"params_schema":{},"params":{}`) {
+		t.Fatalf("imported facts %s %v", raw, err)
+	}
+	if brief, err := json.Marshal(lantern.Brief()); err != nil || !strings.Contains(string(brief), `"imported":true`) || !strings.Contains(string(brief), `"params":[]`) {
+		t.Fatalf("imported brief %s %v", brief, err)
+	}
+	if raw, _ := json.Marshal(plain); strings.Contains(string(raw), "imported") {
+		t.Fatalf("a baked model says imported: %s", raw)
+	}
+
 	staged := creativecontent.Payload{Model: json.RawMessage(`{"format":"glb","manifest":{"triangles":12}}`)}
 	if _, ok := creativecontent.ModelFactsOf(staged); ok {
 		t.Fatal("staged form read as complete")

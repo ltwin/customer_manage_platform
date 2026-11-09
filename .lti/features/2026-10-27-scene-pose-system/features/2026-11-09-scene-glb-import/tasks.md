@@ -9,7 +9,7 @@
 
 - [x] 2.1 导入接口：新增 `creativescene/import.go:ImportModelToLibrary`，按 design「导入接口的校验与写入顺序」实现；`httpapi/creative_media.go` 加路由，`creative_documents.go` 让 `creative_upload_unavailable` 带 `details.upload_id`。先写测试：成功（载荷、持有关系、资产、上传均已消费）；每个失败分支各一例（400 ×3、404、409、413 ×2）；同一操作 ID 重放不建第二份，也不再消费上传
 - [x] 2.2 只属于资产库与派生：`ops_model.go:isLibraryCopy` 改为按 `materials` 判断（`isLibraryOwned`），`(*deriveModelOp).apply` 照抄 `Import`。先写测试：三种载荷的判断结果；导入的模型做面分配后得到新内容，仍是 `imported` 且带 `import`，资产不变（AC-10）
-- [ ] 2.3 助手与读取方：`jobs.go:CreateBakeJobInTx` 和 `agent.go` 的 `write_model` 遇到导入的 base 时拒绝；`include_code` 与模型视图带 `imported`；`creativecontent/model_facts.go:ModelFactsOf` 支持导入形态；`creativeagent/context.go` 的 `search_assets` 要点和 `read_asset` 附 `imported`、`import`；`scene_tools.go` 更新说明（导入的模型、自发光贴图、顶点色）。先写测试覆盖以上各处（AC-11）
+- [x] 2.3 助手与读取方：`jobs.go:CreateBakeJobInTx` 和 `agent.go` 的 `write_model` 遇到导入的 base 时拒绝；`include_code` 与模型视图带 `imported`；`creativecontent/model_facts.go:ModelFactsOf` 支持导入形态；`creativeagent/context.go` 的 `search_assets` 要点和 `read_asset` 附 `imported`、`import`；`scene_tools.go` 更新说明（导入的模型、自发光贴图、顶点色）。先写测试覆盖以上各处（AC-11）
 
 ## 3. 前端：类型与材质渲染
 

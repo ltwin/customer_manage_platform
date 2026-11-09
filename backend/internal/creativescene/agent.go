@@ -442,10 +442,12 @@ type LightView struct {
 }
 
 // ModelView is a placed model: its revision and what was baked, never its
-// code (read_scene's include_code asks for that).
+// code (read_scene's include_code asks for that). An imported model has
+// neither code nor parameters.
 type ModelView struct {
 	ContentRevisionID string                 `json:"content_revision_id"`
 	Usable            bool                   `json:"usable"`
+	Imported          bool                   `json:"imported,omitempty"`
 	NameHint          string                 `json:"name_hint,omitempty"`
 	Params            map[string]any         `json:"params,omitempty"`
 	ParamsSchema      map[string]paramSpec   `json:"params_schema,omitempty"`
@@ -504,7 +506,7 @@ func objectView(o Object, models map[string]placedModel, shadows map[string]stri
 		mv := &ModelView{ContentRevisionID: o.Model.ContentRevisionID}
 		if m, ok := models[o.Model.ContentRevisionID]; ok && m.usable {
 			bounds := m.payload.Manifest.Bounds
-			mv.Usable, mv.NameHint, mv.BoundsM = true, m.payload.NameHint, &bounds
+			mv.Usable, mv.NameHint, mv.BoundsM, mv.Imported = true, m.payload.NameHint, &bounds, m.payload.Generator.Imported()
 			mv.Params, mv.ParamsSchema = m.payload.Generator.Params, m.payload.Generator.ParamsSchema
 			mv.Triangles, mv.Slots = m.payload.Manifest.Triangles, m.payload.Faces.effectiveSlots(m.payload.Manifest.Slots)
 			if mv.UV = m.payload.Manifest.UV; mv.UV != nil && !*mv.UV {
@@ -638,7 +640,9 @@ func AgentReadInTx(ctx context.Context, tx store.TxAccountScope, in ReadInput) (
 		if !m.usable {
 			return SceneRead{}, modelUnavailable(id)
 		}
-		code[id] = m.payload.Generator.Code
+		if !m.payload.Generator.Imported() { // no code to give; its view says imported
+			code[id] = m.payload.Generator.Code
+		}
 	}
 	if out.ChangesSinceLastWrite, err = ChangesSinceInTx(ctx, tx, in.DocumentID, in.ConversationRuns); err != nil {
 		return SceneRead{}, err
@@ -667,6 +671,9 @@ func (r *SceneRead) fit(budget int, code map[string]string, order []string, all 
 	}
 	used += 320 // room for the brief flag, the omission count and the notes
 	for _, id := range order {
+		if _, ok := code[id]; !ok {
+			continue // an imported model, which has no code
+		}
 		n, err := size(map[string]string{id: code[id]})
 		if err != nil {
 			return err
