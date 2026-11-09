@@ -98,6 +98,7 @@ Create 和 Complete 各自使用客户端 operation_id，成功后保存各自�
 - 用途为 display、`image/*`、不超过 4 MB，且是画布实际展示的那一份（display / thumbnail 角色，或没有 display 规格的原图）时，响应为 `Cache-Control: private, max-age=<票据剩余秒数>, immutable`；其余（有 display 规格的原图、download、视频音频、大文件）保持 `private, no-store`。
 - 撤销语义随之放宽：已缓存的展示图在票据到期前（最长约 15 分钟）仍可从浏览器缓存显示；票据在 URL 里，缓存副本不会比授权更久，到期后的每次 GET 仍先授权。这与签名 URL 的业界常见语义一致。
 - 缓存只用浏览器 HTTP 缓存（容量与淘汰由浏览器管理），不另建 Cache Storage / IndexedDB，不额外占用站点存储配额。
+- 登出响应带 `Clear-Site-Data: "cache"`，清空本站 HTTP 缓存，共用电脑上的下一个人不继承上一账号看过的展示图（Safari 等不支持该头的浏览器仍按票据到期与 LRU 淘汰）。
 
 read pin 建议 120 秒有效、活跃读取每 30 秒续期；续期失败或授权失效时在 lease 到期前中断流，不能让活跃读取在无保留状态下无限持续。票据只用短期、日志脱敏，不包含长期 access token。读取票据与 pin 的精确存储由本模块拥有，实施时补齐身份/过期索引，不在正文或前端永久保存。
 

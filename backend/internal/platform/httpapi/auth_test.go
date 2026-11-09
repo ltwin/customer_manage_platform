@@ -637,6 +637,9 @@ func TestAuthSessionCookieAndErrorMatrix(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("missing-cookie logout status=%d", rec.Code)
 	}
+	if got := rec.Header().Get("Clear-Site-Data"); got != `"cache"` {
+		t.Fatalf("logout must clear the browser cache: Clear-Site-Data=%q", got)
+	}
 	cleared = requireRefreshCookie(t, rec)
 	if cleared.MaxAge >= 0 || !cleared.Expires.Before(fixture.now) {
 		t.Fatalf("logout did not clear cookie: max_age=%d expires=%s", cleared.MaxAge, cleared.Expires)

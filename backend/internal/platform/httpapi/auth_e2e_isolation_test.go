@@ -101,6 +101,9 @@ func TestAccountAccessHTTPPostgresE2EAndFullIsolation(t *testing.T) {
 	if logout.Code != http.StatusNoContent {
 		t.Fatalf("logout status=%d", logout.Code)
 	}
+	if got := logout.Header().Get("Clear-Site-Data"); got != `"cache"` {
+		t.Fatalf("logout must clear the browser cache: Clear-Site-Data=%q", got)
+	}
 	cleared := requireRefreshCookie(t, logout)
 	if cleared.MaxAge >= 0 || !cleared.Expires.Before(fixture.now) {
 		t.Fatal("logout did not clear refresh cookie")
