@@ -111,6 +111,7 @@ func (s *Service) workRun(ctx context.Context, scope store.AccountScope, request
 	attemptCtx, cancelAttempt := context.WithCancel(ctx)
 	defer cancelAttempt()
 	stop := s.renewLease(attemptCtx, scope, held, cancelAttempt)
+	stopWatch := s.watchCancel(attemptCtx, scope, held, cancelAttempt)
 	var source *string
 	queryErr := scope.QueryRow(attemptCtx, "creative_agent_runs", "source_run_id", "id=$2", held.RunID).Scan(&source)
 	var outcome turnOutcome
@@ -122,6 +123,7 @@ func (s *Service) workRun(ctx context.Context, scope store.AccountScope, request
 	} else {
 		outcome, turnErr = s.executeWithCompaction(attemptCtx, scope, held)
 	}
+	stopWatch()
 	stop()
 	// The run reaches a terminal state inside the attempt that claimed it. The
 	// turn's error is recorded there rather than returned, because returning it

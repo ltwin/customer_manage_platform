@@ -7,8 +7,8 @@
 
 ## 2. worker 及时中断（后端）
 
-- [ ] 2.1 先写 `cancel_watch_test.go`：流式中取消后 2 秒内供应商 ctx 被取消；nil、立即报错、阻塞到 ctx 取消三种 notifier 下模型调用照常发出、取消后由续租兜底、attempt 结束后监听协程退出。确认是红的
-- [ ] 2.2 新增 `cancel_watch.go:watchCancel`（异步订阅、500ms 限流、2s 查询超时）；`service.go` 加 `notifier` 字段与 `SetNotifier`；`execute.go:workRun` 与 `renewLease` 并列启停监听；`cmd/creative-worker/main.go` 注入 `db`。2.1 变绿，`make check-go PKG=./internal/creativeagent/...` 通过
+- [x] 2.1 先写 `cancel_watch_test.go`：流式中取消后 2 秒内供应商 ctx 被取消；nil、立即报错、阻塞到 ctx 取消三种 notifier 下模型调用照常发出、取消后由续租兜底、attempt 结束后监听协程退出。确认是红的
+- [x] 2.2 新增 `cancel_watch.go:watchCancel`（异步订阅、500ms 限流、2s 查询超时）；`service.go` 加 `notifier` 字段与 `SetNotifier`；`execute.go:workRun` 与 `renewLease` 并列启停监听；`cmd/creative-worker/main.go` 注入 `db`。2.1 变绿，`make check-go PKG=./internal/creativeagent/...` 通过
 
 ## 3. 契约文字与生成物
 
