@@ -22,4 +22,4 @@
 
 ## 5. 文档
 
-- [ ] 5.1 更新 `docs/dev/creative-agent.md` 的 CancelRun 段、`docs/product/creative-canvas-system/modules/harness.md` §5、`agent-api-events.md` 的 cancel / close-reconciliation 两行，与新语义一致；相对链接检查通过
+- [x] 5.1 更新 `docs/dev/creative-agent.md` 的 CancelRun 段、`docs/product/creative-canvas-system/modules/harness.md` §5、`agent-api-events.md` 的 cancel / close-reconciliation 两行，与新语义一致；相对链接检查通过

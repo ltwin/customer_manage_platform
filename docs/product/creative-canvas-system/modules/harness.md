@@ -108,7 +108,7 @@ run默认5分钟、最多12工具调用和13模型轮次；只读调用、Skill�
 
 Gateway将unknown核实为未受理并返回prepared/retry_eligible后，Harness沿用原model step、call_operation及request恢复prepared步骤，再尝试Rearm；不生成下一模型轮次，也不把永久failed当可恢复。额度被其他调用占用则保存waiting_input及预算原因，无新attempt；明确继续或到期按原状态机处理。
 
-同run接管遵循slot/run epoch：救援不能仅因lease过期把slot给另一run；先识别prepared/已提交工具/unknown模型，再queued或reconciling。取消事务立即失效epoch，未知供应商结果仍核实，deadline或“结束等待”后释放slot，Gateway继续对账。消息/SSE连接断开不取消运行。
+同run接管遵循slot/run epoch：救援不能仅因lease过期把slot给另一run；先识别prepared/已提交工具/unknown模型，再queued或reconciling。取消事务立即失效epoch并结束运行、释放slot，即使仍有未知供应商结果；未知费用保留并由Gateway在后台核实，worker经运行通知及时中断模型调用（owner 2026-11-10）。未被停止的unknown仍为reconciling，deadline或“结束等待”后释放slot。消息/SSE连接断开不取消运行。
 
 终态重试只承接已有步骤，详见[data-model恢复契约](../data-model.md#7-agent-会话运行和工具回执)：成功回执只展示；可证实未执行且在恢复窗口的步骤复用原operation与输入；未知必须先核实。创建新任务与恢复是不同动作。复制已生成文字为新节点是明确新编辑，不是假称恢复旧operation。
 
