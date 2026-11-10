@@ -3,26 +3,7 @@ import { Box, Camera, Cloud, Eye, EyeOff, Folder, Lightbulb, Lock, LockOpen, Sha
 import type { SceneObject } from '../api.ts'
 import { canDrop, draggedObjects, type DropPlace } from '../grouping.ts'
 import type { Selection } from '../input/selection.ts'
-
-type Row = { object: SceneObject; depth: number }
-
-/** The object tree in sibling order, flattened for display. */
-function rows(objects: readonly SceneObject[]): Row[] {
-  const byParent = new Map<string, SceneObject[]>()
-  for (const o of objects) {
-    const key = o.parent_id ?? ''
-    byParent.set(key, [...(byParent.get(key) ?? []), o])
-  }
-  const out: Row[] = []
-  const walk = (parent: string, depth: number) => {
-    for (const o of (byParent.get(parent) ?? []).sort((a, b) => a.order - b.order)) {
-      out.push({ object: o, depth })
-      walk(o.id, depth + 1)
-    }
-  }
-  walk('', 0)
-  return out
-}
+import { outlineRows } from '../outlineRows.ts'
 
 const icon = { primitive: Box, model_instance: Shapes, light: Lightbulb, camera: Camera, group: Folder, volume: Cloud } as const
 
@@ -56,7 +37,7 @@ export function Outliner({
   /** Rows dropped before, after or inside another row: a reparent keeping world positions. */
   onDrop: (moving: string[], target: string, place: DropPlace) => void
 }) {
-  const list = useMemo(() => rows(objects), [objects])
+  const list = useMemo(() => outlineRows(objects), [objects])
   const order = list.map((r) => r.object.id)
   const [moving, setMoving] = useState<string[] | null>(null)
   const [over, setOver] = useState<{ id: string; place: DropPlace } | null>(null)

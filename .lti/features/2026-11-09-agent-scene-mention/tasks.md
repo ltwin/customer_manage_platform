@@ -20,7 +20,7 @@
 ## 4. 物件列表与菜单搜索
 
 - [x] 4.1 实测 U1（开发库物件最多的场景，`readScene` 响应体积与耗时），结论记入 design 未决事项；超出假设则停下修订 design
-- [ ] 4.2 抽出 `creative-scene/outlineRows.ts`，`Outliner` 改用且行为不变；新增 `scenePickerModel.ts`（单击 / 修饰键 / Shift 范围 / 拖选区间、搜索保留上级、清空搜索保留选中）；`scene-picker.test.ts` 通过
+- [x] 4.2 抽出 `creative-scene/outlineRows.ts`，`Outliner` 改用且行为不变；新增 `scenePickerModel.ts`（单击 / 修饰键 / Shift 范围 / 拖选区间、搜索保留上级、清空搜索保留选中）；`scene-picker.test.ts` 通过
 - [ ] 4.3 `ScenePicker.tsx` 接入 `PromptEditor` 的场景展开（首行「整个场景」、拖选 `setPointerCapture` + 边缘自动滚动），点场景 chip 重新编辑时生成新键并用 `execCommand('insertHTML')` 替换；`generation.css` 补样式
 - [ ] 4.4 `@` 菜单顶部搜索框（与 `query` 同步）、按「场景 / 图片 / 文本」分组、`highlighted` 节点排前、最大高度 320px；`make check-frontend` 通过
 
