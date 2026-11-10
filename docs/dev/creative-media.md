@@ -44,7 +44,7 @@
 
 3D 场景的代码模型（契约 `data: 模型内容`）沿用同一条上传链路，只多一种类型：
 
-- **上传类型 `model`**：`.glb`、`model/gltf-binary`、上限 16 MiB，只允许 `staged` 目标。`Formats` 不列出它，文件选择和拖入都不会出现模型；只有编辑器在烘焙后程序内上传（`frontend/src/creative-canvas/editor/media.ts:uploadGenerated`）。
+- **上传类型 `model`**：`.glb`、`model/gltf-binary`、上限 200 MiB，只允许 `staged` 目标。`Formats` 不列出它，文件选择和拖入都不会出现模型；只有编辑器在烘焙后程序内上传（`frontend/src/creative-canvas/editor/media.ts:uploadGenerated`）。
 - **校验**：`workVerify` 调用 `creativeglb.Inspect`，只接受静态 GLB 子集，manifest 从顶点数据算出并核对访问器声明；不合规以 `media_unsupported` 结束。通过后修订载荷是暂存形态 `{format, manifest}`，由暂存候选持有。
 - **去向**：暂存候选不能被采用到资产或节点（`AdoptCandidate` 拒绝 `declared_kind = 'model'`），只能被场景命令 `commit_model` 消费（`creativestaging.Consume`，`adopted_target_kind = 'document'`）。完整形态 `{format, generator, manifest, name_hint}` 只由 `commit_model` 经 `creativecontent.WriteModelAndRetain` 写入，复用暂存修订的 blob：GLB 为 `original`，缩略图 PNG（同一命令里的另一个暂存图片上传）为 `thumbnail`。
 - **票据**：角色加 `thumbnail`；编辑器按修订取 `original` 票据下载 GLB，加载前同样先过宿主侧的子集预检。

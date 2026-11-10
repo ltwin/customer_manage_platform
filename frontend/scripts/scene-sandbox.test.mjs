@@ -299,10 +299,10 @@ export default function build() { for (;;) {} }
 const memoryBomb = `export const mount = 'free'
 export default function build() { const keep = []; for (;;) keep.push(new Float64Array(1 << 24)) }
 `
-// 3 million triangles: the Worker refuses to send a GLB over 16 MiB.
+// 6 million triangles: the Worker refuses to send a GLB over 200 MiB.
 const hugeOutput = `export const mount = 'free'
 export default function build({ THREE, lib }) {
-  const p = new Float32Array(3000000 * 9)
+  const p = new Float32Array(6000000 * 9)
   for (let i = 0; i < p.length; i++) p[i] = (i % 7) * 0.01
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.BufferAttribute(p, 3))
@@ -314,7 +314,7 @@ const manyTriangles = `export const mount = 'free'
 export default function build({ THREE, lib }) {
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3))
-  g.setIndex(new THREE.BufferAttribute(new Uint32Array(300001 * 3).fill(0).map((_, i) => i % 3), 1))
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(2000001 * 3).fill(0).map((_, i) => i % 3), 1))
   return new THREE.Mesh(g, lib.material('a'))
 }
 `
@@ -411,7 +411,7 @@ for (const name of browsers) {
       const bomb = await compile(memoryBomb)
       assert.ok(!bomb.ok && ['runtime', 'timeout'].includes(bomb.error.kind), JSON.stringify(bomb))
       const huge = await compile(hugeOutput)
-      assert.deepEqual(huge.error, { kind: 'limit', message: 'GLB 超过 16 MiB' })
+      assert.deepEqual(huge.error, { kind: 'limit', message: 'GLB 超过 200 MiB' })
       const many = await compile(manyTriangles)
       assert.equal(many.error?.kind, 'limit', JSON.stringify(many))
 

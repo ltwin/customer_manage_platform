@@ -77,7 +77,7 @@ func TestFacesShapeErrors(t *testing.T) {
 		"slot without ranges": one(mesh(`[["",0]]`, `{"a":[]}`)),
 		"range of three":      one(mesh(`[["",0]]`, `{"a":[[0,1,2]]}`)),
 		"empty range":         one(mesh(`[["",0]]`, `{"a":[[3,3]]}`)),
-		"range past limit":    one(mesh(`[["",0]]`, `{"a":[[0,300001]]}`)),
+		"range past limit":    one(mesh(`[["",0]]`, `{"a":[[0,2000001]]}`)),
 		"unsorted ranges":     one(mesh(`[["",0]]`, `{"a":[[4,5],[0,1]]}`)),
 		"overlap across":      one(mesh(`[["",0]]`, `{"a":[[0,4]],"b":[[3,6]]}`)),
 		"too many ranges":     one(mesh(`[["",0]]`, `{"a":[`+strings.Join(manyRanges, ",")+`]}`)),

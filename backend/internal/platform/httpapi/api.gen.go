@@ -8238,7 +8238,7 @@ type CreativeUploadCompletePayload struct {
 type CreativeUploadCreatePayload struct {
 	FileName string `json:"file_name"`
 
-	// Kind model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
+	// Kind model（model/gltf-binary，≤ 200 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
 	Kind CreativeUploadCreatePayloadKind `json:"kind"`
 	Mime string                          `json:"mime"`
 
@@ -8248,7 +8248,7 @@ type CreativeUploadCreatePayload struct {
 	Target CreativeUploadTarget   `json:"target"`
 }
 
-// CreativeUploadCreatePayloadKind model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
+// CreativeUploadCreatePayloadKind model（model/gltf-binary，≤ 200 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
 type CreativeUploadCreatePayloadKind string
 
 // CreativeUploadDetails creative_upload_unavailable 指出不可用的那个暂存上传。

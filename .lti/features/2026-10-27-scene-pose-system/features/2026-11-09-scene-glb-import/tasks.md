@@ -30,3 +30,9 @@
 - [x] 5.1 大文件实测：用 10 / 50 / 150 MB 的素材记录各阶段耗时；单个阶段卡顿超过 1 秒时，把 parse、convert、write 移进 worker。结论写回 design 未决事项
 - [x] 5.2 （owner 2026-11-09 决定跳过，延后处理，见下方说明）owner 验收材料：准备 3–4 个公开授权素材（带贴图道具、贴图变换、顶点色、透明叶片）和一份 `.blend` 对照场景（同一相机、太阳加均匀环境光、手动曝光、AgX），把本项目三处截图与 Blender 截图放进 `discovery/research/`；统计角色加布景用到的不同图片张数（AC-14）。请 owner 判断 AC-1、AC-5、AC-6，并决定 64 张上限，结论写回 Epic 未决事项
      - **跳过（owner 2026-11-09）**：这台机器没有 Blender，owner 决定本次跳过 5.2，先验收收尾。AC-1、AC-5、AC-6 的 Blender 对照，AC-14 的图片张数统计，以及 64 张上限的决定，都留到之后。已选好的对照素材：Poly Haven `industrial_wall_lamp`（CC0）、Khronos `TextureTransformTest`（CC0）、`VertexColorTest`、`AlphaBlendModeTest`（CC-BY 4.0）。四个文件都已通过前端预检和换算
+
+## 6. 模型预算放宽（Epic 修订 v5，owner 2026-11-09）
+
+- [x] 6.1 后端：`creativeglb.DefaultLimits` 改为 GLB ≤ 200 MiB、三角形 ≤ 2000000（上传上限随它）；面级材质分配区间端点上限、助手 `write_model` 工具说明里的「三角面 ≤30 万」同步；OpenAPI 的 manifest `triangles`、面级材质区间端点最大值和上传 `kind: model` 的说明改掉，`make generate`
+- [x] 6.2 前端：`inspect` 的 `defaultLimits`、沙箱 `MAX_GLB_BYTES` 与「GLB 超过 16 MiB」提示同步；沙箱超限用例改成超过 200 MiB 的输出；`docs/dev/creative-media.md` 的上传上限
+- [ ] 6.3 实测：一个接近上限（约 200 万三角形）的导入模型，记录换算与上传、视口首帧和交互、路径追踪建层的耗时，结果写进 design 并给 owner 看

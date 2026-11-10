@@ -1,12 +1,12 @@
 {
   "uid": "e1eb0660-2356-492d-ab1b-e03a0fe032dc",
-  "revision": 7,
+  "revision": 8,
   "id": "scene-glb-import",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-pose-system",
   "designBinding": {
-    "version": 4,
+    "version": 5,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -20,18 +20,20 @@
       "data:场景文档",
       "data:模型内容",
       "data:模型资产",
-      "api:导入模型到资产库"
+      "api:导入模型到资产库",
+      "patterns:几何模块契约"
     ],
     "delivers": [
       "data:场景文档",
       "data:模型内容",
       "data:模型资产",
-      "api:导入模型到资产库"
+      "api:导入模型到资产库",
+      "patterns:几何模块契约"
     ]
   },
   "state": "in-progress",
   "createdAt": "2026-11-09T11:50:51.501Z",
-  "updatedAt": "2026-11-10T04:01:44.380Z",
+  "updatedAt": "2026-11-10T04:14:50.585Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -39,19 +41,21 @@
       "broad-impact"
     ]
   },
-  "approvals": {
-    "proposal": {
+  "approvals": {},
+  "approvalHistory": [
+    {
       "by": "samson",
       "at": "2026-11-09T12:04:18.509Z",
-      "contentHash": "dff53a8053dc9cb6"
+      "contentHash": "dff53a8053dc9cb6",
+      "role": "proposal"
     },
-    "design": {
+    {
       "by": "samson",
       "at": "2026-11-09T12:04:18.509Z",
-      "contentHash": "d3af65e76f013107"
+      "contentHash": "d3af65e76f013107",
+      "role": "design"
     }
-  },
-  "approvalHistory": [],
+  ],
   "revisions": [],
   "baseline": {
     "commit": "60faf9808985ede8ce45c95ac047a32f1da67891",

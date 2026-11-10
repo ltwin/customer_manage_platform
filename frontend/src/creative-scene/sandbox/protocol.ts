@@ -7,7 +7,7 @@ import type { components } from '../../api/schema'
 export const CONTRACT_VERSION = 1
 export const LIB_VERSIONS: readonly number[] = [1]
 export const MAX_CODE_BYTES = 64 * 1024
-export const MAX_GLB_BYTES = 16 * 1024 * 1024
+export const MAX_GLB_BYTES = 200 * 1024 * 1024
 export const MAX_ERROR_CHARS = 2000
 export const COMPILE_TIMEOUT_MS = 5000
 export const SANDBOX_PAGE = '/scene-sandbox/sandbox.html'

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"sort"
@@ -162,7 +163,7 @@ func checkFaceAssign(assign map[string][][]int, used map[string]bool) (int, erro
 		}
 		for i, r := range ranges {
 			if len(r) != 2 || r[0] < 0 || r[0] >= r[1] || r[1] > creativeglb.DefaultLimits().MaxTriangles {
-				return 0, errors.New("区间须为 [start, end)，0 ≤ start < end ≤ 300000")
+				return 0, fmt.Errorf("区间须为 [start, end)，0 ≤ start < end ≤ %d", creativeglb.DefaultLimits().MaxTriangles)
 			}
 			if i > 0 && r[0] < ranges[i-1][0] {
 				return 0, errors.New("同一槽位的区间须升序")

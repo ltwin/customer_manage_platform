@@ -7774,7 +7774,7 @@ components:
               type: array
               minItems: 2
               maxItems: 2
-              items: {type: integer, minimum: 0, maximum: 300000}
+              items: {type: integer, minimum: 0, maximum: 2000000}
     CreativeModelManifest:
       type: object
       additionalProperties: false
@@ -7788,7 +7788,7 @@ components:
           properties:
             min: {type: array, minItems: 3, maxItems: 3, items: {type: number}}
             max: {type: array, minItems: 3, maxItems: 3, items: {type: number}}
-        triangles: {type: integer, minimum: 1, maximum: 300000}
+        triangles: {type: integer, minimum: 1, maximum: 2000000}
         slots:
           type: array
           maxItems: 32
@@ -17250,7 +17250,7 @@ components:
       required: [file_name, kind, mime, size, target]
       properties:
         file_name: {type: string, minLength: 1, maxLength: 255}
-        kind: {type: string, enum: [image, video, audio, model], description: "model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表"}
+        kind: {type: string, enum: [image, video, audio, model], description: "model（model/gltf-binary，≤ 200 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表"}
         mime: {type: string}
         size: {type: integer, format: int64, minimum: 1}
         rights: {$ref: "#/components/schemas/CreativeContentRights"}

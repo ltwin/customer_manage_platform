@@ -41,8 +41,8 @@ export type Limits = {
 }
 
 export const defaultLimits: Readonly<Limits> = Object.freeze({
-  maxBytes: 16 * 1024 * 1024,
-  maxTriangles: 300000,
+  maxBytes: 200 * 1024 * 1024,
+  maxTriangles: 2000000,
   maxNodes: 10000,
   maxPrimitiveInstances: 10000,
   maxSlots: 32,

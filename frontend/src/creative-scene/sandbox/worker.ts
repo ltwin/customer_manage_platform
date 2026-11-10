@@ -89,7 +89,7 @@ async function compile(request: CompileRequest): Promise<CompileResultMessage> {
       throw new CompileFailure(compileError('runtime', '导出结果不是 GLB'))
     }
     if (glb.byteLength > MAX_GLB_BYTES) {
-      throw new CompileFailure(compileError('limit', 'GLB 超过 16 MiB'))
+      throw new CompileFailure(compileError('limit', 'GLB 超过 200 MiB'))
     }
     return { type: 'result', id, ok: true, glb, module: { ...info, params } }
   } catch (err) {

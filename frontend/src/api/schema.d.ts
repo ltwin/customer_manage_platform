@@ -8295,7 +8295,7 @@ export interface components {
         CreativeUploadCreatePayload: {
             file_name: string;
             /**
-             * @description model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
+             * @description model（model/gltf-binary，≤ 200 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
              * @enum {string}
              */
             kind: "image" | "video" | "audio" | "model";

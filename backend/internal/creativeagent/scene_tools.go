@@ -161,7 +161,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"代码是只有 export 的 ES 模块：export const params = {h: {type:'number', default:6, min:2, max:20, unit:'m', label:'高度'}}（number|integer|boolean|enum(options)|color，≤32 项）；" +
 				"export const mount = 'floor'（floor 原点在底面中心，wall 背面底边中心，ceiling 顶面中心，free 几何中心）；export default function build({params, THREE, lib, rng}) {…; return group}。" +
 				sceneConventions + "只能是三角网格；材质只用 lib.material(slot, hint)（hint 如 stone、wood），不用纹理和着色器。lib：subtract/union/intersect(a,b)、extrude(shape,depth,{bevel})、lathe(points,segments)、array(obj,count,[x,y,z])、radial(obj,count,radius,axis)；rng() 是确定性随机数。" +
-				"对象名 part:<id> 是部件，空对象 anchor:<id> 是挂点。代码 ≤64 KiB，编译 ≤5 秒，三角面 ≤30 万。" +
+				"对象名 part:<id> 是部件，空对象 anchor:<id> 是挂点。代码 ≤64 KiB，编译 ≤5 秒，三角面 ≤200 万。" +
 				"视口流畅度取决于场景里的物件数和每个模型的材质槽数，与三角面关系不大：同一槽位的零件渲染时会自动合并，不必为了性能减少分段数或零件。" +
 				"只改参数时给 base_content_revision_id 代替 code；导入的模型（imported）没有代码，不能作 base_content_revision_id，只能换材质或摆放，整个替换照常可以。被多个实例共用的模型：scope=this 只改这一个（分出新模型），all_instances 一起改。" +
 				"烘焙期间目标被改过时返回 conflict 和 retry_job_id：单独传它、新基线和 target 即可写入，不重新编译。",
