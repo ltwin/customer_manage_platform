@@ -36,6 +36,7 @@ type ImportModelInput struct {
 	Mount             string                       `json:"mount,omitempty"`
 	Import            ModelImport                  `json:"import"`
 	Materials         map[string]MaterialSlot      `json:"materials"`
+	Rig               *Rig                         `json:"rig,omitempty"`
 	Target            creativelibrary.ImportTarget `json:"target"`
 }
 
@@ -103,6 +104,13 @@ func ImportModelToLibrary(ctx context.Context, scope store.AccountScope, c creat
 			staged, ok := decodeModelPayload(glbStaged.Payload.Model)
 			if !ok || staged.Generator != nil {
 				return creativeops.Outcome{}, &UploadUnavailableError{UploadID: in.GLBUploadID}
+			}
+			// The browser found the rig; it holds only against the skeleton
+			// the server computed (design「服务端的骨架与 rig 校验顺序」).
+			if in.Rig != nil {
+				if err := in.Rig.Validate(staged.Manifest.Skeleton); err != nil {
+					return creativeops.Outcome{}, err
+				}
 			}
 			slots := slotIDs(staged.Manifest)
 			for _, name := range slices.Sorted(maps.Keys(in.Materials)) {
@@ -189,7 +197,7 @@ func writeImport(ctx context.Context, tx store.TxAccountScope, in ImportModelInp
 	hint := []rune(in.Target.Title)
 	hint = hint[:min(len(hint), maxNameHintRunes)]
 	imp := in.Import
-	payload, err := json.Marshal(ModelPayload{Format: "glb", Generator: &Generator{Language: languageImported, Mount: in.Mount}, Manifest: manifest, NameHint: string(hint), Materials: in.Materials, Import: &imp})
+	payload, err := json.Marshal(ModelPayload{Format: "glb", Generator: &Generator{Language: languageImported, Mount: in.Mount}, Manifest: manifest, NameHint: string(hint), Materials: in.Materials, Import: &imp, Rig: in.Rig})
 	if err != nil {
 		return creativelibrary.AssetResult{}, err
 	}

@@ -78,6 +78,12 @@ func TestCreativeAssetFromGLBHTTP(t *testing.T) {
 	if !strings.Contains(bad.Body.String(), `"field":"materials.nope"`) {
 		t.Fatalf("not a slot names no field: %s", bad.Body.String())
 	}
+	// A rig on a GLB without bones: the reason comes with the field.
+	rig := post(func(p map[string]any) { p["rig"] = map[string]any{} })
+	want("rig without skeleton", rig, 400, "validation_failed")
+	if !strings.Contains(rig.Body.String(), `"field":"rig"`) || !strings.Contains(rig.Body.String(), `"reason":"no_skeleton"`) {
+		t.Fatalf("rig without skeleton: %s", rig.Body.String())
+	}
 	want("image unavailable", post(func(p map[string]any) {
 		p["materials"] = map[string]any{slot: map[string]any{"preset": "principled@1", "params": map[string]any{}, "maps": map[string]any{"base_color": map[string]any{"content_revision_id": "ccrv_missing"}}}}
 		p["texture_upload_ids"] = []string{}

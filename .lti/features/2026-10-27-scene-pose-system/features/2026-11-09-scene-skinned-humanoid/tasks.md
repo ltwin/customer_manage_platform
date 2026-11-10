@@ -5,12 +5,12 @@
 - [x] 1.1 OpenAPI：`CreativeModelManifest` 加 `skeleton`；`CreativeModelPayload`、`CreativeModelPreviewPayload`、`CreativeSceneModel` 加 `rig`；`CreativeSceneModelRef` 改为 `content_revision_id` / `builtin` 二选一；`CreativeSceneSetInstanceModel` 的 `model` 加 `builtin`，并加可选的 `material_slots`；`CreativeAssetFromGLBPayload` 加 `rig`；`/creative/scene-models/{file}` 路径随 2.1 的 handler 一起加；`CreativeFieldDetails` 加可选的 `reason`；`/creative/scene-textures/{file}` 的 pattern 与媒体类型。运行 `make generate`。完成判据：`go build ./...` 与前端 `tsc -b` 通过，读模型引用的前端调用点先按类型收窄（界面留给 5.1）
 - [x] 1.2 `creativeglb` 的蒙皮子集：先写测试，蒙皮子集的每条规则各一个反例（joint 越界或不在场景树、缺逆绑定矩阵、带 skin 的节点没有 mesh、网格同时被带 skin 与不带 skin 的节点引用、`JOINTS_0` 越界、权重越界或和不为 1、`JOINTS_1`、关节超限）；根节点带旋转、网格节点自身带变换时，蒙皮包围盒与手算结果一致；`Skeleton` 的并集、父关节和 `s1` 指纹；`Matches` 比对骨架。然后实现 `skin.go`，修改 `glb.go`；前端 `sandbox/inspect.ts` 同步镜像（共用 `testdata/cases.json`，两侧须同时通过，故从 4.1 提前）。现有 `creativeglb` 测试与 `scripts/creative-scene-model.test.ts` 全绿
 - [x] 1.3 `creativescene/rig.go` 与共用测试向量 `testdata/humanoid_rig.json`（`Makefile` 的 `generate` / `generate-check` 复制到前端）。向量覆盖：穿刺①的五个角色与两个素体的骨架；缺必需骨骼；重复映射；脚挂在控制骨下；可选骨骼越级；约束的源不是关节；源越界；父级受约束的 aim；成环。先写读向量的 Go 测试，再实现 `Validate`。向量由暂存区脚本从原文件抽取骨架后生成，每例给 `valid` 与第一条问题的 `field`、`reason`（`unknown_bone` / `missing_required` / `not_joint` / `duplicate_node` / `hierarchy` / `invalid` / `limit` / `source_is_node` / `cycle`）；`creativeops.FieldError` 加 `Reason`，`abortFieldError` 填 `details.reason`
-- [ ] 1.4 模型命令与导入：
+- [x] 1.4 模型命令与导入：
   - `import.go` 收 `rig`，按 design「服务端的骨架与 `rig` 校验顺序」复核。
   - `commitModelOp` 拒绝带骨架的 GLB。
   - `deriveModelOp` 照抄 `Rig`，并拒绝带骨架的来源。
-  - `library.go` 的库副本照抄 `Rig`。
-  - `setInstanceModelOp` 接受 `builtin` 与 `material_slots`（整体替换）。
+  - `library.go` 的库副本照抄 `Rig`（库副本原样复制载荷，无需改代码，只补测试）。
+  - `setInstanceModelOp` 接受 `material_slots`（整体替换，与 `update_objects` 同样只校验外形与贴图）；`builtin` 的解析依赖 2.1 的清单，随 2.2 的 `validateModelRef` / `targets` 一起做。
   - 先写测试，每个分支各一例（含 AC-4 的 400 与 AC-10）。
 
 ## 2. 后端：内置模型
@@ -28,6 +28,7 @@
   - `validateModelRef`、`modelRefs`、`readModels`、`opEnv.resolve`、`setInstanceModelOp.targets` 认得 `builtin`。
   - 有效槽位取清单的 manifest（`materials.go`）。
   - `faces.go`、`jobs.go`、`library.go`、`agent.go` 的 `write_model` 对内置模型拒绝；`ModelView` 带 `builtin`。
+  - `set_instance_model` 的 `builtin`（从 1.4 移来）；助手路径（`resolveSlots`）核对 `set_instance_model.material_slots` 的槽位名属于新模型。
   - 助手：`builtinSearch` 支持 `kind: model`，并过滤 `listed: false`；`readBuiltinAsset` 支持内置模型；`edit_scene` 的说明与 schema 更新；`editScene` 遇到内置模型而没写材质时补上条目的 `materials`（添加和换模型都补）。
   - 先写测试：AC-9、AC-11（现有指纹测试不变，没有内置模型的场景指纹不变），以及以上各个拒绝分支。
 

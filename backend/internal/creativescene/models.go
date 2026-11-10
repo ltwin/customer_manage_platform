@@ -115,6 +115,8 @@ type ModelImport struct {
 // A library copy, written only by SaveModelToLibrary, also carries the
 // instance's materials and the revision it was copied from; an imported model,
 // written only by ImportModelToLibrary, its materials and where it came from.
+// Rig is a skinned model's humanoid mapping and constraints, only with a
+// manifest skeleton; every later revision copies it.
 type ModelPayload struct {
 	Format           string                  `json:"format"`
 	Generator        *Generator              `json:"generator,omitempty"`
@@ -124,6 +126,7 @@ type ModelPayload struct {
 	Materials        map[string]MaterialSlot `json:"materials,omitzero"`
 	SourceRevisionID string                  `json:"source_revision_id,omitempty"`
 	Import           *ModelImport            `json:"import,omitempty"`
+	Rig              *Rig                    `json:"rig,omitempty"`
 }
 
 func decodeModelPayload(raw json.RawMessage) (ModelPayload, bool) {
