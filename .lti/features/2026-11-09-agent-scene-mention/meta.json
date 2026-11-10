@@ -1,12 +1,12 @@
 {
   "uid": "98650d92-2da5-4025-97d7-f2b81ca459e1",
-  "revision": 3,
+  "revision": 4,
   "id": "agent-scene-mention",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-09T12:29:03.360Z",
-  "updatedAt": "2026-11-10T06:27:49.860Z",
+  "updatedAt": "2026-11-10T06:29:01.885Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -35,8 +35,19 @@
     }
   ],
   "revisions": [],
+  "baseline": {
+    "commit": "dc742a987bfe933ef9812486e4c7cce444bcb098",
+    "at": "2026-11-10T06:29:00.940Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "04a48b02f2b4ab02c4e3a72f4f40a7a1d2aeb6fe30d6c3ec1a18ec4983666045"
+    },
+    "preExisting": [
+      ".lti/snapshots/04a48b02f2b4ab02c4e3a72f4f40a7a1d2aeb6fe30d6c3ec1a18ec4983666045.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
