@@ -1,0 +1,20 @@
+Male: 52 standard bones mapped of 52; faces (0.00, -0.04, 1.00)
+  height hips 0.949 head 1.600 foot 0.086 (world units, metres)
+  hierarchy issues: none
+  T correction (left): leftUpperLeg 2.24°, leftLowerLeg 6.42°, leftUpperArm 1.73°, leftLowerArm 3.52°, leftHand 6.12°, leftHand roll 2.62°
+  worst limb direction 0.00°
+  T-pose back of left hand (index × little): (0.02, 1.00, -0.00)
+    fist Index: distal joint from knuckle (-0.020, -0.041, -0.009)
+    fist Middle: distal joint from knuckle (-0.021, -0.047, -0.010)
+    fist Ring: distal joint from knuckle (-0.020, -0.045, -0.008)
+    fist Little: distal joint from knuckle (-0.020, -0.040, -0.010)
+Female: 52 standard bones mapped of 52; faces (0.00, -0.06, 1.00)
+  height hips 0.932 head 1.550 foot 0.071 (world units, metres)
+  hierarchy issues: none
+  T correction (left): leftUpperLeg 5.95°, leftLowerLeg 8.17°, leftUpperArm 1.07°, leftLowerArm 2.73°, leftHand 4.65°, leftHand roll 3.96°
+  worst limb direction 0.00°
+  T-pose back of left hand (index × little): (0.03, 1.00, -0.00)
+    fist Index: distal joint from knuckle (-0.019, -0.041, -0.008)
+    fist Middle: distal joint from knuckle (-0.020, -0.046, -0.009)
+    fist Ring: distal joint from knuckle (-0.019, -0.044, -0.007)
+    fist Little: distal joint from knuckle (-0.018, -0.039, -0.009)
