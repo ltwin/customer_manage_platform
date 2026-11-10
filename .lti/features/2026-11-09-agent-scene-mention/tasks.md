@@ -21,15 +21,15 @@
 
 - [x] 4.1 实测 U1（开发库物件最多的场景，`readScene` 响应体积与耗时），结论记入 design 未决事项；超出假设则停下修订 design
 - [x] 4.2 抽出 `creative-scene/outlineRows.ts`，`Outliner` 改用且行为不变；新增 `scenePickerModel.ts`（单击 / 修饰键 / Shift 范围 / 拖选区间、搜索保留上级、清空搜索保留选中）；`scene-picker.test.ts` 通过
-- [ ] 4.3 `ScenePicker.tsx` 接入 `PromptEditor` 的场景展开（首行「整个场景」、拖选 `setPointerCapture` + 边缘自动滚动），点场景 chip 重新编辑时生成新键并用 `execCommand('insertHTML')` 替换；`generation.css` 补样式
-- [ ] 4.4 `@` 菜单顶部搜索框（与 `query` 同步）、按「场景 / 图片 / 文本」分组、`highlighted` 节点排前、最大高度 320px；`make check-frontend` 通过
+- [x] 4.3 `ScenePicker.tsx` 接入 `PromptEditor` 的场景展开（首行「整个场景」、拖选 `setPointerCapture` + 边缘自动滚动），点场景 chip 重新编辑时生成新键并用 `execCommand('insertHTML')` 替换；`generation.css` 补样式
+- [x] 4.4 `@` 菜单顶部搜索框（与 `query` 同步）、按「场景 / 图片 / 文本」分组、`highlighted` 节点排前、最大高度 320px；`make check-frontend` 通过
 
 ## 5. 待选引用
 
-- [ ] 5.1 `promptDOM` 新增 `pendingChip`，`readPromptDOM` 跳过 `[data-pending]`；`PromptEditorHandle` 新增 `setPending(id|null)` / `commitPending()`，编辑器有焦点时 `setPending` 不生效，聚焦时自动转正、光标停在其后
-- [ ] 5.2 `AgentPanel`：选中目标边沿检测（画布单选 / 编辑器选中集合，切换视图重置基线并移除待选）、`pendingKey` 计入发送资格、点发送先 `commitPending` 再经 `sendQueued` effect 调 `sendDraft`、删除 `SceneSelectionTag` 浮层；`WorkspacePage` 传 `canvasFocus` / `editingScene`；`make check-frontend` 通过
+- [x] 5.1 `promptDOM` 新增 `pendingChip`，`readPromptDOM` 跳过 `[data-pending]`；`PromptEditorHandle` 新增 `setPending(id|null)` / `commitPending()`，编辑器有焦点时 `setPending` 不生效，聚焦时自动转正、光标停在其后
+- [x] 5.2 `AgentPanel`：选中目标边沿检测（画布单选 / 编辑器选中集合，切换视图重置基线并移除待选）、`pendingKey` 计入发送资格、点发送先 `commitPending` 再经 `sendQueued` effect 调 `sendDraft`、删除 `SceneSelectionTag` 浮层；`WorkspacePage` 传 `canvasFocus` / `editingScene`；`make check-frontend` 通过
 
 ## 6. e2e 与收尾
 
-- [ ] 6.1 新增 `agent-scene-mention.e2e.mjs`（画布待选插入 / 替换 / 转正、选中没变不新增、空正文只有待选时发送、图片能力限制拦截、搜索 200 节点 < 100 ms、二级菜单多选与拖选、剪切→粘贴、删除→撤销、插入→撤销→重做、编辑→撤销），一次只跑一个用例；同时实测 U2（500 个物件列表帧耗时）并记入 design
+- [x] 6.1 新增 `agent-scene-mention.e2e.mjs`（画布待选插入 / 替换 / 转正、选中没变不新增、空正文只有待选时发送、图片能力限制拦截、搜索 200 节点 < 100 ms、二级菜单多选与拖选、剪切→粘贴、删除→撤销、插入→撤销→重做、编辑→撤销），一次只跑一个用例；同时实测 U2（500 个物件列表帧耗时）并记入 design
 - [ ] 6.2 改 `creative-scene-agent.e2e.mjs`：去掉浮层标签断言，改为编辑器选中 → 待选 chip → 正式 chip → `scene_ref`，并断言分批语序的 `instruction_segments`；逐个用例跑通

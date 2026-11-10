@@ -5,11 +5,13 @@ import {
 } from './promptReferences.ts'
 
 // 这棵子树由浏览器编辑器管理，React 不渲染它的子节点。
+// 待选引用（data-pending）不是正文：不读、不存、不发送。
 export function readPromptDOM(root: Node): string {
   let text = ''
   for (const child of Array.from(root.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) text += child.textContent ?? ''
     else if (child instanceof HTMLElement) {
+      if (child.dataset.pending !== undefined) continue
       if (child.dataset.ref) text += mentionToken(child.dataset.ref)
       else if (child.tagName === 'BR') text += '\n'
       else {
@@ -36,9 +38,11 @@ export function promptChip(
       ? '上传中'
       : ref.state === 'failed'
         ? '上传失败'
-        : ref.kind === 'text'
-          ? '文本参考 · 引用处展开为原文'
-          : `发送时记为 [${ref.label}]`
+        : ref.scene
+          ? sceneChipTitle(ref)
+          : ref.kind === 'text'
+            ? '文本参考 · 引用处展开为原文'
+            : `发送时记为 [${ref.label}]`
   if (ref.state) chip.classList.add(`is-${ref.state}`)
   const src = url || ref.thumbnail
   if (ref.state === 'uploading') {
@@ -54,14 +58,41 @@ export function promptChip(
   } else {
     const icon = document.createElement('span')
     icon.className = 'cc-mention-icon'
-    icon.textContent =
-      ref.kind === 'text' ? 'T' : ref.kind === 'video' ? '▷' : '▧'
+    icon.textContent = mentionIcon(ref.kind)
     chip.append(icon)
   }
   const label = document.createElement('span')
   label.className = 'cc-mention-title'
   label.textContent = ref.title
   chip.append(label)
+  return chip
+}
+
+export function mentionIcon(kind: string): string {
+  return kind === 'text'
+    ? 'T'
+    : kind === 'video'
+      ? '▷'
+      : kind === 'scene'
+        ? '◫'
+        : '▧'
+}
+
+function sceneChipTitle(ref: PromptReference): string {
+  const scene = ref.scene!
+  const names = scene.objectIDs.map((_, i) => scene.names[i] || '未命名')
+  return names.length
+    ? `${scene.title || '未命名场景'}：${names.join('、')} · 点击修改物件`
+    : `整个场景：${scene.title || '未命名场景'} · 点击选择物件`
+}
+
+// 置灰的待选引用：点进输入框后才转为正式引用。没有 data-ref，所以不进正文。
+export function pendingChip(ref: PromptReference, url?: string): HTMLSpanElement {
+  const chip = promptChip(ref, url)
+  delete chip.dataset.ref
+  chip.dataset.pending = ref.sourceID ?? ''
+  chip.classList.add('is-pending')
+  chip.title = '待选引用 · 点进输入框后加入'
   return chip
 }
 
@@ -125,6 +156,8 @@ export function restorePromptCaret(root: HTMLElement, offset: number) {
   const walk = (parent: Node) => {
     for (const child of Array.from(parent.childNodes)) {
       if (found) return
+      if (child instanceof HTMLElement && child.dataset.pending !== undefined)
+        continue
       const atomic = child instanceof HTMLElement && !!child.dataset.ref
       const length = atomic
         ? mentionToken(child.dataset.ref!).length

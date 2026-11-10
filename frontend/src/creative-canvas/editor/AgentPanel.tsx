@@ -69,8 +69,16 @@ import Picker, { type PickerOption } from './Picker.tsx'
 import {
   agentReferences,
   agentSegments,
+  maxSceneRefObjects,
+  maxSceneRefs,
   referencedMaterials,
   revisionText,
+  sceneCount,
+  sceneRefKey,
+  sceneReferences,
+  sceneRefsInOrder,
+  usedSceneRefs,
+  type SceneRefDraft,
   uploadReferences,
   type AgentMaterial,
 } from './agentReferences.ts'
@@ -128,11 +136,7 @@ import {
   type MessagePart,
   type Outgoing,
 } from './agentOutgoing.ts'
-import {
-  sceneContext,
-  selectedNames,
-} from '../../creative-scene/context.ts'
-import { SceneSelectionTag } from './AgentScene.tsx'
+import { sceneContext } from '../../creative-scene/context.ts'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -211,12 +215,18 @@ export default function AgentPanel({
   canvasID,
   canvas,
   defaultOpen = false,
+  canvasFocus = null,
+  editingScene = false,
 }: {
   account: string
   canvasID: string
   canvas?: api.Canvas | null
   // 从首页一句话开始进来时，面板直接打开。
   defaultOpen?: boolean
+  // 画布上唯一选中的节点；没有或多选时为 null。
+  canvasFocus?: string | null
+  // 3D 编辑器开着：选中目标改看编辑器里的物件。
+  editingScene?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   // Runs are followed for as long as this canvas is open, panel or no panel.
@@ -244,6 +254,8 @@ export default function AgentPanel({
           account={account}
           canvasID={canvasID}
           canvas={canvas}
+          canvasFocus={canvasFocus}
+          editingScene={editingScene}
           onClose={() => setOpen(false)}
         />
       )}
@@ -254,11 +266,15 @@ function AgentConversation({
   account,
   canvasID,
   canvas,
+  canvasFocus,
+  editingScene,
   onClose,
 }: {
   account: string
   canvasID: string
   canvas?: api.Canvas | null
+  canvasFocus: string | null
+  editingScene: boolean
   onClose: () => void
 }) {
   const storageKey = agentPendingKey(account, canvasID)
@@ -304,11 +320,20 @@ function AgentConversation({
   const uploadInput = useRef<HTMLInputElement>(null)
   const [pickingMaterial, setPickingMaterial] = useState(false)
   const materialRefs = agentReferences(canvas, materials)
+  // 正文里的场景引用，按本机键记着。一次编辑里只增不改：剪切再粘贴、撤销、重做
+  // 恢复出来的键都还认得；改引用换一个新键。发送后清空。
+  const [sceneRefs, setSceneRefs] = useState<Record<string, SceneRefDraft>>({})
   // 粘贴、上传的图片和资产库、画布引用一样，以 chip 落在输入框的光标处。
   const references = [
     ...materialRefs,
     ...uploadReferences(attachments.items),
+    ...sceneReferences(sceneRefs),
   ]
+  function addSceneRef(ref: SceneRefDraft): string {
+    const key = sceneRefKey()
+    setSceneRefs((old) => ({ ...old, [key]: ref }))
+    return key
+  }
   const thumbnails = useThumbnails(
     references
       .filter((item) => draft.includes(`@[${item.sourceID}]`))
@@ -405,15 +430,139 @@ function AgentConversation({
   const compactPercent = catalog?.limits.auto_compact_percent ?? 0
   const ring = ringView(usage, chosenModel, compactPercent)
   const command = waiting ? null : parseCommand(draft)
-  // 场景编辑器开着时，这条消息会带上它的选中；补充和命令不带。
   const scene = useStore(sceneContext)
-  const sceneNames = scene && !waiting && !command ? selectedNames(scene) : []
   const locked = busy || !!pending || storageBroken
   const hasImage = referenced.some((item) => item.kind === 'image')
+  const scenesUsed = usedSceneRefs(draft, sceneRefs)
+  const sceneLimit = sceneCount(draft, sceneRefs) > maxSceneRefs
+  // 第一级菜单里的场景：画布上能打开的场景节点；引用满 5 个场景后，没引用过的置灰。
+  const usedDocs = new Set(Object.values(scenesUsed).map((ref) => ref.documentID))
+  const sceneMenu = (canvas?.nodes ?? []).flatMap((node) =>
+    node.metadata.type_key === 'core.scene' &&
+    node.data.document_id &&
+    !node.document_trashed
+      ? [
+          {
+            documentID: node.data.document_id,
+            title: node.metadata.title,
+            disabled:
+              usedDocs.size >= maxSceneRefs &&
+              !usedDocs.has(node.data.document_id),
+          },
+        ]
+      : [],
+  )
+  const sceneTitle = (documentID: string) =>
+    canvas?.nodes.find((node) => node.data.document_id === documentID)
+      ?.metadata.title ?? ''
+  // 画布上选中的节点在 @ 菜单里排前。
+  const focusNode = canvas?.nodes.find((node) => node.id === canvasFocus)
+  const highlighted = new Set(
+    focusNode
+      ? [
+          focusNode.metadata.type_key === 'core.scene'
+            ? `scene:${focusNode.data.document_id ?? ''}`
+            : (focusNode.data.content_revision_id ?? ''),
+        ]
+      : [],
+  )
+
+  // 选中进入待选引用：只在选中目标变化时产生（未选 → 选中、A → B）。点进输入框再切出、
+  // 选中没变，不会再产生；在画布和 3D 编辑器之间切换只换基线，不产生。
+  const selectionTarget = editingScene
+    ? scene?.selected.length
+      ? `${scene.documentID}:${scene.selected.join(',')}`
+      : null
+    : canvasFocus
+  const baseline = useRef(selectionTarget)
+  const baselineView = useRef(editingScene)
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const [pendingRequest, setPendingRequest] = useState<string | null>(null)
+  function clearPending() {
+    editor.current?.setPending(null)
+    setPendingKey(null)
+    setPendingRequest(null)
+  }
+  // 选中目标能引用时，返回它在输入框里的键；场景先登记成新的场景引用。
+  function pendingTarget(): string | null {
+    if (editingScene) {
+      if (!scene?.selected.length || scene.selected.length > maxSceneRefObjects)
+        return null
+      if (!usedDocs.has(scene.documentID) && usedDocs.size >= maxSceneRefs)
+        return null
+      return addSceneRef({
+        documentID: scene.documentID,
+        title: sceneTitle(scene.documentID),
+        objectIDs: scene.selected,
+        names: scene.selected.map((id) => scene.names?.[id] ?? ''),
+      })
+    }
+    if (!focusNode) return null
+    if (focusNode.metadata.type_key === 'core.scene') {
+      const documentID = focusNode.data.document_id
+      if (!documentID || focusNode.document_trashed) return null
+      if (!usedDocs.has(documentID) && usedDocs.size >= maxSceneRefs) return null
+      return addSceneRef({
+        documentID,
+        title: focusNode.metadata.title,
+        objectIDs: [],
+        names: [],
+      })
+    }
+    const revision = focusNode.data.content_revision_id
+    return revision && materialRefs.some((ref) => ref.sourceID === revision)
+      ? revision
+      : null
+  }
+  useEffect(() => {
+    if (baselineView.current !== editingScene || waiting) {
+      baselineView.current = editingScene
+      baseline.current = selectionTarget
+      clearPending()
+      return
+    }
+    if (selectionTarget === baseline.current) return
+    baseline.current = selectionTarget
+    // 补充内容的输入框只收纯文字，没有待选引用。
+    const key = waiting || locked ? null : pendingTarget()
+    if (key) setPendingRequest(key)
+    else clearPending()
+    // Only a change of what is selected places a reference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionTarget, editingScene, waiting])
+  // 登记好的引用渲染进 references 之后，再放进输入框。
+  const pendingReady =
+    !!pendingRequest && references.some((ref) => ref.sourceID === pendingRequest)
+  useEffect(() => {
+    if (!pendingRequest || !pendingReady) return
+    const placed = editor.current?.setPending(pendingRequest) ?? false
+    setPendingKey(placed ? pendingRequest : null)
+    setPendingRequest(null)
+  }, [pendingRequest, pendingReady])
+  // 点发送时先把待选引用转正，等这一轮渲染出新正文后再发，
+  // 引用数量、图片能力这些检查都按转正后的正文算。
+  const [sendQueued, setSendQueued] = useState(false)
+  function submit() {
+    if (pendingKey && !waiting) {
+      editor.current?.commitPending()
+      setPendingKey(null)
+      setSendQueued(true)
+      return
+    }
+    sendDraft()
+  }
+  useEffect(() => {
+    if (!sendQueued) return
+    setSendQueued(false)
+    sendDraft()
+    // sendDraft reads this render's draft, which is what was queued.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendQueued])
   const unsupportedImage =
     hasImage &&
     !(waiting ? runImageInput : chosenModel?.capability.image_input)
   const referenceLimit =
+    sceneLimit ||
     referenced.length > (catalog?.limits.attachments ?? 10) ||
     referenced.filter((item) => item.kind === 'image').length >
       (catalog?.limits.image_preview_count ?? 8)
@@ -424,6 +573,9 @@ function AgentConversation({
     setModel(value.model)
     setSkill(value.skill)
     setMaterials(value.materials ?? [])
+    setSceneRefs((old) => ({ ...old, ...value.scenes }))
+    // 整段换掉正文时待选引用随之消失。
+    setPendingKey(null)
     setDraft(value.text)
   }
   useEffect(() => {
@@ -728,10 +880,16 @@ function AgentConversation({
         !(outcome.kind === 'rejected' && (stopOnStart.current || command.stopped))
       ) {
         // 已经停了的那条被拒：没有运行要停，草稿照常放回，不再报错。
+        const sceneGone =
+          outcome.kind === 'rejected' &&
+          outcome.error.code === 'not_found' &&
+          Object.keys(outcome.chain.draft?.scenes ?? {}).length > 0
         setError(
-          outcome.error instanceof Error
-            ? outcome.error.message
-            : '提交结果暂不确定，请确认原操作',
+          sceneGone
+            ? '引用的场景已不可用，请重新选择'
+            : outcome.error instanceof Error
+              ? outcome.error.message
+              : '提交结果暂不确定，请确认原操作',
         )
       }
       // 结果未知时链还留着，重新发送重放的是同一操作：停止要跟着链走。
@@ -864,6 +1022,7 @@ function AgentConversation({
       skill,
       text: [revisionText(draft, references), ...uploaded.filter((item) => !mentioned.some((m) => m.id === item.id)).map((item) => `@[${item.id}]`)].filter(Boolean).join(' '),
       materials: referenced,
+      ...(Object.keys(scenesUsed).length ? { scenes: scenesUsed } : {}),
     }
     let segments: Segment[]
     try {
@@ -878,13 +1037,18 @@ function AgentConversation({
     for (const item of referenced) knownTitles.current.set(item.id, item.title)
     // 补充和插队一样带片段：文字、引用、附件都可以。
     if (waiting) {
+      const supplement = steerSegments(segments)
+      if (!supplement) {
+        setError('场景引用只能在新消息中发送')
+        return
+      }
       void perform(
         single(
           `/agent-runs/${waiting.id}/supplements`,
           {
             expected_revision: waiting.revision,
             waiting_token: waiting.waiting_token,
-            instruction_segments: steerSegments(segments) ?? [],
+            instruction_segments: supplement,
           },
           saved,
         ),
@@ -906,6 +1070,7 @@ function AgentConversation({
       segments,
       titleOf,
       selected?.display_name,
+      sceneRefsInOrder(draft, sceneRefs),
     )
     const send: QueuedMessage['send'] = {
       model,
@@ -1079,6 +1244,8 @@ function AgentConversation({
     setDraft('')
     setSkill('')
     setMaterials([])
+    setSceneRefs({})
+    clearPending()
     attachments.clear()
   }
   // 点发送就把这条画进对话、清空输入框；草稿已记在待确认链里，没送达会放回来。
@@ -1415,7 +1582,7 @@ function AgentConversation({
       sendCommand({ name: 'compact', args: '' }, true)
   }
   // 运行中或等补充时，输入框空着发送键就是停止键；有内容时是排队或补充。
-  const hasDraft = !!draft.trim() || uploaded.length > 0
+  const hasDraft = !!draft.trim() || uploaded.length > 0 || (!!pendingKey && !waiting)
   const stoppable = hasDraft ? undefined : latest
   // 压缩是对整个对话的操作，不进队列。
   const commandBlocked = !!command && !!active
@@ -1662,7 +1829,7 @@ function AgentConversation({
           noValidate
           onSubmit={(event) => {
             event.preventDefault()
-            sendDraft()
+            submit()
           }}
         >
           {shownQueue.length > 0 && (
@@ -1684,18 +1851,13 @@ function AgentConversation({
               onHover={slash.hover}
               onChoose={chooseSlash}
             />
-            {!waiting && (selectedSkill || sceneNames.length > 0) && (
+            {!waiting && selectedSkill && (
               <div className="cc-agent-skill">
-                {selectedSkill && (
-                  <SkillTag
-                    skill={selectedSkill}
-                    disabled={locked}
-                    onRemove={() => chooseSkill('')}
-                  />
-                )}
-                {sceneNames.length > 0 && (
-                  <SceneSelectionTag names={sceneNames} />
-                )}
+                <SkillTag
+                  skill={selectedSkill}
+                  disabled={locked}
+                  onRemove={() => chooseSkill('')}
+                />
               </div>
             )}
             <label className="sr-only" htmlFor="creative-agent-draft">
@@ -1725,7 +1887,11 @@ function AgentConversation({
                 } else setDraft(text)
               }}
               onKey={slash.onKey}
-              onGenerate={() => sendDraft()}
+              onGenerate={submit}
+              scenes={waiting ? undefined : sceneMenu}
+              onSceneRef={waiting ? undefined : addSceneRef}
+              highlighted={highlighted}
+              onPendingCommit={() => setPendingKey(null)}
               onLibrary={() => setPickingMaterial(true)}
               onFiles={addFiles}
             />
@@ -1755,7 +1921,9 @@ function AgentConversation({
             )}
             {referenceLimit && (
               <p className="cc-agent-hint" role="status">
-                引用数量超过本轮上限，请减少素材。
+                {sceneLimit
+                  ? `一条消息最多引用 ${maxSceneRefs} 个场景。`
+                  : '引用数量超过本轮上限，请减少素材。'}
               </p>
             )}
             <div className="cc-agent-composer-foot">
