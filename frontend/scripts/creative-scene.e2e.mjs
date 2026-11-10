@@ -9501,10 +9501,7 @@ if (process.env.SCENE_E2E_TRACE) await check('glb-import: the mirror shows an em
     const apart = await pixelDiff(page, out[0], out[1], 24)
     console.log(`  mirror-board: the emission map behind the camera changes ${(apart * 100).toFixed(2)}% of the pixels`)
     assert.ok(apart > 0.002, `the mirror shows the emission map (${(apart * 100).toFixed(2)}% apart)`)
-    // A textured lit export through the layer reports this on develop as well (60faf980, the C5c1 export check
-    // fails on it too): a defect of its own, not this check's.
-    const known = "Failed to execute 'writeBuffer' on 'GPUQueue': parameter 1 is not of type 'GPUBuffer'."
-    assert.deepEqual(errors.filter((e) => e !== known), [], errors.join('\n'))
+    assert.deepEqual(errors, [], errors.join('\n'))
     await context.close()
   } finally {
     await gpu.close()
@@ -9712,9 +9709,7 @@ if (process.env.SCENE_E2E_TRACE) await check('glb-import AC-1/AC-9: an imported 
       console.log(`  mirror-board: the lantern's ${name} changes ${(apart * 100).toFixed(2)}% of the lit export`)
       assert.ok(apart > 0.002, `the mirror of the lit export: ${name} differs (${(apart * 100).toFixed(2)}%)`)
     }
-    // A textured lit export through the layer reports this until a7f74ccc (develop) is merged in: not this check's.
-    const known = "Failed to execute 'writeBuffer' on 'GPUQueue': parameter 1 is not of type 'GPUBuffer'."
-    assert.deepEqual(exporter.errors.filter((e) => e !== known), [], exporter.errors.join('\n'))
+    assert.deepEqual(exporter.errors, [], exporter.errors.join('\n'))
     await exporter.context.close()
   } finally {
     await gpu.close()
