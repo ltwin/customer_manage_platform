@@ -1,10 +1,10 @@
 {
   "uid": "d4e65c9a-64c5-45c7-9a8b-d66305647bea",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-pose-system",
   "title": "姿态系统：分镜中精准控制主体动作——骨骼绑定与权重绘制、导入外部已绑定资产、姿态库复用、Agent 参考资产库姿态生成新姿态",
   "createdAt": "2026-10-28T04:13:39.136Z",
-  "updatedAt": "2026-11-10T04:14:22.996Z",
+  "updatedAt": "2026-11-10T07:19:06.386Z",
   "state": "active",
   "designBaselines": [
     {
@@ -986,6 +986,11 @@
     {
       "uid": "e1eb0660-2356-492d-ab1b-e03a0fe032dc",
       "changeId": "scene-glb-import",
+      "dependsOnUids": []
+    },
+    {
+      "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
+      "changeId": "scene-skinned-humanoid",
       "dependsOnUids": []
     }
   ],
