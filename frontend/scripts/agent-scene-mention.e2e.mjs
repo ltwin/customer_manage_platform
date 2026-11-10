@@ -212,7 +212,7 @@ const checks = {
   async 'the scene picker selects by click, modifier and drag, and inserts in list order'() {
     const t = await open()
     await pickFromMenu(t, '客')
-    await t.page.locator('.cc-prompt-options [role=option]', { hasText: '客厅' }).click()
+    await t.page.getByRole('button', { name: '选择「客厅」里的物件' }).click()
     const row = (name) => t.page.locator('.cc-scene-picker-list [data-object]', { hasText: name })
     await row('沙发').waitFor()
     await row('沙发').click()
@@ -300,6 +300,65 @@ const checks = {
     assert.deepEqual(segments.filter((s) => s.type === 'scene_ref'), [{ type: 'scene_ref', document_id: 'cwdoc_living' }])
     return t
   },
+  async 'committing a pending reference can be undone and redone without it coming back grey'() {
+    const t = await open()
+    await select(t.page, 'n-living')
+    await pending(t.page).waitFor()
+    await t.editor.click()
+    await chips(t.page).first().waitFor()
+    await t.editor.press('ControlOrMeta+z')
+    await t.page.waitForFunction(() => !document.querySelector('.cc-prompt-editor [data-ref], .cc-prompt-editor [data-pending]'))
+    assert.equal(await t.page.getByRole('button', { name: '发送', exact: true }).isDisabled(), true, 'nothing left to send')
+    // Focusing again does not bring it back.
+    await blur(t.page)
+    await t.editor.click()
+    assert.equal(await chips(t.page).count() + await pending(t.page).count(), 0)
+    await t.editor.press('ControlOrMeta+Shift+z')
+    await chips(t.page).first().waitFor()
+    const segments = await sent(t)
+    assert.deepEqual(segments.filter((s) => s.type === 'scene_ref'), [{ type: 'scene_ref', document_id: 'cwdoc_living' }])
+    return t
+  },
+  async 'a scene click inserts the whole scene; re-editing keeps an object that is gone'() {
+    const t = await open()
+    await pickFromMenu(t, '客')
+    await t.page.locator('.cc-prompt-options [role=option]', { hasText: '客厅' }).click()
+    await t.page.waitForFunction(() => !document.querySelector('.cc-prompt-picker'))
+    assert.equal(await chips(t.page).first().textContent(), '◫客厅', 'a click inserts, no object list')
+    // Pick 台灯 and 主光, then 台灯 is deleted from the scene.
+    await chips(t.page).first().click()
+    const row = (name) => t.page.locator('.cc-scene-picker-list [data-object]', { hasText: name })
+    await row('台灯').click()
+    await row('主光').click({ modifiers: ['ControlOrMeta'] })
+    await t.page.getByRole('button', { name: '插入' }).click()
+    await t.page.waitForFunction(() => document.querySelector('.cc-prompt-editor [data-ref]')?.textContent === '◫客厅 · 台灯、主光')
+    const objects = scenes.cwdoc_living.scene.objects
+    const lamp = objects.findIndex((o) => o.id === 'lamp')
+    const [removed] = objects.splice(lamp, 1)
+    try {
+      await chips(t.page).first().click()
+      await row('已不在场景里').waitFor()
+      assert.deepEqual(await t.page.locator('.cc-scene-picker-list [aria-selected=true] span:last-child').allTextContents(), ['已不在场景里的物件', '主光'])
+      assert.equal(await t.page.locator('.cc-scene-picker footer [role=status]').textContent(), '已选 2 个物件')
+      await t.page.getByRole('button', { name: '插入' }).click()
+      await t.page.waitForFunction(() => !document.querySelector('.cc-prompt-picker'))
+      const segments = await sent(t)
+      assert.deepEqual(segments.filter((s) => s.type === 'scene_ref'), [{ type: 'scene_ref', document_id: 'cwdoc_living', object_ids: ['key', 'lamp'] }])
+    } finally {
+      objects.splice(lamp, 0, removed)
+    }
+    return t
+  },
+  async 'more than 50 objects selected in the editor says so and places nothing'() {
+    const t = await open()
+    await t.page.evaluate(() => window.__editing(true))
+    await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: Array.from({ length: 50 }, (_, i) => 'o' + i), names: {} }))
+    await pending(t.page).waitFor()
+    await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: Array.from({ length: 51 }, (_, i) => 'o' + i), names: {} }))
+    await t.page.getByText('一次最多引用 50 个物件').waitFor()
+    assert.equal(await pending(t.page).count(), 0)
+    return t
+  },
   async 'the scene editor selection is referenced in batches, in order'() {
     const t = await open()
     await t.page.evaluate(() => window.__editing(true))
@@ -333,7 +392,7 @@ const checks = {
     for (let i = 0; i < 500; i++) objects.push(object(`o${i}`, `物件${i}`, 'primitive', null, i + 2))
     const t = await open()
     await pickFromMenu(t, '卧')
-    await t.page.locator('.cc-prompt-options [role=option]', { hasText: '卧室' }).click()
+    await t.page.getByRole('button', { name: '选择「卧室」里的物件' }).click()
     await t.page.locator('.cc-scene-picker-list [data-object]').nth(400).waitFor({ state: 'attached' })
     const frames = await t.page.evaluate(async () => {
       const list = document.querySelector('.cc-scene-picker-list')

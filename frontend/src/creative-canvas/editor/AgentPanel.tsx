@@ -1919,6 +1919,13 @@ function AgentConversation({
                   : '当前模型不支持图片理解，请切换视觉模型或移除图片引用。'}
               </p>
             )}
+            {!waiting &&
+              editingScene &&
+              (scene?.selected.length ?? 0) > maxSceneRefObjects && (
+                <p className="cc-agent-hint" role="status">
+                  一次最多引用 {maxSceneRefObjects} 个物件
+                </p>
+              )}
             {referenceLimit && (
               <p className="cc-agent-hint" role="status">
                 {sceneLimit

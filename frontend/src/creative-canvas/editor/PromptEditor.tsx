@@ -391,9 +391,12 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
     }
     const chip = promptChip(item, thumbnails[item.content?.id ?? ''])
     if (document.activeElement === el) {
-      // 原生编辑命令进撤销栈：之后按撤销先撤掉这个引用。
+      // 待选标签是在撤销栈之外放进来的，也在撤销栈之外拿掉；正式引用用原生编辑命令
+      // 插在原处，之后按撤销只撤掉这个引用，不会把待选标签恢复回来。
       const range = document.createRange()
-      range.selectNode(old)
+      range.setStartBefore(old)
+      range.collapse(true)
+      old.remove()
       const selection = window.getSelection()
       selection?.removeAllRanges()
       selection?.addRange(range)
@@ -687,7 +690,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
                       {section.items.map((item) => {
                         const i = items.indexOf(item)
                         const thumb = thumbnails[item.ref?.content?.id ?? '']
-                        return (
+                        const option = (
                           <button
                             type="button"
                             role="option"
@@ -702,7 +705,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
                                 : undefined
                             }
                             onMouseMove={() => setIndex(i)}
-                            onClick={() => choose(item, true)}
+                            onClick={() => choose(item)}
                           >
                             {thumb && item.kind === 'image' ? (
                               <img src={thumb} alt="" />
@@ -714,8 +717,26 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
                             <span>{item.title}</span>
                             {highlighted?.has(item.key) && <em>已选中</em>}
                             <small>{item.label}</small>
-                            {item.scene && <ChevronRight size={14} aria-hidden="true" />}
                           </button>
+                        )
+                        // 单击场景插入整个场景；右侧箭头（或 →）展开物件列表。
+                        return item.scene ? (
+                          <div className="cc-prompt-scene-row" key={item.key}>
+                            {option}
+                            <button
+                              type="button"
+                              className="cc-prompt-expand"
+                              aria-label={`选择「${item.title}」里的物件`}
+                              title="选择物件"
+                              disabled={item.disabled}
+                              onMouseMove={() => setIndex(i)}
+                              onClick={() => choose(item, true)}
+                            >
+                              <ChevronRight size={14} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ) : (
+                          option
                         )
                       })}
                     </div>

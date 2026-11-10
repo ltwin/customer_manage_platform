@@ -100,17 +100,25 @@ export function ScenePicker({
   useEffect(() => () => cancelAnimationFrame(drag.current?.frame ?? 0), [])
 
   const rows = scene ? pickerRows(scene.objects, query) : []
-  const order = rows.filter((row) => row.matched).map((row) => row.object.id)
+  // 重新编辑时，原来引用的物件可能已经不在场景里：照样列出、保持选中，
+  // 摄影师可以取消它；不取消就原样带上，不会悄悄变成整个场景。
+  const known = new Set(scene?.objects.map((o) => o.id))
+  const missing = scene ? initial.filter((id) => !known.has(id)) : []
+  const order = [
+    ...missing,
+    ...rows.filter((row) => row.matched).map((row) => row.object.id),
+  ]
   const count = selection.selected.length
 
   function confirm() {
     if (!scene || count > maxObjects) return
     const picked = pickedObjects(selection, scene.objects)
+    const gone = missing.filter((id) => selection.selected.includes(id))
     onConfirm({
       documentID,
       title: scene.title || title,
-      objectIDs: picked.map((o) => o.id),
-      names: picked.map((o) => o.name),
+      objectIDs: [...picked.map((o) => o.id), ...gone],
+      names: [...picked.map((o) => o.name), ...gone.map(() => '')],
     })
   }
   function rowAt(x: number, y: number): string | null {
@@ -241,6 +249,21 @@ export function ScenePicker({
           >
             整个场景
           </button>
+          {missing.map((id) => (
+            <div
+              key={id}
+              role="option"
+              data-object={id}
+              data-matched="true"
+              data-missing="true"
+              aria-selected={selection.selected.includes(id)}
+              title={id}
+              style={{ paddingLeft: 8 }}
+            >
+              <span className="cc-mention-icon">⊘</span>
+              <span>已不在场景里的物件</span>
+            </div>
+          ))}
           {rows.map(({ object, depth, matched }) => (
             <div
               key={object.id}
@@ -263,7 +286,7 @@ export function ScenePicker({
           {count === 0
             ? '整个场景'
             : count > maxObjects
-              ? `已选 ${count} 个，一次最多 ${maxObjects} 个`
+              ? `一次最多引用 ${maxObjects} 个物件`
               : `已选 ${count} 个物件`}
         </span>
         <button

@@ -560,6 +560,24 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* 场景项：整行插入整个场景，右侧箭头展开物件列表。 */
+.cc-prompt-scene-row {
+  display: flex;
+  align-items: center;
+}
+.cc-prompt-picker .cc-prompt-scene-row > button[role='option'] {
+  flex: 1;
+  min-width: 0;
+}
+.cc-prompt-picker .cc-prompt-scene-row > .cc-prompt-expand {
+  flex: none;
+  justify-content: center;
+  width: 32px;
+  color: var(--fg-3);
+}
+.cc-scene-picker-list [data-missing='true'] {
+  color: var(--fg-3);
+}
 /* 待选引用：置灰，点进输入框后才转正。 */
 .cc-prompt-mention.is-pending {
   background: transparent;
