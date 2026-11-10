@@ -310,6 +310,11 @@
   background: var(--primary);
   color: var(--on-primary);
 }
+/* 运行中发送键变成停止键：中性色，不和发送抢锚点色 */
+.cc-agent-panel button.cc-agent-send.is-stop {
+  background: var(--fg);
+  color: var(--bg);
+}
 .cc-agent-launch {
   background: var(--s2);
   border: 0;
@@ -987,7 +992,7 @@
   gap: 8px;
   height: 42px;
   margin-bottom: -16px;
-  padding: 0 6px 8px 12px;
+  padding: 0 12px 8px;
   border-radius: var(--r) var(--r) 0 0;
   background: var(--s3);
   color: var(--fg-2);
@@ -1011,19 +1016,6 @@
 .cc-agent-dot.is-wait {
   background: var(--primary);
   animation: none;
-}
-.cc-agent-panel .cc-agent-status button {
-  height: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--fg-2);
-  font-size: 12px;
-}
-.cc-agent-panel .cc-agent-status button:hover:not(:disabled) {
-  background: var(--s4);
-  color: var(--fg);
 }
 .cc-agent-box {
   position: relative;

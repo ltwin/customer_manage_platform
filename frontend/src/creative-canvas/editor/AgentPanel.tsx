@@ -16,6 +16,7 @@ import {
   Paperclip,
   Plus,
   ScanSearch,
+  Square,
   SquarePen,
   Wand2,
   Sparkles,
@@ -69,11 +70,14 @@ import {
   type PageReader,
   type ThreadWindow,
 } from './agentThread.ts'
-import { currentStep } from './agentBlocks.ts'
+import { currentStep, isFinished } from './agentBlocks.ts'
 import {
   AgentTurnContext,
   followRun,
   forgetRuns,
+  freezeStopping,
+  releaseStopping,
+  shownRun,
   useAgentRuns,
   type TurnContext,
 } from './agentRuns.ts'
@@ -183,7 +187,7 @@ export default function AgentPanel({
   // Runs are followed for as long as this canvas is open, panel or no panel.
   useEffect(() => forgetRuns, [account, canvasID])
   const state = useAgentRuns((store) => {
-    const runs = Object.values(store.runs)
+    const runs = Object.keys(store.runs).map((id) => shownRun(store, id))
     if (runs.some((view) => view && isActiveRun(view.run))) return 'run'
     return runs.some((view) => view?.run.state === 'waiting_input')
       ? 'wait'
@@ -309,6 +313,8 @@ function AgentConversation({
   const pendingRef = useRef<PendingAgentChain | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
+  // The stop on its way, if any; true once the run has ended.
+  const stopRequest = useRef<Promise<boolean> | null>(null)
   const thread =
     threadWindow?.conversation === conversation ? threadWindow.items : noMessages
   const {
@@ -320,8 +326,9 @@ function AgentConversation({
     nearTop,
   } = useAgentScroll(conversation, thread[0]?.id ?? '')
   // The list is read once; what a run is doing now comes from its stream.
+  // A stop on its way shows the run as stopped already (see shownRun).
   const followed = useAgentRuns(
-    useShallow((store) => runs.map((run) => store.runs[run.id]?.run)),
+    useShallow((store) => runs.map((run) => shownRun(store, run.id)?.run)),
   )
   const runUsages = useAgentRuns(
     useShallow((store) => runs.map((run) => store.runs[run.id]?.usage)),
@@ -587,6 +594,46 @@ function AgentConversation({
       if (mounted.current) setBusy(false)
     }
   }
+  // 点停止立刻显示已停止，请求在后台发出；失败时恢复成运行中并提示。
+  function stop(run: AgentRun) {
+    freezeStopping(run)
+    setError('')
+    const request = cancelUntilFinished(run.id).then(
+      (reply) => {
+        setRuns((old) =>
+          old.map((item) => (item.id === reply.id ? reply : item)),
+        )
+        return true
+      },
+      () => {
+        releaseStopping(run.id)
+        if (mounted.current) setError('停止没有成功，请重试')
+        return false
+      },
+    )
+    stopRequest.current = request
+    void request.finally(() => {
+      if (stopRequest.current === request) stopRequest.current = null
+    })
+  }
+  // 更早版本记下的回执会原样回放出未结束的状态；换一个新的操作号再停一次。
+  async function cancelUntilFinished(id: string): Promise<AgentRun> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const step = agentStep(`/agent-runs/${id}/cancel`, {})
+      const reply = await api.send<AgentRun>(
+        account,
+        step.path,
+        stepBody(step),
+        step.operation,
+      )
+      if (isFinished(reply)) return reply
+    }
+    throw new Error('run still active after cancel')
+  }
+  // 停止还没落定时，新消息等它：会话要等停止提交后才空出来。
+  function afterStop(): Promise<boolean> {
+    return stopRequest.current ?? Promise.resolve(true)
+  }
   // /compact: the whole submission is the command, with its focus if any.
   function sendCommand(
     value: NonNullable<ReturnType<typeof parseCommand>>,
@@ -612,7 +659,11 @@ function AgentConversation({
     void notice.confirm().then((ok) => {
       if (!ok) return
       showOutgoing(outgoingParts([commandSegment(value)], titleOf), !keepDraft)
-      void perform(chain, keepDraft)
+      void afterStop().then((stopped) => {
+        if (stopped) return perform(chain, keepDraft)
+        setOutgoing(null)
+        restoreDraft(chain.draft)
+      })
     })
   }
   // 补全命令后光标立刻落到末尾：编辑器应用新文本时会把光标放回原处，
@@ -701,7 +752,11 @@ function AgentConversation({
           editing ? selectedNames(editing) : [],
         ),
       )
-      void perform(chain)
+      void afterStop().then((stopped) => {
+        if (stopped) return perform(chain)
+        setOutgoing(null)
+        restoreDraft(saved)
+      })
     })
   }
   // 点发送就把这条画进对话、清空输入框；草稿已记在待确认链里，没送达会放回来。
@@ -1028,6 +1083,8 @@ function AgentConversation({
     else if (value === 'compact')
       sendCommand({ name: 'compact', args: '' }, true)
   }
+  // 运行中发送键就是停止键；等补充时，输入框空着才是停止。
+  const stoppable = active ?? (waiting && !draft.trim() ? waiting : undefined)
   const sendable =
     !locked &&
     !active &&
@@ -1254,20 +1311,7 @@ function AgentConversation({
             sendDraft()
           }}
         >
-          {latest && (
-            <RunStatus
-              run={latest}
-              disabled={locked}
-              onStop={() => {
-                void perform(single(`/agent-runs/${latest.id}/cancel`, {}))
-              }}
-              onRelease={() => {
-                void perform(
-                  single(`/agent-runs/${latest.id}/close-reconciliation`, {}),
-                )
-              }}
-            />
-          )}
+          {latest && <RunStatus run={latest} />}
           <div className="cc-agent-box">
             <SlashMenu
               items={slash.items}
@@ -1404,15 +1448,28 @@ function AgentConversation({
                   onCompact={() => sendCommand({ name: 'compact', args: '' }, true)}
                 />
               )}
-              <button
-                className="cc-agent-send"
-                aria-label={waiting ? '补充并继续' : '发送'}
-                title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
-                type="submit"
-                disabled={!sendable}
-              >
-                <ArrowUp size={17} />
-              </button>
+              {stoppable ? (
+                <button
+                  className="cc-agent-send is-stop"
+                  aria-label="停止"
+                  title="停止"
+                  type="button"
+                  disabled={locked}
+                  onClick={() => stop(stoppable)}
+                >
+                  <Square size={12} fill="currentColor" />
+                </button>
+              ) : (
+                <button
+                  className="cc-agent-send"
+                  aria-label={waiting ? '补充并继续' : '发送'}
+                  title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
+                  type="submit"
+                  disabled={!sendable}
+                >
+                  <ArrowUp size={17} />
+                </button>
+              )}
             </div>
           </div>
         </form>
@@ -1534,18 +1591,9 @@ function ThreadLoading() {
   )
 }
 
-// The row above the input while a run is going: what it is doing, and stop.
-function RunStatus({
-  run,
-  disabled,
-  onStop,
-  onRelease,
-}: {
-  run: AgentRun
-  disabled: boolean
-  onStop: () => void
-  onRelease: () => void
-}) {
+// The row above the input while a run is going: what it is doing. Stopping is
+// the send button's job.
+function RunStatus({ run }: { run: AgentRun }) {
   const step = useAgentRuns((store) => {
     const view = store.runs[run.id]
     return view ? currentStep(view) : ''
@@ -1559,14 +1607,6 @@ function RunStatus({
       >
         {waiting ? '等你补充后继续' : step || '正在处理'}
       </span>
-      {run.state === 'reconciling' && (
-        <button type="button" disabled={disabled} onClick={onRelease}>
-          结束等待
-        </button>
-      )}
-      <button type="button" disabled={disabled} onClick={onStop}>
-        停止
-      </button>
     </div>
   )
 }
