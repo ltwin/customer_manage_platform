@@ -1,6 +1,6 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
@@ -54,9 +54,9 @@
       "api:读取内置贴图"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-10T09:15:44.276Z",
+  "updatedAt": "2026-11-10T09:17:44.844Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -79,8 +79,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "b8296d834be189ba3e52ac2a4d97b11744fa7ab3",
+    "at": "2026-11-10T09:17:43.494Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a7458fc8fa9278c8f69db66365730b9400d4553a83fc90238b4d809e46db9da4"
+    },
+    "preExisting": [
+      ".lti/snapshots/a7458fc8fa9278c8f69db66365730b9400d4553a83fc90238b4d809e46db9da4.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
