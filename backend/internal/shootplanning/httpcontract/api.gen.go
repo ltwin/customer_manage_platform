@@ -2703,10 +2703,11 @@ type CreativeDocumentConflictDetails struct {
 	Conflicts []CreativeDocumentConflict `json:"conflicts"`
 }
 
-// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。
+// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 reason 是不成立的原因，目前只用于骨骼映射与约束（rig.humanoid.leftFoot 的上级不是 leftLowerLeg 等）。
 type CreativeFieldDetails struct {
 	ContentRevisionId *string `json:"content_revision_id,omitempty"`
 	Field             string  `json:"field"`
+	Reason            *string `json:"reason,omitempty"`
 }
 
 // CreativeImageEditBusyDetails defines model for CreativeImageEditBusyDetails.
@@ -2728,7 +2729,7 @@ type CreativeMaterialSlotDetails struct {
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 type CreativeRevision = string
 
-// CreativeSceneTextureDetails 读不到的内置贴图文件名（creative_texture_unavailable）。
+// CreativeSceneTextureDetails 读不到的内置贴图或内置模型文件名（creative_texture_unavailable、creative_model_file_unavailable）。
 type CreativeSceneTextureDetails struct {
 	File string `json:"file"`
 }
