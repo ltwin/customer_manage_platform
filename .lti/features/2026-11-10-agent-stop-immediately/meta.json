@@ -1,12 +1,12 @@
 {
   "uid": "e3d4752e-c0ae-4fc9-b501-a3ae5d0db91c",
-  "revision": 4,
+  "revision": 5,
   "id": "agent-stop-immediately",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-10T11:08:49.261Z",
-  "updatedAt": "2026-11-10T12:02:11.256Z",
+  "updatedAt": "2026-11-10T12:03:16.153Z",
   "risk": {
     "factors": [
       "concurrency"
@@ -34,8 +34,19 @@
       "removed": []
     }
   ],
+  "baseline": {
+    "commit": "d601db993f65b7d693004c1084d2b40281463411",
+    "at": "2026-11-10T12:03:15.561Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5e7933cb5dc9fd98b15753067b32919955335843e2b89509399892a856ac7678"
+    },
+    "preExisting": [
+      ".lti/snapshots/5e7933cb5dc9fd98b15753067b32919955335843e2b89509399892a856ac7678.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
