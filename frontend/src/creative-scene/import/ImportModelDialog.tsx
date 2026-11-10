@@ -102,6 +102,9 @@ export default function ImportModelDialog({
   const [origin, setOrigin] = useState(false)
   const [run, setRun] = useState<{ run: ImportRun; state: RunState } | null>(null)
   const [message, setMessage] = useState('')
+  // 点了「导入」、还在按原点重写 GLB：已经锁定，关闭就放弃，没有东西要清理。
+  const [starting, setStarting] = useState(false)
+  const abandoned = useRef(false)
   const imported = useRef(false)
 
   useEffect(() => {
@@ -143,8 +146,12 @@ export default function ImportModelDialog({
 
   // 上传中关闭等于取消；提交中不能取消，结果可能已经写入。
   const close = () => {
-    if (!working) onClose()
-    else run?.run.cancel()
+    if (working) {
+      run?.run.cancel()
+      return
+    }
+    abandoned.current = true
+    onClose()
   }
 
   async function start() {
@@ -153,12 +160,19 @@ export default function ImportModelDialog({
     if (!name) return setMessage('请填写资产名称')
     if (sourceURL.trim() && !validURL(sourceURL.trim())) return setMessage('来源页面须是 http 或 https 开头的网址')
     setMessage('')
+    setStarting(true)
     let written = prepared.written
     if (origin) {
       // 换算结果保持原样，下次不勾时还能用。
       const moved = prepared.conversion.scene.clone()
       toBottomCenter(moved)
-      written = await writeGLB(moved)
+      try {
+        written = await writeGLB(moved)
+      } catch (e) {
+        setStarting(false)
+        return setMessage(e instanceof Error ? e.message : String(e))
+      }
+      if (abandoned.current) return
     }
     const job: ImportJob = {
       glb: written.glb,
@@ -192,6 +206,7 @@ export default function ImportModelDialog({
     }
     const next = new ImportRun(job, network, (s) => setRun((r) => (r ? { ...r, state: s } : r)))
     setRun({ run: next, state: { phase: 'uploading', done: 0, total: 0 } })
+    setStarting(false)
     await next.start()
   }
 
@@ -199,7 +214,7 @@ export default function ImportModelDialog({
   const changed = prepared?.report.filter((r) => r.level === 'changed') ?? []
   const ignored = prepared?.report.filter((r) => r.level === 'ignored') ?? []
   const line = (r: ReportItem, i: number) => <li key={i}>{r.slot ? `${r.slot}：${r.text}` : r.text}</li>
-  const editable = !working && state?.phase !== 'done'
+  const editable = !starting && !working && state?.phase !== 'done'
 
   return (
     <StudioDialog title="导入模型" onClose={close}>
@@ -290,11 +305,11 @@ export default function ImportModelDialog({
           ) : (
             <>
               <button type="button" className="btn" disabled={working && !run?.run.cancellable} onClick={close}>
-                {working ? '取消导入' : '关闭'}
+                {starting || working ? '取消导入' : '关闭'}
               </button>
               {!refused && (
                 <button className="btn btn-primary" disabled={!prepared || !editable}>
-                  {working ? '正在导入…' : '导入'}
+                  {starting || working ? '正在导入…' : '导入'}
                 </button>
               )}
             </>

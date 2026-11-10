@@ -12,7 +12,9 @@ import { dimensions, prepareImages, type Codec } from '../src/creative-scene/imp
 import { writeGLB } from '../src/creative-scene/import/write.ts'
 import { ImportRun, retryForMs, type ImportJob, type ImportNetwork, type ImportPayload, type ImportResult, type RunState } from '../src/creative-scene/import/run.ts'
 import { ApiError } from '../src/api/transport.ts'
-import type { Upload } from '../src/creative-canvas/editor/media.ts'
+import { uploadGenerated, type Upload } from '../src/creative-canvas/editor/media.ts'
+import { setAuthenticated } from '../src/auth/session.ts'
+import type { Me } from '../src/api/client.ts'
 import { inspect } from '../src/creative-scene/sandbox/inspect.ts'
 import { ImportRejected, parseImport, type Decoders, type GLTFJSON, type MaterialJSON } from '../src/creative-scene/import/parse.ts'
 
@@ -564,6 +566,43 @@ test('morph targets, animations, cameras, lights, other scenes and points are dr
   assert.equal(others, 0)
 })
 
+test('meshes under a dropped camera or points node stay, where they were in the world', async () => {
+  const c = await converted(
+    build(
+      {
+        scenes: [{ nodes: [0, 2] }],
+        nodes: [
+          { name: 'rig', camera: 0, translation: [5, 0, 0], children: [1] },
+          { name: 'lens', mesh: 0, translation: [0, 2, 0] },
+          { name: 'dots', mesh: 1, scale: [2, 2, 2], children: [3] },
+          { name: 'pad', mesh: 0, translation: [0, 0, 1] },
+        ],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }, { primitives: [{ attributes: { POSITION: 0 }, mode: 0 }] }],
+        cameras: [{ type: 'perspective', perspective: { yfov: 1, znear: 0.1 } }],
+      } as GLTFJSON,
+      [
+        { array: quadPositions, type: 'VEC3' },
+        { array: quadIndices, type: 'SCALAR' },
+      ],
+    ),
+  )
+  const left = meshes(c.scene)
+  assert.equal(left.length, 2)
+  const at = left.map((m) => worldBox(m).slice(0, 3)).sort((a, b) => a[0]! - b[0]!)
+  assert.deepEqual(at, [
+    [0, 0, 2],
+    [5, 2, 0],
+  ])
+})
+
+test('a material named __proto__ keeps its slot through to the payload', async () => {
+  const names = slotNames([{ name: '__proto__' }, { name: 'constructor' }], new Set([0, 1]))
+  const c = await converted(quads([{ name: '__proto__' }, { name: 'constructor' }]))
+  const payload = slotPayload(c.slots, () => 'ccrv_x')
+  assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(payload))).sort(), [...names.values()].sort())
+  assert.equal(Object.getPrototypeOf(payload), Object.getPrototypeOf({}))
+})
+
 test('the origin stays where the file has it, or moves to the bottom centre', async () => {
   const file = () =>
     build({ nodes: [{ mesh: 0, translation: [3, 2, 1] }], meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }] }, [
@@ -924,4 +963,40 @@ test('a failed upload discards the others', async () => {
   await new ImportRun(importJob(), net, (s) => states.push(s)).start()
   assert.deepEqual(states.at(-1), { phase: 'failed', message: '图片校验失败' })
   assert.deepEqual(discarded.sort(), ['ccup_1', 'ccup_2'])
+})
+
+test('an upload stopped or failed after its session is created cancels the session; one that settled as a staged candidate is discarded', async () => {
+  setAuthenticated({ access_token: 'token', token_type: 'Bearer', expires_in: 600 }, { id: 'account-fixture', email: 'fixture@example.invalid', created_at: '2026-11-09T00:00:00Z', timezone: 'Asia/Shanghai' } as Me)
+  const realFetch = globalThis.fetch
+  const calls: string[] = []
+  let cancel = 200
+  const session = { id: 'up_1', revision: 'r1', state: 'uploading', part_count: 1, part_size: 1024 }
+  const abort = new AbortController()
+  globalThis.fetch = async (input, init) => {
+    const url = String(input)
+    calls.push(`${init?.method ?? 'GET'} ${url.replace('/api/v1', '')}`)
+    if (url.endsWith('/creative/uploads')) return Response.json({ ...session, state: 'created' })
+    if (url.endsWith('/creative/uploads/up_1')) return Response.json(cancel === 200 ? session : { ...session, state: 'ready', publication: { kind: 'candidate', id: 'cand_1', revision: 'cr1' } })
+    if (url.endsWith('/part-authorizations')) {
+      abort.abort()
+      throw new DOMException('aborted', 'AbortError')
+    }
+    if (url.endsWith('/cancel')) return cancel === 200 ? Response.json({ ...session, state: 'cancelled' }) : Response.json({ error: { code: 'conflict', message: 'x' } }, { status: 409 })
+    return Response.json({})
+  }
+  try {
+    const file = new File([new Uint8Array(8)], 'model.glb')
+    await assert.rejects(uploadGenerated(file, { kind: 'model', mime: 'model/gltf-binary' }, { kind: 'staged' }, abort.signal, async () => {}))
+    await settle()
+    assert.ok(calls.includes('POST /creative/uploads/up_1/cancel'), calls.join('\n'))
+
+    // The session settles as a staged candidate while the client gives up: the cancel is refused, the candidate goes.
+    calls.length = 0
+    cancel = 409
+    await assert.rejects(uploadGenerated(file, { kind: 'model', mime: 'model/gltf-binary' }, { kind: 'staged' }, undefined, async () => {}))
+    for (let i = 0; i < 5; i++) await settle()
+    assert.ok(calls.includes('POST /creative/upload-candidates/cand_1/discard'), calls.join('\n'))
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })

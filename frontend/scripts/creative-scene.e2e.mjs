@@ -9589,6 +9589,29 @@ function lanternGLB() {
 // in the material preview and, behind the camera, in the mirror of the lit
 // export through the world-space layer. Whether they look right is the
 // owner's, against Blender (AC-1).
+await check('glb-import: with the origin moved, a double click on 导入 imports once', async () => {
+  const server = new SceneServer()
+  stock(server)
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('menuitem', { name: '导入模型…' }).click()
+  await (await chooser).setFiles({ name: 'lantern.glb', mimeType: 'model/gltf-binary', buffer: lanternGLB() })
+  const dialog = page.getByRole('dialog', { name: '导入模型' })
+  await dialog.getByText('2 个材质槽位').waitFor({ timeout: 20_000 })
+  await dialog.getByRole('checkbox', { name: '原点移到底面中心' }).check()
+  await dialog.getByRole('button', { name: '导入', exact: true }).dblclick()
+  await dialog.waitFor({ state: 'detached', timeout: 60_000 })
+  await saved(page)
+  await sleep(1500)
+  assert.equal(server.importRequests.length, 1, 'one import request')
+  assert.equal(server.imports.size, 1, 'one asset')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
 if (process.env.SCENE_E2E_TRACE) await check('glb-import AC-1/AC-9: an imported GLB glows and is cut in the preview and the mirror of the lit export; its source shows; one undo', async () => {
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {

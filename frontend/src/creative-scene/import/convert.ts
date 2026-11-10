@@ -305,6 +305,14 @@ function expandInstances(scene: Group, report: Reporter) {
   if (instanced.length > 0) report.add(null, 'changed', '实例化的网格已展开成独立的网格')
 }
 
+function holdsMesh(o: Object3D): boolean {
+  let found = false
+  o.traverse((d) => {
+    found ||= d instanceof Mesh
+  })
+  return found
+}
+
 export function convert(parsed: ParsedImport, options: ConvertOptions): Conversion {
   const { json, scene } = parsed
   const associations = parsed.associations as ReadonlyMap<Object3D | Material, Association>
@@ -326,6 +334,8 @@ export function convert(parsed: ParsedImport, options: ConvertOptions): Conversi
   })
   for (const o of strays) {
     if (o.type === 'Points' || o.type.startsWith('Line')) report.add(null, 'ignored', '点和线不支持，已丢掉')
+    // Meshes hanging under it stay where they are in the world.
+    for (const child of [...o.children]) if (holdsMesh(child)) o.parent!.attach(child)
     o.removeFromParent()
   }
 
@@ -441,17 +451,18 @@ export function toBottomCenter(scene: Object3D): void {
 
 /** The slots as the import request sends them, each image named by its uploaded revision. */
 export function slotPayload(slots: ReadonlyMap<string, ConvertedSlot>, revisionOf: (image: number) => string): Record<string, SlotJSON> {
-  const out: Record<string, SlotJSON> = {}
-  for (const [id, s] of slots) {
-    const slot: SlotJSON = { preset: principledID, params: { ...s.params } }
-    const entries = Object.entries(s.maps) as [MapName, MapRef][]
-    if (entries.length > 0) {
-      slot.maps = Object.fromEntries(entries.map(([k, r]) => [k, r.channel ? { content_revision_id: revisionOf(r.image), channel: r.channel } : { content_revision_id: revisionOf(r.image) }]))
-      slot.mapping = { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: s.normalStrength }
-    }
-    if (s.alphaMode !== 'opaque') slot.alpha_mode = s.alphaMode
-    if (s.alphaMode === 'clip') slot.alpha_cutoff = Math.min(1, Math.max(0, s.alphaCutoff))
-    out[id] = slot
+  // Built with fromEntries: a slot the file names `__proto__` stays a slot.
+  return Object.fromEntries([...slots].map(([id, s]) => [id, payloadOf(s, revisionOf)]))
+}
+
+function payloadOf(s: ConvertedSlot, revisionOf: (image: number) => string): SlotJSON {
+  const slot: SlotJSON = { preset: principledID, params: { ...s.params } }
+  const entries = Object.entries(s.maps) as [MapName, MapRef][]
+  if (entries.length > 0) {
+    slot.maps = Object.fromEntries(entries.map(([k, r]) => [k, r.channel ? { content_revision_id: revisionOf(r.image), channel: r.channel } : { content_revision_id: revisionOf(r.image) }]))
+    slot.mapping = { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: s.normalStrength }
   }
-  return out
+  if (s.alphaMode !== 'opaque') slot.alpha_mode = s.alphaMode
+  if (s.alphaMode === 'clip') slot.alpha_cutoff = Math.min(1, Math.max(0, s.alphaCutoff))
+  return slot
 }

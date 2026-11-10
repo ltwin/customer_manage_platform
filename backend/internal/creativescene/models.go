@@ -96,7 +96,7 @@ func (g Generator) MarshalJSON() ([]byte, error) {
 		return json.Marshal(struct {
 			Language string `json:"language"`
 			Mount    string `json:"mount"`
-		}{g.Language, g.Mount})
+		}{Language: g.Language, Mount: g.Mount})
 	}
 	type code Generator
 	return json.Marshal(code(g))
