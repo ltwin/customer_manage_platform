@@ -14,8 +14,8 @@
 
 ## 3. 前端数据层
 
-- [ ] 3.1 `PromptReference.scene?`、`agentReferences` 输出 `scene_ref` 片段（本机键 `sref_*` → `sceneRefs`，只序列化正文用到的键）、`agentState` 的 `AgentDraft.scenes` / `readDraft` 与 `messageSteps` 固定传 `selected_object_ids: []`；`creative-agent.test.ts` 覆盖本机键 ↔ 片段、草稿恢复、5 个场景上限、两个引用各 40 个物件
-- [ ] 3.2 `agentOutgoing` 的 `outgoingParts` / `messageParts` 显示场景引用 chip（整个场景、物件列表、「已删除的物件」）；`agent-outgoing.test.ts` 新用例通过
+- [x] 3.1 `PromptReference.scene?`、`agentReferences` 输出 `scene_ref` 片段（本机键 `sref_*` → `sceneRefs`，只序列化正文用到的键）、`agentState` 的 `AgentDraft.scenes` / `readDraft` 与 `messageSteps` 固定传 `selected_object_ids: []`；`creative-agent.test.ts` 覆盖本机键 ↔ 片段、草稿恢复、5 个场景上限、两个引用各 40 个物件
+- [x] 3.2 `agentOutgoing` 的 `outgoingParts` / `messageParts` 显示场景引用 chip（整个场景、物件列表、「已删除的物件」）；`agent-outgoing.test.ts` 新用例通过
 
 ## 4. 物件列表与菜单搜索
 

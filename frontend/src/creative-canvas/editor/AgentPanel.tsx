@@ -906,7 +906,6 @@ function AgentConversation({
       segments,
       titleOf,
       selected?.display_name,
-      editing ? selectedNames(editing) : [],
     )
     const send: QueuedMessage['send'] = {
       model,

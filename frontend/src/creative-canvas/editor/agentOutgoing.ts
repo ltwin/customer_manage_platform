@@ -1,15 +1,17 @@
 import type { components } from '../../api/schema'
 import type { PendingAgentChain } from './agentState.ts'
+import { sceneRefTitle, type SceneRefDraft } from './agentReferences.ts'
 
 type Segment = components['schemas']['CreativeAgentInstructionSegment']
 type Block =
   components['schemas']['CreativeAgentMessage']['body']['blocks'][number]
 
-// 用户消息的一段：文字、引用（Skill 或素材）、命令，或从 3D 场景发送时选中的物体
-// （names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
+// 用户消息的一段：文字、引用（Skill、素材或场景）、命令，或旧页面从 3D 场景发送时
+// 选中的物体（names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
+// 场景引用的 chip 带 detail：完整的物件名单。
 export type MessagePart =
   | { kind: 'text'; text: string }
-  | { kind: 'chip'; title: string }
+  | { kind: 'chip'; title: string; scene?: true; detail?: string }
   | { kind: 'command'; command: string; text?: string }
   | { kind: 'scene'; names: string[] }
 
@@ -24,15 +26,41 @@ export interface Outgoing {
 }
 
 const unnamed = '引用素材'
+const deletedObject = '已删除的物件'
 
+function sceneChip(ref: SceneRefDraft): MessagePart {
+  const names = ref.objectIDs.map((_, i) => ref.names[i] || '未命名')
+  return {
+    kind: 'chip',
+    title: sceneRefTitle(ref),
+    scene: true,
+    detail: names.length
+      ? `${ref.title || '未命名场景'}：${names.join('、')}`
+      : `整个场景：${ref.title || '未命名场景'}`,
+  }
+}
+
+// scenes 是正文里的场景引用，按出现顺序，与 scene_ref 片段一一对应。
 export function outgoingParts(
   segments: Segment[],
   titleOf: (revisionID: string) => string | undefined,
   skillName?: string,
-  sceneNames: string[] = [],
+  scenes: SceneRefDraft[] = [],
 ): MessagePart[] {
-  const parts = segments.map((segment): MessagePart => {
+  let scene = 0
+  return segments.map((segment): MessagePart => {
     switch (segment.type) {
+      case 'scene_ref': {
+        const ref = scenes[scene++]
+        return sceneChip(
+          ref ?? {
+            documentID: segment.document_id ?? '',
+            title: '',
+            objectIDs: segment.object_ids ?? [],
+            names: [],
+          },
+        )
+      }
       case 'skill_ref':
         return { kind: 'chip', title: skillName ?? 'Skill' }
       case 'content_ref':
@@ -50,10 +78,6 @@ export function outgoingParts(
         return { kind: 'text', text: segment.text ?? '' }
     }
   })
-  // 服务端把选中的物体存在消息末尾，这里照样放。
-  return sceneNames.length
-    ? [...parts, { kind: 'scene', names: sceneNames }]
-    : parts
 }
 
 export function messageParts(
@@ -69,6 +93,16 @@ export function messageParts(
         kind: 'scene',
         names: block.scene?.objects.map((object) => object.name) ?? [],
       }
+    // 场景引用显示发送时冻结的名称；发送时已经不在场景里的物件显示为「已删除的物件」。
+    if (block.type === 'scene_ref' && block.scene)
+      return sceneChip({
+        documentID: block.scene.document_id,
+        title: block.scene.title,
+        objectIDs: block.scene.objects.map((object) => object.id),
+        names: block.scene.objects.map((object) =>
+          object.missing ? deletedObject : object.name,
+        ),
+      })
     return {
       kind: 'chip',
       title:

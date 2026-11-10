@@ -1,5 +1,6 @@
 import { memo, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
+  Box,
   Check,
   ChevronRight,
   FoldVertical,
@@ -402,7 +403,13 @@ export function UserMessage({
           ) : part.kind === 'text' ? (
             <span key={index}>{part.text}</span>
           ) : (
-            <span className="cc-agent-chip" key={index}>
+            <span
+              className="cc-agent-chip"
+              key={index}
+              title={part.detail}
+              data-scene={part.scene}
+            >
+              {part.scene && <Box size={12} aria-hidden="true" />}
               {part.title}
             </span>
           ),

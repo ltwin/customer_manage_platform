@@ -66,18 +66,12 @@ test('what was sent is drawn the way the server will draw it', () => {
   )
 })
 
-test('the objects selected in the scene editor ride on the message', () => {
-  const parts = outgoingParts(
-    [{ type: 'text', text: '把它们加高' }],
-    titleOf,
-    undefined,
-    ['柱 A', ''],
-  )
-  assert.deepEqual(parts, [
+test('a selection an older page sent still rides on the message', () => {
+  const parts = [
     { kind: 'text', text: '把它们加高' },
     { kind: 'scene', names: ['柱 A', ''] },
-  ])
-  // The stored message reads back the same: the server puts the selection last.
+  ]
+  // The server put the selection last.
   assert.deepEqual(
     messageParts(
       [
@@ -103,6 +97,53 @@ test('the objects selected in the scene editor ride on the message', () => {
     label: '柱 A 等 3 个物体',
     detail: '柱 A、未命名物体、椅子',
   })
+})
+
+test('scene references are drawn in place, as sent and as stored', () => {
+  const lamp = { documentID: 'doc', title: '客厅', objectIDs: ['a', 'b'], names: ['台灯', ''] }
+  const whole = { documentID: 'bed', title: '卧室', objectIDs: [], names: [] }
+  const parts = outgoingParts(
+    [
+      { type: 'text', text: '把' },
+      { type: 'scene_ref', document_id: 'doc', object_ids: ['a', 'b'] },
+      { type: 'text', text: '改成金属，' },
+      { type: 'scene_ref', document_id: 'bed' },
+    ],
+    titleOf,
+    undefined,
+    [lamp, whole],
+  )
+  assert.deepEqual(parts, [
+    { kind: 'text', text: '把' },
+    { kind: 'chip', title: '客厅 · 台灯、未命名', scene: true, detail: '客厅：台灯、未命名' },
+    { kind: 'text', text: '改成金属，' },
+    { kind: 'chip', title: '卧室', scene: true, detail: '整个场景：卧室' },
+  ])
+  // Stored: the snapshot's names, and an object gone when sent reads as deleted.
+  assert.deepEqual(
+    messageParts(
+      [
+        {
+          type: 'scene_ref',
+          scene: {
+            document_id: 'doc',
+            title: '客厅',
+            revision: 12,
+            objects: [
+              { id: 'a', name: '台灯' },
+              { id: 'b', name: '', missing: true },
+            ],
+          },
+        },
+        { type: 'scene_ref', scene: { document_id: 'bed', title: '卧室', revision: 3, objects: [] } },
+      ],
+      titleOf,
+    ),
+    [
+      { kind: 'chip', title: '客厅 · 台灯、已删除的物件', scene: true, detail: '客厅：台灯、已删除的物件' },
+      { kind: 'chip', title: '卧室', scene: true, detail: '整个场景：卧室' },
+    ],
+  )
 })
 
 const sending: Outgoing = {

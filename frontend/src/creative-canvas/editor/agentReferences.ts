@@ -1,7 +1,13 @@
 import type { components } from '../../api/schema'
 import type { ChatAttachment } from '../home/chatAttachments.ts'
 import type { Canvas, Content } from './api.ts'
-import type { PromptReference } from './promptReferences.ts'
+import type { PromptReference, SceneRefDraft } from './promptReferences.ts'
+
+export type { SceneRefDraft }
+// 一条消息最多引用几个不同的场景，与服务端 maxSceneRefs 一致；
+// 每处引用最多 50 个物件。
+export const maxSceneRefs = 5
+export const maxSceneRefObjects = 50
 
 export type AgentMaterial = {
   id: string
@@ -62,6 +68,64 @@ export function uploadReferences(
     connected: false,
   }))
 }
+// 每插入一次场景引用生成一个本机键：同一个场景可以在一条消息里引用几次，
+// 每次带不同的物件。键写进去就不再改，改引用是换一个新键。
+export function sceneRefKey(): string {
+  return `sref_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`
+}
+// 场景引用标签上的字：标题 · 名称1、名称2 +N；没有名称的物件显示「未命名」。
+export function sceneRefTitle(ref: SceneRefDraft): string {
+  const title = ref.title || '未命名场景'
+  if (!ref.objectIDs.length) return title
+  const names = ref.objectIDs.map((_, i) => ref.names[i] || '未命名')
+  const shown = names.slice(0, 2).join('、')
+  return `${title} · ${shown}${names.length > 2 ? ` +${names.length - 2}` : ''}`
+}
+export function sceneReferences(
+  refs: Readonly<Record<string, SceneRefDraft>>,
+): PromptReference[] {
+  return Object.entries(refs).map(([key, scene]) => ({
+    key,
+    sourceID: key,
+    revisionID: null,
+    title: sceneRefTitle(scene),
+    kind: 'scene',
+    label: '场景',
+    scene,
+    connected: false,
+  }))
+}
+// 正文里实际用到的场景引用：存草稿和发送只带这些，删掉的引用留在表里给撤销用。
+export function usedSceneRefs(
+  text: string,
+  refs: Readonly<Record<string, SceneRefDraft>>,
+): Record<string, SceneRefDraft> {
+  const used: Record<string, SceneRefDraft> = {}
+  for (const match of text.matchAll(/@\[([\w-]+)\]/g)) {
+    const ref = refs[match[1]]
+    if (ref) used[match[1]] = ref
+  }
+  return used
+}
+// 正文里的场景引用，按出现顺序（同一个键出现两次就算两次），与 scene_ref 片段一一对应。
+export function sceneRefsInOrder(
+  text: string,
+  refs: Readonly<Record<string, SceneRefDraft>>,
+): SceneRefDraft[] {
+  return [...text.matchAll(/@\[([\w-]+)\]/g)].flatMap((match) => {
+    const ref = refs[match[1]]
+    return ref ? [ref] : []
+  })
+}
+// 正文里引用了几个不同的场景。
+export function sceneCount(
+  text: string,
+  refs: Readonly<Record<string, SceneRefDraft>>,
+): number {
+  return new Set(
+    Object.values(usedSceneRefs(text, refs)).map((ref) => ref.documentID),
+  ).size
+}
 // 发出去和存起来的文字只认内容修订：把还按本机 key 写的引用换成修订 id。
 export function revisionText(
   text: string,
@@ -81,6 +145,19 @@ export function agentSegments(
   let offset = 0
   for (const match of text.matchAll(/@\[([\w-]+)\]/g)) {
     const item = references.find((r) => r.sourceID === match[1])
+    if (item?.scene) {
+      if (match.index! > offset)
+        segments.push({ type: 'text', text: text.slice(offset, match.index) })
+      segments.push({
+        type: 'scene_ref',
+        document_id: item.scene.documentID,
+        ...(item.scene.objectIDs.length
+          ? { object_ids: item.scene.objectIDs }
+          : {}),
+      })
+      offset = match.index! + match[0].length
+      continue
+    }
     if (!item?.revisionID)
       throw new Error(
         item?.state ? '参考图还没上传好' : '引用素材已不可用，请重新选择',
