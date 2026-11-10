@@ -28,7 +28,7 @@ import { mergeParts } from '../src/creative-scene/models/merge.ts'
 import { parseGLB, parseModelGLB } from '../src/creative-scene/sandbox/gltf.ts'
 import { disposePieceViews, expandByPieces, perPiece, pieceViews, piecesOf } from '../src/creative-scene/render/pieces.ts'
 import { edgesOf, shellOf } from '../src/creative-scene/objects/wireframe.ts'
-import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   localContent,
   localRevision,
@@ -883,6 +883,37 @@ test('outline shells and wire edges are made per piece: the same as each part on
   const looseShell = shellOf(loose)
   assert.equal(loose.attributes.normal, normal, 'a geometry without an index keeps its own normals')
   assert.notEqual(looseShell.attributes.position, loose.attributes.position, 'and its positions: freeing the shell frees none of its buffers')
+})
+
+test('the outline shell is three’s creased normals at π where corners are a centimetre apart or more, and quick on a dense mesh (scene-glb-import 6.3)', () => {
+  const card = new THREE.PlaneGeometry(1, 1)
+  const back = card.clone().rotateY(Math.PI)
+  const cards = mergeGeometries([card.toNonIndexed(), back.toNonIndexed()])!
+  for (const [name, g] of [
+    ['sphere', new THREE.SphereGeometry(1, 32, 16)],
+    ['knot', new THREE.TorusKnotGeometry(1, 0.3, 64, 8)],
+    ['cards back to back', cards],
+  ] as const) {
+    const ours = shellOf(g)
+    const three = toCreasedNormals(g.index ? g : g.clone(), Math.PI)
+    for (const attribute of ['position', 'normal']) assert.deepEqual(values(ours, attribute), values(three, attribute), `${name}: ${attribute}`)
+  }
+  assert.deepEqual(values(shellOf(cards), 'normal').slice(0, 3), [0, 0, 1], 'the two sides of a card part')
+
+  // 1.96 million triangles, corners some 3.6 mm apart: three took over three seconds in the browser.
+  const dense = new THREE.SphereGeometry(0.8, 1400, 700)
+  const started = performance.now()
+  const shell = shellOf(dense)
+  const ms = performance.now() - started
+  assert.ok(ms < 1500, `${Math.round(ms)} ms`)
+  const p = shell.attributes.position!
+  const n = shell.attributes.normal!
+  let worst = 1
+  for (let i = 0; i < p.count; i += 997) {
+    const r = Math.hypot(p.getX(i), p.getY(i), p.getZ(i))
+    if (r > 0 && Math.abs(p.getY(i)) < 0.79) worst = Math.min(worst, (p.getX(i) * n.getX(i) + p.getY(i) * n.getY(i) + p.getZ(i) * n.getZ(i)) / r)
+  }
+  assert.ok(worst > 0.9999, `normals point out of the sphere (${worst})`)
 })
 
 test('pieces made unlike each other, which three cannot merge, are made whole instead', (t) => {

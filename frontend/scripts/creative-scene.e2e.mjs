@@ -13379,6 +13379,124 @@ if (process.env.SCENE_E2E_PERF) await check('real-time GI startup: a refused pip
   }
 })
 
+/**
+ * scene-glb-import 6.3: a sphere of 2 · lat · lon triangles with a UV map and
+ * a 2048² noise base colour, as a large scanned or generated model comes.
+ */
+function sphereGLB(lat, lon) {
+  const n = (lat + 1) * (lon + 1)
+  const pos = new Float32Array(n * 3)
+  const nor = new Float32Array(n * 3)
+  const uv = new Float32Array(n * 2)
+  for (let j = 0; j <= lat; j++) {
+    const t = (j / lat) * Math.PI
+    for (let i = 0; i <= lon; i++) {
+      const p = (i / lon) * 2 * Math.PI
+      const k = j * (lon + 1) + i
+      const d = [Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)]
+      nor.set(d, k * 3)
+      pos.set([d[0] * 0.8, d[1] * 0.8 + 0.8, d[2] * 0.8], k * 3)
+      uv.set([i / lon, j / lat], k * 2)
+    }
+  }
+  const idx = new Uint32Array(lat * lon * 6)
+  for (let j = 0, at = 0; j < lat; j++) {
+    for (let i = 0; i < lon; i++, at += 6) {
+      const a = j * (lon + 1) + i
+      idx.set([a, a + 1, a + lon + 1, a + 1, a + lon + 2, a + lon + 1], at)
+    }
+  }
+  const noise = pngOf(2048, 2048, (x, y) => [((x * 7919) ^ (y * 104729)) & 255, (x * y) & 255, (x + y) & 255, 255])
+  const view = (a) => Buffer.from(a.buffer)
+  return glbOf(
+    {
+      asset: { version: '2.0', generator: 'qa' },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ name: 'Sphere', mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 }, indices: 3, material: 0 }] }],
+      materials: [{ name: 'Skin', pbrMetallicRoughness: { baseColorTexture: { index: 0 }, metallicFactor: 0, roughnessFactor: 0.6 } }],
+      textures: [{ source: 0 }],
+      images: [{ bufferView: 4, mimeType: 'image/png' }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: n, type: 'VEC3', min: [-0.8, 0, -0.8], max: [0.8, 1.6, 0.8] },
+        { bufferView: 1, componentType: 5126, count: n, type: 'VEC3' },
+        { bufferView: 2, componentType: 5126, count: n, type: 'VEC2' },
+        { bufferView: 3, componentType: 5125, count: idx.length, type: 'SCALAR' },
+      ],
+    },
+    [view(pos), view(nor), view(uv), view(idx), noise],
+  )
+}
+
+// SCENE_E2E_BIG_IMPORT=1 (scene-glb-import 6.3, Epic revision v5): a model
+// near the budget (1.96 million triangles) through the import dialog onto
+// the stage in the real-time GI's rendered view, on this machine's GPU. The
+// times are for the record: how long the dialog takes and the longest task
+// in it, how long till the layer is ready with it, and the frame times while
+// orbiting. Only errors fail it.
+if (process.env.SCENE_E2E_BIG_IMPORT) await check('glb-import 6.3: a model near the budget, imported and in the rendered view', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    await traceLogging(context)
+    const server = new SceneServer()
+    stock(server)
+    server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    const glb = sphereGLB(700, 1400)
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('menuitem', { name: '导入模型…' }).click()
+    const from = await page.evaluate(() => performance.now())
+    const started = Date.now()
+    // Over Playwright's 50 MB for a buffer: through a file.
+    const file = join(tmpdir(), 'scene-e2e-sphere.glb')
+    await writeFile(file, glb)
+    await (await chooser).setFiles(file)
+    const dialog = page.getByRole('dialog', { name: '导入模型' })
+    await dialog.getByText(/个三角形/).waitFor({ timeout: 120_000 })
+    const readMs = Date.now() - started
+    const summary = await dialog.locator('p').nth(1).textContent()
+    const clicked = Date.now()
+    await dialog.getByRole('button', { name: '导入', exact: true }).click()
+    await dialog.waitFor({ state: 'detached', timeout: 300_000 })
+    const importMs = Date.now() - clicked
+    await waitFor(() => server.scene.objects.some((o) => o.name?.startsWith('sphere') || o.model?.content_revision_id === [...server.imports.values()][0]?.content_revision_id), 'the sphere goes in', 120_000)
+    const placed = Date.now()
+    await trianglesStill(page, 'the sphere')
+    const drawnMs = Date.now() - placed
+    let stats = null
+    await waitFor(async () => {
+      stats = await page.evaluate(() => window.__sceneGPU.traceStats)
+      return stats?.state === 'ready' && stats.pending === 0 && stats.layer === stats.target
+    }, 'the layer ready', 300_000)
+    const layerMs = Date.now() - placed
+    const { log, longTasks } = await traceLog(page)
+    const tasks = longTasks.filter((t) => t.at >= from)
+    const longest = (after, before = Infinity) => Math.round(Math.max(0, ...tasks.filter((t) => t.at >= after && t.at < before).map((t) => t.ms)))
+    await page.mouse.move(x, y)
+    await orbitFrames(page, 1000)
+    const frames = frameStats(await orbitFrames(page, 4000))
+    const sent = server.importRequests[0]
+    const bytes = server.uploadBytes.get(sent.payload.glb_upload_id)?.length ?? 0
+    console.log(`  file ${(glb.length / 2 ** 20).toFixed(1)} MiB; ${summary}; stored GLB ${(bytes / 2 ** 20).toFixed(1)} MiB`)
+    console.log(`  dialog: read and converted in ${readMs} ms, uploaded and saved in ${importMs} ms; longest task ${longest(from)} ms`)
+    console.log(`  stage: drawn ${drawnMs} ms after it went in, layer ready ${layerMs} ms after (tier ${stats.tier}, ${(stats.bytes / 2 ** 20).toFixed(0)} MiB, ${log.length} layer updates); longest task after the dialog ${longest(from + readMs + importMs)} ms`)
+    if (process.env.SCENE_E2E_BIG_IMPORT_TASKS) console.log(`  long tasks (ms from choosing the file: length): ${tasks.filter((t) => t.ms > 200).map((t) => `${Math.round(t.at - from)}: ${Math.round(t.ms)}`).join(', ')}; dialog closed at ${readMs + importMs}`)
+    // Selected as it went in: its outline in the rendered view, for the record.
+    await shot(page, 'glb-import-big-selected')
+    console.log(`  orbiting in the rendered view: mean ${frames.mean.toFixed(1)} ms, p95 ${frames.p95.toFixed(1)} ms, max ${frames.max.toFixed(1)} ms over ${frames.frames} frames`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // --- the timeline (scene-timeline-shots): SCENE_E2E_ONLY='timeline AC-2' runs one --------------------------------------------
 
 const camA = gid('cama')

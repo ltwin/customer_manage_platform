@@ -35,4 +35,4 @@
 
 - [x] 6.1 后端：`creativeglb.DefaultLimits` 改为 GLB ≤ 200 MiB、三角形 ≤ 2000000（上传上限随它）；面级材质分配区间端点上限、助手 `write_model` 工具说明里的「三角面 ≤30 万」同步；OpenAPI 的 manifest `triangles`、面级材质区间端点最大值和上传 `kind: model` 的说明改掉，`make generate`
 - [x] 6.2 前端：`inspect` 的 `defaultLimits`、沙箱 `MAX_GLB_BYTES` 与「GLB 超过 16 MiB」提示同步；沙箱超限用例改成超过 200 MiB 的输出；`docs/dev/creative-media.md` 的上传上限
-- [ ] 6.3 实测：一个接近上限（约 200 万三角形）的导入模型，记录换算与上传、视口首帧和交互、路径追踪建层的耗时，结果写进 design 并给 owner 看
+- [x] 6.3 实测：一个接近上限（约 200 万三角形）的导入模型，记录换算与上传、视口首帧和交互、路径追踪建层的耗时，结果写进 design 并给 owner 看
