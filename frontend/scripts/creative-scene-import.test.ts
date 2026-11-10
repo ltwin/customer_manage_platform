@@ -8,6 +8,9 @@ import { Box3, LoadingManager, Mesh, type MeshStandardMaterial, type Object3D } 
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { applyTransform, convert, slotNames, slotPayload, type Conversion } from '../src/creative-scene/import/convert.ts'
+import { dimensions, prepareImages, type Codec } from '../src/creative-scene/import/images.ts'
+import { writeGLB } from '../src/creative-scene/import/write.ts'
+import { inspect } from '../src/creative-scene/sandbox/inspect.ts'
 import { ImportRejected, parseImport, type Decoders, type GLTFJSON, type MaterialJSON } from '../src/creative-scene/import/parse.ts'
 
 // The GLB import (scene-glb-import group 4): files built here from JSON, and
@@ -566,4 +569,183 @@ test('the origin stays where the file has it, or moves to the bottom centre', as
     ])
   assert.deepEqual(worldBox((await converted(file())).scene), [3, 2, 1, 4, 3, 1])
   assert.deepEqual(worldBox((await converted(file(), { originToBottomCenter: true })).scene), [-0.5, 0, 0, 0.5, 1, 0])
+})
+
+// --- write and images (task 4.3) ---
+
+// GLTFExporter reads its blobs back with FileReader, which Node has not.
+;(globalThis as { FileReader?: unknown }).FileReader ??= class {
+  result: ArrayBuffer | string | null = null
+  onloadend: (() => void) | null = null
+  readAsArrayBuffer(blob: Blob) {
+    void blob.arrayBuffer().then((r) => {
+      this.result = r
+      this.onloadend?.()
+    })
+  }
+  readAsDataURL(blob: Blob) {
+    void blob.arrayBuffer().then((r) => {
+      this.result = `data:${blob.type || 'application/octet-stream'};base64,${Buffer.from(r).toString('base64')}`
+      this.onloadend?.()
+    })
+  }
+}
+
+const jsonOf = (file: ArrayBuffer) => {
+  const view = new DataView(file)
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(file, 20, view.getUint32(12, true)))) as GLTFJSON & Record<string, unknown>
+}
+
+test('the written GLB passes inspect, carries no textures or quantisation, and keeps the file’s bounds', async () => {
+  const transform = { KHR_texture_transform: { offset: [0.5, 0], scale: [2, 2] } }
+  const files: [string, ArrayBuffer][] = [
+    ['textured', quads([{ name: 'paper', pbrMetallicRoughness: { baseColorTexture: { index: 0, extensions: transform } }, normalTexture: { index: 0, extensions: transform } }, {}], { ...textureRefs(1), extensionsUsed: ['KHR_texture_transform'] }, { images: [png], color: true })],
+    ...(['meshopt.glb', 'draco.glb'] as const).map((name): [string, ArrayBuffer] => {
+      const b = readFileSync(path.join(fixtures, name))
+      return [name, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer]
+    }),
+  ]
+  for (const [name, file] of files) {
+    const parsed = await parseImport(file, nodeDecoders)
+    const before = worldBox(parsed.scene)
+    const c = convert(parsed, { originToBottomCenter: false })
+    const { glb: out, manifest } = await writeGLB(c.scene)
+    const json = jsonOf(out)
+    for (const k of ['images', 'textures', 'samplers']) assert.equal(json[k], undefined, `${name}: no ${k}`)
+    assert.ok(!(json.extensionsUsed ?? []).includes('KHR_mesh_quantization'), `${name}: no quantisation`)
+    assert.deepEqual(json.extensionsUsed ?? [], [], name)
+    assert.deepEqual([...manifest.bounds.min, ...manifest.bounds.max].map((v) => Math.round(v * 1e4) / 1e4), before, `${name}: bounds`)
+    assert.deepEqual(manifest.slots.map((s) => s.id), [...c.slots.keys()].sort(), `${name}: slots`)
+    assert.deepEqual(inspect(out), manifest)
+  }
+})
+
+test('a model over the budget is refused with the reason', async () => {
+  const parsed = await parseImport(quads([{ name: 'm' }]), nodeDecoders)
+  const c = convert(parsed, { originToBottomCenter: false })
+  const extra = c.scene.children[0]!
+  for (let i = 0; i < 10001; i++) c.scene.add(extra.clone())
+  await assert.rejects(writeGLB(c.scene), (e: unknown) => e instanceof ImportRejected && e.reason === 'limit' && /节点/.test(e.message))
+})
+
+/** Image headers, enough for dimensions() and sniff(). */
+function pngOf(w: number, h: number, size = 64): Uint8Array {
+  const b = Buffer.alloc(size)
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).copy(b)
+  b.writeUInt32BE(w, 16)
+  b.writeUInt32BE(h, 20)
+  return b
+}
+function jpegOf(w: number, h: number, size = 64): Uint8Array {
+  const b = Buffer.alloc(size)
+  Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 11, 8]).copy(b)
+  b.writeUInt16BE(h, 13)
+  b.writeUInt16BE(w, 15)
+  return b
+}
+function webpOf(kind: 'VP8X' | 'VP8 ' | 'VP8L', w: number, h: number, size = 64): Uint8Array {
+  const b = Buffer.alloc(size)
+  b.write('RIFF', 0)
+  b.writeUInt32LE(size - 8, 4)
+  b.write('WEBP', 8)
+  b.write(kind, 12)
+  if (kind === 'VP8X') {
+    b.writeUIntLE(w - 1, 24, 3)
+    b.writeUIntLE(h - 1, 27, 3)
+  } else if (kind === 'VP8 ') {
+    b.writeUInt16LE(w, 26)
+    b.writeUInt16LE(h, 28)
+  } else {
+    b[20] = 0x2f
+    b.writeUInt32LE((w - 1) | ((h - 1) << 14), 21)
+  }
+  return b
+}
+
+test('image sizes are read from PNG, JPEG and all three WebP headers', () => {
+  assert.deepEqual(dimensions(pngOf(300, 200), 'image/png'), { width: 300, height: 200 })
+  assert.deepEqual(dimensions(jpegOf(300, 200), 'image/jpeg'), { width: 300, height: 200 })
+  for (const kind of ['VP8X', 'VP8 ', 'VP8L'] as const) assert.deepEqual(dimensions(webpOf(kind, 300, 200), 'image/webp'), { width: 300, height: 200 }, kind)
+})
+
+/**
+ * A codec whose pictures are transparent if the source says so (its last
+ * byte) and whose encodings take a byte a pixel, a quarter for JPEG.
+ */
+function fakeCodec() {
+  const drawn: { width: number; height: number; type?: string }[] = []
+  const codec: Codec = {
+    async draw(source, width, height) {
+      const record: (typeof drawn)[number] = { width, height }
+      drawn.push(record)
+      return {
+        hasAlpha: source.bytes[source.bytes.length - 1] === 1,
+        async encode(type) {
+          record.type = type
+          return type === 'image/png' ? pngOf(width, height, Math.max(64, width * height)) : jpegOf(width, height, Math.max(64, (width * height) / 4))
+        },
+        close() {},
+      }
+    },
+  }
+  return { codec, drawn }
+}
+const transparent = (b: Uint8Array) => {
+  const c = Buffer.from(b)
+  c[c.length - 1] = 1
+  return c
+}
+
+test('images within the limits go up as they are; identical ones once, as the strictest use', async () => {
+  const { codec, drawn } = fakeCodec()
+  const a = pngOf(16, 16)
+  const sources = new Map([
+    [0, { bytes: a, mime: 'image/png' as const }],
+    [1, { bytes: Buffer.from(a), mime: 'image/png' as const }],
+    [2, { bytes: jpegOf(8, 8), mime: 'image/jpeg' as const }],
+  ])
+  const { images, report } = await prepareImages(new Map([[0, 'color'], [1, 'data'], [2, 'color']] as const), sources, codec, { maxBytes: 1000, maxPixels: 64 * 64, maxEdge: 64 })
+  assert.deepEqual(images.map((i) => [i.images, i.mime, i.bytes === sources.get(i.images[0]!)!.bytes]), [
+    [[0, 1], 'image/png', true],
+    [[2], 'image/jpeg', true],
+  ])
+  assert.deepEqual(drawn, [])
+  assert.deepEqual(report, [])
+})
+
+test('images over the limits: transparent WebP and normal maps become PNG, an opaque base colour JPEG; halved until they fit', async () => {
+  const { codec, drawn } = fakeCodec()
+  const limits = { maxBytes: 1100, maxPixels: 64 * 64, maxEdge: 64 }
+  const sources = new Map([
+    [0, { bytes: transparent(webpOf('VP8X', 128, 128)), mime: 'image/webp' as const }],
+    [1, { bytes: pngOf(128, 64), mime: 'image/png' as const }],
+    [2, { bytes: jpegOf(128, 128), mime: 'image/jpeg' as const }],
+    [3, { bytes: jpegOf(32, 32, 2000), mime: 'image/jpeg' as const }],
+  ])
+  const uses = new Map([[0, 'color'], [1, 'data'], [2, 'color'], [3, 'color']] as const)
+  const { images, report } = await prepareImages(uses, sources, codec, limits)
+  // 64 × 64 is in the pixel limit, but 4096 PNG bytes are not: halved to 32 × 32.
+  assert.deepEqual(images.map((i) => [i.images[0], i.mime, i.width, i.height]), [
+    [0, 'image/png', 32, 32],
+    [1, 'image/png', 32, 16],
+    [2, 'image/jpeg', 64, 64],
+    [3, 'image/jpeg', 32, 32],
+  ])
+  assert.deepEqual(drawn.map((d) => [d.width, d.height, d.type]), [
+    [64, 64, 'image/png'],
+    [32, 32, 'image/png'],
+    [64, 32, 'image/png'],
+    [32, 16, 'image/png'],
+    [64, 64, 'image/jpeg'],
+    [32, 32, 'image/jpeg'],
+  ])
+  assert.equal(report.length, 4)
+  assert.equal(report[0]!.text, '图片 0（128 × 128）超过上传上限，已缩小到 32 × 32 并存为 PNG')
+})
+
+test('more than 64 distinct images are refused', async () => {
+  const { codec } = fakeCodec()
+  const sources = new Map(Array.from({ length: 65 }, (_, i) => [i, { bytes: pngOf(i + 1, 1), mime: 'image/png' as const }]))
+  const uses = new Map(Array.from({ length: 65 }, (_, i) => [i, 'color' as const]))
+  await assert.rejects(prepareImages(uses, sources, codec), (e: unknown) => e instanceof ImportRejected && e.reason === 'limit')
 })

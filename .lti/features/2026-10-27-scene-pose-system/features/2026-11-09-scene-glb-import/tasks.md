@@ -21,7 +21,7 @@
 
 - [x] 4.1 预检与解析：`import/parse.ts`，在加载前扫描外部 URI、KTX2 / Basis 和蒙皮，然后注册 Draco（解码器随前端打包）与 meshopt 解析，再取图片原字节（`bufferView` 与 `data:` URL）。先写单测：外部图片 URI 和外部缓冲 URI 都在加载前被拒绝；`data:` URL 图片能取出原字节；Draco、meshopt 夹具（提交在 `frontend/scripts/fixtures/`，附来源说明）都能解析
 - [x] 4.2 换算：`import/convert.ts`，实现 Epic 换算表的全部行，包括反量化、槽位命名、颜色换算、ORM 共图、贴图变换烘焙、寻址方式检查、原点移动和换算报告。先写单测：换算表每一行至少一例；量化夹具三种（整数位置且节点带缩放、归一化 UV、交错属性）；镜像与钳制寻址各两种（UV 在界内、跨界）
-- [ ] 4.3 写出与图片：`import/write.ts` 用 `GLTFExporter` 写出 GLB 并调用 `inspect()`；`import/images.ts` 处理超限缩小、按用途和透明度选编码、按哈希去重。先写单测：导出物通过 `inspect()`，没有 `images` / `textures` / `KHR_mesh_quantization`，包围盒与原文件相同；超限的透明 WebP 和法线贴图编码为 PNG，超限的不透明基础色编码为 JPEG
+- [x] 4.3 写出与图片：`import/write.ts` 用 `GLTFExporter` 写出 GLB 并调用 `inspect()`；`import/images.ts` 处理超限缩小、按用途和透明度选编码、按哈希去重。先写单测：导出物通过 `inspect()`，没有 `images` / `textures` / `KHR_mesh_quantization`，包围盒与原文件相同；超限的透明 WebP 和法线贴图编码为 PNG，超限的不透明基础色编码为 JPEG
 - [ ] 4.4 提交边界：`import/run.ts` 依次完成上传、等就绪、预置本地图片并渲染缩略图、提交，按状态图重试或丢弃；`creative-canvas/editor/media.ts` 的 `uploadGenerated` 允许 `image/webp`。先写单测（注入网络操作）：响应丢失后用同一操作 ID 重试，只建一份且不丢弃上传；收到 4xx 后丢弃；提交中不能取消；上传中取消会丢弃（AC-12、AC-12b、AC-12c）
 - [ ] 4.5 导入对话框与入口：`import/ImportModelDialog.tsx` 包含换算报告、进度、标题、授权说明（用 `asset.copyright` 预填）、来源页面、原点选项、贴附方式，提交中关闭页面用 `beforeunload` 询问。入口：`creative-canvas/assets/AssetImport.tsx` 与 `creative-canvas/editor/fileImport.ts:importPlan`（`.glb` 交给对话框，拖到画布上的提示「模型只能导入到资产库」）、`panels/AssetPanel.tsx` 的「导入模型」、`SceneEditor.tsx` 的「添加 > 导入模型…」（导入后放入场景）。e2e（单条）：导入夹具 GLB，资产出现、缩略图非空；拖进场景，检查材质预览、实时 GI 镜中反射、`lit` 导出三处的自发光与挖空；撤销（AC-1 的自动部分、AC-9）
 
