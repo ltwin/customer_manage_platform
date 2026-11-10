@@ -744,6 +744,7 @@ test('images over the limits: transparent WebP and normal maps become PNG, an op
   ])
   assert.equal(report.length, 4)
   assert.equal(report[0]!.text, '图片 0（128 × 128）超过上传上限，已缩小到 32 × 32 并存为 PNG')
+  assert.equal(report[3]!.text, '图片 3（32 × 32）超过上传上限，已重新编码为 JPEG', 'only too many bytes: the size stays')
 })
 
 test('more than 64 distinct images are refused', async () => {

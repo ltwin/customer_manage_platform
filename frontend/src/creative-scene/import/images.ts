@@ -113,7 +113,9 @@ export async function prepareImages(uses: ReadonlyMap<number, ImageUse>, sources
     }
     if (!done) throw new ImportRejected('limit', `图片 ${indices[0]} 缩到最小仍超过上传上限`)
     images.push(done)
-    report.push({ slot: null, level: 'changed', text: `图片 ${indices[0]}（${size.width} × ${size.height}）超过上传上限，已缩小到 ${width} × ${height} 并存为 ${done.mime === 'image/png' ? 'PNG' : 'JPEG'}` })
+    const format = done.mime === 'image/png' ? 'PNG' : 'JPEG'
+    const how = width === size.width && height === size.height ? `已重新编码为 ${format}` : `已缩小到 ${width} × ${height} 并存为 ${format}`
+    report.push({ slot: null, level: 'changed', text: `图片 ${indices[0]}（${size.width} × ${size.height}）超过上传上限，${how}` })
   }
   return { images, report }
 }
