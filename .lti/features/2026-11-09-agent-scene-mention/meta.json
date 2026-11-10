@@ -1,0 +1,42 @@
+{
+  "uid": "98650d92-2da5-4025-97d7-f2b81ca459e1",
+  "revision": 3,
+  "id": "agent-scene-mention",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-11-09T12:29:03.360Z",
+  "updatedAt": "2026-11-10T06:27:49.860Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-10T06:27:49.594Z",
+      "contentHash": "c25f92d1f20c16e0"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-10T06:27:49.594Z",
+      "contentHash": "8841954cab0f9aa3",
+      "deltaHash": "c1b87c46ba2f1977"
+    }
+  },
+  "approvalHistory": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-09T13:33:25.804Z",
+      "contentHash": "1a15ba6bbc47fe9f",
+      "role": "proposal"
+    }
+  ],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
