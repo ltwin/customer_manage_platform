@@ -190,9 +190,9 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 | 字段 | 类型 | 必须 | 缺省 / 约束 |
 |---|---|---|---|
-| `maps` | object | 否 | 键为 `base_color`、`normal`、`roughness`、`metalness`、`ao`，至少一个；未知键返回 400 |
+| `maps` | object | 否 | 键为 `base_color`、`normal`、`roughness`、`metalness`、`ao`、`emissive`（scene-pose-system 子项 2），至少一个；未知键返回 400 |
 | `maps.<kind>.content_revision_id` | string（`ccrv_…`） | 是 | 本账号 `image` 类型、`ready` 且可展示的内容修订，校验与模型引用相同；否则返回 400 `creative_image_unavailable` |
-| `maps.<kind>.channel` | `"r"` \| `"g"` \| `"b"` \| `"a"` | 否 | 只对 `roughness`、`metalness`、`ao` 有效，缺省 `r`，存储时补齐；写在 `base_color`、`normal` 上返回 400。glTF 的打包 ORM 图可以三项都指定同一张图，分别取 `r`、`g`、`b` |
+| `maps.<kind>.channel` | `"r"` \| `"g"` \| `"b"` \| `"a"` | 否 | 只对 `roughness`、`metalness`、`ao` 有效，缺省 `r`，存储时补齐；写在 `base_color`、`normal`、`emissive` 上返回 400。glTF 的打包 ORM 图可以三项都指定同一张图，分别取 `r`、`g`、`b` |
 | `mapping` | object | 否 | 只在有 `maps` 时允许；有 `maps` 而没写时存储为 `{kind:"triplanar", size_m:1, rotation_deg:0, normal_strength:1}` |
 | `mapping.kind` | `"triplanar"` \| `"uv"` | 否 | 缺省 `triplanar`：按物件空间的米铺开，物件缩放时不拉伸（同 Blender 的 Box 投影）。`uv` 用模型的 `TEXCOORD_0`；模型没有 UV 时按三平面投影显示，编辑器和助手都会被提示。助手按 manifest 的 `uv = false` 判断（修订 v18），旧模型没有这个字段时不提示；基础体都带 UV |
 | `mapping.size_m` | number 0.01…100 | 否 | 只在 `triplanar` 时允许，缺省 1：一块贴图的宽度（米），高度按图片宽高比 |
@@ -202,10 +202,11 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `alpha_mode` | `"opaque"` \| `"clip"` \| `"blend"` | 否 | 对应 glTF 的 OPAQUE / MASK / BLEND。缺省 `opaque`；有 `maps` 时存储时补齐。不带基础色贴图也允许，此时透明度只来自 `opacity` |
 | `alpha_cutoff` | number 0…1 | 否 | 只在 `alpha_mode = clip` 时允许，缺省 0.5，存储时补齐 |
 
-  - 贴图与常数参数相乘，语义同 three.js 和 glTF：基础色 = `color` × 贴图（按 sRGB 读取）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光；法线贴图是切线空间，OpenGL 约定（+Y 朝上，同 glTF、Blender），乘 `normal_strength`。除基础色外按线性读取。
+  - 贴图与常数参数相乘，语义同 three.js 和 glTF：基础色 = `color` × 贴图（按 sRGB 读取）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光；法线贴图是切线空间，OpenGL 约定（+Y 朝上，同 glTF、Blender），乘 `normal_strength`；自发光 = `emissive` × 贴图（按 sRGB 读取）× `emissive_intensity`，同 glTF 的 `emissiveTexture`，`emissive` 为黑色时贴图不起作用（scene-pose-system 子项 2）。除基础色和自发光外按线性读取。
   - 透明方式：`opaque` 忽略贴图的透明通道，`opacity`、`transmission` 的行为与修订 v17 之前完全相同；`clip` 把 `opacity × 贴图透明通道` 低于 `alpha_cutoff` 的部分挖掉，留下的部分完全不透明，挖掉的部分不投影，屏幕外反射和探针 GI 里同样挖空；`blend` 把贴图透明通道乘到 `opacity` 上，按半透明物件处理（与 `opacity < 1` 相同），即使整张贴图都不透明。
+  - 顶点色（scene-pose-system 子项 2）：`principled@1` 的 `params` 加布尔参数 `vertex_color`，缺省 `false`。打开时基础色再乘模型的 `COLOR_0`（按线性读取，同 glTF），与基础色贴图同时生效；带透明通道的 `COLOR_0` 只取 RGB。模型没有 `COLOR_0`、基础体和内置贴图材质上，这个参数不起作用。参数在材质目录里定义，命令接口照旧只校验外形。修订之前，没有分配材质的槽位按 GLB 自带的常数显示时已经带顶点色，这条规则不变。
   - 白模、线稿和线框不看材质（与 Blender 相同），贴图和透明方式都不体现；材质预览、最终渲染、`render_view` 和 `lit` 导出体现。
-  - 单个场景最多引用 64 张不同的图片（跨所有槽位去重计数），超出返回 413 `creative_size_limit`。这是初始值，C5c1 实测后调整。
+  - 单个场景最多引用 64 张不同的图片（跨所有槽位去重计数），超出返回 413 `creative_size_limit`。这是初始值，C5c1 实测后调整；scene-pose-system 子项 2 用带贴图的角色加布景实测，验收时决定是否调整。
 - **灯光**（字段与 three.js 同名同义，渲染时原样赋给对应的灯光类）：
 
 | `type` | three.js | 字段与缺省 |
@@ -239,6 +240,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 修订 v17（C5c1 起草时）：材质槽新增可选的 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`，引用表开始登记图片。不迁移：没有这些字段就是没有贴图、`opaque`，渲染与之前相同。改了 `maps` 的槽位会进入渲染指纹（指纹已整体计入 `material_slots`），已有的 `lit` 导出图照常提示过时；没改的场景指纹不变。回滚到不认识这些字段的后端会读取失败，只做前向修复。
 - 修订 v20（C5c2 起草时）：`kind = textured` 的预设可以带 `mapping`、`alpha_mode`、`alpha_cutoff`。只放宽校验，不迁移；旧编辑器不认识这些预设，按未知预设显示中性灰，所以前后端同一版本上线。内置贴图不进引用表，也不计入单场景 64 张图片的上限。
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
+- scene-pose-system 子项 2（外部 GLB 导入）：`maps` 加 `emissive`，`principled@1` 加参数 `vertex_color`。不迁移：没有这两项就是没有自发光贴图、不乘顶点色，渲染与之前相同；自发光贴图的图片进引用表、计入 64 张上限，与其他贴图相同。旧编辑器不认识 `emissive` 键会读取失败，前后端同一版本上线，回滚只做前向修复。OpenAPI 的 `CreativeSceneTextureMaps` 加可选的 `emissive`。
 
 ## 场景内置基础体
 
@@ -280,30 +282,31 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - `creative_contents.kind = 'model'`。
   - 每个版本一条 `creative_content_revisions`（`schema_version = 1`）。
   - GLB 存为 blob，经 `creative_content_objects` 以 `role='original'` 绑定；缩略图 PNG 以 `role='thumbnail'` 绑定。
-  - 上传走 `creative_uploads`，`declared_kind` 加 `model`，校验格式加 `model/gltf-binary`（`.glb`），上限 16 MiB，只允许暂存目标。
+  - 上传走 `creative_uploads`，`declared_kind` 加 `model`，校验格式加 `model/gltf-binary`（`.glb`），上限 200 MiB（修订 v5），只允许暂存目标。
   - **两种形态**：
     - 暂存形态：worker 校验 GLB 通过后写入，载荷只有 `{format, manifest}`，manifest 由服务端从 GLB 算出；由暂存候选持有，只供 `commit_model` 消费，不能被场景引用，也不能被采用到资产或画布节点。候选被消费后（`adopted_target_kind = 'document'`）失去持有方，按 GC 回收。
-    - 完整形态：`commit_model` 写入，载荷为下表结构；GLB 与缩略图对象复用暂存修订的 blob，不复制字节。`derive_model`（修订 v13）也写完整形态：载荷来自来源修订，只换 `faces`，GLB 与缩略图复用来源修订的 blob。
-  - **写入口**：`model` 不能经通用写入口（`creativecontent.Validate` / `WriteAndRetain`）写入，资产、画布 `replace_content`、生成输出都写不进来。暂存形态只由 `WriteMediaAndRetain`（worker）写，完整形态只由 `WriteModelAndRetain`（`commit_model`、`derive_model`）写。
+    - 完整形态：`commit_model` 写入，载荷为下表结构；GLB 与缩略图对象复用暂存修订的 blob，不复制字节。`derive_model`（修订 v13）也写完整形态：载荷来自来源修订，只换 `faces`，GLB 与缩略图复用来源修订的 blob。导入接口（`api: 导入模型到资产库`，scene-pose-system 子项 2）也写完整形态：`generator` 为导入形式，另带 `import` 和 `materials`，见下方「导入的模型」；GLB 复用暂存修订的 blob。
+  - **写入口**：`model` 不能经通用写入口（`creativecontent.Validate` / `WriteAndRetain`）写入，资产、画布 `replace_content`、生成输出都写不进来。暂存形态只由 `WriteMediaAndRetain`（worker）写，完整形态只由 `WriteModelAndRetain`（`commit_model`、`derive_model`、导入接口）写。
 - **角色**：权威主数据，内容修订不可变。
-- **所有权**：由 `creativescene` 的 `commit_model` 写入（消费暂存上传）；`creativelibrary` 存入资产库时只引用同一修订，不复制字节（复制语义由「不可变 + 编辑时分叉」实现，见 I4、I7）。
+- **所有权**：由 `creativescene` 的 `commit_model` 写入（消费暂存上传）；导入的模型由 `creativescene` 的导入接口写入，只属于资产库（`data: 模型资产`）；`creativelibrary` 存入资产库时只引用同一修订，不复制字节（复制语义由「不可变 + 编辑时分叉」实现，见 I4、I7）。
 
 ### 结构与身份
 
 | 路径 | 类型 | 必须 | 约束 |
 |---|---|---|---|
 | `model.format` | `"glb"` | 是 | — |
-| `model.generator.language` | `"three-module"` | 是 | 外部导入（后续）将使用其他值 |
-| `model.generator.contract_version` | integer | 是 | 当前为 1 |
-| `model.generator.lib_version` | integer | 是 | 当前为 1 |
-| `model.generator.code` | string | 是 | ≤ 64 KiB，UTF-8 |
-| `model.generator.code_sha256` | `sha256-<64 hex>` | 是 | 服务端重算并核对 |
-| `model.generator.params_schema` | object | 是 | 按几何模块契约的参数定义 |
-| `model.generator.params` | object | 是 | 每个键都在 schema 中，值在范围内 |
-| `model.generator.mount` | `floor`/`wall`/`ceiling`/`free` | 是 | — |
-| `model.manifest` | 见几何模块契约「产物」 | 是 | `triangles` ≤ 300000；`slots` ≤ 32；`parts` ≤ 200 |
+| `model.generator.language` | `"three-module"` \| `"imported"` | 是 | `imported` 表示外部导入的 GLB（scene-pose-system 子项 2），只由导入接口写入；此时 `generator` 只有 `language` 和 `mount`，下面标「`three-module` 时」的字段都没有 |
+| `model.generator.contract_version` | integer | `three-module` 时 | 当前为 1 |
+| `model.generator.lib_version` | integer | `three-module` 时 | 当前为 1 |
+| `model.generator.code` | string | `three-module` 时 | ≤ 64 KiB，UTF-8 |
+| `model.generator.code_sha256` | `sha256-<64 hex>` | `three-module` 时 | 服务端重算并核对 |
+| `model.generator.params_schema` | object | `three-module` 时 | 按几何模块契约的参数定义 |
+| `model.generator.params` | object | `three-module` 时 | 每个键都在 schema 中，值在范围内 |
+| `model.generator.mount` | `floor`/`wall`/`ceiling`/`free` | 是 | 导入的模型由导入时选择，缺省 `floor` |
+| `model.manifest` | 见几何模块契约「产物」 | 是 | `triangles` ≤ 2000000（修订 v5）；`slots` ≤ 32；`parts` ≤ 200 |
 | `model.name_hint` | string ≤ 80 | 否 | 助手或摄影师起的名字 |
 | `model.faces` | object | 否 | 面级材质分配（C5b，修订 v13），见下方「面级材质分配」；缺省表示没有 |
+| `model.import` | object | `imported` 时 | 导入来源与授权说明，见下方「导入的模型」 |
 
 **面级材质分配**（修订 v13，owner 2026-10-28）：
 
@@ -344,6 +347,24 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   作废的部分在编辑器里提示；助手从 `write_model` 的工具结果得知（工具层比较新旧修订的分配）。系统说明提示助手：要让面分配跨代码修改保留，给相关物件起 `part:<id>` 这类唯一的名字。
 - **写入口**：`commit_model` 的 `faces`（重新生成时带过来），`derive_model`（只改分配，复用 GLB），见 `api: 场景模型命令`。库副本照抄来源修订的 `faces`（`data: 模型资产`）。
 
+**导入的模型**（scene-pose-system 子项 2，owner 2026-11-09）：
+
+- **含义**：账号从外部导入的静态 GLB。浏览器把原文件换算成静态子集（拆出图片、材质换成槽位、解压几何），只有换算后的 GLB 进存储；原文件不保存。几何没有代码和参数，改不了形状，可以换材质、做面级材质分配。
+- **结构**：`generator = {language: "imported", mount}`；`import` 如下；`materials` 是导入时由 glTF 材质换算出的分配，结构同 `data: 模型资产` 的库副本；没有 `source_revision_id`。
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `model.import.file_name` | string 1–255 | 是 | 原文件名（含扩展名），按 Unicode 码点计，不含路径 |
+| `model.import.attribution` | string ≤ 2000 | 否 | 来源与授权说明，摄影师填写；导入时用 glTF 的 `asset.copyright` 预填。缺省表示没有填写 |
+| `model.import.source_url` | string ≤ 2048 | 否 | 素材的来源页面，只允许 `http`、`https` |
+
+- 导入时间取内容修订的 `created_at`，不另存。服务端不核实授权说明的真假，只保存和显示；授权由摄影师在上传时声明，与其他上传相同。
+- **场景里派生**：导入的模型放进场景后做面级材质分配时，`derive_model` 照常从它派生出场景自己的修订：载荷照抄 `generator`、`import`、`manifest`、`name_hint`，换 `faces`，不带 `materials`。派生出的修订仍是 `imported`。`commit_model` 的 `generator` 只接受 `three-module`，写不出导入的模型。
+- **读取方**：
+  - 编辑器：属性栏不显示参数和代码，显示「导入的模型」、原文件名、来源与授权说明；不能改参数、不能改代码。
+  - 助手：`write_model` 以导入的模型为基础时拒绝，提示「导入的模型没有代码，只能换材质或摆放」；以它为基础的烘焙任务同样拒绝。`read_scene` 的 `include_code` 对它不返回代码。
+  - 场景读取照常不带代码；导入的模型本来就没有。
+
 ### 访问模式与保证
 - **接受的 GLB 子集**（worker 的 verify 阶段用 Go 实现，编辑器宿主用同一算法预检；不执行代码，文件里的任何声明都不直接采信；不在子集内的一律拒绝）：
   - 容器：magic 为 `glTF`，version 为 2，总长度与实际一致；JSON 块加至多一个 BIN 块，4 字节对齐。
@@ -352,7 +373,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - 网格：primitive 的 `mode` 为 4；属性只允许 `POSITION`（`FLOAT VEC3`，必有）、`NORMAL`、`TANGENT`、`TEXCOORD_0/1`、`COLOR_0`；不允许 `targets`、`JOINTS_*`、`WEIGHTS_*`。
   - 访问器：不用 `sparse`；按组件对齐；`byteStride` ≥ 元素大小；全部数据落在 `bufferView` 和 BIN 内；索引值小于顶点数；索引数或非索引顶点数是 3 的倍数。
   - 不允许 `images`、`textures`、`samplers`、`skins`、`animations`、`cameras`；`extensionsRequired` 为空，`extensionsUsed` 只允许 `KHR_materials_emissive_strength`。
-  - 预算：节点 ≤ 10000，遍历到的 primitive 实例 ≤ 10000，三角形 ≤ 300000，字节 ≤ 16 MiB；读取的 POSITION 顶点总数（每个访问器计一次）≤ BIN 块字节数 / 12。访问器可以指向同一段数据，少了这一项，各项计数都在预算内的文件也能让校验读上数十亿个顶点；访问器互不重叠的文件不会超出。
+  - 预算：节点 ≤ 10000，遍历到的 primitive 实例 ≤ 10000，三角形 ≤ 2000000，字节 ≤ 200 MiB（修订 v5）；读取的 POSITION 顶点总数（每个访问器计一次）≤ BIN 块字节数 / 12。访问器可以指向同一段数据，少了这一项，各项计数都在预算内的文件也能让校验读上数十亿个顶点；访问器互不重叠的文件不会超出。
   - 不合规时上传以 `failed` 结束，失败码沿用现有的 `media_unsupported`。
 - **manifest 的算法**：三角形数按场景树遍历累加；每个 primitive 的局部范围**从 POSITION 实际数值算出**，并与访问器声明的 `min` / `max` 逐分量核对（必须存在且相等，否则拒绝）；包围盒取局部范围的 8 个角点经节点世界矩阵变换后合并（与 three.js `Box3.setFromObject` 非精确模式一致）；世界矩阵、包围盒与挂点坐标必须是有限值，各节点数值有限但相乘溢出时拒绝；槽位取材质名 `slot:<id>` 与 `extras.hint`，部件取节点名 `part:<id>`，挂点取节点名 `anchor:<id>` 及其世界坐标，名称取 JSON 原文；槽位 ≤ 32、部件 ≤ 200、挂点 ≤ 200；`uv` 为遍历到的每个 primitive 都有 `TEXCOORD_0` 时取 true，否则 false（修订 v18）。
 - **提交时**：manifest 必须与暂存形态中服务端从 GLB 算出的一致，不一致则拒绝。比对规则：`slots`、`parts`、`anchors` 先按 `id` 排序；`id`、`hint`、`triangles`、`uv` 精确相等（暂存形态在修订 v18 之前算出、没有 `uv` 时不比对 `uv`）；`bounds` 与挂点坐标容差 1e-4 m。名称取 GLB JSON 原文（three.js 加载后会删掉节点名里的 `:`）。写入完整形态时使用服务端的值。
@@ -360,7 +381,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 ### 生命周期与演进
 - 持有方：场景修订引用表、资产、画布节点（后续若有）。三者均登记进 `creativereference.LiveOwnerCondition` 和守卫测试。没有持有方的修订按媒体 GC 规则回收。媒体 GC 的类型范围（`creativemedia/gc.go` 的 `unheldMediaRevision`）目前只含 image / video / audio，C2 必须把 `model` 加进去并登记守卫测试；上线时先升级 creative-worker，再开放模型写入。
-- 外部 GLB 导入（下一版）会加 `generator.language = "imported"`，且没有 `code`。本版读取端遇到未知 `language` 时只能显示，不能调参数。
+- scene-pose-system 子项 2（外部 GLB 导入，owner 2026-11-09）：`generator.language` 加 `imported`，`generator` 的代码与参数字段改为只在 `three-module` 时必有，新增 `model.import`。不迁移：已有修订都是 `three-module`。GLB 静态子集不变，导入时由浏览器换算进子集。修订 v5 把静态子集的预算放宽到三角形 2000000、GLB 200 MiB，所有模型共用：不迁移，已有修订都在旧预算内；OpenAPI 里 manifest 的 `triangles`、面级材质分配区间端点的最大值改为 2000000，上传 `kind: model` 的说明改为 200 MiB；回滚到旧后端时，超过旧预算的模型上传会校验失败，已写入的修订照常读取。OpenAPI 的 `CreativeModelGenerator` 改为按 `language` 区分的两种结构（`three-module` 原结构；`imported` 只有 `language`、`mount`），`CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `import`；`commit_model` 用的 `CreativeModelGeneratorInput` 不变。旧编辑器读到没有代码的 `generator` 会出错，前后端同一版本上线，回滚只做前向修复。
 - 修订 v13（C5b）：新增可选的 `model.faces`，新增写入口 `derive_model`。不迁移，没有这个字段就是没有面分配。OpenAPI 的 `CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `faces`。回滚只做前向修复。
 - 修订 v14（C5b 验收）：「重新生成时」补两种作废情况和 `hints` 的保留规则，改正 `t1` 关于重排的说明。只改渲染端的带入规则，数据外形不变，不迁移。
 - 修订 v18（C5c1）：manifest 加 `uv`。不回填：之前写入的模型修订没有这个字段，读取方按「不知道」处理（编辑器按加载出的几何体判断，助手不提示），重新生成或派生自新修订后带上；`derive_model` 和库副本沿用来源修订的 manifest。OpenAPI 的 manifest 加可选的 `uv`。回滚只做前向修复。
@@ -449,7 +470,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 ## 模型资产
 
-- **用途**：资产库可以存放 `model` 资产：一份模型（几何、代码、参数）加它的材质分配，相当于 Blender 的物件资产。位置、旋转、缩放是场景物件的变换，不随资产保存（修订 v12，owner 2026-10-20）。
+- **用途**：资产库可以存放 `model` 资产：一份模型（几何、代码、参数，或导入的几何）加它的材质分配，相当于 Blender 的物件资产。位置、旋转、缩放是场景物件的变换，不随资产保存（修订 v12，owner 2026-10-20）。
 - **存储**：
   - `creative_assets.kind` 的 CHECK 加 `model`。资产库现有能力（分组、标签、评分、回收站、筛选）对 `model` 一视同仁；按画面的筛选（主色、画幅）只作用于图片，模型自然不命中。
   - **库副本**（修订 v12）：存入时新建一个模型内容，写一个完整形态的修订，资产引用它。它是场景里那个模型修订的复制品：
@@ -464,22 +485,27 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
     - 对象：`original` 复用来源修订的 GLB blob，不复制字节；`thumbnail` 是存入时上传的 PNG，按所配材质和面级分配渲染（未分配的槽位按 C5 的规则取提示或默认材质）。
     - 写入口：只由「模型存入资产库」写入；`commit_model` 的操作结构里没有这两个字段，场景命令写不出库副本。约束由应用保证。
     - 修订 v12 之前直接引用场景修订的模型资产只存在于开发环境，照常可读，视为没有材质分配，不迁移。
-- **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。
+  - **导入的模型**（scene-pose-system 子项 2）：导入接口新建一个模型内容，写一个完整形态的修订（`data: 模型内容`「导入的模型」），资产引用它。
+    - 载荷带 `materials`（导入时由 glTF 材质换算，规则在 Epic `scene-pose-system` 的设计「导入的材质换算」），不带 `source_revision_id`。
+    - 对象：`original` 复用暂存上传的 GLB blob；`thumbnail` 是导入时上传的 PNG，按 `materials` 渲染。
+    - 写入口：只由导入接口写入，场景命令写不出。约束由应用保证。
+- **查重**（修订 v12，替代 v11 的按模型修订查重）：按「来源修订 + 材质分配」。来源修订相同、材质分配完全相同（JSON 相等）且不在回收站的模型资产已存在时复用，只追加归类；材质不同就是另一份资产。不按 GLB 的 sha256 合并：GLB 相同而代码或参数不同的两个修订是两份资产，各自保留自己的代码。导入不查重：每次导入新建一份资产，同一文件导入两次就是两份（scene-pose-system 子项 2）。
 - **持有**：资产是库副本修订的 GC 持有方，经现有的 `creativereference.LiveOwnerCondition`（按 `content_revision_id` 与 `kind` 匹配）。与来源修订共用的 GLB、存入时上传的缩略图随之保留；不新增引用列。
   - 库副本 `model.materials` 里引用的图片（修订 v17）：写库副本修订的同一事务里，每张图片写一行 `creative_content_revision_refs`（`holder_revision_id` = 库副本修订，`role = texture`），结构与 GC 规则见 `data: 材质资产`。存入时这些图片按场景的图片规则复核（本账号、`image`、可展示），不可用时存入失败，返回 400 `creative_image_unavailable`。
+  - 导入的模型（scene-pose-system 子项 2）：`materials` 里的图片同样在写修订的事务里写 `creative_content_revision_refs`（`role = texture`）。这些图片是导入时拆出、以暂存上传上来的账号图片，导入成功时消费这些暂存上传；它们不单独作为图片资产出现在资产库里。
   - 场景命令写出的模型修订不带 `materials`，所以不写持有关系；场景里的贴图由场景修订的引用表持有。
-- **库副本只属于资产库**（修订 v12）：`commit_model` 的 `base_content_id` 指向库副本的内容时，服务端新建内容，不在库副本上追加修订，响应的 `models` 照常返回新内容的 ID。这样放进场景后的修改，不论来自编辑器还是助手、页面是否刷新过，总是分叉出场景自己的模型，库副本只有存入时的那一个修订。这条补充 `api: 场景模型命令` 的分叉规则（I4），由本条交付。
+- **库副本只属于资产库**（修订 v12）：载荷带 `materials` 的模型内容（库副本和导入的模型，后者自 scene-pose-system 子项 2）都只属于资产库。`commit_model` 或 `derive_model` 的 `base_content_id` 指向这样的内容时，服务端新建内容，不在库副本上追加修订，响应的 `models` 照常返回新内容的 ID。这样放进场景后的修改，不论来自编辑器还是助手、页面是否刷新过，总是分叉出场景自己的模型，库副本只有存入时的那一个修订。这条补充 `api: 场景模型命令` 的分叉规则（I4），由本条交付。
 - **读取**（修订 v11）：
   - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
   - 助手（修订 v11）：
-    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。导入的模型没有参数名，另附 `imported: true`（scene-pose-system 子项 2）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
     - `materials` 里的贴图只给图片的 `content_revision_id`、宽高和名称，不附像素（修订 v17）；助手经这个库副本可以把这些图片写进场景槽位，规则见 `data: 材质资产`「助手可读」。
-    - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
+    - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值；导入的模型没有参数，改为附 `import`（原文件名、来源与授权说明、来源页面）。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
     - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
     - 模型信息按 `media_metadata` 外发，与资产库元数据相同。
   - 卡片用 `thumbnail` 角色的 PNG，查看浮窗按 `original` 角色读 GLB，都走现有媒体读取票据；查看浮窗的「材质」模式按 `materials` 着色（修订 v12）。
 - **放置**：模型资产只能放进场景（`add_objects` 的 `model.content_revision_id`），不能放到画布：没有 `core.model` 节点类型，画布的放入、填充和参考选择都不接受它。放入时实例的 `material_slots` 写资产的 `materials`：编辑器自动写，助手按 `edit_scene` 的说明写。之后在场景里换材质只改实例（修订 v12）。
-- **OpenAPI**（修订 v12）：`CreativeModelPayload` 与只用于响应的 `CreativeModelPreviewPayload` 的 `model` 加可选的 `materials`、`source_revision_id`。`CreativeModelPayload` 也被请求体引用，但模型不能经通用写入口写入，放宽不产生新的写法。
+- **OpenAPI**（修订 v12）：`CreativeModelPayload` 与只用于响应的 `CreativeModelPreviewPayload` 的 `model` 加可选的 `materials`、`source_revision_id`；scene-pose-system 子项 2 再加可选的 `import`。`CreativeModelPayload` 也被请求体引用，但模型不能经通用写入口写入，放宽不产生新的写法。
 - **生命周期**：回滚时如已有 `model` 资产则拒绝，前向修复。资产库不记录资产被哪个场景使用过（I7）。
 
 ## 物理天空

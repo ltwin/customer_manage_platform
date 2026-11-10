@@ -1706,3 +1706,100 @@ X-Content-Type-Options: nosniff
 - 只增加操作和可选字段，旧客户端不会发送它们。
 - `update_objects` 的 `animation` 是增量写法，不整体替换。旧编辑器改基础值时不会碰到已有的通道。
 - 回滚到不认识这些操作的后端会返回 400，前端同一版本上线。
+
+## 导入模型到资产库
+
+### 用途与调用
+- **用途**：把摄影师导入的外部静态 GLB 存进资产库，成为一份 `model` 资产（`data: 模型内容`「导入的模型」、`data: 模型资产`）。成功即资产已建好，可以从资产库放进场景。
+- **消费者**：资产库页面、资产库抽屉和编辑器资产面板的「导入模型」，以及编辑器「添加 > 导入模型…」（导入后再按 `api: 模型存入资产库`「兼容与变更」里的放入方式放进场景）。助手不能导入。
+- **调用**：`POST /api/v1/creative/assets/from-glb`，`Idempotency-Key` 必填，外层为公共约定（`{operation_id, client_created_at, payload}`，`Idempotency-Key` 等于 `operation_id`），JSON。成功响应复用 `CreativeAssetCreateResult`（`api/openapi.yaml`）。
+- **权限**：登录账号，有创意空间写入权限（同 `/creative/assets/from-scene-model`）；所有上传必须属于当前账号。
+- **前置步骤（不属于本接口）**：浏览器先在本地解析原文件并换算（规则见 Epic 设计「导入的材质换算」），再经 `POST /creative/uploads` 以暂存目标上传：换算后的 GLB（声明类型 `model`）、拆出的每张图片（声明类型 `image`，PNG、JPEG 或 WebP）、缩略图（`image`，PNG）。等每个上传都 `ready` 后调用本接口。GLB 不合静态子集时，上传在 worker 校验阶段以 `media_unsupported` 失败，不会走到本接口。
+
+### 请求
+`payload`：
+
+| 字段路径 | 位置 | 类型/格式 | 必传 | 可为 null | 缺省行为 | 约束与业务含义 |
+|---|---|---|---|---|---|---|
+| `glb_upload_id` | body | string | 是 | 否 | 缺失报错 | 换算后 GLB 的暂存上传：声明类型 `model`、`ready`、未过期未消费。服务端用暂存修订里自己算出的 manifest，不接受客户端的 |
+| `thumbnail_upload_id` | body | string | 是 | 否 | 缺失报错 | 缩略图的暂存上传：声明类型 `image` 的 PNG，256 × 256，按 `materials` 渲染，取景与烘焙缩略图相同 |
+| `texture_upload_ids` | body | string[] | 是 | 否 | 缺失报错 | 拆出的图片的暂存上传，可以为空数组，0–64 项，不重复。每一项的内容修订都必须出现在 `materials` 里，否则 400；导入成功时全部消费 |
+| `mount` | body | `floor` \| `wall` \| `ceiling` \| `free` | 否 | 否 | `floor` | 写入 `generator.mount`，决定从资产库放入场景时怎么贴附表面 |
+| `import.file_name` | body | string 1–255 | 是 | 否 | 缺失报错 | 原文件名，见 `data: 模型内容`「导入的模型」 |
+| `import.attribution` | body | string ≤ 2000 | 否 | 否 | 不保存 | 来源与授权说明；空字符串等同不传 |
+| `import.source_url` | body | string ≤ 2048 | 否 | 否 | 不保存 | `http` 或 `https` 的 URL；其他协议 400 |
+| `materials` | body | `{<slot_id>: CreativeSceneMaterialSlot}` | 是 | 否 | 缺失报错 | 可以是空对象。键必须是 GLB 的槽位（manifest 的 `slots`），否则 400；值的规则同场景对象的 `material_slots`（`data: 场景文档`「材质贴图」），按场景命令同一套校验。贴图引用的 `content_revision_id` 可以是 `texture_upload_ids` 的修订，也可以是本账号已有的可用图片 |
+| `target` | body | `CreativeUploadAssetTarget` | 是 | 否 | 缺失报错 | 沿用现有结构：`title` 必填（1–200），`description`（≤ 1000 码点）、`group_ids`、`tag_ids`、`new_tags`、`is_favorite` 可选。`title` 的前 80 个码点同时写入 `model.name_hint` |
+
+### 成功响应
+- 201：新建了模型内容和资产。导入不查重（`data: 模型资产`），`reused` 总是 `false`。
+
+| 字段路径 | 类型/格式 | 必返或出现条件 | 可为 null | 业务含义与约束 |
+|---|---|---|---|---|
+| `asset_id` | string | 必返 | 否 | 新资产 |
+| `revision` | string | 必返 | 否 | 资产修订，新建为 `"1"` |
+| `content_revision_id` | string | 必返 | 否 | 导入的模型修订；放进场景时写进 `add_objects` 的 `model.content_revision_id` |
+| `library_revision` | string | 必返 | 否 | 资产库修订 |
+| `tag_mapping` | object | 必返 | 否 | `new_tags` 到新标签 ID，同 `/creative/assets/from-scene-model` |
+| `reused` | boolean | 必返 | 否 | 总是 `false` |
+| `title` / `description` | string | 必返 | 否 | 本次写入的值 |
+
+随幂等回执重放：同一 `operation_id` 重复调用返回同一结果，不再新建资产，也不再消费上传。
+
+### 失败响应
+错误体为公共约定的 `{error: {code, message, details?}}`。
+
+| HTTP 状态码 | 业务错误码 | 触发条件 | 调用方处理/是否可重试 |
+|---|---|---|---|
+| 400 | `validation_failed` | `mount`、`import` 字段不合法；`materials` 的键不是 GLB 的槽位，或值不合 `material_slots` 规则（`details` 指出字段路径）；`texture_upload_ids` 有重复，或某项的修订没被 `materials` 用到；缩略图不是 PNG | 修正后重试 |
+| 400 | `creative_image_unavailable` | `materials` 引用的图片不属于本账号、不是 `image`、不可展示或已删除（同场景命令） | 重新上传图片后重试 |
+| 404 | `not_found` | `target` 引用的分组或标签不存在（同 `/creative/assets/from-scene-model`） | 重读资产库 |
+| 409 | `creative_upload_unavailable` | GLB、缩略图或某张图片的上传不存在、属于其他账号、声明类型不对、已过期、已消费或尚未就绪；`details.upload_id` 指出哪一个 | 重新上传后重试 |
+| 413 | `creative_size_limit` | `materials` 引用的不同图片超过 64 张（单个场景的上限，超过就放不进任何场景） | 在导入前减少贴图，或合并贴图 |
+| 409 | `idempotency_conflict` 等 | 公共约定 | — |
+
+### 交互规则
+- **写操作**：一个事务里写模型内容修订（GLB 与缩略图对象复用暂存 blob，不复制字节）、图片持有关系（`creative_content_revision_refs`，`role = texture`）和资产，再消费 GLB、缩略图和全部图片的暂存上传。任一步失败整体回滚，上传保持未消费，可以修正后重试；放弃导入时由浏览器丢弃这些上传，否则按暂存规则 7 天后过期回收。
+- **幂等**：`Idempotency-Key` 作用域与有效期同公共约定；相同 key、不同请求体返回 `idempotency_conflict`。
+- **配额**：上传按现有上传规则计入账号配额；本接口不另设限流。
+
+### 调用示例
+请求：
+
+```http
+POST /api/v1/creative/assets/from-glb
+Idempotency-Key: 0b3c5d7e-1f2a-4b6c-8d9e-0a1b2c3d4e5f
+Content-Type: application/json
+```
+
+```json
+{"operation_id": "0b3c5d7e-1f2a-4b6c-8d9e-0a1b2c3d4e5f", "client_created_at": "2026-11-12T08:30:00Z",
+ "payload": {"glb_upload_id": "cupl_7a01", "thumbnail_upload_id": "cupl_7a02", "texture_upload_ids": ["cupl_7a03", "cupl_7a04"],
+             "mount": "floor",
+             "import": {"file_name": "dragon_sword.glb", "attribution": "Dragon Sword by Example Artist, CC BY 4.0", "source_url": "https://example.com/models/dragon-sword"},
+             "materials": {"blade": {"preset": "principled@1", "params": {"color": "#ffffff", "metalness": 1, "roughness": 1, "emissive": "#ffffff", "emissive_intensity": 2},
+                                     "maps": {"base_color": {"content_revision_id": "ccrv_tex_base"},
+                                              "roughness": {"content_revision_id": "ccrv_tex_orm", "channel": "g"},
+                                              "metalness": {"content_revision_id": "ccrv_tex_orm", "channel": "b"},
+                                              "emissive": {"content_revision_id": "ccrv_tex_base"}},
+                                     "mapping": {"kind": "uv", "repeat": [1, 1], "rotation_deg": 0, "normal_strength": 1},
+                                     "alpha_mode": "opaque"}},
+             "target": {"title": "龙纹剑", "description": "cos 道具参考", "group_ids": ["cgrp_31aa"]}}}
+```
+
+其中 `ccrv_tex_base`、`ccrv_tex_orm` 分别是 `cupl_7a03`、`cupl_7a04` 就绪后的内容修订。
+
+201：
+
+```json
+{"asset_id": "cast_c41d", "revision": "1", "content_revision_id": "ccrv_m8f2", "library_revision": "318", "tag_mapping": {}, "reused": false, "title": "龙纹剑", "description": "cos 道具参考"}
+```
+
+409（第二张图片的上传已过期）：
+
+```json
+{"error": {"code": "creative_upload_unavailable", "message": "上传不可用，请重新上传", "details": {"upload_id": "cupl_7a04"}}}
+```
+
+### 兼容与变更
+首次定义，无已有消费者。新增 OpenAPI 路径与请求体 `CreativeAssetFromGLBPayload`；响应复用 `CreativeAssetCreateResult`。导入的模型的读取形态见 `data: 模型内容` 的修订说明（`CreativeModelGenerator` 按 `language` 区分，是对响应消费者的破坏性变更，前后端同一版本上线）。

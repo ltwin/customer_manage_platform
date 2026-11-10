@@ -70,9 +70,9 @@ export default function build({ params, THREE, lib, rng }) {
 - **命名约定**（进入 manifest）：对象名 `part:<id>` 表示可寻址部件，用于点选改某个部位；空对象 `anchor:<id>` 表示挂点。
 - **几何**：只接受三角网格（GLB 中 primitive 的 `mode` 为 4）；线和点会被拒绝。
 - **产物**：沙箱返回 GLB（经 `GLTFExporter` 二进制导出）和规范化的模块信息 `{contract_version, lib_version, mount, params_schema, params}`（`params` 为补齐默认值后实际使用的值）。manifest 不由沙箱提供，由宿主和服务端从 GLB 算出：`{bounds:{min:[x,y,z],max:[x,y,z]}, triangles, slots:[{id,hint}], parts:[id], anchors:[{id,position:[x,y,z]}], uv}`。`uv`（修订 v18）为 true 表示每个三角网格都带 `TEXCOORD_0`，贴图的 `uv` 映射才能整体按模型 UV 显示。GLB 是几何事实源，只有代码、参数或 `lib_version` 变化时才重新编译。
-- **上限**（初始值，见 design 未决 #3）：代码 ≤ 64 KiB；编译 ≤ 5 秒；三角形 ≤ 300k；GLB ≤ 16 MiB。
+- **上限**：代码 ≤ 64 KiB；编译 ≤ 5 秒；三角形 ≤ 2000000；GLB ≤ 200 MiB（scene-pose-system 修订 v5，与 `data: 模型内容` 的静态子集预算相同，导入的模型共用；贴图不在 GLB 里，不计入）。
 - **为什么**：只用 primitive 的 JSON 表达力不够；整个场景是一段代码则无法支持手动编辑、点选修改和撤销。以物件为粒度写代码，既有建模自由度，又让场景编排可编辑。先例见 research §3（Pascal authored objects）。
-- **不适用于**：内置基础体是前端打包的可信模块，遵守同一契约，但不经沙箱、不烘焙。外部 GLB 导入（下一版）不经过本契约。
+- **不适用于**：内置基础体是前端打包的可信模块，遵守同一契约，但不经沙箱、不烘焙。外部 GLB 导入（scene-pose-system 子项 2）不经过本契约，只与它共用上面的三角形和 GLB 上限。
 - **例子**：C2 交付后补充内置基础体 `box@1` 的实现路径作为参照。
 
 ## 客户端代码沙箱
