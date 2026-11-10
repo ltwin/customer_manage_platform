@@ -3,6 +3,7 @@ import type { Upload } from '../../creative-canvas/editor/media.ts'
 import { jobRenderCapMs, viewBudgetMs } from '../render/engines.ts'
 import { carryOver, codeDiffers, type Carried } from '../models/faces.ts'
 import type { SceneModel } from '../models/cache.ts'
+import { codeGenerator } from '../models/generator.ts'
 import { DeviceLostError } from '../render/gpu.ts'
 import { TraceNotReady } from '../render/trace/base.ts'
 import type { CompileInput } from '../sandbox/host.ts'
@@ -118,7 +119,7 @@ export class SceneExecutor {
     let carried: Carried
     try {
       const prior = await replacing
-      carried = await carryOver(baked.glb, prior?.faces, codeDiffers(prior?.generator, { code_sha256: baked.codeSHA256, lib_version: baked.module.lib_version }))
+      carried = await carryOver(baked.glb, prior?.faces, codeDiffers(codeGenerator(prior?.generator), { code_sha256: baked.codeSHA256, lib_version: baked.module.lib_version }))
     } catch (err) {
       this.discard(out.uploads)
       return hold.lost() ? { state: 'lost' } : this.fail(job, 'host_error', `读不到替换前的模型：${reason(err)}`)

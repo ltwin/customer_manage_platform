@@ -208,8 +208,12 @@ for (const m of texturedEntries) {
   }
 }
 
-/** The textures a principled slot samples, by what it samples them for. */
-export function textureKeys(t: Texturing | undefined): { color?: TextureKey; normal?: TextureKey; orm?: TextureKey } {
+/**
+ * The textures a principled slot samples, by what it samples them for. The
+ * emission map is read as the base colour is, sRGB from the top row, so it
+ * shares that texture when both name one image, as a glTF's often do.
+ */
+export function textureKeys(t: Texturing | undefined): { color?: TextureKey; normal?: TextureKey; orm?: TextureKey; emissive?: TextureKey } {
   const maps = t?.maps
   if (!maps) return {}
   const orm = ormKey(maps.ao, maps.roughness, maps.metalness)
@@ -217,6 +221,7 @@ export function textureKeys(t: Texturing | undefined): { color?: TextureKey; nor
     ...(maps.base_color ? { color: colorKey(maps.base_color.content_revision_id) } : {}),
     ...(maps.normal ? { normal: normalKey(maps.normal.content_revision_id) } : {}),
     ...(orm ? { orm } : {}),
+    ...(maps.emissive ? { emissive: colorKey(maps.emissive.content_revision_id) } : {}),
   }
 }
 
@@ -282,6 +287,18 @@ const placeholderOf = (kind: Kind) => {
 type Source = { refs: number; blob: Promise<Blob> | null; picture: Promise<Picture> | null; borrowers: number }
 const sources = new Map<string, Source>()
 
+/** Files the editor has itself, by revision: an import's images, just uploaded, are not downloaded again. */
+const local = new Map<string, Blob>()
+
+/** Uses blob for revision's original until forgetLocalImage (design「缩略图里的贴图」). */
+export function provideLocalImage(revision: string, blob: Blob) {
+  local.set(revision, blob)
+}
+
+export function forgetLocalImage(revision: string) {
+  local.delete(revision)
+}
+
 let decoding = 0
 const waiting: (() => void)[] = []
 async function limited<T>(job: () => Promise<T>): Promise<T> {
@@ -313,7 +330,8 @@ function borrow(revision: string): Promise<Picture> {
   s.borrowers++
   if (!s.picture) {
     const p = limited(async () => {
-      s.blob ??= within(fetchTimeoutMs, imagePlatform.fetch(revision), '原图下载超时')
+      const own = local.get(revision)
+      s.blob ??= own ? Promise.resolve(own) : within(fetchTimeoutMs, imagePlatform.fetch(revision), '原图下载超时')
       return imagePlatform.decode(await s.blob)
     })
     s.picture = p
@@ -650,6 +668,7 @@ export function resetImages() {
   for (const e of entries.values()) if (e.timer !== null) clearTimeout(e.timer)
   entries.clear()
   sources.clear()
+  local.clear()
   placeholders.clear()
   used = 0
   turn = Promise.resolve()

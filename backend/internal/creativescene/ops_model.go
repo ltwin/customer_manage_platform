@@ -218,9 +218,10 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 }
 
 // deriveModelOp writes a revision that differs from an existing one only in its
-// face assignment (data: 模型内容「写入口」): the source's generator, manifest
-// and name hint, its GLB and thumbnail blobs reused, nothing uploaded or
-// compiled. A library copy's materials and source stay with the library.
+// face assignment (data: 模型内容「写入口」): the source's generator, manifest,
+// name hint and import, its GLB and thumbnail blobs reused, nothing uploaded
+// or compiled. A library copy's or an import's materials and source stay with
+// the library.
 type deriveModelOp struct {
 	Op             string `json:"op"`
 	Ref            string `json:"ref"`
@@ -248,7 +249,7 @@ func (op *deriveModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 	if !glbOK || !thumbOK {
 		return modelUnavailable(src.ID)
 	}
-	payload := ModelPayload{Format: "glb", Generator: p.Generator, Manifest: p.Manifest, NameHint: p.NameHint, Faces: op.Faces}
+	payload := ModelPayload{Format: "glb", Generator: p.Generator, Manifest: p.Manifest, NameHint: p.NameHint, Faces: op.Faces, Import: p.Import}
 	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: glbBlob.BlobID}, {Role: "thumbnail", BlobID: thumbBlob.BlobID}}
 	return env.writeModel(op.Ref, payload, src.DeclarationID, op.BaseContentID, objects)
 }
@@ -272,9 +273,9 @@ func (env *opEnv) writeModel(ref string, payload ModelPayload, declaration, base
 	}
 	given := base
 	if base != "" {
-		// A library copy belongs to the library: an edit of an instance placed
-		// from it forks, whoever makes it.
-		copied, err := isLibraryCopy(env.ctx, env.tx, base)
+		// A library copy or an import belongs to the library: an edit of an
+		// instance placed from it forks, whoever makes it.
+		copied, err := isLibraryOwned(env.ctx, env.tx, base)
 		if err != nil {
 			return err
 		}
@@ -304,11 +305,11 @@ func slotIDs(m creativeglb.Manifest) []string {
 	return out
 }
 
-// isLibraryCopy reports whether a content is a library copy, the only kind
-// whose revision carries source_revision_id. Copies never gain revisions and
-// nothing becomes one, so the answer needs no lock.
-func isLibraryCopy(ctx context.Context, tx store.TxAccountScope, contentID string) (bool, error) {
-	return tx.Exists(ctx, "creative_content_revisions", "content_id=$2 AND payload->'model'->>'source_revision_id' IS NOT NULL", contentID)
+// isLibraryOwned reports whether a content belongs to the library: a library
+// copy or an imported model, the kinds whose revision carries materials.
+// Neither gains revisions and nothing becomes one, so the answer needs no lock.
+func isLibraryOwned(ctx context.Context, tx store.TxAccountScope, contentID string) (bool, error) {
+	return tx.Exists(ctx, "creative_content_revisions", "content_id=$2 AND payload->'model' ? 'materials'", contentID)
 }
 
 // lockStaged locks a staged upload of the given declared kind and reads the
@@ -316,7 +317,7 @@ func isLibraryCopy(ctx context.Context, tx store.TxAccountScope, contentID strin
 func lockStaged(ctx context.Context, tx store.TxAccountScope, uploadID, kind string) (creativestaging.Staged, creativecontent.Revision, error) {
 	s, err := creativestaging.Lock(ctx, tx, uploadID)
 	if errors.Is(err, creativestaging.ErrUnavailable) {
-		return s, creativecontent.Revision{}, creativeops.Explain(ErrUploadUnavailable, "上传 %s 不可用，请重新生成", uploadID)
+		return s, creativecontent.Revision{}, &UploadUnavailableError{UploadID: uploadID}
 	}
 	if err != nil {
 		return s, creativecontent.Revision{}, err
@@ -326,7 +327,7 @@ func lockStaged(ctx context.Context, tx store.TxAccountScope, uploadID, kind str
 	}
 	r, err := creativecontent.RequireUsable(ctx, tx, s.ContentRevisionID, "display")
 	if errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativecontent.ErrUsageDenied) || errors.Is(err, creativecontent.ErrMissingRoot) {
-		return s, creativecontent.Revision{}, creativeops.Explain(ErrUploadUnavailable, "上传 %s 不可用，请重新生成", uploadID)
+		return s, creativecontent.Revision{}, &UploadUnavailableError{UploadID: uploadID}
 	}
 	return s, r, err
 }

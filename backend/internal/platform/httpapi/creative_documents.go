@@ -192,6 +192,7 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 	var limit *creativedocument.LimitError
 	var empty *creativescene.SlotEmptyError
 	var gaps *creativescene.ShotKeysError
+	var upload *creativescene.UploadUnavailableError
 	switch {
 	case errors.As(err, &gaps):
 		var details ErrorDetails
@@ -236,6 +237,13 @@ func creativeDocumentError(c *gin.Context, err error) bool {
 		abortError(c, 404, CodeNotFound, "文档不存在")
 	// Model failures never use 404 or creative_state_conflict: the editor reads
 	// those as "the document is gone" and "the document is in the trash".
+	case errors.As(err, &upload):
+		var details ErrorDetails
+		if e := details.FromCreativeUploadDetails(CreativeUploadDetails{UploadId: upload.UploadID}); e != nil {
+			abortError(c, 500, CodeInternal, "内部错误")
+			return true
+		}
+		abortErrorWithTypedDetails(c, 409, "creative_upload_unavailable", "上传已失效或已被使用，请重新上传", details)
 	case errors.Is(err, creativescene.ErrUploadUnavailable):
 		abortError(c, 409, "creative_upload_unavailable", "上传已失效或已被使用，请重新上传")
 	case errors.Is(err, creativescene.ErrModelUnavailable):

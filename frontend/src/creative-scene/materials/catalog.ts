@@ -75,6 +75,7 @@ export function completeParams(entry: MaterialEntry, params: Record<string, unkn
   for (const [k, spec] of Object.entries(entry.params)) {
     const v = params?.[k]
     if (spec.type === 'color') out[k] = typeof v === 'string' && colour.test(v) ? v : spec.default
+    else if (spec.type === 'boolean') out[k] = typeof v === 'boolean' ? v : spec.default
     else if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.min(spec.max ?? v, Math.max(spec.min ?? v, v))
     else out[k] = spec.default
   }

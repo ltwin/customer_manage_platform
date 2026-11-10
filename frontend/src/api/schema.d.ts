@@ -1191,6 +1191,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/from-glb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 把浏览器换算好的外部静态 GLB 及其拆出的图片导入成模型资产，存入个人库；不查重
+         * @description GLB、缩略图和图片都先经 POST /creative/uploads 以暂存目标上传并就绪。一个事务里写模型内容（generator 为 {language: imported, mount}， 来源记在 model.import，materials 为导入的材质）、图片持有关系和资产，再消费全部上传；任一步失败整体回滚，上传保持未消费。 mount、import 不合法，materials 的键不是 GLB 的槽位或值不合 material_slots 规则，texture_upload_ids 重复或有修订没被 materials 用到， 缩略图不是 PNG，返回 400 validation_failed（details 指出字段）；materials 引用的图片不可展示返回 400 creative_image_unavailable； 分组或标签不存在返回 404；某个上传不可用返回 409 creative_upload_unavailable（details.upload_id 指出哪一个）； materials 引用的不同图片或 texture_upload_ids 超过 64 张返回 413 creative_size_limit。
+         */
+        post: operations["createCreativeAssetFromGLB"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/assets/from-scene-material": {
         parameters: {
             query?: never;
@@ -3284,18 +3304,19 @@ export interface components {
             caption?: string;
         };
         CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeMaterialPayload"];
-        /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（含代码）与 name_hint。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。 */
+        /** @description model 内容的载荷。暂存形态只有 format 与 manifest；完整形态（场景引用的）还有 generator（代码模型含代码）与 name_hint。 导入的模型（generator.language = imported）另有 import 与 materials，只由「导入模型到资产库」写入。 资产库的库副本另有 materials（材质分配，只含 manifest 里存在的槽位，放入场景时写进实例的 material_slots）与 source_revision_id， 只由「模型存入资产库」写入。 */
         CreativeModelPayload: {
             model: {
                 /** @enum {string} */
                 format: "glb";
-                generator?: components["schemas"]["CreativeModelGeneratorInput"];
+                generator?: components["schemas"]["CreativeModelGeneratorInput"] | components["schemas"]["CreativeModelImportedGenerator"];
                 manifest: components["schemas"]["CreativeModelManifest"];
                 name_hint?: string;
                 faces?: components["schemas"]["CreativeModelFaces"];
                 materials?: components["schemas"]["CreativeSceneMaterialSlots"];
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
+                import?: components["schemas"]["CreativeModelImport"];
             };
         };
         /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
@@ -3325,6 +3346,7 @@ export interface components {
                 materials?: components["schemas"]["CreativeSceneMaterialSlots"];
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
+                import?: components["schemas"]["CreativeModelImport"];
             };
         };
         /** @description 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。 */
@@ -3378,8 +3400,26 @@ export interface components {
             options?: string[];
             label?: string;
         };
-        /** @description 模型的生成信息，读取场景时返回，不含代码；代码经 GET /creative/content-revisions/{id} 读取。 */
-        CreativeModelGenerator: {
+        /** @description 模型的生成信息，按 language 区分：three-module 是代码模型（读取场景时不含代码，代码经 GET /creative/content-revisions/{id} 读取）； imported 是外部导入的 GLB，没有代码和参数（data: 模型内容「导入的模型」）。 */
+        CreativeModelGenerator: components["schemas"]["CreativeModelCodeGenerator"] | components["schemas"]["CreativeModelImportedGenerator"];
+        /** @description 外部导入的模型：没有代码和参数，只由导入接口写入。 */
+        CreativeModelImportedGenerator: {
+            /** @enum {string} */
+            language: "imported";
+            /** @enum {string} */
+            mount: "floor" | "wall" | "ceiling" | "free";
+        };
+        /** @description 导入的模型的来源与授权说明；服务端不核实，只保存和显示。导入时间取内容修订的 created_at。 */
+        CreativeModelImport: {
+            /** @description 原文件名（含扩展名，不含路径），按 Unicode 码点计 */
+            file_name: string;
+            /** @description 来源与授权说明，摄影师填写；导入时用 glTF 的 asset.copyright 预填 */
+            attribution?: string;
+            /** @description 素材的来源页面，只允许 http、https */
+            source_url?: string;
+        };
+        /** @description 代码模型的生成信息，不含代码。 */
+        CreativeModelCodeGenerator: {
             /** @enum {string} */
             language: "three-module";
             /** @enum {integer} */
@@ -4756,7 +4796,7 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"] | components["schemas"]["CreativeUploadDetails"];
         /** @description 有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。 首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。 */
         CreativeShotKeysDetails: {
             missing: components["schemas"]["CreativeShotKeyGap"][];
@@ -4778,6 +4818,10 @@ export interface components {
         };
         CreativeLimitDetails: {
             limit: number;
+        };
+        /** @description creative_upload_unavailable 指出不可用的那个暂存上传。 */
+        CreativeUploadDetails: {
+            upload_id: string;
         };
         CreativeMaterialSlotDetails: {
             object_id: string;
@@ -7345,6 +7389,8 @@ export interface components {
         };
         /** @description GLB 与缩略图不在这里，编辑器按修订调用 POST /creative/media-access-tickets（role 为 original / thumbnail）取地址。 */
         CreativeSceneModel: {
+            /** @description 导入的模型的来源与授权说明；代码模型没有这个字段。 */
+            import?: components["schemas"]["CreativeModelImport"];
             /** @description 不可用且无法读取时为空字符串。 */
             content_id: string;
             /** @description false 时 manifest、generator、name_hint 为 null，编辑器显示「模型不可用」占位。 */
@@ -7625,13 +7671,14 @@ export interface components {
             /** @description 只在 alpha_mode 为 clip 时允许，缺省 0.5。 */
             alpha_cutoff?: number;
         };
-        /** @description 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。 */
+        /** @description 贴图与常数参数相乘（同 three.js、glTF）：基础色 = color × 贴图（sRGB）；糙度、金属度 = 参数 × 所选通道；AO 只压暗间接光； 法线贴图是切线空间，OpenGL 约定（+Y 朝上），乘 normal_strength；自发光 = emissive × 贴图（sRGB）× emissive_intensity。图片须是本账号 image 类型、ready 且可展示的内容修订， 否则返回 400 creative_image_unavailable。单个场景最多引用 64 张不同的图片。 */
         CreativeSceneTextureMaps: {
             base_color?: components["schemas"]["CreativeSceneTexture"];
             normal?: components["schemas"]["CreativeSceneTexture"];
             roughness?: components["schemas"]["CreativeSceneChannelTexture"];
             metalness?: components["schemas"]["CreativeSceneChannelTexture"];
             ao?: components["schemas"]["CreativeSceneChannelTexture"];
+            emissive?: components["schemas"]["CreativeSceneTexture"];
         };
         CreativeSceneTexture: {
             content_revision_id: string;
@@ -8248,7 +8295,7 @@ export interface components {
         CreativeUploadCreatePayload: {
             file_name: string;
             /**
-             * @description model（model/gltf-binary，≤ 16 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
+             * @description model（model/gltf-binary，≤ 200 MiB）只允许暂存目标，由场景编辑器上传，不出现在能力列表
              * @enum {string}
              */
             kind: "image" | "video" | "audio" | "model";
@@ -8431,6 +8478,29 @@ export interface components {
             /** Format: date-time */
             client_created_at: string;
             payload: components["schemas"]["CreativeAssetFromSceneModelPayload"];
+        };
+        CreativeAssetFromGLBPayload: {
+            /** @description 换算后 GLB 的暂存上传（声明类型 model，ready）；服务端用暂存修订里自己算出的 manifest。 */
+            glb_upload_id: string;
+            /** @description 按 materials 渲染的 256 × 256 PNG 缩略图的暂存上传（声明类型 image）。 */
+            thumbnail_upload_id: string;
+            /** @description 拆出的图片的暂存上传（声明类型 image）；每一项的内容修订都必须被 materials 引用，导入成功时全部消费。 */
+            texture_upload_ids: string[];
+            /**
+             * @default floor
+             * @enum {string}
+             */
+            mount: "floor" | "wall" | "ceiling" | "free";
+            import: components["schemas"]["CreativeModelImport"];
+            materials: components["schemas"]["CreativeSceneMaterialSlots"];
+            target: components["schemas"]["CreativeUploadAssetTarget"];
+        };
+        CreateCreativeAssetFromGLBRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetFromGLBPayload"];
         };
         CreativeAssetFromSceneMaterialPayload: {
             document_id: string;
@@ -11124,6 +11194,41 @@ export interface operations {
                 };
             };
             /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromGLB: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromGLBRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建导入的模型和资产；reused 总是 false */
             201: {
                 headers: {
                     [name: string]: unknown;

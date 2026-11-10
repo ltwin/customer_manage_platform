@@ -53,6 +53,17 @@ test('import plan keeps order, explains each rejection and the batch limit', () 
   assert.deepEqual(plan.rejected.map((r) => [r.file.name, r.message]), [['notes.txt', '暂不支持此文件格式'], ['c.png', '一次最多导入 2 个文件']])
 })
 
+test('GLB models go to the import dialog in the library; the canvas refuses them', () => {
+  const files = [file('a.png', 'image/png'), file('Lantern.GLB', 'model/gltf-binary'), file('b.glb', '')]
+  const canvas = importPlan(files, caps)
+  assert.deepEqual(canvas.models, [])
+  assert.deepEqual(canvas.rejected.map((r) => [r.file.name, r.message]), [['Lantern.GLB', '模型只能导入到资产库'], ['b.glb', '模型只能导入到资产库']])
+  const library = importPlan(files, caps, { models: true })
+  assert.deepEqual(library.models.map((f) => f.name), ['Lantern.GLB', 'b.glb'])
+  assert.deepEqual(library.accepted.map((a) => a.file.name), ['a.png'])
+  assert.deepEqual(library.rejected, [])
+})
+
 test('nodes line up 330 apart, the first centred on the drop point', () => {
   assert.deepEqual(importSlot(0, { x: 500, y: 400 }, 'core.image'), { x: 350, y: 250 })
   assert.deepEqual(importSlot(2, { x: 500, y: 400 }, 'core.audio'), { x: 1010, y: 340 })

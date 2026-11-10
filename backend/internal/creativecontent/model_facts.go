@@ -100,10 +100,14 @@ func ManifestFactsOf(m creativeglb.Manifest, faces json.RawMessage) ManifestFact
 
 // ModelFacts is what the assistant is told about a complete model; the code
 // is never part of it. Materials is a library asset's material assignment,
-// what placing it writes into material_slots; other models have none.
+// what placing it writes into material_slots; other models have none. An
+// imported model (data: 模型内容「导入的模型」) has no code and no parameters,
+// and says where it came from in Import.
 type ModelFacts struct {
-	Name  string `json:"name,omitempty"`
-	Mount string `json:"mount"`
+	Name     string          `json:"name,omitempty"`
+	Mount    string          `json:"mount"`
+	Imported bool            `json:"imported,omitempty"`
+	Import   json.RawMessage `json:"import,omitempty"`
 	ManifestFacts
 	Materials map[string]json.RawMessage `json:"materials"`
 	// Images are the images the materials' textures use (read_asset fills
@@ -122,6 +126,7 @@ type ModelBrief struct {
 	Name      string                     `json:"name,omitempty"`
 	SizeM     [3]float64                 `json:"size_m"`
 	Mount     string                     `json:"mount"`
+	Imported  bool                       `json:"imported,omitempty"`
 	Triangles int                        `json:"triangles"`
 	Slots     []Slot                     `json:"slots"`
 	Materials map[string]json.RawMessage `json:"materials"`
@@ -137,7 +142,9 @@ func ModelFactsOf(p Payload) (ModelFacts, bool) {
 		Manifest  creativeglb.Manifest       `json:"manifest"`
 		Faces     json.RawMessage            `json:"faces"`
 		Materials map[string]json.RawMessage `json:"materials"`
+		Import    json.RawMessage            `json:"import"`
 		Generator *struct {
+			Language     string                     `json:"language"`
 			Mount        string                     `json:"mount"`
 			ParamsSchema map[string]json.RawMessage `json:"params_schema"`
 			Params       map[string]any             `json:"params"`
@@ -149,19 +156,24 @@ func ModelFactsOf(p Payload) (ModelFacts, bool) {
 	if m.Materials == nil {
 		m.Materials = map[string]json.RawMessage{}
 	}
-	return ModelFacts{Name: m.NameHint, Mount: m.Generator.Mount, ManifestFacts: ManifestFactsOf(m.Manifest, m.Faces),
-		Materials: m.Materials, ParamsSchema: m.Generator.ParamsSchema, Params: m.Generator.Params}, true
+	f := ModelFacts{Name: m.NameHint, Mount: m.Generator.Mount, ManifestFacts: ManifestFactsOf(m.Manifest, m.Faces),
+		Materials: m.Materials, ParamsSchema: m.Generator.ParamsSchema, Params: m.Generator.Params}
+	if m.Generator.Language == "imported" {
+		f.Imported, f.Import = true, m.Import
+		f.ParamsSchema, f.Params = map[string]json.RawMessage{}, map[string]any{}
+	}
+	return f, true
 }
 
-// Brief keeps the name, size, mount, triangles, slots, materials and
-// parameter names.
+// Brief keeps the name, size, mount, whether it is imported, triangles,
+// slots, materials and parameter names.
 func (f ModelFacts) Brief() ModelBrief {
 	params := make([]string, 0, len(f.ParamsSchema))
 	for k := range f.ParamsSchema {
 		params = append(params, k)
 	}
 	slices.Sort(params)
-	return ModelBrief{Name: f.Name, SizeM: f.SizeM, Mount: f.Mount, Triangles: f.Triangles, Slots: f.Slots, Materials: f.Materials, Params: params}
+	return ModelBrief{Name: f.Name, SizeM: f.SizeM, Mount: f.Mount, Imported: f.Imported, Triangles: f.Triangles, Slots: f.Slots, Materials: f.Materials, Params: params}
 }
 
 // MaterialBrief is what a search result says about a material asset (data:

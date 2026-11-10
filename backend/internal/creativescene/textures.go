@@ -35,7 +35,7 @@ func (m *TextureMaps) entries() []textureMap {
 		return nil
 	}
 	var out []textureMap
-	for _, e := range []textureMap{{"base_color", m.BaseColor}, {"normal", m.Normal}, {"roughness", m.Roughness}, {"metalness", m.Metalness}, {"ao", m.AO}} {
+	for _, e := range []textureMap{{"base_color", m.BaseColor}, {"normal", m.Normal}, {"roughness", m.Roughness}, {"metalness", m.Metalness}, {"ao", m.AO}, {"emissive", m.Emissive}} {
 		if e.tex != nil {
 			out = append(out, e)
 		}
@@ -43,8 +43,10 @@ func (m *TextureMaps) entries() []textureMap {
 	return out
 }
 
-// channelled kinds read one channel of their image.
-func channelled(kind string) bool { return kind != "base_color" && kind != "normal" }
+// channelled kinds read one channel of their image; colour kinds read RGB.
+func channelled(kind string) bool {
+	return slices.Contains([]string{"roughness", "metalness", "ao"}, kind)
+}
 
 // checkTextures validates a slot's texture fields and says which one is
 // wrong, as a path inside the slot.
@@ -67,7 +69,7 @@ func checkTextures(slot MaterialSlot) (string, error) {
 	if slot.Maps != nil {
 		entries := slot.Maps.entries()
 		if len(entries) == 0 {
-			return "maps", fmt.Errorf("maps 至少写一种贴图：base_color、normal、roughness、metalness、ao")
+			return "maps", fmt.Errorf("maps 至少写一种贴图：base_color、normal、roughness、metalness、ao、emissive")
 		}
 		for _, e := range entries {
 			if !revisionIDPattern.MatchString(e.tex.ContentRevisionID) {

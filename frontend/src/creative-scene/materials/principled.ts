@@ -3,8 +3,9 @@ import type { ParamValue } from '../builtins/catalog.ts'
 import { defaultAlphaCutoff, type SlotMaterial } from './resolve.ts'
 
 // The principled BSDF's parameters as MeshPhysicalNodeMaterial properties: the
-// names are three.js's in snake case, so most go across as they are. Two
-// convert: colours, and the film thickness, which three takes as a range.
+// names are three.js's in snake case, so most go across as they are. Three
+// convert: colours, the film thickness, which three takes as a range, and
+// vertex_color, three's vertexColors.
 // Features left at 0 (clearcoat, sheen, transmission, iridescence,
 // anisotropy) cost nothing: three.js compiles their branches out.
 
@@ -36,6 +37,8 @@ export function principledProps(p: Record<string, ParamValue>, policy: RenderPol
     anisotropyRotation: num(p, 'anisotropy_rotation'),
     iridescence: num(p, 'iridescence'),
     iridescenceThicknessRange: [num(p, 'iridescence_thickness'), num(p, 'iridescence_thickness')],
+    // The base colour times the mesh's COLOR_0 (linear, as glTF); a mesh without one reads white.
+    vertexColors: p.vertex_color === true,
   }
 }
 

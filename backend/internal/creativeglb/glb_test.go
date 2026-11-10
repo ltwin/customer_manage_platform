@@ -446,7 +446,7 @@ func fixtureCases() []fixtureCase {
 					idx = append(idx, 0, 1, 2)
 				}
 				mesh := b.mesh(map[string]any{"attributes": map[string]any{"POSITION": b.positions([]float32{0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1})}, "indices": b.indices16(idx)})
-				for i := range 301 {
+				for i := range 2001 {
 					b.roots = append(b.roots, b.node(map[string]any{"mesh": mesh, "translation": []float64{float64(i), 0, 0}}))
 				}
 				return encodeGLB(b.doc(), b.bin)

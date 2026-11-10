@@ -13,6 +13,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -434,5 +435,92 @@ func TestReadModelsQueriesDoNotGrowWithModels(t *testing.T) {
 	}
 	if deltas[1] != deltas[6] {
 		t.Fatalf("revision scans grew with models and images: %v", deltas)
+	}
+}
+
+// A code model without parameters keeps params_schema and params as empty
+// objects wherever its generator is written or read again; an imported
+// model's generator is its language and mount only (scene-glb-import 1.1).
+func TestGeneratorFormsSurviveTheirWrites(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	id := objectID(1)
+	const code = `export default function build({ THREE }) { return new THREE.Group() }`
+	res := mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect("objects"), Operations: []any{
+		commit(t, "plain", stagePair(t, f, f.a), generator(code, map[string]any{}, map[string]any{}), basicManifest(t), nil),
+		op{"op": "add_objects", "objects": []any{instance(id, 1, map[string]any{"ref": "plain"})}},
+	}})
+	placed := receiptModels(t, res)["plain"]
+	empty := func(where string, raw json.RawMessage) {
+		t.Helper()
+		var g map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &g); err != nil {
+			t.Fatalf("%s: %v", where, err)
+		}
+		if string(g["params_schema"]) != "{}" || string(g["params"]) != "{}" {
+			t.Errorf("%s generator %s", where, raw)
+		}
+	}
+	stored := func(revision string) json.RawMessage {
+		t.Helper()
+		r, err := creativecontent.Read(t.Context(), f.a, revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p struct {
+			Generator json.RawMessage `json:"generator"`
+		}
+		if err := json.Unmarshal(r.Payload.Model, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.Generator
+	}
+	empty("committed", stored(placed.ContentRevisionID))
+
+	raw, err := creativedocument.Read(t.Context(), f.a, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read struct {
+		Models map[string]struct {
+			Generator json.RawMessage `json:"generator"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &read); err != nil {
+		t.Fatal(err)
+	}
+	empty("scene read", read.Models[placed.ContentRevisionID].Generator)
+
+	res = mustSend(t, f.a, batch{DocumentID: doc, Expected: readScene(t, f.a, doc).expect(content(id)), Operations: []any{
+		derive("faces", placed.ContentRevisionID, brickFaces(), map[string]any{"base_content_id": placed.ContentID}),
+		op{"op": "set_instance_model", "object_id": id, "model": map[string]any{"ref": "faces"}},
+	}})
+	derived := receiptModels(t, res)["faces"]
+	empty("derived", stored(derived.ContentRevisionID))
+
+	v := readScene(t, f.a, doc)
+	_, saved, err := saveModel(t, f.a, command(t, creativescene.SaveModelInput{DocumentID: doc, ObjectID: id, ExpectedObjectRev: contentRev(t, v, id),
+		ThumbnailUploadID: stage(t, f, f.a, "image"), Target: creativelibrary.ImportTarget{Title: "空参数"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty("library copy", stored(saved.ContentRevisionID))
+}
+
+func TestImportedGeneratorIsLanguageAndMount(t *testing.T) {
+	raw, err := json.Marshal(creativescene.Generator{Language: "imported", Mount: "wall"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"language":"imported","mount":"wall"}` {
+		t.Fatalf("imported generator %s", raw)
+	}
+	var back creativescene.Generator
+	if err := json.Unmarshal(raw, &back); err != nil || !back.Imported() || back.Mount != "wall" {
+		t.Fatalf("round trip %+v %v", back, err)
+	}
+	var code creativescene.Generator
+	if err := json.Unmarshal([]byte(`{"language":"three-module","mount":"floor"}`), &code); err != nil || code.Imported() {
+		t.Fatalf("a code model's generator %+v %v", code, err)
 	}
 }

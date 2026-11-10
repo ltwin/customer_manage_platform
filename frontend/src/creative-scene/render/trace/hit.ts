@@ -8,6 +8,7 @@ import { gpuTestHooks } from '../gpu.ts'
 import { probeIrradiance, type ProbeNodes } from '../probes/lookup.ts'
 import { EXTRA_WORDS } from './cache.ts'
 import type { TraceLayer } from './layer.ts'
+import { arrayOf } from './maps.ts'
 import { ROW as NORMAL_ROW, STEPS } from './normals.ts'
 import { HEADER, LIGHT, LIGHT_ROW, MAPS_AT, MATERIAL_ROW, presets, type TraceTables } from './tables.ts'
 import { traceFirst, traceWithin, type Hit } from './wgsl.ts'
@@ -68,7 +69,7 @@ function normalTexel(t: TSLNode): TSLNode {
 }
 
 /** A missing texture's texel: white, flat, an ORM of ones, as the raster's placeholders (images.ts). */
-const none: Record<MapKind, () => TSLNode> = { color: () => vec4(1, 1, 1, 1), normal: () => vec4(0.5, 0.5, 1, 1), orm: () => vec4(1, 1, 1, 1) }
+const none: Record<MapKind, () => TSLNode> = { color: () => vec4(1, 1, 1, 1), normal: () => vec4(0.5, 0.5, 1, 1), orm: () => vec4(1, 1, 1, 1), emissive: () => vec4(1, 1, 1, 1) }
 
 /** three's specular occlusion from an ambient occlusion (computeSpecularOcclusion, Lagarde). */
 const specularOcclusion = (dotNV: TSLNode, ao: TSLNode, roughness: TSLNode) => clamp(pow(dotNV.add(ao), exp2(roughness.mul(-16).sub(1))).sub(1).add(ao), 0, 1)
@@ -244,12 +245,13 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
       metal.assign(row(3).x)
       emission.assign(row(4).xyz.mul(row(5).x))
     })
-    return { albedo, rough, metal, emission: emission.mul(preExposure), ao: float(1).toVar() }
+    // A variable: a slot's emission map multiplies it (surfaceHit).
+    return { albedo, rough, metal, emission: emission.mul(preExposure).toVar(), ao: float(1).toVar() }
   }
 
   /** One of the arrays at a texture coordinate, with its gradients along the two differentials; a layer of −1 (none, not written) as none. */
   function fetch(which: MapKind, layer: TSLNode, coord: TSLNode, gx: TSLNode, gy: TSLNode): TSLNode {
-    const node = maps!.nodes[which]
+    const node = maps!.nodes[arrayOf(which)]
     const at = uint(max(layer, 0))
     // By gradient in compute too (computePatches.ts). A variable here, outside select's branch: the coordinate's parts other samples share are
     // otherwise declared in the first sample's branch, and read unassigned where it is not taken.
@@ -259,7 +261,8 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
 
   /**
    * A slot's textures at a hit (row: its material row): base colour with
-   * alpha, ORM, and the world normal they bend it to. The texture coordinates
+   * alpha, ORM, emission (white without its map), and the world normal they
+   * bend it to. The texture coordinates
    * one differential over are recorded first (the recording's samples are
    * not used), and each sample takes its coordinate's differences from them
    * as gradients, exactly: the mappings are affine along a plane.
@@ -267,17 +270,18 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
   function texturesAt(row: (k: number) => TSLNode, g: MapsIn) {
     const layers = row(MAPS_AT).toVar()
     const tr = row(MAPS_AT + 1).toVar()
+    const glowLayer = row(MAPS_AT + 2).x.toVar()
     // Variables before the If: both mappings read them (surfaceAt's Switch, S0).
     const m: MappingIn<TSLNode> = { scale: tr.xy.toVar(), cos: cos(tr.z).toVar(), sin: sin(tr.z).toVar(), strength: tr.w.toVar() }
-    const has = { color: true, normal: g.only === undefined, orm: g.only === undefined }
-    const layerOf = (w: MapKind) => (w === 'color' ? layers.x : w === 'normal' ? layers.y : layers.z)
+    const has = { color: true, normal: g.only === undefined, orm: g.only === undefined, emissive: g.only === undefined }
+    const layerOf = (w: MapKind) => (w === 'color' ? layers.x : w === 'normal' ? layers.y : w === 'orm' ? layers.z : glowLayer)
     const record = (run: (sample: Sample<TSLNode>) => unknown) => {
-      const out: Record<MapKind, TSLNode[]> = { color: [], normal: [], orm: [] }
+      const out: Record<MapKind, TSLNode[]> = { color: [], normal: [], orm: [], emissive: [] }
       run((which, coord) => (out[which].push(coord), vec4(0)))
       return out
     }
     const withGradients = (X: Record<MapKind, TSLNode[]>, Y: Record<MapKind, TSLNode[]>): Sample<TSLNode> => {
-      const n: Record<MapKind, number> = { color: 0, normal: 0, orm: 0 }
+      const n: Record<MapKind, number> = { color: 0, normal: 0, orm: 0, emissive: 0 }
       return (which, coord) => {
         const k = n[which]++
         return fetch(which, layerOf(which), coord, X[which][k].sub(coord), Y[which][k].sub(coord))
@@ -285,6 +289,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     }
     const color = vec4(1).toVar()
     const orm = vec3(1).toVar()
+    const glow = vec3(1).toVar()
     const normal = g.normalWorld.toVar()
     If(layers.w.lessThan(0.5), () => {
       // Box projection at the object-space point in metres; its bend a covector, into object space by the scale, on to world space as normals go.
@@ -293,6 +298,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
       const t = triplanar(shaderKit, g.pos, g.docNormal, m, has, withGradients(X, Y))
       color.assign(t.color)
       orm.assign(t.orm)
+      if (t.emissive) glow.assign(t.emissive)
       if (t.bend) normal.assign(bendNormal(shaderKit, g.normalWorld, vec4(t.bend.mul(g.scale), 0).mul(g.inv).xyz))
     }).Else(() => {
       // The triangle's UVs (build.worker.ts Segment.extras), interpolated; a differential onto the triangle's plane in object space, the UV it moves by.
@@ -322,6 +328,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
       const u = uvSurface(shaderKit, uvMapped(shaderKit, here, m), m, has, withGradients(X, Y))
       color.assign(u.color)
       orm.assign(u.orm)
+      if (u.emissive) glow.assign(u.emissive)
       if (u.normal) {
         // The triangle's own frame of (u′, w′), its edges in world space as the raster's are in view space.
         const world = (v: TSLNode) => g.M.mul(vec4(v, 0)).xyz
@@ -329,7 +336,7 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
         normal.assign(uvNormal(shaderKit, g.normalWorld, world(e1), world(e2), mapped(ub).sub(mapped(ua)), mapped(uc).sub(mapped(ua)), u.normal))
       }
     })
-    return { color, orm, normal }
+    return { color, orm, glow, normal }
   }
 
   /** A hit's object-space normal: the vertices' interpolated, or the face's own where the geometry has none (normals.ts NONE). */
@@ -659,12 +666,13 @@ export function hitShading(layer: TraceLayer, tables: TraceTables, scene: Scene,
     // The slot's textures (C5c1), where any of its layers is written: the constants times them, the normal bent, toward the ray as before.
     if (maps) {
       const layers = row(MAPS_AT)
-      If(max(layers.x, max(layers.y, layers.z)).greaterThanEqual(0), () => {
+      If(max(max(layers.x, row(MAPS_AT + 2).x), max(layers.y, layers.z)).greaterThanEqual(0), () => {
         const t = texturesAt(row, { pos: toPattern(P, 1), docNormal: normalObject.div(scale), dpx, dpy, idx, b, M, inv, scale, normalWorld })
         s.albedo.mulAssign(t.color.xyz)
         s.rough.mulAssign(t.orm.y)
         s.metal.mulAssign(t.orm.z)
         s.ao.assign(t.orm.x)
+        s.emission.mulAssign(t.glow)
         n.assign(select(dot(normalWorld, dir).greaterThan(0), t.normal.negate(), t.normal))
       })
     }

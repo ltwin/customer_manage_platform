@@ -24,7 +24,7 @@ import {
   Vector3,
 } from 'three'
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js'
-import { defaultLimits, inspect } from '../src/creative-scene/sandbox/inspect.ts'
+import { inspect } from '../src/creative-scene/sandbox/inspect.ts'
 import { cells, generate } from './fixtures/scene-stress/generate.mjs'
 
 // GLTFExporter reads its binary chunks through FileReader, which Node does not have.
@@ -275,7 +275,10 @@ export async function equivalence() {
   return { models, objects, environment: { sky: { kind: 'procedural', sun_elevation_deg: 40, sun_azimuth_deg: 150, turbidity: 3 } } }
 }
 
-const maxTriangles = defaultLimits.maxTriangles
+// The sandbox's limit when S0's hall was laid out (300 000; it is 2 000 000
+// since scene-pose-system revision v5): kept, so the hall stays the scene
+// S0 and later work measured.
+const maxTriangles = 300_000
 
 /**
  * S0's hall (fixtures/scene-stress/spec.json) as models fit to the sandbox's

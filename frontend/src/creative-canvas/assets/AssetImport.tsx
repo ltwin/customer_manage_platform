@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { FileText, Link, Plus, Upload } from 'lucide-react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { Box, FileText, Link, Plus, Upload } from 'lucide-react'
 import type { components } from '../../api/schema'
 import ImportDialog from './ImportDialog.tsx'
 import DuplicateDialog, { type DuplicateChoice } from './DuplicateDialog.tsx'
@@ -15,6 +15,7 @@ import { contentImport, pastedKind } from './importContent.ts'
 import { findDuplicates, type Duplicate } from './importDuplicates.ts'
 import { read } from '../editor/api.ts'
 import type { Point } from './popover.ts'
+import ImportModelDialog from './ImportModel.tsx'
 
 export function useAssetImport({
   account,
@@ -35,6 +36,9 @@ export function useAssetImport({
   paste?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const modelInput = useRef<HTMLInputElement>(null)
+  // 正在导入的模型（一次一个）；group 是发起导入时的位置。
+  const [model, setModel] = useState<{ file: File; group: string } | null>(null)
   const [menu, setMenu] = useState<Point | null>(null)
   const [draft, setDraft] = useState<{
     kind: 'text' | 'link'
@@ -85,16 +89,17 @@ export function useAssetImport({
       })
       return
     }
-    const plan = importPlan(list, uploads.capabilities)
+    const plan = importPlan(list, uploads.capabilities, { models: true })
     uploads.reject(plan.rejected)
-    if (plan.rejected.length)
-      actions.setToast({
-        text: plan.rejected
-          .map(
-            ({ file, message }) => `${readableFileName(file.name)}：${message}`,
-          )
-          .join('；'),
-      })
+    const [first, ...more] = plan.models
+    const notes = [
+      ...plan.rejected.map(
+        ({ file, message }) => `${readableFileName(file.name)}：${message}`,
+      ),
+      ...more.map((file) => `${readableFileName(file.name)}：一次导入一个模型`),
+    ]
+    if (notes.length) actions.setToast({ text: notes.join('；') })
+    if (first) setModel({ file: first, group })
     const accepted = plan.accepted.map((x) => x.file)
     if (!accepted.length) return
     onStart()
@@ -320,7 +325,7 @@ export function useAssetImport({
     files,
     busy,
     button,
-    open: !!draft || !!menu || !!pending,
+    open: !!draft || !!menu || !!pending || !!model,
     overlays: (
       <>
         <input
@@ -329,6 +334,17 @@ export function useAssetImport({
           multiple
           hidden
           aria-label="上传素材文件"
+          onChange={(e) => {
+            files(Array.from(e.currentTarget.files ?? []))
+            e.currentTarget.value = ''
+          }}
+        />
+        <input
+          ref={modelInput}
+          type="file"
+          accept=".glb"
+          hidden
+          aria-label="选择模型文件"
           onChange={(e) => {
             files(Array.from(e.currentTarget.files ?? []))
             e.currentTarget.value = ''
@@ -345,6 +361,12 @@ export function useAssetImport({
                 icon: <Upload size={14} />,
                 shortcut: '或直接拖进来',
                 action: () => input.current?.click(),
+              },
+              {
+                label: '导入模型',
+                icon: <Box size={14} />,
+                shortcut: 'GLB',
+                action: () => modelInput.current?.click(),
               },
               {
                 label: '添加链接',
@@ -397,6 +419,20 @@ export function useAssetImport({
             error={pending.error}
             onChoose={choose}
           />
+        )}
+        {model && (
+          <Suspense fallback={null}>
+            <ImportModelDialog
+              file={model.file}
+              groupIDs={model.group ? [model.group] : []}
+              onImported={(_, title) => {
+                setModel(null)
+                onDone()
+                actions.setToast({ text: `已导入「${title}」` })
+              }}
+              onClose={() => setModel(null)}
+            />
+          </Suspense>
         )}
         <UploadTray
           items={uploads.items}

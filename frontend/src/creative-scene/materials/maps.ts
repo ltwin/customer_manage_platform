@@ -41,8 +41,8 @@ export type Kit<N> = {
   xyz(a: N): N
 }
 
-/** What a slot samples: its base colour (sRGB, alpha), normal map and ORM (ambient occlusion, roughness, metalness in r g b). */
-export type MapKind = 'color' | 'normal' | 'orm'
+/** What a slot samples: its base colour (sRGB, alpha), normal map, ORM (ambient occlusion, roughness, metalness in r g b) and emission (sRGB). */
+export type MapKind = 'color' | 'normal' | 'orm' | 'emissive'
 
 /**
  * Samples one of the slot's textures at a texture coordinate; perMetre is how
@@ -111,10 +111,11 @@ export function triWeights<N>(k: Kit<N>, normal: N): N {
   return k.div(a4, k.add(k.add(k.x(a4), k.y(a4)), k.z(a4)))
 }
 
-/** What the textures give at a point: base colour with alpha (1 without a colour map), ORM (ones without), and the normal's bend. */
-export type Surface<N> = { color: N; orm: N; bend: N | null }
+/** What the textures give at a point: base colour with alpha (1 without a colour map), ORM (ones without), emission (null without its map), and the normal's bend. */
+export type Surface<N> = { color: N; orm: N; emissive: N | null; bend: N | null }
 
-export type Has = { color: boolean; normal: boolean; orm: boolean }
+/** Which maps a slot has; emissive is left out where nothing samples it (scene-glb-import). */
+export type Has = { color: boolean; normal: boolean; orm: boolean; emissive?: boolean }
 
 /** A document-space vector (glTF's, Y up: space.ts) in Blender's axes, Z up, and back. */
 const toBlender = <N>(k: Kit<N>, v: N): N => k.vec3(k.x(v), k.mul(k.z(v), k.num(-1)), k.y(v))
@@ -153,6 +154,7 @@ export function triplanar<N>(k: Kit<N>, docPos: N, docNormal: N, m: MappingIn<N>
   }
   const color = has.color ? blend('color', (c) => c, zero) : k.vec4(k.vec3(one, one, one), one)
   const orm = has.orm ? blend('orm', (c) => k.xyz(c), zero) : k.vec3(one, one, one)
+  const emissive = has.emissive ? blend('emissive', (c) => k.xyz(c), zero) : null
   const bend = has.normal
     ? blend(
         'normal',
@@ -163,7 +165,7 @@ export function triplanar<N>(k: Kit<N>, docPos: N, docNormal: N, m: MappingIn<N>
         zero,
       )
     : null
-  return { color, orm, bend: bend && fromBlender(k, bend) }
+  return { color, orm, emissive, bend: bend && fromBlender(k, bend) }
 }
 
 /** N bent by a height gradient g given in N's space: g's part along the surface taken off it. */
@@ -178,12 +180,13 @@ export function uvMapped<N>(k: Kit<N>, uv: N, m: MappingIn<N>): N {
 }
 
 /** The textures at a UV-mapped point; its normal needs the frame (uvNormal). */
-export function uvSurface<N>(k: Kit<N>, b: N, m: MappingIn<N>, has: Has, sample: Sample<N>): { color: N; orm: N; normal: N | null } {
+export function uvSurface<N>(k: Kit<N>, b: N, m: MappingIn<N>, has: Has, sample: Sample<N>): { color: N; orm: N; emissive: N | null; normal: N | null } {
   const at = texel(k, b)
   const one = k.num(1)
   return {
     color: has.color ? sample('color', at, k.x(m.scale)) : k.vec4(k.vec3(one, one, one), one),
     orm: has.orm ? k.xyz(sample('orm', at, k.x(m.scale))) : k.vec3(one, one, one),
+    emissive: has.emissive ? k.xyz(sample('emissive', at, k.x(m.scale))) : null,
     normal: has.normal ? tangentNormal(k, sample('normal', at, k.x(m.scale)), m.strength) : null,
   }
 }

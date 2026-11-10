@@ -308,6 +308,7 @@ type TextureMaps struct {
 	Roughness *TextureMap `json:"roughness,omitempty"`
 	Metalness *TextureMap `json:"metalness,omitempty"`
 	AO        *TextureMap `json:"ao,omitempty"`
+	Emissive  *TextureMap `json:"emissive,omitempty"`
 }
 
 // TextureMap is one texture; Channel is roughness's, metalness's and ao's

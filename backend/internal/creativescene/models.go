@@ -48,6 +48,18 @@ var (
 	mounts            = []string{"floor", "wall", "ceiling", "free"}
 )
 
+// UploadUnavailableError names the staged upload that is unavailable
+// (details.upload_id); errors.Is matches ErrUploadUnavailable.
+type UploadUnavailableError struct{ UploadID string }
+
+func (e *UploadUnavailableError) Error() string {
+	return fmt.Sprintf("%v: %s", ErrUploadUnavailable, e.UploadID)
+}
+func (e *UploadUnavailableError) Is(target error) bool { return target == ErrUploadUnavailable }
+func (e *UploadUnavailableError) PublicMessage() string {
+	return fmt.Sprintf("上传 %s 不可用，请重新生成", e.UploadID)
+}
+
 // ModelRef points a model instance at an immutable model revision. In a
 // stored snapshot only ContentRevisionID is set; Ref names a commit_model of
 // the same batch and is resolved before the snapshot is validated.
@@ -56,8 +68,13 @@ type ModelRef struct {
 	Ref               string `json:"ref,omitempty"`
 }
 
+// languageImported marks a model imported from an external GLB (data: 模型内容
+// 「导入的模型」): its generator has only the language and the mount.
+const languageImported = "imported"
+
 // Generator is how a model was made: the geometry module and the values it was
-// baked with. Code is left out of read views.
+// baked with, or, for an imported GLB, only how it mounts. Code is left out of
+// read views.
 type Generator struct {
 	Language        string               `json:"language"`
 	ContractVersion int                  `json:"contract_version"`
@@ -69,10 +86,35 @@ type Generator struct {
 	Mount           string               `json:"mount"`
 }
 
+// Imported reports whether g is an imported GLB's: no code, no parameters.
+func (g Generator) Imported() bool { return g.Language == languageImported }
+
+// MarshalJSON writes an imported generator as its language and mount only; a
+// code model's always carries params_schema and params, empty ones included.
+func (g Generator) MarshalJSON() ([]byte, error) {
+	if g.Imported() {
+		return json.Marshal(struct {
+			Language string `json:"language"`
+			Mount    string `json:"mount"`
+		}{Language: g.Language, Mount: g.Mount})
+	}
+	type code Generator
+	return json.Marshal(code(g))
+}
+
+// ModelImport is where an imported model came from, as the photographer
+// declared it; the server keeps it for display and checks only its shape.
+type ModelImport struct {
+	FileName    string `json:"file_name"`
+	Attribution string `json:"attribution,omitempty"`
+	SourceURL   string `json:"source_url,omitempty"`
+}
+
 // ModelPayload is payload.model of model content. The staged form (written by
 // the media worker) has no generator; scenes reference only the complete form.
 // A library copy, written only by SaveModelToLibrary, also carries the
-// instance's materials and the revision it was copied from.
+// instance's materials and the revision it was copied from; an imported model,
+// written only by ImportModelToLibrary, its materials and where it came from.
 type ModelPayload struct {
 	Format           string                  `json:"format"`
 	Generator        *Generator              `json:"generator,omitempty"`
@@ -81,6 +123,7 @@ type ModelPayload struct {
 	Faces            *Faces                  `json:"faces,omitempty"`
 	Materials        map[string]MaterialSlot `json:"materials,omitzero"`
 	SourceRevisionID string                  `json:"source_revision_id,omitempty"`
+	Import           *ModelImport            `json:"import,omitempty"`
 }
 
 func decodeModelPayload(raw json.RawMessage) (ModelPayload, bool) {
@@ -267,6 +310,7 @@ type modelView struct {
 	Generator *Generator            `json:"generator"`
 	NameHint  *string               `json:"name_hint"`
 	Faces     *Faces                `json:"faces"`
+	Import    *ModelImport          `json:"import,omitempty"`
 }
 
 // readModels reads the listed revisions in the caller's snapshot with a fixed
@@ -287,7 +331,7 @@ func readModels(ctx context.Context, tx store.ReadTxAccountScope, ids []string) 
 			g := *p.Generator
 			g.Code = ""
 			manifest := p.Manifest
-			v.Usable, v.Manifest, v.Generator, v.Faces = true, &manifest, &g, p.Faces
+			v.Usable, v.Manifest, v.Generator, v.Faces, v.Import = true, &manifest, &g, p.Faces, p.Import
 			if p.NameHint != "" {
 				hint := p.NameHint
 				v.NameHint = &hint

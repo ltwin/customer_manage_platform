@@ -8,10 +8,12 @@ import {
   budgetUsed,
   builtinTextureURL,
   fetchTimeoutMs,
+  forgetLocalImage,
   imageBudget,
   imagePlatform,
   imageStatus,
   loadSceneImages,
+  provideLocalImage,
   ormKey,
   releaseTexture,
   resetImages,
@@ -43,7 +45,9 @@ let gates = new Map<string, Promise<void>>()
 let decodingNow = 0
 let mostAtOnce = 0
 
+let fetched: string[] = []
 imagePlatform.fetch = async (revision) => {
+  fetched.push(revision)
   if (failing.has(revision)) throw new Error('HTTP 404')
   if (hanging.has(revision)) return new Promise<never>(() => {})
   return new Blob([revision])
@@ -68,6 +72,7 @@ imagePlatform.placeholder = (rgba) => ({ width: 1, height: 1, rgba })
 
 function fresh(t: TestContext) {
   resetImages()
+  fetched = []
   decodes = []
   composed = []
   failing = new Set()
@@ -373,4 +378,21 @@ test('an ORM layer smaller than the others is scaled up as linear filtering samp
   assert.deepEqual(out.filter((_, i) => i % 4 === 0), [0, 50, 150, 200])
   assert.deepEqual(out.filter((_, i) => i % 4 === 1), [100, 75, 25, 0])
   assert.deepEqual([...scaled(row, 2, 1, 2, 1)], row, 'the same size: as it was')
+})
+
+test('an image the editor has itself is decoded from its own file, not downloaded (scene-glb-import thumbnails)', async (t) => {
+  fresh(t)
+  provideLocalImage('ccr_local', new Blob(['ccr_local']))
+  const a = acquireTexture('color:ccr_local')
+  await flush()
+  assert.equal(shown(a), 'ccr_local')
+  assert.deepEqual(fetched, [])
+  releaseTexture('color:ccr_local')
+  t.mock.timers.tick(60_000)
+  await flush()
+  forgetLocalImage('ccr_local')
+  const b = acquireTexture('color:ccr_local')
+  await flush()
+  assert.equal(shown(b), 'ccr_local')
+  assert.deepEqual(fetched, ['ccr_local'], 'once forgotten, it is downloaded as any other')
 })

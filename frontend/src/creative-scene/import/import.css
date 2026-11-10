@@ -1,0 +1,35 @@
+/* 导入模型对话框：换算报告、勾选项和按钮行；其余沿用 .cc-form。 */
+.cc-import-model p {
+  margin: 0;
+}
+.cc-import-model textarea {
+  min-height: 56px;
+}
+.cc-import-report {
+  max-height: 180px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.cc-import-report h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cc-import-report ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.cc-import-refused {
+  color: var(--danger, #ef7a70);
+}
+.cc-form label.cc-import-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

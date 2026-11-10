@@ -97,7 +97,7 @@ func loadMaterials(raw []byte) materialCatalog {
 			panic(fmt.Sprintf("creativescene: material %q is malformed", m.ID))
 		}
 		for name, p := range m.Params {
-			if !slotKeyPattern.MatchString(name) || p.Label == "" || p.Type != "number" && p.Type != "color" || p.Type == "number" && (p.Min == nil || p.Max == nil || *p.Min > *p.Max) {
+			if !slotKeyPattern.MatchString(name) || p.Label == "" || !slices.Contains([]string{"number", "color", "boolean"}, p.Type) || p.Type == "number" && (p.Min == nil || p.Max == nil || *p.Min > *p.Max) {
 				panic(fmt.Sprintf("creativescene: %s.%s is malformed", m.ID, name))
 			}
 			v, err := p.value(p.Default)

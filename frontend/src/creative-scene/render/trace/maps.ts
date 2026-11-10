@@ -26,11 +26,17 @@ import type { SlotMaterial } from '../../materials/resolve.ts'
 // device's layers, or one whose array does not fit the budget, keeps them
 // for good (said in the render tab; an export fails, host/render.ts).
 
+/** The arrays, by their keys' kind: an emission map is a colour key (images.ts textureKeys), a layer of the colours. */
+export type ArrayKind = 'color' | 'normal' | 'orm'
+
+/** The array what a slot samples lies in. */
+export const arrayOf = (which: MapKind): ArrayKind => (which === 'emissive' ? 'color' : which)
+
 /** A layer's side: the viewport's, and an export's (design「数据」). */
 export const LAYER_SIZE = { viewport: 512, export: 1024 } as const
 
 /** How each array stores its texels: what the raster samples, the normal's z left out. */
-const formats: Record<MapKind, { format: typeof RGBAFormat | typeof RGFormat; colorSpace: ColorSpace }> = {
+const formats: Record<ArrayKind, { format: typeof RGBAFormat | typeof RGFormat; colorSpace: ColorSpace }> = {
   color: { format: RGBAFormat, colorSpace: SRGBColorSpace },
   normal: { format: RGFormat, colorSpace: NoColorSpace },
   orm: { format: RGBAFormat, colorSpace: NoColorSpace },
@@ -83,10 +89,12 @@ export class LayerSlots {
   }
 }
 
-/** What a material row holds of a slot's textures (tables.ts): 8 floats, two vec4s, and the clip value of its first. */
+/** What a material row holds of a slot's textures (tables.ts): three vec4s, and the clip value of its first. */
 export type RowMaps = {
   /** The base colour's, normal's and ORM's layers (−1: none, or not written), then the mapping: 0 box projection, 1 UV. */
   layers: [number, number, number, number]
+  /** The emission map's layer in the colours (−1: none, or not written; scene-glb-import). */
+  emissive: number
   /** Texture units per plane unit along u and w (box projection: 1/size and aspect/size; UV: the repeat), the rotation in radians, the normal's strength. */
   transform: [number, number, number, number]
   /** clip's cutoff over the opacity, which a hit holds the base colour's alpha to (above 1: cut everywhere); 0 when nothing is cut. */
@@ -94,7 +102,7 @@ export type RowMaps = {
 }
 
 /** A row's textures where it has none: all −1, nothing cut. */
-export const NO_MAPS: RowMaps = { layers: [-1, -1, -1, 0], transform: [1, 1, 0, 1], clip: 0 }
+export const NO_MAPS: RowMaps = { layers: [-1, -1, -1, 0], emissive: -1, transform: [1, 1, 0, 1], clip: 0 }
 
 /**
  * A slot's textures as its row holds them: each key's layer once written
@@ -111,10 +119,11 @@ export function rowMaps(m: SlotMaterial, layerOf: (key: TextureKey) => number, a
   const clip = policy.alphaCutoff === null ? 0 : opacity > 0 ? Math.max(policy.alphaCutoff / opacity, 1e-6) : 2
   const at = (key: TextureKey | undefined) => (key === undefined ? -1 : layerOf(key))
   const mapping = mappingOf(t)
-  const first = keys.color ?? keys.normal ?? keys.orm
+  const first = keys.color ?? keys.normal ?? keys.orm ?? keys.emissive
   const scale = mapping.kind === 'triplanar' ? [1 / mapping.size, (first ? aspectOf(first) : 1) / mapping.size] : mapping.repeat
   return {
     layers: [at(keys.color), at(keys.normal), at(keys.orm), mapping.kind === 'uv' ? 1 : 0],
+    emissive: at(keys.emissive),
     transform: [scale[0], scale[1], mapping.rotation, mapping.strength],
     clip,
   }
@@ -122,7 +131,7 @@ export function rowMaps(m: SlotMaterial, layerOf: (key: TextureKey) => number, a
 
 /** A key the arrays hold or wait for. */
 type Want = {
-  kind: MapKind
+  kind: ArrayKind
   layer: number | null
   texture: Texture
   /** The image held till it is written: its pixels are on the texture. */
@@ -132,21 +141,21 @@ type Want = {
   failed: boolean
 }
 
-const kindOf = (key: TextureKey) => key.slice(0, key.indexOf(':')) as MapKind
+const kindOf = (key: TextureKey) => key.slice(0, key.indexOf(':')) as ArrayKind
 const allocated = (rt: RenderTarget) => rt.texture.userData.allocated === true
 
 export class TraceMaps {
   /** The arrays as the hit samples them (hit.ts): a node's value is swapped for a larger array. */
-  readonly nodes: Record<MapKind, TSLNode>
+  readonly nodes: Record<ArrayKind, TSLNode>
   readonly size: number
-  private readonly arrays: Record<MapKind, RenderTarget>
-  private readonly slots: Record<MapKind, LayerSlots>
+  private readonly arrays: Record<ArrayKind, RenderTarget>
+  private readonly slots: Record<ArrayKind, LayerSlots>
   private readonly wants = new Map<TextureKey, Want>()
   /** Images in, to be written at the next update. */
   private arrived: TextureKey[] = []
-  private readonly scratch: Partial<Record<MapKind, RenderTarget>> = {}
+  private readonly scratch: Partial<Record<ArrayKind, RenderTarget>> = {}
   private quad: QuadMesh | null = null
-  private readonly resamplers: Partial<Record<MapKind, { material: MeshBasicNodeMaterial; source: TSLNode }>> = {}
+  private readonly resamplers: Partial<Record<ArrayKind, { material: MeshBasicNodeMaterial; source: TSLNode }>> = {}
   private readonly renderer: () => WebGPURenderer
   private disposed = false
   private readonly unsubscribe: () => void
@@ -161,14 +170,14 @@ export class TraceMaps {
   constructor(renderer: () => WebGPURenderer, size: number, maxLayers: number) {
     this.renderer = renderer
     this.size = size
-    const kinds: MapKind[] = ['color', 'normal', 'orm']
-    this.slots = Object.fromEntries(kinds.map((k) => [k, new LayerSlots(maxLayers)])) as Record<MapKind, LayerSlots>
-    this.arrays = Object.fromEntries(kinds.map((k) => [k, this.array(k, MIN_LAYERS)])) as Record<MapKind, RenderTarget>
-    this.nodes = Object.fromEntries(kinds.map((k) => [k, textureNode(this.arrays[k].texture)])) as Record<MapKind, TSLNode>
+    const kinds: ArrayKind[] = ['color', 'normal', 'orm']
+    this.slots = Object.fromEntries(kinds.map((k) => [k, new LayerSlots(maxLayers)])) as Record<ArrayKind, LayerSlots>
+    this.arrays = Object.fromEntries(kinds.map((k) => [k, this.array(k, MIN_LAYERS)])) as Record<ArrayKind, RenderTarget>
+    this.nodes = Object.fromEntries(kinds.map((k) => [k, textureNode(this.arrays[k].texture)])) as Record<ArrayKind, TSLNode>
     this.unsubscribe = imageStatus.subscribe((s) => this.retry(s))
   }
 
-  private array(kind: MapKind, layers: number): RenderTarget {
+  private array(kind: ArrayKind, layers: number): RenderTarget {
     const { format, colorSpace } = formats[kind]
     // Mipmaps allocated at the first upload (initTexture), then generated never: each layer's are copied in.
     const rt = new RenderTarget(this.size, this.size, { depth: layers, format, type: UnsignedByteType, colorSpace, generateMipmaps: true, minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, depthBuffer: false })
@@ -286,7 +295,7 @@ export class TraceMaps {
    * encoded again by the sRGB target). One material a kind, its source node
    * pointed at each image in turn: built once.
    */
-  private resampler(kind: MapKind, image: Texture): MeshBasicNodeMaterial {
+  private resampler(kind: ArrayKind, image: Texture): MeshBasicNodeMaterial {
     let r = this.resamplers[kind]
     if (!r) {
       const source = textureNode(image, uv())
@@ -323,7 +332,7 @@ export class TraceMaps {
   }
 
   /** An array's theoretical bytes (images.ts textureBytes): an RG texel is half an RGBA one. */
-  private bytes(kind: MapKind, layers: number): number {
+  private bytes(kind: ArrayKind, layers: number): number {
     return (textureBytes(this.size, this.size) * layers) / (formats[kind].format === RGFormat ? 2 : 1)
   }
 
@@ -333,7 +342,7 @@ export class TraceMaps {
    * fits the budget; fewer than asked for when the larger one does not, to be
    * tried again at the next write.
    */
-  private fit(kind: MapKind, renderer: WebGPURenderer): number {
+  private fit(kind: ArrayKind, renderer: WebGPURenderer): number {
     const room = this.slots[kind].room
     const old = this.arrays[kind]
     if (!allocated(old)) {
@@ -369,7 +378,7 @@ export class TraceMaps {
       releaseTexture(key)
     }
     this.wants.clear()
-    for (const [kind, rt] of Object.entries(this.arrays) as [MapKind, RenderTarget][]) {
+    for (const [kind, rt] of Object.entries(this.arrays) as [ArrayKind, RenderTarget][]) {
       rt.dispose()
       if (allocated(rt)) releaseBudget(this.bytes(kind, rt.depth))
     }

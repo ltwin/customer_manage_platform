@@ -114,8 +114,8 @@ export async function uploadFile(
   return uploadAs(file, classified, target, onProgress, signal, wait)
 }
 
-/** What the editor produces itself: baked models, their thumbnails, screenshots. */
-export type Generated = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' | 'image/jpeg' }
+/** What the editor produces itself: baked models, their thumbnails, screenshots, and an imported model's images. */
+export type Generated = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' | 'image/jpeg' | 'image/webp' }
 
 /**
  * Uploads bytes the editor produced itself, such as a baked model GLB and its
@@ -130,7 +130,31 @@ export function uploadGenerated(
   signal?: AbortSignal,
   pause: Wait = wait,
 ): Promise<Upload> {
-  return uploadAs(file, declared, target, () => {}, signal, pause)
+  let session: Upload | undefined
+  const track = (p: UploadProgress) => {
+    session = p.upload ?? session
+  }
+  return uploadAs(file, declared, target, track, signal, pause).catch(
+    (e: unknown) => {
+      // 会话建好后中止或失败：取消它，不占着额度等过期；取消不了的
+      // （已经落成暂存候选）等它结束后放弃。
+      if (session) {
+        const live = session
+        void cancelUpload(live).catch(() =>
+          settledUpload(live.id)
+            .then(dropStaged)
+            .catch(() => {}),
+        )
+      }
+      throw e
+    },
+  )
+}
+
+function dropStaged(upload: Upload) {
+  const p = upload.publication
+  if (upload.state === 'ready' && p?.kind === 'candidate')
+    void discardCandidate(p.id, p.revision).catch(() => {})
 }
 
 async function uploadAs(

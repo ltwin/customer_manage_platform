@@ -753,6 +753,9 @@ func CreateBakeJobInTx(ctx context.Context, tx store.TxAccountScope, in BakeInpu
 			return Job{}, nil, err
 		}
 		base := models[in.BaseContentRevisionID].payload.Generator
+		if base.Imported() {
+			return Job{}, nil, invalid("模型修订 %s 是导入的模型，没有代码，只能换材质或摆放", in.BaseContentRevisionID)
+		}
 		req.Code, req.LibVersion = base.Code, base.LibVersion
 	} else if len(in.Code) > maxCodeBytes || !utf8.ValidString(in.Code) {
 		return Job{}, nil, invalid("代码须为 1 字节到 64 KiB 的 UTF-8 文本")

@@ -1,5 +1,6 @@
 import type { components } from '../../api/schema'
 import { materialEntry } from '../../creative-scene/materials/catalog.ts'
+import { codeGenerator, importSource, isImported } from '../../creative-scene/models/generator.ts'
 import type { Content } from '../editor/api.ts'
 
 // 模型与材质资产的信息格式化：检查器、查看浮窗共用。不依赖 three（材质目录只是 JSON），资产库页照常不加载 3D 引擎。
@@ -27,6 +28,8 @@ export type ModelInfo = {
   /** 槽位、提示，以及资产所配材质的名称（没配为空）。 */
   slots: { id: string; hint?: string; material?: string }[]
   params: { key: string; label: string; value: string }[]
+  /** 导入的模型的来源（原文件名、授权说明、来源页面）；代码模型没有。 */
+  source?: ReturnType<typeof importSource>
 }
 
 /** 模型的清单（包围盒、槽位），3D 预览按它取景、配材质。 */
@@ -53,7 +56,7 @@ export function modelFaces(content: Content | undefined): Faces | null {
 /** 完整形态的模型才有信息；暂存形态和其他类型返回 null。 */
 export function modelInfo(content: Content | undefined): ModelInfo | null {
   if (content?.kind !== 'model' || !('model' in content.payload)) return null
-  const { manifest, generator, name_hint } = content.payload.model
+  const { manifest, generator, name_hint, import: imported } = content.payload.model
   if (!generator) return null
   const materials = modelMaterials(content)
   return {
@@ -65,13 +68,14 @@ export function modelInfo(content: Content | undefined): ModelInfo | null {
       const preset = materials[s.id]?.preset
       return preset ? { ...s, material: materialEntry(preset)?.label ?? preset } : s
     }),
-    params: Object.entries(generator.params_schema)
+    params: Object.entries(codeGenerator(generator)?.params_schema ?? {})
       .map(([key, spec]) => ({
         key,
         label: spec.label || key,
-        value: paramValue(generator.params[key] ?? spec.default, spec.unit),
+        value: paramValue(codeGenerator(generator)?.params[key] ?? spec.default, spec.unit),
       }))
       .sort((a, b) => a.key.localeCompare(b.key)),
+    ...(isImported(generator) && imported ? { source: importSource(imported) } : {}),
   }
 }
 
@@ -121,6 +125,11 @@ export function modelRows(info: ModelInfo): [string, string][] {
         .join('、'),
     ])
   for (const p of info.params) rows.push([p.label, p.value])
+  if (info.source) {
+    rows.push(['原文件', info.source.fileName])
+    if (info.source.attribution) rows.push(['授权说明', info.source.attribution])
+    if (info.source.sourceURL) rows.push(['来源页面', info.source.sourceURL])
+  }
   return rows
 }
 

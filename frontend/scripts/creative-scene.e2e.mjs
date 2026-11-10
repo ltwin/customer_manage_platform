@@ -23,6 +23,7 @@ import { Refraction } from 'astronomy-engine'
 import { changedUnits } from '../src/creative-scene/state/intents.ts'
 import { worldOf } from '../src/creative-scene/state/world.ts'
 import { defaultModuleCode } from '../src/creative-scene/sandbox/template.ts'
+import { inspect } from '../src/creative-scene/sandbox/inspect.ts'
 import { capModel, equivalence, hallScene, multiPart, primitives, scaleScene } from './scene-stress.mjs'
 
 const DOC = 'cwdoc_scene'
@@ -212,6 +213,9 @@ class SceneServer {
     this.canvasImages = []
     this.assetQueries = []
     this.assetReads = []
+    // POST /assets/from-glb (scene-glb-import): every request, and the result of each operation, replayed.
+    this.importRequests = []
+    this.imports = new Map()
   }
   /** An image asset on the library list (CreativeLibraryAsset), its content the image the server holds under rev. */
   imageAsset(rev, title) {
@@ -305,6 +309,36 @@ class SceneServer {
     this.library.push(asset)
     return [201, result(asset, false)]
   }
+  /**
+   * POST /assets/from-glb: the staged GLB, its thumbnail and images taken, a model revision of the imported kind with
+   * the slots and the source, and an asset on the list. The same operation again is answered as before (creativeops).
+   */
+  importModel(body) {
+    this.importRequests.push(body)
+    const done = this.imports.get(body.operation_id)
+    if (done) return [201, done]
+    const p = body.payload
+    for (const id of [p.glb_upload_id, p.thumbnail_upload_id, ...p.texture_upload_ids]) {
+      const u = this.uploads.get(id)
+      if (!u || u.state !== 'ready' || u.consumed) return [409, { error: { code: 'creative_upload_unavailable', message: '暂存上传已失效', details: { upload_id: id } } }]
+      u.consumed = true
+    }
+    const glb = this.uploadBytes.get(p.glb_upload_id)
+    const rev = `ccrv_imp${++this.modelSeq}`
+    const content_id = `ccnt_imp${this.modelSeq}`
+    const model = { format: 'glb', manifest: inspect(glb), generator: { language: 'imported', mount: p.mount ?? 'floor' }, name_hint: [...p.target.title].slice(0, 80).join(''), materials: p.materials, import: p.import }
+    this.models.set(rev, { content_id, glb, generator: model.generator, manifest: model.manifest, name_hint: model.name_hint, materials: p.materials, import: p.import, thumbnail: this.uploadBytes.get(p.thumbnail_upload_id) })
+    const id = `ccas_imp${this.modelSeq}`
+    this.library.push({
+      id, title: p.target.title, description: '', kind: 'model', revision: '1', content_id, content_revision_id: rev,
+      content: { id: rev, content_id, kind: 'model', sequence: '1', truncated: false, payload: { model },
+        media: [{ role: 'original', blob_id: 'glb', mime: 'model/gltf-binary', byte_size: glb.byteLength, width: null, height: null, duration_ms: null }, { role: 'thumbnail', blob_id: 'png', mime: 'image/png', byte_size: 64, width: 256, height: 256, duration_ms: null }] },
+      unavailable: false, is_favorite: false, rating: null, palette: [], created_at: '2026-11-09T00:00:00Z', deleted_at: null, purge_after: null, group_ids: p.target.group_ids ?? [], tag_ids: [],
+    })
+    const result = { asset_id: id, revision: '1', title: p.target.title, description: '', content_revision_id: rev, library_revision: '1', tag_mapping: {}, tags_created: [], tags_reused: [], reused: false }
+    this.imports.set(body.operation_id, result)
+    return [201, result]
+  }
   /** A committed model revision, as if made earlier; returns its revision ID (rev, when given). */
   seedModel({ code = defaultModuleCode, params = templateParams, schema = templateSchema, glb = templateGLB, manifest = templateManifest, content, mount = 'floor', rev = `ccrv_seed${++this.modelSeq}` } = {}) {
     const generator = { language: 'three-module', contract_version: 1, lib_version: 1, code, code_sha256: `sha256-${createHash('sha256').update(code).digest('hex')}`, params_schema: schema, params, mount }
@@ -333,7 +367,7 @@ class SceneServer {
         continue
       }
       const { code: _code, ...generator } = m.generator
-      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null, faces: m.faces ?? null }
+      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null, faces: m.faces ?? null, ...(m.import ? { import: m.import } : {}) }
     }
     return out
   }
@@ -596,6 +630,10 @@ async function route(page, server) {
       const [status, body] = server.saveMaterial(request.postDataJSON())
       return json(status, body)
     }
+    if (path === '/assets/from-glb' && request.method() === 'POST') {
+      const [status, body] = server.importModel(request.postDataJSON())
+      return json(status, body)
+    }
     if (path === '/assets/from-scene-model' && request.method() === 'POST') {
       const [status, body] = server.saveModel(request.postDataJSON())
       return json(status, body)
@@ -658,7 +696,10 @@ async function route(page, server) {
           u.binding = { status: 'bound', target_kind: 'asset', target_id: `ccas_up${u.id}`, candidate_id: null, expires_at: '2100-01-01T00:00:00Z' }
           server.library.push(server.imageAsset(rev, u.asset_title))
         } else {
-          Object.assign(u, { state: 'ready', publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
+          // A staged upload's content is its candidate's, an image's served as media (an import's textures).
+          const rev = `ccrv_st_${u.id.slice('ccup_'.length)}`
+          if (u.kind === 'image') server.images.set(rev, server.uploadBytes.get(u.id))
+          Object.assign(u, { state: 'ready', content_revision_id: rev, publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
           u.binding = { status: 'staged', target_kind: null, target_id: null, candidate_id: `ccuc_${u.id}`, expires_at: '2100-01-01T00:00:00Z' }
         }
       }
@@ -3231,7 +3272,7 @@ const change = async (page, server, ops) => {
 }
 const setSlot = (id, slot) => [{ op: 'update_objects', updates: [{ object_id: id, material_slots: { main: slot } }] }]
 
-await check('C5c1: the five maps draw in material preview and final render', async () => {
+await check('C5c1: the six maps draw in material preview and final render', async () => {
   const server = new SceneServer()
   stock(server)
   const ball = gid('ball')
@@ -3249,6 +3290,8 @@ await check('C5c1: the five maps draw in material preview and final render', asy
     ['roughness', { metalness: 1, roughness: 1 }, { roughness: map('ccr_stripes') }],
     ['metalness', { metalness: 1, roughness: 0.3 }, { metalness: map('ccr_stripes') }],
     ['ao', {}, { ao: map('ccr_stripes') }],
+    // scene-glb-import: the emission map times a white glow, red and blue squares against a white one.
+    ['emissive', { emissive: '#ffffff', emissive_intensity: 1 }, { emissive: map('ccr_checker') }],
   ]
   for (const look of ['材质预览', '最终渲染']) {
     await shading(page, look)
@@ -3602,6 +3645,32 @@ await check('C5c1 panel: a base colour map from the library is one revision, UV 
   server.mediaMissing.add(uploaded)
   await page.evaluate(() => window.__invalidate())
   await base.getByText('图片不可用').waitFor()
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('glb-import AC-7: an emission map picked on a box is one revision, one Cmd+Z takes it back', async () => {
+  const server = new SceneServer()
+  stock(server)
+  server.library.push(server.imageAsset('ccr_checker', '棋盘格'))
+  const cube = gid('方块')
+  seed(server, [boxOf('方块', 5, { position: [0, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({ emissive: '#ffffff' }))])
+  const { context, page, errors } = await open(server)
+  await page.getByRole('treeitem', { name: /方块/ }).click()
+  const glow = page.getByLabel('main 的贴图').getByLabel('自发光贴图')
+  const slot = () => server.object(cube).material_slots.main
+  await glow.getByRole('button', { name: '选择' }).click()
+  await page.getByRole('dialog', { name: '选择自发光贴图' }).getByRole('option', { name: '棋盘格' }).click()
+  await waitFor(() => server.commands.length === 1, 'the map')
+  await saved(page)
+  assert.deepEqual(slot().maps, { emissive: { content_revision_id: 'ccr_checker' } })
+  assert.equal(await glow.getByLabel('自发光通道').count(), 0, 'an emission map reads RGB: no channel')
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 2, 'undo the map')
+  await saved(page)
+  assert.equal(slot().maps, undefined)
+  assert.equal(slot().params.emissive, '#ffffff', 'the constant glow stays')
   assert.deepEqual(errors, [])
   await context.close()
 })
@@ -9396,6 +9465,280 @@ if (process.env.SCENE_E2E_TRACE) await check('C5c1: lit exports through the laye
   }
 })
 
+// SCENE_E2E_TRACE=1 (scene-glb-import 3.3): a block behind the camera, seen
+// only in the mirror, glows white, then through an emission map's red and
+// blue squares: the lit export through the layer shows the difference.
+if (process.env.SCENE_E2E_TRACE) await check('glb-import: the mirror shows an emission map behind the camera (real-time GI)', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new SceneServer()
+    // Under the procedural sky emission is unscaled (world/exposure.ts preExposure 1): a physical noon's EV 15 would hide any glow.
+    referenceScene(server, 'mirror-board', (scene) => {
+      realtimeGI(scene)
+      scene.environment.sky = { kind: 'procedural', sun_elevation_deg: 45, sun_azimuth_deg: 135, turbidity: 3 }
+    })
+    stock(server)
+    const { page, errors } = await open(server, { context, query: '?host=1' })
+    await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+    const cam = server.scene.objects.find((o) => o.kind === 'camera').id
+    const block = server.scene.objects.find((o) => o.name === 'redblock').id
+    const glow = { color: '#000000', emissive: '#ffffff', emissive_intensity: 2 }
+    const out = []
+    for (const [i, slot] of [principledSlot(glow), principledSlot(glow, { maps: { emissive: map('ccr_checker') }, mapping: { kind: 'triplanar', size_m: 0.3, rotation_deg: 0, normal_strength: 1 } })].entries()) {
+      server.external(setSlot(block, slot))
+      const id = `csj_glow${i}`
+      server.claimable = [{ id, document_id: DOC, kind: 'export_shots', request: { camera_object_ids: [cam], passes: ['lit'], canvas_id: 'ccv_qa', scene_node_id: 'cwnode_qa' }, attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+      await page.evaluate(() => window.__invalidate())
+      await waitFor(() => server.completes.some((c) => c.id === id), `export ${i}`, 300_000).catch((e) => {
+        throw new Error(`${e.message}\n${errors.join('\n')}`)
+      })
+      const done = server.completes.find((c) => c.id === id).payload
+      assert.equal(done.outcome, 'succeeded', JSON.stringify(done.error))
+      out.push(server.uploadBytes.get(done.export.shots[0].images[0].upload_id))
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/glb-import-glow-${i}.png`, out[i])
+    }
+    const apart = await pixelDiff(page, out[0], out[1], 24)
+    console.log(`  mirror-board: the emission map behind the camera changes ${(apart * 100).toFixed(2)}% of the pixels`)
+    assert.ok(apart > 0.002, `the mirror shows the emission map (${(apart * 100).toFixed(2)}% apart)`)
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/** A GLB of json and these bytes as its bufferViews, in order. */
+function glbOf(json, views) {
+  let offset = 0
+  const parts = []
+  json.bufferViews = views.map((v) => {
+    const at = offset
+    const pad = (4 - (v.length % 4)) % 4
+    parts.push(Buffer.from(v), Buffer.alloc(pad))
+    offset += v.length + pad
+    return { buffer: 0, byteOffset: at, byteLength: v.length }
+  })
+  const bin = Buffer.concat(parts)
+  json.buffers = [{ byteLength: bin.length }]
+  const raw = Buffer.from(JSON.stringify(json))
+  const text = Buffer.concat([raw, Buffer.alloc((4 - (raw.length % 4)) % 4, 0x20)])
+  const chunk = (type, body) => {
+    const h = Buffer.alloc(8)
+    h.writeUInt32LE(body.length, 0)
+    h.writeUInt32LE(type, 4)
+    return Buffer.concat([h, body])
+  }
+  const header = Buffer.alloc(12)
+  header.writeUInt32LE(0x46546c67, 0)
+  header.writeUInt32LE(2, 4)
+  header.writeUInt32LE(12 + 8 + text.length + 8 + bin.length, 8)
+  return Buffer.concat([header, chunk(0x4e4f534a, text), chunk(0x004e4942, bin)])
+}
+
+/**
+ * scene-glb-import 4.5: two 1 m cards standing side by side, as a file from
+ * Blender would have them: a panel glowing through an emission map, with a
+ * normal map and an ORM, and a white leaf with holes cut by alpha (MASK).
+ */
+function lanternGLB() {
+  const f32 = (a) => Buffer.from(new Float32Array(a).buffer)
+  const card = (x0) => [x0, 0, 0, x0 + 1, 0, 0, x0 + 1, 1, 0, x0, 1, 0]
+  const attributes = (position) => ({ POSITION: position, NORMAL: 2, TEXCOORD_0: 3 })
+  const leaf = pngOf(64, 64, (x, y) => [255, 255, 255, [1, 2, 5, 6].includes(x >> 3) && [1, 2, 5, 6].includes(y >> 3) ? 0 : 255])
+  return glbOf(
+    {
+      asset: { version: '2.0', generator: 'qa', copyright: 'Lantern by QA, CC0' },
+      extensionsUsed: ['KHR_materials_emissive_strength'],
+      scene: 0,
+      scenes: [{ nodes: [0, 1] }],
+      nodes: [{ name: 'Lamp', mesh: 0 }, { name: 'Leaf', mesh: 1 }],
+      meshes: [
+        { primitives: [{ attributes: attributes(0), indices: 4, material: 0 }] },
+        { primitives: [{ attributes: attributes(1), indices: 4, material: 1 }] },
+      ],
+      materials: [
+        {
+          name: 'Lamp',
+          pbrMetallicRoughness: { baseColorFactor: [0, 0, 0, 1], metallicFactor: 0, metallicRoughnessTexture: { index: 3 } },
+          normalTexture: { index: 2 },
+          emissiveTexture: { index: 0 },
+          emissiveFactor: [1, 1, 1],
+          extensions: { KHR_materials_emissive_strength: { emissiveStrength: 2 } },
+        },
+        { name: 'Leaf', pbrMetallicRoughness: { baseColorTexture: { index: 1 }, metallicFactor: 0 }, alphaMode: 'MASK', alphaCutoff: 0.5 },
+      ],
+      textures: [0, 1, 2, 3].map((source) => ({ source })),
+      images: [5, 6, 7, 8].map((bufferView) => ({ bufferView, mimeType: 'image/png' })),
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: 4, type: 'VEC3', min: [-1, 0, 0], max: [0, 1, 0] },
+        { bufferView: 1, componentType: 5126, count: 4, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] },
+        { bufferView: 2, componentType: 5126, count: 4, type: 'VEC3' },
+        { bufferView: 3, componentType: 5126, count: 4, type: 'VEC2' },
+        { bufferView: 4, componentType: 5123, count: 6, type: 'SCALAR' },
+      ],
+    },
+    [f32(card(-1)), f32(card(0)), f32([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), f32([0, 1, 1, 1, 1, 0, 0, 0]), Buffer.from(new Uint16Array([0, 1, 2, 0, 2, 3]).buffer), textures.ccr_checker, leaf, textures.ccr_ridges, textures.ccr_stripes],
+  )
+}
+
+// SCENE_E2E_TRACE=1 (scene-glb-import 4.5, AC-1's automatic part and AC-9):
+// a GLB through 「添加 > 导入模型…」, its copyright in the dialog, the asset
+// in the library with a thumbnail, the model in the scene with its source in
+// the property panel and undone in one step; its emission and holes then show
+// in the material preview and, behind the camera, in the mirror of the lit
+// export through the world-space layer. Whether they look right is the
+// owner's, against Blender (AC-1).
+await check('glb-import: with the origin moved, a double click on 导入 imports once', async () => {
+  const server = new SceneServer()
+  stock(server)
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('menuitem', { name: '导入模型…' }).click()
+  await (await chooser).setFiles({ name: 'lantern.glb', mimeType: 'model/gltf-binary', buffer: lanternGLB() })
+  const dialog = page.getByRole('dialog', { name: '导入模型' })
+  await dialog.getByText('2 个材质槽位').waitFor({ timeout: 20_000 })
+  await dialog.getByRole('checkbox', { name: '原点移到底面中心' }).check()
+  await dialog.getByRole('button', { name: '导入', exact: true }).dblclick()
+  await dialog.waitFor({ state: 'detached', timeout: 60_000 })
+  await saved(page)
+  await sleep(1500)
+  assert.equal(server.importRequests.length, 1, 'one import request')
+  assert.equal(server.imports.size, 1, 'one asset')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+if (process.env.SCENE_E2E_TRACE) await check('glb-import AC-1/AC-9: an imported GLB glows and is cut in the preview and the mirror of the lit export; its source shows; one undo', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const server = new SceneServer()
+    referenceScene(server, 'mirror-board', (scene) => {
+      realtimeGI(scene)
+      scene.environment.sky = { kind: 'procedural', sun_elevation_deg: 45, sun_azimuth_deg: 135, turbidity: 3 }
+      // The lantern takes the red block's place behind the camera.
+      scene.objects = scene.objects.filter((o) => o.name !== 'redblock')
+    })
+    stock(server)
+    // The editor in the usual browser, whose viewport screenshots show; the lit exports below in the GPU's.
+    const { context, page, errors } = await open(server)
+
+    // Import, and in it goes.
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('menuitem', { name: '导入模型…' }).click()
+    await (await chooser).setFiles({ name: 'lantern.glb', mimeType: 'model/gltf-binary', buffer: lanternGLB() })
+    const dialog = page.getByRole('dialog', { name: '导入模型' })
+    await dialog.getByText('2 个材质槽位 · 4 张贴图 · 4 个三角形').waitFor({ timeout: 20_000 })
+    assert.equal(await dialog.getByRole('textbox', { name: '授权说明' }).inputValue(), 'Lantern by QA, CC0', 'AC-9: the copyright is filled in')
+    assert.equal(await dialog.getByRole('textbox', { name: '资产名称' }).inputValue(), 'lantern')
+    await dialog.getByRole('textbox', { name: '来源页面' }).fill('https://example.com/lantern')
+    await dialog.getByRole('button', { name: '导入', exact: true }).click()
+    await dialog.waitFor({ state: 'detached', timeout: 60_000 })
+    const [sent] = server.importRequests
+    assert.equal(server.importRequests.length, 1)
+    assert.deepEqual(sent.payload.import, { file_name: 'lantern.glb', attribution: 'Lantern by QA, CC0', source_url: 'https://example.com/lantern' })
+    assert.equal(sent.payload.texture_upload_ids.length, 4)
+    const lamp = sent.payload.materials.Lamp
+    assert.deepEqual(Object.keys(lamp.maps).sort(), ['emissive', 'metalness', 'normal', 'roughness'])
+    assert.equal(lamp.params.emissive_intensity, 2)
+    assert.equal(sent.payload.materials.Leaf.alpha_mode, 'clip')
+    const thumb = server.uploadBytes.get(sent.payload.thumbnail_upload_id)
+    assert.deepEqual(pngSize(thumb), { width: 256, height: 256 })
+    const stats = await lumaStats(page, thumb)
+    assert.ok(stats.bright > 0.01 && stats.bright < 0.99, `the thumbnail shows the model (${(stats.bright * 100).toFixed(1)}% bright)`)
+    if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/glb-import-thumbnail.png`, thumb)
+    const rev = server.imports.get(sent.operation_id).content_revision_id
+    await waitFor(() => server.scene.objects.some((o) => o.model?.content_revision_id === rev), 'the lantern goes in')
+    await saved(page)
+    const lantern = server.scene.objects.find((o) => o.model?.content_revision_id === rev)
+    assert.deepEqual(lantern.material_slots, sent.payload.materials, 'it goes in with its materials')
+
+    // AC-9: the property panel says where it came from, and has no parameters or code.
+    await page.getByRole('treeitem', { name: /lantern/ }).click()
+    const source = page.locator('.cc-scene-import-source')
+    await source.getByText('lantern.glb').waitFor()
+    await source.getByText('Lantern by QA, CC0').waitFor()
+    assert.equal(await source.getByRole('link', { name: 'https://example.com/lantern' }).count(), 1)
+    assert.equal(await page.getByRole('button', { name: '编辑代码' }).count(), 0)
+
+    // One undo takes it out; redo puts it back.
+    const before = server.commands.length
+    await focusEditor(page)
+    await page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => !server.scene.objects.some((o) => o.id === lantern.id), 'undo the import')
+    await saved(page)
+    await page.keyboard.press(`${modKey}+Shift+KeyZ`)
+    await waitFor(() => server.scene.objects.some((o) => o.id === lantern.id), 'redo it')
+    assert.equal(server.commands.length, before + 2)
+    await saved(page)
+
+    // The material preview: the glow and the holes each change the picture.
+    const slotsWith = (edit) => {
+      const slots = structuredClone(sent.payload.materials)
+      edit(slots)
+      return [{ op: 'update_objects', updates: [{ object_id: lantern.id, material_slots: slots }] }]
+    }
+    const unlit = (s) => delete s.Lamp.maps.emissive
+    const whole = (s) => {
+      s.Leaf.alpha_mode = 'opaque'
+      delete s.Leaf.alpha_cutoff
+    }
+    await page.getByRole('treeitem', { name: /lantern/ }).click()
+    await focusEditor(page)
+    await page.keyboard.press('Period')
+    await shading(page, '材质预览')
+    const { box } = await viewportCenter(page)
+    const preview = {}
+    for (const [name, edit] of [['imported', () => {}], ['no-glow', unlit], ['no-holes', whole], ['back', () => {}]]) {
+      await change(page, server, slotsWith(edit))
+      preview[name] = await settledShot(page, box)
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/glb-import-preview-${name}.png`, preview[name])
+    }
+    for (const name of ['no-glow', 'no-holes']) {
+      const diff = await pixelDiff(page, preview.imported, preview[name], 24)
+      assert.ok(diff > 0.002, `material preview: ${name} differs (${(diff * 100).toFixed(2)}%)`)
+    }
+    assert.ok((await pixelDiff(page, preview.imported, preview.back, 24)) < 0.002, 'material preview: the same slots draw the same')
+    assert.deepEqual(errors, [], errors.join('\n'))
+    await context.close()
+
+    // Behind the camera, facing the mirror: the lit export shows it only there.
+    const exporter = await open(server, { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }), query: '?host=1' })
+    await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+    server.external([{ op: 'update_objects', updates: [{ object_id: lantern.id, transform: { position: [-0.6, 0.02, 3.2], rotation: [0, 1, 0, 0], scale: [1, 1, 1] } }] }])
+    const cam = server.scene.objects.find((o) => o.kind === 'camera').id
+    const lit = {}
+    for (const [i, [name, edit]] of [['imported', () => {}], ['no-glow', unlit], ['no-holes', whole]].entries()) {
+      server.external(slotsWith(edit))
+      const id = `csj_lantern${i}`
+      server.claimable = [{ id, document_id: DOC, kind: 'export_shots', request: { camera_object_ids: [cam], passes: ['lit'], canvas_id: 'ccv_qa', scene_node_id: 'cwnode_qa' }, attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+      await exporter.page.evaluate(() => window.__invalidate())
+      await waitFor(() => server.completes.some((c) => c.id === id), `export ${name}`, 300_000).catch((e) => {
+        throw new Error(`${e.message}\n${exporter.errors.join('\n')}`)
+      })
+      const done = server.completes.find((c) => c.id === id).payload
+      assert.equal(done.outcome, 'succeeded', JSON.stringify(done.error))
+      lit[name] = server.uploadBytes.get(done.export.shots[0].images[0].upload_id)
+      if (process.env.SCENE_E2E_SHOTS) await writeFile(`${process.env.SCENE_E2E_SHOTS}/glb-import-lit-${name}.png`, lit[name])
+    }
+    for (const name of ['no-glow', 'no-holes']) {
+      const apart = await pixelDiff(exporter.page, lit.imported, lit[name], 24)
+      console.log(`  mirror-board: the lantern's ${name} changes ${(apart * 100).toFixed(2)}% of the lit export`)
+      assert.ok(apart > 0.002, `the mirror of the lit export: ${name} differs (${(apart * 100).toFixed(2)}%)`)
+    }
+    assert.deepEqual(exporter.errors, [], exporter.errors.join('\n'))
+    await exporter.context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 // SCENE_E2E_TRACE=1: what renderPolicy puts in the world-space layer, a
 // box's slot changed in turn: blend at opacity 1 stays out, as glass does;
 // clip at opacity 0.5 goes in, cut but opaque.
@@ -13030,6 +13373,124 @@ if (process.env.SCENE_E2E_PERF) await check('real-time GI startup: a refused pip
     assert.ok(light.mean > 10, `fallback picture visible: ${light.mean}`)
     assert.ok(errors.some(e => e.includes('injected startup pipeline failure')), 'the driver refusal was observed')
     assert.deepEqual(errors.filter(e => !e.includes('injected startup pipeline failure')), [])
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+/**
+ * scene-glb-import 6.3: a sphere of 2 · lat · lon triangles with a UV map and
+ * a 2048² noise base colour, as a large scanned or generated model comes.
+ */
+function sphereGLB(lat, lon) {
+  const n = (lat + 1) * (lon + 1)
+  const pos = new Float32Array(n * 3)
+  const nor = new Float32Array(n * 3)
+  const uv = new Float32Array(n * 2)
+  for (let j = 0; j <= lat; j++) {
+    const t = (j / lat) * Math.PI
+    for (let i = 0; i <= lon; i++) {
+      const p = (i / lon) * 2 * Math.PI
+      const k = j * (lon + 1) + i
+      const d = [Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)]
+      nor.set(d, k * 3)
+      pos.set([d[0] * 0.8, d[1] * 0.8 + 0.8, d[2] * 0.8], k * 3)
+      uv.set([i / lon, j / lat], k * 2)
+    }
+  }
+  const idx = new Uint32Array(lat * lon * 6)
+  for (let j = 0, at = 0; j < lat; j++) {
+    for (let i = 0; i < lon; i++, at += 6) {
+      const a = j * (lon + 1) + i
+      idx.set([a, a + 1, a + lon + 1, a + 1, a + lon + 2, a + lon + 1], at)
+    }
+  }
+  const noise = pngOf(2048, 2048, (x, y) => [((x * 7919) ^ (y * 104729)) & 255, (x * y) & 255, (x + y) & 255, 255])
+  const view = (a) => Buffer.from(a.buffer)
+  return glbOf(
+    {
+      asset: { version: '2.0', generator: 'qa' },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ name: 'Sphere', mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 }, indices: 3, material: 0 }] }],
+      materials: [{ name: 'Skin', pbrMetallicRoughness: { baseColorTexture: { index: 0 }, metallicFactor: 0, roughnessFactor: 0.6 } }],
+      textures: [{ source: 0 }],
+      images: [{ bufferView: 4, mimeType: 'image/png' }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: n, type: 'VEC3', min: [-0.8, 0, -0.8], max: [0.8, 1.6, 0.8] },
+        { bufferView: 1, componentType: 5126, count: n, type: 'VEC3' },
+        { bufferView: 2, componentType: 5126, count: n, type: 'VEC2' },
+        { bufferView: 3, componentType: 5125, count: idx.length, type: 'SCALAR' },
+      ],
+    },
+    [view(pos), view(nor), view(uv), view(idx), noise],
+  )
+}
+
+// SCENE_E2E_BIG_IMPORT=1 (scene-glb-import 6.3, Epic revision v5): a model
+// near the budget (1.96 million triangles) through the import dialog onto
+// the stage in the real-time GI's rendered view, on this machine's GPU. The
+// times are for the record: how long the dialog takes and the longest task
+// in it, how long till the layer is ready with it, and the frame times while
+// orbiting. Only errors fail it.
+if (process.env.SCENE_E2E_BIG_IMPORT) await check('glb-import 6.3: a model near the budget, imported and in the rendered view', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const context = await gpu.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+    await traceLogging(context)
+    const server = new SceneServer()
+    stock(server)
+    server.scene.render = { ...server.scene.render, engine: 'realtime_gi' }
+    const { page, errors } = await open(server, { context })
+    await shading(page, '最终渲染')
+    const glb = sphereGLB(700, 1400)
+    const { x, y } = await viewportCenter(page)
+    await page.mouse.move(x, y)
+    await page.keyboard.press('Shift+KeyA')
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('menuitem', { name: '导入模型…' }).click()
+    const from = await page.evaluate(() => performance.now())
+    const started = Date.now()
+    // Over Playwright's 50 MB for a buffer: through a file.
+    const file = join(tmpdir(), 'scene-e2e-sphere.glb')
+    await writeFile(file, glb)
+    await (await chooser).setFiles(file)
+    const dialog = page.getByRole('dialog', { name: '导入模型' })
+    await dialog.getByText(/个三角形/).waitFor({ timeout: 120_000 })
+    const readMs = Date.now() - started
+    const summary = await dialog.locator('p').nth(1).textContent()
+    const clicked = Date.now()
+    await dialog.getByRole('button', { name: '导入', exact: true }).click()
+    await dialog.waitFor({ state: 'detached', timeout: 300_000 })
+    const importMs = Date.now() - clicked
+    await waitFor(() => server.scene.objects.some((o) => o.name?.startsWith('sphere') || o.model?.content_revision_id === [...server.imports.values()][0]?.content_revision_id), 'the sphere goes in', 120_000)
+    const placed = Date.now()
+    await trianglesStill(page, 'the sphere')
+    const drawnMs = Date.now() - placed
+    let stats = null
+    await waitFor(async () => {
+      stats = await page.evaluate(() => window.__sceneGPU.traceStats)
+      return stats?.state === 'ready' && stats.pending === 0 && stats.layer === stats.target
+    }, 'the layer ready', 300_000)
+    const layerMs = Date.now() - placed
+    const { log, longTasks } = await traceLog(page)
+    const tasks = longTasks.filter((t) => t.at >= from)
+    const longest = (after, before = Infinity) => Math.round(Math.max(0, ...tasks.filter((t) => t.at >= after && t.at < before).map((t) => t.ms)))
+    await page.mouse.move(x, y)
+    await orbitFrames(page, 1000)
+    const frames = frameStats(await orbitFrames(page, 4000))
+    const sent = server.importRequests[0]
+    const bytes = server.uploadBytes.get(sent.payload.glb_upload_id)?.length ?? 0
+    console.log(`  file ${(glb.length / 2 ** 20).toFixed(1)} MiB; ${summary}; stored GLB ${(bytes / 2 ** 20).toFixed(1)} MiB`)
+    console.log(`  dialog: read and converted in ${readMs} ms, uploaded and saved in ${importMs} ms; longest task ${longest(from)} ms`)
+    console.log(`  stage: drawn ${drawnMs} ms after it went in, layer ready ${layerMs} ms after (tier ${stats.tier}, ${(stats.bytes / 2 ** 20).toFixed(0)} MiB, ${log.length} layer updates); longest task after the dialog ${longest(from + readMs + importMs)} ms`)
+    if (process.env.SCENE_E2E_BIG_IMPORT_TASKS) console.log(`  long tasks (ms from choosing the file: length): ${tasks.filter((t) => t.ms > 200).map((t) => `${Math.round(t.at - from)}: ${Math.round(t.ms)}`).join(', ')}; dialog closed at ${readMs + importMs}`)
+    // Selected as it went in: its outline in the rendered view, for the record.
+    await shot(page, 'glb-import-big-selected')
+    console.log(`  orbiting in the rendered view: mean ${frames.mean.toFixed(1)} ms, p95 ${frames.p95.toFixed(1)} ms, max ${frames.max.toFixed(1)} ms over ${frames.frames} frames`)
+    assert.deepEqual(errors, [], errors.join('\n'))
     await context.close()
   } finally {
     await gpu.close()

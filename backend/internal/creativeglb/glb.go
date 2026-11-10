@@ -59,11 +59,12 @@ type Limits struct {
 	MaxAnchors            int
 }
 
-// DefaultLimits are the contract budgets for model content.
+// DefaultLimits are the contract budgets for model content, imported or
+// written as code alike (scene-pose-system revision v5).
 func DefaultLimits() Limits {
 	return Limits{
-		MaxBytes:              16 << 20,
-		MaxTriangles:          300000,
+		MaxBytes:              200 << 20,
+		MaxTriangles:          2000000,
 		MaxNodes:              10000,
 		MaxPrimitiveInstances: 10000,
 		MaxSlots:              32,

@@ -50,6 +50,32 @@ test('face slots join the model\'s own, after them, with their hints', () => {
   assert.deepEqual(info?.slots, [{ id: 'stone', hint: 'stone' }, { id: 'face_1', hint: 'wood', material: '漆面' }])
 })
 
+test('an imported model shows where it came from instead of parameters', () => {
+  const imported = (source: unknown) =>
+    modelInfo(
+      content({
+        format: 'glb',
+        manifest: { bounds: { min: [0, 0, 0], max: [1, 2, 1] }, triangles: 300, slots: [], parts: [], anchors: [] },
+        generator: { language: 'imported', mount: 'wall' },
+        materials: {},
+        import: source,
+      }),
+    )
+  const info = imported({ file_name: 'lantern.glb', attribution: 'Lantern by A, CC BY 4.0', source_url: 'https://example.com/lantern' })
+  assert.ok(info)
+  assert.deepEqual(info.params, [])
+  assert.deepEqual(modelRows(info), [
+    ['尺寸', '1.00 × 2.00 × 1.00 米'],
+    ['参考点', '背面底边中心'],
+    ['面数', '300'],
+    ['原文件', 'lantern.glb'],
+    ['授权说明', 'Lantern by A, CC BY 4.0'],
+    ['来源页面', 'https://example.com/lantern'],
+  ])
+  // Only the file name is required; a source page that is no web address is not linked.
+  assert.deepEqual(imported({ file_name: 'a.glb', source_url: 'javascript:alert(1)' })?.source, { fileName: 'a.glb' })
+})
+
 test('only a complete model has info', () => {
   assert.equal(modelInfo(content({ format: 'glb', manifest: { bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 1, slots: [], parts: [], anchors: [] } })), null)
   assert.equal(modelInfo(undefined), null)

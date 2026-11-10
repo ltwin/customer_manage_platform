@@ -65,16 +65,16 @@ export function assignmentOf(r: ResolvedSlot): MaterialSlot | null {
   return { preset: principledID, params: { ...m.params }, ...structuredClone(m.texturing ?? {}) }
 }
 
-// The texture fields (C5c1 design「贴图属于材质槽」): a principled slot's five
+// The texture fields (C5c1 design「贴图属于材质槽」): a principled slot's six
 // image inputs, the one mapping they share, and how its alpha is used. Each
 // returns the slot whole, as data: 场景文档 has it: mapping only with maps,
 // the cutoff only with clip, opaque written as nothing.
 
-/** The five image inputs, in the panel's order. */
-export const mapInputs = ['base_color', 'normal', 'roughness', 'metalness', 'ao'] as const
+/** The six image inputs, in the panel's order. */
+export const mapInputs = ['base_color', 'normal', 'roughness', 'metalness', 'ao', 'emissive'] as const
 export type MapInput = (typeof mapInputs)[number]
 /** The inputs as the panel names them, Blender's names. */
-export const mapInputLabel: Record<MapInput, string> = { base_color: '基础色', normal: '法线', roughness: '糙度', metalness: '金属度', ao: 'AO' }
+export const mapInputLabel: Record<MapInput, string> = { base_color: '基础色', normal: '法线', roughness: '糙度', metalness: '金属度', ao: 'AO', emissive: '自发光' }
 /** The inputs that read one channel of their image. */
 export type ChannelInput = 'roughness' | 'metalness' | 'ao'
 export const isChannelInput = (i: MapInput): i is ChannelInput => i === 'roughness' || i === 'metalness' || i === 'ao'

@@ -2715,6 +2715,11 @@ type CreativeShotKeysDetails struct {
 	Missing []CreativeShotKeyGap `json:"missing"`
 }
 
+// CreativeUploadDetails creative_upload_unavailable 指出不可用的那个暂存上传。
+type CreativeUploadDetails struct {
+	UploadId string `json:"upload_id"`
+}
+
 // DefaultQuoteV1 defines model for DefaultQuoteV1.
 type DefaultQuoteV1 struct {
 	EvaluatedAt             time.Time                   `json:"evaluated_at"`
@@ -4536,6 +4541,32 @@ func (t *ErrorDetails) FromCreativeShotKeysDetails(v CreativeShotKeysDetails) er
 
 // MergeCreativeShotKeysDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeShotKeysDetails
 func (t *ErrorDetails) MergeCreativeShotKeysDetails(v CreativeShotKeysDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeUploadDetails returns the union data inside the ErrorDetails as a CreativeUploadDetails
+func (t ErrorDetails) AsCreativeUploadDetails() (CreativeUploadDetails, error) {
+	var body CreativeUploadDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeUploadDetails overwrites any union data inside the ErrorDetails as the provided CreativeUploadDetails
+func (t *ErrorDetails) FromCreativeUploadDetails(v CreativeUploadDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeUploadDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeUploadDetails
+func (t *ErrorDetails) MergeCreativeUploadDetails(v CreativeUploadDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

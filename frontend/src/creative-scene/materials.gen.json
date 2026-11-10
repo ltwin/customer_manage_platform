@@ -24,7 +24,8 @@
         "anisotropy": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "各向异性" },
         "anisotropy_rotation": { "type": "number", "default": 0, "min": -3.141593, "max": 3.141593, "step": 0.01, "unit": "rad", "label": "各向异性旋转" },
         "iridescence": { "type": "number", "default": 0, "min": 0, "max": 1, "step": 0.01, "label": "薄膜" },
-        "iridescence_thickness": { "type": "number", "default": 400, "min": 0, "max": 1200, "step": 1, "unit": "nm", "label": "薄膜厚度" }
+        "iridescence_thickness": { "type": "number", "default": 400, "min": 0, "max": 1200, "step": 1, "unit": "nm", "label": "薄膜厚度" },
+        "vertex_color": { "type": "boolean", "default": false, "label": "顶点色" }
       }
     },
     {

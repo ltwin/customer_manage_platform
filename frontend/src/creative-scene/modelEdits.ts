@@ -7,6 +7,7 @@ import { bake, type BakeDeps, type Compiled } from './host/bake.ts'
 import { newIntentID, newObjectID } from './ids.ts'
 import { modelSummaries, type ModelCache, type SceneModel } from './models/cache.ts'
 import { carryOver, codeDiffers, type Carried, type Faces, type SlotCount } from './models/faces.ts'
+import { codeGenerator } from './models/generator.ts'
 import type { CompileInput } from './sandbox/host.ts'
 import type { CompileError } from './sandbox/protocol.ts'
 import { contentUnit, localContent, localRevision, type WireOp } from './state/apply.ts'
@@ -307,7 +308,7 @@ export class ModelEdits {
       live,
       compiled: (compiled) => {
         const { carry } = plan
-        if (carry) carrying = carryOver(compiled.glb, carry.faces, codeDiffers(carry.generator, { code_sha256: compiled.codeSHA256, lib_version: compiled.module.lib_version }))
+        if (carry) carrying = carryOver(compiled.glb, carry.faces, codeDiffers(codeGenerator(carry.generator), { code_sha256: compiled.codeSHA256, lib_version: compiled.module.lib_version }))
         void carrying.then((carried) => {
           if (!live()) return
           cache.register(previewKey, { glb: compiled.glb, summary: described(compiled).summary('', carried.faces) })

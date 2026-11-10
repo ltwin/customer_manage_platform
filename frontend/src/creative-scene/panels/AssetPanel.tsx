@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
-import { ExternalLink, Grid2x2, Grid3x3, Search } from 'lucide-react'
+import { ExternalLink, Grid2x2, Grid3x3, Search, Upload } from 'lucide-react'
 import * as api from '../../creative-canvas/editor/api.ts'
 import { MediaFigure } from '../../creative-canvas/editor/MediaView.tsx'
 import { groupOptions } from '../../creative-canvas/editor/libraryState.ts'
@@ -64,6 +64,7 @@ export function AssetPanel({
   onDrag,
   onDragBuiltin,
   onExit,
+  onImport,
 }: {
   /** Changes when the page wrote to the library (存入资产库); the lists are read again. */
   refresh: number
@@ -84,6 +85,8 @@ export function AssetPanel({
   onDragBuiltin: (material: { title: string; slot: MaterialSlot } | null) => void
   /** Escape in an empty search box: keys go back to the editor. */
   onExit: () => void
+  /** 「导入模型」: picks a GLB and imports it into the library (scene-glb-import); without it the button is hidden. */
+  onImport?: () => void
 }) {
   const [kind, setKind] = useState<Kind>('model')
   /** Which materials show: the account's (我的) or the built-in ones (内置), never mixed. */
@@ -340,6 +343,12 @@ export function AssetPanel({
           </div>
         </div>
         <div className="cc-scene-assets-row">
+          {kind === 'model' && onImport && (
+            <button type="button" className="cc-scene-assets-import" title="导入 GLB 模型到资产库" onClick={onImport}>
+              <Upload size={13} aria-hidden="true" />
+              导入模型
+            </button>
+          )}
           {kind === 'material' && (
             <div className="cc-scene-assets-kinds" role="tablist" aria-label="材质来源">
               {(['mine', 'builtin'] as const).map((s) => (
@@ -463,7 +472,7 @@ export function AssetPanel({
               {narrowed
                 ? `没有符合条件的${kindName[kind]}`
                 : kind === 'model'
-                  ? '资产库里还没有模型。选中场景里的代码模型，在属性栏点「存入资产库」'
+                  ? `资产库里还没有模型。${onImport ? '点「导入模型」导入 GLB，或' : ''}选中场景里的代码模型，在属性栏点「存入资产库」`
                   : '资产库里还没有材质。在属性栏的材质槽上点「存为材质资产…」'}
             </p>
           ) : (

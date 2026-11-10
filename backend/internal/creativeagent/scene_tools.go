@@ -66,7 +66,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 	case readSceneTool:
 		return &schema.ToolInfo{
 			Name: readSceneTool,
-			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
+			Desc: "读取场景的标题、环境、渲染设置和物件。" + sceneConventions + "模型实例带尺寸 bounds_m、参数和参数定义；导入的外部模型 imported 为 true，没有代码和参数。物件太多时只给名称、类型和位置，用 object_ids 分批读细节。" +
 				"revision 是之后写入的 based_on_revision；changes_since_last_write 是本会话上次写入后别人的改动。" +
 				"有分镜时带 timeline（分镜列表：id、name、frame、绑定的摄像机）；物件的 animated 列出按分镜记了关键帧的属性，不带 shot 读到的是它们的默认状态，带 shot 读那个分镜里的样子（at_shot）；shot_key_gaps 是某个分镜帧上缺关键帧的属性，下次写它们时一并补上。物理天空按地点和时间放太阳时带 sun（太阳参考）和 moon（月亮参考），字段见 edit_scene 说明。" +
 				"材质槽带贴图 maps、映射 mapping 和透明方式 alpha_mode（存储时已补齐缺省值）；模型 uv 为 false 表示有网格没有 UV，uv_fallback_slots 里选了 uv 映射的槽位因此按三平面显示；灯光带 shadow：on 投影、off 不投影（没开投影或灯被隐藏）、over_budget 开了投影但超出表面阴影上限（见 edit_scene 说明）。",
@@ -74,7 +74,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"document_id":  doc,
 				"shot":         str("分镜 ID：按这个分镜的样子读物件"),
 				"object_ids":   strs("只读这些物件的完整信息，最多 200 个"),
-				"include_code": strs("附上这些模型修订（model.content_revision_id）的代码，最多 3 个"),
+				"include_code": strs("附上这些模型修订（model.content_revision_id）的代码，最多 3 个；导入的模型没有代码，不附"),
 			}),
 		}, nil
 	case editSceneTool:
@@ -118,14 +118,15 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"要黄金时刻、蓝调时刻或某个太阳高度时，按它选 local_time；摆逆光（摄像机朝向太阳）、侧光机位时用 scene_azimuth_deg。观感仍用 render_view 的 lit 确认。" +
 				"月亮参考：同样的情况下结果带 moon：phase（new、waxing_crescent、first_quarter、waxing_gibbous、full、waning_gibbous、last_quarter、waning_crescent）、illumination（照亮比例 0…1）、elevation_deg、compass_deg、scene_azimuth_deg、moonrise、moonset，" +
 				"以及 previous_full_moon、next_full_moon、previous_new_moon、next_new_moon（当地日期）；「满月之夜」「新月看银河」先按它选 date，再写 local_time，月亮在天上时 elevation_deg > 0。" +
-				"资产库里的模型：search_assets 按 kind:model 查到后，用它的 content_revision_id 写 add_objects 的 model{content_revision_id}，并把 model 要点里的 materials 原样写进 material_slots（资产带的材质）；可放多个实例，都引用同一版模型；size_m 与 mount 见搜索结果的 model 要点。" +
+				"资产库里的模型：search_assets 按 kind:model 查到后，用它的 content_revision_id 写 add_objects 的 model{content_revision_id}，并把 model 要点里的 materials 原样写进 material_slots（资产带的材质）；可放多个实例，都引用同一版模型；size_m 与 mount 见搜索结果的 model 要点；导入的外部模型 imported 为 true，没有代码和参数，read_asset 的 import 是原文件名和授权说明。" +
 				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit；物理天空下改为摄像机的环境测光或手动曝光，见建议曝光）。" +
 				"渲染器 render.engine 只作用于材质光照（lit 的导出与回看；白模和线稿总按工作台画）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
 				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
-				"贴图只用于原理化材质 principled@1，槽位另写 maps、mapping、alpha_mode、alpha_cutoff：maps 可写 base_color（与 color 相乘，按 sRGB）、normal（切线空间，OpenGL 约定 +Y 朝上，同 glTF、Blender）、roughness、metalness、ao（只压暗间接光）五种，每种 {content_revision_id:图片修订, channel?}；" +
+				"贴图只用于原理化材质 principled@1，槽位另写 maps、mapping、alpha_mode、alpha_cutoff：maps 可写 base_color（与 color 相乘，按 sRGB）、normal（切线空间，OpenGL 约定 +Y 朝上，同 glTF、Blender）、roughness、metalness、ao（只压暗间接光）、emissive（自发光，与 emissive 颜色、emissive_intensity 相乘，按 sRGB）六种，每种 {content_revision_id:图片修订, channel?}；" +
 				"channel 为 r/g/b/a，只用于 roughness、metalness、ao，缺省 r，glTF 打包的 ORM 图三项写同一张图，分别取 r、g、b。图片须是这一轮读得到的：画布上、对话里、已授权的资产库里，或你读到的材质资产、模型资产带的贴图；场景里已经用着的图片可以直接复制到别的槽位。单个场景最多 64 张不同的图片。" +
 				"mapping 只在有 maps 时写：kind 缺省 triplanar（按物件空间的米铺开，物件缩放时不拉伸，size_m 0.01–100 是一块贴图的宽度，缺省 1）；uv 用模型自带的 UV（repeat [u,v] 各 0.01–1000，缺省 [1,1]），模型没有 UV 时按三平面显示；rotation_deg 0–360，normal_strength 0–4（缺省 1）。size_m 只配 triplanar，repeat 只配 uv。" +
+				"principled@1 的 vertex_color 为 true 时，基础色再乘模型自带的顶点色（导入的模型常用；没有顶点色的模型和基础体上不起作用）。" +
 				"alpha_mode：opaque（缺省，忽略贴图的透明通道）、clip（opacity × 基础色贴图的透明通道低于 alpha_cutoff 0–1，缺省 0.5，的部分挖掉，适合树叶、铁丝网）、blend（按半透明处理，适合玻璃贴花）。" +
 				"资产库里的材质：search_assets 按 kind:material 查到，用 read_asset 读到完整 slot 后原样写进某个槽位。" +
 				"内置贴图材质（木地板、红砖、大理石、草地等真实照片贴图）：search_assets 用 source:builtin 查，slot 原样写进槽位即可；参数同 principled@1，可另写 mapping（不写时按这种材质的真实尺寸铺开）和透明方式，不能写 maps。" +
@@ -160,9 +161,9 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"代码是只有 export 的 ES 模块：export const params = {h: {type:'number', default:6, min:2, max:20, unit:'m', label:'高度'}}（number|integer|boolean|enum(options)|color，≤32 项）；" +
 				"export const mount = 'floor'（floor 原点在底面中心，wall 背面底边中心，ceiling 顶面中心，free 几何中心）；export default function build({params, THREE, lib, rng}) {…; return group}。" +
 				sceneConventions + "只能是三角网格；材质只用 lib.material(slot, hint)（hint 如 stone、wood），不用纹理和着色器。lib：subtract/union/intersect(a,b)、extrude(shape,depth,{bevel})、lathe(points,segments)、array(obj,count,[x,y,z])、radial(obj,count,radius,axis)；rng() 是确定性随机数。" +
-				"对象名 part:<id> 是部件，空对象 anchor:<id> 是挂点。代码 ≤64 KiB，编译 ≤5 秒，三角面 ≤30 万。" +
+				"对象名 part:<id> 是部件，空对象 anchor:<id> 是挂点。代码 ≤64 KiB，编译 ≤5 秒，三角面 ≤200 万。" +
 				"视口流畅度取决于场景里的物件数和每个模型的材质槽数，与三角面关系不大：同一槽位的零件渲染时会自动合并，不必为了性能减少分段数或零件。" +
-				"只改参数时给 base_content_revision_id 代替 code。被多个实例共用的模型：scope=this 只改这一个（分出新模型），all_instances 一起改。" +
+				"只改参数时给 base_content_revision_id 代替 code；导入的模型（imported）没有代码，不能作 base_content_revision_id，只能换材质或摆放，整个替换照常可以。被多个实例共用的模型：scope=this 只改这一个（分出新模型），all_instances 一起改。" +
 				"烘焙期间目标被改过时返回 conflict 和 retry_job_id：单独传它、新基线和 target 即可写入，不重新编译。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
