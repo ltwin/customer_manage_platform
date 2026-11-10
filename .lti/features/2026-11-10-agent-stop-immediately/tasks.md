@@ -2,8 +2,8 @@
 
 ## 1. 取消一步进入终态（后端）
 
-- [ ] 1.1 先改写 `TestCUnknownWaitsForReconciliationAndCanBeClosed`，并新增四个测试：重复取消、遗留 `reconciling + cancel_requested_at` 被 sweeper 结束、旧 `reconciling` 回执回放后新 key 得到终态、取消 A → 同会话 B 跑完 → A 迟到返回不污染 B。确认在旧代码上是红的
-- [ ] 1.2 `control.go:controlCommand` 删除 cancel 转入 reconciling 的分支，`sweepRun` 改为只要 `cancelled != nil` 就结束运行。1.1 全部变绿，`TestCCancelDuringDispatchDoesNotPublishLateAnswer` 不改、仍然通过
+- [x] 1.1 先改写 `TestCUnknownWaitsForReconciliationAndCanBeClosed`，并新增四个测试：重复取消、遗留 `reconciling + cancel_requested_at` 被 sweeper 结束、旧 `reconciling` 回执回放后新 key 得到终态、取消 A → 同会话 B 跑完 → A 迟到返回不污染 B。确认在旧代码上是红的
+- [x] 1.2 `control.go:controlCommand` 删除 cancel 转入 reconciling 的分支，`sweepRun` 改为只要 `cancelled != nil` 就结束运行。1.1 全部变绿，`TestCCancelDuringDispatchDoesNotPublishLateAnswer` 不改、仍然通过
 
 ## 2. worker 及时中断（后端）
 
