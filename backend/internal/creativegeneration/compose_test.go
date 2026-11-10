@@ -35,6 +35,9 @@ func TestComposeIndependentImageSuppliers(t *testing.T) {
 	}{
 		{"unconfigured", nil, 0, "API_KEY"},
 		{"existing_only", map[string]string{"AICODEWITH_API_KEY": "a"}, 5, ""},
+		{"krill_only", map[string]string{"KRILL_AI_API_KEY": "k"}, 2, ""},
+		{"ai_and_krill", map[string]string{"AICODEWITH_API_KEY": "a", "KRILL_AI_API_KEY": "k"}, 5, ""},
+		{"all", map[string]string{"AICODEWITH_API_KEY": "a", "KRILL_AI_API_KEY": "k", "RUNNINGHUB_API_KEY": "r"}, 8, ""},
 		{"runninghub_only", map[string]string{"RUNNINGHUB_API_KEY": "r"}, 4, ""},
 		{"both", map[string]string{"AICODEWITH_API_KEY": "a", "RUNNINGHUB_API_KEY": "r"}, 8, ""},
 	} {
@@ -62,6 +65,15 @@ func TestComposeIndependentImageSuppliers(t *testing.T) {
 					t.Fatalf("duplicated model %s", m.Key)
 				}
 				seen[m.Key] = true
+				if strings.HasPrefix(m.Key, "gpt-image-2.6-") {
+					want := gw.AICodeWithImagePolicyVersion
+					if tc.values["KRILL_AI_API_KEY"] != "" {
+						want = "krill-images-2026-11-09"
+					}
+					if m.ConfigurationRevision != want {
+						t.Fatalf("first deployment revision=%s want %s", m.ConfigurationRevision, want)
+					}
+				}
 				if m.Key == "nano-banana-2.1" && m.Label != "Nano Banana 2.1" {
 					t.Fatalf("model label %q", m.Label)
 				}

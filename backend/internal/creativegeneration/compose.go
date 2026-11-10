@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
@@ -40,8 +41,9 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 	}
 	aiKey, _ := credential("AICODEWITH_API_KEY")
 	rhKey, _ := credential("RUNNINGHUB_API_KEY")
-	if aiKey == "" && rhKey == "" {
-		return Composed{Product: empty, Disabled: "未配置 AICODEWITH_API_KEY 或 RUNNINGHUB_API_KEY"}, nil
+	krillKey, _ := credential("KRILL_AI_API_KEY")
+	if aiKey == "" && rhKey == "" && krillKey == "" {
+		return Composed{Product: empty, Disabled: "未配置 AICODEWITH_API_KEY、KRILL_AI_API_KEY 或 RUNNINGHUB_API_KEY"}, nil
 	}
 	encoded := os.Getenv("CREATIVE_GENERATION_PROTECTION_KEY")
 	if encoded == "" {
@@ -73,6 +75,29 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 			cfg.Fetchers[p.Definition.DeploymentID] = fetcher
 		}
 		policies = append(policies, list...)
+	}
+	// 同一模型按注册顺序冻结候选：2.6 优先 Krill；保留逻辑模型的目录顺序。
+	if krillKey != "" {
+		list, err := gw.KrillImagePolicies(currency)
+		if err != nil {
+			return Composed{}, err
+		}
+		adapter, err := gw.NewKrillImages(gw.NewHTTPClient(aicodewithHTTPTimeout), "https://api.kbsfdxc.net", krillKey)
+		if err != nil {
+			return Composed{}, err
+		}
+		for _, p := range list {
+			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, Adapter: adapter, Available: func() bool { k, ok := credential("KRILL_AI_API_KEY"); return ok && k != "" }})
+			cfg.Fetchers[p.Definition.DeploymentID] = adapter
+		}
+		for _, p := range list {
+			index := slices.IndexFunc(policies, func(existing gw.ImagePolicy) bool { return existing.Target.ModelKey == p.Target.ModelKey })
+			if index < 0 {
+				policies = append(policies, p)
+			} else {
+				policies = slices.Insert(policies, index, p)
+			}
+		}
 	}
 	if rhKey != "" {
 		list, err := gw.RunningHubImagePolicies(currency)

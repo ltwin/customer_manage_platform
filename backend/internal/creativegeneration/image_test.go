@@ -38,12 +38,26 @@ type fakeRelay struct {
 	results     []string
 	fallback    bool
 	backupCalls int
+	krill       bool
 }
 
 func (r *fakeRelay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	switch {
+	case r.krill && req.Header.Get("Authorization") == "Bearer krill-key":
+		if req.Method == http.MethodPost {
+			r.backupCalls++
+			var body map[string]any
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			if body["model"] != "gpt-image-2.6-sunburst" || body["quality"] != "high" || body["size"] != "1360x2048" {
+				w.WriteHeader(400)
+				return
+			}
+			_, _ = io.WriteString(w, `{"id":"img_backup","status":"pending"}`)
+		} else {
+			_, _ = io.WriteString(w, `{"id":"img_backup","status":"completed","model":"gpt-image-2.6-sunburst","content_url":"/v1/images/img_backup/content","expires_at":"2099-01-01T00:00:00Z"}`)
+		}
 	case strings.HasPrefix(req.URL.Path, "/openapi/v2/"):
 		r.backupCalls++
 		_, _ = io.WriteString(w, `{"taskId":"rh-task","status":"SUCCESS","results":[{"url":"https://rh-images-1252422369.cos.ap-beijing.myqcloud.com/output/result.png","outputType":"png"}]}`)
@@ -111,6 +125,7 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 	must(t, err)
 	relay := &fakeRelay{results: []string{"https://files.example/outputs/task-unified-1/0.png"}}
 	relay.fallback = len(fallback) > 0 && fallback[0]
+	relay.krill = len(fallback) > 1 && fallback[1]
 	server := httptest.NewTLSServer(relay)
 	t.Cleanup(server.Close)
 	adapter, err := gw.NewAICodeWithImages(server.Client(), server.URL, "relay-key")
@@ -123,7 +138,18 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 		c.Adapters = append(c.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, Adapter: adapter})
 		c.Fetchers[p.Definition.DeploymentID] = &fetcher{data: png}
 	}
-	if relay.fallback {
+	if relay.krill {
+		adapter, err := gw.NewKrillImages(server.Client(), server.URL, "krill-key")
+		must(t, err)
+		list, err := gw.KrillImagePolicies(catalog.Currency())
+		must(t, err)
+		for _, p := range list {
+			c.Adapters = append(c.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, Adapter: adapter})
+			c.Fetchers[p.Definition.DeploymentID] = &fetcher{data: png}
+		}
+		policies = append(policies, list...)
+	}
+	if relay.fallback && !relay.krill {
 		rh, err := gw.NewRunningHubImages(server.Client(), server.URL, func() (string, bool) { return "rh-key", true })
 		must(t, err)
 		rhPolicies, err := gw.RunningHubImagePolicies(catalog.Currency())
@@ -152,7 +178,7 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 	canvas, err := creativecanvas.GetCanvas(t.Context(), scope, project.CanvasID)
 	must(t, err)
 	model, parameters := "gpt-image-2.6-sunburst", json.RawMessage(`{"aspect_ratio":"2:3","quality":"high"}`)
-	if relay.fallback {
+	if relay.fallback && !relay.krill {
 		model = "gpt-image-2"
 		parameters = json.RawMessage(`{"aspect_ratio":"2:3","count":1}`)
 	}
@@ -192,6 +218,16 @@ func TestImageGenerationRunsThroughTheRelayOnce(t *testing.T) {
 	var e creativecanvas.NodeExecution
 	must(t, json.Unmarshal(receipt.Outcome.Response, &e))
 	f.target.ExecutionID = e.ID
+
+	// 新受理任务在画布与网关冻结同一个15分钟总截止。
+	var seconds float64
+	var sameDeadline bool
+	must(t, f.db.QueryRow(`SELECT EXTRACT(EPOCH FROM (e.deadline-e.created_at)), e.deadline=r.deadline_at
+		FROM creative_node_executions e JOIN creative_generation_bindings b ON b.account_id=e.account_id AND b.execution_id=e.id
+		JOIN llm_requests r ON r.account_id=b.account_id AND r.id=b.request_id WHERE e.id=$1`, e.ID).Scan(&seconds, &sameDeadline))
+	if seconds < 890 || seconds > 900 || !sameDeadline {
+		t.Fatalf("generation deadline: seconds=%v shared=%v", seconds, sameDeadline)
+	}
 
 	// 生成一经受理就会跑完扣费，摄影师入口不能取消。
 	if _, err := creativecanvas.CancelPhotographerExecution(t.Context(), f.scope, cmd(f.target)); !errors.Is(err, creativecanvas.ErrActionUnavailable) {
@@ -290,10 +326,19 @@ func TestAgentGenerateNodeSubmitsOnce(t *testing.T) {
 }
 
 func TestImageGenerationFallbackPublishesOnce(t *testing.T) {
-	f := setupImages(t, true)
+	t.Run("runninghub", func(t *testing.T) { testImageGenerationFallbackPublishesOnce(t, false) })
+	t.Run("krill", func(t *testing.T) { testImageGenerationFallbackPublishesOnce(t, true) })
+}
+
+func testImageGenerationFallbackPublishesOnce(t *testing.T, krill bool) {
+	f := setupImages(t, true, krill)
 	catalog, err := f.product.Catalog(t.Context(), f.scope)
 	must(t, err)
-	if len(catalog.Models) != 8 {
+	wantModels := 8
+	if krill {
+		wantModels = 5
+	}
+	if len(catalog.Models) != wantModels {
 		t.Fatalf("duplicated logical model: %+v", catalog.Models)
 	}
 	c := cmd(nil)

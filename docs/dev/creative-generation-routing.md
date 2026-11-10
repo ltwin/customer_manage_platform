@@ -2,7 +2,7 @@
 
 ## 模型、部署和结果身份
 
-`creativegeneration.ImageRegistrations` 将部署策略合并为唯一逻辑模型，摄影师和 Agent 继续只提交 `model_key`。GPT Image 2 优先 AiCodeWith，备用 RunningHub；Nano Banana Pro、Nano Banana 2 使用 RunningHub 稳定版；Nano Banana 2.1 使用 owner 指定的 RunningHub 低价渠道版（economy），当前仅此一个部署。
+`creativegeneration.ImageRegistrations` 将部署策略合并为唯一逻辑模型，摄影师和 Agent 继续只提交 `model_key`。GPT Image 2 优先 AiCodeWith，备用 RunningHub；GPT Image 2.6 Sunburst / Flare 优先 Krill，备用 AiCodeWith；Nano Banana Pro、Nano Banana 2 使用 RunningHub 稳定版；Nano Banana 2.1 使用 owner 指定的 RunningHub 低价渠道版（economy），当前仅此一个部署。
 
 受理时按参数及参考素材筛选部署，冻结候选顺序和能力策略；禁止静默降低分辨率、减少张数或拆分调用。每候选最多2次提交、可恢复失败间隔5秒，最多8个候选，共享原生成期限。凭证、供应商余额及渠道不可用在确认未受理/终止后切换；参数错误、审核拒绝和取消停止。受理未知仍须核实，不因暂停计费而允许重发。
 
@@ -89,3 +89,25 @@ RunningHub 结果域名增加精确的 `rh-hk-images-1252422369.cos.ap-hongkong.
 日志约定：不写提示词、取件地址的路径与查询（只保留 scheme 和主机）、凭证；供应商给出的错误码经 `providerToken` 收敛为短标记。适配器的 `GenerationEvent.Diagnostic` 只进日志，不参与证据摘要，也不入库。
 
 没有日志时，库里只能看到粗粒度分类：`creative_node_executions.error`（节点原因码）→ `llm_generation_requests.admission_control->>'consumer_key'` 等于 `cwexec_*` 的请求 → `llm_requests.failure_class`（如 `not_dispatched`）。证据表 `llm_generation_observations.evidence_cipher` 是加密的，而且不含上面的诊断细节。
+
+## Krill GPT Image 2.6（2026-11-09）
+
+- 复用 `KRILL_AI_API_KEY`，新增 `krill-images-gpt-image-2.6-sunburst`、`krill-images-gpt-image-2.6-flare` 两个部署。同模型默认顺序为 **Krill → AiCodeWith**（2026-11-10 调整）；缺少某家凭证只禁用那一家，逻辑模型不重复。API 与 creative-worker 一起重启后生效；GPT Image 2 和其他模型的路由不变。
+- 按 owner 确认，本次只接生成与容灾，Krill 使用 `billing=disabled`，不占平台成本预算、不伪造按张费用；供应商仍会真实扣款。其[模型广场](https://www.krill-code.com/app/pricing)为 2.6 展示 token 价格，不能复制 AiCodeWith 的按张结算规则。
+- [官方教程](https://www.krill-code.com/app/tutorial?channel=%E7%BB%98%E5%9B%BE&client=api-code)：`POST /v1/images/generations`（JSON），参考图走 `POST /v1/images/edits`（multipart `image[]`），均带 `async=true`、`n=1`；`GET /v1/images/{id}` 查询 `pending/completed/failed`。参考图上传前复核冻结的字节数和摘要；文字参考沿用提示词，不上传成图片。
+- 两家的产品参数继续使用比例、1K/2K/4K、五档 quality、背景、单张输出，但线路映射不同。Krill 实测拒绝 `size=1:1`，只接受 `auto` 或 `WIDTHxHEIGHT`；适配器按其创作面板规则映射像素尺寸，限制在 655360–8294400 像素并对齐 16。Chrome 核对：16:9 的 1K/2K/4K 分别为 1088×608 / 2048×1152 / 3840×2160；方形 4K 为 2880×2880。`auto` 不发送 resolution。输出固定 PNG，沿用每张 25MiB、最多 9 张参考图的产品限制。
+- **规划复杂度核验边界**：Krill 创作面板对 2.6 显示低／中／高三档，但教程没有给出 API 字段。真实请求中 `reasoning_effort=invalid-probe` 仍成功出图，说明“请求被接受”不足以证明该字段生效；本次不发送它，也不对产品承诺规划档位可控。AiCodeWith 当前适配器没有该参数，尚不能由此断言供应商 API 不支持。确认准确 API 契约后再扩展，显式指定该能力时应筛掉不支持的部署，不能静默丢弃。
+- 完成状态必须匹配任务 ID、模型、固定 content 路径和有效期限。`GET /v1/images/{id}/content` 使用 API Bearer 密钥；实测返回 302 到 `e7ccb6761104cf83c278ad6f60ce6b17.r2.cloudflarestorage.com/krill/relay-image-inputs/…`。只允许这个精确 HTTPS 域名和路径前缀，第二跳不带 API 密钥、不继续跟随重定向；签名 URL 和密钥不进入日志。
+- 未确认取消、按客户端 ID 找回能力，不声明支持。429、5xx、响应丢失保持受理未知，不因为本地未记账就重发；已知任务仍按现有轮询和总截止推进。
+
+验证入口：普通门禁不发真实请求；协议测试覆盖字段、参考摘要、任务身份、未知状态和取件鉴权边界，产品集成测试覆盖 AiCodeWith 拒绝后切到 Krill 并只发布一次。显式设置 `KRILL_AI_IMAGE_LIVE=1` 与 `KRILL_AI_API_KEY` 后，可运行 `go test ./internal/platform/llmgateway -run '^TestLiveKrillImages$' -timeout 35m -count=1 -v`，会真实消费两次生图额度，分别验证 Sunburst 文生图和 Flare 参考图编辑及 PNG 下载。
+
+本次真实闭环通过：Sunburst 文生图 17.67 秒、Flare 参考图编辑 19.41 秒，均得到 1024×1024 PNG 并通过受控下载；总测试 37.08 秒。仅验证 low / 1K 档位，不代表所有画质和尺寸组合均已逐一实测。
+
+## 2026-11-10：等待期限与 2.6 首选线路
+
+新受理的生图任务总截止从 10 分钟延长至 **15 分钟**，画布与网关冻结同一截止；单次 HTTP 调用的 2 分钟限制保持原值。GPT Image 2.6 Sunburst / Flare 首选 Krill，AiCodeWith 备用；其他模型及目录排列不变。仅对新任务生效，既有冻结路由、截止和已关闭任务不回写。
+
+触发依据：AiCodeWith 的 Sunburst 4K/max/16:9 请求在 23:58:30 到达本地截止，23:58:55 才观察到 completed；生成中的调用没有明确失败，不提前另发一单。延长截止与调整优先级不改变这一防重复提交规则。
+
+本次额外使用 `KRILL_AI_IMAGE_LIVE_PARAMETERS='{"aspect_ratio":"16:9","resolution":"4K","quality":"max"}'` 定向运行 Sunburst 真实用例，76.10 秒成功返回并下载 3840×2160 PNG（2,736,144 字节）。构建、lint、生成服务包通过；网关包首轮遇到测试数据库连接拒绝，单独重跑全包通过（44.206 秒），不将首轮整体命令记为通过。
