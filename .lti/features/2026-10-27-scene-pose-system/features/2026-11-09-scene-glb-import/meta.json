@@ -1,6 +1,6 @@
 {
   "uid": "e1eb0660-2356-492d-ab1b-e03a0fe032dc",
-  "revision": 5,
+  "revision": 7,
   "id": "scene-glb-import",
   "kind": "feature",
   "assurance": "governed",
@@ -31,7 +31,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-11-09T11:50:51.501Z",
-  "updatedAt": "2026-11-09T12:05:21.946Z",
+  "updatedAt": "2026-11-10T04:01:44.380Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -64,8 +64,357 @@
       ".lti/snapshots/5eccf6709c44d5b1b0374664936d9824c60a0af337c265a9344e8da17155087a.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-11-10T03:28:43.143Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，测试为手动定向执行（按 owner 规则不跑全量）。未覆盖：AC-1 与 Blender 的对照、AC-5 贴图变换的视觉对照、AC-6 顶点色的视觉对照、AC-14 图片上限实测（任务 5.2 由 owner 2026-11-09 决定跳过）；AC-8 放置贴地、AC-12d 挖空效果只有单测或代码走查，没有 e2e",
+        "coverage": [
+          {
+            "criterionId": "AC-c322b56f70b5",
+            "status": "verified",
+            "evidence": "见下面三条子项"
+          },
+          {
+            "criterionId": "AC-5137fc08879a",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：资产进库，缩略图 256² 且有内容（亮像素占比 1%–99%）"
+          },
+          {
+            "criterionId": "AC-e3e54daf5082",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：材质预览截图里去掉自发光贴图或挖空都会改变画面；镜面参考场景的 lit 导出（实时 GI）里，镜中的发光与挖空各自改变画面 1.65% / 0.33%。这只证明三处都接上了，外观是否正确由 owner 对照判断"
+          },
+          {
+            "criterionId": "AC-9d79973fa25f",
+            "status": "deferred",
+            "evidence": "任务 5.2 由 owner 2026-11-09 决定跳过（本机没有 Blender）；素材候选已选好并通过预检"
+          },
+          {
+            "criterionId": "AC-fb21471e00c7",
+            "status": "verified",
+            "evidence": "creative-scene-import.test.ts：第二套 UV、形态键、动画、unlit、扩展贴图（清漆等）各有报告条目；对话框按 changed/ignored 分组列出（ImportModelDialog.tsx，代码走查）"
+          },
+          {
+            "criterionId": "AC-801295f0c3b9",
+            "status": "verified",
+            "evidence": "creative-scene-import.test.ts：Draco、meshopt 夹具能解析；整数位置加节点缩放、归一化 UV、交错属性都换成浮点，世界包围盒不变，写出的文件通过 inspect()，也没有 KHR_mesh_quantization。服务端 creativeglb.Inspect 与前端 inspect 共用 testdata，是同一算法。「画面一致」只用包围盒和数值比对，没有截图对照"
+          },
+          {
+            "criterionId": "AC-520fda8eb02a",
+            "status": "verified",
+            "evidence": "creative-scene-import.test.ts：外部图片和外部缓冲 URI、KTX2、蒙皮都在 GLTFLoader 调用之前被拒绝；超过 32 种材质、超过 64 张图片、超出 inspect 预算都给出原因。这些拒绝都发生在上传之前（run.ts 只在确认后启动）"
+          },
+          {
+            "criterionId": "AC-ba9217109fed",
+            "status": "deferred",
+            "evidence": "UV 烘焙公式有单测（applyTransform，以及几何复制不影响共用的槽位）；与 Blender 对照随 5.2 延后"
+          },
+          {
+            "criterionId": "AC-abe5276ed637",
+            "status": "verified",
+            "evidence": "见下面两条子项"
+          },
+          {
+            "criterionId": "AC-8999a8c93b3d",
+            "status": "verified",
+            "evidence": "单测「mirrored and clamped wrapping…」：UV 在界内时不提示"
+          },
+          {
+            "criterionId": "AC-60472b8c19bd",
+            "status": "verified",
+            "evidence": "同一条单测：跨出 [0, 1] 时逐项提示；Khronos 的 TextureTransformTest 实际导入时，3 个钳制寻址的材质被提示"
+          },
+          {
+            "criterionId": "AC-e1bdc5d5e8da",
+            "status": "deferred",
+            "evidence": "COLOR_0 → vertex_color（convert 单测），光栅和追踪层的 vertexColors（3.2、3.3 单测），开关是材质槽里的布尔参数；与 Blender 对照、手动关掉后的视觉检查随 5.2 延后"
+          },
+          {
+            "criterionId": "AC-00a1498d6d92",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-7' 与 'C5c1: the six maps draw'（合入后复跑通过）"
+          },
+          {
+            "criterionId": "AC-c9fd3fa71e94",
+            "status": "verified",
+            "evidence": "单测「the origin stays… or moves to the bottom centre」：包围盒底面中心移到原点；放置时按 manifest 包围盒贴地，沿用已有的放置逻辑（代码走查，没有单独的 e2e）"
+          },
+          {
+            "criterionId": "AC-72512894d70a",
+            "status": "verified",
+            "evidence": "见下面三条子项"
+          },
+          {
+            "criterionId": "AC-4ee0f384f576",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：授权说明预填为 asset.copyright"
+          },
+          {
+            "criterionId": "AC-82b36ce1eb08",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：属性栏显示原文件名、授权说明和来源链接；查看浮窗由 modelInfo 单测覆盖（任务 3.1）"
+          },
+          {
+            "criterionId": "AC-0f4ec537d401",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：没有「编辑代码」按钮；参数区被信息块替代（SceneEditor 按 isImported 分支）"
+          },
+          {
+            "criterionId": "AC-c9b8269c2bf1",
+            "status": "verified",
+            "evidence": "Go TestDeriveModelFromAnImport：派生出新内容，仍是 imported 且带 import，资产不变"
+          },
+          {
+            "criterionId": "AC-1545273bdf12",
+            "status": "verified",
+            "evidence": "见下面两条子项"
+          },
+          {
+            "criterionId": "AC-7266fc611ae6",
+            "status": "verified",
+            "evidence": "Go TestAssistantReadsAnImport、model_facts_test：ModelFacts 和 ModelBrief 带 imported 与 import"
+          },
+          {
+            "criterionId": "AC-fa97504fb765",
+            "status": "verified",
+            "evidence": "Go 测试：write_model 和烘焙任务以导入的模型为基础时都被拒绝，场景不变"
+          },
+          {
+            "criterionId": "AC-b54923d10566",
+            "status": "verified",
+            "evidence": "见下面两条子项"
+          },
+          {
+            "criterionId": "AC-bd9e18f91485",
+            "status": "verified",
+            "evidence": "run.ts 单测：上传中取消、上传失败、收到 4xx 时，已上传的暂存文件都被丢弃"
+          },
+          {
+            "criterionId": "AC-e5bfa7737e5b",
+            "status": "verified",
+            "evidence": "代码走查：每次点「导入」都新建 ImportRun，生成新的操作 ID"
+          },
+          {
+            "criterionId": "AC-3890740e5b13",
+            "status": "verified",
+            "evidence": "run.ts 单测「a lost response is retried…」：同一操作 ID 和请求体，只建一份资产，没有丢弃上传"
+          },
+          {
+            "criterionId": "AC-d1b7e79d975c",
+            "status": "verified",
+            "evidence": "run.ts 单测：提交中 cancel() 返回 false；对话框此时禁用取消按钮，显示「正在保存到资产库…」（代码走查）"
+          },
+          {
+            "criterionId": "AC-728bbccbb0bf",
+            "status": "verified",
+            "evidence": "images.ts 单测（用桩代替编解码）：超限的透明 WebP 和法线贴图编码为 PNG，不透明的基础色编码为 JPEG；130 MB 实测里真实浏览器也走了这条路径。「导入后叶片照常挖空」没有单独的 e2e"
+          },
+          {
+            "criterionId": "AC-b50020de88f1",
+            "status": "verified",
+            "evidence": "materials 单测：没配新字段的槽位，材质缓存键不变；e2e 'C5c1: the six maps draw'、'C5c1 material asset'、'asset panel: Shift+A'、参数重烘焙用例都通过"
+          },
+          {
+            "criterionId": "AC-45ec2969958b",
+            "status": "deferred",
+            "evidence": "随 5.2 延后，64 张的上限暂不调整"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "前端单测（creative-scene-import 29 条、file-import、scene-images、materials）、Go 包测试（creativemedia、creativescene 等逐包）、e2e 'glb-import AC-1/AC-9'、AC-7、C5c1、资产面板、参数重烘焙均在合入 develop 后通过；设计偏差逐项说明；4 条契约 delta 与实现一致；跨账号 GLB 测试通过",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "7f5a3c60a1de6bad17ec122f5cf03969af3c46531669fd5c68c5eb727a3a8fae"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-11-10T04:01:44.197Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 lti checks，测试为手动定向执行（按 owner 规则不跑全量）。未覆盖：AC-1 与 Blender 的对照、AC-5 贴图变换的视觉对照、AC-6 顶点色的视觉对照、AC-14 图片上限实测（任务 5.2 由 owner 2026-11-09 决定跳过）；AC-8 放置贴地、AC-12d 挖空效果只有单测或代码走查，没有 e2e",
+        "coverage": [
+          {
+            "criterionId": "AC-c322b56f70b5",
+            "status": "verified",
+            "evidence": "见下面三条子项"
+          },
+          {
+            "criterionId": "AC-5137fc08879a",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：资产进库，缩略图 256² 且有内容（亮像素占比 1%–99%）"
+          },
+          {
+            "criterionId": "AC-e3e54daf5082",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：材质预览截图里去掉自发光贴图或挖空都会改变画面；镜面参考场景的 lit 导出（实时 GI）里，镜中的发光与挖空各自改变画面 1.65% / 0.33%。这只证明三处都接上了，外观是否正确由 owner 对照判断"
+          },
+          {
+            "criterionId": "AC-9d79973fa25f",
+            "status": "deferred",
+            "evidence": "任务 5.2 由 owner 2026-11-09 决定跳过（本机没有 Blender）；素材候选已选好并通过预检"
+          },
+          {
+            "criterionId": "AC-fb21471e00c7",
+            "status": "verified",
+            "evidence": "creative-scene-import.test.ts：第二套 UV、形态键、动画、unlit、扩展贴图（清漆等）各有报告条目；对话框按 changed/ignored 分组列出（ImportModelDialog.tsx，代码走查）"
+          },
+          {
+            "criterionId": "AC-801295f0c3b9",
+            "status": "verified",
+            "evidence": "creative-scene-import.test.ts：Draco、meshopt 夹具能解析；整数位置加节点缩放、归一化 UV、交错属性都换成浮点，世界包围盒不变，写出的文件通过 inspect()，也没有 KHR_mesh_quantization。服务端 creativeglb.Inspect 与前端 inspect 共用 testdata，是同一算法。「画面一致」只用包围盒和数值比对，没有截图对照"
+          },
+          {
+            "criterionId": "AC-520fda8eb02a",
+            "status": "verified",
+            "evidence": "creative-scene-import.test.ts：外部图片和外部缓冲 URI、KTX2、蒙皮都在 GLTFLoader 调用之前被拒绝；超过 32 种材质、超过 64 张图片、超出 inspect 预算都给出原因。这些拒绝都发生在上传之前（run.ts 只在确认后启动）"
+          },
+          {
+            "criterionId": "AC-ba9217109fed",
+            "status": "deferred",
+            "evidence": "UV 烘焙公式有单测（applyTransform，以及几何复制不影响共用的槽位）；与 Blender 对照随 5.2 延后"
+          },
+          {
+            "criterionId": "AC-abe5276ed637",
+            "status": "verified",
+            "evidence": "见下面两条子项"
+          },
+          {
+            "criterionId": "AC-8999a8c93b3d",
+            "status": "verified",
+            "evidence": "单测「mirrored and clamped wrapping…」：UV 在界内时不提示"
+          },
+          {
+            "criterionId": "AC-60472b8c19bd",
+            "status": "verified",
+            "evidence": "同一条单测：跨出 [0, 1] 时逐项提示；Khronos 的 TextureTransformTest 实际导入时，3 个钳制寻址的材质被提示"
+          },
+          {
+            "criterionId": "AC-e1bdc5d5e8da",
+            "status": "deferred",
+            "evidence": "COLOR_0 → vertex_color（convert 单测），光栅和追踪层的 vertexColors（3.2、3.3 单测），开关是材质槽里的布尔参数；与 Blender 对照、手动关掉后的视觉检查随 5.2 延后"
+          },
+          {
+            "criterionId": "AC-00a1498d6d92",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-7' 与 'C5c1: the six maps draw'（合入后复跑通过）"
+          },
+          {
+            "criterionId": "AC-c9fd3fa71e94",
+            "status": "verified",
+            "evidence": "单测「the origin stays… or moves to the bottom centre」：包围盒底面中心移到原点；放置时按 manifest 包围盒贴地，沿用已有的放置逻辑（代码走查，没有单独的 e2e）"
+          },
+          {
+            "criterionId": "AC-72512894d70a",
+            "status": "verified",
+            "evidence": "见下面三条子项"
+          },
+          {
+            "criterionId": "AC-4ee0f384f576",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：授权说明预填为 asset.copyright"
+          },
+          {
+            "criterionId": "AC-82b36ce1eb08",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：属性栏显示原文件名、授权说明和来源链接；查看浮窗由 modelInfo 单测覆盖（任务 3.1）"
+          },
+          {
+            "criterionId": "AC-0f4ec537d401",
+            "status": "verified",
+            "evidence": "e2e 'glb-import AC-1/AC-9'（SCENE_E2E_TRACE，合入 develop 后 2026-11-09 复跑通过）：没有「编辑代码」按钮；参数区被信息块替代（SceneEditor 按 isImported 分支）"
+          },
+          {
+            "criterionId": "AC-c9b8269c2bf1",
+            "status": "verified",
+            "evidence": "Go TestDeriveModelFromAnImport：派生出新内容，仍是 imported 且带 import，资产不变"
+          },
+          {
+            "criterionId": "AC-1545273bdf12",
+            "status": "verified",
+            "evidence": "见下面两条子项"
+          },
+          {
+            "criterionId": "AC-7266fc611ae6",
+            "status": "verified",
+            "evidence": "Go TestAssistantReadsAnImport、model_facts_test：ModelFacts 和 ModelBrief 带 imported 与 import"
+          },
+          {
+            "criterionId": "AC-fa97504fb765",
+            "status": "verified",
+            "evidence": "Go 测试：write_model 和烘焙任务以导入的模型为基础时都被拒绝，场景不变"
+          },
+          {
+            "criterionId": "AC-b54923d10566",
+            "status": "verified",
+            "evidence": "见下面两条子项"
+          },
+          {
+            "criterionId": "AC-bd9e18f91485",
+            "status": "verified",
+            "evidence": "run.ts 单测：上传中取消、上传失败、收到 4xx 时，已上传的暂存文件都被丢弃"
+          },
+          {
+            "criterionId": "AC-e5bfa7737e5b",
+            "status": "verified",
+            "evidence": "代码走查：每次点「导入」都新建 ImportRun，生成新的操作 ID"
+          },
+          {
+            "criterionId": "AC-3890740e5b13",
+            "status": "verified",
+            "evidence": "run.ts 单测「a lost response is retried…」：同一操作 ID 和请求体，只建一份资产，没有丢弃上传"
+          },
+          {
+            "criterionId": "AC-d1b7e79d975c",
+            "status": "verified",
+            "evidence": "run.ts 单测：提交中 cancel() 返回 false；对话框此时禁用取消按钮，显示「正在保存到资产库…」（代码走查）"
+          },
+          {
+            "criterionId": "AC-728bbccbb0bf",
+            "status": "verified",
+            "evidence": "images.ts 单测（用桩代替编解码）：超限的透明 WebP 和法线贴图编码为 PNG，不透明的基础色编码为 JPEG；130 MB 实测里真实浏览器也走了这条路径。「导入后叶片照常挖空」没有单独的 e2e"
+          },
+          {
+            "criterionId": "AC-b50020de88f1",
+            "status": "verified",
+            "evidence": "materials 单测：没配新字段的槽位，材质缓存键不变；e2e 'C5c1: the six maps draw'、'C5c1 material asset'、'asset panel: Shift+A'、参数重烘焙用例都通过"
+          },
+          {
+            "criterionId": "AC-45ec2969958b",
+            "status": "deferred",
+            "evidence": "随 5.2 延后，64 张的上限暂不调整"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "前端单测（creative-scene-import 32 条、file-import、scene-images、materials、media）、Go 包测试（creativemedia、creativescene 等逐包）、e2e 'glb-import AC-1/AC-9'、AC-7、C5c1、资产面板、参数重烘焙均在合入 develop 后通过；代码审计 5 项（相机子网格、__proto__ 槽位、原点重写时连点、中止后会话清理、Go 字段名）已在 b577c227 修复，各带复现测试且先红后绿；设计偏差逐项说明；4 条契约 delta 与实现一致；跨账号 GLB 测试通过",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "d7a31519d6e15dd9d8e1bbc448acbfbfe3fe6c0a1769c2870835ef242d0d83ae"
+      }
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }
