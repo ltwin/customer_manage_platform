@@ -1,8 +1,8 @@
 import { readMediaImage } from '../editor/media.ts'
 
-type Entry = { url: string; bytes: number; readers: number }
+type Entry = { url: string; bytes: number; readers: number; expiresAt: number }
 
-/** 浮窗内复用已读图片；不依赖媒体接口的 HTTP 缓存，不跨浮窗持有数据。 */
+/** 有界的图片字节缓存；由查看器或画布页面持有，离开所属范围时 clear。 */
 export class ViewerImageCache {
   private entries = new Map<string, Entry>()
   private pending = new Set<AbortController>()
@@ -14,17 +14,28 @@ export class ViewerImageCache {
   }
 
   peek(source: string) {
+    const entry = this.entries.get(source)
+    if (entry && entry.expiresAt <= Date.now()) this.invalidate(source)
     return this.entries.get(source)?.url
   }
 
-  async load(source: string, controller: AbortController) {
+  async load(source: string, controller: AbortController, expiresAt = Infinity) {
+    controller.signal.throwIfAborted()
+    if (!(expiresAt > Date.now())) throw new Error('图片访问已过期，请重试')
+    this.peek(source) // 过期字节不能因同一个地址再次出现而复用。
     let entry = this.entries.get(source)
     if (!entry) {
       this.pending.add(controller)
       try {
         const blob = await readMediaImage(source, controller.signal)
         controller.signal.throwIfAborted()
-        entry = { url: URL.createObjectURL(blob), bytes: blob.size, readers: 0 }
+        if (!(expiresAt > Date.now())) throw new Error('图片访问已过期，请重试')
+        entry = {
+          url: URL.createObjectURL(blob),
+          bytes: blob.size,
+          readers: 0,
+          expiresAt,
+        }
         this.entries.set(source, entry)
       } finally {
         this.pending.delete(controller)

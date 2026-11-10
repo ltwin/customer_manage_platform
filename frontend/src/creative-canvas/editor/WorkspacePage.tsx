@@ -20,6 +20,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
@@ -87,6 +88,8 @@ import Picker from './Picker.tsx'
 import { useUploads } from './uploads.ts'
 import UploadTray from './UploadTray.tsx'
 import MediaPreview from './MediaPreview.tsx'
+import { ViewerImageCache } from '../viewer/imageCache.ts'
+import { getAuthSnapshot, subscribeAuth } from '../../auth/session.ts'
 import { promptFromNode } from './generation.ts'
 import { mentionToken } from './promptReferences.ts'
 import { downloadMedia } from './MediaView.tsx'
@@ -108,9 +111,10 @@ import {
 const NODE_WIDTH = defaultNodeWidth
 
 export default function WorkspacePage() {
+  const auth = useSyncExternalStore(subscribeAuth, getAuthSnapshot)
   const account = api.currentAccount()
   return account ? (
-    <Workspace key={account} account={account} />
+    <Workspace key={`${account}:${auth.sessionEpoch}`} account={account} />
   ) : (
     <main>请先登录</main>
   )
@@ -170,6 +174,20 @@ function Workspace({ account }: { account: string }) {
   const [help, setHelp] = useState(false)
   const [panMode, setPanMode] = useState(false)
   const { canvasID = '' } = useParams<{ canvasID: string }>()
+  const previewScope = useMemo(
+    () => ({ canvasID, images: new ViewerImageCache() }),
+    [canvasID],
+  )
+  useEffect(() => {
+    const epoch = getAuthSnapshot().sessionEpoch
+    const unsubscribe = subscribeAuth(() => {
+      if (getAuthSnapshot().sessionEpoch !== epoch) previewScope.images.clear()
+    })
+    return () => {
+      unsubscribe()
+      previewScope.images.clear()
+    }
+  }, [previewScope])
   // 首页一句话开始进入画布时带着 openAgent，助手面板直接打开。
   const openAgent = (useLocation().state as { openAgent?: boolean } | null)?.openAgent === true
   // 资产库当前已载入的素材（结果网格与分组预览），供画布拖放与参考标题查找。
@@ -1834,6 +1852,7 @@ function Workspace({ account }: { account: string }) {
           const n = view?.nodes.find((n) => n.id === preview.nodeID)
           return n?.content && isMediaKind(n.metadata.type_key.slice(5)) ? (
             <MediaPreview
+              images={previewScope.images}
               initialRevision={preview.revision}
               content={n.content}
               kind={n.metadata.type_key.slice(5)}

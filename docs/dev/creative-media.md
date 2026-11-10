@@ -53,7 +53,9 @@
 
 ## 读取
 
-`IssueTicket` 在事务内用 `RequireUsable` 核验当前用途后签发 10 分钟无状态票据；`Open` 再次核验、锁 blob、写 read pin（120s）并打开精确版本。HTTP 层实现单段 Range/206/416/HEAD/ETag，`Cache-Control: private, no-store`。撤销 `creative_usage_grants` 后票据与流立即失效。
+`IssueTicket` 用 `RequireUsable` 核验当前用途后签发无状态票据，到期时间按半个 TTL 窗口取整（默认有效期 10–15 分钟）；`Open` 再次核验、锁 blob、写 read pin（120s）并打开精确版本。HTTP 层实现单段 Range/206/416/HEAD/ETag。展示用途、大小不超过 4 MiB 的图片展示图/缩略图（或没有展示图的小原图）允许浏览器缓存到票据到期；大原图、下载、视频等仍是 `private, no-store`。撤销授权阻止后续读取；已有缓存按票据有效期失效，见 [媒体契约](../product/creative-canvas-system/modules/media.md)。
+
+画布全屏图片预览由画布页面持有 `ViewerImageCache`，缓存图片 Blob，不写入持久化存储。关闭预览仅释放当前读者，A→关闭→B→关闭→A 在票据有效期及预算内复用字节；不同修订/角色/票据地址不混用。默认预算为 64 MiB、20 张，淘汰最久未使用且未显示的图片；超预算的单张图在关闭后释放。离开/切换画布或登录会话改变时清空并中止下载，过期票据不再命中缓存，迟到的下载不得重新填回。资产查看器继续使用自己的浮窗级缓存。
 
 ## 测试
 

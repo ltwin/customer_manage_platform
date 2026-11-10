@@ -6,10 +6,13 @@ import * as api from './api.ts'
 import type { Versions } from './generation.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { errorMessage } from './queue.ts'
+import PreviewImage from './PreviewImage.tsx'
+import type { ViewerImageCache } from '../viewer/imageCache.ts'
 
 // 全屏版本浏览保持临时状态；只有「设为主版本」进入画布保存队列。
 export default function MediaPreview({
   initialRevision,
+  images,
   content,
   kind,
   title,
@@ -22,6 +25,7 @@ export default function MediaPreview({
   onClose,
 }: {
   initialRevision?: string
+  images: ViewerImageCache
   content: api.Content
   kind: string
   title: string
@@ -163,6 +167,13 @@ export default function MediaPreview({
             {error}
             <button onClick={() => setRetry((n) => n + 1)}>重试</button>
           </div>
+        ) : kind === 'image' ? (
+          <PreviewImage
+            key={image.id}
+            content={image}
+            title={title}
+            images={images}
+          />
         ) : (
           <MediaFigure
             content={image}

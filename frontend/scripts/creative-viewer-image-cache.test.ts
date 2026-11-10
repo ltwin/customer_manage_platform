@@ -76,3 +76,46 @@ test('switching away or closing cancels pending reads without retaining a late b
   assert.equal(created, 0)
   assert.equal(cache.peek('late'), undefined)
 })
+
+test('A → close → B → close → A reuses bytes until the ticket expires', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 })
+  let reads = 0
+  const revoked: string[] = []
+  t.mock.method(globalThis, 'fetch', async () => {
+    reads++
+    return new Response('image')
+  })
+  t.mock.method(URL, 'createObjectURL', () => `blob:${reads}`)
+  t.mock.method(URL, 'revokeObjectURL', (url: string) => revoked.push(url))
+  const cache = new ViewerImageCache()
+  t.after(() => cache.clear())
+  const a = await cache.load('a', new AbortController(), 2000)
+  a.release()
+  const b = await cache.load('b', new AbortController(), 3000)
+  b.release()
+  const again = await cache.load('a', new AbortController(), 2000)
+  assert.equal(again.url, a.url)
+  assert.equal(reads, 2)
+  again.release()
+  t.mock.timers.setTime(2001)
+  assert.equal(cache.peek('a'), undefined)
+  assert.equal(cache.peek('b'), b.url)
+  assert.deepEqual(revoked, [a.url])
+  await assert.rejects(cache.load('a', new AbortController(), 2000))
+  assert.equal(reads, 2, 'an expired ticket must not start another download')
+})
+
+test('a ticket expiring during download cannot populate the cache', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 })
+  let resolve!: (value: Response) => void
+  let created = 0
+  t.mock.method(globalThis, 'fetch', () => new Promise<Response>((r) => { resolve = r }))
+  t.mock.method(URL, 'createObjectURL', () => { created++; return 'blob:expired' })
+  const cache = new ViewerImageCache()
+  const pending = cache.load('a', new AbortController(), 2000)
+  t.mock.timers.setTime(2001)
+  resolve(new Response('image'))
+  await assert.rejects(pending)
+  assert.equal(created, 0)
+  assert.equal(cache.peek('a'), undefined)
+})
