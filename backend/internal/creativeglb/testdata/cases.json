@@ -240,7 +240,7 @@
   {
     "name": "bad-skin",
     "file": "bad-skin.glb",
-    "reason": "unsupported_feature"
+    "reason": "skin"
   },
   {
     "name": "bad-animation",
@@ -306,5 +306,102 @@
     "name": "bad-bounds-overflow",
     "file": "bad-bounds-overflow.glb",
     "reason": "scene_graph"
+  },
+  {
+    "name": "skinned-turned-root",
+    "file": "skinned-turned-root.glb",
+    "manifest": {
+      "bounds": {
+        "min": [
+          -0.5,
+          -1,
+          -0.5
+        ],
+        "max": [
+          0.5,
+          0,
+          0.5
+        ]
+      },
+      "triangles": 12,
+      "slots": [
+        {
+          "id": "skin"
+        }
+      ],
+      "parts": [],
+      "anchors": [],
+      "uv": false,
+      "skeleton": {
+        "joints": [
+          {
+            "node": 2,
+            "parent": null,
+            "name": "hips"
+          },
+          {
+            "node": 3,
+            "parent": 2,
+            "name": "spine"
+          }
+        ],
+        "fingerprint": "s1-ab6dfbf4f5b06874"
+      }
+    }
+  },
+  {
+    "name": "bad-skin-joint-range",
+    "file": "bad-skin-joint-range.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-weights-sum",
+    "file": "bad-skin-weights-sum.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-weight-negative",
+    "file": "bad-skin-weight-negative.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-joint-outside-scene",
+    "file": "bad-skin-joint-outside-scene.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-without-mesh",
+    "file": "bad-skin-without-mesh.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-mesh-also-static",
+    "file": "bad-skin-mesh-also-static.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-attributes-without-skin",
+    "file": "bad-skin-attributes-without-skin.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-eight-influences",
+    "file": "bad-skin-eight-influences.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-inverse-bind-count",
+    "file": "bad-skin-inverse-bind-count.glb",
+    "reason": "skin"
+  },
+  {
+    "name": "bad-skin-normalized-joints",
+    "file": "bad-skin-normalized-joints.glb",
+    "reason": "accessor"
+  },
+  {
+    "name": "bad-skin-too-many-joints",
+    "file": "bad-skin-too-many-joints.glb",
+    "reason": "limit"
   }
 ]

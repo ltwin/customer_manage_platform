@@ -366,7 +366,9 @@ func fixtureCases() []fixtureCase {
 			}),
 		},
 		{
-			Name: "bad-skin", Reason: ReasonUnsupportedFeature,
+			// A skin without inverse bind matrices (the box has no skin
+			// attributes either; the skin itself is rejected first).
+			Name: "bad-skin", Reason: ReasonSkin,
 			build: basicWith(func(doc map[string]any, b *builder) {
 				doc["skins"] = []any{map[string]any{"joints": []int{0}}}
 				b.nodes[0]["skin"] = 0
@@ -483,6 +485,7 @@ func fixtureCases() []fixtureCase {
 			},
 		},
 	}
+	cases = append(cases, skinFixtureCases()...)
 	for i := range cases {
 		cases[i].File = cases[i].Name + ".glb"
 	}
@@ -647,7 +650,7 @@ func TestMemberParsing(t *testing.T) {
 			return strings.Replace(s, `"mesh":0`, `"mesh":0,"translation":[0,0,0],"matrix":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]`, 1)
 		}, ReasonSceneGraph},
 		{"camera on node", func(s string) string { return strings.Replace(s, `"mesh":0`, `"mesh":0,"camera":0`, 1) }, ReasonUnsupportedFeature},
-		{"joints attribute", func(s string) string { return strings.Replace(s, `"POSITION":0`, `"POSITION":0,"JOINTS_0":0`, 1) }, ReasonUnsupportedFeature},
+		{"joints attribute in the wrong format", func(s string) string { return strings.Replace(s, `"POSITION":0`, `"POSITION":0,"JOINTS_0":0`, 1) }, ReasonAccessor},
 		{"slot hint too long", func(s string) string {
 			return strings.Replace(s, `"hint":"stone"`, `"hint":"`+strings.Repeat("石", 65)+`"`, 1)
 		}, ReasonName},
@@ -704,6 +707,9 @@ func TestMatches(t *testing.T) {
 		// other is the server's: a manifest computed before uv existed has
 		// none to compare, while a host leaving it out does not match.
 		{"server's without uv", func(m *Manifest) { m.UV = nil }, true},
+		{"skeleton on one side", func(m *Manifest) {
+			m.Skeleton = &Skeleton{Joints: []Joint{{Node: 1}}, Fingerprint: "s1-0000000000000000"}
+		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

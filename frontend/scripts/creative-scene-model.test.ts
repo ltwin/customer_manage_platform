@@ -180,7 +180,7 @@ test('inspect reads members exactly like the server', () => {
     ['second scene', (s) => s.replace('"scenes":[{"nodes":[0]}]', '"scenes":[{"nodes":[0]},{"nodes":[]}]'), 'scene_graph'],
     ['matrix and TRS', (s) => s.replace('"mesh":0', '"mesh":0,"translation":[0,0,0],"matrix":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]'), 'scene_graph'],
     ['camera on node', (s) => s.replace('"mesh":0', '"mesh":0,"camera":0'), 'unsupported_feature'],
-    ['joints attribute', (s) => s.replace('"POSITION":0', '"POSITION":0,"JOINTS_0":0'), 'unsupported_feature'],
+    ['joints attribute in the wrong format', (s) => s.replace('"POSITION":0', '"POSITION":0,"JOINTS_0":0'), 'accessor'],
     ['slot hint too long', (s) => s.replace('"hint":"stone"', `"hint":"${'石'.repeat(65)}"`), 'name'],
     ['prototype member', (s) => s.replace('"mesh":0', '"mesh":0,"__proto__":{}'), 'json'],
     ['no triangles', (s) => s.replace('"scenes":[{"nodes":[0]}]', '"scenes":[{"nodes":[]}]'), 'scene_graph'],
@@ -220,6 +220,14 @@ test('manifests match by the contract rules', () => {
   // The second is the server's: computed before uv existed it has none to compare.
   assert.ok(matches(base, variant((m) => { delete m.uv })))
   assert.ok(!matches(variant((m) => { delete m.uv }), base), 'a host manifest without uv does not match')
+  const rigged = variant((m) => {
+    m.skeleton = { joints: [{ node: 1, parent: null, name: 'hips' }, { node: 2, parent: 1, name: 'spine' }], fingerprint: 's1-0000000000000000' }
+  })
+  assert.ok(matches(rigged, structuredClone(rigged)))
+  assert.ok(!matches(base, rigged), 'a skeleton on one side only')
+  assert.ok(!matches(rigged, base), 'a skeleton on one side only')
+  assert.ok(!matches(rigged, variant((m) => { m.skeleton = { ...structuredClone(rigged.skeleton!), joints: [{ node: 1, parent: null, name: 'hips' }, { node: 2, parent: null, name: 'spine' }] } })))
+  assert.ok(!matches(rigged, variant((m) => { m.skeleton = { ...structuredClone(rigged.skeleton!), fingerprint: 's1-0000000000000001' } })))
   assert.deepEqual(base.parts, ['y', 'x'], 'inputs are not reordered')
 })
 

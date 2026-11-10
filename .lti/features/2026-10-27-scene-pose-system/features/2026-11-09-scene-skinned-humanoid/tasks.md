@@ -3,7 +3,7 @@
 ## 1. 后端：骨架、rig 与模型命令
 
 - [x] 1.1 OpenAPI：`CreativeModelManifest` 加 `skeleton`；`CreativeModelPayload`、`CreativeModelPreviewPayload`、`CreativeSceneModel` 加 `rig`；`CreativeSceneModelRef` 改为 `content_revision_id` / `builtin` 二选一；`CreativeSceneSetInstanceModel` 的 `model` 加 `builtin`，并加可选的 `material_slots`；`CreativeAssetFromGLBPayload` 加 `rig`；`/creative/scene-models/{file}` 路径随 2.1 的 handler 一起加；`CreativeFieldDetails` 加可选的 `reason`；`/creative/scene-textures/{file}` 的 pattern 与媒体类型。运行 `make generate`。完成判据：`go build ./...` 与前端 `tsc -b` 通过，读模型引用的前端调用点先按类型收窄（界面留给 5.1）
-- [ ] 1.2 `creativeglb` 的蒙皮子集：先写测试，蒙皮子集的每条规则各一个反例（joint 越界或不在场景树、缺逆绑定矩阵、带 skin 的节点没有 mesh、网格同时被带 skin 与不带 skin 的节点引用、`JOINTS_0` 越界、权重越界或和不为 1、`JOINTS_1`、关节超限）；根节点带旋转、网格节点自身带变换时，蒙皮包围盒与手算结果一致；`Skeleton` 的并集、父关节和 `s1` 指纹；`Matches` 比对骨架。然后实现 `skin.go`，修改 `glb.go`。现有 `creativeglb` 测试全绿
+- [x] 1.2 `creativeglb` 的蒙皮子集：先写测试，蒙皮子集的每条规则各一个反例（joint 越界或不在场景树、缺逆绑定矩阵、带 skin 的节点没有 mesh、网格同时被带 skin 与不带 skin 的节点引用、`JOINTS_0` 越界、权重越界或和不为 1、`JOINTS_1`、关节超限）；根节点带旋转、网格节点自身带变换时，蒙皮包围盒与手算结果一致；`Skeleton` 的并集、父关节和 `s1` 指纹；`Matches` 比对骨架。然后实现 `skin.go`，修改 `glb.go`；前端 `sandbox/inspect.ts` 同步镜像（共用 `testdata/cases.json`，两侧须同时通过，故从 4.1 提前）。现有 `creativeglb` 测试与 `scripts/creative-scene-model.test.ts` 全绿
 - [ ] 1.3 `creativescene/rig.go` 与共用测试向量 `testdata/humanoid_rig.json`（`Makefile` 的 `generate` / `generate-check` 复制到前端）。向量覆盖：穿刺①的五个角色与两个素体的骨架；缺必需骨骼；重复映射；脚挂在控制骨下；可选骨骼越级；约束的源不是关节；源越界；父级受约束的 aim；成环。先写读向量的 Go 测试，再实现 `Validate`
 - [ ] 1.4 模型命令与导入：
   - `import.go` 收 `rig`，按 design「服务端的骨架与 `rig` 校验顺序」复核。
@@ -57,7 +57,7 @@
   - `parse.ts`：放行蒙皮；关节上限；读 VRM 扩展与约束（去掉源不是关节的约束）；有多组影响时从原始访问器裁剪，压缩过又有多组影响的 primitive 拒绝。
   - `convert.ts`：保留关节和挂在关节下的对象，保留 `skinIndex` / `skinWeight`；带骨骼的模型改为平移祖先节点来移动原点。
   - `write.ts`：回写节点下标并删去标记。
-  - `sandbox/inspect.ts`：蒙皮子集预检；`sandbox/host.ts` 拒绝带 `skins` 的代码模型产物。
+  - `sandbox/host.ts` 拒绝带 `skins` 的代码模型产物（`sandbox/inspect.ts` 的蒙皮子集已在 1.2 完成）。
   - 先写测试：
     - 多组影响的最小模型经完整解析链路后，保留第 4–7 根骨骼（AC-5）。
     - AC-5b：合成夹具（根节点旋转、多个 skin、两组影响、原点移到底面中心）写出再解析，静止姿势与非平凡姿态下逐顶点位置、法线、包围盒一致。
