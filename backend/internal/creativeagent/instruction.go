@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -28,6 +29,11 @@ const (
 	// rather than concatenated — stitching two sets of instructions together
 	// produces a third set that neither author wrote.
 	maxSkillRefs = 1
+	// maxSceneRefs bounds the distinct scenes one submission references. It
+	// is a shape like maxSceneSelection, not a configurable budget: each
+	// scene is read inside the run transaction, and five is the most a
+	// sentence can sensibly compare.
+	maxSceneRefs = 5
 )
 
 // InstructionSegment is one ordered piece of what a photographer submitted. It
@@ -51,6 +57,11 @@ type InstructionSegment struct {
 	// Command asks the assistant to act on the conversation itself. Text is
 	// then the command's optional argument, never words for the model.
 	Command string `json:"command,omitempty"`
+	// DocumentID and ObjectIDs belong to scene_ref: a scene, and optionally
+	// the objects in it, referenced at this position. Omitted ObjectIDs mean
+	// the whole scene; an empty list is a client that lost its selection.
+	DocumentID string   `json:"document_id,omitempty"`
+	ObjectIDs  []string `json:"object_ids,omitempty"`
 }
 
 // ResolvedSkill is the one skill a submission fixed, with the position it was
@@ -114,6 +125,15 @@ func (s *Service) ResolveInstruction(ctx context.Context, scope store.AccountSco
 		case "command":
 			out.Command, out.CommandArgs = segment.Command, strings.TrimSpace(segment.Text)
 			out.Body.Blocks = append(out.Body.Blocks, Block{Type: "command", Command: segment.Command, Text: out.CommandArgs})
+		case "scene_ref":
+			// A placeholder: the title, revision and names are read inside the
+			// run transaction, where the snapshot and the run inputs share one
+			// read. Until then the block costs its lower bound.
+			scene := &BlockScene{DocumentID: segment.DocumentID, Objects: make([]BlockSceneObject, 0, len(segment.ObjectIDs))}
+			for _, id := range segment.ObjectIDs {
+				scene.Objects = append(scene.Objects, BlockSceneObject{ID: id})
+			}
+			out.Body.Blocks = append(out.Body.Blocks, Block{Type: "scene_ref", Scene: scene})
 		}
 	}
 	// The projection is checked against the same rule that will store it, so a
@@ -136,8 +156,10 @@ func validSegments(segments []InstructionSegment) error {
 		return ErrLimit
 	}
 	skills := 0
+	var scenes []string
 	for _, segment := range segments {
-		if segment.Command != "" && segment.Type != "command" {
+		if segment.Command != "" && segment.Type != "command" ||
+			(segment.DocumentID != "" || segment.ObjectIDs != nil) && segment.Type != "scene_ref" {
 			return creativeops.ErrValidation
 		}
 		switch segment.Type {
@@ -165,6 +187,13 @@ func validSegments(segments []InstructionSegment) error {
 				segment.SkillID != "" || segment.SkillVersionID != "" || segment.ContentRevisionID != "" {
 				return creativeops.ErrValidation
 			}
+		case "scene_ref":
+			if !validSceneRefSegment(segment) {
+				return creativeops.ErrValidation
+			}
+			if !slices.Contains(scenes, segment.DocumentID) {
+				scenes = append(scenes, segment.DocumentID)
+			}
 		default:
 			// An unknown type is refused, never skipped. Dropping it would send
 			// the model a different instruction from the one submitted.
@@ -177,7 +206,31 @@ func validSegments(segments []InstructionSegment) error {
 	if skills > maxSkillRefs {
 		return creativeops.ErrValidation
 	}
+	// Too many scenes is a size, unlike two skills: the same words still
+	// make sense split over two messages.
+	if len(scenes) > maxSceneRefs {
+		return ErrLimit
+	}
 	return nil
+}
+
+// validSceneRefSegment checks a scene reference's own fields. The object
+// bound is per reference, so one scene can be referenced twice with different
+// objects each time.
+func validSceneRefSegment(segment InstructionSegment) bool {
+	if segment.DocumentID == "" || !utf8.ValidString(segment.DocumentID) || segment.Text != "" ||
+		segment.SkillID != "" || segment.SkillVersionID != "" || segment.ContentRevisionID != "" {
+		return false
+	}
+	if segment.ObjectIDs != nil && len(segment.ObjectIDs) == 0 || len(segment.ObjectIDs) > maxSceneSelection {
+		return false
+	}
+	for i, id := range segment.ObjectIDs {
+		if id == "" || !utf8.ValidString(id) || slices.Contains(segment.ObjectIDs[:i], id) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) resolveSkillSegment(ctx context.Context, scope store.AccountScope,

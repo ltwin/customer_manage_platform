@@ -172,11 +172,45 @@ func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID 
 			names = append(names, id)
 		}
 	}
-	out.Prompt = fmt.Sprintf("创作者正在编辑场景「%s」(%s，第 %d 版)，", out.Title, documentID, cur.Revision)
+	// Objects are named by references in the message now; only a page that
+	// still sends its selection gets it worded here.
+	out.Prompt = fmt.Sprintf("创作者正在编辑场景「%s」(%s，第 %d 版)", out.Title, documentID, cur.Revision)
 	if len(names) == 0 {
-		out.Prompt += "没有选中物件。"
+		out.Prompt += "。"
 	} else {
-		out.Prompt += "选中了：" + strings.Join(names, "、") + "。说「这个」「它们」时指的是选中的物件。"
+		out.Prompt += "，选中了：" + strings.Join(names, "、") + "。说「这个」「它们」时指的是选中的物件。"
+	}
+	return out, nil
+}
+
+// ReferenceContext is a scene as a message referencing it saw it: its title
+// and revision, and the name of every object then in it.
+type ReferenceContext struct {
+	DocumentID string
+	Title      string
+	Revision   int64
+	// Names maps every object in the scene to its name; an object absent
+	// from it was not in the scene.
+	Names map[string]string
+}
+
+// ReferenceContextInTx reads a referenced scene in the account's scope. A
+// scene in the trash, of another type or another account is not found.
+func ReferenceContextInTx(ctx context.Context, tx store.TxAccountScope, documentID string) (ReferenceContext, error) {
+	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, documentID, TypeKey)
+	if err != nil {
+		return ReferenceContext{}, err
+	}
+	if cur.Document.TrashedAt != nil {
+		return ReferenceContext{}, creativedocument.ErrNotFound
+	}
+	scene, err := decodeScene(cur.Content.Payload)
+	if err != nil {
+		return ReferenceContext{}, err
+	}
+	out := ReferenceContext{DocumentID: documentID, Title: cur.Title, Revision: cur.Revision, Names: make(map[string]string, len(scene.Objects))}
+	for _, o := range scene.Objects {
+		out.Names[o.ID] = o.Name
 	}
 	return out, nil
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -337,11 +339,22 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				}
 			}
 
+			// A referenced scene is canvas metadata too, but unlike the
+			// editor's scene it is part of what was asked: dropping it would
+			// send a different instruction, so its absence is refused.
+			if slices.ContainsFunc(resolved.Body.Blocks, func(b Block) bool { return b.Type == "scene_ref" }) &&
+				!consentHas(consent, "canvas_metadata") {
+				return creativeops.Outcome{}, ErrEgressRequired
+			}
+			referenced, err := fillSceneRefsInTx(ctx, tx, resolved.Body)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
 			// Scenes are canvas metadata: told only under a consent that lets
 			// the canvas leave, like the canvas line.
 			var scenes []sceneInput
 			if consentHas(consent, "canvas_metadata") {
-				if scenes, err = sceneInputsInTx(ctx, tx, input.ConversationID, input.SceneContext); err != nil {
+				if scenes, err = sceneInputsInTx(ctx, tx, input.ConversationID, input.SceneContext, referenced); err != nil {
 					return creativeops.Outcome{}, err
 				}
 			}
@@ -354,9 +367,10 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				return creativeops.Outcome{}, err
 			}
 			// The scene lines are sent with every request, so they come out of
-			// the history's share like the submission does.
+			// the history's share like the submission does. The references are
+			// charged again now that their names are known.
 			planned := resolved
-			planned.Bytes += sceneInputBytes(scenes)
+			planned.Bytes = bodyBytes(resolved.Body) + sceneInputBytes(scenes)
 			history, err := s.planHistoryInTx(ctx, tx, input.ConversationID, consent.ID, int64(trigger.Ordinal), model, planned)
 			if err != nil {
 				return creativeops.Outcome{}, err
@@ -370,7 +384,11 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			if err := s.freezePlannedInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks, scenes); err != nil {
+			editing := ""
+			if input.SceneContext != nil {
+				editing = input.SceneContext.DocumentID
+			}
+			if err := s.freezePlannedInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks, scenes, editing); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			if resolved.Skill != nil {
@@ -472,18 +490,52 @@ func (s *Service) planHistoryInTx(ctx context.Context, tx store.TxAccountScope, 
 // freezePlannedInputsInTx writes what the run was planned to carry. A compact
 // run carries nothing; a run that compacts first leaves room for the history
 // its worker will freeze.
-func (s *Service) freezePlannedInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, planned plannedHistory, blocks []Block, scenes []sceneInput) error {
+func (s *Service) freezePlannedInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, planned plannedHistory, blocks []Block, scenes []sceneInput, editing string) error {
 	switch {
 	case planned.Kind == runKindCompact:
 		return nil
 	case planned.Plan != nil:
-		return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, scenes, deferredHistoryOrdinal)
+		return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, scenes, deferredHistoryOrdinal, editing)
 	}
 	next, err := freezeHistoryInputsInTx(ctx, tx, runID, planned.Projection)
 	if err != nil {
 		return err
 	}
-	return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, scenes, next)
+	return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, scenes, next, editing)
+}
+
+// fillSceneRefsInTx completes the scene_ref placeholders with the scenes as
+// they are in this transaction, so the message's snapshot and the run's
+// inputs are one read. It returns the distinct scenes referenced. An object
+// no longer in its scene is kept and marked, never dropped: it was part of
+// what the photographer asked about.
+func fillSceneRefsInTx(ctx context.Context, tx store.TxAccountScope, body Body) ([]string, error) {
+	var docs []string
+	read := map[string]creativescene.ReferenceContext{}
+	for _, block := range body.Blocks {
+		if block.Type != "scene_ref" || block.Scene == nil {
+			continue
+		}
+		ref, ok := read[block.Scene.DocumentID]
+		if !ok {
+			var err error
+			ref, err = creativescene.ReferenceContextInTx(ctx, tx, block.Scene.DocumentID)
+			if errors.Is(err, creativedocument.ErrNotFound) {
+				return nil, ErrNotFound
+			}
+			if err != nil {
+				return nil, err
+			}
+			read[block.Scene.DocumentID] = ref
+			docs = append(docs, block.Scene.DocumentID)
+		}
+		block.Scene.Title, block.Scene.Revision = ref.Title, ref.Revision
+		for i := range block.Scene.Objects {
+			name, ok := ref.Names[block.Scene.Objects[i].ID]
+			block.Scene.Objects[i].Name, block.Scene.Objects[i].Missing = name, !ok
+		}
+	}
+	return docs, nil
 }
 
 // skillInstructionBytes is what the chosen skill will cost in every request. It

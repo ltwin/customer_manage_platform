@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,9 +64,16 @@ func (f *fixture) movePillar(actor creativedocument.Actor, doc, id string, x flo
 
 func (f *fixture) startSceneRun(conversationID, consentID string, scene any) (Run, error) {
 	f.t.Helper()
+	return f.startRefRun(conversationID, consentID, scene, InstructionSegment{Type: "text", Text: "把这根柱子加高"})
+}
+
+// startRefRun starts a run from the given segments, from the scene editor
+// when scene is set.
+func (f *fixture) startRefRun(conversationID, _ string, scene any, segments ...InstructionSegment) (Run, error) {
+	f.t.Helper()
 	payload := map[string]any{
 		"conversation_id": conversationID,
-		"instruction":     map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: "把这根柱子加高"}}},
+		"instruction":     map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": segments},
 		"model_key":       testModelKey,
 	}
 	if scene != nil {
@@ -372,5 +380,366 @@ func TestOnlyTheScenesWrittenLastAreSummarized(t *testing.T) {
 		if err := f.work(f.alice, run.ID); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func sceneRef(doc string, objects ...string) InstructionSegment {
+	segment := InstructionSegment{Type: "scene_ref", DocumentID: doc}
+	if len(objects) > 0 {
+		segment.ObjectIDs = objects
+	}
+	return segment
+}
+
+// triggerBody is the photographer's message that started a run.
+func (f *fixture) triggerBody(conversationID, runID string) Body {
+	f.t.Helper()
+	page, err := f.service.ListMessages(f.t.Context(), f.alice, conversationID, "", 50)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, m := range page.Items {
+		if m.RunID == runID && m.Role == "user" {
+			return m.Body
+		}
+	}
+	f.t.Fatalf("no trigger message for %s", runID)
+	return Body{}
+}
+
+// addNamedObjects adds objects named by id, in one command.
+func (f *fixture) addNamedObjects(doc string, names map[string]string) {
+	f.t.Helper()
+	objects := make([]any, 0, len(names))
+	order := 100
+	for id, name := range names {
+		order++
+		objects = append(objects, map[string]any{
+			"id": id, "kind": "primitive", "name": name, "parent_id": nil, "order": order, "visible": true, "locked": false,
+			"transform": map[string]any{"position": []float64{0, 0, 0}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+			"primitive": map[string]any{"builtin": "box@1"}})
+	}
+	f.writeScene(creativedocument.Photographer, doc, []string{"objects"}, map[string]any{"op": "add_objects", "objects": objects})
+}
+
+func inOrder(t *testing.T, text string, parts ...string) {
+	t.Helper()
+	at := 0
+	for _, p := range parts {
+		i := strings.Index(text[at:], p)
+		if i < 0 {
+			t.Fatalf("%q missing or out of order in:\n%s", p, text)
+		}
+		at += i + len(p)
+	}
+}
+
+// Each reference is frozen where it stood in the message, with the names the
+// scene had then; an object already gone is kept and marked, so the run asks
+// rather than guesses. Later runs read the same snapshot, minus the advice.
+func TestASceneReferenceIsFrozenWhereItStood(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	nave, aisle := f.sceneDocument(), f.sceneDocument()
+	pillar, plain, gone := sceneObjectID("pillarA"), sceneObjectID("plain"), sceneObjectID("gone")
+	f.addPillar(creativedocument.Photographer, nave, pillar, "柱 A", 10)
+	f.addPillar(creativedocument.Photographer, nave, plain, "", 11)
+
+	run, err := f.startRefRun(c.ID, consent.ID, nil,
+		InstructionSegment{Type: "text", Text: "把"}, sceneRef(nave, pillar, gone, plain),
+		InstructionSegment{Type: "text", Text: "加高，"}, sceneRef(aisle),
+		InstructionSegment{Type: "text", Text: "不动"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := f.triggerBody(c.ID, run.ID).Blocks
+	if len(blocks) != 5 || blocks[1].Type != "scene_ref" || blocks[3].Type != "scene_ref" {
+		t.Fatalf("blocks %+v", blocks)
+	}
+	ref := blocks[1].Scene
+	want := []BlockSceneObject{{ID: pillar, Name: "柱 A"}, {ID: gone, Missing: true}, {ID: plain}}
+	if ref.DocumentID != nave || ref.Title != "中殿" || ref.Revision < 1 || !slices.Equal(ref.Objects, want) {
+		t.Fatalf("snapshot %+v", ref)
+	}
+	if whole := blocks[3].Scene; whole.DocumentID != aisle || whole.Revision < 1 || len(whole.Objects) != 0 {
+		t.Fatalf("whole-scene snapshot %+v", whole)
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	line := "[引用场景「中殿」(" + nave + "，第 " + strconv.FormatInt(ref.Revision, 10) + " 版)中的物件：「柱 A」(" + pillar + ")、" + plain + "；" + gone + " 发送时已不在场景里"
+	wholeLine := "[引用场景「中殿」(" + aisle + "，第 " + strconv.FormatInt(blocks[3].Scene.Revision, 10) + " 版)]"
+	sent := f.vendor.sentText(f.vendor.calls() - 1)
+	inOrder(t, sent, "把", sceneRefGuide, line+"，不要猜替代对象，先向创作者确认]", "加高，", wholeLine, "不动")
+	if strings.Count(sent, sceneRefGuide) != 1 {
+		t.Fatalf("the guide must be said once:\n%s", sent)
+	}
+
+	// A rename later does not rewrite what the message showed.
+	name := "柱 甲"
+	f.writeScene(creativedocument.Photographer, nave, []string{"object:" + pillar}, map[string]any{"op": "update_objects",
+		"updates": []any{map[string]any{"object_id": pillar, "name": name}}})
+	if got := f.triggerBody(c.ID, run.ID).Blocks[1].Scene.Objects[0].Name; got != "柱 A" {
+		t.Fatalf("snapshot renamed to %q", got)
+	}
+	next, err := f.startRefRun(c.ID, consent.ID, nil, InstructionSegment{Type: "text", Text: "继续"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.work(f.alice, next.ID); err != nil {
+		t.Fatal(err)
+	}
+	history := f.vendor.sentText(f.vendor.calls() - 1)
+	if strings.Count(history, line+"]") != 1 || strings.Contains(history, "先向创作者确认") || strings.Contains(history, name) {
+		t.Fatalf("history line:\n%s", history)
+	}
+}
+
+// The scene open in the editor is named once, by its own line; a reference to
+// it points at it.
+func TestAReferenceToTheEditedSceneIsNotNamedTwice(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	pillar := sceneObjectID("pillarA")
+	f.addPillar(creativedocument.Photographer, doc, pillar, "柱 A", 10)
+	run, err := f.startRefRun(c.ID, consent.ID, map[string]any{"document_id": doc, "selected_object_ids": []string{}},
+		InstructionSegment{Type: "text", Text: "把"}, sceneRef(doc, pillar), InstructionSegment{Type: "text", Text: "改断"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	sent := f.vendor.sentText(f.vendor.calls() - 1)
+	inOrder(t, sent, "把", "[引用当前编辑的场景中的物件：「柱 A」("+pillar+")]", "改断")
+	if strings.Count(sent, "「中殿」("+doc) != 1 || strings.Contains(sent, "没有选中物件") {
+		t.Fatalf("the edited scene must be named once:\n%s", sent)
+	}
+	if blocks := f.triggerBody(c.ID, run.ID).Blocks; len(blocks) != 3 {
+		t.Fatalf("an empty selection must add no selection block: %+v", blocks)
+	}
+}
+
+// What a reference says is frozen with the run: a retried attempt sends the
+// same words although the object has since been deleted.
+func TestSceneReferencesAreFrozenWithTheRun(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	pillar := sceneObjectID("pillarA")
+	f.addPillar(creativedocument.Photographer, doc, pillar, "柱 A", 10)
+	run, err := f.startRefRun(c.ID, consent.ID, nil, InstructionSegment{Type: "text", Text: "加高"}, sceneRef(doc, pillar))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kind string
+	if err := f.db.QueryRow(`SELECT source_revision_snapshot->>'kind' FROM creative_run_inputs
+		WHERE run_id=$1 AND input_role='instruction' AND read_level='metadata_only'`, run.ID).Scan(&kind); err != nil || kind != "scene_ref" {
+		t.Fatalf("frozen reference row kind=%q err=%v", kind, err)
+	}
+	held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assembled := func() string {
+		t.Helper()
+		messages, _, _, err := f.service.assemble(t.Context(), f.alice, held)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var b strings.Builder
+		for _, m := range messages {
+			b.WriteString(m.Content + "\n")
+		}
+		return b.String()
+	}
+	first := assembled()
+	if !strings.Contains(first, "「柱 A」("+pillar+")") {
+		t.Fatalf("request lacks the reference:\n%s", first)
+	}
+	f.writeScene(creativedocument.Photographer, doc, []string{"objects", "object:" + pillar, "object:" + pillar + ":content"}, map[string]any{"op": "remove_objects", "object_ids": []string{pillar}})
+	if again := assembled(); again != first {
+		t.Fatalf("second assembly differs:\n%s\n---\n%s", first, again)
+	}
+}
+
+// A reference that cannot be honoured refuses the whole submission: nothing
+// is created, no slot is taken and no message is written.
+func TestASceneReferenceIsChecked(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	words := InstructionSegment{Type: "text", Text: "改一下"}
+	if _, err := f.startRefRun(c.ID, "", nil, words, sceneRef(f.sceneDocument())); !errors.Is(err, ErrEgressRequired) {
+		t.Fatalf("scene reference without account consent: %v", err)
+	}
+	consent := f.sceneConsent(c.ID)
+	trashed := f.sceneDocument()
+	if _, err := f.db.Exec(`UPDATE creative_documents SET trashed_at=now() WHERE id=$1`, trashed); err != nil {
+		t.Fatal(err)
+	}
+	var theirs creativedocument.Document
+	typ, _ := creativedocument.Lookup(creativescene.TypeKey)
+	if err := f.bob.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		var err error
+		theirs, err = creativedocument.CreateInTx(t.Context(), tx, typ, "别人的场景", nil, creativedocument.Photographer)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	six := []InstructionSegment{{Type: "text", Text: "比较"}}
+	for range maxSceneRefs + 1 {
+		six = append(six, sceneRef(f.sceneDocument()))
+	}
+	for _, tc := range []struct {
+		name     string
+		consent  string
+		segments []InstructionSegment
+		want     error
+	}{
+		{"unknown scene", consent.ID, []InstructionSegment{words, sceneRef("cdoc_missing")}, ErrNotFound},
+		{"another account's scene", consent.ID, []InstructionSegment{words, sceneRef(theirs.ID)}, ErrNotFound},
+		{"scene in the trash", consent.ID, []InstructionSegment{words, sceneRef(trashed)}, ErrNotFound},
+		{"six scenes", consent.ID, six, ErrLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := f.startRefRun(c.ID, tc.consent, nil, tc.segments...); !errors.Is(err, tc.want) {
+				t.Fatalf("got %v, want %v", err, tc.want)
+			}
+		})
+	}
+	// An empty object list is a client that lost its selection, told apart
+	// from an omitted one (the whole scene) only on the wire.
+	_, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
+		"conversation_id": c.ID, "model_key": testModelKey,
+		"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []any{
+			map[string]any{"type": "scene_ref", "document_id": f.sceneDocument(), "object_ids": []string{}}}}}))
+	if !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("empty object list: %v", err)
+	}
+	if n := f.count("creative_agent_runs", "conversation_id=$1", c.ID); n != 0 {
+		t.Fatalf("refused runs left %d behind", n)
+	}
+	if n := f.count("creative_agent_messages", "conversation_id=$1", c.ID); n != 0 {
+		t.Fatalf("refused runs left %d messages", n)
+	}
+}
+
+// The fifty is per reference: one scene split over two references of forty
+// objects each is one accepted message.
+func TestOneSceneMayBeReferencedTwiceWithFortyObjectsEach(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	names := map[string]string{}
+	batch := func(prefix string) []string {
+		ids := make([]string, 40)
+		for i := range ids {
+			ids[i] = sceneObjectID(fmt.Sprintf("%s%02d", prefix, i))
+			names[ids[i]] = fmt.Sprintf("%s%02d", prefix, i)
+		}
+		return ids
+	}
+	metal, walnut := batch("m"), batch("w")
+	f.addNamedObjects(doc, names)
+	run, err := f.startRefRun(c.ID, consent.ID, nil, sceneRef(doc, metal...), InstructionSegment{Type: "text", Text: "改成金属，"},
+		sceneRef(doc, walnut...), InstructionSegment{Type: "text", Text: "改成胡桃木"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := f.triggerBody(c.ID, run.ID).Blocks
+	if len(blocks[0].Scene.Objects) != 40 || len(blocks[2].Scene.Objects) != 40 || blocks[2].Scene.Objects[0].Name != "w00" {
+		t.Fatalf("references %+v / %+v", blocks[0].Scene, blocks[2].Scene)
+	}
+}
+
+// longNames is a scene of fifty objects whose names are as long as a name
+// may be, so a reference to all of them costs far more than its ids.
+func (f *fixture) longNames(doc string) []string {
+	f.t.Helper()
+	names := map[string]string{}
+	ids := make([]string, maxSceneSelection)
+	for i := range ids {
+		ids[i] = sceneObjectID(fmt.Sprintf("long%02d", i))
+		names[ids[i]] = strconv.Itoa(i) + strings.Repeat("柱", maxSceneNameRunes-len(strconv.Itoa(i)))
+	}
+	f.addNamedObjects(doc, names)
+	return ids
+}
+
+// The turn's budget is charged with the references as they are worded once
+// their names are known, not with the bare ids the request carried.
+func TestAReferenceIsChargedAsWorded(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	f.service.limits.AutoCompactPercent = 0
+	f.vendor.script = compactionScript(testSummary)
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	for _, words := range []string{"第一轮：秋日人像", "第二轮：加入逆光", "第三轮：换成胶片质感"} {
+		run, err := f.startRefRun(c.ID, consent.ID, nil, InstructionSegment{Type: "text", Text: words})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.work(f.alice, run.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc := f.sceneDocument()
+	ids := f.longNames(doc)
+	segments := []InstructionSegment{{Type: "text", Text: "把"}, sceneRef(doc, ids...), {Type: "text", Text: "改成金属"}}
+	placeholder, err := f.service.ResolveInstruction(t.Context(), f.alice, segments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.service.limits.AutoCompactPercent = 1
+	run, err := f.startRefRun(c.ID, consent.ID, nil, segments...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw []byte
+	if err := f.db.QueryRow(`SELECT compaction_plan FROM creative_agent_runs WHERE id=$1`, run.ID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var plan compactionPlan
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	worded := bodyBytes(f.triggerBody(c.ID, run.ID))
+	if plan.RequestBytes != worded || worded < placeholder.Bytes+maxSceneSelection*maxSceneNameRunes*3 {
+		t.Fatalf("planned %d bytes, worded %d, placeholder %d", plan.RequestBytes, worded, placeholder.Bytes)
+	}
+}
+
+// Names can make a message that fit as ids too long once worded; that is a
+// limit, refused with nothing written.
+func TestAReferenceThatOutgrowsTheMessageIsRefused(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	ids := f.longNames(doc)
+	segments := []InstructionSegment{sceneRef(doc, ids...), sceneRef(doc, ids...), sceneRef(doc, ids...)}
+	if _, err := f.service.ResolveInstruction(t.Context(), f.alice, segments); err != nil {
+		t.Fatalf("as ids the message fits: %v", err)
+	}
+	if _, err := f.startRefRun(c.ID, consent.ID, nil, segments...); !errors.Is(err, ErrLimit) {
+		t.Fatalf("got %v, want a limit", err)
+	}
+	if n := f.count("creative_agent_runs", "conversation_id=$1", c.ID); n != 0 {
+		t.Fatalf("refused run left %d behind", n)
+	}
+	if n := f.count("creative_agent_messages", "conversation_id=$1", c.ID); n != 0 {
+		t.Fatalf("refused run left %d messages", n)
 	}
 }

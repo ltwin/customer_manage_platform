@@ -311,7 +311,7 @@ for _, b := range refs {
 | 正文为空、只有待选时直接发送；转正后重新检查限制 | 新 e2e | 按钮可用，发出的片段只有 `scene_ref`；图片能力不支持时出现现有提示，草稿保留 |
 | 剪切→粘贴、删除→撤销、插入→撤销→重做、编辑→撤销 | 新 e2e（`execCommand` 的撤销栈只能在真浏览器里验证） | 每一步之后，正文的 `@[sref_*]` 和 `agentSegments` 的输出都符合预期 |
 | 同一场景两个引用各 40 个物件 | Go 测试，加前端单测 | 202；`validSegments` 不报错 |
-| 本轮预算计入补齐后的措辞 | Go 测试：构造长名称、多个引用，让补齐前低于压缩线、补齐后超过；再构造一个补齐后超过 32 KiB 的情况 | 前一种触发压缩规划，后一种返回 413，`runs` 表数量不变 |
+| 本轮预算计入补齐后的措辞 | Go 测试：构造 50 个最长名称的物件并引用；压缩规划写下的 `request_bytes` 必须等于补齐后的 `bodyBytes`（实施时改为直接断言规划用的字节数，比卡压缩线的阈值更确定）；再构造补齐后超过 32 KiB 的情况 | 前一种 `request_bytes` 等于补齐后的成本且远大于占位成本，后一种返回 413，`runs` 与消息数量不变 |
 | 模型行为：同名物件跨场景、同场景分批、已删除物件先询问 | `scene_ref_live_test.go`（真实模型，手动执行，不进 CI） | 检查工具参数里的 `document_id` 和物件 ID，以及场景前后的差异；第三条要求本轮没有写入场景的工具调用 |
 
 门禁：日常用 `make check-frontend` 和 `make check-go PKG=./internal/creativeagent/... ./internal/creativescene/...`；合回 develop 时用 `make check-merge`。

@@ -540,14 +540,35 @@ func (w *inputWriter) history(ctx context.Context, p historyProjection) error {
 // freezeRequestInputsInTx writes the submission itself, the canvas line and
 // the scene lines, from start: directly after the history when it was frozen
 // first, or deferredHistoryOrdinal when the worker will freeze it after
-// compacting.
-func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, blocks []Block, scenes []sceneInput, start int) error {
+// compacting. editing is the scene open in the editor, which a scene
+// reference to it points at rather than naming again.
+func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, blocks []Block, scenes []sceneInput, start int, editing string) error {
 	w := &inputWriter{tx: tx, runID: runID, ordinal: start}
+	guided := false
 	for _, block := range blocks {
 		switch block.Type {
 		case "text":
 			text := block.Text
 			if err := w.insert(ctx, "instruction", "text", &text, nil, nil); err != nil {
+				return err
+			}
+		case "scene_ref":
+			// Frozen where it stood in the message, so the model reads each
+			// reference next to the words that act on it.
+			text := sceneRefWording(block.Scene, editing, true)
+			if !guided {
+				text, guided = sceneRefGuide+"\n"+text, true
+			}
+			ids := make([]string, 0, len(block.Scene.Objects))
+			for _, o := range block.Scene.Objects {
+				ids = append(ids, o.ID)
+			}
+			snapshot, err := jsonValue(map[string]any{"kind": "scene_ref", "document_id": block.Scene.DocumentID,
+				"revision": block.Scene.Revision, "object_ids": ids})
+			if err != nil {
+				return err
+			}
+			if err := w.insert(ctx, "instruction", "metadata_only", &text, nil, snapshot); err != nil {
 				return err
 			}
 		case "content_ref":
@@ -640,9 +661,10 @@ type sceneInput struct {
 }
 
 // sceneInputsInTx words what a new run is told about scenes: the scene being
-// edited with its selection, then what others changed in it and in the scenes
-// this conversation wrote last since the conversation's runs last wrote them.
-func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, scene *SceneContext) ([]sceneInput, error) {
+// edited with its selection, then what others changed in it, in the scenes the
+// message references and in the scenes this conversation wrote last since the
+// conversation's runs last wrote them.
+func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, scene *SceneContext, referenced []string) ([]sceneInput, error) {
 	var out []sceneInput
 	var docs []string
 	if scene != nil {
@@ -663,6 +685,11 @@ func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationI
 		}
 		out = append(out, line)
 		docs = append(docs, scene.DocumentID)
+	}
+	for _, id := range referenced {
+		if !slices.Contains(docs, id) {
+			docs = append(docs, id)
+		}
 	}
 	runs, err := conversationRunsInTx(ctx, tx, conversationID)
 	if err != nil {
@@ -743,6 +770,9 @@ func bodyMessage(body Body, role string) *schema.Message {
 		}
 		if b.Type == "scene_selection" && b.Scene != nil {
 			parts = append(parts, b.Scene.historyLine())
+		}
+		if b.Type == "scene_ref" && b.Scene != nil {
+			parts = append(parts, sceneRefWording(b.Scene, "", false))
 		}
 	}
 	m.Content = strings.Join(parts, "\n")
