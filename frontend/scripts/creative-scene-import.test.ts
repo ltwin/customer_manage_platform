@@ -10,6 +10,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { applyTransform, convert, slotNames, slotPayload, type Conversion } from '../src/creative-scene/import/convert.ts'
 import { dimensions, prepareImages, type Codec } from '../src/creative-scene/import/images.ts'
 import { writeGLB } from '../src/creative-scene/import/write.ts'
+import { ImportRun, retryForMs, type ImportJob, type ImportNetwork, type ImportPayload, type ImportResult, type RunState } from '../src/creative-scene/import/run.ts'
+import { ApiError } from '../src/api/transport.ts'
+import type { Upload } from '../src/creative-canvas/editor/media.ts'
 import { inspect } from '../src/creative-scene/sandbox/inspect.ts'
 import { ImportRejected, parseImport, type Decoders, type GLTFJSON, type MaterialJSON } from '../src/creative-scene/import/parse.ts'
 
@@ -748,4 +751,176 @@ test('more than 64 distinct images are refused', async () => {
   const sources = new Map(Array.from({ length: 65 }, (_, i) => [i, { bytes: pngOf(i + 1, 1), mime: 'image/png' as const }]))
   const uses = new Map(Array.from({ length: 65 }, (_, i) => [i, 'color' as const]))
   await assert.rejects(prepareImages(uses, sources, codec), (e: unknown) => e instanceof ImportRejected && e.reason === 'limit')
+})
+
+// --- the commit boundary (task 4.4) ---
+
+/**
+ * A server and network for ImportRun: uploads become ready at once (or wait
+ * for release), the import is recorded by operation ID and replayed like
+ * creativeops, and a response can be lost after the server took the request.
+ */
+function fakeNetwork() {
+  const assets = new Map<string, { asset_id: string; body: string }>()
+  const discarded: string[] = []
+  const submits: { body: string; operationID: string }[] = []
+  let clock = 0
+  let uploads = 0
+  const held: (() => void)[] = []
+  const net: ImportNetwork & { hold: boolean; outcome: (attempt: number) => 'ok' | 'lost' | 'down' | 'refused' } = {
+    hold: false,
+    outcome: () => 'ok',
+    async upload(file, declared) {
+      const id = `ccup_${++uploads}`
+      if (net.hold) await new Promise<void>((r) => held.push(r))
+      return { id, content_revision_id: declared.kind === 'image' ? `ccrv_${file.name.replace(/\W/g, '_')}` : null, publication: { kind: 'candidate', id: `cand_${id}`, revision: '1' } } as unknown as Upload
+    },
+    async discard(upload) {
+      discarded.push(upload.id)
+    },
+    async submit(body, operationID) {
+      submits.push({ body, operationID })
+      const outcome = net.outcome(submits.length)
+      if (outcome === 'refused') throw new ApiError(400, 'validation_failed', 'materials.x 不是模型的槽位')
+      if (outcome === 'down') throw new ApiError(503, 'unavailable', 'try later')
+      let asset = assets.get(operationID)
+      if (!asset) assets.set(operationID, (asset = { asset_id: `cass_${assets.size + 1}`, body }))
+      if (outcome === 'lost') throw new TypeError('Failed to fetch')
+      return { asset_id: asset.asset_id, revision: '1', content_revision_id: 'ccrv_model', reused: false } as unknown as ImportResult
+    },
+    async wait(ms) {
+      clock += ms
+    },
+    now: () => clock,
+  }
+  return { net, assets, discarded, submits, release: () => held.splice(0).forEach((r) => r()) }
+}
+
+function importJob(): ImportJob & { drawn: { materials: unknown; revisions: Map<number, string> }[] } {
+  const drawn: { materials: unknown; revisions: Map<number, string> }[] = []
+  return {
+    drawn,
+    glb: new ArrayBuffer(8),
+    fileName: 'lantern.glb',
+    images: [
+      { images: [0, 2], bytes: pngOf(4, 4), mime: 'image/png', width: 4, height: 4 },
+      { images: [1], bytes: webpOf('VP8L', 4, 4), mime: 'image/webp', width: 4, height: 4 },
+    ],
+    slots: new Map([['paper', { params: { color: '#ffffff' }, maps: { base_color: { image: 2 }, emissive: { image: 1 } }, normalStrength: 1, alphaMode: 'opaque', alphaCutoff: 0.5 }]]),
+    async thumbnail(materials, revisions) {
+      drawn.push({ materials, revisions: new Map(revisions) })
+      return new Blob([pngOf(256, 256)], { type: 'image/png' })
+    },
+    fields: { mount: 'floor', import: { file_name: 'lantern.glb' }, target: { title: '灯笼' } },
+  }
+}
+
+const settle = () => new Promise((r) => setImmediate(r))
+
+test('an import uploads the GLB and images, draws the thumbnail with their revisions and sends one request', async () => {
+  const { net, assets, discarded, submits } = fakeNetwork()
+  const job = importJob()
+  const states: RunState[] = []
+  await new ImportRun(job, net, (s) => states.push(s)).start()
+  assert.equal(states.at(-1)?.phase, 'done')
+  assert.equal(assets.size, 1)
+  assert.deepEqual(discarded, [])
+  const sent = JSON.parse(submits[0]!.body) as { operation_id: string; payload: ImportPayload }
+  assert.equal(sent.operation_id, submits[0]!.operationID)
+  assert.deepEqual(sent.payload, {
+    glb_upload_id: 'ccup_1',
+    thumbnail_upload_id: 'ccup_4',
+    texture_upload_ids: ['ccup_2', 'ccup_3'],
+    materials: { paper: { preset: 'principled@1', params: { color: '#ffffff' }, maps: { base_color: { content_revision_id: 'ccrv_texture_1_png' }, emissive: { content_revision_id: 'ccrv_texture_2_webp' } }, mapping: { kind: 'uv', repeat: [1, 1], rotation_deg: 0, normal_strength: 1 } } },
+    mount: 'floor',
+    import: { file_name: 'lantern.glb' },
+    target: { title: '灯笼' },
+  })
+  assert.deepEqual([...job.drawn[0]!.revisions], [
+    [0, 'ccrv_texture_1_png'],
+    [2, 'ccrv_texture_1_png'],
+    [1, 'ccrv_texture_2_webp'],
+  ])
+  assert.deepEqual(states.filter((s) => s.phase === 'uploading').at(-1), { phase: 'uploading', done: 3, total: 3 })
+})
+
+test('a lost response is retried with the same operation and body: one asset, nothing discarded (AC-12b)', async () => {
+  const { net, assets, discarded, submits } = fakeNetwork()
+  net.outcome = (n) => (n === 1 ? 'lost' : n === 2 ? 'down' : 'ok')
+  const states: RunState[] = []
+  await new ImportRun(importJob(), net, (s) => states.push(s)).start()
+  assert.equal(states.at(-1)?.phase, 'done')
+  assert.equal(submits.length, 3)
+  assert.equal(new Set(submits.map((s) => s.operationID)).size, 1)
+  assert.equal(new Set(submits.map((s) => s.body)).size, 1)
+  assert.equal(assets.size, 1)
+  assert.deepEqual(discarded, [])
+})
+
+test('no answer for two minutes leaves the outcome unknown; retrying sends the same request', async () => {
+  const { net, discarded, submits } = fakeNetwork()
+  net.outcome = () => 'lost'
+  const states: RunState[] = []
+  const run = new ImportRun(importJob(), net, (s) => states.push(s))
+  await run.start()
+  assert.equal(states.at(-1)?.phase, 'unknown')
+  assert.ok(net.now() <= retryForMs)
+  assert.equal(run.cancel(), false)
+  net.outcome = () => 'ok'
+  await run.retry()
+  assert.equal(states.at(-1)?.phase, 'done')
+  assert.equal(new Set(submits.map((s) => s.operationID)).size, 1)
+  assert.deepEqual(discarded, [])
+})
+
+test('a refusal discards every upload (AC-12)', async () => {
+  const { net, discarded } = fakeNetwork()
+  net.outcome = () => 'refused'
+  const states: RunState[] = []
+  await new ImportRun(importJob(), net, (s) => states.push(s)).start()
+  assert.deepEqual(states.at(-1), { phase: 'failed', message: 'materials.x 不是模型的槽位' })
+  assert.deepEqual(discarded.sort(), ['ccup_1', 'ccup_2', 'ccup_3', 'ccup_4'])
+})
+
+test('cancelling while uploading discards what was staged and sends nothing; while committing it cannot (AC-12c)', async () => {
+  const { net, discarded, submits, release } = fakeNetwork()
+  net.hold = true
+  const states: RunState[] = []
+  const run = new ImportRun(importJob(), net, (s) => states.push(s))
+  const started = run.start()
+  await settle()
+  assert.equal(run.cancellable, true)
+  assert.equal(run.cancel(), true)
+  release()
+  await started
+  assert.equal(states.at(-1)?.phase, 'cancelled')
+  assert.deepEqual(discarded.sort(), ['ccup_1', 'ccup_2'])
+  assert.equal(submits.length, 0)
+
+  const second = fakeNetwork()
+  let during: boolean | null = null
+  let run2: ImportRun | null = null
+  second.net.outcome = () => {
+    during = run2!.cancel()
+    return 'ok'
+  }
+  const states2: RunState[] = []
+  run2 = new ImportRun(importJob(), second.net, (s) => states2.push(s))
+  await run2.start()
+  assert.equal(during, false)
+  assert.equal(states2.at(-1)?.phase, 'done')
+  assert.deepEqual(second.discarded, [])
+})
+
+test('a failed upload discards the others', async () => {
+  const { net, discarded } = fakeNetwork()
+  const upload = net.upload
+  net.upload = async (file, declared, signal) => {
+    if (file.name.startsWith('texture-2')) throw new Error('图片校验失败')
+    return upload(file, declared, signal)
+  }
+  const states: RunState[] = []
+  await new ImportRun(importJob(), net, (s) => states.push(s)).start()
+  assert.deepEqual(states.at(-1), { phase: 'failed', message: '图片校验失败' })
+  assert.deepEqual(discarded.sort(), ['ccup_1', 'ccup_2'])
 })

@@ -114,8 +114,8 @@ export async function uploadFile(
   return uploadAs(file, classified, target, onProgress, signal, wait)
 }
 
-/** What the editor produces itself: baked models, their thumbnails, screenshots. */
-export type Generated = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' | 'image/jpeg' }
+/** What the editor produces itself: baked models, their thumbnails, screenshots, and an imported model's images. */
+export type Generated = { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' | 'image/jpeg' | 'image/webp' }
 
 /**
  * Uploads bytes the editor produced itself, such as a baked model GLB and its
