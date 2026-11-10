@@ -10,7 +10,7 @@ import { MeshoptDecoder } from 'meshoptimizer'
 // geometry is unpacked here; turning it into floats is convert.ts's.
 
 /** Why a file cannot be imported; message is for the photographer. */
-export type RejectReason = 'not_glb' | 'external_uri' | 'ktx2' | 'skinned' | 'image_format' | 'unreadable'
+export type RejectReason = 'not_glb' | 'external_uri' | 'ktx2' | 'skinned' | 'image_format' | 'unreadable' | 'limit'
 
 export class ImportRejected extends Error {
   readonly reason: RejectReason
@@ -219,7 +219,9 @@ const textureExtensions = new Set(['KHR_texture_transform', 'EXT_texture_webp', 
 
 function strip(json: GLTFJSON): GLTFJSON {
   const keep = (names?: string[]) => names?.filter((n) => !textureExtensions.has(n))
-  const out: GLTFJSON = { ...json, materials: json.materials?.map((m) => withoutTextures(m) as MaterialJSON), extensionsUsed: keep(json.extensionsUsed), extensionsRequired: keep(json.extensionsRequired) }
+  // A material extension left out of extensionsUsed would crash three's loader; listed, it is read as the file meant.
+  const used = new Set([...(keep(json.extensionsUsed) ?? []), ...(json.materials ?? []).flatMap((m) => Object.keys(m.extensions ?? {}))])
+  const out: GLTFJSON = { ...json, materials: json.materials?.map((m) => withoutTextures(m) as MaterialJSON), extensionsUsed: [...used], extensionsRequired: keep(json.extensionsRequired) }
   delete out.images
   delete out.textures
   delete out.samplers
