@@ -1,0 +1,4381 @@
+{
+ "note": "data: 模型内容「骨架与人形映射」与 patterns: 标准人形骨骼 的共用测试向量（scene-pose-system 子项 3）。骨架取自穿刺①的角色与 Quaternius 素体的原文件（只留关节与父关节），映射为穿刺所用；其余为在其上构造的例子。Go 的 rig.Validate 与前端 rig/humanoid.ts 都必须逐例给出相同的 valid、field、reason。改规则时先改这里。",
+ "skeletons": {
+  "xbot": {
+   "joints": [
+    {
+     "node": 0,
+     "parent": 3,
+     "name": "mixamorig:HeadTop_End"
+    },
+    {
+     "node": 1,
+     "parent": 3,
+     "name": "mixamorig:LeftEye"
+    },
+    {
+     "node": 2,
+     "parent": 3,
+     "name": "mixamorig:RightEye"
+    },
+    {
+     "node": 3,
+     "parent": 4,
+     "name": "mixamorig:Head"
+    },
+    {
+     "node": 4,
+     "parent": 53,
+     "name": "mixamorig:Neck"
+    },
+    {
+     "node": 5,
+     "parent": 6,
+     "name": "mixamorig:LeftHandThumb4"
+    },
+    {
+     "node": 6,
+     "parent": 7,
+     "name": "mixamorig:LeftHandThumb3"
+    },
+    {
+     "node": 7,
+     "parent": 8,
+     "name": "mixamorig:LeftHandThumb2"
+    },
+    {
+     "node": 8,
+     "parent": 25,
+     "name": "mixamorig:LeftHandThumb1"
+    },
+    {
+     "node": 9,
+     "parent": 10,
+     "name": "mixamorig:LeftHandIndex4"
+    },
+    {
+     "node": 10,
+     "parent": 11,
+     "name": "mixamorig:LeftHandIndex3"
+    },
+    {
+     "node": 11,
+     "parent": 12,
+     "name": "mixamorig:LeftHandIndex2"
+    },
+    {
+     "node": 12,
+     "parent": 25,
+     "name": "mixamorig:LeftHandIndex1"
+    },
+    {
+     "node": 13,
+     "parent": 14,
+     "name": "mixamorig:LeftHandMiddle4"
+    },
+    {
+     "node": 14,
+     "parent": 15,
+     "name": "mixamorig:LeftHandMiddle3"
+    },
+    {
+     "node": 15,
+     "parent": 16,
+     "name": "mixamorig:LeftHandMiddle2"
+    },
+    {
+     "node": 16,
+     "parent": 25,
+     "name": "mixamorig:LeftHandMiddle1"
+    },
+    {
+     "node": 17,
+     "parent": 18,
+     "name": "mixamorig:LeftHandRing4"
+    },
+    {
+     "node": 18,
+     "parent": 19,
+     "name": "mixamorig:LeftHandRing3"
+    },
+    {
+     "node": 19,
+     "parent": 20,
+     "name": "mixamorig:LeftHandRing2"
+    },
+    {
+     "node": 20,
+     "parent": 25,
+     "name": "mixamorig:LeftHandRing1"
+    },
+    {
+     "node": 21,
+     "parent": 22,
+     "name": "mixamorig:LeftHandPinky4"
+    },
+    {
+     "node": 22,
+     "parent": 23,
+     "name": "mixamorig:LeftHandPinky3"
+    },
+    {
+     "node": 23,
+     "parent": 24,
+     "name": "mixamorig:LeftHandPinky2"
+    },
+    {
+     "node": 24,
+     "parent": 25,
+     "name": "mixamorig:LeftHandPinky1"
+    },
+    {
+     "node": 25,
+     "parent": 26,
+     "name": "mixamorig:LeftHand"
+    },
+    {
+     "node": 26,
+     "parent": 27,
+     "name": "mixamorig:LeftForeArm"
+    },
+    {
+     "node": 27,
+     "parent": 28,
+     "name": "mixamorig:LeftArm"
+    },
+    {
+     "node": 28,
+     "parent": 53,
+     "name": "mixamorig:LeftShoulder"
+    },
+    {
+     "node": 29,
+     "parent": 30,
+     "name": "mixamorig:RightHandPinky4"
+    },
+    {
+     "node": 30,
+     "parent": 31,
+     "name": "mixamorig:RightHandPinky3"
+    },
+    {
+     "node": 31,
+     "parent": 32,
+     "name": "mixamorig:RightHandPinky2"
+    },
+    {
+     "node": 32,
+     "parent": 49,
+     "name": "mixamorig:RightHandPinky1"
+    },
+    {
+     "node": 33,
+     "parent": 34,
+     "name": "mixamorig:RightHandRing4"
+    },
+    {
+     "node": 34,
+     "parent": 35,
+     "name": "mixamorig:RightHandRing3"
+    },
+    {
+     "node": 35,
+     "parent": 36,
+     "name": "mixamorig:RightHandRing2"
+    },
+    {
+     "node": 36,
+     "parent": 49,
+     "name": "mixamorig:RightHandRing1"
+    },
+    {
+     "node": 37,
+     "parent": 38,
+     "name": "mixamorig:RightHandMiddle4"
+    },
+    {
+     "node": 38,
+     "parent": 39,
+     "name": "mixamorig:RightHandMiddle3"
+    },
+    {
+     "node": 39,
+     "parent": 40,
+     "name": "mixamorig:RightHandMiddle2"
+    },
+    {
+     "node": 40,
+     "parent": 49,
+     "name": "mixamorig:RightHandMiddle1"
+    },
+    {
+     "node": 41,
+     "parent": 42,
+     "name": "mixamorig:RightHandIndex4"
+    },
+    {
+     "node": 42,
+     "parent": 43,
+     "name": "mixamorig:RightHandIndex3"
+    },
+    {
+     "node": 43,
+     "parent": 44,
+     "name": "mixamorig:RightHandIndex2"
+    },
+    {
+     "node": 44,
+     "parent": 49,
+     "name": "mixamorig:RightHandIndex1"
+    },
+    {
+     "node": 45,
+     "parent": 46,
+     "name": "mixamorig:RightHandThumb4"
+    },
+    {
+     "node": 46,
+     "parent": 47,
+     "name": "mixamorig:RightHandThumb3"
+    },
+    {
+     "node": 47,
+     "parent": 48,
+     "name": "mixamorig:RightHandThumb2"
+    },
+    {
+     "node": 48,
+     "parent": 49,
+     "name": "mixamorig:RightHandThumb1"
+    },
+    {
+     "node": 49,
+     "parent": 50,
+     "name": "mixamorig:RightHand"
+    },
+    {
+     "node": 50,
+     "parent": 51,
+     "name": "mixamorig:RightForeArm"
+    },
+    {
+     "node": 51,
+     "parent": 52,
+     "name": "mixamorig:RightArm"
+    },
+    {
+     "node": 52,
+     "parent": 53,
+     "name": "mixamorig:RightShoulder"
+    },
+    {
+     "node": 53,
+     "parent": 54,
+     "name": "mixamorig:Spine2"
+    },
+    {
+     "node": 54,
+     "parent": 55,
+     "name": "mixamorig:Spine1"
+    },
+    {
+     "node": 55,
+     "parent": 66,
+     "name": "mixamorig:Spine"
+    },
+    {
+     "node": 56,
+     "parent": 57,
+     "name": "mixamorig:LeftToe_End"
+    },
+    {
+     "node": 57,
+     "parent": 58,
+     "name": "mixamorig:LeftToeBase"
+    },
+    {
+     "node": 58,
+     "parent": 59,
+     "name": "mixamorig:LeftFoot"
+    },
+    {
+     "node": 59,
+     "parent": 60,
+     "name": "mixamorig:LeftLeg"
+    },
+    {
+     "node": 60,
+     "parent": 66,
+     "name": "mixamorig:LeftUpLeg"
+    },
+    {
+     "node": 61,
+     "parent": 62,
+     "name": "mixamorig:RightToe_End"
+    },
+    {
+     "node": 62,
+     "parent": 63,
+     "name": "mixamorig:RightToeBase"
+    },
+    {
+     "node": 63,
+     "parent": 64,
+     "name": "mixamorig:RightFoot"
+    },
+    {
+     "node": 64,
+     "parent": 65,
+     "name": "mixamorig:RightLeg"
+    },
+    {
+     "node": 65,
+     "parent": 66,
+     "name": "mixamorig:RightUpLeg"
+    },
+    {
+     "node": 66,
+     "parent": null,
+     "name": "mixamorig:Hips"
+    }
+   ]
+  },
+  "michelle": {
+   "joints": [
+    {
+     "node": 0,
+     "parent": 1,
+     "name": "mixamorig:HeadTop_End"
+    },
+    {
+     "node": 1,
+     "parent": 2,
+     "name": "mixamorig:Head"
+    },
+    {
+     "node": 2,
+     "parent": 51,
+     "name": "mixamorig:Neck"
+    },
+    {
+     "node": 3,
+     "parent": 4,
+     "name": "mixamorig:LeftHandThumb4"
+    },
+    {
+     "node": 4,
+     "parent": 5,
+     "name": "mixamorig:LeftHandThumb3"
+    },
+    {
+     "node": 5,
+     "parent": 6,
+     "name": "mixamorig:LeftHandThumb2"
+    },
+    {
+     "node": 6,
+     "parent": 23,
+     "name": "mixamorig:LeftHandThumb1"
+    },
+    {
+     "node": 7,
+     "parent": 8,
+     "name": "mixamorig:LeftHandIndex4"
+    },
+    {
+     "node": 8,
+     "parent": 9,
+     "name": "mixamorig:LeftHandIndex3"
+    },
+    {
+     "node": 9,
+     "parent": 10,
+     "name": "mixamorig:LeftHandIndex2"
+    },
+    {
+     "node": 10,
+     "parent": 23,
+     "name": "mixamorig:LeftHandIndex1"
+    },
+    {
+     "node": 11,
+     "parent": 12,
+     "name": "mixamorig:LeftHandMiddle4"
+    },
+    {
+     "node": 12,
+     "parent": 13,
+     "name": "mixamorig:LeftHandMiddle3"
+    },
+    {
+     "node": 13,
+     "parent": 14,
+     "name": "mixamorig:LeftHandMiddle2"
+    },
+    {
+     "node": 14,
+     "parent": 23,
+     "name": "mixamorig:LeftHandMiddle1"
+    },
+    {
+     "node": 15,
+     "parent": 16,
+     "name": "mixamorig:LeftHandRing4"
+    },
+    {
+     "node": 16,
+     "parent": 17,
+     "name": "mixamorig:LeftHandRing3"
+    },
+    {
+     "node": 17,
+     "parent": 18,
+     "name": "mixamorig:LeftHandRing2"
+    },
+    {
+     "node": 18,
+     "parent": 23,
+     "name": "mixamorig:LeftHandRing1"
+    },
+    {
+     "node": 19,
+     "parent": 20,
+     "name": "mixamorig:LeftHandPinky4"
+    },
+    {
+     "node": 20,
+     "parent": 21,
+     "name": "mixamorig:LeftHandPinky3"
+    },
+    {
+     "node": 21,
+     "parent": 22,
+     "name": "mixamorig:LeftHandPinky2"
+    },
+    {
+     "node": 22,
+     "parent": 23,
+     "name": "mixamorig:LeftHandPinky1"
+    },
+    {
+     "node": 23,
+     "parent": 24,
+     "name": "mixamorig:LeftHand"
+    },
+    {
+     "node": 24,
+     "parent": 25,
+     "name": "mixamorig:LeftForeArm"
+    },
+    {
+     "node": 25,
+     "parent": 26,
+     "name": "mixamorig:LeftArm"
+    },
+    {
+     "node": 26,
+     "parent": 51,
+     "name": "mixamorig:LeftShoulder"
+    },
+    {
+     "node": 27,
+     "parent": 28,
+     "name": "mixamorig:RightHandThumb4"
+    },
+    {
+     "node": 28,
+     "parent": 29,
+     "name": "mixamorig:RightHandThumb3"
+    },
+    {
+     "node": 29,
+     "parent": 30,
+     "name": "mixamorig:RightHandThumb2"
+    },
+    {
+     "node": 30,
+     "parent": 47,
+     "name": "mixamorig:RightHandThumb1"
+    },
+    {
+     "node": 31,
+     "parent": 32,
+     "name": "mixamorig:RightHandIndex4"
+    },
+    {
+     "node": 32,
+     "parent": 33,
+     "name": "mixamorig:RightHandIndex3"
+    },
+    {
+     "node": 33,
+     "parent": 34,
+     "name": "mixamorig:RightHandIndex2"
+    },
+    {
+     "node": 34,
+     "parent": 47,
+     "name": "mixamorig:RightHandIndex1"
+    },
+    {
+     "node": 35,
+     "parent": 36,
+     "name": "mixamorig:RightHandMiddle4"
+    },
+    {
+     "node": 36,
+     "parent": 37,
+     "name": "mixamorig:RightHandMiddle3"
+    },
+    {
+     "node": 37,
+     "parent": 38,
+     "name": "mixamorig:RightHandMiddle2"
+    },
+    {
+     "node": 38,
+     "parent": 47,
+     "name": "mixamorig:RightHandMiddle1"
+    },
+    {
+     "node": 39,
+     "parent": 40,
+     "name": "mixamorig:RightHandRing4"
+    },
+    {
+     "node": 40,
+     "parent": 41,
+     "name": "mixamorig:RightHandRing3"
+    },
+    {
+     "node": 41,
+     "parent": 42,
+     "name": "mixamorig:RightHandRing2"
+    },
+    {
+     "node": 42,
+     "parent": 47,
+     "name": "mixamorig:RightHandRing1"
+    },
+    {
+     "node": 43,
+     "parent": 44,
+     "name": "mixamorig:RightHandPinky4"
+    },
+    {
+     "node": 44,
+     "parent": 45,
+     "name": "mixamorig:RightHandPinky3"
+    },
+    {
+     "node": 45,
+     "parent": 46,
+     "name": "mixamorig:RightHandPinky2"
+    },
+    {
+     "node": 46,
+     "parent": 47,
+     "name": "mixamorig:RightHandPinky1"
+    },
+    {
+     "node": 47,
+     "parent": 48,
+     "name": "mixamorig:RightHand"
+    },
+    {
+     "node": 48,
+     "parent": 49,
+     "name": "mixamorig:RightForeArm"
+    },
+    {
+     "node": 49,
+     "parent": 50,
+     "name": "mixamorig:RightArm"
+    },
+    {
+     "node": 50,
+     "parent": 51,
+     "name": "mixamorig:RightShoulder"
+    },
+    {
+     "node": 51,
+     "parent": 52,
+     "name": "mixamorig:Spine2"
+    },
+    {
+     "node": 52,
+     "parent": 53,
+     "name": "mixamorig:Spine1"
+    },
+    {
+     "node": 53,
+     "parent": 64,
+     "name": "mixamorig:Spine"
+    },
+    {
+     "node": 54,
+     "parent": 55,
+     "name": "mixamorig:LeftToe_End"
+    },
+    {
+     "node": 55,
+     "parent": 56,
+     "name": "mixamorig:LeftToeBase"
+    },
+    {
+     "node": 56,
+     "parent": 57,
+     "name": "mixamorig:LeftFoot"
+    },
+    {
+     "node": 57,
+     "parent": 58,
+     "name": "mixamorig:LeftLeg"
+    },
+    {
+     "node": 58,
+     "parent": 64,
+     "name": "mixamorig:LeftUpLeg"
+    },
+    {
+     "node": 59,
+     "parent": 60,
+     "name": "mixamorig:RightToe_End"
+    },
+    {
+     "node": 60,
+     "parent": 61,
+     "name": "mixamorig:RightToeBase"
+    },
+    {
+     "node": 61,
+     "parent": 62,
+     "name": "mixamorig:RightFoot"
+    },
+    {
+     "node": 62,
+     "parent": 63,
+     "name": "mixamorig:RightLeg"
+    },
+    {
+     "node": 63,
+     "parent": 64,
+     "name": "mixamorig:RightUpLeg"
+    },
+    {
+     "node": 64,
+     "parent": null,
+     "name": "mixamorig:Hips"
+    }
+   ]
+  },
+  "robot_expressive": {
+   "joints": [
+    {
+     "node": 2,
+     "parent": null,
+     "name": "Bone"
+    },
+    {
+     "node": 3,
+     "parent": 2,
+     "name": "Foot.L"
+    },
+    {
+     "node": 6,
+     "parent": 2,
+     "name": "Body"
+    },
+    {
+     "node": 8,
+     "parent": 6,
+     "name": "Hips"
+    },
+    {
+     "node": 9,
+     "parent": 8,
+     "name": "Abdomen"
+    },
+    {
+     "node": 10,
+     "parent": 9,
+     "name": "Torso"
+    },
+    {
+     "node": 11,
+     "parent": 10,
+     "name": "Neck"
+    },
+    {
+     "node": 12,
+     "parent": 11,
+     "name": "Head"
+    },
+    {
+     "node": 15,
+     "parent": 10,
+     "name": "Shoulder.L"
+    },
+    {
+     "node": 17,
+     "parent": 15,
+     "name": "UpperArm.L"
+    },
+    {
+     "node": 19,
+     "parent": 17,
+     "name": "LowerArm.L"
+    },
+    {
+     "node": 20,
+     "parent": 19,
+     "name": "Palm2.L"
+    },
+    {
+     "node": 21,
+     "parent": 20,
+     "name": "Middle1.L"
+    },
+    {
+     "node": 22,
+     "parent": 21,
+     "name": "Middle2.L"
+    },
+    {
+     "node": 24,
+     "parent": 19,
+     "name": "Thumb.L"
+    },
+    {
+     "node": 25,
+     "parent": 24,
+     "name": "Thumb2.L"
+    },
+    {
+     "node": 27,
+     "parent": 19,
+     "name": "Palm1.L"
+    },
+    {
+     "node": 28,
+     "parent": 27,
+     "name": "Index.L"
+    },
+    {
+     "node": 29,
+     "parent": 28,
+     "name": "Index2.L"
+    },
+    {
+     "node": 31,
+     "parent": 19,
+     "name": "Palm3.L"
+    },
+    {
+     "node": 32,
+     "parent": 31,
+     "name": "Ring1.L"
+    },
+    {
+     "node": 33,
+     "parent": 32,
+     "name": "Ring2.L"
+    },
+    {
+     "node": 35,
+     "parent": 10,
+     "name": "Shoulder.R"
+    },
+    {
+     "node": 37,
+     "parent": 35,
+     "name": "UpperArm.R"
+    },
+    {
+     "node": 39,
+     "parent": 37,
+     "name": "LowerArm.R"
+    },
+    {
+     "node": 40,
+     "parent": 39,
+     "name": "Palm2.R"
+    },
+    {
+     "node": 41,
+     "parent": 40,
+     "name": "Middle1.R"
+    },
+    {
+     "node": 42,
+     "parent": 41,
+     "name": "Middle2.R"
+    },
+    {
+     "node": 44,
+     "parent": 39,
+     "name": "Thumb.R"
+    },
+    {
+     "node": 45,
+     "parent": 44,
+     "name": "Thumb2.R"
+    },
+    {
+     "node": 47,
+     "parent": 39,
+     "name": "Palm1.R"
+    },
+    {
+     "node": 48,
+     "parent": 47,
+     "name": "Index.R"
+    },
+    {
+     "node": 49,
+     "parent": 48,
+     "name": "Index2.R"
+    },
+    {
+     "node": 51,
+     "parent": 39,
+     "name": "Palm3.R"
+    },
+    {
+     "node": 52,
+     "parent": 51,
+     "name": "Ring1.R"
+    },
+    {
+     "node": 53,
+     "parent": 52,
+     "name": "Ring2.R"
+    },
+    {
+     "node": 55,
+     "parent": 6,
+     "name": "UpperLeg.L"
+    },
+    {
+     "node": 57,
+     "parent": 55,
+     "name": "LowerLeg.L"
+    },
+    {
+     "node": 60,
+     "parent": 6,
+     "name": "UpperLeg.R"
+    },
+    {
+     "node": 62,
+     "parent": 60,
+     "name": "LowerLeg.R"
+    },
+    {
+     "node": 65,
+     "parent": 2,
+     "name": "PoleTarget.L"
+    },
+    {
+     "node": 67,
+     "parent": 2,
+     "name": "Foot.R"
+    },
+    {
+     "node": 70,
+     "parent": 2,
+     "name": "PoleTarget.R"
+    }
+   ]
+  },
+  "vrm1_twist": {
+   "joints": [
+    {
+     "node": 4,
+     "parent": null,
+     "name": "J_Bip_C_Hips"
+    },
+    {
+     "node": 5,
+     "parent": 4,
+     "name": "J_Aim_L_UpperLeg"
+    },
+    {
+     "node": 6,
+     "parent": 5,
+     "name": "J_Roll_L_UpperLeg"
+    },
+    {
+     "node": 7,
+     "parent": 6,
+     "name": "J_Sec_L_TopsUpperLegBack"
+    },
+    {
+     "node": 8,
+     "parent": 7,
+     "name": "J_Sec_L_TopsUpperLegBack_end"
+    },
+    {
+     "node": 9,
+     "parent": 6,
+     "name": "J_Sec_L_TopsUpperLegFront"
+    },
+    {
+     "node": 10,
+     "parent": 9,
+     "name": "J_Sec_L_TopsUpperLegFront_end"
+    },
+    {
+     "node": 11,
+     "parent": 6,
+     "name": "J_Sec_L_TopsUpperLegSide"
+    },
+    {
+     "node": 12,
+     "parent": 11,
+     "name": "J_Sec_L_TopsUpperLegSide_end"
+    },
+    {
+     "node": 13,
+     "parent": 4,
+     "name": "J_Aim_R_UpperLeg"
+    },
+    {
+     "node": 14,
+     "parent": 13,
+     "name": "J_Roll_R_UpperLeg"
+    },
+    {
+     "node": 15,
+     "parent": 14,
+     "name": "J_Sec_R_TopsUpperLegBack"
+    },
+    {
+     "node": 16,
+     "parent": 15,
+     "name": "J_Sec_R_TopsUpperLegBack_end"
+    },
+    {
+     "node": 17,
+     "parent": 14,
+     "name": "J_Sec_R_TopsUpperLegFront"
+    },
+    {
+     "node": 18,
+     "parent": 17,
+     "name": "J_Sec_R_TopsUpperLegFront_end"
+    },
+    {
+     "node": 19,
+     "parent": 14,
+     "name": "J_Sec_R_TopsUpperLegSide"
+    },
+    {
+     "node": 20,
+     "parent": 19,
+     "name": "J_Sec_R_TopsUpperLegSide_end"
+    },
+    {
+     "node": 21,
+     "parent": 4,
+     "name": "J_Bip_C_Spine"
+    },
+    {
+     "node": 22,
+     "parent": 21,
+     "name": "J_Bip_C_Chest"
+    },
+    {
+     "node": 23,
+     "parent": 22,
+     "name": "J_Bip_C_UpperChest"
+    },
+    {
+     "node": 24,
+     "parent": 23,
+     "name": "J_Bip_C_Neck"
+    },
+    {
+     "node": 25,
+     "parent": 24,
+     "name": "J_Bip_C_Head"
+    },
+    {
+     "node": 26,
+     "parent": 25,
+     "name": "J_Adj_L_FaceEye"
+    },
+    {
+     "node": 27,
+     "parent": 25,
+     "name": "J_Adj_R_FaceEye"
+    },
+    {
+     "node": 29,
+     "parent": 25,
+     "name": "J_Sec_Hair1_01"
+    },
+    {
+     "node": 30,
+     "parent": 29,
+     "name": "J_Sec_Hair2_01"
+    },
+    {
+     "node": 31,
+     "parent": 30,
+     "name": "J_Sec_Hair2_01_end"
+    },
+    {
+     "node": 32,
+     "parent": 25,
+     "name": "J_Sec_Hair1_02"
+    },
+    {
+     "node": 33,
+     "parent": 32,
+     "name": "J_Sec_Hair2_02"
+    },
+    {
+     "node": 34,
+     "parent": 33,
+     "name": "J_Sec_Hair2_02_end"
+    },
+    {
+     "node": 35,
+     "parent": 25,
+     "name": "J_Sec_Hair1_03"
+    },
+    {
+     "node": 36,
+     "parent": 35,
+     "name": "J_Sec_Hair2_03"
+    },
+    {
+     "node": 37,
+     "parent": 36,
+     "name": "J_Sec_Hair2_03_end"
+    },
+    {
+     "node": 38,
+     "parent": 25,
+     "name": "J_Sec_Hair1_04"
+    },
+    {
+     "node": 39,
+     "parent": 38,
+     "name": "J_Sec_Hair2_04"
+    },
+    {
+     "node": 40,
+     "parent": 39,
+     "name": "J_Sec_Hair2_04_end"
+    },
+    {
+     "node": 41,
+     "parent": 25,
+     "name": "J_Sec_Hair1_05"
+    },
+    {
+     "node": 42,
+     "parent": 41,
+     "name": "J_Sec_Hair2_05"
+    },
+    {
+     "node": 43,
+     "parent": 42,
+     "name": "J_Sec_Hair3_05"
+    },
+    {
+     "node": 44,
+     "parent": 43,
+     "name": "J_Sec_Hair4_05"
+    },
+    {
+     "node": 45,
+     "parent": 44,
+     "name": "J_Sec_Hair5_05"
+    },
+    {
+     "node": 46,
+     "parent": 45,
+     "name": "J_Sec_Hair6_05"
+    },
+    {
+     "node": 47,
+     "parent": 46,
+     "name": "J_Sec_Hair6_05_end"
+    },
+    {
+     "node": 48,
+     "parent": 25,
+     "name": "J_Sec_Hair1_06"
+    },
+    {
+     "node": 49,
+     "parent": 48,
+     "name": "J_Sec_Hair2_06"
+    },
+    {
+     "node": 50,
+     "parent": 49,
+     "name": "J_Sec_Hair3_06"
+    },
+    {
+     "node": 51,
+     "parent": 50,
+     "name": "J_Sec_Hair4_06"
+    },
+    {
+     "node": 52,
+     "parent": 51,
+     "name": "J_Sec_Hair5_06"
+    },
+    {
+     "node": 53,
+     "parent": 52,
+     "name": "J_Sec_Hair5_06_end"
+    },
+    {
+     "node": 54,
+     "parent": 25,
+     "name": "J_Sec_Hair1_07"
+    },
+    {
+     "node": 55,
+     "parent": 54,
+     "name": "J_Sec_Hair2_07"
+    },
+    {
+     "node": 56,
+     "parent": 55,
+     "name": "J_Sec_Hair3_07"
+    },
+    {
+     "node": 57,
+     "parent": 56,
+     "name": "J_Sec_Hair4_07"
+    },
+    {
+     "node": 58,
+     "parent": 57,
+     "name": "J_Sec_Hair5_07"
+    },
+    {
+     "node": 59,
+     "parent": 58,
+     "name": "J_Sec_Hair5_07_end"
+    },
+    {
+     "node": 60,
+     "parent": 25,
+     "name": "J_Sec_Hair1_08"
+    },
+    {
+     "node": 61,
+     "parent": 60,
+     "name": "J_Sec_Hair2_08"
+    },
+    {
+     "node": 62,
+     "parent": 61,
+     "name": "J_Sec_Hair3_08"
+    },
+    {
+     "node": 63,
+     "parent": 62,
+     "name": "J_Sec_Hair4_08"
+    },
+    {
+     "node": 64,
+     "parent": 63,
+     "name": "J_Sec_Hair5_08"
+    },
+    {
+     "node": 65,
+     "parent": 64,
+     "name": "J_Sec_Hair5_08_end"
+    },
+    {
+     "node": 66,
+     "parent": 25,
+     "name": "J_Sec_Hair1_09"
+    },
+    {
+     "node": 67,
+     "parent": 66,
+     "name": "J_Sec_Hair2_09"
+    },
+    {
+     "node": 68,
+     "parent": 67,
+     "name": "J_Sec_Hair3_09"
+    },
+    {
+     "node": 69,
+     "parent": 68,
+     "name": "J_Sec_Hair4_09"
+    },
+    {
+     "node": 70,
+     "parent": 69,
+     "name": "J_Sec_Hair5_09"
+    },
+    {
+     "node": 71,
+     "parent": 70,
+     "name": "J_Sec_Hair5_09_end"
+    },
+    {
+     "node": 72,
+     "parent": 25,
+     "name": "J_Sec_Hair1_10"
+    },
+    {
+     "node": 73,
+     "parent": 72,
+     "name": "J_Sec_Hair2_10"
+    },
+    {
+     "node": 74,
+     "parent": 73,
+     "name": "J_Sec_Hair3_10"
+    },
+    {
+     "node": 75,
+     "parent": 74,
+     "name": "J_Sec_Hair4_10"
+    },
+    {
+     "node": 76,
+     "parent": 75,
+     "name": "J_Sec_Hair5_10"
+    },
+    {
+     "node": 77,
+     "parent": 76,
+     "name": "J_Sec_Hair5_10_end"
+    },
+    {
+     "node": 78,
+     "parent": 25,
+     "name": "J_Sec_Hair1_11"
+    },
+    {
+     "node": 79,
+     "parent": 78,
+     "name": "J_Sec_Hair2_11"
+    },
+    {
+     "node": 80,
+     "parent": 79,
+     "name": "J_Sec_Hair3_11"
+    },
+    {
+     "node": 81,
+     "parent": 80,
+     "name": "J_Sec_Hair4_11"
+    },
+    {
+     "node": 82,
+     "parent": 81,
+     "name": "J_Sec_Hair4_11_end"
+    },
+    {
+     "node": 83,
+     "parent": 25,
+     "name": "J_Sec_Hair1_12"
+    },
+    {
+     "node": 84,
+     "parent": 83,
+     "name": "J_Sec_Hair2_12"
+    },
+    {
+     "node": 85,
+     "parent": 84,
+     "name": "J_Sec_Hair3_12"
+    },
+    {
+     "node": 86,
+     "parent": 85,
+     "name": "J_Sec_Hair4_12"
+    },
+    {
+     "node": 87,
+     "parent": 86,
+     "name": "J_Sec_Hair4_12_end"
+    },
+    {
+     "node": 88,
+     "parent": 23,
+     "name": "J_Bip_L_Shoulder"
+    },
+    {
+     "node": 89,
+     "parent": 88,
+     "name": "J_Aim_L_Shoulder"
+    },
+    {
+     "node": 90,
+     "parent": 89,
+     "name": "J_Roll_L_UpperArm"
+    },
+    {
+     "node": 91,
+     "parent": 88,
+     "name": "J_Aim_L_TopsUpperArm"
+    },
+    {
+     "node": 92,
+     "parent": 91,
+     "name": "J_Sec_L_TopsUpperArmInside"
+    },
+    {
+     "node": 93,
+     "parent": 92,
+     "name": "J_Sec_L_TopsUpperArmInside_end"
+    },
+    {
+     "node": 94,
+     "parent": 91,
+     "name": "J_Sec_L_TopsUpperArmOutside"
+    },
+    {
+     "node": 95,
+     "parent": 94,
+     "name": "J_Sec_L_TopsUpperArmOutside_end"
+    },
+    {
+     "node": 96,
+     "parent": 88,
+     "name": "J_Bip_L_UpperArm"
+    },
+    {
+     "node": 97,
+     "parent": 96,
+     "name": "J_Bip_L_LowerArm"
+    },
+    {
+     "node": 98,
+     "parent": 97,
+     "name": "J_Bip_L_Hand"
+    },
+    {
+     "node": 99,
+     "parent": 98,
+     "name": "J_Bip_L_Index1"
+    },
+    {
+     "node": 100,
+     "parent": 99,
+     "name": "J_Bip_L_Index2"
+    },
+    {
+     "node": 101,
+     "parent": 100,
+     "name": "J_Bip_L_Index3"
+    },
+    {
+     "node": 103,
+     "parent": 98,
+     "name": "J_Bip_L_Little1"
+    },
+    {
+     "node": 104,
+     "parent": 103,
+     "name": "J_Bip_L_Little2"
+    },
+    {
+     "node": 105,
+     "parent": 104,
+     "name": "J_Bip_L_Little3"
+    },
+    {
+     "node": 107,
+     "parent": 98,
+     "name": "J_Bip_L_Middle1"
+    },
+    {
+     "node": 108,
+     "parent": 107,
+     "name": "J_Bip_L_Middle2"
+    },
+    {
+     "node": 109,
+     "parent": 108,
+     "name": "J_Bip_L_Middle3"
+    },
+    {
+     "node": 111,
+     "parent": 98,
+     "name": "J_Bip_L_Ring1"
+    },
+    {
+     "node": 112,
+     "parent": 111,
+     "name": "J_Bip_L_Ring2"
+    },
+    {
+     "node": 113,
+     "parent": 112,
+     "name": "J_Bip_L_Ring3"
+    },
+    {
+     "node": 115,
+     "parent": 98,
+     "name": "J_Bip_L_Thumb1"
+    },
+    {
+     "node": 116,
+     "parent": 115,
+     "name": "J_Bip_L_Thumb2"
+    },
+    {
+     "node": 117,
+     "parent": 116,
+     "name": "J_Bip_L_Thumb3"
+    },
+    {
+     "node": 119,
+     "parent": 97,
+     "name": "J_Roll_L_Hand"
+    },
+    {
+     "node": 120,
+     "parent": 97,
+     "name": "J_Roll_L_LowerArm"
+    },
+    {
+     "node": 121,
+     "parent": 96,
+     "name": "J_Roll_L_Elbow"
+    },
+    {
+     "node": 122,
+     "parent": 23,
+     "name": "J_Bip_R_Shoulder"
+    },
+    {
+     "node": 123,
+     "parent": 122,
+     "name": "J_Aim_R_Shoulder"
+    },
+    {
+     "node": 124,
+     "parent": 123,
+     "name": "J_Roll_R_UpperArm"
+    },
+    {
+     "node": 125,
+     "parent": 122,
+     "name": "J_Aim_R_TopsUpperArm"
+    },
+    {
+     "node": 126,
+     "parent": 125,
+     "name": "J_Sec_R_TopsUpperArmInside"
+    },
+    {
+     "node": 127,
+     "parent": 126,
+     "name": "J_Sec_R_TopsUpperArmInside_end"
+    },
+    {
+     "node": 128,
+     "parent": 125,
+     "name": "J_Sec_R_TopsUpperArmOutside"
+    },
+    {
+     "node": 129,
+     "parent": 128,
+     "name": "J_Sec_R_TopsUpperArmOutside_end"
+    },
+    {
+     "node": 130,
+     "parent": 122,
+     "name": "J_Bip_R_UpperArm"
+    },
+    {
+     "node": 131,
+     "parent": 130,
+     "name": "J_Bip_R_LowerArm"
+    },
+    {
+     "node": 132,
+     "parent": 131,
+     "name": "J_Bip_R_Hand"
+    },
+    {
+     "node": 133,
+     "parent": 132,
+     "name": "J_Bip_R_Index1"
+    },
+    {
+     "node": 134,
+     "parent": 133,
+     "name": "J_Bip_R_Index2"
+    },
+    {
+     "node": 135,
+     "parent": 134,
+     "name": "J_Bip_R_Index3"
+    },
+    {
+     "node": 137,
+     "parent": 132,
+     "name": "J_Bip_R_Little1"
+    },
+    {
+     "node": 138,
+     "parent": 137,
+     "name": "J_Bip_R_Little2"
+    },
+    {
+     "node": 139,
+     "parent": 138,
+     "name": "J_Bip_R_Little3"
+    },
+    {
+     "node": 141,
+     "parent": 132,
+     "name": "J_Bip_R_Middle1"
+    },
+    {
+     "node": 142,
+     "parent": 141,
+     "name": "J_Bip_R_Middle2"
+    },
+    {
+     "node": 143,
+     "parent": 142,
+     "name": "J_Bip_R_Middle3"
+    },
+    {
+     "node": 145,
+     "parent": 132,
+     "name": "J_Bip_R_Ring1"
+    },
+    {
+     "node": 146,
+     "parent": 145,
+     "name": "J_Bip_R_Ring2"
+    },
+    {
+     "node": 147,
+     "parent": 146,
+     "name": "J_Bip_R_Ring3"
+    },
+    {
+     "node": 149,
+     "parent": 132,
+     "name": "J_Bip_R_Thumb1"
+    },
+    {
+     "node": 150,
+     "parent": 149,
+     "name": "J_Bip_R_Thumb2"
+    },
+    {
+     "node": 151,
+     "parent": 150,
+     "name": "J_Bip_R_Thumb3"
+    },
+    {
+     "node": 153,
+     "parent": 131,
+     "name": "J_Roll_R_Hand"
+    },
+    {
+     "node": 154,
+     "parent": 131,
+     "name": "J_Roll_R_LowerArm"
+    },
+    {
+     "node": 155,
+     "parent": 130,
+     "name": "J_Roll_R_Elbow"
+    },
+    {
+     "node": 156,
+     "parent": 23,
+     "name": "J_Sec_L_Bust1"
+    },
+    {
+     "node": 157,
+     "parent": 156,
+     "name": "J_Sec_L_Bust2"
+    },
+    {
+     "node": 158,
+     "parent": 23,
+     "name": "J_Sec_R_Bust1"
+    },
+    {
+     "node": 159,
+     "parent": 158,
+     "name": "J_Sec_R_Bust2"
+    },
+    {
+     "node": 160,
+     "parent": 4,
+     "name": "J_Bip_L_UpperLeg"
+    },
+    {
+     "node": 161,
+     "parent": 160,
+     "name": "J_Bip_L_LowerLeg"
+    },
+    {
+     "node": 162,
+     "parent": 161,
+     "name": "J_Bip_L_Foot"
+    },
+    {
+     "node": 163,
+     "parent": 162,
+     "name": "J_Bip_L_ToeBase"
+    },
+    {
+     "node": 164,
+     "parent": 163,
+     "name": "J_Bip_L_ToeBase_end"
+    },
+    {
+     "node": 165,
+     "parent": 4,
+     "name": "J_Bip_R_UpperLeg"
+    },
+    {
+     "node": 166,
+     "parent": 165,
+     "name": "J_Bip_R_LowerLeg"
+    },
+    {
+     "node": 167,
+     "parent": 166,
+     "name": "J_Bip_R_Foot"
+    },
+    {
+     "node": 168,
+     "parent": 167,
+     "name": "J_Bip_R_ToeBase"
+    }
+   ]
+  },
+  "vrm0_girl": {
+   "joints": [
+    {
+     "node": 1,
+     "parent": null,
+     "name": "J_Bip_C_Hips"
+    },
+    {
+     "node": 2,
+     "parent": 1,
+     "name": "J_Bip_C_Spine"
+    },
+    {
+     "node": 3,
+     "parent": 2,
+     "name": "J_Bip_C_Chest"
+    },
+    {
+     "node": 4,
+     "parent": 3,
+     "name": "J_Bip_C_UpperChest"
+    },
+    {
+     "node": 5,
+     "parent": 4,
+     "name": "J_Sec_L_Bust1"
+    },
+    {
+     "node": 6,
+     "parent": 5,
+     "name": "J_Sec_L_Bust2"
+    },
+    {
+     "node": 7,
+     "parent": 4,
+     "name": "J_Sec_R_Bust1"
+    },
+    {
+     "node": 8,
+     "parent": 7,
+     "name": "J_Sec_R_Bust2"
+    },
+    {
+     "node": 9,
+     "parent": 4,
+     "name": "J_Bip_C_Neck"
+    },
+    {
+     "node": 10,
+     "parent": 9,
+     "name": "J_Bip_C_Head"
+    },
+    {
+     "node": 11,
+     "parent": 10,
+     "name": "J_Adj_L_FaceEye"
+    },
+    {
+     "node": 12,
+     "parent": 10,
+     "name": "J_Adj_R_FaceEye"
+    },
+    {
+     "node": 13,
+     "parent": 10,
+     "name": "HairJoint-90bd578a-0a02-4b1d-8448-1d427c264eb8"
+    },
+    {
+     "node": 14,
+     "parent": 13,
+     "name": "HairJoint-f109139e-4b37-4b37-8753-4e9d3d78c518"
+    },
+    {
+     "node": 15,
+     "parent": 14,
+     "name": "HairJoint-680f2639-47ad-4a44-bfba-84a7656b4e4c"
+    },
+    {
+     "node": 17,
+     "parent": 10,
+     "name": "HairJoint-8f75599b-6719-4a23-9df3-7bafb987c83e"
+    },
+    {
+     "node": 18,
+     "parent": 17,
+     "name": "HairJoint-62725a20-77c6-4e3f-9c16-d67a06847f32"
+    },
+    {
+     "node": 19,
+     "parent": 18,
+     "name": "HairJoint-adc6646e-d1b4-414d-95cc-2b34441a9b08"
+    },
+    {
+     "node": 21,
+     "parent": 10,
+     "name": "HairJoint-dfbbe1f8-551f-494e-92b1-f31602e51ce5"
+    },
+    {
+     "node": 22,
+     "parent": 21,
+     "name": "HairJoint-bdc09e40-dd31-41b2-a7db-18229e902446"
+    },
+    {
+     "node": 24,
+     "parent": 10,
+     "name": "HairJoint-392d3846-d81f-4440-b15c-f874adf10bf3"
+    },
+    {
+     "node": 25,
+     "parent": 24,
+     "name": "HairJoint-541ba6e5-f44e-4e6f-813f-e5e9dd48f1d2"
+    },
+    {
+     "node": 27,
+     "parent": 10,
+     "name": "HairJoint-a310b619-0bf0-4230-9a7e-048e179c674f"
+    },
+    {
+     "node": 28,
+     "parent": 27,
+     "name": "HairJoint-77a35cd5-4c34-4d23-a5dc-dc28936549e7"
+    },
+    {
+     "node": 29,
+     "parent": 28,
+     "name": "HairJoint-89977a5b-eca4-482f-bf31-3ec0dd04073f"
+    },
+    {
+     "node": 30,
+     "parent": 29,
+     "name": "HairJoint-c3f8d95c-bf57-47e1-b128-220106560b83"
+    },
+    {
+     "node": 31,
+     "parent": 30,
+     "name": "HairJoint-efba079c-5d1f-45a5-9ce8-17bc52ce1b6d"
+    },
+    {
+     "node": 32,
+     "parent": 31,
+     "name": "HairJoint-322cd38e-4793-4e4b-bf6b-e96409e8b36d"
+    },
+    {
+     "node": 34,
+     "parent": 10,
+     "name": "HairJoint-6deb6877-fcff-46fe-bc75-d22ca1f14910"
+    },
+    {
+     "node": 35,
+     "parent": 34,
+     "name": "HairJoint-9eb00ccd-38c7-451b-9599-0eaa08be6ba1"
+    },
+    {
+     "node": 36,
+     "parent": 35,
+     "name": "HairJoint-68191422-fc7e-4fa9-b73a-298116387a84"
+    },
+    {
+     "node": 37,
+     "parent": 36,
+     "name": "HairJoint-d6cd70e1-6dbe-4c49-af01-556ba12c170a"
+    },
+    {
+     "node": 38,
+     "parent": 37,
+     "name": "HairJoint-1913442e-ff98-4f32-8645-e8846532595b"
+    },
+    {
+     "node": 39,
+     "parent": 38,
+     "name": "HairJoint-8a04603a-b28d-4640-8dbc-cf8838598dac"
+    },
+    {
+     "node": 41,
+     "parent": 10,
+     "name": "HairJoint-107f3507-9ea5-45fa-9b53-84621a1eb5b3"
+    },
+    {
+     "node": 42,
+     "parent": 41,
+     "name": "HairJoint-aa9b8371-0add-42c2-b9b6-98e1a2808777"
+    },
+    {
+     "node": 43,
+     "parent": 42,
+     "name": "HairJoint-007aaf43-eb82-424f-8a34-48fcf5554284"
+    },
+    {
+     "node": 44,
+     "parent": 43,
+     "name": "HairJoint-81e2da33-085b-4f39-bbf5-1656c3d334f1"
+    },
+    {
+     "node": 45,
+     "parent": 44,
+     "name": "HairJoint-e5bfc70a-492d-4ce5-8413-7ffec583d369"
+    },
+    {
+     "node": 46,
+     "parent": 45,
+     "name": "HairJoint-ccc7c278-f57e-45de-958c-2f68c1117ce8"
+    },
+    {
+     "node": 48,
+     "parent": 10,
+     "name": "HairJoint-37c33eb9-3507-42a8-9cd9-f9455401fa65"
+    },
+    {
+     "node": 49,
+     "parent": 48,
+     "name": "HairJoint-3c010761-3591-41a8-8130-4d664717082a"
+    },
+    {
+     "node": 50,
+     "parent": 49,
+     "name": "HairJoint-fa6b7b01-b300-4ac3-81fe-7d3ba21ac8e6"
+    },
+    {
+     "node": 51,
+     "parent": 50,
+     "name": "HairJoint-1e949c49-ec03-429b-b0a7-0261b03db3a2"
+    },
+    {
+     "node": 52,
+     "parent": 51,
+     "name": "HairJoint-96290158-52f8-488d-9b08-f9110667a9f7"
+    },
+    {
+     "node": 53,
+     "parent": 52,
+     "name": "HairJoint-f58ad0cb-bdfd-41b4-8155-fee00d1df7d8"
+    },
+    {
+     "node": 55,
+     "parent": 10,
+     "name": "HairJoint-5b3aad15-5789-4e03-a22c-dc4a8ac737fc"
+    },
+    {
+     "node": 56,
+     "parent": 55,
+     "name": "HairJoint-c1387f3e-2264-495d-9936-38ec269687f9"
+    },
+    {
+     "node": 57,
+     "parent": 56,
+     "name": "HairJoint-af6db5bf-0e71-4b07-a880-5df40862fd82"
+    },
+    {
+     "node": 58,
+     "parent": 57,
+     "name": "HairJoint-b408526e-fe10-495a-96cb-2d9c5187cbc0"
+    },
+    {
+     "node": 59,
+     "parent": 58,
+     "name": "HairJoint-4c42ec04-0044-428a-a8e9-c793cbcec0bb"
+    },
+    {
+     "node": 60,
+     "parent": 59,
+     "name": "HairJoint-6cc8da24-6252-4da0-b676-35be7e96ed79"
+    },
+    {
+     "node": 62,
+     "parent": 10,
+     "name": "HairJoint-cca2506d-3f96-4535-a063-48a37b90440d"
+    },
+    {
+     "node": 63,
+     "parent": 62,
+     "name": "HairJoint-4f99b74b-927e-46e1-8c69-c2bde8f7d31e"
+    },
+    {
+     "node": 64,
+     "parent": 63,
+     "name": "HairJoint-acafa350-4910-44a8-985e-53b227d57664"
+    },
+    {
+     "node": 65,
+     "parent": 64,
+     "name": "HairJoint-c04b567f-6679-4b9f-8082-26bf4c62c175"
+    },
+    {
+     "node": 66,
+     "parent": 65,
+     "name": "HairJoint-c04e1484-898b-4183-9b98-cbbe1bcb8f1b"
+    },
+    {
+     "node": 67,
+     "parent": 66,
+     "name": "HairJoint-5b01b064-9385-4e1f-b280-0671cd26601e"
+    },
+    {
+     "node": 69,
+     "parent": 10,
+     "name": "HairJoint-2ac6f20d-e294-48b8-94e8-7c45a56dc354"
+    },
+    {
+     "node": 70,
+     "parent": 69,
+     "name": "HairJoint-f128faad-640f-402b-af31-26a018cdb9ce"
+    },
+    {
+     "node": 71,
+     "parent": 70,
+     "name": "HairJoint-741f7592-b5be-43b4-92c7-66a9400c25bc"
+    },
+    {
+     "node": 72,
+     "parent": 71,
+     "name": "HairJoint-9bf2d79a-8294-415c-ac76-ef4363d7c8d5"
+    },
+    {
+     "node": 73,
+     "parent": 72,
+     "name": "HairJoint-1699c4be-0bb6-4a6f-83f5-cb246f0c3f57"
+    },
+    {
+     "node": 74,
+     "parent": 73,
+     "name": "HairJoint-f766989a-0828-4d48-8209-8686b77d2406"
+    },
+    {
+     "node": 76,
+     "parent": 10,
+     "name": "HairJoint-6ddec442-031b-4fbb-8e20-724a9fd347f7"
+    },
+    {
+     "node": 77,
+     "parent": 76,
+     "name": "HairJoint-2e73f43d-e0b8-451b-b595-fd9f7e9436fd"
+    },
+    {
+     "node": 78,
+     "parent": 77,
+     "name": "HairJoint-e926483b-33cf-4106-ad23-b2b099abd7a2"
+    },
+    {
+     "node": 79,
+     "parent": 78,
+     "name": "HairJoint-e929411f-bd08-4281-81ef-4fa7f2ca62a2"
+    },
+    {
+     "node": 80,
+     "parent": 79,
+     "name": "HairJoint-742f4b4e-a03e-493f-891d-1ff5498daca6"
+    },
+    {
+     "node": 81,
+     "parent": 80,
+     "name": "HairJoint-cfe8d45a-8831-4e5a-b98b-03f39657ab2b"
+    },
+    {
+     "node": 83,
+     "parent": 4,
+     "name": "J_Bip_L_Shoulder"
+    },
+    {
+     "node": 84,
+     "parent": 83,
+     "name": "J_Bip_L_UpperArm"
+    },
+    {
+     "node": 85,
+     "parent": 84,
+     "name": "J_Sec_L_TopsUpperArmInside"
+    },
+    {
+     "node": 87,
+     "parent": 84,
+     "name": "J_Sec_L_TopsUpperArmOutside"
+    },
+    {
+     "node": 89,
+     "parent": 84,
+     "name": "J_Bip_L_LowerArm"
+    },
+    {
+     "node": 90,
+     "parent": 89,
+     "name": "J_Bip_L_Hand"
+    },
+    {
+     "node": 91,
+     "parent": 90,
+     "name": "J_Bip_L_Index1"
+    },
+    {
+     "node": 92,
+     "parent": 91,
+     "name": "J_Bip_L_Index2"
+    },
+    {
+     "node": 93,
+     "parent": 92,
+     "name": "J_Bip_L_Index3"
+    },
+    {
+     "node": 95,
+     "parent": 90,
+     "name": "J_Bip_L_Little1"
+    },
+    {
+     "node": 96,
+     "parent": 95,
+     "name": "J_Bip_L_Little2"
+    },
+    {
+     "node": 97,
+     "parent": 96,
+     "name": "J_Bip_L_Little3"
+    },
+    {
+     "node": 99,
+     "parent": 90,
+     "name": "J_Bip_L_Middle1"
+    },
+    {
+     "node": 100,
+     "parent": 99,
+     "name": "J_Bip_L_Middle2"
+    },
+    {
+     "node": 101,
+     "parent": 100,
+     "name": "J_Bip_L_Middle3"
+    },
+    {
+     "node": 103,
+     "parent": 90,
+     "name": "J_Bip_L_Ring1"
+    },
+    {
+     "node": 104,
+     "parent": 103,
+     "name": "J_Bip_L_Ring2"
+    },
+    {
+     "node": 105,
+     "parent": 104,
+     "name": "J_Bip_L_Ring3"
+    },
+    {
+     "node": 107,
+     "parent": 90,
+     "name": "J_Bip_L_Thumb1"
+    },
+    {
+     "node": 108,
+     "parent": 107,
+     "name": "J_Bip_L_Thumb2"
+    },
+    {
+     "node": 109,
+     "parent": 108,
+     "name": "J_Bip_L_Thumb3"
+    },
+    {
+     "node": 111,
+     "parent": 4,
+     "name": "J_Bip_R_Shoulder"
+    },
+    {
+     "node": 112,
+     "parent": 111,
+     "name": "J_Bip_R_UpperArm"
+    },
+    {
+     "node": 113,
+     "parent": 112,
+     "name": "J_Sec_R_TopsUpperArmInside"
+    },
+    {
+     "node": 115,
+     "parent": 112,
+     "name": "J_Sec_R_TopsUpperArmOutside"
+    },
+    {
+     "node": 117,
+     "parent": 112,
+     "name": "J_Bip_R_LowerArm"
+    },
+    {
+     "node": 118,
+     "parent": 117,
+     "name": "J_Bip_R_Hand"
+    },
+    {
+     "node": 119,
+     "parent": 118,
+     "name": "J_Bip_R_Index1"
+    },
+    {
+     "node": 120,
+     "parent": 119,
+     "name": "J_Bip_R_Index2"
+    },
+    {
+     "node": 121,
+     "parent": 120,
+     "name": "J_Bip_R_Index3"
+    },
+    {
+     "node": 123,
+     "parent": 118,
+     "name": "J_Bip_R_Little1"
+    },
+    {
+     "node": 124,
+     "parent": 123,
+     "name": "J_Bip_R_Little2"
+    },
+    {
+     "node": 125,
+     "parent": 124,
+     "name": "J_Bip_R_Little3"
+    },
+    {
+     "node": 127,
+     "parent": 118,
+     "name": "J_Bip_R_Middle1"
+    },
+    {
+     "node": 128,
+     "parent": 127,
+     "name": "J_Bip_R_Middle2"
+    },
+    {
+     "node": 129,
+     "parent": 128,
+     "name": "J_Bip_R_Middle3"
+    },
+    {
+     "node": 131,
+     "parent": 118,
+     "name": "J_Bip_R_Ring1"
+    },
+    {
+     "node": 132,
+     "parent": 131,
+     "name": "J_Bip_R_Ring2"
+    },
+    {
+     "node": 133,
+     "parent": 132,
+     "name": "J_Bip_R_Ring3"
+    },
+    {
+     "node": 135,
+     "parent": 118,
+     "name": "J_Bip_R_Thumb1"
+    },
+    {
+     "node": 136,
+     "parent": 135,
+     "name": "J_Bip_R_Thumb2"
+    },
+    {
+     "node": 137,
+     "parent": 136,
+     "name": "J_Bip_R_Thumb3"
+    },
+    {
+     "node": 139,
+     "parent": 1,
+     "name": "J_Bip_L_UpperLeg"
+    },
+    {
+     "node": 140,
+     "parent": 139,
+     "name": "J_Sec_L_TopsUpperLegBack"
+    },
+    {
+     "node": 142,
+     "parent": 139,
+     "name": "J_Sec_L_TopsUpperLegFront"
+    },
+    {
+     "node": 144,
+     "parent": 139,
+     "name": "J_Sec_L_TopsUpperLegSide"
+    },
+    {
+     "node": 146,
+     "parent": 139,
+     "name": "J_Bip_L_LowerLeg"
+    },
+    {
+     "node": 147,
+     "parent": 146,
+     "name": "J_Bip_L_Foot"
+    },
+    {
+     "node": 148,
+     "parent": 147,
+     "name": "J_Bip_L_ToeBase"
+    },
+    {
+     "node": 150,
+     "parent": 1,
+     "name": "J_Bip_R_UpperLeg"
+    },
+    {
+     "node": 151,
+     "parent": 150,
+     "name": "J_Sec_R_TopsUpperLegBack"
+    },
+    {
+     "node": 153,
+     "parent": 150,
+     "name": "J_Sec_R_TopsUpperLegFront"
+    },
+    {
+     "node": 155,
+     "parent": 150,
+     "name": "J_Sec_R_TopsUpperLegSide"
+    },
+    {
+     "node": 157,
+     "parent": 150,
+     "name": "J_Bip_R_LowerLeg"
+    },
+    {
+     "node": 158,
+     "parent": 157,
+     "name": "J_Bip_R_Foot"
+    },
+    {
+     "node": 159,
+     "parent": 158,
+     "name": "J_Bip_R_ToeBase"
+    }
+   ]
+  },
+  "ubc_male": {
+   "joints": [
+    {
+     "node": 0,
+     "parent": 1,
+     "name": "Head"
+    },
+    {
+     "node": 1,
+     "parent": 50,
+     "name": "neck_01"
+    },
+    {
+     "node": 2,
+     "parent": 3,
+     "name": "index_04_leaf_l"
+    },
+    {
+     "node": 3,
+     "parent": 4,
+     "name": "index_03_l"
+    },
+    {
+     "node": 4,
+     "parent": 5,
+     "name": "index_02_l"
+    },
+    {
+     "node": 5,
+     "parent": 22,
+     "name": "index_01_l"
+    },
+    {
+     "node": 6,
+     "parent": 7,
+     "name": "middle_04_leaf_l"
+    },
+    {
+     "node": 7,
+     "parent": 8,
+     "name": "middle_03_l"
+    },
+    {
+     "node": 8,
+     "parent": 9,
+     "name": "middle_02_l"
+    },
+    {
+     "node": 9,
+     "parent": 22,
+     "name": "middle_01_l"
+    },
+    {
+     "node": 10,
+     "parent": 11,
+     "name": "pinky_04_leaf_l"
+    },
+    {
+     "node": 11,
+     "parent": 12,
+     "name": "pinky_03_l"
+    },
+    {
+     "node": 12,
+     "parent": 13,
+     "name": "pinky_02_l"
+    },
+    {
+     "node": 13,
+     "parent": 22,
+     "name": "pinky_01_l"
+    },
+    {
+     "node": 14,
+     "parent": 15,
+     "name": "ring_04_leaf_l"
+    },
+    {
+     "node": 15,
+     "parent": 16,
+     "name": "ring_03_l"
+    },
+    {
+     "node": 16,
+     "parent": 17,
+     "name": "ring_02_l"
+    },
+    {
+     "node": 17,
+     "parent": 22,
+     "name": "ring_01_l"
+    },
+    {
+     "node": 18,
+     "parent": 19,
+     "name": "thumb_04_leaf_l"
+    },
+    {
+     "node": 19,
+     "parent": 20,
+     "name": "thumb_03_l"
+    },
+    {
+     "node": 20,
+     "parent": 21,
+     "name": "thumb_02_l"
+    },
+    {
+     "node": 21,
+     "parent": 22,
+     "name": "thumb_01_l"
+    },
+    {
+     "node": 22,
+     "parent": 23,
+     "name": "hand_l"
+    },
+    {
+     "node": 23,
+     "parent": 24,
+     "name": "lowerarm_l"
+    },
+    {
+     "node": 24,
+     "parent": 25,
+     "name": "upperarm_l"
+    },
+    {
+     "node": 25,
+     "parent": 50,
+     "name": "clavicle_l"
+    },
+    {
+     "node": 26,
+     "parent": 27,
+     "name": "index_04_leaf_r"
+    },
+    {
+     "node": 27,
+     "parent": 28,
+     "name": "index_03_r"
+    },
+    {
+     "node": 28,
+     "parent": 29,
+     "name": "index_02_r"
+    },
+    {
+     "node": 29,
+     "parent": 46,
+     "name": "index_01_r"
+    },
+    {
+     "node": 30,
+     "parent": 31,
+     "name": "middle_04_leaf_r"
+    },
+    {
+     "node": 31,
+     "parent": 32,
+     "name": "middle_03_r"
+    },
+    {
+     "node": 32,
+     "parent": 33,
+     "name": "middle_02_r"
+    },
+    {
+     "node": 33,
+     "parent": 46,
+     "name": "middle_01_r"
+    },
+    {
+     "node": 34,
+     "parent": 35,
+     "name": "pinky_04_leaf_r"
+    },
+    {
+     "node": 35,
+     "parent": 36,
+     "name": "pinky_03_r"
+    },
+    {
+     "node": 36,
+     "parent": 37,
+     "name": "pinky_02_r"
+    },
+    {
+     "node": 37,
+     "parent": 46,
+     "name": "pinky_01_r"
+    },
+    {
+     "node": 38,
+     "parent": 39,
+     "name": "ring_04_leaf_r"
+    },
+    {
+     "node": 39,
+     "parent": 40,
+     "name": "ring_03_r"
+    },
+    {
+     "node": 40,
+     "parent": 41,
+     "name": "ring_02_r"
+    },
+    {
+     "node": 41,
+     "parent": 46,
+     "name": "ring_01_r"
+    },
+    {
+     "node": 42,
+     "parent": 43,
+     "name": "thumb_04_leaf_r"
+    },
+    {
+     "node": 43,
+     "parent": 44,
+     "name": "thumb_03_r"
+    },
+    {
+     "node": 44,
+     "parent": 45,
+     "name": "thumb_02_r"
+    },
+    {
+     "node": 45,
+     "parent": 46,
+     "name": "thumb_01_r"
+    },
+    {
+     "node": 46,
+     "parent": 47,
+     "name": "hand_r"
+    },
+    {
+     "node": 47,
+     "parent": 48,
+     "name": "lowerarm_r"
+    },
+    {
+     "node": 48,
+     "parent": 49,
+     "name": "upperarm_r"
+    },
+    {
+     "node": 49,
+     "parent": 50,
+     "name": "clavicle_r"
+    },
+    {
+     "node": 50,
+     "parent": 51,
+     "name": "spine_03"
+    },
+    {
+     "node": 51,
+     "parent": 52,
+     "name": "spine_02"
+    },
+    {
+     "node": 52,
+     "parent": 63,
+     "name": "spine_01"
+    },
+    {
+     "node": 53,
+     "parent": 54,
+     "name": "ball_leaf_l"
+    },
+    {
+     "node": 54,
+     "parent": 55,
+     "name": "ball_l"
+    },
+    {
+     "node": 55,
+     "parent": 56,
+     "name": "foot_l"
+    },
+    {
+     "node": 56,
+     "parent": 57,
+     "name": "calf_l"
+    },
+    {
+     "node": 57,
+     "parent": 63,
+     "name": "thigh_l"
+    },
+    {
+     "node": 58,
+     "parent": 59,
+     "name": "ball_leaf_r"
+    },
+    {
+     "node": 59,
+     "parent": 60,
+     "name": "ball_r"
+    },
+    {
+     "node": 60,
+     "parent": 61,
+     "name": "foot_r"
+    },
+    {
+     "node": 61,
+     "parent": 62,
+     "name": "calf_r"
+    },
+    {
+     "node": 62,
+     "parent": 63,
+     "name": "thigh_r"
+    },
+    {
+     "node": 63,
+     "parent": 64,
+     "name": "pelvis"
+    },
+    {
+     "node": 64,
+     "parent": null,
+     "name": "root"
+    }
+   ]
+  },
+  "ubc_female": {
+   "joints": [
+    {
+     "node": 0,
+     "parent": 1,
+     "name": "Head"
+    },
+    {
+     "node": 1,
+     "parent": 50,
+     "name": "neck_01"
+    },
+    {
+     "node": 2,
+     "parent": 3,
+     "name": "index_04_leaf_l"
+    },
+    {
+     "node": 3,
+     "parent": 4,
+     "name": "index_03_l"
+    },
+    {
+     "node": 4,
+     "parent": 5,
+     "name": "index_02_l"
+    },
+    {
+     "node": 5,
+     "parent": 22,
+     "name": "index_01_l"
+    },
+    {
+     "node": 6,
+     "parent": 7,
+     "name": "middle_04_leaf_l"
+    },
+    {
+     "node": 7,
+     "parent": 8,
+     "name": "middle_03_l"
+    },
+    {
+     "node": 8,
+     "parent": 9,
+     "name": "middle_02_l"
+    },
+    {
+     "node": 9,
+     "parent": 22,
+     "name": "middle_01_l"
+    },
+    {
+     "node": 10,
+     "parent": 11,
+     "name": "pinky_04_leaf_l"
+    },
+    {
+     "node": 11,
+     "parent": 12,
+     "name": "pinky_03_l"
+    },
+    {
+     "node": 12,
+     "parent": 13,
+     "name": "pinky_02_l"
+    },
+    {
+     "node": 13,
+     "parent": 22,
+     "name": "pinky_01_l"
+    },
+    {
+     "node": 14,
+     "parent": 15,
+     "name": "ring_04_leaf_l"
+    },
+    {
+     "node": 15,
+     "parent": 16,
+     "name": "ring_03_l"
+    },
+    {
+     "node": 16,
+     "parent": 17,
+     "name": "ring_02_l"
+    },
+    {
+     "node": 17,
+     "parent": 22,
+     "name": "ring_01_l"
+    },
+    {
+     "node": 18,
+     "parent": 19,
+     "name": "thumb_04_leaf_l"
+    },
+    {
+     "node": 19,
+     "parent": 20,
+     "name": "thumb_03_l"
+    },
+    {
+     "node": 20,
+     "parent": 21,
+     "name": "thumb_02_l"
+    },
+    {
+     "node": 21,
+     "parent": 22,
+     "name": "thumb_01_l"
+    },
+    {
+     "node": 22,
+     "parent": 23,
+     "name": "hand_l"
+    },
+    {
+     "node": 23,
+     "parent": 24,
+     "name": "lowerarm_l"
+    },
+    {
+     "node": 24,
+     "parent": 25,
+     "name": "upperarm_l"
+    },
+    {
+     "node": 25,
+     "parent": 50,
+     "name": "clavicle_l"
+    },
+    {
+     "node": 26,
+     "parent": 27,
+     "name": "index_04_leaf_r"
+    },
+    {
+     "node": 27,
+     "parent": 28,
+     "name": "index_03_r"
+    },
+    {
+     "node": 28,
+     "parent": 29,
+     "name": "index_02_r"
+    },
+    {
+     "node": 29,
+     "parent": 46,
+     "name": "index_01_r"
+    },
+    {
+     "node": 30,
+     "parent": 31,
+     "name": "middle_04_leaf_r"
+    },
+    {
+     "node": 31,
+     "parent": 32,
+     "name": "middle_03_r"
+    },
+    {
+     "node": 32,
+     "parent": 33,
+     "name": "middle_02_r"
+    },
+    {
+     "node": 33,
+     "parent": 46,
+     "name": "middle_01_r"
+    },
+    {
+     "node": 34,
+     "parent": 35,
+     "name": "pinky_04_leaf_r"
+    },
+    {
+     "node": 35,
+     "parent": 36,
+     "name": "pinky_03_r"
+    },
+    {
+     "node": 36,
+     "parent": 37,
+     "name": "pinky_02_r"
+    },
+    {
+     "node": 37,
+     "parent": 46,
+     "name": "pinky_01_r"
+    },
+    {
+     "node": 38,
+     "parent": 39,
+     "name": "ring_04_leaf_r"
+    },
+    {
+     "node": 39,
+     "parent": 40,
+     "name": "ring_03_r"
+    },
+    {
+     "node": 40,
+     "parent": 41,
+     "name": "ring_02_r"
+    },
+    {
+     "node": 41,
+     "parent": 46,
+     "name": "ring_01_r"
+    },
+    {
+     "node": 42,
+     "parent": 43,
+     "name": "thumb_04_leaf_r"
+    },
+    {
+     "node": 43,
+     "parent": 44,
+     "name": "thumb_03_r"
+    },
+    {
+     "node": 44,
+     "parent": 45,
+     "name": "thumb_02_r"
+    },
+    {
+     "node": 45,
+     "parent": 46,
+     "name": "thumb_01_r"
+    },
+    {
+     "node": 46,
+     "parent": 47,
+     "name": "hand_r"
+    },
+    {
+     "node": 47,
+     "parent": 48,
+     "name": "lowerarm_r"
+    },
+    {
+     "node": 48,
+     "parent": 49,
+     "name": "upperarm_r"
+    },
+    {
+     "node": 49,
+     "parent": 50,
+     "name": "clavicle_r"
+    },
+    {
+     "node": 50,
+     "parent": 51,
+     "name": "spine_03"
+    },
+    {
+     "node": 51,
+     "parent": 52,
+     "name": "spine_02"
+    },
+    {
+     "node": 52,
+     "parent": 63,
+     "name": "spine_01"
+    },
+    {
+     "node": 53,
+     "parent": 54,
+     "name": "ball_leaf_l"
+    },
+    {
+     "node": 54,
+     "parent": 55,
+     "name": "ball_l"
+    },
+    {
+     "node": 55,
+     "parent": 56,
+     "name": "foot_l"
+    },
+    {
+     "node": 56,
+     "parent": 57,
+     "name": "calf_l"
+    },
+    {
+     "node": 57,
+     "parent": 63,
+     "name": "thigh_l"
+    },
+    {
+     "node": 58,
+     "parent": 59,
+     "name": "ball_leaf_r"
+    },
+    {
+     "node": 59,
+     "parent": 60,
+     "name": "ball_r"
+    },
+    {
+     "node": 60,
+     "parent": 61,
+     "name": "foot_r"
+    },
+    {
+     "node": 61,
+     "parent": 62,
+     "name": "calf_r"
+    },
+    {
+     "node": 62,
+     "parent": 63,
+     "name": "thigh_r"
+    },
+    {
+     "node": 63,
+     "parent": 64,
+     "name": "pelvis"
+    },
+    {
+     "node": 64,
+     "parent": null,
+     "name": "root"
+    }
+   ]
+  }
+ },
+ "cases": [
+  {
+   "name": "xbot: 穿刺①/素体检查的映射",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 57,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "michelle: 穿刺①/素体检查的映射",
+   "skeleton": "michelle",
+   "rig": {
+    "humanoid": {
+     "head": 1,
+     "neck": 2,
+     "leftThumbDistal": 4,
+     "leftThumbProximal": 5,
+     "leftThumbMetacarpal": 6,
+     "leftIndexDistal": 8,
+     "leftIndexIntermediate": 9,
+     "leftIndexProximal": 10,
+     "leftMiddleDistal": 12,
+     "leftMiddleIntermediate": 13,
+     "leftMiddleProximal": 14,
+     "leftRingDistal": 16,
+     "leftRingIntermediate": 17,
+     "leftRingProximal": 18,
+     "leftLittleDistal": 20,
+     "leftLittleIntermediate": 21,
+     "leftLittleProximal": 22,
+     "leftHand": 23,
+     "leftLowerArm": 24,
+     "leftUpperArm": 25,
+     "leftShoulder": 26,
+     "rightThumbDistal": 28,
+     "rightThumbProximal": 29,
+     "rightThumbMetacarpal": 30,
+     "rightIndexDistal": 32,
+     "rightIndexIntermediate": 33,
+     "rightIndexProximal": 34,
+     "rightMiddleDistal": 36,
+     "rightMiddleIntermediate": 37,
+     "rightMiddleProximal": 38,
+     "rightRingDistal": 40,
+     "rightRingIntermediate": 41,
+     "rightRingProximal": 42,
+     "rightLittleDistal": 44,
+     "rightLittleIntermediate": 45,
+     "rightLittleProximal": 46,
+     "rightHand": 47,
+     "rightLowerArm": 48,
+     "rightUpperArm": 49,
+     "rightShoulder": 50,
+     "upperChest": 51,
+     "chest": 52,
+     "spine": 53,
+     "leftToes": 55,
+     "leftFoot": 56,
+     "leftLowerLeg": 57,
+     "leftUpperLeg": 58,
+     "rightToes": 60,
+     "rightFoot": 61,
+     "rightLowerLeg": 62,
+     "rightUpperLeg": 63,
+     "hips": 64
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "vrm1_twist: 穿刺①/素体检查的映射",
+   "skeleton": "vrm1_twist",
+   "rig": {
+    "humanoid": {
+     "chest": 22,
+     "head": 25,
+     "hips": 4,
+     "leftEye": 26,
+     "leftFoot": 162,
+     "leftHand": 98,
+     "leftIndexDistal": 101,
+     "leftIndexIntermediate": 100,
+     "leftIndexProximal": 99,
+     "leftLittleDistal": 105,
+     "leftLittleIntermediate": 104,
+     "leftLittleProximal": 103,
+     "leftLowerArm": 97,
+     "leftLowerLeg": 161,
+     "leftMiddleDistal": 109,
+     "leftMiddleIntermediate": 108,
+     "leftMiddleProximal": 107,
+     "leftRingDistal": 113,
+     "leftRingIntermediate": 112,
+     "leftRingProximal": 111,
+     "leftShoulder": 88,
+     "leftThumbDistal": 117,
+     "leftThumbMetacarpal": 115,
+     "leftThumbProximal": 116,
+     "leftToes": 163,
+     "leftUpperArm": 96,
+     "leftUpperLeg": 160,
+     "neck": 24,
+     "rightEye": 27,
+     "rightFoot": 167,
+     "rightHand": 132,
+     "rightIndexDistal": 135,
+     "rightIndexIntermediate": 134,
+     "rightIndexProximal": 133,
+     "rightLittleDistal": 139,
+     "rightLittleIntermediate": 138,
+     "rightLittleProximal": 137,
+     "rightLowerArm": 131,
+     "rightLowerLeg": 166,
+     "rightMiddleDistal": 143,
+     "rightMiddleIntermediate": 142,
+     "rightMiddleProximal": 141,
+     "rightRingDistal": 147,
+     "rightRingIntermediate": 146,
+     "rightRingProximal": 145,
+     "rightShoulder": 122,
+     "rightThumbDistal": 151,
+     "rightThumbMetacarpal": 149,
+     "rightThumbProximal": 150,
+     "rightToes": 168,
+     "rightUpperArm": 130,
+     "rightUpperLeg": 165,
+     "spine": 21,
+     "upperChest": 23
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "vrm0_girl: 穿刺①/素体检查的映射",
+   "skeleton": "vrm0_girl",
+   "rig": {
+    "humanoid": {
+     "hips": 1,
+     "leftUpperLeg": 139,
+     "rightUpperLeg": 150,
+     "leftLowerLeg": 146,
+     "rightLowerLeg": 157,
+     "leftFoot": 147,
+     "rightFoot": 158,
+     "spine": 2,
+     "chest": 3,
+     "neck": 9,
+     "head": 10,
+     "leftShoulder": 83,
+     "rightShoulder": 111,
+     "leftUpperArm": 84,
+     "rightUpperArm": 112,
+     "leftLowerArm": 89,
+     "rightLowerArm": 117,
+     "leftHand": 90,
+     "rightHand": 118,
+     "leftToes": 148,
+     "rightToes": 159,
+     "leftEye": 11,
+     "rightEye": 12,
+     "leftThumbMetacarpal": 107,
+     "leftThumbProximal": 108,
+     "leftThumbDistal": 109,
+     "leftIndexProximal": 91,
+     "leftIndexIntermediate": 92,
+     "leftIndexDistal": 93,
+     "leftMiddleProximal": 99,
+     "leftMiddleIntermediate": 100,
+     "leftMiddleDistal": 101,
+     "leftRingProximal": 103,
+     "leftRingIntermediate": 104,
+     "leftRingDistal": 105,
+     "leftLittleProximal": 95,
+     "leftLittleIntermediate": 96,
+     "leftLittleDistal": 97,
+     "rightThumbMetacarpal": 135,
+     "rightThumbProximal": 136,
+     "rightThumbDistal": 137,
+     "rightIndexProximal": 119,
+     "rightIndexIntermediate": 120,
+     "rightIndexDistal": 121,
+     "rightMiddleProximal": 127,
+     "rightMiddleIntermediate": 128,
+     "rightMiddleDistal": 129,
+     "rightRingProximal": 131,
+     "rightRingIntermediate": 132,
+     "rightRingDistal": 133,
+     "rightLittleProximal": 123,
+     "rightLittleIntermediate": 124,
+     "rightLittleDistal": 125,
+     "upperChest": 4
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "ubc_male: 穿刺①/素体检查的映射",
+   "skeleton": "ubc_male",
+   "rig": {
+    "humanoid": {
+     "head": 0,
+     "neck": 1,
+     "leftIndexDistal": 3,
+     "leftIndexIntermediate": 4,
+     "leftIndexProximal": 5,
+     "leftMiddleDistal": 7,
+     "leftMiddleIntermediate": 8,
+     "leftMiddleProximal": 9,
+     "leftLittleDistal": 11,
+     "leftLittleIntermediate": 12,
+     "leftLittleProximal": 13,
+     "leftRingDistal": 15,
+     "leftRingIntermediate": 16,
+     "leftRingProximal": 17,
+     "leftThumbDistal": 19,
+     "leftThumbProximal": 20,
+     "leftThumbMetacarpal": 21,
+     "leftHand": 22,
+     "leftLowerArm": 23,
+     "leftUpperArm": 24,
+     "leftShoulder": 25,
+     "rightIndexDistal": 27,
+     "rightIndexIntermediate": 28,
+     "rightIndexProximal": 29,
+     "rightMiddleDistal": 31,
+     "rightMiddleIntermediate": 32,
+     "rightMiddleProximal": 33,
+     "rightLittleDistal": 35,
+     "rightLittleIntermediate": 36,
+     "rightLittleProximal": 37,
+     "rightRingDistal": 39,
+     "rightRingIntermediate": 40,
+     "rightRingProximal": 41,
+     "rightThumbDistal": 43,
+     "rightThumbProximal": 44,
+     "rightThumbMetacarpal": 45,
+     "rightHand": 46,
+     "rightLowerArm": 47,
+     "rightUpperArm": 48,
+     "rightShoulder": 49,
+     "upperChest": 50,
+     "chest": 51,
+     "spine": 52,
+     "leftToes": 54,
+     "leftFoot": 55,
+     "leftLowerLeg": 56,
+     "leftUpperLeg": 57,
+     "rightToes": 59,
+     "rightFoot": 60,
+     "rightLowerLeg": 61,
+     "rightUpperLeg": 62,
+     "hips": 63
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "ubc_female: 穿刺①/素体检查的映射",
+   "skeleton": "ubc_female",
+   "rig": {
+    "humanoid": {
+     "head": 0,
+     "neck": 1,
+     "leftIndexDistal": 3,
+     "leftIndexIntermediate": 4,
+     "leftIndexProximal": 5,
+     "leftMiddleDistal": 7,
+     "leftMiddleIntermediate": 8,
+     "leftMiddleProximal": 9,
+     "leftLittleDistal": 11,
+     "leftLittleIntermediate": 12,
+     "leftLittleProximal": 13,
+     "leftRingDistal": 15,
+     "leftRingIntermediate": 16,
+     "leftRingProximal": 17,
+     "leftThumbDistal": 19,
+     "leftThumbProximal": 20,
+     "leftThumbMetacarpal": 21,
+     "leftHand": 22,
+     "leftLowerArm": 23,
+     "leftUpperArm": 24,
+     "leftShoulder": 25,
+     "rightIndexDistal": 27,
+     "rightIndexIntermediate": 28,
+     "rightIndexProximal": 29,
+     "rightMiddleDistal": 31,
+     "rightMiddleIntermediate": 32,
+     "rightMiddleProximal": 33,
+     "rightLittleDistal": 35,
+     "rightLittleIntermediate": 36,
+     "rightLittleProximal": 37,
+     "rightRingDistal": 39,
+     "rightRingIntermediate": 40,
+     "rightRingProximal": 41,
+     "rightThumbDistal": 43,
+     "rightThumbProximal": 44,
+     "rightThumbMetacarpal": 45,
+     "rightHand": 46,
+     "rightLowerArm": 47,
+     "rightUpperArm": 48,
+     "rightShoulder": 49,
+     "upperChest": 50,
+     "chest": 51,
+     "spine": 52,
+     "leftToes": 54,
+     "leftFoot": 55,
+     "leftLowerLeg": 56,
+     "leftUpperLeg": 57,
+     "rightToes": 59,
+     "rightFoot": 60,
+     "rightLowerLeg": 61,
+     "rightUpperLeg": 62,
+     "hips": 63
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "robot_expressive: Body 作 hips，脚挂在控制骨下",
+   "skeleton": "robot_expressive",
+   "rig": {
+    "humanoid": {
+     "leftFoot": 3,
+     "hips": 6,
+     "spine": 8,
+     "chest": 9,
+     "upperChest": 10,
+     "neck": 11,
+     "head": 12,
+     "leftShoulder": 15,
+     "leftUpperArm": 17,
+     "leftLowerArm": 19,
+     "leftHand": 20,
+     "leftMiddleProximal": 21,
+     "leftMiddleIntermediate": 22,
+     "leftThumbProximal": 24,
+     "leftThumbDistal": 25,
+     "leftIndexProximal": 28,
+     "leftIndexIntermediate": 29,
+     "leftRingProximal": 32,
+     "leftRingIntermediate": 33,
+     "rightShoulder": 35,
+     "rightUpperArm": 37,
+     "rightLowerArm": 39,
+     "rightHand": 40,
+     "rightMiddleProximal": 41,
+     "rightMiddleIntermediate": 42,
+     "rightThumbProximal": 44,
+     "rightThumbDistal": 45,
+     "rightIndexProximal": 48,
+     "rightIndexIntermediate": 49,
+     "rightRingProximal": 52,
+     "rightRingIntermediate": 53,
+     "leftUpperLeg": 55,
+     "leftLowerLeg": 57,
+     "rightUpperLeg": 60,
+     "rightLowerLeg": 62,
+     "rightFoot": 67
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftFoot",
+   "reason": "hierarchy"
+  },
+  {
+   "name": "robot_expressive: Hips 作 hips，腿挂在 Body 下",
+   "skeleton": "robot_expressive",
+   "rig": {
+    "humanoid": {
+     "leftFoot": 3,
+     "hips": 8,
+     "spine": 9,
+     "chest": 10,
+     "neck": 11,
+     "head": 12,
+     "leftShoulder": 15,
+     "leftUpperArm": 17,
+     "leftLowerArm": 19,
+     "leftHand": 20,
+     "leftMiddleProximal": 21,
+     "leftMiddleIntermediate": 22,
+     "leftThumbProximal": 24,
+     "leftThumbDistal": 25,
+     "leftIndexProximal": 28,
+     "leftIndexIntermediate": 29,
+     "leftRingProximal": 32,
+     "leftRingIntermediate": 33,
+     "rightShoulder": 35,
+     "rightUpperArm": 37,
+     "rightLowerArm": 39,
+     "rightHand": 40,
+     "rightMiddleProximal": 41,
+     "rightMiddleIntermediate": 42,
+     "rightThumbProximal": 44,
+     "rightThumbDistal": 45,
+     "rightIndexProximal": 48,
+     "rightIndexIntermediate": 49,
+     "rightRingProximal": 52,
+     "rightRingIntermediate": 53,
+     "leftUpperLeg": 55,
+     "leftLowerLeg": 57,
+     "rightUpperLeg": 60,
+     "rightLowerLeg": 62,
+     "rightFoot": 67
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftUpperLeg",
+   "reason": "hierarchy"
+  },
+  {
+   "name": "xbot: 缺必需骨骼 leftFoot",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 57,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftFoot",
+   "reason": "missing_required"
+  },
+  {
+   "name": "xbot: 缺可选骨骼 chest 与 upperChest，neck 越级挂在 spine 下",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "spine": 55,
+     "leftToes": 57,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "xbot: 缺全部手指与脚趾",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "xbot: leftToes 与 leftFoot 映射到同一节点",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 58,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftToes",
+   "reason": "duplicate_node"
+  },
+  {
+   "name": "xbot: 可选骨骼违反嵌入（食指第一、三节对调）",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 12,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 10,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 57,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftIndexProximal",
+   "reason": "hierarchy"
+  },
+  {
+   "name": "xbot: 左右腿对调",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 57,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 65,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 60,
+     "hips": 66
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftLowerLeg",
+   "reason": "hierarchy"
+  },
+  {
+   "name": "xbot: 未知的骨骼名",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 1,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 57,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66,
+     "leftUpperArmTwist": 26
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftUpperArmTwist",
+   "reason": "unknown_bone"
+  },
+  {
+   "name": "xbot: 映射到不是关节的节点",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {
+     "leftEye": 67,
+     "rightEye": 2,
+     "head": 3,
+     "neck": 4,
+     "leftThumbDistal": 6,
+     "leftThumbProximal": 7,
+     "leftThumbMetacarpal": 8,
+     "leftIndexDistal": 10,
+     "leftIndexIntermediate": 11,
+     "leftIndexProximal": 12,
+     "leftMiddleDistal": 14,
+     "leftMiddleIntermediate": 15,
+     "leftMiddleProximal": 16,
+     "leftRingDistal": 18,
+     "leftRingIntermediate": 19,
+     "leftRingProximal": 20,
+     "leftLittleDistal": 22,
+     "leftLittleIntermediate": 23,
+     "leftLittleProximal": 24,
+     "leftHand": 25,
+     "leftLowerArm": 26,
+     "leftUpperArm": 27,
+     "leftShoulder": 28,
+     "rightLittleDistal": 30,
+     "rightLittleIntermediate": 31,
+     "rightLittleProximal": 32,
+     "rightRingDistal": 34,
+     "rightRingIntermediate": 35,
+     "rightRingProximal": 36,
+     "rightMiddleDistal": 38,
+     "rightMiddleIntermediate": 39,
+     "rightMiddleProximal": 40,
+     "rightIndexDistal": 42,
+     "rightIndexIntermediate": 43,
+     "rightIndexProximal": 44,
+     "rightThumbDistal": 46,
+     "rightThumbProximal": 47,
+     "rightThumbMetacarpal": 48,
+     "rightHand": 49,
+     "rightLowerArm": 50,
+     "rightUpperArm": 51,
+     "rightShoulder": 52,
+     "upperChest": 53,
+     "chest": 54,
+     "spine": 55,
+     "leftToes": 57,
+     "leftFoot": 58,
+     "leftLowerLeg": 59,
+     "leftUpperLeg": 60,
+     "rightToes": 62,
+     "rightFoot": 63,
+     "rightLowerLeg": 64,
+     "rightUpperLeg": 65,
+     "hips": 66
+    }
+   },
+   "valid": false,
+   "field": "rig.humanoid.leftEye",
+   "reason": "not_joint"
+  },
+  {
+   "name": "xbot: 空映射",
+   "skeleton": "xbot",
+   "rig": {
+    "humanoid": {}
+   },
+   "valid": false,
+   "field": "rig.humanoid.hips",
+   "reason": "missing_required"
+  },
+  {
+   "name": "xbot: 只有约束、没有人形映射",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "rotation",
+      "source": 25,
+      "weight": 0.5
+     }
+    ]
+   },
+   "valid": true
+  },
+  {
+   "name": "vrm1_twist: VRMC_node_constraint 原样",
+   "skeleton": "vrm1_twist",
+   "rig": {
+    "humanoid": {
+     "chest": 22,
+     "head": 25,
+     "hips": 4,
+     "leftEye": 26,
+     "leftFoot": 162,
+     "leftHand": 98,
+     "leftIndexDistal": 101,
+     "leftIndexIntermediate": 100,
+     "leftIndexProximal": 99,
+     "leftLittleDistal": 105,
+     "leftLittleIntermediate": 104,
+     "leftLittleProximal": 103,
+     "leftLowerArm": 97,
+     "leftLowerLeg": 161,
+     "leftMiddleDistal": 109,
+     "leftMiddleIntermediate": 108,
+     "leftMiddleProximal": 107,
+     "leftRingDistal": 113,
+     "leftRingIntermediate": 112,
+     "leftRingProximal": 111,
+     "leftShoulder": 88,
+     "leftThumbDistal": 117,
+     "leftThumbMetacarpal": 115,
+     "leftThumbProximal": 116,
+     "leftToes": 163,
+     "leftUpperArm": 96,
+     "leftUpperLeg": 160,
+     "neck": 24,
+     "rightEye": 27,
+     "rightFoot": 167,
+     "rightHand": 132,
+     "rightIndexDistal": 135,
+     "rightIndexIntermediate": 134,
+     "rightIndexProximal": 133,
+     "rightLittleDistal": 139,
+     "rightLittleIntermediate": 138,
+     "rightLittleProximal": 137,
+     "rightLowerArm": 131,
+     "rightLowerLeg": 166,
+     "rightMiddleDistal": 143,
+     "rightMiddleIntermediate": 142,
+     "rightMiddleProximal": 141,
+     "rightRingDistal": 147,
+     "rightRingIntermediate": 146,
+     "rightRingProximal": 145,
+     "rightShoulder": 122,
+     "rightThumbDistal": 151,
+     "rightThumbMetacarpal": 149,
+     "rightThumbProximal": 150,
+     "rightToes": 168,
+     "rightUpperArm": 130,
+     "rightUpperLeg": 165,
+     "spine": 21,
+     "upperChest": 23
+    },
+    "constraints": [
+     {
+      "node": 5,
+      "kind": "aim",
+      "source": 161,
+      "weight": 1,
+      "aim_axis": "NegativeY"
+     },
+     {
+      "node": 13,
+      "kind": "aim",
+      "source": 166,
+      "weight": 1,
+      "aim_axis": "NegativeY"
+     },
+     {
+      "node": 89,
+      "kind": "aim",
+      "source": 97,
+      "weight": 1,
+      "aim_axis": "PositiveX"
+     },
+     {
+      "node": 90,
+      "kind": "roll",
+      "source": 96,
+      "weight": 0.5,
+      "roll_axis": "X"
+     },
+     {
+      "node": 91,
+      "kind": "aim",
+      "source": 97,
+      "weight": 1,
+      "aim_axis": "PositiveX"
+     },
+     {
+      "node": 119,
+      "kind": "roll",
+      "source": 98,
+      "weight": 1,
+      "roll_axis": "X"
+     },
+     {
+      "node": 120,
+      "kind": "roll",
+      "source": 98,
+      "weight": 0.5,
+      "roll_axis": "X"
+     },
+     {
+      "node": 121,
+      "kind": "roll",
+      "source": 97,
+      "weight": 0.5,
+      "roll_axis": "Y"
+     },
+     {
+      "node": 123,
+      "kind": "aim",
+      "source": 131,
+      "weight": 1,
+      "aim_axis": "NegativeX"
+     },
+     {
+      "node": 124,
+      "kind": "roll",
+      "source": 130,
+      "weight": 0.5,
+      "roll_axis": "X"
+     },
+     {
+      "node": 125,
+      "kind": "aim",
+      "source": 131,
+      "weight": 1,
+      "aim_axis": "NegativeX"
+     },
+     {
+      "node": 153,
+      "kind": "roll",
+      "source": 132,
+      "weight": 1,
+      "roll_axis": "X"
+     },
+     {
+      "node": 154,
+      "kind": "roll",
+      "source": 132,
+      "weight": 0.5,
+      "roll_axis": "X"
+     },
+     {
+      "node": 155,
+      "kind": "roll",
+      "source": 131,
+      "weight": 0.5,
+      "roll_axis": "Y"
+     }
+    ]
+   },
+   "valid": true
+  },
+  {
+   "name": "约束：源不是关节",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "roll",
+      "source": 67,
+      "weight": 1,
+      "roll_axis": "X"
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].source",
+   "reason": "not_joint"
+  },
+  {
+   "name": "约束：源越界",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "roll",
+      "source": 100000,
+      "weight": 1,
+      "roll_axis": "X"
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].source",
+   "reason": "not_joint"
+  },
+  {
+   "name": "约束：被约束的节点不是关节",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 67,
+      "kind": "roll",
+      "source": 25,
+      "weight": 1,
+      "roll_axis": "X"
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].node",
+   "reason": "not_joint"
+  },
+  {
+   "name": "约束：源等于被约束的节点",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 25,
+      "kind": "roll",
+      "source": 25,
+      "weight": 1,
+      "roll_axis": "X"
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].source",
+   "reason": "source_is_node"
+  },
+  {
+   "name": "约束：同一节点两条",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "roll",
+      "source": 25,
+      "weight": 1,
+      "roll_axis": "X"
+     },
+     {
+      "node": 26,
+      "kind": "rotation",
+      "source": 27,
+      "weight": 1
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[1].node",
+   "reason": "duplicate_node"
+  },
+  {
+   "name": "约束：roll 缺 roll_axis",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "roll",
+      "source": 25,
+      "weight": 1
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].roll_axis",
+   "reason": "invalid"
+  },
+  {
+   "name": "约束：rotation 带 aim_axis",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "rotation",
+      "source": 25,
+      "weight": 1,
+      "aim_axis": "PositiveX"
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].aim_axis",
+   "reason": "invalid"
+  },
+  {
+   "name": "约束：权重大于 1",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "rotation",
+      "source": 25,
+      "weight": 1.5
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints[0].weight",
+   "reason": "invalid"
+  },
+  {
+   "name": "约束：rotation 互为源，成环",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "rotation",
+      "source": 25,
+      "weight": 1
+     },
+     {
+      "node": 25,
+      "kind": "rotation",
+      "source": 26,
+      "weight": 1
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints",
+   "reason": "cycle"
+  },
+  {
+   "name": "约束：链式依赖不成环",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "rotation",
+      "source": 25,
+      "weight": 1
+     },
+     {
+      "node": 25,
+      "kind": "rotation",
+      "source": 16,
+      "weight": 1
+     }
+    ]
+   },
+   "valid": true
+  },
+  {
+   "name": "约束：aim 的源的祖先受约束、该约束又读 aim 的节点，成环",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 3,
+      "kind": "aim",
+      "source": 10,
+      "weight": 1,
+      "aim_axis": "PositiveY"
+     },
+     {
+      "node": 25,
+      "kind": "rotation",
+      "source": 3,
+      "weight": 1
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints",
+   "reason": "cycle"
+  },
+  {
+   "name": "约束：父级受约束的 aim，父级约束读 aim 的节点，成环",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "aim",
+      "source": 49,
+      "weight": 1,
+      "aim_axis": "PositiveY"
+     },
+     {
+      "node": 27,
+      "kind": "roll",
+      "source": 26,
+      "weight": 1,
+      "roll_axis": "X"
+     }
+    ]
+   },
+   "valid": false,
+   "field": "rig.constraints",
+   "reason": "cycle"
+  },
+  {
+   "name": "约束：父级受约束的 aim，不成环",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "aim",
+      "source": 49,
+      "weight": 1,
+      "aim_axis": "PositiveY"
+     },
+     {
+      "node": 27,
+      "kind": "roll",
+      "source": 55,
+      "weight": 1,
+      "roll_axis": "X"
+     }
+    ]
+   },
+   "valid": true
+  },
+  {
+   "name": "约束：roll 只看源本身，源的祖先受约束不算依赖",
+   "skeleton": "xbot",
+   "rig": {
+    "constraints": [
+     {
+      "node": 26,
+      "kind": "roll",
+      "source": 14,
+      "weight": 1,
+      "roll_axis": "X"
+     },
+     {
+      "node": 25,
+      "kind": "rotation",
+      "source": 26,
+      "weight": 1
+     }
+    ]
+   },
+   "valid": true
+  }
+ ]
+}

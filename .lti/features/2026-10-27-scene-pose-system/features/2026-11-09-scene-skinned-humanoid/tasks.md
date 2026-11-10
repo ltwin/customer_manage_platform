@@ -4,7 +4,7 @@
 
 - [x] 1.1 OpenAPI：`CreativeModelManifest` 加 `skeleton`；`CreativeModelPayload`、`CreativeModelPreviewPayload`、`CreativeSceneModel` 加 `rig`；`CreativeSceneModelRef` 改为 `content_revision_id` / `builtin` 二选一；`CreativeSceneSetInstanceModel` 的 `model` 加 `builtin`，并加可选的 `material_slots`；`CreativeAssetFromGLBPayload` 加 `rig`；`/creative/scene-models/{file}` 路径随 2.1 的 handler 一起加；`CreativeFieldDetails` 加可选的 `reason`；`/creative/scene-textures/{file}` 的 pattern 与媒体类型。运行 `make generate`。完成判据：`go build ./...` 与前端 `tsc -b` 通过，读模型引用的前端调用点先按类型收窄（界面留给 5.1）
 - [x] 1.2 `creativeglb` 的蒙皮子集：先写测试，蒙皮子集的每条规则各一个反例（joint 越界或不在场景树、缺逆绑定矩阵、带 skin 的节点没有 mesh、网格同时被带 skin 与不带 skin 的节点引用、`JOINTS_0` 越界、权重越界或和不为 1、`JOINTS_1`、关节超限）；根节点带旋转、网格节点自身带变换时，蒙皮包围盒与手算结果一致；`Skeleton` 的并集、父关节和 `s1` 指纹；`Matches` 比对骨架。然后实现 `skin.go`，修改 `glb.go`；前端 `sandbox/inspect.ts` 同步镜像（共用 `testdata/cases.json`，两侧须同时通过，故从 4.1 提前）。现有 `creativeglb` 测试与 `scripts/creative-scene-model.test.ts` 全绿
-- [ ] 1.3 `creativescene/rig.go` 与共用测试向量 `testdata/humanoid_rig.json`（`Makefile` 的 `generate` / `generate-check` 复制到前端）。向量覆盖：穿刺①的五个角色与两个素体的骨架；缺必需骨骼；重复映射；脚挂在控制骨下；可选骨骼越级；约束的源不是关节；源越界；父级受约束的 aim；成环。先写读向量的 Go 测试，再实现 `Validate`
+- [x] 1.3 `creativescene/rig.go` 与共用测试向量 `testdata/humanoid_rig.json`（`Makefile` 的 `generate` / `generate-check` 复制到前端）。向量覆盖：穿刺①的五个角色与两个素体的骨架；缺必需骨骼；重复映射；脚挂在控制骨下；可选骨骼越级；约束的源不是关节；源越界；父级受约束的 aim；成环。先写读向量的 Go 测试，再实现 `Validate`。向量由暂存区脚本从原文件抽取骨架后生成，每例给 `valid` 与第一条问题的 `field`、`reason`（`unknown_bone` / `missing_required` / `not_joint` / `duplicate_node` / `hierarchy` / `invalid` / `limit` / `source_is_node` / `cycle`）；`creativeops.FieldError` 加 `Reason`，`abortFieldError` 填 `details.reason`
 - [ ] 1.4 模型命令与导入：
   - `import.go` 收 `rig`，按 design「服务端的骨架与 `rig` 校验顺序」复核。
   - `commitModelOp` 拒绝带骨架的 GLB。
