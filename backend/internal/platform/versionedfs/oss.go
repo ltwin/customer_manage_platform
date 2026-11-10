@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -156,6 +157,29 @@ func (s *OSS) OpenVersion(ctx context.Context, key, version string, rng *ByteRan
 		return nil, ObjectStat{}, ErrUnknownResult
 	}
 	return result.Body, stat, nil
+}
+
+// SignVersionRead signs a GET for one fixed version, for providers that only
+// accept public HTTPS references. The URL is a bearer grant until it expires.
+func (s *OSS) SignVersionRead(ctx context.Context, key, version string, expires time.Time) (string, error) {
+	if err := validKey(key); err != nil {
+		return "", err
+	}
+	if version == "" {
+		return "", fmt.Errorf("%w: version read signature", ErrState)
+	}
+	result, err := s.api.Presign(ctx, &oss.GetObjectRequest{Bucket: oss.Ptr(s.bucket), Key: oss.Ptr(key), VersionId: oss.Ptr(version)}, oss.PresignExpiration(expires))
+	if err != nil {
+		return "", classify(err)
+	}
+	if result == nil || !strings.HasPrefix(result.URL, "https://") {
+		return "", fmt.Errorf("%w: version read signature is not https", ErrUnknownResult)
+	}
+	// 内网endpoint签出的地址外部取不到；明确报错，而不是让供应商取图失败。
+	if u, err := url.Parse(result.URL); err != nil || strings.Contains(u.Hostname(), "-internal.") {
+		return "", fmt.Errorf("%w: version read signature uses an internal endpoint", ErrState)
+	}
+	return result.URL, nil
 }
 func (s *OSS) PublishVerified(ctx context.Context, key string, body io.Reader, size int64, mime string) (string, error) {
 	if err := validKey(key); err != nil {

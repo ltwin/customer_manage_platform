@@ -50,6 +50,12 @@ type GenerationReferenceOpener interface {
 	OpenGenerationReference(context.Context, GenerationReference) (io.ReadCloser, error)
 }
 
+// GenerationReferenceLinker 给出冻结参考的短期公网只读地址，供只收URL的供应商。
+// 地址指向固定对象版本，内容即冻结字节；授权与有效期由实现按账号复核。
+type GenerationReferenceLinker interface {
+	LinkGenerationReference(context.Context, GenerationReference) (string, error)
+}
+
 // GenerationEvent 是受信Adapter归一化的单份证据。EventKey在attempt内稳定；
 // 修订号是供应商单调整数，没有可比较顺序的矛盾证据必须隔离。
 type GenerationEvent struct {

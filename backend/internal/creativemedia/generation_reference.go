@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -104,8 +105,57 @@ type referenceOpener struct {
 }
 
 func (o *referenceOpener) OpenGenerationReference(ctx context.Context, ref llmgateway.GenerationReference) (io.ReadCloser, error) {
+	key, version, err := o.pin(ctx, ref, o.svc.cfg.ReadPinTTL)
+	if err != nil {
+		return nil, err
+	}
+	body, stat, err := o.svc.adapter.OpenVersion(ctx, key, version, nil)
+	if err != nil {
+		return nil, fmt.Errorf("object storage open: %w", err)
+	}
+	if stat.Size != ref.ByteSize {
+		_ = body.Close()
+		return nil, fmt.Errorf("%w: stored object size %d != frozen %d", creativecontent.ErrNotFound, stat.Size, ref.ByteSize)
+	}
+	return body, nil
+}
+
+// referenceLinkTTL 覆盖供应商受理后取参考图的窗口；读pin同样长，地址有效期内对象不被回收。
+const referenceLinkTTL = 10 * time.Minute
+
+// versionReadSigner 只有能签公网只读地址的存储驱动实现（OSS）；本地驱动不支持。
+type versionReadSigner interface {
+	SignVersionRead(ctx context.Context, key, version string, expires time.Time) (string, error)
+}
+
+// LinkGenerationReference 与打开字节走同一套授权与冻结身份复核，再给出固定版本的签名地址。
+func (o *referenceOpener) LinkGenerationReference(ctx context.Context, ref llmgateway.GenerationReference) (string, error) {
+	signer, ok := o.svc.adapter.(versionReadSigner)
+	if !ok {
+		return "", fmt.Errorf("%w: %s storage cannot sign public reference links", llmgateway.ErrUnavailable, o.svc.adapter.Driver())
+	}
+	key, version, err := o.pin(ctx, ref, referenceLinkTTL)
+	if err != nil {
+		return "", err
+	}
+	stat, err := o.svc.adapter.StatVersion(ctx, key, version)
+	if err != nil {
+		return "", fmt.Errorf("object storage stat: %w", err)
+	}
+	if stat.Size != ref.ByteSize {
+		return "", fmt.Errorf("%w: stored object size %d != frozen %d", creativecontent.ErrNotFound, stat.Size, ref.ByteSize)
+	}
+	location, err := signer.SignVersionRead(ctx, key, version, time.Now().Add(referenceLinkTTL))
+	if err != nil {
+		return "", fmt.Errorf("object storage sign: %w", err)
+	}
+	return location, nil
+}
+
+// pin 复查生成用途授权与冻结身份，并登记读pin，返回固定对象版本。
+func (o *referenceOpener) pin(ctx context.Context, ref llmgateway.GenerationReference, ttl time.Duration) (string, string, error) {
 	if err := validGenerationReference(ref); err != nil {
-		return nil, fmt.Errorf("reference identity: %w", err)
+		return "", "", fmt.Errorf("reference identity: %w", err)
 	}
 	var key, version string
 	err := o.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -135,21 +185,13 @@ func (o *referenceOpener) OpenGenerationReference(ctx context.Context, ref llmga
 		if err != nil {
 			return err
 		}
-		if err := tx.Insert(ctx, "creative_blob_read_pins", []string{"id", "blob_id", "owner_kind", "expires_at"}, "ccpn_"+uuid.NewString(), blobID, "processing", now.Add(o.svc.cfg.ReadPinTTL)); err != nil {
+		if err := tx.Insert(ctx, "creative_blob_read_pins", []string{"id", "blob_id", "owner_kind", "expires_at"}, "ccpn_"+uuid.NewString(), blobID, "processing", now.Add(ttl)); err != nil {
 			return fmt.Errorf("read pin: %w", err)
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
-	body, stat, err := o.svc.adapter.OpenVersion(ctx, key, version, nil)
-	if err != nil {
-		return nil, fmt.Errorf("object storage open: %w", err)
-	}
-	if stat.Size != ref.ByteSize {
-		_ = body.Close()
-		return nil, fmt.Errorf("%w: stored object size %d != frozen %d", creativecontent.ErrNotFound, stat.Size, ref.ByteSize)
-	}
-	return body, nil
+	return key, version, nil
 }

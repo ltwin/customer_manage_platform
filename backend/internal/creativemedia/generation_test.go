@@ -637,6 +637,11 @@ func TestGenerationReferenceOpenerSendsOnlyGrantedBytes(t *testing.T) {
 	if !bytes.Equal(got, raw) {
 		t.Fatal("opened bytes differ from the upload")
 	}
+	// 本地驱动签不出公网地址：明确拒绝，绝不退回别的外发方式。
+	linker := f.svc.GenerationReferenceOpenerFor(f.a).(llmgateway.GenerationReferenceLinker)
+	if _, err := linker.LinkGenerationReference(t.Context(), refs[0]); !errors.Is(err, llmgateway.ErrUnavailable) {
+		t.Fatalf("local storage linked a reference: %v", err)
+	}
 	forged := refs[0]
 	forged.Digest = strings.Repeat("c", 64)
 	if _, err := f.svc.GenerationReferenceOpenerFor(f.a).OpenGenerationReference(t.Context(), forged); err == nil {

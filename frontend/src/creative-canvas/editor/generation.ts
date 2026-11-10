@@ -129,7 +129,13 @@ export const imageParameterKeys = [
 ] as const
 
 const optionLabels: Record<string, Record<string, string>> = {
-  quality: { low: '低画质', medium: '标准画质', high: '高画质' },
+  quality: {
+    low: '低画质',
+    medium: '标准画质',
+    high: '高画质',
+    xhigh: '超高画质',
+    max: '最高画质',
+  },
   background: { auto: '自动', opaque: '不透明', transparent: '透明背景' },
   aspect_ratio: { auto: '自动' },
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,10 +17,10 @@ import (
 )
 
 // AICodeWithImageAdapterVersion 绑定下面的协议映射；字段映射或状态解释变化须升版本。
-const AICodeWithImageAdapterVersion = "aicodewith-images-1"
+const AICodeWithImageAdapterVersion = "aicodewith-images-2"
 
 // aicodewithImageModels 是中转上可用的GPT Image模型；model_key与中转模型名一致。
-var aicodewithImageModels = []string{"gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare"}
+var aicodewithImageModels = []string{"gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "gpt-image-2.6-sunburst", "gpt-image-2.6-flare"}
 
 const (
 	maxAICodeWithTaskBytes = 1 << 20
@@ -33,7 +32,8 @@ const (
 )
 
 // AICodeWithImages 是AiCodeWith异步生图协议：创建任务后轮询，取消接口不生效。
-// 实测结论见 .codestable/features/2026-10-09-image-generation/image-generation-design.md §1。
+// 实测结论见 .codestable/features/2026-10-09-image-generation/image-generation-design.md §1；
+// 2026-11-09中转改版：每个任务只出一张图、按次计费不回报用量、参考图只收公网HTTPS地址。
 type AICodeWithImages struct {
 	client  *http.Client
 	baseURL string
@@ -54,7 +54,6 @@ type aicodewithImageParameters struct {
 	AspectRatio string `json:"aspect_ratio"`
 	Resolution  string `json:"resolution"`
 	Quality     string `json:"quality"`
-	Count       int    `json:"count"`
 	Background  string `json:"background"`
 }
 
@@ -64,24 +63,18 @@ type aicodewithImageRequest struct {
 	Size       string   `json:"size"`
 	Resolution string   `json:"resolution,omitempty"`
 	Quality    string   `json:"quality"`
-	N          int      `json:"n"`
 	Background string   `json:"background,omitempty"`
 	ImageURLs  []string `json:"image_urls,omitempty"`
 }
 
 type aicodewithTask struct {
-	ID       string          `json:"id"`
-	Status   string          `json:"status"`
-	Progress *float64        `json:"progress"`
-	Results  []string        `json:"results"`
-	Usage    *aicodewithCost `json:"usage"`
-	Error    json.RawMessage `json:"error"`
-}
-
-type aicodewithCost struct {
-	TextInputTokens   *int64 `json:"text_input_tokens"`
-	ImageInputTokens  *int64 `json:"image_input_tokens"`
-	ImageOutputTokens *int64 `json:"image_output_tokens"`
+	ID         string   `json:"id"`
+	Status     string   `json:"status"`
+	Progress   *float64 `json:"progress"`
+	ResultData []struct {
+		URL string `json:"url"`
+	} `json:"result_data"`
+	Error json.RawMessage `json:"error"`
 }
 
 func (a *AICodeWithImages) Submit(ctx context.Context, call GenerationCall) (GenerationEvent, error) {
@@ -132,7 +125,6 @@ func (a *AICodeWithImages) Observe(ctx context.Context, call GenerationCall) (Ge
 	if err := json.Unmarshal(raw, &task); err != nil || task.ID != call.TaskID {
 		return GenerationEvent{}, fmt.Errorf("%w: aicodewith task answer", ErrProtocol)
 	}
-	usage := task.usage()
 	switch task.Status {
 	case "processing", "pending", "queued":
 		o := GenerationObservation{State: GenerationRunning, TaskID: task.ID}
@@ -144,13 +136,19 @@ func (a *AICodeWithImages) Observe(ctx context.Context, call GenerationCall) (Ge
 		}
 		return GenerationEvent{EventKey: key, Observation: o}, nil
 	case "completed":
-		outputs, err := a.outputs(task.Results)
+		outputs, err := a.outputs(task)
 		if err != nil {
 			return GenerationEvent{}, err
 		}
-		return GenerationEvent{EventKey: "completed", Observation: GenerationObservation{State: GenerationCompleted, TaskID: task.ID, Outputs: outputs}, Usage: usage}, nil
-	case "failed":
-		return GenerationEvent{EventKey: "failed", Observation: GenerationObservation{State: GenerationFailed, TaskID: task.ID, ErrorCode: task.errorCode()}, Usage: usage, Diagnostic: "provider_error=" + task.providerErrorCode()}, nil
+		// 中转不回报用量、按成功张数计费；张数即结果数。
+		return GenerationEvent{EventKey: "completed", Observation: GenerationObservation{State: GenerationCompleted, TaskID: task.ID, Outputs: outputs}, Usage: map[string]int64{"images": int64(len(outputs))}}, nil
+	case "failed", "cancelled":
+		// 失败与取消的任务不扣费（中转文档）。
+		code := task.errorCode()
+		if task.Status == "cancelled" {
+			code = "provider_cancelled"
+		}
+		return GenerationEvent{EventKey: task.Status, Observation: GenerationObservation{State: GenerationFailed, TaskID: task.ID, ErrorCode: code}, Usage: map[string]int64{"images": 0}, Diagnostic: "provider_error=" + task.providerErrorCode()}, nil
 	default:
 		return GenerationEvent{}, fmt.Errorf("%w: aicodewith task state %s", ErrProtocol, providerToken(task.Status))
 	}
@@ -168,10 +166,11 @@ func (a *AICodeWithImages) requestBody(ctx context.Context, call GenerationCall)
 		return nil, fmt.Errorf("%w: aicodewith image model", ErrCapability)
 	}
 	var p aicodewithImageParameters
-	if err := json.Unmarshal(r.Input.Parameters, &p); err != nil || p.AspectRatio == "" || p.Quality == "" || p.Count < 1 {
+	if err := json.Unmarshal(r.Input.Parameters, &p); err != nil || p.AspectRatio == "" || p.Quality == "" {
 		return nil, fmt.Errorf("%w: aicodewith image parameters", ErrValidation)
 	}
-	body := aicodewithImageRequest{Model: r.ModelKey, Prompt: r.Input.Prompt, Size: p.AspectRatio, Quality: p.Quality, N: p.Count}
+	// GPT Image 2与2.5线上中转会丢弃quality，照发无害；2.6按五档校验。
+	body := aicodewithImageRequest{Model: r.ModelKey, Prompt: r.Input.Prompt, Size: p.AspectRatio, Quality: p.Quality}
 	// 中转只在比例格式下解释清晰度；auto时不发，避免与界面置灰的含义不一致。
 	if p.AspectRatio != "auto" {
 		body.Resolution = p.Resolution
@@ -180,15 +179,23 @@ func (a *AICodeWithImages) requestBody(ctx context.Context, call GenerationCall)
 		body.Background = p.Background
 	}
 	for i, ref := range r.Input.References {
-		// 文字参考已经通过句内引用编进提示词，只外发图片字节。
+		// 文字参考已经通过句内引用编进提示词，只外发图片。
 		if ref.Kind != GenerationImage {
 			continue
 		}
-		data, err := readGenerationReference(ctx, call.References, ref)
-		if err != nil {
-			return nil, fmt.Errorf("reference %d (%s) read: %w", i, ref.RevisionID, err)
+		// 中转拒收data URL，只收公网HTTPS；地址指向冻结的固定对象版本。
+		linker, ok := call.References.(GenerationReferenceLinker)
+		if !ok {
+			return nil, fmt.Errorf("%w: generation reference links", ErrUnavailable)
 		}
-		body.ImageURLs = append(body.ImageURLs, "data:"+ref.MIME+";base64,"+base64.StdEncoding.EncodeToString(data))
+		location, err := linker.LinkGenerationReference(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("reference %d (%s) link: %w", i, ref.RevisionID, err)
+		}
+		if u, err := url.Parse(location); err != nil || u.Scheme != "https" || u.Host == "" {
+			return nil, fmt.Errorf("%w: reference %d link is not https", ErrValidation, i)
+		}
+		body.ImageURLs = append(body.ImageURLs, location)
 	}
 	return json.Marshal(body)
 }
@@ -240,34 +247,22 @@ func (a *AICodeWithImages) do(ctx context.Context, method, route string, body []
 	return resp.StatusCode, raw, nil
 }
 
-// outputs 以结果文件名作稳定输出身份；取件地址只进入受保护字段。
-func (a *AICodeWithImages) outputs(results []string) ([]GenerationOutput, error) {
+// outputs 以任务ID加结果文件名作稳定输出身份（文件名只是序号）；取件地址只进入受保护字段。
+func (a *AICodeWithImages) outputs(task aicodewithTask) ([]GenerationOutput, error) {
 	expires := a.now().Add(aicodewithResultTTL)
-	out := make([]GenerationOutput, 0, len(results))
-	for i, location := range results {
-		u, err := url.Parse(location)
+	out := make([]GenerationOutput, 0, len(task.ResultData))
+	for i, result := range task.ResultData {
+		u, err := url.Parse(result.URL)
 		if err != nil || u.Scheme != "https" || u.Host == "" {
 			return nil, fmt.Errorf("%w: aicodewith result location", ErrProtocol)
 		}
-		id := strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
+		id := task.ID + "_" + strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
 		if !generationToken(id) {
 			return nil, fmt.Errorf("%w: aicodewith result identity", ErrProtocol)
 		}
-		out = append(out, GenerationOutput{ID: id, Index: i, Kind: GenerationImage, Media: &GeneratedMedia{MIME: "image/png", ByteSize: aicodewithImageMaxBytes, SizeIsLimit: true, FetchURL: location, ExpiresAt: expires}})
+		out = append(out, GenerationOutput{ID: id, Index: i, Kind: GenerationImage, Media: &GeneratedMedia{MIME: "image/png", ByteSize: aicodewithImageMaxBytes, SizeIsLimit: true, FetchURL: result.URL, ExpiresAt: expires}})
 	}
 	return out, nil
-}
-
-// usage 只在三个计费维度齐全时返回；缺任何一项都等待核实，不按零结算。
-func (t aicodewithTask) usage() map[string]int64 {
-	if t.Usage == nil || t.Usage.TextInputTokens == nil || t.Usage.ImageInputTokens == nil || t.Usage.ImageOutputTokens == nil {
-		return nil
-	}
-	return map[string]int64{
-		"text_input_tokens":   *t.Usage.TextInputTokens,
-		"image_input_tokens":  *t.Usage.ImageInputTokens,
-		"image_output_tokens": *t.Usage.ImageOutputTokens,
-	}
 }
 
 // providerErrorCode 给日志用：结构化code或字符串错误的有界标记，不含原文。

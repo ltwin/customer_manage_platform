@@ -22,6 +22,14 @@ func (r imageReferences) OpenGenerationReference(_ context.Context, ref gw.Gener
 	return io.NopCloser(bytes.NewReader(r[ref.RevisionID])), nil
 }
 
+// LinkGenerationReference 模拟存储签名：地址只由参考身份决定。
+func (r imageReferences) LinkGenerationReference(_ context.Context, ref gw.GenerationReference) (string, error) {
+	return "https://refs.example/" + ref.RevisionID, nil
+}
+
+// bytesOnly 只能打开字节、不能签地址，模拟本地存储驱动。
+type bytesOnly struct{ gw.GenerationReferenceOpener }
+
 func (r imageReferences) ResolveGenerationMedia(_ context.Context, ref gw.GenerationReference) (gw.GenerationMediaMetadata, error) {
 	return gw.GenerationMediaMetadata{RevisionID: ref.RevisionID, Digest: ref.Digest, ExtractorVersion: "test", Kind: ref.Kind, MIME: ref.MIME, ByteSize: ref.ByteSize}, nil
 }
@@ -70,13 +78,32 @@ func TestAICodeWithImagePolicyDefaultsLimitsAndBound(t *testing.T) {
 	if params["aspect_ratio"] != "1:1" || params["resolution"] != "2K" || params["quality"] != "medium" || params["count"] != float64(1) {
 		t.Fatalf("defaults %v", params)
 	}
-	// 预留按三个维度的硬上界：48000×5 + 18000×7.3 + 64000×27.2 微美元。
-	if q := result.Prepared.Quote(); q.UpperBoundMicros == nil || *q.UpperBoundMicros != 2_112_200 {
-		t.Fatalf("upper bound %+v", q)
+	// 按张计费：预留按最贵档（4K）保守取上界，估算与结算按所选清晰度；失败不扣费。
+	if q := result.Prepared.Quote(); q.UpperBoundMicros == nil || *q.UpperBoundMicros != 160_000 || q.EstimateMicros != 80_000 {
+		t.Fatalf("upper bound %d %+v", *q.UpperBoundMicros, q)
 	}
-	settled, err := result.Prepared.PriceUsage(map[string]int64{"text_input_tokens": 25, "image_input_tokens": 0, "image_output_tokens": 3948})
-	if err != nil || settled.TotalMicros != 107_511 {
-		t.Fatalf("settlement %+v %v", settled, err)
+	for images, want := range map[int64]int64{1: 80_000, 0: 0} {
+		settled, err := result.Prepared.PriceUsage(map[string]int64{"images": images})
+		if err != nil || settled.TotalMicros != want {
+			t.Fatalf("settlement of %d images %+v %v", images, settled, err)
+		}
+	}
+	// 2.6按画质加乘，2.5的画质被中转丢弃、不加价。
+	for model, c := range map[string]struct {
+		params string
+		want   int64
+	}{
+		"gpt-image-2.6-sunburst": {`{"resolution":"4K","quality":"max"}`, 480_000},
+		"gpt-image-2.6-flare":    {`{"resolution":"1K","quality":"low"}`, 20_000},
+		"gpt-image-2.5-sunburst": {`{"resolution":"1K","quality":"high"}`, 40_000},
+	} {
+		result, err := prepareImage(t, model, c.params, refs)
+		if err != nil || result.Verdict != gw.GenerationAllow || result.Prepared.Quote().EstimateMicros != c.want {
+			t.Fatalf("%s %s: %+v %v", model, c.params, result, err)
+		}
+	}
+	if result, err := prepareImage(t, "gpt-image-2.5-flare", `{"quality":"xhigh"}`, refs); err == nil && result.Verdict == gw.GenerationAllow {
+		t.Fatal("2.5 accepted a 2.6-only quality")
 	}
 
 	for name, c := range map[string]struct {
@@ -84,12 +111,12 @@ func TestAICodeWithImagePolicyDefaultsLimitsAndBound(t *testing.T) {
 		list   []gw.GenerationReference
 		want   gw.GenerationVerdict
 	}{
-		"three images":    {`{"count":3}`, nil, ""},
+		"two images":      {`{"count":2}`, nil, ""},
 		"unknown ratio":   {`{"aspect_ratio":"7:3"}`, nil, ""},
 		"gif reference":   {`{}`, []gw.GenerationReference{refs.ref("gif", "image/gif", gw.GenerationImage)}, gw.GenerationDeny},
 		"text reference":  {`{}`, []gw.GenerationReference{refs.ref("note", "text/plain", gw.GenerationText)}, gw.GenerationAllow},
 		"tenth reference": {`{}`, slicesRepeat(refs.ref("png", "image/png", gw.GenerationImage), 10), gw.GenerationDeny},
-		"ninth reference": {`{"aspect_ratio":"auto","count":4,"quality":"high"}`, slicesRepeat(refs.ref("png", "image/png", gw.GenerationImage), 9), gw.GenerationAllow},
+		"ninth reference": {`{"aspect_ratio":"auto","quality":"high"}`, slicesRepeat(refs.ref("png", "image/png", gw.GenerationImage), 9), gw.GenerationAllow},
 	} {
 		t.Run(name, func(t *testing.T) {
 			result, err := prepareImage(t, "gpt-image-2", c.params, refs, c.list...)
@@ -159,7 +186,7 @@ func relayAdapter(t *testing.T, r *relay) *gw.AICodeWithImages {
 
 func TestAICodeWithImageSubmitSendsVerifiedReferencesOnly(t *testing.T) {
 	refs := imageReferences{"a": []byte("first-image"), "note": []byte("说明")}
-	result, err := prepareImage(t, "gpt-image-2", `{"aspect_ratio":"auto","resolution":"4K","count":2,"background":"transparent"}`, refs,
+	result, err := prepareImage(t, "gpt-image-2", `{"aspect_ratio":"auto","resolution":"4K","background":"transparent"}`, refs,
 		refs.ref("a", "image/png", gw.GenerationImage), refs.ref("note", "text/plain", gw.GenerationText))
 	if err != nil || result.Verdict != gw.GenerationAllow {
 		t.Fatalf("prepare %+v %v", result, err)
@@ -174,24 +201,23 @@ func TestAICodeWithImageSubmitSendsVerifiedReferencesOnly(t *testing.T) {
 	if err != nil || event.Observation.State != gw.GenerationAccepted || event.Observation.TaskID != "task-1" {
 		t.Fatalf("submit %+v %v", event, err)
 	}
-	// auto比例不带清晰度；只外发图片，文字参考已在提示词里。
+	// auto比例不带清晰度；只外发图片地址，文字参考已在提示词里；中转一次一张，不发n。
 	urls, _ := sent["image_urls"].([]any)
-	if sent["size"] != "auto" || sent["resolution"] != nil || sent["n"] != float64(2) || sent["background"] != "transparent" || len(urls) != 1 ||
-		urls[0] != "data:image/png;base64,Zmlyc3QtaW1hZ2U=" {
+	if sent["size"] != "auto" || sent["resolution"] != nil || sent["n"] != nil || sent["background"] != "transparent" || len(urls) != 1 ||
+		urls[0] != "https://refs.example/a" {
 		t.Fatalf("sent %v", sent)
 	}
 
-	// 字节与冻结摘要不一致时绝不外发。
-	refs["a"] = []byte("tampered!!!")
+	// 存储签不出公网地址时绝不外发，也不退回data URL。
 	calls := 0
 	r.submit = func(map[string]any) (int, string) { calls++; return http.StatusOK, `{"id":"x"}` }
-	if _, err := a.Submit(t.Context(), gw.GenerationCall{Prepared: result.Prepared, References: refs}); !errors.Is(err, gw.ErrConflict) || !errors.Is(err, gw.ErrNotDispatched) || calls != 0 {
-		t.Fatalf("tampered reference: %v calls=%d", err, calls)
+	if _, err := a.Submit(t.Context(), gw.GenerationCall{Prepared: result.Prepared, References: bytesOnly{refs}}); !errors.Is(err, gw.ErrUnavailable) || !errors.Is(err, gw.ErrNotDispatched) || calls != 0 {
+		t.Fatalf("unlinkable reference: %v calls=%d", err, calls)
 	}
 }
 
 func TestAICodeWithImageStatusesMapToEvidence(t *testing.T) {
-	result, err := prepareImage(t, "gpt-image-2.5-sunburst", `{"count":4}`, imageReferences{})
+	result, err := prepareImage(t, "gpt-image-2.6-sunburst", `{"quality":"xhigh"}`, imageReferences{})
 	if err != nil || result.Verdict != gw.GenerationAllow {
 		t.Fatalf("prepare %+v %v", result, err)
 	}
@@ -218,24 +244,28 @@ func TestAICodeWithImageStatusesMapToEvidence(t *testing.T) {
 	if err != nil || event.Observation.State != gw.GenerationRunning || *event.Observation.Progress != 0.4 {
 		t.Fatalf("running %+v %v", event, err)
 	}
-	// 只回了三张也是完成；用量三项齐全才结算。
-	r.task = `{"id":"task-9","status":"completed","progress":100,"results":[
-		"https://files.example/a/file_1a.png","https://files.example/a/file_2b.png","https://files.example/a/file_3c.png"],
-		"usage":{"text_input_tokens":17,"image_input_tokens":0,"image_output_tokens":588,"cost":{"usd":0.016}}}`
+	// 2026-11-09实测形态：结果在result_data，不带用量；按张数结算。
+	r.task = `{"id":"task-9","result_data":[{"url":"https://api.aicodewith.com/media/v/outputs/task-9/0.png"}],"status":"completed"}`
 	event, err = a.Observe(t.Context(), call)
-	if err != nil || event.Observation.State != gw.GenerationCompleted || len(event.Observation.Outputs) != 3 || event.Usage["image_output_tokens"] != 588 {
+	if err != nil || event.Observation.State != gw.GenerationCompleted || len(event.Observation.Outputs) != 1 || event.Usage["images"] != 1 {
 		t.Fatalf("completed %+v %v", event, err)
 	}
 	if err := event.Observation.Validate(result.Prepared.Generation()); err != nil {
 		t.Fatal(err)
 	}
-	if out := event.Observation.Outputs[1]; out.ID != "file_2b" || out.Media.FetchURL != "https://files.example/a/file_2b.png" {
+	if out := event.Observation.Outputs[0]; out.ID != "task-9_0" || out.Media.FetchURL != "https://api.aicodewith.com/media/v/outputs/task-9/0.png" {
 		t.Fatalf("output %+v", out)
 	}
-	r.task = `{"id":"task-9","status":"failed","error":{"code":"content_policy_violation","message":"包含真实人脸"}}`
-	event, err = a.Observe(t.Context(), call)
-	if err != nil || event.Observation.State != gw.GenerationFailed || event.Observation.ErrorCode != "content_policy_violation" || event.Usage != nil {
-		t.Fatalf("failed %+v %v", event, err)
+	// 失败与取消都不扣费。
+	for task, code := range map[string]string{
+		`{"id":"task-9","status":"failed","result_data":[],"error":{"code":"content_policy_violation","message":"包含真实人脸"}}`: "content_policy_violation",
+		`{"id":"task-9","status":"cancelled","result_data":[]}`:                                                             "provider_cancelled",
+	} {
+		r.task = task
+		event, err = a.Observe(t.Context(), call)
+		if err != nil || event.Observation.State != gw.GenerationFailed || event.Observation.ErrorCode != code || event.Usage["images"] != 0 || len(event.Usage) != 1 {
+			t.Fatalf("failed %+v %v", event, err)
+		}
 	}
 	r.task = ""
 	if event, err = a.Cancel(t.Context(), call); err != nil || event.Observation.State != gw.GenerationUnknown {

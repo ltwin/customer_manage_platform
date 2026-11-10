@@ -30,7 +30,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs/versionedfstest"
 )
 
-// fakeRelay 按 2026-10-09 实测的中转形态应答：创建返回任务ID，查询先处理中再完成。
+// fakeRelay 按 2026-11-09 实测的中转形态应答：创建返回任务ID，查询先处理中再完成，结果在result_data且不带用量。
 type fakeRelay struct {
 	mu          sync.Mutex
 	sent        []map[string]any
@@ -63,8 +63,11 @@ func (r *fakeRelay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			_, _ = io.WriteString(w, `{"id":"task-unified-1","status":"processing","progress":40}`)
 			return
 		}
-		raw, _ := json.Marshal(map[string]any{"id": "task-unified-1", "status": "completed", "progress": 100, "results": r.results,
-			"usage": map[string]any{"text_input_tokens": 20, "image_input_tokens": 0, "image_output_tokens": 548}})
+		var data []map[string]string
+		for _, u := range r.results {
+			data = append(data, map[string]string{"url": u})
+		}
+		raw, _ := json.Marshal(map[string]any{"id": "task-unified-1", "status": "completed", "result_data": data})
 		_, _ = w.Write(raw)
 	default:
 		w.WriteHeader(http.StatusNotFound)
@@ -106,7 +109,7 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 
 	png, err := os.ReadFile("../creativemedia/testdata/sample.png")
 	must(t, err)
-	relay := &fakeRelay{results: []string{"https://files.example/i/file_aa11.png", "https://files.example/i/file_bb22.png"}}
+	relay := &fakeRelay{results: []string{"https://files.example/outputs/task-unified-1/0.png"}}
 	relay.fallback = len(fallback) > 0 && fallback[0]
 	server := httptest.NewTLSServer(relay)
 	t.Cleanup(server.Close)
@@ -148,7 +151,7 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 	must(t, err)
 	canvas, err := creativecanvas.GetCanvas(t.Context(), scope, project.CanvasID)
 	must(t, err)
-	model, parameters := "gpt-image-2.5-sunburst", json.RawMessage(`{"aspect_ratio":"2:3","count":2}`)
+	model, parameters := "gpt-image-2.6-sunburst", json.RawMessage(`{"aspect_ratio":"2:3","quality":"high"}`)
 	if relay.fallback {
 		model = "gpt-image-2"
 		parameters = json.RawMessage(`{"aspect_ratio":"2:3","count":1}`)
@@ -179,7 +182,7 @@ func TestImageGenerationRunsThroughTheRelayOnce(t *testing.T) {
 	f := setupImages(t)
 	catalog, err := f.product.Catalog(t.Context(), f.scope)
 	must(t, err)
-	if len(catalog.Models) != 3 || catalog.Models[0].Parameters[0].Default != "1:1" {
+	if len(catalog.Models) != 5 || catalog.Models[0].Parameters[0].Default != "1:1" {
 		t.Fatalf("catalog %+v", catalog)
 	}
 	command := cmd(nil)
@@ -201,10 +204,10 @@ func TestImageGenerationRunsThroughTheRelayOnce(t *testing.T) {
 		t.Fatalf("submitted %d times", len(f.relay.sent))
 	}
 	sent := f.relay.sent[0]
-	if sent["model"] != "gpt-image-2.5-sunburst" || sent["size"] != "2:3" || sent["resolution"] != "2K" || sent["quality"] != "medium" || sent["n"] != float64(2) || sent["prompt"] != "逆光人像，日出" {
+	if sent["model"] != "gpt-image-2.6-sunburst" || sent["size"] != "2:3" || sent["resolution"] != "2K" || sent["quality"] != "high" || sent["n"] != nil || sent["prompt"] != "逆光人像，日出" {
 		t.Fatalf("sent %v", sent)
 	}
-	if count(t, f.db, "SELECT count(*) FROM creative_node_versions") != 2 {
+	if count(t, f.db, "SELECT count(*) FROM creative_node_versions") != 1 {
 		for _, q := range []string{
 			"SELECT state||' '||coalesce(progress::text,'') FROM llm_generation_tasks",
 			"SELECT state FROM llm_requests",
@@ -218,12 +221,12 @@ func TestImageGenerationRunsThroughTheRelayOnce(t *testing.T) {
 			t.Log(q, "=>", v.String)
 		}
 		t.Logf("polls %d", f.relay.polls)
-		t.Fatal("two images were not kept as versions")
+		t.Fatal("the image was not kept as a version")
 	}
-	// 结算按实际token：20×5 + 548×27.2 微美元。
+	// 按张结算：2K一张80000，2.6高画质×1.5。
 	var cost int64
 	must(t, f.db.QueryRow(`SELECT COALESCE(sum(cost_micros),0) FROM llm_usage_measurements WHERE cost_component='generation_total'`).Scan(&cost))
-	if cost != 100+14906 {
+	if cost != 120_000 {
 		t.Fatalf("settled %d", cost)
 	}
 	var state, applied string
@@ -253,8 +256,11 @@ func TestAgentGenerateNodeSubmitsOnce(t *testing.T) {
 			t.Fatalf("not refused: %+v %v", bad, err)
 		}
 	}
-	params, err := f.product.DraftParameters("gpt-image-2", "core.image", map[string]any{"count": float64(4), "quality": "high"})
-	if err != nil || string(params) != `{"count":4,"quality":"high"}` {
+	if _, err := f.product.DraftParameters("gpt-image-2", "core.image", map[string]any{"count": float64(4)}); !errors.As(err, new(*creativegeneration.Refusal)) {
+		t.Fatalf("one image per task, but count 4 was accepted: %v", err)
+	}
+	params, err := f.product.DraftParameters("gpt-image-2.6-flare", "core.image", map[string]any{"quality": "max"})
+	if err != nil || string(params) != `{"quality":"max"}` {
 		t.Fatalf("parameters %s %v", params, err)
 	}
 
@@ -275,10 +281,10 @@ func TestAgentGenerateNodeSubmitsOnce(t *testing.T) {
 	}
 	again, err := f.product.GenerateNode(t.Context(), f.scope, in)
 	must(t, err)
-	if again.State != "succeeded" || again.ApplyState != "applied" || again.ExecutionID != first.ExecutionID || len(again.ContentRevisionIDs) != 2 || len(f.relay.sent) != 1 {
+	if again.State != "succeeded" || again.ApplyState != "applied" || again.ExecutionID != first.ExecutionID || len(again.ContentRevisionIDs) != 1 || len(f.relay.sent) != 1 {
 		t.Fatalf("replay %+v, submitted %d times", again, len(f.relay.sent))
 	}
-	if sent := f.relay.sent[0]; sent["model"] != "gpt-image-2.5-sunburst" || sent["size"] != "2:3" || sent["n"] != float64(2) {
+	if sent := f.relay.sent[0]; sent["model"] != "gpt-image-2.6-sunburst" || sent["size"] != "2:3" || sent["quality"] != "high" {
 		t.Fatalf("sent %v", sent)
 	}
 }
@@ -287,7 +293,7 @@ func TestImageGenerationFallbackPublishesOnce(t *testing.T) {
 	f := setupImages(t, true)
 	catalog, err := f.product.Catalog(t.Context(), f.scope)
 	must(t, err)
-	if len(catalog.Models) != 6 {
+	if len(catalog.Models) != 8 {
 		t.Fatalf("duplicated logical model: %+v", catalog.Models)
 	}
 	c := cmd(nil)

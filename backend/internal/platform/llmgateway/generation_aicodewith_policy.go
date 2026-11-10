@@ -3,12 +3,13 @@ package llmgateway
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // AICodeWithImagePolicyVersion 是内置生图规则的版本；改价格、上界或参数须升级。
-const AICodeWithImagePolicyVersion = "aicodewith-images-2026-10-13"
+const AICodeWithImagePolicyVersion = "aicodewith-images-2026-11-09"
 
-// AICodeWithImageMode 是三个GPT Image模型唯一的模式：带图片参考即为图生图。
+// AICodeWithImageMode 是各GPT Image模型唯一的模式：带图片参考即为图生图。
 const AICodeWithImageMode = "image"
 
 // 参考图数量上限是产品决策（owner 2026-10-09），中转本身允许16张。
@@ -16,26 +17,32 @@ const AICodeWithImageMode = "image"
 const (
 	aicodewithMaxReferenceImages = 9
 	aicodewithMaxReferenceBytes  = 25 << 20
-	aicodewithMaxImages          = 4
 )
 
-// 用量硬上界由实测给出（2026-10-09）：单张输出最多实测8196 token（21:9 4K高画质），
-// 中转对自动比例按约14300 token预留，取16000；参考图无论多大都约1521 token，取2000；
-// 提示词限16000字符，按每字符最多3 token计。超出上界的结算进入争议，不会按零记账。
-const (
-	aicodewithOutputTokensPerImage = 16000
-	aicodewithInputTokensPerImage  = 2000
-	aicodewithMaxPromptChars       = imagePromptLimit
-	aicodewithMaxTextTokens        = 3 * aicodewithMaxPromptChars
-)
+// 中转2026-11改版后按次计费、不回报用量，每个任务只出一张图；失败不扣费。
+// 单价（USD微单位/张）按市场行情估算（owner 2026-11-09：先参照tapnow等，定价不是当前重点），
+// 待按中转账单核实后再升版本。
+var aicodewithResolutionRates = map[string]int64{"1K": 40_000, "2K": 80_000, "4K": 160_000}
 
-// 单价按中转实测费率（USD微单位/token）：图像输出约27.1、图像输入约7.2；
-// 文字输入无法单独测准，按OpenAI公开的5取。结算附中转回报金额作对账证据。
-var (
-	aicodewithTextRate   = GenerationRatio{Numerator: 5, Denominator: 1}
-	aicodewithInputRate  = GenerationRatio{Numerator: 73, Denominator: 10}
-	aicodewithOutputRate = GenerationRatio{Numerator: 272, Denominator: 10}
-)
+// aicodewithQualityFactors 只用于2.6线：中转按 low…max 五档校验并生成（2026-11-09实测）。
+// 2与2.5线的quality被中转丢弃，不加价。
+var aicodewithQualityFactors = []struct {
+	Quality string
+	Factor  GenerationRatio
+}{
+	{"low", GenerationRatio{Numerator: 1, Denominator: 2}},
+	{"high", GenerationRatio{Numerator: 3, Denominator: 2}},
+	{"xhigh", GenerationRatio{Numerator: 2, Denominator: 1}},
+	{"max", GenerationRatio{Numerator: 3, Denominator: 1}},
+}
+
+// aicodewithQualities 是各模型线中转接受的画质档位；2.6之外沿用三档以兼容已有草稿。
+func aicodewithQualities(model string) []string {
+	if strings.HasPrefix(model, "gpt-image-2.6-") {
+		return []string{"low", "medium", "high", "xhigh", "max"}
+	}
+	return []string{"low", "medium", "high"}
+}
 
 // AICodeWithImageRatios 是中转接受的全部比例；auto由模型决定画幅。
 var AICodeWithImageRatios = []string{"auto", "1:1", "1:2", "2:1", "1:3", "3:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21"}
@@ -46,7 +53,7 @@ type AICodeWithImagePolicy = ImagePolicy
 // AICodeWithImageDeploymentID 是模型在当前账号控制面中的部署身份。
 func AICodeWithImageDeploymentID(model string) string { return "aicodewith-images-" + model }
 
-// AICodeWithImagePolicies 编译三个模型的内置规则。currency 必须是网关账本币种。
+// AICodeWithImagePolicies 编译各模型的内置规则。currency 必须是网关账本币种。
 func AICodeWithImagePolicies(currency string) ([]AICodeWithImagePolicy, error) {
 	if currency != "USD" {
 		return nil, fmt.Errorf("%w: aicodewith image prices are in USD", ErrValidation)
@@ -76,8 +83,8 @@ func aicodewithImagePolicy(model, currency string) (GenerationPolicyDefinition, 
 		"properties": map[string]any{
 			"aspect_ratio": map[string]any{"type": "string", "enum": AICodeWithImageRatios},
 			"resolution":   map[string]any{"type": "string", "enum": []string{"1K", "2K", "4K"}},
-			"quality":      map[string]any{"type": "string", "enum": []string{"low", "medium", "high"}},
-			"count":        map[string]any{"type": "integer", "enum": []int{1, 2, 4}},
+			"quality":      map[string]any{"type": "string", "enum": aicodewithQualities(model)},
+			"count":        map[string]any{"type": "integer", "enum": []int{1}},
 			"background":   map[string]any{"type": "string", "enum": []string{"auto", "opaque", "transparent"}},
 		},
 	}
@@ -96,11 +103,20 @@ func aicodewithImagePolicy(model, currency string) (GenerationPolicyDefinition, 
 		}
 		return out
 	}
-	count := GenerationValueRef{Source: "parameter", Field: "count", Unit: "count"}
-	component := func(id, usage string, estimate GenerationValueRef, rate GenerationRatio) GenerationPriceComponent {
-		// 引擎只能用单一事实作估算量，这里的估算不代表费用；预留按上界，结算按实际token。
-		return GenerationPriceComponent{ID: id, Estimate: estimate, Usage: usage, Unit: "count", Divisor: 1, QuantityRound: "exact",
-			Tiers: []GenerationPriceTier{{ID: id + "_base", Fallback: true, Rate: rate}}}
+	param := func(field string, v any) *GenerationCondition {
+		return &GenerationCondition{Op: "eq", Ref: GenerationValueRef{Source: "parameter", Field: field}, Values: values(v)}
+	}
+	var tiers []GenerationPriceTier
+	for _, res := range []string{"1K", "2K", "4K"} {
+		tiers = append(tiers, GenerationPriceTier{ID: "resolution_" + res, When: param("resolution", res), Rate: GenerationRatio{Numerator: aicodewithResolutionRates[res], Denominator: 1}})
+	}
+	// 只有比例才带清晰度；auto与兜底都按最贵档预留，结算同价。
+	tiers = append(tiers, GenerationPriceTier{ID: "resolution_fallback", Fallback: true, Rate: GenerationRatio{Numerator: aicodewithResolutionRates["4K"], Denominator: 1}})
+	price := GenerationPriceComponent{ID: "images", Estimate: GenerationValueRef{Source: "parameter", Field: "count", Unit: "count"}, Usage: "images", Unit: "count", Divisor: 1, QuantityRound: "exact", Tiers: tiers}
+	if strings.HasPrefix(model, "gpt-image-2.6-") {
+		for _, q := range aicodewithQualityFactors {
+			price.Modifiers = append(price.Modifiers, GenerationPriceModifier{ID: "quality_" + q.Quality, When: *param("quality", q.Quality), Factor: q.Factor})
+		}
 	}
 	mode := GenerationPolicyMode{
 		Definition: GenerationModeDefinition{Key: AICodeWithImageMode, Version: "1", Kind: GenerationImage, InputSchema: schema},
@@ -112,34 +128,25 @@ func aicodewithImagePolicy(model, currency string) (GenerationPolicyDefinition, 
 			"aspect_ratio": json.RawMessage(`"1:1"`), "resolution": json.RawMessage(`"2K"`), "quality": json.RawMessage(`"medium"`),
 			"count": json.RawMessage(`1`), "background": json.RawMessage(`"auto"`),
 		},
-		// 中转偶尔少给结果也照常收费；下限取1，实际得到几张就落几张。
-		Output: GenerationOutputPolicy{Kind: GenerationImage, MinOutputs: 1, MaxOutputs: aicodewithMaxImages, MIMEs: []string{"image/png"}, MaxBytes: aicodewithMaxImages * aicodewithImageMaxBytes},
+		Output: GenerationOutputPolicy{Kind: GenerationImage, MinOutputs: 1, MaxOutputs: 1, MIMEs: []string{"image/png"}, MaxBytes: aicodewithImageMaxBytes},
 		Rules: []GenerationConstraint{
 			{ID: "reference_image_count", Assert: GenerationCondition{Op: "lte", Ref: images("count", "", "count"), Values: values(aicodewithMaxReferenceImages)}},
 			{ID: "reference_image_format", Assert: GenerationCondition{Op: "in", Ref: images("each", "mime", ""), Values: values("image/jpeg", "image/png", "image/webp")}},
 			{ID: "reference_image_bytes", Assert: GenerationCondition{Op: "lte", Ref: images("each", "bytes", "byte"), Values: values(aicodewithMaxReferenceBytes)}},
 		},
-		Pricing: []GenerationPriceComponent{
-			component("text_input", "text_input_tokens", count, aicodewithTextRate),
-			component("image_input", "image_input_tokens", images("count", "", "count"), aicodewithInputRate),
-			component("image_output", "image_output_tokens", count, aicodewithOutputRate),
-		},
+		Pricing: []GenerationPriceComponent{price},
 	}
 	bound := func(n int64) *int64 { return &n }
 	d := GenerationPolicyDefinition{
 		EngineVersion: GenerationPolicyEngineVersion, Version: AICodeWithImagePolicyVersion,
-		Profile:      GenerationProfileDefinition{ModelKey: model, ModelRevision: "2026-10-09", Version: "1"},
+		Profile:      GenerationProfileDefinition{ModelKey: model, ModelRevision: "2026-11-09", Version: "1"},
 		DeploymentID: AICodeWithImageDeploymentID(model), AdapterVersion: AICodeWithImageAdapterVersion,
 		Currency: currency, Modes: []GenerationPolicyMode{mode},
 	}
 	target := GenerationPolicyTarget{
 		ModelKey: model, ModelRevision: d.Profile.ModelRevision, DeploymentID: d.DeploymentID, AdapterVersion: d.AdapterVersion,
 		Modes: []string{AICodeWithImageMode},
-		Usage: map[string]GenerationUsageDefinition{
-			"text_input_tokens":   {Unit: "count", UpperBound: bound(aicodewithMaxTextTokens)},
-			"image_input_tokens":  {Unit: "count", UpperBound: bound(aicodewithMaxReferenceImages * aicodewithInputTokensPerImage)},
-			"image_output_tokens": {Unit: "count", UpperBound: bound(aicodewithMaxImages * aicodewithOutputTokensPerImage)},
-		},
+		Usage: map[string]GenerationUsageDefinition{"images": {Unit: "count", UpperBound: bound(1)}},
 	}
 	return d, target, nil
 }

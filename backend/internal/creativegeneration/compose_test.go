@@ -34,9 +34,9 @@ func TestComposeIndependentImageSuppliers(t *testing.T) {
 		reason string
 	}{
 		{"unconfigured", nil, 0, "API_KEY"},
-		{"existing_only", map[string]string{"AICODEWITH_API_KEY": "a"}, 3, ""},
+		{"existing_only", map[string]string{"AICODEWITH_API_KEY": "a"}, 5, ""},
 		{"runninghub_only", map[string]string{"RUNNINGHUB_API_KEY": "r"}, 4, ""},
-		{"both", map[string]string{"AICODEWITH_API_KEY": "a", "RUNNINGHUB_API_KEY": "r"}, 6, ""},
+		{"both", map[string]string{"AICODEWITH_API_KEY": "a", "RUNNINGHUB_API_KEY": "r"}, 8, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := creativegeneration.Compose(gateway, "USD", media, func(k string) (string, bool) { v, ok := tc.values[k]; return v, ok })
