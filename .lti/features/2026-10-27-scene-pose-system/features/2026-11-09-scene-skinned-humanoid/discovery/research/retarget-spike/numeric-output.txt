@@ -1,0 +1,42 @@
+== real characters, without the palm roll
+Xbot (Mixamo): 54 bones; faces (-0.00, 0.06, 1.00) in its world; worst limb direction 0.00°; head turn 45.0°; palm normal (0.06, 1.00, 0.05)
+    T correction: leftUpperLeg 2.79°, leftLowerLeg 4.21°
+Michelle (Mixamo, Z-up root): 52 bones; faces (0.00, 0.04, 1.00) in its world; worst limb direction 0.00°; head turn —; palm normal (0.02, 0.99, 0.16)
+    T correction: leftUpperLeg 4.51°, leftLowerLeg 3.02°, leftUpperArm 1.28°, leftLowerArm 1.54°, leftHand 3.96°
+VRM 1.0 twist sample: 54 bones; faces (-0.00, 0.06, 1.00) in its world; worst limb direction 0.00°; head turn 45.0°; palm normal (-0.00, 1.00, 0.10)
+    T correction: leftUpperLeg 4.58°, leftLowerLeg 2.24°, leftLowerArm 0.1°, leftHand 6.56°
+VRM 0.x girl (faces −Z): 54 bones; faces (0.00, 0.03, -1.00) in its world; worst limb direction 0.00°; head turn 45.0°; palm normal (0.05, 1.00, -0.01)
+    T correction: leftUpperLeg 4.24°, leftLowerLeg 2.66°, leftUpperArm 2.71°, leftLowerArm 4.94°, leftHand 7.35°
+RobotExpressive, by hand (Hips = hips): 35 bones; faces (-0.00, 0.01, 1.00) in its world; worst limb direction 5.39°; head turn —; palm normal (index × ring) (0.60, 0.78, -0.17)
+    T correction: leftUpperLeg 21.79°, leftLowerLeg 5.39°, leftUpperArm 65.31°, leftLowerArm 57.22°, leftHand 38°
+    hierarchy: leftFoot under no mapped bone; leftUpperLeg under no mapped bone; rightUpperLeg under no mapped bone; rightFoot under no mapped bone
+    T pose: leftLowerLeg off by 5.4°
+RobotExpressive, by hand (Body = hips): 36 bones; faces (-0.00, 0.08, 1.00) in its world; worst limb direction 12.34°; head turn —; palm normal (index × ring) (0.60, 0.79, -0.11)
+    T correction: leftUpperLeg 17.79°, leftLowerLeg 12.34°, leftUpperArm 65.42°, leftLowerArm 57.22°, leftHand 38°
+    hierarchy: leftFoot under no mapped bone; rightFoot under no mapped bone
+    T pose: leftLowerLeg off by 12.3°
+== real characters, with the palm roll
+Xbot (Mixamo): 54 bones; faces (-0.00, 0.06, 1.00) in its world; worst limb direction 0.00°; head turn 45.0°; palm normal (0.06, 1.00, -0.00)
+    T correction: leftUpperLeg 2.79°, leftLowerLeg 4.21°, leftHand roll -2.86°
+Michelle (Mixamo, Z-up root): 52 bones; faces (0.00, 0.04, 1.00) in its world; worst limb direction 0.00°; head turn —; palm normal (0.02, 1.00, 0.00)
+    T correction: leftUpperLeg 4.51°, leftLowerLeg 3.02°, leftUpperArm 1.28°, leftLowerArm 1.54°, leftHand 3.96°, leftHand roll -8.95°
+VRM 1.0 twist sample: 54 bones; faces (-0.00, 0.06, 1.00) in its world; worst limb direction 0.00°; head turn 45.0°; palm normal (-0.00, 1.00, -0.00)
+    T correction: leftUpperLeg 4.58°, leftLowerLeg 2.24°, leftLowerArm 0.1°, leftHand 6.56°, leftHand roll -5.48°
+VRM 0.x girl (faces −Z): 54 bones; faces (0.00, 0.03, -1.00) in its world; worst limb direction 0.00°; head turn 45.0°; palm normal (0.05, 1.00, 0.00)
+    T correction: leftUpperLeg 4.24°, leftLowerLeg 2.66°, leftUpperArm 2.71°, leftLowerArm 4.94°, leftHand 7.35°, leftHand roll 0.74°
+RobotExpressive, by hand (Hips = hips): 35 bones; faces (-0.00, 0.01, 1.00) in its world; worst limb direction 5.39°; head turn —; palm normal (index × ring) (0.60, 0.78, -0.17)
+    T correction: leftUpperLeg 21.79°, leftLowerLeg 5.39°, leftUpperArm 65.31°, leftLowerArm 57.22°, leftHand 38°, leftHand roll 11.93°
+    hierarchy: leftFoot under no mapped bone; leftUpperLeg under no mapped bone; rightUpperLeg under no mapped bone; rightFoot under no mapped bone
+    T pose: leftLowerLeg off by 5.4°
+RobotExpressive, by hand (Body = hips): 36 bones; faces (-0.00, 0.08, 1.00) in its world; worst limb direction 12.34°; head turn —; palm normal (index × ring) (0.60, 0.79, -0.11)
+    T correction: leftUpperLeg 17.79°, leftLowerLeg 12.34°, leftUpperArm 65.42°, leftLowerArm 57.22°, leftHand 38°, leftHand roll 7.87°
+    hierarchy: leftFoot under no mapped bone; rightFoot under no mapped bone
+    T pose: leftLowerLeg off by 12.3°
+
+== variants of Xbot, each differing in one way
+A pose at rest (upper arms 45° down): every bone's whole rotation within 0.000° of Xbot's
+local axes turned at random on every joint: every bone's whole rotation within 0.000° of Xbot's
+a twist helper bone inside each arm: every bone's whole rotation within 0.000° of Xbot's
+arms and legs 30% longer: every bone's whole rotation within 0.000° of Xbot's
+facing −Z under a Z-up root turn: every bone's whole rotation within 0.000° of Xbot's
+no upper chest: its 30° turn still reaches the arms, upper arm at 30.0° (want 30°)
