@@ -565,6 +565,7 @@ export default function build({ params, THREE, lib, rng }) {
 | `model.import.source_url` | string ≤ 2048 | 否 | 素材的来源页面，只允许 `http`、`https` |
 
 - 导入时间取内容修订的 `created_at`，不另存。服务端不核实授权说明的真假，只保存和显示；授权由摄影师在上传时声明，与其他上传相同。
+- **带骨骼的模型暂不支持面级材质分配**（Epic 修订 v7，子项 3）：现有的面分配按静态网格拆分与拾取，不保留蒙皮。`derive_model` 的来源 manifest 有 `skeleton` 时拒绝；编辑器对带骨骼的模型不提供面分配。以后支持时另行设计面身份与蒙皮属性的保留。
 - **场景里派生**：导入的模型放进场景后做面级材质分配时，`derive_model` 照常从它派生出场景自己的修订：载荷照抄 `generator`、`import`、`manifest`、`name_hint`、`rig`（scene-pose-system 子项 3），换 `faces`，不带 `materials`。派生出的修订仍是 `imported`。`commit_model` 的 `generator` 只接受 `three-module`，写不出导入的模型；它的 GLB 也不能带骨架（manifest 有 `skeleton` 时拒绝，代码模型不带骨骼）。
 - **读取方**：
   - 编辑器：属性栏不显示参数和代码，显示「导入的模型」、原文件名、来源与授权说明；不能改参数、不能改代码。
@@ -592,12 +593,15 @@ export default function build({ params, THREE, lib, rng }) {
 | `rig.constraints[]` | 数组，≤ 256 | 否 | 节点约束，语义同 VRMC_node_constraint 1.0 |
 | `constraints[].node` | integer | 是 | 被约束的节点，必须是关节，同一节点至多一条 |
 | `constraints[].kind` | `"roll"` \| `"aim"` \| `"rotation"` | 是 | — |
-| `constraints[].source` | integer | 是 | 源节点下标，≠ `node` |
+| `constraints[].source` | integer | 是 | 源节点下标，必须是 `skeleton.joints` 里的关节，≠ `node`。源不是关节的 VRM 约束由浏览器在导入时去掉并提示（Epic 修订 v7） |
 | `constraints[].weight` | number 0…1 | 是 | — |
 | `constraints[].roll_axis` | `"X"` \| `"Y"` \| `"Z"` | `roll` 时 | — |
 | `constraints[].aim_axis` | `"PositiveX"` \| `"NegativeX"` \| `"PositiveY"` \| `"NegativeY"` \| `"PositiveZ"` \| `"NegativeZ"` | `aim` 时 | — |
 
-  约束的依赖无环：约束 A 的 `source` 是约束 B 的 `node` 或它的后代节点时，A 依赖 B；依赖图必须无环，求值按依赖顺序（`patterns: 标准人形骨骼`「求值顺序」）。
+  约束的依赖无环（Epic 修订 v7）。约束 A 依赖约束 B 的条件按 A 的种类区分，「祖先」都沿 `skeleton` 的 `parent` 链判断（被约束的节点和源都是关节，所以关节祖先链足以判断）：
+  - `roll`、`rotation`：只读源的局部旋转，B 的 `node` 等于 A 的 `source` 时依赖。
+  - `aim`：读源的世界位置和被约束节点父级的世界变换，B 的 `node` 是 A 的 `source` 或它的祖先，或者是 A 的 `node` 的严格祖先时依赖。
+  依赖图必须无环，求值按依赖的拓扑顺序（`patterns: 标准人形骨骼`「求值顺序」）。
 
 - **校验分工**：服务端校验 `rig` 的外形和上表约束（含层级嵌入，Go 实现与前端共用测试向量），不读 GLB 以外的东西；姿态求值不在服务端。
 - **写入口**：导入接口（`api: 导入模型到资产库` 的 `rig`）、`derive_model`（照抄来源修订）、库副本（照抄）。内置模型的 `rig` 在清单里（`data: 内置模型库`）。改映射不另设接口：重新导入。
@@ -908,14 +912,14 @@ scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展�
 | `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容）、`faces`（可选，修订 v13：重新生成时由渲染端带过来的面级材质分配，结构见 `data: 模型内容`） | 无场景单元（不改快照） |
 | `derive_model`（修订 v13） | `ref`（同 `commit_model`）、`from_revision_id`（本账号完整形态的 `model` 修订，可以是库副本）、`faces`（新修订的完整分配；`null` 表示清空）、`base_content_id`（可选，规则同 `commit_model`） | 无场景单元（不改快照）。新修订的 `generator`、`manifest`、`name_hint`（导入的模型另有 `import`、`rig`，scene-pose-system 子项 3）取自来源修订，GLB 与缩略图复用来源修订的 blob，不上传、不编译；库副本的 `materials`、`source_revision_id` 不带过来。C8 的参考点也计划经这个操作写入 |
 | `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
-| `set_instance_model` | `object_id`、`model`（`{content_revision_id}`、`{ref}` 或 `{builtin}`；`builtin` 为内置模型的条目 ID，scene-pose-system 子项 3，例如把女素体换成男素体）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
+| `set_instance_model` | `object_id`、`model`（`{content_revision_id}`、`{ref}` 或 `{builtin}`；`builtin` 为内置模型的条目 ID，scene-pose-system 子项 3，例如把女素体换成男素体）、`material_slots`（可选，Epic 修订 v7：给出时整体替换这些实例的 `material_slots`，与模型引用在同一操作里写入同一个内容单元；不给时保留原值）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
 
 - **分叉规则（I4）**：
   - `base_content_id` 被其他实例或资产引用时，`commit_model` 仍然在该内容上追加修订。是否让其他实例跟随，由 `set_instance_model` 的 `scope` 决定。
   - 资产持有的旧修订不受影响，因为资产引用的是修订而不是内容的最新版。
   - 编辑器和助手在 `scope = "this"` 且共享时，应传入不带 `base_content_id` 的 `commit_model`，即新建内容（分叉）。
 - **持有方交接**：`commit_model` 在场景类型的 `Apply` 中新建模型内容，使用底座传入的 `Retain` 回调预登记引用（底座 `patterns: 文档类型端口`）。
-- **校验**：`commit_model` 的 GLB 不能带骨架（暂存形态的 manifest 有 `skeleton` 时拒绝：代码模型不带骨骼，scene-pose-system 子项 3）；`derive_model` 不能以内置模型为来源（它没有内容修订）。暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` / `derive_model` 必须出现在引用它的操作之前，两者的 `ref` 在同一批内不重复。消费后两个暂存候选标为已被文档采用。
+- **校验**：`commit_model` 的 GLB 不能带骨架（暂存形态的 manifest 有 `skeleton` 时拒绝：代码模型不带骨骼，scene-pose-system 子项 3）；`derive_model` 不能以内置模型为来源（它没有内容修订），也不能以带骨架的修订为来源（带骨骼的模型暂不支持面级材质分配，Epic 修订 v7）。暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` / `derive_model` 必须出现在引用它的操作之前，两者的 `ref` 在同一批内不重复。消费后两个暂存候选标为已被文档采用。
 - **面级材质分配**（修订 v13）：`faces` 按 `data: 模型内容` 校验外形、上限和有效槽位数，不读 GLB。`derive_model` 与 `commit_model` 一样按 I4 分叉：编辑器和助手在共享且 `scope = "this"` 时不传 `base_content_id`。`derive_model` 与 `set_instance_model` 放在同一批，摄影师的一次「指定」只产生一条场景修订，撤销沿用内容单元的规则。
 - **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。
 - **失败响应**（在基础接口之上增加）：
@@ -979,7 +983,8 @@ scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展�
  "annotated_units": [], "removed_units": [], "reset_required": false,
  "models": {"pillar_faces": {"content_id": "ccnt_7d31", "content_revision_id": "ccrev_a0c4"}}}
 ```
-- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。scene-pose-system 子项 3：`set_instance_model` 的 `model` 可以写 `{builtin}`；`commit_model` 拒绝带骨架的 GLB（此前 worker 本来就拒绝带 `skins` 的上传，没有调用方依赖它）；`derive_model` 照抄 `rig`。OpenAPI 同步，运行 `make generate`。
+- **换模型时的材质**（Epic 修订 v7）：编辑器在男、女素体之间互换时，同一个 `set_instance_model` 带上目标素体的 `materials` 作为 `material_slots`，摄影师自定义过的材质一并重置；撤销按内容单元恢复原模型和原材质。助手经 `edit_scene` 换内置模型而没写材质时，工具层同样补上目标的 `materials`。
+- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。scene-pose-system 子项 3：`set_instance_model` 的 `model` 可以写 `{builtin}`，并可带 `material_slots`；`derive_model` 拒绝带骨架的来源；`commit_model` 拒绝带骨架的 GLB（此前 worker 本来就拒绝带 `skins` 的上传，没有调用方依赖它）；`derive_model` 照抄 `rig`。OpenAPI 同步，运行 `make generate`。
 
 ## glossary: ADD 素体
 
@@ -1012,8 +1017,13 @@ scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展�
 - **朝向**：F 由静止骨架算出：上 = `head`（没有时 `neck`）的世界位置减 `hips`；+X = `leftUpperArm` 减 `rightUpperArm`，去掉沿「上」的分量；前 = +X × 上。F 是把标准轴 (X, Y, Z) 转到 (+X, 上, 前) 的旋转。
 - **T 姿势校正**：按骨骼链从上到下，对 `UpperArm`、`LowerArm`、`Hand`、`UpperLeg`、`LowerLeg` 把「本骨骼到下一根骨骼」的世界方向按最短弧转到 F 作用后的标准方向（臂为 ±X，腿为 −Y；`Hand` 的方向取到 `MiddleProximal`，依次退到 `RingProximal`、`IndexProximal`，都没有时不校正）。随后 `Hand` 再绕自身方向转动，使手背法线「(`IndexProximal` − 手) × (`LittleProximal` − 手)」（没有小指用 `RingProximal`；右手取反）在垂直于手方向的平面上的投影，与 F·(0, 1, 0) 的投影同向；缺食指，或小指、无名指都缺时不转。记校正后每根映射骨骼的世界旋转为 T(n)。校正只用于换算，不改模型。
 - **套用**：被映射的骨骼 n = map(b)，世界旋转 = F · G(b) · F⁻¹ · T(n)，从上到下依次写入；未映射的节点保持静止时的局部变换。
-- **求值顺序**：姿态 → 节点约束（`model.rig.constraints`，按 VRMC_node_constraint 1.0 的 roll / aim / rotation 语义，依依赖顺序）→ 蒙皮。视口、静态化几何、导出、`render_view` 都相同。
+- **求值顺序**：姿态 → 节点约束（`model.rig.constraints`，按 VRMC_node_constraint 1.0 的 roll / aim / rotation 语义，按 `data: 模型内容`「骨架与人形映射」定义的依赖做拓扑排序：aim 还依赖被约束节点父链上的约束）→ 蒙皮。视口、静态化几何、导出、`render_view` 都相同。
 - **镜像**：标准骨骼名的 `left` 与 `right` 互换，四元数 (x, y, z, w) 变为 (x, −y, −z, w)。
+- **骨架的几何条件**（Epic 修订 v7）：朝向和 T 姿势校正要用静止骨架的位置，服务端的骨架摘要不含位置，所以由浏览器在导入时判定，不满足时这份人形映射不成立（同必需骨骼违反）。令 s 为 `hips` 到 `head` 的距离：
+  - s < 1e-4 m，或「左上臂减右上臂」去掉沿「上」的分量后长度 < 0.05·s：朝向无法确定。
+  - 被校正的骨骼到下一根骨骼的距离 < 1e-3·s：方向无法确定。
+  - 映射骨骼及其祖先的世界矩阵有非均匀缩放（三个轴的缩放比 > 1.01）时，人形映射照常成立，但导入对话框提示「骨骼带非均匀缩放，摆姿态时可能变形」。
+  渲染端加载时重算朝向；仍然退化（只可能来自绕过浏览器检查的客户端）时，按非人形骨架处理并在属性栏提示。
 
 ### 理由
 

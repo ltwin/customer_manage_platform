@@ -1,12 +1,12 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 1,
+  "revision": 4,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-pose-system",
   "designBinding": {
-    "version": 5,
+    "version": 7,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -29,14 +29,54 @@
       "data:场景文档",
       "data:模型内容",
       "data:模型资产",
-      "api:导入模型到资产库"
+      "api:导入模型到资产库",
+      "data:内置贴图库",
+      "api:读取内置贴图",
+      "api:场景模型命令",
+      "glossary:素体",
+      "glossary:标准人形骨骼",
+      "patterns:标准人形骨骼",
+      "data:内置模型库",
+      "api:读取内置模型文件"
     ],
-    "delivers": []
+    "delivers": [
+      "patterns:标准人形骨骼",
+      "glossary:素体",
+      "glossary:标准人形骨骼",
+      "data:内置模型库",
+      "api:读取内置模型文件",
+      "data:模型内容",
+      "data:场景文档",
+      "data:模型资产",
+      "api:导入模型到资产库",
+      "api:场景模型命令",
+      "data:内置贴图库",
+      "api:读取内置贴图"
+    ]
   },
-  "state": "draft",
+  "state": "approved",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-10T07:19:06.404Z",
-  "approvals": {},
+  "updatedAt": "2026-11-10T09:15:44.276Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "contract-break",
+      "broad-impact",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-10T09:15:43.902Z",
+      "contentHash": "77dd6f08e052b3ca"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-10T09:15:43.902Z",
+      "contentHash": "36ef1b38caca80ce"
+    }
+  },
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
