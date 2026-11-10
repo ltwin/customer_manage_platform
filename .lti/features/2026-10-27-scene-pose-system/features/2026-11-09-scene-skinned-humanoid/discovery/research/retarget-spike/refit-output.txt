@@ -1,0 +1,16 @@
+Xbot: 49,112 skinned triangles, 28,374 vertices, 0 constraints
+    per drag frame: pose + constraints 0.11 ms, CPU skinning 0.63 ms, refit 1.51 ms; upload ≈ 969 KiB
+    rebuild instead: SAH 59.5 ms, CENTER 8.6 ms
+    nodes a ray visits at the big pose: refitted 65.6, rebuilt 52.1 (26% more)
+Michelle: 28,106 skinned triangles, 16,340 vertices, 0 constraints
+    per drag frame: pose + constraints 0.07 ms, CPU skinning 0.43 ms, refit 0.79 ms; upload ≈ 556 KiB
+    rebuild instead: SAH 33.0 ms, CENTER 4.9 ms
+    nodes a ray visits at the big pose: refitted 63.1, rebuilt 41.0 (54% more)
+VRM 1.0 twist sample: 36,470 skinned triangles, 24,951 vertices, 14 constraints
+    per drag frame: pose + constraints 0.14 ms, CPU skinning 0.74 ms, refit 1.13 ms; upload ≈ 776 KiB
+    rebuild instead: SAH 43.8 ms, CENTER 6.6 ms
+    nodes a ray visits at the big pose: refitted 66.6, rebuilt 56.9 (17% more)
+VRM 0.x girl: 22,250 skinned triangles, 76,159 vertices, 0 constraints
+    per drag frame: pose + constraints 0.12 ms, CPU skinning 1.61 ms, refit 0.76 ms; upload ≈ 1429 KiB
+    rebuild instead: SAH 27.0 ms, CENTER 4.1 ms
+    nodes a ray visits at the big pose: refitted 64.1, rebuilt 55.2 (16% more)
