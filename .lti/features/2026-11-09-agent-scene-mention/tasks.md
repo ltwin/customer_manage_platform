@@ -2,7 +2,7 @@
 
 ## 1. 契约
 
-- [ ] 1.1 `api/openapi.yaml` 新增 `scene_ref` 片段与消息块、`CreativeAgentMessageScene.revision` / `objects[].missing`、`objects.minItems` 放宽为 0、`scene_context.selected_object_ids` 标 deprecated；`make generate` 后 Go/TS 两份生成物提交，`make check-go PKG=./internal/creativeagent/...` 与前端 `tsc` 编译通过
+- [x] 1.1 `api/openapi.yaml` 新增 `scene_ref` 片段与消息块、`CreativeAgentMessageScene.revision` / `objects[].missing`、`objects.minItems` 放宽为 0、`scene_context.selected_object_ids` 标 deprecated；`make generate` 后 Go/TS 两份生成物提交，`make check-go PKG=./internal/creativeagent/...` 与前端 `tsc` 编译通过
 
 ## 2. 后端
 

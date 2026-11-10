@@ -4284,10 +4284,10 @@ export interface components {
         /** @description `schema_version=2` 起 skill_ref 与 content_ref 是明确的块类型； v1 写下的 `reference` 仍按原样读出，不会被重新猜成 Skill。 */
         CreativeAgentMessageBlock: {
             /**
-             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。
+             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。 scene_ref 是正文里按位置引用的场景或场景中的物件（服务端写入的快照），objects 为空表示引用整个场景。
              * @enum {string}
              */
-            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference" | "command" | "scene_selection";
+            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference" | "command" | "scene_selection" | "scene_ref";
             /**
              * @description command 块的命令名
              * @enum {string}
@@ -4301,14 +4301,18 @@ export interface components {
             skill?: components["schemas"]["CreativeAgentMessageSkill"];
             scene?: components["schemas"]["CreativeAgentMessageScene"];
         };
-        /** @description scene_selection 块冻结的场景与选中物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。 */
+        /** @description scene_selection 与 scene_ref 块冻结的场景与物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。scene_selection 至少 1 个物体； scene_ref 引用整个场景时 objects 为空。 */
         CreativeAgentMessageScene: {
             document_id: string;
             title: string;
+            /** @description 发送时场景的版本号；scene_ref 块必有，scene_selection 块不带。 */
+            revision?: number;
             objects: {
                 id: string;
-                /** @description 未命名的物体为空字符串 */
+                /** @description 未命名或 missing 的物体为空字符串 */
                 name: string;
+                /** @description 为 true 表示发送时这个物体已经不在场景里；省略即 false。 */
+                missing?: boolean;
             }[];
         };
         CreativeAgentMessageBody: {
@@ -4325,10 +4329,10 @@ export interface components {
         /** @description 一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段 会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID， ID 本身不授予任何读取权限，服务端一律重新核对。 */
         CreativeAgentInstructionSegment: {
             /**
-             * @description command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。
+             * @description command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。 scene_ref 按位置引用一个场景，带 object_ids 时引用其中的物件；一次提交里不同的场景最多 5 个。
              * @enum {string}
              */
-            type: "text" | "skill_ref" | "content_ref" | "command";
+            type: "text" | "skill_ref" | "content_ref" | "command" | "scene_ref";
             text?: string;
             /** @enum {string} */
             command?: "compact";
@@ -4336,6 +4340,10 @@ export interface components {
             skill_id?: string;
             skill_version_id?: string;
             content_revision_id?: string;
+            /** @description scene_ref 引用的场景文档 ID。 */
+            document_id?: string;
+            /** @description scene_ref 引用的物件，不可重复；省略表示引用整个场景。上限按单个片段计算， 同一场景的多个片段各自计。 */
+            object_ids?: string[];
         };
         /**
          * @description 提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。 名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
@@ -4372,9 +4380,13 @@ export interface components {
             instruction: components["schemas"]["CreativeAgentInstruction"];
             /** @description 必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。 */
             model_key: string;
-            /** @description 在场景编辑视图里发起时带上：当前场景和选中的物件，冻结为运行输入， 助手据此只改选中的物件。画布视图里发起时不带。 */
+            /** @description 在场景编辑视图里发起时带上：document_id 是正在编辑的场景（不计入 scene_ref 的 5 个场景上限）。 画布视图里发起时不带。 */
             scene_context?: {
                 document_id: string;
+                /**
+                 * @deprecated
+                 * @description 已弃用：选中的物件改由指令里的 scene_ref 表达，新页面固定传空数组。 非空时仍按原规则在消息末尾追加 scene_selection 块。
+                 */
                 selected_object_ids: string[];
             };
         };
