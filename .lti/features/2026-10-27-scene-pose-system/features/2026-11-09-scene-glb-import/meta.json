@@ -1,6 +1,6 @@
 {
   "uid": "e1eb0660-2356-492d-ab1b-e03a0fe032dc",
-  "revision": 12,
+  "revision": 13,
   "id": "scene-glb-import",
   "kind": "feature",
   "assurance": "governed",
@@ -33,7 +33,21 @@
   },
   "state": "closed",
   "createdAt": "2026-11-09T11:50:51.501Z",
-  "updatedAt": "2026-11-10T06:23:12.914Z",
+  "updatedAt": "2026-11-10T06:23:47.792Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-11-10T06:23:47.706Z",
+    "summary": "feat/scene-glb-import 以 --no-ff 合入 develop（75cd428a）；develop 是分支的祖先，合入树与分支相同，沿用分支上已通过的定向单测、Go 包测试与 e2e",
+    "method": "manual",
+    "limitations": "合入树与分支相同，按 owner 的合并门禁约定未重跑 check-merge；项目未配置 lti checks",
+    "sourceCommit": "f03e49d710aec723ec5e704e62d6ff3aff164a9f",
+    "targetCommit": "75cd428a4283f42dbdbdc27dc0166b579c5dbea1",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "057ac81ac3400086690ca3b57e5af57feac8763702fd3fb4150eca9445d1b739"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
