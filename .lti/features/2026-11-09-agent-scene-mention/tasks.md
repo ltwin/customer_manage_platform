@@ -32,4 +32,4 @@
 ## 6. e2e 与收尾
 
 - [x] 6.1 新增 `agent-scene-mention.e2e.mjs`（画布待选插入 / 替换 / 转正、选中没变不新增、空正文只有待选时发送、图片能力限制拦截、搜索 200 节点 < 100 ms、二级菜单多选与拖选、剪切→粘贴、删除→撤销、插入→撤销→重做、编辑→撤销），一次只跑一个用例；同时实测 U2（500 个物件列表帧耗时）并记入 design
-- [ ] 6.2 改 `creative-scene-agent.e2e.mjs`：去掉浮层标签断言，改为编辑器选中 → 待选 chip → 正式 chip → `scene_ref`，并断言分批语序的 `instruction_segments`；逐个用例跑通
+- [x] 6.2 改 `creative-scene-agent.e2e.mjs`：去掉浮层标签断言，改为编辑器选中 → 待选 chip → 正式 chip → `scene_ref`，并断言分批语序的 `instruction_segments`；逐个用例跑通
