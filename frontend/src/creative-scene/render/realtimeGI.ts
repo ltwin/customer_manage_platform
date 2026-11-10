@@ -58,6 +58,22 @@ const MISSED = 1e3
 /** The roughness below which the reflections retrace what the screen missed (S1 design「反射补追」, Epic U3): all of it in a picture to keep. */
 export const retraceBelow: Record<Quality, number> = { interactive: 0.5, final: 1 }
 
+// The velocity's projection, one matrix for every pipeline (gi-jitter diagnosis, 2026-11-09). VelocityNode.setup
+// binds the matrix it is given then as a uniform, and the shader is kept by a cache key that does not see it: each
+// TRAA handing its own left a pipeline after the first drawing with the first's projection, a still surface some
+// 34 px a frame on the move under another FOV, and TRAA and the temporal denoisers kept no history. The shader
+// reads this one, filled before each draw with what a TRAA gives (its camera's unjittered) or else the camera's.
+const unjittered = new Matrix4()
+let given: Matrix4 | null = null
+velocity.projectionMatrix = unjittered
+velocity.setProjectionMatrix = (projection) => void (given = projection)
+const updateVelocity = velocity.update.bind(velocity)
+velocity.update = (frame) => {
+  const projection = given ?? frame.camera?.projectionMatrix
+  if (projection) unjittered.copy(projection)
+  return updateVelocity(frame)
+}
+
 // The passes' outputs, one node each for every pipeline: three keys a pass's
 // render state by its MRT node, and the scene's materials outlive a
 // pipeline built per picture; a new MRT per picture would leave a set of
@@ -144,6 +160,8 @@ export type RealtimeGI = {
   aoOn: UniformNode<'float', number>
   /** The reflections' material when they trace, its pipeline watched (SceneGPU.pipelineFailed); null without the layer. */
   traced: object | null
+  /** The prepass, its velocity read back by the e2e (SceneRenderer.velocityAt). */
+  prepass: PassNode
   dispose(): void
 }
 
@@ -393,6 +411,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
     aoOn,
     // Our fork's own material (nodes/SSRTraceNode.js), not upstream's API.
     traced: options.trace ? (reflect as unknown as { _ssrMaterial: object })._ssrMaterial : null,
+    prepass,
     dispose() {
       for (const d of disposables) d.dispose()
     },

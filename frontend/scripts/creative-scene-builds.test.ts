@@ -20,7 +20,8 @@ function renderer() {
   const material = new Material()
   const cache = new Map<string, { usedTimes: number }>()
   const stats = { created: 0, stages: 0, draws: 0 }
-  const object = { material, object: new Mesh(), lightsNode: null, onDispose() {} }
+  const object: { material: Material; object: Mesh; lightsNode: null; onDispose(): void; _bindings?: unknown[] } = { material, object: new Mesh(), lightsNode: null, onDispose() {} }
+  const bound = new Map<object, { initialized?: boolean }>()
   material.addEventListener('dispose', () => object.onDispose())
   const target = new RenderTarget()
   let current: RenderTarget | null = target
@@ -59,7 +60,11 @@ function renderer() {
       _createNodeBuilderState: () => { buildContexts.push(r._currentRenderContext); return { usedTimes: 0 } },
     },
     _geometries: { updateForRender() {} },
-    _bindings: { getForRender() { pipelineEvents.push('bind') } },
+    _bindings: {
+      getForRender(o: object) { pipelineEvents.push('bind'); bound.set(o, { initialized: true }) },
+      has: (o: object) => bound.has(o),
+      get: (o: object) => bound.get(o) ?? {},
+    },
     _pipelines: {
       isReady: () => pipelineReady,
       getForRender(_object: unknown, promises: Promise<void>[]) {
@@ -148,6 +153,22 @@ test('an unconsumed shader is removed when its render object goes away', async (
   assert.equal(r.cache.get('same-key')?.usedTimes, 0)
   r.material.dispose()
   assert.equal(r.cache.size, 0)
+})
+
+test('a render object left out of every draw goes with no bind groups; one drawn keeps its own', async () => {
+  // Uncounted, three's deleteForRender would make them, building the shader, and count the camera's shared group out.
+  const left = renderer()
+  left.unready()
+  assert.equal(left.draw(), false, 'its shader is being built')
+  left.material.dispose()
+  assert.deepEqual(left.object._bindings, [])
+  const drawn = renderer()
+  drawn.unready()
+  drawn.draw()
+  await builds(drawn.gpu)
+  assert.equal(drawn.draw(), true, 'piped: its bind groups are counted in')
+  drawn.material.dispose()
+  assert.equal(drawn.object._bindings, undefined, 'three destroys what it counted')
 })
 
 test('renderers with equal material cache keys build independently', async () => {

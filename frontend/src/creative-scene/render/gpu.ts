@@ -301,6 +301,8 @@ export const gpuTestHooks = {
   probeStats: null as unknown,
   /** The viewport's last frame drawn n times and waited for once, its milliseconds (Viewport.tsx LookView; e2e only). */
   redrawViewport: null as ((n: number) => Promise<number>) | null,
+  /** The real-time GI's motion vector at (u, v) of the viewport, in pixels a frame (SceneRenderer.velocityAt; e2e only). */
+  velocityAt: null as ((u: number, v: number) => Promise<[number, number] | null>) | null,
   /** Loses the device of the next renderer made in that role (an offscreen job's), after that many captures. */
   loseNext(role: Role, afterCaptures = 0): void {
     gpuTestHooks.armed.set(role, afterCaptures)

@@ -1,5 +1,4 @@
 import type { Material, Object3D, RenderTarget } from 'three'
-import { velocity } from 'three/tsl'
 import { defaultBuildStages, FunctionNode, shaderStages, ViewportTextureNode, type Node, type WebGPURenderer } from 'three/webgpu'
 import { pageYields, yieldToPage } from './gpu.ts'
 import { buildLifetime } from './buildLifetime.ts'
@@ -18,17 +17,16 @@ import { buildLifetime } from './buildLifetime.ts'
 // buildAsync reads the renderer's target, MRT and context as each stage runs
 // (NodeBuilder.getOutputType, MRTNode.setup), a task or more after the draw
 // that asked for it, the scene's lights as the last render of that scene
-// left them (LightsNode._lights: the overlay pass's camera sees none), and
-// the velocity's projection as TRAA leaves it outside the pipeline's render
-// (none: the velocity took the jitter, and TRAA blurred); each stage here
-// runs with those the draw had. The
+// left them (LightsNode._lights: the overlay pass's camera sees none); each
+// stage here runs with those the draw had. The velocity's projection is one
+// matrix whatever builds it (realtimeGI.ts). The
 // result goes where three's own build puts it (NodeManager.nodeBuilderCache,
 // by the render object's cache key), and the next draw takes it from there.
 // three r186's internals (Renderer._renderObjectDirect, _objects, _nodes):
 // to be checked on every three upgrade, as sceneRenderer.ts asItsPass is.
 
 type LightsNode = { getLights(): unknown[]; setLights(lights: unknown[]): unknown }
-type RenderObject = { material: Material; object: Object3D; lightsNode: LightsNode | null; onDispose(): void }
+type RenderObject = { material: Material; object: Object3D; lightsNode: LightsNode | null; onDispose(): void; _bindings?: unknown[] }
 type BuilderState = { usedTimes: number }
 type NodeBuilder = {
   context: { position?: { isNode?: boolean } }
@@ -48,7 +46,7 @@ type Internals = {
   backend: { get(pipeline: object): { error?: boolean } }
   _objects: { get(...args: unknown[]): RenderObject }
   _geometries: { updateForRender(renderObject: RenderObject): void }
-  _bindings: { getForRender(renderObject: RenderObject): unknown }
+  _bindings: { getForRender(renderObject: RenderObject): unknown; has(renderObject: RenderObject): boolean; get(renderObject: RenderObject): { initialized?: boolean } }
   _pipelines: { getForRender(renderObject: RenderObject, promises: Promise<unknown>[]): object; isReady(renderObject: RenderObject): boolean }
   _nodes: {
     get(renderObject: RenderObject): { nodeBuilderState?: unknown }
@@ -74,7 +72,13 @@ function stateFor(renderer: object) {
 }
 const wrapped = new WeakSet<object>()
 
-/** A disposed render object never receives a late shader, even though material.dispose does not change version. */
+/**
+ * A disposed render object never receives a late shader, even though material.dispose does not change version. One
+ * left out of every draw has its bind groups uncounted (Bindings.getForRender counts them in on the first draw):
+ * three's deleteForRender would make them as it goes, building the shader for them, and count the shared ones out
+ * (the camera's render group), freeing their buffers under the objects still drawing with them (GPUQueue.writeBuffer
+ * on a destroyed buffer in the next draw). It goes with none.
+ */
 const owners = new WeakMap<RenderObject, { alive: boolean; unused: Map<string, BuilderState> }>()
 function ownerOf(r: WebGPURenderer & Internals, object: RenderObject) {
   let owner = owners.get(object)
@@ -89,20 +93,18 @@ function ownerOf(r: WebGPURenderer & Internals, object: RenderObject) {
       if (state.usedTimes === 0 && r._nodes.nodeBuilderCache.get(key) === state) r._nodes.nodeBuilderCache.delete(key)
     }
     held.unused.clear()
+    if (!r._bindings.has(object) || r._bindings.get(object).initialized !== true) object._bindings = []
     dispose.call(object)
   }
   return owner
 }
 
 /** What a draw had set: a build's every stage runs with it. */
-type DrawState = { target: RenderTarget | null; face: number; level: number; mrt: unknown; context: WebGPURenderer['contextNode']; renderContext: unknown; lights: unknown[] | null; projection: unknown }
-
-/** The velocity TRAA gives the unjittered projection for the length of the pipeline's render (VelocityNode.setup reads it). */
-const motion = velocity as unknown as { projectionMatrix: unknown }
+type DrawState = { target: RenderTarget | null; face: number; level: number; mrt: unknown; context: WebGPURenderer['contextNode']; renderContext: unknown; lights: unknown[] | null }
 
 function stateOf(r: WebGPURenderer & Internals, lightsNode: LightsNode | null): DrawState {
   // A copy: the render list's array is filled again by the next render.
-  return { target: r.getRenderTarget(), face: r.getActiveCubeFace(), level: r.getActiveMipmapLevel(), mrt: r.getMRT(), context: r.contextNode, renderContext: r._currentRenderContext, lights: lightsNode ? [...lightsNode.getLights()] : null, projection: motion.projectionMatrix }
+  return { target: r.getRenderTarget(), face: r.getActiveCubeFace(), level: r.getActiveMipmapLevel(), mrt: r.getMRT(), context: r.contextNode, renderContext: r._currentRenderContext, lights: lightsNode ? [...lightsNode.getLights()] : null }
 }
 
 function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null, s: DrawState, fn: () => T): T {
@@ -115,7 +117,6 @@ function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null,
   // in the renderer-wide fallback cache; retiring one pipeline can then free buffers another pipeline still binds.
   r._currentRenderContext = s.renderContext
   if (lightsNode && s.lights) lightsNode.setLights(s.lights)
-  motion.projectionMatrix = s.projection
   try {
     return fn()
   } finally {
@@ -124,7 +125,6 @@ function within<T>(r: WebGPURenderer & Internals, lightsNode: LightsNode | null,
     r.contextNode = was.context
     r._currentRenderContext = was.renderContext
     if (lightsNode && lights) lightsNode.setLights(lights)
-    motion.projectionMatrix = was.projection
   }
 }
 
@@ -198,6 +198,8 @@ let queue: Promise<unknown> = Promise.resolve()
 
 /** Whether a render object's shader is built; if not, its build is started. A build that fails is left to the draw, which fails as before. */
 function built(r: WebGPURenderer & Internals, renderObject: RenderObject): boolean {
+  // Every render object a deferred draw meets, built or not: one left out while another builds its shader is disposed alike.
+  const owner = ownerOf(r, renderObject)
   const { building, failed } = stateFor(r)
   const nodes = r._nodes
   if (nodes.get(renderObject).nodeBuilderState !== undefined) return true
@@ -207,7 +209,6 @@ function built(r: WebGPURenderer & Internals, renderObject: RenderObject): boole
   building.add(key)
   const s = stateOf(r, renderObject.lightsNode)
   const version = renderObject.material.version
-  const owner = ownerOf(r, renderObject)
   const lifetime = buildLifetime(r)
   let targetAlive = true
   const lostTarget = () => { targetAlive = false }
@@ -285,20 +286,6 @@ function install(r: WebGPURenderer & Internals) {
       if (deferring.dry) return
     }
     direct.apply(this, args)
-  }
-}
-
-/**
- * Runs fn with projection as the velocity's (TRAANode._originalProjectionMatrix while the pipeline renders, none
- * before TRAA has set up: three r186): what a pass drawn alone builds for the velocity is then what those frames build.
- */
-export function withVelocity<T>(projection: unknown, fn: () => T): T {
-  const was = motion.projectionMatrix
-  motion.projectionMatrix = projection ?? null
-  try {
-    return fn()
-  } finally {
-    motion.projectionMatrix = was
   }
 }
 
