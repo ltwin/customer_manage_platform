@@ -1,0 +1,41 @@
+{
+  "uid": "e3d4752e-c0ae-4fc9-b501-a3ae5d0db91c",
+  "revision": 4,
+  "id": "agent-stop-immediately",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-11-10T11:08:49.261Z",
+  "updatedAt": "2026-11-10T12:02:11.256Z",
+  "risk": {
+    "factors": [
+      "concurrency"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-10T11:18:26.083Z",
+      "contentHash": "6c116fe22e14bdd8"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-10T12:02:11.042Z",
+      "contentHash": "978ae48a447a7bbb"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [
+    {
+      "at": "2026-11-10T12:01:58.939Z",
+      "summary": "方案评审后：停止期间冻结显示、完成后显示服务端已保存内容（owner 批准默认方案）；cancel 首次响应非终态时换新 key 重发",
+      "contentHash": "f80a3775dae17d52",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
