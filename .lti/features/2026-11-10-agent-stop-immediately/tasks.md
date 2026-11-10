@@ -12,7 +12,7 @@
 
 ## 3. 契约文字与生成物
 
-- [ ] 3.1 `api/openapi.yaml` 改 cancel 的 summary 和 200 说明（新版首次执行即终态，回放返回当时快照）；`make generate` 后提交 `api.gen.go` 与 `schema.d.ts`，`make generate-check` 无漂移
+- [x] 3.1 `api/openapi.yaml` 改 cancel 的 summary 和 200 说明（新版首次执行即终态，回放返回当时快照）；`make generate` 后提交 `api.gen.go` 与 `schema.d.ts`，`make generate-check` 无漂移
 
 ## 4. 前端：发送/停止合一与乐观停止
 
