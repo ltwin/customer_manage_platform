@@ -43,6 +43,8 @@
 .cc-scene-assets-kinds button[aria-selected="true"] { color: var(--fg); background: #f28c2826; }
 .cc-scene-assets-row { display: flex; gap: 4px; align-items: center; }
 .cc-scene-assets-fill { flex: 1; }
+.cc-scene-assets-import { display: flex; flex: none; gap: 4px; align-items: center; height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
+.cc-scene-assets-import:hover { border-color: var(--accent); }
 .cc-scene-assets-row select { flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
 .cc-scene-assets-size { display: flex; flex: none; }
 .cc-scene-assets-size button { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }

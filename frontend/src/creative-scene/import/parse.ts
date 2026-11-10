@@ -52,7 +52,7 @@ export type PrimitiveJSON = {
 
 /** The parts of a glTF document the import reads. */
 export type GLTFJSON = {
-  asset?: { version?: string }
+  asset?: { version?: string; copyright?: string }
   scene?: number
   scenes?: { nodes?: number[] }[]
   nodes?: { name?: string; mesh?: number; skin?: number; children?: number[]; camera?: number; extensions?: Record<string, unknown> }[]

@@ -426,15 +426,17 @@ export function convert(parsed: ParsedImport, options: ConvertOptions): Conversi
     if (m && !namePattern.test(m[2]!)) o.name = `_${o.name}`
   })
 
-  if (options.originToBottomCenter) {
-    const box = new Box3().setFromObject(scene, true)
-    if (!box.isEmpty()) {
-      const offset = new Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2)
-      for (const child of scene.children) child.position.sub(offset)
-      scene.updateMatrixWorld(true)
-    }
-  }
+  if (options.originToBottomCenter) toBottomCenter(scene)
   return { scene, slots, images, report: report.items }
+}
+
+/** Moves the scene's top-level nodes so the bottom centre of its bounds is the origin (AC-8). */
+export function toBottomCenter(scene: Object3D): void {
+  const box = new Box3().setFromObject(scene, true)
+  if (box.isEmpty()) return
+  const offset = new Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2)
+  for (const child of scene.children) child.position.sub(offset)
+  scene.updateMatrixWorld(true)
 }
 
 /** The slots as the import request sends them, each image named by its uploaded revision. */

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { Box, CircleHelp, History, ImageDown, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { currentAccount } from '../creative-canvas/editor/api.ts'
+import { currentAccount, read } from '../creative-canvas/editor/api.ts'
 import { discardCandidate, uploadGenerated, type Upload } from '../creative-canvas/editor/media.ts'
 import { activityText, AgentActivity, editedObjects, highlightedObjects, jobPlaceholders } from './agentActivity.ts'
 import { exportScene, readScene, type Marker, type ObjectUpdate, type Scene, type SceneObject } from './api.ts'
@@ -49,6 +49,7 @@ import { ImportedModelInfo } from './panels/ImportedModelInfo.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
 import { AssetPanel } from './panels/AssetPanel.tsx'
+import ImportModelDialog from './import/ImportModelDialog.tsx'
 import { pushRecent, readRecent } from './library/recent.ts'
 import { EnvironmentPanel } from './panels/EnvironmentPanel.tsx'
 import { RenderPanel } from './panels/RenderPanel.tsx'
@@ -140,7 +141,7 @@ function dragModel(asset: LibraryAsset): DragModel | null {
   return {
     assetID: asset.id,
     revision: asset.content_revision_id,
-    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null },
+    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null, ...(model.import ? { import: model.import } : {}) },
     mount: model.generator.mount,
     bounds: model.manifest.bounds,
   }
@@ -213,6 +214,11 @@ export default function SceneEditor({
   const [builtinDrag, setBuiltinDrag] = useState<{ title: string; slot: MaterialSlot } | null>(null)
   const [recentAssets, setRecentAssets] = useState(() => readRecent(storage(), currentAccount()))
   const [assetFocus, setAssetFocus] = useState(0)
+  // 导入模型（GLB）：place 为 true 时导入后放进场景（「添加 > 导入模型…」），否则只进资产库。
+  const modelInput = useRef<HTMLInputElement>(null)
+  const importPlace = useRef(false)
+  const [modelImport, setModelImport] = useState<{ file: File; place: boolean } | null>(null)
+  const [importTick, setImportTick] = useState(0)
   // The asset panel mounts on its first showing and then stays, hidden behind
   // the outliner tab, so going back to it does not read the library again.
   const [assetsSeen, setAssetsSeen] = useState(false)
@@ -813,6 +819,19 @@ export default function SceneEditor({
     for (const { asset } of [...models].reverse()) setRecentAssets(pushRecent(storage(), currentAccount(), asset.id))
     root.current?.focus({ preventScroll: true })
   }
+  /** Picks a GLB for 导入模型; place puts the imported asset into the scene as well. */
+  const pickModel = (place: boolean) => {
+    if (place && readOnly) return notify('当前不能编辑场景')
+    importPlace.current = place
+    modelInput.current?.click()
+  }
+  /** After 「添加 > 导入模型…」: the new asset goes in as one dragged from the library would. */
+  const placeImported = (assetID: string) => {
+    void read<LibraryAsset>(`/assets/${encodeURIComponent(assetID)}`).then(
+      (asset) => placeModels([asset]),
+      () => notify('已导入资产库，但没能放进场景，可以从资产面板拖入'),
+    )
+  }
   /** Shows the asset panel in the sidebar, its search box taking the keys. */
   const showAssets = () => {
     ui.setState({ sidebar: true, sidebarTab: 'assets' })
@@ -1184,6 +1203,7 @@ export default function SceneEditor({
         'separator',
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
         { label: '从资产库添加…', shortcut: k('toggle-assets'), run: showAssets },
+        { label: '导入模型…', run: () => pickModel(true) },
         { section: '灯光' },
         ...(['directional', 'point', 'spot', 'area'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
@@ -1374,7 +1394,7 @@ export default function SceneEditor({
                 </div>
                 {assetsSeen && (
                   <AssetPanel
-                    refresh={libraryTick}
+                    refresh={libraryTick + importTick}
                     hidden={u.sidebarTab !== 'assets'}
                     recent={recentAssets}
                     readOnly={readOnly}
@@ -1384,6 +1404,7 @@ export default function SceneEditor({
                     onDrag={setLibraryDrag}
                     onDragBuiltin={setBuiltinDrag}
                     onExit={() => root.current?.focus({ preventScroll: true })}
+                    onImport={() => pickModel(false)}
                   />
                 )}
                 {u.sidebarTab !== 'assets' && (
@@ -1699,6 +1720,30 @@ export default function SceneEditor({
             onClose()
           }}
           onCancel={() => ui.setState({ confirmClose: false })}
+        />
+      )}
+      <input
+        ref={modelInput}
+        type="file"
+        accept=".glb"
+        hidden
+        aria-label="选择模型文件"
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0]
+          e.currentTarget.value = ''
+          if (file) setModelImport({ file, place: importPlace.current })
+        }}
+      />
+      {modelImport && (
+        <ImportModelDialog
+          file={modelImport.file}
+          onImported={(result, title) => {
+            setModelImport(null)
+            setImportTick((n) => n + 1)
+            notify(`已导入「${title}」`)
+            if (modelImport.place) placeImported(result.asset_id)
+          }}
+          onClose={() => setModelImport(null)}
         />
       )}
       {confirmRestore && u.preview && (
