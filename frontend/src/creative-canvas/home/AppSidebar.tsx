@@ -1,5 +1,4 @@
 import {
-  Aperture,
   ArrowLeft,
   Folder,
   Plug,
@@ -10,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Link } from 'react-router-dom'
+import { BrandWordmark } from '../../components/BrandLockup'
 import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx'
 import { fallbackAvatarLabel } from '../../account/accountAvatarMedia.ts'
 import type * as api from '../editor/api.ts'
@@ -150,9 +150,9 @@ export default function AppSidebar({
         onBlur={(event) => hideTip(event.target, event.relatedTarget)}
       >
         <div className="cs-side-top">
-          <Link className="cs-side-brand" to="/creative" data-tip="创意空间">
-            <Aperture size={20} strokeWidth={1.5} />
-            <span className="cs-side-text">创意空间</span>
+          <Link className="cs-side-brand" to="/creative" aria-label="Eurika" data-tip="Eurika">
+            <img className="cs-side-mark" src="/brand/mark.svg" alt="" aria-hidden="true" />
+            <BrandWordmark className="cs-side-text cs-side-wordmark" strokeWidth={13} />
           </Link>
           <button
             className="cs-side-toggle"

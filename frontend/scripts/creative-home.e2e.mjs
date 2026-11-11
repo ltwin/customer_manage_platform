@@ -398,7 +398,7 @@ try {
         const box = await side().boundingBox()
         assert.ok(box.height < 64 && Math.round(box.width) === w, `top bar ${JSON.stringify(box)}`)
         assert.equal(await toggle.isVisible(), false, 'toggle hidden')
-        for (const name of ['创意空间', '首页', '项目', '资产库']) assert.ok(await side().getByRole('link', { name, exact: true }).isVisible(), `${name} visible`)
+        for (const name of ['Eurika', '首页', '项目', '资产库']) assert.ok(await side().getByRole('link', { name, exact: true }).isVisible(), `${name} visible`)
         assert.equal(await side().getByRole('link', { name: '返回 CRM' }).isVisible(), false, 'foot hidden')
         assert.equal(await recent().first().isVisible(), false, 'recent hidden')
         await page.screenshot({ path: `${output}/side-${w}.png` })
