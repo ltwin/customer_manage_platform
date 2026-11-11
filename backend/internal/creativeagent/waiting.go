@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -146,18 +147,27 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		Revision     creativeops.Revision `json:"expected_revision"`
 		WaitingToken string               `json:"waiting_token"`
 		Text         string               `json:"text"`
+		Segments     []InstructionSegment `json:"instruction_segments"`
+	}
+	var resolved ResolvedInstruction
+	var resolveErr error
+	if err := creativeops.Decode(command.Payload, &in); err == nil {
+		resolved, resolveErr = s.resolveInput(ctx, scope, in.Text, in.Segments)
 	}
 	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.supplement_run", Capability: "agent_start", Validate: func(raw json.RawMessage) error {
 		if err := creativeops.Decode(raw, &in); err != nil {
 			return err
 		}
-		if in.RunID == "" || in.WaitingToken == "" || in.Revision < 1 || strings.TrimSpace(in.Text) == "" {
+		if in.RunID == "" || in.WaitingToken == "" || in.Revision < 1 || (in.Text == "") == (len(in.Segments) == 0) {
+			return creativeops.ErrValidation
+		}
+		if in.Text != "" && strings.TrimSpace(in.Text) == "" {
 			return creativeops.ErrValidation
 		}
 		if len(in.Text) > s.limits.MessageBodyBytes {
 			return ErrLimit
 		}
-		return nil
+		return resolveErr
 	}, Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
 		// A waiting run may sit in an archived project; it continues only
 		// after the project is restored (owner 2026-10-11, D6).
@@ -188,29 +198,6 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if !now.Before(c.DeadlineAt) {
 			return creativeops.Outcome{}, creativeops.ErrExpired
 		}
-		var batches int
-		rows, err := tx.QueryPage(ctx, "creative_run_inputs", "batch_ordinal", "run_id=$2", []store.OrderBy{{Column: "batch_ordinal", Desc: true}}, 1, 0, c.ID)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if rows.Next() {
-			err = rows.Scan(&batches)
-		}
-		rowErr := rows.Err()
-		rows.Close()
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if rowErr != nil {
-			return creativeops.Outcome{}, rowErr
-		}
-		if batches >= maxSupplements {
-			return creativeops.Outcome{}, ErrLimit
-		}
-		// The run resumes on its model only if something can still serve it.
-		if _, err := s.models.Model(c.ModelKey); err != nil {
-			return creativeops.Outcome{}, translateGateway(err)
-		}
 		consent, err := readConsentForUpdate(ctx, tx, c.EgressConsentID)
 		if err != nil {
 			return creativeops.Outcome{}, err
@@ -221,10 +208,7 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if err = acquireSlotInTx(ctx, tx, c.ConversationID, c.ID, c.token, now); err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if _, err = s.appendMessageInTx(ctx, tx, c.ConversationID, newMessage{Role: "user", Status: "complete", RunID: c.ID, Body: Body{Blocks: []Block{{Type: "text", Text: in.Text}}}}); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if err = tx.Insert(ctx, "creative_run_inputs", []string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body"}, c.ID, batches+1, 0, "instruction", "text", in.Text); err != nil {
+		if err = s.appendInputBatchInTx(ctx, tx, c, resolved, consent); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if _, err = tx.Update(ctx, "creative_agent_runs", "waiting_token=NULL,wait_reason=NULL", "id=$2", c.ID); err != nil {
@@ -240,6 +224,110 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		return runOutcome(run, 202)
 	}}, command)
 }
+
+// resolveInput reads what a photographer puts into a run that is already going:
+// words and references only. The run's Skill and commands were fixed when it
+// started. A bare text is the supplement's original form.
+func (s *Service) resolveInput(ctx context.Context, scope store.AccountScope, text string, segments []InstructionSegment) (ResolvedInstruction, error) {
+	if text != "" {
+		segments = []InstructionSegment{{Type: "text", Text: text}}
+	}
+	for _, segment := range segments {
+		switch segment.Type {
+		case "text":
+			if strings.TrimSpace(segment.Text) == "" {
+				return ResolvedInstruction{}, creativeops.ErrValidation
+			}
+		case "content_ref":
+		default:
+			return ResolvedInstruction{}, creativeops.ErrValidation
+		}
+	}
+	return s.ResolveInstruction(ctx, scope, segments)
+}
+
+// appendInputBatchInTx puts one message into a run that is going: the
+// conversation message, a batch of run inputs and the input block that shows
+// it in the turn, in one transaction. The caller holds the run.
+//
+// A reference the photographer attached here is covered by the account's
+// agreement to the send notice (owner 2026-11-11), not by the run's list of
+// revisions; it must still be this account's, usable, and of a class the
+// consent lets leave.
+func (s *Service) appendInputBatchInTx(ctx context.Context, tx store.TxAccountScope, c controlledRun, resolved ResolvedInstruction, consent Consent) error {
+	var batches int
+	rows, err := tx.QueryPage(ctx, "creative_run_inputs", "batch_ordinal", "run_id=$2", []store.OrderBy{{Column: "batch_ordinal", Desc: true}}, 1, 0, c.ID)
+	if err != nil {
+		return err
+	}
+	if rows.Next() {
+		err = rows.Scan(&batches)
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if rowErr != nil {
+		return rowErr
+	}
+	if batches >= maxSupplements {
+		return ErrLimit
+	}
+	// The run goes on with its model only if something can still serve it.
+	model, err := s.models.Model(c.ModelKey)
+	if err != nil {
+		return translateGateway(err)
+	}
+	levels := map[string]string{}
+	images := 0
+	for _, ref := range resolved.ContentRefs {
+		revision, err := creativecontent.RequireUsable(ctx, tx, ref.RevisionID, "display")
+		if err != nil {
+			return translateContent(err)
+		}
+		levels[ref.RevisionID] = "text"
+		if revision.Kind != "image" {
+			continue
+		}
+		levels[ref.RevisionID] = "image_preview"
+		images++
+		if images > s.limits.ImagePreviewCount {
+			return ErrLimit
+		}
+		if !model.Capability.ImageInput || s.images == nil {
+			return ErrModelCapability
+		}
+		if !consentHas(consent, "image_preview") {
+			return ErrEgressRequired
+		}
+	}
+	message, err := s.appendMessageInTx(ctx, tx, c.ConversationID, newMessage{Role: "user", Status: "complete", RunID: c.ID, Body: resolved.Body, ContentRefs: resolved.ContentRefs})
+	if err != nil {
+		return err
+	}
+	batch := batches + 1
+	var inputs [][]any
+	for i, block := range resolved.Body.Blocks {
+		switch block.Type {
+		case "text":
+			text := block.Text
+			inputs = append(inputs, []any{c.ID, batch, i, "instruction", "text", &text, nil, nil})
+		case "content_ref":
+			// The label is the body too, so a worker that reads only body
+			// still gets words instead of a NULL.
+			id, label := block.RefID, referenceLabel(block.RefID)
+			inputs = append(inputs, []any{c.ID, batch, i, "instruction", levels[id], &label, &id, nil})
+		}
+	}
+	if err = tx.InsertRows(ctx, "creative_run_inputs", inputColumns, inputs); err != nil {
+		return err
+	}
+	_, err = writeBlockInTx(ctx, tx, c.ID, inputSourceKey(batch), blockChange{Type: BlockInput, State: "pending", Set: inputPayload{MessageID: message.ID, Body: resolved.Body}})
+	return err
+}
+
+func inputSourceKey(batch int) string { return "input:" + strconv.Itoa(batch) }
 
 // Checkpoints before a supplement remain replayable. Message metadata marks
 // which immutable batches are already in Eino state; it grants no authority.

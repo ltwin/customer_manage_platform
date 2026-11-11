@@ -24,6 +24,9 @@ const (
 	BlockTool     = "tool"
 	BlockPlan     = "plan"
 	BlockNotice   = "notice"
+	// BlockInput is a message the photographer put into the run while it was
+	// going: pending until a model request carries it.
+	BlockInput = "input"
 )
 
 // BlockInterrupted is every type's shared terminal state: a run that stops or
@@ -140,6 +143,12 @@ type planPayload struct {
 	Steps []PlanStep `json:"steps"`
 }
 
+// inputPayload repeats the message so the turn can show it where it was put.
+type inputPayload struct {
+	MessageID string `json:"message_id"`
+	Body      Body   `json:"body"`
+}
+
 type noticePayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -151,6 +160,7 @@ var blockKinds = map[string]blockKind{
 	BlockTool:     {version: 1, states: []string{"running", "succeeded", "failed", "skipped"}, terminal: []string{"succeeded", "failed", "skipped"}, payload: func() any { return &toolPayload{} }},
 	BlockPlan:     {version: 1, states: []string{"active", "complete"}, terminal: []string{"complete"}, payload: func() any { return &planPayload{} }},
 	BlockNotice:   {version: 1, states: []string{"complete"}, terminal: []string{"complete"}, payload: func() any { return &noticePayload{} }},
+	BlockInput:    {version: 1, states: []string{"pending", "delivered"}, terminal: []string{"delivered"}, payload: func() any { return &inputPayload{} }},
 }
 
 // validatePayload refuses anything the registered shape does not describe,

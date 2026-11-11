@@ -6,8 +6,8 @@
 
 ## 2. 后端：输入批次与插队
 
-- [ ] 2.1 先写测试（红）：补充带片段、老的纯文字补充不变、`text` 与片段同时给出时返回 400；插队的 R1/R2 表驱动（各运行状态、已请求取消、已过期、最新步骤为 prepared / 带工具调用 / 终局 / failed / 还没有步骤）；引用的四种情况（本账号可用但不在清单内则接受，其他账号、授权已撤销、模型不支持图片则拒绝）；幂等（同一个 ID 重放；同一个 ID 跨端点返回 409）；引用行在老查询下按标签读出
-- [ ] 2.2 `blocks.go` 登记 `input`（`pending` / `delivered`，通用终态 `interrupted`）；`waiting.go` 抽出 `appendInputBatchInTx`（消息、批次、引用行同时写入标签 `body`、`input` 块），`SupplementRun` 接受片段；新增 `steer.go:SteerRun`、`finalModelStepInTx`。2.1 中的写入类用例全部变绿
+- [x] 2.1 先写测试（红）：补充带片段、老的纯文字补充不变、`text` 与片段同时给出时返回 400；插队的 R1/R2 表驱动（各运行状态、已请求取消、已过期、最新步骤为 prepared / 带工具调用 / 终局 / failed / 还没有步骤）；引用的四种情况（本账号可用但不在清单内则接受，其他账号、授权已撤销、模型不支持图片则拒绝）；幂等（同一个 ID 重放；同一个 ID 跨端点返回 409）；引用行在老查询下按标签读出
+- [x] 2.2 `blocks.go` 登记 `input`（`pending` / `delivered`，通用终态 `interrupted`）；`waiting.go` 抽出 `appendInputBatchInTx`（消息、批次、引用行同时写入标签 `body`、`input` 块），`SupplementRun` 接受片段；新增 `steer.go:SteerRun`、`finalModelStepInTx`。2.1 中的写入类用例全部变绿（`TestSupplementCarriesSegments` 验证的是送达，3.2 变绿）。默认测试模型支持图片，所以「图片 + 授权缺预览图类别 → 403」替代了「模型不支持图片」的用例；模型能力检查与 `CreateRun` 写法相同
 
 ## 3. 后端：送达、续跑与恢复
 
