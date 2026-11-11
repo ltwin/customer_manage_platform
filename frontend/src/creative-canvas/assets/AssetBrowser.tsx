@@ -1,3 +1,5 @@
+import { CharacterIPFields } from './CharacterFields.tsx'
+import { characterIdentity } from './character.ts'
 import { SHAPES, SWATCHES } from './appearance.ts'
 import ActionPopover from './ActionPopover.tsx'
 import { anchorPoint } from './popover.ts'
@@ -111,6 +113,14 @@ export default function AssetBrowser({
   const kinds = list.facets?.kinds
   const total = kinds ? Object.values(kinds).reduce((a, b) => a + b, 0) : null
   const filtered = narrowed(query)
+  const selectKind = (kind: LibraryQuery['kind']) =>
+    onQuery({
+      ...query,
+      kind,
+      ...(kind === 'character'
+        ? { color: '', shape: '' }
+        : { characterIP: '', characterWork: '' }),
+    })
   const children =
     group && !query.q ? groups.filter((g) => g.parent_id === group.id) : []
   const toggleTag = (id: string) =>
@@ -264,24 +274,26 @@ export default function AssetBrowser({
           <button
             type="button"
             aria-pressed={!query.kind}
-            onClick={() => onQuery({ ...query, kind: '' })}
+            onClick={() => selectKind('')}
           >
             全部{total !== null && <small>{total}</small>}
           </button>
           {KINDS.filter(
-            (k) => query.kind === k.key || (kinds?.[k.key] ?? 0) > 0,
+            (k) => query.kind === k.key || (kinds?.[k.key] ?? 0) > 0 || (!drawer && k.key === 'character'),
           ).map((k) => (
             <button
               key={k.key}
               type="button"
               aria-pressed={query.kind === k.key}
-              onClick={() => onQuery({ ...query, kind: k.key })}
+              onClick={() => selectKind(k.key)}
             >
               {k.label}
               {kinds && <small>{kinds[k.key]}</small>}
             </button>
           ))}
         </div>
+        {query.kind !== 'character' && (
+          <>
         <button
           type="button"
           className={`al-chip${query.color ? ' is-on' : ''}`}
@@ -317,6 +329,8 @@ export default function AssetBrowser({
           </span>
           <ChevronDown size={12} />
         </Picker>
+          </>
+        )}
         <Picker
           label="评分"
           className={query.rating ? 'is-on' : ''}
@@ -350,6 +364,14 @@ export default function AssetBrowser({
           <ChevronDown size={12} />
         </button>
       </div>
+
+      {query.kind === 'character' && (
+        <CharacterFilters
+          key={`${query.characterIP ?? ''}:${query.characterWork ?? ''}`}
+          query={query}
+          onQuery={onQuery}
+        />
+      )}
 
       {(filtered || query.tags.length > 0) && (
         <div className="al-pills" aria-label="生效的条件">
@@ -912,7 +934,8 @@ function AssetCard({
   selection: string[]
 }) {
   const visual =
-    a.kind === 'image' || a.kind === 'video' || a.kind === 'model' || a.kind === 'material'
+    a.kind === 'image' || a.kind === 'video' || a.kind === 'model' || a.kind === 'material' || a.kind === 'character'
+  const identity = a.character ? characterIdentity(a.character) : ''
   return (
     <div
       className={`al-tile${selected ? ' is-on' : ''}`}
@@ -921,7 +944,7 @@ function AssetCard({
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      aria-label={a.title}
+      aria-label={identity ? `${a.title} · ${identity}` : a.title}
       draggable={!a.deleted_at}
       onDragStart={(e) => {
         if (onDrag) return onDrag(a, e)
@@ -997,7 +1020,12 @@ function AssetCard({
       </div>
       {visual ? (
         <div className="al-cap">
-          <span>{a.title}</span>
+          {identity ? (
+            <div className="al-character-cap">
+              <span>{a.title}</span>
+              <small title={identity}>{identity}</small>
+            </div>
+          ) : <span>{a.title}</span>}
           <Stars value={a.rating} />
         </div>
       ) : (
@@ -1009,5 +1037,22 @@ function AssetCard({
         )
       )}
     </div>
+  )
+}
+
+function CharacterFilters({ query, onQuery }: { query: LibraryQuery; onQuery: (next: LibraryQuery) => void }) {
+  const [ip, setIP] = useState<{ name: string; key?: string }>({ name: query.characterIP ?? '' })
+  const [work, setWork] = useState(query.characterWork ?? '')
+  return (
+    <form className="al-character-filter" aria-label="角色卡筛选" onSubmit={(event) => {
+      event.preventDefault()
+      onQuery({ ...query, characterIP: ip.name.trim(), characterWork: work.trim() })
+    }}>
+      <CharacterIPFields filter ip={ip} work={work} onChange={(value, nextWork) => {
+        setIP(value)
+        setWork(nextWork)
+      }} />
+      <button type="submit" className="btn">筛选</button>
+    </form>
   )
 }

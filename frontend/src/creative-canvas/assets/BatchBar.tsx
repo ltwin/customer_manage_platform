@@ -67,7 +67,10 @@ export function ActionButtons({
   return (
     <>
       {entries
-        .filter(({ key }) => key !== 'project' || placeable)
+        .filter(({ key }) =>
+          (key !== 'project' || placeable) &&
+          (key !== 'download' || assets.some((asset) => asset.kind !== 'character'))
+        )
         .map(({ key, label, Icon }) => (
         <button
           type="button"
@@ -91,13 +94,15 @@ export function ActionButtons({
 export default function BatchBar({
   assets,
   onClear,
+  extra,
   ...actions
-}: Actions & { assets: Asset[]; onClear: () => void }) {
+}: Actions & { assets: Asset[]; onClear: () => void; extra?: React.ReactNode }) {
   if (!assets.length) return null
   return (
     <div className="al-batch" role="toolbar" aria-label="批量操作">
       <strong>已选 {assets.length} 项</strong>
       {assets.length > 100 && <span>一次最多处理 100 项</span>}
+      {extra}
       <ActionButtons
         assets={assets}
         {...actions}

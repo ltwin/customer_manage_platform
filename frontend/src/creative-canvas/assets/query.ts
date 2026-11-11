@@ -19,6 +19,7 @@ export const KINDS = [
   { key: 'audio', label: '音频' },
   { key: 'model', label: '模型' },
   { key: 'material', label: '材质' },
+  { key: 'character', label: '角色卡' },
   { key: 'text', label: '文字' },
   { key: 'link', label: '链接' },
 ] as const
@@ -48,6 +49,8 @@ export type LibraryQuery = {
   tags: string[]
   mode: 'all' | 'any'
   kind: Kind | ''
+  characterIP?: string
+  characterWork?: string
   q: string
   shape: Shape | ''
   color: string
@@ -61,9 +64,15 @@ const pick = <T extends string>(
   fallback: T,
 ): T => (allowed.includes(value as T) ? (value as T) : fallback)
 
+const characterFilterApplies = (q: LibraryQuery) =>
+  q.kind === '' || q.kind === 'character'
+
 /** 从网址读条件；不认识的值按缺省处理，进分组时视图固定为全部。 */
 export function readQuery(params: URLSearchParams): LibraryQuery {
   const group = params.get('group') ?? ''
+  const characterIP = (params.get('character_ip') ?? '').trim().slice(0, 60)
+  const characterWork = (params.get('character_work') ?? '').trim().slice(0, 100)
+  const characterKind = [null, '', 'character'].includes(params.get('kind'))
   return {
     view: group
       ? 'all'
@@ -79,7 +88,15 @@ export function readQuery(params: URLSearchParams): LibraryQuery {
       ...new Set((params.get('tags') ?? '').split(',').filter(Boolean)),
     ].slice(0, 50),
     mode: params.get('mode') === 'any' ? 'any' : 'all',
-    kind: pick(params.get('kind'), [...KINDS.map((k) => k.key), ''], ''),
+    // The character filters only narrow character cards: alone they select
+    // that kind, so the filter bar shows them; paired with another kind they
+    // are dropped instead of listing nothing.
+    kind:
+      characterKind && (characterIP || characterWork)
+        ? 'character'
+        : pick(params.get('kind'), [...KINDS.map((k) => k.key), ''], ''),
+    ...(characterKind && characterIP && { characterIP }),
+    ...(characterKind && characterWork && { characterWork }),
     q: (params.get('q') ?? '').trim().slice(0, 200),
     rating: pick(
       params.get('rating'),
@@ -102,6 +119,10 @@ export function writeQuery(q: LibraryQuery): URLSearchParams {
   if (q.tags.length) out.set('tags', q.tags.join(','))
   if (q.tags.length > 1 && q.mode === 'any') out.set('mode', 'any')
   if (q.kind) out.set('kind', q.kind)
+  if (characterFilterApplies(q) && q.characterIP)
+    out.set('character_ip', q.characterIP)
+  if (characterFilterApplies(q) && q.characterWork)
+    out.set('character_work', q.characterWork)
   if (q.q) out.set('q', q.q)
   if (q.shape) out.set('shape', q.shape)
   if (q.color) out.set('color', q.color)
@@ -129,9 +150,11 @@ export const blank = (): LibraryQuery => ({
 
 /** 有没有会缩小结果的条件（类型、关键词、标签、评分、画幅、颜色）。 */
 export const narrowed = (q: LibraryQuery) =>
-  !!(q.kind || q.q || q.tags.length || q.rating || q.shape || q.color)
+  !!(q.kind || q.q || q.tags.length || q.rating || q.shape || q.color || q.characterIP || q.characterWork)
 export const clearFilters = (q: LibraryQuery): LibraryQuery => ({
   ...q,
+  characterIP: '',
+  characterWork: '',
   kind: '',
   q: '',
   tags: [],
@@ -153,6 +176,10 @@ export function listPath(q: LibraryQuery, limit: number, cursor = ''): string {
     out.set('include_descendants', 'true')
   }
   if (q.kind) out.set('kind', q.kind)
+  if (characterFilterApplies(q) && q.characterIP)
+    out.set('character_ip', q.characterIP)
+  if (characterFilterApplies(q) && q.characterWork)
+    out.set('character_work', q.characterWork)
   if (q.q) out.set('q', q.q)
   if (q.tags.length) {
     out.set('tag_ids', q.tags.join(','))

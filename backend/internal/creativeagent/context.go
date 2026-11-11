@@ -133,6 +133,15 @@ func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope,
 func referenceMessage(id string, ref reference) (*schema.Message, error) {
 	message := schema.UserMessage(referenceLabel(id))
 	switch {
+	case ref.character != nil:
+		facts := map[string]any{"content_revision_id": id}
+		ref.character.addFacts(facts)
+		raw, err := json.Marshal(facts)
+		if err != nil {
+			return nil, err
+		}
+		message.Content += "\n" + string(raw)
+		message.Extra = map[string]any{characterRefKey: id}
 	case ref.model != nil:
 		facts, err := json.Marshal(modelReference{Model: ref.model, ThumbnailOmitted: ref.thumbnailOmitted})
 		if err != nil {
@@ -162,6 +171,7 @@ type reference struct {
 	model            *creativecontent.ModelFacts
 	material         *creativecontent.MaterialFacts
 	thumbnailOmitted string
+	character        *characterReference
 }
 
 // modelReference is a model's facts as written into the conversation.
@@ -228,6 +238,14 @@ func (s *Service) readReference(ctx context.Context, tx store.TxAccountScope, id
 			return reference{}, ErrEgressRequired
 		}
 		return reference{image: id}, nil
+	case creativecontent.CharacterKind:
+		if !consentHas(consent, "media_metadata") {
+			return reference{}, ErrEgressRequired
+		}
+		// A version is read by its ID: a canvas node keeps its card when the
+		// asset is trashed or purged (data: 角色卡节点), for every caller.
+		facts, err := s.readCharacterReference(ctx, tx, rev, consent, imageCapable)
+		return reference{character: facts}, err
 	case "model":
 		if !consentHas(consent, "media_metadata") {
 			return reference{}, ErrEgressRequired
@@ -279,6 +297,13 @@ func (s *Service) withThumbnail(ref reference, id string, consent Consent, image
 }
 
 func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Message, messages []llmgateway.Message) ([]llmgateway.Message, error) {
+	toolNames := map[string]string{}
+	for _, message := range source {
+		for _, call := range message.ToolCalls {
+			toolNames[call.ID] = call.Function.Name
+		}
+	}
+	characters := map[int]characterAttachments{}
 	imageAuthorized := false
 	readable := map[string]bool{}
 	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -287,7 +312,15 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 			return err
 		}
 		imageAuthorized = consentHas(c, "image_preview")
-		for _, message := range source {
+		for i, message := range source {
+			if id := characterAttachmentID(message); id != "" &&
+				(message.Role != schema.Tool || toolNames[message.ToolCallID] == readAssetTool) {
+				attachments, err := h.characterAttachmentsInTx(ctx, tx, id, c)
+				if err != nil {
+					return err
+				}
+				characters[i] = attachments
+			}
 			id := messageImageID(message)
 			if id == "" || readable[id] {
 				continue
@@ -307,14 +340,23 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 	seen := map[string]bool{}
 	var total int64
 	var delayed []llmgateway.Message
-	toolNames := map[string]string{}
-	for _, message := range source {
-		for _, call := range message.ToolCalls {
-			toolNames[call.ID] = call.Function.Name
-		}
-	}
 	for _, i := range imageMessageOrder(source) {
 		message := source[i]
+		if character, ok := characters[i]; ok {
+			blocks, caption, err := h.bindCharacterImages(ctx, character, seen, &total, &messages[i])
+			if err != nil {
+				return nil, err
+			}
+			if caption != "" {
+				label := llmgateway.Block{Kind: llmgateway.BlockText, Text: referenceLabel(character.id) + " 的角色卡参考图（" + caption + "）"}
+				if message.Role == schema.Tool {
+					delayed = append(delayed, llmgateway.Message{Role: llmgateway.RoleUser, Blocks: append([]llmgateway.Block{label}, blocks...)})
+				} else {
+					messages[i].Blocks = append(append(messages[i].Blocks, label), blocks...)
+				}
+			}
+			continue
+		}
 		id, _ := message.Extra[imageRefsKey].(string)
 		if message.Role == schema.Tool && (toolNames[message.ToolCallID] == readAssetTool || toolNames[message.ToolCallID] == renderViewTool) {
 			var result struct {
@@ -647,6 +689,9 @@ func (s *Service) readAssetResult(ctx context.Context, scope store.AccountScope,
 		if ref.thumbnailOmitted != "" {
 			result["thumbnail_omitted"] = ref.thumbnailOmitted
 		}
+		if ref.character != nil {
+			return fitCharacterFacts(result, ref.character, s.limits.ToolResultBytes)
+		}
 		if ref.model != nil {
 			return fitModelFacts(result, *ref.model, s.limits.ToolResultBytes)
 		}
@@ -850,7 +895,7 @@ func contextToolInfo(name string) *schema.ToolInfo {
 	switch name {
 	case readAssetTool:
 		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽与资产带的材质、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因；超出单次结果上限时依次省略部件与挂点、参数定义，omitted 列出省略项。不返回生成代码。材质返回完整槽位 slot（原样写进 edit_scene 的 material_slots 即可使用）和贴图图片的宽高 images，并附缩略图；模型资产带的材质用到贴图时同样给 images。贴图只给图片 ID 和宽高，不附原图。" +
-			"内置贴图材质用 builtin_id（search_assets source:builtin 所得）读取，与 content_revision_id 二选一：返回 slot、品类、真实尺寸、参数缺省值 defaults 和来源，并附缩略图。"
+			"角色卡返回完整 character 载荷与来源图片尺寸，按视角顺序附参考图；无法附上的图片列在 images_omitted。内置贴图材质用 builtin_id（search_assets source:builtin 所得）读取，与 content_revision_id 二选一：返回 slot、品类、真实尺寸、参数缺省值 defaults 和来源，并附缩略图。"
 		params["content_revision_id"] = &schema.ParameterInfo{Type: schema.String, Desc: "内容修订 ID；与 builtin_id 二选一"}
 		params["builtin_id"] = &schema.ParameterInfo{Type: schema.String, Desc: "内置贴图材质 ID，如 wood_floor@1；与 content_revision_id 二选一"}
 		params["offset"] = integer("文字起始字节，初次读取填 0")
@@ -939,7 +984,7 @@ func imageMessageOrder(messages []*schema.Message) []int {
 	var current, optional []int
 	for i := len(messages) - 1; i >= 0; i-- {
 		m := messages[i]
-		if messageImageID(m) == "" {
+		if messageImageID(m) == "" && characterAttachmentID(m) == "" {
 			continue
 		}
 		if group, _ := m.Extra["creative_history_group"].(string); group == "" && m.Role != schema.Tool {

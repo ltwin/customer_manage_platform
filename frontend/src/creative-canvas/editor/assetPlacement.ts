@@ -7,6 +7,9 @@ export type CanvasAsset = Asset & {
 }
 export const isCanvasAsset = (a: Asset): a is CanvasAsset =>
   a.kind !== 'model' && a.kind !== 'material'
+export const acceptsCharacterReference = (typeKey: string) =>
+  typeKey === 'core.image'
+
 /** 两个入口共用同一份素材引用；尺寸仍由画布按内容原始比例生成。 */
 export function assetActions(
   assets: CanvasAsset[],

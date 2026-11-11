@@ -654,3 +654,37 @@ func TestGCSerializesWithANewReference(t *testing.T) {
 		t.Fatalf("reference to deleted content: want ErrNotFound, got %v", err)
 	}
 }
+
+func TestGCReclaimsCharacterBeforeItsImages(t *testing.T) {
+	f := setup(t)
+	image := f.uploadAndPurge(t)
+	if _, err := f.db.Exec(`
+INSERT INTO creative_contents(id,account_id,kind,created_by_kind)
+VALUES('ccnt_gc_character','media-a','character','photographer');
+INSERT INTO creative_content_revisions(id,account_id,content_id,sequence,schema_version,payload,rights_declaration_id)
+VALUES('ccrv_gc_character','media-a','ccnt_gc_character',1,1,'{}','rights');
+INSERT INTO creative_assets(id,account_id,kind,title,normalized_title,description,content_id,content_revision_id)
+VALUES('asset-gc-character','media-a','character','云','云','','ccnt_gc_character','ccrv_gc_character')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`INSERT INTO creative_content_revision_refs(account_id,holder_revision_id,content_revision_id,role)
+VALUES('media-a','ccrv_gc_character',$1,'character')`, image.ContentRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 0 {
+		t.Fatalf("live card or its image collected: %+v", r)
+	}
+	if _, err := f.db.Exec("DELETE FROM creative_assets WHERE id='asset-gc-character'"); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("expected one character revision reclaimed: %+v", r)
+	}
+	if f.scalar(t, "SELECT state FROM creative_content_revisions WHERE id=$1", image.ContentRevisionID) != "ready" ||
+		f.scalar(t, "SELECT count(*)::text FROM creative_content_revision_refs WHERE holder_revision_id='ccrv_gc_character'") != "0" {
+		t.Fatal("card reclamation should release its image for the next round")
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("expected the unheld image to be reclaimed next: %+v", r)
+	}
+}

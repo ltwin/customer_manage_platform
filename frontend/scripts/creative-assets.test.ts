@@ -314,3 +314,19 @@ test('appearance filters round-trip through URL, bind pagination and clear with 
   assert.equal(readQuery(new URLSearchParams('shape=wide&color=red')).color, '')
   assert.equal(readQuery(new URLSearchParams('shape=wide&color=red')).shape, '')
 })
+
+test('character filters only travel with the character kind', () => {
+  const alone = readQuery(params('character_ip=Fate&character_work=FGO'))
+  assert.equal(alone.kind, 'character')
+  assert.equal(alone.characterIP, 'Fate')
+  const paired = readQuery(params('kind=image&character_ip=Fate'))
+  assert.equal(paired.kind, 'image')
+  assert.equal(paired.characterIP, undefined)
+  const path = listPath({ ...blank(), kind: 'image', characterIP: 'Fate' }, 20)
+  assert.ok(!path.includes('character_ip'))
+  assert.ok(
+    listPath({ ...blank(), kind: 'character', characterIP: 'Fate' }, 20).includes(
+      'character_ip=Fate',
+    ),
+  )
+})

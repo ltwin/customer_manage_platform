@@ -1169,3 +1169,176 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
   - 骨骼通道 `pose.*`（本 Epic 子项 4）。
   - 灯光、天空、雾的通道。
   - 密集动画拆出快照存储。
+
+## 角色卡
+
+### 用途与存储角色
+- **用途**：资产库里的角色卡及其版本历史。存角色名、外貌描述、参考图、原始素材、身份字段和来源备注；不存造型层级、3D 模型、使用记录（资产库不记录被哪个画布用过，沿用资产库现有约定）。
+- **存储**：PostgreSQL，关系型 + 修订载荷 jsonb。不建新表：
+  - `creative_contents.kind`、`creative_assets.kind` 的 CHECK 加 `character`。
+  - `creative_content_revision_refs.role` 的 CHECK 加 `character`。
+- **角色**：内容修订载荷是权威主数据；资产行是它在资产库的入口，`content_revision_id` 指向当前版本；持有关系行和搜索索引是从载荷派生的，与修订同一事务写入。
+- **所有权**：只有 `api: 新建角色卡`、`api: 角色卡存新版本` 经 `creativecontent.WriteCharacterAndRetain` 写角色卡内容和资产。场景命令、画布命令、通用内容写入口、按修订存入资产库的入口都写不出 `character`。
+
+### 结构与身份
+- 内容 `ccnt_…`、修订 `ccrv_…`、资产 `ccas_…`，沿用现有前缀。一份角色卡 = 一个内容 + 一个资产行；版本 = 该内容的修订，按 `sequence` 递增。
+- 修订载荷（`creative_content_revisions.payload`，`schema_version = 1`）：
+
+| 路径 | 类型 | 必须 | 缺省 / 约束 |
+|---|---|---|---|
+| `character.name` | string | 是 | 1–60 个 Unicode 码点，去掉首尾空白后非空。用于提示词和资产标题 |
+| `character.appearance` | string | 是 | 1–2000 码点。稳定的外貌特征，生成时附在提示词后 |
+| `character.views` | array | 是 | 1–4 项，有顺序，第一项是封面。元素见下表；同一图片修订不能出现两次 |
+| `character.sources` | array | 是 | 0–12 项，元素 `{content_revision_id}`；可以为空数组。不交给生图模型 |
+| `character.aliases` | string[] | 否 | ≤ 10 项，每项 1–60 码点，规范化后互不相同，也不等于 `name`。只用于搜索和助手识别，不进提示词。缺省等同空数组 |
+| `character.variant` | string | 否 | 版本说明，1–40 码点，例如「常服」「第三灵基」。缺省表示没有 |
+| `character.origin` | string | 否 | `original`（原创）或 `derivative`（作品衍生），只用于展示和以后的市场分类，不影响任何校验。没有真人选项。缺省表示未说明 |
+| `character.ip` | object | 否 | 所属 IP，原创和衍生都可以填（原创时是自己的系列名）。结构见下表 |
+| `character.work` | string | 否 | 作品，1–100 码点。有 `ip` 时才允许；IP 和作品相同时不填。写入时按「作品归一」处理 |
+| `character.attribution` | string | 否 | ≤ 2000 码点，来源备注（出处、画师、授权说明等），服务端只保存和显示。缺省表示没有填写 |
+| `character.source_urls` | string[] | 否 | ≤ 10 项，每项 ≤ 2048，只允许 `http`、`https`，作用同来源备注。缺省等同空数组 |
+
+`character.views[]` 元素：
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `content_revision_id` | string `ccrv_…` | 是 | 本账号、`kind = image`、`state = ready`，并且能用作生成参考的图片修订：建卡时用生成受理同一个检查（`creativecontent.RequireGenerationReferenceRow`），保证「建卡成功、生成时才发现这张图不能用」不会发生。创意空间上传的图默认就满足，摄影师看不到任何额外步骤 |
+| `view` | string | 是 | `front` 正面、`three_quarter` 四分之三侧、`side` 侧面、`back` 背面、`face` 脸部特写、`full_body` 全身、`detail` 细节、`other` 其他。枚举可能随一致性调查调整（design「未决事项」） |
+| `note` | string | 否 | ≤ 200 码点，例如「左手的手环」 |
+
+`character.ip`：
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `name` | string | 是 | 1–60 码点。总是存名字本身，导出后不依赖任何目录也能看懂 |
+| `key` | string | 否 | 内置角色 IP 目录的稳定标识（`data: 内置角色 IP 目录`）。有 `key` 时 `name` 是目录里该 IP 的显示名 |
+
+**IP 归一**（建卡、存新版本时由服务端执行，结果写进载荷）：
+1. 请求带 `key`：`key` 必须在目录里，服务端把 `name` 改写为目录显示名。
+2. 请求不带 `key`：`name` 规范化后（NFKC、转小写、去首尾空白、连续空白合一）与目录某个 IP 的显示名或别名相同，就补上 `key` 并改写 `name`；同时命中多个 IP 时不补，按自建处理。
+3. 都不命中：按自建 IP 保存，`name` 原样（只去首尾空白）。
+4. **作品归一**：有 `ip.key`、`work` 规范化后与该 IP 在目录里某部作品的名称或别名相同时，改写为目录里的作品名（「FGO」→「Fate/Grand Order」）；否则原样保存（只去首尾空白）。联想由 `api: 查找角色 IP` 提供。
+
+**载荷不引用账号里的任何记录**：`key` 是随代码发布、全局稳定的目录标识，不是账号数据，导出到其他账号仍然有效（可导出不变量）。
+
+- 对象：角色卡修订自己没有 `creative_content_objects`。封面、缩略图都取 `views[0]` 那张图片的对象，经现有媒体读取票据读取。
+- 持有关系：写修订的同一事务里，`views` 和 `sources` 中每张不同的图片各写一行 `creative_content_revision_refs`（`holder_revision_id` = 角色卡修订，`role = character`）。同一张图同时在 `views` 和 `sources` 里只写一行。
+- 资产行：`kind = character`，`title` 由当前版本生成（建卡和存新版本时同步）：有 `variant` 时为 `<name> · <variant>`，否则为 `<name>`。标题保持简短，**不靠标题区分同名角色**：资产列表、选参考的候选、助手的候选都另外显示 IP、作品和版本说明（见下方「列表与筛选」的 `character` 要点）。`description`、收藏、评分、分组、标签照常。`source_url` 不使用（来源页面在载荷的 `source_urls` 里），保持 null。
+
+### 访问模式与保证
+- **建卡**：一个事务内校验载荷 → 复核每张图片 → 写内容和第 1 个修订 → 写持有关系 → 建资产行、归类、搜索索引 → `library_revision` +1。任一步失败全部不生效。不查重：内容相同的两次建卡是两张角色卡（同导入模型）。
+- **存新版本**：锁资产行 → 检查回收站和 `revision` → 新载荷与当前版本规范化后 JSON 相等则不写 → 否则在同一内容上追加修订、写持有关系 → 资产行改指、`title` 同步、`revision` +1 → 搜索索引、`library_revision` +1。
+- **列表与筛选**：资产列表的 `kind` 过滤加 `character`；按画面的筛选（主色、画幅）只作用于图片，角色卡不命中。角色卡另有两个过滤：
+  - `character_ip`：参数先按「IP 归一」解析。解析成内置 `key` K 时，命中「投影的 key 等于 K」**或**「投影里规范化后的 IP 名等于 K 的显示名或任一别名」——后一条让目录后来收录的自建 IP 不用重建投影也能筛到旧卡。解析不到目录时，按规范化后的 IP 名相等匹配。
+  - `character_work`：参数规范化后，如果给了 `character_ip` 且解析到内置 IP，再按该 IP 的作品别名解析成作品名；没给 `character_ip` 时，在全部内置 IP 的作品名和别名里找，唯一命中就解析，命中多部作品时返回 400 `validation_failed`，`details.candidates` 列出候选 `{ip, work}`。最后与投影里规范化后的作品名比较，同样兼容目录收录前写入的旧值。
+  - 匹配用的值从当前版本载荷派生，存进资产的搜索投影（`creative_asset_search`，与资产 `revision` 同步更新），不扫载荷。投影列的形状见 design.md「数据与迁移」。
+  - 资产列表的每个角色卡项附只读要点 `character: {name, variant?, ip?, work?, view_count}`，界面用它在标题下面显示「IP · 作品 · 版本说明」。
+- **搜索**：资产搜索索引收录 `name`、`aliases`、`variant`、`ip.name`（内置 IP 再加目录别名）、`work`（内置作品再加作品别名）、`appearance`。
+- **读取**：资产读取返回当前版本的完整载荷；旧版本按内容修订读取（`GET /creative/content-revisions/{id}`）。资产库首版不提供版本历史界面。
+- **GC**：
+  - 资产行是当前版本的持有方（`LiveOwnerCondition` 已有的资产条件，含回收站中的资产）。
+  - 持有关系行在持有方修订 `state` 不是 `deleted` 时持有图片（`data: 材质资产` 已加的条件，不递归）。
+  - `character` 加入可回收的内容种类。旧版本没有任何持有方（资产已改指、没有节点或记录引用）时回收，持有关系行级联删除，下一轮再回收不再被持有的图片。
+  - 守卫测试 `projection_roles_test.go` 登记 `role = character`。
+- **保证方**：
+  - 数据库：账号范围、主键唯一、两处 kind CHECK、`role` CHECK、持有关系外键。
+  - 应用：载荷形状、图片可用性、持有关系与载荷一致、IP 与作品归一、资产 `title` 与当前版本一致、搜索投影与当前版本一致、一份角色卡内容只有一个资产行。
+- **隔离**：所有读写经 repository 基座限定 `account_id`（ADR-001）。图片复核要求本账号，所以载荷里不会出现其他账号的图片。
+- **助手读取**：见 `api: 助手读取与使用角色卡`。
+
+### 生命周期与演进
+- 回收站、彻底删除沿用资产库：进回收站只标资产行；彻底删除只删资产行和归类，内容留给 GC。画布节点持有的版本不受影响。
+- 迁移（接在当前最新迁移之后，起草时为 `0081`）：两处 kind CHECK 和 `role` CHECK 加值；`creative_asset_search` 加 IP、作品两列及部分索引。首次建模，无存量数据，不需要回填。回滚时如已有 `character` 内容、资产或 `role = character` 的持有关系行则拒绝，前向修复。
+- 演进：载荷靠 `schema_version` 演进。以后的导入可以加 `imported_from` 之类字段，3D 表示可以加模型引用，都在对应立项时定义。
+- OpenAPI：新增 `CreativeCharacterPayload`（结构同上表，`views` 元素为 `CreativeCharacterView`）；资产相关的 `kind` 枚举（资产列表筛选、`CreativeLibraryAsset.kind`、`CreativeAssetFacets.kinds`）加 `character`，内容载荷的联合类型加 `character`。
+
+### 表达与样例
+```json
+{
+  "character": {
+    "name": "芙宁娜",
+    "appearance": "白发及肩，发尾挑染浅蓝；异色瞳，左蓝右浅蓝；深蓝礼帽带白色羽饰；蓝白燕尾短外套，白色短裤，黑白条纹长袜。",
+    "views": [
+      {"content_revision_id": "ccrv_0f3a1c52-7d0e-4c8b-9a41-2e6f5b7c8d90", "view": "front"},
+      {"content_revision_id": "ccrv_6b2e9d14-3a7f-4e15-8c02-91d4a6b3f7e8", "view": "side"},
+      {"content_revision_id": "ccrv_c4d81a7e-52b9-4f60-a3e7-0b9f2d6c1e54", "view": "face", "note": "眼睛颜色以这张为准"}
+    ],
+    "sources": [{"content_revision_id": "ccrv_9a7e3b21-0c4d-4f8e-b615-7d2c9e0a3f46"}],
+    "aliases": ["芙卡洛斯", "Furina", "水神"],
+    "variant": "常服",
+    "origin": "derivative",
+    "ip": {"name": "原神", "key": "genshin-impact"},
+    "attribution": "参考官方立绘",
+    "source_urls": ["https://example.com/furina"]
+  }
+}
+```
+
+同 IP 多作品的例子（只列身份字段）：`{"name": "阿尔托莉雅·潘德拉贡", "aliases": ["Saber", "阿尔托莉雅"], "variant": "第三灵基", "origin": "derivative", "ip": {"name": "Fate", "key": "fate"}, "work": "Fate/Grand Order"}`。
+
+访问样例：列出原神的角色卡，按最近更新排序：`GET /api/v1/creative/assets?kind=character&character_ip=genshin-impact`，返回的每一项 `kind = character`、`title = 芙宁娜 · 常服`，封面取第一张参考图。用名字 `character_ip=Genshin` 查询结果相同（命中目录别名）。
+
+## 内置角色 IP 目录
+
+### 用途与存储角色
+- **用途**：常见 IP 的标准名称、别名和作品列表，让建卡时「选」而不是「填」，并把「原神 / Genshin / Genshin Impact」归到同一个 IP。不含角色、图片或任何官方素材。
+- **存储**：随后端代码发布的静态数据文件，编译时嵌入（`embed`），不进数据库。文件为 `backend/internal/creativelibrary/character_ips.json`。
+- **角色**：内置 IP 身份（`key`）的权威来源。角色卡载荷里的 `ip.name` 是写入时的快照，之后目录改名不回写角色卡。
+- **所有权**：开发者维护，经代码评审合入；账号不能修改。
+
+### 结构与身份
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `ips[].key` | string | 是 | `[a-z0-9-]`，1–60，全目录唯一；**一经发布不改、不复用** |
+| `ips[].name` | string | 是 | 显示名（中文优先），1–60 码点 |
+| `ips[].aliases` | string[] | 否 | 英文名、简称、旧译名；规范化后在全目录（含所有 `name`）唯一，否则构建期测试失败 |
+| `ips[].works` | array | 否 | 旗下作品，只有一个 IP 对应多部作品时才填（如 Fate）；用于作品联想和作品归一 |
+| `ips[].works[].name` | string | 是 | 作品名，1–100 码点，同一 IP 下规范化后唯一 |
+| `ips[].works[].aliases` | string[] | 否 | 简称、英文名（如「FGO」「Fate/GO」）；同一 IP 下与所有作品名、别名规范化后唯一。不同 IP 之间允许重复，重复时由 `character_work` 的歧义规则处理 |
+
+首批 50–100 个，覆盖常见二游和动漫 IP；名单在实施时整理，owner 过目后合入。
+
+### 访问模式与保证
+- 进程启动时载入内存；IP 归一和 `api: 查找角色 IP` 只读内存。
+- 构建期测试保证：`key` 格式与唯一、IP 名称和别名规范化后无冲突、同一 IP 下作品名称和别名无冲突、与上一次发布相比没有删除或改名的 `key`（删除改为标记 `retired: true`，不再出现在联想里，但已有 `key` 仍能解析）。
+
+### 生命周期与演进
+- 随版本发布增补。退役的 IP 保留条目；已写进角色卡的 `key` 永远可解析。
+- 目录改显示名时，已有角色卡的 `ip.name` 不变，按 `key` 过滤和联想不受影响；查看浮窗显示载荷里的名字。
+- 目录新收录一个账号早已在用的自建 IP 名（或新增别名）时，旧卡的载荷和投影不改写：过滤按「列表与筛选」的名字兼容规则仍能命中；旧卡下次存新版本时自然归一到 `key`。
+- 以后做市场按 IP 浏览，以 `key` 对齐不同账号的角色卡；自建 IP 没有 `key`，只按名字。
+
+## 角色卡节点
+
+### 用途与存储角色
+- **用途**：画布上的角色卡。作为生成节点的参考，生成时展开（`patterns: 角色卡展开为生成参考`）。
+- **存储**：沿用 `creative_nodes`。节点类型 `core.character` 在 `backend/internal/creativecanvas/definitions.go` 注册（`creative_nodes.type_key` 没有数据库约束），不需要迁移。
+- **角色**：节点的 `content_revision_id` 是它使用的角色卡版本，是 GC 持有方（节点已在 `LiveOwnerCondition` 里）。
+- **所有权**：画布命令层。
+
+### 结构与身份
+- 定义：`{TypeKey: "core.character", SchemaVersion: 1, CreationSupported: false, Ports: ["output"], Actions: ["move", "resize", "rename", "duplicate", "remove", "reference", "update_character"]}`。不能生成、不能编辑内容、不能「存入资产库」（它本来就来自资产库）。具体字段名实施时按 `definitions.go` 的现有结构核对。
+- 内容：一个 `kind = character` 的内容修订。
+- 节点视图附加只读字段 `character`：
+
+| 字段 | 类型 | 出现条件 | 说明 |
+|---|---|---|---|
+| `character.name` | string | 总是 | 节点版本的角色名 |
+| `character.cover_revision_id` | string | 总是 | `views[0]` 的图片修订，用来显示封面 |
+| `character.view_count` | integer | 总是 | 参考图张数，用于提示「将展开为 N 张参考图」 |
+| `character.asset_id` | string | 有对应资产时 | 同一 `content_id`、不在回收站的角色卡资产 |
+| `character.latest_revision_id` | string | 资产的当前版本与节点不同时 | 有新版本 |
+
+### 访问模式与保证
+- **建节点**：
+  - 从资产库放入、拖入、「选参考」：`add_node` 带角色卡资产，内容为资产的当前版本。「选参考」时照常连到目标生成节点的 `reference` 端口。
+  - 助手：`edit_canvas` 的 `add_node` 接受角色卡资产（`api: 助手读取与使用角色卡`）。
+  - 画布的「放入」「填充」不接受角色卡（填充是替换媒体内容，不适用）。
+- **连线**：只能作为参考连到生成节点（`target_port = reference`）。连到非生成节点、作为 `data` 输入时，画布命令以现有的连线校验错误拒绝。
+- **更新到新版本**：动作 `update_character` 把节点内容换成 `latest_revision_id`，产生节点版本，可撤销；与当前相同时不产生版本。
+- **新版本提示**：读画布时按节点内容所属的 `content_id` 查资产，规则见上表；查询按画布里的角色卡节点批量进行，不逐个查。
+
+### 生命周期与演进
+- 删除节点即解除持有。角色卡资产进回收站或彻底删除，不影响节点已持有的版本，节点照常可以生成，只是不再有 `asset_id` 和新版本提示。
+- 新节点类型，没有存量，不需要回填。

@@ -36,22 +36,24 @@ type TagCount struct {
 	Count int64  `json:"count"`
 }
 type Search struct {
-	AssetID     string   `json:"asset_id,omitempty"`
-	Untagged    bool     `json:"untagged,omitempty"`
-	Snapshot    bool     `json:"snapshot,omitempty"`
-	Shape       string   `json:"shape,omitempty"`
-	Color       string   `json:"color,omitempty"`
-	View        string   `json:"view"`
-	GroupID     string   `json:"group_id"`
-	Descendants bool     `json:"include_descendants"`
-	Kind        string   `json:"kind"`
-	Q           string   `json:"q"`
-	TagIDs      []string `json:"tag_ids"`
-	TagMode     string   `json:"tag_mode"`
-	Sort        string   `json:"sort"`
-	Limit       int      `json:"limit"`
-	MinRating   *float64 `json:"min_rating,omitempty"`
-	Unrated     bool     `json:"unrated,omitempty"`
+	AssetID       string   `json:"asset_id,omitempty"`
+	Untagged      bool     `json:"untagged,omitempty"`
+	Snapshot      bool     `json:"snapshot,omitempty"`
+	Shape         string   `json:"shape,omitempty"`
+	CharacterIP   string   `json:"character_ip,omitempty"`
+	CharacterWork string   `json:"character_work,omitempty"`
+	Color         string   `json:"color,omitempty"`
+	View          string   `json:"view"`
+	GroupID       string   `json:"group_id"`
+	Descendants   bool     `json:"include_descendants"`
+	Kind          string   `json:"kind"`
+	Q             string   `json:"q"`
+	TagIDs        []string `json:"tag_ids"`
+	TagMode       string   `json:"tag_mode"`
+	Sort          string   `json:"sort"`
+	Limit         int      `json:"limit"`
+	MinRating     *float64 `json:"min_rating,omitempty"`
+	Unrated       bool     `json:"unrated,omitempty"`
 	// Facets are counted on the first page only and do not bind the cursor.
 	IncludeFacets bool   `json:"-"`
 	Cursor        string `json:"-"`
@@ -66,7 +68,7 @@ type searchCursor struct {
 	Revision creativeops.Revision `json:"library_revision,omitempty"`
 }
 
-var assetKinds = []string{"text", "link", "image", "video", "audio", "model", "material"}
+var assetKinds = []string{"text", "link", "image", "video", "audio", "model", "material", creativecontent.CharacterKind}
 
 // AssetKinds lists the content kinds an asset can hold.
 func AssetKinds() []string { return slices.Clone(assetKinds) }
@@ -98,6 +100,16 @@ func (q Search) normalized() (Search, error) {
 	if q.MinRating != nil && ratingHalves(*q.MinRating) == 0 || q.Unrated && q.MinRating != nil || q.IncludeFacets && q.Cursor != "" {
 		return q, creativeops.ErrValidation
 	}
+	if utf8.RuneCountInString(q.CharacterIP) > 60 || utf8.RuneCountInString(q.CharacterWork) > 100 {
+		return q, creativeops.ErrValidation
+	}
+	// The character filters imply kind=character; paired with another kind
+	// they would always list nothing (contracts: 资产列表).
+	if (q.CharacterIP != "" || q.CharacterWork != "") && q.Kind != "" && q.Kind != creativecontent.CharacterKind {
+		return q, creativeops.ErrValidation
+	}
+	q.CharacterIP = creativecontent.CharacterIdentityKey(q.CharacterIP)
+	q.CharacterWork = creativecontent.CharacterIdentityKey(q.CharacterWork)
 	var err error
 	if q.Shape != "" && !slices.Contains([]string{"landscape", "square", "portrait"}, q.Shape) {
 		return q, creativeops.ErrValidation
@@ -122,8 +134,10 @@ func (a *sqlArgs) bind(v any) string {
 // total_count and facets all build their WHERE clause here, inside one read
 // snapshot, so the numbers always describe the listed items.
 type searchFilter struct {
-	q      Search
-	groups []string
+	q         Search
+	groups    []string
+	character characterFilter
+	keyword   characterKeyword
 }
 
 // condition renders the filter; facets leave out the kind or tag part they count.
@@ -168,9 +182,9 @@ func (f searchFilter) condition(withKind, withTags bool, args *sqlArgs) string {
 	if q.Q != "" {
 		p := args.bind("%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q.Q) + "%")
 		// Revoked/deleted content cannot be inferred through keyword matches.
-		cond += ` AND (normalized_title LIKE ` + p + ` ESCAPE '\' OR EXISTS(SELECT 1 FROM creative_asset_search s WHERE s.account_id=$1 AND s.asset_id=creative_assets.id AND s.normalized_text LIKE ` + p + ` ESCAPE '\' AND ` + readableContent("creative_assets.content_revision_id", args) + `) OR EXISTS(SELECT 1 FROM creative_asset_tags a JOIN creative_tags t ON t.account_id=a.account_id AND t.id=a.tag_id WHERE a.account_id=$1 AND a.asset_id=creative_assets.id AND t.normalized_name LIKE ` + p + ` ESCAPE '\'))`
+		cond += ` AND (normalized_title LIKE ` + p + ` ESCAPE '\' OR EXISTS(SELECT 1 FROM creative_asset_search s WHERE s.account_id=$1 AND s.asset_id=creative_assets.id AND s.normalized_text LIKE ` + p + ` ESCAPE '\' AND ` + readableContent("creative_assets.content_revision_id", args) + `) OR EXISTS(SELECT 1 FROM creative_asset_tags a JOIN creative_tags t ON t.account_id=a.account_id AND t.id=a.tag_id WHERE a.account_id=$1 AND a.asset_id=creative_assets.id AND t.normalized_name LIKE ` + p + ` ESCAPE '\')` + f.keyword.condition(args) + `)`
 	}
-	return cond + appearanceCondition(q, args)
+	return cond + appearanceCondition(q, args) + f.character.condition(args)
 }
 
 // displayRights lists the declaration pairs that allow moodboard display.
@@ -341,13 +355,21 @@ func projectAssets(ctx context.Context, tx store.ReadTxAccountScope, items []Ass
 		}
 		preview := creativecontent.Preview(r)
 		a.Content = &preview
+		a.Character = characterBrief(r.Payload.Character)
 	}
 	return attachPalettes(ctx, tx, items)
 }
 
 // resolveFilter checks the referenced group and tags and expands the subtree.
 func resolveFilter(ctx context.Context, tx libraryReader, q Search) (searchFilter, error) {
-	f := searchFilter{q: q}
+	character, err := resolveCharacterFilter(q.CharacterIP, q.CharacterWork)
+	if err != nil {
+		return searchFilter{}, err
+	}
+	f := searchFilter{q: q, character: character}
+	if q.Q != "" && builtinCharacterIPsErr == nil {
+		f.keyword = builtinCharacterIPs.keyword(q.Q)
+	}
 	for _, id := range q.TagIDs {
 		if err := requireEntity(ctx, tx, "creative_tags", id); err != nil {
 			return f, err

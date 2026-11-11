@@ -155,7 +155,7 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 		preview := creativecontent.Preview(r)
 		n.Content = &preview
 	}
-	return nil
+	return fillCharacterNodeViews(ctx, tx, c.Nodes)
 }
 
 // fillDocument shows the document behind a node. A purged document, an

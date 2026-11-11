@@ -1512,15 +1512,15 @@ function AgentConversation({
       {pickingMaterial && (
         <LibraryPicker
           title="引用资产库素材"
-          note="文本和图片引用固定版本；图片需要支持识图的模型"
+          note="引用会固定内容版本。图片和角色卡参考图需要支持识图的模型"
           accept={(asset) =>
-            asset.content?.kind === 'text' || asset.content?.kind === 'image'
+            asset.content?.kind === 'text' || asset.content?.kind === 'image' || asset.content?.kind === 'character'
           }
           onClose={() => setPickingMaterial(false)}
           onPick={(assets) => {
             const picked = assets.flatMap((asset): AgentMaterial[] => {
               const kind = asset.content?.kind
-              return kind === 'text' || kind === 'image'
+              return kind === 'text' || kind === 'image' || kind === 'character'
                 ? [
                     {
                       id: asset.content_revision_id,

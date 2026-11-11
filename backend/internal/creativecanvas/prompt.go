@@ -154,9 +154,16 @@ func savePromptInTx(ctx context.Context, tx store.TxAccountScope, v SavePromptIn
 			if !hasPorts(source.TypeKey) {
 				return creativeops.Outcome{}, noPorts(source)
 			}
+			if !acceptsCharacterReference(source.TypeKey == characterNodeType, n.TypeKey) {
+				return creativeops.Outcome{}, characterReferenceError()
+			}
 		} else {
-			if _, err := creativecontent.RequireUsable(ctx, tx, *i.ContentRevisionID, "display"); err != nil {
+			revision, err := creativecontent.RequireUsable(ctx, tx, *i.ContentRevisionID, "display")
+			if err != nil {
 				return creativeops.Outcome{}, err
+			}
+			if !acceptsCharacterReference(revision.Kind == creativecontent.CharacterKind, n.TypeKey) {
+				return creativeops.Outcome{}, characterReferenceError()
 			}
 		}
 		i.ID = "cwpref_" + uuid.NewString()

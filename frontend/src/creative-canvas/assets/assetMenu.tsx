@@ -69,7 +69,10 @@ export function assetMenuItems({
     { kind: 'trash', label: '移到回收站', Icon: Trash2 },
   ]
   const items: CanvasMenuItem[] = entries
-    .filter(({ kind }) => kind !== 'project' || placeable)
+    .filter(({ kind }) =>
+      (kind !== 'project' || placeable) &&
+      (kind !== 'download' || assets.some((asset) => asset.kind !== 'character'))
+    )
     .map(({ kind, label, Icon }) => ({
     label,
     icon: <Icon size={14} />,

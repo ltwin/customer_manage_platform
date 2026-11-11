@@ -63,7 +63,7 @@ func (h *handlers) creativeScope(c *gin.Context) (store.AccountScope, bool) {
 	return h.scopeFactory.ScopeFor(ac), true
 }
 func creativeError(c *gin.Context, err error) {
-	if imageEditError(c, err) || creativeDocumentError(c, err) {
+	if imageEditError(c, err) || creativeDocumentError(c, err) || creativeCharacterError(c, err) {
 		return
 	}
 	switch {
@@ -162,6 +162,12 @@ func (h *handlers) ListCreativeAssets(c *gin.Context, p ListCreativeAssetsParams
 		}
 		if p.Kind != nil {
 			q.Kind = string(*p.Kind)
+		}
+		if p.CharacterIp != nil {
+			q.CharacterIP = *p.CharacterIp
+		}
+		if p.CharacterWork != nil {
+			q.CharacterWork = *p.CharacterWork
 		}
 		if p.Q != nil {
 			q.Q = *p.Q

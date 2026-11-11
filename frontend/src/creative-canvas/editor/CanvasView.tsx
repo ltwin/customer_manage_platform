@@ -69,6 +69,8 @@ import {
   Crop,
   Minimize2,
   ChevronDown,
+  Contact,
+  RefreshCw,
 } from 'lucide-react'
 import {
   localMedia,
@@ -80,6 +82,9 @@ import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind, type MediaKind } from './media.ts'
 import { parentFirst, selectionRoots, worldPoint } from './graph.ts'
+import { CharacterImage } from '../assets/CharacterFields.tsx'
+import { characterOf } from '../assets/character.ts'
+import { acceptsCharacterReference } from './assetPlacement.ts'
 import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
@@ -186,6 +191,7 @@ const connectableTypes = [
   'core.image',
   'core.video',
   'core.audio',
+  'core.character',
 ]
 const kindLabel: Record<string, string> = {
   text: '文字',
@@ -193,6 +199,7 @@ const kindLabel: Record<string, string> = {
   image: '图片',
   video: '视频',
   audio: '音频',
+  character: '角色卡',
   group: '布局分组',
   scene: '场景',
 }
@@ -239,6 +246,8 @@ function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
     case 'core.text':
     case 'core.link':
       return <Type size={size} />
+    case 'core.character':
+      return <Contact size={size} />
     case 'core.image':
       return <ImageIcon size={size} />
     case 'core.video':
@@ -319,6 +328,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     p = n.content?.payload,
     kind = nodeKind(n.metadata.type_key),
     media = isMediaKind(kind),
+    card = characterOf(n.content),
     group = n.metadata.type_key === 'core.group',
     proportional = kind === 'image' || kind === 'video',
     phase = group ? null : generationPhase(n.status.generation_state),
@@ -517,7 +527,17 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
       )}
       {!group && !media && (
         <div className="cc-node-content">
-          {n.metadata.type_key === 'core.scene' ? (
+          {kind === 'character' ? (
+            card && card.views[0] ? (
+              <div className="cc-character-card">
+                <CharacterImage id={n.character?.cover_revision_id ?? card.views[0].content_revision_id} label={card.name} />
+                <span>将展开为 {card.views.length} 张参考图</span>
+                {n.character?.latest_revision_id && <span role="status">角色卡有新版本</span>}
+              </div>
+            ) : (
+              <p>角色卡内容不可用</p>
+            )
+          ) : n.metadata.type_key === 'core.scene' ? (
             <SceneCard node={n} />
           ) : data.inlineContent ? (
             data.inlineContent.draft ? (
@@ -569,7 +589,9 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
       {!group &&
         !data.crop &&
         connectableTypes.includes(n.metadata.type_key) &&
-        (['input', 'output'] as const).map((side) => (
+        (['input', 'output'] as const).filter(
+          (side) => kind !== 'character' || side === 'output',
+        ).map((side) => (
           <Handle
             key={side}
             id={side === 'input' ? 'reference' : 'output'}
@@ -833,6 +855,7 @@ export default function CanvasView({
   onSaveToLibrary,
   onSaveNodes,
   onSaveNodesAsk,
+  onCreateCharacter,
   onFillNode,
   onUploadFileToNode,
   onLibraryFill,
@@ -886,6 +909,7 @@ export default function CanvasView({
   onSaveNodes: (ids: string[], groupID: string | null) => void
   /** 多选「存入资产库…」：先选分组再批量入库。 */
   onSaveNodesAsk: (ids: string[]) => void
+  onCreateCharacter: (imageRevisions: string[]) => void
   onFillNode: (id: string, asset: Asset) => void
   onUploadFileToNode: (id: string, file: File) => void
   onLibraryFill: (id: string, kind: MediaKind) => void
@@ -1549,6 +1573,10 @@ export default function CanvasView({
     if (sourceID === targetID) return '不能把节点连到它自己'
     const kind = (id: string) =>
       canvas.nodes.find((n) => n.id === id)?.metadata.type_key
+    if (kind(targetID) === 'core.character' ||
+        (kind(sourceID) === 'core.character' &&
+          !acceptsCharacterReference(kind(targetID) ?? '')))
+      return '角色卡只能作为生成节点的参考'
     if (kind(sourceID) === 'core.group' || kind(targetID) === 'core.group')
       return '组不能作为连线的端点，请连到组内的节点'
     if (
@@ -1728,7 +1756,7 @@ export default function CanvasView({
             ? '生成下游节点'
             : '添加上游参考',
       },
-      ...kinds.map(([kind, label, hint, sub]) => ({
+      ...kinds.filter(([kind]) => from?.metadata.type_key !== 'core.character' || acceptsCharacterReference(`core.${kind}`)).map(([kind, label, hint, sub]) => ({
         label,
         icon: <KindIcon typeKey={`core.${kind}`} size={16} />,
         shortcut: hint || undefined,
@@ -1839,6 +1867,24 @@ export default function CanvasView({
       )
       return items
     }
+    const imageRevisions = ids.flatMap((id) => {
+      const node = canvas.nodes.find((item) => item.id === id)
+      // Only a stored, ready picture can back a card; an upload, a running
+      // generation or a local placeholder has no revision to reference yet.
+      return node?.content?.kind === 'image' &&
+        node.status.content_state === 'ready' &&
+        node.content.id.startsWith('ccrv_')
+        ? [node.content.id]
+        : []
+    })
+    const distinctImages = [...new Set(imageRevisions)]
+    if (imageRevisions.length === ids.length && distinctImages.length <= 4)
+      items.push({
+        label: '创建角色卡',
+        icon: <Contact size={16} />,
+        disabled,
+        action: () => onCreateCharacter(distinctImages),
+      })
     if (!one) {
       if (canGroupIDs(ids))
         items.push({
@@ -1922,7 +1968,19 @@ export default function CanvasView({
         disabled,
         action: () => onUploadToNode(target.id, kind),
       })
-    if (connectableTypes.includes(target.metadata.type_key))
+    if (target.character?.latest_revision_id &&
+        target.capabilities.actions.includes('update_character'))
+      items.push({
+        label: '更新角色卡版本',
+        icon: <RefreshCw size={16} />,
+        disabled,
+        action: () => act([{
+          type: 'update_character',
+          node_id: target.id,
+          content_revision_id: target.character!.latest_revision_id!,
+        }]),
+      })
+    if (connectableTypes.includes(target.metadata.type_key) && kind !== 'character')
       items.push({
         label: '从资产库添加参考',
         icon: <Library size={16} />,
@@ -2550,6 +2608,16 @@ export default function CanvasView({
                 tool('解组', <FolderMinus size={16} />, () => act([{ type: 'ungroup_nodes', node_id: one.id }]), disabled || selectionReadOnly),
                 sep('s0'),
                 copy('复制整组'),
+                more,
+              ]
+            if (type === 'core.character')
+              return [
+                one.character?.latest_revision_id && one.capabilities.actions.includes('update_character') &&
+                  tool('更新角色卡版本', <RefreshCw size={16} />, () => act([{
+                    type: 'update_character',
+                    node_id: one.id,
+                    content_revision_id: one.character!.latest_revision_id!,
+                  }])),
                 more,
               ]
             if (type === 'core.text')

@@ -151,7 +151,12 @@ func publishExecution(ctx context.Context, scope store.AccountScope, target Exec
 		}
 		var lastVersion string
 		for _, output := range outputs {
-			version, err := makeVersion(ctx, tx, n.ID, output.ID, "generation", creativegraph.Canonical(map[string]any{"prompt": execution.Prompt, "executor_version": execution.ExecutorVersion, "reference_sources": execution.ReferenceSources}), refs)
+			provenance := map[string]any{"prompt": execution.Prompt, "executor_version": execution.ExecutorVersion, "reference_sources": execution.ReferenceSources}
+			if len(execution.Characters) > 0 {
+				provenance["characters"] = execution.Characters
+				provenance["reference_inputs"] = execution.ReferenceInputs
+			}
+			version, err := makeVersion(ctx, tx, n.ID, output.ID, "generation", creativegraph.Canonical(provenance), refs)
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}

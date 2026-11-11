@@ -6,7 +6,7 @@ import type { PromptReference } from './promptReferences.ts'
 export type AgentMaterial = {
   id: string
   title: string
-  kind: 'text' | 'image'
+  kind: 'text' | 'image' | 'character'
   // 资产库选的带着内容，引用处能显示缩略图和预览。
   content?: Content
 }
@@ -18,14 +18,14 @@ export function agentReferences(
   for (const node of canvas?.nodes ?? []) {
     const id = node.data.content_revision_id
     const kind = node.content?.kind
-    if (!id || (kind !== 'text' && kind !== 'image')) continue
+    if (!id || (kind !== 'text' && kind !== 'image' && kind !== 'character')) continue
     materials.set(id, {
       key: id,
       sourceID: id,
       revisionID: id,
       title: node.metadata.title || '素材',
       kind,
-      label: kind === 'image' ? '图片' : '文本',
+      label: kind === 'image' ? '图片' : kind === 'character' ? '角色卡' : '文本',
       content: node.content,
       connected: false,
     })
@@ -39,7 +39,7 @@ export function agentReferences(
       revisionID: item.id,
       title: item.title,
       kind: item.kind,
-      label: item.kind === 'image' ? '图片' : '文本',
+      label: item.kind === 'image' ? '图片' : item.kind === 'character' ? '角色卡' : '文本',
       content: item.content ?? previous?.content,
       connected: false,
     })
@@ -105,7 +105,7 @@ export function referencedMaterials(
     item.revisionID &&
     item.sourceID &&
     ids.has(item.sourceID) &&
-    (item.kind === 'text' || item.kind === 'image')
+    (item.kind === 'text' || item.kind === 'image' || item.kind === 'character')
       ? [
           {
             id: item.revisionID,

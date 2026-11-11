@@ -128,7 +128,7 @@ type canvasTool struct {
 
 var _ tool.InvokableTool = (*canvasTool)(nil)
 
-var nodeTypes = []string{"text", "image", "video", "audio", "link", "scene"}
+var nodeTypes = []string{"text", "image", "video", "audio", "link", "scene", "character"}
 
 func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 	str := func(desc string) *schema.ParameterInfo { return &schema.ParameterInfo{Type: schema.String, Desc: desc} }
@@ -156,7 +156,7 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 		}
 		return &schema.ToolInfo{
 			Name: editCanvasTool,
-			Desc: "按顺序执行一组画布修改，全部成功或全部不生效：新建节点、改标题、移动、缩放、改写文字节点正文、连接或断开参考、删除节点。连接参考表示 target 生成时把 source 的内容作为参考。新建 scene 节点会同时新建一个空场景，结果 documents 给出它的 document_id，之后用场景工具搭建。修改会进入画布历史，创作者可以撤销。改动前先用 read_canvas 了解现状。",
+			Desc: "按顺序执行一组画布修改，全部成功或全部不生效：新建节点、改标题、移动、缩放、改写文字节点正文、连接或断开参考、删除节点。连接参考表示 target 生成时把 source 的内容作为参考。新建 scene 节点会同时新建一个空场景，结果 documents 给出它的 document_id，之后用场景工具搭建。角色卡节点用 node_type:character 和资产库返回的 asset_id、content_revision_id 放入。将它连到图片生成节点，参考图会自动展开，不要再逐张连它的参考图；同框角色展开后的参考图总数不要超过模型的参考上限。修改会进入画布历史，创作者可以撤销。改动前先用 read_canvas 了解现状。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"actions": {Type: schema.Array, Required: true, Desc: "1 到 100 个动作", ElemInfo: &schema.ParameterInfo{Type: schema.Object, SubParams: action}},
 			}),
@@ -414,6 +414,9 @@ func canvasActions(canvas creativecanvas.Canvas, in []canvasAction, created map[
 		case "add_node":
 			if !slices.Contains(nodeTypes, a.NodeType) {
 				return nil, refuseTool("第 %d 个动作：不支持的节点类型 %q", i, a.NodeType)
+			}
+			if a.NodeType == "character" && (a.AssetID == "" || a.ContentRevisionID == "") {
+				return nil, refuseTool("第 %d 个动作：角色卡需要资产库里的 asset_id 和 content_revision_id", i)
 			}
 			action := creativecanvas.Action{Type: "add_node", NodeID: created[a.Key], TypeKey: "core." + a.NodeType, ContentRevisionID: a.ContentRevisionID}
 			added[action.NodeID] = action.TypeKey

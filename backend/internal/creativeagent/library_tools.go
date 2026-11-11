@@ -38,24 +38,33 @@ func (h *runtimeHandler) requireLibrary(ctx context.Context, metadata bool) erro
 }
 
 type assetSearchArgs struct {
-	Source    string   `json:"source"`
-	AssetID   string   `json:"asset_id"`
-	Untagged  bool     `json:"untagged"`
-	Query     string   `json:"query"`
-	Kind      string   `json:"kind"`
-	GroupID   string   `json:"group_id"`
-	Subgroups bool     `json:"include_subgroups"`
-	TagIDs    []string `json:"tag_ids"`
-	TagMode   string   `json:"tag_mode"`
-	MinRating *float64 `json:"min_rating"`
-	Unrated   bool     `json:"unrated"`
-	Color     string   `json:"color"`
-	Shape     string   `json:"shape"`
-	View      string   `json:"view"`
-	Sort      string   `json:"sort"`
-	Limit     int      `json:"limit"`
-	Cursor    string   `json:"cursor"`
+	Source        string   `json:"source"`
+	AssetID       string   `json:"asset_id"`
+	Untagged      bool     `json:"untagged"`
+	Query         string   `json:"query"`
+	Kind          string   `json:"kind"`
+	CharacterIP   string   `json:"character_ip"`
+	CharacterWork string   `json:"character_work"`
+	GroupID       string   `json:"group_id"`
+	Subgroups     bool     `json:"include_subgroups"`
+	TagIDs        []string `json:"tag_ids"`
+	TagMode       string   `json:"tag_mode"`
+	MinRating     *float64 `json:"min_rating"`
+	Unrated       bool     `json:"unrated"`
+	Color         string   `json:"color"`
+	Shape         string   `json:"shape"`
+	View          string   `json:"view"`
+	Sort          string   `json:"sort"`
+	Limit         int      `json:"limit"`
+	Cursor        string   `json:"cursor"`
 }
+
+type characterSearchArguments struct {
+	Message    string                                   `json:"message"`
+	Candidates []creativelibrary.CharacterWorkCandidate `json:"candidates,omitempty"`
+}
+
+func (e *characterSearchArguments) Error() string { return e.Message }
 
 type libraryName struct {
 	ID   string `json:"id"`
@@ -86,6 +95,9 @@ func (s *Service) searchAssets(ctx context.Context, scope store.AccountScope, ac
 	if a.Limit < 1 || a.Limit > 20 || len(a.TagIDs) > 50 {
 		return "", refuseTool("每页 1 到 20 项、最多 50 个标签")
 	}
+	if (a.CharacterIP != "" || a.CharacterWork != "") && (a.Kind != "character" || a.Source == sourceBuiltin) {
+		return "", &characterSearchArguments{Message: "character_ip 和 character_work 仅用于账号资产库的 kind=character"}
+	}
 	switch a.Source {
 	case sourceBuiltin:
 		// The platform's catalog, not the account's data: no grant asked.
@@ -97,7 +109,11 @@ func (s *Service) searchAssets(ctx context.Context, scope store.AccountScope, ac
 	if err := access.libraryAllowed(ctx, true); err != nil {
 		return "", err
 	}
-	rawPage, err := creativelibrary.DiscoverAssets(ctx, scope, creativelibrary.Search{AssetID: a.AssetID, Untagged: a.Untagged, Q: a.Query, Kind: a.Kind, GroupID: a.GroupID, Descendants: a.Subgroups, TagIDs: a.TagIDs, TagMode: a.TagMode, MinRating: a.MinRating, Unrated: a.Unrated, Color: a.Color, Shape: a.Shape, View: a.View, Sort: a.Sort, Limit: a.Limit, Cursor: a.Cursor}, s.limits.ToolResultBytes)
+	rawPage, err := creativelibrary.DiscoverAssets(ctx, scope, creativelibrary.Search{AssetID: a.AssetID, Untagged: a.Untagged, Q: a.Query, Kind: a.Kind, CharacterIP: a.CharacterIP, CharacterWork: a.CharacterWork, GroupID: a.GroupID, Descendants: a.Subgroups, TagIDs: a.TagIDs, TagMode: a.TagMode, MinRating: a.MinRating, Unrated: a.Unrated, Color: a.Color, Shape: a.Shape, View: a.View, Sort: a.Sort, Limit: a.Limit, Cursor: a.Cursor}, s.limits.ToolResultBytes)
+	var ambiguous *creativelibrary.AmbiguousCharacterWorkError
+	if errors.As(err, &ambiguous) {
+		return "", &characterSearchArguments{Message: "作品简称匹配多部作品，请补充 IP", Candidates: ambiguous.Candidates}
+	}
 	return string(rawPage), asRefusal(err)
 }
 

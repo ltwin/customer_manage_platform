@@ -108,6 +108,15 @@ paths:
           - audio
           - model
           - material
+          - character
+      - name: character_ip
+        in: query
+        schema: {type: string, maxLength: 60}
+        description: 按角色卡所属 IP 的目录 key、名称或别名筛选
+      - name: character_work
+        in: query
+        schema: {type: string, maxLength: 100}
+        description: 按角色卡作品的名称或别名筛选。别名有歧义时返回候选
       - name: q
         in: query
         required: false
@@ -2233,6 +2242,85 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/assets/characters:
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeCharacter
+      summary: 新建角色卡并保存第一个版本
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateCreativeCharacterRequest'}
+      responses:
+        "201":
+          description: 角色卡已创建
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAssetCreateResult'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/assets/{id}/character-revisions:
+    post:
+      tags: [creative-foundation]
+      operationId: saveCreativeCharacterRevision
+      summary: 在角色卡上保存完整的新版本
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: string}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SaveCreativeCharacterRevisionRequest'}
+      responses:
+        "200":
+          description: 保存成功，载荷无变化时复用当前版本
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAssetCreateResult'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/character-ips:
+    get:
+      tags: [creative-foundation]
+      operationId: suggestCreativeCharacterIPs
+      summary: 查找内置和当前账号用过的角色 IP
+      parameters:
+      - in: query
+        name: query
+        schema: {type: string, maxLength: 60}
+      - in: query
+        name: limit
+        schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        "200":
+          description: IP 候选
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeCharacterIPSuggestions'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /creative/capabilities:
     get:
       tags: [creative-foundation]
@@ -7684,6 +7772,123 @@ components:
       - $ref: '#/components/schemas/CreativeModelPayload'
       - $ref: '#/components/schemas/CreativeModelPreviewPayload'
       - $ref: '#/components/schemas/CreativeMaterialPayload'
+      - $ref: '#/components/schemas/CreativeCharacterContentPayload'
+    CreativeCharacterContentPayload:
+      type: object
+      additionalProperties: false
+      required: [character]
+      properties:
+        character: {$ref: '#/components/schemas/CreativeCharacterPayload'}
+    CreativeCharacterPayload:
+      type: object
+      additionalProperties: false
+      required: [name, appearance, views, sources]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 60}
+        appearance: {type: string, minLength: 1, maxLength: 2000}
+        views:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: 有序的生成参考图，第一张为封面。同一修订只出现一次
+          items: {$ref: '#/components/schemas/CreativeCharacterView'}
+        sources:
+          type: array
+          maxItems: 12
+          description: 用于追溯的原始素材，不会发送给生成模型
+          items:
+            type: object
+            additionalProperties: false
+            required: [content_revision_id]
+            properties:
+              content_revision_id: {type: string}
+        aliases: {type: array, maxItems: 10, items: {type: string, minLength: 1, maxLength: 60}}
+        variant: {type: string, minLength: 1, maxLength: 40}
+        origin: {type: string, enum: [original, derivative]}
+        ip: {$ref: '#/components/schemas/CreativeCharacterIP'}
+        work: {type: string, minLength: 1, maxLength: 100}
+        attribution: {type: string, maxLength: 2000}
+        source_urls: {type: array, maxItems: 10, items: {type: string, format: uri, maxLength: 2048}}
+    CreativeCharacterView:
+      type: object
+      additionalProperties: false
+      required: [content_revision_id, view]
+      properties:
+        content_revision_id: {type: string}
+        view: {type: string, enum: [front, three_quarter, side, back, face, full_body, detail, other]}
+        note: {type: string, maxLength: 200}
+    CreativeCharacterIP:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 60}
+        key: {type: string, pattern: '^[a-z0-9-]{1,60}$'}
+    CreativeCharacterBrief:
+      type: object
+      additionalProperties: false
+      required: [name, view_count]
+      properties:
+        name: {type: string}
+        variant: {type: string}
+        ip: {$ref: '#/components/schemas/CreativeCharacterIP'}
+        work: {type: string}
+        view_count: {type: integer, minimum: 1, maximum: 4}
+    CreativeCharacterIPSuggestions:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, builtin, character_count, works]
+            properties:
+              name: {type: string}
+              key: {type: string}
+              builtin: {type: boolean}
+              character_count: {type: integer, minimum: 0}
+              works: {type: array, items: {type: string}}
+    CreativeCharacterTarget:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: string, maxLength: 1000}
+        group_ids: {type: array, maxItems: 100, items: {type: string}}
+        tag_ids: {type: array, maxItems: 50, items: {type: string}}
+        new_tags: {type: array, maxItems: 50, items: {$ref: '#/components/schemas/CreativeNewTag'}}
+        is_favorite: {type: boolean}
+    CreateCreativeCharacterRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload:
+          type: object
+          additionalProperties: false
+          required: [character]
+          properties:
+            character: {$ref: '#/components/schemas/CreativeCharacterPayload'}
+            target: {$ref: '#/components/schemas/CreativeCharacterTarget'}
+    SaveCreativeCharacterRevisionRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload:
+          type: object
+          additionalProperties: false
+          required: [expected_revision, character]
+          properties:
+            expected_revision: {$ref: '#/components/schemas/CreativeRevision'}
+            character: {$ref: '#/components/schemas/CreativeCharacterPayload'}
     CreativeMaterialPayload:
       type: object
       additionalProperties: false
@@ -7972,6 +8177,7 @@ components:
           - audio
           - model
           - material
+          - character
         sequence:
           $ref: '#/components/schemas/CreativeRevision'
         payload:
@@ -8036,6 +8242,7 @@ components:
           - audio
           - model
           - material
+          - character
         revision:
           $ref: '#/components/schemas/CreativeRevision'
         content_id:
@@ -8044,6 +8251,8 @@ components:
           type: string
         content:
           $ref: '#/components/schemas/CreativeContentRevision'
+        character:
+          $ref: '#/components/schemas/CreativeCharacterBrief'
         unavailable:
           type: boolean
         is_favorite:
@@ -8283,6 +8492,7 @@ components:
           - audio
           - model
           - material
+          - character
           properties:
             text:
               type: integer
@@ -8303,6 +8513,9 @@ components:
               type: integer
               format: int64
             material:
+              type: integer
+              format: int64
+            character:
               type: integer
               format: int64
         tags:
@@ -8576,6 +8789,8 @@ components:
           $ref: '#/components/schemas/CreativeRevision'
         content:
           $ref: '#/components/schemas/CreativeContentRevision'
+        character:
+          $ref: '#/components/schemas/CreativeCharacterNodeView'
         version_summary:
           $ref: '#/components/schemas/CreativeNodeVersionSummary'
         document_summary:
@@ -8592,6 +8807,16 @@ components:
           description: >-
             只读，只出现在场景导出图节点上，且节点当前内容仍是导出时那张图。stale 表示来源场景之后有与这张图相关的修改，
             前端显示「场景已更新」；unavailable 表示来源场景不存在、在回收站或不可展示。
+    CreativeCharacterNodeView:
+      type: object
+      additionalProperties: false
+      required: [name, cover_revision_id, view_count]
+      properties:
+        name: {type: string}
+        cover_revision_id: {type: string}
+        view_count: {type: integer, minimum: 1, maximum: 4}
+        asset_id: {type: string}
+        latest_revision_id: {type: string}
     CreativeNodeVersionSummary:
       type: object
       additionalProperties: false
@@ -10211,8 +10436,58 @@ components:
       properties:
         render_id: {type: string}
 
+    CreativeCharacterFieldDetails:
+      type: object
+      additionalProperties: false
+      required: [fields]
+      properties:
+        fields: {type: array, items: {type: string}}
+    CreativeCharacterImageDetails:
+      type: object
+      additionalProperties: false
+      required: [content_revision_ids]
+      properties:
+        content_revision_ids: {type: array, items: {type: string}}
+    CreativeCharacterWorkDetails:
+      type: object
+      additionalProperties: false
+      required: [candidates]
+      properties:
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [ip, work]
+            properties:
+              ip: {type: string}
+              work: {type: string}
+
+    CreativeCharacterGenerationDetails:
+      type: object
+      additionalProperties: false
+      required: [characters]
+      properties:
+        characters:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, content_revision_id, view_count]
+            properties:
+              name: {type: string}
+              content_revision_id: {type: string}
+              view_count: {type: integer}
+        limit: {type: integer}
+        total: {type: integer}
+        image_index: {type: integer}
+        content_revision_id: {type: string}
     ErrorDetails:
       oneOf:
+        - $ref: "#/components/schemas/CreativeCharacterFieldDetails"
+        - $ref: "#/components/schemas/CreativeCharacterImageDetails"
+        - $ref: "#/components/schemas/CreativeCharacterWorkDetails"
+        - $ref: "#/components/schemas/CreativeCharacterGenerationDetails"
         - $ref: "#/components/schemas/CreativeImageEditBusyDetails"
         - $ref: "#/components/schemas/CreativeAgentBusyDetails"
         - $ref: "#/components/schemas/ScheduleConflictDetails"
@@ -14345,6 +14620,7 @@ components:
           - core.image
           - core.video
           - core.audio
+          - core.character
           - core.group
           - core.scene
           - internal.document
@@ -14662,6 +14938,16 @@ components:
           type: string
           enum:
           - subtree
+    CreativeActionUpdateCharacter:
+      type: object
+      additionalProperties: false
+      required: [type, node_id, content_revision_id]
+      properties:
+        type: {type: string, enum: [update_character]}
+        node_id: {type: string}
+        content_revision_id:
+          type: string
+          description: 必须等于对应角色卡资产的当前版本。
     CreativeGraphAction:
       oneOf:
       - $ref: '#/components/schemas/CreativeActionAddNode'
@@ -14669,6 +14955,7 @@ components:
       - $ref: '#/components/schemas/CreativeActionMoveNode'
       - $ref: '#/components/schemas/CreativeActionResizeNode'
       - $ref: '#/components/schemas/CreativeActionUpdateMetadata'
+      - $ref: '#/components/schemas/CreativeActionUpdateCharacter'
       - $ref: '#/components/schemas/CreativeActionClearContent'
       - $ref: '#/components/schemas/CreativeActionReplaceContent'
       - $ref: '#/components/schemas/CreativeActionFillFromAsset'
@@ -15030,6 +15317,11 @@ components:
         generation_provenance:
           type: object
           additionalProperties: true
+          properties:
+            characters:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreativeGenerationCharacter'
         created_at:
           type: string
           format: date-time
@@ -17571,6 +17863,26 @@ components:
         created_at:
           type: string
           format: date-time
+        characters:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/CreativeGenerationCharacter'
+    CreativeGenerationCharacter:
+      type: object
+      additionalProperties: false
+      required: [node_id, content_id, content_revision_id, name, images]
+      properties:
+        node_id: {type: string}
+        content_id: {type: string}
+        content_revision_id: {type: string}
+        name: {type: string}
+        images:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: {type: integer, minimum: 1}
+          description: 第一张和最后一张参考图的编号。
     CreativeRequestExecutionPayload:
       type: object
       additionalProperties: false

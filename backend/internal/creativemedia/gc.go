@@ -59,7 +59,7 @@ type GCReport struct {
 	SkippedBlobs int64
 }
 
-const unheldMediaRevision = `state='ready' AND content_id IN (SELECT id FROM creative_contents WHERE account_id=$1 AND kind IN ('image','video','audio','model','material')) AND NOT (` + creativereference.LiveOwnerCondition + `)`
+const unheldMediaRevision = `state='ready' AND content_id IN (SELECT id FROM creative_contents WHERE account_id=$1 AND kind IN ('image','video','audio','model','material','character')) AND NOT (` + creativereference.LiveOwnerCondition + `)`
 
 // blobHolders 对应 media.md §6.2 的 blob 持有方。绑定到无持有方修订的 blob 视为
 // 未持有：这样的修订已不可用，也不会重新获得持有方。
@@ -210,6 +210,10 @@ func (s *Service) deleteUnheldRevisions(ctx context.Context, scope store.Account
 				return err
 			}
 			if _, err := tx.Delete(ctx, "creative_content_objects", "content_revision_id=$2", id); err != nil {
+				return err
+			}
+			// Revisions are tombstoned, so the foreign key cascade does not run.
+			if _, err := tx.Delete(ctx, "creative_content_revision_refs", "holder_revision_id=$2 AND role='character'", id); err != nil {
 				return err
 			}
 			n++

@@ -239,7 +239,7 @@ func (s *Service) resolveContentSegment(ctx context.Context, scope store.Account
 	}
 	// Content kind and model capability are separate checks; the latter is
 	// validated when the run chooses a model and consent.
-	if revision.Kind != "text" && (revision.Kind != "image" || s.images == nil) {
+	if revision.Kind != "text" && revision.Kind != creativecontent.CharacterKind && (revision.Kind != "image" || s.images == nil) {
 		return ErrUnsupportedSegment
 	}
 	out.ContentRefs = append(out.ContentRefs, ContentRef{RevisionID: segment.ContentRevisionID, Role: "input"})

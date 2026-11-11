@@ -72,7 +72,12 @@ func AdmitGenerationInTx(ctx context.Context, tx store.TxAccountScope, in Reques
 	if err != nil {
 		return NodeExecution{}, err
 	}
-	compiled, err := compileGraphPrompt(ctx, tx, p.Text, refs)
+	originalRefs := refs
+	refs, characters, err := expandCharacterRefsInTx(ctx, tx, refs)
+	if err != nil {
+		return NodeExecution{}, err
+	}
+	compiled, err := compileGraphPrompt(ctx, tx, p.Text, refs, characters)
 	if err != nil {
 		return NodeExecution{}, err
 	}
@@ -107,12 +112,23 @@ func AdmitGenerationInTx(ctx context.Context, tx store.TxAccountScope, in Reques
 	for _, ref := range refs {
 		if ref.source != "" {
 			sources[ref.source] = ref.revision
+			if ref.character != nil {
+				sources[ref.source] = ref.character.ContentRevisionID
+			}
+		}
+	}
+	if len(characters) > 0 {
+		for _, ref := range originalRefs {
+			e.ReferenceInputs = append(e.ReferenceInputs, VersionInput{RevisionID: ref.revision, Role: ref.role})
 		}
 	}
 	promptSnapshot := creativegraph.Canonical(struct {
 		*NodePrompt
-		ReferenceSources map[string]string `json:"reference_sources"`
-	}{p, sources})
+		ReferenceSources map[string]string      `json:"reference_sources"`
+		Characters       []*GenerationCharacter `json:"characters,omitempty"`
+		ReferenceInputs  []VersionInput         `json:"reference_inputs,omitempty"`
+	}{p, sources, characters, e.ReferenceInputs})
+	e.Characters = characters
 	err = tx.Insert(ctx, "creative_node_executions", []string{"id", "canvas_id", "node_id", "action_key", "executor_version", "operation_id", "request_hash", "state", "deadline", "target_data_revision", "selected_version_id", "draft_revision", "prompt_snapshot", "read_set", "caller_kind", "publish_operation_id", "result_operation_id"}, e.ID, canvas.ID, n.ID, e.ActionKey, e.ExecutorVersion, operation, requestHash, e.State, deadline, int64(n.DataRevision), n.SelectedVersionID, int64(p.Revision), promptSnapshot, creativegraph.Canonical(reads), "photographer", e.PublishOperation, e.ResultOperation)
 	if err != nil {
 		return NodeExecution{}, err
@@ -122,13 +138,24 @@ func AdmitGenerationInTx(ctx context.Context, tx store.TxAccountScope, in Reques
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].revision < sorted[j].revision })
 	for _, v := range sorted {
 		if _, err = creativecontent.RequireGenerationReference(ctx, tx, v.revision); err != nil {
-			return NodeExecution{}, err
+			return NodeExecution{}, v.explainReferenceError(err)
 		}
 	}
 	for i, v := range refs {
 		if err = tx.Insert(ctx, "creative_execution_refs", []string{"execution_id", "direction", "ordinal", "content_revision_id", "role"}, e.ID, "input", i, v.revision, v.role); err != nil {
 			return NodeExecution{}, err
 		}
+	}
+	retained := map[string]bool{}
+	for _, c := range characters {
+		if retained[c.ContentRevisionID] {
+			continue
+		}
+		ordinal := len(refs) + len(retained)
+		if err = tx.Insert(ctx, "creative_execution_refs", []string{"execution_id", "direction", "ordinal", "content_revision_id", "role"}, e.ID, "input", ordinal, c.ContentRevisionID, creativecontent.CharacterKind); err != nil {
+			return NodeExecution{}, err
+		}
+		retained[c.ContentRevisionID] = true
 	}
 	if _, err = tx.Update(ctx, "creative_nodes", "active_execution_id=$2,latest_execution_id=$2,status_revision=status_revision+1", "id=$3", e.ID, n.ID); err != nil {
 		return NodeExecution{}, err
@@ -185,7 +212,7 @@ func GuardGenerationInTx(ctx context.Context, tx store.TxAccountScope, target Ex
 		return ErrVersionConflict
 	}
 	// 上游节点之后改了不拦：请求用的是受理时锁定的参考修订，下面逐个复核仍可用。
-	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction='input'", []store.OrderBy{{Column: "content_revision_id"}}, 51, 0, e.ID)
+	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction='input' AND role<>'character'", []store.OrderBy{{Column: "content_revision_id"}}, 51, 0, e.ID)
 	if err != nil {
 		return err
 	}
@@ -347,7 +374,7 @@ func LockGenerationHandoffInTx(ctx context.Context, tx store.TxAccountScope, tar
 
 // 保留衍生权利只读来源身份，不把撤销后的授权当作继续发布资格。
 func generationSourceIdentities(ctx context.Context, tx store.TxAccountScope, id string) ([]creativecontent.Revision, error) {
-	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction='input'", []store.OrderBy{{Column: "content_revision_id"}}, 51, 0, id)
+	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction='input' AND role<>'character'", []store.OrderBy{{Column: "content_revision_id"}}, 51, 0, id)
 	if err != nil {
 		return nil, err
 	}

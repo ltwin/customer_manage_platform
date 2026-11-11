@@ -1803,3 +1803,292 @@ Content-Type: application/json
 
 ### 兼容与变更
 首次定义，无已有消费者。新增 OpenAPI 路径与请求体 `CreativeAssetFromGLBPayload`；响应复用 `CreativeAssetCreateResult`。导入的模型的读取形态见 `data: 模型内容` 的修订说明（`CreativeModelGenerator` 按 `language` 区分，是对响应消费者的破坏性变更，前后端同一版本上线）。
+
+## 新建角色卡
+
+### 用途与调用
+- **用途**：新建一张角色卡，写第 1 个版本并存入资产库。
+- **消费者**：资产库「新建角色卡」、资产库多选图片的「创建角色卡」、画布图片节点的「创建角色卡」。以后助手建的草稿存入资产库也走这个接口（复制草稿载荷）。
+- **调用**：`POST /api/v1/creative/assets/characters`，`Content-Type: application/json`，`Idempotency-Key` 必填，外层为公共约定 `{operation_id, client_created_at, payload}`，`Idempotency-Key` 等于 `operation_id`。
+- **权限**：网页登录态；账号有创意空间写入权限（同 `/creative/assets/from-canvas-node`）。所有图片必须属于当前账号。
+
+### 请求
+
+| 字段路径 | 位置 | 类型 | 必传 | 可为 null | 缺省行为 | 约束与含义 |
+|---|---|---|---|---|---|---|
+| `Idempotency-Key` | header | uuid | 是 | 否 | 缺失报 400 | 等于 `operation_id` |
+| `operation_id` | body | uuid | 是 | 否 | — | 公共约定 |
+| `client_created_at` | body | date-time | 是 | 否 | — | 公共约定 |
+| `payload.character` | body | `CreativeCharacterPayload` | 是 | 否 | — | 结构与约束见 `data: 角色卡`「结构与身份」 |
+| `payload.target.description` | body | string | 否 | 否 | 空 | ≤ 1000 码点 |
+| `payload.target.group_ids` | body | string[] | 否 | 否 | 不归入分组 | 同 `CreativeUploadAssetTarget` |
+| `payload.target.tag_ids` | body | string[] | 否 | 否 | 无标签 | 同上 |
+| `payload.target.new_tags` | body | array | 否 | 否 | 无 | 同上 |
+| `payload.target.is_favorite` | body | boolean | 否 | 否 | false | 同上 |
+
+`payload.target` 是新的 `CreativeCharacterTarget`：等于 `CreativeUploadAssetTarget` 去掉 `title`（标题由角色名和版本说明生成，见 `data: 角色卡`）。`payload.target` 本身可以省略，等同空对象。
+
+`payload.character.ip` 按 `data: 角色卡`「IP 归一」处理，响应不回显载荷；需要看归一结果时读资产。
+
+### 成功响应
+- 201，`CreativeAssetCreateResult`：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+| `asset_id` | string | 是 | 新资产 `ccas_…` |
+| `revision` | CreativeRevision | 是 | 资产行修订，新建为 `"1"` |
+| `content_revision_id` | string | 是 | 角色卡第 1 个版本 `ccrv_…` |
+| `library_revision` | CreativeRevision | 是 | 资产库修订 |
+| `tag_mapping` | object | 是 | 同现有语义 |
+| `reused` | boolean | 是 | 总是 `false`（角色卡不查重） |
+| `title` / `description` | string | 是 | `title` 为 `<name> · <variant>` 或 `<name>` |
+| `tags_created` / `tags_reused` | array | 有新标签时 | 同现有语义 |
+
+随幂等回执重放。
+
+### 失败响应
+错误体为公共 `ErrorEnvelope`。
+
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 载荷字段缺失或越界；`views` 为空或超过 4 张；`views` 内图片重复；没有 `ip` 却带了 `work`；`ip.key` 不在内置目录里；`aliases` 重复或与 `name` 相同；`source_urls` 协议不对。`details.fields` 列出出错的字段路径 | 修正后重试 |
+| 400 | `creative_image_unavailable` | 某张图片不属于本账号、不是图片、未就绪，或不能用作生成参考（`views` 内）/ 不可展示（`sources` 内）；`details.content_revision_ids` 列出这些图片 | 换图后重试 |
+| 404 | `not_found` | `target` 引用的分组或标签不存在 | 重读资产库 |
+| 409 | `idempotency_conflict` | 同一 `operation_id` 用于不同请求 | 公共约定 |
+| 403 | `forbidden` | 创意空间当前不可用 | 公共约定 |
+
+### 交互规则
+- 写操作：一个事务内建内容、修订、持有关系、资产行和归类，不会部分成功。重复提交同一 `operation_id` 返回首次结果，不建第二张。
+- 并发：新建没有并发冲突。
+
+### 调用示例
+```http
+POST /api/v1/creative/assets/characters
+Idempotency-Key: 3b1c2d4e-5f60-4718-9a2b-3c4d5e6f7081
+Content-Type: application/json
+
+{"operation_id": "3b1c2d4e-5f60-4718-9a2b-3c4d5e6f7081", "client_created_at": "2026-11-12T08:00:00Z",
+ "payload": {
+   "character": {
+     "name": "芙宁娜",
+     "appearance": "白发及肩，发尾挑染浅蓝；异色瞳；深蓝礼帽带白色羽饰；蓝白燕尾短外套。",
+     "views": [
+       {"content_revision_id": "ccrv_0f3a1c52-7d0e-4c8b-9a41-2e6f5b7c8d90", "view": "front"},
+       {"content_revision_id": "ccrv_6b2e9d14-3a7f-4e15-8c02-91d4a6b3f7e8", "view": "side"}
+     ],
+     "sources": [],
+     "aliases": ["Furina"],
+     "variant": "常服",
+     "origin": "derivative",
+     "ip": {"name": "Genshin"}
+   },
+   "target": {"group_ids": ["ccgr_5a1e"], "is_favorite": true}
+ }}
+```
+201（`ip` 命中目录别名，保存为 `{"name": "原神", "key": "genshin-impact"}`）：
+```json
+{"asset_id": "ccas_7c9d0e1f-2a3b-4c5d-8e6f-708192a3b4c5", "revision": "1", "content_revision_id": "ccrv_d1e2f3a4-b5c6-4d7e-8f90-a1b2c3d4e5f6", "library_revision": "212", "tag_mapping": {}, "reused": false, "title": "芙宁娜 · 常服", "description": ""}
+```
+400（第二张图已被彻底删除，不可用）：
+```json
+{"error": {"code": "creative_image_unavailable", "message": "有图片已不可用", "details": {"content_revision_ids": ["ccrv_6b2e9d14-3a7f-4e15-8c02-91d4a6b3f7e8"]}}}
+```
+
+### 兼容与变更
+首次定义，无已有消费者。资产 `kind` 枚举加 `character` 是兼容扩展：旧前端遇到不认识的 kind 按现有兜底显示；前后端同一版本上线。元数据接口（`POST /creative/assets/{id}/metadata`）对角色卡传 `title` 时返回 400 `validation_failed`（标题由角色名和版本说明生成，改名要存新版本），其余字段照常。资产列表新增可选查询参数 `character_ip`、`character_work`（`data: 角色卡`「列表与筛选」），只在 `kind=character` 时生效，与其他 kind 一起给时返回 400 `validation_failed`。
+
+## 角色卡存新版本
+
+### 用途与调用
+- **用途**：修改角色卡：把一份完整的新载荷写成新版本，资产改指新版本。
+- **消费者**：查看浮窗的「编辑角色卡」。以后助手草稿的「更新原角色卡」也走这个接口。
+- **调用**：`POST /api/v1/creative/assets/{id}/character-revisions`，`Idempotency-Key` 必填，公共请求外层。
+- **权限**：资产属于当前账号，账号有创意空间写入权限。
+
+### 请求
+
+| 字段路径 | 位置 | 类型 | 必传 | 可为 null | 缺省行为 | 约束与含义 |
+|---|---|---|---|---|---|---|
+| `id` | path | string | 是 | 否 | — | 角色卡资产 `ccas_…` |
+| `payload.expected_revision` | body | CreativeRevision | 是 | 否 | — | 资产行当前 `revision`，防止覆盖别人刚存的版本 |
+| `payload.character` | body | `CreativeCharacterPayload` | 是 | 否 | — | **完整**新载荷，不是补丁；约束同新建 |
+
+### 成功响应
+- 200，`CreativeAssetCreateResult`：`asset_id` 为路径里的资产；`revision` 为资产行新修订；`content_revision_id` 为当前版本；`reused = false`；`title` 按新版本生成；`tag_mapping` 为空对象。
+- 新载荷与当前版本规范化后相等时：不写新版本，`revision`、`content_revision_id` 为当前值，`reused = true`。
+
+### 失败响应
+
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | 载荷不合法（同新建）；资产不是角色卡 | 修正 |
+| 400 | `creative_image_unavailable` | 同新建 | 换图 |
+| 404 | `not_found` | 资产不存在或不属于本账号 | 重读 |
+| 409 | `creative_revision_conflict` | `expected_revision` 与资产行当前不符 | 重读后决定是否覆盖 |
+| 409 | `creative_asset_trashed` | 资产在回收站 | 先恢复 |
+| 409 | `idempotency_conflict` | 公共约定 | — |
+
+### 交互规则
+- 写操作：追加修订、写持有关系、资产改指、索引更新在一个事务里；不会出现资产指向不存在的版本。
+- 并发：以资产行 `revision` 做乐观并发；修改分组、标签、评分、收藏也会推进资产行 `revision`，所以摄影师在两个窗口里一边改归类、一边改角色卡时，后保存的一方会冲突并重读。
+- 已放在画布上的角色卡节点不变（`data: 角色卡节点`）。
+
+### 调用示例
+```http
+POST /api/v1/creative/assets/ccas_7c9d0e1f-2a3b-4c5d-8e6f-708192a3b4c5/character-revisions
+Idempotency-Key: 8d9e0f1a-2b3c-4d5e-9f60-718293a4b5c6
+Content-Type: application/json
+
+{"operation_id": "8d9e0f1a-2b3c-4d5e-9f60-718293a4b5c6", "client_created_at": "2026-11-12T09:30:00Z",
+ "payload": {
+   "expected_revision": "1",
+   "character": {
+     "name": "芙宁娜",
+     "appearance": "白发及肩，发尾挑染浅蓝；异色瞳，左深蓝右浅蓝；深蓝礼帽带白色羽饰；蓝白燕尾短外套。",
+     "views": [
+       {"content_revision_id": "ccrv_0f3a1c52-7d0e-4c8b-9a41-2e6f5b7c8d90", "view": "front"},
+       {"content_revision_id": "ccrv_6b2e9d14-3a7f-4e15-8c02-91d4a6b3f7e8", "view": "side"},
+       {"content_revision_id": "ccrv_c4d81a7e-52b9-4f60-a3e7-0b9f2d6c1e54", "view": "back"}
+     ],
+     "sources": [],
+     "aliases": ["Furina", "芙卡洛斯"],
+     "variant": "常服",
+     "origin": "derivative",
+     "ip": {"name": "原神", "key": "genshin-impact"}
+   }
+ }}
+```
+200：
+```json
+{"asset_id": "ccas_7c9d0e1f-2a3b-4c5d-8e6f-708192a3b4c5", "revision": "2", "content_revision_id": "ccrv_e7f8a9b0-c1d2-4e3f-8a4b-5c6d7e8f9012", "library_revision": "213", "tag_mapping": {}, "reused": false, "title": "芙宁娜 · 常服", "description": ""}
+```
+409（另一个窗口刚给它加了标签，资产行已是修订 2）：
+```json
+{"error": {"code": "creative_revision_conflict", "message": "内容已被其他窗口修改，本机这次修改未保存"}}
+```
+
+### 兼容与变更
+首次定义，无已有消费者迁移。
+
+## 查找角色 IP
+
+### 用途与调用
+- **用途**：建卡和编辑角色卡时，给「所属 IP」和「作品」输入框提供候选，让摄影师选而不是手填。
+- **消费者**：资产库的新建、编辑角色卡对话框；资产库角色卡视图的 IP 筛选。
+- **调用**：`GET /api/v1/creative/character-ips`，响应 `application/json`。
+- **权限**：网页登录态；账号有创意空间读取权限。自建 IP 只来自本账号的角色卡。
+
+### 请求
+
+| 字段 | 位置 | 类型 | 必传 | 缺省行为 | 约束与含义 |
+|---|---|---|---|---|---|
+| `query` | query | string | 否 | 不过滤，按下方排序返回前 `limit` 个 | ≤ 60 码点；按规范化规则做前缀和包含匹配，内置 IP 的别名也参与匹配 |
+| `limit` | query | integer | 否 | 20 | 1–50 |
+
+### 成功响应
+200：
+
+| 字段 | 类型 | 必返 | 说明 |
+|---|---|---|---|
+| `items[]` | array | 是 | 候选 IP，可以为空数组 |
+| `items[].name` | string | 是 | 显示名 |
+| `items[].key` | string | 内置 IP 时 | 目录 `key`；自建 IP 没有 |
+| `items[].builtin` | boolean | 是 | 是否来自内置目录 |
+| `items[].character_count` | integer | 是 | 本账号不在回收站的角色卡里，当前版本属于这个 IP 的张数 |
+| `items[].works` | string[] | 是 | 作品候选：内置目录的作品，加本账号这个 IP 下角色卡用过的作品，去重；可以为空数组 |
+
+- 排序：本账号用过的（`character_count > 0`）在前，按张数降序；其余按目录顺序。同名的内置 IP 和自建 IP 不会同时出现：自建取值命中目录时在写入时已经归一。
+- 退役的内置 IP（`retired`）只在本账号有角色卡用它时出现。
+
+### 失败响应
+
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 400 | `validation_failed` | `query` 过长；`limit` 越界 | 修正 |
+| 403 | `forbidden` | 创意空间当前不可用 | 公共约定 |
+
+### 交互规则
+- 只读，无副作用。不分页：候选只用于输入联想，`limit` 封顶。
+- 「新建 IP」就是在输入框里输入一个没有候选的名字并保存角色卡，不需要单独的接口。
+
+### 调用示例
+```http
+GET /api/v1/creative/character-ips?query=fa&limit=5
+```
+200：
+```json
+{"items": [
+  {"name": "Fate", "key": "fate", "builtin": true, "character_count": 2, "works": ["Fate/stay night", "Fate/Zero", "Fate/Grand Order"]},
+  {"name": "Fallen Star 原创", "builtin": false, "character_count": 1, "works": []}
+]}
+```
+400：
+```json
+{"error": {"code": "validation_failed", "message": "limit 超出范围"}}
+```
+
+### 兼容与变更
+首次定义，无已有消费者。
+
+## 助手读取与使用角色卡
+
+### 用途与调用
+- **用途**：让助手（内置助手和外部助手）找到、读取角色卡，放到画布上连到生成节点；让摄影师在对话输入框里引用角色卡。
+- **消费者**：内置创作助手；外部助手经 MCP 的只读工具（`search_assets`、`read_asset`，共用同一个 `Info()`）。
+- **调用**：现有工具的扩展，不新增工具：
+  - `search_assets`：`kind` 过滤接受 `character`。
+  - `read_asset`：读角色卡版本。
+  - `edit_canvas` 的 `add_node`：接受角色卡资产。
+  - 对话指令 `instruction_segments[]` 的 `content_ref`：`content_revision_id` 可以是角色卡版本。
+- **权限**：沿用现有的读取准入，不为角色卡新增授权：
+  - 内置助手：角色卡的文字按 `media_metadata` 外发；参考图作为图片附件需要模型能看图、且本会话授权含 `image_preview`，不满足时只给文字。
+  - 外部助手：沿用现有连接模型，连接时授权的是整个账号的全部数据类别，由外部宿主自己决定是否看图，所以参考图总是附上。首版不引入连接级的图片授权。
+
+### 请求
+- `search_assets`：已有参数不变，`kind` 的合法值加 `character`；新增可选参数 `character_ip`、`character_work`，解析和匹配规则同资产列表的同名过滤（`data: 角色卡`「列表与筛选」，含作品别名和歧义），只在 `kind = character` 时允许。`query` 匹配角色名、别名、版本说明、IP、作品和外貌描述。
+- `read_asset`：已有参数不变。`content_revision_id` 给角色卡版本（`search_assets` 结果里的 `content_revision_id`），读的就是这个版本。
+- `edit_canvas` 的 `add_node`：已有的资产放置参数不变；资产为角色卡时建 `core.character` 节点，内容为资产的当前版本。
+- `content_ref`：结构不变 `{type: "content_ref", content_revision_id}`。
+
+### 成功响应
+- `search_assets` 每个角色卡项附要点 `character`：`name`、`aliases`、`variant`（有时）、`origin`（有时）、`ip`（有时）、`work`（有时）、`view_count`、`appearance` 前 200 码点。不附图片。助手据 `ip`、`work`、`variant` 向摄影师区分同名角色。
+- `read_asset` 读角色卡版本：返回完整载荷（`name`、`aliases`、`variant`、`appearance`、`views[{content_revision_id, view, note}]`、`sources[{content_revision_id}]`、`origin`、`ip`、`work`、`attribution`、`source_urls`）。
+  - **图片**：按 `views` 的顺序附图片，最多 4 张（即 `views` 全部）。附上的每张图都必须是这个版本 `views` 里的图片修订，读取时逐张校验，不接受调用方另指图片。
+  - `read_asset` 按版本读取：资产进回收站或彻底删除，不影响画布节点已持有的版本（`data: 角色卡节点`），内置和外部助手一致；回收站只影响 `search_assets` 的结果。
+  - 某张图无法压缩到可发送的大小或格式时，单独省略这一张，其余照附；`images_omitted: [{content_revision_id, reason}]` 列出被省略的图和原因。内置助手因模型不能看图或缺 `image_preview` 而全部不附时，`images_omitted` 同样列出全部并给出原因。
+  - `sources` 只给 ID、宽高等元数据，不附像素。
+- `edit_canvas`：与放置其他资产相同的结果，节点类型为 `core.character`。
+- `content_ref` 引用角色卡：消息块按 `read_asset` 的形状给出角色卡内容，图片附件规则相同。
+
+### 失败响应
+
+| 信号 | 错误 | 触发条件 | 处理 |
+|---|---|---|---|
+| 工具错误 | `invalid_arguments` | `kind` 不合法；给了 `character_ip` / `character_work` 但 `kind` 不是 `character`；`character_work` 的别名命中多部作品（结果里列出候选） | 助手修正参数，或把候选给摄影师选 |
+| 工具错误 | `not_found` | 资产或版本不存在、不属于本账号 | 重新搜索 |
+| 工具错误 | 现有连线校验错误 | 把角色卡节点连到非生成节点，或作为 `data` 输入 | 按 `data: 角色卡节点` 改连 |
+| 生成受理失败 | 见 `patterns: 角色卡展开为生成参考` 第 5、6 条 | 展开后超限或图片不可用 | 减少角色卡或参考图 |
+
+### 交互规则
+- 只读工具无副作用。`edit_canvas` 的写入语义、撤销、本轮改动展示与放置其他资产相同。
+- 助手说明（工具 `Info()`）写明：角色卡在生成时自动展开，连一个角色卡节点即可，不要再逐张连它的参考图；同框角色不要超过模型参考上限；摄影师提到 IP 或作品（含简称，如「FGO」）时用 `character_ip` / `character_work` 缩小范围，仍有多张符合时列出来（带 IP、作品、版本说明）让摄影师选，不要自行挑一张。
+
+### 调用示例
+`search_assets` 调用：
+```json
+{"query": "水神", "kind": "character", "character_ip": "原神"}
+```
+结果中的一项（「水神」命中别名，「原神」按名字匹配到内置 IP）：
+```json
+{"asset_id": "ccas_7c9d0e1f-2a3b-4c5d-8e6f-708192a3b4c5", "kind": "character", "title": "芙宁娜 · 常服", "content_revision_id": "ccrv_e7f8a9b0-c1d2-4e3f-8a4b-5c6d7e8f9012",
+ "character": {"name": "芙宁娜", "aliases": ["Furina", "芙卡洛斯"], "variant": "常服", "origin": "derivative", "ip": {"name": "原神", "key": "genshin-impact"}, "view_count": 3, "appearance": "白发及肩，发尾挑染浅蓝；异色瞳，左深蓝右浅蓝；深蓝礼帽带白色羽饰；蓝白燕尾短外套。"}}
+```
+用作品简称缩小范围（「FGO」按 Fate 的作品别名解析为 Fate/Grand Order）：`{"query": "Saber", "kind": "character", "character_ip": "fate", "character_work": "FGO"}`。
+`read_asset` 读上面那张卡：`{"content_revision_id": "ccrv_e7f8a9b0-c1d2-4e3f-8a4b-5c6d7e8f9012"}`，结果附 3 张图片，顺序同 `views`。
+失败（IP 过滤用在非角色卡上）：
+```json
+{"error": "invalid_arguments", "message": "character_ip 只能与 kind=character 一起使用"}
+```
+
+### 兼容与变更
+兼容扩展：参数只加枚举值和两个可选参数，旧的调用方式不变。`read_asset` 读角色卡时可以附多张图片，内置和外部的图片适配都要支持多图（现有只处理单张 `image_revision_id`）。外部助手的工具说明随 `Info()` 更新。
