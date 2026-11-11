@@ -33,7 +33,7 @@ func TestResendLiveAcceptedReceipt(t *testing.T) {
 	}
 	from := values["AUTH_MAIL_FROM"]
 	if from == "" {
-		from = "Photographer CRM <onboarding@resend.dev>"
+		from = "Eurika <onboarding@resend.dev>"
 	}
 	actionSecret := make([]byte, 32)
 	if _, err := rand.Read(actionSecret); err != nil {

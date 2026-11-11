@@ -203,20 +203,28 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   font-weight: 700;
   font-size: 16px;
 }
-/* 品牌标记是全页最大的一块彩色，也只有 28px */
+/* 品牌标记只有 28px，自带深色圆角底，不占用琥珀强调色 */
 .brand-mark {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-s);
   flex: none;
-  background: var(--accent-solid);
-  display: grid;
-  place-items: center;
-  color: var(--on-accent-solid);
-  font-size: 12.5px;
-  font-weight: 700;
+  display: block;
 }
+.brand-name { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.brand-wordmark { display: block; height: 17px; width: auto; }
 .brand small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+/* 竖版组合：欢迎页、登录页用，48px 起换点阵展示版 */
+.brand-stacked { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; }
+.brand-stacked-mark { width: 56px; height: 56px; display: block; }
+.brand-stacked-wordmark { display: block; height: 22px; width: auto; }
+.brand-stacked-cn {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 300;
+  letter-spacing: 0.6em;
+  padding-left: 0.6em;
+  color: var(--muted);
+}
 .nav-item {
   position: relative;
   display: flex;

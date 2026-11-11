@@ -257,7 +257,7 @@ func TestLoadAuthResendConfiguration(t *testing.T) {
 		t.Fatalf("Load Resend configuration: %v", err)
 	}
 	if cfg.AuthMailDriver != "resend" || cfg.ResendAPIKey != "test-resend-key" ||
-		cfg.AuthMailFrom != "Photographer CRM <onboarding@resend.dev>" {
+		cfg.AuthMailFrom != "Eurika <onboarding@resend.dev>" {
 		t.Fatal("Resend configuration mismatch")
 	}
 }

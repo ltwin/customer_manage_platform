@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { Camera, Check, Sparkles } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
+import { BrandLockupStacked } from '../../components/BrandLockup'
 
 type AuthPageShellProps = {
   eyebrow: string
@@ -29,12 +30,7 @@ export default function AuthPageShell({
         <div className="auth-aside-veil" />
 
         <Link className="auth-brand" to="/" data-od-id="brand-home">
-          <span className="brand-mark" aria-hidden="true">
-            <Camera strokeWidth={2} />
-          </span>
-          <span>
-            影约 CRM<small>摄影师私域客户经营</small>
-          </span>
+          <BrandLockupStacked />
         </Link>
 
         <div className="auth-pitch" data-od-id="aside-pitch">

@@ -44,7 +44,7 @@ func TestResendAcceptsMailWithIdempotencyAndRedactedEvent(t *testing.T) {
 				r.Header.Get("User-Agent") == "photographer-crm/1.0" &&
 				r.Header.Get("Idempotency-Key") != "" &&
 				!strings.Contains(r.Header.Get("Idempotency-Key"), "synthetic-secret") &&
-				payload.From == "Photographer CRM <onboarding@resend.dev>" &&
+				payload.From == "Eurika <onboarding@resend.dev>" &&
 				len(payload.To) == 1 && payload.To[0] == "owner@example.invalid" &&
 				payload.Subject != "" && strings.Contains(payload.HTML, "synthetic-secret") &&
 				strings.Contains(payload.Text, "synthetic-secret"),
@@ -211,7 +211,7 @@ func TestResendBoundsTheWholeOperationByDeadline(t *testing.T) {
 
 func TestResendProductionDeadlineFitsPublicMailResponseBudget(t *testing.T) {
 	t.Parallel()
-	sender := NewResend("synthetic-key", "Photographer CRM <onboarding@resend.dev>", nil)
+	sender := NewResend("synthetic-key", "Eurika <onboarding@resend.dev>", nil)
 	if sender.totalTimeout <= 0 || sender.totalTimeout > 900*time.Millisecond {
 		t.Fatalf("total timeout = %s, want (0,900ms]", sender.totalTimeout)
 	}
@@ -241,7 +241,7 @@ func testResendSender(server *httptest.Server, output io.Writer, now time.Time) 
 		endpoint = server.URL + "/emails"
 	}
 	return &Resend{
-		apiKey: "test-api-key", from: "Photographer CRM <onboarding@resend.dev>", endpoint: endpoint,
+		apiKey: "test-api-key", from: "Eurika <onboarding@resend.dev>", endpoint: endpoint,
 		client: client, logger: slog.New(slog.NewJSONHandler(output, nil)), now: func() time.Time { return now },
 		totalTimeout: time.Second, retryDelay: time.Millisecond, maxAttempts: 2,
 	}

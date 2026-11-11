@@ -186,11 +186,11 @@ func renderAuthMail(mail auth.AuthMail) (string, string, string, error) {
 	var subject, action string
 	switch mail.Purpose {
 	case auth.ActionEmailVerification:
-		subject, action = "验证你的 Photographer CRM 邮箱", "验证邮箱"
+		subject, action = "验证你的 Eurika 邮箱", "验证邮箱"
 	case auth.ActionLegacyClaim:
-		subject, action = "认领你的 Photographer CRM 账号", "认领账号"
+		subject, action = "认领你的 Eurika 账号", "认领账号"
 	case auth.ActionPasswordReset:
-		subject, action = "重置你的 Photographer CRM 密码", "重置密码"
+		subject, action = "重置你的 Eurika 密码", "重置密码"
 	default:
 		return "", "", "", auth.NewDeliveryError(auth.DeliveryMisconfigured)
 	}
