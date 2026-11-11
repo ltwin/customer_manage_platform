@@ -28,6 +28,7 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	registerCreativeLibrary(r, h)
 	registerCreativeMedia(r, h)
 	registerSceneTextures(r, h)
+	registerSceneModels(r, h)
 	registerCreativeImageEdit(r, h)
 	registerCreativeDocuments(r, h)
 	w := ServerInterfaceWrapper{Handler: h, ErrorHandler: func(c *gin.Context, _ error, status int) {

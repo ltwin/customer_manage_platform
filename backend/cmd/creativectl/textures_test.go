@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
@@ -66,5 +68,34 @@ func TestTexturesCheckSaysWhatIsMissing(t *testing.T) {
 	}
 	if code, _ := runTexturesCommand(t, &fakeTextures{}, "textures", "check", "--all"); code != exitInvalidInput {
 		t.Fatalf("an argument: %d", code)
+	}
+	if code, _ := runTexturesCommand(t, &fakeTextures{}, "textures", "check", "--dir", "x"); code != exitInvalidInput {
+		t.Fatalf("--dir on check: %d", code)
+	}
+	if code, _ := runTexturesCommand(t, &fakeTextures{result: creativescene.BuiltinImport{Failed: []creativescene.BuiltinImportFailure{}}}, "textures", "import", "--dir", t.TempDir()); code != exitOK {
+		t.Fatalf("--dir on import: %d", code)
+	}
+}
+
+// A file whose source has no direct link is read from --dir; the rest are
+// fetched from their sources.
+func TestFetchFromDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.png"), []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fetched := 0
+	fetch := func(context.Context, creativescene.BuiltinTextureFile) ([]byte, error) {
+		fetched++
+		return []byte("jpg"), nil
+	}
+	if body, err := fetchFromDir(dir, fetch)(t.Context(), creativescene.BuiltinTextureFile{Name: "a.png", Bytes: 3}); err != nil || string(body) != "png" || fetched != 0 {
+		t.Fatalf("from dir %q %v", body, err)
+	}
+	if body, err := fetchFromDir(dir, fetch)(t.Context(), creativescene.BuiltinTextureFile{Name: "b.jpg", URL: "https://x/b.jpg", Bytes: 3}); err != nil || string(body) != "jpg" || fetched != 1 {
+		t.Fatalf("from source %q %v", body, err)
+	}
+	if _, err := fetchFromDir("", fetch)(t.Context(), creativescene.BuiltinTextureFile{Name: "a.png", Bytes: 3}); err == nil {
+		t.Fatal("no link and no --dir")
 	}
 }

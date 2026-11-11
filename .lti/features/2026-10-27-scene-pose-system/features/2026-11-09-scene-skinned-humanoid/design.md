@@ -296,7 +296,7 @@ worker（上传 model）：
 | `backend/internal/creativescene/builtin_models.go` | 新增 | 清单加载、校验、对象存储、`Import`、`Missing`、`Open`、`BuiltinModels`、`BuiltinModelByID`、缩略图 |
 | `backend/internal/creativescene/models.json`、`builtin_thumbnails/models/` | 新增 | 两个素体（脚本生成） |
 | `backend/internal/platform/config/config.go` | 修改 | `SCENE_MODEL_LOCAL_ROOT` |
-| `backend/internal/platform/httpapi/creative_scene_models.go` | 新增 | `GET`/`HEAD /creative/scene-models/{file}`，503 `creative_model_file_unavailable` |
+| `backend/internal/platform/httpapi/creative_scene_model_files.go` | 新增 | `GET`/`HEAD /creative/scene-models/{file}`，503 `creative_model_file_unavailable` |
 | `backend/internal/platform/httpapi/creative_canvas.go`、`router.go` | 修改 | 注册路由、依赖 |
 | `backend/cmd/server/main.go` | 修改 | 组装内置模型存储，后台检查缺失 |
 | `backend/cmd/creativectl/main.go`、`models.go`（新增）、`textures.go` | 修改 | `models import/check`；`textures import --dir` |

@@ -169,6 +169,26 @@ func checkSceneTextures(ctx context.Context, textures *creativescene.BuiltinText
 		slog.Int("files", len(missing)), slog.Any("materials", slices.Sorted(maps.Keys(materials))))
 }
 
+// checkSceneModels 启动后按内置模型清单检查 GLB 是否已导入，处理同 checkSceneTextures；
+// 导入用 creativectl models import --dir。
+func checkSceneModels(ctx context.Context, models *creativescene.BuiltinModels, logger *slog.Logger) {
+	missing, err := models.Missing(ctx)
+	if err != nil {
+		logger.Error("built-in model check failed", slog.String("error", err.Error()))
+		return
+	}
+	if len(missing) == 0 {
+		logger.Info("built-in models ready")
+		return
+	}
+	names := make([]string, 0, len(missing))
+	for _, f := range missing {
+		names = append(names, f.Model)
+	}
+	logger.Error("built-in models missing: run creativectl models import",
+		slog.Int("files", len(missing)), slog.Any("models", names))
+}
+
 // syncPlatformSkills 把镜像里带的内置 Skill 包同步进平台目录：内容没变的跳过，
 // 变了的追加新版本并设为当前版本。失败只记日志不阻断启动——目录里已有的版本照常可用，
 // 下次启动用同一个 operation id 重放。
@@ -260,6 +280,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return newStartupFailure("scene-textures-init", "SCENE_TEXTURE_LOCAL_ROOT", "object-storage", err)
 	}
 	go checkSceneTextures(ctx, sceneTextures, logger)
+	sceneModels, err := creativescene.ComposeBuiltinModels(cfg)
+	if err != nil {
+		return newStartupFailure("scene-models-init", "SCENE_MODEL_LOCAL_ROOT", "object-storage", err)
+	}
+	go checkSceneModels(ctx, sceneModels, logger)
 	imageEditEnabled, err := creativeimageedit.EnabledFromValues(os.Getenv("CREATIVE_IMAGE_EDIT"), os.Getenv("CREATIVE_MEDIA_GC_MODE"))
 	if err != nil {
 		return newStartupFailure("creative-image-edit-init", "CREATIVE_IMAGE_EDIT", "configuration", err)
@@ -514,6 +539,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		PlanningIngestion:  planningIngestionApp,
 		CreativeMedia:      creativeMedia,
 		SceneTextures:      sceneTextures,
+		SceneModels:        sceneModels,
 		CreativeImageEdit:  imageEdit,
 		CreativeAgent:      creativeAgent,
 		CreativeGeneration: creativeGeneration,

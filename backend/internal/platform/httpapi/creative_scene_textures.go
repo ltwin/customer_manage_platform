@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,7 +20,7 @@ import (
 // space reads them. A file's name is its sha256, so it never changes and the
 // browser keeps it.
 
-var sceneTextureName = regexp.MustCompile(`^[0-9a-f]{64}\.jpg$`)
+var sceneTextureName = regexp.MustCompile(`^[0-9a-f]{64}\.(jpg|png)$`)
 
 func registerSceneTextures(r *gin.RouterGroup, h *handlers) {
 	w := ServerInterfaceWrapper{Handler: h, ErrorHandler: func(c *gin.Context, _ error, status int) {
@@ -44,7 +45,7 @@ func (h *handlers) GetCreativeSceneTexture(c *gin.Context, file string, params G
 		abortError(c, 404, CodeNotFound, "没有这张内置贴图")
 		return
 	}
-	etag := strconv.Quote(strings.TrimSuffix(file, ".jpg"))
+	etag := strconv.Quote(strings.TrimSuffix(file, path.Ext(file)))
 	if params.IfNoneMatch != nil && *params.IfNoneMatch == etag {
 		setSceneTextureCache(c, etag)
 		c.Status(http.StatusNotModified)
@@ -73,7 +74,7 @@ func (h *handlers) GetCreativeSceneTexture(c *gin.Context, file string, params G
 	}
 	defer func() { _ = body.Close() }()
 	setSceneTextureCache(c, etag)
-	c.Header("Content-Type", "image/jpeg")
+	c.Header("Content-Type", creativescene.BuiltinTextureMediaType(file))
 	c.Header("Content-Length", strconv.FormatInt(size, 10))
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Status(http.StatusOK)

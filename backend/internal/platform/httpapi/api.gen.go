@@ -10621,6 +10621,11 @@ type CompleteCreativeSceneJobParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// GetCreativeSceneModelParams defines parameters for GetCreativeSceneModel.
+type GetCreativeSceneModelParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
 // GetCreativeSceneTextureParams defines parameters for GetCreativeSceneTexture.
 type GetCreativeSceneTextureParams struct {
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
@@ -14145,6 +14150,9 @@ type ServerInterface interface {
 	// 续租：把租约延长到现在加 30 秒，不超过 deadline
 	// (POST /creative/scene-jobs/{job_id}/lease)
 	LeaseCreativeSceneJob(c *gin.Context, jobId string)
+	// 内置模型的 GLB 文件（内置模型库）；支持 HEAD
+	// (GET /creative/scene-models/{file})
+	GetCreativeSceneModel(c *gin.Context, file string, params GetCreativeSceneModelParams)
 	// 内置贴图材质的图片文件（内置贴图库）；支持 HEAD
 	// (GET /creative/scene-textures/{file})
 	GetCreativeSceneTexture(c *gin.Context, file string, params GetCreativeSceneTextureParams)
@@ -18782,6 +18790,57 @@ func (siw *ServerInterfaceWrapper) LeaseCreativeSceneJob(c *gin.Context) {
 	siw.Handler.LeaseCreativeSceneJob(c, jobId)
 }
 
+// GetCreativeSceneModel operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeSceneModel(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "file" -------------
+	var file string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "file", c.Param("file"), &file, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter file: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeSceneModelParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeSceneModel(c, file, params)
+}
+
 // GetCreativeSceneTexture operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeSceneTexture(c *gin.Context) {
 
@@ -21352,6 +21411,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/scene-jobs/claim", wrapper.ClaimCreativeSceneJob)
 	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/complete", wrapper.CompleteCreativeSceneJob)
 	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/lease", wrapper.LeaseCreativeSceneJob)
+	router.GET(options.BaseURL+"/creative/scene-models/:file", wrapper.GetCreativeSceneModel)
 	router.GET(options.BaseURL+"/creative/scene-textures/:file", wrapper.GetCreativeSceneTexture)
 	router.GET(options.BaseURL+"/creative/tag-categories", wrapper.ListCreativeCategories)
 	router.POST(options.BaseURL+"/creative/tag-categories", wrapper.CreateCreativeCategory)

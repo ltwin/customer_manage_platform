@@ -15,15 +15,16 @@
 
 ## 2. 后端：内置模型
 
-- [ ] 2.1 内置模型库与贴图库放宽：
-  - `builtin_textures.go`：`.png`、`quaternius`、`listed`、`character`；没有 `url` 的文件从目录导入。
+- [x] 2.1 内置模型库与贴图库放宽：
+  - `builtin_textures.go`：`.png`、`quaternius`、`listed`；没有 `url` 的文件从目录导入。`character` 品类本身是 `materials.json` 的数据，随 6.1 的贴图条目一起加（现在加会让资产浏览器多出一个空分组）。
   - 新增 `builtin_models.go`：清单与缩略图的嵌入、加载校验、`scene-models/` 存储、`Open` / `Missing` / `Import`。
   - `config.go` 的 `SCENE_MODEL_LOCAL_ROOT`。
-  - `httpapi/creative_scene_models.go` 与路由注册；`cmd/server/main.go` 的后台缺失检查。
+  - `httpapi/creative_scene_model_files.go` 与路由注册（与已有的 `creative_scene_models_test.go` 区分开）；handler 依赖 `SceneModelFiles` 接口，测试不依赖清单条目；`cmd/server/main.go` 的后台缺失检查。
   - `creativectl models import/check` 与 `textures import --dir`。
   - `Makefile` 复制 `models.json` 与模型缩略图。
   - 先写测试：清单校验的失败例；handler 的 200、304、404、503（AC-12）；import 核对 sha256、`Inspect` 和 manifest，不一致时不写入。
-  - 用一个测试条目跑通，素体条目在 6.1 加入。
+  - 用测试条目跑通：清单校验用共用向量里 xbot 的骨架和映射拼出的条目，导入用 `creativeglb/testdata/skinned-turned-root.glb`；仓库里的 `models.json` 暂为空，素体条目在 6.1 加入。
+  - 文档先写了 `docs/dev/builtin-models.md` 与贴图库的 `--dir`（`.env.example` 引用它），6.1 补素体的生成步骤。
 - [ ] 2.2 场景引用与助手：
   - `validateModelRef`、`modelRefs`、`readModels`、`opEnv.resolve`、`setInstanceModelOp.targets` 认得 `builtin`。
   - 有效槽位取清单的 manifest（`materials.go`）。
@@ -100,7 +101,8 @@
   - `render-texture-thumbnails.mjs` 加模型模式。
   - 把两个素体写进 `models.json`，贴图材质写进 `materials.json`（`listed: false`、`character`），提交缩略图。
   - `creativectl textures import --dir`、`models import --dir` 导入共享对象存储，`check` 通过。
-  - 文档：`docs/dev/builtin-models.md`、`docs/dev/scene-texture-library.md`。
+  - `materials.json` 的 `categories` 加 `character`，前端选材面板与资产浏览器同时过滤 `listed: false`。
+  - 文档：`docs/dev/builtin-models.md` 补素体的生成步骤。
   - 完成判据：服务启动时清单校验通过；两个素体的 `rig` 都是 52 根骨骼。
 - [ ] 6.2 素体的界面与验收：
   - `SceneEditor.tsx` 加「添加 > 素体」；`AssetPanel.tsx` 加「素体」分区。

@@ -2134,6 +2134,39 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/scene-models/{file}:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeSceneModel
+      summary: 内置模型的 GLB 文件（内置模型库）；支持 HEAD
+      description: >-
+        file 是内置模型清单里某个条目 glb.name 的值（内容的 sha256 加 .glb）。不按账号区分内容，
+        需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256，
+        Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。
+        file 格式不对或不在清单里返回 404 not_found；在清单里但对象存储里没有（未导入）或读取失败返回
+        503 creative_model_file_unavailable。
+      parameters:
+      - in: path
+        name: file
+        required: true
+        schema: {type: string, pattern: '^[0-9a-f]{64}\.glb$'}
+      - in: header
+        name: If-None-Match
+        required: false
+        schema: {type: string}
+      responses:
+        "200":
+          description: GLB 文件
+          content:
+            model/gltf-binary:
+              schema: {type: string, format: binary}
+        "304":
+          description: 与 If-None-Match 相同，未修改
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /creative/assets/from-canvas-node:
     post:
       tags: [creative-foundation]

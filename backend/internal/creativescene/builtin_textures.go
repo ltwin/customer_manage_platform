@@ -25,13 +25,14 @@ import (
 // sit under scene-textures/ in the object store, imported from the catalog's
 // list, and are read through GET /creative/scene-textures/{file}.
 
-// builtinFileName is a built-in texture file's name: its content's sha256.
-var builtinFileName = regexp.MustCompile(`^[0-9a-f]{64}\.jpg$`)
+// builtinFileName is a built-in texture file's name: its content's sha256,
+// as a JPEG or, for normals and textures with alpha, a PNG.
+var builtinFileName = regexp.MustCompile(`^[0-9a-f]{64}\.(jpg|png)$`)
 
 const maxBuiltinFileBytes = 32 << 20
 
 var (
-	builtinSites  = []string{"polyhaven", "ambientcg"}
+	builtinSites  = []string{"polyhaven", "ambientcg", "quaternius"}
 	builtinMapIDs = []string{"base_color", "normal", "roughness", "metalness", "ao"}
 )
 
@@ -43,10 +44,12 @@ type builtinMap struct {
 }
 
 // BuiltinTextureFile is a file of the built-in textures: where the import
-// fetches it, and how large it is. Material is the first entry naming it.
+// fetches it, and how large it is. Material is the first entry naming it. A
+// file whose source has no direct link has no URL: the import reads it from
+// a directory (creativectl textures import --dir).
 type BuiltinTextureFile struct {
 	Name     string `json:"name"`
-	URL      string `json:"url"`
+	URL      string `json:"url,omitempty"`
 	Bytes    int64  `json:"bytes"`
 	Material string `json:"-"`
 }
@@ -66,7 +69,14 @@ type materialCategory struct {
 // hasTexturedFields says whether an entry sets any field only a textured
 // entry may have.
 func (m materialSpec) hasTexturedFields() bool {
-	return m.Category != "" || m.SizeM != 0 || m.Maps != nil || m.Defaults != nil || m.Files != nil || m.Source != nil
+	return m.Category != "" || m.SizeM != 0 || m.Maps != nil || m.Defaults != nil || m.Files != nil || m.Source != nil || m.Listed != nil
+}
+
+// listed says whether a textured entry shows in the material picker and the
+// built-in search; an unlisted one, a built-in model's own texture, is still
+// a preset scenes may use.
+func (m materialSpec) listed() bool {
+	return m.Listed == nil || *m.Listed
 }
 
 // completeTextured checks a textured entry and gives it its parameter
@@ -89,7 +99,7 @@ func completeTextured(m materialSpec, principled materialSpec, categories []mate
 		if !builtinFileName.MatchString(f.Name) || listed[f.Name] {
 			return m, fmt.Errorf("文件名 %q 须为内容的 sha256 且不重复", f.Name)
 		}
-		if !strings.HasPrefix(f.URL, "https://") || f.Bytes < 1 || f.Bytes > maxBuiltinFileBytes {
+		if f.URL != "" && !strings.HasPrefix(f.URL, "https://") || f.Bytes < 1 || f.Bytes > maxBuiltinFileBytes {
 			return m, fmt.Errorf("文件 %s 的地址或大小不对", f.Name)
 		}
 		listed[f.Name] = false
@@ -176,19 +186,21 @@ func NewBuiltinTextures(store immutablefs.ObjectStore) *BuiltinTextures {
 // driver as the other object stores: the shared bucket, or its own local
 // root.
 func ComposeBuiltinTextures(cfg config.Config) (*BuiltinTextures, error) {
+	store, err := composeBuiltinStore(cfg, cfg.SceneTextureLocalRoot)
+	if err != nil {
+		return nil, err
+	}
+	return NewBuiltinTextures(store), nil
+}
+
+// composeBuiltinStore opens the object store of built-in files: the shared
+// bucket under the OSS driver, localRoot under the local one.
+func composeBuiltinStore(cfg config.Config, localRoot string) (immutablefs.ObjectStore, error) {
 	switch cfg.AvatarStorageDriver {
 	case config.StorageDriverOSS:
-		store, err := immutablefs.NewOSS(immutablefs.OSSConfig{Region: cfg.OSSRegion, Endpoint: cfg.OSSEndpoint, Bucket: cfg.OSSBucket, UseCName: cfg.OSSUseCName})
-		if err != nil {
-			return nil, err
-		}
-		return NewBuiltinTextures(store), nil
+		return immutablefs.NewOSS(immutablefs.OSSConfig{Region: cfg.OSSRegion, Endpoint: cfg.OSSEndpoint, Bucket: cfg.OSSBucket, UseCName: cfg.OSSUseCName})
 	case config.StorageDriverLocal:
-		store, err := immutablefs.NewLocal(cfg.SceneTextureLocalRoot)
-		if err != nil {
-			return nil, err
-		}
-		return NewBuiltinTextures(store), nil
+		return immutablefs.NewLocal(localRoot)
 	}
 	return nil, config.ErrAvatarStorageDriverInvalid
 }
@@ -311,10 +323,10 @@ func (b *BuiltinTextures) importFile(ctx context.Context, f BuiltinTextureFile, 
 		return fmt.Sprintf("大小不符：下载到 %d 字节，清单为 %d", len(body), f.Bytes)
 	}
 	sum := sha256.Sum256(body)
-	if hex.EncodeToString(sum[:])+".jpg" != f.Name {
+	if hex.EncodeToString(sum[:])+path.Ext(f.Name) != f.Name {
 		return "sha256 与文件名不符"
 	}
-	_, created, err := b.store.PutImmutable(ctx, key, body, immutablefs.Metadata{MediaType: "image/jpeg", Size: f.Bytes, Checksum: "sha256-" + hex.EncodeToString(sum[:])})
+	_, created, err := b.store.PutImmutable(ctx, key, body, immutablefs.Metadata{MediaType: BuiltinTextureMediaType(f.Name), Size: f.Bytes, Checksum: "sha256-" + hex.EncodeToString(sum[:])})
 	switch {
 	case err != nil:
 		return err.Error()
@@ -324,11 +336,20 @@ func (b *BuiltinTextures) importFile(ctx context.Context, f BuiltinTextureFile, 
 	return "skipped" // written meanwhile by another import
 }
 
+// BuiltinTextureMediaType is a built-in texture file's media type, by its
+// extension.
+func BuiltinTextureMediaType(name string) string {
+	if path.Ext(name) == ".png" {
+		return "image/png"
+	}
+	return "image/jpeg"
+}
+
 // builtinThumbnailFS holds each textured entry's 256 × 256 WebP material
 // ball, rendered offline (frontend/scripts/render-texture-thumbnails.mjs) and
-// named by its ID with @ as _.
+// named by its ID with @ as _; built-in models' thumbnails sit in models/.
 //
-//go:embed builtin_thumbnails/*.webp
+//go:embed builtin_thumbnails
 var builtinThumbnailFS embed.FS
 
 var builtinThumbnails = loadThumbnails(builtinThumbnailFS, materials.list)
@@ -388,14 +409,15 @@ func builtinMaterial(m materialSpec) BuiltinMaterial {
 	return BuiltinMaterial{ID: m.ID, Title: m.Label, Category: m.Category, CategoryLabel: label, SizeM: m.SizeM, Slot: MaterialSlot{Preset: m.ID, Params: map[string]any{}}}
 }
 
-// BuiltinMaterials lists the textured entries matching query, in catalog
-// order: each of its words, case aside, is part of the label, the category
-// (ID or label) or the source asset's name. An empty query lists them all.
+// BuiltinMaterials lists the listed textured entries matching query, in
+// catalog order: each of its words, case aside, is part of the label, the
+// category (ID or label) or the source asset's name. An empty query lists them
+// all.
 func BuiltinMaterials(query string) []BuiltinMaterial {
 	words := strings.Fields(strings.ToLower(query))
 	out := []BuiltinMaterial{}
 	for _, m := range materials.list {
-		if m.Kind != MaterialTextured {
+		if m.Kind != MaterialTextured || !m.listed() {
 			continue
 		}
 		b := builtinMaterial(m)

@@ -49,6 +49,7 @@ type materialSpec struct {
 	Defaults map[string]any        `json:"defaults"`
 	Files    []BuiltinTextureFile  `json:"files"`
 	Source   *builtinSource        `json:"source"`
+	Listed   *bool                 `json:"listed"`
 }
 
 type materialCatalog struct {

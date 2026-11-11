@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
@@ -12,8 +16,9 @@ import (
 )
 
 // The built-in textures (data: 内置贴图库) are imported from the catalog's
-// list of files: textures import fetches what the object store lacks,
-// textures check only says what it lacks, for the production preflight.
+// list of files: textures import fetches what the object store lacks, taking
+// the files whose source has no direct link from --dir; textures check only
+// says what it lacks, for the production preflight.
 
 // textureStore is the slice of creativescene.BuiltinTextures these commands
 // drive, so their tests need no object store.
@@ -44,7 +49,16 @@ const (
 
 func runTextures(ctx context.Context, verb string, args []string, deps commandDeps) int {
 	operation := "textures " + verb
-	if len(args) != 0 {
+	flags := flag.NewFlagSet("creativectl-textures-"+verb, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var dir string
+	if verb == "import" {
+		flags.StringVar(&dir, "dir", "", "")
+	}
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
+		if verb == "import" {
+			return fail(deps.stderr, operation, exitInvalidInput, operation+" 只接 --dir <目录>")
+		}
 		return fail(deps.stderr, operation, exitInvalidInput, operation+" 不接参数")
 	}
 	cfg, err := deps.loadConfig()
@@ -57,7 +71,7 @@ func runTextures(ctx context.Context, verb string, args []string, deps commandDe
 	}
 	switch verb {
 	case "import":
-		r := textures.Import(ctx, deps.fetchTexture)
+		r := textures.Import(ctx, fetchFromDir(dir, deps.fetchTexture))
 		if len(r.Failed) > 0 {
 			return report(deps.stdout, texturesImportReport{envelope{Operation: operation, Status: "incomplete", Remediation: "按 failed 的原因处理后重跑，已导入的文件会跳过"}, r}, exitInternal)
 		}
@@ -82,6 +96,31 @@ func runTextures(ctx context.Context, verb string, args []string, deps commandDe
 
 func openTextures(cfg config.Config) (textureStore, error) {
 	return creativescene.ComposeBuiltinTextures(cfg)
+}
+
+// fetchFromDir reads a file whose source has no direct link from dir, and
+// fetches the rest from their sources.
+func fetchFromDir(dir string, fetch creativescene.FetchBuiltinTexture) creativescene.FetchBuiltinTexture {
+	return func(ctx context.Context, f creativescene.BuiltinTextureFile) ([]byte, error) {
+		if f.URL != "" {
+			return fetch(ctx, f)
+		}
+		if dir == "" {
+			return nil, errors.New("来源站没有直链：用 --dir 指定放着这个文件的目录")
+		}
+		return readListed(dir, f.Name, f.Bytes)
+	}
+}
+
+// readListed reads a file the catalog lists from dir; one byte past the
+// listed size is enough to tell it does not match.
+func readListed(dir, name string, size int64) ([]byte, error) {
+	file, err := os.Open(filepath.Join(dir, name))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	return io.ReadAll(io.LimitReader(file, size+1))
 }
 
 // fetchTexture downloads a file from its source, trying again when the

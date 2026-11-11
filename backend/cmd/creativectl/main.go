@@ -1,5 +1,6 @@
 // Command creativectl is the trusted administrative entry point for creative
-// skills and the built-in scene textures (textures.go). Publishing is a deployment act, not a photographer's request: there
+// skills, the built-in scene textures (textures.go) and the built-in models
+// (models.go). Publishing is a deployment act, not a photographer's request: there
 // is no HTTP surface for it. Besides the server's startup sync of built-in
 // packages, this command is the only way a skill version comes into existence,
 // and the only way its objects are reclaimed.
@@ -31,7 +32,7 @@ const (
 	// deploy script has to be able to tell the two apart without parsing text.
 	exitConflict = 4
 
-	usage = "使用 skill import、skill reclaim、textures import 或 textures check"
+	usage = "使用 skill import、skill reclaim、textures import、textures check、models import 或 models check"
 )
 
 // application is the slice of the skill service this command drives. Narrowing
@@ -48,6 +49,7 @@ type commandDeps struct {
 	open         func(context.Context, config.Config, string) (application, store.AccountScope, func(), error)
 	openTextures func(config.Config) (textureStore, error)
 	fetchTexture creativescene.FetchBuiltinTexture
+	openModels   func(config.Config) (modelStore, error)
 }
 
 // envelope is what every invocation reports, success or not.
@@ -84,6 +86,7 @@ func main() {
 		stdout: os.Stdout, stderr: os.Stderr,
 		loadConfig: config.Load, open: openStore,
 		openTextures: openTextures, fetchTexture: fetchTexture,
+		openModels: openModels,
 	}))
 }
 
@@ -106,8 +109,14 @@ func run(ctx context.Context, args []string, deps commandDeps) int {
 	if deps.fetchTexture == nil {
 		deps.fetchTexture = fetchTexture
 	}
+	if deps.openModels == nil {
+		deps.openModels = openModels
+	}
 	if len(args) >= 2 && args[0] == "textures" && (args[1] == "import" || args[1] == "check") {
 		return runTextures(ctx, args[1], args[2:], deps)
+	}
+	if len(args) >= 2 && args[0] == "models" && (args[1] == "import" || args[1] == "check") {
+		return runModels(ctx, args[1], args[2:], deps)
 	}
 	if len(args) < 2 || args[0] != "skill" {
 		return fail(deps.stderr, "unknown", exitInvalidInput, usage)

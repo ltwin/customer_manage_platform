@@ -116,6 +116,7 @@ generate: frontend/node_modules
 	cd frontend && npm run generate
 	mkdir -p frontend/src/creative-scene && cp backend/internal/creativescene/builtins.json frontend/src/creative-scene/builtins.gen.json
 	cp backend/internal/creativescene/materials.json frontend/src/creative-scene/materials.gen.json
+	cp backend/internal/creativescene/models.json frontend/src/creative-scene/builtinModels.gen.json
 	mkdir -p frontend/src/creative-scene/timeline && cp backend/internal/creativescene/testdata/keyframe_eval.json frontend/src/creative-scene/timeline/keyframe_eval.gen.json
 	cp backend/internal/creativescene/channels.json frontend/src/creative-scene/timeline/channels.gen.json
 	mkdir -p frontend/src/creative-scene/rig && cp backend/internal/creativescene/testdata/humanoid_rig.json frontend/src/creative-scene/rig/humanoid_rig.gen.json
@@ -131,6 +132,7 @@ generate-check: frontend/node_modules
 	cp backend/internal/creativecanvas/tool_schemas.gen.go "$$tmp_dir/tool_schemas.gen.go"; \
 	cp frontend/src/creative-scene/builtins.gen.json "$$tmp_dir/builtins.gen.json"; \
 	cp frontend/src/creative-scene/materials.gen.json "$$tmp_dir/materials.gen.json"; \
+	cp frontend/src/creative-scene/builtinModels.gen.json "$$tmp_dir/builtinModels.gen.json"; \
 	cp frontend/src/creative-scene/timeline/keyframe_eval.gen.json "$$tmp_dir/keyframe_eval.gen.json"; \
 	cp frontend/src/creative-scene/timeline/channels.gen.json "$$tmp_dir/channels.gen.json"; \
 	cp frontend/src/creative-scene/rig/humanoid_rig.gen.json "$$tmp_dir/humanoid_rig.gen.json"; \
@@ -148,6 +150,8 @@ generate-check: frontend/node_modules
 		|| { echo "场景内置基础体清单存在漂移，运行 make generate" >&2; exit 1; }; \
 	cmp -s "$$tmp_dir/materials.gen.json" frontend/src/creative-scene/materials.gen.json \
 		|| { echo "场景材质目录存在漂移，运行 make generate" >&2; exit 1; }; \
+	cmp -s "$$tmp_dir/builtinModels.gen.json" frontend/src/creative-scene/builtinModels.gen.json \
+		|| { echo "内置模型清单存在漂移，运行 make generate" >&2; exit 1; }; \
 	cmp -s "$$tmp_dir/keyframe_eval.gen.json" frontend/src/creative-scene/timeline/keyframe_eval.gen.json \
 		|| { echo "关键帧求值测试向量存在漂移，运行 make generate" >&2; exit 1; }; \
 	cmp -s "$$tmp_dir/channels.gen.json" frontend/src/creative-scene/timeline/channels.gen.json \

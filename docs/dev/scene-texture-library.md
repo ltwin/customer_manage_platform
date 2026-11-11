@@ -9,7 +9,7 @@
 | 内容 | 位置 | 说明 |
 |---|---|---|
 | 清单（条目、贴图引用、来源、文件大小和下载地址） | `backend/internal/creativescene/materials.json` | 权威主数据，随代码发布；`make generate` 复制到前端 `materials.gen.json` |
-| 贴图文件 | 对象存储 `scene-textures/<sha256>.jpg` | 内容寻址：文件名就是内容的 sha256，多个条目可共用一个文件 |
+| 贴图文件 | 对象存储 `scene-textures/<sha256>.jpg`（或 `.png`） | 内容寻址：文件名就是内容的 sha256，多个条目可共用一个文件 |
 | 缩略图（256 × 256 材质球 WebP） | `backend/internal/creativescene/builtin_thumbnails/<id 把 @ 换成 _>.webp` | 后端嵌入二进制给助手看；`make generate` 复制到前端 `src/creative-canvas/assets/builtin/` |
 
 存储驱动跟头像、策划素材共用 `AVATAR_STORAGE_DRIVER`：
@@ -31,6 +31,7 @@ docker compose run --rm --no-deps --entrypoint /usr/local/bin/creativectl app te
 ```
 
 - `import`：逐个看清单里的文件，对象已在就跳过；不在就从来源站下载（四路并发、每个文件重试三次），核对大小和 sha256 一致才写入。可以反复运行，只补缺的。输出一行 JSON：`imported`、`skipped` 和 `failed`（每项给文件、条目和原因）；有失败时退出码 1，按原因处理后重跑即可。
+- `import --dir <目录>`：清单里没有 `url` 的文件（来源站没有直链，比如内置模型自带的贴图，见 [builtin-models.md](builtin-models.md)）从这个目录读 `<sha256>.jpg` 或 `.png`，同样核对大小和 sha256；有 `url` 的照常下载。不带 `--dir` 时这些文件记为失败，原因里会提示加 `--dir`。
 - `check`：只检查不下载。全部就绪时退出码 0，`status: "ready"`；有缺失时退出码 3，`missing` 列出文件和条目。
 - 首次导入约 177 MB、72 个文件。来源站单连接较慢，本机实测顺序下载要 19 分钟，四路并发后明显缩短。
 

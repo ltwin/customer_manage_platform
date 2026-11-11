@@ -43,6 +43,7 @@ type Config struct {
 	CreativeMediaQuotaBytes       int64  // CREATIVE_MEDIA_QUOTA_BYTES（每账号媒体额度；默认 20GiB）
 	CreativeSkillLocalRoot        string // CREATIVE_SKILL_LOCAL_ROOT（local driver；缺省 AvatarLocalRoot 同级 creative-skills）
 	SceneTextureLocalRoot         string // SCENE_TEXTURE_LOCAL_ROOT（local driver；缺省 AvatarLocalRoot 同级 scene-textures，存内置贴图）
+	SceneModelLocalRoot           string // SCENE_MODEL_LOCAL_ROOT（local driver；缺省 AvatarLocalRoot 同级 scene-models，存内置模型）
 	CreativeSkillPackagesDir      string // CREATIVE_SKILL_PACKAGES_DIR（内置 Skill 包目录，启动时同步进平台目录；留空不同步）
 	MCPEnabled                    bool   // MCP_ENABLED（默认 false；开启后挂载外部助手的 /mcp 与 OAuth 授权服务器）
 }
@@ -124,6 +125,7 @@ func Load() (Config, error) {
 	// are retained until a general collection exists to decide otherwise.
 	cfg.CreativeSkillLocalRoot = strings.TrimSpace(os.Getenv("CREATIVE_SKILL_LOCAL_ROOT"))
 	cfg.SceneTextureLocalRoot = strings.TrimSpace(os.Getenv("SCENE_TEXTURE_LOCAL_ROOT"))
+	cfg.SceneModelLocalRoot = strings.TrimSpace(os.Getenv("SCENE_MODEL_LOCAL_ROOT"))
 	cfg.CreativeSkillPackagesDir = strings.TrimSpace(os.Getenv("CREATIVE_SKILL_PACKAGES_DIR"))
 	mcpEnabled, err := parseOptionalBool("MCP_ENABLED", strings.TrimSpace(os.Getenv("MCP_ENABLED")), ErrMCPEnabledInvalid)
 	if err != nil {
@@ -198,6 +200,15 @@ func Load() (Config, error) {
 				return Config{}, fmt.Errorf("%w: resolve SCENE_TEXTURE_LOCAL_ROOT: %w", ErrAvatarLocalRootUnavailable, err)
 			}
 			cfg.SceneTextureLocalRoot = absRoot
+		}
+		if cfg.SceneModelLocalRoot == "" {
+			cfg.SceneModelLocalRoot = filepath.Join(filepath.Dir(cfg.AvatarLocalRoot), "scene-models")
+		} else {
+			absRoot, err := filepath.Abs(cfg.SceneModelLocalRoot)
+			if err != nil {
+				return Config{}, fmt.Errorf("%w: resolve SCENE_MODEL_LOCAL_ROOT: %w", ErrAvatarLocalRootUnavailable, err)
+			}
+			cfg.SceneModelLocalRoot = absRoot
 		}
 	case StorageDriverOSS:
 		if cfg.OSSRegion == "" {

@@ -55,6 +55,27 @@ func TestTexturedEntry(t *testing.T) {
 	}
 }
 
+// A built-in model's own textures: PNG files from a source with no direct
+// link, kept out of the picker and the search.
+func TestUnlistedPNGEntry(t *testing.T) {
+	f := strings.Repeat("c", 64) + ".png"
+	raw := strings.NewReplacer(
+		`"files":[{"name":"`+strings.Repeat("a", 64)+`.jpg","url":"https://dl.polyhaven.org/a.jpg","bytes":100}]`, `"files":[{"name":"`+f+`","bytes":100}],"listed":false`,
+		`"maps":{"base_color":{"file":"`+strings.Repeat("a", 64)+`.jpg"},"roughness":{"file":"`+strings.Repeat("a", 64)+`.jpg","channel":"g"}}`, `"maps":{"base_color":{"file":"`+f+`"}}`,
+		`"site":"polyhaven"`, `"site":"quaternius"`,
+	).Replace(texturedEntry(""))
+	c := loadMaterials([]byte(raw))
+	if m := c.byID["t@1"]; m.listed() || len(c.files) != 1 || c.files[0].URL != "" || c.files[0].Name != f {
+		t.Fatalf("%+v %+v", m, c.files)
+	}
+	if m := loadMaterials([]byte(texturedEntry(""))).byID["t@1"]; !m.listed() {
+		t.Fatal("an entry is listed unless it says otherwise")
+	}
+	if BuiltinTextureMediaType(f) != "image/png" || BuiltinTextureMediaType(strings.Repeat("a", 64)+".jpg") != "image/jpeg" {
+		t.Fatal("media type by extension")
+	}
+}
+
 func TestMalformedTexturedEntryPanics(t *testing.T) {
 	other := strings.Repeat("b", 64) + ".jpg"
 	for name, swap := range map[string]string{
@@ -72,6 +93,8 @@ func TestMalformedTexturedEntryPanics(t *testing.T) {
 		"default not a param": `defaults="defaults":{"gloss":1}`,
 		"default outside":     `defaults="defaults":{"roughness":2}`,
 		"not CC0":             `source="source":{"site":"polyhaven","asset":"a","author":"甲","license":"CC-BY"}`,
+		"unknown site":        `source="source":{"site":"sketchfab","asset":"a","author":"甲","license":"CC0"}`,
+		"webp file":           `files="files":[{"name":"` + strings.Repeat("a", 64) + `.webp","url":"https://x/a.webp","bytes":100}]`,
 		"no source":           `source=`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -184,6 +207,17 @@ func TestImportBuiltinTextures(t *testing.T) {
 	}
 	if missing, _ := b.missing(t.Context(), files); len(missing) != 1 || missing[0].Name != gone.Name {
 		t.Fatalf("missing %v", missing)
+	}
+
+	// A PNG is checked against its own name and stored as one.
+	png := builtinFile("png")
+	png.Name = strings.TrimSuffix(png.Name, ".jpg") + ".png"
+	served[png.URL] = "png"
+	if r := b.importFiles(t.Context(), []BuiltinTextureFile{png}, fetch); r.Imported != 1 {
+		t.Fatalf("png import %+v", r)
+	}
+	if meta, err := store.Stat(t.Context(), builtinTextureKey(png.Name)); err != nil || meta.MediaType != "image/png" {
+		t.Fatalf("png stored as %+v %v", meta, err)
 	}
 
 	// A name the catalog does not list is unknown; one not imported is missing.

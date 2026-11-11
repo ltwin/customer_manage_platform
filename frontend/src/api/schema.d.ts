@@ -1180,6 +1180,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/scene-models/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 内置模型的 GLB 文件（内置模型库）；支持 HEAD
+         * @description file 是内置模型清单里某个条目 glb.name 的值（内容的 sha256 加 .glb）。不按账号区分内容， 需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256， Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。 file 格式不对或不在清单里返回 404 not_found；在清单里但对象存储里没有（未导入）或读取失败返回 503 creative_model_file_unavailable。
+         */
+        get: operations["getCreativeSceneModel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/assets/from-canvas-node": {
         parameters: {
             query?: never;
@@ -11424,6 +11444,46 @@ export interface operations {
                 content: {
                     "image/jpeg": string;
                     "image/png": string;
+                };
+            };
+            /** @description 与 If-None-Match 相同，未修改 */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeSceneModel: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description GLB 文件 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "model/gltf-binary": string;
                 };
             };
             /** @description 与 If-None-Match 相同，未修改 */
