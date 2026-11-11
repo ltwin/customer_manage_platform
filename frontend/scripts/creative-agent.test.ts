@@ -22,6 +22,21 @@ import type {
   AgentRun,
   PendingAgentChain,
 } from '../src/creative-canvas/editor/agentState.ts'
+import {
+  emptyQueue,
+  enqueue,
+  markSending,
+  nextQueueAction,
+  putBack,
+  readQueue,
+  recoverQueue,
+  removeQueued,
+  resumeQueue,
+  steerBlocked,
+  steerSegments,
+  writeQueue,
+  type QueuedMessage,
+} from '../src/creative-canvas/editor/agentQueue.ts'
 
 function memoryStorage(initial: string | null = null) {
   const box = { raw: initial }
@@ -504,4 +519,122 @@ test('the notice version moves together with the backend egress policy version',
   )
   const policy = /const policyVersion = "([^"]+)"/.exec(service)?.[1]
   assert.equal(policy, egressNoticeVersion)
+})
+
+function queued(id: string, extra: Partial<QueuedMessage> = {}): QueuedMessage {
+  return {
+    id,
+    parts: [{ kind: 'text', text: id }],
+    draft: { conversation: 'c', model: 'm', skill: '', text: id },
+    send: { model: 'm', imageInput: true, revisionIDs: [], segments: [{ type: 'text', text: id }], scene: null },
+    steer: [{ type: 'text', text: id }],
+    hasImage: false,
+    ...extra,
+  }
+}
+function runIn(id: string, state: AgentRun['state']): AgentRun {
+  return { id, state } as AgentRun
+}
+
+test('a succeeded run sends the head of the queue, once', () => {
+  const queue = enqueue(enqueue(emptyQueue, queued('a')), queued('b'))
+  const first = nextQueueAction(queue, runIn('r1', 'succeeded'), true)
+  assert.equal(first.send?.id, 'a')
+  assert.equal(first.queue.settledRun, 'r1')
+  assert.equal(first.queue.items[0].sending, true)
+  // The same snapshot again, a reconnect, a re-render: nothing more.
+  assert.equal(nextQueueAction(first.queue, runIn('r1', 'succeeded'), true).send, undefined)
+  // The next run ends: the next message, not the one already handed over.
+  const next = nextQueueAction(removeQueued(first.queue, 'a'), runIn('r2', 'succeeded'), true)
+  assert.equal(next.send?.id, 'b')
+})
+
+test('a run that is going or waiting sends nothing', () => {
+  const queue = enqueue(emptyQueue, queued('a'))
+  for (const state of ['queued', 'running', 'waiting_client', 'reconciling', 'waiting_input'] as const)
+    assert.equal(nextQueueAction(queue, runIn('r', state), true).send, undefined)
+})
+
+test('a busy panel waits for the next look', () => {
+  const queue = enqueue(emptyQueue, queued('a'))
+  const busy = nextQueueAction(queue, runIn('r', 'succeeded'), false)
+  assert.equal(busy.send, undefined)
+  assert.equal(busy.queue.settledRun, undefined)
+  assert.equal(nextQueueAction(busy.queue, runIn('r', 'succeeded'), true).send?.id, 'a')
+})
+
+test('stopped, failed and partial runs pause the queue until it is resumed', () => {
+  for (const state of ['cancelled', 'failed', 'partial'] as const) {
+    const queue = enqueue(emptyQueue, queued('a'))
+    const paused = nextQueueAction(queue, runIn('r', state), true)
+    assert.equal(paused.send, undefined)
+    assert.equal(paused.queue.paused, true)
+    assert.equal(nextQueueAction(paused.queue, runIn('r2', 'succeeded'), true).send, undefined)
+    const resumed = resumeQueue(paused.queue)
+    assert.equal(resumed.send?.id, 'a')
+    assert.equal(resumed.queue.paused, false)
+  }
+})
+
+test('a refused send goes back to the head and pauses', () => {
+  const queue = markSending(enqueue(enqueue(emptyQueue, queued('a')), queued('b')), 'a')
+  const back = putBack(removeQueued(queue, 'a'), queued('a', { sending: true }), true)
+  assert.deepEqual(back.items.map((item) => item.id), ['a', 'b'])
+  assert.equal(back.items[0].sending, undefined)
+  assert.equal(back.paused, true)
+})
+
+test('after a reload a message being handed over is in the queue or the chain, never both or neither', () => {
+  const queue = markSending(enqueue(emptyQueue, queued('a')), 'a')
+  const chain: PendingAgentChain = {
+    steps: messageSteps('c', { model: 'm', imageInput: false, revisionIDs: [], segments: [{ type: 'text', text: 'a' }] }),
+    draft: { conversation: 'c', model: 'm', skill: '', text: 'a', queueItem: 'a' },
+  }
+  assert.deepEqual(recoverQueue(queue, chain).items, [])
+  const kept = recoverQueue(queue, null)
+  assert.equal(kept.items.length, 1)
+  assert.equal(kept.items[0].sending, undefined)
+  // The chain keeps naming its queue item across a reload.
+  assert.equal(pendingAgentChain(JSON.stringify(chain))?.draft?.queueItem, 'a')
+})
+
+test('the queue survives storage and a broken storage is an empty queue', () => {
+  const box: Record<string, string> = {}
+  const storage = {
+    getItem: (k: string) => box[k] ?? null,
+    setItem: (k: string, v: string) => { box[k] = v },
+    removeItem: (k: string) => { delete box[k] },
+  }
+  const queue = { ...enqueue(emptyQueue, queued('a')), settledRun: 'r1' }
+  writeQueue(storage, 'k', queue)
+  assert.deepEqual(readQueue(storage, 'k'), queue)
+  writeQueue(storage, 'k', emptyQueue)
+  assert.equal(box.k, undefined)
+  const broken = {
+    getItem: () => { throw new Error('denied') },
+    setItem: () => { throw new Error('denied') },
+    removeItem: () => { throw new Error('denied') },
+  }
+  assert.deepEqual(readQueue(broken, 'k'), emptyQueue)
+  assert.doesNotThrow(() => writeQueue(broken, 'k', queue))
+  box.k = '{not json'
+  assert.deepEqual(readQueue(storage, 'k'), emptyQueue)
+})
+
+test('only words and references steer; a skill keeps the message queued', () => {
+  assert.deepEqual(
+    steerSegments([{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }]),
+    [{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }],
+  )
+  assert.equal(steerSegments([{ type: 'skill_ref', skill_id: 's', skill_version_id: 'v' }, { type: 'text', text: 'x' }]), null)
+  assert.equal(steerBlocked(queued('a', { steer: null }), true), '选了 Skill 的消息只能排队')
+  assert.equal(steerBlocked(queued('a', { hasImage: true }), false), '当前模型不支持图片，只能排队')
+  assert.equal(steerBlocked(queued('a', { hasImage: true }), true), '')
+})
+
+test('a steer is a step the chain can replay', () => {
+  const chain: PendingAgentChain = {
+    steps: [{ path: '/agent-runs/ccrn_1/steers', operation: 'op', createdAt: '2026-11-11T00:00:00Z', payload: { instruction_segments: [] } }],
+  }
+  assert.equal(pendingAgentChain(JSON.stringify(chain))?.steps[0].path, '/agent-runs/ccrn_1/steers')
 })

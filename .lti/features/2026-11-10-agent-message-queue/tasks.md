@@ -20,8 +20,8 @@
 
 ## 5. 前端：队列
 
-- [ ] 5.1 先在 `creative-agent.test.ts` 写测试（红）：`nextQueueAction` 决策表的每一行、重复快照不重发、`sending` 条目在有链和无链两种情况下的恢复、存储不可用时退化为内存
-- [ ] 5.2 新增 `agentQueue.ts`（状态、`sessionStorage` 持久化、`nextQueueAction`、交接）；`agentState.ts` 把 `steers` 加入可重放路径，新增 `draft.queueItem`。5.1 变绿
+- [x] 5.1 先在 `creative-agent.test.ts` 写测试（红）：`nextQueueAction` 决策表的每一行、重复快照不重发、`sending` 条目在有链和无链两种情况下的恢复、存储不可用时退化为内存
+- [x] 5.2 新增 `agentQueue.ts`（状态、`sessionStorage` 持久化、`nextQueueAction`、交接）；`agentState.ts` 把 `steers` 加入可重放路径，新增 `draft.queueItem`。5.1 变绿
 
 ## 6. 前端：面板与界面
 
