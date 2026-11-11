@@ -1,12 +1,12 @@
 {
   "uid": "e3d4752e-c0ae-4fc9-b501-a3ae5d0db91c",
-  "revision": 9,
+  "revision": 11,
   "id": "agent-stop-immediately",
   "kind": "feature",
   "assurance": "governed",
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-10T11:08:49.261Z",
-  "updatedAt": "2026-11-11T03:48:03.115Z",
+  "updatedAt": "2026-11-11T07:04:37.107Z",
   "risk": {
     "factors": [
       "concurrency"
@@ -327,9 +327,35 @@
         "version": 2,
         "digest": "51745394b1c306426536cbe0aa7b237d4e0ca4210e74c7c4c5fafecde3660ff7"
       }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T07:04:27.699Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "未跑完整 make check-frontend 与 creative-agent-blocks.e2e；审查修复后 check-go 只重跑改动用例；未在远端 PG 延迟下实测"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 体验停止交互与发送即运行态后接受；代码审查三项已修复并有红→绿 e2e 证据",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "51745394b1c306426536cbe0aa7b237d4e0ca4210e74c7c4c5fafecde3660ff7"
+      }
     }
   ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-11T07:04:36.733Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "closed"
 }
