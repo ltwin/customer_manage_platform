@@ -41,7 +41,7 @@
 
 ## 3. 前端：骨骼核心（`rig/`）
 
-- [ ] 3.1 `bones.ts`、`humanoid.ts`、`detect.ts`、`retarget.ts`、`constraints.ts`：
+- [x] 3.1 `bones.ts`、`humanoid.ts`、`detect.ts`、`retarget.ts`、`constraints.ts`：
   - 由穿刺原型整理而来。
   - 先写测试：
     - 跑共用测试向量。
@@ -49,6 +49,13 @@
     - 把穿刺①的数值检查改写成测试：4 组姿态的肢体方向误差 < 1°；合成变体误差 < 0.01°；握拳。
     - 约束：父级受约束时，aim 的方向与 three-vrm 参考实现的结果一致。
     - 骨架几何条件的四种退化夹具。
+  - 实施记录：
+    - 测试在 `scripts/creative-scene-rig.test.ts`。夹具 `scripts/fixtures/rig/skeletons.json` 只含穿刺用的 7 个角色的节点树（名称、局部变换、skin 关节、VRM 人形与约束扩展），不含网格、材质和贴图；每个角色记了来源。
+    - `prepare` 的结果（朝向 F、T(n)）在模型根空间里算，不含根节点自己的变换，同一模型的实例可以共用；合成变体加了一例「模型根在场景里平移、旋转、缩放」，误差同样 < 0.01°。
+    - 名字识别：命名表要认出髋骨才采用。RobotExpressive 的 `Head` 与 UE 命名表同名，不加这条会被误认成 UE 骨架。
+    - `pruneOptional` 在提交前去掉服务端会拒绝的可选骨骼（不是关节、与其他骨骼同节点、违反层级嵌入），必需骨骼留给 `checkRig` 判定；`checkRig` 的顺序、字段、原因和消息与 `rig.go` 一致。
+    - 约束的求值分三步：`resetConstraints` → `apply` → `runConstraints`，由 3.2 的 `pose.ts` 组合。依赖排序与 `rig.go` 的成环判定同一规则，共用向量的成环用例同时覆盖。
+    - three-vrm 没有引入为依赖：aim 的公式按它的实现写，测试核对父级受约束时 aim 轴指向源，并验证不按依赖排序时会偏。
 - [ ] 3.2 `template.ts`、`skin.ts`、`pose.ts`：
   - 骨架模板与实例克隆；按 design 的坐标空间做 CPU 蒙皮与静态化几何。
   - 部件 ID 取 `n<节点>p<primitive>`；姿态哈希。
