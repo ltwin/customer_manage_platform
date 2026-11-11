@@ -25,7 +25,7 @@
 判别联合：每种 `type` 只允许自己的字段，多写字段会被拒（同 `CreativeAgentInstructionSegment`）。
 
 ### 成功响应
-- `202 Accepted`，响应体为 `CreativeAgentRun`（与 `supplements` 相同）。状态通常不变（仍是 `running` / `queued` / `waiting_client`），`revision` 递增。
+- `202 Accepted`，响应体为 `CreativeAgentRun`（与 `supplements` 相同）。状态不变（仍是 `running` / `queued` / `waiting_client`），`revision` 不变；`last_event_seq` 前进，前进的那条事件就是 `input` 块的创建。客户端读到的快照或流到达这个序号时，块已经在里面了。
 
 ### 失败响应
 错误体为公共 `ErrorEnvelope`。
@@ -43,7 +43,7 @@
 | 422 | `creative_model_capability_missing` | 引用了图片而本轮模型不支持图片输入 | 消息回队首；前端事先置灰，正常不会触发 |
 
 ### 交互规则
-- 写操作：在同一事务内完成三件事：向对话追加一条 `role=user`、`run_id=该运行` 的消息（正文为片段）；写入 `creative_run_inputs` 的新批次；追加一个 `input` 块（`pending`）。运行状态不变，`revision` 加 1。失败时什么都不写。
+- 写操作：在同一事务内完成三件事：向对话追加一条 `role=user`、`run_id=该运行` 的消息（正文为片段）；写入 `creative_run_inputs` 的新批次；追加一个 `input` 块（`pending`）。运行状态和 `revision` 不变。失败时什么都不写。
 - 幂等：回执以 `(account_id, operation_id)` 为键，操作类型（`agent.steer_run`）、规范化后的 payload 和 `client_created_at` 参与请求哈希。回执保留 90 天，命中时原样回放首次响应（`creativeops.Executor`）。同一个 `operation_id` 换了请求体，或被另一个端点（如 `supplements`）复用，都返回 `409 idempotency_conflict`。结果未知时，客户端用原请求（同 ID、同时间戳、同 payload）重放。
 - 并发：与模型结果入账、取消在运行行锁上串行。被接收的插队，只要运行正常继续，就一定被读到：要么在下一次模型请求前送达，要么在最终回答之后再调用一次模型。运行被取消、出错或过期时可能读不到，块变为 `interrupted`。
 - 异步：送达状态经运行流里 `input` 块的更新推送，没有单独的事件。

@@ -16,7 +16,7 @@
 
 ## 4. 契约与生成物
 
-- [ ] 4.1 `api/openapi.yaml` 新增 steers 路径和 `CreativeAgentSupplementSegment`，Supplement payload 增加片段，新增 `input` 块 payload；`httpapi/creative_agent.go` 接线 `SteerCreativeAgentRun`；`make generate` 后提交 `api.gen.go` 与 `schema.d.ts`，`make generate-check` 无漂移；补一个 HTTP 层冒烟测试，确认路由与错误码映射
+- [x] 4.1 `api/openapi.yaml` 新增 steers 路径和 `CreativeAgentSupplementSegment`，Supplement payload 增加片段，新增 `input` 块 payload；`httpapi/creative_agent.go` 接线 `SteerCreativeAgentRun`；`make generate` 后提交 `api.gen.go` 与 `schema.d.ts`，`make generate-check` 无漂移；补一个 HTTP 层冒烟测试，确认路由与错误码映射
 
 ## 5. 前端：队列
 

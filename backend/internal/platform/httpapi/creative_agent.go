@@ -408,6 +408,13 @@ func (h *handlers) SupplementCreativeAgentRun(c *gin.Context, id string, _ Suppl
 	}
 	h.creativeWrite(c, "run_id", id, agent.SupplementRun)
 }
+func (h *handlers) SteerCreativeAgentRun(c *gin.Context, id string, _ SteerCreativeAgentRunParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "run_id", id, agent.SteerRun)
+}
 func (h *handlers) RetryCreativeAgentRun(c *gin.Context, id string, _ RetryCreativeAgentRunParams) {
 	agent, ok := h.agentService(c)
 	if !ok {
