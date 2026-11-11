@@ -74,3 +74,21 @@
 ### 长期约束
 - 网页端令牌与 MCP 令牌受众不同、签名密钥按用途派生，互不通用。
 - `MCP_ENABLED` 关闭时 `/mcp`、`/oauth/*` 与两个元数据端点都不挂载。
+
+## 角色卡
+
+### 职责与边界
+- 角色卡是资产库的一种资产（`kind = character`），做法同模型资产、材质资产：资产行 + 一份只属于资产库的 `character` 内容 + `creative_content_revision_refs` 持有其中的图片。与材质资产不同，角色卡可以追加修订，资产行指向当前版本。
+- `backend/internal/creativecontent`：`character` 内容种类、写入口 `WriteCharacterAndRetain`（校验载荷、复核图片、写修订和持有关系，同一事务）。
+- `backend/internal/creativelibrary`：新建角色卡、存新版本、标题跟随角色名与版本说明、搜索索引；内置角色 IP 目录（随代码发布的静态数据）、IP 匹配与联想。按修订存入的通用入口（`SaveRevisionInTx`、`CreateFromRevisionInTx`）不接受 `character`。
+- `backend/internal/creativecanvas`：节点类型 `core.character`、新版本提示、生成受理时展开（`patterns: 角色卡展开为生成参考`）。
+- `backend/internal/creativeagent`：角色卡的读取和放置只经上述领域入口，不直接写表；首版助手不写角色卡。
+- 不职责：不做版权或授权限制，来源字段只是备注，服务端不核实；不判断图片里是不是真人；不提供导出、导入、发布、跨账号读取。
+- 依赖方向不变：`httpapi` → `creativelibrary` / `creativecanvas` / `creativeagent` → `creativecontent` → `platform/store`。
+
+### 关键数据流
+- 建卡：资产库或画布 → `POST /creative/assets/characters` → `creativelibrary` → `WriteCharacterAndRetain`（retain = 新资产行）→ 资产行、归类、搜索索引 → `library_revision` +1，经现有账号失效通道通知其他页面。
+- 存新版本：`POST /creative/assets/{id}/character-revisions` → 锁资产行 → 追加修订 → 资产改指 → 同上通知。
+
+### 长期约束
+- 角色卡版本的载荷只含文字、本账号的图片修订 ID 和全局的内置目录 `key`（可导出不变量）。以后的分享、导入、市场都以「复制进本账号」实现，不跨账号共享修订或资产。

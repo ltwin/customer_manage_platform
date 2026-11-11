@@ -1,12 +1,12 @@
 {
   "uid": "659c2387-b2ba-46e6-ba28-48dfb497cf12",
-  "revision": 3,
+  "revision": 6,
   "id": "character-cards",
   "kind": "feature",
   "assurance": "governed",
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-11T06:11:29.339Z",
-  "updatedAt": "2026-11-11T06:45:46.302Z",
+  "updatedAt": "2026-11-11T10:26:25.780Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -49,8 +49,165 @@
       "pelican.html"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-11-11T10:26:13.127Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "未用真实模型走完整对话出图（助手定位与列候选依赖模型遵循工具说明）；真实模型一致性沿用 24 张小样；建卡新入口闭环用测试替身验证；窄屏筛选栏内边距未截图核对；未跑全量 make check。",
+        "coverage": [
+          {
+            "criterionId": "AC-bc7d46548975",
+            "status": "verified",
+            "evidence": "creative-character-cards.e2e.mjs 桌面与窄屏：资产库选图「创建角色卡」、填名字外貌、选视角、无版权步骤，列表出现卡；TestCharacterCreateSearchAndSave（201、标题、来源字段可空）"
+          },
+          {
+            "criterionId": "AC-b6c20a61d751",
+            "status": "verified",
+            "evidence": "TestCharacterImagesAreScopedAndHeld：他账号/非图片/未就绪/不可生成的 views 被拒且不留内容与修订，同图放 sources 可存；TestCreativeCharacterHTTP 缺图返回 400 带 content_revision_ids"
+          },
+          {
+            "criterionId": "AC-c15b89303912",
+            "status": "verified",
+            "evidence": "normalizeLibraryCharacter 按目录名称/别名归一到 key；TestCharacterCreateSearchAndSave 用「ＦＡＴＥ」建卡后按「命运系列」等筛到；IP 联想 SuggestCharacterIPs 用例"
+          },
+          {
+            "criterionId": "AC-2ce663325305",
+            "status": "verified",
+            "evidence": "TestCharacterCreateSearchAndSave：自建 IP「星环档案」出现在联想且 character_count=1、builtin=false"
+          },
+          {
+            "criterionId": "AC-47766ef4dba7",
+            "status": "verified",
+            "evidence": "AssetCard 标题下 characterIdentity（IP · 作品 · 版本说明），资产库与选参考共用；e2e 断言两张「云」分别显示「Fate · Fate/Grand Order」「星环档案 · 第一卷」；助手 search_assets 项带 character 要点"
+          },
+          {
+            "criterionId": "AC-fe9bb23db314",
+            "status": "verified",
+            "evidence": "TestCharacterCreateSearchAndSave：character_work=FGO 与 Fate/Grand Order 均命中；TestCharacterWorkAliasesAreScopedToIP：多 IP 同名简称返回 AmbiguousCharacterWorkError 带两项候选，HTTP 映射 400 details.candidates"
+          },
+          {
+            "criterionId": "AC-6fba6bc547f7",
+            "status": "verified",
+            "evidence": "TestCharacterCreateSearchAndSave：投影写成自建名后按目录 key genshin-impact 仍筛到（character_ip_name 兼容条件）"
+          },
+          {
+            "criterionId": "AC-bc2300bc724c",
+            "status": "verified",
+            "evidence": "TestCharacterCanvasAndGeneration：存新版本后节点仍钉原版本并提示 latest_revision_id，update_character 换版本且可撤销；e2e 画布「更新角色卡版本」"
+          },
+          {
+            "criterionId": "AC-a20bf2a25eff",
+            "status": "verified",
+            "evidence": "TestCharacterCreateSearchAndSave 并发两次存新版本：一个成功一个 ErrVersionConflict；TestCreativeCharacterHTTP stale 返回 409；前端冲突时可保留修改或载入最新版"
+          },
+          {
+            "criterionId": "AC-2514702300da",
+            "status": "verified",
+            "evidence": "TestCharacterCreateSearchAndSave：无变化保存 reused=true、content_revision_id 与 library_revision 不变"
+          },
+          {
+            "criterionId": "AC-88d752d16dae",
+            "status": "verified",
+            "evidence": "TestCharacterCanvasAndGeneration：带 @ 与无 @ 的草稿展开为全部参考图并追加角色设定段，三处编译一致，发布版本 provenance.characters 记录卡版本；前端 CharacterProvenance 显示"
+          },
+          {
+            "criterionId": "AC-1e76bd8a1a49",
+            "status": "verified",
+            "evidence": "TestCharacterPolicyDiagnosticsUseFailedAttachmentAndRouteLimit：路由上限拒绝转为 CharacterGenerationError（上限、总数、每卡张数）；prepareImageRoute 在预检阶段拒绝，不进受理不计费；HTTP 映射 422 creative_generation_parameters"
+          },
+          {
+            "criterionId": "AC-79de0c1cdd4b",
+            "status": "verified",
+            "evidence": "TestCharacterCanvasAndGeneration：连到文本节点被拒；acceptsCharacterReference 同时用于 connect、set_inputs、prompt refs；前端同规则"
+          },
+          {
+            "criterionId": "AC-406ee57417fe",
+            "status": "verified",
+            "evidence": "TestCharacterCanvasAndGeneration：撤销并移入回收站后节点仍可生成、不再有 asset_id 与新版本提示；TestCharacterReadAssetsAttachesAllowedViewsInOrder：回收站后外部助手仍可按版本读取"
+          },
+          {
+            "criterionId": "AC-e1ce4e65a0c7",
+            "status": "verified",
+            "evidence": "TestCharacterCanvasAndGeneration：删节点和资产后跑真实 GC，只保留结果引用的卡版本，发布版本的卡仍可读；TestGCReclaimsCharacterBeforeItsImages"
+          },
+          {
+            "criterionId": "AC-27ac7b93c247",
+            "status": "verified",
+            "evidence": "TestCharacterReadAssetsAttachesAllowedViewsInOrder：search_assets 按名字/别名/IP/作品找到卡，edit_canvas add_node(character)+connect 连到图片节点；工具说明要求连一个角色卡即可。限制：未用真实模型走完整对话出图"
+          },
+          {
+            "criterionId": "AC-b7b87365bbbe",
+            "status": "verified",
+            "evidence": "search_assets 支持 character_ip/character_work（含 FGO 简称、歧义返回候选）；工具说明要求多张符合时列出 IP、作品、版本说明让摄影师选。限制：「不自行挑一张」依赖模型遵循说明，未用真实模型验证"
+          },
+          {
+            "criterionId": "AC-28d89c5eda73",
+            "status": "verified",
+            "evidence": "TestCharacterReadAssetsAttachesAllowedViewsInOrder：外部 search_assets/read_asset 与内置同载荷，按 views 顺序附图，压缩失败与存储错误只省略该张并在 images_omitted 说明，跨账号 not_found"
+          },
+          {
+            "criterionId": "AC-f6bea567b0ff",
+            "status": "verified",
+            "evidence": "TestCharacterReadAssetsAttachesAllowedViewsInOrder：不能看图的模型只得文字且 3 张均为 model_cannot_see_images；本轮按实际附图重写 images_omitted"
+          },
+          {
+            "criterionId": "AC-9a530f545a1c",
+            "status": "verified",
+            "evidence": "creativecontent.CharacterPayload 只含文字、ccrv_ 图片修订 ID 与目录 ip.key，无画布/节点/项目/资产引用；TestCharacterImagesAreScopedAndHeld 校验载荷字段"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "20 条验收均有证据。后端：creativecanvas、creativegeneration、creativelibrary 整包绿；creativeagent（Search/ReadAsset/Character/StartRun/External/Bind）、httpapi（Character/CreativeAsset/Library）、store（Library/Character，含 TestCreativeCharacterCardsMigration 上下迁移与有数据时拒绝回滚）、creativemedia GC 定向绿；go build ./... 与 vet 通过。trust：建卡逐张复核图片归属/类型/就绪/生成用途，助手附图只取本版本 views，跨账号读取 not_found，引用角色卡缺 media_metadata 建 run 即拒。blast-radius：画布与生成整包回归覆盖不带角色卡的编译与输入关系，role=character 行在派发复核与衍生权利中跳过。前端 tsc、oxlint 无错，相关单测 48 条绿，creative-character-cards.e2e.mjs 桌面与窄屏通过。代码审查中等与低优先级问题已修复并补测试。计划外改动：creativelibrary/textindex（角色卡字段入索引）、creativeagent runs.go/execute.go。契约修订一处：read_asset 按版本读取，不受资产回收站影响（owner 2026-11-11 确认）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "90a5f2650b60219c30315830c57a7917a75950e68e9a39905cfd8c5e46806ce3"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T10:26:23.175Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "未用真实模型走完整对话出图；助手建卡（create_character）与设定图模板按非目标留给后续 Feature。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 2026-11-11 选择验收并结案后合入 develop：接受代码审查修复结果，首批 60 个内置 IP 名单按现状收录，read_asset 按版本读取、不受资产回收站影响的契约修订按改后版本收。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "90a5f2650b60219c30315830c57a7917a75950e68e9a39905cfd8c5e46806ce3"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-11T10:26:25.578Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "closed"
 }
