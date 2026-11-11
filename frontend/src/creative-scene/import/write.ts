@@ -78,12 +78,6 @@ export async function writeGLB(scene: Group, track: readonly Object3D[] = []): P
   }
 }
 
-/** The objects a rig by the file's node indices names, to track through the export. */
-export function rigObjects(rig: Rig, objects: ReadonlyMap<number, Object3D>): Object3D[] {
-  const indices = [...Object.values(rig.humanoid ?? {}), ...(rig.constraints ?? []).flatMap((c) => [c.node, c.source])]
-  return [...new Set(indices.map((i) => objects.get(i)!))]
-}
-
 /** The rig by the written GLB's node indices. */
 export function writtenRig(rig: Rig, objects: ReadonlyMap<number, Object3D>, nodes: ReadonlyMap<Object3D, number>): Rig {
   const at = (i: number) => nodes.get(objects.get(i)!)!

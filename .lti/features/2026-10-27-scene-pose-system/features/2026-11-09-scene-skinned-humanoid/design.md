@@ -331,7 +331,7 @@ worker（上传 model）：
 | `frontend/src/creative-scene/import/convert.ts:convert`、`dequantize`、`toBottomCenter` | 修改 | 保留关节；保留并换算权重；带骨骼时平移祖先节点 |
 | `frontend/src/creative-scene/import/write.ts:writeGLB` | 修改 | 节点下标回写、删去标记 |
 | `frontend/src/creative-scene/import/run.ts` | 修改 | 提交带 `rig` |
-| `frontend/src/creative-scene/import/ImportModelDialog.tsx`、`import/RigMapping.tsx`（新增） | 修改 | 映射结果、原因、手动指定、按非人形导入 |
+| `frontend/src/creative-scene/import/ImportModelDialog.tsx`、`import/RigMapping.tsx`（新增）、`import/mapping.ts`（新增） | 修改 | 映射结果、原因、手动指定、按非人形导入；`mapping.ts` 放校验与提交的纯逻辑，供单测直接调用 |
 | `frontend/src/creative-scene/SceneEditor.tsx`、`editing.ts:newModelInstance` | 修改 | 「添加 > 素体」；放置改为接收模型引用；查表改用模型键 |
 | `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 模型类的「我的 / 内置」切换，内置模型可拖入、双击放置 |
 | `frontend/src/creative-canvas/assets/LibraryTree.tsx`、`AssetsPage.tsx`、`BuiltinBrowser.tsx`、`builtin.ts`、`viewer/BuiltinViewer.tsx` | 修改 | 资产库的「内置模型」与查看浮窗的 3D 预览 |

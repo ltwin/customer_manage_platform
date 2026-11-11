@@ -1,19 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Box3, Matrix4, Object3D, PropertyBinding, Quaternion, SkinnedMesh } from 'three'
+import { readFileSync } from 'node:fs'
+import { Box3, Group, Matrix4, Object3D, PropertyBinding, Quaternion, SkinnedMesh } from 'three'
+import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import type { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
-import { convert } from '../src/creative-scene/import/convert.ts'
+import { convert, toBottomCenter } from '../src/creative-scene/import/convert.ts'
+import { checkMapping, fileConstraints, followClone, jointObjects, submittedRig } from '../src/creative-scene/import/mapping.ts'
 import { ImportRejected, parseImport, readContainer } from '../src/creative-scene/import/parse.ts'
-import { rigObjects, writeGLB, writtenRig } from '../src/creative-scene/import/write.ts'
-import { checkRig, pruneOptional } from '../src/creative-scene/rig/humanoid.ts'
+import { writeGLB, writtenRig } from '../src/creative-scene/import/write.ts'
+import { checkRig, pruneOptional, type Rig } from '../src/creative-scene/rig/humanoid.ts'
 import { staticGeometry } from '../src/creative-scene/rig/skin.ts'
 import type { SkinnedPart } from '../src/creative-scene/rig/template.ts'
 import { parseModelGLB } from '../src/creative-scene/sandbox/gltf.ts'
 import { characterGLB, characters, glbOf, globals, inverses, quat, type NodeJSON } from './fixtures/rig/glb.ts'
 
-// Importing a skinned model (scene-skinned-humanoid task 4.1): the skin and
-// its influences through parse, convert and write, the rig followed to the
-// written node indices. The files are made from JSON (fixtures/rig/glb.ts).
+// Importing a skinned model (scene-skinned-humanoid tasks 4.1–4.2): the skin
+// and its influences through parse, convert and write, the rig followed to the
+// written node indices, and the mapping the dialog checks and submits. The
+// files are made from JSON (fixtures/rig/glb.ts).
 
 const decoders = { draco: (): DRACOLoader => assert.fail('no Draco here') }
 
@@ -298,7 +302,7 @@ async function imported(name: string) {
   const fileRig = { humanoid, ...(rig.detection.constraints.length ? { constraints: rig.detection.constraints } : {}) }
   assert.equal(checkRig(fileRig, rig.skeleton), null, `${name} by the file's indices`)
   const c = convert(parsed, { originToBottomCenter: true })
-  const written = await writeGLB(c.scene, rigObjects(fileRig, rig.objects))
+  const written = await writeGLB(c.scene, jointObjects(rig))
   return { parsed, fileRig, written, stored: writtenRig(fileRig, rig.objects, written.nodes) }
 }
 
@@ -328,4 +332,63 @@ test('a skinned file is no longer refused, and its skeleton is found by the file
   assert.equal(parsed.rig?.objects.get(25)?.name, 'mixamorigLeftHand')
   const plain = await parse(glbOf({ scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }], meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }] }, [{ array: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), type: 'VEC3' }]))
   assert.equal(plain.rig, null)
+})
+
+// --- the mapping in the dialog ----------------------------------------------------
+
+type Vectors = { cases: { name: string; rig: Rig }[] }
+const vectors = JSON.parse(readFileSync(new URL('../src/creative-scene/rig/humanoid_rig.gen.json', import.meta.url), 'utf8')) as Vectors
+const vectorRig = (name: string) => vectors.cases.find((c) => c.name === name)!.rig
+
+test('RobotExpressive mapped by hand is still refused for its feet, and imports as a non-humanoid skeleton', async () => {
+  const parsed = await parse(characterGLB(characters.robot_expressive, 19))
+  const rig = parsed.rig!
+  const c = convert(parsed, { originToBottomCenter: false })
+  assert.match(checkMapping(rig, c.scene, rig.detection.humanoid).problem ?? '', /没有从骨骼名认出人形骨骼/)
+  for (const [name, says] of [
+    ['robot_expressive: Hips 作 hips，腿挂在 Body 下', /^leftUpperLeg 上面没有映射过的骨骼/],
+    ['robot_expressive: Body 作 hips，脚挂在控制骨下', /^leftFoot 上面没有映射过的骨骼/],
+  ] as const) {
+    assert.match(checkMapping(rig, c.scene, vectorRig(name).humanoid!).problem ?? '', says, name)
+  }
+  // 按非人形骨架导入：没有映射，也没有约束可带，骨架照样写进 GLB。
+  assert.equal(submittedRig(null, fileConstraints(rig).constraints), undefined)
+  const written = await writeGLB(c.scene, jointObjects(rig))
+  assert.equal(written.manifest.skeleton?.joints.length, rig.skeleton.joints.length)
+})
+
+test('Xbot with one bone mapped wrong holds again once it is set back by hand, and its rig follows a moved origin', async () => {
+  const parsed = await parse(characterGLB(characters.xbot, 25))
+  const rig = parsed.rig!
+  const c = convert(parsed, { originToBottomCenter: false })
+  const found = rig.detection.humanoid
+  assert.equal(checkMapping(rig, c.scene, found).problem, null)
+  const wrong = { ...found, leftUpperLeg: found.rightUpperLeg! }
+  assert.match(checkMapping(rig, c.scene, wrong).problem ?? '', /映射到同一节点/)
+  const fixed = { ...wrong, leftUpperLeg: found.leftUpperLeg! }
+  const check = checkMapping(rig, c.scene, fixed)
+  assert.equal(check.problem, null)
+  assert.deepEqual(check.nonUniform, [])
+
+  // 勾选「原点移到底面中心」：骨架连网格一起复制，映射跟到复制出的关节上。
+  const moved = clone(c.scene) as Group
+  toBottomCenter(moved)
+  const objects = followClone(rig.objects, c.scene, moved)
+  assert.equal(objects.get(25)?.name, rig.objects.get(25)?.name)
+  assert.notEqual(objects.get(25), rig.objects.get(25))
+  const written = await writeGLB(moved, jointObjects(rig, objects))
+  const fileRig = submittedRig(check.humanoid, fileConstraints(rig).constraints)!
+  assert.equal(checkRig(writtenRig(fileRig, objects, written.nodes), written.manifest.skeleton), null)
+})
+
+test('the twist sample keeps its constraints; constraints the server would refuse are all left out, with the reason', async () => {
+  const parsed = await parse(characterGLB(characters.vrm1_twist, 0))
+  const rig = parsed.rig!
+  assert.equal(fileConstraints(rig).constraints.length, 14)
+  assert.deepEqual(fileConstraints(rig).notes, [])
+  const [a, b] = rig.detection.constraints
+  const cyclic = { ...rig, detection: { ...rig.detection, constraints: [{ ...a!, source: b!.node }, { ...b!, kind: 'rotation' as const, roll_axis: undefined, aim_axis: undefined, source: a!.node }] } }
+  const out = fileConstraints(cyclic)
+  assert.deepEqual(out.constraints, [])
+  assert.match(out.notes[0] ?? '', /已全部去掉/)
 })
