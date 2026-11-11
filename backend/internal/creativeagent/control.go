@@ -465,6 +465,15 @@ func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id str
 			return err
 		}
 		if delivered > 0 && pending == 0 {
+			// An accepted steer the final answer did not carry was never
+			// answered: the worker stopped before its continuation.
+			undelivered, err := undeliveredInputsIn(ctx, tx, c.ID)
+			if err != nil {
+				return err
+			}
+			if undelivered {
+				return s.endControlledRun(ctx, tx, c, RunFailed, "creative_steer_undelivered", now)
+			}
 			return s.endControlledRun(ctx, tx, c, RunSucceeded, "", now)
 		}
 		checkpoint, err := tx.Exists(ctx, "creative_agent_checkpoints", "run_id=$2 AND retained_until>$3", c.ID, now)

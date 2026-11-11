@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -338,32 +339,12 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 			seen[key] = true
 		}
 	}
-	rows, err := h.scope.QueryPage(ctx, "creative_run_inputs", "batch_ordinal,body", "run_id=$2 AND batch_ordinal>0", []store.OrderBy{{Column: "batch_ordinal"}, {Column: "ordinal"}}, maxSupplements+1, 0, h.held.RunID)
+	messages, batches, err := h.unseenInputs(ctx, seen)
 	if err != nil {
 		return ctx, state, err
 	}
-	defer rows.Close()
-	count := 0
-	for rows.Next() {
-		count++
-		if count > maxSupplements {
-			return ctx, state, ErrLimit
-		}
-		var batch int
-		var body string
-		if err = rows.Scan(&batch, &body); err != nil {
-			return ctx, state, err
-		}
-		key := strconv.Itoa(batch)
-		if !seen[key] {
-			m := schema.UserMessage(body)
-			m.Extra = map[string]any{"creative_supplement": key}
-			state.Messages = append(state.Messages, m)
-		}
-	}
-	if err = rows.Err(); err != nil && !errors.Is(err, store.ErrNoRows) {
-		return ctx, state, err
-	}
+	state.Messages = append(state.Messages, messages...)
+	h.setDelivery(batches)
 	limitHistoryImages(state.Messages, h.service.limits.ImagePreviewCount)
 	// The in-run guard: a run whose own turns outgrow the window sheds old
 	// payloads and whole earlier turns, never the summary (design §5).
@@ -379,4 +360,82 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 	budget := min(requestByteCeiling(h.service.limits, h.held.Model), h.measure.Ratio.bytesFor(h.held.Model.InputWindowTokens())) - fixed
 	state.Messages = compactMessages(state.Messages, budget)
 	return ctx, state, nil
+}
+
+// unseenInputs turns the batches put into the run since the framework last
+// saw them into messages, in order: a text row is one message, a reference is
+// the message resolveReference builds for it, as the first batch's are. A
+// reference is read under the run's consent and joins the revisions every
+// later dispatch checks again.
+func (h *runtimeHandler) unseenInputs(ctx context.Context, seen map[string]bool) ([]*schema.Message, []int, error) {
+	var messages []*schema.Message
+	var batches []int
+	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		rows, err := tx.QueryPage(ctx, "creative_run_inputs", "batch_ordinal,body,content_revision_id", "run_id=$2 AND batch_ordinal>0",
+			[]store.OrderBy{{Column: "batch_ordinal"}, {Column: "ordinal"}}, maxSupplements*maxBlocks+1, 0, h.held.RunID)
+		if err != nil {
+			return err
+		}
+		type input struct {
+			batch    int
+			body, id *string
+		}
+		var inputs []input
+		for rows.Next() {
+			var in input
+			if err = rows.Scan(&in.batch, &in.body, &in.id); err != nil {
+				rows.Close()
+				return err
+			}
+			inputs = append(inputs, in)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil && !errors.Is(err, store.ErrNoRows) {
+			return err
+		}
+		if len(inputs) > 0 && inputs[len(inputs)-1].batch > maxSupplements {
+			return ErrLimit
+		}
+		var consent *Consent
+		for _, in := range inputs {
+			key := strconv.Itoa(in.batch)
+			if seen[key] {
+				continue
+			}
+			var m *schema.Message
+			switch {
+			case in.id != nil:
+				if consent == nil {
+					c, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+					if err != nil {
+						return err
+					}
+					consent = &c
+				}
+				ref, sent, err := h.service.resolveReference(ctx, tx, h.held.RunID, *in.id, *consent, h.held.Model.Capability.ImageInput)
+				if err != nil {
+					return err
+				}
+				if sent && !slices.Contains(h.revisions, *in.id) {
+					h.revisions = append(h.revisions, *in.id)
+				}
+				m = ref
+			case in.body != nil:
+				m = schema.UserMessage(*in.body)
+			default:
+				continue
+			}
+			if m.Extra == nil {
+				m.Extra = map[string]any{}
+			}
+			m.Extra["creative_supplement"] = key
+			messages = append(messages, m)
+			if len(batches) == 0 || batches[len(batches)-1] != in.batch {
+				batches = append(batches, in.batch)
+			}
+		}
+		return nil
+	})
+	return messages, batches, err
 }

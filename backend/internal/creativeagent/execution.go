@@ -68,7 +68,7 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 		// the request it already paid for instead of buying a second one.
 		TurnKey: func(ctx context.Context, chat llmgateway.ChatRequest) (string, error) {
 			previous, _ := current.get()
-			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition())
+			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition(), runtime.takeDelivery()...)
 			if err != nil {
 				return "", err
 			}

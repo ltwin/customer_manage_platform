@@ -74,6 +74,23 @@ type runtimeHandler struct {
 	// final is the framework's conversation when the agent last finished; a
 	// steer that arrived during the final answer continues from it.
 	final []*schema.Message
+	// delivering is the input batches the request being bound carries for the
+	// first time; the step that journals it marks them delivered.
+	delivering []int
+}
+
+func (h *runtimeHandler) setDelivery(batches []int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.delivering = batches
+}
+
+func (h *runtimeHandler) takeDelivery() []int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	batches := h.delivering
+	h.delivering = nil
+	return batches
 }
 
 // AfterAgent keeps the finished conversation so the run can answer a steer
@@ -85,32 +102,16 @@ func (h *runtimeHandler) AfterAgent(ctx context.Context, state *adk.ChatModelAge
 	return ctx, nil
 }
 
-// undeliveredInputs reports an input batch the finished conversation does not
-// carry yet.
+// undeliveredInputs reports an input no model request has carried yet. It
+// reads the input blocks, the same fact the run sweep reads after a crash.
 func (h *runtimeHandler) undeliveredInputs(ctx context.Context) (bool, error) {
-	h.mu.Lock()
-	seen := map[string]bool{}
-	for _, m := range h.final {
-		if key, ok := m.Extra["creative_supplement"].(string); ok {
-			seen[key] = true
-		}
-	}
-	h.mu.Unlock()
-	rows, err := h.scope.QueryPage(ctx, "creative_run_inputs", "batch_ordinal", "run_id=$2 AND batch_ordinal>0 AND ordinal=0", []store.OrderBy{{Column: "batch_ordinal"}}, maxSupplements+1, 0, h.held.RunID)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var batch int
-		if err := rows.Scan(&batch); err != nil {
-			return false, err
-		}
-		if !seen[strconv.Itoa(batch)] {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
+	return undeliveredInputsIn(ctx, h.scope, h.held.RunID)
+}
+
+func undeliveredInputsIn(ctx context.Context, q interface {
+	Exists(context.Context, string, string, ...any) (bool, error)
+}, runID string) (bool, error) {
+	return q.Exists(ctx, "creative_agent_blocks", "run_id=$2 AND type='input' AND state='pending'", runID)
 }
 
 // finalMessages is the input of a continuation. The framework prepends the

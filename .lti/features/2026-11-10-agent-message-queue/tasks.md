@@ -11,8 +11,8 @@
 
 ## 3. 后端：送达、续跑与恢复
 
-- [ ] 3.1 先写测试（红）：工具执行期间插队，下一次模型请求只包含这一批次一次，块变为 `delivered`；截止点的两种顺序（入账前插队则续跑一次，入账后插队返回 409），`-count=10`；插队与取消竞争；插队后模型出错，块变为 `interrupted`；续跑前退出后 sweep 把运行记为 `partial` / `creative_steer_undelivered`；「文字、图 A、文字、图 B」两张图都在且顺序与片段一致
-- [ ] 3.2 `BeforeModelRewriteState` 按批次组装消息（文字一条，每个引用一条），并记下本次带上的批次；`prepareModelStep` 在事务里把这些批次对应的块标为 `delivered`；`runtime.go` 增加 `AfterAgent` 与 `finalMessages`；`execution.go:run` 实现 R4 循环；`control.go:sweepRun` 实现 R7。3.1 变绿，`make check-go PKG=./internal/creativeagent/...` 通过
+- [x] 3.1 先写测试（红）：工具执行期间插队，下一次模型请求只包含这一批次一次，块变为 `delivered`；截止点的两种顺序（入账前插队则续跑一次，入账后插队返回 409），`-count=10`；插队与取消竞争；插队后模型出错，块变为 `interrupted`；续跑前退出后 sweep 把运行记为 `partial` / `creative_steer_undelivered`；「文字、图 A、文字、图 B」两张图都在且顺序与片段一致
+- [x] 3.2 `BeforeModelRewriteState` 按批次组装消息（文字一条，每个引用一条），并记下本次带上的批次；`prepareModelStep` 在事务里把这些批次对应的块标为 `delivered`；`runtime.go` 增加 `AfterAgent` 与 `finalMessages`；`execution.go:run` 实现 R4 循环；`control.go:sweepRun` 实现 R7。3.1 变绿，`make check-go PKG=./internal/creativeagent/...` 通过
 
 ## 4. 契约与生成物
 

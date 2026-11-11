@@ -11,15 +11,15 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// steerDuringAnswer stands for a steer accepted while the final answer was
-// being written: the batch exists, the request that answered never saw it.
+// steerDuringAnswer steers while the request is out: the model step is
+// prepared, so the steer is accepted, and that request never carries it.
 func steerDuringAnswer(t *testing.T, f *fixture, runID, text string) {
 	t.Helper()
-	if _, err := f.db.Exec(`INSERT INTO creative_run_inputs(account_id,run_id,batch_ordinal,ordinal,input_role,read_level,body)
-		VALUES ('agent-a',$1,1,0,'instruction','text',$2)`, runID, text); err != nil {
-		t.Fatal(err)
+	if err := f.steer(runID, InstructionSegment{Type: "text", Text: text}); err != nil {
+		t.Fatalf("steer while the answer is written: %v", err)
 	}
 }
 
@@ -154,17 +154,11 @@ func (f *fixture) steer(runID string, segments ...InstructionSegment) error {
 
 // queuedRun is a run the worker has not picked up yet: no model step, still
 // open to a steer.
-func queuedRun(t *testing.T, f *fixture, consentID ...string) (Run, Conversation) {
+func queuedRun(t *testing.T, f *fixture) (Run, Conversation) {
 	t.Helper()
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
-	id := ""
-	if len(consentID) > 0 {
-		id = consentID[0]
-	} else {
-		id = f.consent(f.alice, c.ID).ID
-	}
-	run, err := f.startRun(f.alice, c.ID, id, InstructionSegment{Type: "text", Text: "整理"})
+	run, err := f.startRun(f.alice, c.ID, f.consent(f.alice, c.ID).ID, InstructionSegment{Type: "text", Text: "整理"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +223,7 @@ func TestSteerIsOneBatchOneMessageAndOneBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var batch int
 		var body string
@@ -383,5 +377,168 @@ func TestSupplementCarriesSegments(t *testing.T) {
 	}
 	if n := f.count("creative_agent_blocks", "run_id=$1 AND type='input' AND state='delivered'", run.ID); n != 1 {
 		t.Fatalf("delivered input blocks=%d", n)
+	}
+}
+
+func (f *fixture) inputBlockState(runID string) string {
+	f.t.Helper()
+	var state string
+	if err := f.db.QueryRow(`SELECT state FROM creative_agent_blocks WHERE run_id=$1 AND type='input'`, runID).Scan(&state); err != nil {
+		f.t.Fatal(err)
+	}
+	return state
+}
+
+// A tool that is running is not interrupted: the steer goes with the request
+// after it, once.
+func TestSteerDuringAToolReachesTheNextRequestOnce(t *testing.T) {
+	f := setup(t)
+	run, _ := queuedRun(t, f)
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			steerDuringAnswer(t, f, run.ID, "背景换成黄昏的海边")
+			return scriptedResult(r, llmgateway.ToolCall{ID: "look", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)}), nil
+		}
+		return scriptedResult(r), nil
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunSucceeded {
+		t.Fatalf("run=%+v err=%v", got, err)
+	}
+	if f.vendor.calls() != 2 {
+		t.Fatalf("calls=%d", f.vendor.calls())
+	}
+	if occurrences(f.vendor.sent[0], llmgateway.RoleUser, "黄昏") != 0 || occurrences(f.vendor.sent[1], llmgateway.RoleUser, "黄昏") != 1 {
+		t.Fatal("the steer must reach the request after the tool, once")
+	}
+	if state := f.inputBlockState(run.ID); state != "delivered" {
+		t.Fatalf("input block %s", state)
+	}
+}
+
+func TestAnUndeliveredSteerIsShownAsUnread(t *testing.T) {
+	t.Run("stopped", func(t *testing.T) {
+		f := setup(t)
+		run, _ := queuedRun(t, f)
+		if err := f.steer(run.ID, InstructionSegment{Type: "text", Text: "换个方向"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID})); err != nil {
+			t.Fatal(err)
+		}
+		if state := f.inputBlockState(run.ID); state != BlockInterrupted {
+			t.Fatalf("input block %s", state)
+		}
+	})
+	t.Run("the model failed", func(t *testing.T) {
+		f := setup(t)
+		run, _ := queuedRun(t, f)
+		f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+			steerDuringAnswer(t, f, run.ID, "换个方向")
+			return llmgateway.Result{}, &llmgateway.ProviderError{Outcome: llmgateway.OutcomeRejected, Class: "invalid_request", StatusCode: 400}
+		}
+		if err := f.work(f.alice, run.ID); err != nil {
+			t.Fatal(err)
+		}
+		got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+		if err != nil || got.State != RunFailed {
+			t.Fatalf("run=%+v err=%v", got, err)
+		}
+		if f.vendor.calls() != 1 {
+			t.Fatal("a failed run continued for its steer")
+		}
+		if state := f.inputBlockState(run.ID); state != BlockInterrupted {
+			t.Fatalf("input block %s", state)
+		}
+	})
+	// The worker stopped after the final answer and before its continuation:
+	// the sweep must not call that run a success.
+	t.Run("the worker stopped before the continuation", func(t *testing.T) {
+		f := setup(t)
+		run := answeredRun(t, f)
+		if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			c, err := f.service.lockControlledRun(t.Context(), tx, run.ID)
+			if err != nil {
+				return err
+			}
+			resolved, err := f.service.resolveInput(t.Context(), f.alice, "换个方向", nil)
+			if err != nil {
+				return err
+			}
+			consent, err := readConsentForUpdate(t.Context(), tx, c.EgressConsentID)
+			if err != nil {
+				return err
+			}
+			return f.service.appendInputBatchInTx(t.Context(), tx, c, resolved, consent)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.db.Exec(`UPDATE creative_agent_runs SET lease_until=now()-interval '1 minute' WHERE id=$1`, run.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.service.SweepRuns(t.Context(), f.alice, 20); err != nil {
+			t.Fatal(err)
+		}
+		got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+		if err != nil || got.State != RunPartial || got.ErrorCode != "creative_steer_undelivered" {
+			t.Fatalf("run=%+v err=%v", got, err)
+		}
+		if state := f.inputBlockState(run.ID); state != BlockInterrupted {
+			t.Fatalf("input block %s", state)
+		}
+	})
+}
+
+// Words and pictures reach the model in the order the photographer put them.
+func TestSteerImagesKeepTheirOrder(t *testing.T) {
+	f := setup(t)
+	f.service.SetImageReader(testImageReader{})
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": []string{"text", "image_preview"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var consent Consent
+	if err := json.Unmarshal(receipt.Outcome.Response, &consent); err != nil {
+		t.Fatal(err)
+	}
+	a, b := f.mediaRevision(f.alice, "image", "image/png"), f.mediaRevision(f.alice, "image", "image/png")
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "整理"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			if err := f.steer(run.ID, InstructionSegment{Type: "text", Text: "先看这张"}, InstructionSegment{Type: "content_ref", ContentRevisionID: a},
+				InstructionSegment{Type: "text", Text: "再看这张"}, InstructionSegment{Type: "content_ref", ContentRevisionID: b}); err != nil {
+				t.Fatalf("steer: %v", err)
+			}
+		}
+		return scriptedResult(r), nil
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if f.vendor.calls() != 2 {
+		t.Fatalf("calls=%d", f.vendor.calls())
+	}
+	var order []string
+	for _, m := range f.vendor.sent[1].Messages {
+		for _, block := range m.Blocks {
+			switch {
+			case block.Image != nil:
+				order = append(order, block.Image.RevisionID)
+			case strings.Contains(block.Text, "先看这张"), strings.Contains(block.Text, "再看这张"):
+				order = append(order, block.Text)
+			}
+		}
+	}
+	want := []string{"先看这张", a, "再看这张", b}
+	if strings.Join(order, "|") != strings.Join(want, "|") {
+		t.Fatalf("order=%v want %v", order, want)
 	}
 }
