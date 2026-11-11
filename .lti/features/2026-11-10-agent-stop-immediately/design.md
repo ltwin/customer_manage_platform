@@ -135,6 +135,8 @@ async function cancelUntilFinished(id: string) {
 - 状态栏 `RunStatus` 在没有运行时显示「正在处理」，消息下方画 `TurnLoading`。
 - 停止键此时可点（不受 `perform` 的 `busy` 锁影响）：只记下 `stopOnStart` 并立即显示「已停止」，不中途掐断请求链（链中途中断会让结果不确定）；`perform` 拿到新运行时立刻对它调用 `stop()`。链失败且已请求停止时不显示错误，草稿照常放回。
 - 每次新发送清掉上一次的 `stopOnStart`。
+- 结果未知（链留在待确认槽位）时，把 `stopped: true` 写进 `PendingAgentChain`（`advanceChain` 与解析都保留它），「重新发送」重放同一操作建出的运行同样随即取消。链执行途中不改存储——`owns()` 按存储比对，途中改会被判为 lost（代码审查 P1）。
+- 等上一个运行停完（`afterStop`）放在 `perform` 内、`busy` 锁之后：等待期间输入框锁着，后续消息不会在 `performing` 守卫处被静默丢弃；等待中又点了停止则不发送、草稿放回（代码审查 P2）。
 
 按钮决策表：
 
