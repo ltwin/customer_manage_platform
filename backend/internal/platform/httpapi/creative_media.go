@@ -39,6 +39,9 @@ func registerCreativeMedia(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/assets/from-scene-model", w.CreateCreativeAssetFromSceneModel)
 	r.POST("/creative/assets/from-scene-material", w.CreateCreativeAssetFromSceneMaterial)
 	r.POST("/creative/assets/from-glb", w.CreateCreativeAssetFromGLB)
+	r.POST("/creative/assets/characters", w.CreateCreativeCharacter)
+	r.POST("/creative/assets/:id/character-revisions", w.SaveCreativeCharacterRevision)
+	r.GET("/creative/character-ips", w.SuggestCreativeCharacterIPs)
 }
 
 // registerCreativeMediaBytes serves signed part writes and ticketed reads.

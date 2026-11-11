@@ -337,6 +337,11 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 						return creativeops.Outcome{}, ErrEgressRequired
 					}
 				}
+				// A card's text leaves as media metadata; refuse before the run
+				// reserves budget, not when the worker assembles it.
+				if rev.Kind == creativecontent.CharacterKind && !consentHas(consent, "media_metadata") {
+					return creativeops.Outcome{}, ErrEgressRequired
+				}
 			}
 
 			// Scenes are canvas metadata: told only under a consent that lets

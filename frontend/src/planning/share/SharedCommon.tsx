@@ -19,7 +19,7 @@ export function SharedHero({
 }) {
   return (
     <header className="share-hero">
-      <p className="share-eyebrow">影约 · 拍摄策划</p>
+      <p className="share-eyebrow">Eurika · 拍摄策划</p>
       <h1>{plan.title}</h1>
       <p className="share-lead">这是摄影师为这次拍摄准备的创作方案。看完可以直接在页面里留意见，不用注册也不用下载任何东西。</p>
       <div className="share-tag-row">

@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -315,6 +316,36 @@ func (e *ExternalTools) readAsset(ctx context.Context, p ExternalPrincipal, raw 
 	}
 	out := ExternalResult{}
 	var summary []string
+	if card, ok := result["character"].(*creativecontent.CharacterPayload); ok {
+		omitted := 0
+		for _, view := range card.Views {
+			img, err := e.image(ctx, p.Scope, view.ContentRevisionID)
+			var limit *creativemedia.ImagePreviewLimitError
+			reason := ""
+			switch {
+			case err == nil:
+				out.Images = append(out.Images, img)
+			case ctx.Err() != nil:
+				return ExternalResult{}, err
+			case errors.As(err, &limit):
+				reason = "image_size_limit"
+			case errors.Is(err, ErrModelCapability):
+				reason = "image_preview_unavailable"
+			default:
+				// One unreadable view never hides the card's text or the other views.
+				reason = "image_unreadable"
+			}
+			if reason != "" {
+				addCharacterImageOmission(result, view.ContentRevisionID, reason)
+				omitted++
+			}
+		}
+		line := fmt.Sprintf("角色卡资料见结构化结果，已附上 %d 张参考图。", len(out.Images))
+		if omitted > 0 {
+			line += fmt.Sprintf("另有 %d 张没有附上，原因见 images_omitted。", omitted)
+		}
+		summary = append(summary, line)
+	}
 	if id, _ := result["image_revision_id"].(string); id != "" {
 		img, err := e.image(ctx, p.Scope, id)
 		var limit *creativemedia.ImagePreviewLimitError
@@ -342,6 +373,8 @@ func (e *ExternalTools) readAsset(ctx context.Context, p ExternalPrincipal, raw 
 		} else {
 			summary = append([]string{"材质的完整槽位（slot）和贴图尺寸见结构化结果。"}, summary...)
 		}
+	case result["character"] != nil:
+		// The character line above already counts the attached views.
 	case len(out.Images) > 0:
 		summary = append([]string{"已附上图片。"}, summary...)
 	case result["text"] != nil:

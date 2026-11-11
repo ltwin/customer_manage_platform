@@ -338,7 +338,7 @@ func (a *Action) UnmarshalJSON(raw []byte) error {
 	allowedByType := map[string]string{
 		"add_node":  "node_id type_key title x y parent_id asset content content_revision_id document_id document_options",
 		"move_node": "node_id x y", "move_nodes": "node_ids dx dy", "resize_node": "node_id width height",
-		"update_metadata": "node_id title intent", "clear_content": "node_id", "replace_content": "node_id payload rights",
+		"update_character": "node_id content_revision_id", "update_metadata": "node_id title intent", "clear_content": "node_id", "replace_content": "node_id payload rights",
 		"connect_reference": "source_node_id target_node_id source_port target_port role", "disconnect_reference": "edge_id",
 		"set_node_inputs": "node_id inputs", "group_nodes": "node_ids", "ungroup_nodes": "node_id", "reparent_nodes": "node_ids parent_id",
 		"duplicate_selection": "node_ids dx dy", "select_version": "node_id version_id follow_latest", "delete_version": "node_id version_id",

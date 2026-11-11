@@ -25,9 +25,11 @@ export default function AssetInspector({
   onColor,
   onMetadata,
   onOrganize,
+  extra,
   ...actions
 }: Actions & {
   assets: api.Asset[]
+  extra?: React.ReactNode
   catalog: LibraryCatalog | null
   onColor: (color: string) => void
   onRate: (rating: number | null) => void
@@ -74,6 +76,7 @@ export default function AssetInspector({
                 defaultValue={single.title}
                 maxLength={200}
                 disabled={disabled}
+                readOnly={single.kind === 'character'}
                 onBlur={(e) => {
                   const title = e.currentTarget.value.trim()
                   if (title && title !== single.title)
@@ -272,6 +275,7 @@ export default function AssetInspector({
           </dl>
         )}
         <div className="al-ins-actions">
+          {extra}
           <ActionButtons
             assets={assets}
             {...actions}

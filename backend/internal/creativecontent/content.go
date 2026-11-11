@@ -40,7 +40,8 @@ type Payload struct {
 	Model json.RawMessage `json:"model,omitempty"`
 	// Material is one material slot's assignment saved into the library
 	// (data: 材质资产); creativescene validates it before the one write.
-	Material json.RawMessage `json:"material,omitempty"`
+	Material  json.RawMessage   `json:"material,omitempty"`
+	Character *CharacterPayload `json:"character,omitempty"`
 }
 
 // maxScenePayload matches the document snapshot limit; a model payload (code up
@@ -124,8 +125,8 @@ type Revision struct {
 // (WriteDocumentAndRetain) after checking the type's schema; models by the
 // media worker (WriteMediaAndRetain, staged form) and by scene commands
 // (WriteModelAndRetain, complete form); materials by saving a slot into the
-// library (WriteMaterialAndRetain).
-var restrictedKinds = map[string]bool{"scene": true, "model": true, "material": true}
+// library (WriteMaterialAndRetain); character cards by the library's dedicated writer.
+var restrictedKinds = map[string]bool{"scene": true, "model": true, "material": true, "character": true}
 
 // Validate checks content submitted directly; restricted kinds are refused.
 func Validate(d Draft) error {
@@ -136,7 +137,8 @@ func Validate(d Draft) error {
 }
 
 func validate(d Draft) error {
-	if d.Kind != "scene" && len(d.Payload.Scene) != 0 || d.Kind != "model" && len(d.Payload.Model) != 0 || d.Kind != "material" && len(d.Payload.Material) != 0 {
+	if d.Kind != "scene" && len(d.Payload.Scene) != 0 || d.Kind != "model" && len(d.Payload.Model) != 0 ||
+		d.Kind != "material" && len(d.Payload.Material) != 0 || d.Kind != "character" && d.Payload.Character != nil {
 		return creativeops.ErrValidation
 	}
 	switch d.Kind {
@@ -174,6 +176,11 @@ func validate(d Draft) error {
 		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || len(p.Material) > maxMaterialPayload || !isJSONObject(p.Material) {
 			return creativeops.ErrValidation
 		}
+	case "character":
+		p := d.Payload
+		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || p.Character == nil {
+			return creativeops.ErrValidation
+		}
 	default:
 		return creativeops.ErrValidation
 	}
@@ -202,7 +209,7 @@ func WriteAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, s
 // write a document kind. Its caller (creativedocument) has checked the
 // snapshot against the document type.
 func WriteDocumentAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, retain func(Revision) error) (Revision, error) {
-	if hasObjects(draft.Kind) {
+	if hasObjects(draft.Kind) || draft.Kind == "character" {
 		return Revision{}, creativeops.ErrValidation
 	}
 	return write(ctx, tx, draft, writeOptions{}, retain, validate)
@@ -245,8 +252,12 @@ func WriteMaterialAndRetain(ctx context.Context, tx store.TxAccountScope, draft 
 // the holder is not deleted. The rows derive from the holder's payload and
 // never change.
 func HoldTextures(ctx context.Context, tx store.TxAccountScope, holder string, images []string) error {
-	for _, id := range slices.Compact(slices.Sorted(slices.Values(images))) {
-		if err := tx.Insert(ctx, "creative_content_revision_refs", []string{"holder_revision_id", "content_revision_id", "role"}, holder, id, "texture"); err != nil {
+	return holdRevisionImages(ctx, tx, holder, "texture", slices.Compact(slices.Sorted(slices.Values(images))))
+}
+
+func holdRevisionImages(ctx context.Context, tx store.TxAccountScope, holder, role string, images []string) error {
+	for _, id := range images {
+		if err := tx.Insert(ctx, "creative_content_revision_refs", []string{"holder_revision_id", "content_revision_id", "role"}, holder, id, role); err != nil {
 			return err
 		}
 	}

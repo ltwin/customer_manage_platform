@@ -29,5 +29,27 @@ func Document(title, description, source string, payload json.RawMessage) (strin
 			parts = append(parts, value)
 		}
 	}
+	if raw, ok := fields["character"]; ok {
+		// A character card is found by its own words; catalog aliases of its
+		// IP and work match at query time, so a rebuild loses nothing.
+		var card struct {
+			Name       string   `json:"name"`
+			Variant    string   `json:"variant"`
+			Appearance string   `json:"appearance"`
+			Work       string   `json:"work"`
+			Aliases    []string `json:"aliases"`
+			IP         *struct {
+				Name string `json:"name"`
+			} `json:"ip"`
+		}
+		if err := json.Unmarshal(raw, &card); err != nil {
+			return "", err
+		}
+		parts = append(parts, card.Name, card.Variant, card.Work, card.Appearance)
+		parts = append(parts, card.Aliases...)
+		if card.IP != nil {
+			parts = append(parts, card.IP.Name)
+		}
+	}
 	return Normalize(strings.Join(parts, "\n")), nil
 }

@@ -1,10 +1,12 @@
 package creativegeneration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
@@ -127,9 +129,17 @@ func (s *Service) prepareImageRoute(ctx context.Context, tx store.TxAccountScope
 	var selected gw.GenerationAdmission
 	var revision int64
 	var compatible bool
+	var characterLimit *creativecanvas.CharacterGenerationError
 	var frozenParameters json.RawMessage
 	for _, p := range policies {
 		admission, rev, err := s.prepareImage(ctx, tx, in, p, frozenParameters)
+		var characterIssue *creativecanvas.CharacterGenerationError
+		if errors.As(err, &characterIssue) {
+			if characterLimit == nil || characterIssue.Limit > characterLimit.Limit {
+				characterLimit = characterIssue
+			}
+			continue
+		}
 		if errors.Is(err, gw.ErrCapability) || errors.Is(err, creativeops.ErrValidation) {
 			continue
 		}
@@ -155,6 +165,9 @@ func (s *Service) prepareImageRoute(ctx context.Context, tx store.TxAccountScope
 	if len(selected.Route) == 0 {
 		if compatible {
 			return gw.GenerationAdmission{}, 0, gw.ErrUnavailable
+		}
+		if characterLimit != nil {
+			return gw.GenerationAdmission{}, 0, characterLimit
 		}
 		return gw.GenerationAdmission{}, 0, fmt.Errorf("%w: no image deployment supports this input", creativeops.ErrValidation)
 	}
@@ -197,6 +210,9 @@ func (s *Service) prepareImage(ctx context.Context, tx store.TxAccountScope, in 
 	switch result.Verdict {
 	case gw.GenerationAllow:
 	case gw.GenerationDeny:
+		if err := characterPolicyIssue(draft.Characters, refs, result.Issues); err != nil {
+			return gw.GenerationAdmission{}, 0, err
+		}
 		return gw.GenerationAdmission{}, 0, creativeops.ErrValidation
 	default:
 		return gw.GenerationAdmission{}, 0, gw.ErrUnavailable
@@ -212,4 +228,66 @@ func (s *Service) prepareImage(ctx context.Context, tx store.TxAccountScope, in 
 	deadline := now.Add(imageDeadline)
 	// 组与账号额度取0即沿用服务端月度上限；预留按规则给出的上界。
 	return gw.GenerationAdmission{Prepared: result.Prepared, Deadline: deadline, GroupDeadline: deadline}, revision, nil
+}
+
+// The deployed policy reports the selected limit and, for per-image rules, the
+// failing attachment index. Character ranges use image numbers, not attachment positions.
+func characterPolicyIssue(characters []*creativecanvas.GenerationCharacter, refs []gw.GenerationReference, issues []gw.GenerationRuleIssue) error {
+	if len(characters) == 0 {
+		return nil
+	}
+	var imageNumbers = make([]int, len(refs))
+	var imageCount int
+	for i, ref := range refs {
+		if ref.Kind == gw.GenerationImage {
+			imageCount++
+			imageNumbers[i] = imageCount
+		}
+	}
+	for _, issue := range issues {
+		if issue.Code != "constraint_failed" {
+			continue
+		}
+		for _, obs := range issue.Observations {
+			if obs.Ref.Source != "references" || obs.Ref.Kind != gw.GenerationImage {
+				continue
+			}
+			if obs.Ref.Aggregate == "count" && len(obs.Expected) == 1 {
+				var limit int
+				if json.Unmarshal(obs.Expected[0], &limit) == nil && imageCount > limit {
+					return &creativecanvas.CharacterGenerationError{Characters: characters, Limit: limit, Total: imageCount}
+				}
+			}
+			if obs.Ref.Aggregate != "each" || !rejectedImageObservation(obs) ||
+				obs.Index == nil || *obs.Index < 0 || *obs.Index >= len(refs) {
+				continue
+			}
+			index := *obs.Index
+			number := imageNumbers[index]
+			for _, card := range characters {
+				if number >= card.Images[0] && number <= card.Images[1] {
+					return &creativecanvas.CharacterGenerationError{Characters: []*creativecanvas.GenerationCharacter{card}, ImageIndex: number - card.Images[0] + 1, RevisionID: refs[index].RevisionID}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func rejectedImageObservation(obs gw.GenerationRuleObservation) bool {
+	if obs.State != "known" {
+		return false
+	}
+	switch obs.Ref.Field {
+	case "mime":
+		return !slices.ContainsFunc(obs.Expected, func(v json.RawMessage) bool {
+			return bytes.Equal(v, obs.Actual)
+		})
+	case "bytes":
+		var actual, maxBytes int64
+		return len(obs.Expected) == 1 && json.Unmarshal(obs.Actual, &actual) == nil &&
+			json.Unmarshal(obs.Expected[0], &maxBytes) == nil && actual > maxBytes
+	default:
+		return false
+	}
 }

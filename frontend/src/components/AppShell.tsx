@@ -6,6 +6,7 @@ import { preloadLinkTarget } from '../creative-canvas/pages.ts'
 import AccountMenu from '../account/AccountMenu.tsx'
 import type { ShellContext } from './shellContext'
 import StateNotice from './StateNotice'
+import { BrandLockup } from './BrandLockup'
 import {
   beginPageRead,
   completePageRead,
@@ -121,10 +122,7 @@ export default function AppShell() {
             onFocus={(e) => preloadLinkTarget(e.target)}
           >
             <NavLink className="brand" to="/dashboard">
-              <span className="brand-mark">影</span>
-              <span>
-                影约 CRM<small>摄影师私域客户经营</small>
-              </span>
+              <BrandLockup />
             </NavLink>
             {navItems.map((item) => {
               const Icon = item.icon

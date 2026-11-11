@@ -8,14 +8,22 @@ import {
 } from './placement.ts'
 
 /** 重试复用原操作身份和原请求体，不能用新身份重发结果未知的写入。 */
-export function operation<T>(account: string, path: string, payload: unknown) {
+export function prepareOperation(path: string, payload: unknown) {
   const id = crypto.randomUUID()
-  const body = JSON.stringify({
-    operation_id: id,
-    client_created_at: new Date().toISOString(),
-    payload,
-  })
-  return () => api.send<T>(account, path, body, id)
+  return {
+    id,
+    path,
+    body: JSON.stringify({
+      operation_id: id,
+      client_created_at: new Date().toISOString(),
+      payload,
+    }),
+  }
+}
+
+export function operation<T>(account: string, path: string, payload: unknown) {
+  const request = prepareOperation(path, payload)
+  return () => api.send<T>(account, request.path, request.body, request.id)
 }
 export const rejected = (e: unknown) =>
   e instanceof PlacementError ||

@@ -61,7 +61,7 @@ export default function SharedPlanPage() {
   if (state.kind === 'unavailable') {
     return (
       <main className="share-page share-expired">
-        <p className="share-eyebrow">影约 · 拍摄策划</p>
+        <p className="share-eyebrow">Eurika · 拍摄策划</p>
         <h1>这个链接已经失效了</h1>
         <p>可能是摄影师更新了链接、方案有了新版本，或合作安排发生变化。你之前提交的意见和认领都还在，不会丢。</p>
         <p>需要新链接的话，直接联系你的摄影师。</p>

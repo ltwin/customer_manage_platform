@@ -19,7 +19,10 @@ type NodeDefinition struct {
 
 // coreDefinitions owns built-in node behavior. Document nodes come from the
 // creativedocument registry instead; a registered type never shadows a core one.
+const characterNodeType = "core.character"
+
 var coreDefinitions = []NodeDefinition{
+	{TypeKey: characterNodeType, SchemaVersion: 1, EditableFields: []string{"title", "intent", "placement"}, Ports: []string{"output"}, Actions: []string{"move", "resize", "rename", "duplicate", "remove", "reference", "update_character"}, PromptMode: "unavailable"},
 	{TypeKey: "core.text", SchemaVersion: 1, CreationSupported: true, EditableFields: []string{"title", "intent", "body", "placement"}, Ports: []string{"output", "reference"}, Actions: []string{"move", "resize", "rename", "duplicate", "remove", "edit", "reference", "save_to_library"}, PromptMode: "draft"},
 	{TypeKey: "core.link", SchemaVersion: 1, CreationSupported: true, EditableFields: []string{"title", "intent", "url", "description", "placement"}, Ports: []string{"output", "reference"}, Actions: []string{"move", "resize", "rename", "duplicate", "remove", "edit", "reference", "save_to_library"}, PromptMode: "draft"},
 	{TypeKey: "core.image", SchemaVersion: 1, CreationSupported: true, EditableFields: []string{"title", "intent", "caption", "placement"}, Ports: []string{"output", "reference"}, Actions: []string{"move", "resize", "rename", "duplicate", "remove", "edit", "reference", "maximize", "download", "replace", "save_to_library"}, PromptMode: "draft", Maximize: true},

@@ -32,7 +32,7 @@ export type LibraryTask =
       mediaKind: 'image' | 'video' | 'audio'
       title: string
     }
-  | { kind: 'pick'; nodeID: string; title: string }
+  | { kind: 'pick'; nodeID: string; title: string; allowCharacter: boolean }
 type Menu = { at: Point; items: CanvasMenuItem[]; label: string }
 
 const NARROW = 344
@@ -143,6 +143,9 @@ export default function LibraryDrawer({
   const selected = resolve(selection.ids)
   const usable = (list: api.Asset[]) =>
     list.filter((a) => !a.unavailable && !a.deleted_at)
+  const canPickReference = (a: api.Asset) =>
+    isCanvasAsset(a) &&
+    (a.kind !== 'character' || (task?.kind === 'pick' && task.allowCharacter))
   const clear = () => setSelection({ ids: [], anchor: null })
   const organization = useOrganization({
     account,
@@ -218,7 +221,7 @@ export default function LibraryDrawer({
       return
     }
     // 参考接到画布节点上，模型不能当参考。
-    if (task?.kind === 'pick' && a && !isCanvasAsset(a)) return
+    if (task?.kind === 'pick' && a && !canPickReference(a)) return
     setSelection((s) =>
       clickSelection(
         s,
@@ -447,8 +450,8 @@ export default function LibraryDrawer({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={!usable(selected).filter(isCanvasAsset).length}
-              onClick={() => onPick(usable(selected).filter(isCanvasAsset))}
+              disabled={!usable(selected).filter(canPickReference).length}
+              onClick={() => onPick(usable(selected).filter(canPickReference))}
             >
               添加{selected.length ? ` ${selected.length} 项` : ''}
             </button>

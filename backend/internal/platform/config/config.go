@@ -274,7 +274,7 @@ func LoadAccountAuth() (AccountAuthConfig, error) {
 			return AccountAuthConfig{}, ErrResendAPIKeyMissing
 		}
 		if cfg.AuthMailFrom == "" {
-			cfg.AuthMailFrom = "Photographer CRM <onboarding@resend.dev>"
+			cfg.AuthMailFrom = "Eurika <onboarding@resend.dev>"
 		}
 	default:
 		return AccountAuthConfig{}, ErrAuthMailDriverInvalid

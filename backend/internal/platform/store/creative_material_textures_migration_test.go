@@ -8,10 +8,10 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackCreativeMaterialTextures is the head of the rollback chain: every
-// older migration's rollback helper undoes this one first.
+// rollbackCreativeMaterialTextures undoes 0082 and then 0081.
 func rollbackCreativeMaterialTextures(t *testing.T, url string) {
 	t.Helper()
+	rollbackCharacterCards(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-material-textures", err)
 	}
@@ -106,6 +106,7 @@ func TestCreativeMaterialTexturesMigrationRefusesLossyRollback(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			url, db := openMaterialTextures(t)
+			rollbackCharacterCards(t, url)
 			for _, q := range tc.setup {
 				if _, err := db.Exec(q); err != nil {
 					t.Fatal(q, err)

@@ -61,6 +61,18 @@
 .cs-side-brand svg {
   flex: none;
 }
+/* 品牌位用 Eurika 主标：星与折叠后的导航图标同为 20px，字标随侧栏折叠淡出 */
+.cs-side-mark {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.cs-side-wordmark {
+  display: block;
+  height: 14px;
+  width: auto;
+}
 .cs-side-toggle {
   display: grid;
   flex: none;
@@ -259,7 +271,8 @@
     display: none;
   }
 }
-@media (max-width: 380px) {
+/* 字标不能像文字那样省略截断，顶栏放不下导航时只留星 */
+@media (max-width: 480px) {
   .cs-side-brand .cs-side-text {
     display: none;
   }

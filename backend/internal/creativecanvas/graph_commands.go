@@ -97,7 +97,7 @@ func applyBatchAs(ctx context.Context, tx store.TxAccountScope, v BatchInput, op
 	structural := false
 	for _, a := range v.Actions {
 		switch a.Type {
-		case "replace_content", "fill_from_asset", "fill_from_upload", "update_metadata", "clear_content", "select_version", "delete_version", "move_nodes", "move_node", "resize_node":
+		case "replace_content", "update_character", "fill_from_asset", "fill_from_upload", "update_metadata", "clear_content", "select_version", "delete_version", "move_nodes", "move_node", "resize_node":
 		default:
 			structural = true
 		}
@@ -352,13 +352,15 @@ func (e *editGraph) apply(a Action) error {
 		return e.selectVersion(a)
 	case "delete_version":
 		return e.deleteVersion(a)
+	case "update_character":
+		return e.updateCharacter(a)
 	case "clear_content":
 		n, err := e.node(a.NodeID, "data")
 		if err != nil {
 			return err
 		}
-		if n.TypeKey == "core.group" {
-			return creativeops.Explain(creativeops.ErrValidation, "%s 是分组，没有内容可清空", n.ID)
+		if n.TypeKey == "core.group" || n.TypeKey == characterNodeType {
+			return creativeops.Explain(creativeops.ErrValidation, "节点 %s 不支持清空内容", n.ID)
 		}
 		n.ContentID = nil
 		n.ContentRevisionID = nil
@@ -455,6 +457,8 @@ func (e *editGraph) add(a Action) error {
 		return creativeops.Explain(creativeops.ErrValidation, "新节点 ID %q 格式不对，须是 cwnode_ 加 UUID", a.NodeID)
 	case !knownType(a.TypeKey):
 		return creativeops.Explain(creativeops.ErrValidation, "不能新建 %q 类型的节点", a.TypeKey)
+	case a.TypeKey == characterNodeType && a.Asset == nil:
+		return creativeops.Explain(creativeops.ErrValidation, "请从资产库放入角色卡")
 	case a.Asset != nil && a.Content != nil || a.ContentRevisionID != "" && (a.Asset != nil || a.Content != nil):
 		return creativeops.Explain(creativeops.ErrValidation, "新建节点时素材、已有内容修订和正文只能选一项")
 	case !isDocument && (a.DocumentID != "" || len(a.DocumentOptions) != 0):
@@ -598,8 +602,8 @@ func kindMismatch(n Node, kind string) error {
 // fillable is a node that can take its first content.
 func fillable(n Node) error {
 	switch {
-	case n.TypeKey == "core.group":
-		return creativeops.Explain(creativeops.ErrValidation, "%s 是分组，不能放内容", n.ID)
+	case n.TypeKey == "core.group" || n.TypeKey == characterNodeType:
+		return creativeops.Explain(creativeops.ErrValidation, "节点 %s 不支持填充内容", n.ID)
 	case n.ContentRevisionID != nil:
 		return creativeops.Explain(creativeops.ErrValidation, "节点 %s 已有内容，只能往空节点里放；要换内容请重新生成", n.ID)
 	}
@@ -615,7 +619,7 @@ func (e *editGraph) manualVersion(n *Node, r creativecontent.Revision, origin st
 // Text bodies are edited and saved continuously and are not versioned.
 func manualVersion(ctx context.Context, tx store.TxAccountScope, g *graphState, n *Node, r creativecontent.Revision, origin string) error {
 	n.SelectedVersionID = nil
-	if !creativecontent.IsMediaKind(r.Kind) {
+	if !creativecontent.IsMediaKind(r.Kind) && r.Kind != creativecontent.CharacterKind {
 		return nil
 	}
 	v, err := makeVersion(ctx, tx, n.ID, r.ID, origin, json.RawMessage(`{}`), []VersionInput{})
@@ -756,6 +760,8 @@ func (e *editGraph) connect(a Action) error {
 		return noPorts(source)
 	case !hasPorts(target.TypeKey):
 		return noPorts(target)
+	case !acceptsCharacterReference(source.TypeKey == characterNodeType, target.TypeKey):
+		return characterReferenceError()
 	case a.SourcePort != "output" || a.TargetPort != "reference" || a.Role != "reference":
 		return creativeops.Explain(creativeops.ErrValidation, "连线只能从 output 端口连到 reference 端口，角色为 reference")
 	case source.ID == target.ID:
@@ -781,7 +787,7 @@ func (e *editGraph) setInputs(a Action) error {
 	if err != nil {
 		return err
 	}
-	if !hasPorts(n.TypeKey) {
+	if !hasPorts(n.TypeKey) || n.TypeKey == characterNodeType {
 		return noPorts(n)
 	}
 	if len(a.Inputs) > 50 {
@@ -810,9 +816,16 @@ func (e *editGraph) setInputs(a Action) error {
 			if !hasPorts(source.TypeKey) {
 				return noPorts(source)
 			}
+			if !acceptsCharacterReference(source.TypeKey == characterNodeType, n.TypeKey) {
+				return characterReferenceError()
+			}
 		} else {
-			if _, err := creativecontent.RequireUsable(e.ctx, e.tx, *i.ContentRevisionID, "display"); err != nil {
+			revision, err := creativecontent.RequireUsable(e.ctx, e.tx, *i.ContentRevisionID, "display")
+			if err != nil {
 				return err
+			}
+			if !acceptsCharacterReference(revision.Kind == creativecontent.CharacterKind, n.TypeKey) {
+				return characterReferenceError()
 			}
 		}
 		i.ID = "cwinp_" + uuid.NewString()

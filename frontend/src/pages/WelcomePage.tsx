@@ -4,12 +4,12 @@ import {
   AlertTriangle,
   Bell,
   CalendarDays,
-  Camera,
   Package,
   Sparkles,
   Users,
 } from 'lucide-react'
 import { fetchAuthCapabilities } from '../api/client'
+import { BrandLockup, BrandLockupStacked } from '../components/BrandLockup'
 import './WelcomePage.css'
 
 type PreviewTab = 'customers' | 'calendar' | 'packages'
@@ -47,12 +47,7 @@ export default function WelcomePage() {
       <nav className="wp-topnav" data-od-id="topnav">
         <div className="wp-wrap">
           <a className="wp-brand" href="#top">
-            <span className="brand-mark" aria-hidden="true">
-              <Camera strokeWidth={2} />
-            </span>
-            <span>
-              影约 CRM<small>摄影师私域客户经营</small>
-            </span>
+            <BrandLockup />
           </a>
           <div className="wp-nav-links">
             <a href="#value">解决什么</a>
@@ -83,7 +78,7 @@ export default function WelcomePage() {
             <div>
               <span className="wp-eyebrow">
                 <Sparkles aria-hidden="true" />
-                为独立摄影师做的经营台
+                让灵感有光 · 为独立摄影师做的经营台
               </span>
               <h1>
                 客户记在聊天里，
@@ -93,7 +88,7 @@ export default function WelcomePage() {
                 到头来都记不住。
               </h1>
               <p className="wp-lede">
-                影约把客户档案、约单、档期、套系收进一套系统。从私域来的第一句咨询，到交片后的复购提醒，全链路只用一个工作台。
+                Eurika 把客户档案、约单、档期、套系收进一套系统。从私域来的第一句咨询，到交片后的复购提醒，全链路只用一个工作台。
               </p>
               <div className="wp-hero-cta">
                 <Link className="btn btn-primary btn-lg" to="/login" data-od-id="hero-login">
@@ -233,7 +228,7 @@ export default function WelcomePage() {
                     <i />
                     <i />
                   </span>
-                  <span className="wp-path">影约 CRM / 客户</span>
+                  <span className="wp-path">Eurika / 客户</span>
                 </div>
                 <div className="wp-screen-body">
                   <div className="wp-screen-head">
@@ -387,7 +382,7 @@ export default function WelcomePage() {
                     <i />
                     <i />
                   </span>
-                  <span className="wp-path">影约 CRM / 档期 / 3 月 14 日</span>
+                  <span className="wp-path">Eurika / 档期 / 3 月 14 日</span>
                 </div>
                 <div className="wp-screen-body">
                   <div className="wp-screen-head">
@@ -457,7 +452,7 @@ export default function WelcomePage() {
                     <i />
                     <i />
                   </span>
-                  <span className="wp-path">影约 CRM / 套系</span>
+                  <span className="wp-path">Eurika / 套系</span>
                 </div>
                 <div className="wp-screen-body">
                   <div className="wp-screen-head">
@@ -636,12 +631,7 @@ export default function WelcomePage() {
       <footer className="wp-footer" data-od-id="footer">
         <div className="wp-wrap wp-foot-grid">
           <a className="wp-brand" href="#top">
-            <span className="brand-mark" aria-hidden="true">
-              <Camera strokeWidth={2} />
-            </span>
-            <span>
-              影约 CRM<small>摄影师私域客户经营</small>
-            </span>
+            <BrandLockupStacked />
           </a>
           <div className="wp-foot-links">
             <a href="#value">解决什么</a>

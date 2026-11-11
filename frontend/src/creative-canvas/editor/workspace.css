@@ -1646,3 +1646,33 @@ button.cc-project-name:hover,
   background: #f59e0b24;
   white-space: nowrap;
 }
+
+.cc-character-card {
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 6px;
+  padding: 10px 12px;
+  color: var(--fg-2);
+  font: 12px/1.4 var(--font-body);
+}
+.cc-character-card > .al-character-image {
+  min-height: 0;
+}
+.cc-character-card [role="status"] {
+  color: var(--fg);
+}
+
+.cc-character-provenance {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.cc-character-provenance summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.cc-character-provenance-images {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}

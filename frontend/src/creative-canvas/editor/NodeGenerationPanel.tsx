@@ -47,6 +47,7 @@ import {
 import Picker, { type PickerOption } from './Picker.tsx'
 import ImageParameters, { RatioGlyph } from './ImageParameters.tsx'
 import GenerationReference from './GenerationReference.tsx'
+import CharacterProvenance from './CharacterProvenance.tsx'
 import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
 import {
   cleanMentions,
@@ -584,7 +585,7 @@ export default function NodeGenerationPanel({
                 }
                 disabled={locked}
                 onMention={
-                  r.connected && r.sourceID
+                  (r.connected || r.draftIndex !== undefined) && r.sourceID
                     ? () => editor.current?.insertReferences([r.sourceID!])
                     : undefined
                 }
@@ -836,6 +837,9 @@ export default function NodeGenerationPanel({
                 {versions.selected_version_id === v.id ? ' · 当前采用' : ''}
               </strong>
               <small>{new Date(v.created_at).toLocaleString()}</small>
+              {v.generation_provenance.characters?.map((card, i) => (
+                <CharacterProvenance key={`${card.content_revision_id}:${i}`} card={card} />
+              ))}
               <div>
                 <button
                   onClick={() => {

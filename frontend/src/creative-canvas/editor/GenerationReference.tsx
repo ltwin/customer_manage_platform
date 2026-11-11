@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, X } from 'lucide-react'
+import { Contact, FileText, X } from 'lucide-react'
 import type { Content } from './api.ts'
+import { CharacterImage } from '../assets/CharacterFields.tsx'
+import { characterOf } from '../assets/character.ts'
 import { contentText } from './content.ts'
 import { MediaFigure } from './MediaView.tsx'
 
@@ -24,6 +26,7 @@ export default function GenerationReference({
   updated?: boolean
 }) {
   const [peek, setPeek] = useState<{ x: number; y: number } | null>(null)
+  const card = characterOf(content)
   const media = content && ['image', 'video', 'audio'].includes(content.kind)
   const open = (el: HTMLElement) => {
     const r = el.getBoundingClientRect()
@@ -57,6 +60,8 @@ export default function GenerationReference({
       >
         {media ? (
           <MediaFigure content={content} kind={content.kind} title={title} />
+        ) : card ? (
+          <Contact size={13} />
         ) : (
           <FileText size={13} />
         )}
@@ -93,7 +98,9 @@ export default function GenerationReference({
                 : { top: peek.y + 36 }),
             }}
           >
-            {media ? (
+            {card?.views[0] ? (
+              <CharacterImage id={card.views[0].content_revision_id} label={card.name} />
+            ) : media ? (
               <MediaFigure
                 content={content}
                 kind={content.kind}
@@ -105,11 +112,13 @@ export default function GenerationReference({
             <div>
               <b>{title}</b>
               <span>
-                {label
-                  ? content?.kind === 'text'
-                    ? '文本参考 · 引用处展开为原文'
-                    : `发送时记为 [${label}]`
-                  : '生成时使用的参考'}
+                {card
+                  ? `生成时展开 ${card.views.length} 张参考图`
+                  : label
+                    ? content?.kind === 'text'
+                      ? '文本参考 · 引用处展开为原文'
+                      : `发送时记为 [${label}]`
+                    : '生成时使用的参考'}
               </span>
             </div>
           </div>,

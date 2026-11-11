@@ -41,7 +41,7 @@ export default function CanvasLab() {
   const reset = (large = false) => { if (sampling) return; store.getState().reset(large); requestAnimationFrame(() => void flow.fitView({ padding: .15 })) }
   const selected = state.nodes.filter(n => n.selected)
   return <main className="lab-shell">
-    <header className="lab-header"><div><span className="lab-eyebrow">CREATIVE SPACE · ENGINEERING</span><h1>创意画布</h1></div><p>基础验证页 · 仅本地状态，不保存到业务库</p><a href="/">返回影约</a></header>
+    <header className="lab-header"><div><span className="lab-eyebrow">CREATIVE SPACE · ENGINEERING</span><h1>创意画布</h1></div><p>基础验证页 · 仅本地状态，不保存到业务库</p><a href="/">返回 Eurika</a></header>
     <section className="lab-stage" aria-label="受控创意画布">
       <ReactFlow<LabNode> nodeTypes={nodeTypes} nodes={state.nodes} edges={state.edges} onNodesChange={state.onNodesChange} onEdgesChange={state.onEdgesChange} onConnect={state.onConnect} isValidConnection={c => canConnect(state.nodes, state.edges, { ...c, sourceHandle: c.sourceHandle ?? null, targetHandle: c.targetHandle ?? null })}
         nodesDraggable={!panHeld} nodesConnectable={!panHeld} selectionOnDrag selectionMode={SelectionMode.Partial} panOnDrag={[1]} panActivationKeyCode="Space" panOnScroll panOnScrollMode={PanOnScrollMode.Vertical} zoomOnScroll={false} zoomActivationKeyCode={['Control', 'Meta']} multiSelectionKeyCode={['Meta', 'Control']} deleteKeyCode={null} fitView colorMode="dark" onlyRenderVisibleElements>

@@ -111,7 +111,8 @@ type Node struct {
 	Content           *creativecontent.Revision `json:"content,omitempty"`
 	Unavailable       bool                      `json:"unavailable"`
 	// 只读展示：快照读取时填，不进持久化投影和撤销链。
-	Versions *VersionSummary `json:"-"`
+	Versions  *VersionSummary    `json:"-"`
+	Character *CharacterNodeView `json:"-"`
 	// 文档节点的只读展示：快照读取时填；DocumentTrashed 为 nil 表示没有读过文档。
 	DocumentSummary json.RawMessage `json:"-"`
 	DocumentTrashed *bool           `json:"-"`

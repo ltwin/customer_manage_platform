@@ -1,3 +1,5 @@
+import { CharacterImage } from '../assets/CharacterFields.tsx'
+import { characterOf } from '../assets/character.ts'
 import { Globe, Play } from 'lucide-react'
 import type * as api from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
@@ -13,6 +15,14 @@ const isVisual = (kind: string) =>
  * 不用通用图标代替。画布抽屉和资产库页共用。链接只显示域名，不抓取网页。
  */
 export function TileFace({ asset: a }: { asset: api.Asset }) {
+  if (a.kind === 'character') {
+    const cover = characterOf(a.content)?.views[0]
+    return !a.unavailable && cover ? (
+      <CharacterImage id={cover.content_revision_id} label={a.title} />
+    ) : (
+      <p className="cl-tile-note">参考图当前不可用</p>
+    )
+  }
   if (isVisual(a.kind)) {
     if (a.unavailable || !a.content) return <p className="cl-tile-note">{a.unavailable ? '当前无权展示' : ''}</p>
     const time = a.kind === 'video' ? mediaDuration(a) : ''

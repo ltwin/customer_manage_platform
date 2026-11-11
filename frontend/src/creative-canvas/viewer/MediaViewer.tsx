@@ -1,3 +1,5 @@
+import { CharacterImage } from '../assets/CharacterFields.tsx'
+import { characterOf } from '../assets/character.ts'
 import {
   lazy,
   Suspense,
@@ -176,6 +178,8 @@ export default function MediaViewer({
                   key={`${item.id}:${item.content?.id ?? ''}`}
                   item={item}
                 />
+              ) : item.kind === 'character' ? (
+                <CharacterStage item={item} />
               ) : (
                 <MediaStage
                   key={`${item.id}:${item.content?.id ?? ''}`}
@@ -230,6 +234,13 @@ export default function MediaViewer({
     </div>,
     document.querySelector('.cc-workspace') ?? document.body,
   )
+}
+
+function CharacterStage({ item }: { item: ViewerItem }) {
+  const first = characterOf(item.content)?.views[0]
+  return first
+    ? <CharacterImage id={first.content_revision_id} label={item.title} />
+    : <div className="v-state" role="status">参考图当前不可用</div>
 }
 
 function ModelStage({ item }: { item: ViewerItem }) {

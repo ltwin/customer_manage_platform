@@ -245,6 +245,7 @@ func (e CreativeActionAddNodeType) Valid() bool {
 // Defines values for CreativeActionAddNodeTypeKey.
 const (
 	CreativeActionAddNodeTypeKeyCoreAudio        CreativeActionAddNodeTypeKey = "core.audio"
+	CreativeActionAddNodeTypeKeyCoreCharacter    CreativeActionAddNodeTypeKey = "core.character"
 	CreativeActionAddNodeTypeKeyCoreGroup        CreativeActionAddNodeTypeKey = "core.group"
 	CreativeActionAddNodeTypeKeyCoreImage        CreativeActionAddNodeTypeKey = "core.image"
 	CreativeActionAddNodeTypeKeyCoreLink         CreativeActionAddNodeTypeKey = "core.link"
@@ -258,6 +259,8 @@ const (
 func (e CreativeActionAddNodeTypeKey) Valid() bool {
 	switch e {
 	case CreativeActionAddNodeTypeKeyCoreAudio:
+		return true
+	case CreativeActionAddNodeTypeKeyCoreCharacter:
 		return true
 	case CreativeActionAddNodeTypeKeyCoreGroup:
 		return true
@@ -587,6 +590,21 @@ const (
 func (e CreativeActionUngroupNodesType) Valid() bool {
 	switch e {
 	case UngroupNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionUpdateCharacterType.
+const (
+	UpdateCharacter CreativeActionUpdateCharacterType = "update_character"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionUpdateCharacterType enum.
+func (e CreativeActionUpdateCharacterType) Valid() bool {
+	switch e {
+	case UpdateCharacter:
 		return true
 	default:
 		return false
@@ -1169,6 +1187,60 @@ func (e CreativeCanvasNodeBasedOnState) Valid() bool {
 	}
 }
 
+// Defines values for CreativeCharacterPayloadOrigin.
+const (
+	CreativeCharacterPayloadOriginDerivative CreativeCharacterPayloadOrigin = "derivative"
+	CreativeCharacterPayloadOriginOriginal   CreativeCharacterPayloadOrigin = "original"
+)
+
+// Valid indicates whether the value is a known member of the CreativeCharacterPayloadOrigin enum.
+func (e CreativeCharacterPayloadOrigin) Valid() bool {
+	switch e {
+	case CreativeCharacterPayloadOriginDerivative:
+		return true
+	case CreativeCharacterPayloadOriginOriginal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeCharacterViewView.
+const (
+	CreativeCharacterViewViewBack         CreativeCharacterViewView = "back"
+	CreativeCharacterViewViewDetail       CreativeCharacterViewView = "detail"
+	CreativeCharacterViewViewFace         CreativeCharacterViewView = "face"
+	CreativeCharacterViewViewFront        CreativeCharacterViewView = "front"
+	CreativeCharacterViewViewFullBody     CreativeCharacterViewView = "full_body"
+	CreativeCharacterViewViewOther        CreativeCharacterViewView = "other"
+	CreativeCharacterViewViewSide         CreativeCharacterViewView = "side"
+	CreativeCharacterViewViewThreeQuarter CreativeCharacterViewView = "three_quarter"
+)
+
+// Valid indicates whether the value is a known member of the CreativeCharacterViewView enum.
+func (e CreativeCharacterViewView) Valid() bool {
+	switch e {
+	case CreativeCharacterViewViewBack:
+		return true
+	case CreativeCharacterViewViewDetail:
+		return true
+	case CreativeCharacterViewViewFace:
+		return true
+	case CreativeCharacterViewViewFront:
+		return true
+	case CreativeCharacterViewViewFullBody:
+		return true
+	case CreativeCharacterViewViewOther:
+		return true
+	case CreativeCharacterViewViewSide:
+		return true
+	case CreativeCharacterViewViewThreeQuarter:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeContentDraftKind.
 const (
 	CreativeContentDraftKindAudio CreativeContentDraftKind = "audio"
@@ -1198,19 +1270,22 @@ func (e CreativeContentDraftKind) Valid() bool {
 
 // Defines values for CreativeContentRevisionKind.
 const (
-	CreativeContentRevisionKindAudio    CreativeContentRevisionKind = "audio"
-	CreativeContentRevisionKindImage    CreativeContentRevisionKind = "image"
-	CreativeContentRevisionKindLink     CreativeContentRevisionKind = "link"
-	CreativeContentRevisionKindMaterial CreativeContentRevisionKind = "material"
-	CreativeContentRevisionKindModel    CreativeContentRevisionKind = "model"
-	CreativeContentRevisionKindText     CreativeContentRevisionKind = "text"
-	CreativeContentRevisionKindVideo    CreativeContentRevisionKind = "video"
+	CreativeContentRevisionKindAudio     CreativeContentRevisionKind = "audio"
+	CreativeContentRevisionKindCharacter CreativeContentRevisionKind = "character"
+	CreativeContentRevisionKindImage     CreativeContentRevisionKind = "image"
+	CreativeContentRevisionKindLink      CreativeContentRevisionKind = "link"
+	CreativeContentRevisionKindMaterial  CreativeContentRevisionKind = "material"
+	CreativeContentRevisionKindModel     CreativeContentRevisionKind = "model"
+	CreativeContentRevisionKindText      CreativeContentRevisionKind = "text"
+	CreativeContentRevisionKindVideo     CreativeContentRevisionKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeContentRevisionKind enum.
 func (e CreativeContentRevisionKind) Valid() bool {
 	switch e {
 	case CreativeContentRevisionKindAudio:
+		return true
+	case CreativeContentRevisionKindCharacter:
 		return true
 	case CreativeContentRevisionKindImage:
 		return true
@@ -1609,19 +1684,22 @@ func (e CreativeInternalDocumentTypeKey) Valid() bool {
 
 // Defines values for CreativeLibraryAssetKind.
 const (
-	CreativeLibraryAssetKindAudio    CreativeLibraryAssetKind = "audio"
-	CreativeLibraryAssetKindImage    CreativeLibraryAssetKind = "image"
-	CreativeLibraryAssetKindLink     CreativeLibraryAssetKind = "link"
-	CreativeLibraryAssetKindMaterial CreativeLibraryAssetKind = "material"
-	CreativeLibraryAssetKindModel    CreativeLibraryAssetKind = "model"
-	CreativeLibraryAssetKindText     CreativeLibraryAssetKind = "text"
-	CreativeLibraryAssetKindVideo    CreativeLibraryAssetKind = "video"
+	CreativeLibraryAssetKindAudio     CreativeLibraryAssetKind = "audio"
+	CreativeLibraryAssetKindCharacter CreativeLibraryAssetKind = "character"
+	CreativeLibraryAssetKindImage     CreativeLibraryAssetKind = "image"
+	CreativeLibraryAssetKindLink      CreativeLibraryAssetKind = "link"
+	CreativeLibraryAssetKindMaterial  CreativeLibraryAssetKind = "material"
+	CreativeLibraryAssetKindModel     CreativeLibraryAssetKind = "model"
+	CreativeLibraryAssetKindText      CreativeLibraryAssetKind = "text"
+	CreativeLibraryAssetKindVideo     CreativeLibraryAssetKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeLibraryAssetKind enum.
 func (e CreativeLibraryAssetKind) Valid() bool {
 	switch e {
 	case CreativeLibraryAssetKindAudio:
+		return true
+	case CreativeLibraryAssetKindCharacter:
 		return true
 	case CreativeLibraryAssetKindImage:
 		return true
@@ -3100,25 +3178,25 @@ func (e ExportDocumentSchemaVersion) Valid() bool {
 
 // Defines values for ExternalAgentConnectionHostKind.
 const (
-	Chatgpt    ExternalAgentConnectionHostKind = "chatgpt"
-	Claude     ExternalAgentConnectionHostKind = "claude"
-	ClaudeCode ExternalAgentConnectionHostKind = "claude_code"
-	Codex      ExternalAgentConnectionHostKind = "codex"
-	Other      ExternalAgentConnectionHostKind = "other"
+	ExternalAgentConnectionHostKindChatgpt    ExternalAgentConnectionHostKind = "chatgpt"
+	ExternalAgentConnectionHostKindClaude     ExternalAgentConnectionHostKind = "claude"
+	ExternalAgentConnectionHostKindClaudeCode ExternalAgentConnectionHostKind = "claude_code"
+	ExternalAgentConnectionHostKindCodex      ExternalAgentConnectionHostKind = "codex"
+	ExternalAgentConnectionHostKindOther      ExternalAgentConnectionHostKind = "other"
 )
 
 // Valid indicates whether the value is a known member of the ExternalAgentConnectionHostKind enum.
 func (e ExternalAgentConnectionHostKind) Valid() bool {
 	switch e {
-	case Chatgpt:
+	case ExternalAgentConnectionHostKindChatgpt:
 		return true
-	case Claude:
+	case ExternalAgentConnectionHostKindClaude:
 		return true
-	case ClaudeCode:
+	case ExternalAgentConnectionHostKindClaudeCode:
 		return true
-	case Codex:
+	case ExternalAgentConnectionHostKindCodex:
 		return true
-	case Other:
+	case ExternalAgentConnectionHostKindOther:
 		return true
 	default:
 		return false
@@ -4120,19 +4198,22 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	Audio    ListCreativeAssetsParamsKind = "audio"
-	Image    ListCreativeAssetsParamsKind = "image"
-	Link     ListCreativeAssetsParamsKind = "link"
-	Material ListCreativeAssetsParamsKind = "material"
-	Model    ListCreativeAssetsParamsKind = "model"
-	Text     ListCreativeAssetsParamsKind = "text"
-	Video    ListCreativeAssetsParamsKind = "video"
+	Audio     ListCreativeAssetsParamsKind = "audio"
+	Character ListCreativeAssetsParamsKind = "character"
+	Image     ListCreativeAssetsParamsKind = "image"
+	Link      ListCreativeAssetsParamsKind = "link"
+	Material  ListCreativeAssetsParamsKind = "material"
+	Model     ListCreativeAssetsParamsKind = "model"
+	Text      ListCreativeAssetsParamsKind = "text"
+	Video     ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
 	case Audio:
+		return true
+	case Character:
 		return true
 	case Image:
 		return true
@@ -4216,19 +4297,19 @@ func (e ListCreativeAssetsParamsShape) Valid() bool {
 
 // Defines values for GetCreativeMediaParamsRole.
 const (
-	Display   GetCreativeMediaParamsRole = "display"
-	Original  GetCreativeMediaParamsRole = "original"
-	Thumbnail GetCreativeMediaParamsRole = "thumbnail"
+	GetCreativeMediaParamsRoleDisplay   GetCreativeMediaParamsRole = "display"
+	GetCreativeMediaParamsRoleOriginal  GetCreativeMediaParamsRole = "original"
+	GetCreativeMediaParamsRoleThumbnail GetCreativeMediaParamsRole = "thumbnail"
 )
 
 // Valid indicates whether the value is a known member of the GetCreativeMediaParamsRole enum.
 func (e GetCreativeMediaParamsRole) Valid() bool {
 	switch e {
-	case Display:
+	case GetCreativeMediaParamsRoleDisplay:
 		return true
-	case Original:
+	case GetCreativeMediaParamsRoleOriginal:
 		return true
-	case Thumbnail:
+	case GetCreativeMediaParamsRoleThumbnail:
 		return true
 	default:
 		return false
@@ -4590,6 +4671,16 @@ type CreateCreativeCategoryRequest struct {
 	Payload         CreativeCategoryCreatePayload `json:"payload"`
 }
 
+// CreateCreativeCharacterRequest defines model for CreateCreativeCharacterRequest.
+type CreateCreativeCharacterRequest struct {
+	ClientCreatedAt time.Time          `json:"client_created_at"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+	Payload         struct {
+		Character CreativeCharacterPayload `json:"character"`
+		Target    *CreativeCharacterTarget `json:"target,omitempty"`
+	} `json:"payload"`
+}
+
 // CreateCreativeGroupRequest defines model for CreateCreativeGroupRequest.
 type CreateCreativeGroupRequest struct {
 	ClientCreatedAt time.Time                  `json:"client_created_at"`
@@ -4857,6 +4948,17 @@ type CreativeActionUngroupNodes struct {
 
 // CreativeActionUngroupNodesType defines model for CreativeActionUngroupNodes.Type.
 type CreativeActionUngroupNodesType string
+
+// CreativeActionUpdateCharacter defines model for CreativeActionUpdateCharacter.
+type CreativeActionUpdateCharacter struct {
+	// ContentRevisionId 必须等于对应角色卡资产的当前版本。
+	ContentRevisionId string                            `json:"content_revision_id"`
+	NodeId            string                            `json:"node_id"`
+	Type              CreativeActionUpdateCharacterType `json:"type"`
+}
+
+// CreativeActionUpdateCharacterType defines model for CreativeActionUpdateCharacter.Type.
+type CreativeActionUpdateCharacterType string
 
 // CreativeActionUpdateMetadata defines model for CreativeActionUpdateMetadata.
 type CreativeActionUpdateMetadata struct {
@@ -5564,13 +5666,14 @@ type CreativeAssetDigestMatches struct {
 // CreativeAssetFacets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
 type CreativeAssetFacets struct {
 	Kinds struct {
-		Audio    int64 `json:"audio"`
-		Image    int64 `json:"image"`
-		Link     int64 `json:"link"`
-		Material int64 `json:"material"`
-		Model    int64 `json:"model"`
-		Text     int64 `json:"text"`
-		Video    int64 `json:"video"`
+		Audio     int64 `json:"audio"`
+		Character int64 `json:"character"`
+		Image     int64 `json:"image"`
+		Link      int64 `json:"link"`
+		Material  int64 `json:"material"`
+		Model     int64 `json:"model"`
+		Text      int64 `json:"text"`
+		Video     int64 `json:"video"`
 	} `json:"kinds"`
 	Tags []struct {
 		Count int64  `json:"count"`
@@ -5806,6 +5909,7 @@ type CreativeCanvasNode struct {
 	// BasedOnState 只读，只出现在场景导出图节点上，且节点当前内容仍是导出时那张图。stale 表示来源场景之后有与这张图相关的修改， 前端显示「场景已更新」；unavailable 表示来源场景不存在、在回收站或不可展示。
 	BasedOnState *CreativeCanvasNodeBasedOnState `json:"based_on_state,omitempty"`
 	Capabilities CreativeNodeCapabilities        `json:"capabilities"`
+	Character    *CreativeCharacterNodeView      `json:"character,omitempty"`
 	Content      *CreativeContentRevision        `json:"content,omitempty"`
 	Data         CreativeNodeData                `json:"data"`
 
@@ -5906,6 +6010,120 @@ type CreativeChangeSummary struct {
 
 	// ResultRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	ResultRevision CreativeRevision `json:"result_revision"`
+}
+
+// CreativeCharacterBrief defines model for CreativeCharacterBrief.
+type CreativeCharacterBrief struct {
+	Ip        *CreativeCharacterIP `json:"ip,omitempty"`
+	Name      string               `json:"name"`
+	Variant   *string              `json:"variant,omitempty"`
+	ViewCount int                  `json:"view_count"`
+	Work      *string              `json:"work,omitempty"`
+}
+
+// CreativeCharacterContentPayload defines model for CreativeCharacterContentPayload.
+type CreativeCharacterContentPayload struct {
+	Character CreativeCharacterPayload `json:"character"`
+}
+
+// CreativeCharacterFieldDetails defines model for CreativeCharacterFieldDetails.
+type CreativeCharacterFieldDetails struct {
+	Fields []string `json:"fields"`
+}
+
+// CreativeCharacterGenerationDetails defines model for CreativeCharacterGenerationDetails.
+type CreativeCharacterGenerationDetails struct {
+	Characters []struct {
+		ContentRevisionId string `json:"content_revision_id"`
+		Name              string `json:"name"`
+		ViewCount         int    `json:"view_count"`
+	} `json:"characters"`
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	ImageIndex        *int    `json:"image_index,omitempty"`
+	Limit             *int    `json:"limit,omitempty"`
+	Total             *int    `json:"total,omitempty"`
+}
+
+// CreativeCharacterIP defines model for CreativeCharacterIP.
+type CreativeCharacterIP struct {
+	Key  *string `json:"key,omitempty"`
+	Name string  `json:"name"`
+}
+
+// CreativeCharacterIPSuggestions defines model for CreativeCharacterIPSuggestions.
+type CreativeCharacterIPSuggestions struct {
+	Items []struct {
+		Builtin        bool     `json:"builtin"`
+		CharacterCount int      `json:"character_count"`
+		Key            *string  `json:"key,omitempty"`
+		Name           string   `json:"name"`
+		Works          []string `json:"works"`
+	} `json:"items"`
+}
+
+// CreativeCharacterImageDetails defines model for CreativeCharacterImageDetails.
+type CreativeCharacterImageDetails struct {
+	ContentRevisionIds []string `json:"content_revision_ids"`
+}
+
+// CreativeCharacterNodeView defines model for CreativeCharacterNodeView.
+type CreativeCharacterNodeView struct {
+	AssetId          *string `json:"asset_id,omitempty"`
+	CoverRevisionId  string  `json:"cover_revision_id"`
+	LatestRevisionId *string `json:"latest_revision_id,omitempty"`
+	Name             string  `json:"name"`
+	ViewCount        int     `json:"view_count"`
+}
+
+// CreativeCharacterPayload defines model for CreativeCharacterPayload.
+type CreativeCharacterPayload struct {
+	Aliases     *[]string                       `json:"aliases,omitempty"`
+	Appearance  string                          `json:"appearance"`
+	Attribution *string                         `json:"attribution,omitempty"`
+	Ip          *CreativeCharacterIP            `json:"ip,omitempty"`
+	Name        string                          `json:"name"`
+	Origin      *CreativeCharacterPayloadOrigin `json:"origin,omitempty"`
+	SourceUrls  *[]string                       `json:"source_urls,omitempty"`
+
+	// Sources 用于追溯的原始素材，不会发送给生成模型
+	Sources []struct {
+		ContentRevisionId string `json:"content_revision_id"`
+	} `json:"sources"`
+	Variant *string `json:"variant,omitempty"`
+
+	// Views 有序的生成参考图，第一张为封面。同一修订只出现一次
+	Views []CreativeCharacterView `json:"views"`
+	Work  *string                 `json:"work,omitempty"`
+}
+
+// CreativeCharacterPayloadOrigin defines model for CreativeCharacterPayload.Origin.
+type CreativeCharacterPayloadOrigin string
+
+// CreativeCharacterTarget defines model for CreativeCharacterTarget.
+type CreativeCharacterTarget struct {
+	Description *string           `json:"description,omitempty"`
+	GroupIds    *[]string         `json:"group_ids,omitempty"`
+	IsFavorite  *bool             `json:"is_favorite,omitempty"`
+	NewTags     *[]CreativeNewTag `json:"new_tags,omitempty"`
+	TagIds      *[]string         `json:"tag_ids,omitempty"`
+}
+
+// CreativeCharacterView defines model for CreativeCharacterView.
+type CreativeCharacterView struct {
+	ContentRevisionId string                    `json:"content_revision_id"`
+	Note              *string                   `json:"note,omitempty"`
+	View              CreativeCharacterViewView `json:"view"`
+}
+
+// CreativeCharacterViewView defines model for CreativeCharacterView.View.
+type CreativeCharacterViewView string
+
+// CreativeCharacterWorkDetails defines model for CreativeCharacterWorkDetails.
+type CreativeCharacterWorkDetails struct {
+	Candidates []struct {
+		Ip   string `json:"ip"`
+		Work string `json:"work"`
+	} `json:"candidates"`
 }
 
 // CreativeContentDraft defines model for CreativeContentDraft.
@@ -6221,6 +6439,17 @@ type CreativeGenerationCatalog struct {
 	Models         []CreativeGenerationModel `json:"models"`
 }
 
+// CreativeGenerationCharacter defines model for CreativeGenerationCharacter.
+type CreativeGenerationCharacter struct {
+	ContentId         string `json:"content_id"`
+	ContentRevisionId string `json:"content_revision_id"`
+
+	// Images 第一张和最后一张参考图的编号。
+	Images []int  `json:"images"`
+	Name   string `json:"name"`
+	NodeId string `json:"node_id"`
+}
+
 // CreativeGenerationModel defines model for CreativeGenerationModel.
 type CreativeGenerationModel struct {
 	ConfigurationRevision string `json:"configuration_revision"`
@@ -6484,6 +6713,7 @@ type CreativeInternalDocumentTypeKey string
 
 // CreativeLibraryAsset defines model for CreativeLibraryAsset.
 type CreativeLibraryAsset struct {
+	Character         *CreativeCharacterBrief      `json:"character,omitempty"`
 	Content           *CreativeContentRevision     `json:"content,omitempty"`
 	ContentId         string                       `json:"content_id"`
 	ContentRevisionId string                       `json:"content_revision_id"`
@@ -6966,18 +7196,19 @@ type CreativeNodeDataSchemaVersion int
 
 // CreativeNodeExecution defines model for CreativeNodeExecution.
 type CreativeNodeExecution struct {
-	ActionKey       string                     `json:"action_key"`
-	ApplyState      string                     `json:"apply_state"`
-	CanvasId        string                     `json:"canvas_id"`
-	ChangeId        nullable.Nullable[string]  `json:"change_id"`
-	CreatedAt       time.Time                  `json:"created_at"`
-	Deadline        time.Time                  `json:"deadline"`
-	Error           string                     `json:"error"`
-	ExecutionEpoch  int                        `json:"execution_epoch"`
-	ExecutionId     string                     `json:"execution_id"`
-	ExecutorVersion string                     `json:"executor_version"`
-	NodeId          string                     `json:"node_id"`
-	State           CreativeNodeExecutionState `json:"state"`
+	ActionKey       string                         `json:"action_key"`
+	ApplyState      string                         `json:"apply_state"`
+	CanvasId        string                         `json:"canvas_id"`
+	ChangeId        nullable.Nullable[string]      `json:"change_id"`
+	Characters      *[]CreativeGenerationCharacter `json:"characters,omitempty"`
+	CreatedAt       time.Time                      `json:"created_at"`
+	Deadline        time.Time                      `json:"deadline"`
+	Error           string                         `json:"error"`
+	ExecutionEpoch  int                            `json:"execution_epoch"`
+	ExecutionId     string                         `json:"execution_id"`
+	ExecutorVersion string                         `json:"executor_version"`
+	NodeId          string                         `json:"node_id"`
+	State           CreativeNodeExecutionState     `json:"state"`
 }
 
 // CreativeNodeExecutionState defines model for CreativeNodeExecution.State.
@@ -7030,21 +7261,27 @@ type CreativeNodeStatusGenerationState string
 
 // CreativeNodeVersion defines model for CreativeNodeVersion.
 type CreativeNodeVersion struct {
-	ContentRevisionId    string                    `json:"content_revision_id"`
-	CreatedAt            time.Time                 `json:"created_at"`
-	ExecutionIdSnapshot  nullable.Nullable[string] `json:"execution_id_snapshot"`
-	GenerationProvenance map[string]interface{}    `json:"generation_provenance"`
-	Id                   string                    `json:"id"`
-	Inputs               []CreativeVersionInput    `json:"inputs"`
-	NodeId               string                    `json:"node_id"`
-	OriginKind           string                    `json:"origin_kind"`
-	OutputOrdinal        nullable.Nullable[int]    `json:"output_ordinal"`
+	ContentRevisionId    string                                   `json:"content_revision_id"`
+	CreatedAt            time.Time                                `json:"created_at"`
+	ExecutionIdSnapshot  nullable.Nullable[string]                `json:"execution_id_snapshot"`
+	GenerationProvenance CreativeNodeVersion_GenerationProvenance `json:"generation_provenance"`
+	Id                   string                                   `json:"id"`
+	Inputs               []CreativeVersionInput                   `json:"inputs"`
+	NodeId               string                                   `json:"node_id"`
+	OriginKind           string                                   `json:"origin_kind"`
+	OutputOrdinal        nullable.Nullable[int]                   `json:"output_ordinal"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
 
 	// VersionNo 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	VersionNo CreativeRevision `json:"version_no"`
+}
+
+// CreativeNodeVersion_GenerationProvenance defines model for CreativeNodeVersion.GenerationProvenance.
+type CreativeNodeVersion_GenerationProvenance struct {
+	Characters           *[]CreativeGenerationCharacter `json:"characters,omitempty"`
+	AdditionalProperties map[string]interface{}         `json:"-"`
 }
 
 // CreativeNodeVersionPage defines model for CreativeNodeVersionPage.
@@ -9266,6 +9503,18 @@ type RevokeCreativeEgressConsentRequest struct {
 	Payload         CreativeEgressConsentRevokePayload `json:"payload"`
 }
 
+// SaveCreativeCharacterRevisionRequest defines model for SaveCreativeCharacterRevisionRequest.
+type SaveCreativeCharacterRevisionRequest struct {
+	ClientCreatedAt time.Time          `json:"client_created_at"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+	Payload         struct {
+		Character CreativeCharacterPayload `json:"character"`
+
+		// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+		ExpectedRevision CreativeRevision `json:"expected_revision"`
+	} `json:"payload"`
+}
+
 // SaveCreativeLibrarySettingsRequest defines model for SaveCreativeLibrarySettingsRequest.
 type SaveCreativeLibrarySettingsRequest struct {
 	ClientCreatedAt time.Time                      `json:"client_created_at"`
@@ -9897,13 +10146,19 @@ type ListCreativeAssetsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 
 	// View recent 为最近 7 天内添加、未进回收站的素材
-	View               *ListCreativeAssetsParamsView    `form:"view,omitempty" json:"view,omitempty"`
-	GroupId            *string                          `form:"group_id,omitempty" json:"group_id,omitempty"`
-	IncludeDescendants *bool                            `form:"include_descendants,omitempty" json:"include_descendants,omitempty"`
-	Kind               *ListCreativeAssetsParamsKind    `form:"kind,omitempty" json:"kind,omitempty"`
-	Q                  *string                          `form:"q,omitempty" json:"q,omitempty"`
-	TagIds             *[]string                        `form:"tag_ids,omitempty" json:"tag_ids,omitempty"`
-	TagMode            *ListCreativeAssetsParamsTagMode `form:"tag_mode,omitempty" json:"tag_mode,omitempty"`
+	View               *ListCreativeAssetsParamsView `form:"view,omitempty" json:"view,omitempty"`
+	GroupId            *string                       `form:"group_id,omitempty" json:"group_id,omitempty"`
+	IncludeDescendants *bool                         `form:"include_descendants,omitempty" json:"include_descendants,omitempty"`
+	Kind               *ListCreativeAssetsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// CharacterIp 按角色卡所属 IP 的目录 key、名称或别名筛选
+	CharacterIp *string `form:"character_ip,omitempty" json:"character_ip,omitempty"`
+
+	// CharacterWork 按角色卡作品的名称或别名筛选。别名有歧义时返回候选
+	CharacterWork *string                          `form:"character_work,omitempty" json:"character_work,omitempty"`
+	Q             *string                          `form:"q,omitempty" json:"q,omitempty"`
+	TagIds        *[]string                        `form:"tag_ids,omitempty" json:"tag_ids,omitempty"`
+	TagMode       *ListCreativeAssetsParamsTagMode `form:"tag_mode,omitempty" json:"tag_mode,omitempty"`
 
 	// Sort name 按规范化标题（NFKC、小写、去首尾空白）的 Unicode 码位排序，同名按 id；rating 评分高的在前，未评分的排最后，同分按添加时间倒序、再按 id
 	Sort *ListCreativeAssetsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
@@ -9969,6 +10224,11 @@ type BatchTrashCreativeAssetsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CreateCreativeCharacterParams defines parameters for CreateCreativeCharacter.
+type CreateCreativeCharacterParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // FindCreativeAssetDigestMatchesParams defines parameters for FindCreativeAssetDigestMatches.
 type FindCreativeAssetDigestMatchesParams struct {
 	Digests []string `form:"digests" json:"digests"`
@@ -9991,6 +10251,11 @@ type CreateCreativeAssetFromSceneMaterialParams struct {
 
 // CreateCreativeAssetFromSceneModelParams defines parameters for CreateCreativeAssetFromSceneModel.
 type CreateCreativeAssetFromSceneModelParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// SaveCreativeCharacterRevisionParams defines parameters for SaveCreativeCharacterRevision.
+type SaveCreativeCharacterRevisionParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -10050,6 +10315,12 @@ type RequestCreativeNodeExecutionParams struct {
 // ApplyCreativeImageEditParams defines parameters for ApplyCreativeImageEdit.
 type ApplyCreativeImageEditParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// SuggestCreativeCharacterIPsParams defines parameters for SuggestCreativeCharacterIPs.
+type SuggestCreativeCharacterIPsParams struct {
+	Query *string `form:"query,omitempty" json:"query,omitempty"`
+	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ArchiveCreativeAgentConversationParams defines parameters for ArchiveCreativeAgentConversation.
@@ -10685,6 +10956,9 @@ type BatchRestoreCreativeAssetsJSONRequestBody = BatchRestoreCreativeAssetsReque
 // BatchTrashCreativeAssetsJSONRequestBody defines body for BatchTrashCreativeAssets for application/json ContentType.
 type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
+// CreateCreativeCharacterJSONRequestBody defines body for CreateCreativeCharacter for application/json ContentType.
+type CreateCreativeCharacterJSONRequestBody = CreateCreativeCharacterRequest
+
 // CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
 type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
 
@@ -10696,6 +10970,9 @@ type CreateCreativeAssetFromSceneMaterialJSONRequestBody = CreateCreativeAssetFr
 
 // CreateCreativeAssetFromSceneModelJSONRequestBody defines body for CreateCreativeAssetFromSceneModel for application/json ContentType.
 type CreateCreativeAssetFromSceneModelJSONRequestBody = CreateCreativeAssetFromSceneModelRequest
+
+// SaveCreativeCharacterRevisionJSONRequestBody defines body for SaveCreativeCharacterRevision for application/json ContentType.
+type SaveCreativeCharacterRevisionJSONRequestBody = SaveCreativeCharacterRevisionRequest
 
 // ReplaceCreativeAssetByImportJSONRequestBody defines body for ReplaceCreativeAssetByImport for application/json ContentType.
 type ReplaceCreativeAssetByImportJSONRequestBody = ReplaceCreativeAssetByImportRequest
@@ -10947,6 +11224,74 @@ func (a CreativeDocumentOperation) MarshalJSON() ([]byte, error) {
 	object["op"], err = json.Marshal(a.Op)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'op': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for CreativeNodeVersion_GenerationProvenance. Returns the specified
+// element and whether it was found
+func (a CreativeNodeVersion_GenerationProvenance) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for CreativeNodeVersion_GenerationProvenance
+func (a *CreativeNodeVersion_GenerationProvenance) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for CreativeNodeVersion_GenerationProvenance to handle AdditionalProperties
+func (a *CreativeNodeVersion_GenerationProvenance) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["characters"]; found {
+		err = json.Unmarshal(raw, &a.Characters)
+		if err != nil {
+			return fmt.Errorf("error reading 'characters': %w", err)
+		}
+		delete(object, "characters")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for CreativeNodeVersion_GenerationProvenance to handle AdditionalProperties
+func (a CreativeNodeVersion_GenerationProvenance) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Characters != nil {
+		object["characters"], err = json.Marshal(a.Characters)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'characters': %w", err)
+		}
 	}
 
 	for fieldName, field := range a.AdditionalProperties {
@@ -11653,6 +11998,32 @@ func (t *CreativeContentRevisionPayload) MergeCreativeMaterialPayload(v Creative
 	return err
 }
 
+// AsCreativeCharacterContentPayload returns the union data inside the CreativeContentRevisionPayload as a CreativeCharacterContentPayload
+func (t CreativeContentRevisionPayload) AsCreativeCharacterContentPayload() (CreativeCharacterContentPayload, error) {
+	var body CreativeCharacterContentPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterContentPayload overwrites any union data inside the CreativeContentRevisionPayload as the provided CreativeCharacterContentPayload
+func (t *CreativeContentRevisionPayload) FromCreativeCharacterContentPayload(v CreativeCharacterContentPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterContentPayload performs a merge with any union data inside the CreativeContentRevisionPayload, using the provided CreativeCharacterContentPayload
+func (t *CreativeContentRevisionPayload) MergeCreativeCharacterContentPayload(v CreativeCharacterContentPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t CreativeContentRevisionPayload) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -11872,6 +12243,32 @@ func (t *CreativeGraphAction) FromCreativeActionUpdateMetadata(v CreativeActionU
 
 // MergeCreativeActionUpdateMetadata performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionUpdateMetadata
 func (t *CreativeGraphAction) MergeCreativeActionUpdateMetadata(v CreativeActionUpdateMetadata) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionUpdateCharacter returns the union data inside the CreativeGraphAction as a CreativeActionUpdateCharacter
+func (t CreativeGraphAction) AsCreativeActionUpdateCharacter() (CreativeActionUpdateCharacter, error) {
+	var body CreativeActionUpdateCharacter
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionUpdateCharacter overwrites any union data inside the CreativeGraphAction as the provided CreativeActionUpdateCharacter
+func (t *CreativeGraphAction) FromCreativeActionUpdateCharacter(v CreativeActionUpdateCharacter) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionUpdateCharacter performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionUpdateCharacter
+func (t *CreativeGraphAction) MergeCreativeActionUpdateCharacter(v CreativeActionUpdateCharacter) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -12501,6 +12898,110 @@ func (t CreativeModelPayload_Model_Generator) MarshalJSON() ([]byte, error) {
 
 func (t *CreativeModelPayload_Model_Generator) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeCharacterFieldDetails returns the union data inside the ErrorDetails as a CreativeCharacterFieldDetails
+func (t ErrorDetails) AsCreativeCharacterFieldDetails() (CreativeCharacterFieldDetails, error) {
+	var body CreativeCharacterFieldDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterFieldDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterFieldDetails
+func (t *ErrorDetails) FromCreativeCharacterFieldDetails(v CreativeCharacterFieldDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterFieldDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterFieldDetails
+func (t *ErrorDetails) MergeCreativeCharacterFieldDetails(v CreativeCharacterFieldDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCharacterImageDetails returns the union data inside the ErrorDetails as a CreativeCharacterImageDetails
+func (t ErrorDetails) AsCreativeCharacterImageDetails() (CreativeCharacterImageDetails, error) {
+	var body CreativeCharacterImageDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterImageDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterImageDetails
+func (t *ErrorDetails) FromCreativeCharacterImageDetails(v CreativeCharacterImageDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterImageDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterImageDetails
+func (t *ErrorDetails) MergeCreativeCharacterImageDetails(v CreativeCharacterImageDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCharacterWorkDetails returns the union data inside the ErrorDetails as a CreativeCharacterWorkDetails
+func (t ErrorDetails) AsCreativeCharacterWorkDetails() (CreativeCharacterWorkDetails, error) {
+	var body CreativeCharacterWorkDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterWorkDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterWorkDetails
+func (t *ErrorDetails) FromCreativeCharacterWorkDetails(v CreativeCharacterWorkDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterWorkDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterWorkDetails
+func (t *ErrorDetails) MergeCreativeCharacterWorkDetails(v CreativeCharacterWorkDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCharacterGenerationDetails returns the union data inside the ErrorDetails as a CreativeCharacterGenerationDetails
+func (t ErrorDetails) AsCreativeCharacterGenerationDetails() (CreativeCharacterGenerationDetails, error) {
+	var body CreativeCharacterGenerationDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterGenerationDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterGenerationDetails
+func (t *ErrorDetails) FromCreativeCharacterGenerationDetails(v CreativeCharacterGenerationDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterGenerationDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterGenerationDetails
+func (t *ErrorDetails) MergeCreativeCharacterGenerationDetails(v CreativeCharacterGenerationDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
 	return err
 }
 
@@ -13308,6 +13809,9 @@ type ServerInterface interface {
 
 	// (POST /creative/assets/batch-trash)
 	BatchTrashCreativeAssets(c *gin.Context, params BatchTrashCreativeAssetsParams)
+	// 新建角色卡并保存第一个版本
+	// (POST /creative/assets/characters)
+	CreateCreativeCharacter(c *gin.Context, params CreateCreativeCharacterParams)
 
 	// (GET /creative/assets/digest-matches)
 	FindCreativeAssetDigestMatches(c *gin.Context, params FindCreativeAssetDigestMatchesParams)
@@ -13326,6 +13830,9 @@ type ServerInterface interface {
 
 	// (GET /creative/assets/{id})
 	GetCreativeTextAsset(c *gin.Context, id string)
+	// 在角色卡上保存完整的新版本
+	// (POST /creative/assets/{id}/character-revisions)
+	SaveCreativeCharacterRevision(c *gin.Context, id string, params SaveCreativeCharacterRevisionParams)
 
 	// (POST /creative/assets/{id}/import-replace)
 	ReplaceCreativeAssetByImport(c *gin.Context, id string, params ReplaceCreativeAssetByImportParams)
@@ -13371,6 +13878,9 @@ type ServerInterface interface {
 	// 查询当前已实现的创意能力；地基阶段不开放业务动作
 	// (GET /creative/capabilities)
 	GetCreativeCapabilities(c *gin.Context)
+	// 查找内置和当前账号用过的角色 IP
+	// (GET /creative/character-ips)
+	SuggestCreativeCharacterIPs(c *gin.Context, params SuggestCreativeCharacterIPsParams)
 
 	// (GET /creative/content-revisions/{id})
 	GetCreativeContentRevision(c *gin.Context, id string)
@@ -14967,6 +15477,22 @@ func (siw *ServerInterfaceWrapper) ListCreativeAssets(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "character_ip" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "character_ip", c.Request.URL.Query(), &params.CharacterIp, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter character_ip: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "character_work" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "character_work", c.Request.URL.Query(), &params.CharacterWork, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter character_work: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	// ------------- Optional query parameter "q" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -15319,6 +15845,51 @@ func (siw *ServerInterfaceWrapper) BatchTrashCreativeAssets(c *gin.Context) {
 	siw.Handler.BatchTrashCreativeAssets(c, params)
 }
 
+// CreateCreativeCharacter operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeCharacter(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeCharacterParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeCharacter(c, params)
+}
+
 // FindCreativeAssetDigestMatches operation middleware
 func (siw *ServerInterfaceWrapper) FindCreativeAssetDigestMatches(c *gin.Context) {
 
@@ -15553,6 +16124,60 @@ func (siw *ServerInterfaceWrapper) GetCreativeTextAsset(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeTextAsset(c, id)
+}
+
+// SaveCreativeCharacterRevision operation middleware
+func (siw *ServerInterfaceWrapper) SaveCreativeCharacterRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SaveCreativeCharacterRevisionParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SaveCreativeCharacterRevision(c, id, params)
 }
 
 // ReplaceCreativeAssetByImport operation middleware
@@ -16243,6 +16868,43 @@ func (siw *ServerInterfaceWrapper) GetCreativeCapabilities(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeCapabilities(c)
+}
+
+// SuggestCreativeCharacterIPs operation middleware
+func (siw *ServerInterfaceWrapper) SuggestCreativeCharacterIPs(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SuggestCreativeCharacterIPsParams
+
+	// ------------- Optional query parameter "query" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "query", c.Request.URL.Query(), &params.Query, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter query: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SuggestCreativeCharacterIPs(c, params)
 }
 
 // GetCreativeContentRevision operation middleware
@@ -20488,12 +21150,14 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-rate", wrapper.BatchRateCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-restore", wrapper.BatchRestoreCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets/characters", wrapper.CreateCreativeCharacter)
 	router.GET(options.BaseURL+"/creative/assets/digest-matches", wrapper.FindCreativeAssetDigestMatches)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
 	router.POST(options.BaseURL+"/creative/assets/from-glb", wrapper.CreateCreativeAssetFromGLB)
 	router.POST(options.BaseURL+"/creative/assets/from-scene-material", wrapper.CreateCreativeAssetFromSceneMaterial)
 	router.POST(options.BaseURL+"/creative/assets/from-scene-model", wrapper.CreateCreativeAssetFromSceneModel)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
+	router.POST(options.BaseURL+"/creative/assets/:id/character-revisions", wrapper.SaveCreativeCharacterRevision)
 	router.POST(options.BaseURL+"/creative/assets/:id/import-replace", wrapper.ReplaceCreativeAssetByImport)
 	router.POST(options.BaseURL+"/creative/assets/:id/metadata", wrapper.UpdateCreativeAssetMetadata)
 	router.POST(options.BaseURL+"/creative/assets/:id/purge", wrapper.PurgeCreativeAsset)
@@ -20509,6 +21173,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/image-edits/apply", wrapper.ApplyCreativeImageEdit)
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
+	router.GET(options.BaseURL+"/creative/character-ips", wrapper.SuggestCreativeCharacterIPs)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
 	router.POST(options.BaseURL+"/creative/conversations/:id/archive", wrapper.ArchiveCreativeAgentConversation)
 	router.POST(options.BaseURL+"/creative/conversations/:id/egress-consents", wrapper.GrantCreativeEgressConsent)

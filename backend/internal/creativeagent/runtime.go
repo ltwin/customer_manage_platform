@@ -358,6 +358,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	var public creativeops.Public
 	var parked errParked
 	var structured *structuredRefusal
+	var characterSearch *characterSearchArguments
 	switch {
 	case readErr == nil:
 	case errors.As(readErr, &parked):
@@ -367,6 +368,17 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		return "", readErr
 	case errors.As(readErr, &structured):
 		code, result = "creative_tool_refused", structured.result
+	case errors.As(readErr, &characterSearch):
+		code = "invalid_arguments"
+		raw, err := json.Marshal(struct {
+			*characterSearchArguments
+			Code    string `json:"code"`
+			Success bool   `json:"success"`
+		}{characterSearch, code, false})
+		if err != nil {
+			return "", err
+		}
+		result = string(raw)
 	case errors.As(readErr, &public):
 		code = "creative_tool_refused"
 		raw, err := json.Marshal(map[string]any{"success": false, "code": code, "message": public.PublicMessage()})
