@@ -1,6 +1,6 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 5,
+  "revision": 6,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
@@ -56,13 +56,13 @@
   },
   "state": "in-progress",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-10T09:17:44.844Z",
+  "updatedAt": "2026-11-11T01:57:20.526Z",
   "risk": {
     "factors": [
-      "trust-boundary",
-      "contract-break",
       "broad-impact",
-      "perf-sensitive"
+      "contract-break",
+      "perf-sensitive",
+      "trust-boundary"
     ]
   },
   "approvals": {
@@ -78,7 +78,15 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
+  "revisions": [
+    {
+      "at": "2026-11-11T01:57:18.110Z",
+      "summary": "AC-4 修正：RobotExpressive 的脚挂在根骨骼下，任何手动映射都不成立，只能按非人形骨架导入；「手动修改后成立」改用 Xbot 错映射一根骨骼的夹具验证（owner 2026-11-10 同意）",
+      "contentHash": "bd7d45fbcba3d502",
+      "added": [],
+      "removed": []
+    }
+  ],
   "baseline": {
     "commit": "b8296d834be189ba3e52ac2a4d97b11744fa7ab3",
     "at": "2026-11-10T09:17:43.494Z",
