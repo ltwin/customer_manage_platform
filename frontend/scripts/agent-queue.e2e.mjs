@@ -272,6 +272,36 @@ try {
     await s.close()
   })
 
+  await check('remove: deleting a queued message sends nothing', async () => {
+    const s = await scene()
+    await s.type('第一条')
+    await s.type('第二条')
+    await s.queue.getByRole('button', { name: '删除这条' }).first().click()
+    assert.deepEqual(await s.queued(), ['第二条\n插队'])
+    await s.finish('succeeded')
+    await s.until(() => s.server.sends.length >= 2, 'the remaining one was sent')
+    assert.deepEqual(s.server.sends[1].body.payload.instruction.instruction_segments, [{ type: 'text', text: '第二条' }])
+    await s.close()
+  })
+
+  await check('auto: a refused head goes back, the queue pauses, the composer keeps its words', async () => {
+    const s = await scene({
+      send: (input) =>
+        input.path.endsWith('/runs')
+          ? input.json({ error: { code: 'creative_agent_busy', message: '账号已有运行' } }, 429)
+          : input.accepting(input),
+    })
+    await s.type('第一条')
+    await s.editor().click()
+    await s.page.keyboard.type('还在写')
+    await s.finish('succeeded')
+    await s.page.getByText('账号已有运行').waitFor()
+    await s.queue.getByText('已暂停，不会自动发出').waitFor()
+    assert.deepEqual(await s.queued(), ['第一条'], 'back at the head')
+    assert.equal(await s.editor().innerText(), '还在写', 'the composer is untouched')
+    await s.close()
+  })
+
   for (const ending of ['stop', 'partial']) {
     await check(`pause: after ${ending} the queue holds until 继续发送`, async () => {
       const s = await scene()
