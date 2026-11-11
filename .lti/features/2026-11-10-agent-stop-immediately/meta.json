@@ -1,12 +1,26 @@
 {
   "uid": "e3d4752e-c0ae-4fc9-b501-a3ae5d0db91c",
-  "revision": 11,
+  "revision": 12,
   "id": "agent-stop-immediately",
   "kind": "feature",
   "assurance": "governed",
   "state": "closed",
   "createdAt": "2026-11-10T11:08:49.261Z",
-  "updatedAt": "2026-11-11T07:04:37.107Z",
+  "updatedAt": "2026-11-11T07:08:58.279Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-11T07:08:58.190Z",
+    "summary": "合入 develop（同时快进合入场景改动清单折叠 8f10529e）；合入树仅比分支多折叠清单与 Epic 文档，tsc -b、oxlint、go build、go vet 通过",
+    "method": "manual",
+    "limitations": "owner 已体验并要求不重跑分支已做过的测试；合入点未跑 check-merge 与 e2e",
+    "sourceCommit": "bed1e683557fe65567dfdbe33ba8b7e758848987",
+    "targetCommit": "35a754ac7450fb66ec93913b75378f7e899bd874",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "47c8e5460a5f99b28c35594ad20608b70b4db9b89b4ba35940231ec714529ade"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "concurrency"
