@@ -9,8 +9,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// The steer route is wired to the service: a run out of reach is absent.
-// What the service refuses is covered in creativeagent's steer tests.
+// The steer route is wired to the service: a run out of reach is absent, in
+// the service's words. An unregistered route is a 404 not_found too, so the
+// message is what tells them apart. What the service refuses is covered in
+// creativeagent's steer tests.
 func TestSteerRouteIsWired(t *testing.T) {
 	f := newMCPFixture(t, false)
 	steer := func(runID, segments string) (int, string) {
@@ -32,7 +34,7 @@ func TestSteerRouteIsWired(t *testing.T) {
 		raw, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(raw)
 	}
-	if status, body := steer("ccrn_"+uuid.NewString(), `[{"type":"text","text":"换个方向"}]`); status != 404 || !strings.Contains(body, "not_found") {
+	if status, body := steer("ccrn_"+uuid.NewString(), `[{"type":"text","text":"换个方向"}]`); status != 404 || !strings.Contains(body, "会话、运行或授权不存在") {
 		t.Fatalf("absent run: %d %s", status, body)
 	}
 }
