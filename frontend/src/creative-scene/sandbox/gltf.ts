@@ -17,7 +17,12 @@ const allowed = /^(blob|data):/i
  */
 export type MeshIdentity = { path: [string, number][]; primitive: number }
 
-export type ParsedModel = { scene: Group; identities: ReadonlyMap<Mesh, MeshIdentity> }
+/**
+ * nodes: the GLB node index of each object that is a node (a one-primitive
+ * mesh is its node's object; a mesh of several primitives is not, its group
+ * is), for the skeleton (rig/template.ts).
+ */
+export type ParsedModel = { scene: Group; identities: ReadonlyMap<Mesh, MeshIdentity>; nodes: ReadonlyMap<Object3D, number> }
 
 type NodeJSON = { name?: string; children?: number[] }
 type Association = { nodes?: number; meshes?: number; primitives?: number }
@@ -68,7 +73,9 @@ export async function parseModelGLB(glb: ArrayBuffer): Promise<ParsedModel> {
   })
   const gltf = await new GLTFLoader(manager).parseAsync(glb, '')
   if (blocked !== null) throw new Error(`GLB 引用了外部地址 ${blocked}`)
-  return { scene: gltf.scene, identities: identitiesOf(gltf) }
+  const nodes = new Map<Object3D, number>()
+  for (const [o, a] of gltf.parser.associations as Map<Object3D, Association | undefined>) if (a?.nodes !== undefined) nodes.set(o, a.nodes)
+  return { scene: gltf.scene, identities: identitiesOf(gltf), nodes }
 }
 
 export async function parseGLB(glb: ArrayBuffer): Promise<Group> {

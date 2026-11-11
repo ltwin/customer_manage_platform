@@ -56,15 +56,23 @@
     - `pruneOptional` 在提交前去掉服务端会拒绝的可选骨骼（不是关节、与其他骨骼同节点、违反层级嵌入），必需骨骼留给 `checkRig` 判定；`checkRig` 的顺序、字段、原因和消息与 `rig.go` 一致。
     - 约束的求值分三步：`resetConstraints` → `apply` → `runConstraints`，由 3.2 的 `pose.ts` 组合。依赖排序与 `rig.go` 的成环判定同一规则，共用向量的成环用例同时覆盖。
     - three-vrm 没有引入为依赖：aim 的公式按它的实现写，测试核对父级受约束时 aim 轴指向源，并验证不按依赖排序时会偏。
-- [ ] 3.2 `template.ts`、`skin.ts`、`pose.ts`：
+- [x] 3.2 `template.ts`、`skin.ts`、`pose.ts`：
   - 骨架模板与实例克隆；按 design 的坐标空间做 CPU 蒙皮与静态化几何。
   - 部件 ID 取 `n<节点>p<primitive>`；姿态哈希。
   - 缓存：256 MiB 字节预算，在用的钉住，其余按最近使用淘汰并释放。
-  - `__sceneTest.setPose`。
+  - `__scenePose.set`（原写 `__sceneTest.setPose`；`__sceneTest` 是 e2e 页面的布尔开关，测试钩子照 `__sceneGPU` 另挂）。
   - 先写测试：
     - 坐标空间三种情况（根节点旋转、网格节点自身变换、同模型两个不同实例），three 光栅顶点与静态化几何逐顶点一致。
     - 部件身份：两个网格各有 primitive 0；同一网格不同 skin。
     - 缓存的淘汰与钉住。
+  - 实施记录：
+    - 测试在 `scripts/creative-scene-rig-skin.test.ts`，蒙皮 GLB 在测试里由 JSON 拼出：一个小模型覆盖坐标空间与部件身份，Xbot 的节点树加几个绑在左手上的顶点覆盖套姿态。
+    - 部件 ID 要用节点下标：`sandbox/gltf.ts:parseModelGLB` 的结果加 `nodes`（对象 → GLB 节点下标），已补进 design 挂载点。
+    - three 的 GLTFLoader 本来就按单位绑定矩阵、`attached` 模式绑定，与 glTF 规定一致，模板不再重新绑定；坐标空间测试核对了光栅结果（`getVertexPosition` 乘网格矩阵）与静态化几何乘模型根矩阵逐顶点一致（< 1e-5 m）。
+    - 骨架模板是解析结果的拷贝，去掉不挂在关节下的静态网格（下面挂着关节的换成空节点）；`taken` 交给 5.2 的 `partsOf` 跳过。
+    - 静态化几何的 uv 等属性与原几何共用数组、各用各的属性对象（three 按属性对象释放显存）；缓存按位置、法线、切线、索引和拾取 BVH 计字节。
+    - 静止姿势不跑约束，得到的就是存储的模型；没有人形映射或骨架几何退化的模型，标准姿态一律按静止姿势处理。
+    - 粗测：9000 个顶点、每个 4 个影响，CPU 蒙皮约 1.3 ms（Node）。
 
 ## 4. 前端：导入带骨骼的角色
 

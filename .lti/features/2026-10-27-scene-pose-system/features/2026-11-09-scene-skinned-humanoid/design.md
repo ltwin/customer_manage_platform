@@ -39,7 +39,7 @@
 **姿态在本次的状态**：骨骼通道在子项 4 才有，本次的「当前姿态」只有两个来源：
 
 - 静止姿势：缺省。
-- 编辑器内存里的测试姿态：经 `__sceneTest.setPose(objectId, pose)` 写入，按物件 ID 存放，不进快照、不进撤销。子项 4 把来源换成骨骼通道的求值结果，渲染路径不变。
+- 编辑器内存里的测试姿态：经 `__scenePose.set(objectId, pose)` 写入（e2e 页面设了 `__sceneTest` 时才挂出，同 `__sceneGPU`），按物件 ID 存放，不进快照、不进撤销。子项 4 把来源换成骨骼通道的求值结果，渲染路径不变。
 
 所有渲染入口都从同一个「当前姿态」读，保证视口、追踪层、包围盒和导出一致。
 
@@ -311,7 +311,7 @@ worker（上传 model）：
 | `frontend/src/creative-scene/rig/constraints.ts` | 新增 | VRM 节点约束 roll / aim / rotation；按契约的依赖（aim 含被约束节点父链）拓扑排序，与 `rig.go` 的成环判定共用测试向量 |
 | `frontend/src/creative-scene/rig/template.ts` | 新增 | 从解析结果分出骨架模板，克隆实例 |
 | `frontend/src/creative-scene/rig/skin.ts` | 新增 | CPU 蒙皮、静态化几何、姿态哈希、缓存 |
-| `frontend/src/creative-scene/rig/pose.ts` | 新增 | 当前姿态的存放（测试姿态），`__sceneTest.setPose` |
+| `frontend/src/creative-scene/rig/pose.ts` | 新增 | 当前姿态的存放（测试姿态），`__scenePose.set`；把姿态与约束套到实例上 |
 | `frontend/src/creative-scene/models/cache.ts:ModelCache.load`、`downloadGLB`、`partsOf` | 修改 | 分出骨架模板；`builtin:` 键走新接口；合并时跳过蒙皮网格 |
 | `frontend/src/creative-scene/models/catalog.ts` | 新增 | 内置模型清单副本与摘要 |
 | `frontend/src/creative-scene/models/key.ts` | 新增 | `modelKey(ref)` |
@@ -325,6 +325,7 @@ worker（上传 model）：
 | `frontend/src/creative-scene/host/render.ts`、`host/pageExecutor.ts` | 修改 | 按模型键加载；导出等待静态化几何与段重建 |
 | `frontend/src/creative-scene/preview/cache.ts`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 修改 | 带骨骼的模型按静止姿势显示与出缩略图 |
 | `frontend/src/creative-scene/sandbox/inspect.ts` | 修改 | 蒙皮子集预检与骨架摘要 |
+| `frontend/src/creative-scene/sandbox/gltf.ts:parseModelGLB` | 修改 | 解析结果带上对象到 GLB 节点下标的对照，供骨架模板定部件 ID |
 | `frontend/src/creative-scene/sandbox/host.ts` | 修改 | 代码模型的产物带 `skins` 时报错（与服务端一致） |
 | `frontend/src/creative-scene/import/parse.ts:precheck`、`parseImport` | 修改 | 放行蒙皮；关节上限；读 VRM 扩展与约束 |
 | `frontend/src/creative-scene/import/convert.ts:convert`、`dequantize`、`toBottomCenter` | 修改 | 保留关节；保留并换算权重；带骨骼时平移祖先节点 |
@@ -350,7 +351,7 @@ worker（上传 model）：
 | AC-2 / AC-3 导入 VRM、Mixamo | 前端单测：五个角色的识别结果（映射数、手指、约束数），素材作为夹具（授权允许再分发的提交进仓库，其余在测试里下载并跳过）。e2e（单条）：导入 VRM 1.0 样例到放进场景、贴地 |
 | AC-4 映射不成立 | 共用测试向量（Go 与 TS）；单测：RobotExpressive 手动修改后仍不成立、可按非人形骨架导入，Xbot 错映射一根骨骼后手动改回成立；Go 测试：导入接口收到不成立的映射时 400 |
 | AC-5 换算与拒绝 | 单测：8 影响、归一化整数权重、全零权重夹具的换算结果与报告；Go 测试：蒙皮子集每条规则各一个反例（下标越界、权重和、缺逆绑定矩阵、混用网格、关节超限） |
-| AC-6 按姿态渲染 | 前端单测：把穿刺①的数值检查（肢体方向、合成变体、握拳、约束）改写成测试，在素体和夹具上跑。e2e（单条）：`__sceneTest.setPose` 后，视口、镜中、导出三处的肢体位置一致（按屏幕上手部的像素位置比对），包围盒更新 |
+| AC-6 按姿态渲染 | 前端单测：把穿刺①的数值检查（肢体方向、合成变体、握拳、约束）改写成测试，在素体和夹具上跑。e2e（单条）：`__scenePose.set` 后，视口、镜中、导出三处的肢体位置一致（按屏幕上手部的像素位置比对），包围盒更新 |
 | AC-7 合并与缓存 | 单测：合并时跳过蒙皮网格；`traceKey` 只对改了姿态的实例变化；部件身份（两个网格各有 primitive 0、同一网格不同 skin）；字节预算的淘汰与钉住。e2e：`__sceneNoMerge` 开关两种画面一致（现有做法） |
 | 坐标空间 | 单测：根节点旋转、网格节点自身变换、同模型两个不同位置与缩放的实例，光栅与追踪层输入逐顶点一致 |
 | 约束顺序 | 共用向量：父级受约束的 aim、非关节源被拒、越界源、成环；单测：父级受约束时 aim 的方向与 three-vrm 参考结果一致 |
