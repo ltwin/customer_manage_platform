@@ -1,0 +1,57 @@
+{
+  "uid": "81e65423-dd89-46de-b95d-43333b1e7b97",
+  "revision": 5,
+  "id": "agent-message-queue",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-11-11T07:09:10.244Z",
+  "updatedAt": "2026-11-11T08:33:45.417Z",
+  "risk": {
+    "factors": [
+      "concurrency",
+      "trust-boundary"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T08:33:45.131Z",
+      "contentHash": "4de6b3794ebd10e3"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T08:33:45.131Z",
+      "contentHash": "b7b158de998e8ea5",
+      "deltaHash": "0c89cee896408bf2"
+    }
+  },
+  "approvalHistory": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T07:20:23.756Z",
+      "contentHash": "88e2c38f5ad81ffb",
+      "role": "proposal"
+    }
+  ],
+  "revisions": [
+    {
+      "at": "2026-11-11T07:28:27.466Z",
+      "summary": "design 调查后对齐外发授权验收：一次运行的授权在开始时确定，插队不能替换；超出范围的插队被拒、回队首，作为新一轮发出时再走外发确认",
+      "contentHash": "bc66f6311cbc2ee3",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-11T08:25:18.191Z",
+      "summary": "方案评审第 1 轮：截止点定为最终回答入账；202 区分已接收/已送达，input 块记录送达状态；partial 也暂停队列；waiting_input 被拒的提示；插队附件由账号级同意覆盖（owner 2026-11-11）；队首交接与响应丢失走待确认链",
+      "contentHash": "4de6b3794ebd10e3",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

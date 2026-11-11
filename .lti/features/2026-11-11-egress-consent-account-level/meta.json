@@ -1,0 +1,17 @@
+{
+  "uid": "4a5df2fa-e027-48cf-b4c3-88d59ad89180",
+  "revision": 1,
+  "id": "egress-consent-account-level",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-11-11T08:25:26.484Z",
+  "updatedAt": "2026-11-11T08:25:26.556Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
