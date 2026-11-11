@@ -90,7 +90,7 @@ import {
   type PageReader,
   type ThreadWindow,
 } from './agentThread.ts'
-import { currentStep, isFinished } from './agentBlocks.ts'
+import { currentStep, inputMessageIDs, isFinished } from './agentBlocks.ts'
 import {
   AgentTurnContext,
   followRun,
@@ -443,6 +443,10 @@ function AgentConversation({
   }, [storageKey])
   const queueKey = conversation ? agentQueueKey(account, conversation) : ''
   const queue = queueState.key === queueKey ? queueState.queue : emptyQueue
+  // 待确认链拿着的那条由链显示（气泡、重新发送）；它仍留在队列里，被拒时放回队首。
+  const shownQueue = queue.items.filter(
+    (item) => item.id !== pending?.draft?.queueItem,
+  )
   // 换到一个对话就读它的队列；刷新前正在交接的那条，按待确认链认领（见 recoverQueue）。
   useEffect(() => {
     const value = queueKey
@@ -623,7 +627,8 @@ function AgentConversation({
   }
   // keepDraft leaves the composer alone: compacting from the ring is not
   // sending what the creator is still writing.
-  // 来自队列的一条（draft.queueItem）不碰输入框：链落盘即移出队列，被拒由调用方放回。
+  // 来自队列的一条（draft.queueItem）不碰输入框：送达才移出队列，结果未知时留在
+  // 队列里显示发送中，被拒由调用方放回队首。
   async function perform(
     command: PendingAgentChain,
     keepDraft = false,
@@ -645,16 +650,16 @@ function AgentConversation({
         return { kind: 'skipped' }
       }
       if (!savePending(pendingRef.current, command)) return { kind: 'skipped' }
-      if (queued && command.draft)
-        updateQueue(agentQueueKey(account, command.draft.conversation), (q) =>
-          removeQueued(q, queued),
-        )
       const outcome = await performAgentChain(
         command,
         { owns, save: savePending },
         (path, body, operation) =>
           api.send<Reply>(account, path, body, operation),
       )
+      if (queued && command.draft && (outcome.kind === 'done' || outcome.kind === 'lost'))
+        updateQueue(agentQueueKey(account, command.draft.conversation), (q) =>
+          removeQueued(q, queued),
+        )
       if (outcome.kind === 'lost') {
         if (mounted.current && !input) setOutgoing(null)
         return outcome
@@ -714,7 +719,11 @@ function AgentConversation({
     setError('')
   }
   // 点停止立刻显示已停止，请求在后台发出；失败时恢复成运行中并提示。
+  // 队列随显示的停止当帧暂停，停止失败时一起复原，这一轮结束后照常发出队首。
   function stop(run: AgentRun) {
+    const key = agentQueueKey(account, run.conversation_id)
+    const before =
+      queueRef.current.key === key ? queueRef.current.queue : readQueue(queueStorage(), key)
     freezeStopping(run)
     setError('')
     const request = cancelUntilFinished(run.id).then(
@@ -726,6 +735,11 @@ function AgentConversation({
       },
       () => {
         releaseStopping(run.id)
+        updateQueue(key, (q) =>
+          q.settledRun === run.id
+            ? { ...q, paused: before.paused, settledRun: before.settledRun }
+            : q,
+        )
         if (mounted.current) setError('停止没有成功，请重试')
         return false
       },
@@ -939,6 +953,9 @@ function AgentConversation({
     } else if (outcome.kind !== 'unknown') setSteering(null)
     if (outcome.kind !== 'rejected' && outcome.kind !== 'skipped') return
     updateQueue(key, (q) => putBack(q, item))
+    steerRefused(outcome, supplementing)
+  }
+  function steerRefused(outcome: SendOutcome, supplementing: boolean) {
     if (
       outcome.kind === 'rejected' &&
       outcome.error instanceof ApiError &&
@@ -950,17 +967,24 @@ function AgentConversation({
           : '这一轮不能再插入，会在本轮结束后发送',
       )
   }
-  // 重放待确认链。来自队列的那条已经移出队列，由这里接手：被拒时原文回到输入框。
+  // 重放待确认链。来自队列的那条结果未知时还在队列里（发送中）：被拒就放回
+  // 队首，和第一次被拒一样，输入框里正在写的不动。
   async function resend() {
     const saved = pendingRef.current
     if (!saved) return
-    let command = saved
-    if (saved.draft?.queueItem) {
-      const { queueItem: _item, ...draft } = saved.draft
-      command = { ...saved, draft }
+    const outcome = await perform(saved)
+    if (!mounted.current) return
+    const input = isRunInput(saved)
+    const queued = saved.draft?.queueItem
+    if (queued && saved.draft && outcome.kind === 'rejected') {
+      updateQueue(agentQueueKey(account, saved.draft.conversation), (q) => {
+        const item = q.items.find((other) => other.id === queued)
+        return item ? putBack(q, item, !input) : q
+      })
+      if (input)
+        steerRefused(outcome, saved.steps[0]?.path.endsWith('/supplements') ?? false)
     }
-    const outcome = await perform(command)
-    if (!mounted.current || !isRunInput(command)) return
+    if (!input) return
     if (outcome.kind === 'done') {
       const seq = (outcome.reply as AgentRun).last_event_seq
       setSteering((old) => old && { ...old, seq })
@@ -1061,13 +1085,7 @@ function AgentConversation({
   // 插队和补充的消息由运行里的 input 块画出，对话里不再单独画一遍。
   const inputMessages = useAgentRuns(
     useShallow((store) =>
-      runs.flatMap((run) =>
-        (shownRun(store, run.id)?.blocks ?? []).flatMap((block) =>
-          block.type === 'input'
-            ? [String((block.payload as { message_id?: unknown }).message_id)]
-            : [],
-        ),
-      ),
+      runs.flatMap((run) => inputMessageIDs(shownRun(store, run.id)?.blocks ?? [])),
     ),
   )
   const shownInRun = new Set(inputMessages)
@@ -1374,6 +1392,7 @@ function AgentConversation({
   function steerReason(item: QueuedMessage): string | null {
     if (!latest) return null
     if (locked) return '请稍候'
+    if (latest.kind === 'compact') return '正在压缩上下文，结束后发送'
     return steerBlocked(item, runImageInput)
   }
   return (
@@ -1604,9 +1623,9 @@ function AgentConversation({
             sendDraft()
           }}
         >
-          {queue.items.length > 0 && (
+          {shownQueue.length > 0 && (
             <AgentQueue
-              items={queue.items}
+              items={shownQueue}
               paused={queue.paused}
               locked={locked}
               steerReason={steerReason}

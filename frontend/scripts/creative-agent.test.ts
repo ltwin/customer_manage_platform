@@ -584,15 +584,16 @@ test('a refused send goes back to the head and pauses', () => {
   assert.equal(back.paused, true)
 })
 
-test('after a reload a message being handed over is in the queue or the chain, never both or neither', () => {
+test('after a reload a message the chain holds stays in the queue as sending, one never handed over is back', () => {
   const queue = { ...markSending(enqueue(emptyQueue, queued('a')), 'a'), settledRun: 'r1' }
   const chain: PendingAgentChain = {
     steps: messageSteps('c', { model: 'm', imageInput: false, revisionIDs: [], segments: [{ type: 'text', text: 'a' }] }),
     draft: { conversation: 'c', model: 'm', skill: '', text: 'a', queueItem: 'a' },
   }
+  // The chain still decides; a refusal on resend puts it back at the head.
   const handed = recoverQueue(queue, chain)
-  assert.deepEqual(handed.items, [])
-  assert.equal(handed.settledRun, 'r1')
+  assert.equal(handed, queue)
+  assert.equal(nextQueueAction(handed, runIn('r1', 'succeeded'), true).send, undefined)
   const kept = recoverQueue(queue, null)
   assert.equal(kept.items.length, 1)
   assert.equal(kept.items[0].sending, undefined)

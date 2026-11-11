@@ -48,7 +48,7 @@ const stored = (id, text, extra = {}) => ({
 
 // One mocked run, `run`, in `state`. `send` answers every POST that is not a
 // cancel; by default it accepts: a consent, a new run, a steer or a supplement.
-async function scene({ state = 'running', send, storage } = {}) {
+async function scene({ state = 'running', send, storage, cancel } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 } })
   const page = await context.newPage()
   const errors = []
@@ -167,6 +167,7 @@ async function scene({ state = 'running', send, storage } = {}) {
       const entry = { path, body, key: request.headers()['idempotency-key'], at: Date.now() }
       server.sends.push(entry)
       if (path.endsWith('/cancel')) {
+        if (cancel) return cancel({ json })
         await finish('cancelled')
         return json({ ...server.run })
       }
@@ -321,6 +322,18 @@ try {
     })
   }
 
+  await check('pause: a stop that fails undoes the pause, and the round ending sends the head', async () => {
+    const s = await scene({ cancel: ({ json }) => json({ error: { code: 'creative_unavailable', message: 'down' } }, 503) })
+    await s.type('第一条')
+    await s.editor().click()
+    await s.button('停止').click()
+    await s.page.getByText('停止没有成功，请重试').waitFor()
+    assert.equal(await s.queue.getByText('已暂停，不会自动发出').count(), 0, 'the pause went with the stop')
+    await s.finish('succeeded')
+    await s.until(() => s.server.sends.some((entry) => entry.path.endsWith('/runs')), 'the head was sent')
+    await s.close()
+  })
+
   await check('steer: the bubble shows in the same frame and gives way to the input block', async () => {
     let release
     const gate = new Promise((resolve) => (release = resolve))
@@ -373,12 +386,34 @@ try {
     await s.queue.getByRole('button', { name: '插队' }).click()
     const again = s.page.getByRole('button', { name: '重新发送' })
     await again.waitFor()
-    assert.equal(await s.queue.count(), 0, 'the chain owns it now')
+    assert.equal(await s.queue.count(), 0, 'the chain shows it now')
     await again.click()
     await s.page.locator('[data-type="input"] .cc-agent-user', { hasText: '补一盏灯' }).waitFor()
+    // Delivered: gone from the queue it was kept in while the result was unknown.
+    await s.page.waitForFunction((key) => !sessionStorage.getItem(key), queueKey)
     assert.equal(s.server.sends.length, 2)
     assert.equal(s.server.sends[0].key, s.server.sends[1].key, 'same idempotency key')
     assert.deepEqual(s.server.sends[0].body, s.server.sends[1].body, 'same request')
+    await s.close()
+  })
+
+  await check('steer: refused on resend goes back to the head and leaves the composer alone', async () => {
+    const s = await scene({
+      send: (input) =>
+        input.index === 0
+          ? input.json({ error: { code: 'creative_unavailable', message: 'down' } }, 503)
+          : input.json({ error: { code: 'creative_run_state', message: 'too late' } }, 409),
+    })
+    await s.type('补一盏灯')
+    await s.editor().click()
+    await s.page.keyboard.type('另一条草稿')
+    await s.queue.getByRole('button', { name: '插队' }).click()
+    const again = s.page.getByRole('button', { name: '重新发送' })
+    await again.waitFor()
+    await again.click()
+    await s.page.getByText('这一轮不能再插入，会在本轮结束后发送').waitFor()
+    assert.deepEqual(await s.queued(), ['补一盏灯\n插队'], 'back at the head')
+    assert.equal(await s.editor().innerText(), '另一条草稿', 'the draft being written is kept')
     await s.close()
   })
 
@@ -444,7 +479,7 @@ try {
     })
     await s.page.getByRole('button', { name: '重新发送' }).waitFor()
     await s.queue.getByText('没发出的').waitFor()
-    assert.deepEqual(await s.queued(), ['没发出的\n插队'], 'the chain owns one, the other is back at the head')
+    assert.deepEqual(await s.queued(), ['没发出的\n插队'], 'the chain shows one, the other is back at the head')
     await s.close()
   })
 

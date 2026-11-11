@@ -74,8 +74,8 @@ type runtimeHandler struct {
 	// final is the framework's conversation when the agent last finished; a
 	// steer that arrived during the final answer continues from it.
 	final []*schema.Message
-	// delivering is the input batches the request being bound carries for the
-	// first time; the step that journals it marks them delivered.
+	// delivering is the input batches the next request carries for the first
+	// time; its dispatch, or the replay of its step, marks them delivered.
 	delivering []int
 }
 
@@ -85,12 +85,10 @@ func (h *runtimeHandler) setDelivery(batches []int) {
 	h.delivering = batches
 }
 
-func (h *runtimeHandler) takeDelivery() []int {
+func (h *runtimeHandler) delivery() []int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	batches := h.delivering
-	h.delivering = nil
-	return batches
+	return h.delivering
 }
 
 // AfterAgent keeps the finished conversation so the run can answer a steer

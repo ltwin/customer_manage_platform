@@ -39,3 +39,8 @@
 ## 8. 文档
 
 - [x] 8.1 `docs/product/creative-canvas-system/data-model.md` 补写外发资源边界的新规则；`docs/dev/creative-agent.md` 写插队、补充片段、送达与续跑；`docs/product/creative-canvas-system/modules/agent-api-events.md` 增加 steers 行和 `input` 块
+
+## 9. 代码审计修复
+
+- [x] 9.1 后端（先写红色测试）：恢复运行时把已送达批次的引用并入派发复核（`TestSteerReferenceIsRecheckedAfterResume`）；旧版本补充没有 `input` 块时跳过标记（`TestSupplementWithoutInputBlockStillResumes`）；送达改在派发事务 `Admit` 里标记，重放已有步骤时在 `prepareModelStep` 补标（`TestAnUndeliveredSteerIsShownAsUnread/the_request_was_prepared_but_never_sent`）；压缩运行拒绝插队（`TestSteerIsRefusedWhenTheRunCannotTakeIt/compaction`）；补充接口 `text` 与空的 `instruction_segments` 同时给出返回 400
+- [x] 9.2 前端：队列条目送达才移出队列，「重新发送」被拒时放回队首、不覆盖输入框（e2e「steer: refused on resend」）；停止失败时复原队列的暂停与 `settledRun`（e2e「pause: a stop that fails」）；只按可渲染的 `input` 块去重（`inputMessageIDs`）；压缩运行时「插队」置灰

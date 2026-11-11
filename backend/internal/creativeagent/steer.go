@@ -54,7 +54,9 @@ func (s *Service) SteerRun(ctx context.Context, scope store.AccountScope, comman
 		default:
 			return creativeops.Outcome{}, ErrRunState
 		}
-		if c.cancelled != nil {
+		// A compaction asks the model about the history, never with the
+		// run's inputs: a steer there would be accepted and never read.
+		if c.cancelled != nil || c.Kind == runKindCompact {
 			return creativeops.Outcome{}, ErrRunState
 		}
 		now, err := tx.CreativeNow(ctx)

@@ -23,7 +23,7 @@ export type QueuedMessage = {
   // 插队用的片段；选了 Skill 的消息只能排队（一轮的 Skill 在开始时已定）。
   steer: SteerSegment[] | null
   hasImage: boolean
-  // 正在交给待确认链：链落盘后移出队列，刷新时按有没有链来恢复。
+  // 正在交给待确认链：送达才移出队列，被拒放回队首；刷新时按有没有链来恢复。
   sending?: true
 }
 export type ConversationQueue = {
@@ -138,7 +138,7 @@ export function resumeQueue(
     : { queue: resumed }
 }
 
-// 刷新后：带 sending 的一条，若待确认链就是它，由链负责后续，移出队列；
+// 刷新后：带 sending 的一条，若待确认链就是它，仍由链负责，照旧显示发送中；
 // 没有链说明还没落盘、请求没有发出，它仍在队首，那一轮也要重新算一次，
 // 否则成功结束的那一轮已记为处理过，这条就再也不会自动发出。
 export function recoverQueue(
@@ -146,18 +146,14 @@ export function recoverQueue(
   pending: PendingAgentChain | null,
 ): ConversationQueue {
   const owner = pending?.draft?.queueItem
-  let changed = false
   let unsent = false
-  const items = queue.items.flatMap((item) => {
-    if (!item.sending) return [item]
-    changed = true
-    if (item.id === owner) return []
+  const items = queue.items.map((item) => {
+    if (!item.sending || item.id === owner) return item
     unsent = true
     const { sending: _sending, ...rest } = item
-    return [rest]
+    return rest
   })
-  if (!changed) return queue
-  if (!unsent) return { ...queue, items }
+  if (!unsent) return queue
   const { settledRun: _settled, ...rest } = queue
   return { ...rest, items }
 }

@@ -159,7 +159,9 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if err := creativeops.Decode(raw, &in); err != nil {
 			return err
 		}
-		if in.RunID == "" || in.WaitingToken == "" || in.Revision < 1 || (in.Text == "") == (len(in.Segments) == 0) {
+		// Exactly one of text and instruction_segments; an empty list given
+		// is still given.
+		if in.RunID == "" || in.WaitingToken == "" || in.Revision < 1 || (in.Text == "") == (in.Segments == nil) || in.Segments != nil && len(in.Segments) == 0 {
 			return creativeops.ErrValidation
 		}
 		if in.Text != "" && strings.TrimSpace(in.Text) == "" {
@@ -329,6 +331,47 @@ func (s *Service) appendInputBatchInTx(ctx context.Context, tx store.TxAccountSc
 }
 
 func inputSourceKey(batch int) string { return "input:" + strconv.Itoa(batch) }
+
+// markInputsDeliveredInTx records that a request carries these batches: from
+// here they are the model's to answer. Marking again changes nothing; a
+// supplement written before input blocks existed has none to mark.
+func markInputsDeliveredInTx(ctx context.Context, tx store.TxAccountScope, runID string, batches []int) error {
+	for _, batch := range batches {
+		shown, err := tx.Exists(ctx, "creative_agent_blocks", "run_id=$2 AND source_key=$3", runID, inputSourceKey(batch))
+		if err != nil {
+			return err
+		}
+		if !shown {
+			continue
+		}
+		if _, err := writeBlockInTx(ctx, tx, runID, inputSourceKey(batch), blockChange{Type: BlockInput, State: "delivered"}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deliveredInputRevisions are the references of batches a model request has
+// already carried. A resumed run finds them in its checkpoint, not through
+// unseenInputs, so the dispatch check has to be told about them here. One
+// that went as a bare label is checked too: refusing is the safe side.
+func deliveredInputRevisions(ctx context.Context, scope store.AccountScope, runID string) ([]string, error) {
+	rows, err := scope.Query(ctx, "creative_run_inputs", "content_revision_id", `run_id=$2 AND batch_ordinal>0 AND content_revision_id IS NOT NULL
+AND EXISTS (SELECT 1 FROM creative_agent_blocks b WHERE b.account_id=$1 AND b.run_id=$2 AND b.type='input' AND b.state='delivered' AND b.source_key='input:'||batch_ordinal)`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
 
 // Checkpoints before a supplement remain replayable. Message metadata marks
 // which immutable batches are already in Eino state; it grants no authority.

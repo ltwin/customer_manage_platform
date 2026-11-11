@@ -146,6 +146,81 @@ func TestSteerContinuationResumesFromItsCheckpoint(t *testing.T) {
 	}
 }
 
+// A steered reference lives in the checkpoint once delivered; a resumed run
+// checks it again before the next request, as it does the first batch's.
+func TestSteerReferenceIsRecheckedAfterResume(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.consent(f.alice, c.ID)
+	revision := f.revision(f.alice, "插队带的正文")
+	var runID string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			if err := f.steer(runID, InstructionSegment{Type: "content_ref", ContentRevisionID: revision}); err != nil {
+				t.Fatalf("steer: %v", err)
+			}
+			return scriptedResult(r, llmgateway.ToolCall{ID: "look", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)}), nil
+		}
+		if n == 2 {
+			return scriptedResult(r, llmgateway.ToolCall{ID: "again", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)}), nil
+		}
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "整理"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID = run.ID
+	held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, err := f.service.newRunExecution(t.Context(), f.alice, held)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stop at the second tool: the steer's request is in the checkpoint.
+	pause := &checkpointPause{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}}
+	execution.config.Handlers = append([]adk.ChatModelAgentMiddleware{&skipFirstTool{pause: pause}}, execution.config.Handlers...)
+	if _, err = execution.run(t.Context()); !errors.Is(err, errRunInterrupted) {
+		t.Fatalf("run did not stop on its second tool: %v", err)
+	}
+	if !strings.Contains(f.vendor.prompt(), "插队带的正文") {
+		t.Fatal("the steered reference never reached the model")
+	}
+	revoked := contextConsent(t, f, c.ID, revision)
+	if _, err = f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": revoked.ID, "expected_revision": revoked.Revision})); err != nil {
+		t.Fatal(err)
+	}
+	calls := f.vendor.calls()
+	resumed, err := f.service.newRunExecution(t.Context(), f.alice, held)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = resumed.run(t.Context()); !errors.Is(err, ErrEgressRequired) {
+		t.Fatalf("resume after revocation: %v", err)
+	}
+	if f.vendor.calls() != calls {
+		t.Fatal("a revoked reference was sent again after resume")
+	}
+}
+
+// skipFirstTool lets the first tool call run and pauses on the next one.
+type skipFirstTool struct {
+	*adk.BaseChatModelAgentMiddleware
+	pause *checkpointPause
+	seen  int
+}
+
+func (s *skipFirstTool) WrapInvokableToolCall(ctx context.Context, next adk.InvokableToolCallEndpoint, tc *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
+	s.seen++
+	if s.seen == 1 {
+		return next, nil
+	}
+	return s.pause.WrapInvokableToolCall(ctx, next, tc)
+}
+
 func (f *fixture) steer(runID string, segments ...InstructionSegment) error {
 	f.t.Helper()
 	_, err := f.service.SteerRun(f.t.Context(), f.alice, command(f.t, map[string]any{"run_id": runID, "instruction_segments": segments}))
@@ -289,6 +364,18 @@ func TestSteerIsRefusedWhenTheRunCannotTakeIt(t *testing.T) {
 			}
 		})
 	}
+	// A compaction never asks the model with the run's inputs: a steer there
+	// would be accepted and never read.
+	t.Run("compaction", func(t *testing.T) {
+		f := setup(t)
+		run, _ := queuedRun(t, f)
+		if _, err := f.db.Exec(`UPDATE creative_agent_runs SET kind='compact' WHERE id=$1`, run.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.steer(run.ID, text); !errors.Is(err, ErrRunState) {
+			t.Fatalf("err=%v", err)
+		}
+	})
 	t.Run("twelve batches already", func(t *testing.T) {
 		f := setup(t)
 		run, _ := queuedRun(t, f)
@@ -364,6 +451,10 @@ func TestSupplementCarriesSegments(t *testing.T) {
 	if _, err = f.service.SupplementRun(t.Context(), f.alice, command(t, both)); !errors.Is(err, creativeops.ErrValidation) {
 		t.Fatalf("text and segments together: %v", err)
 	}
+	both["instruction_segments"] = []InstructionSegment{}
+	if _, err = f.service.SupplementRun(t.Context(), f.alice, command(t, both)); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("text and an empty segment list: %v", err)
+	}
 	delete(both, "text")
 	both["instruction_segments"] = []InstructionSegment{{Type: "text", Text: "参考这份"}, {Type: "content_ref", ContentRevisionID: revision}}
 	if _, err = f.service.SupplementRun(t.Context(), f.alice, command(t, both)); err != nil {
@@ -377,6 +468,37 @@ func TestSupplementCarriesSegments(t *testing.T) {
 	}
 	if n := f.count("creative_agent_blocks", "run_id=$1 AND type='input' AND state='delivered'", run.ID); n != 1 {
 		t.Fatalf("delivered input blocks=%d", n)
+	}
+}
+
+// A supplement written before input blocks existed has none; delivering it
+// marks nothing and the run goes on.
+func TestSupplementWithoutInputBlockStillResumes(t *testing.T) {
+	f := setup(t)
+	run, held, paused := pauseCheckpointRun(t, f, false)
+	if err := f.service.completeAttempt(t.Context(), f.alice, held, paused.outcome, errRunInterrupted); err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.service.SupplementRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID, "expected_revision": waiting.Revision,
+		"waiting_token": waiting.WaitingToken, "text": "旧版本写的补充"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.db.Exec(`DELETE FROM creative_agent_blocks WHERE run_id=$1 AND type='input'`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunSucceeded {
+		t.Fatalf("run=%+v err=%v", got, err)
+	}
+	if !strings.Contains(f.vendor.prompt(), "旧版本写的补充") {
+		t.Fatal("the old supplement never reached the model")
 	}
 }
 
@@ -449,6 +571,35 @@ func TestAnUndeliveredSteerIsShownAsUnread(t *testing.T) {
 		}
 		if f.vendor.calls() != 1 {
 			t.Fatal("a failed run continued for its steer")
+		}
+		if state := f.inputBlockState(run.ID); state != BlockInterrupted {
+			t.Fatalf("input block %s", state)
+		}
+	})
+	// The continuation's request was prepared and refused before it went out:
+	// the model never read the steer.
+	t.Run("the request was prepared but never sent", func(t *testing.T) {
+		f := setup(t)
+		run, _ := queuedRun(t, f)
+		f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+			if n == 1 {
+				steerDuringAnswer(t, f, run.ID, "换个方向")
+				// The month runs out: the continuation's step is prepared and
+				// its reservation refused, so no request goes out.
+				if _, err := f.db.Exec(`UPDATE llm_budgets SET limit_micros=0`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return scriptedResult(r), nil
+		}
+		if err := f.work(f.alice, run.ID); err != nil {
+			t.Fatal(err)
+		}
+		if f.vendor.calls() != 1 {
+			t.Fatalf("calls=%d", f.vendor.calls())
+		}
+		if n := f.count("creative_agent_steps", "run_id=$1 AND kind='model'", run.ID); n != 2 {
+			t.Fatalf("model steps=%d, want the continuation prepared", n)
 		}
 		if state := f.inputBlockState(run.ID); state != BlockInterrupted {
 			t.Fatalf("input block %s", state)

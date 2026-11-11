@@ -48,7 +48,7 @@ created: 2026-09-10
 | GET /agent-runs/{id}/inputs | 冻结来源、读取级别、修订与到期状态；读取媒体仍检查当前用途 |
 | GET /agent-runs/{id}/artifacts | 提案、影响范围、应用状态、过期与实际变更定位 |
 | POST /agent-runs/{id}/supplements | expected_revision、waiting_token、`text` 或 `instruction_segments`（text / content_ref，二选一）→ 202 queued；保持原模型/同意/截止时间；同事务写 `input` 块 |
-| POST /agent-runs/{id}/steers | `instruction_segments`（text / content_ref）→ 202，**已接收**；运行状态与 revision 不变，`last_event_seq` 前进到 `input` 块的创建；最终回答已入账、运行不在 queued/running/waiting_client、已停止、超过截止时间或已有 12 批输入 → 409/413；见下方「插队与 input 块」 |
+| POST /agent-runs/{id}/steers | `instruction_segments`（text / content_ref）→ 202，**已接收**；运行状态与 revision 不变，`last_event_seq` 前进到 `input` 块的创建；最终回答已入账、运行不在 queued/running/waiting_client、压缩运行、已停止、超过截止时间或已有 12 批输入 → 409/413；见下方「插队与 input 块」 |
 | POST /agent-runs/{id}/apply | expected_revision、artifact_id/revision、proposal_hash、waiting_token、mode=apply_only或apply_and_continue → 前者200原子应用及终态，后者202取得slot入队、GET查询真正效果；mode必填，不隐式继续模型调用 |
 | POST /agent-runs/{id}/cancel | 幂等停止当前运行；首次执行即结束为终态并释放slot，200返回终态run，未知费用在后台核实；同key回放返回首次快照，非终态时换新key重发；不能只取消队列job |
 | POST /agent-runs/{id}/close-reconciliation | 只在未被停止的reconciling，明确结束等待 → 200终态/settlement；核实继续，写slot释放；面板不再调用 |

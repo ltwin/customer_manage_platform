@@ -724,7 +724,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 // The ordinal comes from the run's own counter under its row lock, so two
 // workers cannot hand out the same position.
 func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope, held claim, previousModel string,
-	chat llmgateway.ChatRequest, composition contextComposition, delivered ...int) (stepID, bindingKey string, err error) {
+	chat llmgateway.ChatRequest, composition contextComposition, replayed ...int) (stepID, bindingKey string, err error) {
 	// The 256 KiB input contract, checked on the request as assembled — the
 	// system prompt the skill contributed, the history, the quoted bodies, the
 	// separators and the tool definitions, all of it.
@@ -772,13 +772,6 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 		if state != RunRunning || epoch != held.Epoch {
 			return ErrRunState
 		}
-		// The request carries these inputs: from here they are the model's to
-		// answer. A replayed turn marks them again, which changes nothing.
-		for _, batch := range delivered {
-			if _, err := writeBlockInTx(ctx, tx, held.RunID, inputSourceKey(batch), blockChange{Type: BlockInput, State: "delivered"}); err != nil {
-				return err
-			}
-		}
 		var previousOrdinal int64
 		if previousModel != "" {
 			if err := tx.QueryRow(ctx, "creative_agent_steps", "ordinal", "id=$2 AND run_id=$3 AND kind='model'", previousModel, held.RunID).Scan(&previousOrdinal); err != nil {
@@ -809,7 +802,9 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 				return errCheckpointJournal
 			}
 			bindingKey = turnBindingKey(held.RunID, existingOrdinal)
-			return nil
+			// A replayed turn may return the result it paid for without a
+			// dispatch, so the inputs it carried are marked here too.
+			return markInputsDeliveredInTx(ctx, tx, held.RunID, replayed)
 		}
 		pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='tool' AND state='prepared'", held.RunID)
 		if err != nil {

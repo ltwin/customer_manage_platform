@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"context"
+	"slices"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -27,6 +28,15 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 	prompt, revisions, history, err := s.assemble(ctx, scope, held)
 	if err != nil {
 		return nil, err
+	}
+	delivered, err := deliveredInputRevisions(ctx, scope, held.RunID)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range delivered {
+		if !slices.Contains(revisions, id) {
+			revisions = append(revisions, id)
+		}
 	}
 
 	execution := &runExecution{prompt: prompt}
@@ -55,8 +65,13 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 			// The last check, inside the transaction that records the dispatch
 			// intent. An authorisation withdrawn in a transaction that commits
 			// first stops the bytes; one withdrawn after is honestly too late.
+			// The inputs this request carries are delivered with the same
+			// commit: a request refused before it goes out leaves them unread.
 			Admit: func(tx store.TxAccountScope) error {
-				return s.admitDispatchInTx(ctx, tx, held, runtime.revisions)
+				if err := s.admitDispatchInTx(ctx, tx, held, runtime.revisions); err != nil {
+					return err
+				}
+				return markInputsDeliveredInTx(ctx, tx, held.RunID, runtime.delivery())
 			},
 		},
 		// Streamed so the photographer sees the answer form; the framework still
@@ -68,7 +83,7 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 		// the request it already paid for instead of buying a second one.
 		TurnKey: func(ctx context.Context, chat llmgateway.ChatRequest) (string, error) {
 			previous, _ := current.get()
-			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition(), runtime.takeDelivery()...)
+			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition(), runtime.delivery()...)
 			if err != nil {
 				return "", err
 			}
