@@ -105,12 +105,19 @@ export function outgoingIn(
   return outgoing
 }
 
+// 插队或补充：写进一个已有的运行，不是一条新消息。
+export function isRunInput(chain: PendingAgentChain): boolean {
+  return /\/(steers|supplements)$/.test(chain.steps[0]?.path ?? '')
+}
+
 // 发送完要重读哪些：往已有会话里发出一个运行，只重读这个会话的消息和运行；
-// 新建了会话，或回执不是运行，就连会话列表一起重读。
+// 新建了会话，或回执不是运行，就连会话列表一起重读。插队和补充由运行流里的
+// input 块画出来，不用重读。
 export function refreshAfterSend(
   chain: PendingAgentChain,
   reply: unknown,
-): 'thread' | 'all' {
+): 'none' | 'thread' | 'all' {
+  if (isRunInput(chain)) return 'none'
   const created = chain.steps.some((step) =>
     step.path.endsWith('/conversations'),
   )

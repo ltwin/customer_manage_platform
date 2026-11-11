@@ -25,8 +25,10 @@
 
 ## 6. 前端：面板与界面
 
-- [ ] 6.1 `AgentPanel.tsx`：从 `sendDraft` 抽出 `sendMessage`；运行中有内容时按钮为「加入排队」，回车排队；接入 `nextQueueAction` 自动发出与「继续发送」；插队与 `waiting_input` 下的补充都走 `perform(single(...))`；队列发出被拒时放回队首、暂停，不回填输入框；补充可以带附件
-- [ ] 6.2 新增 `AgentQueue.tsx`（列表、插队、删除、继续发送、置灰原因、被拒提示），`agent.css` 加样式；`AgentBlocks.tsx` 渲染 `input` 块（`interrupted` 时附「助手没有读到这条」）和乐观气泡；对话列表跳过已由 `input` 块显示的消息。`make check-frontend` 通过
+- [x] 6.1 `AgentPanel.tsx`：从 `sendDraft` 抽出 `sendMessage`；运行中有内容时按钮为「加入排队」，回车排队；接入 `nextQueueAction` 自动发出与「继续发送」；插队与 `waiting_input` 下的补充都走 `perform(single(...))`；队列发出被拒时放回队首、暂停，不回填输入框；补充可以带附件
+- [x] 6.2 新增 `AgentQueue.tsx`（列表、插队、删除、继续发送、置灰原因、被拒提示），`agent.css` 加样式；`AgentBlocks.tsx` 渲染 `input` 块（`interrupted` 时附「助手没有读到这条」）和乐观气泡；对话列表跳过已由 `input` 块显示的消息。`make check-frontend` 通过
+  - 实施记录（清单外改动）：`agentBlocks.ts` 把 `input` 登记为可渲染的块类型（不登记会降级成「需要更新页面」）；`agentRuns.ts` 的 `TurnContext` 加 `titleOf`，让运行里的 `input` 气泡显示引用标题；`agentOutgoing.ts` 加 `isRunInput`，`refreshAfterSend` 对插队/补充返回 `none`（气泡由 `input` 块画出，不重读对话），连带 `scripts/agent-outgoing.test.ts`。`UserMessage` 从 `AgentPanel.tsx` 移到 `AgentBlocks.tsx` 供两处共用。
+  - 实施中补的两处：`steerSegments` 去掉引用之间的空白文字片段（接口不收空白片段）；`recoverQueue` 在条目没发出时清掉 `settledRun`，否则交接中刷新后那条不会再自动发出。队列条目经「重新发送」重放时由面板接手，被拒回到输入框。
 
 ## 7. e2e 与回归
 

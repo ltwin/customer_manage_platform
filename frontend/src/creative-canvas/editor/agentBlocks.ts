@@ -33,6 +33,7 @@ const supported: Record<string, number> = {
   plan: 1,
   notice: 1,
   compaction: 1,
+  input: 1,
 }
 const processTypes = new Set(['thinking', 'tool', 'plan'])
 

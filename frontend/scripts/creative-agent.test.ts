@@ -585,15 +585,20 @@ test('a refused send goes back to the head and pauses', () => {
 })
 
 test('after a reload a message being handed over is in the queue or the chain, never both or neither', () => {
-  const queue = markSending(enqueue(emptyQueue, queued('a')), 'a')
+  const queue = { ...markSending(enqueue(emptyQueue, queued('a')), 'a'), settledRun: 'r1' }
   const chain: PendingAgentChain = {
     steps: messageSteps('c', { model: 'm', imageInput: false, revisionIDs: [], segments: [{ type: 'text', text: 'a' }] }),
     draft: { conversation: 'c', model: 'm', skill: '', text: 'a', queueItem: 'a' },
   }
-  assert.deepEqual(recoverQueue(queue, chain).items, [])
+  const handed = recoverQueue(queue, chain)
+  assert.deepEqual(handed.items, [])
+  assert.equal(handed.settledRun, 'r1')
   const kept = recoverQueue(queue, null)
   assert.equal(kept.items.length, 1)
   assert.equal(kept.items[0].sending, undefined)
+  // Never sent: the finished run is weighed again, so the message still goes out.
+  assert.equal(kept.settledRun, undefined)
+  assert.equal(nextQueueAction(kept, runIn('r1', 'succeeded'), true).send?.id, 'a')
   // The chain keeps naming its queue item across a reload.
   assert.equal(pendingAgentChain(JSON.stringify(chain))?.draft?.queueItem, 'a')
 })
@@ -627,6 +632,18 @@ test('only words and references steer; a skill keeps the message queued', () => 
     [{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }],
   )
   assert.equal(steerSegments([{ type: 'skill_ref', skill_id: 's', skill_version_id: 'v' }, { type: 'text', text: 'x' }]), null)
+  // The blank between two references is not a segment of its own.
+  assert.deepEqual(
+    steerSegments([
+      { type: 'content_ref', content_revision_id: 'ccrv_a' },
+      { type: 'text', text: ' ' },
+      { type: 'content_ref', content_revision_id: 'ccrv_b' },
+    ]),
+    [
+      { type: 'content_ref', content_revision_id: 'ccrv_a' },
+      { type: 'content_ref', content_revision_id: 'ccrv_b' },
+    ],
+  )
   assert.equal(steerBlocked(queued('a', { steer: null }), true), '选了 Skill 的消息只能排队')
   assert.equal(steerBlocked(queued('a', { hasImage: true }), false), '当前模型不支持图片，只能排队')
   assert.equal(steerBlocked(queued('a', { hasImage: true }), true), '')

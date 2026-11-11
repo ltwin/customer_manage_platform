@@ -139,21 +139,27 @@ export function resumeQueue(
 }
 
 // 刷新后：带 sending 的一条，若待确认链就是它，由链负责后续，移出队列；
-// 没有链说明还没落盘、请求没有发出，它仍在队首。
+// 没有链说明还没落盘、请求没有发出，它仍在队首，那一轮也要重新算一次，
+// 否则成功结束的那一轮已记为处理过，这条就再也不会自动发出。
 export function recoverQueue(
   queue: ConversationQueue,
   pending: PendingAgentChain | null,
 ): ConversationQueue {
   const owner = pending?.draft?.queueItem
   let changed = false
+  let unsent = false
   const items = queue.items.flatMap((item) => {
     if (!item.sending) return [item]
     changed = true
     if (item.id === owner) return []
+    unsent = true
     const { sending: _sending, ...rest } = item
     return [rest]
   })
-  return changed ? { ...queue, items } : queue
+  if (!changed) return queue
+  if (!unsent) return { ...queue, items }
+  const { settledRun: _settled, ...rest } = queue
+  return { ...rest, items }
 }
 
 // 插队按钮为什么不能用；能用时为空。
@@ -166,13 +172,16 @@ export function steerBlocked(
   return ''
 }
 
-// 去掉 Skill 的片段才能插队；有 Skill 时整条只能排队。
+// 去掉 Skill 的片段才能插队；有 Skill 时整条只能排队。引用之间只隔着空格时，
+// 那段空白不单独成段：插队和补充不收空白的文字片段。
 export function steerSegments(segments: Segment[]): SteerSegment[] | null {
   if (segments.some((segment) => segment.type !== 'text' && segment.type !== 'content_ref'))
     return null
-  return segments.map((segment) =>
+  return segments.flatMap((segment): SteerSegment[] =>
     segment.type === 'text'
-      ? { type: 'text', text: segment.text ?? '' }
-      : { type: 'content_ref', content_revision_id: segment.content_revision_id ?? '' },
+      ? segment.text?.trim()
+        ? [{ type: 'text', text: segment.text }]
+        : []
+      : [{ type: 'content_ref', content_revision_id: segment.content_revision_id ?? '' }],
   )
 }

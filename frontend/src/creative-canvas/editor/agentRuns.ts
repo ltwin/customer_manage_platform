@@ -196,5 +196,7 @@ export interface TurnContext {
   account?: string
   // Re-runs one failed read of a finished run; absent while it cannot be sent.
   retry?: (runID: string, stepID: string) => void
+  // Titles of what the photographer referenced, for messages drawn in a run.
+  titleOf?: (revisionID: string) => string | undefined
 }
 export const AgentTurnContext = createContext<TurnContext>({})

@@ -507,7 +507,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.cc-agent-exchange.is-sending .cc-agent-user {
+.cc-agent-user[aria-busy='true'] {
   opacity: 0.6;
 }
 .cc-agent-chip {
@@ -1312,4 +1312,87 @@
     right: -36px;
     width: min(248px, calc(100vw - 48px));
   }
+}
+
+/* 排队的消息：输入框上方一列，单行省略；插队、删除只在悬停或聚焦时显眼 */
+.cc-agent-queue {
+  border-radius: var(--r);
+  background: var(--s2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-size: 12px;
+}
+.cc-agent-queue ol {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.cc-agent-queue li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+}
+.cc-agent-queue li:hover {
+  background: var(--s3);
+}
+.cc-agent-queue li[aria-busy='true'] {
+  opacity: 0.6;
+}
+.cc-agent-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.cc-agent-queue-text .cc-agent-chip {
+  max-width: 96px;
+  line-height: 18px;
+  vertical-align: baseline;
+}
+.cc-agent-queue-state {
+  flex: none;
+  color: var(--fg-3);
+}
+.cc-agent-queue button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  cursor: pointer;
+}
+.cc-agent-queue button:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--s4);
+  color: var(--fg);
+}
+.cc-agent-queue button:disabled,
+.cc-agent-queue button[aria-disabled='true'] {
+  color: var(--fg-3);
+  cursor: default;
+}
+.cc-agent-queue-paused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 2px 12px;
+  color: var(--warning);
+}
+.cc-agent-queue-paused span {
+  flex: 1;
+}
+.cc-agent-queue-paused button {
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-3);
 }
