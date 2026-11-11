@@ -1,12 +1,12 @@
 {
   "uid": "81e65423-dd89-46de-b95d-43333b1e7b97",
-  "revision": 5,
+  "revision": 6,
   "id": "agent-message-queue",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-11T07:09:10.244Z",
-  "updatedAt": "2026-11-11T08:33:45.417Z",
+  "updatedAt": "2026-11-11T08:35:02.067Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -50,8 +50,19 @@
       "removed": []
     }
   ],
+  "baseline": {
+    "commit": "db4d0f3f3c2f25994a858351d8502eb13f98d0f1",
+    "at": "2026-11-11T08:35:00.420Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "0333fe68d258f78ac234c700c0439129aa4d6396b10daca66936cff53ee9ba79"
+    },
+    "preExisting": [
+      ".lti/snapshots/0333fe68d258f78ac234c700c0439129aa4d6396b10daca66936cff53ee9ba79.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
