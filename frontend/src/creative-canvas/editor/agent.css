@@ -827,7 +827,7 @@
   color: var(--fg-3);
   text-align: right;
 }
-.cc-agent-panel .cc-agent-scene-changes button {
+.cc-agent-panel .cc-agent-scene-changes button:not(.cc-agent-fold) {
   flex: none;
   padding: 1px 8px;
   border: 1px solid var(--line-2);
@@ -838,6 +838,9 @@
 }
 .cc-agent-panel .cc-agent-scene-changes button:disabled {
   opacity: 0.5;
+}
+.cc-agent-panel .cc-agent-scene-changes button.cc-agent-fold {
+  color: var(--fg-2);
 }
 .cc-agent-scene-changes .cc-agent-note {
   margin: 4px 0 0;

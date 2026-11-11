@@ -1,5 +1,5 @@
-import { useCallback, useContext, useEffect, useState } from 'react'
-import { Box, X } from 'lucide-react'
+import { useCallback, useContext, useEffect, useId, useState } from 'react'
+import { Box, ChevronDown, ChevronUp, X } from 'lucide-react'
 import {
   commandScene,
   readRunChanges,
@@ -137,6 +137,8 @@ export function SceneRunChanges({
   ))
 }
 
+const sceneChangePreviewLimit = 5
+
 function SceneChangeList({
   runID,
   documentID,
@@ -145,7 +147,9 @@ function SceneChangeList({
   documentID: string
 }) {
   const { canvas, account } = useContext(AgentTurnContext)
+  const listID = useId()
   const [changes, setChanges] = useState<RunChanges | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -171,6 +175,11 @@ function SceneChangeList({
   if (failed && !changes)
     return <p className="cc-agent-note">「{title}」的本轮改动暂时读不出来</p>
   if (!changes?.revisions.length || !changes.entries.length) return null
+  const remainingCount = changes.entries.length - sceneChangePreviewLimit
+  const visibleEntries = expanded
+    ? changes.entries
+    : changes.entries.slice(0, sceneChangePreviewLimit)
+  const DisclosureIcon = expanded ? ChevronUp : ChevronDown
 
   const restore = async (batches: readonly RestoreBatch[], name?: string) => {
     if (!account || busy) return
@@ -206,8 +215,8 @@ function SceneChangeList({
           撤销本轮
         </button>
       </header>
-      <ul>
-        {changes.entries.map((entry) => {
+      <ul id={listID}>
+        {visibleEntries.map((entry) => {
           const id = entry.target.object_id ?? entry.target.unit ?? ''
           const back =
             entry.blocked?.reason === 'changed_by_others' &&
@@ -244,6 +253,18 @@ function SceneChangeList({
           )
         })}
       </ul>
+      {remainingCount > 0 && (
+        <button
+          type="button"
+          className="cc-agent-fold"
+          aria-expanded={expanded}
+          aria-controls={listID}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <DisclosureIcon size={12} aria-hidden="true" />
+          {expanded ? '收起改动' : `展开其余 ${remainingCount} 项改动`}
+        </button>
+      )}
       {notice && (
         <p className="cc-agent-note" role="status">
           {notice}

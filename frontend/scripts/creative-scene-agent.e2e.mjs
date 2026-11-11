@@ -331,6 +331,7 @@ class PanelServer {
     this.commands = []
     this.created = []
     this.changeReads = 0
+    this.extraChanges = []
     this.restored = new Set()
     this.undoAll = [tableBatch]
     // Statuses for the next commands, in order; past the end, 200.
@@ -347,6 +348,7 @@ class PanelServer {
         { target: { kind: 'object', object_id: 'sobj_chair000000000000000000' }, name: '椅子', change: 'added', ...chair },
         { target: { kind: 'object', object_id: 'sobj_table000000000000000000' }, name: '桌子', change: 'modified', restore: tableBatch, blocked: null },
         { target: { kind: 'object', object_id: 'sobj_lamp0000000000000000000' }, name: '台灯', change: 'modified', restore: null, blocked: { reason: 'changed_by_others', revision: '5', actor_kind: 'photographer' } },
+        ...this.extraChanges,
       ],
       undo_all: this.undoAll,
     }
@@ -399,9 +401,10 @@ async function routePanel(context, panel) {
   })
 }
 
-async function openPanel() {
+async function openPanel(extraChanges = []) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 } })
   const panel = new PanelServer()
+  panel.extraChanges = extraChanges
   await routePanel(context, panel)
   const t = await tab(context, '.scene-agent-panel-qa.html')
   await t.page.getByRole('log', { name: '对话消息' }).getByText('搭好了：椅子、桌子和台灯。').waitFor()
@@ -699,6 +702,40 @@ try {
     await p.page.reload()
     await p.page.locator('.cc-agent-fold').first().click()
     await p.page.getByText('截图已不可用').waitFor()
+    assert.deepEqual(p.errors, [])
+    await p.context.close()
+  })
+
+  await check('the scene change list previews five rows and can expand and collapse on a narrow screen', async () => {
+    const extraChanges = ['背景板', '柔光箱', '反光板', '灯架'].map((name, index) => ({
+      target: { kind: 'object', object_id: `sobj_extra_${index}` },
+      name, change: 'added', restore: null, blocked: null,
+    }))
+    const p = await openPanel(extraChanges)
+    await p.page.setViewportSize({ width: 375, height: 812 })
+    const list = p.page.getByRole('region', { name: '本轮对「棚拍布景」的改动' })
+    const rows = list.getByRole('listitem')
+    const expand = list.getByRole('button', { name: '展开其余 2 项改动' })
+    const collapse = list.getByRole('button', { name: '收起改动' })
+    await expand.waitFor()
+    assert.equal(await rows.count(), 5)
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false')
+    await expand.press('Enter')
+    await collapse.waitFor()
+    assert.equal(await rows.count(), 7)
+    assert.equal(await collapse.getAttribute('aria-expanded'), 'true')
+    assert.deepEqual(await list.locator('.cc-agent-scene-name').allTextContents(),
+      ['椅子', '桌子', '台灯', '背景板', '柔光箱', '反光板', '灯架'])
+    await collapse.press('Space')
+    await expand.waitFor()
+    assert.equal(await rows.count(), 5)
+    assert.equal(p.panel.changeReads, 1)
+
+    p.panel.extraChanges = extraChanges.slice(0, 2)
+    await p.page.reload()
+    await rows.nth(4).waitFor()
+    assert.equal(await rows.count(), 5)
+    assert.equal(await list.getByRole('button', { name: /展开|收起/ }).count(), 0)
     assert.deepEqual(p.errors, [])
     await p.context.close()
   })
