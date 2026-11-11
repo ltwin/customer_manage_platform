@@ -212,10 +212,13 @@ try {
   await check('button: waiting for input stops when empty and continues once written', async () => {
     const s = await scene({ state: 'waiting_input', cancel: async ({ json, server }) => json(answered(server.run)) })
     await s.button('停止').waitFor()
-    await s.page.locator('#creative-agent-draft').fill('用暖色')
+    // 补充和新消息用同一个输入框，可以带附件。
+    await s.page.getByRole('textbox', { name: '补充内容' }).click()
+    await s.page.keyboard.type('用暖色')
     await s.button('补充并继续').waitFor()
     assert.equal(await s.button('停止').count(), 0)
-    await s.page.locator('#creative-agent-draft').fill('')
+    await s.page.keyboard.press('ControlOrMeta+A')
+    await s.page.keyboard.press('Backspace')
     await s.button('停止').waitFor()
     await s.close()
   })

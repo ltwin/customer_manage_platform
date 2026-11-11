@@ -32,8 +32,9 @@
 
 ## 7. e2e 与回归
 
-- [ ] 7.1 新增 `frontend/scripts/agent-queue.e2e.mjs`（`AGENT_QUEUE_E2E_ONLY` 单用例过滤），逐个用例通过：回车排队同帧清空；成功后只发一条；停止或 `partial` 后暂停并能继续发送；插队同帧出现气泡；409 回队首；响应丢失后重放同一请求；`waiting_input` 达到上限时的提示；Skill / 图片置灰；刷新后队列还在；交接中刷新；请求与直接发送一致
-- [ ] 7.2 回归：`agent-stop.e2e.mjs`、`agent-send.e2e.mjs` 逐个用例通过
+- [x] 7.1 新增 `frontend/scripts/agent-queue.e2e.mjs`（`AGENT_QUEUE_E2E_ONLY` 单用例过滤），逐个用例通过：回车排队同帧清空；成功后只发一条；停止或 `partial` 后暂停并能继续发送；插队同帧出现气泡；409 回队首；响应丢失后重放同一请求；`waiting_input` 达到上限时的提示；Skill / 图片置灰；刷新后队列还在；交接中刷新；请求与直接发送一致
+- [x] 7.2 回归：`agent-stop.e2e.mjs`、`agent-send.e2e.mjs` 逐个用例通过
+  - 实施记录：`agent-stop.e2e.mjs` 的「等补充」用例原来用 `#creative-agent-draft` 文本框，补充改用 `PromptEditor`（可带附件）后改为按「补充内容」输入框操作，断言不变。
 
 ## 8. 文档
 
