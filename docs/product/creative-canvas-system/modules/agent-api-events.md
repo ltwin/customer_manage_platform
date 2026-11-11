@@ -12,6 +12,15 @@ created: 2026-09-10
 
 事件模型由 [V6-030 design](../../../../.codestable/features/2026-10-08-agent-stream-blocks/agent-stream-blocks-design.md) 取代 §2 的事件表：所有可见过程统一为持久化的有序块，事件只剩 `block.created`、`block.updated` 和已有的 run 级事件（`run.state_changed`、`run.finished`、`usage.updated`）。`message.delta` 和 `step.state_changed` 不再使用。用户回应统一走 `POST /agent-runs/{id}/blocks/{block_id}/respond`。信封、`seq`、快照加 `after_seq` 补读、水位和重连规则（§1 末行、§3）继续有效。思考块只展示供应商的公开摘要，见 PRD §11.3 #11。
 
+## 2026-11-11 补充：插队与 input 块（agent-message-queue）
+
+- 运行进行中，摄影师可以把一条消息插进这一轮（`POST /agent-runs/{id}/steers`）；运行在 `waiting_input` 时同样的插队走 `supplements`。两者都可以带文字、引用和附件（`instruction_segments`），Skill 与命令不能插队。
+- 服务端同一事务写三件事：一条 `role=user`、`run_id=该运行` 的消息，`creative_run_inputs` 的新批次，一个 `input` 块（`pending`）。202 只表示已接收。
+- 下一次模型请求带上这批输入时，块在准备该步骤的事务里变为 `delivered`（已送达）。最终回答写出期间到达的插队，运行在同一个 run 里再跑一轮回答它；最终回答入账后到达的插队被拒（409），前端放回队首，作为下一轮发出。运行在送达前结束时块变为 `interrupted`，前端显示「助手没有读到这条」；worker 中断后由救援结束为 `partial`（`creative_steer_undelivered`）。
+- `input` 块：`payload_version` 1，`payload = {message_id, body}`（`body` 同消息正文），状态 `pending → delivered`，共用终态 `interrupted`；`source_key = input:<batch_ordinal>`。对话消息列表里已由 `input` 块显示的消息不再单独画出；本次之前写入、没有 `input` 块的纯文字补充仍按普通用户消息显示。
+- 附带内容的外发：摄影师在本运行中亲手附带或引用的本账号内容由账号级同意覆盖，不必在运行同意的修订清单里；仍校验归属、可用、撤销、数据类别（图片需要 `image_preview`）和运行模型的图片能力。见 [data-model.md](../data-model.md) 外发同意的资源边界。
+- 排队只存在前端（每个对话一份，`sessionStorage`），服务端不知道队列；请求都经待确认链，结果未知时用同一个 operation 重放。
+
 ## 当前实现补充（2026-09-30）
 
 提交中的 `content_ref` 支持已保存的文本与图片修订，后者需要模型图片能力与 `image_preview` 同意；图片读取句柄由服务端绑定。`canvas_metadata` 同意允许发送小画布概览及调用 `read_canvas`。素材权限仍由 `selected_revision_ids` 的精确集合约束。
@@ -38,7 +47,8 @@ created: 2026-09-10
 | GET /agent-runs/{id} | 当前run/步骤摘要/产物/等待项/限制/费用状态，以及snapshot_seq、earliest_event_seq、finished_at；大输入/结果单独有界读取 |
 | GET /agent-runs/{id}/inputs | 冻结来源、读取级别、修订与到期状态；读取媒体仍检查当前用途 |
 | GET /agent-runs/{id}/artifacts | 提案、影响范围、应用状态、过期与实际变更定位 |
-| POST /agent-runs/{id}/supplements | expected_revision、waiting_token、明确消息/已授权输入 → 202 queued；保持原模型/同意/截止时间 |
+| POST /agent-runs/{id}/supplements | expected_revision、waiting_token、`text` 或 `instruction_segments`（text / content_ref，二选一）→ 202 queued；保持原模型/同意/截止时间；同事务写 `input` 块 |
+| POST /agent-runs/{id}/steers | `instruction_segments`（text / content_ref）→ 202，**已接收**；运行状态与 revision 不变，`last_event_seq` 前进到 `input` 块的创建；最终回答已入账、运行不在 queued/running/waiting_client、已停止、超过截止时间或已有 12 批输入 → 409/413；见下方「插队与 input 块」 |
 | POST /agent-runs/{id}/apply | expected_revision、artifact_id/revision、proposal_hash、waiting_token、mode=apply_only或apply_and_continue → 前者200原子应用及终态，后者202取得slot入队、GET查询真正效果；mode必填，不隐式继续模型调用 |
 | POST /agent-runs/{id}/cancel | 幂等停止当前运行；首次执行即结束为终态并释放slot，200返回终态run，未知费用在后台核实；同key回放返回首次快照，非终态时换新key重发；不能只取消队列job |
 | POST /agent-runs/{id}/close-reconciliation | 只在未被停止的reconciling，明确结束等待 → 200终态/settlement；核实继续，写slot释放；面板不再调用 |

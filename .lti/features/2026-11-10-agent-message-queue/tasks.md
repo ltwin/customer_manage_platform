@@ -38,4 +38,4 @@
 
 ## 8. 文档
 
-- [ ] 8.1 `docs/product/creative-canvas-system/data-model.md` 补写外发资源边界的新规则；`docs/dev/creative-agent.md` 写插队、补充片段、送达与续跑；`docs/product/creative-canvas-system/modules/agent-api-events.md` 增加 steers 行和 `input` 块
+- [x] 8.1 `docs/product/creative-canvas-system/data-model.md` 补写外发资源边界的新规则；`docs/dev/creative-agent.md` 写插队、补充片段、送达与续跑；`docs/product/creative-canvas-system/modules/agent-api-events.md` 增加 steers 行和 `input` 块
