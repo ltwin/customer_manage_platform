@@ -71,6 +71,60 @@ type runtimeHandler struct {
 	// skillIndex is the frozen index of skill versions the conversation used
 	// before; load_skill may load any of them besides the run's own.
 	skillIndex []skillIndexEntry
+	// final is the framework's conversation when the agent last finished; a
+	// steer that arrived during the final answer continues from it.
+	final []*schema.Message
+}
+
+// AfterAgent keeps the finished conversation so the run can answer a steer
+// the model did not see without starting the turn over.
+func (h *runtimeHandler) AfterAgent(ctx context.Context, state *adk.ChatModelAgentState) (context.Context, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.final = append(h.final[:0], state.Messages...)
+	return ctx, nil
+}
+
+// undeliveredInputs reports an input batch the finished conversation does not
+// carry yet.
+func (h *runtimeHandler) undeliveredInputs(ctx context.Context) (bool, error) {
+	h.mu.Lock()
+	seen := map[string]bool{}
+	for _, m := range h.final {
+		if key, ok := m.Extra["creative_supplement"].(string); ok {
+			seen[key] = true
+		}
+	}
+	h.mu.Unlock()
+	rows, err := h.scope.QueryPage(ctx, "creative_run_inputs", "batch_ordinal", "run_id=$2 AND batch_ordinal>0 AND ordinal=0", []store.OrderBy{{Column: "batch_ordinal"}}, maxSupplements+1, 0, h.held.RunID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var batch int
+		if err := rows.Scan(&batch); err != nil {
+			return false, err
+		}
+		if !seen[strconv.Itoa(batch)] {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// finalMessages is the input of a continuation. The framework prepends the
+// instruction again, so the system messages it put there are dropped.
+func (h *runtimeHandler) finalMessages() []*schema.Message {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	messages := make([]*schema.Message, 0, len(h.final))
+	for _, m := range h.final {
+		if m.Role != schema.System {
+			messages = append(messages, m)
+		}
+	}
+	return messages
 }
 
 func (h *runtimeHandler) setComposition(c contextComposition) {

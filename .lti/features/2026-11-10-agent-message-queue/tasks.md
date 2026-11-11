@@ -2,7 +2,7 @@
 
 ## 1. 穿刺：续跑可行性（U1）
 
-- [ ] 1.1 在 `steer_test.go` 用脚本化 stubVendor 写三个穿刺用例：①最终回答后插入一个批次，用 `AfterAgent` 留下的消息 `runner.Run` 续跑，断言第二次模型请求的消息序列（系统指令不重复、`Extra` 保留、插队文字恰好一次）；②续跑中遇到工具等待，从检查点恢复后能继续；③续跑前退出，运行留在可被 sweep 处理的状态。①②可行就继续；不可行就停下，回报 owner 并改用 `WrapModel` 方案
+- [x] 1.1 在 `steer_test.go` 用脚本化 stubVendor 写三个穿刺用例：①最终回答后插入一个批次，用 `AfterAgent` 留下的消息 `runner.Run` 续跑，断言第二次模型请求的消息序列（系统指令不重复、`Extra` 保留、插队文字恰好一次）；②续跑中遇到工具等待，从检查点恢复后能继续；③续跑前退出，运行留在可被 sweep 处理的状态。①②可行就继续；不可行就停下，回报 owner 并改用 `WrapModel` 方案。结果：①② 通过（`TestSteerAfterTheFinalAnswerIsAnsweredInTheSameRun`、`TestSteerContinuationResumesFromItsCheckpoint`），整包回归通过；③ 依赖 R7，并入 3.1
 
 ## 2. 后端：输入批次与插队
 

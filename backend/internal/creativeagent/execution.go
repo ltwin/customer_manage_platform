@@ -178,6 +178,21 @@ func (e *runExecution) run(ctx context.Context) (turnOutcome, error) {
 		iterator = runner.Run(ctx, e.prompt, adk.WithCheckPointID(h.held.RunID))
 	}
 	runErr := drainAgent(iterator)
+	// A steer accepted while the final answer was being written was not in
+	// that request. The run answers it before it ends (design R4); a steer
+	// after the answer was recorded is refused, so this sees all of them.
+	for runErr == nil {
+		pending, err := h.undeliveredInputs(ctx)
+		if err != nil {
+			runErr = err
+			break
+		}
+		if !pending {
+			break
+		}
+		iterator = runner.Run(ctx, h.finalMessages(), adk.WithCheckPointID(h.held.RunID))
+		runErr = drainAgent(iterator)
+	}
 	// Keep queries after cancellation bounded, and derive delivery from the
 	// journal: a replayed Gateway result does not invoke Consume a second time.
 	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
