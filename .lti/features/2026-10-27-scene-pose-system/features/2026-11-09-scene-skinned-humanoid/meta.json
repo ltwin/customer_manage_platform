@@ -1,12 +1,12 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 6,
+  "revision": 8,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-pose-system",
   "designBinding": {
-    "version": 7,
+    "version": 8,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -56,7 +56,7 @@
   },
   "state": "in-progress",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-11T01:57:20.526Z",
+  "updatedAt": "2026-11-11T02:44:02.066Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -65,24 +65,33 @@
       "trust-boundary"
     ]
   },
-  "approvals": {
-    "proposal": {
+  "approvals": {},
+  "approvalHistory": [
+    {
       "by": "samson",
       "at": "2026-11-10T09:15:43.902Z",
-      "contentHash": "77dd6f08e052b3ca"
+      "contentHash": "77dd6f08e052b3ca",
+      "role": "proposal"
     },
-    "design": {
+    {
       "by": "samson",
       "at": "2026-11-10T09:15:43.902Z",
-      "contentHash": "36ef1b38caca80ce"
+      "contentHash": "36ef1b38caca80ce",
+      "role": "design"
     }
-  },
-  "approvalHistory": [],
+  ],
   "revisions": [
     {
       "at": "2026-11-11T01:57:18.110Z",
       "summary": "AC-4 修正：RobotExpressive 的脚挂在根骨骼下，任何手动映射都不成立，只能按非人形骨架导入；「手动修改后成立」改用 Xbot 错映射一根骨骼的夹具验证（owner 2026-11-10 同意）",
       "contentHash": "bd7d45fbcba3d502",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-11T02:44:00.072Z",
+      "summary": "Epic 修订 v8：素体的入口改为资产库页面与场景资产面板模型类的「内置」来源（同内置材质），「添加 > 素体」保留为快捷入口；AC-1 加资产库与资产面板的检查（owner 2026-11-10 同意）",
+      "contentHash": "20c8db317cf5f14e",
       "added": [],
       "removed": []
     }

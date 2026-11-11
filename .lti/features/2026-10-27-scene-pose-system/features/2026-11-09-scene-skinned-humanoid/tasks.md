@@ -105,12 +105,13 @@
   - 文档：`docs/dev/builtin-models.md` 补素体的生成步骤。
   - 完成判据：服务启动时清单校验通过；两个素体的 `rig` 都是 52 根骨骼。
 - [ ] 6.2 素体的界面与验收：
-  - `SceneEditor.tsx` 加「添加 > 素体」；`AssetPanel.tsx` 加「素体」分区。
+  - `SceneEditor.tsx` 加「添加 > 素体」快捷入口；`AssetPanel.tsx` 的模型类加「我的 / 内置」切换（Epic 修订 v8，取代单独的「素体」分区）。
+  - 资产库页面：`LibraryTree` 加「内置模型」，`BuiltinBrowser` 支持模型，`BuiltinViewer` 显示 3D 预览、来源与授权。
   - `editing.ts:newModelInstance` 改为接收模型引用。
   - `ModelParams.tsx`：内置模型的信息块，以及「换成男素体 / 女素体」（带目标材质）。
   - 带骨骼的模型和内置模型隐藏面分配、存入资产库、改参数。
   - 选材面板与资产库的内置来源过滤 `listed: false`。
-  - e2e（单条）：AC-1，含换素体与撤销。
+  - e2e（单条）：AC-1，含资产库内置模型、资产面板拖入、换素体与撤销。
   - e2e：把 GLB 请求改成 503，检查占位与导出失败（AC-12）。
 - [ ] 6.3 实测与 owner 材料：
   - AC-8：在实时 GI 下给素体换一个姿态，记录 CPU 蒙皮、静态化、段重建、GI 收敛到可导出的耗时。

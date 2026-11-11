@@ -213,7 +213,8 @@ worker（上传 model）：
   - `downloadGLB` 遇到 `builtin:` 键时，经 `authorizedFetch` 读 `/creative/scene-models/<file>`。
   - 503 时按「模型加载失败」处理：视口占位并提示，导出失败。
 - **放置**：
-  - 「添加 > 素体」和资产面板「素体」两个入口，都按条目写 `model: {builtin}` 和 `material_slots = materials`，经现有 `newModelInstance`（改为接收模型引用）。
+  - 场景资产面板模型类的「内置」来源（与「我的」切换，同内置材质，Epic 修订 v8）和「添加 > 素体」快捷入口，都按条目写 `model: {builtin}` 和 `material_slots = materials`，经现有 `newModelInstance`（改为接收模型引用）。
+  - 资产库页面：左侧树在「内置材质」旁加「内置模型」，网格只读，按名称、品类本地过滤；查看浮窗（`BuiltinViewer`）对内置模型显示 3D 预览（经 `preview/` 按模型键加载）、来源与授权。
   - 属性栏的模型区：内置模型显示名称、来源与授权，另有「换成男素体 / 女素体」。它发一个 `set_instance_model`，带上目标条目的 `materials` 作为 `material_slots`（评审第 6 项）：摄影师自定义过的材质一并重置；撤销按内容单元恢复原模型和原材质。助手换内置模型而没写材质时，工具层同样补上。
 
 ### 素体的生成
@@ -331,7 +332,8 @@ worker（上传 model）：
 | `frontend/src/creative-scene/import/run.ts` | 修改 | 提交带 `rig` |
 | `frontend/src/creative-scene/import/ImportModelDialog.tsx`、`import/RigMapping.tsx`（新增） | 修改 | 映射结果、原因、手动指定、按非人形导入 |
 | `frontend/src/creative-scene/SceneEditor.tsx`、`editing.ts:newModelInstance` | 修改 | 「添加 > 素体」；放置改为接收模型引用；查表改用模型键 |
-| `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 「素体」分区 |
+| `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 模型类的「我的 / 内置」切换，内置模型可拖入、双击放置 |
+| `frontend/src/creative-canvas/assets/LibraryTree.tsx`、`AssetsPage.tsx`、`BuiltinBrowser.tsx`、`builtin.ts`、`viewer/BuiltinViewer.tsx` | 修改 | 资产库的「内置模型」与查看浮窗的 3D 预览 |
 | `frontend/src/creative-scene/panels/ModelParams.tsx`、`panels/MaterialSlots.tsx` | 修改 | 内置模型的信息块与换男女；按模型键取槽位 |
 | `frontend/src/creative-scene/modelEdits.ts`、`saveModel.ts`、`faceEdit/state.ts`、`faceEdit/assign.ts`、`faceEdit/useFaceMeshes.ts`、`state/sync.ts`、`state/intents.ts` | 修改 | 按模型键查表；对内置模型关闭面分配、存入资产库、改参数 |
 | `frontend/src/creative-scene/materials/catalog.ts:texturedEntries`、`panels/LibraryPicker.tsx`、`creative-canvas/assets/builtin.ts` | 修改 | 过滤 `listed: false` |
@@ -344,7 +346,7 @@ worker（上传 model）：
 
 | 验收 | 验证方式 |
 |---|---|
-| AC-1 内置素体 | e2e（单条）：添加女素体 → 三处截图（材质预览、实时 GI 镜中、`lit` 导出）非空、贴图像素符合预期区域；换材质与撤销；属性栏没有面分配和存入资产库；换成男素体后带男素体的材质，撤销后回到女素体和原材质。owner 看图 |
+| AC-1 内置素体 | e2e（单条）：资产库内置模型列表与查看浮窗；场景资产面板切「内置」拖入；添加女素体 → 三处截图（材质预览、实时 GI 镜中、`lit` 导出）非空、贴图像素符合预期区域；换材质与撤销；属性栏没有面分配和存入资产库；换成男素体后带男素体的材质，撤销后回到女素体和原材质。owner 看图 |
 | AC-2 / AC-3 导入 VRM、Mixamo | 前端单测：五个角色的识别结果（映射数、手指、约束数），素材作为夹具（授权允许再分发的提交进仓库，其余在测试里下载并跳过）。e2e（单条）：导入 VRM 1.0 样例到放进场景、贴地 |
 | AC-4 映射不成立 | 共用测试向量（Go 与 TS）；单测：RobotExpressive 手动修改后仍不成立、可按非人形骨架导入，Xbot 错映射一根骨骼后手动改回成立；Go 测试：导入接口收到不成立的映射时 400 |
 | AC-5 换算与拒绝 | 单测：8 影响、归一化整数权重、全零权重夹具的换算结果与报告；Go 测试：蒙皮子集每条规则各一个反例（下标越界、权重和、缺逆绑定矩阵、混用网格、关节超限） |
