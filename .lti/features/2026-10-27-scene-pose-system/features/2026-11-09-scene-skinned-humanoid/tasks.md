@@ -113,11 +113,18 @@
 
 ## 5. 前端：渲染
 
-- [ ] 5.1 模型键与内置模型的加载：
+- [x] 5.1 模型键与内置模型的加载：
   - 新增 `models/key.ts:modelKey`、`models/catalog.ts`。
   - `downloadGLB` 遇到 `builtin:` 时走 `/creative/scene-models/`，503 时视口占位并提示、导出失败。
   - design 列出的查表调用点全部改用模型键（`SceneEditor.tsx`、`saveModel.ts`、`modelEdits.ts`、`host/*`、`panels/MaterialSlots.tsx`、`state/*`、`faceEdit/*`、`placement/*`）。
   - 完成判据：`tsc -b` 与 `oxlint` 无报错；现有场景相关单测和一条现有模型 e2e 照常通过（AC-11）。
+  - 实施记录：
+    - `models/key.ts`：`modelKey`、`builtinOf`、`builtinKey`。`models/catalog.ts`：清单副本、条目查询、`builtinModelURL`、内置摘要表，以及 `summaryOf(models, ref)`：先查传入的表，内置模型再查目录。宿主读到的 `doc.models` 和历史预览的表都来自服务端、不含内置模型，所以取景、出图加载、物件分发都用 `summaryOf`；编辑器的表在 `modelSummaries` 和历史预览两处都并入了内置摘要。
+    - 改为按模型键的：`SceneObjects.tsx`（`ModelMesh` 的键与摘要）、`host/render.ts:loadModels`、`host/framing.ts:sceneBounds`、`panels/MaterialSlots.tsx`（槽位、常量、来源槽位、部件加载）、`SceneEditor.tsx`（`modelOf`、属性栏的模型、槽位名）。
+    - 只对账号修订有意义的调用点保持读 `content_revision_id`，内置模型自然被排除：改代码和参数（`modelEdits.ts`、`retune`、代码面板）、派生与面分配（`faceEdit/assign.ts`）、同步层的未知修订判断与回执换号（`state/sync.ts`、`state/intents.ts`）、`pageExecutor` 的替换查询。`placement/*` 不查模型表，无需改动。
+    - 明确提示：面编辑对内置模型和 manifest 带 `skeleton` 的模型给出「带骨骼的模型和内置模型不能面编辑」（状态栏不再提示 Tab）；存入资产库对内置模型给出「内置模型不能存入资产库」。属性栏的代码模型参数区对内置模型不显示，内置模型的信息块留给 6.2。
+    - `downloadGLB` 对 `builtin:` 键经 `authorizedFetch` 读 `/creative/scene-models/<file>`；503 时报「内置模型的文件暂时读不到」，走现有的加载失败占位（导出同样失败）。
+    - 验证：`tsc -b`、`oxlint` 无报错；相关单测 11 个文件共 251 条通过；e2e（端口 5199，单条）「asset panel: Shift+A」和「a model that cannot be shown」通过。「a code model: 代码模型…」在改动前的提交上同样超时（等不到生成命令），与本次无关，未处理。
 - [ ] 5.2 蒙皮渲染：
   - `models/cache.ts` 分出骨架模板，合并时跳过蒙皮网格。
   - 新增 `objects/SkinnedModel.tsx`。

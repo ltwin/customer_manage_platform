@@ -40,6 +40,8 @@ import { useFaceMeshes } from './faceEdit/useFaceMeshes.ts'
 import { newIntentID, newMarkerID } from './ids.ts'
 import { forkPlan, ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
+import { builtinSummaries, summaryOf } from './models/catalog.ts'
+import { builtinOf, modelKey } from './models/key.ts'
 import type { SlotCount } from './models/faces.ts'
 import { codeGenerator, isImported } from './models/generator.ts'
 import { CodePanel } from './panels/CodePanel.tsx'
@@ -290,7 +292,7 @@ export default function SceneEditor({
   const localModels = useStore(modelCache.local)
   const knownModels = useStore(modelCache.known)
   const failedModels = useStore(modelCache.failed)
-  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels, knownModels), [u.preview, s.base, localModels, knownModels])
+  const models = useMemo(() => (u.preview ? { ...builtinSummaries, ...u.preview.models } : modelSummaries(s.base?.models, localModels, knownModels)), [u.preview, s.base, localModels, knownModels])
   // A placed asset's model is told apart once the server describes it.
   useEffect(() => {
     if (s.base) modelCache.settle(Object.keys(s.base.models ?? {}))
@@ -302,12 +304,12 @@ export default function SceneEditor({
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
   const faceObject = u.faceEdit ? byID.get(u.faceEdit.objectID) : undefined
   /** A model instance's summary, from what the editor knows of the scene's models. */
-  const modelOf = (o: SceneObject | undefined) => (o?.model?.content_revision_id ? models[o.model.content_revision_id] : undefined)
+  const modelOf = (o: SceneObject | undefined) => summaryOf(models, o?.model)
   const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelOf(faceObject), modelCache)
   /** A model instance whose model can be drawn; anything else has no model to fail. */
   const usableModel = (o: SceneObject | undefined) => modelOf(o)?.usable !== false
   const shownActive = (active && shownObjects.find((o) => o.id === active.id)) ?? null
-  const shownModel = shownActive?.model?.content_revision_id
+  const shownModel = modelKey(shownActive?.model)
   // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
   const hasObject = !!shownActive || selected.length > 0
   const hadObject = useRef(false)
@@ -535,7 +537,7 @@ export default function SceneEditor({
     }
   }
 
-  const slotNamesOf = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((x) => x.slot)
+  const slotNamesOf = (o: SceneObject) => slotsOf(o, modelOf(o)).map((x) => x.slot)
   /** 复制材质到选中物件: one update of every target, one undo step. */
   const copyMaterialsToSelected = () => {
     if (!active) return
@@ -1305,7 +1307,7 @@ export default function SceneEditor({
       return `${count ? `已选 ${count} 个三角形 · ` : ''}单击选面片 · 拖动框选 · Shift 加选 · L 选相连 · A 全选 · Esc 清空选区 · Tab 退出`
     }
     if (s.trashed) return '场景在回收站，请先恢复后再编辑'
-    if (selected.length) return `G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除${active && !faceEditBlock(active, true) ? ' · Tab 面编辑' : ''}`
+    if (selected.length) return `G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除${active && !faceEditBlock(active, true, modelOf(active)) ? ' · Tab 面编辑' : ''}`
     return '左键选择 · 拖动框选 · 中键环绕（Alt+左键） · Shift+A 添加'
   })()
   const deviceText = `导航：${u.device === 'auto' ? `${u.guessed === 'trackpad' ? '触控板' : '鼠标'}（自动）` : u.device === 'trackpad' ? '触控板' : '鼠标'}`
@@ -1520,7 +1522,7 @@ export default function SceneEditor({
                     />
                   )}
                   {shownActive?.kind === 'model_instance' && shownModel && isImported(models[shownModel]?.generator) && <ImportedModelInfo source={models[shownModel]?.import} />}
-                  {shownActive?.kind === 'model_instance' && shownModel && !isImported(models[shownModel]?.generator) && (
+                  {shownActive?.kind === 'model_instance' && shownModel && builtinOf(shownModel) === null && !isImported(models[shownModel]?.generator) && (
                     <ModelParams
                       key={shownActive.id}
                       generator={codeGenerator(models[shownModel]?.generator)}

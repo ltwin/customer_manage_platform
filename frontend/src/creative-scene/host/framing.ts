@@ -4,6 +4,8 @@ import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, clampFocus, fullFrame, verticalFov, type DepthOfField } from '../cameraOptics.ts'
 import { cameraDefaults } from '../state/apply.ts'
 import type { SceneModel } from '../models/cache.ts'
+import { summaryOf } from '../models/catalog.ts'
+import { modelKey } from '../models/key.ts'
 import { ev100, type ViewerExposure } from '../world/exposure.ts'
 import { docToView, positionToView, type Quat, type Vec3 } from '../space.ts'
 
@@ -169,8 +171,8 @@ export function sceneBounds(scene: Scene, models: Readonly<Record<string, SceneM
   for (const o of scene.objects) {
     if (!o.visible) continue
     let local: Box3 | null = null
-    if (o.kind === 'model_instance' && o.model?.content_revision_id) {
-      const b = models[o.model.content_revision_id]?.manifest?.bounds ?? modelFallback
+    if (o.kind === 'model_instance' && modelKey(o.model)) {
+      const b = summaryOf(models, o.model)?.manifest?.bounds ?? modelFallback
       local = new Box3(new Vector3().fromArray(b.min), new Vector3().fromArray(b.max))
     } else if (o.kind === 'primitive' && o.primitive && o.primitive.builtin !== 'ground@1') {
       const geometry = primitiveGeometry(o.primitive.builtin, o.primitive.params)

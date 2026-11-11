@@ -2,6 +2,7 @@ import { Mesh, type BufferGeometry, type Material, type Object3D } from 'three'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { readModelGenerator, type ModelGenerator } from '../api.ts'
+import { authorizedFetch } from '../../auth/session.ts'
 import { mediaTicket } from '../../creative-canvas/editor/media.ts'
 import { parseModelGLB, type MeshIdentity } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
@@ -10,10 +11,12 @@ import { disposePieceViews } from '../render/pieces.ts'
 import { mergeParts, noMerge } from './merge.ts'
 import { applyFaces, fingerprints, fingerprintsNow, flipWinding, namedIn, ownedMeshes, slotOfMaterial, type Faces, type OwnedMesh } from './faces.ts'
 import type { SceneSession } from '../state/sync.ts'
+import { builtinModel, builtinModelURL, builtinSummaries } from './catalog.ts'
+import { builtinOf } from './key.ts'
 
-// Model GLBs by content revision: one ticket, one download, one inspection
-// and one parse each. Instances draw the cached geometries, so a model used
-// a hundred times is in memory once.
+// Model GLBs by model key (models/key.ts: a content revision, or builtin:<id>):
+// one download, one inspection and one parse each. Instances draw the cached
+// geometries, so a model used a hundred times is in memory once.
 
 export type SceneModel = components['schemas']['CreativeSceneModel']
 
@@ -59,8 +62,17 @@ export type LocalModel = { glb: ArrayBuffer; summary: SceneModel; generator?: Mo
 export type Download = (revision: string) => Promise<ArrayBuffer>
 export type ReadGenerator = (revision: string) => Promise<ModelGenerator>
 
-async function downloadGLB(revision: string): Promise<ArrayBuffer> {
-  const ticket = await mediaTicket(revision, 'original', 'display')
+async function downloadGLB(key: string): Promise<ArrayBuffer> {
+  const builtin = builtinOf(key)
+  if (builtin !== null) {
+    const entry = builtinModel(builtin)
+    if (!entry) throw new Error(`没有内置模型 ${builtin}`)
+    const response = await authorizedFetch(builtinModelURL(entry.glb.name))
+    if (response.status === 503) throw new Error('内置模型的文件暂时读不到，请稍后再试')
+    if (!response.ok) throw new Error(`模型加载失败（${response.status}）`)
+    return response.arrayBuffer()
+  }
+  const ticket = await mediaTicket(key, 'original', 'display')
   const response = await fetch(ticket.url, { credentials: 'same-origin' })
   if (!response.ok) throw new Error(`模型加载失败（${response.status}）`)
   return response.arrayBuffer()
@@ -344,15 +356,16 @@ function disposeParts(parts: Promise<ModelParts>[]) {
 export const modelCache = new ModelCache()
 
 /**
- * What the editor knows about the models a scene names: the server's
- * summaries win, then local bakes, then what placed assets said.
+ * What the editor knows about the models a scene names, by model key: the
+ * server's summaries win, then local bakes, then what placed assets said;
+ * the built-in models always.
  */
 export function modelSummaries(
   server: Readonly<Record<string, SceneModel>> | undefined,
   local: Readonly<Record<string, LocalModel>>,
   known: Readonly<Record<string, SceneModel>> = {},
 ): Record<string, SceneModel> {
-  const out: Record<string, SceneModel> = { ...known }
+  const out: Record<string, SceneModel> = { ...builtinSummaries, ...known }
   for (const [id, m] of Object.entries(local)) out[id] = m.summary
   return { ...out, ...server }
 }

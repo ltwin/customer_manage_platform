@@ -3,6 +3,8 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
+import { summaryOf } from '../models/catalog.ts'
+import { modelKey } from '../models/key.ts'
 import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, softShadowsIn, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { applyExposure, preExposure, sceneLowSun, sceneLux } from '../world/exposure.ts'
@@ -91,8 +93,12 @@ export type Shooter = {
 
 /** Loads every model the scene shows; one that fails draws as its grey block. */
 export async function loadModels(scene: Scene, models: Readonly<Record<string, SceneModel>>): Promise<void> {
-  const revisions = new Set(scene.objects.flatMap((o) => (o.model?.content_revision_id && models[o.model.content_revision_id]?.usable !== false ? [o.model.content_revision_id] : [])))
-  await Promise.allSettled([...revisions].map((r) => modelCache.load(r, models[r]?.faces)))
+  const keys = new Map(scene.objects.flatMap((o) => {
+    const key = modelKey(o.model)
+    const summary = summaryOf(models, o.model)
+    return key && summary?.usable !== false ? [[key, summary] as const] : []
+  }))
+  await Promise.allSettled([...keys].map(([k, summary]) => modelCache.load(k, summary?.faces)))
 }
 
 export async function renderView(documentID: string, request: RenderRequest, read: (id: string) => Promise<SceneDocument> = readScene): Promise<Shot> {
