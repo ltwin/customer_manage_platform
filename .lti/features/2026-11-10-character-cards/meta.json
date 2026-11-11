@@ -1,0 +1,56 @@
+{
+  "uid": "659c2387-b2ba-46e6-ba28-48dfb497cf12",
+  "revision": 3,
+  "id": "character-cards",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "in-progress",
+  "createdAt": "2026-11-11T06:11:29.339Z",
+  "updatedAt": "2026-11-11T06:45:46.302Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "data-migration",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T06:45:01.762Z",
+      "contentHash": "b3b07e9ccc4b6beb"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T06:45:01.762Z",
+      "contentHash": "6ee73fbfdf3fe456",
+      "deltaHash": "50da087b480ed8d3"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "baseline": {
+    "commit": "8f10529e1b277be625f6bd018a70c964c45c2de7",
+    "at": "2026-11-11T06:45:46.156Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a8f58c50da7afbbf780c9a05fdaecffbf7bde0e0374bc86b3ebfd35682a9d152"
+    },
+    "preExisting": [
+      ".lti/features/2026-11-10-character-cards/contracts.md",
+      ".lti/features/2026-11-10-character-cards/design.md",
+      ".lti/features/2026-11-10-character-cards/discovery/research/reference-consistency.md",
+      ".lti/features/2026-11-10-character-cards/meta.json",
+      ".lti/features/2026-11-10-character-cards/proposal.md",
+      ".lti/features/2026-11-10-character-cards/specs.md",
+      ".lti/features/2026-11-10-character-cards/tasks.md",
+      ".lti/snapshots/a8f58c50da7afbbf780c9a05fdaecffbf7bde0e0374bc86b3ebfd35682a9d152.json",
+      "docs/research/tripo3d-modeling.md",
+      "pelican.html"
+    ]
+  },
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "develop"
+}
