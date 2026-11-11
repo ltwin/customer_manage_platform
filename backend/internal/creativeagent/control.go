@@ -204,19 +204,14 @@ func (s *Service) controlCommand(ctx context.Context, scope store.AccountScope, 
 			}
 			c.cancelled = &now
 		}
-		if err = s.gateway.ReleaseUnusedGroupInTx(ctx, tx, callerService, c.ID); err != nil {
-			return creativeops.Outcome{}, err
+		// A stop ends the run now even with a model call still out: the slot is
+		// freed and the call's cost stays open for the gateway to verify, as it
+		// does for any finished run (owner 2026-11-10).
+		state, code := RunFailed, "creative_reconciliation_closed"
+		if c.cancelled != nil {
+			state, code = RunCancelled, "creative_run_cancelled"
 		}
-		if c.unsettled() && !closeWaiting && now.Before(c.DeadlineAt) {
-			err = s.moveControlledRun(ctx, tx, c, RunReconciling, "creative_run_cancelled", now)
-		} else {
-			state, code := RunFailed, "creative_reconciliation_closed"
-			if c.cancelled != nil {
-				state, code = RunCancelled, "creative_run_cancelled"
-			}
-			err = s.endControlledRun(ctx, tx, c, state, code, now)
-		}
-		if err != nil {
+		if err = s.endControlledRun(ctx, tx, c, state, code, now); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		run, err := scanRun(tx.QueryRow(ctx, "creative_agent_runs", runColumns, "id=$2", c.ID))
@@ -425,7 +420,8 @@ func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id str
 		if c.State == RunRunning && c.lease != nil && now.Before(*c.lease) {
 			return nil
 		}
-		if !now.Before(c.DeadlineAt) || c.cancelled != nil && !c.unsettled() {
+		// A stop recorded by an older release may have left the run reconciling.
+		if !now.Before(c.DeadlineAt) || c.cancelled != nil {
 			state, code := RunFailed, "creative_run_deadline_exceeded"
 			if c.cancelled != nil {
 				state, code = RunCancelled, "creative_run_cancelled"

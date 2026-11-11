@@ -13188,7 +13188,7 @@ type ServerInterface interface {
 	// 工具块的参数与有界结果，展开时按需读取
 	// (GET /creative/agent-runs/{id}/blocks/{block_id}/detail)
 	GetCreativeAgentRunBlockDetail(c *gin.Context, id string, blockId string)
-	// 取消当前运行；未知费用保留核实
+	// 停止当前运行；立即结束，未知费用在后台继续核实
 	// (POST /creative/agent-runs/{id}/cancel)
 	CancelCreativeAgentRun(c *gin.Context, id string, params CancelCreativeAgentRunParams)
 	// 结束运行的核实等待；费用核实继续

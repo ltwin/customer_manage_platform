@@ -768,7 +768,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 取消当前运行；未知费用保留核实 */
+        /**
+         * 停止当前运行；立即结束，未知费用在后台继续核实
+         * @description 首次执行即把运行结束为终态（cancelled，已有交付回答时为 partial）并释放会话槽位，
+         *     进行中的模型调用随后被中断；未知费用不记为零，由 Gateway 在后台核实。
+         *     同一 Idempotency-Key 的回放返回首次执行时的快照——更早版本记录的回执可能回放出
+         *     reconciling，调用方以响应 state 为准，非终态时换新 key 重发。
+         */
         post: operations["cancelCreativeAgentRun"];
         delete?: never;
         options?: never;
@@ -10343,7 +10349,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 成功；幂等回放原响应 */
+            /** @description 成功，返回终态运行；幂等回放原响应 */
             200: {
                 headers: {
                     [name: string]: unknown;

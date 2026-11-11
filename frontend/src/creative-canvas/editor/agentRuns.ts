@@ -19,16 +19,71 @@ interface RunsState {
   // Expanded/collapsed choices, keyed by block id (`segment:<first block id>`
   // for a segment). Absent means the photographer has not chosen.
   open: Record<string, boolean | undefined>
+  // A stop the photographer asked for, until the run's own snapshot says it
+  // ended: the view at the click, frozen as stopped, so text still streaming
+  // in does not keep growing on screen. The stream folds into `runs` beneath.
+  stopping: Record<string, RunView | undefined>
 }
 
-export const useAgentRuns = create<RunsState>(() => ({ runs: {}, open: {} }))
+export const useAgentRuns = create<RunsState>(() => ({
+  runs: {},
+  open: {},
+  stopping: {},
+}))
+
+// shownRun is the view to draw: a stop on its way wins over the stream.
+export function shownRun(state: RunsState, id: string): RunView | undefined {
+  return state.stopping[id] ?? state.runs[id]
+}
+
+// freezeStopping shows the run as stopped from the click on. Its open blocks
+// are interrupted the way the server closes them when the run ends.
+export function freezeStopping(run: AgentRun) {
+  useAgentRuns.setState((state) => {
+    const view = state.runs[run.id] ?? {
+      run,
+      blocks: [],
+      seq: '0',
+      runSeq: '0',
+      outdated: false,
+    }
+    const frozen: RunView = {
+      ...view,
+      run: { ...view.run, state: 'cancelled' },
+      blocks: view.blocks.map((block) =>
+        block.finished_at ? block : { ...block, state: 'interrupted' },
+      ),
+    }
+    return { stopping: { ...state.stopping, [run.id]: frozen } }
+  })
+}
+
+// releaseStopping goes back to the stream's view, as when the stop failed.
+export function releaseStopping(id: string) {
+  useAgentRuns.setState((state) => ({
+    stopping: without(state.stopping, id),
+  }))
+}
+
+function without<T>(record: Record<string, T>, id: string): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => key !== id),
+  )
+}
 
 export function setOpen(id: string, open: boolean) {
   useAgentRuns.setState((state) => ({ open: { ...state.open, [id]: open } }))
 }
 
+// Once the run's own view has ended, a frozen stop gives way to it: what the
+// server kept is what the conversation shows from then on.
 function put(id: string, view: RunView) {
-  useAgentRuns.setState((state) => ({ runs: { ...state.runs, [id]: view } }))
+  useAgentRuns.setState((state) => ({
+    runs: { ...state.runs, [id]: view },
+    ...(isFinished(view.run) && state.stopping[id]
+      ? { stopping: without(state.stopping, id) }
+      : {}),
+  }))
 }
 
 const pollMs = 2000
@@ -51,7 +106,7 @@ export function followRun(id: string) {
 export function forgetRuns() {
   for (const controller of followers.values()) controller.abort()
   followers.clear()
-  useAgentRuns.setState({ runs: {}, open: {} })
+  useAgentRuns.setState({ runs: {}, open: {}, stopping: {} })
 }
 
 async function follow(id: string, signal: AbortSignal) {

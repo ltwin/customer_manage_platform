@@ -33,17 +33,19 @@ type stubVendor struct {
 
 func (v *stubVendor) Key() llmgateway.ProviderKey { return llmgateway.ProviderOpenAICompatible }
 
+// Invoke records the call under the lock but runs the script outside it, so a
+// script that blocks one run's call does not block another run's.
 func (v *stubVendor) Invoke(ctx context.Context, r llmgateway.ProviderRequest) (llmgateway.Result, error) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
 	v.sent = append(v.sent, r.Chat)
-	if v.script != nil {
-		return v.script(ctx, r, len(v.sent))
+	n, script, fail, text := len(v.sent), v.script, v.fail, v.reply
+	v.mu.Unlock()
+	if script != nil {
+		return script(ctx, r, n)
 	}
-	if v.fail != nil {
-		return llmgateway.Result{}, v.fail
+	if fail != nil {
+		return llmgateway.Result{}, fail
 	}
-	text := v.reply
 	if text == "" {
 		text = "好的，我来整理这些参考。"
 	}

@@ -92,6 +92,8 @@ func run() error {
 		return err
 	}
 	agent.SetLogger(slog.Default())
+	// A stop reaches the model call through the run's notifications.
+	agent.SetNotifier(db)
 	agent.SetImageReader(media)
 	// Expired scene jobs settle the runs that parked on them.
 	creativescene.SetJobWaiter(agent.SceneJobWaiter())

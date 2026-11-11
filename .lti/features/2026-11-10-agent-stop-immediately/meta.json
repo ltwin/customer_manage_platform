@@ -1,12 +1,12 @@
 {
   "uid": "e3d4752e-c0ae-4fc9-b501-a3ae5d0db91c",
-  "revision": 4,
+  "revision": 11,
   "id": "agent-stop-immediately",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-10T11:08:49.261Z",
-  "updatedAt": "2026-11-10T12:02:11.256Z",
+  "updatedAt": "2026-11-11T07:04:37.107Z",
   "risk": {
     "factors": [
       "concurrency"
@@ -32,10 +32,330 @@
       "contentHash": "f80a3775dae17d52",
       "added": [],
       "removed": []
+    },
+    {
+      "at": "2026-11-11T02:59:21.963Z",
+      "summary": "owner 验收反馈（前端响应优先）：发出到建好运行之间也按运行中渲染，可停；停后运行一建好即取消",
+      "contentHash": "8505601ed55c9121",
+      "added": [],
+      "removed": []
     }
   ],
-  "verify": [],
+  "baseline": {
+    "commit": "d601db993f65b7d693004c1084d2b40281463411",
+    "at": "2026-11-10T12:03:15.561Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5e7933cb5dc9fd98b15753067b32919955335843e2b89509399892a856ac7678"
+    },
+    "preExisting": [
+      ".lti/snapshots/5e7933cb5dc9fd98b15753067b32919955335843e2b89509399892a856ac7678.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-11-10T12:30:48.436Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "未跑全量 make check-frontend（vite build 与全部前端单测）和 creative-agent-blocks.e2e.mjs（只改了一处断言文字，未重跑）；2 秒中断在本地测试 PG 上测得，未在远端共享 PG 上实测延迟；按上限估算结算为 Gateway 既有路径，未重测；全量门禁留给合并时的 make check-merge",
+        "coverage": [
+          {
+            "criterionId": "AC-06cebd58f80c",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx stoppable/is-stop 按钮 + RunStatus 去按钮；agent-stop.e2e.mjs「button: running」断言只有「停止」、状态栏 0 个按钮"
+          },
+          {
+            "criterionId": "AC-ef329e7e106e",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「button: running」：运行 succeeded 后按钮回到「发送」；发送路径代码未改，仅在停止未落定时等待"
+          },
+          {
+            "criterionId": "AC-aa8ad5453e24",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「button: waiting」：空→停止，填写→补充并继续，清空→停止"
+          },
+          {
+            "criterionId": "AC-de21d11ce2ca",
+            "status": "verified",
+            "evidence": "agentRuns.ts freezeStopping/put；agent-stop.e2e.mjs「freeze」：点击后 300ms 内按钮为发送、已停止备注、无状态栏，3 秒延迟内推送文本文字不变，完成后显示服务端全文"
+          },
+          {
+            "criterionId": "AC-04daaa783423",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx cancelUntilFinished；agent-stop.e2e.mjs「replay」两次 cancel 且 Idempotency-Key 不同；后端 TestCOldCancelReceiptReplaysAndANewKeyEndsTheRun"
+          },
+          {
+            "criterionId": "AC-34b5849d464f",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「failure」：503 后按钮回到停止、提示「停止没有成功，请重试」、显示最新真实文字"
+          },
+          {
+            "criterionId": "AC-aeb61e9fe21e",
+            "status": "verified",
+            "evidence": "control.go controlCommand；TestCCancelEndsAnUnknownRunAtOnce（cancelled、finished_at 非空、settlement unknown、槽位 0、pending consumer 保留）；TestCStoppedRunsLateAnswerDoesNotReachTheNextRun（流式中取消后同会话立即启动 B）"
+          },
+          {
+            "criterionId": "AC-982edf310d23",
+            "status": "verified",
+            "evidence": "TestCCancelQueuedIsAtomicAndIdempotent（同 key 回放）；TestCCancelEndsAnUnknownRunAtOnce（新 key 返回同一终态）；fixture 无 generator，撤回生成的幂等沿用 StopAgentGeneration 现有实现，未新增测试"
+          },
+          {
+            "criterionId": "AC-9813cd0c1712",
+            "status": "verified",
+            "evidence": "TestCCancelDuringDispatchDoesNotPublishLateAnswer、TestCStoppedRunsLateAnswerDoesNotReachTheNextRun：无 A 的 assistant 消息、A 仍 cancelled、sweep 后 settled；-count=10 稳定"
+          },
+          {
+            "criterionId": "AC-5a2d1bb8f204",
+            "status": "verified",
+            "evidence": "cancel_watch.go watchCancel；TestStopReachesAStreamingCallWithinTwoSeconds 断言 <2s（本地 PG），-count=10 稳定"
+          },
+          {
+            "criterionId": "AC-469a27ee7a38",
+            "status": "verified",
+            "evidence": "TestStopFallsBackToTheLeaseWithoutNotifications：nil / 立即报错 / 订阅永不就绪三种下模型调用照常发出、续租中断，且挂起的订阅随 attempt 退出"
+          },
+          {
+            "criterionId": "AC-71502233988b",
+            "status": "verified",
+            "evidence": "TestCStoppedRunsLateAnswerDoesNotReachTheNextRun：迟到真实用量入账后 sweep 把 A settlement 推进到 settled 且仍 cancelled；按上限估算路径为 Gateway 既有逻辑未改未重测；creative-agent.test.ts 断言面板源码无费用核实文案"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "12 条验收全部有测试证据：后端 make check-go PKG=./internal/creativeagent/...（build、lint 0、测试 163s 绿）；并发 4 用例 -count=10 绿；前端 tsc、oxlint 0 错、creative-agent.test.ts 绿；agent-stop.e2e.mjs 6 个用例逐个通过。计划外改动 2 处：runs_test.go 的 stubVendor 锁范围（重叠测试必需）、creative-agent-blocks.e2e.mjs 状态栏文字断言（去掉停止按钮后的跟随）。proposal 批准后经 lti revise 修订了冻结显示与新 key 重发两条措辞（owner 批准设计时已同意）。无契约 delta（lti contracts 不含 agent 端点；OpenAPI 仅改说明文字）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "59f1253f1495fbb00e50a71326a98eb4c639d34239ff3772e3189cdd1eaa7e12"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-11-11T03:11:46.994Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "未跑全量 make check-frontend（vite build 与全部前端单测）和 creative-agent-blocks.e2e.mjs；2 秒中断在本地测试 PG 上测得，未在远端共享 PG 实测；按上限估算结算为 Gateway 既有路径未重测；全量门禁留给合并时的 make check-merge",
+        "coverage": [
+          {
+            "criterionId": "AC-06cebd58f80c",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx stoppable/is-stop 按钮 + RunStatus 去按钮；agent-stop.e2e.mjs「button: running」断言只有「停止」、状态栏 0 个按钮"
+          },
+          {
+            "criterionId": "AC-ef329e7e106e",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「button: running」：运行 succeeded 后按钮回到「发送」；发送路径代码未改，仅在停止未落定时等待"
+          },
+          {
+            "criterionId": "AC-aa8ad5453e24",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「button: waiting」：空→停止，填写→补充并继续，清空→停止"
+          },
+          {
+            "criterionId": "AC-de21d11ce2ca",
+            "status": "verified",
+            "evidence": "agentRuns.ts freezeStopping/put；agent-stop.e2e.mjs「freeze」：点击后 300ms 内按钮为发送、已停止备注、无状态栏，3 秒延迟内推送文本文字不变，完成后显示服务端全文"
+          },
+          {
+            "criterionId": "AC-04daaa783423",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx cancelUntilFinished；agent-stop.e2e.mjs「replay」两次 cancel 且 Idempotency-Key 不同；后端 TestCOldCancelReceiptReplaysAndANewKeyEndsTheRun"
+          },
+          {
+            "criterionId": "AC-34b5849d464f",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「failure」：503 后按钮回到停止、提示「停止没有成功，请重试」、显示最新真实文字"
+          },
+          {
+            "criterionId": "AC-aeb61e9fe21e",
+            "status": "verified",
+            "evidence": "control.go controlCommand；TestCCancelEndsAnUnknownRunAtOnce（cancelled、finished_at 非空、settlement unknown、槽位 0、pending consumer 保留）；TestCStoppedRunsLateAnswerDoesNotReachTheNextRun（流式中取消后同会话立即启动 B）"
+          },
+          {
+            "criterionId": "AC-982edf310d23",
+            "status": "verified",
+            "evidence": "TestCCancelQueuedIsAtomicAndIdempotent（同 key 回放）；TestCCancelEndsAnUnknownRunAtOnce（新 key 返回同一终态）；fixture 无 generator，撤回生成的幂等沿用 StopAgentGeneration 现有实现，未新增测试"
+          },
+          {
+            "criterionId": "AC-9813cd0c1712",
+            "status": "verified",
+            "evidence": "TestCCancelDuringDispatchDoesNotPublishLateAnswer、TestCStoppedRunsLateAnswerDoesNotReachTheNextRun：无 A 的 assistant 消息、A 仍 cancelled、sweep 后 settled；-count=10 稳定"
+          },
+          {
+            "criterionId": "AC-5a2d1bb8f204",
+            "status": "verified",
+            "evidence": "cancel_watch.go watchCancel；TestStopReachesAStreamingCallWithinTwoSeconds 断言 <2s（本地 PG），-count=10 稳定"
+          },
+          {
+            "criterionId": "AC-469a27ee7a38",
+            "status": "verified",
+            "evidence": "TestStopFallsBackToTheLeaseWithoutNotifications：nil / 立即报错 / 订阅永不就绪三种下模型调用照常发出、续租中断，且挂起的订阅随 attempt 退出"
+          },
+          {
+            "criterionId": "AC-71502233988b",
+            "status": "verified",
+            "evidence": "TestCStoppedRunsLateAnswerDoesNotReachTheNextRun：迟到真实用量入账后 sweep 把 A settlement 推进到 settled 且仍 cancelled；按上限估算路径为 Gateway 既有逻辑未改未重测；creative-agent.test.ts 断言面板源码无费用核实文案"
+          },
+          {
+            "criterionId": "AC-c00b54a9c372",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx starting/RunStatus 无运行时显示正在处理/TurnLoading；agent-stop.e2e.mjs「start: a message just sent」建运行延迟时 300ms 内按钮为停止、状态栏正在处理、出现加载轮廓"
+          },
+          {
+            "criterionId": "AC-81635b5d47f8",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx stopStarting/stopOnStart 与 perform 中 stop(reply)；e2e「start: a message just sent」300ms 内已停止且轮廓消失、建好后对 run2 发 cancel；「start: a stopped message that is refused」不报错并放回草稿"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 验收反馈后补「发出即运行中、建好前可停」（proposal/spec/design/tasks 经 lti revise）。14 条验收均有证据：后端未再改动，沿用 make check-go PKG=./internal/creativeagent/...（build、lint 0、测试绿）与并发 4 用例 -count=10；前端 tsc、oxlint 无错；agent-stop.e2e.mjs 8 个用例逐个通过（含新增 start 两例），既有 agent-send.e2e.mjs 回归通过。计划外改动 2 处：runs_test.go stubVendor 锁范围、creative-agent-blocks.e2e.mjs 状态栏文字断言。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "52171ce57e354705a7a9f46b7ae0c071212ee9a37d946cbe2adcbf148bf0bda1"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-11-11T03:48:02.939Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "未跑全量 make check-frontend 与 creative-agent-blocks.e2e.mjs；后端整包 check-go 未在本次测试文件改动后重跑（只改了一个测试的等待方式，已单跑该用例）；2 秒中断仅在本地测试 PG 上测得；全量门禁留给合并时的 make check-merge",
+        "coverage": [
+          {
+            "criterionId": "AC-06cebd58f80c",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx stoppable/is-stop 按钮 + RunStatus 去按钮；agent-stop.e2e.mjs「button: running」断言只有「停止」、状态栏 0 个按钮"
+          },
+          {
+            "criterionId": "AC-ef329e7e106e",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「button: running」：运行 succeeded 后按钮回到「发送」；发送路径代码未改，仅在停止未落定时等待；停止未落定时发送在 busy 锁内等待、不丢消息：e2e「send: while waiting」（修复前红、修复后绿）"
+          },
+          {
+            "criterionId": "AC-aa8ad5453e24",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「button: waiting」：空→停止，填写→补充并继续，清空→停止"
+          },
+          {
+            "criterionId": "AC-de21d11ce2ca",
+            "status": "verified",
+            "evidence": "agentRuns.ts freezeStopping/put；agent-stop.e2e.mjs「freeze」：点击后 300ms 内按钮为发送、已停止备注、无状态栏，3 秒延迟内推送文本文字不变，完成后显示服务端全文"
+          },
+          {
+            "criterionId": "AC-04daaa783423",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx cancelUntilFinished；agent-stop.e2e.mjs「replay」两次 cancel 且 Idempotency-Key 不同；后端 TestCOldCancelReceiptReplaysAndANewKeyEndsTheRun"
+          },
+          {
+            "criterionId": "AC-34b5849d464f",
+            "status": "verified",
+            "evidence": "agent-stop.e2e.mjs「failure」：503 后按钮回到停止、提示「停止没有成功，请重试」、显示最新真实文字"
+          },
+          {
+            "criterionId": "AC-aeb61e9fe21e",
+            "status": "verified",
+            "evidence": "control.go controlCommand；TestCCancelEndsAnUnknownRunAtOnce（cancelled、finished_at 非空、settlement unknown、槽位 0、pending consumer 保留）；TestCStoppedRunsLateAnswerDoesNotReachTheNextRun（流式中取消后同会话立即启动 B）"
+          },
+          {
+            "criterionId": "AC-982edf310d23",
+            "status": "verified",
+            "evidence": "TestCCancelQueuedIsAtomicAndIdempotent（同 key 回放）；TestCCancelEndsAnUnknownRunAtOnce（新 key 返回同一终态）；fixture 无 generator，撤回生成的幂等沿用 StopAgentGeneration 现有实现，未新增测试"
+          },
+          {
+            "criterionId": "AC-9813cd0c1712",
+            "status": "verified",
+            "evidence": "TestCCancelDuringDispatchDoesNotPublishLateAnswer、TestCStoppedRunsLateAnswerDoesNotReachTheNextRun：无 A 的 assistant 消息、A 仍 cancelled、sweep 后 settled；-count=10 稳定"
+          },
+          {
+            "criterionId": "AC-5a2d1bb8f204",
+            "status": "verified",
+            "evidence": "cancel_watch.go watchCancel；TestStopReachesAStreamingCallWithinTwoSeconds 断言 <2s（本地 PG），-count=10 稳定"
+          },
+          {
+            "criterionId": "AC-469a27ee7a38",
+            "status": "verified",
+            "evidence": "TestStopFallsBackToTheLeaseWithoutNotifications：nil / 立即报错 / 订阅永不就绪三种下模型调用照常发出、续租中断，且挂起的订阅随 attempt 退出"
+          },
+          {
+            "criterionId": "AC-71502233988b",
+            "status": "verified",
+            "evidence": "TestCStoppedRunsLateAnswerDoesNotReachTheNextRun：迟到真实用量入账后 sweep 把 A settlement 推进到 settled 且仍 cancelled；按上限估算路径为 Gateway 既有逻辑未改未重测；creative-agent.test.ts 断言面板源码无费用核实文案"
+          },
+          {
+            "criterionId": "AC-c00b54a9c372",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx starting/RunStatus 无运行时显示正在处理/TurnLoading；agent-stop.e2e.mjs「start: a message just sent」建运行延迟时 300ms 内按钮为停止、状态栏正在处理、出现加载轮廓"
+          },
+          {
+            "criterionId": "AC-81635b5d47f8",
+            "status": "verified",
+            "evidence": "AgentPanel.tsx stopStarting/stopOnStart 与 perform 中 stop(reply)；e2e「start: a message just sent」300ms 内已停止且轮廓消失、建好后对 run2 发 cancel；「start: a stopped message that is refused」不报错并放回草稿；结果未知后重新发送仍取消：e2e「start: a stopped message whose result is unknown」（修复前红、修复后绿）与 creative-agent.test.ts 链 stopped 标记单测"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "处理代码审查 3 项：停止意图随待确认链（P1）、等旧运行停止时加锁防丢消息（P2）、重叠测试 cleanup 不再死等（P2）。新增 e2e 2 例在修复前代码上红、修复后绿；受影响的 send/start 共 3 例与 agent-send.e2e.mjs 回归通过；creative-agent.test.ts 14 例绿；重叠测试单跑通过；tsc、oxlint 无错。后端非测试代码未再改，沿用此前 check-go 与 -count=10 证据。design 补了两条实现细节（批准后修订，见提交 24038006）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "51745394b1c306426536cbe0aa7b237d4e0ca4210e74c7c4c5fafecde3660ff7"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T07:04:27.699Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "未跑完整 make check-frontend 与 creative-agent-blocks.e2e；审查修复后 check-go 只重跑改动用例；未在远端 PG 延迟下实测"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 体验停止交互与发送即运行态后接受；代码审查三项已修复并有红→绿 e2e 证据",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "51745394b1c306426536cbe0aa7b237d4e0ca4210e74c7c4c5fafecde3660ff7"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-11T07:04:36.733Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

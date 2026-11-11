@@ -130,10 +130,19 @@ async function cancelUntilFinished(id: string) {
 
 停止完成后显示的内容：服务端保存的块，可能比点击瞬间多出「点击 → 取消提交」之间已落库的尾部文字（正常 < 0.5 秒）。理由：这部分已进入运行记录，刷新页面和下一轮模型上下文看到的都是它；如果前端一直藏着，界面与助手实际“说过的话”不一致。见未决事项。
 
+发出到建好运行之间（`outgoing` 已画出、还没有 `outgoing.run`）也按运行中渲染（owner 验收反馈，前端响应优先）：
+
+- 状态栏 `RunStatus` 在没有运行时显示「正在处理」，消息下方画 `TurnLoading`。
+- 停止键此时可点（不受 `perform` 的 `busy` 锁影响）：只记下 `stopOnStart` 并立即显示「已停止」，不中途掐断请求链（链中途中断会让结果不确定）；`perform` 拿到新运行时立刻对它调用 `stop()`。链失败且已请求停止时不显示错误，草稿照常放回。
+- 每次新发送清掉上一次的 `stopOnStart`。
+- 结果未知（链留在待确认槽位）时，把 `stopped: true` 写进 `PendingAgentChain`（`advanceChain` 与解析都保留它），「重新发送」重放同一操作建出的运行同样随即取消。链执行途中不改存储——`owns()` 按存储比对，途中改会被判为 lost（代码审查 P1）。
+- 等上一个运行停完（`afterStop`）放在 `perform` 内、`busy` 锁之后：等待期间输入框锁着，后续消息不会在 `performing` 守卫处被静默丢弃；等待中又点了停止则不发送、草稿放回（代码审查 P2）。
+
 按钮决策表：
 
 | 运行状态（扣除 stopping） | 草稿 | 按钮 | 点击 |
 |---|---|---|---|
+| 无运行、刚发出未建好 | 任意 | 停止（可点） | 记下 `stopOnStart`，立即显示已停止 |
 | 无运行 | 任意 | 发送（按现有 `sendable` 禁用） | 发送 |
 | `queued`/`running`/`waiting_client`/`reconciling` | 任意 | 停止 | `stop(active)` |
 | `waiting_input` | 空 | 停止 | `stop(waiting)` |

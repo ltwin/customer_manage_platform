@@ -308,7 +308,7 @@ try {
     const rows = s.page.locator('.cc-agent-turn [data-type="tool"]')
     await rows.nth(1).waitFor()
     assert.equal(await s.page.locator('.cc-agent-fold').count(), 0, 'the live tail has no header')
-    assert.equal(await s.page.locator('.cc-agent-status').textContent(), '读取素材库停止')
+    assert.equal(await s.page.locator('.cc-agent-status').textContent(), '读取素材库')
     await s.finishTool(first, 3)
     await s.finishTool(second, 4, 'failed')
     await s.page.locator('.cc-agent-tool.is-failed').getByText('失败').waitFor()

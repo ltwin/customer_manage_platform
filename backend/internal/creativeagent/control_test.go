@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,7 +48,10 @@ func TestCCancelQueuedIsAtomicAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestCUnknownWaitsForReconciliationAndCanBeClosed(t *testing.T) {
+// An unknown result no longer keeps a stopped run waiting: the stop ends it at
+// once and frees the conversation, while the cost stays open for the gateway to
+// verify. The unknown evidence is kept and nothing is sent again.
+func TestCCancelEndsAnUnknownRunAtOnce(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
@@ -66,38 +70,225 @@ func TestCUnknownWaitsForReconciliationAndCanBeClosed(t *testing.T) {
 	if err != nil || got.State != RunReconciling {
 		t.Fatalf("run=%+v err=%v", got, err)
 	}
-	if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 1 {
-		t.Fatal("unknown lost its slot")
-	}
-	if _, err = f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID})); err != nil {
-		t.Fatal(err)
-	}
-	got, _ = f.service.ReadRun(t.Context(), f.alice, run.ID)
-	if got.State != RunReconciling {
-		t.Fatal("cancel discarded unknown")
-	}
-	receipt, err := f.service.CloseReconciliation(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID}))
+	receipt, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = json.Unmarshal(receipt.Outcome.Response, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.State != RunCancelled || got.SettlementState != "unknown" {
+	if got.State != RunCancelled || got.SettlementState != "unknown" || got.FinishedAt == nil {
+		t.Fatalf("cancelled=%+v", got)
+	}
+	if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 0 {
+		t.Fatal("cancel kept slot")
+	}
+	if n := f.count("llm_result_consumers", "state='pending'"); n != 1 {
+		t.Fatal("unknown evidence discarded")
+	}
+	// A second stop under a new key finds the run already ended.
+	again, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second Run
+	if err = json.Unmarshal(again.Outcome.Response, &second); err != nil || second.State != RunCancelled {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	if _, err = f.service.CloseReconciliation(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID})); !errors.Is(err, ErrRunState) {
+		t.Fatalf("close after stop: %v", err)
+	}
+	if _, err = f.service.SweepRuns(t.Context(), f.alice, 20); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunCancelled {
+		t.Fatalf("sweep reopened %+v", got)
+	}
+	if f.vendor.calls() != 1 {
+		t.Fatal("unknown redispatched")
+	}
+}
+
+// close-reconciliation remains for runs that wait on an unknown result without
+// having been stopped.
+func TestCCloseReconciliationEndsAnUnstoppedUnknownRun(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.consent(f.alice, c.ID)
+	f.vendor.script = func(context.Context, llmgateway.ProviderRequest, int) (llmgateway.Result, error) {
+		return llmgateway.Result{}, &llmgateway.ProviderError{Outcome: llmgateway.OutcomeUnknown, Class: "lost", Detail: "accepted unknown"}
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 1 {
+		t.Fatal("unknown lost its slot")
+	}
+	receipt, err := f.service.CloseReconciliation(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Run
+	if err = json.Unmarshal(receipt.Outcome.Response, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.State != RunFailed || got.SettlementState != "unknown" {
 		t.Fatalf("closed=%+v", got)
 	}
 	if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 0 {
 		t.Fatal("close kept slot")
 	}
-	if n := f.count("llm_result_consumers", "state='pending'"); n != 1 {
-		t.Fatal("unknown evidence discarded")
+}
+
+// A run stopped before this release can still sit in reconciling. The sweep
+// ends it rather than keep it waiting for its cost.
+func TestCSweepEndsAStoppedRunLeftReconciling(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.consent(f.alice, c.ID)
+	f.vendor.script = func(context.Context, llmgateway.ProviderRequest, int) (llmgateway.Result, error) {
+		return llmgateway.Result{}, &llmgateway.ProviderError{Outcome: llmgateway.OutcomeUnknown, Class: "lost", Detail: "accepted unknown"}
 	}
-	if _, err = f.service.SweepRuns(t.Context(), f.alice, 20); err != nil {
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "test"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if f.vendor.calls() != 1 {
-		t.Fatal("unknown redispatched")
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
 	}
+	if _, err = f.db.Exec(`UPDATE creative_agent_runs SET cancel_requested_at=clock_timestamp() WHERE id=$1 AND state='reconciling'`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.sweepRuns()
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunCancelled || got.SettlementState != "unknown" {
+		t.Fatalf("run=%+v err=%v", got, err)
+	}
+	if n := f.count("creative_agent_slots", "run_id=$1", run.ID); n != 0 {
+		t.Fatal("sweep kept slot")
+	}
+}
+
+// A receipt is never rewritten: a stop recorded before this release replays as
+// it was. The client then stops again under a new key, which ends the run.
+func TestCOldCancelReceiptReplaysAndANewKeyEndsTheRun(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.consent(f.alice, c.ID)
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := command(t, map[string]any{"run_id": run.ID})
+	if _, err = f.service.CancelRun(t.Context(), f.alice, op); err != nil {
+		t.Fatal(err)
+	}
+	// What an older release answered while a model call was still out.
+	if _, err = f.db.Exec(`UPDATE creative_operation_receipts SET response=jsonb_set(response::jsonb,'{state}','"reconciling"')::json WHERE operation_id=$1`, op.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := f.service.CancelRun(t.Context(), f.alice, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Run
+	if err = json.Unmarshal(replay.Outcome.Response, &got); err != nil || got.State != RunReconciling {
+		t.Fatalf("replay=%+v err=%v", got, err)
+	}
+	fresh, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(fresh.Outcome.Response, &got); err != nil || got.State != RunCancelled {
+		t.Fatalf("fresh=%+v err=%v", got, err)
+	}
+}
+
+// Stopping A frees the conversation while A's model call is still out. B runs
+// in it at once, and A's late answer touches neither B nor the conversation.
+func TestCStoppedRunsLateAnswerDoesNotReachTheNextRun(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.consent(f.alice, c.ID)
+	entered, release := make(chan struct{}), make(chan struct{})
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		result := scriptedResult(r)
+		if n == 1 {
+			close(entered)
+			<-release
+			result.Text = "A 的迟到回答"
+			return result, nil
+		}
+		result.Text = "B 的回答"
+		return result, nil
+	}
+	a, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// However the test ends, A is let go and its worker finishes before the
+	// fixture's database closes. doneA is closed once, so both the test and the
+	// cleanup can wait on it.
+	var errA error
+	doneA := make(chan struct{})
+	go func() {
+		defer close(doneA)
+		errA = f.work(f.alice, a.ID)
+	}()
+	var unblock sync.Once
+	t.Cleanup(func() {
+		unblock.Do(func() { close(release) })
+		<-doneA
+	})
+	<-entered
+	receipt, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": a.ID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stopped Run
+	if err = json.Unmarshal(receipt.Outcome.Response, &stopped); err != nil || stopped.State != RunCancelled {
+		t.Fatalf("stopped=%+v err=%v", stopped, err)
+	}
+	b, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "second"})
+	if err != nil {
+		t.Fatalf("next run refused: %v", err)
+	}
+	if err = f.work(f.alice, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	unblock.Do(func() { close(release) })
+	<-doneA
+	if errA != nil {
+		t.Fatal(errA)
+	}
+	f.sweepRuns()
+	gotA, err := f.service.ReadRun(t.Context(), f.alice, a.ID)
+	if err != nil || gotA.State != RunCancelled || gotA.SettlementState != "settled" {
+		t.Fatalf("a=%+v err=%v", gotA, err)
+	}
+	gotB, err := f.service.ReadRun(t.Context(), f.alice, b.ID)
+	if err != nil || gotB.State != RunSucceeded || gotB.SettlementState != "settled" {
+		t.Fatalf("b=%+v err=%v", gotB, err)
+	}
+	if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant'", a.ID); n != 0 {
+		t.Fatal("late answer published")
+	}
+	if n := f.count("creative_agent_messages", "conversation_id=$1 AND body::text LIKE '%A 的迟到回答%'", c.ID); n != 0 {
+		t.Fatal("late answer reached the conversation")
+	}
+	if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant'", b.ID); n != 1 {
+		t.Fatalf("b has %d answers", n)
+	}
+	assertRunReleased(t, f, a.ID)
+	assertRunReleased(t, f, b.ID)
 }
 
 func TestCExpiredLeaseWithoutCheckpointStopsWithoutRedispatch(t *testing.T) {

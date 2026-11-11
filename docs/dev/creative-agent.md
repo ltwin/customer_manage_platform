@@ -335,9 +335,18 @@ B3 基线为 `0d316fd`。C 增加迁移 0049（等待标识、等待原因、终
 
 ### 控制与救援
 
-- `CancelRun` 按 run 身份幂等取消，不要求面板追赶每一次 revision。取消事务立即废止 epoch。
-  已派发/unknown 请求转 reconciling，保留 slot 和未知预算；没有未知调用则关闭并释放占用。
-  `CloseReconciliation` 允许明确结束等待，但不将未知费用记为零，Gateway 继续保存核算证据。
+- `CancelRun` 按 run 身份幂等取消，不要求面板追赶每一次 revision。取消事务立即废止 epoch，
+  并在同一事务里把运行结束为终态（`cancelled`，已有交付回答时为 `partial`）、释放 slot——
+  即使还有已派发/unknown 的模型调用（owner 2026-11-10）。未知费用不记为零：预算 hold 和
+  pending consumer 保留，Gateway 在后台核实，sweeper 只推进终态运行的 `settlement_state`。
+  同一 Idempotency-Key 的回放返回首次执行时的快照；更早版本留下的 `reconciling` 回执会原样回放，
+  面板以响应 `state` 为准，非终态时换新 key 再停一次。未发出的生成在提交后尽力撤回（`stopQueuedGenerations`）。
+- `CloseReconciliation` 只用于没被停止、因 unknown 结果停在 reconciling 的运行：明确结束等待，
+  同样不将未知费用记为零。sweeper 遇到请求过取消却仍在 reconciling 的旧运行，直接结束为 `cancelled`。
+- Worker 执行期间订阅本运行的 `agent_run` 实时通知（`watchCancel`，worker 进程注入 `SetNotifier`）：
+  被唤醒后读一次运行行，发现已取消、epoch 变化或不再 running 就中断当前尝试，正常 1 秒内掐断
+  供应商流。唤醒限流 500ms、单次读取 2s 超时；订阅在协程里异步建立、随 attempt 结束，
+  LISTEN 不可用时不阻塞执行，由 10 秒一次的续租兜底发现取消。
 - 控制事务按 slot → Gateway group / 各预算桶 / request → run 加锁。Gateway 的
   `LockCallerGroupInTx` 只暴露调用事实，不读取 Harness 表；迟到消费以原 claim 再次判断执行权。
   终态只释放已知结果的 pending consumer，未知调用继续保留。费用更新不会重开终态。

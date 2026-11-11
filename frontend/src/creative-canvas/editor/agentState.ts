@@ -21,11 +21,6 @@ export function isActiveRun(run: AgentRun): boolean {
     run.state,
   )
 }
-export function hasUnsettledCost(run: AgentRun): boolean {
-  return (
-    run.settlement_state === 'unknown' || run.settlement_state === 'pending'
-  )
-}
 // 回到一个会话时沿用它最近一次运行的模型；模型已下架或不可用就不沿用。
 export function recalledModel(
   runs: readonly AgentRun[],
@@ -53,7 +48,12 @@ export type AgentStep = {
   createdAt: string
   payload: Record<string, unknown>
 }
-export type PendingAgentChain = { steps: AgentStep[]; draft?: AgentDraft }
+export type PendingAgentChain = {
+  steps: AgentStep[]
+  draft?: AgentDraft
+  // 运行还没建好时摄影师就点了停止：链无论何时走完，建出的运行都要随即取消。
+  stopped?: true
+}
 export type AgentDraft = {
   conversation: string
   model: string
@@ -165,7 +165,11 @@ export function advanceChain(
       ...more,
     ]
   }
-  return { steps, ...(draft ? { draft } : {}) }
+  return {
+    steps,
+    ...(draft ? { draft } : {}),
+    ...(chain.stopped ? { stopped: true as const } : {}),
+  }
 }
 export function ownsPendingChain(
   storage: Pick<Storage, 'getItem'>,
@@ -358,6 +362,7 @@ export function pendingAgentChain(
   return {
     steps,
     ...(value.draft !== undefined ? { draft: readDraft(value.draft) } : {}),
+    ...(value.stopped === true ? { stopped: true as const } : {}),
   }
 }
 
@@ -368,7 +373,7 @@ const failures: Record<string, string> = {
   creative_run_deadline_exceeded: '已超过本次运行期限',
   creative_run_interrupted: '运行被中断，请重新发送',
   creative_run_superseded: '这次运行已被新的操作取代',
-  creative_reconciliation_closed: '已结束等待，费用仍会继续核实',
+  creative_reconciliation_closed: '已停止',
   creative_checkpoint_missing: '恢复记录不完整，已停止自动继续',
   creative_checkpoint_incompatible: '运行版本已变化，无法自动恢复',
   creative_checkpoint_inconsistent: '恢复记录不一致，已停止自动继续',

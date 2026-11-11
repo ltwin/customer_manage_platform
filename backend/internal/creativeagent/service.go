@@ -18,6 +18,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/realtime"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -210,7 +211,11 @@ type Service struct {
 	// creating a run then fails in the transaction rather than leaving a run
 	// nobody will ever execute.
 	runtime jobs.Runtime
-	logger  *slog.Logger
+	// notifier wakes a worker when the run it is executing changes, so a stop
+	// reaches the model call without waiting for the lease renewal. Nil in a
+	// process that does not execute runs.
+	notifier realtime.Notifier
+	logger   *slog.Logger
 	// unavailableLogged remembers which skill versions were already reported
 	// as unavailable, so the reason is logged once per process, not on every
 	// catalog read. A pointer, because a run executes on a copy of the service
@@ -233,6 +238,9 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 
 // SetRuntime binds the queue used for same-transaction enqueue.
 func (s *Service) SetRuntime(runtime jobs.Runtime) { s.runtime = runtime }
+
+// SetNotifier binds the realtime notifications a worker listens on for stops.
+func (s *Service) SetNotifier(notifier realtime.Notifier) { s.notifier = notifier }
 
 // SetLogger receives the process logger. Failure detail goes here, never into a
 // client-visible error code.

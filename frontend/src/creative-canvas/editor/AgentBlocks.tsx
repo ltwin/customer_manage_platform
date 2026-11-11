@@ -23,8 +23,13 @@ import {
   isFinished,
   type AgentBlock,
 } from './agentBlocks.ts'
-import { AgentTurnContext, setOpen, useAgentRuns } from './agentRuns.ts'
-import { hasUnsettledCost, runFailure } from './agentState.ts'
+import {
+  AgentTurnContext,
+  setOpen,
+  shownRun,
+  useAgentRuns,
+} from './agentRuns.ts'
+import { runFailure } from './agentState.ts'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
 import { SceneRunChanges, SceneShot } from './AgentScene.tsx'
 import { tokenLabel } from './agentContext.ts'
@@ -374,7 +379,7 @@ function Segment({
 
 // The blocks of one run, in the order they happened.
 export function RunTurn({ runID }: { runID: string }) {
-  const view = useAgentRuns((state) => state.runs[runID])
+  const view = useAgentRuns((state) => shownRun(state, runID))
   if (!view) return <TurnLoading />
   const items = layout(view.blocks)
   const finished = isFinished(view.run)
@@ -402,7 +407,6 @@ export function RunTurn({ runID }: { runID: string }) {
           {run.state === 'cancelled'
             ? '已停止'
             : runFailure(run.error_code) || '本次执行未能完成'}
-          {hasUnsettledCost(run) && '；已发生的费用仍在核实'}
         </p>
       )}
     </div>

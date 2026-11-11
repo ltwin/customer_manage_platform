@@ -12,7 +12,6 @@ import {
   sendRefusal,
   stepBody,
   isActiveRun,
-  hasUnsettledCost,
   recalledModel,
   runFailure,
   egressNoticeVersion,
@@ -86,6 +85,27 @@ test('uncertain submissions retain the exact operation and bytes across refresh'
     ),
   )
   assert.throws(() => pendingAgentChain(JSON.stringify({ steps: [] })))
+})
+// 停在结果未知的那条记着摄影师已经点了停止：刷新、重新发送、链往下走都不丢。
+test('a stop asked for before the run existed stays with the uncertain chain', () => {
+  const step = (path: string, operation: string) => ({
+    path,
+    operation,
+    createdAt: '2026-11-10T00:00:00Z',
+    payload: {},
+  })
+  const chain = {
+    steps: [
+      step('/conversations/c/egress-consents', 'consent'),
+      step('/conversations/c/runs', 'run'),
+    ],
+    stopped: true as const,
+  }
+  assert.deepEqual(pendingAgentChain(JSON.stringify(chain)), chain)
+  assert.equal(advanceChain(chain, { id: 'consent-id' })?.stopped, true)
+  const plain = { steps: chain.steps }
+  assert.equal(pendingAgentChain(JSON.stringify(plain))?.stopped, undefined)
+  assert.equal(advanceChain(plain, { id: 'consent-id' })?.stopped, undefined)
 })
 test('legacy records become a chain that replays the original bytes', () => {
   const body = JSON.stringify({
@@ -309,7 +329,6 @@ test('terminal execution and unresolved money remain separate', () => {
     created_at: '',
   }
   assert.equal(isActiveRun(run), false)
-  assert.equal(hasUnsettledCost(run), true)
   assert.equal(isActiveRun({ ...run, state: 'reconciling' }), true)
 })
 
@@ -440,6 +459,13 @@ test('a refused request says what to do next', () => {
   assert.equal(runFailure('creative_model_rejected'), '模型服务拒绝了这次请求，请重试或换一个模型')
   assert.equal(runFailure('creative_canvas_integrity'), '画布数据校验未通过，已停止修改，请联系我们处理')
   assert.equal(runFailure('creative_from_a_newer_server'), '本次执行未能完成，请重试')
+  // 停止是摄影师自己的操作，费用核实属于后台记账，不出现在对话里。
+  assert.equal(runFailure('creative_reconciliation_closed'), '已停止')
+  for (const file of ['AgentBlocks.tsx', 'AgentPanel.tsx', 'agentState.ts'])
+    assert.doesNotMatch(
+      readFileSync(new URL(`../src/creative-canvas/editor/${file}`, import.meta.url), 'utf8'),
+      /费用仍|结束等待/,
+    )
   assert.equal(runFailure(undefined), '')
 })
 
