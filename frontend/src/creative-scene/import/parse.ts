@@ -2,6 +2,7 @@ import { LoadingManager, type Group, type Material, type Object3D } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { MeshoptDecoder } from 'meshoptimizer'
+import { detectRig, skeletonOf, type Detection, type FileSkeleton } from '../rig/detect.ts'
 
 // Reading a GLB the photographer picked (design「模块职责与协作」parse): the
 // file's JSON is checked before any loader sees it, every image's own bytes are
@@ -10,7 +11,7 @@ import { MeshoptDecoder } from 'meshoptimizer'
 // geometry is unpacked here; turning it into floats is convert.ts's.
 
 /** Why a file cannot be imported; message is for the photographer. */
-export type RejectReason = 'not_glb' | 'external_uri' | 'ktx2' | 'skinned' | 'image_format' | 'unreadable' | 'limit'
+export type RejectReason = 'not_glb' | 'external_uri' | 'ktx2' | 'skin' | 'image_format' | 'unreadable' | 'limit'
 
 export class ImportRejected extends Error {
   readonly reason: RejectReason
@@ -50,21 +51,23 @@ export type PrimitiveJSON = {
   extensions?: Record<string, unknown>
 }
 
+export type AccessorJSON = { bufferView?: number; byteOffset?: number; componentType: number; normalized?: boolean; count: number; type: string; sparse?: unknown }
+
 /** The parts of a glTF document the import reads. */
 export type GLTFJSON = {
   asset?: { version?: string; copyright?: string }
   scene?: number
   scenes?: { nodes?: number[] }[]
-  nodes?: { name?: string; mesh?: number; skin?: number; children?: number[]; camera?: number; extensions?: Record<string, unknown> }[]
+  nodes?: { name?: string; mesh?: number; skin?: number; children?: number[]; camera?: number; extensions?: Record<string, unknown>; extras?: Record<string, unknown> }[]
   meshes?: { name?: string; primitives: PrimitiveJSON[] }[]
   materials?: MaterialJSON[]
   textures?: { source?: number; sampler?: number; extensions?: Record<string, { source?: number } | undefined> }[]
   images?: { uri?: string; bufferView?: number; mimeType?: string; name?: string }[]
   samplers?: { wrapS?: number; wrapT?: number; magFilter?: number; minFilter?: number }[]
   buffers?: { uri?: string; byteLength: number }[]
-  bufferViews?: { buffer: number; byteOffset?: number; byteLength: number; extensions?: Record<string, unknown> }[]
-  accessors?: unknown[]
-  skins?: unknown[]
+  bufferViews?: { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number; extensions?: Record<string, unknown> }[]
+  accessors?: AccessorJSON[]
+  skins?: { joints: number[]; inverseBindMatrices?: number; skeleton?: number }[]
   animations?: unknown[]
   cameras?: unknown[]
   extensionsUsed?: string[]
@@ -80,6 +83,29 @@ export type SourceImage = { bytes: Uint8Array; mime: ImageMIME }
 /** What three made of a node, mesh, primitive or material: the indices into the file's JSON. */
 export type Association = { nodes?: number; meshes?: number; primitives?: number; materials?: number }
 
+/**
+ * A primitive's bone influences when it has more than one set (JOINTS_1 …):
+ * read from the file's own accessors, as three's loader reads the first set
+ * only and normalises it alone. Every set merged, each vertex keeps its four
+ * largest, normalised (design「导入时保留骨骼并回写节点下标」).
+ */
+export type Influences = {
+  /** Every set merged, for a primitive with more than one; null with one, which the loader reads right. */
+  merged: { joints: Uint16Array; weights: Float32Array } | null
+  /** Vertices that had more than four. */
+  trimmed: number
+  /** Vertices without any weight: the loader binds them wholly to their first joint. */
+  unweighted: number
+}
+
+/** The file's skeleton and what was found on it, by the file's node indices. */
+export type ImportRig = {
+  skeleton: FileSkeleton
+  detection: Detection
+  /** File node index → the object three made of it. */
+  objects: ReadonlyMap<number, Object3D>
+}
+
 export type ParsedImport = {
   /** The file's JSON as it is, textures and all. */
   json: GLTFJSON
@@ -88,6 +114,10 @@ export type ParsedImport = {
   associations: ReadonlyMap<Object3D | Material, Association>
   /** Each image by its index in json.images. */
   images: ReadonlyMap<number, SourceImage>
+  /** Null for a file without skins. */
+  rig: ImportRig | null
+  /** By `<mesh>/<primitive>`, each skinned primitive whose influences could be read from the file. */
+  influences: ReadonlyMap<string, Influences>
 }
 
 /** The loaders parse borrows; the Draco one is made per file and disposed after it. */
@@ -99,7 +129,7 @@ const chunkBIN = 0x004e4942
 
 const reexport = '请在 Blender 里重新导出为 GLB（格式选「glTF 二进制」）'
 
-function readContainer(file: Uint8Array): { json: GLTFJSON; bin: Uint8Array | null } {
+export function readContainer(file: Uint8Array): { json: GLTFJSON; bin: Uint8Array | null } {
   const view = new DataView(file.buffer, file.byteOffset, file.byteLength)
   if (file.byteLength < 20 || view.getUint32(0, true) !== glbMagic) throw new ImportRejected('not_glb', `这不是 GLB 文件，${reexport}`)
   if (view.getUint32(4, true) !== 2) throw new ImportRejected('not_glb', `只支持 glTF 2.0 的 GLB，${reexport}`)
@@ -140,11 +170,110 @@ function precheck(json: GLTFJSON): void {
   }
   const basis = (json.extensionsUsed ?? []).includes('KHR_texture_basisu') || (json.images ?? []).some((i) => i.mimeType === 'image/ktx2' || (i.uri !== undefined && /^data:image\/ktx2/i.test(i.uri)))
   if (basis) throw new ImportRejected('ktx2', '模型的贴图是 KTX2 / Basis 压缩格式，暂不支持。请在 Blender 里把贴图换成 PNG 或 JPEG 再导出')
-  const skinned =
-    (json.skins?.length ?? 0) > 0 ||
-    (json.nodes ?? []).some((n) => n.skin !== undefined) ||
-    (json.meshes ?? []).some((m) => m.primitives.some((p) => Object.keys(p.attributes).some((a) => /^(JOINTS|WEIGHTS)_/.test(a))))
-  if (skinned) throw new ImportRejected('skinned', '模型带骨骼蒙皮，带骨骼的角色要等后续版本支持')
+  const joints = new Set<number>()
+  for (const skin of json.skins ?? []) {
+    if (skin.joints.length > maxJointsPerSkin) throw new ImportRejected('limit', `模型的一副骨架有 ${skin.joints.length} 根骨骼，最多 ${maxJointsPerSkin} 根`)
+    for (const j of skin.joints) joints.add(j)
+  }
+  if (joints.size > maxJoints) throw new ImportRejected('limit', `模型共有 ${joints.size} 根骨骼，最多 ${maxJoints} 根`)
+}
+
+// The skin subset's limits (data: 模型内容「接受的 GLB 子集」).
+const maxJointsPerSkin = 256
+const maxJoints = 512
+
+/** A buffer of the file by index: the binary chunk for a buffer without a uri, else its data: URL. */
+function buffers(json: GLTFJSON, bin: Uint8Array | null): (i: number) => Uint8Array {
+  const cache = new Map<number, Uint8Array>()
+  return (i) => {
+    let b = cache.get(i)
+    if (!b) {
+      const def = json.buffers?.[i]
+      b = def?.uri !== undefined ? decodeDataURL(def.uri).bytes : i === 0 ? bin ?? undefined : undefined
+      if (!b) throw new ImportRejected('unreadable', `缓冲 ${i} 缺失，无法读取`)
+      cache.set(i, b)
+    }
+    return b
+  }
+}
+
+const componentBytes = new Map([
+  [5121, 1],
+  [5123, 2],
+  [5125, 4],
+  [5126, 4],
+])
+
+/** An accessor's values as floats, glTF's normalisation applied; null when they cannot be read here (sparse or compressed). */
+function readAccessor(json: GLTFJSON, buffer: (i: number) => Uint8Array, index: number): Float32Array | null {
+  const a = json.accessors?.[index]
+  const view = a?.bufferView === undefined ? undefined : json.bufferViews?.[a.bufferView]
+  const size = componentBytes.get(a?.componentType ?? 0)
+  const n = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a?.type ?? ''] ?? 0
+  if (!a || !view || !size || n === 0 || a.sparse !== undefined || view.extensions?.EXT_meshopt_compression || view.extensions?.KHR_meshopt_compression) return null
+  const bytes = buffer(view.buffer)
+  const data = new DataView(bytes.buffer, bytes.byteOffset + (view.byteOffset ?? 0), view.byteLength)
+  const stride = view.byteStride ?? size * n
+  const out = new Float32Array(a.count * n)
+  const scale = a.normalized ? { 5121: 255, 5123: 65535, 5125: 4294967295 }[a.componentType as 5121] ?? 1 : 1
+  for (let i = 0; i < a.count; i++) {
+    for (let c = 0; c < n; c++) {
+      const at = (a.byteOffset ?? 0) + i * stride + c * size
+      if (at + size > data.byteLength) throw new ImportRejected('unreadable', `访问器 ${index} 的数据不完整`)
+      const v = a.componentType === 5126 ? data.getFloat32(at, true) : a.componentType === 5125 ? data.getUint32(at, true) : a.componentType === 5123 ? data.getUint16(at, true) : data.getUint8(at)
+      out[i * n + c] = v / scale
+    }
+  }
+  return out
+}
+
+/**
+ * Every skinned primitive's influences as the file has them, where they can
+ * be read here: several sets merged, the four largest kept, normalised; and
+ * the vertices left without weight. Several compressed sets cannot be read.
+ */
+function readInfluences(json: GLTFJSON, bin: Uint8Array | null): Map<string, Influences> {
+  const buffer = buffers(json, bin)
+  const out = new Map<string, Influences>()
+  json.meshes?.forEach((mesh, m) =>
+    mesh.primitives.forEach((p, k) => {
+      const sets: number[] = []
+      for (let s = 0; p.attributes[`JOINTS_${s}`] !== undefined && p.attributes[`WEIGHTS_${s}`] !== undefined; s++) sets.push(s)
+      if (sets.length === 0) return
+      const compressed = p.extensions?.KHR_draco_mesh_compression !== undefined
+      const read = compressed ? [] : sets.map((s) => [readAccessor(json, buffer, p.attributes[`JOINTS_${s}`]!), readAccessor(json, buffer, p.attributes[`WEIGHTS_${s}`]!)] as const)
+      if (compressed || read.some(([j, w]) => !j || !w)) {
+        if (sets.length > 1) throw new ImportRejected('skin', `网格 ${mesh.name ?? m} 的每个顶点受超过 4 根骨骼影响，又经过压缩，无法读取。请在 Blender 里取消压缩后导出`)
+        return
+      }
+      const count = read[0]![1]!.length / 4
+      const joints = new Uint16Array(count * 4)
+      const weights = new Float32Array(count * 4)
+      const all: [number, number][] = []
+      let trimmed = 0
+      let unweighted = 0
+      for (let v = 0; v < count; v++) {
+        all.length = 0
+        for (const [j, w] of read) for (let c = 0; c < 4; c++) if (w![v * 4 + c]! > 0) all.push([j![v * 4 + c]!, w![v * 4 + c]!])
+        if (all.length === 0) unweighted++
+        if (all.length > 4) trimmed++
+        all.sort((x, y) => y[1] - x[1])
+        const top = all.slice(0, 4)
+        const sum = top.reduce((t, [, w]) => t + w, 0)
+        top.forEach(([j, w], c) => {
+          joints[v * 4 + c] = j
+          weights[v * 4 + c] = w / sum
+        })
+        // As the loader does: no weight at all is all of it on the first joint.
+        if (top.length === 0) {
+          joints[v * 4] = read[0]![0]![v * 4]!
+          weights[v * 4] = 1
+        }
+      }
+      out.set(`${m}/${k}`, { merged: sets.length > 1 ? { joints, weights } : null, trimmed, unweighted })
+    }),
+  )
+  return out
 }
 
 function decodeDataURL(uri: string): { bytes: Uint8Array; type: string } {
@@ -171,17 +300,7 @@ export function sniff(bytes: Uint8Array): ImageMIME | null {
 }
 
 function extractImages(json: GLTFJSON, bin: Uint8Array | null): Map<number, SourceImage> {
-  const buffers = new Map<number, Uint8Array>()
-  const buffer = (i: number): Uint8Array => {
-    let b = buffers.get(i)
-    if (!b) {
-      const def = json.buffers?.[i]
-      b = def?.uri !== undefined ? decodeDataURL(def.uri).bytes : i === 0 ? bin ?? undefined : undefined
-      if (!b) throw new ImportRejected('unreadable', `缓冲 ${i} 缺失，无法读取`)
-      buffers.set(i, b)
-    }
-    return b
-  }
+  const buffer = buffers(json, bin)
   const out = new Map<number, SourceImage>()
   json.images?.forEach((image, i) => {
     let bytes: Uint8Array
@@ -228,7 +347,7 @@ function strip(json: GLTFJSON): GLTFJSON {
   return out
 }
 
-function writeContainer(json: GLTFJSON, bin: Uint8Array | null): ArrayBuffer {
+export function writeContainer(json: GLTFJSON, bin: Uint8Array | null): ArrayBuffer {
   const text = new TextEncoder().encode(JSON.stringify(json))
   const jsonLength = (text.byteLength + 3) & ~3
   const binLength = bin ? (bin.byteLength + 3) & ~3 : 0
@@ -252,10 +371,19 @@ function writeContainer(json: GLTFJSON, bin: Uint8Array | null): ArrayBuffer {
 
 const allowed = /^(blob|data):/i
 
+function rigOf(json: GLTFJSON, associations: ReadonlyMap<Object3D | Material, Association | undefined>): ImportRig | null {
+  const skeleton = skeletonOf(json)
+  if (!skeleton) return null
+  const objects = new Map<number, Object3D>()
+  for (const [o, a] of associations) if (a?.nodes !== undefined && 'isObject3D' in o) objects.set(a.nodes, o)
+  return { skeleton, detection: detectRig(json), objects }
+}
+
 export async function parseImport(file: ArrayBuffer, decoders: Decoders): Promise<ParsedImport> {
   const { json, bin } = readContainer(new Uint8Array(file))
   precheck(json)
   const images = extractImages(json, bin)
+  const influences = readInfluences(json, bin)
   // The second line, as sandbox/gltf.ts: nothing left in the file is fetched.
   let blocked: string | null = null
   const manager = new LoadingManager()
@@ -275,7 +403,8 @@ export async function parseImport(file: ArrayBuffer, decoders: Decoders): Promis
   try {
     const gltf = await loader.parseAsync(writeContainer(strip(json), bin), '')
     if (blocked !== null) throw new ImportRejected('external_uri', `模型引用了外部文件 ${blocked}，只能导入资源都内嵌的 GLB`)
-    return { json, scene: gltf.scene, associations: gltf.parser.associations as Map<Object3D | Material, Association>, images }
+    const associations = gltf.parser.associations as Map<Object3D | Material, Association | undefined>
+    return { json, scene: gltf.scene, associations: associations as Map<Object3D | Material, Association>, images, rig: rigOf(json, associations), influences }
   } catch (e) {
     if (e instanceof ImportRejected) throw e
     throw new ImportRejected('unreadable', `无法解析这个 GLB：${e instanceof Error ? e.message : String(e)}`)

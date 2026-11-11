@@ -5,81 +5,16 @@ import { BufferAttribute, BufferGeometry, Matrix4, Mesh, Object3D, Quaternion, S
 import { MeshBVH } from 'three-mesh-bvh'
 import { parseModelGLB } from '../src/creative-scene/sandbox/gltf.ts'
 import { instantiate, templateOf, type SkeletonTemplate } from '../src/creative-scene/rig/template.ts'
+import { characterGLB, characters, glbOf, globals, inverses, quat, type NodeJSON } from './fixtures/rig/glb.ts'
 import { measure, poseHash, staticGeometry, StaticGeometryCache, traceKeyOf } from '../src/creative-scene/rig/skin.ts'
 import { pose, posable, poseOf, prepareTemplate, setPose, testPoses } from '../src/creative-scene/rig/pose.ts'
 import { standardOffset, turn } from '../src/creative-scene/rig/retarget.ts'
 import type { Skeleton } from '../src/creative-scene/rig/humanoid.ts'
 
 // The skeleton template, CPU skinning and the current pose
-// (scene-skinned-humanoid task 3.2): skinned GLBs made here from JSON, one
-// small model for the coordinate spaces and part identities, and Xbot's node
-// tree (fixtures/rig/skeletons.json) with a few skinned vertices for a pose.
-
-type Typed = Float32Array | Uint8Array | Uint16Array
-const componentTypes = new Map<unknown, number>([
-  [Float32Array, 5126],
-  [Uint8Array, 5121],
-  [Uint16Array, 5123],
-])
-const sizes: Record<string, number> = { SCALAR: 1, VEC3: 3, VEC4: 4, MAT4: 16 }
-
-/** A GLB of json with each accessor's array in its own buffer view, in order. */
-function glbOf(json: Record<string, unknown>, accessors: { array: Typed; type: string }[]): ArrayBuffer {
-  const chunks: Buffer[] = []
-  const bufferViews: { buffer: number; byteOffset: number; byteLength: number }[] = []
-  let offset = 0
-  const acc = accessors.map((a, i) => {
-    const bytes = Buffer.from(a.array.buffer, a.array.byteOffset, a.array.byteLength)
-    const pad = Buffer.alloc((4 - (bytes.length % 4)) % 4)
-    bufferViews.push({ buffer: 0, byteOffset: offset, byteLength: bytes.length })
-    chunks.push(bytes, pad)
-    offset += bytes.length + pad.length
-    const n = sizes[a.type]
-    const out: Record<string, unknown> = { bufferView: i, componentType: componentTypes.get(a.array.constructor), count: a.array.length / n, type: a.type }
-    if (a.type === 'VEC3') {
-      const lo = [0, 1, 2].map((c) => Math.min(...a.array.filter((_, k) => k % 3 === c)))
-      const hi = [0, 1, 2].map((c) => Math.max(...a.array.filter((_, k) => k % 3 === c)))
-      Object.assign(out, { min: lo, max: hi })
-    }
-    return out
-  })
-  const bin = Buffer.concat(chunks)
-  const text = Buffer.from(JSON.stringify({ asset: { version: '2.0' }, scene: 0, accessors: acc, bufferViews, buffers: [{ byteLength: bin.length }], ...json }))
-  const jsonChunk = Buffer.concat([text, Buffer.alloc((4 - (text.length % 4)) % 4, 0x20)])
-  const chunk = (body: Buffer, type: number) => {
-    const h = Buffer.alloc(8)
-    h.writeUInt32LE(body.length, 0)
-    h.writeUInt32LE(type, 4)
-    return Buffer.concat([h, body])
-  }
-  const body = Buffer.concat([chunk(jsonChunk, 0x4e4f534a), chunk(bin, 0x004e4942)])
-  const header = Buffer.alloc(12)
-  header.writeUInt32LE(0x46546c67, 0)
-  header.writeUInt32LE(2, 4)
-  header.writeUInt32LE(12 + body.length, 8)
-  const out = Buffer.concat([header, body])
-  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer
-}
-
-type NodeJSON = { name?: string; children?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; matrix?: number[]; mesh?: number; skin?: number }
-
-/** Each node's matrix in the scene, the way glTF composes them. */
-function globals(nodes: NodeJSON[], roots: number[]): Matrix4[] {
-  const out: Matrix4[] = []
-  const local = (n: NodeJSON) =>
-    n.matrix
-      ? new Matrix4().fromArray(n.matrix)
-      : new Matrix4().compose(new Vector3(...(n.translation ?? [0, 0, 0])), new Quaternion(...(n.rotation ?? [0, 0, 0, 1])), new Vector3(...(n.scale ?? [1, 1, 1])))
-  const walk = (i: number, parent: Matrix4) => {
-    out[i] = parent.clone().multiply(local(nodes[i]))
-    for (const c of nodes[i].children ?? []) walk(c, out[i])
-  }
-  for (const r of roots) walk(r, new Matrix4())
-  return out
-}
-
-const inverses = (ms: Matrix4[]) => new Float32Array(ms.flatMap((m) => m.clone().invert().toArray()))
-const quat = (axis: [number, number, number], deg: number) => new Quaternion().setFromAxisAngle(new Vector3(...axis).normalize(), (deg * Math.PI) / 180).toArray()
+// (scene-skinned-humanoid task 3.2): skinned GLBs made from JSON
+// (fixtures/rig/glb.ts), one small model for the coordinate spaces and part
+// identities, and Xbot's node tree with a triangle at its left hand for a pose.
 
 // A strip from y = 0 to 2 skinned to joints A (bottom) and B (top), drawn by
 // node 1 with skin 0 and by node 5 with skin 1 (bound 0.5 m off), and a small
@@ -304,8 +239,6 @@ test('the cache counts the picking BVH', () => {
 
 // --- a pose on a humanoid ---------------------------------------------------------
 
-type Character = { nodes: NodeJSON[]; scenes: { nodes: number[] }[]; scene: number; skins: { joints: number[] }[] }
-const xbotTree = (JSON.parse(readFileSync(new URL('fixtures/rig/skeletons.json', import.meta.url), 'utf8')) as Record<string, Character>).xbot
 const vectors = JSON.parse(readFileSync(new URL('../src/creative-scene/rig/humanoid_rig.gen.json', import.meta.url), 'utf8')) as {
   skeletons: Record<string, Skeleton & { joints: { node: number; parent: number | null; name: string }[] }>
   cases: { name: string; rig: { humanoid: Record<string, number> } }[]
@@ -313,29 +246,7 @@ const vectors = JSON.parse(readFileSync(new URL('../src/creative-scene/rig/human
 const xbotRig = { humanoid: vectors.cases.find((c) => c.name === 'xbot: 穿刺①/素体检查的映射')!.rig.humanoid }
 
 /** Xbot's skeleton drawing one triangle at the left hand, skinned to it. */
-function xbotGLB(): ArrayBuffer {
-  const joints = xbotTree.skins[0].joints
-  const roots = xbotTree.scenes[xbotTree.scene].nodes
-  const nodes: NodeJSON[] = [...structuredClone(xbotTree.nodes), { name: 'Hand mark', mesh: 0, skin: 0 }]
-  const g = globals(nodes, roots)
-  const hand = xbotRig.humanoid.leftHand
-  const at = new Vector3().setFromMatrixPosition(g[hand])
-  const j = joints.indexOf(hand)
-  return glbOf(
-    {
-      scenes: [{ nodes: [...roots, nodes.length - 1] }],
-      nodes,
-      meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 } }] }],
-      skins: [{ joints, inverseBindMatrices: 3 }],
-    },
-    [
-      { array: new Float32Array([at.x, at.y, at.z, at.x + 0.01, at.y, at.z, at.x, at.y + 0.01, at.z]), type: 'VEC3' },
-      { array: new Uint8Array([j, 0, 0, 0, j, 0, 0, 0, j, 0, 0, 0]), type: 'VEC4' },
-      { array: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]), type: 'VEC4' },
-      { array: inverses(joints.map((n) => g[n])), type: 'MAT4' },
-    ],
-  )
-}
+const xbotGLB = () => characterGLB(characters.xbot, xbotRig.humanoid.leftHand)
 
 test('a test pose moves the skin of every instance the same way, and null is the rest', async () => {
   const t = await template(xbotGLB())

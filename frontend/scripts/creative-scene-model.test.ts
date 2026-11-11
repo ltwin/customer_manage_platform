@@ -471,6 +471,9 @@ test('the host reports sandbox errors, bad modules and GLBs outside the subset',
   assert.ok(!lines.ok && lines.error.kind === 'invalid' && lines.error.message.includes('unsupported_feature'))
   const big = await reply((id) => ({ type: 'result', id, ok: true, glb: fixture('bad-too-many-triangles.glb'), module: pillar }))
   assert.ok(!big.ok && big.error.kind === 'limit')
+  // A code model has no skeleton (AC-10), however well formed the skin.
+  const skinned = await reply((id) => ({ type: 'result', id, ok: true, glb: fixture('skinned-turned-root.glb'), module: pillar }))
+  assert.deepEqual(skinned, { ok: false, error: { kind: 'invalid', message: '代码模型不能带骨骼：生成的 GLB 有 skins' } })
 
   const before = frames.reduce((n, f) => n + f.posted.length, 0)
   const tooLong = await host.compile({ code: 'x'.repeat(64 * 1024 + 1), params: {}, libVersion: 1 })

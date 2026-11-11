@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Group } from 'three'
+import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { currentAccount, send } from '../../creative-canvas/editor/api.ts'
 import { fileTitle } from '../../creative-canvas/editor/fileImport.ts'
 import { discardCandidate, readableFileName, uploadGenerated } from '../../creative-canvas/editor/media.ts'
@@ -163,8 +165,8 @@ export default function ImportModelDialog({
     setStarting(true)
     let written = prepared.written
     if (origin) {
-      // 换算结果保持原样，下次不勾时还能用。
-      const moved = prepared.conversion.scene.clone()
+      // 换算结果保持原样，下次不勾时还能用。带骨骼的网格要连骨架一起复制。
+      const moved = clone(prepared.conversion.scene) as Group
       toBottomCenter(moved)
       try {
         written = await writeGLB(moved)

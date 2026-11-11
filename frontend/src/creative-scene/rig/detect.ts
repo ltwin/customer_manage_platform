@@ -171,6 +171,27 @@ function constraintsOf(nodes: readonly NodeJSON[], joints: ReadonlySet<number>):
   return { constraints, droppedConstraints }
 }
 
+/** A skeleton summary by the file's node indices, as the server works it out of the stored GLB (data: 模型内容 manifest.skeleton). */
+export type FileSkeleton = { joints: { node: number; parent: number | null; name: string }[] }
+
+/** The union of the skins' joints by node index, each with its nearest joint ancestor; null without skins. */
+export function skeletonOf(json: RigJSON): FileSkeleton | null {
+  const joints = new Set((json.skins ?? []).flatMap((s) => s.joints))
+  if (joints.size === 0) return null
+  const nodes = json.nodes ?? []
+  const parents = new Map<number, number>()
+  nodes.forEach((n, i) => n.children?.forEach((c) => parents.set(c, i)))
+  return {
+    joints: [...joints]
+      .sort((a, b) => a - b)
+      .map((node) => {
+        let parent = parents.get(node)
+        while (parent !== undefined && !joints.has(parent)) parent = parents.get(parent)
+        return { node, parent: parent ?? null, name: nodes[node]?.name ?? '' }
+      }),
+  }
+}
+
 /** The mapping and constraints found in a skinned file's JSON. */
 export function detectRig(json: RigJSON): Detection {
   const nodes = json.nodes ?? []

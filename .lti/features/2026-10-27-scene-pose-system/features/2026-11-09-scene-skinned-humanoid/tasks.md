@@ -76,7 +76,7 @@
 
 ## 4. 前端：导入带骨骼的角色
 
-- [ ] 4.1 解析、换算与写出：
+- [x] 4.1 解析、换算与写出：
   - `parse.ts`：放行蒙皮；关节上限；读 VRM 扩展与约束（去掉源不是关节的约束）；有多组影响时从原始访问器裁剪，压缩过又有多组影响的 primitive 拒绝。
   - `convert.ts`：保留关节和挂在关节下的对象，保留 `skinIndex` / `skinWeight`；带骨骼的模型改为平移祖先节点来移动原点。
   - `write.ts`：回写节点下标并删去标记。
@@ -86,6 +86,14 @@
     - AC-5b：合成夹具（根节点旋转、多个 skin、两组影响、原点移到底面中心）写出再解析，静止姿势与非平凡姿态下逐顶点位置、法线、包围盒一致。
     - 节点下标回写后与识别出的映射一致；导出物不带标记。
   - 合成夹具提交在 `frontend/scripts/fixtures/`。
+  - 实施记录：
+    - 测试在 `scripts/creative-scene-import-rig.test.ts`。合成夹具是 `scripts/fixtures/rig/glb.ts`：用 JSON 拼 GLB 的工具和「角色节点树 + 绑在一根关节上的三角形」，3.2 的测试也改用它。
+    - 拒绝原因 `skinned` 改为 `skin`，只用于「多组影响又经过压缩」；关节超限用已有的 `limit`。
+    - 全为 0 的权重：three 的加载器会先把它们改成 (1, 0, 0, 0)，换算阶段已分辨不出，所以改在解析时从原始访问器里数，进换算报告。
+    - 「原点移到底面中心」不用改做法：原本就是平移最上层节点、不改顶点。只补了一条：算包围盒前先更新世界矩阵，蒙皮网格按静止姿势计入。测试确认顶点和逆绑定矩阵不变，蒙皮结果整体平移，存储的包围盒底面为 0。
+    - `writeGLB(scene, track)` 返回被跟踪对象的新节点下标；`rigObjects` / `writtenRig` 把按原文件下标的 `rig` 换成写出后的下标。three 导出时会去掉节点名里的 `:` 等字符，回写按标记找节点，不受影响。
+    - 导入对话框里勾选原点时的复制改用 `SkeletonUtils.clone`：`Object3D.clone` 不会把蒙皮网格重新绑到复制出的骨骼上。
+    - `sandbox/host.ts` 的拒绝（AC-10）测在 `creative-scene-model.test.ts`，用 `creativeglb/testdata/skinned-turned-root.glb`。
 - [ ] 4.2 导入对话框与提交：
   - `ImportModelDialog.tsx` 显示映射结果（骨骼数、手指、约束数、去掉的项、非均匀缩放的提示）。
   - 不成立时说明原因。

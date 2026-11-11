@@ -8,7 +8,9 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  SkinnedMesh,
   SRGBColorSpace,
+  Uint16BufferAttribute,
   Vector3,
   type BufferAttribute,
   type Group,
@@ -66,7 +68,7 @@ const maxSlots = 32
 const namePattern = /^[A-Za-z0-9_-]{1,64}$/
 const repeatWrap = 10497
 const wrapNames: Record<number, string> = { 33648: '镜像', 33071: '钳制' }
-const kept = new Set(['position', 'normal', 'tangent', 'uv', 'uv1', 'color'])
+const kept = new Set(['position', 'normal', 'tangent', 'uv', 'uv1', 'color', 'skinIndex', 'skinWeight'])
 
 /** The slot IDs of the file's materials in order; a primitive without one draws as `default`. */
 export function slotNames(materials: readonly (MaterialJSON | undefined)[], used: ReadonlySet<number | null>): Map<number | null, string> {
@@ -122,13 +124,28 @@ function floats(a: BufferAttribute | InterleavedBufferAttribute): Float32BufferA
 
 const isFloat = (a: BufferAttribute | InterleavedBufferAttribute) => !('isInterleavedBufferAttribute' in a && a.isInterleavedBufferAttribute) && a.array instanceof Float32Array && !a.normalized
 
-/** Every attribute the store keeps as plain floats; the rest dropped (reported by the caller). */
+/** Joint indices as unsigned shorts, the widest JOINTS_0 the store takes. */
+function jointIndices(a: BufferAttribute | InterleavedBufferAttribute): Uint16BufferAttribute {
+  const out = new Uint16Array(a.count * 4)
+  for (let i = 0; i < a.count; i++) for (let c = 0; c < 4; c++) out[i * 4 + c] = a.getComponent(i, c)
+  return new Uint16BufferAttribute(out, 4)
+}
+
+const plainJoints = (a: BufferAttribute | InterleavedBufferAttribute) =>
+  !('isInterleavedBufferAttribute' in a && a.isInterleavedBufferAttribute) && (a.array instanceof Uint8Array || a.array instanceof Uint16Array) && !a.normalized
+
+/**
+ * Every attribute the store keeps as plain floats, joint indices as plain
+ * unsigned integers; the rest dropped (reported by the caller).
+ */
 export function dequantize(g: BufferGeometry): string[] {
   const dropped: string[] = []
   for (const [name, a] of Object.entries(g.attributes)) {
     if (!kept.has(name)) {
       g.deleteAttribute(name)
       dropped.push(name)
+    } else if (name === 'skinIndex') {
+      if (!plainJoints(a)) g.setAttribute(name, jointIndices(a))
     } else if (!isFloat(a)) {
       g.setAttribute(name, floats(a))
     }
@@ -323,13 +340,13 @@ export function convert(parsed: ParsedImport, options: ConvertOptions): Conversi
   if ((json.extensionsUsed ?? []).includes('KHR_lights_punctual')) report.add(null, 'ignored', '灯光已丢掉')
 
   expandInstances(scene, report)
-  // Everything but meshes and the groups holding them goes: cameras, lights,
-  // points and lines.
+  // Everything but meshes, joints and the groups holding them goes: cameras,
+  // lights, points and lines.
   const strays: Object3D[] = []
   scene.traverse((o) => {
     if (o === scene) return
     const isMesh = o instanceof Mesh
-    if (!isMesh && o.type !== 'Group' && o.type !== 'Object3D') strays.push(o)
+    if (!isMesh && o.type !== 'Group' && o.type !== 'Object3D' && o.type !== 'Bone') strays.push(o)
     o.userData = {}
   })
   for (const o of strays) {
@@ -349,6 +366,8 @@ export function convert(parsed: ParsedImport, options: ConvertOptions): Conversi
   const used = new Set(indices.values())
   const names = slotNames(json.materials ?? [], used)
   if (names.size > maxSlots) throw new ImportRejected('limit', `模型有 ${names.size} 种材质，最多 ${maxSlots} 种。请在 Blender 里合并材质后再导出`)
+
+  skinWeights(meshes, parsed, report)
 
   // Floats first, once per geometry, so world positions never move.
   const geometries = new Set(meshes.map((m) => m.geometry as BufferGeometry))
@@ -440,8 +459,48 @@ export function convert(parsed: ParsedImport, options: ConvertOptions): Conversi
   return { scene, slots, images, report: report.items }
 }
 
-/** Moves the scene's top-level nodes so the bottom centre of its bounds is the origin (AC-8). */
+/**
+ * Each skinned primitive's influences as the store keeps them: the merged
+ * sets parse read for one with several, every vertex's weights summing to 1
+ * (weights read as normalised integers do only to their precision). A vertex
+ * without weight is bound wholly to its first joint, by the loader or here.
+ */
+function skinWeights(meshes: readonly Mesh[], parsed: ParsedImport, report: Reporter) {
+  const done = new Set<BufferGeometry>()
+  let trimmed = 0
+  let unweighted = 0
+  for (const mesh of meshes) {
+    const g = mesh.geometry as BufferGeometry
+    if (!(mesh instanceof SkinnedMesh) || done.has(g)) continue
+    done.add(g)
+    const a = parsed.associations.get(mesh)
+    const read = a?.meshes === undefined ? undefined : parsed.influences.get(`${a.meshes}/${a.primitives ?? 0}`)
+    for (const name of Object.keys(g.attributes)) if (/^(joints|weights)_\d+$/.test(name)) g.deleteAttribute(name)
+    if (read?.merged) {
+      g.setAttribute('skinIndex', new Uint16BufferAttribute(read.merged.joints, 4))
+      g.setAttribute('skinWeight', new Float32BufferAttribute(read.merged.weights, 4))
+    }
+    trimmed += read?.trimmed ?? 0
+    unweighted += read?.unweighted ?? 0
+    const w = floats(g.getAttribute('skinWeight'))
+    for (let i = 0; i < w.count; i++) {
+      const sum = w.getX(i) + w.getY(i) + w.getZ(i) + w.getW(i)
+      if (sum > 0) w.setXYZW(i, w.getX(i) / sum, w.getY(i) / sum, w.getZ(i) / sum, w.getW(i) / sum)
+      else w.setXYZW(i, 1, 0, 0, 0)
+    }
+    g.setAttribute('skinWeight', w)
+  }
+  if (trimmed > 0) report.add(null, 'changed', `${trimmed} 个顶点受超过 4 根骨骼影响，只保留了影响最大的 4 根`)
+  if (unweighted > 0) report.add(null, 'changed', `${unweighted} 个顶点没有骨骼权重，已绑到它的第一根骨骼`)
+}
+
+/**
+ * Moves the scene's top-level nodes so the bottom centre of its bounds is the
+ * origin (AC-8). The joints move with them, so a skinned mesh follows without
+ * its vertices or bind poses changing; its bounds are those of the skin at rest.
+ */
 export function toBottomCenter(scene: Object3D): void {
+  scene.updateMatrixWorld(true)
   const box = new Box3().setFromObject(scene, true)
   if (box.isEmpty()) return
   const offset = new Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2)
