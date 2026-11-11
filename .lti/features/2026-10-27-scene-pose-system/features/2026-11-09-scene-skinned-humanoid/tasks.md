@@ -101,6 +101,7 @@
   - `render-texture-thumbnails.mjs` 加模型模式。
   - 把两个素体写进 `models.json`，贴图材质写进 `materials.json`（`listed: false`、`character`），提交缩略图。
   - `creativectl textures import --dir`、`models import --dir` 导入共享对象存储，`check` 通过。
+  - compose 部署（本地驱动）：仿 `scene_texture_data` 加 `scene_model_data` 卷；`production-preflight.sh` 的卷集合、挂载检查加上它，并加 `models check` 一步；同步 `test-production-preflight.sh` 等运维测试（`make check-ops`）。
   - `materials.json` 的 `categories` 加 `character`，前端选材面板与资产浏览器同时过滤 `listed: false`。
   - 文档：`docs/dev/builtin-models.md` 补素体的生成步骤。
   - 完成判据：服务启动时清单校验通过；两个素体的 `rig` 都是 52 根骨骼。

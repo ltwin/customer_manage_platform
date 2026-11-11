@@ -1,6 +1,6 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 8,
+  "revision": 9,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
@@ -56,16 +56,27 @@
   },
   "state": "in-progress",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-11T02:44:02.066Z",
+  "updatedAt": "2026-11-11T02:49:49.242Z",
   "risk": {
     "factors": [
-      "broad-impact",
+      "trust-boundary",
       "contract-break",
-      "perf-sensitive",
-      "trust-boundary"
+      "broad-impact",
+      "perf-sensitive"
     ]
   },
-  "approvals": {},
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-11T02:49:48.267Z",
+      "contentHash": "20c8db317cf5f14e"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-11T02:49:48.267Z",
+      "contentHash": "6c29ac6538076a41"
+    }
+  },
   "approvalHistory": [
     {
       "by": "samson",
