@@ -54,6 +54,9 @@ func SaveModelToLibrary(ctx context.Context, scope store.AccountScope, c creativ
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
+			if obj.Model.Builtin != "" {
+				return creativeops.Outcome{}, invalid("物件 %s 是内置模型 %s，不用存入资产库：它本来就能直接放进任何场景", in.ObjectID, obj.Model.Builtin)
+			}
 			src, err := usableModel(ctx, tx, obj.Model.ContentRevisionID)
 			if err != nil {
 				return creativeops.Outcome{}, err

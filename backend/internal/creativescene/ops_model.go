@@ -101,9 +101,17 @@ func (env *opEnv) verifyExisting(ops []sceneOp) error {
 }
 
 // resolve turns {ref} into the revision committed earlier in the batch and
-// checks {content_revision_id}; afterwards m holds only a revision id.
+// checks {content_revision_id} and {builtin}; afterwards m holds only a
+// revision id or a built-in model's ID.
 func (env *opEnv) resolve(m *ModelRef) error {
 	switch {
+	case m.Builtin != "" && (m.Ref != "" || m.ContentRevisionID != ""):
+		return invalid("model 只能写 ref、content_revision_id 或 builtin 其中之一")
+	case m.Builtin != "":
+		if _, ok := builtinModels.byID[m.Builtin]; !ok {
+			return builtinModelUnavailable(m.Builtin)
+		}
+		return nil
 	case m.Ref != "" && m.ContentRevisionID != "":
 		return invalid("model 只能写 ref 或 content_revision_id 其中之一")
 	case m.Ref != "":
@@ -387,7 +395,7 @@ func (op *setInstanceModelOp) checkScope() error {
 }
 
 // targets are the instances to change; with all_instances each must reference
-// the same revision as object_id in s.
+// the same model as object_id in s.
 func (op *setInstanceModelOp) targets(s Scene, byID map[string]int) ([]string, error) {
 	instance := func(id string) (*Object, error) {
 		i, ok := byID[id]
@@ -416,8 +424,8 @@ func (op *setInstanceModelOp) targets(s Scene, byID map[string]int) ([]string, e
 		if err != nil {
 			return nil, err
 		}
-		if o.Model.ContentRevisionID != base.Model.ContentRevisionID {
-			return nil, invalid("物件 %s 与 %s 引用的不是同一个模型修订", id, op.ObjectID)
+		if *o.Model != *base.Model {
+			return nil, invalid("物件 %s 与 %s 引用的不是同一个模型", id, op.ObjectID)
 		}
 	}
 	return op.ObjectIDs, nil

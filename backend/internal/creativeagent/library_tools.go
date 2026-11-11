@@ -119,12 +119,20 @@ func (s *Service) searchAssets(ctx context.Context, scope store.AccountScope, ac
 
 const sourceBuiltin = "builtin"
 
-// builtinSearch lists the built-in textured materials matching the query,
-// all at once in catalog order: there are few, and nothing else narrows them.
+// builtinSearch lists the built-in textured materials and models matching
+// the query, all at once in catalog order: there are few, and nothing else
+// narrows them. Without a kind it lists both, materials first.
 func builtinSearch(a assetSearchArgs) (string, error) {
-	items := []creativescene.BuiltinMaterial{}
+	items := []any{}
 	if a.Kind == "" || a.Kind == "material" {
-		items = creativescene.BuiltinMaterials(a.Query)
+		for _, m := range creativescene.BuiltinMaterials(a.Query) {
+			items = append(items, m)
+		}
+	}
+	if a.Kind == "" || a.Kind == "model" {
+		for _, m := range creativescene.FindBuiltinModels(a.Query) {
+			items = append(items, m)
+		}
 	}
 	out, err := json.Marshal(map[string]any{"items": items, "total_count": len(items), "has_more": false})
 	return string(out), err

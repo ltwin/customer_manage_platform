@@ -25,13 +25,19 @@
   - 先写测试：清单校验的失败例；handler 的 200、304、404、503（AC-12）；import 核对 sha256、`Inspect` 和 manifest，不一致时不写入。
   - 用测试条目跑通：清单校验用共用向量里 xbot 的骨架和映射拼出的条目，导入用 `creativeglb/testdata/skinned-turned-root.glb`；仓库里的 `models.json` 暂为空，素体条目在 6.1 加入。
   - 文档先写了 `docs/dev/builtin-models.md` 与贴图库的 `--dir`（`.env.example` 引用它），6.1 补素体的生成步骤。
-- [ ] 2.2 场景引用与助手：
+- [x] 2.2 场景引用与助手：
   - `validateModelRef`、`modelRefs`、`readModels`、`opEnv.resolve`、`setInstanceModelOp.targets` 认得 `builtin`。
   - 有效槽位取清单的 manifest（`materials.go`）。
   - `faces.go`、`jobs.go`、`library.go`、`agent.go` 的 `write_model` 对内置模型拒绝；`ModelView` 带 `builtin`。
   - `set_instance_model` 的 `builtin`（从 1.4 移来）；助手路径（`resolveSlots`）核对 `set_instance_model.material_slots` 的槽位名属于新模型。
   - 助手：`builtinSearch` 支持 `kind: model`，并过滤 `listed: false`；`readBuiltinAsset` 支持内置模型；`edit_scene` 的说明与 schema 更新；`editScene` 遇到内置模型而没写材质时补上条目的 `materials`（添加和换模型都补）。
   - 先写测试：AC-9、AC-11（现有指纹测试不变，没有内置模型的场景指纹不变），以及以上各个拒绝分支。
+  - 实施记录：
+    - 仓库清单暂为空，测试经 `creativescene.UseBuiltinModelsForTest` 换上 `testdata/builtin_models.json` 的两个测试素体（xbot 骨架）。
+    - `derive_model` 与 `write_model` 的 `base_content_revision_id` 写内置模型 ID 时，`creative_model_unavailable` 的消息说明它是内置模型；面分配随 `derive_model` 一并拒绝，`faces.go` 无需改动。
+    - `search_assets(source: builtin)` 不写 kind 时材质与模型都列出；内置模型缩略图的图片定位用 `builtin-model:` 前缀，与内置材质的 `builtin:` 分开。
+    - 读场景的模型摘要补上 `rig`（1.1 已加进 OpenAPI 的 `CreativeSceneModel`，1.4 漏了读取）。
+    - 工具说明约增加 1 KB，压缩回归测试的窗口相应调大。
 
 ## 3. 前端：骨骼核心（`rig/`）
 

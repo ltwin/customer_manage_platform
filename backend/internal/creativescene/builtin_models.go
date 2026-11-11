@@ -16,7 +16,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"testing/fstest"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
@@ -342,4 +344,113 @@ func (b *BuiltinModels) importFile(ctx context.Context, list []builtinModelSpec,
 		return "imported"
 	}
 	return "skipped" // written meanwhile by another import
+}
+
+var builtinModelCategoryLabels = map[string]string{"humanoid": "人形"}
+
+// BuiltinModel is a catalog entry as the assistant's search lists it: SizeM
+// is its bounds' size in metres; it goes into a scene as model.builtin.
+type BuiltinModel struct {
+	ID            string     `json:"builtin_id"`
+	Title         string     `json:"title"`
+	Category      string     `json:"category"`
+	CategoryLabel string     `json:"category_label"`
+	Mount         string     `json:"mount"`
+	SizeM         [3]float64 `json:"size_m"`
+	Humanoid      bool       `json:"humanoid"`
+}
+
+// BuiltinModelFacts is an entry as read_asset gives it: what the search
+// lists, its slots, the materials placing it writes, and its source.
+type BuiltinModelFacts struct {
+	BuiltinModel
+	Triangles int                     `json:"triangles"`
+	Slots     []string                `json:"slots"`
+	Materials map[string]MaterialSlot `json:"materials"`
+	Source    builtinModelSource      `json:"source"`
+}
+
+func builtinModelOf(m builtinModelSpec) BuiltinModel {
+	b := m.Manifest.Bounds
+	return BuiltinModel{ID: m.ID, Title: m.Label, Category: m.Category, CategoryLabel: builtinModelCategoryLabels[m.Category], Mount: m.Mount,
+		SizeM:    [3]float64{b.Max[0] - b.Min[0], b.Max[1] - b.Min[1], b.Max[2] - b.Min[2]},
+		Humanoid: m.Rig != nil && len(m.Rig.Humanoid) > 0}
+}
+
+// FindBuiltinModels lists the entries matching query, in catalog order: each
+// of its words, case aside, is part of the label or the category (ID or
+// label), so 女, 素体 and 人形 all find the female base body. An empty query
+// lists them all.
+func FindBuiltinModels(query string) []BuiltinModel {
+	return findBuiltinModels(builtinModels.list, query)
+}
+
+func findBuiltinModels(list []builtinModelSpec, query string) []BuiltinModel {
+	words := strings.Fields(strings.ToLower(query))
+	out := []BuiltinModel{}
+	for _, m := range list {
+		b := builtinModelOf(m)
+		text := strings.ToLower(strings.Join([]string{b.Title, b.Category, b.CategoryLabel}, "\n"))
+		if !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) }) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// BuiltinModelByID is the entry with this ID, if any.
+func BuiltinModelByID(id string) (BuiltinModelFacts, bool) {
+	m, ok := builtinModels.byID[id]
+	if !ok {
+		return BuiltinModelFacts{}, false
+	}
+	return builtinModelFacts(m), true
+}
+
+func builtinModelFacts(m builtinModelSpec) BuiltinModelFacts {
+	return BuiltinModelFacts{BuiltinModel: builtinModelOf(m), Triangles: m.Manifest.Triangles, Slots: slotIDs(m.Manifest),
+		Materials: maps.Clone(m.Materials), Source: m.Source}
+}
+
+// BuiltinModelIDs lists the entries' IDs in catalog order.
+func BuiltinModelIDs() []string {
+	ids := make([]string, len(builtinModels.list))
+	for i, m := range builtinModels.list {
+		ids[i] = m.ID
+	}
+	return ids
+}
+
+// UseBuiltinModelsForTest puts the catalog raw in place of the shipped one
+// for one test, each entry with a placeholder thumbnail: the shipped catalog
+// has no entries until the base bodies come. It panics on a malformed
+// catalog, as loading the shipped one does.
+func UseBuiltinModelsForTest(tb creativedocument.Cleaner, raw []byte) {
+	tb.Helper()
+	var file struct {
+		Models []struct {
+			ID string `json:"id"`
+		} `json:"models"`
+	}
+	_ = json.Unmarshal(raw, &file) // the load below reports a malformed catalog
+	thumbs := fstest.MapFS{}
+	for _, m := range file.Models {
+		thumbs["builtin_thumbnails/models/"+strings.ReplaceAll(m.ID, "@", "_")+".webp"] = &fstest.MapFile{Data: []byte("RIFF\x00\x00\x00\x00WEBP")}
+	}
+	old := builtinModels
+	builtinModels = mustLoadBuiltinModels(raw, thumbs)
+	tb.Cleanup(func() { builtinModels = old })
+}
+
+// BuiltinModelThumbnail is an entry's WebP thumbnail.
+func BuiltinModelThumbnail(id string) ([]byte, bool) {
+	b, ok := builtinModels.thumbnails[id]
+	return b, ok
+}
+
+// builtinMaterials are the materials placing the entry writes, fresh for
+// the caller to keep.
+func builtinMaterials(id string) (map[string]MaterialSlot, bool) {
+	m, ok := builtinModels.byID[id]
+	return maps.Clone(m.Materials), ok
 }

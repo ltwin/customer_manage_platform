@@ -443,9 +443,11 @@ type LightView struct {
 
 // ModelView is a placed model: its revision and what was baked, never its
 // code (read_scene's include_code asks for that). An imported model has
-// neither code nor parameters.
+// neither code nor parameters; a built-in one has its catalog ID instead of a
+// revision.
 type ModelView struct {
-	ContentRevisionID string                 `json:"content_revision_id"`
+	ContentRevisionID string                 `json:"content_revision_id,omitempty"`
+	Builtin           string                 `json:"builtin,omitempty"`
 	Usable            bool                   `json:"usable"`
 	Imported          bool                   `json:"imported,omitempty"`
 	NameHint          string                 `json:"name_hint,omitempty"`
@@ -502,7 +504,18 @@ func objectView(o Object, models map[string]placedModel, shadows map[string]stri
 			v.Slots = o.Primitive.Faces.effectiveSlots([]creativeglb.Slot{{ID: "main"}})
 		}
 	}
-	if o.Model != nil {
+	if o.Model != nil && o.Model.Builtin != "" {
+		mv := &ModelView{Builtin: o.Model.Builtin}
+		if b, ok := builtinModels.byID[o.Model.Builtin]; ok {
+			bounds := b.Manifest.Bounds
+			mv.Usable, mv.NameHint, mv.BoundsM = true, b.Label, &bounds
+			mv.Triangles, mv.Slots, mv.UV = b.Manifest.Triangles, (*Faces)(nil).effectiveSlots(b.Manifest.Slots), b.Manifest.UV
+			if mv.UV != nil && !*mv.UV {
+				mv.UVFallbackSlots = uvMappedSlots(o.MaterialSlots)
+			}
+		}
+		v.Model = mv
+	} else if o.Model != nil {
 		mv := &ModelView{ContentRevisionID: o.Model.ContentRevisionID}
 		if m, ok := models[o.Model.ContentRevisionID]; ok && m.usable {
 			bounds := m.payload.Manifest.Bounds
@@ -1004,6 +1017,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	}
 	scene, err := decodeScene(cur.Content.Payload)
 	if err != nil {
+		return nil, err
+	}
+	if in.Operations, err = fillBuiltinMaterials(in.Operations); err != nil {
 		return nil, err
 	}
 	if in.Operations, err = resolveSlots(ctx, tx, in.Operations, scene); err != nil {

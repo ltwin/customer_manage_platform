@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,7 +90,7 @@ func TestBuiltinSourceRefusals(t *testing.T) {
 	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","kind":"model","limit":5}`); err != nil || out != `{"has_more":false,"items":[],"total_count":0}` {
 		t.Fatalf("built-in models: %s %v", out, err)
 	}
-	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","limit":1}`); err != nil || strings.Count(out, `"builtin_id"`) != len(creativescene.BuiltinMaterialIDs()) {
+	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","limit":1}`); err != nil || strings.Count(out, `"builtin_id"`) != len(creativescene.BuiltinMaterialIDs())+len(creativescene.BuiltinModelIDs()) {
 		t.Fatalf("all built-ins come at once, whatever the limit: %s %v", out, err)
 	}
 	if _, err := h.readAsset(t.Context(), `{"builtin_id":"glass@1","offset":0,"limit":1}`); !errors.As(err, &refusal) || !strings.Contains(refusal.message, "wood_floor@1") {
@@ -146,4 +148,60 @@ func TestAssistantAppliesABuiltinMaterial(t *testing.T) {
 		}
 	}
 	t.Fatal("the wall was not written")
+}
+
+// AC-9: the assistant finds a body by a word of it, reads it with its
+// thumbnail, and places it without writing materials: the tool gives it the
+// body's own (data: 内置模型库「助手」).
+func TestAssistantPlacesABuiltinModel(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "creativescene", "testdata", "builtin_models.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	creativescene.UseBuiltinModelsForTest(t, raw)
+	f, c, _, doc := visualScene(t, true)
+	h := texturedHandler(t, f, c.ID)
+	found, err := h.searchAssets(t.Context(), `{"source":"builtin","kind":"model","query":"女","limit":5}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Items []creativescene.BuiltinModel `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(found), &page); err != nil || len(page.Items) != 1 || page.Items[0].ID != "body_test_female@1" || !page.Items[0].Humanoid || page.Items[0].Mount != "floor" {
+		t.Fatalf("%s %v", found, err)
+	}
+	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","query":"素体","limit":5}`); err != nil || strings.Count(out, `"builtin_id"`) != 2 {
+		t.Fatalf("without a kind both bodies come: %s %v", out, err)
+	}
+	read, err := h.readAsset(t.Context(), `{"builtin_id":"body_test_female@1","offset":0,"limit":1}`)
+	if err != nil || !strings.Contains(read, `"materials":{"body"`) || !strings.Contains(read, `"slots":["body","eyes"]`) || !strings.Contains(read, `"image_revision_id":"builtin-model:body_test_female@1"`) {
+		t.Fatalf("read_asset: %s %v", read, err)
+	}
+	if img, err := f.service.agentImage(t.Context(), f.alice, "builtin-model:body_test_female@1", 1<<20); err != nil || img.MIME != "image/webp" {
+		t.Fatalf("thumbnail %+v %v", img, err)
+	}
+	var refusal *toolRefusal
+	if _, err := h.readAsset(t.Context(), `{"builtin_id":"body_elf@1","offset":0,"limit":1}`); !errors.As(err, &refusal) || !strings.Contains(refusal.message, "body_test_male@1") {
+		t.Fatalf("unknown built-in: %v", err)
+	}
+
+	args, err := json.Marshal(map[string]any{"document_id": doc, "based_on_revision": h.docRevision(t, doc), "operations": []any{map[string]any{"op": "add_objects", "objects": []any{map[string]any{
+		"id": sceneObjectID("her"), "kind": "model_instance", "name": "人", "parent_id": nil, "order": 1, "transform": identityAt(0), "visible": true, "locked": false,
+		"model": map[string]any{"builtin": page.Items[0].ID}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.editScene(t.Context(), "place", string(args)); err != nil {
+		t.Fatalf("the body was refused: %v", sceneRefusal(err))
+	}
+	for _, o := range f.objectsOf(doc) {
+		if o.ID == sceneObjectID("her") {
+			if o.Model.Builtin != "body_test_female@1" || len(o.MaterialSlots) != 2 || o.MaterialSlots["body"].Params["roughness"] != 0.6 {
+				t.Fatalf("placed %+v with %+v", o.Model, o.MaterialSlots)
+			}
+			return
+		}
+	}
+	t.Fatal("the body was not placed")
 }

@@ -115,9 +115,10 @@ func TestCompactionSmallWindowCanContinue(t *testing.T) {
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W4's
-	// aerial perspective, the face assignment guidance (about 0.6 KB) and the
-	// textures, mappings and shadow budget (about 2.6 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 26300 })
+	// aerial perspective, the face assignment guidance (about 0.6 KB), the
+	// textures, mappings and shadow budget (about 2.6 KB) and the built-in
+	// models (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 27400 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for i := 0; i < 4; i++ {
@@ -140,9 +141,10 @@ func TestCompactionOriginalsLeaveRoomForRecentTurns(t *testing.T) {
 	// The window leaves the same room as before the scene tools (about 7 KB of
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W4's
-	// aerial perspective, the face assignment guidance (about 0.6 KB) and the
-	// textures, mappings and shadow budget (about 2.6 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 26300 })
+	// aerial perspective, the face assignment guidance (about 0.6 KB), the
+	// textures, mappings and shadow budget (about 2.6 KB) and the built-in
+	// models (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 27400 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for _, text := range []string{strings.Repeat("x", 20000), strings.Repeat("y", 20000), "最近方案甲", "最近方案乙"} {
@@ -292,9 +294,9 @@ func TestCompactionReplacementAtSameCoverageUsesNewSummary(t *testing.T) {
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W5's
 	// volume objects (about 1 KB), the face assignment guidance (about
-	// 0.6 KB) and the textures, mappings and shadow budget (about 2.6 KB) were
-	// added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 18300 })
+	// 0.6 KB), the textures, mappings and shadow budget (about 2.6 KB) and
+	// the built-in models (about 1 KB) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 19400 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = compactionScript(testSummary + "\nreplacement-small-summary")

@@ -895,9 +895,9 @@ func contextToolInfo(name string) *schema.ToolInfo {
 	switch name {
 	case readAssetTool:
 		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。模型返回尺寸（米）、挂载方式、面数、材质槽与资产带的材质、部件、挂点、参数定义与当前值，并附缩略图；不能附图时 thumbnail_omitted 说明原因；超出单次结果上限时依次省略部件与挂点、参数定义，omitted 列出省略项。不返回生成代码。材质返回完整槽位 slot（原样写进 edit_scene 的 material_slots 即可使用）和贴图图片的宽高 images，并附缩略图；模型资产带的材质用到贴图时同样给 images。贴图只给图片 ID 和宽高，不附原图。" +
-			"角色卡返回完整 character 载荷与来源图片尺寸，按视角顺序附参考图；无法附上的图片列在 images_omitted。内置贴图材质用 builtin_id（search_assets source:builtin 所得）读取，与 content_revision_id 二选一：返回 slot、品类、真实尺寸、参数缺省值 defaults 和来源，并附缩略图。"
+			"角色卡返回完整 character 载荷与来源图片尺寸，按视角顺序附参考图；无法附上的图片列在 images_omitted。内置贴图材质和内置模型用 builtin_id（search_assets source:builtin 所得）读取，与 content_revision_id 二选一：材质返回 slot、品类、真实尺寸、参数缺省值 defaults 和来源；模型返回名称、品类、挂载方式、尺寸、面数、材质槽 slots、放入场景时自带的材质 materials 和来源。都附缩略图。"
 		params["content_revision_id"] = &schema.ParameterInfo{Type: schema.String, Desc: "内容修订 ID；与 builtin_id 二选一"}
-		params["builtin_id"] = &schema.ParameterInfo{Type: schema.String, Desc: "内置贴图材质 ID，如 wood_floor@1；与 content_revision_id 二选一"}
+		params["builtin_id"] = &schema.ParameterInfo{Type: schema.String, Desc: "内置贴图材质或内置模型的 ID，如 wood_floor@1、body_female@1；与 content_revision_id 二选一"}
 		params["offset"] = integer("文字起始字节，初次读取填 0")
 		params["limit"] = integer("文字最多字节数，1 到 8192；图片也填写此参数")
 	case readCanvasTool:

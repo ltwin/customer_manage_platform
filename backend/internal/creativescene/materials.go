@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -222,14 +223,80 @@ func decodeSlot(raw json.RawMessage, op int, path string) (MaterialSlot, error) 
 	return slot, nil
 }
 
+// fillBuiltinMaterials writes a built-in model's materials into the
+// assistant's add_objects items and set_instance_model operations that place
+// it without material_slots, as the editor does (data: 内置模型库「放置」).
+// Anything unreadable or unknown is left for the scene command to report.
+func fillBuiltinMaterials(ops []json.RawMessage) ([]json.RawMessage, error) {
+	fill := func(o map[string]json.RawMessage) (bool, error) {
+		var m struct {
+			Builtin string `json:"builtin"`
+		}
+		if _, written := o["material_slots"]; written || json.Unmarshal(o["model"], &m) != nil || m.Builtin == "" {
+			return false, nil
+		}
+		slots, ok := builtinMaterials(m.Builtin)
+		if !ok {
+			return false, nil
+		}
+		raw, err := json.Marshal(slots)
+		o["material_slots"] = raw
+		return true, err
+	}
+	out := slices.Clone(ops)
+	for i, raw := range ops {
+		var op map[string]json.RawMessage
+		var name string
+		if json.Unmarshal(raw, &op) != nil || json.Unmarshal(op["op"], &name) != nil {
+			continue
+		}
+		changed := false
+		switch name {
+		case "add_objects":
+			var items []map[string]json.RawMessage
+			if json.Unmarshal(op["objects"], &items) != nil {
+				continue
+			}
+			for _, it := range items {
+				filled, err := fill(it)
+				if err != nil {
+					return nil, err
+				}
+				changed = changed || filled
+			}
+			if changed {
+				list, err := json.Marshal(items)
+				if err != nil {
+					return nil, err
+				}
+				op["objects"] = list
+			}
+		case "set_instance_model":
+			var err error
+			if changed, err = fill(op); err != nil {
+				return nil, err
+			}
+		}
+		if changed {
+			var err error
+			if out[i], err = json.Marshal(op); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
 // resolveSlots is the assistant's material slots (design「助手：材质、灯光与
 // 环境」): an update_objects entry's material_slots merges by slot into what
 // the object has, null clearing a slot, and goes to the command whole, as the
 // command replaces it. Every slot written names a slot the object has (main
-// for a primitive, the manifest's for a model) and a material of the catalog
-// with parameters in range. The model's slots are the snapshot's: an object
-// whose model the batch also swaps is refused, as the scene command would
-// refuse its content changing twice, with the way to do it.
+// for a primitive, the manifest's for a model, the catalog's for a built-in
+// one) and a material of the catalog with parameters in range. The model's
+// slots are the snapshot's: an object whose model the batch also swaps is
+// refused, as the scene command would refuse its content changing twice, with
+// the way to do it. A set_instance_model's material_slots name the new
+// model's slots.
 func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMessage, cur Scene) ([]json.RawMessage, error) {
 	type item struct {
 		ID            string                      `json:"id"`
@@ -240,17 +307,22 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		MaterialSlots map[string]*json.RawMessage `json:"material_slots"`
 	}
 	type decoded struct {
-		Op        string            `json:"op"`
-		Objects   []json.RawMessage `json:"objects"`
-		Updates   []json.RawMessage `json:"updates"`
-		ObjectID  string            `json:"object_id"`
-		ObjectIDs []string          `json:"object_ids"`
+		Op            string                      `json:"op"`
+		Objects       []json.RawMessage           `json:"objects"`
+		Updates       []json.RawMessage           `json:"updates"`
+		ObjectID      string                      `json:"object_id"`
+		ObjectIDs     []string                    `json:"object_ids"`
+		Model         *ModelRef                   `json:"model"`
+		MaterialSlots map[string]*json.RawMessage `json:"material_slots"`
 	}
 	heads := make([]decoded, len(ops))
 	slotted := false
 	for i, raw := range ops {
 		if json.Unmarshal(raw, &heads[i]) != nil {
 			return ops, nil // the scene command reports the shape
+		}
+		if heads[i].MaterialSlots != nil {
+			slotted = true
 		}
 		for _, raws := range [][]json.RawMessage{heads[i].Objects, heads[i].Updates} {
 			for _, r := range raws {
@@ -268,16 +340,17 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 	// What each object is and has, as the batch goes; faces is a builtin's
 	// face assignment, whose slots take materials too (有效槽位).
 	type state struct {
-		kind  string
-		model string
-		faces *Faces
-		slots map[string]MaterialSlot
+		kind    string
+		model   string
+		builtin string
+		faces   *Faces
+		slots   map[string]MaterialSlot
 	}
 	objects := make(map[string]*state, len(cur.Objects))
 	for _, o := range cur.Objects {
 		st := &state{kind: o.Kind, slots: o.MaterialSlots}
 		if o.Model != nil {
-			st.model = o.Model.ContentRevisionID
+			st.model, st.builtin = o.Model.ContentRevisionID, o.Model.Builtin
 		}
 		if o.Primitive != nil {
 			st.faces = o.Primitive.Faces
@@ -297,9 +370,12 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 	}
 	var revisions []string
 	for _, h := range heads {
+		if h.Model != nil && h.Model.ContentRevisionID != "" {
+			revisions = append(revisions, h.Model.ContentRevisionID)
+		}
 		for _, r := range h.Objects {
 			var it item
-			if json.Unmarshal(r, &it) == nil && it.Model != nil {
+			if json.Unmarshal(r, &it) == nil && it.Model != nil && it.Model.ContentRevisionID != "" {
 				revisions = append(revisions, it.Model.ContentRevisionID)
 			}
 		}
@@ -319,6 +395,13 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 		case KindPrimitive:
 			return effectiveSlotIDs(builtinSlots, st.faces), true
 		case KindModelInstance:
+			if st.builtin != "" {
+				b, ok := builtinModels.byID[st.builtin]
+				if !ok {
+					return nil, false // the scene command reports it
+				}
+				return slotIDs(b.Manifest), true
+			}
 			m, ok := models[st.model]
 			if !ok || !m.usable {
 				return nil, false // nothing to check against
@@ -362,6 +445,23 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 				}
 				swapped[id] = true
 			}
+			if h.Model == nil || h.MaterialSlots == nil {
+				continue
+			}
+			st := &state{kind: KindModelInstance, model: h.Model.ContentRevisionID, builtin: h.Model.Builtin}
+			for _, name := range slices.Sorted(maps.Keys(h.MaterialSlots)) {
+				v := h.MaterialSlots[name]
+				if v == nil {
+					continue // the scene command reports the shape
+				}
+				slot, err := decodeSlot(*v, i, "material_slots."+name)
+				if err != nil {
+					return nil, err
+				}
+				if err := check(h.ObjectID, st, name, slot); err != nil {
+					return nil, err
+				}
+			}
 			continue
 		default:
 			continue
@@ -377,7 +477,7 @@ func resolveSlots(ctx context.Context, tx store.TxAccountScope, ops []json.RawMe
 			if h.Op == "add_objects" {
 				st := &state{kind: it.Kind, slots: map[string]MaterialSlot{}}
 				if it.Model != nil {
-					st.model = it.Model.ContentRevisionID
+					st.model, st.builtin = it.Model.ContentRevisionID, it.Model.Builtin
 				}
 				writtenFaces(st, it)
 				objects[it.ID] = st
