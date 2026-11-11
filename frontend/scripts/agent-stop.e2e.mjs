@@ -33,7 +33,7 @@ const browser = await chromium.launch({ headless: true })
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // One mocked run. `cancel` decides how each cancel request is answered.
-async function scene({ state = 'running', cancel } = {}) {
+async function scene({ state = 'running', cancel, send } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 } })
   const page = await context.newPage()
   const errors = []
@@ -44,6 +44,8 @@ async function scene({ state = 'running', cancel } = {}) {
     blocks: [],
     cancels: [],
     sends: [],
+    // Runs created during the test, by id; their streams stay empty.
+    runs: {},
     run: {
       id: 'run',
       conversation_id: 'conversation',
@@ -64,7 +66,9 @@ async function scene({ state = 'running', cancel } = {}) {
   }
   const frame = (event) => `id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
   await page.exposeFunction('__replay', (target) => {
-    const after = Number(new URL(target, 'http://x').searchParams.get('after_seq') ?? 0)
+    const parsed = new URL(target, 'http://x')
+    if (!parsed.pathname.includes('/agent-runs/run/')) return []
+    const after = Number(parsed.searchParams.get('after_seq') ?? 0)
     return server.log.filter((event) => Number(event.seq) > after).map(frame)
   })
   await page.addInitScript(() => {
@@ -126,15 +130,20 @@ async function scene({ state = 'running', cancel } = {}) {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const json = (body, status = 200) => route.fulfill({ status, json: body })
-    if (request.method() === 'POST' && path.endsWith('/agent-runs/run/cancel')) {
-      const entry = { key: request.headers()['idempotency-key'], at: Date.now() }
+    const cancelled = /\/agent-runs\/([^/]+)\/cancel$/.exec(path)
+    if (request.method() === 'POST' && cancelled) {
+      const entry = { run: cancelled[1], key: request.headers()['idempotency-key'], at: Date.now() }
       server.cancels.push(entry)
       return cancel({ route, json, entry, server, end, index: server.cancels.length - 1 })
     }
     if (request.method() === 'POST') {
       server.sends.push({ path, at: Date.now() })
+      if (send) return send({ path, json, server })
       return json({ error: { code: 'creative_test_stop', message: 'stop here' } }, 409)
     }
+    const other = /\/agent-runs\/([^/]+)$/.exec(path)
+    if (other && server.runs[other[1]])
+      return json({ ...server.runs[other[1]], blocks: [], snapshot_seq: '0' })
     if (path.endsWith('/agent/catalog'))
       return json({
         limits: { attachments: 10, image_preview_count: 8 },
@@ -156,7 +165,9 @@ async function scene({ state = 'running', cancel } = {}) {
   })
   await page.goto(url)
   await page.locator('.cc-agent-turn').waitFor({ state: 'attached' })
-  await page.waitForFunction(() => window.__sse.controller !== null)
+  // A finished run is read once and never streamed.
+  if (!['succeeded', 'partial', 'failed', 'cancelled'].includes(state))
+    await page.waitForFunction(() => window.__sse.controller !== null)
   const text = () => page.locator('[data-block="ccbk_answer"]').innerText()
   const button = (name) => page.locator('.cc-agent-composer-foot').getByRole('button', { name, exact: true })
   return {
@@ -289,6 +300,72 @@ try {
     assert(s.server.sends.length > 0, 'sent after the stop')
     assert(s.server.sends[0].at >= answeredAt, 'sent after the stop answered')
     assert(s.server.sends[0].path.endsWith('/egress-consents'))
+    await s.close()
+  })
+
+  // 建运行被拖住时：发出去的同一帧就是运行中样式，可以停；建好后立刻被取消。
+  const startScene = (runs) => {
+    let release
+    const gate = new Promise((resolve) => (release = resolve))
+    const scenePromise = scene({
+      state: 'succeeded',
+      cancel: ({ json, server, entry }) => {
+        server.runs[entry.run] = answered(server.runs[entry.run])
+        return json(server.runs[entry.run])
+      },
+      send: async ({ path, json, server }) => {
+        if (path.endsWith('/egress-consents')) return json({ id: 'consent-2' })
+        await gate
+        return runs({ json, server })
+      },
+    })
+    return scenePromise.then((s) => ({ ...s, release }))
+  }
+  const sendMessage = async (s) => {
+    await s.page.getByRole('textbox', { name: '创作问题' }).click()
+    await s.page.keyboard.type('换成侧光')
+    await s.page.keyboard.press('Enter')
+  }
+
+  await check('start: a message just sent shows as running and can be stopped before its run exists', async () => {
+    const s = await startScene(({ json, server }) => {
+      server.runs.run2 = { ...server.run, id: 'run2', state: 'queued', trigger_message_id: 'message-2', last_event_seq: '1' }
+      delete server.runs.run2.finished_at
+      return json(server.runs.run2)
+    })
+    await s.button('发送').waitFor()
+    await sendMessage(s)
+    await s.button('停止').waitFor({ timeout: 300 })
+    await s.page.locator('.cc-agent-status', { hasText: '正在处理' }).waitFor({ timeout: 300 })
+    await s.page.locator('.is-sending .cc-agent-loading-answer').waitFor({ timeout: 300 })
+    await s.page.locator('.cc-agent-compose').screenshot({ path: '/tmp/agent-stop-starting.png' })
+    await sleep(500)
+    assert.equal(await s.button('停止').count(), 1, 'still stoppable while the run is being made')
+    await s.button('停止').click()
+    await s.page.locator('.is-sending .cc-agent-note', { hasText: '已停止' }).waitFor({ timeout: 300 })
+    assert.equal(await s.page.locator('.is-sending .cc-agent-loading-answer').count(), 0)
+    assert.equal(await s.page.locator('.cc-agent-status').count(), 0)
+    assert.equal(s.server.cancels.length, 0, 'nothing to cancel yet')
+    s.release()
+    for (let i = 0; i < 40 && !s.server.cancels.some((entry) => entry.run === 'run2'); i++) await sleep(50)
+    assert(s.server.cancels.some((entry) => entry.run === 'run2'), 'the new run was cancelled once it existed')
+    await sleep(300)
+    assert.equal(await s.page.getByText('停止没有成功，请重试').count(), 0)
+    assert.equal(await s.page.locator('.is-sending .cc-agent-note', { hasText: '已停止' }).count(), 1)
+    await s.close()
+  })
+
+  await check('start: a stopped message that is refused puts the draft back without an error', async () => {
+    const s = await startScene(({ json }) => json({ error: { code: 'creative_test_refused', message: '拒绝' } }, 409))
+    await sendMessage(s)
+    await s.button('停止').waitFor({ timeout: 300 })
+    await s.button('停止').click()
+    s.release()
+    await s.page.getByRole('textbox', { name: '创作问题' }).getByText('换成侧光').waitFor()
+    await sleep(300)
+    assert.equal(await s.page.locator('.cc-agent-error, [role="alert"]').count(), 0, 'no error')
+    assert.equal(await s.page.getByText('拒绝').count(), 0)
+    assert.equal(s.server.cancels.length, 0)
     await s.close()
   })
 

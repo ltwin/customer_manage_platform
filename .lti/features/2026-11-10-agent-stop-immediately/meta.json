@@ -1,12 +1,12 @@
 {
   "uid": "e3d4752e-c0ae-4fc9-b501-a3ae5d0db91c",
-  "revision": 6,
+  "revision": 7,
   "id": "agent-stop-immediately",
   "kind": "feature",
   "assurance": "governed",
   "state": "in-progress",
   "createdAt": "2026-11-10T11:08:49.261Z",
-  "updatedAt": "2026-11-10T12:30:48.621Z",
+  "updatedAt": "2026-11-11T02:59:22.542Z",
   "risk": {
     "factors": [
       "concurrency"
@@ -30,6 +30,13 @@
       "at": "2026-11-10T12:01:58.939Z",
       "summary": "方案评审后：停止期间冻结显示、完成后显示服务端已保存内容（owner 批准默认方案）；cancel 首次响应非终态时换新 key 重发",
       "contentHash": "f80a3775dae17d52",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-11T02:59:21.963Z",
+      "summary": "owner 验收反馈（前端响应优先）：发出到建好运行之间也按运行中渲染，可停；停后运行一建好即取消",
+      "contentHash": "8505601ed55c9121",
       "added": [],
       "removed": []
     }

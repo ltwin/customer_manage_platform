@@ -130,10 +130,17 @@ async function cancelUntilFinished(id: string) {
 
 停止完成后显示的内容：服务端保存的块，可能比点击瞬间多出「点击 → 取消提交」之间已落库的尾部文字（正常 < 0.5 秒）。理由：这部分已进入运行记录，刷新页面和下一轮模型上下文看到的都是它；如果前端一直藏着，界面与助手实际“说过的话”不一致。见未决事项。
 
+发出到建好运行之间（`outgoing` 已画出、还没有 `outgoing.run`）也按运行中渲染（owner 验收反馈，前端响应优先）：
+
+- 状态栏 `RunStatus` 在没有运行时显示「正在处理」，消息下方画 `TurnLoading`。
+- 停止键此时可点（不受 `perform` 的 `busy` 锁影响）：只记下 `stopOnStart` 并立即显示「已停止」，不中途掐断请求链（链中途中断会让结果不确定）；`perform` 拿到新运行时立刻对它调用 `stop()`。链失败且已请求停止时不显示错误，草稿照常放回。
+- 每次新发送清掉上一次的 `stopOnStart`。
+
 按钮决策表：
 
 | 运行状态（扣除 stopping） | 草稿 | 按钮 | 点击 |
 |---|---|---|---|
+| 无运行、刚发出未建好 | 任意 | 停止（可点） | 记下 `stopOnStart`，立即显示已停止 |
 | 无运行 | 任意 | 发送（按现有 `sendable` 禁用） | 发送 |
 | `queued`/`running`/`waiting_client`/`reconciling` | 任意 | 停止 | `stop(active)` |
 | `waiting_input` | 空 | 停止 | `stop(waiting)` |

@@ -19,6 +19,7 @@
 - [x] 4.1 `agentRuns.ts` 加 `stopping` 冻结快照、`freezeStopping` / `releaseStopping`，`put()` 读到终态时撤掉快照；`AgentBlocks.tsx` 渲染 `stopping ?? runs`、stopping 视为 finished，并去掉费用核实文案；`agentState.ts` 删除 `hasUnsettledCost`，`creative_reconciliation_closed` 文案改为「已停止」；同步更新 `creative-agent.test.ts`，`make check-frontend` 通过
 - [x] 4.2 `AgentPanel.tsx`：按决策表实现发送/停止合一按钮；`stop()` + `cancelUntilFinished()`（非终态换新 key 重发一次，失败回滚并提示）；`sendDraft` / `sendCommand` 先等正在进行的停止；`RunStatus` 去掉两个按钮，不再调用 `close-reconciliation`；`agent.css` 加停止态按钮样式、删除状态栏按钮样式。`make check-frontend` 通过
 - [x] 4.3 新增 `frontend/scripts/agent-stop.e2e.mjs`（mock HTTP）。用例：按钮随状态切换；cancel 延迟 3 秒期间持续推送文本事件，文字保持不变、完成后显示服务端内容；cancel 失败回滚到最新真实视图；首次响应非终态时用新 key 重发；停止中发送会等停止完成。一次跑一个用例，换端口，全部通过
+- [x] 4.4 发出到建好运行之间按运行中渲染（停止键、「正在处理」、加载轮廓），这一段点停止立即显示已停止、运行建好后立刻取消、建运行失败时不报错放回草稿；`agent-stop.e2e.mjs` 新增「start」用例（建运行延迟 1.5 秒）逐个通过
 
 ## 5. 文档
 

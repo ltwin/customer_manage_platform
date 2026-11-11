@@ -315,6 +315,9 @@ function AgentConversation({
   const performing = useRef(false)
   // The stop on its way, if any; true once the run has ended.
   const stopRequest = useRef<Promise<boolean> | null>(null)
+  // 发出去、运行还没建好时点了停止：建好就取消它。界面上已经显示停止。
+  const stopOnStart = useRef(false)
+  const [startStopped, setStartStopped] = useState(false)
   const thread =
     threadWindow?.conversation === conversation ? threadWindow.items : noMessages
   const {
@@ -571,13 +574,17 @@ function AgentConversation({
           }
           setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
           followLatest()
+          if (stopOnStart.current) stop(reply)
         }
-      } else {
+      } else if (!(stopOnStart.current && outcome.kind === 'rejected')) {
+        // 已经停了的那条被拒：没有运行要停，草稿照常放回，不再报错。
         setError(
           outcome.error instanceof Error
             ? outcome.error.message
             : '提交结果暂不确定，请确认原操作',
         )
+      }
+      if (outcome.kind === 'rejected' || outcome.kind === 'unknown') {
         // 原文回到输入框：明确被拒时链已清掉，可以改了再发；结果未知时链还在，
         // 输入框随链锁着，等确认送达或重新发送。建好的对话照样留着。
         setOutgoing(null)
@@ -591,8 +598,15 @@ function AgentConversation({
       else setRefresh((value) => value + 1)
     } finally {
       performing.current = false
+      stopOnStart.current = false
       if (mounted.current) setBusy(false)
     }
+  }
+  // 运行还没建好就点了停止：先显示停止，建好后由 perform 接着取消。
+  function stopStarting() {
+    stopOnStart.current = true
+    setStartStopped(true)
+    setError('')
   }
   // 点停止立刻显示已停止，请求在后台发出；失败时恢复成运行中并提示。
   function stop(run: AgentRun) {
@@ -761,6 +775,8 @@ function AgentConversation({
   }
   // 点发送就把这条画进对话、清空输入框；草稿已记在待确认链里，没送达会放回来。
   function showOutgoing(parts: MessagePart[], clear = true) {
+    stopOnStart.current = false
+    setStartStopped(false)
     setOutgoing({ conversation, parts })
     if (clear) {
       setDraft('')
@@ -1085,6 +1101,8 @@ function AgentConversation({
   }
   // 运行中发送键就是停止键；等补充时，输入框空着才是停止。
   const stoppable = active ?? (waiting && !draft.trim() ? waiting : undefined)
+  // 刚发出、运行还没建好：前端先当它在跑，不等请求返回。
+  const starting = !!sending && !sending.run && !startStopped && !stoppable
   const sendable =
     !locked &&
     !active &&
@@ -1275,7 +1293,13 @@ function AgentConversation({
             {sending && (
               <div className="cc-agent-exchange is-sending">
                 <UserMessage parts={sending.parts} sending />
-                {sending.run && <RunTurn runID={sending.run} />}
+                {sending.run ? (
+                  <RunTurn runID={sending.run} />
+                ) : startStopped ? (
+                  <p className="cc-agent-note">已停止</p>
+                ) : (
+                  <TurnLoading />
+                )}
               </div>
             )}
           </AgentTurnContext.Provider>
@@ -1311,7 +1335,7 @@ function AgentConversation({
             sendDraft()
           }}
         >
-          {latest && <RunStatus run={latest} />}
+          {(latest || starting) && <RunStatus run={latest} />}
           <div className="cc-agent-box">
             <SlashMenu
               items={slash.items}
@@ -1448,14 +1472,14 @@ function AgentConversation({
                   onCompact={() => sendCommand({ name: 'compact', args: '' }, true)}
                 />
               )}
-              {stoppable ? (
+              {starting || stoppable ? (
                 <button
                   className="cc-agent-send is-stop"
                   aria-label="停止"
                   title="停止"
                   type="button"
-                  disabled={locked}
-                  onClick={() => stop(stoppable)}
+                  disabled={!starting && locked}
+                  onClick={() => (stoppable ? stop(stoppable) : stopStarting())}
                 >
                   <Square size={12} fill="currentColor" />
                 </button>
@@ -1593,12 +1617,13 @@ function ThreadLoading() {
 
 // The row above the input while a run is going: what it is doing. Stopping is
 // the send button's job.
-function RunStatus({ run }: { run: AgentRun }) {
+// Without a run yet the message is still on its way; it shows as working.
+function RunStatus({ run }: { run?: AgentRun }) {
   const step = useAgentRuns((store) => {
-    const view = store.runs[run.id]
+    const view = run && store.runs[run.id]
     return view ? currentStep(view) : ''
   })
-  const waiting = run.state === 'waiting_input'
+  const waiting = run?.state === 'waiting_input'
   return (
     <div className="cc-agent-status" role="status" aria-label="运行状态">
       <span className={waiting ? 'cc-agent-dot is-wait' : 'cc-agent-dot'} />
